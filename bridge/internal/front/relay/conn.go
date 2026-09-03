@@ -110,10 +110,24 @@ const (
 // already refused everything a correct main could do.
 const maxPendingDown = int(credit.WindowBytes) + 1
 
-// maxPendingUp bounds the per-connection plane 6 queue. The read gate allows
-// ONE outstanding read per connection, so the queue holds at most that chunk
-// plus the END that follows the peer's FIN.
-const maxPendingUp = 2
+// maxPendingUp bounds the per-connection plane 6 queue by ITEM COUNT, exactly
+// as maxPendingDown does for the other direction, and for the same reason.
+//
+// The BYTE bound is the real one: AcceptRead spends the connection's grant, so
+// the front can never hold more than credit.WindowBytes of unsent peer bytes -
+// which is protocol section 11.1's "it NEVER BUFFERS MORE THAN THE OUTSTANDING
+// CREDIT for that connection". The count bound is what a stream of SHORT reads
+// would otherwise leave unstated: a message-mode pipe delivering a 512 KiB
+// message hands the front whatever the kernel buffer holds, so one window can
+// arrive as sixteen 4096-byte reads rather than two 32 KiB ones, and the queue
+// is then sixteen items inside the same 64 KiB. Exceeding THIS bound is an
+// internal invariant rather than a peer fault, because the byte window already
+// refused everything a correct peer and a correct read gate could do.
+//
+// It was 2 until the Windows lane measured the truth: 2 assumed the read gate
+// allowed one outstanding read per connection AND that plane 6 drained between
+// two of them, and the second half of that was never enforced anywhere.
+const maxPendingUp = int(credit.WindowBytes) + 1
 
 // downItem is one thing to do to the peer, in order. Exactly one of Payload and
 // End is set: END is on the DATA plane precisely so it cannot overtake the last
@@ -248,6 +262,11 @@ func (c *Conn) GrantCredit(bytes uint32) error { return c.grant.Add(bytes) }
 // ReadBudget is how many bytes the supervisor may ask the operating system for
 // right now. Zero means DO NOT READ, and it is the only gate: refused, paused,
 // ended, unadmitted, out of credit, or already reading.
+//
+// Because AcceptRead spends the grant, "out of credit" now counts the bytes
+// this connection has already read and not yet handed to plane 6. That is what
+// makes section 11.1's bound real: the front stops READING at the credit bound,
+// rather than stopping at it only once plane 6 happened to drain.
 func (c *Conn) ReadBudget() int {
 	if c.readInFlight || c.paused || c.readEnded {
 		return 0
@@ -289,6 +308,26 @@ func (c *Conn) AcceptRead(chunk []byte) (handshakeCompleted bool, err error) {
 			Detail: fmt.Sprintf("plane 6 queue for connection %d already holds %d items", c.ID, len(c.pendingUp)),
 		}
 	}
+	// THE GRANT IS CHARGED HERE, at the moment the bytes leave the operating
+	// system, and NOT when the chunk is later committed to plane 6.
+	//
+	// Section 11.1 is normative: the front "NEVER BUFFERS MORE THAN THE
+	// OUTSTANDING CREDIT for that connection: at the credit bound it STOPS
+	// READING the pipe handle". Read bytes cannot be un-read, so the only
+	// moment at which the account and the front's own buffer agree is this one.
+	// Charging at TakeUpward instead let the read gate reopen on credit that
+	// bytes already sitting in pendingUp had spent in every sense but the
+	// bookkeeping, and the front then read a THIRD window ahead of a plane 6
+	// write that had not returned - which is how a 512 KiB message produced
+	// internal_invariant (and, one read later, credit_overrun) on Windows while
+	// every Linux run drained plane 6 fast enough to hide it.
+	//
+	// The read gate makes this Spend infallible for a correct supervisor:
+	// ReadBudget never exceeds the outstanding credit, so a violation here is
+	// the front having lost track of its own arithmetic.
+	if err := c.grant.Spend(uint32(len(chunk))); err != nil {
+		return false, err
+	}
 	c.pendingUp = append(c.pendingUp, upItem{Payload: chunk})
 	if !c.handshakeSeen && bytes.IndexByte(chunk, '\n') >= 0 {
 		c.handshakeSeen = true
@@ -325,10 +364,11 @@ func (c *Conn) ReadFailed() { c.readInFlight = false }
 // HasUpward reports whether this connection wants a turn on plane 6.
 func (c *Conn) HasUpward() bool { return len(c.pendingUp) > 0 }
 
-// TakeUpward removes this connection's next plane 6 frame and charges its
-// credit. It is called once per round-robin turn, which is what section 11.1's
-// fairness rule means: at most ONE chunk per connection per turn, so one busy
-// connection cannot starve twenty others on a shared plane.
+// TakeUpward removes this connection's next plane 6 frame. It is called once
+// per round-robin turn, which is what section 11.1's fairness rule means: at
+// most ONE chunk per connection per turn, so one busy connection cannot starve
+// twenty others on a shared plane. The credit was already charged by
+// AcceptRead.
 //
 // sequence is the plane 6 sequence the supervisor assigned; recording it here
 // keeps ThroughDataSequence and the wire from ever disagreeing.
@@ -341,14 +381,11 @@ func (c *Conn) TakeUpward(sequence uint64) (payload []byte, end bool, err error)
 	if len(c.pendingUp) == 0 {
 		c.pendingUp = nil
 	}
-	if !item.End {
-		// END costs no credit: it carries no payload, and a half-close that
-		// could be blocked by an exhausted window would deadlock main, which
-		// only grants credit after it sees the EOF (section 11.1).
-		if err := c.grant.Spend(uint32(len(item.Payload))); err != nil {
-			return nil, false, err
-		}
-	}
+	// NOTHING IS SPENT HERE. AcceptRead charged the grant when the bytes left
+	// the operating system; taking a turn on plane 6 moves a chunk that is
+	// already paid for. END costs no credit either way: it carries no payload,
+	// and a half-close that could be blocked by an exhausted window would
+	// deadlock main, which only grants credit after it sees the EOF (11.1).
 	c.throughDataSeq = sequence
 	return item.Payload, item.End, nil
 }

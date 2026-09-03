@@ -1,6 +1,7 @@
 package relay
 
 import (
+	"bytes"
 	"errors"
 	"testing"
 
@@ -117,7 +118,11 @@ func TestOnlyOneReadIsOutstandingAtATime(t *testing.T) {
 		t.Fatalf("accepting a read: %v", err)
 	}
 	if c.ReadBudget() == 0 {
-		t.Fatal("the gate reopens once the read has been taken")
+		t.Fatal("the gate reopens once the read has returned, against what credit is left")
+	}
+	if want := credit.WindowBytes - uint32(len("payload")); c.OutstandingCredit() != want {
+		t.Fatalf("the accepted bytes are already charged, outstanding=%d want=%d",
+			c.OutstandingCredit(), want)
 	}
 }
 
@@ -231,11 +236,11 @@ func TestEndCostsNoCredit(t *testing.T) {
 	if _, err := c.AcceptRead([]byte("abcd")); err != nil {
 		t.Fatalf("accepting a read: %v", err)
 	}
+	if c.OutstandingCredit() != 0 {
+		t.Fatalf("the credit is spent at ACCEPT, got %d", c.OutstandingCredit())
+	}
 	if _, _, err := c.TakeUpward(1); err != nil {
 		t.Fatalf("taking the chunk: %v", err)
-	}
-	if c.OutstandingCredit() != 0 {
-		t.Fatalf("the credit is spent, got %d", c.OutstandingCredit())
 	}
 	if err := c.PeerEnded(); err != nil {
 		t.Fatalf("peer FIN with no credit left: %v", err)
@@ -249,17 +254,15 @@ func TestEndCostsNoCredit(t *testing.T) {
 	}
 }
 
-// TakeUpward SPENDS credit at the moment the frame is committed to plane 6, so
-// the account and the wire cannot disagree.
+// ACCEPTREAD SPENDS credit at the moment the bytes leave the operating system,
+// which is what makes section 11.1's "never buffers more than the outstanding
+// credit" a property of the front rather than of plane 6's drain rate.
 func TestUpwardSpendingIsRefusedPastTheCreditBound(t *testing.T) {
 	c := admittedConn(t, 4)
 	c.ReadIssued()
 	// A read larger than the budget cannot happen through ReadBudget, so this
 	// is the defence against the front itself getting the arithmetic wrong.
-	if _, err := c.AcceptRead([]byte("too many bytes")); err != nil {
-		t.Fatalf("accepting a read: %v", err)
-	}
-	_, _, err := c.TakeUpward(1)
+	_, err := c.AcceptRead([]byte("too many bytes"))
 	if got := faultName(t, err); got != credit.NameCreditOverrun {
 		t.Fatalf("got %s, want %s", got, credit.NameCreditOverrun)
 	}
@@ -344,5 +347,173 @@ func TestMarkClosedDropsEveryQueueAndStopsAllIO(t *testing.T) {
 	}
 	if _, _, _, ok := c.NextDown(); ok {
 		t.Fatal("a closed connection has nothing to write")
+	}
+}
+
+// THE 512 KiB MESSAGE, WITH PLANE 6 HELD BUSY - the Windows lane's failure,
+// reproduced on a platform with no named pipes.
+//
+// The peer writes one 512 KiB message. A message-mode pipe does not hand it
+// over in 32 KiB pieces because the front asked for 32 KiB: it hands over
+// whatever the kernel buffer holds, which the CI machine measured at 4096
+// bytes, so the front sees a hundred and twenty-eight SHORT reads inside one
+// 64 KiB window. Plane 6's write goroutine is slower than those reads on
+// Windows, so a chunk stays in the queue while the next read is already coming
+// back.
+//
+// Before AcceptRead charged the grant, that shape broke the front against
+// ITSELF: the read gate saw a full window of unspent credit, issued read after
+// read, and the fifth one hit `internal_invariant` on a plane 6 queue of two.
+// The front then exited, main saw plane_io_error, and the bridge - whose 512
+// KiB tools/call was half delivered - saw the host close the connection and
+// exited 0 with nothing on stderr.
+//
+// Reverting either half of the fix (the Spend in AcceptRead, or maxPendingUp)
+// turns this red.
+func TestALargeMessageArrivesWholeThroughShortReadsWithPlaneSixHeldBusy(t *testing.T) {
+	const total = 512 * 1024
+	const kernelBuffer = 4096
+
+	message := make([]byte, total)
+	for i := range message {
+		message[i] = byte('a' + i%26)
+	}
+	// The peer's first line has to complete for the handshake latch, and the
+	// front interprets nothing else, so a newline in the first read is enough.
+	message[0] = '\n'
+
+	c := admittedConn(t, credit.WindowBytes)
+
+	// MAIN, as front-relay-transport.ts behaves: it decodes a DATA frame, hands
+	// the payload to the consumer and replenishes exactly what it consumed, up
+	// to the 64 KiB window.
+	replenish := func(consumed uint32) {
+		room := credit.WindowBytes - c.OutstandingCredit()
+		if consumed > room {
+			consumed = room
+		}
+		if consumed == 0 {
+			return
+		}
+		if err := c.GrantCredit(consumed); err != nil {
+			t.Fatalf("main's replenishment: %v", err)
+		}
+	}
+
+	var (
+		delivered []byte
+		offset    int
+		sequence  uint64
+		// planeBusy is the plane 6 write the supervisor has handed to its
+		// writer goroutine and that has not returned yet. While it is set, no
+		// turn is taken, which is exactly pumpDataUp's `if s.dataUp.busy`.
+		planeBusy []byte
+		// planeLag is how many more loop turns that write takes to return. TWO
+		// is the Windows shape and the reason the defect only appeared there: a
+		// plane 6 write to an overlapped stdio handle is slower than the next
+		// short read off a pipe whose buffer is already full, so reads overtake
+		// the drain. On Linux the same write returns before the next read and
+		// the queue never holds two, which is why every local run was green.
+		planeLag int
+	)
+	const planeWriteLagTurns = 2
+
+	// The supervisor's own loop: pumpConnIO issues a read BEFORE pumpDataUp
+	// takes a turn, which is the ordering that makes the read gate the only
+	// thing standing between a fast peer and an unbounded queue.
+	for offset < total || len(delivered) < total {
+		progressed := false
+
+		if budget := c.ReadBudget(); budget > 0 && offset < total {
+			if budget > kernelBuffer {
+				budget = kernelBuffer
+			}
+			if offset+budget > total {
+				budget = total - offset
+			}
+			c.ReadIssued()
+			chunk := append([]byte(nil), message[offset:offset+budget]...)
+			offset += budget
+			if _, err := c.AcceptRead(chunk); err != nil {
+				t.Fatalf("accepting a read at offset %d: %v", offset, err)
+			}
+			progressed = true
+		}
+
+		// The write in flight returns, several reads behind, and main consumes
+		// it and replenishes exactly what it consumed.
+		if planeBusy != nil {
+			planeLag--
+			if planeLag <= 0 {
+				delivered = append(delivered, planeBusy...)
+				replenish(uint32(len(planeBusy)))
+				planeBusy = nil
+			}
+			progressed = true
+		}
+
+		if planeBusy == nil && c.HasUpward() {
+			sequence++
+			payload, end, err := c.TakeUpward(sequence)
+			if err != nil {
+				t.Fatalf("taking a plane 6 turn at sequence %d: %v", sequence, err)
+			}
+			if end {
+				t.Fatal("the peer never half-closed in this test")
+			}
+			if uint32(len(payload)) > credit.ChunkBytes {
+				t.Fatalf("a DATA frame of %d bytes is past the %d-byte chunk bound",
+					len(payload), credit.ChunkBytes)
+			}
+			planeBusy = payload
+			planeLag = planeWriteLagTurns
+			progressed = true
+		}
+
+		if !progressed {
+			t.Fatalf("the relay stalled: read %d of %d bytes, delivered %d, queue %d, credit %d",
+				offset, total, len(delivered), c.PendingUp(), c.OutstandingCredit())
+		}
+	}
+
+	if len(delivered) != total {
+		t.Fatalf("delivered %d bytes, want %d", len(delivered), total)
+	}
+	if !bytes.Equal(delivered, message) {
+		t.Fatal("the bytes that reached plane 6 are not the bytes the peer wrote, in order")
+	}
+}
+
+// THE READ GATE IS THE BUFFER BOUND. The front never holds more unsent peer
+// bytes than the credit main granted, whatever plane 6 is doing - which is the
+// sentence protocol section 11.1 already contained and the implementation did
+// not keep.
+func TestTheFrontNeverBuffersPastTheOutstandingCredit(t *testing.T) {
+	c := admittedConn(t, credit.WindowBytes)
+
+	read := 0
+	for {
+		budget := c.ReadBudget()
+		if budget == 0 {
+			break
+		}
+		if budget > 4096 {
+			budget = 4096
+		}
+		c.ReadIssued()
+		if _, err := c.AcceptRead(make([]byte, budget)); err != nil {
+			t.Fatalf("accepting a read after %d bytes: %v", read, err)
+		}
+		read += budget
+		if read > int(credit.WindowBytes) {
+			t.Fatalf("the front read %d bytes against a %d-byte grant with plane 6 idle-free",
+				read, credit.WindowBytes)
+		}
+	}
+	if read != int(credit.WindowBytes) {
+		t.Fatalf("the front stopped at %d bytes; the whole grant is readable", read)
+	}
+	if c.PendingUp() != int(credit.WindowBytes)/4096 {
+		t.Fatalf("the queue holds %d items", c.PendingUp())
 	}
 }

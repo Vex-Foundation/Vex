@@ -19,12 +19,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { StudioDuplexTransport } from "@vex-agent/mcp/duplex-transport.js";
 import { PIPE_FRONT_BOUND_FLAGS, PIPE_FRONT_ERROR_CODES } from "@vex-agent/mcp/pipe-front-frames.js";
 
+/**
+ * The structural log is CAPTURED, not silenced: one case asserts that main
+ * names an unobserved exit as the reason a later bind failed, and the log line
+ * is where that fact is published.
+ */
+const logged = vi.hoisted(() => ({ errors: [] as string[], warns: [] as string[] }));
 vi.mock("../../logger/index.js", () => ({
-  log: { info: () => {}, warn: () => {}, error: () => {} },
+  log: {
+    info: () => {},
+    warn: (line: string) => logged.warns.push(line),
+    error: (line: string) => logged.errors.push(line),
+  },
 }));
 
 const {
   FRONT_BRINGUP_DEADLINE_MS,
+  FRONT_EXIT_WAIT_MS,
   FRONT_MAX_RESTARTS,
   FRONT_STDERR_RING_LINES,
   FrontSupervisor,
@@ -55,7 +66,12 @@ interface Harness {
   readonly start: Promise<unknown>;
 }
 
-function build(over: { readonly generation?: number } = {}): Harness {
+function build(
+  over: {
+    readonly generation?: number;
+    readonly exitOnKill?: "async" | "never";
+  } = {},
+): Harness {
   const supervisor = new FrontSupervisor({
     pipeName: PIPE_NAME,
     command: "C:\\Program Files\\Vex\\resources\\bridge\\vex-pipe-front.exe",
@@ -67,6 +83,7 @@ function build(over: { readonly generation?: number } = {}): Harness {
     spawnFront: () => {
       const front = new FakeFront({
         generation: over.generation ?? 0x1000 + fronts.length,
+        ...(over.exitOnKill === undefined ? {} : { exitOnKill: over.exitOnKill }),
       });
       fronts.push(front);
       return front;
@@ -82,6 +99,32 @@ async function microtasks(): Promise<void> {
   await Promise.resolve();
 }
 
+/**
+ * WAIT FOR THE RESTART, because main now waits for the corpse.
+ *
+ * A restart is no longer same-tick: main kills the failed front and spawns the
+ * replacement only once it has seen the `exit` event, because on Windows the
+ * pipe name belongs to the PROCESS and is released when the process is gone,
+ * not when `kill()` returns. The fake models that with a macrotask, so a test
+ * that wants to see the next front waits for one, then for the supervisor's
+ * own `then`.
+ */
+async function restartSettles(): Promise<void> {
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, 0);
+  });
+  await microtasks();
+}
+
+/**
+ * The same wait under FAKE timers: the exit macrotask has to be advanced past
+ * rather than waited for.
+ */
+async function restartSettlesFake(): Promise<void> {
+  vi.advanceTimersByTime(1);
+  await microtasks();
+}
+
 function latest(): InstanceType<typeof FakeFront> {
   const front = fronts[fronts.length - 1];
   if (front === undefined) throw new Error("no front was spawned");
@@ -95,6 +138,8 @@ beforeEach(() => {
   built = [];
   epoch = 7;
   refusal = null;
+  logged.errors.length = 0;
+  logged.warns.length = 0;
 });
 
 /**
@@ -185,7 +230,10 @@ describe("the bootstrap", () => {
 
     expect(admitted).toHaveLength(0);
     expect(front.killed).toBe(1);
-    // A pid mismatch is restartable: a second spawn may well be main's child.
+    // A pid mismatch is restartable: a second spawn may well be main's child -
+    // once the first one has actually let go of the pipe name.
+    expect(fronts).toHaveLength(1);
+    await restartSettles();
     expect(fronts).toHaveLength(2);
     expect(harness.supervisor.currentState()).toBe("starting");
   });
@@ -198,10 +246,12 @@ describe("the bootstrap", () => {
     // Kill it, and let the replacement announce the SAME generation. Only main
     // survives a restart, so only main can catch this (protocol 4).
     latest().exit(1);
+    await restartSettles();
     expect(fronts).toHaveLength(2);
     latest().sendHelloAck({ generation: 0x2222 });
-    expect(fronts).toHaveLength(3);
     expect(fronts[1]?.killed).toBe(1);
+    await restartSettles();
+    expect(fronts).toHaveLength(3);
 
     // A FRESH generation on the same epoch is accepted, and the epoch is the
     // one the dead front was serving - never a fresh count (protocol 5.2).
@@ -260,7 +310,8 @@ describe("failure settles every connection before it decides anything", () => {
 
     expect(closed.sort()).toEqual([0, 1]);
     expect(admitted[0]?.destroyed).toBe(true);
-    // Killed, and restarted LOCKED under a new generation.
+    // Killed, and restarted LOCKED under a new generation - AFTER its exit.
+    await restartSettles();
     expect(fronts).toHaveLength(2);
   });
 
@@ -272,12 +323,14 @@ describe("failure settles every connection before it decides anything", () => {
     first.exit(1);
     // Two signals, ONE accounted failure: the second finds the child already
     // settled and is ignored, so one death cannot spend two restarts.
+    await restartSettles();
     expect(fronts).toHaveLength(2);
 
     latest().completeHandshake();
     const second = latest();
     second.exit(1);
     second.endControlUp();
+    await restartSettles();
     expect(fronts).toHaveLength(3);
   });
 });
@@ -290,6 +343,7 @@ describe("the restart budget", () => {
       // a front dying every thirty seconds restart forever.
       latest().completeHandshake();
       latest().exit(1);
+      await restartSettles();
     }
     expect(fronts).toHaveLength(FRONT_MAX_RESTARTS + 2);
     expect({
@@ -352,7 +406,7 @@ describe("LOCK and QUIT", () => {
     expect(wire?.destroyed).toBe(true);
   });
 
-  it("kills and restarts the front when LOCK_ACK misses its deadline", () => {
+  it("kills and restarts the front when LOCK_ACK misses its deadline", async () => {
     vi.useFakeTimers();
     try {
       const harness = build();
@@ -363,8 +417,11 @@ describe("LOCK and QUIT", () => {
 
       // "A front that cannot be commanded is never left holding live handles."
       vi.advanceTimersByTime(2);
-      expect(fronts).toHaveLength(2);
       expect(fronts[0]?.killed).toBe(1);
+      // The replacement waits for the corpse: the name is the process's.
+      expect(fronts).toHaveLength(1);
+      await restartSettlesFake();
+      expect(fronts).toHaveLength(2);
     } finally {
       vi.useRealTimers();
     }
@@ -417,14 +474,15 @@ describe("LOCK and QUIT", () => {
 });
 
 describe("the bring-up deadline and the child's stderr", () => {
-  it("kills a front that never reaches BOUND", () => {
+  it("kills a front that never reaches BOUND", async () => {
     vi.useFakeTimers();
     try {
       build();
       latest().sendHelloAck();
       vi.advanceTimersByTime(FRONT_BRINGUP_DEADLINE_MS + 1);
-      expect(fronts).toHaveLength(2);
       expect(fronts[0]?.killed).toBe(1);
+      await restartSettlesFake();
+      expect(fronts).toHaveLength(2);
     } finally {
       vi.useRealTimers();
     }
@@ -460,5 +518,138 @@ describe("dispose", () => {
       state: "stopped",
     });
     expect(transitions).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * THE PIPE NAME BELONGS TO THE PROCESS, NOT TO `kill()`.
+ *
+ * These are the cases CI run 33751109754 turned red on the Windows lane, and
+ * every one of them is invisible on a transport whose endpoint is a file the
+ * kernel unlinks. The front binds its name with first-instance protection and
+ * the name is DERIVED from the config directory, so it is the same name every
+ * launch and on every restart: a replacement that binds while the corpse is
+ * still running gets `listener_bind_failed`, and six of those spend the whole
+ * restart budget in under a second on a machine where nothing is broken.
+ *
+ * go-winio's `pipe_test.go` is the reference for the shape - `TestListenConnectRace`
+ * and `TestAcceptAfterCloseFails` both close the listener and only then rebind,
+ * because the handle is what the name belongs to. VS Code's `PtyHostService`
+ * restarts in one tick and gets away with it only because
+ * `createRandomIPCHandle()` hands every pty host a NEW name; main cannot.
+ */
+describe("the pipe name is released by the EXIT, not by the kill", () => {
+  it("holds the replacement until the killed front has actually exited", async () => {
+    const harness = build();
+    latest().completeHandshake();
+    const first = latest();
+
+    // A restartable failure: the front's control plane went away.
+    first.endControlUp();
+    expect(first.killed).toBe(1);
+    // NOTHING IS SPAWNED YET. This is the whole fix: the previous binding is
+    // still held by a live process, and a spawn here is a bind that fails.
+    expect(fronts).toHaveLength(1);
+    expect(harness.supervisor.currentState()).toBe("starting");
+
+    await restartSettles();
+    expect(fronts).toHaveLength(2);
+    latest().completeHandshake();
+    expect(harness.supervisor.currentState()).toBe("serving");
+  });
+
+  it("gives up on an unobserved exit at its bound, and NAMES it in the next failure", async () => {
+    vi.useFakeTimers();
+    try {
+      // A front that ignores the signal. Main cannot wait forever for it, and
+      // it must not pretend the wait succeeded either.
+      const harness = build({ exitOnKill: "never" });
+      latest().completeHandshake();
+      const stubborn = latest();
+      stubborn.endControlUp();
+      expect(stubborn.killed).toBe(1);
+
+      vi.advanceTimersByTime(FRONT_EXIT_WAIT_MS - 1);
+      await microtasks();
+      expect(fronts).toHaveLength(1);
+
+      vi.advanceTimersByTime(2);
+      await microtasks();
+      expect(fronts).toHaveLength(2);
+
+      // The next front fails to bind, exactly as it would on Windows against a
+      // name the corpse still owns, and main's report says WHY rather than
+      // blaming a machine that is fine.
+      latest().endControlUp();
+      await microtasks();
+      expect(harness.supervisor.currentState()).toBe("starting");
+      expect(logged.errors.some((line) => line.includes("was never seen to exit"))).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("QUIT resolves only once the front is GONE, so the next bind is free", async () => {
+    const harness = build();
+    latest().completeHandshake();
+    const front = latest();
+
+    const quit = harness.supervisor.quit(2_500, new Promise<void>(() => undefined));
+    front.sendQuitAck();
+    await quit;
+    // The acknowledgement is not the exit. `shutdownStudioMcpHost` resolves
+    // through here, so "the host has shut down" has to mean the pipe name is
+    // free - which is what a quit-and-relaunch depends on.
+    expect({ killed: front.killed, exited: front.hasExited() }).toEqual({
+      killed: 1,
+      exited: true,
+    });
+    expect(harness.supervisor.currentState()).toBe("stopped");
+  });
+
+  it("LOCK to a front still in bring-up KILLS it instead of encoding a frame it cannot answer", () => {
+    const harness = build();
+    // No HELLO_ACK: a LOCK at generation 0 is refused by the encoder, and the
+    // throw would escape `lock` into `lockStudioMcpHost` with the child left
+    // alive and never locked. The same rule as QUIT: kill it, come back locked.
+    const front = latest();
+    epoch = 8;
+    harness.supervisor.lock();
+
+    expect(front.controlOfType("LOCK")).toHaveLength(0);
+    expect(front.malformedFromMain).toHaveLength(0);
+    expect(front.killed).toBe(1);
+  });
+
+  it("QUIT to a front still in bring-up KILLS it instead of encoding a frame it cannot answer", async () => {
+    const harness = build();
+    // No HELLO_ACK: the planes still carry the bootstrap generation 0, and the
+    // encoder refuses every non-bootstrap frame at generation 0 by name. The
+    // throw used to escape `quit` and skip the teardown entirely, leaving the
+    // child alive on the pipe name - `quit failed: PipeFrontEncodeError` in the
+    // Windows log, followed by six bind failures.
+    const front = latest();
+    await harness.supervisor.quit(2_500, new Promise<void>(() => undefined));
+
+    expect(front.controlOfType("QUIT")).toHaveLength(0);
+    expect(front.malformedFromMain).toHaveLength(0);
+    expect({ killed: front.killed, exited: front.hasExited() }).toEqual({
+      killed: 1,
+      exited: true,
+    });
+    expect(harness.supervisor.currentState()).toBe("stopped");
+  });
+
+  it("a quit during a pending restart cancels it rather than spawning into a teardown", async () => {
+    const harness = build();
+    latest().completeHandshake();
+    latest().endControlUp();
+    expect(fronts).toHaveLength(1);
+
+    await harness.supervisor.quit(2_500, new Promise<void>(() => undefined));
+    await restartSettles();
+    // No seventh handle, no front left running after the host reported stopped.
+    expect(fronts).toHaveLength(1);
+    expect(harness.supervisor.currentState()).toBe("stopped");
   });
 });

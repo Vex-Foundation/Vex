@@ -233,6 +233,13 @@ describe("the admission epoch boundary", () => {
     closeStudioAdmission();
     expect(studioAdmissionEpoch()).toBe(first + 1);
     fronts[0]?.exit(1);
+    // The replacement waits for the corpse: the pipe name belongs to the
+    // process, not to `kill()`.
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 0);
+    });
+    await Promise.resolve();
+    await Promise.resolve();
     expect(fronts).toHaveLength(2);
     expect(fronts[1]?.hello()?.initialAdmissionEpoch).toBe(first + 1);
   });

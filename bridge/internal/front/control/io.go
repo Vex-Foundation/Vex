@@ -185,10 +185,12 @@ func (p *planeWriter) hand(encoded []byte) {
 
 // startConnRead issues ONE read on an accepted handle.
 //
-// One outstanding read per connection is what keeps the front's own buffering
-// at a single chunk, well inside the outstanding credit that section 11.1
-// bounds. It also means the goroutine has a definite end: it delivers exactly
-// one result and returns.
+// One outstanding read per connection keeps a connection's chunks ordered
+// without a lock, and it means the goroutine has a definite end: it delivers
+// exactly one result and returns. It is NOT what bounds the front's buffering -
+// a read may be issued the instant the previous one returns, so the queue would
+// grow without a second gate. What bounds the buffering is the GRANT, charged
+// by relay.AcceptRead when the bytes leave the operating system (section 11.1).
 func (s *Supervisor) startConnRead(id uint32, wire connWire, budget int) {
 	go func() {
 		buf := make([]byte, budget)

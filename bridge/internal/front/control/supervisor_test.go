@@ -724,3 +724,97 @@ func waitFor(t *testing.T, condition func() bool) {
 	}
 	t.Fatal("timed out waiting for the front to reach the expected state")
 }
+
+// THE 512 KiB REQUEST, THROUGH THE REAL FRONT, WITH MAIN REPLENISHING LIKE
+// front-relay-transport.ts.
+//
+// This is the conformance case the Windows lane turned red ("relays a LARGE
+// frame with every byte intact through the front") driven end to end on a
+// platform with no named pipes: the REAL supervisor, the REAL relay, the REAL
+// codec, four real os.Pipe planes and a real socket peer. What a Linux runner
+// cannot reproduce is the TIMING - a message-mode pipe handing over 4096 bytes
+// at a time while an overlapped plane 6 write is still outstanding - so the
+// deterministic proof of the read gate lives in relay/conn_test.go and this
+// case proves the whole machine carries a message far larger than every bound
+// it crosses, in order, byte for byte.
+func TestALargePeerMessageReachesMainWholeAndInOrder(t *testing.T) {
+	h := newHarness(t)
+	h.bootstrap()
+	peer, id := h.openConnection()
+	h.admit(id, 7)
+
+	const total = 512 * 1024
+	message := make([]byte, total)
+	for i := range message {
+		message[i] = byte('a' + i%26)
+	}
+	// The handshake latch is a newline scan and nothing else, and it has to
+	// complete or the front's 5000 ms deadline would close the connection.
+	message[total-1] = '\n'
+
+	wrote := make(chan error, 1)
+	go func() {
+		// SHORT WRITES ARE THE POINT. The peer offers the message in
+		// 4096-byte pieces, the size of the kernel pipe buffer the Windows job
+		// measured, so the front sees a hundred and twenty-eight reads inside
+		// what its credit accounting treats as two windows.
+		for offset := 0; offset < total; offset += 4096 {
+			end := offset + 4096
+			if end > total {
+				end = total
+			}
+			if _, err := peer.Write(message[offset:end]); err != nil {
+				wrote <- err
+				return
+			}
+		}
+		wrote <- nil
+	}()
+
+	// MAIN'S HALF: drain plane 6 continuously and replenish exactly what was
+	// consumed, up to the 64 KiB window - `replenish` in
+	// front-relay-transport.ts, which is the behaviour the front's read gate is
+	// paced by.
+	outstanding := expectedCreditBytes
+	received := make([]byte, 0, total)
+	for len(received) < total {
+		frame := h.expectUpData()
+		data, ok := frame.Payload.(frames.Data)
+		if !ok {
+			t.Fatalf("expected DATA on plane 6, got %s", frame.Type().Name())
+		}
+		if frame.Connection != id {
+			t.Fatalf("DATA for connection %d, want %d", frame.Connection, id)
+		}
+		if uint32(len(data.Payload)) > expectedChunkBytes {
+			t.Fatalf("a DATA payload of %d bytes is past the %d-byte chunk bound",
+				len(data.Payload), expectedChunkBytes)
+		}
+		if uint32(len(data.Payload)) > outstanding {
+			t.Fatalf("the front sent %d bytes against %d outstanding credit",
+				len(data.Payload), outstanding)
+		}
+		outstanding -= uint32(len(data.Payload))
+		received = append(received, data.Payload...)
+		h.sendControl(id, frames.Credit{Bytes: uint32(len(data.Payload))})
+		outstanding += uint32(len(data.Payload))
+	}
+
+	if err := <-wrote; err != nil {
+		t.Fatalf("the peer's write: %v", err)
+	}
+	if !bytes.Equal(received, message) {
+		t.Fatalf("main received %d bytes; they are not the peer's bytes in order", len(received))
+	}
+	// NO ERROR FRAME. The front reported nothing structural on the way: an
+	// internal_invariant or a credit_violation here is the defect this case
+	// exists for, and it would arrive on plane 4.
+	select {
+	case frame := <-h.up:
+		if report, ok := frame.Payload.(frames.ErrorReport); ok {
+			t.Fatalf("the front reported %s (count %d)\n%s",
+				report.Code.Name(), report.Count, h.logs.String())
+		}
+	default:
+	}
+}

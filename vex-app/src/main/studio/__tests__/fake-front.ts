@@ -68,6 +68,19 @@ export interface FakeFrontOptions {
   readonly pid?: number;
   /** The generation `HELLO_ACK` announces. */
   readonly generation?: number;
+  /**
+   * What `kill()` does to the process, which is what main now WAITS ON before
+   * it binds the pipe name again.
+   *
+   *  - `"async"` (default) - the exit event fires on a later macrotask, as a
+   *    real `child_process` kill does. Nothing in production is synchronous
+   *    here, and a fake that exited inside `kill()` would hide the whole race.
+   *  - `"never"` - a front that ignores the signal. It is the case main's
+   *    bounded wait exists for, and the only way to test that bound.
+   */
+  readonly exitOnKill?: "async" | "never";
+  /** The exit code the killed process reports. Default `null`, as a signal does. */
+  readonly killExitCode?: number | null;
 }
 
 export class FakeFront implements FrontChild {
@@ -97,12 +110,18 @@ export class FakeFront implements FrontChild {
   private controlUpSequence = 1n;
   private dataUpSequence = 1n;
 
+  private readonly exitOnKill: "async" | "never";
+  private readonly killExitCode: number | null;
+  private exitedAlready = false;
+
   private exitListeners: ((code: number | null) => void)[] = [];
   private errorListeners: ((error: Error) => void)[] = [];
 
   constructor(options: FakeFrontOptions = {}) {
     this.pid = options.pid ?? 4242;
     this.generation = options.generation ?? 0x51ee_1234;
+    this.exitOnKill = options.exitOnKill ?? "async";
+    this.killExitCode = options.killExitCode ?? null;
     this.controlDownDecoder = new PipeFrontFrameDecoder({
       plane: PIPE_FRONT_PLANE.controlDown,
       generation: 0,
@@ -146,6 +165,13 @@ export class FakeFront implements FrontChild {
 
   kill(): void {
     this.killed += 1;
+    if (this.exitOnKill === "never" || this.exitedAlready) return;
+    // A LATER MACROTASK, not a microtask: main must be able to observe the
+    // window in which the process is dying but has not died, because that is
+    // the window in which the pipe name is still taken.
+    setTimeout(() => {
+      this.exit(this.killExitCode);
+    }, 0).unref?.();
   }
 
   /* -------------------------------------------------------------- scripting */
@@ -286,8 +312,15 @@ export class FakeFront implements FrontChild {
     this.dataUpPlane.fail(new Error("plane 6 failed"));
   }
 
-  /** The child process exits. */
+  /** Whether the process is GONE, which is what releases a Windows pipe name. */
+  hasExited(): boolean {
+    return this.exitedAlready;
+  }
+
+  /** The child process exits. Idempotent: a process exits once. */
   exit(code: number | null): void {
+    if (this.exitedAlready) return;
+    this.exitedAlready = true;
     for (const listener of [...this.exitListeners]) listener(code);
   }
 

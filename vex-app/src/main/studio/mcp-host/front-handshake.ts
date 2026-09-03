@@ -150,6 +150,12 @@ export type FrontFailureName =
   | "front_error"
   /** `LOCK_ACK` did not arrive within its 1000 ms deadline (protocol 8). */
   | "lock_ack_timeout"
+  /**
+   * `LOCK` was requested while the front had not yet answered `HELLO_ACK`.
+   * Its planes still carry generation 0, so the frame cannot be encoded; the
+   * child is killed and restarted LOCKED instead (the same rule QUIT follows).
+   */
+  | "lock_before_hello_ack"
   /** A `DATA` frame took a connection past its granted credit (12.3). */
   | "credit_overrun"
   /** A `DATA` or `END` arrived for a direction already ended (12.3). */

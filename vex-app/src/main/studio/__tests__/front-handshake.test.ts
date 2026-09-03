@@ -61,6 +61,7 @@ const FAILURES = [
   "admission_epoch_exhausted",
   "front_error",
   "lock_ack_timeout",
+  "lock_before_hello_ack",
   "credit_overrun",
   "data_after_end",
   "ack_regression",

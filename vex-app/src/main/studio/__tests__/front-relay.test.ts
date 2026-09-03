@@ -86,6 +86,21 @@ function dataSequence(index: number): bigint {
   return frame.sequence;
 }
 
+/**
+ * WAIT FOR THE RESTART. Main kills a failed front and spawns the replacement
+ * only once it has seen the `exit` event: on Windows the pipe name belongs to
+ * the PROCESS, so a replacement bound in the same tick binds a name the corpse
+ * still owns. `front-supervisor.test.ts` owns that proof; here it is only the
+ * reason a restart is one macrotask away.
+ */
+async function restartSettles(): Promise<void> {
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, 0);
+  });
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
 async function microtasks(): Promise<void> {
   await Promise.resolve();
   await Promise.resolve();
@@ -155,7 +170,7 @@ describe("the read side and its credit", () => {
     ]);
   });
 
-  it("kills the front when DATA exceeds the credit main granted", () => {
+  it("kills the front when DATA exceeds the credit main granted", async () => {
     build();
     front().completeHandshake();
     const wire = openConnection(1);
@@ -168,6 +183,7 @@ describe("the read side and its credit", () => {
     front().sendData(1, Buffer.alloc(FRONT_CHUNK_BYTES, 0x61));
     expect(fronts).toHaveLength(1);
     front().sendData(1, Buffer.alloc(FRONT_CHUNK_BYTES, 0x61));
+    await restartSettles();
     expect(fronts).toHaveLength(2);
   });
 
@@ -318,12 +334,13 @@ describe("the main -> front window, and the cumulative acknowledgement", () => {
     expect(perConnection.get(3)).toBe(16);
   });
 
-  it("kills the front on an acknowledgement that regresses or names an unsent sequence", () => {
+  it("kills the front on an acknowledgement that regresses or names an unsent sequence", async () => {
     build();
     front().completeHandshake();
     openConnection(1);
     admitted[0]?.write("a".repeat(16));
     front().sendWriteDone(1, dataSequence(0) + 5n);
+    await restartSettles();
     expect(fronts).toHaveLength(2);
   });
 });
@@ -373,7 +390,7 @@ describe("close, and the edge that must not overtake the last response", () => {
     expect({ closed, spawns: fronts.length }).toEqual({ closed: 1, spawns: 1 });
   });
 
-  it("kills the front when DATA arrives for a direction already ended", () => {
+  it("kills the front when DATA arrives for a direction already ended", async () => {
     build();
     front().completeHandshake();
     openConnection(1);
@@ -381,6 +398,7 @@ describe("close, and the edge that must not overtake the last response", () => {
     front().sendData(1, Buffer.from("after"));
     // `data_after_end` (protocol 12.3), and it is fatal like every other named
     // failure except the purged stale admit.
+    await restartSettles();
     expect(fronts).toHaveLength(2);
   });
 

@@ -98,6 +98,32 @@ export const FRONT_BRINGUP_DEADLINE_MS = 10_000;
 export const FRONT_STDERR_RING_LINES = 64;
 
 /**
+ * How long main waits for a killed front to actually EXIT before it spawns the
+ * replacement, or before a quit reports itself finished.
+ *
+ * THE PIPE NAME IS A SINGLETON THE OPERATING SYSTEM RELEASES AT PROCESS EXIT.
+ * The front binds it with first-instance protection, and the name is derived
+ * from the config directory, so it is the SAME name every launch. `kill()`
+ * requests the exit; it does not prove it. A replacement spawned in the same
+ * tick binds a name the corpse still owns, reports `listener_bind_failed`, and
+ * dies - and six of those spend the whole restart budget in under a second
+ * against a machine that was never broken. That is the exact cascade CI run
+ * 33751109754 recorded on the Windows lane.
+ *
+ * go-winio's own suite is the reference for the shape: `TestListenConnectRace`
+ * closes the listener and only then binds the name again, fifty times, because
+ * the handle - not the intention to close it - is what the name belongs to.
+ * VS Code's `PtyHostService` gets away with disposing and restarting in one
+ * tick precisely because `createRandomIPCHandle()` gives every pty host a NEW
+ * name; main cannot, so main waits.
+ *
+ * 2000 ms is generous for a process whose whole job is a pipe and is well
+ * inside the 10 s bring-up deadline. When it expires the wait ends anyway and
+ * the unobserved exit is NAMED, so the bind failure that may follow says why.
+ */
+export const FRONT_EXIT_WAIT_MS = 2_000;
+
+/**
  * The supervisor's own state, and it is what the host status is derived from.
  *
  *  - `idle`      - nothing spawned yet.
@@ -161,6 +187,10 @@ interface LiveChild {
   bound: boolean;
   /** Set once this child's failure has been accounted, so it counts once. */
   settled: boolean;
+  /** Set by the child's own `exit` event, whatever main was doing at the time. */
+  exited: boolean;
+  /** Waiters parked on that event. Settled exactly once, by the event or a timeout. */
+  exitWaiters: (() => void)[];
 }
 
 export class FrontSupervisor {
@@ -189,6 +219,16 @@ export class FrontSupervisor {
 
   private bringupTimer: NodeJS.Timeout | null = null;
   private lockTimer: NodeJS.Timeout | null = null;
+
+  /**
+   * The PREVIOUS child whose exit main asked for and did not see within
+   * `FRONT_EXIT_WAIT_MS`, or `null`.
+   *
+   * It is carried into the next failure's detail because it is the one fact
+   * that explains a `listener_bind_failed` on a machine where nothing is wrong:
+   * the name is still held by a process main told to die.
+   */
+  private unobservedExitPid: number | undefined | null = null;
 
   /** Resolves the caller waiting on the FIRST bring-up. Later ones are silent. */
   private startSettle: ((outcome: FrontStartOutcome) => void) | null = null;
@@ -257,6 +297,18 @@ export class FrontSupervisor {
     if (live === null || this.state === "stopped" || this.state === "failed") return;
     this.state = "locking";
     this.deps.onTransition();
+    // A CHILD THAT HAS NOT ANSWERED `HELLO_ACK` CANNOT BE COMMANDED - the same
+    // rule `quit` applies. Its planes still carry generation 0 and the encoder
+    // refuses a `LOCK` there by name; the throw would escape into
+    // `lockStudioMcpHost` and leave a front alive with the lock never sent.
+    // Kill it and come back LOCKED, which is what the deadline path does too.
+    if (!live.acked) {
+      this.failCurrent(
+        "lock_before_hello_ack",
+        "LOCK requested before HELLO_ACK; the front is restarted locked",
+      );
+      return;
+    }
     live.planes.writeControl({
       connection: 0,
       body: { type: "LOCK", admissionEpoch: this.deps.admissionEpoch() },
@@ -288,15 +340,68 @@ export class FrontSupervisor {
     }
     this.state = "quitting";
     this.deps.onTransition();
-    const acked = new Promise<void>((resolve) => {
-      this.quitAck = resolve;
-    });
-    live.planes.writeControl({
-      connection: 0,
-      body: { type: "QUIT", deadlineMs: Math.max(0, Math.trunc(remainingMs)) },
-    });
-    await Promise.race([acked, deadline]);
+
+    // A CHILD THAT HAS NOT ANSWERED `HELLO_ACK` CANNOT BE COMMANDED.
+    //
+    // Its planes still carry the bootstrap generation 0, and the encoder
+    // refuses every non-bootstrap frame at generation 0 by name
+    // (`bad_generation`) - correctly, because a `QUIT` at generation 0 is a
+    // frame no front would accept either. Sending it threw out of `quit`, past
+    // the `dispose()` on the line below, and left the child ALIVE holding the
+    // pipe name for the next bind to fail on. That is what the Windows lane
+    // logged as `quit failed: PipeFrontEncodeError` immediately before six
+    // `listener_bind_failed` restarts. A front still in bring-up is killed
+    // instead, which is what `dispose` does and what it has always meant.
+    if (live.acked) {
+      const acked = new Promise<void>((resolve) => {
+        this.quitAck = resolve;
+      });
+      try {
+        live.planes.writeControl({
+          connection: 0,
+          body: { type: "QUIT", deadlineMs: Math.max(0, Math.trunc(remainingMs)) },
+        });
+        await Promise.race([acked, deadline]);
+      } catch (cause: unknown) {
+        // NOTHING MAY SKIP THE TEARDOWN BELOW. An encoder refusal is a bug in
+        // this process worth seeing loudly, and it is never a reason to leave a
+        // child process alive.
+        this.quitAck = null;
+        log.error(
+          `[studio:front] QUIT refused by the encoder: `
+            + `${cause instanceof Error ? cause.name : "unknown"}`,
+        );
+      }
+    }
+
+    await this.disposeAwaitingExit(deadline);
+  }
+
+  /**
+   * `dispose()`, and then WAIT FOR THE PROCESS TO BE GONE.
+   *
+   * `kill()` requests an exit; only the `exit` event proves one, and until it
+   * arrives the front still owns the pipe name. `shutdownStudioMcpHost` resolves
+   * through here, so "the host has shut down" means the name is free - which is
+   * what a quit-and-relaunch, and the conformance suite's `afterEach`, depend
+   * on. The wait is bounded by the caller's ONE absolute quit budget, never by
+   * a second deadline of its own (protocol 8).
+   */
+  private async disposeAwaitingExit(deadline: Promise<void>): Promise<void> {
+    const live = this.live;
     this.dispose();
+    if (live === null) return;
+    const observed = await Promise.race([
+      this.awaitChildExit(live, FRONT_EXIT_WAIT_MS),
+      deadline.then(() => false),
+    ]);
+    if (observed) return;
+    this.unobservedExitPid = live.child.pid;
+    log.warn(
+      `[studio:front] the front (pid ${String(live.child.pid ?? "unknown")}) was killed `
+        + "but its exit was not observed within the quit budget; "
+        + "the pipe name may still be held",
+    );
   }
 
   /**
@@ -369,6 +474,8 @@ export class FrontSupervisor {
       acked: false,
       bound: false,
       settled: false,
+      exited: false,
+      exitWaiters: [],
     };
     this.live = live;
 
@@ -376,6 +483,16 @@ export class FrontSupervisor {
       this.fail(token, "spawn_failed", error.name, { alreadyDead: true });
     });
     child.onExit((code) => {
+      // THE LATCH IS SET FIRST, AND UNCONDITIONALLY. Every guard below is about
+      // whether this death is a NEW FAILURE; none of them is about whether the
+      // process is gone, and the waiter that holds the pipe name's release is
+      // interested only in the second question.
+      live.exited = true;
+      for (const wake of live.exitWaiters.splice(0)) wake();
+      // A child main has already accounted must not spend a second unit of the
+      // restart budget: its failure was settled when the plane EOF or the kill
+      // that produced this exit was handled.
+      if (live.settled) return;
       this.handleExit(token, code);
     });
     this.attachStderr(child.stderr);
@@ -474,6 +591,9 @@ export class FrontSupervisor {
         }
         live.bound = true;
         this.clearBringupTimer();
+        // The name was bindable after all, so the previous corpse is no longer
+        // an explanation for anything.
+        this.unobservedExitPid = null;
         // TWO-PHASE PUBLICATION: the relay exists only from here, so nothing
         // could have been served before the flags were confirmed.
         this.relay = new FrontRelay({
@@ -628,6 +748,14 @@ export class FrontSupervisor {
     if (live !== null) live.settled = true;
     if (this.state === "stopped" || this.quitRequested) return;
 
+    if (this.unobservedExitPid !== null) {
+      // THE ONE FACT THAT EXPLAINS A BIND FAILURE ON A HEALTHY MACHINE. It is
+      // appended rather than substituted: the structural failure name is still
+      // the front's own.
+      detail = `${detail} (the previous front, pid `
+        + `${String(this.unobservedExitPid ?? "unknown")}, was never seen to exit)`;
+      this.unobservedExitPid = null;
+    }
     log.error(`[studio:front] ${failure}: ${detail}`);
     this.clearBringupTimer();
     this.clearLockTimer();
@@ -653,10 +781,67 @@ export class FrontSupervisor {
       log.error(
         `[studio:front] restarting LOCKED (attempt ${String(this.restartCount)})`,
       );
-      this.spawnOnce();
+      this.scheduleRestart(live);
       return;
     }
     this.finishFailed("restart_budget_exhausted", detail);
+  }
+
+  /**
+   * Wait for one child to be GONE, bounded.
+   *
+   * Resolves `true` when the exit was observed and `false` when the bound
+   * expired first. It never rejects and never leaves a timer armed: the caller
+   * is on a teardown path where an extra handle is the failure mode.
+   */
+  private awaitChildExit(live: LiveChild, budgetMs: number): Promise<boolean> {
+    if (live.exited) return Promise.resolve(true);
+    return new Promise<boolean>((resolve) => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        resolve(false);
+      }, budgetMs);
+      timer.unref?.();
+      live.exitWaiters.push(() => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(true);
+      });
+    });
+  }
+
+  /**
+   * Spawn the replacement ONLY ONCE THE CORPSE HAS LET GO OF THE PIPE NAME.
+   *
+   * The restart is therefore asynchronous, which the callers of `fail` already
+   * tolerate: none of them reads a result, and the caller waiting on the first
+   * bring-up is settled by `BOUND` or by the exhausted budget, not by the
+   * spawn. What changes is that the budget is now spent on real attempts.
+   */
+  private scheduleRestart(live: LiveChild | null): void {
+    this.state = "starting";
+    this.deps.onTransition();
+    const resume = (observed: boolean): void => {
+      // Quit, dispose or a newer spawn overtook this restart while it waited.
+      if (this.quitRequested || this.state === "stopped" || this.live !== null) return;
+      if (!observed && live !== null) {
+        this.unobservedExitPid = live.child.pid;
+        log.error(
+          `[studio:front] the previous front (pid ${String(live.child.pid ?? "unknown")}) `
+            + `did not exit within ${String(FRONT_EXIT_WAIT_MS)} ms; `
+            + "it may still hold the pipe name",
+        );
+      }
+      this.spawnOnce();
+    };
+    if (live === null) {
+      resume(true);
+      return;
+    }
+    void this.awaitChildExit(live, FRONT_EXIT_WAIT_MS).then(resume);
   }
 
   private finishFailed(failure: FrontFailureName, detail: string): void {

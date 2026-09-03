@@ -619,19 +619,36 @@ describe.skipIf(windowsUnavailable)(
   "the built Go bridge against the real Studio host, over the Windows pipe",
   () => {
     let pipeName = "";
-
-    beforeAll(() => {
-      // Unique per run: two suites (or two developers on one machine) must not
-      // race for a name whose first instance is exclusive by design.
-      pipeName = `\\\\.\\pipe\\vex-studio-conformance-${process.pid}-${Date.now().toString(36)}`;
-      process.env["VEX_STUDIO_SOCKET"] = pipeName;
-    });
+    let pipeNames = 0;
 
     afterAll(() => {
       delete process.env["VEX_STUDIO_SOCKET"];
     });
 
     beforeEach(async () => {
+      // A FRESH NAME PER TEST, and BOTH halves of that are load-bearing.
+      //
+      // Unique per RUN keeps two suites, or two developers on one machine, off
+      // a name whose first instance is exclusive by design. Unique per TEST
+      // adds the thing this suite got wrong: a name is released by the front
+      // PROCESS exiting, and while `shutdownStudioMcpHost` now waits for that
+      // exit, a front that ignores the signal ends its wait at
+      // `FRONT_EXIT_WAIT_MS` and the corpse may still hold the old name. Per
+      // test, that costs the next case nothing.
+      //
+      // It does NOT replace the supervisor's wait, and it must not be read as
+      // covering for it. In the product the name is DERIVED from the config
+      // directory - `endpoint.PipeName` - so every launch and every restart
+      // reuses one name, and only the wait makes a quit-and-relaunch or a
+      // crash-restart bind. This suite would be green with a per-test name and
+      // a broken supervisor, which is exactly why the supervisor's own suite
+      // owns that proof (`front-supervisor.test.ts`, "the pipe name is
+      // released by the EXIT, not by the kill").
+      pipeNames += 1;
+      pipeName = `\\\\.\\pipe\\vex-studio-conformance-${process.pid}`
+        + `-${Date.now().toString(36)}-${String(pipeNames)}`;
+      process.env["VEX_STUDIO_SOCKET"] = pipeName;
+
       runCallImpl = async () => ({ kind: "completed", result: { success: true, output: "ok" } });
       projectExistsImpl = async (projectId) => projectId === PROJECT_ID;
       resetStudioMcpHostForTests();
@@ -725,7 +742,21 @@ describe.skipIf(windowsUnavailable)(
       child.endStdin();
       const exit = await child.waitForExit(30_000);
       expect(exit.code).toBe(0);
-      expect(child.stderr()).toBe("");
+      // AND THE BOUND IS REPORTED, which is where this arm differs from the
+      // unix one. The host is never TOLD the client's input ended, so it holds
+      // its side and the 5000 ms drain is the only thing that ends the session.
+      // The contract's bounds table requires the fact on stderr "rather than
+      // presented as a clean close", and section 3.5 requires the outcome to
+      // record WHICH of the two branches ran - so a silent stderr here would be
+      // the bridge presenting an elapsed bound as a clean close. The unix arm's
+      // `expect(child.stderr()).toBe("")` is correct THERE precisely because
+      // the half-close ends its drain early. `relayExit`'s own table test in
+      // `bridge/cmd/vex-mcp/relay_exit_test.go` pins the mapping on Linux; this
+      // asserts the real binary took that branch over the real pipe.
+      const stderr = child.stderr();
+      expect(stderr.trimEnd().split("\n")).toHaveLength(1);
+      expect(stderr).toMatch(/^vex-mcp: /);
+      expect(stderr).toContain("a named pipe has no half-close");
     }, 90_000);
   },
 );
