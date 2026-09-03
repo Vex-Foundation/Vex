@@ -8,7 +8,7 @@
  *   - "Open session" navigates the UI store and closes the panel;
  *   - approve on a rendered `ApprovalCard` fires the mutation with `{ id }`
  *     (the full risk-gated card is reused verbatim);
- *   - Escape + outside pointerdown close; Escape restores trigger focus (A6);
+ *   - Escape + backdrop click close; Escape restores trigger focus (A6);
  *   - two-tier FALLBACK poll cadence 60s idle / 15s open — slowed from
  *     15s/5s once `useMissionUpdateLiveSync` began invalidating `pendingAll`
  *     on `approval_enqueued`, so the badge is push-driven and the poll is the
@@ -114,6 +114,8 @@ function queryBadge(): HTMLElement | null {
 }
 
 beforeEach(() => {
+  HTMLDialogElement.prototype.showModal = function (): void { this.setAttribute("open", ""); };
+  HTMLDialogElement.prototype.close = function (): void { this.removeAttribute("open"); this.dispatchEvent(new Event("close")); };
   mockApproveMutate.mockReset();
   mockRejectMutate.mockReset();
   refetchIntervals.length = 0;
@@ -294,17 +296,19 @@ describe("GlobalApprovals - dismissal + focus (A6)", () => {
     renderBadge();
     const badge = getBadge();
     fireEvent.click(badge);
-    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    fireEvent(screen.getByRole("dialog"), new Event("cancel", { cancelable: true }));
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(document.activeElement).toBe(badge);
   });
 
-  it("an outside pointerdown closes the panel", () => {
+  it("a backdrop click closes the review without deciding the action", () => {
     pendingState = { data: { ok: true, data: [makeRow()] } };
     renderBadge();
     fireEvent.click(getBadge());
     expect(screen.getByRole("dialog")).toBeTruthy();
-    fireEvent.pointerDown(document.body);
+    fireEvent.click(screen.getByRole("dialog"));
+    expect(mockApproveMutate).not.toHaveBeenCalled();
+    expect(mockRejectMutate).not.toHaveBeenCalled();
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 });

@@ -2,7 +2,7 @@
  * DESK RULE global approvals inbox — the app-wide "awaiting your signature"
  * affordance in the header's right flank.
  *
- * A quiet amber pin badge (`AWAITING <n>`) that opens a right-anchored panel
+ * A quiet amber pin badge (`AWAITING <n>`) that opens a centered review dialog
  * listing EVERY pending approval across all sessions. The badge renders
  * `null` when nothing is pending (so the flank stays empty when idle) and also
  * when the query is loading or errored (A4 — the inline `ApprovalsRegion`
@@ -20,10 +20,8 @@
  * `approvals/useCrossModeApprovalToast.ts` for why the memory lives above the
  * mode dispatch rather than in either shell.
  *
- * Chrome follows the repo-native anchored-panel pattern
- * (`components/ui/select-menu.tsx`): no portals, no inline styles, outside
- * pointerdown + Escape close, focus restored to the trigger on close, and
- * initial focus moved into the panel on open.
+ * Uses the shared native dialog for viewport placement, focus containment,
+ * Escape dismissal, and the app's existing modal styling.
  */
 
 import {
@@ -34,8 +32,8 @@ import {
   useRef,
   useState,
   type JSX,
-  type KeyboardEvent,
 } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogBody } from "../../components/ui/dialog.js";
 import type { ApprovalPendingGlobalDto } from "@shared/schemas/approvals.js";
 import {
   useGlobalApprovalsLiveSync,
@@ -68,9 +66,7 @@ export function GlobalApprovals(): JSX.Element | null {
     refetchInterval: open ? PANEL_OPEN_POLL_MS : IDLE_POLL_MS,
   });
 
-  const rootRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
-  const panelRef = useRef<HTMLDivElement | null>(null);
   const panelId = useId();
 
   // Loading (undefined) or an application-level failure → no rows, no badge.
@@ -94,25 +90,9 @@ export function GlobalApprovals(): JSX.Element | null {
     triggerRef.current?.focus();
   }, []);
 
-  // Outside pointerdown collapses the panel (no focus restore — the user is
-  // deliberately interacting elsewhere). Only wired while open.
-  useEffect((): (() => void) | undefined => {
-    if (!open) return undefined;
-    const onPointerDown = (event: PointerEvent): void => {
-      const root = rootRef.current;
-      if (root !== null && !root.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("pointerdown", onPointerDown);
-    return () => document.removeEventListener("pointerdown", onPointerDown);
-  }, [open]);
-
-  // A6: move focus into the panel on open so keyboard users land inside the
-  // popover; the root's Escape handler (below) then closes from anywhere within.
-  useEffect((): void => {
-    if (open) panelRef.current?.focus();
-  }, [open]);
+  useEffect(() => {
+    if (rows?.length === 0) setOpen(false);
+  }, [rows]);
 
   if (rows === null || rows.length === 0) return null;
 
@@ -120,17 +100,8 @@ export function GlobalApprovals(): JSX.Element | null {
   const badgeLabel =
     count > MAX_BADGE_COUNT ? `${MAX_BADGE_COUNT}+` : String(count);
 
-  // Escape from the trigger OR anywhere inside the panel (keydown bubbles to
-  // the root) restores focus to the trigger and closes.
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
-    if (event.key === "Escape" && open) {
-      event.preventDefault();
-      closePanel();
-    }
-  };
-
   return (
-    <div ref={rootRef} className="relative" onKeyDown={onKeyDown}>
+    <div>
       <button
         ref={triggerRef}
         type="button"
@@ -146,25 +117,33 @@ export function GlobalApprovals(): JSX.Element | null {
       >
         AWAITING {badgeLabel}
       </button>
-      {open ? (
-        <div
-          ref={panelRef}
+      <Dialog open={open} onOpenChange={(next) => next ? setOpen(true) : closePanel()}>
+        <DialogContent
           id={panelId}
-          role="dialog"
-          aria-label="Pending approvals"
           data-vex-area="global-approvals-panel"
-          tabIndex={-1}
-          className="absolute right-0 top-full z-20 mt-1 max-h-[60vh] w-[min(420px,80vw)] overflow-y-auto rounded-lg border border-border bg-popover text-popover-foreground focus-visible:outline-none"
+          className="w-[calc(100vw-3rem)] max-w-3xl"
         >
-          {rows.map((row) => (
-            <GlobalApprovalItem
-              key={row.id}
-              row={row}
-              onOpenSession={closePanel}
-            />
-          ))}
-        </div>
-      ) : null}
+          <DialogHeader className="sticky top-0 z-10 flex-row items-start justify-between gap-4 bg-surface-2 pr-6">
+            <div>
+              <DialogTitle>Pending approvals</DialogTitle>
+              <DialogDescription>Review the details before approving an action.</DialogDescription>
+            </div>
+            <button
+              type="button"
+              onClick={closePanel}
+              aria-label="Close approval review"
+              className="shrink-0 rounded-md px-3 py-2 text-sm text-ink-secondary hover:bg-surface-3 hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+            >
+              Close
+            </button>
+          </DialogHeader>
+          <DialogBody className="gap-0 px-3 pb-4 pt-0">
+            {rows.map((row) => (
+              <GlobalApprovalItem key={row.id} row={row} onOpenSession={closePanel} />
+            ))}
+          </DialogBody>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
