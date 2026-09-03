@@ -1,3 +1,4 @@
+import { confirmedLighterCloseDisposition } from "./close-position-confirmation.js";
 import { createHash } from "node:crypto";
 
 import type {
@@ -180,7 +181,7 @@ export type ExecuteApprovedLighterCancelAllResult =
 
 export type ExecuteApprovedLighterClosePositionResult =
   | {
-      readonly status: "closed" | "partially_closed";
+      readonly status: "closed" | "partially_closed" | "not_closed";
       readonly intentId: string;
       readonly signerTxHash: string;
       readonly submittedTxHash: string;
@@ -192,7 +193,12 @@ export type ExecuteApprovedLighterClosePositionResult =
       readonly averageFillPrice: string | null;
       readonly resultingPosition: LighterPositionSnapshot | null;
     }
-  | LighterLifecycleUnresolvedResult;
+  | (LighterLifecycleUnresolvedResult & {
+      readonly providerStatus?: string;
+      readonly executedAmount?: string;
+      readonly remainingOrderAmount?: string;
+      readonly averageFillPrice?: string | null;
+    });
 
 export interface LighterOrderLifecycleExecutionDeps {
   readonly secretReader: LighterTradingSecretReader;
@@ -1302,32 +1308,42 @@ export async function executeApprovedLighterClosePosition(
     });
     if (accepted === null) return markAndReturnAmbiguous(deps, intent, "api_acceptance_persist_failed", signed.txHash);
 
+    let observedOrder: LighterLifecycleOrderSnapshot | null = null;
     for (let attempt = 0; attempt < MAX_RECONCILIATION_ATTEMPTS; attempt += 1) {
       if (attempt > 0) await deps.wait(Math.min(2_000, 250 * (2 ** attempt)));
-      const [latestAccount, inactiveOrders] = await Promise.all([
-        deps.client.getAccount(intent.environment, { by: "index", value: String(intent.accountIndex) }),
-        deps.client.getAccountInactiveOrders(intent.environment, {
+      // Read the position after the terminal order, bypassing both cached and
+      // in-flight pre-submit account reads. Provider propagation may still lag.
+      let latestAccount;
+      try {
+        const inactiveOrders = await deps.client.getAccountInactiveOrders(intent.environment, {
           accountIndex: intent.accountIndex, marketId: intent.marketIndex!, marketType: "perp", limit: 100,
-        }, auth),
-      ]);
-      const order = findExactClientOrder(inactiveOrders.orders, {
-        accountIndex: intent.accountIndex,
-        marketIndex: intent.marketIndex!,
-        clientOrderId: unsignedOrder.clientOrderIndex,
-      });
-      if (order === null || !isTerminalOrderStatus(order.status)) continue;
+        }, auth);
+        const order = findExactClientOrder(inactiveOrders.orders, {
+          accountIndex: intent.accountIndex,
+          marketIndex: intent.marketIndex!,
+          clientOrderId: unsignedOrder.clientOrderIndex,
+        });
+        if (order === null || !isTerminalOrderStatus(order.status)) continue;
+        observedOrder = lifecycleSnapshot(order);
+        latestAccount = await deps.client.getAccount(intent.environment,
+          { by: "index", value: String(intent.accountIndex), activeOnly: false }, { fresh: true });
+      } catch {
+        continue;
+      }
       const latest = latestAccount.accounts.find((candidate) =>
         (candidate.index ?? candidate.account_index) === intent.accountIndex);
-      if (latest === undefined) continue;
-      const resultingRaw = (latest.positions ?? []).find((candidate) => candidate.market_id === intent.marketIndex);
-      const resultingPosition = resultingRaw === undefined || !isPositiveDecimal(resultingRaw.position)
-        ? null
-        : positionSnapshotOf(resultingRaw);
-      if (resultingPosition !== null && resultingPosition.sign !== context.position.sign) continue;
-      const outcome = lifecycleSnapshot(order);
-      const status = resultingPosition === null ? "closed" : "partially_closed";
+      if (latest === undefined || !Array.isArray(latest.positions)) continue;
+      const resultingRaw = latest.positions.find((candidate) => candidate.market_id === intent.marketIndex);
+      const status = confirmedLighterCloseDisposition({
+        initialPosition: context.position.position, initialSign: context.position.sign,
+        filledAmount: observedOrder.filledBaseAmount,
+        resultingPosition: resultingRaw?.position ?? "0", resultingSign: resultingRaw?.sign,
+        sizeDecimals: context.sizeDecimals,
+      });
+      if (status === null) continue;
+      const resultingPosition = status === "closed" ? null : positionSnapshotOf(resultingRaw!);
       await deps.intents.markProviderOutcome({ intentId: intent.intentId, state: "completed", evidence: {
-        kind: "lighter_close_position_outcome", order: outcome, resultingPosition, disposition: status,
+        kind: "lighter_close_position_outcome", order: observedOrder, resultingPosition, disposition: status,
       } });
       return {
         status,
@@ -1335,23 +1351,32 @@ export async function executeApprovedLighterClosePosition(
         signerTxHash: signed.txHash,
         submittedTxHash: response.tx_hash,
         clientOrderId: unsignedOrder.clientOrderIndex,
-        providerOrderId: outcome.orderId,
-        providerStatus: outcome.status,
-        executedAmount: outcome.filledBaseAmount,
-        remainingOrderAmount: outcome.remainingBaseAmount,
-        averageFillPrice: averageFillPrice(outcome.filledBaseAmount, outcome.filledQuoteAmount),
+        providerOrderId: observedOrder.orderId,
+        providerStatus: observedOrder.status,
+        executedAmount: observedOrder.filledBaseAmount,
+        remainingOrderAmount: observedOrder.remainingBaseAmount,
+        averageFillPrice: averageFillPrice(observedOrder.filledBaseAmount, observedOrder.filledQuoteAmount),
         resultingPosition,
       };
     }
     await deps.intents.markProviderOutcome({ intentId: intent.intentId, state: "sequencer_pending", evidence: {
       kind: "lighter_close_position_pending", clientOrderId: unsignedOrder.clientOrderIndex,
+      order: observedOrder, disposition: "position_confirmation_pending",
     } });
     return {
       status: "sequencer_pending",
       intentId: intent.intentId,
       signerTxHash: signed.txHash,
       submittedTxHash: response.tx_hash,
-      reason: "Provider accepted the reduce-only close; exact terminal order and resulting-position evidence is pending.",
+      ...(observedOrder === null ? {} : {
+        providerStatus: observedOrder.status,
+        executedAmount: observedOrder.filledBaseAmount,
+        remainingOrderAmount: observedOrder.remainingBaseAmount,
+        averageFillPrice: averageFillPrice(observedOrder.filledBaseAmount, observedOrder.filledQuoteAmount),
+      }),
+      reason: observedOrder === null
+        ? "Provider accepted the reduce-only close; exact terminal order and resulting-position evidence is pending."
+        : "The close order has terminal fill evidence, but the position update is not yet consistent with it. Report the observed fill; position confirmation is pending. Do not call it partially closed or resubmit.",
     };
   } catch (error) {
     if (signerTxHash === null) await deps.intents.markAmbiguous({ intentId: intent.intentId, reason: "signing_failed_after_nonce_reservation" });

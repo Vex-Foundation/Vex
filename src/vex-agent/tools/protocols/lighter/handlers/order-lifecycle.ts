@@ -594,10 +594,12 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
       const result = await executeApprovedLighterClosePosition(approved, deps);
       return ok({
         source: "vex_lighter_position_close",
+        approval: { status: "approved_in_vex", approvalId: context.approvalId },
+        workflow: "This is an execution result after the user approved in Vex. A Studio prepare call can wait for that approval and return this result; it is not an unapproved preview.",
         ...result,
-        userGuidance: result.status === "closed" || result.status === "partially_closed"
-          ? "Report the exact fill, average fill price, provider order status, and resulting position. If partially closed, state clearly that no automatic retry occurred."
-          : "Tell the user the reduce-only close was submitted but final order and position evidence is pending; reconcile before any retry.",
+        userGuidance: result.status === "closed" || result.status === "partially_closed" || result.status === "not_closed"
+          ? "The user approved this action in Vex. Report the exact fill, average fill price, provider status and confirmed position. not_closed means the order ended with no fill. No automatic retry occurred."
+          : "The user approved this action in Vex. Report any observed order fill separately from position confirmation, which is still pending. Do not claim a partial close from an unchanged position. Reconcile before any retry.",
       });
     } catch (error) {
       return fail(error instanceof Error ? error.message : String(error));

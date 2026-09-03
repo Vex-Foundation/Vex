@@ -523,7 +523,13 @@ describe("Lighter reduce-only position close lifecycle", () => {
     })).rejects.toThrow("cannot close the full position");
   });
 
-  it("submits once and reports exact fill plus resulting flat position", async () => {
+  it.each([
+    { name: "flat immediately", filled: "1.0000", position: "0.0000", lag: false, status: "closed" },
+    { name: "flat after a lagging account response", filled: "1.0000", position: "0.0000", lag: true, status: "closed" },
+    { name: "position never catches up", filled: "1.0000", position: "1.0000", lag: false, status: "sequencer_pending" },
+    { name: "confirmed partial reduction", filled: "0.4000", position: "0.6000", lag: false, status: "partially_closed" },
+    { name: "terminal order with no fill", filled: "0.0000", position: "1.0000", lag: false, status: "not_closed" },
+  ])("submits once and reports $name accurately", async (scenario) => {
     const dependencies = deps();
     const matchHash = "d".repeat(64);
     const clientOrderId = deriveVexAssignedClientOrderIndex(matchHash);
@@ -534,14 +540,14 @@ describe("Lighter reduce-only position close lifecycle", () => {
       client_order_index: Number(clientOrderId),
       initial_base_amount: "1.0000",
       remaining_base_amount: "0.0000",
-      filled_base_amount: "1.0000",
-      filled_quote_amount: "49.75",
+      filled_base_amount: scenario.filled,
+      filled_quote_amount: scenario.filled === "1.0000" ? "49.75" : scenario.filled === "0.4000" ? "19.90" : "0",
       price: "49.50",
       side: "sell",
       type: "market",
       time_in_force: "immediate-or-cancel",
       reduce_only: true,
-      status: "filled",
+      status: scenario.filled === "1.0000" ? "filled" : "canceled",
     };
     Object.assign(dependencies.client, {
       getAccount: vi.fn()
@@ -557,7 +563,8 @@ describe("Lighter reduce-only position close lifecycle", () => {
             }],
           }],
         })
-        .mockResolvedValue({ code: 200, accounts: [{ index: 42, positions: [{ ...longPosition, position: "0.0000" }] }] }),
+        .mockResolvedValueOnce({ code: 200, accounts: [{ index: 42, positions: [{ ...longPosition, position: scenario.lag ? "1.0000" : scenario.position }] }] })
+        .mockResolvedValue({ code: 200, accounts: [{ index: 42, positions: [{ ...longPosition, position: scenario.position }] }] }),
       getMarkets: vi.fn().mockResolvedValue({ code: 200, order_books: [market] }),
       getOrderBookOrders: vi.fn().mockResolvedValue({ code: 200, total_asks: 0, asks: [], total_bids: 1, bids: [bid] }),
       getAccountTrades: vi.fn().mockResolvedValue({ code: 200, trades: [] }),
@@ -600,14 +607,25 @@ describe("Lighter reduce-only position close lifecycle", () => {
     });
     const result = await executeApprovedLighterClosePosition(closeIntent, dependencies);
     expect(result).toMatchObject({
-      status: "closed",
-      clientOrderId,
-      providerOrderId: "281474976710658",
-      executedAmount: "1.0000",
+      status: scenario.status,
+      executedAmount: scenario.filled,
       remainingOrderAmount: "0.0000",
-      averageFillPrice: "49.75",
-      resultingPosition: null,
+      averageFillPrice: scenario.filled === "0.0000" ? null : "49.75",
     });
+    if (scenario.status === "sequencer_pending") {
+      expect(result).not.toHaveProperty("resultingPosition");
+      expect(dependencies.intents.markProviderOutcome).not.toHaveBeenCalledWith(expect.objectContaining({ state: "completed" }));
+    } else {
+      expect(result).toMatchObject({
+        clientOrderId,
+        providerOrderId: "281474976710658",
+        resultingPosition: scenario.status === "closed" ? null : expect.objectContaining({ position: scenario.position }),
+      });
+    }
+    for (const call of vi.mocked(dependencies.client.getAccount).mock.calls.slice(1)) {
+      expect(call[2]).toEqual({ fresh: true });
+    }
+    if (scenario.lag) expect(dependencies.wait).toHaveBeenCalled();
     expect(dependencies.authSigner.signCreateOrder).toHaveBeenCalledWith(expect.objectContaining({
       order: expect.objectContaining({
         orderTypeCode: 1,
