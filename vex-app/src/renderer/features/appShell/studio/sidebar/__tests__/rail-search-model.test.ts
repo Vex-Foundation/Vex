@@ -14,12 +14,31 @@ import { makeProject } from "../../__tests__/studio-fixtures.js";
 import {
   deriveRailSearchResults,
   railSearchHitCount,
+  RAIL_INDEX_OFF,
   RAIL_SEARCH_GROUP_LIMIT,
   RAIL_SEARCH_SCAN_MAX,
+  type RailIndexedFiles,
 } from "../rail-search-model.js";
 
 function file(name: string, path = name, kind: FileNode["kind"] = "file"): FileNode {
   return { nodeId: `id:${path}`, name, path, kind, size: null, modifiedMs: null };
+}
+
+/** Main's answer, with the fields a case does not care about filled in. */
+function index(overrides: Partial<RailIndexedFiles> = {}): RailIndexedFiles {
+  return {
+    state: "ready",
+    matches: [],
+    totalMatches: 0,
+    truncated: false,
+    indexedFileCount: 10,
+    indexedAtMs: 1_000,
+    ...overrides,
+  };
+}
+
+function match(relativePath: string, score = 100) {
+  return { relativePath, nodeId: `index:${relativePath}`, score };
 }
 
 describe("the rail search", () => {
@@ -99,5 +118,150 @@ describe("the rail search", () => {
       "notes",
     );
     expect(railSearchHitCount(results)).toBe(2);
+  });
+});
+
+describe("the project-wide file index", () => {
+  it("offers a file the explorer never loaded, which is the whole point", () => {
+    const results = deriveRailSearchResults(
+      [],
+      [],
+      "deep",
+      false,
+      index({ matches: [match("src/never/opened/deep.ts")], totalMatches: 1 }),
+    );
+    expect(results.files.map((node) => node.path)).toEqual([
+      "src/never/opened/deep.ts",
+    ]);
+    // The row has to be openable: it carries main's node token and a real name.
+    expect(results.files[0]?.nodeId).toBe("index:src/never/opened/deep.ts");
+    expect(results.files[0]?.name).toBe("deep.ts");
+    expect(results.files[0]?.kind).toBe("file");
+  });
+
+  it("keeps the LOADED row when both halves offer the same file", () => {
+    // A loaded node is a row the user can already see in the tree, and the two
+    // address the same file - so listing both would be the same row twice.
+    const results = deriveRailSearchResults(
+      [],
+      [file("main.ts", "src/main.ts")],
+      "main",
+      false,
+      index({ matches: [match("src/main.ts")], totalMatches: 1 }),
+    );
+    expect(results.files).toHaveLength(1);
+    expect(results.files[0]?.nodeId).toBe("id:src/main.ts");
+  });
+
+  it("puts loaded rows first and appends the index's rest", () => {
+    const results = deriveRailSearchResults(
+      [],
+      [file("main.ts", "src/main.ts")],
+      "main",
+      false,
+      index({
+        matches: [match("src/main.ts"), match("lib/main.ts")],
+        totalMatches: 2,
+      }),
+    );
+    expect(results.files.map((node) => node.path)).toEqual([
+      "src/main.ts",
+      "lib/main.ts",
+    ]);
+  });
+
+  it("answers from the loaded nodes while the index is still building", () => {
+    // An empty list would be a claim nothing supports: the file half has not
+    // been consulted yet.
+    const results = deriveRailSearchResults(
+      [],
+      [file("main.ts", "src/main.ts")],
+      "main",
+      false,
+      index({ state: "building", indexedAtMs: null, indexedFileCount: 0 }),
+    );
+    expect(results.files.map((node) => node.path)).toEqual(["src/main.ts"]);
+    expect(results.indexState).toBe("building");
+    expect(results.indexedAtMs).toBeNull();
+  });
+
+  it("reports the INDEX's count once it has answered, not the loaded subset's", () => {
+    const results = deriveRailSearchResults(
+      [],
+      [file("main.ts", "src/main.ts")],
+      "main",
+      false,
+      index({ matches: [match("src/main.ts")], totalMatches: 57 }),
+    );
+    // The index covers the whole project, so it is the honest denominator for
+    // "showing 1 of N".
+    expect(results.fileMatchCount).toBe(57);
+  });
+
+  it("stops repeating the loaded reader's cap once the index has answered", () => {
+    // The scan cap bounded an answer that is no longer the answer. Repeating it
+    // would point the user at a limit they are not hitting.
+    const withIndex = deriveRailSearchResults([], [file("a.ts")], "a", true, index());
+    expect(withIndex.scanTruncated).toBe(false);
+    const withoutIndex = deriveRailSearchResults([], [file("a.ts")], "a", true);
+    expect(withoutIndex.scanTruncated).toBe(true);
+  });
+
+  it("carries the index's cap and ranking truncation through to the answer", () => {
+    const results = deriveRailSearchResults(
+      [],
+      [],
+      "a",
+      false,
+      index({
+        state: "capped",
+        truncated: true,
+        indexedFileCount: 50_000,
+        matches: [match("a.ts")],
+        totalMatches: 1,
+      }),
+    );
+    expect(results.indexState).toBe("capped");
+    expect(results.indexTruncated).toBe(true);
+    expect(results.indexedFileCount).toBe(50_000);
+  });
+
+  it("keeps a failed query distinct from an empty one", () => {
+    const failed = deriveRailSearchResults([], [], "a", false, index({ state: "unavailable" }));
+    expect(failed.indexState).toBe("unavailable");
+    expect(failed.files).toEqual([]);
+    // "Could not search" is not "found nothing", and the rail renders them
+    // differently, so the model must not collapse them.
+    const empty = deriveRailSearchResults([], [], "a", false, index());
+    expect(empty.indexState).toBe("ready");
+  });
+
+  it("bounds the merged file group and never exceeds the group limit", () => {
+    const loaded = Array.from({ length: 15 }, (_, i) =>
+      file(`alpha${String(i)}.ts`, `loaded/alpha${String(i)}.ts`),
+    );
+    const indexed = Array.from({ length: 30 }, (_, i) =>
+      match(`indexed/alpha${String(i)}.ts`),
+    );
+    const results = deriveRailSearchResults(
+      [],
+      loaded,
+      "alpha",
+      false,
+      index({ matches: indexed, totalMatches: 300 }),
+    );
+    expect(results.files).toHaveLength(RAIL_SEARCH_GROUP_LIMIT);
+    expect(results.fileMatchCount).toBe(300);
+  });
+
+  it("says the index is off when no project is open", () => {
+    const results = deriveRailSearchResults(
+      [makeProject({ name: "vex" })],
+      [],
+      "vex",
+      false,
+      RAIL_INDEX_OFF,
+    );
+    expect(results.indexState).toBe("off");
   });
 });

@@ -1,40 +1,84 @@
 /**
- * ONE search over two kinds of thing: the user's projects and the files the
- * open project's explorer has already loaded.
+ * ONE search over two kinds of thing: the user's projects and the open
+ * project's files.
  *
  * Pure, so the whole answer - what matched, what was cut, and what was never
  * looked at - is table-testable without mounting a rail.
  *
- * ## The bound is part of the answer, not a hidden trim
+ * ## The file half is now a project-wide index
  *
- * There is no main-side file-name index behind this. The file half runs over
- * the nodes the explorer session holds, which is exactly the folders the user
- * has expanded. Two separate limits therefore ride in the result and are said
- * out loud by the rail:
+ * It used to be the nodes the explorer had already loaded, which is the folders
+ * a human had expanded: a file in an unopened folder could not be found. Main
+ * now walks the whole project once per search session and ranks names there
+ * (`shared/schemas/studio-search.ts`), and this function MERGES that answer with
+ * the loaded nodes rather than replacing them, for two reasons:
  *
- *  - SCAN: at most {@link RAIL_SEARCH_SCAN_MAX} loaded nodes are read out of the
- *    explorer model, so a project with an enormous expanded tree cannot make one
- *    keystroke walk an unbounded list. The MODEL reports that its read stopped
- *    early (`ExplorerModel.loadedNodes` returns `truncated`) and that fact
- *    travels through here to the screen: a scan that stopped may have missed a
- *    matching file entirely, which is a worse fact than an unshown match.
- *  - SHOW: at most {@link RAIL_SEARCH_GROUP_LIMIT} rows are returned per group,
- *    with `projectMatchCount` / `fileMatchCount` carrying how many matched in
- *    total, so the rail can say "showing 20 of 57" rather than pretending the
- *    list ended.
+ *  - the index takes a moment to build, and the loaded nodes are an honest
+ *    answer to show meanwhile instead of an empty list;
+ *  - a loaded node is a row the user can already see in the tree, so when both
+ *    halves offer the same file the loaded one wins - VS Code orders its
+ *    already-open editors ahead of file-search results the same way
+ *    (`anythingQuickAccess.ts`: history picks first, then
+ *    `additionalPicksExcludes` drops the file result that duplicates one).
  *
- * Neither is a silent cut: every row not shown is reachable by narrowing the
- * query, and the counts say how many there are.
+ * ## The bounds are part of the answer, not a hidden trim
+ *
+ * Four limits ride in this result and every one is said out loud by the rail:
+ *
+ *  - SHOW: at most {@link RAIL_SEARCH_GROUP_LIMIT} rows per group, with the
+ *    match counts carrying how many exist;
+ *  - SCAN: at most {@link RAIL_SEARCH_SCAN_MAX} loaded nodes are read out of
+ *    the explorer model;
+ *  - INDEX CAP: the project holds more files than one index may, so a name may
+ *    never have been collected at all;
+ *  - RANKING: more names matched than main was willing to score.
  */
 
 import type { FileNode } from "@shared/schemas/files.js";
 import type { ProjectDto } from "@shared/schemas/projects.js";
+import type {
+  SearchFileMatch,
+  SearchIndexState,
+} from "@shared/schemas/studio-search.js";
 
 /** Rows shown per group before the count line takes over. */
 export const RAIL_SEARCH_GROUP_LIMIT = 20;
 
 /** Loaded nodes examined per keystroke. The walk stops here and says so. */
 export const RAIL_SEARCH_SCAN_MAX = 2000;
+
+/**
+ * What the index behind this answer was doing.
+ *
+ * Two states beyond main's own: `off` when no project is open (there is nothing
+ * to index) and `unavailable` when the query failed. `unavailable` is NOT
+ * folded into "no matches" - a search that could not run and a search that ran
+ * and found nothing are different statements, and only one of them means the
+ * file is not there.
+ */
+export type RailIndexState = SearchIndexState | "off" | "unavailable";
+
+/** Main's answer for the file half, as the rail holds it. */
+export interface RailIndexedFiles {
+  readonly state: RailIndexState;
+  readonly matches: readonly SearchFileMatch[];
+  readonly totalMatches: number;
+  /** Ranking scored only a bounded prefix of the matching set. */
+  readonly truncated: boolean;
+  readonly indexedFileCount: number;
+  /** When the walk finished, epoch ms, or null while it has not. */
+  readonly indexedAtMs: number | null;
+}
+
+/** No project open, so there is nothing to index and nothing to say about one. */
+export const RAIL_INDEX_OFF: RailIndexedFiles = {
+  state: "off",
+  matches: [],
+  totalMatches: 0,
+  truncated: false,
+  indexedFileCount: 0,
+  indexedAtMs: null,
+};
 
 export interface RailSearchResults {
   /** The trimmed, lower-cased needle. Empty means "no query": both lists are empty. */
@@ -43,13 +87,28 @@ export interface RailSearchResults {
   /** How many projects matched, including the ones beyond the group limit. */
   readonly projectMatchCount: number;
   readonly files: readonly FileNode[];
-  /** How many loaded files matched, including the ones beyond the group limit. */
+  /**
+   * How many files matched, including the ones beyond the group limit.
+   *
+   * When the index answered this is the INDEX's count, because the index covers
+   * the whole project and the loaded nodes are a subset of it. Only a CAPPED
+   * index can hold fewer names than the tree has loaded, and that case is
+   * reported by `indexState` rather than smuggled into this number.
+   */
   readonly fileMatchCount: number;
   /**
-   * The read of loaded nodes stopped at {@link RAIL_SEARCH_SCAN_MAX}, so files
-   * beyond it were never examined and a match among them is not in `files`.
+   * The read of loaded nodes stopped at {@link RAIL_SEARCH_SCAN_MAX}. Only
+   * meaningful while the index has not answered: once it has, the loaded nodes
+   * are a convenience on top of a project-wide result, not the answer itself.
    */
   readonly scanTruncated: boolean;
+  readonly indexState: RailIndexState;
+  /** Main ranked only a bounded prefix of the matching names. */
+  readonly indexTruncated: boolean;
+  /** How many names the index holds. Zero until it has answered. */
+  readonly indexedFileCount: number;
+  /** When the index was walked, epoch ms, or null when it has not answered. */
+  readonly indexedAtMs: number | null;
 }
 
 const EMPTY: RailSearchResults = {
@@ -59,31 +118,37 @@ const EMPTY: RailSearchResults = {
   files: [],
   fileMatchCount: 0,
   scanTruncated: false,
+  indexState: "off",
+  indexTruncated: false,
+  indexedFileCount: 0,
+  indexedAtMs: null,
 };
 
 /**
- * Match projects by name and loaded files by name.
+ * Match projects by name, and files by main's ranking merged with the loaded
+ * nodes.
  *
- * Case-insensitive substring on the NAME in both halves, deliberately: the rail
- * renders names, and matching a path segment the row does not show would
- * produce hits whose reason the user cannot see. A file's path is still shown
- * on its result row, so a matched name is always locatable.
+ * Projects are matched here by case-insensitive substring on the NAME: the rail
+ * renders names, and matching something the row does not show would produce
+ * hits whose reason the user cannot see. FILES are ranked in main, so the order
+ * of the indexed half is the fuzzy score and not this function's.
  *
  * @param projects every project the rail knows about, in list order.
  * @param loadedFiles the open project's loaded nodes, in tree order, ALREADY
- *   bounded by their reader. Pass an empty list when no project is open - there
- *   is nothing loaded to search.
+ *   bounded by their reader. Pass an empty list when no project is open.
  * @param query the raw field text.
  * @param loadedTruncated whether that reader stopped before the end of the
  *   loaded tree. Passed in rather than inferred from `loadedFiles.length`: a
  *   capped array cannot tell a tree of exactly the cap from a far bigger one.
- * @returns the two bounded groups plus the counts that describe what was cut.
+ * @param indexed main's answer, or {@link RAIL_INDEX_OFF} when there is none.
+ * @returns the two bounded groups plus everything that describes what was cut.
  */
 export function deriveRailSearchResults(
   projects: readonly ProjectDto[],
   loadedFiles: readonly FileNode[],
   query: string,
   loadedTruncated = false,
+  indexed: RailIndexedFiles = RAIL_INDEX_OFF,
 ): RailSearchResults {
   const needle = query.trim().toLowerCase();
   if (needle.length === 0) return EMPTY;
@@ -97,24 +162,68 @@ export function deriveRailSearchResults(
   }
 
   const fileHits: FileNode[] = [];
-  let fileMatchCount = 0;
+  const seenPaths = new Set<string>();
+  let loadedMatchCount = 0;
   // Directories are excluded: opening one is a tree action the result row
   // cannot perform, and a row that looks like a hit but does nothing on Enter
   // is worse than no row.
   for (const node of loadedFiles) {
     if (node.kind !== "file") continue;
     if (!node.name.toLowerCase().includes(needle)) continue;
-    fileMatchCount += 1;
+    loadedMatchCount += 1;
+    if (seenPaths.has(node.path)) continue;
+    seenPaths.add(node.path);
     if (fileHits.length < RAIL_SEARCH_GROUP_LIMIT) fileHits.push(node);
   }
+
+  for (const match of indexed.matches) {
+    if (fileHits.length >= RAIL_SEARCH_GROUP_LIMIT) break;
+    // The loaded row for the same file is already in the list, and it is the
+    // one the user can see in the tree. Both address the same file, so keeping
+    // both would be the same row twice.
+    if (seenPaths.has(match.relativePath)) continue;
+    seenPaths.add(match.relativePath);
+    fileHits.push(indexMatchAsNode(match));
+  }
+
+  const indexAnswered = indexed.state === "ready" || indexed.state === "capped";
 
   return {
     needle,
     projects: projectHits,
     projectMatchCount,
     files: fileHits,
-    fileMatchCount,
-    scanTruncated: loadedTruncated,
+    fileMatchCount: indexAnswered
+      ? Math.max(indexed.totalMatches, fileHits.length)
+      : loadedMatchCount,
+    // Once the index has answered, the loaded reader's cap no longer bounds the
+    // ANSWER, so repeating it would point the user at a limit that is not the
+    // one they are hitting.
+    scanTruncated: indexAnswered ? false : loadedTruncated,
+    indexState: indexed.state,
+    indexTruncated: indexed.truncated,
+    indexedFileCount: indexed.indexedFileCount,
+    indexedAtMs: indexed.indexedAtMs,
+  };
+}
+
+/**
+ * One ranked match as a tree node.
+ *
+ * `size` and `modifiedMs` are null and not fabricated: the index holds names,
+ * the walk never stat-ed these files, and a zero would be a measurement nobody
+ * took. The row renders a name and a path, and Enter opens it through the same
+ * token path a tree row uses, so nothing downstream needs the missing fields.
+ */
+function indexMatchAsNode(match: SearchFileMatch): FileNode {
+  const cut = match.relativePath.lastIndexOf("/");
+  return {
+    nodeId: match.nodeId,
+    name: cut === -1 ? match.relativePath : match.relativePath.slice(cut + 1),
+    path: match.relativePath,
+    kind: "file",
+    size: null,
+    modifiedMs: null,
   };
 }
 

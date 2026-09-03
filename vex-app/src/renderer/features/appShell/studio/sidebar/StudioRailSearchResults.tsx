@@ -26,12 +26,17 @@ import type { JSX } from "react";
 import type { FileNode } from "@shared/schemas/files.js";
 import type { ProjectDto } from "@shared/schemas/projects.js";
 import { IconFile, IconFolderClose } from "../../../../components/icons/index.js";
+import { SEARCH_INDEX_AGE_NOTICE_MS } from "@shared/schemas/studio-search.js";
 import {
   STUDIO_SEARCH_EMPTY,
   STUDIO_SEARCH_FILE_SCOPE_NOTE,
   STUDIO_SEARCH_GROUP_FILES,
   STUDIO_SEARCH_GROUP_PROJECTS,
+  STUDIO_SEARCH_INDEX_BUILDING,
+  STUDIO_SEARCH_RANKING_TRUNCATED,
   STUDIO_SEARCH_RESULTS_LABEL,
+  studioSearchIndexCappedLine,
+  studioSearchIndexedAgeLine,
   studioSearchScanTruncatedLine,
   studioSearchShowingLine,
 } from "../studio-copy.js";
@@ -54,6 +59,13 @@ export interface StudioRailSearchResultsProps {
   readonly onOpenFile: (node: FileNode) => void;
   /** True while a project is open, so the file scope note is meaningful. */
   readonly fileSearchAvailable: boolean;
+  /**
+   * The clock, for the index's age line only.
+   *
+   * Injected rather than read inside the render so the age is a deterministic
+   * function of the props in tests. Production leaves it out.
+   */
+  readonly nowMs?: number;
 }
 
 export function StudioRailSearchResults({
@@ -64,16 +76,27 @@ export function StudioRailSearchResults({
   onOpenProject,
   onOpenFile,
   fileSearchAvailable,
+  nowMs,
 }: StudioRailSearchResultsProps): JSX.Element {
   const hits = railSearchHitCount(results);
   const projectOffset = 0;
   const fileOffset = results.projects.length;
+  const building = results.indexState === "building";
+  // The index is a SNAPSHOT and it says how old it is once that starts to
+  // matter. Below the notice window a date would be noise; above it, a user who
+  // just created a file needs the reason it is missing and the remedy.
+  const indexAgeMs =
+    results.indexedAtMs === null ? null : (nowMs ?? Date.now()) - results.indexedAtMs;
+  const showAge = indexAgeMs !== null && indexAgeMs >= SEARCH_INDEX_AGE_NOTICE_MS;
 
   return (
     <div className="vex-scroll vex-scroll-overlay min-h-0 flex-1 overflow-y-auto overflow-x-clip px-2 py-3">
       {hits === 0 ? (
+        // "Nothing matched" is only honest once the index has answered. While
+        // the walk is running the file half has not been consulted at all, and
+        // saying there are no matches would be a claim nothing supports.
         <p role="status" className="px-2 py-3 text-[12px] leading-[18px] text-ink-secondary">
-          {STUDIO_SEARCH_EMPTY}
+          {building ? STUDIO_SEARCH_INDEX_BUILDING : STUDIO_SEARCH_EMPTY}
         </p>
       ) : (
         <div id={listboxId} role="listbox" aria-label={STUDIO_SEARCH_RESULTS_LABEL}>
@@ -131,10 +154,35 @@ export function StudioRailSearchResults({
         ) : null}
         {/* The WALK's own bound, and it outranks the group lines above: those
           * say which matches were not listed, this says which files were never
-          * examined, so a match may be missing from the answer altogether. */}
+          * examined, so a match may be missing from the answer altogether.
+          * Only reachable before the index answers - after that the loaded
+          * reader is no longer what bounds the answer. */}
         {results.scanTruncated ? (
           <p role="status" className="text-[11px] leading-[16px] text-warning">
             {studioSearchScanTruncatedLine(RAIL_SEARCH_SCAN_MAX)}
+          </p>
+        ) : null}
+        {/* THE INDEX'S OWN CAP, and the worst of the bounds on this list: a
+          * name that was never collected cannot be found, so an empty result
+          * is not evidence the file is absent. */}
+        {results.indexState === "capped" ? (
+          <p role="status" className="text-[11px] leading-[16px] text-warning">
+            {studioSearchIndexCappedLine(results.indexedFileCount)}
+          </p>
+        ) : null}
+        {results.indexTruncated ? (
+          <p role="status" className="text-[11px] leading-[16px] text-warning">
+            {STUDIO_SEARCH_RANKING_TRUNCATED}
+          </p>
+        ) : null}
+        {building && hits > 0 ? (
+          <p role="status" className="text-[11px] leading-[16px] text-ink-tertiary">
+            {STUDIO_SEARCH_INDEX_BUILDING}
+          </p>
+        ) : null}
+        {showAge && indexAgeMs !== null ? (
+          <p className="text-[11px] leading-[16px] text-ink-tertiary">
+            {studioSearchIndexedAgeLine(results.indexedFileCount, indexAgeMs)}
           </p>
         ) : null}
         {fileSearchAvailable ? (
