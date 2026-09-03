@@ -52,6 +52,7 @@ import {
 export interface StudioAdmission {
   readonly result: ToolResult;
   readonly dispatched: boolean;
+  readonly preparedApproval?: import("../tools/registry/prepared-action-follow-ups.js").ValidatedPreparedActionFollowUp;
 }
 
 /** One call as it arrives from the MCP surface. */
@@ -156,5 +157,14 @@ export async function admitStudioCall(
     { toolId: manifest.toolId, params: call.args },
     toProtocolExecutionContext(call, context, "studio_mcp"),
   );
+  if (result.pendingApproval === true && manifest.toolId === "lighter.order.create") {
+    try {
+      const { readStudioPreparedApproval } = await import("./prepared-approval.js");
+      const preparedApproval = await readStudioPreparedApproval(context.sessionId, call);
+      return { result, dispatched: true, preparedApproval };
+    } catch {
+      return { dispatched: true, result: { success: false, output: "The saved Lighter order is missing, expired, or inconsistent. No approval was created. Prepare a fresh order." } };
+    }
+  }
   return { result, dispatched: true };
 }

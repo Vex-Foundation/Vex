@@ -235,6 +235,21 @@ describe("the cap is claimed before anything is written", () => {
     expect(reserved.ok).toBe(true);
     if (reserved.ok) reserved.reservation.release();
   });
+
+  it("queues the prepared execution call and returns the user's rejection to the MCP caller", async () => {
+    const approvalCall = { name: "lighter__order_create", args: { intentId: "lighter-exec-1" }, toolCallId: "call-1" };
+    const preparedApproval = {
+      approvalPreview: { toolName: "order.create", namespace: "lighter", criticalArgs: { intentId: "lighter-exec-1" } },
+      expiresAt: "2030-01-01T00:00:00.000Z",
+    };
+    executeStudioTool.mockResolvedValue({ result: { success: false, pendingApproval: true, actionKind: "external_post", output: "requires approval" }, approvalCall, preparedApproval });
+    const running = runStudioCall(PROJECT_ID, { ...CALL, name: "lighter__order_create_prepare" });
+    await vi.waitFor(() => expect(enqueueStudioApprovalIntent).toHaveBeenCalledTimes(1));
+    expect(enqueueStudioApprovalIntent).toHaveBeenCalledWith(expect.objectContaining({ call: approvalCall, preparedApproval }));
+    settleStudioWaiter(row({ decision: "rejected", decisionReason: "user_rejected", executionStatus: "not_started", settlement: null }));
+    expect(await running).toMatchObject({ kind: "declined" });
+    expect(executeStudioTool).toHaveBeenCalledTimes(1);
+  });
 });
 
 async function settleWith(settled: StudioSettlementRow): Promise<unknown> {

@@ -54,7 +54,7 @@ function scalarApprovalPreview(
   return values;
 }
 
-function buildCreateApprovalFollowUp(
+export function buildCreateApprovalFollowUp(
   intent: LighterOrderExecutionIntentRow,
   preview: Parameters<typeof buildLighterOrderApprovalDisclosure>[1],
 ): PreparedActionFollowUp {

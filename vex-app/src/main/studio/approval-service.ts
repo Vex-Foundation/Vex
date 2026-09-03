@@ -266,8 +266,9 @@ async function runStudioCallAdmitted(
     );
     enqueued = await enqueueStudioApprovalIntent({
       scope,
-      call,
+      call: execution.approvalCall ?? call,
       result: execution.result,
+      ...(execution.preparedApproval === undefined ? {} : { preparedApproval: execution.preparedApproval }),
       toolContext: buildProjectToolContext(
         scope,
         options.signal ? { abortSignal: options.signal } : {},
