@@ -37,8 +37,8 @@
  * evaluated once.
  */
 
-import type { StudioChord, StudioIntent } from "./keybindings.js";
-import { STUDIO_KEYBINDINGS } from "./keybindings.js";
+import type { StudioChord, StudioIntent, StudioKeybinding } from "./keybindings.js";
+import { STUDIO_KEYBINDINGS, studioPrimaryChord } from "./keybindings.js";
 
 /** The platforms Vex ships for. `other` is not a case: it labels like Linux. */
 export type StudioPlatform = "darwin" | "win32" | "linux";
@@ -71,15 +71,33 @@ export const studioPlatform: StudioPlatform = detectStudioPlatform(
 interface ModifierLabels {
   readonly ctrlOrCmd: string;
   readonly shift: string;
+  /**
+   * The LITERAL Control key. macOS prints `⌃` and prints it FIRST; off macOS
+   * no chord can name it (Control is the primary modifier there), so the
+   * string exists only to keep the record total.
+   */
+  readonly control: string;
   readonly separator: string;
   /** Whether Ctrl-or-Cmd prints AFTER Shift (it is the Meta modifier there). */
   readonly ctrlOrCmdIsMeta: boolean;
 }
 
 const MODIFIER_LABELS: Readonly<Record<StudioPlatform, ModifierLabels>> = {
-  darwin: { ctrlOrCmd: "⌘", shift: "⇧", separator: "", ctrlOrCmdIsMeta: true },
-  win32: { ctrlOrCmd: "Ctrl", shift: "Shift", separator: "+", ctrlOrCmdIsMeta: false },
-  linux: { ctrlOrCmd: "Ctrl", shift: "Shift", separator: "+", ctrlOrCmdIsMeta: false },
+  darwin: { ctrlOrCmd: "⌘", shift: "⇧", control: "⌃", separator: "", ctrlOrCmdIsMeta: true },
+  win32: {
+    ctrlOrCmd: "Ctrl",
+    shift: "Shift",
+    control: "Ctrl",
+    separator: "+",
+    ctrlOrCmdIsMeta: false,
+  },
+  linux: {
+    ctrlOrCmd: "Ctrl",
+    shift: "Shift",
+    control: "Ctrl",
+    separator: "+",
+    ctrlOrCmdIsMeta: false,
+  },
 };
 
 /**
@@ -93,7 +111,9 @@ const MODIFIER_LABELS: Readonly<Record<StudioPlatform, ModifierLabels>> = {
  */
 const KEY_LABELS: Readonly<Record<string, string>> = {
   Backquote: "`",
+  Backslash: "\\",
   Digit5: "5",
+  Enter: "Enter",
   KeyA: "A",
   KeyB: "B",
   KeyE: "E",
@@ -125,12 +145,31 @@ export function keybindingLabel(
   const labels = MODIFIER_LABELS[platform];
   const parts: string[] = [];
   // VS Code's order: Ctrl, Shift, Alt, Meta, key. Ctrl-or-Cmd is the Ctrl
-  // modifier off macOS and the Meta modifier on it, so it moves.
+  // modifier off macOS and the Meta modifier on it, so it moves; the literal
+  // Control key is always first, which is why `⌃⇧\`` reads that way and not
+  // `⇧⌃\``.
+  if (chord.control === true) parts.push(labels.control);
   if (chord.ctrlOrCmd && !labels.ctrlOrCmdIsMeta) parts.push(labels.ctrlOrCmd);
   if (chord.shift) parts.push(labels.shift);
   if (chord.ctrlOrCmd && labels.ctrlOrCmdIsMeta) parts.push(labels.ctrlOrCmd);
   parts.push(key);
   return parts.join(labels.separator);
+}
+
+/**
+ * One ROW as a person on `platform` reads it: its primary chord, spelled.
+ *
+ * The consumer of the table always wants this rather than
+ * {@link keybindingLabel} over `binding.chord`, which would spell the base
+ * chord on macOS and therefore print `⇧⌘\`` for a row that is actually
+ * `⌃⇧\`` there. `keybindingLabel` stays exported for the chord-level cases
+ * (a test, a secondary chord) that genuinely have no row.
+ */
+export function studioKeybindingLabel(
+  binding: StudioKeybinding,
+  platform: StudioPlatform,
+): string | null {
+  return keybindingLabel(studioPrimaryChord(binding, platform), platform);
 }
 
 /** One watermark row: an action, and the keys that reach it. */
@@ -153,12 +192,10 @@ export interface WatermarkRow {
  * and a watermark whose rows move between renders cannot be learned.
  *
  * ITS CONSUMER IS THE `rows` PROP of `EmptyWorkspaceWatermark` (the terminal
- * surface owns that component). Nothing in production passes these rows yet:
- * the component is rendered from inside `TerminalTabs.tsx` and no public prop
- * carries them out to a caller, so the panel still shows the component's own
- * keyless default. The seam and the rows are proved together in
- * `__tests__/useStudioKeybindings.test.tsx`; wiring them is one prop on the
- * terminal surface, which this lane does not own.
+ * surface owns that component), reached through `TerminalTabsProps.watermarkRows`
+ * and `StudioWorkspaceControllerProps.watermarkRows`. `StudioCenter` is the one
+ * production caller: it is the component that mounts both the keyboard hook and
+ * the workspaces, so the bound set and the rows drawn from it cannot disagree.
  */
 export function studioWatermarkRows(
   platform: StudioPlatform,
@@ -167,7 +204,7 @@ export function studioWatermarkRows(
   const rows: WatermarkRow[] = [];
   for (const binding of STUDIO_KEYBINDINGS) {
     if (!available.has(binding.intent)) continue;
-    const keys = keybindingLabel(binding.chord, platform);
+    const keys = studioKeybindingLabel(binding, platform);
     if (keys === null) continue;
     rows.push({ action: binding.action, keys });
   }

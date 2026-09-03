@@ -17,6 +17,7 @@ import {
   useExportSessionMarkdown,
   useSessionPlan,
 } from "../../lib/api/sessions.js";
+import { publishComposerFocus } from "./composer-focus.js";
 import { clearDraft, draftKeyFor } from "../../lib/composer-drafts.js";
 import { showToast } from "../../lib/toast.js";
 import { useUiStore } from "../../stores/uiStore.js";
@@ -87,6 +88,7 @@ export interface SessionComposerProps {
    */
   readonly variant?: "hero" | "docked";
 }
+
 
 export function SessionComposer({
   activeSession,
@@ -220,6 +222,19 @@ export function SessionComposer({
   const draftEmpty = draft.trim().length === 0;
   const submitDisabled = draftEmpty || submitPending;
   const stopping = stopAvailable && stopRequested;
+
+  // THE PUBLIC FOCUS SEAM's registration: where `Ctrl+Shift+A` lands after it
+  // has switched the shell out of Studio. See `composer-focus.ts` - the
+  // registration also consumes a request made before this composer existed,
+  // which is every request, because the chord runs while the Studio column is
+  // still the one on screen.
+  useEffect(
+    () =>
+      publishComposerFocus(() => {
+        textareaRef.current?.focus({ preventScroll: true });
+      }),
+    [textareaRef],
+  );
 
   // KEEP FOCUS on the send/stop key. Pressing a button moves focus off the
   // draft, so without this the caret is lost and the next keystroke goes

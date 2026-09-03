@@ -23,7 +23,7 @@ import {
   peekProjectTerminals,
   publishProjectTerminals,
   publishProjectWorkspaceLifecycle,
-} from "../workspace/project-terminals.js";
+} from "../workspace/workspace-handles.js";
 import type { WorkspaceCloseOutcome } from "../workspace/close-lifecycle.js";
 import { STUDIO_WORKSPACE_KEEP_ALIVE_MAX } from "../workspace/keep-alive.js";
 import { installStudioDomStubs, makeError, makeProject } from "./studio-fixtures.js";
@@ -457,6 +457,115 @@ describe("keep-alive", () => {
     expect(rows[2]?.textContent).toContain("No running terminals");
     // Nothing invented for the row whose workspace published no count.
     expect(rows[3]?.textContent).toBe("p4Close");
+  });
+});
+
+describe("the last Studio location, restored", () => {
+  /**
+   * v17 persists `runtimeMode` and `activeProjectId`, so a relaunch arrives
+   * here with a selection already in the store rather than with `null`. The
+   * store's coercion says the id is a well-formed string; only THIS component
+   * can say whether it names a project that still exists, and the answer has to
+   * be reached against a SETTLED list - which is why the check is the repair
+   * effect and not a second one.
+   */
+  it("opens the project the store came back holding", async () => {
+    const project = makeProject({ name: "left-open" });
+    projectsListMock.mockResolvedValue({ ok: true, data: [project] });
+    // The rehydrated store, before the centre ever mounts.
+    useUiStore.setState({ runtimeMode: "studio", activeProjectId: project.id });
+
+    renderCenter();
+
+    expect(await screen.findByTestId(`workspace-${project.id}`)).not.toBeNull();
+    expect(useUiStore.getState().activeProjectId).toBe(project.id);
+  });
+
+  it("falls back to the welcome, still in Studio, when the id no longer exists", async () => {
+    const survivor = makeProject({ name: "survivor" });
+    projectsListMock.mockResolvedValue({ ok: true, data: [survivor] });
+    // A project deleted between sessions, or a hand-written localStorage id.
+    useUiStore.setState({
+      runtimeMode: "studio",
+      activeProjectId: "11111111-1111-4111-8111-111111111111",
+    });
+
+    renderCenter();
+
+    await screen.findByRole("heading", { name: "Vex Studio" });
+    await waitFor(() => {
+      expect(useUiStore.getState().activeProjectId).toBeNull();
+    });
+    // Studio, with its recents - not a bounce back to the Agent shell.
+    expect(useUiStore.getState().runtimeMode).toBe("studio");
+    expect(
+      screen.queryByTestId("workspace-11111111-1111-4111-8111-111111111111"),
+    ).toBeNull();
+  });
+});
+
+describe("focus lands on the welcome", () => {
+  /**
+   * Entering Studio unmounts the mode capsule the user pressed, so focus falls
+   * to `document.body` and a keyboard user tabs in from the top of the window.
+   * The centre puts it on the welcome's primary action instead - and never
+   * takes focus somebody else is holding.
+   */
+  it("puts focus on the primary action once the Start row exists", async () => {
+    projectsListMock.mockResolvedValue({ ok: true, data: [] });
+    useUiStore.setState({ setupGateActive: false, unlockCurtainActive: false });
+    renderCenter();
+    await screen.findByRole("heading", { name: "Vex Studio" });
+
+    await waitFor(() => {
+      expect(
+        document.activeElement?.getAttribute("data-vex-studio-welcome-action"),
+      ).toBe("primary");
+    });
+  });
+
+  it("waits while the boot gate or the unlock curtain covers the window", async () => {
+    // Both are full-window overlays rendered ABOVE this column while it is
+    // already mounted. Focusing a control behind one puts the caret somewhere
+    // the user cannot see and cannot leave except by tabbing blind.
+    projectsListMock.mockResolvedValue({ ok: true, data: [] });
+    useUiStore.setState({ setupGateActive: true, unlockCurtainActive: false });
+    renderCenter();
+    await screen.findByRole("heading", { name: "Vex Studio" });
+    await screen.findByRole("button", { name: /New project/i });
+
+    expect(document.activeElement).toBe(document.body);
+
+    // The gate lifts, and the landing happens then.
+    act(() => {
+      useUiStore.getState().dismissSetupGate();
+    });
+    await waitFor(() => {
+      expect(
+        document.activeElement?.getAttribute("data-vex-studio-welcome-action"),
+      ).toBe("primary");
+    });
+  });
+
+  it("never takes focus from a control the user is already on", async () => {
+    projectsListMock.mockResolvedValue({ ok: true, data: [] });
+    useUiStore.setState({ setupGateActive: false, unlockCurtainActive: false });
+    // Someone is focused BEFORE the centre gets its first commit.
+    const held = document.createElement("button");
+    document.body.appendChild(held);
+    held.focus();
+    expect(document.activeElement).toBe(held);
+
+    renderCenter();
+    await screen.findByRole("heading", { name: "Vex Studio" });
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("button", { name: /New project/i }),
+      ).not.toBeNull();
+    });
+
+    expect(document.activeElement).toBe(held);
+    held.remove();
   });
 });
 

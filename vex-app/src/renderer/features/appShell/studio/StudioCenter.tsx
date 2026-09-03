@@ -60,12 +60,18 @@ import {
 import { StudioWelcome } from "./welcome/StudioWelcome.js";
 import { StudioBridgeReadinessPanel } from "./welcome/StudioBridgeReadinessPanel.js";
 import { StudioKeepAliveDialog } from "./StudioKeepAliveDialog.js";
-import { useStudioKeybindings } from "./useStudioKeybindings.js";
+import { studioBoundIntents, useStudioKeybindings } from "./useStudioKeybindings.js";
+import { studioPlatform, studioWatermarkRows } from "./keybindings-labels.js";
+import type { WatermarkRow } from "./terminal/TerminalTabs.js";
 import { openProjectCreator, StudioProjectDialogs } from "./projects/index.js";
 import {
   peekProjectWorkspaceLifecycle,
   takeProjectTerminals,
-} from "./workspace/project-terminals.js";
+} from "./workspace/workspace-handles.js";
+import {
+  focusStudioWelcome,
+  studioFocusPermission,
+} from "./workspace/workspace-focus.js";
 import {
   closeProject,
   emptyKeepAlive,
@@ -75,6 +81,25 @@ import {
   selectWelcome,
   type KeepAliveState,
 } from "./workspace/keep-alive.js";
+
+/**
+ * WHAT AN EMPTY WORKSPACE ADVERTISES, resolved once.
+ *
+ * This component is where the two halves meet and therefore where the rows
+ * belong: it mounts the keyboard table, so `studioBoundIntents()` here is the
+ * set that hook will actually dispatch, and it mounts the workspaces that draw
+ * the watermark. Computing it in the terminal surface instead would give the
+ * panel a second opinion about which shortcuts exist.
+ *
+ * Module-level, like `studioPlatform` itself: the handler map is a module
+ * constant and the platform cannot change under a running renderer, so this is
+ * a constant too - and a stable identity keeps it out of every workspace's
+ * render as a fresh array.
+ */
+const STUDIO_WATERMARK_ROWS: readonly WatermarkRow[] = studioWatermarkRows(
+  studioPlatform,
+  studioBoundIntents(),
+);
 
 export interface StudioCenterProps {
   /**
@@ -383,6 +408,65 @@ export function StudioCenter({
     [activeProjectId, applyKeepAlive, setActiveProjectId],
   );
 
+  /**
+   * IS THE SHELL THE SURFACE THE USER IS ACTUALLY LOOKING AT?
+   *
+   * The boot gate and the unlock curtain are full-window overlays rendered
+   * ABOVE this column while it is already mounted, so "Studio is on screen" and
+   * "Studio is what the user can see" are different facts. Only focus cares
+   * about the difference, and it cares absolutely: focusing a control behind a
+   * curtain puts the caret somewhere the user cannot see it and cannot leave
+   * except by tabbing blind.
+   *
+   * This is the gate for BOTH landings below - the welcome's own, and the
+   * `active` flag each workspace focuses on. It is deliberately not folded into
+   * `active`: that flag also decides what is `hidden`, and a curtain must not
+   * unmount or hide a workspace.
+   */
+  const shellReady = useUiStore(
+    (s) => !s.setupGateActive && !s.unlockCurtainActive,
+  );
+
+  /**
+   * FOCUS LANDS ON THE WELCOME when Studio is showing it.
+   *
+   * The mode capsule that brings the user here lives in the column they are
+   * leaving, so entering Studio unmounts the control that held focus and drops
+   * it on `document.body` - the same defect the workspace open had, on the
+   * other half of the same gesture.
+   *
+   * ARMED and retried after each commit, like the workspace's: the Start row
+   * does not exist until the project read settles, and it is the row this
+   * gesture means to land on. `studioFocusPermission` is what makes the retry
+   * safe - it moves focus only when NOTHING holds it, so a user who reached for
+   * the rail while the list loaded keeps the focus they took.
+   */
+  const welcomeFocusArmedRef = useRef(true);
+  const welcomeShown = keepAlive.activeProjectId === null;
+  useEffect(() => {
+    if (!welcomeShown || !shellReady) {
+      // Re-armed for the NEXT arrival at the welcome: closing a project is an
+      // arrival too, and a curtain that lifts is the first moment focus may
+      // move at all.
+      welcomeFocusArmedRef.current = true;
+      return;
+    }
+    if (!welcomeFocusArmedRef.current) return;
+    // Found by the welcome's own public marker, as the explorer's focus seam
+    // finds the tree: the section already names itself for the e2e suite and
+    // for `studioSurfaceOf`, and a ref would be a second way to say the same
+    // thing.
+    const welcome = document.querySelector<HTMLElement>(
+      '[data-vex-area="studio-welcome"]',
+    );
+    const permission = studioFocusPermission(welcome, document.activeElement);
+    if (permission !== "take" || welcome === null) {
+      welcomeFocusArmedRef.current = false;
+      return;
+    }
+    if (focusStudioWelcome(welcome)) welcomeFocusArmedRef.current = false;
+  });
+
   const refusedProject =
     refusedProjectId === null ? null : (projectById.get(refusedProjectId) ?? null);
   const openProjects = keepAlive.projectIds
@@ -394,7 +478,7 @@ export function StudioCenter({
       data-vex-area="studio-center"
       className="relative flex h-full min-h-0 w-full min-w-0 flex-col"
     >
-      {keepAlive.activeProjectId === null ? (
+      {welcomeShown ? (
         <StudioWelcome
           onCreateProject={onCreateProject}
           onSelectProject={setActiveProjectId}
@@ -436,6 +520,7 @@ export function StudioCenter({
           key={projectId}
           projectId={projectId}
           active={projectId === keepAlive.activeProjectId}
+          shellReady={shellReady}
           explorers={explorers}
           terminals={terminalRegistry}
           onRetryClose={handleCloseWorkspace}
@@ -474,12 +559,21 @@ export function StudioCenter({
 function StudioProjectWorkspace({
   projectId,
   active,
+  shellReady,
   explorers,
   terminals,
   onRetryClose,
 }: {
   readonly projectId: string;
   readonly active: boolean;
+  /**
+   * Whether the shell itself is visible - no boot gate, no unlock curtain.
+   *
+   * It gates FOCUS ONLY, never `hidden`: a workspace behind a curtain is still
+   * mounted, still attached and still restoring, and only its right to take the
+   * caret is suspended. See the centre's own note.
+   */
+  readonly shellReady: boolean;
   readonly explorers: ExplorerRegistry;
   readonly terminals?: TerminalRegistry;
   /**
@@ -545,6 +639,12 @@ function StudioProjectWorkspace({
           projectId={projectId}
           registry={terminals}
           onRetryClose={retryClose}
+          watermarkRows={STUDIO_WATERMARK_ROWS}
+          // WHICH WORKSPACE THE USER IS LOOKING AT, which only this component
+          // knows: the hidden ones are mounted too. The controller focuses
+          // itself when this turns true (see its open-focus effect), so an
+          // un-hide is an open for focus purposes exactly as a mount is.
+          active={active && shellReady}
         />
       </ErrorBoundary>
     </div>

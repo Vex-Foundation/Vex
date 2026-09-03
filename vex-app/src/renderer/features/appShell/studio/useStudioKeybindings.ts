@@ -7,7 +7,7 @@
  * into the owner that already performs it, through that owner's public
  * function). Nothing here reaches into a component.
  *
- * ## Studio intercepts exactly what it advertises
+ * ## Studio intercepts exactly what it advertises, and only when it acts
  *
  * An intent with no handler is NOT intercepted: the resolver matched, the hook
  * finds nothing to call, and the event is left completely alone - not
@@ -17,17 +17,33 @@
  * construction. That is `editorGroupWatermark.ts:212-213` filtering its rows to
  * commands that exist, made into an invariant rather than a coincidence.
  *
- * ## What is wired today, and what waits on its owner
+ * A HANDLER RETURNS WHETHER IT ACTED, and that is the second half of the same
+ * invariant. Binding an intent says an owner CAN answer it; it does not say one
+ * is on screen right now. `Ctrl+W` with no workspace mounted, `Ctrl+Shift+E`
+ * with the rail collapsed and no tree rendered - in both the honest outcome is
+ * that Studio took nothing, so the keystroke travels on. Without the return
+ * value the hook would have to `preventDefault` on the strength of the binding
+ * alone and would silently eat keys nothing answered.
  *
- * Three intents have a reachable public owner and are bound here: the rail
- * toggle and the runtime mode (the uiStore's own actions) and the project
- * creator (`openProjectCreator`, the intent publisher the sidebar and the
- * centre already share). The rest name owners that do not expose a public
- * command yet - the workspace controller's terminal actions, the explorer's
- * focus, the rail's search - and are deliberately left unbound rather than
- * reached for through the DOM. When an owner publishes its function, that
- * intent is one entry in the map below and the watermark grows a row with no
- * other change.
+ * ## What is wired, and the one intent that has no owner
+ *
+ * Every intent but one reaches an owner's public function: the uiStore's own
+ * actions (rail, runtime mode), the project-dialog intent publisher, the
+ * explorer's `focusStudioExplorer`, the rail's `focusStudioRailSearch`, and the
+ * mounted workspace's `ProjectWorkspaceCommands` (new, split, close tab, keep
+ * tab open, next and previous tab), reached through
+ * `workspace/workspace-handles.ts` for the same reason the close gesture is -
+ * the actions live in a per-project controller and this hook is mounted once,
+ * by `StudioCenter`.
+ *
+ * `toggleTerminal` IS DELIBERATELY UNBOUND. It names a terminal PANEL that can
+ * be shown and hidden, which is VS Code's layout and not Studio's: here the
+ * workspace IS the terminal surface, its tabs hold terminals and files in one
+ * strip, and there is nothing for `Ctrl+\`` to fold away. Wiring it to
+ * something else - focus the terminal, open one - would be inventing product
+ * behaviour under a label that promises a different one, so the row stays in
+ * the table (the chord is reserved and proved against the menu) and out of the
+ * watermark until a panel exists to toggle.
  *
  * ## Bubble phase, and never over a handled event
  *
@@ -40,9 +56,17 @@
  */
 
 import { useEffect } from "react";
+import { isDialogOnScreen } from "../../../components/ui/dialog.js";
 import { useUiStore } from "../../../stores/uiStore.js";
+import { focusAgentComposer } from "../composer-focus.js";
 import { openProjectCreator } from "./projects/index.js";
+import { focusStudioExplorer } from "./explorer/index.js";
+import { focusStudioRailSearch } from "./sidebar/StudioSidebar.js";
 import { TERMINAL_WRAPPER_CLASS } from "./terminal/index.js";
+import {
+  peekProjectWorkspaceCommands,
+  type ProjectWorkspaceCommands,
+} from "./workspace/workspace-handles.js";
 import {
   resolveStudioKeybinding,
   type StudioIntent,
@@ -50,25 +74,72 @@ import {
 } from "./keybindings.js";
 import { studioPlatform, type StudioPlatform } from "./keybindings-labels.js";
 
-/** What answers an intent. A missing entry means the intent is unbound. */
-export type StudioKeybindingHandlers = Partial<Record<StudioIntent, () => void>>;
+/**
+ * What answers an intent. A missing entry means the intent is unbound.
+ *
+ * The return says whether the handler ACTED. See the module note: an owner that
+ * is bound but not on screen answers `false`, and the keystroke travels on.
+ */
+export type StudioKeybindingHandlers = Partial<Record<StudioIntent, () => boolean>>;
 
 /**
- * The intents whose owners are reachable today, and how.
+ * The commands of the workspace the user is LOOKING AT, or null.
  *
- * Module-level constants rather than a hook-built object: each reads the store
- * at DISPATCH time through `getState()`, so none of them closes over a stale
- * value and the map's identity never changes.
+ * The active project is the uiStore's fact and the commands are the mounted
+ * controller's; joining them here rather than inside the registry keeps the
+ * workspace module free of the shell's selection state. A hidden kept-alive
+ * workspace publishes its commands too, and must never answer: a `Ctrl+W` in
+ * one project may not close a tab in another.
+ */
+function activeWorkspaceCommands(): ProjectWorkspaceCommands | null {
+  const projectId = useUiStore.getState().activeProjectId;
+  return projectId === null ? null : peekProjectWorkspaceCommands(projectId);
+}
+
+/** Run one workspace command, or report that no workspace answered. */
+function onActiveWorkspace(
+  run: (commands: ProjectWorkspaceCommands) => boolean,
+): boolean {
+  const commands = activeWorkspaceCommands();
+  return commands === null ? false : run(commands);
+}
+
+/**
+ * The intents' owners, and how each is reached.
+ *
+ * Module-level constants rather than a hook-built object: each resolves its
+ * owner at DISPATCH time - `getState()` for the store, a registry peek for the
+ * workspace - so none of them closes over a stale value and the map's identity
+ * never changes.
  */
 const DEFAULT_HANDLERS: StudioKeybindingHandlers = {
+  newTerminal: () => onActiveWorkspace((commands) => commands.newTerminal()),
+  splitTerminal: () => onActiveWorkspace((commands) => commands.splitActiveTerminal()),
+  focusExplorer: focusStudioExplorer,
+  goToFile: focusStudioRailSearch,
   toggleRail: () => {
     const store = useUiStore.getState();
     store.setSidebarOpen(!store.sidebarOpen);
+    return true;
   },
+  closeTab: () => onActiveWorkspace((commands) => commands.closeActiveTab()),
+  keepTabOpen: () => onActiveWorkspace((commands) => commands.pinActiveTab()),
+  nextTab: () => onActiveWorkspace((commands) => commands.selectTabAtOffset(1)),
+  previousTab: () => onActiveWorkspace((commands) => commands.selectTabAtOffset(-1)),
   agentMode: () => {
     useUiStore.getState().setRuntimeMode("agent");
+    // AND FOCUS LANDS. The chord removes the whole Studio column, so without
+    // this the user who pressed it arrives in the Agent shell with focus on
+    // `document.body` - measured on the built app. The composer is not mounted
+    // yet at this instant; the seam latches the request and the composer
+    // consumes it when it mounts. See `focusAgentComposer`.
+    focusAgentComposer();
+    return true;
   },
-  newProject: openProjectCreator,
+  newProject: () => {
+    openProjectCreator();
+    return true;
+  },
 };
 
 /** The intents a handler map answers. The watermark shows exactly these. */
@@ -102,18 +173,6 @@ export function studioSurfaceOf(element: Element | null): StudioSurface {
 }
 
 /**
- * Whether a modal dialog is on screen.
- *
- * `dialog[open]` is the state the native element itself reports, which is the
- * only honest source: Studio's dialogs are native `<dialog>` elements opened
- * with `showModal()`, and a React flag would be a second copy of a fact the DOM
- * already holds.
- */
-function anyDialogOpen(doc: Document): boolean {
-  return doc.querySelector("dialog[open]") !== null;
-}
-
-/**
  * Bind the Studio keyboard table for as long as this component is mounted.
  *
  * @param handlers - overrides merged over the wired defaults. Production passes
@@ -134,17 +193,20 @@ export function useStudioKeybindings(
       if (event.defaultPrevented) return;
       const intent = resolveStudioKeybinding(event, {
         surface: studioSurfaceOf(document.activeElement),
-        dialogOpen: anyDialogOpen(document),
+        dialogOpen: isDialogOnScreen(document),
         platform,
       });
       if (intent === null) return;
       const handler = resolved[intent];
       // Unbound: leave the event completely alone. See the module note.
       if (handler === undefined) return;
-      // Bound: the browser's own meaning for this chord (Ctrl+P prints,
-      // Ctrl+B bolds in a contenteditable) must not also happen.
+      // Bound, but its owner may not be on screen. Only a handler that ACTED
+      // earns the interception; one that declined leaves the key exactly as an
+      // unbound one does.
+      if (!handler()) return;
+      // Taken: the browser's own meaning for this chord (Ctrl+P prints, Ctrl+B
+      // bolds in a contenteditable) must not also happen.
       event.preventDefault();
-      handler();
     };
     document.addEventListener("keydown", onKeyDown);
     return () => {

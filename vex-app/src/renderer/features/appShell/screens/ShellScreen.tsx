@@ -31,6 +31,7 @@ import { useEffect, useRef, useState, type JSX, type ReactNode } from "react";
 import { motion, type TargetAndTransition } from "motion/react";
 import { IconClose } from "../../../components/icons/index.js";
 import { Tooltip } from "../../../components/ui/tooltip.js";
+import { isDialogOnScreen } from "../../../components/ui/dialog.js";
 import type { ShellScreenOrigin } from "../../../stores/uiStore.js";
 import { EASE_STANDARD, SPRING_PANEL } from "../../../lib/motion/index.js";
 
@@ -87,17 +88,42 @@ export function ShellScreen({
 }): JSX.Element {
   const rootRef = useRef<HTMLElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
+  // Whether this instance has already asked to close. A ref, not effect-local
+  // state: the listener re-registers whenever `onClose` changes identity, and
+  // the fact it guards belongs to the screen, not to one registration.
+  const closeAsked = useRef(false);
   // Sampled once per mount: the enter/exit declaration must not flip
   // mid-animation if the OS preference changes while the screen is open.
   const [reduced] = useState(prefersReducedMotion);
 
-  // Escape closes from anywhere — the screen is a modal layer over the shell.
+  // Escape closes from anywhere - the screen is a modal layer over the shell -
+  // but ONLY while this screen is the surface the key belongs to. The three
+  // guards below are one rule stated three ways: a global listener may take a
+  // key no nearer owner wanted and no later surface owns.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onClose();
-      }
+      if (event.key !== "Escape") return;
+      // Someone nearer the key already dealt with it (a menu, an inline
+      // editor, a tree's own table). Same rule the Studio keybinding hook
+      // states for its document listener.
+      if (event.defaultPrevented) return;
+      // A native `<dialog>` is open ABOVE this screen, in the top layer, and
+      // owns Escape. Taking it here would close the surface UNDER the one the
+      // user is looking at, and because `preventDefault` on Escape suppresses
+      // the platform's own close request the dialog would stay open with the
+      // keystroke swallowed - which is exactly what a modal dialog opened over
+      // a just-closed screen did.
+      if (isDialogOnScreen()) return;
+      // ONE close intent per screen instance. The host animates the screen out
+      // (`ShellScreens` owns the `AnimatePresence`), so this component and this
+      // listener OUTLIVE the user's close by the length of the exit; without
+      // this guard the leaving screen keeps eating Escape from whatever opened
+      // in the meantime. Measured: ~0.3s of exit during which a modal dialog
+      // opened and its Escape was consumed here.
+      if (closeAsked.current) return;
+      closeAsked.current = true;
+      event.preventDefault();
+      onClose();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -240,7 +266,13 @@ export function ShellScreen({
           ref={closeRef}
           type="button"
           aria-label={`Close ${title}`}
-          onClick={onClose}
+          onClick={() => {
+            // The same one close intent per instance the Escape listener
+            // takes: a screen closed by the key must not also be closable by
+            // Escape while it animates out.
+            closeAsked.current = true;
+            onClose();
+          }}
           className="absolute right-6 top-6 flex h-10 w-10 items-center justify-center rounded-full border border-line-2 text-ink-secondary transition-colors hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
         >
           <IconClose size={16} />

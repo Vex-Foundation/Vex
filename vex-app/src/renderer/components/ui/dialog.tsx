@@ -160,6 +160,26 @@ function resolveDialogInitialFocus(dialog: HTMLDialogElement): HTMLElement {
   return dialog;
 }
 
+/**
+ * IS A DIALOG ON SCREEN RIGHT NOW - the fact every global key owner must ask
+ * before taking a keystroke.
+ *
+ * `dialog[open]` is the state the native element itself reports, which is the
+ * only honest source: these dialogs are opened with `showModal()` and render in
+ * the top layer, above every painted z-index, so a surface underneath is not
+ * the surface the user is looking at. A React flag would be a second copy of a
+ * fact the DOM already holds.
+ *
+ * Escape is the case that made this a shared predicate rather than a local
+ * query: `preventDefault()` on an Escape keydown suppresses the platform's own
+ * close request, so a global listener that takes Escape while a dialog is open
+ * does not merely act on the wrong surface - it leaves the dialog open with the
+ * user's keystroke swallowed.
+ */
+export function isDialogOnScreen(doc: Document = document): boolean {
+  return doc.querySelector("dialog[open]") !== null;
+}
+
 export interface DialogContentProps extends HTMLAttributes<HTMLDialogElement> {
   /** Width family; omitted means the 380px prompt column. */
   readonly size?: DialogSize;

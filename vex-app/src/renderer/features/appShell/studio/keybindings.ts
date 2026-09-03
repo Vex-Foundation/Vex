@@ -34,6 +34,27 @@
  * those keystrokes into `Focus explorer` and the user could not type. Every row
  * requires Alt to be UP.
  *
+ * ## macOS is NOT "Cmd wherever Windows has Ctrl"
+ *
+ * That substitution is right for most rows and WRONG for the four VS Code
+ * itself writes a `mac:` override for, so this table writes the same four
+ * overrides and for the same reasons, read out of the checkout:
+ *
+ *  - Toggle terminal is `Ctrl+\`` on macOS, not `Cmd+\``
+ *    (`terminal.contribution.ts:128-129`, `KeyMod.WinCtrl` - which is the
+ *    literal Control key on macOS, not Cmd);
+ *  - New terminal is `Ctrl+Shift+\`` on macOS for the same reason
+ *    (`terminalActions.ts:1218`);
+ *  - Split terminal is `Cmd+\` on macOS with `Ctrl+Shift+5` as a SECONDARY
+ *    chord (`terminalActions.ts:1057-1061`), because Cmd+Shift+5 is macOS's
+ *    own screenshot capture;
+ *  - Next/previous tab stay on Control, because Cmd+Tab is the macOS
+ *    application switcher and never reaches a window.
+ *
+ * A row therefore carries an optional {@link StudioMacOverride}. Off macOS the
+ * override is not consulted at all, which is why {@link StudioChord.control}
+ * only ever appears inside one.
+ *
  * ## `when`: where a binding applies
  *
  * VS Code resolves a keypress against a context and skips every rule whose
@@ -66,6 +87,7 @@ export type StudioIntent =
   | "goToFile"
   | "toggleRail"
   | "closeTab"
+  | "keepTabOpen"
   | "nextTab"
   | "previousTab"
   | "agentMode"
@@ -92,12 +114,35 @@ export interface StudioChord {
   readonly code: string;
   readonly ctrlOrCmd: boolean;
   readonly shift: boolean;
+  /**
+   * The LITERAL Control key, which on macOS is a different physical key from
+   * Cmd. Defaults to false and is meaningful only inside a
+   * {@link StudioMacOverride}: off macOS Control IS `ctrlOrCmd`, so a
+   * non-macOS chord setting both would be asking for one key twice. The table
+   * test enumerates that no row does.
+   */
+  readonly control?: boolean;
+}
+
+/**
+ * What a row means on macOS, where it means something else.
+ *
+ * `primary` is the chord the label spells and the watermark shows; `secondary`
+ * is an additional chord that resolves to the same intent and is deliberately
+ * NOT shown, exactly as VS Code shows one keybinding per command while
+ * accepting both.
+ */
+export interface StudioMacOverride {
+  readonly primary: StudioChord;
+  readonly secondary?: StudioChord;
 }
 
 /** One row of the contract. */
 export interface StudioKeybinding {
   readonly intent: StudioIntent;
   readonly chord: StudioChord;
+  /** macOS overrides, present only where VS Code itself writes one. */
+  readonly mac?: StudioMacOverride;
   /**
    * The surfaces this binding applies on. `"anywhere"` means every surface,
    * including `none`; a list means exactly those.
@@ -126,12 +171,14 @@ export const STUDIO_KEYBINDINGS: readonly StudioKeybinding[] = [
   {
     intent: "newTerminal",
     chord: { code: "Backquote", ctrlOrCmd: true, shift: true },
+    mac: { primary: { code: "Backquote", ctrlOrCmd: false, shift: true, control: true } },
     when: "anywhere",
     action: "New terminal",
   },
   {
     intent: "toggleTerminal",
     chord: { code: "Backquote", ctrlOrCmd: true, shift: false },
+    mac: { primary: { code: "Backquote", ctrlOrCmd: false, shift: false, control: true } },
     when: "anywhere",
     action: "Toggle terminal panel",
   },
@@ -141,6 +188,10 @@ export const STUDIO_KEYBINDINGS: readonly StudioKeybinding[] = [
     // when no terminal has focus.
     intent: "splitTerminal",
     chord: { code: "Digit5", ctrlOrCmd: true, shift: true },
+    mac: {
+      primary: { code: "Backslash", ctrlOrCmd: true, shift: false },
+      secondary: { code: "Digit5", ctrlOrCmd: false, shift: true, control: true },
+    },
     when: ["terminal"],
     action: "Split terminal",
   },
@@ -169,14 +220,38 @@ export const STUDIO_KEYBINDINGS: readonly StudioKeybinding[] = [
     action: "Close tab",
   },
   {
+    // KEEP THE PREVIEW TAB, VS Code's `workbench.action.keepEditor`.
+    //
+    // VS CODE'S OWN CHORD IS `Ctrl+K Enter`, A CHORD SEQUENCE, and this table
+    // has no sequences: a row is one chord, and `resolveStudioKeybinding` is a
+    // pure function of ONE event with no prefix state to carry between two
+    // presses. Adding that machinery for a single row would put a
+    // "waiting for the second key" mode into every keystroke Studio sees, so
+    // this is an INTERIM SINGLE CHORD (coordinator decision, 2026-09-02) and
+    // the row moves to `Ctrl+K Enter` if and when the table gains sequences.
+    //
+    // `Ctrl+Enter` is free: it collides with no Electron menu accelerator
+    // (the collision proof below enumerates them) and Studio binds no other
+    // Enter. Cmd+Enter on macOS is the ordinary substitution - there is no VS
+    // Code `mac:` override to copy here, because the chord it overrides does
+    // not exist there either.
+    intent: "keepTabOpen",
+    chord: { code: "Enter", ctrlOrCmd: true, shift: false },
+    when: IN_WORKSPACE,
+    action: "Keep tab open",
+  },
+  {
     intent: "nextTab",
     chord: { code: "Tab", ctrlOrCmd: true, shift: false },
+    // Cmd+Tab is the macOS application switcher and never reaches a window.
+    mac: { primary: { code: "Tab", ctrlOrCmd: false, shift: false, control: true } },
     when: IN_WORKSPACE,
     action: "Next tab",
   },
   {
     intent: "previousTab",
     chord: { code: "Tab", ctrlOrCmd: true, shift: true },
+    mac: { primary: { code: "Tab", ctrlOrCmd: false, shift: true, control: true } },
     when: IN_WORKSPACE,
     action: "Previous tab",
   },
@@ -217,12 +292,49 @@ function appliesOn(binding: StudioKeybinding, surface: StudioSurface): boolean {
 }
 
 /**
+ * THE CHORDS a row is reached by ON THIS PLATFORM, primary first.
+ *
+ * Off macOS this is always the single base chord: {@link StudioKeybinding.mac}
+ * exists precisely because macOS is the platform whose answer differs, and
+ * consulting it elsewhere would bind the literal Control key on Windows, where
+ * Control is already the primary modifier.
+ */
+export function studioChordsFor(
+  binding: StudioKeybinding,
+  platform: StudioPlatform,
+): readonly StudioChord[] {
+  const override = binding.mac;
+  if (platform !== "darwin" || override === undefined) return [binding.chord];
+  return override.secondary === undefined
+    ? [override.primary]
+    : [override.primary, override.secondary];
+}
+
+/**
+ * The chord a row is SPELLED as on this platform: the primary, always.
+ *
+ * A secondary chord resolves but is not advertised, which is VS Code's own
+ * split between `primary` and `secondary` in a keybinding registration.
+ */
+export function studioPrimaryChord(
+  binding: StudioKeybinding,
+  platform: StudioPlatform,
+): StudioChord {
+  const [primary] = studioChordsFor(binding, platform);
+  // `studioChordsFor` never returns an empty list; the fallback exists only
+  // because a tuple index is `T | undefined` under `noUncheckedIndexedAccess`.
+  return primary ?? binding.chord;
+}
+
+/**
  * Whether the event's modifiers are exactly this chord's.
  *
- * EXACTLY, in both directions: a chord without Shift does not match a keypress
- * with Shift held (`Ctrl+Shift+W` is not `Close tab`), and the modifier that is
- * not Ctrl-or-Cmd on this platform must be UP - otherwise Ctrl+Cmd+B on macOS
- * would toggle the rail, which no label promises.
+ * EXACTLY, in every direction, and the third direction is what the macOS
+ * overrides added: a chord without Shift does not match a keypress with Shift
+ * held (`Ctrl+Shift+W` is not `Close tab`); Cmd and Ctrl never stand in for
+ * each other; and on macOS the literal Control key must be in exactly the
+ * state the chord asks for, so `Ctrl+\`` (Toggle terminal) and `Cmd+\`` (no
+ * Studio binding at all) cannot be confused.
  */
 function modifiersMatch(
   chord: StudioChord,
@@ -231,9 +343,14 @@ function modifiersMatch(
 ): boolean {
   if (event.altKey) return false;
   if (event.shiftKey !== chord.shift) return false;
-  const primary = platform === "darwin" ? event.metaKey : event.ctrlKey;
-  const secondary = platform === "darwin" ? event.ctrlKey : event.metaKey;
-  return primary === chord.ctrlOrCmd && !secondary;
+  const wantsControl = chord.control ?? false;
+  if (platform === "darwin") {
+    return event.metaKey === chord.ctrlOrCmd && event.ctrlKey === wantsControl;
+  }
+  // Off macOS Control IS the primary modifier, so a chord cannot ask for both
+  // and Meta (Windows/Super) is never part of a Studio chord.
+  if (wantsControl) return false;
+  return event.ctrlKey === chord.ctrlOrCmd && !event.metaKey;
 }
 
 /**
@@ -255,10 +372,12 @@ export function resolveStudioKeybinding(
 ): StudioIntent | null {
   if (context.dialogOpen) return null;
   for (const binding of STUDIO_KEYBINDINGS) {
-    if (binding.chord.code !== event.code) continue;
-    if (!modifiersMatch(binding.chord, event, context.platform)) continue;
     if (!appliesOn(binding, context.surface)) continue;
-    return binding.intent;
+    for (const chord of studioChordsFor(binding, context.platform)) {
+      if (chord.code !== event.code) continue;
+      if (!modifiersMatch(chord, event, context.platform)) continue;
+      return binding.intent;
+    }
   }
   return null;
 }

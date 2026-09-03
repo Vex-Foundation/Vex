@@ -36,7 +36,7 @@ import {
   PROJECT_CLOSE_CONSEQUENCE_WHAT,
 } from "./projects/projects-copy.js";
 import { STUDIO_WORKSPACE_KEEP_ALIVE_MAX } from "./workspace/keep-alive.js";
-import { peekProjectTerminals } from "./workspace/project-terminals.js";
+import { peekProjectTerminals } from "./workspace/workspace-handles.js";
 import {
   STUDIO_KEEP_ALIVE_CANCEL,
   STUDIO_KEEP_ALIVE_CLOSE,
