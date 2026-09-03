@@ -261,6 +261,8 @@ test("the built highlight worker executes under the app's CSP and round-trips a 
     readonly ok?: unknown;
     readonly reason?: unknown;
     readonly longLines?: unknown;
+    readonly budgetExceededLines?: unknown;
+    readonly budgetExceededTotal?: unknown;
     readonly lines?: readonly (readonly {
       readonly text: string;
       readonly color: string | null;
@@ -279,6 +281,15 @@ test("the built highlight worker executes under the app's CSP and round-trips a 
     `the worker refused a five-line TypeScript sample: ${String(response.reason ?? "")}`,
   ).toBe(true);
   expect(response.longLines).toBe(0);
+  // THE BUDGET REPORT crosses the real structured clone, from the real built
+  // chunk. It is asserted here and not only in the renderer suite because the
+  // worker is a separate build: a field the source-level tests prove is a field
+  // a stale or mis-bundled chunk can still fail to send, and the port refuses
+  // such an answer outright (`malformed_result`), which would show every file
+  // in the viewer as plain text. Five short lines cannot exhaust a per-line
+  // clock, so the honest answer is an empty report rather than an absent one.
+  expect(response.budgetExceededTotal).toBe(0);
+  expect(response.budgetExceededLines).toEqual([]);
 
   const lines = response.lines ?? [];
   expect(Array.isArray(lines)).toBe(true);

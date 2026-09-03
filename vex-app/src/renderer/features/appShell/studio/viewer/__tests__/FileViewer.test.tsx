@@ -308,6 +308,84 @@ describe("the chip names every bound", () => {
       await Promise.resolve();
     });
     expect(screen.queryByTestId("file-viewer-chip")).toBeNull();
+    expect(screen.queryByTestId("file-viewer-secondary-note")).toBeNull();
+  });
+
+  /**
+   * PARTLY HIGHLIGHTED (UX-8): the state that used to render as silence.
+   *
+   * vscode-textmate abandons a line whose scan outruns the per-line clock and
+   * hands back what it has, so the row arrives byte-exact and half-coloured.
+   * The viewer showed it as if it were finished, which is the one thing a
+   * highlighter must not do: a reader who notices grey in the middle of a line
+   * and is told nothing has no reason to trust the colour anywhere else.
+   *
+   * BOTH REGISTERS at once, and that is the design. The chip announces WHICH
+   * lines, because that is a fact about this file worth pointing at; the quiet
+   * note explains what the budget IS, because a definition does not deserve an
+   * announcement on every file that hits it.
+   */
+  it("names the partly highlighted lines and where the first one is", async () => {
+    files.responder = () => ok(contentOf("const a = 1;\n"));
+    await mount();
+    await act(async () => {
+      highlighter.settleOldest(
+        [
+          [
+            {
+              text: "const a = 1;",
+              color: "var(--x)",
+              italic: false,
+              bold: false,
+              underline: false,
+            },
+          ],
+        ],
+        0,
+        { lines: [7, 812], total: 3 },
+      );
+      await Promise.resolve();
+    });
+
+    const chip = screen.getByTestId("file-viewer-chip").textContent ?? "";
+    // The COUNT is the total, never the length of the list the worker sent.
+    expect(chip).toContain("3 lines ran out of highlighting time");
+    expect(chip).toContain("first at line 7");
+    // And the budget is explained quietly, in words, under it.
+    const note = screen.getByTestId("file-viewer-secondary-note").textContent ?? "";
+    expect(note).toContain("half a second");
+    expect(note).toContain("Every character is still there.");
+    // THE PARTIAL COLOURS STAY, which is what VS Code does with the same
+    // result. Removing them would report the bound by taking away the thing the
+    // bound partly delivered.
+    expect(lineTexts()).toContain("const a = 1;");
+  });
+
+  it("says ONE line in the singular", async () => {
+    files.responder = () => ok(contentOf("const a = 1;\n"));
+    await mount();
+    await act(async () => {
+      highlighter.settleOldest([[]], 0, { lines: [2] });
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId("file-viewer-chip").textContent).toContain(
+      "1 line ran out of highlighting time, first at line 2.",
+    );
+  });
+
+  it("says nothing about the budget when no line ran out of it", async () => {
+    files.responder = () => ok(contentOf("const a = 1;\n"));
+    await mount();
+    await act(async () => {
+      highlighter.settleOldest([[]], 3);
+      await Promise.resolve();
+    });
+    const chip = screen.getByTestId("file-viewer-chip").textContent ?? "";
+    // The long-line bound is a DIFFERENT bound: it must not drag the budget
+    // explanation onto every file with a minified line in it.
+    expect(chip).toContain("20,000 characters");
+    expect(chip).not.toContain("highlighting time");
+    expect(screen.queryByTestId("file-viewer-secondary-note")).toBeNull();
   });
 });
 

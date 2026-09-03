@@ -47,6 +47,7 @@ import type { TokenLine } from "./highlight/highlight-protocol.js";
 import { fileViewerRegistry, type FileViewerRegistry } from "./file-viewer-registry.js";
 import {
   VIEWER_HIGHLIGHT_MAX_BYTES,
+  VIEWER_LINE_TIME_BUDGET_MS,
   VIEWER_MAX_TOKENIZE_LINE_LENGTH,
   type FileViewerSession,
 } from "./file-viewer-session.js";
@@ -58,7 +59,9 @@ import {
   TRANSPORT_FAILED,
   VIEWER_LOADING,
   formatBytes,
+  highlightBudgetNote,
   longLinesText,
+  partlyHighlightedText,
   plainReasonIsExpected,
   plainReasonText,
   refusalText,
@@ -296,6 +299,13 @@ function Body({
  *
  * The sentence itself does not change in either register: the bound still
  * reports itself, which is the rule the module header states.
+ *
+ * BOTH REGISTERS CAN APPEAR AT ONCE, and the partly-highlighted state is why.
+ * A file whose lines ran out of highlighting time is not plain and not
+ * finished: which lines it happened to is a fact worth announcing, and what the
+ * budget IS is background. So the chip names the lines and the quiet note under
+ * it explains the budget, rather than one long announcement or a fact with no
+ * explanation.
  */
 function Chip({
   highlight,
@@ -312,34 +322,61 @@ function Chip({
     highlight.kind === "plain" || highlight.kind === "plain-after-failure";
   const expected = isPlain && plainReasonIsExpected(highlight.reason);
 
+  // The LOUD register: a bound Vex hit or a failure it had, announced.
   const notes: string[] = [];
+  // The QUIET register: statements that need no action and would cost the chip
+  // its meaning if every file announced them.
+  const secondary: string[] = [];
+
   if (isPlain) {
-    notes.push(plainReasonText(highlight.reason, size ?? 0, VIEWER_HIGHLIGHT_MAX_BYTES));
+    const reason = plainReasonText(highlight.reason, size ?? 0, VIEWER_HIGHLIGHT_MAX_BYTES);
+    if (expected) secondary.push(reason);
+    else notes.push(reason);
   }
   if (highlight.kind === "highlighted" && highlight.longLines > 0) {
     notes.push(longLinesText(highlight.longLines, VIEWER_MAX_TOKENIZE_LINE_LENGTH));
   }
-  if (notes.length === 0) return null;
-
-  if (expected) {
-    return (
-      <div
-        data-testid="file-viewer-secondary-note"
-        className="shrink-0 px-3 py-1 text-[11px] leading-4 text-ink-dimmed"
-      >
-        {notes.join(" ")}
-      </div>
-    );
+  // PARTLY HIGHLIGHTED. A file that is highlighted and has lines the clock ran
+  // out on is neither of the two registers above: it is not plain and it is not
+  // finished. The first number is what makes it actionable, so an empty list
+  // with a non-zero total says nothing rather than pointing at line zero - the
+  // port refuses that combination, and this is the render side of the same
+  // refusal.
+  const firstBudgetLine =
+    highlight.kind === "highlighted" ? highlight.budgetExceededLines[0] : undefined;
+  if (
+    highlight.kind === "highlighted" &&
+    highlight.budgetExceededTotal > 0 &&
+    firstBudgetLine !== undefined
+  ) {
+    notes.push(partlyHighlightedText(highlight.budgetExceededTotal, firstBudgetLine));
+    // The definition of the budget goes QUIET, under the chip that just named
+    // the lines. The fact is the announcement; what half a second means is
+    // background the reader consults, not something to interrupt them with.
+    secondary.push(highlightBudgetNote(VIEWER_LINE_TIME_BUDGET_MS));
   }
+  if (notes.length === 0 && secondary.length === 0) return null;
 
   return (
-    <div
-      data-testid="file-viewer-chip"
-      role="status"
-      className="shrink-0 border-b border-line-3 bg-surface-2 px-3 py-1 text-[11px] leading-4 text-ink-tertiary"
-    >
-      {notes.join(" ")}
-    </div>
+    <>
+      {notes.length === 0 ? null : (
+        <div
+          data-testid="file-viewer-chip"
+          role="status"
+          className="shrink-0 border-b border-line-3 bg-surface-2 px-3 py-1 text-[11px] leading-4 text-ink-tertiary"
+        >
+          {notes.join(" ")}
+        </div>
+      )}
+      {secondary.length === 0 ? null : (
+        <div
+          data-testid="file-viewer-secondary-note"
+          className="shrink-0 px-3 py-1 text-[11px] leading-4 text-ink-dimmed"
+        >
+          {secondary.join(" ")}
+        </div>
+      )}
+    </>
   );
 }
 

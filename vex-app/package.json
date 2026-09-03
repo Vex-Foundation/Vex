@@ -55,6 +55,7 @@
     "@hookform/resolvers": "~5.2.2",
     "@parcel/watcher": "~2.6.0",
     "@sentry/electron": "~7.13.0",
+    "@shikijs/vscode-textmate": "10.0.2",
     "@solana/web3.js": "~1.98.4",
     "@tanstack/react-query": "~5.100.9",
     "@tanstack/react-virtual": "3.14.8",

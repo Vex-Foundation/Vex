@@ -86,7 +86,7 @@ import {
   HIGHLIGHT_MAX_TOKENS,
   type TokenLine,
 } from "./highlight/highlight-protocol.js";
-import { plainTokenize } from "./highlight/shiki-tokenizer.js";
+import { LINE_TIME_BUDGET_MS, plainTokenize } from "./highlight/shiki-tokenizer.js";
 import {
   languageOfPath,
   PLAIN_LANGUAGE,
@@ -146,6 +146,24 @@ export const VIEWER_MAX_TOKENIZE_LINE_LENGTH = 20_000;
 export const VIEWER_MAX_TOKENS = HIGHLIGHT_MAX_TOKENS;
 
 /**
+ * How long ONE line may be coloured for before the highlighter keeps what it
+ * has and moves on, in milliseconds.
+ *
+ * THE VALUE LIVES WITH THE TOKENIZER ({@link LINE_TIME_BUDGET_MS}), which is
+ * what spends it: it is a shiki option, and shiki is that module's business
+ * alone. Re-exported under the viewer's own name for the same reason
+ * {@link VIEWER_MAX_TOKENS} is - this is where a reader of the viewer's bounds
+ * looks - and because the CHIP has to name it. The chip is on the main thread
+ * and the copy module is deliberately dependency-free, so the number reaches it
+ * as an argument from here rather than by importing the tokenizer into the
+ * sentence that describes it.
+ *
+ * AT THE BOUND the line keeps every byte and the colours found so far, and the
+ * chip says how many lines it happened to and where the first one is.
+ */
+export const VIEWER_LINE_TIME_BUDGET_MS = LINE_TIME_BUDGET_MS;
+
+/**
  * How deep the reload queue goes: one running, one queued.
  *
  * VS Code's model manager caps its reload queue at exactly this
@@ -202,6 +220,14 @@ export type HighlightState =
       readonly kind: "highlighted";
       readonly lines: readonly TokenLine[];
       readonly longLines: number;
+      /**
+       * The lines whose colouring ran out of clock, 1-based and ascending. See
+       * `HighlightSuccess.budgetExceededLines`: a non-empty list means the file
+       * IS highlighted and some of its lines are only partly so, which is a
+       * different statement from any of the `plain` reasons.
+       */
+      readonly budgetExceededLines: readonly number[];
+      readonly budgetExceededTotal: number;
     }
   | { readonly kind: "plain-after-failure"; readonly reason: PlainReason };
 
@@ -771,7 +797,7 @@ export class FileViewerSession {
       this.#highlightRequest = null;
 
       if (outcome.ok) {
-        this.#publishTokens(outcome.lines, outcome.longLines);
+        this.#publishTokens(outcome);
         return;
       }
       // A request WE abandoned is not a failure and says nothing to the user.
@@ -796,16 +822,27 @@ export class FileViewerSession {
    * At the bound the file is shown in full as plain text with `too_many_tokens`
    * on the chip.
    */
-  #publishTokens(lines: readonly TokenLine[], longLines: number): void {
+  #publishTokens(outcome: {
+    readonly lines: readonly TokenLine[];
+    readonly longLines: number;
+    readonly budgetExceededLines: readonly number[];
+    readonly budgetExceededTotal: number;
+  }): void {
     let tokens = 0;
-    for (const line of lines) {
+    for (const line of outcome.lines) {
       tokens += line.length;
       if (tokens > VIEWER_MAX_TOKENS) {
         this.#setHighlight({ kind: "plain-after-failure", reason: "too_many_tokens" });
         return;
       }
     }
-    this.#setHighlight({ kind: "highlighted", lines, longLines });
+    this.#setHighlight({
+      kind: "highlighted",
+      lines: outcome.lines,
+      longLines: outcome.longLines,
+      budgetExceededLines: outcome.budgetExceededLines,
+      budgetExceededTotal: outcome.budgetExceededTotal,
+    });
   }
 
   /**

@@ -196,6 +196,56 @@ export function longLinesText(count: number, maxLineLength: number): string {
   return `${lines} over ${groupDigits(maxLineLength)} characters and not highlighted.`;
 }
 
+/**
+ * PARTLY HIGHLIGHTED: the lines whose colouring ran out of clock.
+ *
+ * The bound this reports is the one that used to be invisible. vscode-textmate
+ * stops scanning a line once it has spent the per-line budget on it and hands
+ * back what it has, so the line keeps every byte and loses the colours after
+ * that point - and before this sentence existed the viewer showed it as if it
+ * were finished. A row that is half coloured and half grey, with nothing said,
+ * is a highlighter the user is right to stop trusting.
+ *
+ * It names the FIRST line so there is somewhere to go and look. The count is
+ * the exact number of lines, never the length of the list the worker sends: the
+ * list is bounded at fifty numbers and the count is not, so on a file with two
+ * hundred such lines this still says two hundred.
+ */
+export function partlyHighlightedText(total: number, firstLine: number): string {
+  const lines = total === 1 ? "1 line" : `${groupDigits(total)} lines`;
+  return `Partly highlighted: ${lines} ran out of highlighting time, first at line ${groupDigits(firstLine)}.`;
+}
+
+/**
+ * The quieter half of the same fact: what the budget IS, and what was kept.
+ *
+ * Separate from the sentence above because it answers a different question. The
+ * first says WHICH lines; this says why it is not a failure and what is on
+ * screen - the colours found before the clock ran out are real, and the text is
+ * complete. Nothing was cut; only colouring stopped.
+ */
+export function highlightBudgetNote(budgetMs: number): string {
+  return `Vex colours each line for at most ${budgetInWords(budgetMs)} and keeps what it found by then. Every character is still there.`;
+}
+
+/**
+ * The budget as a person would say it.
+ *
+ * Written in words rather than printed as a number because the sentence it sits
+ * in is an explanation, not a measurement: "half a second" is read, "500 ms" is
+ * decoded. The three branches cover the value we ship (500) and the two shapes a
+ * future one could take, so changing the constant changes the sentence instead
+ * of breaking it.
+ */
+function budgetInWords(budgetMs: number): string {
+  if (budgetMs === 500) return "half a second";
+  if (budgetMs % 1_000 === 0) {
+    const seconds = budgetMs / 1_000;
+    return seconds === 1 ? "one second" : `${groupDigits(seconds)} seconds`;
+  }
+  return `${groupDigits(budgetMs)} milliseconds`;
+}
+
 /** `20000` as `20,000`. Whole non-negative numbers only, which is all we pass. */
 function groupDigits(value: number): string {
   return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
