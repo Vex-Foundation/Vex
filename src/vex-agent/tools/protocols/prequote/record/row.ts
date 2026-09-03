@@ -22,7 +22,7 @@ export function familyToChainFamily(family: PrequoteFamily): ChainFamily {
 /**
  * Best-effort `swap_prequotes` write. The DB call is the only throw site left in
  * the recorder, so it is isolated here to honour the "never throws to caller"
- * contract. Only a bounded structural reason is logged — never raw provider/DB
+ * contract. Only a bounded structural reason is logged - never raw provider/DB
  * text. Returns true on a successful write.
  */
 export async function writePrequoteRow(toolId: string, input: CreatePrequoteInput): Promise<boolean> {

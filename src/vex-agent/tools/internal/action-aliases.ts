@@ -9,13 +9,13 @@
  * family ROUTER (EVM vs Solana for `SwapQuote`; EVM-only for the hidden
  * Uniswap pair); the other three are pass-through / mode selectors.
  *
- * Param translation is the whole point — the alias presents ONE clean
+ * Param translation is the whole point - the alias presents ONE clean
  * LLM-facing shape and maps to whatever the underlying manifest calls things:
  *
  *   SwapQuote (EVM)    { chain, tokenIn, tokenOut, amountIn, slippageBps? }
- *                       → kyberswap.swap.quote (SAME keys — KyberSwap ONLY, no venue fallback)
- *   SwapQuote (Solana) → solana.swap.quote (SAME keys — W5a unified them: tokenIn/tokenOut/amountIn)
- *   SwapQuoteUniswap  → uniswap.swap.quote (SAME keys) — always available
+ *                       → kyberswap.swap.quote (SAME keys - KyberSwap ONLY, no venue fallback)
+ *   SwapQuote (Solana) → solana.swap.quote (SAME keys - W5a unified them: tokenIn/tokenOut/amountIn)
+ *   SwapQuoteUniswap  → uniswap.swap.quote (SAME keys) - always available
  *   TokenCheck         { chain, tokenAddress } → kyberswap.tokens.check (same keys; the
  *                       retired `address` spelling is rejected by name on BOTH lanes, and
  *                       supplying both spellings is rejected too)
@@ -25,17 +25,17 @@
  *
  * Units (SPEC §1.3): kyber/uniswap/jupiter swap `amountIn` is HUMAN decimal
  * (e.g. "1.5"); the bridge legs take `amountRaw`, RAW base units (wei/lamports)
- * — the same key the khalani/relay manifests declare. The alias schemas document
+ * - the same key the khalani/relay manifests declare. The alias schemas document
  * this and translation preserves it (no unit conversion happens here). The
  * retired bare `amount` key is rejected by name on both lanes.
  *
  * Chain params on the swap/token aliases accept BOTH a slug and a chain ID, in
- * either JSON type (`"base"`, `"8453"`, `8453`) — `TokenFind`
+ * either JSON type (`"base"`, `"8453"`, `8453`) - `TokenFind`
  * (khalani.tokens.search) returns `chainId` as a NUMBER, so an id is the form
  * the agent normally holds. All three normalize to one value before venue
  * classification (`./chain-param.js`), so the way a chain was spelled can never
  * change which venue it routes to. The MUTATING executes share that exact
- * schema (`../mutating-aliases.ts`) — quote and execute must accept the same
+ * schema (`../mutating-aliases.ts`) - quote and execute must accept the same
  * forms or a legal quote cannot be executed. The bridge aliases are
  * deliberately NOT included: their chain names belong to the Khalani/Relay
  * namespaces and feed the bridge prequote match-hash, so widening them is a
@@ -47,8 +47,8 @@
  * (`family.venue === "uniswap"`), `SwapQuote` refuses and NAMES
  * `SwapQuoteUniswap` as the venue that covers the chain, which the model can
  * act on in the same turn. Failure-shaped venue guidance for the cases this
- * module cannot see — Kyber codes 4008/4010/4011, a mined revert, a pre-sign
- * revert, an unavailable edge — is worded inside the KyberSwap handlers
+ * module cannot see - Kyber codes 4008/4010/4011, a mined revert, a pre-sign
+ * revert, an unavailable edge - is worded inside the KyberSwap handlers
  * themselves (`kyberswap/handlers/swap/fallback-messaging.ts`), which hold the
  * raw failure code; this module does not re-derive them.
  */
@@ -65,6 +65,7 @@ import { isNumericChainIdInput } from "@tools/kyberswap/chains.js";
 import { resolveBridgeVenue } from "@tools/relay/bridge-venue.js";
 import { findCallerSuppliedForbiddenParamOrDestinationKey } from "@tools/khalani/request.js";
 import { khalaniSlippageRejection } from "../protocols/khalani/slippage-unsupported.js";
+import { bridgeRecipientAliasRefusal } from "../protocols/bridge-recipient-param.js";
 import { rejectBridgeStatusModeConflict } from "../protocols/khalani/bridge-status-mode.js";
 import { dropEmptyModelValues, formatZodIssuesForModel } from "./arg-validation.js";
 import { resolveUniswapDeployment } from "@tools/uniswap/chains.js";
@@ -73,7 +74,7 @@ import logger from "@utils/logger.js";
 // ── Shared dispatch context projection ───────────────────────────────
 //
 // The read-only aliases need the same execution-context slice the Khalani
-// read aliases pass (no `contextUsageBand` — these are never mutating, so the
+// read aliases pass (no `contextUsageBand` - these are never mutating, so the
 // protocol-runtime pressure guard is a no-op for them; mirrors
 // internal/khalani.ts).
 
@@ -84,23 +85,26 @@ function protocolContext(context: InternalToolContext): Parameters<typeof execut
     sessionId: context.sessionId,
     walletResolution: context.walletResolution,
     walletPolicy: context.walletPolicy,
-    // Operator Stop — an alias must not be the path that drops it.
+    // Operator Stop - an alias must not be the path that drops it.
     ...(context.abortSignal ? { abortSignal: context.abortSignal } : {}),
   };
 }
 
-// ── SwapQuote — EVM (KyberSwap ONLY)/Solana family router ───────────
+// ── SwapQuote - EVM (KyberSwap ONLY)/Solana family router ───────────
 //
 // The family classifier (`classifySwapFamily`) is shared with the Stage 8b
 // MUTATING `SwapExecute` alias router (`tools/mutating-aliases.ts`) so the
 // read-only quote and the execute can never disagree on which family/venue a
 // chain maps to.
 
-// `.strict()` (FIX-SPINE round 1, finding 14/C4) — the removed legacy
+// `.strict()` (FIX-SPINE round 1, finding 14/C4) - the removed legacy
 // `side`/`recipient`/`amount` fields are REJECTED with a clear message, never
-// silently stripped. Silently dropping `recipient` in particular would be a
-// transaction-safety-significant silent behavior change (the agent believes
-// it redirected output that in fact went to the sender).
+// silently stripped. Silently dropping a destination key would be a
+// transaction-safety-significant silent behavior change (the agent believes it
+// redirected output that in fact went to the sender). That is now the rule on
+// every lane: the BRIDGE aliases below no longer declare `recipient` either,
+// and they answer a supplied one BY NAME with the shared bridge-destination
+// sentence (`../protocols/bridge-recipient-param.js`).
 const SwapQuoteArgs = z.object({
   chain: ChainParam,
   tokenIn: z.string().min(1, { message: "tokenIn is required" }),
@@ -126,13 +130,13 @@ export async function handleSwapQuote(
     // A chain ID is refused AS an id. It came from TokenFind, so "cannot
     // determine swap family" would read as a lookup mistake rather than the
     // truth: no venue in the tree serves that chain. This branch runs BEFORE
-    // the Uniswap branch below on purpose — naming the Uniswap venue would
+    // the Uniswap branch below on purpose - naming the Uniswap venue would
     // claim it covers a chain nothing registers.
     if (isNumericChainIdInput(a.chain)) {
       return fail(
         `SwapQuote: chain id ${a.chain} is not a chain Vex can swap on. ` +
-          `Pass a supported EVM chain — either its slug or the chain id TokenFind ` +
-          `returns (ethereum/1, base/8453, arbitrum/42161, …) — or "solana".`,
+          `Pass a supported EVM chain - either its slug or the chain id TokenFind ` +
+          `returns (ethereum/1, base/8453, arbitrum/42161, …) - or "solana".`,
       );
     }
     return fail(
@@ -154,12 +158,12 @@ export async function handleSwapQuote(
     return executeProtocolTool({ toolId: "solana.swap.quote", params }, protocolContext(context));
   }
 
-  // EVM → KyberSwap ONLY (plan §11.2 — the silent Uniswap fallback is removed).
+  // EVM → KyberSwap ONLY (plan §11.2 - the silent Uniswap fallback is removed).
   // Both quote handlers resolve tokens strictly (address-only), so DEX symbol
   // search is disabled to avoid wrong-contract matches (e.g. "USDC" → axlUSDC).
   if (!isEvmSwapTokenInput(a.tokenIn) || !isEvmSwapTokenInput(a.tokenOut)) {
     return fail(
-      "SwapQuote: EVM tokens must be a contract address — resolve the symbol " +
+      "SwapQuote: EVM tokens must be a contract address - resolve the symbol " +
         "with TokenFind first, or pass native ETH/native. (Symbol resolution " +
         "via the DEX is disabled to avoid wrong-contract matches.)",
     );
@@ -186,7 +190,7 @@ export async function handleSwapQuote(
   return executeProtocolTool({ toolId: "kyberswap.swap.quote", params }, protocolContext(context));
 }
 
-// ── SwapQuoteUniswap — HIDDEN EVM-only Uniswap fallback quote ──────
+// ── SwapQuoteUniswap - HIDDEN EVM-only Uniswap fallback quote ──────
 
 const SwapQuoteUniswapArgs = z.object({
   chain: ChainParam,
@@ -199,7 +203,7 @@ const SwapQuoteUniswapArgs = z.object({
 type SwapQuoteUniswapArgs = z.infer<typeof SwapQuoteUniswapArgs>;
 
 /**
- * Resolves DIRECTLY against the Uniswap deployment registry — NOT
+ * Resolves DIRECTLY against the Uniswap deployment registry - NOT
  * `classifySwapFamily`, which prioritizes KyberSwap whenever it ALSO covers the
  * chain. Naming the venue in the tool is what lets the model reach Uniswap even
  * on a chain Kyber serves.
@@ -214,7 +218,7 @@ export async function handleSwapQuoteUniswap(
   }
   const a: SwapQuoteUniswapArgs = parsed.data;
 
-  // Resolve DIRECTLY against the Uniswap deployment registry — NOT via
+  // Resolve DIRECTLY against the Uniswap deployment registry - NOT via
   // `classifySwapFamily` (which prioritizes KyberSwap whenever it ALSO covers
   // the chain; the whole point of this fallback is to reach Uniswap even on a
   // chain Kyber supports, e.g. after a 4011 token-not-found refusal).
@@ -224,7 +228,7 @@ export async function handleSwapQuoteUniswap(
   }
   if (!isEvmSwapTokenInput(a.tokenIn) || !isEvmSwapTokenInput(a.tokenOut)) {
     return fail(
-      "SwapQuoteUniswap: EVM tokens must be a contract address — resolve the symbol "
+      "SwapQuoteUniswap: EVM tokens must be a contract address - resolve the symbol "
         + "with TokenFind first, or pass native ETH/native.",
     );
   }
@@ -239,14 +243,14 @@ export async function handleSwapQuoteUniswap(
   return executeProtocolTool({ toolId: "uniswap.swap.quote", params }, protocolContext(context));
 }
 
-// ── TokenCheck — EVM honeypot / fee-on-transfer ─────────────────────
+// ── TokenCheck - EVM honeypot / fee-on-transfer ─────────────────────
 
 /**
  * `.strict()` is the point, not decoration.
  *
  * A plain `z.object()` IGNORES an undeclared key, so a call that still spelled
  * the token `address` parsed "successfully" and dispatched with the field
- * missing — the alias lane silently dropping what the protocol lane rejects by
+ * missing - the alias lane silently dropping what the protocol lane rejects by
  * name. Strict parsing closes that hole for every unknown key; the retired key
  * gets the explicit message below because "unrecognized key" does not tell an
  * agent what to send instead.
@@ -263,7 +267,7 @@ const TokenCheckArgs = z.object({
  * carrying `address` and `tokenAddress` is ambiguous about which one the caller
  * believes is being checked, and quietly preferring one would run a honeypot
  * check against an address the agent may not have meant. There is no precedence
- * rule here on purpose — the caller re-sends one key.
+ * rule here on purpose - the caller re-sends one key.
  */
 function refuseRetiredTokenCheckAddress(args: Record<string, unknown>): string | null {
   if (!Object.hasOwn(args, "address")) return null;
@@ -271,7 +275,7 @@ function refuseRetiredTokenCheckAddress(args: Record<string, unknown>): string |
   return (
     'TokenCheck: the parameter "address" was retired and renamed to "tokenAddress"'
     + (both
-      ? ' — you supplied BOTH "address" and "tokenAddress", and Vex will not guess which token you meant. Re-send the call with "tokenAddress" only.'
+      ? ' - you supplied BOTH "address" and "tokenAddress", and Vex will not guess which token you meant. Re-send the call with "tokenAddress" only.'
       : '. Re-send the call with the token contract address under "tokenAddress".')
   );
 }
@@ -294,7 +298,7 @@ export async function handleTokenCheck(
   );
 }
 
-// ── BridgeStatus — order get (by id) / orders list ──────────────────
+// ── BridgeStatus - order get (by id) / orders list ──────────────────
 
 const BridgeStatusArgs = z.object({
   orderId: z.string().min(1).optional(),
@@ -356,7 +360,7 @@ export async function handleBridgeStatus(
   }
   const a = parsed.data;
 
-  // Mode conflict is REJECTED BY NAME, never resolved silently — see
+  // Mode conflict is REJECTED BY NAME, never resolved silently - see
   // `../protocols/khalani/bridge-status-mode.ts`.
   const conflict = rejectBridgeStatusModeConflict(a);
   if (conflict !== null) return fail(conflict);
@@ -368,7 +372,7 @@ export async function handleBridgeStatus(
     );
   }
 
-  // List mode — forward only the list filters that were provided.
+  // List mode - forward only the list filters that were provided.
   const params: Record<string, unknown> = {};
   if (a.walletAddress !== undefined) params.walletAddress = a.walletAddress;
   if (a.walletFamily !== undefined) params.walletFamily = a.walletFamily;
@@ -381,7 +385,7 @@ export async function handleBridgeStatus(
   return executeProtocolTool({ toolId: "khalani.orders.list", params }, protocolContext(context));
 }
 
-// ── BridgeQuote — read-only cross-chain bridge preview ──────────────
+// ── BridgeQuote - read-only cross-chain bridge preview ──────────────
 
 const BridgeQuoteArgs = z.object({
   fromChain: z.string().min(1, { message: "fromChain is required" }),
@@ -391,13 +395,17 @@ const BridgeQuoteArgs = z.object({
   amountRaw: z.string().min(1, { message: "amountRaw is required (raw base units)" }),
   tradeType: z.string().min(1).optional(),
   fromAddress: z.string().min(1).optional(),
-  recipient: z.string().min(1).optional(),
-  // No `refundTo` — the refund destination is derived from the selected
+  // No `recipient` - a bridge delivers to the wallet selected for this project
+  // on the destination chain, so the destination is derived and never taken
+  // from tool input. A supplied key is refused by name below
+  // (`../protocols/bridge-recipient-param.js`), exactly as the four bridge
+  // manifests refuse it.
+  // No `refundTo` - the refund destination is derived from the selected
   // source wallet, never taken from tool input (refund-destination policy in
   // `@tools/khalani/request.js`).
   filler: z.string().min(1).optional(),
   // Relay-only price protection, in basis points (1 bps = 0.01%). REJECTED by
-  // name on the Khalani branch — Khalani exposes no slippage tolerance.
+  // name on the Khalani branch - Khalani exposes no slippage tolerance.
   slippageBps: z.number().int().nonnegative().optional(),
 });
 
@@ -407,22 +415,27 @@ export async function handleBridgeQuote(
 ): Promise<ToolResult> {
   // Fee params and the refund destination are rejected BY NAME, never silently
   // stripped. This schema is not `.strict()`, so dropping the keys alone would
-  // let the attempt pass unnoticed — and the QUOTE is precisely what the
+  // let the attempt pass unnoticed - and the QUOTE is precisely what the
   // prequote gate would later bind a matching execute against, so an attacker
   // who sets the same value on both would collide the hashes and pass the gate.
   // See the two policy blocks in `@tools/khalani/request.js`.
   //
   // ORDER IS LOAD-BEARING: this runs BEFORE the empty-value normalization
   // below. Normalization exists to stop `recipient: ""` costing the agent a
-  // turn — but applied first it would also delete `refundTo: ""`, converting an
+  // turn - but applied first it would also delete `refundTo: ""`, converting an
   // attempted refund redirection into silence. The refusal comes first so the
   // key is always answered BY NAME.
   const forbiddenParam = findCallerSuppliedForbiddenParamOrDestinationKey(args);
   if (forbiddenParam !== null) {
     return fail(
-      `BridgeQuote: ${forbiddenParam.param} is not an accepted parameter — ${forbiddenParam.reason} Remove it and retry.`,
+      `BridgeQuote: ${forbiddenParam.param} is not an accepted parameter - ${forbiddenParam.reason} Remove it and retry.`,
     );
   }
+
+  // The BRIDGE DESTINATION, same doctrine and the same load-bearing order: the
+  // key is answered by name before normalization can delete `recipient: ""`.
+  const suppliedRecipient = bridgeRecipientAliasRefusal("BridgeQuote", args);
+  if (suppliedRecipient !== null) return fail(suppliedRecipient);
 
   // `slippageBps` is REJECTED BY NAME whenever this call routes to Khalani
   // (SPEC §2.4 item 21). It used to be dropped in silence, which told the agent
@@ -450,7 +463,6 @@ export async function handleBridgeQuote(
       amountRaw: a.amountRaw,
     };
     if (a.tradeType !== undefined) params.tradeType = a.tradeType;
-    if (a.recipient !== undefined) params.recipient = a.recipient;
     if (a.slippageBps !== undefined) params.slippageBps = a.slippageBps;
     return executeProtocolTool({ toolId: "relay.quote.get", params }, protocolContext(context));
   }
@@ -464,12 +476,11 @@ export async function handleBridgeQuote(
   };
   if (a.tradeType !== undefined) params.tradeType = a.tradeType;
   if (a.fromAddress !== undefined) params.fromAddress = a.fromAddress;
-  if (a.recipient !== undefined) params.recipient = a.recipient;
   if (a.filler !== undefined) params.filler = a.filler;
   return executeProtocolTool({ toolId: "khalani.quote.get", params }, protocolContext(context));
 }
 
-// ── BridgeQuoteRelay — Relay-only bridge preview ──────────────────────────
+// ── BridgeQuoteRelay - Relay-only bridge preview ──────────────────────────
 //
 // The read half of the Relay venue pair. Unlike the generic `BridgeQuote`
 // (which stays Khalani-routed except the local-chain static exception), this
@@ -483,12 +494,14 @@ const BridgeQuoteRelayArgs = z.object({
   toToken: z.string().min(1, { message: "toToken is required" }),
   amountRaw: z.string().min(1, { message: "amountRaw is required (raw base units)" }),
   tradeType: z.string().min(1).optional(),
-  recipient: z.string().min(1).optional(),
-  // No `refundTo` — the refund destination is derived from the selected
+  // No `recipient` - the destination is derived from the wallet selected for
+  // this project on the destination chain; a supplied key is refused by name
+  // below (`../protocols/bridge-recipient-param.js`).
+  // No `refundTo` - the refund destination is derived from the selected
   // source wallet, never taken from tool input (refund-destination policy in
   // `@tools/khalani/request.js`).
   // Relay-only price protection, in basis points (1 bps = 0.01%). REJECTED by
-  // name on the Khalani branch — Khalani exposes no slippage tolerance.
+  // name on the Khalani branch - Khalani exposes no slippage tolerance.
   slippageBps: z.number().int().nonnegative().optional(),
 });
 
@@ -497,14 +510,18 @@ export async function handleBridgeQuoteRelay(
   context: InternalToolContext,
 ): Promise<ToolResult> {
   // This schema is not `.strict()` either, so the same by-name refusal applies
-  // — otherwise a redirected refund address would be dropped here in silence.
+  // - otherwise a redirected refund address would be dropped here in silence.
   // Same load-bearing order as `BridgeQuote`: refusal BEFORE normalization.
   const forbiddenParam = findCallerSuppliedForbiddenParamOrDestinationKey(args);
   if (forbiddenParam !== null) {
     return fail(
-      `BridgeQuoteRelay: ${forbiddenParam.param} is not an accepted parameter — ${forbiddenParam.reason} Remove it and retry.`,
+      `BridgeQuoteRelay: ${forbiddenParam.param} is not an accepted parameter - ${forbiddenParam.reason} Remove it and retry.`,
     );
   }
+
+  // Same by-name bridge-destination refusal, before normalization.
+  const suppliedRecipient = bridgeRecipientAliasRefusal("BridgeQuoteRelay", args);
+  if (suppliedRecipient !== null) return fail(suppliedRecipient);
 
   const parsed = BridgeQuoteRelayArgs.safeParse(dropEmptyModelValues(args));
   if (!parsed.success) {
@@ -520,7 +537,6 @@ export async function handleBridgeQuoteRelay(
     amountRaw: a.amountRaw,
   };
   if (a.tradeType !== undefined) params.tradeType = a.tradeType;
-  if (a.recipient !== undefined) params.recipient = a.recipient;
   if (a.slippageBps !== undefined) params.slippageBps = a.slippageBps;
   return executeProtocolTool({ toolId: "relay.quote.get", params }, protocolContext(context));
 }

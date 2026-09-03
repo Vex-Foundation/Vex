@@ -2,7 +2,7 @@
  * `khalani.bridge` deposit-plan stage (steps 6 and 7b of the staged-execute
  * contract, split out in 0R.4, refactor-only): build the provider deposit
  * plan, materialize its signable legs, and classify their native-currency
- * exposure — all BEFORE the preview, before any recording and before any
+ * exposure - all BEFORE the preview, before any recording and before any
  * signing. Planning is fault-TOLERATED here and fault-FATAL at step 8.
  */
 
@@ -12,7 +12,7 @@ import {
   authorizeKhalaniPlanNativeValue,
   type KhalaniPlanNativeValue,
 } from "@tools/khalani/deposit-native-value.js";
-import type { DepositMethod, KhalaniChain } from "@tools/khalani/types.js";
+import type { KhalaniChain } from "@tools/khalani/types.js";
 import { VexError } from "../../../../../../errors.js";
 import type { ToolResult } from "../../../../types.js";
 import { khalaniFailureMessage } from "../bridge-support.js";
@@ -21,14 +21,14 @@ import type { FailPreSign } from "./types.js";
 export interface KhalaniDepositPlanInput {
   readonly fromAddress: string;
   readonly quoteId: string;
+  /** The route the handler selected from the quote it just took, never a param. */
   readonly routeId: string;
-  readonly depositMethod: DepositMethod | "";
   readonly sourceChain: KhalaniChain;
   readonly chains: KhalaniChain[];
   readonly fromToken: string;
   readonly chargeFee: boolean;
   readonly feeRaw: bigint;
-  /** What the venue was actually quoted for — the number Vex derived, never the provider's echo. */
+  /** What the venue was actually quoted for - the number Vex derived, never the provider's echo. */
   readonly bridgedAmountRaw: string;
 }
 
@@ -57,7 +57,8 @@ export async function buildKhalaniDepositPlan(
       from: input.fromAddress,
       quoteId: input.quoteId,
       routeId: input.routeId,
-      ...(input.depositMethod ? { depositMethod: input.depositMethod } : {}),
+      // No `depositMethod`: the selected route dictates its own deposit path,
+      // and it was never something a caller could bind to a quote.
     });
   } catch (err) {
     const externalName = err instanceof VexError ? err.externalName : undefined;

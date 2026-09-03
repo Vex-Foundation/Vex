@@ -300,6 +300,37 @@ describe("khalani.bridge — staged execute safety (W3a)", () => {
     expect(mockFailActivityEvent).not.toHaveBeenCalled();
   });
 
+  it("no routeId/depositMethod params: quotes with NO route filter, takes the BEST route, and lets that route dictate the deposit method", async () => {
+    // `routeId` and `depositMethod` stopped being parameters of this tool (the
+    // quote can never bind either, so the prequote gate blocked every call that
+    // set one). What replaces them has to be the same on the wire: no route
+    // filter goes out, the best-index rule picks from what the quote returned,
+    // and `buildDeposit` sends no deposit method at all.
+    mockGetQuotes.mockResolvedValueOnce({
+      quoteId: "q1",
+      routes: [
+        { routeId: "r1", type: "Across", depositMethods: ["CONTRACT_CALL"], quote: { amountIn: "1500000", amountOut: "1400000", expectedDurationSeconds: 9, validBefore: FUTURE, quoteExpiresAt: FUTURE } },
+        { routeId: "r2", type: "Across", depositMethods: ["PERMIT2"], quote: { amountIn: "1500000", amountOut: "1499000", expectedDurationSeconds: 2, validBefore: FUTURE, quoteExpiresAt: FUTURE } },
+      ],
+    });
+    mockResolveRouteBestIndex.mockReturnValue(1);
+
+    await execute();
+
+    // ONE argument: the request. The second `{ routes: [...] }` argument only
+    // ever carried the caller's `routeId`.
+    expect(mockGetQuotes).toHaveBeenCalledTimes(1);
+    expect(mockGetQuotes.mock.calls[0]).toHaveLength(1);
+    // The route is the one the best-index rule chose, not the first returned.
+    expect(mockResolveRouteBestIndex).toHaveBeenCalledTimes(1);
+    const [depositCall] = mockBuildDeposit.mock.calls;
+    expect(depositCall).toBeDefined();
+    const deposit = (depositCall?.[0] ?? {}) as Record<string, unknown>;
+    expect(deposit.quoteId).toBe("q1");
+    expect(deposit.routeId).toBe("r2");
+    expect(deposit).not.toHaveProperty("depositMethod");
+  });
+
   it("CAS miss on markActivityBroadcast aborts BEFORE submit — same _executionId", async () => {
     mockMarkActivityBroadcast.mockResolvedValue({ applied: false, row: { id: 100 } });
     const result = await execute();

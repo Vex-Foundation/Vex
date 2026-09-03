@@ -1,16 +1,16 @@
 /**
  * Pendle LP identity families: the single-token add/remove (P5) and the R5d
- * variants — dual remove, keep-YT add, market transfer, and LP→PT.
+ * variants - dual remove, keep-YT add, market transfer, and LP→PT.
  */
 
 import { canonAddress, canonAmount } from "./canonicalize.js";
 
 /**
  * Pendle LP single-token ADD trade identity (P5). Adding single-token liquidity
- * (token → LP) is its OWN kind — not a swap, mint, or redeem: it deposits ONE
+ * (token → LP) is its OWN kind - not a swap, mint, or redeem: it deposits ONE
  * payment token into a Pendle market and receives the LP token. Computed
  * IDENTICALLY at the `pendle.lp.quote` (direction "add") record-time and the
- * `pendle.lp.add` EXECUTE gate-time — both bind the MARKET (the LP anchor)
+ * `pendle.lp.add` EXECUTE gate-time - both bind the MARKET (the LP anchor)
  * directly (never resolved from a PT), so the digests collide.
  *
  * Direction is structurally unmixable from a remove: `lp_add` and `lp_remove` are
@@ -22,7 +22,7 @@ import { canonAddress, canonAmount } from "./canonicalize.js";
 export interface LpAddMatchInput {
   readonly kind: "lp_add";
   readonly sessionId: string;
-  /** VENUE binding — "pendle". */
+  /** VENUE binding - "pendle". */
   readonly provider: string;
   readonly chainId: number;
   /** Selected EVM wallet (signer). */
@@ -43,7 +43,7 @@ export interface LpAddMatchInput {
  * Pendle LP single-token REMOVE trade identity (P5). Removing single-token
  * liquidity (LP → token) is its OWN kind. Computed IDENTICALLY at the
  * `pendle.lp.quote` (direction "remove") record-time and the `pendle.lp.remove`
- * EXECUTE gate-time — both bind the MARKET directly. It carries `tokenOut` (the
+ * EXECUTE gate-time - both bind the MARKET directly. It carries `tokenOut` (the
  * output token; a remove can target any token, default = the market's underlying),
  * bound so a divergent output blocks. Material (FIXED order): ["lp_remove",
  * sessionId, provider, chainId, wallet, receiver, market, tokenOut, amount,
@@ -52,7 +52,7 @@ export interface LpAddMatchInput {
 export interface LpRemoveMatchInput {
   readonly kind: "lp_remove";
   readonly sessionId: string;
-  /** VENUE binding — "pendle". */
+  /** VENUE binding - "pendle". */
   readonly provider: string;
   readonly chainId: number;
   /** Selected EVM wallet (signer). */
@@ -70,7 +70,7 @@ export interface LpRemoveMatchInput {
 }
 
 /**
- * Pendle DUAL LP remove identity (R5d). `LP → (token, PT)` — two output legs,
+ * Pendle DUAL LP remove identity (R5d). `LP → (token, PT)` - two output legs,
  * where `lp_remove` has one. Its own kind, never `lp_remove`: the two actions
  * take the same market and the same LP amount, so a shared kind would let a
  * single-token remove quote authorize a dual remove execute (and vice-versa),
@@ -78,13 +78,13 @@ export interface LpRemoveMatchInput {
  *
  * Material (FIXED order): ["lp_remove_dual", sessionId, provider, chainId,
  * wallet, receiver, market, tokenOut, amount, slippageBps]. The PT output leg is
- * NOT a free parameter — it is the market's own PT — so binding `market` binds
+ * NOT a free parameter - it is the market's own PT - so binding `market` binds
  * it; `tokenOut` is the leg the caller can vary.
  */
 export interface LpRemoveDualMatchInput {
   readonly kind: "lp_remove_dual";
   readonly sessionId: string;
-  /** VENUE binding — "pendle". */
+  /** VENUE binding - "pendle". */
   readonly provider: string;
   readonly chainId: number;
   /** Selected EVM wallet (signer). */
@@ -102,7 +102,7 @@ export interface LpRemoveDualMatchInput {
 }
 
 /**
- * Pendle KEEP-YT LP add identity (R5d). `token → (LP, YT)` — two output legs,
+ * Pendle KEEP-YT LP add identity (R5d). `token → (LP, YT)` - two output legs,
  * where `lp_add` has one. Its own kind, never `lp_add`: same market, same token,
  * same amount, so a shared kind would let a plain add quote authorize a keep-YT
  * execute, which returns a materially different position.
@@ -114,7 +114,7 @@ export interface LpRemoveDualMatchInput {
 export interface LpAddKeepYtMatchInput {
   readonly kind: "lp_add_keep_yt";
   readonly sessionId: string;
-  /** VENUE binding — "pendle". */
+  /** VENUE binding - "pendle". */
   readonly provider: string;
   readonly chainId: number;
   /** Selected EVM wallet (signer). */
@@ -132,14 +132,14 @@ export interface LpAddKeepYtMatchInput {
 }
 
 /**
- * Pendle LP TRANSFER identity (R5d). `LP(market A) → LP(market B)` — liquidity
+ * Pendle LP TRANSFER identity (R5d). `LP(market A) → LP(market B)` - liquidity
  * moved between markets. Its own kind for the same reason as the rollover: both
  * markets are free parameters and both must be bound.
  *
  * Material (FIXED order): ["lp_transfer", sessionId, provider, chainId, wallet,
  * receiver, fromMarket, toMarket, amount, slippageBps].
  *
- * NO `keepYt` FIELD. The R5d card allowed one "if shipped"; it is not — no
+ * NO `keepYt` FIELD. The R5d card allowed one "if shipped"; it is not - no
  * `keepYt` param exists on any manifest, handler or client body in the tree
  * (`transfer-liquidity` was live-probed as `[LP(mktA)] → [LP(mktB)]`, a single
  * output leg). An identity field for a parameter the execute cannot carry would
@@ -149,7 +149,7 @@ export interface LpAddKeepYtMatchInput {
 export interface LpTransferMatchInput {
   readonly kind: "lp_transfer";
   readonly sessionId: string;
-  /** VENUE binding — "pendle". */
+  /** VENUE binding - "pendle". */
   readonly provider: string;
   readonly chainId: number;
   /** Selected EVM wallet (signer). */
@@ -180,7 +180,7 @@ export interface LpTransferMatchInput {
 export interface LpToPtMatchInput {
   readonly kind: "lp_to_pt";
   readonly sessionId: string;
-  /** VENUE binding — "pendle". */
+  /** VENUE binding - "pendle". */
   readonly provider: string;
   readonly chainId: number;
   /** Selected EVM wallet (signer). */
@@ -189,7 +189,7 @@ export interface LpToPtMatchInput {
   readonly receiver: string;
   /** The Pendle market (== the LP token) being converted. */
   readonly market: string;
-  /** The PT received (the market's PT; bound explicitly — see the doc). */
+  /** The PT received (the market's PT; bound explicitly - see the doc). */
   readonly ptOut: string;
   /** Human decimal amount of the LP token to convert. */
   readonly amount: string;
@@ -243,7 +243,7 @@ export function lpRemoveHashMaterial(input: LpRemoveMatchInput): string {
 
 /**
  * Pendle DUAL LP remove material (R5d, FIXED order). Mirrors `lp_remove`'s field
- * order exactly, so the ONLY difference between the two digests is the kind tag —
+ * order exactly, so the ONLY difference between the two digests is the kind tag -
  * which is what makes a single-token remove quote unable to authorize a dual
  * remove execute. Addresses EVM (lowercased); `amount` via `canonAmount`.
  */

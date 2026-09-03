@@ -1,5 +1,5 @@
 /**
- * Pendle LP quote extraction (pendle.lp.quote) — single-token add / remove (P5).
+ * Pendle LP quote extraction (pendle.lp.quote) - single-token add / remove (P5).
  */
 
 import { z } from "zod";
@@ -14,13 +14,13 @@ import {
   PENDLE_LIQUIDITY_FLOOR_USD,
 } from "./pendle-thresholds.js";
 
-// ── Pendle LP quote result (pendle.lp.quote) — single-token add / remove (P5) ────
+// ── Pendle LP quote result (pendle.lp.quote) - single-token add / remove (P5) ────
 //
 // An LP quote previews adding single-token liquidity (token → LP) or removing it
 // (LP → token). The verdict reuses the PT market-quality signals: liquidity floor
 // + price-impact magnitude. LP is NOT a fixed-rate term commitment, so there is NO
 // term-lock on either direction. The market EXPIRES, though: after expiry LP still
-// removes (principal side) but stops earning swap fees/rewards — so the bounded
+// removes (principal side) but stops earning swap fees/rewards - so the bounded
 // `safetyDetail` DISCLOSES expiry/matured state (informational; never a hard fail).
 
 const PendleLpQuoteResultSchema = z.object({
@@ -85,7 +85,7 @@ export function extractPendleLpQuote(
     safetyDetail.priceImpact = { checked: true, magnitude: mag, high: mag > PENDLE_IMPACT_HIGH };
   }
 
-  // Expiry disclosure — informational (NOT a term-lock, NOT a hard fail). A
+  // Expiry disclosure - informational (NOT a term-lock, NOT a hard fail). A
   // matured market can still be removed but no longer earns fees/rewards.
   const expiryMs = d.expiry ? Date.parse(d.expiry) : NaN;
   if (Number.isFinite(expiryMs)) {

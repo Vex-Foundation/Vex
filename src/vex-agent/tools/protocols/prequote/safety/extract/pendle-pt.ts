@@ -1,5 +1,5 @@
 /**
- * Pendle PT quote extraction (pendle.pt.quote) — fixed-yield PT (Wave 5).
+ * Pendle PT quote extraction (pendle.pt.quote) - fixed-yield PT (Wave 5).
  */
 
 import { z } from "zod";
@@ -14,25 +14,25 @@ import {
   PENDLE_LIQUIDITY_FLOOR_USD,
 } from "./pendle-thresholds.js";
 
-// ── Pendle quote result (pendle.pt.quote) — fixed-yield PT (Wave 5) ─────────────
+// ── Pendle quote result (pendle.pt.quote) - fixed-yield PT (Wave 5) ─────────────
 //
 // A Pendle quote is NEITHER a token-honeypot check nor a bridge: its verdict
 // derives from three market-quality signals, and `fail` is reserved for the ONE
 // integrity failure (buying INTO an expired market). Everything else that is
-// merely risky/unverified degrades to `unknown` (allowed-with-approval-warning) —
+// merely risky/unverified degrades to `unknown` (allowed-with-approval-warning) -
 // missing data NEVER silently passes.
 //   - price impact MAGNITUDE (sign is unreliable upstream): |impact| ≤ 1% → ok;
 //     missing or > 1% → unknown (a > 5% impact is flagged "high" in the detail),
 //   - market liquidity floor: ≥ $250k → ok; < $250k or missing → unknown,
 //   - expiry sanity: a BUY requires expiry > now (else fail); sell/redeem: n/a.
-// A buy also emits `termLock { maturityIso }` in the detail — the typed,
+// A buy also emits `termLock { maturityIso }` in the detail - the typed,
 // unspoofable approval-preview warning that funds are locked until maturity.
 
 const PendleQuoteResultSchema = z.object({
   action: z.enum(["swap", "redeem"]),
   direction: z.enum(["buy", "sell", "redeem"]),
   // PT (default when absent) vs YT. A YT buy still fails on an expired market but
-  // emits NO term-lock — a YT is not locked, it decays to zero — so the approval
+  // emits NO term-lock - a YT is not locked, it decays to zero - so the approval
   // preview never renders a misleading "funds locked until maturity" for it.
   instrument: z.enum(["pt", "yt"]).optional(),
   chainId: z.number(),
@@ -116,7 +116,7 @@ export function extractPendleQuote(
     } else {
       legs.push("pass");
       safetyDetail.expiry = { checked: true, expired: false };
-      // Typed, unspoofable term-lock — the approval preview renders the fixed
+      // Typed, unspoofable term-lock - the approval preview renders the fixed
       // message from `maturityIso` (never from model args). ONLY for a PT (a
       // committed term): a YT decays to zero rather than locking, so it carries
       // no term-lock and the preview shows no "locked until maturity" message.

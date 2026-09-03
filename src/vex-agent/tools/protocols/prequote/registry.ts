@@ -5,7 +5,7 @@
  * a prequote on success and how; the execute-gate registry (`EXECUTE_GATE_TOOLS`)
  * names which execute tools are subject to the quote-before-transaction gate and
  * which prequote `kind` each must match. `PREQUOTE_MAX_AGE_MS` is the shared
- * freshness window. Pure data + types — no IO.
+ * freshness window. Pure data + types - no IO.
  */
 
 import type { PrequoteFamily } from "@vex-agent/db/repos/swap-prequotes.js";
@@ -20,14 +20,14 @@ import type { PrequoteFamily } from "@vex-agent/db/repos/swap-prequotes.js";
  * or Solana), so its `family` is resolved inside the recorder, not here.
  *
  * `khalani.quote.get` is the BRIDGE quote (cross-chain), and is used ONLY for
- * bridges (the read alias `BridgeQuote` is its only other caller) — recording
+ * bridges (the read alias `BridgeQuote` is its only other caller) - recording
  * it as `kind: "bridge"` never mis-records a non-bridge quote.
  */
 type PrequoteQuoteRegistration =
   | { readonly kind: "swap"; readonly family: PrequoteFamily; readonly provider: string }
   | { readonly kind: "bridge"; readonly provider: string }
   // Pendle's single quote tool records EITHER a `swap` prequote (buy / early-exit
-  // sell) OR a `redeem` prequote — decided at record-time from the Convert
+  // sell) OR a `redeem` prequote - decided at record-time from the Convert
   // `action` (Wave 5). The recorder dispatches on this `pendle` label, then
   // writes the appropriate DB kind. `family` is always eip155 (Ethereum v1).
   | { readonly kind: "pendle"; readonly family: PrequoteFamily; readonly provider: string }
@@ -53,7 +53,7 @@ type PrequoteQuoteRegistration =
 export const PREQUOTE_QUOTE_TOOLS: Record<string, PrequoteQuoteRegistration> = {
   "kyberswap.swap.quote": { kind: "swap", family: "eip155", provider: "kyberswap" },
   "uniswap.swap.quote": { kind: "swap", family: "eip155", provider: "uniswap" },
-  // Trench Express curve buy/sell — records a `swap` prequote (provider "trench")
+  // Trench Express curve buy/sell - records a `swap` prequote (provider "trench")
   // so the match-hash binds tokenIn/tokenOut/amount/chain/provider; a curve
   // trade IS a swap, so NO new prequote kind and NO migration (Codex aha).
   "trench.trade_quote": { kind: "swap", family: "eip155", provider: "trench" },
@@ -64,10 +64,10 @@ export const PREQUOTE_QUOTE_TOOLS: Record<string, PrequoteQuoteRegistration> = {
   // YT is ALWAYS a swap (never redeem-py); the pendle recorder records it via the
   // swap identity, so a YT quote authorizes only the matching YT buy/sell execute.
   "pendle.yt.quote": { kind: "pendle", family: "eip155", provider: "pendle" },
-  // PY quote records a `mint` or `redeem_py` prequote (P4) — decided from the
+  // PY quote records a `mint` or `redeem_py` prequote (P4) - decided from the
   // echoed `direction`.
   "pendle.py.quote": { kind: "pendle-py", family: "eip155", provider: "pendle" },
-  // LP quote records an `lp_add` or `lp_remove` prequote (P5) — decided from the
+  // LP quote records an `lp_add` or `lp_remove` prequote (P5) - decided from the
   // echoed `direction`.
   "pendle.lp.quote": { kind: "pendle-lp", family: "eip155", provider: "pendle" },
   // Morpho vault quote records a `lend_deposit` or `lend_withdraw` prequote
@@ -102,14 +102,14 @@ export const PREQUOTE_MAX_AGE_MS = 15 * 60_000;
 export type ExecuteGateRegistration =
   | { readonly kind: "swap"; readonly family: PrequoteFamily; readonly provider: string }
   | { readonly kind: "bridge"; readonly provider: string }
-  // Pendle PT redeem — its OWN kind, matched against a `redeem` prequote via the
+  // Pendle PT redeem - its OWN kind, matched against a `redeem` prequote via the
   // dedicated redeem identity (Wave 5, G2#3). `family` is always eip155.
   | { readonly kind: "redeem"; readonly family: PrequoteFamily; readonly provider: string }
-  // Pendle PY mint / pre-expiry redeem — their OWN kinds, matched against a
+  // Pendle PY mint / pre-expiry redeem - their OWN kinds, matched against a
   // `mint` / `redeem_py` prequote via the dedicated PY identities (P4).
   | { readonly kind: "mint"; readonly family: PrequoteFamily; readonly provider: string }
   | { readonly kind: "redeem_py"; readonly family: PrequoteFamily; readonly provider: string }
-  // Pendle LP single-token add / remove — their OWN kinds, matched against an
+  // Pendle LP single-token add / remove - their OWN kinds, matched against an
   // `lp_add` / `lp_remove` prequote via the dedicated LP identities (P5).
   | { readonly kind: "lp_add"; readonly family: PrequoteFamily; readonly provider: string }
   | { readonly kind: "lp_remove"; readonly family: PrequoteFamily; readonly provider: string }
@@ -150,12 +150,12 @@ export type ExecuteGateRegistration =
 
 export const EXECUTE_GATE_TOOLS: Record<string, ExecuteGateRegistration> = {
   // Agent Scan (plan §11.2): the buy/sell lot-direction split is gone (no PnL
-  // lot tracking survives) — ONE execute toolId per venue. `provider` still
+  // lot tracking survives) - ONE execute toolId per venue. `provider` still
   // binds the venue-specific identity, so a kyberswap prequote can never
   // authorize a uniswap execute and vice versa (identity/hash.ts unchanged).
   "kyberswap.swap.execute": { kind: "swap", family: "eip155", provider: "kyberswap" },
   "uniswap.swap.execute": { kind: "swap", family: "eip155", provider: "uniswap" },
-  // Trench Express curve execute — matches a fresh `swap` prequote from
+  // Trench Express curve execute - matches a fresh `swap` prequote from
   // trench.trade_quote (provider "trench"); the local-chain 4663 identity is
   // resolved in `gate.ts` (buildEvmIdentity trench branch).
   "trench.trade_execute": { kind: "swap", family: "eip155", provider: "trench" },
@@ -168,7 +168,7 @@ export const EXECUTE_GATE_TOOLS: Record<string, ExecuteGateRegistration> = {
   "pendle.pt.sell": { kind: "swap", family: "eip155", provider: "pendle" },
   "pendle.pt.redeem": { kind: "redeem", family: "eip155", provider: "pendle" },
   // Pendle YT buy / early-exit sell match a fresh `swap` prequote (the token legs
-  // are addresses — chain-scoped, collision-safe). `pendle.claim` is an income
+  // are addresses - chain-scoped, collision-safe). `pendle.claim` is an income
   // sweep with NOTHING quoted, so it has NO prequote entry (approval-gated only).
   "pendle.yt.buy": { kind: "swap", family: "eip155", provider: "pendle" },
   "pendle.yt.sell": { kind: "swap", family: "eip155", provider: "pendle" },

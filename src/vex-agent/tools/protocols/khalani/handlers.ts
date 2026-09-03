@@ -1,5 +1,5 @@
 /**
- * Khalani protocol handlers — aggregator.
+ * Khalani protocol handlers - aggregator.
  * Split into modules: read (chains/tokens/quotes/orders), bridge (mutating).
  */
 

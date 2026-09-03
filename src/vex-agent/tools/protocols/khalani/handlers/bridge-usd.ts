@@ -3,9 +3,9 @@
  *
  * Khalani serves ZERO USD in quotes and orders (live-verified). To stamp a USD
  * estimate on a recorded bridge, we resolve it ourselves from the ONLY Khalani
- * surface that carries it — `GET /v1/tokens` `extensions.price.usd` — at the
+ * surface that carries it - `GET /v1/tokens` `extensions.price.usd` - at the
  * moment we record, then multiply by the human token amount. Every lookup is
- * fail-soft: a miss yields `null` USD (a NAMED, accepted degradation — never a
+ * fail-soft: a miss yields `null` USD (a NAMED, accepted degradation - never a
  * fabricated figure) and the caller records the token amounts only.
  *
  * The `usd_source` marker (`KHALANI_TOKEN_PRICE_USD_SOURCE`) makes the provenance
@@ -21,7 +21,7 @@ import type { KhalaniToken } from "@tools/khalani/types.js";
 
 export const KHALANI_TOKEN_PRICE_USD_SOURCE = "khalani_token_price";
 
-/** Resolved token facts for one side of a bridge — any field may be absent. */
+/** Resolved token facts for one side of a bridge - any field may be absent. */
 export interface KhalaniTokenInfo {
   readonly symbol?: string;
   readonly decimals?: number;

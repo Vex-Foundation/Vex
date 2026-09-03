@@ -1,7 +1,7 @@
 /**
  * Relay bridge identity builder + quote-shape validator (LOCKED Wave-2 #4/#5).
  *
- * Relay gets its OWN bridge identity path — it does NOT reuse Khalani's builder.
+ * Relay gets its OWN bridge identity path - it does NOT reuse Khalani's builder.
  * The relay QUOTE recorder (`relay.quote.get`) and the relay EXECUTE gate
  * (`relay.bridge`) both build an IDENTICAL identity from the same params so
  * their match-hashes collide, with `provider: "relay"` bound in (so a khalani
@@ -47,7 +47,7 @@ function parseTradeType(raw: string): BridgeTradeType {
  *
  * Shares ONE resolver (`resolveRelaySlippageBps`) with the handler lane
  * (`relay/handlers/bridge/legs.ts`'s `resolveLegs`), so the identity can never
- * bind a value the handler would have refused — nor a DIFFERENT value than the
+ * bind a value the handler would have refused - nor a DIFFERENT value than the
  * one the provider is sent.
  *
  * ABSENT → the materialized Vex default, not a `""` sentinel (W4a): the handler
@@ -88,12 +88,16 @@ export async function buildRelayBridgeIdentity(
   const fromChainId = resolveRelayChainId(fromChain, chains);
   const toChainId = resolveRelayChainId(toChain, chains);
 
-  // Relay v1 is EVM-only — the signer + recipient are the same EVM EOA across
+  // Relay v1 is EVM-only - the signer + recipient are the same EVM EOA across
   // EVM chains.
   const sourceWallet = resolveSelectedAddress(context.walletResolution, context.walletPolicy, "eip155");
-  const explicitRecipient = relayStr(params, "recipient");
-  const recipient = explicitRecipient !== "" ? explicitRecipient : sourceWallet;
-  // DERIVED, never read from params — same refund-destination policy as the
+  // DERIVED, never read from params - the bridge-destination policy the Khalani
+  // identity (`./bridge.ts`) applies, for the same reason a params-bound
+  // `refundTo` was closed below: a model-chosen destination set identically on
+  // the quote and the execute collides the hashes and passes the gate. Relay is
+  // EVM-only, so the destination IS the selected EVM wallet.
+  const recipient = sourceWallet;
+  // DERIVED, never read from params - same refund-destination policy as the
   // Khalani identity (`./bridge.ts`). Binding it from PARAMS could not stop the
   // vector it was meant to stop: an attacker setting the SAME address on the
   // quote AND the execute collides the hashes and passes the gate. Unchanged
@@ -116,11 +120,11 @@ export async function buildRelayBridgeIdentity(
     amount,
     tradeType: parseTradeType(relayStr(params, "tradeType")),
     refundTo,
-    // Relay has no referrer/fee/filler surface — stable empties.
+    // Relay has no referrer/fee/filler surface - stable empties.
     referrer: "",
     referrerFeeBps: "",
     filler: "",
-    // Relay DOES forward slippage (`slippageTolerance`), so it must be bound —
+    // Relay DOES forward slippage (`slippageTolerance`), so it must be bound -
     // this was the one identity where the doctrine had been missed. Since W4a
     // the value is ALWAYS present (default materialized), never a `""` sentinel.
     slippageBps: canonRelaySlippageBps(params),

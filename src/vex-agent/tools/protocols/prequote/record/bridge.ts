@@ -20,7 +20,7 @@ import { writePrequoteRow } from "./row.js";
 
 /**
  * Bounded structural-only safetyDetail for a bridge prequote. A successful
- * Khalani quote proves route availability, NOT token safety — so the verdict is
+ * Khalani quote proves route availability, NOT token safety - so the verdict is
  * ALWAYS `unknown` and the detail says exactly that (object shape, no raw text).
  */
 const BRIDGE_SAFETY_DETAIL: Record<string, unknown> = {
@@ -70,7 +70,7 @@ export async function recordBridgePrequote(
     sessionId,
     matchHash,
     kind: "bridge",
-    // Bridge prequote `family` is the SOURCE family (where the signer lives) —
+    // Bridge prequote `family` is the SOURCE family (where the signer lives) -
     // mirrors the verdict provider/family pairing the gate reads back by kind.
     family: identity.sourceFamily,
     provider,

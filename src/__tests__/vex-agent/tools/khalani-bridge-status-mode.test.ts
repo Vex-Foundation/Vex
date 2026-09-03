@@ -28,7 +28,7 @@ describe("BridgeStatus mode conflict", () => {
   it("names the discarded parameter when one is combined with orderId", () => {
     const reason = rejectBridgeStatusModeConflict({ orderId: "order_abc123", limit: 5 });
     expect(reason).toBe(
-      "BridgeStatus takes EITHER orderId (one order) OR the list filters, never both — "
+      "BridgeStatus takes EITHER orderId (one order) OR the list filters, never both - "
       + "limit was supplied alongside orderId and would have been silently discarded. "
       + "Drop orderId to filter a list, or drop limit to read that one order.",
     );
