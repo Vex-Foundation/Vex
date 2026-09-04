@@ -82,6 +82,12 @@ const LOCKER_UNAVAILABLE: PoolsOnChainSnapshot = {
   },
 };
 
+/** The registered fixture's locker info, or a loud failure if the fixture stops being registered. */
+function registeredInfo(snapshot: PoolsOnChainSnapshot) {
+  if (snapshot.locker.status !== "registered") throw new Error("fixture is not a registered snapshot");
+  return snapshot.locker.info;
+}
+
 /** A V3 token: the case that came back "unregistered / older sushi launcher" before the repair. */
 const REGISTERED_V3: PoolsOnChainSnapshot = {
   ...REGISTERED,
@@ -90,7 +96,7 @@ const REGISTERED_V3: PoolsOnChainSnapshot = {
     suite: POOLS_SUITES.find((suite) => suite.version === 3)!,
     launcher: "0x33eF6673BD80cB11fcC41b82Bc2181E65cC4d2fA",
     info: {
-      ...(REGISTERED.locker as { info: PoolsOnChainSnapshot["locker"] extends { info: infer I } ? I : never }).info,
+      ...registeredInfo(REGISTERED),
       // The measured V2/V3 split: creator 90 percent, community bucket ZERO.
       feeSplitBps: {
         creator: 9000, platform: 500, buyback: 500, community: 0,

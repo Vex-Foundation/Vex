@@ -121,6 +121,8 @@ function plan(): PoolsLaunchPlan {
     predictedPoolAddress: POOL,
     metadataUri: METADATA_URI,
     imageLanded: true,
+    gas: { limit: 0n, priceWei: 0n, boundWei: 0n },
+    simulateOnly: false,
     binding: {
       name: "Vex Flamingo",
       symbol: "VEXFLAM",

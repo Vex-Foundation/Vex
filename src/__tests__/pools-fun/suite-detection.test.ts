@@ -23,7 +23,7 @@
  * would prove only that the test can return a value.
  */
 
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach, type Mock } from "vitest";
 import { getAddress, type Address } from "viem";
 
 import { POOLS_SUITES } from "@tools/pools-fun/constants.js";
@@ -72,7 +72,7 @@ function batch(
 const registeredOn = { poolInfo: HOLDS, splits: SPLITS, launcher: ok(LAUNCHER) };
 const silentAbout = { poolInfo: HOLDS_NOT, splits: HOLDS_NOT, launcher: ok(ZERO) };
 
-let multicall: ReturnType<typeof vi.fn>;
+let multicall: Mock<(...args: unknown[]) => unknown>;
 
 vi.mock("@tools/evm-chains/evm-client.js", () => ({
   getLocalPublicClient: () => ({

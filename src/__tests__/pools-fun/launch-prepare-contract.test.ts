@@ -55,8 +55,9 @@ describe("the live prepare body validates", () => {
     // members has no consumer left, and keeping both fragments in one ABI would
     // make `decodeFunctionData` ambiguous on the exact call that spends money.
     // The verifier reports this as a named `selector_and_encoding` refusal.
-    expect(live().data.slice(0, 10)).toBe("0xb3ee5495");
-    expect(decodeLaunchCalldata(live().data as `0x${string}`)).toBeNull();
+    const body = live() as { data: `0x${string}` };
+    expect(body.data.slice(0, 10)).toBe("0xb3ee5495");
+    expect(decodeLaunchCalldata(body.data)).toBeNull();
   });
 
   it("the V3 response's recipient IS the one inside its own calldata", () => {
