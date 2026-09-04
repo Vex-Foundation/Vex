@@ -2,12 +2,20 @@
  * THE VEX STUDIO MCP HOST, PROVEN BY A REAL CLIENT SESSION.
  *
  * Every other Studio spec proves that the installer WROTE a config. This one
- * proves the config WORKS: a project is created through the shell, and the
+ * proves that config WORKS: a project is created through the shell, and the
  * `[mcp_servers.vex]` block the installer put in that project's
  * `.codex/config.toml` is then used - as bytes, not as a template - to reach
- * the running app twice.
+ * the running app.
  *
- * ## Two layers, because they prove different things
+ * ## Three layers, because they prove different things
+ *
+ * LAYER 0 is CONFIGURATION, and it costs nothing: the installed block is
+ * copied verbatim into a throwaway `CODEX_HOME` and `codex mcp list --json`
+ * is asked what Codex now sees. The binary answers with the `vex` stdio entry,
+ * its command, its args and its timeout, under NO command-line override. The
+ * same command run from inside the project with an EMPTY `CODEX_HOME` answers
+ * `[]`, which is the measured fact that codex-cli 0.153.2 does not read a
+ * project-level `.codex/config.toml` at all.
  *
  * LAYER 1 is a REAL MCP CLIENT and no model at all: the spec spawns the
  * `vex-mcp` bridge exactly as the installed config names it, performs
@@ -25,16 +33,23 @@
  * its event stream is read for `mcp_tool_call` items. A model's prose is never
  * the evidence here - the events are.
  *
- * ## Why the server is passed to Codex on the command line
+ * ## WHAT THIS SPEC DOES NOT PROVE, stated plainly
  *
- * MEASURED, codex-cli 0.153.2: a project-level `.codex/config.toml` is NOT
- * read. `codex mcp list` run from inside a directory holding one reports "No
- * MCP servers configured yet"; only `$CODEX_HOME/config.toml` is loaded. So
- * this spec parses the installed file and replays its exact `command`, `args`
- * and `tool_timeout_sec` through `-c mcp_servers.vex.*` overrides, which
- * `codex mcp list --json` confirms produce an identical stdio server entry.
- * The overrides are runtime-only: the owner's `~/.codex/config.toml` is never
- * read, copied or written by this spec.
+ * It does not prove that Codex DISCOVERS a project's config on its own,
+ * because codex-cli 0.153.2 does not: only `$CODEX_HOME/config.toml` is
+ * loaded, and layer 0 asserts both halves of that. Layer 2 therefore replays
+ * the installed entry's exact `command`, `args` and `tool_timeout_sec` through
+ * `-c mcp_servers.vex.*` overrides. What layers 0 and 2 together establish is
+ * that the bytes the installer wrote are a valid Codex MCP configuration and
+ * that a real agent reaches the host through them - not that a user who drops
+ * the project into Codex gets those tools without a further step.
+ *
+ * The zero-override path cannot carry layer 2 either, and the reason is
+ * measured rather than assumed: `CODEX_HOME` is also where Codex reads
+ * credentials, so a throwaway home answers 401. `fixtures/codex-live-runner.ts`
+ * records that measurement beside the code that acts on it. The overrides stay
+ * runtime-only: the owner's `~/.codex/config.toml` is never read, copied or
+ * written by this spec.
  *
  * ## Why the config dir has to be handed over explicitly
  *
@@ -57,11 +72,9 @@
  * nothing here can spend funds.
  */
 
-import { spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { parse as parseToml } from "smol-toml";
-import { z } from "zod";
 import {
   CallToolResultSchema,
   InitializeResultSchema,
@@ -69,6 +82,14 @@ import {
 } from "@modelcontextprotocol/core";
 import { test, expect } from "./fixtures/vex-app-with-database.js";
 import { enterStudio, tourTo } from "./fixtures/studio-shell.js";
+import {
+  CLIENT_PROTOCOL_VERSION,
+  openBridgeSession,
+  readInstalledVexEntry,
+  toolResultText,
+  type InstalledVexEntry,
+} from "./fixtures/studio-mcp-client.js";
+import { codexVersion, listCodexMcpServers, runCodex } from "./fixtures/codex-live-runner.js";
 
 /** This walk runs only when it is asked for by name. */
 const MCP_LIVE = process.env.VEX_E2E_MCP_LIVE === "1";
@@ -80,19 +101,6 @@ const MCP_LIVE_SKIP_REASON =
 /** Where the evidence this walk produces is archived, with its provenance. */
 const EVIDENCE_DIR =
   "/tmp/claude-1000/-home-kubas-Vex/0ca1de3e-7a01-4552-ba76-c7971d6fd3e1/scratchpad/startup/mcp-live";
-
-/**
- * The MCP revision this client offers.
- *
- * Read from the machine artifact rather than from convention:
- * `node_modules/@modelcontextprotocol/core/dist/auth-CUe6YdwF.mjs` defines
- * `LATEST_PROTOCOL_VERSION = "2025-11-25"`, and
- * `@modelcontextprotocol/server` gates its own priming behaviour on
- * `>= "2025-11-25"`. The constant is not re-exported from either package's
- * entry point, which is why it is spelled here with its source; the negotiated
- * value the server answers with is asserted rather than assumed.
- */
-const CLIENT_PROTOCOL_VERSION = "2025-11-25";
 
 /**
  * The $VEX pool, as the app itself names it.
@@ -114,238 +122,6 @@ const E2E_VAULT_PASSWORD = "vex-e2e-mcp-live-passphrase";
 
 /** How long the whole walk may take: two model turns plus a live provider. */
 const WALK_TIMEOUT_MS = 900_000;
-
-/** How long one Codex turn may take before the walk counts as stuck. */
-const CODEX_TIMEOUT_MS = 360_000;
-
-/** How long one MCP request may wait for its response. */
-const MCP_REQUEST_TIMEOUT_MS = 60_000;
-
-/* ============================ wire vocabulary ============================= */
-
-/**
- * The JSON-RPC envelope, validated before the payload inside it is handed to a
- * protocol schema. Two boundaries, two validations: this one proves the frame
- * is a response to OUR request, the protocol schema proves the result is the
- * shape the specification names.
- */
-const jsonRpcResponseSchema = z.object({
-  jsonrpc: z.literal("2.0"),
-  id: z.union([z.number(), z.string()]),
-  result: z.unknown().optional(),
-  error: z
-    .object({ code: z.number(), message: z.string(), data: z.unknown().optional() })
-    .optional(),
-});
-
-/**
- * One `codex exec --json` line. Only the fields this walk reads are named; a
- * stream carrying more is normal and is archived whole.
- *
- * The item vocabulary is the binary's own: `item.started` / `item.completed`
- * envelopes carrying an item whose `type` is one of `mcp_tool_call`,
- * `agent_message`, `command_execution` and the rest, which is what
- * `strings` over the shipped codex binary enumerates.
- */
-const codexEventSchema = z.object({
-  type: z.string(),
-  item: z
-    .object({
-      type: z.string(),
-      server: z.string().optional(),
-      tool: z.string().optional(),
-      status: z.string().optional(),
-      text: z.string().optional(),
-      arguments: z.unknown().optional(),
-      // `error` is the CLIENT's own transport failure; a tool that refused
-      // still answers, and its sentence arrives inside `result.content`.
-      error: z.unknown().nullable().optional(),
-      result: z
-        .object({
-          content: z
-            .array(z.object({ type: z.string(), text: z.string().optional() }).loose())
-            .optional(),
-        })
-        .loose()
-        .nullable()
-        .optional(),
-    })
-    .loose()
-    .optional(),
-});
-
-/** The installed `[mcp_servers.vex]` block, as the installer's key allowlist writes it. */
-const installedVexEntrySchema = z.object({
-  command: z.string().min(1),
-  args: z.array(z.string()),
-  tool_timeout_sec: z.number(),
-});
-
-type InstalledVexEntry = z.infer<typeof installedVexEntrySchema>;
-
-/* ========================= a real MCP stdio client ======================== */
-
-/** One live stdio session against the bridge binary. The caller owns `close`. */
-interface BridgeSession {
-  request(method: string, params: Record<string, unknown>): Promise<unknown>;
-  notify(method: string, params: Record<string, unknown>): void;
-  /** Everything the bridge wrote to stderr, for the failure report. */
-  stderr(): string;
-  close(): Promise<void>;
-}
-
-/**
- * Spawn the bridge exactly as the installed config names it and speak
- * newline-delimited JSON-RPC to it, which is the MCP stdio transport.
- *
- * Written here rather than pulled from a client SDK because the repository
- * ships `@modelcontextprotocol/core` and `/server` and no client package, and
- * a new dependency is outside this walk's ownership. The protocol schemas from
- * `core` still do the validating, so nothing about the wire is asserted from
- * memory.
- */
-function openBridgeSession(
-  entry: InstalledVexEntry,
-  env: Readonly<Record<string, string>>,
-): BridgeSession {
-  const child = spawn(entry.command, [...entry.args], {
-    stdio: ["pipe", "pipe", "pipe"],
-    env: { ...process.env, ...env },
-  });
-
-  const pending = new Map<number, { resolve(value: unknown): void; reject(cause: Error): void }>();
-  let nextId = 1;
-  let stdoutBuffer = "";
-  let stderrText = "";
-  let exited: { code: number | null; signal: NodeJS.Signals | null } | null = null;
-
-  // The method each id was sent for, so a JSON-RPC error names what failed.
-  const methods = new Map<number, string>();
-  const methodOf = (id: number | string): string =>
-    typeof id === "number" ? methods.get(id) ?? `request ${String(id)}` : String(id);
-
-  const failAllPending = (cause: Error): void => {
-    for (const waiter of pending.values()) waiter.reject(cause);
-    pending.clear();
-  };
-
-  child.stdout.setEncoding("utf8");
-  child.stdout.on("data", (chunk: string) => {
-    stdoutBuffer += chunk;
-    for (;;) {
-      const newline = stdoutBuffer.indexOf("\n");
-      if (newline === -1) break;
-      const line = stdoutBuffer.slice(0, newline).trim();
-      stdoutBuffer = stdoutBuffer.slice(newline + 1);
-      if (line === "") continue;
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(line);
-      } catch {
-        // A non-JSON line on an MCP stdio stream is the server's own noise;
-        // it is kept with the stderr evidence rather than thrown away.
-        stderrText += `[stdout non-json] ${line}\n`;
-        continue;
-      }
-      const framed = jsonRpcResponseSchema.safeParse(parsed);
-      // A notification from the server carries no `id` and is not an answer to
-      // anything this client asked; it is not an error either.
-      if (!framed.success) continue;
-      // Every id this client mints is a number, so a string id belongs to
-      // nothing it is waiting for.
-      const id = framed.data.id;
-      if (typeof id !== "number") continue;
-      const waiter = pending.get(id);
-      if (waiter === undefined) continue;
-      pending.delete(id);
-      if (framed.data.error !== undefined) {
-        waiter.reject(
-          new Error(
-            `${methodOf(id)}: the server answered error ` +
-              `${String(framed.data.error.code)}: ${framed.data.error.message}`,
-          ),
-        );
-        continue;
-      }
-      waiter.resolve(framed.data.result);
-    }
-  });
-
-  child.stderr.setEncoding("utf8");
-  child.stderr.on("data", (chunk: string) => {
-    stderrText += chunk;
-  });
-
-  child.on("exit", (code, signal) => {
-    exited = { code, signal };
-    failAllPending(
-      new Error(
-        `the vex-mcp bridge exited (code ${String(code)}, signal ${String(signal)}) ` +
-          `before answering. Its stderr:\n${stderrText}`,
-      ),
-    );
-  });
-  child.on("error", (cause: Error) => {
-    failAllPending(new Error(`the vex-mcp bridge could not be spawned: ${cause.message}`));
-  });
-
-  const write = (payload: Record<string, unknown>): void => {
-    if (exited !== null) {
-      throw new Error(`the vex-mcp bridge has already exited; its stderr:\n${stderrText}`);
-    }
-    child.stdin.write(`${JSON.stringify(payload)}\n`);
-  };
-
-  return {
-    async request(method, params) {
-      const id = nextId;
-      nextId += 1;
-      methods.set(id, method);
-      const answer = new Promise<unknown>((resolve, reject) => {
-        pending.set(id, { resolve, reject });
-      });
-      write({ jsonrpc: "2.0", id, method, params });
-      let timer: NodeJS.Timeout | undefined;
-      const deadline = new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => {
-          pending.delete(id);
-          reject(
-            new Error(
-              `${method} did not answer within ${String(MCP_REQUEST_TIMEOUT_MS)}ms. ` +
-                `The bridge's stderr so far:\n${stderrText}`,
-            ),
-          );
-        }, MCP_REQUEST_TIMEOUT_MS);
-      });
-      try {
-        return await Promise.race([answer, deadline]);
-      } finally {
-        if (timer !== undefined) clearTimeout(timer);
-      }
-    },
-    notify(method, params) {
-      write({ jsonrpc: "2.0", method, params });
-    },
-    stderr() {
-      return stderrText;
-    },
-    async close() {
-      if (exited !== null) return;
-      child.stdin.end();
-      await new Promise<void>((resolve) => {
-        const timer = setTimeout(() => {
-          child.kill("SIGKILL");
-          resolve();
-        }, 5_000);
-        timer.unref();
-        child.once("exit", () => {
-          clearTimeout(timer);
-          resolve();
-        });
-      });
-    },
-  };
-}
 
 /* =============================== helpers ================================= */
 
@@ -379,26 +155,11 @@ async function projectDirectory(projectsRoot: string, stamp: string): Promise<st
   return path.join(projectsRoot, slug);
 }
 
-/** The `[mcp_servers.vex]` entry the installer wrote, parsed by a real TOML parser. */
-function readInstalledVexEntry(configTomlPath: string): InstalledVexEntry {
-  const document = parseToml(fs.readFileSync(configTomlPath, "utf8"));
-  const servers = z
-    .object({ mcp_servers: z.object({ vex: z.unknown() }) })
-    .safeParse(document);
-  if (!servers.success) {
-    throw new Error(
-      `${configTomlPath} carries no [mcp_servers.vex] section; the installer ` +
-        "writes one for every project whose agent selection includes Codex CLI",
-    );
-  }
-  return installedVexEntrySchema.parse(servers.data.mcp_servers.vex);
-}
-
-/** Text content joined out of an MCP tool result. */
-function toolResultText(result: z.infer<typeof CallToolResultSchema>): string {
-  return result.content
-    .map((part) => (part.type === "text" ? part.text : `[${part.type}]`))
-    .join("\n");
+/** The commit the app under test was built from, for the provenance line. */
+function gitHead(): string {
+  const run = spawnSync("git", ["rev-parse", "--short", "HEAD"], { encoding: "utf8" });
+  if (run.error !== undefined || run.status !== 0) return "git: unavailable";
+  return run.stdout.trim();
 }
 
 /** Write one evidence file and return its path, so the report can name it. */
@@ -506,12 +267,46 @@ test.describe("Studio MCP, live", () => {
       expect(entry.args[0]).toBe("--project");
     });
 
+    /* ---- 4. LAYER 0: what Codex makes of those bytes, for free ---------- */
+
+    // TWO MEASURED HALVES OF ONE FACT, asserted rather than left in a comment,
+    // because the whole honesty of this spec rests on them. `codex mcp list
+    // --json` reaches no model and needs no credentials, so this step is free.
+    await test.step("the installed block is a zero-override Codex configuration, and the project path is not", async () => {
+      const emptyHome = path.join(runDir, "codex-home-empty");
+      fs.mkdirSync(emptyHome, { recursive: true });
+      expect(
+        listCodexMcpServers({ codexHome: emptyHome, cwd: projectDir }),
+        "codex read the project-level .codex/config.toml after all - the -c " +
+          "overrides layer 2 uses exist only because it does not, so this " +
+          "spec's claim and its mechanism both need revisiting",
+      ).toEqual([]);
+
+      const codexHome = path.join(runDir, "codex-home-installed");
+      fs.mkdirSync(codexHome, { recursive: true });
+      // The installer's own bytes, unedited. A rewrite here would prove a file
+      // this test composed rather than the file the product wrote.
+      fs.copyFileSync(configTomlPath, path.join(codexHome, "config.toml"));
+      const servers = listCodexMcpServers({ codexHome, cwd: projectDir });
+      const vex = servers.find((server) => server.name === "vex");
+      expect(vex, "codex loaded no `vex` server from the installed block").toBeDefined();
+      if (vex === undefined) throw new Error("unreachable: asserted defined above");
+      expect(vex.enabled).toBe(true);
+      expect(vex.transport.type).toBe("stdio");
+      expect(vex.transport.command).toBe(entry.command);
+      expect(vex.transport.args).toEqual(entry.args);
+      expect(vex.tool_timeout_sec).toBe(entry.tool_timeout_sec);
+      archived.push(
+        archive(runDir, "layer0-codex-mcp-list.json", `${JSON.stringify(servers, null, 2)}\n`),
+      );
+    });
+
     // The one thing an installed entry cannot carry and this run needs: the
     // throwaway config dir. See the file header for why it travels here and
     // nowhere else.
     const bridgeEnv = { VEX_CONFIG_DIR: vexDb.stack.configDir };
 
-    /* ---- 4. LAYER 1: a real MCP session, no model involved -------------- */
+    /* ---- 5. LAYER 1: a real MCP session, no model involved -------------- */
 
     let toolSearchDescription = "";
     let candleText = "";
@@ -547,13 +342,15 @@ test.describe("Studio MCP, live", () => {
           "vex_ToolSearch was listed without a description, so no agent can know what it is for",
         ).toBeGreaterThan(0);
 
-        // `chain` is not in this tool's JSON-Schema `required` list (only
-        // `query` is) and the handler still demands it: MEASURED against the
-        // live host, a call with `query` alone is refused with "Parameters
-        // \"chain\", \"chainIds\" ... are mutually exclusive and none of them is
-        // set". The cross-field rule lives in the handler, not the schema, so
-        // it is only knowable by calling. Scoped to the chain the $VEX pool
-        // lives on, which also keeps the walk to one provider request.
+        // Scoped to the chain the $VEX pool lives on, which keeps the walk to
+        // one provider request. UNSCOPED IS ALSO LEGAL and this walk is what
+        // established that it had stopped being so: on 2026-09-04 the live host
+        // refused a `query`-only call with "Parameters \"chain\", \"chainIds\"
+        // ... are mutually exclusive and none of them is set", because the
+        // manifest declared the pair `exclusiveParamGroups` (exactly one) while
+        // its description and handler both treat naming no chain as a valid
+        // cross-chain search. The manifest now declares `atMostOne`, and
+        // `dexscreener-manifest.test.ts` owns the boundary assertion.
         const found = CallToolResultSchema.parse(
           await session.request("tools/call", {
             name: "dexscreener__pairs_search",
@@ -606,7 +403,7 @@ test.describe("Studio MCP, live", () => {
       }
     });
 
-    /* ---- 5. the app's own side of that session -------------------------- */
+    /* ---- 6. the app's own side of that session -------------------------- */
 
     await test.step("the app served it", async () => {
       const mainLog = path.join(vexDb.stack.configDir, ".electron-state", "logs", "main.log");
@@ -627,7 +424,7 @@ test.describe("Studio MCP, live", () => {
       ).toEqual([]);
     });
 
-    /* ---- 6. LAYER 2: the external agent --------------------------------- */
+    /* ---- 7. LAYER 2: the external agent --------------------------------- */
 
     await test.step("Codex sees the tools and reads the chart", async () => {
       const prompt =
@@ -679,11 +476,12 @@ test.describe("Studio MCP, live", () => {
       // A REFUSAL IS NOT A BREAKAGE, and the difference is the whole point of
       // the product's outcome vocabulary: a tool that refuses BY NAME names the
       // precondition, ran nothing, and is meant to be called again once the
-      // caller fixes it. MEASURED here: Codex's first `pairs_search` omitted
-      // `chain`, was refused with the sentence that names the remedy, and its
-      // next call succeeded. What must never happen is a call that failed with
-      // no tool-level answer at all - a dead socket, a scrubbed environment, a
+      // caller fixes it. What must never happen is a call that failed with no
+      // tool-level answer at all - a dead socket, a scrubbed environment, a
       // host that refused the connection - so THAT is what this asserts.
+      // (The refusal this walk actually met, an unscoped `pairs_search`, was a
+      // manifest defect and is fixed; a tolerated refusal here must never be
+      // read as evidence that a refusal was correct.)
       const unanswered = dexCalls.filter(
         (call) => call.status === "failed" && !call.refusedByName,
       );
@@ -717,7 +515,7 @@ test.describe("Studio MCP, live", () => {
       expect(events.finalMessage, "the analysis carries no figures").toMatch(/\d/u);
     });
 
-    /* ---- 7. provenance -------------------------------------------------- */
+    /* ---- 8. provenance -------------------------------------------------- */
 
     const provenance = [
       `utc: ${new Date().toISOString()}`,
@@ -735,155 +533,3 @@ test.describe("Studio MCP, live", () => {
     await testInfo.attach("provenance.txt", { body: provenance, contentType: "text/plain" });
   });
 });
-
-/* ============================ the Codex spawn ============================= */
-
-interface CodexToolCall {
-  readonly server: string | undefined;
-  readonly tool: string | undefined;
-  readonly status: string | undefined;
-  /**
-   * Did the HOST answer this call with a refusal sentence of its own?
-   *
-   * True means the tool ran nothing and said why, which is a normal outcome the
-   * caller can act on. False on a failed call means nothing came back at all.
-   */
-  readonly refusedByName: boolean;
-  /** The tool's own sentence, when it answered one. */
-  readonly answer: string;
-}
-
-interface CodexRun {
-  readonly raw: string;
-  readonly stderr: string;
-  readonly exitCode: number | null;
-  readonly finalMessage: string;
-  readonly toolCalls: readonly CodexToolCall[];
-}
-
-/**
- * Run one non-interactive Codex turn against this run's Vex host.
- *
- * `--skip-git-repo-check` because a freshly created Vex project is not a git
- * repository, and `--sandbox read-only` because nothing this walk asks for
- * writes anything: the sandbox is the second, independent guarantee that a
- * live agent turn inside a test cannot touch the tree.
- */
-async function runCodex(options: {
-  readonly projectDir: string;
-  readonly entry: InstalledVexEntry;
-  readonly bridgeEnv: Readonly<Record<string, string>>;
-  readonly prompt: string;
-}): Promise<CodexRun> {
-  const envToml = Object.entries(options.bridgeEnv)
-    .map(([key, value]) => `${key}=${JSON.stringify(value)}`)
-    .join(", ");
-  const args = [
-    "exec",
-    "--cd",
-    options.projectDir,
-    "--sandbox",
-    "read-only",
-    "--skip-git-repo-check",
-    "--json",
-    // The installed entry, replayed. Codex 0.153.2 reads no project-level
-    // config, so its own bytes are handed over on the command line instead.
-    "-c",
-    `mcp_servers.vex.command=${JSON.stringify(options.entry.command)}`,
-    "-c",
-    `mcp_servers.vex.args=${JSON.stringify(options.entry.args)}`,
-    "-c",
-    `mcp_servers.vex.tool_timeout_sec=${String(options.entry.tool_timeout_sec)}`,
-    "-c",
-    `mcp_servers.vex.env={${envToml}}`,
-    "-",
-  ];
-
-  const child = spawn("codex", args, {
-    cwd: options.projectDir,
-    stdio: ["pipe", "pipe", "pipe"],
-  });
-  child.stdin.write(options.prompt);
-  child.stdin.end();
-
-  let raw = "";
-  let stderr = "";
-  child.stdout.setEncoding("utf8");
-  child.stdout.on("data", (chunk: string) => {
-    raw += chunk;
-  });
-  child.stderr.setEncoding("utf8");
-  child.stderr.on("data", (chunk: string) => {
-    stderr += chunk;
-  });
-
-  const exitCode = await new Promise<number | null>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      child.kill("SIGKILL");
-      reject(
-        new Error(
-          `codex exec did not finish within ${String(CODEX_TIMEOUT_MS)}ms; its stderr:\n${stderr}`,
-        ),
-      );
-    }, CODEX_TIMEOUT_MS);
-    child.once("error", (cause: Error) => {
-      clearTimeout(timer);
-      reject(new Error(`codex could not be spawned: ${cause.message}`));
-    });
-    child.once("close", (code) => {
-      clearTimeout(timer);
-      resolve(code);
-    });
-  });
-
-  const toolCalls: CodexToolCall[] = [];
-  let finalMessage = "";
-  for (const line of raw.split("\n")) {
-    if (line.trim() === "") continue;
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    const event = codexEventSchema.safeParse(parsed);
-    if (!event.success) continue;
-    const item = event.data.item;
-    if (event.data.type !== "item.completed" || item === undefined) continue;
-    if (item.type === "mcp_tool_call") {
-      const answer = (item.result?.content ?? [])
-        .map((part) => part.text ?? "")
-        .join("\n")
-        .trim();
-      toolCalls.push({
-        server: item.server,
-        tool: item.tool,
-        status: item.status,
-        refusedByName: item.error === null || item.error === undefined ? answer !== "" : false,
-        answer,
-      });
-    }
-    // The LAST agent message is the answer; earlier ones are the turn's
-    // narration and are kept in the archived stream rather than asserted on.
-    if (item.type === "agent_message" && item.text !== undefined) finalMessage = item.text;
-  }
-
-  return { raw, stderr, exitCode, finalMessage, toolCalls };
-}
-
-/** The Codex build this evidence came from. */
-function codexVersion(): string {
-  return readCommand("codex", ["--version"]);
-}
-
-/** The commit the app under test was built from. */
-function gitHead(): string {
-  return readCommand("git", ["rev-parse", "--short", "HEAD"]);
-}
-
-/** A short command's stdout, or a sentence saying it could not be read. */
-function readCommand(command: string, args: readonly string[]): string {
-  const run = spawnSync(command, [...args], { encoding: "utf8" });
-  if (run.error !== undefined || run.status !== 0) return `${command}: unavailable`;
-  return run.stdout.trim();
-}
