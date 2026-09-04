@@ -51,7 +51,7 @@ describe("sanitizeRequestingClientName", () => {
   });
 
   /**
-   * The Codex-final-review defect: refusing only ASCII controls left every
+   * The defect this closes: refusing only ASCII controls left every
    * Unicode class that can make the rendered line lie. Each case here is a name
    * a human would read as something OTHER than what the client declared.
    *
