@@ -288,11 +288,25 @@ function resolveRowAmountBasis(
  * output-schema failure mode cannot recur here.
  */
 function mapVexFee(row: AgentScanRow): AgentScanVexFee | null {
-  if (row.status === "failed" && row.vex_fee_source !== "separate_leg") return null;
-  const tokenSymbol = sanitizeTokenSymbol(row.vex_fee_token_symbol);
-  const amountHuman = row.vex_fee_amount_human;
-  if (tokenSymbol === null && amountHuman === null) return null;
-  return { tokenSymbol, amountHuman };
+  // THE MONEY half. Suppressed on a failed row unless the charge was its own
+  // confirmed transfer, exactly as before.
+  const moneyWithheld = row.status === "failed" && row.vex_fee_source !== "separate_leg";
+  const tokenSymbol = moneyWithheld ? null : sanitizeTokenSymbol(row.vex_fee_token_symbol);
+  const amountHuman = moneyWithheld ? null : row.vex_fee_amount_human;
+  // THE ATTEMPT half (owner rule V1, 2026-09-04). A fee leg that is pending or
+  // reverted carries no money and still has to be visible, so its presence alone
+  // is enough to emit the object. Never withheld by the money rule above: the
+  // question it answers is "was a fee attempted", not "was one collected".
+  const legStatus = boundedText(row.vex_fee_leg_status, ACTIVITY_STATUS_MAX_LENGTH);
+  if (tokenSymbol === null && amountHuman === null && legStatus === null) return null;
+  return {
+    tokenSymbol,
+    amountHuman,
+    status: legStatus,
+    txHash: boundedText(row.vex_fee_leg_tx_hash, AGENT_SCAN_TEXT_BOUNDS.txRef),
+    chainId: toChainId(row.vex_fee_leg_chain_id),
+    chainFamily: boundedText(row.vex_fee_leg_chain_family, AGENT_SCAN_TEXT_BOUNDS.chainFamily),
+  };
 }
 
 // ── Entry ─────────────────────────────────────────────────────────────────

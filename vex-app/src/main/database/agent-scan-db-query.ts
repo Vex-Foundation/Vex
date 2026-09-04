@@ -295,26 +295,38 @@ const CURSOR_TS_EXPR = `to_char(aa.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"
 
 /**
  * THE VEX FEE FROM ITS SEPARATE LEG, projected onto the logical row (R1 Step 2b)
- * — a READ projection that writes nothing, so the documented
+ * - a READ projection that writes nothing, so the documented
  * `SUM(usd_vex_fee_est) WHERE status='confirmed'` revenue invariant is
  * byte-unaffected.
  *
  * Since the OWNER REVISION of 2026-08-05 no fee leg is its own ledger entry here
  * (see `AGENT_ACTIVITY_LOGICAL_ROW_PREDICATE`), so this is the ONLY place the
- * charge is visible on this surface and it projects unconditionally. The former
- * "and only if that leg is not already its own row" guard was the exact predicate
- * that is now false for every fee role, and is deleted rather than kept as a tautology.
+ * charge is visible on this surface and it projects unconditionally.
  *
- * A9 — a confirmed fee whose PARENT FAILED stays visible: the sibling arm gates
- * on `fee.status = 'confirmed'` only, never on `aa.status`, so the failed launch
- * row still reports the fee that was really charged. Only the OWN-ROW arm is
- * gated on `aa.status = 'confirmed'`, because those columns are written at intent
- * time and the row's own status is what says whether that fee was collected.
+ * A9 - a confirmed fee whose PARENT FAILED stays visible: the sibling arm never
+ * consults `aa.status`, so the failed launch row still reports the fee that was
+ * really charged. Only the OWN-ROW arm is gated on `aa.status = 'confirmed'`,
+ * because those columns are written at intent time and the row's own status is
+ * what says whether that fee was collected.
  *
- * ONE SOURCE WINS WHOLE, and the anomalies FAIL CLOSED — two confirmed fee legs
+ * V1 (owner decision 2026-09-04, mirroring the AgentScan server's
+ * `read-repo.ts`) - a PENDING or REVERTED fee attempt stays visible too. The
+ * sibling lateral no longer filters on `fee.status = 'confirmed'`; the picked
+ * leg's status, hash and chain are projected for every state, while the MONEY
+ * fields (symbol, amount, USD) are still filled only by a CONFIRMED leg, because
+ * an attempted charge is not a charge. A confirmed retry wins the ORDER BY, so
+ * the money is read from the leg that actually settled. Before this rule a swap
+ * or launch whose fee transfer was still in flight, or had reverted, reported NO
+ * fee attempt at all.
+ *
+ * ONE SOURCE WINS WHOLE, and the anomalies FAIL CLOSED - two CONFIRMED fee legs
  * on one execution, or an own-row fee beside a confirmed sibling, report NO
- * exact fee at all. Reporting one exact-looking fee while knowingly omitting
- * another is a money field stating less than the truth.
+ * exact fee at all, and the multiplicity case blanks the leg-visibility fields
+ * with it. Reporting one exact-looking fee while knowingly omitting another is a
+ * money field stating less than the truth. The count is
+ * `FILTER (WHERE status = 'confirmed')` and not a plain `count(*)`: with pending
+ * and failed legs now admitted, a legitimate failed-then-confirmed retry pair
+ * would otherwise be read as a double charge and blank a real fee.
  */
 const VEX_FEE_LATERALS = `
       LEFT JOIN LATERAL (
@@ -322,26 +334,36 @@ const VEX_FEE_LATERALS = `
                COALESCE(fee.executed_amount_in_human, fee.amount_in_human) AS vex_fee_amount_human,
                COALESCE(fee.executed_amount_in_raw,   fee.amount_in_raw)   AS vex_fee_amount_raw,
                fee.usd_vex_fee_est                                        AS usd_vex_fee_est,
-               count(*) OVER ()                                           AS fee_leg_count
+               fee.status                                                 AS leg_status,
+               fee.tx_hash                                                AS leg_tx_hash,
+               fee.chain_id                                               AS leg_chain_id,
+               fee.chain_family                                           AS leg_chain_family,
+               count(*) FILTER (WHERE fee.status = 'confirmed') OVER ()    AS confirmed_leg_count
           FROM agent_activity fee
          WHERE fee.protocol_execution_id = aa.protocol_execution_id
            AND fee.id        <> aa.id
            AND fee.event_role IN ('bridge_fee','swap_fee','trench_fee','pools_fee','tx_vex_fee','vex_fee')
-           AND fee.status     = 'confirmed'
-         ORDER BY fee.event_index ASC
+         ORDER BY (fee.status = 'confirmed') DESC, fee.event_index DESC, fee.id DESC
          LIMIT 1
       ) fee_leg ON TRUE
       LEFT JOIN LATERAL (
         SELECT (aa.vex_fee_amount_raw IS NOT NULL AND aa.status = 'confirmed')  AS own_ok,
                (fee_leg.vex_fee_amount_raw IS NOT NULL
-                AND fee_leg.fee_leg_count = 1)                                  AS sibling_ok
+                AND fee_leg.leg_status = 'confirmed'
+                AND fee_leg.confirmed_leg_count <= 1)                           AS sibling_ok,
+               (fee_leg.leg_status IS NOT NULL
+                AND fee_leg.confirmed_leg_count <= 1)                           AS leg_visible
       ) fee_flags ON TRUE
       LEFT JOIN LATERAL (
         SELECT CASE
                  WHEN fee_flags.own_ok AND fee_flags.sibling_ok THEN NULL
                  WHEN fee_flags.own_ok THEN 'in_transaction'
                  WHEN fee_flags.sibling_ok THEN 'separate_leg'
-               END::text AS vex_fee_source
+               END::text AS vex_fee_source,
+               CASE WHEN fee_flags.leg_visible THEN fee_leg.leg_status END::text       AS vex_fee_leg_status,
+               CASE WHEN fee_flags.leg_visible THEN fee_leg.leg_tx_hash END::text      AS vex_fee_leg_tx_hash,
+               CASE WHEN fee_flags.leg_visible THEN fee_leg.leg_chain_id END           AS vex_fee_leg_chain_id,
+               CASE WHEN fee_flags.leg_visible THEN fee_leg.leg_chain_family END::text AS vex_fee_leg_chain_family
       ) fee_pick ON TRUE`;
 
 /**
@@ -471,6 +493,15 @@ export function buildAgentScanPageQuery(args: AgentScanQueryArgs): AgentScanQuer
           WHEN 'separate_leg' THEN fee_leg.vex_fee_amount_human
         END AS vex_fee_amount_human,
         fee_pick.vex_fee_source,
+        -- Owner rule V1: the fee ATTEMPT itself, whatever became of it. Not a
+        -- money field, so it survives the confirmed-only gate above.
+        CASE fee_pick.vex_fee_leg_status
+          WHEN 'definitively_failed' THEN 'failed'
+          ELSE fee_pick.vex_fee_leg_status
+        END AS vex_fee_leg_status,
+        LEFT(fee_pick.vex_fee_leg_tx_hash, ${AGENT_SCAN_TEXT_BOUNDS.txRef}) AS vex_fee_leg_tx_hash,
+        fee_pick.vex_fee_leg_chain_id,
+        LEFT(fee_pick.vex_fee_leg_chain_family, ${AGENT_SCAN_TEXT_BOUNDS.chainFamily}) AS vex_fee_leg_chain_family,
         LEFT(aa.failure_code, ${AGENT_SCAN_TEXT_BOUNDS.failureCode}) AS failure_code,
         LEFT(aa.failure_reason, ${AGENT_SCAN_TEXT_BOUNDS.failureReason}) AS failure_reason,
         LEFT(aa.tx_hash, ${AGENT_SCAN_TEXT_BOUNDS.txRef}) AS tx_hash,

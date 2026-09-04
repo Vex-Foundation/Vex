@@ -136,25 +136,35 @@ describe("agentscan_reporting_state — singleton + progress stamps", () => {
     expect(new Date(state.nextRegisterAttemptAt).getTime()).toBeGreaterThan(Date.now() + 500_000);
 
     await stampRegistered();
-    await repo.markBackfillEnqueued();
+    const registered = await repo.getReportingState();
+    await repo.enqueueBackfillAndMark({ startedAtGeneration: registered.registrationGeneration });
     state = await repo.getReportingState();
     expect(state.registeredAt).not.toBeNull();
     expect(state.backfillEnqueuedAt).not.toBeNull();
+    // The marker says WHICH vocabulary the backfill covered, not merely that one ran.
+    expect(state.backfillVocabularyVersion).toBe(repo.AGENTSCAN_VOCABULARY_VERSION);
+    const generationBeforeReset = state.registrationGeneration;
 
     await repo.resetForReRegistration();
     state = await repo.getReportingState();
     expect(state.registeredAt).toBeNull();
     expect(state.backfillEnqueuedAt).toBeNull();
+    // The whole history is owed again, so the coverage claim goes with it, and
+    // the generation moves so a mark that started before this reset is refused.
+    expect(state.backfillVocabularyVersion).toBeNull();
+    expect(state.registrationGeneration).toBe(generationBeforeReset + 1);
     // identity survives an auth_lost recovery — only the progress stamps reset
     expect(state.agentHash).toBe(IDENTITY_A.agentHash);
   });
 
-  it("markStopped + markBackfillEnqueued persist", async () => {
+  it("markStopped + the backfill marker persist", async () => {
     const repo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
-    await repo.markBackfillEnqueued();
+    const before = await repo.getReportingState();
+    await repo.enqueueBackfillAndMark({ startedAtGeneration: before.registrationGeneration });
     await repo.markStopped("consent_revoked");
     const state = await repo.getReportingState();
     expect(state.backfillEnqueuedAt).not.toBeNull();
+    expect(state.backfillVocabularyVersion).toBe(repo.AGENTSCAN_VOCABULARY_VERSION);
     expect(state.stoppedReason).toBe("consent_revoked");
   });
 
@@ -337,7 +347,22 @@ describe("agentscan_outbox — claim-and-stamp lifecycle", () => {
 });
 
 describe("agentscan_outbox — resetForReRegistration (auth_lost full resend)", () => {
-  it("resends previously-sent rows with backfill:true; rejected rows stay terminal; unsent rows are untouched", async () => {
+  /**
+   * CONTRACT CHANGE 2026-09-04 (Codex final review, round 1). This test used to
+   * assert that an UNSENT row keeps `backfill = false` through the reset. That
+   * expectation was the defect written down: the 401 that enters this path
+   * arrives while a batch is in flight, so the rows that were being sent are
+   * exactly the ones still `sent_at IS NULL` and still flagged as live activity.
+   * Surviving the reset, they are drained later against a freshly-registered
+   * identity and this install's HISTORY reaches the server labelled as activity
+   * that just happened. The controlled backfill cannot correct it either -
+   * `enqueueEligibleActivity` diffs on `(activity_id, status)` and those pairs
+   * already have rows, so it inserts nothing.
+   *
+   * The rule now is: EVERY non-rejected row, sent or unsent, becomes owed again
+   * as history. Poisoned rows stay poisoned.
+   */
+  it("resends every non-rejected row, SENT OR UNSENT, as backfill:true; rejected rows stay terminal", async () => {
     const repo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
     const { execute, queryOne } = await import("@vex-agent/db/client.js");
 
@@ -389,7 +414,9 @@ describe("agentscan_outbox — resetForReRegistration (auth_lost full resend)", 
     );
     expect(unsentRow?.sent_at).toBeNull();
     expect(unsentRow?.rejected_at).toBeNull();
-    expect(unsentRow?.backfill).toBe(false);
+    // The row this whole contract change exists for: in flight when the 401
+    // landed, so it must be re-labelled history rather than kept as live.
+    expect(unsentRow?.backfill).toBe(true);
 
     // Force-due everything: the resent row must be reclaimable as backfill;
     // the rejected row must stay out of the candidate set forever.
@@ -398,6 +425,9 @@ describe("agentscan_outbox — resetForReRegistration (auth_lost full resend)", 
     const resent = reclaimed.find((c) => c.outboxId === sentOutboxId);
     if (!resent) throw new Error("expected the previously-sent row to be reclaimable");
     expect(resent.backfill).toBe(true);
+    const reclaimedUnsent = reclaimed.find((c) => c.outboxId === unsentOutboxId);
+    if (!reclaimedUnsent) throw new Error("expected the unsent row to be reclaimable");
+    expect(reclaimedUnsent.backfill).toBe(true);
     expect(reclaimed.some((c) => c.outboxId === rejectedOutboxId)).toBe(false);
   });
 

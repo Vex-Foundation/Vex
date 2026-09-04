@@ -402,21 +402,30 @@ export async function claimAgentscanAttestCandidates(input: {
  * queue and answered 2xx. Terminal for the SUBMISSION sweep; the row moves to
  * the read-back sweep below, because acceptance is not verification.
  *
- * `verifyStatus` is the queue state the server named in that same response. It
- * is written only when the row has no verdict yet, so a read-back that already
- * settled the row cannot be walked backwards by a late duplicate submission.
+ * THE POST PATH IS SUBMISSION ONLY. It records that the claim was sent and
+ * writes NO verify status, and that is a correctness requirement rather than a
+ * simplification. The server's `token-attestations-repo.ts` answers a DUPLICATE
+ * POST with the row's EXISTING `verifyStatus`, which can already be `verified`;
+ * the previous version of this function copied that word onto the row while
+ * leaving `agentscan_verified_at` NULL, and migration 102's
+ * `launched_tokens_agentscan_verified_stamp` CHECK forbids exactly that pair.
+ * The canonical way in is ordinary: this install crashes after the server
+ * commits the attestation and before this mark lands, the row is claimed again,
+ * the duplicate POST returns `verified`, and the UPDATE aborts on the CHECK -
+ * every sweep, forever, because the row never leaves the candidate set.
+ *
+ * The status and its stamp are therefore written in exactly one place,
+ * `recordAgentscanVerifyStatus`, from the GET verdict that is the only authority
+ * on whether the creation proof held. A duplicate POST's status is a log line
+ * there and nothing more.
  */
-export async function markAgentscanAttested(
-  id: number,
-  verifyStatus: string | null = null,
-): Promise<boolean> {
+export async function markAgentscanAttested(id: number): Promise<boolean> {
   const row = await queryOne<Record<string, unknown>>(
     `UPDATE launched_tokens
-        SET agentscan_attested_at = NOW(),
-            agentscan_verify_status = COALESCE(agentscan_verify_status, $2)
+        SET agentscan_attested_at = NOW()
       WHERE id = $1 AND agentscan_attested_at IS NULL
       RETURNING id`,
-    [id, verifyStatus],
+    [id],
   );
   return row !== null;
 }
@@ -469,12 +478,25 @@ export async function claimAgentscanVerifyCandidates(input: {
 }
 
 /**
- * Record the server's verdict for one submitted attestation.
+ * Record the server's verdict for one submitted attestation. THE ONLY WRITER of
+ * `agentscan_verify_status` and `agentscan_verified_at`.
  *
  * `agentscan_verified_at` is stamped ONLY for `verified`, which is what migration
  * 102's `launched_tokens_agentscan_verified_stamp` requires: the status and the
- * stamp can never tell different stories about the same row. The write is scoped
- * to submitted rows so a verdict can never appear on a row that was never sent.
+ * stamp can never tell different stories about the same row. Writing them in one
+ * statement, in one place, is what makes that CHECK unfalsifiable rather than a
+ * trap for a second writer.
+ *
+ * A COMPARE-AND-SET, not a blind write. The row is updated only while its status
+ * is still open - `NULL` (never read back) or `unverified` (the server's own
+ * word for "queued, not judged"). Two sweeps can overlap on one row (the claim
+ * uses `FOR UPDATE SKIP LOCKED` per batch, not per row across runs), and an HTTP
+ * response can arrive out of order with a newer one, so without the guard a
+ * stale `unverified` read could land after a terminal `verified` or `mismatch`
+ * and walk a settled row backwards into the polling set. The four terminal
+ * verdicts are answers that cannot change by asking again; this predicate is
+ * what makes that true of the stored row as well as of the sweep's candidate
+ * query. `false` therefore means "already settled", not "not found".
  */
 export async function recordAgentscanVerifyStatus(input: {
   id: number;
@@ -485,7 +507,9 @@ export async function recordAgentscanVerifyStatus(input: {
         SET agentscan_verify_status = $2,
             agentscan_verify_checked_at = NOW(),
             agentscan_verified_at = CASE WHEN $2 = 'verified' THEN NOW() ELSE NULL END
-      WHERE id = $1 AND agentscan_attested_at IS NOT NULL
+      WHERE id = $1
+        AND agentscan_attested_at IS NOT NULL
+        AND (agentscan_verify_status IS NULL OR agentscan_verify_status = 'unverified')
       RETURNING id`,
     [input.id, input.status],
   );

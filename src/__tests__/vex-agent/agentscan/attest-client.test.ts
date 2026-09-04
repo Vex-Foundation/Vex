@@ -53,13 +53,47 @@ const INPUT = {
 };
 
 describe("postTokenAttestation — wire shape", () => {
+  /**
+   * THE POST'S STATUS IS NOT A VERDICT, and the client's job is to keep the two
+   * distinguishable rather than to hide one. A DUPLICATE POST is answered by the
+   * server's `token-attestations-repo.ts` with the row's EXISTING `verifyStatus`,
+   * so a retry after a crash can carry `verified` out of a request that proved
+   * nothing. The outcome kind stays `accepted` whatever that word says: only
+   * `fetchTokenAttestationVerdict` can produce a `verdict`, and only that kind
+   * is allowed to reach the row's status column and its `verified_at` stamp.
+   */
+  it.each(["unverified", "verified", "mismatch", "unverifiable", "revoked"])(
+    "reports a %s in the POST response as an ACCEPTED submission, never as a verdict",
+    async (reported) => {
+      stubFetch(jsonResponse(200, { status: "accepted", verifyStatus: reported }));
+      const outcome = await postTokenAttestation("http://localhost", INPUT);
+
+      expect(outcome.kind).toBe("accepted");
+      expect(outcome).not.toHaveProperty("status");
+      expect(outcome).toEqual({ kind: "accepted", verifyStatus: reported });
+    },
+  );
+
+  it("carries a null verifyStatus when the 2xx body names none, and still accepts the submission", async () => {
+    stubFetch(jsonResponse(200, { status: "accepted" }));
+    expect(await postTokenAttestation("http://localhost", INPUT)).toEqual({
+      kind: "accepted",
+      verifyStatus: null,
+    });
+  });
+
   it("POSTs to /v1/tokens/attest with NO auth header and the exact, lowercased body", async () => {
     const mock = stubFetch(jsonResponse(200, { status: "accepted", verifyStatus: "verified" }));
     const outcome = await postTokenAttestation("http://localhost", INPUT);
 
-    // ACCEPTED carries the QUEUE state the server named, not a verdict: the
-    // POST answers `{status:"accepted", verifyStatus}` and the verdict is read
-    // back separately.
+    // ACCEPTED carries the QUEUE state the server named, and it is NOT a
+    // verdict. The client reports it verbatim - a duplicate POST is answered
+    // with the row's existing status, `verified` included - and that word is
+    // NON-AUTHORITATIVE by contract: `sync/agentscan-attest.ts` logs it and
+    // stores nothing, because a POST proves only that the claim was accepted,
+    // and `db/repos/launched-tokens.ts` writes the status solely from the GET
+    // verdict, together with the `verified_at` stamp migration 102's CHECK
+    // requires beside it.
     expect(outcome).toEqual({ kind: "accepted", verifyStatus: "verified" });
     expect(mock).toHaveBeenCalledTimes(1);
     const [url, init] = mock.mock.calls[0] as [string, RequestInit];

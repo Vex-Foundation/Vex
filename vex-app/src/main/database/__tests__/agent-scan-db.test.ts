@@ -289,10 +289,57 @@ describe("getAgentScan row selection", () => {
       // excluded shows it twice.
       "fee.event_role IN ('bridge_fee','swap_fee','trench_fee','pools_fee','tx_vex_fee','vex_fee')",
     );
-    expect(sql).toContain("fee.status     = 'confirmed'");
     // The deleted guard was the logical-row predicate applied to the `fee`
-    // alias — the only place this SQL ever spoke of `fee.kind`.
+    // alias - the only place this SQL ever spoke of `fee.kind`.
     expect(sql).not.toContain("fee.kind");
+  });
+
+  /**
+   * OWNER RULE V1 (2026-09-04), and the defect it closes. The sibling lateral
+   * used to select `AND fee.status = 'confirmed'`, so a swap or launch whose fee
+   * transfer was still in flight, or had reverted, reported NO fee attempt at
+   * all - while the fee leg was also excluded from the row list, which is the
+   * only other place it could have appeared. The MONEY fields stay
+   * confirmed-only, because an attempted charge is not a charge.
+   *
+   * This surface has no real-Postgres harness in this repository, so its
+   * counterpart assertions are SQL-text pins; the executed behaviour is proven
+   * against real Postgres for the sibling projection in
+   * `src/__tests__/integration/agent-scan/vex-fee-projection.int.test.ts`.
+   */
+  it("admits a fee leg in ANY status, and only a CONFIRMED one may fill a money field", async () => {
+    await getAgentScan(EMPTY_INPUT, CORRELATION_ID);
+    const { sql } = pageCall();
+
+    // The lateral no longer filters the leg on its status...
+    expect(sql).not.toContain("fee.status     = 'confirmed'");
+    // ...it ORDERS a confirmed leg first, so a confirmed retry after a failed
+    // attempt is the leg the money is read from.
+    expect(sql).toContain("ORDER BY (fee.status = 'confirmed') DESC");
+    // ...and the money discriminator requires that the picked leg confirmed.
+    expect(sql).toContain("AND fee_leg.leg_status = 'confirmed'");
+    // The double-charge count filters on CONFIRMED, or a legitimate
+    // failed-then-confirmed retry pair would read as an anomaly and blank a fee
+    // that was really taken exactly once.
+    expect(sql).toContain("count(*) FILTER (WHERE fee.status = 'confirmed') OVER ()");
+  });
+
+  it("projects the ATTEMPT's own status, hash and chain beside the money fields", async () => {
+    await getAgentScan(EMPTY_INPUT, CORRELATION_ID);
+    const { sql } = pageCall();
+
+    expect(sql).toContain("AS vex_fee_leg_status");
+    expect(sql).toContain("AS vex_fee_leg_tx_hash");
+    expect(sql).toContain("vex_fee_leg_chain_id");
+    expect(sql).toContain("AS vex_fee_leg_chain_family");
+    // Visible only while the double-charge anomaly is ruled out: with two
+    // confirmed legs the row cannot say which charge it is describing, so it
+    // reports no fee at all rather than half of one.
+    expect(sql).toContain("fee_flags.leg_visible");
+    expect(sql).toContain("fee_leg.confirmed_leg_count <= 1");
+    // The DTO's status vocabulary is `pending | confirmed | failed`, so the
+    // stored terminal name is collapsed here exactly as the row's own is.
+    expect(sql).toContain("WHEN 'definitively_failed' THEN 'failed'");
   });
 
   it("reads agent_activity ONLY - no legacy union arm", async () => {

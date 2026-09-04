@@ -160,10 +160,13 @@ describe("agentscan attest sweep — claim/POST/mark (AC2)", () => {
          FROM launched_tokens WHERE id = $1`,
       [seeded.id],
     );
-    // SUBMITTED, not verified: the server queued the claim and said so, and the
-    // verified stamp stays null until it judges the creation proof.
+    // SUBMITTED, and NOTHING ELSE. The POST is the submission arrow of the state
+    // machine and writes no verdict: the status the response named is not
+    // authority (a duplicate POST is answered with the row's EXISTING status,
+    // `verified` included), so it is logged and left to the GET read-back, which
+    // writes the status and its stamp together.
     expect(row?.agentscan_attested_at).not.toBeNull();
-    expect(row?.agentscan_verify_status).toBe("unverified");
+    expect(row?.agentscan_verify_status).toBeNull();
     expect(row?.agentscan_verified_at).toBeNull();
   });
 
@@ -374,7 +377,9 @@ describe("agentscan attest sweep: the verdict read-back (D4)", () => {
     expect(result).toMatchObject({ verdictsChecked: 1, verdictsSettled: 0 });
 
     const row = await verifyRow(seeded.id);
-    expect(row?.agentscan_verify_status).toBe("unverified");
+    // `absent` is not a verdict, so the status is still whatever the read-back
+    // last stored - nothing, because only a verdict may write it.
+    expect(row?.agentscan_verify_status).toBeNull();
     expect(row?.agentscan_verify_checked_at).not.toBeNull();
   });
 
@@ -404,5 +409,136 @@ describe("agentscan attest sweep: the verdict read-back (D4)", () => {
 
     const result = await lane.runAgentscanAttest(deps(new ScriptedAttest().fn, throwing));
     expect(result).toMatchObject({ verdictsChecked: 2, verdictsSettled: 1 });
+  });
+});
+
+/**
+ * THE DUPLICATE POST AFTER A CRASH, and the CHECK it used to violate forever.
+ *
+ * The server's `token-attestations-repo.ts` answers a duplicate POST with the
+ * row's EXISTING `verifyStatus` - which, once its verify job has run, is
+ * `verified`. The canonical way to send one is ordinary: this install POSTs, the
+ * server commits the attestation, and the process dies before
+ * `markAgentscanAttested` lands. The row is still unattested locally, so the
+ * next sweep claims it and POSTs again.
+ *
+ * While the POST path copied that word onto the row, the UPDATE wrote
+ * `agentscan_verify_status = 'verified'` with `agentscan_verified_at` still
+ * NULL, which migration 102's `launched_tokens_agentscan_verified_stamp` CHECK
+ * forbids. The statement aborted, the row was never marked attested, and it
+ * came back on every sweep from then on - a permanent loop out of an ordinary
+ * crash. The POST is submission only now, so the retry simply succeeds.
+ */
+describe("agentscan attest sweep: a duplicate POST after a crash before the local mark", () => {
+  it("marks the retry attested instead of aborting on the verified-stamp CHECK", async () => {
+    const seeded = await seedLaunchedToken({ withSignature: true });
+    const lane = await import("../../../vex-agent/sync/agentscan-attest.js");
+
+    // The crash: the server committed the attestation, this install did not.
+    // The row is therefore still unattested and comes back as a candidate.
+    const retry = new ScriptedAttest();
+    retry.outcomes = [{ kind: "accepted", verifyStatus: "verified" }];
+
+    const result = await lane.runAgentscanAttest(deps(retry.fn));
+
+    expect(result).toMatchObject({ checked: 1, attested: 1, invalid: 0, retryable: 0 });
+    const row = await queryOne<{
+      agentscan_attested_at: Date | null;
+      agentscan_verify_status: string | null;
+      agentscan_verified_at: Date | null;
+    }>(
+      `SELECT agentscan_attested_at, agentscan_verify_status, agentscan_verified_at
+         FROM launched_tokens WHERE id = $1`,
+      [seeded.id],
+    );
+    expect(row?.agentscan_attested_at).not.toBeNull();
+    // The server's word travelled no further than a log line: the row records
+    // SUBMITTED and waits for the GET, which writes the status and the stamp
+    // together and can therefore never contradict the CHECK.
+    expect(row?.agentscan_verify_status).toBeNull();
+    expect(row?.agentscan_verified_at).toBeNull();
+
+    // And the row has left the submission set for good.
+    const second = new ScriptedAttest();
+    await lane.runAgentscanAttest(deps(second.fn));
+    expect(second.calls).toHaveLength(0);
+  });
+
+  it("the verdict path stamps status and verified_at together, so the CHECK holds", async () => {
+    const seeded = await seedLaunchedToken({ withSignature: true });
+    const lane = await import("../../../vex-agent/sync/agentscan-attest.js");
+    await lane.runAgentscanAttest(deps(new ScriptedAttest().fn));
+    await execute(
+      `UPDATE launched_tokens SET agentscan_verify_checked_at = NULL WHERE id = $1`,
+      [seeded.id],
+    );
+
+    const verdict = new ScriptedVerdict();
+    verdict.outcomes = [{ kind: "verdict", status: "verified" }];
+    const result = await lane.runAgentscanAttest(deps(new ScriptedAttest().fn, verdict.fn));
+
+    expect(result).toMatchObject({ verdictsChecked: 1, verdictsSettled: 1 });
+    const row = await queryOne<{
+      agentscan_verify_status: string | null;
+      agentscan_verified_at: Date | null;
+    }>(
+      `SELECT agentscan_verify_status, agentscan_verified_at FROM launched_tokens WHERE id = $1`,
+      [seeded.id],
+    );
+    expect(row?.agentscan_verify_status).toBe("verified");
+    expect(row?.agentscan_verified_at).not.toBeNull();
+  });
+});
+
+/**
+ * THE COMPARE-AND-SET on the verdict write. A terminal verdict is an answer that
+ * cannot change by asking again, and the sweep's candidate query already says so
+ * - but a response in flight when the terminal one landed would otherwise walk
+ * the row backwards into the polling set, and (for `verified`) drop the
+ * `verified_at` stamp the CHECK requires beside it.
+ */
+describe("recordAgentscanVerifyStatus: a compare-and-set from an OPEN status only", () => {
+  it("refuses to downgrade a settled verdict, and leaves its stamp intact", async () => {
+    const repo = await import("@vex-agent/db/repos/launched-tokens.js");
+    const seeded = await seedLaunchedToken({ withSignature: true });
+    const lane = await import("../../../vex-agent/sync/agentscan-attest.js");
+    await lane.runAgentscanAttest(deps(new ScriptedAttest().fn));
+
+    expect(await repo.recordAgentscanVerifyStatus({ id: seeded.id, status: "verified" })).toBe(true);
+    // The stale read-back, arriving after the terminal one.
+    expect(await repo.recordAgentscanVerifyStatus({ id: seeded.id, status: "unverified" })).toBe(false);
+    // And a second terminal verdict cannot overwrite the first either.
+    expect(await repo.recordAgentscanVerifyStatus({ id: seeded.id, status: "mismatch" })).toBe(false);
+
+    const row = await queryOne<{
+      agentscan_verify_status: string | null;
+      agentscan_verified_at: Date | null;
+    }>(
+      `SELECT agentscan_verify_status, agentscan_verified_at FROM launched_tokens WHERE id = $1`,
+      [seeded.id],
+    );
+    expect(row?.agentscan_verify_status).toBe("verified");
+    expect(row?.agentscan_verified_at).not.toBeNull();
+  });
+
+  it("accepts a verdict over the OPEN `unverified` state, which settles nothing on its own", async () => {
+    const repo = await import("@vex-agent/db/repos/launched-tokens.js");
+    const seeded = await seedLaunchedToken({ withSignature: true });
+    const lane = await import("../../../vex-agent/sync/agentscan-attest.js");
+    await lane.runAgentscanAttest(deps(new ScriptedAttest().fn));
+
+    expect(await repo.recordAgentscanVerifyStatus({ id: seeded.id, status: "unverified" })).toBe(true);
+    expect(await repo.recordAgentscanVerifyStatus({ id: seeded.id, status: "mismatch" })).toBe(true);
+
+    const row = await queryOne<{
+      agentscan_verify_status: string | null;
+      agentscan_verified_at: Date | null;
+    }>(
+      `SELECT agentscan_verify_status, agentscan_verified_at FROM launched_tokens WHERE id = $1`,
+      [seeded.id],
+    );
+    expect(row?.agentscan_verify_status).toBe("mismatch");
+    // A non-verified verdict never carries the stamp - the other half of the CHECK.
+    expect(row?.agentscan_verified_at).toBeNull();
   });
 });

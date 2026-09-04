@@ -45,11 +45,18 @@ interface Seeded {
  * `bridge_fee` leg in the given status. The fee leg is deliberately NOT a feed
  * row — that is the whole problem being fixed.
  */
+type FeeLegStatus = "pending" | "confirmed" | "definitively_failed";
+
 async function seedBridgeWithFeeLeg(
-  feeStatus: "pending" | "confirmed",
+  feeStatus: FeeLegStatus,
   logicalStatus: "pending" | "confirmed" | "definitively_failed" = "pending",
   extraFeeLegs = 0,
   feeRole: "bridge_fee" | "vex_fee" = "bridge_fee",
+  /**
+   * Status for the EXTRA fee legs, when a retry has to differ from the first
+   * attempt. Defaults to `feeStatus`, which is the double-charge fixture.
+   */
+  extraFeeStatus: FeeLegStatus = feeStatus,
 ): Promise<Seeded> {
   const repo = await import("../../../vex-agent/db/repos/agent-activity.js");
   const sessionId = `vex-fee-projection-${randomUUID()}`;
@@ -117,16 +124,22 @@ async function seedBridgeWithFeeLeg(
   // production can never produce.
   const feeLegs = result.legs.filter((leg) => leg.eventRole === feeRole);
   let nonce = 1;
-  for (const leg of feeLegs) {
+  for (const [index, leg] of feeLegs.entries()) {
+    const status = index === 0 ? feeStatus : extraFeeStatus;
     await repo.markActivityBroadcast(leg.id, {
       txHash: `0x${String(leg.id).padStart(64, "0")}`,
       fromAddress: walletAddress,
       nonce: nonce++,
     });
-    if (feeStatus === "confirmed") {
+    if (status === "confirmed") {
       await repo.confirmActivityEvent(leg.id, {
         executedAmountInRaw: FEE_RAW,
         executedAmountInHuman: FEE_HUMAN,
+      });
+    } else if (status === "definitively_failed") {
+      await repo.failActivityEvent(leg.id, {
+        failureCode: "mined_revert",
+        failureReason: "fixture: the fee transfer reverted on chain",
       });
     }
   }
@@ -311,12 +324,64 @@ describe("Vex fee — the separate leg reaches the logical feed row", () => {
     expect(row?.vexFeeTokenDecimals).toBe(18);
   });
 
-  it("reports NOTHING while the fee leg is still pending — a planned fee is not a collected one", async () => {
+  /**
+   * CONTRACT CHANGE 2026-09-04, owner rule V1 (Codex final review, round 1).
+   * This case used to assert that a PENDING fee leg reports nothing at all, and
+   * the sibling lateral enforced it with `AND fee.status = 'confirmed'`. That is
+   * two different statements collapsed into one: "no money was taken yet" is
+   * true, "no fee was attempted" is false, and the row served only the second.
+   * A swap or launch whose fee transfer is in flight, or has reverted, is
+   * exactly the state a user needs to see - it is money that may still leave the
+   * wallet - and the fold made it invisible.
+   *
+   * The rule now: the ATTEMPT is always visible with its own status, hash and
+   * chain; the MONEY fields stay confirmed-only, because an attempted charge is
+   * not a charge.
+   */
+  it("shows a PENDING fee ATTEMPT with its status and hash, and no money", async () => {
     const seeded = await seedBridgeWithFeeLeg("pending");
     const row = await feedRow(seeded);
 
     expect(row?.vexFeeAmountRaw).toBeNull();
+    expect(row?.vexFeeAmountHuman).toBeNull();
     expect(row?.vexFeeTokenSymbol).toBeNull();
+    expect(row?.usdVexFeeEst).toBeNull();
+
+    expect(row?.vexFeeLegStatus).toBe("pending");
+    expect(row?.vexFeeLegTxHash).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(row?.vexFeeLegChainId).toBe(CHAIN_ID);
+    expect(row?.vexFeeLegChainFamily).toBe("eip155");
+  });
+
+  it("shows a REVERTED fee attempt as failed, and still pays out no money field", async () => {
+    const seeded = await seedBridgeWithFeeLeg("definitively_failed");
+    const row = await feedRow(seeded);
+
+    expect(row?.vexFeeLegStatus).toBe("definitively_failed");
+    expect(row?.vexFeeLegTxHash).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(row?.vexFeeAmountRaw).toBeNull();
+    expect(row?.vexFeeTokenSymbol).toBeNull();
+  });
+
+  it("reads the money from the CONFIRMED retry after a failed attempt, and keeps the failure on the record", async () => {
+    // Two fee children on one execution: index 1 reverted, index 2 settled. The
+    // ORDER BY puts the confirmed leg first, so the money comes from the transfer
+    // that actually happened - and, critically, the failed-then-confirmed pair is
+    // NOT the double-charge anomaly, because the multiplicity count filters on
+    // `status = 'confirmed'`. Counting both would blank a fee really taken once.
+    const seeded = await seedBridgeWithFeeLeg("definitively_failed", "pending", 1, "bridge_fee", "confirmed");
+    const row = await feedRow(seeded);
+
+    expect(row?.vexFeeAmountRaw).toBe(FEE_RAW);
+    expect(row?.vexFeeAmountHuman).toBe(FEE_HUMAN);
+    expect(row?.vexFeeLegStatus).toBe("confirmed");
+
+    // The failed attempt is not erased by the retry: the bridge row's own leg
+    // list carries every sibling, so the reverted transfer stays on the record
+    // beside the one that settled.
+    const legs = row?.legs as { role: string | null; status: string | null }[] | null;
+    const feeLegs = (legs ?? []).filter((leg) => leg.role === "bridge_fee");
+    expect(feeLegs.map((leg) => leg.status).sort()).toEqual(["confirmed", "definitively_failed"]);
   });
 
   it("keeps reporting a CONFIRMED fee after the parent bridge fails — the money did leave the wallet", async () => {
@@ -332,13 +397,19 @@ describe("Vex fee — the separate leg reaches the logical feed row", () => {
   it("FAILS CLOSED on two confirmed fee legs rather than reporting one and hiding the other", async () => {
     // Reporting one exact-looking fee while knowingly omitting another is a
     // money field stating less than the truth with no marker. Summing is not an
-    // option until split-fee semantics are defined.
+    // option until split-fee semantics are defined. The anomaly is REPORTED
+    // rather than silently summed - `transactions-mappers.ts` logs
+    // `agent_scan.fee_leg_multiplicity` from `vex_fee_anomaly` - and the
+    // ATTEMPT fields blank with the money, because the projection cannot say
+    // which of the two charges the row is describing.
     const seeded = await seedBridgeWithFeeLeg("confirmed", "pending", 1);
     const row = await feedRow(seeded);
 
     expect(row?.vexFeeAmountRaw).toBeNull();
     expect(row?.vexFeeAmountHuman).toBeNull();
     expect(row?.vexFeeTokenSymbol).toBeNull();
+    expect(row?.vexFeeLegStatus).toBeNull();
+    expect(row?.vexFeeLegTxHash).toBeNull();
   });
 
   it("never assembles a MIXED tuple — every fee field comes from the one winning source", async () => {

@@ -60,6 +60,10 @@ function row(overrides: Partial<AgentScanRow> = {}): AgentScanRow {
     vex_fee_token_symbol: null,
     vex_fee_amount_human: null,
     vex_fee_source: null,
+    vex_fee_leg_status: null,
+    vex_fee_leg_tx_hash: null,
+    vex_fee_leg_chain_id: null,
+    vex_fee_leg_chain_family: null,
     failure_code: null,
     failure_reason: null,
     tx_hash: "0xdeadbeef",
@@ -330,7 +334,14 @@ describe("mapAgentScanRow amount honesty", () => {
       row({ status: "failed", vex_fee_source: "separate_leg",
             vex_fee_token_symbol: "USDC", vex_fee_amount_human: "0.01" }),
     );
-    expect(separateLeg.vexFee).toEqual({ tokenSymbol: "USDC", amountHuman: "0.01" });
+    expect(separateLeg.vexFee).toEqual({
+      tokenSymbol: "USDC",
+      amountHuman: "0.01",
+      status: null,
+      txHash: null,
+      chainId: null,
+      chainFamily: null,
+    });
   });
 });
 
@@ -500,7 +511,14 @@ describe("mapAgentScanRow fees, failures and bounds", () => {
     const entry = mapValid(
       row({ vex_fee_token_symbol: "USDC", vex_fee_amount_human: "0.0125" }),
     );
-    expect(entry.vexFee).toEqual({ tokenSymbol: "USDC", amountHuman: "0.0125" });
+    expect(entry.vexFee).toEqual({
+      tokenSymbol: "USDC",
+      amountHuman: "0.0125",
+      status: null,
+      txHash: null,
+      chainId: null,
+      chainFamily: null,
+    });
   });
 
   it("carries a tolerant failure code and reason", () => {
@@ -604,12 +622,18 @@ describe("mapAgentScanRow fees, failures and bounds", () => {
  * this suite owns is the last hop: that a folded fee survives the row -> DTO
  * mapping and the IPC output schema, so the charge actually reaches the user.
  */
+const FEE_LEG_TX_HASH = `0x${"ab".repeat(32)}`;
+
 describe("mapAgentScanRow: the launchpad family and its folded fee", () => {
   const FOLDED_FEE = {
     vex_fee_source: "separate_leg" as const,
     vex_fee_token_symbol: "VIRTUAL",
     vex_fee_amount_human: "0.0025",
     vex_fee_usd_est: "0.0087",
+    vex_fee_leg_status: "confirmed",
+    vex_fee_leg_tx_hash: FEE_LEG_TX_HASH,
+    vex_fee_leg_chain_id: 8453,
+    vex_fee_leg_chain_family: "eip155",
   };
 
   it.each([
@@ -623,7 +647,14 @@ describe("mapAgentScanRow: the launchpad family and its folded fee", () => {
 
       expect(entry.activityKind).toBe(activity_kind);
       expect(entry.eventRole).toBe(event_role);
-      expect(entry.vexFee).toEqual({ tokenSymbol: "VIRTUAL", amountHuman: "0.0025" });
+      expect(entry.vexFee).toEqual({
+        tokenSymbol: "VIRTUAL",
+        amountHuman: "0.0025",
+        status: "confirmed",
+        txHash: FEE_LEG_TX_HASH,
+        chainId: 8453,
+        chainFamily: "eip155",
+      });
       expect(entry.usdFeeEst).toBe("0.0087");
     },
   );
@@ -676,5 +707,79 @@ describe("mapAgentScanRow: the launchpad family and its folded fee", () => {
     expect(entry.activityKind).toBe("launch");
     expect(entry.eventRole).toBe("launch_cancel");
     expect(entry.vexFee).toBeNull();
+  });
+});
+
+/**
+ * OWNER RULE V1 (2026-09-04, Codex final review round 1): a fee ATTEMPT is
+ * visible whatever became of it, and only a CONFIRMED one carries money.
+ *
+ * The defect: both fold projections filtered the fee child to
+ * `status = 'confirmed'` while the child was also excluded from the row list, so
+ * a swap or launch whose fee transfer was pending or reverted reported NO fee
+ * attempt at all - the state a user most needs to see, because a pending
+ * transfer is money that may still leave the wallet.
+ */
+describe("mapAgentScanRow: a fee ATTEMPT with no money on it", () => {
+  const ATTEMPT = {
+    vex_fee_leg_tx_hash: FEE_LEG_TX_HASH,
+    vex_fee_leg_chain_id: 8453,
+    vex_fee_leg_chain_family: "eip155",
+  };
+
+  it.each(["pending", "failed"])(
+    "emits a %s attempt with its own status, hash and chain, and no amount",
+    (legStatus) => {
+      const entry = mapValid(row({ ...ATTEMPT, vex_fee_leg_status: legStatus }));
+
+      expect(entry.vexFee).toEqual({
+        tokenSymbol: null,
+        amountHuman: null,
+        status: legStatus,
+        txHash: FEE_LEG_TX_HASH,
+        chainId: 8453,
+        chainFamily: "eip155",
+      });
+      // No money is claimed for an attempt, on either surface the label reads.
+      expect(entry.usdFeeEst).toBeNull();
+    },
+  );
+
+  /**
+   * The attempt is NOT withheld by the failed-row money rule. That rule exists
+   * because an in-transaction fee reverts with the transaction it sat in; it
+   * answers "was a fee collected". The attempt answers "was a fee attempted",
+   * and on a failed row that is exactly the question the user is asking.
+   */
+  it("keeps the attempt visible on a FAILED row while still withholding the money", () => {
+    const entry = mapValid(
+      row({
+        ...ATTEMPT,
+        status: "failed",
+        vex_fee_leg_status: "failed",
+        vex_fee_source: "in_transaction",
+        vex_fee_token_symbol: "USDC",
+        vex_fee_amount_human: "0.01",
+      }),
+    );
+
+    expect(entry.vexFee).toEqual({
+      tokenSymbol: null,
+      amountHuman: null,
+      status: "failed",
+      txHash: FEE_LEG_TX_HASH,
+      chainId: 8453,
+      chainFamily: "eip155",
+    });
+  });
+
+  /**
+   * The double-charge anomaly fails closed in SQL: with two CONFIRMED fee legs
+   * the projection blanks every field, money and attempt alike, because the row
+   * cannot say which of the two charges it would be describing. The mapper sees
+   * that as a row with no fee at all, and must not invent one.
+   */
+  it("reports NO fee when the projection failed closed on two confirmed legs", () => {
+    expect(mapValid(row()).vexFee).toBeNull();
   });
 });

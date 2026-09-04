@@ -55,12 +55,31 @@
 -- database with no NOT VALID and no backfill.
 --
 -- OLD CODE ON A NEW DATABASE is safe: a widened CHECK accepts everything the
--- narrower one did, the new `launched_tokens` columns are nullable, and
--- `agentscan_reporting_state.vocabulary_version` has a DEFAULT. The one
+-- narrower one did, the new `launched_tokens` columns are nullable,
+-- `agentscan_reporting_state.vocabulary_version` has a DEFAULT, and so do the
+-- two columns added in section 7 (`backfill_vocabulary_version` is nullable,
+-- `registration_generation` defaults to 0), so an old build's INSERTs and
+-- UPDATEs, which name neither, still succeed. An old build cannot write
+-- `backfill_vocabulary_version` at all, which is precisely the property section
+-- 7 relies on: its V1-only backfill cannot satisfy the V2 gate. The one
 -- behaviour an old build sees is the reset `backfill_enqueued_at` below, which
 -- it handles correctly by construction - that is the existing one-time backfill
 -- branch of `sync/agentscan-report.ts`, and its enqueue is a diff against the
 -- outbox, so it re-sends nothing that has already been sent.
+--
+-- AMENDED 2026-09-04, BEFORE RELEASE, and every statement below is written to be
+-- idempotent on a database where the FIRST version of this file already ran (the
+-- development install). The amendment adds two columns to
+-- `agentscan_reporting_state` - `backfill_vocabulary_version` and
+-- `registration_generation` - with `ADD COLUMN IF NOT EXISTS`, so re-running the
+-- file is a no-op on the columns that exist and creates the two that do not. It
+-- does NOT re-run the vocabulary walk (still guarded by `vocabulary_version < 2`)
+-- and deliberately does NOT backfill `backfill_vocabulary_version` for an install
+-- whose backfill was already marked: nothing in the database says which BINARY
+-- wrote that mark, so stamping it would assert coverage that may not exist. A
+-- NULL stamp simply means "no backfill has proven it covered this vocabulary",
+-- and `sync/agentscan-report.ts` treats that as a backfill still owed - the
+-- enqueue is a diff, so the repair costs one scan and re-sends nothing.
 --
 -- ROLLBACK is by restoring the previous constraint bodies (migration 088 for the
 -- role list and the kind/role binding, migration 082 for the second-leg
@@ -327,3 +346,37 @@ UPDATE agentscan_reporting_state
 
 ALTER TABLE agentscan_reporting_state
   ALTER COLUMN vocabulary_version SET DEFAULT 2;
+
+-- ── 7. WHICH vocabulary a backfill actually covered, and WHICH registration it
+--       belonged to ──────────────────────────────────────────────────────────
+--
+-- `vocabulary_version` above says what the SCHEMA can store. It is not, and was
+-- mistakenly read as, a statement about what a completed backfill SCANNED, and
+-- the difference is a real defect during a staged rollout: a binary whose
+-- `AGENTSCAN_VOCABULARY_VERSION` is 1, running against a database this migration
+-- has already stamped at 2, performs a V1-only scan and writes
+-- `backfill_enqueued_at`. A later V2 binary reads that timestamp as "the family
+-- history is covered", and every historical claim, launch_cancel and vex_fee row
+-- then reaches the server through the INCREMENTAL tick, labelled live activity -
+-- a lie the server cannot detect and this install cannot correct, because a
+-- completed outbox row is never re-sent.
+--
+-- So the completion marker gains the version it covered. NULLABLE with no
+-- default, on purpose: an old binary does not know the column, cannot write it,
+-- and therefore cannot satisfy the gate. `db/repos/agentscan-reporting.ts`
+-- compares `backfill_vocabulary_version >= AGENTSCAN_VOCABULARY_VERSION` instead
+-- of testing the timestamp for NULL, and the marking transaction stamps it with
+-- the version that scan ran under, never with the schema's.
+--
+-- `registration_generation` is the fence for the OTHER half of the same
+-- marker. `resetForReRegistration` (the 401 recovery) clears the completion mark
+-- because the whole history is owed again. The backfill's enqueue and its mark
+-- used to be two commits, so a reset landing between them was overwritten by the
+-- stale mark that had started before it. Every reset now bumps this counter, and
+-- the backfill carries the generation it started under into its marking
+-- statement, which refuses to write when the generation has moved. NOT NULL
+-- DEFAULT 0 because a monotonically increasing counter has a correct starting
+-- value; the two writers that bump it are the two reset paths and nothing else.
+ALTER TABLE agentscan_reporting_state
+  ADD COLUMN IF NOT EXISTS backfill_vocabulary_version INTEGER,
+  ADD COLUMN IF NOT EXISTS registration_generation     INTEGER NOT NULL DEFAULT 0;

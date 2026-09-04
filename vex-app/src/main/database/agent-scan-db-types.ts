@@ -82,6 +82,20 @@ export interface AgentScanRow {
    */
   readonly vex_fee_source: string | null;
 
+  /**
+   * THE FEE ATTEMPT ITSELF (owner rule V1, 2026-09-04). The three money fields
+   * above are filled only by a CONFIRMED fee leg; these four say that an attempt
+   * EXISTS and what state it is in - `pending` while the transfer is in flight,
+   * `definitively_failed` when it reverted - so an in-flight or reverted fee is
+   * never reported as "no fee". `null` when the execution has no fee leg, when
+   * the fee was taken inside the transaction, or when the double-charge anomaly
+   * made the projection fail closed.
+   */
+  readonly vex_fee_leg_status: string | null;
+  readonly vex_fee_leg_tx_hash: string | null;
+  readonly vex_fee_leg_chain_id: number | string | null;
+  readonly vex_fee_leg_chain_family: string | null;
+
   readonly failure_code: string | null;
   /** Redacted engine text, SQL-clamped to the DTO's 500-char bound. */
   readonly failure_reason: string | null;

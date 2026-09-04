@@ -29,7 +29,7 @@
  */
 
 import type { PoolClient } from "pg";
-import { query, queryOne, execute, withTransaction } from "../client.js";
+import { query, queryOne, execute, executeWith, queryOneWith, withTransaction } from "../client.js";
 
 export type AgentscanStopReason = "consent_revoked" | "quarantined" | "agent_conflict" | "wallet_conflict";
 
@@ -43,11 +43,34 @@ export interface AgentscanReportingState {
   readonly nextRegisterAttemptAt: string;
   readonly backfillEnqueuedAt: string | null;
   /**
-   * Which reporting vocabulary this install's database carries (migration
-   * 102 stamps 2). Paired with `backfillEnqueuedAt` it is the gate on the
-   * launchpad-family roles: see `ELIGIBILITY_SQL`.
+   * Which reporting vocabulary this install's DATABASE carries (migration 102
+   * stamps 2). It says which roles the schema can STORE, never which roles a
+   * backfill has already covered - that is `backfillVocabularyVersion`.
    */
   readonly vocabularyVersion: number;
+  /**
+   * Which vocabulary the LAST COMPLETED controlled backfill actually scanned,
+   * `null` when no backfill has ever completed on this install.
+   *
+   * Separate from `vocabularyVersion` because the two answer different
+   * questions, and conflating them is how an older binary defeats the gate: a
+   * build whose `AGENTSCAN_VOCABULARY_VERSION` is 1, running against a database
+   * migration 102 has already stamped at 2, scans only the V1 roles and would
+   * otherwise leave behind a completion mark that the next V2 build reads as
+   * "the family history is already covered" - and every historical family row
+   * then reaches the server labelled as live activity. The stamp is written by
+   * the marking transaction with the version the scan itself ran under, so it
+   * can only ever say what was really covered.
+   */
+  readonly backfillVocabularyVersion: number | null;
+  /**
+   * Bumped by every registration reset (`resetForReRegistration`,
+   * `resetIdentityForRecovery`). The controlled backfill carries the generation
+   * it started under and refuses to write its completion mark if that generation
+   * has moved, so a 401 reset landing mid-backfill is never overwritten by the
+   * stale mark that started before it.
+   */
+  readonly registrationGeneration: number;
   readonly stoppedReason: AgentscanStopReason | null;
   /** Display name AgentScan bound to this install (session/complete response). */
   readonly agentName: string | null;
@@ -153,8 +176,21 @@ export const AGENTSCAN_VOCABULARY_VERSION = 2;
  *
  * So the new vocabulary is admitted only when BOTH hold:
  *   - the database carries the widening (`vocabulary_version >= 2`), and
- *   - this scan is either the controlled backfill itself, or it runs after that
- *     backfill has been marked complete (`backfill_enqueued_at IS NOT NULL`).
+ *   - this scan is either the controlled backfill itself, or it runs after a
+ *     backfill THAT COVERED THIS VOCABULARY completed
+ *     (`backfill_vocabulary_version >= 2`).
+ *
+ * THE SECOND CONDITION IS A VERSION AND NOT A TIMESTAMP, and that is the whole
+ * point of it. `backfill_enqueued_at IS NOT NULL` says only that SOME backfill
+ * ran; it cannot say which vocabulary that backfill scanned. A build at
+ * `AGENTSCAN_VOCABULARY_VERSION = 1` running against a database migration 102
+ * has already stamped at 2 - an older binary on a migrated install, which is an
+ * ordinary state during a staged rollout - performs a V1-ONLY scan and, under
+ * the timestamp gate, leaves a mark the next V2 build reads as "the family
+ * history is covered". Every historical claim row then reaches the server
+ * labelled live activity. The version stamp is written by the marking
+ * transaction with the version the scan actually ran under, so it can only say
+ * what was really covered, and a V1 mark cannot satisfy a V2 gate.
  *
  * That is the VS Code one-time-migration shape (a durable done-marker, the work
  * skipped when it is present, the marker written after the work) applied to a
@@ -171,7 +207,8 @@ const ELIGIBILITY_SQL = `
         ${ELIGIBLE_VOCABULARY_V1_SQL}
      OR (${ELIGIBLE_VOCABULARY_V2_SQL}
          AND s.vocabulary_version >= ${AGENTSCAN_VOCABULARY_VERSION}
-         AND ($1::boolean OR s.backfill_enqueued_at IS NOT NULL))
+         AND ($1::boolean
+              OR s.backfill_vocabulary_version >= ${AGENTSCAN_VOCABULARY_VERSION}))
       )`;
 
 /**
@@ -311,6 +348,8 @@ interface StateRow {
   next_register_attempt_at: Date;
   backfill_enqueued_at: Date | null;
   vocabulary_version: number;
+  backfill_vocabulary_version: number | null;
+  registration_generation: number;
   stopped_reason: AgentscanStopReason | null;
   agent_name: string | null;
   last_handshake_at: Date | null;
@@ -329,6 +368,9 @@ function mapState(row: StateRow): AgentscanReportingState {
     nextRegisterAttemptAt: new Date(row.next_register_attempt_at).toISOString(),
     backfillEnqueuedAt: row.backfill_enqueued_at ? new Date(row.backfill_enqueued_at).toISOString() : null,
     vocabularyVersion: Number(row.vocabulary_version),
+    backfillVocabularyVersion:
+      row.backfill_vocabulary_version === null ? null : Number(row.backfill_vocabulary_version),
+    registrationGeneration: Number(row.registration_generation),
     stoppedReason: row.stopped_reason,
     agentName: row.agent_name,
     lastHandshakeAt: row.last_handshake_at ? new Date(row.last_handshake_at).toISOString() : null,
@@ -414,19 +456,31 @@ export async function noteRegisterAttemptFailed(delaySeconds: number): Promise<v
 }
 
 /**
- * Shared by `resetForReRegistration` and `resetIdentityForRecovery`: every
- * already-sent row becomes owed again, flagged `backfill` (a historical
- * resend, not fresh activity). Poisoned rows (`rejected_at`) stay poisoned —
- * a validation refusal the server made once does not become valid by
- * resending the identical payload. Caller runs this inside its own
- * transaction alongside its own state reset, so a crash can't leave one half
- * applied.
+ * Shared by `resetForReRegistration` and `resetIdentityForRecovery`: EVERY
+ * non-poisoned outbox row becomes owed again and flagged `backfill` (a
+ * historical resend, not fresh activity). Poisoned rows (`rejected_at`) stay
+ * poisoned - a validation refusal the server made once does not become valid by
+ * resending the identical payload. Caller runs this inside its own transaction
+ * alongside its own state reset, so a crash can't leave one half applied.
+ *
+ * SENT AND UNSENT ALIKE, and the unsent half is the one this rule exists for.
+ * The reset used to be scoped to `sent_at IS NOT NULL`, which reads as "only a
+ * row the server already saw needs resending". That is wrong for the state this
+ * path is entered from: the 401 that triggers it arrives while a batch is in
+ * flight, so the rows that were being sent when the identity went away are
+ * exactly the ones still `sent_at IS NULL` and still `backfill = FALSE`. Left
+ * untouched, they survive the reset and the drain later sends this install's
+ * historical activity to a freshly-registered agent labelled as LIVE. The
+ * controlled backfill cannot rescue them either: `enqueueEligibleActivity` is a
+ * diff on `(activity_id, status)` and those pairs already have rows, so it
+ * inserts nothing and the mislabelling is permanent. Resetting an unsent row is
+ * otherwise a no-op on its own terms - it was owed before and is owed after.
  */
 async function resetOutboxForFullResend(client: PoolClient): Promise<void> {
   await client.query(
     `UPDATE agentscan_outbox
         SET sent_at = NULL, attempt_count = 0, next_attempt_at = NOW(), backfill = TRUE, last_error = NULL
-      WHERE sent_at IS NOT NULL`,
+      WHERE rejected_at IS NULL`,
   );
 }
 
@@ -447,7 +501,11 @@ export async function resetForReRegistration(): Promise<void> {
   await withTransaction(async (client) => {
     await client.query(
       `UPDATE agentscan_reporting_state
-          SET registered_at = NULL, backfill_enqueued_at = NULL, updated_at = NOW()
+          SET registered_at = NULL,
+              backfill_enqueued_at = NULL,
+              backfill_vocabulary_version = NULL,
+              registration_generation = registration_generation + 1,
+              updated_at = NOW()
         WHERE id = 1`,
     );
     await resetOutboxForFullResend(client);
@@ -482,6 +540,8 @@ export async function resetIdentityForRecovery(): Promise<void> {
               bound_wallets_fingerprint = NULL,
               registered_at = NULL,
               backfill_enqueued_at = NULL,
+              backfill_vocabulary_version = NULL,
+              registration_generation = registration_generation + 1,
               last_handshake_at = NULL,
               server_cursor_row_id = NULL,
               register_attempt_count = 0,
@@ -504,14 +564,6 @@ export async function markStopped(reason: AgentscanStopReason): Promise<void> {
   );
 }
 
-export async function markBackfillEnqueued(): Promise<void> {
-  await ensureSingleton();
-  await execute(
-    `UPDATE agentscan_reporting_state
-        SET backfill_enqueued_at = NOW(), updated_at = NOW()
-      WHERE id = 1`,
-  );
-}
 
 /**
  * The diff scan. Inserts every eligible-AND-READY (activity, status) pair the
@@ -523,16 +575,12 @@ export async function markBackfillEnqueued(): Promise<void> {
  * The same is true of a row held back by the vocabulary gate: the controlled
  * backfill picks it up, and every scan after that mark sees it.
  */
-export async function enqueueEligibleActivity(backfill: boolean): Promise<number> {
-  // The singleton has to exist before the CROSS JOIN below, or the scan reads
-  // zero state rows and enqueues nothing at all - a silent no-op, not an error.
-  await ensureSingleton();
-  return execute(
-    `INSERT INTO agentscan_outbox (activity_id, status, backfill)
+const ENQUEUE_ELIGIBLE_SQL = `
+     INSERT INTO agentscan_outbox (activity_id, status, backfill)
      SELECT a.id, a.status, $1::boolean
        FROM agent_activity a
       CROSS JOIN (
-             SELECT vocabulary_version, backfill_enqueued_at
+             SELECT vocabulary_version, backfill_vocabulary_version
                FROM agentscan_reporting_state
               WHERE id = 1
            ) s
@@ -540,9 +588,98 @@ export async function enqueueEligibleActivity(backfill: boolean): Promise<number
         AND ${CONFIRMED_READINESS_SQL}
         AND NOT EXISTS (SELECT 1 FROM agentscan_outbox o
                          WHERE o.activity_id = a.id AND o.status = a.status)
-     ON CONFLICT (activity_id, status) DO NOTHING`,
-    [backfill],
-  );
+     ON CONFLICT (activity_id, status) DO NOTHING`;
+
+export async function enqueueEligibleActivity(backfill: boolean): Promise<number> {
+  // The singleton has to exist before the CROSS JOIN below, or the scan reads
+  // zero state rows and enqueues nothing at all - a silent no-op, not an error.
+  await ensureSingleton();
+  return execute(ENQUEUE_ELIGIBLE_SQL, [backfill]);
+}
+
+/** What one attempt at the controlled backfill did, whether or not it got to mark. */
+export interface BackfillEnqueueOutcome {
+  /** Rows this attempt enqueued as history. `0` when it declined to run. */
+  readonly enqueued: number;
+  /** Whether the completion mark was written. `false` means the backfill is still owed. */
+  readonly marked: boolean;
+  /**
+   * Why the attempt declined, `null` when it ran. `generation_moved`: a
+   * registration reset landed after the caller read its state, so this scan
+   * belongs to an identity that no longer exists. `already_marked`: a concurrent
+   * runner completed the same backfill first.
+   */
+  readonly declined: "generation_moved" | "already_marked" | null;
+}
+
+/**
+ * THE CONTROLLED BACKFILL, ENQUEUE AND COMPLETION MARK IN ONE TRANSACTION.
+ *
+ * Two commits used to do this - `enqueueEligibleActivity(true)` and then
+ * `markBackfillEnqueued()` - and the window between them is a lost update. The
+ * 401 lane (`resetForReRegistration`) clears `backfill_enqueued_at` because the
+ * whole history is owed again; if that reset lands after the enqueue commits and
+ * before the mark does, the mark writes the timestamp straight back over it. The
+ * install then believes a backfill it never ran is complete, and every
+ * newly-eligible historical row that the reset made owed is picked up by the
+ * next INCREMENTAL tick and reported as live activity.
+ *
+ * The fix is the one shape that makes the two halves one fact: a single
+ * transaction that takes `SELECT ... FOR UPDATE` on the singleton before it
+ * scans, so a concurrent reset either completes entirely before this attempt or
+ * waits behind it, and never interleaves.
+ *
+ * THE GENERATION IS THE SECOND HALF OF THE GUARD, and it covers what the lock
+ * cannot: a reset that landed BEFORE this transaction started, after the caller
+ * read the state that made it decide to backfill. The caller passes the
+ * generation it saw; a different one under the lock means this scan was decided
+ * against an identity that no longer exists, so the attempt declines without
+ * enqueueing or marking and the next tick starts over on the current one.
+ *
+ * The mark stamps `backfill_vocabulary_version` with the version THIS scan ran
+ * under, never the schema's, and never walks it backwards - see
+ * `AgentscanReportingState.backfillVocabularyVersion` for why an older binary
+ * must not be able to satisfy a newer gate.
+ */
+export async function enqueueBackfillAndMark(input: {
+  startedAtGeneration: number;
+}): Promise<BackfillEnqueueOutcome> {
+  await ensureSingleton();
+  return withTransaction(async (client) => {
+    const locked = await queryOneWith<{
+      registration_generation: number;
+      backfill_enqueued_at: Date | null;
+      backfill_vocabulary_version: number | null;
+    }>(
+      client,
+      `SELECT registration_generation, backfill_enqueued_at, backfill_vocabulary_version
+         FROM agentscan_reporting_state
+        WHERE id = 1
+          FOR UPDATE`,
+    );
+    if (locked === null) throw new Error("agentscan_reporting_state singleton missing after ensure");
+
+    if (Number(locked.registration_generation) !== input.startedAtGeneration) {
+      return { enqueued: 0, marked: false, declined: "generation_moved" as const };
+    }
+    const covered =
+      locked.backfill_vocabulary_version === null ? null : Number(locked.backfill_vocabulary_version);
+    if (locked.backfill_enqueued_at !== null && covered !== null && covered >= AGENTSCAN_VOCABULARY_VERSION) {
+      return { enqueued: 0, marked: false, declined: "already_marked" as const };
+    }
+
+    const enqueued = await executeWith(client, ENQUEUE_ELIGIBLE_SQL, [true]);
+    await executeWith(
+      client,
+      `UPDATE agentscan_reporting_state
+          SET backfill_enqueued_at = NOW(),
+              backfill_vocabulary_version = GREATEST(COALESCE(backfill_vocabulary_version, 0), $2::int),
+              updated_at = NOW()
+        WHERE id = 1 AND registration_generation = $1::int`,
+      [input.startedAtGeneration, AGENTSCAN_VOCABULARY_VERSION],
+    );
+    return { enqueued, marked: true, declined: null };
+  });
 }
 
 /**

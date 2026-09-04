@@ -52,6 +52,14 @@
  * token route. Treating a 2xx as verification asserts a proof nobody checked -
  * that was the D4 defect this half of the lane exists to close.
  *
+ * THE TWO ARROWS HAVE TWO DIFFERENT AUTHORITIES, and only the second may write
+ * a status. The POST records submission and nothing else. Its response body can
+ * name a status - on a DUPLICATE POST the server answers with the row's existing
+ * one, `verified` included - but that word arrives through a request that proved
+ * nothing, and storing it without the `verified_at` stamp violates migration
+ * 102's CHECK and leaves the row failing every sweep from then on. It is logged
+ * here and settled only by the GET.
+ *
  * ── Scoped by LAUNCHPAD, never by chain ───────────────────────────────────
  *
  * The candidate set used to be pinned to chain 4663 because one venue existed on
@@ -171,9 +179,21 @@ export async function runAgentscanAttest(deps: AgentscanAttestDeps): Promise<Age
   for (const candidate of candidates) {
     const outcome = await attestOne(deps, candidate);
     if (outcome.kind === "accepted") {
-      const landed = await markAgentscanAttested(candidate.id, outcome.verifyStatus);
+      const landed = await markAgentscanAttested(candidate.id);
       if (landed) attested++;
       else logger.info("agentscan.attest.duplicate_cas_miss", { id: candidate.id });
+      // NON-AUTHORITATIVE, and deliberately not stored. A duplicate POST is
+      // answered with the row's EXISTING status, which can already be
+      // `verified`; copying that word onto the row without the `verified_at`
+      // stamp violates migration 102's CHECK and burns the row forever. Only
+      // `sweepVerdicts` below writes a status, and only from the GET verdict.
+      // Logged because it is still evidence about the server's queue.
+      if (outcome.verifyStatus !== null) {
+        logger.info("agentscan.attest.submission_status", {
+          id: candidate.id,
+          reportedStatus: outcome.verifyStatus,
+        });
+      }
       continue;
     }
     if (outcome.kind === "invalid") {

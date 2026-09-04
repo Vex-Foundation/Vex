@@ -175,6 +175,40 @@ describe("AgentScanScreen - rows and audit detail", () => {
     expect(screen.getByText("base → arbitrum")).not.toBeNull();
   });
 
+  /**
+   * OWNER RULE V1 (2026-09-04). A fee transfer that is still in flight carries no
+   * amount, and the detail line used to render nothing at all for it - so money
+   * that may still leave the wallet was invisible on the only surface that shows
+   * this row. The line now names the attempt's state instead of inventing a
+   * number, which would be the opposite error.
+   */
+  it("names a PENDING Vex fee attempt on the detail line instead of falling silent", () => {
+    mockQuery([
+      availablePage([
+        entry({
+          id: "1",
+          activityKind: "swap",
+          eventRole: "swap",
+          status: "pending",
+          vexFee: {
+            tokenSymbol: null,
+            amountHuman: null,
+            status: "pending",
+            txHash: `0x${"ab".repeat(32)}`,
+            chainId: 8453,
+            chainFamily: "eip155",
+          },
+          usdFeeEst: null,
+        }),
+      ]),
+    ]);
+    mountScreen();
+    fireEvent.click(screen.getByRole("button", { name: /Show details/ }));
+
+    expect(screen.getByText("Vex fee")).not.toBeNull();
+    expect(screen.getByText("attempt pending")).not.toBeNull();
+  });
+
   it("expands to the audit detail: legs with their own explorer links, Vex fee, and the failure reason", () => {
     mockQuery([
       availablePage([
@@ -185,7 +219,14 @@ describe("AgentScanScreen - rows and audit detail", () => {
           status: "failed",
           failureCode: "bridge_failed",
           failureReason: "destination fill reverted",
-          vexFee: { tokenSymbol: "USDC", amountHuman: "0.05" },
+          vexFee: {
+            tokenSymbol: "USDC",
+            amountHuman: "0.05",
+            status: "confirmed",
+            txHash: "0xfee",
+            chainId: 8453,
+            chainFamily: "eip155",
+          },
           usdFeeEst: "0.05",
           providerOrderId: "ord_9",
           legs: [

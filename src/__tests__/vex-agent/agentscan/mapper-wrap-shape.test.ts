@@ -265,14 +265,22 @@ describe("the outbox eligibility gate is still CLOSED for wrap", () => {
     expect(block).toContain("'bridge'");
   });
 
-  it("the composed predicate gates the launchpad family on the backfill mark", () => {
+  it("the composed predicate gates the launchpad family on the COVERED vocabulary, not on a timestamp", () => {
     // The gate is what keeps a widened vocabulary from letting the incremental
     // scan claim months of history as live activity. If it is ever removed, the
     // wrap flip above would be the second-least of the problems.
+    //
+    // CONTRACT CHANGE 2026-09-04: it reads `backfill_vocabulary_version`, not
+    // `backfill_enqueued_at IS NOT NULL`. A timestamp says only that SOME
+    // backfill ran; a build at vocabulary 1 running against a database migration
+    // 102 already stamped at 2 performs a V1-only scan and would leave a mark the
+    // next V2 build reads as full coverage. The version stamp can only claim
+    // what the scan that wrote it actually covered.
     const start = REPORTING_SQL.indexOf("const ELIGIBILITY_SQL = `");
     const end = REPORTING_SQL.indexOf("`;", start);
     const composed = REPORTING_SQL.slice(start, end);
     expect(composed).toContain("s.vocabulary_version >=");
-    expect(composed).toContain("s.backfill_enqueued_at IS NOT NULL");
+    expect(composed).toContain("s.backfill_vocabulary_version >=");
+    expect(composed).not.toContain("backfill_enqueued_at");
   });
 });

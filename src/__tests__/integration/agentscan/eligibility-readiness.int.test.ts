@@ -118,8 +118,11 @@ async function seedPending(
  */
 async function markVocabularyBackfillComplete(): Promise<void> {
   const repo = await reportingRepo();
-  await repo.getReportingState();
-  await repo.markBackfillEnqueued();
+  const state = await repo.getReportingState();
+  // The one transaction that owns both halves of the marker, exactly as the
+  // periodic lane calls it. The stamp it writes is the VERSION the scan covered,
+  // which is what the eligibility gate reads.
+  await repo.enqueueBackfillAndMark({ startedAtGeneration: state.registrationGeneration });
 }
 
 /**
