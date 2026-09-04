@@ -1,0 +1,45 @@
+{
+  "definition": {
+    "function": {
+      "description": "Read positions exposed through Lighter's public account endpoint on Core or Robinhood Chain by account index or the owning L1 walletAddress. Use when the user asks for public account positions, exposure, or holdings visible in Lighter account data. Returns bounded account rows and at most 25 positions per account. Public read: no credential, wallet, signer, order placement, cancellation, deposit, or withdrawal support. Provide at most one of: accountIndex, walletAddress. Provide at least one of: accountIndex, walletAddress.",
+      "name": "lighter__positions_list",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "accountIndex": {
+            "description": "Optional Lighter account index as a safe non-negative integer. Provide exactly one of accountIndex or walletAddress.",
+            "type": "number"
+          },
+          "activeOnly": {
+            "description": "Optional Lighter account filter forwarded to the public account endpoint when supported.",
+            "type": "boolean"
+          },
+          "environment": {
+            "description": "Optional public Lighter environment to read: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc for conversational Lighter requests. Any other value is rejected.",
+            "enum": [
+              "core",
+              "rhc"
+            ],
+            "type": "string"
+          },
+          "walletAddress": {
+            "description": "Optional 0x-prefixed L1 EVM wallet address that owns the Lighter account. Provide exactly one of walletAddress or accountIndex.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "lighter",
+    "requiresEnv": null,
+    "toolId": "lighter.positions"
+  }
+}

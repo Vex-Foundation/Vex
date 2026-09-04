@@ -1,0 +1,29 @@
+{
+  "definition": {
+    "function": {
+      "description": "Reconcile one durable Core USDC or RHC USDG withdrawal from exact evidence. Use when a submitted withdrawal is pending, claimable, completed, ambiguous, or needs final-delivery proof. It reads the environment-specific TxType 13 transaction, authenticated paginated history, current gateway pending balance, and any canonical destination receipt and block. It adopts only one exact amount/time/history identity and marks delivery only after a matching gateway event, exact token transfer to the owner, canonical block membership, zero pending balance, and 12 confirmations. Returns durable execution, approval, history, claim, destination, confirmation, and next-action fields. Missing or contradictory evidence never triggers a retry; omit intentId to recover the latest withdrawal for the selected wallet, including one created in an earlier session.",
+      "name": "lighter__withdraw_status",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "intentId": {
+            "description": "Optional Core or RHC withdrawal intent id from lighter__withdraw_prepare or lighter__withdraw. Exact ids may be recovered from an earlier session only when they belong to the selected wallet.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "lighter",
+    "requiresEnv": null,
+    "toolId": "lighter.withdraw.status"
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "definition": {
+    "function": {
+      "description": "Approval-gated Lighter deposit resume target for one exact prepared intent. Call only through the matching host approval card; direct or cross-session calls are refused. After a fresh exact preflight, the privileged local wallet path may approve the environment-specific gateway and deposit Ethereum USDC for Core or Robinhood Chain USDG for RHC, so real funds move on-chain and network fees are spent. Transaction hashes are durably recorded before broadcast, ambiguous sends are reconciliation-only, and any replacement is fee-only with identical calldata, destination, value, and nonce. Returns the durable execution state and exact settlement evidence; credit is final only after the matching on-chain receipt, Deposit event, Lighter type-1 status-3 transaction, and wallet-owned account balance are all verified.",
+      "name": "lighter__deposit",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "intentId": {
+            "description": "Session-scoped Lighter deposit intent id produced by lighter__deposit_prepare. The approved deposit path refuses ids from other sessions.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "intentId"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "user_wallet_broadcast",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": true,
+    "namespace": "lighter",
+    "requiresEnv": null,
+    "toolId": "lighter.deposit"
+  }
+}

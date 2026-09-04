@@ -6,7 +6,7 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
     embeddingText: embeddingText(
       `Check whether the selected Vex wallet is ready to trade on Lighter. Unspecified conversational requests default to Robinhood Chain; use Core only when explicitly selected, and keep that environment in later calls. ` +
       `Use when: setup, funding, readiness, or a perp request needs checking. Pass the requested market so Vex checks its live minimum. Reads wallet settlement balance, Lighter collateral, deposit minimum, and public key state. It signs and moves nothing. ` +
-      `Example queries: set up my Lighter account, can this wallet trade on Lighter, fund Lighter for a 2 USDC trade.`,
+      `Example queries: set up my Lighter account, trade perps on Lighter, can this wallet trade on Lighter, fund Lighter for a 2 USDC trade.`,
     ),
     aliases: ["lighter onboarding status", "lighter account readiness", "can I trade on lighter", "trade on lighter", "lighter wallet setup", "set up lighter account", "lighter perps setup"],
     exampleIntents: ["set up my Lighter account", "I need to trade on Lighter", "get me ready to trade on Lighter", "I want to trade perps on Lighter"],
@@ -145,10 +145,10 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   },
   "lighter.position.protect": {
     embeddingText: embeddingText(
-      `Preview and prepare native Lighter OCO protection for one existing perpetual position using exactly one reduce-only stop-loss and one same-size reduce-only take-profit. ` +
-      `Use when: the user wants both a stop loss and take profit on an existing Lighter long or short. Require exact size, reducing side, both trigger prices, both hard execution bounds, and expiry; never guess. This does not open a position and does not support entry-plus-protection, OTO, or OTOCO. ` +
-      `After one exact approval, Vex signs and submits one native Lighter grouped transaction. It reports active protection only after both exact children are visible from authenticated provider evidence, never emulates cancellation, and never retries uncertainty. ` +
-      `Example queries: protect my 0.1 ETH Lighter long with stop 2900 bound 2850 and take profit 3300 bound 3250, add stop loss and take profit to my RHC perp position.`,
+      `Preview native Lighter OCO protection for an existing perpetual position: one reduce-only stop-loss and one same-size reduce-only take-profit. ` +
+      `Use when the user wants both protections on a Lighter long or short. Require exact size, reducing side, both triggers, both hard execution bounds, and expiry; never guess. It does not open a position or support entry protection, OTO, or OTOCO. ` +
+      `After one approval, Vex submits one native group and calls protection active only after authenticated evidence proves both exact children. It never emulates sibling cancellation or retries uncertainty. ` +
+      `Example: protect my 0.1 ETH Lighter long with stop 2900 bound 2850 and take profit 3300 bound 3250.`,
     ),
     aliases: ["lighter oco", "lighter stop loss and take profit", "protect lighter position", "paired tp sl"],
     exampleIntents: ["protect my Lighter long with a stop loss and take profit", "add native OCO to my RHC perp position"],
@@ -284,7 +284,7 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
       `Prepare an exact secure withdrawal from the selected wallet's Lighter account: Core USDC to Ethereum or RHC USDG to Robinhood Chain. ` +
       `Use when: the user asks to withdraw, cash out, or move Lighter collateral back to their wallet. Pass the explicit environment and human-decimal amount; Vex resolves the account and local credential and refuses destination, route, ownership, margin, gateway, or unresolved-state ambiguity. ` +
       `Returns a durable intent and trusted approval card after live preflight; preparation signs and moves nothing. ` +
-      `Example queries: withdraw 2 USDC from Lighter Core, withdraw 5 USDG from Lighter RHC.`,
+      `Example queries: withdraw from Lighter, withdraw 2 USDC from Lighter Core, withdraw 5 USDG from Lighter RHC.`,
     ),
     aliases: ["withdraw from lighter", "lighter core withdrawal", "withdraw usdc", "cash out lighter"],
     exampleIntents: ["withdraw 2 USDC from Lighter Core", "move my Core collateral back to my wallet"],

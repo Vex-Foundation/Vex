@@ -303,7 +303,7 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Approval-resume target for one exact prepared Lighter key registration. Direct calls without the matching host approval are refused. Electron main revalidates exact wallet ownership, slot vacancy, nonce, vault-derived public key, and workflow state; signs Lighter's human-readable EIP-191 ownership message locally; persists TxType 8 structural identity before sendTx; and never returns or stores signatures or the signed payload. It activates the encrypted trading credential only after exact live public-key match, official CheckClient success, and nonce +1 synchronization. Ambiguous outcomes are reconciliation-only and are never blindly resubmitted.",
+      "Approval-resume target for one exact prepared Lighter key registration. Direct calls without the matching host approval are refused. After approval, Electron main signs and broadcasts the exact registration transaction; it revalidates wallet ownership, slot vacancy, nonce, vault-derived public key, and workflow state, signs Lighter's human-readable EIP-191 ownership message locally, persists TxType 8 structural identity before sendTx, and never returns or stores signatures or the signed payload. It activates the encrypted trading credential only after exact live public-key match, official CheckClient success, and nonce +1 synchronization. Ambiguous outcomes are reconciliation-only and are never blindly resubmitted.",
     mutating: true,
     actionKind: "user_wallet_broadcast",
     params: [KEY_REGISTRATION_INTENT_ID_PARAM],

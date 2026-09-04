@@ -1,0 +1,32 @@
+{
+  "definition": {
+    "function": {
+      "description": "Approval-resume target for one exact prepared Lighter key registration. Direct calls without the matching host approval are refused. After approval, Electron main signs and broadcasts the exact registration transaction; it revalidates wallet ownership, slot vacancy, nonce, vault-derived public key, and workflow state, signs Lighter's human-readable EIP-191 ownership message locally, persists TxType 8 structural identity before sendTx, and never returns or stores signatures or the signed payload. It activates the encrypted trading credential only after exact live public-key match, official CheckClient success, and nonce +1 synchronization. Ambiguous outcomes are reconciliation-only and are never blindly resubmitted.",
+      "name": "lighter__key_register",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "intentId": {
+            "description": "Session-scoped Lighter key-registration intent id produced by lighter__key_register_prepare.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "intentId"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "user_wallet_broadcast",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": true,
+    "namespace": "lighter",
+    "requiresEnv": null,
+    "toolId": "lighter.key.register"
+  }
+}

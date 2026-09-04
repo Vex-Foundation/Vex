@@ -1,0 +1,48 @@
+{
+  "definition": {
+    "function": {
+      "description": "Check the selected Vex wallet's complete live Lighter onboarding readiness on Lighter Core (Core) in ONE read-only call. This tool is fixed to Core. It already checks wallet USDC on Ethereum mainnet, native ETH for gas, Lighter collateral/account ownership, gateway allowance, the live deposit minimum, and locally managed trading-credential readiness. Prefer this directly for Core setup, readiness, named-trade funding checks, and 'can I deposit?' questions; do NOT run protocol discovery or a separate wallet-balance read first. Direct deposits are the exception: when the user says deposit or fund an explicit amount, skip this onboarding read and WalletBalances, use ToolSearch once to select lighter.deposit.prepare, and pass the requested amount unchanged. After this shortcut returns, answer directly from its deterministic result without another diagnostic or research pass unless the call failed. It moves no funds, signs nothing, creates no approval, and never registers a key. Omit walletAddress to use the selected Vex EVM wallet. amountIn is target collateral for a named trade only and requires marketSymbol or marketId.",
+      "name": "lighter_core_onboarding_status",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "amountIn": {
+            "description": "Optional target collateral for a named trade in human USDC decimals, for example \"1\" or \"11\". Requires marketId or marketSymbol. Never pass a direct deposit or funding amount here; use ToolSearch once to select lighter.deposit.prepare and pass the user's amount unchanged.",
+            "type": "string"
+          },
+          "marketId": {
+            "description": "Optional Lighter Core market id. Provide at most one of marketId or marketSymbol, and include amountIn when checking a market minimum.",
+            "type": "number"
+          },
+          "marketSymbol": {
+            "description": "Optional Lighter Core market symbol, for example SUI. Provide at most one of marketSymbol or marketId, and include amountIn when checking a market minimum.",
+            "type": "string"
+          },
+          "walletAddress": {
+            "description": "Optional 0x-prefixed EVM wallet address to check. Omit to use the session's selected Vex wallet. Never a private key.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "gates": {
+      "declaredVisibility": {},
+      "measured": {
+        "hiddenWithoutEnvGates": false,
+        "visibleInMissionSetup": true
+      },
+      "proactive": false,
+      "requiresEnv": null,
+      "showOnlyWhenEnvMissing": null
+    },
+    "kind": "internal",
+    "mutating": false,
+    "pressureSafety": "read_only",
+    "withheld": false
+  }
+}

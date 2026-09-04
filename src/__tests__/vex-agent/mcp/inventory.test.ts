@@ -55,7 +55,7 @@ describe("the exported inventory covers exactly the export scope", () => {
   });
 
   it("pins the exported surface size the owner decided (O20)", () => {
-    // 165 is a REVIEWED number: 25 internal tools plus 140 protocol tools. It
+    // 206 is a REVIEWED number: 29 internal tools plus 177 protocol tools. It
     // is pinned literally because a change to it is always a decision about
     // what external agents may call, never an incidental refactor.
     // 155 -> 159: stage A4b exported the four generic transaction signing
@@ -64,9 +64,11 @@ describe("the exported inventory covers exactly the export scope", () => {
     // with the 18-tool website-API surface (S10).
     // 165 -> 167: the native <-> wrapped-native pair, exported by default like
     // every other wallet tool and recorded in `mcp-export-scope.md`.
-    expect(inventory).toHaveLength(167);
-    expect(inventory.filter((t) => t.kind === "internal")).toHaveLength(27);
-    expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(140);
+    // 167 -> 206: Lighter added two fixed-environment onboarding shortcuts
+    // and its reviewed 37-tool protocol surface.
+    expect(inventory).toHaveLength(206);
+    expect(inventory.filter((t) => t.kind === "internal")).toHaveLength(29);
+    expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(177);
   });
 
   it("exports ToolSearch under its own public name and no other spelling", () => {

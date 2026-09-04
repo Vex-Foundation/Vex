@@ -1,0 +1,48 @@
+{
+  "definition": {
+    "function": {
+      "description": "Read public Lighter API-key metadata for an account on Core or Robinhood Chain. Use when checking which API-key slots exist on an account, their registered public keys, or current nonce values needed for nonce planning. Requires accountIndex and optionally apiKeyIndex. Returns bounded API-key rows with account index, api key index, public key, nonce, and transaction time. Public read: no credential, API private key, wallet, signer, auth-token minting, order placement, cancellation, deposit, or withdrawal support.",
+      "name": "lighter__api_keys_inspect",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "accountIndex": {
+            "description": "Required Lighter account index as a safe non-negative integer. This is public account-index metadata, not a private credential.",
+            "type": "number"
+          },
+          "apiKeyIndex": {
+            "description": "Optional Lighter API-key index from 0 to 255. Omit it to request the provider's all-keys sentinel, which is useful for nonce planning before a future signer path.",
+            "type": "number"
+          },
+          "environment": {
+            "description": "Optional public Lighter environment to read: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc for conversational Lighter requests. Any other value is rejected.",
+            "enum": [
+              "core",
+              "rhc"
+            ],
+            "type": "string"
+          },
+          "limit": {
+            "description": "Max API-key metadata rows to return (default 25, max 50). Out-of-range values are rejected.",
+            "type": "number"
+          }
+        },
+        "required": [
+          "accountIndex"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "lighter",
+    "requiresEnv": null,
+    "toolId": "lighter.apiKeys.inspect"
+  }
+}

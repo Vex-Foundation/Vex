@@ -104,7 +104,9 @@ describe("tool contract snapshots", () => {
     // 36 -> 37: `BoardCompose` (`registry/board.ts`), the terminal presentation
     // tool.
     // 37 -> 39: the native <-> wrapped-native pair (`registry/wallet-wrap.ts`).
-    expect(internal).toHaveLength(39);
+    // 39 -> 41: Lighter registered separate Core and RHC onboarding-status
+    // shortcuts so setup state is visible without protocol discovery.
+    expect(internal).toHaveLength(41);
 
     // The TOTAL is asserted STRUCTURALLY - every registered tool and every
     // manifest gets exactly one contract, and nothing else does. A literal was
@@ -136,8 +138,10 @@ describe("tool contract snapshots", () => {
     // 36 -> 38, worst case 76 -> 78: the native <-> wrapped-native pair
     // (`registry/wallet-wrap.ts`) declares no visibility gate either, so both
     // are offered in every session the baseline can represent.
-    expect(internalVisibleOrder).toHaveLength(38);
-    expect(internalVisibleOrder.length + MAX_DISCOVERED_TOOLS_PER_SESSION).toBe(78);
+    // 38 -> 40, worst case 78 -> 80: both Lighter environment-specific
+    // onboarding-status shortcuts are model-visible.
+    expect(internalVisibleOrder).toHaveLength(40);
+    expect(internalVisibleOrder.length + MAX_DISCOVERED_TOOLS_PER_SESSION).toBe(80);
   });
 
   it("derives its env gates from the live catalogs", () => {

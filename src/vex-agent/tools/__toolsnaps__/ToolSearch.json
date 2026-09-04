@@ -11,7 +11,7 @@
             "type": "number"
           },
           "namespace": {
-            "description": "Protocol filter. Supported namespaces: Cross-chain: khalani, relay; EVM Trading: kyberswap, uniswap, morpho, pendle, trench, pools; Solana: solana; Market Research: dexscreener, virtuals. Reserved namespaces are not discoverable.",
+            "description": "Protocol filter. Supported namespaces: Cross-chain: khalani, relay; EVM Trading: kyberswap, uniswap, morpho, pendle, trench, pools; Solana: solana; Market Research: dexscreener, lighter, virtuals. Reserved namespaces are not discoverable.",
             "type": "string"
           },
           "query": {

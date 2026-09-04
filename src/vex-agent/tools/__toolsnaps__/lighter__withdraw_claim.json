@@ -1,0 +1,32 @@
+{
+  "definition": {
+    "function": {
+      "description": "Execute one exact separately approved Lighter manual settlement claim for Core USDC or RHC USDG. Use when the trusted host approval from lighter__withdraw_claim_prepare resumes. It refuses direct, cross-session, stale, changed-amount, changed-contract, insufficient-ETH, or over-ceiling execution. The local wallet signs only the fixed-owner asset-3 claim with value zero; Vex persists hash, sender, and nonce before one broadcast, accepts only exact fee-only replacements, and never retries ambiguity. Returns the claim id, transaction hash, confirming or ambiguous state, receipt status when known, and reconciliation guidance. Real funds move only to the fixed owner after approval.",
+      "name": "lighter__withdraw_claim",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "claimId": {
+            "description": "Session-scoped environment-bound manual settlement claim id produced by lighter__withdraw_claim_prepare.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "claimId"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "user_wallet_broadcast",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": true,
+    "namespace": "lighter",
+    "requiresEnv": null,
+    "toolId": "lighter.withdraw.claim"
+  }
+}
