@@ -12,6 +12,8 @@
  *      share a single timer and a single in-flight probe.
  *   3. THE MIGRATIONS COUNT. A URL that resolves is not a schema that exists.
  *   4. NO TIMER SURVIVES. Resolve or abort, the interval is cleared.
+ *   5. THE RECYCLE COMMITS AT THE DRAIN. A `closePool()` that rejects leaves
+ *      readiness false and is retried; concurrent callers share one drain.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -82,6 +84,64 @@ describe("ensureEngineDbUrl", () => {
     const second = await ensureEngineDbUrl("corr-2");
     expect(second.ok).toBe(true);
     expect(closePool).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * THE COMMIT POINT. The applied URL used to be read back off
+   * `process.env.VEX_DB_URL`, which this function writes BEFORE the drain, so a
+   * `closePool()` that REJECTED left the next pass comparing its own
+   * half-applied variable, accepting the equality, and reporting a database
+   * that the pool it had failed to close was still serving.
+   */
+  it("stays UNREADY when the pool drain fails, and commits on the next one", async () => {
+    buildPoolConfig.mockResolvedValue(CONFIG);
+    migrationsDone = true;
+    closePool.mockRejectedValueOnce(new Error("pool would not drain"));
+
+    const failed = await ensureEngineDbUrl("corr-close-1");
+    expect(failed.ok).toBe(false);
+    expect(isEngineDbReady()).toBe(false);
+    // The variable IS written - the pool rebuilds itself from it - but it is
+    // not the fact readiness is derived from.
+    expect(process.env.VEX_DB_URL).toBe(
+      "postgresql://vex:test-password@127.0.0.1:5433/vex",
+    );
+
+    // The next call retries the recycle instead of trusting the environment.
+    const repaired = await ensureEngineDbUrl("corr-close-2");
+    expect(repaired.ok).toBe(true);
+    expect(closePool).toHaveBeenCalledTimes(2);
+    expect(isEngineDbReady()).toBe(true);
+  });
+
+  it("serializes concurrent callers into ONE drain", async () => {
+    buildPoolConfig.mockResolvedValue(CONFIG);
+    migrationsDone = true;
+    let releaseDrain = (): void => {};
+    closePool.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseDrain = () => {
+            resolve();
+          };
+        }),
+    );
+
+    const first = ensureEngineDbUrl("corr-concurrent-1");
+    const second = ensureEngineDbUrl("corr-concurrent-2");
+    // The second caller JOINED the pass already running, and nothing has been
+    // committed while the drain is still open.
+    await vi.waitFor(() => {
+      expect(closePool).toHaveBeenCalledTimes(1);
+    });
+    expect(isEngineDbReady()).toBe(false);
+
+    releaseDrain();
+    const [firstOutcome, secondOutcome] = await Promise.all([first, second]);
+    expect(firstOutcome.ok).toBe(true);
+    expect(secondOutcome.ok).toBe(true);
+    expect(closePool).toHaveBeenCalledTimes(1);
+    expect(isEngineDbReady()).toBe(true);
   });
 
   it("reports the database as unavailable while compose has written nothing", async () => {

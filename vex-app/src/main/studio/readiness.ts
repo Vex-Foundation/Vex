@@ -184,11 +184,18 @@ export function currentStudioReadinessEpoch(): number {
  * The barrier completed: preflight registered AND reconciliation finished.
  * Ignored, and LOGGED, when the caller's epoch is stale - which is what a
  * retry timer that outlived its teardown holds.
+ *
+ * RETURNS WHETHER IT COMMITTED, because the caller has work that belongs
+ * strictly after a successful transition: the ready log the user reads, and
+ * the project-cleanup repair it launches. A caller that could not tell a
+ * commit from a refusal announced a ready Studio, and started new database
+ * work, on a process whose teardown had already invalidated its epoch.
  */
-export function markStudioRuntimeReady(callerEpoch: number): void {
-  if (!ownsEpoch(callerEpoch, "ready")) return;
+export function markStudioRuntimeReady(callerEpoch: number): boolean {
+  if (!ownsEpoch(callerEpoch, "ready")) return false;
   readiness = { ready: true };
   announceReadiness();
+  return true;
 }
 
 /** The preflight could not be registered. Studio stays closed. */

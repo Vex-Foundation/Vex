@@ -32,6 +32,16 @@
  * The only way out of the wait is the caller's own `AbortSignal`, which its
  * lifecycle owner aborts at teardown.
  *
+ * ## The recycle COMMITS at the drain
+ *
+ * Pointing the pool at a new URL is two effects, not one: the environment
+ * variable the lazy pool reads, and the drain that makes the pool holding the
+ * old URL go away. Readiness is published only when the second one has
+ * completed, and one recycle runs at a time. A drain that rejects therefore
+ * leaves readiness FALSE and is retried by the next call, instead of being
+ * mistaken for a completed switch by a later pass that only compared the
+ * environment variable this one had already written.
+ *
  * ## Ownership of the poll
  *
  * ONE timer for the whole process, shared by every waiter (single-flight), held
@@ -51,10 +61,30 @@ import { migrationsApplied } from "./migrations-applied.js";
 const DEFAULT_POLL_MS = 1_000;
 
 /**
- * Whether `ensureEngineDbUrl` has successfully pointed the engine pool at the
- * app-managed Postgres in this process. Written only by a successful ensure.
+ * The URL this process has SUCCESSFULLY applied: written only once the pool
+ * that held the previous one has actually been drained.
+ *
+ * It is deliberately not `process.env.VEX_DB_URL`. The environment variable is
+ * what the lazy pool READS when it next builds itself, so it has to be written
+ * before the drain; the drain is what stops the old pool from serving the old
+ * URL, and only its completion proves the switch happened. Reading readiness
+ * off the environment made a REJECTED `closePool()` indistinguishable from a
+ * completed recycle: the next pass saw its own half-applied variable, accepted
+ * the equality, and reported ready while the pool it had failed to close was
+ * still serving.
  */
-let engineDbUrlApplied = false;
+let appliedDbUrl: string | null = null;
+
+/**
+ * SINGLE-FLIGHT for the recycle. `ensureEngineDbUrl` reads the config, writes
+ * the environment and drains the pool across three awaits; two callers
+ * interleaving inside that window would drain twice and could commit their
+ * URLs out of order. Concurrent callers therefore JOIN the pass already in
+ * flight and see its outcome - the shape VS Code's `Throttler` uses for the
+ * same problem (`base/common/async.ts`): one active promise, every other
+ * caller attached to it.
+ */
+let recycleInFlight: Promise<Result<void, VexError>> | null = null;
 
 /** Rejection handed to a waiter whose owner aborted the wait. */
 export class EngineDbWaitAbortedError extends Error {
@@ -93,8 +123,13 @@ function makePostgresUrl(args: {
  * Point the engine's lazy pool at the app-managed Postgres.
  *
  * Mutates `process.env.VEX_DB_URL` and recycles the pool when the resolved URL
- * differs from the one already in effect; `closePool` is idempotent, so
- * concurrent callers converge on the same URL and at most one drain.
+ * differs from the one this process has already applied. Callers that arrive
+ * while a recycle is running JOIN it rather than starting a second one.
+ *
+ * THE COMMIT POINT IS THE DRAIN, not the environment write. A `closePool()`
+ * that rejects leaves the applied URL untouched, so readiness stays false, the
+ * next call retries the recycle, and nothing reports a usable database while
+ * the pool holding the previous URL is still alive.
  *
  * The pool module is reached through a DYNAMIC import, and only on the path
  * that actually recycles it. This module is now read at BOOT - the settlement
@@ -102,21 +137,36 @@ function makePostgresUrl(args: {
  * `pg` into main's load path, which is exactly what the bridge's own dynamic
  * imports exist to avoid.
  */
-export async function ensureEngineDbUrl(
+export function ensureEngineDbUrl(
+  correlationId: string,
+): Promise<Result<void, VexError>> {
+  const joined = recycleInFlight;
+  if (joined !== null) return joined;
+  const pass: Promise<Result<void, VexError>> = applyEngineDbUrl(
+    correlationId,
+  ).finally(() => {
+    if (recycleInFlight === pass) recycleInFlight = null;
+  });
+  recycleInFlight = pass;
+  return pass;
+}
+
+async function applyEngineDbUrl(
   correlationId: string,
 ): Promise<Result<void, VexError>> {
   try {
     const cfg = await buildPoolConfig();
     if (cfg === null) return err(engineDbUnavailableError(correlationId));
     const nextUrl = makePostgresUrl(cfg);
-    if (process.env.VEX_DB_URL === nextUrl) {
-      engineDbUrlApplied = true;
-      return ok(undefined);
-    }
+    if (appliedDbUrl === nextUrl) return ok(undefined);
+    // The environment FIRST, because the pool the drain below destroys rebuilds
+    // itself from this variable at its next query. Writing it after the drain
+    // would let a query landing between the two rebuild the pool against the
+    // URL this call exists to replace.
     process.env.VEX_DB_URL = nextUrl;
     const { closePool } = await import("@vex-agent/db/client.js");
     await closePool();
-    engineDbUrlApplied = true;
+    appliedDbUrl = nextUrl;
     log.info(
       `[engine-db] engine database connection refreshed correlationId=${correlationId}`,
     );
@@ -131,7 +181,7 @@ export async function ensureEngineDbUrl(
  * least once in this process AND the migrate runner reported success.
  */
 export function isEngineDbReady(): boolean {
-  return engineDbUrlApplied && migrationsApplied();
+  return appliedDbUrl !== null && migrationsApplied();
 }
 
 interface EngineDbWaiter {
@@ -240,7 +290,10 @@ export function whenEngineDbReady(
   });
 }
 
-/** Test seam: forget the applied URL, the waiters, the timer and the logs. */
+/**
+ * Test seam: forget the applied URL, the in-flight recycle, the waiters, the
+ * timer and the logs.
+ */
 export function resetEngineDbReadinessForTests(): void {
   for (const waiter of [...waiters]) {
     waiters.delete(waiter);
@@ -251,7 +304,8 @@ export function resetEngineDbReadinessForTests(): void {
     clearInterval(pollTimer);
     pollTimer = null;
   }
-  engineDbUrlApplied = false;
+  appliedDbUrl = null;
+  recycleInFlight = null;
   pollInFlight = false;
   loggedWaiting = false;
   loggedReady = false;
