@@ -643,7 +643,7 @@ describe("migration 078 — the outbox status CHECK and the settled block time",
     expect(stored?.settled_block_time).toBeNull();
 
     await reporting.enqueueEligibleActivity(false);
-    const claimed = (await reporting.claimDueOutbox(10)).filter((c) => c.activityId === id);
+    const claimed = (await reporting.claimDueOutbox(10)).events.filter((c) => c.activityId === id);
     const confirmedPair = claimed.find((c) => c.status === "confirmed");
     expect(confirmedPair?.activity).toBeTruthy();
     const event = mapActivityToEvent(confirmedPair?.activity ?? {}, { status: "confirmed" });

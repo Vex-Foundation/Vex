@@ -20,6 +20,11 @@
  * is always safe. `rescheduleOutbox` overrides the stamp when the server
  * answered with its own `Retry-After`.
  *
+ * Every claim carries the `registration_generation` it ran under, and every
+ * TERMINAL write of those rows (`markOutboxSent`, `markOutboxRejected`,
+ * `rescheduleOutbox`) is fenced by it - see `writeOutboxAtGeneration` for the
+ * in-flight send a 401 reset would otherwise lose.
+ *
  * ── What never goes in here ────────────────────────────────────────────────
  *
  * `last_error` carries status/code words only ("429 rate_limited"), never
@@ -29,7 +34,7 @@
  */
 
 import type { PoolClient } from "pg";
-import { query, queryOne, execute, executeWith, queryOneWith, withTransaction } from "../client.js";
+import { queryOne, queryWith, execute, executeWith, queryOneWith, withTransaction } from "../client.js";
 
 export type AgentscanStopReason = "consent_revoked" | "quarantined" | "agent_conflict" | "wallet_conflict";
 
@@ -90,6 +95,47 @@ export interface ClaimedOutboxEvent {
   /** Raw `agent_activity` row for payload building; null if the row vanished between claim and read. */
   readonly activity: Record<string, unknown> | null;
 }
+
+/**
+ * One claim transaction's rows PLUS the registration generation they were
+ * claimed under - the fence every terminal write of those rows carries back.
+ *
+ * The generation belongs to the BATCH, not to the row: it is one fact read once
+ * per claim, and putting a copy of it on every event would invite a caller to
+ * mix generations from two claims inside one write.
+ */
+export interface ClaimedOutboxBatch {
+  /**
+   * `registration_generation` as of the claim, read under a SHARE lock on the
+   * state singleton INSIDE the claim's own transaction.
+   *
+   * Read there rather than passed down from the lane's earlier
+   * `getReportingState()`, and the difference is not cosmetic. A reset that
+   * commits between the lane's state read and the claim leaves the lane holding
+   * G while the rows it goes on to claim have already been relabelled at G+1;
+   * every terminal write would then be refused as stale, the batch would be sent
+   * to the server and immediately re-owed, and the lane would repeat that on
+   * every tick that reuses the same stale read. Reading under the claim's own
+   * lock cannot observe a generation NEWER than the rows it claimed (a reset
+   * either commits before the share lock is taken, and is seen, or waits behind
+   * the whole claim), and cannot observe an older one either.
+   */
+  readonly registrationGeneration: number;
+  readonly events: readonly ClaimedOutboxEvent[];
+}
+
+/**
+ * What a fenced terminal outbox write did.
+ *
+ * `stale_generation` is an ORDINARY outcome, not an error: a registration reset
+ * committed while this batch was in flight, so the rows the write refers to have
+ * already been relabelled as owed history and belong to a different (or
+ * abandoned) identity. The write applies to nothing and the caller reports the
+ * rows as still owed.
+ */
+export type OutboxWriteOutcome =
+  | { readonly kind: "applied"; readonly rows: number }
+  | { readonly kind: "stale_generation"; readonly rows: 0 };
 
 /**
  * WHAT IS REPORTABLE AT ALL - the single source of truth for the diff scan,
@@ -685,77 +731,201 @@ export async function enqueueBackfillAndMark(input: {
 /**
  * Claim up to `limit` due rows (backfill first, then oldest), stamping the
  * retry backoff before the caller sends. Returns each claimed pair with its
- * live `agent_activity` row for payload building.
+ * live `agent_activity` row for payload building, PLUS the registration
+ * generation the claim ran under.
+ *
+ * ONE TRANSACTION, AND THE LOCK ORDER IS STATE THEN OUTBOX. Every writer that
+ * touches both the singleton and the outbox takes them in that order
+ * (`resetForReRegistration` / `resetIdentityForRecovery` via their state UPDATE,
+ * `enqueueBackfillAndMark` via `FOR UPDATE`, the fenced terminal writes via
+ * `FOR SHARE`), so no pair of them can deadlock. The share lock here is what
+ * makes the returned generation exact rather than merely conservative - see
+ * `ClaimedOutboxBatch.registrationGeneration`.
  */
-export async function claimDueOutbox(limit: number): Promise<ClaimedOutboxEvent[]> {
-  const claimed = await query<{
-    id: string | number;
-    activity_id: string | number;
-    status: ClaimedOutboxEvent["status"];
-    backfill: boolean;
-  }>(
-    `WITH claimed AS (
-       SELECT o.id FROM agentscan_outbox o
-        WHERE o.sent_at IS NULL AND o.rejected_at IS NULL AND o.next_attempt_at <= NOW()
-        ORDER BY o.backfill DESC, o.id ASC
-        LIMIT $1
-        FOR UPDATE SKIP LOCKED
-     )
-     UPDATE agentscan_outbox o
-        SET attempt_count = o.attempt_count + 1,
-            next_attempt_at = NOW() + make_interval(secs => ${CLAIM_BACKOFF_SQL}),
-            last_error = NULL
-       FROM claimed
-      WHERE o.id = claimed.id
-     RETURNING o.id, o.activity_id, o.status, o.backfill`,
-    [limit],
-  );
-  if (claimed.length === 0) return [];
+export async function claimDueOutbox(limit: number): Promise<ClaimedOutboxBatch> {
+  await ensureSingleton();
+  return withTransaction(async (client) => {
+    const state = await queryOneWith<{ registration_generation: number }>(
+      client,
+      `SELECT registration_generation FROM agentscan_reporting_state WHERE id = 1 FOR SHARE`,
+    );
+    if (state === null) throw new Error("agentscan_reporting_state singleton missing after ensure");
+    const registrationGeneration = Number(state.registration_generation);
 
-  const activityIds = [...new Set(claimed.map((c) => Number(c.activity_id)))];
-  const activityRows = await query<Record<string, unknown>>(
-    `SELECT * FROM agent_activity WHERE id = ANY($1::bigint[])`,
-    [activityIds],
-  );
-  const byId = new Map(activityRows.map((r) => [Number(r.id), r]));
+    const claimed = await queryWith<{
+      id: string | number;
+      activity_id: string | number;
+      status: ClaimedOutboxEvent["status"];
+      backfill: boolean;
+    }>(
+      client,
+      `WITH claimed AS (
+         SELECT o.id FROM agentscan_outbox o
+          WHERE o.sent_at IS NULL AND o.rejected_at IS NULL AND o.next_attempt_at <= NOW()
+          ORDER BY o.backfill DESC, o.id ASC
+          LIMIT $1
+          FOR UPDATE SKIP LOCKED
+       )
+       UPDATE agentscan_outbox o
+          SET attempt_count = o.attempt_count + 1,
+              next_attempt_at = NOW() + make_interval(secs => ${CLAIM_BACKOFF_SQL}),
+              last_error = NULL
+         FROM claimed
+        WHERE o.id = claimed.id
+       RETURNING o.id, o.activity_id, o.status, o.backfill`,
+      [limit],
+    );
+    if (claimed.length === 0) return { registrationGeneration, events: [] };
 
-  return claimed.map((c) => ({
-    outboxId: Number(c.id),
-    activityId: Number(c.activity_id),
-    status: c.status,
-    backfill: c.backfill,
-    activity: byId.get(Number(c.activity_id)) ?? null,
-  }));
+    const activityIds = [...new Set(claimed.map((c) => Number(c.activity_id)))];
+    const activityRows = await queryWith<Record<string, unknown>>(
+      client,
+      `SELECT * FROM agent_activity WHERE id = ANY($1::bigint[])`,
+      [activityIds],
+    );
+    const byId = new Map(activityRows.map((r) => [Number(r.id), r]));
+
+    return {
+      registrationGeneration,
+      events: claimed.map((c) => ({
+        outboxId: Number(c.id),
+        activityId: Number(c.activity_id),
+        status: c.status,
+        backfill: c.backfill,
+        activity: byId.get(Number(c.activity_id)) ?? null,
+      })),
+    };
+  });
 }
 
-/** Server accepted (or deduplicated) these events — terminal, never resent. */
-export async function markOutboxSent(outboxIds: number[]): Promise<void> {
-  if (outboxIds.length === 0) return;
-  await execute(
-    `UPDATE agentscan_outbox
-        SET sent_at = NOW(), last_error = NULL
-      WHERE id = ANY($1::bigint[]) AND sent_at IS NULL AND rejected_at IS NULL`,
-    [outboxIds],
+/**
+ * THE FENCE EVERY TERMINAL OUTBOX WRITE PASSES THROUGH.
+ *
+ * The defect it closes (Codex final review, round 2): the periodic and push
+ * lanes claim different batches concurrently. Request A commits on the server
+ * but its response is delayed; request B comes back 401, the drain resets the
+ * registration (every non-rejected row unsent, `backfill = TRUE`, generation
+ * G+1); A's delayed 200 then arrives and writes `sent_at`. That row is now
+ * "already sent" AFTER the reset that made it owed again, so it is silently
+ * omitted from the full resend the reset exists to produce. Under
+ * `resetIdentityForRecovery` it is worse than a gap: the event stays attached to
+ * the identity that was abandoned and never reaches the new one.
+ *
+ * `registration_generation` already fenced the backfill transaction; this
+ * extends the same fence to an in-flight SEND. Two halves, and both are needed:
+ *
+ *   - `SELECT ... FOR SHARE` on the singleton SERIALIZES this write against a
+ *     reset. A reset holds the row exclusively (its own UPDATE), so a write that
+ *     arrives mid-reset blocks here until the reset commits and then reads the
+ *     new generation. Without it, the write could slip in between the reset's
+ *     state UPDATE and its outbox relabel and be undone silently - which is
+ *     correct by luck, not by construction - or read a pre-reset snapshot.
+ *   - the same generation is restated as a PREDICATE in the UPDATE itself, so
+ *     the row write and the fence are evaluated by one statement against one
+ *     committed state, never by two.
+ *
+ * When the reset won, the write applies to nothing: the row stays unsent and
+ * backfill-marked, exactly as the reset left it, and the caller is told
+ * `stale_generation` so it can report the rows as still owed instead of as sent.
+ *
+ * This is VS Code's `handleSaveSuccess`
+ * (`agents-colab/vscode/src/vs/workbench/services/textfile/common/textFileEditorModel.ts:953-964`):
+ * a write that SUCCEEDED downstream may only clear the dirty flag if the
+ * model's `versionId` did not move while it was in flight; otherwise the success
+ * is real and the model stays dirty. Adopted verbatim in shape. What differs is
+ * the failure vocabulary: VS Code silently traces, and metamask-core's
+ * `#updateTransactionInternal` throws when the record it re-reads is gone
+ * (`agents-colab/metamask-core/packages/transaction-controller/src/TransactionController.ts:2616`),
+ * because their caller aborts the whole flow. Ours returns a typed outcome,
+ * because a stale batch is ordinary weather on this lane and the drain has to
+ * keep accounting for the remaining rows.
+ */
+async function writeOutboxAtGeneration(
+  atGeneration: number,
+  run: (client: PoolClient) => Promise<number>,
+): Promise<OutboxWriteOutcome> {
+  await ensureSingleton();
+  return withTransaction(async (client) => {
+    const state = await queryOneWith<{ registration_generation: number }>(
+      client,
+      `SELECT registration_generation FROM agentscan_reporting_state WHERE id = 1 FOR SHARE`,
+    );
+    if (state === null || Number(state.registration_generation) !== atGeneration) {
+      return { kind: "stale_generation", rows: 0 } as const;
+    }
+    return { kind: "applied", rows: await run(client) } as const;
+  });
+}
+
+/** The generation predicate restated inside a terminal write's own UPDATE. */
+const GENERATION_UNCHANGED_SQL = (param: string) =>
+  `(SELECT registration_generation FROM agentscan_reporting_state WHERE id = 1) = ${param}::int`;
+
+/**
+ * Server accepted (or deduplicated) these events - terminal, never resent,
+ * PROVIDED the registration generation has not moved since they were claimed.
+ */
+export async function markOutboxSent(
+  outboxIds: number[],
+  atGeneration: number,
+): Promise<OutboxWriteOutcome> {
+  if (outboxIds.length === 0) return { kind: "applied", rows: 0 };
+  return writeOutboxAtGeneration(atGeneration, (client) =>
+    executeWith(
+      client,
+      `UPDATE agentscan_outbox
+          SET sent_at = NOW(), last_error = NULL
+        WHERE id = ANY($1::bigint[]) AND sent_at IS NULL AND rejected_at IS NULL
+          AND ${GENERATION_UNCHANGED_SQL("$2")}`,
+      [outboxIds, atGeneration],
+    ),
   );
 }
 
-/** Server's per-item validation refusal — terminal; retrying an identical payload can only refail. */
-export async function markOutboxRejected(outboxId: number, error: string): Promise<void> {
-  await execute(
-    `UPDATE agentscan_outbox
-        SET rejected_at = NOW(), last_error = $2
-      WHERE id = $1 AND sent_at IS NULL AND rejected_at IS NULL`,
-    [outboxId, error.slice(0, 200)],
+/**
+ * Server's per-item validation refusal - terminal; retrying an identical payload
+ * can only refail. Fenced like every terminal write: a rejection decided against
+ * a batch the reset has already relabelled must not poison a row that is now
+ * owed again as history, because the payload the NEXT identity sends is not the
+ * one this verdict was about.
+ */
+export async function markOutboxRejected(
+  outboxId: number,
+  error: string,
+  atGeneration: number,
+): Promise<OutboxWriteOutcome> {
+  return writeOutboxAtGeneration(atGeneration, (client) =>
+    executeWith(
+      client,
+      `UPDATE agentscan_outbox
+          SET rejected_at = NOW(), last_error = $2
+        WHERE id = $1 AND sent_at IS NULL AND rejected_at IS NULL
+          AND ${GENERATION_UNCHANGED_SQL("$3")}`,
+      [outboxId, error.slice(0, 200), atGeneration],
+    ),
   );
 }
 
-/** Override the stamped backoff (e.g. the server's own Retry-After) for still-owed rows. */
-export async function rescheduleOutbox(outboxIds: number[], delaySeconds: number): Promise<void> {
-  if (outboxIds.length === 0) return;
-  await execute(
-    `UPDATE agentscan_outbox
-        SET next_attempt_at = NOW() + make_interval(secs => $2::float8)
-      WHERE id = ANY($1::bigint[]) AND sent_at IS NULL AND rejected_at IS NULL`,
-    [outboxIds, delaySeconds],
+/**
+ * Override the stamped backoff (e.g. the server's own Retry-After) for still-owed
+ * rows. Fenced too: the reset sets `next_attempt_at = NOW()` because the whole
+ * history is owed immediately, and a stale hold decided under the previous
+ * identity must not push the new one's resend an hour into the future.
+ */
+export async function rescheduleOutbox(
+  outboxIds: number[],
+  delaySeconds: number,
+  atGeneration: number,
+): Promise<OutboxWriteOutcome> {
+  if (outboxIds.length === 0) return { kind: "applied", rows: 0 };
+  return writeOutboxAtGeneration(atGeneration, (client) =>
+    executeWith(
+      client,
+      `UPDATE agentscan_outbox
+          SET next_attempt_at = NOW() + make_interval(secs => $2::float8)
+        WHERE id = ANY($1::bigint[]) AND sent_at IS NULL AND rejected_at IS NULL
+          AND ${GENERATION_UNCHANGED_SQL("$3")}`,
+      [outboxIds, delaySeconds, atGeneration],
+    ),
   );
 }

@@ -239,7 +239,7 @@ describe("agentscan_outbox — diff scan", () => {
     await confirmSeededSwap(activityId);
     expect(await repo.enqueueEligibleActivity(false)).toBe(1); // the (id, confirmed) pair
 
-    const claimed = await repo.claimDueOutbox(10);
+    const claimed = (await repo.claimDueOutbox(10)).events;
     const statuses = claimed.map((c) => c.status).sort();
     expect(statuses).toEqual(["confirmed", "pending"]);
     expect(claimed.every((c) => c.activityId === activityId)).toBe(true);
@@ -249,7 +249,7 @@ describe("agentscan_outbox — diff scan", () => {
     const repo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
     await seedEligibleSwap();
     expect(await repo.enqueueEligibleActivity(true)).toBe(1);
-    const claimed = await repo.claimDueOutbox(10);
+    const claimed = (await repo.claimDueOutbox(10)).events;
     expect(claimed).toHaveLength(1);
     expect(at(claimed, 0).backfill).toBe(true);
   });
@@ -284,7 +284,7 @@ describe("agentscan_outbox — diff scan", () => {
     // Exactly one: the superseded row. A row this install has CLOSED must be
     // reported, or the server holds its pending row open forever.
     expect(await repo.enqueueEligibleActivity(false)).toBe(1);
-    const claimed = await repo.claimDueOutbox(10);
+    const claimed = (await repo.claimDueOutbox(10)).events;
     expect(claimed).toHaveLength(1);
     expect(at(claimed, 0).activityId).toBe(superseded.id);
     expect(at(claimed, 0).status).toBe("superseded_unproven");
@@ -297,11 +297,11 @@ describe("agentscan_outbox — claim-and-stamp lifecycle", () => {
     await seedEligibleSwap();
     await repo.enqueueEligibleActivity(false);
 
-    const first = await repo.claimDueOutbox(10);
+    const first = (await repo.claimDueOutbox(10)).events;
     expect(first).toHaveLength(1);
     expect(at(first, 0).activity).not.toBeNull();
 
-    const second = await repo.claimDueOutbox(10);
+    const second = (await repo.claimDueOutbox(10)).events;
     expect(second).toHaveLength(0);
   });
 
@@ -311,19 +311,20 @@ describe("agentscan_outbox — claim-and-stamp lifecycle", () => {
     await seedEligibleSwap();
     await repo.enqueueEligibleActivity(false);
 
-    const claimed = await repo.claimDueOutbox(10);
-    expect(claimed).toHaveLength(1);
-    const outboxId = at(claimed, 0).outboxId;
+    const batch = await repo.claimDueOutbox(10);
+    const generation = batch.registrationGeneration;
+    expect(batch.events).toHaveLength(1);
+    const outboxId = at(batch.events, 0).outboxId;
 
     // Retry-After override: due again once the (test-shortened) delay passes.
-    await repo.rescheduleOutbox([outboxId], 0);
-    const reclaimed = await repo.claimDueOutbox(10);
+    expect(await repo.rescheduleOutbox([outboxId], 0, generation)).toEqual({ kind: "applied", rows: 1 });
+    const reclaimed = (await repo.claimDueOutbox(10)).events;
     expect(reclaimed).toHaveLength(1);
 
-    await repo.markOutboxSent([outboxId]);
+    expect(await repo.markOutboxSent([outboxId], generation)).toEqual({ kind: "applied", rows: 1 });
     // Force-due everything: a sent row must STILL never be claimable.
     await execute(`UPDATE agentscan_outbox SET next_attempt_at = NOW()`, []);
-    expect(await repo.claimDueOutbox(10)).toHaveLength(0);
+    expect((await repo.claimDueOutbox(10)).events).toHaveLength(0);
   });
 
   it("markOutboxRejected terminalizes with a bounded error note", async () => {
@@ -331,12 +332,14 @@ describe("agentscan_outbox — claim-and-stamp lifecycle", () => {
     const repo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
     await seedEligibleSwap();
     await repo.enqueueEligibleActivity(false);
-    const claimed = await repo.claimDueOutbox(10);
-    const outboxId = at(claimed, 0).outboxId;
+    const batch = await repo.claimDueOutbox(10);
+    const outboxId = at(batch.events, 0).outboxId;
 
-    await repo.markOutboxRejected(outboxId, "validation_failed");
+    expect(
+      await repo.markOutboxRejected(outboxId, "validation_failed", batch.registrationGeneration),
+    ).toEqual({ kind: "applied", rows: 1 });
     await execute(`UPDATE agentscan_outbox SET next_attempt_at = NOW()`, []);
-    expect(await repo.claimDueOutbox(10)).toHaveLength(0);
+    expect((await repo.claimDueOutbox(10)).events).toHaveLength(0);
 
     const row = await queryOne<{ last_error: string | null; rejected_at: Date | null }>(
       `SELECT last_error, rejected_at FROM agentscan_outbox WHERE id = $1`, [outboxId],
@@ -371,7 +374,8 @@ describe("agentscan_outbox — resetForReRegistration (auth_lost full resend)", 
     const unsentActivityId = await seedEligibleSwap();
     await repo.enqueueEligibleActivity(false);
 
-    const claimed = await repo.claimDueOutbox(10);
+    const batch = await repo.claimDueOutbox(10);
+    const claimed = batch.events;
     expect(claimed).toHaveLength(3);
     function claimedFor(activityId: number) {
       const row = claimed.find((c) => c.activityId === activityId);
@@ -382,8 +386,8 @@ describe("agentscan_outbox — resetForReRegistration (auth_lost full resend)", 
     const rejectedOutboxId = claimedFor(rejectedActivityId).outboxId;
     const unsentOutboxId = claimedFor(unsentActivityId).outboxId;
 
-    await repo.markOutboxSent([sentOutboxId]);
-    await repo.markOutboxRejected(rejectedOutboxId, "validation_failed");
+    await repo.markOutboxSent([sentOutboxId], batch.registrationGeneration);
+    await repo.markOutboxRejected(rejectedOutboxId, "validation_failed", batch.registrationGeneration);
 
     await repo.resetForReRegistration();
 
@@ -421,7 +425,7 @@ describe("agentscan_outbox — resetForReRegistration (auth_lost full resend)", 
     // Force-due everything: the resent row must be reclaimable as backfill;
     // the rejected row must stay out of the candidate set forever.
     await execute(`UPDATE agentscan_outbox SET next_attempt_at = NOW()`, []);
-    const reclaimed = await repo.claimDueOutbox(10);
+    const reclaimed = (await repo.claimDueOutbox(10)).events;
     const resent = reclaimed.find((c) => c.outboxId === sentOutboxId);
     if (!resent) throw new Error("expected the previously-sent row to be reclaimable");
     expect(resent.backfill).toBe(true);
@@ -437,10 +441,10 @@ describe("agentscan_outbox — resetForReRegistration (auth_lost full resend)", 
 
     await seedEligibleSwap();
     await repo.enqueueEligibleActivity(false);
-    const claimed = await repo.claimDueOutbox(10);
-    const sentOutboxId = claimed[0]?.outboxId;
+    const batch = await repo.claimDueOutbox(10);
+    const sentOutboxId = batch.events[0]?.outboxId;
     if (sentOutboxId === undefined) throw new Error("expected a claimed row");
-    await repo.markOutboxSent([sentOutboxId]);
+    await repo.markOutboxSent([sentOutboxId], batch.registrationGeneration);
 
     await repo.resetIdentityForRecovery();
 

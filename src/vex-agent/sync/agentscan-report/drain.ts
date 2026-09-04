@@ -55,7 +55,12 @@ export async function drainOutbox(
   let deferred = 0;
 
   for (let batch = 0; batch < AGENTSCAN_MAX_BATCHES_PER_TICK; batch++) {
-    const claimed = await reportingRepo.claimDueOutbox(AGENTSCAN_BATCH_LIMIT);
+    // The generation travels with the batch from here to every terminal write
+    // below: a registration reset that lands while this batch is in flight must
+    // make those writes apply to nothing, or a row the reset re-owed is marked
+    // sent behind its back and dropped from the full resend.
+    const { events: claimed, registrationGeneration } =
+      await reportingRepo.claimDueOutbox(AGENTSCAN_BATCH_LIMIT);
     if (claimed.length === 0) break;
 
     // One envelope carries one backfill flag — a mixed claim is split.
@@ -73,7 +78,7 @@ export async function drainOutbox(
         stop = true;
         break;
       }
-      const outcome = await sendGroup(client, agentHash, ingestToken, group);
+      const outcome = await sendGroup(client, agentHash, ingestToken, group, registrationGeneration);
       sent += outcome.sent;
       rejected += outcome.rejected;
       deferred += outcome.deferred;
@@ -88,11 +93,23 @@ export async function drainOutbox(
   return { sent, rejected, deferred };
 }
 
+/**
+ * One HTTP batch and every verdict it can produce.
+ *
+ * `atGeneration` is the `registration_generation` the rows were claimed under.
+ * Every terminal write carries it, and a `stale_generation` answer means a
+ * registration reset committed while this request was in flight: the rows are
+ * already relabelled as owed history under a different (or abandoned) identity,
+ * so the verdict is reported and the rows counted as DEFERRED rather than sent,
+ * rejected or held. The drain stops after one, because continuing to send under
+ * a token the reset has invalidated can only earn another 401.
+ */
 async function sendGroup(
   client: AgentscanClient,
   agentHash: string,
   ingestToken: string,
   group: ClaimedOutboxEvent[],
+  atGeneration: number,
 ): Promise<{ sent: number; rejected: number; deferred: number; stop: boolean }> {
   // A vanished activity row (cascade already removed its outbox rows) has
   // nothing to send and nothing to mark.
@@ -124,17 +141,48 @@ async function sendGroup(
     const sentIds = mappable
       .filter((_, index) => !rejectedIndexes.has(index))
       .map((c) => c.outboxId);
-    await reportingRepo.markOutboxSent(sentIds);
+    const sentWrite = await reportingRepo.markOutboxSent(sentIds, atGeneration);
+    let staleSent = 0;
+    if (sentWrite.kind === "stale_generation") {
+      staleSent = sentIds.length;
+      logger.warn("agentscan.report.send_ack_stale_generation", {
+        rows: staleSent,
+        claimedAtGeneration: atGeneration,
+      });
+    }
+
+    let rejected = 0;
+    let staleRejected = 0;
     for (const index of outcome.rejectedIndexes) {
       const item = mappable[index];
       if (item === undefined) continue;
-      await reportingRepo.markOutboxRejected(item.outboxId, "validation_failed");
+      const rejection = await reportingRepo.markOutboxRejected(
+        item.outboxId,
+        "validation_failed",
+        atGeneration,
+      );
+      if (rejection.kind === "stale_generation") {
+        staleRejected += 1;
+        continue;
+      }
+      rejected += 1;
       logger.warn("agentscan.report.event_rejected", {
         activityId: item.activityId,
         status: item.status,
       });
     }
-    return { sent: sentIds.length, rejected: outcome.rejectedIndexes.length, deferred: 0, stop: false };
+    if (staleRejected > 0) {
+      logger.warn("agentscan.report.rejection_stale_generation", {
+        rows: staleRejected,
+        claimedAtGeneration: atGeneration,
+      });
+    }
+
+    const stale = staleSent + staleRejected;
+    if (stale > 0) {
+      return { sent: sentIds.length - staleSent, rejected, deferred: stale, stop: true };
+    }
+    return { sent: sentIds.length, rejected, deferred: 0, stop: false };
   }
 
   const owedIds = mappable.map((c) => c.outboxId);
@@ -158,14 +206,26 @@ async function sendGroup(
     // OUR envelope failed the server's schema — a client bug, not weather.
     // Data is never dropped; the rows hold for an hour so the log is seen
     // before the next thundering retry.
-    await reportingRepo.rescheduleOutbox(owedIds, INVALID_BATCH_HOLD_SECONDS);
+    const held = await reportingRepo.rescheduleOutbox(owedIds, INVALID_BATCH_HOLD_SECONDS, atGeneration);
+    if (held.kind === "stale_generation") {
+      logger.warn("agentscan.report.hold_stale_generation", {
+        rows: owedIds.length,
+        claimedAtGeneration: atGeneration,
+      });
+    }
     logger.error("agentscan.report.batch_invalid", { detail: outcome.detail, rows: owedIds.length });
     return { sent: 0, rejected: 0, deferred: owedIds.length, stop: true };
   }
   // retryable — the claim already stamped exponential backoff; the server's
   // own Retry-After overrides it when present.
   if (outcome.retryAfterSeconds !== null) {
-    await reportingRepo.rescheduleOutbox(owedIds, outcome.retryAfterSeconds);
+    const held = await reportingRepo.rescheduleOutbox(owedIds, outcome.retryAfterSeconds, atGeneration);
+    if (held.kind === "stale_generation") {
+      logger.warn("agentscan.report.hold_stale_generation", {
+        rows: owedIds.length,
+        claimedAtGeneration: atGeneration,
+      });
+    }
   }
   logger.info("agentscan.report.batch_deferred", {
     detail: outcome.detail,
