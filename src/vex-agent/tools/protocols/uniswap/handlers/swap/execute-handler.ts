@@ -148,7 +148,7 @@ export async function executeUniswapSwap(
   // quote at 1,190.145 on 2026-08-27 without reverting.
   //
   // The row is CLAIMED further down, after every comparison this execution can
-  // make has passed (round-2 blocker 1). Claiming here burnt the approved quote
+  // make has passed (review finding, 2026-09-04). Claiming here burnt the approved quote
   // on the way out of a correct refusal: the retry the refusal instructed the
   // agent to make got `already_claimed`.
   const claimed = await readUniswapExecutionSnapshot(TOOL_ID, sessionId, p, context);

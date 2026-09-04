@@ -168,7 +168,7 @@ export const executeHandler: ProtocolHandler = async (p, context): Promise<ToolR
   //
   // It is READ here and CLAIMED in Phase A, after the build, the calldata guard,
   // the fee-statement comparison and the debit-plan comparison have all passed
-  // (round-2 blocker 1). Claiming here spent the approved quote on the way out
+  // (review finding, 2026-09-04). Claiming here spent the approved quote on the way out
   // of a correct refusal, and the retry the refusal asked for got
   // `already_claimed`.
   const claimed = await readSwapExecutionSnapshot(toolId, sessionId, p, context);

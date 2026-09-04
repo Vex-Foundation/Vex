@@ -379,8 +379,8 @@ const CLAIMABLE_PREDICATE = `
 /**
  * The exact row a claim would consume, read WITHOUT consuming it.
  *
- * This exists because of the ordering the money path requires (Codex round-2
- * blocker 1): an executor must be able to re-derive its fee statement and its
+ * This exists because of the ordering the money path requires (review finding,
+ * 2026-09-04): an executor must be able to re-derive its fee statement and its
  * router input against the row that authorizes the fill, and REFUSE, before the
  * row is spent. Claiming first turned every divergence into a burnt quote - the
  * refusal was correct and the retry got `already_claimed`.

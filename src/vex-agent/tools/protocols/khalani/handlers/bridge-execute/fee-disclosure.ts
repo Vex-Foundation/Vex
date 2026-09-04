@@ -112,7 +112,7 @@ const KHALANI_QUOTE_TOOL_NAME = "khalani__bridge_quote_get";
  * carries its bounded reason so the public result can state WHY instead of
  * collapsing into a generic bridge failure.
  *
- * `not_gated` IS A REFUSAL HERE (round-2 blocker 4). Answering `null` turned the
+ * `not_gated` IS A REFUSAL HERE (review finding, 2026-09-04). Answering `null` turned the
  * loss of this tool's registry mapping into permission to sign a fee, and this
  * handler is gated by construction: the prequote row is its entire fee
  * authority. Rule 07, fail closed.

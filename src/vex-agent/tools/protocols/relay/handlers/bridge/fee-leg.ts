@@ -113,7 +113,7 @@ const RELAY_QUOTE_TOOL_NAME = "relay__bridge_quote_get";
  * public result can state WHY rather than collapsing into a generic bridge
  * failure.
  *
- * `not_gated` IS A REFUSAL HERE (round-2 blocker 4). It used to answer `null`,
+ * `not_gated` IS A REFUSAL HERE (review finding, 2026-09-04). It used to answer `null`,
  * which turned the loss of this tool's registry mapping into permission to sign
  * a fee: this handler is gated by construction and its whole fee authority is
  * the prequote row, so an absent registration means the fee cannot be bound to
