@@ -1862,7 +1862,7 @@ frozen in A4a because both sides of the wire depend on them.
    reviewed doc `studio-mcp/bridge-endpoint-contract.md` plus GOLDEN
    VECTORS (one JSON fixture consumed by the TS tests in this arc and
    the Go tests in A4c). It defines, exactly:
-   - Endpoint derivation per OS: Linux `$XDG_RUNTIME_DIR/
+   - Endpoint derivation per OS: Linux `/run/user/<uid>/` when private, else `$XDG_RUNTIME_DIR/
      vex-studio-<hash>.sock`, falling back (unset, not a directory,
      not owned by the user, or mode wider than 0700) to
      `<tmpdir>/vex-studio-<uid>/vex-studio-<hash>.sock` inside a 0700
