@@ -40,7 +40,10 @@
  */
 
 import type { StudioToolCall } from "@vex-agent/mcp/admission.js";
-import type { StudioDuplexTransport } from "@vex-agent/mcp/duplex-transport.js";
+import type {
+  StudioDuplexTransport,
+  StudioWriteOutcome,
+} from "@vex-agent/mcp/duplex-transport.js";
 import type {
   RunStudioCallOptions,
   StudioCallOutcome,
@@ -178,7 +181,15 @@ export interface ServeConnectionInput {
   readonly projectId: string;
   readonly runCall: StudioRunCall;
   readonly cancelCause: () => StudioCancelCause;
-  readonly writeLine: (line: string, progressKey: string | null) => Promise<void>;
+  /**
+   * The connection's ONE outbound writer, answering with the outcome its queue
+   * actually took. `accepted` is the only one the transport may count or turn
+   * into this connection's `first response` line.
+   */
+  readonly writeLine: (
+    line: string,
+    progressKey: string | null,
+  ) => Promise<StudioWriteOutcome>;
   readonly onWireFailure: (code: StudioWireErrorCode) => void;
   /** The transport's own lifecycle transitions, for this connection's log. */
   readonly onWireLifecycle: (event: SocketTransportLifecycleEvent) => void;

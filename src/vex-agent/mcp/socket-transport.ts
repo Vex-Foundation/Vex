@@ -62,7 +62,10 @@
  * a typed over-limit error and a closed connection.
  */
 
-import type { StudioDuplexTransport } from "./duplex-transport.js";
+import type {
+  StudioDuplexTransport,
+  StudioWriteOutcome,
+} from "./duplex-transport.js";
 
 import type { InvalidJsonReason } from "./wire-errors.js";
 
@@ -272,8 +275,17 @@ export interface SocketTransportOptions {
    * queue, `send()` frames the message and hands the line to it rather than
    * writing. `progressKey` is non-null for a `notifications/progress` frame,
    * which is the only class the queue may coalesce.
+   *
+   * The writer ANSWERS WITH AN OUTCOME rather than a bare resolution, because
+   * its promise settles on five different edges and only one of them is the
+   * bytes leaving this process (`StudioWriteOutcome`). A milestone or a counter
+   * built on the resolution alone would claim an answer left main while it sat
+   * in a closed queue.
    */
-  readonly writeLine?: (line: string, progressKey: string | null) => Promise<void>;
+  readonly writeLine?: (
+    line: string,
+    progressKey: string | null,
+  ) => Promise<StudioWriteOutcome>;
   /**
    * The connection lifecycle transitions, for the OWNER'S structural log.
    *
@@ -308,7 +320,7 @@ export class StudioSocketTransport implements JsonRpcWireTransport {
   private readonly shutdownDeadlineMs: number;
   private readonly onFailure: ((failure: SocketTransportFailure) => void) | undefined;
   private readonly writeLine:
-    | ((line: string, progressKey: string | null) => Promise<void>)
+    | ((line: string, progressKey: string | null) => Promise<StudioWriteOutcome>)
     | undefined;
   private readonly onLifecycle:
     | ((event: SocketTransportLifecycleEvent) => void)
@@ -419,15 +431,17 @@ export class StudioSocketTransport implements JsonRpcWireTransport {
       return Promise.resolve();
     }
     const line = `${JSON.stringify(message)}\n`;
-    // COUNTED AND REPORTED ON ACCEPTANCE, not here.
+    // COUNTED AND REPORTED ON ACCEPTANCE, not here, and not on resolution.
     //
     // "Did main's answer leave main" is the exact question the log could not
     // answer, and a milestone written at the hand-off answers a weaker one: a
-    // frame handed to an outbound queue that is already closed, or to a write
-    // that rejects, never reached the peer at all, and a `first response` line
-    // for it is a false witness in the one log an incident is read from. The
-    // wire's completion callback and the writer's resolution are the two
-    // points at which the bytes are somebody else's; both run `accepted`.
+    // frame handed to an outbound queue that is already closed never reached
+    // the peer at all, and a `first response` line for it is a false witness
+    // in the one log an incident is read from. Nor is the writer's RESOLUTION
+    // the answer: the host's queue settles every frame it closed, coalesced or
+    // dropped at its bound, deliberately, so a disconnect is not an unhandled
+    // rejection. Only the `accepted` outcome means the bytes are somebody
+    // else's problem now.
     const outbound = classifyOutboundFrame(message);
     const accepted = (): void => {
       this.countOutbound(outbound);
@@ -440,18 +454,56 @@ export class StudioSocketTransport implements JsonRpcWireTransport {
         outbound,
       });
     };
+    const settle = (outcome: StudioWriteOutcome): void => {
+      // ONE OUTCOME OUT OF FOUR. The owner's queue resolves for a frame it
+      // coalesced, dropped at its bound, or swallowed on close, and it says
+      // which; a milestone written on any of those is a false witness in the
+      // log an incident is read from.
+      if (outcome === "accepted") accepted();
+    };
+    // The DRAIN accounting settles on EVERY edge, acceptance or not, and a
+    // writer that rejects discharges this frame's hold too: leaving it
+    // outstanding would hold a finished connection open to its deadline for a
+    // frame nobody is waiting for any more.
+    const settleDrain = (): void => {
+      this.settleIfDrained();
+    };
     if (this.writeLine !== undefined) {
       return this.writeLine(line, progressCoalesceKey(message))
-        .then(accepted)
-        .finally(() => {
-          this.settleIfDrained();
-        });
+        .then(settle)
+        .finally(settleDrain);
     }
-    return new Promise<void>((resolve) => {
-      this.wire.write(line, () => {
-        accepted();
-        this.settleIfDrained();
-        resolve();
+    return this.writeToWire(line).then(settle).finally(settleDrain);
+  }
+
+  /**
+   * Write one line straight to the wire, with the SAME outcome vocabulary the
+   * owner's queue answers in.
+   *
+   * The standalone path (no host queue) still has to distinguish the bytes
+   * leaving from the wire going away underneath them: `close` and `error`
+   * settle it so a teardown cannot strand `send`, and neither of them is
+   * acceptance. Ordering is the queue's, not this module's, so there is no
+   * `drain` parking here - a refused write's callback still runs when Node
+   * flushes it.
+   */
+  private writeToWire(line: string): Promise<StudioWriteOutcome> {
+    return new Promise<StudioWriteOutcome>((resolve) => {
+      let settled = false;
+      const done = (outcome: StudioWriteOutcome): void => {
+        if (settled) return;
+        settled = true;
+        this.wire.off("close", gone);
+        this.wire.off("error", gone);
+        resolve(outcome);
+      };
+      const gone = (): void => {
+        done("closed");
+      };
+      this.wire.once("close", gone);
+      this.wire.once("error", gone);
+      this.wire.write(line, (error) => {
+        done(error === undefined || error === null ? "accepted" : "closed");
       });
     });
   }
@@ -762,13 +814,9 @@ export class StudioSocketTransport implements JsonRpcWireTransport {
   }
 
   /** The framing error line, through the owner's serialized writer when set. */
-  private writeFramingLine(line: string): Promise<void> {
+  private writeFramingLine(line: string): Promise<StudioWriteOutcome> {
     if (this.writeLine !== undefined) return this.writeLine(line, null);
-    return new Promise<void>((resolve) => {
-      this.wire.write(line, () => {
-        resolve();
-      });
-    });
+    return this.writeToWire(line);
   }
 
   /** The contract's shutdown deadline, as a promise that cleans up its timer. */

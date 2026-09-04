@@ -24,6 +24,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { FakeDuplexTransport } from "@vex-agent/mcp/duplex-transport-fake.js";
+import type { StudioWriteOutcome } from "@vex-agent/mcp/duplex-transport.js";
 import {
   loggableMcpMethod,
   StudioSocketTransport,
@@ -209,13 +210,13 @@ describe("the first outbound line", () => {
     // the log claimed main's answer had left main while the bytes were still
     // in main. The one question this line exists to answer was the one it
     // could get wrong.
-    const parked: Array<() => void> = [];
+    const parked: Array<(outcome: StudioWriteOutcome) => void> = [];
     const wire = new FakeDuplexTransport("accept_sync");
     const events: SocketTransportLifecycleEvent[] = [];
     const transport = new StudioSocketTransport(wire, {
       onLifecycle: (event) => events.push(event),
       writeLine: () =>
-        new Promise<void>((resolve) => {
+        new Promise<StudioWriteOutcome>((resolve) => {
           parked.push(resolve);
         }),
     });
@@ -227,7 +228,7 @@ describe("the first outbound line", () => {
 
     const [accept] = parked;
     if (accept === undefined) throw new Error("the writer was never called");
-    accept();
+    accept("accepted");
     await sent;
 
     expect(events.filter((event) => event.kind === "first_response")).toHaveLength(1);

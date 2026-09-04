@@ -20,6 +20,7 @@ import { createServer, connect, type AddressInfo, type Socket } from "node:net";
 
 import { describe, expect, it, vi } from "vitest";
 
+import type { StudioWriteOutcome } from "@vex-agent/mcp/duplex-transport.js";
 import type { SocketTransportLifecycleEvent } from "@vex-agent/mcp/socket-transport.js";
 
 import { serveOverSocket } from "../mcp-host/serve.js";
@@ -68,7 +69,7 @@ describe("serveOverSocket peer EOF replay", () => {
           result: { success: true, output: "ok" },
         }),
         cancelCause: () => "disconnect",
-        writeLine: async () => undefined,
+        writeLine: async (): Promise<StudioWriteOutcome> => "accepted",
         onWireFailure: vi.fn(),
         onWireLifecycle: (event: SocketTransportLifecycleEvent): void => {
           events.push(event);
