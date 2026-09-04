@@ -47,13 +47,26 @@
  * (`studio/keybindings.ts`), so the set this refuses and the set the hook acts
  * on cannot drift apart.
  *
- * IT DOES NOT `preventDefault`, and that is the one place this departs from
- * the reference. VS Code calls it because its keybinding service dispatches
- * from its own listener; Studio's hook is a BUBBLE-phase listener on
- * `document` that treats `defaultPrevented` as "a surface nearer the key
- * already dealt with it" and returns. Preventing the default here would
- * therefore refuse the chord in xterm AND cancel it in the hook, which is the
+ * IT DOES NOT `preventDefault` FOR A STUDIO CHORD, and that is the one place
+ * this departs from the reference. VS Code calls it because its keybinding
+ * service dispatches from its own listener; Studio's hook is a BUBBLE-phase
+ * listener on `document` that treats `defaultPrevented` as "a surface nearer
+ * the key already dealt with it" and returns. Preventing the default there
+ * would refuse the chord in xterm AND cancel it in the hook, which is the
  * defect this fixes with extra steps.
+ *
+ * A CLIPBOARD CHORD IS THE OPPOSITE CASE and is consumed completely - it never
+ * travels on, and the browser's own copy/paste must not fire behind ours. See
+ * the key handler, and `terminal-clipboard.ts` for the table it reads.
+ *
+ * ## THE SKIP SET IS TWO FACTS, NOT ONE
+ *
+ * A chord is taken from the shell only when the resolver would answer it on the
+ * `terminal` surface AND an owner answers that intent. Asking only the first
+ * question cost the shell two keys - `Ctrl+\\`` (an intent nothing wires) and
+ * `Ctrl+Enter` (an intent that declines on a terminal tab): xterm refused them
+ * and then nothing acted, so they reached neither Studio nor the pty. See
+ * `studioTerminalSkipChords` in `keybindings.ts`.
  *
  * ## The clear goes THROUGH the write queue, not around it
  *
@@ -87,9 +100,37 @@ import {
   resizeTerminal,
   writeTerminal,
 } from "../../../../lib/api/terminal.js";
-import { isStudioTerminalChord } from "../keybindings.js";
+import { isStudioTerminalChord, type StudioIntent } from "../keybindings.js";
 import { studioPlatform, type StudioPlatform } from "../keybindings-labels.js";
+import { studioBoundIntents } from "../useStudioKeybindings.js";
+import {
+  decideTerminalClipboardAction,
+  runTerminalClipboardAction,
+  terminalClipboardNotice,
+  terminalRightClickIsCopyPaste,
+  type TerminalClipboardAction,
+  type TerminalClipboardTarget,
+} from "./terminal-clipboard.js";
+import { TerminalContextMenu } from "./TerminalContextMenu.js";
 import { terminalRegistry, type TerminalRegistry } from "./terminal-registry.js";
+
+/**
+ * The intents an owner answers, resolved ONCE and LAZILY.
+ *
+ * Lazily because `useStudioKeybindings` reaches back into this folder for
+ * `TERMINAL_WRAPPER_CLASS`, so the two modules form an import cycle and a value
+ * read at module-evaluation time here could be read before the hook's handler
+ * map exists. The first keystroke into a shell is long after every module has
+ * loaded, so resolving it there is both safe and free.
+ *
+ * ONE SET, kept, because `studioTerminalSkipChords` memoises on its identity: a
+ * fresh set per keystroke would rebuild the projection on every key.
+ */
+let handledIntentsMemo: ReadonlySet<StudioIntent> | null = null;
+function handledIntents(): ReadonlySet<StudioIntent> {
+  handledIntentsMemo ??= studioBoundIntents();
+  return handledIntentsMemo;
+}
 
 /**
  * RIS - "reset to initial state" (ECMA-48). Written into the stream rather than
@@ -164,6 +205,48 @@ export function XtermHost({
   const [exit, setExit] = useState<{ exitCode: number; signal: number | null } | null>(
     null,
   );
+  /**
+   * What the clipboard could not do, IN WORDS, or null.
+   *
+   * Separate from `refusal`, which is the HOST's vocabulary
+   * (`TerminalErrorCode`): a denied clipboard permission is a renderer fact
+   * with a different remedy, and forcing it through the host's enum would need
+   * a code the host can never send.
+   */
+  const [clipboardNotice, setClipboardNotice] = useState<string | null>(null);
+  /** Where a context menu was opened, in viewport coordinates, or null. */
+  const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
+
+  /**
+   * The terminal this pane is currently attached to, or null between mounts.
+   *
+   * A ref rather than a registry lookup: the registry deliberately has no
+   * non-acquiring read, and the clipboard must act on the terminal THIS pane
+   * holds - which is precisely the one the subscription effect took a reference
+   * to. Null while detached, so a context menu left open across an unmount
+   * cannot write into a terminal nobody is showing.
+   */
+  const clipboardTargetRef = useRef<TerminalClipboardTarget | null>(null);
+
+  const runClipboard = useCallback((action: TerminalClipboardAction): void => {
+    const target = clipboardTargetRef.current;
+    if (target === null) return;
+    void runTerminalClipboardAction(
+      action,
+      target,
+      typeof navigator === "undefined" ? undefined : navigator.clipboard,
+    ).then((outcome) => {
+      // REPORTED, never swallowed: a denied clipboard is the difference between
+      // "the shortcut is broken" and "your system said no", and only one of
+      // those has something the user can do about it.
+      setClipboardNotice(terminalClipboardNotice(outcome));
+    });
+  }, []);
+
+  // Read through a ref inside the subscription effect so that re-creating the
+  // callback can never tear down and re-establish the pty subscriptions.
+  const runClipboardRef = useRef(runClipboard);
+  runClipboardRef.current = runClipboard;
 
   // Callback props are read through a ref so that a parent re-rendering with a
   // fresh closure does not tear down and re-establish the SUBSCRIPTIONS - which
@@ -186,14 +269,32 @@ export function XtermHost({
 
     const entry = registry.acquire(terminalId);
     registry.attach(terminalId, container);
+    clipboardTargetRef.current = entry.terminal;
 
-    // REFUSED, not consumed: `false` makes xterm return before it encodes the
-    // key or cancels the event, so the keypress bubbles to the document
-    // listener that owns the Studio table. See the module header for why this
-    // does not `preventDefault`, and `keybindings.ts` for what the set is.
-    entry.terminal.attachCustomKeyEventHandler(
-      (event) => !isStudioTerminalChord(event, platform),
-    );
+    // TWO REFUSALS, and they are not the same refusal.
+    //
+    // A CLIPBOARD chord is handled HERE and consumed completely: xterm must not
+    // encode it (`false`) AND the browser's own copy/paste must not also run
+    // (`preventDefault`), because a `Ctrl+Shift+V` that both pasted through us
+    // and pasted through the browser would double the text. It never travels
+    // on: no Studio row claims one, and there is nothing above to hand it to.
+    //
+    // A STUDIO chord is REFUSED but not consumed: `false` makes xterm return
+    // before it encodes the key or cancels the event, so the keypress bubbles
+    // to the document listener that owns the Studio table. See the module
+    // header for why that path does not `preventDefault`.
+    entry.terminal.attachCustomKeyEventHandler((event) => {
+      const action = decideTerminalClipboardAction(event, {
+        hasSelection: entry.terminal.hasSelection(),
+        platform,
+      });
+      if (action !== null) {
+        event.preventDefault();
+        runClipboardRef.current(action);
+        return false;
+      }
+      return !isStudioTerminalChord(event, platform, handledIntents());
+    });
 
     // Latched per replay: set by a resync, cleared by the first byte that
     // follows it. See the module header.
@@ -264,6 +365,7 @@ export function XtermHost({
       // policy this host attached is withdrawn with it rather than left on an
       // instance no consumer is driving.
       entry.terminal.attachCustomKeyEventHandler(() => true);
+      clipboardTargetRef.current = null;
       void detachTerminal(terminalId);
       registry.release(terminalId);
     };
@@ -290,12 +392,34 @@ export function XtermHost({
 
   return (
     <div
+      // NO SURFACE OF ITS OWN. The glass pane above this host is the surface,
+      // and the xterm canvas is alpha-0 (`terminal-palette.ts`), so what shows
+      // between the glyphs is the wallpaper through the pane's tint. A fill
+      // here would sit between the two and turn the glass back into a card.
       className={cn(
-        "relative flex h-full min-h-0 w-full min-w-0 flex-col bg-surface-1",
+        "relative flex h-full min-h-0 w-full min-w-0 flex-col bg-transparent",
         className,
       )}
       onFocus={onActivate}
       onPointerDown={onActivate}
+      // RIGHT CLICK, split by platform exactly as VS Code splits it. On Windows
+      // it IS the gesture - copy when something is selected, paste otherwise,
+      // no menu - because that is what conhost does and what a Windows user's
+      // hand expects. Everywhere else it opens the two-row menu below.
+      //
+      // The native browser menu is suppressed either way: there is no useful
+      // browser menu for a canvas-rendered terminal, and leaving it would
+      // shadow both behaviours.
+      onContextMenu={(event) => {
+        event.preventDefault();
+        onActivate?.();
+        const hasSelection = clipboardTargetRef.current?.hasSelection() ?? false;
+        if (terminalRightClickIsCopyPaste(platform)) {
+          runClipboard(hasSelection ? "copyAndClearSelection" : "paste");
+          return;
+        }
+        setMenuAt({ x: event.clientX, y: event.clientY });
+      }}
     >
       {/*
         The watermark sits UNDER the terminal: the terminal palette declares a
@@ -309,7 +433,14 @@ export function XtermHost({
         <VexMark size={120} className="text-brand-mark opacity-[0.06]" />
       </div>
 
-      <div ref={containerRef} className="relative min-h-0 flex-1" />
+      {/*
+        THE GRID'S INSET from the pane edge: 8px, the same rhythm as the header
+        text above it and the column padding outside the pane, so the text
+        never touches the pane's edge light. Margin, not padding: the registry's
+        wrapper is `inset: 0` of this box, and an absolutely positioned child
+        fills its parent's padding box, so only a margin moves the grid.
+      */}
+      <div ref={containerRef} className="relative mx-2 mb-2 min-h-0 flex-1" />
 
       {droppedRows > 0 ? (
         <div className="pointer-events-none absolute top-2 right-2 rounded-md border border-line-3 bg-surface-2 px-2 py-0.5 text-[11px] leading-4 text-ink-secondary">
@@ -339,6 +470,40 @@ export function XtermHost({
           </button>
         </div>
       ) : null}
+
+      {menuAt === null ? null : (
+        <TerminalContextMenu
+          at={menuAt}
+          hasSelection={clipboardTargetRef.current?.hasSelection() ?? false}
+          onCopy={() => {
+            runClipboard("copySelection");
+          }}
+          onPaste={() => {
+            runClipboard("paste");
+          }}
+          onClose={() => {
+            setMenuAt(null);
+          }}
+        />
+      )}
+
+      {clipboardNotice === null ? null : (
+        <div
+          role="alert"
+          className="absolute inset-x-2 bottom-2 rounded-md border border-line-2 bg-surface-2 px-3 py-2 text-[12px] leading-4 text-ink-primary"
+        >
+          <span>{clipboardNotice}</span>
+          <button
+            type="button"
+            onClick={() => {
+              setClipboardNotice(null);
+            }}
+            className="ml-2 rounded px-1 text-ink-tertiary hover:text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {exit !== null ? (
         <div className="pointer-events-none absolute bottom-2 left-2 rounded-md border border-line-3 bg-surface-2 px-2 py-0.5 text-[11px] leading-4 text-ink-tertiary">

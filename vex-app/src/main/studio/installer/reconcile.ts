@@ -50,20 +50,28 @@
 
 import {
   STUDIO_AGENTS_MD_PATH,
-  claudeMdImportsAgents,
+  STUDIO_CLAUDE_MD_IMPORTS,
+  STUDIO_VEX_GUIDE_PATH,
+  claudeMdMissingStudioImports,
+  studioClaudeMdDeletedImports,
   inspectStudioManagedBlock,
+  inspectStudioVexGuide,
+  studioClaudeMdImportSetHash,
   studioManagedBlockOwnership,
   removeStudioManagedBlock,
-  mergeClaudeMdImport,
-  removeClaudeMdImport,
+  mergeClaudeMdImports,
+  removeClaudeMdImports,
   mergeStudioAgentConfig,
   mergeStudioManagedBlock,
+  mergeStudioVexGuide,
   readStudioOwnedRegion,
   removeStudioAgentConfig,
   renderFreshClaudeMd,
   renderStudioAgentConfig,
   renderStudioManagedBlock,
+  renderStudioVexGuide,
   studioManagedBodyHash,
+  type StudioManagedBlockState,
   type StudioProjectBrief,
   type StudioProjectFacts,
   type StudioRenderResult,
@@ -159,8 +167,9 @@ export interface ReconcileOptions {
    * The managed-block brief.
    *
    * NULL is permitted for a TEARDOWN plan only - one whose artifacts are all
-   * `remove` operations, which never render the block. `decideAgentsMd` is the
-   * one consumer, and it refuses loudly rather than rendering an empty brief,
+   * `remove` operations, which never render a fenced document.
+   * `decideFencedDocument` is the one consumer, and it refuses loudly rather
+   * than rendering from an empty brief,
    * so a plan that needs a brief and was handed `null` fails visibly instead of
    * writing a stripped file into a user's repository.
    */
@@ -516,8 +525,12 @@ function decideDesiredText(
       return decideAgentConfig(artifact, existing, options);
     case "agents-md":
       return artifact.operation === "remove"
-        ? decideAgentsMdTeardown(artifact, existing, options)
-        : decideAgentsMd(existing, options);
+        ? decideFencedTeardown(artifact, existing, options)
+        : decideFencedDocument(AGENTS_MD_DOCUMENT, existing, options);
+    case "vex-guide":
+      return artifact.operation === "remove"
+        ? decideFencedTeardown(artifact, existing, options)
+        : decideFencedDocument(VEX_GUIDE_DOCUMENT, existing, options);
     case "claude-md":
       return artifact.operation === "remove"
         ? decideClaudeMdTeardown(artifact, existing, options)
@@ -668,7 +681,49 @@ function entryHashFor(
 }
 
 /**
- * TEARDOWN of the `AGENTS.md` managed block (B0).
+ * THE TWO FENCED DOCUMENTS, and the one policy that governs both.
+ *
+ * `AGENTS.md` carries the authority core; `.vex/vex-guide.md` carries the
+ * sections Codex's 32 KiB `project_doc_max_bytes` budget will not let the block
+ * hold (`@vex-agent/studio/installer/render/vex-guide.ts`). They are managed
+ * identically - same markers, same digest, same drift rule, same repair-only
+ * overwrite - so the deciders below take the document rather than being written
+ * twice. Two copies of this policy would be two places to forget that a drifted
+ * body is never silently replaced.
+ */
+interface FencedDocument {
+  /** For the user-facing detail lines. */
+  readonly relativePath: string;
+  readonly render: (brief: StudioProjectBrief) => string;
+  readonly merge: (
+    existing: string,
+    brief: StudioProjectBrief,
+    options: { readonly overwriteDrift: boolean },
+  ) => StudioRenderResult;
+  readonly inspect: (
+    existing: string,
+    brief: StudioProjectBrief,
+  ) => StudioManagedBlockState;
+}
+
+const AGENTS_MD_DOCUMENT: FencedDocument = {
+  relativePath: STUDIO_AGENTS_MD_PATH,
+  render: renderStudioManagedBlock,
+  merge: mergeStudioManagedBlock,
+  inspect: inspectStudioManagedBlock,
+};
+
+const VEX_GUIDE_DOCUMENT: FencedDocument = {
+  relativePath: STUDIO_VEX_GUIDE_PATH,
+  // The environment is omitted on every call here: in production the LIVE
+  // provider keys are the truth, and only a test states them.
+  render: (brief) => renderStudioVexGuide(brief),
+  merge: (existing, brief, options) => mergeStudioVexGuide(existing, brief, options),
+  inspect: (existing, brief) => inspectStudioVexGuide(existing, brief),
+};
+
+/**
+ * TEARDOWN of a fenced managed document (B0).
  *
  * The block claims live authority - it tells the next coding agent that this
  * repository is connected to Vex and which wallets it may spend - so a deleted
@@ -686,7 +741,7 @@ function entryHashFor(
  * recorded, so every byte in it was Vex's. Any other outcome writes the
  * remainder back and leaves the file in place.
  */
-function decideAgentsMdTeardown(
+function decideFencedTeardown(
   artifact: StudioArtifactPlan,
   existing: string | null,
   options: ReconcileOptions,
@@ -736,7 +791,11 @@ function decideAgentsMdTeardown(
   return { kind: "write", text: removal.text, entryHash: null };
 }
 
-function decideAgentsMd(existing: string | null, options: ReconcileOptions): Decision {
+function decideFencedDocument(
+  document: FencedDocument,
+  existing: string | null,
+  options: ReconcileOptions,
+): Decision {
   const brief = options.brief;
   if (brief === null) {
     // Only a teardown plan may omit the brief, and a teardown never plans this
@@ -751,14 +810,14 @@ function decideAgentsMd(existing: string | null, options: ReconcileOptions): Dec
         + "left the file alone.",
     };
   }
-  const block = renderStudioManagedBlock(brief);
+  const block = document.render(brief);
   const bodyHash = studioManagedBodyHash(managedBodyOf(block));
 
   if (existing === null) {
     return { kind: "write", text: block, entryHash: bodyHash };
   }
 
-  const state = inspectStudioManagedBlock(existing, brief);
+  const state = document.inspect(existing, brief);
   if (state.kind === "malformed") {
     return { kind: "refused", reason: "malformed_managed_block", detail: state.detail };
   }
@@ -766,22 +825,23 @@ function decideAgentsMd(existing: string | null, options: ReconcileOptions): Dec
     return {
       kind: "drift_blocked",
       detail:
-        `The Vex section in "${STUDIO_AGENTS_MD_PATH}" was edited after Vex wrote it, so `
+        `The Vex section in "${document.relativePath}" was edited after Vex wrote it, so `
         + "Vex left it exactly as it is. Run Repair to replace it with the generated "
         + "section; everything outside the markers is yours either way.",
     };
   }
   return fromRender(
-    mergeStudioManagedBlock(existing, brief, { overwriteDrift: options.repair }),
+    document.merge(existing, brief, { overwriteDrift: options.repair }),
     bodyHash,
   );
 }
 
 /**
- * TEARDOWN of the `CLAUDE.md` import line (B0).
+ * TEARDOWN of the `CLAUDE.md` import lines (B0).
  *
- * Only ONE line is ever Vex's here: the `@AGENTS.md` import. Everything else in
- * the file is the user's, so the teardown removes that line through the same
+ * Only Vex's own import lines are ever Vex's here: `@AGENTS.md` and
+ * `@.vex/vex-guide.md`. Everything else in the file is the user's, so the
+ * teardown removes those lines through the same
  * merge discipline the install used and leaves the rest of the file untouched -
  * INCLUDING an empty remainder. Unlike `AGENTS.md`, this file is not removed
  * even when nothing is left in it: the coordinator's teardown semantics say the
@@ -794,7 +854,13 @@ function decideClaudeMdTeardown(
   options: ReconcileOptions,
 ): Decision {
   if (existing === null) return { kind: "unchanged", entryHash: null };
-  if (!claudeMdImportsAgents(existing)) return { kind: "unchanged", entryHash: null };
+  if (
+    claudeMdMissingStudioImports(existing).length === STUDIO_CLAUDE_MD_IMPORTS.length
+  ) {
+    // Not one of Vex's lines is in the file: there is nothing of ours to take
+    // out, whatever the store remembers.
+    return { kind: "unchanged", entryHash: null };
+  }
 
   // Provenance is the ownership proof: the line is only removed where the store
   // says Vex put it there.
@@ -811,7 +877,7 @@ function decideClaudeMdTeardown(
     return { kind: "unchanged", entryHash: null };
   }
 
-  const removal = removeClaudeMdImport(existing);
+  const removal = removeClaudeMdImports(existing);
   if (removal.status === "refused") {
     return { kind: "refused", reason: removal.reason, detail: removal.detail };
   }
@@ -819,29 +885,54 @@ function decideClaudeMdTeardown(
   return { kind: "write", text: removal.text, entryHash: null };
 }
 
+/**
+ * `CLAUDE.md`: both of Vex's imports present, and only the ones Vex wrote
+ * treated as deletable.
+ *
+ * THE THREE STATES A MISSING LINE CAN BE IN, and they have different answers:
+ *
+ *   1. Vex never wrote here at all -> first install, add both lines.
+ *   2. Vex wrote THIS line and it is gone -> the user (or a tool) removed it,
+ *      and re-adding it on every scope edit would be Vex overruling a
+ *      deliberate deletion. That is drift, and only Repair puts it back.
+ *   3. Vex wrote here, but never wrote THIS line -> the import set GREW (the
+ *      guide arrived in 0.2.7). Nobody deleted anything, so the line is simply
+ *      added, the way the first one was.
+ *
+ * State 3 is why the artifact records an entry hash at all: without it a
+ * project installed before `.vex/vex-guide.md` existed would have its missing
+ * guide import reported as a user deletion, and every such project would be
+ * told to run Repair for a line that had never been there.
+ * `studioClaudeMdImportSetHash` digests the set Vex wrote; a row with NO hash
+ * predates the guide and means exactly `[@AGENTS.md]`.
+ */
 function decideClaudeMd(
   artifact: StudioArtifactPlan,
   existing: string | null,
   options: ReconcileOptions,
 ): Decision {
-  if (existing === null) return fromRender(renderFreshClaudeMd(), null);
+  const desiredHash = studioClaudeMdImportSetHash();
+  if (existing === null) return fromRender(renderFreshClaudeMd(), desiredHash);
 
-  if (claudeMdImportsAgents(existing)) return { kind: "unchanged", entryHash: null };
+  const missing = claudeMdMissingStudioImports(existing);
+  if (missing.length === 0) return { kind: "unchanged", entryHash: desiredHash };
 
-  // The import is gone. If Vex never wrote it, this is a first install. If Vex
-  // DID write it, the user (or a tool) removed it, and re-adding it on every
-  // scope edit would be Vex overruling a deliberate deletion - so it is drift,
-  // and only Repair puts it back.
-  if (options.provenance.has(artifact.key) && !options.repair) {
+  const recorded = options.provenance.get(artifact.key);
+  const deleted = studioClaudeMdDeletedImports(
+    existing,
+    recorded === undefined ? undefined : recorded.entryHash,
+  );
+
+  if (deleted.length > 0 && !options.repair) {
     return {
       kind: "drift_blocked",
       detail:
-        `The "@${STUDIO_AGENTS_MD_PATH}" import Vex added to "${artifact.relativePath}" `
-        + "is gone, so Claude Code no longer reads this project's Vex section. Run "
-        + "Repair to put the line back.",
+        `The ${deleted.map((line) => `"${line}"`).join(" and ")} import Vex added to `
+        + `"${artifact.relativePath}" is gone, so Claude Code no longer reads all of `
+        + "this project's Vex instructions. Run Repair to put the line back.",
     };
   }
-  return fromRender(mergeClaudeMdImport(existing), null);
+  return fromRender(mergeClaudeMdImports(existing), desiredHash);
 }
 
 /**

@@ -9,9 +9,17 @@
  * preference never crosses IPC into the privileged process,
  * whose storage is for secrets, wallet state and setup truth.
  *
- * The RESOLUTION and MOVE algebra is shared with the Studio rail
- * (`section-registry.ts`); the ids, labels and default order below are this
- * rail's alone. See that module for why the two registries stay separate.
+ * SINCE THE STUDIO PARITY DECREE (owner screenshots, 2026-09-04) THIS IS THE
+ * ONLY SECTION VOCABULARY THE BOOK HAS. The Studio project rail is the SAME
+ * rail as the agent session rail, scoped to the project's wallets, so a second
+ * id union would have been a second answer to "which card is this". What the
+ * Studio rail still owns alone is its persisted ORDER KEY
+ * (`studio-section-order.ts`) - one user, two arrangements.
+ *
+ * A section is not universal, though: some cards can only be answered for a
+ * SESSION. `BOOK_SECTION_SCOPES` below is the one table that says which, with
+ * the reason, and `bookSectionsForScope` is the only way a rail learns its
+ * list. The RESOLUTION and MOVE algebra stays in `section-registry.ts`.
  */
 
 import {
@@ -55,6 +63,67 @@ export const BOOK_SECTION_LABEL: Readonly<Record<BookSectionId, string>> = {
 
 export function isBookSectionId(value: string): value is BookSectionId {
   return (DEFAULT_BOOK_SECTIONS as readonly string[]).includes(value);
+}
+
+/** The wallet scopes a BOOK rail can be mounted for. */
+export type BookRailScopeKind = "session" | "project";
+
+/**
+ * WHICH SCOPES EACH SECTION CAN HONESTLY ANSWER FOR - the one table, and the
+ * only reason a rail ever renders fewer cards than another.
+ *
+ * A row lists a scope kind only when the card has a REAL read for it. Nothing
+ * here is a taste decision about what Studio "should" show; every omission is
+ * a card that would otherwise have to invent an answer, which on a rail that
+ * names whose funds are on screen is a wrong answer, not a degraded one.
+ *
+ *   position  session + project  `usePortfolio` takes the scope union straight
+ *                                to the wire; main resolves the wallet
+ *                                allow-list for both arms.
+ *   wallets   session + project  `WalletPairCard` already reads either.
+ *   balances  session + project  `BalancesCard` already reads either.
+ *   activity  session + project  `agentScanFiltersSchema` now carries
+ *                                `filters.projectId` beside `sessionId`, and
+ *                                MAIN resolves that project's own wallets
+ *                                from `project_wallets` and INTERSECTS them
+ *                                with the inventory allow-list
+ *                                (`agent-scan-db.ts`). So the card has a real
+ *                                project read and the scope decision stayed
+ *                                in main - the renderer still never filters a
+ *                                global feed.
+ *   session   session ONLY       the card IS the session object (model, turn
+ *                                stats, sleep state). A project has none.
+ *   trench    session ONLY       the image locker and its launch are keyed by
+ *                                session id in main's own storage.
+ */
+export const BOOK_SECTION_SCOPES: Readonly<
+  Record<BookSectionId, readonly BookRailScopeKind[]>
+> = {
+  position: ["session", "project"],
+  wallets: ["session", "project"],
+  balances: ["session", "project"],
+  activity: ["session", "project"],
+  session: ["session"],
+  trench: ["session"],
+};
+
+/** Does this section have a real read for `kind`? */
+function bookSectionServesScope(
+  id: BookSectionId,
+  kind: BookRailScopeKind,
+): boolean {
+  return BOOK_SECTION_SCOPES[id].includes(kind);
+}
+
+/**
+ * The sections a rail mounted for `kind` renders, in the decreed default
+ * order. The ONLY producer of a rail's id list - a surface that hand-wrote its
+ * own list would be a second place for the table above to drift.
+ */
+export function bookSectionsForScope(
+  kind: BookRailScopeKind,
+): readonly BookSectionId[] {
+  return DEFAULT_BOOK_SECTIONS.filter((id) => bookSectionServesScope(id, kind));
 }
 
 /** This rail's registry, as the shared mechanism and the rows consume it. */

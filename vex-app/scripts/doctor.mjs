@@ -6,6 +6,8 @@
  *   - Node version satisfies engines.node
  *   - On WSL2: WSLg active OR `$DISPLAY` set OR fallback X server reachable
  *   - Electron binary cached (avoid first-run download surprise mid-session)
+ *   - The shell that will run `bridge/build.sh` resolves (Git for Windows on
+ *     Windows, never the System32 `bash.exe` that is WSL's launcher)
  *   - The Vex Studio bridge for THIS platform and architecture is built and
  *     still matches the sources and the pinned Go toolchain
  *
@@ -26,6 +28,7 @@ import {
   BRIDGE_BUILD_SCRIPT,
   evaluateBridgeFreshness,
   hostGoTarget,
+  resolveBuildShell,
   resolveGoToolchain,
 } from "./bridge-freshness.mjs";
 
@@ -169,6 +172,21 @@ function checkStudioBridge() {
     return;
   }
   const { goos, goarch } = target;
+
+  // WHICH bash will run the build, named before anything else about the
+  // bridge: on Windows a PATH lookup finds WSL's launcher, and a developer
+  // reading "the bridge is stale" deserves to know which shell the rebuild
+  // will actually use - or that there is none.
+  const shell = resolveBuildShell();
+  if (shell.kind === "refused") {
+    const [headline, ...rest] = shell.message.split("\n");
+    fail(
+      `Studio bridge build shell: ${headline}`,
+      rest.map((line) => line.trim()).filter(Boolean).join("\n  ")
+    );
+  } else {
+    ok(`Studio bridge build shell: ${shell.command} (${shell.source})`);
+  }
 
   const toolchain = resolveGoToolchain(REPO_ROOT);
   if (toolchain.kind === "refused") {

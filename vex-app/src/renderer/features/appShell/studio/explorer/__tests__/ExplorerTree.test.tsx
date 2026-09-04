@@ -806,6 +806,19 @@ describe("motion", () => {
     // carries the colour transition.
     expect(rowFor("src").getAttribute("class") ?? "").toContain("vex-tint");
   });
+
+  it("fades a row in on mount, so unfolding a folder is a ramp rather than a cut", async () => {
+    standardTree();
+    await mountTree();
+
+    // `vex-surface-enter` is the house entrance (motion-primitives.css), the
+    // seat of the reference tree's mount fade (deepseek `Rows.module.css`
+    // `row-in`). Every row carries it: the children a folder unfolds are rows
+    // mounting, and that mount is the choreography. Keyed by row id, a
+    // re-render never replays it.
+    expect(rowFor("src").getAttribute("class") ?? "").toContain("vex-surface-enter");
+    expect(rowFor("readme.md").getAttribute("class") ?? "").toContain("vex-surface-enter");
+  });
 });
 
 /**

@@ -201,9 +201,23 @@ export function revealRefusalText(code: FilesErrorCode): string {
   }
 }
 
-/** A reveal the file service never answered. Distinct from a refusal. */
-export const REVEAL_TRANSPORT_FAILED =
-  "Vex could not reach the file service to show this file.";
+/**
+ * A reveal the file service never answered, as the APP-WIDE notification says
+ * it. Distinct from a refusal, and it does not live in the viewer.
+ *
+ * A refusal above is an answer ABOUT THIS FILE and belongs beside it. A
+ * transport failure is a statement about the file service, which the user can
+ * hit from the explorer and the terminal too, and which they must be able to
+ * re-read after the tab that provoked it is gone. So it names the file in its
+ * own sentence rather than borrowing the header's, and is raised into the
+ * project-scoped notification model.
+ */
+export function revealTransportFailedText(relativePath: string): string {
+  return `Vex could not reach the file service to show ${relativePath} in the file manager.`;
+}
+
+/** The headline over {@link revealTransportFailedText}. */
+export const REVEAL_TRANSPORT_FAILED_TITLE = "The file service could not be reached";
 
 /** A read that never got an answer. Distinct from a refusal: retry is real. */
 export const TRANSPORT_FAILED =

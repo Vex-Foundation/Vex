@@ -278,11 +278,18 @@ describe("TerminalTabs keyboard and controls", () => {
   it("keeps the hover-revealed close in the tab order and in the a11y tree", () => {
     renderTabs(twoTabs("g1"));
     const close = screen.getByRole("button", { name: "Close Terminal 2" });
-    // `opacity-0`, never `hidden` or `display:none`: a control a keyboard user
-    // cannot reach is a control that does not exist for them.
-    expect(close.className).toContain("opacity-0");
-    expect(close.className).toContain("focus-visible:opacity-100");
-    expect(close.className).toContain("peer-hover:opacity-100");
+    // Faded, never `hidden` or `display:none`: a control a keyboard user cannot
+    // reach is a control that does not exist for them.
+    //
+    // THE ICON FADES, NOT THE BUTTON, and that is the difference this
+    // assertion names. The close control is part of the tab's shell, so
+    // fading the whole element would leave a hole in the tab's right end at
+    // rest; and the reveal answers a hover ANYWHERE on the shell (`group`),
+    // not only on the trigger.
+    expect(close.className).toContain("[&>*]:opacity-0");
+    expect(close.className).toContain("focus-visible:[&>*]:opacity-100");
+    expect(close.className).toContain("group-hover:[&>*]:opacity-100");
+    expect(close.closest("[data-terminal-tab-shell]")?.className).toContain("group");
     close.focus();
     expect(document.activeElement).toBe(close);
   });
@@ -660,5 +667,131 @@ describe("the panel header reads ONE directory field", () => {
     // so both headers answer, and both must name the unknown rather than
     // rendering an empty control.
     expect(screen.getAllByLabelText("Working directory not known yet")).toHaveLength(2);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * The close control belongs to the TAB, not to the strip
+ * ------------------------------------------------------------------ */
+
+/**
+ * The shape the owner asked for (15.png is what shipped, 16.png is the target)
+ * and the shape VS Code and every browser use: the `x` sits INSIDE the tab, at
+ * its right edge, and the divider that separates one tab from the next comes
+ * AFTER it.
+ *
+ * A DOM test cannot see "looks like one pill", so these assert the two facts
+ * that produce it and that a revert would change: WHICH element carries the
+ * divider, and that the control is inside the tab's own run of elements. The
+ * pixels themselves are covered in `e2e/studio-terminal-input.spec.ts`.
+ */
+describe("the close control sits inside its tab", () => {
+  function closeButtonFor(name: RegExp): HTMLElement {
+    const button = screen
+      .getAllByRole("button")
+      .find((candidate) => new RegExp(`Close.*${name.source}`).test(candidate.ariaLabel ?? ""));
+    if (button === undefined) throw new Error(`no close button for ${name.source}`);
+    return button;
+  }
+
+  it("wraps the trigger and its close in ONE tab shell, with no divider on either", () => {
+    renderTabs(twoTabs("g1"));
+    const trigger = screen.getByRole("tab", { name: /Terminal 1/ });
+    const close = closeButtonFor(/Terminal 1/);
+
+    // THE SHAPE OF 16.png, as the DOM shows it. The trigger and the close
+    // share a `.vex-tab-shell` wrapper that is the tab's box; the paint is
+    // the wrapper's (glass.css, terminal.css) and neither half draws a stroke.
+    const shell = trigger.closest(".vex-tab-shell");
+    expect(shell).not.toBeNull();
+    expect(shell?.contains(close)).toBe(true);
+    expect(trigger.className).not.toMatch(/\bborder-(?:[rlxy]|line)/);
+    expect(trigger.className).toContain("border-0");
+    expect(trigger.className).toContain("bg-transparent");
+    expect(close.className).not.toMatch(/\bborder(?:-(?:[rlxy]|line))?\b/);
+  });
+
+  it("marks the active tab's shell and only that one, so the paint follows selection", () => {
+    renderTabs(twoTabs("g1"));
+    const shells = document.querySelectorAll("[data-terminal-tab-shell]");
+    expect(shells).toHaveLength(2);
+    expect(shells[0]?.hasAttribute("data-active")).toBe(true);
+    expect(shells[1]?.hasAttribute("data-active")).toBe(false);
+  });
+
+  it("keeps the roving tabindex across wrapped tabs", () => {
+    // The primitive walks `closest('[role=\"tablist\"]')`; through
+    // `parentElement` it would see one trigger per wrapper and ArrowRight
+    // would land back on the same tab.
+    const onSelectTab = vi.fn();
+    renderTabs(twoTabs("g1"), { onSelectTab });
+    const first = screen.getByRole("tab", { name: /Terminal 1/ });
+    first.focus();
+    fireEvent.keyDown(first, { key: "ArrowRight" });
+    expect(onSelectTab).toHaveBeenCalledExactlyOnceWith("g2");
+    expect(document.activeElement).toBe(screen.getByRole("tab", { name: /Terminal 2/ }));
+  });
+
+  it("orders the controls so each close belongs to the tab on its left", () => {
+    renderTabs(twoTabs("g1"));
+    const list = screen.getByRole("tablist");
+    const owned = [...list.querySelectorAll("[data-terminal-tab-shell]")].map((shell) =>
+      [...shell.children].map((child) =>
+        child.getAttribute("role") === "tab"
+          ? `tab:${child.getAttribute("data-tab-value") ?? ""}`
+          : child.hasAttribute("data-terminal-tab-close")
+            ? "close"
+            : "other",
+      ),
+    );
+    // Each shell: its trigger, then its close. Never close-then-tab.
+    expect(owned).toEqual([
+      ["tab:g1", "close"],
+      ["tab:g2", "close"],
+    ]);
+  });
+
+  it("closes from the keyboard with Delete, without leaving the tab", () => {
+    const onCloseTab = vi.fn();
+    renderTabs(twoTabs("g1"), { onCloseTab });
+    const trigger = screen.getByRole("tab", { name: /Terminal 1/ });
+    trigger.focus();
+
+    fireEvent.keyDown(trigger, { key: "Delete" });
+
+    expect(onCloseTab).toHaveBeenCalledExactlyOnceWith("g1");
+  });
+
+  it("leaves the strip's own navigation keys alone", () => {
+    const onCloseTab = vi.fn();
+    renderTabs(twoTabs("g1"), { onCloseTab });
+    const trigger = screen.getByRole("tab", { name: /Terminal 1/ });
+
+    // Delete is the ONLY key this adds. Arrow navigation is the primitive's and
+    // must still reach it; Backspace is not a close gesture anywhere.
+    fireEvent.keyDown(trigger, { key: "ArrowRight" });
+    fireEvent.keyDown(trigger, { key: "Backspace" });
+    expect(onCloseTab).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(screen.getByRole("tab", { name: /Terminal 2/ }));
+  });
+
+  it("still closes on middle click", () => {
+    const onCloseTab = vi.fn();
+    renderTabs(twoTabs("g1"), { onCloseTab });
+    fireEvent(
+      screen.getByRole("tab", { name: /Terminal 2/ }),
+      new MouseEvent("auxclick", { button: 1, bubbles: true, cancelable: true }),
+    );
+    expect(onCloseTab).toHaveBeenCalledExactlyOnceWith("g2");
+  });
+
+  it("keeps the close control in the tab order and in the accessibility tree", () => {
+    renderTabs(twoTabs("g1"));
+    const close = closeButtonFor(/Terminal 2/);
+    // Hover-revealed is a PAINT decision: the icon fades, the control does not
+    // leave the layout, so a keyboard user can always reach it.
+    expect(close.tabIndex).toBe(0);
+    expect(close.hasAttribute("hidden")).toBe(false);
+    expect(close.className).not.toContain("hidden");
   });
 });

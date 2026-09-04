@@ -154,6 +154,24 @@ export interface StudioKeybinding {
    * Studio.
    */
   readonly action: string;
+  /**
+   * THE ROW IS RESERVED, NOT WIRED: no owner answers this intent and none is
+   * expected to until the product grows the surface it names.
+   *
+   * A reserved row exists so its chord is CLAIMED - proved against the Electron
+   * menu accelerators, spelled in the labels, and unavailable to a future row
+   * that would collide with it - while Studio takes nothing when it is pressed.
+   *
+   * It is a fact about the ROW and it lives here rather than being inferred at
+   * a call site, because two consumers need it and they must not disagree: the
+   * hook (which finds no handler and leaves the event completely alone) and
+   * {@link studioTerminalSkipChords} (which must NOT ask xterm to refuse a key
+   * nothing will act on - that is how `Ctrl+\`` ended up reaching neither
+   * Studio nor the shell). `useStudioKeybindings.test.tsx` asserts the two
+   * agree by enumeration, so a row that gains an owner and keeps this flag is a
+   * red test rather than a dead key.
+   */
+  readonly reserved?: true;
 }
 
 /** The surfaces a tab shortcut applies on: the workspace and its two panels. */
@@ -181,6 +199,12 @@ export const STUDIO_KEYBINDINGS: readonly StudioKeybinding[] = [
     mac: { primary: { code: "Backquote", ctrlOrCmd: false, shift: false, control: true } },
     when: "anywhere",
     action: "Toggle terminal panel",
+    // RESERVED. It names a terminal PANEL that can be shown and hidden, which
+    // is VS Code's layout and not Studio's: here the workspace IS the terminal
+    // surface and there is nothing for the chord to fold away. See
+    // `useStudioKeybindings.ts` for the full reasoning, and `reserved` above
+    // for what the flag obliges.
+    reserved: true,
   },
   {
     // Terminal-only, as in VS Code, where Split's `when` is
@@ -237,7 +261,15 @@ export const STUDIO_KEYBINDINGS: readonly StudioKeybinding[] = [
     // not exist there either.
     intent: "keepTabOpen",
     chord: { code: "Enter", ctrlOrCmd: true, shift: false },
-    when: IN_WORKSPACE,
+    // NOT `IN_WORKSPACE`, and the missing surface is `terminal`. VS Code's
+    // `workbench.action.keepEditor` is an EDITOR command
+    // (`when: activeEditorIsPreview`), and there is no preview terminal to
+    // keep. Leaving `terminal` in cost the shell a key: the chord was in the
+    // skip list, so xterm refused to encode `Ctrl+Enter`, and the hook then
+    // found `pinActiveTab()` returning false on a terminal tab and declined it
+    // too - a keystroke that reached neither Studio nor the pty. Claude Code
+    // and every REPL that binds Ctrl+Enter to "submit" need it.
+    when: ["workspace", "viewer"],
     action: "Keep tab open",
   },
   {
@@ -400,16 +432,6 @@ export function resolveStudioKeybinding(
  * ------------------------------------------------------------------ */
 
 /**
- * The surfaces whose chords a terminal must NOT swallow.
- *
- * A terminal pane sits inside a workspace, so both answers apply to a keypress
- * made with the caret in xterm: `terminal` covers Split, and `workspace` covers
- * the tab chords. `rail`, `viewer` and `none` are surfaces the caret cannot be
- * on while it is in a shell, so a row bound only to those is left to the shell.
- */
-const SKIP_SHELL_SURFACES: readonly StudioSurface[] = ["workspace", "terminal"];
-
-/**
  * THE CHORDS XTERM MUST REFUSE TO SEND TO THE SHELL, derived from the table.
  *
  * This is VS Code's `commandsToSkipShell`
@@ -422,28 +444,71 @@ const SKIP_SHELL_SURFACES: readonly StudioSurface[] = ["workspace", "terminal"];
  * drift from it. `DEFAULT_COMMANDS_TO_SKIP_SHELL` and its test
  * (`terminalInstance.test.ts:421`) are the shape this replaces.
  *
- * What is NOT here is the point of it: `Ctrl+C`, `Ctrl+D`, `Ctrl+R`, `Ctrl+L`
- * and every other control character belong to the shell, and a Studio that took
- * them would have broken the terminal to gain a shortcut.
+ * ## A CHORD IS ONLY REFUSED WHEN SOMETHING WILL ACT ON IT
  *
- * MEMOISED per platform, not rebuilt per keystroke: this is consulted on the
- * input path, once per key the user presses into a shell, and the table is a
- * module constant so the projection of it is one too.
+ * The projection used to be "every row whose `when` mentions the workspace OR
+ * the terminal", and it cost the shell two keys, both found by review and both
+ * of the same shape - refused by xterm, then declined by the hook, so the
+ * keystroke reached NEITHER Studio nor the pty:
+ *
+ *  - `Ctrl+\`` (`toggleTerminal`) has no owner at all. It is a reserved row;
+ *    see {@link StudioKeybinding.reserved}.
+ *  - `Ctrl+Enter` (`keepTabOpen`) applied on the terminal surface, where
+ *    "keep the preview tab" has no meaning and the workspace answers `false`.
+ *    Its `when` no longer lists `terminal`.
+ *
+ * So the derivation is now exactly the resolver's own question, asked for the
+ * `terminal` surface: WOULD `resolveStudioKeybinding` return an intent here,
+ * and is that intent one an owner answers. VS Code's handler asks the same two
+ * things in the same order - `softDispatch` resolves a command, and only a
+ * resolved command in `commandsToSkipShell` returns `false`
+ * (`terminalInstance.ts:1149-1170`).
+ *
+ * `SKIP_SHELL_SURFACE` is `terminal` alone and not `terminal` plus `workspace`,
+ * because {@link StudioKeyContext.surface} is resolved INNERMOST FIRST
+ * (`studioSurfaceOf`): an element inside a terminal answers `terminal`, never
+ * `workspace`, so a row that does not list `terminal` is a row the resolver
+ * would not match for a keypress made in a shell. A wider skip list is a list
+ * of keys refused on behalf of a binding that will not fire.
+ *
+ * @param handledIntents - the intents an owner answers, from
+ * `studioBoundIntents()`. Passed in rather than imported so this module stays
+ * the pure table it is: the handler map is the hook's fact, and importing it
+ * here would point the table at its own consumer.
  */
-const skipChordsByPlatform = new Map<StudioPlatform, readonly StudioChord[]>();
+const SKIP_SHELL_SURFACE: StudioSurface = "terminal";
+
+/**
+ * MEMOISED per (handler set, platform), not rebuilt per keystroke: this is
+ * consulted once for every key a user presses into a shell. Keyed weakly on the
+ * set so a test's throwaway set is collected with it.
+ */
+const skipChordCache = new WeakMap<
+  ReadonlySet<StudioIntent>,
+  Map<StudioPlatform, readonly StudioChord[]>
+>();
 
 export function studioTerminalSkipChords(
   platform: StudioPlatform,
+  handledIntents: ReadonlySet<StudioIntent>,
 ): readonly StudioChord[] {
-  const cached = skipChordsByPlatform.get(platform);
+  let byPlatform = skipChordCache.get(handledIntents);
+  if (byPlatform === undefined) {
+    byPlatform = new Map<StudioPlatform, readonly StudioChord[]>();
+    skipChordCache.set(handledIntents, byPlatform);
+  }
+  const cached = byPlatform.get(platform);
   if (cached !== undefined) return cached;
+
   const chords: StudioChord[] = [];
   for (const binding of STUDIO_KEYBINDINGS) {
-    if (!SKIP_SHELL_SURFACES.some((surface) => appliesOn(binding, surface))) continue;
+    if (binding.reserved === true) continue;
+    if (!handledIntents.has(binding.intent)) continue;
+    if (!appliesOn(binding, SKIP_SHELL_SURFACE)) continue;
     chords.push(...studioChordsFor(binding, platform));
   }
   const frozen: readonly StudioChord[] = chords;
-  skipChordsByPlatform.set(platform, frozen);
+  byPlatform.set(platform, frozen);
   return frozen;
 }
 
@@ -454,12 +519,18 @@ export function studioTerminalSkipChords(
  * from the same chords {@link resolveStudioKeybinding} would resolve on the
  * `terminal` surface, so a chord cannot be refused by one and ignored by the
  * other - which is the drift the derivation exists to make impossible.
+ *
+ * What is NOT here is the point of it: `Ctrl+C` without a selection, `Ctrl+D`,
+ * `Ctrl+R`, `Ctrl+L`, `Ctrl+Enter`, `Ctrl+\` and every other control character
+ * belong to the shell, and a Studio that took them would have broken the
+ * terminal to gain a shortcut.
  */
 export function isStudioTerminalChord(
   event: StudioKeyEvent,
   platform: StudioPlatform,
+  handledIntents: ReadonlySet<StudioIntent>,
 ): boolean {
-  for (const chord of studioTerminalSkipChords(platform)) {
+  for (const chord of studioTerminalSkipChords(platform, handledIntents)) {
     if (chord.code !== event.code) continue;
     if (modifiersMatch(chord, event, platform)) return true;
   }

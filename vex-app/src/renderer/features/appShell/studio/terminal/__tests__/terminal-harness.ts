@@ -48,6 +48,14 @@ type EventKind = "data" | "resync" | "property" | "exit" | "refused";
 export type CreateAnswer = TerminalCreateValue;
 
 export interface TerminalBridgeStub {
+  /**
+   * Urls handed to `vex.terminalLinks.open`, in order.
+   *
+   * The assertion a link test can honestly make: the RENDERER asked, with the
+   * exact string the terminal produced. Whether a browser opened is main's
+   * business and is proved in `main/ipc/__tests__/terminal-links-ipc.test.ts`.
+   */
+  readonly openedLinks: string[];
   readonly writes: { terminalId: string; data: string }[];
   readonly resizes: { terminalId: string; cols: number; rows: number }[];
   readonly attaches: string[];
@@ -316,6 +324,7 @@ export function installTerminalBridge(): TerminalBridgeStub {
   }
 
   const stub: TerminalBridgeStub = {
+    openedLinks: [],
     writes: [],
     resizes: [],
     attaches: [],
@@ -591,10 +600,34 @@ export function installTerminalBridge(): TerminalBridgeStub {
   Object.defineProperty(window, "vex", {
     configurable: true,
     writable: true,
-    value: { terminal },
+    // `terminalLinks` rides along because the registry creates every terminal
+    // with a link handler, and a clicked link with no bridge under it would
+    // throw inside an xterm event callback rather than failing an assertion.
+    // Recorded, never performed: opening a link is main's authority and this
+    // double has none.
+    value: { terminal, terminalLinks: makeTerminalLinksStub(stub) },
   });
 
   return stub;
+}
+
+/** The `vex.terminalLinks` double: records the urls, answers `opened`. */
+function makeTerminalLinksStub(stub: TerminalBridgeStub): {
+  open: (input: { url: string }) => Promise<unknown>;
+} {
+  return {
+    open(input) {
+      stub.openedLinks.push(input.url);
+      return Promise.resolve({
+        ok: true,
+        data: {
+          kind: "opened",
+          host: { ascii: "example.com", display: "example.com" },
+          asked: true,
+        },
+      });
+    },
+  };
 }
 
 /** Give an element a measurable box, which jsdom otherwise reports as 0x0. */

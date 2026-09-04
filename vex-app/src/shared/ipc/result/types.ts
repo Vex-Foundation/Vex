@@ -98,6 +98,14 @@ export type VexDomain =
    */
   | "images"
   /**
+   * The user's own BACKDROP under the glass shell. A preference with a byte
+   * store behind it: one image per installation, PNG/JPEG only (the measured
+   * `nativeImage` decode set), served through the app protocol. Held apart
+   * from `images` because nothing downstream signs over it and nothing
+   * refuses to delete it.
+   */
+  | "shellBackdrop"
+  /**
    * Trench Express TOKEN LAUNCH (contracts C0/C5). Covers the preview, submit
    * and cancel handlers behind the launch dialog.
    *
@@ -318,6 +326,36 @@ export type VexErrorCode =
   | "images.not_found"
   | "images.in_use"
   | "images.store_unavailable"
+  /**
+   * User backdrop (glass shell). All five are `redacted: true` and never echo
+   * a filesystem path: main owns the picker, so no path exists on the
+   * renderer's side to leak.
+   *
+   *  - `shellBackdrop.too_large`          - the picked file is over the 8 MiB
+   *                                         stat gate; refused before a byte is
+   *                                         read. `retryable: false`.
+   *  - `shellBackdrop.too_small`          - empty, or shorter than any image
+   *                                         header. `retryable: false`.
+   *  - `shellBackdrop.unsupported_format` - the MAGIC BYTES are not PNG or
+   *                                         JPEG (WebP included: Electron 42's
+   *                                         `nativeImage` cannot decode it,
+   *                                         measured), or the header carries no
+   *                                         readable dimensions.
+   *                                         `retryable: false`.
+   *  - `shellBackdrop.undecodable`        - the sniff passed but `nativeImage`
+   *                                         could not decode the bytes, or the
+   *                                         decoded size is outside the
+   *                                         640x360..8192 band. A corrupt file
+   *                                         is never painted. `retryable: false`.
+   *  - `shellBackdrop.store_unavailable`  - the CONFIG_DIR byte store or the
+   *                                         preferences pointer could not be
+   *                                         read or written. `retryable: true`.
+   */
+  | "shellBackdrop.too_large"
+  | "shellBackdrop.too_small"
+  | "shellBackdrop.unsupported_format"
+  | "shellBackdrop.undecodable"
+  | "shellBackdrop.store_unavailable"
   /**
    * TOKEN LAUNCH refusals (C0/C5/C6b). Every one of these carries its NUMBERS
    * in the message — a money refusal that does not say by how much is not

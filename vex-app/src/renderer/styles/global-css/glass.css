@@ -1,0 +1,127 @@
+/* THE GLASS TIERS - the only way a shell surface becomes translucent.
+ *
+ * Four named classes over the tokens shell.css declares under
+ * [data-vex-shell="true"] (chip < rail < pane < overlay by coverage). TSX
+ * consumes the CLASS, never a `backdrop-blur-*` utility: the design guard
+ * (features/appShell/__tests__/shell-design-guard.test.ts) bans the utility
+ * outright and this sheet is outside its scan by design. Pinned as CSS text
+ * by __tests__/glass-tokens.test.ts.
+ *
+ * Three laws, each enforced below rather than asked for in a comment:
+ *
+ *  1. EDGE LIGHT, NEVER BORDERS. No rule in this sheet declares `border`.
+ *     The edge a pane shows is the light it catches: an inset 1px top
+ *     highlight and, on free-standing tiers, an inset hairline ring. Both
+ *     are box-shadows, so they cost no layout and cannot become a stroke
+ *     between two surfaces (the boxed look the owner rejected).
+ *
+ *  2. NESTING BOUND. A filtering tier (rail, pane, overlay) must not sit
+ *     inside another filtering tier: two stacked backdrop-filters double the
+ *     GPU pass over the same pixels and compound the veil. The guard rule at
+ *     the end strips the inner filter, so a mistaken nesting costs one blur,
+ *     not two, and the compounded tint stays visible in review. The chip is
+ *     the tier MADE for nesting: it carries a tint and a ring and no filter,
+ *     because whatever it sits in has already blurred the backdrop.
+ *
+ *  3. FALLBACK. A renderer without backdrop-filter would paint a 0.55 veil
+ *     straight over the photo, which is unreadable; the @supports block
+ *     raises every tint to its opaque surface sibling instead.
+ *
+ * Both spellings of the filter are declared: Chromium (Electron) resolves
+ * the unprefixed one, WebKit-based tooling still reads the prefix, and the
+ * order (prefixed first) lets the standard property win where both exist. */
+
+.vex-glass-rail {
+  background: var(--vex-glass-tint-rail);
+  -webkit-backdrop-filter: blur(var(--vex-glass-blur-rail)) saturate(var(--vex-glass-saturate));
+  backdrop-filter: blur(var(--vex-glass-blur-rail)) saturate(var(--vex-glass-saturate));
+  box-shadow: var(--vex-glass-edge);
+}
+
+/* Pane: the terminal / editor host. Denser veil, softer blur, a full ring
+ * so a rounded pane reads as one lit object over the wall, plus the lv2
+ * elevation it already had as a solid card. */
+.vex-glass-pane {
+  background: var(--vex-glass-tint-pane);
+  -webkit-backdrop-filter: blur(var(--vex-glass-blur-pane)) saturate(var(--vex-glass-saturate));
+  backdrop-filter: blur(var(--vex-glass-blur-pane)) saturate(var(--vex-glass-saturate));
+  box-shadow:
+    var(--vex-glass-edge),
+    var(--vex-glass-edge-ring),
+    var(--shadow-lv2);
+}
+
+/* Chip: a card, foot band or plate INSIDE a rail or pane. Tint + ring only;
+ * see law 2 for why it carries no filter of its own. */
+.vex-glass-chip {
+  background: var(--vex-glass-tint-chip);
+  box-shadow: var(--vex-glass-edge-ring);
+}
+
+/* Overlay: a full-app screen or a floating menu over everything. Nearly
+ * opaque, the deepest blur, lv3 elevation (whose 1px first layer is the
+ * hairline substitute tokens.css documents). */
+.vex-glass-overlay {
+  background: var(--vex-glass-tint-overlay);
+  -webkit-backdrop-filter: blur(var(--vex-glass-blur-overlay)) saturate(var(--vex-glass-saturate));
+  backdrop-filter: blur(var(--vex-glass-blur-overlay)) saturate(var(--vex-glass-saturate));
+  box-shadow:
+    var(--vex-glass-edge),
+    var(--shadow-lv3);
+}
+
+/* TAB SHELL - the wrapper a terminal tab strip puts around trigger + close
+ * so the close control can live inside the tab's chrome (TerminalTabs; the
+ * trigger itself goes transparent and borderless). Chrome only: layout is
+ * the consumer's. It sits inside a pane, so like the chip it is a plate,
+ * not a filter. Tabs are separated by a transparent gap, never a rule. */
+.vex-tab-shell {
+  border-radius: 8px 8px 0 0;
+  background: var(--vex-glass-tint-chip);
+  transition: background-color var(--vex-duration-fast) var(--vex-ease-standard);
+}
+
+.vex-tab-shell[data-active] {
+  background: var(--vex-glass-tint-pane);
+  box-shadow: var(--vex-glass-edge);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vex-tab-shell {
+    transition: none;
+  }
+}
+
+/* LAW 2, enforced: a filtering tier nested in a filtering tier loses its
+ * filter. Every ordered pair of the three filtering tiers is listed so the
+ * rule cannot be satisfied by accident. Placement note: an overlay is a
+ * fixed layer, and a backdrop-filter ancestor is a containing block for
+ * fixed descendants, so a real overlay can never be a descendant of a rail
+ * or pane anyway; the rule exists for the mistake, not the design. */
+.vex-glass-rail .vex-glass-rail,
+.vex-glass-rail .vex-glass-pane,
+.vex-glass-rail .vex-glass-overlay,
+.vex-glass-pane .vex-glass-rail,
+.vex-glass-pane .vex-glass-pane,
+.vex-glass-pane .vex-glass-overlay,
+.vex-glass-overlay .vex-glass-rail,
+.vex-glass-overlay .vex-glass-pane,
+.vex-glass-overlay .vex-glass-overlay {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+/* LAW 3, enforced. Both theme selectors are named so the celeris block in
+ * shell.css (specificity 0,2,0) cannot out-rank the fallback and keep a
+ * translucent veil where nothing blurs behind it. Rail and pane settle on
+ * the working panel; chip and overlay on the raised step, because a chip on
+ * a rail of the same fill would vanish (only its ring would remain). */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  [data-vex-shell="true"],
+  [data-vex-shell="true"][data-vex-theme="celeris"] {
+    --vex-glass-tint-rail: var(--vex-surface-1);
+    --vex-glass-tint-pane: var(--vex-surface-1);
+    --vex-glass-tint-chip: var(--vex-surface-2);
+    --vex-glass-tint-overlay: var(--vex-surface-2);
+  }
+}

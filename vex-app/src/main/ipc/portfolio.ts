@@ -116,12 +116,17 @@ function registerPortfolioTokenHistoryReadHandler(): () => void {
  * AGENT SCAN read — read-only, global-scope FULL-HISTORY activity feed backed by
  * `agent-scan-db.ts`, which resolves the GLOBAL configured wallet inventory
  * server-side (never a renderer-supplied address) and treats
- * `filters.sessionId` as a NARROWING predicate on top of it.
+ * `filters.sessionId` and `filters.projectId` as NARROWING predicates on top of
+ * it. The project arm resolves that project's own wallets from
+ * `project_wallets` in main and INTERSECTS them with the inventory allow-list,
+ * so the scope decision never leaves the privileged process; the renderer does
+ * not filter a global feed.
  *
  * Logging records the DTO `status`, the entry COUNT, whether a cursor and a
- * session filter were present, and `correlationId` ONLY — never wallet
- * addresses, amounts, token identities, tx hashes, or the filter VALUES (a
- * protocol/kind list is user-chosen but still activity metadata).
+ * session or project scope were present, and `correlationId` ONLY - never
+ * wallet addresses, amounts, token identities, tx hashes, session or project
+ * IDS, or the filter VALUES (a protocol/kind list is user-chosen but still
+ * activity metadata).
  *
  * Timeout-vs-cancel reinterpretation is identical to `listTokenHistory`'s and
  * exists for the same reason: `registerHandler`'s abort normalisation rewrites
@@ -136,7 +141,12 @@ function registerPortfolioAgentScanReadHandler(): () => void {
     inputSchema: agentScanReadInputSchema,
     outputSchema: agentScanDtoSchema,
     handle: async (input, ctx): Promise<Result<AgentScanDto>> => {
-      const scoped = input.filters.sessionId !== undefined;
+      // WHETHER a scope narrowed the read, never WHICH one: a session or
+      // project id is activity metadata, and these two booleans answer every
+      // operational question the id would. The schema has already refused a
+      // request carrying both, by name.
+      const sessionScoped = input.filters.sessionId !== undefined;
+      const projectScoped = input.filters.projectId !== undefined;
       const outcome = await getAgentScan(input, ctx.requestId);
       if (outcome.ok) {
         if (outcome.data.status === "unavailable" && ctx.signal.aborted) {
@@ -150,7 +160,8 @@ function registerPortfolioAgentScanReadHandler(): () => void {
           outcome.data.status === "available" ? outcome.data.entries.length : 0;
         log.info(
           `[ipc:vex:portfolio:listAgentScan] ok status=${outcome.data.status} ` +
-            `entries=${entryCount} paged=${input.cursor !== null} sessionScoped=${scoped} ` +
+            `entries=${entryCount} paged=${input.cursor !== null} ` +
+            `sessionScoped=${sessionScoped} projectScoped=${projectScoped} ` +
             `correlationId=${ctx.requestId}`,
         );
         return outcome;

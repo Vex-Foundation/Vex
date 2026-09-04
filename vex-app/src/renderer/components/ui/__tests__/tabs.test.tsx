@@ -67,6 +67,37 @@ describe("Tabs primitive", () => {
     expect(queryByText("alpha-content")).toBeTruthy();
   });
 
+  it("walks every trigger in the tablist when each is wrapped with its own controls", () => {
+    // A consumer may wrap a trigger with the controls that belong to its tab
+    // (a close button cannot be a child of a button). The roving tabindex
+    // finds the LIST, not the wrapper: through `parentElement` each trigger
+    // would see only itself and ArrowRight would land where it started.
+    const { getByRole, queryByText } = render(
+      <Tabs defaultValue="alpha">
+        <TabsList>
+          <div>
+            <TabsTrigger value="alpha">Alpha</TabsTrigger>
+            <button type="button">close alpha</button>
+          </div>
+          <div>
+            <TabsTrigger value="beta">Beta</TabsTrigger>
+            <button type="button">close beta</button>
+          </div>
+        </TabsList>
+        <TabsContent value="alpha">alpha-content</TabsContent>
+        <TabsContent value="beta">beta-content</TabsContent>
+      </Tabs>
+    );
+    const alpha = getByRole("tab", { name: "Alpha" });
+    alpha.focus();
+    fireEvent.keyDown(alpha, { key: "ArrowRight" });
+    expect(queryByText("beta-content")).toBeTruthy();
+    expect(document.activeElement).toBe(getByRole("tab", { name: "Beta" }));
+    fireEvent.keyDown(getByRole("tab", { name: "Beta" }), { key: "Home" });
+    expect(queryByText("alpha-content")).toBeTruthy();
+    expect(document.activeElement).toBe(alpha);
+  });
+
   it("supports controlled mode via value + onValueChange", () => {
     const onChange = vi.fn();
     const Controlled = (): JSX.Element => (

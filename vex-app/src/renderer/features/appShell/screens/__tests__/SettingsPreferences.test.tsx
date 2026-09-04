@@ -12,8 +12,10 @@
  *   - the notifications row round-trips through the typed uiStore slot.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactElement } from "react";
 import { useUiStore } from "../../../../stores/uiStore.js";
 import {
   getSubmitKeyBehavior,
@@ -21,10 +23,27 @@ import {
 } from "../../../../lib/composer-submission-policy.js";
 import { SettingsPreferences } from "../SettingsScreen/SettingsPreferences.js";
 
+// The Background row (SettingsBackdropRow, its own suite) reads the backdrop
+// through TanStack Query on mount; the group therefore renders under a
+// QueryClient with the bridge stubbed to "shipped artwork".
+const shellBackdropReadMock = vi.fn();
+
+function renderGroup(ui: ReactElement): ReturnType<typeof render> {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+}
+
 beforeEach(async () => {
   window.localStorage.clear();
   await resetSubmitKeyBehaviorForTest();
   useUiStore.getState().setThemePreference("chronos");
+  shellBackdropReadMock.mockReset();
+  shellBackdropReadMock.mockResolvedValue({ ok: true, data: { backdrop: null } });
+  Object.defineProperty(window, "vex", {
+    configurable: true,
+    writable: true,
+    value: { shellBackdrop: { read: shellBackdropReadMock } },
+  });
 });
 
 afterEach(() => {
@@ -40,7 +59,7 @@ function cube(id: string): HTMLButtonElement {
 
 describe("SettingsPreferences", () => {
   it("a theme cube click persists the preference and stamps the resolved theme on the document root", () => {
-    render(<SettingsPreferences />);
+    renderGroup(<SettingsPreferences />);
     fireEvent.click(cube("celeris"));
     expect(useUiStore.getState().themePreference).toBe("celeris");
     expect(document.documentElement.dataset["vexTheme"]).toBe("celeris");
@@ -49,7 +68,7 @@ describe("SettingsPreferences", () => {
   });
 
   it("cube selection follows the persisted preference, never the resolved theme", () => {
-    render(<SettingsPreferences />);
+    renderGroup(<SettingsPreferences />);
     fireEvent.click(cube("system"));
     // jsdom matchMedia is absent -> system resolves to chronos, yet the
     // SYSTEM cube must stay the pressed one.
@@ -59,7 +78,7 @@ describe("SettingsPreferences", () => {
   });
 
   it("the Enter-key choice round-trips through the submission policy's public API", () => {
-    render(<SettingsPreferences />);
+    renderGroup(<SettingsPreferences />);
     const modEnter = screen.getByRole("button", { name: "Ctrl/Cmd+Enter sends" });
     expect(getSubmitKeyBehavior()).toBe("enter");
     fireEvent.click(modEnter);
@@ -69,10 +88,26 @@ describe("SettingsPreferences", () => {
     expect(getSubmitKeyBehavior()).toBe("enter");
   });
 
+  it("mounts the Background row between Appearance and the Enter key, reading the backdrop once", async () => {
+    renderGroup(<SettingsPreferences />);
+    const rows = Array.from(
+      document.querySelectorAll(
+        "[data-vex-settings-appearance], [data-vex-settings-backdrop], [data-vex-settings-enter]",
+      ),
+    ).map((row) => row.getAttributeNames().find((name) => name.startsWith("data-vex-settings-")));
+    expect(rows).toEqual([
+      "data-vex-settings-appearance",
+      "data-vex-settings-backdrop",
+      "data-vex-settings-enter",
+    ]);
+    expect(await screen.findByRole("button", { name: "Choose image" })).not.toBeNull();
+    expect(shellBackdropReadMock).toHaveBeenCalledTimes(1);
+  });
+
   it("the notifications row reads the typed uiStore slot and a click round-trips through its setter", () => {
     useUiStore.setState({ notificationsEnabled: true });
 
-    render(<SettingsPreferences />);
+    renderGroup(<SettingsPreferences />);
     const toggle = screen.getByRole("switch", { name: "Notifications" });
     expect(toggle.getAttribute("aria-checked")).toBe("true");
     fireEvent.click(toggle);

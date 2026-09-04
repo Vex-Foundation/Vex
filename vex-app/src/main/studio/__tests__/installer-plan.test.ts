@@ -41,14 +41,14 @@ describe("plan coverage", () => {
     }
   });
 
-  it("always plans the three instruction artifacts, whatever is selected", () => {
+  it("always plans the four instruction artifacts, whatever is selected", () => {
     for (const selection of [[], ALL_IDS]) {
       const plan = buildStudioPlan({
         selectedAgentIds: selection,
         previouslyWritten: new Set(),
       });
       expect(plan.artifacts.map((a) => a.key)).toEqual(
-        expect.arrayContaining(["agents-md", "claude-md", "protocols-doc"]),
+        expect.arrayContaining(["agents-md", "vex-guide", "claude-md", "protocols-doc"]),
       );
     }
   });

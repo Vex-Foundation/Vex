@@ -4,16 +4,16 @@
  * honest build-stage disclosure, the display headline, and the retirement of
  * the BACKED BY footer band.
  *
- * CONTRACT CHANGE (UX after-audit N1): the runtime-mode capsule is NOT part of
- * this hero any more. It used to render here and in the Studio rail only, which
- * left an open agent session with no control into Studio anywhere on screen.
- * Its home is now the agent rail header (`AgentSidebarHeader`), whose own suite
- * pins the door; this file pins the other half - that the hero mounts no second
- * copy, because the page carries exactly ONE `Runtime mode` radiogroup.
+ * THE CAPSULE'S SEAT (owner decree 2026-09-04): while no session is active the
+ * `Agent | Studio` capsule sits here under the wordmark; once a session is
+ * active the agent rail header (`AgentSidebarHeader`) is the seat and this
+ * hero mounts none. One store fact, `activeSessionId`, decides both, which is
+ * what keeps the page at exactly ONE `Runtime mode` radiogroup. This file pins
+ * the hero's half; the header's suite pins the other.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { greetingPoolForHour } from "../../../lib/greeting.js";
 import { useUiStore } from "../../../stores/uiStore.js";
 
@@ -43,7 +43,7 @@ const RETIRED_QUIPS = [
 ] as const;
 
 beforeEach(() => {
-  useUiStore.setState({ runtimeMode: "agent" });
+  useUiStore.setState({ runtimeMode: "agent", activeSessionId: null });
   profileWithName(null);
 });
 
@@ -113,17 +113,36 @@ describe("SessionWelcomeHero", () => {
     expect(randSpy.mock.calls.length).toBeLessThanOrEqual(1);
   });
 
-  it("mounts NO runtime-mode control - the capsule has one home, the rail header", () => {
-    // CONTRACT CHANGE (UX after-audit N1). The capsule used to live here, and
-    // only here plus the Studio rail, so opening a session left the shell with
-    // no door into Studio at all. It moved to the agent rail header, which is
-    // on screen in every agent state; the hero gave up its copy because the
-    // page-wide invariant is exactly ONE `Runtime mode` radiogroup (pinned by
-    // e2e/studio.spec.ts). A second one here would double the control.
+  it("seats the runtime-mode capsule directly under the wordmark while no session is active", () => {
+    // Owner decree 2026-09-04: the switch is under the vex wordmark on the
+    // welcome screen, as it was before the rail-header move. Revert the mount
+    // and this case is the one that goes red.
+    const { container } = render(<SessionWelcomeHero />);
+    const group = screen.getByRole("radiogroup", { name: "Runtime mode" });
+    expect(
+      screen.getByRole("radio", { name: "Agent" }).getAttribute("aria-checked"),
+    ).toBe("true");
+    // The seat, not merely the presence: the mark's box is the capsule's
+    // immediately preceding sibling inside the rise stack.
+    const markBox = container.querySelector('span[aria-hidden="true"]');
+    expect(markBox?.nextElementSibling).toBe(group);
+    expect(group.parentElement?.className).toContain("vex-rise");
+  });
+
+  it("the capsule switches the shell to Studio", () => {
+    render(<SessionWelcomeHero />);
+    fireEvent.click(screen.getByRole("radio", { name: "Studio" }));
+    expect(useUiStore.getState().runtimeMode).toBe("studio");
+  });
+
+  it("mounts NO capsule once a session is active - the rail header is the seat then", () => {
+    // An idle session still renders this hero (SessionPanel's hero phase), and
+    // the rail header already carries the capsule for it; a copy here would
+    // make the page count two (e2e/studio.spec.ts pins one).
+    useUiStore.setState({ activeSessionId: "session-1" });
     render(<SessionWelcomeHero />);
     expect(screen.queryByRole("radiogroup", { name: "Runtime mode" })).toBeNull();
     expect(screen.queryByRole("radio", { name: "Studio" })).toBeNull();
-    expect(screen.queryByRole("radio", { name: "Agent" })).toBeNull();
     expect(useUiStore.getState().runtimeMode).toBe("agent");
   });
 

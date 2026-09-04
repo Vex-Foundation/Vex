@@ -7,6 +7,7 @@
  */
 
 import { z } from "zod";
+import { shellBackdropPointerSchema } from "./shell-backdrop.js";
 
 export const preferencesSchema = z
   .object({
@@ -49,6 +50,29 @@ export const preferencesSchema = z
         reducedMotion: z.enum(["auto", "always", "never"]),
       })
       .strict(),
+
+    /**
+     * Shell preferences owned by MAIN. `backdrop` is the pointer of record for
+     * the user's own wallpaper (`shell-backdrop.ts`): the bytes live under
+     * CONFIG_DIR and only main can reconcile them against this pointer on
+     * launch, which is why it is here and not in the renderer's uiStore
+     * (whose localStorage is untrusted by design).
+     *
+     * `.default(...)` rather than a required key, deliberately: the root schema
+     * is `.strict()` and every install before this key shipped has a
+     * `preferences.json` without it. A REQUIRED key would fail `safeParse` on
+     * first launch and fall through to the full-defaults reset, wiping the
+     * telemetry consent, window bounds and updater throttle for every existing
+     * user (the exact failure the retired-`hyperliquid` migration in
+     * `main/preferences/store.ts` exists to prevent). An absent key reads as
+     * "no custom backdrop", which is what it means.
+     */
+    shell: z
+      .object({
+        backdrop: shellBackdropPointerSchema.nullable(),
+      })
+      .strict()
+      .default({ backdrop: null }),
   })
   .strict();
 
@@ -60,4 +84,5 @@ export const defaultPreferences: Preferences = {
   window: { width: 1280, height: 800, x: null, y: null, maximized: false },
   updater: { lastCheckedAt: null },
   ui: { reducedMotion: "auto" },
+  shell: { backdrop: null },
 };

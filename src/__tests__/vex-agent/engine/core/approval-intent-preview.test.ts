@@ -622,6 +622,70 @@ describe("sanitizeRequestingClientName", () => {
     expect(sanitizeRequestingClientName(name)).toBeNull();
   });
 
+  /**
+   * The Codex-final-review defect: refusing only ASCII controls left every
+   * Unicode class that can make the rendered line lie. Each case here is a name
+   * a human would read as something OTHER than what the client declared.
+   *
+   * The suffix under attack is `approvalActorLine`'s "(an MCP client)" - the
+   * three words that tell the reader this name is self-declared provenance and
+   * not an identity Vex verified. A right-to-left override placed inside the
+   * name reorders the glyphs that follow it, so the suffix can be painted
+   * backwards or dragged behind the name; a zero-width joiner or space makes two
+   * different clients render identically. Both are refused WHOLE, so the card
+   * falls back to "an MCP client" and claims nothing it cannot show.
+   */
+  it.each([
+    ["a right-to-left override (U+202E)", "Claude \u202eedoC"],
+    ["a left-to-right override (U+202D)", "\u202dClaude Code"],
+    ["a right-to-left embedding (U+202B)", "Claude\u202bCode"],
+    ["a first-strong isolate (U+2068)", "Claude\u2068Code"],
+    ["a pop directional isolate (U+2069)", "Claude Code\u2069"],
+    ["a zero-width joiner (U+200D)", "Claude\u200d Code"],
+    ["a zero-width non-joiner (U+200C)", "Clau\u200cde Code"],
+    ["a zero-width space (U+200B)", "Claude\u200bCode"],
+    ["a soft hyphen (U+00AD)", "Clau\u00adde Code"],
+    ["a line separator (U+2028)", "Claude Code\u2028VEX APPROVED"],
+    ["a paragraph separator (U+2029)", "Claude Code\u2029VEX APPROVED"],
+    ["a C1 control (U+0085 NEL)", "Claude\u0085Code"],
+    ["a lone high surrogate", "Claude \ud800Code"],
+  ])("refuses %s rather than rendering it", (_label, name) => {
+    expect(sanitizeRequestingClientName(name)).toBeNull();
+  });
+
+  /**
+   * The other half of the same invariant, and the reason the rule is a
+   * CATEGORY test and not "ASCII only": a client whose name is written in the
+   * reader's own script is a client with a name. Refusing these would push every
+   * non-English client onto the anonymous label, which is the same loss of
+   * provenance the hardening exists to prevent.
+   */
+  it.each([
+    ["Polish letters", "Zażółć gęślą jaźń"],
+    ["CJK", "克劳德代码"],
+    ["Cyrillic", "Клод Код"],
+    ["an astral pictograph (paired surrogates)", "Claude Code \u{1f4bb}"],
+    ["a combining mark", "Cláude Côde"],
+  ])("keeps a benign non-ASCII name: %s", (_label, name) => {
+    expect(sanitizeRequestingClientName(name)).toBe(name);
+  });
+
+  /**
+   * A refusal is NOT a strip. `String.prototype.trim` eats U+2028, U+2029 and
+   * U+FEFF, so a check placed after the trim would quietly accept
+   * `"\u2028Claude Code"` as `"Claude Code"` - a name the client never declared,
+   * shown to a human as if it had. The class is therefore tested on the raw
+   * value, and this test is what goes red if that order is swapped back.
+   */
+  it.each([
+    ["a leading line separator", "\u2028Claude Code"],
+    ["a trailing paragraph separator", "Claude Code\u2029"],
+    ["a leading BOM", "\ufeffClaude Code"],
+  ])("refuses %s instead of silently trimming it away", (_label, name) => {
+    expect(name.trim()).not.toBe(name);
+    expect(sanitizeRequestingClientName(name)).toBeNull();
+  });
+
   it.each([
     ["a number", 42],
     ["undefined", undefined],
@@ -662,6 +726,21 @@ describe("sanitizeRequestingClientName", () => {
     expect(
       buildPolicySnapshot(context, "Claude\nCode").requestedByClient,
     ).toBeNull();
+  });
+
+  // The snapshot is the value that lands in `policy_json` and travels to the
+  // card, so the boundary that matters is proven at the boundary, not only on
+  // the helper.
+  it("records no client when the declared name reorders the line it would be shown on", () => {
+    expect(
+      buildPolicySnapshot(context, "Claude \u202eedoC").requestedByClient,
+    ).toBeNull();
+  });
+
+  it("carries a non-ASCII client name through to the snapshot", () => {
+    expect(buildPolicySnapshot(context, " Zażółć gęślą jaźń ").requestedByClient).toBe(
+      "Zażółć gęślą jaźń",
+    );
   });
 
   /**

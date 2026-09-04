@@ -7,6 +7,11 @@
  * branches must not make a hook conditional, and the project name needs a
  * query. Reading it here keeps that read inside the branch that wants it.
  *
+ * The chrome is the ONLY thing that differs between the two rails since the
+ * parity decree - the instruments inside are one component
+ * (`BookRailStack`), and the headline is what tells the user whose numbers
+ * these are.
+ *
  * The name is a LABEL. It comes from the same projects read the rail already
  * uses and grants nothing; while the read is in flight the header simply has
  * no headline rather than a placeholder claiming a project that is not

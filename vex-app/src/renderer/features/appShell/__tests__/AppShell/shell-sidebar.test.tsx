@@ -76,6 +76,7 @@ const healthMock = vi.fn<() => Promise<Result<HealthReport>>>();
 const getUserProfileMock = vi.fn<() => Promise<Result<UserProfile>>>();
 const setUserProfileMock = vi.fn<(profile: UserProfile) => Promise<Result<UserProfile>>>();
 const messagesListMock = vi.fn();
+const shellBackdropReadMock = vi.fn();
 const missionGetDraftMock = vi.fn();
 const runtimeGetStateMock = vi.fn();
 
@@ -184,6 +185,8 @@ beforeEach(() => {
     ok: true,
     data: { items: [], nextCursor: null, hasMore: false },
   });
+  shellBackdropReadMock.mockReset();
+  shellBackdropReadMock.mockResolvedValue({ ok: true, data: { backdrop: null } });
   Object.defineProperty(window, "vex", {
     configurable: true,
     value: {
@@ -232,6 +235,11 @@ beforeEach(() => {
       capabilities: {
         get: () =>
           Promise.resolve({ ok: true, data: { features: { memory: true } } }),
+      },
+      // Glass lane D: ShellBackdrop reads the user's own wallpaper once per
+      // mount. Default = none set, so the shipped artwork paints.
+      shellBackdrop: {
+        read: shellBackdropReadMock,
       },
     },
   });
@@ -488,6 +496,35 @@ describe("AppShell", () => {
     ).toBe("/backdrops/midnight-lake.webp");
   });
 
+  it("paints the user's own backdrop under the columns when one is set, on the same wall", async () => {
+    const url = "app://vex/user-backdrop/bg_0123456789abcdef0123456789abcdef";
+    shellBackdropReadMock.mockResolvedValue({
+      ok: true,
+      data: {
+        backdrop: {
+          imageId: "bg_0123456789abcdef0123456789abcdef",
+          url,
+          mime: "image/png",
+          width: 1920,
+          height: 1080,
+          byteLength: 4096,
+        },
+      },
+    });
+    const view = renderShell();
+    const backdrop = view.container.querySelector("[data-vex-area='shell-backdrop']");
+    expect(backdrop).not.toBeNull();
+    await waitFor(() => {
+      expect(backdrop?.getAttribute("data-vex-backdrop-source")).toBe("custom");
+    });
+    // ONE image, the user's, instead of both theme assets; the veils and the
+    // stage attribute are untouched.
+    const images = backdrop?.querySelectorAll("img") ?? [];
+    expect(images.length).toBe(1);
+    expect(images[0]?.getAttribute("src")).toBe(url);
+    expect(backdrop?.getAttribute("data-vex-backdrop-dimmed")).toBe("false");
+  });
+
   it("applies the Chronos theme to the shell root as data-vex-theme", () => {
     const view = renderShell();
     const root = view.container.querySelector('[data-vex-screen="appShell"]');
@@ -619,28 +656,32 @@ describe("AppShell", () => {
 
   it("keeps exactly ONE way into Studio on screen across the welcome<->session edge", () => {
     // THE DEFECT, at the seat where it was measured (UX after-audit N1). The
-    // `Agent | Studio` capsule used to render on the welcome HERO, so selecting
-    // a session unmounted the hero and took the only control out of agent mode
-    // off the screen entirely: Studio was reachable only by going back to
-    // welcome. Close-range suites cannot see this, because each of them mounts
-    // one component; only the assembled shell can show that the control
-    // survives a stage change. Put the capsule back on the hero and the session
-    // half below goes red with a count of zero.
+    // `Agent | Studio` capsule used to render on the welcome HERO only, so
+    // selecting a session unmounted the hero and took the only control out of
+    // agent mode off the screen entirely. Close-range suites cannot see this,
+    // because each of them mounts one component; only the assembled shell can
+    // show that the control survives a stage change.
     //
-    // The other half of the invariant is the COUNT: the capsule has exactly one
-    // home per page (this rail header in agent mode, the Studio rail header in
-    // Studio mode), which is what `e2e/studio.spec.ts` pins page-wide. A second
-    // copy anywhere in agent mode would make this 2.
+    // The seat is decided by ONE store fact, `activeSessionId` (owner decree
+    // 2026-09-04: the capsule sits under the wordmark on the welcome screen):
+    // null, the hero carries it and the rail header mounts none; non-null, the
+    // rail header carries it and the hero mounts none. The COUNT is the
+    // invariant either way (`e2e/studio.spec.ts` pins it page-wide). Make
+    // either seat unconditional and one half below reads 2.
     const view = renderShell();
     const rail = (): HTMLElement | null =>
       view.container.querySelector("[data-vex-area='sessions-sidebar']");
+    const centre = (): HTMLElement | null =>
+      view.container.querySelector("[data-vex-area='session-panel']");
 
     const welcomeGroups = screen.getAllByRole("radiogroup", {
       name: "Runtime mode",
     });
     expect(welcomeGroups).toHaveLength(1);
-    // And it is the RAIL's, not the hero's: the hero gave its copy up.
-    expect(rail()?.contains(welcomeGroups[0] ?? null)).toBe(true);
+    // And it is the HERO's (the centre column), under the wordmark, not the
+    // rail's.
+    expect(centre()?.contains(welcomeGroups[0] ?? null)).toBe(true);
+    expect(rail()?.contains(welcomeGroups[0] ?? null)).toBe(false);
 
     act(() => useUiStore.getState().setActiveSessionId("s-1"));
 

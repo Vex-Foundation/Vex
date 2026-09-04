@@ -77,7 +77,11 @@ export function ExplorerHeader({
   return (
     <div
       className={cn(
-        "flex h-8 shrink-0 items-center gap-1 border-b border-line-3 bg-surface-sidebar px-2",
+        // No rule under it and no plate behind it: the header sits on the
+        // rail's own glass, and the 11px uppercase title is what separates it
+        // from the 13px rows below (the reference draws its section headers
+        // the same way, a register step rather than a stroke).
+        "flex h-8 shrink-0 items-center gap-1 px-2",
         className,
       )}
     >

@@ -87,6 +87,57 @@ export function dbError(
   });
 }
 
+/**
+ * A project-scoped read whose project is gone or tombstoned.
+ *
+ * The sentence and the code MIRROR `portfolio-db.ts`'s project arm on purpose:
+ * the user meets the same failure through two surfaces of the same rail, and
+ * two different sentences for one state is what makes a refusal read as a bug.
+ * They are not shared because both are private to their own feed module and
+ * neither exports its error vocabulary; the extraction owner would be a
+ * `projects` error module, which is not this change's to create.
+ *
+ * NEVER an empty page: on an audit feed "nothing found" and "that project is
+ * gone" are different answers and rule 04 forbids collapsing them.
+ */
+export function projectNotFound(correlationId: string): Result<never, VexError> {
+  return err({
+    code: "projects.not_found",
+    domain: "portfolio",
+    message: "That project no longer exists. Refresh your project list.",
+    retryable: false,
+    userActionable: true,
+    redacted: true,
+    correlationId,
+  });
+}
+
+/**
+ * A project whose STORED wallet selection no longer matches the inventory.
+ * Also never an empty page - a drifted selection means Vex cannot say whose
+ * activity the feed would be showing, which is the one thing this surface
+ * exists to state.
+ */
+export function projectWalletDrift(
+  family: "evm" | "solana",
+  correlationId: string,
+): Result<never, VexError> {
+  const label = family === "evm" ? "EVM" : "Solana";
+  return err({
+    code: "projects.wallet_drift",
+    domain: "portfolio",
+    message:
+      `The ${label} wallet saved for this project no longer matches the wallet in `
+      + "your inventory: it was removed, or re-imported over a different key. "
+      + "No activity was read. Select the wallet again in project settings to "
+      + "confirm which key it should use.",
+    retryable: false,
+    userActionable: true,
+    redacted: true,
+    correlationId,
+  });
+}
+
 export function isStatementTimeout(cause: unknown): boolean {
   return (
     typeof cause === "object" &&
@@ -146,6 +197,42 @@ export async function rollbackQuietly(client: Client): Promise<void> {
   }
 }
 
+// ── Address lookup variants ───────────────────────────────────────────────
+
+/** Shape-valid EVM address; anything else is bound exactly, never broadened. */
+const EVM_ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
+
+/**
+ * The indexed lookup variants an address can be STORED as, for the addresses
+ * this module binds beside the inventory allow-list (the project narrowing).
+ *
+ * It implements the SAME rule
+ * `inventory-wallets.ts:resolveInventoryWalletAddressLookupVariants` applies to
+ * the inventory, and for the same measured reason: wallet records are
+ * checksummed while receipt and intent writers commonly canonicalize to
+ * lowercase, so binding only the stored form would hide the user's own history
+ * behind a producer's casing choice. On a project-scoped audit feed that is not
+ * a cosmetic miss - it renders as "this project has never done anything".
+ *
+ * Solana base58 stays EXACT and case-sensitive (its casing is identity), and an
+ * invalid EVM-shaped value is bound exactly too - fail closed, never broadened.
+ *
+ * The two implementations are kept in agreement by
+ * `agent-scan-db-project-scope.test.ts`, which runs both over the same
+ * inventory. A shared owner is the right end state; `inventory-wallets.ts` is
+ * outside this lane's file set, so the guard is the test rather than the move.
+ */
+export function toAddressLookupVariants(
+  addresses: readonly string[],
+): readonly string[] {
+  const variants: string[] = [];
+  for (const address of addresses) {
+    variants.push(address);
+    if (EVM_ADDRESS_PATTERN.test(address)) variants.push(address.toLowerCase());
+  }
+  return [...new Set(variants)];
+}
+
 // ── Status vocabulary translation ─────────────────────────────────────────
 
 /**
@@ -184,6 +271,21 @@ export interface AgentScanQueryPlan {
 export interface AgentScanQueryArgs {
   /** Server-resolved inventory allow-list. NEVER caller-supplied, never omitted. */
   readonly wallets: readonly string[];
+  /**
+   * The PROJECT's own server-resolved address lookup variants when
+   * `filters.projectId` was supplied, else `null`.
+   *
+   * It is an INTERSECTION, not a scope: the inventory allow-list above stays
+   * `$1` and unconditional, and this compiles to a SECOND
+   * `wallet_address = ANY(...)` predicate beside it. There is no code path in
+   * which supplying a project replaces the allow-list, so quoting a project id
+   * can only ever remove rows.
+   *
+   * Never an EMPTY array: a project with nothing selected returns the empty
+   * page before this builder is reached, because `= ANY('{}')` is false for
+   * every row and would express the same thing far less legibly.
+   */
+  readonly projectWallets: readonly string[] | null;
   readonly filters: AgentScanFilters;
   readonly cursor: AgentScanCursor | null;
 }
@@ -263,7 +365,7 @@ const LEGS_EXPR = `CASE WHEN aa.kind = 'bridge' THEN (
         ) END`;
 
 export function buildAgentScanPageQuery(args: AgentScanQueryArgs): AgentScanQueryPlan {
-  const { wallets, filters, cursor } = args;
+  const { wallets, projectWallets, filters, cursor } = args;
   const params: unknown[] = [];
   const push = (value: unknown): number => {
     params.push(value);
@@ -292,6 +394,15 @@ export function buildAgentScanPageQuery(args: AgentScanQueryArgs): AgentScanQuer
   // only ever remove rows from an already-scoped set — never add any.
   if (filters.sessionId !== undefined) {
     predicates.push(`AND aa.session_id = $${push(filters.sessionId)}`);
+  }
+  // NARROWS the read to the project's own selection, INTERSECTED with the
+  // unconditional allow-list above rather than replacing it. Addresses arrive
+  // already resolved and expanded to their indexed lookup variants
+  // (`agent-scan-db.ts`); a caller-supplied address never reaches this line.
+  if (projectWallets !== null) {
+    predicates.push(
+      `AND aa.wallet_address = ANY($${push([...projectWallets])}::text[])`,
+    );
   }
 
   if (cursor !== null) {

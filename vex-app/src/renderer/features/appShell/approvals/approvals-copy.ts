@@ -91,7 +91,8 @@ export const APPROVAL_UNNAMED_MCP_CLIENT = "an MCP client";
 /**
  * WHO proposed this action, as one sentence for the card's actor row.
  *
- * Rule 90 binds an approval to its actor AND to whether an agent proposed it,
+ * Rule 90 binds an approval to its ORIGIN (agent or studio_mcp) and to whether an
+ * agent proposed it; the client name shown beside it is client-reported provenance,
  * and the two are one fact for a reader: "Claude Code (an MCP client) in
  * project vex-studio" answers both at once. The three inputs are the three
  * things Vex actually knows, and none of them is derived from model input:

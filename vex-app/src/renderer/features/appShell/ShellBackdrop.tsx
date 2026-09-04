@@ -29,10 +29,26 @@
  *
  * If the image ever fails to load, the shell root's own
  * `bg-[var(--vex-surface-0)]` remains as the canvas — never a white flash.
+ *
+ * THE USER'S OWN BACKDROP (glass redesign, lane D). When the installation has
+ * a custom image (`window.vex.shellBackdrop.read`, one cache entry shared
+ * with the Settings row), it is painted INSTEAD of both theme assets, on the
+ * same drift loop, under the same grain and veils, so every glass surface
+ * reads the user's photo exactly as it reads the shipped one (owner
+ * screenshot 23: a kitty window over the user's own mountain wallpaper). The
+ * two shipped artworks stay the fallback for every other state: no custom
+ * image, a read that has not answered, a failed read, or a custom image the
+ * renderer could not load (`onError`), which falls back to them rather than
+ * to a hole in the wall (brief section 8, item 10). The custom image is one
+ * `<img>` with no theme class: a personal photo is not re-picked by theme.
  */
 
-import type { JSX } from "react";
+import { useEffect, useState, type JSX } from "react";
 import { cn } from "../../lib/utils.js";
+import {
+  currentShellBackdrop,
+  useShellBackdrop,
+} from "../../lib/api/shell-backdrop.js";
 
 /**
  * Owner-supplied artwork (2026-07-31): the midnight lake — dark mountain
@@ -60,25 +76,48 @@ export function ShellBackdrop({
 }: {
   readonly dimmed: boolean;
 }): JSX.Element {
+  const backdropQuery = useShellBackdrop();
+  const custom = currentShellBackdrop(backdropQuery.data);
+  // A custom URL the renderer could not load. Keyed by URL so a NEW pick
+  // (new id, new URL) gets its own chance rather than inheriting the old
+  // failure.
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  const customUrl = custom !== null && custom.url !== failedUrl ? custom.url : null;
+  useEffect(() => {
+    if (custom === null) setFailedUrl(null);
+  }, [custom]);
   return (
     <div
       aria-hidden
       data-vex-area="shell-backdrop"
       data-vex-backdrop-dimmed={dimmed ? "true" : "false"}
+      data-vex-backdrop-source={customUrl === null ? "shipped" : "custom"}
       className="pointer-events-none absolute inset-0 z-0 overflow-hidden"
     >
-      <img
-        src={BACKDROP_SRC}
-        alt=""
-        draggable={false}
-        className="vex-backdrop-chronos vex-backdrop-drift h-full w-full select-none object-cover saturate-[1.05] contrast-[1.03]"
-      />
-      <img
-        src={BACKDROP_CELERIS_SRC}
-        alt=""
-        draggable={false}
-        className="vex-backdrop-celeris vex-backdrop-drift absolute inset-0 h-full w-full select-none object-cover"
-      />
+      {customUrl !== null ? (
+        <img
+          src={customUrl}
+          alt=""
+          draggable={false}
+          onError={() => setFailedUrl(customUrl)}
+          className="vex-backdrop-drift h-full w-full select-none object-cover"
+        />
+      ) : (
+        <>
+          <img
+            src={BACKDROP_SRC}
+            alt=""
+            draggable={false}
+            className="vex-backdrop-chronos vex-backdrop-drift h-full w-full select-none object-cover saturate-[1.05] contrast-[1.03]"
+          />
+          <img
+            src={BACKDROP_CELERIS_SRC}
+            alt=""
+            draggable={false}
+            className="vex-backdrop-celeris vex-backdrop-drift absolute inset-0 h-full w-full select-none object-cover"
+          />
+        </>
+      )}
       {/* Film grain over the artwork ONLY (below the veils) — see the
         * BACKDROP_SRC note; rails/panels keep their own grain rules. */}
       <div

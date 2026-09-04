@@ -54,7 +54,8 @@ export const STUDIO_SUN_PATH_MAX_BYTES = 103;
 export const STUDIO_SOCKET_OVERRIDE_ENV = "VEX_STUDIO_SOCKET";
 
 /**
- * The systemd per-user runtime root on Linux, PROBED rather than assumed.
+ * The systemd per-user runtime root on Linux, PROBED rather than assumed, and
+ * PREFERRED over `XDG_RUNTIME_DIR`.
  *
  * It is the rung that keeps the two owners from disagreeing.
  * `XDG_RUNTIME_DIR` is an environment variable, and an MCP client is free to
@@ -66,16 +67,33 @@ export const STUDIO_SOCKET_OVERRIDE_ENV = "VEX_STUDIO_SOCKET";
  * and the FILESYSTEM facts of `/run/user/<uid>`), and that last term is the
  * one both sides read identically whatever their environment says.
  *
+ * THE ORDER IS THE OTHER HALF OF THAT, and it was measured wrong first.
+ * Probing the directory only AFTER the variable failed still lets the two
+ * sides diverge: a private CUSTOM `XDG_RUNTIME_DIR` (WSLg's
+ * `/mnt/wslg/runtime-dir` on some distributions) is a directory the app can
+ * see and a scrubbed bridge cannot, so the host bound there while the bridge
+ * found `/run/user/<uid>` private and dialled that. Same privacy gate, two
+ * endpoints, no rendezvous. The environment-independent fact therefore goes
+ * first, and the variable decides only where a system with no
+ * `/run/user/<uid>` keeps its runtime directory.
+ *
+ * THE RESIDUAL, NAMED RATHER THAN CLOSED (contract 1.2): a machine with no
+ * private `/run/user/<uid>` AND a custom private `XDG_RUNTIME_DIR` the
+ * launcher drops still diverges. Nothing both processes can read describes
+ * that directory; the follow-up is a rendezvous file, not another environment
+ * rung.
+ *
  * The directory is held to the SAME `isPrivateDirectory` gate the variable is
  * held to - a directory, owned by this uid, with no group or other bits -
- * which is the systemd guarantee that makes it a safe socket home. When it
- * does not hold, the tmpdir fallback is exactly what it was.
+ * which is the systemd guarantee that makes it a safe socket home. When
+ * neither holds, the tmpdir fallback is exactly what it was.
  *
  * VS Code's `createStaticIPCHandle` (`src/vs/base/parts/ipc/node/ipc.net.ts`
- * in the reference checkout) prefers `XDG_RUNTIME_DIR` and otherwise falls
- * back to a caller-supplied directory, with no middle rung. Vex needs one
- * because VS Code's two sides are one process tree sharing an environment and
- * ours are not: our client half is spawned by somebody else's agent.
+ * in the reference checkout) reads `XDG_RUNTIME_DIR` once at module load and
+ * otherwise falls back to a caller-supplied directory, with no probed runtime
+ * root at all. Vex needs one, and needs it FIRST, because VS Code's two sides
+ * are one process tree sharing an environment and ours are not: our client
+ * half is spawned by somebody else's agent, with somebody else's environment.
  */
 export const LINUX_RUNTIME_DIR_ROOT = "/run/user";
 
@@ -262,8 +280,8 @@ export function planStudioEndpoint(input: EndpointPlanInput): StudioEndpointPlan
 
   const fileName = studioEndpointFileName(input.configDirRealPath);
 
-  // Linux: the XDG runtime directory when the system actually gave us a
-  // private one. The fallback chain below is the "or it did not" branch.
+  // Linux: a private runtime directory when the system gave us one, and the
+  // fallback below when it did not.
   // Unix targets only from here: a win32 target returned its pipe above, and
   // a pipe is not a filesystem path. The flavour is still selected from the
   // input rather than assumed, so a future non-win32 flavour cannot be
@@ -271,6 +289,22 @@ export function planStudioEndpoint(input: EndpointPlanInput): StudioEndpointPlan
   const target = flavour(input.platform);
 
   if (input.platform === "linux") {
+    // THE FILESYSTEM FACT FIRST, THE ENVIRONMENT SECOND (contract 1.2). Both
+    // rungs are held to the same privacy gate; what the order decides is which
+    // one wins when they name DIFFERENT directories, and only one of the two
+    // is a fact both processes read identically. See `LINUX_RUNTIME_DIR_ROOT`.
+    const systemdRuntimeDir = target.join(LINUX_RUNTIME_DIR_ROOT, String(input.uid));
+    if (isPrivateDirectory(input.probeDirectory(systemdRuntimeDir), input.uid)) {
+      return planPrivateRuntimeDir(systemdRuntimeDir, fileName, target);
+    }
+
+    // NO `/run/user/<uid>`, SO THE VARIABLE NAMES THE ONLY PRIVATE RUNTIME
+    // DIRECTORY THIS SYSTEM OFFERS. A distribution that puts one elsewhere
+    // (WSLg's `/mnt/wslg/runtime-dir`) is served here rather than pushed down
+    // to the tmpdir form. It is also the rung that carries the residual
+    // divergence contract 1.2 names by hand: a launcher that drops the
+    // variable on such a machine derives a different endpoint from this one,
+    // and no fact available to both sides closes it.
     const runtimeDir = input.env["XDG_RUNTIME_DIR"];
     if (
       typeof runtimeDir === "string"
@@ -280,18 +314,10 @@ export function planStudioEndpoint(input: EndpointPlanInput): StudioEndpointPlan
     ) {
       return planPrivateRuntimeDir(runtimeDir, fileName, target);
     }
-
-    // THE VARIABLE IS ABSENT OR UNUSABLE, BUT THE DIRECTORY MAY STILL BE
-    // THERE. This is the rung that makes an environment-scrubbing client agree
-    // with the app about one endpoint. It is a filesystem fact both sides
-    // read, held to the same privacy gate as the variable's own directory.
-    const systemdRuntimeDir = target.join(LINUX_RUNTIME_DIR_ROOT, String(input.uid));
-    if (isPrivateDirectory(input.probeDirectory(systemdRuntimeDir), input.uid)) {
-      return planPrivateRuntimeDir(systemdRuntimeDir, fileName, target);
-    }
   }
 
-  // macOS always, and Linux when `XDG_RUNTIME_DIR` is unset, relative, not a
+  // macOS always, and Linux when neither runtime directory is private: no
+  // `/run/user/<uid>`, and an `XDG_RUNTIME_DIR` that is unset, relative, not a
   // directory, not ours, or readable by anyone else.
   const parentDir = target.join(input.tmpdir, `vex-studio-${String(input.uid)}`);
   const candidate = target.join(parentDir, fileName);

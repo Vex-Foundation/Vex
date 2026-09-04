@@ -18,6 +18,10 @@
 import { useCallback, type JSX } from "react";
 import { AnimatePresence } from "motion/react";
 import { useUiStore } from "../../../stores/uiStore.js";
+import {
+  agentScanRouteScope,
+  agentScanScopeKey,
+} from "../../../stores/uiStore/shell-route.js";
 import { MemoryScreen } from "./MemoryScreen.js";
 import { SessionsScreen } from "./SessionsScreen.js";
 import { HowVexWorksScreen } from "./HowVexWorksScreen.js";
@@ -53,11 +57,12 @@ export function ShellScreens(): JSX.Element {
         <SessionsScreen key="sessions" origin={route.origin} onClose={close} />
       ) : route.kind === "agentScan" ? (
         <AgentScanScreen
-          // Identity-keyed on the scope: swapping between the global feed and
-          // a session preset must remount, not reuse the old filter state.
-          key={`agentScan:${route.sessionId ?? "global"}`}
+          // Identity-keyed on the scope: swapping between the global feed, a
+          // session preset and a project preset must remount, not reuse
+          // filter state that belonged to another scope.
+          key={`agentScan:${agentScanScopeKey(agentScanRouteScope(route))}`}
           origin={route.origin}
-          sessionId={route.sessionId}
+          scope={agentScanRouteScope(route)}
           onClose={close}
         />
       ) : route.kind === "howItWorks" ? (

@@ -52,14 +52,27 @@
  * same `onPinTab`, which is optional: with no owner for it the strip draws no
  * promotion affordance rather than a control that does nothing.
  *
- * ## Close and split live BESIDE the trigger, not inside it
+ * ## Trigger and close share ONE tab shell
  *
- * A `<button>` cannot contain a `<button>`, and the primitive's keyboard
- * navigation finds its siblings through `parentElement.querySelectorAll('[role=tab]')`.
- * Wrapping each trigger with its close button in a div would satisfy HTML and
- * break the roving tabindex. So the per-tab controls are SIBLINGS of the trigger
- * inside the tablist, which keeps both the markup valid and the navigation
- * intact, and leaves every control reachable by keyboard in reading order.
+ * A `<button>` cannot contain a `<button>`, so the close control is the
+ * trigger's sibling in the DOM. It used to be a sibling in the TABLIST as well,
+ * because the primitive's keyboard navigation found its peers through
+ * `parentElement` and any wrapper broke the roving tabindex; the strip then
+ * painted the seam with matching backgrounds on two elements and a divider on
+ * the close button (owner's Windows session, 15.png: the `x` read as a control
+ * of the strip, after the tab). The primitive now walks
+ * `closest('[role="tablist"]')`, so each tab is one `.vex-tab-shell` wrapper
+ * holding its trigger, its Keep action and its close - VS Code's own shape
+ * (`multiEditorTabsControl.ts:916` builds `.tab-actions` INSIDE the tab
+ * container) and the shape of 16.png. The wrapper is the tab's chrome (the
+ * glass chip tint at rest, the pane tint when active, no border anywhere:
+ * `glass.css` and `terminal.css` own the paint); the trigger inside it is
+ * transparent and borderless, and a hover anywhere on the shell lights the
+ * whole tab because there is only one element to light.
+ *
+ * The gestures are VS Code's too: middle click closes, and `Delete` closes from
+ * the keyboard, so the close is reachable without ever moving focus off the tab
+ * itself.
  */
 
 import {
@@ -280,7 +293,13 @@ export function TerminalTabs({
           <TabsList
             ref={listRef}
             aria-label="Studio terminals and files"
-            className="h-9 w-full justify-start gap-0 overflow-x-auto rounded-none border-x-0 border-t-0 border-b border-line-3 p-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            // NO RULE UNDER THE STRIP. The pane is glass and its tabs are
+            // chips on it; the active tab's own edge light and the header's
+            // spacing are the separation. The 8px left inset is the same inset
+            // the header text and the terminal grid keep from the pane edge,
+            // and the 4px top keeps the pane's inset highlight visible above
+            // the tabs' rounded tops.
+            className="vex-terminal-tab-strip h-9 w-full items-end justify-start gap-0.5 overflow-x-auto rounded-none border-0 pt-1 pr-0 pb-0 pl-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           >
             {state.tabs.map((tab) => (
               <TabRow
@@ -313,7 +332,7 @@ export function TerminalTabs({
             aria-hidden="true"
             data-overflow-start={overflow.atStart ? undefined : ""}
             className={cn(
-              "pointer-events-none absolute inset-y-0 left-0 w-6 bg-gradient-to-r from-surface-1 to-transparent",
+              "pointer-events-none absolute inset-y-0 left-0 w-6 bg-gradient-to-r from-[var(--vex-glass-tint-pane)] to-transparent",
               overflow.atStart ? "opacity-0" : "opacity-100",
             )}
           />
@@ -321,7 +340,7 @@ export function TerminalTabs({
             aria-hidden="true"
             data-overflow-end={overflow.atEnd ? undefined : ""}
             className={cn(
-              "pointer-events-none absolute inset-y-0 right-0 w-6 bg-gradient-to-l from-surface-1 to-transparent",
+              "pointer-events-none absolute inset-y-0 right-0 w-6 bg-gradient-to-l from-[var(--vex-glass-tint-pane)] to-transparent",
               overflow.atEnd ? "opacity-0" : "opacity-100",
             )}
           />
@@ -618,17 +637,22 @@ function TabRow({
   }
 
   return (
-    <>
+    <div
+      // THE TAB'S CHROME lives on this shell (glass.css paints rest and active,
+      // terminal.css the hover), and `group` is what lets the close icon
+      // answer a hover anywhere on it. `data-active` is the paint's switch; the
+      // trigger's `aria-selected` stays the accessibility fact.
+      className="vex-tab-shell group flex h-full shrink-0 items-stretch"
+      data-active={active || undefined}
+      data-terminal-tab-shell=""
+    >
       <TabsTrigger
         ref={triggerRef}
         value={tab.tabId}
-        // The hover group is the TRIGGER's, and the close button reads it
-        // through `peer-hover`, because the two are siblings rather than nested
-        // (a button cannot contain a button; see the module header).
-        className={cn(
-          "peer h-full shrink-0 gap-1.5 rounded-none border-r border-line-3 px-3",
-          active ? "bg-interactive-active text-ink-primary" : null,
-        )}
+        // TRANSPARENT AND BORDERLESS: the shell around it is the tab's box.
+        // `bg-transparent` out-merges the primitive's active wash and the
+        // rest-state `hover:text-ink-primary` is the only thing kept.
+        className="h-full shrink-0 gap-1.5 rounded-none border-0 bg-transparent pr-1 pl-3 hover:bg-transparent"
         title={
           runState === null
             ? tab.title
@@ -660,6 +684,21 @@ function TabRow({
           event.preventDefault();
           onCloseTab(tab.tabId);
         }}
+        // DELETE CLOSES, from the tab itself. The close button is in the tab
+        // order, but reaching it means leaving the tab, and the roving tabindex
+        // that makes Arrow keys work is the reason a keyboard user is ON the
+        // trigger in the first place. VS Code binds the same key to
+        // `workbench.action.closeActiveEditor` alternatives on its tab; here it
+        // is local, so it cannot fire while focus is anywhere else.
+        //
+        // The primitive's own handler runs after this one (it is passed through
+        // as `onKeyDown`), and it only acts on Arrow/Home/End, so there is no
+        // ordering to negotiate.
+        onKeyDown={(event) => {
+          if (event.key !== "Delete") return;
+          event.preventDefault();
+          onCloseTab(tab.tabId);
+        }}
       >
         {isGroup ? <IconTerminal size={12} /> : <IconFile size={12} />}
         {/* The dot is colour-only and `aria-hidden`; the word after the title
@@ -688,14 +727,13 @@ function TabRow({
             onPinTab?.(tab.tabId);
           }}
           className={cn(
-            // Same hover-revealed, never-keyboard-hidden grammar as close: it
-            // stays in the layout, in the tab order and in the accessibility
-            // tree, and paints on hover of either sibling, on the active tab
-            // and on its own focus ring.
-            "shrink-0 rounded px-1 py-0.5 text-[10px] leading-4 text-ink-tertiary transition-opacity duration-[var(--vex-duration-fast)]",
-            "opacity-0 peer-hover:opacity-100 hover:opacity-100 focus-visible:opacity-100",
+            // Same hover-revealed, never-keyboard-hidden grammar as close, and
+            // inside the same shell: it sits between the label and the close
+            // control, so the whole tab is one continuous surface.
+            "flex shrink-0 items-center px-1 text-[10px] leading-4 text-ink-tertiary",
+            "opacity-0 group-hover:opacity-100 hover:opacity-100 focus-visible:opacity-100",
             active ? "opacity-100" : null,
-            "hover:bg-interactive-hover hover:text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+            "transition-opacity duration-[var(--vex-duration-fast)] hover:text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset",
           )}
         >
           Keep
@@ -708,20 +746,26 @@ function TabRow({
         onClick={() => {
           onCloseTab(tab.tabId);
         }}
+        // INSIDE the tab's box, with no divider: the shell's edge is the tab's
+        // edge and the next tab starts after the strip's gap.
+        data-terminal-tab-close=""
         className={cn(
-          // HOVER-REVEALED, NEVER KEYBOARD-HIDDEN. `opacity-0` keeps the button
-          // in the layout, in the tab order and in the accessibility tree; it
-          // paints on hover of either sibling, on the active tab, and on its own
-          // focus ring, so a keyboard user always sees what they are on.
-          "mr-2 shrink-0 rounded p-1 text-ink-tertiary transition-opacity duration-[var(--vex-duration-fast)]",
-          "opacity-0 peer-hover:opacity-100 hover:opacity-100 focus-visible:opacity-100",
-          active ? "opacity-100" : null,
-          "hover:bg-interactive-hover hover:text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+          "flex shrink-0 items-center rounded-tr-lg pr-2 pl-1 text-ink-tertiary",
+          // HOVER-REVEALED, NEVER KEYBOARD-HIDDEN. `opacity-0` on the ICON keeps
+          // the button in the layout, in the tab order and in the accessibility
+          // tree, and keeps the tab's width identical whether the icon is
+          // painted or not - so a tab does not resize under the pointer. It
+          // paints on hover anywhere on the shell, on the active tab, and on
+          // its own focus ring.
+          "[&>*]:opacity-0 group-hover:[&>*]:opacity-100 focus-visible:[&>*]:opacity-100",
+          active ? "[&>*]:opacity-100" : null,
+          "[&>*]:transition-opacity [&>*]:duration-[var(--vex-duration-fast)]",
+          "hover:text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset",
         )}
       >
         <IconClose size={12} />
       </button>
-    </>
+    </div>
   );
 }
 

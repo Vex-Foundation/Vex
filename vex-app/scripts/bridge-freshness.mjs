@@ -38,6 +38,12 @@
  * The manifest lives in the build output directory (`bridge/dist/` is
  * git-ignored), so it is discarded exactly when the artifact it describes is.
  *
+ * THE TWO PREREQUISITES LIVE HERE TOO, for the same reason the freshness
+ * check does: `build-host-bridges.mjs` and `doctor.mjs` must answer "can this
+ * machine build the bridge, and with what?" identically, and a second copy of
+ * either answer is a second source of truth. `resolveGoToolchain` owns the Go
+ * pin; `resolveBuildShell` owns which `bash` runs `bridge/build.sh`.
+ *
  * THE TOOLCHAIN IS REQUIRED, NOT OPTIONAL. A missing or wrong `go` is answered
  * with a named refusal that points at `bridge/build.sh` and `vex-app/DEV.md`,
  * never with a skip: a silent skip is how a developer ends up debugging an
@@ -301,6 +307,242 @@ export function resolveGoToolchain(repoRoot, detected = detectGoToolchain()) {
     };
   }
   return { kind: "ok", version: detected.version };
+}
+
+/**
+ * WHICH `bash` RUNS `bridge/build.sh`?
+ *
+ * On Windows, `bash` is the wrong question to ask PATH. Every Windows box with
+ * WSL enabled carries `%SystemRoot%\System32\bash.exe`, the WSL launcher, and
+ * it is on the system PATH ahead of anything an installer adds. Spawning
+ * `bash` there hands `bridge/build.sh` to a Linux distribution that receives
+ * Windows paths it cannot resolve and a Go toolchain that is not the one this
+ * module just vouched for. MEASURED on the owner's machine (2026-09-04): Git
+ * for Windows was installed at `C:\Program Files\Git\bin\bash.exe`, `where
+ * bash` answered `C:\Windows\System32\bash.exe` first, and the bridge build
+ * failed inside WSL.
+ *
+ * So the Windows shell is RESOLVED, never looked up:
+ *
+ *   1. `VEX_GIT_BASH`, for an install in neither default place. An override
+ *      that is set and not usable REFUSES; it never falls through to a guess,
+ *      because a developer who pointed at a shell deserves to hear that the
+ *      pointer is wrong rather than watch a different shell run.
+ *   2. `git --exec-path`, which is where Git for Windows itself is, walked up
+ *      to the install root: the same Git that cloned this repository names the
+ *      Git Bash beside it. `--exec-path` reports
+ *      `<root>\mingw64\libexec\git-core`, so the root is several levels up and
+ *      each ancestor is tested rather than one guessed depth.
+ *   3. The two default install roots, `%ProgramFiles%\Git` and
+ *      `%LocalAppData%\Programs\Git` (system-wide and per-user installers).
+ *
+ * A candidate under `System32` or `SysWOW64` is refused at every step, in the
+ * override too: those are WSL, whatever asked for them.
+ *
+ * On POSIX, PATH `bash` is correct and is what the CI jobs already use.
+ *
+ * Adopted from VS Code `src/vs/base/node/powershell.ts` (ordered explicit
+ * candidates, each with a source label and an existence probe, first hit wins)
+ * and `src/vs/base/node/processes.ts` (`getCaseInsensitive` for environment
+ * lookups: `process.env` is case-insensitive on Windows, a plain object is
+ * not, and the candidates must not depend on which spelling of `ProgramFiles`
+ * the caller happened to pass).
+ */
+
+/** Environment variable that names an explicit Git Bash. */
+export const GIT_BASH_OVERRIDE_ENV = "VEX_GIT_BASH";
+
+/** Where a Git for Windows install keeps `bash.exe`, root-relative, in order. */
+const GIT_BASH_RELATIVE_PATHS = [
+  ["bin", "bash.exe"],
+  ["usr", "bin", "bash.exe"],
+];
+
+/** The default install roots, as environment variable plus subdirectory. */
+const GIT_INSTALL_ROOTS = [
+  { variable: "ProgramFiles", subdirectory: "Git" },
+  { variable: "LOCALAPPDATA", subdirectory: path.win32.join("Programs", "Git") },
+];
+
+/** How many levels above `git --exec-path` are searched for the install root. */
+const GIT_EXEC_PATH_ANCESTORS = 5;
+
+/** `process.env` is case-insensitive on Windows; an injected object is not. */
+function environmentValue(env, name) {
+  const wanted = name.toLowerCase();
+  for (const key of Object.keys(env)) {
+    if (key.toLowerCase() === wanted) {
+      const value = env[key];
+      return typeof value === "string" && value.trim() !== "" ? value : undefined;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Is this the WSL launcher rather than a shell?
+ *
+ * The directory is what identifies it: Windows keeps `bash.exe` in `System32`
+ * (and its 32-bit view `SysWOW64`), and no Git for Windows install puts one
+ * there. Matching the directory rather than a fixed `C:\Windows` also holds on
+ * a machine whose `%SystemRoot%` is not on C:.
+ */
+export function isWindowsSystemBash(file) {
+  const directory = path.win32.basename(path.win32.dirname(file)).toLowerCase();
+  return directory === "system32" || directory === "syswow64";
+}
+
+/** The default existence probe: a real file, not a directory. */
+function isExistingFile(file) {
+  try {
+    return existsSync(file) && statSync(file).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Ask the installed Git where its executables live, or `null` when there is no
+ * usable `git`. Never throws: a machine without Git is answered by the
+ * remaining candidates, and refused by name if they miss too.
+ */
+export function detectGitExecPath() {
+  try {
+    const result = spawnSync("git", ["--exec-path"], { encoding: "utf8" });
+    if (result.error !== undefined || result.status !== 0) return null;
+    const value = (result.stdout ?? "").trim();
+    return value === "" ? null : value;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Every place a Git for Windows `bash.exe` could be, in probe order, each
+ * labelled with the evidence that suggested it. The override is NOT here: it
+ * refuses instead of falling through, so it is the caller's first step.
+ */
+export function windowsGitBashCandidates({ env = process.env, gitExecPath = null } = {}) {
+  const candidates = [];
+  const add = (root, source) => {
+    for (const relative of GIT_BASH_RELATIVE_PATHS) {
+      candidates.push({ file: path.win32.join(root, ...relative), source });
+    }
+  };
+
+  if (gitExecPath !== null && gitExecPath.trim() !== "") {
+    let directory = path.win32.normalize(gitExecPath.trim());
+    for (let level = 0; level < GIT_EXEC_PATH_ANCESTORS; level += 1) {
+      add(directory, `git --exec-path (${gitExecPath.trim()})`);
+      const parent = path.win32.dirname(directory);
+      if (parent === directory) break;
+      directory = parent;
+    }
+  }
+
+  for (const { variable, subdirectory } of GIT_INSTALL_ROOTS) {
+    const base = environmentValue(env, variable);
+    if (base === undefined) continue;
+    add(path.win32.join(base, subdirectory), `%${variable}%\\${subdirectory}`);
+  }
+
+  return candidates;
+}
+
+/**
+ * The shell that will run `bridge/build.sh`, or a sentence a developer can act
+ * on.
+ *
+ * Returns `{ kind: "ok", command, source }` - `command` is what to spawn, and
+ * `source` says why that one - or `{ kind: "refused", message }`. Never a
+ * silent fallback to PATH `bash` on Windows: that is the defect this function
+ * exists for.
+ *
+ * `platform`, `env`, `gitExecPath` and `fileExists` are injectable so the
+ * Windows table can be exercised from any machine; production callers pass
+ * nothing.
+ */
+export function resolveBuildShell({
+  platform = process.platform,
+  env = process.env,
+  gitExecPath = platform === "win32" ? detectGitExecPath() : null,
+  fileExists = isExistingFile,
+} = {}) {
+  if (platform !== "win32") {
+    return { kind: "ok", command: "bash", source: "PATH" };
+  }
+
+  const override = environmentValue(env, GIT_BASH_OVERRIDE_ENV);
+  if (override !== undefined) {
+    const file = override.trim();
+    if (isWindowsSystemBash(file)) {
+      return {
+        kind: "refused",
+        message:
+          `${GIT_BASH_OVERRIDE_ENV} points at '${file}', which is the Windows WSL launcher, `
+          + "not a Git Bash.\n"
+          + "    That shell runs bridge/build.sh inside a Linux distribution, where the "
+          + "Windows paths and the pinned Go toolchain this build needs do not exist.\n"
+          + `    Point ${GIT_BASH_OVERRIDE_ENV} at a Git for Windows bash.exe `
+          + "(for example C:\\Program Files\\Git\\bin\\bash.exe), or unset it and let this "
+          + "build find one; see vex-app/DEV.md.",
+      };
+    }
+    if (!fileExists(file)) {
+      return {
+        kind: "refused",
+        message:
+          `${GIT_BASH_OVERRIDE_ENV} is set to '${file}', and there is no file there.\n`
+          + "    An explicit override is not a hint: this build will not quietly run a "
+          + "different shell than the one it was told to use.\n"
+          + `    Correct ${GIT_BASH_OVERRIDE_ENV} or unset it to search the Git for Windows `
+          + "install roots; see vex-app/DEV.md.",
+      };
+    }
+    return { kind: "ok", command: file, source: GIT_BASH_OVERRIDE_ENV };
+  }
+
+  const candidates = windowsGitBashCandidates({ env, gitExecPath });
+  for (const candidate of candidates) {
+    if (isWindowsSystemBash(candidate.file)) continue;
+    if (fileExists(candidate.file)) {
+      return { kind: "ok", command: candidate.file, source: candidate.source };
+    }
+  }
+
+  const probed =
+    candidates.length === 0
+      ? "    Nothing could be probed: no 'git' answered --exec-path and neither "
+        + "%ProgramFiles% nor %LOCALAPPDATA% is set.\n"
+      : candidates.map((candidate) => `    probed ${candidate.file}\n`).join("");
+  return {
+    kind: "refused",
+    message:
+      "no Git Bash on this Windows machine, so the Vex Studio bridge cannot be built.\n"
+      + `    ${BRIDGE_BUILD_SCRIPT} is a bash script and Windows has no bash of its own: `
+      + "the System32 'bash.exe' that PATH offers is the WSL launcher, which runs the build "
+      + "inside a Linux distribution and is deliberately NOT used.\n"
+      + probed
+      + "    Install Git for Windows (https://git-scm.com/download/win), which ships Git "
+      + `Bash, or set ${GIT_BASH_OVERRIDE_ENV} to an existing bash.exe; see vex-app/DEV.md.`,
+  };
+}
+
+/**
+ * `bridge/build.sh`'s path as the resolved shell should receive it.
+ *
+ * Git Bash is an MSYS2 program: it accepts a drive-letter path with forward
+ * slashes, while a backslash path reaches the script's own `dirname`/`cd` as
+ * escape sequences. On POSIX the path is already correct and is returned
+ * unchanged.
+ */
+export function buildScriptArgument(repoRoot, platform = process.platform) {
+  if (platform === "win32") {
+    // `path.win32` explicitly, so the string this produces is the same one a
+    // Windows host produces and the table test can assert it from anywhere.
+    return path.win32.join(repoRoot, BRIDGE_BUILD_SCRIPT).split(path.win32.sep).join("/");
+  }
+  return path.join(repoRoot, BRIDGE_BUILD_SCRIPT);
 }
 
 /**

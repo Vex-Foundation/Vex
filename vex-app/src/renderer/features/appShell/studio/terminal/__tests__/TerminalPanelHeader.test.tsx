@@ -324,3 +324,16 @@ describe("the picker's popup has a surface under it", () => {
     expect(screen.getByRole("option", { name: "bash" }).querySelector("svg")).toBeNull();
   });
 });
+
+describe("the header on glass", () => {
+  it("draws no rule under itself and keeps the pane's 8px inset", () => {
+    const { view } = renderHeader();
+    const header = view.container.firstElementChild;
+    expect(header).not.toBeNull();
+    // On a glass pane the separation from the grid is spacing; a hairline here
+    // is the boxed look the owner rejected.
+    expect(header?.className).not.toMatch(/\bborder(?:-[tb])?\b/);
+    expect(header?.className).not.toContain("border-line");
+    expect(header?.className).toContain("px-2");
+  });
+});
