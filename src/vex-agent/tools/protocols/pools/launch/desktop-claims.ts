@@ -16,6 +16,10 @@
 import { getAddress, type Address, type Hex } from "viem";
 
 import { getLocalChain } from "@tools/evm-chains/registry.js";
+import {
+  POOLS_UNREGISTERED_SENTENCE,
+  readPoolsOnChainSnapshot,
+} from "@tools/pools-fun/evm/token-registration.js";
 import { getLocalPublicClient } from "@tools/evm-chains/evm-client.js";
 import { getPoolsFunClient } from "@tools/pools-fun/client.js";
 import { POOLS_CHAIN_ID } from "@tools/pools-fun/constants.js";
@@ -75,13 +79,40 @@ export const previewPoolsClaim: PreviewPoolsClaim = async (session, inputs) => {
   }
 
   const client = getLocalPublicClient(chainConfig);
-  const context = await readPoolsClaimContext(client, token, account);
+
+  // WHICH SUITE HOLDS THE TOKEN, before any locker is addressed. The desktop
+  // lane shares the agent lane's detection so the two cannot disagree about
+  // where a token's fees live; each non-registered outcome keeps its own words,
+  // because "we could not ask" is not "there is nothing here".
+  let registration;
+  try {
+    registration = (await readPoolsOnChainSnapshot(token)).locker;
+  } catch {
+    return refusal(
+      "provider_unavailable",
+      "The chain could not be reached to find which pools.fun suite holds this token, so nothing about its "
+        + "fees was established.",
+    );
+  }
+  if (registration.status === "unavailable" || registration.status === "ambiguous") {
+    return refusal("provider_unavailable", registration.detail);
+  }
+  if (registration.status === "unregistered") {
+    return refusal(
+      "invalid_inputs",
+      `This token is ${POOLS_UNREGISTERED_SENTENCE}, so it has no creator fee stream to claim here.`,
+    );
+  }
+  const suite = registration.suite;
+
+  const context = await readPoolsClaimContext(client, token, account, suite);
   if (!context.ok) return refusal("provider_unavailable", context.reason);
 
   const simulation = await simulatePoolsClaim(client, {
     account,
     token,
     blockNumber: context.context.blockNumber,
+    suite,
   });
   if (simulation.kind === "unavailable") {
     // NEVER rendered as zero: "we could not ask" and "there is nothing" are
@@ -95,7 +126,7 @@ export const previewPoolsClaim: PreviewPoolsClaim = async (session, inputs) => {
 
   const tokenRaw = simulation.kind === "would_pay" ? simulation.tokenAmountRaw : 0n;
   const pairedRaw = simulation.kind === "would_pay" ? simulation.pairedAmountRaw : 0n;
-  const gasLimit = await estimatePoolsClaimGas(client, { account, token });
+  const gasLimit = await estimatePoolsClaimGas(client, { account, token, locker: suite.locker as Address });
   const gasPrice = await readGasPrice(client);
 
   return {

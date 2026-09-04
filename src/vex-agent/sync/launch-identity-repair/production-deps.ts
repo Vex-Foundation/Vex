@@ -208,6 +208,11 @@ async function decodePoolsLaunchForSweep(
       userSalt: plan.userSalt as `0x${string}`,
       predictedTokenAddress: plan.predictedTokenAddress as `0x${string}`,
     },
+    // The gateway the plan recorded SELECTS THE SUITE, and its factory comes
+    // with it. A row from before migration 082 carries none; the decoder then
+    // discovers the suite from the receipt itself and requires exactly one to
+    // have emitted both events, which is stricter than the pinned-V1 default it
+    // replaces - that default declined every V2 and V3 launch by construction.
     plan.gateway === null ? {} : { gateway: plan.gateway },
   );
 

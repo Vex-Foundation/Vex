@@ -87,11 +87,95 @@ pool: {address, network}, pair: {baseSymbol, quoteSymbol}, watermark?: {...} }`.
 
 ## Contracts (Robinhood Chain, chainId 4663)
 
+### Contract suites: THREE generations, all live
+
+pools.fun redeployed its whole Factory/Locker/Gateway triple TWICE in three days
+(V1 -> V2 on 2026-09-02, V2 -> V3 on 2026-09-03) and kept every generation
+alive. A token stays with the suite that registered it forever, so the addresses
+are a TABLE (`constants.ts` `POOLS_SUITES`), never one pinned triple.
+
+| suite | Gateway | Factory | Locker | HolderRewardsDeployer |
+|---|---|---|---|---|
+| V1 | `0x3AB42e7dd316aF8854033bc216C657eD34961164` | `0x626C3d09B65bF5d1D40E0D5F25e19fa49783B3D4` | `0x35E41f84d3fD61d4648F0c8B41a1E7d301bCd75E` | none |
+| V2 | `0xC5cf20C52b98bEe5fa2440ed0D2CFBBe9a4c2fc0` | `0x80709b9040C2f794ffceE629dE5b6dF7594A4A58` | `0x7BDF342857BBb1dED76b3aa5E0C580D5c87aD49E` | `0x2da890c5F7c17ca1c07d0D3c709F4Ca3B9F34378` |
+| V3 | `0x2Bc81783Ed0fDd8B04604FF93FA3872212cac429` | `0x5f13c63a8060Fd47f7B7278FBCb3A6f47FCb2DC6` | `0xd64C1f0f26b6f636520bC686f8E25cBA58082cFE` | `0x5aeE24bD5c0aD32C136B96d82157C0D3A6d7BBAA` |
+
+Every row was read back from the chain on 2026-09-04
+(`live-chain/suite_probe_2026-09-04.json`): each gateway's `VERSION()` equals its
+key, `gateway.factory()` equals the row's factory, and `factory.locker()` equals
+the row's locker. The suite is a closed TRIANGLE, which is what lets the launch
+verifier require agreement rather than trusting one address.
+
+**READS AND CLAIMS SPAN ALL THREE. LAUNCHES TARGET V3 ONLY** (owner decision
+D-suites). The V1 `launch` ABI is deleted rather than kept: a second launch path
+is a second money path nobody exercises.
+
+**Selectors.** V1 `launch` is `0xb3ee5495` over a 12-member tuple. V2 AND V3 use
+`0x3cc0226c` over FOURTEEN members - the same twelve, plus
+`priceAttestation(asset, underlyingPriceUsdE18, expectedUiMultiplier, observedAt,
+expiresAt, pricingEpoch)` and `bytes priceSignature`. The change is not backward
+compatible, and while the V1 fragment was pinned every launch refused
+`calldata_undecodable`.
+
+**Event topics are byte-identical across all three suites** (`TokenLaunched`,
+`GatewayLaunch`, `Claimed`). Only the EMITTER addresses differ, which is why the
+settlement decoder resolves a suite before it decodes: a V3 launch judged against
+V1's emitters decodes as "no GatewayLaunch event" - a confirmed transaction that
+moved real money, reported as unattributable.
+
+### Fees-to-holders sentinels (read live from the gateway, never pinned)
+
+A launch that opts into holder rewards does not put a wallet in `feeRecipient`;
+it puts one of the gateway's own sentinel constants there, and the factory reads
+it as "deploy a distributor in this mode".
+
+| mode | sentinel | V1 | V2 | V3 |
+|---|---|---|---|---|
+| `token` | `0x968b0c1e896fB1DdB2042957Fc0614c67AB7FFc2` | reverts | yes | yes |
+| `paired` | `0x968b0c1e896Fb1DdB2042957FC0614c67AB7ffC3` | reverts | reverts | yes |
+| `both` | `0x968b0c1e896fB1ddB2042957fC0614C67Ab7Ffc4` | reverts | reverts | yes |
+
+So V2 supports token-mode holder rewards only, and V1 none at all. A revert is a
+capability fact about the suite, not an RPC failure. The verifier reads these
+from the gateway at the anchored block - a sentinel pinned in this repository
+could be edited to point a fee stream at a mode the user did not choose, and
+nothing on-chain would contradict it. The provider's own
+`feeRecipient.display` reads `"Token holders"` on those responses and is NEVER
+consulted.
+
+### Stock pricing modes (V3 factory)
+
+`PartyFactory.pricingModeFor(asset)` returns a `uint8` whose meaning is the enum
+ordering in the verified source: `0 NONE`, `1 CORE_CHAINLINK`,
+`2 CHAINLINK_STOCK`, `3 SIGNED_STOCK`. Of the 194 launch assets, 35 are
+`CHAINLINK_STOCK` and 159 are `SIGNED_STOCK`.
+
+| mode | tick authority | attestation |
+|---|---|---|
+| `CORE_CHAINLINK` (WETH, USDG) | `startTickFor(asset)` | must be all-zero |
+| `CHAINLINK_STOCK` (35 assets, e.g. NVDA) | `startTickFor(asset)` | must be all-zero |
+| `SIGNED_STOCK` (159 assets) | `quoteStartTick(asset, attestation, signature)` | REQUIRED, backend-signed |
+
+`startTickFor` REVERTS `PriceAttestationRequired` on a `SIGNED_STOCK` pair, so
+that mode has no feed tick at all. The factory validates a signed quote in
+`_signedStockTick`: `asset == pairedAsset`, non-zero price, `pricingEpoch ==
+factory.pricingEpoch()` (197 on 2026-09-04), `observedAt <= now`, `expiresAt >=
+now`, `expiresAt - observedAt <= curve.maxQuoteAge`, `now - observedAt <=
+curve.maxQuoteAge`, and an EIP-712 signature recovering to
+`factory.priceSigner()` (`0xc4559C672617395292a5878D3200B9c3d46EaCc7`).
+`MIN/MAX_SIGNED_QUOTE_AGE` are 30 s and 120 s and bound what the owner may
+configure a given asset's `maxQuoteAge` to - the PER-ASSET value from
+`getPairedAssetCurve` is the one the factory actually enforces.
+
+Vex does not re-derive the EIP-712 digest locally: it asks the factory to price
+the exact quote in the calldata (`quoteStartTick`) and requires the tick that
+comes back to equal the tuple's, plus its own explicit bounds as a second,
+independent check and a safety margin so a quote cannot expire in flight.
+
+### Other contracts on this chain
+
 | What | Address |
 |---|---|
-| PartyFactory (pools.fun launcher) | `0x626C3d09B65bF5d1D40E0D5F25e19fa49783B3D4` |
-| PartyLocker (holds every LP NFT; `getPoolInfo`, `getPoolSplits`, fee claims) | `0x35E41f84d3fD61d4648F0c8B41a1E7d301bCd75E` |
-| PoolsFunLaunchGateway (backend-mined launch path, charges the deployment fee) | `0x3AB42e7dd316aF8854033bc216C657eD34961164` |
 | SushiLaunchpad (the `platform=sushi` launcher) | `0x104F1Ab42674565EC3DF0BFEbCcC4186f72fA7ED` |
 | DopplerERC20V1Factory (the launcher you get with NO `platform` param) | `0x1B37D3a72082029c44B35B604Ea473617580b69a` |
 | SushiSwap V3 Factory | `0xE51960f1B45f1C9FB6D166E6a884F866fC70433B` |
@@ -99,6 +183,46 @@ pool: {address, network}, pair: {baseSymbol, quoteSymbol}, watermark?: {...} }`.
 | Sushi RouteProcessor | `0x8e6fd69a77e88ee20ba4b4fbd59dfcda3ec0e98a` |
 | WETH (18 decimals) | `0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73` |
 | USDG (**6 decimals**) | `0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168` |
+
+### Which suite holds a token: the locker leads
+
+`readPoolsOnChainSnapshot` asks EVERY suite two questions in one multicall at one
+block, and the two answer different things:
+
+- `locker.getPoolInfo(token)` - the REGISTRATION, and the money authority: the
+  locker owns `getPoolSplits`, the `claimable*` mappings and `collectAndClaim`.
+- `gateway.launcherOf(token)` - ATTRIBUTION, and ZERO for a token launched
+  directly through the factory rather than the gateway.
+
+Exactly one suite's LOCKER must hold the token. `launcher` is reported only when
+that same suite's gateway also recorded the launch, and `null` there means
+"launched directly against the factory", never "we could not read it".
+
+An earlier revision required BOTH to be non-zero. Run live it called sushicat -
+an ordinary V1 token trading for three weeks - `ambiguous`, because it was
+launched directly through the factory. Measured at one block on 2026-09-04:
+
+| token | V1 locker | V1 gateway | verdict |
+|---|---|---|---|
+| sushicat | holds `0x50136D41...` | names none | registered V1, launcher null |
+| VEXFLAM | holds `0x272AA764...` | names `0x33eF...d2fA` | registered V1, ours |
+| THONG | holds nothing | names none | registered V3 (its own suite) |
+
+The four outcomes are `registered`, `unregistered` (every suite answered, no
+locker holds it), `ambiguous` (two lockers hold it, or a gateway names a launcher
+no locker registered), and `unavailable` (a suite could not be asked - which is
+NOT "unregistered"). Never first-match-wins.
+
+**The sushi sentence is earned, not inferred.** The old code told every caller
+that an absent registration meant "the older sushi launcher"; that is how a V3
+token got described as a sushi token. The launcher is now named only when the
+launchpad's own row says `platform: "sushi"`.
+
+**Fee splits moved with the suites.** V1 pools split 2000/2500/3000/2500 with a
+real community bucket; pools created on V2/V3 split 9000/500/500/0 and stock
+pairs 9000/1000. The split is read live per token, and a zero community bucket is
+reported in words ("community bucket 0 on this pool") so a reader who knows the
+old numbers does not mistake it for an unread field.
 
 **Three launchers, one API.** `platform=poolsfun` is PartyFactory,
 `platform=sushi` is the older SushiLaunchpad, and OMITTING the parameter gives
@@ -195,7 +319,16 @@ have to rediscover it. None of it is called by P1 code.
 
 ### `GET /pools-fun/launches/config`
 
-`{ "deploymentFeeWei": "263000000000000", "gatewayVersion": 1 }`.
+Measured 2026-08-18: `{ "deploymentFeeWei": "263000000000000", "gatewayVersion": 1 }`.
+Measured 2026-09-04: `{ "deploymentFeeWei": "1051674002092832", "gatewayVersion": 3,
+"feesToHoldersSupported": true, "holderRewardsPayoutModes": ["token","paired","both"],
+"networkGasHint": { "estimatedWei": ..., "reserveWei": ... } }`.
+
+**`gatewayVersion` IS NOT STABLE.** It moved 1 -> 2 -> 3 in three days with no
+notice, and the launch verifier requires the live gateway's own `VERSION()` to
+equal both this number and the one suite Vex launches against. A version the
+suite table does not carry is refused BY NAME rather than treated as "newer, so
+probably fine": a V4 tuple would decode wrong.
 
 **The fee is DYNAMIC.** It moved from 0.000263 ETH to 0.00105 ETH inside 24
 hours, and the gateway contract bounds it to `[1e12, 1e16]` wei on-chain. Read it

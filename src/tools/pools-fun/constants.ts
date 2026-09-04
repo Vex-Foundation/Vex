@@ -26,27 +26,125 @@ export const POOLS_CHAIN_ID = 4663;
  */
 export const POOLS_CHAIN_SLUG = "robinhood";
 
-/** PartyFactory - deploys the token, creates and seeds the Sushi V3 pool. */
-export const POOLS_FACTORY_ADDRESS = "0x626C3d09B65bF5d1D40E0D5F25e19fa49783B3D4";
-
-/** PartyLocker - holds every LP NFT forever; owns `getPoolInfo` / `getPoolSplits`. */
-export const POOLS_LOCKER_ADDRESS = "0x35E41f84d3fD61d4648F0c8B41a1E7d301bCd75E";
+/**
+ * THE CONTRACT SUITES, and why there are three.
+ *
+ * pools.fun redeployed its whole triple twice inside three days (V1 -> V2 on
+ * 2026-09-02, V2 -> V3 on 2026-09-03), and the launchpad keeps every generation
+ * ALIVE: a token registered with V1 is still claimable from the V1 locker, and
+ * `launches/prepare` targets whichever gateway is current. Pinning one triple as
+ * "the" addresses is what made `pools__token_get` report every post-migration
+ * token as "unregistered / older sushi launcher" and made every launch refuse
+ * with `calldata_undecodable` (measured, REPORT.md sections 4 and 9).
+ *
+ * So the addresses are a TABLE keyed by the gateway's own `VERSION()`, and a
+ * consumer says which suite it means. Every row was read back from the chain on
+ * 2026-09-04 (`live-chain/suite_probe_2026-09-04.json`): the gateway's
+ * `VERSION()` equals the key, `gateway.factory()` equals `factory`,
+ * `factory.locker()` equals `locker`, and `locker.factory()` closes the loop
+ * back to `factory`. The suite is a closed triangle, which is what lets suite
+ * detection require agreement instead of trusting one lookup.
+ *
+ * READS AND CLAIMS SPAN ALL THREE (owner decision D-suites). LAUNCHES TARGET
+ * {@link POOLS_LAUNCH_SUITE_VERSION} ONLY - V1 and V2 launch code is deleted
+ * rather than kept "just in case", because a second launch path is a second
+ * money path nobody exercises.
+ *
+ * CAPABILITIES DIFFER BY SUITE, and the differences are facts, not omissions:
+ *   V1  no holder rewards, no stock pricing at all (`FEES_TO_HOLDERS`,
+ *       `priceSigner`, `pricingEpoch`, `MIN/MAX_SIGNED_QUOTE_AGE` all revert).
+ *   V2  `FEES_TO_HOLDERS` only - the PAIRED and BOTH sentinels do not exist, so
+ *       V2 holder rewards are token-mode only.
+ *   V3  all three sentinels, and the signed-stock pricing surface.
+ * `holderRewardsDeployer` is therefore optional on a row, and a caller that
+ * needs it on a suite that has none is told so by name.
+ */
+export interface PoolsContractSuite {
+  /** The gateway's own `VERSION()`. The key, and the thing that is verified. */
+  readonly version: 1 | 2 | 3;
+  /** PoolsFunLaunchGateway - the prepared launch path, and `launcherOf`. */
+  readonly gateway: string;
+  /** PartyFactory - deploys the token, creates and seeds the Sushi V3 pool. */
+  readonly factory: string;
+  /** PartyLocker - holds every LP NFT forever; owns `getPoolInfo` / `getPoolSplits`. */
+  readonly locker: string;
+  /**
+   * HolderRewardsDeployer singleton, which mints one distributor per opted-in
+   * token. Absent on V1: that suite has no holder rewards at all.
+   */
+  readonly holderRewardsDeployer?: string;
+}
 
 /**
- * PoolsFunLaunchGateway - the launch path Vex USES (owner decision; see the
- * P3 section of `pools-fun-integration.plan.md`). The backend mines the salt and
- * returns ready `Gateway.launch(tuple)` calldata, and the gateway collects
- * `deploymentFeeWei` - a fee a direct `PartyFactory.launch()` from the EOA would
- * not pay, accepted deliberately in exchange for the prepared path.
+ * Every suite Vex knows, newest LAST so `POOLS_SUITES` reads as a history.
  *
- * The attribution consequence a settlement decode must carry: on this path the
- * on-chain `creator` is the GATEWAY, and the real launcher is in `launcherOf`.
- * Note this does NOT affect `pools.my_launches`, because the launchpad's own
- * deployer index credits the launching wallet (measured).
- *
- * Launch phase, not P1.
+ * A token that matches none of these is not a pools.fun gateway token at all -
+ * which is a fact about the token, not about this table, and is reported in
+ * exactly those words.
  */
-export const POOLS_GATEWAY_ADDRESS = "0x3AB42e7dd316aF8854033bc216C657eD34961164";
+export const POOLS_SUITES: readonly PoolsContractSuite[] = [
+  {
+    version: 1,
+    gateway: "0x3AB42e7dd316aF8854033bc216C657eD34961164",
+    factory: "0x626C3d09B65bF5d1D40E0D5F25e19fa49783B3D4",
+    locker: "0x35E41f84d3fD61d4648F0c8B41a1E7d301bCd75E",
+  },
+  {
+    version: 2,
+    gateway: "0xC5cf20C52b98bEe5fa2440ed0D2CFBBe9a4c2fc0",
+    factory: "0x80709b9040C2f794ffceE629dE5b6dF7594A4A58",
+    locker: "0x7BDF342857BBb1dED76b3aa5E0C580D5c87aD49E",
+    holderRewardsDeployer: "0x2da890c5F7c17ca1c07d0D3c709F4Ca3B9F34378",
+  },
+  {
+    version: 3,
+    gateway: "0x2Bc81783Ed0fDd8B04604FF93FA3872212cac429",
+    factory: "0x5f13c63a8060Fd47f7B7278FBCb3A6f47FCb2DC6",
+    locker: "0xd64C1f0f26b6f636520bC686f8E25cBA58082cFE",
+    holderRewardsDeployer: "0x5aeE24bD5c0aD32C136B96d82157C0D3A6d7BBAA",
+  },
+] as const;
+
+/** A suite version, as a type. Reads accept any of them; launches accept one. */
+export type PoolsSuiteVersion = PoolsContractSuite["version"];
+
+/**
+ * The ONE suite a launch may target.
+ *
+ * Owner decision D-suites: launches are V3-only. This constant is not a default
+ * a caller may override - it is the whole launch surface, and the verifier
+ * proves the live gateway's `VERSION()` equals it before anything is signed. A
+ * fourth suite appearing on-chain does NOT silently become the launch target: a
+ * `gatewayVersion` the table does not carry is refused by name until this
+ * constant, the ABI and the verifier are updated together.
+ */
+export const POOLS_LAUNCH_SUITE_VERSION = 3 as const;
+
+/**
+ * The suite a version names, or `undefined` when Vex does not know that suite.
+ *
+ * Not exported: the only caller is {@link poolsLaunchSuite} below. A lane that
+ * needs version lookup exports it when it has a consumer, rather than this one
+ * publishing a surface nobody uses.
+ */
+function poolsSuiteByVersion(version: number): PoolsContractSuite | undefined {
+  return POOLS_SUITES.find((suite) => suite.version === version);
+}
+
+/**
+ * The suite a launch targets. Never `undefined` - the table and the constant are
+ * pinned together, and a table that lost its launch suite is a build-time bug
+ * rather than a runtime branch, so this throws instead of returning a fallback.
+ */
+export function poolsLaunchSuite(): PoolsContractSuite {
+  const suite = poolsSuiteByVersion(POOLS_LAUNCH_SUITE_VERSION);
+  if (suite === undefined) {
+    throw new Error(
+      `POOLS_SUITES has no entry for the pinned launch suite V${POOLS_LAUNCH_SUITE_VERSION}.`,
+    );
+  }
+  return suite;
+}
 
 /**
  * USDG - the one launchable pair whose address is NOT derivable from the

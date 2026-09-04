@@ -27,11 +27,7 @@ import {
   PARTY_LOCKER_CLAIMED_EVENT_ABI,
   POOLS_GATEWAY_LAUNCH_EVENT_ABI,
 } from "@tools/pools-fun/abi.js";
-import {
-  POOLS_FACTORY_ADDRESS,
-  POOLS_GATEWAY_ADDRESS,
-  POOLS_LOCKER_ADDRESS,
-} from "@tools/pools-fun/constants.js";
+import { POOLS_SUITES } from "@tools/pools-fun/constants.js";
 import {
   decodePoolsClaimSettlement,
   decodePoolsLaunchSettlement,
@@ -39,9 +35,20 @@ import {
   type PoolsSettlementLog,
 } from "@vex-agent/sync/pools-settlement-decoder.js";
 
-const GATEWAY = getAddress(POOLS_GATEWAY_ADDRESS);
-const FACTORY = getAddress(POOLS_FACTORY_ADDRESS);
-const LOCKER = getAddress(POOLS_LOCKER_ADDRESS);
+/**
+ * The suite whose emitters the default cases use.
+ *
+ * V1 on purpose: our seven real launches are V1 rows, so these cases keep
+ * describing receipts that actually exist on-chain. The per-suite cases at the
+ * bottom of this file cover V2 and V3, whose event topics are byte-identical -
+ * only the emitter addresses differ, which is exactly the thing that broke.
+ */
+const V1 = POOLS_SUITES.find((s) => s.version === 1)!;
+const V2 = POOLS_SUITES.find((s) => s.version === 2)!;
+const V3 = POOLS_SUITES.find((s) => s.version === 3)!;
+const GATEWAY = getAddress(V1.gateway);
+const FACTORY = getAddress(V1.factory);
+const LOCKER = getAddress(V1.locker);
 const WALLET = getAddress("0x33eF6673BD80cB11fcC41b82Bc2181E65cC4d2fA");
 const STRANGER = getAddress("0x9999999999999999999999999999999999999999");
 const TOKEN = getAddress("0x01e685d39e6bf52ad0c421a4be1e092ce684e6bb");
@@ -156,31 +163,42 @@ describe("launch settlement - the proven case", () => {
   });
 });
 
+/**
+ * The suite the authorized plan names.
+ *
+ * Every production launch records its gateway (migration 082), so the plan
+ * SELECTS the suite and these cases go through that path. The discovery path -
+ * an older row with no gateway - has its own block at the bottom of this file,
+ * because its refusals are deliberately different: it has to name the suites it
+ * looked at.
+ */
+const NAMED_V1 = { gateway: V1.gateway, factory: V1.factory };
+
 describe("launch settlement - BOTH events are required", () => {
   it("declines with only the factory event (it credits the gateway, so it cannot name us)", () => {
-    expectRefusal(decodePoolsLaunchSettlement([factoryLog()], EXPECTED), "no GatewayLaunch");
+    expectRefusal(decodePoolsLaunchSettlement([factoryLog()], EXPECTED, NAMED_V1), "no GatewayLaunch");
   });
 
   it("declines with only the gateway event", () => {
-    expectRefusal(decodePoolsLaunchSettlement([gatewayLog()], EXPECTED), "no TokenLaunched");
+    expectRefusal(decodePoolsLaunchSettlement([gatewayLog()], EXPECTED, NAMED_V1), "no TokenLaunched");
   });
 
   it("declines on an empty receipt", () => {
-    expectRefusal(decodePoolsLaunchSettlement([], EXPECTED), "no GatewayLaunch");
+    expectRefusal(decodePoolsLaunchSettlement([], EXPECTED, NAMED_V1), "no GatewayLaunch");
   });
 });
 
 describe("launch settlement - emitters are PINNED", () => {
   it("declines a GatewayLaunch emitted by an impostor contract", () => {
     expectRefusal(
-      decodePoolsLaunchSettlement([gatewayLog({}, STRANGER), factoryLog()], EXPECTED),
+      decodePoolsLaunchSettlement([gatewayLog({}, STRANGER), factoryLog()], EXPECTED, NAMED_V1),
       "no GatewayLaunch",
     );
   });
 
   it("declines a TokenLaunched emitted by an impostor contract", () => {
     expectRefusal(
-      decodePoolsLaunchSettlement([gatewayLog(), factoryLog({}, STRANGER)], EXPECTED),
+      decodePoolsLaunchSettlement([gatewayLog(), factoryLog({}, STRANGER)], EXPECTED, NAMED_V1),
       "no TokenLaunched",
     );
   });
@@ -337,6 +355,113 @@ describe("claim settlement", () => {
     expectRefusal(
       decodePoolsClaimSettlement([claimedLog(), claimedLog()], expected),
       "cannot be attributed",
+    );
+  });
+});
+
+/**
+ * ONE TOKEN, THREE SUITES: the same launch, emitted by V1, V2 and V3.
+ *
+ * WHY THIS BLOCK EXISTS. The three suites emit BYTE-IDENTICAL topics (verified
+ * against the three Sourcify ABIs), so the only thing that distinguishes a V3
+ * launch receipt from a V1 one is the EMITTER ADDRESS. While the decoder pinned
+ * V1's addresses, every V2 and V3 launch decoded as "no GatewayLaunch event from
+ * the pinned gateway" - a confirmed transaction that moved real money, reported
+ * as unattributable, forever. These cases are what make that impossible to
+ * reintroduce silently.
+ */
+describe("launch settlement - every suite, and never two at once", () => {
+  const suites = [
+    ["V1", V1],
+    ["V2", V2],
+    ["V3", V3],
+  ] as const;
+
+  it.each(suites)("%s: the plan's gateway selects the suite, and its factory comes with it", (_name, suite) => {
+    const logs = [
+      gatewayLog({}, suite.gateway),
+      factoryLog({ creator: getAddress(suite.gateway), deployer: getAddress(suite.gateway) }, suite.factory),
+    ];
+    const result = decodePoolsLaunchSettlement(logs, EXPECTED, { gateway: suite.gateway });
+    expect(result.ok, result.ok ? "" : result.reason).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.tokenAddress).toBe(TOKEN);
+  });
+
+  it.each(suites)("%s: discovers itself when the row carries no gateway", (_name, suite) => {
+    // Rows written before migration 082 have no gateway column. Discovery finds
+    // the one suite that emitted BOTH events - which is stricter than the old
+    // V1 default it replaces, not looser.
+    const logs = [
+      gatewayLog({}, suite.gateway),
+      factoryLog({ creator: getAddress(suite.gateway), deployer: getAddress(suite.gateway) }, suite.factory),
+    ];
+    const result = decodePoolsLaunchSettlement(logs, EXPECTED);
+    expect(result.ok, result.ok ? "" : result.reason).toBe(true);
+  });
+
+  it("refuses to mix suites: a V3 gateway event beside a V1 factory event proves nothing", () => {
+    // The dual-event rule means ONE launch produced both, and a launch is one
+    // gateway calling its own factory. Accepting a cross-suite pair would keep
+    // the ceremony and lose the guarantee.
+    const logs = [
+      gatewayLog({}, V3.gateway),
+      factoryLog({ creator: getAddress(V1.gateway), deployer: getAddress(V1.gateway) }, V1.factory),
+    ];
+    expectRefusal(decodePoolsLaunchSettlement(logs, EXPECTED, { gateway: V3.gateway }), "no TokenLaunched");
+    expectRefusal(decodePoolsLaunchSettlement(logs, EXPECTED), "no pools.fun suite emitted both");
+  });
+
+  it("refuses a receipt in which TWO suites each emitted a full launch pair", () => {
+    const logs = [
+      gatewayLog({}, V1.gateway),
+      factoryLog({ creator: getAddress(V1.gateway), deployer: getAddress(V1.gateway) }, V1.factory),
+      gatewayLog({}, V3.gateway),
+      factoryLog({ creator: getAddress(V3.gateway), deployer: getAddress(V3.gateway) }, V3.factory),
+    ];
+    expectRefusal(decodePoolsLaunchSettlement(logs, EXPECTED), "cannot be attributed");
+  });
+
+  it("refuses a gateway the suite table does not carry, by name", () => {
+    // A sweep must leave such a row PENDING rather than confirm it: a receipt
+    // from an unknown contract cannot be shown to be a pools.fun launch at all.
+    const result = decodePoolsLaunchSettlement(
+      [gatewayLog({}, STRANGER), factoryLog({}, STRANGER)],
+      EXPECTED,
+      { gateway: STRANGER },
+    );
+    expectRefusal(result, "not one of the pools.fun suites Vex knows");
+  });
+});
+
+describe("claim settlement - across suites", () => {
+  const suites = [
+    ["V1", V1],
+    ["V2", V2],
+    ["V3", V3],
+  ] as const;
+
+  it.each(suites)("%s: decodes a claim from the locker the claim was sent to", (_name, suite) => {
+    const result = decodePoolsClaimSettlement(
+      [claimedLog({}, suite.locker)],
+      { account: WALLET, tokenAddress: TOKEN },
+      { locker: suite.locker },
+    );
+    expect(result.ok, result.ok ? "" : result.reason).toBe(true);
+  });
+
+  it.each(suites)("%s: decodes without a named locker, because any known one is ours", (_name, suite) => {
+    // The `account` and `token` filters still make the attribution exact; the
+    // locker set only bounds WHICH contracts may be believed at all.
+    expect(
+      decodePoolsClaimSettlement([claimedLog({}, suite.locker)], { account: WALLET, tokenAddress: TOKEN }).ok,
+    ).toBe(true);
+  });
+
+  it("still refuses a Claimed event from a contract in no suite", () => {
+    expectRefusal(
+      decodePoolsClaimSettlement([claimedLog({}, STRANGER)], { account: WALLET, tokenAddress: TOKEN }),
+      "no Claimed event",
     );
   });
 });

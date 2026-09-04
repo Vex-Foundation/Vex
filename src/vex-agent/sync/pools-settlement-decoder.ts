@@ -25,10 +25,25 @@
  * a transaction we can attribute one of them from, and picking the first would
  * be a guess wearing a decoder's clothes.
  *
- * EMITTER PINNING. Logs are filtered to the pinned gateway and factory before
- * anything is decoded: any contract can emit a same-signature event, and
- * trusting an unpinned emitter would let an unrelated address be recorded as the
- * user's token.
+ * EMITTER PINNING, ACROSS THREE SUITES. Logs are filtered to a KNOWN gateway and
+ * factory before anything is decoded: any contract can emit a same-signature
+ * event, and trusting an unpinned emitter would let an unrelated address be
+ * recorded as the user's token.
+ *
+ * The event topics are byte-identical on V1, V2 and V3 (verified: the three
+ * Sourcify ABIs declare the same `TokenLaunched`, `GatewayLaunch` and `Claimed`
+ * signatures), so the only thing that changes across suites is WHICH ADDRESS
+ * emitted them. A decoder pinned to one suite's addresses therefore declines
+ * every launch made by another - silently, and after the money has already
+ * moved. So the emitters are the suite TABLE.
+ *
+ * AND THE TWO EVENTS MUST COME FROM THE SAME SUITE. Accepting a `GatewayLaunch`
+ * from V3 beside a `TokenLaunched` from V1 would prove nothing about either:
+ * the whole point of the dual-event rule is that ONE launch produced both, and a
+ * launch is produced by one gateway calling its own factory. So a suite is
+ * selected first - by the caller's authorized plan when it names a gateway, or
+ * by finding the one suite that emitted both - and every later check is made
+ * within it.
  */
 
 import { decodeEventLog, getAddress, toEventSelector, type Address, type Hex } from "viem";
@@ -39,9 +54,8 @@ import {
   POOLS_GATEWAY_LAUNCH_EVENT_ABI,
 } from "@tools/pools-fun/abi.js";
 import {
-  POOLS_FACTORY_ADDRESS,
-  POOLS_GATEWAY_ADDRESS,
-  POOLS_LOCKER_ADDRESS,
+  POOLS_SUITES,
+  type PoolsContractSuite,
 } from "@tools/pools-fun/constants.js";
 
 /** One receipt log, as the decoders read it. */
@@ -128,8 +142,20 @@ export function decodePoolsLaunchSettlement(
   expected: PoolsLaunchExpectation,
   emitters: { readonly gateway?: string; readonly factory?: string } = {},
 ): PoolsSettlementOutcome<DecodedPoolsLaunch> {
-  const gateway = emitters.gateway ?? POOLS_GATEWAY_ADDRESS;
-  const factory = emitters.factory ?? POOLS_FACTORY_ADDRESS;
+  // ── WHICH SUITE EMITTED THIS LAUNCH ───────────────────────────────
+  //
+  // When the authorized plan names a gateway, that gateway selects the suite and
+  // its factory comes with it: the plan is what the user authorized, so the
+  // receipt is proven against the suite the launch was signed for rather than
+  // against whichever suite happens to fit. An unknown gateway is refused by
+  // name - not silently widened to "any suite".
+  //
+  // Only a sweep over an older row may arrive without a gateway (migration 082
+  // added the column later). Then the suite is DISCOVERED, and discovery is the
+  // strict version: exactly one suite must have emitted BOTH events.
+  const selected = selectSuite(logs, emitters);
+  if (!selected.ok) return selected;
+  const { gateway, factory } = selected;
 
   const gatewayLogs = logsFrom(logs, gateway, GATEWAY_LAUNCH_TOPIC);
   const factoryLogs = logsFrom(logs, factory, TOKEN_LAUNCHED_TOPIC);
@@ -301,11 +327,23 @@ export function decodePoolsClaimSettlement(
   expected: { readonly account: Address; readonly tokenAddress: Address },
   emitters: { readonly locker?: string } = {},
 ): PoolsSettlementOutcome<DecodedPoolsClaim> {
-  const locker = emitters.locker ?? POOLS_LOCKER_ADDRESS;
-  const claimedLogs = logsFrom(logs, locker, CLAIMED_TOPIC);
+  // A claim names its locker, because the CALLER knows which suite it claimed
+  // from - it simulated and broadcast against that exact address. Without one,
+  // every known suite's locker is accepted, which is what an older row (or a
+  // repair sweep) needs; the `account` and `token` filters below still make the
+  // attribution exact.
+  const lockers = emitters.locker === undefined
+    ? POOLS_SUITES.map((suite) => suite.locker)
+    : [emitters.locker];
+  const claimedLogs = lockers.flatMap((locker) => logsFrom(logs, locker, CLAIMED_TOPIC));
 
   if (claimedLogs.length === 0) {
-    return { ok: false, reason: `no Claimed event from the pinned locker ${locker} in this receipt` };
+    return {
+      ok: false,
+      reason:
+        `no Claimed event from ${lockers.length === 1 ? `the pinned locker ${lockers[0]}` : "any known pools.fun locker"}`
+        + " in this receipt",
+    };
   }
 
   const decoded: DecodedPoolsClaim[] = [];
@@ -350,4 +388,73 @@ export function decodePoolsClaimSettlement(
   }
 
   return { ok: true, value: decoded[0]! };
+}
+
+/**
+ * The suite whose gateway and factory a launch receipt is judged against.
+ *
+ * THREE CASES, and the middle one is the reason this exists:
+ *
+ *   the caller named a gateway  -> that suite, factory included. A gateway
+ *       address the table does not carry is REFUSED BY NAME rather than treated
+ *       as "some gateway": a receipt from an unknown contract cannot be proven
+ *       to be a pools.fun launch at all, and the sweep must leave such a row
+ *       pending rather than confirm it.
+ *   the caller named both       -> used verbatim, for tests and for a row that
+ *       recorded a pair explicitly.
+ *   the caller named neither    -> DISCOVERY: exactly one suite must have
+ *       emitted BOTH a GatewayLaunch and a TokenLaunched in this receipt. Zero
+ *       is "not a gateway launch"; more than one is a receipt no single suite
+ *       describes, and picking one would be the first-match guess the whole
+ *       suite model exists to refuse.
+ */
+function selectSuite(
+  logs: readonly PoolsSettlementLog[],
+  emitters: { readonly gateway?: string; readonly factory?: string },
+):
+  | { readonly ok: true; readonly gateway: string; readonly factory: string }
+  | { readonly ok: false; readonly reason: string } {
+  if (emitters.gateway !== undefined && emitters.factory !== undefined) {
+    return { ok: true, gateway: emitters.gateway, factory: emitters.factory };
+  }
+
+  if (emitters.gateway !== undefined) {
+    const named = emitters.gateway;
+    const suite = POOLS_SUITES.find((candidate) => sameAddress(candidate.gateway, named));
+    if (suite === undefined) {
+      return {
+        ok: false,
+        reason:
+          `the authorized plan names gateway ${named}, which is not one of the pools.fun suites Vex knows `
+          + `(${POOLS_SUITES.map((s) => `V${s.version} ${s.gateway}`).join(", ")}); this receipt cannot be `
+          + "proven to describe a pools.fun launch",
+      };
+    }
+    return { ok: true, gateway: suite.gateway, factory: suite.factory };
+  }
+
+  const emitting: PoolsContractSuite[] = POOLS_SUITES.filter(
+    (suite) =>
+      logsFrom(logs, suite.gateway, GATEWAY_LAUNCH_TOPIC).length > 0
+      && logsFrom(logs, suite.factory, TOKEN_LAUNCHED_TOPIC).length > 0,
+  );
+
+  if (emitting.length === 0) {
+    return {
+      ok: false,
+      reason:
+        "no pools.fun suite emitted both a GatewayLaunch and a TokenLaunched in this receipt "
+        + `(checked ${POOLS_SUITES.map((s) => `V${s.version}`).join(", ")})`,
+    };
+  }
+  if (emitting.length > 1) {
+    return {
+      ok: false,
+      reason:
+        `${emitting.length} pools.fun suites (${emitting.map((s) => `V${s.version}`).join(", ")}) each emitted a `
+        + "full launch pair in this receipt; a single launch cannot be attributed from it",
+    };
+  }
+  const suite = emitting[0]!;
+  return { ok: true, gateway: suite.gateway, factory: suite.factory };
 }

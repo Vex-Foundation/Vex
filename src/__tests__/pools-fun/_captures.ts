@@ -59,7 +59,13 @@ export const CAPTURES = {
   discoverInvalidSortBy: "discover-invalid-sortby-400",
   ohlcvHour: "ohlcv-hour-weth-quote",
   ohlcvUnknownToken: "ohlcv-unknown-token-502",
+  /** The V1 capture, kept as the characterization baseline for the suite repair. */
   prepareWalletRecipient: "launches-prepare-wallet-recipient",
+  /** The three V3 prepares of 2026-09-04: plain WETH, holders-BOTH, and a feed-priced stock. */
+  prepareV3Weth: "launches-prepare-v3-weth",
+  prepareV3HoldersBoth: "launches-prepare-v3-holders-both",
+  prepareV3StockNvda: "launches-prepare-v3-stock-nvda",
+  launchConfigV3: "launches-config-v3",
   prepareXUnresolvable: "launches-prepare-x-unresolvable-400",
   prepareInsufficientDevBuy: "launches-prepare-insufficient-dev-buy-400",
 } as const;

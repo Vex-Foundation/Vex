@@ -99,6 +99,30 @@ NOT a constant to echo: `pools.candles` derives it from the timestamps and
 reports what it found. `ohlcv-hour-weth-quote.json` is the capture that pins the
 ascending case.
 
+## The V3 suite captures (2026-09-04)
+
+`launches-config-v3.json` and the three `launches-prepare-v3-*.json` files are
+the launch path's V3 evidence, captured the day pools.fun's third contract suite
+went live. What each one pins, and must keep pinning through any refresh:
+
+- `launches-config-v3` - `gatewayVersion: 3`. It read `1` when the launch path
+  was written, and moved twice in three days.
+- `launches-prepare-v3-weth` - selector `0x3cc0226c` and the FOURTEEN-member
+  tuple. The V1 selector was `0xb3ee5495` over twelve members, which is why
+  every launch refused `calldata_undecodable` until this suite landed. The
+  price attestation is all-zero and `priceSignature` is empty.
+- `launches-prepare-v3-holders-both` - `feeRecipient` is the gateway's
+  `FEES_TO_HOLDERS_BOTH` sentinel, not a wallet, and the response labels it
+  `display: "Token holders"`. The pair of facts is the whole reason verifier
+  point 15 exists.
+- `launches-prepare-v3-stock-nvda` - a stock pair whose attestation is EMPTY,
+  because NVDA is `CHAINLINK_STOCK`. No live prepare against a `SIGNED_STOCK`
+  asset was captured; the signed-stock cases are built locally and labelled as
+  such in the tests rather than being passed off as measurements.
+
+They needed no sanitization: the launching wallet is not a member of the launch
+tuple, and the probe wallet was searched for in the raw bytes before copying.
+
 ## Regenerating
 
 ```

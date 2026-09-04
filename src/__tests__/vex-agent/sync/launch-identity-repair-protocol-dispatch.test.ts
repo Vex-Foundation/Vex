@@ -22,10 +22,12 @@ import {
   PARTY_FACTORY_TOKEN_LAUNCHED_ABI,
   POOLS_GATEWAY_LAUNCH_EVENT_ABI,
 } from "@tools/pools-fun/abi.js";
-import { POOLS_FACTORY_ADDRESS, POOLS_GATEWAY_ADDRESS } from "@tools/pools-fun/constants.js";
+import { POOLS_SUITES } from "@tools/pools-fun/constants.js";
 
-const GATEWAY = getAddress(POOLS_GATEWAY_ADDRESS);
-const FACTORY = getAddress(POOLS_FACTORY_ADDRESS);
+/** V1: the suite our real launches, and therefore the sweep's real rows, belong to. */
+const SUITE = POOLS_SUITES.find((s) => s.version === 1)!;
+const GATEWAY = getAddress(SUITE.gateway);
+const FACTORY = getAddress(SUITE.factory);
 const WALLET = getAddress("0x33eF6673BD80cB11fcC41b82Bc2181E65cC4d2fA");
 const STRANGER = getAddress("0x9999999999999999999999999999999999999999");
 const TOKEN = getAddress("0x01e685d39e6bf52ad0c421a4be1e092ce684e6bb");

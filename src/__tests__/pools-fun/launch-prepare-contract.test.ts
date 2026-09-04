@@ -48,9 +48,23 @@ describe("the live prepare body validates", () => {
     expect(validatePrepareResponse(noDisplay).feeRecipient.display).toBeNull();
   });
 
-  it("the response's recipient is the one inside its own calldata", () => {
-    // The relation the capture pins, and the one the verifier's point 4 checks.
-    const parsed = validatePrepareResponse(live());
+  it("no longer DECODES, because launches are V3-only and the V1 fragment is deleted", () => {
+    // An intentional contract change, recorded rather than quietly dropped.
+    // Launches target the V3 suite (owner decision D-suites) whose `launch`
+    // selector is 0x3cc0226c over a 14-member tuple; V1's 0xb3ee5495 over 12
+    // members has no consumer left, and keeping both fragments in one ABI would
+    // make `decodeFunctionData` ambiguous on the exact call that spends money.
+    // The verifier reports this as a named `selector_and_encoding` refusal.
+    expect(live().data.slice(0, 10)).toBe("0xb3ee5495");
+    expect(decodeLaunchCalldata(live().data as `0x${string}`)).toBeNull();
+  });
+
+  it("the V3 response's recipient IS the one inside its own calldata", () => {
+    // The relation point 4 checks, now pinned on the suite that is actually
+    // launched against. The holders capture is the one that mirrors exactly; the
+    // plain-WETH capture does NOT, and that measured provider defect is pinned
+    // in `launch-verifier-v3-suite.test.ts` rather than smoothed over here.
+    const parsed = validatePrepareResponse(captureResponse(CAPTURES.prepareV3HoldersBoth));
     const tuple = decodeLaunchCalldata(parsed.data as `0x${string}`);
     expect(tuple).not.toBeNull();
     expect(getAddress(tuple!.feeRecipient)).toBe(getAddress(parsed.feeRecipient.address));

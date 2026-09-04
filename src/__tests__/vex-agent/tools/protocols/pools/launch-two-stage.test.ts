@@ -15,7 +15,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { getAddress, type Address, type Hex } from "viem";
 
-import { POOLS_CHAIN_ID, POOLS_GATEWAY_ADDRESS } from "@tools/pools-fun/constants.js";
+import { POOLS_CHAIN_ID, poolsLaunchSuite } from "@tools/pools-fun/constants.js";
 import * as planModule from "@vex-agent/tools/protocols/pools/handlers/launch/execute/plan.js";
 import * as authorizeModule from "@vex-agent/tools/protocols/pools/handlers/launch/execute/authorize.js";
 import * as broadcastModule from "@vex-agent/tools/protocols/pools/handlers/launch/execute/broadcast.js";
@@ -31,7 +31,7 @@ import {
 } from "@vex-agent/tools/protocols/pools/launch.js";
 import type { PoolsLaunchInputs } from "@vex-agent/tools/protocols/pools/launch/runtime-contract.js";
 
-const GATEWAY = getAddress(POOLS_GATEWAY_ADDRESS);
+const GATEWAY = getAddress(poolsLaunchSuite().gateway);
 const WALLET = getAddress("0x33eF6673BD80cB11fcC41b82Bc2181E65cC4d2fA");
 const OTHER_WALLET = getAddress("0x9999999999999999999999999999999999999999");
 const TOKEN = getAddress("0x01e685d39e6bf52ad0c421a4be1e092ce684e6bb");
