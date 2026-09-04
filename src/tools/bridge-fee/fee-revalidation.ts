@@ -66,7 +66,7 @@ export const VEX_FEE_QUOTE_UNAUTHORIZED_REASON = "vex_fee_quote_unauthorized";
 
 /**
  * A bridge refusal as the PUBLIC tool result must carry it (review finding,
- * 2026-09-04).
+ * 2026-09-04; rule 04, layer 3).
  *
  * The venues used to return a bare sentence, so the typed reason existed only in
  * a log line and the agent-facing result collapsed every fee-statement refusal
