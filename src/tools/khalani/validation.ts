@@ -27,6 +27,7 @@
 export {
   validateChainsResponse,
   validateTokensResponse,
+  validateTokenBalancesResponse,
   validateTokenSearchResponse,
   validateAutocompleteResponse,
 } from "./validation/chains-tokens.js";

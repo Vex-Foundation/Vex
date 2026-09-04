@@ -63,6 +63,13 @@ export default defineConfig({
       // drive; only this lane starts a database for them.
       "vex-app/src/main/**/__tests__/*.int.test.ts",
       "src/__tests__/integration/repos/money-state-reader.int.test.ts",
+      // WP8: the wallet-scoped reading of that same money-state doctrine, plus
+      // the activity-table lock the snapshot publisher depends on.
+      "src/__tests__/integration/repos/snapshot-publication-gate.int.test.ts",
+      // WP11: migration 100's access path for that same gate, proved by real plans.
+      "src/__tests__/integration/repos/snapshot-publication-indexes.int.test.ts",
+      // F-EVM: the pending-debit compensation's in-flight SQL against the real schema.
+      "src/__tests__/integration/repos/pending-debit-compensation.int.test.ts",
       "src/__tests__/integration/repos/session-control-state-wake.int.test.ts",
       "src/__tests__/integration/repos/recovery-money-gate-race.int.test.ts",
       "src/__tests__/integration/repos/recovery-reverse-lock-order.int.test.ts",

@@ -30,6 +30,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { SOLANA_NATIVE_ASSET_IDENTITY } from "@tools/solana-ecosystem/shared/solana-asset-identity.js";
 
 type QueryFn = (
   text: string,
@@ -299,6 +300,48 @@ describe("getTokenHistory - address normalization", () => {
       cursor: null,
     });
     expect(allBoundParams()).toContain(SOL_TOKEN);
+  });
+
+  it("does not guess native versus wSOL for a legacy row without provenance", async () => {
+    scriptTransaction({ page: [] });
+    await getTokenHistory({
+      chainId: SOLANA_CHAIN_ID,
+      tokenAddress: SOLANA_NATIVE_ASSET_IDENTITY.routeMint,
+      cursor: null,
+    });
+
+    const { sql } = pageQueryCall();
+    expect(sql).toContain(
+      `CASE WHEN a.input_token = '${SOLANA_NATIVE_ASSET_IDENTITY.routeMint}' THEN NULL ELSE a.input_token END`,
+    );
+    expect(sql).toContain(
+      `CASE WHEN a.output_token = '${SOLANA_NATIVE_ASSET_IDENTITY.routeMint}' THEN NULL ELSE a.output_token END`,
+    );
+  });
+
+  it("uses pinned wrap provenance to select native SOL or wSOL enrichment", async () => {
+    scriptTransaction({ page: [] });
+    await getTokenHistory({
+      chainId: SOLANA_CHAIN_ID,
+      tokenAddress: SOLANA_NATIVE_ASSET_IDENTITY.routeMint,
+      cursor: null,
+    });
+
+    const { sql } = pageQueryCall();
+    expect(sql).toContain(
+      `aa.route_provenance->'settlement'->>'inputMint' = aa.token_in_address`,
+    );
+    expect(sql).toContain(
+      `aa.route_provenance->'settlement'->>'outputMint' = aa.token_out_address`,
+    );
+    // wrapAndUnwrapSol true identifies the native account balance.
+    expect(sql).toContain(
+      `aa.route_provenance->'settlement'->'wrapAndUnwrapSol' = 'true'::jsonb THEN '${SOLANA_NATIVE_ASSET_IDENTITY.persistedAddress}'`,
+    );
+    // The validated boolean's other value is false, which keeps the wSOL mint.
+    expect(sql).toContain(
+      `ELSE '${SOLANA_NATIVE_ASSET_IDENTITY.routeMint}' END ELSE NULL END`,
+    );
   });
 
   it("binds the chain-alias candidate set including the bare decimal chain id", async () => {

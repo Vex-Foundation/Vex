@@ -106,7 +106,7 @@ export interface LocalChainBalancesRead {
 /**
  * Read native + ERC-20 balances for one wallet on one local chain, priced via
  * DexScreener. `tokenAddrs` is the caller's scan set (checksummed, deduped —
- * see `buildTokenScanSet` on the sync side). Address-only — never touches key
+ * see `buildLocalChainInventory` on the sync side). Address-only - never touches key
  * material. RPC errors propagate; pricing is fail-soft (null USD downstream).
  */
 export async function readLocalChainBalances(

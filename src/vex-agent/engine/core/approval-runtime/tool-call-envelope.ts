@@ -52,6 +52,10 @@ import {
   readApprovedQuoteAuthority,
   type ApprovedQuoteAuthority,
 } from "@vex-agent/tools/protocols/quote-authority/approved-authority.js";
+import {
+  readApprovedPrequoteAuthority,
+  type ApprovedPrequoteAuthority,
+} from "@vex-agent/tools/protocols/prequote/approved-row-authority.js";
 import type { IntentPreview } from "../approval-intent-preview.js";
 
 /**
@@ -104,6 +108,7 @@ export function buildApprovalToolCall(
   toolArgs: Record<string, unknown>,
   binding?: ApprovalProposalBinding,
   quoteAuthority?: ApprovedQuoteAuthority,
+  prequoteAuthority?: ApprovedPrequoteAuthority,
 ): Record<string, unknown> {
   const canonicalName = resolveToolName(toolName);
   const manifest = resolveInjectedProtocolTool(canonicalName);
@@ -120,8 +125,18 @@ export function buildApprovalToolCall(
   // call whose bound quote was edited after the human approved it.
   const quoteBlock =
     quoteAuthority === undefined ? {} : { quoteAuthority: { ...quoteAuthority } };
+  // WHICH PREQUOTE ROW, and what it disclosed. A third sibling, for the reason
+  // the second one is separate from the first: the snapshot block is the
+  // authority the CLAIM enforces, this one is the authority the prequote GATE
+  // enforces, and a venue that seals no snapshot (Jupiter) has only this one.
+  // It rides into `computeRequestDigest` with the rest, so an approval whose
+  // bound row was edited after the human decided cannot be dispatched.
+  const rowBlock =
+    prequoteAuthority === undefined
+      ? {}
+      : { prequoteAuthority: { ...prequoteAuthority } };
   if (!manifest) {
-    return { command: canonicalName, args: toolArgs, ...boundBlock, ...quoteBlock };
+    return { command: canonicalName, args: toolArgs, ...boundBlock, ...quoteBlock, ...rowBlock };
   }
 
   return {
@@ -134,6 +149,7 @@ export function buildApprovalToolCall(
     },
     ...boundBlock,
     ...quoteBlock,
+    ...rowBlock,
   };
 }
 
@@ -150,6 +166,21 @@ export function readApprovalQuoteAuthority(
   rawToolCall: Record<string, unknown>,
 ): ApprovedQuoteAuthority | null {
   return readApprovedQuoteAuthority(rawToolCall.quoteAuthority);
+}
+
+/**
+ * The prequote row an approval bound, or `null` when the row carries none
+ * (every lane but a gated execute, and every approval written before the
+ * binding existed).
+ *
+ * `null` is NOT "anything goes": the prequote gate fails closed on a RESUMED
+ * dispatch that can name no row (`approval_binding_missing`), because a human
+ * authorized one quote and an unbound resume cannot say which.
+ */
+export function readApprovalPrequoteAuthority(
+  rawToolCall: Record<string, unknown>,
+): ApprovedPrequoteAuthority | null {
+  return readApprovedPrequoteAuthority(rawToolCall.prequoteAuthority);
 }
 
 /**

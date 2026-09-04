@@ -13,6 +13,8 @@ import {
   preSignRefusalGuidance,
 } from "@tools/evm-chains/pre-sign-revert-refusal.js";
 import { UniswapFinalRequestRefusal } from "@tools/uniswap/final-request-guard.js";
+import { UniswapFeeCapExceededError, UniswapLiveFeeMarketRefusal } from "@tools/uniswap/execute.js";
+import { UniswapPreSignDebitRefusal } from "./quote-spendability.js";
 import { effectiveMaxSlippageBps } from "@vex-agent/tools/protocols/slippage-policy.js";
 import type { AgentActivityEvent } from "@vex-agent/db/repos/agent-activity.js";
 import logger from "@utils/logger.js";
@@ -146,6 +148,50 @@ export async function postIntentFailureResult(input: {
       output: `${TOOL_ID}: the ${input.refusedRole} step was refused before signing. ${uniswapFailureMessage(err)} Recorded as execution ${executionId}.`,
       data: {
         _executionId: executionId, status: "not_attempted", retryable: true,
+        failureCode: err.kind,
+      },
+    };
+  }
+  // The AUTHORITATIVE DEBIT GATE refused: the wallet no longer covers what is
+  // still to be broadcast, or that cost could not be verified at all. Nothing
+  // was signed, so this is `not_attempted` like the two refusals above, and the
+  // refusal's own sentence - which states required, held and missing - is
+  // rendered verbatim rather than replaced by canned guidance for a revert that
+  // never happened. `retryable` follows the refusal: a shortfall repeats
+  // unchanged, an unreadable balance may not.
+  if (err instanceof UniswapPreSignDebitRefusal) {
+    return {
+      success: false,
+      output: `${TOOL_ID}: the ${input.refusedRole} step was refused before signing. ${uniswapFailureMessage(err)} Recorded as execution ${executionId}.`,
+      data: {
+        _executionId: executionId, status: "not_attempted", retryable: err.retryable,
+        failureCode: "allowance_or_balance",
+      },
+    };
+  }
+  // The chain's current price left the ceiling this execution's debit total was
+  // computed under. Nothing was signed; the way out is a fresh quote, not a
+  // retry at whatever the node now asks for.
+  if (err instanceof UniswapFeeCapExceededError) {
+    return {
+      success: false,
+      output: `${TOOL_ID}: the ${input.refusedRole} step was refused before signing. ${uniswapFailureMessage(err)} Recorded as execution ${executionId}.`,
+      data: { _executionId: executionId, status: "not_attempted", retryable: false },
+    };
+  }
+  // The LIVE fee market could not be shown to still fit the approved ceiling.
+  // Nothing was signed, so `not_attempted` like the refusals above, and the
+  // refusal's own sentence - which names which of the three happened and the
+  // way out - is rendered verbatim. `retryable` comes off the refusal because
+  // the three differ exactly there: an unreachable node may answer next time, a
+  // risen price and a changed pricing mode need a fresh quote. Reducing an
+  // unreadable market to "failed unexpectedly" is the collapse rule 90 forbids.
+  if (err instanceof UniswapLiveFeeMarketRefusal) {
+    return {
+      success: false,
+      output: `${TOOL_ID}: the ${input.refusedRole} step was refused before signing. ${uniswapFailureMessage(err)} Recorded as execution ${executionId}.`,
+      data: {
+        _executionId: executionId, status: "not_attempted", retryable: err.retryable,
         failureCode: err.kind,
       },
     };

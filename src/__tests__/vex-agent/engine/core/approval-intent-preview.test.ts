@@ -63,6 +63,42 @@ describe("buildIntentPreview", () => {
     expect(preview.criticalArgs).not.toHaveProperty("feeReceiver");
   });
 
+  it("keeps the generic swap card at its current supplied-args and quote boundary", () => {
+    const preview = buildIntentPreview(
+      "kyberswap.swap.execute",
+      {
+        chain: "base",
+        tokenIn: "0x1111111111111111111111111111111111111111",
+        tokenOut: "0x2222222222222222222222222222222222222222",
+        amountIn: "1.5",
+      },
+      {
+        quoteBinding: {
+          cardVersion: "kyber-quote-v1",
+          snapshotId: "prequote-1",
+          digest: "a".repeat(64),
+          approvedAmountOutHuman: "2.5",
+          approvedMinOutHuman: "2.4",
+          approvedMinOutRaw: "2400000",
+          tokenOutSymbol: "QUOTE_TIME_SYMBOL",
+          effectiveSlippageBps: 400,
+          expiresAt: "2026-08-31T12:00:00.000Z",
+        },
+      },
+    );
+
+    expect(preview.criticalArgs).toMatchObject({
+      chain: "base",
+      tokenIn: "0x1111111111111111111111111111111111111111",
+      tokenOut: "0x2222222222222222222222222222222222222222",
+      amountIn: "1.5",
+    });
+    expect(preview.criticalArgs.quoteBinding).toContain("QUOTE_TIME_SYMBOL");
+    expect(preview.criticalArgs).not.toHaveProperty("tokenInDecimals");
+    expect(preview.criticalArgs).not.toHaveProperty("tokenOutDecimals");
+    expect(preview.criticalArgs).not.toHaveProperty("amountInRaw");
+  });
+
   it("projects a bridge's amountRaw AND its fee — the amount being signed", () => {
     const preview = buildIntentPreview("relay.bridge", {
       fromChain: "base",

@@ -64,6 +64,35 @@ function parseKindCheck(): string[] {
     .filter((token) => token.length > 0);
 }
 
+/**
+ * Extract the LAST `CONSTRAINT swap_prequotes_eligibility_kind_check CHECK
+ * (eligibility_kind IN (...))` value list, in migration application order.
+ *
+ * LAST, not first: migration 099 DROPs and recreates the constraint, so the
+ * live vocabulary is 097's. Reading the first match would pin migration 095's
+ * five values forever and the lockstep would silently stop guarding anything.
+ */
+function parseEligibilityCheck(): string[] {
+  const sqlWithoutComments = MIGRATION_SQL.split("\n")
+    .filter((line) => !line.trimStart().startsWith("--"))
+    .join("\n");
+  const re =
+    /CONSTRAINT\s+swap_prequotes_eligibility_kind_check\s+CHECK\s*\(\s*eligibility_kind\s+IN\s*\(([^)]*)\)/gi;
+  let match: RegExpExecArray | null;
+  let last: RegExpExecArray | null = null;
+  while ((match = re.exec(sqlWithoutComments)) !== null) {
+    last = match;
+  }
+  if (!last) {
+    throw new Error("lockstep: 'swap_prequotes_eligibility_kind_check' CHECK not found in the migrations");
+  }
+  const valueList = last[1];
+  if (valueList === undefined) {
+    throw new Error("lockstep: the eligibility CHECK matched no value list");
+  }
+  return [...valueList.matchAll(/'([^']+)'/g)].flatMap((m) => (m[1] === undefined ? [] : [m[1]]));
+}
+
 /** Extract the string-literal members of `export type PrequoteKind = ... ;`. */
 function parseKindUnion(): string[] {
   const match = /export type PrequoteKind =([^;]*);/.exec(REPO_TS);
@@ -184,18 +213,11 @@ describe("swap_prequotes kind — SQL CHECK <-> TS union lockstep", () => {
 
   it("the eligibility vocabulary is in lockstep too - it gates the CLAIM", () => {
     // Same failure modes as `kind`, and a worse consequence: `eligibility_kind`
-    // is a predicate in the atomic claim (migration 095), so TS ahead of SQL
-    // makes the recorder's insert throw inside a best-effort writer and leaves
-    // NO superseding row - which is exactly the stale-authority hole 095 closes.
-    const sqlWithoutComments = MIGRATION_SQL.split("\n")
-      .filter((line) => !line.trimStart().startsWith("--"))
-      .join("\n");
-    const check = /CONSTRAINT\s+swap_prequotes_eligibility_kind_check\s+CHECK\s*\(\s*eligibility_kind\s+IN\s*\(([^)]*)\)/i
-      .exec(sqlWithoutComments);
-    if (!check) throw new Error("lockstep: 'swap_prequotes_eligibility_kind_check' CHECK not found");
-    const sqlList = check[1];
-    if (sqlList === undefined) throw new Error("lockstep: eligibility CHECK matched no value list");
-    const sqlKinds = [...sqlList.matchAll(/'([^']+)'/g)].flatMap((m) => (m[1] === undefined ? [] : [m[1]])).sort();
+    // is a predicate in the atomic claim (migration 095) AND, since WP2, in the
+    // COMMON execute gate. TS ahead of SQL makes the recorder's insert throw
+    // inside a best-effort writer and leaves NO superseding row - which is
+    // exactly the stale-authority hole 095 closes.
+    const sqlKinds = parseEligibilityCheck().sort();
 
     const union = /export type PrequoteEligibilityKind =([\s\S]*?);/.exec(REPO_TS);
     if (!union) throw new Error("lockstep: 'PrequoteEligibilityKind' union not found");
@@ -208,7 +230,28 @@ describe("swap_prequotes kind — SQL CHECK <-> TS union lockstep", () => {
     // mirror, so a member added there must reach both sides.
     expect(new Set(sqlKinds)).toEqual(new Set([
       "executable", "unpriceable_output", "excessive_impact", "oversize_snapshot", "provider_usd_invalid",
+      // WP2 (migration 099). Spendability is not a second executability
+      // answer - it is three more reasons the ONE answer can be "no".
+      "insufficient_balance", "balance_unavailable", "gas_reserve_insufficient",
     ]));
+  });
+
+  it("the pre-097 eligibility vocabulary is preserved - 097 is expand-only", () => {
+    // A value dropped from the CHECK would make every live row carrying it
+    // unwritable on its next update; this pins that 097 only widened.
+    for (const kind of [
+      "executable", "unpriceable_output", "excessive_impact", "oversize_snapshot", "provider_usd_invalid",
+    ]) {
+      expect(parseEligibilityCheck(), `${kind} was dropped from the CHECK`).toContain(kind);
+    }
+  });
+
+  it("the LIVE eligibility CHECK is 097's, not 095's", () => {
+    // The parser takes the LAST definition in application order for the same
+    // reason `parseKindCheck` does: 097 drops and recreates the constraint, so
+    // reading the first match would pin a constraint Postgres no longer has and
+    // the guard would pass against a stale contract.
+    expect(parseEligibilityCheck()).toContain("insufficient_balance");
   });
 
   it("no kind is listed twice on either side", () => {

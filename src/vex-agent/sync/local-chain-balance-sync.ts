@@ -15,9 +15,18 @@
  *
  * Token set = the chain's seed set ∪ the wallet's EXPLICIT pins
  * (`tracked_tokens` — written by the `WalletTrackToken` tool and the
- * swap/bridge auto-pin hooks). This replaced the implicit spot-swap derivation
- * (Robinhood launch): explicit rows cover bridged, transferred, and airdropped
- * tokens that the old derivation could never see.
+ * swap/bridge auto-pin hooks) ∪ the identity candidates the chain's indexer
+ * enumerated (Blockscout on 4663). The union itself is owned by the pure
+ * `wallet-inventory/local-chain.ts`; this module performs the two reads that
+ * feed it. The indexer is authoritative for IDENTITY ONLY - every balance,
+ * scale and symbol below is re-read from RPC.
+ *
+ * REPLACEMENT REQUIRES AN EXHAUSTIVE ENUMERATION. `replaceBalancesForChain`
+ * replaces the chain's whole snapshot, so it may only run when the scan set was
+ * every holding: an indexer outage means a token this wallet holds may be
+ * outside the set, and writing that set would DELETE its last-good row and
+ * report the deletion to the agent as "you hold none of it". The last-good rows
+ * and their original timestamps stay untouched instead (C3.5).
  *
  * Failure semantics (Codex final-review fix): fail-soft (return skipped, keep
  * the last-good rows) applies ONLY to on-chain/RPC/transport failures —
@@ -28,7 +37,7 @@
  * Khalani sync path.
  */
 
-import { formatUnits, getAddress } from "viem";
+import { formatUnits } from "viem";
 
 import { NATIVE_TOKEN_ADDRESS } from "@tools/kyberswap/constants.js";
 import {
@@ -39,6 +48,14 @@ import { getLocalChain, type LocalChainConfig } from "@tools/evm-chains/registry
 import type { ChainFamily } from "@tools/khalani/types.js";
 import * as balancesRepo from "@vex-agent/db/repos/balances.js";
 import * as trackedTokensRepo from "@vex-agent/db/repos/tracked-tokens.js";
+import { readRobinhoodErc20IdentityCandidates } from "@tools/blockscout/client.js";
+import { ROBINHOOD_CHAIN_ID } from "@tools/blockscout/operation.js";
+import {
+  buildLocalChainScanSet,
+  fromBlockscoutInventory,
+  type LocalChainIndexerObservation,
+  type LocalChainScanSet,
+} from "@vex-agent/wallet-inventory/local-chain.js";
 import type { BalanceRow } from "@vex-agent/db/repos/balances.js";
 import logger from "@utils/logger.js";
 
@@ -58,6 +75,10 @@ export interface LocalChainSyncResult {
  * replace) sit OUTSIDE the RPC try/catch — a DB failure rejects loudly so the
  * worker marks the run failed (matching the Khalani path). Only the on-chain /
  * pricing reads in between are fail-soft.
+ *
+ * The write happens only when BOTH completeness conditions hold: the scan set
+ * was exhaustive (the indexer answered completely) and every token in it read
+ * successfully. Either gap keeps the last-good rows.
  */
 export async function syncLocalChainForWallet(
   family: ChainFamily,
@@ -70,8 +91,28 @@ export async function syncLocalChainForWallet(
   }
 
   // DB READ — propagates. A failing pinned-token query is a local-DB fault the
-  // operator must see, not a condition to paper over with a skipped chain.
-  const tokenAddrs = await buildTokenScanSet(config, walletAddress);
+  // operator must see, not a condition to paper over with a skipped chain. The
+  // indexer read inside is fail-soft and reports itself through `exhaustive`.
+  const inventory = await buildLocalChainInventory(config, walletAddress);
+  const tokenAddrs = inventory.addresses;
+
+  // ENUMERATION GATE - a non-exhaustive scan set can never REPLACE the chain's
+  // snapshot: a held token outside the set would be deleted and read back as
+  // "you hold none of it". Same rule as the per-token failure below, one step
+  // earlier in the pipeline. No write happens, so the last-good rows and their
+  // original timestamps survive (C3.5).
+  if (!inventory.exhaustive) {
+    logger.warn("sync.local_chain.enumeration_not_exhaustive", {
+      chainId,
+      address: walletAddress.slice(0, 10) + "...",
+      indexerSource: inventory.indexer?.source ?? null,
+      indexerReason: inventory.indexer?.incompleteReason ?? null,
+      unprocessedContracts: inventory.indexer?.unprocessedContractAddresses.length ?? 0,
+      droppedAddresses: inventory.droppedAddresses.length,
+      scanned: tokenAddrs.length,
+    });
+    return { chainId, tokensUpdated: 0, skipped: true };
+  }
 
   // RPC/TRANSPORT — fail-soft. No write happens on this path, so cached rows
   // for this chain survive a transient RPC outage (mirrors the Khalani native
@@ -127,31 +168,50 @@ export async function syncLocalChainForWallet(
 // ── Token scan set ──────────────────────────────────────────────────
 
 /**
- * Seed set ∪ explicitly pinned tokens, deduped case-insensitively and
- * checksummed. Malformed pinned addresses are dropped defensively (untrusted
- * DB rows). Exported for the live `WalletBalances` read path, which scans the
- * SAME set.
+ * Enumerate this chain's scan set for this wallet: seeds ∪ explicit pins ∪ the
+ * indexer's identity candidates, deduplicated, checksummed and ordered by the
+ * pure union owner. Exported for the live `WalletBalances` read path, which
+ * enumerates the SAME set - the live read and the projection must never
+ * disagree about which tokens exist.
+ *
+ * Two different failure contracts meet here, deliberately:
+ * - the DB pin read PROPAGATES (a local-DB fault the operator must see);
+ * - the indexer read never throws except on caller cancellation; an outage
+ *   returns a non-exhaustive set, which every caller must honour.
  */
-export async function buildTokenScanSet(
+export async function buildLocalChainInventory(
   config: LocalChainConfig,
   walletAddress: string,
-): Promise<`0x${string}`[]> {
-  const byLower = new Map<string, `0x${string}`>();
-  const add = (raw: string): void => {
-    try {
-      const checksummed = getAddress(raw);
-      byLower.set(checksummed.toLowerCase(), checksummed);
-    } catch {
-      // Not a valid EVM address — skip (defensive against bad DB data).
-    }
-  };
+  options: { signal?: AbortSignal } = {},
+): Promise<LocalChainScanSet> {
+  const pinnedAddresses = await trackedTokensRepo.getTrackedTokenAddressesForChain(
+    walletAddress,
+    config.id,
+  );
+  return buildLocalChainScanSet({
+    chainId: config.id,
+    seedAddresses: config.seedTokens.map((token) => token.address),
+    pinnedAddresses,
+    indexer: await readIdentityCandidates(config, walletAddress, options.signal),
+  });
+}
 
-  for (const token of config.seedTokens) add(token.address);
-
-  const pinned = await trackedTokensRepo.getTrackedTokenAddressesForChain(walletAddress, config.id);
-  for (const address of pinned) add(address);
-
-  return [...byLower.values()];
+/**
+ * The identity enumerator for this chain, or null when it has none.
+ *
+ * Blockscout is scoped to Robinhood Chain by product decision (see
+ * `tools/blockscout/BLOCKSCOUT.md`), so the check is on the chain id rather
+ * than a capability flag no other chain would ever set.
+ */
+async function readIdentityCandidates(
+  config: LocalChainConfig,
+  walletAddress: string,
+  signal: AbortSignal | undefined,
+): Promise<LocalChainIndexerObservation | null> {
+  if (config.id !== ROBINHOOD_CHAIN_ID) return null;
+  return fromBlockscoutInventory(
+    await readRobinhoodErc20IdentityCandidates(walletAddress, { signal }),
+  );
 }
 
 // ── Row assembly ────────────────────────────────────────────────────

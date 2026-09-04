@@ -47,6 +47,10 @@ export function toProtocolExecutionContext(
     // the provenance, so no lane can carry the approval id while dropping the
     // snapshot it authorized.
     approvedQuoteAuthority: context.approvedQuoteAuthority ?? null,
+    // ...and WHICH PREQUOTE ROW, with the digest of what it disclosed. Same
+    // lane, same reason: a context that carried the approval id while dropping
+    // the row it approved would let the gate re-decide which quote is current.
+    approvedPrequoteAuthority: context.approvedPrequoteAuthority ?? null,
     // The call this dispatch answers.
     toolCallId: call.toolCallId,
     // Which consent surface exists for this dispatch. See `runtime/gates.ts`.

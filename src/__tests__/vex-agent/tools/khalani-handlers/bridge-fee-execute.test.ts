@@ -162,11 +162,25 @@ function ctx(): ProtocolExecutionContext {
     walletResolution: { source: "default" },
     walletPolicy: { kind: "none" },
     sessionId: "session-1",
+    bridgeTokenPreview: {
+      source: {
+        family: "eip155", kind: "erc20", chainId: 8453, tokenAddress: FROM_TOKEN,
+        symbol: "USDC", decimals: 6, metadataSource: "rpc_contract", symbolSanitized: false,
+      },
+      destination: {
+        family: "eip155", kind: "erc20", chainId: 42161, tokenAddress: TO_TOKEN,
+        symbol: "USDC.e", decimals: 6, metadataSource: "rpc_contract", symbolSanitized: false,
+      },
+      amountRaw: "1500000",
+      amountHuman: "1.5",
+    },
   } as ProtocolExecutionContext;
 }
 
 function execute(over: Record<string, unknown> = {}) {
-  return BRIDGE_HANDLERS["khalani.bridge"]!(
+  const handler = BRIDGE_HANDLERS["khalani.bridge"];
+  if (!handler) throw new Error("khalani.bridge handler missing");
+  return handler(
     { fromChain: "base", toChain: "arbitrum", fromToken: FROM_TOKEN, toToken: TO_TOKEN, amountRaw: "1500000", ...over },
     ctx(),
   );

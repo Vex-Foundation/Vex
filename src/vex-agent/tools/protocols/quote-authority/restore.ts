@@ -13,9 +13,10 @@
 
 import { z } from "zod";
 
+import { boundDebitPlanSchema } from "./debit-plan.js";
 import {
   ROUTE_SNAPSHOT_VERSION,
-  digestSnapshotRaw,
+  digestRouteSnapshot,
   type RouteSnapshot,
 } from "./snapshot.js";
 import { snapshotRefusal as buildSnapshotRefusal } from "./refusal.js";
@@ -42,7 +43,34 @@ const RouteSnapshotSchema = z.object({
   effectiveSlippageBps: z.number().int().min(0).max(10_000),
   expiresAt: z.string().min(1),
   eligibility: z.object({ kind: z.string() }).passthrough(),
+  debitPlan: boundDebitPlanSchema,
 });
+
+/**
+ * The eligibility a restored snapshot must carry to be executable at all.
+ *
+ * Parsed STRICTLY rather than cast: the outer schema only proves the blob has a
+ * `kind`, and this lane's whole promise is that what comes back out of durable
+ * storage is what the quote put in. A row whose executable verdict lost its
+ * measured impact is a row this build cannot vouch for, so it is refused rather
+ * than narrowed by assertion (rule 04: no cast where a check belongs).
+ */
+const ExecutableEligibilitySchema = z.object({
+  kind: z.literal("executable"),
+  priceImpactFraction: z.number(),
+  adverse: z.boolean(),
+});
+
+/**
+ * The version tag alone, read before the full shape.
+ *
+ * A row written by an older build fails the strict schema for a reason that has
+ * a NAME - it is a snapshot from a format that bound less - and the agent is
+ * told to re-quote rather than handed the generic "not a shape this build can
+ * read". Everything else about the row is still untrusted, so this parse asks
+ * for nothing but the tag.
+ */
+const SnapshotVersionSchema = z.object({ v: z.number().int() });
 
 /**
  * The fields the execute actually consumes off a restored summary.
@@ -84,6 +112,10 @@ export function restoreRouteSnapshot(routeRef: unknown): RestoredSnapshot {
   if (routeRef === null || routeRef === undefined) {
     return { ok: false, refusal: buildSnapshotRefusal("missing_snapshot") };
   }
+  const version = SnapshotVersionSchema.safeParse(routeRef);
+  if (version.success && version.data.v !== ROUTE_SNAPSHOT_VERSION) {
+    return { ok: false, refusal: buildSnapshotRefusal("snapshot_version_unsupported") };
+  }
   const parsed = RouteSnapshotSchema.safeParse(routeRef);
   if (!parsed.success) {
     return { ok: false, refusal: buildSnapshotRefusal("snapshot_unreadable") };
@@ -91,7 +123,13 @@ export function restoreRouteSnapshot(routeRef: unknown): RestoredSnapshot {
   if (parsed.data.eligibility.kind !== "executable") {
     return { ok: false, refusal: buildSnapshotRefusal("not_executable") };
   }
-  if (digestSnapshotRaw(parsed.data.raw) !== parsed.data.digest) {
+  const eligibility = ExecutableEligibilitySchema.safeParse(parsed.data.eligibility);
+  if (!eligibility.success) {
+    return { ok: false, refusal: buildSnapshotRefusal("snapshot_unreadable") };
+  }
+  // Covers the stored string AND the bound debit plan: a tampered leg set or a
+  // lifted fee ceiling fails here exactly like a tampered route summary.
+  if (digestRouteSnapshot(parsed.data) !== parsed.data.digest) {
     return { ok: false, refusal: buildSnapshotRefusal("digest_mismatch") };
   }
   let routeSummary: unknown;
@@ -105,7 +143,8 @@ export function restoreRouteSnapshot(routeRef: unknown): RestoredSnapshot {
   }
   // The summary the caller POSTs is the UNTOUCHED parse, not the validator's
   // projection - see `RestoredRouteSummaryShape`.
-  return { ok: true, snapshot: parsed.data as RouteSnapshot, routeSummary };
+  const snapshot: RouteSnapshot = { ...parsed.data, eligibility: eligibility.data };
+  return { ok: true, snapshot, routeSummary };
 }
 
 // ── Approval-card binding ───────────────────────────────────────────────

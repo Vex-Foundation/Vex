@@ -117,6 +117,12 @@ const CHAINS = [
 
 const PARAMS = { fromChain: "base", fromToken: "native", toChain: "robinhood", toToken: "native", amountRaw: "1000000000000000" };
 
+function executeRelay(params = PARAMS, context: ProtocolExecutionContext = CTX) {
+  const handler = RELAY_BRIDGE_HANDLERS["relay.bridge"];
+  if (!handler) throw new Error("relay.bridge handler missing");
+  return handler(params, context);
+}
+
 function txStep(id: string, chainId = 8453) {
   return { id, kind: "transaction", requestId: "0xreq", items: [{ data: { to: "0x2222222222222222222222222222222222222222", value: "1000000000000000", data: "0x", chainId } }] };
 }
@@ -179,8 +185,34 @@ beforeEach(() => {
 });
 
 describe("relay.bridge — what Vex derives for the native-value gate", () => {
+  it("returns a structured pre-sign refusal when trusted metadata is unavailable", async () => {
+    const result = await executeRelay(PARAMS, {
+      ...CTX,
+      bridgeTokenPreview: {
+        source: {
+          family: "eip155", kind: "metadata_unavailable", chainId: 8453, tokenAddress: ZERO,
+          symbol: null, decimals: null, metadataSource: "chain_registry_unavailable", symbolSanitized: false,
+          metadataErrorCode: "native_registry_metadata_unavailable",
+          metadataErrorMessage: "Native currency symbol and decimals are unavailable in the venue chain registry.",
+        },
+        destination: {
+          family: "eip155", kind: "native", chainId: 4663, tokenAddress: ZERO,
+          symbol: "ETH", decimals: 18, metadataSource: "chain_registry", symbolSanitized: false,
+        },
+        amountRaw: "1000000000000000",
+        amountHuman: null,
+      },
+    });
+    const out = outputOf(result);
+
+    expect(out).toMatchObject({ status: "rejected" });
+    expect(out.message).toContain("nothing was signed");
+    expect(mockPlanStepTx).not.toHaveBeenCalled();
+    expect(mockSign).not.toHaveBeenCalled();
+  });
+
   it("hands the planner Vex's OWN post-fee amount and origin asset, never the quote's", async () => {
-    await RELAY_BRIDGE_HANDLERS["relay.bridge"]!(PARAMS, CTX);
+    await executeRelay();
     expect(mockPlanStepTx).toHaveBeenCalledTimes(1);
     const context = mockPlanStepTx.mock.calls[0]![3] as Record<string, unknown>;
     expect(context).toMatchObject({
@@ -201,13 +233,13 @@ describe("relay.bridge — a refused native charge is reported honestly", () => 
   });
 
   it("nothing is signed and nothing is broadcast", async () => {
-    await RELAY_BRIDGE_HANDLERS["relay.bridge"]!(PARAMS, CTX);
+    await executeRelay();
     expect(mockSign).not.toHaveBeenCalled();
     expect(mockMarkBroadcast).not.toHaveBeenCalled();
   });
 
   it("the result is 'not_attempted', never the generic 'interrupted' body", async () => {
-    const result = await RELAY_BRIDGE_HANDLERS["relay.bridge"]!(PARAMS, CTX);
+    const result = await executeRelay();
     expect(result.success).toBe(false);
     const body = outputOf(result);
     expect(body.status).toBe("not_attempted");
@@ -215,13 +247,13 @@ describe("relay.bridge — a refused native charge is reported honestly", () => 
   });
 
   it("names the unattributed amount and says nothing was signed or broadcast", async () => {
-    const body = outputOf(await RELAY_BRIDGE_HANDLERS["relay.bridge"]!(PARAMS, CTX));
+    const body = outputOf(await executeRelay());
     expect(String(body.message)).toContain("1000000000000000 wei");
     expect(String(body.message)).toMatch(/nothing was signed or broadcast for this step/i);
   });
 
   it("distinguishes a Vex policy refusal from a transport failure, and names what to do next", async () => {
-    const body = outputOf(await RELAY_BRIDGE_HANDLERS["relay.bridge"]!(PARAMS, CTX));
+    const body = outputOf(await executeRelay());
     const message = String(body.message);
     // Which state to change, and that re-sending THIS one cannot work.
     expect(message).toMatch(/NOT a network, provider or transport failure/i);
@@ -234,17 +266,17 @@ describe("relay.bridge — a refused native charge is reported honestly", () => 
   });
 
   it("marks the SAME quote as not retryable — a re-send is refused deterministically", async () => {
-    const result = await RELAY_BRIDGE_HANDLERS["relay.bridge"]!(PARAMS, CTX);
+    const result = await executeRelay();
     expect((result.data as Record<string, unknown>).retryable).toBe(false);
   });
 
   it("finalizes the recorded plan as not-attempted so the in-flight guard releases", async () => {
-    await RELAY_BRIDGE_HANDLERS["relay.bridge"]!(PARAMS, CTX);
+    await executeRelay();
     expect(mockAbort).toHaveBeenCalled();
   });
 
   it("charges no Vex fee — the bridge did not happen", async () => {
-    const body = outputOf(await RELAY_BRIDGE_HANDLERS["relay.bridge"]!(PARAMS, CTX));
+    const body = outputOf(await executeRelay());
     expect(JSON.stringify(body.vexFee)).toContain("not_attempted");
   });
 });

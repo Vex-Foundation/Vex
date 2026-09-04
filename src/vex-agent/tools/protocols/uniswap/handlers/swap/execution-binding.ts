@@ -12,6 +12,7 @@ import { formatUnits } from "viem";
 import type { UniswapFeeCharge } from "@tools/uniswap/fee/index.js";
 import type { UniswapToken } from "@tools/uniswap/types.js";
 
+import type { BoundDebitPlan } from "../../../quote-authority/debit-plan.js";
 import {
   UNISWAP_SNAPSHOT_VERSION,
   sealUniswapSnapshot,
@@ -85,6 +86,14 @@ export function buildUniswapQuoteSnapshot(input: {
   readonly charge: UniswapFeeCharge;
   readonly quoted: QuotedRoute;
   readonly expiresAt: string;
+  /**
+   * The transactions this quote authorizes and the ceiling they are signed
+   * under, measured by the SAME planner the execute uses
+   * (`./native-debit-plan.ts`). REQUIRED: a snapshot without a plan would
+   * authorize a price and leave the transaction set free, which is the gap this
+   * binding exists to close.
+   */
+  readonly debitPlan: BoundDebitPlan;
 }): UniswapExecutionSnapshot {
   const { tokenOut, quoted } = input;
   const inputs = executionInputsFrom(input);
@@ -103,5 +112,6 @@ export function buildUniswapQuoteSnapshot(input: {
     approvedMinOutHuman: formatUnits(quoted.minAmountOut, tokenOut.decimals),
     slippageBps: quoted.slippageBps,
     expiresAt: input.expiresAt,
+    debitPlan: input.debitPlan,
   });
 }

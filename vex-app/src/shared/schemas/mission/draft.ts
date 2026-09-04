@@ -114,8 +114,8 @@ export type MissionAcceptance = z.infer<typeof missionAcceptanceSchema>;
 
 /**
  * C3 - the mission's typed deployed-capital declaration, as the renderer reads
- * it. This is HASH-BOUND material (contract v6): the host accepts a contract
- * whose hash covers these exact five parts, so the card must be able to SHOW
+ * it. This is HASH-BOUND material (contract v7; v6 is frozen legacy): the host accepts a contract
+ * whose current hash covers these exact six parts, so the card must be able to SHOW
  * what is being accepted. A field bound into an acceptance the UI cannot render
  * is a blind signature, which is what this DTO exists to end.
  *
@@ -140,6 +140,8 @@ export const missionDeployedCapitalSchema = z
     decimals: z.number().int().min(0).max(36),
     chainId: z.number().int().positive(),
     assetAddress: z.string().max(128),
+    /** Structural identity; null only for a legacy five-field declaration. */
+    assetKind: z.enum(["native", "token"]).nullable(),
     assetSymbol: z.string().max(32).regex(/^[A-Za-z0-9_.$-]+$/),
     /** Main-derived display figure; null when it could not be derived. */
     amountHuman: z.string().nullable(),

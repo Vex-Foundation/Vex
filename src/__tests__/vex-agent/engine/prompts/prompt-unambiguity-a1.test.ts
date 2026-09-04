@@ -4,7 +4,7 @@
  *
  *  - the precedence preamble (turn state > safety > policy > mode),
  *  - ONE call notation everywhere (`tool_name(param="value")`),
- *  - the alias table ("shortcuts are the same engines"),
+ *  - the stable shortcut routing table,
  *  - the honest discover-first framing (toolIds real, schemas not),
  *  - one H1 per turn layer,
  *  - the retired fossils (`hl_positions`, the hard-coded namespace list).
@@ -90,12 +90,12 @@ describe("prompt unambiguity (A1)", () => {
   });
 
   describe("alias table", () => {
-    it("names the curated shortcuts and the engines they run", () => {
+    it("names the curated shortcuts and the engines or capability routes they run", () => {
       const toolModel = buildToolModelPrompt();
-      expect(toolModel).toContain("Shortcuts are the same engines");
+      expect(toolModel).toContain("Shortcuts route through the owned engines");
       expect(toolModel).toContain("PREFER the shortcut");
       for (const [alias, target] of [
-        ["TokenFind", "khalani__tokens_search"],
+        ["TokenFind", "EVM token identity router"],
         ["TokenCheck", "kyberswap__token_safety_check"],
         ["BridgeStatus", "khalani__order_get"],
       ] as const) {

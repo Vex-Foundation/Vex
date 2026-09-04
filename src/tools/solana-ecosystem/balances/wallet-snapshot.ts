@@ -24,19 +24,15 @@
  * refuses to write a partial read, while a live tool has nothing to destroy and
  * surfaces the partial read plus its account errors.
  *
- * ## The three shaping rules, pinned once
+ * ## The shaping rules, pinned once
  *
- * 1. Native SOL is emitted under the wSOL mint (`SOL_MINT`) with `SOL_DECIMALS`.
- *    That is the address it is PRICED by and the one every Solana surface in
- *    this repo already spells "SOL" as.
- * 2. A zero balance produces NO row (parity with the Khalani scan and the EVM
- *    reader). Native SOL included: zero lamports means no native row.
- * 3. A wSOL TOKEN account is FOLDED into the native row rather than emitted
- *    beside it, because the two would collide on `proj_balances`' primary key
- *    `(wallet_address, chain_id, token_address)`. When there is no native row to
- *    fold into (zero lamports, non-zero wSOL account) the wSOL holding is
- *    emitted as an ordinary token row with its own metadata - preserved
- *    deliberately, and pinned by test.
+ * 1. Native SOL always has its own row, including at zero, and its amount is
+ *    account lamports only.
+ * 2. A wSOL token account is always an ordinary SPL row. It may share SOL's
+ *    price, but never its balance or spendability.
+ * 3. Zero SPL holdings produce no row. The native zero row is the deliberate
+ *    exception because absence of a native balance must not look like absence
+ *    of the native asset.
  *
  * Row ORDER is native first, then the token rows in reader order. Consumers and
  * their snapshots depend on it.
@@ -44,6 +40,7 @@
 
 import { formatUnits } from "viem";
 
+import { SOLANA_NATIVE_ASSET_IDENTITY } from "../shared/solana-asset-identity.js";
 import { SOL_DECIMALS, SOL_MINT } from "../shared/solana-constants.js";
 import {
   readSolanaWalletBalances,
@@ -69,7 +66,10 @@ const SOL_NAME = "Solana";
  * decimals exactly (the same rule the EVM path follows).
  */
 export interface SolanaBalanceRow {
-  /** The mint address, base58, in the chain's own spelling. Case is IDENTITY. */
+  /**
+   * Route and pricing mint. For native SOL this is wSOL's mint, while
+   * `isNative` remains the authoritative asset discriminator.
+   */
   readonly mint: string;
   readonly symbol: string | null;
   readonly name: string | null;
@@ -79,7 +79,7 @@ export interface SolanaBalanceRow {
   readonly priceUsd: number | null;
   /** `amountRaw` scaled by `decimals`, times `priceUsd`. Null when unpriced. */
   readonly usdValue: number | null;
-  /** True for the native SOL row (including any wSOL account folded into it). */
+  /** True only for the native account-lamport row. Never inferred from `mint`. */
   readonly isNative: boolean;
 }
 
@@ -93,19 +93,10 @@ export interface SolanaBalanceRow {
  * snapshot that would read as "you hold nothing".
  */
 export function projectSolanaBalanceRows(read: SolanaWalletBalancesRead): SolanaBalanceRow[] {
-  const rows: SolanaBalanceRow[] = [];
-
-  const lamports = BigInt(read.lamports);
-  // Rule 3 needs the wSOL total BEFORE the native row is built, so the folded
-  // row is emitted once, already summed, and the output stays immutable.
-  let foldedWrappedLamports = 0n;
-  if (lamports > 0n) {
-    for (const token of read.tokens) {
-      if (token.mint === SOL_MINT) foldedWrappedLamports += BigInt(token.amountRaw);
-    }
-    const nativeRaw = (lamports + foldedWrappedLamports).toString();
-    rows.push({
-      mint: SOL_MINT,
+  const nativeRaw = BigInt(read.lamports).toString();
+  const rows: SolanaBalanceRow[] = [
+    {
+      mint: SOLANA_NATIVE_ASSET_IDENTITY.routeMint,
       symbol: SOL_SYMBOL,
       name: SOL_NAME,
       decimals: SOL_DECIMALS,
@@ -113,22 +104,23 @@ export function projectSolanaBalanceRows(read: SolanaWalletBalancesRead): Solana
       priceUsd: read.solPriceUsd,
       usdValue: usdValue(nativeRaw, SOL_DECIMALS, read.solPriceUsd),
       isNative: true,
-    });
-  }
+    },
+  ];
 
   for (const token of read.tokens) {
-    // Folded above. With NO native row (zero lamports) this branch is not taken
-    // and the wSOL account keeps its own ordinary row.
-    if (token.mint === SOL_MINT && lamports > 0n) continue;
-    // Rule 2 is ENFORCED here, not merely inherited. The reader already drops
+    // The zero-SPL rule is ENFORCED here, not merely inherited. The reader already drops
     // zero accounts, but this projector OWNS the rule and is called with reads
     // a caller may have assembled itself, so a zero holding must not become a
     // row just because it arrived in `tokens`.
     if (BigInt(token.amountRaw) === 0n) continue;
+    const isWrappedSol = token.mint === SOL_MINT;
     rows.push({
       mint: token.mint,
-      symbol: token.symbol,
-      name: token.name,
+      // A provider may label the wSOL mint as "SOL" for routing UX. A balance
+      // row names the spendability domain instead, so native SOL and wSOL are
+      // distinguishable even before the structural marker is inspected.
+      symbol: isWrappedSol ? "wSOL" : token.symbol,
+      name: isWrappedSol ? "Wrapped SOL" : token.name,
       decimals: token.decimals,
       amountRaw: token.amountRaw,
       priceUsd: token.priceUsd,

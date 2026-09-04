@@ -118,7 +118,7 @@ export async function runTopTraders(
       sortBy,
       sortDir,
       providerSortKey: document.providerSortKey,
-      note: `The provider calls this rank "${document.providerSortKey}". Two of its four rank names are wrong about what they measure, so the public name says what the column IS: netCashFlowUsd is dollars out minus dollars in, and currentHoldingValueUsd is the present value of the position. Ranking runs on the provider over the whole pair.${sortBy === "currentHoldingValueUsd" ? " The ORDER of these rows is the provider's own unrealized rank; the per-row currentHoldingValueUsd is derived here from balanceAmount and the pair price, because the provider ranks by it and does not emit it. The two agree in meaning but the row value is a Vex derivation and says so." : ""}`,
+      note: `The provider calls this rank "${document.providerSortKey}". Two of its four rank names are wrong about what they measure, so the public name says what the column IS: netCashFlowUsd is dollars out minus dollars in, and currentHoldingValueUsd is the present value of the position. Ranking runs on the provider over the whole pair.${sortBy === "currentHoldingValueUsd" ? " The ORDER of these rows is the provider's own unrealized rank; the per-row currentHoldingValueUsd is derived here from pairObservedRetainedAmount and the pair price, because the provider ranks by it and does not emit it. The two agree in meaning but the row value is a Vex derivation and says so." : ""}`,
     },
     filtersApplied: {
       // Always a number now: the window is 30 days whether or not the caller
@@ -137,7 +137,7 @@ export async function runTopTraders(
     /*
      * WHETHER THE HOLDING VALUE IS DERIVABLE AT ALL ON THIS RANKING.
      *
-     * `balanceAmount` nullity is SORT-CORRELATED and nothing said so. Measured
+     * Retained-amount nullity is SORT-CORRELATED and nothing said so. Measured
      * null counts out of 100: `currentHoldingValueUsd` 0, `netCashFlowUsd` asc
      * 0, `boughtUsd` desc 58, and `boughtUsd` asc and `netCashFlowUsd` desc
      * BOTH 100 of 100. So on two of the eight sort/direction combinations
@@ -153,7 +153,7 @@ export async function runTopTraders(
         (row) => row.balanceAmount !== null
       ).length,
       leaderboardSize: document.rows.length,
-      note: `The provider sends balanceAmount only on some rankings, and currentHoldingValueUsd is derived from it, so an all-null holding column is a property of THIS sort rather than a failure. Measured out of 100 rows: sortBy currentHoldingValueUsd returned 0 nulls, netCashFlowUsd with sortDir asc returned 0, boughtUsd desc returned 58, and boughtUsd asc and netCashFlowUsd desc each returned 100 nulls. This answer ranked by ${sortBy} ${sortDir}. For a reliably populated holding value, ask for sortBy currentHoldingValueUsd.`,
+      note: `The provider sends the retained amount (pairObservedRetainedAmount) only on some rankings, and currentHoldingValueUsd is derived from it, so an all-null holding column is a property of THIS sort rather than a failure. Measured out of 100 rows: sortBy currentHoldingValueUsd returned 0 nulls, netCashFlowUsd with sortDir asc returned 0, boughtUsd desc returned 58, and boughtUsd asc and netCashFlowUsd desc each returned 100 nulls. This answer ranked by ${sortBy} ${sortDir}. For a reliably populated holding value, ask for sortBy currentHoldingValueUsd.`,
     },
     labelCoverage: {
       labelPresent: rows.filter((row) => row.label !== null).length,
@@ -168,6 +168,21 @@ export async function runTopTraders(
       note: `This surface serves ONE leaderboard of up to ${TOP_TRADERS_PROVIDER_WINDOW} wallets per sort. There is no offset, no cursor and no page parameter, so wallets ranked below it are UNREACHABLE by asking again: they are not hidden behind a page. To see different wallets, change sortBy, sortDir or lookbackDays, which gives the provider a different question to rank. For a chronological or wallet-filtered view of any depth, use dexscreener__trades_list, which does page.`,
     },
     unknowns: {
+      /*
+       * The two derivations an agent was MEASURED performing off this payload
+       * anyway, as machine-readable refusals rather than prose. Both are also
+       * restated per row, beside the number that invites them, because the
+       * prose form of both already existed here on 2026-08-30 and lost.
+       */
+      supplyShare: {
+        status: "not_determinable",
+        reason: "No amount on this payload can be divided by token supply to obtain a share of it. pairObservedRetainedAmount is what a wallet retains of what it BOUGHT ON THIS POOL as this venue observed it: tokens acquired elsewhere, tokens transferred in or out, and every other pool are invisible here, and this endpoint never reports total supply. MEASURED CONSEQUENCE: the top 20 of these amounts on one pool summed to about 110 percent of that token's supply, which is what such a division produces.",
+        answeredBy: "dexscreener__pair_details_get with fields including holders and supply returns the provider's holder distribution with its own rowsCovered, which is the only supply-share evidence in this surface.",
+      },
+      entityRelationship: {
+        status: "unknown",
+        reason: "Whether two or more of these wallets are one actor cannot be established here. This endpoint reports per-address swap flow on one pool and no linkage of any kind, so summing rows to describe a single entity's position has no basis in this payload.",
+      },
       cannotDetermine: [
         "profit or loss",
         "cost basis",
@@ -180,7 +195,7 @@ export async function runTopTraders(
       note: "This endpoint sees ONE pool's swap history and nothing else. Every item above is invisible to it, so a wallet that looks like it sold everything may have moved tokens out, and a wallet that looks inactive may be trading the same token elsewhere. Do not describe any wallet here as profitable, smart money, or an exited holder.",
     },
     traderSemantics:
-      "netCashFlowUsd is dollars OUT minus dollars IN on this pair and is NOT profit. currentHoldingValueUsd is what the remaining position is worth now, not unrealized gain. retainedBoughtPct is the share of what the wallet BOUGHT here that it still holds, never a share of token supply. activeSpanSeconds is the time between a wallet's first and last trade on this pair, not a holding period.",
+      "netCashFlowUsd is dollars OUT minus dollars IN on this pair and is NOT profit. currentHoldingValueUsd is what the remaining position is worth now, not unrealized gain. retainedBoughtPct is the share of what the wallet BOUGHT here that it still holds, never a share of token supply. pairObservedRetainedAmount is that same retained quantity in tokens, venue-observed and never an on-chain balance; it has no denominator on this payload and is never divided by supply. activeSpanSeconds is the time between a wallet's first and last trade on this pair, not a holding period.",
     contextHandoff:
       "For what these wallets did and when, call dexscreener__trades_list with a maker address; for the price move they traded into, call dexscreener__candles_list.",
     sanitizedFields: [...sanitized].sort(),
@@ -209,7 +224,7 @@ export async function runTopTraders(
  * it: measured, 100 of 100 rows on a fresh unrealized rank carried a balance
  * and no value. It is therefore derived here, and every property of that
  * derivation is stated on the row: the exact decimal product of the provider's
- * own `balanceAmount` and the pair's current `priceUsd`, both echoed, with no
+ * own retained amount and the pair's current `priceUsd`, both echoed, with no
  * binary floating point anywhere on the token lexeme. When either factor is
  * absent or is not a plain decimal, the value is NULL with the missing inputs
  * named. An approximated money figure that looks like a measured one is
@@ -220,7 +235,7 @@ function holdingValue(
   priceUsd: string | null
 ): Record<string, unknown> {
   const missingInputs: string[] = [];
-  if (row.balanceAmount === null) missingInputs.push("balanceAmount");
+  if (row.balanceAmount === null) missingInputs.push("pairObservedRetainedAmount");
   if (priceUsd === null) missingInputs.push("pairPriceUsd");
   const product =
     row.balanceAmount === null || priceUsd === null
@@ -235,12 +250,25 @@ function holdingValue(
     // dishonest about its own precision.
     currentHoldingValueUsd: roundUsdCents(product),
     currentHoldingValueBasis: {
-      balanceAmount: row.balanceAmount,
+      pairObservedRetainedAmount: row.balanceAmount,
+      /*
+       * THIS BLOCK RESTATES THE AMOUNT, SO IT RESTATES THE REFUSAL.
+       *
+       * A basis block is read as working-out, and working-out is exactly where
+       * a reader picks a number up to divide it. The machine-readable status
+       * is therefore repeated in full; only the PROSE is a pointer, because
+       * the row's own copy sits a few keys away with the whole sentence.
+       */
+      pairObservedRetainedSupplyShare: {
+        status: "not_determinable",
+        reason: "Same refusal as the row's own pairObservedRetainedSupplyShare, which carries it in full.",
+      },
+      pairObservedRetainedEntityRelationship: "unknown",
       pairPriceUsd: priceUsd,
-      method: "exact decimal multiplication of balanceAmount by the pair's current priceUsd, displayed rounded to cents",
+      method: "exact decimal multiplication of pairObservedRetainedAmount by the pair's current priceUsd, displayed rounded to cents",
       exactProductUsd: product,
       derivationPrecision:
-        "THE INPUT IS ALREADY A PROVIDER ROUNDING, MEASURED IN SIGNIFICANT DIGITS RATHER THAN DECIMAL PLACES. balanceAmount arrives as a human decimal string carrying about 15 to 16 significant digits whatever the token's decimals and wherever the decimal point falls (measured over 600 live rows: \"1464600134847.065\" at 16 significant digits, and a small balance running to seven decimal places as \"0.0001992\" to reach the same precision), so the true balance can differ from it in the figures below that precision. The multiplication itself is exact over the lexemes given, which is why exactProductUsd carries every digit of it, but the displayed value is rounded to cents: emitting the full 18-significant-digit product would present far more precision than its inputs justify. A genuinely sub-cent position therefore displays as 0.00 here and is only readable in exactProductUsd beside it.",
+        "THE INPUT IS ALREADY A PROVIDER ROUNDING, MEASURED IN SIGNIFICANT DIGITS RATHER THAN DECIMAL PLACES. pairObservedRetainedAmount arrives as a human decimal string carrying about 15 to 16 significant digits whatever the token's decimals and wherever the decimal point falls (measured over 600 live rows: \"1464600134847.065\" at 16 significant digits, and a small balance running to seven decimal places as \"0.0001992\" to reach the same precision), so the true balance can differ from it in the figures below that precision. The multiplication itself is exact over the lexemes given, which is why exactProductUsd carries every digit of it, but the displayed value is rounded to cents: emitting the full 18-significant-digit product would present far more precision than its inputs justify. A genuinely sub-cent position therefore displays as 0.00 here and is only readable in exactProductUsd beside it.",
       ...(missingInputs.length === 0 ? {} : { missingInputs }),
       note:
         product === null
@@ -292,7 +320,31 @@ function shapeRow(
     netCashFlowUsd: row.netCashFlowUsd,
     amountBuy: row.amountBuy,
     amountSell: row.amountSell,
-    balanceAmount: row.balanceAmount,
+    /*
+     * THE FIELD NAME IS THE MECHANISM.
+     *
+     * This was `balanceAmount`, and MEASURED (live session 2026-08-30) an
+     * agent divided it by the token's total supply and told a user "the top
+     * wallet holds about 90 percent of total supply". The payload already
+     * forbade exactly that, in `unknowns.cannotDetermine` and again in
+     * `traderSemantics`, and the agent even hit the falsifying evidence (the
+     * top 20 of these amounts summed to about 110 percent of supply) and
+     * reasoned it away. A field named like an on-chain holding, sitting next
+     * to a number, beat a paragraph that forbade the division.
+     *
+     * So the name says what the value IS - the amount this wallet retains OF
+     * WHAT IT BOUGHT ON THIS POOL, as this venue observed it - and the two
+     * refusals below travel as FIELDS in the same shape, adjacent to the
+     * number, rather than as prose elsewhere in the envelope. This is not an
+     * on-chain balance: transfers in and out, other pools, other venues and
+     * the token's supply are all invisible to this endpoint.
+     */
+    pairObservedRetainedAmount: row.balanceAmount,
+    pairObservedRetainedSupplyShare: {
+      status: "not_determinable",
+      reason: "This endpoint sees ONE pool's swap flow. Token supply, transfers and off-pool holdings are invisible to it, so no share of supply can be computed from the amount above. See unknowns.supplyShare.",
+    },
+    pairObservedRetainedEntityRelationship: "unknown",
     ...holdingValue(row, priceUsd),
     retainedBoughtPct: row.retainedBoughtPct,
     firstSwapAtMs: row.firstSwapAtMs,

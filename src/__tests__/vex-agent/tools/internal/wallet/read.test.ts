@@ -19,12 +19,21 @@ import type { ChainFamily } from "@tools/khalani/types.js";
 // ── Mocks ───────────────────────────────────────────────────────
 
 const mockScan = vi.fn();
+// The shared Khalani price enrichment now runs on this path too, so its ONE
+// provider boundary is scripted to answer nothing: rows Khalani left unpriced
+// stay unpriced, and no test in this suite reaches the network.
+vi.mock("@tools/dexscreener/price-read.js", () => ({
+  readTokensPairs: () => Promise.resolve([]),
+  readTokenPools: () => Promise.resolve([]),
+}));
+
 vi.mock("@tools/khalani/balances.js", async (importOriginal) => {
   const original = await importOriginal<typeof import("@tools/khalani/balances.js")>();
   return {
     // Real selection helpers are trivially pure EXCEPT the parse (registry
     // fetch) — replace parse with a static two-chain registry (base + solana).
     getSelectedChainIdsForFamily: original.getSelectedChainIdsForFamily,
+    calculateTokensTotalUsd: original.calculateTokensTotalUsd,
     parseBalanceChainSelection: async (raw: string | undefined) => {
       if (!raw) return { rawProvided: false, byFamily: new Map() };
       const byFamily = new Map<ChainFamily, number[]>();
@@ -66,12 +75,29 @@ vi.mock("@tools/evm-chains/balances.js", () => ({
 
 const mockScanSet = vi.fn();
 vi.mock("@vex-agent/sync/local-chain-balance-sync.js", () => ({
-  buildTokenScanSet: (...a: unknown[]) => mockScanSet(...a),
+  buildLocalChainInventory: (...a: unknown[]) => mockScanSet(...a),
 }));
 
 vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
   resolveSelectedAddressForRead: () => "0xWALLET",
 }));
+
+import { buildLocalChainScanSet } from "@vex-agent/wallet-inventory/local-chain.js";
+
+/**
+ * The enumeration the mocked sync lane answers with: a seeds-and-pins scan set,
+ * built by the REAL union owner so the shape under test is never a hand-written
+ * imitation of it. No indexer, which is exactly the state a local chain reports
+ * when Blockscout answered nothing.
+ */
+function scanSetOf(addresses: readonly string[], chainId = 4663) {
+  return buildLocalChainScanSet({
+    chainId,
+    seedAddresses: addresses,
+    pinnedAddresses: [],
+    indexer: null,
+  });
+}
 
 const { handleWalletBalances } = await import(
   "../../../../../vex-agent/tools/internal/wallet/read.js"
@@ -102,7 +128,7 @@ function khalaniScan(family: ChainFamily, overrides: Record<string, unknown> = {
 beforeEach(() => {
   vi.clearAllMocks();
   mockScan.mockImplementation(async ({ family }: { family: ChainFamily }) => khalaniScan(family));
-  mockScanSet.mockResolvedValue([VEX]);
+  mockScanSet.mockResolvedValue(scanSetOf([VEX]));
   // 0.005 ETH priced $2000 + 2 VEX priced $0.5.
   mockReadLocal.mockResolvedValue({
     nativeWei: 5_000000000000000n,
@@ -131,7 +157,8 @@ describe("handleWalletBalances — inclusive chain scope", () => {
     const tokens = snap.tokens as Array<Record<string, unknown>>;
     const native = tokens.find((t) => t.address === NATIVE)!;
     expect(native.symbol).toBe("ETH");
-    expect(native.balance).toBe("5000000000000000");
+    expect(native.balanceRaw).toBe("5000000000000000");
+    expect(native.balance).toBe("0.005");
     expect(native.priceUsd).toBe("2000");
     // 0.005 * 2000 + 2 * 0.5 = 11.
     expect(data.totalUsd).toBeCloseTo(11);
@@ -147,7 +174,30 @@ describe("handleWalletBalances — inclusive chain scope", () => {
   it("an omitted filter scans all Khalani chains AND every local chain", async () => {
     mockScan.mockImplementation(async ({ family, chainIds }: { family: ChainFamily; chainIds?: number[] }) => {
       expect(chainIds).toBeUndefined(); // unfiltered Khalani scan
-      return khalaniScan(family, family === "eip155" ? { totalUsd: 7, scannedChainIds: [8453] } : {});
+      // The Khalani $7 is carried by a real ROW, not by a bare `totalUsd`
+      // field: the handler now re-derives that number from the rows AFTER the
+      // shared price enrichment has filled whatever nulls it could, so a
+      // scripted total that no row backs would be a fiction no production scan
+      // can produce (the scan owner reduces the same rows).
+      return khalaniScan(
+        family,
+        family === "eip155"
+          ? {
+              tokens: [
+                {
+                  symbol: "KHL",
+                  name: "Khalani Token",
+                  address: "0xk",
+                  chainId: 8453,
+                  decimals: 18,
+                  extensions: { balance: "7000000000000000000", price: { usd: "1" } },
+                },
+              ],
+              totalUsd: 7,
+              scannedChainIds: [8453],
+            }
+          : {},
+      );
     });
     const res = await handleWalletBalances({ walletFamily: "eip155" }, CONTEXT);
     expect(res.success).toBe(true);

@@ -59,6 +59,7 @@ describe("khalani balances barrel surface", () => {
       scannedChainIds: [],
       chainErrors: [],
       totalUsd: 0,
+      rejectedEntries: [],
     } satisfies TokenBalanceScanResult;
     expect([_err, _selection, _scan]).toHaveLength(3);
   });

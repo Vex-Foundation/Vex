@@ -86,7 +86,7 @@
  * `agent_activity` write.
  */
 
-import { Connection, Keypair, VersionedTransaction } from "@solana/web3.js";
+import { Connection, Keypair, PublicKey, VersionedMessage, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
 import { VexError, ErrorCodes } from "../../../../errors.js";
 import { deserializeVersionedTx } from "./deserialize.js";
@@ -115,9 +115,36 @@ export type SolanaSignerContract =
    */
   | { readonly kind: "coSigned"; readonly requiredSigners: readonly string[] };
 
+/**
+ * What the pre-sign hook is given: the message EXACTLY as it will be signed.
+ *
+ * The blockhash is already settled (verified or replaced) when this runs, so a
+ * fee quoted from `message` is the fee of the transaction that is about to
+ * exist - not of an earlier draft of it.
+ */
+export interface PreSignContext {
+  readonly message: VersionedMessage;
+  /** The wallet whose signature is about to be produced. */
+  readonly signer: PublicKey;
+}
+
 export interface PrepareVersionedTxOptions {
   /** Defaults to the shared cached Solana connection. Inject for tests or a non-default RPC. */
   readonly connection?: Connection;
+  /**
+   * The AUTHORITATIVE pre-sign window (contract C2.6).
+   *
+   * Runs after every signer and blockhash check has passed and immediately
+   * before the signature is produced, so a caller can re-read the chain and
+   * REFUSE by throwing. Nothing has been signed, staged or broadcast at that
+   * point, so a throw is a clean pre-broadcast failure the caller finalizes on
+   * its existing intent row.
+   *
+   * A quote-time balance check is disclosure; this is the check. The window
+   * exists because minutes can pass between the two, and the wallet is not
+   * ours alone in the meantime.
+   */
+  readonly beforeSign?: (context: PreSignContext) => Promise<void>;
   /** See module doc — VERIFY mode. Omit for REPLACE / MANDATORY-HEIGHT mode. */
   readonly knownBlockhash?: KnownSolanaBlockhash;
   /** Defaults to `soleSigner`, so every pre-existing call site keeps its exact contract. */
@@ -156,6 +183,13 @@ export async function prepareVersionedTx(
   const evidence = options.knownBlockhash
     ? verifyKnownBlockhash(tx, options.knownBlockhash)
     : await replaceWithFreshBlockhash(tx, options.connection ?? getSolanaConnection());
+
+  // AUTHORITATIVE PRE-SIGN WINDOW - after the signer and blockhash contracts
+  // hold, before a signature exists. A throw here refuses the transaction
+  // outright; nothing has been signed.
+  if (options.beforeSign) {
+    await options.beforeSign({ message: tx.message, signer: signer.publicKey });
+  }
 
   signVersionedTx(tx, [signer]);
   assertOnlyOurSlotChanged(tx, slotsBefore, ourSlot);

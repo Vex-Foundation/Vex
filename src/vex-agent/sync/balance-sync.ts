@@ -1,5 +1,5 @@
 /**
- * Balance sync — Khalani → proj_balances → proj_portfolio_snapshots.
+ * Balance sync - Khalani → proj_balances → proj_portfolio_snapshots.
  *
  * Khalani balance reads are scanned per chain, then written transactionally per
  * chain. Absent tokens are removed only for chains that were actually scanned.
@@ -15,13 +15,27 @@ import * as balancesRepo from "@vex-agent/db/repos/balances.js";
 import type { BalanceRow } from "@vex-agent/db/repos/balances.js";
 import { hasPendingActivityForWallets } from "@vex-agent/db/repos/agent-activity.js";
 import { resolveChainHint } from "./chains.js";
-import { computeBalanceUsd, fillMissingKhalaniPrices } from "./khalani-price-fallback.js";
+import { enrichKhalaniBalancePrices } from "@tools/khalani/balance-price-enrichment.js";
 import { syncLocalChainForWallet } from "./local-chain-balance-sync.js";
 import { syncSolanaWalletBalances } from "./solana-balance-sync.js";
 import { SOLANA_SYNTHETIC_CHAIN_ID } from "../../constants/solana-chain.js";
 import { enrichPendleBalances, seedPendleChainBalances } from "./pendle-enrichment.js";
 import { PENDLE_SUPPORTED_CHAIN_IDS } from "@tools/pendle/chains.js";
 import { runSingleFlightBalanceSync } from "./balance-sync/single-flight.js";
+import { getPool } from "@vex-agent/db/client.js";
+import {
+  readActivityFence,
+  readPublicationBlockers,
+  type ActivityFence,
+} from "./balance-sync/publication-gate.js";
+import { salvageRejectedEntries } from "./balance-sync/rejected-entry-salvage.js";
+import {
+  logPublicationOutcome,
+  publishSnapshotGroup,
+  type PublicationOutcome,
+  type PublicationSkipReason,
+  type SnapshotDraft,
+} from "./balance-sync/snapshot-publication.js";
 import { describeFailureForLog } from "@utils/error-summary.js";
 import logger from "@utils/logger.js";
 
@@ -56,6 +70,12 @@ export interface FullSyncResult {
   totalUsd: number;
   /** Shared id tying this cycle's per-wallet snapshot rows together. */
   snapshotGroupId: string;
+  /**
+   * Present iff `snapshots` is empty because publication was WITHHELD. The
+   * cycle still refreshed balances; only the snapshot was skipped, and callers
+   * that told the user "recorded" must read this before saying so.
+   */
+  snapshotSkippedReason?: PublicationSkipReason;
 }
 
 export interface SelectiveSyncResult {
@@ -67,14 +87,14 @@ export interface SelectiveSyncResult {
 // ── Core sync ───────────────────────────────────────────────────
 
 /**
- * Sync balances for one wallet — Khalani chains via the Khalani scan, LOCAL
+ * Sync balances for one wallet - Khalani chains via the Khalani scan, LOCAL
  * (non-Khalani) EVM chains via direct RPC. Both write the same transactional
  * per-chain replace, so callers (`fullBalanceSync`, `selectiveBalanceSync`) and
  * the snapshot / active_chains logic treat every chain uniformly.
  *
  * Routing is Khalani-registry-FIRST (same order as the inclusive resolver): a
  * chain genuinely present in the Khalani dynamic registry is synced via Khalani
- * even if the local registry also lists it — if Khalani later adds 4663, Khalani
+ * even if the local registry also lists it - if Khalani later adds 4663, Khalani
  * wins automatically. Only chains in the local registry AND absent from Khalani
  * go to the direct-RPC path. When the ONLY requested chains are local, Khalani
  * is not called at all. For every pre-existing case (no local chain in scope)
@@ -101,7 +121,7 @@ export async function syncWalletBalances(
     if (!local.skipped) localChainsUpdated += 1;
   }
 
-  // Pendle chains Khalani CANNOT scan — seed PT balances via the chain's own RPC
+  // Pendle chains Khalani CANNOT scan - seed PT balances via the chain's own RPC
   // (same transactional per-chain replace). Also BEFORE the Khalani total-USD
   // read, and fail-soft per chain (a skipped chain keeps its last-good rows).
   let pendleSeedTokens = 0;
@@ -136,7 +156,7 @@ export async function syncWalletBalances(
 
   let base: SyncResult;
   if (skipKhalani) {
-    // Only local / Pendle-seed chains were requested — do NOT call Khalani (an
+    // Only local / Pendle-seed chains were requested - do NOT call Khalani (an
     // empty filter there means "all Khalani chains"). Recompute the total from DB.
     const walletBalances = await balancesRepo.getBalances(address);
     base = {
@@ -163,7 +183,7 @@ export async function syncWalletBalances(
 }
 
 /**
- * Split a requested chain scope into Khalani vs local vs Pendle-seed ids —
+ * Split a requested chain scope into Khalani vs local vs Pendle-seed ids -
  * Khalani registry membership FIRST, then the local registry, then the Pendle
  * registry:
  * - A chain present in the Khalani dynamic registry routes to Khalani even if
@@ -171,7 +191,7 @@ export async function syncWalletBalances(
  *   chains Khalani DOES cover are enriched in-place there (see the merge loop).
  * - A chain is "local" only when it is in the local registry AND not in Khalani.
  * - A chain is "Pendle-seed" only when it is a Pendle chain absent from BOTH the
- *   Khalani registry and the local registry — Khalani's scan would THROW for it
+ *   Khalani registry and the local registry - Khalani's scan would THROW for it
  *   (`khalani/balances/scan.ts`), so PT balances are seeded direct from its RPC.
  * - `chainIds` undefined → all Khalani chains (khalani filter undefined) + all
  *   local-only EVM chains + all Pendle chains Khalani cannot scan (eip155 only).
@@ -182,7 +202,7 @@ export async function syncWalletBalances(
  *   direct from its own RPC (`solanaRpc`), and Khalani is suppressed unless
  *   that read is skipped, in which case it is the fallback.
  * - Fail-open: if the Khalani registry fetch itself fails (`khalaniIds === null`),
- *   partition on local-registry membership alone and seed NOTHING — a standalone
+ *   partition on local-registry membership alone and seed NOTHING - a standalone
  *   Pendle replace could delete cached Khalani rows for a chain Khalani actually
  *   covers, so Pendle chains fall through to the Khalani path, which surfaces its
  *   own error. Local chains keep syncing during a Khalani outage.
@@ -224,7 +244,7 @@ async function partitionChainScope(
   }
 
   if (family !== "eip155") {
-    // No local / Pendle chains outside EVM — preserve existing behavior exactly.
+    // No local / Pendle chains outside EVM - preserve existing behavior exactly.
     return {
       khalaniChainIds: chainIds,
       localChainIds: [],
@@ -307,13 +327,22 @@ async function syncKhalaniWalletBalances(
   chainIds?: number[],
   lastGoodProtectedChainIds: readonly number[] = [],
 ): Promise<SyncResult> {
-  // `address` is supplied by the caller (inventory iteration). Address-only —
+  // `address` is supplied by the caller (inventory iteration). Address-only -
   // the sync path never touches key material.
 
   // Fetch from Khalani. Scanning per chain avoids incomplete multi-chain
   // balance responses and lets cleanup distinguish "empty" from "not scanned".
   const scan = await getTokenBalancesAcrossChains({ address, family, chainIds });
-  const tokens = scan.tokens;
+
+  // Khalani's own price wins wherever it exists; this only fills the nulls it
+  // started returning on 2026-08-26. It runs on the PROVIDER's rows, before
+  // they become durable rows and before the empty-chain cleanup and the Pendle
+  // merge, so it sees exactly what Khalani returned and nothing synthesized -
+  // and it is the SAME pass the live wallet read runs, so the two lanes cannot
+  // disagree about what a holding is worth. Fail-soft: an unpriceable chain
+  // keeps its rows untouched.
+  const enriched = await enrichKhalaniBalancePrices(scan.tokens);
+  const tokens = enriched.rows.map((row) => row.token);
 
   // Group by chainId for transactional replace
   const byChain = new Map<number, BalanceRow[]>();
@@ -324,13 +353,18 @@ async function syncKhalaniWalletBalances(
     byChain.set(token.chainId, existing);
   }
 
-  // Khalani's own price wins wherever it exists; this only fills the nulls it
-  // started returning on 2026-08-26. Runs BEFORE the empty-chain cleanup and
-  // the Pendle merge, so it sees exactly the rows Khalani produced and nothing
-  // synthesized. Fail-soft: an unpriceable chain keeps its rows untouched.
-  await fillMissingKhalaniPrices(byChain);
+  // Entries the Khalani boundary refused for their decimals alone. They are
+  // holdings, so they are not allowed to vanish here; see
+  // `salvageRejectedEntries` for what each of the two cases costs.
+  const rejectedEntries = scan.rejectedEntries ?? [];
+  const replaceBlockedChainIds = salvageRejectedEntries({
+    family,
+    address,
+    rejectedEntries,
+    byChain,
+  });
 
-  // Get previously known chains — if Khalani now returns nothing for a chain,
+  // Get previously known chains - if Khalani now returns nothing for a chain,
   // we must replace with empty to remove stale "ghost" balances
   const previousChains = await balancesRepo.getBalancesByChain(address);
   const refreshedChainIds = new Set(scan.scannedChainIds);
@@ -338,6 +372,9 @@ async function syncKhalaniWalletBalances(
   for (const prev of previousChains) {
     // Only clean chains that the scanner actually refreshed successfully.
     if (!refreshedChainIds.has(prev.chainId)) continue;
+    // A chain whose inventory is not fully recoverable is never emptied either:
+    // the destructive replace is off for it this cycle.
+    if (replaceBlockedChainIds.has(prev.chainId)) continue;
     if (byChain.has(prev.chainId)) continue;
     if (protectedChainIds.has(prev.chainId)) {
       // Khalani is only the fallback here and it returned nothing for this
@@ -351,7 +388,7 @@ async function syncKhalaniWalletBalances(
     byChain.set(prev.chainId, []); // empty = delete all tokens for this chain
   }
 
-  // Pendle enrichment (P2) — merge tracked PT balances into EACH Pendle chain the
+  // Pendle enrichment (P2) - merge tracked PT balances into EACH Pendle chain the
   // Khalani scan actually refreshed, BEFORE the per-chain replace. SCOPE LOCK
   // (G2#2): run ONLY for refreshed chains, so a sync scoped elsewhere never
   // synthesizes/replaces those rows. Pendle chains Khalani CANNOT scan are seeded
@@ -359,6 +396,7 @@ async function syncKhalaniWalletBalances(
   // Khalani rows); the DB read inside PROPAGATES (2b doctrine).
   for (const chainId of PENDLE_SUPPORTED_CHAIN_IDS) {
     if (!refreshedChainIds.has(chainId)) continue;
+    if (replaceBlockedChainIds.has(chainId)) continue;
     const existing = byChain.get(chainId) ?? [];
     const merged = await enrichPendleBalances(family, address, chainId, existing);
     if (merged.length > 0 || byChain.has(chainId)) {
@@ -366,7 +404,7 @@ async function syncKhalaniWalletBalances(
     }
   }
 
-  // Replace per chain (transactional) — empty arrays delete stale rows
+  // Replace per chain (transactional) - empty arrays delete stale rows
   let tokensUpdated = 0;
   for (const [chainId, rows] of byChain) {
     const count = await balancesRepo.replaceBalancesForChain(address, chainId, rows);
@@ -383,6 +421,8 @@ async function syncKhalaniWalletBalances(
     tokens: tokensUpdated,
     chains: byChain.size,
     chainErrors: scan.chainErrors.length,
+    rejectedEntries: rejectedEntries.length,
+    replaceBlockedChains: replaceBlockedChainIds.size,
     totalUsd: totalUsd.toFixed(2),
   });
 
@@ -398,11 +438,22 @@ async function syncKhalaniWalletBalances(
 /**
  * Snapshot policy for one `fullBalanceSync` cycle.
  *
- * - `"always"` — take the snapshot regardless of in-flight transactions. Used by
- *   `initSync`, whose startup snapshot is authoritative by design, and by the
- *   user-initiated refresh, which is an explicit "show me now".
- * - `"when-settled"` — take the snapshot ONLY if no pending activity exists.
- *   Used by the periodic job and the `balances_snapshot` job.
+ * ## `"always"` NO LONGER BYPASSES THE GUARD (WP8)
+ *
+ * It used to mean "take the snapshot regardless of in-flight transactions",
+ * which contradicts the invariant the guard exists for: a snapshot taken
+ * mid-transaction becomes the baseline every later P&L figure is measured
+ * against, and a startup or a user tapping refresh does not make a half-settled
+ * portfolio any more true. There is no caller important enough to corrupt the
+ * baseline for, so BOTH policies now pass through the publication gate.
+ *
+ * What survives is a FRESHNESS distinction, and it is the only thing the two
+ * values still mean to `./balance-sync/single-flight.ts`:
+ *
+ * - `"always"` - this caller (startup, the user's explicit refresh) wants an
+ *   attempt at ITS OWN moment, so it will not adopt a run that started earlier;
+ *   it queues and runs its own cycle. The attempt may still be withheld.
+ * - `"when-settled"` - the periodic jobs, happy to adopt any in-flight run.
  */
 export type SnapshotPolicy = "always" | "when-settled";
 
@@ -411,12 +462,20 @@ export interface FullBalanceSyncOptions {
 }
 
 /**
- * Full balance sync — both wallet families + portfolio snapshot.
+ * Full balance sync - both wallet families + portfolio snapshot.
  *
- * ## THE SNAPSHOT GUARD IS GROUP-WIDE, DELIBERATELY
+ * ## THE SNAPSHOT GUARD IS GROUP-WIDE AND SERIALIZED, DELIBERATELY
  *
- * `hasPendingActivityForWallets` is computed ONCE, over EVERY wallet, BEFORE the
- * loop. Deciding per wallet inside the loop would emit a HALF-POPULATED
+ * The whole group is published in ONE short transaction that holds
+ * `LOCK TABLE agent_activity IN SHARE MODE`, so the "nothing is in flight"
+ * predicate is true AT THE INSTANT OF THE INSERT and stays true until commit.
+ * The previous design evaluated it once, before a scan lasting minutes, which
+ * a transaction starting mid-scan was simply invisible to. See
+ * `./balance-sync/publication-gate.ts` for why a lock and not a re-read, and
+ * for the transition fence that additionally catches a transaction which both
+ * begins and settles inside the scan.
+ *
+ * Deciding per wallet inside the loop would emit a HALF-POPULATED
  * `snapshotGroupId` group, and the group id exists precisely so a cycle can be
  * stitched back together from rows with distinct `created_at`. A half group also
  * breaks `pnlVsPrev`, which compares against the previous snapshot per wallet: a
@@ -428,114 +487,162 @@ export interface FullBalanceSyncOptions {
  * Only the SNAPSHOT is suppressed. `syncWalletBalances` →
  * `replaceBalancesForChain` runs unconditionally, so the live balance display
  * stays fresh while a transaction is in flight. Suppressing both would freeze
- * the user's portfolio for the whole duration of a pending swap.
+ * the user's portfolio for the whole duration of a pending swap. A publication
+ * that is skipped - including one skipped because the lock was busy - is
+ * REPORTED (`snapshotSkippedReason`), never silent.
  */
 export function fullBalanceSync(options: FullBalanceSyncOptions = {}): Promise<FullSyncResult> {
   const policy = options.snapshot ?? "when-settled";
-  return runSingleFlightBalanceSync(policy, () => runFullBalanceSync(policy));
+  return runSingleFlightBalanceSync(policy, () => runFullBalanceSync());
 }
 
 /**
  * The UNGUARDED core. Private on purpose: it mints a `snapshotGroupId` and
  * writes a snapshot group, so calling it concurrently is the corruption
- * `runSingleFlightBalanceSync` exists to prevent. Every caller — startup, the
- * periodic `balances` job, both sync-worker branches, and the user refresh —
+ * `runSingleFlightBalanceSync` exists to prevent. Every caller - startup, the
+ * periodic `balances` job, both sync-worker branches, and the user refresh -
  * reaches it through the exported wrapper above.
  */
-async function runFullBalanceSync(policy: SnapshotPolicy): Promise<FullSyncResult> {
+async function runFullBalanceSync(): Promise<FullSyncResult> {
   // One group id ties every per-wallet snapshot row from this cycle together,
   // so an aggregate view can stitch a cycle back despite distinct created_at.
   const snapshotGroupId = randomUUID();
   const wallets: SyncResult[] = [];
-  const snapshots: WalletSnapshotResult[] = [];
   let aggregateTotalUsd = 0;
 
   const walletEntries = (["eip155", "solana"] as const).flatMap((family) =>
     listWallets(toInventoryFamily(family)).map((entry) => ({ family, address: entry.address })),
   );
+  const walletAddresses = walletEntries.map((entry) => entry.address);
 
-  const snapshotAllowed = await isSnapshotAllowed(
-    policy,
-    walletEntries.map((entry) => entry.address),
-  );
+  // Stamped BEFORE the scan. Everything the gate later compares against is
+  // established here, while the balances we are about to read are still true.
+  const fenceAtCycleStart = await readCycleStartFence(walletAddresses);
+
+  // Cheap pre-flight, NOT the decision. It exists only so a cycle that is
+  // already obviously blocked does not pay for building per-wallet position
+  // breakdowns it will throw away. The authoritative check runs under the lock.
+  const preflightBlocked = fenceAtCycleStart === null || await isObviouslyBlocked(walletAddresses);
 
   // Project EVERY inventory wallet (≤3 EVM + ≤3 Solana), one snapshot each.
+  // Every DTO is prepared HERE, outside any transaction: gathering is minutes
+  // of provider and database work and must never happen under the lock.
+  const drafts: SnapshotDraft[] = [];
   for (const { family, address } of walletEntries) {
     const sync = await syncWalletBalances(family, address);
     wallets.push(sync);
     aggregateTotalUsd += sync.totalUsd;
 
-    if (!snapshotAllowed) continue;
+    if (preflightBlocked) continue;
 
     const positions = await buildPositionsBreakdown(family, address);
     const positionData = positions as { chains?: Array<{ chainId: number }> };
     const chainSet = new Set<string>();
     for (const c of positionData.chains ?? []) chainSet.add(String(c.chainId));
 
-    const { snapshotId, pnlVsPrev } = await balancesRepo.insertSnapshot({
+    drafts.push({
       walletFamily: family,
       walletAddress: address,
-      snapshotGroupId,
       totalUsd: sync.totalUsd,
       positions,
       activeChains: [...chainSet],
     });
-    snapshots.push({
-      walletFamily: family,
-      walletAddress: address,
-      snapshotId,
-      totalUsd: sync.totalUsd,
-      pnlVsPrev,
-    });
   }
+
+  const outcome: PublicationOutcome = preflightBlocked
+    ? await describePreflightBlock(walletAddresses, fenceAtCycleStart === null)
+    : await publishSnapshotGroup({
+        snapshotGroupId,
+        walletAddresses,
+        fenceAtCycleStart,
+        drafts,
+      });
+  logPublicationOutcome(outcome, snapshotGroupId);
+
+  const snapshots: WalletSnapshotResult[] = outcome.published
+    ? outcome.rows.map((row) => ({
+        walletFamily: row.walletFamily,
+        walletAddress: row.walletAddress,
+        snapshotId: row.snapshotId,
+        totalUsd: row.totalUsd,
+        pnlVsPrev: row.pnlVsPrev,
+      }))
+    : [];
 
   logger.info("sync.balance.full_completed", {
     wallets: wallets.length,
     snapshots: snapshots.length,
-    snapshotSkipped: !snapshotAllowed,
+    snapshotSkipped: !outcome.published,
+    snapshotSkippedReason: outcome.published ? null : outcome.reason,
     totalUsd: aggregateTotalUsd.toFixed(2),
     snapshotGroupId,
   });
 
-  return { wallets, snapshots, totalUsd: aggregateTotalUsd, snapshotGroupId };
+  return {
+    wallets,
+    snapshots,
+    totalUsd: aggregateTotalUsd,
+    snapshotGroupId,
+    ...(outcome.published ? {} : { snapshotSkippedReason: outcome.reason }),
+  };
 }
 
 /**
- * The group-wide gate. `"always"` short-circuits without a query; otherwise ONE
- * existence check covers every pending kind (swap, launch, Solana leg, logical
- * bridge fill) across every wallet in this cycle.
- *
- * A failed check is treated as "pending" — the conservative direction. Guessing
- * "settled" because the DB hiccuped is how a mid-settlement snapshot gets
- * written, and a missing snapshot is recoverable while a wrong one poisons
- * `pnlVsPrev` for every later cycle.
+ * The pre-flight already decided to withhold; this only ENUMERATES why, so the
+ * report still names the blocking rows and can escalate one that has been
+ * unreconciled past the threshold. It reads on the pool, deliberately outside
+ * any lock: it informs a decision that is already made and can influence
+ * nothing. A failure to enumerate downgrades the report, never the decision.
  */
-async function isSnapshotAllowed(
-  policy: SnapshotPolicy,
+async function describePreflightBlock(
   walletAddresses: readonly string[],
-): Promise<boolean> {
-  if (policy === "always") return true;
+  fenceUnavailable: boolean,
+): Promise<PublicationOutcome> {
+  const reason: PublicationSkipReason = fenceUnavailable
+    ? "gate_probe_failed"
+    : "in_flight_money_state";
   try {
-    const pending = await hasPendingActivityForWallets(walletAddresses);
-    if (pending) {
-      logger.info("sync.balance.snapshot_deferred", {
-        reason: "pending_activity",
-        hint: "balances still refreshed; the snapshot resumes once every transaction terminalizes",
-      });
-    }
-    return !pending;
+    return { published: false, reason, blockers: await readPublicationBlockers(getPool(), walletAddresses) };
   } catch (err) {
-    // The probe talks to Postgres, and a driver/connection failure carries the
-    // connection string — password included — in its message. The canonical
-    // bounded summary is the ONLY thing that may reach the log file (rule 06;
-    // the logger itself redacts nothing).
-    logger.warn("sync.balance.pending_probe_failed", { error: describeFailureForLog(err) });
-    return false;
+    logger.warn("sync.balance.blocker_detail_failed", { error: describeFailureForLog(err) });
+    return { published: false, reason, blockers: [] };
   }
 }
 
 /**
- * Selective sync — only affected chains after a trade. Syncs EVERY inventory
+ * The cycle-start activity generation. `null` means the stamp could not be
+ * taken, and without it the transition fence cannot prove anything - so the
+ * cycle publishes nothing. Unknown is blocked, never assumed settled.
+ */
+async function readCycleStartFence(
+  walletAddresses: readonly string[],
+): Promise<ActivityFence | null> {
+  try {
+    return await readActivityFence(getPool(), walletAddresses);
+  } catch (err) {
+    // A pg connection failure carries the connection string - password
+    // included - so only the canonical bounded summary may reach the log.
+    logger.warn("sync.balance.activity_fence_failed", { error: describeFailureForLog(err) });
+    return null;
+  }
+}
+
+/**
+ * Pre-flight ONLY (see the call site). A failed probe answers "blocked", which
+ * costs a snapshot and never risks one: guessing "settled" because the database
+ * hiccuped is how a mid-settlement snapshot gets written.
+ */
+async function isObviouslyBlocked(walletAddresses: readonly string[]): Promise<boolean> {
+  try {
+    return await hasPendingActivityForWallets(walletAddresses);
+  } catch (err) {
+    logger.warn("sync.balance.pending_probe_failed", { error: describeFailureForLog(err) });
+    return true;
+  }
+}
+
+/**
+ * Selective sync - only affected chains after a trade. Syncs EVERY inventory
  * wallet for the affected family (bounded ≤3) because the background pipeline
  * has no session context to know which wallet traded. Does NOT snapshot
  * (snapshots are produced only by full sync).
@@ -555,13 +662,41 @@ export async function selectiveBalanceSync(chainHint: string): Promise<Selective
 
 // ── Helpers ─────────────────────────────────────────────────────
 
+/**
+ * USD value of a raw token amount at a USD price, or null when either is absent.
+ *
+ * Exported for its own cases in `balance-sync.test.ts`; it is not a public
+ * contract. The float math is the pre-existing display boundary for the
+ * `balanceUsd` column and is deliberately unchanged: the raw amount stays a
+ * string, and only the USD DISPLAY value is a float.
+ *
+ * `decimals` is nullable on a persisted `BalanceRow`. Without it a raw amount
+ * has no human value at all, so the answer is null - never a raw integer
+ * multiplied by a price.
+ */
+export function computeBalanceUsd(
+  balanceRaw: string,
+  decimals: number | null,
+  priceUsd: number | null,
+): number | null {
+  if (priceUsd === null || decimals === null || balanceRaw === "0") return null;
+  try {
+    const balanceHuman = Number(BigInt(balanceRaw)) / Math.pow(10, decimals);
+    return balanceHuman * priceUsd;
+  } catch {
+    // BigInt parse failure - no USD value, never a guessed one.
+    return null;
+  }
+}
+
 function mapTokenToBalance(family: ChainFamily, walletAddress: string, token: KhalaniToken): BalanceRow {
   const balanceRaw = token.extensions?.balance ?? "0";
   const priceUsdStr = token.extensions?.price?.usd;
   const priceUsd = priceUsdStr ? parseFloat(priceUsdStr) : null;
 
-  // Same arithmetic the DexScreener price fallback uses, so a row priced by
-  // either source computes its USD value identically.
+  // One arithmetic for both sources: by the time a token reaches here its
+  // price is either Khalani's own or the one the shared enrichment filled in,
+  // and the column must not depend on which.
   const balanceUsd = computeBalanceUsd(balanceRaw, token.decimals, priceUsd);
 
   return {

@@ -29,8 +29,12 @@ import {
   prepareVersionedTx,
   type PreparedSolanaTx,
 } from "@tools/solana-ecosystem/shared/solana-transaction.js";
+import { resolveSolanaSwapInputAsset } from "@tools/solana-ecosystem/shared/solana-asset-identity.js";
 import { walletScopeErrorToResult } from "@vex-agent/tools/internal/wallet/resolve.js";
-import { findFreshMatchedSwapPrequote } from "@vex-agent/tools/protocols/swap-prequote.js";
+import {
+  findFreshMatchedSwapPrequote,
+  type MatchedSwapPrequote,
+} from "@vex-agent/tools/protocols/swap-prequote.js";
 import {
   createAgentActivityIntent,
   createAgentActivityPreBroadcastFailure,
@@ -42,11 +46,18 @@ import { effectiveMaxSlippageBps } from "@vex-agent/tools/protocols/slippage-pol
 import { formatLamportsAsSol } from "@vex-agent/tools/protocols/amount-display.js";
 import logger from "@utils/logger.js";
 
+import { VexError, ErrorCodes } from "../../../../../../errors.js";
 import { SOLANA_SYNTHETIC_CHAIN_ID } from "../../../../../../constants/solana-chain.js";
 import type { ProtocolHandler } from "../../../types.js";
 import type { ToolResult } from "../../../../types.js";
 import { str, fail } from "../../../handler-helpers.js";
 import { buildActivityTokenLeg } from "../../activity-token-leg.js";
+import {
+  approvedNativeCostRefusal,
+  judgeJupiterSpendability,
+  observeJupiterSwapSpendability,
+  preSignSpendabilityRefusal,
+} from "../../swap-spendability.js";
 import { broadcastStagedSolanaTx } from "../../staged-broadcast.js";
 import { humanAmountToAtomic } from "./swap-amount.js";
 import {
@@ -95,19 +106,44 @@ export const swapExecuteHandler: ProtocolHandler = async (p, ctx): Promise<ToolR
   if (!converted.ok) return fail(`${toolId} failed: ${converted.reason}`);
   const amountRaw = converted.amountRaw;
 
-  // R4: re-fetch the SAME fresh matched quote the prequote gate
-  // (executeProtocolTool, BEFORE this handler runs) already proved exists.
-  // The gate's hash match already proves every REQUEST param (mints,
-  // amount, fee/tip/CU-strategy/DEX-filter/maxAccounts/wrap knobs) is
-  // identical to the quote; what it CANNOT prove is that this fresh fee
-  // derivation still lands on the same treasury ATA - that check runs
-  // explicitly below, against the persisted preview read here.
+  // Same syntax rule as the quote (owner decision 2026-08-31), decided again
+  // here rather than restored from the row: the quote and the execute must
+  // reach the SAME asset from the same params, and a divergence must refuse
+  // rather than silently spend the other balance.
+  const inputAsset = resolveSolanaSwapInputAsset({
+    query: inputRaw,
+    resolvedMint: inputToken.address,
+    wrapAndUnwrapSol: knobs.wrapAndUnwrapSol,
+  });
+  if (!inputAsset.ok) return fail(`${toolId} failed: ${inputAsset.message}`);
+
+  // R4: re-read the authorizing quote the prequote gate (executeProtocolTool,
+  // BEFORE this handler runs) already validated. The gate's hash match proves
+  // every REQUEST param (mints, amount, fee/tip/CU-strategy/DEX-filter/
+  // maxAccounts/wrap knobs) is identical to the quote; what it CANNOT prove is
+  // that this fresh fee derivation still lands on the same treasury ATA - that
+  // check runs explicitly below, against the persisted preview read here.
+  //
+  // THE READ IS GUARDED, not raw (Codex finding 6). The gate approved the row
+  // that was latest at ITS instant; this read happens later, and a concurrent
+  // quote for the same identity can have recorded a newer row in between.
+  // `findFreshMatchedSwapPrequote` re-applies the gate's own three guardrails
+  // to whatever it finds, so a newer row that authorizes nothing refuses here
+  // instead of being executed on. Jupiter has no atomic claim lane, so this is
+  // the only remaining reader on the Solana path.
   const matched = await findFreshMatchedSwapPrequote(toolId, sessionId, p, ctx);
-  const persistedFeePreview = matched
-    ? jupiterFeePreviewSchema.safeParse((matched.safetyDetail as Record<string, unknown>).feePreview)
-    : undefined;
-  if (!matched || !persistedFeePreview?.success) {
+  if (!matched.ok) return fail(`${toolId} failed: ${unauthorizedQuoteMessage(matched)}`);
+  const persistedFeePreview = jupiterFeePreviewSchema.safeParse(matched.prequote.safetyDetail.feePreview);
+  if (!persistedFeePreview.success) {
     return fail(`${toolId} failed: no matching fee-bearing quote found. Call solana__swap_quote first with the exact same params, then retry.`);
+  }
+  // WHAT THE CARD DISCLOSED THIS SWAP WOULD COST. Bound below, in the pre-sign
+  // window, against the exact message. Absent means the row carries no readable
+  // spendability statement, which cannot happen for an `executable` row and is
+  // refused rather than executed unbound.
+  const approvedNativeCostRaw = matched.spendability?.native.required.raw;
+  if (approvedNativeCostRaw === undefined) {
+    return fail(`${toolId} failed: the approved quote carries no readable native-cost disclosure, so this swap's cost cannot be bound to what was approved. Call solana__swap_quote again and approve the fresh quote.`);
   }
 
   const connection = getSolanaConnection();
@@ -236,10 +272,44 @@ export const swapExecuteHandler: ProtocolHandler = async (p, ctx): Promise<ToolR
     signedTx = await prepareVersionedTx(prepared.unsignedTx.serialize(), keypair, {
       knownBlockhash: { blockhash: prepared.recentBlockhash, lastValidBlockHeight: prepared.lastValidBlockHeight },
       connection,
+      // THE AUTHORITATIVE READ (contract C2.6). The quote's numbers are
+      // minutes old and were disclosure; these are taken against the EXACT
+      // message about to be signed - its own fee, every lamport it debits from
+      // this wallet, the certified tip, every wallet-paid account rent, and the
+      // measured follow-up reserve - and a shortfall throws before a signature
+      // exists.
+      beforeSign: async ({ message, signer }) => {
+        const observation = await observeJupiterSwapSpendability({
+          connection,
+          owner: addr,
+          signer,
+          message,
+          inputAsset: inputAsset.asset,
+          principalRaw: prepared.raw.inAmount,
+          inputSymbol: inputToken.symbol,
+          inputDecimals: inputToken.decimals,
+        });
+        const judged = judgeJupiterSpendability(observation, {
+          kind: "executable",
+          priceImpactFraction: 0,
+          adverse: false,
+        });
+        const refusal = preSignSpendabilityRefusal(judged.eligibility)
+          // Solvency alone is not consent: a fresh `/build` may carry a higher
+          // priority fee, bounded only by Vex's global 10,000,000-lamport cap,
+          // and a wallet that can afford the difference never agreed to it.
+          // The card's own figure is the ceiling.
+          ?? approvedNativeCostRefusal(observation, approvedNativeCostRaw);
+        if (refusal) throw refusal;
+      },
     });
   } catch (err) {
     const reason = swapFailureMessage(err);
-    await failActivityEvent(eventRow.id, { failureCode: "unknown", failureReason: reason });
+    // A pre-sign spendability refusal is a BALANCE outcome, not an unknown
+    // one: the row is what the agent and the activity feed read the cause
+    // from, and "unknown" would hide a remedy the wallet owner can act on.
+    const failureCode: AgentActivityFailureCode = presignFailureCode(err);
+    await failActivityEvent(eventRow.id, { failureCode, failureReason: reason });
     return {
       success: false,
       output: `${toolId} failed: ${reason} - recorded (execution ${executionId}); nothing was broadcast.`,
@@ -346,3 +416,50 @@ export const swapExecuteHandler: ProtocolHandler = async (p, ctx): Promise<ToolR
   };
 };
 
+/**
+ * Why the re-read of the authorizing quote refused, in words an agent can act
+ * on. Every branch names `solana__swap_quote`, because re-quoting is the ONLY
+ * recovery: the row this execute would have used is gone or authorizes nothing,
+ * and no retry of the execute alone can change that.
+ */
+function unauthorizedQuoteMessage(refused: Extract<MatchedSwapPrequote, { ok: false }>): string {
+  switch (refused.reason) {
+    case "no_quote":
+      return "no matching fee-bearing quote found. Call solana__swap_quote first with the exact same params, then retry.";
+    case "safety_fail":
+      return "the quote for this exact request is recorded as a confirmed safety failure. Nothing was built or signed, and re-running the execute cannot clear it.";
+    case "not_executable":
+      return `the quote authorizing this execute was superseded by a newer solana__swap_quote for the same request that authorizes nothing (recorded eligibility: ${refused.eligibilityKind ?? "unknown"}). Nothing was built or signed. Call solana__swap_quote again and read its eligibility before retrying.`;
+    case "not_gated":
+      return "this tool is not registered as a gated swap execute, so no quote can authorize it. This is a build defect, not a user error.";
+    // ── The approval-resume fence. Jupiter seals no route snapshot and has no
+    // atomic claim lane, so this re-read is the only place a RESUMED Solana
+    // swap can be held to the quote a person actually approved - and both its
+    // fee policy and its approved native-cost ceiling are derived from that
+    // row, which is exactly what a substituted row would replace.
+    case "approval_row_superseded":
+      return "a newer solana__swap_quote for these exact params was recorded while the approval waited, so the quote the approval card named is no longer the current one. Nothing was built or signed. Approving a card authorizes the quote it showed - its fee disclosure and its native cost ceiling - never a later one. Call solana__swap_quote again and approve the fresh quote.";
+    case "approved_disclosure_changed":
+      return "the approved quote is still the current one, but the fee preview and native-cost ceiling it discloses now are not the ones the approval card stated, so signing would spend against numbers nobody consented to. Nothing was built or signed. Call solana__swap_quote again and approve the fresh quote.";
+    case "approval_binding_missing":
+      return "this approval does not record WHICH quote it authorized, so no quote can be proven to be the one that was approved. Nothing was built or signed. Call solana__swap_quote again and approve the fresh quote.";
+  }
+}
+
+/**
+ * Classify a pre-sign throw for the activity row.
+ *
+ * `allowance_or_balance` is the WALLET outcome - drained, frozen, or short.
+ * The approved-cost refusal is NOT that: the wallet could pay, the fresh build
+ * simply cost more than the approval disclosed, which is a quote-to-execute
+ * SHAPE divergence and files under the generic build-divergence bucket the
+ * design reserves for them (`status-and-failure.ts`: new distinctions start as
+ * structured `failure_reason` text under an existing code). The reason text
+ * carries both lamport figures, so the feed states the real cause either way.
+ */
+function presignFailureCode(err: unknown): AgentActivityFailureCode {
+  if (!(err instanceof VexError)) return "unknown";
+  if (err.code === ErrorCodes.SOLANA_INSUFFICIENT_BALANCE) return "allowance_or_balance";
+  if (err.code === ErrorCodes.SOLANA_SWAP_FAILED) return "route_not_found";
+  return "unknown";
+}

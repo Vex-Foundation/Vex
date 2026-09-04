@@ -97,6 +97,8 @@ export function buildApprovalIntentPreview(
             termLock: input.result.prequote?.termLock,
             feePreview: input.result.prequote?.feePreview,
             quoteBinding: input.result.prequote?.quoteBinding,
+            spendability: input.result.prequote?.spendability,
+            bridgeTokenPreview: input.result.prequote?.bridgeTokenPreview,
             riskPreview: input.result.riskPreview,
           }
         : undefined,
@@ -252,8 +254,15 @@ export async function enqueueApprovalIntentWithGate(
   const quoteAuthority = result.prequote?.quoteBinding === undefined
     ? undefined
     : approvedQuoteAuthorityFrom(result.prequote.quoteBinding);
+  // ...and WHICH PREQUOTE ROW the gate allowed on, with the digest of what that
+  // row disclosed on this card. Taken from the gate's own typed sibling channel
+  // (`prequoteAuthority`), never from `toolArgs`. Stored inside the envelope so
+  // both lanes' digests cover it and the resumed dispatch is gated on that
+  // exact row rather than on whichever quote is newest by then. Absent for
+  // every lane that is not a gated execute.
+  const prequoteAuthority = result.prequoteAuthority;
   const envelope = buildApprovalToolCall(
-    input.toolName, input.toolArgs, binding, quoteAuthority,
+    input.toolName, input.toolArgs, binding, quoteAuthority, prequoteAuthority,
   );
   // Both lanes record a digest, with different authority contracts. Studio
   // binds the complete card, expiry and project identity. The agent lane binds

@@ -105,6 +105,7 @@ import {
   siteError,
 } from "@tools/dexscreener/site-errors.js";
 import { fail, num, ok, str } from "../../handler-helpers.js";
+import { liquidityInterpretation } from "./liquidity-interpretation.js";
 import { readStringList } from "../../runtime/list-params.js";
 import type { ProtocolHandler } from "../../types.js";
 import {
@@ -716,6 +717,33 @@ async function runPairGet(
       // note is the honest text for that basis, and it is emitted below.
       + `${resolutionBasis === "deepest_of_search_window" ? `, resolved from token ${resolvedFrom ?? ""} as the deepest of the ${matchedInWindow ?? 0} pools for that token inside the ${searchWindowSize ?? 0}-row search window the provider returned` : ""}.`,
     pair: row,
+    /*
+     * THE CAUSAL QUALIFIER TRAVELS WITH THE NUMBER.
+     *
+     * MEASURED, live session 2026-08-30: this tool's `liquidityUsd` was read
+     * twice on one pool, 210K then 223K, over an interval in which the price
+     * rose about 10.7 percent, and the answer that reached the user was
+     * "someone added to the pool". Nothing on that payload said the figure is
+     * a price mark of the reserves and therefore moves on price alone, so
+     * there was no caveat to ignore. `liquidityInterpretation` is that
+     * statement as FIELDS, and it names the reserve amounts and the tool that
+     * can actually establish an add or a remove.
+     */
+    liquidityInterpretation: liquidityInterpretation({
+      liquidityUsd: row.liquidityUsd,
+      reserves: groups.includes("reserves")
+        ? {
+            baseTokens: row.liquidityBaseTokens ?? null,
+            quoteTokens: row.liquidityQuoteTokens ?? null,
+          }
+        : null,
+      ...((row.notApplicableInputs ?? []).includes("liquidityUsd")
+        ? {
+            notApplicableReason:
+              "This row is a bonding-curve row: it has no liquidity pool, so there is no pool liquidity to report and none was withheld.",
+          }
+        : {}),
+    }),
     window,
     resolvedPair,
     resolutionBasis,
@@ -1557,6 +1585,18 @@ async function runPairsBatch(
   const hasTokens = parsed.identities.some((one) => one.kind === "token");
 
   return ok({
+    /*
+     * THE CAUSAL QUALIFIER, ONCE, AT THE ENVELOPE.
+     *
+     * Every row here carries a `liquidityUsd`, and every one of them is a
+     * price mark of that pool's reserves rather than a deposit ledger. The
+     * statement is about what the FIELD means and does not vary per row, so it
+     * is stated once instead of being copied onto each row.
+     */
+    liquidityInterpretation: liquidityInterpretation({
+      appliesTo: "every_row_in_this_answer",
+      reserves: null,
+    }),
     // EVERY NUMBER HERE IS READ OFF THE RECONCILED SETS ABOVE, and each clause
     // names the mechanism that produced it. The previous template mixed two
     // nouns under one name and attributed a dedupe collapse to thresholds that
@@ -2041,6 +2081,18 @@ async function runPairsSearch(
   const droppedByThreshold = totalOf(filtered.droppedByFilter);
 
   return ok({
+    /*
+     * THE CAUSAL QUALIFIER, ONCE, AT THE ENVELOPE.
+     *
+     * Every row here carries a `liquidityUsd`, and every one of them is a
+     * price mark of that pool's reserves rather than a deposit ledger. The
+     * statement is about what the FIELD means and does not vary per row, so it
+     * is stated once instead of being copied onto each row.
+     */
+    liquidityInterpretation: liquidityInterpretation({
+      appliesTo: "every_row_in_this_answer",
+      reserves: null,
+    }),
     summary:
       `${rows.length} of ${filtered.kept.length} matching pairs for "${query}" `
       + `${chains.length === 0 ? "across every chain" : `on ${chains.join(", ")}`}, `
@@ -2295,6 +2347,18 @@ async function runTokenPairs(
     .join(" ");
 
   return ok({
+    /*
+     * THE CAUSAL QUALIFIER, ONCE, AT THE ENVELOPE.
+     *
+     * Every row here carries a `liquidityUsd`, and every one of them is a
+     * price mark of that pool's reserves rather than a deposit ledger. The
+     * statement is about what the FIELD means and does not vary per row, so it
+     * is stated once instead of being copied onto each row.
+     */
+    liquidityInterpretation: liquidityInterpretation({
+      appliesTo: "every_row_in_this_answer",
+      reserves: null,
+    }),
     summary:
       `${rows.length} of ${matching.length} indexed pools for ${tokenAddress} on ${chain}, `
       + `${usd(totalLiquidityUsd)} liquidity across ${venueCount} `

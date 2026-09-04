@@ -298,6 +298,90 @@ export type ToolFailure = {
   readonly env: readonly string[];
 };
 
+/**
+ * The quote-time spendability facts, as the tool vocabulary states them.
+ *
+ * Typed structurally rather than by importing the protocol module: `types.ts`
+ * is the tool vocabulary and must not depend on one protocol family's
+ * implementation. The producing module's `SpendabilityPreview`
+ * (`protocols/quote-authority/spendability-contract.ts`) is assignable to this,
+ * and the compiler checks that at the assignment - so the two cannot drift
+ * without a build failure.
+ *
+ * QUOTE-TIME ONLY. It states what a chain read said when the quote was taken;
+ * the authoritative debit check belongs to the pre-sign window, and the
+ * rendered card line says so in words.
+ */
+export interface ToolSpendabilityPreview {
+  readonly cardVersion: string;
+  readonly source: ToolSpendabilityLeg;
+  readonly native: ToolSpendabilityLeg;
+  /**
+   * The transactions the quote's binding will ENFORCE, when the venue sealed a
+   * plan (WP2-B). Structural for the same reason as the rest of this shape, and
+   * OPTIONAL because a venue with no EVM leg plan (Solana) seals none.
+   */
+  readonly debitPlan?: ToolDebitPlan;
+}
+
+/**
+ * The bound transaction set of a quote, as the tool vocabulary states it.
+ *
+ * The producing module's `BoundDebitPlan`
+ * (`protocols/quote-authority/debit-plan.ts`) is assignable to this and the
+ * compiler checks that at the assignment. Gas UNITS are absent by design: they
+ * are an execute-time fact (2.07x measured block-to-block drift), so what is
+ * bound is the ROLE set, the per-gas ceilings and the reserve's identity.
+ */
+export interface ToolDebitPlan {
+  readonly legs: readonly {
+    readonly role: "allowance_reset" | "allowance" | "swap" | "swap_fee";
+    readonly feeCap: ToolLegFeeCap;
+    /**
+     * How the leg's gas units were reached: `measured` from a live estimate of
+     * that exact call, `conservative` from the venue's own quoter plus headroom
+     * when the call could not be simulated yet. A leg with NEITHER cannot reach
+     * a bound plan - the quote that would have carried one is not executable.
+     */
+    readonly pricing: "measured" | "conservative";
+  }[];
+  readonly reserve: {
+    readonly kind: "zero_value_self_transfer";
+    readonly feeCap: ToolLegFeeCap;
+  };
+}
+
+/** A per-gas ceiling in exact base-10 wei strings, never a float (rule 90). */
+export type ToolLegFeeCap =
+  | {
+      readonly mode: "eip1559";
+      readonly maxFeePerGasWei: string;
+      readonly maxPriorityFeePerGasWei: string;
+    }
+  | { readonly mode: "legacy"; readonly gasPriceWei: string };
+
+/** One asset's side of {@link ToolSpendabilityPreview}. */
+export interface ToolSpendabilityLeg {
+  readonly asset: {
+    readonly chainId: number;
+    readonly address: string;
+    readonly symbol: string | null;
+  };
+  readonly wallet: string;
+  readonly blockTag: "pending" | "latest";
+  readonly observedAt: string;
+  readonly required: ToolSpendabilityAmount;
+  readonly current: ToolSpendabilityAmount;
+}
+
+/** An atomic amount travelling with what is needed to read it (rule 90). */
+export interface ToolSpendabilityAmount {
+  readonly raw: string;
+  readonly human: string | null;
+  readonly decimals: number | null;
+  readonly symbol: string | null;
+}
+
 export interface ToolResult {
   /** Whether the tool executed successfully */
   success: boolean;
@@ -404,6 +488,17 @@ export interface ToolResult {
       readonly safetyVerdict: "pass" | "fail" | "unknown";
       readonly safetyDetail: Record<string, unknown>;
     };
+    /**
+     * The quote-time spendability facts, when the venue measured them: what the
+     * swap debits from the source asset and from native, against what the
+     * wallet actually held. The recorder validates this and persists it in the
+     * row's bounded `safety_detail`, from which the execute-time gate restores
+     * it for the approval card.
+     *
+     * Present only on an `executable` quote: an ineligible one carries its
+     * facts inside its own eligibility member and has no card to render.
+     */
+    readonly spendability?: ToolSpendabilityPreview;
   };
   /** Engine signal - structured command from tool to engine (e.g. stop_mission) */
   engineSignal?: EngineSignal;
@@ -513,6 +608,52 @@ export interface ToolResult {
      * the full economic disclosure before approving.
      */
     readonly feePreview?: JupiterFeePreview;
+    /**
+     * Bridge asset facts read at the pre-approval gate. EVM ERC-20 symbol and
+     * decimals come from the contract; native identity comes from the chain
+     * registry. Solana is explicitly marked as outside the EVM contract-read
+     * lane rather than guessed.
+     */
+    readonly bridgeTokenPreview?: {
+      readonly source: {
+        readonly family: "eip155" | "solana";
+        readonly kind: "erc20" | "native" | "solana" | "metadata_unavailable";
+        readonly chainId: number;
+        readonly tokenAddress: string;
+        readonly symbol: string | null;
+        readonly decimals: number | null;
+        readonly metadataSource: string;
+        readonly symbolSanitized: boolean;
+        readonly metadataErrorCode?: "contract_metadata_unavailable" | "native_registry_metadata_unavailable";
+        readonly metadataErrorMessage?: string;
+      };
+      readonly destination: {
+        readonly family: "eip155" | "solana";
+        readonly kind: "erc20" | "native" | "solana" | "metadata_unavailable";
+        readonly chainId: number;
+        readonly tokenAddress: string;
+        readonly symbol: string | null;
+        readonly decimals: number | null;
+        readonly metadataSource: string;
+        readonly symbolSanitized: boolean;
+        readonly metadataErrorCode?: "contract_metadata_unavailable" | "native_registry_metadata_unavailable";
+        readonly metadataErrorMessage?: string;
+      };
+      readonly amountRaw: string;
+      readonly amountHuman: string | null;
+    };
+    /**
+     * What the wallet could pay when the matched quote was taken: the source
+     * principal and the total native debit against the balances read at that
+     * moment. Restored from the matched prequote's persisted `safetyDetail`
+     * (NEVER from raw args), so the Required / Current figures on the card are
+     * the store's figures and the model cannot state different ones.
+     *
+     * The rendered line labels itself as a quote-time observation. Sign-time
+     * code must never treat it as authority - the authoritative read lives in
+     * the pre-sign window.
+     */
+    readonly spendability?: ToolSpendabilityPreview;
   };
   /**
    * Jupiter Lend Borrow LTV/health disclosure (Agent Scan Phase 3 Batch 5,
@@ -527,6 +668,27 @@ export interface ToolResult {
    * `buildIntentPreview`.
    */
   riskPreview?: LendBorrowRiskPreview;
+  /**
+   * WHICH PREQUOTE ROW the prequote gate allowed on, and a digest of what that
+   * row disclosed to the approval card.
+   *
+   * A SIBLING of `prequote` rather than a member of it, for two reasons. It is
+   * a fact about the APPROVAL - it is stored in the approval envelope and read
+   * back on resume - not a line on the card; and it must be recorded for every
+   * gated execute, including a lane whose card carries no verdict-bearing
+   * `prequote` block.
+   *
+   * Set ONLY by `executeProtocolTool` from the gate's own matched row, never
+   * from raw args, and never rendered to the model. Typed structurally so the
+   * tool vocabulary does not depend on one protocol family's implementation;
+   * the producing module's typed value is assignable, and the compiler checks
+   * that at the assignment.
+   */
+  prequoteAuthority?: {
+    readonly v: string;
+    readonly prequoteId: string;
+    readonly disclosureDigest: string;
+  };
   /**
    * Trusted one-step handoff from a successful non-mutating prepare tool to
    * its mutating execution tool. The turn loop validates the source→target

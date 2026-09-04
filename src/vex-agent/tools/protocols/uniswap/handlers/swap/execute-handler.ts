@@ -50,6 +50,7 @@ import {
   uniswapFeeNotCharged,
   withFeeDisclosure,
   type UniswapFeeCollection,
+  type UniswapFeeLegDebitGate,
   type UniswapFeeLegPlan,
 } from "./fee/index.js";
 import { VexError, ErrorCodes } from "../../../../../../errors.js";
@@ -59,7 +60,14 @@ import {
   compareUniswapExecutionInputs,
   floorUnreachableRefusal,
 } from "../../../quote-authority/uniswap.js";
+import { compareDebitPlanRoles, uniformPlanFeeCap } from "../../../quote-authority/debit-plan.js";
+import { UNISWAP_FRESH_QUOTE_TOOL } from "../../../quote-authority/refusal.js";
 import { executionInputsFrom } from "./execution-binding.js";
+import {
+  planUniswapDebitLegs,
+  type UniswapSpendabilityClient,
+} from "./native-debit-plan.js";
+import { createUniswapPreSignDebitGate } from "./quote-spendability.js";
 import {
   ambiguousBroadcastResult,
   preSignRefusalResult,
@@ -222,6 +230,13 @@ export async function executeUniswapSwap(
         required: amountIn,
         decimals: tokenIn.decimals,
         label: tokenIn.symbol,
+        // The chain the statement is about (contract C2.4), and the only tag a
+        // SPEND may be authorized from: `pending` subtracts this wallet's own
+        // in-flight transactions. This preflight is still not the authority -
+        // that lives in each leg's pre-sign gate below - it is what keeps gas
+        // from being burned on a `transferFrom` that cannot succeed.
+        chainId: deployment.chainId,
+        blockTag: "pending",
       });
       validateUniswapSpender(router);
       currentAllowance = await readUniswapAllowance(clients.publicClient, tokenIn.address, getAddress(signer.address), router);
@@ -233,6 +248,94 @@ export async function executeUniswapSwap(
       err,
     );
   }
+
+  // ── THE NATIVE DEBIT PLAN, before anything is recorded or signed ──
+  //
+  // The same legs, from the same builders, that the loop below signs: allowance
+  // reset and allowance when the current allowance is short, the swap, and the
+  // Vex fee transfer LAST. The fee leg is in the plan from here on (contract
+  // C2.5), because leaving it out is how a wallet funds the swap, watches it
+  // confirm and then cannot pay the fee it was told about.
+  //
+  // ONE per-gas ceiling for the whole execution, taken from the CLAIMED
+  // SNAPSHOT below: every leg's debit is computed at it and every leg's bytes
+  // are signed under it, so the number the card disclosed, the number a refusal
+  // is based on and the number the chain may charge are one number (Rabby binds
+  // the same price it priced with, `SendToken/index.tsx:1188`).
+  const spendabilityClient: UniswapSpendabilityClient = clients.publicClient;
+  let debitLegs: ReturnType<typeof planUniswapDebitLegs>;
+  try {
+    debitLegs = planUniswapDebitLegs({
+      deployment,
+      router,
+      recipient: getAddress(signer.address),
+      tokenIn,
+      tokenOut,
+      quoted,
+      charge: feeCharge,
+      currentAllowance,
+    });
+  } catch (err) {
+    return failPreBroadcast(
+      p,
+      { chainId: deployment.chainId, chainSlug: deployment.key, walletAddress: signer.address, sessionId, tokenIn, tokenOut },
+      err,
+    );
+  }
+
+  // ── THE PLAN THE HUMAN APPROVED, held against the one this execute resolved ──
+  //
+  // The leg SET comes from a fresh allowance read, so it can genuinely differ
+  // from the quote's: an allowance granted or spent between the two turns two
+  // transactions into four, or four into two. A wallet that is merely solvent
+  // for the wider set is not a wallet that authorized it, so a changed set is a
+  // refusal by name and the way out is a fresh quote (rule 90: approval binds to
+  // the exact parameters).
+  const planDrift = compareDebitPlanRoles(
+    approved.debitPlan,
+    debitLegs.map((leg) => leg.role),
+    UNISWAP_FRESH_QUOTE_TOOL,
+  );
+  if (planDrift) {
+    return failPreBroadcast(
+      p,
+      { chainId: deployment.chainId, chainSlug: deployment.key, walletAddress: signer.address, sessionId, tokenIn, tokenOut },
+      new VexError(ErrorCodes.SWAP_FAILED, planDrift.message, planDrift.hint),
+    );
+  }
+  // The ceiling comes FROM THE SNAPSHOT, never from a fresh chain read: it is
+  // what the card disclosed and what every leg's bytes are forced to carry, so
+  // the price the human agreed to is the price the wallet can be charged.
+  // `compareDebitPlanRoles` already refused a plan whose legs disagree on one,
+  // so this cannot be null here; the check is kept because a non-null assertion
+  // on a money path is not evidence.
+  const legFeeCap = uniformPlanFeeCap(approved.debitPlan);
+  if (legFeeCap === null) {
+    return failPreBroadcast(
+      p,
+      { chainId: deployment.chainId, chainSlug: deployment.key, walletAddress: signer.address, sessionId, tokenIn, tokenOut },
+      new VexError(
+        ErrorCodes.SWAP_FAILED,
+        "Refused before signing: the approved quote states no single gas-price ceiling for this swap's transactions.",
+        `Nothing was signed. Request a fresh ${UNISWAP_FRESH_QUOTE_TOOL} and execute against that.`,
+      ),
+    );
+  }
+
+  const debitGateFor = createUniswapPreSignDebitGate({
+    client: spendabilityClient,
+    chainId: deployment.chainId,
+    wallet: getAddress(signer.address),
+    tokenIn,
+    legs: debitLegs,
+    feeCap: legFeeCap,
+    // The FULL requested amount: the router input and the fee both come out of
+    // the source asset, and a guard that covered only the router input would
+    // leave the fee to fail after the swap already spent the rest.
+    principalRaw: amountIn,
+    feeRaw: feeCharge.feeRaw ?? 0n,
+    ...(quoted.route.gasEstimate === undefined ? {} : { quotedSwapGas: quoted.route.gasEstimate }),
+  });
 
   // The swap legs are planned for the NET amount - that is what the router
   // pulls and what the approval must cover. The fee leg carries the remainder,
@@ -258,6 +361,25 @@ export async function executeUniswapSwap(
     charge: feeCharge, deployment, tokenIn, walletAddress: signer.address, sessionId,
   });
   if (feePlan) events.push({ ...feePlan.event, eventIndex: swapLegCount });
+
+  // THE PLAN THAT WAS PRICED IS THE PLAN THAT WILL BE BROADCAST. Both sides
+  // derive the allowance legs from the same rule and the same allowance read,
+  // so a difference here means one of the two moved; a debit computed for a
+  // different leg set is a debit for a different swap, and signing under it
+  // would authorize a cost nobody totalled.
+  const plannedRoles = debitLegs.map((leg): string => leg.role).join(",");
+  const recordedRoles = events.map((event) => event.eventRole).join(",");
+  if (plannedRoles !== recordedRoles) {
+    return failPreBroadcast(
+      p,
+      { chainId: deployment.chainId, chainSlug: deployment.key, walletAddress: signer.address, sessionId, tokenIn, tokenOut },
+      new VexError(
+        ErrorCodes.SWAP_FAILED,
+        `Refused before signing: this execution would broadcast ${recordedRoles || "no legs"} but its native-debit total was computed for ${plannedRoles || "no legs"}.`,
+        "Nothing was signed. Request a fresh uniswap__swap_quote and execute against that.",
+      ),
+    );
+  }
 
   const { executionId, events: createdEvents } = await createAgentActivityIntent({
     toolId: TOOL_ID, namespace: PROTOCOL, intentParams: p, events,
@@ -291,6 +413,14 @@ export async function executeUniswapSwap(
               expectedValueRaw: tokenIn.isNative ? approved.swapAmountRaw : "0",
             }
           : undefined,
+        // EVERY leg, not only the swap: an allowance leg spends native gas, and
+        // the question this gate answers is whether the wallet can still pay for
+        // this leg AND everything still authorized after it. The role comes from
+        // the DEBIT PLAN, whose order the equality check above proved identical
+        // to the recorded events - so the leg being signed and the leg being
+        // priced are the same one by construction, not by a widened cast.
+        debitGateFor(debitLegs[i]!.role),
+        { cap: legFeeCap },
       );
 
       if (outcome.kind === "ambiguous") {
@@ -360,6 +490,12 @@ export async function executeUniswapSwap(
         finalized, feeCharge, feePlan, feeRowId, executionId, swapLegCount,
         chainId: deployment.chainId, tokenDecimals: tokenIn.decimals, clients,
         priorLeg,
+        // CHECKED AGAIN, after the swap: the fee leg was counted in the plan
+        // above, and now that the swap has actually taken its money the wallet
+        // is re-read before this transfer is signed. A refusal here leaves the
+        // CONFIRMED swap untouched - `runUniswapFeeLeg` never throws and never
+        // rewrites the parent row.
+        debitGate: debitGateFor("swap_fee"),
       });
     }
 
@@ -398,6 +534,7 @@ async function attachVexFee(x: {
   readonly tokenDecimals: number;
   readonly clients: ReturnType<typeof getUniswapEvmClients>;
   readonly priorLeg: ConfirmedPriorLeg | undefined;
+  readonly debitGate: UniswapFeeLegDebitGate;
 }): Promise<ToolResult> {
   const disclosure = x.feeCharge.disclosure;
   const attach = (collection: UniswapFeeCollection): ToolResult =>
@@ -437,6 +574,7 @@ async function attachVexFee(x: {
     publicClient: x.clients.publicClient,
     walletClient: x.clients.walletClient,
     priorLeg: x.priorLeg,
+    debitGate: x.debitGate,
   });
   return attach(collection);
 }

@@ -23,10 +23,17 @@ import type { SafetyVerdict } from "@vex-agent/db/repos/swap-prequotes.js";
 import type { JupiterFeePreview } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/fee-swap.js";
 import type { LendBorrowRiskPreview } from "@tools/solana-ecosystem/jupiter/jupiter-lend/borrow-api/risk-preview-types.js";
 import type { QuoteBindingPreview } from "../quote-authority/restore.js";
+import type { SpendabilityPreview } from "../quote-authority/spendability-contract.js";
+import type { ApprovedPrequoteAuthority } from "../prequote/approved-row-authority.js";
 import { evaluateLendBorrowRiskPreview } from "../solana-jupiter/borrow-risk-preview.js";
 import { summarizeProtocolError } from "./errors.js";
 import { isPreviewExecution } from "../capture-validator.js";
 import logger from "@utils/logger.js";
+import {
+  isBridgeTokenPreviewSigningReady,
+  resolveBridgeTokenPreview,
+  type BridgeTokenIdentityPreview,
+} from "../bridge-token-identity.js";
 
 /**
  * `solana.lend.borrowOperate`'s pre-approval LTV/health disclosure is NOT a
@@ -111,6 +118,16 @@ export type PrequoteGateDecision =
       readonly riskPreview: LendBorrowRiskPreview | undefined;
       /** The approved quote's card binding (typed, unspoofable) for a gated swap execute. */
       readonly quoteBinding: QuoteBindingPreview | undefined;
+      /** Quote-time spendability facts (typed, unspoofable) for the approval card. */
+      readonly spendability: SpendabilityPreview | undefined;
+      readonly bridgeTokenPreview: BridgeTokenIdentityPreview | undefined;
+      /**
+       * WHICH ROW the gate allowed on and what it disclosed, for the approval
+       * envelope. `undefined` for a call the prequote gate never evaluated (an
+       * ungated tool, or the disjoint risk-preview channel) - there is no quote
+       * row to bind in either case.
+       */
+      readonly prequoteAuthority: ApprovedPrequoteAuthority | undefined;
     }
   | { readonly kind: "block"; readonly message: string };
 
@@ -144,6 +161,37 @@ export async function evaluatePrequoteGateDecision(
       });
       return { kind: "block", message: decision.message };
     }
+    let bridgeTokenPreview: BridgeTokenIdentityPreview | undefined;
+    try {
+      bridgeTokenPreview = await resolveBridgeTokenPreview(
+        toolId,
+        params,
+        scopedContext.abortSignal,
+      );
+    } catch (error) {
+      logger.warn("protocol.execute.bridge_token_identity_blocked", {
+        toolId,
+        errorClass: error instanceof Error ? error.constructor.name : "unknown",
+      });
+      return {
+        kind: "block",
+        message: `${toolId} requires approval, but direct EVM token symbol/decimals could not be confirmed from the contract. Re-check the chain and token address, then quote again.`,
+      };
+    }
+    if (
+      bridgeTokenPreview !== undefined
+      && !isBridgeTokenPreviewSigningReady(bridgeTokenPreview)
+      && (scopedContext.approved || scopedContext.sessionPermission !== "restricted")
+    ) {
+      logger.warn("protocol.execute.bridge_token_identity_blocked", {
+        toolId,
+        reason: "contract_metadata_unavailable",
+      });
+      return {
+        kind: "block",
+        message: `${toolId} cannot sign because direct EVM token symbol/decimals are unavailable. Re-check the chain and token address, then quote again.`,
+      };
+    }
     return {
       kind: "allow",
       verdict: decision.verdict,
@@ -155,6 +203,9 @@ export async function evaluatePrequoteGateDecision(
       feePreview: decision.feePreview,
       riskPreview: undefined,
       quoteBinding: decision.quoteBinding,
+      spendability: decision.spendability,
+      bridgeTokenPreview,
+      prequoteAuthority: decision.prequoteAuthority,
     };
   }
 
@@ -171,6 +222,9 @@ export async function evaluatePrequoteGateDecision(
     feePreview: undefined,
     riskPreview: risk.riskPreview,
     quoteBinding: undefined,
+    spendability: undefined,
+    bridgeTokenPreview: undefined,
+    prequoteAuthority: undefined,
   };
 }
 
@@ -255,6 +309,9 @@ export function evaluateApprovalGate(
   prequoteFeePreview: JupiterFeePreview | undefined,
   prequoteRiskPreview: LendBorrowRiskPreview | undefined,
   prequoteQuoteBinding: QuoteBindingPreview | undefined,
+  prequoteSpendability: SpendabilityPreview | undefined,
+  prequoteBridgeTokenPreview: BridgeTokenIdentityPreview | undefined,
+  prequoteAuthority: ApprovedPrequoteAuthority | undefined,
 ): ToolResult | undefined {
   if (manifest.mutating && manifest.actionKind !== "local_write" && !context.approved && !isPreviewExecution(request.toolId, params)
     && context.sessionPermission === "restricted"
@@ -283,15 +340,27 @@ export function evaluateApprovalGate(
         termLock?: { maturityIso: string };
         feePreview?: JupiterFeePreview;
         quoteBinding?: QuoteBindingPreview;
+        spendability?: SpendabilityPreview;
+        bridgeTokenPreview?: BridgeTokenIdentityPreview;
       } = { verdict: prequoteVerdict };
       if (prequoteFotTax !== undefined) prequote.fotTax = prequoteFotTax;
       if (prequoteTermLock !== undefined) prequote.termLock = prequoteTermLock;
       if (prequoteFeePreview !== undefined) prequote.feePreview = prequoteFeePreview;
       if (prequoteQuoteBinding !== undefined) prequote.quoteBinding = prequoteQuoteBinding;
+      if (prequoteSpendability !== undefined) prequote.spendability = prequoteSpendability;
+      if (prequoteBridgeTokenPreview !== undefined) prequote.bridgeTokenPreview = prequoteBridgeTokenPreview;
       pending.prequote = prequote;
     }
     if (prequoteRiskPreview !== undefined) {
       pending.riskPreview = prequoteRiskPreview;
+    }
+    // WHICH ROW this card is about, on its own sibling channel: the enqueue
+    // stores it in the approval envelope so the resumed dispatch is fenced to
+    // the row and the disclosure the human decided on, not to whichever quote
+    // is newest by then. Independent of `prequote` above, which a lane without
+    // a verdict legitimately omits.
+    if (prequoteAuthority !== undefined) {
+      pending.prequoteAuthority = { ...prequoteAuthority };
     }
     return pending;
   }
