@@ -382,6 +382,76 @@ describe("the registration retry is OWNED, and a teardown ends it", () => {
     }
   });
 
+  /**
+   * THE REGISTRATION THAT WAS ALREADY IN FLIGHT.
+   *
+   * Teardown clears the retry timer and then invalidates the epoch, but the
+   * registration it did not wait for answers afterwards. A `false` from that
+   * late answer used to arm a fresh timer at a call site the teardown had
+   * already passed, so the lifecycle ended owning a timer nobody could cancel.
+   * The arming itself now refuses a stale epoch and an aborted signal.
+   */
+  it("arms NOTHING when the teardown lands inside the first registration", async () => {
+    vi.useFakeTimers();
+    try {
+      let teardown: (() => void) | null = null;
+      setStudioDispatchPreflight.mockImplementationOnce(() => {
+        // The teardown lands while this registration is in flight.
+        teardown?.();
+        throw new Error("engine import failed");
+      });
+      teardown = setupStudioSettlementBridge();
+      await vi.advanceTimersByTimeAsync(0);
+
+      // No timer survives the lifecycle that just ended.
+      expect(vi.getTimerCount()).toBe(0);
+      trace.length = 0;
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(trace).toEqual([]);
+      expect(isStudioRuntimeReady()).toBe(false);
+      const readiness = studioReadiness();
+      expect(readiness.ready).toBe(false);
+      if (readiness.ready) return;
+      expect(readiness.code).toBe("shutting_down");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("arms NOTHING when the teardown lands inside a RETRY registration", async () => {
+    vi.useFakeTimers();
+    try {
+      let teardown: (() => void) | null = null;
+      setStudioDispatchPreflight
+        .mockImplementationOnce(() => {
+          throw new Error("engine import failed");
+        })
+        .mockImplementationOnce(() => {
+          // The retry's own registration is the one the teardown interrupts.
+          teardown?.();
+          throw new Error("engine import failed again");
+        });
+      teardown = setupStudioSettlementBridge();
+      await vi.advanceTimersByTimeAsync(0);
+      // The first failure armed exactly one retry, which is the timer under
+      // test: it must not be replaced by another one.
+      expect(vi.getTimerCount()).toBe(1);
+
+      await vi.advanceTimersByTimeAsync(6_000);
+      expect(vi.getTimerCount()).toBe(0);
+      expect(trace).toEqual(["preflight", "preflight"]);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(trace).toEqual(["preflight", "preflight"]);
+      expect(isStudioRuntimeReady()).toBe(false);
+      const readiness = studioReadiness();
+      expect(readiness.ready).toBe(false);
+      if (readiness.ready) return;
+      expect(readiness.code).toBe("shutting_down");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("disposes the engine write-repair owner on teardown", async () => {
     const teardown = setupStudioSettlementBridge();
     await awaitStudioRuntimeReady();

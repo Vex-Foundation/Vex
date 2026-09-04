@@ -144,6 +144,44 @@ describe("ensureEngineDbUrl", () => {
     expect(isEngineDbReady()).toBe(true);
   });
 
+  /**
+   * THE JOIN IS MECHANICS, NOT IDENTITY.
+   *
+   * The single-flight used to share a whole `Result<void, VexError>`, so every
+   * caller that JOINED a failing pass was handed the FIRST caller's
+   * correlation id: two unrelated IPC requests reported the same id and any
+   * support trace built from it pointed at a request that was not theirs. The
+   * shared pass now answers only whether the recycle committed, and each
+   * caller builds its own error after joining.
+   */
+  it("gives each joined caller its OWN correlation id when the recycle fails", async () => {
+    buildPoolConfig.mockResolvedValue(CONFIG);
+    let failDrain = (): void => {};
+    closePool.mockImplementationOnce(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          failDrain = () => {
+            reject(new Error("pool would not drain"));
+          };
+        }),
+    );
+
+    const first = ensureEngineDbUrl("corr-own-1");
+    const second = ensureEngineDbUrl("corr-own-2");
+    await vi.waitFor(() => {
+      expect(closePool).toHaveBeenCalledTimes(1);
+    });
+
+    failDrain();
+    const [firstOutcome, secondOutcome] = await Promise.all([first, second]);
+    if (firstOutcome.ok || secondOutcome.ok) {
+      throw new Error("a failed drain must not report an applied URL");
+    }
+    expect(firstOutcome.error.correlationId).toBe("corr-own-1");
+    expect(secondOutcome.error.correlationId).toBe("corr-own-2");
+    expect(isEngineDbReady()).toBe(false);
+  });
+
   it("reports the database as unavailable while compose has written nothing", async () => {
     const outcome = await ensureEngineDbUrl("corr-3");
     expect(outcome.ok).toBe(false);

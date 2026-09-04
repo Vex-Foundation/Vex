@@ -76,15 +76,28 @@ const DEFAULT_POLL_MS = 1_000;
 let appliedDbUrl: string | null = null;
 
 /**
- * SINGLE-FLIGHT for the recycle. `ensureEngineDbUrl` reads the config, writes
- * the environment and drains the pool across three awaits; two callers
+ * WHAT THE SHARED PASS ANSWERS: whether the recycle COMMITTED, and nothing
+ * about who asked for it.
+ *
+ * The single-flight below is joined by callers that have nothing to do with
+ * each other, so its result must not carry one caller's identity. It used to
+ * be a whole `Result<void, VexError>`, correlation id included, which meant
+ * every joiner was handed the FIRST caller's id and any support trace built
+ * from those ids pointed at a request that was not theirs.
+ */
+type EngineDbRecycleOutcome = "applied" | "unavailable";
+
+/**
+ * SINGLE-FLIGHT for the recycle MECHANICS. `applyEngineDbUrl` reads the config,
+ * writes the environment and drains the pool across three awaits; two callers
  * interleaving inside that window would drain twice and could commit their
  * URLs out of order. Concurrent callers therefore JOIN the pass already in
  * flight and see its outcome - the shape VS Code's `Throttler` uses for the
  * same problem (`base/common/async.ts`): one active promise, every other
- * caller attached to it.
+ * caller attached to it. The identity-bearing error is built AFTER the join,
+ * per caller, by `ensureEngineDbUrl`.
  */
-let recycleInFlight: Promise<Result<void, VexError>> | null = null;
+let recycleInFlight: Promise<EngineDbRecycleOutcome> | null = null;
 
 /** Rejection handed to a waiter whose owner aborted the wait. */
 export class EngineDbWaitAbortedError extends Error {
@@ -137,28 +150,37 @@ function makePostgresUrl(args: {
  * `pg` into main's load path, which is exactly what the bridge's own dynamic
  * imports exist to avoid.
  */
-export function ensureEngineDbUrl(
+export async function ensureEngineDbUrl(
   correlationId: string,
 ): Promise<Result<void, VexError>> {
+  const outcome = await recycleEngineDbUrl();
+  // THE ERROR IS THIS CALLER'S, built after the join: a joiner that inherited
+  // the pass's own error inherited the correlation id of whichever request
+  // happened to start it.
+  return outcome === "applied"
+    ? ok(undefined)
+    : err(engineDbUnavailableError(correlationId));
+}
+
+/** Join the recycle in flight, or start one. Identity-free by construction. */
+function recycleEngineDbUrl(): Promise<EngineDbRecycleOutcome> {
   const joined = recycleInFlight;
   if (joined !== null) return joined;
-  const pass: Promise<Result<void, VexError>> = applyEngineDbUrl(
-    correlationId,
-  ).finally(() => {
-    if (recycleInFlight === pass) recycleInFlight = null;
-  });
+  const pass: Promise<EngineDbRecycleOutcome> = applyEngineDbUrl().finally(
+    () => {
+      if (recycleInFlight === pass) recycleInFlight = null;
+    },
+  );
   recycleInFlight = pass;
   return pass;
 }
 
-async function applyEngineDbUrl(
-  correlationId: string,
-): Promise<Result<void, VexError>> {
+async function applyEngineDbUrl(): Promise<EngineDbRecycleOutcome> {
   try {
     const cfg = await buildPoolConfig();
-    if (cfg === null) return err(engineDbUnavailableError(correlationId));
+    if (cfg === null) return "unavailable";
     const nextUrl = makePostgresUrl(cfg);
-    if (appliedDbUrl === nextUrl) return ok(undefined);
+    if (appliedDbUrl === nextUrl) return "applied";
     // The environment FIRST, because the pool the drain below destroys rebuilds
     // itself from this variable at its next query. Writing it after the drain
     // would let a query landing between the two rebuild the pool against the
@@ -167,12 +189,12 @@ async function applyEngineDbUrl(
     const { closePool } = await import("@vex-agent/db/client.js");
     await closePool();
     appliedDbUrl = nextUrl;
-    log.info(
-      `[engine-db] engine database connection refreshed correlationId=${correlationId}`,
-    );
-    return ok(undefined);
+    // No correlation id: the recycle is shared by every joined caller, so
+    // stamping it with one of their ids would name the wrong request.
+    log.info("[engine-db] engine database connection refreshed");
+    return "applied";
   } catch {
-    return err(engineDbUnavailableError(correlationId));
+    return "unavailable";
   }
 }
 
@@ -223,7 +245,7 @@ async function pollOnce(): Promise<void> {
   try {
     if (waiters.size === 0) return;
     if (!isEngineDbReady()) {
-      await ensureEngineDbUrl("engine-db-readiness");
+      await recycleEngineDbUrl();
       if (waiters.size === 0) return;
       if (!isEngineDbReady()) return;
     }

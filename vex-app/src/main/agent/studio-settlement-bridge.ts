@@ -416,6 +416,15 @@ function scheduleDispatchPreflightRetry(
   signal: AbortSignal,
   retriesUsed = 0,
 ): void {
+  // THE TEARDOWN CHECK BELONGS HERE, at the one owner of the arming, not at
+  // each caller. Every call site reaches this function AFTER an awaited
+  // registration, and a registration that was still in flight when teardown
+  // landed answers once the teardown has already cleared the timers: arming
+  // then leaves a live timer behind a lifecycle that is over, owned by
+  // nobody, on a process that is going away. Both facts teardown moves are
+  // checked, because they are moved by different owners: the controller here
+  // and the epoch in `readiness.ts`.
+  if (signal.aborted || currentStudioReadinessEpoch() !== epoch) return;
   if (retriesUsed >= PREFLIGHT_RETRY_ATTEMPTS) {
     log.error(
       "[agent:studio-settlement-bridge] studio runtime initialization did not "
