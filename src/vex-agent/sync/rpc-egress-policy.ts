@@ -176,25 +176,129 @@ function toLookupAddresses(resolved: string | readonly LookupAddress[]): LookupA
 }
 
 /**
- * THE ADDRESS TABLE. `true` only for an address that parses AND falls outside
- * every non-public range below; anything unparsable is refused, because an
- * address we cannot classify is an address we cannot clear.
+ * THE ADDRESS TABLE, as CIDR blocks rather than string prefixes.
  *
- * Refused: unspecified (`0.0.0.0`, `::`), loopback (`127/8`, `::1`), RFC 1918
- * private (`10/8`, `172.16/12`, `192.168/16`), link-local INCLUDING the cloud
- * metadata address (`169.254/16`, `fe80::/10`), CGNAT (`100.64/10`),
- * IETF protocol assignments (`192.0.0/24`), benchmarking (`198.18/15`),
- * multicast and every reserved range above it (`224/4`, `240/4`, `ff00::/8`),
- * IPv6 unique-local (`fc00::/7`), and the IPv4-mapped / NAT64-embedded forms of
- * all of the above.
+ * WHY CIDR AND NOT `startsWith` (external review of PR #142 round 2): the
+ * previous IPv6 classifier matched `fe80` as TEXT, but link-local is
+ * `fe80::/10`, which runs through `febf:ffff:...`, so `fe90::1` was classified
+ * public (and `fec0::1`, deprecated site-local, was never considered at all). A
+ * prefix expressed in BITS cannot drift from the range it names, so every block
+ * below is written as its RFC CIDR and matched numerically against the parsed
+ * address.
+ *
+ * IPv4, refused (RFC 1122, 1918, 2544, 5735, 5737, 6598, 6890):
+ * "this network", loopback, CGNAT, link-local (which is where the cloud
+ * metadata address lives), the three private ranges, the IETF protocol
+ * assignments, the three documentation ranges, benchmarking, multicast,
+ * reserved, and broadcast.
+ */
+export const NON_PUBLIC_IPV4_CIDRS = [
+  "0.0.0.0/8", // "this network" / unspecified
+  "10.0.0.0/8", // RFC 1918 private
+  "100.64.0.0/10", // RFC 6598 CGNAT
+  "127.0.0.0/8", // loopback
+  "169.254.0.0/16", // link-local, incl. 169.254.169.254 cloud metadata
+  "172.16.0.0/12", // RFC 1918 private
+  "192.0.0.0/24", // IETF protocol assignments
+  "192.0.2.0/24", // TEST-NET-1 documentation
+  "192.168.0.0/16", // RFC 1918 private
+  "198.18.0.0/15", // RFC 2544 benchmarking
+  "198.51.100.0/24", // TEST-NET-2 documentation
+  "203.0.113.0/24", // TEST-NET-3 documentation
+  "224.0.0.0/4", // multicast
+  "240.0.0.0/4", // reserved
+  "255.255.255.255/32", // limited broadcast (inside 240/4, named for the table's own sake)
+] as const;
+
+/**
+ * IPv6, refused outright (RFC 4193, 4291, 6666, 3849, 4380, 8215).
+ *
+ * `2001::/32` (Teredo) and `64:ff9b:1::/48` (RFC 8215 local-use translation)
+ * are refused WHOLE rather than decoded: Teredo tunnels an arbitrary IPv4
+ * destination inside the address, and the local-use NAT64 prefix splits its
+ * embedded IPv4 around the reserved u-octet at /48. Neither is a destination a
+ * provider registry has any honest reason to name, so the conservative
+ * classification costs us nothing and guessing at the embedded address could
+ * cost us a socket into private space.
+ */
+export const NON_PUBLIC_IPV6_CIDRS = [
+  "::/128", // unspecified
+  "::1/128", // loopback
+  "64:ff9b:1::/48", // RFC 8215 local-use IPv4/IPv6 translation
+  "100::/64", // RFC 6666 discard-only
+  "2001::/32", // Teredo
+  "2001:db8::/32", // documentation
+  "fc00::/7", // unique-local
+  "fe80::/10", // link-local (through febf:ffff:...)
+  "fec0::/10", // deprecated site-local (RFC 3879), still routed by some stacks
+  "ff00::/8", // multicast
+] as const;
+
+/**
+ * IPv6 blocks that CARRY an IPv4 address: the verdict is the verdict on the
+ * embedded IPv4, because that is where the packet ends up. `::ffff:1.1.1.1` is
+ * a public destination; `::ffff:127.0.0.1` is loopback wearing a v6 costume,
+ * which is the classic bypass this table exists to close.
+ *
+ * `embeddedAt` is the byte offset of the IPv4 address inside the 16-byte form.
+ */
+export const EMBEDDED_IPV4_IPV6_CIDRS = [
+  { cidr: "::ffff:0:0/96", embeddedAt: 12 }, // IPv4-mapped
+  { cidr: "64:ff9b::/96", embeddedAt: 12 }, // RFC 6052 well-known NAT64
+  { cidr: "2002::/16", embeddedAt: 2 }, // RFC 3056 6to4
+] as const;
+
+/** A CIDR block compiled once into the bytes and bit-length the matcher needs. */
+interface AddressBlock {
+  readonly cidr: string;
+  readonly bytes: readonly number[];
+  readonly prefixBits: number;
+}
+
+/**
+ * Compile a CIDR constant. A malformed constant is a programming error in the
+ * table above, not runtime input, so it throws at module load rather than
+ * silently classifying nothing.
+ */
+function compileCidr(cidr: string): AddressBlock {
+  const [network, prefix] = cidr.split("/");
+  const prefixBits = Number(prefix);
+  const bytes = network === undefined ? null : (parseIpv4(network) ?? parseIpv6(network));
+  if (!bytes || !Number.isInteger(prefixBits) || prefixBits < 0 || prefixBits > bytes.length * 8) {
+    throw new Error(`malformed egress CIDR constant: ${cidr}`);
+  }
+  return { cidr, bytes, prefixBits };
+}
+
+const IPV4_BLOCKS: readonly AddressBlock[] = NON_PUBLIC_IPV4_CIDRS.map(compileCidr);
+const IPV6_BLOCKS: readonly AddressBlock[] = NON_PUBLIC_IPV6_CIDRS.map(compileCidr);
+const EMBEDDED_BLOCKS: readonly { readonly block: AddressBlock; readonly embeddedAt: number }[] =
+  EMBEDDED_IPV4_IPV6_CIDRS.map((entry) => ({ block: compileCidr(entry.cidr), embeddedAt: entry.embeddedAt }));
+
+/** True iff `address` (4 or 16 bytes) falls inside `block`, compared bit by bit. */
+function withinBlock(address: readonly number[], block: AddressBlock): boolean {
+  if (address.length !== block.bytes.length) return false;
+  const wholeBytes = block.prefixBits >> 3;
+  for (let i = 0; i < wholeBytes; i += 1) {
+    if (address[i] !== block.bytes[i]) return false;
+  }
+  const remainingBits = block.prefixBits & 7;
+  if (remainingBits === 0) return true;
+  const mask = (0xff << (8 - remainingBits)) & 0xff;
+  return ((address[wholeBytes] ?? 0) & mask) === ((block.bytes[wholeBytes] ?? 0) & mask);
+}
+
+/**
+ * THE CLASSIFIER. `true` only for an address that PARSES and falls outside every
+ * block above; anything unparsable is refused, because an address we cannot
+ * classify is an address we cannot clear.
  */
 export function isPublicIpAddress(address: string): boolean {
-  const host = address.startsWith("[") && address.endsWith("]") ? address.slice(1, -1) : address;
-  // A scoped IPv6 literal (`fe80::1%eth0`) is classified by its address part.
-  const bare = host.split("%")[0] ?? "";
+  const bare = bareHost(address);
   const ipv4 = parseIpv4(bare);
   if (ipv4) return !isNonPublicIpv4(ipv4);
-  if (bare.includes(":")) return !isNonPublicIpv6(bare);
+  const ipv6 = parseIpv6(bare);
+  if (ipv6) return !isNonPublicIpv6(ipv6);
   return false; // not an IP literal at all: this function only clears addresses.
 }
 
@@ -231,28 +335,49 @@ export function isSsrfSafeRpcUrl(rawUrl: string): boolean {
  * public (allowed). Pure, NO DNS resolution: an IP literal is classified exactly
  * by the table in {@link isPublicIpAddress}; a DNS name is accepted here and
  * decided at connect time by the pinning dispatcher.
+ *
+ * AN ADDRESS-SHAPED HOST THAT DOES NOT PARSE IS REFUSED, not passed on as a
+ * name. `010.0.0.1`, `0x7f.1` and `2130706433` are all loopback to `getaddrinfo`
+ * and none of them is a hostname anybody registers, so they fail closed here
+ * instead of being handed to the resolver as if they were DNS names.
  */
 export function isPrivateOrLoopbackHost(host: string): boolean {
-  const h = host.startsWith("[") && host.endsWith("]") ? host.slice(1, -1) : host;
+  const h = bareHost(host).toLowerCase();
 
   if (h === "localhost" || h.endsWith(".localhost")) return true;
 
   const ipv4 = parseIpv4(h);
   if (ipv4) return isNonPublicIpv4(ipv4);
 
-  if (h.includes(":")) return isNonPublicIpv6(h);
+  const ipv6 = parseIpv6(h);
+  if (ipv6) return isNonPublicIpv6(ipv6);
+
+  if (h.includes(":") || isNumericHostShape(h)) return true; // address-shaped and unparsable: fail closed.
 
   // A public DNS name (not an IP literal): allowed on its face by this
   // syntactic pass, and resolved + pinned before any socket is opened.
   return false;
 }
 
+/** Strip an IPv6 URL bracket pair and a zone id (`[fe80::1%eth0]`), leaving the address itself. */
+function bareHost(host: string): string {
+  const unbracketed = host.startsWith("[") && host.endsWith("]") ? host.slice(1, -1) : host;
+  return unbracketed.split("%")[0] ?? "";
+}
+
+/** A host whose every label is decimal, octal or hex digits: an address form, never a registrable name. */
+function isNumericHostShape(host: string): boolean {
+  if (host.length === 0) return false;
+  return host.split(".").every((label) => /^(?:0x[0-9a-f]+|\d+)$/i.test(label));
+}
+
+/** Strict dotted quad: four decimal octets, no leading zeros (octal ambiguity), each 0-255. */
 function parseIpv4(host: string): readonly number[] | null {
   const parts = host.split(".");
   if (parts.length !== 4) return null;
   const octets: number[] = [];
   for (const part of parts) {
-    if (!/^\d{1,3}$/.test(part)) return null;
+    if (!/^(?:0|[1-9]\d{0,2})$/.test(part)) return null;
     const n = Number(part);
     if (n > 255) return null;
     octets.push(n);
@@ -260,47 +385,68 @@ function parseIpv4(host: string): readonly number[] | null {
   return octets;
 }
 
-function isNonPublicIpv4(octets: readonly number[]): boolean {
-  const a = octets[0] ?? 0;
-  const b = octets[1] ?? 0;
-  if (a === 10) return true; // 10.0.0.0/8
-  if (a === 127) return true; // loopback
-  if (a === 0) return true; // unspecified / this-network
-  if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12
-  if (a === 192 && b === 168) return true; // 192.168.0.0/16
-  if (a === 169 && b === 254) return true; // link-local (incl. 169.254.169.254 metadata)
-  if (a === 100 && b >= 64 && b <= 127) return true; // 100.64.0.0/10 CGNAT
-  if (a === 192 && b === 0 && (octets[2] ?? 0) === 0) return true; // 192.0.0.0/24 IETF protocol assignments
-  if (a === 198 && (b === 18 || b === 19)) return true; // 198.18.0.0/15 benchmarking
-  if (a >= 224) return true; // multicast / reserved
-  return false;
+/**
+ * Parse an IPv6 literal into its 16 bytes, or `null` when it is not one.
+ *
+ * Handles the whole textual form RFC 4291 defines - full, `::`-compressed, and
+ * the dotted-quad tail (`::ffff:127.0.0.1`) - because the classifier has to see
+ * the same address the kernel will connect to. A single `::` is allowed once and
+ * must stand for at least one group, group values are 1-4 hex digits, and
+ * anything else returns `null` so the caller can fail closed.
+ */
+function parseIpv6(host: string): readonly number[] | null {
+  if (!host.includes(":")) return null;
+  let text = host.toLowerCase();
+
+  // A dotted-quad tail becomes the two hex groups it stands for, so the rest of
+  // the parse deals with one notation only.
+  const lastColon = text.lastIndexOf(":");
+  const tail = text.slice(lastColon + 1);
+  if (tail.includes(".")) {
+    const embedded = parseIpv4(tail);
+    if (!embedded) return null;
+    const hi = ((embedded[0] ?? 0) << 8) | (embedded[1] ?? 0);
+    const lo = ((embedded[2] ?? 0) << 8) | (embedded[3] ?? 0);
+    text = `${text.slice(0, lastColon + 1)}${hi.toString(16)}:${lo.toString(16)}`;
+  }
+
+  const sides = text.split("::");
+  if (sides.length > 2) return null;
+  const head = sides[0] ?? "";
+  const tailSide = sides.length === 2 ? (sides[1] ?? "") : "";
+  const headGroups = head.length > 0 ? head.split(":") : [];
+  const tailGroups = tailSide.length > 0 ? tailSide.split(":") : [];
+
+  let groups: string[];
+  if (sides.length === 1) {
+    if (headGroups.length !== 8) return null;
+    groups = headGroups;
+  } else {
+    // `::` stands for AT LEAST one zero group, so a compressed address can carry
+    // at most seven written groups.
+    if (headGroups.length + tailGroups.length > 7) return null;
+    const zeros = Array.from({ length: 8 - headGroups.length - tailGroups.length }, () => "0");
+    groups = [...headGroups, ...zeros, ...tailGroups];
+  }
+
+  const bytes: number[] = [];
+  for (const group of groups) {
+    if (!/^[0-9a-f]{1,4}$/.test(group)) return null;
+    const value = Number.parseInt(group, 16);
+    bytes.push(value >> 8, value & 0xff);
+  }
+  return bytes;
 }
 
-function isNonPublicIpv6(host: string): boolean {
-  const h = host.toLowerCase();
-  if (h === "::1" || h === "::") return true; // loopback / unspecified
-  if (h.startsWith("fe80")) return true; // link-local
-  if (h.startsWith("fc") || h.startsWith("fd")) return true; // unique-local fc00::/7
-  if (h.startsWith("ff")) return true; // multicast ff00::/8
-  // IPv4-mapped (::ffff:a.b.c.d) and NAT64 (64:ff9b::a.b.c.d): classify the embedded v4.
-  const embedded = h.match(/:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
-  if (embedded?.[1] && (h.startsWith("::ffff:") || h.startsWith("64:ff9b:"))) {
-    const v4 = parseIpv4(embedded[1]);
-    return v4 ? isNonPublicIpv4(v4) : true;
+function isNonPublicIpv4(octets: readonly number[]): boolean {
+  return IPV4_BLOCKS.some((block) => withinBlock(octets, block));
+}
+
+function isNonPublicIpv6(bytes: readonly number[]): boolean {
+  for (const { block, embeddedAt } of EMBEDDED_BLOCKS) {
+    if (!withinBlock(bytes, block)) continue;
+    // The packet ends up at the embedded IPv4, so that address is the verdict.
+    return isNonPublicIpv4(bytes.slice(embeddedAt, embeddedAt + 4));
   }
-  // WHATWG URL NORMALIZES mapped addresses to the HEX form before we ever see
-  // them (`[::ffff:127.0.0.1]` becomes hostname `[::ffff:7f00:1]`), so the
-  // dotted match above never fires for URL-sourced hosts - decode the embedded
-  // v4 from the last two 16-bit groups.
-  const hexMapped = h.match(/^(?:::ffff:|64:ff9b::)([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
-  if (hexMapped) {
-    const hi = Number.parseInt(hexMapped[1] ?? "", 16);
-    const lo = Number.parseInt(hexMapped[2] ?? "", 16);
-    if (!Number.isFinite(hi) || !Number.isFinite(lo)) return true;
-    return isNonPublicIpv4([hi >> 8, hi & 0xff, lo >> 8, lo & 0xff]);
-  }
-  // Any other ::ffff:- or NAT64-prefixed shape (or the deprecated ::ffff:0:a.b.c.d
-  // SIIT form) - fail closed rather than risk a mis-parse reaching a local target.
-  if (h.startsWith("::ffff:") || h.startsWith("64:ff9b:")) return true;
-  return false;
+  return IPV6_BLOCKS.some((block) => withinBlock(bytes, block));
 }
