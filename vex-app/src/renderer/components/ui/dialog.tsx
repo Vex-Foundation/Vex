@@ -40,6 +40,7 @@ import {
   type ReactEventHandler,
   type ReactNode,
 } from "react";
+import { IconWarning } from "../icons/index.js";
 import { cn } from "../../lib/utils.js";
 
 interface DialogContextValue {
@@ -100,6 +101,85 @@ const DIALOG_WIDTH_CLASS: Readonly<Record<DialogSize, string>> = {
   board: "w-[90vw] max-w-[1280px]",
 };
 
+/**
+ * NAME THE ELEMENT THAT TAKES FOCUS WHEN THIS DIALOG OPENS.
+ *
+ * Spread onto the ONE element the dialog wants focused:
+ *
+ * ```tsx
+ * <Button variant="ghost" onClick={onClose} {...DIALOG_INITIAL_FOCUS}>Cancel</Button>
+ * ```
+ *
+ * ## Why an attribute and not React's `autoFocus`
+ *
+ * Measured in a real browser, not assumed: React does NOT render the
+ * `autoFocus` prop as the `autofocus` CONTENT attribute - it strips the prop
+ * and calls `.focus()` imperatively during the commit. `DialogContent` then
+ * calls `showModal()` from its own effect, and a parent's effect runs AFTER
+ * its children's, so the native dialog focusing steps ran LAST and moved focus
+ * to the first focusable descendant. That is how `ProjectDeleteDialog` opened
+ * on the typed confirmation field that ARMS the delete, and the keep-alive
+ * dialog on a project's `Close` button, while both files said `autoFocus` on
+ * Cancel and every `document.activeElement` assertion passed.
+ *
+ * `autofocus` is the attribute the platform's own focusing steps read, so it
+ * means the same thing to the browser, to the jsdom polyfill, and to
+ * `DialogContent` below. It is a content attribute, so a test can assert it
+ * without a live focus manager.
+ */
+export const DIALOG_INITIAL_FOCUS: { readonly autofocus?: string } = {
+  autofocus: "",
+};
+
+/**
+ * Which element `DialogContent` focuses after `showModal()`.
+ *
+ * The element the dialog NAMED, and otherwise the dialog itself - never the
+ * first focusable descendant, which is what the platform default does and what
+ * put focus on a delete-arming field.
+ *
+ * Focusing the dialog element arms nothing, lets the accessible name and
+ * description be announced, and leaves the first control one Tab away. The
+ * alternative default considered and REJECTED was "the first control in the
+ * footer" (the cancel seat in most of this app's dialogs): `PlanDisplayModal`
+ * renders `Accept plan` first in its footer, so that rule would hand default
+ * focus to a state-changing action in exactly the kind of dialog rule 08 is
+ * about.
+ *
+ * A named element that is disabled cannot take focus, so the dialog does.
+ */
+function resolveDialogInitialFocus(dialog: HTMLDialogElement): HTMLElement {
+  const named = dialog.querySelector<HTMLElement>("[autofocus]");
+  if (
+    named !== null &&
+    !named.hasAttribute("disabled") &&
+    named.getAttribute("aria-disabled") !== "true"
+  ) {
+    return named;
+  }
+  return dialog;
+}
+
+/**
+ * IS A DIALOG ON SCREEN RIGHT NOW - the fact every global key owner must ask
+ * before taking a keystroke.
+ *
+ * `dialog[open]` is the state the native element itself reports, which is the
+ * only honest source: these dialogs are opened with `showModal()` and render in
+ * the top layer, above every painted z-index, so a surface underneath is not
+ * the surface the user is looking at. A React flag would be a second copy of a
+ * fact the DOM already holds.
+ *
+ * Escape is the case that made this a shared predicate rather than a local
+ * query: `preventDefault()` on an Escape keydown suppresses the platform's own
+ * close request, so a global listener that takes Escape while a dialog is open
+ * does not merely act on the wrong surface - it leaves the dialog open with the
+ * user's keystroke swallowed.
+ */
+export function isDialogOnScreen(doc: Document = document): boolean {
+  return doc.querySelector("dialog[open]") !== null;
+}
+
 export interface DialogContentProps extends HTMLAttributes<HTMLDialogElement> {
   /** Width family; omitted means the 380px prompt column. */
   readonly size?: DialogSize;
@@ -123,6 +203,10 @@ export interface DialogContentProps extends HTMLAttributes<HTMLDialogElement> {
  *  - ESC handling (the browser fires `cancel` → we route to onOpenChange)
  *  - Backdrop click handling — `mousedown` on the dialog itself (not
  *    children, courtesy of e.target === e.currentTarget check)
+ *  - INITIAL FOCUS after `showModal()` (see `DIALOG_INITIAL_FOCUS` and
+ *    `resolveDialogInitialFocus`): the dialog decides where focus lands, so
+ *    the decision is made once here rather than by whichever control the
+ *    markup happens to render first.
  *  - Focus restoration on close
  *
  * Focus trap: the native `<dialog>` element + `showModal()` already
@@ -176,6 +260,11 @@ export const DialogContent = forwardRef<HTMLDialogElement, DialogContentProps>(
           // dialog is detached. Both are programmer errors; swallow so a
           // misuse during fast unmount doesn't crash the renderer.
         }
+        // AFTER showModal, always: this effect runs after the children's, and
+        // the native focusing steps ran inside showModal, so this is the last
+        // word on where the dialog opens. Unconditional - a re-run would only
+        // happen on a fresh open, which is exactly when initial focus applies.
+        resolveDialogInitialFocus(node).focus();
       } else if (!open && node.open) {
         node.close();
       }
@@ -227,6 +316,11 @@ export const DialogContent = forwardRef<HTMLDialogElement, DialogContentProps>(
     return (
       <dialog
         ref={assignRef}
+        // Programmatically focusable, never in the Tab order: the dialog is
+        // where focus rests when the surface names no element of its own
+        // (`resolveDialogInitialFocus`), and a `<dialog>` without a tabindex
+        // ignores `.focus()`.
+        tabIndex={-1}
         aria-labelledby={titleId}
         aria-describedby={descriptionId}
         onCancel={handleCancel}
@@ -337,12 +431,87 @@ export function DialogHeadlessHeader({
   );
 }
 
+/**
+ * Which register the consequence strip reads in.
+ *
+ * Two, and only two, because there are two kinds of consent this product asks
+ * for. `warning` is for an action that ends something or moves the user's files;
+ * `notice` is for one that changes files Vex itself maintains and can rewrite
+ * again. Repair is the reason `notice` exists: it overwrites a file the user may
+ * have edited, so it needs the strip, but dressing it in the same red as Delete
+ * would leave Studio's two most consequential buttons speaking one tone for two
+ * very different outcomes.
+ */
+export type DialogConsequenceTone = "warning" | "notice";
+
+const CONSEQUENCE_TONE_CLASS: Readonly<Record<DialogConsequenceTone, string>> = {
+  warning: "border-warning/40 bg-warning-wash text-warning-label",
+  notice: "border-accent-primary/30 bg-accent-wash text-ink-primary",
+};
+
+export interface DialogConsequenceProps
+  extends HTMLAttributes<HTMLDivElement> {
+  /** Register. Defaults to `warning`. */
+  readonly tone?: DialogConsequenceTone;
+}
+
+/**
+ * THE CONSEQUENCE STRIP: what this dialog is about to do, above everything else.
+ *
+ * ADDITIVE - no existing consumer changes shape by this existing. It sits
+ * BETWEEN `DialogHeader` and `DialogBody` as a `shrink-0` sibling, so it is
+ * outside the body's `overflow-y-auto` container and is the first thing read
+ * whatever the body is scrolled to.
+ *
+ * ## The defect it closes
+ *
+ * Studio's consent dialogs led with a title and a description and left the
+ * consequence to be inferred from a paragraph in a scrolling form: "Delete
+ * project?" over a body the user had to read to learn that the running
+ * terminals would be closed, and a Full access radio card whose one sentence of
+ * caution sat in the same register as the option beside it. The strip states the
+ * three facts a person needs before consenting - WHAT will happen, TO WHAT
+ * (folder, project, wallets), and WHETHER IT CAN BE UNDONE - in the dialog's own
+ * chrome, where nothing can scroll it away from the button that performs it.
+ *
+ * The strip is a statement, not a control, EXCEPT where the consequence is a
+ * GRANT: an acknowledgement checkbox rendered as its child binds the consent to
+ * the exact proposal on screen (rule 09 - approval binds to the exact action and
+ * parameters). The primitive owns the register and the layout; the words and the
+ * acknowledgement belong to the surface, which is where their copy lives.
+ *
+ * The glyph is `aria-hidden`: the strip's text carries the whole meaning, and a
+ * screen reader that also announced "warning" would be reading the decoration.
+ */
+export const DialogConsequence = forwardRef<
+  HTMLDivElement,
+  DialogConsequenceProps
+>(({ className, tone = "warning", children, ...props }, ref) => (
+  <div
+    ref={ref}
+    data-vex-dialog-consequence={tone}
+    className={cn(
+      "flex shrink-0 items-start gap-2 border-y px-6 py-3 text-xs leading-5",
+      CONSEQUENCE_TONE_CLASS[tone],
+      className,
+    )}
+    {...props}
+  >
+    <IconWarning size={14} className="mt-0.5 shrink-0" />
+    <div className="flex min-w-0 flex-1 flex-col gap-1.5">{children}</div>
+  </div>
+));
+DialogConsequence.displayName = "DialogConsequence";
+
 export const DialogBody = forwardRef<
   HTMLDivElement,
   HTMLAttributes<HTMLDivElement>
 >(({ className, ...props }, ref) => (
   <div
     ref={ref}
+    // THE scroll region of a dialog. Named in the DOM so a test can assert
+    // that what must stay visible is NOT inside it.
+    data-vex-dialog-body=""
     className={cn(
       // 24px side padding keeps the 332px content column at max-w 380.
       "flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 py-5",
@@ -352,6 +521,50 @@ export const DialogBody = forwardRef<
   />
 ));
 DialogBody.displayName = "DialogBody";
+
+/**
+ * THE PINNED SLOT: what the user must see whatever the body is scrolled to.
+ *
+ * ADDITIVE - no existing consumer changes shape by this existing. It sits
+ * BETWEEN `DialogBody` and `DialogFooter` as a `shrink-0` sibling, so it is
+ * outside the body's `overflow-y-auto` container and cannot be scrolled off.
+ *
+ * ## The defect it closes
+ *
+ * A submit error and a render report were mounted as the LAST children of
+ * `DialogBody`. The dialog is capped at 85vh, the body is the one scroll
+ * region, and the footer holding the submit button is sticky - so on a form
+ * taller than the viewport the answer to "why did nothing happen when I pressed
+ * Create" was painted below the fold, under a button that had not moved.
+ * Nothing scrolled to it and nothing announced it. A toast cannot serve either:
+ * `showModal()` puts the dialog in the top layer, above every painted z-index,
+ * so a toast raised while a modal is open is behind it.
+ *
+ * ## It owns its own bound
+ *
+ * A render report over a project with many artifacts is genuinely long. Letting
+ * it grow would push the footer off the bottom of the dialog, which is the same
+ * defect with the roles swapped, so the slot scrolls INTERNALLY at a fraction
+ * of the viewport and the footer keeps its seat. Nothing is hidden: the content
+ * is complete and reachable by scrolling inside the slot.
+ *
+ * Render it CONDITIONALLY - an empty slot would paint its divider over nothing.
+ */
+export const DialogPinnedSlot = forwardRef<
+  HTMLDivElement,
+  HTMLAttributes<HTMLDivElement>
+>(({ className, ...props }, ref) => (
+  <div
+    ref={ref}
+    data-vex-dialog-pinned=""
+    className={cn(
+      "flex max-h-[38vh] shrink-0 flex-col gap-4 overflow-y-auto overscroll-contain border-t border-line-2 px-6 pt-4",
+      className,
+    )}
+    {...props}
+  />
+));
+DialogPinnedSlot.displayName = "DialogPinnedSlot";
 
 export const DialogFooter = forwardRef<
   HTMLDivElement,

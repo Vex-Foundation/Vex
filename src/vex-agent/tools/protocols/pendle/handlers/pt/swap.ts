@@ -1,5 +1,5 @@
 /**
- * `pendle.pt.buy` / `pendle.pt.sell` — the token↔PT AMM swap pair.
+ * `pendle.pt.buy` / `pendle.pt.sell` - the token↔PT AMM swap pair.
  *
  * Convert is RE-FETCHED here (the quote's route is never signed), then the
  * fund-safety extractor (`../../calldata.ts`, LOCKED G2#1) runs before signing:
@@ -69,13 +69,13 @@ export async function executePendleSwap(
     const amountWei = parseUnits(amountInRaw, tokenIn.decimals);
     const slippage = resolvePendleSlippage(toolId, num(p, "slippageBps"));
 
-    // PT + canonical market — buy: PT is tokenOut; sell: PT is tokenIn.
+    // PT + canonical market - buy: PT is tokenOut; sell: PT is tokenIn.
     const ptAddress = side === "buy" ? tokenOut : tokenIn.address;
 
     /**
      * A refusal that happened before anything could be signed. It is recorded as
      * a hashless `definitively_failed` row so a refusal is as visible in Agent
-     * Scan as a fill — "nothing happened" used to be indistinguishable from
+     * Scan as a fill - "nothing happened" used to be indistinguishable from
      * "nothing was recorded".
      */
     const refuse = async (
@@ -106,7 +106,7 @@ export async function executePendleSwap(
 
     if (p.dryRun === true) {
       const response = await getPendleClient().convert(chainId, {
-        receiver: PENDLE_ROUTER, // placeholder — dry-run never signs
+        receiver: PENDLE_ROUTER, // placeholder - dry-run never signs
         input: { token: tokenIn.address, amount: amountWei.toString() },
         outputToken: tokenOut,
         slippage: slippage.fraction,
@@ -139,7 +139,7 @@ export async function executePendleSwap(
     const intent: PendleTxIntent = {
       action: side as PendleAction,
       wallet,
-      // The tolerance this route is held to — see calldata/price-floor.ts.
+      // The tolerance this route is held to - see calldata/price-floor.ts.
       slippageBps: slippage.bps,
       inputToken: tokenIn.address,
       inputAmountWei: amountWei,
@@ -147,13 +147,13 @@ export async function executePendleSwap(
       expectedMarket,
       ptAddress: getAddress(ptAddress),
       // Sell: bind the decoded TokenOutput.tokenOut to the quoted payment token.
-      // (A buy's output PT is implied by the market — no output tuple to bind.)
+      // (A buy's output PT is implied by the market - no output tuple to bind.)
       ...(side === "sell" ? { expectedOutputToken: tokenOut } : {}),
     };
     const route = selectSafeRoute(intent, response);
 
     // Read BEFORE signing: the durable row's legs must carry their decimals
-    // (rules/90 — a raw amount without them is unreadable), and the staged
+    // (rules/90 - a raw amount without them is unreadable), and the staged
     // intent has to exist before a signature does.
     const assetMap = await buildAssetMap(chainId);
     const quotedOutRaw = route.outputs[0]?.amount ?? "0";

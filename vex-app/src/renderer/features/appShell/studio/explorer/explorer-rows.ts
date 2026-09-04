@@ -1,0 +1,193 @@
+/**
+ * THE ROW VOCABULARY - what the explorer can put on a line, as a closed union.
+ *
+ * Separated from `explorer-model.ts` because these are the CONTRACT and that is
+ * the ENGINE. B4's sidebar, the row component and the session all read these
+ * shapes; only the model mutates them, and only the model needs the splice
+ * machinery, the index maps and the render counts that live next to it.
+ *
+ * Three kinds, and the two that are not filesystem entries exist because the
+ * tree is the wrong shape to say what they say any other way:
+ *
+ *  - a paged directory has to offer the REST of itself, and a bound that does
+ *    not report itself is a silent cut;
+ *  - a directory that could not be read, or a project whose watcher is gone,
+ *    has to say WHY where the user is looking, not in a log they will not open.
+ */
+
+import type { FileNode, FilesErrorCode } from "@shared/schemas/files.js";
+
+/* ------------------------------------------------------------------ *
+ * The row union
+ * ------------------------------------------------------------------ */
+
+/** How far a directory's own listing has got. Meaningless for a file. */
+export type ExplorerLoadState = "idle" | "loading" | "loaded" | "error";
+
+/** How far the "show more" affordance of one directory has got. */
+export type ExplorerLoadMoreState = "idle" | "loading" | "error";
+
+interface ExplorerRowBase {
+  /** Unique within the tree. A node row's id IS its `nodeId`. */
+  readonly id: string;
+  /** Depth from the project root, 0-based. `aria-level` is this plus one. */
+  readonly level: number;
+  /** The owning directory's `nodeId`, or `null` for a row directly at the root. */
+  readonly parentId: string | null;
+  /** 1-based position among the owning directory's ROWS, tail rows included. */
+  readonly posInSet: number;
+  /** How many rows the owning directory has, tail rows included. */
+  readonly setSize: number;
+}
+
+/**
+ * A write this row is waiting on, or `null`.
+ *
+ * The row keeps its place and its name while it is pending: a row that vanished
+ * on Enter and came back on the answer would flicker, and a row that vanished
+ * and did NOT come back (a refusal) would have deleted itself for a delete that
+ * did not happen.
+ */
+export type ExplorerRowPending = "creating" | "renaming" | "deleting";
+
+/** A real filesystem entry. */
+export interface ExplorerNodeRow extends ExplorerRowBase {
+  readonly kind: "node";
+  readonly node: FileNode;
+  /** A mutation this row is waiting for main to answer. */
+  readonly pending: ExplorerRowPending | null;
+  /** Directories only; always false for a file. */
+  readonly expanded: boolean;
+  /** Whether this directory's children have been listed at least once. */
+  readonly resolved: boolean;
+  readonly loadState: ExplorerLoadState;
+  readonly errorCode: FilesErrorCode | null;
+  /** Rows loaded so far. The page size a refresh re-lists with. */
+  readonly loadedCount: number;
+  /** What main said this directory holds in total, or null before a listing. */
+  readonly totalCount: number | null;
+  /** What the exclude rules hid, or null before a listing. */
+  readonly excludedCount: number | null;
+}
+
+/**
+ * The "show the rest" row. Exactly one per directory whose last page said
+ * `hasMore`, positioned as that directory's LAST child row.
+ *
+ * It counts itself into `posInSet`/`setSize` on purpose: a screen reader that
+ * hears "Show 300 more entries, 201 of 201" has been told the truth about the
+ * list it is in. Hiding the row from the set would make the count claim the
+ * directory ends where the page does.
+ */
+export interface ExplorerLoadMoreRow extends ExplorerRowBase {
+  readonly kind: "loadMore";
+  /** `totalCount` minus what is loaded. Never a guess; main counted it. */
+  readonly remaining: number;
+  /** Opaque; passed back verbatim. */
+  readonly cursor: string;
+  readonly state: ExplorerLoadMoreState;
+  readonly errorCode: FilesErrorCode | null;
+}
+
+/**
+ * A sentence in the tree, where the tree itself is the wrong shape to say it:
+ * one per directory whose listing failed, and one at the ROOT for the
+ * suspended, unavailable and closed watcher states.
+ */
+export interface ExplorerNoticeRow extends ExplorerRowBase {
+  readonly kind: "notice";
+  readonly text: string;
+  /** `"retry"` renders an affordance and makes Enter mean retry. */
+  readonly action: "retry" | null;
+  readonly code: FilesErrorCode | null;
+  readonly tone: ExplorerNoticeTone;
+}
+
+/**
+ * THE EDIT ROW: an input rendered AS a tree row.
+ *
+ * VS Code's model exactly (`explorerViewer.ts:904-923`, `renderInputBox`): the
+ * label is hidden and an input box takes its place inside the same row element,
+ * validated live, committed on Enter, cancelled on Escape. The alternative - a
+ * modal dialog asking for a name - was rejected there and is rejected here for
+ * the same reason: the name belongs at the position the entry will occupy, and
+ * a dialog hides the very list the user is choosing a unique name against.
+ *
+ * AT MOST ONE exists in the tree, which is why the model holds a single edit
+ * rather than a flag per node. Two open name boxes would be two answers to
+ * "what is the user typing", and the second would have to be abandoned anyway.
+ *
+ * A `rename` REPLACES the row it names, so the tree does not grow while it is
+ * open; a create ADDS one, as the last child of its parent, because that is the
+ * only position the renderer can choose without inventing a total order that
+ * belongs to main.
+ */
+export interface ExplorerEditRow extends ExplorerRowBase {
+  readonly kind: "edit";
+  readonly intent: EditIntent;
+  /** What the input starts with: empty for a create, the old name for a rename. */
+  readonly initialName: string;
+  /** The node being renamed, or `null` for a create. */
+  readonly targetId: string | null;
+  /**
+   * The refusal shown under the input, or `null`.
+   *
+   * It carries a refusal from MAIN as well as a live validation message: a
+   * create that main rejected reopens its row with the reason on it, which is
+   * what "the error is the row's own state" means. A toast would put the
+   * sentence somewhere other than the name that caused it.
+   */
+  readonly message: string | null;
+  /** The commit is in flight. The input stays mounted and goes read-only. */
+  readonly submitting: boolean;
+}
+
+/** What an open edit row will do when it commits. */
+export type EditIntent = "createFile" | "createFolder" | "rename";
+
+export type ExplorerRow =
+  | ExplorerNodeRow
+  | ExplorerLoadMoreRow
+  | ExplorerNoticeRow
+  | ExplorerEditRow;
+
+/** An open edit, as the model holds it. */
+export interface EditDescriptor {
+  readonly intent: EditIntent;
+  /** The directory the entry belongs to. `null` is the project root. */
+  readonly parentId: string | null;
+  /** The node being renamed, or `null` for a create. */
+  readonly targetId: string | null;
+  readonly initialName: string;
+  readonly message: string | null;
+  readonly submitting: boolean;
+}
+
+/** How a listing joins what a directory already holds. */
+export type SetChildrenMode = "replace" | "append";
+
+/** A directory's load-more tail row, as the session sets it. */
+export interface LoadMoreDescriptor {
+  readonly remaining: number;
+  readonly cursor: string;
+  readonly state: ExplorerLoadMoreState;
+  readonly errorCode?: FilesErrorCode;
+}
+
+/**
+ * Whether a notice reports a FAILURE or states a fact.
+ *
+ * "This project has no files yet" is the tree telling the truth about an empty
+ * folder; a warning mark on it would claim something is wrong when nothing is.
+ * Every other notice on this surface - suspended, closed, unavailable, and each
+ * listing refusal - is a failure and keeps the mark.
+ */
+export type ExplorerNoticeTone = "info" | "warning";
+
+/** A directory's (or the root's) notice tail row, as the session sets it. */
+export interface NoticeDescriptor {
+  readonly text: string;
+  readonly action: "retry" | null;
+  readonly code?: FilesErrorCode;
+  readonly tone: ExplorerNoticeTone;
+}

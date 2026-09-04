@@ -1,5 +1,5 @@
 /**
- * Pendle SY wrap / unwrap handlers (R5d card D3) — `pendle.sy.mint` (token → SY)
+ * Pendle SY wrap / unwrap handlers (R5d card D3) - `pendle.sy.mint` (token → SY)
  * and `pendle.sy.redeem` (SY → token).
  *
  * ONE code path serves both directions: an SY wrap is symmetric, so the only
@@ -9,21 +9,21 @@
  * The matured-market matrix (R5b) exists because a PT/YT/LP position belongs to
  * a market with an expiry, so a buy-shaped action must refuse a matured one by
  * name and an exit-shaped action must still reach it. An SY belongs to NO
- * market: it has no expiry, no PT and no YT (`calldata/decode.ts` — arg 1 of
+ * market: it has no expiry, no PT and no YT (`calldata/decode.ts` - arg 1 of
  * `mintSyFromToken`/`redeemSyToToken` is the SY CONTRACT, not a market), so
  * there is nothing to classify and nothing to refuse. The SY the caller names is
  * instead bound directly into the calldata check (`expectedSy`), which is a
  * stronger guarantee than a catalogue lookup: the transaction cannot touch a
  * different SY than the one asked for.
  *
- * PREQUOTE — the DRY-RUN-IN-TOOL pattern. A `dryRun: true` call quotes through
+ * PREQUOTE - the DRY-RUN-IN-TOOL pattern. A `dryRun: true` call quotes through
  * Convert, runs the FULL fund-safety extractor (Router pin, sender/value binds,
  * exact approval-set bind, calldata intent bind, and the price floor), records
  * the authorization, and broadcasts nothing. The execute call re-fetches Convert,
  * re-runs every one of those checks, and is refused unless a fresh dry run with
  * IDENTICAL params exists. See `./sy-prequote.ts`.
  *
- * Upstream error text NEVER reaches the model — only bounded, code-keyed detail.
+ * Upstream error text NEVER reaches the model - only bounded, code-keyed detail.
  */
 
 import { getAddress, parseUnits, type Address, type Hex } from "viem";
@@ -60,7 +60,7 @@ import {
 } from "./shared.js";
 import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 
-/** The activity role every SY row carries (migration 053) — one in, one out. */
+/** The activity role every SY row carries (migration 053) - one in, one out. */
 const SY_EVENT_ROLE = "yield_sy" as const;
 
 function toolIdFor(direction: PendleSyDirection): string {
@@ -89,7 +89,7 @@ async function executePendleSyWrap(
     const chainEntry = requirePendleChain(chain);
     const chainId = chainEntry.chainId;
     const chainSlug = chainEntry.slug;
-    // A mutation without a session has nothing to attribute its durable row to —
+    // A mutation without a session has nothing to attribute its durable row to -
     // and nothing to scope its prequote to either.
     const sessionId = context.sessionId;
     if (!sessionId) return fail(`${toolId} requires an active session.`);
@@ -111,7 +111,7 @@ async function executePendleSyWrap(
     /**
      * A refusal that happened before anything could be signed, recorded as a
      * hashless `definitively_failed` row so it is as visible in Agent Scan as a
-     * fill — "nothing happened" must not be indistinguishable from "nothing was
+     * fill - "nothing happened" must not be indistinguishable from "nothing was
      * recorded".
      */
     const refuse = async (
@@ -143,7 +143,7 @@ async function executePendleSyWrap(
 
     // Signer resolution stays AFTER the dry-run branch decision so a preview
     // never decrypts a key. The dry run still binds the SELECTED address as the
-    // receiver — the same address the execute will sign with — so its route
+    // receiver - the same address the execute will sign with - so its route
     // safety is the identical check, not a weaker one against a placeholder.
     let wallet: Address;
     let signer: ChainWallet | null = null;
@@ -172,13 +172,13 @@ async function executePendleSyWrap(
     const intent: PendleTxIntent = {
       action: direction === "mint" ? "sy-mint" : "sy-redeem",
       wallet,
-      // The tolerance this route is held to — see calldata/price-floor.ts.
+      // The tolerance this route is held to - see calldata/price-floor.ts.
       slippageBps: slippage.bps,
       inputToken: tokenIn.address,
       inputAmountWei: amountWei,
       isNative: false,
       expectedSy: sy,
-      // The ONLY token this wrap may be quoted as delivering — the SY on a mint,
+      // The ONLY token this wrap may be quoted as delivering - the SY on a mint,
       // the payment token on a redeem. Without it a mint's `minSyOut` (a bare
       // uint256 naming no token) would be floored against whatever token the
       // response chose to declare, and `route.outputs[0]` below would report it.
@@ -188,7 +188,7 @@ async function executePendleSyWrap(
       // by `expectedSy`, and carries no output tuple.
       ...(direction === "redeem" ? { expectedOutputToken: tokenOut } : {}),
     };
-    // FULL fund-safety extractor — identical on both the dry run and the execute.
+    // FULL fund-safety extractor - identical on both the dry run and the execute.
     const route = selectSafeRoute(intent, response);
 
     const assetMap = await buildAssetMap(chainId);

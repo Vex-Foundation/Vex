@@ -18,12 +18,16 @@ import type { VexShellBridge } from "../../shared/types/bridge/shell/index.js";
 import { capabilities } from "./capabilities.js";
 import { database } from "./database.js";
 import { docker } from "./docker.js";
+import { files } from "./files.js";
 import { market } from "./market.js";
+import { studio } from "./studio.js";
 import { onboarding } from "./onboarding.js";
+import { search } from "./search.js";
 import { secrets } from "./secrets.js";
 import { settings } from "./settings.js";
 import { support } from "./support.js";
 import { system } from "./system.js";
+import { terminal } from "./terminal.js";
 import { telemetry } from "./telemetry.js";
 import { updater } from "./updater.js";
 import { wallet } from "./wallet.js";
@@ -41,4 +45,8 @@ export const shellBridge = {
   support,
   updater,
   market,
+  studio,
+  terminal,
+  files,
+  search,
 } satisfies VexShellBridge;

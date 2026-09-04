@@ -1,10 +1,10 @@
 /**
  * UPDATER PREVIEW - diagnostic toast viewer (owner request 2026-07-22,
  * sibling of the SetupTour): `VITE_VEX_UPDATER_PREVIEW=1` replaces the
- * live update layer with this local previewer so the sticky update toast
- * can be seen in EVERY state without a real update feed.
+ * live update layer with this local previewer so the update toast can be
+ * seen in EVERY state without a real update feed.
  *
- * A small picker docks to the LEFT of the toast slot; each key feeds the
+ * A small picker docks to the LEFT of the toast stack; each key feeds the
  * `UpdateToastSurface` a schema-valid mock status. Action handlers walk
  * the mock through realistic transitions locally ("Update now" ->
  * downloading -> downloaded, "Cancel" -> available, "Try again" from a

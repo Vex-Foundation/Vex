@@ -36,7 +36,11 @@ function globalRow(over: Record<string, unknown> = {}): Record<string, unknown> 
     decision: null,
     decisionReason: null,
     executionStatus: null,
+    origin: "agent",
+    projectId: null,
+    requestedByClient: null,
     sessionTitle: "Send ETH to bridge",
+    projectName: null,
     ...over,
   };
 }
@@ -97,8 +101,32 @@ describe("approvals schemas", () => {
       decision: null,
       decisionReason: null,
       executionStatus: null,
+      origin: "studio_mcp",
+      projectId: "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+      requestedByClient: "Claude Code",
     });
     expect(parsed.success).toBe(true);
+  });
+
+  it("requestedByClient is required, nullable, bounded and free of control characters", () => {
+    // The card shows this string beside the actor row and a human decides from
+    // it, so the DTO boundary restates the enqueue-side rule: absent is not the
+    // same as null (a row predating the field is mapped to null by main, never
+    // left keyless), and a name that could forge a line is refused whole.
+    const { requestedByClient: _omit, ...withoutClient } = globalRow();
+    expect(approvalPendingGlobalDtoSchema.safeParse(withoutClient).success).toBe(false);
+    expect(
+      approvalPendingGlobalDtoSchema.safeParse(globalRow({ requestedByClient: "Codex CLI" }))
+        .success,
+    ).toBe(true);
+    expect(
+      approvalPendingGlobalDtoSchema.safeParse(globalRow({ requestedByClient: "a\u0000b" }))
+        .success,
+    ).toBe(false);
+    expect(
+      approvalPendingGlobalDtoSchema.safeParse(globalRow({ requestedByClient: "x".repeat(61) }))
+        .success,
+    ).toBe(false);
   });
 
   it("approvalSummaryDtoSchema rejects extra keys (.strict)", () => {

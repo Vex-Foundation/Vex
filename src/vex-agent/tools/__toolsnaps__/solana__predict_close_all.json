@@ -7,7 +7,7 @@
         "additionalProperties": false,
         "properties": {
           "minSellPriceSlippageBps": {
-            "description": "Slippage tolerance applied to EACH sell in this batch, in basis points (0-1000; e.g. 100 = 1%). Vex caps slippage at 1000 bps (10%) and rejects anything above rather than clamping. Required by the provider — there is no default, so pick a value you accept across every position closed.",
+            "description": "Slippage tolerance applied to EACH sell in this batch, in basis points (0-1000; e.g. 100 = 1%). Vex caps slippage at 1000 bps (10%) and rejects anything above rather than clamping. Required by the provider - there is no default, so pick a value you accept across every position closed.",
             "type": "number"
           }
         },

@@ -1,4 +1,4 @@
-/** Mission tools — only visible in mission setup/run contexts. */
+/** Mission tools - only visible in mission setup/run contexts. */
 
 import type { ToolDef } from "../types.js";
 import { responseFormatParam } from "@vex-agent/response-format.js";
@@ -38,7 +38,7 @@ export const MISSION_TOOLS: readonly ToolDef[] = [
       allowedProtocols: { type: "array", items: { type: "string" }, description: "Allowed protocols or venues" },
       riskProfile: { type: "string", description: "Risk profile such as conservative, moderate, or aggressive" },
       successCriteria: { type: "array", items: { type: "string" }, description: "Concrete success criteria" },
-      stopConditions: { type: "array", items: { type: "string" }, description: "Proposed non-success stop conditions for the contract. The user owns this list — propose, refine with the user, and save updates here. Final acceptance happens via the host Accept contract step, not in chat" },
+      stopConditions: { type: "array", items: { type: "string" }, description: "Proposed non-success stop conditions for the contract. The user owns this list - propose, refine with the user, and save updates here. Final acceptance happens via the host Accept contract step, not in chat" },
       deadline: { type: "string", description: "Optional deadline, preferably ISO8601 or an absolute date/time with timezone" },
       durationMinutes: { type: "number", description: "The mission's time-box in whole minutes (e.g. 5, 60). The run auto-finalizes at started_at + this many minutes, regardless of progress. Set this from the goal's stated duration; if omitted, a 60-minute default applies." },
     }, additionalProperties: false },

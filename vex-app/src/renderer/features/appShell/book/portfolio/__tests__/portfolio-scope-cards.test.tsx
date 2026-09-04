@@ -60,6 +60,7 @@ const SOL_WALLET = {
 };
 
 const SESSION = "00000000-0000-4000-8000-0000000000aa";
+const PROJECT = "00000000-0000-4000-8000-0000000000bb";
 
 function token(symbol: string, usd: number | null) {
   return {
@@ -79,6 +80,20 @@ function renderWith(ui: ReactNode) {
   return render(
     <QueryClientProvider client={client}>{ui}</QueryClientProvider>,
   );
+}
+
+/**
+ * Same render, but hands back the client so a test can assert what the card
+ * did NOT put in the cache. A disabled query leaves no entry under its key at
+ * all, which is the observable difference between "fetched and ignored" and
+ * "never read".
+ */
+function renderWithClient(ui: ReactNode): { readonly client: QueryClient } {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+  return { client };
 }
 
 beforeEach(() => {
@@ -207,6 +222,66 @@ describe("PortfolioOverviewCard scope input", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "All wallets" }));
     await screen.findByText("$1234.56");
+  });
+});
+
+describe("PortfolioOverviewCard global-inventory read under a project scope", () => {
+  /**
+   * The chips are a global-inventory affordance and a project card hides them.
+   * The finding this pins is the read BEHIND them: a project rail must not fire
+   * `wallets.listAvailable` nor write the shared global inventory cache row.
+   * The real card is rendered against the real query layer here - only the
+   * bridge is faked - so the assertion is on the IPC the card actually made.
+   */
+  it("never reads the global wallet inventory and leaves its cache row empty", async () => {
+    readMock.mockResolvedValue({
+      ok: true,
+      data: portfolio({ scope: "project" }),
+    });
+    listAvailableMock.mockResolvedValue({
+      ok: true,
+      data: { evm: [EVM_WALLET], solana: [SOL_WALLET] },
+    });
+    const { client } = renderWithClient(
+      <PortfolioOverviewCard scope={{ kind: "project", projectId: PROJECT }} />,
+    );
+    // The scope's own read resolving is the settle point: the card has
+    // mounted, run its effects and painted before the negative is asserted.
+    await screen.findByText("$1234.56");
+    expect(readMock).toHaveBeenCalledWith({
+      scope: "project",
+      projectId: PROJECT,
+    });
+    expect(listAvailableMock).not.toHaveBeenCalled();
+    expect(client.getQueryData(["wallets", "available"])).toBeUndefined();
+    expect(screen.queryByRole("group", { name: "Portfolio scope" })).toBeNull();
+  });
+
+  it("still reads it under a global scope - the gate is the scope, not a mute", async () => {
+    readMock.mockResolvedValue({ ok: true, data: portfolio() });
+    listAvailableMock.mockResolvedValue({
+      ok: true,
+      data: { evm: [EVM_WALLET], solana: [SOL_WALLET] },
+    });
+    renderWith(<PortfolioOverviewCard scope={GLOBAL_PORTFOLIO_SCOPE} />);
+    await screen.findByRole("group", { name: "Portfolio scope" });
+    expect(listAvailableMock).toHaveBeenCalledWith({});
+  });
+
+  it("a session scope keeps reading it too", async () => {
+    readMock.mockResolvedValue({
+      ok: true,
+      data: portfolio({ scope: "session" }),
+    });
+    listAvailableMock.mockResolvedValue({
+      ok: true,
+      data: { evm: [EVM_WALLET], solana: [SOL_WALLET] },
+    });
+    renderWith(
+      <PortfolioOverviewCard scope={{ kind: "session", sessionId: SESSION }} />,
+    );
+    await screen.findByRole("group", { name: "Portfolio scope" });
+    expect(listAvailableMock).toHaveBeenCalledWith({});
   });
 });
 

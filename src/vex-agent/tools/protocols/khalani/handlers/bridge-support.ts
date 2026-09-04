@@ -1,7 +1,7 @@
 /**
  * `bridge.ts` shared support: agent-grade result shaping, the explorer-link
  * + route-jargon helpers, and the never-signed-leg abort/in-flight/order-
- * lookup primitives — split out (Card C5, move-only) once the parent file
+ * lookup primitives - split out (Card C5, move-only) once the parent file
  * crossed the repo's 500-line cap. See `bridge.ts`'s own module doc for the
  * full staged-execute contract these helpers serve. Shared by both
  * `bridge-execute.ts` (the main handler) and `bridge-poll.ts` (in-turn order
@@ -24,8 +24,8 @@ export function khalaniFailureMessage(err: unknown): string {
 }
 
 /**
- * The same failure rendered under the W1 AGENT-FACING contract —
- * `<toolId> failed [<CODE>/<category>, HTTP <status>]: <cause> — <remedy>`.
+ * The same failure rendered under the W1 AGENT-FACING contract -
+ * `<toolId> failed [<CODE>/<category>, HTTP <status>]: <cause> - <remedy>`.
  *
  * Separate from {@link khalaniFailureMessage} on purpose: that one feeds
  * persisted `failure_reason` values and log lines, where the bracketed envelope
@@ -85,10 +85,10 @@ export interface BridgeVexFeeView extends VexFeeCollection {
 }
 
 /**
- * Build the agent-grade result. OWNER RULE: never truncated — every leg, hash,
+ * Build the agent-grade result. OWNER RULE: never truncated - every leg, hash,
  * amount, and USD estimate is projected as a structured field. USD is always
  * marked as an estimate. `success` is FALSE for any not-yet-verified outcome
- * (pending/settling/filled-unverified/failed/refunded) — success-shaped
+ * (pending/settling/filled-unverified/failed/refunded) - success-shaped
  * ambiguity is forbidden (R2/Q2); only the W4 sweep's verified confirm is a
  * success, and it seeds balances then (C3).
  */
@@ -115,7 +115,7 @@ export function bridgeResult(input: {
   orderId?: string;
   depositTxHash?: string;
   /**
-   * O-8 — what the durable provider-status write did. Supplied only by the
+   * O-8 - what the durable provider-status write did. Supplied only by the
    * post-deposit poll bodies, because they are the only ones where a provider
    * status could have been read; a pre-broadcast rejection has nothing to
    * disclose and stays byte-unchanged.
@@ -171,7 +171,7 @@ export function bridgeResult(input: {
 }
 
 /**
- * Best-effort abort of never-signed downstream rows — a throw is logged, never
+ * Best-effort abort of never-signed downstream rows - a throw is logged, never
  * propagated. `toIndexExclusive` (when set) bounds the abort to
  * `event_index < toIndexExclusive`, so an ambiguous DEPOSIT can abort its
  * never-signed sibling legs while leaving the logical `bridge_fill_expected` row
@@ -197,7 +197,7 @@ export function inFlightResult(toolId: string, existing: AgentActivityEvent | nu
   const detail = existing ? ` (execution ${existing.protocolExecutionId}, status ${existing.status})` : "";
   return {
     success: false,
-    output: `${toolId}: a bridge for this route is already in flight${detail} — wait for it to settle before starting another.`,
+    output: `${toolId}: a bridge for this route is already in flight${detail} - wait for it to settle before starting another.`,
   };
 }
 

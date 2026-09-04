@@ -10,7 +10,10 @@
  *     nothing created or edited;
  *   - the renderer cannot supply a slug, a path, or a wallet address - the
  *     strict schemas reject every one of those keys by name;
- *   - `updateScope` requires an `expectedScopeVersion` and at least one field.
+ *   - `updateScope` requires an `expectedScopeVersion` and at least one field;
+ *   - a create RENDERS the project's files under its own `create` trigger, and
+ *     neither a failed render nor a failed re-read turns a committed project
+ *     into a failed call.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -31,6 +34,7 @@ const mocks = vi.hoisted(() => ({
   updateProjectScope: vi.fn(),
   renderProjectFiles: vi.fn(),
   enrichProjectFiles: vi.fn(),
+  deleteProject: vi.fn(),
   resolveWalletRef: vi.fn(),
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
@@ -67,6 +71,14 @@ vi.mock("../../studio/installer.js", () => ({
   renderProjectFiles: mocks.renderProjectFiles,
   enrichProjectFiles: mocks.enrichProjectFiles,
 }));
+// The delete OWNER. Mocked like every other owner so this suite keeps testing
+// the boundary (sender, schema, cancellation) rather than the lifecycle gate,
+// the tombstone transaction and the filesystem teardown, which have their own
+// live-Postgres suite.
+vi.mock("../../studio/project-delete.js", () => ({
+  deleteProject: mocks.deleteProject,
+}));
+
 vi.mock("../../logger/index.js", () => ({ log: mocks.log }));
 
 const { registerProjectsHandlers } = await import("../projects/index.js");
@@ -106,6 +118,29 @@ const RENDER = {
   trigger: "scope_update" as const,
   artifacts: [],
   warnings: [],
+  runFailure: null,
+};
+
+/** The row a re-read after the render answers with: the marker has advanced. */
+const RENDERED_DTO = {
+  ...DTO,
+  scopeVersion: 2,
+  files: {
+    lastRenderedScopeVersion: 2,
+    generatorFingerprint: "1.0.0+r1",
+    artifacts: [],
+  },
+};
+
+/** A render that could not run, as `renderProjectFiles` reports it. */
+const RENDER_ERROR = {
+  code: "projects.root_unavailable",
+  domain: "projects",
+  message: "Vex could not reach your projects folder.",
+  retryable: true,
+  userActionable: true,
+  redacted: true,
+  correlationId: REQUEST_ID,
 };
 
 type ResultShape = {
@@ -164,10 +199,18 @@ const CHANNELS = [
     },
   },
   { channel: CH.projects.repairFiles, payload: { projectId: PROJECT_ID } },
+  {
+    channel: CH.projects.delete,
+    payload: {
+      projectId: PROJECT_ID,
+      alsoTrashFolder: false,
+      expectedName: "My App",
+    },
+  },
 ] as const;
 
 describe("vex:projects:* - registration and the shared boundary paths", () => {
-  it("registers exactly the five declared channels", () => {
+  it("registers exactly the six declared channels", () => {
     expect([...handlers.keys()].sort()).toEqual(
       [
         CH.projects.create,
@@ -175,13 +218,23 @@ describe("vex:projects:* - registration and the shared boundary paths", () => {
         CH.projects.list,
         CH.projects.updateScope,
         CH.projects.repairFiles,
+        CH.projects.delete,
       ].sort(),
     );
   });
 
-  it("has NO delete channel: A5 never deletes a user's files", () => {
-    expect(Object.keys(CH.projects)).not.toContain("delete");
-    expect([...handlers.keys()].some((c) => c.includes("delete"))).toBe(false);
+  it("HAS a delete channel, reversing the stage-A5 decision", () => {
+    // Through A5b this suite asserted the opposite - "has NO delete channel:
+    // A5 never deletes a user's files". The owner reversed that on 2026-08-29:
+    // a project the user can create and never remove is not a workflow, and
+    // leaving removal to the file manager orphaned Vex's own durable rows.
+    //
+    // The constraints behind the original refusal are met by the DESIGN rather
+    // than by the channel's absence: it is a SOFT delete (the money-path audit
+    // references the project with no cascade), it removes only artifacts Vex
+    // recorded writing, and the user's folder is opt-in and goes to the TRASH.
+    expect(Object.keys(CH.projects)).toContain("delete");
+    expect(handlers.has(CH.projects.delete)).toBe(true);
   });
 
   it.each(CHANNELS)("$channel rejects an untrusted sender", async ({ channel, payload }) => {
@@ -207,6 +260,7 @@ describe("vex:projects:* - registration and the shared boundary paths", () => {
         mocks.listProjects,
         mocks.updateProjectScope,
         mocks.renderProjectFiles,
+        mocks.deleteProject,
       ];
       // Abort while the owner is in flight, exactly as `vex:cancel` would.
       for (const owner of owners) {
@@ -234,7 +288,10 @@ describe("vex:projects:* - registration and the shared boundary paths", () => {
 });
 
 describe("vex:projects:create", () => {
-  it("creates a project and returns the persisted DTO", async () => {
+  it("creates a project, RENDERS its files, and returns the re-read row", async () => {
+    // The defect this pins: creation used to write no files at all, while the
+    // dialog that calls it promises an MCP config per selected agent.
+    mocks.getProject.mockResolvedValue({ ok: true, data: RENDERED_DTO });
     const r = await call(CH.projects.create, {
       name: "My App",
       permission: "restricted",
@@ -242,8 +299,78 @@ describe("vex:projects:create", () => {
       wallets: { evm: null, solana: null },
     });
     expect(r.ok).toBe(true);
-    expect(r.data).toEqual(DTO);
     expect(mocks.createProject).toHaveBeenCalledTimes(1);
+    // Its OWN trigger, after the commit, on the id the transaction returned.
+    expect(mocks.renderProjectFiles).toHaveBeenCalledWith(
+      PROJECT_ID,
+      "create",
+      REQUEST_ID,
+    );
+    // And the row is RE-READ: the render advanced the durable marker that the
+    // committed row was read before, so returning that row would show "Vex has
+    // never completed a full pass" above the pass that just completed.
+    expect(r.data).toEqual({
+      project: RENDERED_DTO,
+      render: RENDER,
+      refreshFailure: null,
+    });
+  });
+
+  it("keeps the project when the render fails, and carries the render's code", async () => {
+    mocks.renderProjectFiles.mockResolvedValue({ ok: false, error: RENDER_ERROR });
+    const r = await call(CH.projects.create, { name: "My App", permission: "full" });
+
+    // The project EXISTS: its directory is claimed and its session is written.
+    // Reporting the render failure as a create failure would invite the user to
+    // create it a second time.
+    expect(r.ok).toBe(true);
+    const data = r.data as {
+      project: { id: string };
+      render: { runFailure: unknown; trigger: string; warnings: unknown[] };
+    };
+    expect(data.project.id).toBe(PROJECT_ID);
+    expect(data.render.trigger).toBe("create");
+    expect(data.render.runFailure).toEqual({
+      kind: "render_failed",
+      code: "projects.root_unavailable",
+      detail: "Vex could not reach your projects folder.",
+      correlationId: REQUEST_ID,
+    });
+    // NOT smuggled in as an artifact-level warning about a coding agent.
+    expect(data.render.warnings).toEqual([]);
+  });
+
+  it("returns the committed row plus a refresh failure when the re-read fails", async () => {
+    mocks.getProject.mockResolvedValue({
+      ok: false,
+      error: {
+        code: "internal.unexpected",
+        domain: "projects",
+        message: "Vex could not read this project.",
+        retryable: true,
+        userActionable: false,
+        redacted: true,
+        correlationId: REQUEST_ID,
+      },
+    });
+    const r = await call(CH.projects.create, { name: "My App", permission: "full" });
+
+    expect(r.ok).toBe(true);
+    const data = r.data as {
+      project: { id: string };
+      render: unknown;
+      refreshFailure: { kind: string; code: string };
+    };
+    // The COMMITTED row, which is real, plus the honest qualifier - not an
+    // error that would also discard the render report.
+    expect(data.project.id).toBe(PROJECT_ID);
+    expect(data.render).toEqual(RENDER);
+    expect(data.refreshFailure).toEqual({
+      kind: "project_refresh_failed",
+      code: "internal.unexpected",
+      detail: "Vex could not read this project.",
+      correlationId: REQUEST_ID,
+    });
   });
 
   it("applies schema defaults so an omitted roster and selection are explicit", async () => {
@@ -347,6 +474,7 @@ describe("vex:projects:get and vex:projects:list", () => {
 
 describe("vex:projects:updateScope", () => {
   it("applies a permission edit and returns the bumped scope version", async () => {
+    mocks.getProject.mockResolvedValue({ ok: true, data: RENDERED_DTO });
     const r = await call(CH.projects.updateScope, {
       projectId: PROJECT_ID,
       expectedScopeVersion: 1,
@@ -406,6 +534,26 @@ describe("vex:projects:updateScope", () => {
     expect(r.ok).toBe(false);
     expect(r.error?.code).toBe("validation.invalid_input");
     expect(mocks.updateProjectScope).not.toHaveBeenCalled();
+  });
+
+  it("reports a failed render as a run failure, never as a coding-agent warning", async () => {
+    mocks.renderProjectFiles.mockResolvedValue({ ok: false, error: RENDER_ERROR });
+    const r = await call(CH.projects.updateScope, {
+      projectId: PROJECT_ID,
+      expectedScopeVersion: 1,
+      permission: "full",
+    });
+
+    // The scope edit COMMITTED, so the call succeeded.
+    expect(r.ok).toBe(true);
+    const data = r.data as {
+      render: { runFailure: { code: string } | null; warnings: unknown[] };
+    };
+    // This branch used to log the code and then describe the failure as a
+    // `launch_required` warning about an agent, naming the wrong subject and
+    // throwing away the one field that distinguishes the remedies.
+    expect(data.render.runFailure?.code).toBe("projects.root_unavailable");
+    expect(data.render.warnings).toEqual([]);
   });
 
   it("surfaces a scope conflict by name so the caller re-reads instead of retrying", async () => {

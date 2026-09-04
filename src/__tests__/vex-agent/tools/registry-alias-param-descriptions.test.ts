@@ -1,7 +1,7 @@
 /**
  * The action-alias PARAM schemas are the only instruction the model gets before
  * it fills a parameter in, so each one has to be true of the code that receives
- * it — AND of the protocol manifest the alias forwards to.
+ * it - AND of the protocol manifest the alias forwards to.
  *
  * Three things this suite pins:
  *
@@ -10,7 +10,7 @@
  *     described only slugs, so the agent had no way to know the id it was
  *     already holding was acceptable.
  *  2. RELAY SLIPPAGE. Both hidden Relay bridge aliases said only "Slippage
- *     tolerance in basis points." — no unit anchor, no statement of what it
+ *     tolerance in basis points." - no unit anchor, no statement of what it
  *     protects, and no mention of the ceiling. The bridge enforces the same
  *     1000-bps cap the swap surfaces do (`relay/handlers/bridge/legs.ts` →
  *     `resolveRelaySlippageBps`), so the last block drives that REAL resolver
@@ -20,9 +20,9 @@
  *     drifts existed because only one lane was ever pinned: the alias said
  *     `amount` while the manifest said `amountRaw`, or declared `string` where
  *     the manifest declared `number`. The parity block below asserts BOTH
- *     directions — every key the alias advertises exists on the target with the
+ *     directions - every key the alias advertises exists on the target with the
  *     same declared type, and every REQUIRED key of the target is advertised by
- *     the alias — so a rename that lands on one lane fails the suite until it
+ *     the alias - so a rename that lands on one lane fails the suite until it
  *     lands on the other.
  */
 
@@ -75,7 +75,7 @@ function paramOf(toolName: string, key: string): JsonSchemaParam {
 const CHAIN_FORMS_SENTENCE =
   "Accepts a chain slug/alias or the numeric chain id TokenFind returns (e.g. base or 8453).";
 
-describe("chain params — the menu must admit the form TokenFind hands back", () => {
+describe("chain params - the menu must admit the form TokenFind hands back", () => {
   for (const toolName of ["SwapQuote", "SwapExecute"]) {
     it(`${toolName} tells the agent a numeric chain id is accepted`, () => {
       expect(paramOf(toolName, "chain").description).toContain(CHAIN_FORMS_SENTENCE);
@@ -162,7 +162,7 @@ describe("TokenFind mutation contract is consistent across action aliases", () =
 
 const RELAY_BRIDGE_ALIASES = ["BridgeQuoteRelay", "BridgeExecuteRelay"] as const;
 
-describe("Relay bridge slippageBps — what it protects, and the ceiling it is held to", () => {
+describe("Relay bridge slippageBps - what it protects, and the ceiling it is held to", () => {
   for (const toolName of RELAY_BRIDGE_ALIASES) {
     it(`${toolName} says which side of the bridge the tolerance applies to`, () => {
       const description = paramOf(toolName, "slippageBps").description ?? "";
@@ -183,7 +183,7 @@ describe("Relay bridge slippageBps — what it protects, and the ceiling it is h
       );
     });
 
-    it(`${toolName} declares slippageBps as a NUMBER — the type the resolver enforces`, () => {
+    it(`${toolName} declares slippageBps as a NUMBER - the type the resolver enforces`, () => {
       // W3: the Relay lane was the fleet's only `type: "string"` slippage, which
       // meant the manifest `unit: "bps"` gate never ran on it. Both the relay
       // manifests and `resolveRelaySlippageBps` now take a number and REJECT a
@@ -205,7 +205,7 @@ describe("the documented Relay ceiling is the one the code enforces", () => {
     });
   });
 
-  it("REJECTS one basis point above it — never clamps to the ceiling", () => {
+  it("REJECTS one basis point above it - never clamps to the ceiling", () => {
     const parsed = resolveRelaySlippageBps(subject, VEX_MAX_SLIPPAGE_BPS + 1);
     expect(parsed.ok).toBe(false);
     expect(parsed.ok === false && parsed.reason).toContain("must not exceed 1000 basis points");
@@ -223,7 +223,7 @@ describe("the documented Relay ceiling is the one the code enforces", () => {
 /**
  * Every alias that forwards to protocol tools, with the keys it translates
  * VERBATIM (same name on both lanes). A key the alias renames on the way
- * through — e.g. `SwapQuote`'s Solana branch — is deliberately absent: parity
+ * through - e.g. `SwapQuote`'s Solana branch - is deliberately absent: parity
  * is asserted only where the two lanes claim to speak the same vocabulary.
  */
 const ALIAS_PARITY: readonly {
@@ -279,7 +279,7 @@ function manifestParam(toolId: string, key: string) {
   return manifest.params.find((param) => param.key === key);
 }
 
-describe("alias ↔ protocol parity — one rename must land on BOTH lanes", () => {
+describe("alias ↔ protocol parity - one rename must land on BOTH lanes", () => {
   for (const { alias, toolIds, sharedKeys } of ALIAS_PARITY) {
     for (const toolId of toolIds) {
       it(`${alias} → ${toolId}: every shared key exists on both lanes with the same type`, () => {

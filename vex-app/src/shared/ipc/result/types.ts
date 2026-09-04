@@ -78,6 +78,15 @@ export type VexDomain =
    */
   | "market"
   /**
+   * B0 - read-only Vex Studio MCP host status (`studio.hostStatus`). Main's
+   * host owns the listener and publishes every lifecycle transition on
+   * `EV.studio.hostStatus`; the handler only reads the in-memory cache, so
+   * failures map to `internal.unexpected`. The domain carries no mutating
+   * operation: locking, starting and quitting the host are lifecycle events
+   * the renderer observes, never ones it commands.
+   */
+  | "studio"
+  /**
    * Trench image locker (C2) — the GLOBAL, persistent library of pre-staged
    * token-launch images. Owns the byte store under `userData` (keyed by an
    * opaque `imageId` that never decodes to a path) plus the metadata rows the
@@ -388,6 +397,60 @@ export type VexErrorCode =
   | "projects.scope_conflict"
   | "projects.wallet_drift"
   | "projects.backing_session_integrity"
+  /**
+   * B0 - the project is being DELETED, so the operation was declined. Not a
+   * failure and not `not_found`: the project still exists as the user last saw
+   * it, and their own delete is what refused this. Retryable only in the sense
+   * that the answer will soon become `projects.not_found`.
+   * `retryable: false, userActionable: true`.
+   */
+  | "projects.deleting"
+  /**
+   * B0 - the requested slug belongs to a DELETED project whose cleanup has not
+   * finished. The remover still owns that folder, so a new project cannot claim
+   * it without racing for the same directory. RETRYABLE: cleanup is a durable
+   * obligation with recovery owners, so this resolves on its own.
+   * `retryable: true, userActionable: true`.
+   */
+  | "projects.slug_cleanup_pending"
+  /**
+   * B3 - cross-platform path semantics. Five refusals that used to be reported
+   * as one of the two blanket root errors, split because they have five
+   * different remedies and four of them are reachable only on Windows or macOS.
+   *
+   *  - `projects.root_unverifiable` - the configured root and the recorded root
+   *    could not be PROVEN to be the same directory: the recorded one could not
+   *    be inspected (moved, deleted, an offline network drive), or the
+   *    filesystem supplied no `dev`/`ino` identity for it (both zero, as Node
+   *    reports on some Windows network and FAT volumes). Distinct from
+   *    `root_changed`, which asserts they ARE different and asks the user to
+   *    restore a configured value. `retryable: true, userActionable: true`.
+   *
+   *  - `projects.root_permission_denied` - `mkdir` of the project folder was
+   *    refused with EACCES/EPERM. The folder exists and the fix is a permission,
+   *    not the "does the location exist" advice `root_unavailable` gives.
+   *    `retryable: false, userActionable: true`.
+   *
+   *  - `projects.root_out_of_space`   - ENOSPC/EDQUOT on the volume holding the
+   *    projects root. `retryable: false, userActionable: true`.
+   *
+   *  - `projects.root_path_invalid`   - the root path itself is not usable on
+   *    this system (EINVAL, ENOTDIR, ENAMETOOLONG): a component is a file, a
+   *    character this filesystem forbids, or a path past the length limit. The
+   *    realistic cause is a `projectsRoot` override written on another platform.
+   *    `retryable: false, userActionable: true`.
+   *
+   *  - `projects.name_reserved`       - the project name derives a folder name
+   *    the Win32 path namespace reserves for a device (CON, PRN, AUX, NUL,
+   *    COM0-9, LPT0-9). Refused on EVERY platform: the folder outlives the
+   *    machine it was created on, and a Linux-created `con/` cannot be opened
+   *    on Windows. `retryable: false, userActionable: true`.
+   */
+  | "projects.root_unverifiable"
+  | "projects.root_permission_denied"
+  | "projects.root_out_of_space"
+  | "projects.root_path_invalid"
+  | "projects.name_reserved"
   | "internal.contract_violation"
   | "internal.cancelled"
   | "internal.unexpected";

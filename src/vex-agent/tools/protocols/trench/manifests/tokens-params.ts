@@ -1,7 +1,7 @@
 /**
  * Shared filter vocabulary for `trench.tokens`.
  *
- * `ProtocolParamDef` carries no enum/min/max — the allowed values and bounds
+ * `ProtocolParamDef` carries no enum/min/max - the allowed values and bounds
  * live in the description prose here and are ENFORCED by the shared reader
  * module (`protocols/runtime/list-params.ts`, reject-unknown `readEnum`). Kept
  * in its own file (split from day one) because the wide filter surface is the
@@ -9,7 +9,7 @@
  *
  * Grounded in the live REST probe (2026-07-31): every filter maps to a field
  * that actually exists on the wire. Fields the API returns as 0/absent on every
- * token (holders, 24h volume, priceUsd, verified) are DELIBERATELY absent — a
+ * token (holders, 24h volume, priceUsd, verified) are DELIBERATELY absent - a
  * filter over an always-zero field silently empties the result and invents a
  * dead market (the exact defect the DexScreener readers exist to prevent).
  */
@@ -51,11 +51,11 @@ export const TRENCH_UNSUPPORTED_PARAMS: Readonly<Record<string, string>> = {
   minHolders: "holder counts are 0 on every Trench token (unpopulated telemetry).",
   minVolume: "24h volume is 0 on every Trench token (unpopulated telemetry).",
   minVolume24h: "24h volume is 0 on every Trench token (unpopulated telemetry).",
-  minLiquidityUsd: "Trench exposes no USD liquidity — the curve price has no USD quote asset.",
+  minLiquidityUsd: "Trench exposes no USD liquidity - the curve price has no USD quote asset.",
   minMarketCapUsd: "Trench exposes no priceUsd, so a USD market-cap floor cannot be computed.",
   priceUsd: "Trench token endpoints carry no priceUsd field.",
   verified: "Trench has no verified/badge field.",
-  chainIds: "Trench is single-chain (Robinhood Chain 4663) — a chain filter is meaningless.",
+  chainIds: "Trench is single-chain (Robinhood Chain 4663) - a chain filter is meaningless.",
 };
 
 export const TRENCH_TOKENS_PARAMS: readonly ProtocolParamDef[] = [
@@ -75,7 +75,7 @@ export const TRENCH_TOKENS_PARAMS: readonly ProtocolParamDef[] = [
     key: "limit",
     type: "number",
     description:
-      "Max deduped tokens to return, 1-200 (no default — omitting returns the walked window). The provider caps each page at 30; higher limits page-walk and dedupe by address.",
+      "Max deduped tokens to return, 1-200 (no default - omitting returns the walked window). The provider caps each page at 30; higher limits page-walk and dedupe by address.",
   },
   {
     key: "page",
@@ -105,7 +105,7 @@ export const TRENCH_TOKENS_PARAMS: readonly ProtocolParamDef[] = [
     key: "minCurveProgressPct",
     type: "number",
     description:
-      "Client-side: keep only tokens at least this far toward graduating, 0-100, and not greater than maxCurveProgressPct (an inverted band is rejected by name). Curve progress is computed by Vex ON-CHAIN at ONE PINNED BLOCK, echoed as curveProgressBlock: each token's own ethReserve and fakeEth from fakepool_stats over the graduation reserve derived from the Diamond's live ethMcapThreshold — never a hard-coded threshold. Rows are read in Multicall3 batches of at most 30 (so a 600-row page walk costs at most 20 batched calls, not one unbounded call). Applies to bonding-curve tokens; a graduated token counts as 100. Rows whose on-chain read fails are DROPPED and counted; if the threshold itself cannot be read the filter is refused rather than guessed. Setting this (or maxCurveProgressPct/includeCurveProgress) turns the on-chain read on; leaving all three unset keeps the list a pure REST call.",
+      "Client-side: keep only tokens at least this far toward graduating, 0-100, and not greater than maxCurveProgressPct (an inverted band is rejected by name). Curve progress is computed by Vex ON-CHAIN at ONE PINNED BLOCK, echoed as curveProgressBlock: each token's own ethReserve and fakeEth from fakepool_stats over the graduation reserve derived from the Diamond's live ethMcapThreshold - never a hard-coded threshold. Rows are read in Multicall3 batches of at most 30 (so a 600-row page walk costs at most 20 batched calls, not one unbounded call). Applies to bonding-curve tokens; a graduated token counts as 100. Rows whose on-chain read fails are DROPPED and counted; if the threshold itself cannot be read the filter is refused rather than guessed. Setting this (or maxCurveProgressPct/includeCurveProgress) turns the on-chain read on; leaving all three unset keeps the list a pure REST call.",
   },
   {
     key: "maxCurveProgressPct",
@@ -117,6 +117,6 @@ export const TRENCH_TOKENS_PARAMS: readonly ProtocolParamDef[] = [
     key: "includeCurveProgress",
     type: "boolean",
     description:
-      "When true, enrich each returned row with curveProgressPct (0-100) WITHOUT filtering. Default false. Computed on-chain at one pinned block (echoed as curveProgressBlock) from each token's own reserves and the Diamond's live graduation threshold, read in Multicall3 batches of at most 30 rows. Graduated rows are 100; rows whose on-chain read fails are dropped and counted. Display/hunting-grade only — a token can graduate between this read and any trade.",
+      "When true, enrich each returned row with curveProgressPct (0-100) WITHOUT filtering. Default false. Computed on-chain at one pinned block (echoed as curveProgressBlock) from each token's own reserves and the Diamond's live graduation threshold, read in Multicall3 batches of at most 30 rows. Graduated rows are 100; rows whose on-chain read fails are dropped and counted. Display/hunting-grade only - a token can graduate between this read and any trade.",
   },
 ];

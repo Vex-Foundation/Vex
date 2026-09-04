@@ -1,5 +1,5 @@
 /**
- * Pendle Convert ROUTE binding — is this calldata the trade the caller asked
+ * Pendle Convert ROUTE binding - is this calldata the trade the caller asked
  * for, at a price they authorised?
  *
  * Extracted from `../calldata.ts` (R5a). Decoding lives in `./decode.ts`, the
@@ -12,7 +12,7 @@
  *   3. Value bind       : tx.value present+non-zero ONLY for native input; the
  *                         value must equal the input amount. Non-native → absent/0.
  *   4. Approvals bind   : requiredApprovals EXACTLY match the expected set and
- *                         contain NOTHING else — buy/sell AND py-mint: the single
+ *                         contain NOTHING else - buy/sell AND py-mint: the single
  *                         input token at the input amount (native → empty);
  *                         redeem AND py-redeem: the {YT, PT} pair (Convert asks
  *                         both), each at the input amount. SY wrap/unwrap take
@@ -20,7 +20,7 @@
  *                         token, redeem approves the SY. Spender is IMPLICIT =
  *                         the pinned Router.
  *   5. Calldata bind    : FULL `decodeFunctionData` against the complete Router
- *                         ABI and assert EVERY intent-relevant param — the
+ *                         ABI and assert EVERY intent-relevant param - the
  *                         method is valid for the action, the decoded receiver
  *                         is the session wallet, the decoded market/YT is the
  *                         quoted one, and the ACTUAL spend inside the dynamic
@@ -29,7 +29,7 @@
  *                         echo is caught too.
  *   6. PRICE FLOOR      : the route's own embedded minimum-output must clear the
  *                         floor its own quoted outputs imply at the caller's
- *                         slippage (R5a — see `./price-floor.ts`). Checked LAST,
+ *                         slippage (R5a - see `./price-floor.ts`). Checked LAST,
  *                         so a tampered route is reported as tampering rather
  *                         than as a price problem.
  */
@@ -76,8 +76,8 @@ export type PendleAction =
   | "sy-mint"
   | "sy-redeem"
   // LP → PT in one shot, R5d. Live-probed 2026-07-28 as a PLAIN single-leg
-  // `removeLiquiditySinglePt` — NOT a `callAndReflect` action, despite sharing a
-  // family with the two below — so it is bound right here like any other
+  // `removeLiquiditySinglePt` - NOT a `callAndReflect` action, despite sharing a
+  // family with the two below - so it is bound right here like any other
   // single-leg route, with `minPtOut` at arg 3.
   | "lp-to-pt"
   // The two `callAndReflect` actions, R5d. Their calldata is a multi-leg wrapper
@@ -89,7 +89,7 @@ export type PendleAction =
 
 export interface PendleTxIntent {
   action: PendleAction;
-  /** Session wallet — the ONLY allowed receiver + sender. */
+  /** Session wallet - the ONLY allowed receiver + sender. */
   wallet: Address;
   /** Input token (native sentinel for native ETH input). */
   inputToken: Address;
@@ -97,7 +97,7 @@ export interface PendleTxIntent {
   inputAmountWei: bigint;
   isNative: boolean;
   /**
-   * The tolerance this trade was QUOTED at, in whole basis points — the same
+   * The tolerance this trade was QUOTED at, in whole basis points - the same
    * value sent to Convert as `slippage`, and the basis of the price floor.
    *
    * REQUIRED, deliberately. Making it optional would let a caller construct an
@@ -111,9 +111,9 @@ export interface PendleTxIntent {
   expectedMarket?: Address;
   /** Redeem: the PT's canonical YT. Asserted against the decoded YT. */
   expectedYt?: Address;
-  /** PT contract — part of the redeem approval set. */
+  /** PT contract - part of the redeem approval set. */
   ptAddress?: Address;
-  /** Sell/redeem: the quoted output token — asserted against TokenOutput.tokenOut. */
+  /** Sell/redeem: the quoted output token - asserted against TokenOutput.tokenOut. */
   expectedOutputToken?: Address;
   /** SY wrap/unwrap: the SY contract the caller named. Asserted against arg 1. */
   expectedSy?: Address;
@@ -122,7 +122,7 @@ export interface PendleTxIntent {
    * BEFORE the floor (see `assertRouteOutputTopology`).
    *
    * REQUIRED IN PRACTICE for any action whose min-out lives in a bare `uint256`
-   * argument — `sy-mint` and `lp-to-pt` today — because those selectors name no
+   * argument - `sy-mint` and `lp-to-pt` today - because those selectors name no
    * output token in the calldata, so without this the floor is derived from
    * whatever token the response declares. Optional on the type only because the
    * `TokenOutput`-carrying actions already bind their delivered token through
@@ -137,12 +137,12 @@ const ACTION_METHODS: Record<PendleAction, readonly PendleRouterMethod[]> = {
   buy: ["swapExactTokenForPt"],
   sell: ["swapExactPtForToken"],
   // YT buy/sell reuse the PT swap-route validation with their own methods
-  // (IPActionSwapYTV3 — identical ApproxParams/TokenInput/TokenOutput layout).
+  // (IPActionSwapYTV3 - identical ApproxParams/TokenInput/TokenOutput layout).
   "yt-buy": ["swapExactTokenForYt"],
   "yt-sell": ["swapExactYtForToken"],
   redeem: ["redeemPyToToken", "redeemPyToSy"],
   // PY mint is mintPyFromToken ONLY; pre-expiry PY redeem is redeemPyToToken ONLY
-  // (never the SY fallback — that is the matured-PT `redeem` path).
+  // (never the SY fallback - that is the matured-PT `redeem` path).
   "py-mint": ["mintPyFromToken"],
   "py-redeem": ["redeemPyToToken"],
   // LP single-token add/remove each carry their OWN method (never a swap).
@@ -154,7 +154,7 @@ const ACTION_METHODS: Record<PendleAction, readonly PendleRouterMethod[]> = {
   // remove.
   "lp-remove-dual": ["removeLiquidityDualTokenAndPt"],
   "lp-add-keep-yt": ["addLiquiditySingleTokenKeepYt"],
-  // SY wrap/unwrap each carry their OWN method — never a swap, never a mint-py.
+  // SY wrap/unwrap each carry their OWN method - never a swap, never a mint-py.
   "sy-mint": ["mintSyFromToken"],
   "sy-redeem": ["redeemSyToToken"],
   // LP → PT carries its OWN single-leg method.
@@ -175,7 +175,7 @@ function assertApprovals(intent: PendleTxIntent, response: PendleConvertResponse
   const amount = intent.inputAmountWei.toString();
 
   // Matured redeem AND pre-expiry py-redeem burn the PT+YT pair, so Convert asks
-  // for allowances on BOTH — the set must be EXACTLY {YT, PT}, each at the input
+  // for allowances on BOTH - the set must be EXACTLY {YT, PT}, each at the input
   // amount, and nothing else.
   if (intent.action === "redeem" || intent.action === "py-redeem") {
     const yt = intent.expectedYt ? getAddress(intent.expectedYt) : null;
@@ -243,7 +243,7 @@ export function assertRouteSafe(
   // 4. Approvals bind (response-level).
   assertApprovals(intent, response);
 
-  // 5. Calldata bind — FULL decode; every intent-relevant param asserted.
+  // 5. Calldata bind - FULL decode; every intent-relevant param asserted.
   const call = decodeRouterCall(route.tx.data);
   if (!ACTION_METHODS[intent.action].includes(call.method)) {
     return unsafe(`transaction method ${call.method} is not valid for a ${intent.action}`);
@@ -272,7 +272,7 @@ export function assertRouteSafe(
     );
   }
 
-  // The ACTUAL spend inside the calldata must equal the intent amount — an
+  // The ACTUAL spend inside the calldata must equal the intent amount - an
   // inflated netTokenIn/exactPtIn/netPyIn can never reach a signature.
   if (call.spendWei !== intent.inputAmountWei) {
     return unsafe("transaction spend amount does not match the quoted input");
@@ -314,14 +314,14 @@ export function assertRouteSafe(
     return unsafe("echoed market/YT disagrees with the calldata");
   }
 
-  // 6a. Output topology — BEFORE the floor, because the floor reads the very
+  // 6a. Output topology - BEFORE the floor, because the floor reads the very
   //     outputs this binds. A response free to declare its own output token can
   //     hand the floor a dust amount of an unrelated asset.
   if (intent.expectedRouteOutputs !== undefined) {
     assertRouteOutputTopology(route, intent.expectedRouteOutputs);
   }
 
-  // 6b. Price floor — LAST, so a tampered route is reported as tampering. No
+  // 6b. Price floor - LAST, so a tampered route is reported as tampering. No
   //    route reaches a signature unbound: the intent's `slippageBps` is
   //    required, so there is no path through here without a floor.
   assertRouteFloorBound(call, route, intent.slippageBps);
@@ -335,7 +335,7 @@ export function assertRouteSafe(
  * `PENDLE_UNSAFE_TX` when none is safe (never falls back to an unchecked route).
  *
  * EVERY route's rejection reason is reported (W2e). Keeping only `lastErr` told
- * the agent why route 8 failed to bind and stayed silent about route 1 — the
+ * the agent why route 8 failed to bind and stayed silent about route 1 - the
  * BEST-PRICED one, and the only refusal that explains why the trade did not
  * happen. The reasons are ordered as Pendle ranked the routes, so the first one
  * named is the best-priced one; the code and remedy carried are that route's,
@@ -360,7 +360,7 @@ export function selectSafeRoute(
   }
   if (reasons.length === 0) return unsafe("Pendle returned no route to check");
   const summary =
-    `no route passed the fund-safety checks (${reasons.length} tried) — ${reasons.join("; ")}`;
+    `no route passed the fund-safety checks (${reasons.length} tried) - ${reasons.join("; ")}`;
   if (firstVexFailure === undefined) return unsafe(summary);
   throw new VexError(firstVexFailure.code, `Pendle refused to sign: ${summary}.`, firstVexFailure.hint);
 }

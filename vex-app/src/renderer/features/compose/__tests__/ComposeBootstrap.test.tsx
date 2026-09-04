@@ -232,6 +232,44 @@ describe("ComposeBootstrap - terminal kinds", () => {
     clickLogs(view);
   });
 
+  it("kind=foreign_listener → names the other database and never offers Continue", async () => {
+    mockCompose.mockReturnValue({
+      promise: Promise.resolve({
+        ok: true,
+        data: {
+          kind: "foreign_listener",
+          composeOutPath: "/tmp/compose.yml",
+          installId: "vex-1031ec52",
+          message:
+            "127.0.0.1:27432 rejects this install's credentials while this install's own database container accepts them, so the port is served by a different Postgres.",
+          previousInstallHoldingPorts: false,
+        },
+      }),
+      cancel: mockCancel,
+    });
+    const view = render(<ComposeBootstrap />);
+    await waitFor(() => {
+      expect(view.container.textContent).toMatch(
+        /Another database owns this port/,
+      );
+    });
+    // The port and the remedy must both be visible: the operator has to
+    // know WHICH port, and that Vex refused to touch that database.
+    expect(view.container.textContent).toMatch(/27432/);
+    expect(view.container.textContent).toMatch(/mirrored networking/i);
+    const buttons = Array.from(view.container.querySelectorAll("button"));
+    expect(
+      buttons.find((b) => b.textContent?.includes("Try again")),
+    ).toBeTruthy();
+    expect(buttons.find((b) => b.textContent?.includes("Continue"))).toBeFalsy();
+    // Never the previous-install stop action: Vex does not stop a stack
+    // it did not create.
+    expect(view.container.textContent).not.toMatch(
+      /Stop previous Vex services/,
+    );
+    clickLogs(view);
+  });
+
   it("previous-install collision stops services and automatically retries composeUp", async () => {
     mockCompose
       .mockReturnValueOnce({

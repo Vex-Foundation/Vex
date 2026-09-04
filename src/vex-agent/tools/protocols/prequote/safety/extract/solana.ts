@@ -1,5 +1,5 @@
 /**
- * Solana quote extraction (solana.swap.quote) — Jupiter token metadata, the
+ * Solana quote extraction (solana.swap.quote) - Jupiter token metadata, the
  * per-mint audit block, and the W5 fee-bearing disclosure.
  */
 
@@ -12,7 +12,7 @@ import { aggregateVerdict } from "./verdict.js";
 import type { LegVerdictDetail } from "./verdict.js";
 import type { ExtractedQuote } from "./extracted-quote.js";
 
-// Solana token metadata + safety block — structural re-validation of the
+// Solana token metadata + safety block - structural re-validation of the
 // Jupiter quote summary fields we need.
 const SolanaTokenMetadataSchema = z.object({
   address: z.string(),
@@ -37,7 +37,7 @@ const SolanaQuoteSchema = z.object({
   slippageBps: z.number().nullish(),
   // W5 (design §6 R4): `solana.swap.quote`'s fee-bearing disclosure, when
   // present. Optional so any pre-existing quote-result fixture without it
-  // still validates — the new `solana.swap.quote` handler always includes it
+  // still validates - the new `solana.swap.quote` handler always includes it
   // in real traffic.
   feePreview: jupiterFeePreviewSchema.optional(),
 });
@@ -82,7 +82,7 @@ export function extractSolana(
   // W5a: `amountIn` is a HUMAN decimal STRING (the old `amount` number param
   // is gone, and with it the float multiply it fed). A missing or wrong-typed
   // value records NO prequote row, so the later execute blocks for want of one
-  // — fail-closed, matching the gate's "" on the other side.
+  // - fail-closed, matching the gate's "" on the other side.
   const amountIn = params.amountIn;
   if (typeof amountIn !== "string" || amountIn.trim() === "") return null;
   const amount = amountIn;
@@ -110,7 +110,7 @@ export function extractSolana(
       inputToken: inLeg.detail,
       outputToken: outLeg.detail,
       // W5 (design §6 R4): the bounded fee-bearing disclosure rides the same
-      // JSONB channel as every other Solana quote detail — the gate later
+      // JSONB channel as every other Solana quote detail - the gate later
       // extracts it back out for the approval preview.
       ...(parsed.data.feePreview !== undefined ? { feePreview: parsed.data.feePreview } : {}),
     },

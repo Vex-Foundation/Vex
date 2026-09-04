@@ -6,7 +6,7 @@
  * `market`, `tokenIn`/`tokenOut`, `amountIn`, `slippageBps`) with
  * `provider: "pendle"` bound in, so their match-hashes collide. The market is the
  * LP anchor and is bound DIRECTLY (validated against the chain's active markets via
- * `resolveMarketByAddress`) — never resolved from a PT — so neither side
+ * `resolveMarketByAddress`) - never resolved from a PT - so neither side
  * reimplements a mapping. Add and remove are DISTINCT kinds (`lp_add` /
  * `lp_remove`), so direction is structurally unmixable: an add quote can never
  * authorize a remove execute (and vice-versa).
@@ -92,7 +92,7 @@ async function resolveLpLeg(
 /**
  * Build the canonical Pendle LP ADD identity (token → LP). Reads `tokenIn` (the
  * payment token) plus the shared LP leg. The receiver is ALWAYS the selected EVM
- * wallet — the calldata intent binding asserts receiver == wallet before signing.
+ * wallet - the calldata intent binding asserts receiver == wallet before signing.
  */
 export async function buildPendleLpAddIdentity(
   sessionId: string,
@@ -121,7 +121,7 @@ export async function buildPendleLpAddIdentity(
 
 /**
  * Build the canonical Pendle LP REMOVE identity (LP → token). The output token is
- * `tokenOut` when provided, else the market's underlyingAsset — resolved
+ * `tokenOut` when provided, else the market's underlyingAsset - resolved
  * identically on both sides so a quote-without-tokenOut authorizes an
  * execute-without-tokenOut. A divergent `tokenOut` produces a different digest →
  * gate BLOCK.

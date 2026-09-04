@@ -101,10 +101,14 @@ import {
   type PreparedContinuation,
 } from "../../types.js";
 import { studioDispatchPreflightAllows } from "../../studio/dispatch-gate.js";
+import { acquireStudioDispatchLease } from "../../studio/project-lease-registry.js";
 import { studioRefusalText } from "../../studio/refusal-settlement.js";
 import { encodeStudioSettlement } from "../../studio/settlement-codec.js";
 import { registerStudioWriteRepair } from "../../studio/write-repair.js";
-import { loadProjectScope } from "./studio-project-scope.js";
+import {
+  loadProjectScope,
+  ProjectDeletedError,
+} from "./studio-project-scope.js";
 import {
   reportDurableStudioRow,
   UNCONFIRMED_REFUSAL,
@@ -120,8 +124,35 @@ import {
 /**
  * Side effects after an `approved_in_tx` snapshot whose row is
  * `origin = 'studio_mcp'`.
+ *
+ * ## The `dispatch` lease, and why it wraps the whole thing
+ *
+ * From here to the settlement, this project has work in flight against a
+ * wallet. Main's project lifecycle gate counts that as a `dispatch` lease and a
+ * concurrent project delete DRAINS it, so the ordinary case is that the delete
+ * waits for this to finish rather than racing it to the durable tombstone
+ * check. The lease is taken SYNCHRONOUSLY here - before the first await, which
+ * is `claimResumeContinuation` - because a lease taken after an await describes
+ * a moment that has already passed.
+ *
+ * It is accounting, NOT authority: `null` (no main process, or admission
+ * already closed) changes nothing about whether this may run. That question is
+ * answered durably by the tombstone re-check inside `runStudioDispatchGate`,
+ * under the session control lock the delete transaction also takes.
  */
 export async function applyStudioApproveSideEffects(
+  approvalId: string,
+  snapshot: Extract<ApproveSnapshot, { type: "approved_in_tx" }>,
+): Promise<ApprovePrepareOutcome> {
+  const lease = acquireStudioDispatchLease(snapshot.row.project_id);
+  try {
+    return await dispatchApprovedStudioAction(approvalId, snapshot);
+  } finally {
+    lease?.release();
+  }
+}
+
+async function dispatchApprovedStudioAction(
   approvalId: string,
   snapshot: Extract<ApproveSnapshot, { type: "approved_in_tx" }>,
 ): Promise<ApprovePrepareOutcome> {
@@ -190,6 +221,21 @@ export async function applyStudioApproveSideEffects(
   try {
     scope = await loadProjectScope(projectId, sessionId);
   } catch (cause) {
+    // A DELETED project is not an unreadable one. Settled under its own cause
+    // so the audit says the user's deletion stopped this action, not that Vex
+    // failed to read something.
+    if (cause instanceof ProjectDeletedError) {
+      logger.warn("engine.studio.project_deleted", { approvalId, projectId });
+      return await refusedOutcome(
+        snapshot,
+        continuation,
+        await refuseStudioBeforeDispatch(
+          approvalId,
+          "project_deleted",
+          STUDIO_REFUSAL_CAUSES.project_deleted,
+        ),
+      );
+    }
     const summary = summarizeErrorForLog(cause);
     logger.warn("engine.studio.scope_unavailable", {
       approvalId,

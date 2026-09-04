@@ -23,7 +23,7 @@ import type { LaunchExecuteDeps } from "./handlers/launch/fee-seam.js";
 import { runTrenchFeeLeg } from "./fee/index.js";
 import { TRENCH_CHAIN_ID } from "@tools/trench-express/constants.js";
 // NOTE (2026-08-02): trench deliberately has NO per-protocol settlement decoder.
-// The owner decree of 2026-07-30 retired per-protocol settlement verification —
+// The owner decree of 2026-07-30 retired per-protocol settlement verification -
 // `sync/settlement-decoders.ts` was deleted and pending rows are now resolved by
 // the STATUS-ONLY repair sweep (`sync/agent-activity-repair.ts`), which asks one
 // chain-status question per row and explicitly sources Robinhood Chain (4663)
@@ -35,12 +35,12 @@ import { TRENCH_CHAIN_ID } from "@tools/trench-express/constants.js";
  * The Vex fee wiring for the launch path (plan §C7), injected here rather than
  * imported inside the handler so the money path stays testable with a no-op.
  *
- * The two lanes converged on the same contract with different spellings — the
+ * The two lanes converged on the same contract with different spellings - the
  * launch handler asks in `{ basis, baseWei, kind }` terms, the fee module speaks
- * `{ base: <discriminated>, parentKind }` — so this adapter is a RENAME plus one
+ * `{ base: <discriminated>, parentKind }` - so this adapter is a RENAME plus one
  * supplied constant, and nothing else: no arithmetic, no defaulting of a money
  * value, no reinterpretation. The one thing it adds is `TRENCH_CHAIN_ID`, which
- * the fee runner needs and the launch seam does not carry — that is the venue's
+ * the fee runner needs and the launch seam does not carry - that is the venue's
  * fixed identity (Trench is single-chain), not a value inferred from the
  * request. If this adapter ever has to compute an AMOUNT, that is the signal the
  * two contracts have genuinely diverged and one of them must move.

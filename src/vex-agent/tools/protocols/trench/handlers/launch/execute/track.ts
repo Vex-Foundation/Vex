@@ -1,5 +1,5 @@
 /**
- * The launch's TRACKING step — making the freshly created token visible to
+ * The launch's TRACKING step - making the freshly created token visible to
  * `WalletBalances` and the portfolio.
  *
  * One reason to change: how a confirmed launch enters the local-chain balance
@@ -10,7 +10,7 @@
  * hand.
  *
  * The mechanism is the SAME one `WalletTrackToken` and the swap/bridge
- * auto-pins use — `tracked-tokens.pinTrackedToken`, whose `ON CONFLICT DO
+ * auto-pins use - `tracked-tokens.pinTrackedToken`, whose `ON CONFLICT DO
  * NOTHING` makes a repeat pin a no-op. Launch, then a manual pin, then a repair
  * pass therefore produce one row and no error, in any order.
  *

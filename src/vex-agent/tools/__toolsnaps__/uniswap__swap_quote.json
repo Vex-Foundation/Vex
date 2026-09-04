@@ -19,7 +19,7 @@
             "type": "number"
           },
           "tokenIn": {
-            "description": "Input token CONTRACT ADDRESS or native ETH/native. Uniswap has no symbol search — resolve a symbol to its address first.",
+            "description": "Input token CONTRACT ADDRESS or native ETH/native. Uniswap has no symbol search - resolve a symbol to its address first.",
             "type": "string"
           },
           "tokenOut": {

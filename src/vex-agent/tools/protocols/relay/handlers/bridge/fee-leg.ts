@@ -1,6 +1,6 @@
 /**
  * The Vex integrator fee on a Relay bridge: how it is DISCLOSED on every surface
- * (quote, dryRun, execute) and how it is COLLECTED — always last, always after
+ * (quote, dryRun, execute) and how it is COLLECTED - always last, always after
  * the origin deposit is confirmed, never as a claim about the bridge itself.
  *
  * Money-path ordering (audit §4, KEEP): a bridge that never lands never pays a
@@ -47,7 +47,7 @@ export interface RelayFeeCollection {
   readonly collectionNote: string;
 }
 
-/** No fee applies to this bridge — the disclosure already states why. */
+/** No fee applies to this bridge - the disclosure already states why. */
 export const NO_FEE_COLLECTION: RelayFeeCollection = {
   collection: "not_charged",
   collectionNote: "No Vex fee applies to this bridge.",
@@ -55,7 +55,7 @@ export const NO_FEE_COLLECTION: RelayFeeCollection = {
 
 /**
  * The fee, as the agent must see it on EVERY Relay surface (quote, dryRun,
- * execute). Pure projection of the already-resolved split — no second
+ * execute). Pure projection of the already-resolved split - no second
  * derivation, so the disclosed number and the transferred number are the same
  * number by construction.
  */
@@ -80,7 +80,7 @@ export function relayFeeDisclosure(
   });
 }
 
-/** Disclosure for every path where the bridge did not complete — nothing is ever charged there. */
+/** Disclosure for every path where the bridge did not complete - nothing is ever charged there. */
 export function feeNotTaken(legs: RelayLegs): FeeNotTaken {
   return {
     ...buildBridgeFeeSkippedDisclosure({
@@ -130,7 +130,7 @@ export async function runRelayVexFeeLeg(input: {
         onHashStaged: async (handles) => {
           const res = await markActivityBroadcast(legRowId, handles);
           if (!res.applied) {
-            throw new Error(`markActivityBroadcast CAS miss for Vex fee leg ${legRowId} — refusing to broadcast untracked`);
+            throw new Error(`markActivityBroadcast CAS miss for Vex fee leg ${legRowId} - refusing to broadcast untracked`);
           }
         },
         onAccepted: async () => {
@@ -148,7 +148,7 @@ export async function runRelayVexFeeLeg(input: {
       });
       return {
         collection: "reverted",
-        collectionNote: "The bridge went through. The Vex fee transfer reverted, so no fee was collected — your bridge is unaffected.",
+        collectionNote: "The bridge went through. The Vex fee transfer reverted, so no fee was collected - your bridge is unaffected.",
       };
     }
     if (outcome.kind === "ambiguous") {
@@ -164,7 +164,7 @@ export async function runRelayVexFeeLeg(input: {
     let legStatus: OriginBroadcast["status"] = "confirmed";
     try {
       // R1 Step 3b: Vex COMPOSED this transfer, so its atomic amount is the
-      // exact `feeSplit.feeRaw` we signed — not a quote, not a provider's word.
+      // exact `feeSplit.feeRaw` we signed - not a quote, not a provider's word.
       // It is therefore one of the few legs whose executed amount may be written
       // at return time, and doing so is what puts the collected fee on the feed
       // row instead of leaving it to a decode that may never happen.
@@ -193,7 +193,7 @@ export async function runRelayVexFeeLeg(input: {
     await abortRemaining(executionId, feeLegIndex, "vex fee leg refused before signing", feeLegIndex + 1);
     return {
       collection: "not_attempted",
-      collectionNote: "The bridge went through. The Vex fee transfer was refused before signing, so no fee was collected — your bridge is unaffected.",
+      collectionNote: "The bridge went through. The Vex fee transfer was refused before signing, so no fee was collected - your bridge is unaffected.",
     };
   }
 }

@@ -13,6 +13,9 @@
  *    ONE producer of `approved: true`, the approval runtime's resumed Studio
  *    dispatch, which runs only after the human decided and only after the
  *    dispatch slot was claimed under the stop gate and the dispatch generation.
+ *  - `toolLane: "mcp"`, the one field that says which surface dispatched. It
+ *    authorizes nothing; it exists so a prepared action does not promise an
+ *    automatic follow-up on a lane whose turn loop does not exist here.
  *  - `modelOriginated: true`, because everything on this surface was emitted by
  *    an external coding agent's model. It is what keeps the `execute_tool`
  *    envelope closed on this path even if admission were bypassed.
@@ -109,6 +112,11 @@ export function buildProjectToolContext(
     sessionKind: "agent",
     contextUsageBand: "normal",
     modelOriginated: true,
+    // THE LANE, host-side. It changes exactly one thing: a prepare whose
+    // follow-up confirm has no dispatcher on this surface says so in its own
+    // message instead of promising an automatic one (`tools/internal/types.ts`,
+    // `toolLane`). It gates nothing and grants nothing.
+    toolLane: "mcp",
     sourceSurface: "mcp_local",
     sourceSession: scope.backingSessionId,
     walletResolution: buildProjectWalletResolution(scope.wallets),

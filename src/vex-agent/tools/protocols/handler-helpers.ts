@@ -1,11 +1,11 @@
 /**
- * Shared protocol handler helpers — extracted from duplicated per-handler utilities.
+ * Shared protocol handler helpers - extracted from duplicated per-handler utilities.
  *
  * str/num/ok/fail are used identically in all 13 handler files.
  * Consolidating here per Team Standards §2.3 (stop on repetition, 3+ = extract).
  *
  * `enumField` is re-exported from `tools/internal/types.ts` where it already
- * exists — same helper, one source of truth. Post-PR1 the protocol runtime
+ * exists - same helper, one source of truth. Post-PR1 the protocol runtime
  * validates `ProtocolParamDef.type` (string/number/boolean) at the
  * execute_tool boundary, so by the time a handler calls `enumField` the
  * value is guaranteed to be a string (or missing); the helper narrows it
@@ -19,7 +19,7 @@ export { enumField } from "../internal/types.js";
 /**
  * Widen an SDK response value to `ToolResult.data`'s open
  * `Record<string, unknown>` shape. The runtime value is structurally
- * compatible — the double-cast exists only because TypeScript rejects
+ * compatible - the double-cast exists only because TypeScript rejects
  * `typed-object → Record<string, unknown>` for interfaces without an
  * index signature. Centralising it here keeps handlers that pass through
  * a typed SDK result to one acknowledged unsafe line instead of

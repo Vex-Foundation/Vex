@@ -1,10 +1,10 @@
 /**
- * `pendle.rewards.merkle` — merkle-distributed rewards accrued to the session
+ * `pendle.rewards.merkle` - merkle-distributed rewards accrued to the session
  * wallet, which no Vex tool could see before (G-10).
  *
  * READ-ONLY, AND NOT BY POLICY ALONE. `/v1/dashboard/merkle-rewards/{user}`
  * returns `{user, token, merkleRoot, chainId, assetId, amount, fromTimestamp,
- * toTimestamp}` and NOTHING else — no `proof` array, no `verifyCallData`. That
+ * toTimestamp}` and NOTHING else - no `proof` array, no `verifyCallData`. That
  * was settled by a live probe on 2026-07-27 against a wallet holding seven
  * pending rewards, correcting the API enumeration that claimed otherwise. A
  * claim transaction cannot be built from this endpoint, so the tool says so in
@@ -16,7 +16,7 @@
  *
  * MONEY FORMAT. Reward amounts are raw base units of arbitrary reward tokens and
  * this endpoint publishes no decimals. Each is resolved through the injected
- * asset lookup or shipped explicitly `unreadable` — never at an assumed 18. A
+ * asset lookup or shipped explicitly `unreadable` - never at an assumed 18. A
  * USD figure exists only for a row whose decimals AND price both resolved, and
  * the total names how many rows it had to leave out.
  */
@@ -43,7 +43,7 @@ import { failureDetail } from "./read-shared.js";
 
 const TOOL_ID = "pendle.rewards.merkle";
 
-/** Fixed text, asserted by a test — see the module header. */
+/** Fixed text, asserted by a test - see the module header. */
 const CANNOT_CLAIM_NOTE =
   "Pendle's public API does not publish the merkle proof, so Vex cannot execute this claim. Claim at app.pendle.finance.";
 
@@ -55,7 +55,7 @@ interface ProjectedReward {
   chainId: number;
   token: { address: string; symbol: string | null; decimals: number | null };
   amount: PendleReadAmount;
-  /** Null whenever decimals or price were missing — never a zero standing in for unknown. */
+  /** Null whenever decimals or price were missing - never a zero standing in for unknown. */
   valueUsd: string | null;
   window: { from: string | null; to: string | null };
 }
@@ -114,7 +114,7 @@ function valueUsdFor(amount: PendleReadAmount, priceUsd: number | undefined): st
  *
  * A failing batch stops the walk but KEEPS what earlier batches collected: a
  * partially priced answer is worth more than none, provided the reason is named
- * — which it is, and which the total's own note then repeats.
+ * - which it is, and which the total's own note then repeats.
  */
 async function priceRewardTokens(
   rewards: readonly PendleReadMerkleReward[],
@@ -159,7 +159,7 @@ export async function pendleRewardsMerkle(
   try {
     wallet = resolveSelectedAddress(context.walletResolution, context.walletPolicy, "eip155");
   } catch (err) {
-    return fail(`Pendle merkle rewards unavailable — no EVM wallet selected (${failureDetail(TOOL_ID, err)})`);
+    return fail(`Pendle merkle rewards unavailable - no EVM wallet selected (${failureDetail(TOOL_ID, err)})`);
   }
 
   let rewards;
@@ -201,7 +201,7 @@ export async function pendleRewardsMerkle(
   const hiddenRows = claimableRows.length - claimable.length;
   /**
    * The total covers the rows that were both SHOWN and priceable. Whenever
-   * either is short of the full set it is a floor, and it says so — an
+   * either is short of the full set it is a floor, and it says so - an
    * unlabelled partial total is a number that reads as the whole answer.
    */
   const totalIsPartial = unpricedRows > 0 || hiddenRows > 0;
@@ -242,7 +242,7 @@ export async function pendleRewardsMerkle(
     claimable,
     claimed,
     nextStep:
-      "These rewards are NOT claimable through Vex and never will be through this endpoint — Pendle publishes the " +
+      "These rewards are NOT claimable through Vex and never will be through this endpoint - Pendle publishes the " +
       "amount but not the merkle proof needed to claim it. Claim them at app.pendle.finance. For the yield Vex CAN " +
       "sweep (YT interest and LP rewards) use pendle__rewards_claim, and for position-level accruals pendle__positions_get.",
   });
@@ -259,7 +259,7 @@ function totalNote(state: {
   const reasons: string[] = [];
   if (state.hiddenRows > 0) {
     reasons.push(
-      `it covers only the ${state.shown} row(s) shown of ${state.total} claimable — the rest are beyond this tool's row cap`,
+      `it covers only the ${state.shown} row(s) shown of ${state.total} claimable - the rest are beyond this tool's row cap`,
     );
   }
   if (state.unpricedRows > 0) {
@@ -273,7 +273,7 @@ function totalNote(state: {
   if (reasons.length === 0) return undefined;
   return (
     `totalClaimableUsd is a FLOOR, not the full claimable value: ${reasons.join("; ")}. ` +
-    "The accrued amounts themselves are unaffected — only their valuation is."
+    "The accrued amounts themselves are unaffected - only their valuation is."
   );
 }
 
@@ -294,6 +294,6 @@ function summarize(state: {
   return (
     `${rows} ${scope}, ${valued}` +
     (state.unpricedRows > 0 && state.totalUsd !== null ? ` (${state.unpricedRows} row(s) unvalued and excluded)` : "") +
-    ". Vex cannot claim these — claim them at app.pendle.finance."
+    ". Vex cannot claim these - claim them at app.pendle.finance."
   );
 }

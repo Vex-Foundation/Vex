@@ -171,8 +171,13 @@ jobs:
         with:
           go-version: "1.27.0"
           check-latest: false
-          # The bridge is PURE STDLIB: there is no go.sum and nothing to cache,
-          # and setup-go's cache fails closed on a missing dependency file.
+          # Cache deliberately OFF even though bridge/go.sum exists: the module
+          # graph is github.com/Microsoft/go-winio (the Windows pipe front's
+          # only third-party dependency) plus golang.org/x/sys, downloaded in
+          # seconds and verified against the committed go.sum on every run. A
+          # restored cache would be one more input to a binary that ships
+          # inside the signed bundle. vex-mcp itself links no third-party
+          # package (the import-graph test in bridge/ pins that).
           cache: false
 
       - name: Verify tag matches vex-app/package.json version
@@ -270,6 +275,9 @@ jobs:
       # + APPLE_API_KEY_ID + APPLE_API_ISSUER flow in from the previous step via
       # $GITHUB_ENV — do NOT re-declare them here (an empty ${{ env.* }} override
       # would blank the decoded key path).
+      # The native-payload contract runs inside afterPack (build/afterPack.mjs)
+      # for every packaged arch, BEFORE signing and publish - the release path
+      # deliberately relies on that hook instead of a separate check:package step.
       - name: Package, sign, notarize & publish
         working-directory: vex-app
         run: pnpm exec electron-builder --mac --arm64 --x64 --publish always --config electron-builder.release.yml
@@ -349,8 +357,13 @@ jobs:
         with:
           go-version: "1.27.0"
           check-latest: false
-          # The bridge is PURE STDLIB: there is no go.sum and nothing to cache,
-          # and setup-go's cache fails closed on a missing dependency file.
+          # Cache deliberately OFF even though bridge/go.sum exists: the module
+          # graph is github.com/Microsoft/go-winio (the Windows pipe front's
+          # only third-party dependency) plus golang.org/x/sys, downloaded in
+          # seconds and verified against the committed go.sum on every run. A
+          # restored cache would be one more input to a binary that ships
+          # inside the signed bundle. vex-mcp itself links no third-party
+          # package (the import-graph test in bridge/ pins that).
           cache: false
 
       - name: Verify tag matches vex-app/package.json version
@@ -419,8 +432,13 @@ jobs:
         with:
           go-version: "1.27.0"
           check-latest: false
-          # The bridge is PURE STDLIB: there is no go.sum and nothing to cache,
-          # and setup-go's cache fails closed on a missing dependency file.
+          # Cache deliberately OFF even though bridge/go.sum exists: the module
+          # graph is github.com/Microsoft/go-winio (the Windows pipe front's
+          # only third-party dependency) plus golang.org/x/sys, downloaded in
+          # seconds and verified against the committed go.sum on every run. A
+          # restored cache would be one more input to a binary that ships
+          # inside the signed bundle. vex-mcp itself links no third-party
+          # package (the import-graph test in bridge/ pins that).
           cache: false
 
       - name: Verify tag matches vex-app/package.json version
@@ -522,22 +540,33 @@ jobs:
           Write-Host "All Windows artifacts signed, timestamped and attributed correctly."
 
       # Bridge-path-specific assertion, on top of the recursive check above:
-      # the recursive scan walks dist-electron/*.exe, and the bridge lives
-      # inside the unpacked app directory. A missing or misnamed bridge would
+      # the recursive scan walks dist-electron/*.exe, and the bridge binaries
+      # live inside the unpacked app directory. A missing or misnamed one would
       # otherwise pass every gate and fail only in a user's MCP client.
-      - name: Verify the packaged Vex Studio bridge (Windows)
+      #
+      # BOTH artifacts are required, BY NAME. On Windows `resources/bridge/`
+      # carries the MCP bridge AND the named-pipe front (the artifact table in
+      # vex-app/scripts/bridge-artifact.mjs), and a scan that looked for one
+      # name would pass a package that shipped only that one. The Authenticode
+      # step above already covers the front: app-builder-lib signs every .exe
+      # copied through extraResources (winPackager.js shouldSignFile, the
+      # `.exe` backward-compatibility branch) with no per-file configuration.
+      - name: Verify the packaged Vex Studio bridge binaries (Windows)
         working-directory: vex-app
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $bridges = Get-ChildItem -Path dist-electron -Recurse -Filter vex-mcp.exe -ErrorAction SilentlyContinue
-          if ($bridges.Count -eq 0) {
-            Write-Error "No resources/bridge/vex-mcp.exe in dist-electron - the package would ship without its Vex Studio bridge."
-          }
-          foreach ($b in $bridges) {
-            if ($b.FullName -notmatch 'resources\\bridge\\vex-mcp\.exe$') {
-              Write-Error "Unexpected bridge location $($b.FullName); the contract path is resources/bridge/vex-mcp.exe."
+          foreach ($name in @('vex-mcp.exe', 'vex-pipe-front.exe')) {
+            $found = Get-ChildItem -Path dist-electron -Recurse -Filter $name -ErrorAction SilentlyContinue
+            if ($found.Count -eq 0) {
+              Write-Error "No resources/bridge/$name in dist-electron - the package would ship without it."
             }
-            Write-Host "bridge: $($b.FullName) ($($b.Length) bytes)"
+            $expected = 'resources\\bridge\\' + [regex]::Escape($name) + '$'
+            foreach ($b in $found) {
+              if ($b.FullName -notmatch $expected) {
+                Write-Error "Unexpected bridge location $($b.FullName); the contract path is resources/bridge/$name."
+              }
+              Write-Host "bridge: $($b.FullName) ($($b.Length) bytes)"
+            }
           }
-          Write-Host "Packaged Vex Studio bridge present at the contract path."
+          Write-Host "Packaged Vex Studio bridge binaries present at the contract paths."

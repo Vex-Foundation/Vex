@@ -176,4 +176,51 @@ describe("setupVexMarketService", () => {
     await vi.advanceTimersByTimeAsync(1_000_000); // well past every interval
     expect(fetchPair.mock.calls.length).toBe(callsBefore);
   });
+
+  /**
+   * THE QUIT HANG, as a unit.
+   *
+   * The price poll rides the app's Chromium transport, and the quit destroys
+   * the window that transport lives in WHILE a request is open: the request's
+   * promise is then never settled at all - it does not reject, and it leaves
+   * no timer or socket behind for the event loop to hold. `stop()` drained it
+   * unbounded, so `globalCleanup.runAll()` never settled, `app.exit(0)` was
+   * never reached, and the Playwright fixture's `app.close()` exceeded a 120 s
+   * teardown budget on a spec whose assertions had already passed.
+   *
+   * Deleting the drain bound turns this red by hanging, which is the same
+   * shape the product defect had.
+   */
+  it("stop() settles when a poll never settles, and the late poll publishes nothing", async () => {
+    const publish = vi.fn();
+    // The unsettleable request. No rejection, no timer: exactly what a
+    // destroyed transport window leaves behind.
+    let landPair: (pair: VexPairData) => void = () => undefined;
+    const stop = setupVexMarketService({
+      ...BASE,
+      drainTimeoutMs: 2_000,
+      fetchPair: vi.fn(
+        () =>
+          new Promise<VexPairData>((resolve) => {
+            landPair = resolve;
+          }),
+      ),
+      fetchSparkline: vi.fn().mockResolvedValue(SPARK),
+      fetchHolderCount: vi.fn().mockResolvedValue(354),
+      publish,
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+    publish.mockClear();
+
+    const stopped = stop();
+    await vi.advanceTimersByTimeAsync(2_000);
+    await stopped; // THE POINT: it resolves at all.
+
+    // And abandoning it costs nothing: a poll that lands afterwards is refused
+    // by the `stopped` guard, so it neither publishes nor reschedules.
+    landPair(PAIR);
+    await vi.advanceTimersByTimeAsync(1_000_000);
+    expect(publish).not.toHaveBeenCalled();
+  });
 });

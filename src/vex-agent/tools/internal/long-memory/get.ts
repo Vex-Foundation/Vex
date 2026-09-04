@@ -1,11 +1,11 @@
 /**
- * MemoryGet handler (S3) — direct fetch of a long-term memory entry by id.
+ * MemoryGet handler (S3) - direct fetch of a long-term memory entry by id.
  *
  * Explicit fetch ⇒ returns the entry. Concise by default (metadata + lineage
  * only); pass response_format='detailed' to also inline the full metadata bag.
  * Either way content_md injects into the engine's loadedDocuments under
  * `long_memory:{id}` so it surfaces in the system prompt's loaded-content
- * section — so concise avoids double-emitting the body in the tool output.
+ * section - so concise avoids double-emitting the body in the tool output.
  *
  * Steering on miss: not-found → re-search hint; a non-active entry steers the
  * agent toward the live successor (`supersededBy`) when one exists, otherwise
@@ -44,7 +44,7 @@ export async function handleLongMemoryGet(
   if (entry.status !== "active") {
     if (entry.supersededBy !== null) {
       return fail(
-        `long-term memory entry ${id} is ${entry.status} — it was replaced. The current version is entry ${entry.supersededBy}; fetch that with MemoryGet instead.`,
+        `long-term memory entry ${id} is ${entry.status} - it was replaced. The current version is entry ${entry.supersededBy}; fetch that with MemoryGet instead.`,
       );
     }
     return fail(
@@ -62,7 +62,7 @@ export async function handleLongMemoryGet(
     title: entry.title,
     summary: entry.summary,
     status: entry.status,
-    // Lifecycle lineage — both directions so the agent can navigate the chain.
+    // Lifecycle lineage - both directions so the agent can navigate the chain.
     supersedesId: entry.supersedesId,
     supersededBy: entry.supersededBy,
   };

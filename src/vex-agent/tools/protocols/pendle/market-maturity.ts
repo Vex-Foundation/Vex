@@ -1,5 +1,5 @@
 /**
- * "Has this Pendle market matured?" — the ONE place that reads an expiry.
+ * "Has this Pendle market matured?" - the ONE place that reads an expiry.
  *
  * Two callers need this answer for different reasons, and they must never drift
  * apart:
@@ -10,13 +10,13 @@
  *
  * They phrase their refusals differently, because a caller mid-redeem needs
  * different words from a caller whose market lookup just returned a suspicious
- * row — but the arithmetic is shared, so a future change to how an expiry is
+ * row - but the arithmetic is shared, so a future change to how an expiry is
  * read cannot fix one path and leave the other behind.
  *
  * `expiry` is provider text and therefore untrusted: it is `string | null` on
  * `PendleMarket`, and both "absent" and "present but unreadable" are real states
  * that must NOT collapse into "not matured". They collapse into `unreadable`,
- * which every caller refuses — a maturity we cannot prove is not a maturity we
+ * which every caller refuses - a maturity we cannot prove is not a maturity we
  * may act on (rules/90).
  */
 

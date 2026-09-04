@@ -19,11 +19,11 @@
             "type": "boolean"
           },
           "includeCurveProgress": {
-            "description": "When true, enrich each returned row with curveProgressPct (0-100) WITHOUT filtering. Default false. Computed on-chain at one pinned block (echoed as curveProgressBlock) from each token's own reserves and the Diamond's live graduation threshold, read in Multicall3 batches of at most 30 rows. Graduated rows are 100; rows whose on-chain read fails are dropped and counted. Display/hunting-grade only — a token can graduate between this read and any trade.",
+            "description": "When true, enrich each returned row with curveProgressPct (0-100) WITHOUT filtering. Default false. Computed on-chain at one pinned block (echoed as curveProgressBlock) from each token's own reserves and the Diamond's live graduation threshold, read in Multicall3 batches of at most 30 rows. Graduated rows are 100; rows whose on-chain read fails are dropped and counted. Display/hunting-grade only - a token can graduate between this read and any trade.",
             "type": "boolean"
           },
           "limit": {
-            "description": "Max deduped tokens to return, 1-200 (no default — omitting returns the walked window). The provider caps each page at 30; higher limits page-walk and dedupe by address.",
+            "description": "Max deduped tokens to return, 1-200 (no default - omitting returns the walked window). The provider caps each page at 30; higher limits page-walk and dedupe by address.",
             "type": "number"
           },
           "maxCurveProgressPct": {
@@ -31,7 +31,7 @@
             "type": "number"
           },
           "minCurveProgressPct": {
-            "description": "Client-side: keep only tokens at least this far toward graduating, 0-100, and not greater than maxCurveProgressPct (an inverted band is rejected by name). Curve progress is computed by Vex ON-CHAIN at ONE PINNED BLOCK, echoed as curveProgressBlock: each token's own ethReserve and fakeEth from fakepool_stats over the graduation reserve derived from the Diamond's live ethMcapThreshold — never a hard-coded threshold. Rows are read in Multicall3 batches of at most 30 (so a 600-row page walk costs at most 20 batched calls, not one unbounded call). Applies to bonding-curve tokens; a graduated token counts as 100. Rows whose on-chain read fails are DROPPED and counted; if the threshold itself cannot be read the filter is refused rather than guessed. Setting this (or maxCurveProgressPct/includeCurveProgress) turns the on-chain read on; leaving all three unset keeps the list a pure REST call.",
+            "description": "Client-side: keep only tokens at least this far toward graduating, 0-100, and not greater than maxCurveProgressPct (an inverted band is rejected by name). Curve progress is computed by Vex ON-CHAIN at ONE PINNED BLOCK, echoed as curveProgressBlock: each token's own ethReserve and fakeEth from fakepool_stats over the graduation reserve derived from the Diamond's live ethMcapThreshold - never a hard-coded threshold. Rows are read in Multicall3 batches of at most 30 (so a 600-row page walk costs at most 20 batched calls, not one unbounded call). Applies to bonding-curve tokens; a graduated token counts as 100. Rows whose on-chain read fails are DROPPED and counted; if the threshold itself cannot be read the filter is refused rather than guessed. Setting this (or maxCurveProgressPct/includeCurveProgress) turns the on-chain read on; leaving all three unset keeps the list a pure REST call.",
             "type": "number"
           },
           "page": {

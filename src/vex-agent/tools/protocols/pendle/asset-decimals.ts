@@ -6,7 +6,7 @@
  * order-book sizes (the market's PY unit) and merkle reward amounts (arbitrary
  * reward tokens), plus the per-leg identity `pendle.market.get` reports. NONE of
  * the endpoints behind them carries decimals, and neither does the documented
- * market catalogue `/v2/markets/all` — verified against the recorded live body,
+ * market catalogue `/v2/markets/all` - verified against the recorded live body,
  * whose `pt`/`yt`/`sy` legs are bare `chainId-address` strings.
  *
  * The ONLY catalogue in this repository that carries `decimals` is the per-chain
@@ -16,12 +16,12 @@
  * wiring step cannot forget to decide, because the compiler will not let it.
  *
  * Two implementations are expected:
- *   - {@link PENDLE_READ_NO_ASSET_FACTS} — the honest degradation. Amounts ship
+ *   - {@link PENDLE_READ_NO_ASSET_FACTS} - the honest degradation. Amounts ship
  *     raw, `decimals: null`, `exact: null`, `unreadable: true`, and the tool
  *     says so in words. `"1047061"` is 1.05 at six decimals and 0.00105 at nine;
  *     rules/90 records what guessing that cost, so this never guesses.
  *   - a catalogue-backed lookup (`buildAssetMap`, as `pendle.position.value`
- *     already does for exactly this purpose) — wired when the read lane is
+ *     already does for exactly this purpose) - wired when the read lane is
  *     allowed to reach that module.
  *
  * Nothing here fetches anything. It is the shape of the answer plus the two pure
@@ -40,7 +40,7 @@ export interface PendleReadAssetFacts {
 /** Keyed by BARE LOWERCASE address, because that is what every read validator emits. */
 export type PendleReadAssetFactsByAddress = ReadonlyMap<string, PendleReadAssetFacts>;
 
-/** Resolve one chain's asset facts. Injected — see the module header. */
+/** Resolve one chain's asset facts. Injected - see the module header. */
 export type PendleReadAssetFactsLookup = (chainId: number) => Promise<PendleReadAssetFactsByAddress>;
 
 const EMPTY_FACTS: PendleReadAssetFactsByAddress = new Map();
@@ -48,8 +48,8 @@ const EMPTY_FACTS: PendleReadAssetFactsByAddress = new Map();
 /**
  * The no-catalogue lookup: every amount comes back explicitly UNREADABLE.
  *
- * This is a real product state, not a placeholder — it is what the read lane can
- * honestly say while the only decimals source sits behind a frozen module — and
+ * This is a real product state, not a placeholder - it is what the read lane can
+ * honestly say while the only decimals source sits behind a frozen module - and
  * it is asserted in the handler tests so the degraded shape can never drift into
  * an assumed-18 fabrication.
  */
@@ -59,7 +59,7 @@ export const PENDLE_READ_NO_ASSET_FACTS: PendleReadAssetFactsLookup = () => Prom
  * Run the injected lookup without letting its failure take the whole read down.
  *
  * The failure is RETURNED rather than swallowed: a caller that cannot resolve
- * decimals still answers, but it must say why its amounts are unreadable —
+ * decimals still answers, but it must say why its amounts are unreadable -
  * "Pendle does not publish decimals" and "the catalogue read failed" are
  * different facts, and a bare empty map cannot tell them apart.
  */
@@ -85,7 +85,7 @@ export interface PendleReadToken {
  * Project a contract address into a read-output token.
  *
  * Returns `null` for an address that does not survive the trusted-fields
- * boundary — a leg we cannot address is a leg we must not name.
+ * boundary - a leg we cannot address is a leg we must not name.
  */
 export function readToken(address: string | null, facts: PendleReadAssetFactsByAddress): PendleReadToken | null {
   const checked = trustedAddress(address);
@@ -118,4 +118,4 @@ export function readableAmount(raw: string, decimals: number | null): PendleRead
 export const PENDLE_UNREADABLE_AMOUNT_NOTE =
   "Some amounts below are RAW base units with no decimals: this Pendle endpoint does not publish them and Vex could " +
   "not resolve them from the chain's asset catalogue. They are flagged `unreadable` and MUST NOT be read as human " +
-  "amounts — the same digits mean a thousandfold different quantity at 6 versus 9 decimals.";
+  "amounts - the same digits mean a thousandfold different quantity at 6 versus 9 decimals.";

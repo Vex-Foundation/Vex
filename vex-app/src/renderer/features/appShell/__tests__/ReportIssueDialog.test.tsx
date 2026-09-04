@@ -5,38 +5,8 @@
  * never mock ipcRenderer in renderer tests).
  */
 
-import { describe, expect, it, vi, beforeAll, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-
-// JSDOM does not implement `HTMLDialogElement.showModal()` — the dialog
-// stays without the `open` attribute and Testing Library's a11y tree
-// hides every descendant from `getByRole`. We polyfill the bare minimum
-// so the dialog content is visible to queries. SessionCreator and other
-// dialog-using components share this constraint; if a global setup
-// emerges later, this block can be removed.
-beforeAll(() => {
-  const proto = HTMLDialogElement.prototype as unknown as {
-    showModal?: () => void;
-    close?: () => void;
-    show?: () => void;
-  };
-  if (typeof proto.showModal !== "function") {
-    proto.showModal = function showModalPolyfill(this: HTMLDialogElement): void {
-      this.setAttribute("open", "");
-    };
-  }
-  if (typeof proto.close !== "function") {
-    proto.close = function closePolyfill(this: HTMLDialogElement): void {
-      this.removeAttribute("open");
-      this.dispatchEvent(new Event("close"));
-    };
-  }
-  if (typeof proto.show !== "function") {
-    proto.show = function showPolyfill(this: HTMLDialogElement): void {
-      this.setAttribute("open", "");
-    };
-  }
-});
 
 const createBugReportMock = vi.fn();
 

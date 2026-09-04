@@ -1,10 +1,10 @@
 /**
- * `pendle.yt.quote` — the read half of the YT surface.
+ * `pendle.yt.quote` - the read half of the YT surface.
  *
  * INSTRUMENT GUARD (fail-closed, BEFORE any Convert call): EXACTLY one leg must
  * be an active YT on the resolved chain (out → buy, in → sell). Without it, a
  * quote with two non-YT legs would still record a GENERIC swap identity that
- * could authorize the PT execute for the same legs — skipping the PT term-lock
+ * could authorize the PT execute for the same legs - skipping the PT term-lock
  * warning path. Instrument confusion is a fund-safety hole, so the quote refuses
  * instead of degrading.
  */
@@ -45,13 +45,13 @@ export async function pendleYtQuote(p: Record<string, unknown>, context: Protoco
     // INSTRUMENT GUARD (fail-closed, BEFORE any Convert call): EXACTLY one leg
     // must be an active YT on the resolved chain (out → buy, in → sell). Without
     // this, a quote with two non-YT legs would still record a GENERIC swap
-    // identity that could authorize the PT execute for the same legs — skipping
+    // identity that could authorize the PT execute for the same legs - skipping
     // the PT term-lock warning path. Instrument confusion is a fund-safety hole,
     // so the quote refuses instead of degrading.
     const marketByOut = await resolveMarketByYt(chainId, tokenOut);
     const marketByIn = await resolveMarketByYt(chainId, tokenIn.address);
     if (marketByOut && marketByIn) {
-      return fail("Both tokens are Pendle YTs — trade a YT against a payment token, one leg at a time.");
+      return fail("Both tokens are Pendle YTs - trade a YT against a payment token, one leg at a time.");
     }
     if (!marketByOut && !marketByIn) {
       return fail("Neither token is an active Pendle YT on this chain - find the YT via pendle__markets_discover, or use pendle__pt_quote for PT trades.");
@@ -80,7 +80,7 @@ export async function pendleYtQuote(p: Record<string, unknown>, context: Protoco
     const outDecimals = assetMap.get(tokenOut.toLowerCase())?.decimals ?? null;
 
     // Echo the fields `extractPendleQuote` validates, with `instrument: "yt"` so
-    // the recorder does NOT emit a PT-style term-lock (a YT is not locked — it
+    // the recorder does NOT emit a PT-style term-lock (a YT is not locked - it
     // decays). `chainId` is the RESOLVED chain (the swap prequote identity binds
     // it). market/yt are guaranteed non-null by the instrument guard above; a YT
     // trade is ALWAYS a swap (never redeem-py), so `action` is fixed "swap".

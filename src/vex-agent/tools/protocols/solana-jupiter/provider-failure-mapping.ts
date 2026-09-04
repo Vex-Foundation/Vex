@@ -7,9 +7,9 @@
  *
  * WHAT WAS WRONG. `handlers/lend.ts`, `handlers/lend-borrow.ts` and
  * `predict-execute.ts` each filed EVERY pre-broadcast provider rejection as
- * `route_not_found`. That code is agent-visible — `tools/internal/
+ * `route_not_found`. That code is agent-visible - `tools/internal/
  * inspect-views/transactions.ts` renders it back into the activity the agent
- * reads — so on 2026-07-25 the production DB told the agent a routing failure
+ * reads - so on 2026-07-25 the production DB told the agent a routing failure
  * when Jupiter Prediction had actually answered "Minimum order is $5". An
  * autonomous agent reads a routing failure as a liquidity problem and retries
  * a call that can never succeed.
@@ -24,14 +24,14 @@
  * here is reserved for a refusal that actually names routing or fill.
  *
  * WHY PROSE. Jupiter's machine `code` (e.g. `"create_order_failed"`) is too
- * coarse to classify on — it is the same code for a size refusal and for a
- * closed market — so the provider's own sentence is the only signal that
+ * coarse to classify on - it is the same code for a size refusal and for a
+ * closed market - so the provider's own sentence is the only signal that
  * separates them. `httpStatus` is used for what it IS evidence of: whether
  * the provider answered at all.
  *
  * The scenario names below (`insufficient_collateral:`, `market_closed:`,
  * `position_not_found:`) are the ones the mapping table already prescribes as
- * `failure_reason` TEXT under the closest existing code — R1's rule that a
+ * `failure_reason` TEXT under the closest existing code - R1's rule that a
  * domain scenario is a reason, not a new code. This module adds no code to
  * the enum.
  */
@@ -53,7 +53,7 @@ export interface JupiterProviderFailure {
 }
 
 /**
- * Ordered most-specific first — the order is load-bearing. "insufficient
+ * Ordered most-specific first - the order is load-bearing. "insufficient
  * liquidity" must be tested before "insufficient balance" (both contain
  * "insufficient"), and a routing refusal before any bare "not found".
  *
@@ -131,7 +131,7 @@ function classifyUnrecognized(err: unknown, category: string): { scenario: strin
   // W1 gave `invalid_request` TWO producers: our own validation
   // (`isLocallyAuthoredValidationFailure`) and any provider 4xx
   // (`categoryFromHttpStatus`). The category name alone therefore no longer
-  // says WHO refused, and this persisted `failureReason` must — so the status
+  // says WHO refused, and this persisted `failureReason` must - so the status
   // branch above claims the provider-answered half FIRST, and only the
   // statusless remainder reaches here. That remainder is Vex's own validation
   // by construction: `carriesProviderVerdict` disqualifies anything bearing
@@ -146,7 +146,7 @@ function classifyUnrecognized(err: unknown, category: string): { scenario: strin
 }
 
 /**
- * Classify a caught pre-broadcast Jupiter provider error. Never throws — any
+ * Classify a caught pre-broadcast Jupiter provider error. Never throws - any
  * unrecognized shape lands on `"unknown"` with the provider's own (scrubbed)
  * words preserved, which is the part the agent actually needs.
  */

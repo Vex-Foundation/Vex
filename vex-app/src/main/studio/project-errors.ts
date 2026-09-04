@@ -56,6 +56,29 @@ export function projectsRootChangedError(correlationId: string): VexError {
   );
 }
 
+/**
+ * Vex could not PROVE the configured root is the recorded one.
+ *
+ * Deliberately NOT `projects.root_changed`: that error tells the user to
+ * restore a root they changed, and this situation is not that. It is reached
+ * when the recorded folder cannot be inspected (moved, deleted, an unavailable
+ * network drive) or when the filesystem supplies no identity for it at all
+ * (`dev` and `ino` both zero, which Node reports on some Windows network and
+ * FAT volumes). Telling somebody with an unmounted drive to edit `config.json`
+ * would send them to fix the one thing that is not broken.
+ *
+ * Retryable, because the usual cause is a volume that comes back.
+ */
+export function projectsRootUnverifiableError(correlationId: string): VexError {
+  return projectsError(
+    "projects.root_unverifiable",
+    "Vex could not confirm that the projects folder is the same folder your projects were " +
+      "created in, so it did not touch them. This usually means the folder is on a drive that " +
+      "is not currently available, or it was moved. Reconnect or restore the folder and try again.",
+    { correlationId, retryable: true, userActionable: true },
+  );
+}
+
 /** The projects root could not be created or resolved on disk. */
 export function projectsRootUnavailableError(correlationId: string): VexError {
   return projectsError(
@@ -83,6 +106,73 @@ export function projectSlugTakenError(
   );
 }
 
+/**
+ * The projects root exists but this user may not write in it (EACCES/EPERM).
+ *
+ * NOT `projects.root_unavailable`: "check that the location exists and is a
+ * folder" sends someone to look at a folder that is plainly there. Permission
+ * is a different fix, and saying so is the difference between a two-minute
+ * `chmod` and an afternoon.
+ *
+ * Not retryable: nothing about waiting changes a permission bit.
+ */
+export function projectsRootPermissionDeniedError(correlationId: string): VexError {
+  return projectsError(
+    "projects.root_permission_denied",
+    "Vex is not allowed to create a folder inside your projects root, so nothing was created. " +
+      "Grant your user account write permission on that folder (on macOS, also check that Vex " +
+      "has access to the location in System Settings), then try again.",
+    { correlationId, retryable: false, userActionable: true },
+  );
+}
+
+/** The volume holding the projects root is full (ENOSPC/EDQUOT). */
+export function projectsRootOutOfSpaceError(correlationId: string): VexError {
+  return projectsError(
+    "projects.root_out_of_space",
+    "There is no free space left on the drive holding your projects folder, so the project " +
+      "folder could not be created. Nothing was created. Free some space and try again.",
+    { correlationId, retryable: false, userActionable: true },
+  );
+}
+
+/**
+ * The projects root path is not a usable path on this system (EINVAL,
+ * ENOTDIR, ENAMETOOLONG).
+ *
+ * The distinct case worth naming: a `projectsRoot` override that is legal text
+ * on the machine it was typed on and illegal on the machine reading it - a
+ * Windows path with a character NTFS forbids, a component that is a reserved
+ * device name, a path past the system's length limit, or a component that
+ * turned out to be a file.
+ */
+export function projectsRootPathInvalidError(correlationId: string): VexError {
+  return projectsError(
+    "projects.root_path_invalid",
+    "Your projects root is not a usable folder path on this system, so no project folder could " +
+      "be created. Nothing was created. Check the projectsRoot value in config.json: a component " +
+      "may be a file rather than a folder, contain a character this system forbids, or be too long.",
+    { correlationId, retryable: false, userActionable: true },
+  );
+}
+
+/**
+ * The name derives a folder name Windows reserves for a device.
+ *
+ * Refused on EVERY platform even though only Windows enforces it: the folder
+ * outlives the machine it was created on. The message names the actual set
+ * rather than only the name the user typed, because "con" surprises people.
+ */
+export function projectNameReservedError(correlationId: string): VexError {
+  return projectsError(
+    "projects.name_reserved",
+    "That name becomes a folder name Windows reserves for a device (CON, PRN, AUX, NUL, COM0-COM9 " +
+      "and LPT0-LPT9). Vex refuses it on every system, because a project folder with that name " +
+      "could not be opened if you ever moved it to a Windows machine. Choose a different name.",
+    { correlationId, retryable: false, userActionable: true },
+  );
+}
+
 /** The project name derived no usable slug (for example, punctuation only). */
 export function projectNameUnusableError(correlationId: string): VexError {
   return {
@@ -96,6 +186,37 @@ export function projectNameUnusableError(correlationId: string): VexError {
     redacted: true,
     correlationId,
   };
+}
+
+/**
+ * The project is being deleted, so this operation was declined (B0).
+ *
+ * Deliberately NOT `projects.not_found`: the project still exists, the user's
+ * own delete is what refused this, and saying "no such project" would be both
+ * untrue and confusing next to a list that still shows it.
+ */
+export function projectDeletingError(correlationId: string): VexError {
+  return projectsError(
+    "projects.deleting",
+    "This project is being deleted, so Vex did not run that. Nothing was changed.",
+    { correlationId, retryable: false, userActionable: true },
+  );
+}
+
+/**
+ * The slug belongs to a tombstone whose cleanup has not finished (B0).
+ *
+ * RETRYABLE, and that is the point: the remover still owns that folder, and
+ * claiming it now would mean the cleanup deleting the NEW project's files.
+ * Cleanup is a durable obligation with two recovery owners, so waiting works.
+ */
+export function projectSlugCleanupPendingError(correlationId: string): VexError {
+  return projectsError(
+    "projects.slug_cleanup_pending",
+    "A project with this name was just deleted and Vex is still removing its "
+      + "files. Nothing was created. Try again in a moment.",
+    { correlationId, retryable: true, userActionable: true },
+  );
 }
 
 export function projectNotFoundError(correlationId: string): VexError {

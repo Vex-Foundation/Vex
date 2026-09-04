@@ -45,7 +45,7 @@ function registerPortfolioReadHandler(): () => void {
     handle: async (input, ctx): Promise<Result<PortfolioDto>> => {
       const sessionPart =
         input.scope === "session" ? ` sessionId=${input.sessionId}` : "";
-      const outcome = await getPortfolio(input);
+      const outcome = await getPortfolio(input, ctx.requestId);
       if (outcome.ok) {
         log.info(
           `[ipc:vex:portfolio:read] ok scope=${input.scope}${sessionPart} ` +

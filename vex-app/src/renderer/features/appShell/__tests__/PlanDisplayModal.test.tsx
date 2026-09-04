@@ -12,10 +12,12 @@
  *     blocked_pending_acceptance / not_found / failed Result / rejected
  *     mutation) surfaces distinct copy.
  *
- * The native <dialog> is polyfilled (jsdom has no showModal/close).
+ * The native <dialog> modal methods jsdom lacks come from the shared renderer
+ * setup (`test/dialog-modal-polyfill.ts`), which also runs the real dialog
+ * focusing steps, so no suite installs its own.
  */
 
-import { beforeAll, beforeEach, describe, it, expect, vi } from "vitest";
+import { beforeEach, describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 
 type AcceptData = { ok: true; data: { outcome: string } } | undefined;
@@ -68,24 +70,6 @@ function planQuery(over: Partial<PlanState>) {
     refetch: vi.fn(),
   };
 }
-
-beforeAll(() => {
-  const proto = HTMLDialogElement.prototype as unknown as {
-    showModal?: () => void;
-    close?: () => void;
-  };
-  if (typeof proto.showModal !== "function") {
-    proto.showModal = function (this: HTMLDialogElement): void {
-      this.setAttribute("open", "");
-    };
-  }
-  if (typeof proto.close !== "function") {
-    proto.close = function (this: HTMLDialogElement): void {
-      this.removeAttribute("open");
-      this.dispatchEvent(new Event("close"));
-    };
-  }
-});
 
 beforeEach(() => {
   vi.clearAllMocks();

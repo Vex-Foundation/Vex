@@ -5,14 +5,14 @@
  *
  * SEPARATE from `read-params.ts`, which owns the two PORTFOLIO-shaped read tools
  * (`pendle.yields`, `pendle.position.value`). The two files change for different
- * reasons — that one moves when the screening and portfolio vocabularies move,
- * this one moves when Pendle's per-market query surface moves — and they share
+ * reasons - that one moves when the screening and portfolio vocabularies move,
+ * this one moves when Pendle's per-market query surface moves - and they share
  * only the rejection TYPE, so both lanes speak one failure vocabulary. The
  * primitive readers live in `read-param-readers.ts`.
  *
  * REJECT BY NAME, NEVER SILENTLY DROP. The protocol runtime already refuses an
  * undeclared key and a wrong-typed value. What it cannot see is a well-typed
- * value outside the domain — `timeFrame: "minute"`, `precision: 7`, a 400-day
+ * value outside the domain - `timeFrame: "minute"`, `precision: 7`, a 400-day
  * hourly window, an id belonging to another chain. Each of those is refused here
  * with the offending PARAM NAME and the accepted set, because a model that
  * believes it read minute candles carries that mistake into every later step.
@@ -66,8 +66,8 @@ export const PENDLE_ORDERBOOK_DEFAULT_LEVELS = 10;
  * Hard ceiling on depth levels returned PER SIDE.
  *
  * This parser is the only bound the order-book read has: unlike the candle
- * decoder, `read/validation/orderbook.ts` caps no rows — it normalizes every
- * entry the provider sent — so an unbounded `limit` would let a book decide how
+ * decoder, `read/validation/orderbook.ts` caps no rows - it normalizes every
+ * entry the provider sent - so an unbounded `limit` would let a book decide how
  * much of the agent's context it occupies. The live books measured on 2026-07-27
  * carried at most ten levels a side (five without AMM depth merged), so fifty is
  * far above anything observed while still being a number. `levelCounts` always
@@ -80,7 +80,7 @@ export const PENDLE_ORDERBOOK_MAX_LEVELS = 50;
 export const PENDLE_ORDERBOOK_DEFAULT_PRECISION = 2;
 
 /**
- * Default series fields: the three a fixed-yield decision actually turns on —
+ * Default series fields: the three a fixed-yield decision actually turns on -
  * the rate being locked, the rate it is being locked against, and whether the
  * market is deep enough to exit. Naming fields also keeps the CU cost at the
  * narrow-window price instead of the provider's default set.
@@ -89,12 +89,12 @@ export const PENDLE_HISTORY_DEFAULT_FIELDS: readonly PendleReadHistoryField[] = 
 
 // ── pendle.market.get ───────────────────────────────────────────────
 
-/** Which param carried the address — echoed so the answer names what was asked. */
+/** Which param carried the address - echoed so the answer names what was asked. */
 export type PendleMarketIdentifier = "market" | "pt" | "yt";
 
 export interface PendleMarketGetQuery {
   chainId: number;
-  /** Bare lowercase 0x — the market, PT or YT address. */
+  /** Bare lowercase 0x - the market, PT or YT address. */
   address: string;
   addressParam: PendleMarketIdentifier;
 }
@@ -117,7 +117,7 @@ export function parsePendleMarketGetParams(p: Record<string, unknown>): PendleRe
   if (first === undefined) {
     return reject(
       "market",
-      "name exactly one of `market`, `pt` or `yt` — the market (LP) address, the principal-token address, or the yield-token address.",
+      "name exactly one of `market`, `pt` or `yt` - the market (LP) address, the principal-token address, or the yield-token address.",
     );
   }
   if (supplied.length > 1) {
@@ -293,7 +293,7 @@ export function parsePendleOrderbookParams(p: Record<string, unknown>): PendleRe
  * There is deliberately no wallet param: the wallet is the session's selected
  * one, resolved in the handler through the same path `pendle.position.value`
  * uses. Accepting an address from model output would make the tool a
- * third-party balance probe (rules/06 — data minimisation).
+ * third-party balance probe (rules/06 - data minimisation).
  */
 export interface PendleMerkleRewardsQuery {
   chainId: number | undefined;

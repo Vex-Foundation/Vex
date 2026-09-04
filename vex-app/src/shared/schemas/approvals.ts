@@ -22,6 +22,36 @@
 import { z } from "zod";
 
 export const APPROVAL_REASONING_PREVIEW_MAX = 200;
+/**
+ * Upper bound on the MCP client name carried to the renderer.
+ *
+ * It MIRRORS `REQUESTING_CLIENT_NAME_MAX` in
+ * `src/vex-agent/engine/core/approval-intent-preview.ts`, which is the one
+ * owner of the rule: that module DROPS a longer name rather than shortening
+ * it, so a value that reaches this boundary is already within bound and this
+ * schema is the boundary's own restatement, not a second policy. Restated
+ * rather than imported because this schema layer must not depend on the agent
+ * runtime (same reason `approvalActionKindSchema` restates `ACTION_KINDS`).
+ */
+export const REQUESTING_CLIENT_NAME_DTO_MAX = 60;
+
+/**
+ * The renderer-safe MCP client name: bounded, and free of the control
+ * characters that could forge a line in a card a human decides from.
+ *
+ * One schema for BOTH boundaries - the main-side row mapper validating a
+ * durable column and the DTO the renderer parses - because a name that fails
+ * either check must fail both, and two spellings of the rule would eventually
+ * disagree. Anything it rejects becomes `null`, and the card names no actor by
+ * name rather than showing an unvouched string.
+ */
+export const requestedByClientSchema = z
+  .string()
+  .min(1)
+  .max(REQUESTING_CLIENT_NAME_DTO_MAX)
+  // eslint-disable-next-line no-control-regex
+  .regex(/^[^\u0000-\u001f\u007f]+$/, "must not contain control characters");
+
 export const APPROVAL_HISTORY_DEFAULT_LIMIT = 20;
 export const APPROVAL_HISTORY_MAX_LIMIT = 100;
 
@@ -102,6 +132,24 @@ export type ApprovalExecutionStatus = z.infer<
 >;
 
 /**
+ * WHO asked for this action - the provenance recorded on `approval_intents`.
+ *
+ * `agent` is Vex's own agent loop; `studio_mcp` is an external coding agent
+ * that reached Vex through the Vex Studio MCP host. The distinction is a
+ * money-path fact: "an external tool asked my wallet to do this" is a different
+ * thing for a user to approve than "the assistant I was talking to asked".
+ *
+ * NULL on the DTO means something specific and narrower than "unknown": the
+ * approval has no companion `approval_intents` row at all (it predates
+ * migration 024). It never means "we could not tell", and an off-enum value
+ * from a drifted schema normalizes to null rather than to `agent` - labelling a
+ * Studio-originated row as agent-originated would be a lie about authority, and
+ * the safe direction is to claim less, not more.
+ */
+export const approvalOriginSchema = z.enum(["agent", "studio_mcp"]);
+export type ApprovalOrigin = z.infer<typeof approvalOriginSchema>;
+
+/**
  * Renderer-safe preview projection from `approval_intents.preview_json`.
  * The main-side mapper allow-lists keys via the same defensive style as
  * `extractToolName`: never recurses, never returns raw blobs. Values are
@@ -157,6 +205,25 @@ export const approvalSummaryDtoSchema = z
     decision: approvalDecisionSchema.nullable(),
     decisionReason: z.string().nullable(),
     executionStatus: approvalExecutionStatusSchema.nullable(),
+    /** Provenance (B0). Null when the approval has no companion intent row. */
+    origin: approvalOriginSchema.nullable(),
+    /** The Vex Studio project this action was proposed for, when any. */
+    projectId: z.string().uuid().nullable(),
+    /**
+     * WHO asked, by NAME, when an external MCP client did: the `clientInfo.name`
+     * it declared in its `initialize` handshake, recorded on the intent's
+     * `policy_json` at enqueue and sanitized there.
+     *
+     * DISPLAY ONLY, and untrusted: another process chose this string for
+     * itself. Nothing binds, branches or authorizes on it - `origin` is the
+     * provenance fact, this is the label beside it. `null` covers three
+     * different things the renderer must not conflate with each other: an
+     * agent-originated approval (no MCP client exists), a Studio approval whose
+     * client sent no usable name, and a row predating this field. The card says
+     * "an MCP client" for the Studio cases and names no actor for the agent
+     * case, so a null is never rendered as a blank actor row.
+     */
+    requestedByClient: requestedByClientSchema.nullable(),
   })
   .strict();
 export type ApprovalSummaryDto = z.infer<typeof approvalSummaryDtoSchema>;
@@ -174,6 +241,16 @@ export type ApprovalSummaryDto = z.infer<typeof approvalSummaryDtoSchema>;
 export const approvalPendingGlobalDtoSchema = approvalSummaryDtoSchema
   .extend({
     sessionTitle: z.string().nullable(),
+    /**
+     * The project's display name, joined at read time. DELIBERATELY SURVIVES A
+     * TOMBSTONE: a pending approval that outlived its project should still say
+     * which project asked, because "some deleted project wanted your wallet to
+     * do this" is not an answer a user can act on.
+     *
+     * Display only. `projectId` is the identity anything binds on; this is
+     * user-authored free text and is bounded to the column's own CHECK.
+     */
+    projectName: z.string().max(80).nullable(),
   })
   .strict();
 export type ApprovalPendingGlobalDto = z.infer<

@@ -1,5 +1,5 @@
 /**
- * Protocol runtime — the ToolSearch discovery entry point + the protocol execute handler.
+ * Protocol runtime - the ToolSearch discovery entry point + the protocol execute handler.
  *
  * These are the two internal tools that the LLM uses to interact
  * with protocol capabilities. Discovery returns metadata.
@@ -7,10 +7,10 @@
  *
  * This file is the façade + orchestration owner. The boundary/redaction/capture
  * internals live in `./runtime/`:
- *   - `./runtime/params.ts`  — strict Zod param-boundary validation (B-002),
- *   - `./runtime/errors.ts`  — provider-safe error redaction (B-003),
- *   - `./runtime/gates.ts`   — prequote-gate + approval-gate invocation,
- *   - `./runtime/capture.ts` — capture validation / projection / audit recording.
+ *   - `./runtime/params.ts`  - strict Zod param-boundary validation (B-002),
+ *   - `./runtime/errors.ts`  - provider-safe error redaction (B-003),
+ *   - `./runtime/gates.ts`   - prequote-gate + approval-gate invocation,
+ *   - `./runtime/capture.ts` - capture validation / projection / audit recording.
  * `executeProtocolTool` stays HERE as the orchestration owner: it keeps the
  * exact ordering (validation → prequote gate → approval gate → handler/capture)
  * and stamps `actionKind` on every return path.
@@ -57,7 +57,7 @@ export { discoverProtocolCapabilities } from "./discovery.js";
 // is gone, replaced by a direct manifest read.
 //
 // Preview override preserved (Codex 1A Q3 ruling): `isPreviewExecution(...)`
-// returns `"read"` regardless of `manifest.actionKind` — preview / dryRun is
+// returns `"read"` regardless of `manifest.actionKind` - preview / dryRun is
 // read-only simulation, even on a mutating manifest. The approval gate below
 // also skips preview, so the override stays consistent end-to-end.
 //
@@ -65,11 +65,11 @@ export { discoverProtocolCapabilities } from "./discovery.js";
 // (propagation paths) and `protocol-taxonomy.test.ts` (per-manifest pins).
 
 /**
- * Local helper — stamp `actionKind` on a `ToolResult`. ALWAYS overwrites any
+ * Local helper - stamp `actionKind` on a `ToolResult`. ALWAYS overwrites any
  * handler-set value: for protocol tools the manifest-driven classifier is
  * authoritative, not handler payload. A handler trying to downgrade a
  * `user_wallet_broadcast` mutation to `read` cannot bypass the policy
- * classifier (Codex final review, puzzle 5/1A — 2026-05-23). Tested in
+ * classifier (Codex final review, puzzle 5/1A - 2026-05-23). Tested in
  * `execute-tool-taxonomy.test.ts` ("handler-set actionKind cannot override
  * the derived classifier").
  */
@@ -85,7 +85,7 @@ export async function executeProtocolTool(
 ): Promise<ToolResult> {
   const manifest = getProtocolManifest(request.toolId);
   if (!manifest) {
-    // Unknown manifest — leave `actionKind` undefined per Codex review
+    // Unknown manifest - leave `actionKind` undefined per Codex review
     // (puzzle 5/1A): policy layer treats missing `actionKind` as the
     // conservative "unknown action" signal.
     return {
@@ -112,15 +112,15 @@ export async function executeProtocolTool(
     );
   }
 
-  // Resolve target action kind ONCE — every subsequent return path stamps
+  // Resolve target action kind ONCE - every subsequent return path stamps
   // it on the `ToolResult` so the dispatcher / policy / audit layers see
   // the target classification, NOT the `execute_tool` wrapper's `read`.
   // Preview / dryRun overrides to `read` regardless of `manifest.actionKind`
-  // (Codex 1A Q3 ruling — preview is read-only simulation end-to-end).
+  // (Codex 1A Q3 ruling - preview is read-only simulation end-to-end).
   // Input-spelling normalization BEFORE any gate reads the params: an
   // `acceptsStringArray` param whose value arrived as a JSON-encoded array
   // becomes the array the model meant. One narrow, logged, manifest-declared
-  // rewrite — see `./runtime/string-array-coercion.ts`. Every other value is
+  // rewrite - see `./runtime/string-array-coercion.ts`. Every other value is
   // the untouched model input.
   const coerced = coerceStringArrayParams(manifest, request.params ?? {});
   if (coerced.coercedKeys.length > 0) {
@@ -147,7 +147,7 @@ export async function executeProtocolTool(
   // manifest DECLARED `type: "number"` whose value arrived as a losslessly
   // numeric string becomes that number. Amounts travel as STRING params in this
   // repo (rule 90), so a declared-number param is structurally non-monetary and
-  // no amount is in reach — see `./runtime/numeric-string-coercion.ts`.
+  // no amount is in reach - see `./runtime/numeric-string-coercion.ts`.
   // `validateProtocolParams` below is unchanged and still gates the result.
   const numeric = coerceNumericStringParams(manifest, withoutEmptyLists.params);
   if (numeric.coercedKeys.length > 0) {
@@ -163,7 +163,7 @@ export async function executeProtocolTool(
 
   // Normalize the wallet scope so the deny-guard + migrated handlers never see
   // undefined. Both fields are REQUIRED on the type (production is fail-closed
-  // via tsc); this defends test/legacy callers that omit them — they default to
+  // via tsc); this defends test/legacy callers that omit them - they default to
   // source:"default", which is never session-scoped and never denied.
   const scopedContext: ProtocolExecutionContext = {
     ...context,
@@ -175,7 +175,7 @@ export async function executeProtocolTool(
   // tools (actionKind user_wallet_broadcast / external_post) was LIFTED in
   // 5D-protocols p5. Every protocol signer now resolves the session's selected
   // wallet (resolveSigningWallet / resolveSelectedAddress) and fails closed on an
-  // unselected family or address drift — there is no fallback to the primary
+  // unselected family or address drift - there is no fallback to the primary
   // wallet. Authorization is the approval gate below plus handler-level wallet
   // resolution; no second global gate is needed. The signer-import + keystore
   // scans (src/vex-agent/tools + src/tools/**) prevent a signer from regressing
@@ -186,7 +186,7 @@ export async function executeProtocolTool(
   // ToolLifecycle union; no runtime lifecycle gate at the per-tool level.
   // Per-namespace lifecycle is enforced below via `isExecutableNamespace`.
 
-  // Per-namespace lifecycle gate — `deprecated_hidden` namespaces refuse
+  // Per-namespace lifecycle gate - `deprecated_hidden` namespaces refuse
   // execution unless `VEX_ALLOW_DEPRECATED_PROTOCOLS=1`. `reserved` never
   // execute. See `lifecycle.ts` and `embeddings/_DEPRECATED.md`.
   if (!isExecutableNamespace(manifest.namespace)) {
@@ -219,7 +219,7 @@ export async function executeProtocolTool(
     }, effectiveActionKind);
   }
 
-  // Pressure-barrier guard for protocol tools — at band ≥ barrier, mutating
+  // Pressure-barrier guard for protocol tools - at band ≥ barrier, mutating
   // protocol calls are blocked unless they are preview/dryRun. Same semantics
   // as the dispatcher's hard-deny for internal mutating tools, INCLUDING the
   // C8 preparation bypass: this is the third mirror of one rule, and a
@@ -241,13 +241,13 @@ export async function executeProtocolTool(
         success: false,
         output:
           `${request.toolId} is blocked at context pressure ${band}. `
-          + `The runtime compacts this conversation automatically — no tool call is required from you. `
+          + `The runtime compacts this conversation automatically - no tool call is required from you. `
           + `Continue with read-only or preview variants; the full tool set returns after the compaction lands.`,
       }, effectiveActionKind);
     }
   }
 
-  // Strict param-boundary validation (B-002) — UNKNOWN/extra keys, missing
+  // Strict param-boundary validation (B-002) - UNKNOWN/extra keys, missing
   // required params, and wrong-typed declared params are ALL rejected here,
   // BEFORE the handler runs. Manifest-derived Zod schema; see
   // `validateProtocolParams` (./runtime/params.ts). Pre-B-002 this only checked
@@ -265,11 +265,11 @@ export async function executeProtocolTool(
   if (!handler) {
     return withActionKind({
       success: false,
-      output: `No handler registered for ${request.toolId}. This is a bug — manifest exists but handler is missing.`,
+      output: `No handler registered for ${request.toolId}. This is a bug - manifest exists but handler is missing.`,
     }, effectiveActionKind);
   }
 
-  // ── Prequote gate — quote-before-transaction on the BROADCAST path. Runs
+  // ── Prequote gate - quote-before-transaction on the BROADCAST path. Runs
   // BEFORE the approval gate (a block must short-circuit even a call that would
   // otherwise be enqueued for approval). Gated tools are the three swap EXECUTEs
   // (kind 'swap', Stage 7) and the Khalani bridge EXECUTE (kind 'bridge', Stage
@@ -301,8 +301,8 @@ export async function executeProtocolTool(
   prequoteBridgeTokenPreview = prequoteDecision.bridgeTokenPreview;
   prequoteAuthority = prequoteDecision.prequoteAuthority;
 
-  // Approval gate — mutating tools require approval under restricted permission.
-  // Preview (dryRun) is read-only simulation — skip approval. The pending
+  // Approval gate - mutating tools require approval under restricted permission.
+  // Preview (dryRun) is read-only simulation - skip approval. The pending
   // result (with the typed `prequote` carry) is built in
   // `evaluateApprovalGate` (./runtime/gates.ts).
   const pendingApproval = evaluateApprovalGate(
@@ -319,7 +319,7 @@ export async function executeProtocolTool(
     ? scopedContext
     : { ...scopedContext, bridgeTokenPreview: prequoteBridgeTokenPreview };
 
-  // Determine preview BEFORE handler call — flag survives thrown exceptions
+  // Determine preview BEFORE handler call - flag survives thrown exceptions
   const isPreview = isPreviewExecution(request.toolId, params);
   const shouldCapture = manifest.mutating && !isPreview;
 
@@ -363,7 +363,7 @@ export async function executeProtocolTool(
       }
     }
 
-    // Capture mutating execution — awaited inline for deterministic projection readiness
+    // Capture mutating execution - awaited inline for deterministic projection readiness
     // protocol_executions: ALL mutations (success + failure) for audit
     // proj_activity + positions/lots: ONLY successful mutations (business truth)
     // Preview executions skip capture entirely (determined before handler call)
@@ -372,7 +372,7 @@ export async function executeProtocolTool(
         await captureExecution(request.toolId, manifest.namespace, context.sessionId ?? null, params, result, durationMs);
       } catch (err) {
         // B-003: capture/DB errors can embed a credential-bearing connection
-        // URL — log only the redacted, bounded summary.
+        // URL - log only the redacted, bounded summary.
         const safe = summarizeProtocolError(err);
         logger.warn("protocol.execute.capture_failed", {
           toolId: request.toolId,
@@ -386,14 +386,14 @@ export async function executeProtocolTool(
   } catch (err) {
     const durationMs = Date.now() - startTime;
 
-    // Operator Stop — RETHROW, before provider-failure logging and before
+    // Operator Stop - RETHROW, before provider-failure logging and before
     // failure capture. A protocol handler that was interrupted mid-wait did not
     // FAIL: dressing the abort as a failed ToolResult here swallowed it, made
     // the dispatcher's `TOOL_ABORTED_BY_USER_STOP_OUTPUT` branch unreachable for
     // every protocol tool, and wrote a failed-mutation audit row for a mutation
     // that was never attempted. The predicate is the dispatcher's EXACT one
     // (`dispatcher.ts`): a caller `AbortError` AND this turn's signal actually
-    // aborted — so a provider SDK's own internal abort/deadline (signal not
+    // aborted - so a provider SDK's own internal abort/deadline (signal not
     // aborted, or a `TimeoutError`) stays an ordinary classified tool failure
     // with its capture intact.
     if (isAbortError(err) && context.abortSignal?.aborted === true) {
@@ -406,7 +406,7 @@ export async function executeProtocolTool(
 
     // B-003: reduce the raw provider/SDK error to a redacted, bounded summary.
     // The original message may carry URLs, request/response bodies, auth, or
-    // key material — none of which may reach the log, the tool output, or the
+    // key material - none of which may reach the log, the tool output, or the
     // renderer. We surface ONLY the cause CATEGORY + a bounded redacted message.
     const safe = summarizeProtocolError(err);
 

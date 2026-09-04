@@ -1,23 +1,44 @@
 /**
- * The Vex Studio MCP HOST: the one owner of the local socket an external
- * coding agent's bridge connects to.
+ * The Vex Studio MCP HOST: the public face of the local endpoint an external
+ * coding agent's bridge connects to, and the owner of WHO IS CONNECTED.
  *
- * ## The listener exists only while Vex is UNLOCKED and READY
+ * ## Two lifecycles, two owners, one facade
  *
- * A listener that is always up would widen the locked attack surface for the
- * sake of a nicer diagnostic. The accepted trade is that a bridge sees one
- * combined "Vex is not running or locked" message; the alternative was an
- * always-open door on a self-custodial wallet. So `startStudioMcpHost` runs
- * after an unlock and after the A3 readiness barrier reports ready, and
- * `lockStudioMcpHost` closes the listener synchronously on a relock.
+ * The host used to be one state machine, and it conflated two independent
+ * questions. It now delegates both and keeps the connection registry:
+ *
+ *   - `mcp-host/listener.ts` owns the TRANSPORT (`stopped -> starting ->
+ *     listening -> shutting_down`): planning, verifying and binding the
+ *     endpoint, and closing it on quit.
+ *   - `mcp-host/admission.ts` owns AUTHORITY (`locked | unready | ready`): may
+ *     what arrives on that socket be served, and the epoch that fences every
+ *     in-flight establish when the answer becomes no.
+ *   - THIS module owns the connection registry, the bounds, and the derived
+ *     renderer-visible status, and it is the entry point every caller uses.
+ *
+ * The listener is bound ONCE at app-ready, as soon as the executor is
+ * configured, and it is independent of the vault and of the settlement barrier.
+ * Only application quit closes it.
+ *
+ * ## What a LOCKED host does, and why binding it is not an open door
+ *
+ * A locked host reads NOTHING from a peer. The connection is accepted, a typed
+ * `locked` handshake refusal is written (a code the v1 bridge already switches
+ * on - contract section 2.2), and the connection is closed: no project bytes
+ * are read, no project identifier travels in either direction, no
+ * established-connection slot is claimed, and no idle connection is held. What
+ * the always-bound listener buys is the ability to say "Vex is locked" instead
+ * of a connection error that also means "Vex is not installed" and "Vex is
+ * still starting".
  *
  * ## The lock order, and why the host sits where it does
  *
  * `secrets/session.ts` performs, in this order:
  *
  *   1. the synchronous scrub and signing revocation, UNCHANGED and FIRST;
- *   2. `lockStudioMcpHost()` - mark locked, close the listener, destroy every
- *      registered socket SYNCHRONOUSLY;
+ *   2. `lockStudioMcpHost()` - close ADMISSION (advancing the fence epoch) and
+ *      destroy every registered socket SYNCHRONOUSLY, while the LISTENER and
+ *      its endpoint survive;
  *   3. the existing provider reset, dispatch-generation advance and durable
  *      refusal pass.
  *
@@ -30,57 +51,46 @@
  * into `approval_intents.refusal_reason` - the same reason the global refusal
  * pass in step 3 uses, so their CAS race cannot produce a misleading
  * settlement.
- *
- * ## Windows
- *
- * The endpoint is a NAMED PIPE, served exactly the way VS Code serves its main
- * IPC: a hash-derived predictable name (`\\.\pipe\vex-studio-<hash>`, same
- * discriminator as the unix socket) bound with a plain `server.listen`, with
- * NO custom security descriptor. Verified in the reference checkout:
- * `createStaticIPCHandle` does exactly this, and `src/vs/base` plus
- * `src/vs/platform` contain zero security-descriptor handling; the boundary is
- * the documented Windows default pipe SD plus protocol-level validation.
- *
- * Two lifecycle differences follow from the transport, and only two:
- *
- *   - THERE IS NO UNLINK. A pipe exists only while its server does, so there
- *     is no stale file to remove and no directory whose ownership and mode
- *     have to be proven first. The pipe's namespace is the operating system's.
- *   - THE STALE CHECK IS A CONNECT PROBE ONLY. A pipe that answers means
- *     another Vex owns it, and startup refuses rather than racing it.
- *
- * Everything else is identical: the same bounds, the same handshake, the same
- * unlock-bound listener lifecycle, the same approval gating.
- *
- * AND IT IS RUNTIME-DISABLED. `WINDOWS_TRANSPORT_PROVEN` in `mcp-host/
- * endpoint.ts` is false, so `runStart` refuses a pipe plan with
- * `windows_pending_platform_proof` before it reaches `server.listen`: libuv
- * creates the pipe with a NULL security descriptor and without
- * `PIPE_REJECT_REMOTE_CLIENTS`, whose default grants Everyone and the
- * anonymous logon READ, and a cross-user read-only connect against a wallet's
- * handshake-pending slots has never been measured. The pattern above stays and
- * stays vector-tested; only opening the transport is refused. The flag flips by
- * EXTENDING the required `bridge-windows` CI job with the contract's section
- * 1.6 proof matrix, not by editing this comment.
  */
 
-import { createServer, type Server, type Socket } from "node:net";
-import { chmodSync, realpathSync, unlinkSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 
-import { CONFIG_DIR } from "../paths/config-dir.js";
-import { log } from "../logger/index.js";
-import { studioReadiness } from "./readiness.js";
-import { planStudioEndpoint, unprovenWindowsTransport } from "./mcp-host/endpoint.js";
+import type { StudioDuplexTransport } from "@vex-agent/mcp/duplex-transport.js";
+
+import type {
+  StudioHostStatus,
+  StudioHostUnavailableCause,
+} from "@shared/schemas/studio.js";
+
+import { publishStudioHostStatus } from "./host-status.js";
+import { onStudioReadinessChange } from "./readiness.js";
 import {
-  captureEndpointDirectoryChain,
-  clearStaleEndpoint,
-  nodeDirectoryProbe,
-  prepareEndpointDirectory,
-  refuseLiveEndpoint,
-  verifyEndpointDirectoryChain,
-} from "./mcp-host/bind.js";
+  closeStudioAdmission,
+  openStudioAdmission,
+  resetStudioAdmissionForTests,
+  studioAdmission,
+  studioAdmissionEpoch,
+  studioAdmissionPermanentlyClosed,
+} from "./mcp-host/admission.js";
+import {
+  closeStudioListener,
+  markStudioListenerShuttingDown,
+  resetStudioListenerForTests,
+  startStudioListener,
+  studioConfigDirHashInput,
+  studioListenerCause,
+  studioListenerEndpoint,
+  studioListenerPhase,
+  type StudioHostStart,
+  type StudioListenerDeps,
+} from "./mcp-host/listener.js";
+import {
+  STUDIO_HOST_SHUTDOWN_DEADLINE_MS,
+  STUDIO_MAX_CONNECTIONS,
+  STUDIO_MAX_HANDSHAKE_PENDING,
+  STUDIO_MAX_INFLIGHT_GLOBAL,
+  STUDIO_MAX_LISTENER_SOCKETS,
+} from "./mcp-host/bounds.js";
 import {
   atCapacityRefusal,
   lockedRefusal,
@@ -89,6 +99,10 @@ import {
 } from "./mcp-host/handshake.js";
 import { serveOverSocket } from "./mcp-host/serve.js";
 import {
+  lockStudioFrontEndpoint,
+  studioFrontCause,
+} from "./mcp-host/front-endpoint.js";
+import {
   StudioConnection,
   type CallSlotOutcome,
   type ConnectionSlotOutcome,
@@ -96,91 +110,100 @@ import {
   type StudioRunCall,
 } from "./mcp-host/connection.js";
 
-/** The contract's established-connection bound. Connection 17 is REFUSED. */
-export const STUDIO_MAX_CONNECTIONS = 16;
-
-/** The contract's concurrent handshake-pending bound. */
-export const STUDIO_MAX_HANDSHAKE_PENDING = 4;
-
-/** The contract's global in-flight bound. Matches the broker's waiter cap. */
-export const STUDIO_MAX_INFLIGHT_GLOBAL = 32;
-
-/**
- * The listener's own socket cap: the two bounds plus ONE overflow socket.
- *
- * `maxConnections` is a Node-level DROP - accepted and destroyed with no byte
- * written - so at exactly 16 established plus 4 pending the next bridge saw an
- * unexplained close where the contract promises a typed `at_capacity` ack. The
- * overflow slot admits the 21st far enough to reach the handshake-pending path,
- * be refused with that ack, and be closed. The bounds are still real: the 22nd
- * is dropped, and the established reservation is a separate synchronous bound.
- */
-export const STUDIO_MAX_LISTENER_SOCKETS =
-  STUDIO_MAX_CONNECTIONS + STUDIO_MAX_HANDSHAKE_PENDING + 1;
-
-/** How long the host waits for connections to settle on shutdown. */
-export const STUDIO_HOST_SHUTDOWN_DEADLINE_MS = 5_000;
-
-export type StudioHostStart =
-  | { readonly started: true; readonly endpoint: string }
-  | { readonly started: false; readonly reason: string };
-
-interface StartAttempt {
-  readonly epoch: number;
-  readonly promise: Promise<StudioHostStart>;
-}
-
-interface HostState {
-  server: Server | null;
-  endpoint: string | null;
-  locked: boolean;
-  starting: StartAttempt | null;
-  /** The ONE follow-up start queued behind a stale attempt. */
-  queued: StartAttempt | null;
-}
-
-const state: HostState = {
-  server: null,
-  endpoint: null,
-  locked: false,
-  starting: null,
-  queued: null,
+export {
+  STUDIO_HOST_SHUTDOWN_DEADLINE_MS,
+  STUDIO_MAX_CONNECTIONS,
+  STUDIO_MAX_HANDSHAKE_PENDING,
+  STUDIO_MAX_INFLIGHT_GLOBAL,
+  STUDIO_MAX_LISTENER_SOCKETS,
 };
+export { studioConfigDirHashInput };
+export type { StudioHostStart };
+
 const connections = new Set<StudioConnection>();
 let globalInFlight = 0;
 
 /**
- * THE LIFECYCLE EPOCH: a monotonic counter every teardown advances.
- *
- * A start and a connection establish are both chains of awaits, and a lock or
- * a quit can land in any gap between them. Re-reading `state.locked` is not
- * enough on its own: an unlock that follows the lock closely enough would clear
- * it, and a stale continuation would then publish a listener or a serving
- * connection that belongs to a lifecycle nobody asked for. A captured epoch
- * cannot be cleared, so "is the world I started in still the current one" has
- * exactly one answer and it never becomes true again.
- *
- * Every async continuation captures it once, before its first await, and
- * re-checks before it publishes ANYTHING: the listener, the endpoint, a
- * serving phase. On a stale check the continuation closes what it acquired and
- * publishes nothing.
- */
-let lifecycleEpoch = 0;
-
-/**
  * Established-connection RESERVATIONS, claimed synchronously.
  *
- * Not derived from `connections` any more: counting serving connections after
- * the asynchronous project check let two handshakes at 15 both proceed and
- * yield 17. This number is incremented in the same tick the handshake line
- * parses, so the second of two concurrent handshakes sees the first one's
- * claim.
+ * Not derived from `connections`: counting serving connections after the
+ * asynchronous project check let two handshakes at 15 both proceed and yield
+ * 17. This number is incremented in the same tick the handshake line parses, so
+ * the second of two concurrent handshakes sees the first one's claim.
  */
 let reservedConnections = 0;
 
-/** The current lifecycle epoch. Exposed for the race tests. */
-export function studioMcpLifecycleEpoch(): number {
-  return lifecycleEpoch;
+/**
+ * THE RENDERER-VISIBLE STATUS, derived from the two owners and nothing else.
+ *
+ * Derived rather than stored so it cannot drift from the facts it describes:
+ * there is no second variable to forget to update, and every transition site
+ * simply calls `emitHostStatus()` after mutating whatever it owns.
+ *
+ * Precedence is deliberate, and it reads TRANSPORT FIRST. A host that could not
+ * bind is broken in a way the user may be able to repair, and saying "locked"
+ * over the top of it would hide a real failure behind a state that resolves
+ * itself on the next unlock. Once the transport is up, the honest word is the
+ * admission one: `locked` while the vault is locked, the barrier's own code
+ * while it is still closed, and `running` when a peer would actually be served.
+ */
+function currentHostStatus(): StudioHostStatus {
+  const connectionCount = reservedConnections;
+  const base = {
+    connectionCount,
+    maxConnections: STUDIO_MAX_CONNECTIONS,
+    atCapacity: connectionCount >= STUDIO_MAX_CONNECTIONS,
+  } as const;
+  const phase = studioListenerPhase();
+  if (phase === "shutting_down") {
+    return { ...base, state: "unavailable", cause: "shutting_down" };
+  }
+  if (phase === "starting") return { ...base, state: "starting", cause: null };
+  if (phase === "stopped") {
+    return { ...base, state: "unavailable", cause: studioListenerCause() };
+  }
+  // THE FRONT'S OWN REFUSAL comes before admission, and after the transport,
+  // for the same reason the transport does: a Windows user whose pipe front is
+  // missing, whose pipe security Windows would not confirm, or whose front
+  // crash-looped is looking at something they may be able to repair, and
+  // "locked" over the top of it would hide a real failure behind a state that
+  // resolves itself on the next unlock.
+  const front = studioFrontCause();
+  if (front !== null) return { ...base, state: "unavailable", cause: front };
+  // ADMISSION PERMANENTLY CLOSED is the one locked state an unlock cannot
+  // clear, so it is never reported as `locked` (protocol 5.2).
+  if (studioAdmissionPermanentlyClosed()) {
+    return { ...base, state: "unavailable", cause: "admission_permanently_closed" };
+  }
+  const admission = studioAdmission();
+  if (admission.state === "locked") return { ...base, state: "locked", cause: null };
+  if (admission.state === "unready") {
+    return { ...base, state: "unavailable", cause: admission.code };
+  }
+  return { ...base, state: "running", cause: null };
+}
+
+/**
+ * Publish the current status. Identical consecutive payloads are coalesced by
+ * the cache, so calling this from every transition site is cheap and the sites
+ * do not have to reason about whether anything visible actually changed.
+ */
+function emitHostStatus(): void {
+  publishStudioHostStatus(currentHostStatus());
+}
+
+/**
+ * The barrier moves on its own - it has a bounded registration retry that can
+ * open it long after any host transition - and admission is DERIVED from it, so
+ * the only thing missing is a republication. One listener, for the life of the
+ * process, owned by this module scope: there is no window, no timer and no
+ * per-call registration behind it, so there is nothing to dispose.
+ */
+onStudioReadinessChange(emitHostStatus);
+
+/** The admission fence epoch. Exposed for the race tests. */
+export function studioMcpAdmissionEpoch(): number {
+  return studioAdmissionEpoch();
 }
 
 /** Established-connection reservations outstanding. Exposed for the bound tests. */
@@ -188,21 +211,20 @@ export function studioMcpReservedConnectionCount(): number {
   return reservedConnections;
 }
 
-/** Advance the epoch. Called by EVERY teardown, before it closes anything. */
-function advanceLifecycleEpoch(): number {
-  lifecycleEpoch += 1;
-  return lifecycleEpoch;
-}
-
 /** Claim one established-connection slot, or refuse. Release is idempotent. */
 function reserveConnectionSlot(): ConnectionSlotOutcome {
   if (reservedConnections >= STUDIO_MAX_CONNECTIONS) {
+    // The ESTABLISHED bound. This one really is "Studio is full", so the emit
+    // here carries `atCapacity: true` - unlike the handshake-pending refusal in
+    // `handleConnection`, which is a different and much smaller queue.
+    emitHostStatus();
     return {
       ok: false,
       refusal: atCapacityRefusal(STUDIO_MAX_CONNECTIONS, "MCP connections"),
     };
   }
   reservedConnections += 1;
+  emitHostStatus();
   let released = false;
   return {
     ok: true,
@@ -210,44 +232,19 @@ function reserveConnectionSlot(): ConnectionSlotOutcome {
       if (released) return;
       released = true;
       reservedConnections -= 1;
+      emitHostStatus();
     },
   };
 }
 
-/** Is the listener up right now? Exposed for diagnostics and tests. */
+/** The bound endpoint, or null. Exposed for diagnostics and tests. */
 export function studioMcpHostEndpoint(): string | null {
-  return state.endpoint;
+  return studioListenerEndpoint();
 }
 
 /** Established plus handshaking connections. Exposed for the bound tests. */
 export function studioMcpConnectionCount(): number {
   return connections.size;
-}
-
-/**
- * The config directory as the hash input: its REALPATH, with the LITERAL path
- * as the frozen fallback.
- *
- * Both sides of the wire hash the realpath so a symlinked config directory
- * cannot make the app and the bridge derive two different endpoints.
- *
- * The fallback is part of the CONTRACT (`bridge-endpoint-contract.md` section
- * 1.1, vector `realpathFallback`), not a local convenience: `realpath` fails
- * when the directory does not exist yet, which is every first run, and both
- * sides must answer that case the same way or the bridge would connect to a
- * path the app never bound. Refusing startup instead was rejected - it would
- * turn "Vex has not created its config directory yet" into "Studio does not
- * work", for a case with an answer both sides can derive with no shared code.
- *
- * The fallback is NOT a trust decision: the endpoint's own directory ownership
- * and mode are verified at bind time regardless of which string was hashed.
- */
-export function studioConfigDirHashInput(): string {
-  try {
-    return realpathSync(CONFIG_DIR);
-  } catch {
-    return CONFIG_DIR;
-  }
 }
 
 export interface StudioHostDeps {
@@ -263,229 +260,75 @@ export function configureStudioMcpHost(deps: StudioHostDeps): void {
   hostDeps = deps;
 }
 
+const listenerDeps: StudioListenerDeps = {
+  onConnection: handleConnection,
+  onTransition: emitHostStatus,
+  precondition: (): {
+    readonly reason: string;
+    readonly cause: StudioHostUnavailableCause;
+  } | null =>
+    hostDeps === null
+      ? {
+          reason: "The Vex Studio MCP host has no executor configured.",
+          cause: "not_configured",
+        }
+      : null,
+};
+
 /**
- * Start the listener. Idempotent, single-flight, and refuses with a NAMED
- * cause rather than falling back to anything less verified.
+ * Bind the listener. Idempotent and single-flight.
+ *
+ * It NEVER touches admission: a bound listener on a locked Vex is the designed
+ * boot state, and the settlement barrier gates handshakes and calls rather than
+ * this bind.
  */
 export function startStudioMcpHost(): Promise<StudioHostStart> {
-  const inFlight = state.starting;
-  if (inFlight === null) return beginStart();
-  // SINGLE-FLIGHT PER EPOCH, not per process. An attempt whose epoch a lock has
-  // invalidated can only refuse, so handing it to a caller who asked AFTER the
-  // unlock told them "the host did not start" and left nothing running. The
-  // current epoch gets a FRESH attempt, queued behind the stale one.
-  if (inFlight.epoch === lifecycleEpoch) return inFlight.promise;
-  return queueStartAfter(inFlight.promise);
-}
-
-/** Begin one attempt for the CURRENT epoch and publish it as in-flight. */
-function beginStart(): Promise<StudioHostStart> {
-  const epoch = lifecycleEpoch;
-  const promise = runStart(epoch).finally(() => {
-    if (state.starting?.promise === promise) state.starting = null;
-  });
-  state.starting = { epoch, promise };
-  return promise;
+  return startStudioListener(listenerDeps);
 }
 
 /**
- * Queue exactly ONE fresh start behind a stale attempt. Bounded: the entry is
- * keyed by the epoch that asked for it, so callers in that epoch join the same
- * follow-up rather than chaining another one.
+ * OPEN ADMISSION. The counterpart of `lockStudioMcpHost`, and it touches the
+ * transport as little as `startStudioMcpHost` touches the door.
+ *
+ * The CALLER owns the proof that opening is safe: `secrets/session.ts` calls
+ * this only once its dispatch-generation advance has committed, its poison is
+ * clear and its pending durable refusal has been written.
  */
-function queueStartAfter(stale: Promise<StudioHostStart>): Promise<StudioHostStart> {
-  const epoch = lifecycleEpoch;
-  const queued = state.queued;
-  if (queued !== null && queued.epoch === epoch) return queued.promise;
-  const promise = runQueuedStart(stale, epoch);
-  state.queued = { epoch, promise };
-  return promise;
+export function openStudioMcpAdmission(): void {
+  openStudioAdmission();
+  emitHostStatus();
 }
 
-async function runQueuedStart(
-  stale: Promise<StudioHostStart>,
-  epoch: number,
-): Promise<StudioHostStart> {
-  // The stale attempt owns the endpoint path until it settles, however it
-  // settles. Its rejection is not this caller's failure.
-  await stale.catch(() => undefined);
-  if (state.queued?.epoch === epoch) state.queued = null;
-  // A teardown may have landed while this waited: that epoch queues its own
-  // start, and this one refuses rather than binding for a dead lifecycle.
-  if (epoch !== lifecycleEpoch) return refusedStart(lockedSentence());
-  return startStudioMcpHost();
-}
-
-/**
- * One start attempt, under the epoch its caller captured BEFORE the first
- * await. Every gate below re-checks that epoch rather than `state.locked`,
- * which a later unlock could clear underneath a stale continuation.
- */
-async function runStart(epoch: number): Promise<StudioHostStart> {
-  if (state.server !== null && state.endpoint !== null) {
-    return { started: true, endpoint: state.endpoint };
-  }
-  if (hostDeps === null) {
-    return refusedStart("The Vex Studio MCP host has no executor configured.");
-  }
-  state.locked = false;
-
-  const readiness = studioReadiness();
-  if (!readiness.ready) return refusedStart(readiness.cause);
-
-  const plan = planStudioEndpoint({
-    platform: process.platform,
-    configDirRealPath: studioConfigDirHashInput(),
-    env: process.env,
-    tmpdir: tmpdir(),
-    uid: typeof process.getuid === "function" ? process.getuid() : -1,
-    probeDirectory: nodeDirectoryProbe,
-  });
-  if (plan.kind === "refused") return refusedStart(plan.message);
-
-  // THE WINDOWS RUNTIME GATE (contract 1.6). The pipe was PLANNED - derivation
-  // and syntax are unchanged and still vector-tested - and the transport is
-  // refused until a Windows runner has measured its security descriptor.
-  const gated = unprovenWindowsTransport(plan);
-  if (gated !== null && gated.kind === "refused") return refusedStart(gated.message);
-
-  let verifyDirectoryIdentity = (): string | null => null;
-  if (plan.kind === "pipe") {
-    // DEFENSIVE, at the listen site itself. `planOverride` refuses pipe syntax
-    // off win32 by name, and this is the second copy of that decision: a pipe
-    // path handed to `server.listen` on Linux binds an ordinary FILE relative
-    // to the process's working directory, which is a privileged listener in an
-    // unverified location - the exact P4 failure this module exists to
-    // prevent.
-    if (process.platform !== "win32") {
-      return refusedStart(
-        `The Vex Studio MCP host will not bind the named pipe ${plan.path} on `
-          + `${process.platform}: named pipes exist on Windows only, and binding `
-          + "that name here would create an ordinary file, not an endpoint.",
-      );
-    }
-    // A pipe has no parent directory and no stale file: the ONLY question is
-    // whether another Vex is already serving this name.
-    const liveFailure = await refuseLiveEndpoint(plan.path);
-    if (liveFailure !== null) return refusedStart(liveFailure);
-  } else {
-    // Two steps, in this order: the parent must be proven private BEFORE any
-    // decision about an entry inside it, because "is this stale socket safe to
-    // remove" is only answerable in a directory nobody else can write.
-    const prepared = prepareEndpointDirectory(plan);
-    if (prepared !== null) return refusedStart(prepared);
-    const captured = captureEndpointDirectoryChain(plan.parentDir);
-    if (captured.kind === "refused") return refusedStart(captured.reason);
-    verifyDirectoryIdentity = () => verifyEndpointDirectoryChain(captured.identity);
-    const staleFailure = await clearStaleEndpoint(plan.path, verifyDirectoryIdentity);
-    if (staleFailure !== null) return refusedStart(staleFailure);
-  }
-  // The stale probe is a network round trip with a 1 s ceiling. A lock inside
-  // it must not be overtaken into a listener.
-  if (epoch !== lifecycleEpoch) return refusedStart(lockedSentence());
-  const preBindIdentityFailure = verifyDirectoryIdentity();
-  if (preBindIdentityFailure !== null) return refusedStart(preBindIdentityFailure);
-
-  // `allowHalfOpen` IS THE CONTRACT, not a tuning knob. Without it Node ends
-  // the writable side the moment the peer's FIN arrives, so a bridge that
-  // half-closes after sending its last request (which is exactly what
-  // `bridge/internal/relay/relay.go` does when its own stdin reaches EOF)
-  // could never receive that request's answer. With it, the socket transport
-  // owns the shutdown: it drains the frames already delivered under one
-  // absolute deadline, then ends the writable side itself.
-  const server = createServer({ allowHalfOpen: true });
-  server.maxConnections = STUDIO_MAX_LISTENER_SOCKETS;
-  server.on("connection", handleConnection);
-  server.on("error", (error: Error) => {
-    log.error("[studio:mcp] listener error", error);
-  });
-
-  try {
-    await new Promise<void>((resolve, reject) => {
-      server.once("error", reject);
-      server.listen(plan.path, () => {
-        server.off("error", reject);
-        resolve();
-      });
-    });
-  } catch (cause) {
-    server.close();
-    return refusedStart(
-      `The Vex Studio MCP host could not bind ${plan.path}: `
-        + `${cause instanceof Error ? cause.message : String(cause)}`,
-    );
-  }
-
-  const postBindIdentityFailure = verifyDirectoryIdentity();
-  if (postBindIdentityFailure !== null) {
-    server.close();
-    return refusedStart(postBindIdentityFailure);
-  }
-
-  // THE PUBLICATION GATE. The listener now exists and is bound, so a stale
-  // epoch here means a lock ran during `listen`: close the listener, remove the
-  // endpoint file this attempt created, and publish nothing. Anything less
-  // leaves a listening socket that no teardown owns.
-  if (epoch !== lifecycleEpoch) {
-    server.close();
-    if (plan.kind === "unix") {
-      // A unix socket leaves a FILE behind that this attempt created. A named
-      // pipe does not exist independently of its server, so `server.close()`
-      // is the whole rollback there and an unlink would target nothing.
-      try {
-        unlinkSync(plan.path);
-      } catch {
-        // The path may already be gone. Not a second failure path.
-      }
-    }
-    return refusedStart(lockedSentence());
-  }
-
-  // 0600 on the socket itself, in addition to the 0700 directory. Belt and
-  // braces: on Linux the socket's own mode is enforced on connect. A named
-  // pipe has no filesystem mode; its access control is the security
-  // descriptor Windows applied at creation.
-  if (plan.kind === "unix") {
-    try {
-      chmodSync(plan.path, 0o600);
-    } catch (cause) {
-      log.warn("[studio:mcp] could not tighten socket mode", cause);
-    }
-  }
-
-  state.server = server;
-  state.endpoint = plan.path;
-  log.info(`[studio:mcp] listening at ${plan.path}`);
-  return { started: true, endpoint: plan.path };
-}
-
-function refusedStart(reason: string): StudioHostStart {
-  log.warn(`[studio:mcp] host not started: ${reason}`);
-  return { started: false, reason };
-}
-
-function handleConnection(socket: Socket): void {
+function handleConnection(wire: StudioDuplexTransport): void {
   const deps = hostDeps;
-  if (deps === null || state.locked) {
-    socket.destroy();
+  if (deps === null) {
+    // Unreachable while listening (the bind precondition refuses without an
+    // executor) and still fail-closed: there is nothing to serve and nothing
+    // honest to say about a host that was torn down under its own listener.
+    wire.destroy();
     return;
   }
 
-  // The epoch this connection belongs to. A lock or a quit advances it, and
-  // every establish continuation refuses to publish once it has.
-  const epoch = lifecycleEpoch;
-  const connection = new StudioConnection(`c-${randomUUID().slice(0, 8)}`, socket, {
+  // The admission epoch this connection belongs to. A lock or a quit advances
+  // it, and every establish continuation refuses to publish once it has.
+  const epoch = studioAdmissionEpoch();
+  // THE ADAPTER BOUNDARY IS BEHIND US. Whatever carries the bytes - a
+  // `net.Socket` wrapped by the listener, or one logical connection multiplexed
+  // through the Windows pipe front - everything from here down speaks the one
+  // `StudioDuplexTransport` contract. That is the "second wrapper, not a second
+  // protocol" promise, kept at the type level.
+  const connection = new StudioConnection(`c-${randomUUID().slice(0, 8)}`, wire, {
     runCall: deps.runCall,
     acquireCallSlot,
     // Connection 17 is REFUSED with a typed ack and nobody is evicted: an
     // approval-blocked connection has no traffic and is not idle, so
     // "least recently used" would pick exactly the one a human is deciding.
     reserveConnectionSlot,
-    isStale: (): boolean => epoch !== lifecycleEpoch || state.locked,
+    isStale: (): boolean =>
+      epoch !== studioAdmissionEpoch() || studioAdmission().state === "locked",
     checkProject: async (projectId: string): Promise<StudioHandshakeRefused | null> => {
-      if (state.locked) return lockedRefusal(lockedSentence());
-      const readiness = studioReadiness();
-      if (!readiness.ready) return lockedRefusal(readiness.cause);
+      const admission = studioAdmission();
+      if (admission.state !== "ready") return lockedRefusal(admission.cause);
       // NON-AUTHORITATIVE, and discarded after the ack: `runStudioCall` loads
       // the real scope atomically on every call.
       const exists = await deps.projectExists(projectId);
@@ -494,20 +337,46 @@ function handleConnection(socket: Socket): void {
     serveConnection: (input: ServeConnectionInput) =>
       serveOverSocket(input, {
         epoch,
-        currentEpoch: () => lifecycleEpoch,
+        currentEpoch: () => studioAdmissionEpoch(),
         version: process.env["VEX_APP_VERSION"] ?? "0.0.0",
       }),
     onClosed: (closed) => {
       connections.delete(closed);
+      emitHostStatus();
     },
   });
   connections.add(connection);
+  emitHostStatus();
+
+  // A HOST THAT CANNOT SERVE ANSWERS BEFORE IT READS. `refuse` latches the
+  // terminal phase, detaches the data listener and pauses the socket
+  // synchronously, in this tick, so the refusal is written without a single
+  // project byte being parsed and the connection is closed rather than held
+  // idle. It claims no established reservation, and it stops counting as
+  // handshake-pending immediately, so a flood of refused connects can only
+  // consume the raw listener bound and never the bounds a real bridge needs.
+  //
+  // Both non-ready admission states take this path, and both carry the `locked`
+  // code: the closed set the v1 bridge switches on covers "Vex is locked, still
+  // starting, or shutting down" with that one member (contract section 2.2),
+  // and the MESSAGE carries the honest distinction - the vault sentence or the
+  // settlement barrier's own.
+  const admission = studioAdmission();
+  if (admission.state !== "ready") {
+    void connection.refuse(lockedRefusal(admission.cause));
+    return;
+  }
 
   // The HANDSHAKE-PENDING bound, checked at accept time because that is when a
   // pending socket appears. Registration happens first so the refusal leaves
   // through the same teardown path as every other close.
   const pending = [...connections].filter((item) => item.isHandshaking()).length;
   if (pending > STUDIO_MAX_HANDSHAKE_PENDING) {
+    // A HANDSHAKE-PENDING refusal, which is NOT "Studio is full". It emits so
+    // the renderer sees the churn, but `atCapacity` stays derived from the
+    // ESTABLISHED reservations alone: telling a user their 16 connection slots
+    // are gone because four sockets are mid-handshake would be false.
+    emitHostStatus();
     void connection.refuse(
       atCapacityRefusal(STUDIO_MAX_HANDSHAKE_PENDING, "connections waiting to handshake"),
     );
@@ -537,40 +406,44 @@ function acquireCallSlot(): CallSlotOutcome {
   };
 }
 
-function lockedSentence(): string {
-  return (
-    "Vex is locked, so it will not serve MCP calls. Nothing was executed and no "
-    + "funds moved. Unlock Vex and connect again."
-  );
-}
-
 /**
  * THE LOCK TEARDOWN, SYNCHRONOUS BY CONTRACT.
  *
  * Called from `lockSecretSession` immediately after the scrub and before the
  * dispatch-generation advance. Everything here happens in one tick: the
- * lifecycle epoch advances (so no in-progress start or establish can publish
- * anything), admission closes, the listener stops, and every socket is
- * destroyed with the TRUSTED cause the CALLER named - `lock` for a user relock,
- * `vex_quit` when the quit hooks lock the session. Threading it is what keeps
- * one event from writing two different reasons into the durable audit column. The asynchronous remainder of each connection's teardown
- * (the pinned instance's close, the durable refusal the abort triggers) runs
- * afterwards and is deliberately NOT awaited here - the advance must not wait
- * for a peer to notice its socket is gone.
+ * admission epoch advances (so no in-progress establish can publish anything),
+ * admission closes, and every socket is destroyed with the TRUSTED cause the
+ * CALLER named - `lock` for a user relock, `vex_quit` when the quit hooks lock
+ * the session. Threading it is what keeps one event from writing two different
+ * reasons into the durable audit column. The asynchronous remainder of each
+ * connection's teardown (the pinned instance's close, the durable refusal the
+ * abort triggers) runs afterwards and is deliberately NOT awaited here - the
+ * advance must not wait for a peer to notice its socket is gone.
+ *
+ * THE LISTENER AND ITS ENDPOINT SURVIVE. A relock closes the door, not the
+ * building: the next connect is answered with a typed `locked` refusal rather
+ * than a connection error, and an unlock reopens admission on the same bound
+ * socket with no rebind and no endpoint change. Only quit closes the listener.
  */
 export function lockStudioMcpHost(cause: "lock" | "vex_quit" = "lock"): void {
-  // FIRST, and synchronously: every in-progress start and establish is stale
-  // from this line on, so none of them can publish a listener or reach
-  // `serving` even though their own awaits have not resumed yet.
-  advanceLifecycleEpoch();
-  state.locked = true;
-  const server = state.server;
-  state.server = null;
-  state.endpoint = null;
-  if (server !== null) server.close();
+  // FIRST, and synchronously: every in-progress establish is stale from this
+  // line on, so none of them can reach `serving` even though their own awaits
+  // have not resumed yet.
+  closeStudioAdmission();
+  // A quit-caused lock latches the terminal transport phase in the same tick,
+  // so the status can never read `locked` (which invites the user to unlock)
+  // while the application is leaving. The ordered quit task closes the listener
+  // itself, in its own stage.
+  if (cause === "vex_quit") markStudioListenerShuttingDown(listenerDeps);
   for (const connection of [...connections]) {
     connection.destroyNow(cause);
   }
+  // THE PRIORITY LOCK FRAME, in the same tick, and AFTER the epoch advance
+  // above so it carries the new epoch: every `ADMIT` still queued at the front
+  // names the old one and is PURGED rather than executed (endpoint contract
+  // 4.1.1). On every other transport main owns the handles and this is a no-op.
+  lockStudioFrontEndpoint();
+  emitHostStatus();
 }
 
 /**
@@ -586,12 +459,9 @@ export function lockStudioMcpHost(cause: "lock" | "vex_quit" = "lock"): void {
  * The cause is `vex_quit`, which is what the durable refusal records.
  */
 export async function shutdownStudioMcpHost(): Promise<void> {
-  advanceLifecycleEpoch();
-  state.locked = true;
-  const server = state.server;
-  state.server = null;
-  state.endpoint = null;
+  closeStudioAdmission();
 
+  const startedAt = Date.now();
   let releaseDeadline = (): void => undefined;
   const deadlineTimer = setTimeout(() => {
     releaseDeadline();
@@ -602,16 +472,18 @@ export async function shutdownStudioMcpHost(): Promise<void> {
   });
 
   try {
-    if (server !== null) {
-      await Promise.race([
-        new Promise<void>((resolve) => {
-          server.close(() => {
-            resolve();
-          });
-        }),
-        deadline,
-      ]);
-    }
+    // Emitted BEFORE the drain by the listener's own transition, not after: a
+    // quit that takes its full 5 s budget should show as shutting down for
+    // those 5 s, not report nothing until the window it would have been
+    // rendered in is already gone.
+    // The front's `QUIT` carries what REMAINS of the one absolute budget, never
+    // a fresh five seconds: two independent deadlines is a ten-second quit, and
+    // the endpoint contract promises one (protocol 8).
+    await closeStudioListener(
+      deadline,
+      listenerDeps,
+      Math.max(0, STUDIO_HOST_SHUTDOWN_DEADLINE_MS - (Date.now() - startedAt)),
+    );
     const open = [...connections];
     for (const connection of open) connection.destroyNow("vex_quit");
     await Promise.race([
@@ -626,17 +498,14 @@ export async function shutdownStudioMcpHost(): Promise<void> {
     connections.clear();
     globalInFlight = 0;
     reservedConnections = 0;
+    emitHostStatus();
   }
 }
 
 /** Test seam: forget every host-owned handle between cases. */
 export function resetStudioMcpHostForTests(): void {
-  advanceLifecycleEpoch();
-  state.server = null;
-  state.endpoint = null;
-  state.locked = false;
-  state.starting = null;
-  state.queued = null;
+  resetStudioListenerForTests();
+  resetStudioAdmissionForTests();
   connections.clear();
   globalInFlight = 0;
   reservedConnections = 0;

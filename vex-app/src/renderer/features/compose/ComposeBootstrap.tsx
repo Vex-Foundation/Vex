@@ -42,6 +42,7 @@ import { useAggregatedServiceState } from "./bootstrap/useAggregatedServiceState
 import { RunningBody } from "./bootstrap/branches/RunningBody.js";
 import { ReadyBody } from "./bootstrap/branches/ReadyBody.js";
 import { PortCollisionBody } from "./bootstrap/branches/PortCollisionBody.js";
+import { ForeignListenerBody } from "./bootstrap/branches/ForeignListenerBody.js";
 import { UnhealthyBody } from "./bootstrap/branches/UnhealthyBody.js";
 import { FailedBody } from "./bootstrap/branches/FailedBody.js";
 import { CancelledBody } from "./bootstrap/branches/CancelledBody.js";
@@ -89,6 +90,12 @@ export function ComposeBootstrap(): JSX.Element {
               message: data.message,
               previousInstallHoldingPorts:
                 data.previousInstallHoldingPorts,
+            });
+            return;
+          case "foreign_listener":
+            setPhase({
+              kind: "error.foreign_listener",
+              message: data.message,
             });
             return;
           case "unhealthy":
@@ -197,6 +204,11 @@ export function ComposeBootstrap(): JSX.Element {
                   : (stopPreviousInstall.error?.message ?? null)
               }
               onStopPreviousInstall={handleStopPreviousInstall}
+              onRetry={handleRetry}
+            />
+          ) : phase.kind === "error.foreign_listener" ? (
+            <ForeignListenerBody
+              message={phase.message}
               onRetry={handleRetry}
             />
           ) : phase.kind === "error.unhealthy" ? (

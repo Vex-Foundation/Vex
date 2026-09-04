@@ -15,14 +15,14 @@ import { dispatchTargetIsMutating } from "./mutating-targets.js";
 import { resolveInjectedProtocolTool } from "../registry/injected-protocol-tools.js";
 
 /**
- * Tools always allowed while a plan is pending acceptance — the safe-control
+ * Tools always allowed while a plan is pending acceptance - the safe-control
  * set: author/refine the plan (`PlanWrite`), stop the mission (`MissionStop`),
  * relieve context pressure (`CompactApply`), and edit the mission draft during
  * setup (`MissionDraftUpdate`). These are `local_write` but must NOT be
  * trapped behind the gate (MissionStop is the escape hatch; `CompactApply` is
- * the agent's only pressure relief at barrier/critical — the rationale transfers
+ * the agent's only pressure relief at barrier/critical - the rationale transfers
  * verbatim from the tool it replaced; `MissionDraftUpdate` is a local
- * DB write with no fund-moving side effect — safe-listing it lets setup
+ * DB write with no fund-moving side effect - safe-listing it lets setup
  * co-author the contract and plan together without deadlocking once an
  * unaccepted plan exists, mirroring why `PlanWrite` is here).
  */
@@ -43,7 +43,7 @@ const PLAN_GATE_SAFE_CONTROL: ReadonlySet<string> = new Set([
  *
  * Allow while pending: `read`-kind tools (incl. `ToolSearch` and read-only
  * protocol quotes/previews) + the safe-control allowlist. Block everything else
- * — execution, wallet broadcasts, posts, scheduling, and sensitive local writes
+ * - execution, wallet broadcasts, posts, scheduling, and sensitive local writes
  * like `polymarket_setup`. For `execute_tool` / mutating aliases the EFFECTIVE
  * side-effect of the resolved TARGET is what matters (the wrapper's own
  * actionKind is `read`), so we resolve via `dispatchTargetIsMutating`.
@@ -64,7 +64,7 @@ export async function checkPlanAcceptanceDeny(
 
   if (PLAN_GATE_SAFE_CONTROL.has(call.name)) return null;
 
-  // An injected discovered-tool name is a protocol execution too — without
+  // An injected discovered-tool name is a protocol execution too - without
   // this the gate would fall through to `getActionKind(<mapped name>)`, which
   // is undefined, and block read-only quotes the plan needs.
   const isProtocolExecution =
@@ -82,6 +82,6 @@ export async function checkPlanAcceptanceDeny(
     output:
       `Plan mode is on and your action plan is not yet accepted, so "${call.name}" is blocked. ` +
       `Research, discovery, read-only quotes, and plan edits (PlanWrite) are allowed. ` +
-      `Finish the plan and ask the user to review and accept it — execution unlocks on acceptance.`,
+      `Finish the plan and ask the user to review and accept it - execution unlocks on acceptance.`,
   };
 }

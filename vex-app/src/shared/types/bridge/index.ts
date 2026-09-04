@@ -30,6 +30,7 @@ export type {
   OnboardingBridge,
   SecretsBridge,
   SettingsBridge,
+  StudioBridge,
   SupportBridge,
   SystemBridge,
   TelemetryBridge,

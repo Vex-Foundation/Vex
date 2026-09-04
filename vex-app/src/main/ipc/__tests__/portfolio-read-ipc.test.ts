@@ -105,6 +105,6 @@ describe("portfolio read IPC", () => {
         ],
       },
     });
-    expect(getPortfolio).toHaveBeenCalledWith({ scope: "global" });
+    expect(getPortfolio).toHaveBeenCalledWith({ scope: "global" }, expect.any(String));
   });
 });

@@ -22,10 +22,13 @@ import {
   approvalActionKindSchema,
   approvalDecisionSchema,
   approvalExecutionStatusSchema,
+  approvalOriginSchema,
+  type ApprovalOrigin,
   approvalPermissionSchema,
   approvalPreviewSchema,
   approvalRiskLevelSchema,
   approvalStatusSchema,
+  requestedByClientSchema,
   type ApprovalActionKind,
   type ApprovalDecision,
   type ApprovalExecutionStatus,
@@ -128,6 +131,19 @@ interface ApprovalRow {
   readonly intent_decision: string | null;
   readonly intent_decision_reason: string | null;
   readonly intent_execution_status: string | null;
+  /**
+   * B0 provenance. `origin` is `NOT NULL` on the table but arrives NULL through
+   * the LEFT JOIN when there is no companion intent row at all.
+   */
+  readonly intent_origin: string | null;
+  readonly intent_project_id: string | null;
+  /**
+   * `policy_json ->> 'requestedByClient'`, extracted in SQL so the raw policy
+   * blob never crosses into this process as an object to be re-projected. Null
+   * for an agent-originated approval, for a Studio client that declared no
+   * usable name, and for a row written before the field existed.
+   */
+  readonly intent_requested_by_client: string | null;
 }
 
 /**
@@ -152,6 +168,9 @@ const APPROVAL_ROW_COLUMNS = [
   "i.decision AS intent_decision",
   "i.decision_reason AS intent_decision_reason",
   "i.execution_status AS intent_execution_status",
+  "i.origin AS intent_origin",
+  "i.project_id AS intent_project_id",
+  "i.policy_json ->> 'requestedByClient' AS intent_requested_by_client",
 ].join(", ");
 
 const APPROVAL_FROM_CLAUSE =
@@ -225,6 +244,21 @@ function normaliseIntentDecision(raw: string | null): ApprovalDecision | null {
   return parsed.success ? parsed.data : null;
 }
 
+/**
+ * An off-enum `origin` becomes NULL, NEVER `'agent'`.
+ *
+ * The default-to-agent shortcut is available and is wrong: it would relabel a
+ * Studio-originated row - an EXTERNAL tool asking Vex's wallet to act - as one
+ * Vex's own agent proposed, which is a lie about authority on a money path. A
+ * null says "no provenance recorded", which is true and which the renderer can
+ * present honestly.
+ */
+function normaliseIntentOrigin(raw: string | null): ApprovalOrigin | null {
+  if (raw === null) return null;
+  const parsed = approvalOriginSchema.safeParse(raw);
+  return parsed.success ? parsed.data : null;
+}
+
 function normaliseIntentExecutionStatus(
   raw: string | null,
 ): ApprovalExecutionStatus | null {
@@ -240,6 +274,22 @@ function normaliseIntentExecutionStatus(
  * blobs / bigint cannot leak via the preview path even if the engine writes
  * a malformed row).
  */
+/**
+ * The recorded MCP client name, or null.
+ *
+ * The engine already sanitized and bounded this value before storing it
+ * (`sanitizeRequestingClientName`), and this is the READ side of a durable
+ * column, so it is re-checked here rather than trusted: a row written by
+ * another build, or edited, must not put control characters or an unbounded
+ * string into a card a human decides from. Failing to null claims less, which
+ * the renderer then states honestly.
+ */
+function normaliseRequestedByClient(raw: string | null): string | null {
+  if (raw === null) return null;
+  const parsed = requestedByClientSchema.safeParse(raw);
+  return parsed.success && parsed.data.length > 0 ? parsed.data : null;
+}
+
 function normaliseIntentPreview(raw: unknown): ApprovalPreview | null {
   if (raw === null || raw === undefined) return null;
   const parsed = approvalPreviewSchema.safeParse(raw);
@@ -271,6 +321,9 @@ function toDto(row: ApprovalRow): ApprovalSummaryDto {
     decision: normaliseIntentDecision(row.intent_decision),
     decisionReason: row.intent_decision_reason,
     executionStatus: normaliseIntentExecutionStatus(row.intent_execution_status),
+    origin: normaliseIntentOrigin(row.intent_origin),
+    projectId: row.intent_project_id,
+    requestedByClient: normaliseRequestedByClient(row.intent_requested_by_client),
   };
 }
 
@@ -353,6 +406,7 @@ const SESSION_TITLE_EXPR =
 interface GlobalApprovalRow extends ApprovalRow {
   readonly session_title: string | null;
   readonly session_deleted_at: string | Date | null;
+  readonly project_name: string | null;
 }
 
 function toGlobalDto(row: GlobalApprovalRow): ApprovalPendingGlobalDto {
@@ -369,6 +423,10 @@ function toGlobalDto(row: GlobalApprovalRow): ApprovalPendingGlobalDto {
     ...base,
     sessionId: sessionDeleted ? null : base.sessionId,
     sessionTitle,
+    // NOT nulled on a project tombstone, unlike `sessionTitle` on a deleted
+    // session. A pending approval whose project was deleted still has to be
+    // decidable, and "which project asked" is the fact that makes it so.
+    projectName: row.project_name,
   };
 }
 
@@ -380,9 +438,11 @@ export async function listPendingAllApprovals(): Promise<
       const result = await client.query<GlobalApprovalRow>(
         `SELECT ${APPROVAL_ROW_COLUMNS},
                 ${SESSION_TITLE_EXPR} AS session_title,
-                s.deleted_at AS session_deleted_at
+                s.deleted_at AS session_deleted_at,
+                p.name AS project_name
            ${APPROVAL_FROM_CLAUSE}
            LEFT JOIN sessions s ON s.id = q.session_id
+           LEFT JOIN projects p ON p.id = i.project_id
           WHERE q.status = 'pending'
           ORDER BY q.created_at ASC
           LIMIT 100`,

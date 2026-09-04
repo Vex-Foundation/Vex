@@ -1,5 +1,5 @@
 /**
- * Chain read tool — on-chain EVM forensics via inclusive chain discovery + viem
+ * Chain read tool - on-chain EVM forensics via inclusive chain discovery + viem
  * public client.
  *
  * Read-only, scoped actions:
@@ -19,7 +19,7 @@
  * `WalletBalances` uses): Khalani-registry chains keep the dynamic Khalani
  * client; chains only the local EVM registry knows (e.g. Robinhood Chain 4663)
  * read direct-RPC through `getLocalPublicClient`. This widens READ-ONLY
- * forensics only — quote/bridge paths must keep the STRICT Khalani resolver so
+ * forensics only - quote/bridge paths must keep the STRICT Khalani resolver so
  * a local-only chain can never look Khalani-supported.
  */
 
@@ -72,14 +72,14 @@ export async function handleChainRead(
   }
   // W6a renamed `chainId` → `chain`. Internal tools have no strict unknown-key
   // gate, so an unrenamed call would silently drop the value and be answered
-  // with "Missing required: chain" — an accusation the caller cannot act on,
+  // with "Missing required: chain" - an accusation the caller cannot act on,
   // because it DID send a chain. Refuse the old spelling by name and name the
   // replacement, which is correctable in one turn.
   if (!chainRaw && params["chainId"] !== undefined) {
     return {
       success: false,
       output:
-        'ChainRead no longer takes "chainId" — the key said Id while the value was usually a slug. '
+        'ChainRead no longer takes "chainId" - the key said Id while the value was usually a slug. '
         + 'Resend it as "chain" (a chain slug or the STRING spelling of a chain id, e.g. "base" or "8453").',
     };
   }
@@ -96,8 +96,8 @@ export async function handleChainRead(
 
   // Resolve chain (Khalani first, local registry as fallback). Any throw here
   // (unsupported chain, RPC discovery, provider/SDK error) is reduced to a
-  // redacted, bounded summary so raw viem/RPC text — which can carry URLs,
-  // request/response bodies, or key material — never reaches the model output
+  // redacted, bounded summary so raw viem/RPC text - which can carry URLs,
+  // request/response bodies, or key material - never reaches the model output
   // (B-003).
   let chainId: number;
   let chainName: string;

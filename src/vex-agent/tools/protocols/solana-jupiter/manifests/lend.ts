@@ -11,7 +11,7 @@ export const LEND_TOOLS: readonly ProtocolToolManifest[] = [
     mutating: false,
     actionKind: "read",
     params: [
-      { key: "assets", type: "string", description: "Comma-separated list of asset identifiers to filter to — matches the underlying asset mint address, Earn share-token (jlToken) mint, symbol, or provider lending id. Case-insensitive for symbol. Omit for all markets." },
+      { key: "assets", type: "string", description: "Comma-separated list of asset identifiers to filter to - matches the underlying asset mint address, Earn share-token (jlToken) mint, symbol, or provider lending id. Case-insensitive for symbol. Omit for all markets." },
       { key: "minSupplyRate", type: "number", description: "Only return markets whose base supply APY percent is at or above this value, e.g. 3 for 3%." },
       { key: "minTotalRate", type: "number", description: "Only return markets whose combined (supply + rewards) APY percent is at or above this value, e.g. 5 for 5%." },
     ],
@@ -28,7 +28,7 @@ export const LEND_TOOLS: readonly ProtocolToolManifest[] = [
     mutating: false,
     actionKind: "read",
     params: [
-      { key: "walletAddress", type: "string", description: "The wallet ACCOUNT to read, as a Solana address (not a token mint or a position key). Defaults to the session's selected Solana wallet — omit it to read your own. Under session scope a DIFFERENT address is rejected." },
+      { key: "walletAddress", type: "string", description: "The wallet ACCOUNT to read, as a Solana address (not a token mint or a position key). Defaults to the session's selected Solana wallet - omit it to read your own. Under session scope a DIFFERENT address is rejected." },
     ],
     exampleParams: {},
     requiresEnv: "JUPITER_API_KEY",
@@ -61,10 +61,10 @@ export const LEND_TOOLS: readonly ProtocolToolManifest[] = [
     params: [
       { key: "asset", type: "string", required: true, description: "Token address to withdraw." },
       { key: "amountRaw", type: "string", description: "Amount to withdraw, in RAW atomic units of the asset as an integer string, never human decimals (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\") - see solana__lend_earn_positions_list for your current balance and the asset's decimals. Mutually exclusive with withdrawAll - provide exactly one, never both and never neither." },
-      { key: "withdrawAll", type: "boolean", description: "Exit the ENTIRE Earn position for this asset, dust-free (redeems the position's full share balance rather than an underlying amount). Mutually exclusive with amountRaw — provide exactly one, never both. Never pass withdrawAll: false; omit it and pass amountRaw instead." },
+      { key: "withdrawAll", type: "boolean", description: "Exit the ENTIRE Earn position for this asset, dust-free (redeems the position's full share balance rather than an underlying amount). Mutually exclusive with amountRaw - provide exactly one, never both. Never pass withdrawAll: false; omit it and pass amountRaw instead." },
     ],
     // The handler's XOR (`handlers/lend.ts` `resolveEarnWithdrawIntent`) is
-    // EXACTLY-ONE — neither param present is "nothing to withdraw", both is
+    // EXACTLY-ONE - neither param present is "nothing to withdraw", both is
     // "some, and also everything". Declaring it makes the rule a schema fact
     // discovery can show before the call, instead of a refusal after it.
     exclusiveParamGroups: [["amountRaw", "withdrawAll"]],

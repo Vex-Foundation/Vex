@@ -4,11 +4,11 @@
  *
  * This is a SEPARATE module from `./params.ts` on purpose. `params.ts` owns the
  * generic manifest boundary (unknown keys, required presence, declared type);
- * this owns one domain rule — "what a basis-point value is allowed to be" — and
+ * this owns one domain rule - "what a basis-point value is allowed to be" - and
  * has a different reason to change.
  *
  * WHY THIS EXISTS (measured, not inferred): Jupiter ACCEPTS a non-integer
- * `slippageBps` and answers with `otherAmountThreshold = 0` — a swap that will
+ * `slippageBps` and answers with `otherAmountThreshold = 0` - a swap that will
  * accept ANY output, including near-zero. Reproduced at `50.5`, `50.9`, and
  * most dangerously `0.5`: a caller that means "0.5%" and passes `0.5` gets
  * TOTAL-LOSS tolerance instead of tight protection, with no error and a
@@ -50,7 +50,7 @@ export function checkBpsParam(
   }
 
   // Checked BEFORE integrality: a negative tolerance is not a rounding
-  // problem, it is a caller error. Never substitute a default for it — a
+  // problem, it is a caller error. Never substitute a default for it - a
   // silent fallback hides the bug at a price-protection boundary.
   if (value < 0) {
     return (
@@ -72,7 +72,7 @@ export function checkBpsParam(
 /**
  * Name the correct form for the value the caller most plausibly meant, WITHOUT
  * choosing it for them. The common mistake is passing a percentage into a bps
- * field (`0.5` meaning 0.5%), so we spell out that conversion — `0.5% → 50`,
+ * field (`0.5` meaning 0.5%), so we spell out that conversion - `0.5% → 50`,
  * `50.5% → 5050`. Emitted only when the percent reading is itself a whole
  * number of bps; otherwise there is no unambiguous suggestion worth making and
  * we stay silent rather than guess.

@@ -27,6 +27,10 @@ import type { ShellScreenOrigin } from "../../../stores/uiStore.js";
 import { useUiStore } from "../../../stores/uiStore.js";
 import { usePortfolio } from "../../../lib/api/portfolio.js";
 import {
+  portfolioReadInputFor,
+  sessionPortfolioScope,
+} from "../book/portfolio/portfolio-scope.js";
+import {
   filterDustTokens,
   sortTokensByUsdDesc,
   tokenLineKey,
@@ -44,7 +48,9 @@ export function AssetsScreen({
   readonly sessionId: string | null;
   readonly onClose: () => void;
 }): JSX.Element {
-  const query = usePortfolio(sessionId);
+  const query = usePortfolio(
+    portfolioReadInputFor(sessionPortfolioScope(sessionId)),
+  );
   const hideDustBalances = useUiStore((s) => s.hideDustBalances);
   const setHideDustBalances = useUiStore((s) => s.setHideDustBalances);
   const result = query.data;

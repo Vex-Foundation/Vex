@@ -205,7 +205,11 @@ describe("approvals handlers", () => {
       decision: null,
       decisionReason: null,
       executionStatus: null,
+      origin: "studio_mcp",
+      projectId: "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+      requestedByClient: "Claude Code",
       sessionTitle: "My session",
+      projectName: "Demo project",
     };
     mocks.listPendingAllApprovals.mockResolvedValueOnce({
       ok: true,

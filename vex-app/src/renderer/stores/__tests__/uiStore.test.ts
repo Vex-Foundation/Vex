@@ -284,7 +284,22 @@ describe("uiStore", () => {
       hideDustBalances: true,
       notificationsEnabled: true,
       bookSectionOrder: [],
+      studioBookSectionOrder: [],
       bookTab: "portfolio",
+      // The Studio rail's vertical split (v16). A LAYOUT preference in the same
+      // class as `sidebarWidth`: the user sets it by dragging a seam, and it has
+      // to come back the size they chose. Its default rides here so a fresh
+      // install hydrates into a defined share rather than `undefined`.
+      studioRailExplorerShare: 0.55,
+      // The LAST STUDIO LOCATION (v17). A relaunch returns to the shell and
+      // the project the user left, which is what the Studio welcome's copy
+      // promises; both values are coerced on the way back in and the id is
+      // confirmed against the settled project list before it opens anything.
+      runtimeMode: "agent",
+      activeProjectId: null,
+      // The OPEN FILE TABS' own home (v18), per project. Empty on a fresh
+      // store: only the workspace owner writes it, and no project is open.
+      studioFileTabs: {},
     });
     expect(parsed.state.createSessionOpen).toBeUndefined();
     expect(parsed.state.createSessionInitialTurn).toBeUndefined();
@@ -617,7 +632,22 @@ describe("uiStore", () => {
       hideDustBalances: true,
       notificationsEnabled: true,
       bookSectionOrder: [],
+      studioBookSectionOrder: [],
       bookTab: "portfolio",
+      // The Studio rail's vertical split (v16). A LAYOUT preference in the same
+      // class as `sidebarWidth`: the user sets it by dragging a seam, and it has
+      // to come back the size they chose. Its default rides here so a fresh
+      // install hydrates into a defined share rather than `undefined`.
+      studioRailExplorerShare: 0.55,
+      // The LAST STUDIO LOCATION (v17). A relaunch returns to the shell and
+      // the project the user left, which is what the Studio welcome's copy
+      // promises; both values are coerced on the way back in and the id is
+      // confirmed against the settled project list before it opens anything.
+      runtimeMode: "agent",
+      activeProjectId: null,
+      // The OPEN FILE TABS' own home (v18), per project. Empty on a fresh
+      // store: only the workspace owner writes it, and no project is open.
+      studioFileTabs: {},
     });
     expect(parsed.state.logBuffer).toBeUndefined();
     expect(parsed.state.currentView).toBeUndefined();

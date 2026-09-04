@@ -6,11 +6,11 @@
 import { canonAddress, canonAmount } from "./canonicalize.js";
 
 /**
- * Pendle PY mint trade identity (P4). A mint (token → PT+YT) is its OWN kind —
+ * Pendle PY mint trade identity (P4). A mint (token → PT+YT) is its OWN kind -
  * not a swap, bridge, or matured redeem: it acquires BOTH an equal PT and YT in
  * one transaction from a single payment token. Computed IDENTICALLY at the
  * `pendle.py.quote` (direction "mint") record-time and the `pendle.py.mint`
- * EXECUTE gate-time — both resolve the market (and its YT) from the PT anchor
+ * EXECUTE gate-time - both resolve the market (and its YT) from the PT anchor
  * through the SAME market lookup, so the digests collide.
  *
  * Material (FIXED order): ["mint", sessionId, provider, chainId, wallet, receiver,
@@ -22,7 +22,7 @@ import { canonAddress, canonAmount } from "./canonicalize.js";
 export interface MintMatchInput {
   readonly kind: "mint";
   readonly sessionId: string;
-  /** VENUE binding — "pendle". A mint quote can never authorize another venue. */
+  /** VENUE binding - "pendle". A mint quote can never authorize another venue. */
   readonly provider: string;
   readonly chainId: number;
   /** Selected EVM wallet (signer). */
@@ -45,7 +45,7 @@ export interface MintMatchInput {
 
 /**
  * Pendle PRE-EXPIRY PY redeem trade identity (P4). Burns an EQUAL PT+YT pair back
- * to a token BEFORE expiry — distinct from the matured-PT `redeem` (PT only). It
+ * to a token BEFORE expiry - distinct from the matured-PT `redeem` (PT only). It
  * extends the redeem material with an explicit `outputToken` (the matured redeem
  * always outputs the underlying; a pre-expiry redeem can output any token, so it
  * must be bound). Computed IDENTICALLY at `pendle.py.quote` (direction "redeem")
@@ -57,7 +57,7 @@ export interface MintMatchInput {
 export interface RedeemPyMatchInput {
   readonly kind: "redeem_py";
   readonly sessionId: string;
-  /** VENUE binding — "pendle". */
+  /** VENUE binding - "pendle". */
   readonly provider: string;
   readonly chainId: number;
   /** Selected EVM wallet (signer). */
@@ -66,7 +66,7 @@ export interface RedeemPyMatchInput {
   readonly receiver: string;
   /** PT being burned (half of the pair). */
   readonly ptAddress: string;
-  /** YT being burned (resolved from the PT's market — the other half). */
+  /** YT being burned (resolved from the PT's market - the other half). */
   readonly ytAddress: string;
   /** Human decimal amount of the PT+YT pair to burn (equal legs). */
   readonly amount: string;

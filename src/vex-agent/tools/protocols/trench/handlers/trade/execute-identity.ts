@@ -3,7 +3,7 @@
  * helpers every stage of it shares.
  *
  * Extracted so the entry point, the staged loop, the confirmed-swap finalizer
- * and the failure paths all name the SAME tool id, protocol and chain slug —
+ * and the failure paths all name the SAME tool id, protocol and chain slug -
  * those strings are written into `agent_activity` rows and read back by the
  * feed, so a drifted copy would silently split one venue's history in two.
  */

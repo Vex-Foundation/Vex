@@ -29,7 +29,7 @@ the `schema_version` insert, `COMMIT`, with `ROLLBACK` on any throw. A
 an advisory lock serialises concurrent migrators.
 
 **2. A DROP plus a FAILING ADD of the same CHECK leaves the constraint
-intact.** This is the property migration 097 rests on: it drops the constraint
+intact.** This is the property migration 099 (097 on the branch, renumbered at integration) rests on: it drops the constraint
 by name and recreates it widened, and there must be no window in which the
 table is unconstrained. Probed by dropping the constraint and then issuing an
 ADD that Postgres rejects, inside one transaction, then rolling back:

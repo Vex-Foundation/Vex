@@ -1,5 +1,5 @@
 /**
- * `trench.launch_execute` — the ONLY leg that signs a Trench token creation.
+ * `trench.launch_execute` - the ONLY leg that signs a Trench token creation.
  *
  * `mutating: true`, `actionKind: "user_wallet_broadcast"`, risk high. This file
  * is the PUBLIC ENTRY POINT and owns the ORDER; each step's mechanics live in
@@ -17,14 +17,14 @@
  *      restricted session is refused by name and sent to the launch FORM, which
  *      is this tool's consent surface instead of an approval card. The matrix
  *      and the rulings behind it live on `resolveAuthorizationVariant` below.
- *   4. Build the plan — anchored fee, image bytes + digest, `msg.value`, the Vex
+ *   4. Build the plan - anchored fee, image bytes + digest, `msg.value`, the Vex
  *      fee, BOTH mission ceilings, the native-value gate (`./plan.ts`).
- *   5. Create the intent already `authorized` and CAS-CONSUME it — the
+ *   5. Create the intent already `authorized` and CAS-CONSUME it - the
  *      exactly-once gate (`./execute/authorize.ts`).
  *   6. RE-DERIVE the plan and compare it field-by-field against what was
  *      authorized. THIS IS THE LAST GATE: a fee that moved, an image swapped, a
  *      permission downgraded, or substituted calldata all refuse here. Nothing
- *      reads the persisted authorization back to decide — the gate is
+ *      reads the persisted authorization back to decide - the gate is
  *      re-derivation (see `./authorization.ts`).
  *   7-11. Durable activity row, staged broadcast, decode, record, then the Vex
  *      fee LAST and only on a confirmed receipt (`./execute/broadcast.ts`).
@@ -80,7 +80,7 @@ export async function trenchLaunchExecuteHandler(
   const sessionId = context.sessionId;
   if (!sessionId) return fail(`${TOOL_ID} requires an active session.`);
 
-  // 2. Address only — no decryption yet.
+  // 2. Address only - no decryption yet.
   let walletAddress: Address;
   try {
     walletAddress = getAddress(
@@ -113,7 +113,7 @@ export async function trenchLaunchExecuteHandler(
     nativeAddress: NATIVE_ADDRESS,
   };
 
-  // 4. Plan — ceilings enforced ONLY on the autonomous path (§C6 leaves a human
+  // 4. Plan - ceilings enforced ONLY on the autonomous path (§C6 leaves a human
   //    click ungated by design).
   const planned = await buildLaunchPlan(
     variant.ceilings === null
@@ -138,7 +138,7 @@ export async function trenchLaunchExecuteHandler(
     // is no approval row and no mission contract to reconstruct it from, so
     // without this blob an audit of a chat launch has an id and a kind and no
     // answer to "authorized to spend WHAT?". It is AUDIT ONLY, exactly like the
-    // other agent paths — the gate stays the re-derive-and-compare below plus
+    // other agent paths - the gate stays the re-derive-and-compare below plus
     // the CAS (see ./authorization.ts). The other two agent variants are left
     // as they are deliberately: their honest records need evidence this call
     // does not hold (when the human resolved the card; the launch count in
@@ -150,7 +150,7 @@ export async function trenchLaunchExecuteHandler(
   });
   if (!consumed.ok) return fail(consumed.reason);
 
-  // 6. Re-derive and compare — the last gate before signing.
+  // 6. Re-derive and compare - the last gate before signing.
   const rederived = await buildLaunchPlan(planInput);
   if (!rederived.ok) {
     await settleLaunchFailure(intentId, sessionId, `PlanRefused:${rederived.code}`);
@@ -206,7 +206,7 @@ async function resolveAuthorizationVariant(
  * Test seam for the authorization-variant decision.
  *
  * Exported so the provenance BINDING (which run's ceilings gate this launch)
- * can be pinned without standing up a signer, a chain and a database — the
+ * can be pinned without standing up a signer, a chain and a database - the
  * decision is pure policy over trusted host evidence, and it is the one part of
  * this file a mistake in would be silent.
  */

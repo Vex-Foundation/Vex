@@ -101,7 +101,7 @@ async function runRankedOrListing(
   });
 
   // Recording BEFORE projection: the model copy no longer carries `toolId`, and
-  // the working set is keyed on it. RANKED rows only — a listing row has no
+  // the working set is keyed on it. RANKED rows only - a listing row has no
   // param schema, so injecting it would advertise a tool with no parameters.
   const displaced = recordDiscoveredTools(
     context.sessionId,
@@ -117,7 +117,7 @@ async function runRankedOrListing(
   }
   // The listing builds its own `nextStep` (how to select from the menu); a
   // ranked result states the next-request injection fact instead. Empty ranked
-  // results get no pointer — there is nothing to call.
+  // results get no pointer - there is nothing to call.
   if (!isListing && modelResult.count > 0) {
     modelResult.nextStep = QUERY_NEXT_STEP;
   }

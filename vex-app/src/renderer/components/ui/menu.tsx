@@ -239,6 +239,12 @@ export function Menu({
           role="menuitem"
           className={cn("vex-menu-item", entry.danger === true && "vex-menu-danger")}
           disabled={entry.disabled}
+          // Both, deliberately. `disabled` is the enforcement (not clickable,
+          // not activatable); `aria-disabled` is the ANNOUNCEMENT, and some
+          // screen readers skip a natively-disabled control silently rather
+          // than saying it is unavailable. A row the product renders on purpose
+          // in a disabled state has to be heard as disabled, not vanish.
+          aria-disabled={entry.disabled === true ? true : undefined}
           aria-haspopup={hasSub ? "menu" : undefined}
           aria-expanded={hasSub ? subOpen : undefined}
           onFocus={() => setOpenSubmenuId(hasSub ? entry.id : null)}

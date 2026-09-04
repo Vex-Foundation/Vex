@@ -58,6 +58,7 @@ describe("agent-bridge teardown ownership at quit", () => {
         order.push("workers");
         await teardownAgentBridges();
       }, cleanupOnQuit),
+      "ordered-quit",
     );
 
     // register-all's INDEPENDENT teardown task, running concurrently. It is the
@@ -66,7 +67,7 @@ describe("agent-bridge teardown ownership at quit", () => {
     registry.add(async () => {
       order.push("ipc-teardowns");
       await teardownAgentBridges();
-    });
+    }, "ipc-handler-teardowns");
 
     const runAll = registry.runAll();
 
@@ -92,6 +93,7 @@ describe("agent-bridge teardown ownership at quit", () => {
       makeOrderedQuitCleanup(async () => {
         throw new Error("bridge drain boom");
       }, cleanupOnQuit),
+      "ordered-quit",
     );
 
     // `runAll` settles every task, so a rejected ordered stop is contained.

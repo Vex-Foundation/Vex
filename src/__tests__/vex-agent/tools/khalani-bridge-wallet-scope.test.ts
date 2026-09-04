@@ -14,8 +14,11 @@
  *   - the EVM source resolves an EVM-family signer and passes it to the executor;
  *   - the Solana source resolves a Solana-family signer and passes it to the
  *     executor;
- *   - the recipient defaults to the session's dest-family wallet;
- *   - no explicit recipient + an unselected dest family fails closed.
+ *   - the destination is DERIVED from the session's dest-family wallet, and a
+ *     supplied `recipient` is rejected by name (bridge-destination policy in
+ *     `@tools/khalani/request.js`: a destination a model can choose is a
+ *     destination an injection can choose);
+ *   - an unselected dest family fails closed, with or without the param.
  *
  * SOLANA scope IS re-pinned (not removed): the coordinator enabled Solana-origin
  * staging after W3a (`markActivitySolanaBroadcast`), so the Solana source is no
@@ -44,6 +47,8 @@ function zeroValueAuthorization(to: string) {
 
 const SEL_EVM = "0x1111111111111111111111111111111111111111";
 const SEL_SOL = "So1anaSe1ectedAddr1111111111111111111111111";
+/** A destination the caller would like the funds to go to. It never can. */
+const ATTACKER = "0xeFEfeFEfeFeFEFEFEfefeFeFefEfEfEfeFEFEFEf";
 
 const mockResolveSelectedAddress = vi.fn((_r: unknown, _p: unknown, family: string) => (family === "solana" ? SEL_SOL : SEL_EVM));
 const mockResolveSigningWallet = vi.fn((_r: unknown, _p: unknown, family: string) =>
@@ -324,9 +329,48 @@ describe("khalani.bridge session wallet scope", () => {
     expect(mockSignStageKhalaniLeg.mock.calls[0]![3]).toMatchObject({ family: "solana", address: SEL_SOL });
   });
 
-  it("recipient defaults to the session's dest-family wallet", async () => {
+  it("the destination is DERIVED: the session's dest-family wallet reaches the provider request", async () => {
     await run();
     expect(mockPrepareQuoteRequest.mock.calls[0]![0]).toMatchObject({ fromAddress: SEL_EVM, recipient: SEL_EVM });
+  });
+
+  it("a supplied recipient is REJECTED BY NAME with the address the bridge delivers to", async () => {
+    const r = await run({ recipient: ATTACKER });
+
+    expect(r.success).toBe(false);
+    // Names the parameter, the real destination, and the tool that CAN send
+    // somewhere else - a refusal that does not say where to go next is a
+    // refusal the agent works around.
+    expect(r.output).toContain("recipient is not a parameter");
+    expect(r.output).toContain(SEL_EVM);
+    expect(r.output).toContain("WalletSendPrepare");
+    expect(r.output).not.toContain(ATTACKER);
+    // Nothing was quoted, nothing was recorded, nothing was signed.
+    expect(mockPrepareQuoteRequest).not.toHaveBeenCalled();
+    expect(mockGetQuotes).not.toHaveBeenCalled();
+    expect(mockCreateBridgeActivityIntent).not.toHaveBeenCalled();
+    expect(mockCreateBridgePreBroadcastFailure).not.toHaveBeenCalled();
+    expect(mockSignStageKhalaniLeg).not.toHaveBeenCalled();
+  });
+
+  it("a supplied recipient on a dest family with NO selected wallet still fails closed", async () => {
+    // The refusal needs the derived address; when there is none the ordinary
+    // wallet-scope refusal answers instead. Never an invented address, and
+    // never the caller's.
+    mockGetChainFamily.mockImplementation((id: number) => (id === 42 ? "solana" : "eip155"));
+    mockResolvePrequoteRoute.mockResolvedValue({ outcome: "khalani", fromChainId: 1, toChainId: 42 });
+    mockResolveSelectedAddress.mockImplementation((_r, _p, family) => {
+      if (family === "solana") throw new Error("WALLET_NOT_SELECTED");
+      return SEL_EVM;
+    });
+
+    const r = await run({ recipient: ATTACKER });
+
+    expect(r.success).toBe(false);
+    expect(r.output).not.toContain(ATTACKER);
+    expect(mockGetQuotes).not.toHaveBeenCalled();
+    expect(mockSignStageKhalaniLeg).not.toHaveBeenCalled();
+    expect(mockCreateBridgeActivityIntent).not.toHaveBeenCalled();
   });
 
   it("no explicit recipient + unselected dest family fails closed BEFORE quote + signing", async () => {

@@ -18,7 +18,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
 import {
   IconClose,
-  IconPanelLeft,
   IconPlus,
   IconSearch,
 } from "../../components/icons/index.js";
@@ -38,8 +37,8 @@ import { useQuietScrollbars } from "../../lib/useQuietScrollbars.js";
 import { useScrollbarVisibility } from "../../lib/useScrollbarVisibility.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { RailSearchField } from "../../components/ui/rail-list.js";
+import { AgentSidebarHeader } from "./AgentSidebarHeader.js";
 import { SessionDeleteDialog } from "./SessionDeleteDialog.js";
-import { SidebarHomeSigil } from "./SidebarHomeSigil.js";
 import { SidebarProfile } from "./SidebarProfile.js";
 import { VexTokenCardCompact } from "./market/VexTokenCardCompact.js";
 import {
@@ -47,7 +46,6 @@ import {
   SessionsEmptyPlaceholder,
   SessionsErrorPlaceholder,
   SessionsLoadingPlaceholder,
-  SidebarIconButton,
 } from "./SessionRows.js";
 import {
   filterSessionsByMode,
@@ -216,39 +214,13 @@ export function SessionsList({
       data-vex-area="sessions-sidebar"
       data-vex-sidebar-open={collapsed ? "false" : "true"}
     >
-      <header
-        className={cn(
-          // The mark sits LEFT as the sole brand (doubling as "Back to
-          // welcome"), the magnifier + collapse arrow sit RIGHT. Collapsed,
-          // the spine stacks mark → magnifier → expand arrow.
-          "relative flex shrink-0",
-          wide
-            ? "h-12 items-center justify-between px-3"
-            : "flex-col items-center justify-center gap-0.5 px-2 py-2",
-        )}
-      >
-        <SidebarHomeSigil sidebarOpen={wide} />
-        <div
-          className={cn(
-            "flex items-center",
-            wide ? "gap-0.5" : "flex-col gap-0.5",
-          )}
-          data-rail-control
-        >
-          <SidebarIconButton
-            label={searchOpen ? "Close session search" : "Search sessions"}
-            onClick={toggleSearch}
-          >
-            <IconSearch size={16} />
-          </SidebarIconButton>
-          <SidebarIconButton
-            label={collapsed ? "Expand sessions sidebar" : "Collapse sessions sidebar"}
-            onClick={onToggleSidebar}
-          >
-            <IconPanelLeft size={17} />
-          </SidebarIconButton>
-        </div>
-      </header>
+      <AgentSidebarHeader
+        wide={wide}
+        collapsed={collapsed}
+        searchOpen={searchOpen}
+        onToggleSearch={toggleSearch}
+        onToggleSidebar={onToggleSidebar}
+      />
 
       {wide && searchOpen ? (
         <div className="px-3 pt-1 pb-2">
@@ -364,6 +336,14 @@ export function SessionsList({
           <SessionsErrorPlaceholder
             sidebarOpen={wide}
             message={query.data.error.message}
+          />
+        ) : query.isError ? (
+          // A TRANSPORT rejection never produces a Result, so without this
+          // branch it fell through to `null` and the rail went blank - a lie
+          // by omission (rule 08: failure is a distinct state, not emptiness).
+          <SessionsErrorPlaceholder
+            sidebarOpen={wide}
+            message="Vex could not read your sessions."
           />
         ) : query.data && query.data.ok ? (
           visibleRows.length === 0 ? (

@@ -3,12 +3,12 @@
   "tools": [
     {
       "alwaysLoad": true,
-      "descriptionBytes": 3661,
+      "descriptionBytes": 2046,
       "destructiveHint": false,
       "inputSchema": {
         "properties": {
           "cursor": {
-            "description": "Opaque pagination cursor (transactions) — pass the prior response's nextCursor to fetch the next page",
+            "description": "Opaque pagination cursor (transactions) - pass the prior response's nextCursor to fetch the next page",
             "type": "string"
           },
           "limit": {
@@ -24,7 +24,7 @@
             "type": "string"
           },
           "txHash": {
-            "description": "Transaction hash anchor (transactions) — return rows matching this txHash",
+            "description": "Transaction hash anchor (transactions) - return rows matching this txHash",
             "type": "string"
           },
           "view": {
@@ -54,12 +54,12 @@
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 2730,
+      "descriptionBytes": 2016,
       "destructiveHint": true,
       "inputSchema": {
         "properties": {
           "amountRaw": {
-            "description": "Amount in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Read decimals from a contract-verified TokenFind candidate on the exact source chain. A provider-list decimal is not signing authority, and a raw amount without contract decimals is unsafe.",
+            "description": "Amount in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Read decimals from a contract-verified TokenFind candidate on the exact source chain. A provider-list decimal is not signing authority, and a raw amount without contract decimals is unsafe. A raw amount next to a token whose decimals you have not read is a thousandfold error waiting to happen.",
             "type": "string"
           },
           "filler": {
@@ -76,10 +76,6 @@
           },
           "fromToken": {
             "description": "Source token address.",
-            "type": "string"
-          },
-          "recipient": {
-            "description": "Destination recipient override (defaults to your dest-chain wallet).",
             "type": "string"
           },
           "toChain": {
@@ -112,12 +108,12 @@
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 1512,
+      "descriptionBytes": 1938,
       "destructiveHint": true,
       "inputSchema": {
         "properties": {
           "amountRaw": {
-            "description": "Amount in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Read decimals from a contract-verified TokenFind candidate on the exact source chain. A provider-list decimal is not signing authority, and a raw amount without contract decimals is unsafe.",
+            "description": "Amount in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Read decimals from a contract-verified TokenFind candidate on the exact source chain. A provider-list decimal is not signing authority, and a raw amount without contract decimals is unsafe. A raw amount next to a token whose decimals you have not read is a thousandfold error waiting to happen.",
             "type": "string"
           },
           "fromChain": {
@@ -126,10 +122,6 @@
           },
           "fromToken": {
             "description": "Source token address, or native ETH/native.",
-            "type": "string"
-          },
-          "recipient": {
-            "description": "Destination recipient override (defaults to your dest-chain wallet).",
             "type": "string"
           },
           "slippageBps": {
@@ -166,12 +158,12 @@
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 2094,
+      "descriptionBytes": 1889,
       "destructiveHint": false,
       "inputSchema": {
         "properties": {
           "amountRaw": {
-            "description": "Amount in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Read decimals from a contract-verified TokenFind candidate on the exact source chain. A provider-list decimal is not signing authority, and a raw amount without contract decimals is unsafe.",
+            "description": "Amount in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Read decimals from a contract-verified TokenFind candidate on the exact source chain. A provider-list decimal is not signing authority, and a raw amount without contract decimals is unsafe. A raw amount next to a token whose decimals you have not read is a thousandfold error waiting to happen.",
             "type": "string"
           },
           "filler": {
@@ -188,10 +180,6 @@
           },
           "fromToken": {
             "description": "Source token address.",
-            "type": "string"
-          },
-          "recipient": {
-            "description": "Destination recipient override.",
             "type": "string"
           },
           "toChain": {
@@ -224,12 +212,12 @@
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 1410,
+      "descriptionBytes": 1110,
       "destructiveHint": false,
       "inputSchema": {
         "properties": {
           "amountRaw": {
-            "description": "Amount in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Read decimals from a contract-verified TokenFind candidate on the exact source chain. A provider-list decimal is not signing authority, and a raw amount without contract decimals is unsafe.",
+            "description": "Amount in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Read decimals from a contract-verified TokenFind candidate on the exact source chain. A provider-list decimal is not signing authority, and a raw amount without contract decimals is unsafe. A raw amount next to a token whose decimals you have not read is a thousandfold error waiting to happen.",
             "type": "string"
           },
           "fromChain": {
@@ -238,10 +226,6 @@
           },
           "fromToken": {
             "description": "Source token address, or native ETH/native.",
-            "type": "string"
-          },
-          "recipient": {
-            "description": "Destination recipient override (defaults to your dest-chain wallet).",
             "type": "string"
           },
           "slippageBps": {
@@ -278,7 +262,7 @@
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 1297,
+      "descriptionBytes": 1548,
       "destructiveHint": false,
       "inputSchema": {
         "properties": {
@@ -343,7 +327,7 @@
             "type": "string"
           },
           "address": {
-            "description": "Recipient address — optional mint filter for erc721_mint (only mints to this address are returned)",
+            "description": "Recipient address - optional mint filter for erc721_mint (only mints to this address are returned)",
             "type": "string"
           },
           "chain": {
@@ -377,7 +361,7 @@
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 3289,
+      "descriptionBytes": 2048,
       "destructiveHint": true,
       "inputSchema": {
         "properties": {
@@ -390,7 +374,7 @@
             "type": "string"
           },
           "slippageBps": {
-            "description": "Slippage tolerance in basis points (1 bps = 0.01%); default 100 = 1%, which fits deep, liquid pairs. It is the ONLY price protection on the trade. Pass the SAME value to the quote and the execute, or omit it on both — a mismatch blocks the execute. On a thin or volatile pair (new listings, memecoins, small pools) 100 bps often fails. When it fails, the message says so and names this parameter: re-quote with a higher slippageBps and pass the same value to the execute. Do not read a slippage failure as \"this pair is untradeable\" and do not switch venue for it — another venue at 100 bps fails the same way. Vex caps it at 1000 (10%) and REJECTS anything above rather than clamping; every increase widens the worst-case price you accept, so raise it in steps.",
+            "description": "Slippage tolerance in basis points (1 bps = 0.01%); default 100 = 1%, which fits deep, liquid pairs. It is the ONLY price protection on the trade. Pass the SAME value to the quote and the execute, or omit it on both - a mismatch blocks the execute. On a thin or volatile pair (new listings, memecoins, small pools) 100 bps often fails. When it fails, the message says so and names this parameter: re-quote with a higher slippageBps and pass the same value to the execute. Do not read a slippage failure as \"this pair is untradeable\" and do not switch venue for it - another venue at 100 bps fails the same way. Vex caps it at 1000 (10%) and REJECTS anything above rather than clamping; every increase widens the worst-case price you accept, so raise it in steps.",
             "type": "number"
           },
           "tokenIn": {
@@ -418,7 +402,7 @@
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 2337,
+      "descriptionBytes": 2047,
       "destructiveHint": true,
       "inputSchema": {
         "properties": {
@@ -427,11 +411,11 @@
             "type": "string"
           },
           "chain": {
-            "description": "EVM chain to swap on (ethereum, base, arbitrum, robinhood, …) — Uniswap ONLY, no venue routing. Solana is NOT supported by this tool.",
+            "description": "EVM chain to swap on (ethereum, base, arbitrum, robinhood, …) - Uniswap ONLY, no venue routing. Solana is NOT supported by this tool.",
             "type": "string"
           },
           "slippageBps": {
-            "description": "Slippage tolerance in basis points (1 bps = 0.01%); default 100 = 1%, which fits deep, liquid pairs. It is the ONLY price protection on the trade. Pass the SAME value to the quote and the execute, or omit it on both — a mismatch blocks the execute. On a thin or volatile pair (new listings, memecoins, small pools) 100 bps often fails. When it fails, the message says so and names this parameter: re-quote with a higher slippageBps and pass the same value to the execute. Do not read a slippage failure as \"this pair is untradeable\" and do not switch venue for it — another venue at 100 bps fails the same way. Vex caps it at 1000 (10%) and REJECTS anything above rather than clamping; every increase widens the worst-case price you accept, so raise it in steps.",
+            "description": "Slippage tolerance in basis points (1 bps = 0.01%); default 100 = 1%, which fits deep, liquid pairs. It is the ONLY price protection on the trade. Pass the SAME value to the quote and the execute, or omit it on both - a mismatch blocks the execute. On a thin or volatile pair (new listings, memecoins, small pools) 100 bps often fails. When it fails, the message says so and names this parameter: re-quote with a higher slippageBps and pass the same value to the execute. Do not read a slippage failure as \"this pair is untradeable\" and do not switch venue for it - another venue at 100 bps fails the same way. Vex caps it at 1000 (10%) and REJECTS anything above rather than clamping; every increase widens the worst-case price you accept, so raise it in steps.",
             "type": "number"
           },
           "tokenIn": {
@@ -459,7 +443,7 @@
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 3374,
+      "descriptionBytes": 2047,
       "destructiveHint": false,
       "inputSchema": {
         "properties": {
@@ -472,7 +456,7 @@
             "type": "string"
           },
           "slippageBps": {
-            "description": "Slippage tolerance in basis points (1 bps = 0.01%); default 100 = 1%, which fits deep, liquid pairs. It is the ONLY price protection on the trade. Pass the SAME value to the quote and the execute, or omit it on both — a mismatch blocks the execute. On a thin or volatile pair (new listings, memecoins, small pools) 100 bps often fails. When it fails, the message says so and names this parameter: re-quote with a higher slippageBps and pass the same value to the execute. Do not read a slippage failure as \"this pair is untradeable\" and do not switch venue for it — another venue at 100 bps fails the same way. Vex caps it at 1000 (10%) and REJECTS anything above rather than clamping; every increase widens the worst-case price you accept, so raise it in steps.",
+            "description": "Slippage tolerance in basis points (1 bps = 0.01%); default 100 = 1%, which fits deep, liquid pairs. It is the ONLY price protection on the trade. Pass the SAME value to the quote and the execute, or omit it on both - a mismatch blocks the execute. On a thin or volatile pair (new listings, memecoins, small pools) 100 bps often fails. When it fails, the message says so and names this parameter: re-quote with a higher slippageBps and pass the same value to the execute. Do not read a slippage failure as \"this pair is untradeable\" and do not switch venue for it - another venue at 100 bps fails the same way. Vex caps it at 1000 (10%) and REJECTS anything above rather than clamping; every increase widens the worst-case price you accept, so raise it in steps.",
             "type": "number"
           },
           "tokenIn": {
@@ -500,7 +484,7 @@
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 2560,
+      "descriptionBytes": 2017,
       "destructiveHint": false,
       "inputSchema": {
         "properties": {
@@ -509,11 +493,11 @@
             "type": "string"
           },
           "chain": {
-            "description": "EVM chain to swap on (ethereum, base, arbitrum, robinhood, …) — Uniswap ONLY, no venue routing. Solana is NOT supported by this tool.",
+            "description": "EVM chain to swap on (ethereum, base, arbitrum, robinhood, …) - Uniswap ONLY, no venue routing. Solana is NOT supported by this tool.",
             "type": "string"
           },
           "slippageBps": {
-            "description": "Slippage tolerance in basis points (1 bps = 0.01%); default 100 = 1%, which fits deep, liquid pairs. It is the ONLY price protection on the trade. Pass the SAME value to the quote and the execute, or omit it on both — a mismatch blocks the execute. On a thin or volatile pair (new listings, memecoins, small pools) 100 bps often fails. When it fails, the message says so and names this parameter: re-quote with a higher slippageBps and pass the same value to the execute. Do not read a slippage failure as \"this pair is untradeable\" and do not switch venue for it — another venue at 100 bps fails the same way. Vex caps it at 1000 (10%) and REJECTS anything above rather than clamping; every increase widens the worst-case price you accept, so raise it in steps.",
+            "description": "Slippage tolerance in basis points (1 bps = 0.01%); default 100 = 1%, which fits deep, liquid pairs. It is the ONLY price protection on the trade. Pass the SAME value to the quote and the execute, or omit it on both - a mismatch blocks the execute. On a thin or volatile pair (new listings, memecoins, small pools) 100 bps often fails. When it fails, the message says so and names this parameter: re-quote with a higher slippageBps and pass the same value to the execute. Do not read a slippage failure as \"this pair is untradeable\" and do not switch venue for it - another venue at 100 bps fails the same way. Vex caps it at 1000 (10%) and REJECTS anything above rather than clamping; every increase widens the worst-case price you accept, so raise it in steps.",
             "type": "number"
           },
           "tokenIn": {
@@ -568,7 +552,7 @@
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 2053,
+      "descriptionBytes": 1956,
       "destructiveHint": false,
       "inputSchema": {
         "properties": {
@@ -584,7 +568,7 @@
                 "type": "array"
               }
             ],
-            "description": "Comma-separated chain IDs or aliases. Accepts either a comma-separated string (\"1,8453\") or an array of strings ([\"1\",\"8453\"]) — the two are equivalent."
+            "description": "Comma-separated chain IDs or aliases. Accepts either a comma-separated string (\"1,8453\") or an array of strings ([\"1\",\"8453\"]) - the two are equivalent."
           },
           "query": {
             "description": "Search phrase or token address.",
@@ -604,13 +588,13 @@
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 2803,
+      "descriptionBytes": 2039,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "action": {
-            "description": "Read-only Twitter/X operation. tweet_search: search posts by cashtag/hashtag/words with filters — the momentum workhorse (max 20 per call); user_timeline: recent posts by one account, newest first (max 20); user_details: one account's profile: follower count, verification, bio — author credibility; tweet_details: one post by id, with its engagement counts; tweet_replies: replies under one post — sentiment around a call; tweet_likers: accounts that liked a post (max 100) — who is behind a signal; tweet_retweeters: accounts that reposted a post (max 100); user_search: find accounts by name/handle text (max 20); user_replies: one account's replies, i.e. what it says under other posts (max 20); user_followers: an account's followers (max 100); user_following: who an account follows (max 100); space_details: one Space's metadata and participant counts; account_status: the configured research account itself — use it to check the session works.",
+            "description": "Read-only Twitter/X operation. tweet_search: search posts by cashtag/hashtag/words with filters - the momentum workhorse (max 20 per call); user_timeline: recent posts by one account, newest first (max 20); user_details: one account's profile: follower count, verification, bio - author credibility; tweet_details: one post by id, with its engagement counts; tweet_replies: replies under one post - sentiment around a call; tweet_likers: accounts that liked a post (max 100) - who is behind a signal; tweet_retweeters: accounts that reposted a post (max 100); user_search: find accounts by name/handle text (max 20); user_replies: one account's replies, i.e. what it says under other posts (max 20); user_followers: an account's followers (max 100); user_following: who an account follows (max 100); space_details: one Space's metadata and participant counts; account_status: the configured research account itself - use it to check the session works.",
             "enum": [
               "tweet_search",
               "user_timeline",
@@ -652,7 +636,7 @@
                 "type": "string"
               },
               "excludeWords": {
-                "description": "Words that must not appear — useful against airdrop/giveaway spam.",
+                "description": "Words that must not appear - useful against airdrop/giveaway spam.",
                 "items": {
                   "type": "string"
                 },
@@ -703,15 +687,15 @@
                 "type": "array"
               },
               "minLikes": {
-                "description": "Minimum likes, 1 or more. The single most useful filter for momentum: an unfiltered cashtag sweep measured 15 of 19 rows at zero engagement. 10 is a useful floor. 0 is rejected — X's query builder drops a 0 floor instead of applying it.",
+                "description": "Minimum likes, 1 or more. The single most useful filter for momentum: an unfiltered cashtag sweep measured 15 of 19 rows at zero engagement. 10 is a useful floor. 0 is rejected - X's query builder drops a 0 floor instead of applying it.",
                 "type": "number"
               },
               "minReplies": {
-                "description": "Minimum replies, 1 or more (0 is rejected — it would be silently dropped).",
+                "description": "Minimum replies, 1 or more (0 is rejected - it would be silently dropped).",
                 "type": "number"
               },
               "minRetweets": {
-                "description": "Minimum reposts, 1 or more (0 is rejected — it would be silently dropped).",
+                "description": "Minimum reposts, 1 or more (0 is rejected - it would be silently dropped).",
                 "type": "number"
               },
               "onlyLinks": {
@@ -719,7 +703,7 @@
                 "type": "boolean"
               },
               "onlyOriginal": {
-                "description": "Exclude replies. It does NOT exclude quote-tweets — measured, 7 of 19 \"originals\" were quote-tweets. Check each row's `quoted` field.",
+                "description": "Exclude replies. It does NOT exclude quote-tweets - measured, 7 of 19 \"originals\" were quote-tweets. Check each row's `quoted` field.",
                 "type": "boolean"
               },
               "onlyReplies": {
@@ -757,11 +741,11 @@
                 "type": "array"
               },
               "top": {
-                "description": "Select from X's TOP (relevance) result set instead of LATEST. It changes WHICH posts match, NOT their order — the client re-sorts every result newest-first regardless.",
+                "description": "Select from X's TOP (relevance) result set instead of LATEST. It changes WHICH posts match, NOT their order - the client re-sorts every result newest-first regardless.",
                 "type": "boolean"
               },
               "withinHours": {
-                "description": "Only posts from the last N hours (1-720). Derives startDate for you and echoes the resolved UTC instant in filtersApplied. Rejected together with an explicit startDate — pass one or the other.",
+                "description": "Only posts from the last N hours (1-720). Derives startDate for you and echoes the resolved UTC instant in filtersApplied. Rejected together with an explicit startDate - pass one or the other.",
                 "type": "number"
               }
             },
@@ -818,7 +802,7 @@
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 1397,
+      "descriptionBytes": 1393,
       "destructiveHint": false,
       "inputSchema": {
         "properties": {
@@ -831,7 +815,7 @@
             "type": "number"
           },
           "decimals": {
-            "description": "The token's decimals, 0 to 36 (get them from TokenFind — 6 for USDC, 18 for most ERC-20s). Required for apply_bps, usd_to_token_amount and token_amount_to_usd, and for unit_convert whenever `from` or `to` is 'raw' or 'human'.",
+            "description": "The token's decimals, 0 to 36 (get them from TokenFind - 6 for USDC, 18 for most ERC-20s). Required for apply_bps, usd_to_token_amount and token_amount_to_usd, and for unit_convert whenever `from` or `to` is 'raw' or 'human'.",
             "type": "number"
           },
           "from": {
@@ -852,11 +836,11 @@
             "type": "string"
           },
           "gasUnits": {
-            "description": "gas_cost only. The gas UNIT count as a digits-only string (a unitless count, e.g. '1634838') — never a gas price.",
+            "description": "gas_cost only. The gas UNIT count as a digits-only string (a unitless count, e.g. '1634838') - never a gas price.",
             "type": "string"
           },
           "op": {
-            "description": "Which calculation to run. 'unit_convert' — restate one amount in another unit of the SAME family ({wei,gwei,eth} or {lamports,sol} or {raw,human}); exact, never floors, so it returns no remainder. 'gas_cost' — gasUnits x gasPriceWei, answered in wei, gwei and eth at once; exact, no remainder. 'apply_bps' — split an amount into fee and net at a basis-point rate; fee.remainder counts TEN-THOUSANDTHS of one base unit that the floor dropped (numerator over denominator 10000). 'usd_to_token_amount' — how many base units a USD figure buys; remainder is the leftover numerator over the divisor (priceUsd scaled to an integer), always smaller than the cost of one base unit. 'token_amount_to_usd' — what a base-unit amount is worth; usd is floored to 6 decimals (usdPrecision) and remainder is the leftover numerator over 10^(priceUsd decimals + token decimals), i.e. the value below one micro-dollar.",
+            "description": "Which calculation to run. 'unit_convert' - restate one amount in another unit of the SAME family ({wei,gwei,eth} or {lamports,sol} or {raw,human}); exact, never floors, so it returns no remainder. 'gas_cost' - gasUnits x gasPriceWei, answered in wei, gwei and eth at once; exact, no remainder. 'apply_bps' - split an amount into fee and net at a basis-point rate; fee.remainder counts TEN-THOUSANDTHS of one base unit that the floor dropped (numerator over denominator 10000). 'usd_to_token_amount' - how many base units a USD figure buys; remainder is the leftover numerator over the divisor (priceUsd scaled to an integer), always smaller than the cost of one base unit. 'token_amount_to_usd' - what a base-unit amount is worth; usd is floored to 6 decimals (usdPrecision) and remainder is the leftover numerator over 10^(priceUsd decimals + token decimals), i.e. the value below one micro-dollar.",
             "enum": [
               "unit_convert",
               "gas_cost",
@@ -871,7 +855,7 @@
             "type": "string"
           },
           "to": {
-            "description": "unit_convert only. The unit to restate the amount in. Same family as `from` — there is no fixed rate between wei and lamports, so a cross-family request is refused.",
+            "description": "unit_convert only. The unit to restate the amount in. Same family as `from` - there is no fixed rate between wei and lamports, so a cross-family request is refused.",
             "enum": [
               "wei",
               "gwei",
@@ -905,7 +889,7 @@
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 6344,
+      "descriptionBytes": 2032,
       "destructiveHint": false,
       "inputSchema": {
         "properties": {
@@ -936,7 +920,7 @@
             "type": "string"
           },
           "walletFamily": {
-            "description": "Which wallet FAMILY to read — 'eip155', 'solana', or 'all'. Default 'all' aggregates your EVM + Solana wallets. This is a wallet family, not a chain: chains go in `chainIds`.",
+            "description": "Which wallet FAMILY to read - 'eip155', 'solana', or 'all'. Default 'all' aggregates your EVM + Solana wallets. This is a wallet family, not a chain: chains go in `chainIds`.",
             "enum": [
               "eip155",
               "solana",
@@ -955,7 +939,7 @@
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 1804,
+      "descriptionBytes": 2031,
       "destructiveHint": true,
       "inputSchema": {
         "properties": {
@@ -977,7 +961,7 @@
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 2288,
+      "descriptionBytes": 1945,
       "destructiveHint": false,
       "inputSchema": {
         "properties": {
@@ -990,19 +974,19 @@
             "type": "string"
           },
           "gasLimit": {
-            "description": "Maximum gas UNITS, as a decimal integer string. REQUIRED fee cap. Vex never derives a spending limit from a network estimate, so calling without the caps refuses by name and returns the current estimate as a labelled hint you can choose from.",
+            "description": "Maximum gas UNITS, as a decimal integer string. The second call passes this plus EITHER the 1559 pair (`maxFeePerGasWei` with `maxPriorityFeePerGasWei`, required TOGETHER) OR the legacy `gasPriceWei` - never both pricing modes. REQUIRED IN EFFECT, optional in the schema: Vex never derives a spending limit from a network estimate, so a call without the caps is refused by name and returns the current estimate as a labelled hint you choose from. That refusal is the first call of the two-call workflow.",
             "type": "string"
           },
           "gasPriceWei": {
-            "description": "LEGACY cap on the price per gas unit, in RAW wei as a decimal integer string, for chains without EIP-1559. Mutually exclusive with the 1559 pair. REQUIRED fee cap. Vex never derives a spending limit from a network estimate, so calling without the caps refuses by name and returns the current estimate as a labelled hint you can choose from.",
+            "description": "LEGACY cap on the price per gas unit, in RAW wei as a decimal integer string, for chains without EIP-1559. Mutually exclusive with the 1559 pair. REQUIRED IN EFFECT, optional in the schema: Vex never derives a spending limit from a network estimate, so a call without the caps is refused by name and returns the current estimate as a labelled hint you choose from. That refusal is the first call of the two-call workflow.",
             "type": "string"
           },
           "maxFeePerGasWei": {
-            "description": "EIP-1559 cap on the total price per gas unit, in RAW wei as a decimal integer string. Pass this with maxPriorityFeePerGasWei, or pass gasPriceWei instead, never both. REQUIRED fee cap. Vex never derives a spending limit from a network estimate, so calling without the caps refuses by name and returns the current estimate as a labelled hint you can choose from.",
+            "description": "EIP-1559 cap on the total price per gas unit, in RAW wei as a decimal integer string. Pass this with maxPriorityFeePerGasWei, or pass gasPriceWei instead, never both. REQUIRED IN EFFECT, optional in the schema: Vex never derives a spending limit from a network estimate, so a call without the caps is refused by name and returns the current estimate as a labelled hint you choose from. That refusal is the first call of the two-call workflow.",
             "type": "string"
           },
           "maxPriorityFeePerGasWei": {
-            "description": "EIP-1559 cap on the validator tip per gas unit, in RAW wei as a decimal integer string. Cannot exceed maxFeePerGasWei. REQUIRED fee cap. Vex never derives a spending limit from a network estimate, so calling without the caps refuses by name and returns the current estimate as a labelled hint you can choose from.",
+            "description": "EIP-1559 cap on the validator tip per gas unit, in RAW wei as a decimal integer string. Cannot exceed maxFeePerGasWei. REQUIRED IN EFFECT, optional in the schema: Vex never derives a spending limit from a network estimate, so a call without the caps is refused by name and returns the current estimate as a labelled hint you choose from. That refusal is the first call of the two-call workflow.",
             "type": "string"
           },
           "to": {
@@ -1016,8 +1000,7 @@
         },
         "required": [
           "chain",
-          "to",
-          "gasLimit"
+          "to"
         ],
         "type": "object"
       },
@@ -1029,7 +1012,7 @@
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 1503,
+      "descriptionBytes": 1901,
       "destructiveHint": true,
       "inputSchema": {
         "properties": {
@@ -1038,7 +1021,7 @@
             "type": "string"
           },
           "walletFamily": {
-            "description": "Which wallet FAMILY to act on — 'eip155' for your EVM wallet or 'solana' for your Solana wallet. This is a wallet family, not a chain: the EVM chain goes in `chain`.",
+            "description": "Which wallet FAMILY to act on - 'eip155' for your EVM wallet or 'solana' for your Solana wallet. This is a wallet family, not a chain: the EVM chain goes in `chain`.",
             "enum": [
               "eip155",
               "solana"
@@ -1060,12 +1043,12 @@
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 1252,
+      "descriptionBytes": 1680,
       "destructiveHint": false,
       "inputSchema": {
         "properties": {
           "amountIn": {
-            "description": "Amount of the token to send (for native/ERC-20), or \"1\" for an ERC-721. In HUMAN decimal units (e.g. \"1.5\") — not wei, lamports, or any other base unit.",
+            "description": "Amount of the token to send (for native/ERC-20), or \"1\" for an ERC-721. In HUMAN decimal units (e.g. \"1.5\") - not wei, lamports, or any other base unit.",
             "type": "string"
           },
           "chain": {
@@ -1081,7 +1064,7 @@
             "type": "string"
           },
           "walletFamily": {
-            "description": "Which wallet FAMILY to act on — 'eip155' for your EVM wallet or 'solana' for your Solana wallet. This is a wallet family, not a chain: the EVM chain goes in `chain`.",
+            "description": "Which wallet FAMILY to act on - 'eip155' for your EVM wallet or 'solana' for your Solana wallet. This is a wallet family, not a chain: the EVM chain goes in `chain`.",
             "enum": [
               "eip155",
               "solana"
@@ -1104,7 +1087,7 @@
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 1273,
+      "descriptionBytes": 1816,
       "destructiveHint": true,
       "inputSchema": {
         "properties": {
@@ -1126,16 +1109,16 @@
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 1505,
+      "descriptionBytes": 1898,
       "destructiveHint": false,
       "inputSchema": {
         "properties": {
           "computeUnitLimit": {
-            "description": "REQUIRED cap on the requested COMPUTE UNITS, as a decimal integer string. The priority fee is charged on the requested limit rather than on units actually used, so this is part of what you authorize. Calling without the caps refuses by name and returns the current network estimate as a labelled hint.",
+            "description": "Cap on the requested COMPUTE UNITS, as a decimal integer string. REQUIRED IN EFFECT, optional in the schema, and required TOGETHER with computeUnitPriceMicroLamports: a call without the caps is refused by name and returns the current network estimate as a labelled hint, which is the first call of the two-call workflow. The priority fee is charged on the requested limit rather than on units actually used, so this is part of what you authorize.",
             "type": "string"
           },
           "computeUnitPriceMicroLamports": {
-            "description": "REQUIRED cap on the priority price per compute unit, in RAW micro-lamports as a decimal integer string. Together with computeUnitLimit it fixes the maximum priority fee in lamports, which is echoed back in approvedFeeBounds.",
+            "description": "Cap on the priority price per compute unit, in RAW micro-lamports as a decimal integer string. REQUIRED IN EFFECT, optional in the schema, and required TOGETHER with computeUnitLimit; the two fix the maximum priority fee in lamports, which is echoed back in approvedFeeBounds.",
             "type": "string"
           },
           "transactionBase64": {
@@ -1144,9 +1127,7 @@
           }
         },
         "required": [
-          "transactionBase64",
-          "computeUnitLimit",
-          "computeUnitPriceMicroLamports"
+          "transactionBase64"
         ],
         "type": "object"
       },
@@ -1158,7 +1139,7 @@
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 971,
+      "descriptionBytes": 1044,
       "destructiveHint": false,
       "inputSchema": {
         "properties": {
@@ -1194,7 +1175,7 @@
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 2124,
+      "descriptionBytes": 2024,
       "destructiveHint": true,
       "inputSchema": {
         "properties": {
@@ -1216,7 +1197,7 @@
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 2337,
+      "descriptionBytes": 2022,
       "destructiveHint": false,
       "inputSchema": {
         "properties": {
@@ -1237,27 +1218,26 @@
             "type": "string"
           },
           "gasLimit": {
-            "description": "Maximum gas UNITS, as a decimal integer string. REQUIRED fee cap. Vex never derives a spending limit from a network estimate, so calling without the caps refuses by name and returns the current estimate as a labelled hint.",
+            "description": "Maximum gas UNITS, as a decimal integer string. The second call passes this plus EITHER the 1559 pair (`maxFeePerGasWei` with `maxPriorityFeePerGasWei`, required TOGETHER) OR the legacy `gasPriceWei` - never both pricing modes. REQUIRED IN EFFECT, optional in the schema: Vex never derives a spending limit from a network estimate, so a call without the caps is refused by name and returns the current estimate as a labelled hint. That refusal is the first call of the two-call workflow.",
             "type": "string"
           },
           "gasPriceWei": {
-            "description": "LEGACY cap on the price per gas unit, in RAW wei as a decimal integer string, for chains without EIP-1559. Mutually exclusive with the 1559 pair. REQUIRED fee cap. Vex never derives a spending limit from a network estimate, so calling without the caps refuses by name and returns the current estimate as a labelled hint.",
+            "description": "LEGACY cap on the price per gas unit, in RAW wei as a decimal integer string, for chains without EIP-1559. Mutually exclusive with the 1559 pair. REQUIRED IN EFFECT, optional in the schema: Vex never derives a spending limit from a network estimate, so a call without the caps is refused by name and returns the current estimate as a labelled hint. That refusal is the first call of the two-call workflow.",
             "type": "string"
           },
           "maxFeePerGasWei": {
-            "description": "EIP-1559 cap on the total price per gas unit, in RAW wei as a decimal integer string. Pass this with maxPriorityFeePerGasWei, or pass gasPriceWei instead, never both. REQUIRED fee cap. Vex never derives a spending limit from a network estimate, so calling without the caps refuses by name and returns the current estimate as a labelled hint.",
+            "description": "EIP-1559 cap on the total price per gas unit, in RAW wei as a decimal integer string. Pass this with maxPriorityFeePerGasWei, or pass gasPriceWei instead, never both. REQUIRED IN EFFECT, optional in the schema: Vex never derives a spending limit from a network estimate, so a call without the caps is refused by name and returns the current estimate as a labelled hint. That refusal is the first call of the two-call workflow.",
             "type": "string"
           },
           "maxPriorityFeePerGasWei": {
-            "description": "EIP-1559 cap on the validator tip per gas unit, in RAW wei as a decimal integer string. Cannot exceed maxFeePerGasWei. REQUIRED fee cap. Vex never derives a spending limit from a network estimate, so calling without the caps refuses by name and returns the current estimate as a labelled hint.",
+            "description": "EIP-1559 cap on the validator tip per gas unit, in RAW wei as a decimal integer string. Cannot exceed maxFeePerGasWei. REQUIRED IN EFFECT, optional in the schema: Vex never derives a spending limit from a network estimate, so a call without the caps is refused by name and returns the current estimate as a labelled hint. That refusal is the first call of the two-call workflow.",
             "type": "string"
           }
         },
         "required": [
           "chain",
           "direction",
-          "amountRaw",
-          "gasLimit"
+          "amountRaw"
         ],
         "type": "object"
       },
@@ -1269,74 +1249,36 @@
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 2057,
+      "descriptionBytes": 1812,
       "destructiveHint": false,
       "inputSchema": {
+        "additionalProperties": false,
         "properties": {
-          "chunksPerSource": {
-            "description": "Search-only, and REQUIRES searchDepth: \"advanced\" — measured live, basic depth ignores it. Passages Tavily selects per source, 1-5. This is provider-side selection, not truncation of what we received: at advanced depth chunksPerSource: 1 held every row to 720-755 B against 646-2,203 B without it.",
-            "type": "number"
-          },
-          "fetchTop": {
-            "description": "Search-only. How many of the top hits to read in full, 0-10 (default 3); 0 = snippets only. Budget: each page read costs ~2.1 KB (max observed 2,508 B), so fetchTop: 10 is ~21 KB of page text alone. The default shape measures ~12 KB.",
-            "type": "number"
-          },
-          "maxResults": {
-            "description": "Search-only. Hits to request from Tavily, 1-10 (default 6). This changes the provider request, not a local trim. Budget: a hit you do not read costs ~1.0 KB of snippet (measured 466-1,891 B).",
-            "type": "number"
-          },
-          "query": {
-            "description": "Search query. Pass this OR `url`, not both.",
-            "type": "string"
-          },
-          "searchDepth": {
-            "description": "Search-only. `advanced` improves recall and costs 2 Tavily credits instead of 1 (measured). Default: `basic`.",
-            "enum": [
-              "basic",
-              "advanced"
-            ],
-            "type": "string"
-          },
-          "timeRange": {
-            "description": "Search-only. Restrict hits to the last day/week/month/year. Verified live on `topic: \"news\"` (with `day`, all 5 rows were published that day against a 5-day spread without it). On `topic: \"general\"` the provider accepts it but returns no dates, so its effect cannot be verified from the payload.",
-            "enum": [
-              "day",
-              "week",
-              "month",
-              "year"
-            ],
-            "type": "string"
-          },
-          "topic": {
-            "description": "Search-only. `news` is the ONLY way to get publication dates (measured: 10/10 news rows carried one, 0/9 general rows did) and is the right choice for \"why is this token moving today\". Scores are NOT comparable across topics — measured 0.53-0.71 on general vs 0.02-0.33 on news for the same query. Default: `general`.",
-            "enum": [
-              "general",
-              "news"
-            ],
-            "type": "string"
-          },
-          "url": {
-            "description": "Absolute http:// or https:// URL to read as markdown. Unlike a search page read this is NOT query-targeted - you get the whole document, measured at 21,319 B for one documentation page, and no parameter bounds it. Other schemes (ftp, file, mailto, data) rejected. Pass this OR `query`, not both.",
+          "name": {
+            "description": "The ONE tool name to describe: a hot-set name, a protocol publicName, or the `mcp__vex__<publicName>` form your client shows. The prefix is stripped; anything else is answered with the nearest names in the catalogue.",
             "type": "string"
           }
         },
+        "required": [
+          "name"
+        ],
         "type": "object"
       },
       "kind": "internal",
-      "publicName": "WebResearch",
+      "publicName": "vex_ToolDescribe",
       "readOnlyHint": true,
-      "requiresEnv": "TAVILY_API_KEY",
-      "title": "Search and read the web"
+      "requiresEnv": null,
+      "title": "Read one tool's whole contract"
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 1107,
+      "descriptionBytes": 1500,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "limit": {
-            "description": "Maximum rows to return, 1 to 20. Applies to both modes: default 5 with `query`, and the whole namespace with `namespace` when omitted. `totalCount` and `hasMore` report what a limit left out. Out-of-range values are refused, not clamped.",
+            "description": "Maximum rows to return, 1 to 20. Applies to both modes: default 5 with `query`, and the whole namespace with `namespace` when omitted. `totalCount` and `hasMore` report what a limit left out; there is no cursor, so reach the rest by raising this limit or by narrowing with `namespace` alone or a tighter query. Out-of-range values are refused, not clamped.",
             "type": "number"
           },
           "namespace": {
@@ -3736,7 +3678,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 2712,
+      "descriptionBytes": 3038,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
@@ -4391,18 +4333,14 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 2945,
+      "descriptionBytes": 3472,
       "destructiveHint": true,
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "amountRaw": {
-            "description": "Amount to bridge, in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Raw base units as an integer string (not human decimals) — read the token's decimals from `TokenFind` first.",
+            "description": "Amount to bridge, in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Raw base units as an integer string (not human decimals) - read the token's decimals from `TokenFind` first.",
             "minLength": 1,
-            "type": "string"
-          },
-          "depositMethod": {
-            "description": "CONTRACT_CALL, PERMIT2, or TRANSFER.",
             "type": "string"
           },
           "dryRun": {
@@ -4433,14 +4371,6 @@
           "fromToken": {
             "description": "Source token address.",
             "minLength": 1,
-            "type": "string"
-          },
-          "recipient": {
-            "description": "Destination recipient override.",
-            "type": "string"
-          },
-          "routeId": {
-            "description": "Specific route ID (default: best route).",
             "type": "string"
           },
           "toChain": {
@@ -4485,13 +4415,13 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 2204,
+      "descriptionBytes": 2304,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "amountRaw": {
-            "description": "Amount to bridge, in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Raw base units as an integer string (not human decimals) — read the token's decimals from `TokenFind` first.",
+            "description": "Amount to bridge, in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Raw base units as an integer string (not human decimals) - read the token's decimals from `TokenFind` first.",
             "minLength": 1,
             "type": "string"
           },
@@ -4523,10 +4453,6 @@
           "fromToken": {
             "description": "Source token address.",
             "minLength": 1,
-            "type": "string"
-          },
-          "recipient": {
-            "description": "Destination recipient override.",
             "type": "string"
           },
           "toChain": {
@@ -4668,7 +4594,7 @@
                 "type": "array"
               }
             ],
-            "description": "Comma-separated order IDs to filter. Accepts either a comma-separated string (\"1,8453\") or an array of strings ([\"1\",\"8453\"]) — the two are equivalent."
+            "description": "Comma-separated order IDs to filter. Accepts either a comma-separated string (\"1,8453\") or an array of strings ([\"1\",\"8453\"]) - the two are equivalent."
           },
           "toChain": {
             "anyOf": [
@@ -4724,7 +4650,7 @@
                 "type": "array"
               }
             ],
-            "description": "Comma-separated chain IDs or aliases. Omit to scan all chains in the family. Accepts either a comma-separated string (\"1,8453\") or an array of strings ([\"1\",\"8453\"]) — the two are equivalent."
+            "description": "Comma-separated chain IDs or aliases. Omit to scan all chains in the family. Accepts either a comma-separated string (\"1,8453\") or an array of strings ([\"1\",\"8453\"]) - the two are equivalent."
           },
           "dryRun": {
             "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
@@ -4768,7 +4694,7 @@
                 "type": "array"
               }
             ],
-            "description": "Comma-separated chain IDs or aliases. Accepts either a comma-separated string (\"1,8453\") or an array of strings ([\"1\",\"8453\"]) — the two are equivalent."
+            "description": "Comma-separated chain IDs or aliases. Accepts either a comma-separated string (\"1,8453\") or an array of strings ([\"1\",\"8453\"]) - the two are equivalent."
           },
           "dryRun": {
             "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
@@ -4816,7 +4742,7 @@
                 "type": "array"
               }
             ],
-            "description": "Comma-separated chain IDs or aliases. Accepts either a comma-separated string (\"1,8453\") or an array of strings ([\"1\",\"8453\"]) — the two are equivalent."
+            "description": "Comma-separated chain IDs or aliases. Accepts either a comma-separated string (\"1,8453\") or an array of strings ([\"1\",\"8453\"]) - the two are equivalent."
           },
           "dryRun": {
             "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
@@ -4860,7 +4786,7 @@
                 "type": "array"
               }
             ],
-            "description": "Comma-separated chain IDs or aliases (e.g. '1,solana'). Accepts either a comma-separated string (\"1,8453\") or an array of strings ([\"1\",\"8453\"]) — the two are equivalent."
+            "description": "Comma-separated chain IDs or aliases (e.g. '1,solana'). Accepts either a comma-separated string (\"1,8453\") or an array of strings ([\"1\",\"8453\"]) - the two are equivalent."
           },
           "dryRun": {
             "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
@@ -5050,7 +4976,7 @@
             "type": "boolean"
           },
           "tokenAddress": {
-            "description": "Token contract address to inspect (0x… on the named chain). Resolve it with TokenFind first — a symbol is not accepted. The former key `address` is retired and is rejected by name.",
+            "description": "Token contract address to inspect (0x… on the named chain). Resolve it with TokenFind first - a symbol is not accepted. The former key `address` is retired and is rejected by name.",
             "minLength": 1,
             "type": "string"
           }
@@ -6526,7 +6452,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 1251,
+      "descriptionBytes": 1249,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
@@ -6549,7 +6475,7 @@
             "type": "boolean"
           },
           "ids": {
-            "description": "Comma-separated asset ids to price — bare 0x addresses or 'chainId-0xaddress' composites, at most 50 per call. An id belonging to a different chain than `chain` is rejected by name. Omit to page through the chain's assets instead.",
+            "description": "Comma-separated asset ids to price - bare 0x addresses or 'chainId-0xaddress' composites, at most 50 per call. An id belonging to a different chain than `chain` is rejected by name. Omit to page through the chain's assets instead.",
             "type": "string"
           },
           "limit": {
@@ -6601,14 +6527,14 @@
                 "type": "integer"
               }
             ],
-            "description": "Chain slug or id — one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')."
+            "description": "Chain slug or id - one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')."
           },
           "dryRun": {
             "description": "Preview without executing.",
             "type": "boolean"
           },
           "market": {
-            "description": "The Pendle MARKET (LP) CONTRACT ADDRESS — the LP anchor liquidity is added to or removed from.",
+            "description": "The Pendle MARKET (LP) CONTRACT ADDRESS - the LP anchor liquidity is added to or removed from.",
             "minLength": 1,
             "type": "string"
           },
@@ -6662,7 +6588,7 @@
                 "type": "integer"
               }
             ],
-            "description": "Chain slug or id — one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')."
+            "description": "Chain slug or id - one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')."
           },
           "dryRun": {
             "description": "true = quote only. Prices both output legs, runs every fund-safety check including a separate price floor per leg, records the authorization this tool needs, and broadcasts NOTHING. Required before the real call.",
@@ -6708,7 +6634,7 @@
         "additionalProperties": false,
         "properties": {
           "amountIn": {
-            "description": "Human-readable amount — add: the payment token amount; remove: the LP token amount to burn.",
+            "description": "Human-readable amount - add: the payment token amount; remove: the LP token amount to burn.",
             "minLength": 1,
             "type": "string"
           },
@@ -6723,7 +6649,7 @@
                 "type": "integer"
               }
             ],
-            "description": "Chain slug or id — one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')."
+            "description": "Chain slug or id - one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')."
           },
           "direction": {
             "description": "'add' (token → LP) or 'remove' (LP → token).",
@@ -6735,7 +6661,7 @@
             "type": "boolean"
           },
           "market": {
-            "description": "The Pendle MARKET (LP) CONTRACT ADDRESS — the LP anchor liquidity is added to or removed from.",
+            "description": "The Pendle MARKET (LP) CONTRACT ADDRESS - the LP anchor liquidity is added to or removed from.",
             "minLength": 1,
             "type": "string"
           },
@@ -6792,14 +6718,14 @@
                 "type": "integer"
               }
             ],
-            "description": "Chain slug or id — one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')."
+            "description": "Chain slug or id - one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')."
           },
           "dryRun": {
             "description": "Preview without executing.",
             "type": "boolean"
           },
           "market": {
-            "description": "The Pendle MARKET (LP) CONTRACT ADDRESS — the LP anchor liquidity is added to or removed from.",
+            "description": "The Pendle MARKET (LP) CONTRACT ADDRESS - the LP anchor liquidity is added to or removed from.",
             "minLength": 1,
             "type": "string"
           },
@@ -6851,7 +6777,7 @@
                 "type": "integer"
               }
             ],
-            "description": "Chain slug or id — one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')."
+            "description": "Chain slug or id - one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')."
           },
           "dryRun": {
             "description": "true = quote only. Prices both output legs, runs every fund-safety check including a separate price floor per leg, records the authorization this tool needs, and broadcasts NOTHING. Required before the real call.",
@@ -6910,7 +6836,7 @@
                 "type": "integer"
               }
             ],
-            "description": "Chain slug or id — one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc'). Both legs are on ONE chain; none of these tools bridges."
+            "description": "Chain slug or id - one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc'). Both legs are on ONE chain; none of these tools bridges."
           },
           "dryRun": {
             "description": "true = quote only. Prices the move, runs every fund-safety check including the per-leg price floor, records the authorization this tool needs, and broadcasts NOTHING. Required before the real call.",
@@ -6922,7 +6848,7 @@
             "type": "string"
           },
           "pt": {
-            "description": "OPTIONAL check: the PT contract address you expect to receive. Must be this market's own PT — a PT from any other market is refused by name. Omit it and Vex uses the market's PT.",
+            "description": "OPTIONAL check: the PT contract address you expect to receive. Must be this market's own PT - a PT from any other market is refused by name. Omit it and Vex uses the market's PT.",
             "type": "string"
           },
           "slippageBps": {
@@ -6969,7 +6895,7 @@
                 "type": "integer"
               }
             ],
-            "description": "Chain slug or id — one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc'). Both legs are on ONE chain; none of these tools bridges."
+            "description": "Chain slug or id - one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc'). Both legs are on ONE chain; none of these tools bridges."
           },
           "dryRun": {
             "description": "true = quote only. Prices the move, runs every fund-safety check including the per-leg price floor, records the authorization this tool needs, and broadcasts NOTHING. Required before the real call.",
@@ -7009,7 +6935,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 1083,
+      "descriptionBytes": 1079,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
@@ -7065,7 +6991,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 1063,
+      "descriptionBytes": 1057,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
@@ -7081,14 +7007,14 @@
                 "type": "integer"
               }
             ],
-            "description": "Chain slug or numeric id — one of Pendle's supported chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc', 1, 42161). An unsupported chain is rejected by name. The same address on another chain is a different asset."
+            "description": "Chain slug or numeric id - one of Pendle's supported chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc', 1, 42161). An unsupported chain is rejected by name. The same address on another chain is a different asset."
           },
           "dryRun": {
             "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
             "type": "boolean"
           },
           "market": {
-            "description": "Market (LP) CONTRACT ADDRESS, 0x-prefixed 40-hex. Pass exactly ONE of market, pt or yt — passing two is rejected by name rather than resolved.",
+            "description": "Market (LP) CONTRACT ADDRESS, 0x-prefixed 40-hex. Pass exactly ONE of market, pt or yt - passing two is rejected by name rather than resolved.",
             "type": "string"
           },
           "pt": {
@@ -7115,7 +7041,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 739,
+      "descriptionBytes": 735,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
@@ -7138,7 +7064,7 @@
             "type": "boolean"
           },
           "fields": {
-            "description": "Comma-separated series fields. Default: impliedApy,underlyingApy,tvl. Selectable: impliedApy, underlyingApy, maxApy, baseApy, tvl, ptPrice, ytPrice, lpPrice, tradingVolume, pendleApy, aggregatedApy, swapFeeApy, ytFloatingApy, totalPt, totalSy, totalSupply, totalActiveSupply. An unknown field is rejected by name — Pendle serves only these. Ask for fewer fields to spend fewer compute units.",
+            "description": "Comma-separated series fields. Default: impliedApy,underlyingApy,tvl. Selectable: impliedApy, underlyingApy, maxApy, baseApy, tvl, ptPrice, ytPrice, lpPrice, tradingVolume, pendleApy, aggregatedApy, swapFeeApy, ytFloatingApy, totalPt, totalSy, totalSupply, totalActiveSupply. An unknown field is rejected by name - Pendle serves only these. Ask for fewer fields to spend fewer compute units.",
             "type": "string"
           },
           "from": {
@@ -7175,7 +7101,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 1734,
+      "descriptionBytes": 1732,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
@@ -7257,7 +7183,7 @@
             "type": "string"
           },
           "fields": {
-            "description": "Comma-separated row field groups to keep: identity, apy, liquidity, expiry, legs, points, protocols — or 'all' (default). Use it to keep large result sets small.",
+            "description": "Comma-separated row field groups to keep: identity, apy, liquidity, expiry, legs, points, protocols - or 'all' (default). Use it to keep large result sets small.",
             "type": "string"
           },
           "includeMatured": {
@@ -7273,11 +7199,11 @@
             "type": "boolean"
           },
           "limit": {
-            "description": "Max markets to return (default 20). There is NO hidden ceiling — hasMore and nextOffset report what is left.",
+            "description": "Max markets to return (default 20). There is NO hidden ceiling - hasMore and nextOffset report what is left.",
             "type": "number"
           },
           "maxDaysToExpiry": {
-            "description": "Maximum whole days until maturity — find the nearest maturities.",
+            "description": "Maximum whole days until maturity - find the nearest maturities.",
             "type": "number"
           },
           "maxImpliedApyPercent": {
@@ -7297,7 +7223,7 @@
             "type": "number"
           },
           "minLiquidityUsd": {
-            "description": "Minimum market liquidity in USD — screen out thin markets you could not exit.",
+            "description": "Minimum market liquidity in USD - screen out thin markets you could not exit.",
             "type": "number"
           },
           "offset": {
@@ -7329,7 +7255,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 1668,
+      "descriptionBytes": 1664,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
@@ -7344,7 +7270,7 @@
                 "type": "integer"
               }
             ],
-            "description": "Optional chain slug or numeric id (e.g. 'ethereum', 42161) to narrow the list to ONE chain. Omit it to see every chain's rewards in one call — there is no chainIds list here, and no 'all' literal to pass. An unsupported chain is rejected by name."
+            "description": "Optional chain slug or numeric id (e.g. 'ethereum', 42161) to narrow the list to ONE chain. Omit it to see every chain's rewards in one call - there is no chainIds list here, and no 'all' literal to pass. An unsupported chain is rejected by name."
           },
           "dryRun": {
             "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
@@ -7377,7 +7303,7 @@
             "type": "boolean"
           },
           "fields": {
-            "description": "Comma-separated leg field groups to keep: identity, balance, value, expiry, accrued — or 'all' (default).",
+            "description": "Comma-separated leg field groups to keep: identity, balance, value, expiry, accrued - or 'all' (default).",
             "type": "string"
           },
           "includeAccrued": {
@@ -7393,7 +7319,7 @@
             "type": "number"
           },
           "redeemableOnly": {
-            "description": "Only legs in state matured_redeemable — the matured PTs ready to redeem (default false).",
+            "description": "Only legs in state matured_redeemable - the matured PTs ready to redeem (default false).",
             "type": "boolean"
           },
           "sort": {
@@ -7434,7 +7360,7 @@
                 "type": "integer"
               }
             ],
-            "description": "Chain slug or id — one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')."
+            "description": "Chain slug or id - one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')."
           },
           "dryRun": {
             "description": "Preview without executing.",
@@ -7495,7 +7421,7 @@
                 "type": "integer"
               }
             ],
-            "description": "Chain slug or id — one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')."
+            "description": "Chain slug or id - one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')."
           },
           "dryRun": {
             "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
@@ -7556,7 +7482,7 @@
                 "type": "integer"
               }
             ],
-            "description": "Chain slug or id — one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')."
+            "description": "Chain slug or id - one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')."
           },
           "dryRun": {
             "description": "Preview without executing.",
@@ -7611,7 +7537,7 @@
                 "type": "integer"
               }
             ],
-            "description": "Chain slug or id — one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc'). Both legs are on ONE chain; none of these tools bridges."
+            "description": "Chain slug or id - one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc'). Both legs are on ONE chain; none of these tools bridges."
           },
           "dryRun": {
             "description": "true = quote only. Prices the move, runs every fund-safety check including the per-leg price floor, records the authorization this tool needs, and broadcasts NOTHING. Required before the real call.",
@@ -7672,7 +7598,7 @@
                 "type": "integer"
               }
             ],
-            "description": "Chain slug or id — one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')."
+            "description": "Chain slug or id - one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')."
           },
           "dryRun": {
             "description": "Preview without executing.",
@@ -7733,14 +7659,14 @@
                 "type": "integer"
               }
             ],
-            "description": "Chain slug or id — one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')."
+            "description": "Chain slug or id - one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')."
           },
           "dryRun": {
             "description": "Preview without executing.",
             "type": "boolean"
           },
           "pt": {
-            "description": "The market's PT (principal token) CONTRACT ADDRESS — the anchor that resolves the market and its YT.",
+            "description": "The market's PT (principal token) CONTRACT ADDRESS - the anchor that resolves the market and its YT.",
             "minLength": 1,
             "type": "string"
           },
@@ -7779,7 +7705,7 @@
         "additionalProperties": false,
         "properties": {
           "amountIn": {
-            "description": "Human-readable amount — mint: the payment token amount; redeem: the PT+YT pair amount to burn.",
+            "description": "Human-readable amount - mint: the payment token amount; redeem: the PT+YT pair amount to burn.",
             "minLength": 1,
             "type": "string"
           },
@@ -7794,7 +7720,7 @@
                 "type": "integer"
               }
             ],
-            "description": "Chain slug or id — one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')."
+            "description": "Chain slug or id - one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')."
           },
           "direction": {
             "description": "'mint' (token → PT+YT) or 'redeem' (pre-expiry PT+YT → token).",
@@ -7806,7 +7732,7 @@
             "type": "boolean"
           },
           "pt": {
-            "description": "The market's PT (principal token) CONTRACT ADDRESS — the anchor that resolves the market and its YT.",
+            "description": "The market's PT (principal token) CONTRACT ADDRESS - the anchor that resolves the market and its YT.",
             "minLength": 1,
             "type": "string"
           },
@@ -7863,14 +7789,14 @@
                 "type": "integer"
               }
             ],
-            "description": "Chain slug or id — one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')."
+            "description": "Chain slug or id - one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')."
           },
           "dryRun": {
             "description": "Preview without executing.",
             "type": "boolean"
           },
           "pt": {
-            "description": "The market's PT (principal token) CONTRACT ADDRESS — the anchor that resolves the market and its YT.",
+            "description": "The market's PT (principal token) CONTRACT ADDRESS - the anchor that resolves the market and its YT.",
             "minLength": 1,
             "type": "string"
           },
@@ -7917,14 +7843,14 @@
                 "type": "integer"
               }
             ],
-            "description": "Chain slug or id — one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')."
+            "description": "Chain slug or id - one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')."
           },
           "dryRun": {
-            "description": "Preview the positions that would be claimed — including eligibleMarkets and skippedMarkets — without executing.",
+            "description": "Preview the positions that would be claimed - including eligibleMarkets and skippedMarkets - without executing.",
             "type": "boolean"
           },
           "market": {
-            "description": "Optional MARKET CONTRACT ADDRESS to scope the claim to one market — the way to reach a market the unscoped sweep reported in skippedMarkets (no cap applies to a scoped claim). Omit to sweep up to 10 held markets on the chain.",
+            "description": "Optional MARKET CONTRACT ADDRESS to scope the claim to one market - the way to reach a market the unscoped sweep reported in skippedMarkets (no cap applies to a scoped claim). Omit to sweep up to 10 held markets on the chain.",
             "type": "string"
           }
         },
@@ -7964,7 +7890,7 @@
                 "type": "integer"
               }
             ],
-            "description": "Chain slug or id — one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')."
+            "description": "Chain slug or id - one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')."
           },
           "dryRun": {
             "description": "true = quote only. Prices the wrap, runs every fund-safety check including the price floor, records the authorization this tool needs, and broadcasts NOTHING. Required before the real call.",
@@ -7981,7 +7907,7 @@
             "type": "string"
           },
           "tokenIn": {
-            "description": "The payment token CONTRACT ADDRESS to wrap — the INPUT leg (ERC-20; pass the chain's wrapped-native token for native exposure).",
+            "description": "The payment token CONTRACT ADDRESS to wrap - the INPUT leg (ERC-20; pass the chain's wrapped-native token for native exposure).",
             "minLength": 1,
             "type": "string"
           }
@@ -8025,7 +7951,7 @@
                 "type": "integer"
               }
             ],
-            "description": "Chain slug or id — one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')."
+            "description": "Chain slug or id - one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')."
           },
           "dryRun": {
             "description": "true = quote only. Prices the wrap, runs every fund-safety check including the price floor, records the authorization this tool needs, and broadcasts NOTHING. Required before the real call.",
@@ -8042,7 +7968,7 @@
             "type": "string"
           },
           "tokenOut": {
-            "description": "The token CONTRACT ADDRESS to receive — the OUTPUT leg (ERC-20; pass the chain's wrapped-native token for native exposure).",
+            "description": "The token CONTRACT ADDRESS to receive - the OUTPUT leg (ERC-20; pass the chain's wrapped-native token for native exposure).",
             "minLength": 1,
             "type": "string"
           }
@@ -8086,7 +8012,7 @@
                 "type": "integer"
               }
             ],
-            "description": "Chain slug or id — one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')."
+            "description": "Chain slug or id - one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')."
           },
           "dryRun": {
             "description": "Preview without executing.",
@@ -8147,7 +8073,7 @@
                 "type": "integer"
               }
             ],
-            "description": "Chain slug or id — one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')."
+            "description": "Chain slug or id - one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')."
           },
           "dryRun": {
             "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
@@ -8208,7 +8134,7 @@
                 "type": "integer"
               }
             ],
-            "description": "Chain slug or id — one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')."
+            "description": "Chain slug or id - one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')."
           },
           "dryRun": {
             "description": "Preview without executing.",
@@ -8332,7 +8258,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 884,
+      "descriptionBytes": 998,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
@@ -8384,7 +8310,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 688,
+      "descriptionBytes": 902,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
@@ -8717,13 +8643,13 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 2270,
+      "descriptionBytes": 2478,
       "destructiveHint": true,
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "amountRaw": {
-            "description": "Amount to bridge, in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Raw base units as an integer string (not human decimals) — read the token's decimals from `TokenFind` first.",
+            "description": "Amount to bridge, in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Raw base units as an integer string (not human decimals) - read the token's decimals from `TokenFind` first.",
             "minLength": 1,
             "type": "string"
           },
@@ -8747,10 +8673,6 @@
           "fromToken": {
             "description": "Source token address, or native ETH/native.",
             "minLength": 1,
-            "type": "string"
-          },
-          "recipient": {
-            "description": "Destination recipient (default: your wallet).",
             "type": "string"
           },
           "slippageBps": {
@@ -8796,13 +8718,13 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 1886,
+      "descriptionBytes": 2094,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "amountRaw": {
-            "description": "Amount to bridge, in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Raw base units as an integer string (not human decimals) — read the token's decimals from `TokenFind` first.",
+            "description": "Amount to bridge, in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Raw base units as an integer string (not human decimals) - read the token's decimals from `TokenFind` first.",
             "minLength": 1,
             "type": "string"
           },
@@ -8826,10 +8748,6 @@
           "fromToken": {
             "description": "Source token address, or native ETH/native.",
             "minLength": 1,
-            "type": "string"
-          },
-          "recipient": {
-            "description": "Destination recipient (default: your wallet).",
             "type": "string"
           },
           "slippageBps": {
@@ -8980,7 +8898,7 @@
             "type": "boolean"
           },
           "market": {
-            "description": "Which Borrow market: \"main\" or \"ethena\" (default \"main\"). Vault ids are scoped per market — the same vaultId in a different market is a different vault. An unrecognized value is rejected.",
+            "description": "Which Borrow market: \"main\" or \"ethena\" (default \"main\"). Vault ids are scoped per market - the same vaultId in a different market is a different vault. An unrecognized value is rejected.",
             "type": "string"
           },
           "vaultIds": {
@@ -9046,7 +8964,7 @@
             "type": "boolean"
           },
           "walletAddress": {
-            "description": "The wallet ACCOUNT to read, as a Solana address (not a token mint or a position key). Defaults to the session's selected Solana wallet — omit it to read your own. Under session scope a DIFFERENT address is rejected.",
+            "description": "The wallet ACCOUNT to read, as a Solana address (not a token mint or a position key). Defaults to the session's selected Solana wallet - omit it to read your own. Under session scope a DIFFERENT address is rejected.",
             "type": "string"
           }
         },
@@ -9068,7 +8986,7 @@
         "additionalProperties": false,
         "properties": {
           "assets": {
-            "description": "Comma-separated list of asset identifiers to filter to — matches the underlying asset mint address, Earn share-token (jlToken) mint, symbol, or provider lending id. Case-insensitive for symbol. Omit for all markets.",
+            "description": "Comma-separated list of asset identifiers to filter to - matches the underlying asset mint address, Earn share-token (jlToken) mint, symbol, or provider lending id. Case-insensitive for symbol. Omit for all markets.",
             "type": "string"
           },
           "dryRun": {
@@ -9115,7 +9033,7 @@
             "type": "boolean"
           },
           "withdrawAll": {
-            "description": "Exit the ENTIRE Earn position for this asset, dust-free (redeems the position's full share balance rather than an underlying amount). Mutually exclusive with amountRaw — provide exactly one, never both. Never pass withdrawAll: false; omit it and pass amountRaw instead.",
+            "description": "Exit the ENTIRE Earn position for this asset, dust-free (redeems the position's full share balance rather than an underlying amount). Mutually exclusive with amountRaw - provide exactly one, never both. Never pass withdrawAll: false; omit it and pass amountRaw instead.",
             "type": "boolean"
           }
         },
@@ -9140,7 +9058,7 @@
         "additionalProperties": false,
         "properties": {
           "amountUsdc": {
-            "description": "Amount to spend, in whole/fractional USDC dollars (human-readable, e.g. 10 for $10) — not raw atomic units.",
+            "description": "Amount to spend, in whole/fractional USDC dollars (human-readable, e.g. 10 for $10) - not raw atomic units.",
             "type": "number"
           },
           "dryRun": {
@@ -9215,7 +9133,7 @@
             "type": "boolean"
           },
           "minSellPriceSlippageBps": {
-            "description": "Slippage tolerance applied to EACH sell in this batch, in basis points (0-1000; e.g. 100 = 1%). Vex caps slippage at 1000 bps (10%) and rejects anything above rather than clamping. Required by the provider — there is no default, so pick a value you accept across every position closed.",
+            "description": "Slippage tolerance applied to EACH sell in this batch, in basis points (0-1000; e.g. 100 = 1%). Vex caps slippage at 1000 bps (10%) and rejects anything above rather than clamping. Required by the provider - there is no default, so pick a value you accept across every position closed.",
             "minimum": 0,
             "type": "integer"
           }
@@ -9250,7 +9168,7 @@
             "type": "string"
           },
           "includeMarkets": {
-            "description": "Include the event's nested markets array (default false — lean).",
+            "description": "Include the event's nested markets array (default false - lean).",
             "type": "boolean"
           }
         },
@@ -9345,7 +9263,7 @@
             "type": "boolean"
           },
           "limit": {
-            "description": "Max results, 1-20 (default 20). The provider ignores this param upstream — Vex enforces the requested count locally.",
+            "description": "Max results, 1-20 (default 20). The provider ignores this param upstream - Vex enforces the requested count locally.",
             "type": "number"
           },
           "provider": {
@@ -9552,7 +9470,7 @@
             "type": "number"
           },
           "walletAddress": {
-            "description": "The wallet ACCOUNT to read, as a Solana address (not a token mint or a position key). Defaults to the session's selected Solana wallet — omit it to read your own. Under session scope a DIFFERENT address is rejected.",
+            "description": "The wallet ACCOUNT to read, as a Solana address (not a token mint or a position key). Defaults to the session's selected Solana wallet - omit it to read your own. Under session scope a DIFFERENT address is rejected.",
             "type": "string"
           }
         },
@@ -9587,7 +9505,7 @@
             "type": "string"
           },
           "walletAddress": {
-            "description": "The wallet ACCOUNT to read, as a Solana address (not a token mint or a position key). Defaults to the session's selected Solana wallet — omit it to read your own. Under session scope a DIFFERENT address is rejected.",
+            "description": "The wallet ACCOUNT to read, as a Solana address (not a token mint or a position key). Defaults to the session's selected Solana wallet - omit it to read your own. Under session scope a DIFFERENT address is rejected.",
             "type": "string"
           }
         },
@@ -9646,7 +9564,7 @@
             "type": "boolean"
           },
           "isYes": {
-            "description": "Filter by side — true for YES, false for NO.",
+            "description": "Filter by side - true for YES, false for NO.",
             "type": "boolean"
           },
           "limit": {
@@ -9666,7 +9584,7 @@
             "type": "number"
           },
           "walletAddress": {
-            "description": "The wallet ACCOUNT to read, as a Solana address (not a token mint or a position key). Defaults to the session's selected Solana wallet — omit it to read your own. Under session scope a DIFFERENT address is rejected.",
+            "description": "The wallet ACCOUNT to read, as a Solana address (not a token mint or a position key). Defaults to the session's selected Solana wallet - omit it to read your own. Under session scope a DIFFERENT address is rejected.",
             "type": "string"
           }
         },
@@ -9692,7 +9610,7 @@
             "type": "boolean"
           },
           "walletAddress": {
-            "description": "The wallet ACCOUNT to read, as a Solana address (not a token mint or a position key). Defaults to the session's selected Solana wallet — omit it to read your own. Under session scope a DIFFERENT address is rejected.",
+            "description": "The wallet ACCOUNT to read, as a Solana address (not a token mint or a position key). Defaults to the session's selected Solana wallet - omit it to read your own. Under session scope a DIFFERENT address is rejected.",
             "type": "string"
           }
         },
@@ -9748,7 +9666,7 @@
             "type": "boolean"
           },
           "includeMarkets": {
-            "description": "Include each recommended event's nested markets array (default false — lean).",
+            "description": "Include each recommended event's nested markets array (default false - lean).",
             "type": "boolean"
           },
           "provider": {
@@ -9756,7 +9674,7 @@
             "type": "string"
           },
           "walletAddress": {
-            "description": "The wallet ACCOUNT to base recommendations on, as a Solana address — any wallet, not only your own.",
+            "description": "The wallet ACCOUNT to base recommendations on, as a Solana address - any wallet, not only your own.",
             "minLength": 1,
             "type": "string"
           }
@@ -9802,7 +9720,7 @@
             "type": "string"
           },
           "walletAddress": {
-            "description": "The wallet ACCOUNT to read, as a Solana address (not a token mint or a position key). Defaults to the session's selected Solana wallet — omit it to read your own. Under session scope a DIFFERENT address is rejected.",
+            "description": "The wallet ACCOUNT to read, as a Solana address (not a token mint or a position key). Defaults to the session's selected Solana wallet - omit it to read your own. Under session scope a DIFFERENT address is rejected.",
             "type": "string"
           }
         },
@@ -9828,7 +9746,7 @@
             "type": "boolean"
           },
           "limit": {
-            "description": "Max results, 1-100. Required — this feed has no upstream owner/market scope, so an explicit window is required to avoid an unbounded response.",
+            "description": "Max results, 1-100. Required - this feed has no upstream owner/market scope, so an explicit window is required to avoid an unbounded response.",
             "type": "number"
           },
           "offset": {
@@ -9901,12 +9819,12 @@
         "additionalProperties": false,
         "properties": {
           "amountIn": {
-            "description": "Amount to swap. In HUMAN decimal units (e.g. \"1.5\") — not wei, lamports, or any other base unit. Converted to base units exactly, with no floating-point step: a value carrying more precision than the input side holds is REJECTED, never silently rounded.",
+            "description": "Amount to swap. In HUMAN decimal units (e.g. \"1.5\") - not wei, lamports, or any other base unit. Converted to base units exactly, with no floating-point step: a value carrying more precision than the input side holds is REJECTED, never silently rounded.",
             "minLength": 1,
             "type": "string"
           },
           "computeUnitPricePercentile": {
-            "description": "Priority-fee strategy: medium (25th percentile), high (default, 50th), or veryHigh (75th). This is the LEVER for priority-fee cost — Jupiter picks the actual price per compute unit at the percentile you name, and Vex refuses to sign a build whose resulting priority fee exceeds 10,000,000 lamports (0.01 SOL). If a swap is refused for that reason, lower this and re-quote. Priority prices are congestion-driven and swing by an order of magnitude within minutes, so a fresh quote at the SAME setting often fits too — the refusal is not a property of the pair.",
+            "description": "Priority-fee strategy: medium (25th percentile), high (default, 50th), or veryHigh (75th). This is the LEVER for priority-fee cost - Jupiter picks the actual price per compute unit at the percentile you name, and Vex refuses to sign a build whose resulting priority fee exceeds 10,000,000 lamports (0.01 SOL). If a swap is refused for that reason, lower this and re-quote. Priority prices are congestion-driven and swing by an order of magnitude within minutes, so a fresh quote at the SAME setting often fits too - the refusal is not a property of the pair.",
             "type": "string"
           },
           "dexes": {
@@ -9926,11 +9844,11 @@
             "type": "boolean"
           },
           "maxAccounts": {
-            "description": "Max account count in the route (1-64, default 64) — trims transaction size at the cost of route choice.",
+            "description": "Max account count in the route (1-64, default 64) - trims transaction size at the cost of route choice.",
             "type": "number"
           },
           "slippageBps": {
-            "description": "Slippage tolerance in basis points (1 bps = 0.01%); default 100 = 1%, which fits deep, liquid pairs. It sets otherAmountThreshold, the minimum output the swap enforces once it executes, and is the ONLY price protection on the trade — the execute does NOT re-check the price against the quote. Pass the identical value to quote and execute (a mismatch blocks the execute). On a thin or volatile pair (new mints, memecoins, small pools) 100 bps often fails. Which failure you get depends on tipLamports. On the DEFAULT tipped lane (tipLamports omitted = 1,000,000) Jupiter forwards the transaction without simulating it, so a slippage failure ALWAYS lands on-chain FAILED: the network fee is spent, nothing is swapped, and the reason appears on the activity row rather than in this call's result — this call returns \"broadcast, confirmation pending\". Only tipLamports: 0 takes the RPC lane, which simulates first and can refuse for free with status \"rejected_before_broadcast\". Either way the remedy is the same: re-quote with a higher slippageBps and execute with the identical value. Read a slippage failure as \"this pair needs more tolerance\", not as \"this pair is untradeable\". Vex caps it at 1000 (10%) and REJECTS anything above rather than clamping. Raise it in steps — no tolerance is known to fit a given pair in advance, and every increase widens the worst-case price you accept.",
+            "description": "Slippage tolerance in basis points (1 bps = 0.01%); default 100 = 1%, which fits deep, liquid pairs. It sets otherAmountThreshold, the minimum output the swap enforces once it executes, and is the ONLY price protection on the trade - the execute does NOT re-check the price against the quote. Pass the identical value to quote and execute (a mismatch blocks the execute). On a thin or volatile pair (new mints, memecoins, small pools) 100 bps often fails. Which failure you get depends on tipLamports. On the DEFAULT tipped lane (tipLamports omitted = 1,000,000) Jupiter forwards the transaction without simulating it, so a slippage failure ALWAYS lands on-chain FAILED: the network fee is spent, nothing is swapped, and the reason appears on the activity row rather than in this call's result - this call returns \"broadcast, confirmation pending\". Only tipLamports: 0 takes the RPC lane, which simulates first and can refuse for free with status \"rejected_before_broadcast\". Either way the remedy is the same: re-quote with a higher slippageBps and execute with the identical value. Read a slippage failure as \"this pair needs more tolerance\", not as \"this pair is untradeable\". Vex caps it at 1000 (10%) and REJECTS anything above rather than clamping. Raise it in steps - no tolerance is known to fit a given pair in advance, and every increase widens the worst-case price you accept.",
             "minimum": 0,
             "type": "integer"
           },
@@ -9939,12 +9857,12 @@
             "type": "number"
           },
           "tokenIn": {
-            "description": "Input token symbol or mint — the side you sell.",
+            "description": "Input token symbol or mint - the side you sell.",
             "minLength": 1,
             "type": "string"
           },
           "tokenOut": {
-            "description": "Output token symbol or mint — the side you buy.",
+            "description": "Output token symbol or mint - the side you buy.",
             "minLength": 1,
             "type": "string"
           },
@@ -9976,12 +9894,12 @@
         "additionalProperties": false,
         "properties": {
           "amountIn": {
-            "description": "Amount to swap. In HUMAN decimal units (e.g. \"1.5\") — not wei, lamports, or any other base unit. Converted to base units exactly, with no floating-point step: a value carrying more precision than the input side holds is REJECTED, never silently rounded.",
+            "description": "Amount to swap. In HUMAN decimal units (e.g. \"1.5\") - not wei, lamports, or any other base unit. Converted to base units exactly, with no floating-point step: a value carrying more precision than the input side holds is REJECTED, never silently rounded.",
             "minLength": 1,
             "type": "string"
           },
           "computeUnitPricePercentile": {
-            "description": "Priority-fee strategy: medium (25th percentile), high (default, 50th), or veryHigh (75th). This is the LEVER for priority-fee cost — Jupiter picks the actual price per compute unit at the percentile you name, and Vex refuses to sign a build whose resulting priority fee exceeds 10,000,000 lamports (0.01 SOL). If a swap is refused for that reason, lower this and re-quote. Priority prices are congestion-driven and swing by an order of magnitude within minutes, so a fresh quote at the SAME setting often fits too — the refusal is not a property of the pair.",
+            "description": "Priority-fee strategy: medium (25th percentile), high (default, 50th), or veryHigh (75th). This is the LEVER for priority-fee cost - Jupiter picks the actual price per compute unit at the percentile you name, and Vex refuses to sign a build whose resulting priority fee exceeds 10,000,000 lamports (0.01 SOL). If a swap is refused for that reason, lower this and re-quote. Priority prices are congestion-driven and swing by an order of magnitude within minutes, so a fresh quote at the SAME setting often fits too - the refusal is not a property of the pair.",
             "type": "string"
           },
           "dexes": {
@@ -10001,11 +9919,11 @@
             "type": "boolean"
           },
           "maxAccounts": {
-            "description": "Max account count in the route (1-64, default 64) — trims transaction size at the cost of route choice.",
+            "description": "Max account count in the route (1-64, default 64) - trims transaction size at the cost of route choice.",
             "type": "number"
           },
           "slippageBps": {
-            "description": "Slippage tolerance in basis points (1 bps = 0.01%); default 100 = 1%, which fits deep, liquid pairs. It sets otherAmountThreshold, the minimum output the swap enforces once it executes, and is the ONLY price protection on the trade — the execute does NOT re-check the price against the quote. Pass the identical value to quote and execute (a mismatch blocks the execute). On a thin or volatile pair (new mints, memecoins, small pools) 100 bps often fails. Which failure you get depends on tipLamports. On the DEFAULT tipped lane (tipLamports omitted = 1,000,000) Jupiter forwards the transaction without simulating it, so a slippage failure ALWAYS lands on-chain FAILED: the network fee is spent, nothing is swapped, and the reason appears on the activity row rather than in this call's result — this call returns \"broadcast, confirmation pending\". Only tipLamports: 0 takes the RPC lane, which simulates first and can refuse for free with status \"rejected_before_broadcast\". Either way the remedy is the same: re-quote with a higher slippageBps and execute with the identical value. Read a slippage failure as \"this pair needs more tolerance\", not as \"this pair is untradeable\". Vex caps it at 1000 (10%) and REJECTS anything above rather than clamping. Raise it in steps — no tolerance is known to fit a given pair in advance, and every increase widens the worst-case price you accept.",
+            "description": "Slippage tolerance in basis points (1 bps = 0.01%); default 100 = 1%, which fits deep, liquid pairs. It sets otherAmountThreshold, the minimum output the swap enforces once it executes, and is the ONLY price protection on the trade - the execute does NOT re-check the price against the quote. Pass the identical value to quote and execute (a mismatch blocks the execute). On a thin or volatile pair (new mints, memecoins, small pools) 100 bps often fails. Which failure you get depends on tipLamports. On the DEFAULT tipped lane (tipLamports omitted = 1,000,000) Jupiter forwards the transaction without simulating it, so a slippage failure ALWAYS lands on-chain FAILED: the network fee is spent, nothing is swapped, and the reason appears on the activity row rather than in this call's result - this call returns \"broadcast, confirmation pending\". Only tipLamports: 0 takes the RPC lane, which simulates first and can refuse for free with status \"rejected_before_broadcast\". Either way the remedy is the same: re-quote with a higher slippageBps and execute with the identical value. Read a slippage failure as \"this pair needs more tolerance\", not as \"this pair is untradeable\". Vex caps it at 1000 (10%) and REJECTS anything above rather than clamping. Raise it in steps - no tolerance is known to fit a given pair in advance, and every increase widens the worst-case price you accept.",
             "minimum": 0,
             "type": "integer"
           },
@@ -10014,12 +9932,12 @@
             "type": "number"
           },
           "tokenIn": {
-            "description": "Input token symbol or mint — the side you sell.",
+            "description": "Input token symbol or mint - the side you sell.",
             "minLength": 1,
             "type": "string"
           },
           "tokenOut": {
-            "description": "Output token symbol or mint — the side you buy.",
+            "description": "Output token symbol or mint - the side you buy.",
             "minLength": 1,
             "type": "string"
           },
@@ -10081,7 +9999,7 @@
         "additionalProperties": false,
         "properties": {
           "category": {
-            "description": "Category: recent (freshly launched tokens, newest first — measured live: ages 10-175 s since mint, createdAt on every row; use for brand-new/fresh tokens), toptrending (most price movement), toptraded (highest volume), toporganicscore (highest real/organic activity), verified (Jupiter-verified), lst (liquid staking), stocks (tokenized equities, e.g. Ondo, Remora).",
+            "description": "Category: recent (freshly launched tokens, newest first - measured live: ages 10-175 s since mint, createdAt on every row; use for brand-new/fresh tokens), toptrending (most price movement), toptraded (highest volume), toporganicscore (highest real/organic activity), verified (Jupiter-verified), lst (liquid staking), stocks (tokenized equities, e.g. Ondo, Remora).",
             "enum": [
               "toptrending",
               "toptraded",
@@ -10108,7 +10026,7 @@
             "type": "string"
           },
           "limit": {
-            "description": "Max rows returned (default 20). Server-side for the top* categories; applied Vex-side for recent/lst/verified/stocks with returned/totalMatched/hasMore accounting — nothing is silently dropped.",
+            "description": "Max rows returned (default 20). Server-side for the top* categories; applied Vex-side for recent/lst/verified/stocks with returned/totalMatched/hasMore accounting - nothing is silently dropped.",
             "type": "number"
           },
           "minLiquidity": {
@@ -10226,7 +10144,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 2406,
+      "descriptionBytes": 2400,
       "destructiveHint": true,
       "inputSchema": {
         "additionalProperties": false,
@@ -10259,7 +10177,7 @@
             "description": "Optional 0-4 social links, each an https URL (comma-separated or array)."
           },
           "name": {
-            "description": "Token name (1-18 chars) — the chain reverts a longer one.",
+            "description": "Token name (1-18 chars) - the chain reverts a longer one.",
             "minLength": 1,
             "type": "string"
           },
@@ -10290,7 +10208,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 1612,
+      "descriptionBytes": 1704,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
@@ -10326,12 +10244,12 @@
             "description": "Optional 0-4 social links, each an https URL (comma-separated or array)."
           },
           "name": {
-            "description": "Token name (1-18 chars) — the chain reverts a longer one.",
+            "description": "Token name (1-18 chars) - the chain reverts a longer one.",
             "minLength": 1,
             "type": "string"
           },
           "prebuy": {
-            "description": "Optional prebuy in ETH, as a plain decimal string (for example \"0.0003\") — the ETH the launch spends buying its own token in the same transaction. Priced into msg.value, the simulation, the gas estimate, the Vex fee and every total. Omit it (or pass \"0\") for a launch that buys nothing. No sign, exponent or separators, and an implausible magnitude is refused rather than priced.",
+            "description": "Optional prebuy in ETH, as a plain decimal string (for example \"0.0003\") - the ETH the launch spends buying its own token in the same transaction. Priced into msg.value, the simulation, the gas estimate, the Vex fee and every total. Omit it (or pass \"0\") for a launch that buys nothing. No sign, exponent or separators, and an implausible magnitude is refused rather than priced.",
             "type": "string"
           },
           "symbol": {
@@ -10356,7 +10274,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 963,
+      "descriptionBytes": 959,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
@@ -10389,7 +10307,7 @@
             "description": "Optional 0-4 social links, each an https URL (comma-separated or array)."
           },
           "name": {
-            "description": "Token name (1-18 chars) — the chain reverts a longer one.",
+            "description": "Token name (1-18 chars) - the chain reverts a longer one.",
             "minLength": 1,
             "type": "string"
           },
@@ -10460,7 +10378,7 @@
             "type": "number"
           },
           "page": {
-            "description": "0-based page index (REQUIRED — the provider returns an error without it).",
+            "description": "0-based page index (REQUIRED - the provider returns an error without it).",
             "type": "number"
           },
           "token": {
@@ -10507,11 +10425,11 @@
             "type": "boolean"
           },
           "includeCurveProgress": {
-            "description": "When true, enrich each returned row with curveProgressPct (0-100) WITHOUT filtering. Default false. Computed on-chain at one pinned block (echoed as curveProgressBlock) from each token's own reserves and the Diamond's live graduation threshold, read in Multicall3 batches of at most 30 rows. Graduated rows are 100; rows whose on-chain read fails are dropped and counted. Display/hunting-grade only — a token can graduate between this read and any trade.",
+            "description": "When true, enrich each returned row with curveProgressPct (0-100) WITHOUT filtering. Default false. Computed on-chain at one pinned block (echoed as curveProgressBlock) from each token's own reserves and the Diamond's live graduation threshold, read in Multicall3 batches of at most 30 rows. Graduated rows are 100; rows whose on-chain read fails are dropped and counted. Display/hunting-grade only - a token can graduate between this read and any trade.",
             "type": "boolean"
           },
           "limit": {
-            "description": "Max deduped tokens to return, 1-200 (no default — omitting returns the walked window). The provider caps each page at 30; higher limits page-walk and dedupe by address.",
+            "description": "Max deduped tokens to return, 1-200 (no default - omitting returns the walked window). The provider caps each page at 30; higher limits page-walk and dedupe by address.",
             "type": "number"
           },
           "maxCurveProgressPct": {
@@ -10519,7 +10437,7 @@
             "type": "number"
           },
           "minCurveProgressPct": {
-            "description": "Client-side: keep only tokens at least this far toward graduating, 0-100, and not greater than maxCurveProgressPct (an inverted band is rejected by name). Curve progress is computed by Vex ON-CHAIN at ONE PINNED BLOCK, echoed as curveProgressBlock: each token's own ethReserve and fakeEth from fakepool_stats over the graduation reserve derived from the Diamond's live ethMcapThreshold — never a hard-coded threshold. Rows are read in Multicall3 batches of at most 30 (so a 600-row page walk costs at most 20 batched calls, not one unbounded call). Applies to bonding-curve tokens; a graduated token counts as 100. Rows whose on-chain read fails are DROPPED and counted; if the threshold itself cannot be read the filter is refused rather than guessed. Setting this (or maxCurveProgressPct/includeCurveProgress) turns the on-chain read on; leaving all three unset keeps the list a pure REST call.",
+            "description": "Client-side: keep only tokens at least this far toward graduating, 0-100, and not greater than maxCurveProgressPct (an inverted band is rejected by name). Curve progress is computed by Vex ON-CHAIN at ONE PINNED BLOCK, echoed as curveProgressBlock: each token's own ethReserve and fakeEth from fakepool_stats over the graduation reserve derived from the Diamond's live ethMcapThreshold - never a hard-coded threshold. Rows are read in Multicall3 batches of at most 30 (so a 600-row page walk costs at most 20 batched calls, not one unbounded call). Applies to bonding-curve tokens; a graduated token counts as 100. Rows whose on-chain read fails are DROPPED and counted; if the threshold itself cannot be read the filter is refused rather than guessed. Setting this (or maxCurveProgressPct/includeCurveProgress) turns the on-chain read on; leaving all three unset keeps the list a pure REST call.",
             "type": "number"
           },
           "page": {
@@ -10601,7 +10519,7 @@
                 "type": "integer"
               }
             ],
-            "description": "Chain — Robinhood Chain / \"robinhood\" (the only chain; defaults to robinhood)."
+            "description": "Chain - Robinhood Chain / \"robinhood\" (the only chain; defaults to robinhood)."
           },
           "dryRun": {
             "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
@@ -10660,7 +10578,7 @@
                 "type": "integer"
               }
             ],
-            "description": "Chain — Robinhood Chain / \"robinhood\" (the only chain; defaults to robinhood)."
+            "description": "Chain - Robinhood Chain / \"robinhood\" (the only chain; defaults to robinhood)."
           },
           "dryRun": {
             "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
@@ -10793,7 +10711,7 @@
             "type": "integer"
           },
           "tokenIn": {
-            "description": "Input token CONTRACT ADDRESS or native ETH/native. Uniswap has no symbol search — resolve a symbol to its address first.",
+            "description": "Input token CONTRACT ADDRESS or native ETH/native. Uniswap has no symbol search - resolve a symbol to its address first.",
             "minLength": 1,
             "type": "string"
           },
@@ -10871,7 +10789,7 @@
                 "type": "integer"
               }
             ],
-            "description": "REQUIRED. The one chain to list — Virtuals indexes exactly four: base, solana, robinhood, ethereum. Chain slug/alias, or the numeric chain id `TokenFind` returns (e.g. `base` or `8453`)."
+            "description": "REQUIRED. The one chain to list - Virtuals indexes exactly four: base, solana, robinhood, ethereum. Chain slug/alias, or the numeric chain id `TokenFind` returns (e.g. `base` or `8453`)."
           },
           "dryRun": {
             "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
@@ -10886,11 +10804,11 @@
             "type": "number"
           },
           "pageSize": {
-            "description": "Rows fetched per provider page (default 100, max 200 — the provider's proven ceiling). Up to 5 pages are scanned per call, so pageSize x 5 bounds how deep one call reads.",
+            "description": "Rows fetched per provider page (default 100, max 200 - the provider's proven ceiling). Up to 5 pages are scanned per call, so pageSize x 5 bounds how deep one call reads.",
             "type": "number"
           },
           "sort": {
-            "description": "Alias of sortBy, accepted for compatibility. Same values. Send ONE of the two, never both — a silently dropped spelling is indistinguishable from one that was honoured.",
+            "description": "Alias of sortBy, accepted for compatibility. Same values. Send ONE of the two, never both - a silently dropped spelling is indistinguishable from one that was honoured.",
             "enum": [
               "mcap",
               "volume",
@@ -10900,7 +10818,7 @@
             "type": "string"
           },
           "sortBy": {
-            "description": "Sort order, always descending: mcap (default), volume, newest, or recentGraduation. It decides WHICH rows the window contains, so pair it with status — sortBy: newest is what surfaces UNDERGRAD agents. An unrecognised value is rejected, not folded to mcap.",
+            "description": "Sort order, always descending: mcap (default), volume, newest, or recentGraduation. It decides WHICH rows the window contains, so pair it with status - sortBy: newest is what surfaces UNDERGRAD agents. An unrecognised value is rejected, not folded to mcap.",
             "enum": [
               "mcap",
               "volume",
@@ -10989,7 +10907,7 @@
                 "type": "integer"
               }
             ],
-            "description": "REQUIRED. The one chain to list — Virtuals indexes exactly four: base, solana, robinhood, ethereum. Chain slug/alias, or the numeric chain id `TokenFind` returns (e.g. `base` or `8453`)."
+            "description": "REQUIRED. The one chain to list - Virtuals indexes exactly four: base, solana, robinhood, ethereum. Chain slug/alias, or the numeric chain id `TokenFind` returns (e.g. `base` or `8453`)."
           },
           "dryRun": {
             "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",

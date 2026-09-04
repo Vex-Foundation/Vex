@@ -1,5 +1,5 @@
 /**
- * `pendle.yt.buy` / `pendle.yt.sell` — the token↔YT AMM swap pair.
+ * `pendle.yt.buy` / `pendle.yt.sell` - the token↔YT AMM swap pair.
  *
  * YT (yield token) is the VARIABLE / leveraged-yield leg of a Pendle market: it
  * accrues the underlying yield until expiry and then DECAYS TO ZERO. It is NOT
@@ -74,7 +74,7 @@ export async function executePendleYtSwap(
     const amountWei = parseUnits(amountInRaw, tokenIn.decimals);
     const slippage = resolvePendleSlippage(toolId, num(p, "slippageBps"));
 
-    // YT + canonical market — buy: YT is tokenOut; sell: YT is tokenIn.
+    // YT + canonical market - buy: YT is tokenOut; sell: YT is tokenIn.
     const ytAddress = side === "yt-buy" ? tokenOut : tokenIn.address;
 
     /** A pre-signature refusal, recorded as a hashless `definitively_failed` row. */
@@ -106,7 +106,7 @@ export async function executePendleYtSwap(
 
     if (p.dryRun === true) {
       const response = await getPendleClient().convert(chainId, {
-        receiver: PENDLE_ROUTER, // placeholder — dry-run never signs
+        receiver: PENDLE_ROUTER, // placeholder - dry-run never signs
         input: { token: tokenIn.address, amount: amountWei.toString() },
         outputToken: tokenOut,
         slippage: slippage.fraction,
@@ -133,13 +133,13 @@ export async function executePendleYtSwap(
     });
     if (!response) return refuse("route_not_found", "Pendle returned no route for this YT trade.");
     if (response.action !== "swap") {
-      return refuse("route_not_found", "Pendle did not return a YT swap route — check the market is active and not matured.");
+      return refuse("route_not_found", "Pendle did not return a YT swap route - check the market is active and not matured.");
     }
 
     const intent: PendleTxIntent = {
       action: side as PendleAction,
       wallet,
-      // The tolerance this route is held to — see calldata/price-floor.ts.
+      // The tolerance this route is held to - see calldata/price-floor.ts.
       slippageBps: slippage.bps,
       inputToken: tokenIn.address,
       inputAmountWei: amountWei,

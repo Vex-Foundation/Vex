@@ -570,7 +570,7 @@
       }
     },
     {
-      "name": "linux: XDG_RUNTIME_DIR unset falls back to the tmpdir form",
+      "name": "linux: XDG_RUNTIME_DIR unset and no /run/user/<uid> falls back to the tmpdir form",
       "platform": "linux",
       "uid": 1000,
       "tmpdir": "/tmp",
@@ -582,6 +582,97 @@
         "path": "/tmp/vex-studio-1000/vex-studio-7ea66dd102b3.sock",
         "parentDir": "/tmp/vex-studio-1000",
         "createParent": true
+      }
+    },
+    {
+      "name": "linux: XDG_RUNTIME_DIR unset, the private /run/user/<uid> is used anyway",
+      "platform": "linux",
+      "uid": 1000,
+      "tmpdir": "/tmp",
+      "configDirRealPath": "/home/alice/.config/vex",
+      "env": {},
+      "directories": {
+        "/run/user/1000": {
+          "isDirectory": true,
+          "uid": 1000,
+          "mode": 448
+        }
+      },
+      "expect": {
+        "kind": "unix",
+        "path": "/run/user/1000/vex-studio-7ea66dd102b3.sock",
+        "parentDir": "/run/user/1000",
+        "createParent": false
+      }
+    },
+    {
+      "name": "linux: XDG_RUNTIME_DIR unset and /run/user/<uid> owned by another user falls back",
+      "platform": "linux",
+      "uid": 1000,
+      "tmpdir": "/tmp",
+      "configDirRealPath": "/home/alice/.config/vex",
+      "env": {},
+      "directories": {
+        "/run/user/1000": {
+          "isDirectory": true,
+          "uid": 0,
+          "mode": 448
+        }
+      },
+      "expect": {
+        "kind": "unix",
+        "path": "/tmp/vex-studio-1000/vex-studio-7ea66dd102b3.sock",
+        "parentDir": "/tmp/vex-studio-1000",
+        "createParent": true
+      }
+    },
+    {
+      "name": "linux: XDG_RUNTIME_DIR unset and /run/user/<uid> wider than 0700 falls back",
+      "platform": "linux",
+      "uid": 1000,
+      "tmpdir": "/tmp",
+      "configDirRealPath": "/home/alice/.config/vex",
+      "env": {},
+      "directories": {
+        "/run/user/1000": {
+          "isDirectory": true,
+          "uid": 1000,
+          "mode": 493
+        }
+      },
+      "expect": {
+        "kind": "unix",
+        "path": "/tmp/vex-studio-1000/vex-studio-7ea66dd102b3.sock",
+        "parentDir": "/tmp/vex-studio-1000",
+        "createParent": true
+      }
+    },
+    {
+      "name": "linux: an unusable XDG_RUNTIME_DIR still reaches the private /run/user/<uid>",
+      "platform": "linux",
+      "uid": 1000,
+      "tmpdir": "/tmp",
+      "configDirRealPath": "/home/alice/.config/vex",
+      "env": {
+        "XDG_RUNTIME_DIR": "/srv/shared-runtime"
+      },
+      "directories": {
+        "/srv/shared-runtime": {
+          "isDirectory": true,
+          "uid": 1000,
+          "mode": 493
+        },
+        "/run/user/1000": {
+          "isDirectory": true,
+          "uid": 1000,
+          "mode": 448
+        }
+      },
+      "expect": {
+        "kind": "unix",
+        "path": "/run/user/1000/vex-studio-7ea66dd102b3.sock",
+        "parentDir": "/run/user/1000",
+        "createParent": false
       }
     },
     {

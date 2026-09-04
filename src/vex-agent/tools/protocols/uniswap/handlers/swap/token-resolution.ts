@@ -1,5 +1,5 @@
 /**
- * Token-leg resolution for Uniswap — ADDRESS-ONLY (or native).
+ * Token-leg resolution for Uniswap - ADDRESS-ONLY (or native).
  *
  * Uniswap has no symbol search, so a bare symbol is rejected rather than
  * guessed at. This mirrors kyberswap's strict resolution and keeps the quote
@@ -30,7 +30,7 @@ export async function resolveUniswapToken(
   if (!isAddress(input)) {
     throw new VexError(
       ErrorCodes.KYBER_TOKEN_NOT_FOUND,
-      `Token "${input}" is not a valid address. Uniswap has no symbol search — pass the exact contract address (resolve it with a discovery tool first) or native ETH.`,
+      `Token "${input}" is not a valid address. Uniswap has no symbol search - pass the exact contract address (resolve it with a discovery tool first) or native ETH.`,
     );
   }
   const client = getUniswapPublicClient(deployment);

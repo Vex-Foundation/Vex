@@ -2,7 +2,7 @@
  * The untrusted-param boundary shared by every protocol list tool.
  *
  * Namespace-neutral owner (relocated from the since-deleted `dexscreener/list-core/param-readers.ts`
- * when a fourth consumer — `trench` — joined DexScreener's pair/feed/narrative
+ * when a fourth consumer - `trench` - joined DexScreener's pair/feed/narrative
  * list families; rule 04 default-owner move). DexScreener still imports the same
  * symbols through a re-export facade at the old path, so no dexscreener call site
  * changed.
@@ -19,7 +19,7 @@
  * The previous readers checked `typeof value === "number"` and nothing else:
  *
  * - `minLiquidityUsd: NaN` made every comparison false, dropped all 30 rows and
- *   reported `matched: 0` — an empty market, invented by a bad parameter.
+ *   reported `matched: 0` - an empty market, invented by a bad parameter.
  * - `limit: -5` fell through to a hidden default.
  * - `limit: 0` meant "20" in `search` and "everything" in three other tools. One
  *   value, two opposite meanings; it is now REJECTED so it can mean neither.
@@ -42,8 +42,8 @@ export type Read<T> =
 
 export interface NumericParamSpec {
   /**
-   * `nonNegative` — a negative value is meaningless (USD, counts, seconds,
-   * ratios, token units). `signed` — a negative value is a real threshold
+   * `nonNegative` - a negative value is meaningless (USD, counts, seconds,
+   * ratios, token units). `signed` - a negative value is a real threshold
    * (`minPriceChangePct: -20` is "down no more than 20 %").
    */
   readonly domain: "nonNegative" | "signed";
@@ -55,11 +55,11 @@ export interface NumericParamSpec {
 export type NumericParamSpecs = Readonly<Record<string, NumericParamSpec>>;
 
 /**
- * `limit` and `offset` — identical on every list tool in this namespace.
+ * `limit` and `offset` - identical on every list tool in this namespace.
  *
  * `limit` has a MINIMUM of 1 and no default: `0` is rejected rather than given
  * one of its two historical meanings. The 200 ceiling is above the provider's
- * hard 30-row cap on purpose — it bounds the parameter without pretending the
+ * hard 30-row cap on purpose - it bounds the parameter without pretending the
  * provider can be asked for more.
  */
 export const WINDOW_NUMERIC_PARAMS: NumericParamSpecs = {
@@ -91,7 +91,7 @@ export function readNumber(
     // unchecked NaN threshold empties the result set and looks like a market.
     return {
       ok: false,
-      reason: `"${key}" must be a finite number — received ${String(raw)}. Every comparison against `
+      reason: `"${key}" must be a finite number - received ${String(raw)}. Every comparison against `
         + "a non-finite threshold is false, which would silently drop every row.",
     };
   }
@@ -123,8 +123,8 @@ export function readBoolean(params: Record<string, unknown>, key: string): Read<
  * Read a param the model may spell EITHER as a comma-separated string OR as an
  * array of strings, and return the canonical comma-string.
  *
- * The array form reduces to the string form — members are joined and the
- * ordinary comma path runs — so the two spellings cannot drift into two
+ * The array form reduces to the string form - members are joined and the
+ * ordinary comma path runs - so the two spellings cannot drift into two
  * behaviours. Measured cost of not accepting both
  * (`agents_dm/agentscan-phase4/persona-tests/call-records.json`, first record):
  * `dexscreener.profiles {chainIds: ["solana"]}` was rejected in 78 bytes while
@@ -152,7 +152,7 @@ export function readStringOrArrayParam(
  * The comma-string-ONLY reader, for params that are not lists of data.
  *
  * Kept separate rather than expressed as a flag inside the array reader so the
- * rejection can say WHY the array form is refused here — `fields` selects an
+ * rejection can say WHY the array form is refused here - `fields` selects an
  * output projection, and an agent told only "must be a string" would reasonably
  * try the array again on the next tool.
  */
@@ -166,7 +166,7 @@ function readCommaStringParam(
   return {
     ok: false,
     reason: Array.isArray(raw)
-      ? `"${key}" must be a comma-separated string, not an array — it selects OUTPUT FIELDS rather `
+      ? `"${key}" must be a comma-separated string, not an array - it selects OUTPUT FIELDS rather `
         + 'than carrying a list of values (e.g. fields: "fdvUsd,marketCapUsd").'
       : `"${key}" must be a comma-separated string, not ${typeof raw}.`,
   };
@@ -180,7 +180,7 @@ function readStringArrayMembers(raw: unknown, key: string): Read<string | null> 
     };
   }
   if (raw.length === 0) {
-    return { ok: false, reason: `"${key}" was supplied as an empty array — it carries no values.` };
+    return { ok: false, reason: `"${key}" was supplied as an empty array - it carries no values.` };
   }
   const members: string[] = [];
   for (const [index, member] of raw.entries()) {
@@ -210,7 +210,7 @@ function readStringArrayMembers(raw: unknown, key: string): Read<string | null> 
  * stays comma-string-only so the two ideas cannot blur.
  *
  * When arrays are accepted, both spellings run through the SAME split/trim/case
- * path — see {@link readStringOrArrayParam} — so `["ETHEREUM"]` and `"ETHEREUM"`
+ * path - see {@link readStringOrArrayParam} - so `["ETHEREUM"]` and `"ETHEREUM"`
  * cannot normalise differently. Two spellings that both parse but disagree would
  * trade a loud rejection for a silent wrong answer.
  */
@@ -235,7 +235,7 @@ export function readStringList(
 }
 
 /**
- * `omitFields` — subtractive projection, bounded by a per-family ALLOWLIST.
+ * `omitFields` - subtractive projection, bounded by a per-family ALLOWLIST.
  *
  * An allowlist rather than a denylist because the set of fields that must never
  * leave a payload (identity, the provenance envelope, the external-content
@@ -284,13 +284,13 @@ export function readEnum<T extends string>(
   const normalised = raw.trim().toLowerCase();
   const match = allowed.find((candidate) => candidate.toLowerCase() === normalised);
   if (match === undefined) {
-    return { ok: false, reason: `"${key}" must be one of: ${allowed.join(", ")} — received "${raw}".` };
+    return { ok: false, reason: `"${key}" must be one of: ${allowed.join(", ")} - received "${raw}".` };
   }
   return { ok: true, value: match };
 }
 
 /**
- * The echo of what was actually applied — only keys the caller supplied.
+ * The echo of what was actually applied - only keys the caller supplied.
  *
  * Shared so `filtersApplied` means the same thing in every payload: normalised
  * values, absent keys omitted rather than emitted as `null`.

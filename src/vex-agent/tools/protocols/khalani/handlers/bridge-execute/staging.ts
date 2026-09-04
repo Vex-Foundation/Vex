@@ -21,7 +21,7 @@ export function khalaniStageHooksFor(rowId: number): KhalaniStageHooks {
       // Nonce-less staging is Solana-only: the dedicated CAS's
       // `chain_family='solana'` predicate makes a nonce-less EVM leg a
       // CAS miss (abort below), never a wrongly-shaped stage. A `null`
-      // nonce always carries the blockhash evidence (W5 §2/R2b) — see
+      // nonce always carries the blockhash evidence (W5 §2/R2b) - see
       // `KhalaniStageHandles`'s discriminated-union doc.
       const res = h.nonce === null
         ? await markActivitySolanaBroadcast(rowId, {
@@ -30,7 +30,7 @@ export function khalaniStageHooksFor(rowId: number): KhalaniStageHooks {
           })
         : await markActivityBroadcast(rowId, { txHash: h.txHash, fromAddress: h.fromAddress, nonce: h.nonce });
       if (!res.applied) {
-        throw new Error(`agent_activity: staging CAS miss for event ${rowId} — refusing to broadcast untracked`);
+        throw new Error(`agent_activity: staging CAS miss for event ${rowId} - refusing to broadcast untracked`);
       }
     },
     onAccepted: async () => {

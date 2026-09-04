@@ -22,6 +22,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   statSync,
@@ -61,7 +62,15 @@ function currentUid(): number {
 }
 
 beforeEach(() => {
-  root = mkdtempSync(path.join(tmpdir(), "vex-studio-bind-"));
+  // REALPATH THE ROOT. On macOS `os.tmpdir()` is `/var/folders/...` and `/var`
+  // is itself a symlink to `/private/var`, so a lexical root makes every path
+  // this suite builds differ from the one `captureEndpointDirectoryChain`
+  // records - it captures a REALPATH chain, which is the whole point of the
+  // check. Anchoring on the resolved directory removes that platform artefact
+  // without touching the symlinks these tests deliberately create, which is
+  // what the suite is actually about. Same anchoring as `files-real-fs.test.ts`
+  // and `projects-db-create-errno.test.ts`.
+  root = realpathSync(mkdtempSync(path.join(tmpdir(), "vex-studio-bind-")));
 });
 
 afterEach(() => {

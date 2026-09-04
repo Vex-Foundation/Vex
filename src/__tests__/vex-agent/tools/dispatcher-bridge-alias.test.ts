@@ -94,16 +94,16 @@ describe("bridge alias — routing + translation", () => {
     });
   });
 
-  it("forwards the bound money overrides (tradeType, recipient, filler)", async () => {
-    // `refundTo` is NOT in this list any more — it is derived from the selected
-    // source wallet and rejected by name (see the test below).
+  it("forwards the bound money overrides (tradeType, filler)", async () => {
+    // Neither `refundTo` nor `recipient` is in this list any more - both are
+    // derived from the selected wallets and refused by name (the tests below,
+    // and the four-alias table in `bridge-recipient-alias-refusal.test.ts`).
     await dispatchTool(
       {
         name: "BridgeExecute",
         args: {
           ...BRIDGE_ARGS,
           tradeType: "EXACT_OUTPUT",
-          recipient: "0x" + "ab".repeat(20),
           filler: "native-filler",
         },
         toolCallId: "b2",
@@ -112,9 +112,27 @@ describe("bridge alias — routing + translation", () => {
     );
     const [req] = executeProtocolTool.mock.calls[0] as [{ params: Record<string, unknown> }];
     expect(req.params.tradeType).toBe("EXACT_OUTPUT");
-    expect(req.params.recipient).toBe("0x" + "ab".repeat(20));
     expect(req.params.filler).toBe("native-filler");
     expect(req.params).not.toHaveProperty("refundTo");
+    expect(req.params).not.toHaveProperty("recipient");
+  });
+
+  it("REJECTS a model-supplied recipient BY NAME (NOT forwarded, NOT dispatched)", async () => {
+    // A bridge delivers to the wallet selected for this project on the
+    // destination chain. The alias used to forward the key and let the manifest
+    // boundary refuse it one layer down - fail-closed, but it advertised a
+    // parameter that can never succeed and answered with a tool name the agent
+    // had not called.
+    const result = await dispatchTool(
+      { name: "BridgeExecute", args: { ...BRIDGE_ARGS, recipient: "0x" + "ab".repeat(20) }, toolCallId: "b2d" },
+      ctx(),
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("BridgeExecute: recipient is not an accepted parameter");
+    expect(result.output).toContain("WalletSendPrepare");
+    expect(result.output).not.toContain("0x" + "ab".repeat(20));
+    expect(executeProtocolTool).not.toHaveBeenCalled();
   });
 
   it("REJECTS a model-supplied refundTo BY NAME (NOT dropped, NOT dispatched)", async () => {
@@ -160,7 +178,9 @@ describe("bridge alias — routing + translation", () => {
   it("REJECTS the execute-only routeId / depositMethod at the alias boundary (NOT forwarded)", async () => {
     // 8c security fix: routeId/depositMethod are unbindable execute-only knobs.
     // `.strict()` on BridgeArgs rejects them so the agent cannot supply them via
-    // the menu — clear reject, NO dispatch.
+    // the menu - clear reject, NO dispatch. They are no longer parameters of the
+    // namespaced `khalani__bridge_execute` either (see
+    // `khalani-bridge-route-not-a-param.test.ts`), so both surfaces agree.
     for (const bad of [{ routeId: "r1" }, { depositMethod: "PERMIT2" }]) {
       executeProtocolTool.mockClear();
       const result = await dispatchTool(

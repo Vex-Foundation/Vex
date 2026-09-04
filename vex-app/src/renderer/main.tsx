@@ -10,6 +10,8 @@ import { queryClient } from "./app/queryClient.js";
 import type { CreateBugReportInput } from "@shared/schemas/bug-reports.js";
 import { probeZodLocale, registerZodLocale } from "@vex-lib/zod-locale.js";
 import { rendererReportDedupe } from "./lib/report-dedupe.js";
+import { reportRendererFailure } from "./lib/renderer-error-report.js";
+import { bindStudioRegistryTeardown } from "./features/appShell/studio/studio-registries.js";
 
 /**
  * zod declares `sideEffects: false` and registers its English error map as a
@@ -20,22 +22,21 @@ import { rendererReportDedupe } from "./lib/report-dedupe.js";
  */
 registerZodLocale();
 
+/**
+ * WINDOW TEARDOWN for the Studio registries (terminals, explorer sessions, file
+ * viewers). Bound here because it belongs to the WINDOW, not to any component:
+ * the registries deliberately outlive every mount, so no unmount is the right
+ * moment to dispose them. Before this binding nothing called their `disposeAll`
+ * at all - see `features/appShell/studio/studio-registries.ts`.
+ */
+bindStudioRegistryTeardown(window);
+
 // Fire-and-forget helper: every renderer-auto-report path goes through here so
 // a failed report (preload validation reject, IPC unavailable, main throws)
 // can NEVER itself trigger another `unhandledrejection` and cause a loop.
 function safeSupportReport(input: CreateBugReportInput): void {
   void window.vex?.support
     ?.createBugReport(input)
-    .catch(() => undefined);
-}
-
-function safeSentryReport(input: {
-  readonly kind: "caught" | "uncaught" | "boundary";
-  readonly message: string;
-  readonly componentStack?: string | null;
-}): void {
-  void window.vex?.telemetry
-    ?.reportRendererError(input)
     .catch(() => undefined);
 }
 
@@ -63,8 +64,11 @@ if (!zodLocaleProbe.localized) {
   const message =
     `zod locale not registered in renderer (${zodLocaleProbe.marker}); ` +
     `validation messages will read "${zodLocaleProbe.sampleMessage}"`;
-  console.error(message);
-  safeSentryReport({ kind: "caught", message, componentStack: null });
+  reportRendererFailure({
+    surface: "renderer.zod-locale",
+    kind: "caught",
+    error: new Error(message),
+  });
 }
 
 // Promise rejections bypass React's error boundary entirely — wire a top-level
@@ -93,6 +97,45 @@ window.addEventListener("unhandledrejection", (event) => {
     context: {},
     refs: {},
   });
+  reportRendererFailure({
+    surface: "window.unhandledrejection",
+    kind: "uncaught",
+    error: reason,
+  });
+});
+
+/**
+ * THE WINDOW'S SYNCHRONOUS ERROR CHANNEL, and it was missing.
+ *
+ * React's root callbacks only see throws inside React's own work. A throw in a
+ * DOM event listener, a `setTimeout` callback, a resize observer, or a module's
+ * top-level body reaches `window.onerror` and NOTHING ELSE - before this
+ * listener those failures left no trace at all.
+ *
+ * `event.error` is the thrown value when the browser has one; a cross-origin
+ * script error arrives with `error === null`, and the synthesized Error below
+ * keeps the message and location rather than reporting an empty failure.
+ */
+window.addEventListener("error", (event) => {
+  const thrown: unknown =
+    event.error ??
+    new Error(
+      `${event.message} (${event.filename}:${String(event.lineno)}:${String(event.colno)})`,
+    );
+  const described = thrown instanceof Error ? thrown.message : String(thrown);
+  if (
+    rendererReportDedupe.shouldDrop({
+      category: "renderer_window_error",
+      key: described.slice(0, 200),
+    })
+  ) {
+    return;
+  }
+  reportRendererFailure({
+    surface: "window.error",
+    kind: "uncaught",
+    error: thrown,
+  });
 });
 
 const rootEl = document.getElementById("root");
@@ -119,9 +162,10 @@ createRoot(rootEl, {
         refs: {},
       });
     }
-    safeSentryReport({
+    reportRendererFailure({
+      surface: "react.caught",
       kind: "caught",
-      message,
+      error,
       componentStack: info.componentStack ?? null,
     });
   },
@@ -145,9 +189,40 @@ createRoot(rootEl, {
         refs: {},
       });
     }
-    safeSentryReport({
+    reportRendererFailure({
+      surface: "react.uncaught",
       kind: "uncaught",
-      message,
+      error,
+      componentStack: info.componentStack ?? null,
+    });
+  },
+  /**
+   * React RECOVERED from this one by itself - a hydration mismatch, a
+   * concurrent render it could retry, a boundary-free error it absorbed. The
+   * screen is fine, so there is no user-facing surface for it; the evidence is
+   * still worth keeping, because a recoverable error is usually the first
+   * visible symptom of the state that later throws for real.
+   *
+   * Reported as `caught` (a warning in Sentry's levels), never as a bug
+   * report: an automatic support row for something the app already handled is
+   * noise the owner has to triage.
+   */
+  onRecoverableError(error, info) {
+    // Deduped like every other automatic emitter here: a hydration mismatch
+    // re-fires on every attempt, and an undeduped one would fill the log with
+    // one root cause.
+    if (
+      rendererReportDedupe.shouldDrop({
+        category: "renderer_recoverable_error",
+        key: String(error).slice(0, 200),
+      })
+    ) {
+      return;
+    }
+    reportRendererFailure({
+      surface: "react.recoverable",
+      kind: "caught",
+      error,
       componentStack: info.componentStack ?? null,
     });
   },

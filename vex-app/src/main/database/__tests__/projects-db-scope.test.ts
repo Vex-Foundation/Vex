@@ -31,7 +31,7 @@
  *      caller sees can never sit on top of a committed write.
  */
 
-import { mkdtemp, realpath, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Client } from "pg";
@@ -510,9 +510,15 @@ describe("project reads", () => {
   });
 
   it("rejects every read once the configured root no longer matches the recorded one", async () => {
+    // The recorded root EXISTS and is a different directory. That is now
+    // load-bearing (B3): root equality is decided by filesystem identity, so a
+    // recorded root that is not on disk at all is the different, retryable
+    // refusal `projects.root_unverifiable` rather than `root_changed`.
+    const elsewhere = path.join(root, "elsewhere");
+    await mkdir(elsewhere);
     scriptClient((sql) => {
       if (sql.includes("FROM studio_settings")) {
-        return { rows: [{ projects_root: path.join(root, "elsewhere") }] };
+        return { rows: [{ projects_root: elsewhere }] };
       }
       if (sql.includes("FROM projects")) return { rows: [projectRow()] };
       return { rows: [] };

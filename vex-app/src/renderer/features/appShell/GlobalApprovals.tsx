@@ -15,6 +15,11 @@
  * control-state transition. The two-tier poll (faster while the panel is open,
  * slower while idle) is now the dropped-event fallback, not the primary net.
  *
+ * Cross-mode toast (B4c): this component also owns the one-shot announcement
+ * for an approval raised in the mode the user is NOT looking at - see
+ * `approvals/useCrossModeApprovalToast.ts` for why the memory lives above the
+ * mode dispatch rather than in either shell.
+ *
  * Chrome follows the repo-native anchored-panel pattern
  * (`components/ui/select-menu.tsx`): no portals, no inline styles, outside
  * pointerdown + Escape close, focus restored to the trigger on close, and
@@ -37,6 +42,8 @@ import {
   usePendingApprovalsAll,
 } from "../../lib/api/approvals.js";
 import { GlobalApprovalItem } from "./GlobalApprovals/GlobalApprovalItem.js";
+import { useCrossModeApprovalToast } from "./approvals/useCrossModeApprovalToast.js";
+import { useUiStore } from "../../stores/uiStore.js";
 
 /**
  * Idle fallback poll — the app-wide read opens a short-lived pg client per
@@ -70,8 +77,21 @@ export function GlobalApprovals(): JSX.Element | null {
   const rows = useMemo<ReadonlyArray<ApprovalPendingGlobalDto> | null>(() => {
     const data = query.data;
     if (data === undefined || data.ok === false) return null;
-    return [...data.data].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    // NEWEST FIRST. The panel is an inbox and the row a user just caused is
+    // the one they came for, so it leads - and it is therefore also the row
+    // whose Reject the open effect below focuses, which is what "focus lands
+    // on the newest card" means mechanically rather than by convention.
+    return [...data.data].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }, [query.data]);
+
+  // The cross-mode announcement (B4c). Owned HERE, above the mode dispatch:
+  // this component is mounted exactly once for the frame (`ShellStatusStrip`)
+  // and already holds the app-wide list, so the observation survives a mode
+  // switch instead of resetting with the shell that switched. Declared before
+  // the early return below - the badge hides when nothing is pending, and a
+  // hook may not.
+  const runtimeMode = useUiStore((state) => state.runtimeMode);
+  useCrossModeApprovalToast(rows, runtimeMode);
 
   const closePanel = useCallback((): void => {
     setOpen(false);
@@ -92,10 +112,27 @@ export function GlobalApprovals(): JSX.Element | null {
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [open]);
 
-  // A6: move focus into the panel on open so keyboard users land inside the
-  // popover; the root's Escape handler (below) then closes from anywhere within.
+  // A6, sharpened: move focus onto the SAFER ACTION of the newest card, not
+  // onto the panel container.
+  //
+  // The container was what this focused, and a live approval card measured in
+  // Studio showed exactly what that costs: the panel had focus, so the reader
+  // was on nothing, one Tab from a reason field and two from a decision. Rule
+  // 08 puts default focus for a dangerous action on the safer choice, and
+  // `ApprovalDecisionActions` NAMES that choice with the same `autofocus`
+  // content attribute the dialog primitive resolves (`DIALOG_INITIAL_FOCUS`),
+  // so this reads the name rather than guessing at a selector of its own.
+  //
+  // The panel itself remains the fallback: a card whose Reject is disabled
+  // (a decision already in flight) names nothing focusable, and focusing the
+  // container arms nothing and leaves the controls one Tab away. The root's
+  // Escape handler closes from either position.
   useEffect((): void => {
-    if (open) panelRef.current?.focus();
+    if (!open) return;
+    const panel = panelRef.current;
+    if (panel === null) return;
+    const named = panel.querySelector<HTMLElement>("[autofocus]:not([disabled])");
+    (named ?? panel).focus();
   }, [open]);
 
   if (rows === null || rows.length === 0) return null;

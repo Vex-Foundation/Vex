@@ -19,7 +19,7 @@ const FORBIDDEN_FEE_PARAMS = ["fee", "feeBps", "feeReceiver", "feeAmount"] as co
 export function checkForbiddenFeeParams(params: Readonly<Record<string, unknown>>): string | null {
   for (const key of FORBIDDEN_FEE_PARAMS) {
     if (Object.prototype.hasOwnProperty.call(params, key)) {
-      return `Parameter "${key}" is not accepted — Vex's swap fee rate and receiver are fixed product constants; remove it and retry.`;
+      return `Parameter "${key}" is not accepted - Vex's swap fee rate and receiver are fixed product constants; remove it and retry.`;
     }
   }
   return null;

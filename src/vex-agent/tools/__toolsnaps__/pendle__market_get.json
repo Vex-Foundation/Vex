@@ -1,17 +1,17 @@
 {
   "definition": {
     "function": {
-      "description": "Look up ONE Pendle market by its market (LP), PT or YT address and get everything needed before quoting it: full leg identity (PT, YT, SY, underlying, accounting asset), expiry and days to maturity, whether it has MATURED, the token lists the market accepts for minting/redeeming and for swap input/output (bounded per list, each with its full `total` and a `truncated` flag — a token outside the shown slice may still be accepted), and Pendle's own live rates (underlying↔PT, underlying↔YT, implied APY as a percent). Use the accepted-token lists to pick a valid tokenIn/tokenOut before calling a quote — an off-list token is Pendle's most common 400. Works for MATURED markets, which the trading tools cannot resolve; a matured market returns identity and accepted tokens with rates: null, because Pendle serves no live rates once a market expires. Rates are pre-trade reference prices, not a guaranteed fill, and Pendle trades are exact-INPUT only — you name amountIn and receive an estimate, never a guaranteed amountOut. Read-only, no side effects.",
+      "description": "Look up ONE Pendle market by its market (LP), PT or YT address and get everything needed before quoting it: full leg identity (PT, YT, SY, underlying, accounting asset), expiry and days to maturity, whether it has MATURED, the token lists the market accepts for minting/redeeming and for swap input/output (bounded per list, each with its full `total` and a `truncated` flag - a token outside the shown slice may still be accepted), and Pendle's own live rates (underlying↔PT, underlying↔YT, implied APY as a percent). Use the accepted-token lists to pick a valid tokenIn/tokenOut before calling a quote - an off-list token is Pendle's most common 400. Works for MATURED markets, which the trading tools cannot resolve; a matured market returns identity and accepted tokens with rates: null, because Pendle serves no live rates once a market expires. Rates are pre-trade reference prices, not a guaranteed fill, and Pendle trades are exact-INPUT only - you name amountIn and receive an estimate, never a guaranteed amountOut. Read-only, no side effects.",
       "name": "pendle__market_get",
       "parameters": {
         "additionalProperties": false,
         "properties": {
           "chain": {
-            "description": "Chain slug or numeric id — one of Pendle's supported chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc', 1, 42161). An unsupported chain is rejected by name. The same address on another chain is a different asset.",
+            "description": "Chain slug or numeric id - one of Pendle's supported chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc', 1, 42161). An unsupported chain is rejected by name. The same address on another chain is a different asset.",
             "type": "string"
           },
           "market": {
-            "description": "Market (LP) CONTRACT ADDRESS, 0x-prefixed 40-hex. Pass exactly ONE of market, pt or yt — passing two is rejected by name rather than resolved.",
+            "description": "Market (LP) CONTRACT ADDRESS, 0x-prefixed 40-hex. Pass exactly ONE of market, pt or yt - passing two is rejected by name rather than resolved.",
             "type": "string"
           },
           "pt": {

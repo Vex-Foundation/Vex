@@ -2,7 +2,7 @@
  * Agent-grade output projection for Relay bridge results (Wave-3 W3b, §4).
  *
  * Pure, no IO, no recording: builds the structured, NEVER-truncated (OWNER RULE)
- * projection the model + feed consume — from→to chains explicit, human amounts,
+ * projection the model + feed consume - from→to chains explicit, human amounts,
  * USD verbatim-from-the-adapted-quote and always a NULLABLE ESTIMATE, per-leg
  * hashes structured. Raw smallest-unit amounts and provider jargon never leak
  * out; every agent-relevant FIELD is preserved.
@@ -24,14 +24,14 @@ export interface BridgeEndpointDisplay {
   readonly name: string;
 }
 
-/** One side (in / out) of the bridge projected for display — USD is a nullable estimate. */
+/** One side (in / out) of the bridge projected for display - USD is a nullable estimate. */
 export interface BridgeAmountDisplay {
   /** SYMBOL when known, else the currency address (never a bare zero-address). */
   readonly token: string;
   readonly tokenAddress: string;
   /**
    * HUMAN-readable amount, or null when Relay gave nothing convertible to human
-   * units. NEVER a raw smallest-unit value — a raw fallback is preserved in
+   * units. NEVER a raw smallest-unit value - a raw fallback is preserved in
    * `amountRaw` and labelled explicitly by consumers (m6: no silent unit confusion).
    */
   readonly amount: string | null;
@@ -41,7 +41,7 @@ export interface BridgeAmountDisplay {
    * shown as if it were a human amount.
    */
   readonly amountRaw: string | null;
-  /** Per-side USD ESTIMATE from the adapted quote — null unless finite. */
+  /** Per-side USD ESTIMATE from the adapted quote - null unless finite. */
   readonly usd: string | null;
 }
 
@@ -59,7 +59,7 @@ export interface BridgeOutputLeg {
  * USD ESTIMATE for a Vex fee amount, derived from the quote side's own
  * per-side USD: `feeUsd = (sideUsd / sideHumanAmount) × feeHumanAmount`. Relay
  * prices the side, not the fee, so this is a proration and is labelled an
- * estimate everywhere it surfaces. Returns null — never a fabricated figure —
+ * estimate everywhere it surfaces. Returns null - never a fabricated figure -
  * whenever decimals, USD, or a positive human amount is missing.
  */
 export function relayFeeUsdEstimate(
@@ -109,7 +109,7 @@ export function relayChainDisplay(chainId: number, chains: readonly RelayChain[]
  * is NEVER promoted into the human `amount` (m6: that was the unit-confusion
  * bug); it is preserved verbatim in `amountRaw` so nothing is lost. USD is passed
  * through verbatim (already finite-validated + nullable by the adapter). No
- * network calls — everything comes from the quote + cached chains.
+ * network calls - everything comes from the quote + cached chains.
  */
 export function bridgeSideDisplay(
   side: RelayQuoteSide,
@@ -134,7 +134,7 @@ export function bridgeSideDisplay(
   } else if (amount === null && rawFallback !== undefined && decimals !== null && /^\d+$/.test(rawFallback)) {
     amount = formatUnits(BigInt(rawFallback), decimals);
   }
-  // The raw fallback is a smallest-unit value — keep it verbatim, but never as
+  // The raw fallback is a smallest-unit value - keep it verbatim, but never as
   // the human `amount` (a consumer labels it "<raw> (raw units)" when needed).
   const amountRaw = side.amountRaw ?? rawFallback ?? null;
 

@@ -1,11 +1,11 @@
 /**
- * Pendle `callAndReflect` ROUTE binding — the multi-leg sibling of
+ * Pendle `callAndReflect` ROUTE binding - the multi-leg sibling of
  * `./bind-route.ts`.
  *
  * Two actions, and only two, reach this module (measured 2026-07-28, R5d):
  * `pt-rollover` (roll-over-pt) and `lp-transfer` (transfer-liquidity). Their
  * calldata is a `callAndReflect` wrapper carrying whole Router calls as `bytes`,
- * so the single-leg binder in `./bind-route.ts` cannot read them at all — its
+ * so the single-leg binder in `./bind-route.ts` cannot read them at all - its
  * `decodeRouterCall` refuses the outer selector by design. `convert-lp-to-pt`
  * does NOT come here: it live-probed as a plain single-leg
  * `removeLiquiditySinglePt` and is bound by `assertRouteSafe` like any other
@@ -18,7 +18,7 @@
  *   2. Sender bind      : tx.from absent OR equals the session wallet.
  *   3. Value bind       : ZERO, always. Both reflect actions spend an ERC20
  *                         position token (a PT or an LP), never native ETH, so
- *                         there is no native branch to take — and no field a
+ *                         there is no native branch to take - and no field a
  *                         caller could set to open one.
  *   4. Approvals bind   : EXACTLY one approval, for the input position token, at
  *                         the input amount, and nothing else. Spender is
@@ -29,14 +29,14 @@
  *                         an unmeasured chain refuses rather than assuming the
  *                         address the other chains happen to share.
  *   6. Calldata bind    : every leg FULL-decoded through the same Router
- *                         allowlist, then per leg — the receiver
+ *                         allowlist, then per leg - the receiver
  *                         (`reflectLegReceiverIsAllowed`: leg 1 reflector-or-wallet,
  *                         every later leg wallet-only), the market, and, for
  *                         leg 1 only, the ACTUAL spend against the quoted input.
  *                         Later legs spend an INTERMEDIATE amount the quote never
  *                         reports, so there is nothing to bind them to.
  *   7. Echo cross-check : `contractCallParams` on a reflect body echoes
- *                         `[reflector, selfCall1, selfCall2, reflectCall]` — the
+ *                         `[reflector, selfCall1, selfCall2, reflectCall]` - the
  *                         REFLECTOR at index 0 and raw leg calldata after it, not
  *                         the `[receiver, market]` pair a single-leg route echoes.
  *                         Index 0 is bound against the pinned reflector, and each
@@ -90,7 +90,7 @@ export interface PendleReflectIntent {
    * contract earns it.
    */
   chainId: number;
-  /** Session wallet — the ONLY allowed sender, and the only receiver after leg 1. */
+  /** Session wallet - the ONLY allowed sender, and the only receiver after leg 1. */
   wallet: Address;
   /** The position token being spent: the source PT (rollover) or the source LP/market (transfer). */
   inputToken: Address;
@@ -103,14 +103,14 @@ export interface PendleReflectIntent {
    */
   slippageBps: number;
   /**
-   * The market each leg must carry at arg 1, IN EXECUTION ORDER — for both
+   * The market each leg must carry at arg 1, IN EXECUTION ORDER - for both
    * actions that is `[sourceMarket, destinationMarket]`. The decoded leg count
    * must equal this list's length, so a body that grows an extra leg is refused
    * rather than partially bound.
    */
   expectedLegMarkets: readonly Address[];
   /**
-   * The EXACT set of output tokens the response is allowed to declare — the
+   * The EXACT set of output tokens the response is allowed to declare - the
    * destination PT for a rollover, the destination market's LP for a transfer.
    *
    * REQUIRED, deliberately, exactly as `slippageBps` is. Both reflect actions end
@@ -201,7 +201,7 @@ export function assertReflectRouteSafe(
     }
   }
 
-  // 3. Value bind — a reflect action spends an ERC20 position token, never native.
+  // 3. Value bind - a reflect action spends an ERC20 position token, never native.
   const rawValue = route.tx.value;
   const value = typeof rawValue === "string" && rawValue !== "" ? BigInt(rawValue) : 0n;
   if (value !== 0n) return unsafe("a reflect route must not send native value");
@@ -209,7 +209,7 @@ export function assertReflectRouteSafe(
   // 4. Approvals bind (response-level).
   assertReflectApprovals(intent, response);
 
-  // 5. Reflector pin — fails CLOSED on a chain whose reflector we never measured.
+  // 5. Reflector pin - fails CLOSED on a chain whose reflector we never measured.
   const pinned = pendleReflectorFor(intent.chainId);
   if (pinned === undefined) {
     return unsafe(`no reflector has been measured for chain ${intent.chainId}`);
@@ -240,11 +240,11 @@ export function assertReflectRouteSafe(
   // 7. Echo cross-check.
   assertReflectEcho(route, pinned, reflect.legs);
 
-  // 8a. Output topology — BEFORE the floor, because the FINAL leg is floored
+  // 8a. Output topology - BEFORE the floor, because the FINAL leg is floored
   //     against `route.outputs` and names no output token of its own.
   assertRouteOutputTopology(route, intent.expectedRouteOutputs);
 
-  // 8b. PRICE FLOOR — last. Every leg must own a binding row first: a leg whose
+  // 8b. PRICE FLOOR - last. Every leg must own a binding row first: a leg whose
   //    minimum we cannot even locate is unbound, and an unbound leg is never
   //    signed.
   for (const [index, leg] of reflect.legs.entries()) {
@@ -261,7 +261,7 @@ export function assertReflectRouteSafe(
 /**
  * Pick the SAFEST usable reflect route: the first route (best-ranked by Pendle)
  * that passes every fund-safety check. Throws `PENDLE_UNSAFE_TX` when none is
- * safe — it NEVER falls back to an unchecked route, exactly like
+ * safe - it NEVER falls back to an unchecked route, exactly like
  * `selectSafeRoute`.
  */
 export function selectSafeReflectRoute(

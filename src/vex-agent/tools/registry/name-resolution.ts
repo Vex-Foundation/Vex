@@ -208,7 +208,7 @@ const CORE_RENAMES: readonly (readonly [string, string, string])[] = [
   // THE ARGUMENT SHAPES DIFFER, AND THAT IS HANDLED, NOT IGNORED. An alias maps
   // a NAME; it cannot map arguments. A stale call carrying the old `toolIds` or
   // `list` argument therefore ROUTES to `ToolSearch` and is then
-  // answered by name — `dispatcher/tool-search-args.ts` rejects `toolIds` and
+  // answered by name - `dispatcher/tool-search-args.ts` rejects `toolIds` and
   // `list` explicitly, naming the mode that replaced each. The alternative,
   // leaving the names unmapped, would answer the same call with the generic
   // unknown-tool line and teach the model nothing. A silent misparse is not

@@ -14,5 +14,12 @@
       "@vex-lib/*": ["../src/lib/*"]
     }
   },
-  "include": ["src/renderer", "src/shared", "../src/lib"]
+  "include": ["src/renderer", "src/shared", "../src/lib"],
+  // The worker entry uses `self.onmessage` / `self.postMessage`, which need
+  // `lib: WebWorker`. It is compiled by tsconfig.renderer-worker.json instead;
+  // adding WebWorker here would put those globals in scope for every component
+  // in the app, where using one is a bug that would stop being a type error.
+  "exclude": [
+    "src/renderer/features/appShell/studio/viewer/highlight/highlight.worker.ts"
+  ]
 }

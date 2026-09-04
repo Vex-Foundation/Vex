@@ -31,24 +31,13 @@ vi.mock("../../screens/SettingsScreen.js", () => ({
   SettingsScreen: () => null,
 }));
 
-vi.mock("@thesvg/react", () => ({
-  Docker: () => null,
-  Ethereum: () => null,
-  Solana: () => null,
-  Base: () => null,
-  Robinhood: () => null,
-  Polygon: () => null,
-  Optimism: () => null,
-  BnbChain: () => null,
-  Tether: () => null,
-  Circle: () => null,
-  Chainlink: () => null,
-  Postgresql: () => null,
-  Bitcoin: () => null,
-  Bnb: () => null,
-  DaiStablecoin: () => null,
-  Usdc: () => null,
-}));
+// Every brand mark stubs to null, whatever its name: the marks are
+// presentation-only here, and a hand-listed mock breaks the whole suite
+// file each time a component references a new mark.
+vi.mock("@thesvg/react", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@thesvg/react")>();
+  return Object.fromEntries(Object.keys(actual).map((name) => [name, () => null]));
+});
 
 // Stage 4: the always-mounted BookPanel renders SessionRuntimeBar (in the
 // RUNTIME & COST block) → ModelBrandIcon, which statically imports ~20 brand
@@ -84,28 +73,6 @@ const missionGetDraftMock = vi.fn();
 const runtimeGetStateMock = vi.fn();
 
 beforeAll(() => {
-  const proto = HTMLDialogElement.prototype as unknown as {
-    showModal?: () => void;
-    close?: () => void;
-    show?: () => void;
-  };
-  if (typeof proto.showModal !== "function") {
-    proto.showModal = function showModalPolyfill(this: HTMLDialogElement): void {
-      this.setAttribute("open", "");
-    };
-  }
-  if (typeof proto.close !== "function") {
-    proto.close = function closePolyfill(this: HTMLDialogElement): void {
-      this.removeAttribute("open");
-      this.dispatchEvent(new Event("close"));
-    };
-  }
-  if (typeof proto.show !== "function") {
-    proto.show = function showPolyfill(this: HTMLDialogElement): void {
-      this.setAttribute("open", "");
-    };
-  }
-
   // jsdom does not implement ResizeObserver, which SessionsList uses for
   // fit-to-height. The component's effect feature-detects it, so without a
   // stub it just leaves containerHeight at 0 (the planned fallback) — but

@@ -18,6 +18,7 @@
 
 import type { JSX, RefObject } from "react";
 import { APPROVAL_REJECT_REASON_MAX } from "@shared/schemas/approvals.js";
+import { DIALOG_INITIAL_FOCUS } from "../../../components/ui/dialog.js";
 
 export interface ApprovalDecisionActionsProps {
   readonly isHighRisk: boolean;
@@ -76,11 +77,21 @@ export function ApprovalDecisionActions({
         placeholder="Reason (optional)"
         className={REASON_INPUT}
       />
+      {/* REJECT IS THE NAMED INITIAL FOCUS, and it is first in the footer.
+          The safer action owns both, and it owns them through the same
+          `autofocus` content attribute every dialog in this app names its
+          initial focus with (`components/ui/dialog.tsx`), so a card mounted
+          inside a dialog and a card mounted inside the global approvals panel
+          resolve to the SAME element by one rule rather than two. Measured
+          defect this closes: the panel moved focus to its own container, so a
+          keyboard user landed on nothing and the "least destructive default"
+          existed only in the inline card's mount effect. */}
       <button
         ref={rejectRef}
         type="button"
         onClick={onReject}
         disabled={inFlight}
+        {...DIALOG_INITIAL_FOCUS}
         aria-label={rejectArmed ? "Confirm reject" : "Reject"}
         className={`${KEY_BASE} text-[var(--vex-text-2)] hover:bg-interactive-hover hover:text-foreground ${
           rejectArmed ? ARMED_BORDER : "border-[var(--vex-line-strong)]"
@@ -93,7 +104,7 @@ export function ApprovalDecisionActions({
         onClick={onApprove}
         disabled={inFlight}
         aria-label={approveArmed ? "Confirm approve" : "Approve"}
-        className={`${KEY_BASE} bg-[var(--vex-pin)] font-medium text-[var(--vex-surface-0)] hover:bg-[color-mix(in_oklab,var(--vex-pin)_85%,white)] ${
+        className={`${KEY_BASE} bg-[var(--vex-pin)] font-medium text-[var(--vex-surface-0)] hover:bg-[var(--vex-pin-hover)] ${
           approveArmed ? ARMED_BORDER : "border-transparent"
         }`}
       >

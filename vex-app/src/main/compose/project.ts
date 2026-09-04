@@ -39,3 +39,13 @@ export function projectName(installId: string): string {
 export function projectLabelFilter(installId: string): string {
   return `label=com.docker.compose.project=${projectName(installId)}`;
 }
+
+/**
+ * Label selector narrowing a project match to one compose service
+ * (`db`, `embeddings-runtime`, ...). Combined with `projectLabelFilter`
+ * by callers that need a specific container of this install rather than
+ * any of them.
+ */
+export function serviceLabelFilter(service: string): string {
+  return `label=com.docker.compose.service=${service}`;
+}

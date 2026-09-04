@@ -1,5 +1,5 @@
 /**
- * Solana/Jupiter protocol handlers — aggregator.
+ * Solana/Jupiter protocol handlers - aggregator.
  * Split into modules: core (prices/tokens/swap), predict, predict-orders,
  * predict-social, lend (Earn), lend-borrow (Borrow).
  */

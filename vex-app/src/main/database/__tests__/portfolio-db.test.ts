@@ -33,6 +33,7 @@ const mocks = vi.hoisted(() => ({
   buildPoolConfig: vi.fn(),
   listWallets: vi.fn(),
   getSessionWalletScope: vi.fn(),
+  readProjectPortfolioScope: vi.fn(),
   log: {
     info: vi.fn(),
     warn: vi.fn(),
@@ -62,6 +63,13 @@ vi.mock("@vex-lib/wallet.js", () => ({
 
 vi.mock("../sessions-db.js", () => ({
   getSessionWalletScope: mocks.getSessionWalletScope,
+}));
+
+// Mocked as its own module, exactly like the session arm's resolver: the
+// project scope must NOT consume one of the four scripted portfolio queries,
+// or every test that also exercises the project path would desync.
+vi.mock("../projects/portfolio-scope.js", () => ({
+  readProjectPortfolioScope: mocks.readProjectPortfolioScope,
 }));
 
 vi.mock("../../logger/index.js", () => ({ log: mocks.log }));
@@ -1087,5 +1095,124 @@ describe("semantic token identity in aggregation SQL (shape)", () => {
     if (!result.ok) return;
     expect(result.data.tokens).toHaveLength(1);
     expect(result.data.tokens[0]).toMatchObject({ symbol: "WETH", tokenAddress: "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", balanceUsd: 1500 });
+  });
+});
+
+describe("portfolio-db getPortfolio - project scope (B0)", () => {
+  const PROJECT = "3f2504e0-4f89-41d3-9a0c-0305e82c3301";
+  const EVM = "0x1111111111111111111111111111111111111111";
+  const SOL = "So11111111111111111111111111111111111111112";
+
+  function scoped(
+    evm: { id: string; address: string } | null,
+    solana: { id: string; address: string } | null,
+  ): void {
+    mocks.readProjectPortfolioScope.mockResolvedValueOnce({
+      kind: "ok",
+      wallets: { evm, solana },
+    });
+  }
+
+  it("aggregates BOTH of the project's selected wallets", async () => {
+    scoped({ id: "evm_1", address: EVM }, { id: "sol_1", address: SOL });
+    scriptPortfolioQueries({ live: 100, tokens: [], snapshot: null });
+
+    const result = await getPortfolio({ scope: "project", projectId: PROJECT });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.scope).toBe("project");
+    const bound = allBoundParams();
+    expect(bound).toContain(EVM);
+    expect(bound).toContain(SOL);
+  });
+
+  it("NARROWS to one wallet when walletId names a project selection", async () => {
+    scoped({ id: "evm_1", address: EVM }, { id: "sol_1", address: SOL });
+    scriptPortfolioQueries({ live: 40, tokens: [], snapshot: null });
+
+    const result = await getPortfolio({
+      scope: "project",
+      projectId: PROJECT,
+      walletId: "evm_1",
+    });
+
+    expect(result.ok).toBe(true);
+    const bound = allBoundParams();
+    expect(bound).toContain(EVM);
+    // The OTHER selected wallet is never bound. Narrowing that still read the
+    // aggregate would be a silent widening of the allow-list.
+    expect(bound).not.toContain(SOL);
+  });
+
+  it("REJECTS a walletId that is not one of THIS project's selections", async () => {
+    // The id is a perfectly good inventory id; it is simply not this project's.
+    // Honouring it would make the arm a way to read any wallet through a
+    // project id, which is the widening the server-side allow-list prevents.
+    scoped({ id: "evm_1", address: EVM }, { id: "sol_1", address: SOL });
+
+    const result = await getPortfolio({
+      scope: "project",
+      projectId: PROJECT,
+      walletId: "evm_someone_elses",
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("wallets.invalid_selection");
+    expect(mocks.query).not.toHaveBeenCalled();
+  });
+
+  it("FAILS CLOSED on wallet drift rather than reporting an empty portfolio", async () => {
+    mocks.readProjectPortfolioScope.mockResolvedValueOnce({
+      kind: "drift",
+      family: "evm",
+    });
+
+    const result = await getPortfolio({ scope: "project", projectId: PROJECT });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("projects.wallet_drift");
+    expect(mocks.query).not.toHaveBeenCalled();
+  });
+
+  it("FAILS CLOSED for a missing or TOMBSTONED project", async () => {
+    mocks.readProjectPortfolioScope.mockResolvedValueOnce({ kind: "not_found" });
+
+    const result = await getPortfolio({ scope: "project", projectId: PROJECT });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("projects.not_found");
+    expect(mocks.query).not.toHaveBeenCalled();
+  });
+
+  it("returns an EMPTY portfolio, not an error, when nothing is selected", async () => {
+    // A project with no wallet chosen is a real state and a different one from
+    // "unknown project" and from "drift".
+    scoped(null, null);
+
+    const result = await getPortfolio({ scope: "project", projectId: PROJECT });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.scope).toBe("project");
+    expect(result.data.walletCount).toBe(0);
+    expect(mocks.query).not.toHaveBeenCalled();
+  });
+
+  it("never logs a resolved address", async () => {
+    scoped({ id: "evm_1", address: EVM }, null);
+    scriptPortfolioQueries({ live: 5, tokens: [], snapshot: null });
+
+    await getPortfolio({ scope: "project", projectId: PROJECT });
+
+    const logged = JSON.stringify([
+      ...mocks.log.info.mock.calls,
+      ...mocks.log.warn.mock.calls,
+      ...mocks.log.error.mock.calls,
+    ]);
+    expect(logged).not.toContain(EVM);
   });
 });

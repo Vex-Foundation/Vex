@@ -28,6 +28,7 @@
  */
 
 import { realpath } from "node:fs/promises";
+import { acquireProjectLease } from "./project-lifecycle-gate.js";
 import { app } from "electron";
 
 import { err, ok, type Result, type VexError } from "@shared/ipc/result.js";
@@ -62,7 +63,7 @@ import {
   type ProjectRenderScope,
 } from "../database/projects/render-scope.js";
 import { log } from "../logger/index.js";
-import { projectNotFoundError } from "./project-errors.js";
+import { projectDeletingError, projectNotFoundError } from "./project-errors.js";
 import {
   resolveProjectDirectory,
   resolveProjectsRoot,
@@ -91,8 +92,13 @@ import {
 
 export { __resetStudioRenderQueuesForTests } from "./installer/queue.js";
 
-/** Why a render is running. `repair` is the only trigger that overwrites drift. */
-export type StudioRenderTrigger = "scope_update" | "repair";
+/**
+ * Why a render is running. `repair` is the only trigger that overwrites drift.
+ *
+ * `superseded` is deliberately NOT a member: it is an ANSWER a run can give,
+ * never a reason a caller can ask for one.
+ */
+export type StudioRenderTrigger = "create" | "scope_update" | "repair";
 
 /**
  * Render (or repair) one project's files.
@@ -113,17 +119,38 @@ export async function renderProjectFiles(
     whenSuperseded: () =>
       ok({
         // A superseded job never read a scope, so it reports the one fact it
-        // has: it did nothing, and the newer job owns the result.
+        // has: it did nothing, and the newer job owns the result. That is not a
+        // FAILURE - the work is being done by the job that overtook this one -
+        // so `runFailure` stays null and `trigger` carries the answer.
         scopeVersion: 1,
         completed: false,
         trigger: "superseded",
         artifacts: [],
         warnings: [],
+        runFailure: null,
       }),
   });
 }
 
 async function runRender(
+  projectId: string,
+  trigger: StudioRenderTrigger,
+  correlationId: string,
+): Promise<Result<StudioRenderOutcome, VexError>> {
+  // A RENDER LEASE, before the first await. A render writes into the project's
+  // folder, so a delete has to be able to both refuse new ones and know this
+  // one is running. The teardown that runs during a delete holds the
+  // administrative token and is admitted through the same gate.
+  const admission = acquireProjectLease(projectId, "render");
+  if (!admission.ok) return err(projectDeletingError(correlationId));
+  try {
+    return await runRenderAdmitted(projectId, trigger, correlationId);
+  } finally {
+    admission.lease.release();
+  }
+}
+
+async function runRenderAdmitted(
   projectId: string,
   trigger: StudioRenderTrigger,
   correlationId: string,
@@ -138,14 +165,18 @@ async function runRender(
 
   const bridge = await locateStudioBridge();
   if (bridge.kind === "unavailable") {
+    // A RUN FAILURE, not a warning. This used to report itself as a
+    // `launch_required` warning with a null agent, which put "Vex reconciled
+    // this project's files" and "Select a coding agent to get one" above a
+    // footnote saying the opposite. Nothing was written and nothing CAN be
+    // written until the binary is there, so that is the headline.
     return ok({
       scopeVersion: scope.scopeVersion,
       completed: false,
-      trigger: trigger === "repair" ? "repair" : "scope_update",
+      trigger,
       artifacts: [],
-      warnings: [
-        { kind: "launch_required", agentId: null, detail: bridge.detail },
-      ],
+      warnings: [],
+      runFailure: { kind: "bridge_unavailable", detail: bridge.detail },
     });
   }
 
@@ -194,7 +225,7 @@ async function runRender(
 
   // TWO PASSES, AND `AGENTS.md` IS THE SECOND ONE.
   //
-  // The managed block PROMISES its reader, in `renderStudioChangeLog`, that
+  // The managed block PROMISES its reader, in its "What's new" section, that
   // "every regeneration that changed anything adds a line here". With one pass
   // that was false by construction: the brief was built before reconciliation
   // and the note was appended after it, so the line describing a run only ever
@@ -218,23 +249,63 @@ async function runRender(
     io,
   });
 
-  // The note is composed ONLY when the first pass changed something. Injecting
-  // one unconditionally would change the block on every run, which would write
-  // `AGENTS.md`, which would justify the note: a self-fulfilling loop that
-  // rewrites a user's file forever. `AGENTS.md` is named in the summary because
-  // a note that lands in the block is itself a change to the block.
+  // THE INVARIANT: a file the current scope version rendered is NEVER reported
+  // as predating it.
+  //
+  // The change log lives INSIDE the hashed managed block, and the drift check
+  // (`enrichProjectFiles` -> `inspectArtifact`) re-renders that block from the
+  // DURABLE change notes to decide `current` versus `stale`. So the note this
+  // run bakes into `AGENTS.md` and the note it stores afterwards must be the
+  // same line, byte for byte, or the project reports its own freshly written
+  // file as out of date forever. Two ways that used to fail, both closed here:
+  //
+  //   1. ORDER. The summary in the file listed the first pass's files and then
+  //      `AGENTS.md`; the summary stored afterwards listed the SAME files in
+  //      PLAN order, where `AGENTS.md` precedes `CLAUDE.md` and
+  //      `.vex/protocols.md`. Composing the pending summary through
+  //      `orderByPlan` - the same ordering the stored one goes through - makes
+  //      the two identical whenever `AGENTS.md` is written.
+  //   2. THE NOTE-FREE REWRITE. A scope edit that moves nothing but the block
+  //      (a rename, a wallet change) leaves the first pass unchanged, so no
+  //      note reached the file - and one was stored anyway, because the run
+  //      DID change something. `agentsMdNeedsRewrite` asks the block itself
+  //      whether it is about to be rewritten for reasons other than the note,
+  //      so those runs compose their note too.
+  //
+  // The note is still never injected into an otherwise no-op run: injecting one
+  // unconditionally would change the block on every run, which would write
+  // `AGENTS.md`, which would justify the note - a self-fulfilling loop that
+  // rewrites a user's file forever.
   const firstPassChanged = firstPass.artifacts.some(
     (outcome) => outcome.status === "written" || outcome.status === "removed",
   );
-  const pendingNote = firstPassChanged
+  const noteFreeBrief = buildProjectBrief(scope, notesOutcome.data);
+  const rewritingAgentsMd =
+    firstPassChanged
+    || (await agentsMdNeedsRewrite(
+      directory.data,
+      plan,
+      noteFreeBrief,
+      provenance,
+      trigger === "repair",
+    ));
+  const pendingNote = rewritingAgentsMd
     ? {
       version: appVersion(),
       date: isoDate(new Date()),
       summary: summarizeRun(
-        [
+        orderByPlan(plan, [
           ...firstPass.artifacts,
-          { status: "written", path: STUDIO_AGENTS_MD_RELATIVE_PATH },
-        ],
+          {
+            status: "written",
+            kind: "agents-md",
+            agentId: null,
+            path: STUDIO_AGENTS_MD_RELATIVE_PATH,
+            // The run has not written it yet; `created` versus `updated` does
+            // not reach the summary, which names paths only.
+            change: "updated",
+          },
+        ]),
         trigger,
       ),
     }
@@ -247,10 +318,11 @@ async function runRender(
       unsupported: [],
     },
     facts,
-    brief: buildProjectBrief(
-      scope,
-      pendingNote === null ? notesOutcome.data : [pendingNote, ...notesOutcome.data],
-    ),
+    // The SAME brief the rewrite prediction above asked its question with when
+    // there is no note to inject, so the two cannot answer differently.
+    brief: pendingNote === null
+      ? noteFreeBrief
+      : buildProjectBrief(scope, [pendingNote, ...notesOutcome.data]),
     provenance,
     repair: trigger === "repair",
     io,
@@ -268,16 +340,31 @@ async function runRender(
     (outcome) => outcome.status === "written" || outcome.status === "removed",
   );
 
+  // THE REPORTED FLAG IS THE MARKER'S, NOT THE RECONCILER'S.
+  //
+  // `recordCompleteRender` is guarded on the scope version: a scope edit that
+  // committed while the files were being written means this run rendered an
+  // older authority, so the UPDATE matches no row and the marker stays where it
+  // was. That refusal is the whole point of the guard, and reporting
+  // `completed: true` over it would tell the user their project is up to date
+  // while the durable record says a reconciliation is still owed - the exact
+  // disagreement the marker exists to prevent.
+  let completed = result.completed;
   if (result.completed) {
-    // Guarded on the scope version: a scope edit that committed while the files
-    // were being written means this run rendered an older authority, and
-    // claiming it would mark the project up to date when it is not.
     const advanced = await recordCompleteRender(
       projectId,
       scope.scopeVersion,
       studioGeneratorFingerprint(appVersion()),
     );
     if (!advanced.ok) return advanced;
+    if (!advanced.data) {
+      completed = false;
+      log.info(
+        `[studio:installer] the render marker was not advanced: the scope moved during the run `
+          + `projectId=${projectId} scopeVersion=${String(scope.scopeVersion)} `
+          + `correlationId=${correlationId}`,
+      );
+    }
   }
 
   if (changed) {
@@ -300,10 +387,11 @@ async function runRender(
 
   return ok({
     scopeVersion: scope.scopeVersion,
-    completed: result.completed,
-    trigger: trigger === "repair" ? "repair" : "scope_update",
+    completed,
+    trigger,
     artifacts: [...result.artifacts],
     warnings: [...result.warnings],
+    runFailure: null,
   });
 }
 
@@ -358,6 +446,51 @@ export async function enrichProjectFiles(
     generatorFingerprint: project.files.generatorFingerprint,
     artifacts,
   };
+}
+
+/**
+ * Would `AGENTS.md`'s managed block be rewritten by this run even if no change
+ * note were injected into it?
+ *
+ * Asked with the NOTE-FREE brief, and answered by the same inspection the
+ * sidebar badge reads, so "the run is about to rewrite the block" and "the badge
+ * says the block is behind the scope" can never be two different answers.
+ *
+ * The mapping is the reconciler's own behaviour, not a second policy:
+ * `missing` and `stale` are written, a `drifted` block is left alone unless this
+ * is an explicit Repair, and an `unreadable` (malformed fence) block is refused
+ * rather than rewritten.
+ *
+ * COSTS ONE EXTRA READ of a file the second pass is about to read anyway.
+ * Renders are user-triggered and rare; a wrong drift badge on every project is
+ * the expensive side.
+ */
+async function agentsMdNeedsRewrite(
+  projectDirectory: string,
+  plan: StudioPlan,
+  briefWithoutPendingNote: StudioProjectBrief,
+  provenance: ReadonlyMap<string, { entryHash: string | null; contentHash: string }>,
+  repair: boolean,
+): Promise<boolean> {
+  const artifact = plan.artifacts.find(
+    (candidate) => candidate.kind === "agents-md" && candidate.operation === "install",
+  );
+  if (artifact === undefined) return false;
+  const status = await inspectArtifact(
+    projectDirectory,
+    artifact,
+    briefWithoutPendingNote,
+    provenance,
+  );
+  switch (status.state) {
+    case "missing":
+    case "stale":
+      return true;
+    case "drifted":
+      return repair;
+    default:
+      return false;
+  }
 }
 
 async function inspectArtifact(
@@ -545,7 +678,11 @@ function summarizeRun(
     .map((outcome) => outcome.path)
     .filter((path): path is string => path !== null);
 
-  const prefix = trigger === "repair" ? "repaired" : "updated";
+  // One word per trigger. `created` is no longer than the `repaired` that
+  // `studio-change-note-bound.test.ts` already measures the worst case against,
+  // so the new trigger cannot push a line past the column's CHECK.
+  const prefix =
+    trigger === "repair" ? "repaired" : trigger === "create" ? "created" : "updated";
   if (touched.length === 0) return `${prefix} this project's Vex files`;
   return `${prefix} ${touched.join(", ")}`;
 }

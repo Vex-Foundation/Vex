@@ -203,6 +203,14 @@ export const ErrorCodes = {
   OPENCLAW_HOOKS_PROBE_FAILED: "OPENCLAW_HOOKS_PROBE_FAILED",
 
   KEYSTORE_CORRUPT: "KEYSTORE_CORRUPT",
+  /**
+   * The keystore file could not be replaced because something else holds it
+   * open (the sharing violation Windows raises as EPERM/EBUSY on `rename`), or
+   * the config directory is not writable. Named separately from a generic write
+   * failure because the remedy is "close the program holding it" and because
+   * the previous key material is intact: nothing was lost.
+   */
+  KEYSTORE_WRITE_LOCKED: "KEYSTORE_WRITE_LOCKED",
 
   // Wallet import/export
   INVALID_PRIVATE_KEY: "INVALID_PRIVATE_KEY",

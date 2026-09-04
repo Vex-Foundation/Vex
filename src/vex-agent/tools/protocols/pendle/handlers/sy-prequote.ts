@@ -1,5 +1,5 @@
 /**
- * The SY family's prequote record + gate — the DRY-RUN-IN-TOOL pattern (R5d D3).
+ * The SY family's prequote record + gate - the DRY-RUN-IN-TOOL pattern (R5d D3).
  *
  * Every other quote-gated Vex tool splits the contract across two toolIds: a
  * READ quote tool records the prequote (dispatched from
@@ -35,7 +35,7 @@
  * for an SY. That mirrors the bridge recorder's doctrine rather than claiming a
  * `pass` nobody computed.
  *
- * NEVER persist or log raw provider/HTTP/DB/error text — only bounded structural
+ * NEVER persist or log raw provider/HTTP/DB/error text - only bounded structural
  * labels.
  */
 
@@ -59,7 +59,7 @@ import {
 import { PREQUOTE_MAX_AGE_MS } from "../../prequote/registry.js";
 
 /**
- * The DB `kind` an SY prequote is stored under — the direction's OWN kind
+ * The DB `kind` an SY prequote is stored under - the direction's OWN kind
  * (migration 054), never the shared `"swap"` D3 used. Both gate reads scope on
  * `kind`, so this is what stops a `dryRun` of one direction from authorizing the
  * other's execute at the row level, independently of the digest.
@@ -75,11 +75,11 @@ function syPrequoteKind(direction: PendleSyDirection): "sy_mint" | "sy_redeem" {
  * swap-shaped identity it has always returned; this re-tags it into the
  * direction's dedicated identity so the DIRECTION rides in the first material
  * slot rather than depending on which leg holds the SY. `sy`/`token` are read
- * back off the built legs — for a mint the token is spent and the SY received,
+ * back off the built legs - for a mint the token is spent and the SY received,
  * for a redeem the reverse.
  *
  * ONE function, called by BOTH the recorder and the gate, so the two sides can
- * never disagree about the mapping — the property that matters for a match hash.
+ * never disagree about the mapping - the property that matters for a match hash.
  * The leg convention is duplicated from the builder; if that builder is ever
  * given the R5d identities directly, this adapter should be deleted, not kept in
  * parallel.
@@ -91,7 +91,7 @@ function buildSyMatchInput(
   direction: PendleSyDirection,
 ): SyMintMatchInput | SyRedeemMatchInput {
   const identity = buildPendleSyIdentity(sessionId, params, context, direction);
-  // The builder resolves the chain or throws, so this is unreachable — but the
+  // The builder resolves the chain or throws, so this is unreachable - but the
   // swap-shaped return type admits null/undefined, and a defaulted chain id
   // would let two chains share a digest. Refuse rather than pick one.
   if (identity.chainId == null) {
@@ -127,7 +127,7 @@ export interface PendleSyRouteRef {
 /**
  * Record the prequote a later execute must match. Called by the SY handlers ONLY
  * after the dry run has fully validated the route (Router pin, sender/value/
- * approval binds, calldata intent bind and the price floor) — an unsafe route
+ * approval binds, calldata intent bind and the price floor) - an unsafe route
  * must never leave an authorization behind.
  *
  * Never throws to the caller.
@@ -172,7 +172,7 @@ export async function recordPendleSyPrequote(
 
 /**
  * The gate's answer. A block carries a bounded structural `reason` for the log
- * and the agent-facing `message` the handler surfaces — never row contents,
+ * and the agent-facing `message` the handler surfaces - never row contents,
  * addresses, or raw error text.
  */
 export type PendleSyGateDecision =
@@ -184,7 +184,7 @@ function blockMessage(toolId: string, reason: "no_quote" | "safety_fail" | "gate
   switch (reason) {
     case "no_quote":
       return (
-        `${toolId} blocked: no fresh dry run for these exact params — the execute must use EXACTLY the same `
+        `${toolId} blocked: no fresh dry run for these exact params - the execute must use EXACTLY the same `
         + `chain, sy, token, amountIn and slippageBps (same value, or omitted on both sides). ${dryRun}`
       );
     case "safety_fail":

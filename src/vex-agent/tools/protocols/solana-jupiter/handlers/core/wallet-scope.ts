@@ -1,5 +1,5 @@
 /**
- * Solana wallet scoping for the Jupiter handlers — who owns the address, and
+ * Solana wallet scoping for the Jupiter handlers - who owns the address, and
  * whose key signs.
  *
  * Extracted verbatim from `../core.ts` as part of a façade-preserving
@@ -18,7 +18,7 @@ export function walletAddress(p: Record<string, unknown>, ctx: ProtocolExecution
   const explicit = str(p, "walletAddress");
   if (ctx.walletResolution.source === "session") {
     // Session authority: the selected Solana wallet is the only valid owner.
-    // An explicit (renderer/LLM-supplied) address that differs is rejected — it
+    // An explicit (renderer/LLM-supplied) address that differs is rejected - it
     // must never override session scope.
     const selected = resolveSelectedAddress(ctx.walletResolution, ctx.walletPolicy, "solana");
     if (explicit && !walletAddressesEqual("solana", explicit, selected)) {
@@ -29,7 +29,7 @@ export function walletAddress(p: Record<string, unknown>, ctx: ProtocolExecution
     }
     return selected;
   }
-  // source:"default" — explicit override preserved; else the primary.
+  // source:"default" - explicit override preserved; else the primary.
   return explicit || resolveSelectedAddress(ctx.walletResolution, ctx.walletPolicy, "solana");
 }
 

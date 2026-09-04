@@ -1,5 +1,5 @@
 /**
- * Virtuals Protocol manifest — agent-token intelligence module.
+ * Virtuals Protocol manifest - agent-token intelligence module.
  *
  * Read-only discovery surface for Virtuals agent tokens (Robinhood, Base,
  * Solana, Ethereum). No mutating tools: trades execute through the existing

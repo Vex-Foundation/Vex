@@ -38,6 +38,50 @@ of the reference behavior, with evidence)
    waiting out the full non-inclusion window
    (PendingTransactionTracker.ts:544-557 is the pattern).
 
+## ADOPTED from both references: the bridge destination is derived
+(2026-09-03, studio-prod BRIDGE-1)
+
+- MetaMask quotes a bridge for the SELECTED account: `walletAddress` on
+  `GenericQuoteRequest` comes from the selected account
+  (`bridge-controller.ts` `#getMultichainSelectedAccount`,
+  `fetchBridgeQuotes`), and the only destination field,
+  `destWalletAddress` (`types.ts:136`), exists for the SAME user's
+  account on the other VM - the controller refuses to poll a
+  Solana-crossing quote when the client did not supply it
+  (`bridge-controller.test.ts:1585`). It is never a free address the
+  caller names.
+- Rabby's bridge flow has NO recipient input at all: the quote and the
+  build both take `userAddress` from
+  `state.account.currentAccount.address`
+  (`Bridge/Component/BridgeContent.tsx:81,207,264`), and the word
+  "recipient" does not occur anywhere under `src/ui/views/Bridge`.
+- ADOPTED, and Vex goes one step further than either: `recipient` is
+  removed from all four bridge tools (Khalani and Relay, quote and
+  execute) and a caller-supplied value is REJECTED BY NAME with the
+  address the bridge will deliver to, rather than dropped. Rule 90:
+  "Fee receiver, destination, or other value that can redirect funds
+  never originates from model input. Reject a caller-supplied forbidden
+  field by name rather than silently dropping it." The destination is
+  always `resolveSelectedAddress(..., destinationFamily)`; a
+  cross-family bridge with no wallet selected on the destination family
+  fails closed with the ordinary wallet-scope refusal, never an
+  arbitrary address.
+- Why by-name matters HERE and not for MetaMask or Rabby: their bridge
+  destination is chosen by a human in a UI, ours by a model. A silent
+  drop would hide an attempted redirection, and in a FULL project no
+  approval card exists to show the human what the destination was.
+- The prequote identity binds the DERIVED destination on both sides
+  (`prequote/identity/bridge.ts`, `relay-bridge.ts`), the same fix
+  `refundTo` got: a params-bound destination let an attacker set the
+  same address on the quote AND the execute, collide the hashes and
+  pass the gate.
+- NOT adopted: MetaMask's `destWalletAddress` as an agent-facing
+  parameter. It is the right shape for a wallet UI where the human owns
+  both accounts and picks them; as a tool param it is exactly the
+  redirection vector rule 90 forbids. A user who wants funds elsewhere
+  bridges to their own wallet and then sends with `WalletSendPrepare`,
+  which the user approves - the remedy every refusal names.
+
 ## Named omissions (not smuggled into A4b; own future arcs)
 
 - Counterparty reputation / first-interaction / blacklist layer

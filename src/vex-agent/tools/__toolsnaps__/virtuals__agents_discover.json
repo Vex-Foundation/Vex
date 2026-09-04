@@ -7,7 +7,7 @@
         "additionalProperties": false,
         "properties": {
           "chain": {
-            "description": "REQUIRED. The one chain to list — Virtuals indexes exactly four: base, solana, robinhood, ethereum. Chain slug/alias, or the numeric chain id `TokenFind` returns (e.g. `base` or `8453`).",
+            "description": "REQUIRED. The one chain to list - Virtuals indexes exactly four: base, solana, robinhood, ethereum. Chain slug/alias, or the numeric chain id `TokenFind` returns (e.g. `base` or `8453`).",
             "enum": [
               "base",
               "solana",
@@ -25,11 +25,11 @@
             "type": "number"
           },
           "pageSize": {
-            "description": "Rows fetched per provider page (default 100, max 200 — the provider's proven ceiling). Up to 5 pages are scanned per call, so pageSize x 5 bounds how deep one call reads.",
+            "description": "Rows fetched per provider page (default 100, max 200 - the provider's proven ceiling). Up to 5 pages are scanned per call, so pageSize x 5 bounds how deep one call reads.",
             "type": "number"
           },
           "sort": {
-            "description": "Alias of sortBy, accepted for compatibility. Same values. Send ONE of the two, never both — a silently dropped spelling is indistinguishable from one that was honoured.",
+            "description": "Alias of sortBy, accepted for compatibility. Same values. Send ONE of the two, never both - a silently dropped spelling is indistinguishable from one that was honoured.",
             "enum": [
               "mcap",
               "volume",
@@ -39,7 +39,7 @@
             "type": "string"
           },
           "sortBy": {
-            "description": "Sort order, always descending: mcap (default), volume, newest, or recentGraduation. It decides WHICH rows the window contains, so pair it with status — sortBy: newest is what surfaces UNDERGRAD agents. An unrecognised value is rejected, not folded to mcap.",
+            "description": "Sort order, always descending: mcap (default), volume, newest, or recentGraduation. It decides WHICH rows the window contains, so pair it with status - sortBy: newest is what surfaces UNDERGRAD agents. An unrecognised value is rejected, not folded to mcap.",
             "enum": [
               "mcap",
               "volume",

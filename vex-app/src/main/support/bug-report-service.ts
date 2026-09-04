@@ -73,6 +73,13 @@ export interface BugReportServiceResult {
 export interface BugReportServiceDeps {
   readonly transport?: BugReportTransport;
   readonly now?: () => Date;
+  /**
+   * Host platform stamped onto the report. Injectable for the same reason
+   * `now` is: a test that compares the recorded value against
+   * `process.platform` is comparing the runner to itself and passes even if
+   * the field were never threaded through.
+   */
+  readonly platform?: NodeJS.Platform;
 }
 
 /**
@@ -116,7 +123,7 @@ export async function createBugReport(
     title: redacted.value.title,
     description: redacted.value.description,
     appVersion: app.getVersion(),
-    osPlatform: process.platform,
+    osPlatform: deps.platform ?? process.platform,
     installId,
     correlationId: safeRefs.correlationId ?? input.correlationIdFromIpc,
     sessionId: safeRefs.sessionId ?? null,

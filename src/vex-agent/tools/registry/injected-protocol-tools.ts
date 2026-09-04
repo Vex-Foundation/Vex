@@ -12,7 +12,7 @@
  * NAME MAPPING. OpenAI function names must match `^[a-zA-Z0-9_-]{1,64}$`, so
  * the dotted toolId cannot be sent verbatim. The projected name is the
  * manifest's authored `publicName` (`protocols/types.ts`), a REVIEWED naming
- * decision carried in `tool-surface-spec/mappings/*.json` — not a string
+ * decision carried in `tool-surface-spec/mappings/*.json` - not a string
  * transform of the toolId.
  *
  * WHY A TABLE AND NOT A TRANSFORM. The old projection mangled `.` → `__`
@@ -31,7 +31,7 @@
  * product is a production preview, aliases exist to keep in-flight state safe
  * rather than to guarantee indefinite compatibility, and the owner accepts that
  * a durable artifact (an old accepted plan, a re-read transcript) may emit a
- * retired spelling. Such a call is not silently misrouted — it fails the
+ * retired spelling. Such a call is not silently misrouted - it fails the
  * catalog lookup, and `dispatcher/protocol-route.ts` answers by NAME with a
  * ToolSearch instruction, which re-teaches the current name. The alias table
  * (`./name-resolution.ts`) stays wired for the entries that do need it.
@@ -39,7 +39,7 @@
  * GATING. Injection is a VISIBILITY decision only. Which manifests may be
  * shown is decided here (lifecycle + `requiresEnv` + advertised namespace +
  * the pressure barrier); whether a call may RUN is decided, unchanged, by
- * `executeProtocolTool` off the RESOLVED MANIFEST — never off the function
+ * `executeProtocolTool` off the RESOLVED MANIFEST - never off the function
  * name. See `dispatcher/protocol-route.ts`.
  */
 
@@ -111,7 +111,7 @@ export function fromInjectedToolName(name: string): string | undefined {
 /**
  * Resolve an injected function name back to its manifest, or `undefined` when
  * the name is not an injected protocol tool (an internal tool, a typo, or a
- * hallucinated id). Callers MUST use the returned manifest — not the name —
+ * hallucinated id). Callers MUST use the returned manifest - not the name -
  * for every gating decision.
  *
  * CATALOG-SELECTION BOUNDARY (approved plan section 5.5). This is the ONE
@@ -121,7 +121,7 @@ export function fromInjectedToolName(name: string): string | undefined {
  * ToolSearch `select:` mode.
  *
  * A RETIRED name is answered from the alias table, which STATES the immutable
- * dotted toolId. It is never answered by inverting the name — inversion is not
+ * dotted toolId. It is never answered by inverting the name - inversion is not
  * defined under the one-separator grammar (see the module doc). The alias
  * branch is consulted FIRST-AFTER-CANONICAL in effect: `fromInjectedToolName`
  * only ever returns a LIVE publicName's id, so an alias can never shadow a live
@@ -136,7 +136,7 @@ export function resolveInjectedProtocolTool(name: string): ProtocolToolManifest 
 }
 
 /**
- * True for a name in the injected NAMESPACE — one that is shaped like a
+ * True for a name in the injected NAMESPACE - one that is shaped like a
  * publicName, whether or not a live tool claims it.
  *
  * Deliberately a shape test rather than a catalog hit: its whole job is to
@@ -190,7 +190,7 @@ export function buildInjectedProtocolTools(ctx: ToolVisibilityContext): OpenAITo
  * Exported so `ToolSearch` select mode runs the IDENTICAL barrier check this
  * projection runs. If select recorded a manifest injection would then drop, the
  * model would be told a tool is callable and find it missing from the very next
- * tools array — the silent loss the whole displacement-warning machinery exists
+ * tools array - the silent loss the whole displacement-warning machinery exists
  * to prevent.
  *
  * Mirror of `visibility.ts`'s `passesPressureSafety` for protocol manifests:

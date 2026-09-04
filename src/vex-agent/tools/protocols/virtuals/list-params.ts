@@ -16,7 +16,7 @@
  * tool whose whole failure mode was an empty answer that looked like an empty
  * market.
  *
- * The numeric readers themselves are the shared ones — this module owns the
+ * The numeric readers themselves are the shared ones - this module owns the
  * VOCABULARY (which keys exist, and their bounds), never a second copy of the
  * number-checking rules.
  */
@@ -39,8 +39,8 @@ export const DEFAULT_PAGE_SIZE = 100;
 const MAX_PAGE_SIZE = 200;
 
 /**
- * `page` has no useful upper bound of ours — the provider reports 54,785 rows
- * on BASE alone — so the ceiling exists only to reject a nonsense value that
+ * `page` has no useful upper bound of ours - the provider reports 54,785 rows
+ * on BASE alone - so the ceiling exists only to reject a nonsense value that
  * would burn the page budget on empty responses.
  */
 const MAX_PAGE = 10_000;
@@ -64,7 +64,7 @@ export const SORT_MAP: Record<string, VirtualsSortField> = {
 };
 
 /**
- * The legal chain values, as the MANIFEST spells them — a refusal must name the
+ * The legal chain values, as the MANIFEST spells them - a refusal must name the
  * vocabulary the agent was given, not the provider's internal one.
  */
 const CHAIN_LIST = VIRTUALS_CHAIN_SLUGS.join(", ");
@@ -107,7 +107,7 @@ function readStatusFilter(params: Record<string, unknown>): Read<StatusFilter> {
     return {
       ok: false,
       reason: `Unknown status "${raw}". Legal values: ${STATUS_FILTERS.join(", ")}. `
-        + "It is NOT applied as a no-op — an unrecognised status used to return the unfiltered list.",
+        + "It is NOT applied as a no-op - an unrecognised status used to return the unfiltered list.",
     };
   }
   return { ok: true, value: match };
@@ -116,7 +116,7 @@ function readStatusFilter(params: Record<string, unknown>): Read<StatusFilter> {
 /**
  * `sortBy` is the documented param; `sort` stays accepted as its alias and
  * `sortBy` wins when both are sent. An unknown keyword is refused rather than
- * folded to mcap — the whole `status:"undergrad"` bug was a wrong sort silently
+ * folded to mcap - the whole `status:"undergrad"` bug was a wrong sort silently
  * deciding which 50 rows existed.
  */
 function readSortKeyword(params: Record<string, unknown>): Read<string> {

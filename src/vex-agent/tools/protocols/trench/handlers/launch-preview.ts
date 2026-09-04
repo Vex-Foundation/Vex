@@ -1,11 +1,11 @@
 /**
- * `trench.launch_preview` handler — READ-ONLY dry-run of the launchpad
+ * `trench.launch_preview` handler - READ-ONLY dry-run of the launchpad
  * `create()` (no signature, no broadcast).
  *
  * Validates the launch inputs, then runs the probe-proven preview flow: build
  * the `create` calldata with an EMPTY image, simulate it on-chain via `eth_call`
  * to recover the predicted token address, take a FRESH `eth_estimateGas`, and
- * sign OUR own gas bound onto it (`gasLimitWithHeadroom` — never the node's bare
+ * sign OUR own gas bound onto it (`gasLimitWithHeadroom` - never the node's bare
  * estimate). The creation fee is the anchored 0.001 ETH constant proven by the
  * funded live probe (verified against storage + simulation 2026-07-30); the
  * verified Diamond ABI exposes no fee getter, so it is not read from a
@@ -15,7 +15,7 @@
  * bps of the ETH `msg.value`, a SEPARATE transfer that runs only after the
  * launch confirms) is disclosed here and included in the total. A "total" of
  * creation fee + gas alone would under-state the launch on the exact surface the
- * agent prices it from — and because that fee leg is its own transaction, its
+ * agent prices it from - and because that fee leg is its own transaction, its
  * gas is budgeted into the total too, on the same constant the pre-sign balance
  * gate uses.
  *
@@ -23,7 +23,7 @@
  * bytes: they are resolved through the C2b locker seam and encoded with the
  * SAME `buildCreateCalldata` the execute leg signs, so the estimate is the
  * launch's, not a stand-in's. Without it the simulation still uses an empty
- * image and real gas will be materially higher — the live probe measured
+ * image and real gas will be materially higher - the live probe measured
  * 4,534,423 gas for a 3.3 KB image against ~1M for an empty one.
  *
  * Every response says WHICH of the two it is (`imagePriced`), because the
@@ -169,7 +169,7 @@ function validateLaunchParams(p: Record<string, unknown>): ValidatedLaunch | str
   if (links.length > LINKS_MAX) return `links accepts at most ${LINKS_MAX} URLs.`;
   for (const link of links) {
     if (link.length > LINK_LEN_MAX) return `each link must be at most ${LINK_LEN_MAX} characters.`;
-    if (!/^https:\/\//i.test(link)) return `each link must be an https URL — received "${link.slice(0, 48)}".`;
+    if (!/^https:\/\//i.test(link)) return `each link must be an https URL - received "${link.slice(0, 48)}".`;
   }
 
   const imageRead = readNumber(p, "imageByteLength", IMAGE_NUMERIC_PARAMS);
@@ -300,7 +300,7 @@ function buildPreviewCalldata(validated: ValidatedLaunch, pricing: ImagePricing)
  * Can this wallet afford the launch this preview just priced?
  *
  * SCOPE IS THE WHOLE POINT (R8). `trench.launch_execute` ALWAYS requires an
- * image, so an empty-image simulation cannot prove ANY real launch affordable —
+ * image, so an empty-image simulation cannot prove ANY real launch affordable -
  * its gas figure is an order of magnitude low. Every `empty_fallback` path
  * therefore answers `unpriced` and NEVER a shortfall, however large the balance
  * is: a "sufficient" derived from an under-estimate is exactly the false comfort
@@ -309,7 +309,7 @@ function buildPreviewCalldata(validated: ValidatedLaunch, pricing: ImagePricing)
  * WHY THE FIELD IS NO LONGER CALLED `noPrebuyBalanceVerdict`. That name was
  * earned: the preview could only price a launch with no prebuy, and a verdict
  * that did not say so would have claimed more than it priced. Now the preview
- * CAN price a prebuy, so the same honesty rule forces the opposite move — a
+ * CAN price a prebuy, so the same honesty rule forces the opposite move - a
  * fixed "no prebuy" in the name would be a lie whenever one was priced. The
  * verdict is therefore `balanceVerdict`, and it carries `balanceVerdictScope`
  * naming the exact scenario it judged (`no_prebuy` or `prebuy_included`). The
@@ -359,7 +359,7 @@ export async function trenchLaunchPreviewHandler(
   const feeEth = formatEther(TRENCH_CREATION_FEE_WEI);
 
   // `msg.value` is composed by the SAME function the execution path composes it
-  // with — creation fee + prebuy, exact bigint sum, no tolerance — so the
+  // with - creation fee + prebuy, exact bigint sum, no tolerance - so the
   // simulated call, the gas estimate and every total below describe the launch
   // the caller named rather than a no-prebuy stand-in for it.
   const msgValueWei = composeLaunchMsgValue(TRENCH_CREATION_FEE_WEI, validated.prebuyWei);
@@ -394,7 +394,7 @@ export async function trenchLaunchPreviewHandler(
     /** The caller's own prebuy, priced. Zero when none was named. */
     prebuyWei: validated.prebuyWei.toString(),
     prebuyEth: formatEther(validated.prebuyWei),
-    /** Creation fee + prebuy, exactly — the ETH leg the launch would send. */
+    /** Creation fee + prebuy, exactly - the ETH leg the launch would send. */
     msgValueWei: msgValueWei.toString(),
     msgValueEth: formatEther(msgValueWei),
     vexFee,
@@ -458,7 +458,7 @@ export async function trenchLaunchPreviewHandler(
       value: msgValueWei,
     });
     if (!sim.data) {
-      return fail("Launch simulation returned no data — cannot predict the token address.");
+      return fail("Launch simulation returned no data - cannot predict the token address.");
     }
     const predictedToken = decodeFunctionResult({
       abi: TRENCH_DIAMOND_ABI,
@@ -477,7 +477,7 @@ export async function trenchLaunchPreviewHandler(
     const gasCostWei = gasLimit * gasPrice;
     // A launch that charges the fee sends TWO transactions, so the total budgets
     // gas for both. The fee leg's budget is the SAME constant the pre-sign
-    // balance gate uses (`launch/plan.ts`) — one number, so the surface that
+    // balance gate uses (`launch/plan.ts`) - one number, so the surface that
     // prices a launch and the gate that refuses it can never disagree.
     const feeLegGasCostWei = vexFeeWei > 0n ? LAUNCH_FEE_LEG_GAS_LIMIT * gasPrice : 0n;
     const totalCostWei = costBeforeGasWei + gasCostWei + feeLegGasCostWei;
@@ -502,7 +502,7 @@ export async function trenchLaunchPreviewHandler(
       gasPriceWei: gasPrice.toString(),
       /**
        * The gas PRICE twin. `gasEstimate` and `gasLimitWithHeadroom` above are
-       * gas UNITS, not wei, so they deliberately get no gwei twin — quoting one
+       * gas UNITS, not wei, so they deliberately get no gwei twin - quoting one
        * would invent a unit they do not have.
        */
       gasPriceGwei: formatWeiAsGwei(gasPrice),
@@ -521,8 +521,8 @@ export async function trenchLaunchPreviewHandler(
         + "estimatedTotalCost = msg.value (creation fee + prebuy) + Vex fee + gas for BOTH transactions (the launch "
         + "and the separate fee transfer). balanceVerdict judges exactly the scenario named in balanceVerdictScope "
         + (validated.prebuyWei > 0n
-          ? "('prebuy_included' — this prebuy is part of every figure above), "
-          : "('no_prebuy' — pass prebuy to price one), ")
+          ? "('prebuy_included' - this prebuy is part of every figure above), "
+          : "('no_prebuy' - pass prebuy to price one), ")
         + "and is 'unpriced' whenever the image was not priced, because a real launch always carries an image.",
     });
   } catch (err) {

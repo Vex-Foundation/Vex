@@ -82,6 +82,25 @@ export const IconFolderClose = ({ size = 16, className }: GlyphProps): JSX.Eleme
   </svg>
 );
 
+/**
+ * The house mark. Added for Vex Studio's WELCOME rail row (2026-08-31): the
+ * owner's mockup puts a house beside that row, and the set had no home glyph.
+ * Drawn to the family contract - one even-odd filled outline on the same 16
+ * design grid, `fill="currentColor"`, no stroke.
+ */
+export const IconHome = ({ size = 16, className }: GlyphProps): JSX.Element => (
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <g transform="scale(1.5)">
+        <path
+          fillRule="evenodd"
+          clipRule="evenodd"
+          d="M8 1.2L15.2 7.6V14.8H0.8V7.6L8 1.2ZM8 2.94L13.8 8.1V13.4H2.2V8.1L8 2.94ZM6.7 13.4H9.3V10.1H6.7V13.4Z"
+          fill="currentColor"
+        />
+    </g>
+  </svg>
+);
+
 export const IconCode = ({ size = 16, className }: GlyphProps): JSX.Element => (
   <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
     <g transform="scale(1.5)">

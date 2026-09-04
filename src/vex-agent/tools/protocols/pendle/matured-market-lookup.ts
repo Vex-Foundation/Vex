@@ -1,16 +1,16 @@
 /**
- * The MATURED-CAPABLE financial resolver — `market-lookup.ts`'s deliberate,
+ * The MATURED-CAPABLE financial resolver - `market-lookup.ts`'s deliberate,
  * separately-named counterpart (R5b, G-02 / D18).
  *
  * WHO MAY IMPORT THIS. Exactly three actions, because exactly three actions can
  * legitimately act on a market that has already expired:
- *   - `pendle.pt.redeem` (quote, prequote identity, execute) — the core
+ *   - `pendle.pt.redeem` (quote, prequote identity, execute) - the core
  *     fixed-yield product case, and the whole reason this module exists: a
  *     matured PT used to resolve to nothing, so the position the redeem tool was
  *     built for was unreachable by that tool;
- *   - `pendle.lp.remove` (quote, identity, execute) — Pendle documents remove as
+ *   - `pendle.lp.remove` (quote, identity, execute) - Pendle documents remove as
  *     "callable regardless of the market's expiry";
- *   - `pendle.claim` target selection — accrued income does not stop being the
+ *   - `pendle.claim` target selection - accrued income does not stop being the
  *     user's because the market expired.
  *
  * EVERY OTHER ACTION KEEPS `market-lookup.ts`. A buy, a mint, an add, and both
@@ -23,13 +23,13 @@
  * WHY A SEPARATE MODULE RATHER THAN A FLAG ON THE FROZEN ONE. `market-lookup.ts`
  * is the single lookup for every mutating handler; teaching it a `includeMatured`
  * parameter would put the safety of ten call sites on remembering to pass
- * `false`. Here the default is the safe one by construction — a handler has to
+ * `false`. Here the default is the safe one by construction - a handler has to
  * import a module whose name says what it does.
  *
  * THE INACTIVE-ROW RULE. "Inactive" is the provider's bookkeeping label;
  * "matured" is an on-chain fact. An inactive row is believed ONLY when it
  * carries a parseable `expiry` at or before the injected clock. Missing,
- * unparseable, or still-future expiry is REFUSED BY NAME — the future-expiry
+ * unparseable, or still-future expiry is REFUSED BY NAME - the future-expiry
  * case is the dangerous one, because trusting the label there would redeem
  * against a market that is still live.
  */
@@ -46,7 +46,7 @@ export interface PendleExitMarket {
   readonly market: PendleMarket;
   /**
    * Where the row came from, already validated. `matured` means the row was in
-   * the inactive catalogue AND its expiry proved it — callers branch on THIS,
+   * the inactive catalogue AND its expiry proved it - callers branch on THIS,
    * never on the presence of the row (G-02: "callers branching on `matured`
    * rather than on presence").
    */
@@ -62,14 +62,14 @@ function eq(a: string | null, b: string): boolean {
  *
  * Deliberately a THROW, not a `null`. Absence and untrustworthiness are
  * different answers: `null` lets the caller honestly say "not a Pendle market",
- * while a row that exists but cannot be believed must stop the call outright —
+ * while a row that exists but cannot be believed must stop the call outright -
  * collapsing it into `null` would let the caller fall through to some other path
  * as though the market were simply absent.
  */
 function refuseUntrustworthyRow(market: PendleMarket, expiry: string | null, reason: string): never {
   throw new VexError(
     ErrorCodes.PENDLE_MARKET_NOT_FOUND,
-    `Pendle lists market ${market.address} as inactive, but ${reason} — Vex will not treat it as matured.`,
+    `Pendle lists market ${market.address} as inactive, but ${reason} - Vex will not treat it as matured.`,
     "Nothing was quoted or signed. Confirm the market with pendle__market_get, which reads the full catalogue including matured markets, before retrying.",
   );
 }
@@ -133,7 +133,7 @@ export async function resolveExitMarketByAddress(
 }
 
 /**
- * The canonical YT for a PT, matured included — the `pendle.pt.redeem` prequote
+ * The canonical YT for a PT, matured included - the `pendle.pt.redeem` prequote
  * identity path.
  *
  * Both the quote recorder and the execute gate call THIS, so their redeem

@@ -1,5 +1,5 @@
 /**
- * Khalani protocol tool manifests — 9 tools (8 read + 1 mutating).
+ * Khalani protocol tool manifests - 9 tools (8 read + 1 mutating).
  *
  * Each manifest declares what the tool does, what params it takes,
  * and whether it mutates state. The runtime uses this for discovery
@@ -8,13 +8,17 @@
 
 import type { ProtocolToolManifest } from "../types.js";
 import { KHALANI_MAIN_DISCOVERY } from "../embeddings/khalani/manifest.js";
-import { CANONICAL_RAW_AMOUNT_SENTENCE } from "../conventions.js";
+import {
+  BRIDGE_DERIVED_RECIPIENT_SENTENCE,
+  CANONICAL_MCP_APPROVAL_SENTENCE,
+  CANONICAL_RAW_AMOUNT_SENTENCE,
+} from "../conventions.js";
 import { BRIDGE_TOKEN_METADATA_RESULT_DESCRIPTION } from "../bridge-token-identity-contract.js";
 
 /**
  * The ONE raw-amount description both Khalani bridge tools declare (W5b). It
  * ends with the shared convention sentence, which names `TokenFind` as the
- * decimals source — rule 90: a raw amount that travels without the decimals
+ * decimals source - rule 90: a raw amount that travels without the decimals
  * needed to read it is a thousandfold error waiting to happen.
  */
 const AMOUNT_RAW_DESCRIPTION =
@@ -24,18 +28,18 @@ const AMOUNT_RAW_DESCRIPTION =
 /**
  * Both list spellings are equivalent (W2d). `["1","8453"]` is what an LLM
  * emitting JSON reaches for first, and every Khalani list param rejected it
- * until `acceptsStringArray` was declared — a silent-looking failure on a param
+ * until `acceptsStringArray` was declared - a silent-looking failure on a param
  * whose comma spelling worked.
  */
 const STRING_OR_ARRAY_CLAUSE =
-  'Accepts either a comma-separated string ("1,8453") or an array of strings (["1","8453"]) — the two '
+  'Accepts either a comma-separated string ("1,8453") or an array of strings (["1","8453"]) - the two '
   + "are equivalent.";
 
 /**
  * The provider's own documented ceiling, stated where the agent reads it
  * instead of being learnt from an HTTP 400 (live 2026-08-03: `limit=100` →
  * `Validation failed (limit: Too big: expected number to be <=20)`). Vex
- * rejects an out-of-range value before the wire — see `@tools/khalani/bounds.ts`.
+ * rejects an out-of-range value before the wire - see `@tools/khalani/bounds.ts`.
  */
 const LIMIT_1_TO_20_CLAUSE = "Range 1-20 (provider maximum, default 10); anything else is rejected before the call.";
 
@@ -46,6 +50,21 @@ const LIMIT_1_TO_20_CLAUSE = "Range 1-20 (provider maximum, default 10); anythin
  * spending a call on an unknown-parameter answer. The schema, discovery and
  * every description advertise `walletFamily` alone.
  */
+/**
+ * `routeId` and `depositMethod` were declared execute-only knobs the QUOTE has
+ * no counterpart for, so the prequote gate could never bind them: every call
+ * that set one was blocked as `unbindable_param` before approval
+ * (`../prequote/identity/bridge.ts`), and the `BridgeExecute` alias refused
+ * them at its own boundary. A parameter that cannot succeed on any path is not
+ * a parameter, so both are declared here as REJECTED instead - the namespaced
+ * tool and the alias now say the same thing, and the answer says where the two
+ * values actually come from. The bridge selects the best route from the quote
+ * it just took, and the deposit method is the one that route dictates.
+ */
+const BRIDGE_ROUTE_IS_QUOTED_SENTENCE =
+  "The route and the deposit method come from the quote: this tool re-quotes and takes the best route, "
+  + "and that route dictates its own deposit method, so neither can be chosen from tool input.";
+
 const WALLET_FAMILY_RETIRED_SPELLING = {
   key: "wallet",
   removeAfter:
@@ -221,9 +240,10 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
       + "the ONLY route that reaches Robinhood Chain (4663), which Khalani does not carry. Resolve `fromToken` and "
       + "`toToken` to addresses with TokenFind on each exact chain first, and continue only from contract-verified, mutation-ready EVM identities. Pass `amountRaw` in the source token's RAW atomic units; the approval gate independently re-reads EVM symbol and decimals from chain. "
       + "Vex takes 25 bps (0.25%) of the input token, quoted INSIDE the amounts below so the output shown is what "
-      + "actually arrives. `refundTo`, `referrer` and `referrerFeeBps` are NOT parameters here and are rejected by "
-      + "name: the refund destination is derived from the source wallet and Vex never takes a fee from a "
-      + "caller-supplied address. RETURNS `quoteId`, `routeCount`, `routes` and `vexFee`, plus an `expiryNote`. "
+      + "actually arrives. `recipient`, `refundTo`, `referrer` and `referrerFeeBps` are NOT parameters here and "
+      + "are rejected by name: the bridge delivers to the wallet selected for this project on the "
+      + "destination chain, the refund destination is derived from the source wallet, and Vex never takes a "
+      + "fee from a caller-supplied address. RETURNS `quoteId`, `routeCount`, `routes` and `vexFee`, plus an `expiryNote`. "
       + "Each route carries `routeId`, `type`, `amountIn` and `amountOut` (RAW atomic units), `etaSeconds`, "
       + "`expiresAtUnixSeconds` with `expiresInSeconds` remaining, `validBeforeUnixSeconds`, "
       + "`quoteExpiresAtUnixSeconds`, `estimatedGas` and `tags`. `vexFee` states `charged`, `bps`, the fee amount "
@@ -245,7 +265,14 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "amountRaw", type: "string", required: true, description: AMOUNT_RAW_DESCRIPTION },
       { key: "tradeType", type: "string", description: "EXACT_INPUT or EXACT_OUTPUT (default: EXACT_INPUT)." },
       { key: "fromAddress", type: "string", description: "Source wallet address override." },
-      { key: "recipient", type: "string", description: "Destination recipient override." },
+      // `recipient` is deliberately NOT exposed: a bridge delivers to the
+      // wallet selected for this project on the destination chain, derived
+      // through `resolveSelectedAddress`. A destination a model can choose is a
+      // destination an injection can choose, and in a FULL project no card
+      // shows it. Declared in `rejectedParams` below so the boundary answers
+      // the attempt with the remedy; both handlers reject it again by name,
+      // with the address. See the bridge-destination policy in
+      // `@tools/khalani/request.js`.
       // `refundTo` is deliberately NOT exposed: it decides where funds land
       // when a bridge fails, and a model-chosen fund destination is the same
       // vector as a model-chosen fee. Vex derives it from the selected source
@@ -264,6 +291,7 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
       toToken: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
       amountRaw: "1000000",
     },
+    rejectedParams: { recipient: BRIDGE_DERIVED_RECIPIENT_SENTENCE },
     discovery: KHALANI_MAIN_DISCOVERY["khalani.quote.get"],
   },
   {
@@ -323,13 +351,14 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
       + "to a transfer you already quoted; Khalani is the PRIMARY bridge, and `BridgeExecuteRelay` is the "
       + "alternative when Khalani has no route and the ONLY route that reaches Robinhood Chain (4663). "
       + "CALL IT WITH `dryRun: true` FIRST: that branch quotes and signs nothing, and it is the only branch that "
-      + "returns success. APPROVAL: in a RESTRICTED session the real call does not execute, it returns pending "
-      + "approval for a human to see first; in a FULL-permission session it executes directly. PRECONDITIONS, each "
+      + "returns success. " + CANONICAL_MCP_APPROVAL_SENTENCE + " PRECONDITIONS, each "
       + "refused BY NAME: a fresh matching quote must already exist; a route whose deadline has passed fails with "
       + "deadline_expired and must be re-quoted, never retried; a bridge already in flight on the same route "
-      + "refuses rather than starting a second; and `refundTo`, `referrer` and `referrerFeeBps` are NOT parameters "
-      + "and are rejected, because the refund destination is derived from the source wallet and Vex never takes a "
-      + "fee from a caller-supplied address. UNITS: `amountRaw` is RAW atomic units of `fromToken`; resolve the "
+      + "refuses rather than starting a second; and `recipient`, `refundTo`, `referrer`, `referrerFeeBps`, "
+      + "`routeId` and `depositMethod` are NOT parameters and are rejected by name, because the bridge delivers "
+      + "to the wallet selected for this project on the destination chain, the refund destination is derived "
+      + "from the source wallet, Vex never takes a fee from a caller-supplied address, and the route and its "
+      + "deposit method come from the quote this call takes. UNITS: `amountRaw` is RAW atomic units of `fromToken`; resolve the "
       + "decimals with TokenFind on the exact source chain. The approval gate independently re-reads EVM symbol and decimals from the contract and refuses unavailable metadata; provider-list decimals are never signing authority. Vex takes 25 bps (0.25%) of the input token as a SEPARATE transfer that runs "
       + "after the deposit, so a bridge that never happens is never charged. The `dryRun` preview RETURNS "
       + "`dryRun`, `quoteId`, `route`, `fromChain`, `toChain`, `vexFee` and `nativeCost`. "
@@ -354,17 +383,26 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "amountRaw", type: "string", required: true, description: AMOUNT_RAW_DESCRIPTION },
       { key: "tradeType", type: "string", description: "EXACT_INPUT or EXACT_OUTPUT." },
       { key: "fromAddress", type: "string", description: "Source wallet address override." },
-      { key: "recipient", type: "string", description: "Destination recipient override." },
+      // `recipient` is deliberately NOT exposed: a bridge delivers to the
+      // wallet selected for this project on the destination chain, derived
+      // through `resolveSelectedAddress`. A destination a model can choose is a
+      // destination an injection can choose, and in a FULL project no card
+      // shows it. Declared in `rejectedParams` below so the boundary answers
+      // the attempt with the remedy; both handlers reject it again by name,
+      // with the address. See the bridge-destination policy in
+      // `@tools/khalani/request.js`.
       // `refundTo` is deliberately NOT exposed: it decides where funds land
       // when a bridge fails, and a model-chosen fund destination is the same
       // vector as a model-chosen fee. Vex derives it from the selected source
       // wallet; both handlers reject it by name. See the refund-destination
       // policy in `@tools/khalani/request.js`.
-      // `referrer` / `referrerFeeBps` deliberately NOT exposed — see the note on
+      // `referrer` / `referrerFeeBps` deliberately NOT exposed - see the note on
       // `khalani.quote.get` above. `executeKhalaniBridge` rejects them by name.
       { key: "filler", type: "string", description: "Restrict quotes to a specific filler." },
-      { key: "routeId", type: "string", description: "Specific route ID (default: best route)." },
-      { key: "depositMethod", type: "string", description: "CONTRACT_CALL, PERMIT2, or TRANSFER." },
+      // `routeId` / `depositMethod` are deliberately NOT exposed - see
+      // BRIDGE_ROUTE_IS_QUOTED_SENTENCE above. Declared in `rejectedParams`
+      // below so the boundary answers the attempt with where the two values
+      // really come from.
       { key: "dryRun", type: "boolean", description: "If true, build deposit plan without executing." },
     ],
     exampleParams: {
@@ -373,6 +411,11 @@ export const KHALANI_TOOLS: readonly ProtocolToolManifest[] = [
       toChain: "base",
       toToken: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
       amountRaw: "100000000",
+    },
+    rejectedParams: {
+      recipient: BRIDGE_DERIVED_RECIPIENT_SENTENCE,
+      routeId: BRIDGE_ROUTE_IS_QUOTED_SENTENCE,
+      depositMethod: BRIDGE_ROUTE_IS_QUOTED_SENTENCE,
     },
     discovery: KHALANI_MAIN_DISCOVERY["khalani.bridge"],
   },

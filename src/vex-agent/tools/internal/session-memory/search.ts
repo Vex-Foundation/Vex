@@ -1,5 +1,5 @@
 /**
- * `SessionMemorySearch` tool handler — semantic recall over THIS session's
+ * `SessionMemorySearch` tool handler - semantic recall over THIS session's
  * narrative memory chunks (`session_memories` table).
  *
  * Returns top-K narrative chunks (4-section markdown bodies) scoped to the
@@ -7,7 +7,7 @@
  * service as `MemorySearch` (no remote calls, no OpenRouter).
  *
  * Empty-store short-circuit: if the session has zero active chunks, returns
- * success with an empty hits array and a hint — no DB load, no embedding
+ * success with an empty hits array and a hint - no DB load, no embedding
  * call. The memory-state banner in the system prompt is the primary signal
  * to the agent; this handler is the runtime backstop.
  */
@@ -36,7 +36,7 @@ const SessionMemorySearchSchema = z.object({
     .min(1)
     .max(2000)
     .describe(
-      "Semantic intent. Write the way you would ask another expert — not keywords. ✓ 'previous WIF position decisions and rationale' ✗ 'WIF'",
+      "Semantic intent. Write the way you would ask another expert - not keywords. ✓ 'previous WIF position decisions and rationale' ✗ 'WIF'",
     ),
   k: z.number().int().positive().optional().describe(
     `Max chunks to return. Default ${MEMORY_RECALL_DEFAULT_K}, clamped to 5.`,
@@ -76,7 +76,7 @@ export async function handleSessionMemorySearch(
     return {
       success: true,
       output:
-        "SessionMemorySearch: no memories yet — the session has not been compacted. " +
+        "SessionMemorySearch: no memories yet - the session has not been compacted. " +
         "Continue working; memories become available after the first compact (≥ 88% context).",
       data: { hits: [], reason: "empty_store" },
     };

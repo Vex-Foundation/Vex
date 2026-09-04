@@ -68,7 +68,7 @@ function parseKindCheck(): string[] {
  * Extract the LAST `CONSTRAINT swap_prequotes_eligibility_kind_check CHECK
  * (eligibility_kind IN (...))` value list, in migration application order.
  *
- * LAST, not first: migration 097 DROPs and recreates the constraint, so the
+ * LAST, not first: migration 099 DROPs and recreates the constraint, so the
  * live vocabulary is 097's. Reading the first match would pin migration 095's
  * five values forever and the lockstep would silently stop guarding anything.
  */
@@ -230,7 +230,7 @@ describe("swap_prequotes kind — SQL CHECK <-> TS union lockstep", () => {
     // mirror, so a member added there must reach both sides.
     expect(new Set(sqlKinds)).toEqual(new Set([
       "executable", "unpriceable_output", "excessive_impact", "oversize_snapshot", "provider_usd_invalid",
-      // WP2 (migration 097). Spendability is not a second executability
+      // WP2 (migration 099). Spendability is not a second executability
       // answer - it is three more reasons the ONE answer can be "no".
       "insufficient_balance", "balance_unavailable", "gas_reserve_insufficient",
     ]));

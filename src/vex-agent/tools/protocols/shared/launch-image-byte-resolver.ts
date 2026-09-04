@@ -1,5 +1,5 @@
 /**
- * C2b — the image BYTE-resolver seam (agent-runtime side).
+ * C2b - the image BYTE-resolver seam (agent-runtime side).
  *
  * SHARED, not Trench's. It was written for Trench and lived under `trench/`
  * until pools.fun launches needed the same bytes; the locker itself is one
@@ -21,7 +21,7 @@
  * fallback and no empty-image default: {@link resolveLaunchImageBytes} throws
  * {@link LaunchImageResolverUnavailableError} by name. A launch that cannot
  * prove which bytes it is about to commit to a real, irreversible on-chain
- * create must not proceed — a silently empty image would be accepted by the
+ * create must not proceed - a silently empty image would be accepted by the
  * Diamond and produce a permanently image-less token.
  *
  * The resolver returns the stored `digest` ALONGSIDE the bytes so the execute
@@ -34,11 +34,11 @@
  * One locker now feeds two launchpads with different image economics, so there
  * are two independent registration points and the caller picks by lane:
  *
- *  - {@link resolveLaunchImageBytes} — the ORIGINAL bytes the user picked,
+ *  - {@link resolveLaunchImageBytes} - the ORIGINAL bytes the user picked,
  *    stored verbatim. This is what pools.fun uploads to its own backend, where
  *    the image is hosted off-chain and no size limit of ours applies. Its
  *    behaviour is unchanged from before the split.
- *  - {@link resolveLaunchImageOnchainBytes} — the DERIVED Trench copy, under the
+ *  - {@link resolveLaunchImageOnchainBytes} - the DERIVED Trench copy, under the
  *    20 KB on-chain budget, because Trench writes the bytes inline in `create()`
  *    calldata and every one of them is gas on an irreversible transaction.
  *    Answers `no_onchain_variant` when the ladder could not bring the image
@@ -60,7 +60,7 @@ export interface LaunchImageBytes {
 /**
  * Resolve a locker image's bytes by its opaque id.
  *
- * `null` means "no such image" — a normal, expected answer the caller refuses
+ * `null` means "no such image" - a normal, expected answer the caller refuses
  * on by name. It never means "the resolver is missing"; that is the throw.
  */
 export type LaunchImageByteResolver = (
@@ -72,7 +72,7 @@ export type LaunchImageByteResolver = (
  *
  * `null` from the resolver still means "no such image". `no_onchain_variant` is
  * the genuinely different answer: the image EXISTS, the user can see it, and it
- * is launchable on pools.fun — it simply has no copy small enough for Trench's
+ * is launchable on pools.fun - it simply has no copy small enough for Trench's
  * calldata. Collapsing the two into `null` would make the Trench handler tell
  * the user their picture is missing, which is both false and unactionable.
  */
@@ -111,7 +111,7 @@ export class LaunchImageResolverUnavailableError extends Error {
 
 let currentResolver: LaunchImageByteResolver | null = null;
 
-/** Install the main-process implementation. Idempotent — last writer wins. */
+/** Install the main-process implementation. Idempotent - last writer wins. */
 export function registerLaunchImageByteResolver(
   resolver: LaunchImageByteResolver,
 ): void {
@@ -150,7 +150,7 @@ export async function resolveLaunchImageBytes(
 
 let currentOnchainResolver: LaunchImageOnchainByteResolver | null = null;
 
-/** Install the main-process implementation. Idempotent — last writer wins. */
+/** Install the main-process implementation. Idempotent - last writer wins. */
 export function registerLaunchImageOnchainByteResolver(
   resolver: LaunchImageOnchainByteResolver,
 ): void {

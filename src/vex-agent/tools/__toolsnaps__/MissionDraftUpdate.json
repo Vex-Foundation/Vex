@@ -103,7 +103,7 @@
             "type": "string"
           },
           "stopConditions": {
-            "description": "Proposed non-success stop conditions for the contract. The user owns this list — propose, refine with the user, and save updates here. Final acceptance happens via the host Accept contract step, not in chat",
+            "description": "Proposed non-success stop conditions for the contract. The user owns this list - propose, refine with the user, and save updates here. Final acceptance happens via the host Accept contract step, not in chat",
             "items": {
               "type": "string"
             },

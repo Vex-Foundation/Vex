@@ -32,10 +32,15 @@ export interface KhalaniQuoteInput {
   readonly tradeType: string | undefined;
   readonly filler: string | undefined;
   readonly fromAddress: string;
+  /**
+   * The DERIVED destination (the selected wallet on the destination family).
+   * Never a tool param - the handler rejects a supplied `recipient` by name
+   * before this stage is entered (bridge-destination policy in
+   * `@tools/khalani/request.js`).
+   */
   readonly recipient: string;
   readonly fromChainId: number;
   readonly fromFamily: BridgeChainFamily;
-  readonly routeIdParam: string;
 }
 
 export interface KhalaniQuotedRoute {
@@ -58,7 +63,7 @@ export async function quoteKhalaniBridgeRoute(
   input: KhalaniQuoteInput,
   failPreSign: FailPreSign,
 ): Promise<KhalaniQuoteOutcome> {
-  const { fromChain, toChain, fromToken, toToken, amount, fromChainId, fromFamily, routeIdParam } = input;
+  const { fromChain, toChain, fromToken, toToken, amount, fromChainId, fromFamily } = input;
 
   // 3. Prepare the quote request (normalizes addresses, parses hex amounts).
   let prepared: PreparedQuoteRequest;
@@ -68,14 +73,15 @@ export async function quoteKhalaniBridgeRoute(
       tradeType: input.tradeType,
       fromAddress: input.fromAddress, recipient: input.recipient,
       // No `refundTo`: `prepareQuoteRequest` derives it from `fromAddress`
-      // (refund-destination policy in `@tools/khalani/request.js`).
+      // (refund-destination policy in `@tools/khalani/request.js`), and
+      // `recipient` is the destination the handler derived, never a param.
       filler: input.filler,
     });
   } catch (err) {
     return { outcome: "failed", result: await failPreSign("bridge_failed", khalaniFailureMessage(err)) };
   }
 
-  // 3b. Vex integrator fee (`@tools/bridge-fee`) — split BEFORE the quote so
+  // 3b. Vex integrator fee (`@tools/bridge-fee`) - split BEFORE the quote so
   // the venue prices the amount it will actually receive and the `amountOut`
   // the agent is shown is what the user actually gets. `params.amountRaw` stays
   // the TOTAL debited (Kyber/Jupiter `currency_in` parity); the fee leaves as
@@ -103,9 +109,11 @@ export async function quoteKhalaniBridgeRoute(
   let selectedRoute: QuoteRoute;
   let quoteId: string;
   try {
+    // No route filter: `routeId` is not a parameter of this tool (the quote
+    // has no counterpart for it, so it could never be quote-bound), and the
+    // best route is selected from what the quote returns.
     const quoteResponse = await getKhalaniClient().getQuotes(
       { ...prepared.request, amount: quotedAmountRaw },
-      routeIdParam ? { routes: [routeIdParam] } : undefined,
     );
     const outcome = classifyKhalaniQuoteResponse(quoteResponse);
     if (outcome.outcome === "no_route") {
@@ -115,15 +123,7 @@ export async function quoteKhalaniBridgeRoute(
       };
     }
     quoteId = outcome.quoteId;
-    if (routeIdParam) {
-      const found = outcome.routes.find((r) => r.routeId === routeIdParam);
-      if (!found) {
-        return { outcome: "failed", result: await failPreSign("route_not_found", `Route ${routeIdParam} not found in quote`) };
-      }
-      selectedRoute = found;
-    } else {
-      selectedRoute = outcome.routes[resolveRouteBestIndex(outcome.routes)]!;
-    }
+    selectedRoute = outcome.routes[resolveRouteBestIndex(outcome.routes)]!;
   } catch (err) {
     const externalName = err instanceof VexError ? err.externalName : undefined;
     return {
@@ -133,13 +133,13 @@ export async function quoteKhalaniBridgeRoute(
   }
 
   // 5. Freshness. The rule (quoteExpiresAt, else validBefore, non-positive =
-  // none) has ONE owner — `khalaniRouteExpiryUnixSeconds` — shared with the
+  // none) has ONE owner - `khalaniRouteExpiryUnixSeconds` - shared with the
   // quote/dryRun previews, so what the agent is SHOWN is what is ENFORCED.
   const expiresAt = khalaniRouteExpiryUnixSeconds(selectedRoute);
   if (expiresAt !== null && Date.now() >= expiresAt * 1000) {
     return {
       outcome: "failed",
-      result: await failPreSign("deadline_expired", "Quote has expired — re-request a fresh quote"),
+      result: await failPreSign("deadline_expired", "Quote has expired - re-request a fresh quote"),
     };
   }
 

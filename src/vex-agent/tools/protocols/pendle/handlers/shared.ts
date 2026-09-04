@@ -1,5 +1,5 @@
 /**
- * Shared Pendle handler helpers — used by BOTH the PT (`handlers/pt.ts`) and the
+ * Shared Pendle handler helpers - used by BOTH the PT (`handlers/pt.ts`) and the
  * YT + claim (`handlers/yt.ts`) surfaces.
  *
  * These are fund-safety-adjacent (chain resolution, ON-CHAIN decimal reads,
@@ -34,7 +34,7 @@ export function isNativeInput(input: string): boolean {
 /** The tolerance a Pendle trade runs at, in the two forms the path needs. */
 export interface PendleSlippage {
   /**
-   * Whole basis points — what the PRICE FLOOR is computed from
+   * Whole basis points - what the PRICE FLOOR is computed from
    * (`calldata/price-floor.ts`).
    */
   readonly bps: number;
@@ -56,7 +56,7 @@ export interface PendleSlippage {
  *    is at the manifest gate: `0.5` could mean 0.5 bps or 0.5%, and rounding a
  *    price-protection parameter is guessing.
  *
- * 2. Pendle then CLAMPED with `Math.min(bps, 5000)` — the only venue in the tree
+ * 2. Pendle then CLAMPED with `Math.min(bps, 5000)` - the only venue in the tree
  *    exempt from `protocols/slippage-policy.ts`, which every other venue obeys
  *    and which is explicit that out-of-range is "REJECTED, never clamped"
  *    (`VEX_MAX_SLIPPAGE_BPS = 1000`). Because the clamp applied identically on
@@ -85,12 +85,12 @@ export function resolvePendleSlippage(toolId: string, bps: number | undefined): 
 }
 
 /**
- * Model-facing failure detail — the REAL cause, scrubbed and bounded.
+ * Model-facing failure detail - the REAL cause, scrubbed and bounded.
  *
  * Owner decree (2026-08-02): a tool error surfaced to the agent carries the
  * ACTUAL cause, never a bare "unexpected error". This helper feeds ~40 Pendle
- * WRITE call sites; until now every non-VexError throw on those paths — an RPC
- * refusal, a reverted broadcast, a wallet that could not pay — reached the
+ * WRITE call sites; until now every non-VexError throw on those paths - an RPC
+ * refusal, a reverted broadcast, a wallet that could not pay - reached the
  * model as the same three characterless words, so the agent could only retry
  * blind. The provider's own text is untrusted, which is why it is SCRUBBED
  * (`summarizeProtocolError`: secret redaction, HTML/JSON body removal, URL and
@@ -98,7 +98,7 @@ export function resolvePendleSlippage(toolId: string, bps: number | undefined): 
  *
  * A VexError still LEADS with our own vocabulary (code + authored hint), but no
  * longer stops there: the approval/broadcast throw sites wrap the node's real
- * words inside `message` (see `tools/pendle/erc20.ts` — "Failed to reset
+ * words inside `message` (see `tools/pendle/erc20.ts` - "Failed to reset
  * allowance: …"), so `APPROVAL_FAILED` alone hid an unpayable wallet behind a
  * code the agent could only retry. `describeFailureForAgent` appends the
  * scrubbed real cause.
@@ -152,7 +152,7 @@ export async function resolveInputToken(chain: PendleChain, raw: string): Promis
   if (isNativeInput(raw)) {
     throw new VexError(
       ErrorCodes.PENDLE_TOKEN_NOT_FOUND,
-      "Pendle trades require an ERC-20 input token — native currency is not supported here.",
+      "Pendle trades require an ERC-20 input token - native currency is not supported here.",
       wrappedNativeHint(chain),
     );
   }
@@ -167,7 +167,7 @@ export async function resolveInputToken(chain: PendleChain, raw: string): Promis
   try {
     decimals = Number(await client.readContract({ address, abi: PENDLE_ERC20_ABI, functionName: "decimals" }));
   } catch {
-    throw new VexError(ErrorCodes.PENDLE_TOKEN_NOT_FOUND, `Cannot read decimals for ${address} on ${chain.slug} — not an ERC-20 there.`);
+    throw new VexError(ErrorCodes.PENDLE_TOKEN_NOT_FOUND, `Cannot read decimals for ${address} on ${chain.slug} - not an ERC-20 there.`);
   }
   return { address, isNative: false, decimals };
 }
@@ -183,7 +183,7 @@ export function requireTokenAddress(raw: string): Address {
 
 /**
  * Pendle's display reading of a wei amount. The conversion is owned by
- * `protocols/amount-display.ts`; this keeps Pendle's own contract — the 18-
+ * `protocols/amount-display.ts`; this keeps Pendle's own contract - the 18-
  * decimal default, the numeric result, and the deliberate THROW on a
  * malformed `wei` (`BigInt` below, unchanged) rather than a silent zero.
  */
@@ -195,8 +195,8 @@ export function humanAmount(wei: string | bigint, decimals: number | null): numb
 /**
  * Build one `agent_activity` leg. Every field the row needs to be READABLE
  * travels together (rules/90): a raw amount whose decimals are unknown is the
- * canonical thousandfold-error shape — `"1047061"` is 1.05 at 6 decimals and
- * 0.00105 at 9 — so an unknown `decimals` also drops the human rendering rather
+ * canonical thousandfold-error shape - `"1047061"` is 1.05 at 6 decimals and
+ * 0.00105 at 9 - so an unknown `decimals` also drops the human rendering rather
  * than pairing a raw amount with a guessed one.
  */
 export function legInput(
@@ -217,7 +217,7 @@ export function legInput(
 
 /**
  * The ONE model-facing wording for a Pendle broadcast that did not end in a
- * proven fill — reverted, unprovable, or a claim that swept nothing.
+ * proven fill - reverted, unprovable, or a claim that swept nothing.
  *
  * Always `success: false`, deliberately: `runtime/capture.ts` skips capture on a
  * failed result, and a mined-but-unproven trade must NOT project a lot from

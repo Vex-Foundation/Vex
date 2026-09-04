@@ -51,6 +51,11 @@
  */
 
 import type { StudioSettlementRow } from "@vex-agent/db/repos/approval-intents.js";
+import {
+  acquireProjectLease,
+  reclassifyProjectLease,
+  type ProjectLease,
+} from "./project-lifecycle-gate.js";
 import type { StudioRuntimeAvailability } from "@vex-agent/mcp/approvals.js";
 import type { StudioToolCall } from "@vex-agent/mcp/admission.js";
 import type {
@@ -114,6 +119,40 @@ export async function runStudioCall(
     return { kind: "not_queued", reason: LOCKED_SENTENCE };
   }
 
+  // THE LIFECYCLE LEASE, taken SYNCHRONOUSLY - before the first await below.
+  //
+  // It does not decide authority: `loadProjectScopeSnapshot` reads the
+  // tombstone from the database and is the linearization point for that. This
+  // lease answers the other half, which no query can: it makes this call
+  // COUNTABLE and DRAINABLE, so a delete can wait for it to finish instead of
+  // committing a tombstone while a full-permission call is mid-flight.
+  //
+  // Taken here rather than after any await because a lease acquired after an
+  // await describes a moment that has already passed - a delete could have
+  // closed admission and finished draining in the gap.
+  const admission = acquireProjectLease(projectId, "executingCall");
+  if (!admission.ok) {
+    return { kind: "not_queued", reason: DELETING_SENTENCE };
+  }
+
+  try {
+    return await runStudioCallAdmitted(
+      projectId,
+      call,
+      options,
+      admission.lease,
+    );
+  } finally {
+    admission.lease.release();
+  }
+}
+
+async function runStudioCallAdmitted(
+  projectId: string,
+  call: StudioToolCall,
+  options: RunStudioCallOptions,
+  lease: ProjectLease,
+): Promise<StudioCallOutcome> {
   const correlationId = studioCorrelationId();
   const dbUrlOutcome = await ensureEngineDbUrl(correlationId);
   if (!dbUrlOutcome.ok) {
@@ -174,6 +213,28 @@ export async function runStudioCall(
     };
   }
 
+  // THE LEASE CHANGES CLASS HERE, SYNCHRONOUSLY, BEFORE THE NEXT AWAIT.
+  //
+  // Up to this line the call was `executingCall` - bounded work a delete WAITS
+  // for. From this line it is a call that will park on a human decision, and a
+  // parked call is the one thing a delete must NOT wait for: the settlement
+  // that releases it is the refusal the delete transaction itself commits, so
+  // draining it would be waiting on an event the wait prevents. That is the
+  // deadlock the two lease classes exist to separate, and until this call
+  // existed nothing in production ever moved between them - a real restricted
+  // call parked on a card kept `executingCall`, the drain timed out, and the
+  // delete answered `blocked_active_calls` for a call that was never going to
+  // finish.
+  //
+  // Moved BEFORE the enqueue rather than after it, deliberately. The enqueue is
+  // several awaits long (two dynamic imports and a transaction), and holding
+  // `executingCall` across them narrows the deadlock window without closing it.
+  // Doing it early cannot orphan an approval: the enqueue gate takes the
+  // project row `FOR SHARE` and refuses on a tombstone, so a delete that
+  // proceeds because of this reclassification makes the enqueue below refuse
+  // rather than park an intent nothing will ever settle.
+  reclassifyProjectLease(lease, "pendingApproval");
+
   // The gate fired. RESERVE THE PLACE FIRST, then enqueue, then block. The
   // order is the safety property: a reservation refused here leaves no row and
   // no approval card, whereas checking the cap after the enqueue would tell the
@@ -212,6 +273,13 @@ export async function runStudioCall(
         options.signal ? { abortSignal: options.signal } : {},
       ),
       readStudioRuntimeAvailability,
+      // WHO ASKED. Carried from the MCP `initialize` handshake so the card a
+      // human decides from names the actor instead of leaving the row blank.
+      // It is untrusted display text and the enqueue path sanitizes it; this
+      // function only forwards it.
+      ...(options.clientName === undefined
+        ? {}
+        : { requestedByClient: options.clientName }),
     });
   } catch (cause: unknown) {
     reserved.reservation.release();
@@ -252,6 +320,17 @@ export async function runStudioCall(
     reservation: reserved.reservation,
   });
 
+  // THE PARK IS OVER. Whatever the broker released with - a settlement, a
+  // withdrawal, a closed broker - this call is no longer waiting on a human, so
+  // it stops being counted as one. It goes back to `executingCall`, which is
+  // the truthful class for a call that is finishing, and every return below
+  // then releases from there.
+  //
+  // This cannot resurrect drained work behind a completed drain: a delete that
+  // committed in the meantime refused this intent, which is why the broker
+  // released at all, so the branches below return without doing anything.
+  reclassifyProjectLease(lease, "executingCall");
+
   if (release.kind === "at_capacity") {
     return { kind: "not_queued", reason: release.reason };
   }
@@ -275,6 +354,14 @@ export async function runStudioCall(
 }
 
 /** The one sentence a locked Vex gives a Studio call. */
+/**
+ * Said when the project is being deleted. Names what did not happen and what
+ * is true now, like every other refusal sentence on this path.
+ */
+const DELETING_SENTENCE =
+  "This Vex project is being deleted, so the action was not queued. Nothing "
+  + "was executed and no funds moved.";
+
 const LOCKED_SENTENCE =
   "Vex is locked, so it will not run this action. Nothing was executed and no "
   + "funds moved. Unlock Vex and call the tool again.";

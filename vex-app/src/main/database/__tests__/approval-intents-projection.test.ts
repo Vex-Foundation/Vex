@@ -95,6 +95,8 @@ function rowWithIntent(overrides: Record<string, unknown> = {}): Record<string, 
     intent_decision: null,
     intent_decision_reason: null,
     intent_execution_status: "not_started",
+    intent_origin: "agent",
+    intent_project_id: null,
     ...overrides,
   };
 }
@@ -117,6 +119,8 @@ function rowWithoutIntent(overrides: Record<string, unknown> = {}): Record<strin
     intent_decision: null,
     intent_decision_reason: null,
     intent_execution_status: null,
+    intent_origin: null,
+    intent_project_id: null,
     ...overrides,
   };
 }
@@ -324,5 +328,103 @@ describe("listPendingAllApprovals - companion intent projection", () => {
     expect(dto.riskLevel).toBeNull();
     expect(dto.preview).toBeNull();
     expect(dto.sessionTitle).toBeNull();
+  });
+
+  describe("provenance (B0)", () => {
+    it("projects a Studio-originated approval with its project", async () => {
+      const projectId = "3f2504e0-4f89-41d3-9a0c-0305e82c3301";
+      queryMock.mockResolvedValueOnce({
+        rows: [
+          {
+            ...rowWithIntent({
+              intent_origin: "studio_mcp",
+              intent_project_id: projectId,
+            }),
+            session_title: "Base swap",
+            session_deleted_at: null,
+            project_name: "Demo project",
+          },
+        ],
+      });
+      const result = await listPendingAllApprovals();
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const [dto] = result.data;
+      expect(dto?.origin).toBe("studio_mcp");
+      expect(dto?.projectId).toBe(projectId);
+      expect(dto?.projectName).toBe("Demo project");
+    });
+
+    it("KEEPS the project name when the project is tombstoned", async () => {
+      // The join is on `approval_intents.project_id`, whose FK has no cascade
+      // precisely so the audit outlives the project. A pending approval that
+      // outlived its project must still say which project asked - otherwise the
+      // user is asked to decide about an action with no attributable origin.
+      queryMock.mockResolvedValueOnce({
+        rows: [
+          {
+            ...rowWithIntent({
+              intent_origin: "studio_mcp",
+              intent_project_id: "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+            }),
+            session_title: null,
+            session_deleted_at: null,
+            project_name: "Deleted project",
+          },
+        ],
+      });
+      const result = await listPendingAllApprovals();
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data[0]?.projectName).toBe("Deleted project");
+    });
+
+    it("normalizes an OFF-ENUM origin to null, never to agent", async () => {
+      // Claiming less, not more. Relabelling a Studio-originated row as
+      // agent-originated would misattribute authority on a money path.
+      queryMock.mockResolvedValueOnce({
+        rows: [
+          {
+            ...rowWithIntent({ intent_origin: "totally_bogus" }),
+            session_title: null,
+            session_deleted_at: null,
+            project_name: null,
+          },
+        ],
+      });
+      const result = await listPendingAllApprovals();
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data[0]?.origin).toBeNull();
+      expect(result.data[0]?.origin).not.toBe("agent");
+    });
+
+    it("yields null provenance for a row with no companion intent", async () => {
+      queryMock.mockResolvedValueOnce({
+        rows: [
+          {
+            ...rowWithoutIntent(),
+            session_title: null,
+            session_deleted_at: null,
+            project_name: null,
+          },
+        ],
+      });
+      const result = await listPendingAllApprovals();
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data[0]?.origin).toBeNull();
+      expect(result.data[0]?.projectId).toBeNull();
+      expect(result.data[0]?.projectName).toBeNull();
+    });
+
+    it("JOINS projects so the name has a source", async () => {
+      queryMock.mockResolvedValueOnce({ rows: [] });
+      await listPendingAllApprovals();
+      const sql = String(queryMock.mock.calls[0]?.[0] ?? "");
+      expect(sql).toContain("LEFT JOIN projects p ON p.id = i.project_id");
+      expect(sql).toContain("i.origin AS intent_origin");
+      expect(sql).toContain("i.project_id AS intent_project_id");
+    });
   });
 });

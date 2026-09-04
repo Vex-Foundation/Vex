@@ -1,18 +1,18 @@
 /**
- * The Vex fee on a Trench curve TRADE — which base each side uses, and when the
+ * The Vex fee on a Trench curve TRADE - which base each side uses, and when the
  * leg may run.
  *
  * The two sides are asymmetric, and the asymmetry is the point:
  *
- *   BUY  — the base is the ETH the user SPENDS, which Vex knows exactly before
+ *   BUY  - the base is the ETH the user SPENDS, which Vex knows exactly before
  *          anything is signed. The curve is therefore quoted for `amount − fee`,
  *          so the disclosed `expectedOut`/`minOut` are POST-fee and are what
  *          actually arrives.
- *   SELL — the base is the ETH the user RECEIVES, which does not exist until the
+ *   SELL - the base is the ETH the user RECEIVES, which does not exist until the
  *          transaction settles. The row is planned from the QUOTE so it exists
  *          before broadcast, and the leg that is actually signed is RE-PLANNED
  *          from the decoded proceeds. If the decode declines, Vex cannot prove
- *          what arrived and takes NO fee at all — 25 bps of a quote is 25 bps of
+ *          what arrived and takes NO fee at all - 25 bps of a quote is 25 bps of
  *          a number that did not happen.
  *
  * In both cases the leg runs LAST, after the trade confirms. See
@@ -32,7 +32,7 @@ export interface TradeFeeIdentity {
   readonly sessionId: string;
 }
 
-/** No fee applies at this size — used for both the buy and the sell disclosure. */
+/** No fee applies at this size - used for both the buy and the sell disclosure. */
 export function tradeFeeSkipped(side: TrenchTradeSide, baseWei: bigint): TrenchFeeDisclosure {
   return buildTrenchFeeSkippedDisclosure({
     basis: side === "buy" ? "buy_eth_in" : "sell_eth_out",
@@ -54,7 +54,7 @@ export function tradeFeeUnprovenBase(): TrenchFeeDisclosure {
   });
 }
 
-/** Plan the BUY fee from the ETH the user spends — known exactly, pre-intent. */
+/** Plan the BUY fee from the ETH the user spends - known exactly, pre-intent. */
 export function planBuyFeeLeg(identity: TradeFeeIdentity, ethInWei: bigint): TrenchFeeLegPlan | null {
   return planTrenchFeeLeg({
     base: { basis: "buy_eth_in", ethInWei },

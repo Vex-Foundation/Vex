@@ -3,22 +3,22 @@
  *
  * `solana.swap.quote` used to return amounts, slippage, and the Vex fee
  * preview and nothing about HOW the swap executes or what it costs in
- * slippage — Solana was the only venue in the repo whose swap quote carried
+ * slippage - Solana was the only venue in the repo whose swap quote carried
  * no price impact (KyberSwap surfaces one via `kyberswap/helpers.ts`, Pendle
  * ships `priceImpact` on every quote). Both fields were already on the
  * validated `/build` response (`JupiterSwapBuildResponse.priceImpactPct` /
  * `.routePlan`, schema-checked in `jupiter-swaps/schemas.ts`), so this is
- * pure projection of data already fetched — no extra provider call.
+ * pure projection of data already fetched - no extra provider call.
  *
  * UNIT TRAP, named deliberately: Jupiter's field is called `priceImpactPct`
- * but its value is a decimal FRACTION, not a percent — the repo's own
+ * but its value is a decimal FRACTION, not a percent - the repo's own
  * captured reference (`agents_dm/agentscan-phase3/recon-docs-swap.md` §"Full
  * /order response schema") states `priceImpactPct` = `priceImpact` ÷ 100, and
  * the recorded live quote fixture shows `priceImpactPct
  * "-0.00015864212550172836"` against `priceImpact -0.015864212550172837`.
  * Surfacing it under the provider's own name would hand the agent a number
  * 100x smaller than the label implies, so it is surfaced as
- * `priceImpactFraction` — the SAME fraction convention KyberSwap's
+ * `priceImpactFraction` - the SAME fraction convention KyberSwap's
  * `routeSummary.priceImpact` already uses (0.0015 = 0.15%).
  *
  * SIGN CONVENTION, settled 2026-08-03 (W2g). The magnitude note above was
@@ -27,7 +27,7 @@
  * ordinary case" and carries "the OPPOSITE sign" to KyberSwap's. A fresh
  * read-only capture disproves that: `GET /swap/v2/build` SOL→USDC across three
  * runs returns `"0"` for small sizes and then POSITIVE, monotonically growing
- * values as the size moves the pool — 100 SOL `"0.00011185…"`, 2 000 SOL
+ * values as the size moves the pool - 100 SOL `"0.00011185…"`, 2 000 SOL
  * `"0.00038529…"`, 50 000 SOL `"0.00366076…"`
  * (`agents_dm/verify/capture-jupiter-price-impact-sign.ts`, fixture
  * `fixture-jupiter-price-impact-sign-2026-08-03.jsonl`; pinned by this
@@ -47,7 +47,7 @@ import type {
   JupiterSwapRoutePlanStep,
 } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/types.js";
 
-/** One leg of the executed route — which venue fills which fraction of the swap. */
+/** One leg of the executed route - which venue fills which fraction of the swap. */
 export interface ConciseJupiterSwapHop {
   /** Venue name as Jupiter reports it (e.g. "Whirlpool", "GoonFi V2"). */
   amm: string;
@@ -66,7 +66,7 @@ export interface ConciseJupiterSwapHop {
 export interface JupiterSwapRouteProjection {
   /**
    * Price impact as a decimal FRACTION (0.0015 = 0.15%), the provider's exact
-   * string — Jupiter names this `priceImpactPct` but the value is not a
+   * string - Jupiter names this `priceImpactPct` but the value is not a
    * percent (see the module doc). `null` when the provider omitted it: unknown
    * impact, never assume zero.
    */
@@ -90,7 +90,7 @@ function projectHop(step: JupiterSwapRoutePlanStep): ConciseJupiterSwapHop {
 /**
  * Project a validated `/build` response's execution route and price impact.
  * Defensive on both fields: the response is external data, and `routePlan` is
- * only schema-checked as an array — a non-array degrades to an empty route
+ * only schema-checked as an array - a non-array degrades to an empty route
  * rather than throwing inside a quote handler.
  */
 export function projectJupiterSwapRoute(raw: JupiterSwapBuildResponse): JupiterSwapRouteProjection {

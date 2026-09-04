@@ -133,7 +133,6 @@ const BANNED: readonly BannedPattern[] = [
   },
   { name: "resting glow shadow", regex: /shadow-\[0_0_/ },
   // Signal Tape foundation (§0.4): the retired indigo/violet accent and the
-  // two raw status hexes are now tokens (--vex-pin / --vex-warn-text). Any raw
   // re-introduction in shell sources is a red build.
   { name: "legacy indigo/violet accent", regex: /#(?:6366f1|8b5cf6)/i },
   { name: "raw pin/warn status hex", regex: /#(?:ffd35c|ffce5a|f0a0a0)/i },
@@ -189,6 +188,20 @@ const BANNED: readonly BannedPattern[] = [
     regex:
       /vex-micro-label[^"'`]*(?<![:-])text-ink-(?:tertiary|caption)|(?<![:-])text-ink-(?:tertiary|caption)[^"'`]*vex-micro-label/,
   },
+  // MOTION-POLICY, the CSP half (B5.2 motion pass). The renderer serves
+  // `style-src 'self'`, and CSP treats PARSING A STRING into style
+  // declarations as an inline style: `setAttribute("style", ...)` and
+  // `element.style.cssText = ...` are refused at runtime, with no build error
+  // and no type error to catch them first. Single CSSOM property writes
+  // (`el.style.width = ...`, `setProperty("--x", ...)`) and React's
+  // `style={{...}}` prop are NOT refused - React commits those property by
+  // property - which is why the JSX form stays legal and is used freely in
+  // this tree. That distinction is the whole rule, so the ban names the two
+  // string-parsing forms and nothing else.
+  {
+    name: "CSP-refused inline style string (MOTION-POLICY)",
+    regex: /setAttribute\(\s*["'`]style["'`]|\.style\.cssText\s*=/,
+  },
 ];
 
 /**
@@ -214,7 +227,24 @@ const WHITELIST: readonly WhitelistEntry[] = [
       "Glass is allowed ONLY on the two side rails.",
   },
   {
-    file: "features/appShell/BookPanel.tsx",
+    // Stage B4a: the Studio rail is the SAME rail as the sessions rail, in the
+    // same seat, wearing the same --vex-rail glass. It is one of the two side
+    // rails the law sanctions, not a third glass surface.
+    file: "features/appShell/studio/sidebar/StudioSidebar.tsx",
+    pattern: "backdrop-blur (glass)",
+    reason:
+      "User-sanctioned glass rail: the Studio sidebar replaces the sessions " +
+      "sidebar in column 1 and floats as the same translucent ink " +
+      "(--vex-rail) with backdrop-blur over the current shell photo backdrop. " +
+      "Glass is allowed ONLY on the two side rails.",
+  },
+  {
+    // Stage B4c: the BOOK's chrome moved out of BookPanel.tsx into the frame
+    // both rails (agent + Studio) now share, so the sanction moved WITH the
+    // glass rather than being duplicated. BookPanel.tsx no longer names the
+    // utility at all, so its entry is deleted rather than left as a stale
+    // sanction.
+    file: "features/appShell/book/BookRailFrame.tsx",
     pattern: "backdrop-blur (glass)",
     reason:
       "User-sanctioned glass rail: the BOOK panel floats as translucent ink " +
@@ -410,7 +440,6 @@ describe("shell design guard (S7)", () => {
     expect(matchNames("text-[#f0a0a0]")).toContain("raw pin/warn status hex");
     // The accent root and the new semantic tokens are NOT raw-hex violations.
     expect(matchNames("text-[var(--vex-pin)]")).toEqual([]);
-    expect(matchNames("text-[var(--vex-warn-text)]")).toEqual([]);
   });
 
   it("flags theme-blind white/black utilities, in every alpha and variant form", () => {

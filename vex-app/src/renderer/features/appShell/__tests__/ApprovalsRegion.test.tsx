@@ -54,6 +54,9 @@ function makeSummary(
     decision: null,
     decisionReason: null,
     executionStatus: null,
+    origin: null,
+    projectId: null,
+    requestedByClient: null,
     ...over,
   };
 }

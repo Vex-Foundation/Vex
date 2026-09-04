@@ -37,7 +37,7 @@ export interface ProtocolDiscoveryRequest {
   /**
    * True iff a live compaction preparation suppresses the `barrier` mutating
    * block for this turn (contract C8). While true, discovery must NOT tag
-   * mutating rows `unavailable_at_pressure` at `barrier` — the dispatcher will
+   * mutating rows `unavailable_at_pressure` at `barrier` - the dispatcher will
    * in fact allow them, and an advisory that contradicts the gate is worse than
    * no advisory. `critical` still tags. Absent ⇒ false ⇒ today's tagging.
    */
@@ -45,7 +45,7 @@ export interface ProtocolDiscoveryRequest {
   /**
    * Namespace listing mode. When true, `namespace` is REQUIRED and the response is
    * the COMPLETE set of that protocol's advertised, available tools as lean
-   * rows ({@link ProtocolDiscoveryListItem} — no param schemas, no scores) with
+   * rows ({@link ProtocolDiscoveryListItem} - no param schemas, no scores) with
    * no ranking and no `limit` truncation. Without a namespace the request fails:
    * dumping every namespace as one payload is forbidden.
    */
@@ -74,7 +74,7 @@ export interface ProtocolDiscoveryRequest {
 export type DiscoveryAvailabilityMode = "filter-env-unmet" | "include-unavailable";
 
 /**
- * The COMPLETE model-facing manifest projection — a ranked discovery row minus
+ * The COMPLETE model-facing manifest projection - a ranked discovery row minus
  * its ranking-only evidence.
  *
  * One builder produces it for both consumers (`toManifestRow` in
@@ -92,7 +92,7 @@ export type ManifestRow = Omit<ProtocolDiscoveryItem, "score" | "whyMatched">;
 export interface ProtocolDiscoveryItem {
   toolId: string;
   /**
-   * The CALLABLE name — what the model puts in a tool call once this row has
+   * The CALLABLE name - what the model puts in a tool call once this row has
    * been described and injected (`registry/injected-protocol-tools.ts`).
    *
    * Not decoration and not derivable: the publicName grammar carries exactly
@@ -111,7 +111,7 @@ export interface ProtocolDiscoveryItem {
   mutating: boolean;
   /**
    * The manifest's own side-effect classification. `mutating` alone reads as
-   * "will spend funds" — `trench.launch_request_form` is `mutating: true` and
+   * "will spend funds" - `trench.launch_request_form` is `mutating: true` and
    * spends nothing, which is a discovery-schema gap, not a trench bug.
    */
   actionKind: ActionKind;
@@ -124,13 +124,13 @@ export interface ProtocolDiscoveryItem {
   required: string[];
   /**
    * The manifest's authored worked call. It exists on every manifest, is
-   * correct, and was dropped from this row until W7 — `dexscreener.search`'s is
+   * correct, and was dropped from this row until W7 - `dexscreener.search`'s is
    * exactly the call whose absence produced the live
    * `missing required parameter query` failure.
    */
   exampleParams: Record<string, unknown>;
   /**
-   * Rendered cross-param group rules — one sentence per declared group, across
+   * Rendered cross-param group rules - one sentence per declared group, across
    * {@link ProtocolToolManifest.exclusiveParamGroups},
    * {@link ProtocolToolManifest.atMostOne}, and
    * {@link ProtocolToolManifest.atLeastOneOf}, in that order. Only present when
@@ -180,7 +180,7 @@ export interface ProtocolDiscoveryListItem {
   actionKind: ActionKind;
   description: string;
   /**
-   * Required param KEYS only — never the full schema. A listing exists to be
+   * Required param KEYS only - never the full schema. A listing exists to be
    * cheap over a whole namespace, and a half-schema in a listing is the worst
    * of both worlds (`reports/model-research.md` §4.1: a discovered tool must be
    * re-materialized as a full definition before the call). The measured harm
@@ -190,8 +190,8 @@ export interface ProtocolDiscoveryListItem {
   requiredParams: string[];
   /**
    * Exclusive-union markers: a list row NEVER carries the ranked item's fields.
-   * Declaring them `never` keeps `tools` readable without a narrowing dance —
-   * `item.params` types as `… | undefined` — while making an accidental
+   * Declaring them `never` keeps `tools` readable without a narrowing dance -
+   * `item.params` types as `… | undefined` - while making an accidental
    * assignment a compile error.
    */
   namespace?: never;
@@ -208,7 +208,7 @@ export interface ProtocolDiscoveryListItem {
  * Retrieval metadata attached to a discovery result. Surfaces whether the
  * response was an unranked catalog listing, dense-ranked, or lexical fallback,
  * plus audit columns of the embedding used. The `embeddingModel`/`embeddingDim`
- * columns are internal retrieval mechanics consumed ONLY by telemetry — they
+ * columns are internal retrieval mechanics consumed ONLY by telemetry - they
  * are stripped from the model-facing copy (see {@link ProtocolDiscoveryModelRetrievalMeta}
  * and the dispatcher's `toModelDiscoveryResult`). The model uses `method` and
  * `denseFailed` to interpret weak matches (lexical fallback often signals

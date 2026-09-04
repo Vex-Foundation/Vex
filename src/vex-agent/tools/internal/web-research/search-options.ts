@@ -4,7 +4,7 @@
  *
  * TWO CALLERS, ONE CONTRACT. The tool handler builds options from LLM params;
  * the regime worker builds its own (`regime-worker.ts`). The options object is
- * explicit and FROZEN in both cases — every field spelled out at the call site —
+ * explicit and FROZEN in both cases - every field spelled out at the call site -
  * so a change to the agent-facing default can never silently shrink the regime
  * classifier's evidence set. That failure has a precedent: the classifier ran
  * Tavily-only for a month because a source degraded quietly.
@@ -13,12 +13,12 @@
  * default call near 12 KB, measured from the
  * live per-row means (snippet ≈ 1.0 KB, page read ≈ 2.1 KB). The previous
  * hardcoded shape (10 rows + 5 reads) measured 14,753 B and 16,470 B minutes
- * apart on the SAME query — a coin flip, not a margin.
+ * apart on the SAME query - a coin flip, not a margin.
  *
  * REJECT, DO NOT IGNORE. A param that does not apply is rejected BY NAME rather
  * than dropped: silently discarding a value the caller supplied is the failure
  * mode `rules/90` names for fee and limit params, and it applies to research
- * params for the same reason — the agent believes it asked for something it did
+ * params for the same reason - the agent believes it asked for something it did
  * not get.
  */
 
@@ -122,14 +122,14 @@ const WebResearchParams = z
     }
 
     // Measured live (2026-07-27, 3-row control per call): at basic depth Tavily
-    // ignores chunksPerSource — rows stayed 459–2,251 B with `chunksPerSource: 1`
-    // — while at advanced depth the same request bounded every row to 720–755 B.
+    // ignores chunksPerSource - rows stayed 459–2,251 B with `chunksPerSource: 1`
+    // - while at advanced depth the same request bounded every row to 720–755 B.
     // Forwarding it at basic depth would be a param silently dropped.
     if (params.chunksPerSource !== undefined && params.searchDepth !== "advanced") {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message:
-          "`chunksPerSource` requires `searchDepth: \"advanced\"` — measured live, basic depth "
+          "`chunksPerSource` requires `searchDepth: \"advanced\"` - measured live, basic depth "
           + "ignores it (rows stayed 459–2,251 B) while advanced honours it (720–755 B)",
       });
     }
@@ -142,8 +142,8 @@ export type WebResearchParseResult =
 /** Validate raw LLM params and resolve them into one explicit request. */
 export function parseWebResearchRequest(params: Record<string, unknown>): WebResearchParseResult {
   // Empty means ABSENT before the exactly-one-of refine runs. `{query: "",
-  // url: "https://…"}` — the model filling both advertised fields and meaning
-  // only the second — used to die on a pathless "Too small: expected string to
+  // url: "https://…"}` - the model filling both advertised fields and meaning
+  // only the second - used to die on a pathless "Too small: expected string to
   // have >=1 characters" instead of simply fetching the page; and `{query:
   // ""}` alone now gets the refine's actual instruction rather than a size
   // complaint about a field it thought it had left blank.

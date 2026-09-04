@@ -6,14 +6,14 @@ const CHAIN_PARAM = {
   key: "chain",
   type: "string" as const,
   required: true,
-  description: "Chain slug or id — one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc').",
+  description: "Chain slug or id - one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc').",
 };
 
 const PT_PARAM = {
   key: "pt",
   type: "string" as const,
   required: true,
-  description: "The market's PT (principal token) CONTRACT ADDRESS — the anchor that resolves the market and its YT.",
+  description: "The market's PT (principal token) CONTRACT ADDRESS - the anchor that resolves the market and its YT.",
 };
 
 export const PENDLE_PY_TOOLS: readonly ProtocolToolManifest[] = [
@@ -32,7 +32,7 @@ export const PENDLE_PY_TOOLS: readonly ProtocolToolManifest[] = [
       PT_PARAM,
       { key: "tokenIn", type: "string", description: "MINT only: the payment token CONTRACT ADDRESS to spend (ERC-20; use WETH for ETH)." },
       { key: "tokenOut", type: "string", description: "REDEEM only: the output token CONTRACT ADDRESS. Defaults to the market's underlying asset." },
-      { key: "amountIn", type: "string", required: true, description: "Human-readable amount — mint: the payment token amount; redeem: the PT+YT pair amount to burn." },
+      { key: "amountIn", type: "string", required: true, description: "Human-readable amount - mint: the payment token amount; redeem: the PT+YT pair amount to burn." },
       { key: "slippageBps", type: "number", unit: "bps", description: `Slippage tolerance in basis points (default ${VEX_DEFAULT_SLIPPAGE_BPS} = ${VEX_DEFAULT_SLIPPAGE_BPS / 100}%).` },
     ],
     exampleParams: { chain: "ethereum", direction: "mint", pt: "0xb253eff1104802b97ac7e3ac9fdd73aece295a2c", tokenIn: "0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0", amountIn: "1" },

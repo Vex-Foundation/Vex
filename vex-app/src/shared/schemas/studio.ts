@@ -1,0 +1,183 @@
+/**
+ * Vex Studio HOST STATUS - the shared contract for the renderer's Studio-mode
+ * indicator (stage B0).
+ *
+ * ## What this payload is, and what it deliberately is not
+ *
+ * The Studio MCP host is a local socket an external coding agent's bridge
+ * connects to. The renderer needs to answer three questions - is it serving,
+ * why not, and is it full - and NOTHING else. So this payload carries a state,
+ * a closed cause code, and three numbers.
+ *
+ * IT NEVER CARRIES THE ENDPOINT. The unix socket path and the Windows pipe name
+ * are the address of a privileged local listener; a renderer that learned them
+ * would hold a capability it has no business holding, and the app's own threat
+ * model treats the renderer as hostile. `studio-host-status.test.ts` asserts
+ * `.strict()` rejects an `endpoint` key, so the omission is enforced rather
+ * than merely observed.
+ *
+ * IT NEVER CARRIES PROSE. `studioReadiness().cause` is a sentence written for
+ * an MCP peer, and start refusals embed filesystem paths and provider error
+ * text ("could not bind /run/user/1000/..."). Every other event channel in this
+ * app refuses runtime prose for the same reason, so the wire carries a CODE and
+ * the sentence stays main-side.
+ *
+ * ## Where the cause members come from
+ *
+ * `starting`, `fence_uninitialized` and `shutting_down` are the readiness
+ * barrier's own unready set, whose authoritative list is `STUDIO_UNREADY_CODES`
+ * in `main/studio/readiness.ts`. Shared code cannot import from main (the
+ * process boundary runs the other way), so the two are reconciled by a TABLE
+ * TEST that enumerates the barrier's codes against this enum and fails when
+ * either side grows a member the other lacks. Adding an unready code without
+ * adding it here is a test failure, not a silently unrepresentable state.
+ *
+ * `not_configured` and `endpoint_unavailable` are the host's own refusals,
+ * which the readiness barrier knows nothing about: the host can be refused
+ * before it ever consults readiness (no executor installed) or after it
+ * (endpoint planning, the Windows transport gate, a directory-identity check,
+ * a stale-socket probe, or `listen` itself failing). They are two codes rather
+ * than one per refusal site on purpose - the renderer's remedy is identical for
+ * every endpoint refusal, and a finer split would only put provider detail on
+ * the wire under a different name.
+ */
+
+import { z } from "zod";
+
+/**
+ * Why the host is not serving. Non-null ONLY when `state` is `unavailable`;
+ * `running`, `locked` and `starting` each explain themselves.
+ */
+export const studioHostUnavailableCauseSchema = z.enum([
+  /** The readiness barrier has not finished (mirrors `STUDIO_UNREADY_CODES`). */
+  "starting",
+  /** The approval fence could not be initialized (mirrors the barrier). */
+  "fence_uninitialized",
+  /** The app is shutting down (mirrors the barrier). */
+  "shutting_down",
+  /** No executor is installed, so the host refuses to serve calls it cannot run. */
+  "not_configured",
+  /**
+   * The endpoint could not be planned, verified, or bound. Covers directory
+   * ownership and mode checks, the stale-endpoint probe, and `listen`
+   * failures. The specific sentence stays in main's log.
+   */
+  "endpoint_unavailable",
+  /*
+   * `windows_transport_disabled` stood here while the section 1.6 Windows
+   * transport gate was closed. The gate opened on the CI runs recorded in
+   * `mcp-host/endpoint.ts`, no path can produce the cause any longer, and
+   * renderer and main ship in one artifact, so the reader and the writer went
+   * together and no rollout ordering applied.
+   */
+  /**
+   * The Windows pipe-front CHILD PROCESS is not usable: its binary is missing
+   * from the installation, it could not be spawned, or it refused the frozen
+   * `HELLO` numbers main and it are built to share.
+   *
+   * A PACKAGING FAULT, and its own member rather than another
+   * `endpoint_unavailable`: the remedy is to repair the installation
+   * (reinstall Vex, or rebuild the bridge when running from source), which is
+   * not the remedy for any other endpoint refusal. Following the same rule as
+   * every other member, the DETAIL - which binary, which path, which field -
+   * stays in main's log and never reaches the wire.
+   */
+  "front_unavailable",
+  /**
+   * WINDOWS DID NOT CONFIRM THE PIPE'S PROTECTION, so Vex did not serve on it.
+   *
+   * The front reads its security descriptor and its pipe flags back from the
+   * created handle at runtime and reports what it VERIFIED, never what it asked
+   * for (`pipe-front-protocol.md` section 6.2). Main requires `rejectRemote`,
+   * `firstInstance` and `messageMode`, and refuses to publish a listener when
+   * any of them comes back unconfirmed or when the descriptor readback does not
+   * match (`ERROR` 5). This is the FAIL-CLOSED half of the whole Windows
+   * transport arc: a wallet transport whose cross-user access cannot be
+   * demonstrated is not opened, and saying "could not open its endpoint" here
+   * would hide a security refusal behind a generic failure.
+   */
+  "pipe_security_unconfirmed",
+  /**
+   * The pipe front died repeatedly and its restart budget is spent.
+   *
+   * Its own member because the remedy is a RESTART OF VEX rather than a repair
+   * of the installation: the budget never resets while main lives (the same
+   * rule the pty host follows), so a front that crash-looped once will not come
+   * back on its own however long the user waits.
+   */
+  "front_restart_budget_exhausted",
+  /**
+   * The admission fence epoch is spent, so admission is closed for the life of
+   * this process (`pipe-front-protocol.md` section 5.2).
+   *
+   * Its own member because it is the one unavailable state an UNLOCK cannot
+   * clear: the fence that makes a lock safe can no longer be raised, so Vex
+   * keeps the door shut. The remedy is a full application restart, and it must
+   * never be reported as "locked", which invites an unlock that cannot work.
+   */
+  "admission_permanently_closed",
+]);
+export type StudioHostUnavailableCause = z.infer<
+  typeof studioHostUnavailableCauseSchema
+>;
+
+/**
+ * The host's lifecycle state.
+ *
+ *  - `running`    - the listener is bound and a peer would be served.
+ *  - `locked`     - Vex is locked. The listener stays bound and every connect
+ *                   is answered with a typed `locked` refusal that reads no
+ *                   project bytes, which is the honest answer a bridge cannot
+ *                   derive from a connection error. Nothing is admitted.
+ *  - `starting`   - a bind attempt is in flight and has not reached its
+ *                   publication gate.
+ *  - `unavailable`- not serving, and `cause` says why. Covers both a listener
+ *                   that is not up and a bound listener whose readiness barrier
+ *                   has not opened yet.
+ */
+export const studioHostStateSchema = z.enum([
+  "running",
+  "locked",
+  "starting",
+  "unavailable",
+]);
+export type StudioHostState = z.infer<typeof studioHostStateSchema>;
+
+/**
+ * The established-connection bound, mirrored onto the wire so the renderer can
+ * render "3 of 16" without hard-coding the host's constant. Reconciled against
+ * `STUDIO_MAX_CONNECTIONS` by a table test.
+ */
+export const STUDIO_MAX_CONNECTIONS_WIRE = 16;
+
+export const studioHostStatusSchema = z
+  .object({
+    state: studioHostStateSchema,
+    /** Null unless `state` is `unavailable`; enforced by a refinement below. */
+    cause: studioHostUnavailableCauseSchema.nullable(),
+    /**
+     * ESTABLISHED connections only - the synchronous reservations the host
+     * grants at handshake. Sockets still handshaking are deliberately excluded:
+     * a peer that has not finished its handshake holds no slot a user would
+     * recognise as a connection, and counting it would make the indicator
+     * flicker on every probe.
+     */
+    connectionCount: z.number().int().nonnegative().max(STUDIO_MAX_CONNECTIONS_WIRE),
+    maxConnections: z.literal(STUDIO_MAX_CONNECTIONS_WIRE),
+    /**
+     * `connectionCount >= maxConnections`. A handshake-pending capacity refusal
+     * emits a status update but does NOT set this flag: that bound is a
+     * different, smaller queue, and reporting it as "full" would tell the user
+     * their 16 connection slots are gone when none of them are.
+     */
+    atCapacity: z.boolean(),
+  })
+  .strict()
+  .refine(
+    (value) => (value.state === "unavailable") === (value.cause !== null),
+    {
+      message: "cause is present exactly when state is unavailable",
+      path: ["cause"],
+    },
+  );
+export type StudioHostStatus = z.infer<typeof studioHostStatusSchema>;

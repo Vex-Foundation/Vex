@@ -19,22 +19,21 @@ import {
   useState,
   type JSX,
 } from "react";
-import { useUiStore } from "../../stores/uiStore.js";
+import { useUiStore, type RuntimeMode } from "../../stores/uiStore.js";
 import {
   BOOK_COLLAPSED,
   computeShellColumns,
-  SIDEBAR_AUTO_COLLAPSE,
+  shouldAutoCollapseSidebar,
   WELCOME_PORTFOLIO_WIDTH,
   type ShellColumns,
 } from "../../lib/shell-columns.js";
 import { BookPanel } from "./BookPanel.js";
-import { DeskRuleTapeState } from "./DeskRuleTapeState.js";
-import { MissionRail } from "./MissionRail.js";
 import { SessionCreator } from "./SessionCreator.js";
-import { SessionExportControl } from "./SessionExportControl.js";
 import { SessionPanel } from "./SessionPanel.js";
 import { SessionsList } from "./SessionsList.js";
-import { GlobalApprovals } from "./GlobalApprovals.js";
+import { ShellStatusStrip } from "./ShellStatusStrip.js";
+import { StudioCenter } from "./studio/StudioCenter.js";
+import { StudioSidebar } from "./studio/sidebar/StudioSidebar.js";
 import { AgentLaunchFormHost } from "./token-launch/AgentLaunchFormHost.js";
 import { BoardModalHost } from "./Board/BoardModalHost.js";
 import { BoardGrid } from "./Board/BoardGrid.js";
@@ -44,7 +43,6 @@ import { BoardSpotlightWithChart } from "./Board/BoardSpotlightWithChart.js";
 import { AskVexPanel } from "./Board/AskVexPanel.js";
 import { ConnectionBanner } from "../../components/ui/connection-banner.js";
 import { useNetworkOnline } from "../../lib/use-network-online.js";
-import { GlobalErrorBanner } from "./GlobalErrorBanner.js";
 import { useEngineErrorRetentionSync } from "../../lib/api/engine-errors.js";
 import { ShellBackdrop } from "./ShellBackdrop.js";
 import { ShellDragHandle } from "./ShellDragHandle.js";
@@ -56,6 +54,8 @@ export function AppShell(): JSX.Element {
   // still be waiting for them when they select it.
   useEngineErrorRetentionSync();
   const activeSessionId = useUiStore((s) => s.activeSessionId);
+  const activeProjectId = useUiStore((s) => s.activeProjectId);
+  const runtimeMode = useUiStore((s) => s.runtimeMode);
   const theme = useUiStore((s) => s.theme);
   const createSessionOpen = useUiStore((s) => s.createSessionOpen);
   const openCreateSession = useUiStore((s) => s.openCreateSession);
@@ -64,7 +64,10 @@ export function AppShell(): JSX.Element {
   // Backdrop veil is derived from state AppShell already subscribes to —
   // light on welcome/idle (no active session), deep behind an active session
   // transcript.
-  const backdropDimmed = activeSessionId !== null;
+  // Studio's own welcome stage is "no project selected", so the veil follows
+  // whichever selection the ACTIVE mode is keyed on.
+  const backdropDimmed =
+    runtimeMode === "studio" ? activeProjectId !== null : activeSessionId !== null;
 
   return (
     // `relative isolate`: anchors the absolutely-positioned shell backdrop
@@ -74,11 +77,17 @@ export function AppShell(): JSX.Element {
       data-vex-shell="true"
       data-vex-theme={theme}
       data-vex-screen="appShell"
+      // The mode the shell is dispatching. `data-vex-screen` is UNCHANGED and
+      // stays the e2e selector in BOTH modes: Studio is a mode inside the app
+      // shell, never a new View member.
+      data-vex-runtime-mode={runtimeMode}
     >
       <ShellBackdrop dimmed={backdropDimmed} />
 
       <ShellFrame
+        runtimeMode={runtimeMode}
         activeSessionId={activeSessionId}
+        activeProjectId={activeProjectId}
         onCreate={() => openCreateSession()}
       />
 
@@ -105,10 +114,14 @@ export function AppShell(): JSX.Element {
  * an open BOOK).
  */
 function ShellFrame({
+  runtimeMode,
   activeSessionId,
+  activeProjectId,
   onCreate,
 }: {
+  readonly runtimeMode: RuntimeMode;
   readonly activeSessionId: string | null;
+  readonly activeProjectId: string | null;
   readonly onCreate: () => void;
 }): JSX.Element {
   const sidebarOpen = useUiStore((s) => s.sidebarOpen);
@@ -121,6 +134,7 @@ function ShellFrame({
   const toggleBook = useUiStore((s) => s.toggleBook);
   const bookWidth = useUiStore((s) => s.bookWidth);
   const setBookWidth = useUiStore((s) => s.setBookWidth);
+  const setActiveProjectId = useUiStore((s) => s.setActiveProjectId);
 
   const frameRef = useRef<HTMLDivElement | null>(null);
   const [viewport, setViewport] = useState(() =>
@@ -151,7 +165,7 @@ function ShellFrame({
   // below the breakpoint flips the ephemeral re-expand override instead of
   // the persisted preference. Crossing back into wide clears the override so
   // the next narrow entry starts at the rail again.
-  const narrow = viewport < SIDEBAR_AUTO_COLLAPSE;
+  const narrow = shouldAutoCollapseSidebar(viewport);
   useEffect(() => {
     if (!narrow) setSidebarNarrowExpanded(false);
   }, [narrow, setSidebarNarrowExpanded]);
@@ -170,7 +184,12 @@ function ShellFrame({
   // WELCOME stage: the right edge is the floating Portfolio tab rather than the
   // BOOK rail, so the solver runs sidebar-only and the third track carries the
   // tab's own reservation instead of a solved BOOK width.
-  const welcomeStage = activeSessionId === null;
+  // MODE-AWARE welcome stage. The derivation is otherwise unchanged: the column
+  // solve and `rightTrack` read this exactly as they always did, so Studio gets
+  // the same floating-Portfolio geometry on its welcome screen that agent mode
+  // gets on its own.
+  const studio = runtimeMode === "studio";
+  const welcomeStage = studio ? activeProjectId === null : activeSessionId === null;
   const cols: ShellColumns = computeShellColumns(
     viewport,
     sidebarCollapsed ? 0 : sidebarWidth,
@@ -235,38 +254,42 @@ function ShellFrame({
         reconnecting={!networkOnline}
         label="Offline - waiting for the network to come back"
       />
+      {/* COLUMN 1 - the rail the active mode owns. The two rails are separate
+        * components on purpose: they hold different objects with different
+        * lifetimes, and one component branching on the mode would own both. */}
       <div className="relative z-20 min-w-0 overflow-visible">
-        <SessionsList
-          onCreate={onCreate}
-          collapsed={sidebarCollapsed}
-          width={cols.sidebar}
-          onToggleSidebar={toggleSidebar}
-        />
+        {studio ? (
+          <StudioSidebar
+            collapsed={sidebarCollapsed}
+            width={cols.sidebar}
+            onToggleSidebar={toggleSidebar}
+            activeProjectId={activeProjectId}
+            onSelectProject={setActiveProjectId}
+            onSelectWelcome={() => setActiveProjectId(null)}
+          />
+        ) : (
+          <SessionsList
+            onCreate={onCreate}
+            collapsed={sidebarCollapsed}
+            width={cols.sidebar}
+            onToggleSidebar={toggleSidebar}
+          />
+        )}
       </div>
 
       <section className="relative z-10 flex min-w-0 flex-col overflow-hidden">
-        {/* THE STATUS STRIP — three zones on a 1fr/auto/1fr grid, equal
-         * flanks so the centre is TRULY centred: MISSION/PLAN badge cluster
-         * (left), the one live status word (centre), approvals inbox +
-         * export key (right). Both flank children render null when idle. */}
-        <header className="relative grid h-11 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 px-6">
-          <div className="flex min-w-0 items-center justify-start">
-            <MissionRail activeSessionId={activeSessionId} />
-          </div>
-          <div className="flex min-w-0 items-center justify-center">
-            <DeskRuleTapeState />
-          </div>
-          <div className="flex items-center justify-end gap-2">
-            {/* Session-LESS failures (memory maintenance) surface here: they
-             * belong to no conversation. Renders null when idle. */}
-            <GlobalErrorBanner />
-            <GlobalApprovals />
-            <SessionExportControl activeSessionId={activeSessionId} />
-          </div>
-        </header>
+        {/* THE STATUS STRIP, mounted ONCE for the whole frame regardless of
+          * mode. It carries `GlobalApprovals`, which owns the approvals live
+          * sync, and preload allows one subscriber per event kind per window -
+          * so a per-shell strip would mean two subscriptions across a mode
+          * switch. See `ShellStatusStrip.tsx`. */}
+        <ShellStatusStrip
+          runtimeMode={runtimeMode}
+          activeSessionId={activeSessionId}
+        />
 
         <div className="min-h-0 flex-1">
-          <SessionPanel />
+          {studio ? <StudioCenter /> : <SessionPanel />}
         </div>
       </section>
 

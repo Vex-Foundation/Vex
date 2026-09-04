@@ -183,6 +183,18 @@ export interface EnqueueApprovalInput {
    */
   readonly preparedApprovalBinding?: PreparedApprovalBinding;
   readonly origin: "agent" | "studio_mcp";
+  /**
+   * Studio only - the `clientInfo.name` the external MCP client declared in its
+   * `initialize` handshake, so the card can NAME who asked instead of leaving
+   * the actor row blank (rule 90: an approval binds the actor and whether an
+   * agent proposed the action).
+   *
+   * It is untrusted, self-declared text from another process, so it is
+   * PROVENANCE only: `buildPolicySnapshot` sanitizes it and it lands in
+   * `policy_json`, which no gate reads and no digest covers. It deliberately
+   * does not reach `preview_json` - see `PolicySnapshot.requestedByClient`.
+   */
+  readonly requestedByClient?: string;
   /** Studio only - the project whose scope authorized the call. */
   readonly projectId?: string;
   /** Studio only - the `projects.scope_version` the call was admitted under. */
@@ -225,7 +237,7 @@ export async function enqueueApprovalIntentWithGate(
       ? {}
       : { preparedApprovalBinding: binding }),
   });
-  const intentPolicy = buildPolicySnapshot(input.toolContext);
+  const intentPolicy = buildPolicySnapshot(input.toolContext, input.requestedByClient);
   // The INTENT's own expiry floors the default, so an approval can never
   // outlive the proposal it would broadcast - a Solana blockhash is valid for
   // about a minute, and the default TTL is an hour.

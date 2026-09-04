@@ -1,13 +1,19 @@
 /**
  * SessionWelcomeHero — the rebrand hero contract (accepted mockup,
  * 2026-08-20): vx mark pair themed by CSS, micro-label date eyebrow carrying the
- * honest build-stage disclosure, the display headline, the reserved
- * Agent | Studio toggle (Studio disabled + lock, runtimeMode read-only),
- * and the retirement of the BACKED BY footer (studio seam #2).
+ * honest build-stage disclosure, the display headline, and the retirement of
+ * the BACKED BY footer band.
+ *
+ * CONTRACT CHANGE (UX after-audit N1): the runtime-mode capsule is NOT part of
+ * this hero any more. It used to render here and in the Studio rail only, which
+ * left an open agent session with no control into Studio anywhere on screen.
+ * Its home is now the agent rail header (`AgentSidebarHeader`), whose own suite
+ * pins the door; this file pins the other half - that the hero mounts no second
+ * copy, because the page carries exactly ONE `Runtime mode` radiogroup.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { greetingPoolForHour } from "../../../lib/greeting.js";
 import { useUiStore } from "../../../stores/uiStore.js";
 
@@ -107,26 +113,18 @@ describe("SessionWelcomeHero", () => {
     expect(randSpy.mock.calls.length).toBeLessThanOrEqual(1);
   });
 
-  it("reserves the Studio seat: disabled, wearing the lock, and never writing runtimeMode", () => {
+  it("mounts NO runtime-mode control - the capsule has one home, the rail header", () => {
+    // CONTRACT CHANGE (UX after-audit N1). The capsule used to live here, and
+    // only here plus the Studio rail, so opening a session left the shell with
+    // no door into Studio at all. It moved to the agent rail header, which is
+    // on screen in every agent state; the hero gave up its copy because the
+    // page-wide invariant is exactly ONE `Runtime mode` radiogroup (pinned by
+    // e2e/studio.spec.ts). A second one here would double the control.
     render(<SessionWelcomeHero />);
-    const studio = screen.getByRole("button", {
-      name: "Studio mode (coming soon)",
-    });
-    expect(studio).toHaveProperty("disabled", true);
-    expect(studio.querySelector("svg")).not.toBeNull();
-    fireEvent.click(studio);
+    expect(screen.queryByRole("radiogroup", { name: "Runtime mode" })).toBeNull();
+    expect(screen.queryByRole("radio", { name: "Studio" })).toBeNull();
+    expect(screen.queryByRole("radio", { name: "Agent" })).toBeNull();
     expect(useUiStore.getState().runtimeMode).toBe("agent");
-  });
-
-  it("marks the Agent segment as the current runtime mode without offering a switch", () => {
-    render(<SessionWelcomeHero />);
-    const group = screen.getByRole("group", { name: "Runtime mode" });
-    const agent = Array.from(group.querySelectorAll("span")).find(
-      (el) => el.textContent === "Agent",
-    );
-    expect(agent?.getAttribute("aria-current")).toBe("true");
-    // Agent is a state readout, not a control — no button, no store write.
-    expect(agent?.tagName).toBe("SPAN");
   });
 
   it("retires the BACKED BY footer band entirely (studio seam #2)", () => {

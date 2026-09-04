@@ -4,7 +4,7 @@
  *
  * Balances leave as `{raw, decimals, exact}` triplets (`../money-format.ts`): a
  * raw base-unit string alone is the canonical money-format failure, and
- * `Number()` on a u256 silently loses precision above ~9 tokens at 18 decimals —
+ * `Number()` on a u256 silently loses precision above ~9 tokens at 18 decimals -
  * which is what the projector this replaces did on every leg.
  *
  * Two correctness rules worth stating plainly:
@@ -67,7 +67,7 @@ export interface ProjectedPositionLeg {
   stateDetermined: boolean;
   stateNote?: string;
   market: string | null;
-  /** The leg's own token — for a matured PT this is its REAL address (G-18). */
+  /** The leg's own token - for a matured PT this is its REAL address (G-18). */
   token: ProjectedToken | null;
   expiry: string | null;
   daysToExpiry: number | null;
@@ -93,7 +93,7 @@ export function positionState(
     // A matured LP can still be removed (principal side) but earns nothing more.
     case "lp":
       return "matured_removable";
-    // A YT is worth zero after expiry — this is the decay the buy path warns of.
+    // A YT is worth zero after expiry - this is the decay the buy path warns of.
     case "yt":
       return "expired_worthless";
     // SY has no expiry of its own; it tracks its underlying and keeps earning.
@@ -115,14 +115,14 @@ function projectAccrued(
   return {
     items,
     totalUsd: null,
-    note: "Pendle CACHES claimable amounts for up to 24 hours, so these can lag the chain. They are also unpriced on this endpoint — no USD total is implied.",
+    note: "Pendle CACHES claimable amounts for up to 24 hours, so these can lag the chain. They are also unpriced on this endpoint - no USD total is implied.",
   };
 }
 
 /**
  * Project one PT / YT / LP leg.
  *
- * `legToken` is the contract the balance is denominated in — the PT address for
+ * `legToken` is the contract the balance is denominated in - the PT address for
  * a PT leg, the YT for a YT leg, the market itself for LP. Resolving it (via the
  * read-lane resolver for matured markets) is what fixes G-18: a matured PT used
  * to project as `pt: null, expiry: null, redeemable: false`, i.e. the exact
@@ -160,7 +160,7 @@ export function projectPositionLeg(args: {
 
   if (matured === null) {
     projected.stateNote =
-      "Pendle's catalogue did not resolve this market, so maturity is UNPROVEN — `state` is a conservative default, not a determination. Re-read before acting on it; do not treat this leg as confirmed live.";
+      "Pendle's catalogue did not resolve this market, so maturity is UNPROVEN - `state` is a conservative default, not a determination. Re-read before acting on it; do not treat this leg as confirmed live.";
   }
 
   const valued = valueLeg(kind, leg, token, matured === true, assetByAddress);
@@ -171,7 +171,7 @@ export function projectPositionLeg(args: {
     projected.activeBalance = amountTriplet(leg.activeBalanceRaw, token?.decimals ?? null);
     if (leg.activeBalanceRaw !== leg.balanceRaw) {
       projected.activeBalanceNote =
-        "`activeBalance` is the STAKED share of `balance` that earns boosted rewards — not a second holding, and not a pending amount. The remainder sits unstaked in the wallet.";
+        "`activeBalance` is the STAKED share of `balance` that earns boosted rewards - not a second holding, and not a pending amount. The remainder sits unstaked in the wallet.";
     }
   }
   if (includeAccrued) {
@@ -226,7 +226,7 @@ function valueLeg(
   assetByAddress: Map<string, PendleAsset>,
 ): { valueUsd: string | null; basis: ProjectedPositionLeg["valuationBasis"] } {
   // A MATURED PT is worth ~face. Value it at the accounting price (`price.acc`),
-  // NEVER the underlying spot — the SIERRA evidence behind this rule stands.
+  // NEVER the underlying spot - the SIERRA evidence behind this rule stands.
   const address = token?.address ?? null;
   if (kind === "pt" && matured && address !== null && token !== null && token.decimals !== null) {
     const acc = trustedNumber(assetByAddress.get(address)?.priceAcc ?? null, 1e9);
@@ -247,7 +247,7 @@ function valueLeg(
  * Spot USD for a balance. The multiply is float arithmetic, unavoidably: the
  * provider's price IS a float. That is why this is a DISPLAY figure carrying an
  * explicit `valuationBasis`, while the balance beside it stays an exact triplet
- * — the number an agent would act on is the balance, not the mark.
+ * - the number an agent would act on is the balance, not the mark.
  */
 function spotValue(
   balanceRaw: string,
@@ -264,7 +264,7 @@ function spotValue(
 }
 
 /**
- * Total the projected legs. Unpriceable legs are COUNTED, not absorbed as zero —
+ * Total the projected legs. Unpriceable legs are COUNTED, not absorbed as zero -
  * a portfolio total that quietly swallowed an unvalued position would understate
  * the wallet and give no hint that it had.
  */

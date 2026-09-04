@@ -19,7 +19,11 @@ import {
   clearKeystorePasswordProvider,
 } from "@utils/env.js";
 import { ENV_FILE, SECRETS_VAULT_FILE } from "../paths/config-dir.js";
-import { lockStudioMcpHost, startStudioMcpHost } from "../studio/mcp-host.js";
+import {
+  lockStudioMcpHost,
+  openStudioMcpAdmission,
+  startStudioMcpHost,
+} from "../studio/mcp-host.js";
 import { log } from "../logger/index.js";
 
 let unlockedMasterPassword: string | null = null;
@@ -178,10 +182,10 @@ export function initializeMasterPassword(
     unlockedMasterPassword = password;
     applyUnlockedRuntime(password);
     stripManagedSecretsFromDotenvFile(ENV_FILE);
-    // First-time setup also establishes an unlocked session, so the listener
-    // gets the same start as an ordinary unlock. It refuses itself when the
-    // readiness barrier is not open yet.
-    void startStudioMcpHost();
+    // First-time setup also establishes an unlocked session, so admission
+    // opens exactly the way an ordinary unlock opens it. The listener itself
+    // was bound at app-ready and is untouched here.
+    reopenStudioHostIfSafe();
     return ok({ kind: existed ? "unchanged" : "set" });
   } catch (cause) {
     return toPublicError(cause);
@@ -220,12 +224,13 @@ export async function unlockSecretSession(
     // handled by poisoning (below) rather than ignored. The await is what lets
     // the poison be set before this call reports success.
     await advanceStudioDispatchGenerationSafely("unlock");
-    // The MCP listener exists only while Vex is unlocked, and only once the A3
-    // readiness barrier reports ready - `startStudioMcpHost` re-checks that
-    // itself and refuses with the barrier's own sentence, so an unlock during
-    // startup does not open the door early. Not awaited: a socket that cannot
-    // bind is a diagnostic, never a reason to fail an unlock the vault already
-    // completed.
+    // MCP ADMISSION opens here, and only here: the listener was bound at
+    // app-ready and stays bound across a relock, so what an unlock changes is
+    // who may be served, not whether a socket exists. It opens only once this
+    // unlock's generation advance has committed and no dispatch poison or
+    // unwritten refusal is outstanding, which is what `reopenStudioHostIfSafe`
+    // decides. The settlement barrier gates handshakes and calls on its own, so
+    // an unlock during startup does not open the door early.
     reopenStudioHostIfSafe();
     return ok({ unlocked: true });
   } catch (cause) {
@@ -414,8 +419,20 @@ function stopStudioRecoveryWhenClear(): void {
   }
 }
 
-function reopenStudioHostIfSafe(): void {
+/**
+ * Open Studio MCP admission if - and only if - this session may serve calls:
+ * the vault is unlocked and the dispatch fence is neither poisoned nor owed a
+ * durable refusal. Exported because app-ready has the same question to ask
+ * about a session that was already unlocked before the host was configured.
+ */
+export function reopenStudioHostIfSafe(): void {
   if (!isSecretSessionUnlocked() || isStudioDispatchPoisoned()) return;
+  openStudioMcpAdmission();
+  // The listener is normally already bound (app-ready binds it once and only
+  // quit closes it). An app-ready bind that FAILED - a stale endpoint a crashed
+  // Vex left behind, a config directory that was not private yet - has no other
+  // retry site, and an unlock is exactly when a user expects Studio back. It is
+  // idempotent and single-flight, so a bound host does nothing here.
   void startStudioMcpHost();
 }
 
@@ -532,8 +549,8 @@ export async function lockSecretSession(
   // a sweep is owed and the trusted cause it must write.
   retainPendingRefusalCause(cause);
   scrubUnlockedRuntime();
-  // STEP 2, SYNCHRONOUS, and BEFORE the first await. The listener stops
-  // admitting and every registered socket is destroyed with the trusted cause
+  // STEP 2, SYNCHRONOUS, and BEFORE the first await. ADMISSION closes and
+  // every registered socket is destroyed with the trusted cause
   // `lock`, which is what each blocked MCP call's abort chain will report and
   // what the broker writes into `approval_intents.refusal_reason` - the same
   // reason the global refusal pass below uses, so their CAS race cannot settle
@@ -614,8 +631,8 @@ export function adoptUnlockedPassword(password: string): void {
   applyUnlockedRuntime(password);
   unlockedMasterPassword = password;
   stripManagedSecretsFromDotenvFile(ENV_FILE);
-  // A restore leaves the session unlocked, so the listener belongs up again.
-  void startStudioMcpHost();
+  // A restore leaves the session unlocked, so admission belongs open again.
+  reopenStudioHostIfSafe();
 }
 
 export function requireUnlockedMasterPassword(): Result<string> {

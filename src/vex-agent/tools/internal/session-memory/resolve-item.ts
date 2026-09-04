@@ -1,13 +1,13 @@
 /**
- * `SessionMemoryResolve` tool handler — closes a single outstanding
+ * `SessionMemoryResolve` tool handler - closes a single outstanding
  * item on a session memory chunk. Updates the JSONB element + re-renders
  * `body_md` + re-embeds via the same local EmbeddingGemma service.
  *
  * Orchestrates the two-step pattern from PR1:
- *   1. markOutstandingResolved repo call — updates outstanding_items array
+ *   1. markOutstandingResolved repo call - updates outstanding_items array
  *      element and body_md.
  *   2. embedDocument(theme, body_md) on the post-update body.
- *   3. updateEmbedding repo call — replaces the vector in place so future
+ *   3. updateEmbedding repo call - replaces the vector in place so future
  *      recall sees the resolved state.
  *
  * If embedding fails (local service down), the body_md change is preserved
@@ -89,12 +89,12 @@ export async function handleSessionMemoryResolveItem(
   }
 
   // Re-embed the updated body. If embedDocument fails, the resolution still
-  // persists in DB — the vector becomes stale until a future re-embed.
+  // persists in DB - the vector becomes stale until a future re-embed.
   try {
     const embedded = await embedDocument(result.memory.theme, result.memory.bodyMd);
     // Race-safety: pass the body_md_hash of the body we embedded so a
     // concurrent resolution that rewrote body_md (and bumped its hash)
-    // rejects this UPDATE. False return = stale embedding, do NOT retry —
+    // rejects this UPDATE. False return = stale embedding, do NOT retry -
     // the winning concurrent path already wrote a fresh vector for the
     // current body. (codex PR3-final race fix.)
     const updated = await updateEmbedding(

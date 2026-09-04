@@ -4,7 +4,7 @@
  * ── Why the gas bound is ours (G-40 / P0-5, D2) ─────────────────────────────
  *
  * All nine Pendle `sendTransaction` sites passed no `gas`, so viem filled
- * `request.gas` with the node's BARE `eth_estimateGas` result — 0% headroom —
+ * `request.gas` with the node's BARE `eth_estimateGas` result - 0% headroom -
  * on every trade. Pendle reached `gasLimitWithHeadroom` only through its ERC-20
  * approval helper (`@tools/pendle/erc20.ts`); the trade the approval was FOR
  * did not.
@@ -13,8 +13,8 @@
  * `@tools/evm-chains/gas-limit-headroom.ts`: four transactions mined-REVERTED
  * having consumed ~97.3% of a bare-estimate limit, and re-running the same
  * calldata's estimate across twelve consecutive blocks returned a 2.07x spread.
- * Pendle routes carry ~2.6 KB of aggregator `extCalldata` — precisely the shape
- * with that spread — and the Convert response carries NO gas figure of its own
+ * Pendle routes carry ~2.6 KB of aggregator `extCalldata` - precisely the shape
+ * with that spread - and the Convert response carries NO gas figure of its own
  * (live-verified 2026-07-27: the tx object is only `{data, to, from, value}`),
  * so the bound must be ours. `gasLimitForProviderHintedCall` is therefore NOT
  * the right helper here; there is no provider hint to reconcile.
@@ -23,7 +23,7 @@
  *
  * Pendle used to sign, broadcast, and then echo the QUOTE back as the result.
  * Nothing durable was written, so `broadcast-unconfirmed.ts` had to tell the
- * agent — truthfully, at the time — that "Vex has NOT recorded this
+ * agent - truthfully, at the time - that "Vex has NOT recorded this
  * transaction". Every Pendle mutation was therefore invisible to the repair
  * sweep, and a `success: true` result carried a quoted amount under a name that
  * read as a fill.
@@ -34,17 +34,17 @@
  * nothing failing to say so". So the whole §11.1 write protocol runs HERE, once,
  * for every Pendle Router call:
  *
- *   1. `createAgentActivityIntent` — BEFORE anything is signed.
- *   2. `markActivityBroadcast` — the tx hash staged BEFORE the raw submit. A
+ *   1. `createAgentActivityIntent` - BEFORE anything is signed.
+ *   2. `markActivityBroadcast` - the tx hash staged BEFORE the raw submit. A
  *      CAS MISS REFUSES TO BROADCAST (an untracked transaction with real funds
  *      behind it is strictly worse than no transaction).
- *   3. `markBroadcastAccepted` — once the node has accepted the payload.
- *   4. `confirmActivityEvent` / `failActivityEvent` — from a DEFINITIVE receipt
+ *   3. `markBroadcastAccepted` - once the node has accepted the payload.
+ *   4. `confirmActivityEvent` / `failActivityEvent` - from a DEFINITIVE receipt
  *      ONLY. Ambiguity NEVER terminalizes; the row stays `pending` for the
  *      repair sweep, forever if need be.
  *
- * Executed amounts come from `sync/pendle-settlement-decoder.ts` — net wallet
- * deltas over the receipt's own logs — never from the route that was quoted.
+ * Executed amounts come from `sync/pendle-settlement-decoder.ts` - net wallet
+ * deltas over the receipt's own logs - never from the route that was quoted.
  * A decode that cannot prove a leg declines the whole confirmation and the row
  * stays `pending`: this module never converts a quote into a result.
  *
@@ -80,7 +80,7 @@ export const PENDLE_ACTIVITY_PROTOCOL = "pendle";
 /**
  * The six `yield_*` roles (migration 053). Narrowed from the full role union so
  * a Pendle caller cannot accidentally write a `swap`/`lend`/`bridge` row through
- * this path — the `agent_activity_kind_role_binding` CHECK would reject it, but
+ * this path - the `agent_activity_kind_role_binding` CHECK would reject it, but
  * failing at the type boundary beats failing at the database.
  */
 export type PendleActivityRole = Extract<
@@ -91,7 +91,7 @@ export type PendleActivityRole = Extract<
 export interface PendleRouterTx {
   /** The pinned Router (already bound by the fund-safety extractor). */
   readonly to: Address;
-  /** The validated calldata — floor-bound before it reaches here. */
+  /** The validated calldata - floor-bound before it reaches here. */
   readonly data: Hex;
   /** Native value: non-zero ONLY for a native-input trade. */
   readonly value: bigint;
@@ -101,7 +101,7 @@ export interface PendleRouterTx {
  * Everything the durable row needs, gathered by the handler BEFORE it signs.
  *
  * `tokenIn2`/`tokenOut2` are the Option-C second legs (migration 053) and are
- * valid ONLY on `yield_py`/`yield_lp` — a `py.mint` splits 1→PT+YT and so
+ * valid ONLY on `yield_py`/`yield_lp` - a `py.mint` splits 1→PT+YT and so
  * carries `tokenOut2`; a pre-expiry `py.redeem` burns PT+YT→1 and so carries
  * `tokenIn2`. Populating both, or neither, on a `yield_py` is a shape no Pendle
  * action produces and the DB refuses it.
@@ -116,7 +116,7 @@ export interface PendleActivityPlan {
   readonly chainSlug: string;
   readonly walletAddress: string;
   readonly sessionId: string;
-  /** Raw handler params — sanitized inside `createExecutionIntent`, not here. */
+  /** Raw handler params - sanitized inside `createExecutionIntent`, not here. */
   readonly intentParams: Record<string, unknown>;
   readonly tokenIn?: AgentActivityLegInput;
   readonly tokenOut?: AgentActivityLegInput;
@@ -128,7 +128,7 @@ export interface PendleActivityPlan {
   readonly routeProvenance?: Record<string, unknown>;
 }
 
-/** Executed amounts PROVEN from the receipt — raw plus its exact-decimal rendering. */
+/** Executed amounts PROVEN from the receipt - raw plus its exact-decimal rendering. */
 export interface PendleExecutedAmounts {
   readonly amountInRaw?: string;
   readonly amountInHuman?: string;
@@ -146,10 +146,10 @@ export interface PendleExecutedAmounts {
  * three genuinely different situations, distinguished by `reason` so the caller
  * can say which one happened rather than picking one wording for all three:
  *
- *   - `ambiguous`  — we cannot prove the transaction landed at all.
- *   - `undecodable` — it MINED SUCCESSFULLY but the receipt did not prove the
+ *   - `ambiguous`  - we cannot prove the transaction landed at all.
+ *   - `undecodable` - it MINED SUCCESSFULLY but the receipt did not prove the
  *     legs, so confirming would mean inventing amounts.
- *   - `no_credit`  — a CLAIM mined successfully and credited nothing decodable.
+ *   - `no_credit`  - a CLAIM mined successfully and credited nothing decodable.
  */
 export type PendleBroadcastResult =
   | {
@@ -171,11 +171,11 @@ export type PendleBroadcastResult =
  * The EXACT sentence a caller must surface when the broadcast's fate is
  * unknown. One constant, because the wording is the contract: it must refuse a
  * retry (the transaction may already have moved real funds) AND promise
- * automatic resolution — a promise Pendle can now keep, since the row exists
+ * automatic resolution - a promise Pendle can now keep, since the row exists
  * and the repair sweep has a registered decoder for it.
  */
 export const PENDLE_AMBIGUOUS_BROADCAST_MESSAGE =
-  "Cannot prove whether this broadcast landed — do not retry; this attempt is recorded as pending and resolves automatically.";
+  "Cannot prove whether this broadcast landed - do not retry; this attempt is recorded as pending and resolves automatically.";
 
 /** A mined-but-unprovable settlement. Distinct from ambiguity: the transaction DID land. */
 function undecodableMessage(txHash: Hex): string {
@@ -194,7 +194,7 @@ function noCreditMessage(txHash: Hex): string {
 }
 
 /**
- * Record a refusal that happened BEFORE anything could be signed — a matured
+ * Record a refusal that happened BEFORE anything could be signed - a matured
  * market, no route, no holding, an out-of-policy slippage, a price floor the
  * route could not meet. A hashless `definitively_failed` row in one step: there
  * was never a payload to broadcast, so there is nothing to stage or sweep.
@@ -225,7 +225,7 @@ export async function recordPendleRefusal(
         sessionId: plan.sessionId,
         ...(plan.tokenIn ? { tokenIn: plan.tokenIn } : {}),
         ...(plan.tokenOut ? { tokenOut: plan.tokenOut } : {}),
-        // Option-C second legs whenever the refusal knows them — a `py.mint`
+        // Option-C second legs whenever the refusal knows them - a `py.mint`
         // refused after its quote knows both minted instruments, and a failed
         // row that names fewer legs than the succeeded one would have is a
         // narrower truth for no reason. A refusal that fires before the second
@@ -257,7 +257,7 @@ export async function recordPendleRefusal(
  * the transaction is sent to.
  *
  * THROWS only for a pre-signature failure (a failing estimate, a refused stage)
- * — at which point nothing was broadcast and the caller's existing catch is
+ * - at which point nothing was broadcast and the caller's existing catch is
  * correct. Once a hash exists this function ALWAYS returns a result carrying it
  * (H-4): the hash is produced by `signStageBroadcast` and threaded through every
  * branch, so no post-broadcast throw can swallow it.
@@ -268,7 +268,7 @@ export async function sendPendleRouterTx(
   tx: PendleRouterTx,
   plan: PendleActivityPlan,
 ): Promise<PendleBroadcastResult> {
-  // Step 1 — the durable intent exists BEFORE a signature does. A throw here is
+  // Step 1 - the durable intent exists BEFORE a signature does. A throw here is
   // pre-signature and propagates: refusing to trade beats trading untracked.
   const { executionId, events } = await createAgentActivityIntent({
     toolId: plan.toolId,
@@ -291,7 +291,7 @@ export async function sendPendleRouterTx(
         ...(plan.usdInEst !== undefined ? { usdInEst: plan.usdInEst } : {}),
         ...(plan.usdOutEst !== undefined ? { usdOutEst: plan.usdOutEst } : {}),
         usdSource: "pendle",
-        // R1 Step 5a — the WHOLE Pendle family gains the decode inputs at its
+        // R1 Step 5a - the WHOLE Pendle family gains the decode inputs at its
         // one intent spine. The router is `tx.to`, the address this very
         // transaction is sent to, so the hint cannot name a contract the
         // transaction did not use. `declaredValueRaw` is recorded only for a
@@ -316,21 +316,21 @@ export async function sendPendleRouterTx(
     { to: tx.to, data: tx.data, value: tx.value },
     {
       onNonceReserved: (request) => reserveActivityEvmNonce(eventRow.id, request),
-      // Step 2 — reached AFTER signing and immediately BEFORE the raw submit.
+      // Step 2 - reached AFTER signing and immediately BEFORE the raw submit.
       onHashStaged: async (handles) => {
         const staged = await markActivityBroadcast(eventRow.id, handles);
         if (!staged.applied) {
           // A CAS miss means this row is not in the state we believe it to be.
           // Throwing here aborts `signStageBroadcast` BEFORE
-          // `sendRawTransaction` runs — nothing is broadcast. Broadcasting an
+          // `sendRawTransaction` runs - nothing is broadcast. Broadcasting an
           // untracked transaction with real funds behind it would be the worse
           // outcome by a wide margin.
           throw new Error(
-            `pendle: markActivityBroadcast CAS miss for event ${eventRow.id} — refusing to broadcast untracked`,
+            `pendle: markActivityBroadcast CAS miss for event ${eventRow.id} - refusing to broadcast untracked`,
           );
         }
       },
-      // Step 3 — bookkeeping only; `signStageBroadcast` swallows a throw here
+      // Step 3 - bookkeeping only; `signStageBroadcast` swallows a throw here
       // because the transaction is already in flight by then.
       onAccepted: async () => {
         const accepted = await markBroadcastAccepted(eventRow.id);
@@ -343,9 +343,9 @@ export async function sendPendleRouterTx(
 
   if (outcome.kind === "ambiguous") {
     // Ambiguity NEVER terminalizes (§11.1 / FIX-SPINE C1). No `failActivityEvent`,
-    // no re-broadcast — the row keeps its staged hash and the sweep resolves it.
+    // no re-broadcast - the row keeps its staged hash and the sweep resolves it.
     logger.info("pendle.activity.ambiguous", { id: eventRow.id, toolId: plan.toolId, stage: outcome.stage });
-    // Migration 067 — the whole Pendle family gains this at its ONE spine.
+    // Migration 067 - the whole Pendle family gains this at its ONE spine.
     await noteHandlerPendingReason(
       plan.toolId, eventRow.id,
       outcome.stage === "send" ? "broadcast_ambiguous_send" : "broadcast_ambiguous_confirm",
@@ -364,7 +364,7 @@ export async function sendPendleRouterTx(
       failActivityEvent(eventRow.id, {
         failureCode: "mined_revert",
         // No new failure_code for Pendle (migration 053): a mined revert is a
-        // mined revert. The hash is not repeated — the row's own `tx_hash`
+        // mined revert. The hash is not repeated - the row's own `tx_hash`
         // column carries it.
         failureReason: `${plan.toolId}: the Pendle Router call reverted on-chain.`,
       }),
@@ -384,12 +384,12 @@ export async function sendPendleRouterTx(
     logger.warn("pendle.activity.undecodable_receipt", { id: eventRow.id, toolId: plan.toolId, role: plan.eventRole });
     // Mined SUCCESSFULLY; the receipt did not prove the legs. `no_credit` is a
     // claim that swept nothing, which is a different fact from an unreadable
-    // receipt — but both leave the row pending with its amounts unknown, and
+    // receipt - but both leave the row pending with its amounts unknown, and
     // this column names WHY it is pending, not what the agent should be told.
     await noteHandlerPendingReason(plan.toolId, eventRow.id, "settlement_undecodable");
     return {
       kind: "unproven",
-      // A claim's specific shape — mined, credited nothing — gets its own
+      // A claim's specific shape - mined, credited nothing - gets its own
       // wording: "the receipt was unreadable" and "there was nothing to sweep"
       // are different facts and the agent acts differently on each.
       reason: plan.eventRole === "yield_claim" ? "no_credit" : "undecodable",
@@ -416,7 +416,7 @@ export async function sendPendleRouterTx(
 
   // Auto-pin AFTER confirmation and fail-soft: an acquired Pendle instrument
   // that never joins the tracked set is invisible to every later balance scan.
-  // Never fails the trade — the funds have already moved.
+  // Never fails the trade - the funds have already moved.
   try {
     await pinConfirmedPendleAcquisition(
       plan.walletAddress,
@@ -442,7 +442,7 @@ export async function sendPendleRouterTx(
 /**
  * Turn the mined receipt into executed amounts via the shared Pendle decoder,
  * then render each proven raw amount at the decimals the SAME plan leg declared
- * — rules/90: "raw amounts must travel with the decimals needed to read them".
+ * - rules/90: "raw amounts must travel with the decimals needed to read them".
  * A leg whose decimals the plan never stated gets a raw amount and no human
  * rendering, which is honest; guessing 18 would be a thousandfold error.
  *

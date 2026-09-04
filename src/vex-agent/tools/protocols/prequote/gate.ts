@@ -1,17 +1,17 @@
 /**
- * Stage 7 — execute-time prequote gate.
+ * Stage 7 - execute-time prequote gate.
  *
  * Quote-before-transaction: a swap EXECUTE may broadcast ONLY when a fresh
  * matching `swap` prequote exists, that prequote is not a confirmed scam, and
  * that prequote actually AUTHORIZED an execute (its eligibility is
  * `executable`).
  * The gate is the INVERSE of the recorder: the recorder swallows its errors
- * (a missing prequote is safe), but the gate FAILS CLOSED — any error, a
+ * (a missing prequote is safe), but the gate FAILS CLOSED - any error, a
  * missing session, or an un-gateable token identity → BLOCK. The gate runs
  * BEFORE the approval gate in `executeProtocolTool`; an allow carries the
  * matched verdict to the restricted-mode approval preview (R5).
  *
- * NEVER leaks raw provider/DB/wallet text — only a bounded structural reason
+ * NEVER leaks raw provider/DB/wallet text - only a bounded structural reason
  * class reaches the log and the agent-facing message.
  *
  * This file is the public entry point and owns the decision FLOW; the pieces
@@ -55,7 +55,7 @@ export type { GateDecision } from "./gate/decision.js";
 /**
  * Evaluate the execute-time prequote gate for a gated EXECUTE (swap OR bridge).
  * Single decision; fail-closed to BLOCK on ANY failure. Guardrail #1: a fresh
- * `fail` row can never slip through — `existsFreshFailByMatch` (kind-scoped) is
+ * `fail` row can never slip through - `existsFreshFailByMatch` (kind-scoped) is
  * checked FIRST (a later `pass`/`unknown` for the same identity cannot override
  * it), and the latest-row `fail` is re-checked as belt-and-suspenders. A bridge
  * prequote is always `unknown`, so the bridge path normally allows via the
@@ -97,7 +97,7 @@ export async function evaluatePrequoteGate(
 
     if (latest.safetyVerdict === "unknown") {
       // Surface that an un-audited identity is being allowed (preview/full-auto
-      // see it downstream). Prefix only — never the full hash or any address.
+      // see it downstream). Prefix only - never the full hash or any address.
       logger.warn("protocol.prequote.gate.unknown_allowed", {
         toolId,
         family,
@@ -161,7 +161,7 @@ export async function evaluatePrequoteGate(
     return allow;
   } catch (err) {
     const reason = classifyGateBlockReason(err, context.walletPolicy);
-    // Bounded structural log only — never raw provider/DB/wallet text. `reason`
+    // Bounded structural log only - never raw provider/DB/wallet text. `reason`
     // now disambiguates the wallet cases (wallet_setup / wallet_scope /
     // wallet_not_selected) that previously all collapsed to `gate_error`.
     logger.warn("protocol.prequote.gate.error", {
@@ -179,7 +179,7 @@ export async function evaluatePrequoteGate(
 }
 
 /**
- * Back-compat alias — the historical swap-only entry point. Delegates to the
+ * Back-compat alias - the historical swap-only entry point. Delegates to the
  * kind-aware `evaluatePrequoteGate` (the gated registry now carries the kind).
  * Retained so existing swap callers/tests keep working unchanged.
  */

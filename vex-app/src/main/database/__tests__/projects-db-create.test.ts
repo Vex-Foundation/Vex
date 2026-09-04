@@ -162,7 +162,7 @@ describe("createProject - directory claim", () => {
     expect(callsMatching(query, "ROLLBACK")).toHaveLength(0);
   });
 
-  it("refuses an occupied slug with projects.slug_taken and touches neither the folder nor the DB", async () => {
+  it("refuses an occupied slug with projects.slug_taken, writing nothing", async () => {
     const existing = path.join(root, "my-app");
     await mkdir(existing);
     await writeFile(path.join(existing, "user-file.txt"), "important");
@@ -176,8 +176,18 @@ describe("createProject - directory claim", () => {
     expect(outcome.error.message).toContain("my-app");
     // The user's file survives: the claim never overwrites and never renames.
     expect(await readdir(existing)).toEqual(["user-file.txt"]);
-    // Nothing reached the database.
-    expect(query).not.toHaveBeenCalled();
+    // B0 changed this from "nothing reached the database" to "nothing WROTE to
+    // it". The create path now asks, before claiming the directory, whether the
+    // slug belongs to a tombstone whose cleanup is unfinished - because the
+    // remover still owns that folder and racing it would delete the new
+    // project's files. That is exactly one read-only lookup and no writes.
+    const statements = query.mock.calls.map((call) => String(call[0]));
+    expect(statements).toHaveLength(1);
+    expect(statements[0]).toContain("FROM projects");
+    expect(statements[0]).toContain("cleanup_state IN ('pending', 'trash_pending')");
+    expect(
+      statements.some((sql) => /\b(INSERT|UPDATE|DELETE|BEGIN)\b/i.test(sql)),
+    ).toBe(false);
   });
 
   it("refuses a name that derives no slug rather than inventing a folder name", async () => {
@@ -284,9 +294,15 @@ describe("createProject - root contract", () => {
     // was recorded before this configuration changed, or a concurrent
     // first-creation won the row. Either way this transaction must not insert a
     // project whose `root_path` is relative to a root that is not the anchor.
+    // The anchor names a directory that EXISTS and is a different one. Root
+    // equality is filesystem identity (B3), so an anchor pointing at a path
+    // that is not on disk is the separate `projects.root_unverifiable`.
+    // OUTSIDE the projects root, so the compensation assertion below still sees
+    // an empty root directory.
+    const otherRoot = await realpath(await mkdtemp(path.join(tmpdir(), "vex-other-root-")));
     const query = scriptClient((sql) => {
       if (sql.includes("INSERT INTO studio_settings")) {
-        return { rows: [{ projects_root: path.join(root, "somewhere-else") }] };
+        return { rows: [{ projects_root: otherRoot }] };
       }
       return { rows: [] };
     });
@@ -306,6 +322,7 @@ describe("createProject - root contract", () => {
 
     // The directory this request created is removed again.
     expect(await readdir(root)).toEqual([]);
+    await rm(otherRoot, { recursive: true, force: true });
   });
 
   it("proceeds when the anchor returns the same root by a different but equivalent path form", async () => {

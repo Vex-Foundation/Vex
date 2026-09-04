@@ -5,20 +5,20 @@
  * from live defects rather than from taste:
  *
  * 1. **A raw amount must travel with the decimals needed to read it.**
- *    `"1047061"` next to a bare mint is 1.05 at 6 decimals and 0.00105 at 9 — a
+ *    `"1047061"` next to a bare mint is 1.05 at 6 decimals and 0.00105 at 9 - a
  *    thousandfold error for the agent that guesses. So every balance leaves here
  *    as a TRIPLET: the raw base units, the decimals used, and the exact human
  *    string. When decimals are unknown the human string is `null`, never a guess.
  *
  * 2. **`Number()` must never touch a u256.** The previous projectors did
  *    `Number(balanceWei) / 10 ** decimals`, which silently loses precision above
- *    2^53 — an 18-decimal balance passes that line at ~9 tokens. Everything here
+ *    2^53 - an 18-decimal balance passes that line at ~9 tokens. Everything here
  *    is BigInt and string arithmetic.
  *
  * USD is the one place a float legitimately arrives: the provider sends
  * `valuation` as a JSON number. It is converted ONCE, at a fixed scale, into a
  * decimal string, and every sum afterwards is integer arithmetic on those scaled
- * units — so a portfolio total can never drift the way repeated float addition
+ * units - so a portfolio total can never drift the way repeated float addition
  * does.
  */
 
@@ -33,7 +33,7 @@ const MAX_DECIMALS = 36;
  * A base-unit amount and everything needed to read it.
  *
  * `exact` is `null` ONLY when `decimals` could not be resolved from the chain's
- * asset catalogue. That is a real state — an asset Pendle does not list — and it
+ * asset catalogue. That is a real state - an asset Pendle does not list - and it
  * is reported rather than papered over with an assumed 18.
  */
 export interface PendleAmount {
@@ -167,7 +167,7 @@ export function bpsString(fraction: number | null | undefined, places = 2): stri
 }
 
 /**
- * Whole days from `now` until an ISO expiry — negative once matured, null when
+ * Whole days from `now` until an ISO expiry - negative once matured, null when
  * the expiry cannot be read. Days, not milliseconds, because "how long is this
  * locked for" is the question an agent actually asks.
  */

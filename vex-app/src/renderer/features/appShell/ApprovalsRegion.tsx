@@ -26,6 +26,7 @@ import type { JSX } from "react";
 import type { ApprovalSummaryDto } from "@shared/schemas/approvals.js";
 import { usePendingApprovals } from "../../lib/api/approvals.js";
 import { ApprovalCard } from "./ApprovalCard.js";
+import { selectFreshApprovals } from "./approvals/fresh-approvals.js";
 
 /**
  * Fallback poll only. `useMissionUpdateLiveSync` pushes `approval_enqueued`
@@ -61,19 +62,18 @@ export function ApprovalsRegion({
   }, [query.data]);
 
   // Identify the FIRST newly-appearing id (oldest by createdAt) for focus.
+  // The selector is shared with the cross-mode toast
+  // (`approvals/fresh-approvals.ts`); the RETENTION below is this region's own.
   const focusTargetId = useMemo<string | null>(() => {
     if (view === null || view.kind !== "rows") return null;
-    const seen = seenIdsRef.current;
-    const fresh = view.rows.filter((r) => !seen.has(r.id));
-    if (fresh.length === 0) return null;
-    const sorted = [...fresh].sort((a, b) =>
-      a.createdAt.localeCompare(b.createdAt),
-    );
-    return sorted[0]?.id ?? null;
+    return selectFreshApprovals(view.rows, seenIdsRef.current)[0]?.id ?? null;
   }, [view]);
 
   // Sync the "seen" set AFTER render so subsequent renders treat current ids
-  // as known (no re-focus on refetch).
+  // as known (no re-focus on refetch). REPLACE, not accumulate: an approval
+  // that leaves this session's list and comes back is a fresh card and
+  // deserves the focus again. The toast's memory accumulates instead - see
+  // `fresh-approvals.ts`.
   useEffect(() => {
     if (view === null || view.kind !== "rows") return;
     const next = new Set<string>();

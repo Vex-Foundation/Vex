@@ -42,6 +42,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DIALOG_INITIAL_FOCUS,
 } from "../../components/ui/dialog.js";
 import { Label } from "../../components/ui/label.js";
 import {
@@ -226,6 +227,9 @@ export function VexSetupDialog({
               <input
                 id="vex-setup-name"
                 type="text"
+                // Where this dialog opens: the first field of a form that
+                // saves nothing until Save is pressed.
+                {...DIALOG_INITIAL_FOCUS}
                 maxLength={DISPLAY_NAME_MAX}
                 value={displayName}
                 onChange={(event) => {

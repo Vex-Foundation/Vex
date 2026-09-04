@@ -35,15 +35,15 @@ export function ambiguousBroadcastResult(input: {
     success: false,
     // "Do not retry" is the safety-critical half and never moves. The
     // second half gives the agent a READ it can perform itself instead
-    // of waiting on the sweep — the alternative to waiting must never
+    // of waiting on the sweep - the alternative to waiting must never
     // be a re-broadcast.
-    output: `${TOOL_ID}: broadcast of the ${input.eventRole} transaction (${input.txHash}) could not be confirmed yet — it may still settle on-chain. Do not retry; this attempt is recorded as pending and will resolve automatically. You can verify it now yourself with ChainRead (action tx_receipt, chain=${input.chainId}, txHash=${input.txHash}).`,
+    output: `${TOOL_ID}: broadcast of the ${input.eventRole} transaction (${input.txHash}) could not be confirmed yet - it may still settle on-chain. Do not retry; this attempt is recorded as pending and will resolve automatically. You can verify it now yourself with ChainRead (action tx_receipt, chain=${input.chainId}, txHash=${input.txHash}).`,
     data: { _executionId: input.executionId, txHash: input.txHash, status: "pending" },
   };
 }
 
 /**
- * A sign-time refusal never reached the network — no bytes, no gas, no
+ * A sign-time refusal never reached the network - no bytes, no gas, no
  * possible duplicate. Calling it a transaction that "failed" made the agent
  * read a routine, recoverable slippage refusal as a lost trade, with no remedy
  * named (`evm-chains/pre-sign-revert-refusal.ts` carries the incident).
@@ -71,7 +71,7 @@ export function preSignRefusalResult(input: {
 
 /**
  * Only a MINED revert reaches here, so the reason is one of
- * `mined-revert-reason.ts`'s self-terminating sentences — no sentence period is
+ * `mined-revert-reason.ts`'s self-terminating sentences - no sentence period is
  * added after it.
  */
 export function minedRevertResult(input: {
@@ -87,7 +87,7 @@ export function minedRevertResult(input: {
 }
 
 /**
- * C18 (Codex final-review round 1, finding 3): the intent already exists —
+ * C18 (Codex final-review round 1, finding 3): the intent already exists -
  * finalize what's left, SAME `_executionId`, never a second execution (never
  * `failPreBroadcast` here).
  */
@@ -105,10 +105,10 @@ export async function postIntentFailureResult(input: {
   // A leg refused because its estimate never succeeded after an allowance
   // this same execute confirmed is not an unexpected internal failure:
   // nothing was signed for it, the never-signed rows are finalized "not
-  // attempted" (the confirmed approval row is untouched — it has a hash),
+  // attempted" (the confirmed approval row is untouched - it has a hash),
   // and re-running is safe.
   if (err instanceof DependentLegGasEstimateError) {
-    // ERC-20 input — the common shape, and the one the native-input fix did
+    // ERC-20 input - the common shape, and the one the native-input fix did
     // not reach: with an approval leg in front, a genuine price-guard refusal
     // arrives ONLY here, and the RPC-lag wording named no parameter the agent
     // could change. A POOL-STATE reason that survived every retry is

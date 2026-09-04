@@ -38,10 +38,15 @@ export {
 export { studioServerEntryWrite } from "./json-file.js";
 export type { StudioOwnedRegion } from "./owned-region.js";
 export { readStudioOwnedRegion, studioRegionHash } from "./owned-region.js";
-export type { StudioManagedBlockState } from "./managed-block.js";
+export type {
+  StudioManagedBlockState,
+  StudioManagedBlockOwnership,
+} from "./managed-block.js";
 export {
+  STUDIO_MANAGED_BLOCK_MAX_BYTES,
   STUDIO_PROTOCOLS_DOC_PATH,
   inspectStudioManagedBlock,
+  studioManagedBlockOwnership,
   mergeStudioManagedBlock,
   removeStudioManagedBlock,
   renderStudioManagedBlock,
@@ -57,6 +62,13 @@ export {
   removeClaudeMdImport,
   renderFreshClaudeMd,
 } from "./claude-md.js";
+export type {
+  StudioInstallationEnvironment,
+} from "../../instructions/installation-environment.js";
+export {
+  resolveStudioInstallationEnvironment,
+  studioDeclaredEnvironmentKeys,
+} from "../../instructions/installation-environment.js";
 export type {
   StudioBriefInventory,
   StudioBriefPermission,

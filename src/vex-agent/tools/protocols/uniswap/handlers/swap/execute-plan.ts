@@ -1,5 +1,5 @@
 /**
- * Phase A — what will be broadcast, decided BEFORE anything is signed.
+ * Phase A - what will be broadcast, decided BEFORE anything is signed.
  *
  * The events plan (plan §11.1) is one `agent_activity` row per planned
  * broadcast: `allowance_reset`/`allowance` only when the current allowance is
@@ -108,7 +108,7 @@ export function planSwapEvents(input: PlanSwapEventsInput): PlannedEvent[] {
       // The approved floor, non-attested: the AgentScan mapper does not read it
       // and `amount_out_raw` keeps its meaning (the executed output).
       approvedMinOutRaw: input.approvedMinOutRaw,
-      // R1 Step 5a — the decode inputs, persisted at INTENT time. The router is
+      // R1 Step 5a - the decode inputs, persisted at INTENT time. The router is
       // the deployment's own verified `router02`, never a provider-supplied
       // address; `declaredValueRaw` is written only for a native input, and the
       // wrapped-native contract only when the OUT leg is native, because those

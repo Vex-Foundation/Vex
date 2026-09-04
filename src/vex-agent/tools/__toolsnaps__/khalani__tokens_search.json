@@ -18,7 +18,7 @@
                 "type": "array"
               }
             ],
-            "description": "Comma-separated chain IDs or aliases. Accepts either a comma-separated string (\"1,8453\") or an array of strings ([\"1\",\"8453\"]) — the two are equivalent."
+            "description": "Comma-separated chain IDs or aliases. Accepts either a comma-separated string (\"1,8453\") or an array of strings ([\"1\",\"8453\"]) - the two are equivalent."
           },
           "query": {
             "description": "Search phrase or token address.",

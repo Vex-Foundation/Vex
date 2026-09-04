@@ -1,8 +1,8 @@
 /**
- * Trench Express manifest — bonding-curve launchpad on Robinhood Chain (4663).
+ * Trench Express manifest - bonding-curve launchpad on Robinhood Chain (4663).
  *
  * P1 read surface only: browse tokens, search, per-token trade tape, and a
- * read-only launch preview (dry-run of create — no signature, no broadcast).
+ * read-only launch preview (dry-run of create - no signature, no broadcast).
  * The money path (curve buy/sell) and the real launch flow land in later phases.
  */
 

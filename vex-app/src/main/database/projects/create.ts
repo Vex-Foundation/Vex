@@ -52,9 +52,15 @@ import {
 } from "@shared/schemas/projects.js";
 import { log } from "../../logger/index.js";
 import { deriveProjectSlug } from "../../studio/project-slug.js";
+import { slugHeldByUnfinishedCleanup } from "./delete.js";
 import {
+  projectNameReservedError,
   projectNameUnusableError,
+  projectSlugCleanupPendingError,
   projectSlugTakenError,
+  projectsRootOutOfSpaceError,
+  projectsRootPathInvalidError,
+  projectsRootPermissionDeniedError,
   projectsRootUnavailableError,
 } from "../../studio/project-errors.js";
 import {
@@ -78,6 +84,51 @@ function isErrnoCode(cause: unknown, code: string): boolean {
     cause !== null &&
     (cause as { code?: unknown }).code === code
   );
+}
+
+function errnoCode(cause: unknown): string | null {
+  if (typeof cause !== "object" || cause === null) return null;
+  const code = (cause as { code?: unknown }).code;
+  return typeof code === "string" ? code : null;
+}
+
+/**
+ * Map a `mkdir` failure to the refusal that names what actually happened.
+ *
+ * WHY THIS EXISTS. Every non-EEXIST failure used to become
+ * `projects.root_unavailable`, whose message asks the user to check that the
+ * location exists, is a folder, and is writable. For a full disk that is wrong
+ * advice, for a permission problem it buries the one fact that matters in a
+ * list of three, and for a root path this system cannot express it sends them
+ * looking at a folder that is fine. Each of these is a different remedy, and
+ * three of the four are reachable mainly on the platforms this batch is about:
+ * EACCES on a macOS protected location, EINVAL and ENAMETOOLONG on Windows.
+ *
+ * An errno this function does not know keeps the existing fallback - it is the
+ * honest answer for "the root could not be used and Vex cannot say why" - but
+ * the code is now LOGGED, so the next unmapped errno arrives with its name
+ * attached instead of as an anonymous warning.
+ */
+function directoryClaimError(cause: unknown, correlationId: string): VexError {
+  const code = errnoCode(cause);
+  switch (code) {
+    case "EACCES":
+    case "EPERM":
+      return projectsRootPermissionDeniedError(correlationId);
+    case "ENOSPC":
+    case "EDQUOT":
+      return projectsRootOutOfSpaceError(correlationId);
+    case "EINVAL":
+    case "ENOTDIR":
+    case "ENAMETOOLONG":
+      return projectsRootPathInvalidError(correlationId);
+    default:
+      // ENOENT included: the root existed a moment ago (`resolveProjectsRoot`
+      // created and realpath-ed it) and does not now, which is exactly what
+      // "the projects folder could not be opened" describes, and it is
+      // retryable in the way that error already claims.
+      return projectsRootUnavailableError(correlationId);
+  }
 }
 
 /**
@@ -165,8 +216,15 @@ export async function createProject(
   walletRefs: ProjectWalletRefs,
   correlationId: string,
 ): Promise<Result<ProjectDto, VexError>> {
-  const slug = deriveProjectSlug(input.name);
-  if (slug === null) return err(projectNameUnusableError(correlationId));
+  const derived = deriveProjectSlug(input.name);
+  if (derived.kind === "refused") {
+    return err(
+      derived.reason === "reserved_device_name"
+        ? projectNameReservedError(correlationId)
+        : projectNameUnusableError(correlationId),
+    );
+  }
+  const slug = derived.slug;
 
   const rootOutcome = await resolveProjectsRoot(correlationId);
   if (!rootOutcome.ok) return rootOutcome;
@@ -182,6 +240,22 @@ export async function createProject(
     return err(projectsRootUnavailableError(correlationId));
   }
 
+  // THE TOMBSTONE CHECK, BEFORE THE DIRECTORY IS CLAIMED (B0).
+  //
+  // The partial unique index frees a slug at the DATABASE level as soon as the
+  // project is tombstoned, so an insert would succeed. The FILESYSTEM is the
+  // problem: a tombstone whose cleanup has not finished still owns that folder,
+  // and its remover is going to delete entries from it. Claiming it now would
+  // mean the remover deleting the NEW project's files.
+  //
+  // Retryable, because cleanup is a durable obligation with two recovery owners
+  // (the startup sweep and a repeated delete), so waiting actually resolves it.
+  const heldByCleanup = await slugHeldByUnfinishedCleanup(slug);
+  if (!heldByCleanup.ok) return heldByCleanup;
+  if (heldByCleanup.data) {
+    return err(projectSlugCleanupPendingError(correlationId));
+  }
+
   // Exclusive claim: no `recursive`, so an existing directory is EEXIST.
   try {
     await mkdir(directory);
@@ -189,11 +263,14 @@ export async function createProject(
     if (isErrnoCode(cause, "EEXIST")) {
       return err(projectSlugTakenError(slug, correlationId));
     }
+    // The errno is named in the log even when it is mapped, so an operator
+    // reading a support bundle sees the same fact the refusal was derived from.
     log.warn(
-      `[projects-db] could not claim the project directory correlationId=${correlationId}`,
+      `[projects-db] could not claim the project directory `
+        + `errno=${errnoCode(cause) ?? "unknown"} correlationId=${correlationId}`,
       cause,
     );
-    return err(projectsRootUnavailableError(correlationId));
+    return err(directoryClaimError(cause, correlationId));
   }
 
   const outcome = await withClient(async (client) =>

@@ -1,0 +1,412 @@
+/**
+ * EVERY user-visible string of the Studio TERMINAL surface, in one module.
+ *
+ * The sibling surfaces each have one - `explorer/explorer-copy.ts`,
+ * `viewer/viewer-copy.ts`, `projects/projects-copy.ts` - and the shell's own
+ * `studio-copy.ts` says in its first paragraph why the terminal keeps its own
+ * rather than joining it: this surface has its own owner and its own
+ * vocabulary. It simply never got the file, and the strings lived at the top of
+ * a 1000-line component where a wording review meant reading the component.
+ *
+ * Two of the three tables are EXHAUSTIVE over a closed union, which is the
+ * property worth preserving: a refusal reason or a close failure added without
+ * a sentence beside it is a type error rather than a reason code printed at the
+ * user.
+ *
+ * Rules that bind this file, as they bind `studio-copy.ts`: English, no em
+ * dashes, no roadmap copy.
+ */
+
+import type { TerminalErrorCode } from "@shared/schemas/terminal.js";
+import { STUDIO_FILE_TABS_MAX } from "../workspace/types.js";
+import type { WorkspaceCloseFailure } from "../workspace/close-lifecycle.js";
+import type { WorkspaceRefusalReason } from "../workspace/types.js";
+
+/* ------------------------------------------------------------------ *
+ * The panel header
+ * ------------------------------------------------------------------ */
+
+/**
+ * The shell picker's accessible name, on the button and on the listbox.
+ *
+ * "THE NEXT TERMINAL", never "new terminals", and the difference is not style.
+ * An accessible name is matched by SUBSTRING by every tool that looks a control
+ * up by name - the UX walk's own `getByRole("button", { name: "New terminal" })`
+ * included - so "Shell for new terminals" made this picker a second answer to
+ * "New terminal" beside the strip's `+`. The walk measured two controls of that
+ * name in the centre with one project open, in both themes on both runs (N2),
+ * while the source had exactly one `aria-label="New terminal"`: the duplicate
+ * was this name overlapping that one, not a second button.
+ *
+ * Rule 08's floor is that two controls a user must tell apart cannot share a
+ * name; a name that CONTAINS another control's whole name fails it the same
+ * way, because neither the user nor the tool can say which was meant.
+ */
+export const SHELL_PICKER_LABEL = "Shell for the next terminal";
+
+/* ------------------------------------------------------------------ *
+ * Tab identity and state
+ * ------------------------------------------------------------------ */
+
+/**
+ * What a terminal tab is CALLED before anyone renames it.
+ *
+ * `Terminal 1`, `Terminal 2`, and never the shell's path. Three terminals used
+ * to read `bash | bash | bash`, which names the program rather than the thing
+ * the user is switching between, and a strip in which no tab can be told from
+ * another is a strip with no navigation in it. VS Code's tab list does the same
+ * (`terminalTabsList.ts`, `getAriaLabel`: "Terminal {id} {title}"), and its
+ * numbers are what people mean when they say "the second terminal".
+ *
+ * The shell is not lost: it moves to the tab's tooltip and to the panel
+ * header's second line, where it is a fact about the tab rather than its name.
+ */
+export function terminalTabTitle(n: number): string {
+  return `Terminal ${String(n)}`;
+}
+
+/**
+ * Does this title look like one Vex generated?
+ *
+ * Used to pick the next free number, so `Terminal 2` is not handed out twice
+ * while the first one is open. A tab the user renamed to something else simply
+ * stops holding a number, which is the correct reading: they named it.
+ */
+export const TERMINAL_TITLE_PATTERN = /^Terminal (\d+)$/;
+
+/** A terminal tab's state, in the words a screen reader gets beside the dot. */
+export const TERMINAL_STATE_COPY = {
+  running: "Running",
+  exited: "Exited",
+  error: "Ended with an error",
+  restoring: "Restoring",
+} as const;
+
+/**
+ * The tab's tooltip: its name, what is running in it, and its state.
+ *
+ * The tooltip is where the shell name went when the tab stopped being named
+ * after it. `shellLabel` is absent until the host has said what it started.
+ */
+export function terminalTabTooltip(
+  title: string,
+  shellLabel: string | null,
+  state: keyof typeof TERMINAL_STATE_COPY,
+): string {
+  const parts = [title];
+  // The same process NAME the header's second line shows, and for the same
+  // reason: the tooltip and the header describe one fact, so a tab reading
+  // `Terminal 1 - /bin/bash - Running` over a header reading `bash` would be
+  // two spellings of it. See `shellProcessName`.
+  if (shellLabel !== null && shellLabel !== "") parts.push(shellProcessName(shellLabel));
+  parts.push(TERMINAL_STATE_COPY[state]);
+  return parts.join(" - ");
+}
+
+/* ------------------------------------------------------------------ *
+ * The tab strip's per-tab controls
+ * ------------------------------------------------------------------ */
+
+/**
+ * CLOSING A TERMINAL ENDS ITS SHELL, and the tooltip says so.
+ *
+ * The product decision (owner, 2026-09-02) is VS Code's: the close control on
+ * a terminal tab kills the shell, with no confirmation dialog in the way. The
+ * dialog is not what makes that safe - saying it before the click is. A tab
+ * whose shell has already exited says only that it is closing the tab, because
+ * there is nothing left to end.
+ */
+export function closeTabLabel(title: string): string {
+  return `Close ${title}`;
+}
+
+export function closeTerminalTooltip(title: string, running: boolean): string {
+  return running
+    ? `Close ${title}. The shell running in it will be ended.`
+    : `Close ${title}.`;
+}
+
+/**
+ * THE PREVIEW TAB, IN WORDS.
+ *
+ * Italics are what VS Code paints a preview tab in
+ * (`multiEditorTabsControl.ts:1730`, `italic: !isPinned(editor)`), and italics
+ * are exactly nothing to a screen reader. So the state travels the same way a
+ * terminal's does on this strip: a visual signal plus the state IN WORDS, after
+ * the title, so the accessible name reads "app.ts Preview" rather than opening
+ * with a status nobody asked about yet.
+ */
+export const FILE_TAB_PREVIEW_STATE_COPY = "Preview";
+
+/**
+ * KEEP OPEN: the action that promotes a preview tab to a kept one.
+ *
+ * Named for the tab it acts on, like every other per-tab control here, because
+ * a strip of files whose actions were all called "Keep open" is a strip a
+ * keyboard user cannot navigate by name. The tooltip says what a preview tab IS
+ * - the fact nothing else on screen tells them, and the reason the button is
+ * there at all.
+ */
+export function keepTabOpenLabel(title: string): string {
+  return `Keep ${title} open`;
+}
+
+export function keepTabOpenTooltip(title: string): string {
+  return `Keep ${title} open. Opening another file replaces a preview tab.`;
+}
+
+/** Rename, as a per-tab action and as the double-click the tab already accepts. */
+export function renameTabLabel(title: string): string {
+  return `Rename ${title}`;
+}
+
+/** The inline rename field's own name, and what its two keys do. */
+export const RENAME_FIELD_LABEL = "Terminal name";
+export const RENAME_HINT_COPY = "Enter to save, Escape to cancel";
+
+/* ------------------------------------------------------------------ *
+ * The panel header's action cluster
+ * ------------------------------------------------------------------ */
+
+/**
+ * SPLIT and KILL, named for the terminal they act on.
+ *
+ * Both are per-tab actions that used to sit beside every tab in the strip -
+ * three tabs meant nine icons in a row, none of which told the user which
+ * terminal they were about to change. They live in the panel header now, which
+ * describes exactly one terminal, so the name can be specific and the strip can
+ * go back to being a list of names.
+ */
+export function splitTerminalLabel(title: string): string {
+  return `Split ${title} side by side`;
+}
+
+export function splitTerminalVerticalLabel(title: string): string {
+  return `Split ${title} top and bottom`;
+}
+
+/**
+ * KILL is not CLOSE, and the two names must stay apart.
+ *
+ * With one pane they end the same shell, but they are different actions on a
+ * split tab: close ends the whole tab, kill ends the ONE terminal the header
+ * describes. Naming them alike would leave two controls a keyboard user cannot
+ * tell apart while they do different things.
+ */
+export function killTerminalLabel(title: string): string {
+  return `Kill the shell in ${title}`;
+}
+
+/**
+ * WHAT IS RUNNING, as a process NAME rather than as a path.
+ *
+ * The pty host reports this by polling node-pty's `process`
+ * (`pty-host/terminal-process.ts:780`), which is the FOREGROUND process - `vim`
+ * while vim runs, the shell otherwise - and which reports the shell as the
+ * launch path it was started from. So the header's second line read `/bin/bash`
+ * for every restored terminal and for a created one as soon as the first poll
+ * landed (N4), while the create reply's own `shellName` is already a basename
+ * and read `bash`. One fact, two spellings, decided by which message arrived
+ * last.
+ *
+ * This is the one place that decides, and it decides for the NAME: VS Code
+ * titles a terminal with the process name and not with its path, and a header
+ * that changes from `bash` to `/bin/bash` a fifth of a second after the
+ * terminal opens is telling the user something changed when nothing did.
+ *
+ * A LAST SEGMENT, split on both separators, because the value can be a Windows
+ * path: on Windows the poll runs exactly once (node-pty does not update
+ * `process` there, so the host polls and stops) and what it reports is the
+ * ConPTY launch path. A value with no separator - `vim`, `bash` - is returned
+ * unchanged, and a value that is nothing but separators keeps its original
+ * text rather than becoming empty, because an unreadable name still says more
+ * than none.
+ */
+export function shellProcessName(reported: string): string {
+  const segments = reported.split(/[/\\]/);
+  const last = segments[segments.length - 1] ?? "";
+  return last === "" ? reported : last;
+}
+
+/** The header's second line: what is running, and where it is. */
+export function terminalShellLabel(shellLabel: string | null): string {
+  return shellLabel === null || shellLabel === ""
+    ? "Shell not reported yet"
+    : shellProcessName(shellLabel);
+}
+
+/* ------------------------------------------------------------------ *
+ * The empty workspace
+ * ------------------------------------------------------------------ */
+
+/**
+ * The watermark's rows: what you can do here, and how.
+ *
+ * VS Code's empty editor group shows its shortcuts rather than a blank field
+ * (`editorGroupWatermark.ts`), which is the pattern. Studio has no accelerators
+ * yet - UX-5 owns that table - so the rows ship with the two actions the mockup
+ * draws in the strip and NO key column until there are keys to show. The
+ * component takes `rows` so the keyboard brief can fill them without touching
+ * this surface again.
+ */
+export const EMPTY_WORKSPACE_WATERMARK_ROWS = [
+  { action: "New terminal" },
+  { action: "Split a terminal" },
+] as const;
+
+/**
+ * What a shell Vex knows but this machine does not have says, in a row.
+ *
+ * A leading space, because it is APPENDED to the shell's own label to build the
+ * accessible name. The row is still listed and still reachable by keyboard: a
+ * user who cannot find zsh in the picker learns nothing, and a user who finds
+ * it marked as not installed learns exactly what to do.
+ */
+export const SHELL_UNAVAILABLE_SUFFIX = " (not installed)";
+
+/**
+ * The accessible name of the directory line in the panel header.
+ *
+ * The visible text is the bare label (`src/lib`, `vex-core`, `outside
+ * project`), which is what a person reading the header wants; on its own it is
+ * an unexplained fragment to anyone hearing it, so the accessible name says
+ * what the fragment IS. `null` is the state before the shell's first directory
+ * property arrives, which is a real state and not an error.
+ *
+ * The value passed here is always a label. There is no branch that could
+ * receive a filesystem path: the wire does not carry one.
+ */
+export function terminalLocationLabel(displayCwd: string | null): string {
+  return displayCwd === null
+    ? "Working directory not known yet"
+    : `Working directory: ${displayCwd}`;
+}
+
+/** Why nothing happened, in words the person reading it can act on. */
+export const REFUSAL_COPY: Partial<Record<TerminalErrorCode, string>> = {
+  limit_project_terminals:
+    "This project already has the maximum number of terminals. Close one to open another.",
+  limit_global_terminals:
+    "Vex has the maximum number of terminals open. Close one to open another.",
+  host_unavailable:
+    "The terminal service is not running and could not be restarted. Restart Vex to try again.",
+  project_deleting: "This project is being deleted, so no new terminal can open.",
+  create_timeout: "The terminal service did not answer in time. Try again.",
+  launch_shell_unavailable:
+    "That shell is not installed on this machine. Pick another one from the shell menu.",
+  snapshot_unavailable: "Vex could not read this project's saved terminal layout.",
+};
+
+/**
+ * What a FAILED close says, per failure.
+ *
+ * Exhaustive over `WorkspaceCloseFailure` for the reason the mutation table
+ * beside it is exhaustive: a failure added without a sentence must be a type
+ * error rather than a reason code printed at the user. Each one names what did
+ * or did not survive, because that is the fact the user needs before deciding
+ * whether to retry - the first two mean nothing was saved AND nothing was lost,
+ * the last two mean the layout is safe and a shell is not.
+ *
+ * Only three of the four invite a retry. `kill_not_owned` says the host
+ * reported a shell as belonging to ANOTHER Vex window, which no retry from this
+ * one can change, so its sentence names the owner instead of asking the user to
+ * try the same thing again.
+ *
+ * These live here rather than in `studio-copy.ts` deliberately: that module
+ * owns the SHELL's vocabulary and says so in its own doc ("the terminal, the
+ * explorer and the viewer keep their own copy modules"), and this is the
+ * terminal surface's copy owner, beside the two refusal tables it already
+ * holds.
+ */
+export const CLOSE_FAILURE_COPY: Readonly<Record<WorkspaceCloseFailure, string>> = {
+  persist_unreachable:
+    "Vex could not reach the terminal service to save this workspace, so nothing was closed. Your terminals are still running. Try closing again.",
+  persist_refused:
+    "The terminal service refused to save this workspace, so nothing was closed. Your terminals are still running. Try closing again.",
+  kill_incomplete:
+    "This workspace was saved, but at least one shell could not be ended. Your work is safe. Try closing again.",
+  kill_not_owned:
+    "This workspace was saved, but the terminal service reports at least one of its shells as belonging to another Vex window, so this window cannot end it. Your work is safe. Close that window to end the shell.",
+};
+
+/**
+ * The RESTORE could not be read, so Vex does not know what this project holds.
+ *
+ * Said out loud rather than swallowed, because the silence was the defect: a
+ * read that failed left an empty strip over a snapshot that may be perfectly
+ * good, and nothing on screen distinguished that from a project that genuinely
+ * has no terminals. It also names why no terminal was opened for them - the
+ * auto-open deliberately does not fire over a layout Vex could not read, since
+ * a terminal spawned there would be persisted on top of the layout it failed to
+ * restore.
+ */
+export const RESTORE_FAILED_COPY =
+  "Vex could not read this project's saved terminal workspace, so nothing was "
+  + "restored and no terminal was opened. Open one below, or reopen the project "
+  + "to try the restore again.";
+
+/**
+ * FILE TABS THAT COULD NOT COME BACK, counted rather than hidden.
+ *
+ * A persisted path is re-resolved through main before its tab exists, and a
+ * path main cannot confirm - the file was deleted, moved, or is no longer
+ * inside the project - produces no tab. Saying nothing would be the defect the
+ * failed restore above already had: the user left five files open, four came
+ * back, and nothing on screen distinguished that from the fifth having been
+ * closed. It names no path, because the only paths that reach this sentence are
+ * ones Vex could not confirm.
+ *
+ * There is no retry, and that is deliberate: reopening the file is the repair,
+ * and the explorer and the rail's search are both one gesture away.
+ */
+export function fileTabsNotRestoredCopy(count: number): string {
+  return count === 1
+    ? "1 file tab could not be restored. That file is no longer where it was."
+    : `${String(count)} file tabs could not be restored. Those files are no `
+      + "longer where they were.";
+}
+
+/**
+ * The EMPTY WORKSPACE, and why it is still reachable.
+ *
+ * Opening a project auto-creates its first terminal, so this is not the state a
+ * fresh project starts in. It is what remains when the auto-open deliberately
+ * did not fire (a restore Vex could not read) or when the user closed every tab
+ * themselves. Both used to render a black rectangle with no affordance in it,
+ * which reads as a broken surface rather than as an empty one.
+ */
+export const EMPTY_WORKSPACE_COPY = "No terminals or files are open in this project.";
+
+/**
+ * The empty state's own action.
+ *
+ * Deliberately NOT "New terminal", which is the tab strip's `+` button: two
+ * controls sharing one accessible name is ambiguous to anyone navigating by
+ * name, and the strip's `+` is still present above this panel.
+ */
+export const EMPTY_WORKSPACE_ACTION_COPY = "Open a terminal";
+
+/** Refused because this workspace is closing. Not a bound; a phase. */
+export const CLOSING_CREATE_COPY =
+  "This workspace is closing, so no new terminal can open in it.";
+
+export const KEEP_ALIVE_COPY =
+  "This project already has the maximum number of live terminal tabs. Close one to open another - Vex never closes a running shell for you.";
+
+/**
+ * What a refused mutation SAYS, per reason.
+ *
+ * A lookup rather than a chain of ternaries because `WorkspaceMutation` gained
+ * a second bound in B4b and the two read identically in code while meaning
+ * different things to a user. Every member of the union has an entry, so a
+ * refusal can never fall through to a reason code printed at the user.
+ */
+export const MUTATION_REFUSAL_COPY: Readonly<Record<WorkspaceRefusalReason, string>> = {
+  keep_alive_limit: KEEP_ALIVE_COPY,
+  file_tab_limit:
+    `This project already has ${String(STUDIO_FILE_TABS_MAX)} files open. Close one to open another; Vex never closes a tab for you.`,
+  unknown_tab: "That tab is no longer open.",
+  unknown_pane: "That pane is no longer open.",
+  last_pane:
+    "That is the last pane in this tab. Close the tab itself to close it.",
+};

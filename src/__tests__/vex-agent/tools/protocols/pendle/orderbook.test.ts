@@ -1,5 +1,5 @@
 /**
- * `pendle.orderbook` — the resting limit-order depth Vex quotes cannot reach.
+ * `pendle.orderbook` - the resting limit-order depth Vex quotes cannot reach.
  *
  * Every Pendle convert quote pins `useLimitOrder: false`, so the price an agent
  * is shown excludes limit-order liquidity on 83 of 84 whitelisted markets
@@ -7,7 +7,7 @@
  * the honesty note is part of the contract, not decoration.
  *
  * The trap it must not fall into: `/v2/limit-orders/book` answers HTTP 404 for a
- * market that is not limit-order whitelisted — live-verified on the DEEPEST
+ * market that is not limit-order whitelisted - live-verified on the DEEPEST
  * chain-1 market. That is "this market has no book", not "the read failed", and
  * reporting it as an error would teach the agent to retry something that can
  * never succeed.
@@ -64,7 +64,7 @@ beforeEach(() => {
   mockGetOrderbook.mockResolvedValue(liveBook);
 });
 
-describe("pendle.orderbook — a whitelisted market", () => {
+describe("pendle.orderbook - a whitelisted market", () => {
   it("passes the provider-required precision and reports the book as whitelisted", async () => {
     const data = output(
       await pendleOrderbook({ chain: "ethereum", market: MARKET, precision: 3 }, PENDLE_READ_NO_ASSET_FACTS, NOW),
@@ -124,12 +124,12 @@ describe("pendle.orderbook — a whitelisted market", () => {
   it("always carries the standing AMM-only warning", async () => {
     const data = output(await pendleOrderbook({ chain: "ethereum", market: MARKET }, PENDLE_READ_NO_ASSET_FACTS, NOW));
     expect(data.note).toBe(
-      "Vex Pendle quotes are AMM-only; resting orders here may offer a better price — Vex cannot fill them.",
+      "Vex Pendle quotes are AMM-only; resting orders here may offer a better price - Vex cannot fill them.",
     );
   });
 });
 
-describe("pendle.orderbook — a market with no book", () => {
+describe("pendle.orderbook - a market with no book", () => {
   beforeEach(() => {
     const notWhitelisted = new VexError(ErrorCodes.PENDLE_MARKET_NOT_FOUND, "Pendle has no book data (HTTP 404).");
     notWhitelisted.httpStatus = 404;
@@ -137,7 +137,7 @@ describe("pendle.orderbook — a market with no book", () => {
     mockGetOrderbook.mockRejectedValue(notWhitelisted);
   });
 
-  it("answers whitelisted:false with an explanation — it is not a failed read", async () => {
+  it("answers whitelisted:false with an explanation - it is not a failed read", async () => {
     const result = await pendleOrderbook({ chain: "ethereum", market: MARKET }, PENDLE_READ_NO_ASSET_FACTS, NOW);
     expect(result.success).toBe(true);
 
@@ -149,7 +149,7 @@ describe("pendle.orderbook — a market with no book", () => {
   });
 });
 
-describe("pendle.orderbook — absence and input", () => {
+describe("pendle.orderbook - absence and input", () => {
   it("keeps a determined absence distinct from an unfinished catalogue walk", async () => {
     mockListMarkets.mockResolvedValue({ markets: [], total: 0, complete: false, pagesFetched: 1 });
     const data = output(

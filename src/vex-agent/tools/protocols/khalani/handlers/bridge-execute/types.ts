@@ -11,7 +11,7 @@ import type { AmountView, BridgeVexFeeView } from "../bridge-support.js";
 
 /**
  * The invariant half of every `bridgeResult` this handler can return once the
- * intent is recorded — assembled once, spread at each exit.
+ * intent is recorded - assembled once, spread at each exit.
  */
 export interface KhalaniBridgePendingBase {
   readonly executionId: number;

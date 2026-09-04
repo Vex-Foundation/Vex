@@ -25,21 +25,13 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import type { PortfolioDto, PositionTokenDto } from "@shared/schemas/portfolio.js";
 import { useUiStore } from "../../../stores/uiStore.js";
 
-vi.mock("@thesvg/react", () => ({
-  Bitcoin: () => null,
-  Bnb: () => null,
-  BnbChain: () => null,
-  Chainlink: () => null,
-  Circle: () => null,
-  DaiStablecoin: () => null,
-  Ethereum: () => null,
-  Optimism: () => null,
-  Polygon: () => null,
-  Robinhood: () => null,
-  Solana: () => null,
-  Tether: () => null,
-  Usdc: () => null,
-}));
+// Every brand mark stubs to null, whatever its name: the marks are
+// presentation-only here, and a hand-listed mock breaks the whole suite
+// file each time a component references a new mark.
+vi.mock("@thesvg/react", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@thesvg/react")>();
+  return Object.fromEntries(Object.keys(actual).map((name) => [name, () => null]));
+});
 
 const mockUsePortfolio = vi.hoisted(() => vi.fn());
 
@@ -299,7 +291,15 @@ describe("BalancesCard - session scope (C4)", () => {
 
   it("reads the SESSION portfolio, never the global one", () => {
     mountWith([token({ tokenName: "Token A", symbol: "AAA", balanceUsd: 10 })], SESSION);
-    expect(mockUsePortfolio).toHaveBeenCalledWith(SESSION);
+    // The hook takes the WHOLE validated read input now, not a
+    // `string | null` session id: that parameter could not express the B0
+    // project scope and collapsed it to `null`, which IS the global aggregate.
+    // The property asserted is unchanged - this card reads the SESSION, never
+    // the global inventory.
+    expect(mockUsePortfolio).toHaveBeenCalledWith({
+      scope: "session",
+      sessionId: SESSION,
+    });
   });
 
   it("carries the session scope into the All-assets route it opens", () => {

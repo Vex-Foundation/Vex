@@ -16,7 +16,7 @@
             "type": "string"
           },
           "address": {
-            "description": "Recipient address — optional mint filter for erc721_mint (only mints to this address are returned)",
+            "description": "Recipient address - optional mint filter for erc721_mint (only mints to this address are returned)",
             "type": "string"
           },
           "chain": {

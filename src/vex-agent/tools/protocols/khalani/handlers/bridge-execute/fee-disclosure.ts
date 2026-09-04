@@ -1,7 +1,7 @@
 /**
  * `khalani.bridge` USD/token facts and Vex-fee disclosure (step 7 of the
  * staged-execute contract, split out in 0R.4, refactor-only). Khalani serves
- * no USD, so these are resolved here — BEFORE the dryRun branch — which is
+ * no USD, so these are resolved here - BEFORE the dryRun branch - which is
  * what makes the preview disclose the SAME fee the execute charges, and the
  * dryRun preview of the native-cost breakdown.
  */
@@ -82,7 +82,7 @@ export async function resolveKhalaniFeeDisclosure(
 
 /**
  * The native-cost block the dryRun preview carries. A preview that cannot show
- * the breakdown says so and says why — silence would read as "no native charge",
+ * the breakdown says so and says why - silence would read as "no native charge",
  * which is exactly the misreading that let an undisclosed 1e15 wei through.
  */
 export function nativeCostPreview(

@@ -59,13 +59,10 @@ function renderUnlockScreen(): ReturnType<typeof render> {
 }
 
 beforeEach(() => {
-  HTMLDialogElement.prototype.showModal = function showModal(): void {
-    this.setAttribute("open", "");
-  };
-  HTMLDialogElement.prototype.close = function close(): void {
-    this.removeAttribute("open");
-    this.dispatchEvent(new Event("close"));
-  };
+  // The <dialog> modal methods come from `test/setup.ts`
+  // (`test/dialog-modal-polyfill.ts`), which runs the real focusing steps. A
+  // local stub here would reinstall one that focuses nothing and make every
+  // `document.activeElement` assertion in this file meaningless.
   mockUnlock.mockReset();
   // Default to a generic "wrong password" Result so accidental calls don't
   // bubble out as Unhandled Rejection noise inside vitest. Each test that
@@ -131,6 +128,12 @@ describe("UnlockScreen", () => {
     const view = renderUnlockScreen();
     fireEvent.click(view.getByRole("button", { name: /I forgot my password/i }));
     const dialog = view.getByRole("dialog") as HTMLDialogElement;
+    // The safer choice holds focus (rule 08): the sibling action destroys the
+    // vault. `DialogContent` puts it there after `showModal()`, and asserting
+    // it means something now that the polyfill runs the focusing steps.
+    expect(document.activeElement).toBe(
+      view.getByRole("button", { name: "Cancel" }),
+    );
     fireEvent.click(dialog);
     expect(view.getByRole("dialog")).toBeTruthy();
     fireEvent(dialog, new Event("cancel", { bubbles: false, cancelable: true }));

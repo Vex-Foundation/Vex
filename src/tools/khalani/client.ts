@@ -188,25 +188,21 @@ export class KhalaniClient {
     );
   }
 
-  getQuotes(request: QuoteRequest, opts?: { routes?: string[] }): Promise<QuoteResponse> {
+  // No route filter: the route comes from the quote (the handler re-quotes and
+  // takes the best route), so no caller pins one and the `routes` query that
+  // once carried a caller-chosen routeId is gone with the parameter.
+  getQuotes(request: QuoteRequest): Promise<QuoteResponse> {
     return this.request(
       "/v1/quotes",
       validateQuoteResponse,
-      {
-        method: "POST",
-        query: { routes: opts?.routes?.join(",") },
-        body: request,
-      },
+      { method: "POST", body: request },
     );
   }
 
-  async *streamQuotes(request: QuoteRequest, opts?: { routes?: string[] }): AsyncGenerator<QuoteStreamRoute> {
+  async *streamQuotes(request: QuoteRequest): AsyncGenerator<QuoteStreamRoute> {
     try {
       const response = await fetchWithTimeout(
-        this.buildUrl("/v1/quotes", {
-          mode: "stream",
-          routes: opts?.routes?.join(","),
-        }),
+        this.buildUrl("/v1/quotes", { mode: "stream" }),
         {
           method: "POST",
           headers: {

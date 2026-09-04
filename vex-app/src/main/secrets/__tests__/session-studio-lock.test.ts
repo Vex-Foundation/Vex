@@ -63,9 +63,12 @@ vi.mock("../../studio/mcp-host.js", () => ({
     order.push("host_lock");
     lockStudioMcpHost(cause);
   },
+  openStudioMcpAdmission: () => {
+    order.push("host_unlock");
+  },
   startStudioMcpHost: () => {
     order.push("host_start");
-    return Promise.resolve({ started: false, reason: "not in this test" });
+    return Promise.resolve({ started: true, endpoint: "/tmp/not-in-this-test" });
   },
 }));
 vi.mock("../../studio/approval-refusals.js", () => ({
@@ -198,13 +201,15 @@ describe("the poison and its bounded retry", () => {
     expect(session.hasPendingStudioRefusalRepair()).toBe(true);
     expect(session.isStudioDispatchPoisoned()).toBe(true);
 
-    // A fresh generation is necessary but not sufficient. The listener must
-    // not reopen while the durable quit refusal remains unwritten.
+    // A fresh generation is necessary but not sufficient. ADMISSION must not
+    // reopen while the durable quit refusal remains unwritten. (The listener
+    // itself is not part of this decision any more: it stays bound, refusing
+    // every peer with the typed `locked` ack.)
     order.length = 0;
     await session.unlockSecretSession("pw");
     expect(session.isSecretSessionUnlocked()).toBe(true);
     expect(session.isStudioDispatchPoisoned()).toBe(true);
-    expect(order).not.toContain("host_start");
+    expect(order).not.toContain("host_unlock");
 
     const advancesBeforeRepair = advanceStudioDispatchGeneration.mock.calls.length;
     refuseAllPendingStudioIntents.mockResolvedValue(2);
@@ -218,7 +223,7 @@ describe("the poison and its bounded retry", () => {
     );
     expect(session.hasPendingStudioRefusalRepair()).toBe(false);
     expect(session.isStudioDispatchPoisoned()).toBe(false);
-    expect(order).toContain("host_start");
+    expect(order).toContain("host_unlock");
   });
 });
 

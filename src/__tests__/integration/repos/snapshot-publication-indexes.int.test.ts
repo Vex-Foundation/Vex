@@ -1,5 +1,5 @@
 /**
- * Integration: migration 098 gives the snapshot publication gate an index-only
+ * Integration: migration 100 gives the snapshot publication gate an index-only
  * access path on all three intent tables, proved by REAL PostgreSQL plans.
  *
  * WHY A PLAN TEST AND NOT A TIMING TEST. The gate
@@ -47,8 +47,8 @@ import {
 
 /** What the ENGINE runtime loads: `dist/` when built, else the source tree. */
 const SOURCE_DIR = getVexAgentMigrationsDir();
-const MIGRATION_098 = "098_wallet_intent_wallet_indexes.sql";
-const TARGET_DB = "vex_098_probe";
+const MIGRATION_100 = "100_wallet_intent_wallet_indexes.sql";
+const TARGET_DB = "vex_100_probe";
 const SESSION = "session-098-probe";
 
 /** 3,000 rows per table over 300 wallets: 10 rows each, 3 of them blocking. */
@@ -394,11 +394,11 @@ describe("098 wallet-address indexes for the publication gate", () => {
   }, 180_000);
 
   it("applies 098 once, and applying again is a no-op (runner and statements)", async () => {
-    copyFileSync(path.join(SOURCE_DIR, MIGRATION_098), path.join(stagingDir, MIGRATION_098));
+    copyFileSync(path.join(SOURCE_DIR, MIGRATION_100), path.join(stagingDir, MIGRATION_100));
 
     const first = await runMigrationsWithProgress({ pool, migrationsDir: stagingDir });
     expect(first.applied).toBe(1);
-    expect(first.files).toEqual([MIGRATION_098]);
+    expect(first.files).toEqual([MIGRATION_100]);
 
     // Second runner pass: `schema_version` already holds 98, so nothing is
     // pending. This proves the RUNNER's idempotence.
@@ -408,7 +408,7 @@ describe("098 wallet-address indexes for the publication gate", () => {
 
     // And the FILE's own idempotence, independent of `schema_version`: a
     // repair/mirror path that re-executes the SQL must not fail or duplicate.
-    const sql = readFileSync(path.join(SOURCE_DIR, MIGRATION_098), "utf-8");
+    const sql = readFileSync(path.join(SOURCE_DIR, MIGRATION_100), "utf-8");
     await expect(pool.query(sql)).resolves.toBeDefined();
 
     for (const table of INTENT_TABLES) {

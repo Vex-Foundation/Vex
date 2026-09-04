@@ -119,6 +119,9 @@ const PENDING_SUMMARY: ApprovalSummaryDto = {
   decision: null,
   decisionReason: null,
   executionStatus: null,
+  origin: null,
+  projectId: null,
+  requestedByClient: null,
 };
 
 vi.mock("../../../lib/api/approvals.js", () => ({

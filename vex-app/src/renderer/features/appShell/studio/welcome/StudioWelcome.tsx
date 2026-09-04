@@ -1,0 +1,226 @@
+/**
+ * THE STUDIO WELCOME SCREEN - what fills the centre column while no project is
+ * selected. A START SCREEN, not a text column.
+ *
+ * The shape is VS Code's Getting Started (`gettingStarted.ts`): a statement of
+ * what this is, a Start row of actions, and the recents underneath as rows the
+ * rest of the app also uses (`buildStartList`, `buildRecentlyOpenedList`).
+ * deepseek's `EmptyHero` supplies the register - one sentence of purpose and
+ * ONE obviously primary control, everything else quiet
+ * (`ui-conversation/src/client/skeleton/EmptyHero.tsx`). Its watermark
+ * treatment is the one `editorGroupWatermark.ts` gives an empty editor group;
+ * ours is the `VexMark` at low opacity, placed exactly as the terminal's own
+ * watermark is (`studio/terminal/XtermHost.tsx`).
+ *
+ * Three lines of copy and no more (`studio-copy.ts`): what a project is, what
+ * creating one does, and the way back to the agent shell. The audit's finding
+ * I1 was that the old screen said a lot and told a first-time user nothing they
+ * could act on.
+ *
+ * The way back to the agent shell is one plain button under the pointer line.
+ * The Agent | Studio capsule itself lives in the rail header (the one home the
+ * audit gave it, visible on every Studio screen), so this screen must not mount
+ * a second radiogroup with the same accessible name beside it.
+ *
+ * ## Two things this screen deliberately does NOT have
+ *
+ * 1. THE CREATE CTA IS CONDITIONAL. The ProjectCreator is stage B4b's. A button
+ *    wired to nothing, or wearing roadmap copy, would be a lie about what the
+ *    app can do, so the CTA renders only when a caller supplies a real handler.
+ *    B4a passes none and the screen simply has no CTA; B4b passes the real one
+ *    and the CTA appears with no change here.
+ *
+ * 2. NO PER-AGENT STATE OF ANY KIND (owner decision 2026-08-31). Vex does not
+ *    detect agent CLIs: the user SELECTS agents in the project creator, the
+ *    installer writes their MCP files, and the selection is changed in the
+ *    project settings. Per-agent file state is a PROJECT fact and lives where
+ *    the project does - the row's drift dot and the settings/repair envelope
+ *    views - never on a screen that has no project.
+ *
+ *    THE BRIDGE READINESS PANEL IS NOT AN EXCEPTION TO THIS. It reports
+ *    whether this INSTALLATION has a `vex-mcp` binary, which is one fact about
+ *    Vex itself and is true or false before any project exists. It says
+ *    nothing about any agent CLI and does not detect one.
+ */
+
+import type { JSX } from "react";
+import type { ProjectDto } from "@shared/schemas/projects.js";
+import { VexMark } from "../../../../components/common/VexMark.js";
+import { Button } from "../../../../components/ui/button.js";
+import { RailGroup } from "../../../../components/ui/rail-list.js";
+import { IconFolderOpen, IconPlus } from "../../../../components/icons/index.js";
+import { useProjects } from "../../../../lib/api/projects.js";
+import { useUiStore } from "../../../../stores/uiStore.js";
+import { StudioBridgeReadinessPanel } from "./StudioBridgeReadinessPanel.js";
+import { WelcomeProjectRow } from "./WelcomeProjectRow.js";
+import {
+  STUDIO_WELCOME_AGENT_ACTION,
+  STUDIO_WELCOME_AGENT_POINTER,
+  STUDIO_WELCOME_CREATE_LABEL,
+  STUDIO_WELCOME_LEAD,
+  STUDIO_WELCOME_NEXT,
+  STUDIO_WELCOME_RECENT_EMPTY,
+  STUDIO_WELCOME_RECENT_ERROR,
+  STUDIO_WELCOME_RECENT_LOADING,
+  STUDIO_WELCOME_RECENT_TITLE,
+  STUDIO_WELCOME_TITLE,
+  studioWelcomeOpenLabel,
+} from "../studio-copy.js";
+
+export interface StudioWelcomeProps {
+  /**
+   * Open the project creator. OPTIONAL on purpose - see the module note. When
+   * absent the CTA is not rendered at all.
+   */
+  readonly onCreateProject?: () => void;
+  readonly onSelectProject: (projectId: string) => void;
+}
+
+export function StudioWelcome({
+  onCreateProject,
+  onSelectProject,
+}: StudioWelcomeProps): JSX.Element {
+  const setRuntimeMode = useUiStore((state) => state.setRuntimeMode);
+  const query = useProjects();
+  const projects: readonly ProjectDto[] =
+    query.data !== undefined && query.data.ok ? query.data.data : [];
+  // "We could not look" is a different fact from "you have none", and BOTH
+  // ways the read can fail have to reach it: a settled Result that says
+  // `ok: false`, and a REJECTED call that leaves no Result at all (the preload
+  // bridge throwing, the window tearing down mid-call). The second used to
+  // fall through to `[]` and paint the empty state. A failed refetch that
+  // still has a good earlier list is NOT this state - the rows on screen are
+  // real, so `query.isError` alone would be a lie in the other direction.
+  const readFailed =
+    query.data === undefined ? query.isError : !query.data.ok;
+  // The second action opens the project the LIST returned first. The handler
+  // owns that order (see the rows below); picking a different one here would be
+  // a second answer to "which project is the recent one".
+  const firstProject = projects[0] ?? null;
+
+  return (
+    <section
+      data-vex-area="studio-welcome"
+      aria-label={STUDIO_WELCOME_TITLE}
+      className="relative flex h-full min-h-0 w-full flex-col items-center overflow-y-auto px-8 py-12"
+    >
+      {/* Brand backdrop, placed as the terminal's watermark is: decoration
+        * under the content, never in the accessible tree, never clickable. */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 flex items-center justify-center"
+      >
+        <VexMark size={200} className="text-brand-mark opacity-[0.06]" />
+      </div>
+
+      <div className="relative z-10 flex w-full max-w-xl flex-col gap-8">
+        <div className="flex flex-col items-center gap-3 text-center">
+          <VexMark size={40} className="text-brand-mark" aria-hidden="true" />
+          <h1 className="font-display text-[26px] leading-[34px] font-medium tracking-[-0.01em] text-ink-primary">
+            {STUDIO_WELCOME_TITLE}
+          </h1>
+          <p className="text-[14px] leading-[22px] text-ink-secondary">
+            {STUDIO_WELCOME_LEAD}
+          </p>
+          <p className="text-[13px] leading-[20px] text-ink-tertiary">
+            {STUDIO_WELCOME_NEXT}
+          </p>
+        </div>
+
+        {/* THE BRIDGE DIAGNOSTIC, above the actions on purpose (B1.6).
+          *
+          * A project created without a bridge gets no coding-agent config
+          * files at all, so the fact that the bridge is missing has to be
+          * readable BEFORE the button that creates one, not underneath the
+          * project list. The panel renders nothing while the check is in
+          * flight and nothing when the bridge is there, so on a healthy
+          * installation this position costs no space. */}
+        <StudioBridgeReadinessPanel />
+
+        {/* The Start row: the primary action, and the one that opens what the
+          * user already has. Both are absent when they would be dishonest -
+          * no creator handler, no create button; no projects, nothing to
+          * open. */}
+        {onCreateProject !== undefined || firstProject !== null ? (
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            {onCreateProject !== undefined ? (
+              // THE PRIMARY ACTION, marked so the centre's focus seam can find
+              // it by name rather than by "the first button on the screen" -
+              // the bridge diagnostic and the way back to Agent are buttons
+              // too, and the Start row is the last of the three to render.
+              <Button
+                variant="accent"
+                data-vex-studio-welcome-action="primary"
+                onClick={onCreateProject}
+              >
+                <IconPlus size={15} />
+                {STUDIO_WELCOME_CREATE_LABEL}
+              </Button>
+            ) : null}
+            {firstProject !== null ? (
+              <Button
+                variant="outline"
+                // The primary action when there is no creator handler: the
+                // marker names the row's FIRST control, whichever it is.
+                data-vex-studio-welcome-action={
+                  onCreateProject === undefined ? "primary" : undefined
+                }
+                onClick={() => onSelectProject(firstProject.id)}
+              >
+                <IconFolderOpen size={15} />
+                {studioWelcomeOpenLabel(firstProject.name)}
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+
+        <RailGroup
+          title={STUDIO_WELCOME_RECENT_TITLE}
+          headingId="studio-welcome-projects"
+        >
+          {query.isLoading ? (
+            <li className="px-2 py-1 text-[13px] leading-[20px] text-ink-tertiary">
+              {STUDIO_WELCOME_RECENT_LOADING}
+            </li>
+          ) : readFailed ? (
+            <li
+              role="status"
+              className="px-2 py-1 text-[13px] leading-[20px] text-warning"
+            >
+              {STUDIO_WELCOME_RECENT_ERROR}
+            </li>
+          ) : projects.length === 0 ? (
+            <li className="px-2 py-1 text-[13px] leading-[20px] text-ink-tertiary">
+              {STUDIO_WELCOME_RECENT_EMPTY}
+            </li>
+          ) : (
+            // The order the list returns, never re-sorted here: the handler
+            // owns it and a second ordering would be a second answer.
+            projects.map((project) => (
+              <li key={project.id}>
+                <WelcomeProjectRow
+                  project={project}
+                  onSelect={() => onSelectProject(project.id)}
+                />
+              </li>
+            ))
+          )}
+        </RailGroup>
+
+        {/* The way back to the agent shell: one plain action, NOT a second
+          * mode capsule. The Agent | Studio capsule has exactly one home, the
+          * rail header, and it is on screen at the same time as this welcome;
+          * a second radiogroup with the same accessible name doubled the
+          * control (e2e/studio.spec.ts pins the count at one). */}
+        <div className="flex flex-col items-center gap-2 border-t border-line-1 pt-6">
+          <p className="text-center text-[12px] leading-[18px] text-ink-tertiary">
+            {STUDIO_WELCOME_AGENT_POINTER}
+          </p>
+          <Button variant="outline" onClick={() => setRuntimeMode("agent")}>
+            {STUDIO_WELCOME_AGENT_ACTION}
+          </Button>
+        </div>
+      </div>
+    </section>
+  );
+}

@@ -25,7 +25,7 @@
 
 import { useEffect, useRef, useState, type JSX } from "react";
 import { motion, useReducedMotion } from "motion/react";
-import { EASE_INOUT, EASE_STANDARD } from "../../lib/motion.js";
+import { EASE_INOUT, EASE_STANDARD } from "../../lib/motion/index.js";
 
 const COVER_S = 0.22;
 const CURTAIN_S = 0.62;

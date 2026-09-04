@@ -1,7 +1,7 @@
 /**
- * Tool registry OpenAI projection — `getOpenAITools`.
+ * Tool registry OpenAI projection - `getOpenAITools`.
  *
- * Thin wrapper over `getVisibleToolDefs` + the OpenAI projection — keeps the
+ * Thin wrapper over `getVisibleToolDefs` + the OpenAI projection - keeps the
  * filter chain in one place. Imports `toOpenAITools` from the canonical
  * `../types.js`; never imports the `registry.js` façade (cycle).
  */
@@ -15,7 +15,7 @@ import { buildInjectedProtocolTools } from "./injected-protocol-tools.js";
 /**
  * Get tools as OpenAI format, filtered for the given session context.
  *
- * Thin wrapper over `getVisibleToolDefs` + the OpenAI projection — keeps
+ * Thin wrapper over `getVisibleToolDefs` + the OpenAI projection - keeps
  * the filter chain in one place.
  *
  * INJECTED PROTOCOL TOOLS (owner decision 2026-08-03, SPEC §7 Q1). The tools
@@ -33,7 +33,7 @@ import { buildInjectedProtocolTools } from "./injected-protocol-tools.js";
  *    moving `required` into the one channel a provider can enforce; the
  *    alternative (prose-only params) is what produced the live
  *    missing-required-param loops. Do not "fix" the churn by caching a stale
- *    tools array — a schema the model can see but the dispatcher would reject
+ *    tools array - a schema the model can see but the dispatcher would reject
  *    is worse than a cache miss.
  */
 export function getOpenAITools(ctx: ToolVisibilityContext): OpenAITool[] {

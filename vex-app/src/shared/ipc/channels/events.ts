@@ -29,6 +29,24 @@ export const EV = {
   },
 
   /**
+   * Vex Studio MCP host status (stage B0). Main's host publishes a
+   * `StudioHostStatus` at every lifecycle transition: start publication, an
+   * established connection claimed or released, either capacity refusal, the
+   * lock teardown, and quit.
+   *
+   * BOUNDED CODES AND COUNTS ONLY. The payload never carries the endpoint path
+   * or pipe name - that is the address of a privileged local listener - and
+   * never carries the readiness barrier's prose cause or a bind error's text;
+   * see `@shared/schemas/studio.js`. Identical consecutive payloads are
+   * coalesced by the publisher, so a burst of connects emits one update per
+   * distinct state. Validated with `studioHostStatusSchema` at the preload
+   * boundary; the DB is not involved (the host's state is in-memory).
+   */
+  studio: {
+    hostStatus: "vex:event:studio:hostStatus",
+  },
+
+  /**
    * Board live lease events (ticks, degradation, terminal close).
    *
    * Unlike every other channel here, this one is NOT a broadcast: main sends it
@@ -117,6 +135,47 @@ export const EV = {
      * CURRENT check interval, neither of which the renderer can derive.
      */
     activityProgress: "vex:event:portfolio:activityProgress",
+  },
+  /**
+   * Vex Studio terminals (stage B2).
+   *
+   * `port` is NOT an ordinary event: it is the channel main uses to TRANSFER a
+   * `MessagePort` into a window's preload, alongside the one-shot nonce that
+   * correlates it with the `terminal.acquirePort` reply. Its payload therefore
+   * carries a nonce and nothing else - the port itself rides the transfer list,
+   * where the renderer can never reach it, because only preload owns the port
+   * object and the renderer sees domain methods.
+   *
+   * `availability` is the terminal subsystem's own honest state, including the
+   * durable "unavailable" a spent restart cap produces.
+   *
+   * `terminalsLost` is what an UNEXPECTED pty-host termination looks like from
+   * the renderer. Every pty in that process died with it, and the data-plane
+   * port they were reported over died too - so the `exit` events the renderer
+   * would ordinarily receive can never arrive. Without this event the tabs sit
+   * there looking alive, accepting keystrokes that go nowhere. It carries the
+   * ids main had recorded, so the renderer can mark exactly those dead and
+   * offer to revive from the last snapshot.
+   */
+  terminal: {
+    port: "vex:event:terminal:port",
+    availability: "vex:event:terminal:availability",
+    terminalsLost: "vex:event:terminal:terminalsLost",
+  },
+  /**
+   * Vex Studio project files (stage B3a).
+   *
+   * NOT a broadcast: main sends to the single window that owns the
+   * subscription, because a file subscription is owned rather than observed -
+   * the same posture as `EV.board.live`.
+   *
+   * The payload is a DISCRIMINATED UNION (`changed` | `resync` | `status`),
+   * validated with `filesEventSchema` at the preload boundary. Nothing durable
+   * is involved: the filesystem is the source of truth and a `resync` is main
+   * telling the consumer to go read it again.
+   */
+  files: {
+    changed: "vex:event:files:changed",
   },
   engine: {
     transcriptAppend: "vex:event:engine:transcriptAppend",

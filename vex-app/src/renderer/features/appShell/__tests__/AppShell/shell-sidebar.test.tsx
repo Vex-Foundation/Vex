@@ -37,24 +37,13 @@ vi.mock("../../screens/AgentScanScreen.js", () => ({
   AgentScanScreen: () => null,
 }));
 
-vi.mock("@thesvg/react", () => ({
-  Docker: () => null,
-  Ethereum: () => null,
-  Solana: () => null,
-  Base: () => null,
-  Robinhood: () => null,
-  Polygon: () => null,
-  Optimism: () => null,
-  BnbChain: () => null,
-  Tether: () => null,
-  Circle: () => null,
-  Chainlink: () => null,
-  Postgresql: () => null,
-  Bitcoin: () => null,
-  Bnb: () => null,
-  DaiStablecoin: () => null,
-  Usdc: () => null,
-}));
+// Every brand mark stubs to null, whatever its name: the marks are
+// presentation-only here, and a hand-listed mock breaks the whole suite
+// file each time a component references a new mark.
+vi.mock("@thesvg/react", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@thesvg/react")>();
+  return Object.fromEntries(Object.keys(actual).map((name) => [name, () => null]));
+});
 
 // Stage 4: the always-mounted BookPanel renders SessionRuntimeBar (in the
 // RUNTIME & COST block) → ModelBrandIcon, which statically imports ~20 brand
@@ -91,28 +80,6 @@ const missionGetDraftMock = vi.fn();
 const runtimeGetStateMock = vi.fn();
 
 beforeAll(() => {
-  const proto = HTMLDialogElement.prototype as unknown as {
-    showModal?: () => void;
-    close?: () => void;
-    show?: () => void;
-  };
-  if (typeof proto.showModal !== "function") {
-    proto.showModal = function showModalPolyfill(this: HTMLDialogElement): void {
-      this.setAttribute("open", "");
-    };
-  }
-  if (typeof proto.close !== "function") {
-    proto.close = function closePolyfill(this: HTMLDialogElement): void {
-      this.removeAttribute("open");
-      this.dispatchEvent(new Event("close"));
-    };
-  }
-  if (typeof proto.show !== "function") {
-    proto.show = function showPolyfill(this: HTMLDialogElement): void {
-      this.setAttribute("open", "");
-    };
-  }
-
   // jsdom does not implement ResizeObserver, which SessionsList uses for
   // fit-to-height. The component's effect feature-detects it, so without a
   // stub it just leaves containerHeight at 0 (the planned fallback) — but
@@ -648,6 +615,43 @@ describe("AppShell", () => {
     expect(frame?.style.gridTemplateColumns).toBe(
       `342px minmax(0, 1fr) ${WELCOME_PORTFOLIO_WIDTH}px`,
     );
+  });
+
+  it("keeps exactly ONE way into Studio on screen across the welcome<->session edge", () => {
+    // THE DEFECT, at the seat where it was measured (UX after-audit N1). The
+    // `Agent | Studio` capsule used to render on the welcome HERO, so selecting
+    // a session unmounted the hero and took the only control out of agent mode
+    // off the screen entirely: Studio was reachable only by going back to
+    // welcome. Close-range suites cannot see this, because each of them mounts
+    // one component; only the assembled shell can show that the control
+    // survives a stage change. Put the capsule back on the hero and the session
+    // half below goes red with a count of zero.
+    //
+    // The other half of the invariant is the COUNT: the capsule has exactly one
+    // home per page (this rail header in agent mode, the Studio rail header in
+    // Studio mode), which is what `e2e/studio.spec.ts` pins page-wide. A second
+    // copy anywhere in agent mode would make this 2.
+    const view = renderShell();
+    const rail = (): HTMLElement | null =>
+      view.container.querySelector("[data-vex-area='sessions-sidebar']");
+
+    const welcomeGroups = screen.getAllByRole("radiogroup", {
+      name: "Runtime mode",
+    });
+    expect(welcomeGroups).toHaveLength(1);
+    // And it is the RAIL's, not the hero's: the hero gave its copy up.
+    expect(rail()?.contains(welcomeGroups[0] ?? null)).toBe(true);
+
+    act(() => useUiStore.getState().setActiveSessionId("s-1"));
+
+    const sessionGroups = screen.getAllByRole("radiogroup", {
+      name: "Runtime mode",
+    });
+    expect(sessionGroups).toHaveLength(1);
+    expect(rail()?.contains(sessionGroups[0] ?? null)).toBe(true);
+    expect(
+      screen.getByRole("radio", { name: "Studio" }).getAttribute("aria-checked"),
+    ).toBe("false");
   });
 });
 

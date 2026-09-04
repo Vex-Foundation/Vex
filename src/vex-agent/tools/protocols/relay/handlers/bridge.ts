@@ -1,15 +1,15 @@
 /**
- * Relay bridge handlers — quote.get (read) + bridge (mutating), on the W-SPINE
+ * Relay bridge handlers - quote.get (read) + bridge (mutating), on the W-SPINE
  * `agent_activity` contract (Wave-3 W3b).
  *
  * FAÇADE. This file keeps its name and its public export
  * (`RELAY_BRIDGE_HANDLERS`); the implementation lives in the sibling `bridge/`
  * folder, split by responsibility (SPEC wave 0R.2):
- *   - `bridge/legs.ts`      — param adaptation, provider request, route key,
- *   - `bridge/fee-leg.ts`   — the Vex fee disclosure and its collection leg,
- *   - `bridge/broadcast.ts` — the ORIGIN-ONLY staged broadcast loop,
- *   - `bridge/results.ts`   — every agent-facing body,
- *   - `bridge/recording.ts` — the best-effort durable-ledger side effects.
+ *   - `bridge/legs.ts`      - param adaptation, provider request, route key,
+ *   - `bridge/fee-leg.ts`   - the Vex fee disclosure and its collection leg,
+ *   - `bridge/broadcast.ts` - the ORIGIN-ONLY staged broadcast loop,
+ *   - `bridge/results.ts`   - every agent-facing body,
+ *   - `bridge/recording.ts` - the best-effort durable-ledger side effects.
  *
  * Relay is a KEYLESS cross-chain bridge and the ONLY route to/from Robinhood
  * Chain (Khalani does not cover 4663); elsewhere it is the alternative venue to
@@ -17,7 +17,7 @@
  * proj_activity capture onto
  * the durable `agent_activity` bridge ledger:
  *
- *  1. Pre-sign gates (all pure, all fail-closed, NONE record) run in order —
+ *  1. Pre-sign gates (all pure, all fail-closed, NONE record) run in order -
  *     W2 health gate → W2 correlation → W2 step policy. ANY gate failure aborts
  *     BEFORE any pending plan or signing, then atomically records a HASHLESS
  *     `definitively_failed` logical row (`createBridgePreBroadcastFailure`, C1).
@@ -65,7 +65,8 @@ import logger from "@utils/logger.js";
 import { findCallerSuppliedForbiddenParam } from "@tools/khalani/request.js";
 import type { ToolResult } from "../../../types.js";
 import type { ProtocolHandler, ProtocolExecutionContext } from "../../types.js";
-import { ok, fail } from "../../handler-helpers.js";
+import { ok, fail, str } from "../../handler-helpers.js";
+import { bridgeRecipientRefusal } from "../../conventions.js";
 import { relayChainDisplay, bridgeSideDisplay, bridgeSummaryLine, relayFeeUsdEstimate } from "./bridge-output.js";
 import { BRIDGE_FAMILY, BRIDGE_TOOL_ID, PROTOCOL } from "./bridge/constants.js";
 import {
@@ -116,7 +117,7 @@ function quoteRiskNote(adapted: RelayBridgeQuote): string {
 function laggingNote(sides: readonly string[]): string {
   return sides.length === 0
     ? ""
-    : ` NOTE: Relay reports block production lagging on the ${sides.join(" and ")} chain — the fill may take longer than the estimate.`;
+    : ` NOTE: Relay reports block production lagging on the ${sides.join(" and ")} chain - the fill may take longer than the estimate.`;
 }
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
@@ -142,7 +143,7 @@ async function relayQuoteGet(
 
   let quote: RelayQuoteResponse;
   try {
-    quote = await getRelayClient().getQuote(buildRequest(legs, user, params));
+    quote = await getRelayClient().getQuote(buildRequest(legs, user));
   } catch (err) {
     return fail(`relay__bridge_quote_get failed: ${summarizeProtocolError(err).message}`);
   }
@@ -210,7 +211,7 @@ async function relayBridge(
   const route = buildRoute(legs);
   const dryRun = params.dryRun === true;
 
-  // Selected wallet ADDRESS only (never decrypts) — recorded on failure rows and
+  // Selected wallet ADDRESS only (never decrypts) - recorded on failure rows and
   // used for the in-flight pre-check before we resolve the full signing wallet.
   let walletAddress: string;
   try {
@@ -219,7 +220,7 @@ async function relayBridge(
     return walletScopeErrorToResult(err);
   }
 
-  // relay.bridge is a mutating tool — a session is always present by the time it
+  // relay.bridge is a mutating tool - a session is always present by the time it
   // dispatches; guard defensively and narrow it for recording.
   const sessionId = context.sessionId;
   if (!sessionId) return fail(`${BRIDGE_TOOL_ID} requires an active session.`);
@@ -243,7 +244,7 @@ async function relayBridge(
     );
   }
 
-  // ── Health gate (no quote needed) — fail fast on an unserviceable route ──
+  // ── Health gate (no quote needed) - fail fast on an unserviceable route ──
   const health = evaluateRelayRouteHealth(chains, legs.originChainId, legs.destinationChainId);
   if (!dryRun && !health.serviceable) {
     return failPreSign(route, walletAddress, sessionId, params, "chain_unsupported", healthFailureReason(health), from, to, originLeg, destLeg);
@@ -252,7 +253,7 @@ async function relayBridge(
   // ── Quote (v2) ──
   let quote: RelayQuoteResponse;
   try {
-    quote = await getRelayClient().getQuote(buildRequest(legs, walletAddress, params));
+    quote = await getRelayClient().getQuote(buildRequest(legs, walletAddress));
   } catch (err) {
     const reason = summarizeProtocolError(err).message;
     if (dryRun) return fail(`${BRIDGE_TOOL_ID} preview failed: ${reason}`);
@@ -313,12 +314,12 @@ async function relayBridge(
     );
   }
 
-  // Friendly in-flight pre-check (C2) — the authoritative gate is the DB unique
+  // Friendly in-flight pre-check (C2) - the authoritative gate is the DB unique
   // index inside createBridgeActivityIntent; this just fails fast + friendly.
   const preCheck = await checkBridgeInFlight({ walletAddress, sessionId: sessionId, route });
   if (preCheck.inFlight) return inFlightResult(from, to);
 
-  // Full signing wallet (decrypts) — resolved only now that the call may sign.
+  // Full signing wallet (decrypts) - resolved only now that the call may sign.
   let signer: ChainWallet;
   try {
     signer = resolveSigningWallet(context.walletResolution, context.walletPolicy, "eip155");
@@ -328,7 +329,7 @@ async function relayBridge(
   if (signer.family !== "eip155") return fail("Resolved wallet family mismatch.");
   const expectedFrom = getAddress(signer.address);
 
-  // ── Origin signing clients — resolved BEFORE the intent (blocker 3) ──
+  // ── Origin signing clients - resolved BEFORE the intent (blocker 3) ──
   // Client/registry/RPC resolution is the last thing that can fail before a
   // pending plan exists. Doing it PRE-intent means a registry/RPC/construction
   // failure records a HASHLESS `definitively_failed` row (C1) and never strands a
@@ -349,8 +350,8 @@ async function relayBridge(
   // ── Atomic intent + all legs + ONE planned logical row, BEFORE any signing ──
   //
   // The Vex fee transfer is planned as the FINAL Vex-signed leg, after the
-  // deposit — a bridge that never lands never pays a fee. It is recorded under
-  // its own `bridge_fee` event_role (migration 050; `allowance` before that —
+  // deposit - a bridge that never lands never pays a fee. It is recorded under
+  // its own `bridge_fee` event_role (migration 050; `allowance` before that -
   // see `BRIDGE_FEE_ACTIVITY_EVENT_ROLE`); its token, amount, USD estimate and
   // hash are the real ones, so the movement is neither hidden nor mislabeled.
   const chargeFee = legs.feeSkipReason === null;
@@ -382,13 +383,13 @@ async function relayBridge(
       tokenIn: feeLegInput,
       // Vex's own 25 bps, recorded for the first time (migration 050), via the
       // SAME `relayFeeUsdEstimate` derivation that produces the agent-facing
-      // disclosure — so the disclosed and the recorded number are one number.
+      // disclosure - so the disclosed and the recorded number are one number.
       // `undefined` (never 0) when the origin side carries no readable USD.
       // It belongs on THIS leg rather than the logical row: the fee transfer
       // runs after the deposit, so this row's own status is what says whether
       // Vex was actually paid, which keeps a SUM over confirmed rows honest.
       // Pass `adapted.currencyIn` (the RelayQuoteSide every `relayFeeDisclosure`
-      // call site passes), NOT the local `inSide` — that is the display
+      // call site passes), NOT the local `inSide` - that is the display
       // projection and a different type.
       usdVexFeeEst: relayFeeUsdEstimate(adapted.currencyIn, legs.feeSplit.feeRaw, tokenIdentity.source) ?? undefined,
       usdSource: adapted.usdSource,
@@ -420,7 +421,7 @@ async function relayBridge(
       tokenOut: destLeg,
       usdInEst: adapted.currencyIn.amountUsd ?? undefined,
       usdOutEst: adapted.currencyOut.amountUsd ?? undefined,
-      // No total fee USD is derived (Relay's fee buckets overlap — a sum
+      // No total fee USD is derived (Relay's fee buckets overlap - a sum
       // double-counts). Per-bucket USD is surfaced VERBATIM in the output.
       // Migration 050 changes nothing here: `usd_venue_fee_est` stays NULL for
       // the same reason, because a summed bucket total would be a guess, and
@@ -441,7 +442,7 @@ async function relayBridge(
     poll: Parameters<typeof pendingResult>[0]["poll"];
     depositUnconfirmed: boolean;
     feeCollection: Parameters<typeof pendingResult>[0]["feeCollection"];
-    /** Absent on every path that never polled — nothing was read, so nothing was recorded. */
+    /** Absent on every path that never polled - nothing was read, so nothing was recorded. */
     providerStatusRecording?: ProviderStatusRecording;
   }): ToolResult =>
     pendingResult({
@@ -460,7 +461,7 @@ async function relayBridge(
   const broadcasts = run.broadcasts;
 
   // Deposit confirmed on origin. Auto-pin (fail-soft) then run the INFORMATIONAL
-  // in-turn poll — it never confirms/terminalizes the durable row (W4 owns the
+  // in-turn poll - it never confirms/terminalizes the durable row (W4 owns the
   // verified pending→confirmed + reveal-clear). The logical row stays pending.
   await maybeAutoPin(walletAddress, legs);
   logger.info("relay.bridge.deposit_confirmed", {
@@ -469,11 +470,11 @@ async function relayBridge(
     executionId,
   });
   // R1 Step 4: the logical row is pending for a reason the fallback can route
-  // on — the destination fill is the PROVIDER's word and nothing here has proven
+  // on - the destination fill is the PROVIDER's word and nothing here has proven
   // it. Before 067 this row was pending with no stated reason at all.
   await noteHandlerPendingReason("relay.bridge", logicalRow.id, "provider_fill_unverified");
 
-  // Vex fee leg — LAST, and only now: the deposit is confirmed and its
+  // Vex fee leg - LAST, and only now: the deposit is confirmed and its
   // requestId is attached, so collecting the fee cannot delay or alter Relay's
   // own fill tracking (separate lifecycles sharing one plan). Its outcome
   // NEVER changes the bridge's: a fee that does not land is missed Vex
@@ -493,7 +494,7 @@ async function relayBridge(
   const poll = await pollRelayIntentStatus(requestId);
   // R1 Step 3a: persist what the provider actually said, so `AgentScan` is fed
   // at return instead of waiting for the next sweep. `observed:false` means
-  // every status call this turn threw — there is no status to record, and
+  // every status call this turn threw - there is no status to record, and
   // recording the placeholder would invent one.
   const providerStatusRecording = poll.observed
     ? await recordBridgeProviderObservation({
@@ -504,27 +505,53 @@ async function relayBridge(
 }
 
 /**
- * Reject a caller-supplied refund destination BY NAME, on BOTH Relay entry
+ * Reject a caller-supplied fund destination BY NAME, on BOTH Relay entry
  * points, before anything else runs.
  *
+ * Two keys, one doctrine. `refundTo` decides where funds land when a bridge
+ * FAILS; `recipient` decides where they land when it SUCCEEDS. Neither is a
+ * parameter: both are derived from the session's selected EVM wallet (Relay v1
+ * is EVM-only, so source, destination and refund are the same account).
+ *
  * Rejecting on the QUOTE matters as much as on the execute: the prequote gate
- * binds the money leg, so an attacker who set the same address on both would
- * collide the hashes and pass the gate. A silent drop would hide the attempt
- * entirely. `relay.bridge` and `relay.quote.get` are directly reachable through
- * `execute_tool`, so the alias-level rejection is not sufficient on its own.
+ * binds the quote's params, so an attacker who set the same address on both
+ * would collide the hashes and pass the gate. A silent drop would hide the
+ * attempt entirely. `relay.bridge` and `relay.quote.get` are directly reachable
+ * through `execute_tool`, so the alias-level rejection is not sufficient on its
+ * own - and the manifest boundary (`runtime/params.ts`), which refuses the
+ * undeclared `recipient` key BEFORE this handler and before the prequote gate,
+ * cannot name the address the bridge would actually deliver to. This can.
+ *
+ * The destination address is resolved ONLY when the key was supplied: an
+ * ordinary call must not change its wallet-resolution order, and a supplied
+ * `recipient` under a session with no selected EVM wallet fails closed with the
+ * ordinary wallet-scope refusal rather than an invented address.
  */
-function rejectCallerSuppliedDestination(toolId: string, params: Record<string, unknown>): ToolResult | null {
+function rejectCallerSuppliedDestination(
+  toolId: string,
+  params: Record<string, unknown>,
+  context: ProtocolExecutionContext,
+): ToolResult | null {
   const forbidden = findCallerSuppliedForbiddenParam(params);
-  if (forbidden === null) return null;
-  return {
-    success: false,
-    output: `${toolId} failed: ${forbidden.param} is not an accepted parameter — ${forbidden.reason} Remove it and retry.`,
-  };
+  if (forbidden !== null) {
+    return {
+      success: false,
+      output: `${toolId} failed: ${forbidden.param} is not an accepted parameter - ${forbidden.reason} Remove it and retry.`,
+    };
+  }
+  if (str(params, "recipient") === "") return null;
+  let destination: string;
+  try {
+    destination = resolveSelectedAddress(context.walletResolution, context.walletPolicy, BRIDGE_FAMILY);
+  } catch (err) {
+    return walletScopeErrorToResult(err);
+  }
+  return { success: false, output: bridgeRecipientRefusal(toolId, destination) };
 }
 
 export const RELAY_BRIDGE_HANDLERS: Record<string, ProtocolHandler> = {
   "relay.quote.get": async (p, ctx) =>
-    rejectCallerSuppliedDestination("relay.quote.get", p) ?? relayQuoteGet(p, ctx),
+    rejectCallerSuppliedDestination("relay.quote.get", p, ctx) ?? relayQuoteGet(p, ctx),
   "relay.bridge": async (p, ctx) =>
-    rejectCallerSuppliedDestination("relay.bridge", p) ?? relayBridge(p, ctx),
+    rejectCallerSuppliedDestination("relay.bridge", p, ctx) ?? relayBridge(p, ctx),
 };

@@ -1,9 +1,9 @@
 /**
- * `BridgeStatus` mode selection — the by-name rejection of a contradictory call.
+ * `BridgeStatus` mode selection - the by-name rejection of a contradictory call.
  *
  * The alias has TWO modes and one parameter bag: `orderId` fetches one order,
  * everything else filters a list. Supplying both is a contradiction, and the
- * alias used to resolve it silently — it forwarded `orderId` and DROPPED every
+ * alias used to resolve it silently - it forwarded `orderId` and DROPPED every
  * list filter the agent had also supplied. The agent then read a single order
  * back and had no way to learn that its `limit`/`fromChain`/`txHashSearch` were
  * never applied (audit F10). Naming the discarded parameters is the whole point:
@@ -42,7 +42,7 @@ export function rejectBridgeStatusModeConflict(
   );
   if (supplied.length === 0) return null;
   return (
-    "BridgeStatus takes EITHER orderId (one order) OR the list filters, never both — "
+    "BridgeStatus takes EITHER orderId (one order) OR the list filters, never both - "
     + `${supplied.join(", ")} ${supplied.length === 1 ? "was" : "were"} supplied alongside orderId `
     + "and would have been silently discarded. Drop orderId to filter a list, or drop "
     + `${supplied.join(", ")} to read that one order.`

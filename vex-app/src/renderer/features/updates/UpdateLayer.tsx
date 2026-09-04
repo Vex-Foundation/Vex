@@ -4,8 +4,8 @@
  *
  * Owns the live status subscription, the renderer-local per-version "Later"
  * snooze, the error-toast dismissal, and the two-step + blocked-recovery
- * action wiring; projects the status onto the global ToastHost's sticky
- * slot via `UpdateToastSurface`. Defensive: a no-op when the updater bridge
+ * action wiring; projects the status onto the notification model via
+ * `UpdateToastSurface`, which the global ToastHost stack renders. Defensive: a no-op when the updater bridge
  * is absent (plain dev / no feed / isolated renderer tests that don't stub
  * `window.vex.updater`).
  *

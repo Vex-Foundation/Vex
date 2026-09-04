@@ -33,6 +33,25 @@ import {
 } from "@vex-agent/studio/installer/render/index.js";
 import { dbError, withClient } from "../sessions/connection.js";
 
+/**
+ * HOW Vex came to own an artifact's bytes.
+ *
+ *   - `written`  Vex rendered and REPLACED them. They are Vex's own output.
+ *   - `adopted`  the bytes were ALREADY on disk, byte-for-byte identical to
+ *                what a fresh render produces, and the reconciler finalized
+ *                them so a write whose provenance commit was lost is not
+ *                refused as a collision forever.
+ *
+ * The distinction exists because adoption CANNOT tell "Vex wrote this and the
+ * record was lost" from "the user wrote exactly this before installing Vex":
+ * the bytes are identical by construction. That is harmless while the record
+ * only authorizes rewriting identical bytes with identical bytes, and harmful
+ * the moment it authorizes a DELETION - which is what the B0 project teardown
+ * does. So only `written` is authorship proof; `adopted` is a no-collision
+ * marker, and the teardown keeps those bytes.
+ */
+export type ArtifactProvenanceOrigin = "written" | "adopted";
+
 /** One artifact's durable record. */
 export interface ArtifactProvenance {
   readonly artifactKey: string;
@@ -41,6 +60,8 @@ export interface ArtifactProvenance {
   readonly entryHash: string | null;
   /** Digest of the whole file as Vex left it. */
   readonly contentHash: string;
+  /** Whether Vex WROTE these bytes or merely ADOPTED bytes already there. */
+  readonly origin: ArtifactProvenanceOrigin;
 }
 
 /** What the durable record says about a project's last complete render. */
@@ -54,6 +75,7 @@ interface ProvenanceRow {
   relative_path: string;
   entry_hash: string | null;
   content_hash: string;
+  origin: string;
 }
 
 /** Every artifact record for one project, keyed by artifact key. */
@@ -63,7 +85,7 @@ export async function readArtifactProvenance(
   return withClient(async (client) => {
     try {
       const rows = await client.query<ProvenanceRow>(
-        `SELECT artifact_key, relative_path, entry_hash, content_hash
+        `SELECT artifact_key, relative_path, entry_hash, content_hash, origin
            FROM project_file_provenance WHERE project_id = $1`,
         [projectId],
       );
@@ -74,6 +96,12 @@ export async function readArtifactProvenance(
           relativePath: row.relative_path,
           entryHash: row.entry_hash,
           contentHash: row.content_hash,
+          // UNKNOWN READS AS `adopted`. The column's CHECK admits only the two
+          // members, so this is unreachable for a row this app wrote; it is the
+          // conservative answer for a row from a database an older or newer
+          // build touched, and conservative here means "Vex will not delete
+          // these bytes".
+          origin: row.origin === "written" ? "written" : "adopted",
         });
       }
       return ok<ReadonlyMap<string, ArtifactProvenance>>(map);
@@ -84,11 +112,27 @@ export async function readArtifactProvenance(
 }
 
 /**
- * Record one artifact as written by Vex. Its OWN statement, committed now.
+ * Record one artifact's provenance. Its OWN statement, committed now.
  *
- * Called immediately after a successful replacement, before the run continues
- * to the next artifact. See the module header for why this is not deferred to
- * the end of the run.
+ * Called immediately after a successful replacement (`origin: "written"`), or
+ * when the reconciler finalizes bytes that were already correct on disk
+ * (`origin: "adopted"`). See the module header for why this is not deferred to
+ * the end of the run, and `ArtifactProvenanceOrigin` for why the two are not
+ * the same fact.
+ *
+ * ## `written` NEVER DOWNGRADES TO `adopted`, and the guarantee is in the SQL
+ *
+ * Adoption is a NO-COLLISION marker; `written` is AUTHORSHIP PROOF, and only
+ * authorship proof authorizes the B0 teardown to DELETE an artifact's bytes. A
+ * later `adopted` commit over a `written` row would silently revoke a deletion
+ * right the project already holds, so the upsert KEEPS `written` when the
+ * existing row says `written`, whatever the incoming value.
+ *
+ * The reconciler already declines to make that call, but that is a caller's
+ * discipline and this is a durable invariant. Expressing it in the `DO UPDATE`
+ * makes it hold for every future caller, including ones not written yet. The
+ * reverse move (`adopted` -> `written`) is unrestricted: it is an UPGRADE, and
+ * it is exactly what happens when Vex genuinely rewrites the artifact.
  */
 export async function commitArtifactProvenance(
   projectId: string,
@@ -98,12 +142,18 @@ export async function commitArtifactProvenance(
     try {
       await client.query(
         `INSERT INTO project_file_provenance
-           (project_id, artifact_key, relative_path, entry_hash, content_hash, written_at)
-         VALUES ($1, $2, $3, $4, $5, NOW())
+           (project_id, artifact_key, relative_path, entry_hash, content_hash,
+            origin, written_at)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())
          ON CONFLICT (project_id, artifact_key) DO UPDATE
            SET relative_path = EXCLUDED.relative_path,
                entry_hash = EXCLUDED.entry_hash,
                content_hash = EXCLUDED.content_hash,
+               origin = CASE
+                          WHEN project_file_provenance.origin = 'written'
+                            THEN 'written'
+                          ELSE EXCLUDED.origin
+                        END,
                written_at = NOW()`,
         [
           projectId,
@@ -111,6 +161,7 @@ export async function commitArtifactProvenance(
           record.relativePath,
           record.entryHash,
           record.contentHash,
+          record.origin,
         ],
       );
       return ok(null);
@@ -156,7 +207,7 @@ export async function readRenderMarker(
         generator_version: string | null;
       }>(
         `SELECT last_rendered_scope_version, generator_version
-           FROM projects WHERE id = $1`,
+           FROM projects WHERE id = $1 AND deleted_at IS NULL`,
         [projectId],
       );
       const row = rows.rows[0];
@@ -188,9 +239,13 @@ export async function recordCompleteRender(
   return withClient(async (client) => {
     try {
       const updated = await client.query(
+        // A tombstoned project must never have its render marker advanced:
+        // the artifacts are being taken back OUT, and recording them as
+        // freshly rendered would tell the next reconciliation there is nothing
+        // to remove.
         `UPDATE projects
             SET last_rendered_scope_version = $2, generator_version = $3
-          WHERE id = $1 AND scope_version = $2`,
+          WHERE id = $1 AND scope_version = $2 AND deleted_at IS NULL`,
         [projectId, scopeVersion, generatorFingerprint],
       );
       return ok(updated.rowCount === 1);

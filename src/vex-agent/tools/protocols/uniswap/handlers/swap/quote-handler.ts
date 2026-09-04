@@ -1,5 +1,5 @@
 /**
- * `uniswap.swap.quote` — read-only. Keyless on-chain quoting plus the embedded
+ * `uniswap.swap.quote` - read-only. Keyless on-chain quoting plus the embedded
  * SAFETY block the prequote extractor re-validates.
  */
 
@@ -117,7 +117,7 @@ export async function uniswapSwapQuote(
   const chain = str(p, "chain"), tokenInRaw = str(p, "tokenIn"), tokenOutRaw = str(p, "tokenOut"), amountInRaw = str(p, "amountIn");
   if (!chain || !tokenInRaw || !tokenOutRaw || !amountInRaw) return { success: false, output: "Missing required: chain, tokenIn, tokenOut, amountIn" };
 
-  // Pure param policy first — cheapest check, and it must not depend on a chain
+  // Pure param policy first - cheapest check, and it must not depend on a chain
   // or a network round trip to tell the caller their tolerance is out of range.
   const slippage = resolveUniswapSlippageBps(QUOTE_TOOL_ID, p);
   if (!slippage.ok) return { success: false, output: slippage.reason };
@@ -143,7 +143,7 @@ export async function uniswapSwapQuote(
   const feeCharge = await resolveUniswapFeeCharge({ chainId: deployment.chainId, tokenIn, amountInRaw: amountIn });
   const quoted = await computeQuote(deployment, tokenIn, tokenOut, feeCharge.swapAmountRaw, slippageBps);
 
-  // Safety signals (LOCKED #5): factory allowlist + min-liquidity + FoT — never gate here.
+  // Safety signals (LOCKED #5): factory allowlist + min-liquidity + FoT - never gate here.
   const client = getUniswapPublicClient(deployment);
   const [factory, liquidity, fotSuspected] = await Promise.all([
     checkRouteFactories(client, deployment, quoted.route),
@@ -210,7 +210,7 @@ export async function uniswapSwapQuote(
     tokenIn: { address: tokenIn.address, symbol: tokenIn.symbol, decimals: tokenIn.decimals, isNative: tokenIn.isNative },
     tokenOut: { address: tokenOut.address, symbol: tokenOut.symbol, decimals: tokenOut.decimals, isNative: tokenOut.isNative },
     route: { version: quoted.route.version, path: quoted.route.path, fees: quoted.route.fees ?? null },
-    // What the user is debited in total, and what the route was priced for —
+    // What the user is debited in total, and what the route was priced for -
     // they differ by the Vex fee, and stating only one of them is how an agent
     // ends up reporting a number the wallet never saw.
     amountIn: amountInRaw,

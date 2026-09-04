@@ -187,7 +187,7 @@ function bridgeRow(verdict: SafetyVerdict, overrides: Partial<SwapPrequote> = {}
 // ── Discriminated match-hash ─────────────────────────────────────────────
 
 describe("buildBridgeIdentity — defaults", () => {
-  it("derives families + chain ids and defaults recipient to the dest-family wallet", async () => {
+  it("derives families + chain ids and derives recipient from the dest-family wallet", async () => {
     const id = await mod.buildBridgeIdentity(SESSION_ID, bridgeParams(), ctx());
     expect(id.kind).toBe("bridge");
     expect(id.sourceFamily).toBe("eip155");
@@ -195,17 +195,24 @@ describe("buildBridgeIdentity — defaults", () => {
     expect(id.fromChainId).toBe(8453);
     expect(id.toChainId).toBe(20011000000);
     expect(id.sourceWallet).toBe("0xEVMWALLET"); // EVM source wallet
-    expect(id.recipient).toBe("SoLDestWa11et"); // defaulted to dest-family wallet
+    expect(id.recipient).toBe("SoLDestWa11et"); // DERIVED from the dest-family wallet
     expect(id.tradeType).toBe("EXACT_INPUT"); // default
   });
 
-  it("an explicit recipient is honored (not defaulted)", async () => {
+  it("a supplied recipient is IGNORED - the identity binds the DERIVED destination", async () => {
+    // The same hole `refundTo` had: binding a model-supplied destination let an
+    // attacker who set the SAME address on the quote AND the execute collide
+    // the hashes and pass the gate. The bridge tools no longer accept the key
+    // at all (both manifests refuse it at the untrusted boundary, both handlers
+    // reject it by name), and the identity binds where the funds will really
+    // land - so the hash cannot be made to agree about an address that is not
+    // the selected wallet.
     const id = await mod.buildBridgeIdentity(
       SESSION_ID,
       bridgeParams({ recipient: "ExplicitRecipient" }),
       ctx(),
     );
-    expect(id.recipient).toBe("ExplicitRecipient");
+    expect(id.recipient).toBe("SoLDestWa11et");
   });
 
   it("tradeType EXACT_OUTPUT is preserved; anything else defaults to EXACT_INPUT", async () => {

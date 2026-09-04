@@ -3,7 +3,7 @@
  *
  * `runtime/bps-param.ts` owns what a basis-point value is ARITHMETICALLY
  * allowed to be (finite, whole, non-negative) and deliberately applies no
- * ceiling — "a maximum-slippage bound is a product-policy decision with its
+ * ceiling - "a maximum-slippage bound is a product-policy decision with its
  * own owner". This module is that owner.
  *
  * Two rules, both owner-pinned:
@@ -25,7 +25,7 @@
  * is skipped entirely once a session is `full` permission, operator
  * instructions are unenforced free text, and no env var, app setting, or
  * session-policy row expresses a risk limit. Rather than invent one, the
- * ceiling is absolute — raising it is a deliberate code change with an owner
+ * ceiling is absolute - raising it is a deliberate code change with an owner
  * decision behind it.
  */
 
@@ -33,7 +33,7 @@
  * Owner-pinned maximum slippage for any Vex-executed trade: 1000 bps (10%).
  *
  * Well above a normal tolerance ({@link VEX_DEFAULT_SLIPPAGE_BPS} bps) and well below the total-loss range
- * providers actually accept — KyberSwap's live builds take 5000 bps (50%) and
+ * providers actually accept - KyberSwap's live builds take 5000 bps (50%) and
  * do not clamp; Jupiter's range check permits 10000 (100%).
  */
 export const VEX_MAX_SLIPPAGE_BPS = 1000;
@@ -45,7 +45,7 @@ export const VEX_MAX_SLIPPAGE_BPS = 1000;
  * `canonSlippageBpsWithDefault`) must have exactly one value across the handler
  * lane and the identity lane, or a quote taken without slippage stops
  * authorizing an execute taken without slippage. This constant is the ONLY
- * module allowed to decide the number — enforced by the `slippage-default-home`
+ * module allowed to decide the number - enforced by the `slippage-default-home`
  * source rule (`_manifest-lint/source-rules.ts`), whose allowlist is now empty.
  *
  * Lower layers do not mirror it: functions under `src/tools/**` take an
@@ -55,7 +55,7 @@ export const VEX_MAX_SLIPPAGE_BPS = 1000;
  *
  * VALUE (owner decree 2026-08-03, audit wave W4b): 50 → 100. 50 bps was the
  * inherited aggregator convention and was measurably too tight on the venues
- * Vex actually trades — the tolerance is a WORST-CASE bound, not an expected
+ * Vex actually trades - the tolerance is a WORST-CASE bound, not an expected
  * cost, and a quote that reverts costs gas and a whole mission slice while
  * paying nothing for the unused headroom. 100 is what the trench curve path had
  * already converged on independently. The ceiling
@@ -63,14 +63,14 @@ export const VEX_MAX_SLIPPAGE_BPS = 1000;
  *
  * HASH CONSEQUENCE: the default is hash material, so any prequote recorded at
  * 50 before this change fails its gate CLOSED for the remainder of its window
- * (≤15 minutes) — a re-quote resolves it. That is the safe direction: an
+ * (≤15 minutes) - a re-quote resolves it. That is the safe direction: an
  * execute is refused, never silently admitted under a different tolerance.
  */
 export const VEX_DEFAULT_SLIPPAGE_BPS = 100;
 
 /**
  * The binding bound for a venue: Vex's ceiling or the venue's, whichever is
- * lower. Omit `venueMaxBps` when the venue publishes no maximum below Vex's —
+ * lower. Omit `venueMaxBps` when the venue publishes no maximum below Vex's -
  * the ceiling then binds on its own, which is the fail-safe reading.
  *
  * Measured venue maxima (audit 2026-08): Jupiter 0–10000, Relay 0–10000
@@ -141,9 +141,9 @@ export const RELAY_MAX_SLIPPAGE_BPS = 10000;
 /**
  * Resolve the EFFECTIVE Relay slippage tolerance from untrusted params.
  *
- * ONE function for both Relay lanes — the bridge handler
+ * ONE function for both Relay lanes - the bridge handler
  * (`relay/handlers/bridge/legs.ts`) and the prequote identity
- * (`prequote/identity/relay-bridge.ts`) — so the value the gate bound and the
+ * (`prequote/identity/relay-bridge.ts`) - so the value the gate bound and the
  * value the provider receives can never disagree.
  *
  * Two policy decisions live here (audit waves W3 + W4a):
@@ -222,7 +222,7 @@ export function resolveMorphoSlippageBps(
 
 /**
  * Name the correct form for the value the caller most plausibly meant, WITHOUT
- * choosing it for them — the common mistake is passing a percentage into a bps
+ * choosing it for them - the common mistake is passing a percentage into a bps
  * field. Silent unless the percent reading is itself a whole number of bps.
  * Same rule as `runtime/bps-param.ts`'s hint.
  */

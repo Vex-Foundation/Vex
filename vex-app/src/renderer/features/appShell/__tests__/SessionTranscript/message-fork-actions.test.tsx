@@ -18,7 +18,17 @@ import {
   readDraft,
   resetDraftsForTest,
 } from "../../../../lib/composer-drafts.js";
-import { getToastSnapshot } from "../../../../lib/toast.js";
+import { notifications } from "../../../../lib/notifications/index.js";
+
+/**
+ * The transient toast is a notification-model entry since B2.2: the store that
+ * held one message and forgot it is gone, so the assertions read the model's
+ * newest retained item instead of a slot.
+ */
+function latestToastText(): string | null {
+  return notifications.getSnapshot().items[0]?.message ?? null;
+}
+
 import { useUiStore } from "../../../../stores/uiStore.js";
 
 const SESSION_ID = "00000000-0000-4000-8000-00000000000a";
@@ -103,7 +113,10 @@ beforeEach(() => {
     sessions: { branch: branchInvoke, list: vi.fn(), get: vi.fn() },
   };
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  notifications.reset();
+});
 
 describe("edit message (A18)", () => {
   it("edit writes the message text into THIS session's composer draft and rewrites no history", () => {
@@ -153,7 +166,7 @@ describe("edit in a new branch (A18 one-gesture)", () => {
     const { getAllByLabelText } = mount(CONVERSATION);
     fireEvent.click(getAllByLabelText("Edit in a new branch")[0]!);
     await waitFor(() =>
-      expect(getToastSnapshot()?.text).toBe(
+      expect(latestToastText()).toBe(
         "Nothing before this message to branch from.",
       ),
     );
@@ -170,7 +183,7 @@ describe("blocked outcomes and failures", () => {
     const { getAllByLabelText } = mount(CONVERSATION);
     fireEvent.click(getAllByLabelText("Branch from here")[0]!);
     await waitFor(() =>
-      expect(getToastSnapshot()?.text).toContain("hasn't finished"),
+      expect(latestToastText()).toContain("hasn't finished"),
     );
     expect(useUiStore.getState().activeSessionId).toBe(SESSION_ID);
   });
@@ -180,7 +193,7 @@ describe("blocked outcomes and failures", () => {
     const { getAllByLabelText } = mount(CONVERSATION);
     fireEvent.click(getAllByLabelText("Branch from here")[0]!);
     await waitFor(() =>
-      expect(getToastSnapshot()?.text).toBe(
+      expect(latestToastText()).toBe(
         "Branching failed - nothing was created.",
       ),
     );

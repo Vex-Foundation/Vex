@@ -1,5 +1,5 @@
 /**
- * Which markets a `pendle.claim` income sweep will actually touch — and,
+ * Which markets a `pendle.claim` income sweep will actually touch - and,
  * just as importantly, which eligible ones it will NOT.
  *
  * Extracted from `./handlers/yt.ts` (2026-07-25) so the selection rule and its
@@ -14,14 +14,14 @@
  *
  * What changes here is HONESTY, not the bound. The previous implementation
  * `break`ed out of the selection loop at the cap, so the result reported
- * neither how many markets were eligible nor which ones were left behind —
+ * neither how many markets were eligible nor which ones were left behind -
  * and because the selection order is the provider's own stable position
  * order, markets past the cap could never be reached by repeating the call.
  * Selection now walks EVERY eligible position, takes the first
  * {@link MAX_CLAIM_MARKETS}, and returns the remainder as an explicit skip
  * list so the caller can tell the agent exactly what was left and how to
  * reach it (`pendle.claim` with an explicit `market`, which bypasses the cap
- * entirely — see {@link buildPendleClaimTargets}).
+ * entirely - see {@link buildPendleClaimTargets}).
  *
  * A market whose YT leg cannot be bound (no `yt`/`underlyingAsset`/`sy`) is
  * also a skip, not a silence: the fail-closed drop is deliberate, but the
@@ -40,7 +40,7 @@ export const MAX_CLAIM_MARKETS = 10;
 
 /** Why an eligible-looking market is not part of this claim. */
 export type PendleClaimSkipReason =
-  /** Eligible, but past the per-transaction market cap — reachable via an explicit `market`. */
+  /** Eligible, but past the per-transaction market cap - reachable via an explicit `market`. */
   | "market_cap"
   /** The market is missing the YT bind material (`yt`/`underlyingAsset`/`sy`) a safe interest claim requires. */
   | "unbindable_yt"
@@ -61,20 +61,20 @@ export interface PendleClaimTargets {
   readonly intendedYts: Map<string, PendleClaimYtBind>;
   /** Lowercase market addresses whose LP rewards are being claimed. */
   readonly intendedMarkets: Set<string>;
-  /** Markets on this chain with a non-zero YT or LP balance — the honest denominator. */
+  /** Markets on this chain with a non-zero YT or LP balance - the honest denominator. */
   readonly eligibleMarketCount: number;
   /** Markets contributing at least one leg to THIS claim. */
   readonly selectedMarketCount: number;
   /** Every eligible market left out, with the reason. Empty when nothing was dropped. */
   readonly skipped: readonly PendleClaimSkip[];
-  /** The cap in force for an unscoped claim (`null` when an explicit market was requested — the cap does not apply). */
+  /** The cap in force for an unscoped claim (`null` when an explicit market was requested - the cap does not apply). */
   readonly marketCap: number | null;
 }
 
 /**
  * Register one market's YT leg as claimable, WITH the bind material the claim
  * safety check needs: the market's underlyingAsset (the only allowed
- * tokenRedeemSy — the SDK redeems accrued SY interest into it) and its SY (the
+ * tokenRedeemSy - the SDK redeems accrued SY interest into it) and its SY (the
  * only token an interest claim may approve). A market missing either cannot be
  * bound → its YT leg is skipped (fail-closed; LP rewards are unaffected).
  */
@@ -89,7 +89,7 @@ function addYtTarget(intendedYts: Map<string, PendleClaimYtBind>, m: PendleMarke
 
 /**
  * Does the wallet hold a claimable (YT or LP) balance in this market, on THIS
- * chain? A read failure PROPAGATES rather than degrading to "no" or "yes" — the
+ * chain? A read failure PROPAGATES rather than degrading to "no" or "yes" - the
  * caller must not claim blind, and must not be told a real position is absent.
  */
 async function holdsClaimablePosition(
@@ -113,7 +113,7 @@ async function holdsClaimablePosition(
  * Build the wallet's intended claim sets on one chain.
  *
  * With `explicitMarket`, the claim is scoped to that single market and the
- * cap does not apply — this is the escape hatch for anything the unscoped
+ * cap does not apply - this is the escape hatch for anything the unscoped
  * sweep had to leave behind. Otherwise the sets are derived from the
  * dashboard positions (markets where the wallet holds a YT or LP balance),
  * bounded to {@link MAX_CLAIM_MARKETS} with every remaining eligible market
@@ -169,7 +169,7 @@ export async function buildPendleClaimTargets(
 
   const client = getPendleClient();
   // EXIT PATH (R5b): the sweep indexes BOTH catalogues. A matured market used to
-  // be dropped by `if (!m) continue` below — silently absent from eligible AND
+  // be dropped by `if (!m) continue` below - silently absent from eligible AND
   // from skipped, which broke the honesty invariant this module exists to keep
   // (G-02: "claim silently drops matured markets from both").
   const [positionsByChain, activeMarkets, maturedMarkets] = await Promise.all([
@@ -191,7 +191,7 @@ export async function buildPendleClaimTargets(
   for (const pos of chainPositions?.openPositions ?? []) {
     const marketAddr = stripChainPrefix(pos.marketId);
     const m = marketAddr ? marketByAddress.get(marketAddr.toLowerCase()) : undefined;
-    if (!m) continue; // not an active market on this chain — nothing claimable
+    if (!m) continue; // not an active market on this chain - nothing claimable
     const hasYt = pos.yt != null && pos.yt.balance !== "0";
     const hasLp = pos.lp != null && pos.lp.balance !== "0";
     if (!hasYt && !hasLp) continue;
@@ -212,7 +212,7 @@ export async function buildPendleClaimTargets(
     if (added) {
       selectedMarketCount += 1;
     } else {
-      // YT-only position on a market with no bind material — fail-closed, but said out loud.
+      // YT-only position on a market with no bind material - fail-closed, but said out loud.
       skipped.push({ market: address, reason: "unbindable_yt" });
     }
   }
@@ -226,7 +226,7 @@ export async function buildPendleClaimTargets(
 /**
  * One agent-facing sentence describing what this claim leaves behind, or
  * `null` when it leaves nothing behind. Always names the reachable path for a
- * capped market — repeating the bare call cannot reach it, because selection
+ * capped market - repeating the bare call cannot reach it, because selection
  * order is the provider's stable position order.
  */
 export function describePendleClaimSkips(targets: PendleClaimTargets): string | null {
@@ -238,7 +238,7 @@ export function describePendleClaimSkips(targets: PendleClaimTargets): string | 
   const parts: string[] = [];
   if (capped.length > 0) {
     parts.push(
-      `Claimed ${targets.selectedMarketCount} of ${targets.eligibleMarketCount} eligible markets — one claim is `
+      `Claimed ${targets.selectedMarketCount} of ${targets.eligibleMarketCount} eligible markets - one claim is `
       + `capped at ${targets.marketCap ?? MAX_CLAIM_MARKETS} markets to keep the transaction within gas. `
       + `NOT claimed: ${capped.join(", ")}. Repeating this call selects the same markets again; claim each of `
       + "those by passing it as the `market` param, which is not capped.",
@@ -246,12 +246,12 @@ export function describePendleClaimSkips(targets: PendleClaimTargets): string | 
   }
   if (unbindable.length > 0) {
     parts.push(
-      `YT interest was NOT claimed on ${unbindable.join(", ")} — Pendle did not report the YT/SY/underlying `
+      `YT interest was NOT claimed on ${unbindable.join(", ")} - Pendle did not report the YT/SY/underlying `
       + "the safety check binds against for those markets (LP rewards, if any, were still claimed).",
     );
   }
   if (notFound.length > 0) {
-    parts.push(`${notFound.join(", ")} is not an active Pendle market on this chain — nothing was claimed for it.`);
+    parts.push(`${notFound.join(", ")} is not an active Pendle market on this chain - nothing was claimed for it.`);
   }
   if (notHeld.length > 0) {
     parts.push(

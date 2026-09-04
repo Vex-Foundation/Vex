@@ -1,5 +1,5 @@
 /**
- * `UnitsConvert` — the agent's deterministic unit/percentage calculator.
+ * `UnitsConvert` - the agent's deterministic unit/percentage calculator.
  *
  * WHY IT EXISTS. Every money mistake this repo has recorded is an arithmetic
  * one the model did in its head: `22518000` wei read as 22.5 gwei instead of
@@ -10,12 +10,12 @@
  *
  * ## The contract in one paragraph
  *
- * Every op answers with the SAME amount shape — `{ raw, decimals, human }`,
+ * Every op answers with the SAME amount shape - `{ raw, decimals, human }`,
  * the repo's canonical "raw amounts travel with the decimals needed to read
  * them" pair (`rules/90`), plus `human` already rendered so the model never
  * has to shift a decimal point itself. `remainder` appears ONLY when flooring
  * actually discarded value, and each op's manifest text names what that bare
- * integer is a remainder OF (its source unit, or its numerator/denominator) —
+ * integer is a remainder OF (its source unit, or its numerator/denominator) -
  * an undocumented residue would be one more number to misread.
  *
  * ## Rules that shaped the implementation
@@ -39,7 +39,7 @@
  * implementation therefore denominates the result rather than truncating it:
  * a same-family conversion is EXACT, and an input finer than the family's
  * atomic unit is refused by name instead of being silently floored. Value is
- * still never lost silently — it is refused loudly. `remainder` remains
+ * still never lost silently - it is refused loudly. `remainder` remains
  * required, and is exercised, on the three ops that genuinely floor:
  * `apply_bps`, `usd_to_token_amount`, `token_amount_to_usd`.
  */
@@ -75,12 +75,12 @@ function countDigits(value: string): number {
 
 /**
  * An ATOMIC value: digits only. The refusal names the decimal point explicitly
- * because that is the actual defect nine times out of ten — a human amount
+ * because that is the actual defect nine times out of ten - a human amount
  * pasted into a base-unit field.
  */
 function parseIntegerValue(field: string, value: string, unitNote: string): bigint {
   if (value.startsWith("-")) {
-    refuse(`${field} must not be negative — this tool works on non-negative amounts only.`);
+    refuse(`${field} must not be negative - this tool works on non-negative amounts only.`);
   }
   if (!INTEGER_GRAMMAR.test(value)) {
     refuse(
@@ -101,11 +101,11 @@ interface ScaledDecimal {
 
 function parseDecimalValue(field: string, value: string): ScaledDecimal {
   if (value.startsWith("-")) {
-    refuse(`${field} must not be negative — this tool works on non-negative amounts only.`);
+    refuse(`${field} must not be negative - this tool works on non-negative amounts only.`);
   }
   if (!DECIMAL_GRAMMAR.test(value)) {
     refuse(
-      `${field} must be a plain decimal number as a string, e.g. "0.0225" — no sign, no exponent, no separators, and a digit before the point.`,
+      `${field} must be a plain decimal number as a string, e.g. "0.0225" - no sign, no exponent, no separators, and a digit before the point.`,
     );
   }
   if (countDigits(value) > MAX_VALUE_DIGITS) {
@@ -177,7 +177,7 @@ const UNITS: Record<UnitName, UnitSpec> = {
   human: { family: "token", exponent: null },
 };
 
-/** The atomic unit of each family — the one a value cannot be finer than. */
+/** The atomic unit of each family - the one a value cannot be finer than. */
 const ATOM_LABEL: Record<UnitFamily, string> = {
   evm: "1 wei",
   solana: "1 lamport",
@@ -189,7 +189,7 @@ function unitExponent(unit: UnitName, decimals: number | undefined): number {
   if (spec.exponent !== null) return spec.exponent;
   if (decimals === undefined) {
     refuse(
-      `decimals is required when \`from\` or \`to\` is "human" or "raw" — a raw token amount is unreadable without the token's decimals (get them from TokenFind).`,
+      `decimals is required when \`from\` or \`to\` is "human" or "raw" - a raw token amount is unreadable without the token's decimals (get them from TokenFind).`,
     );
   }
   return decimals;
@@ -207,7 +207,7 @@ function runUnitConvert(args: {
   const toSpec = UNITS[args.to];
   if (fromSpec.family !== toSpec.family) {
     refuse(
-      `cannot convert "${args.from}" (${FAMILY_LABEL[fromSpec.family]}) to "${args.to}" (${FAMILY_LABEL[toSpec.family]}) — these are different unit families and no fixed rate exists between them. Convert within one family; for a value across chains use a price instead (usd_to_token_amount / token_amount_to_usd).`,
+      `cannot convert "${args.from}" (${FAMILY_LABEL[fromSpec.family]}) to "${args.to}" (${FAMILY_LABEL[toSpec.family]}) - these are different unit families and no fixed rate exists between them. Convert within one family; for a value across chains use a price instead (usd_to_token_amount / token_amount_to_usd).`,
     );
   }
 
@@ -269,7 +269,7 @@ function runApplyBps(args: { amountRaw: string; bps: number; decimals: number })
 
 function requirePositivePrice(price: ScaledDecimal): void {
   if (price.digits === 0n) {
-    refuse("priceUsd must be greater than zero — a zero price cannot value an amount.");
+    refuse("priceUsd must be greater than zero - a zero price cannot value an amount.");
   }
 }
 
@@ -290,7 +290,7 @@ function runUsdToTokenAmount(args: {
   return amount(numerator / denominator, args.decimals, numerator % denominator);
 }
 
-/** USD is reported to 6 fractional digits — a micro-dollar, the smallest figure worth quoting. */
+/** USD is reported to 6 fractional digits - a micro-dollar, the smallest figure worth quoting. */
 const USD_PRECISION = 6;
 
 function runTokenAmountToUsd(args: {

@@ -68,7 +68,13 @@ export type StudioArtifactPlan =
   | {
     readonly key: string;
     readonly kind: Exclude<StudioArtifactKind, "agent-config">;
-    readonly operation: "install";
+    /**
+     * `remove` is reachable ONLY from `buildStudioTeardownPlan` (B0). The
+     * install planner still emits these three unconditionally as installs -
+     * they describe the project itself, not any one client - so a project being
+     * DELETED must never be planned by that path.
+     */
+    readonly operation: "install" | "remove";
     readonly agent: null;
     readonly agentId: null;
     readonly relativePath: string;
@@ -173,6 +179,83 @@ export function buildStudioPlan(options: {
 
   return { artifacts, unsupported };
 }
+
+/**
+ * THE TEARDOWN PLAN: take back everything Vex recorded writing, and nothing
+ * else (stage B0).
+ *
+ * A SEPARATE FUNCTION, not a mode of `buildStudioPlan`, and that separation is
+ * the point. The install planner appends `AGENTS.md`, `CLAUDE.md` and
+ * `.vex/protocols.md` UNCONDITIONALLY, because they describe the project rather
+ * than any one client. Running it for a project being deleted and filtering to
+ * `remove` would silently drop those three - which is how a deleted project
+ * ends up still carrying an `AGENTS.md` managed block telling the next coding
+ * agent that this repository is connected to Vex and which wallets it may
+ * spend. That block is a claim of live authority, and leaving it behind is a
+ * lie to the next reader, not merely litter.
+ *
+ * DERIVED ENTIRELY FROM PROVENANCE. Every artifact here is one the durable
+ * store says Vex wrote. An artifact Vex never recorded writing is not planned,
+ * is never read, and cannot be removed by this path - the reconciler then adds
+ * the second half of the guarantee by proving ownership of the BYTES before it
+ * touches them.
+ *
+ * There is no `unsupported` list: a teardown makes no selection, so there is no
+ * selection to be unable to honour.
+ */
+export function buildStudioTeardownPlan(options: {
+  readonly previouslyWritten: ReadonlySet<string>;
+}): StudioPlan {
+  const artifacts: StudioArtifactPlan[] = [];
+
+  for (const key of options.previouslyWritten) {
+    const agentId = agentIdFromKey(key);
+    if (agentId !== null) {
+      const agent: StudioAgent = STUDIO_AGENTS[agentId];
+      // An unwritable agent has no file, so provenance should never hold a key
+      // for one; skipping keeps the planner total rather than throwing on a
+      // row a future registry change could leave behind.
+      if (!isWritableStudioAgent(agent)) continue;
+      artifacts.push({
+        key,
+        kind: "agent-config",
+        operation: "remove",
+        agent,
+        agentId,
+        relativePath: agent.configPath,
+      });
+      continue;
+    }
+
+    const instruction = INSTRUCTION_ARTIFACTS[key];
+    if (instruction === undefined) continue;
+    artifacts.push({
+      key,
+      kind: instruction.kind,
+      operation: "remove",
+      agent: null,
+      agentId: null,
+      relativePath: instruction.relativePath,
+    });
+  }
+
+  return { artifacts, unsupported: [] };
+}
+
+/** The three project-level artifacts, keyed exactly as the install planner keys them. */
+const INSTRUCTION_ARTIFACTS: Readonly<
+  Record<
+    string,
+    {
+      readonly kind: Exclude<StudioArtifactKind, "agent-config">;
+      readonly relativePath: string;
+    }
+  >
+> = {
+  "agents-md": { kind: "agents-md", relativePath: STUDIO_AGENTS_MD_RELATIVE_PATH },
+  "claude-md": { kind: "claude-md", relativePath: STUDIO_CLAUDE_MD_PATH },
+  "protocols-doc": { kind: "protocols-doc", relativePath: STUDIO_PROTOCOLS_DOC_PATH },
+};
 
 function describeUnsupported(agent: StudioUnsupportedAgent): StudioUnsupportedSelection {
   return {

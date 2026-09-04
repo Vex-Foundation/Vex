@@ -5,12 +5,12 @@
  * exists to prevent. `resolveMarketForRead` reads the catalogue to exhaustion
  * when it can, and says so; when its page budget runs out first, the address's
  * absence is UNPROVEN. "Pendle has no such market" is a fact an agent may act on
- * — it may conclude the address is wrong, or on another chain. "I could not
+ * - it may conclude the address is wrong, or on another chain. "I could not
  * finish looking" is not, and rules/90 is explicit that a reader which cannot
  * prove what happened must decline rather than guess.
  *
  * Shared by every tool that starts from a market address, so the two states can
- * never drift into different wording — or, worse, into one.
+ * never drift into different wording - or, worse, into one.
  */
 
 import type { PendleReadMarketLookup } from "../market-read.js";
@@ -39,7 +39,7 @@ export function marketAbsenceAnswer(
   return {
     summary: proven
       ? `No Pendle market on ${chain} has ${addressParam} ${address}. Pendle's full catalogue for that chain was read, including matured markets.`
-      : `Vex could not prove whether ${chain} has a market with ${addressParam} ${address}: the catalogue walk hit its page budget before finishing. Absence is NOT established — do not conclude the market does not exist.`,
+      : `Vex could not prove whether ${chain} has a market with ${addressParam} ${address}: the catalogue walk hit its page budget before finishing. Absence is NOT established - do not conclude the market does not exist.`,
     resolution: status,
     absenceProven: proven,
     chain,

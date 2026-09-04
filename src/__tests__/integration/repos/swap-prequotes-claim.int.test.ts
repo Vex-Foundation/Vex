@@ -290,7 +290,7 @@ describe("a later quote supersedes an earlier one for the same identity", () => 
 
   // ── Migration 097: the spendability vocabulary, live ───────────────────
 
-  describe("migration 097 widened the eligibility CHECK", () => {
+  describe("migration 099 widened the eligibility CHECK", () => {
     // The lockstep test proves SQL text and TS union agree; only Postgres can
     // prove the CONSTRAINT ITSELF admits the new values. Without this, a 097
     // that failed to apply would leave the recorder's insert throwing inside a

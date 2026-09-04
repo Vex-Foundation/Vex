@@ -1,5 +1,5 @@
 /**
- * `pendle.lp.add` — deposit ONE payment token into a Pendle market and receive
+ * `pendle.lp.add` - deposit ONE payment token into a Pendle market and receive
  * the market's LP token (Convert action `add-liquidity`,
  * `addLiquiditySingleToken`). The MARKET address IS the LP token, and it is the
  * anchor bound end to end (instrument guard → identity → calldata).
@@ -91,7 +91,7 @@ export async function executePendleLpAdd(p: Record<string, unknown>, context: Pr
 
     if (p.dryRun === true) {
       const response = await getPendleClient().convertMulti(chainId, {
-        receiver: PENDLE_ROUTER, // placeholder — dry-run never signs
+        receiver: PENDLE_ROUTER, // placeholder - dry-run never signs
         inputs: [{ token: tokenIn.address, amount: amountWei.toString() }],
         outputs: [marketAddr],
         slippage: slippage.fraction,
@@ -124,12 +124,12 @@ export async function executePendleLpAdd(p: Record<string, unknown>, context: Pr
     const intent: PendleTxIntent = {
       action: "lp-add",
       wallet,
-      // The tolerance this route is held to — see calldata/price-floor.ts.
+      // The tolerance this route is held to - see calldata/price-floor.ts.
       slippageBps: slippage.bps,
       inputToken: tokenIn.address,
       inputAmountWei: amountWei,
       isNative: tokenIn.isNative,
-      // addLiquiditySingleToken carries the MARKET at arg 1 — bind it to the quote.
+      // addLiquiditySingleToken carries the MARKET at arg 1 - bind it to the quote.
       expectedMarket: marketAddr,
     };
     const route = selectSafeRoute(intent, response);
@@ -145,13 +145,13 @@ export async function executePendleLpAdd(p: Record<string, unknown>, context: Pr
       });
       await ensurePendleAllowanceExact(publicClient, walletClient, tokenIn.address, PENDLE_ROUTER, amountWei);
     }
-    // Read BEFORE signing — the staged row's legs need their decimals.
+    // Read BEFORE signing - the staged row's legs need their decimals.
     const assetMap = await buildAssetMap(chainId);
     const quotedLpOut = route.outputs.find((o) => o.token.toLowerCase() === marketAddr.toLowerCase())?.amount ?? "0";
     const lpDec = assetMap.get(marketAddr.toLowerCase())?.decimals ?? 18;
     const quotedInUsd = legUsd(assetMap, tokenIn.address, humanAmount(amountWei, tokenIn.decimals));
 
-    // SINGLE-TOKEN add is the shipped shape — one in, one out. The Option-C
+    // SINGLE-TOKEN add is the shipped shape - one in, one out. The Option-C
     // second-leg columns stay NULL, and migration 053's `yield_lp` predicate
     // applies its dual invariants only where they are populated.
     const broadcast = await sendPendleRouterTx(

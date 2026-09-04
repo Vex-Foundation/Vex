@@ -1,0 +1,203 @@
+{
+  "probe": "pg-connect-latency",
+  "artifactVersion": 1,
+  "label": "wsl2-to-windows-docker-desktop-27432",
+  "runs": 20,
+  "gapMs": 100,
+  "target": {
+    "host": "127.0.0.1",
+    "port": 27432,
+    "portSource": "compose",
+    "database": "vex",
+    "user": "vex",
+    "configDir": "/mnt/c/Users/kubas/AppData/Roaming/vex",
+    "passwordPath": "/mnt/c/Users/kubas/AppData/Roaming/vex/local-infra/secrets/pg_password"
+  },
+  "productConnectTimeoutMs": 2000,
+  "environment": {
+    "timestamp": "2026-09-01T16:13:31.909Z",
+    "platform": "linux",
+    "osType": "Linux",
+    "osRelease": "6.18.33.2-microsoft-standard-WSL2",
+    "arch": "x64",
+    "nodeVersion": "v24.15.0",
+    "dockerVersion": "29.6.1",
+    "serverVersion": "18.3 (Debian 18.3-1.pgdg13+1)"
+  },
+  "samples": [
+    {
+      "attempt": 1,
+      "connectMs": 17.270962999999995,
+      "queryMs": 2.5046549999999996,
+      "endMs": 5.191251000000008,
+      "serverVersion": "18.3 (Debian 18.3-1.pgdg13+1)"
+    },
+    {
+      "attempt": 2,
+      "connectMs": 9.760895000000005,
+      "queryMs": 1.0278279999999995,
+      "endMs": 4.2725480000000005,
+      "serverVersion": null
+    },
+    {
+      "attempt": 3,
+      "connectMs": 9.78559899999999,
+      "queryMs": 1.1016690000000153,
+      "endMs": 4.1609000000000265,
+      "serverVersion": null
+    },
+    {
+      "attempt": 4,
+      "connectMs": 8.265971999999977,
+      "queryMs": 0.9157150000000343,
+      "endMs": 3.5661819999999693,
+      "serverVersion": null
+    },
+    {
+      "attempt": 5,
+      "connectMs": 8.308243999999945,
+      "queryMs": 1.0209120000000667,
+      "endMs": 3.38756699999999,
+      "serverVersion": null
+    },
+    {
+      "attempt": 6,
+      "connectMs": 7.639163999999937,
+      "queryMs": 0.663236999999981,
+      "endMs": 2.920840999999996,
+      "serverVersion": null
+    },
+    {
+      "attempt": 7,
+      "connectMs": 7.459565999999995,
+      "queryMs": 0.801195000000007,
+      "endMs": 3.737803999999983,
+      "serverVersion": null
+    },
+    {
+      "attempt": 8,
+      "connectMs": 8.412333999999987,
+      "queryMs": 0.8778340000000071,
+      "endMs": 3.92173600000001,
+      "serverVersion": null
+    },
+    {
+      "attempt": 9,
+      "connectMs": 9.766775000000052,
+      "queryMs": 1.2429949999999508,
+      "endMs": 4.149371000000087,
+      "serverVersion": null
+    },
+    {
+      "attempt": 10,
+      "connectMs": 8.187569999999823,
+      "queryMs": 0.9809829999999238,
+      "endMs": 3.5355380000000878,
+      "serverVersion": null
+    },
+    {
+      "attempt": 11,
+      "connectMs": 9.50013899999999,
+      "queryMs": 0.8673080000000937,
+      "endMs": 4.2045029999999315,
+      "serverVersion": null
+    },
+    {
+      "attempt": 12,
+      "connectMs": 7.200810999999931,
+      "queryMs": 0.8466880000000856,
+      "endMs": 4.522282000000132,
+      "serverVersion": null
+    },
+    {
+      "attempt": 13,
+      "connectMs": 9.92504699999995,
+      "queryMs": 0.8934269999999742,
+      "endMs": 4.445990999999822,
+      "serverVersion": null
+    },
+    {
+      "attempt": 14,
+      "connectMs": 6.986014000000068,
+      "queryMs": 0.6691389999998592,
+      "endMs": 3.2213500000000295,
+      "serverVersion": null
+    },
+    {
+      "attempt": 15,
+      "connectMs": 7.845974000000069,
+      "queryMs": 1.0035239999999703,
+      "endMs": 3.5421539999999823,
+      "serverVersion": null
+    },
+    {
+      "attempt": 16,
+      "connectMs": 7.850873000000092,
+      "queryMs": 1.0283660000000054,
+      "endMs": 3.6147269999999025,
+      "serverVersion": null
+    },
+    {
+      "attempt": 17,
+      "connectMs": 7.40632800000003,
+      "queryMs": 0.7075380000001132,
+      "endMs": 3.4249210000000403,
+      "serverVersion": null
+    },
+    {
+      "attempt": 18,
+      "connectMs": 7.245776999999862,
+      "queryMs": 0.6873399999999492,
+      "endMs": 3.3513640000001033,
+      "serverVersion": null
+    },
+    {
+      "attempt": 19,
+      "connectMs": 6.604404000000159,
+      "queryMs": 0.7061539999999695,
+      "endMs": 3.3439359999997578,
+      "serverVersion": null
+    },
+    {
+      "attempt": 20,
+      "connectMs": 6.459847999999965,
+      "queryMs": 0.6359240000001591,
+      "endMs": 3.349152000000231,
+      "serverVersion": null
+    }
+  ],
+  "summaries": {
+    "connect": {
+      "count": 20,
+      "min": 6.459847999999965,
+      "p50": 7.850873000000092,
+      "p95": 9.92504699999995,
+      "max": 17.270962999999995,
+      "mean": 8.594114849999992
+    },
+    "query": {
+      "count": 20,
+      "min": 0.6359240000001591,
+      "p50": 0.8778340000000071,
+      "p95": 1.2429949999999508,
+      "max": 2.5046549999999996,
+      "mean": 0.9591215500000082
+    },
+    "end": {
+      "count": 20,
+      "min": 2.920840999999996,
+      "p50": 3.5661819999999693,
+      "p95": 4.522282000000132,
+      "max": 5.191251000000008,
+      "mean": 3.7932059000000047
+    }
+  },
+  "verdict": {
+    "classification": "not-implicated",
+    "slowMs": 1000,
+    "connectTimeoutMs": 2000,
+    "samplesAtOrOverSlow": 0,
+    "samplesAtOrOverTimeout": 0,
+    "total": 20
+  }
+}

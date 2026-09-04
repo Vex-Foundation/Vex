@@ -1,5 +1,5 @@
 /**
- * Khalani failure classifier (Phase 2 W1) — the COORDINATOR-FIXED, closed-set
+ * Khalani failure classifier (Phase 2 W1) - the COORDINATOR-FIXED, closed-set
  * decision of which Khalani quote/build failures are fallback-eligible (a fallback
  * venue such as Relay could serve the route) versus handled inside Khalani.
  *
@@ -10,32 +10,32 @@
  * fallback venue).
  *
  * Fallback-eligible ("Khalani cannot service this route; a fallback could"):
- *   - empty `routes[]` from POST /v1/quotes — the PRIMARY signal. It is NOT an
+ *   - empty `routes[]` from POST /v1/quotes - the PRIMARY signal. It is NOT an
  *     exception (the quotes endpoint returns zero routes, it does not throw); in
  *     stream mode the decision is made only after a clean NDJSON close (see
  *     `quote-result.ts`).
  *   - `CannotFillException`, `NotSupportedChainException`,
  *     `NotSupportedTokenException`, `NotSupportedContractException`,
  *     `NotSupportedAssetReverseContractException`.
- *   - `deposit_mined_revert` (REVISION 1 — fallback-on-execute-revert design) —
+ *   - `deposit_mined_revert` (REVISION 1 - fallback-on-execute-revert design) -
  *     the `bridge_deposit` leg of `khalani.bridge`'s staged broadcast was
  *     signed, broadcast, MINED, and reverted on-chain (`outcome.kind ===
  *     "reverted"`). Produced by the caller ONLY for the `bridge_deposit` leg
- *     role (REVISION 1 R1) — an `allowance`/`allowance_reset` leg reverting is
+ *     role (REVISION 1 R1) - an `allowance`/`allowance_reset` leg reverting is
  *     an ERC-20 approve failure, never a route/venue signal. A failed receipt
- *     proves the exact signed deposit tx was included and reverted — distinct
- *     from the `BroadcastException` submit-ambiguity below — but it does NOT
+ *     proves the exact signed deposit tx was included and reverted - distinct
+ *     from the `BroadcastException` submit-ambiguity below - but it does NOT
  *     prove Relay would succeed (R2/R3): the classification only makes
  *     `BridgeQuoteRelay` (a read-only quote probe) worth suggesting, never an
  *     automatic Relay execution.
  *
- * Not eligible (handle inside Khalani / fix the request — a fallback would not
+ * Not eligible (handle inside Khalani / fix the request - a fallback would not
  * help). Each carries the in-Khalani handling category so a caller (W3a
  * handlers) does not re-derive the `externalName` → action mapping:
  *   - `QuoteNotFoundException`             → `requote`
  *   - `InternalErrorException`            → `backoff`
- *   - `BroadcastException`                → `resign` (chain-level RPC issue —
- *                                            funds/nonce/blockhash — that would
+ *   - `BroadcastException`                → `resign` (chain-level RPC issue -
+ *                                            funds/nonce/blockhash - that would
  *                                            hit Relay too)
  *   - `ValidationException` /
  *     `BadRequestException` /
@@ -55,7 +55,7 @@
  * as a generic Khalani failure rather than this module inventing a policy the
  * coordinator did not fix.
  *
- * Pure, no IO. It ONLY classifies — it does not decide retries or backoff
+ * Pure, no IO. It ONLY classifies - it does not decide retries or backoff
  * timing. The fallback messaging (`handlers/fallback.ts`) reads the outcome;
  * the bridge handlers (W3a) read the handling category.
  */
@@ -88,7 +88,7 @@ export type KhalaniInKhalaniHandling =
  * `empty_routes` is a value (zero routes), `exception` carries the mapped
  * `externalName` (which may be `undefined` for a transport/unnamed error →
  * classified `deny`), and `deposit_mined_revert` is the MINED on-chain revert
- * of the staged `bridge_deposit` leg (REVISION 1) — never a caught exception,
+ * of the staged `bridge_deposit` leg (REVISION 1) - never a caught exception,
  * so it carries no `externalName`. Callers construct `deposit_mined_revert`
  * ONLY when the reverted leg's role is `bridge_deposit` (REVISION 1 R1).
  */
@@ -140,7 +140,7 @@ export function classifyKhalaniFailure(signal: KhalaniFailureSignal): KhalaniFai
   }
 
   const name = signal.externalName;
-  // Absent or non-string name (transport/unnamed error) — fail closed.
+  // Absent or non-string name (transport/unnamed error) - fail closed.
   if (typeof name !== "string" || name.length === 0) {
     return { outcome: "not_eligible", handling: "deny" };
   }

@@ -29,14 +29,21 @@ let pendingState: {
   data: Result<ReadonlyArray<ApprovalPendingGlobalDto>> | undefined;
 } = { data: undefined };
 
+/**
+ * A decision already in flight, which is what DISABLES a card's Reject. It is a
+ * mutable flag because the open-focus rule below has two arms and the second
+ * one exists only while a card names nothing focusable.
+ */
+let decisionInFlight = false;
+
 vi.mock("../../../lib/api/approvals.js", () => ({
   usePendingApprovalsAll: (opts?: { readonly refetchInterval?: number }) => {
     refetchIntervals.push(opts?.refetchInterval);
     return pendingState;
   },
   useGlobalApprovalsLiveSync: () => {},
-  useApprove: () => ({ mutate: mockApproveMutate, isPending: false }),
-  useReject: () => ({ mutate: mockRejectMutate, isPending: false }),
+  useApprove: () => ({ mutate: mockApproveMutate, isPending: decisionInFlight }),
+  useReject: () => ({ mutate: mockRejectMutate, isPending: decisionInFlight }),
 }));
 
 const { GlobalApprovals } = await import("../GlobalApprovals.js");
@@ -65,6 +72,10 @@ function makeRow(
     decision: null,
     decisionReason: null,
     executionStatus: null,
+    origin: null,
+    projectId: null,
+    requestedByClient: null,
+    projectName: null,
     sessionTitle: "Alpha session",
     ...over,
   };
@@ -114,16 +125,22 @@ beforeEach(() => {
   mockApproveMutate.mockReset();
   mockRejectMutate.mockReset();
   refetchIntervals.length = 0;
+  decisionInFlight = false;
   pendingState = { data: undefined };
   // A full-app screen is open, so "Open session" must also close it.
   useUiStore.setState({
     activeSessionId: null,
     shellRoute: { kind: "memory", origin: null },
+    runtimeMode: "agent",
   });
 });
 
 afterEach(() => {
-  useUiStore.setState({ activeSessionId: null, shellRoute: { kind: "none" } });
+  useUiStore.setState({
+    activeSessionId: null,
+    shellRoute: { kind: "none" },
+    runtimeMode: "agent",
+  });
 });
 
 describe("GlobalApprovals - badge visibility", () => {
@@ -216,6 +233,37 @@ describe("GlobalApprovals - panel", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it("Open session from STUDIO switches to the agent shell with the selection", () => {
+    // The strip is mounted above the mode dispatch, so this panel is reachable
+    // from Studio - and a session transcript only exists in the agent shell.
+    // Selecting the session without switching the mode leaves the user in
+    // Studio, looking at a project workspace, having pressed a control that
+    // promised them a session.
+    useUiStore.setState({ runtimeMode: "studio" });
+    pendingState = {
+      data: {
+        ok: true,
+        data: [
+          makeRow({
+            id: "g-a",
+            sessionId: SESSION_A,
+            sessionTitle: "Alpha session",
+          }),
+        ],
+      },
+    };
+    renderBadge();
+    fireEvent.click(getBadge());
+    fireEvent.click(screen.getByRole("button", { name: /open session/i }));
+
+    // ONE navigation: the mode and the selection land together, not one
+    // without the other.
+    const state = useUiStore.getState();
+    expect(state.runtimeMode).toBe("agent");
+    expect(state.activeSessionId).toBe(SESSION_A);
+    expect(state.shellRoute).toEqual({ kind: "none" });
+  });
+
   it("approve on a rendered card fires the mutation with the approval id", () => {
     pendingState = {
       data: {
@@ -289,5 +337,148 @@ describe("GlobalApprovals - poll cadence + overflow", () => {
     pendingState = { data: { ok: true, data: rows } };
     renderBadge();
     expect(getBadge().textContent).toContain("AWAITING 99+");
+  });
+});
+
+/**
+ * THE INBOX ORDER AND WHERE THE PANEL PUTS THE KEYBOARD, both measured defects
+ * on a real Studio approval card (live test pass 2, I-2): the panel moved focus
+ * to its own container, so a reader who opened it with the keyboard was on
+ * nothing, one Tab from a free-text reason field and two from a decision.
+ *
+ * Rule 08: default focus for a dangerous action goes to the SAFER choice. The
+ * safer choice here is Reject, and it is the row a user just caused that they
+ * came for, so the two rules meet on one element - the newest card's Reject.
+ */
+describe("GlobalApprovals - inbox order and the keyboard's landing", () => {
+  const OLDEST = "2026-05-28T10:00:00.000Z";
+  const NEWEST = "2026-05-28T10:05:00.000Z";
+
+  function twoRows(): void {
+    pendingState = {
+      data: {
+        ok: true,
+        data: [
+          makeRow({
+            id: "g-old",
+            sessionId: SESSION_A,
+            sessionTitle: "Older session",
+            createdAt: OLDEST,
+          }),
+          makeRow({
+            id: "g-new",
+            sessionId: SESSION_B,
+            sessionTitle: "Newer session",
+            createdAt: NEWEST,
+          }),
+        ],
+      },
+    };
+  }
+
+  it("lists the newest approval first", () => {
+    twoRows();
+    renderBadge();
+    fireEvent.click(getBadge());
+    const titles = Array.from(
+      screen
+        .getByRole("dialog")
+        .querySelectorAll("[data-vex-area='global-approval-item']"),
+    ).map((item) => item.textContent ?? "");
+    expect(titles).toHaveLength(2);
+    expect(titles[0]).toContain("Newer session");
+    expect(titles[1]).toContain("Older session");
+  });
+
+  it("puts initial focus on the newest card's Reject, not on the panel", () => {
+    twoRows();
+    renderBadge();
+    fireEvent.click(getBadge());
+    const panel = screen.getByRole("dialog");
+    const rejects = screen.getAllByRole("button", { name: "Reject" });
+    expect(document.activeElement).toBe(rejects[0]);
+    expect(document.activeElement).not.toBe(panel);
+    // The focused Reject really is the newest row's, not merely the first
+    // Reject of an arbitrary order.
+    const items = Array.from(
+      panel.querySelectorAll("[data-vex-area='global-approval-item']"),
+    );
+    expect(items[0]?.contains(document.activeElement)).toBe(true);
+    expect(items[0]?.textContent ?? "").toContain("Newer session");
+  });
+
+  it("falls back to the panel when the newest card names nothing focusable", () => {
+    decisionInFlight = true;
+    twoRows();
+    renderBadge();
+    fireEvent.click(getBadge());
+    const panel = screen.getByRole("dialog");
+    expect(
+      screen.getAllByRole("button", { name: "Reject" })[0]?.hasAttribute("disabled"),
+    ).toBe(true);
+    expect(document.activeElement).toBe(panel);
+  });
+
+  /**
+   * Reject NAMES itself the initial focus with the same `autofocus` content
+   * attribute every dialog in this app uses, so a card inside the panel and a
+   * card inside a dialog resolve to the same element by ONE rule. If that name
+   * is dropped, the panel silently returns to focusing its container.
+   */
+  it("resolves the safer action by the named-initial-focus attribute", () => {
+    twoRows();
+    renderBadge();
+    fireEvent.click(getBadge());
+    const named = screen
+      .getByRole("dialog")
+      .querySelector("[autofocus]:not([disabled])");
+    expect(named).not.toBeNull();
+    expect(named?.getAttribute("aria-label")).toBe("Reject");
+  });
+});
+
+/**
+ * STUDIO MODE, and the honest limit of what this file can prove about it.
+ *
+ * Measured (live test pass 2, I-2): in Studio the `AWAITING 1` badge appeared
+ * to do nothing and the card was reachable only after switching to Agent mode.
+ * The React path is mode-agnostic and these tests show it opening, listing and
+ * focusing under `runtimeMode: "studio"` exactly as in agent mode, so whatever
+ * was observed is NOT a branch in this component.
+ *
+ * jsdom has no layout engine, so it cannot see paint order, clipping or hit
+ * testing, and a test here asserting "the Studio panel opens" would have passed
+ * before and after any fix. These cases therefore claim only what jsdom models:
+ * the panel mounts its rows in Studio, and the keyboard lands on the safer
+ * action rather than on a Studio surface. Settling the visual report needs a
+ * Playwright run in Studio with a pending approval.
+ */
+describe("GlobalApprovals - Studio mode", () => {
+  beforeEach(() => {
+    useUiStore.setState({ runtimeMode: "studio" });
+  });
+
+  it("opens the panel in place with the full card, without leaving Studio", () => {
+    pendingState = {
+      data: { ok: true, data: [makeRow({ id: "g-studio" })] },
+    };
+    renderBadge();
+    fireEvent.click(getBadge());
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "Reject" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Approve" })).toHaveLength(1);
+    // Opening the inbox is not a navigation: the user is still in Studio.
+    expect(useUiStore.getState().runtimeMode).toBe("studio");
+  });
+
+  it("lands the keyboard on the safer action, not on a Studio surface", () => {
+    pendingState = {
+      data: { ok: true, data: [makeRow({ id: "g-studio" })] },
+    };
+    renderBadge();
+    fireEvent.click(getBadge());
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "Reject" }),
+    );
   });
 });
