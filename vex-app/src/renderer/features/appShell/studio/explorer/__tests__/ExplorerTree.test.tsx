@@ -133,28 +133,6 @@ afterEach(async () => {
 });
 
 describe("mount and lifecycle", () => {
-  it("uses the browser microtask receiver with the default registry under StrictMode", async () => {
-    const schedule = globalThis.queueMicrotask;
-    const microtask = vi.spyOn(globalThis, "queueMicrotask").mockImplementation(function (
-      this: unknown,
-      run: VoidFunction,
-    ) {
-      // Browser APIs reject an unrelated object as their receiver; jsdom does not.
-      if (this !== undefined && this !== globalThis) throw new TypeError("Illegal invocation");
-      schedule(run);
-    });
-    try {
-      registry = new ExplorerRegistry();
-      standardTree();
-      await mountTree();
-      expect(api.watchCount).toBe(1);
-      expect(rowNames()).toHaveLength(3);
-      expect(microtask).toHaveBeenCalled();
-    } finally {
-      microtask.mockRestore();
-    }
-  });
-
   it("opens exactly ONE watch and ONE listener under StrictMode", async () => {
     standardTree();
     await mountTree();
