@@ -3,7 +3,7 @@
  * request is allowed to end up, decided at CONNECT time and pinned for the
  * socket.
  *
- * WHY THIS MODULE EXISTS (external review of PR #142, blocker 1). The previous
+ * WHY THIS MODULE EXISTS (review finding, 2026-09-04). The previous
  * control was syntactic only: `isSsrfSafeRpcUrl` classified an IP LITERAL and
  * accepted every DNS name on its face, so a provider registry could name
  * `rpc.example.com`, have it resolve to `127.0.0.1` or `169.254.169.254`, and

@@ -1,7 +1,7 @@
 /**
  * A PROVIDER-SUPPLIED RPC URL CANNOT REACH PRIVATE SPACE, proven at the socket.
  *
- * The defect (external review of PR #142, blocker 1): the SSRF control was
+ * The defect (review finding, 2026-09-04): the SSRF control was
  * syntactic, so `https://rebound.test` was accepted on its face and whatever it
  * resolved to received the request. The `eth_chainId` echo stops us BELIEVING a
  * false receipt; it does not stop the POST from arriving at a local service.

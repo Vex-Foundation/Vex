@@ -3,7 +3,7 @@
  * back. The TRANSPORT the leg builds is part of that contract, so it is asserted
  * here too rather than assumed.
  *
- * The defect this pins (external review of PR #142, blocker 2): every candidate
+ * The defect this pins (review finding, 2026-09-04): every candidate
  * had a 15 s transport timeout AND one transport retry, and the widened
  * candidate list made six candidates realistic, so ONE leg of ONE row could hold
  * the shared sync worker for three minutes while balance and settlement sync

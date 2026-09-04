@@ -41,7 +41,7 @@ export const SOLANA_MAINNET_GENESIS = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2
 /**
  * THE SSRF CLASSIFIERS LIVE IN `rpc-egress-policy.ts` NOW, beside the connect-time
  * pin that closes the DNS-rebinding hole they could never close on their own
- * (external review of PR #142, blocker 1). They are re-exported here unchanged
+ * (review finding, 2026-09-04). They are re-exported here unchanged
  * so every existing import path - this module, `bridge-activity-repair.ts`'s own
  * re-export, and their tests - keeps working: this is a MOVE, not a behavior
  * change.

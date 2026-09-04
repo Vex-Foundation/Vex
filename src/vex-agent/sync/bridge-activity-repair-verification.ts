@@ -115,7 +115,7 @@ async function verifyEvmLegOnChain(
           dispatcher: trustedAsConfigured.has(rpcUrl) ? undefined : egress,
         };
         const client = createPublicClient({
-          // Redirect-off (Blocker 10): a 3xx to a re-pointed (possibly private)
+          // Redirect-off: a 3xx to a re-pointed (possibly private)
           // host is refused, not followed. `dispatcher` is the connect-time
           // egress decision for a PROVIDER-supplied URL - resolve, refuse
           // non-public, pin the checked address - and is deliberately absent for
