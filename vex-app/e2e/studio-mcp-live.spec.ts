@@ -72,7 +72,6 @@
  * nothing here can spend funds.
  */
 
-import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import {
@@ -92,6 +91,7 @@ import {
 import {
   codexVersion,
   createTemporaryCodexHome,
+  invokeBoundedSync,
   listCodexMcpServers,
   runCodex,
   type CodexStreamDiagnostics,
@@ -162,11 +162,31 @@ async function projectDirectory(projectsRoot: string, stamp: string): Promise<st
   return path.join(projectsRoot, slug);
 }
 
-/** The commit the app under test was built from, for the provenance line. */
+/** How long the provenance line may wait on `git`. A bound, not a wait. */
+const GIT_HEAD_TIMEOUT_MS = 10_000;
+
+/**
+ * The commit the app under test was built from, for the provenance line.
+ *
+ * Through the fixtures' bounded invoker rather than a bare `spawnSync`: a
+ * `git` that blocks (an index lock, a filesystem that stopped answering) would
+ * otherwise hang the whole walk on a decoration, and this way the timeout and
+ * the output bound are the same ones every other blocking call here obeys.
+ */
 function gitHead(): string {
-  const run = spawnSync("git", ["rev-parse", "--short", "HEAD"], { encoding: "utf8" });
-  if (run.error !== undefined || run.status !== 0) return "git: unavailable";
-  return run.stdout.trim();
+  try {
+    return invokeBoundedSync({
+      binary: "git",
+      args: ["rev-parse", "--short", "HEAD"],
+      label: "git rev-parse",
+      context: "for the provenance line",
+      timeoutMs: GIT_HEAD_TIMEOUT_MS,
+    }).trim();
+  } catch {
+    // Provenance is a decoration on the report; a repository that will not
+    // answer must not fail the walk.
+    return "git: unavailable";
+  }
 }
 
 /** Write one evidence file and return its path, so the report can name it. */
@@ -433,18 +453,29 @@ test.describe("Studio MCP, live", () => {
           archive(runDir, "layer1-vex-toolsearch-description.txt", toolSearchDescription),
         );
       } finally {
-        const stderr = session.stderr();
-        if (stderr !== "") archived.push(archive(runDir, "layer1-bridge-stderr.txt", stderr));
-        // Counted, not silently skipped: a transport that could not read the
-        // peer must not look like a peer that said nothing.
-        const framing = session.diagnostics();
-        archived.push(
-          archive(runDir, "layer1-transport-diagnostics.json", `${JSON.stringify(framing, null, 2)}\n`),
-        );
-        expect(framing.malformedFrames, "the bridge wrote malformed JSON-RPC frames").toBe(0);
-        expect(framing.uncorrelatedResponses, "the bridge answered ids nobody asked").toBe(0);
-        expect(framing.droppedStderrBytes, "the bridge outgrew the stderr bound").toBe(0);
-        await session.close();
+        // The diagnostics are ASSERTIONS, so they can throw; the session is a
+        // PROCESS, so it must be ended either way. Hence the nested `finally`:
+        // a failing transport counter used to skip the close below it and leave
+        // the bridge running for the rest of the walk.
+        try {
+          const stderr = session.stderr();
+          if (stderr !== "") archived.push(archive(runDir, "layer1-bridge-stderr.txt", stderr));
+          // Counted, not silently skipped: a transport that could not read the
+          // peer must not look like a peer that said nothing.
+          const framing = session.diagnostics();
+          archived.push(
+            archive(
+              runDir,
+              "layer1-transport-diagnostics.json",
+              `${JSON.stringify(framing, null, 2)}\n`,
+            ),
+          );
+          expect(framing.malformedFrames, "the bridge wrote malformed JSON-RPC frames").toBe(0);
+          expect(framing.uncorrelatedResponses, "the bridge answered ids nobody asked").toBe(0);
+          expect(framing.droppedStderrBytes, "the bridge outgrew the stderr bound").toBe(0);
+        } finally {
+          await session.close();
+        }
       }
     });
 

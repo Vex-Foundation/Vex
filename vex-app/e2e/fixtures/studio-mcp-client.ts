@@ -27,7 +27,14 @@
  * proven by `.../test/node/mcpStdioStateHandler.test.ts`): end stdin, wait a
  * grace period, SIGTERM, wait the same grace again, SIGKILL. Every step AWAITS
  * the child's `close` event, so `close()` resolving means the process is gone
- * and reaped rather than merely signalled.
+ * and reaped rather than merely signalled. A child still open after SIGKILL
+ * makes `close()` THROW, because the only way that happens is a descendant
+ * holding the session's stdio, and a caller told nothing would report a clean
+ * run over a live pipe.
+ *
+ * A REQUEST THAT MISSES ITS DEADLINE closes the bridge before it rejects: the
+ * peer has already failed its contract, and rejecting alone would leave the
+ * caller with a dead request and a live child.
  *
  * BOUNDS: stderr retention and the stdout line-framing buffer both have an
  * explicit byte bound. Stderr uses the bounded-capture policy (leading bytes
@@ -49,7 +56,7 @@ import { z } from "zod";
 import type { CallToolResultSchema } from "@modelcontextprotocol/core";
 import { createBoundedTextCapture } from "./bounded-text-capture.js";
 
-/** How long one MCP request may wait for its response. */
+/** How long one MCP request may wait for its response, by default. */
 export const MCP_REQUEST_TIMEOUT_MS = 60_000;
 
 /**
@@ -252,6 +259,7 @@ export interface BridgeSessionOptions {
   readonly shutdownGraceMs?: number;
   readonly maxLineBytes?: number;
   readonly maxStderrBytes?: number;
+  readonly requestTimeoutMs?: number;
 }
 
 interface PendingWaiter {
@@ -271,6 +279,7 @@ export function openBridgeSession(
   const shutdownGraceMs = options.shutdownGraceMs ?? BRIDGE_SHUTDOWN_GRACE_MS;
   const maxLineBytes = options.maxLineBytes ?? BRIDGE_MAX_LINE_BYTES;
   const maxStderrBytes = options.maxStderrBytes ?? BRIDGE_STDERR_LIMIT_BYTES;
+  const requestTimeoutMs = options.requestTimeoutMs ?? MCP_REQUEST_TIMEOUT_MS;
 
   const child = spawn(entry.command, [...entry.args], {
     stdio: ["pipe", "pipe", "pipe"],
@@ -438,6 +447,39 @@ export function openBridgeSession(
       child.once("close", onClose);
     });
 
+  /**
+   * End stdin, then SIGTERM, then SIGKILL, AWAITING `close` at every step.
+   *
+   * The MCP shutdown sequence, as VS Code implements it for the same transport.
+   * Returning means the child is gone and reaped, so a caller's `finally` can
+   * be trusted to have left no process behind.
+   *
+   * A child that has not closed even after SIGKILL THROWS rather than returning
+   * quietly: SIGKILL cannot be ignored, so a missing `close` means the process
+   * group still holds this session's stdio - a descendant it spawned outlives
+   * it - and a caller told nothing would report a clean run over a live pipe.
+   */
+  const closeBridge = async (): Promise<void> => {
+    if (closed !== null) return;
+    try {
+      child.stdin.end();
+    } catch {
+      // An stdin already in an error state is not a reason to skip the rest
+      // of the sequence; the signals below still have to run.
+    }
+    if (await waitForClose(shutdownGraceMs)) return;
+    child.kill("SIGTERM");
+    if (await waitForClose(shutdownGraceMs)) return;
+    child.kill("SIGKILL");
+    if (await waitForClose(shutdownGraceMs)) return;
+    throw new Error(
+      `the vex-mcp bridge (pid ${String(child.pid)}) did not close within ` +
+        `${String(shutdownGraceMs)}ms of SIGKILL; SIGKILL cannot be ignored, so a ` +
+        "descendant it spawned is still holding this session's stdio and has to be " +
+        `ended by hand. Its stderr:\n${stderrText()}`,
+    );
+  };
+
   return {
     async request(method, params) {
       const id = nextId;
@@ -451,13 +493,27 @@ export function openBridgeSession(
       const deadline = new Promise<never>((_resolve, reject) => {
         timer = setTimeout(() => {
           pending.delete(id);
-          reject(
-            new Error(
-              `${method} did not answer within ${String(MCP_REQUEST_TIMEOUT_MS)}ms. ` +
-                `The bridge's stderr so far:\n${stderrText()}`,
-            ),
-          );
-        }, MCP_REQUEST_TIMEOUT_MS);
+          // A bridge that missed its deadline is UNHEALTHY, and leaving it
+          // running would hand the caller a rejected request and a live child
+          // still holding this run's pipes. So the rejection waits for the
+          // shutdown sequence, exactly as the timeout path in
+          // `codex-live-runner.ts` does, and reports a cleanup that failed
+          // instead of hiding it behind the deadline.
+          void (async () => {
+            let cleanup = "the bridge has been closed";
+            try {
+              await closeBridge();
+            } catch (cause) {
+              cleanup = `closing the bridge then FAILED: ${cause instanceof Error ? cause.message : String(cause)}`;
+            }
+            reject(
+              new Error(
+                `${method} did not answer within ${String(requestTimeoutMs)}ms; ` +
+                  `${cleanup}. The bridge's stderr so far:\n${stderrText()}`,
+              ),
+            );
+          })();
+        }, requestTimeoutMs);
       });
       try {
         return await Promise.race([answer, deadline]);
@@ -481,26 +537,6 @@ export function openBridgeSession(
         exit: closed,
       };
     },
-    /**
-     * End stdin, then SIGTERM, then SIGKILL, AWAITING `close` at every step.
-     *
-     * The MCP shutdown sequence, as VS Code implements it for the same
-     * transport. Resolving means the child is gone and reaped, so a caller's
-     * `finally` can be trusted to have left no process behind.
-     */
-    async close() {
-      if (closed !== null) return;
-      try {
-        child.stdin.end();
-      } catch {
-        // An stdin already in an error state is not a reason to skip the rest
-        // of the sequence; the signals below still have to run.
-      }
-      if (await waitForClose(shutdownGraceMs)) return;
-      child.kill("SIGTERM");
-      if (await waitForClose(shutdownGraceMs)) return;
-      child.kill("SIGKILL");
-      await waitForClose(shutdownGraceMs);
-    },
+    close: closeBridge,
   };
 }

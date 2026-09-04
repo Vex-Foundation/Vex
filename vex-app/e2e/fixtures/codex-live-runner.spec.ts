@@ -22,7 +22,7 @@ import {
   awaitChildExit,
   createCodexStreamDecoder,
   createTemporaryCodexHome,
-  invokeCodexSync,
+  invokeBoundedSync,
 } from "./codex-live-runner.js";
 
 const GRACE_MS = 150;
@@ -33,7 +33,7 @@ function nodePeer(script: string) {
 
 test.describe("synchronous invocation bounds", () => {
   test("returns the child's stdout when it succeeds", () => {
-    const stdout = invokeCodexSync({
+    const stdout = invokeBoundedSync({
       binary: process.execPath,
       args: ["-e", 'process.stdout.write("0.153.2")'],
       label: "codex --version",
@@ -45,7 +45,7 @@ test.describe("synchronous invocation bounds", () => {
   test("kills a hanging invocation at the timeout and names the signal", () => {
     const before = Date.now();
     expect(() =>
-      invokeCodexSync({
+      invokeBoundedSync({
         binary: process.execPath,
         args: ["-e", "setInterval(() => {}, 1000)"],
         label: "codex mcp list",
@@ -61,7 +61,7 @@ test.describe("synchronous invocation bounds", () => {
 
   test("refuses an invocation that outgrows its output bound", () => {
     expect(() =>
-      invokeCodexSync({
+      invokeBoundedSync({
         binary: process.execPath,
         args: ["-e", 'process.stdout.write("x".repeat(100000))'],
         label: "codex mcp list",
@@ -73,7 +73,7 @@ test.describe("synchronous invocation bounds", () => {
 
   test("reports a non-zero exit with its stderr", () => {
     expect(() =>
-      invokeCodexSync({
+      invokeBoundedSync({
         binary: process.execPath,
         args: ["-e", 'process.stderr.write("no config"); process.exit(3);'],
         label: "codex mcp list",
@@ -113,6 +113,33 @@ test.describe("child exit escalation", () => {
       evidence: () => "",
     });
     expect(code).toBe(4);
+  });
+
+  test("says so when the child has NOT closed after SIGKILL", async () => {
+    // A descendant holding the child's stdout is the only way a SIGKILLed
+    // process still has no `close` event: the signal cannot be ignored, but the
+    // pipe stays open while the grandchild owns a copy of it. The grandchild
+    // ends on its own so the test leaves nothing behind.
+    const child = nodePeer(`
+      const { spawn } = require("child_process");
+      spawn(process.execPath, ["-e", "setTimeout(() => {}, 2500)"], {
+        stdio: ["ignore", 1, 2],
+        detached: true,
+      }).unref();
+      setInterval(() => {}, 1000);
+      process.on("SIGTERM", () => {});
+    `);
+    await expect(
+      awaitChildExit(child, {
+        timeoutMs: 300,
+        shutdownGraceMs: GRACE_MS,
+        label: "codex exec",
+        evidence: () => "no stderr",
+      }),
+    ).rejects.toThrow(/did NOT close within .*SIGKILL, so a process it spawned is still holding/su);
+    // The signal landed; what did not happen is the close, which is exactly the
+    // difference the message now carries.
+    expect(child.signalCode).toBe("SIGKILL");
   });
 
   test("a SIGTERM the child honours needs no SIGKILL", async () => {
@@ -187,6 +214,35 @@ test.describe("codex stream decoder", () => {
     decoder.end();
     expect(decoder.nonJsonLines()).toBe(0);
     expect(decoder.unrecognizedEvents()).toBe(0);
+  });
+});
+
+test.describe("decoder framing bound", () => {
+  test("declares an unframed stream instead of buffering it forever", () => {
+    const decoder = createCodexStreamDecoder({ maxLineBytes: 1024 });
+    decoder.feed("x".repeat(5000));
+    const violation = decoder.framingViolation();
+    expect(violation, "an unbounded buffer would have kept growing quietly").not.toBeNull();
+    expect(violation).toContain("5000 bytes with no newline");
+    expect(violation).toContain("1024-byte line bound");
+
+    // Once violated the decoder is done: further bytes are neither buffered nor
+    // counted as damage of another kind, and `end()` decodes nothing.
+    decoder.feed(`${JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: "late" } })}\n`);
+    decoder.end();
+    expect(decoder.finalMessage()).toBe("");
+    expect(decoder.nonJsonLines()).toBe(0);
+    expect(decoder.unrecognizedEvents()).toBe(0);
+  });
+
+  test("a long line that DOES arrive framed is decoded, not refused", () => {
+    const decoder = createCodexStreamDecoder({ maxLineBytes: 1024 });
+    const text = "y".repeat(600);
+    decoder.feed(
+      `${JSON.stringify({ type: "item.completed", item: { type: "agent_message", text } })}\n`,
+    );
+    expect(decoder.framingViolation()).toBeNull();
+    expect(decoder.finalMessage()).toBe(text);
   });
 });
 

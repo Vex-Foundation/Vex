@@ -48,7 +48,9 @@
  * BOUNDS: the raw stdout and stderr this file RETAINS are bounded and report
  * what they dropped (`./bounded-text-capture.ts`). Decoding does not depend on
  * that bound: every line is parsed as it arrives, so a turn whose archive was
- * clipped still yields every tool call and the final message.
+ * clipped still yields every tool call and the final message. The decoder's own
+ * held tail is bounded too, and a peer that writes past it without a newline
+ * ends the turn with a framing failure instead of growing a buffer forever.
  *
  * MALFORMED LINES are counted by kind and returned on the run, never silently
  * skipped, so "the agent called no tool" can be told apart from "the stream
@@ -92,6 +94,13 @@ export const CODEX_STDERR_LIMIT_BYTES = 1_048_576;
 
 /** How long each shutdown step waits before escalating, once a turn timed out. */
 export const CODEX_SHUTDOWN_GRACE_MS = 10_000;
+
+/**
+ * The longest single stdout line the decoder holds before declaring the stream
+ * unframed. Far above any `codex exec --json` event and far below the memory a
+ * peer that stopped writing newlines would otherwise take.
+ */
+export const CODEX_MAX_LINE_BYTES = 16_777_216;
 
 /**
  * One `codex exec --json` line. Only the fields this walk reads are named; a
@@ -189,28 +198,30 @@ export interface CodexRun {
 }
 
 /**
- * Run the binary once, synchronously, under a timeout and an output bound.
+ * Run one binary synchronously, under a timeout and an output bound.
  *
- * The single owner of every blocking invocation here, so no caller can add one
- * that hangs the walk forever. `spawnSync` with `timeout` kills the child with
- * `killSignal` and REAPS it before returning, and it does the same on
- * `maxBuffer`; both arrive back as `error` plus `signal`, which the thrown
- * message repeats rather than hiding behind "status null".
+ * The single owner of every blocking invocation the live walk makes - `codex`
+ * and `git` alike - so no caller can add one that hangs the walk forever.
+ * `spawnSync` with `timeout` kills the child with `killSignal` and REAPS it
+ * before returning, and it does the same on `maxBuffer`; both arrive back as
+ * `error` plus `signal`, which the thrown message repeats rather than hiding
+ * behind "status null".
  *
- * `binary` exists so the lifecycle can be exercised without the real `codex`
- * on the machine; every production caller here leaves it at its default.
+ * `binary` is REQUIRED rather than defaulted to `codex`: a bound that belongs
+ * to whichever process is being run should not read as a Codex-only helper,
+ * and every caller already knows which binary it means.
  */
-export function invokeCodexSync(options: {
+export function invokeBoundedSync(options: {
+  readonly binary: string;
   readonly args: readonly string[];
   readonly label: string;
   readonly context: string;
-  readonly binary?: string;
   readonly cwd?: string;
   readonly env?: Readonly<Record<string, string>>;
   readonly timeoutMs?: number;
   readonly maxBufferBytes?: number;
 }): string {
-  const run = spawnSync(options.binary ?? "codex", [...options.args], {
+  const run = spawnSync(options.binary, [...options.args], {
     cwd: options.cwd,
     encoding: "utf8",
     env: options.env === undefined ? process.env : { ...process.env, ...options.env },
@@ -251,7 +262,8 @@ export function listCodexMcpServers(options: {
   readonly codexHome: string;
   readonly cwd: string;
 }): readonly CodexMcpServer[] {
-  const stdout = invokeCodexSync({
+  const stdout = invokeBoundedSync({
+    binary: "codex",
     args: ["mcp", "list", "--json"],
     label: "codex mcp list",
     context: `under CODEX_HOME=${options.codexHome}`,
@@ -264,7 +276,8 @@ export function listCodexMcpServers(options: {
 /** The Codex build this evidence came from. */
 export function codexVersion(): string {
   try {
-    return invokeCodexSync({
+    return invokeBoundedSync({
+      binary: "codex",
       args: ["--version"],
       label: "codex --version",
       context: "for the provenance record",
@@ -336,6 +349,14 @@ export function createTemporaryCodexHome(options: {
  * it: what counts as a tool call, which agent message is the answer, and what
  * an unreadable line does. Feeding it does not depend on any retention bound,
  * which is why a clipped archive never costs the walk an assertion.
+ *
+ * The HELD TAIL is the one thing here that could grow without limit, so it has
+ * its own bound. Past it the decoder declares the stream UNFRAMED, drops the
+ * tail and stops decoding: a line longer than the bound is not a big event, it
+ * is a peer that stopped emitting JSONL, and buffering the rest of it would
+ * trade a diagnosis for an out-of-memory. The violation is a sentence the
+ * owner reads and turns into a failure, never a silent skip - same policy as
+ * `studio-mcp-client.ts` applies to the bridge's own stdout.
  */
 export interface CodexStreamDecoder {
   /** Feed raw stdout. Complete lines are decoded; a partial tail is held. */
@@ -346,14 +367,24 @@ export interface CodexStreamDecoder {
   toolCalls(): readonly CodexToolCall[];
   nonJsonLines(): number;
   unrecognizedEvents(): number;
+  /**
+   * Why this stream stopped being decodable, or null while it is fine.
+   *
+   * Set once, by the line bound. The owner surfaces it as a run failure.
+   */
+  framingViolation(): string | null;
 }
 
-export function createCodexStreamDecoder(): CodexStreamDecoder {
+export function createCodexStreamDecoder(
+  options: { readonly maxLineBytes?: number } = {},
+): CodexStreamDecoder {
+  const maxLineBytes = options.maxLineBytes ?? CODEX_MAX_LINE_BYTES;
   const toolCalls: CodexToolCall[] = [];
   let finalMessage = "";
   let nonJsonLines = 0;
   let unrecognizedEvents = 0;
   let lineBuffer = "";
+  let framingViolation: string | null = null;
 
   const decodeLine = (line: string): void => {
     if (line.trim() === "") return;
@@ -391,6 +422,7 @@ export function createCodexStreamDecoder(): CodexStreamDecoder {
 
   return {
     feed(chunk) {
+      if (framingViolation !== null) return;
       lineBuffer += chunk;
       for (;;) {
         const newline = lineBuffer.indexOf("\n");
@@ -399,8 +431,19 @@ export function createCodexStreamDecoder(): CodexStreamDecoder {
         lineBuffer = lineBuffer.slice(newline + 1);
         decodeLine(line);
       }
+      const pendingBytes = Buffer.byteLength(lineBuffer, "utf8");
+      if (pendingBytes > maxLineBytes) {
+        framingViolation =
+          `codex exec wrote ${String(pendingBytes)} bytes with no newline, past the ` +
+          `${String(maxLineBytes)}-byte line bound; \`codex exec --json\` is ` +
+          "newline-delimited JSON";
+        // Dropped rather than kept: the tail is unusable by definition, and the
+        // reason to stop is the sentence above, not the bytes.
+        lineBuffer = "";
+      }
     },
     end() {
+      if (framingViolation !== null) return;
       const rest = lineBuffer;
       lineBuffer = "";
       decodeLine(rest);
@@ -409,6 +452,7 @@ export function createCodexStreamDecoder(): CodexStreamDecoder {
     toolCalls: () => toolCalls,
     nonJsonLines: () => nonJsonLines,
     unrecognizedEvents: () => unrecognizedEvents,
+    framingViolation: () => framingViolation,
   };
 }
 
@@ -479,14 +523,23 @@ export async function awaitChildExit(
         timedOut = true;
         void (async () => {
           child.kill("SIGTERM");
-          if (!(await waitForClose(policy.shutdownGraceMs))) {
+          let gone = await waitForClose(policy.shutdownGraceMs);
+          if (!gone) {
             child.kill("SIGKILL");
-            await waitForClose(policy.shutdownGraceMs);
+            gone = await waitForClose(policy.shutdownGraceMs);
           }
+          // SIGKILL cannot be ignored, so a child that still has not closed is
+          // one whose DESCENDANTS hold its stdio. Saying "the child has closed"
+          // there would hand the caller a tidy sentence over a live pipe.
+          const ending = gone
+            ? "the child has closed"
+            : `the child (pid ${String(child.pid)}) did NOT close within ` +
+              `${String(policy.shutdownGraceMs)}ms of SIGKILL, so a process it spawned is ` +
+              "still holding its stdio and has to be ended by hand";
           reject(
             new Error(
               `${policy.label} did not finish within ${String(policy.timeoutMs)}ms and was ` +
-                `killed; the child has closed. Its evidence:\n${policy.evidence()}`,
+                `killed; ${ending}. Its evidence:\n${policy.evidence()}`,
             ),
           );
         })();
@@ -553,10 +606,19 @@ export async function runCodex(options: {
 
   // DECODE AS IT ARRIVES, so the retention bound can never cost the walk a tool
   // call or the final message.
+  // An unframed peer never becomes framed, so the turn ends the moment the
+  // decoder says so rather than waiting out the whole timeout on a stream
+  // nobody can read. `awaitChildExit` below then returns the ordinary close,
+  // and the violation is raised after it with the stderr that explains it.
+  let killedForFraming = false;
   child.stdout.setEncoding("utf8");
   child.stdout.on("data", (chunk: string) => {
     rawCapture.append(chunk);
     decoder.feed(chunk);
+    if (decoder.framingViolation() !== null && !killedForFraming) {
+      killedForFraming = true;
+      child.kill("SIGKILL");
+    }
   });
   child.stderr.setEncoding("utf8");
   child.stderr.on("data", (chunk: string) => {
@@ -575,6 +637,11 @@ export async function runCodex(options: {
     evidence: stderrText,
   });
   decoder.end();
+
+  const violation = decoder.framingViolation();
+  if (violation !== null) {
+    throw new Error(`${violation}. Its stderr:\n${stderrText()}`);
+  }
 
   return {
     raw: rawCapture.text(),

@@ -200,6 +200,49 @@ test.describe("bridge session lifecycle", () => {
     }).toThrow(/already exited/u);
   });
 
+  test("a request that misses its deadline closes the unhealthy bridge", async () => {
+    const session = openBridgeSession(
+      // Reads the request and answers nothing, ever.
+      peer(`
+        process.stdin.resume();
+        setInterval(() => {}, 1000);
+      `),
+      {},
+      { shutdownGraceMs: GRACE_MS, requestTimeoutMs: 300 },
+    );
+    await expect(session.request("initialize", {})).rejects.toThrow(
+      /initialize did not answer within 300ms; the bridge has been closed/u,
+    );
+    // THE POINT: the rejection arrived after the shutdown sequence, so a caller
+    // whose `finally` never runs is still not left with a live bridge.
+    expect(session.diagnostics().exit, "the deadline left the bridge running").not.toBeNull();
+  });
+
+  test("close FAILS loudly when the peer is still holding its stdio after SIGKILL", async () => {
+    const session = openBridgeSession(
+      // A detached grandchild keeps a copy of stdout, so the SIGKILLed peer
+      // never emits `close`. It ends on its own, leaving nothing behind.
+      peer(`
+        const { spawn } = require("child_process");
+        spawn(process.execPath, ["-e", "setTimeout(() => {}, 2500)"], {
+          stdio: ["ignore", 1, 2],
+          detached: true,
+        }).unref();
+        setInterval(() => {}, 1000);
+        process.on("SIGTERM", () => {});
+        process.stdin.resume();
+      `),
+      {},
+      { shutdownGraceMs: GRACE_MS },
+    );
+    await expect(session.close()).rejects.toThrow(
+      /did not close within .*SIGKILL cannot be ignored/su,
+    );
+    // A silent return here is the regression: the caller would have reported a
+    // clean walk while this run's stdio was still open.
+    expect(session.diagnostics().exit).toBeNull();
+  });
+
   test("close is safe to call twice", async () => {
     const session = openBridgeSession(peer("process.exit(0);"), {}, { shutdownGraceMs: GRACE_MS });
     await session.close();
