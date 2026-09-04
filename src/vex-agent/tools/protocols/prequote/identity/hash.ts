@@ -37,6 +37,7 @@ import { redeemHashMaterial, ptRolloverHashMaterial } from "./hash/pendle-pt.js"
 import { mintHashMaterial, redeemPyHashMaterial } from "./hash/pendle-py.js";
 import { syHashMaterial } from "./hash/pendle-sy.js";
 import { swapHashMaterial } from "./hash/swap.js";
+import { MORPHO_MARKET_LANE } from "./lane.js";
 
 import type { BridgeMatchInput, BridgeTradeType } from "./hash/bridge.js";
 import type {
@@ -205,7 +206,7 @@ export function computePrequoteMatchHash(input: PrequoteMatchInput): string {
       // on the registration precisely so this dispatch can read it. The vault
       // material is UNCHANGED and `lane` is in neither material - see
       // `hash/morpho-borrow.ts` for why the two can never collide anyway.
-      material = input.lane === "market"
+      material = input.lane === MORPHO_MARKET_LANE
         ? morphoBorrowHashMaterial(input)
         : lendHashMaterial(input);
       break;

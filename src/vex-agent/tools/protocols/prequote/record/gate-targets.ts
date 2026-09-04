@@ -22,9 +22,11 @@
  * identity builders keep owning the hash material. Where a table already
  * existed on that side, this module DERIVES from it rather than restating it:
  *
- *   - the Morpho MARKET map calls `morphoBorrowKindForDirection`, the same
- *     function the identity builders use, so the row, the hash and the
- *     description read one table;
+ *   - the Morpho MARKET map calls `morphoBorrowKindForDirection` and
+ *     `morphoMarketLaneForDirection`, the same functions the identity builders
+ *     use, and the VAULT map reads the same `identity/lane.ts` constant its
+ *     builders now put on the identity, so the row, the hash and the
+ *     description read one table and one lane owner;
  *   - every map is keyed by the EXTRACTOR's own direction union, so a venue
  *     that gains a direction fails to compile here until its row is declared.
  *
@@ -38,8 +40,10 @@ import type { ExtractedPendleLpQuote } from "../safety/extract/pendle-lp.js";
 import type { ExtractedPendlePyQuote } from "../safety/extract/pendle-py.js";
 import {
   morphoBorrowKindForDirection,
+  morphoMarketLaneForDirection,
   type MorphoBorrowDirection,
 } from "../identity/morpho-borrow.js";
+import { MORPHO_VAULT_LANE } from "../identity/lane.js";
 
 /** The row the four venue swap quotes record (`record/swap.ts`). */
 export const SWAP_QUOTE_GATE_TARGET = { kind: "swap" } as const satisfies PrequoteGateTarget;
@@ -85,22 +89,26 @@ export const PENDLE_LP_QUOTE_GATE_TARGETS = {
  * market", which share both kinds.
  */
 export const MORPHO_LEND_QUOTE_GATE_TARGETS = {
-  deposit: { kind: "lend_deposit", lane: "vault" },
-  withdraw: { kind: "lend_withdraw", lane: "vault" },
+  deposit: { kind: "lend_deposit", lane: MORPHO_VAULT_LANE },
+  withdraw: { kind: "lend_withdraw", lane: MORPHO_VAULT_LANE },
 } as const satisfies Readonly<Record<ExtractedMorphoLendQuote["direction"], PrequoteGateTarget>>;
 
 /**
  * The row one market direction records. The four borrower operations carry no
  * lane (their kinds belong to this lane alone); the LENDER'S two reuse the
- * vault lane's kinds, so they MUST carry `lane: "market"` - the same
- * discriminator their identity builders put in the hash
- * (`identity/morpho-borrow.ts`, `buildMorphoMarketSupplyIdentity`).
+ * vault lane's kinds, so they MUST carry the market lane.
+ *
+ * NEITHER HALF IS DECIDED HERE. The kind comes from the identity side's own
+ * table (`morphoBorrowKindForDirection`) and the lane from the same module's
+ * `morphoMarketLaneForDirection`, which is what the two market builders
+ * actually put on the identity they hash. A lane spelled as a literal here
+ * could move while the identity stood still, and the description would then
+ * publish an authorization the gate refuses.
  */
 function morphoMarketGateTarget(direction: MorphoBorrowDirection): PrequoteGateTarget {
   const kind = morphoBorrowKindForDirection(direction);
-  return kind === "lend_deposit" || kind === "lend_withdraw"
-    ? { kind, lane: "market" }
-    : { kind };
+  const lane = morphoMarketLaneForDirection(direction);
+  return lane === undefined ? { kind } : { kind, lane };
 }
 
 /**

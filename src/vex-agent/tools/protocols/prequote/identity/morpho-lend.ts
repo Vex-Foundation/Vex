@@ -34,6 +34,7 @@ import { VEX_DEFAULT_SLIPPAGE_BPS } from "../../slippage-policy.js";
 import { canonSlippageBpsWithDefault } from "../slippage.js";
 import type { ProtocolExecutionContext } from "../../types.js";
 import type { LendDepositMatchInput, LendWithdrawMatchInput } from "./hash.js";
+import { MORPHO_VAULT_LANE } from "./lane.js";
 
 /** The direction-specific amount key. Deliberately NOT interchangeable. */
 const AMOUNT_KEY = {
@@ -88,6 +89,12 @@ export function buildMorphoLendDepositIdentity(
   const leg = resolveLendLeg(params, context, "deposit");
   return {
     kind: "lend_deposit",
+    // Named, not implied. The lane used to be carried here by OMISSION (the
+    // dispatcher reads anything that is not "market" as the vault), which left
+    // the value itself owned only by the sites that DID spell it. It is stated
+    // now, from the one owner, so a substitution of that owner moves this
+    // identity too - the drift check the description depends on.
+    lane: MORPHO_VAULT_LANE,
     sessionId,
     provider: "morpho",
     chainId: leg.chainId,
@@ -108,6 +115,8 @@ export function buildMorphoLendWithdrawIdentity(
   const leg = resolveLendLeg(params, context, "withdraw");
   return {
     kind: "lend_withdraw",
+    /** VAULT lane, from its one owner - see the deposit builder. */
+    lane: MORPHO_VAULT_LANE,
     sessionId,
     provider: "morpho",
     chainId: leg.chainId,

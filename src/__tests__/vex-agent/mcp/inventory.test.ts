@@ -44,6 +44,32 @@ function byteLength(value: string): number {
   return Buffer.byteLength(value, "utf8");
 }
 
+/**
+ * BOTH READINGS OF THE HOT-SET BOUND over one description, from one place.
+ *
+ * The character reading is the measured contract (Claude Code cuts at 2048 code
+ * points); the byte reading is the second, for any client that counts the
+ * encoded string. They are computed together so the two table lints below and
+ * the synthetic threshold case cannot drift into measuring different things -
+ * the whole point of the synthetic case is that it fails if `bytes` ever stops
+ * counting bytes.
+ */
+function boundReadings(description: string): {
+  readonly characters: number;
+  readonly bytes: number;
+  readonly fitsInCharacters: boolean;
+  readonly fitsInBytes: boolean;
+} {
+  const characters = [...description].length;
+  const bytes = byteLength(description);
+  return {
+    characters,
+    bytes,
+    fitsInCharacters: characters <= ALWAYS_LOADED_DESCRIPTION_MAX_CHARACTERS,
+    fitsInBytes: bytes <= ALWAYS_LOADED_DESCRIPTION_MAX_CHARACTERS,
+  };
+}
+
 /** The first `limit` BYTES of a string, decoded back. */
 function head(value: string, limit: number): string {
   return Buffer.from(value, "utf8").subarray(0, limit).toString("utf8");
@@ -372,10 +398,13 @@ describe("the description budget (O23)", () => {
   it.each(
     buildStudioInventory()
       .filter((tool) => tool.alwaysLoad)
-      .map((tool) => [tool.publicName, [...tool.description].length] as const),
-  )("%s fits the always-loaded description bound whole (%i characters)", (_name, characters) => {
-    expect(characters).toBeLessThanOrEqual(ALWAYS_LOADED_DESCRIPTION_MAX_CHARACTERS);
-  });
+      .map((tool) => [tool.publicName, [...tool.description].length, tool.description] as const),
+  )(
+    "%s fits the always-loaded description bound whole (%i characters)",
+    (_name, _characters, description) => {
+      expect(boundReadings(description).fitsInCharacters).toBe(true);
+    },
+  );
 
   /**
    * THE SAME BOUND, COUNTED IN BYTES.
@@ -397,9 +426,29 @@ describe("the description budget (O23)", () => {
   it.each(
     buildStudioInventory()
       .filter((tool) => tool.alwaysLoad)
-      .map((tool) => [tool.publicName, byteLength(tool.description)] as const),
-  )("%s fits the same bound in UTF-8 bytes (%i bytes)", (_name, bytes) => {
-    expect(bytes).toBeLessThanOrEqual(ALWAYS_LOADED_DESCRIPTION_MAX_CHARACTERS);
+      .map((tool) => [tool.publicName, byteLength(tool.description), tool.description] as const),
+  )("%s fits the same bound in UTF-8 bytes (%i bytes)", (_name, _bytes, description) => {
+    expect(boundReadings(description).fitsInBytes).toBe(true);
+  });
+
+  it("the BYTE reading is the one that catches a non-ASCII description at the threshold", () => {
+    // The live hot set cannot prove this on its own: its longest description is
+    // 2047 bytes over 2046 characters, so replacing the byte count above with a
+    // second character count would keep the suite green and the gap would be
+    // back. This is the case that only the byte reading can fail - a synthetic
+    // description one code point UNDER the bound whose UTF-8 encoding is two
+    // bytes OVER it, which is what an edit that trades two ASCII characters for
+    // one arrow produces.
+    const synthetic = `${"a".repeat(ALWAYS_LOADED_DESCRIPTION_MAX_CHARACTERS - 1)}\u2192`;
+    const readings = boundReadings(synthetic);
+
+    expect(readings.characters).toBe(ALWAYS_LOADED_DESCRIPTION_MAX_CHARACTERS);
+    expect(readings.bytes).toBe(ALWAYS_LOADED_DESCRIPTION_MAX_CHARACTERS + 2);
+    // The character lint accepts it, so it is not the one holding the line.
+    expect(readings.fitsInCharacters).toBe(true);
+    // The byte lint refuses it. If `boundReadings.bytes` ever counted code
+    // points, this is the assertion that goes red.
+    expect(readings.fitsInBytes).toBe(false);
   });
 
   it("keeps the byte reading honest: the hot set is not pure ASCII", () => {
@@ -411,7 +460,10 @@ describe("the description budget (O23)", () => {
     // answer to that failure is to delete this case, not to add a character.
     const differing = buildStudioInventory()
       .filter((tool) => tool.alwaysLoad)
-      .filter((tool) => byteLength(tool.description) !== [...tool.description].length);
+      .filter((tool) => {
+        const readings = boundReadings(tool.description);
+        return readings.bytes !== readings.characters;
+      });
     expect(differing.length).toBeGreaterThan(0);
   });
 

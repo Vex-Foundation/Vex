@@ -13,6 +13,7 @@
 
 import type { PrequoteFamily } from "@vex-agent/db/repos/swap-prequotes.js";
 
+import { MORPHO_MARKET_LANE, MORPHO_VAULT_LANE, type MorphoLendLane } from "./identity/lane.js";
 import {
   BRIDGE_QUOTE_GATE_TARGET,
   MORPHO_LEND_QUOTE_GATE_TARGETS,
@@ -153,15 +154,18 @@ export type ExecuteGateRegistration =
   // history. That makes the kind alone insufficient to build an identity, so
   // every registration under these two kinds MUST name its `lane`, and the same
   // discriminator travels on the match input into `computePrequoteMatchHash`.
+  // The two VALUES come from `identity/lane.ts`, the one owner every side reads
+  // (the identity builders, the recorders' gate targets, and this table), so a
+  // lane cannot move on one side and stand still on the others.
   | {
     readonly kind: "lend_deposit";
-    readonly lane: "vault" | "market";
+    readonly lane: MorphoLendLane;
     readonly family: PrequoteFamily;
     readonly provider: string;
   }
   | {
     readonly kind: "lend_withdraw";
-    readonly lane: "vault" | "market";
+    readonly lane: MorphoLendLane;
     readonly family: PrequoteFamily;
     readonly provider: string;
   }
@@ -209,8 +213,8 @@ export const EXECUTE_GATE_TOOLS: Record<string, ExecuteGateRegistration> = {
   "pendle.lp.remove": { kind: "lp_remove", family: "eip155", provider: "pendle" },
   // Morpho vault deposit / withdraw match their dedicated `lend_deposit` /
   // `lend_withdraw` prequotes from `morpho.vault.quote` (E3b-2).
-  "morpho.vault.deposit": { kind: "lend_deposit", lane: "vault", family: "eip155", provider: "morpho" },
-  "morpho.vault.withdraw": { kind: "lend_withdraw", lane: "vault", family: "eip155", provider: "morpho" },
+  "morpho.vault.deposit": { kind: "lend_deposit", lane: MORPHO_VAULT_LANE, family: "eip155", provider: "morpho" },
+  "morpho.vault.withdraw": { kind: "lend_withdraw", lane: MORPHO_VAULT_LANE, family: "eip155", provider: "morpho" },
   // Morpho Blue market operations match their dedicated borrow-lane prequotes
   // from `morpho.market.quote` (E3c). ONE kind each, and the mapping is the
   // whole safety property: the gate reads its row under the kind as a predicate,
@@ -229,8 +233,8 @@ export const EXECUTE_GATE_TOOLS: Record<string, ExecuteGateRegistration> = {
   // cannot authorize a market supply and the reverse is equally impossible: the
   // gate builds a market identity here, whose material is a different length
   // over a different anchor, so the digests cannot meet.
-  "morpho.market.supply": { kind: "lend_deposit", lane: "market", family: "eip155", provider: "morpho" },
-  "morpho.market.withdraw": { kind: "lend_withdraw", lane: "market", family: "eip155", provider: "morpho" },
+  "morpho.market.supply": { kind: "lend_deposit", lane: MORPHO_MARKET_LANE, family: "eip155", provider: "morpho" },
+  "morpho.market.withdraw": { kind: "lend_withdraw", lane: MORPHO_MARKET_LANE, family: "eip155", provider: "morpho" },
 };
 
 // ── Recorder -> gate-row mapping (derived, read-only) ─────────────────────
@@ -245,7 +249,7 @@ export const EXECUTE_GATE_TOOLS: Record<string, ExecuteGateRegistration> = {
  */
 export interface PrequoteGateTarget {
   readonly kind: ExecuteGateRegistration["kind"];
-  readonly lane?: "vault" | "market";
+  readonly lane?: MorphoLendLane;
 }
 
 /**
@@ -304,7 +308,7 @@ export const PREQUOTE_QUOTE_WRITES: Readonly<Record<string, readonly PrequoteGat
   );
 
 /** The lane a gate registration carries, or `undefined` when its kind needs none. */
-export function laneOfGateRegistration(gate: ExecuteGateRegistration): "vault" | "market" | undefined {
+export function laneOfGateRegistration(gate: ExecuteGateRegistration): MorphoLendLane | undefined {
   return "lane" in gate ? gate.lane : undefined;
 }
 
