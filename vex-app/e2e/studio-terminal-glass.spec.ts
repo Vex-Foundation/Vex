@@ -52,7 +52,13 @@ import {
   expect,
   type VexDatabaseFixture,
 } from "./fixtures/vex-app-with-database.js";
-import { tourIsPresent, tourTo, TOUR_SKIP_REASON } from "./fixtures/studio-shell.js";
+import {
+  focusTerminalGrid,
+  openFirstProjectWithATerminal,
+  tourIsPresent,
+  tourTo,
+  TOUR_SKIP_REASON,
+} from "./fixtures/studio-shell.js";
 
 /** Lines the burst writes. Thirty times the 1000-row scrollback, so the buffer wraps. */
 const BURST_LINES = 30_000;
@@ -109,55 +115,6 @@ interface Contrast {
   readonly foreground: [number, number, number];
   readonly contrastMean: number;
   readonly contrastWorst: number;
-}
-
-/** Open a project and wait until its first terminal is attached. */
-async function openFirstProjectWithATerminal(page: Page): Promise<void> {
-  await tourTo(page, "appShell");
-  await page
-    .getByRole("radiogroup", { name: "Runtime mode" })
-    .getByRole("radio", { name: "Studio" })
-    .click();
-  await expect(page.locator('[data-vex-screen="appShell"]')).toHaveAttribute(
-    "data-vex-runtime-mode",
-    "studio",
-  );
-
-  const sidebar = page.locator('[data-vex-area="studio-sidebar"]');
-  await expect(sidebar).toBeVisible();
-  await sidebar.getByRole("button", { name: "New project" }).click();
-
-  const creator = page.getByRole("dialog", { name: "New project" });
-  await expect(creator).toBeVisible();
-  const projectName = `vex-glass-${Date.now().toString(36)}`;
-  await creator.getByLabel("Name").fill(projectName);
-  await creator.getByRole("button", { name: "Create", exact: true }).click();
-  await creator.getByRole("button", { name: "Close" }).click();
-  await expect(creator).toBeHidden();
-
-  // Anchored: the rail also renders an "Actions for <name>" menu button whose
-  // name contains the project name.
-  await sidebar.getByRole("button", { name: new RegExp(`^${projectName}`) }).click();
-
-  const center = page.locator('[data-vex-area="studio-center"]');
-  await expect(center).toBeVisible();
-  await expect(
-    center.getByRole("tablist", { name: "Studio terminals and files" }),
-  ).toBeVisible();
-  await expect(page.locator(".vex-terminal-surface--active")).toBeVisible();
-}
-
-/**
- * Put the caret in the terminal by clicking its grid. Not the helper textarea:
- * xterm parks it at 0x0 off-screen until the terminal is focused, and a
- * zero-size element is one Playwright refuses to click.
- */
-async function focusTerminal(page: Page): Promise<void> {
-  const screen = page.locator(".vex-terminal-surface--active .xterm-screen");
-  const box = await screen.boundingBox();
-  expect(box, "no terminal grid to focus").not.toBeNull();
-  if (box === null) throw new Error("unreachable");
-  await page.mouse.click(box.x + Math.min(40, box.width / 2), box.y + Math.min(40, box.height / 2));
 }
 
 /** Hide the tour navigator (QA scaffolding, never a shipped surface) for a capture. */
@@ -266,7 +223,7 @@ async function stopFrameCounter(page: Page): Promise<{ frames: number; ms: numbe
 }
 
 async function measureThroughput(page: Page): Promise<Throughput> {
-  await focusTerminal(page);
+  await focusTerminalGrid(page);
   const marker = `glassdone${Date.now().toString(36)}`;
   const center = page.locator('[data-vex-area="studio-center"]');
 
@@ -488,13 +445,7 @@ test("Studio terminal on glass: backdrop shows through, gutter and scroll throug
   // headless X server is light.
   await tourTo(page, "appShell");
   await pickTheme(page, "chronos");
-  await openFirstProjectWithATerminal(page);
-  // A login shell may block on a profile prompt (a `sudo` in .bashrc asks for
-  // a password on this machine); an interrupt lets the profile finish and
-  // hands the prompt over. Harmless on a shell that is already at its prompt.
-  await focusTerminal(page);
-  await page.keyboard.press("Control+C");
-  await page.waitForTimeout(1_000);
+  await openFirstProjectWithATerminal(page, "vex-glass-");
 
   /* ---- 1. THE GUTTER, at the two widths the owner named ---------------- */
   report["gutters"] = [
@@ -505,7 +456,7 @@ test("Studio terminal on glass: backdrop shows through, gutter and scroll throug
   save();
 
   /* ---- 2. THE PANE: renderer, filter, backgrounds, a screenshot -------- */
-  await focusTerminal(page);
+  await focusTerminalGrid(page);
   await page.keyboard.type("printf 'glass pane over the wallpaper\\n'; ls -la");
   await page.keyboard.press("Enter");
   await page.waitForTimeout(800);
@@ -524,7 +475,7 @@ test("Studio terminal on glass: backdrop shows through, gutter and scroll throug
   save();
 
   /* ---- 3. CONTRAST of the palette foreground over the painted pane ---- */
-  await focusTerminal(page);
+  await focusTerminalGrid(page);
   await page.keyboard.type("clear");
   await page.keyboard.press("Enter");
   await page.waitForTimeout(400);
@@ -541,7 +492,7 @@ test("Studio terminal on glass: backdrop shows through, gutter and scroll throug
   try {
     await pickTheme(page, "celeris");
     await page.waitForTimeout(400);
-    await focusTerminal(page);
+    await focusTerminalGrid(page);
     await page.keyboard.type("clear");
     await page.keyboard.press("Enter");
     await page.waitForTimeout(400);

@@ -41,7 +41,12 @@ import {
   expect,
   type VexDatabaseFixture,
 } from "./fixtures/vex-app-with-database.js";
-import { tourIsPresent, tourTo, TOUR_SKIP_REASON } from "./fixtures/studio-shell.js";
+import {
+  focusTerminalGrid,
+  openFirstProjectWithATerminal,
+  tourIsPresent,
+  TOUR_SKIP_REASON,
+} from "./fixtures/studio-shell.js";
 
 /**
  * How long to wait for a shell to echo. A cold `bash`/`cmd.exe` on a loaded CI
@@ -50,50 +55,39 @@ import { tourIsPresent, tourTo, TOUR_SKIP_REASON } from "./fixtures/studio-shell
  */
 const ECHO_TIMEOUT_MS = 30_000;
 
-/** Read everything the terminal's buffer currently holds, as text. */
+/**
+ * How fast the space is typed. `keyboard.type` with no delay sends a whole
+ * line inside one frame, and MEASURED on this machine that loses characters
+ * (`vexspacemtmudqvs` arrived at the shell as `vexspacemudqvs`): a burst that
+ * fast is not the keystroke stream this spec is about. 25 ms per key is a
+ * quick human and every character survives it.
+ */
+const TYPE_DELAY_MS = 25;
+
+/**
+ * Everything the terminal's buffer holds, as ONE string.
+ *
+ * xterm's DOM renderer emits one `div` per SCREEN row, so a shell line long
+ * enough to wrap is two divs; joining them with a newline would put a break
+ * inside the very echo this spec matches on. The rows are joined with nothing
+ * and each one's trailing pad is dropped, so a wrapped line reads back
+ * contiguous.
+ *
+ * The read is only possible because this build renders through xterm's DOM
+ * renderer: `.xterm-rows` belongs to it, and a terminal that got the WebGL
+ * addon has no text in the DOM at all. The renderer is asserted before the
+ * poll rather than assumed, so a machine whose GPU changes the answer fails
+ * with the reason instead of timing out on an empty buffer.
+ */
 async function terminalText(page: Page): Promise<string> {
   return page.evaluate(() => {
     const rows = document.querySelectorAll(
       ".vex-terminal-surface--active .xterm-rows > div",
     );
-    return [...rows].map((row) => row.textContent ?? "").join("\n");
+    return [...rows]
+      .map((row) => (row.textContent ?? "").replace(/\s+$/u, ""))
+      .join("");
   });
-}
-
-/** Open a project and wait until its first terminal is attached. */
-async function openFirstProjectWithATerminal(page: Page): Promise<void> {
-  await tourTo(page, "appShell");
-  await page
-    .getByRole("radiogroup", { name: "Runtime mode" })
-    .getByRole("radio", { name: "Studio" })
-    .click();
-  await expect(page.locator('[data-vex-screen="appShell"]')).toHaveAttribute(
-    "data-vex-runtime-mode",
-    "studio",
-  );
-
-  const sidebar = page.locator('[data-vex-area="studio-sidebar"]');
-  await expect(sidebar).toBeVisible();
-  await sidebar.getByRole("button", { name: "New project" }).click();
-
-  const creator = page.getByRole("dialog", { name: "New project" });
-  await expect(creator).toBeVisible();
-  const projectName = `vex-term-${Date.now().toString(36)}`;
-  await creator.getByLabel("Name").fill(projectName);
-  await creator.getByRole("button", { name: "Create", exact: true }).click();
-  await creator.getByRole("button", { name: "Close" }).click();
-  await expect(creator).toBeHidden();
-
-  await sidebar.getByRole("button", { name: new RegExp(`^${projectName}$`) }).click();
-
-  const center = page.locator('[data-vex-area="studio-center"]');
-  await expect(center).toBeVisible();
-  await expect(
-    center.getByRole("tablist", { name: "Studio terminals and files" }),
-  ).toBeVisible();
-  // The visible surface is the one the registry marked active; until that
-  // class is on, the pane measures the geometry of wherever it last was.
-  await expect(page.locator(".vex-terminal-surface--active")).toBeVisible();
 }
 
 test("Studio terminal: a space reaches the shell, the grid fills the pane, a link asks main", async ({
@@ -112,17 +106,28 @@ test("Studio terminal: a space reaches the shell, the grid fills the pane, a lin
   await expect(page.locator('[data-vex-screen="systemCheck"]')).toBeVisible();
   test.skip(!(await tourIsPresent(page)), TOUR_SKIP_REASON);
 
-  await openFirstProjectWithATerminal(page);
+  await openFirstProjectWithATerminal(page, "vex-term-");
 
   /* ---- 1. THE SPACE ---------------------------------------------------- */
 
   // Typed with real key events into the terminal's own textarea, which is where
   // a user's keystroke lands, so every listener between the document and xterm
   // gets its chance to swallow the key exactly as it would in production.
-  const textarea = page.locator(".vex-terminal-surface--active textarea").first();
-  await textarea.click();
+  await focusTerminalGrid(page);
+  await expect(
+    page.locator(".vex-terminal-surface--active textarea").first(),
+  ).toBeFocused();
   const marker = `vexspace${Date.now().toString(36)}`;
-  await page.keyboard.type(`echo ${marker} one two`);
+  await page.keyboard.type(`echo ${marker} one two`, { delay: TYPE_DELAY_MS });
+
+  // The evidence below is read out of the DOM rows, which exist only under
+  // xterm's DOM renderer. Say so here: an environment that hands out WebGL
+  // would otherwise turn this claim into a 30-second timeout on an empty
+  // string, with nothing in the failure naming the renderer as the reason.
+  await expect(
+    page.locator(".vex-terminal-surface--active .xterm-rows"),
+    "the buffer is read from the DOM rows, and this terminal renders through WebGL",
+  ).toBeAttached();
 
   // THE SHELL'S ECHO IS THE EVIDENCE, not our own write counter: the question
   // is whether the bytes reached the pty, and only the pty can answer it.
