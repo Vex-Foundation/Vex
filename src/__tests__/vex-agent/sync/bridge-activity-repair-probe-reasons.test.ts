@@ -72,6 +72,33 @@ function input() {
   };
 }
 
+/**
+ * The error viem 2.54.3 actually raises when an endpoint ANSWERS with a
+ * JSON-RPC `error` object, reproduced from a live probe of
+ * `https://arbitrum-one.publicnode.com` on 2026-09-04 (eth_chainId 42161, then
+ * `-32602` for a month-old receipt: "Archive requests require a personal
+ * token"). Shape, not text: `InvalidParamsRpcError` (numeric `code`) whose
+ * `cause` is `RpcRequestError` with the same numeric code.
+ */
+function refusedRequest(): Error {
+  const cause = new Error("Archive requests require a personal token. Get one at: https://www.allnodes.com/publicnode");
+  cause.name = "RpcRequestError";
+  Object.assign(cause, { code: -32602 });
+  const err = new Error("Invalid parameters were provided to the RPC method.", { cause });
+  err.name = "InvalidParamsRpcError";
+  Object.assign(err, { code: -32602 });
+  return err;
+}
+
+/** A transport failure as viem raises it: NO numeric code anywhere in the chain. */
+function transportFailure(): Error {
+  const socket = new Error("getaddrinfo ENOTFOUND rpc.example");
+  Object.assign(socket, { code: "ENOTFOUND" }); // a STRING code - not an answer.
+  const err = new Error("HTTP request failed.", { cause: socket });
+  err.name = "HttpRequestError";
+  return err;
+}
+
 function notFound(): Error {
   // viem carries the RPC URL in this message, which is why the code matches on
   // `name` and never on the text.
@@ -116,6 +143,36 @@ describe("verifyBridgeLegOnChain — one reason per real observation", () => {
     expect(await verifyBridgeLegOnChain(input())).toEqual({ verified: false, reason: "rpc_unreachable" });
   });
 
+  it("an endpoint that ANSWERED and refused is not 'unreachable' - the loop moves on and a later URL verifies", async () => {
+    // The owner's row 132, replayed at the loop level: the first endpoint echoes
+    // 42161 and refuses the archive read, the second serves the receipt.
+    rpcUrls = ["https://refuses.example", "https://serves.example"];
+    clientScript.push({ chainId: 42161, throws: refusedRequest() }, { chainId: 42161, receiptStatus: "success" });
+    expect(await verifyBridgeLegOnChain(input())).toEqual({ verified: true });
+  });
+
+  it("EVERY endpoint refused → rpc_refused_request, never rpc_unreachable", async () => {
+    rpcUrls = ["https://a", "https://b"];
+    clientScript.push({ chainId: 42161, throws: refusedRequest() }, { chainId: 42161, throws: refusedRequest() });
+    expect(await verifyBridgeLegOnChain(input())).toEqual({ verified: false, reason: "rpc_refused_request" });
+  });
+
+  it("transport failure, then a refusal, then 'no receipt yet' → fill_not_mined wins by precedence", async () => {
+    rpcUrls = ["https://a", "https://b", "https://c"];
+    clientScript.push(
+      { chainId: 42161, throws: transportFailure() },
+      { chainId: 42161, throws: refusedRequest() },
+      { chainId: 42161, throws: notFound() },
+    );
+    expect(await verifyBridgeLegOnChain(input())).toEqual({ verified: false, reason: "fill_not_mined" });
+  });
+
+  it("a refusal on the CHAIN-ID call also counts as an answer, not silence", async () => {
+    rpcUrls = ["https://a"];
+    clientScript.push({ chainId: undefined, throws: refusedRequest() });
+    expect(await verifyBridgeLegOnChain(input())).toEqual({ verified: false, reason: "rpc_refused_request" });
+  });
+
   it("a receipt with status success verifies", async () => {
     clientScript.push({ chainId: 42161, receiptStatus: "success" });
     expect(await verifyBridgeLegOnChain(input())).toEqual({ verified: true });
@@ -150,6 +207,10 @@ describe("multi-endpoint precedence is fixed, not URL-order dependent", () => {
     [["fill_not_mined", "rpc_unreachable"], "fill_not_mined"],
     [["chain_echo_mismatch", "rpc_unreachable"], "chain_echo_mismatch"],
     [["fill_not_mined", "unreadable_receipt_status"], "unreadable_receipt_status"],
+    [["rpc_unreachable", "rpc_refused_request"], "rpc_refused_request"],
+    [["rpc_refused_request", "rpc_unreachable"], "rpc_refused_request"],
+    [["rpc_refused_request", "chain_echo_mismatch"], "chain_echo_mismatch"],
+    [["rpc_refused_request"], "rpc_refused_request"],
     [["rpc_unreachable"], "rpc_unreachable"],
     [[], "no_safe_rpc"],
   ] as const)("%j → %s", (observations, expected) => {
