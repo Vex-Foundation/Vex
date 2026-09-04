@@ -205,3 +205,100 @@ export const EXECUTE_GATE_TOOLS: Record<string, ExecuteGateRegistration> = {
   "morpho.market.supply": { kind: "lend_deposit", lane: "market", family: "eip155", provider: "morpho" },
   "morpho.market.withdraw": { kind: "lend_withdraw", lane: "market", family: "eip155", provider: "morpho" },
 };
+
+// ── Recorder -> gate-row mapping (derived, read-only) ─────────────────────
+
+/**
+ * ONE gate row a quote tool's recorder can write.
+ *
+ * `lane` is present exactly when the kind needs it - `lend_deposit` and
+ * `lend_withdraw` are shared by the vault lane and the market lane, and the
+ * lane travels on the identity into `computePrequoteMatchHash`, so a row
+ * without its lane names two different operations at once.
+ */
+export interface PrequoteGateTarget {
+  readonly kind: ExecuteGateRegistration["kind"];
+  readonly lane?: "vault" | "market";
+}
+
+/**
+ * WHICH GATE ROWS EACH QUOTE TOOL ACTUALLY WRITES, keyed by the same quote
+ * toolId as {@link PREQUOTE_QUOTE_TOOLS}.
+ *
+ * READ-ONLY DERIVATION, NOT A SECOND GATE. The gate itself keeps reading
+ * `EXECUTE_GATE_TOOLS` + the match hash; nothing here can admit a prequote the
+ * gate would refuse. It exists because the published contract
+ * (`vex_ToolDescribe.quoteGate.authorizedBy`, `mcp/tool-describe-export.ts`)
+ * used to derive "which quote authorizes this execute" from `provider`
+ * equality alone, which advertised pairings the gate refuses: every Morpho
+ * quote for every Morpho execute, every Pendle quote for every Pendle execute.
+ * Provider is necessary and never sufficient - the gate reads its row under
+ * `kind` (and `lane`) as a predicate.
+ *
+ * EVERY ROW IS TAKEN FROM THE RECORDER THAT WRITES IT, never from convention:
+ *
+ * - `swap` (`record/swap.ts:165,185`) for the four venue swap quotes.
+ * - `bridge` (`record/bridge.ts:72`) for both bridge quotes.
+ * - `pendle.pt.quote` writes `redeem` (`record/pendle-pt.ts:71`) or `swap`
+ *   (`record/pendle-pt.ts:94,111`), decided from the Convert `action`.
+ * - `pendle.yt.quote` shares that recorder but its handler FIXES
+ *   `action: "swap"` (`pendle/handlers/yt/quote.ts:88`), so the redeem branch
+ *   is unreachable for it and a YT quote can never authorize a PT redeem.
+ * - `pendle.py.quote` writes `mint` (`record/pendle-py.ts:55`) or `redeem_py`
+ *   (`record/pendle-py.ts:90`).
+ * - `pendle.lp.quote` writes `lp_add` (`record/pendle-lp.ts:55`) or
+ *   `lp_remove` (`record/pendle-lp.ts:90`).
+ * - `morpho.vault.quote` writes `lend_deposit` or `lend_withdraw`
+ *   (`record/morpho-lend.ts:62`) on the VAULT lane
+ *   (`identity/hash/morpho-lend.ts:61,87`).
+ * - `morpho.market.quote` writes one of the six borrow-lane kinds
+ *   (`record/morpho-borrow.ts:71` through
+ *   `identity/morpho-borrow.ts:61-72 KIND_FOR_DIRECTION`), and its `supply` /
+ *   `withdraw` directions reuse the two lend kinds on the MARKET lane
+ *   (`identity/morpho-borrow.ts:199,213`).
+ */
+export const PREQUOTE_QUOTE_WRITES: Readonly<Record<string, readonly PrequoteGateTarget[]>> = {
+  "kyberswap.swap.quote": [{ kind: "swap" }],
+  "uniswap.swap.quote": [{ kind: "swap" }],
+  "trench.trade_quote": [{ kind: "swap" }],
+  "solana.swap.quote": [{ kind: "swap" }],
+  "khalani.quote.get": [{ kind: "bridge" }],
+  "relay.quote.get": [{ kind: "bridge" }],
+  "pendle.pt.quote": [{ kind: "swap" }, { kind: "redeem" }],
+  "pendle.yt.quote": [{ kind: "swap" }],
+  "pendle.py.quote": [{ kind: "mint" }, { kind: "redeem_py" }],
+  "pendle.lp.quote": [{ kind: "lp_add" }, { kind: "lp_remove" }],
+  "morpho.vault.quote": [
+    { kind: "lend_deposit", lane: "vault" },
+    { kind: "lend_withdraw", lane: "vault" },
+  ],
+  "morpho.market.quote": [
+    { kind: "lend_supply_collateral" },
+    { kind: "lend_withdraw_collateral" },
+    { kind: "lend_borrow" },
+    { kind: "lend_repay" },
+    { kind: "lend_deposit", lane: "market" },
+    { kind: "lend_withdraw", lane: "market" },
+  ],
+};
+
+/** The lane a gate registration carries, or `undefined` when its kind needs none. */
+export function laneOfGateRegistration(gate: ExecuteGateRegistration): "vault" | "market" | undefined {
+  return "lane" in gate ? gate.lane : undefined;
+}
+
+/**
+ * The quote toolIds whose recorder can write the row this execute is gated on,
+ * from the SAME provider. Sorted, so the published answer is deterministic.
+ */
+export function quoteToolsAuthorizing(gate: ExecuteGateRegistration): readonly string[] {
+  const lane = laneOfGateRegistration(gate);
+  return Object.entries(PREQUOTE_QUOTE_TOOLS)
+    .filter(([quoteToolId, registration]) => {
+      if (registration.provider !== gate.provider) return false;
+      const writes = PREQUOTE_QUOTE_WRITES[quoteToolId] ?? [];
+      return writes.some((target) => target.kind === gate.kind && target.lane === lane);
+    })
+    .map(([quoteToolId]) => quoteToolId)
+    .sort();
+}

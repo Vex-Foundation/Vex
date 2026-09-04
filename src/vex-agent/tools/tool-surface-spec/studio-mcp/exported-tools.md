@@ -55,14 +55,14 @@ free. Both texts live on the tool
 | name | title | lane | read only | destructive | always load | requires env | description bytes | returns | vex fee |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | AgentScan | Review this wallet's recorded activity | internal | yes | no | yes | - | 2046 | yes | none |
-| BridgeExecute | Execute a cross-chain bridge | internal | no | yes | yes | - | 2016 | yes | 25 bps |
-| BridgeExecuteRelay | Execute a Relay bridge | internal | no | yes | yes | - | 1938 | yes | 25 bps |
+| BridgeExecute | Execute a cross-chain bridge | internal | no | yes | yes | - | 2015 | yes | 25 bps |
+| BridgeExecuteRelay | Execute a Relay bridge | internal | no | yes | yes | - | 1937 | yes | 25 bps |
 | BridgeQuote | Quote a cross-chain bridge | internal | yes | no | yes | - | 1889 | yes | none |
 | BridgeQuoteRelay | Quote a Relay bridge | internal | yes | no | yes | - | 1110 | yes | none |
 | BridgeStatus | Check a bridge order's status | internal | yes | no | yes | - | 1548 | yes | none |
 | ChainRead | Read raw EVM chain data | internal | yes | no | yes | - | 1326 | yes | none |
-| SwapExecute | Execute a token swap | internal | no | yes | yes | - | 2048 | yes | 25 bps |
-| SwapExecuteUniswap | Execute a Uniswap swap | internal | no | yes | yes | - | 2047 | yes | 25 bps |
+| SwapExecute | Execute a token swap | internal | no | yes | yes | - | 2047 | yes | 25 bps |
+| SwapExecuteUniswap | Execute a Uniswap swap | internal | no | yes | yes | - | 2046 | yes | 25 bps |
 | SwapQuote | Quote a token swap | internal | yes | no | yes | - | 2047 | yes | none |
 | SwapQuoteUniswap | Quote a Uniswap swap | internal | yes | no | yes | - | 2017 | yes | none |
 | TokenCheck | Check an EVM token for honeypot and tax | internal | yes | no | yes | - | 953 | yes | none |
@@ -70,14 +70,14 @@ free. Both texts live on the tool
 | TwitterAccount | Read Twitter accounts and posts | internal | yes | no | yes | RETTIWT_API_KEY | 2039 | yes | none |
 | UnitsConvert | Convert token amounts and units | internal | yes | no | yes | - | 1393 | yes | none |
 | WalletBalances | Read wallet balances across chains | internal | yes | no | yes | - | 2032 | yes | none |
-| WalletEvmTransactionConfirm | Broadcast a prepared EVM transaction | internal | no | yes | yes | - | 2031 | yes | 25 bps |
+| WalletEvmTransactionConfirm | Broadcast a prepared EVM transaction | internal | no | yes | yes | - | 2030 | yes | 25 bps |
 | WalletEvmTransactionPrepare | Prepare an EVM transaction | internal | no | no | yes | - | 1945 | yes | 25 bps |
-| WalletSendConfirm | Broadcast a prepared wallet transfer | internal | no | yes | yes | - | 1901 | yes | none |
+| WalletSendConfirm | Broadcast a prepared wallet transfer | internal | no | yes | yes | - | 1900 | yes | none |
 | WalletSendPrepare | Prepare a wallet transfer | internal | no | no | yes | - | 1680 | yes | none |
-| WalletSolanaTransactionConfirm | Broadcast a prepared Solana transaction | internal | no | yes | yes | - | 1816 | yes | none |
+| WalletSolanaTransactionConfirm | Broadcast a prepared Solana transaction | internal | no | yes | yes | - | 1815 | yes | none |
 | WalletSolanaTransactionPrepare | Prepare a Solana transaction | internal | no | no | yes | - | 1898 | yes | none |
 | WalletTrackToken | Track a token in the local wallet view | internal | no | no | yes | - | 1044 | yes | none |
-| WalletWrapConfirm | Broadcast a prepared wrap or unwrap | internal | no | yes | yes | - | 2024 | yes | none |
+| WalletWrapConfirm | Broadcast a prepared wrap or unwrap | internal | no | yes | yes | - | 2023 | yes | none |
 | WalletWrapPrepare | Prepare a native / wrapped-native conversion | internal | no | no | yes | - | 2022 | yes | none |
 | vex_ToolDescribe | Read one tool's whole contract | internal | yes | no | yes | - | 1812 | yes | none |
 | vex_ToolSearch | Search the protocol tool catalog | internal | yes | no | yes | - | 1500 | yes | none |
@@ -111,7 +111,7 @@ free. Both texts live on the tool
 
 | name | title | lane | read only | destructive | always load | requires env | description bytes | returns | vex fee |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| khalani__bridge_execute | Execute a Khalani bridge | protocol | no | yes | no | - | 3472 | - | - |
+| khalani__bridge_execute | Execute a Khalani bridge | protocol | no | yes | no | - | 3471 | - | - |
 | khalani__bridge_quote_get | Quote a Khalani bridge | protocol | yes | no | no | - | 2304 | - | none (read) |
 | khalani__chains_list | List Khalani bridge chains | protocol | yes | no | no | - | 850 | - | none (read) |
 | khalani__order_get | Read one Khalani bridge order | protocol | yes | no | no | - | 990 | - | none (read) |
