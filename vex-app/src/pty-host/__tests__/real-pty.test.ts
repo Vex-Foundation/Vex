@@ -1007,16 +1007,24 @@ describe("a real curses program", () => {
       // without this the assertions below would also hold for a `cat`.
       //
       // MEASURED against this machine's `less` and `xterm-256color` terminfo
-      // rather than assumed: the complete set it emits is `?1049h` (alternate
-      // screen), `22;0;0t` (window title stack), `?1h` (application cursor
-      // keys), `7m`/`27m` (reverse video for the status line) and `K` (erase to
-      // end of line). It uses NO absolute cursor addressing - it repaints by
-      // writing newlines - so asserting on a `H` sequence here would be testing
-      // a convention this program does not follow. That assertion was written
-      // first, and the live stream is what corrected it.
+      // rather than assumed: on Linux the complete set it emits is `?1049h`
+      // (alternate screen), `22;0;0t` (window title stack), `?1h` (application
+      // cursor keys), `7m`/`27m` (reverse video for the status line) and `K`
+      // (erase to end of line). It uses NO absolute cursor addressing - it
+      // repaints by writing newlines - so asserting on a `H` sequence here
+      // would be testing a convention this program does not follow. That
+      // assertion was written first, and the live stream is what corrected it.
+      //
+      // The witnesses are the two sequences EVERY platform emits by the time
+      // the second page is on screen. Reverse video is not one of them: ConPTY
+      // re-encodes the stream on its own schedule (it also adds absolute
+      // addressing of its own), and the same commit's Windows lane saw `7m`
+      // in one vitest step and not in the next (CI run 33804547267, job
+      // 100811769277: the full run passed, the pty-host-alone run failed on
+      // exactly this line). A witness that depends on when the attribute
+      // repaint lands is a witness to timing, not to the mirror.
       const stream = dataOf(port);
       expect(stream).toContain("[?1049h");
-      expect(stream).toContain("[7m");
       expect(stream).toContain("[K");
 
       // The mirror's serialization must render back to the rows that are on
