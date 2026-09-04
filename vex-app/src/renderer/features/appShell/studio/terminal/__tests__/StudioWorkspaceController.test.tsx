@@ -2035,3 +2035,22 @@ describe("file tabs across a restart", () => {
     expect(listedNodeIds).toEqual([]);
   });
 });
+
+describe("the workspace on glass", () => {
+  it("is a glass pane inset 8px from a column that paints nothing", async () => {
+    await renderOpened();
+    const card = document.querySelector("[data-vex-workspace-card]");
+    expect(card).not.toBeNull();
+    // The column: the backdrop is the wall, so no ground of its own, and the
+    // 8px padding is the gutter's outer half.
+    expect(card?.className).not.toMatch(/\bbg-/);
+    expect(card?.className).toContain("p-2");
+    // The pane: the glass tier by name (the design guard bans the utility),
+    // rounded, and with no border - the edge light in glass.css is the edge.
+    const pane = card?.firstElementChild;
+    expect(pane?.className).toContain("vex-glass-pane");
+    expect(pane?.className).toContain("rounded-xl");
+    expect(pane?.className).not.toMatch(/\bborder\b/);
+    expect(pane?.className).not.toContain("bg-surface");
+  });
+});

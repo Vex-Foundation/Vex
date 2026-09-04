@@ -186,29 +186,42 @@ describe("STUDIO_KEYBINDINGS: the table itself", () => {
  * VS Code proves the same property by listing its command IDs and asserting
  * membership (`terminalInstance.test.ts:421`, `DEFAULT_COMMANDS_TO_SKIP_SHELL`).
  * Ours is derived rather than listed, so the assertion is the derivation's own
- * invariant: exactly the chords a keypress made in a terminal could resolve to,
- * on every platform, and nothing else.
+ * invariant: exactly the chords a keypress made in a terminal could resolve to
+ * AND that an owner will answer, on every platform, and nothing else.
+ *
+ * The `handled` set is stated here rather than taken from the hook, so these
+ * rows prove the DERIVATION. That the hook's real handler map agrees with the
+ * table's `reserved` flags is a separate, equally necessary assertion, and it
+ * lives in `useStudioKeybindings.test.tsx` where the map is.
  */
+const ALL_INTENTS: ReadonlySet<StudioIntent> = new Set(
+  STUDIO_KEYBINDINGS.map((binding) => binding.intent),
+);
+/** What Studio actually wires: every intent except the reserved rows. */
+const HANDLED_INTENTS: ReadonlySet<StudioIntent> = new Set(
+  STUDIO_KEYBINDINGS.filter((binding) => binding.reserved !== true).map(
+    (binding) => binding.intent,
+  ),
+);
+
 describe("studioTerminalSkipChords: what xterm must not send to the shell", () => {
   for (const platform of PLATFORMS) {
-    it(`equals the workspace and terminal chords on ${platform}`, () => {
-      const expected = STUDIO_KEYBINDINGS.filter((binding) => {
-        const surfaces = surfacesOf(binding);
-        return surfaces.includes("terminal") || surfaces.includes("workspace");
-      }).flatMap((binding) => studioChordsFor(binding, platform).map(chordKey));
-      expect([...studioTerminalSkipChords(platform)].map(chordKey).sort()).toEqual(
-        [...expected].sort(),
-      );
+    it(`equals the handled terminal-surface chords on ${platform}`, () => {
+      const expected = STUDIO_KEYBINDINGS.filter(
+        (binding) =>
+          binding.reserved !== true && surfacesOf(binding).includes("terminal"),
+      ).flatMap((binding) => studioChordsFor(binding, platform).map(chordKey));
+      expect(
+        [...studioTerminalSkipChords(platform, HANDLED_INTENTS)].map(chordKey).sort(),
+      ).toEqual([...expected].sort());
     });
 
     /**
      * The other half, and the one that matters to a person: every chord the
-     * resolver WOULD answer with the caret in a shell is refused, and a
-     * keystroke the resolver has no row for is left to the shell. `Ctrl+C`,
-     * `Ctrl+D`, `Ctrl+R` and `Ctrl+L` are named explicitly because taking any
-     * of them would break the terminal to gain a shortcut.
+     * resolver WOULD answer with the caret in a shell, AND that has an owner, is
+     * refused; everything else is left to the shell.
      */
-    it(`refuses exactly what the terminal surface resolves on ${platform}`, () => {
+    it(`refuses exactly what the terminal surface resolves and an owner answers on ${platform}`, () => {
       for (const binding of STUDIO_KEYBINDINGS) {
         for (const chord of studioChordsFor(binding, platform)) {
           const event = press(chord, platform);
@@ -217,10 +230,11 @@ describe("studioTerminalSkipChords: what xterm must not send to the shell", () =
             dialogOpen: false,
             platform,
           });
+          const shouldSkip = resolved !== null && HANDLED_INTENTS.has(resolved);
           expect(
-            isStudioTerminalChord(event, platform),
+            isStudioTerminalChord(event, platform, HANDLED_INTENTS),
             `${binding.intent} on ${platform}`,
-          ).toBe(resolved !== null);
+          ).toBe(shouldSkip);
         }
       }
     });
@@ -234,10 +248,70 @@ describe("studioTerminalSkipChords: what xterm must not send to the shell", () =
           shiftKey: false,
           altKey: false,
         };
-        expect(isStudioTerminalChord(event, platform), code).toBe(false);
+        expect(isStudioTerminalChord(event, platform, HANDLED_INTENTS), code).toBe(false);
       }
     });
+
+    /**
+     * THE TWO KEYS THE PROJECTION USED TO EAT, named individually because each
+     * was a separate defect with the same shape: xterm refused to encode them
+     * and then no owner acted, so they reached NEITHER Studio NOR the pty.
+     *
+     * Revert either half of the fix - drop the `reserved` filter, or put
+     * `terminal` back in `keepTabOpen`'s `when` - and the matching row goes red.
+     */
+    it(`lets Ctrl+Backquote and Ctrl+Enter reach the shell on ${platform}`, () => {
+      const control = platform === "darwin";
+      const toggleTerminal: StudioKeyEvent = {
+        code: "Backquote",
+        ctrlKey: true,
+        metaKey: false,
+        shiftKey: false,
+        altKey: false,
+      };
+      const keepTabOpen: StudioKeyEvent = {
+        code: "Enter",
+        ctrlKey: !control,
+        metaKey: control,
+        shiftKey: false,
+        altKey: false,
+      };
+      expect(isStudioTerminalChord(toggleTerminal, platform, HANDLED_INTENTS)).toBe(false);
+      expect(isStudioTerminalChord(keepTabOpen, platform, HANDLED_INTENTS)).toBe(false);
+    });
+
+    it(`still refuses Ctrl+Enter if an owner ever claims it on ${platform}`, () => {
+      // The skip list is a projection of TWO facts, and this proves the second
+      // one is live rather than incidental: `keepTabOpen` is handled, so if its
+      // `when` listed `terminal` the chord would be refused again.
+      expect(
+        isStudioTerminalChord(
+          { code: "Enter", ctrlKey: true, metaKey: false, shiftKey: false, altKey: false },
+          platform,
+          ALL_INTENTS,
+        ),
+      ).toBe(false);
+      // `keepTabOpen` does not apply on `terminal` at all, so no handler set can
+      // bring it back - which is the invariant, stated as an experiment.
+      expect(
+        resolveStudioKeybinding(
+          { code: "Enter", ctrlKey: true, metaKey: false, shiftKey: false, altKey: false },
+          { surface: "terminal", dialogOpen: false, platform: "win32" },
+        ),
+      ).toBeNull();
+    });
   }
+});
+
+describe("keepTabOpen applies where a preview tab can exist", () => {
+  it.each(["workspace", "viewer"] as const)("resolves on %s", (surface) => {
+    expect(
+      resolveStudioKeybinding(
+        { code: "Enter", ctrlKey: true, metaKey: false, shiftKey: false, altKey: false },
+        { surface, dialogOpen: false, platform: "win32" },
+      ),
+    ).toBe("keepTabOpen");
+  });
 });
 
 describe("resolveStudioKeybinding: every row, every platform", () => {
