@@ -32,7 +32,7 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { Result } from "@shared/ipc/result.js";
 import type { ProjectList } from "@shared/schemas/projects.js";
 
