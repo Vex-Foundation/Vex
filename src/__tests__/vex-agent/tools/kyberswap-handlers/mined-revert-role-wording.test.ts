@@ -189,7 +189,7 @@ beforeEach(() => {
       approvedClaim(
         routeResponse.data.routeSummary,
         typeof params.slippageBps === "number" ? params.slippageBps : VEX_DEFAULT_SLIPPAGE_BPS,
-        { legs: approvedLegs },
+        { legs: approvedLegs, amountInRaw: 10n ** 18n },
       ),
   );
   mockBuildRoute.mockResolvedValue({

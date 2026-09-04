@@ -193,6 +193,9 @@ export const executeHandler: ProtocolHandler = async (p, context): Promise<ToolR
       tokenIn, tokenOut, amountIn, amountInRaw, slippage, routerAddress,
       approvedSummary, approvedSnapshot: claimed.snapshot,
       safetyCheckUnavailable,
+      // The claimed row's own Vex fee statement, carried into Phase A so the
+      // fee this build will sign can be held to the one the card stated.
+      approvedVexFee: claimed.vexFee,
     });
   } catch (err) {
     return failPreBroadcast(toolId, p, sessionId, walletAddress, chainId, slug, legInput(tokenIn), legInput(tokenOut), err, true);

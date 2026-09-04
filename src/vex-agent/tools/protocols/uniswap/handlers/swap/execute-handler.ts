@@ -31,7 +31,7 @@ import { noteHandlerPendingReason } from "@vex-agent/tools/protocols/runtime/pen
 import type { ToolResult } from "../../../../types.js";
 import type { ProtocolExecutionContext } from "../../../types.js";
 import { str, fail } from "../../../handler-helpers.js";
-import { TOOL_ID, PROTOCOL } from "./protocol-id.js";
+import { TOOL_ID, QUOTE_TOOL_ID, PROTOCOL } from "./protocol-id.js";
 import { requireDeployment, routerFor } from "./deployment.js";
 import { resolveUniswapToken } from "./token-resolution.js";
 import { resolveUniswapSlippageBps } from "./slippage.js";
@@ -55,6 +55,8 @@ import {
 } from "./fee/index.js";
 import { VexError, ErrorCodes } from "../../../../../../errors.js";
 import { claimUniswapExecutionSnapshot } from "../../../prequote/claim.js";
+import { toVexFeePreview } from "../../../prequote/fee-disclosure.js";
+import { revalidateVexFeeStatement } from "@tools/vex-fee/fee-revalidation.js";
 import { canonicalWrapPairRefusal } from "../../../wrap-pair-refusal.js";
 import {
   compareUniswapExecutionInputs,
@@ -186,6 +188,43 @@ export async function executeUniswapSwap(
       p,
       { chainId: deployment.chainId, chainSlug: deployment.key, walletAddress, sessionId, tokenIn, tokenOut },
       new VexError(ErrorCodes.KYBER_PRICE_FLOOR_VIOLATED, drift.message, drift.hint),
+    );
+  }
+
+  // ── THE VEX FEE STATEMENT THE HUMAN READ, held against this execution's ──
+  //
+  // `compareUniswapExecutionInputs` above binds this execute to the SNAPSHOT.
+  // This binds it to the block the approval CARD stated and the row-disclosure
+  // digest covered - a different authority, and the one a person actually read.
+  // It matters because the disposition is decided by a LIVE oracle: a token
+  // flagged fee-on-transfer or honeypot between the quote and the click turns a
+  // charged fee into a skipped one, and a token that clears the oracle on the
+  // second read turns a skipped fee into a charged one. Either direction is a
+  // fee nobody consented to.
+  //
+  // Both sides go through the recorder's own projection, so the comparison is
+  // between two blocks of the same validated shape rather than between a
+  // disclosure and a memory of one. It runs BEFORE the signing wallet is
+  // resolved, so a refusal here has decrypted no key and signed no leg -
+  // neither the allowance, nor the swap, nor the fee transfer.
+  const feeVerdict = revalidateVexFeeStatement(
+    claimed.vexFee,
+    toVexFeePreview(QUOTE_TOOL_ID, feeCharge.disclosure),
+  );
+  if (!feeVerdict.ok) {
+    logger.warn("protocol.vex_fee.presign_refused", {
+      toolId: TOOL_ID,
+      reason: feeVerdict.reason,
+      movedFields: feeVerdict.movedFields,
+    });
+    return failPreBroadcast(
+      p,
+      { chainId: deployment.chainId, chainSlug: deployment.key, walletAddress, sessionId, tokenIn, tokenOut },
+      new VexError(
+        ErrorCodes.SWAP_FAILED,
+        `Refused before signing: ${feeVerdict.summary} is not what the approved quote stated.`,
+        `Nothing was signed. Request a fresh ${UNISWAP_FRESH_QUOTE_TOOL} and approve that one.`,
+      ),
     );
   }
 

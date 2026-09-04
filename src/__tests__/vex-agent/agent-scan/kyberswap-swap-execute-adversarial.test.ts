@@ -254,6 +254,9 @@ describe("kyberswap.swap.execute — adversarial (FIX2-W0)", () => {
         approvedClaim(
           approvedSummary,
           typeof params.slippageBps === "number" ? params.slippageBps : VEX_DEFAULT_SLIPPAGE_BPS,
+          // The atomic amount the execute parses from `amountIn: "1"` at 18
+          // decimals, which is what the row's Vex fee block was stated over.
+          { amountInRaw: 10n ** 18n },
         ),
     );
     // REAL router calldata (re-encoded from a captured build) — the handler
