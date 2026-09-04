@@ -43,7 +43,7 @@ import { liveProtocolManifests } from "./retrieval-eval-harness.js";
  * and recapture the affected baselines with the lane's `--update` command. Do
  * not silence the test by deriving the number from the catalog.
  */
-export const PINNED_LIVE_CATALOG_TOOL_COUNT = 142;
+export const PINNED_LIVE_CATALOG_TOOL_COUNT = 145;
 
 /** Active manifests in advertised namespaces. Independent of process env. */
 export function liveCatalogToolCount(): number {

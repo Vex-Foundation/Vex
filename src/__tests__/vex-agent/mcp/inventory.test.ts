@@ -80,9 +80,9 @@ describe("the exported inventory covers exactly the export scope", () => {
     // `pools__holder_rewards_get`) and the two Virtuals market-history reads
     // (`virtuals__agent_trades_list`, `virtuals__agent_candles_list`). All four
     // are read-only and none signs.
-    expect(inventory).toHaveLength(171);
+    expect(inventory).toHaveLength(172);
     expect(inventory.filter((t) => t.kind === "internal")).toHaveLength(27);
-    expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(144);
+    expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(145);
   });
 
   it("keeps WebResearch OUT of tools/list while the in-app registry keeps it", () => {

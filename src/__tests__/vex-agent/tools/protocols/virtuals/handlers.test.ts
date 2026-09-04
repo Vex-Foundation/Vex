@@ -102,8 +102,11 @@ describe("registry parity", () => {
     expect(Object.keys(VIRTUALS_HANDLERS).sort()).toEqual(manifest);
   });
 
-  it("declares six read-only tools", () => {
-    expect(VIRTUALS_TOOLS).toHaveLength(6);
+  it("declares seven read-only tools", () => {
+    // 6 -> 7 with `virtuals.creator_fees` (PR-C4). It stays read-only on
+    // purpose: the payout it reports is executed by Virtuals' own backend under
+    // SWAP_ROLE, so there is no transaction this namespace could sign.
+    expect(VIRTUALS_TOOLS).toHaveLength(7);
     for (const tool of VIRTUALS_TOOLS) {
       expect(tool.mutating).toBe(false);
       expect(tool.actionKind).toBe("read");
