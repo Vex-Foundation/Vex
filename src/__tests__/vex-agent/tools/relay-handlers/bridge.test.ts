@@ -171,6 +171,7 @@ const {
   boundSkippedVexFee,
   matchedPrequoteWithVexFee,
 } = await import("../../../tools/bridge-fee/bound-vex-fee.js");
+const { BRIDGE_FEE_RECEIVER_EVM } = await import("@tools/bridge-fee/index.js");
 const { DependentLegGasEstimateError, DEPENDENT_LEG_ESTIMATE_MARKER } =
   await import("@tools/evm-chains/dependent-leg-gas-estimate.js");
 
@@ -363,6 +364,118 @@ describe("relay.bridge - the fee must still match the statement the approval was
     await runBridge({ ...PARAMS, dryRun: true });
     expect(mockFindFreshMatchedPrequote).not.toHaveBeenCalled();
     expect(mockSign).not.toHaveBeenCalled();
+  });
+
+  /**
+   * losing the execute-gate registration is an internal
+   * AUTHORIZATION failure, not permission to sign.
+   *
+   * `not_gated` is what the gate answers when this tool has no entry in the
+   * execute-gate registry - the exact state a registry refactor produces. The
+   * handler used to read that as "no approved statement exists to contradict"
+   * and carry on to the signer, so the loss of the fee's entire authority became
+   * a licence to take it. This drives the public handler with the registration
+   * absent and proves the refusal happens before any signer, nonce reservation,
+   * staging or broadcast.
+   */
+  it("REFUSES when this fee-bearing tool has no registered quote gate at all", async () => {
+    mockFindFreshMatchedPrequote.mockResolvedValue({ ok: false, reason: "not_gated" });
+
+    const result = await runBridge();
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("fee-bearing tool with no registered quote gate");
+    expect(result.output).toContain("no funds moved");
+    // Not phrased as a re-quote: re-quoting cannot restore a missing mapping.
+    expect(result.output).not.toContain("approve the fresh quote");
+    assertNothingHappened();
+    expect(mockPreFail).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The typed reason must survive to the RESULT, not only to a log line. An
+   * agent that reads "relay.bridge failed" cannot tell a moved fee statement
+   * (re-quote) from a missing registration (report a build defect).
+   */
+  describe("the typed refusal reason reaches the tool result", () => {
+    function refusalOf(result: { readonly data?: Record<string, unknown> }): Record<string, unknown> {
+      const block = result.data?._vexFeeRefusal;
+      if (block === undefined || block === null || typeof block !== "object") {
+        throw new Error("expected the result to carry a typed _vexFeeRefusal block");
+      }
+      return block as Record<string, unknown>;
+    }
+
+    it("carries `vex_fee_statement_changed` and the field that moved", async () => {
+      mockFindFreshMatchedPrequote.mockResolvedValue(matchedPrequoteWithVexFee(boundChargedVexFee({
+        feeAmountRaw: "2000000000000", netAmountRaw: "998000000000000", totalDebitedRaw: "1000000000000000",
+      })));
+
+      const refusal = refusalOf(await runBridge());
+
+      expect(refusal.reason).toBe("vex_fee_statement_changed");
+      expect(refusal.movedFields).toEqual(["feeAmountRaw"]);
+      expect(String(refusal.remediation)).toContain("relay__bridge_quote_get");
+    });
+
+    it("carries `vex_fee_statement_missing` when the bound row states no fee", async () => {
+      mockFindFreshMatchedPrequote.mockResolvedValue(matchedPrequoteWithVexFee(undefined));
+
+      expect(refusalOf(await runBridge()).reason).toBe("vex_fee_statement_missing");
+    });
+
+    it("carries `vex_fee_gate_unregistered` and a remedy that is not a re-quote", async () => {
+      mockFindFreshMatchedPrequote.mockResolvedValue({ ok: false, reason: "not_gated" });
+
+      const refusal = refusalOf(await runBridge());
+
+      expect(refusal.reason).toBe("vex_fee_gate_unregistered");
+      expect(String(refusal.remediation)).toContain("build defect");
+    });
+
+    it("never leaks the treasury address into the typed block", async () => {
+      mockFindFreshMatchedPrequote.mockResolvedValue(matchedPrequoteWithVexFee(boundChargedVexFee({
+        feeAmountRaw: "2000000000000", netAmountRaw: "998000000000000", totalDebitedRaw: "1000000000000000",
+      })));
+
+      expect(JSON.stringify(refusalOf(await runBridge()))).not.toMatch(/0x[0-9a-fA-F]{40}/);
+    });
+  });
+
+  /**
+   * PIN, DO NOT RE-DERIVE (fixed decision 2026-09-04, recorded beside
+   * `vexFeePreviewSchema`).
+   *
+   * The fee leg signs after the origin deposit has already confirmed. A reviewer
+   * proposed re-running authoritative eligibility inside that window; the owner
+   * decision is that the APPROVED STATEMENT is the authority there, so the leg
+   * signs exactly the amount and the receiver that were compared before anything
+   * was signed - whatever a later eligibility read would say.
+   *
+   * Proved on the SIGNER, not on the wording: the fee transfer's calldata is the
+   * ERC-20 `transfer(receiver, amount)` this bridge planned.
+   */
+  it("signs exactly the approved fee amount and receiver, even after the deposit confirms", async () => {
+    const result = await runBridge();
+    expect(outputOf(result).status).toBe("pending");
+
+    // Two signed legs: the deposit, then the fee transfer.
+    expect(mockSign).toHaveBeenCalledTimes(2);
+    const feeCall = mockSign.mock.calls[1] as unknown[];
+    const request = feeCall[2] as { readonly to: string; readonly data: string; readonly value: bigint };
+
+    // 25 bps of 1e15 wei, the figure the disclosure on this same result states.
+    const disclosed = outputOf(result).vexFee as Record<string, unknown>;
+    expect(disclosed.feeAmountRaw).toBe("2500000000000");
+    // This route's origin currency is native, so the transfer IS the value: the
+    // amount signed and the receiver are both read straight off the request.
+    expect(String(request.value)).toBe(String(disclosed.feeAmountRaw));
+    expect(request.to.toLowerCase()).toBe(BRIDGE_FEE_RECEIVER_EVM.toLowerCase());
+    expect(request.data).toBe("0x");
+    // Nothing re-read eligibility between the deposit and the fee: the gate was
+    // consulted exactly once, in the pre-sign window.
+    expect(mockFindFreshMatchedPrequote).toHaveBeenCalledTimes(1);
+    expect(firstCallOrder(mockFindFreshMatchedPrequote)).toBeLessThan(firstCallOrder(mockSign));
   });
 });
 

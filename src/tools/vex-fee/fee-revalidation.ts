@@ -44,6 +44,7 @@
  * would take that decision away from them.
  */
 
+import { VexError } from "../../errors.js";
 import type { VexFeePreview } from "@vex-agent/tools/protocols/prequote/fee-disclosure.js";
 
 /** Digits only - the shape the persisted block's amount fields are validated to. */
@@ -197,4 +198,69 @@ function sameAddress(a: string, b: string): boolean {
   if (a === b) return true;
   if (!EVM_ADDRESS.test(a) || !EVM_ADDRESS.test(b)) return false;
   return a.toLowerCase() === b.toLowerCase();
+}
+
+/**
+ * The typed refusal, as it must reach the PUBLIC tool result.
+ *
+ * Rule 04 layer 3: a trusted agent-facing error is "sanitized, concrete enough
+ * to remediate, bounded, and correlated". Until this existed, every venue folded
+ * a fee-statement refusal into its own generic swap failure code
+ * (`SWAP_FAILED`, `KYBER_MALFORMED_PARAMS`) and the only machine-readable trace
+ * of WHY was a log line an agent cannot read - so an agent could not tell "the
+ * approved fee moved, re-quote" apart from "the swap failed", which have
+ * different remedies.
+ *
+ * It is deliberately data on the result rather than a new `ErrorCodes` member:
+ * the code vocabulary is a shared contract owned elsewhere, and what an agent
+ * needs here is the bounded reason plus the fields that moved. Amounts and
+ * addresses are absent by construction - `movedFields` names figures, never
+ * their values.
+ */
+export interface VexFeeRefusalDisclosure {
+  readonly reason: VexFeeRevalidationReason;
+  readonly movedFields: readonly VexFeeBoundField[];
+  /** The one recovery, in the venue's own vocabulary. */
+  readonly remediation: string;
+}
+
+/**
+ * The `data` block a refusing tool result carries, under a Vex-authored
+ * `_`-prefixed key - the same convention `_executionId` already uses on these
+ * results, so no consumer of the documented fields is affected.
+ */
+export function vexFeeRefusalData(
+  disclosure: VexFeeRefusalDisclosure,
+): Record<string, unknown> {
+  return { _vexFeeRefusal: { ...disclosure, movedFields: [...disclosure.movedFields] } };
+}
+
+/**
+ * The refusal as a THROWN value, for the venues whose pre-sign phase reports by
+ * throwing (KyberSwap's Phase A).
+ *
+ * It exists so a phase that can only throw still reaches the public result with
+ * its typed reason intact: the recorder at the catch site asks
+ * `vexFeeRefusalOf` and merges the disclosure into the tool result's `data`.
+ * Without it the reason survives only in a log line, which is the collapse rule
+ * 04 forbids.
+ *
+ * `code` stays the venue's own existing `ErrorCodes` member: the durable failure
+ * mapping and every consumer of that vocabulary are unchanged by this class.
+ */
+export class VexFeeStatementRefusal extends VexError {
+  constructor(
+    code: string,
+    message: string,
+    hint: string,
+    readonly disclosure: VexFeeRefusalDisclosure,
+  ) {
+    super(code, message, hint);
+    this.name = "VexFeeStatementRefusal";
+  }
+}
+
+/** The disclosure a thrown fee refusal carries, or `undefined` for anything else. */
+export function vexFeeRefusalOf(err: unknown): VexFeeRefusalDisclosure | undefined {
+  return err instanceof VexFeeStatementRefusal ? err.disclosure : undefined;
 }

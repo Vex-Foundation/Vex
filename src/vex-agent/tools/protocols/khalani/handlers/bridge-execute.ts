@@ -55,6 +55,7 @@ import {
   type RecordedLeg,
 } from "./bridge-support.js";
 import { interpretPoll } from "./bridge-poll.js";
+import { bridgeFeeRefusalData } from "@tools/bridge-fee/index.js";
 import { quoteKhalaniBridgeRoute } from "./bridge-execute/quote.js";
 import { buildKhalaniDepositPlan } from "./bridge-execute/deposit-plan.js";
 import {
@@ -279,7 +280,15 @@ export async function executeKhalaniBridge(
     params, context, sessionId, derivedNow: vexFee,
   });
   if (feeStatementRefusal !== null) {
-    return { success: false, output: `${toolId} failed: ${feeStatementRefusal}` };
+    // The TYPED reason travels on the result, not only in the log line: a moved
+    // fee statement, a missing one and an unregistered gate have three different
+    // remedies, and collapsing them into "bridge failed" leaves an agent
+    // guessing which one it is looking at.
+    return {
+      success: false,
+      output: `${toolId} failed: ${feeStatementRefusal.message}`,
+      data: bridgeFeeRefusalData(feeStatementRefusal),
+    };
   }
 
   // 8. Fail closed on the plan and on its native-cost classification. An

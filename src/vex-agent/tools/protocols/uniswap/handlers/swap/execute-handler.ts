@@ -54,9 +54,9 @@ import {
   type UniswapFeeLegPlan,
 } from "./fee/index.js";
 import { VexError, ErrorCodes } from "../../../../../../errors.js";
-import { claimUniswapExecutionSnapshot } from "../../../prequote/claim.js";
+import { readUniswapExecutionSnapshot, commitPrequoteClaim } from "../../../prequote/claim.js";
 import { toVexFeePreview } from "../../../prequote/fee-disclosure.js";
-import { revalidateVexFeeStatement } from "@tools/vex-fee/fee-revalidation.js";
+import { revalidateVexFeeStatement, vexFeeRefusalData } from "@tools/vex-fee/fee-revalidation.js";
 import { canonicalWrapPairRefusal } from "../../../wrap-pair-refusal.js";
 import {
   compareUniswapExecutionInputs,
@@ -139,15 +139,19 @@ export async function executeUniswapSwap(
   const wrapPair = canonicalWrapPairRefusal(deployment.chainId, tokenIn, tokenOut, TOOL_ID);
   if (wrapPair) return fail(wrapPair);
 
-  // ── THE APPROVED QUOTE, claimed for exactly one execute ──
+  // ── THE APPROVED QUOTE, READ but not yet consumed ──
   //
-  // Claimed BEFORE this handler quotes anything, so two concurrent executes of
-  // one quote resolve to a single winner before either prices a route. Fresh
-  // pathing below is allowed and expected - Uniswap's pools move - but the
-  // router input, the fee and the floor come from THIS snapshot, never from the
-  // fresh route. Deriving the floor from a fresh route is what let the sibling
-  // venue fill a 313,879.7 quote at 1,190.145 on 2026-08-27 without reverting.
-  const claimed = await claimUniswapExecutionSnapshot(TOOL_ID, sessionId, p, context, `${TOOL_ID}:${sessionId}`);
+  // Read BEFORE this handler quotes anything, because the router input, the fee
+  // and the floor come from THIS snapshot and never from the fresh route. Fresh
+  // pathing below is allowed and expected - Uniswap's pools move - but deriving
+  // the floor from a fresh route is what let the sibling venue fill a 313,879.7
+  // quote at 1,190.145 on 2026-08-27 without reverting.
+  //
+  // The row is CLAIMED further down, after every comparison this execution can
+  // make has passed (round-2 blocker 1). Claiming here burnt the approved quote
+  // on the way out of a correct refusal: the retry the refusal instructed the
+  // agent to make got `already_claimed`.
+  const claimed = await readUniswapExecutionSnapshot(TOOL_ID, sessionId, p, context);
   if (!claimed.ok) {
     return failPreBroadcast(
       p,
@@ -225,6 +229,15 @@ export async function executeUniswapSwap(
         `Refused before signing: ${feeVerdict.summary} is not what the approved quote stated.`,
         `Nothing was signed. Request a fresh ${UNISWAP_FRESH_QUOTE_TOOL} and approve that one.`,
       ),
+      // The TYPED reason, on the result the agent actually reads. Without it a
+      // moved fee statement is indistinguishable from any other swap failure,
+      // and the two have different remedies. Nothing is claimed at this point,
+      // so the remediation it names is a remedy the agent can really take.
+      vexFeeRefusalData({
+        reason: feeVerdict.reason,
+        movedFields: feeVerdict.movedFields,
+        remediation: `Request a fresh ${UNISWAP_FRESH_QUOTE_TOOL} and approve that one.`,
+      }),
     );
   }
 
@@ -243,6 +256,27 @@ export async function executeUniswapSwap(
     );
   }
   quoted = { ...quoted, minAmountOut: approvedMinOut };
+
+  // ── ONLY NOW is the approved quote consumed ──
+  //
+  // Every comparison this execution can make has passed: the router input, the
+  // fee disposition, the card's own fee statement and the approved floor. The
+  // claim is atomic and asserts the row's identity, its claimability and the
+  // disclosure block the checks above were made against, so a row that moved
+  // underneath refuses typed instead of being claimed silently.
+  //
+  // A refusal ABOVE this line leaves `claimed_at` and `claimed_by` null and the
+  // quote reusable; a refusal here means another execute won the same row, which
+  // is the one state where "already claimed" is the truth. Still nothing signed:
+  // the signing wallet is resolved on the next line.
+  const consumed = await commitPrequoteClaim(claimed.claim, `${TOOL_ID}:${sessionId}`);
+  if (!consumed.ok) {
+    return failPreBroadcast(
+      p,
+      { chainId: deployment.chainId, chainSlug: deployment.key, walletAddress, sessionId, tokenIn, tokenOut },
+      new VexError(ErrorCodes.KYBER_PRICE_FLOOR_VIOLATED, consumed.refusal.message),
+    );
+  }
 
   // Per-session signing wallet - resolved only now that dryRun is rejected
   // and the quote succeeded, so a rejected/failed call never decrypts a key.

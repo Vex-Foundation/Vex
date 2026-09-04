@@ -13,7 +13,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { uniswapSpendabilityFake } from "./_uniswap-spendability-fake.js";
-import { claimStandingInForTheParams } from "./_uniswap-approved-snapshot.js";
+import { readStandingInForTheParams } from "./_uniswap-approved-snapshot.js";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 
 const TOKEN_IN = "0x8Ff92566f2e81BDd68EDfAa8cde73942A723796b";
@@ -121,10 +121,11 @@ vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
 // before it prices anything. This suite's subject is elsewhere, so the claim
 // stands in with the quote this very call would have produced - see
 // `_uniswap-approved-snapshot.ts`.
-const claimUniswapExecutionSnapshot = vi.fn();
+const readUniswapExecutionSnapshot = vi.fn();
 vi.mock("@vex-agent/tools/protocols/prequote/claim.js", () => ({
-  claimSwapExecutionSnapshot: vi.fn(),
-  claimUniswapExecutionSnapshot: (...args: unknown[]) => claimUniswapExecutionSnapshot(...args),
+  commitPrequoteClaim: vi.fn(async () => ({ ok: true })),
+  readSwapExecutionSnapshot: vi.fn(),
+  readUniswapExecutionSnapshot: (...args: unknown[]) => readUniswapExecutionSnapshot(...args),
 }));
 
 vi.mock("@utils/logger.js", () => ({ default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() } }));
@@ -153,8 +154,8 @@ const ZERO_VERDICT = "balanceOf returned zero immediately after the confirmed bu
 
 beforeEach(() => {
   vi.clearAllMocks();
-  claimUniswapExecutionSnapshot.mockImplementation(
-    claimStandingInForTheParams({ chainId: 4663, weth: "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73" }),
+  readUniswapExecutionSnapshot.mockImplementation(
+    readStandingInForTheParams({ chainId: 4663, weth: "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73" }),
   );
   readUniswapAllowance.mockResolvedValue(10n ** 30n);
   signUniswapTransaction.mockResolvedValue({ serializedTransaction: "0xsigned", txHash: "0xhash", fromAddress: WALLET, nonce: 1 });

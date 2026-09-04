@@ -38,6 +38,13 @@ export async function failPreBroadcast(
     tokenOut?: UniswapToken;
   },
   err: unknown,
+  /**
+   * A typed refusal disclosure, when this failure has a machine-readable remedy
+   * the generic failure code cannot express (`vexFeeRefusalData`). Merged into
+   * the result's `data` alongside `_executionId`; absent for every other
+   * failure, which keeps the result shape unchanged where nothing typed exists.
+   */
+  refusal?: Record<string, unknown>,
 ): Promise<ToolResult> {
   const failureCode = classifyPreBroadcastFailure(err).failureCode;
   const failureReason = uniswapFailureMessage(err);
@@ -60,7 +67,11 @@ export async function failPreBroadcast(
       failureReason,
     },
   });
-  return { success: false, output: `${TOOL_ID} failed: ${failureReason}.`, data: { _executionId: executionId } };
+  return {
+    success: false,
+    output: `${TOOL_ID} failed: ${failureReason}.`,
+    data: { _executionId: executionId, ...(refusal ?? {}) },
+  };
 }
 
 /**

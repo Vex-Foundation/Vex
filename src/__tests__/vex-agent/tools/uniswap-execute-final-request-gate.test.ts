@@ -31,7 +31,7 @@ const ROUTER = getAddress("0x89e5db8b5aa49aa85ac63f691524311aeb649eba");
 const CHAIN_ID = 4663;
 
 const quoteBestRoute = vi.fn();
-const claimUniswapExecutionSnapshot = vi.fn();
+const readUniswapExecutionSnapshot = vi.fn();
 const createAgentActivityIntent = vi.fn();
 const createAgentActivityPreBroadcastFailure = vi.fn();
 const signUniswapTransaction = vi.fn();
@@ -112,8 +112,9 @@ vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
   walletScopeErrorToResult: vi.fn((err: unknown) => ({ success: false, output: String(err) })),
 }));
 vi.mock("@vex-agent/tools/protocols/prequote/claim.js", () => ({
-  claimSwapExecutionSnapshot: vi.fn(),
-  claimUniswapExecutionSnapshot: (...args: unknown[]) => claimUniswapExecutionSnapshot(...args),
+  commitPrequoteClaim: vi.fn(async () => ({ ok: true })),
+  readSwapExecutionSnapshot: vi.fn(),
+  readUniswapExecutionSnapshot: (...args: unknown[]) => readUniswapExecutionSnapshot(...args),
 }));
 vi.mock("@utils/logger.js", () => {
   const stub = { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() };
@@ -204,7 +205,7 @@ beforeEach(async () => {
     ],
   });
   createAgentActivityPreBroadcastFailure.mockResolvedValue({ executionId: 999, event: {} });
-  claimUniswapExecutionSnapshot.mockResolvedValue({
+  readUniswapExecutionSnapshot.mockResolvedValue({
     ok: true, prequoteId: "prequote-1", snapshot: await approved(),
     vexFee: await approvedVexFee(),
   });

@@ -55,6 +55,53 @@ export const VEX_FEE_STATEMENT_CHANGED_REASON = "vex_fee_statement_changed";
 export const VEX_FEE_STATEMENT_MISSING_REASON = "vex_fee_statement_missing";
 
 /**
+ * The bounded reason for a fee-bearing handler whose prequote registration is
+ * absent. NOT a market state and not a user error: these tools are gated by
+ * construction, so a missing mapping is an internal authorization failure.
+ */
+export const VEX_FEE_GATE_UNREGISTERED_REASON = "vex_fee_gate_unregistered";
+
+/** The bounded reason for a bound row that authorizes no execute at all. */
+export const VEX_FEE_QUOTE_UNAUTHORIZED_REASON = "vex_fee_quote_unauthorized";
+
+/**
+ * A bridge refusal as the PUBLIC tool result must carry it (Codex round-2
+ * suggestion, rule 04 layer 3).
+ *
+ * The venues used to return a bare sentence, so the typed reason existed only in
+ * a log line and the agent-facing result collapsed every fee-statement refusal
+ * into the venue's generic bridge failure. An agent cannot pick a remedy from
+ * that: "the approved fee moved, re-quote" and "the bridge failed" are different
+ * situations.
+ *
+ * Bounded by construction: a reason token, the FIELD names that moved (never
+ * their values, never an address) and one first-party remediation sentence.
+ */
+export interface BridgeFeeRefusal {
+  readonly reason: string;
+  readonly movedFields: readonly BridgeFeeStatementField[];
+  /** The agent-facing sentence, already built by the message helpers below. */
+  readonly message: string;
+  readonly remediation: string;
+}
+
+/**
+ * The `data` block a refusing bridge result carries. The key and shape are the
+ * same `_vexFeeRefusal` the swap venues emit (`tools/vex-fee/fee-revalidation.
+ * ts`), so one agent-side reader covers all four venues, and the `_` prefix is
+ * the established convention for a Vex-authored field on these results.
+ */
+export function bridgeFeeRefusalData(refusal: BridgeFeeRefusal): Record<string, unknown> {
+  return {
+    _vexFeeRefusal: {
+      reason: refusal.reason,
+      movedFields: [...refusal.movedFields],
+      remediation: refusal.remediation,
+    },
+  };
+}
+
+/**
  * The fields compared, in the order they are compared. `charged` first because
  * a disposition change makes every amount below it incomparable, and naming the
  * amount instead of the disposition would describe the symptom.
@@ -216,9 +263,8 @@ export function missingBridgeFeeStatementMessage(quoteToolName: string): string 
  *
  * Shared by both bridge venues for the same reason the comparison is: the two
  * handlers refuse the same states, so they must refuse them in the same
- * vocabulary. `not_gated` is absent on purpose - it is structural, it means no
- * quote channel exists for this tool at all, and the caller skips the
- * revalidation rather than refusing an ungated call it cannot bind.
+ * vocabulary. `not_gated` is absent on purpose - it is not a quote state at all,
+ * and its refusal is `unregisteredBridgeFeeGateMessage` below.
  */
 export function unauthorizedBridgeQuoteMessage(
   refusal: {
@@ -254,4 +300,25 @@ export function unauthorizedBridgeQuoteMessage(
         + ` one that was approved. Nothing was signed or broadcast. Call ${quoteToolName} again and approve`
         + " the fresh quote.";
   }
+}
+
+/**
+ * A fee-bearing bridge handler whose execute-gate registration is missing.
+ *
+ * `not_gated` used to be answered with `null` - "proceed" - on both bridge
+ * venues, which made the loss of the registry mapping a grant of permission to
+ * sign (review finding, 2026-09-04). These two tools are gated BY CONSTRUCTION:
+ * their whole fee authority is the prequote row, so an absent registration means
+ * this build cannot bind the fee to anything a person approved. Rule 07: missing
+ * or unknown authority fails closed.
+ *
+ * It is deliberately NOT phrased as a quote problem. Re-quoting cannot fix a
+ * build that lost its mapping, and telling an agent to retry a call that can
+ * never succeed is the dead end this vocabulary avoids everywhere else.
+ */
+export function unregisteredBridgeFeeGateMessage(bridgeToolId: string): string {
+  return `${bridgeToolId} is a fee-bearing tool with no registered quote gate in this build, so the Vex fee`
+    + " it would take cannot be bound to any approved quote. Nothing was signed, nothing was broadcast and"
+    + " no funds moved. This is a Vex build defect, not a state you can clear: report it. A bridge is still"
+    + " possible through the other bridge venue.";
 }

@@ -48,7 +48,7 @@ import { evaluateRelayRouteHealth } from "@tools/relay/health.js";
 import { assertRelayQuoteCorrelation } from "@tools/relay/correlation.js";
 import { classifyRelayBridgeSteps } from "@tools/relay/step-policy.js";
 import { pollRelayIntentStatus, resolveRelayStepClients, type RelayStepClients } from "@tools/relay/execute.js";
-import { BRIDGE_FEE_ACTIVITY_EVENT_ROLE } from "@tools/bridge-fee/index.js";
+import { BRIDGE_FEE_ACTIVITY_EVENT_ROLE, bridgeFeeRefusalData } from "@tools/bridge-fee/index.js";
 import type { RelayQuoteResponse } from "@tools/relay/types.js";
 import { loadConfig } from "@config/store.js";
 import {
@@ -322,7 +322,17 @@ async function relayBridge(
     sessionId,
     derivedNow: relayFeeDisclosure(legs, adapted.currencyIn, tokenIdentity.source),
   });
-  if (feeStatementRefusal !== null) return fail(`${BRIDGE_TOOL_ID} failed: ${feeStatementRefusal}`);
+  if (feeStatementRefusal !== null) {
+    // The TYPED reason travels on the result, not only in the log line above: a
+    // moved fee statement, a missing one and an unregistered gate have three
+    // different remedies, and collapsing them into "bridge failed" leaves an
+    // agent guessing which one it is looking at.
+    return {
+      success: false,
+      output: `${BRIDGE_TOOL_ID} failed: ${feeStatementRefusal.message}`,
+      data: bridgeFeeRefusalData(feeStatementRefusal),
+    };
+  }
 
   // ── Pre-sign gates (fail-closed, hashless failure row, C1) ──
   if (!correlation.ok) {
