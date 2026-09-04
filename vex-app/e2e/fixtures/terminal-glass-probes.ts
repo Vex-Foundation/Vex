@@ -132,6 +132,7 @@ export interface Contrast {
  * (OSC 11), read back from the file the shell wrote, not from the DOM.
  */
 export interface Osc11Reply {
+  readonly measured: true;
   readonly theme: string;
   /** The reply as `printf %q` escaped it, verbatim from the file. */
   readonly raw: string;
@@ -139,6 +140,42 @@ export interface Osc11Reply {
   readonly rgb: [number, number, number];
   /** Claude Code's `auto` rule over that RGB: what it would pick in this pane. */
   readonly claudeCodeTheme: "light" | "dark";
+}
+
+/**
+ * A probe that types a POSIX shell line (`printf`, `read -d`, `%q`, `tee`)
+ * cannot run where the Studio launches `ComSpec`: cmd.exe has none of those,
+ * and a PowerShell reader would have to take the reply back through ConPTY's
+ * input translation, which is a measurement of its own, not a one-liner. So
+ * on Windows the probe records that it did not run rather than typing bash
+ * into cmd.exe and failing on the echo. The contract the pty probe proves
+ * elsewhere (the reply bytes classify by theme) is proven without a pty by
+ * `terminal-theme-resolution.test.ts`, which computes the bytes xterm sends
+ * from the resolved theme.
+ */
+export interface ProbeUnmeasured {
+  readonly measured: false;
+  readonly theme: string;
+  readonly reason: "posix_probe";
+  readonly platform: NodeJS.Platform;
+  readonly detail: string;
+}
+
+export type Osc11Result = Osc11Reply | ProbeUnmeasured;
+
+/** Whether the shell the Studio launches on this platform can run the POSIX probes. */
+export function posixProbesAvailable(): boolean {
+  return process.platform !== "win32";
+}
+
+function unmeasuredPosixProbe(theme: string, probe: string): ProbeUnmeasured {
+  return {
+    measured: false,
+    theme,
+    reason: "posix_probe",
+    platform: process.platform,
+    detail: `${probe} types a POSIX shell line; the Studio launches ComSpec on ${process.platform}`,
+  };
 }
 
 /**
@@ -173,11 +210,12 @@ export interface ReverseVideoSample {
 export interface ReverseVideoUnmeasured {
   readonly measured: false;
   readonly theme: string;
+  readonly reason: "dom_renderer";
   readonly renderer: "dom";
-  readonly reason: string;
+  readonly detail: string;
 }
 
-export type ReverseVideoResult = ReverseVideoSample | ReverseVideoUnmeasured;
+export type ReverseVideoResult = ReverseVideoSample | ReverseVideoUnmeasured | ProbeUnmeasured;
 
 export async function measureGutter(page: Page, width: number, height: number): Promise<GutterMeasurement> {
   await page.setViewportSize({ width, height });
@@ -515,7 +553,8 @@ const OSC11_REPLY_TIMEOUT_MS = 10_000;
  * -> pty -> shell, which is exactly the path Claude Code's theme detection
  * takes, and it is readable under the WebGL renderer where the rows are not.
  */
-export async function probeOsc11(page: Page, theme: string, dir: string): Promise<Osc11Reply> {
+export async function probeOsc11(page: Page, theme: string, dir: string): Promise<Osc11Result> {
+  if (!posixProbesAvailable()) return unmeasuredPosixProbe(theme, "probeOsc11");
   const file = path.join(dir, `osc11-${theme}.txt`);
   fs.rmSync(file, { force: true });
   await focusTerminalGrid(page);
@@ -540,7 +579,7 @@ export async function probeOsc11(page: Page, theme: string, dir: string): Promis
   const rgb: [number, number, number] = [channel(match[1]), channel(match[2]), channel(match[3])];
   // Claude Code 2.1.260's detector, verbatim: linear channel weights over 0..1.
   const weighted = (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]) / 255;
-  return { theme, raw, rgb, claudeCodeTheme: weighted > 0.5 ? "light" : "dark" };
+  return { measured: true, theme, raw, rgb, claudeCodeTheme: weighted > 0.5 ? "light" : "dark" };
 }
 
 /** How far (Euclidean, 0..441) a pixel may sit from a colour and still count as it. */
@@ -565,6 +604,7 @@ export async function measureReverseVideo(
   facts: PaneFacts,
   capture: CaptureClip,
 ): Promise<ReverseVideoResult> {
+  if (!posixProbesAvailable()) return unmeasuredPosixProbe(theme, "measureReverseVideo");
   const foregroundCss = facts.foreground;
   await focusTerminalGrid(page);
   await page.keyboard.type("printf '\\e[7m      REVERSE VIDEO      \\e[0m plain\\n'");
@@ -620,8 +660,9 @@ export async function measureReverseVideo(
     return {
       measured: false,
       theme,
+      reason: "dom_renderer",
       renderer: "dom",
-      reason: "the DOM renderer's injected colour sheet is refused by the renderer CSP; no box is painted",
+      detail: "the DOM renderer's injected colour sheet is refused by the renderer CSP; no box is painted",
     };
   }
   expect(top, `${theme}: no reverse-video box found in the capture`).toBeGreaterThanOrEqual(0);

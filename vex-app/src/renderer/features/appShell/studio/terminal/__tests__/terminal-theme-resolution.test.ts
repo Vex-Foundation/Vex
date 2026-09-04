@@ -21,6 +21,12 @@
  * Claude Code's dark-theme grey `rgb(153,153,153)` on the light pane, 2.5:1).
  * The token keeps alpha 0 so the watermark survives and carries the RGB of the
  * surface the pane paints, so the answer classifies by theme.
+ *
+ * The last suite computes the reply BYTES xterm sends for each resolved
+ * background and classifies them, so the wire contract is proven on every
+ * platform without a pty: the e2e probe in `terminal-glass-probes.ts` types
+ * a POSIX shell line and records itself unmeasured where the Studio launches
+ * `ComSpec`.
  */
 
 import { readFileSync } from "node:fs";
@@ -100,6 +106,40 @@ function claudeCodeClassifies(hex8: string): "light" | "dark" {
   return weighted > 0.5 ? "light" : "dark";
 }
 
+/**
+ * The OSC 11 reply xterm 6.0.0 sends for a theme background, byte for byte:
+ * `CoreBrowserTerminal` answers a REPORT with `ESC ] 11 ; <rgb> ESC \`, the
+ * colour going through `color.toColorRGB` (alpha dropped) and
+ * `toRgbString(rgb, 16)`, which writes each 8-bit channel as the 16-bit form
+ * `hh` + `hh` (`XParseColor.pad`, default branch). So `#ffffff00` is answered
+ * `rgb:ffff/ffff/ffff`, never black.
+ */
+function osc11ReplyBytes(hex8: string): string {
+  const { r, g, b } = channels(hex8);
+  const channel16 = (value: number): string => {
+    const hh = value.toString(16).padStart(2, "0");
+    return hh + hh;
+  };
+  return `\x1b]11;rgb:${channel16(r)}/${channel16(g)}/${channel16(b)}\x1b\\`;
+}
+
+/**
+ * Read a reply the way the asking program does: the `rgb:` triple, each
+ * channel scaled by its own digit count back to 8 bits (xterm's `parseColor`
+ * and the e2e probe read it the same way), then Claude Code's linear rule.
+ */
+function classifyOsc11Reply(reply: string): { rgb: [number, number, number]; theme: "light" | "dark" } {
+  const match = /^\x1b\]11;rgb:([0-9a-f]+)\/([0-9a-f]+)\/([0-9a-f]+)\x1b\\$/.exec(reply);
+  if (match === null) throw new Error(`not an OSC 11 reply: ${JSON.stringify(reply)}`);
+  const channel = (hex: string | undefined): number => {
+    const digits = hex ?? "";
+    return Math.round((parseInt(digits, 16) / (16 ** digits.length - 1)) * 255);
+  };
+  const rgb: [number, number, number] = [channel(match[1]), channel(match[2]), channel(match[3])];
+  const weighted = (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]) / 255;
+  return { rgb, theme: weighted > 0.5 ? "light" : "dark" };
+}
+
 function setTheme(theme: "chronos" | "celeris"): void {
   if (theme === "chronos") {
     document.documentElement.removeAttribute("data-vex-theme");
@@ -162,6 +202,33 @@ describe("readTerminalTheme against the real stylesheet", () => {
     expect(dark.foreground).not.toBe(light.foreground);
     expect(claudeCodeClassifies(dark.background ?? "")).toBe("dark");
     expect(claudeCodeClassifies(light.background ?? "")).toBe("light");
+  });
+
+  it.each([
+    ["chronos", "dark"],
+    ["celeris", "light"],
+  ] as const)("the OSC 11 reply bytes for %s classify as %s without a pty", (theme, expected) => {
+    setTheme(theme);
+    const background = readTerminalTheme(document.documentElement).background ?? "";
+    const reply = osc11ReplyBytes(background);
+    const { r, g, b } = channels(background);
+    const hh = (value: number): string => value.toString(16).padStart(2, "0");
+
+    // The bytes carry the token's RGB in the 16-bit form and no alpha at all,
+    // so a program that asks reads the surface colour, not the transparency.
+    expect(reply).toBe(`\x1b]11;rgb:${hh(r)}${hh(r)}/${hh(g)}${hh(g)}/${hh(b)}${hh(b)}\x1b\\`);
+    expect(reply).not.toContain("rgb:0000/0000/0000");
+    const read = classifyOsc11Reply(reply);
+    expect(read.rgb).toEqual([r, g, b]);
+    expect(read.theme).toBe(expected);
+  });
+
+  it("the colourless fallback would be answered as black, which is why the tokens carry an RGB", () => {
+    // The pre-fix defect, pinned as arithmetic: an alpha-0 black token answers
+    // `rgb:0000/0000/0000` and every asking program picks dark, in light mode too.
+    const reply = osc11ReplyBytes(COLOURLESS);
+    expect(reply).toBe("\x1b]11;rgb:0000/0000/0000\x1b\\");
+    expect(classifyOsc11Reply(reply).theme).toBe("dark");
   });
 
   it("stays neutral and colourless with no element to resolve against", () => {

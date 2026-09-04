@@ -28,7 +28,11 @@
  *    shell asks, the reply travels the real pty round trip, and the file the
  *    shell writes is asserted to classify light in celeris and dark in
  *    chronos. A reverse-video sample is measured alongside, since its glyphs
- *    take the same token's RGB.
+ *    take the same token's RGB. Both probes type a POSIX shell line, so where
+ *    the Studio launches `ComSpec` (Windows) they record an unmeasured
+ *    `posix_probe` outcome instead of running, and the classification is
+ *    asserted only where it was measured; the reply bytes themselves are
+ *    proven without a pty in `terminal-theme-resolution.test.ts`.
  *
  * ## The completion signal for the burst
  *
@@ -77,7 +81,8 @@ import {
   type CaptureClip,
   type Contrast,
   type GutterMeasurement,
-  type Osc11Reply,
+  posixProbesAvailable,
+  type Osc11Result,
   type ReverseVideoResult,
 } from "./fixtures/terminal-glass-probes.js";
 
@@ -218,7 +223,7 @@ test("Studio terminal on glass: backdrop shows through, gutter and scroll throug
   save();
 
   /* ---- 3b. WHAT THE TERMINAL TELLS A PROGRAM, and reverse video --------- */
-  const osc11: Osc11Reply[] = [await probeOsc11(page, theme, dir)];
+  const osc11: Osc11Result[] = [await probeOsc11(page, theme, dir)];
   const reverseVideo: ReverseVideoResult[] = [await measureReverseVideo(page, theme, facts, capture)];
   report["osc11"] = osc11;
   report["reverseVideo"] = reverseVideo;
@@ -299,11 +304,20 @@ test("Studio terminal on glass: backdrop shows through, gutter and scroll throug
   // `theme.background` with the alpha dropped, and Claude Code in `auto` mode
   // picks its theme from that answer by the rule `probeOsc11` applies. A
   // pane that answered black in light mode got dark chrome painted over it.
+  // The probe is a POSIX shell line: where the Studio launches ComSpec it does
+  // not run, and what it records instead is the gate's own outcome, so a
+  // probe that silently did nothing cannot pass as measured.
   expect(
     osc11.map((reply) => reply.theme).sort(),
     `celerisSkipped: ${String(report["celerisSkipped"] ?? "no")}`,
   ).toEqual(["celeris", "chronos"]);
   for (const reply of osc11) {
+    if (!reply.measured) {
+      expect(posixProbesAvailable(), `${reply.theme} OSC 11 unmeasured on a POSIX host`).toBe(false);
+      expect(reply.reason).toBe("posix_probe");
+      continue;
+    }
+    expect(posixProbesAvailable(), `${reply.theme} OSC 11 measured where the probe cannot run`).toBe(true);
     expect(reply.claudeCodeTheme, `${reply.theme} OSC 11 answered ${reply.raw}`).toBe(
       reply.theme === "celeris" ? "light" : "dark",
     );
@@ -314,9 +328,13 @@ test("Studio terminal on glass: backdrop shows through, gutter and scroll throug
   // read against the foreground-coloured box. Before the token carried an
   // RGB the light theme painted black glyphs on a near-black box (1.6:1).
   // Under the DOM renderer (xvfb: no WebGL2) the sample is unmeasurable and
-  // is recorded as such; the floor holds wherever the WebGL renderer paints.
+  // is recorded as such, as it is where the POSIX probe cannot run; the floor
+  // holds wherever the WebGL renderer paints and the probe ran.
   for (const sample of reverseVideo) {
-    if (!sample.measured) continue;
+    if (!sample.measured) {
+      if (sample.reason === "posix_probe") expect(posixProbesAvailable()).toBe(false);
+      continue;
+    }
     expect(sample.glyphPixels, `${sample.theme} reverse video shows no glyphs`).toBeGreaterThan(0);
     expect(sample.contrast, `${sample.theme} reverse video contrast`).toBeGreaterThanOrEqual(4.5);
   }
