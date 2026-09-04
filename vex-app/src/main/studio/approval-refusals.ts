@@ -34,7 +34,7 @@
 import type { PoolClient } from "pg";
 
 import { log } from "../logger/index.js";
-import { ensureEngineDbUrl } from "../ipc/runtime/_ensure-engine-db-url.js";
+import { ensureEngineDbUrl } from "../database/engine-db-readiness.js";
 import { studioCorrelationId } from "./approval-broker.js";
 
 /** The six machine causes migration 086 accepts, as the callers name them. */

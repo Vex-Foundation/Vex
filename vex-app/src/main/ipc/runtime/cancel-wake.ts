@@ -15,7 +15,7 @@ import {
 import { log } from "../../logger/index.js";
 import { registerHandler } from "../register-handler.js";
 import { controlFailedError } from "./_errors.js";
-import { ensureEngineDbUrl } from "./_ensure-engine-db-url.js";
+import { ensureEngineDbUrl } from "../../database/engine-db-readiness.js";
 import { emitControlStateAfterChange } from "./_emit-control-state.js";
 
 export function registerRuntimeCancelWakeHandler(): () => void {

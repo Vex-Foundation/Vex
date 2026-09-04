@@ -43,7 +43,7 @@ import {
  */
 export type StudioBookSectionId = BookSectionId;
 
-/** Default order = the agent rail's order, minus the session-only cards. */
+/** Default order = the agent rail's order, minus the session-only card. */
 export const DEFAULT_STUDIO_BOOK_SECTIONS: readonly StudioBookSectionId[] =
   bookSectionsForScope("project");
 
@@ -57,7 +57,7 @@ export const STUDIO_BOOK_SECTION_LABEL: Readonly<
 
 /**
  * The Studio rail's drop validator: a known BOOK id that ALSO has a
- * project-scoped read. `isBookSectionId` alone would accept `activity` and
+ * project-scoped read. `isBookSectionId` alone would accept `session` and
  * move a card this rail cannot draw.
  */
 export function isStudioBookSectionId(

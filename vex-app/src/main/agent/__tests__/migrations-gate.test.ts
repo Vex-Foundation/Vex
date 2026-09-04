@@ -29,7 +29,7 @@ vi.mock("../../logger/index.js", () => ({
 vi.mock("../../database/migrations-applied.js", () => ({
   migrationsApplied: () => applied,
 }));
-vi.mock("../../ipc/runtime/_ensure-engine-db-url.js", () => ({
+vi.mock("../../database/engine-db-readiness.js", () => ({
   ensureEngineDbUrl: vi.fn(),
 }));
 vi.mock("../../database/wake-db.js", () => ({ probeLoopWakeReady: vi.fn() }));

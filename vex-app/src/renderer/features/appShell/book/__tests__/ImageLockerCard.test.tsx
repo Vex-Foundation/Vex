@@ -20,7 +20,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement, type ReactNode } from "react";
-import { ImageLockerCard } from "../ImageLockerCard.js";
+import {
+  ImageLockerCard,
+  LAUNCH_FROM_AGENT_SESSION_NOTE,
+  type ImageLockerScope,
+} from "../ImageLockerCard.js";
 
 // The launch dialog owns the tokenLaunch IPC domain and a preview lifecycle of
 // its own (TokenLaunchDialog.test.tsx). Stubbed so this suite can prove the
@@ -68,8 +72,11 @@ function setVex(): void {
 }
 
 const SESSION = "00000000-0000-4000-8000-00000000dddd";
+const PROJECT = "9c1b0e8e-0000-4000-8000-0000000000ab";
+const SESSION_SCOPE: ImageLockerScope = { kind: "session", sessionId: SESSION };
+const PROJECT_SCOPE: ImageLockerScope = { kind: "project", projectId: PROJECT };
 
-function renderCard() {
+function renderCard(scope: ImageLockerScope = SESSION_SCOPE) {
   setVex();
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -77,7 +84,7 @@ function renderCard() {
   function Wrapper({ children }: { readonly children: ReactNode }) {
     return createElement(QueryClientProvider, { client }, children);
   }
-  return render(createElement(ImageLockerCard, { sessionId: SESSION }), {
+  return render(createElement(ImageLockerCard, { scope }), {
     wrapper: Wrapper,
   });
 }
@@ -329,5 +336,35 @@ describe("the on-chain copy, as the user is told about it", () => {
     // read to the user as a broken image.
     await waitFor(() => expect(listMock).toHaveBeenCalled());
     expect(readThumbMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("a PROJECT rail (Studio parity decree)", () => {
+  it("browses the same global locker: the images and the upload control render", async () => {
+    listMock.mockResolvedValue({ ok: true, data: { images: [A, B] } });
+    renderCard(PROJECT_SCOPE);
+    expect(await screen.findByText("2")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /add image/i })).toBeTruthy();
+  });
+
+  it("renders NO launch action, and says where a launch is signed from instead", async () => {
+    // The launch is attributed to a session id on the signing path; a project
+    // has none this card may borrow (its `backingSessionId` is an owner
+    // decision). So the seat the launch holds for a session carries the
+    // sentence, not a button.
+    listMock.mockResolvedValue({ ok: true, data: { images: [A] } });
+    renderCard(PROJECT_SCOPE);
+    await screen.findByText("1");
+    expect(screen.queryByRole("button", { name: /launch/i })).toBeNull();
+    expect(screen.queryByRole("radiogroup")).toBeNull();
+    expect(screen.getByText(LAUNCH_FROM_AGENT_SESSION_NOTE)).toBeTruthy();
+  });
+
+  it("a SESSION rail still renders the launch action and not the note", async () => {
+    listMock.mockResolvedValue({ ok: true, data: { images: [A] } });
+    renderCard(SESSION_SCOPE);
+    await screen.findByText("1");
+    expect(screen.getByRole("button", { name: /launch/i })).toBeTruthy();
+    expect(screen.queryByText(LAUNCH_FROM_AGENT_SESSION_NOTE)).toBeNull();
   });
 });

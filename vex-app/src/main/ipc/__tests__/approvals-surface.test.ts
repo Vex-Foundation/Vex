@@ -30,7 +30,7 @@ vi.mock("electron", () => ({
   app: { isPackaged: true },
 }));
 
-vi.mock("../runtime/_ensure-engine-db-url.js", () => ({
+vi.mock("../../database/engine-db-readiness.js", () => ({
   ensureEngineDbUrl: vi
     .fn()
     .mockResolvedValue({ ok: true, data: undefined }),

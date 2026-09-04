@@ -15,7 +15,7 @@ import {
   chatSteerResultSchema,
   type ChatSteerResult,
 } from "@shared/schemas/chat.js";
-import { ensureEngineDbUrl } from "./chat/engine-db-url.js";
+import { ensureEngineDbUrl } from "../database/engine-db-readiness.js";
 import {
   classifyEngineError,
   sessionNotFoundError,

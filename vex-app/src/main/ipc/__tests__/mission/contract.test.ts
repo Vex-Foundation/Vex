@@ -40,7 +40,7 @@ vi.mock("@vex-agent/engine/mission/diff.js", () => ({
   getContractStatus: (...a: unknown[]) => mockGetContractStatus(...a),
 }));
 
-vi.mock("../../runtime/_ensure-engine-db-url.js", () => ({
+vi.mock("../../../database/engine-db-readiness.js", () => ({
   ensureEngineDbUrl: (...a: unknown[]) => mockEnsureEngineDbUrl(...a),
 }));
 

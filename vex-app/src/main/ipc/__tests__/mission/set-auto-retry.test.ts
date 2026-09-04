@@ -37,7 +37,7 @@ vi.mock("electron", () => {
 vi.mock("@vex-agent/engine/mission/set-auto-retry.js", () => ({
   setMissionAutoRetry: (...a: unknown[]) => mockSetMissionAutoRetry(...a),
 }));
-vi.mock("../../runtime/_ensure-engine-db-url.js", () => ({
+vi.mock("../../../database/engine-db-readiness.js", () => ({
   ensureEngineDbUrl: (...a: unknown[]) => mockEnsureEngineDbUrl(...a),
 }));
 vi.mock("../../../logger/index.js", () => ({

@@ -24,7 +24,7 @@ import { ok, err, type Result } from "@shared/ipc/result.js";
 import { getActiveRunForSession } from "../../database/mission-runs-db.js";
 import { log } from "../../logger/index.js";
 import { controlFailedError } from "../runtime/_errors.js";
-import { ensureEngineDbUrl } from "../runtime/_ensure-engine-db-url.js";
+import { ensureEngineDbUrl } from "../../database/engine-db-readiness.js";
 import { emitControlStateAfterChange } from "../runtime/_emit-control-state.js";
 import { classifyRunLeaseState } from "./lease-state.js";
 

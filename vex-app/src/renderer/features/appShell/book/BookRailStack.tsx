@@ -10,11 +10,14 @@
  * component trees over two id unions, which is how they drifted into two
  * different answers to "what does this rail show".
  *
- * The structure is the reference sidebar's (deepseek-harness
- * `ui-sidebar/SidebarRoot.tsx`): ONE shell renders the SAME regions for every
- * context, and the context supplies the DATA rather than a different tree.
- * What a section may NOT show for a scope is not a branch here either - it is
- * one row in `BOOK_SECTION_SCOPES`, which is what produces the rail's id list.
+ * The structure is the reference's (deepseek-harness
+ * `packages/interaction/README.md`: one surface over a neutral seam, the host
+ * supplies the scope; VS Code `viewPaneContainer.ts`: one container, panes by
+ * registry, per-location persisted order): ONE shell renders the SAME regions
+ * for every context, and the context supplies the DATA rather than a
+ * different tree. What a section may NOT show for a scope is not a branch
+ * here either - it is one row in `BOOK_SECTION_SCOPES`, which is what
+ * produces the rail's id list.
  *
  * SCOPE IS THE ONLY INPUT. `BookRailScope` is a closed union, mapped once to
  * the cards' `PortfolioCardScope`; no card reads the active session or the
@@ -55,6 +58,7 @@ import { BookInspectPanel } from "./inspect/BookInspectPanel.js";
 import { useToolInspectStore } from "./inspect/inspect-store.js";
 import { ImageLockerCard } from "./ImageLockerCard.js";
 import { PositionBlock } from "./PositionBlock.js";
+import { ProjectBlock } from "./ProjectBlock.js";
 import { SessionActivityCard } from "./SessionActivityCard.js";
 import { SessionBlock } from "./SessionBlock.js";
 import { WalletPairCard } from "./WalletPairCard.js";
@@ -92,11 +96,11 @@ export type BookRailScope =
 /**
  * The card a section id stands for, for THIS rail scope.
  *
- * Exhaustive over `BookSectionId`. The session-only cards return `null` under
- * a project scope rather than inventing a session id: unreachable, because the
- * Studio registry never yields those ids, and FAIL-CLOSED if the scope table
- * and the registry ever disagreed - an absent card, never a card reading
- * somebody else's session.
+ * Exhaustive over `BookSectionId`. The single-scope cards return `null` under
+ * the other scope rather than inventing an id: unreachable, because neither
+ * registry yields the other rail's id, and FAIL-CLOSED if the scope table and
+ * a registry ever disagreed - an absent card, never a card reading somebody
+ * else's session or project.
  */
 function renderBookSection(
   id: BookSectionId,
@@ -105,7 +109,6 @@ function renderBookSection(
   // Widened once: `BookRailScope` is the two members of the card scope union
   // that have a rail, so every card below reads the SAME scope object.
   const cards: PortfolioCardScope = scope;
-  const session = scope.kind === "session" ? scope.sessionId : null;
   switch (id) {
     case "position":
       return <PositionBlock scope={cards} />;
@@ -118,12 +121,19 @@ function renderBookSection(
       // owns the wallet resolution for each (`agent-scan-db.ts`).
       return <SessionActivityCard scope={scope} />;
     case "session":
-      return session === null ? null : <SessionBlock sessionId={session} />;
+      return scope.kind === "session" ? (
+        <SessionBlock sessionId={scope.sessionId} />
+      ) : null;
+    case "project":
+      return scope.kind === "project" ? (
+        <ProjectBlock projectId={scope.projectId} />
+      ) : null;
     case "trench":
       // Trench Photos + Launch a Token are ONE card: a launch REQUIRES an
       // image from that locker, so separating them sent the user hunting for
-      // the reason a launch refused.
-      return session === null ? null : <ImageLockerCard sessionId={session} />;
+      // the reason a launch refused. BOTH scopes: the locker is global; the
+      // card itself decides that only a session renders the launch.
+      return <ImageLockerCard scope={scope} />;
     default: {
       const exhaustive: never = id;
       throw new Error(`Unhandled BOOK section: ${String(exhaustive)}`);
@@ -179,8 +189,12 @@ export function BookRailStack({
   // object to the user, and a second key would leave Studio on a stale tab.
   const bookTab = useUiStore((state) => state.bookTab);
   const setBookTab = useUiStore((state) => state.setBookTab);
+  // The dot is a SESSION fact: a board arrives from a session transcript and
+  // the Board tab of a project rail never holds one, so a dot lit by a
+  // session's board must not survive into Studio and announce a board that
+  // tab cannot show.
   const boardUnseen = useBoardSurfaceStore(
-    (state) => state.unseenBoardKey !== null,
+    (state) => scope.kind === "session" && state.unseenBoardKey !== null,
   );
 
   const { order, setOrder, registry } = useRailOrder(scope);
@@ -286,7 +300,7 @@ export function BookRailStack({
             value="board"
             className="vex-scroll vex-scroll-overlay mt-3 min-h-0 flex-1 overflow-y-auto"
           >
-            <ActiveBoardModule />
+            <ActiveBoardModule scopeKind={scope.kind} />
           </TabsContent>
         </Tabs>
       </div>

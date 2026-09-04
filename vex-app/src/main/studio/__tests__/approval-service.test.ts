@@ -23,7 +23,7 @@ vi.mock("../../logger/index.js", () => ({
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 const ensureEngineDbUrl = vi.fn();
-vi.mock("../../ipc/runtime/_ensure-engine-db-url.js", () => ({
+vi.mock("../../database/engine-db-readiness.js", () => ({
   ensureEngineDbUrl: (id: string) => ensureEngineDbUrl(id),
 }));
 const isSecretSessionUnlocked = vi.fn(() => true);

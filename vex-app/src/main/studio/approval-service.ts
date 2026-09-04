@@ -65,7 +65,7 @@ import type {
 import type { ToolResult } from "@vex-agent/tools/types.js";
 
 import { log } from "../logger/index.js";
-import { ensureEngineDbUrl } from "../ipc/runtime/_ensure-engine-db-url.js";
+import { ensureEngineDbUrl } from "../database/engine-db-readiness.js";
 import {
   isSecretSessionUnlocked,
   isStudioDispatchPoisoned,

@@ -21,11 +21,14 @@
  *      scale loop (glacial — no single glance perceives motion; the global
  *      reduced-motion rule stills it);
  *   2. an ink veil (--vex-surface-0) over it, whose opacity carries the
- *      stage state: light on the welcome/idle stage (opacity-30 — the
- *      artwork stays the protagonist), deep behind an active session
- *      transcript (opacity-80 — messages must read clearly). The 900ms
- *      ease-[var(--vex-ease-inout)] keeps the deepen cinematic, not abrupt
- *      (owner decree 2026-07-20).
+ *      stage state: light on the welcome/idle stage (the artwork stays the
+ *      protagonist), deep behind an active session transcript (messages
+ *      must read clearly). The densities are the `--vex-backdrop-veil-*`
+ *      tokens in shell.css, applied by `.vex-backdrop-veil` off the
+ *      `data-vex-backdrop-dimmed` stamp below, because a theme decides them
+ *      (celeris Studio dims less so the day artwork survives the glass
+ *      pane, 2026-09-04). The 900ms ease-[var(--vex-ease-inout)] keeps the
+ *      deepen cinematic, not abrupt (owner decree 2026-07-20).
  *
  * If the image ever fails to load, the shell root's own
  * `bg-[var(--vex-surface-0)]` remains as the canvas — never a white flash.
@@ -124,12 +127,11 @@ export function ShellBackdrop({
         aria-hidden
         className="vex-noise vex-noise--backdrop pointer-events-none absolute inset-0"
       />
-      <div
-        className={cn(
-          "absolute inset-0 bg-[var(--vex-surface-0)] transition-opacity duration-[900ms] ease-[var(--vex-ease-inout)]",
-          dimmed ? "opacity-80" : "opacity-30",
-        )}
-      />
+      {/* Density comes from `.vex-backdrop-veil` (shell.css), keyed on the
+        * wall's `data-vex-backdrop-dimmed` above and resolved through the
+        * `--vex-backdrop-veil-*` tokens, so a theme or a mode can repoint it
+        * in CSS; the element keeps only the deepen's timing. */}
+      <div className="vex-backdrop-veil absolute inset-0 bg-[var(--vex-surface-0)] transition-opacity duration-[900ms] ease-[var(--vex-ease-inout)]" />
       {/* Welcome bottom scrim — grounds the hero's lower third for text
         * legibility. Lives HERE (full-window, under every column) and not
         * inside the hero, so opening the right Portfolio tab can never

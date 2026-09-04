@@ -855,7 +855,77 @@ test("UX-2 rail and explorer: the spine, the pane, the seam and the search", asy
   const book = page.getByLabel("Project instrument");
   await expect(book).toBeVisible();
   await expect(book.getByText(projectName, { exact: true })).toBeVisible();
+
+  // THE PARITY CONTRACT (owner screenshots, 2026-09-04): the project rail IS
+  // the agent session rail. Each card is the shared `PortfolioCard` region,
+  // named by its eyebrow, in the agent rail's order.
+  const railCards = book.locator('[data-vex-book-section]');
+  await expect(railCards).toHaveCount(6);
+  await expect(railCards.nth(0)).toHaveAttribute("data-vex-book-section", "position");
+  await expect(railCards.nth(1)).toHaveAttribute("data-vex-book-section", "wallets");
+  await expect(railCards.nth(2)).toHaveAttribute("data-vex-book-section", "balances");
+  await expect(railCards.nth(3)).toHaveAttribute("data-vex-book-section", "activity");
+  await expect(railCards.nth(4)).toHaveAttribute("data-vex-book-section", "project");
+  await expect(railCards.nth(5)).toHaveAttribute("data-vex-book-section", "trench");
+  await expect(book.getByRole("region", { name: "Position", exact: true })).toBeVisible();
+  await expect(book.getByRole("region", { name: "Wallets", exact: true })).toBeVisible();
+
+  // BALANCES carries the same door the agent rail has. The register a fresh
+  // project can show is either its holdings with "View all assets" under
+  // them, or the PROJECT empty sentence; it is never the session's or the
+  // global one, and the door is never hidden behind a project scope.
+  const balances = book.getByRole("region", { name: "Balances", exact: true });
+  await expect(balances).toBeVisible();
+  await expect(
+    balances.getByText(/View all assets|No balances in this project's wallets yet/),
+  ).toBeVisible();
+  await expect(balances.getByText(/this session's wallets/)).toHaveCount(0);
+
+  // ACTIVITY carries "View all activity" unconditionally (the owner's
+  // screenshot was cropped under the card; the door is there).
+  const activity = book.getByRole("region", { name: "Activity", exact: true });
+  await expect(activity).toBeVisible();
+  await expect(
+    activity.getByRole("button", { name: "View all activity" }),
+  ).toBeVisible();
+
+  // PROJECT is the SESSION card's counterpart: the same rows, and the one row
+  // a project has that a session does not - its path, ending in the folder
+  // main actually created.
+  const projectCard = book.getByRole("region", { name: "Project", exact: true });
+  await expect(projectCard).toBeVisible();
+  await expect(projectCard.getByText("Mode", { exact: true })).toBeVisible();
+  await expect(projectCard.getByText("Studio", { exact: true })).toBeVisible();
+  await expect(projectCard.getByText("Access", { exact: true })).toBeVisible();
+  await expect(projectCard.getByText(/^(Full|Restricted)$/)).toBeVisible();
+  await expect(projectCard.getByText("Started", { exact: true })).toBeVisible();
+  await expect(projectCard.getByText("Path", { exact: true })).toBeVisible();
+  await expect(projectCard.getByTitle(new RegExp(`${projectName}$`))).toBeVisible();
+
+  // LAUNCHPAD browses the same global locker, and says where a launch is
+  // signed from instead of offering one a project cannot attribute.
+  const launchpad = book.getByRole("region", { name: "Launchpad", exact: true });
+  await expect(launchpad).toBeVisible();
+  await expect(launchpad.getByRole("button", { name: "Add image" })).toBeVisible();
+  await expect(launchpad.locator('[data-vex-area="launchpad-browse-note"]')).toBeVisible();
+  await expect(launchpad.getByRole("button", { name: /Launch/ })).toHaveCount(0);
   await shot(page, `${theme}-30-workspace-right-rail`);
+
+  // The Board tab is the shared chrome; its project content is the honest
+  // empty state (a board is composed in an Agent chat), with the one way
+  // there. Photographed, then put back: `bookTab` is a persisted preference
+  // and the steps below expect the Portfolio stack.
+  await book.getByRole("tab", { name: "Board" }).click();
+  const projectBoard = book.locator(
+    '[data-vex-area="active-board"][data-state="empty"][data-scope="project"]',
+  );
+  await expect(projectBoard).toBeVisible();
+  await expect(
+    projectBoard.getByRole("button", { name: "Switch to Agent" }),
+  ).toBeVisible();
+  await shot(page, `${theme}-30b-workspace-right-rail-board`);
+  await book.getByRole("tab", { name: "Portfolio" }).click();
+  await expect(book.getByRole("region", { name: "Position", exact: true })).toBeVisible();
 
   /* ---- 31: ONE search, over two kinds of thing (I2) ------------------- */
 

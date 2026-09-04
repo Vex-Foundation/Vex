@@ -52,6 +52,7 @@ import {
   portfolioReadInputFor,
   type PortfolioCardScope,
 } from "./portfolio/portfolio-scope.js";
+import { snapshotAge } from "./portfolio/snapshot-age.js";
 import { GlobalWalletSwitcher } from "./GlobalWalletSwitcher.js";
 import { PositionChains } from "./PositionChains.js";
 import { PortfolioRefreshButton } from "./PortfolioRefreshButton.js";
@@ -213,16 +214,24 @@ function PositionBody({
 /**
  * The card's ONE display figure: the live total in the serif hero treatment
  * (`PortfolioOverviewCard` grammar, 34px), with the snapshot total and the
- * PnL versus it underneath when the DTO carries them. `snapshotAt` stays
- * UNRENDERED — a second timestamp beside "vs last snapshot" adds a figure the
- * user cannot act on and did not ask for; it has not earned a line.
+ * PnL versus it underneath when the DTO carries them.
+ *
+ * `snapshotAt` IS RENDERED, as an AGE beside the snapshot value (owner
+ * measurement 2026-09-04: a "+$0.41" in the gain tone against a 31-day-old
+ * baseline, because publication had been withheld). The age is what tells
+ * the reader whether the delta is this hour's or last month's, and past 24
+ * hours the delta drops its gain/loss tone for the muted one - a PnL versus
+ * a stale baseline is not a live gain (rule 08: never stale success as
+ * fresh). The clock is read at render; a portfolio refresh re-renders it.
  */
 function TotalFigure({
   portfolio,
 }: {
   readonly portfolio: PortfolioDto;
 }): JSX.Element {
-  const { liveTotalUsd, snapshotTotalUsd, pnlVsPrev } = portfolio;
+  const { liveTotalUsd, snapshotTotalUsd, pnlVsPrev, snapshotAt } = portfolio;
+  const age = snapshotAt === null ? null : snapshotAge(snapshotAt, Date.now());
+  const stale = age !== null && age.stale;
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-start justify-between gap-2">
@@ -235,12 +244,26 @@ function TotalFigure({
         {formatUsd(liveTotalUsd)}
       </span>
       {snapshotTotalUsd !== null ? (
-        <span className="flex items-baseline gap-1.5 text-[11px] tabular-nums text-ink-tertiary">
+        <span
+          data-vex-area="position-snapshot"
+          data-stale={stale ? "true" : "false"}
+          className="flex items-baseline gap-1.5 text-[11px] tabular-nums text-ink-tertiary"
+        >
           <span>snapshot {formatUsd(snapshotTotalUsd)}</span>
+          {age !== null ? (
+            <span data-vex-area="position-snapshot-age">
+              <span aria-hidden>| </span>
+              {age.label}
+            </span>
+          ) : null}
           {pnlVsPrev !== null ? (
             <span
-              className={pnlToneClass(pnlVsPrev)}
-              aria-label={`Profit and loss versus previous snapshot ${formatUsdDelta(pnlVsPrev)}`}
+              className={stale ? "text-ink-tertiary" : pnlToneClass(pnlVsPrev)}
+              aria-label={
+                age === null
+                  ? `Profit and loss versus previous snapshot ${formatUsdDelta(pnlVsPrev)}`
+                  : `Profit and loss versus snapshot taken ${age.label} ${formatUsdDelta(pnlVsPrev)}`
+              }
             >
               {formatUsdDelta(pnlVsPrev)}
             </span>

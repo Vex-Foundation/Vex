@@ -17,9 +17,10 @@
  * (`studio-section-order.ts`) - one user, two arrangements.
  *
  * A section is not universal, though: some cards can only be answered for a
- * SESSION. `BOOK_SECTION_SCOPES` below is the one table that says which, with
- * the reason, and `bookSectionsForScope` is the only way a rail learns its
- * list. The RESOLUTION and MOVE algebra stays in `section-registry.ts`.
+ * SESSION, and one only for a PROJECT. `BOOK_SECTION_SCOPES` below is the one
+ * table that says which, with the reason, and `bookSectionsForScope` is the
+ * only way a rail learns its list. The RESOLUTION and MOVE algebra stays in
+ * `section-registry.ts`.
  */
 
 import {
@@ -39,15 +40,21 @@ export type BookSectionId =
   | "balances"
   | "activity"
   | "session"
+  | "project"
   | "trench";
 
-/** Default order = the rail's decreed render order (Trench = the merged card). */
+/**
+ * Default order = the rail's decreed render order (Trench = the merged card).
+ * `session` and `project` share ONE slot: they are the same "what am I
+ * looking at" card for the two scopes, and no rail ever renders both.
+ */
 export const DEFAULT_BOOK_SECTIONS: readonly BookSectionId[] = [
   "position",
   "wallets",
   "balances",
   "activity",
   "session",
+  "project",
   "trench",
 ];
 
@@ -58,6 +65,7 @@ export const BOOK_SECTION_LABEL: Readonly<Record<BookSectionId, string>> = {
   balances: "Balances",
   activity: "Activity",
   session: "Session",
+  project: "Project",
   trench: "Trench Express",
 };
 
@@ -93,8 +101,15 @@ export type BookRailScopeKind = "session" | "project";
  *                                global feed.
  *   session   session ONLY       the card IS the session object (model, turn
  *                                stats, sleep state). A project has none.
- *   trench    session ONLY       the image locker and its launch are keyed by
- *                                session id in main's own storage.
+ *   project   project ONLY       the project-scoped counterpart of `session`:
+ *                                the card IS the project object (access,
+ *                                path, created). A session has none.
+ *   trench    session + project  the image locker is GLOBAL (`useLockerImages`
+ *                                takes no scope), so the card browses it for
+ *                                either. Only the LAUNCH is keyed by session
+ *                                id on the signing path, and the card renders
+ *                                that action for a session alone (see
+ *                                `ImageLockerCard`).
  */
 export const BOOK_SECTION_SCOPES: Readonly<
   Record<BookSectionId, readonly BookRailScopeKind[]>
@@ -104,7 +119,8 @@ export const BOOK_SECTION_SCOPES: Readonly<
   balances: ["session", "project"],
   activity: ["session", "project"],
   session: ["session"],
-  trench: ["session"],
+  project: ["project"],
+  trench: ["session", "project"],
 };
 
 /** Does this section have a real read for `kind`? */
@@ -126,11 +142,28 @@ export function bookSectionsForScope(
   return DEFAULT_BOOK_SECTIONS.filter((id) => bookSectionServesScope(id, kind));
 }
 
-/** This rail's registry, as the shared mechanism and the rows consume it. */
+/**
+ * The agent SESSION rail's own list: the vocabulary minus the project-only
+ * card. The same projection `studio-section-order.ts` makes for the project
+ * rail, so neither rail's registry can yield an id it renders as nothing.
+ */
+export const SESSION_BOOK_SECTIONS: readonly BookSectionId[] =
+  bookSectionsForScope("session");
+
+/**
+ * The session rail's drop validator: a known BOOK id that ALSO has a
+ * session-scoped read, so a `project` id that reached the agent key is
+ * dropped instead of moving an empty section.
+ */
+export function isSessionBookSectionId(value: string): value is BookSectionId {
+  return isBookSectionId(value) && bookSectionServesScope(value, "session");
+}
+
+/** The session rail's registry, as the shared mechanism and the rows consume it. */
 export const BOOK_SECTION_REGISTRY: SectionRegistry<BookSectionId> = {
-  defaults: DEFAULT_BOOK_SECTIONS,
+  defaults: SESSION_BOOK_SECTIONS,
   label: BOOK_SECTION_LABEL,
-  isId: isBookSectionId,
+  isId: isSessionBookSectionId,
 };
 
 /** See `resolveSectionOrder` - known ids in stored order, missing appended. */

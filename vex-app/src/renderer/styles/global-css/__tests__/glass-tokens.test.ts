@@ -166,6 +166,48 @@ describe("glass tokens (shell.css)", () => {
   });
 });
 
+describe("the wall's veil (shell.css)", () => {
+  // The veil under every tier is part of what the glass shows of the
+  // artwork: 0.8 white under a 0.72 pane left 5.6% of the day artwork, a flat
+  // card (owner review 2026-09-04). The densities are tokens so a theme and a
+  // mode can repoint them; these pins keep the stage semantics.
+  const idle = Number(declarationValue(chronos, "--vex-backdrop-veil-idle"));
+  const dim = Number(declarationValue(chronos, "--vex-backdrop-veil-dim"));
+  const celerisStudio = ruleBody(
+    shellCss,
+    '[data-vex-shell="true"][data-vex-theme="celeris"][data-vex-runtime-mode="studio"]',
+  );
+  const celerisStudioDim = Number(declarationValue(celerisStudio, "--vex-backdrop-veil-dim"));
+
+  it("declares both densities once on the shell root, idle lighter than dimmed", () => {
+    expect(idle).toBeGreaterThan(0);
+    expect(dim).toBeLessThanOrEqual(1);
+    expect(idle).toBeLessThan(dim);
+    // The Agent transcript reads straight off the wall in both themes, so
+    // the celeris THEME block does not lighten the dim; only Studio does.
+    expect(declarationValue(celeris, "--vex-backdrop-veil-dim")).toBeUndefined();
+    expect(declarationValue(celeris, "--vex-backdrop-veil-idle")).toBeUndefined();
+  });
+
+  it("dims celeris Studio less than the transcript, and still more than the welcome stage", () => {
+    expect(celerisStudioDim).toBeLessThan(dim);
+    expect(celerisStudioDim).toBeGreaterThan(idle);
+    expect(declarationValue(celerisStudio, "--vex-backdrop-veil-idle")).toBeUndefined();
+  });
+
+  it("applies the densities off the stage stamp, through the tokens", () => {
+    expect(declarationValue(ruleBody(shellCss, ".vex-backdrop-veil"), "opacity")).toBe(
+      "var(--vex-backdrop-veil-idle)",
+    );
+    expect(
+      declarationValue(
+        ruleBody(shellCss, '[data-vex-backdrop-dimmed="true"] > .vex-backdrop-veil'),
+        "opacity",
+      ),
+    ).toBe("var(--vex-backdrop-veil-dim)");
+  });
+});
+
 describe("glass classes (glass.css)", () => {
   const filterOf = (tier: string): string =>
     `blur(var(--vex-glass-blur-${tier})) saturate(var(--vex-glass-saturate))`;

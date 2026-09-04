@@ -27,7 +27,7 @@ import { getActiveRunForSession } from "../../database/mission-runs-db.js";
 import { log } from "../../logger/index.js";
 import { registerHandler } from "../register-handler.js";
 import { controlFailedError } from "../runtime/_errors.js";
-import { ensureEngineDbUrl } from "../runtime/_ensure-engine-db-url.js";
+import { ensureEngineDbUrl } from "../../database/engine-db-readiness.js";
 import { runResumeDispatch } from "../_shared/runtime-resume-dispatch.js";
 
 function toPlanState(plan: SessionPlan): PlanState {
