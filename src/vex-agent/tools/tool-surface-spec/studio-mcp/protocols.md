@@ -53,9 +53,9 @@ whether its provider key is configured on this machine.
 
 ## Totals
 
-- tools: 170
+- tools: 172
 - Vex tools: 27
-- protocol tools: 143 across 11 protocols
+- protocol tools: 145 across 11 protocols
 - destructive: 50
 
 ## Vex tools

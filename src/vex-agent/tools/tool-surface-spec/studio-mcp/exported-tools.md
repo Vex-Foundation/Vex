@@ -43,11 +43,11 @@ free. Both texts live on the tool
 
 ## Totals
 
-- exported tools: 170
+- exported tools: 172
 - internal: 27
-- protocol: 143 across 11 namespaces
+- protocol: 145 across 11 namespaces
 - always loaded: 27
-- read-only: 112
+- read-only: 114
 - destructive: 50
 
 ## Internal tools
