@@ -1,45 +1,45 @@
 {
-  "version": "virtuals-v1",
+  "version": "virtuals-v2",
   "mode": "lexical",
   "datasetId": "tool-discovery-virtuals",
-  "datasetVersion": "virtuals-v1",
+  "datasetVersion": "virtuals-v2",
   "status": "captured",
-  "capturedAt": "2026-09-04T18:02:37.007Z",
+  "capturedAt": "2026-09-04T20:35:54.449Z",
   "metrics": {
     "overall": {
-      "count": 21,
-      "recall1": 0.381,
-      "recall5": 0.81,
-      "coverage5": 0.81,
-      "mrr5": 0.519,
-      "groupMrr5": 0.519
+      "count": 24,
+      "recall1": 0.375,
+      "recall5": 0.833,
+      "coverage5": 0.833,
+      "mrr5": 0.531,
+      "groupMrr5": 0.531
     },
     "awareness": {
       "blind": {
-        "count": 11,
-        "recall1": 0.182,
-        "recall5": 0.636,
-        "coverage5": 0.636,
-        "mrr5": 0.314,
-        "groupMrr5": 0.314
+        "count": 12,
+        "recall1": 0.167,
+        "recall5": 0.667,
+        "coverage5": 0.667,
+        "mrr5": 0.329,
+        "groupMrr5": 0.329
       },
       "protocolAware": {
-        "count": 10,
-        "recall1": 0.6,
+        "count": 12,
+        "recall1": 0.583,
         "recall5": 1,
         "coverage5": 1,
-        "mrr5": 0.745,
-        "groupMrr5": 0.745
+        "mrr5": 0.732,
+        "groupMrr5": 0.732
       }
     },
     "intentShapes": {
       "single": {
-        "count": 20,
-        "recall1": 0.4,
-        "recall5": 0.85,
-        "coverage5": 0.85,
-        "mrr5": 0.545,
-        "groupMrr5": 0.545
+        "count": 23,
+        "recall1": 0.391,
+        "recall5": 0.87,
+        "coverage5": 0.87,
+        "mrr5": 0.554,
+        "groupMrr5": 0.554
       },
       "cross": {
         "count": 0,
@@ -132,12 +132,12 @@
         "groupMrr5": 0
       },
       "rewards": {
-        "count": 0,
-        "recall1": 0,
-        "recall5": 0,
-        "coverage5": 0,
-        "mrr5": 0,
-        "groupMrr5": 0
+        "count": 3,
+        "recall1": 0.333,
+        "recall5": 1,
+        "coverage5": 1,
+        "mrr5": 0.611,
+        "groupMrr5": 0.611
       },
       "solana_lend": {
         "count": 0,
@@ -174,8 +174,14 @@
     }
   },
   "notes": [
-    "dataset tool-discovery-virtuals@virtuals-v1, mode lexical, 21 cases evaluated.",
-    "overall recall@1 0.381, recall@5 0.81, coverage@5 0.81, mrr@5 0.519, groupMrr@5 0.519.",
-    "Measured delta vs previous baseline (virtuals-v1, captured 2026-08-28T10:37:11.035Z): 28 metric values moved; overall recall@5 0.706 -> 0.81, overall mrr@5 0.502 -> 0.519, case count 17 -> 21."
-  ]
+    "dataset tool-discovery-virtuals@virtuals-v2, mode lexical, 24 cases evaluated.",
+    "overall recall@1 0.375, recall@5 0.833, coverage@5 0.833, mrr@5 0.531, groupMrr@5 0.531.",
+    "Measured delta vs previous baseline (virtuals-v1, captured 2026-09-04T18:02:37.007Z): 28 metric values moved; overall recall@5 0.81 -> 0.833, overall mrr@5 0.519 -> 0.531, case count 21 -> 24."
+  ],
+  "reconciliation": {
+    "reconciledAt": "2026-09-04T20:35:54.449Z",
+    "previousVersion": "virtuals-v1",
+    "previousCaseCount": 21,
+    "reason": "Previous baseline was captured against dataset virtuals-v1 (21 cases) on 2026-09-04T18:02:37.007Z; the canonical dataset is now virtuals-v2 (24 cases). The baseline was STALE: it was never recaptured after the dataset changed, so this update re-anchors it against the current dataset. The dataset contract and its quality floors were NOT changed."
+  }
 }

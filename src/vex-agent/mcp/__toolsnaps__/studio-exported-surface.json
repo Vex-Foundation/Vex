@@ -1,5 +1,5 @@
 {
-  "toolCount": 169,
+  "toolCount": 170,
   "tools": [
     {
       "alwaysLoad": true,
@@ -11207,7 +11207,58 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 1291,
+      "descriptionBytes": 2347,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "chain": {
+            "anyOf": [
+              {
+                "enum": [
+                  "base",
+                  "solana",
+                  "robinhood",
+                  "ethereum"
+                ],
+                "type": "string"
+              },
+              {
+                "minimum": 1,
+                "type": "integer"
+              }
+            ],
+            "description": "The chain the agent lives on. Creator fees are held by a per-chain contract with its own payout asset and its own swap thresholds, so the chain and the agent must agree. Only base and robinhood have an AgentTaxV2; solana and ethereum are accepted and answered with `supported: false` and the measured reason rather than a schema error. Chain slug/alias, or the numeric chain id `TokenFind` returns (e.g. `base` or `8453`)."
+          },
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "The numeric Virtuals agent id, exactly as virtuals__agents_discover returns it. The tool resolves the agent's bonding token from it and additionally cross-checks the contract's creator address against the wallet the provider shows. Give this OR tokenAddress, never both.",
+            "type": "number"
+          },
+          "tokenAddress": {
+            "description": "The agent token's CONTRACT address - the bonding token while the agent is still on its curve, the same address after graduation. This is the key AgentTaxV2 accounts by, so it needs no provider lookup and works even when the Virtuals API is down. Give this OR id, never both.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chain"
+        ],
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "virtuals",
+      "publicName": "virtuals__creator_fees_get",
+      "readOnlyHint": true,
+      "requiresEnv": null,
+      "title": "Read a Virtuals agent creator's fee status",
+      "toolId": "virtuals.creator_fees"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 1767,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,

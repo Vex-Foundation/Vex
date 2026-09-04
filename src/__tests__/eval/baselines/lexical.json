@@ -4,7 +4,7 @@
   "datasetId": "tool-discovery-seed",
   "datasetVersion": "v3-agent-116",
   "status": "captured",
-  "capturedAt": "2026-09-04T18:01:51.893Z",
+  "capturedAt": "2026-09-04T20:35:36.600Z",
   "metrics": {
     "overall": {
       "count": 109,
@@ -176,6 +176,6 @@
   "notes": [
     "dataset tool-discovery-seed@v3-agent-116, mode lexical, 109 cases evaluated.",
     "overall recall@1 0.404, recall@5 0.578, coverage@5 0.505, mrr@5 0.465, groupMrr@5 0.424.",
-    "Measured delta vs previous baseline (v3-agent-116, captured 2026-08-29T15:15:32.709Z): 26 metric values moved; overall recall@5 0.569 -> 0.578, overall mrr@5 0.463 -> 0.465, case count 109 -> 109."
+    "Measured delta: none, metrics are identical to the previous baseline."
   ]
 }

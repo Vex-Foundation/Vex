@@ -180,6 +180,7 @@
     "uniswap.swap.execute",
     "uniswap.swap.quote",
     "virtuals.candles",
+    "virtuals.creator_fees",
     "virtuals.geneses",
     "virtuals.get",
     "virtuals.graduations",

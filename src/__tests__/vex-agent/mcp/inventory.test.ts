@@ -81,9 +81,14 @@ describe("the exported inventory covers exactly the export scope", () => {
     // answer at all (who is trading a pre-graduation agent, and what its pool
     // price history looks like), so they belong in the same export scope as
     // the four Virtuals reads already there.
-    expect(inventory).toHaveLength(169);
+    // 169 -> 170: PR-C4 exported `virtuals__creator_fees_get`, the creator-fee
+    // STATUS read. It is read-only and it is the tool that answers "can I claim
+    // my agent's fees" with a measured no (AgentTaxV2's payout path is
+    // SWAP_ROLE-only), so keeping it out of the export would leave an external
+    // agent with the question and no tool that can answer it honestly.
+    expect(inventory).toHaveLength(170);
     expect(inventory.filter((t) => t.kind === "internal")).toHaveLength(27);
-    expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(142);
+    expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(143);
   });
 
   it("keeps WebResearch OUT of tools/list while the in-app registry keeps it", () => {

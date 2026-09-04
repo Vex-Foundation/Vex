@@ -30,6 +30,10 @@ import { liveProtocolManifests } from "./retrieval-eval-harness.js";
  * identities, so this is a pure +4 and every affected baseline was recaptured
  * in the same change.
  *
+ * 142 -> 143 (PR-C4): `virtuals.creator_fees`, the agent creator's trading-fee
+ * status read. A new identity, so a pure +1; the virtuals lexical and dense
+ * baselines were recaptured in the same change.
+ *
  * A deliberate ratchet, not a duplicate of the catalog. It fails when the tool
  * surface changes without anyone noticing, which is the event that invalidates
  * every stored baseline in `baselines/`.
@@ -38,7 +42,7 @@ import { liveProtocolManifests } from "./retrieval-eval-harness.js";
  * and recapture the affected baselines with the lane's `--update` command. Do
  * not silence the test by deriving the number from the catalog.
  */
-export const PINNED_LIVE_CATALOG_TOOL_COUNT = 142;
+export const PINNED_LIVE_CATALOG_TOOL_COUNT = 143;
 
 /** Active manifests in advertised namespaces. Independent of process env. */
 export function liveCatalogToolCount(): number {
