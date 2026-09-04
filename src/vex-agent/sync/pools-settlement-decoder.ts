@@ -332,6 +332,23 @@ export function decodePoolsClaimSettlement(
   // every known suite's locker is accepted, which is what an older row (or a
   // repair sweep) needs; the `account` and `token` filters below still make the
   // attribution exact.
+  //
+  // A NAMED LOCKER MUST BE ONE OF THE TABLE'S. The caller's hint selects among
+  // the suites; it never adds an emitter, because a locker outside the table
+  // would let a forged `Claimed` from an arbitrary contract decode as a payout.
+  if (emitters.locker !== undefined) {
+    const named = emitters.locker;
+    const suite = POOLS_SUITES.find((candidate) => sameAddress(candidate.locker, named));
+    if (suite === undefined) {
+      return {
+        ok: false,
+        reason:
+          `the claim names locker ${named}, which is not one of the pools.fun suites Vex knows `
+          + `(${POOLS_SUITES.map((s) => `V${s.version} ${s.locker}`).join(", ")}); this receipt cannot be `
+          + "proven to describe a pools.fun claim",
+      };
+    }
+  }
   const lockers = emitters.locker === undefined
     ? POOLS_SUITES.map((suite) => suite.locker)
     : [emitters.locker];
@@ -400,8 +417,11 @@ export function decodePoolsClaimSettlement(
  *       as "some gateway": a receipt from an unknown contract cannot be proven
  *       to be a pools.fun launch at all, and the sweep must leave such a row
  *       pending rather than confirm it.
- *   the caller named both       -> used verbatim, for tests and for a row that
- *       recorded a pair explicitly.
+ *   the caller named a factory too -> it must be THAT suite's factory. A hint is
+ *       never used verbatim: an emitter pair that is not in the table would let
+ *       a forged event pair from arbitrary contracts decode as a launch, and a
+ *       mismatched known pair is two suites disagreeing about one row. A
+ *       factory-only hint is refused for the same reason.
  *   the caller named neither    -> DISCOVERY: exactly one suite must have
  *       emitted BOTH a GatewayLaunch and a TokenLaunched in this receipt. Zero
  *       is "not a gateway launch"; more than one is a receipt no single suite
@@ -414,8 +434,13 @@ function selectSuite(
 ):
   | { readonly ok: true; readonly gateway: string; readonly factory: string }
   | { readonly ok: false; readonly reason: string } {
-  if (emitters.gateway !== undefined && emitters.factory !== undefined) {
-    return { ok: true, gateway: emitters.gateway, factory: emitters.factory };
+  if (emitters.gateway === undefined && emitters.factory !== undefined) {
+    return {
+      ok: false,
+      reason:
+        `a factory (${emitters.factory}) was named without its gateway; a pools.fun suite is selected by its `
+        + "gateway, and a factory alone does not identify one",
+    };
   }
 
   if (emitters.gateway !== undefined) {
@@ -428,6 +453,17 @@ function selectSuite(
           `the authorized plan names gateway ${named}, which is not one of the pools.fun suites Vex knows `
           + `(${POOLS_SUITES.map((s) => `V${s.version} ${s.gateway}`).join(", ")}); this receipt cannot be `
           + "proven to describe a pools.fun launch",
+      };
+    }
+    // A factory hint is CHECKED against the suite the gateway selects, never
+    // substituted for it: the table is the authority on which factory a gateway
+    // launches through, and a hint that disagrees is a row two suites describe.
+    if (emitters.factory !== undefined && !sameAddress(emitters.factory, suite.factory)) {
+      return {
+        ok: false,
+        reason:
+          `the authorized plan names gateway ${named} (suite V${suite.version}) with factory ${emitters.factory}, `
+          + `but that suite launches through ${suite.factory}; the emitter pair does not describe one suite`,
       };
     }
     return { ok: true, gateway: suite.gateway, factory: suite.factory };

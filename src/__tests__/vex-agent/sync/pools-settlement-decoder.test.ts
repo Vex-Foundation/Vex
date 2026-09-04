@@ -465,3 +465,71 @@ describe("claim settlement - across suites", () => {
     );
   });
 });
+
+/**
+ * EMITTER HINTS SELECT AMONG THE TABLE'S SUITES; THEY NEVER ADD AN EMITTER.
+ *
+ * The plan's `{gateway, factory}` and the claim's `{locker}` are hints the
+ * caller recorded, and a hint used verbatim would let a receipt full of forged
+ * same-signature events from arbitrary contracts decode as a launch or a payout
+ * (Codex final review of PR1). Every hint is resolved through `POOLS_SUITES`
+ * and refused by name when the table does not carry it.
+ */
+describe("launch settlement - emitter hints are resolved through the suite table", () => {
+  it("refuses an unknown gateway/factory PAIR even when both emitted matching events", () => {
+    const logs = [
+      gatewayLog({}, STRANGER),
+      factoryLog({ creator: STRANGER, deployer: STRANGER }, STRANGER),
+    ];
+    expectRefusal(
+      decodePoolsLaunchSettlement(logs, EXPECTED, { gateway: STRANGER, factory: STRANGER }),
+      "not one of the pools.fun suites Vex knows",
+    );
+  });
+
+  it("refuses a MISMATCHED known pair: a V3 gateway hinted with V1's factory", () => {
+    const logs = [
+      gatewayLog({}, V3.gateway),
+      factoryLog({ creator: getAddress(V3.gateway), deployer: getAddress(V3.gateway) }, V3.factory),
+    ];
+    // The same receipt decodes with the honest hint, so the refusal below is
+    // about the hint, not the logs.
+    expect(decodePoolsLaunchSettlement(logs, EXPECTED, { gateway: V3.gateway, factory: V3.factory }).ok).toBe(true);
+    expectRefusal(
+      decodePoolsLaunchSettlement(logs, EXPECTED, { gateway: V3.gateway, factory: V1.factory }),
+      "does not describe one suite",
+    );
+  });
+
+  it("refuses a factory-only hint: a factory alone does not identify a suite", () => {
+    const logs = [
+      gatewayLog({}, V3.gateway),
+      factoryLog({ creator: getAddress(V3.gateway), deployer: getAddress(V3.gateway) }, V3.factory),
+    ];
+    expectRefusal(decodePoolsLaunchSettlement(logs, EXPECTED, { factory: V3.factory }), "named without its gateway");
+  });
+});
+
+describe("claim settlement - a named locker must be one of the table's", () => {
+  it("refuses an explicit locker outside the table even when it emitted a matching Claimed", () => {
+    expectRefusal(
+      decodePoolsClaimSettlement(
+        [claimedLog({}, STRANGER)],
+        { account: WALLET, tokenAddress: TOKEN },
+        { locker: STRANGER },
+      ),
+      "not one of the pools.fun suites Vex knows",
+    );
+  });
+
+  it("a known locker hint selects only that suite: a Claimed from another suite's locker is not believed", () => {
+    expectRefusal(
+      decodePoolsClaimSettlement(
+        [claimedLog({}, V1.locker)],
+        { account: WALLET, tokenAddress: TOKEN },
+        { locker: V3.locker },
+      ),
+      "no Claimed event",
+    );
+  });
+});
