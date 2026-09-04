@@ -179,10 +179,12 @@
     "trench.trades",
     "uniswap.swap.execute",
     "uniswap.swap.quote",
+    "virtuals.candles",
     "virtuals.geneses",
     "virtuals.get",
     "virtuals.graduations",
-    "virtuals.list"
+    "virtuals.list",
+    "virtuals.trades"
   ],
   "requiresEnvGates": [
     "JUPITER_API_KEY",

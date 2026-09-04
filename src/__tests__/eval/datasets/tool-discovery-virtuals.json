@@ -1,143 +1,305 @@
 {
   "version": "virtuals-v1",
   "namespace": "virtuals",
-  "description": "Retrieval-verification dataset for the virtuals namespace: read-only agent-token screening, single-agent detail, the graduation feed and the genesis sale calendar. Blind rows describe the research outcome without naming the brand; protocol-aware rows name it.",
+  "description": "Retrieval-verification dataset for the virtuals namespace: read-only agent-token screening, single-agent detail, the graduation feed, the genesis sale calendar, the bonding-curve trade tape and pool price candles. Blind rows describe the research outcome without naming the brand; protocol-aware rows name it.",
   "queries": [
     {
       "query": "screen agent tokens on Robinhood Chain by market cap and tell me which ones already left the bonding curve",
       "awareness": "blind",
       "scenario": "market_research",
       "intentShape": "single",
-      "expectedToolIds": ["virtuals.list"],
-      "expectedCoverageGroups": [["virtuals.list"]]
+      "expectedToolIds": [
+        "virtuals.list"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "virtuals.list"
+        ]
+      ]
     },
     {
       "query": "find the newest AI agent tokens on Base that are still on their bonding curve",
       "awareness": "blind",
       "scenario": "market_research",
       "intentShape": "single",
-      "expectedToolIds": ["virtuals.list"],
-      "expectedCoverageGroups": [["virtuals.list"]]
+      "expectedToolIds": [
+        "virtuals.list"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "virtuals.list"
+        ]
+      ]
     },
     {
       "query": "list Virtuals agent tokens on Solana sorted by 24h volume, top 20",
       "awareness": "protocol-aware",
       "scenario": "market_research",
       "intentShape": "single",
-      "expectedToolIds": ["virtuals.list"],
-      "expectedCoverageGroups": [["virtuals.list"]]
+      "expectedToolIds": [
+        "virtuals.list"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "virtuals.list"
+        ]
+      ]
     },
     {
       "query": "compare Virtuals agent tokens on Ethereum by holder concentration and age",
       "awareness": "protocol-aware",
       "scenario": "market_research",
       "intentShape": "single",
-      "expectedToolIds": ["virtuals.list"],
-      "expectedCoverageGroups": [["virtuals.list"]]
+      "expectedToolIds": [
+        "virtuals.list"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "virtuals.list"
+        ]
+      ]
     },
     {
       "query": "pull the full profile of agent token id 96200 including its liquidity and which venue trades it",
       "awareness": "blind",
       "scenario": "market_research",
       "intentShape": "single",
-      "expectedToolIds": ["virtuals.get"],
-      "expectedCoverageGroups": [["virtuals.get"]]
+      "expectedToolIds": [
+        "virtuals.get"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "virtuals.get"
+        ]
+      ]
     },
     {
       "query": "before I buy this agent token, check whether its anti-sniper buy tax window is still open",
       "awareness": "blind",
       "scenario": "token_safety",
       "intentShape": "single",
-      "expectedToolIds": ["virtuals.get"],
-      "expectedCoverageGroups": [["virtuals.get"]]
+      "expectedToolIds": [
+        "virtuals.get"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "virtuals.get"
+        ]
+      ]
     },
     {
       "query": "read one Virtuals agent in detail by its numeric id: tokenomics, category and fully diluted value in VIRTUAL",
       "awareness": "protocol-aware",
       "scenario": "market_research",
       "intentShape": "single",
-      "expectedToolIds": ["virtuals.get"],
-      "expectedCoverageGroups": [["virtuals.get"]]
+      "expectedToolIds": [
+        "virtuals.get"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "virtuals.get"
+        ]
+      ]
     },
     {
       "query": "show the Virtuals detail page for a single agent so I know its trading route and graduation state",
       "awareness": "protocol-aware",
       "scenario": "market_research",
       "intentShape": "single",
-      "expectedToolIds": ["virtuals.get"],
-      "expectedCoverageGroups": [["virtuals.get"]]
+      "expectedToolIds": [
+        "virtuals.get"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "virtuals.get"
+        ]
+      ]
     },
     {
       "query": "which agent tokens just graduated on Robinhood Chain in the last day",
       "awareness": "blind",
       "scenario": "market_research",
       "intentShape": "single",
-      "expectedToolIds": ["virtuals.graduations"],
-      "expectedCoverageGroups": [["virtuals.graduations"]]
+      "expectedToolIds": [
+        "virtuals.graduations"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "virtuals.graduations"
+        ]
+      ]
     },
     {
       "query": "feed of freshly graduated agent tokens on Base, newest graduation first, with their live buy tax",
       "awareness": "blind",
       "scenario": "market_research",
       "intentShape": "single",
-      "expectedToolIds": ["virtuals.graduations"],
-      "expectedCoverageGroups": [["virtuals.graduations"]]
+      "expectedToolIds": [
+        "virtuals.graduations"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "virtuals.graduations"
+        ]
+      ]
     },
     {
       "query": "what graduated on Virtuals recently on Solana, latest ten",
       "awareness": "protocol-aware",
       "scenario": "market_research",
       "intentShape": "single",
-      "expectedToolIds": ["virtuals.graduations"],
-      "expectedCoverageGroups": [["virtuals.graduations"]]
+      "expectedToolIds": [
+        "virtuals.graduations"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "virtuals.graduations"
+        ]
+      ]
     },
     {
       "query": "catch a fresh Virtuals graduation on Robinhood Chain before the sniper window closes",
       "awareness": "protocol-aware",
       "scenario": "market_research",
       "intentShape": "single",
-      "expectedToolIds": ["virtuals.graduations"],
-      "expectedCoverageGroups": [["virtuals.graduations"]]
+      "expectedToolIds": [
+        "virtuals.graduations"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "virtuals.graduations"
+        ]
+      ]
     },
     {
       "query": "what agent-token points sales are opening soon and when do they end",
       "awareness": "blind",
       "scenario": "market_research",
       "intentShape": "single",
-      "expectedToolIds": ["virtuals.geneses"],
-      "expectedCoverageGroups": [["virtuals.geneses"]]
+      "expectedToolIds": [
+        "virtuals.geneses"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "virtuals.geneses"
+        ]
+      ]
     },
     {
       "query": "history of pre-launch sale events for agent tokens, with participant counts, older page too",
       "awareness": "blind",
       "scenario": "market_research",
       "intentShape": "single",
-      "expectedToolIds": ["virtuals.geneses"],
-      "expectedCoverageGroups": [["virtuals.geneses"]]
+      "expectedToolIds": [
+        "virtuals.geneses"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "virtuals.geneses"
+        ]
+      ]
     },
     {
       "query": "browse the Virtuals genesis calendar for launches coming up on Base",
       "awareness": "protocol-aware",
       "scenario": "market_research",
       "intentShape": "single",
-      "expectedToolIds": ["virtuals.geneses"],
-      "expectedCoverageGroups": [["virtuals.geneses"]]
+      "expectedToolIds": [
+        "virtuals.geneses"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "virtuals.geneses"
+        ]
+      ]
     },
     {
       "query": "list Virtuals genesis sale events with their start and end times and the agent each one is linked to",
       "awareness": "protocol-aware",
       "scenario": "market_research",
       "intentShape": "single",
-      "expectedToolIds": ["virtuals.geneses"],
-      "expectedCoverageGroups": [["virtuals.geneses"]]
+      "expectedToolIds": [
+        "virtuals.geneses"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "virtuals.geneses"
+        ]
+      ]
     },
     {
       "query": "find a recently graduated agent token on Robinhood Chain and then read its full profile before buying",
       "awareness": "blind",
       "scenario": "market_research",
       "intentShape": "workflow",
-      "expectedToolIds": ["virtuals.graduations", "virtuals.get"],
-      "expectedCoverageGroups": [["virtuals.graduations"], ["virtuals.get"]]
+      "expectedToolIds": [
+        "virtuals.graduations",
+        "virtuals.get"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "virtuals.graduations"
+        ],
+        [
+          "virtuals.get"
+        ]
+      ]
+    },
+    {
+      "query": "who has been buying and selling this pre-graduation agent token in the last hour",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "virtuals.trades"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "virtuals.trades"
+        ]
+      ]
+    },
+    {
+      "query": "show me the recent trade tape for virtuals agent 135655, buys only",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "virtuals.trades"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "virtuals.trades"
+        ]
+      ]
+    },
+    {
+      "query": "give me hourly open high low close candles for this agent token's pool",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "virtuals.candles"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "virtuals.candles"
+        ]
+      ]
+    },
+    {
+      "query": "price history chart for virtuals agent 96200 since it graduated",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "virtuals.candles"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "virtuals.candles"
+        ]
+      ]
     }
   ]
 }

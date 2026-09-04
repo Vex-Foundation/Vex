@@ -1,7 +1,7 @@
 {
   "definition": {
     "function": {
-      "description": "Screen Virtuals Protocol agent tokens on ONE chain (base, solana, robinhood, or ethereum). Use this when the user wants to find or compare agent tokens rather than read one they can already name. Returns `agents` alongside chain, status, sort, matched, totalOnChain, count, `window` and a `windowNote`. Each row carries id, name, symbol, status (UNDERGRAD bonding-curve vs graduated AVAILABLE, with a warning flag on UNDERGRAD), token/preToken/LP addresses, holderCount, top10HolderPercentage, mcapInVirtual (denominated in the VIRTUAL token, NOT USD), volume24h, priceChangePercent24h, isVerified (anti-impersonation badge only), the anti-sniper buy-tax window, ageDays, and verified socials. Filter status client-side (undergrad|graduated|all) and order with sortBy: mcap, volume, newest, or recentGraduation (sort is accepted as an alias). WINDOWED: a chain holds tens of thousands of agents, so this reads a BOUNDED slice - up to 5 pages of pageSize rows from page - and every reply carries a windowNote naming the exact slice searched. CONTINUATION IS PROSE PLUS NUMBERS, not a cursor: `window` carries firstPage, lastPage, pagesFetched, pageSize, rowsScanned, total and `exhausted`, and `windowNote` says the same thing in words. `exhausted: true` means the provider had no further rows, which is the only end-of-list signal here; otherwise continue by calling again with page set to window.lastPage + 1, exactly as the windowNote states. An empty result is a statement about that window, never about the chain. Because status is filtered after the fetch, a status the sort buries needs the matching sort or a later page: UNDERGRAD agents have low market caps and do not appear near the top of an mcap sort - use sortBy: newest. Every unrecognised value (status, sortBy, limit, page, pageSize) is REJECTED by name rather than clamped. Read-only. Provide at most one of: sortBy, sort.",
+      "description": "Screen Virtuals Protocol agent tokens on ONE chain (base, robinhood, solana, ethereum). Use this to find or compare agent tokens rather than read one you can already name. EVERY FILTER RUNS SERVER-SIDE, so an empty result is a statement about your screen, not about a slice of the chain: the reply carries `count` (rows here), `totalMatched` (rows the filter found), `page`, `pageSize`, `pageCount`, `hasMore`, `nextPage` when there is one, and `filtersApplied` echoing exactly what ran. Each row carries id, virtualId, name, symbol, status (UNDERGRAD bonding-curve vs graduated AVAILABLE, with a warning on UNDERGRAD), factory, role, token/preToken/LP addresses, holderCount, top10HolderPercentage, devHoldingPercentage, mcapInVirtual (denominated in the VIRTUAL token, NOT USD), volume24h, priceChangePercent24h, the raw 18-decimal price in VIRTUAL, isVerified (anti-impersonation badge only), the anti-sniper tax window, ageDays, launchedAt and verified socials. Screen with any combination of: status, query + searchScope, symbol, tokenAddress (matches either the curve token or the graduated token), creatorWallet, factory, role, market-cap / holder / volume / liquidity / 24h-change / top-10-concentration ranges, createdAfter, launchedAfter, and the boolean screens isVerified, hasGraduated, hasGenesis, hasStaking, hasMarginTrading, hasFounderVideo, hasRevenueConnect, isDevCommitted, hasAntiSniperTax, hasAirdrop, needAcf, isProject60days, launchRadarEnabled, isRobotics, includeLaunchX / excludeLaunchX. Order with sortBy over the provider's 26 sortable attributes plus four convenience keywords, and sortDirection asc or desc. Set includePriceSeries for the provider's own 24h price samples on each row. Every unrecognised value is REJECTED by name rather than clamped or ignored - which matters here because the provider itself ignores an unknown filter key and returns everything. Read-only. Provide at most one of: sortBy, sort. Provide at most one of: limit, pageSize. Provide at most one of: includeLaunchX, excludeLaunchX.",
       "name": "virtuals__agents_discover",
       "parameters": {
         "additionalProperties": false,
@@ -16,21 +16,226 @@
             ],
             "type": "string"
           },
+          "createdAfter": {
+            "description": "Only agents created at or after this date (YYYY-MM-DD or full ISO).",
+            "type": "string"
+          },
+          "creatorWallet": {
+            "description": "The wallet that launched the agent (the row's own walletAddress), case-insensitive.",
+            "type": "string"
+          },
+          "excludeLaunchX": {
+            "description": "Drop X_LAUNCH and ACP_LAUNCH agents, as the provider's own UI does by default.",
+            "type": "boolean"
+          },
+          "factory": {
+            "description": "The launch contract family. Live BASE counts on 2026-09-04: BONDING_V4 21,630, BONDING_V5 19,473, BONDING 15,326, BONDING_V2 112, VIBES_BONDING_V2 47, ERC20 30, ERC20_PRO 4, BONDING_V3 3, SOL_METEORA 0 (98 on solana). Every ROBOTIC_* member returned ZERO rows: a robotics agent is stored under the plain factory with launchInfo.isRobotics true, so use `isRobotics` for that screen.",
+            "enum": [
+              "ERC20",
+              "BONDING",
+              "BONDING_V2",
+              "BONDING_V3",
+              "BONDING_V4",
+              "BONDING_V5",
+              "ERC20_PRO",
+              "ROBOTIC_BONDING_V2",
+              "ROBOTIC_BONDING_V3",
+              "ROBOTIC_BONDING_V4",
+              "ROBOTIC_ERC20_PRO",
+              "VIBES_BONDING_V2",
+              "SOL_METEORA"
+            ],
+            "type": "string"
+          },
+          "genesisStartsAfter": {
+            "description": "Only agents whose linked genesis sale starts at or after this date.",
+            "type": "string"
+          },
+          "genesisStartsBefore": {
+            "description": "Only agents whose linked genesis sale starts at or before this date.",
+            "type": "string"
+          },
+          "hasAirdrop": {
+            "description": "The launch reserved a non-zero airdrop percentage.",
+            "type": "boolean"
+          },
+          "hasAntiSniperTax": {
+            "description": "The launch configured a non-zero anti-sniper tax type. Note this is about CONFIGURATION, not about the window being open right now - read each row's antiSniper block for that.",
+            "type": "boolean"
+          },
+          "hasFounderVideo": {
+            "description": "The agent published a founder video pitch.",
+            "type": "boolean"
+          },
+          "hasGenesis": {
+            "description": "The agent came through a genesis points sale (its genesis relation is set).",
+            "type": "boolean"
+          },
+          "hasGraduated": {
+            "description": "The provider's own definition of graduated: lpCreatedAt is set.",
+            "type": "boolean"
+          },
+          "hasMarginTrading": {
+            "description": "The agent is margin-tradable. Zero rows on base and robinhood when last measured.",
+            "type": "boolean"
+          },
+          "hasRevenueConnect": {
+            "description": "The agent has a revenue-connect wallet configured.",
+            "type": "boolean"
+          },
+          "hasStaking": {
+            "description": "The agent has a staking address or an agent staking contract.",
+            "type": "boolean"
+          },
+          "includeLaunchX": {
+            "description": "Keep ONLY X_LAUNCH and ACP_LAUNCH agents. Opposite of excludeLaunchX; send at most one.",
+            "type": "boolean"
+          },
+          "includePriceSeries": {
+            "description": "Ask the provider for its 24h price samples and 24h low/high on each row, returned as `priceSeries24h`. These are irregularly spaced samples, not OHLC candles; for real candles on a graduated agent use virtuals__agent_candles_list.",
+            "type": "boolean"
+          },
+          "isDevCommitted": {
+            "description": "The developer made the on-platform commitment.",
+            "type": "boolean"
+          },
+          "isProject60days": {
+            "description": "The launch is in the 60-day project programme.",
+            "type": "boolean"
+          },
+          "isRobotics": {
+            "description": "A robotics agent. This is the working screen for robotics; the ROBOTIC_* factory values match nothing.",
+            "type": "boolean"
+          },
+          "isVerified": {
+            "description": "Anti-impersonation badge only - NOT a safety or quality signal. 45 rows carry it on base.",
+            "type": "boolean"
+          },
+          "launchRadarEnabled": {
+            "description": "The launch opted into Launch Radar.",
+            "type": "boolean"
+          },
+          "launchedAfter": {
+            "description": "Only agents whose bonding pair started trading at or after this date.",
+            "type": "string"
+          },
           "limit": {
-            "description": "Max agents to return after filtering (default 20, max 100). Paging stops once this many rows match. Out of range is rejected, not clamped.",
+            "description": "Rows to return on this page (default 20, max 100). This is OUR bound, not the provider's - it served a 10,000-row page live - because an agent row is large. Filtering is server-side, so a smaller page is not a smaller search: `totalMatched` says how many rows the filter found and `nextPage` reaches the rest. Out of range is rejected, not clamped.",
             "type": "number"
           },
+          "maxHolderCount": {
+            "description": "Ceiling on the holder count, for finding agents that are still early.",
+            "type": "number"
+          },
+          "maxLiquidityUsd": {
+            "description": "Liquidity ceiling (USD, display-grade).",
+            "type": "number"
+          },
+          "maxMcapInVirtual": {
+            "description": "Market cap ceiling, denominated in VIRTUAL, not USD.",
+            "type": "number"
+          },
+          "maxPriceChangePercent24h": {
+            "description": "24h change ceiling, in percent. Negative is legal.",
+            "type": "number"
+          },
+          "maxTop10HolderPercentage": {
+            "description": "Top-10 concentration ceiling, 0-100 - the usual way to screen out concentrated supply.",
+            "type": "number"
+          },
+          "maxVolume24h": {
+            "description": "24h volume ceiling (USD, display-grade).",
+            "type": "number"
+          },
+          "minHolderCount": {
+            "description": "Floor on the holder count - the usual screen against an agent nobody holds.",
+            "type": "number"
+          },
+          "minLiquidityUsd": {
+            "description": "Liquidity floor (USD, display-grade).",
+            "type": "number"
+          },
+          "minMcapInVirtual": {
+            "description": "Market cap floor, denominated in VIRTUAL, not USD.",
+            "type": "number"
+          },
+          "minPriceChangePercent24h": {
+            "description": "24h change floor, in percent. Negative is legal: -20 means down no more than 20 percent.",
+            "type": "number"
+          },
+          "minTop10HolderPercentage": {
+            "description": "Top-10 concentration floor, 0-100.",
+            "type": "number"
+          },
+          "minVolume24h": {
+            "description": "24h volume floor (USD, display-grade).",
+            "type": "number"
+          },
+          "needAcf": {
+            "description": "The launch used Automated Capital Formation (the 10 VIRTUAL launch-fee option).",
+            "type": "boolean"
+          },
           "page": {
-            "description": "1-based FIRST provider page of the window (default 1). The reply's windowNote names the next page to continue from.",
+            "description": "1-based provider page (default 1). The reply's `nextPage` names the next one.",
             "type": "number"
           },
           "pageSize": {
-            "description": "Rows fetched per provider page (default 100, max 200 - the provider's proven ceiling). Up to 5 pages are scanned per call, so pageSize x 5 bounds how deep one call reads.",
+            "description": "Alias of `limit`, accepted for compatibility - the same knob now that filtering happens server-side. Send either spelling, never both spellings in the same call.",
             "type": "number"
           },
-          "sort": {
-            "description": "Alias of sortBy, accepted for compatibility. Same values. Send ONE of the two, never both - a silently dropped spelling is indistinguishable from one that was honoured.",
+          "query": {
+            "description": "Free text or an address. By default it matches name, symbol, tokenAddress and preToken; `searchScope` narrows that to one side or the other.",
+            "type": "string"
+          },
+          "role": {
+            "description": "The agent's declared role. Most rows have none at all (9,410 of 10,000 sampled), so this is a narrow screen: ON_CHAIN 3,392 rows chain-wide.",
             "enum": [
+              "ENTERTAINMENT",
+              "INFORMATION",
+              "ON_CHAIN",
+              "PRODUCTIVITY",
+              "CREATIVE"
+            ],
+            "type": "string"
+          },
+          "searchScope": {
+            "description": "What `query` matches: text (name and symbol only), address (exact token or preToken match, case-insensitive), or any (default, both). Only meaningful alongside `query`.",
+            "enum": [
+              "text",
+              "address",
+              "any"
+            ],
+            "type": "string"
+          },
+          "sort": {
+            "description": "Alias of sortBy. Send either spelling, never both spellings in the same call.",
+            "enum": [
+              "circulatingSupply",
+              "createdAt",
+              "devHoldingPercentage",
+              "fdvInVirtual",
+              "holderCount",
+              "holderCountPercent24h",
+              "launchedAt",
+              "level",
+              "liquidityUsd",
+              "lpCreatedAt",
+              "mcapInVirtual",
+              "mindshare",
+              "netVolume24h",
+              "priceChangePercent1h",
+              "priceChangePercent5m",
+              "priceChangePercent6h",
+              "priceChangePercent24h",
+              "top10HolderPercentage",
+              "totalValueLocked",
+              "updatedAt",
+              "virtualTokenValue",
+              "virtualsPoolVol24h",
+              "volume1h",
+              "volume5m",
+              "volume6h",
+              "volume24h",
               "mcap",
               "volume",
               "newest",
@@ -39,8 +244,34 @@
             "type": "string"
           },
           "sortBy": {
-            "description": "Sort order, always descending: mcap (default), volume, newest, or recentGraduation. It decides WHICH rows the window contains, so pair it with status - sortBy: newest is what surfaces UNDERGRAD agents. An unrecognised value is rejected, not folded to mcap.",
+            "description": "Order the provider applies. Accepts its 26 sortable attributes directly, plus four keywords kept for compatibility: mcap (= mcapInVirtual, the default), volume (= volume24h), newest (= createdAt) and recentGraduation (= lpCreatedAt, which ALSO restricts the result to graduated agents, because ordering non-graduates by graduation time answers a different question). The provider refuses an attribute it does not have, so an unlisted key is a failed call rather than a default order.",
             "enum": [
+              "circulatingSupply",
+              "createdAt",
+              "devHoldingPercentage",
+              "fdvInVirtual",
+              "holderCount",
+              "holderCountPercent24h",
+              "launchedAt",
+              "level",
+              "liquidityUsd",
+              "lpCreatedAt",
+              "mcapInVirtual",
+              "mindshare",
+              "netVolume24h",
+              "priceChangePercent1h",
+              "priceChangePercent5m",
+              "priceChangePercent6h",
+              "priceChangePercent24h",
+              "top10HolderPercentage",
+              "totalValueLocked",
+              "updatedAt",
+              "virtualTokenValue",
+              "virtualsPoolVol24h",
+              "volume1h",
+              "volume5m",
+              "volume6h",
+              "volume24h",
               "mcap",
               "volume",
               "newest",
@@ -48,12 +279,36 @@
             ],
             "type": "string"
           },
+          "sortDirection": {
+            "description": "asc or desc (default desc). Declared as a closed set because the provider ACCEPTS a nonsense direction and silently sorts descending, so a typo would be invisible.",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "type": "string"
+          },
           "status": {
-            "description": "Client-side status filter applied to the fetched window: undergrad (bonding curve), graduated (AVAILABLE), or all (default). An unrecognised value is rejected, not ignored.",
+            "description": "Lifecycle stage, applied SERVER-SIDE: undergrad (still on the bonding curve), graduated (AVAILABLE, trading on an AMM pool), genesis (in a points sale), or all (default, no filter). An unrecognised value is rejected, not ignored.",
             "enum": [
               "undergrad",
               "graduated",
+              "genesis",
               "all"
+            ],
+            "type": "string"
+          },
+          "symbol": {
+            "description": "Exact ticker match, case-insensitive. Symbols are NOT unique - VEX matched 10 rows.",
+            "type": "string"
+          },
+          "tokenAddress": {
+            "description": "Find the agent that owns this address. Matches EITHER the graduated tokenAddress OR the bonding preToken, because the same agent uses different columns before and after graduation.",
+            "type": "string"
+          },
+          "vibesStatus": {
+            "description": "The vibes/ICO lane state. PRECOMMIT is the only value the provider matches (19 rows live); anything else returns zero rows there, which is why the set is closed here.",
+            "enum": [
+              "PRECOMMIT"
             ],
             "type": "string"
           }

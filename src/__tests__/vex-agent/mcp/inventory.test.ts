@@ -75,9 +75,15 @@ describe("the exported inventory covers exactly the export scope", () => {
     // 168 -> 167: `WebResearch` left the export (owner decision 2026-09-03).
     // Every client that connects has its own web search, so the exported copy
     // was a duplicate that cost a provider key and 2 KB of context.
-    expect(inventory).toHaveLength(167);
+    // 167 -> 169: PR-C1 exported the two Virtuals market-history reads,
+    // `virtuals__agent_trades_list` and `virtuals__agent_candles_list`. Both
+    // are read-only and answer a question the namespace previously could not
+    // answer at all (who is trading a pre-graduation agent, and what its pool
+    // price history looks like), so they belong in the same export scope as
+    // the four Virtuals reads already there.
+    expect(inventory).toHaveLength(169);
     expect(inventory.filter((t) => t.kind === "internal")).toHaveLength(27);
-    expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(140);
+    expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(142);
   });
 
   it("keeps WebResearch OUT of tools/list while the in-app registry keeps it", () => {

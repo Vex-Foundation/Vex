@@ -135,7 +135,7 @@ describe("G2 - publicName mapping gate", () => {
     );
   });
 
-  it("the mapped surface is the whole 136-tool catalog (drift alarm, not a cap)", () => {
+  it("the mapped surface is the whole 142-tool catalog (drift alarm, not a cap)", () => {
     // Not a limit: a Batch-2 addition updates this number together with its
     // mapping row, so the count and the map can never diverge silently.
     // 137 before the Batch 2 near-duplicate merges (owner decision D7) retired
@@ -159,7 +159,10 @@ describe("G2 - publicName mapping gate", () => {
     // `pair.details`, `candles`, `trades` and `top.traders`. All four are new
     // identities - no toolId is reclaimed, because none of the retired
     // public-API tools answered any part of what they answer.
-    expect(PROTOCOL_TOOLS.length).toBe(140);
+    // 140 before PR-C1, which added the two Virtuals market-history reads
+    // (`virtuals.trades`, `virtuals.candles`). Both are new identities with
+    // their own mapping rows in `mappings/virtuals.json`.
+    expect(PROTOCOL_TOOLS.length).toBe(142);
   });
 });
 

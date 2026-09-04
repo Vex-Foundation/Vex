@@ -43,11 +43,11 @@ free. Both texts live on the tool
 
 ## Totals
 
-- exported tools: 167
+- exported tools: 169
 - internal: 27
-- protocol: 140 across 11 namespaces
+- protocol: 142 across 11 namespaces
 - always loaded: 27
-- read-only: 109
+- read-only: 111
 - destructive: 50
 
 ## Internal tools
@@ -274,7 +274,9 @@ free. Both texts live on the tool
 
 | name | title | lane | read only | destructive | always load | requires env | description bytes | returns | vex fee |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| virtuals__agent_get | Read one Virtuals agent token | protocol | yes | no | no | - | 556 | - | none (read) |
-| virtuals__agents_discover | Screen Virtuals agent tokens | protocol | yes | no | no | - | 1889 | - | none (read) |
-| virtuals__genesis_launches_list | Browse the Virtuals Genesis calendar | protocol | yes | no | no | - | 1655 | - | none (read) |
-| virtuals__graduations_list | List recent Virtuals graduations | protocol | yes | no | no | - | 1247 | - | none (read) |
+| virtuals__agent_candles_list | Read a Virtuals agent's price candles | protocol | yes | no | no | - | 1611 | - | none (read) |
+| virtuals__agent_get | Read one Virtuals agent token | protocol | yes | no | no | - | 1365 | - | none (read) |
+| virtuals__agent_trades_list | Read a Virtuals agent's curve trade tape | protocol | yes | no | no | - | 1331 | - | none (read) |
+| virtuals__agents_discover | Screen Virtuals agent tokens | protocol | yes | no | no | - | 2039 | - | none (read) |
+| virtuals__genesis_launches_list | Browse the Virtuals Genesis calendar | protocol | yes | no | no | - | 1291 | - | none (read) |
+| virtuals__graduations_list | List recent Virtuals graduations | protocol | yes | no | no | - | 938 | - | none (read) |
