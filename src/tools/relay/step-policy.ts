@@ -25,6 +25,14 @@
  *    step. Any non-origin chainId → reject BEFORE any intent/sign.
  *  - Role map (closed): `approve` → `allowance`, `deposit` → `bridge_deposit`
  *    (the `agent_activity` roles W-SPINE's repo exposes). Truthful roles only.
+ *  - EXACTLY ONE DEPOSIT STEP. A plain bridge moves the principal once. A quote
+ *    carrying two deposit steps is rejected HERE, before any signable step is
+ *    returned: the approve binding proves an allowance equal to the principal,
+ *    and a second deposit against that same grant (or against an allowance that
+ *    already existed) would move the principal twice on one consent. The
+ *    downstream handler also requires the deposit to be the LAST signable step,
+ *    but that is a second reader of the same fact; the invariant belongs to the
+ *    only owner that sees the whole step list.
  *  - THE APPROVAL SHAPE IS `reset -> exact grant -> deposit`, or a prefix of
  *    it: at most one grant, at most one reset before it, and every approval
  *    strictly BEFORE the deposit step. Each approval's spender MUST be the
@@ -55,7 +63,8 @@ export type RelayStepRejectionReason =
   | "unsupported_step_kind"
   | "step_chain_not_origin"
   | "missing_step_transaction"
-  | "approve_not_bound_to_deposit";
+  | "approve_not_bound_to_deposit"
+  | "unsupported_deposit_step_count";
 
 /** One accepted, origin-scoped signable step + its role (original quote order). */
 export interface RelaySignableStep {
@@ -142,7 +151,26 @@ export function classifyRelayBridgeSteps(
   const approveBinding = bindApproveStepsToDeposit(signable);
   if (approveBinding !== null) return approveBinding;
 
+  const depositCount = countDeposits(signable);
+  if (depositCount !== 1) {
+    return {
+      ok: false,
+      reason: "unsupported_deposit_step_count",
+      stepId: "deposit",
+      detail: `Relay returned ${depositCount} deposit steps for this bridge; Vex signs a plain bridge, which is exactly one. Nothing was signed. Get a fresh relay__bridge_quote_get for this route and retry.`,
+    };
+  }
+
   return { ok: true, steps: signable };
+}
+
+/** How many classified steps carry the deposit role. */
+function countDeposits(signable: readonly RelaySignableStep[]): number {
+  let deposits = 0;
+  for (const entry of signable) {
+    if (entry.role === "bridge_deposit") deposits++;
+  }
+  return deposits;
 }
 
 /** The single origin transaction a classified step carries, or `null`. */

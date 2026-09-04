@@ -42,9 +42,19 @@
  *    so this entry binds the DEPOSITOR and leaves the amount to that gate.
  *  - `0x5a1ee3ac` = `depositErc20(address depositor, address token, bytes32
  *    id)`, the three-argument overload in the same verified source. It encodes
- *    no amount: the depository pulls the whole ALLOWANCE, which the approve
- *    guard has already bound to exactly the principal. Listed so the overload is
- *    a KNOWN shape rather than an unverified one.
+ *    NO amount and carries no native value: the depository pulls the whole
+ *    EFFECTIVE ALLOWANCE at execution time. Nothing on this path proves that
+ *    allowance equals the principal - the approve guard binds a grant this plan
+ *    CONTAINS, and a plan may legitimately carry no approve step at all when an
+ *    allowance already exists (`@tools/relay/step-policy.ts`), which no gate
+ *    compares to `bridgedRaw`. An allowance larger than the principal would
+ *    therefore be pulled in full. So this overload is REFUSED
+ *    ({@link BridgeDepositCalldataRefusalReason} `deposit_allowance_pull_unbindable`)
+ *    until an exact effective-allowance equality is read on-chain immediately
+ *    before signing. This is the same fail-closed choice
+ *    `@tools/kyberswap/evm/swap-calldata-guard.ts` makes for the simple-mode
+ *    entry point whose transfers it cannot express: a shape whose amount cannot
+ *    be bound is refused, never reported bound.
  *  - `0xf3125a1f` = Khalani `CONTRACT_CALL` deposit, target
  *    `0x1A7c327d0f402AEf2eD3D20D1141bD71BA1C317B` on Base. NOT CONFIRMED. That
  *    address is unverified on the Base explorer (no ABI, no source) and on
@@ -92,14 +102,6 @@ const VERIFIED_DEPOSIT_SIGNATURES: Readonly<Record<string, VerifiedDepositSignat
     amountArg: 2,
     principalIsTxValue: false,
   },
-  "0x5a1ee3ac": {
-    signature: "depositErc20(address,address,bytes32)",
-    types: [ADDRESS, ADDRESS, BYTES32],
-    depositorArg: 0,
-    tokenArg: 1,
-    amountArg: null,
-    principalIsTxValue: false,
-  },
   "0x49290c1c": {
     signature: "depositNative(address,bytes32)",
     types: [ADDRESS, BYTES32],
@@ -108,6 +110,16 @@ const VERIFIED_DEPOSIT_SIGNATURES: Readonly<Record<string, VerifiedDepositSignat
     amountArg: null,
     principalIsTxValue: true,
   },
+};
+
+/**
+ * Selectors whose SIGNATURE is confirmed but whose principal this module cannot
+ * bind to the plan, so they are refused rather than reported bound. Refusing is
+ * what keeps `bound: true` an honest claim: the alternative would be a verdict
+ * saying the deposit moves the principal when nothing proved it.
+ */
+const UNBINDABLE_DEPOSIT_SIGNATURES: Readonly<Record<string, string>> = {
+  "0x5a1ee3ac": "depositErc20(address,address,bytes32)",
 };
 
 /** Closed refusal vocabulary of the deposit binding. */
@@ -119,7 +131,9 @@ export type BridgeDepositCalldataRefusalReason =
   /** A confirmed selector that moves an amount other than the quoted principal. */
   | "deposit_principal_mismatch"
   /** A confirmed selector crediting an account that is not the selected wallet. */
-  | "deposit_depositor_not_wallet";
+  | "deposit_depositor_not_wallet"
+  /** A confirmed selector that pulls the allowance instead of a bindable amount. */
+  | "deposit_allowance_pull_unbindable";
 
 export type BridgeDepositCalldataVerdict =
   | { readonly ok: true; readonly bound: true; readonly signature: string }
@@ -169,13 +183,23 @@ function sameAddress(a: string, b: string): boolean {
 }
 
 /**
- * Every (venue, chain, selector) already reported, so the unverified-selector
- * line is emitted ONCE per shape rather than once per bridge. The set is
- * bounded by the number of deposit shapes a build can meet, which is the
- * number of entries a venue's router publishes: a handful, not a per-call
- * growth.
+ * How many (venue, chain, selector) keys the dedup remembers. An honest venue
+ * publishes a handful of deposit shapes, so this is far above real traffic; the
+ * cap exists because the SELECTOR half of every key is provider-controlled, and
+ * an unbounded set of provider-controlled strings is a memory the provider
+ * writes for the life of the process.
  */
-const reportedUnverified = new Set<string>();
+const UNVERIFIED_DEDUP_CAPACITY = 64;
+
+/**
+ * The (venue, chain, selector) keys already reported, most-recently-reported
+ * LAST: an insertion-ordered `Map` is the LRU, and the oldest key is evicted
+ * when the capacity is reached. Eviction is ACCOUNTED, never silent - the next
+ * line carries `dedupEvictedKeys`, so a reader can tell that an earlier shape
+ * may be reported a second time rather than believing the dedup was exact.
+ */
+const reportedUnverified = new Map<string, true>();
+let unverifiedDedupEvictions = 0;
 
 /** Report an unconfirmed deposit selector once per venue, chain and selector. */
 export function logUnverifiedDepositSelector(args: {
@@ -185,12 +209,25 @@ export function logUnverifiedDepositSelector(args: {
   readonly target: string;
 }): void {
   const key = `${args.venue}:${args.chainId}:${args.selector}`;
-  if (reportedUnverified.has(key)) return;
-  reportedUnverified.add(key);
+  if (reportedUnverified.has(key)) {
+    // Refresh recency: a shape a build keeps meeting must not be the one the
+    // cap evicts.
+    reportedUnverified.delete(key);
+    reportedUnverified.set(key, true);
+    return;
+  }
+  while (reportedUnverified.size >= UNVERIFIED_DEDUP_CAPACITY) {
+    const oldest = reportedUnverified.keys().next();
+    if (oldest.done === true) break;
+    reportedUnverified.delete(oldest.value);
+    unverifiedDedupEvictions++;
+  }
+  reportedUnverified.set(key, true);
   logger.info(`${args.venue}.${DEPOSIT_SELECTOR_UNVERIFIED}`, {
     chainId: args.chainId,
     selector: args.selector,
     target: args.target,
+    dedupEvictedKeys: unverifiedDedupEvictions,
   });
 }
 
@@ -208,6 +245,14 @@ export function verifyBridgeDepositCalldata(
   const selector = selectorOf(call.data);
   if (selector === null) {
     return { ok: true, bound: false, selector: "0x" };
+  }
+  const unbindable = UNBINDABLE_DEPOSIT_SIGNATURES[selector];
+  if (unbindable !== undefined) {
+    return {
+      ok: false,
+      reason: "deposit_allowance_pull_unbindable",
+      detail: `the deposit calls ${unbindable} (selector ${selector}), the overload that pulls the whole standing allowance instead of an amount Vex can bind to this plan`,
+    };
   }
   const known = VERIFIED_DEPOSIT_SIGNATURES[selector];
   if (known === undefined) {

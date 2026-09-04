@@ -390,6 +390,14 @@ export interface WithheldFeeCollection {
  *
  * The planned fee row is ABORTED rather than left planned: a row nobody will
  * ever sign must not sit pending forever, and the abort is what releases it.
+ *
+ * THE ABORT IS EXACTLY ONE ROW WIDE. `abortPlannedEvents` finalizes every
+ * hashless pending row from `fromIndex` ONWARD, and the logical
+ * `bridge_fill_expected` row sits after the fee row: aborting it would
+ * terminalize the reconciliation row of a deposit that WAS submitted to the
+ * provider and release its in-flight guard while the bridge may still fill. So
+ * the range handed to the venue is `[feeLegIndex, feeLegIndex + 1)` and the
+ * fill row stays pending for the W4 sweep.
  */
 export async function withholdFeeOnDepositShortfall(args: {
   readonly shortfall: DepositShortfall;
@@ -397,7 +405,16 @@ export async function withholdFeeOnDepositShortfall(args: {
   /** Index of the planned fee row, or -1 when this bridge charges no fee. */
   readonly feeLegIndex: number;
   readonly logScope: string;
-  readonly abortPlannedFeeRow: (fromIndex: number, reason: string) => Promise<void>;
+  /**
+   * Finalize the planned rows in `[fromIndex, toIndexExclusive)`. Both venues
+   * pass this straight to their `abortRemaining`, whose third argument is the
+   * repository's own exclusive bound.
+   */
+  readonly abortPlannedFeeRow: (
+    fromIndex: number,
+    reason: string,
+    toIndexExclusive: number,
+  ) => Promise<void>;
 }): Promise<WithheldFeeCollection> {
   logger.warn(`${args.logScope}.fee_withheld_deposit_short`, {
     executionId: args.executionId,
@@ -405,7 +422,11 @@ export async function withholdFeeOnDepositShortfall(args: {
     quoted: args.shortfall.quotedAmountRaw,
   });
   if (args.feeLegIndex !== -1) {
-    await args.abortPlannedFeeRow(args.feeLegIndex, "deposit proved less than the quoted principal");
+    await args.abortPlannedFeeRow(
+      args.feeLegIndex,
+      "deposit proved less than the quoted principal",
+      args.feeLegIndex + 1,
+    );
   }
   return { collection: "not_attempted", collectionNote: depositShortfallNote(args.shortfall) };
 }

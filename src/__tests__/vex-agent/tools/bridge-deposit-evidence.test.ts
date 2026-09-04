@@ -345,19 +345,38 @@ describe("withholdFeeOnDepositShortfall - a short bridge is never charged", () =
   const shortfall = { provenAmountRaw: "999999", quotedAmountRaw: "1000000" };
 
   it("aborts the planned fee row and takes no fee", async () => {
-    const aborted: Array<readonly [number, string]> = [];
+    const aborted: Array<readonly [number, string, number]> = [];
     const collection = await withholdFeeOnDepositShortfall({
       shortfall,
       executionId: 42,
       feeLegIndex: 2,
       logScope: "relay.bridge",
-      abortPlannedFeeRow: async (fromIndex, reason) => {
-        aborted.push([fromIndex, reason]);
+      abortPlannedFeeRow: async (fromIndex, reason, toIndexExclusive) => {
+        aborted.push([fromIndex, reason, toIndexExclusive]);
       },
     });
     expect(collection.collection).toBe("not_attempted");
     expect(aborted).toHaveLength(1);
     expect(aborted[0]?.[0]).toBe(2);
+  });
+
+  it("bounds the abort to the fee row ALONE, leaving the logical fill row pending", async () => {
+    // The deposit WAS submitted to the provider: it merely moved less than the
+    // quote. Its `bridge_fill_expected` row is the next event index, and
+    // `abortPlannedEvents` finalizes every hashless pending row from
+    // `fromIndex` onward, so an unbounded abort would terminalize the
+    // reconciliation row and release the in-flight guard of a live bridge.
+    const aborted: Array<readonly [number, string, number]> = [];
+    await withholdFeeOnDepositShortfall({
+      shortfall,
+      executionId: 42,
+      feeLegIndex: 3,
+      logScope: "khalani.bridge",
+      abortPlannedFeeRow: async (fromIndex, reason, toIndexExclusive) => {
+        aborted.push([fromIndex, reason, toIndexExclusive]);
+      },
+    });
+    expect(aborted).toEqual([[3, "deposit proved less than the quoted principal", 4]]);
   });
 
   it("names BOTH figures in the note the agent and the human read", async () => {

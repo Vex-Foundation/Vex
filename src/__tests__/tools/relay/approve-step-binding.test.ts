@@ -282,6 +282,42 @@ describe("classifyRelayBridgeSteps - reset then grant then deposit, and nothing 
   }
 });
 
+// ── Exactly one deposit ────────────────────────────────────────────────────
+//
+// The approve binding proves ONE grant equal to the principal. It says nothing
+// about how many times that grant is spent, and a quote may legitimately carry
+// no approval at all when an allowance already exists. A step list with two
+// deposits would move the principal twice on one consent, so the count is the
+// step policy's own invariant - it is the only gate that sees the whole list.
+
+describe("classifyRelayBridgeSteps - a plain bridge deposits exactly once", () => {
+  it("rejects a second deposit step against one exact-principal approval", () => {
+    const result = classifyRelayBridgeSteps(
+      quote(approveStep(approveData(DEPOSIT_TARGET, PRINCIPAL)), depositStep(), depositStep()),
+      ORIGIN,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe("unsupported_deposit_step_count");
+      expect(result.detail).toMatch(/nothing was signed/i);
+      expect(result.detail).toMatch(/relay__bridge_quote_get/);
+    }
+    // No step list is returned, so the handler has nothing to broadcast.
+    expect("steps" in result).toBe(false);
+  });
+
+  it("rejects two deposit steps on a standing allowance, where no approve step exists at all", () => {
+    const result = classifyRelayBridgeSteps(quote(depositStep(), depositStep()), ORIGIN);
+    expect(result).toMatchObject({ ok: false, reason: "unsupported_deposit_step_count" });
+    expect("steps" in result).toBe(false);
+  });
+
+  it("accepts the single-deposit shape unchanged", () => {
+    expect(classifyRelayBridgeSteps(quote(approveStep(approveData(DEPOSIT_TARGET, PRINCIPAL)), depositStep()), ORIGIN).ok)
+      .toBe(true);
+  });
+});
+
 // ── The deposit call itself ────────────────────────────────────────────────
 //
 // The exact allowance proves what the depository MAY pull; only the deposit
@@ -314,6 +350,26 @@ describe("planRelayStepTx - the deposit moves exactly the principal", () => {
         .toThrow(/refused before signing the relay deposit/i);
     });
   }
+
+  it("refuses the allowance-pulling overload, which encodes no amount to bind", () => {
+    // `depositErc20(depositor, token, id)` pulls the whole EFFECTIVE allowance.
+    // This plan may carry no approve step at all (Relay omits it on a standing
+    // allowance), so nothing here proves that allowance is the principal.
+    const body = encodeAbiParameters(
+      [{ type: "address" }, { type: "address" }, { type: "bytes32" }],
+      [WALLET, USDC, `0x${"11".repeat(32)}`],
+    );
+    try {
+      planRelayStepTx(depositStep(`0x5a1ee3ac${body.slice(2)}`), ORIGIN, WALLET, depositContext());
+      expect.unreachable("an amount-free deposit overload must not plan");
+    } catch (err) {
+      const error = err as { code?: string; message?: string; hint?: string };
+      expect(error.code).toBe("RELAY_BRIDGE_FAILED");
+      expect(error.message).toMatch(/refused before signing the relay deposit/i);
+      expect(error.message).toContain("0x5a1ee3ac");
+      expect(error.hint).toMatch(/fresh relay__bridge_quote_get/);
+    }
+  });
 
   it("records rather than refuses a selector no authority confirms", () => {
     // Refusing an unconfirmed selector would break honest traffic the moment

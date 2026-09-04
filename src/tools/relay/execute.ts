@@ -266,12 +266,14 @@ export function planRelayStepTx(
 
   // THE DEPOSIT BINDING (`@tools/evm-chains/bridge-deposit-calldata.ts`). The
   // exact allowance proves what the depository MAY pull; only the deposit
-  // calldata proves what it is being ASKED to pull. Both Relay deposit
-  // selectors are confirmed against the verified `RelayDepository` source, so a
-  // deposit that names another token, credits another account, or moves an
-  // amount that is not the principal refuses HERE, before any nonce or
-  // signature. A selector no authority confirms is recorded and logged once,
-  // never refused: the receipt floor is the money guard for it.
+  // calldata proves what it is being ASKED to pull. Relay's amount-carrying
+  // deposit selectors are confirmed against the verified `RelayDepository`
+  // source, so a deposit that names another token, credits another account, or
+  // moves an amount that is not the principal refuses HERE, before any nonce or
+  // signature - and so does the amount-free overload, whose principal is the
+  // standing allowance and therefore cannot be bound at all. A selector no
+  // authority confirms is recorded and logged once, never refused: the receipt
+  // floor is the money guard for it.
   if (nativeValue.role === "bridge_deposit") {
     const verdict = verifyBridgeDepositCalldata(
       { to, data: data.data, value },

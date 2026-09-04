@@ -519,7 +519,11 @@ async function relayBridge(
       executionId,
       feeLegIndex,
       logScope: "relay.bridge",
-      abortPlannedFeeRow: (fromIndex, reason) => abortRemaining(executionId, fromIndex, reason),
+      // Exactly the fee row: the logical `bridge_fill_expected` row sits after
+      // it and must stay pending, because the deposit itself reached the
+      // provider and its reconciliation is still owed.
+      abortPlannedFeeRow: (fromIndex, reason, toIndexExclusive) =>
+        abortRemaining(executionId, fromIndex, reason, toIndexExclusive),
     })
     : feeLegIndex === -1
     ? NO_FEE_COLLECTION
