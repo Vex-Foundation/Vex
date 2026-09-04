@@ -56,7 +56,7 @@ export const POOLS_LAUNCH_TOOLS: readonly ProtocolToolManifest[] = [
       + "tick, the pinned metadata and image, the token address, the prebuy, the exact value, and the wallet's "
       + "balance - and REFUSES BY NAME if any of them disagrees. The creator fee stream always goes to the user's own "
       + "session wallet on this path; there is no recipient parameter. AN IMAGE IS REQUIRED on this path: pass the "
-      + "imageId of a picture the user staged in the image locker (list them with trench__images_list, which reads the "
+      + "imageId of a picture the user staged in the image locker (list them with launchpads__images_list, which reads the "
       + "locker both launchpads share), because a token launched without one renders blank on pools.fun forever and "
       + "that cannot be undone - without an imageId this tool REFUSES and launches nothing. It runs ONLY under explicit authority: in a "
       + "FULL-permission chat session the user's permission is the authority and this executes directly; in a "

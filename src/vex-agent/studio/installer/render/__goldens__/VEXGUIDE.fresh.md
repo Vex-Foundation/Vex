@@ -1,4 +1,4 @@
-<!-- vex:studio:begin vex=0.2.6 hash=2daea0b745fa7eba -->
+<!-- vex:studio:begin vex=0.2.6 hash=cd08fce61547d09f -->
 # Vex guide - project "acme-trading"
 
 The companion to this project's `AGENTS.md`, which carries the authority:
@@ -162,6 +162,16 @@ pools.fun is a no-curve launchpad whose tokens open directly in a real SushiSwap
 - Quote: Preview a launch and its current deployment cost without committing. The preview is advisory and cannot predict the final token address. This namespace has no trading quote; acquiring a token requires a separate trading quote on a swap venue.
 - Act: Open the launch form for a pools fun coin, launch the coin on pools fun now under the applicable authority, or claim my creator fees after a dry-run simulation. It has no buy or sell action.
 - Vex fee: 25 bps of the native value a launch or trade sends; reads are free.
+
+### launchpads
+
+The launchpad-neutral half of a token launch: the shared image locker, and the public content-addressed host a launch's image URL points at.
+
+- Chains: No chain of its own: the locker and its host are chain-agnostic, and one staged picture serves a launch on any chain.
+- Read: List the pictures staged in the user's image locker: label, size, format, and whether each already has a public address.
+- Quote: Nothing here is priced; publishing a picture costs nothing.
+- Act: Publish one staged picture to Vex's public image host, under the ordinary approval card, and record its permanent URL.
+- Vex fee: none - the image locker is a read and publishing a picture moves no value, so neither charges anything. The launch a picture is FOR is charged by its own launchpad namespace.
 
 A quote authorizes only the execute in its OWN pair and stays fresh for
 15 minutes. A namespace's own execute runs the SAME code path as the

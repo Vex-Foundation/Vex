@@ -117,9 +117,15 @@ describe("trench prompt package", () => {
     expect(prompt).toContain("`MissionDraftUpdate` cannot write them");
     expect(prompt).toContain("contract card before accepting the contract");
     // The image check is a STATE read during setup, not banned market research.
-    expect(prompt).toContain("`trench__images_list`");
+    // INTENTIONAL CONTRACT CHANGE (launchpads arc PR2): the locker is one
+    // locker, shared by every launchpad, and the tool that lists it is now the
+    // launchpad-neutral `launchpads__images_list`. The old assertions pinned a
+    // Trench-prefixed name and a Trench-branded card for a store that was never
+    // Trench's, which is exactly what taught the model otherwise.
+    expect(prompt).toContain("`launchpads__images_list`");
     expect(prompt).toContain("state read");
-    expect(prompt).toContain("Trench Photos card");
+    expect(prompt).toContain("image card");
+    expect(prompt).toContain("shared by every launchpad");
   });
 
   // ── P5: mission run — research pointer, launches, slice ────────
@@ -145,7 +151,14 @@ describe("trench prompt package", () => {
       expect(prompt).toContain("## Token launches");
       expect(prompt).toContain("irreversible and spends real ETH");
       expect(prompt).toContain("max launch value, max launch count");
-      expect(prompt).toContain("`trench__launch_preview`");
+      // INTENTIONAL CONTRACT CHANGE (launchpads arc PR2): the run prompt no
+      // longer hard-codes ONE launchpad's preview and execute names. It names
+      // the launchpad-neutral image step, then sends the model to ToolSearch
+      // for the venue's own tools - which is what stopped the prompt from
+      // describing Trench as the only launchpad while pools.fun launches were
+      // already live.
+      expect(prompt).toContain("`launchpads__images_list`");
+      expect(prompt).toContain("find them with ToolSearch");
       expect(prompt).toContain("hands the launch DECISION to the user");
       // Honesty gate: a refusal from deferred host wiring is a report-and-move-on,
       // never an improvised alternative route or a retry loop.

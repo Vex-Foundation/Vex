@@ -79,7 +79,7 @@ export function buildMissionRunPrompt(
 
   lines.push("## Token launches");
   lines.push("- Launching a token is irreversible and spends real ETH: only a mission whose contract authorizes launching, and whose host-authored launch ceilings (max launch value, max launch count) are set, may launch one.");
-  lines.push("- The path is `trench__images_list` (an image the user pre-staged — you can never supply one), then `trench__launch_preview`, then `trench__launch_execute`; `trench__launch_request_form` hands the launch DECISION to the user instead of spending.");
+  lines.push("- The picture comes first and is launchpad-neutral: `launchpads__images_list` names an image the user pre-staged, and you can never supply one. The rest of the path belongs to the launchpad you are launching on, and each one names its own preview, form and execute tools; find them with ToolSearch rather than assuming. A `*_launch_request_form` tool hands the launch DECISION to the user instead of spending.");
   // Honesty gate (Codex round 2): a launch tool may refuse today because the
   // host surface (form wiring, contract-card ceilings) is not in place. The
   // refusal is safe; the dangerous response is improvising around it.

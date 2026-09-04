@@ -349,6 +349,16 @@ Characteristics and limits: Symbols repeat and contract address is identity. Hol
 Coverage: Robinhood Chain (4663) only.
 Contains mutating tools (may require approval).
 
+### launchpads
+The launchpad-neutral half of a token launch: the shared image locker, and the public content-addressed host a launch's image URL points at.
+Read: List the pictures staged in the user's image locker: label, size, format, and whether each already has a public address.
+Quote: Nothing here is priced; publishing a picture costs nothing.
+Act: Publish one staged picture to Vex's public image host, under the ordinary approval card, and record its permanent URL.
+When it applies: Use it whenever a launch on any launchpad needs a picture, or the user asks what pictures are staged.
+Characteristics and limits: You can never create, upload or supply a picture, only name one the locker holds. Publishing makes the bytes PUBLIC and permanent until the user withdraws them; the URL is the picture's own hash, so it can never later serve different bytes. Only metadata leaves the locker.
+No chain of its own: the locker and its host are chain-agnostic, and one staged picture serves a launch on any chain.
+Contains mutating tools (may require approval).
+
 ## How Vex works a task
 
 ### Research

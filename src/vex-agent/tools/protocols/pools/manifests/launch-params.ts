@@ -55,7 +55,7 @@ export const POOLS_LAUNCH_FIELD_PARAMS: readonly ProtocolParamDef[] = [
     key: "imageId",
     type: "string",
     description:
-      "Identifier of a picture the user already staged in the app's image locker, listed by trench__images_list (the locker is shared by both launchpads). The agent can never create one, only name one the locker already holds. Optional here; pools__launch_execute REQUIRES it.",
+      "Identifier of a picture the user already staged in the app's image locker, listed by launchpads__images_list (one locker, shared by every launchpad). The agent can never create one, only name one the locker already holds. Optional here; pools__launch_execute REQUIRES it.",
   },
   {
     key: "prebuy",
@@ -88,7 +88,7 @@ export const POOLS_LAUNCH_EXECUTE_PARAMS: readonly ProtocolParamDef[] =
           ...param,
           required: true,
           description:
-            "REQUIRED on this tool: the identifier of a picture the user already staged in the app's image locker, listed by trench__images_list (the locker is shared by both launchpads). The agent can never create one, only name one the locker already holds; without it this tool refuses and nothing is launched. A token launched with no image renders blank on pools.fun forever and that cannot be undone.",
+            "REQUIRED on this tool: the identifier of a picture the user already staged in the app's image locker, listed by launchpads__images_list (one locker, shared by every launchpad). The agent can never create one, only name one the locker already holds; without it this tool refuses and nothing is launched. A token launched with no image renders blank on pools.fun forever and that cannot be undone.",
         }
       : param,
   );

@@ -22,6 +22,7 @@ import * as dbClient from "@vex-agent/db/client.js";
 import * as lease from "@vex-agent/engine/runtime/lease-and-status.js";
 import * as walletResolve from "@vex-agent/tools/internal/wallet/resolve.js";
 import { POOLS_HANDLERS } from "@vex-agent/tools/protocols/pools/handlers.js";
+import { getProtocolManifest } from "@vex-agent/tools/protocols/catalog.js";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 import { makeProtocolContext } from "../../_test-context.js";
 
@@ -245,10 +246,16 @@ describe("the launch surface has no fee, value, recipient, deadline or gas input
   // The strict param boundary rejects undeclared keys before a handler runs, so
   // this asserts the DECLARATION rather than handler behaviour: none of these
   // keys may ever appear in the manifests.
+  // The catalog is imported STATICALLY at the top of this file rather than with
+  // a dynamic `import()` inside each case. The dynamic form made every one of
+  // these seven cases pay a cold module load of the whole protocol catalog
+  // inside the default 10 s test timeout, and on a slow machine the first cases
+  // timed out - a red suite that said nothing about the assertion, which is a
+  // pure array check that cannot fail. The load happens once, at import, where
+  // no per-test timeout applies.
   it.each(["feeRecipient", "value", "deadline", "gas", "minOut", "devBuyMinOut", "salt"])(
     "does not declare %s on either launch tool",
-    async (key) => {
-      const { getProtocolManifest } = await import("@vex-agent/tools/protocols/catalog.js");
+    (key) => {
       for (const toolId of ["pools.launch_preview", "pools.launch_request_form"]) {
         const keys = getProtocolManifest(toolId)?.params.map((p) => p.key) ?? [];
         expect(keys, `${toolId} must not accept ${key}`).not.toContain(key);

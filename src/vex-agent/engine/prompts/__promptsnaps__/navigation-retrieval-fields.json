@@ -1091,6 +1091,55 @@
           ]
         }
       ]
+    },
+    "launchpads": {
+      "aliases": [
+        "launchpads",
+        "image locker",
+        "launch images",
+        "token launch artwork",
+        "launch image host"
+      ],
+      "discoveryHints": [
+        "what images can I use to launch a token",
+        "check the image locker",
+        "do I have a picture staged for the launch",
+        "publish my launch image",
+        "public url for the token picture"
+      ],
+      "exampleQueries": [
+        "ToolSearch(query=\"what images are staged for a token launch\", namespace=\"launchpads\")",
+        "ToolSearch(query=\"publish the launch image and get its public url\", namespace=\"launchpads\")"
+      ],
+      "facets": [
+        {
+          "label": "The shared image locker",
+          "summary": "List the pictures the user has staged in the app, metadata only. The locker is shared by every launchpad, so the same picture serves any launch. A launch REQUIRES one and the agent can never supply it; check while planning, and if the locker is empty ask the user to add a picture on the image card.",
+          "toolPrefixes": [
+            "launchpads.images"
+          ],
+          "hints": [
+            "what images do I have for a launch",
+            "check the image locker",
+            "list my staged launch images",
+            "pick a launch image",
+            "is there a picture for the token"
+          ]
+        },
+        {
+          "label": "Publishing a launch image",
+          "summary": "Publish one staged picture to Vex's public image host and get the permanent URL a launch puts on chain. The bytes become public and stay hosted until withdrawn; the URL is the picture's own sha256, so it can never serve different bytes later. Approval-gated, signs nothing, spends no gas, and publishing the same picture twice returns the same URL.",
+          "toolPrefixes": [
+            "launchpads.image_publish"
+          ],
+          "hints": [
+            "publish the launch image",
+            "get a public url for the token picture",
+            "host my launch image",
+            "make the picture public for the launch"
+          ]
+        }
+      ]
     }
   },
   "toolDiscoveryDigests": {
@@ -1235,6 +1284,8 @@
     "pools.launch_preview": "c4c122a5e3f401f4c444cb1ba42c3d7648c6d2605b214a737368ee3a945a3a03",
     "pools.launch_request_form": "97980310773833aba195d4094b44a2567a53877ede8f12a3da7742f76138143b",
     "pools.launch_execute": "059c49b596aa13a1328999b113ef6f7fc4a1ef67443c59806961662347299a1f",
-    "pools.claim_fees": "274475a9f9ffd37aec741fddab2d47a129dcf8922986237604b98d9ef866dd48"
+    "pools.claim_fees": "274475a9f9ffd37aec741fddab2d47a129dcf8922986237604b98d9ef866dd48",
+    "launchpads.images": "f7f02a267d0e6f53148e9e9185993c1829fc7e2fda7ace9dcd394bcc7a4d6e99",
+    "launchpads.image_publish": "e06e4ed9409bbcd3f332860c9361d3118d374f1b9437531ab0026bf6a2bbcf9f"
   }
 }

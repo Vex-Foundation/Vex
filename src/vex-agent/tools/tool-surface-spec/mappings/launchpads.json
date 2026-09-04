@@ -1,0 +1,15 @@
+{
+  "namespace": "launchpads",
+  "entries": [
+    {
+      "toolId": "launchpads.images",
+      "publicName": "launchpads__images_list",
+      "rationale": "Adds the canonical verb; bounded listing of the user's staged image locker, metadata only. The namespace is launchpad-neutral on purpose: there is ONE locker, shared by every launchpad, and the previous name (trench__images_list) taught the model that it belonged to Trench, which was never true."
+    },
+    {
+      "toolId": "launchpads.image_publish",
+      "publicName": "launchpads__image_publish",
+      "rationale": "Resource then action, with no plural: this publishes exactly ONE picture per call, so a `_list`-shaped or plural name would misdescribe the operation. `publish` rather than `upload` because the consequence the user consents to is publication, not transfer."
+    }
+  ]
+}

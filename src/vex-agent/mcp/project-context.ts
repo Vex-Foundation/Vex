@@ -117,6 +117,10 @@ export function buildProjectToolContext(
     // message instead of promising an automatic one (`tools/internal/types.ts`,
     // `toolLane`). It gates nothing and grants nothing.
     toolLane: "mcp",
+    // The project this call runs for. Host-side evidence from the authoritative
+    // scope snapshot; the lane that accepts an `imagePath` resolves the project
+    // ROOT from it at the moment of use.
+    studioProjectId: scope.projectId,
     sourceSurface: "mcp_local",
     sourceSession: scope.backingSessionId,
     walletResolution: buildProjectWalletResolution(scope.wallets),

@@ -112,6 +112,16 @@ export const STUDIO_NAMESPACE_FEES: Readonly<Record<string, StudioNamespaceFee>>
       "src/tools/solana-ecosystem/jupiter/jupiter-prediction",
     ],
   },
+  launchpads: {
+    // Nothing in this namespace moves value. Listing the locker is a database
+    // read, and publishing a picture is an upload to a host Vex runs: there is
+    // no swap, no transfer and no launch here to take a cut of, so the honest
+    // line is "none" with the lanes that must import no fee module as evidence.
+    line:
+      "none - the image locker is a read and publishing a picture moves no value, so neither "
+      + "charges anything. The launch a picture is FOR is charged by its own launchpad namespace.",
+    freeLanes: ["src/vex-agent/tools/protocols/launchpads"],
+  },
   trench: {
     line:
       "25 bps of the ETH a curve trade moves, or of a launch's native value; "

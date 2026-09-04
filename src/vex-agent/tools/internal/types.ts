@@ -117,6 +117,20 @@ export interface InternalToolContext {
    */
   toolLane?: "in_app" | "mcp";
   /**
+   * WHICH Vex Studio project this call runs for, when it runs for one.
+   *
+   * HOST-SIDE EVIDENCE, never model input, exactly like `missionId` and
+   * `approvalId` above: it is copied from the authoritative per-call project
+   * scope snapshot the privileged app loads, and nothing on the wire can
+   * influence it. Absent on every in-app lane, where there is no project.
+   *
+   * It is not a permission and grants nothing. Its one job is to let a lane
+   * that accepts a model-supplied FILE PATH look up the project root that path
+   * must stay inside (`mcp/project-root.ts` reads `projects.root_path` fresh at
+   * the moment of use, rather than trusting a root cached on a connection).
+   */
+  studioProjectId?: string | null;
+  /**
    * Session kind - propagated from EngineContext. Lets handlers defense-in-depth
    * their own preconditions without relying solely on the registry visibility
    * filter (e.g. `LoopDefer` handler rejects non-mission calls even if the
