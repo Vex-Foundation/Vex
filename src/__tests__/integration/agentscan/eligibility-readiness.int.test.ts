@@ -47,6 +47,10 @@ const extraExecutionIds: number[] = [];
 afterEach(async () => {
   const { execute } = await sql();
   await execute(`DELETE FROM agentscan_outbox`, []);
+  // The vocabulary gate's marker is INSTALL state, not row state: leaving it set
+  // would hand the next suite an install that has already backfilled, which is
+  // exactly the cross-file residue the fixture cleanup below exists to prevent.
+  await execute(`UPDATE agentscan_reporting_state SET backfill_enqueued_at = NULL WHERE id = 1`, []);
   if (extraExecutionIds.length > 0) {
     const ids = extraExecutionIds.splice(0, extraExecutionIds.length);
     await execute(`DELETE FROM agent_activity WHERE protocol_execution_id = ANY($1::bigint[])`, [ids]);
@@ -61,9 +65,24 @@ const SOLANA_ONLY_KINDS = new Set(["lend", "prediction"]);
 const ERC20_IN = { tokenAddress: "0x" + "1".repeat(40), tokenSymbol: "USDC", tokenDecimals: 6, amountRaw: "2000000" };
 const ERC20_OUT = { tokenAddress: "0x" + "2".repeat(40), tokenSymbol: "PT", tokenDecimals: 18, amountRaw: "1900000000000000000" };
 
+/** The kinds this file drives through the generic write path. */
+type SeedKind = "swap" | "lend" | "prediction" | "yield" | "launch" | "wrap" | "claim";
+
+/**
+ * The claim family spends nothing (`agent_activity_claim_family_no_input_leg`,
+ * migration 102), so a claim row is seeded with its OUTPUT leg only. The
+ * database refuses the swap-shaped fixture for these roles, which is the
+ * constraint doing its job rather than a fixture inconvenience.
+ */
+const NO_INPUT_LEG_ROLES = new Set([
+  "creator_fee_claim",
+  "holder_reward_claim",
+  "reward_distribution",
+]);
+
 /** One pending row of the given kind/role, through the real generic write path. */
 async function seedPending(
-  kind: "swap" | "lend" | "prediction" | "yield" | "launch" | "wrap",
+  kind: SeedKind,
   eventRole: string,
   extra: Record<string, unknown> = {},
 ): Promise<number> {
@@ -82,11 +101,28 @@ async function seedPending(
     chainFamily: SOLANA_ONLY_KINDS.has(kind) ? "solana" : "eip155",
     walletAddress,
     sessionId,
-    tokenIn: ERC20_IN,
+    ...(NO_INPUT_LEG_ROLES.has(eventRole) ? {} : { tokenIn: ERC20_IN }),
     tokenOut: ERC20_OUT,
     ...extra,
   });
   return event.id;
+}
+
+/**
+ * Put the reporting state where a normal install sits AFTER its one-time
+ * backfill for the widened vocabulary has run: version 2, marker present.
+ *
+ * Every incremental scan below assumes that state, because that is the steady
+ * state; the gate itself - what an incremental scan may do BEFORE the marker -
+ * has its own suite in `vocabulary-backfill-gate.int.test.ts`.
+ */
+async function markVocabularyBackfillComplete(): Promise<void> {
+  const repo = await reportingRepo();
+  const state = await repo.getReportingState();
+  // The one transaction that owns both halves of the marker, exactly as the
+  // periodic lane calls it. The stamp it writes is the VERSION the scan covered,
+  // which is what the eligibility gate reads.
+  await repo.enqueueBackfillAndMark({ startedAtGeneration: state.registrationGeneration });
 }
 
 /**
@@ -165,6 +201,29 @@ describe("eligibility — the reportable kind/role matrix", () => {
 
   for (const [kind, eventRole] of REPORTABLE) {
     it(`enqueues a pending ${kind}/${eventRole} row`, async () => {
+      const id = await seedPending(kind, eventRole);
+      expect(await enqueuedFor(id)).toBe(1);
+    });
+  }
+
+  /**
+   * Migration 102's vocabulary, arm for arm with the server's `ROLES_BY_KIND`.
+   * Every one of these needs the version gate satisfied first, which is what
+   * `markVocabularyBackfillComplete` establishes.
+   */
+  const REPORTABLE_FAMILY: readonly (readonly [SeedKind, string])[] = [
+    ["claim", "pools_claim"],
+    ["claim", "creator_fee_claim"],
+    ["claim", "holder_reward_claim"],
+    ["claim", "reward_distribution"],
+    ["launch", "launch_cancel"],
+    ["swap", "vex_fee"],
+    ["launch", "vex_fee"],
+  ];
+
+  for (const [kind, eventRole] of REPORTABLE_FAMILY) {
+    it(`enqueues a pending ${kind}/${eventRole} row once the vocabulary backfill is marked`, async () => {
+      await markVocabularyBackfillComplete();
       const id = await seedPending(kind, eventRole);
       expect(await enqueuedFor(id)).toBe(1);
     });
@@ -440,6 +499,94 @@ describe("readiness — a confirmed row waits for the money it owes", () => {
   });
 });
 
+/**
+ * READINESS for migration 102's family, arm for arm with `roleLegsIncomplete`
+ * and with what the AgentScan server will accept.
+ *
+ * The stakes are the same as everywhere else in this file: the server merges
+ * `pending -> terminal` exactly once, so an amount that misses its own confirmed
+ * event is lost to it forever. An arm that releases too early reports a claim
+ * with no payout; an arm that holds a role with no amounts to wait for holds it
+ * for the whole grace and then reports it amountless anyway.
+ */
+describe("readiness: the launchpad family", () => {
+  const CLAIM_OUT = "1900000000000000000";
+  const PAIRED_OUT = "4500000";
+
+  for (const eventRole of ["pools_claim", "creator_fee_claim", "holder_reward_claim"] as const) {
+    it(`holds a confirmed ${eventRole} until its payout is proven`, async () => {
+      await markVocabularyBackfillComplete();
+      const id = await seedPending("claim", eventRole);
+      expect(await enqueuedFor(id)).toBe(1);
+
+      await confirmStatusOnly(id);
+      expect(await enqueuedFor(id)).toBe(1);
+
+      // An INPUT amount proves nothing here and the row could not carry one
+      // anyway: a claim spends nothing.
+      await setColumns(id, { executed_amount_out_raw: CLAIM_OUT });
+      expect(await enqueuedFor(id)).toBe(2);
+    });
+
+    it(`holds a confirmed ${eventRole} that declared a SECOND payout until both arrive`, async () => {
+      await markVocabularyBackfillComplete();
+      const id = await seedPending("claim", eventRole, {
+        tokenOut2: {
+          tokenAddress: "0x" + "4".repeat(40),
+          tokenSymbol: "USDC",
+          tokenDecimals: 6,
+          amountRaw: PAIRED_OUT,
+        },
+      });
+      // The pending pair goes out first, as it does for every other role: there
+      // are no amounts to wait for yet.
+      expect(await enqueuedFor(id)).toBe(1);
+      await confirmStatusOnly(id);
+
+      await setColumns(id, { executed_amount_out_raw: CLAIM_OUT });
+      expect(await enqueuedFor(id)).toBe(1);
+
+      await setColumns(id, { executed_amount_out2_raw: PAIRED_OUT });
+      expect(await enqueuedFor(id)).toBe(2);
+    });
+  }
+
+  it("never holds a reward_distribution: the caller is paid nothing to wait for", async () => {
+    await markVocabularyBackfillComplete();
+    const id = await seedPending("claim", "reward_distribution");
+    expect(await enqueuedFor(id)).toBe(1);
+
+    await confirmStatusOnly(id);
+    // Straight through with no amounts: requiring one would hold every honest
+    // distribute for the full grace and report it amountless at the end of it.
+    expect(await enqueuedFor(id)).toBe(2);
+  });
+
+  it("holds a launch_cancel that declared a refund token, and releases one that did not", async () => {
+    await markVocabularyBackfillComplete();
+    const withRefund = await seedPending("launch", "launch_cancel");
+    expect(await enqueuedFor(withRefund)).toBe(1);
+    await confirmStatusOnly(withRefund);
+    expect(await enqueuedFor(withRefund)).toBe(1);
+    await setColumns(withRefund, { executed_amount_out_raw: CLAIM_OUT });
+    expect(await enqueuedFor(withRefund)).toBe(2);
+
+    const withoutRefund = await seedPending("launch", "launch_cancel");
+    await setColumns(withoutRefund, { token_out_address: null });
+    expect(await enqueuedFor(withoutRefund)).toBe(1);
+    await confirmStatusOnly(withoutRefund);
+    expect(await enqueuedFor(withoutRefund)).toBe(2);
+  });
+
+  it("never holds a vex_fee leg: its one amount rides the row's own input side", async () => {
+    await markVocabularyBackfillComplete();
+    const id = await seedPending("swap", "vex_fee");
+    expect(await enqueuedFor(id)).toBe(1);
+    await confirmStatusOnly(id);
+    expect(await enqueuedFor(id)).toBe(2);
+  });
+});
+
 describe("migration 078 — the outbox status CHECK and the settled block time", () => {
   it("the outbox accepts a superseded_unproven pair and still rejects an unknown status", async () => {
     const { execute } = await sql();
@@ -496,7 +643,7 @@ describe("migration 078 — the outbox status CHECK and the settled block time",
     expect(stored?.settled_block_time).toBeNull();
 
     await reporting.enqueueEligibleActivity(false);
-    const claimed = (await reporting.claimDueOutbox(10)).filter((c) => c.activityId === id);
+    const claimed = (await reporting.claimDueOutbox(10)).events.filter((c) => c.activityId === id);
     const confirmedPair = claimed.find((c) => c.status === "confirmed");
     expect(confirmedPair?.activity).toBeTruthy();
     const event = mapActivityToEvent(confirmedPair?.activity ?? {}, { status: "confirmed" });

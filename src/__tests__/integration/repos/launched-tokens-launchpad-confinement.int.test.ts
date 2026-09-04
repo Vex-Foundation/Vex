@@ -213,7 +213,6 @@ describe("claim confinement - neither lane sees the other's rows", () => {
     const trench = await seed("trench_express");
     const pools = await seedPoolsRowCarryingTrenchSignature();
     const claimed = await repo.claimAgentscanAttestCandidates({
-      chainId: CHAIN,
       limit: 25,
       retryAfterSeconds: 600,
     });

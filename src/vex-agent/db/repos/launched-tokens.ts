@@ -267,37 +267,95 @@ export async function markAttributed(id: number): Promise<boolean> {
 }
 
 /**
+ * WHICH LAUNCHPADS CAN BE ATTESTED TO AGENTSCAN, AND WITH WHICH SIGNATURE.
+ *
+ * The AgentScan attestation registry verifies ONE canonical message, the one
+ * `canonicalAttestMessage` builds (`packages/contract/src/attest.ts`) and that
+ * `src/tools/trench-express/attribution.ts` is the only module here allowed to
+ * produce. A signature over any other message recovers to a different address
+ * and is refused, so a launchpad may only appear here once a column holding an
+ * AGENTSCAN-FORMATTED signature exists for it.
+ *
+ * Exactly one does today. `attest_signature` (migration 071) is the trench.express
+ * badge proof and happens to sign that same canonical message
+ * (`src/tools/trench-express/attribution.ts:77`). `pools_attest_signature`
+ * (migration 094) does NOT: pools.fun's own badge signs the venue-prefixed
+ * message `src/tools/pools-fun/attribution.ts:142` builds, a deliberately
+ * different one, so shipping it to AgentScan would send a proof over the wrong
+ * bytes and burn the row on a definitive refusal. The
+ * pools.fun and Virtuals launches therefore need their own third signature,
+ * produced at launch time by the handler that still holds the signer; that
+ * column is this lane's declared dependency on the launch lanes, not something a
+ * predicate here can conjure.
+ *
+ * THE CHAIN IS NOT A PARAMETER any more, and that is the point. The sweep used
+ * to be pinned to `TRENCH_CHAIN_ID`, which was a faithful proxy for the venue
+ * while one venue existed on one chain. The AgentScan attestation registry
+ * covers chain 4663 AND Base 8453, and Virtuals launches on both, so a chain
+ * parameter here would silently strand every launch on the other one. The
+ * launchpad is the selector; each row reports its OWN `chain_id`.
+ *
+ * The column names below are frozen literals in this module, never input, so
+ * interpolating them into the predicate cannot carry a caller's string into SQL.
+ */
+const AGENTSCAN_ATTEST_SOURCES = [
+  {
+    /** `launched_tokens.launchpad`, this repository's own venue vocabulary. */
+    launchpad: "trench_express",
+    /** The AgentScan wire value the POST must name (`packages/contract/src/launchpad.ts`). */
+    wireLaunchpad: "trench",
+    /** The column holding a signature over AgentScan's canonical message. */
+    signatureColumn: "attest_signature",
+  },
+] as const;
+
+export type AgentscanAttestWireLaunchpad =
+  (typeof AGENTSCAN_ATTEST_SOURCES)[number]["wireLaunchpad"];
+
+/** `(launchpad = 'x' AND x_signature IS NOT NULL) OR ...` over the table above. */
+const AGENTSCAN_ATTESTABLE_SQL = AGENTSCAN_ATTEST_SOURCES.map(
+  (source) => `(launchpad = '${source.launchpad}' AND ${source.signatureColumn} IS NOT NULL)`,
+).join(" OR ");
+
+/** `CASE WHEN launchpad = 'x' THEN x_signature END` over the same table. */
+const AGENTSCAN_SIGNATURE_SQL = `CASE ${AGENTSCAN_ATTEST_SOURCES.map(
+  (source) => `WHEN t.launchpad = '${source.launchpad}' THEN t.${source.signatureColumn}`,
+).join(" ")} END`;
+
+/** Local venue value -> the AgentScan wire launchpad, or `null` for a venue that has none. */
+export function agentscanWireLaunchpad(launchpad: string): AgentscanAttestWireLaunchpad | null {
+  return AGENTSCAN_ATTEST_SOURCES.find((source) => source.launchpad === launchpad)?.wireLaunchpad ?? null;
+}
+
+/**
  * What the AgentScan attestation sweep needs to make one POST. A SEPARATE
  * candidate set from `AttributionCandidate` — same signature, two independent
  * consumers — plus the creation tx hash the AgentScan wire contract requires
  * as a validated hint (trench.express's own `/vex/attribute` never asked for
- * one).
+ * one) and the launchpad whose creation proof the server must apply.
  */
 export interface AgentscanAttestCandidate {
   id: number;
   chainId: number;
+  /** The AgentScan wire launchpad this row claims (`trench`, `pools_fun`, `virtuals`). */
+  launchpad: AgentscanAttestWireLaunchpad;
   tokenAddress: string;
   attestSignature: string;
   createTxHash: string;
 }
 
 /**
- * Claim up to `limit` signed-but-unattested (AgentScan) tokens, least-recently-
+ * Claim up to `limit` signed-but-unsubmitted (AgentScan) tokens, least-recently-
  * attempted first, stamping `agentscan_attest_attempted_at` in the SAME
  * statement. Mirrors `claimAttributionCandidates` verbatim in shape, over the
  * 074 pair of columns instead of 071's — a permanently-refused row moves to
  * the back of the queue instead of starving row 26, and `FOR UPDATE SKIP
  * LOCKED` gives two concurrent sweeps disjoint batches.
  *
- * CONFINED TO `trench_express`, like its 071 twin and for a sharper reason:
- * `attest_signature` carries the TRENCH-formatted proof, so a pools.fun row
- * selected here would ship a signature over the wrong message to AgentScan.
- * Whether AgentScan should also receive pools.fun attestations (over
- * `pools_attest_signature`) is a real product question and an EXPLICIT future
- * decision - not something this predicate should answer by accident.
+ * Scoped by LAUNCHPAD and never by chain: see `AGENTSCAN_ATTEST_SOURCES` for
+ * which launchpads qualify and why a chain predicate here would strand launches.
  */
 export async function claimAgentscanAttestCandidates(input: {
-  chainId: number;
   limit: number;
   retryAfterSeconds: number;
 }): Promise<AgentscanAttestCandidate[]> {
@@ -305,39 +363,155 @@ export async function claimAgentscanAttestCandidates(input: {
     `WITH candidates AS (
        SELECT id AS candidate_id
          FROM launched_tokens
-        WHERE chain_id = $1
-          AND launchpad = 'trench_express'
+        WHERE (${AGENTSCAN_ATTESTABLE_SQL})
           AND agentscan_attested_at IS NULL
-          AND attest_signature IS NOT NULL
           AND (agentscan_attest_attempted_at IS NULL
-               OR agentscan_attest_attempted_at < NOW() - ($3 || ' seconds')::interval)
+               OR agentscan_attest_attempted_at < NOW() - ($2 || ' seconds')::interval)
         ORDER BY agentscan_attest_attempted_at ASC NULLS FIRST, id ASC
-        LIMIT $2
+        LIMIT $1
         FOR UPDATE SKIP LOCKED
      )
      UPDATE launched_tokens t
         SET agentscan_attest_attempted_at = NOW()
        FROM candidates c
       WHERE t.id = c.candidate_id
-      RETURNING t.id, t.chain_id, t.token_address, t.attest_signature, t.create_tx_hash`,
-    [input.chainId, input.limit, String(input.retryAfterSeconds)],
+      RETURNING t.id, t.chain_id, t.launchpad, t.token_address,
+                ${AGENTSCAN_SIGNATURE_SQL} AS attest_signature,
+                t.create_tx_hash`,
+    [input.limit, String(input.retryAfterSeconds)],
+  );
+  return rows.flatMap((r) => {
+    const wire = agentscanWireLaunchpad(r.launchpad as string);
+    // Unreachable while the predicate and the table agree; dropped rather than
+    // guessed if they ever stop agreeing, because a POST naming the wrong
+    // launchpad is a definitive refusal that burns the row.
+    if (wire === null) return [];
+    return [{
+      id: Number(r.id),
+      chainId: Number(r.chain_id),
+      launchpad: wire,
+      tokenAddress: r.token_address as string,
+      attestSignature: r.attest_signature as string,
+      createTxHash: r.create_tx_hash as string,
+    }];
+  });
+}
+
+/**
+ * The attestation was SUBMITTED: the server took the claim into its verify
+ * queue and answered 2xx. Terminal for the SUBMISSION sweep; the row moves to
+ * the read-back sweep below, because acceptance is not verification.
+ *
+ * THE POST PATH IS SUBMISSION ONLY. It records that the claim was sent and
+ * writes NO verify status, and that is a correctness requirement rather than a
+ * simplification. The server's `token-attestations-repo.ts` answers a DUPLICATE
+ * POST with the row's EXISTING `verifyStatus`, which can already be `verified`;
+ * the previous version of this function copied that word onto the row while
+ * leaving `agentscan_verified_at` NULL, and migration 102's
+ * `launched_tokens_agentscan_verified_stamp` CHECK forbids exactly that pair.
+ * The canonical way in is ordinary: this install crashes after the server
+ * commits the attestation and before this mark lands, the row is claimed again,
+ * the duplicate POST returns `verified`, and the UPDATE aborts on the CHECK -
+ * every sweep, forever, because the row never leaves the candidate set.
+ *
+ * The status and its stamp are therefore written in exactly one place,
+ * `recordAgentscanVerifyStatus`, from the GET verdict that is the only authority
+ * on whether the creation proof held. A duplicate POST's status is a log line
+ * there and nothing more.
+ */
+export async function markAgentscanAttested(id: number): Promise<boolean> {
+  const row = await queryOne<Record<string, unknown>>(
+    `UPDATE launched_tokens
+        SET agentscan_attested_at = NOW()
+      WHERE id = $1 AND agentscan_attested_at IS NULL
+      RETURNING id`,
+    [id],
+  );
+  return row !== null;
+}
+
+/** What the read-back sweep needs to ask the server for one row's verdict. */
+export interface AgentscanVerifyCandidate {
+  readonly id: number;
+  readonly chainId: number;
+  readonly tokenAddress: string;
+}
+
+/**
+ * Claim up to `limit` SUBMITTED rows whose verdict is still open, least-recently-
+ * checked first, stamping `agentscan_verify_checked_at` in the same statement.
+ *
+ * "Still open" is `NULL` (never read back) or `unverified` (the server's own
+ * word for "queued, not judged"). The four terminal verdicts leave the set for
+ * good: a `verified` row is done, and `mismatch`, `unverifiable` and `revoked`
+ * are answers that cannot change by asking again, and re-serving them would be the
+ * starvation loop the pools.fun claim documents, dressed up as politeness.
+ */
+export async function claimAgentscanVerifyCandidates(input: {
+  limit: number;
+  retryAfterSeconds: number;
+}): Promise<AgentscanVerifyCandidate[]> {
+  const rows = await query<Record<string, unknown>>(
+    `WITH candidates AS (
+       SELECT id AS candidate_id
+         FROM launched_tokens
+        WHERE agentscan_attested_at IS NOT NULL
+          AND (agentscan_verify_status IS NULL OR agentscan_verify_status = 'unverified')
+          AND (agentscan_verify_checked_at IS NULL
+               OR agentscan_verify_checked_at < NOW() - ($2 || ' seconds')::interval)
+        ORDER BY agentscan_verify_checked_at ASC NULLS FIRST, id ASC
+        LIMIT $1
+        FOR UPDATE SKIP LOCKED
+     )
+     UPDATE launched_tokens t
+        SET agentscan_verify_checked_at = NOW()
+       FROM candidates c
+      WHERE t.id = c.candidate_id
+      RETURNING t.id, t.chain_id, t.token_address`,
+    [input.limit, String(input.retryAfterSeconds)],
   );
   return rows.map((r) => ({
     id: Number(r.id),
     chainId: Number(r.chain_id),
     tokenAddress: r.token_address as string,
-    attestSignature: r.attest_signature as string,
-    createTxHash: r.create_tx_hash as string,
   }));
 }
 
-/** The AgentScan attestation landed. Terminal — the row leaves the sweep's candidate set for good. */
-export async function markAgentscanAttested(id: number): Promise<boolean> {
+/**
+ * Record the server's verdict for one submitted attestation. THE ONLY WRITER of
+ * `agentscan_verify_status` and `agentscan_verified_at`.
+ *
+ * `agentscan_verified_at` is stamped ONLY for `verified`, which is what migration
+ * 102's `launched_tokens_agentscan_verified_stamp` requires: the status and the
+ * stamp can never tell different stories about the same row. Writing them in one
+ * statement, in one place, is what makes that CHECK unfalsifiable rather than a
+ * trap for a second writer.
+ *
+ * A COMPARE-AND-SET, not a blind write. The row is updated only while its status
+ * is still open - `NULL` (never read back) or `unverified` (the server's own
+ * word for "queued, not judged"). Two sweeps can overlap on one row (the claim
+ * uses `FOR UPDATE SKIP LOCKED` per batch, not per row across runs), and an HTTP
+ * response can arrive out of order with a newer one, so without the guard a
+ * stale `unverified` read could land after a terminal `verified` or `mismatch`
+ * and walk a settled row backwards into the polling set. The four terminal
+ * verdicts are answers that cannot change by asking again; this predicate is
+ * what makes that true of the stored row as well as of the sweep's candidate
+ * query. `false` therefore means "already settled", not "not found".
+ */
+export async function recordAgentscanVerifyStatus(input: {
+  id: number;
+  status: string;
+}): Promise<boolean> {
   const row = await queryOne<Record<string, unknown>>(
-    `UPDATE launched_tokens SET agentscan_attested_at = NOW()
-      WHERE id = $1 AND agentscan_attested_at IS NULL
+    `UPDATE launched_tokens
+        SET agentscan_verify_status = $2,
+            agentscan_verify_checked_at = NOW(),
+            agentscan_verified_at = CASE WHEN $2 = 'verified' THEN NOW() ELSE NULL END
+      WHERE id = $1
+        AND agentscan_attested_at IS NOT NULL
+        AND (agentscan_verify_status IS NULL OR agentscan_verify_status = 'unverified')
       RETURNING id`,
-    [id],
+    [input.id, input.status],
   );
   return row !== null;
 }

@@ -62,8 +62,10 @@ function clientReturning(outcome: SendOutcome): AgentscanClient {
 beforeEach(() => {
   vi.clearAllMocks();
   // One claimed batch, then the drain's next claim comes back empty.
-  mockClaimDueOutbox.mockResolvedValueOnce([claimedRow()]).mockResolvedValue([]);
-  mockMarkOutboxSent.mockResolvedValue(undefined);
+  mockClaimDueOutbox
+    .mockResolvedValueOnce({ registrationGeneration: 0, events: [claimedRow()] })
+    .mockResolvedValue({ registrationGeneration: 0, events: [] });
+  mockMarkOutboxSent.mockResolvedValue({ kind: "applied", rows: 1 });
 });
 
 describe("drainOutbox - agent health surfacing", () => {

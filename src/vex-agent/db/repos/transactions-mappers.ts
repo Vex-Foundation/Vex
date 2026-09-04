@@ -329,6 +329,15 @@ export function mapRow(r: Record<string, unknown>): TransactionRow {
       usdDestinationPrepayEst: str(r.usd_destination_prepay_est),
       // P2: withheld on a definitively_failed row — see `deriveVexFeeClaim`.
       ...vexFee,
+      // Owner rule V1 (2026-09-04): the fee ATTEMPT is visible whatever became
+      // of it. These four are NOT money and so are deliberately outside
+      // `deriveVexFeeClaim`'s withdrawal - a pending or reverted fee transfer is
+      // exactly the state a user needs to see on a failed action, and blanking
+      // it is what made a real attempt read as "no fee attempt at all".
+      vexFeeLegStatus: str(r.vex_fee_leg_status),
+      vexFeeLegTxHash: str(r.vex_fee_leg_tx_hash),
+      vexFeeLegChainId: num(r.vex_fee_leg_chain_id),
+      vexFeeLegChainFamily: str(r.vex_fee_leg_chain_family),
       usdSource: str(r.usd_source),
       fromChainId: isBridge ? num(r.from_chain_id) : null,
       fromChainSlug: isBridge ? str(r.from_chain_slug) : null,

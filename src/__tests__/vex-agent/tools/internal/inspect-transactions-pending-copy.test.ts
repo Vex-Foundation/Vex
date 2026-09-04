@@ -94,3 +94,48 @@ describe("it does not invent a cadence it cannot support", () => {
     expect(line).not.toContain("5s");
   });
 });
+
+/**
+ * OWNER RULE V1 (2026-09-04) ON THE AGENT'S OWN SUMMARY LINE.
+ *
+ * The fee clause used to render nothing at all when there was no amount, and its
+ * comment gave the right reason for the wrong scope: "a failed attempt is not
+ * charged", so no number may be invented. True. But silence says something else
+ * - that no fee was attempted - and for a transfer still in flight that is money
+ * the agent needs to know may still leave the wallet. The line now names the
+ * attempt's state and still invents no number.
+ */
+describe("the Vex fee clause: an ATTEMPT is stated, a number is never invented", () => {
+  it("names a PENDING fee attempt on a row that carries no fee amount", () => {
+    const line = summarizeTransactionRowForTest(
+      row({ status: "pending", vexFeeLegStatus: "pending", vexFeeAmountHuman: null }),
+    );
+    expect(line).toContain("Vex fee attempt pending");
+    expect(line).not.toContain("Vex fee 0");
+  });
+
+  it("names a REVERTED fee attempt as failed", () => {
+    const line = summarizeTransactionRowForTest(
+      row({ status: "confirmed", vexFeeLegStatus: "definitively_failed", vexFeeAmountHuman: null }),
+    );
+    expect(line).toContain("Vex fee attempt failed");
+  });
+
+  it("prefers the CONFIRMED amount over the attempt clause when the fee actually settled", () => {
+    const line = summarizeTransactionRowForTest(
+      row({
+        status: "confirmed",
+        vexFeeLegStatus: "confirmed",
+        vexFeeAmountHuman: "0.0025",
+        vexFeeTokenSymbol: "ETH",
+      }),
+    );
+    expect(line).toContain("Vex fee 0.0025 ETH");
+    expect(line).not.toContain("attempt");
+  });
+
+  it("says nothing about a fee on a row that has no fee leg at all", () => {
+    const line = summarizeTransactionRowForTest(row({ status: "confirmed" }));
+    expect(line).not.toContain("Vex fee");
+  });
+});

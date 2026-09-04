@@ -125,6 +125,27 @@ const NOTHING: Omit<AgentscanReportResult, "skipped"> = {
   deferred: 0,
 };
 
+/** The drain half of `NOTHING` - nothing was claimed, so nothing was sent. */
+const NOTHING_DRAIN = { sent: 0, rejected: 0, deferred: 0 } as const;
+
+/**
+ * Is the one-time controlled backfill still owed?
+ *
+ * Two facts, not one. The stamp being absent means no backfill has ever run.
+ * The stamp being OLDER than the vocabulary this build reports means one ran but
+ * covered fewer roles than this build is about to emit - the staged-rollout case
+ * where an earlier binary completed the backfill on an already-migrated database
+ * - and the roles it did not scan are exactly the historical population that
+ * must not reach the server as live activity. Either way the controlled backfill
+ * runs (its enqueue is a diff, so it re-sends nothing already sent) and the
+ * incremental lane holds off until it has.
+ */
+function backfillOwed(state: reportingRepo.AgentscanReportingState): boolean {
+  if (state.backfillEnqueuedAt === null) return true;
+  const covered = state.backfillVocabularyVersion;
+  return covered === null || covered < reportingRepo.AGENTSCAN_VOCABULARY_VERSION;
+}
+
 /** CSPRNG identity — 32 bytes hex (public hash) + 32 bytes base64url (secret token). */
 export function generateAgentscanIdentity(): { agentHash: string; ingestToken: string } {
   return {
@@ -163,14 +184,24 @@ export async function runAgentscanReport(
 
   const client = deps.buildClient(baseUrl);
 
-  // The one-time backfill (AC2): first enqueue after a successful registration
-  // carries the whole eligible history; every later scan is incremental.
-  if (state.backfillEnqueuedAt === null) {
-    const enqueued = await reportingRepo.enqueueEligibleActivity(true);
-    await reportingRepo.markBackfillEnqueued();
-    if (enqueued > 0) logger.info("agentscan.report.backfill_enqueued", { rows: enqueued });
+  // The one-time backfill (AC2): the first enqueue after a successful
+  // registration carries the whole eligible history; every later scan is
+  // incremental. It is owed again whenever the vocabulary this build reports
+  // has outrun the one the last completed backfill actually covered - see
+  // `backfillOwed` - and the enqueue and its completion mark commit together.
+  if (backfillOwed(state)) {
+    const outcome = await reportingRepo.enqueueBackfillAndMark({
+      startedAtGeneration: state.registrationGeneration,
+    });
+    if (outcome.declined !== null) {
+      // A registration reset or a concurrent runner got there first. Nothing was
+      // enqueued and nothing was marked; the next tick re-decides on fresh state.
+      logger.info("agentscan.report.backfill_declined", { reason: outcome.declined });
+      return { skipped: null, enqueued: 0, backfillEnqueued: false, ...NOTHING_DRAIN };
+    }
+    if (outcome.enqueued > 0) logger.info("agentscan.report.backfill_enqueued", { rows: outcome.enqueued });
     const drain = await drainOutbox(client, agentHash, ingestToken);
-    return { skipped: null, enqueued, backfillEnqueued: true, ...drain };
+    return { skipped: null, enqueued: outcome.enqueued, backfillEnqueued: true, ...drain };
   }
 
   const incremental = await drainIncremental(client, agentHash, ingestToken);
@@ -190,14 +221,15 @@ export async function runAgentscanReport(
  * 410/quarantine), so a push-lane fire CAN reset or stop the lane's state.
  * State is read fresh on every call, never cached across invocations.
  *
- * The `backfillEnqueuedAt === null` guard below is load-bearing: between the
- * periodic lane's `markHandshakeComplete()` commit and its later
- * `enqueueEligibleActivity(true)` + `markBackfillEnqueued()` commit — a
- * window that is wide on first GA registration with months of history, and
- * re-opens after every `resetForReRegistration` — a push-lane fire must not
- * run `enqueueEligibleActivity(false)`, or it permanently mislabels the whole
- * eligible history as live activity (backfill=false) and the periodic
- * backfill that follows inserts zero rows and stamps the flag anyway.
+ * The `backfillOwed` guard below is load-bearing: between the periodic lane's
+ * `markHandshakeComplete()` commit and its later `enqueueBackfillAndMark()`
+ * commit - a window that is wide on first GA registration with months of
+ * history, re-opens after every `resetForReRegistration`, and opens again for a
+ * build whose vocabulary has outrun the last completed backfill's - a push-lane
+ * fire must not run `enqueueEligibleActivity(false)`, or it permanently
+ * mislabels the whole eligible history as live activity (backfill=false) and the
+ * controlled backfill that follows inserts zero rows and stamps the marker
+ * anyway.
  */
 export async function runAgentscanIncremental(
   deps: AgentscanReporterDeps,
@@ -211,7 +243,7 @@ export async function runAgentscanIncremental(
     return { skipped: "unregistered", ...NOTHING };
   }
   if (state.registeredAt === null) return { skipped: "unregistered", ...NOTHING };
-  if (state.backfillEnqueuedAt === null) return { skipped: "unregistered", ...NOTHING };
+  if (backfillOwed(state)) return { skipped: "unregistered", ...NOTHING };
 
   const client = deps.buildClient(baseUrl);
   const incremental = await drainIncremental(client, state.agentHash, state.ingestToken);

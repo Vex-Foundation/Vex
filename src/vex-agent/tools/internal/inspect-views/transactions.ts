@@ -106,20 +106,31 @@ function usdEstimate(value: number | null | undefined): string | null {
  * summary the agent reads first never mentioned them, so "what did that cost
  * me?" had no answer at a glance.
  *
- * Two deliberate refusals here. It renders the EXACT token amount, never the
- * USD estimate alone: `usdVexFeeEst` is nullable precisely when no trustworthy
- * price existed, and a summary that showed only USD would print "no fee" for a
- * fee that was charged. And it renders nothing at all when there is no fee
- * amount - a failed attempt is not charged, and inventing a "fee: 0" line would
- * assert something the record does not say.
+ * One deliberate refusal here: it renders the EXACT token amount, never the USD
+ * estimate alone. `usdVexFeeEst` is nullable precisely when no trustworthy price
+ * existed, and a summary that showed only USD would print "no fee" for a fee
+ * that was charged.
+ *
+ * An ATTEMPT with no amount is still stated (owner rule V1, 2026-09-04). No
+ * amount means no CONFIRMED fee leg, and "Vex fee 0" would assert something the
+ * record does not say - but so does silence when a fee transfer is in flight or
+ * has reverted. The attempt line names the state instead of inventing a number.
  */
 function vexFeeClause(row: TransactionRow): string | null {
   const amount = row.vexFeeAmountHuman;
-  if (typeof amount !== "string" || amount.length === 0) return null;
+  if (typeof amount !== "string" || amount.length === 0) return attemptClause(row);
   const symbol = row.vexFeeTokenSymbol;
   const fee = symbol ? `${amount} ${symbol}` : amount;
   const usd = usdEstimate(row.usdVexFeeEst != null ? Number(row.usdVexFeeEst) : null);
   return usd ? `Vex fee ${fee} (${usd})` : `Vex fee ${fee}`;
+}
+
+/** The fee leg exists but has not settled: say which state it is in, never a number. */
+function attemptClause(row: TransactionRow): string | null {
+  const legStatus = row.vexFeeLegStatus;
+  if (legStatus === "pending") return "Vex fee attempt pending";
+  if (legStatus === "definitively_failed") return "Vex fee attempt failed";
+  return null;
 }
 
 /** Chain display for a bridge route endpoint - slug preferred, numeric id as fallback. */
