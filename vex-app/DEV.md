@@ -10,6 +10,37 @@
   invoke raw `go build` in packaging paths. Local install used on the dev
   machine: official tarball under `~/.local/go` (add `~/.local/go/bin` to
   PATH in build scripts only).
+- **On Windows: Git for Windows**, for its Git Bash. `bridge/build.sh` is a
+  bash script and Windows has no bash of its own.
+
+### Windows: the build finds Git Bash itself, and never uses WSL's
+
+`where bash` on any Windows machine with WSL enabled answers
+`C:\Windows\System32\bash.exe` first. That is the WSL launcher, not a shell:
+it hands `bridge/build.sh` to a Linux distribution that cannot resolve the
+Windows paths it is given and does not have the pinned Go toolchain this build
+just verified. It was the real cause of a bridge build that failed on the
+owner's machine (2026-09-04) while Git for Windows sat, unused, at
+`C:\Program Files\Git\bin\bash.exe`.
+
+So `vex-app/scripts/build-host-bridges.mjs` does not look `bash` up on PATH.
+`resolveBuildShell` (in `vex-app/scripts/bridge-freshness.mjs`) resolves it,
+in this order, and refuses a candidate under `System32` or `SysWOW64` at every
+step:
+
+1. `VEX_GIT_BASH`, when set. An override that names a missing file, or WSL's
+   bash, REFUSES the build; it never falls through to a guess.
+2. `git --exec-path` and its parent directories, up to five levels, each
+   probed for `bin\bash.exe` and `usr\bin\bash.exe`. The Git that cloned this
+   repository names the Git Bash beside it.
+3. `%ProgramFiles%\Git` and `%LocalAppData%\Programs\Git`, the system-wide and
+   per-user Git for Windows install roots, probed the same way.
+
+When none of them exists, the build stops with a message naming every path it
+probed, so the fix is installing Git for Windows or setting `VEX_GIT_BASH` -
+not debugging an installer that "writes no files". `pnpm --dir vex-app doctor`
+prints the shell it resolved and its source before it says anything about the
+bridge. On macOS and Linux, PATH `bash` is correct and is what is used.
 
 ### `bridge/` builds TWO binaries, and not for the same targets
 

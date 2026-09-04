@@ -25,13 +25,17 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   BRIDGE_BUILD_SCRIPT,
   bridgeSourceFiles,
+  buildScriptArgument,
   evaluateBridgeFreshness,
   freshnessStamp,
   hashBridgeSources,
   hostGoTarget,
+  isWindowsSystemBash,
   readManifest,
   requiredGoVersion,
+  resolveBuildShell,
   resolveGoToolchain,
+  windowsGitBashCandidates,
   writeManifest,
 } from "../../../../scripts/bridge-freshness.mjs";
 
@@ -487,5 +491,229 @@ describe("the host target", () => {
   it("refuses an unsupported platform or arch BY NAME", () => {
     expect(() => hostGoTarget("freebsd", "x64")).toThrow(/freebsd\/x64/);
     expect(() => hostGoTarget("linux", "ia32")).toThrow(/linux\/ia32/);
+  });
+});
+
+/**
+ * WHICH `bash` RUNS `bridge/build.sh` ON WINDOWS?
+ *
+ * The risk here is not a build that fails loudly. It is a build handed to the
+ * WRONG shell: `%SystemRoot%\System32\bash.exe` exists on every Windows box
+ * with WSL enabled and is ahead of Git for Windows on PATH, so a PATH lookup
+ * runs the bridge build inside a Linux distribution with Windows paths and a
+ * toolchain this module never vouched for. MEASURED on the owner's machine
+ * (2026-09-04). None of that is observable from a green Linux suite, so the
+ * resolver takes its platform, environment, `git --exec-path` answer and
+ * existence probe as INPUTS and the table below drives real Windows layouts
+ * from this machine.
+ *
+ * The reference is VS Code's `src/vs/base/node/powershell.ts`: ordered
+ * explicit candidates, each labelled with its source, first existing one wins.
+ */
+
+const SYSTEM32_BASH = "C:\\Windows\\System32\\bash.exe";
+const PROGRAM_FILES_GIT_BASH = "C:\\Program Files\\Git\\bin\\bash.exe";
+const PROGRAM_FILES_GIT_USR_BASH = "C:\\Program Files\\Git\\usr\\bin\\bash.exe";
+const LOCAL_APPDATA_GIT_BASH =
+  "C:\\Users\\dev\\AppData\\Local\\Programs\\Git\\bin\\bash.exe";
+const PORTABLE_GIT_BASH = "D:\\tools\\Git\\bin\\bash.exe";
+
+const WINDOWS_ENV = {
+  ProgramFiles: "C:\\Program Files",
+  LOCALAPPDATA: "C:\\Users\\dev\\AppData\\Local",
+} as const;
+
+function filesystem(...files: readonly string[]): (file: string) => boolean {
+  const present = new Set(files);
+  return (file) => present.has(file);
+}
+
+describe("the shell that runs bridge/build.sh", () => {
+  it("uses PATH bash off Windows, where PATH bash is the right answer", () => {
+    for (const platform of ["linux", "darwin"]) {
+      expect(resolveBuildShell({ platform, env: {}, fileExists: () => false })).toEqual({
+        kind: "ok",
+        command: "bash",
+        source: "PATH",
+      });
+    }
+  });
+
+  const table: readonly {
+    readonly name: string;
+    readonly env: Record<string, string>;
+    readonly gitExecPath: string | null;
+    readonly files: readonly string[];
+    readonly command: string;
+    readonly source: string;
+  }[] = [
+    {
+      name: "prefers the Git for Windows install over the WSL launcher on PATH",
+      env: { ...WINDOWS_ENV },
+      gitExecPath: null,
+      files: [SYSTEM32_BASH, PROGRAM_FILES_GIT_BASH],
+      command: PROGRAM_FILES_GIT_BASH,
+      source: "%ProgramFiles%\\Git",
+    },
+    {
+      name: "falls back to usr\\bin\\bash.exe when the install has no bin\\bash.exe",
+      env: { ...WINDOWS_ENV },
+      gitExecPath: null,
+      files: [SYSTEM32_BASH, PROGRAM_FILES_GIT_USR_BASH],
+      command: PROGRAM_FILES_GIT_USR_BASH,
+      source: "%ProgramFiles%\\Git",
+    },
+    {
+      name: "finds the per-user install under %LOCALAPPDATA%",
+      env: { ...WINDOWS_ENV },
+      gitExecPath: null,
+      files: [SYSTEM32_BASH, LOCAL_APPDATA_GIT_BASH],
+      command: LOCAL_APPDATA_GIT_BASH,
+      source: "%LOCALAPPDATA%\\Programs\\Git",
+    },
+    {
+      name: "walks up from git --exec-path to a portable install in neither default root",
+      env: { ...WINDOWS_ENV },
+      gitExecPath: "D:/tools/Git/mingw64/libexec/git-core",
+      files: [SYSTEM32_BASH, PORTABLE_GIT_BASH],
+      command: PORTABLE_GIT_BASH,
+      source: "git --exec-path (D:/tools/Git/mingw64/libexec/git-core)",
+    },
+    {
+      name: "asks the Git that is actually installed before the default roots",
+      env: { ...WINDOWS_ENV },
+      gitExecPath: "D:\\tools\\Git\\mingw64\\libexec\\git-core",
+      files: [PORTABLE_GIT_BASH, PROGRAM_FILES_GIT_BASH],
+      command: PORTABLE_GIT_BASH,
+      source: "git --exec-path (D:\\tools\\Git\\mingw64\\libexec\\git-core)",
+    },
+    {
+      name: "reads the environment case-insensitively, as Windows itself does",
+      env: { PROGRAMFILES: "C:\\Program Files" },
+      gitExecPath: null,
+      files: [SYSTEM32_BASH, PROGRAM_FILES_GIT_BASH],
+      command: PROGRAM_FILES_GIT_BASH,
+      source: "%ProgramFiles%\\Git",
+    },
+    {
+      name: "takes VEX_GIT_BASH ahead of every install it could have found",
+      env: { ...WINDOWS_ENV, VEX_GIT_BASH: PORTABLE_GIT_BASH },
+      gitExecPath: null,
+      files: [PORTABLE_GIT_BASH, PROGRAM_FILES_GIT_BASH],
+      command: PORTABLE_GIT_BASH,
+      source: "VEX_GIT_BASH",
+    },
+  ];
+
+  for (const row of table) {
+    it(row.name, () => {
+      expect(
+        resolveBuildShell({
+          platform: "win32",
+          env: row.env,
+          gitExecPath: row.gitExecPath,
+          fileExists: filesystem(...row.files),
+        })
+      ).toEqual({ kind: "ok", command: row.command, source: row.source });
+    });
+  }
+
+  it("never answers a bare 'bash' on Windows, whatever is on PATH", () => {
+    const resolutions = table.map((row) =>
+      resolveBuildShell({
+        platform: "win32",
+        env: row.env,
+        gitExecPath: row.gitExecPath,
+        fileExists: filesystem(...row.files),
+      })
+    );
+    for (const resolution of resolutions) {
+      expect(resolution.kind === "ok" ? resolution.command : "").not.toBe("bash");
+    }
+  });
+
+  it("refuses BY NAME when the machine has no Git Bash at all", () => {
+    const resolution = resolveBuildShell({
+      platform: "win32",
+      env: { ...WINDOWS_ENV },
+      gitExecPath: null,
+      // WSL's launcher is present and is deliberately not a candidate.
+      fileExists: filesystem(SYSTEM32_BASH),
+    });
+    expect(resolution.kind).toBe("refused");
+    const message = resolution.kind === "refused" ? resolution.message : "";
+    expect(message).toContain("no Git Bash");
+    expect(message).toContain("WSL launcher");
+    expect(message).toContain(PROGRAM_FILES_GIT_BASH);
+    expect(message).toContain(LOCAL_APPDATA_GIT_BASH);
+    expect(message).toContain("git-scm.com/download/win");
+    expect(message).toContain("VEX_GIT_BASH");
+    expect(message).toContain("vex-app/DEV.md");
+  });
+
+  it("says what it could not even probe when the environment is empty too", () => {
+    const resolution = resolveBuildShell({
+      platform: "win32",
+      env: {},
+      gitExecPath: null,
+      fileExists: filesystem(),
+    });
+    expect(resolution.kind).toBe("refused");
+    const message = resolution.kind === "refused" ? resolution.message : "";
+    expect(message).toContain("Nothing could be probed");
+  });
+
+  it("refuses an override that names a file that is not there, instead of guessing", () => {
+    const resolution = resolveBuildShell({
+      platform: "win32",
+      env: { ...WINDOWS_ENV, VEX_GIT_BASH: "D:\\gone\\bash.exe" },
+      gitExecPath: null,
+      // A perfectly good Git Bash exists; the override still wins the refusal.
+      fileExists: filesystem(PROGRAM_FILES_GIT_BASH),
+    });
+    expect(resolution.kind).toBe("refused");
+    const message = resolution.kind === "refused" ? resolution.message : "";
+    expect(message).toContain("VEX_GIT_BASH");
+    expect(message).toContain("D:\\gone\\bash.exe");
+    expect(message).toContain("no file there");
+  });
+
+  it("refuses an override that points at the WSL launcher", () => {
+    const resolution = resolveBuildShell({
+      platform: "win32",
+      env: { ...WINDOWS_ENV, VEX_GIT_BASH: SYSTEM32_BASH },
+      gitExecPath: null,
+      fileExists: filesystem(SYSTEM32_BASH, PROGRAM_FILES_GIT_BASH),
+    });
+    expect(resolution.kind).toBe("refused");
+    const message = resolution.kind === "refused" ? resolution.message : "";
+    expect(message).toContain("WSL launcher");
+    expect(message).toContain(SYSTEM32_BASH);
+  });
+
+  it("recognises the WSL launcher wherever Windows is installed", () => {
+    expect(isWindowsSystemBash(SYSTEM32_BASH)).toBe(true);
+    expect(isWindowsSystemBash("D:\\Windows\\SysWOW64\\bash.exe")).toBe(true);
+    expect(isWindowsSystemBash("c:\\windows\\system32\\BASH.EXE")).toBe(true);
+    expect(isWindowsSystemBash(PROGRAM_FILES_GIT_BASH)).toBe(false);
+    expect(isWindowsSystemBash(PORTABLE_GIT_BASH)).toBe(false);
+  });
+
+  it("never offers a System32 candidate, whatever git --exec-path answers", () => {
+    const candidates = windowsGitBashCandidates({
+      env: { ...WINDOWS_ENV },
+      gitExecPath: "C:\\Windows\\System32\\Git\\mingw64\\libexec\\git-core",
+    });
+    expect(candidates.length).toBeGreaterThan(0);
+    for (const candidate of candidates) {
+      expect(isWindowsSystemBash(candidate.file)).toBe(false);
+    }
+  });
+
+  it("hands Git Bash a path it can actually open", () => {
+    expect(buildScriptArgument("C:\\src\\Vex", "win32")).toBe("C:/src/Vex/bridge/build.sh");
+    expect(buildScriptArgument("/home/dev/Vex", "linux")).toBe(
+      path.join("/home/dev/Vex", BRIDGE_BUILD_SCRIPT)
+    );
   });
 });

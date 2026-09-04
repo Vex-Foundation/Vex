@@ -90,3 +90,29 @@ export function evaluateBridgeFreshness(input: {
   readonly goVersion: string;
   readonly sourcesDigest?: string;
 }): BridgeFreshness;
+
+export const GIT_BASH_OVERRIDE_ENV: "VEX_GIT_BASH";
+
+/** One place a Git for Windows `bash.exe` could be, with the evidence for it. */
+export interface GitBashCandidate {
+  readonly file: string;
+  readonly source: string;
+}
+
+export type BuildShellResolution =
+  | { readonly kind: "ok"; readonly command: string; readonly source: string }
+  | { readonly kind: "refused"; readonly message: string };
+
+export function isWindowsSystemBash(file: string): boolean;
+export function detectGitExecPath(): string | null;
+export function windowsGitBashCandidates(input?: {
+  readonly env?: Readonly<Record<string, string | undefined>>;
+  readonly gitExecPath?: string | null;
+}): GitBashCandidate[];
+export function resolveBuildShell(input?: {
+  readonly platform?: string;
+  readonly env?: Readonly<Record<string, string | undefined>>;
+  readonly gitExecPath?: string | null;
+  readonly fileExists?: (file: string) => boolean;
+}): BuildShellResolution;
+export function buildScriptArgument(repoRoot: string, platform?: string): string;
