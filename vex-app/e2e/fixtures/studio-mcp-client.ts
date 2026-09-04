@@ -19,7 +19,7 @@
  * THE CALLER OWNS THE SESSION: `openBridgeSession` returns a handle whose
  * `close` must run in a `finally`, exactly as before the extraction.
  *
- * ## Lifecycle, after the turn-2 review
+ * ## Lifecycle
  *
  * SHUTDOWN follows the MCP specification's own sequence, which is also the one
  * VS Code implements for its stdio servers

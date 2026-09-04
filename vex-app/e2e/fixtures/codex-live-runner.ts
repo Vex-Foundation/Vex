@@ -36,7 +36,7 @@
  * bytes through `-c mcp_servers.vex.*` overrides under the owner's real
  * `CODEX_HOME`. Neither reads, copies or writes any credential.
  *
- * ## Lifecycle policy, after the turn-2 review
+ * ## Lifecycle policy
  *
  * TIMEOUTS: every invocation of the binary carries one, the synchronous ones
  * included. `spawnSync` with a `timeout` kills AND reaps before it returns;
