@@ -23,9 +23,18 @@
  * under the Trench Express mark the app already pairs with that name
  * (`TokenLaunchDialog` renders the same resolution beside the same words). A
  * launch REQUIRES an image from this locker, so two cards sent the user hunting
- * for the reason a launch refused. `TokenLaunchButton` is composed unchanged —
+ * for the reason a launch refused. `TokenLaunchButton` is composed unchanged -
  * the agent-driven `AgentLaunchFormHost` path is a separate flow and keeps
  * working.
+ *
+ * TWO SCOPES, ONE DECISION (Studio parity decree, 2026-09-04). The locker is
+ * GLOBAL - `useLockerImages` takes no scope - so the card browses, adds and
+ * deletes images for a project rail exactly as for a session rail. The LAUNCH
+ * is not: a user-origin launch is attributed to a session id on the signing
+ * path, and a project has none of its own that this card may borrow (its
+ * `backingSessionId` is an owner decision, not a rail's). So the scope decides
+ * the card's MODE here, in one place: `session` renders the launch action;
+ * `project` renders one sentence saying where a launch is signed from.
  */
 
 import { useState, type JSX } from "react";
@@ -47,15 +56,23 @@ import {
 import { CardStateNote, PortfolioCard } from "./portfolio/PortfolioCard.js";
 import { ImageThumb } from "./image-locker/ImageThumb.js";
 
+/**
+ * What the rail is mounted for. Closed: the card has a real read for both,
+ * and no host may hand it a scope it would have to invent a session for.
+ */
+export type ImageLockerScope =
+  | { readonly kind: "session"; readonly sessionId: string }
+  | { readonly kind: "project"; readonly projectId: string };
+
+/** What a project rail says in the seat the launch action holds for a session. */
+export const LAUNCH_FROM_AGENT_SESSION_NOTE =
+  "A token launch is signed from an Agent session. Images staged here are ready for one.";
+
 export function ImageLockerCard({
-  sessionId,
+  scope,
 }: {
-  /**
-   * Scopes a user-origin launch to the open session. REQUIRED-nullable: every
-   * host must decide, because `null` means "this launch answers no session"
-   * and that is a lifecycle fact, not an omission.
-   */
-  readonly sessionId: string | null;
+  /** Decides the card's mode: `session` can launch, `project` browses. */
+  readonly scope: ImageLockerScope;
 }): JSX.Element {
   const query = useLockerImages();
   const upload = useUploadLockerImage();
@@ -162,14 +179,27 @@ export function ImageLockerCard({
 
       {/* The ONLY way a user reaches the launch dialog, now inside the card
           that holds the image every launch needs. The chips sit beside it so
-          the launchpad is chosen where the picture is. */}
+          the launchpad is chosen where the picture is. A PROJECT rail has no
+          session to sign from, so this seat carries the sentence that says
+          so instead of a launch it cannot attribute. */}
       <div className="mt-2.5 flex flex-col gap-2 border-t border-line-2 pt-2.5">
-        <LaunchPlatformChips value={platform} onChange={setPlatform} />
-        <TokenLaunchButton
-          sessionId={sessionId}
-          platform={platform}
-          onPlatformChange={setPlatform}
-        />
+        {scope.kind === "session" ? (
+          <>
+            <LaunchPlatformChips value={platform} onChange={setPlatform} />
+            <TokenLaunchButton
+              sessionId={scope.sessionId}
+              platform={platform}
+              onPlatformChange={setPlatform}
+            />
+          </>
+        ) : (
+          <p
+            data-vex-area="launchpad-browse-note"
+            className="text-[11px] leading-relaxed text-ink-tertiary"
+          >
+            {LAUNCH_FROM_AGENT_SESSION_NOTE}
+          </p>
+        )}
       </div>
     </PortfolioCard>
   );

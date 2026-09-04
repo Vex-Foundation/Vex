@@ -10,7 +10,9 @@
  *     absent, and to the em dash when the symbol is hostile,
  *   - unpriced rows keep the em-dash USD convention (never $0.00),
  *   - "View all assets" measures its own rect and opens the `assets`
- *     ShellScreen route with that origin through the uiStore.
+ *     ShellScreen route with that origin through the uiStore, carrying the
+ *     card's OWN scope - global, session, or (Studio parity) project - so the
+ *     register can never be wider than the card that led to it.
  *   - hide-dust (`hideDustBalances`, default true): sub-cent priced rows are
  *     filtered out BEFORE the top-5 cut, so a dust row never occupies a
  *     slot a real (or unpriced) holding should fill instead,
@@ -68,18 +70,22 @@ function mountWith(
   tokens: readonly PositionTokenDto[],
   sessionId: string | null = null,
 ) {
+  return mountScoped(
+    tokens,
+    sessionId === null ? { kind: "global" } : { kind: "session", sessionId },
+  );
+}
+
+function mountScoped(
+  tokens: readonly PositionTokenDto[],
+  scope: Parameters<typeof BalancesCard>[0]["scope"],
+) {
   mockUsePortfolio.mockReturnValue({
     isLoading: false,
     isError: false,
     data: { ok: true, data: portfolio(tokens) },
   });
-  return render(
-    <BalancesCard
-      scope={
-        sessionId === null ? { kind: "global" } : { kind: "session", sessionId }
-      }
-    />,
-  );
+  return render(<BalancesCard scope={scope} />);
 }
 
 beforeEach(() => {
@@ -341,6 +347,39 @@ describe("BalancesCard - session scope (C4)", () => {
     mountWith([], SESSION);
     expect(
       screen.getByText(/No balances in this session's wallets yet/i),
+    ).not.toBeNull();
+  });
+});
+
+describe("BalancesCard - project scope (Studio parity)", () => {
+  const PROJECT = "9c1b0e8e-0000-4000-8000-0000000000ab";
+  const SCOPE = { kind: "project", projectId: PROJECT } as const;
+
+  it("reads the PROJECT portfolio, never the global one", () => {
+    mountScoped([token({ tokenName: "Token A", symbol: "AAA", balanceUsd: 10 })], SCOPE);
+    expect(mockUsePortfolio).toHaveBeenCalledWith({
+      scope: "project",
+      projectId: PROJECT,
+    });
+  });
+
+  it("offers 'View all assets' and opens the register NARROWED to the project", () => {
+    // The door the project rail used to hide, because the route could only
+    // say `sessionId: null` - the global aggregate. It now carries the
+    // project arm, and never a session id beside it.
+    mountScoped([token({ tokenName: "Token A", symbol: "AAA", balanceUsd: 10 })], SCOPE);
+    fireEvent.click(screen.getByRole("button", { name: /View all assets/i }));
+    expect(useUiStore.getState().shellRoute).toEqual({
+      kind: "assets",
+      origin: { x: 0, y: 0, width: 0, height: 0 },
+      projectId: PROJECT,
+    });
+  });
+
+  it("states the PROJECT empty invitation, never the session or global one", () => {
+    mountScoped([], SCOPE);
+    expect(
+      screen.getByText(/No balances in this project's wallets yet/i),
     ).not.toBeNull();
   });
 });

@@ -90,3 +90,31 @@ export function CardStateNote({
     </p>
   );
 }
+
+/**
+ * Key/value row of the metadata cards (SESSION, PROJECT): muted label, stronger
+ * tabular value, hairline-separated. ONE primitive for both cards so the
+ * project rail's card and the session rail's card are the same row to the
+ * eye; `title` carries the whole value for a row that truncates (a path).
+ */
+export function CardKeyValueRow({
+  label,
+  title,
+  children,
+}: {
+  readonly label: string;
+  readonly title?: string;
+  readonly children: ReactNode;
+}): JSX.Element {
+  return (
+    <div className="flex items-baseline justify-between gap-3 border-b border-line-1 py-1.5 last:border-b-0 last:pb-0.5">
+      <span className="text-[10.5px] text-ink-tertiary">{label}</span>
+      <span
+        className="min-w-0 truncate text-right text-[11.5px] tabular-nums text-ink-primary"
+        title={title}
+      >
+        {children}
+      </span>
+    </div>
+  );
+}

@@ -20,7 +20,7 @@
  * own behavior is pinned separately in `GlobalWalletAddresses.test.tsx`.
  */
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import type {
   PortfolioDto,
@@ -560,5 +560,68 @@ describe("PositionBlock project view", () => {
       screen.getByText("No wallets selected for this project."),
     ).not.toBeNull();
     expect(screen.queryByText("No wallets in this session.")).toBeNull();
+  });
+});
+
+describe("PositionBlock snapshot age (owner measurement 2026-09-04)", () => {
+  // The clock is read at render, so the age is a deterministic function of
+  // the fixture's `snapshotAt` and this fake now.
+  const NOW = new Date("2026-09-04T12:00:00.000Z");
+
+  beforeEach(() => {
+    vi.useFakeTimers({ now: NOW, toFake: ["Date"] });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function mountSnapshot(snapshotAt: string) {
+    mockPortfolio(
+      portfolio({
+        liveTotalUsd: 62.71,
+        snapshotTotalUsd: 100.62,
+        pnlVsPrev: 0.41,
+        snapshotAt,
+      }),
+    );
+    return render(<PositionBlock scope={{ kind: "global" }} />);
+  }
+
+  it("a FRESH snapshot states its age and keeps the gain tone", () => {
+    mountSnapshot("2026-09-04T11:55:00.000Z");
+    const line = document.querySelector('[data-vex-area="position-snapshot"]');
+    expect(line?.getAttribute("data-stale")).toBe("false");
+    expect(
+      document.querySelector('[data-vex-area="position-snapshot-age"]')?.textContent,
+    ).toContain("5 min ago");
+    const delta = screen.getByLabelText(/Profit and loss versus snapshot taken 5 min ago/);
+    expect(delta.className).toContain("text-success");
+  });
+
+  it("a STALE snapshot (31 days) states its age and MUTES the delta - not a live gain", () => {
+    mountSnapshot("2026-08-04T12:00:00.000Z");
+    const line = document.querySelector('[data-vex-area="position-snapshot"]');
+    expect(line?.getAttribute("data-stale")).toBe("true");
+    expect(
+      document.querySelector('[data-vex-area="position-snapshot-age"]')?.textContent,
+    ).toContain("31 days ago");
+    const delta = screen.getByLabelText(/Profit and loss versus snapshot taken 31 days ago/);
+    expect(delta.className).not.toContain("text-success");
+    expect(delta.className).toContain("text-ink-tertiary");
+    // The figures themselves are untouched: the tone changed, not the truth.
+    expect(delta.textContent).toBe("+$0.41");
+    expect(screen.getByText(/snapshot \$100\.62/)).toBeTruthy();
+  });
+
+  it("renders no age when the DTO carries no snapshot timestamp", () => {
+    mockPortfolio(
+      portfolio({ snapshotTotalUsd: 100.62, pnlVsPrev: 0.41, snapshotAt: null }),
+    );
+    render(<PositionBlock scope={{ kind: "global" }} />);
+    expect(document.querySelector('[data-vex-area="position-snapshot-age"]')).toBeNull();
+    expect(
+      screen.getByLabelText(/Profit and loss versus previous snapshot/).className,
+    ).toContain("text-success");
   });
 });

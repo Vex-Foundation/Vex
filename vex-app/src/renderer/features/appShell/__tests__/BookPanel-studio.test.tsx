@@ -5,10 +5,10 @@
  * The properties that carry the risk:
  *  1. PARITY. The Studio rail renders the SAME sections, in the same order,
  *     under the same labels, from the same registry - minus exactly the
- *     sections `BOOK_SECTION_SCOPES` says have no project-scoped read. The
- *     table below is written by hand and BOTH the registry and the rendered
- *     DOM are held to it, in both rails, so a card that quietly appears on one
- *     rail only fails here.
+ *     session-only card, plus its project-scoped counterpart in the same
+ *     slot. The table below is written by hand with a column per rail, and
+ *     BOTH the registry and the rendered DOM are held to it, in both rails,
+ *     so a card that quietly appears on one rail only fails here.
  *  2. EVERY Studio card is handed the PROJECT scope, with the selected
  *     project's id. A card that received a global or session scope would be
  *     showing the wrong wallets under a project's name - a wrong answer that
@@ -54,6 +54,18 @@ function sessionProbe(testid: string) {
   );
 }
 
+/** A project-only card: its probe records the id it was handed. */
+function projectProbe(testid: string) {
+  return ({ projectId }: { readonly projectId: string }) => (
+    <div
+      data-testid={testid}
+      data-scope-kind="project"
+      data-project-id={projectId}
+      data-session-id=""
+    />
+  );
+}
+
 vi.mock("../book/portfolio/BalancesCard.js", () => ({
   BalancesCard: scopeProbe("card-balances"),
 }));
@@ -69,8 +81,11 @@ vi.mock("../book/SessionActivityCard.js", () => ({
 vi.mock("../book/SessionBlock.js", () => ({
   SessionBlock: sessionProbe("card-session"),
 }));
+vi.mock("../book/ProjectBlock.js", () => ({
+  ProjectBlock: projectProbe("card-project"),
+}));
 vi.mock("../book/ImageLockerCard.js", () => ({
-  ImageLockerCard: sessionProbe("card-images"),
+  ImageLockerCard: scopeProbe("card-images"),
 }));
 vi.mock("../book/board/ActiveBoardModule.js", () => ({
   ActiveBoardModule: () => <div data-testid="board-module" />,
@@ -86,9 +101,9 @@ vi.mock("../book/portfolio/WelcomePortfolioPanel.js", () => ({
 
 const { BookPanel } = await import("../BookPanel.js");
 const { useUiStore } = await import("../../../stores/uiStore.js");
-const { BOOK_SECTION_LABEL, DEFAULT_BOOK_SECTIONS } = await import(
-  "../book/section-order.js"
-);
+const { useBoardSurfaceStore } = await import("../Board/board-surface-store.js");
+const { BOOK_SECTION_LABEL, DEFAULT_BOOK_SECTIONS, bookSectionsForScope } =
+  await import("../book/section-order.js");
 const { DEFAULT_STUDIO_BOOK_SECTIONS } = await import(
   "../book/studio-section-order.js"
 );
@@ -100,19 +115,32 @@ const SESSION = "44444444-4444-4444-8444-444444444444";
  * THE PARITY TABLE - the contract, written out by hand rather than derived
  * from the code it checks.
  *
- * `studio: false` is never a taste decision about what a project rail "should"
- * show; it is a card that has no honest project-scoped read, and the reason
- * says which one is missing. When that read lands, this table gains a `true`
- * and the registry has to follow.
+ * A `false` is never a taste decision about what a rail "should" show; it is
+ * a card that has no honest read for that scope, and the reason says which
+ * one is missing. When that read lands, this table gains a `true` and the
+ * registry has to follow.
  */
 const PARITY = [
-  { id: "position", label: "Position", testid: "card-position", studio: true },
-  { id: "wallets", label: "Wallets", testid: "card-wallets", studio: true },
-  { id: "balances", label: "Balances", testid: "card-balances", studio: true },
+  {
+    id: "position",
+    label: "Position",
+    testid: "card-position",
+    agent: true,
+    studio: true,
+  },
+  { id: "wallets", label: "Wallets", testid: "card-wallets", agent: true, studio: true },
+  {
+    id: "balances",
+    label: "Balances",
+    testid: "card-balances",
+    agent: true,
+    studio: true,
+  },
   {
     id: "activity",
     label: "Activity",
     testid: "card-activity",
+    agent: true,
     // TURNED TRUE by the project-scoped Agent Scan read (2026-09-04):
     // `agentScanFiltersSchema` carries `filters.projectId`, and main resolves
     // that project's own wallets from `project_wallets` and intersects them
@@ -125,18 +153,31 @@ const PARITY = [
     id: "session",
     label: "Session",
     testid: "card-session",
+    agent: true,
     studio: false,
     why: "the card IS the session object",
+  },
+  {
+    id: "project",
+    label: "Project",
+    testid: "card-project",
+    agent: false,
+    studio: true,
+    why: "the card IS the project object - the session card's counterpart",
   },
   {
     id: "trench",
     label: "Trench Express",
     testid: "card-images",
-    studio: false,
-    why: "the image locker is keyed by session id in main",
+    agent: true,
+    // TURNED TRUE by the parity decree: the locker is GLOBAL, so the card
+    // browses it for a project; only the LAUNCH is a session's, and the card
+    // withholds that action itself (`ImageLockerCard.test.tsx` pins it).
+    studio: true,
   },
 ] as const;
 
+const AGENT_ROWS = PARITY.filter((row) => row.agent);
 const STUDIO_ROWS = PARITY.filter((row) => row.studio);
 const SESSION_ONLY_ROWS = PARITY.filter((row) => !row.studio);
 
@@ -202,8 +243,14 @@ beforeEach(() => {
 });
 
 describe("the parity table is the registry", () => {
-  it("the agent rail is exactly the table, in table order", () => {
+  it("the registry is exactly the table, in table order", () => {
     expect([...DEFAULT_BOOK_SECTIONS]).toEqual(PARITY.map((row) => row.id));
+  });
+
+  it("the agent rail is exactly the session-capable rows, in the same order", () => {
+    expect([...bookSectionsForScope("session")]).toEqual(
+      AGENT_ROWS.map((row) => row.id),
+    );
   });
 
   it("the Studio rail is exactly the project-capable rows, in the same order", () => {
@@ -220,12 +267,13 @@ describe("the parity table is the registry", () => {
 });
 
 describe("the two rails render the same sections for the same table", () => {
-  it("the agent rail renders every row", () => {
+  it("the agent rail renders every session-capable row and no other", () => {
     mountAgent(SESSION);
-    expect(renderedSectionIds()).toEqual(PARITY.map((row) => row.id));
-    for (const row of PARITY) {
+    expect(renderedSectionIds()).toEqual(AGENT_ROWS.map((row) => row.id));
+    for (const row of AGENT_ROWS) {
       expect(screen.getByTestId(row.testid)).not.toBeNull();
     }
+    expect(screen.queryByTestId("card-project")).toBeNull();
   });
 
   it("the Studio rail renders every project-capable row and no other", () => {
@@ -311,6 +359,18 @@ describe("the Portfolio/Board toggle is the same toggle on both rails", () => {
       screen.getByRole("tab", { name: /board/i }).getAttribute("aria-selected"),
     ).toBe("true");
   });
+
+  it("the Board tab never wears a session's unseen dot in Studio", () => {
+    // A board arrives from a session transcript and is retained in the store
+    // across a mode switch; the project rail's Board tab holds no board, so
+    // announcing one there would be a lie about a tab that cannot show it.
+    useBoardSurfaceStore.setState({ unseenBoardKey: `${SESSION}:12` });
+    mountStudio(PROJECT);
+    expect(document.querySelector('[data-vex-area="book-board-unseen"]')).toBeNull();
+    expect(screen.getByRole("tab", { name: /board/i }).textContent).not.toContain(
+      "new board",
+    );
+  });
 });
 
 describe("Studio rail - its chrome", () => {
@@ -370,7 +430,7 @@ describe("Studio rail - its own persisted order", () => {
 
   it("drops a session-only id that reached the Studio key", () => {
     useUiStore.setState({
-      studioBookSectionOrder: ["trench", "session", "wallets"],
+      studioBookSectionOrder: ["session", "wallets"],
     });
     mountStudio(PROJECT);
     const rendered = renderedSectionIds();
@@ -424,7 +484,7 @@ describe("agent mode is untouched", () => {
     useUiStore.setState({ studioBookSectionOrder: ["balances", "wallets"] });
     mountAgent(SESSION);
     const handle = screen.getByRole("button", {
-      name: new RegExp(`Reorder Position - position 1 of ${PARITY.length}`),
+      name: new RegExp(`Reorder Position - position 1 of ${AGENT_ROWS.length}`),
     });
     fireEvent.keyDown(handle, { key: "ArrowDown" });
     expect([...useUiStore.getState().studioBookSectionOrder]).toEqual([

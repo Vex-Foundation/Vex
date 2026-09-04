@@ -19,7 +19,10 @@
  *     carry NO eye,
  *   - SESSION SCOPE (C4): a `sessionId` on the route reads THAT session's
  *     portfolio (never the global one), retitles the screen, and rides along
- *     on the eye's `returnTo` so the close path restores the same scope.
+ *     on the eye's `returnTo` so the close path restores the same scope,
+ *   - PROJECT SCOPE (Studio parity): a `projectId` on the route reads THAT
+ *     project's own selection, names the project in the title, and the
+ *     token-history close path returns to the PROJECT register.
  *
  * The sibling screens and the portfolio query hook are mocked — this suite
  * owns the assets branch, not Memory/Sessions/HowVexWorks/TokenHistory or
@@ -59,6 +62,12 @@ vi.mock("../TokenHistoryScreen.js", () => ({
 const mockUsePortfolio = vi.hoisted(() => vi.fn());
 vi.mock("../../../../lib/api/portfolio.js", () => ({
   usePortfolio: mockUsePortfolio,
+}));
+// The project's name is a label read for the title; the project arm below
+// scripts it, the other arms never ask (the hook is disabled by `null`).
+const mockUseProject = vi.hoisted(() => vi.fn());
+vi.mock("../../../../lib/api/projects.js", () => ({
+  useProject: mockUseProject,
 }));
 
 const { ShellScreens } = await import("../ShellScreens.js");
@@ -105,6 +114,7 @@ beforeEach(() => {
     shellRoute: { kind: "none" },
     hideDustBalances: true,
   });
+  mockUseProject.mockReturnValue({ isLoading: false, isError: false, data: undefined });
   mockUsePortfolio.mockReturnValue({
     isLoading: false,
     isError: false,
@@ -371,6 +381,90 @@ describe("AssetsScreen - session scope (C4)", () => {
     render(<ShellScreens />);
     expect(
       screen.getByText(/No balances in this session's wallets yet/i),
+    ).not.toBeNull();
+  });
+});
+
+describe("AssetsScreen - project scope (Studio parity)", () => {
+  const PROJECT = "9c1b0e8e-0000-4000-8000-0000000000ab";
+  const USDC_BASE = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
+
+  it("reads the PROJECT portfolio and names the project in the title", () => {
+    mockUseProject.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: { ok: true, data: { id: PROJECT, name: "vex-core" } },
+    });
+    useUiStore.setState({
+      shellRoute: { kind: "assets", origin: null, projectId: PROJECT },
+    });
+    render(<ShellScreens />);
+    expect(mockUsePortfolio).toHaveBeenCalledWith({
+      scope: "project",
+      projectId: PROJECT,
+    });
+    expect(mockUseProject).toHaveBeenCalledWith(PROJECT);
+    expect(
+      screen.getByRole("dialog", { name: "Project assets: vex-core" }),
+    ).not.toBeNull();
+  });
+
+  it("carries no name while the project read has not answered", () => {
+    useUiStore.setState({
+      shellRoute: { kind: "assets", origin: null, projectId: PROJECT },
+    });
+    render(<ShellScreens />);
+    expect(screen.getByRole("dialog", { name: "Project assets" })).not.toBeNull();
+  });
+
+  it("the token-history close path returns to the PROJECT register, never the global one", () => {
+    mockUsePortfolio.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: {
+        ok: true,
+        data: portfolio([
+          token({
+            tokenName: "USD Coin",
+            symbol: "USDC",
+            chainId: 8453,
+            tokenAddress: USDC_BASE,
+            balanceUsd: 100,
+          }),
+        ]),
+      },
+    });
+    useUiStore.setState({
+      shellRoute: { kind: "assets", origin: null, projectId: PROJECT },
+    });
+    render(<ShellScreens />);
+    fireEvent.click(screen.getByRole("button", { name: "Token history: USD Coin" }));
+    const route = useUiStore.getState().shellRoute;
+    if (route.kind !== "tokenHistory") throw new Error("route kind mismatch");
+    expect(route.returnTo).toEqual({ kind: "assets", projectId: PROJECT });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Close token history (stub)" }),
+    );
+    expect(useUiStore.getState().shellRoute).toEqual({
+      kind: "assets",
+      origin: null,
+      projectId: PROJECT,
+    });
+  });
+
+  it("states the PROJECT empty invitation", () => {
+    mockUsePortfolio.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: { ok: true, data: portfolio([]) },
+    });
+    useUiStore.setState({
+      shellRoute: { kind: "assets", origin: null, projectId: PROJECT },
+    });
+    render(<ShellScreens />);
+    expect(
+      screen.getByText(/No balances in this project's wallets yet/i),
     ).not.toBeNull();
   });
 });

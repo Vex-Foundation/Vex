@@ -47,7 +47,10 @@ const EXPECTED_SCOPES: Readonly<Record<BookSectionId, readonly string[]>> = {
   balances: ["session", "project"],
   activity: ["session", "project"],
   session: ["session"],
-  trench: ["session"],
+  project: ["project"],
+  // The locker is GLOBAL; only the launch is a session's, and the card
+  // itself withholds that action under a project scope.
+  trench: ["session", "project"],
 };
 
 describe("the scope table is the only thing that shortens a rail", () => {
@@ -63,10 +66,10 @@ describe("the scope table is the only thing that shortens a rail", () => {
     }
   });
 
-  it("the session rail is the whole registry, in the decreed order", () => {
-    expect([...bookSectionsForScope("session")]).toEqual([
-      ...DEFAULT_BOOK_SECTIONS,
-    ]);
+  it("the session rail excludes exactly the project-only card", () => {
+    expect([...bookSectionsForScope("session")]).toEqual(
+      DEFAULT_BOOK_SECTIONS.filter((id) => id !== "project"),
+    );
   });
 
   it("the project rail keeps the registry's ORDER, only dropping rows", () => {
@@ -83,6 +86,11 @@ describe("the scope table is the only thing that shortens a rail", () => {
       // wallets and intersects them with the inventory allow-list, so the card
       // has a real project read and no longer has to invent an answer.
       "activity",
+      // PROJECT is the project-scoped counterpart of SESSION, in its slot.
+      "project",
+      // TRENCH joined with the parity decree: the locker is global, and the
+      // card withholds the launch action for a project itself.
+      "trench",
     ]);
   });
 });
@@ -116,11 +124,9 @@ describe("the Studio validator refuses the sections it cannot draw", () => {
     }
   });
 
-  it("a session-only id is a KNOWN book id and still not a Studio id", () => {
-    for (const sessionOnly of ["session", "trench"]) {
-      expect(isBookSectionId(sessionOnly)).toBe(true);
-      expect(isStudioBookSectionId(sessionOnly)).toBe(false);
-    }
+  it("the session-only id is a KNOWN book id and still not a Studio id", () => {
+    expect(isBookSectionId("session")).toBe(true);
+    expect(isStudioBookSectionId("session")).toBe(false);
   });
 });
 
@@ -142,18 +148,15 @@ describe("resolveStudioBookSectionOrder", () => {
       "position",
       "wallets",
       "activity",
+      "project",
+      "trench",
     ]);
   });
 
   it("drops a SESSION-ONLY id that reached this key, instead of rendering it", () => {
     // The one that would matter in practice: a payload written by a build
     // where the two orders shared a key, or a hand edit.
-    const resolved = resolveStudioBookSectionOrder([
-      "trench",
-      "wallets",
-      "session",
-    ]);
-    expect(resolved).not.toContain("trench");
+    const resolved = resolveStudioBookSectionOrder(["session", "wallets"]);
     expect(resolved).not.toContain("session");
     expect(resolved[0]).toBe("wallets");
     expect([...resolved].toSorted()).toEqual(

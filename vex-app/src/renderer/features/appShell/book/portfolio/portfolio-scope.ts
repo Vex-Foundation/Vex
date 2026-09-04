@@ -42,21 +42,6 @@ export type PortfolioCardScope =
 export const GLOBAL_PORTFOLIO_SCOPE: PortfolioCardScope = { kind: "global" };
 
 /**
- * The scope a raw active-session id describes.
- *
- * Kept so the surfaces that hold a `string | null` (the app shell's active
- * session, the All-assets screen's route parameter) have ONE place that turns
- * it into a scope, rather than each re-deciding that `null` means global.
- */
-export function sessionPortfolioScope(
-  sessionId: string | null,
-): PortfolioCardScope {
-  return sessionId === null
-    ? GLOBAL_PORTFOLIO_SCOPE
-    : { kind: "session", sessionId };
-}
-
-/**
  * The scope, as the validated read input main actually receives.
  *
  * Total over the union by construction: the switch has no default, so a new
