@@ -110,6 +110,25 @@
   --vex-glass-blur-pane: 18px;
   --vex-glass-blur-overlay: 32px;
   --vex-glass-saturate: 120%;
+  /* THE WALL'S OWN VEIL (ShellBackdrop's ink layer over the artwork, wearing
+   * .vex-backdrop-veil below). It is the stage light, not a glass tier: light
+   * while the welcome stage is on (the artwork is the protagonist), deep
+   * behind an active session transcript, whose messages read STRAIGHT off
+   * the wall with nothing else between them and the photo.
+   *
+   * It compounds with every tier above it, and that product is what the
+   * glass actually shows of the artwork. Measured in the built app
+   * (e2e/studio-terminal-glass.spec.ts, 2026-09-04): a 0.62 chronos pane over
+   * the 0.8 veil leaves 7.6% of the night artwork, and because that artwork
+   * is dark with bright highlights (mean 22/41/75, peaks to 234) the
+   * highlights still read as ridges through the pane. The same 0.8 WHITE
+   * veil under a 0.72 celeris pane leaves 5.6% of a mid-tone day artwork
+   * (mean 156/190/180, darks to 28): 7 levels of structure on a 247 white,
+   * which is a flat card. No tint retune can recover that (the rail is
+   * pinned at 0.6 and the pane must stay denser than the rail), so the
+   * override below is where the light theme's glass is decided. */
+  --vex-backdrop-veil-idle: 0.3;
+  --vex-backdrop-veil-dim: 0.8;
   /* COMPATIBILITY ALIASES, each with a named consumer and a removal
    * condition (glass-tokens.test.ts fails the moment an alias has no
    * `var()` consumer left, which is the signal to delete it here):
@@ -150,6 +169,23 @@
   --vex-glass-edge: inset 0 1px 0 0 rgba(255, 255, 255, 0.55);
   --vex-glass-edge-ring: inset 0 0 0 1px rgba(10, 13, 24, 0.06);
   --vex-rail-strong: rgba(255, 255, 255, 0.78);
+}
+
+/* Celeris in STUDIO: the wall dims less, so the day artwork survives the
+ * pane (owner review of the built app, 2026-09-04: "glass only on dark
+ * mode"). Scoped to Studio on purpose: there every reading surface is a
+ * glass pane carrying its own veil, so the wall's deep dim only doubles a
+ * veil that already exists. The Agent transcript has no such pane (its
+ * messages sit on the wall) and keeps the 0.8 in both themes; chronos
+ * Studio keeps it too, because the owner approved that look as is.
+ *
+ * 0.45 leaves 55% of the artwork under the wall and 15.4% under the 0.72
+ * pane: 18 levels of structure on a 243 white, which is the same order the
+ * chronos pane shows (16 levels between its mean and its brightest pixel).
+ * The terminal ink (#2b3040) over the darkest artwork pixel in the sampled
+ * region still clears 7:1 by arithmetic; the spec measures it. */
+[data-vex-shell="true"][data-vex-theme="celeris"][data-vex-runtime-mode="studio"] {
+  --vex-backdrop-veil-dim: 0.45;
 }
 
 /* Shell scrollbar — the onboarding recipe (38%/60% accent thumb) under the
@@ -295,6 +331,18 @@
 }
 [data-vex-theme="celeris"] .vex-backdrop-chronos {
   display: none;
+}
+
+/* The wall's veil density, keyed on the stage attribute ShellBackdrop stamps
+ * (`data-vex-backdrop-dimmed`) and resolved through the tokens above, so a
+ * theme or a mode can repoint it without a JS read. The 900ms opacity
+ * transition stays on the element (ShellBackdrop.tsx): it is the deepen's
+ * cinematic timing, not a density decision. */
+.vex-backdrop-veil {
+  opacity: var(--vex-backdrop-veil-idle);
+}
+[data-vex-backdrop-dimmed="true"] > .vex-backdrop-veil {
+  opacity: var(--vex-backdrop-veil-dim);
 }
 
 /* SIDEBAR COLLAPSE CHOREOGRAPHY — slide + crossfade, not a morph: the

@@ -109,6 +109,39 @@ interface Throughput {
   readonly scrolledPx: number;
 }
 
+/**
+ * The terminal's scrollbar as PAINTED. xterm 6 mounts VS Code's
+ * ScrollableElement, so the bar is a real `.slider` element sized inline and
+ * coloured by scrollbars.css; none of that is readable in jsdom.
+ */
+interface ScrollbarFacts {
+  /** The vestigial `.xterm-viewport`'s own native gutter, in CSS px. 0 means gone. */
+  readonly viewportGutter: number;
+  readonly trackWidth: number;
+  readonly sliderWidth: number;
+  /** The transparent inset each side of the thumb (the slider's padding). */
+  readonly sliderInset: number;
+  readonly sliderRadius: string;
+  readonly sliderBackground: string;
+  /** `--vex-scrollbar-thumb` resolved in the track's own scope, for comparison. */
+  readonly tokenBackground: string;
+  /**
+   * xterm's injected `<style>` elements inside the terminal, and how many of
+   * them the document actually applied. The renderer's CSP (`style-src
+   * 'self'`) refuses inline sheets, which is why the slider's colour cannot
+   * come from the palette bridge and lives in scrollbars.css instead.
+   */
+  readonly injectedSheets: { readonly count: number; readonly applied: number };
+  /** The track's class list right after the wheel, with the pointer still over the grid. */
+  readonly classesAfterWheel: string;
+  /** The track's class list once the pointer left and the idle hide ran. */
+  readonly classesAfterLeave: string;
+  /** The track's class list once the pointer came back over the grid. */
+  readonly classesOnHover: string;
+  /** The show/fade transition duration under `prefers-reduced-motion: reduce`. */
+  readonly reducedMotionTransition: string;
+}
+
 interface Contrast {
   readonly theme: string;
   readonly sample: { readonly mean: [number, number, number]; readonly extreme: [number, number, number] };
@@ -225,7 +258,13 @@ async function stopFrameCounter(page: Page): Promise<{ frames: number; ms: numbe
 async function measureThroughput(page: Page): Promise<Throughput> {
   await focusTerminalGrid(page);
   const marker = `glassdone${Date.now().toString(36)}`;
-  const center = page.locator('[data-vex-area="studio-center"]');
+  // The HEADER's location line, not the whole center: under the DOM renderer
+  // `.xterm-rows` carries the typed command, marker included, so a poll on
+  // the center's text matched before Enter had even landed (measured:
+  // burstMs 17, burstFrames 0).
+  const location = page
+    .locator('[data-vex-area="studio-center"]')
+    .locator("p:has([data-vex-terminal-shell])");
 
   await page.keyboard.type(
     `seq 1 ${String(BURST_LINES)}; mkdir -p ${marker}; cd ${marker}`,
@@ -234,7 +273,7 @@ async function measureThroughput(page: Page): Promise<Throughput> {
   const t0 = Date.now();
   await page.keyboard.press("Enter");
   await expect
-    .poll(async () => await center.textContent(), { timeout: BURST_TIMEOUT_MS })
+    .poll(async () => await location.textContent(), { timeout: BURST_TIMEOUT_MS })
     .toContain(marker);
   const burstMs = Date.now() - t0;
   const burst = await readFrameCounter(page);
@@ -284,6 +323,87 @@ async function measureThroughput(page: Page): Promise<Throughput> {
     wheelFps: Math.round((wheel.frames / wheel.ms) * 1000),
     scrolledPx: Math.round(scrollBefore - scrollAfter),
   };
+}
+
+const TRACK_SELECTOR =
+  ".vex-terminal-surface--active .xterm-scrollable-element > .scrollbar.vertical";
+
+async function trackClasses(page: Page): Promise<string> {
+  return page.evaluate(
+    (selector) => document.querySelector(selector)?.className ?? "",
+    TRACK_SELECTOR,
+  );
+}
+
+/**
+ * Read the bar with the pointer still over the grid (the wheel just ran, so
+ * VS Code's state machine holds it `visible`), then prove the auto-hide: the
+ * pointer leaves, the 500ms idle hide runs and the track turns `invisible`;
+ * the pointer returns and it is `visible` again. Reduced motion is emulated
+ * last and undone before returning, so the capture that follows is unaffected.
+ */
+async function measureScrollbar(page: Page, gridBox: { x: number; y: number; width: number; height: number }): Promise<ScrollbarFacts> {
+  const geometry = await page.evaluate((selector) => {
+    const viewport = document.querySelector<HTMLElement>(".vex-terminal-surface--active .xterm-viewport");
+    const track = document.querySelector<HTMLElement>(selector);
+    const slider = track?.querySelector<HTMLElement>(".slider") ?? null;
+    const probe = document.createElement("span");
+    probe.style.backgroundColor = "var(--vex-scrollbar-thumb)";
+    (track ?? document.body).appendChild(probe);
+    const tokenBackground = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    const sliderStyle = slider === null ? null : getComputedStyle(slider);
+    const sheets = [...document.querySelectorAll<HTMLStyleElement>(".vex-terminal-surface--active style")];
+    const injectedSheets = {
+      count: sheets.length,
+      applied: sheets.filter((sheet) => (sheet.sheet?.cssRules.length ?? 0) > 0).length,
+    };
+    return {
+      injectedSheets,
+      viewportGutter: viewport === null ? Number.NaN : viewport.offsetWidth - viewport.clientWidth,
+      trackWidth: track?.offsetWidth ?? Number.NaN,
+      sliderWidth: slider?.offsetWidth ?? Number.NaN,
+      sliderInset: sliderStyle === null ? Number.NaN : Number.parseFloat(sliderStyle.paddingLeft),
+      sliderRadius: sliderStyle?.borderRadius ?? "",
+      sliderBackground: sliderStyle?.backgroundColor ?? "",
+      tokenBackground,
+      classesAfterWheel: track?.className ?? "",
+    };
+  }, TRACK_SELECTOR);
+
+  // Leave the terminal: the hide is scheduled 500ms after the pointer goes
+  // and the fade takes 800ms; the class flips at the schedule, not the fade.
+  // `invisible` contains `visible`, so the states are matched on word
+  // boundaries, never by substring.
+  await page.mouse.move(2, 2);
+  await expect.poll(() => trackClasses(page), { timeout: 5_000 }).toMatch(/\binvisible\b/);
+  const classesAfterLeave = await trackClasses(page);
+
+  await page.mouse.move(gridBox.x + gridBox.width / 2, gridBox.y + gridBox.height / 2);
+  await expect
+    .poll(async () => /\bvisible\b/.test(await trackClasses(page)), { timeout: 5_000 })
+    .toBe(true);
+  const classesOnHover = await trackClasses(page);
+
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const reducedMotionTransition = await page.evaluate(
+    (selector) => {
+      const track = document.querySelector<HTMLElement>(selector);
+      return track === null ? "" : getComputedStyle(track).transitionDuration;
+    },
+    TRACK_SELECTOR,
+  );
+  await page.emulateMedia({ reducedMotion: null });
+
+  return { ...geometry, classesAfterLeave, classesOnHover, reducedMotionTransition };
+}
+
+/** A computed `transition-duration` ("0.01ms", "1e-05s", "0.8s") in milliseconds. */
+function durationMs(value: string): number {
+  const match = /^([0-9.e+-]+)(ms|s)$/.exec(value.trim());
+  if (match === null) throw new Error(`not a duration: ${value}`);
+  const amount = Number(match[1]);
+  return match[2] === "s" ? amount * 1000 : amount;
 }
 
 function relativeLuminance([r, g, b]: [number, number, number]): number {
@@ -488,6 +608,14 @@ test("Studio terminal on glass: backdrop shows through, gutter and scroll throug
   report["throughput"] = throughput;
   save();
 
+  /* ---- 4b. THE SCROLLBAR the wheel just revealed ------------------------ */
+  const gridBox = await page.locator(".vex-terminal-surface--active .xterm-screen").boundingBox();
+  expect(gridBox, "no terminal grid to hover").not.toBeNull();
+  if (gridBox === null) throw new Error("unreachable");
+  const scrollbar = await measureScrollbar(page, gridBox);
+  report["scrollbar"] = scrollbar;
+  save();
+
   /* ---- 5. THE OTHER THEME, best effort: a capture and its contrast ----- */
   try {
     await pickTheme(page, "celeris");
@@ -515,5 +643,28 @@ test("Studio terminal on glass: backdrop shows through, gutter and scroll throug
   expect(throughput.burstFrames).toBeGreaterThan(0);
   for (const gutter of report["gutters"] as GutterMeasurement[]) {
     expect(gutter.gutter).toBeGreaterThanOrEqual(0);
+  }
+
+  // THE SCROLLBAR (owner review 2026-09-04: "rounder, smaller, smoother").
+  // The `.vex-scroll` shape on xterm's slider, the vestigial viewport gutter
+  // gone, the colour from the app's ladder, VS Code's reveal/hide, and the
+  // fade collapsed under reduced motion.
+  expect(scrollbar.viewportGutter).toBe(0);
+  expect(scrollbar.trackWidth).toBe(6);
+  expect(scrollbar.sliderWidth).toBe(6);
+  expect(scrollbar.sliderInset).toBe(2);
+  expect(scrollbar.sliderRadius).toBe("9999px");
+  expect(scrollbar.sliderBackground).toBe(scrollbar.tokenBackground);
+  expect(scrollbar.classesAfterWheel).toMatch(/\bvisible\b/);
+  expect(scrollbar.classesAfterLeave).toMatch(/\binvisible\b/);
+  expect(scrollbar.classesOnHover).toMatch(/\bvisible\b/);
+  // base.css collapses every transition to 0.01ms; Chromium serializes that
+  // as "1e-05s", so the value is parsed rather than matched as text.
+  expect(durationMs(scrollbar.reducedMotionTransition)).toBeLessThanOrEqual(0.01);
+
+  // THE CONTRAST FLOOR (rule 08, both themes): the palette foreground over
+  // the pane as painted, at its worst sampled pixel, never below 7:1.
+  for (const contrast of contrasts) {
+    expect(contrast.contrastWorst, `${contrast.theme} contrastWorst`).toBeGreaterThanOrEqual(7);
   }
 });

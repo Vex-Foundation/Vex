@@ -102,6 +102,13 @@ export function readTerminalTheme(element: HTMLElement | null): ITheme {
       "rgba(128, 136, 152, 0.24)",
     ),
   };
+  // NOT HERE: the scrollbar slider (`scrollbarSliderBackground` and its
+  // hover/active pair). xterm 6 paints its slider through a `<style>` element
+  // it injects into the terminal, and the renderer's CSP (`style-src 'self'`,
+  // index.html) refuses inline sheets, so those keys never reach a pixel
+  // (measured on the built app 2026-09-04: with all three set, the slider's
+  // computed background stayed rgba(0, 0, 0, 0)). The slider is a real
+  // element, so scrollbars.css colours it from the app's own scrollbar pair.
   for (const [key, slot] of ANSI_SLOTS) {
     theme[key] = readVar(styles, `--vex-alias-term-${slot}`, NEUTRAL);
   }
