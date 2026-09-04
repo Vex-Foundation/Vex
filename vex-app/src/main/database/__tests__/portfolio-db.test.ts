@@ -156,6 +156,9 @@ describe("portfolio-db getPortfolio - global scope", () => {
       snapshotInTransitUsd: null,
       snapshotInFlight: null,
       snapshotUnresolvedCount: null,
+      snapshotInFlightTotalCount: null,
+      snapshotInFlightShownCount: null,
+      snapshotInFlightTruncated: null,
       pnlVsPrev: null,
       snapshotAt: null,
       tokens: [],
@@ -360,18 +363,15 @@ describe("portfolio-db getPortfolio - coercion + fallback", () => {
     );
   });
 
-  it("collapses an absent snapshot to null total/pnl/at and a null ledger", async () => {
+  it("keeps the live total readable when no snapshot cycle exists", async () => {
+    // The snapshot half of that answer - every null the absent basis produces -
+    // belongs to `portfolio-snapshot-basis.test.ts`; what this file still owns
+    // is that the live aggregation is unaffected by it.
     scriptPortfolioQueries({ live: "10", tokens: [], snapshot: null });
     const result = await getPortfolio({ scope: "global" });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.data.snapshotTotalUsd).toBeNull();
-    expect(result.data.snapshotSettledUsd).toBeNull();
-    expect(result.data.snapshotInTransitUsd).toBeNull();
-    expect(result.data.snapshotInFlight).toBeNull();
-    expect(result.data.snapshotUnresolvedCount).toBeNull();
-    expect(result.data.pnlVsPrev).toBeNull();
-    expect(result.data.snapshotAt).toBeNull();
     expect(result.data.liveTotalUsd).toBe(10);
   });
 
@@ -460,239 +460,11 @@ describe("portfolio-db getPortfolio - coercion + fallback", () => {
   });
 });
 
-/** One in-flight bridge leg, in the exact shape the publisher persists. */
-const IN_FLIGHT_BRIDGE = {
-  kind: "agent_activity_pending",
-  ref: "132",
-  detail: "bridge_fill_expected",
-  standing: "in_transit" as const,
-  ageSeconds: 600,
-  amountHuman: "150.0",
-  symbol: "USDC",
-  usdEstimate: 150,
-};
-
-describe("portfolio-db getPortfolio - PnL + token cap (codex review)", () => {
+describe("portfolio-db getPortfolio - token cap (codex review)", () => {
   beforeEach(() => {
     mocks.listWallets.mockImplementation((family: string) =>
       family === "evm" ? [{ id: "1", address: WALLET_A, label: "", createdAt: "" }] : [],
     );
-  });
-
-  it("computes PnL as latest.total − previous.total over two complete cycles", async () => {
-    scriptPortfolioQueries({
-      live: "100",
-      tokens: [],
-      snapshot: { snapshot_group_id: "g1", total: "100", at: "2026-05-21T10:00:00.000Z" },
-      previousSnapshot: { snapshot_group_id: "g0", total: "80", at: "2026-05-20T10:00:00.000Z" },
-    });
-    const result = await getPortfolio({ scope: "global" });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.data.snapshotTotalUsd).toBeCloseTo(100, 4);
-    expect(result.data.pnlVsPrev).toBeCloseTo(20, 4);
-    // The snapshot query asks for the latest TWO groups and no longer sums
-    // per-wallet pnl_vs_prev.
-    const snapshotSql = String(mocks.query.mock.calls[3]?.[0] ?? "");
-    expect(snapshotSql).toContain("LIMIT 2");
-    expect(snapshotSql).not.toContain("pnl_vs_prev");
-  });
-
-  it("leaves PnL null when only one complete cycle exists", async () => {
-    scriptPortfolioQueries({
-      live: "100",
-      tokens: [],
-      snapshot: { snapshot_group_id: "g1", total: "100", at: "2026-05-21T10:00:00.000Z" },
-    });
-    const result = await getPortfolio({ scope: "global" });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.data.snapshotTotalUsd).toBeCloseTo(100, 4);
-    expect(result.data.pnlVsPrev).toBeNull();
-  });
-
-  it("SETTLED + IN TRANSIT is the basis, on both sides of the PnL", async () => {
-    scriptPortfolioQueries({
-      live: "100",
-      tokens: [],
-      snapshot: {
-        snapshot_group_id: "g1",
-        total: "50",
-        at: "2026-05-21T10:00:00.000Z",
-        in_transit: 150,
-        unresolved_count: 0,
-        in_flight: JSON.stringify([IN_FLIGHT_BRIDGE]),
-      },
-      previousSnapshot: {
-        snapshot_group_id: "g0",
-        total: "180",
-        at: "2026-05-20T10:00:00.000Z",
-        in_transit: 20,
-        unresolved_count: 0,
-        in_flight: "[]",
-      },
-    });
-    const result = await getPortfolio({ scope: "global" });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.data.snapshotTotalUsd).toBeCloseTo(200, 4);
-    // 200 vs 200: the previous cycle held 180 settled plus 20 on its way.
-    expect(result.data.pnlVsPrev).toBeCloseTo(0, 4);
-  });
-
-  it("THE OWNER'S SCENARIO: 200 settled, then 50 settled mid-bridge, reads 200 and 0", async () => {
-    // "I did a bridge, I have $200 and send it, a snapshot fires meanwhile and
-    // shows $50 and -$150, which causes anxiety." The previous cycle measured
-    // the whole $200 settled; the latest fires while $150 is in transit.
-    scriptPortfolioQueries({
-      live: "50",
-      tokens: [],
-      snapshot: {
-        snapshot_group_id: "mid-bridge",
-        total: "50",
-        at: "2026-05-21T10:05:00.000Z",
-        in_transit: 150,
-        unresolved_count: 0,
-        in_flight: JSON.stringify([IN_FLIGHT_BRIDGE]),
-      },
-      previousSnapshot: {
-        snapshot_group_id: "before-bridge",
-        total: "200",
-        at: "2026-05-21T10:00:00.000Z",
-        in_transit: 0,
-        unresolved_count: 0,
-        in_flight: "[]",
-      },
-    });
-    const result = await getPortfolio({ scope: "global" });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.data.snapshotSettledUsd).toBeCloseTo(50, 4);
-    expect(result.data.snapshotInTransitUsd).toBeCloseTo(150, 4);
-    expect(result.data.snapshotTotalUsd).toBeCloseTo(200, 4);
-    // No loss was taken, so none is reported. This is the whole point.
-    expect(result.data.pnlVsPrev).toBeCloseTo(0, 4);
-    expect(result.data.snapshotInFlight).toEqual([IN_FLIGHT_BRIDGE]);
-    expect(result.data.snapshotUnresolvedCount).toBe(0);
-  });
-
-  it("treats a group with NO record (written before migration 101) as in-transit 0", async () => {
-    scriptPortfolioQueries({
-      live: "100",
-      tokens: [],
-      snapshot: {
-        snapshot_group_id: "g1",
-        total: "100",
-        at: "2026-05-21T10:00:00.000Z",
-        in_transit: null,
-        unresolved_count: null,
-        in_flight: null,
-      },
-      previousSnapshot: {
-        snapshot_group_id: "g0",
-        total: "80",
-        at: "2026-05-20T10:00:00.000Z",
-        in_transit: null,
-        unresolved_count: null,
-        in_flight: null,
-      },
-    });
-    const result = await getPortfolio({ scope: "global" });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    // Exactly the figures the pre-101 reader produced, so the two bases stay
-    // comparable across the migration rather than reporting a phantom jump.
-    expect(result.data.snapshotSettledUsd).toBeCloseTo(100, 4);
-    expect(result.data.snapshotInTransitUsd).toBe(0);
-    expect(result.data.snapshotTotalUsd).toBeCloseTo(100, 4);
-    expect(result.data.pnlVsPrev).toBeCloseTo(20, 4);
-    expect(result.data.snapshotInFlight).toEqual([]);
-    expect(result.data.snapshotUnresolvedCount).toBe(0);
-  });
-
-  it("mixes an old previous group with a new latest one without a phantom jump", async () => {
-    scriptPortfolioQueries({
-      live: "100",
-      tokens: [],
-      snapshot: {
-        snapshot_group_id: "g1",
-        total: "100",
-        at: "2026-05-21T10:00:00.000Z",
-        in_transit: 0,
-        unresolved_count: 0,
-        in_flight: "[]",
-      },
-      previousSnapshot: {
-        snapshot_group_id: "g0",
-        total: "80",
-        at: "2026-05-20T10:00:00.000Z",
-        in_transit: null,
-        unresolved_count: null,
-        in_flight: null,
-      },
-    });
-    const result = await getPortfolio({ scope: "global" });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.data.pnlVsPrev).toBeCloseTo(20, 4);
-  });
-
-  it("counts an UNRESOLVED entry without adding it to any total", async () => {
-    scriptPortfolioQueries({
-      live: "50",
-      tokens: [],
-      snapshot: {
-        snapshot_group_id: "g1",
-        total: "50",
-        at: "2026-05-21T10:00:00.000Z",
-        // The publisher already excluded the unresolved estimate from
-        // `in_transit_usd`; the reader must not add it back.
-        in_transit: 0,
-        unresolved_count: 1,
-        in_flight: JSON.stringify([{ ...IN_FLIGHT_BRIDGE, standing: "unresolved" }]),
-      },
-    });
-    const result = await getPortfolio({ scope: "global" });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.data.snapshotTotalUsd).toBeCloseTo(50, 4);
-    expect(result.data.snapshotUnresolvedCount).toBe(1);
-    expect(result.data.snapshotInFlight?.[0]?.standing).toBe("unresolved");
-  });
-
-  it("degrades a malformed ledger to an empty one, keeping the settled total", async () => {
-    scriptPortfolioQueries({
-      live: "50",
-      tokens: [],
-      snapshot: {
-        snapshot_group_id: "g1",
-        total: "50",
-        at: "2026-05-21T10:00:00.000Z",
-        in_transit: 150,
-        unresolved_count: 0,
-        in_flight: '[{"kind":"agent_activity_pending"}]',
-      },
-    });
-    const result = await getPortfolio({ scope: "global" });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    // A durable row that has crossed serialization is external input: it is
-    // parsed, not trusted. A row that fails the schema must not take the rest
-    // of the portfolio down with it, and must not reach the DTO half-formed.
-    expect(result.data.snapshotInFlight).toEqual([]);
-    expect(result.data.snapshotTotalUsd).toBeCloseTo(200, 4);
-    expect(mocks.log.warn).toHaveBeenCalled();
-  });
-
-  it("joins the group record by snapshot_group_id, not by a second query", async () => {
-    scriptPortfolioQueries({ live: "0", tokens: [], snapshot: null });
-    await getPortfolio({ scope: "global" });
-    // Still four SELECTs: the group record is a correlated scalar subquery in
-    // the snapshot query, so a group with no record cannot drop out of it.
-    expect(mocks.query).toHaveBeenCalledTimes(4);
-    const snapshotSql = String(mocks.query.mock.calls[3]?.[0] ?? "");
-    expect(snapshotSql).toContain("proj_portfolio_snapshot_groups");
-    expect(snapshotSql).toContain("LIMIT 2");
   });
 
   it("caps token lines at 500 even if the DB returns more (no output-schema overflow)", async () => {
