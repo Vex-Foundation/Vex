@@ -129,6 +129,56 @@ describe("approvals schemas", () => {
     ).toBe(false);
   });
 
+  /**
+   * The SECOND boundary of the Codex-final-review fix. `sanitizeRequestingClientName`
+   * refuses these on the way into `policy_json`; this schema refuses them on the
+   * way out of a durable row and into the renderer, because a row written by an
+   * older build - or by any writer that is not that sanitizer - reaches the card
+   * through here. The two are deliberately the same character class, so a name
+   * that fails one fails both.
+   *
+   * What each case would do to the line a human decides from: the bidi overrides
+   * and isolates REORDER it, so the "(an MCP client)" suffix that marks the name
+   * as self-declared can be painted somewhere other than after the name; the
+   * zero-width members make two distinct clients render as one name; U+2028 is a
+   * line break that the ASCII-control check did not cover.
+   */
+  it.each([
+    ["a right-to-left override (U+202E)", "Claude \u202eedoC"],
+    ["a left-to-right override (U+202D)", "\u202dClaude Code"],
+    ["a first-strong isolate (U+2068)", "Claude\u2068Code"],
+    ["a pop directional isolate (U+2069)", "Claude Code\u2069"],
+    ["a zero-width joiner (U+200D)", "Claude\u200d Code"],
+    ["a zero-width space (U+200B)", "Claude\u200bCode"],
+    ["a byte-order mark (U+FEFF)", "\ufeffClaude Code"],
+    ["a soft hyphen (U+00AD)", "Clau\u00adde Code"],
+    ["a line separator (U+2028)", "Claude Code\u2028VEX APPROVED"],
+    ["a paragraph separator (U+2029)", "Claude Code\u2029VEX APPROVED"],
+    ["a C1 control (U+0085 NEL)", "Claude\u0085Code"],
+    ["a lone high surrogate", "Claude \ud800Code"],
+  ])("requestedByClient refuses %s", (_label, name) => {
+    expect(
+      approvalPendingGlobalDtoSchema.safeParse(globalRow({ requestedByClient: name })).success,
+    ).toBe(false);
+  });
+
+  /**
+   * And the names that MUST survive: refusing every non-ASCII name would strip
+   * the provenance off every client whose name is not written in English, which
+   * is a worse card, not a safer one.
+   */
+  it.each([
+    ["Polish letters", "Zażółć gęślą jaźń"],
+    ["CJK", "克劳德代码"],
+    ["Cyrillic", "Клод Код"],
+    ["an astral pictograph (paired surrogates)", "Claude Code \u{1f4bb}"],
+  ])("requestedByClient keeps a benign non-ASCII name: %s", (_label, name) => {
+    const parsed = approvalPendingGlobalDtoSchema.safeParse(
+      globalRow({ requestedByClient: name }),
+    );
+    expect(parsed.success).toBe(true);
+  });
+
   it("approvalSummaryDtoSchema rejects extra keys (.strict)", () => {
     const parsed = approvalSummaryDtoSchema.safeParse({
       id: "approval-1",

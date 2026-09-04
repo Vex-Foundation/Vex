@@ -33,18 +33,34 @@ const IN_APP_PREPARED_MESSAGE = "Transfer prepared; Vex will confirm it automati
 
 /**
  * THE MCP MESSAGE. Nothing dispatches the confirm on that lane, so the message
- * names the call, the id it needs and the window it has, and says where the
- * approval card appears. The measured defect I-1 was an agent waiting for a
+ * names the call, the id it needs and the window it has, and says what happens
+ * when the caller makes it. The measured defect I-1 was an agent waiting for a
  * dispatch that was never going to happen.
  *
  * The window is READ from the TTL the row is written with, so the sentence
  * cannot outlive the number it quotes.
+ *
+ * The last clause is PERMISSION-AWARE because the confirm gate is
+ * restricted-only (`confirm.ts`: `!context.approved && sessionPermission ===
+ * "restricted"`). Telling a full-permission caller that "the approval card is
+ * raised there" promised a human review that this project does not perform: the
+ * next call signs and broadcasts real funds with nobody in the loop. The
+ * sentence now says which of the two it is, read from the permission the
+ * context was admitted under - a stronger claim needs the stronger evidence, so
+ * the card is only promised where the gate actually raises one.
  */
-function mcpPreparedMessage(intentId: string): string {
+function mcpPreparedMessage(
+  intentId: string,
+  permission: InternalToolContext["sessionPermission"],
+): string {
   const minutes = String(WALLET_INTENT_TTL_MS / 60_000);
+  const whatHappens =
+    permission === "restricted"
+      ? "the approval card is raised there."
+      : "this project has full permission, so confirm broadcasts immediately and no approval card is raised.";
   return (
     `Transfer prepared: call WalletSendConfirm with intentId ${intentId} within ${minutes} minutes `
-    + "to broadcast; the approval card is raised there."
+    + `to broadcast; ${whatHappens}`
   );
 }
 
@@ -106,7 +122,9 @@ export async function handleWalletSendPrepare(
     token: token ?? "native",
     status: "prepared",
     expiresAt,
-    message: overMcp ? mcpPreparedMessage(intentId) : IN_APP_PREPARED_MESSAGE,
+    message: overMcp
+      ? mcpPreparedMessage(intentId, context.sessionPermission)
+      : IN_APP_PREPARED_MESSAGE,
   });
   if (overMcp) {
     // No `preparedActionFollowUp`: the only consumer of that field is the
