@@ -252,7 +252,10 @@ describe("the readiness barrier", () => {
    * was not: it logged a ready Studio the user reads as an open one, and it
    * launched the project-cleanup repair - fresh database work - on a process
    * that had just decided to go away. The transition now reports whether it
-   * committed, and both of those live strictly after that answer.
+   * committed, and both of those live strictly after that answer. The same
+   * held INSIDE the helper: the announcement of the first scan's rows and the
+   * second reconciliation query both ran before anyone re-read the abort, so
+   * the checks are now between every await and every published effect.
    */
   it("publishes NOTHING when a teardown lands during the reconciliation", async () => {
     let releaseScan = (): void => {};
@@ -293,6 +296,14 @@ describe("the readiness barrier", () => {
     expect(readyLines).toEqual([]);
     // ... and no new work started behind it.
     expect(repairUnfinishedProjectCleanups).not.toHaveBeenCalled();
+    // Nor INSIDE the reconciliation itself: the scan that was in flight when
+    // the teardown landed neither announces its committed rows nor starts the
+    // second reconciliation query. Both used to run because the abort and the
+    // epoch were only consulted once the whole helper had returned.
+    expect(announceStudioReconciliations).not.toHaveBeenCalled();
+    expect(reconcileUnstartedStudioApprovals).not.toHaveBeenCalled();
+    expect(announceStudioUnstartedRefusals).not.toHaveBeenCalled();
+    expect(trace).toEqual(["preflight", "reconcile"]);
   });
 
   it("DENIES after teardown instead of restoring the engine default", async () => {

@@ -43,10 +43,11 @@
  *      included: a retry that reached the database work directly spent the
  *      whole budget on a database that had not started yet.
  *   1c. AFTER EVERY AWAITED PHASE the abort signal and the epoch are checked
- *      again, and the readiness write reports whether it COMMITTED. Only a
- *      committed transition logs a ready Studio and starts the project-cleanup
- *      repair, so a teardown landing inside the reconciliation cannot publish
- *      readiness or begin new work.
+ *      again, INSIDE the reconciliation as well as around it, and the readiness
+ *      write reports whether it COMMITTED. Only a committed transition logs a
+ *      ready Studio and starts the project-cleanup repair, so a teardown
+ *      landing inside the reconciliation can neither announce its rows, nor
+ *      start the second reconciliation query, nor publish readiness.
  *   2. THE ABANDONED-DISPATCH RECONCILER runs, in bounded pages. A Studio row
  *      left `dispatching` belongs to a process that died holding it, and
  *      process start is the one moment at which that is provable - which is
@@ -326,8 +327,8 @@ async function completeStudioRuntime(
     scheduleDispatchPreflightRetry(epoch, signal, retriesUsed);
     return;
   }
-  await reconcileAbandonedDispatches();
-  if (signal.aborted) return;
+  await reconcileAbandonedDispatches(epoch, signal);
+  if (!initializationIsCurrent(epoch, signal)) return;
   // THE COMMIT, and everything below it is strictly after it. The epoch is
   // checked INSIDE readiness, at the moment of the write, not before the awaits
   // above, which would prove nothing about the state now; what the caller needs
@@ -404,6 +405,19 @@ let preflightRetryTimer: NodeJS.Timeout | null = null;
  */
 let initializationAbort: AbortController | null = null;
 let initializationInFlight = false;
+
+/**
+ * Is THIS initialization still the one that may act?
+ *
+ * Both facts a teardown moves, checked together, because different owners move
+ * them: the abort controller lives in this module and the epoch in
+ * `readiness.ts`. A retry that outlived its teardown holds a stale epoch even
+ * though it also holds an aborted signal, and a re-entry that began a NEW epoch
+ * leaves the previous run's signal untouched.
+ */
+function initializationIsCurrent(epoch: number, signal: AbortSignal): boolean {
+  return !signal.aborted && currentStudioReadinessEpoch() === epoch;
+}
 
 function cancelDispatchPreflightRetry(): void {
   if (preflightRetryTimer === null) return;
@@ -515,7 +529,10 @@ export async function disposeStudioWriteRepairOwner(): Promise<void> {
  * have moved funds. A failed pass does not keep Studio closed - the scan is
  * over either way, so the race it exists to prevent is over too.
  */
-async function reconcileAbandonedDispatches(): Promise<void> {
+async function reconcileAbandonedDispatches(
+  epoch: number,
+  signal: AbortSignal,
+): Promise<void> {
   try {
     const {
       reconcileAbandonedStudioDispatches,
@@ -523,8 +540,14 @@ async function reconcileAbandonedDispatches(): Promise<void> {
       reconcileUnstartedStudioApprovals,
       announceStudioUnstartedRefusals,
     } = await import("@vex-agent/engine/core/approval-runtime.js");
+    if (!initializationIsCurrent(epoch, signal)) return;
     const reconciled = await reconcileAbandonedStudioDispatches();
-    // AFTER the writes have committed, never inside them.
+    // AFTER the writes have committed, never inside them - and only while this
+    // initialization is still the current one. The rows themselves are durable
+    // and the next process start reconciles them again, so a dropped
+    // announcement costs nothing; announcing from a process that is shutting
+    // down, or starting the SECOND scan behind it, is fresh work nobody owns.
+    if (!initializationIsCurrent(epoch, signal)) return;
     announceStudioReconciliations(reconciled);
     if (reconciled.length > 0) {
       log.warn(
@@ -534,7 +557,9 @@ async function reconcileAbandonedDispatches(): Promise<void> {
     }
     // The second half of the same premise: an APPROVED row that never started
     // has no owner either, and unlike a `dispatching` one it can still RUN.
+    if (!initializationIsCurrent(epoch, signal)) return;
     const unstarted = await reconcileUnstartedStudioApprovals();
+    if (!initializationIsCurrent(epoch, signal)) return;
     announceStudioUnstartedRefusals(unstarted);
     if (unstarted.length > 0) {
       log.warn(
