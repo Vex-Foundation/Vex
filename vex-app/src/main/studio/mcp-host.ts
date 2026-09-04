@@ -98,6 +98,7 @@ import {
   type StudioHandshakeRefused,
 } from "./mcp-host/handshake.js";
 import { serveOverSocket } from "./mcp-host/serve.js";
+import { FrontRelayTransport } from "./mcp-host/front-relay-transport.js";
 import {
   lockStudioFrontEndpoint,
   studioFrontCause,
@@ -344,6 +345,14 @@ function handleConnection(wire: StudioDuplexTransport): void {
       connections.delete(closed);
       emitHostStatus();
     },
+    // WHICH WIRE THIS IS, decided by the one place that knows: the host built
+    // it. `instanceof` rather than a flag on the contract, because
+    // `StudioDuplexTransport` deliberately has no member that distinguishes
+    // the two implementations and adding one would put a diagnostic concern
+    // into the wire contract every consumer speaks.
+    transportKind: wire instanceof FrontRelayTransport ? "front" : "socket",
+    droppedFrames:
+      wire instanceof FrontRelayTransport ? (): number => wire.droppedFrames : null,
   });
   connections.add(connection);
   emitHostStatus();

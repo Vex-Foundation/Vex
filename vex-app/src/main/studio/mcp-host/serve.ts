@@ -45,6 +45,11 @@ export function serveOverSocket(
       onFailure: (failure) => {
         input.onWireFailure(failure.kind);
       },
+      // The transport is the OWNER of the two transitions only it can see - an
+      // inbound envelope reaching the queue and an outbound line reaching the
+      // wire - and the connection is the owner of the LINE. This is the wire
+      // between them; nothing here decides anything.
+      onLifecycle: input.onWireLifecycle,
     });
     // The dynamic import is the widest await in the whole establish chain.
     // A lock inside it must not be overtaken into a serving connection.
