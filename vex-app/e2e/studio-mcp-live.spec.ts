@@ -89,7 +89,14 @@ import {
   toolResultText,
   type InstalledVexEntry,
 } from "./fixtures/studio-mcp-client.js";
-import { codexVersion, listCodexMcpServers, runCodex } from "./fixtures/codex-live-runner.js";
+import {
+  codexVersion,
+  createTemporaryCodexHome,
+  listCodexMcpServers,
+  runCodex,
+  type CodexStreamDiagnostics,
+  type TemporaryCodexHome,
+} from "./fixtures/codex-live-runner.js";
 
 /** This walk runs only when it is asked for by name. */
 const MCP_LIVE = process.env.VEX_E2E_MCP_LIVE === "1";
@@ -175,12 +182,38 @@ test.describe("Studio MCP, live", () => {
   test.skip(!MCP_LIVE, MCP_LIVE_SKIP_REASON);
   test.describe.configure({ timeout: WALK_TIMEOUT_MS });
 
+  /**
+   * The throwaway `CODEX_HOME` directories this walk mints, and their policy.
+   *
+   * They are not evidence: Codex fills a `CODEX_HOME` with its own history,
+   * session and state databases, and keeping those under the archive of every
+   * green run accumulates state nobody reads. So a PASSING run removes them and
+   * a FAILING run keeps them, with the retained path recorded as an annotation
+   * on the failure. The array lives at describe scope because the removal has
+   * to run after a step throws, which a `finally` inside the test body cannot
+   * do without wrapping the whole walk.
+   */
+  const temporaryHomes: TemporaryCodexHome[] = [];
+  test.afterEach(({}, testInfo) => {
+    const outcome = testInfo.status === "passed" ? "passed" : "failed";
+    for (const home of temporaryHomes.splice(0)) {
+      testInfo.annotations.push({ type: "codex-home", description: home.release(outcome) });
+    }
+  });
+
   test("an external Codex agent sees the Vex tools and reads the VEX chart through them", async ({
     vexDb,
   }, testInfo) => {
     const runDir = path.join(EVIDENCE_DIR, `run-${new Date().toISOString().replace(/[:.]/gu, "-")}`);
     fs.mkdirSync(runDir, { recursive: true });
     const archived: string[] = [];
+    /** What the Codex stream decoder could not use, for the provenance record. */
+    let codexDiagnostics: CodexStreamDiagnostics = {
+      nonJsonLines: 0,
+      unrecognizedEvents: 0,
+      droppedRawBytes: 0,
+      droppedStderrBytes: 0,
+    };
 
     /* ---- 1. a Studio with an UNLOCKED vault ---------------------------- */
 
@@ -273,21 +306,24 @@ test.describe("Studio MCP, live", () => {
     // because the whole honesty of this spec rests on them. `codex mcp list
     // --json` reaches no model and needs no credentials, so this step is free.
     await test.step("the installed block is a zero-override Codex configuration, and the project path is not", async () => {
-      const emptyHome = path.join(runDir, "codex-home-empty");
-      fs.mkdirSync(emptyHome, { recursive: true });
+      const empty = createTemporaryCodexHome({ parentDir: runDir, name: "codex-home-empty" });
+      temporaryHomes.push(empty);
       expect(
-        listCodexMcpServers({ codexHome: emptyHome, cwd: projectDir }),
+        listCodexMcpServers({ codexHome: empty.path, cwd: projectDir }),
         "codex read the project-level .codex/config.toml after all - the -c " +
           "overrides layer 2 uses exist only because it does not, so this " +
           "spec's claim and its mechanism both need revisiting",
       ).toEqual([]);
 
-      const codexHome = path.join(runDir, "codex-home-installed");
-      fs.mkdirSync(codexHome, { recursive: true });
       // The installer's own bytes, unedited. A rewrite here would prove a file
       // this test composed rather than the file the product wrote.
-      fs.copyFileSync(configTomlPath, path.join(codexHome, "config.toml"));
-      const servers = listCodexMcpServers({ codexHome, cwd: projectDir });
+      const installed = createTemporaryCodexHome({
+        parentDir: runDir,
+        name: "codex-home-installed",
+        seedConfigTomlPath: configTomlPath,
+      });
+      temporaryHomes.push(installed);
+      const servers = listCodexMcpServers({ codexHome: installed.path, cwd: projectDir });
       const vex = servers.find((server) => server.name === "vex");
       expect(vex, "codex loaded no `vex` server from the installed block").toBeDefined();
       if (vex === undefined) throw new Error("unreachable: asserted defined above");
@@ -399,6 +435,15 @@ test.describe("Studio MCP, live", () => {
       } finally {
         const stderr = session.stderr();
         if (stderr !== "") archived.push(archive(runDir, "layer1-bridge-stderr.txt", stderr));
+        // Counted, not silently skipped: a transport that could not read the
+        // peer must not look like a peer that said nothing.
+        const framing = session.diagnostics();
+        archived.push(
+          archive(runDir, "layer1-transport-diagnostics.json", `${JSON.stringify(framing, null, 2)}\n`),
+        );
+        expect(framing.malformedFrames, "the bridge wrote malformed JSON-RPC frames").toBe(0);
+        expect(framing.uncorrelatedResponses, "the bridge answered ids nobody asked").toBe(0);
+        expect(framing.droppedStderrBytes, "the bridge outgrew the stderr bound").toBe(0);
         await session.close();
       }
     });
@@ -443,6 +488,18 @@ test.describe("Studio MCP, live", () => {
       });
       archived.push(archive(runDir, "codex-events.jsonl", events.raw));
       archived.push(archive(runDir, "codex-final-answer.md", events.finalMessage));
+      // Reported, never assumed away: an event stream this walk could not read
+      // is a different failure from an agent that called nothing, and the
+      // retention bounds say so when they clip the archive above.
+      codexDiagnostics = events.diagnostics;
+      expect(
+        events.diagnostics.nonJsonLines,
+        "codex wrote stdout lines that were not JSON",
+      ).toBe(0);
+      expect(
+        events.diagnostics.unrecognizedEvents,
+        "codex wrote event lines this walk could not decode, so its assertions read a partial turn",
+      ).toBe(0);
       await testInfo.attach("codex-final-answer.md", {
         body: events.finalMessage,
         contentType: "text/markdown",
@@ -526,6 +583,7 @@ test.describe("Studio MCP, live", () => {
       `bridge: ${entry.command} ${entry.args.join(" ")}`,
       `vex_ToolSearch description bytes: ${String(Buffer.byteLength(toolSearchDescription))}`,
       `layer1 candle bytes: ${String(Buffer.byteLength(candleText))}`,
+      `codex stream diagnostics: ${JSON.stringify(codexDiagnostics)}`,
       "files:",
       ...archived.map((file) => `  ${file}`),
     ].join("\n");
