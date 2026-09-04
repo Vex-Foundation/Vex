@@ -325,6 +325,25 @@ export const CH = {
     setUserProfile: "vex:settings:setUserProfile",
   },
 
+  /**
+   * The user's own BACKDROP under the glass shell - ONE image per installation,
+   * no library. Bytes live main-side under CONFIG_DIR keyed by an OPAQUE
+   * `bg_<32 hex>` id and are served through the app protocol's
+   * `/user-backdrop/<id>` route; the pointer of record is `preferences.json`.
+   * Every input is empty and strict: `pick` opens the MAIN-owned picker itself
+   * (no path crosses), and because there is exactly one backdrop, `read` and
+   * `clear` have no id to name either.
+   *
+   * Deliberately NOT a member of `images` above: that domain is the launch
+   * locker, persisted with a launch lifecycle and on the signing path, while a
+   * wallpaper is a preference with nothing downstream of it.
+   */
+  shellBackdrop: {
+    pick: "vex:shellBackdrop:pick",
+    clear: "vex:shellBackdrop:clear",
+    read: "vex:shellBackdrop:read",
+  },
+
   // Updater — user-triggered in-app update flow (M13). `check` may run on
   // app start/focus or manually; download + restart happen ONLY after an
   // explicit user action (skill vex-user-triggered-updates §"Non-negotiable
@@ -641,6 +660,16 @@ export const CH = {
     readWorkspace: "vex:terminal:readWorkspace",
     availability: "vex:terminal:availability",
     shellCatalogue: "vex:terminal:shellCatalogue",
+    /**
+     * A link the SHELL printed, which the user clicked.
+     *
+     * On this surface rather than beside the app-link allowlist because it is
+     * a different authority: that list is Vex's own closed set of
+     * destinations, this one is arbitrary text from the user's shell and its
+     * authority is a native consent dialog per host per window per run. See
+     * `main/ipc/terminal-links.ts`.
+     */
+    openLink: "vex:terminal:openLink",
   },
 
   /**

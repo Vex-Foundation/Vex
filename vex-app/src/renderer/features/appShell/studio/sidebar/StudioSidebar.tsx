@@ -544,11 +544,15 @@ export function StudioSidebar({
           expandOnRowClick
           onToggle={() => setExplorerOpen((open) => !open)}
           className="flex min-h-0 flex-1 flex-col"
+          bodyClassName="flex min-h-0 flex-1 flex-col"
         >
           {/* The pane takes the rest of the rail, as VS Code's explorer view
             * takes its view's height. It titles itself with the ROOT PROJECT'S
-            * NAME, which is what that view pane does too. */}
-          <div className="mt-1 flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-line-3">
+            * NAME, which is what that view pane does too. No frame around it:
+            * the pane is spacing on the rail's glass, and the register step
+            * between the section title, the pane header and the rows is what
+            * separates them (the rail redesign took the four boxes out). */}
+          <div className="mt-1 flex min-h-0 flex-1 flex-col overflow-hidden">
             <ExplorerHeader
               title={activeProject.name}
               onRefresh={refreshExplorer}
@@ -575,10 +579,12 @@ export function StudioSidebar({
       onPointerLeave={onPointerLeave}
       aria-label={STUDIO_SIDEBAR_LABEL}
       className={cn(
-        // The same glass rail as the sessions sidebar (--vex-rail +
-        // guard-whitelisted backdrop-blur, no separating stroke). Studio is the
-        // same room, not a second application.
-        "vex-sidebar relative flex h-full flex-col bg-[var(--vex-rail)] backdrop-blur-xl",
+        // The same glass rail as the sessions sidebar: the rail tier of
+        // `glass.css` (tint, blur and the inset edge light, no separating
+        // stroke), named as a class so the design guard's utility ban holds
+        // without a whitelist entry. Studio is the same room, not a second
+        // application.
+        "vex-sidebar vex-glass-rail relative flex h-full flex-col",
         fading && "vex-sidebar-fading",
         railIn && "vex-sidebar-rail-in",
         quiet && "vex-quiet-bars",
@@ -600,12 +606,15 @@ export function StudioSidebar({
           className={cn("flex items-center", wide ? "gap-1" : "flex-col gap-0.5")}
           data-rail-control
         >
-          {/* THE WAY BACK. Studio used to be reachable from the agent hero and
-            * leavable only from the Studio welcome screen, so a user inside a
-            * project had no rendered path back to agent mode. The capsule is
-            * wide-only because it is words, not an icon; the collapsed rail
-            * reaches it through the Welcome row or by expanding. */}
-          {wide ? (
+          {/* THE WAY BACK, while a project is open. With no project the
+            * Studio welcome screen carries the capsule under its wordmark
+            * (owner decree 2026-09-04) and this header mounts none, so the
+            * `Runtime mode` radiogroup is unique on the page; `activeProjectId`
+            * is the one fact both seats read. Inside a project the welcome is
+            * gone and this header is the only rendered path back to agent
+            * mode. Wide-only because it is words, not an icon; the collapsed
+            * rail reaches it by expanding. */}
+          {wide && activeProjectId !== null ? (
             <RuntimeModeToggle runtimeMode={runtimeMode} onChange={setRuntimeMode} />
           ) : null}
           <SidebarIconButton
@@ -718,7 +727,9 @@ export function StudioSidebar({
       </div>
 
       {wide ? (
-        <div className="border-t border-[var(--vex-line)] px-3 py-3">
+        // Spacing alone separates the widget from the list above it; the rule
+        // that used to sit here was the fourth box of the old rail.
+        <div className="px-3 py-3">
           <VexTokenCardCompact />
         </div>
       ) : null}

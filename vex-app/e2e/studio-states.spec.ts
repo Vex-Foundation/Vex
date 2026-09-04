@@ -50,6 +50,7 @@ import path from "node:path";
 import type { Locator, Page, TestInfo } from "@playwright/test";
 import { test, expect, type VexDatabaseFixture } from "./fixtures/vex-app-with-database.js";
 import { APP_DIR, relaunchApp } from "./fixtures/electron-app.js";
+import { enterStudio, TOUR_SKIP_REASON } from "./fixtures/studio-shell.js";
 
 /** Where a capture pass writes. Empty means: assert, photograph nothing. */
 const SHOTS_DIR =
@@ -68,37 +69,42 @@ async function shot(page: Page, name: string): Promise<void> {
   await page.screenshot({ path: path.join(SHOTS_DIR, `${name}.png`) });
 }
 
-async function tourTo(page: Page, view: string): Promise<void> {
-  const tour = page.locator("[data-vex-setup-tour]");
-  await expect(tour).toBeVisible();
-  await tour.getByRole("button", { name: view, exact: true }).click();
-  await expect(page.locator(`[data-vex-screen="${view}"]`)).toBeVisible();
-}
-
-/** Reach the Studio shell, or skip with the reason. */
-async function enterStudio(page: Page): Promise<boolean> {
-  await page.waitForLoadState("domcontentloaded");
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await expect(page.locator('[data-vex-screen="systemCheck"]')).toBeVisible();
-  if ((await page.locator("[data-vex-setup-tour]").count()) === 0) return false;
-  await tourTo(page, "appShell");
-  const shell = page.locator('[data-vex-screen="appShell"]');
-  //
-  // THE RETURN LEG IS A POINTER, and that is a measured gap rather than a
-  // preference. `Ctrl+Shift+A` is a TOGGLE in the table and its handler answers
-  // both directions (`useStudioKeybindings.test.tsx` drives the return), but
-  // the only listener for it is mounted by `StudioCenter`, which `AppShell`
-  // renders only while the mode is `studio`. So there is nothing listening in
-  // an Agent session yet: the chord into Studio needs the hook mounted in a
-  // seat that survives the mode switch, which belongs to `AppShell` and not to
-  // the keyboard module. When that mount lands, the two lines below become
-  // `await page.keyboard.press("Control+Shift+A")`.
-  await page
-    .getByRole("radiogroup", { name: "Runtime mode" })
-    .getByRole("radio", { name: "Studio" })
-    .click();
-  await expect(shell).toHaveAttribute("data-vex-runtime-mode", "studio");
-  return true;
+/**
+ * The directory a just-created project got, FOUND rather than derived: the slug
+ * is main's to mint, so a walk that recomputed it would assert against its own
+ * copy of that rule instead of against the folder the app actually made.
+ *
+ * HARD, never a skip. A walk that has already driven the creator to its report
+ * and closed it is past every declared prerequisite of this file, so an absent
+ * directory is the product failing to write one - the exact defect this file
+ * exists to catch. It used to `test.skip` here, which turned a failed creation
+ * into a green run; `bridge_unavailable` (no built `vex-mcp`) is named in the
+ * message because it is the one environment cause, and it is a cause the run
+ * must fail on rather than skip past.
+ */
+async function projectDirectory(
+  projectsRoot: string,
+  stamp: string,
+): Promise<string> {
+  const find = (): string | undefined =>
+    fs
+      .readdirSync(projectsRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .find((name) => name.includes(stamp));
+  await expect
+    .poll(() => find() !== undefined, {
+      timeout: 60_000,
+      message:
+        `no project directory containing ${stamp} under ${projectsRoot}; the ` +
+        "installer writes nothing when it cannot find the bridge binary its " +
+        "configs point at, so this walk needs a built `vex-mcp` " +
+        "(`pnpm --dir vex-app run build:bridge:dev`)",
+    })
+    .toBe(true);
+  const slug = find();
+  if (slug === undefined) throw new Error("unreachable: the poll above proved a slug exists");
+  return path.join(projectsRoot, slug);
 }
 
 /* ========================= UX-4: the consent grammar ======================== */
@@ -111,12 +117,7 @@ test("UX-4 consent grammar: the strip, the grant, and the outcome rows", async (
   test.setTimeout(300_000);
   const page = vexDb.shell;
   const reached = await enterStudio(page);
-  test.skip(
-    !reached,
-    "this spec reaches the shell through the diagnostic setup tour, which is " +
-      "baked in at build time: rebuild with `VITE_VEX_SETUP_TOUR=1 pnpm --dir " +
-      "vex-app build` and rerun",
-  );
+  test.skip(!reached, TOUR_SKIP_REASON);
 
   const sidebar = page.locator('[data-vex-area="studio-sidebar"]');
   await expect(sidebar).toBeVisible();
@@ -425,12 +426,7 @@ test("UX-1 terminal surface: the card, the tab, the cluster and the picker", asy
   test.setTimeout(300_000);
   const page = vexDb.shell;
   const reached = await enterStudio(page);
-  test.skip(
-    !reached,
-    "this spec reaches the shell through the diagnostic setup tour, which is " +
-      "baked in at build time: rebuild with `VITE_VEX_SETUP_TOUR=1 pnpm --dir " +
-      "vex-app build` and rerun",
-  );
+  test.skip(!reached, TOUR_SKIP_REASON);
 
   const theme = process.env.VEX_UX_THEME === "celeris" ? "celeris" : "chronos";
   await pickTheme(page, theme);
@@ -543,12 +539,7 @@ test("UX-3 welcome and status pill: the hero, the recents, the card", async ({
   test.setTimeout(300_000);
   const page = vexDb.shell;
   const reached = await enterStudio(page);
-  test.skip(
-    !reached,
-    "this spec reaches the shell through the diagnostic setup tour, which is " +
-      "baked in at build time: rebuild with `VITE_VEX_SETUP_TOUR=1 pnpm --dir " +
-      "vex-app build` and rerun",
-  );
+  test.skip(!reached, TOUR_SKIP_REASON);
 
   // The preview build replaces the LIVE pill with the per-cause panel, so this
   // half has no live pill to assert and its shots would carry the panel across
@@ -580,11 +571,13 @@ test("UX-3 welcome and status pill: the hero, the recents, the card", async ({
   // reachable states are modelled).
   await expect(welcome.getByRole("button", { name: /^Open / })).toHaveCount(0);
   await expect(welcome).toContainText("No projects yet.");
-  // The way back is a real control here, not a sentence about one - a plain
-  // button, because the Agent | Studio capsule has exactly one home (the rail
-  // header) and a second radiogroup with the same name doubled the control.
-  await expect(welcome.getByRole("button", { name: "Back to Agent mode" })).toBeVisible();
-  await expect(welcome.getByRole("radiogroup", { name: "Runtime mode" })).toHaveCount(0);
+  // The way back is a real control here, not a sentence about one: the
+  // Agent | Studio capsule itself, under the wordmark (owner decree
+  // 2026-09-04). It has exactly one home per page, so the rail header mounts
+  // none while this welcome is on screen; the stand-in button is gone.
+  await expect(welcome.getByRole("radiogroup", { name: "Runtime mode" })).toBeVisible();
+  await expect(page.getByRole("radiogroup", { name: "Runtime mode" })).toHaveCount(1);
+  await expect(welcome.getByRole("button", { name: "Back to Agent mode" })).toHaveCount(0);
   await shot(page, `${theme}-01-studio-welcome-empty`);
 
   /* ---- 13 (the band): the pill in the strip, and its card -------------- */
@@ -673,12 +666,7 @@ test("UX-3 host status: a card for every wire cause", async ({
   test.setTimeout(300_000);
   const page = vexDb.shell;
   const reached = await enterStudio(page);
-  test.skip(
-    !reached,
-    "this spec reaches the shell through the diagnostic setup tour, which is " +
-      "baked in at build time: rebuild with `VITE_VEX_SETUP_TOUR=1 pnpm --dir " +
-      "vex-app build` and rerun",
-  );
+  test.skip(!reached, TOUR_SKIP_REASON);
 
   const panel = page.locator('[data-vex-area="studio-host-status-preview"]');
   test.skip(
@@ -759,12 +747,7 @@ test("UX-2 rail and explorer: the spine, the pane, the seam and the search", asy
   test.setTimeout(300_000);
   const page = vexDb.shell;
   const reached = await enterStudio(page);
-  test.skip(
-    !reached,
-    "this spec reaches the shell through the diagnostic setup tour, which is " +
-      "baked in at build time: rebuild with `VITE_VEX_SETUP_TOUR=1 pnpm --dir " +
-      "vex-app build` and rerun",
-  );
+  test.skip(!reached, TOUR_SKIP_REASON);
 
   const theme = process.env.VEX_UX_THEME === "celeris" ? "celeris" : "chronos";
   await pickTheme(page, theme);
@@ -774,10 +757,16 @@ test("UX-2 rail and explorer: the spine, the pane, the seam and the search", asy
 
   /* ---- 01: the welcome rail, and the way back to Agent ---------------- */
 
-  // I9's rail half: the capsule is IN the rail, so Studio is never a one-way
-  // door once a project is open and the welcome screen is gone.
+  // With no project open the capsule is the WELCOME's, under its wordmark, and
+  // the rail header mounts none (owner decree 2026-09-04; one radiogroup per
+  // page). Its rail half is asserted below, once a project is open.
   await expect(
     sidebar.getByRole("radiogroup", { name: "Runtime mode" }),
+  ).toHaveCount(0);
+  await expect(
+    page
+      .locator('[data-vex-area="studio-welcome"]')
+      .getByRole("radiogroup", { name: "Runtime mode" }),
   ).toBeVisible();
   await shot(page, `${theme}-01-studio-welcome-empty`);
 
@@ -799,6 +788,13 @@ test("UX-2 rail and explorer: the spine, the pane, the seam and the search", asy
 
   const explorerPane = sidebar.locator('[data-vex-rail-pane="explorer"]');
   await expect(explorerPane).toBeVisible();
+
+  // I9's rail half: once a project is open the welcome is gone and the capsule
+  // is IN the rail, so Studio is never a one-way door; still exactly one.
+  await expect(
+    sidebar.getByRole("radiogroup", { name: "Runtime mode" }),
+  ).toBeVisible();
+  await expect(page.getByRole("radiogroup", { name: "Runtime mode" })).toHaveCount(1);
 
   // THE I6 ASSERTION, and it is a number on purpose. The pane was a fixed 256px
   // box (`h-64`) inside a scrolling rail. At this viewport the rail is 900px
@@ -827,16 +823,20 @@ test("UX-2 rail and explorer: the spine, the pane, the seam and the search", asy
   // The row is re-located by its NAME after the click: `expanded: false` stops
   // matching the moment the folder opens, and a locator that no longer matches
   // is not a row whose hover state can be photographed.
+  //
+  // HARD, never a guard. The create path writes `.vex/` into every project and
+  // nothing in `DEFAULT_FILE_EXCLUDE_DIRS` hides it, so a collapsed folder row
+  // is a fact about the tree this walk just opened. The `if` here meant a tree
+  // that listed no directory at all photographed an unexpanded state and passed.
   const collapsedFolder = sidebar.getByRole("treeitem", { expanded: false }).first();
-  if ((await collapsedFolder.count()) > 0) {
-    const folderName = (await collapsedFolder.innerText()).trim();
-    await collapsedFolder.click();
-    const openFolder = sidebar
-      .getByRole("treeitem", { name: folderName, exact: false })
-      .first();
-    await expect(openFolder).toHaveAttribute("aria-expanded", "true");
-    await openFolder.hover();
-  }
+  await expect(collapsedFolder).toBeVisible({ timeout: 60_000 });
+  const folderName = (await collapsedFolder.innerText()).trim();
+  await collapsedFolder.click();
+  const openFolder = sidebar
+    .getByRole("treeitem", { name: folderName, exact: false })
+    .first();
+  await expect(openFolder).toHaveAttribute("aria-expanded", "true");
+  await openFolder.hover();
   await shot(page, `${theme}-19-explorer-expanded-hover-long-name`);
 
   /* ---- 28: keyboard focus, on the CONTAINER -------------------------- */
@@ -962,12 +962,7 @@ test("UX-5 keyboard: the table reaches its owners, and a dialog suspends it", as
   test.setTimeout(300_000);
   const page = vexDb.shell;
   const reached = await enterStudio(page);
-  test.skip(
-    !reached,
-    "this spec reaches the shell through the diagnostic setup tour, which is " +
-      "baked in at build time: rebuild with `VITE_VEX_SETUP_TOUR=1 pnpm --dir " +
-      "vex-app build` and rerun",
-  );
+  test.skip(!reached, TOUR_SKIP_REASON);
 
   const theme = process.env.VEX_UX_THEME === "celeris" ? "celeris" : "chronos";
   await pickTheme(page, theme);
@@ -1223,12 +1218,7 @@ test("TAB-1 preview tabs: one preview per workspace, and how a tab is kept", asy
   test.setTimeout(300_000);
   const page = vexDb.shell;
   const reached = await enterStudio(page);
-  test.skip(
-    !reached,
-    "this spec reaches the shell through the diagnostic setup tour, which is " +
-      "baked in at build time: rebuild with `VITE_VEX_SETUP_TOUR=1 pnpm --dir " +
-      "vex-app build` and rerun",
-  );
+  test.skip(!reached, TOUR_SKIP_REASON);
 
   const sidebar = page.locator('[data-vex-area="studio-sidebar"]');
   const centre = page.locator('[data-vex-area="studio-center"]');
@@ -1252,11 +1242,17 @@ test("TAB-1 preview tabs: one preview per workspace, and how a tab is kept", asy
   // toggles it instead of opening anything.
   const fileRows = sidebar.locator('[role="treeitem"]:not([aria-expanded])');
   await expect(fileRows.first()).toBeVisible({ timeout: 60_000 });
-  const fileCount = await fileRows.count();
-  test.skip(
-    fileCount < 3,
-    `this walk needs three files in the project tree and found ${String(fileCount)}`,
-  );
+  // HARD, never a skip. A freshly created Claude Code project's root holds the
+  // installer's own artifacts - `.mcp.json`, `AGENTS.md`, `CLAUDE.md` - so
+  // three file rows is a fact about what the create path WRITES, not a
+  // precondition of this machine. Skipping on it turned a project the
+  // installer failed to furnish into a green run.
+  await expect
+    .poll(() => fileRows.count(), {
+      timeout: 60_000,
+      message: "a created project's root holds fewer than the three files this walk opens",
+    })
+    .toBeGreaterThanOrEqual(3);
 
   const terminalTabs = await tabs.getByRole("tab").count();
   const fileTabCount = async (): Promise<number> =>
@@ -1344,12 +1340,7 @@ test("IDX-1 search: a file the explorer never loaded is found and opened", async
   test.setTimeout(300_000);
   const page = vexDb.shell;
   const reached = await enterStudio(page);
-  test.skip(
-    !reached,
-    "this spec reaches the shell through the diagnostic setup tour, which is " +
-      "baked in at build time: rebuild with `VITE_VEX_SETUP_TOUR=1 pnpm --dir " +
-      "vex-app build` and rerun",
-  );
+  test.skip(!reached, TOUR_SKIP_REASON);
 
   const sidebar = page.locator('[data-vex-area="studio-sidebar"]');
   const centre = page.locator('[data-vex-area="studio-center"]');
@@ -1366,27 +1357,12 @@ test("IDX-1 search: a file the explorer never loaded is found and opened", async
   await creator.getByRole("button", { name: "Create", exact: true }).click();
   await page.getByRole("button", { name: /Done|Close/ }).first().click();
 
-  // The project's own directory, found rather than derived: the slug is main's
-  // to mint, and a spec that recomputed it would be asserting against its own
-  // copy of that rule instead of against the directory the app actually made.
-  const projectsRoot = vexDb.stack.projectsRoot;
-  const slug = fs
-    .readdirSync(projectsRoot, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .find((name) => name.includes(stamp));
-  test.skip(
-    slug === undefined,
-    `no project directory for ${projectName} under ${projectsRoot}; the `
-      + "installer writes nothing when it cannot find the bridge binary its "
-      + "configs point at, so this walk needs a built `vex-mcp`",
-  );
-  if (slug === undefined) return;
+  const projectDir = await projectDirectory(vexDb.stack.projectsRoot, stamp);
 
   // THREE LEVELS DOWN. The explorer lists one directory at a time and only when
   // a human expands it, so nothing in this run will have listed this folder.
   const targetName = `idx1-buried-${stamp}.ts`;
-  const buriedDir = path.join(projectsRoot, slug, "deep", "nested", "folder");
+  const buriedDir = path.join(projectDir, "deep", "nested", "folder");
   fs.mkdirSync(buriedDir, { recursive: true });
   fs.writeFileSync(path.join(buriedDir, targetName), "export const buried = 1;\n");
 
@@ -1470,12 +1446,7 @@ test("EXP-1 explorer actions: create, rename and delete a file from the tree", a
   test.setTimeout(300_000);
   const page = vexDb.shell;
   const reached = await enterStudio(page);
-  test.skip(
-    !reached,
-    "this spec reaches the shell through the diagnostic setup tour, which is " +
-      "baked in at build time: rebuild with `VITE_VEX_SETUP_TOUR=1 pnpm --dir " +
-      "vex-app build` and rerun",
-  );
+  test.skip(!reached, TOUR_SKIP_REASON);
 
   const sidebar = page.locator('[data-vex-area="studio-sidebar"]');
   await expect(sidebar).toBeVisible();
@@ -1491,19 +1462,7 @@ test("EXP-1 explorer actions: create, rename and delete a file from the tree", a
   await creator.getByRole("button", { name: "Create", exact: true }).click();
   await page.getByRole("button", { name: /Done|Close/ }).first().click();
 
-  // The project's directory is FOUND, not derived: the slug is main's to mint.
-  const projectsRoot = vexDb.stack.projectsRoot;
-  const slug = fs
-    .readdirSync(projectsRoot, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .find((name) => name.includes(stamp));
-  test.skip(
-    slug === undefined,
-    `no project directory for ${projectName} under ${projectsRoot}`,
-  );
-  if (slug === undefined) return;
-  const projectDir = path.join(projectsRoot, slug);
+  const projectDir = await projectDirectory(vexDb.stack.projectsRoot, stamp);
 
   await sidebar.getByRole("button", { name: new RegExp(projectName) }).first().click();
 
@@ -1711,19 +1670,26 @@ test("EXP-1 explorer actions: create, rename and delete a file from the tree", a
   // The refusal that protects durable provenance. `AGENTS.md` is written by the
   // installer, so a tree that let the user rename it would leave a provenance
   // row pointing at a path that no longer exists.
+  //
+  // THE ROW IS THERE, and that is asserted rather than guarded. `AGENTS.md` is
+  // written by the create path this walk just drove (the same file
+  // `studio-project-journey.spec.ts` asserts as a `current` artifact), and the
+  // walk already clicks `CLAUDE.md` unguarded a few steps above. An
+  // `if (count > 0)` here meant an installer that wrote no `AGENTS.md`, or a
+  // tree that failed to list it, silently skipped the ONE refusal that protects
+  // durable provenance - and reported green.
   const agents = tree.getByRole("treeitem", { name: "AGENTS.md" });
-  if ((await agents.count()) > 0) {
-    await agents.first().click();
-    await page.keyboard.press("F2");
-    await tree.getByRole("textbox").fill(`not-agents-${stamp}.md`);
-    await page.keyboard.press("Enter");
-    // The reason lands ON THE ROW, beside the name that caused it, and the file
-    // is still exactly where the installer put it.
-    await expect(tree.getByRole("alert")).toContainText("Repair", { timeout: 60_000 });
-    expect(fs.existsSync(path.join(projectDir, "AGENTS.md"))).toBe(true);
-    await shot(page, "exp1-07-managed-refusal");
-    await page.keyboard.press("Escape");
-  }
+  await expect(agents).toHaveCount(1, { timeout: 60_000 });
+  await agents.click();
+  await page.keyboard.press("F2");
+  await tree.getByRole("textbox").fill(`not-agents-${stamp}.md`);
+  await page.keyboard.press("Enter");
+  // The reason lands ON THE ROW, beside the name that caused it, and the file
+  // is still exactly where the installer put it.
+  await expect(tree.getByRole("alert")).toContainText("Repair", { timeout: 60_000 });
+  expect(fs.existsSync(path.join(projectDir, "AGENTS.md"))).toBe(true);
+  await shot(page, "exp1-07-managed-refusal");
+  await page.keyboard.press("Escape");
 
   /* ---- DELETE: through the confirmation, and only through it ------------ */
 
@@ -1817,12 +1783,7 @@ test("HL-1 viewer: a line that outruns the highlight budget is reported, not hid
   test.setTimeout(300_000);
   const page = vexDb.shell;
   const reached = await enterStudio(page);
-  test.skip(
-    !reached,
-    "this spec reaches the shell through the diagnostic setup tour, which is " +
-      "baked in at build time: rebuild with `VITE_VEX_SETUP_TOUR=1 pnpm --dir " +
-      "vex-app build` and rerun",
-  );
+  test.skip(!reached, TOUR_SKIP_REASON);
 
   const theme = process.env.VEX_UX_THEME === "celeris" ? "celeris" : "chronos";
   await pickTheme(page, theme);
@@ -1842,27 +1803,14 @@ test("HL-1 viewer: a line that outruns the highlight budget is reported, not hid
   await creator.getByRole("button", { name: "Create", exact: true }).click();
   await page.getByRole("button", { name: /Done|Close/ }).first().click();
 
-  // The project's directory is FOUND, not derived: the slug is main's to mint.
-  const projectsRoot = vexDb.stack.projectsRoot;
-  const slug = fs
-    .readdirSync(projectsRoot, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .find((name) => name.includes(stamp));
-  test.skip(
-    slug === undefined,
-    `no project directory for ${projectName} under ${projectsRoot}; the `
-      + "installer writes nothing when it cannot find the bridge binary its "
-      + "configs point at, so this walk needs a built `vex-mcp`",
-  );
-  if (slug === undefined) return;
+  const projectDir = await projectDirectory(vexDb.stack.projectsRoot, stamp);
 
   // Line 2 is the expensive one, and the lines around it are there so the chip
   // has a line NUMBER to name that is not the whole file.
   const fixtureName = "hl1-long-line.ts";
   const expensiveLine = `const deep = ${"(".repeat(9_000)}1`;
   fs.writeFileSync(
-    path.join(projectsRoot, slug, fixtureName),
+    path.join(projectDir, fixtureName),
     ["// HL-1: the line below outruns the per-line highlight budget.", expensiveLine, ""].join(
       "\n",
     ),
@@ -1952,12 +1900,7 @@ test("RESTORE-1 restore: the last location comes back, and focus lands", async (
   test.setTimeout(900_000);
   let page = vexDb.shell;
   const reached = await enterStudio(page);
-  test.skip(
-    !reached,
-    "this spec reaches the shell through the diagnostic setup tour, which is " +
-      "baked in at build time: rebuild with `VITE_VEX_SETUP_TOUR=1 pnpm --dir " +
-      "vex-app build` and rerun",
-  );
+  test.skip(!reached, TOUR_SKIP_REASON);
 
   /**
    * The second boot's door: the tour, and NOTHING ELSE.

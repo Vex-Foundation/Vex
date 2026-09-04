@@ -187,8 +187,9 @@ export interface EnqueueApprovalInput {
   /**
    * Studio only - the `clientInfo.name` the external MCP client declared in its
    * `initialize` handshake, so the card can NAME who asked instead of leaving
-   * the actor row blank (rule 90: an approval binds the actor and whether an
-   * agent proposed the action).
+   * the actor row blank. Rule 90 binds the ORIGIN column and whether an agent
+   * proposed the action; this name is client-reported provenance rendered
+   * beside it, bound by nothing.
    *
    * It is untrusted, self-declared text from another process, so it is
    * PROVENANCE only: `buildPolicySnapshot` sanitizes it and it lands in

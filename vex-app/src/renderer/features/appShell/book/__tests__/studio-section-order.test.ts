@@ -1,12 +1,18 @@
 /**
- * The STUDIO rail's section registry, and the property that makes it a
- * SEPARATE registry rather than a filtered view of the agent one.
+ * THE STUDIO RAIL'S ORDER KEY - what a stored order means now that the Studio
+ * project rail is the SAME rail as the agent session rail (owner parity
+ * decree, 2026-09-04).
  *
- * Two of its ids ("wallets", "balances") are spelled the same as agent ids and
- * one ("portfolio") is not. If the two rails shared a validator, a drop of
- * "position" would be a known id on the Studio rail (moving the wrong card)
- * and "portfolio" would be an unknown id on the agent rail. Both directions
- * are pinned below.
+ * Two properties carry the risk, and they pull in opposite directions:
+ *
+ *  1. ONE VOCABULARY. The ids and the labels are the agent registry's own, so
+ *     a card can never be called two names or given two ids. The earlier
+ *     ratified-v1 `portfolio` id is retired.
+ *  2. NOT ONE LIST. The Studio rail still renders only the sections that have
+ *     a project-scoped read (`BOOK_SECTION_SCOPES`), and that projection is
+ *     also the DROP VALIDATOR: a session-only id reaching this key - from a
+ *     hand edit, or from a build where the two orders shared a key - is
+ *     dropped rather than moving a card the Studio rail cannot draw.
  *
  * The resolution contract itself - known ids in stored order, missing ones
  * appended AT THE END, unknown ids dropped - is the shared mechanism's, and is
@@ -22,44 +28,99 @@ import {
   STUDIO_BOOK_SECTION_LABEL,
 } from "../studio-section-order.js";
 import {
+  BOOK_SECTION_LABEL,
+  BOOK_SECTION_SCOPES,
+  bookSectionsForScope,
   DEFAULT_BOOK_SECTIONS,
   isBookSectionId,
+  type BookSectionId,
 } from "../section-order.js";
 
-describe("the Studio registry is the ratified v1 rail", () => {
-  it("is exactly Portfolio Overview, Wallets, Balances in that order", () => {
-    expect([...DEFAULT_STUDIO_BOOK_SECTIONS]).toEqual([
-      "portfolio",
-      "wallets",
-      "balances",
-    ]);
+/**
+ * The scope table, written out by hand: the reason each row is what it is
+ * lives in `section-order.ts`, and this is the pin that a row cannot change
+ * without a test changing with it.
+ */
+const EXPECTED_SCOPES: Readonly<Record<BookSectionId, readonly string[]>> = {
+  position: ["session", "project"],
+  wallets: ["session", "project"],
+  balances: ["session", "project"],
+  activity: ["session", "project"],
+  session: ["session"],
+  trench: ["session"],
+};
+
+describe("the scope table is the only thing that shortens a rail", () => {
+  it("declares a scope list for every known section, and nothing else", () => {
+    expect(Object.keys(BOOK_SECTION_SCOPES).toSorted()).toEqual(
+      [...DEFAULT_BOOK_SECTIONS].toSorted(),
+    );
   });
 
-  it("carries none of the agent-only sections", () => {
-    for (const agentOnly of ["position", "activity", "session", "trench"]) {
-      expect(isStudioBookSectionId(agentOnly)).toBe(false);
+  it("matches the hand-written expectation row for row", () => {
+    for (const id of DEFAULT_BOOK_SECTIONS) {
+      expect([...BOOK_SECTION_SCOPES[id]]).toEqual([...EXPECTED_SCOPES[id]]);
     }
   });
 
-  it("every known section has a human label for the drag handle", () => {
+  it("the session rail is the whole registry, in the decreed order", () => {
+    expect([...bookSectionsForScope("session")]).toEqual([
+      ...DEFAULT_BOOK_SECTIONS,
+    ]);
+  });
+
+  it("the project rail keeps the registry's ORDER, only dropping rows", () => {
+    const project = bookSectionsForScope("project");
+    expect([...project]).toEqual(
+      DEFAULT_BOOK_SECTIONS.filter((id) => project.includes(id)),
+    );
+    expect([...project]).toEqual([
+      "position",
+      "wallets",
+      "balances",
+      // ACTIVITY joined the project rail when the Agent Scan read learned
+      // `filters.projectId` (2026-09-04): main resolves the project's own
+      // wallets and intersects them with the inventory allow-list, so the card
+      // has a real project read and no longer has to invent an answer.
+      "activity",
+    ]);
+  });
+});
+
+describe("the Studio rail speaks the agent rail's vocabulary", () => {
+  it("carries the agent ids, not a parallel id set", () => {
+    for (const id of DEFAULT_STUDIO_BOOK_SECTIONS) {
+      expect(isBookSectionId(id)).toBe(true);
+    }
+  });
+
+  it("reads the SAME label table - one card, one name", () => {
+    expect(STUDIO_BOOK_SECTION_LABEL).toBe(BOOK_SECTION_LABEL);
     for (const id of DEFAULT_STUDIO_BOOK_SECTIONS) {
       expect(STUDIO_BOOK_SECTION_LABEL[id].length).toBeGreaterThan(0);
     }
   });
+
+  it("retires the ratified-v1 `portfolio` id on both rails", () => {
+    expect(isBookSectionId("portfolio")).toBe(false);
+    expect(isStudioBookSectionId("portfolio")).toBe(false);
+  });
 });
 
-describe("the two rails do NOT share an id set", () => {
-  it("an agent-only id is unknown to Studio and vice versa", () => {
-    expect(isBookSectionId("position")).toBe(true);
-    expect(isStudioBookSectionId("position")).toBe(false);
-    expect(isStudioBookSectionId("portfolio")).toBe(true);
-    expect(isBookSectionId("portfolio")).toBe(false);
+describe("the Studio validator refuses the sections it cannot draw", () => {
+  it("accepts exactly the project-capable ids", () => {
+    for (const id of DEFAULT_BOOK_SECTIONS) {
+      expect(isStudioBookSectionId(id)).toBe(
+        BOOK_SECTION_SCOPES[id].includes("project"),
+      );
+    }
   });
 
-  it("the id sets are genuinely different lists", () => {
-    expect([...DEFAULT_STUDIO_BOOK_SECTIONS]).not.toEqual([
-      ...DEFAULT_BOOK_SECTIONS,
-    ]);
+  it("a session-only id is a KNOWN book id and still not a Studio id", () => {
+    for (const sessionOnly of ["session", "trench"]) {
+      expect(isBookSectionId(sessionOnly)).toBe(true);
+      expect(isStudioBookSectionId(sessionOnly)).toBe(false);
+    }
   });
 });
 
@@ -78,21 +139,22 @@ describe("resolveStudioBookSectionOrder", () => {
   it("appends every MISSING known id at the end, in default order", () => {
     expect(resolveStudioBookSectionOrder(["balances"])).toEqual([
       "balances",
-      "portfolio",
+      "position",
       "wallets",
+      "activity",
     ]);
   });
 
-  it("drops an AGENT id that reached this key, instead of rendering it", () => {
+  it("drops a SESSION-ONLY id that reached this key, instead of rendering it", () => {
     // The one that would matter in practice: a payload written by a build
     // where the two orders shared a key, or a hand edit.
     const resolved = resolveStudioBookSectionOrder([
       "trench",
       "wallets",
-      "position",
+      "session",
     ]);
     expect(resolved).not.toContain("trench");
-    expect(resolved).not.toContain("position");
+    expect(resolved).not.toContain("session");
     expect(resolved[0]).toBe("wallets");
     expect([...resolved].toSorted()).toEqual(
       [...DEFAULT_STUDIO_BOOK_SECTIONS].toSorted(),
@@ -103,7 +165,7 @@ describe("resolveStudioBookSectionOrder", () => {
     const resolved = resolveStudioBookSectionOrder([
       "balances",
       "balances",
-      "portfolio",
+      "position",
     ]);
     expect(resolved.filter((id) => id === "balances")).toHaveLength(1);
     expect(resolved).toHaveLength(DEFAULT_STUDIO_BOOK_SECTIONS.length);

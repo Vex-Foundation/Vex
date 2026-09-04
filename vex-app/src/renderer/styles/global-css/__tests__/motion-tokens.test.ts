@@ -58,6 +58,7 @@ const allSheets: readonly (readonly [string, string])[] = [
   "chronos-motion.css",
   "console.css",
   "fonts.css",
+  "glass.css",
   "landing-motifs.css",
   "motion-primitives.css",
   "onboarding.css",

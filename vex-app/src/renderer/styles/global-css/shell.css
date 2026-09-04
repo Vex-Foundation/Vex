@@ -3,7 +3,7 @@
  * root. The room's back wall is the current shell photo backdrop (ShellBackdrop,
  * owner-decreed 2026-07-20 — this deliberately supersedes the earlier
  * "zero photography" law); the columns float over it as glass (the two
- * rails + composer, guard-whitelisted backdrop-blur). Depth on solid
+ * rails + composer, wearing the glass tiers of global-css/glass.css). Depth on solid
  * surfaces still comes from the three luminance steps + white hairlines —
  * never resting glow. One accent family rooted at the brand #0000c0
  * (tokens v2); the only sanctioned gradient is the selection beam
@@ -59,25 +59,72 @@
    * like the three --vex-pin-* lines above it, so status-contrast.test.ts can
    * resolve the partner out of tokens.css and re-measure both themes. */
   --vex-pin-hover: color-mix(in oklab, var(--vex-alias-state-warn) 85%, var(--vex-alias-label-primary));
-  /* Glass instrument surface — user-sanctioned translucent ink for the
-   * floating Signal Console composer (SessionComposer), paired with
-   * backdrop-blur over the current shell backdrop (guard-whitelisted).
-   * --vex-glass-strong is the focus step (.vex-console:focus-within). */
-  --vex-glass: rgba(11, 15, 29, 0.66);
-  --vex-glass-strong: rgba(11, 15, 29, 0.82);
-  /* Side-rail surface — the two rails (SessionsList / BookPanel) wear a
-   * softer, more translucent tint than the composer glass so the current
-   * shell backdrop shows through them and they merge into one canvas with the
-   * center column instead of reading as bordered panels (owner review: NO
-   * separating stroke at all — pure glass, the tint step is the only edge).
-   * Backdrop-blur is guard-whitelisted for legibility over the photo.
-   * --vex-rail-strong anchors the brand strip + footer registry bands. */
-  /* macOS-clean ink glass (owner decree, 2026-07-20): re-tuned to the exact
-   * ink hue (#0a0d18 base, matching --vex-surface-0) instead of the previous
-   * off-hue navy-grey, and deepened slightly so text stays legible without a
-   * grain overlay riding on top. */
-  --vex-rail: rgba(10, 13, 24, 0.55);
+  /* GLASS TIERS (glass redesign 2026-09-04). Every translucent surface in the
+   * shell is one of four named tiers, consumed ONLY through the classes in
+   * global-css/glass.css (.vex-glass-rail / -pane / -chip / -overlay); no TSX
+   * carries a backdrop-blur utility any more (shell-design-guard BANNED list).
+   * Tints are alpha literals on purpose: glass is a veil over a photo, not a
+   * solid surface token, and both themes' veils live side by side below.
+   *
+   * Alpha ORDER is the contract, pinned by __tests__/glass-tokens.test.ts:
+   * chip < rail < pane < overlay. A chip sits INSIDE a rail (its coverage
+   * compounds with the rail's, which is what makes it read as a plate); a
+   * pane hosts a terminal, so its veil is denser than a rail's; an overlay
+   * screen covers everything and is nearly opaque.
+   *
+   * Readings behind the numbers (owner reference screenshots, 2026-09-04):
+   * macOS Terminal over El Capitan reads at roughly 0.6 coverage with the
+   * wallpaper still legible through it; kitty's panes sit near 0.55 and go
+   * visibly denser where two overlap; Hyper/verminal is the dense end at
+   * roughly 0.78. The rail keeps today's owner-approved 0.55; the pane sits
+   * at the macOS end of that bracket (coordinator decision 2026-09-04: the
+   * owner reviews the pane tint on the built app, one token change if it
+   * is rejected).
+   *
+   * The ink hue is the room's own (#0a0d18, --vex-surface-0) for rail, pane
+   * and chip; the overlay keeps the composer's slightly bluer ink
+   * (#0b0f1d) it has always worn. */
+  --vex-glass-tint-rail: rgba(10, 13, 24, 0.55);
+  --vex-glass-tint-pane: rgba(10, 13, 24, 0.62);
+  --vex-glass-tint-chip: rgba(10, 13, 24, 0.42);
+  --vex-glass-tint-overlay: rgba(11, 15, 29, 0.82);
+  /* EDGE LIGHT, NEVER BORDERS. A glass surface carries no separating stroke
+   * (owner review of the rails: pure glass, the tint step is the only
+   * edge). What it may carry is the light a real pane catches: a 1px top
+   * highlight (--vex-glass-edge) and, on free-standing tiers, a hairline
+   * inner ring (--vex-glass-edge-ring). Both are INSET box-shadows so they
+   * never change layout and never resolve to a `border`. */
+  --vex-glass-edge: inset 0 1px 0 0 rgba(255, 255, 255, 0.07);
+  --vex-glass-edge-ring: inset 0 0 0 1px rgba(255, 255, 255, 0.045);
+  /* Blur radii and saturation are GEOMETRY, theme-invariant, declared once
+   * here and never in the celeris block (the test forbids a per-theme
+   * override, so the two themes cannot drift apart in depth). The rail
+   * radius is today's `backdrop-blur-xl` (24px) so the approved rails do not
+   * move. There is NO chip radius: a chip is by definition inside another
+   * tier, whose filter has already blurred the backdrop, and the nesting
+   * bound in glass.css forbids a second filter on top of it. The saturation
+   * lift is small (a blur averages colour and greys it; the screenshots show
+   * the wallpaper through the pane at or just under its own saturation, never
+   * boosted, so a stronger web-glass lift would read false). */
+  --vex-glass-blur-rail: 24px;
+  --vex-glass-blur-pane: 18px;
+  --vex-glass-blur-overlay: 32px;
+  --vex-glass-saturate: 120%;
+  /* COMPATIBILITY ALIASES, each with a named consumer and a removal
+   * condition (glass-tokens.test.ts fails the moment an alias has no
+   * `var()` consumer left, which is the signal to delete it here):
+   *  - --vex-rail: SessionsList.tsx, StudioSidebar.tsx, BookRailFrame.tsx
+   *    (`bg-[var(--vex-rail)] backdrop-blur-xl`) until they wear
+   *    .vex-glass-rail.
+   *  - --vex-glass-strong: screens/ShellScreen.tsx until it wears
+   *    .vex-glass-overlay.
+   *  - --vex-rail-strong: SidebarProfile.tsx foot (moves to .vex-glass-chip)
+   *    and book/portfolio/WelcomePortfolioPanel.tsx round button (a solid
+   *    plate on a bordered button, not a glass tier; it needs its own
+   *    decision). No new tier equals its 0.7, so it keeps its literal. */
+  --vex-rail: var(--vex-glass-tint-rail);
   --vex-rail-strong: rgba(10, 13, 24, 0.7);
+  --vex-glass-strong: var(--vex-glass-tint-overlay);
   /* shadcn projection — stock Button/Input/Dialog inside the shell speak
    * the brand automatically (same mechanism as the onboarding scope). */
   --color-primary: var(--vex-accent);
@@ -90,14 +137,19 @@
   --color-muted-foreground: var(--vex-text-3);
 }
 
-/* Celeris glass: the rail/console glass flips to white over the day
- * artwork. Alpha literals stay literals (glass is a veil over a photo, not
- * a solid surface token); both themes' values live here side by side. */
+/* Celeris glass: every veil flips to white over the day artwork, in the
+ * same chip < rail < pane < overlay order. The top highlight stays white
+ * (a lit edge on white glass) while the inner ring flips to a faint INK
+ * hairline, because a white ring on white glass is invisible. Blur and
+ * saturation are not restated here: geometry is theme-invariant. */
 [data-vex-shell="true"][data-vex-theme="celeris"] {
-  --vex-rail: rgba(255, 255, 255, 0.6);
+  --vex-glass-tint-rail: rgba(255, 255, 255, 0.6);
+  --vex-glass-tint-pane: rgba(255, 255, 255, 0.72);
+  --vex-glass-tint-chip: rgba(255, 255, 255, 0.5);
+  --vex-glass-tint-overlay: rgba(255, 255, 255, 0.85);
+  --vex-glass-edge: inset 0 1px 0 0 rgba(255, 255, 255, 0.55);
+  --vex-glass-edge-ring: inset 0 0 0 1px rgba(10, 13, 24, 0.06);
   --vex-rail-strong: rgba(255, 255, 255, 0.78);
-  --vex-glass: rgba(255, 255, 255, 0.66);
-  --vex-glass-strong: rgba(255, 255, 255, 0.85);
 }
 
 /* Shell scrollbar — the onboarding recipe (38%/60% accent thumb) under the

@@ -21,6 +21,7 @@ import type { FilesOutcome } from "@shared/schemas/files.js";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkspaceFileTab } from "../../workspace/types.js";
+import { notifications } from "../../../../../lib/notifications/index.js";
 import { FileViewer } from "../FileViewer.js";
 import { FileViewerRegistry } from "../file-viewer-registry.js";
 import { VIEWER_HIGHLIGHT_MAX_BYTES } from "../file-viewer-session.js";
@@ -57,10 +58,38 @@ let reveal: RevealFake;
 class RevealFake {
   readonly asks: { projectId: string; nodeId: string }[] = [];
   answer: Result<FilesOutcome<null>> = { ok: true, data: { ok: true, value: null } };
+  /**
+   * When true a reveal HOLDS until the test answers it by index.
+   *
+   * A fake that resolved immediately could never show a stale answer being
+   * dropped, because the second ask could not exist while the first was still
+   * in flight - the same reason {@link FakeHighlighterPort} holds.
+   */
+  manual = false;
+  readonly held: ((result: Result<FilesOutcome<null>>) => void)[] = [];
+  readonly rejects: ((error: unknown) => void)[] = [];
 
   call(input: { projectId: string; nodeId: string }): Promise<Result<FilesOutcome<null>>> {
     this.asks.push(input);
-    return Promise.resolve(this.answer);
+    if (!this.manual) return Promise.resolve(this.answer);
+    return new Promise((resolve, reject) => {
+      this.held.push(resolve);
+      this.rejects.push(reject);
+    });
+  }
+
+  /** Answer the ask made at `index`, oldest first, in any order the test likes. */
+  settleAt(index: number, result: Result<FilesOutcome<null>>): void {
+    const settle = this.held[index];
+    if (settle === undefined) throw new Error(`no reveal in flight at ${String(index)}`);
+    settle(result);
+  }
+
+  /** Reject the ask made at `index`: a bridge that never answered at all. */
+  rejectAt(index: number, error: Error = new Error("the bridge rejected")): void {
+    const fail = this.rejects[index];
+    if (fail === undefined) throw new Error(`no reveal in flight at ${String(index)}`);
+    fail(error);
   }
 }
 
@@ -97,6 +126,9 @@ beforeEach(() => {
     explorers: new ExplorerRegistry(),
   });
   reveal = new RevealFake();
+  // The window's model is module-level and shared by every suite in the
+  // process; the reveal tests read it, so each one starts from empty.
+  notifications.reset();
   clipboard = { writeText: vi.fn(() => Promise.resolve()) };
   Object.defineProperty(navigator, "clipboard", {
     configurable: true,
@@ -107,6 +139,9 @@ beforeEach(() => {
 
 afterEach(() => {
   registry.disposeAll();
+  // Also clears the purge timers a raised notification armed, so a suite that
+  // raised one leaves no timer behind.
+  notifications.reset();
   vi.restoreAllMocks();
 });
 
@@ -129,14 +164,18 @@ function View({
 }
 
 /** Mount and let the read plus its publication settle. */
-async function mount(props: Parameters<typeof View>[0] = {}): Promise<void> {
+async function mount(
+  props: Parameters<typeof View>[0] = {},
+): Promise<ReturnType<typeof render>> {
+  let view!: ReturnType<typeof render>;
   await act(async () => {
-    render(<View {...props} />);
+    view = render(<View {...props} />);
     await Promise.resolve();
   });
   await act(async () => {
     await Promise.resolve();
   });
+  return view;
 }
 
 function lineTexts(): string[] {
@@ -570,6 +609,15 @@ describe("the kind menu reveals the file", () => {
     return screen.getByText("Reveal in file manager");
   }
 
+  /** Open the menu and press the reveal row: one ask. */
+  async function askReveal(): Promise<void> {
+    const row = await openMenu();
+    await act(async () => {
+      fireEvent.click(row);
+      await Promise.resolve();
+    });
+  }
+
   it("asks main for the TAB'S NODE, and never for a path", async () => {
     files.responder = () => ok(contentOf("const a = 1;\n"));
     await mount();
@@ -617,22 +665,122 @@ describe("the kind menu reveals the file", () => {
     expect(note.textContent).toContain("no longer on disk");
     // ANNOUNCED: the user pressed something and it did not happen.
     expect(note.getAttribute("role")).toBe("alert");
+    // A REFUSAL STAYS CONTEXTUAL. It is main's answer about THIS file, decided
+    // against the node it resolved, and it goes stale with the tab - so it
+    // must not also be raised app-wide, where it would outlive its subject.
+    expect(notifications.getSnapshot().items).toEqual([]);
   });
 
-  it("distinguishes a service it could not reach from a refusal", async () => {
+  /**
+   * A CALL THAT NEVER REACHED MAIN IS NOT AN ANSWER ABOUT THIS FILE.
+   *
+   * The file service is reached by the explorer and the terminal too, and the
+   * user has to be able to re-read the failure after this tab is gone. So it
+   * leaves the viewer entirely and is raised into the project-scoped
+   * notification model, naming its own file.
+   */
+  it("reports a service it could not reach in the notifications, not over the file", async () => {
     files.responder = () => ok(contentOf("const a = 1;\n"));
     await mount();
     reveal.answer = transportFailure<FilesOutcome<null>>();
 
-    const row = await openMenu();
+    await askReveal();
+
+    expect(screen.queryByTestId("file-viewer-reveal-note")).toBeNull();
+    const raised = notifications.getSnapshot().items;
+    expect(raised).toHaveLength(1);
+    const item = raised[0];
+    expect(item?.severity).toBe("error");
+    expect(item?.scope).toEqual({ kind: "project", projectId: "p1" });
+    expect(item?.source).toBe("studio.viewer");
+    expect(item?.title).toBe("The file service could not be reached");
+    // It names its OWN file: the row is read in a center that has no tab.
+    expect(item?.message).toContain("src/a.ts");
+    expect(item?.message).toContain("could not reach the file service");
+    // Traceable to main's log record for the same request.
+    expect(item?.correlationId).toBe("test-correlation");
+  });
+
+  it("reports a bridge that rejected the same way, with no invented correlation", async () => {
+    files.responder = () => ok(contentOf("const a = 1;\n"));
+    await mount();
+    reveal.manual = true;
+
+    await askReveal();
     await act(async () => {
-      fireEvent.click(row);
+      reveal.rejectAt(0);
       await Promise.resolve();
     });
 
+    expect(screen.queryByTestId("file-viewer-reveal-note")).toBeNull();
+    const item = notifications.getSnapshot().items[0];
+    expect(item?.message).toContain("could not reach the file service");
+    // A rejected bridge carries no envelope, so there is nothing to correlate.
+    expect(item?.correlationId).toBeNull();
+  });
+
+  /**
+   * TWO REVEALS, ANSWERED BACKWARDS. The tab never changed, so a fence built
+   * on the tab alone lets the older answer land last and stand as the current
+   * one. Only the ask's own generation can drop it.
+   */
+  it("keeps the NEWEST reveal's answer when two settle out of order", async () => {
+    files.responder = () => ok(contentOf("const a = 1;\n"));
+    await mount();
+    reveal.manual = true;
+
+    await askReveal();
+    await askReveal();
+    expect(reveal.asks).toHaveLength(2);
+
+    await act(async () => {
+      reveal.settleAt(1, { ok: true, data: { ok: false, code: "outside_project" } });
+      await Promise.resolve();
+    });
     expect(screen.getByTestId("file-viewer-reveal-note").textContent).toContain(
-      "could not reach the file service",
+      "resolves outside the project folder",
     );
+
+    await act(async () => {
+      reveal.settleAt(0, { ok: true, data: { ok: false, code: "not_found" } });
+      await Promise.resolve();
+    });
+
+    const note = screen.getByTestId("file-viewer-reveal-note");
+    expect(note.textContent).toContain("resolves outside the project folder");
+    expect(note.textContent).not.toContain("no longer on disk");
+  });
+
+  /**
+   * A RENAME KEEPS THE TAB AND REPLACES ITS NODE. An answer about the node the
+   * user asked about is not an answer about the one now open in the same tab,
+   * so the tab id alone is not the identity the publication is bound to.
+   */
+  it("drops an answer whose node the tab replaced while it was in flight", async () => {
+    files.responder = () => ok(contentOf("const a = 1;\n"));
+    const view = await mount();
+    reveal.manual = true;
+
+    await askReveal();
+    expect(reveal.asks).toEqual([{ projectId: "p1", nodeId: "node-1" }]);
+
+    const renamed: WorkspaceFileTab = {
+      ...TAB,
+      nodeId: "node-2",
+      title: "b.ts",
+      relativePath: "src/b.ts",
+    };
+    await act(async () => {
+      view.rerender(<View tab={renamed} />);
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      reveal.settleAt(0, { ok: true, data: { ok: false, code: "not_found" } });
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByTestId("file-viewer-reveal-note")).toBeNull();
   });
 
   it("names the trigger for a screen reader and reports whether it is open", async () => {

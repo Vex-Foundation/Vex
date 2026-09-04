@@ -36,8 +36,21 @@ export const APPROVAL_REASONING_PREVIEW_MAX = 200;
 export const REQUESTING_CLIENT_NAME_DTO_MAX = 60;
 
 /**
- * The renderer-safe MCP client name: bounded, and free of the control
- * characters that could forge a line in a card a human decides from.
+ * The renderer-safe MCP client name: bounded, and free of the code points that
+ * could forge, reorder or hide the line in a card a human decides from.
+ *
+ * The refused set is the Unicode general categories `Cc` (controls), `Cf`
+ * (format: the bidi overrides and isolates U+202A-202E / U+2066-2069 that REORDER
+ * the rendered line, and the zero-width U+200B-200D / U+FEFF that HIDE code
+ * points), `Cs` (lone surrogates), and `Zl`/`Zp` (U+2028 / U+2029 line breaks).
+ * A name in the reader's own script is text, so Polish letters and CJK pass;
+ * only what is unrenderable or renders as something other than itself is refused.
+ *
+ * RESTATES, character class for character class, `UNRENDERABLE_CLIENT_NAME_CLASS`
+ * in `src/vex-agent/engine/core/approval-intent-preview.ts`, which is the one
+ * owner of the rule. Restated rather than imported because this schema layer must
+ * not depend on the agent runtime (same reason `approvalActionKindSchema`
+ * restates `ACTION_KINDS`); the two spellings must stay identical.
  *
  * One schema for BOTH boundaries - the main-side row mapper validating a
  * durable column and the DTO the renderer parses - because a name that fails
@@ -49,8 +62,10 @@ export const requestedByClientSchema = z
   .string()
   .min(1)
   .max(REQUESTING_CLIENT_NAME_DTO_MAX)
-  // eslint-disable-next-line no-control-regex
-  .regex(/^[^\u0000-\u001f\u007f]+$/, "must not contain control characters");
+  .regex(
+    /^[^\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}]+$/u,
+    "must not contain control, format, surrogate or line-separator characters",
+  );
 
 export const APPROVAL_HISTORY_DEFAULT_LIMIT = 20;
 export const APPROVAL_HISTORY_MAX_LIMIT = 100;

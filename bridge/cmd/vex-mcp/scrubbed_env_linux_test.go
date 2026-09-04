@@ -217,3 +217,147 @@ func runBridge(t *testing.T, binary string, env []string) (int, string) {
 		return -1, ""
 	}
 }
+
+// THE CUSTOM-XDG HALF OF THE SAME DEFECT, THROUGH REAL PROCESSES.
+//
+// The rung above closed the case where the app saw XDG_RUNTIME_DIR and the
+// bridge saw nothing, but only while the variable named /run/user/<uid>. When
+// it names a private CUSTOM directory - WSLg sets
+// XDG_RUNTIME_DIR=/mnt/wslg/runtime-dir on some distributions - the app bound
+// THERE and this binary, spawned without the variable, found /run/user/<uid>
+// equally private and dialled THAT. Two directories, both passing the privacy
+// gate, no rendezvous. Contract 1.2 now evaluates the FILESYSTEM fact first,
+// and this is that order measured end to end: a real listener at the path the
+// APP's own derivation names under a custom XDG_RUNTIME_DIR, and a real bridge
+// process given HOME and PATH only.
+//
+// The vectors cannot catch a regression here on their own: both sides would
+// match a re-ordered fixture. What catches it is the two halves being derived
+// from DIFFERENT environments and having to meet on one socket.
+func TestScrubbedEnvironmentMeetsTheAppUnderACustomXDGRuntimeDir(t *testing.T) {
+	binary := buildBridge(t)
+	configDir := t.TempDir()
+	customRuntimeDir := shortPrivateDir(t)
+	systemdRuntimeDir := fmt.Sprintf("%s/%d", endpoint.LinuxRuntimeDirRoot, os.Getuid())
+
+	// THE APP'S HALF, derived rather than assumed: the app is launched from a
+	// desktop session, so its environment carries the custom variable. The
+	// derivation is the contract's, run here through the bridge's own
+	// re-implementation of it, which the golden vectors hold to the host's.
+	appPlan := endpoint.Derive(endpoint.Input{
+		GOOS:               "linux",
+		ConfigDirHashInput: endpoint.HashInput(configDir),
+		Env:                map[string]string{"XDG_RUNTIME_DIR": customRuntimeDir},
+		Tmpdir:             os.TempDir(),
+		UID:                os.Getuid(),
+		ProbeDirectory:     endpoint.ProbeFilesystem,
+	})
+	if appPlan.Kind != endpoint.KindUnix {
+		t.Fatalf("the app half planned %+v; this case needs a unix endpoint", appPlan)
+	}
+
+	if !privateRuntimeDir(systemdRuntimeDir) {
+		// THE RESIDUAL DIVERGENCE THE ORDER CANNOT CLOSE (contract 1.2),
+		// measured on the machine that has it: with no private
+		// /run/user/<uid>, the custom variable is the only private runtime
+		// directory and the app uses it, while a client that drops the
+		// variable leaves this binary with nothing better than the tmpdir
+		// form. It must say so as an ABSENT directory naming the unforwarded
+		// variable, never as an ancestor that changed.
+		t.Run("no systemd runtime directory: the divergence is reported as an absent directory",
+			func(t *testing.T) {
+				if appPlan.ParentDir != customRuntimeDir {
+					t.Fatalf("the app half is %+v, want the custom runtime directory %s",
+						appPlan, customRuntimeDir)
+				}
+				tmpRoot := t.TempDir()
+				exit, stderr := runBridge(t, binary, []string{
+					"HOME=" + os.Getenv("HOME"),
+					"PATH=" + os.Getenv("PATH"),
+					"TMPDIR=" + tmpRoot,
+					"VEX_CONFIG_DIR=" + configDir,
+					"VEX_PROJECT_ID=" + fakeProjectID,
+				})
+				if exit != 2 {
+					t.Fatalf("exit %d, want 2 (a local refusal); stderr: %s", exit, stderr)
+				}
+				want := endpoint.EndpointDirectoryMissingRefusal(
+					filepath.Join(tmpRoot, fmt.Sprintf("vex-studio-%d", os.Getuid())), false)
+				if !strings.Contains(stderr, want) {
+					t.Fatalf("stderr %q does not carry %q", stderr, want)
+				}
+			})
+		return
+	}
+
+	// THE FIX ITSELF. This machine has a private /run/user/<uid>, so the app's
+	// own derivation must land THERE even though its environment names a
+	// perfectly private custom directory - which is what lets a bridge that
+	// never saw the variable find it.
+	if appPlan.ParentDir != systemdRuntimeDir {
+		t.Fatalf("the app half bound in %s while a private %s exists: contract 1.2 "+
+			"row 1 is the filesystem fact and it is evaluated FIRST",
+			appPlan.ParentDir, systemdRuntimeDir)
+	}
+	if _, err := os.Lstat(appPlan.Path); err == nil {
+		t.Fatalf("%s already exists; this test's config directory is fresh and its "+
+			"endpoint must be too", appPlan.Path)
+	}
+	stopHost := listenAsHost(t, appPlan.Path)
+	defer stopHost()
+
+	base := []string{
+		"HOME=" + os.Getenv("HOME"),
+		"PATH=" + os.Getenv("PATH"),
+		"VEX_CONFIG_DIR=" + configDir,
+		"VEX_PROJECT_ID=" + fakeProjectID,
+	}
+	for _, row := range []struct {
+		name string
+		env  []string
+	}{
+		// The regression: the client dropped the variable the app was using.
+		{"a scrubbed environment", base},
+		// The control: the SAME custom variable this bridge's client forwarded.
+		// Both must reach the socket the app bound, which is the property the
+		// order exists for.
+		{"the custom variable forwarded", append(append([]string{}, base...),
+			"XDG_RUNTIME_DIR="+customRuntimeDir)},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			exit, stderr := runBridge(t, binary, row.env)
+			if exit != 0 {
+				t.Fatalf("exit %d, want 0 (it must reach %s); stderr: %s",
+					exit, appPlan.Path, stderr)
+			}
+		})
+	}
+}
+
+// shortPrivateDir is a private runtime directory standing in for a
+// distribution's own (WSLg's /mnt/wslg/runtime-dir).
+//
+// Rooted at /tmp rather than t.TempDir because a socket under Go's test
+// temporary directory - which carries the TEST'S NAME plus a random suffix -
+// is close to the 103-byte sun_path bound before the endpoint's own 28-byte
+// file name is appended, and a plan that refuses path_too_long would stop
+// testing the rendezvous this file is about.
+func shortPrivateDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("/tmp", "vex-xdg-")
+	if err != nil {
+		t.Fatalf("creating a private runtime directory: %v", err)
+	}
+	// MkdirTemp already creates 0700, but the umask is the machine's business
+	// and the probe's gate is the subject: state the mode rather than inherit
+	// it.
+	if err := os.Chmod(dir, 0o700); err != nil {
+		t.Fatalf("tightening %s to 0700: %v", dir, err)
+	}
+	t.Cleanup(func() {
+		if removeErr := os.RemoveAll(dir); removeErr != nil {
+			t.Errorf("removing %s: %v", dir, removeErr)
+		}
+	})
+	return dir
+}

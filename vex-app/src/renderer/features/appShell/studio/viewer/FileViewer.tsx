@@ -42,6 +42,7 @@ import {
 import { IconCopy, IconFolderOpen } from "../../../../components/icons/index.js";
 import { Menu } from "../../../../components/ui/menu.js";
 import { revealProjectNodeInFileManager } from "../../../../lib/api/files.js";
+import { notify } from "../../../../lib/notifications/index.js";
 import { cn } from "../../../../lib/utils.js";
 import type { WorkspaceFileTab } from "../workspace/types.js";
 import { FileViewerLines, type ViewerViewportObservers } from "./FileViewerLines.js";
@@ -60,7 +61,7 @@ import {
   KIND_MENU_LABEL,
   ORPHANED_NOTICE,
   REVEAL_IN_FILE_MANAGER_LABEL,
-  REVEAL_TRANSPORT_FAILED,
+  REVEAL_TRANSPORT_FAILED_TITLE,
   RETRY_LABEL,
   TRANSPORT_FAILED,
   VIEWER_LOADING,
@@ -72,6 +73,7 @@ import {
   plainReasonText,
   refusalText,
   revealRefusalText,
+  revealTransportFailedText,
   viewerKindLabel,
 } from "./viewer-copy.js";
 
@@ -126,6 +128,26 @@ export function FileViewer({
    */
   const tabRef = useRef(tab);
   tabRef.current = tab;
+  /**
+   * The latest project, for the reveal fence below.
+   *
+   * `projectId` is a prop, so a reveal in flight when the shell swaps projects
+   * holds the OLD one in its closure. The fence needs the current value to
+   * decide whether the answer is still about what is on screen, and only a ref
+   * carries that into a promise created before the change.
+   */
+  const projectIdRef = useRef(projectId);
+  projectIdRef.current = projectId;
+  /**
+   * WHICH REVEAL THE ANSWER ON SCREEN BELONGS TO.
+   *
+   * Bumped on every ask; the settle publishes only if it is still the newest.
+   * Without it two reveals answered out of order leave the OLDER sentence on
+   * screen, which is the same publication-fence bug `file-viewer-session.ts`
+   * carries a generation for (rule 05: guard publication with operation
+   * identity, checked at publication and not only at start).
+   */
+  const revealGenerationRef = useRef(0);
 
   useEffect(() => {
     // Acquired in an effect, never in render: StrictMode renders twice but runs
@@ -207,31 +229,84 @@ export function FileViewer({
    * resolves the resource in the renderer and hands the reveal to a privileged
    * service rather than performing it where the command was invoked.
    *
-   * PUBLICATION IS GUARDED BY THE TAB. A reveal answered after the user moved
-   * to another file must not put its sentence over that file, so the answer is
-   * dropped unless the tab that asked is still the tab on screen.
+   * ## PUBLICATION IS FENCED BY THE ASK, ALL FOUR PARTS
+   *
+   * The inline sentence is a statement about the file ON SCREEN, so it is
+   * published only if the ask it answers is still what the screen shows:
+   *
+   *  - the GENERATION still matches, so of two reveals answered out of order
+   *    the older one cannot land on top of the newer;
+   *  - the PROJECT is still the one that asked;
+   *  - the TAB is still the one that asked;
+   *  - the tab's NODE is still the one that asked. A rename keeps the tab and
+   *    replaces its node token, and the tab id alone would let an answer about
+   *    the old node stand as an answer about the new one.
+   *
+   * ## A REFUSAL IS CONTEXTUAL, A TRANSPORT FAILURE IS APP-WIDE
+   *
+   * `not_found`, `symlinked_path`, `outside_project` are durable ANSWERS ABOUT
+   * THIS FILE that main decided against the node it resolved; they belong
+   * beside the file, and they go stale with it.
+   *
+   * A call that never reached main is a statement about the FILE SERVICE - the
+   * explorer and the terminal reach it too - and the user must be able to
+   * re-read it after this tab is gone. So it is raised into the project-scoped
+   * notification model instead, UNFENCED and naming its own file, because it
+   * was never about the tab on screen. VS Code does the same split: its file
+   * commands route the thrown failure to `INotificationService`
+   * (`files/browser/fileActions.ts:596,1086,1112`) while a resolution's own
+   * answer stays with the resource.
+   *
+   * The id is per project AND node, so hammering one file replaces its own
+   * notification while two failing files still report twice; the correlation
+   * id from the envelope travels with it so the row can be traced to main's
+   * log. No Retry action: the reveal has no state to resume, the button would
+   * outlive this component and have to be detached on unmount, and a notice
+   * the user re-triggers from the file itself is the smaller contract.
    */
   const handleReveal = useCallback(() => {
     const askedFor = tabRef.current;
+    const askedProjectId = projectId;
+    const generation = revealGenerationRef.current + 1;
+    revealGenerationRef.current = generation;
     setMenuOpen(false);
     setRevealNote(null);
     const settle = (note: string | null): void => {
+      if (generation !== revealGenerationRef.current) return;
+      if (projectIdRef.current !== askedProjectId) return;
       if (tabRef.current.tabId !== askedFor.tabId) return;
+      if (tabRef.current.nodeId !== askedFor.nodeId) return;
       setRevealNote(note);
     };
+    const unreachable = (correlationId: string | null): void => {
+      notify({
+        id: `studio.viewer-reveal:${askedProjectId}:${askedFor.nodeId}`,
+        severity: "error",
+        scope: { kind: "project", projectId: askedProjectId },
+        source: "studio.viewer",
+        title: REVEAL_TRANSPORT_FAILED_TITLE,
+        message: revealTransportFailedText(askedFor.relativePath),
+        ...(correlationId === null ? {} : { correlationId }),
+      });
+      // Nothing inline: the notification IS the report, and a second copy over
+      // the file would say it twice in a place it does not belong.
+      settle(null);
+    };
     void revealProjectNodeInFileManager({
-      projectId,
+      projectId: askedProjectId,
       nodeId: askedFor.nodeId,
     }).then(
       (result) => {
         if (!result.ok) {
-          settle(REVEAL_TRANSPORT_FAILED);
+          unreachable(result.error.correlationId);
           return;
         }
         settle(result.data.ok ? null : revealRefusalText(result.data.code));
       },
       () => {
-        settle(REVEAL_TRANSPORT_FAILED);
+        // A rejected bridge carries no envelope, so there is no correlation id
+        // to pass on rather than one to invent.
+        unreachable(null);
       },
     );
   }, [projectId]);

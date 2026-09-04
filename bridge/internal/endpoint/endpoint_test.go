@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/Vex-Foundation/vex/bridge/internal/configdir"
 	"github.com/Vex-Foundation/vex/bridge/internal/endpoint"
 	"github.com/Vex-Foundation/vex/bridge/internal/vectors"
 )
@@ -558,5 +559,129 @@ func TestPipeOverrideIsRefusedOnEveryUnixTarget(t *testing.T) {
 	})
 	if win.Kind != endpoint.KindPipe || win.Path != `\\.\pipe\vex-studio-abc` {
 		t.Fatalf("win32 pipe override planned %+v", win)
+	}
+}
+
+// THE ORDER, AS A PROPERTY: two private runtime directories, and the one both
+// processes can READ wins (contract 1.2, rows 1 and 2).
+//
+// A vector row pins the answer for one machine shape. This pins the reason:
+// the app half sees a custom XDG_RUNTIME_DIR (WSLg's /mnt/wslg/runtime-dir is
+// the measured example) and the bridge half, spawned by a client that scrubs
+// the environment, sees nothing - and both must still name ONE endpoint. With
+// the variable consulted first they named two, each inside a directory that
+// passed the privacy gate, which is exactly why the gate alone was not enough.
+func TestPrivateRunUserWinsOverACustomXDGTheLauncherMayDrop(t *testing.T) {
+	const configDir = "/home/alice/.config/vex"
+	const customXDG = "/mnt/wslg/runtime-dir"
+	systemdDir := fmt.Sprintf("%s/%d", endpoint.LinuxRuntimeDirRoot, 1000)
+	bothPrivate := func(dir string) *endpoint.DirFacts {
+		if dir == customXDG || dir == systemdDir {
+			return &endpoint.DirFacts{IsDirectory: true, UID: 1000, Mode: 0o700}
+		}
+		return nil
+	}
+	plan := func(env map[string]string) endpoint.Plan {
+		return endpoint.Derive(endpoint.Input{
+			GOOS:               "linux",
+			ConfigDirHashInput: configDir,
+			Env:                env,
+			Tmpdir:             "/tmp",
+			UID:                1000,
+			ProbeDirectory:     bothPrivate,
+		})
+	}
+
+	app := plan(map[string]string{"XDG_RUNTIME_DIR": customXDG})
+	scrubbed := plan(map[string]string{})
+	if app != scrubbed {
+		t.Fatalf("the two halves derived DIFFERENT endpoints: app %+v, scrubbed %+v", app, scrubbed)
+	}
+	if app.ParentDir != systemdDir || app.CreateParent {
+		t.Fatalf("the plan is %+v; contract 1.2 row 1 names %s, created by the system", app, systemdDir)
+	}
+	if want := configdir.JoinPosix(systemdDir, endpoint.FileName(configDir)); app.Path != want {
+		t.Fatalf("path %q, want %q", app.Path, want)
+	}
+}
+
+// ROW 2 STILL SERVES THE SYSTEMS IT EXISTS FOR: no /run/user/<uid>, so a
+// custom private XDG_RUNTIME_DIR is the only private runtime directory the
+// machine offers, and the plan uses it rather than falling to the tmpdir form.
+func TestCustomXDGIsUsedWhenThereIsNoPrivateRunUser(t *testing.T) {
+	const configDir = "/home/alice/.config/vex"
+	const customXDG = "/mnt/wslg/runtime-dir"
+	for _, row := range []struct {
+		name       string
+		systemdDir *endpoint.DirFacts
+	}{
+		{"absent", nil},
+		{"owned by another user", &endpoint.DirFacts{IsDirectory: true, UID: 0, Mode: 0o700}},
+		{"readable by the group", &endpoint.DirFacts{IsDirectory: true, UID: 1000, Mode: 0o750}},
+		{"not a directory", &endpoint.DirFacts{IsDirectory: false, UID: 1000, Mode: 0o700}},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			plan := endpoint.Derive(endpoint.Input{
+				GOOS:               "linux",
+				ConfigDirHashInput: configDir,
+				Env:                map[string]string{"XDG_RUNTIME_DIR": customXDG},
+				Tmpdir:             "/tmp",
+				UID:                1000,
+				ProbeDirectory: func(dir string) *endpoint.DirFacts {
+					switch dir {
+					case customXDG:
+						return &endpoint.DirFacts{IsDirectory: true, UID: 1000, Mode: 0o700}
+					case fmt.Sprintf("%s/%d", endpoint.LinuxRuntimeDirRoot, 1000):
+						return row.systemdDir
+					}
+					return nil
+				},
+			})
+			if plan.ParentDir != customXDG || plan.CreateParent {
+				t.Fatalf("plan %+v; contract 1.2 row 2 names %s, created by the system",
+					plan, customXDG)
+			}
+		})
+	}
+}
+
+// THE RESIDUAL DIVERGENCE, MEASURED RATHER THAN ASSERTED AWAY (contract 1.2).
+//
+// No private /run/user/<uid> and a custom private XDG_RUNTIME_DIR the client
+// drops: the host lands on row 2 and this side on row 3, and no fact both
+// processes read closes it. The test exists so the gap is a KNOWN quantity
+// with an owner - the rendezvous file named in 1.2 - rather than a surprise on
+// a user's machine, and so that a future change which closes it fails here and
+// is forced to update the contract in the same diff.
+func TestTheCustomXDGResidualDivergenceIsWhatTheContractSays(t *testing.T) {
+	const configDir = "/home/alice/.config/vex"
+	const customXDG = "/mnt/wslg/runtime-dir"
+	onlyCustom := func(dir string) *endpoint.DirFacts {
+		if dir == customXDG {
+			return &endpoint.DirFacts{IsDirectory: true, UID: 1000, Mode: 0o700}
+		}
+		return nil
+	}
+	plan := func(env map[string]string) endpoint.Plan {
+		return endpoint.Derive(endpoint.Input{
+			GOOS:               "linux",
+			ConfigDirHashInput: configDir,
+			Env:                env,
+			Tmpdir:             "/tmp",
+			UID:                1000,
+			ProbeDirectory:     onlyCustom,
+		})
+	}
+	host := plan(map[string]string{"XDG_RUNTIME_DIR": customXDG})
+	scrubbed := plan(map[string]string{})
+	if host.ParentDir != customXDG {
+		t.Fatalf("the host half is %+v, want the custom runtime directory", host)
+	}
+	if scrubbed.ParentDir != "/tmp/vex-studio-1000" || !scrubbed.CreateParent {
+		t.Fatalf("the scrubbed half is %+v, want the tmpdir form", scrubbed)
+	}
+	if host.Path == scrubbed.Path {
+		t.Fatal("the residual divergence contract 1.2 names is CLOSED: update section 1.2, " +
+			"its follow-up and this test in the same change")
 	}
 }

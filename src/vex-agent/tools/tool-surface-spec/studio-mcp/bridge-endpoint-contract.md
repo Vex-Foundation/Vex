@@ -32,6 +32,19 @@ classes and shutdown state machine (3.4, 3.5). Nothing a v1 host or bridge
 already observed changed shape; the resolver correction is described in 1.1.1
 and landed in all three implementations in the same change.
 
+AMENDED in the Codex final-review fix arc: THE LINUX DERIVATION ORDER IS
+REVERSED (1.2). `/run/user/<uid>` is probed FIRST and `XDG_RUNTIME_DIR` second,
+because a private CUSTOM `XDG_RUNTIME_DIR` (WSLg's `/mnt/wslg/runtime-dir`)
+that a launcher does not forward made two private directories compete, and the
+two owners bound and dialled different ones. Both owners changed in the same
+diff, the golden vectors carry the custom-XDG rows in both directions, and the
+residual case the order cannot reach is stated in 1.2 with its follow-up. It is
+a DERIVATION change under section 5 and the two binaries ship together: an old
+bridge that was handed a custom `XDG_RUNTIME_DIR` dials there while a new host
+binds `/run/user/<uid>`, which fails closed as a local refusal (no socket to
+dial, or an absent directory reported as absent) rather than as a wrong
+endpoint answering.
+
 SECURITY AMENDMENT after the independent backend audit: Unix endpoint use now
 pins both the lexical ancestor chain and its realpath-resolved target chain by
 filesystem identity (1.5). An identity change refuses locally with the shared
@@ -214,8 +227,8 @@ evaluated by both owners in this order:
 
 | # | condition | endpoint | parent created by Vex |
 | --- | --- | --- | --- |
-| 1 | `XDG_RUNTIME_DIR` is set, absolute and a PRIVATE DIRECTORY | `$XDG_RUNTIME_DIR/vex-studio-<hash>.sock` | no |
-| 2 | otherwise, `/run/user/<uid>` is a PRIVATE DIRECTORY | `/run/user/<uid>/vex-studio-<hash>.sock` | no |
+| 1 | `/run/user/<uid>` is a PRIVATE DIRECTORY | `/run/user/<uid>/vex-studio-<hash>.sock` | no |
+| 2 | otherwise, `XDG_RUNTIME_DIR` is set, absolute and a PRIVATE DIRECTORY | `$XDG_RUNTIME_DIR/vex-studio-<hash>.sock` | no |
 | 3 | otherwise | `<tmpdir>/vex-studio-<uid>/vex-studio-<hash>.sock` | yes |
 
 PRIVATE DIRECTORY means the same four things in rows 1 and 2, established with
@@ -224,7 +237,33 @@ has no group or other permission bits. Those are the four ways a runtime
 directory stops being private, and a listener in a directory another user can
 read is the failure this whole section exists to prevent.
 
-ROW 2 IS WHY THE TWO SIDES CANNOT DISAGREE, and it exists because they did.
+THE ORDER IS PART OF THE CONTRACT, not an implementation detail, and it is the
+half that shipped wrong. The FILESYSTEM fact is consulted BEFORE the
+environment variable, because only the filesystem fact is one both processes
+read identically. With the variable first, a real machine still diverges: WSLg
+sets `XDG_RUNTIME_DIR=/mnt/wslg/runtime-dir` on some distributions, a directory
+that passes the privacy gate, so a host that can see the variable bound THERE
+while a bridge spawned without it found `/run/user/<uid>` equally private and
+dialled THAT. Two private directories, one gate, no rendezvous. With row 1
+first the two agree on every machine that HAS a private `/run/user/<uid>`,
+whatever either parent forwarded, and row 2 still serves the systems whose
+runtime directory is somewhere else.
+
+THE RESIDUAL DIVERGENCE, NAMED RATHER THAN CLOSED. A machine with NO private
+`/run/user/<uid>` AND a custom private `XDG_RUNTIME_DIR` the client does not
+forward derives two endpoints: the host lands on row 2, the scrubbed bridge on
+row 3. Nothing available to both processes describes that directory, so no rung
+can close it - the bridge would have to be TOLD. The follow-up is a RENDEZVOUS
+FILE: the host writes the endpoint it actually bound into its config directory
+(which both sides already resolve identically, section 1.1.1) and the bridge
+reads it under the same ownership and mode rules it holds a directory to,
+preferring it over the derivation. Until that ships, the bridge's diagnostic is
+what carries the user across the gap - an absent directory is reported as
+absent and the sentence names the unforwarded variable as the likely cause
+(section 1.5.1). Both owners carry a test that MEASURES this divergence rather
+than asserting it away.
+
+ROW 1 IS WHY THE TWO SIDES CANNOT DISAGREE, and it exists because they did.
 `XDG_RUNTIME_DIR` is an ENVIRONMENT variable, and the app and the bridge are
 spawned by different parents: the app inherits a desktop session's environment,
 the bridge inherits whatever its MCP client hands it. Codex CLI hands it almost
@@ -238,7 +277,7 @@ TERM, TMPDIR, TZ) plus that server's own config `env` map, and
 developer's own environment it derived `/run/user/1000/...`; with an
 environment carrying only HOME and PATH it derived `/tmp/vex-studio-1000/...`
 and exited 2 before answering `initialize`, and the client reported a broken
-pipe. Row 2 is a FILESYSTEM fact rather than an environment one, so both sides
+pipe. Row 1 is a FILESYSTEM fact rather than an environment one, so both sides
 read it identically whatever their parent forwarded.
 
 Vex's Codex installer dialect could instead write `env = { XDG_RUNTIME_DIR =
@@ -253,10 +292,11 @@ promise.
 VS CODE, AND WHERE VEX DIVERGES. `createStaticIPCHandle`
 (`src/vs/base/parts/ipc/node/ipc.net.ts`, reference checkout) prefers
 `XDG_RUNTIME_DIR` and otherwise falls back to a caller-supplied directory, with
-no middle rung and no ownership or mode check. Vex needs row 2 because VS
-Code's two sides are one process tree sharing an environment and ours are not,
-and it keeps rows 1 and 2 behind the privacy gate because this listener fronts
-a self-custodial wallet's MCP host rather than an editor's window.
+no probed runtime root and no ownership or mode check. Vex needs row 1, and
+needs it FIRST, because VS Code's two sides are one process tree sharing an
+environment and ours are not; and it keeps rows 1 and 2 behind the privacy gate
+because this listener fronts a self-custodial wallet's MCP host rather than an
+editor's window.
 
 **Linux fallback (row 3) and macOS.**
 
@@ -459,9 +499,10 @@ The defect this replaced was measured, not imagined: a scrubbed-environment
 client derived `/tmp/vex-studio-1000` while the app listened under
 `/run/user/1000`, and the bridge reported that the ancestor of a directory
 which had never existed "changed before use" - a sentence describing a swap
-attack, printed for an ordinary "Vex is somewhere else". Section 1.2 row 2 is
-what stops the divergence; this is what the user is told when a directory is
-absent anyway.
+attack, printed for an ordinary "Vex is somewhere else". Section 1.2 row 1,
+evaluated FIRST, is what stops the divergence; this is what the user is told
+when a directory is absent anyway, including on the residual case row 1 cannot
+reach (a custom `XDG_RUNTIME_DIR` on a machine with no `/run/user/<uid>`).
 
 ACCEPTED RESIDUAL, STATED PLAINLY. These checks are path-based because Node has
 no descriptor-relative socket bind/unlink API, and Go has no matching

@@ -23,6 +23,7 @@ import {
   type StudioChangelogEntry,
 } from "@vex-agent/studio/instructions/changelog.js";
 import { renderStudioManagedBody } from "@vex-agent/studio/installer/render/managed-block.js";
+import { renderStudioVexGuideBody } from "@vex-agent/studio/installer/render/vex-guide.js";
 import { getAdvertisedProtocolNavigation } from "@vex-agent/tools/protocols/descriptions.js";
 
 import { STUDIO_TEST_BRIEF, STUDIO_TEST_ENVIRONMENT } from "./render-fixtures.js";
@@ -35,6 +36,17 @@ const entry = (over: Partial<StudioChangelogEntry>): StudioChangelogEntry => ({
   text: "text",
   ...over,
 });
+
+/**
+ * The two managed documents, concatenated: what a reader who followed
+ * `AGENTS.md`'s "Read these on start" section actually has in front of them.
+ */
+function renderedDocuments(): string {
+  return [
+    renderStudioManagedBody(STUDIO_TEST_BRIEF),
+    renderStudioVexGuideBody(STUDIO_TEST_BRIEF, STUDIO_TEST_ENVIRONMENT),
+  ].join("\n\n");
+}
 
 describe("the shipped change log", () => {
   it("is newest first, so the window keeps the newest versions", () => {
@@ -92,11 +104,16 @@ describe("the shipped change log", () => {
     expect(studioChangelogSummary("0.9.3", entries)).toBeNull();
   });
 
-  it("names only subjects the block can actually show the reader", () => {
+  it("names only subjects the two managed documents can actually show the reader", () => {
     // An entry whose subject matches nothing announces a change no reader can
     // find. Section subjects must appear as headings; protocol subjects must be
     // namespaces the server advertises; tool subjects are named in the text.
-    const body = renderStudioManagedBody(STUDIO_TEST_BRIEF, STUDIO_TEST_ENVIRONMENT);
+    //
+    // BOTH DOCUMENTS, since the 2026-09-04 split: the notes live in
+    // `.vex/vex-guide.md` and the sections they name are spread across it and
+    // `AGENTS.md`, so a subject satisfied by either file is findable by the
+    // reader the notes address - who is told to read both.
+    const body = renderedDocuments();
     const namespaces = new Set(
       getAdvertisedProtocolNavigation().map((navigation) => navigation.namespace as string),
     );
@@ -112,7 +129,7 @@ describe("the shipped change log", () => {
   });
 
   it("puts its tags beside the headings it named", () => {
-    const body = renderStudioManagedBody(STUDIO_TEST_BRIEF, STUDIO_TEST_ENVIRONMENT);
+    const body = renderedDocuments();
     for (const note of STUDIO_CHANGELOG) {
       if (note.kind === "removed" || note.target === "tool") continue;
       const tag = studioChangelogTag(note.subject);

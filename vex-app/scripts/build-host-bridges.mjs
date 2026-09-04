@@ -23,6 +23,12 @@
  * jobs call `bridge/build.sh` with explicit targets, so this script is the dev
  * and internal-packaging path only.
  *
+ * THE SHELL IS RESOLVED, NOT LOOKED UP. `bridge/build.sh` is bash, and on
+ * Windows the `bash` PATH offers is `System32\bash.exe`, the WSL launcher.
+ * `resolveBuildShell` finds the Git for Windows bash instead, and refuses by
+ * name when there is none rather than running the build in a Linux
+ * distribution that has neither these paths nor this toolchain.
+ *
  * A MISSING OR WRONG GO TOOLCHAIN STOPS THE RUN. It is not skipped past: a dev
  * session without a bridge is a Vex Studio that writes no coding-agent config
  * files, and the failure surfaces much later and much less clearly than here.
@@ -40,9 +46,11 @@ import {
 } from "./bridge-artifact.mjs";
 import {
   BRIDGE_BUILD_SCRIPT,
+  buildScriptArgument,
   evaluateBridgeFreshness,
   hashBridgeSources,
   hostGoTarget,
+  resolveBuildShell,
   resolveGoToolchain,
   writeManifest,
 } from "./bridge-freshness.mjs";
@@ -85,6 +93,16 @@ function main() {
     throw new Error(toolchain.message);
   }
 
+  // WHICH bash, resolved before the first target rather than looked up per
+  // spawn: on Windows the PATH answer is WSL's launcher, which runs the build
+  // in a Linux distribution that has neither these paths nor this toolchain.
+  const shell = resolveBuildShell();
+  if (shell.kind === "refused") {
+    throw new Error(shell.message);
+  }
+  const buildScript = buildScriptArgument(REPO_ROOT);
+  console.log(`bridge: building with ${shell.command} (${shell.source})`);
+
   // Hashed once: the inputs are the same for every target in this run, and
   // only the triple differs.
   const sourcesDigest = hashBridgeSources(REPO_ROOT);
@@ -106,16 +124,16 @@ function main() {
     }
 
     console.log(`bridge: building ${goos}-${goarch} - ${freshness.reason}`);
-    const result = spawnSync(
-      "bash",
-      [path.join(REPO_ROOT, BRIDGE_BUILD_SCRIPT), goos, goarch],
-      { stdio: "inherit", cwd: REPO_ROOT }
-    );
+    const result = spawnSync(shell.command, [buildScript, goos, goarch], {
+      stdio: "inherit",
+      cwd: REPO_ROOT,
+    });
     if (result.status !== 0) {
       throw new Error(
-        `${BRIDGE_BUILD_SCRIPT} ${goos} ${goarch} failed (exit ${result.status ?? "signal"}). `
-          + `Go ${toolchain.version} is on PATH, so this is a build failure rather than a `
-          + "missing prerequisite; the compiler's own output is above."
+        `${BRIDGE_BUILD_SCRIPT} ${goos} ${goarch} failed (exit ${result.status ?? "signal"}) `
+          + `under ${shell.command}. Go ${toolchain.version} is on PATH and the shell resolved, `
+          + "so this is a build failure rather than a missing prerequisite; the compiler's own "
+          + "output is above."
       );
     }
 

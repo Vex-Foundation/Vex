@@ -288,15 +288,18 @@ export interface UiState {
    */
   readonly bookSectionOrder: readonly string[];
   /**
-   * User's custom order for the STUDIO rail's sections, with its own id set
-   * (`book/studio-section-order.ts`: Portfolio Overview / Wallets / Balances).
+   * User's custom order for the STUDIO rail's sections. The ids are the agent
+   * rail's own (`book/section-order.ts`; owner parity decree 2026-09-04): the
+   * Studio rail is the SAME rail projected to the sections that have a
+   * project-scoped read (`book/studio-section-order.ts` derives that set from
+   * `BOOK_SECTION_SCOPES`, inventing no id of its own).
    *
-   * A SEPARATE key from `bookSectionOrder` on purpose: the two rails are
-   * separate registries whose id sets already differ, so one shared key would
-   * make a reorder on either rail rewrite the other, and each rail's resolver
-   * would drop the other's ids. `[]` means "no custom order - use the
-   * default". Same class as `bookSectionOrder`: COSMETIC, persisted (v15), and
-   * coerced on every rehydrate because the payload is user-writable
+   * A SEPARATE key from `bookSectionOrder` on purpose: the two arrangements
+   * are separate preferences over one vocabulary, so one shared key would make
+   * a reorder on either rail rewrite the other, and the Studio resolver drops
+   * the session-only ids the agent rail may hold. `[]` means "no custom order
+   * - use the default". Same class as `bookSectionOrder`: COSMETIC, persisted
+   * (v15), and coerced on every rehydrate because the payload is user-writable
    * localStorage.
    */
   readonly studioBookSectionOrder: readonly string[];

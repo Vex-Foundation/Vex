@@ -61,16 +61,8 @@
  */
 
 import { test, expect, type VexElectronFixture } from "./fixtures/electron-app.js";
+import { tourIsPresent, tourTo, TOUR_SKIP_REASON } from "./fixtures/studio-shell.js";
 import type { Page, TestInfo } from "@playwright/test";
-
-/**
- * Does this run PROMISE Studio coverage?
- *
- * Set by the CI test step alongside the build step's `VITE_VEX_SETUP_TOUR=1`.
- * Read once, at module scope, so the expectation is a property of the run
- * rather than something the journey could reinterpret mid-flight.
- */
-const TOUR_REQUIRED = process.env.VEX_E2E_REQUIRE_TOUR === "1";
 
 /**
  * Console errors this journey tolerates, and nothing else.
@@ -118,20 +110,6 @@ async function shot(
   const file = testInfo.outputPath(`${name}.png`);
   await page.screenshot({ path: file });
   taken.push(file);
-}
-
-/**
- * Jump to a view through the diagnostic setup tour.
- *
- * Same navigator `qa-screenshots.spec.ts` uses, and the same waiting
- * discipline: the click is followed by the target screen becoming visible, so
- * nothing here waits on a clock.
- */
-async function tourTo(page: Page, view: string): Promise<void> {
-  const tour = page.locator("[data-vex-setup-tour]");
-  await expect(tour).toBeVisible();
-  await tour.getByRole("button", { name: view, exact: true }).click();
-  await expect(page.locator(`[data-vex-screen="${view}"]`)).toBeVisible();
 }
 
 /** What `vex.projects.list` answers right now, through the real bridge. */
@@ -182,26 +160,7 @@ test("Studio journey: the shell switches to Studio and opens the project creator
   // systemCheck (the same fact `smoke.spec.ts` pins), and its arrival is the
   // observable state that says the orchestrator is done writing views.
   await expect(page.locator('[data-vex-screen="systemCheck"]')).toBeVisible();
-  const tourPresent = (await page.locator("[data-vex-setup-tour]").count()) > 0;
-  if (TOUR_REQUIRED && !tourPresent) {
-    // FAIL, never skip: this run declared that it covers the Studio journey.
-    throw new Error(
-      "VEX_E2E_REQUIRE_TOUR=1 declares this run must cover the Studio journey, " +
-        "but the built bundle renders no `[data-vex-setup-tour]`, so it was " +
-        "built without `VITE_VEX_SETUP_TOUR=1`. Those two flags are a pair: " +
-        "`VITE_VEX_SETUP_TOUR=1` on the build step and `VEX_E2E_REQUIRE_TOUR=1` " +
-        "on the test step of job `vex-app-e2e` in `.github/workflows/ci.yml`. " +
-        "Losing either one would otherwise turn this required gate into a " +
-        "silent skip that proves nothing about Studio. Rebuild with " +
-        "`VITE_VEX_SETUP_TOUR=1 pnpm --dir vex-app build` and rerun.",
-    );
-  }
-  test.skip(
-    !tourPresent,
-    "the Studio journey reaches the shell through the diagnostic setup tour, " +
-      "which is baked in at build time: rebuild with " +
-      "`VITE_VEX_SETUP_TOUR=1 pnpm --dir vex-app build` and rerun",
-  );
+  test.skip(!(await tourIsPresent(page)), TOUR_SKIP_REASON);
 
   /* ---- 1. the shell, in agent mode ---------------------------------- */
 
@@ -212,7 +171,11 @@ test("Studio journey: the shell switches to Studio and opens the project creator
   expect(shellNodeBeforeSwitch).not.toBeNull();
   await shot(page, testInfo, screenshots, "01-app-shell-agent");
 
-  /* ---- 2. the rail header's radio switches the whole shell to Studio -- */
+  /* ---- 2. the welcome hero's radio switches the whole shell to Studio -- */
+
+  // On the agent welcome the capsule sits under the vex wordmark (no session
+  // is active, so the rail header mounts none): the page-wide locator resolves
+  // to that one seat.
 
   const modeGroup = page.getByRole("radiogroup", { name: "Runtime mode" });
   await expect(modeGroup.getByRole("radio", { name: "Agent" })).toHaveAttribute(
@@ -222,15 +185,20 @@ test("Studio journey: the shell switches to Studio and opens the project creator
   await modeGroup.getByRole("radio", { name: "Studio" }).click();
 
   await expect(shell).toHaveAttribute("data-vex-runtime-mode", "studio");
-  // Studio is NOT a one-way door, and the capsule has exactly ONE home: the
-  // rail header, visible on every Studio screen. The invariant is "exactly one
-  // capsule on the page, showing Studio as checked" - a stale agent-rail
-  // capsule orphaned behind the Studio columns, or a second one on the welcome, would
-  // double the count and fail here (the welcome carries a plain button back).
+  // Studio is NOT a one-way door, and the capsule has exactly ONE home per
+  // page. With no project open that home is the Studio WELCOME, under its
+  // wordmark (owner decree 2026-09-04); the Studio rail header mounts its copy
+  // only once a project is open. The invariant is "exactly one capsule on the
+  // page, showing Studio as checked" - a stale agent-rail capsule orphaned
+  // behind the Studio columns, or a rail-header copy beside the welcome's,
+  // would double the count and fail here.
   await expect(modeGroup).toHaveCount(1);
   const studioWelcome = page.locator('[data-vex-area="studio-welcome"]');
-  await expect(studioWelcome.getByRole("radiogroup", { name: "Runtime mode" })).toHaveCount(0);
-  await expect(studioWelcome.getByRole("button", { name: "Back to Agent mode" })).toHaveCount(1);
+  await expect(studioWelcome.getByRole("radiogroup", { name: "Runtime mode" })).toHaveCount(1);
+  await expect(
+    page.locator('[data-vex-area="studio-sidebar"]').getByRole("radiogroup", { name: "Runtime mode" }),
+  ).toHaveCount(0);
+  await expect(studioWelcome.getByRole("button", { name: "Back to Agent mode" })).toHaveCount(0);
   await expect(modeGroup.getByRole("radio", { name: "Studio" })).toHaveAttribute(
     "aria-checked",
     "true",

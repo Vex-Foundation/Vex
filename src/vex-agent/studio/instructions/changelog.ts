@@ -66,6 +66,21 @@ export const STUDIO_CHANGELOG_VERSION_LIMIT = 8;
 export const STUDIO_CHANGELOG: readonly StudioChangelogEntry[] = [
   {
     version: "0.2.7",
+    kind: "changed",
+    target: "rule",
+    subject: "Read these on start",
+    text:
+      "AGENTS.md now carries the authority alone - this project's permission "
+      + "level, its wallets, how to call the tools, what a result means and the "
+      + "task shapes - and the rest moved WHOLE into `.vex/vex-guide.md`: "
+      + "what's new in Vex, the protocol blocks, building on Vex MCP and the "
+      + "bug bounty. Nothing was shortened. Codex loads AGENTS.md under a "
+      + "32 KiB total budget and truncates the file rather than splitting it, "
+      + "so what must be in context on every turn is kept short; read the guide "
+      + "at the start of a session, as the first section of AGENTS.md says.",
+  },
+  {
+    version: "0.2.7",
     kind: "added",
     target: "tool",
     subject: "vex_ToolDescribe",

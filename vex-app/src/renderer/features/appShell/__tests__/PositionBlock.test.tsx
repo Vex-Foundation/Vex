@@ -31,6 +31,7 @@ import type {
 const mockUsePortfolio = vi.hoisted(() => vi.fn());
 const mockUseSessionWallets = vi.hoisted(() => vi.fn());
 const mockUseAvailableWallets = vi.hoisted(() => vi.fn());
+const mockUseProject = vi.hoisted(() => vi.fn());
 
 vi.mock("../../../lib/api/portfolio.js", () => ({
   usePortfolio: mockUsePortfolio,
@@ -48,6 +49,10 @@ vi.mock("../../../lib/api/session-wallets.js", () => ({
 
 vi.mock("../../../lib/api/wallet-inventory.js", () => ({
   useAvailableWallets: mockUseAvailableWallets,
+}));
+
+vi.mock("../../../lib/api/projects.js", () => ({
+  useProject: mockUseProject,
 }));
 
 const { PositionBlock } = await import("../book/PositionBlock.js");
@@ -102,8 +107,36 @@ function mockSessionWallets(
   });
 }
 
+/** The project's own wallet selection, as `useProject` resolves it. */
+function mockProjectWallets(
+  evmAddr: string | null,
+  solAddr: string | null,
+): void {
+  mockUseProject.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: {
+      ok: true,
+      data: {
+        id: PROJECT,
+        wallets: {
+          evm: evmAddr === null ? null : { walletId: "evm_1", address: evmAddr },
+          solana: solAddr === null ? null : { walletId: "sol_1", address: solAddr },
+        },
+      },
+    },
+  });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
+  // A project read that has not answered: no families, so no chip row - never
+  // a row of chains the project may not hold.
+  mockUseProject.mockReturnValue({
+    isLoading: true,
+    isError: false,
+    data: undefined,
+  });
   // Global-scope suites never render the session body; a benign default keeps
   // the hook harmless when a test forgets to script it.
   mockUseSessionWallets.mockReturnValue({
@@ -130,7 +163,7 @@ describe("PositionBlock zero-balance display", () => {
         ],
       }),
     );
-    const { container } = render(<PositionBlock activeSessionId={null} />);
+    const { container } = render(<PositionBlock scope={{ kind: "global" }} />);
 
     expect(screen.getByText("SOL")).not.toBeNull();
     expect(screen.queryByText("GABECUBE")).toBeNull();
@@ -146,7 +179,7 @@ describe("PositionBlock zero-balance display", () => {
         tokens: [token("DUST", 0.004), token("EDGE", 0.006)],
       }),
     );
-    render(<PositionBlock activeSessionId={null} />);
+    render(<PositionBlock scope={{ kind: "global" }} />);
 
     expect(screen.queryByText("DUST")).toBeNull();
     expect(screen.getByText("EDGE")).not.toBeNull();
@@ -160,7 +193,7 @@ describe("PositionBlock zero-balance display", () => {
         tokens: [token("GABECUBE", 0), token("AWSTIN", -0.002)],
       }),
     );
-    const { container } = render(<PositionBlock activeSessionId={null} />);
+    const { container } = render(<PositionBlock scope={{ kind: "global" }} />);
 
     expect(container.querySelectorAll("li")).toHaveLength(0);
     expect(screen.getByText("No priced balances.")).not.toBeNull();
@@ -170,7 +203,7 @@ describe("PositionBlock zero-balance display", () => {
 
   it("keeps 'No token balances.' for a portfolio with no token rows at all", () => {
     mockPortfolio(portfolio({ tokens: [] }));
-    render(<PositionBlock activeSessionId={null} />);
+    render(<PositionBlock scope={{ kind: "global" }} />);
 
     expect(screen.getByText("No token balances.")).not.toBeNull();
     expect(screen.queryByText("No priced balances.")).toBeNull();
@@ -184,7 +217,7 @@ describe("PositionBlock zero-balance display", () => {
     );
     const dust = [token("ZERO1", 0), token("ZERO2", 0.001)];
     mockPortfolio(portfolio({ tokens: [...priced, ...dust] }));
-    const { container } = render(<PositionBlock activeSessionId={null} />);
+    const { container } = render(<PositionBlock scope={{ kind: "global" }} />);
 
     expect(container.querySelectorAll("li")).toHaveLength(8);
     expect(screen.getByText("+2 more")).not.toBeNull();
@@ -197,7 +230,7 @@ describe("PositionBlock zero-balance display", () => {
         tokens: [token("ETH", null, 4663, 0.005)],
       }),
     );
-    const { container } = render(<PositionBlock activeSessionId={null} />);
+    const { container } = render(<PositionBlock scope={{ kind: "global" }} />);
 
     expect(screen.getByText("ETH")).not.toBeNull();
     expect(screen.getByText("0.005 ETH")).not.toBeNull();
@@ -217,7 +250,7 @@ describe("PositionBlock zero-balance display", () => {
         ],
       }),
     );
-    render(<PositionBlock activeSessionId={null} />);
+    render(<PositionBlock scope={{ kind: "global" }} />);
 
     expect(screen.getByText("SOL")).not.toBeNull();
     expect(screen.queryByText("GHOST")).toBeNull();
@@ -231,7 +264,7 @@ describe("PositionBlock zero-balance display", () => {
         tokens: [token("GABECUBE", 0)],
       }),
     );
-    render(<PositionBlock activeSessionId={null} />);
+    render(<PositionBlock scope={{ kind: "global" }} />);
 
     expect(screen.getByText("$987.65")).not.toBeNull();
     expect(screen.getByText("No priced balances.")).not.toBeNull();
@@ -241,6 +274,7 @@ describe("PositionBlock zero-balance display", () => {
 // ── Session scope: deposit addresses + per-chain switcher (owner redesign) ──
 
 const SESSION = "00000000-0000-4000-8000-00000000aaaa";
+const PROJECT = "00000000-0000-4000-8000-00000000bbbb";
 const EVM_ADDR = "0xAAAAaaaaAAAAaaaaAAAAaaaaAAAAaaaaAAAAaaaa";
 const SOL_ADDR = "So11111111111111111111111111111111111111112";
 
@@ -263,7 +297,7 @@ describe("PositionBlock session view (unified chain switcher)", () => {
         chains: [chain(8453, "evm", 25, [{ symbol: "USDC", balanceUsd: 25, amount: null }])],
       }),
     );
-    render(<PositionBlock activeSessionId={SESSION} />);
+    render(<PositionBlock scope={{ kind: "session", sessionId: SESSION }} />);
 
     expect(screen.getByText("Ethereum")).not.toBeNull();
     expect(screen.getByText("No assets on Ethereum")).not.toBeNull();
@@ -277,7 +311,7 @@ describe("PositionBlock session view (unified chain switcher)", () => {
         chains: [chain(8453, "evm", 25, [{ symbol: "USDC", balanceUsd: 25, amount: null }])],
       }),
     );
-    render(<PositionBlock activeSessionId={SESSION} />);
+    render(<PositionBlock scope={{ kind: "session", sessionId: SESSION }} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Show Base assets" }));
     // The brand SVGs carry their own <title> text, so the name can match
@@ -303,7 +337,7 @@ describe("PositionBlock session view (unified chain switcher)", () => {
         ],
       }),
     );
-    render(<PositionBlock activeSessionId={SESSION} />);
+    render(<PositionBlock scope={{ kind: "session", sessionId: SESSION }} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Show Robinhood assets" }));
     expect(screen.getAllByText("Robinhood").length).toBeGreaterThan(0);
@@ -325,7 +359,7 @@ describe("PositionBlock session view (unified chain switcher)", () => {
         chains: [chain(137, "evm", 5, [{ symbol: "POL", balanceUsd: 5, amount: null }])],
       }),
     );
-    render(<PositionBlock activeSessionId={SESSION} />);
+    render(<PositionBlock scope={{ kind: "session", sessionId: SESSION }} />);
 
     fireEvent.click(screen.getByRole("button", { name: "more" }));
     expect(screen.getByText("Networks")).not.toBeNull();
@@ -335,7 +369,7 @@ describe("PositionBlock session view (unified chain switcher)", () => {
   it("offers 'more' even when nothing beyond the quick set is funded (empty-state dialog)", () => {
     mockSessionWallets(EVM_ADDR, null);
     mockPortfolio(portfolio({ scope: "session", chains: [] }));
-    render(<PositionBlock activeSessionId={SESSION} />);
+    render(<PositionBlock scope={{ kind: "session", sessionId: SESSION }} />);
 
     fireEvent.click(screen.getByRole("button", { name: "more" }));
     expect(screen.getByText("Networks")).not.toBeNull();
@@ -356,7 +390,7 @@ describe("PositionBlock session view (unified chain switcher)", () => {
         ],
       }),
     );
-    const { container } = render(<PositionBlock activeSessionId={SESSION} />);
+    const { container } = render(<PositionBlock scope={{ kind: "session", sessionId: SESSION }} />);
     const chainsArea = container.querySelector(
       '[data-vex-area="position-chains"]',
     ) as HTMLElement;
@@ -388,7 +422,7 @@ describe("PositionBlock session view (unified chain switcher)", () => {
         ],
       }),
     );
-    const { container } = render(<PositionBlock activeSessionId={SESSION} />);
+    const { container } = render(<PositionBlock scope={{ kind: "session", sessionId: SESSION }} />);
     const chains = within(
       container.querySelector('[data-vex-area="position-chains"]') as HTMLElement,
     );
@@ -412,9 +446,119 @@ describe("PositionBlock session view (unified chain switcher)", () => {
         ],
       }),
     );
-    render(<PositionBlock activeSessionId={SESSION} />);
+    render(<PositionBlock scope={{ kind: "session", sessionId: SESSION }} />);
     fireEvent.click(screen.getByRole("button", { name: "more" }));
     expect(screen.getAllByText("Polygon").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Solana").length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * PROJECT scope - the Vex Studio rail's arm of the same card (owner parity
+ * decree, 2026-09-04).
+ *
+ * The property that carries the money risk: the read goes out as the PROJECT
+ * scope and the chip row is built from the PROJECT's own wallet selection. A
+ * fallback to the global inventory here would put somebody else's funds under
+ * a project's name, which is a wrong answer that renders.
+ */
+describe("PositionBlock project view", () => {
+  it("reads the PROJECT scope - never the global inventory", () => {
+    mockProjectWallets(EVM_ADDR, SOL_ADDR);
+    mockPortfolio(portfolio({ scope: "project", chains: [] }));
+    render(<PositionBlock scope={{ kind: "project", projectId: PROJECT }} />);
+
+    expect(mockUsePortfolio).toHaveBeenCalledWith({
+      scope: "project",
+      projectId: PROJECT,
+    });
+  });
+
+  it("is titled Position and counts the project's wallets", () => {
+    mockProjectWallets(EVM_ADDR, SOL_ADDR);
+    mockPortfolio(portfolio({ scope: "project", walletCount: 2, chains: [] }));
+    render(<PositionBlock scope={{ kind: "project", projectId: PROJECT }} />);
+
+    expect(screen.getByText("Position")).not.toBeNull();
+    expect(screen.getByText("2 wallets")).not.toBeNull();
+    expect(screen.queryByText("Portfolio")).toBeNull();
+  });
+
+  it("builds the chip row from the PROJECT's selection, defaulting to Ethereum", () => {
+    mockProjectWallets(EVM_ADDR, SOL_ADDR);
+    mockPortfolio(
+      portfolio({
+        scope: "project",
+        chains: [
+          chain(8453, "evm", 25, [
+            { symbol: "USDC", balanceUsd: 25, amount: null },
+          ]),
+        ],
+      }),
+    );
+    render(<PositionBlock scope={{ kind: "project", projectId: PROJECT }} />);
+
+    expect(screen.getByText("Ethereum")).not.toBeNull();
+    expect(screen.getByText("No assets on Ethereum")).not.toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Show Solana assets" }),
+    ).not.toBeNull();
+  });
+
+  it("opens on Solana when the project selected NO EVM wallet", () => {
+    mockProjectWallets(null, SOL_ADDR);
+    mockPortfolio(
+      portfolio({
+        scope: "project",
+        chains: [
+          chain(20011000000, "solana", 60, [
+            { symbol: "SOL", balanceUsd: 60, amount: null },
+          ]),
+        ],
+      }),
+    );
+    const { container } = render(
+      <PositionBlock scope={{ kind: "project", projectId: PROJECT }} />,
+    );
+    const chains = within(
+      container.querySelector('[data-vex-area="position-chains"]') as HTMLElement,
+    );
+    expect(chains.getByText("SOL")).not.toBeNull();
+    expect(
+      chains.queryByRole("button", { name: "Show Ethereum assets" }),
+    ).toBeNull();
+  });
+
+  it("a FAILED project read draws no chip row rather than guessing the families", () => {
+    mockUseProject.mockReturnValue({
+      isLoading: false,
+      isError: true,
+      data: undefined,
+    });
+    mockPortfolio(
+      portfolio({
+        scope: "project",
+        chains: [chain(1, "evm", 40, [{ symbol: "ETH", balanceUsd: 40, amount: null }])],
+      }),
+    );
+    const { container } = render(
+      <PositionBlock scope={{ kind: "project", projectId: PROJECT }} />,
+    );
+    expect(
+      container.querySelector('[data-vex-area="position-chains"]'),
+    ).toBeNull();
+    // The resolved total is still the project's own and stays on screen.
+    expect(screen.getByText("$123.45")).not.toBeNull();
+  });
+
+  it("names the PROJECT when the scope holds no wallets", () => {
+    mockProjectWallets(null, null);
+    mockPortfolio(portfolio({ scope: "project", walletCount: 0 }));
+    render(<PositionBlock scope={{ kind: "project", projectId: PROJECT }} />);
+
+    expect(
+      screen.getByText("No wallets selected for this project."),
+    ).not.toBeNull();
+    expect(screen.queryByText("No wallets in this session.")).toBeNull();
   });
 });

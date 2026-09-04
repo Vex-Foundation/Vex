@@ -1,28 +1,41 @@
 /**
  * The `AGENTS.md` managed block: THE VEX MCP PROTOCOL, addressed to the agent.
  *
- * ONE CONTENT, ONE RENDERER, THREE CARRIERS. `AGENTS.md` is its home; `CLAUDE.md`
- * reaches it through the `@AGENTS.md` import the installer maintains, and the
+ * ONE CONTENT, ONE RENDERER, THREE CARRIERS. `AGENTS.md` is its home;
+ * `CLAUDE.md` reaches it through the `@AGENTS.md` and `@.vex/vex-guide.md`
+ * imports the installer maintains, and the
  * per-agent context redirects the catalogue writes point at the same file. There
  * is no identity layer and no second wording: what an agent is told about Vex is
  * this text, and the handshake string shares its rules from one source
  * (`shared-usage.ts`).
  *
- * THE SECTIONS, in the order `renderStudioManagedBody` composes them:
+ * TWO DOCUMENTS SINCE 2026-09-04, one renderer. `renderStudioManagedBody`
+ * composes the AUTHORITY CORE - the text that must be in context on every turn
+ * - and `renderStudioVexGuideBody` composes the companion `.vex/vex-guide.md`.
+ * The sections below say which file each one lands in; every section is WHOLE
+ * in exactly one of them, and none was shortened by the split.
  *
- *   1. What's new in Vex <version>   - `changelog.ts`, versioned, Next.js style
- *   2. This project                  - the level in force, wallets, agents, id
- *   3. How to work with Vex MCP      - discovery, names, outcomes, fees
- *   4. How to do the common jobs     - the task shapes, in MCP names
- *   5. Protocols available           - `protocol-blocks.ts`
- *   6. Your position                 - what each read tool actually knows
- *   7. Building on Vex MCP           - what an app inherits
- *   8. Reporting Vex bugs            - the bounty, and ASK FIRST
+ *   AGENTS.md, in composition order:
+ *     1. Read these on start         - the two companion files, and when
+ *     2. This project                - the level in force, wallets, agents, id
+ *     3. How to work with Vex MCP    - discovery, names, outcomes, fees
+ *     4. How to do the common jobs   - the task shapes, in MCP names
+ *     5. Your position               - what each read tool actually knows
  *
- * WHY THE CHANGE LOG IS FIRST. Next.js-style: the first thing a reader (human or
- * model) sees is what moved since they last looked. A regeneration that changed
- * anything is visible before any of the unchanging prose, so a silent rewrite is
- * impossible to mistake for a file nobody touched.
+ *   .vex/vex-guide.md:
+ *     1. What's new in Vex <version> - `changelog.ts`, versioned
+ *        This file                   - the project's own rolling change log
+ *     2. Protocols available         - `protocol-blocks.ts`
+ *     3. Building on Vex MCP         - what an app inherits
+ *     4. Reporting Vex bugs          - the bounty, and ASK FIRST
+ *
+ * WHY THE POINTER IS FIRST. A reader who never learns that the guide exists
+ * cannot read it, and Codex truncates rather than splits, so the section whose
+ * absence hides the other file goes in the bytes most likely to survive. The
+ * change logs keep their Next.js-style position at the top of the file each one
+ * describes: a regeneration that changed anything is visible before any of the
+ * unchanging prose, so a silent rewrite is impossible to mistake for a file
+ * nobody touched.
  *
  * PURE, AND FACT-DRIVEN. Nothing here reads a database, a socket or the live
  * environment. Every project-specific value arrives as a `StudioProjectBrief`
@@ -190,21 +203,27 @@ export function renderStudioBlockTitle(brief: StudioProjectBrief): string {
 }
 
 /**
- * Section 1: what changed in VEX, and what changed for THIS PROJECT.
+ * What changed in VEX, for the reader who has just been handed a regenerated
+ * file. Lives in `.vex/vex-guide.md`.
  *
- * Two axes, deliberately under one heading. The Vex notes come from
+ * TWO AXES, ONE PER FILE SINCE 2026-09-04. The Vex notes here come from
  * `changelog.ts`, authored with the change and shipped with the build; the
- * project notes come from the durable provenance store and say what the user
- * did. A reader who has just been handed a regenerated file wants both, and
- * neither answers the other's question.
+ * PROJECT notes (`renderStudioThisFileLog`) come from the durable provenance
+ * store and say what the user did. They were one section while both lived in
+ * `AGENTS.md`. The split that moved the Vex notes into the guide kept each one
+ * whole and moved neither's words: the project log stays beside the file it
+ * describes, and the Vex log travels with the sections it announces.
  */
-export function renderStudioWhatsNew(brief: StudioProjectBrief): string {
+export function renderStudioWhatsNewInVex(brief: StudioProjectBrief): string {
   const lines = [
     `## What's new in Vex ${brief.vexVersion}`,
     "",
     `The notes below cover the last ${String(STUDIO_CHANGELOG_VERSION_LIMIT)} Vex versions that changed anything`,
     "an agent can see. A section or protocol block that one of them names carries",
     "its version beside its own heading.",
+    "",
+    "A note whose subject is a section of `AGENTS.md` names a heading in THAT",
+    "file; the sections below are this one's.",
     "",
   ];
 
@@ -218,9 +237,22 @@ export function renderStudioWhatsNew(brief: StudioProjectBrief): string {
       );
     }
   }
+  return lines.join("\n");
+}
 
-  lines.push(
-    "",
+/**
+ * What changed for THIS PROJECT: the rolling log of what Vex wrote and when.
+ *
+ * Sits directly under the Vex notes, in `.vex/vex-guide.md`, exactly as it did
+ * under them in the single block - same `###` heading, same words, same place
+ * relative to the section above it. The two axes were designed as one section
+ * and the 2026-09-04 split moved them TOGETHER: what changed in Vex, then what
+ * changed for this project. Neither is something an agent acts on mid-turn,
+ * which is why the pair is in the guide rather than in the authority core, and
+ * why the core's worst case has room for the sections that ARE.
+ */
+export function renderStudioThisFileLog(brief: StudioProjectBrief): string {
+  const lines = [
     "### This file",
     "",
     `Newest first. Vex keeps the last ${String(STUDIO_CHANGE_NOTE_LIMIT)} entries and drops older ones;`,
@@ -233,7 +265,7 @@ export function renderStudioWhatsNew(brief: StudioProjectBrief): string {
     `${String(STUDIO_CHANGE_NOTE_LIMIT)} entries. The file as a whole grows only through text the user adds`,
     "OUTSIDE the markers, which Vex never touches.",
     "",
-  );
+  ];
   if (brief.changeNotes.length === 0) {
     lines.push(
       `- ${brief.scopeUpdatedOn} · Vex ${brief.vexVersion} · initial render for this project`,
@@ -566,6 +598,42 @@ export const STUDIO_COMMON_JOBS_NOTE = [
   "Name the exact chain and contract identity, the source freshness, the observed",
   "liquidity, the missing coverage, and whether the result is research or an",
   "executable quote. A provider label is not proof.",
+].join("\n");
+
+/**
+ * THE POINTER SECTION: the two managed files this one does not carry, and the
+ * instruction to open them.
+ *
+ * WHY IT EXISTS AT ALL (2026-09-04). Codex loads `AGENTS.md` under a TOTAL
+ * budget of `project_doc_max_bytes` (32 KiB by default,
+ * `codex-rs/config/defaults.toml`) across the root-to-cwd chain and TRUNCATES
+ * the last file at whatever remains (`codex-rs/core/src/agents_md.rs`). It has
+ * no import mechanism, so a longer file is not split for it - it is CUT, mid
+ * sentence, with no notice to the model or the user. Claude Code has imports
+ * and no such cap, which is why `CLAUDE.md` can pull both files in and every
+ * other client must be TOLD to read them. Being told is the whole mechanism
+ * here, so this section says which file, when, and what is in it.
+ *
+ * FIRST IN THE BLOCK, deliberately: it is the one section whose absence makes
+ * the others unfindable, and the first bytes of the file are the bytes a
+ * truncating loader is most likely to keep.
+ */
+export const STUDIO_READ_ON_START_NOTE = [
+  studioTaggedHeading("## Read these on start", "Read these on start"),
+  "",
+  "Two files in this repository carry the rest of the Vex protocol. Neither is",
+  "in your context by itself: open them with your own file-reading tool.",
+  "",
+  "- `.vex/vex-guide.md` - READ IT AT THE START OF A SESSION, before your first",
+  "  Vex call. What changed in Vex and what Vex last changed in this project,",
+  "  every protocol available here with its chains, its fee and whether its",
+  "  provider key is configured on this machine, what an app you build on Vex",
+  "  inherits, and how a Vex bug is reported.",
+  "- `.vex/protocols.md` - READ IT ON DEMAND: the tool-by-tool inventory, with",
+  "  each tool's read-only and destructive hints and the key it needs.",
+  "",
+  "Claude Code imports the guide through `CLAUDE.md` and already has it. Every",
+  "other client, Codex included, reads it because this line says so.",
 ].join("\n");
 
 /** Section 6: what each read tool actually knows, and what it does not. */
