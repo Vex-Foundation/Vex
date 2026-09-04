@@ -326,7 +326,7 @@ const VEX_FEE_LATERALS = `
           FROM agent_activity fee
          WHERE fee.protocol_execution_id = aa.protocol_execution_id
            AND fee.id        <> aa.id
-           AND fee.event_role IN ('bridge_fee','swap_fee','trench_fee','pools_fee','tx_vex_fee')
+           AND fee.event_role IN ('bridge_fee','swap_fee','trench_fee','pools_fee','tx_vex_fee','vex_fee')
            AND fee.status     = 'confirmed'
          ORDER BY fee.event_index ASC
          LIMIT 1

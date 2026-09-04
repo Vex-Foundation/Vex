@@ -20,8 +20,11 @@ import { z } from "zod";
 
 import { mapActivityToEvent } from "../../../vex-agent/agentscan/mapper.js";
 
-// ── Server contract mirror (provenance: vex-agentscan@c52fe3d packages/contract/src) ──
-const EVENT_KINDS = ["swap", "bridge", "lend", "prediction", "wrap", "yield", "launch"] as const;
+// ── Server contract mirror (provenance: vex-agentscan@7a38a26, branch
+// feat/launchpads-server, packages/contract/src/{enums,role-binding}.ts) ──
+const EVENT_KINDS = [
+  "swap", "bridge", "lend", "prediction", "wrap", "yield", "launch", "claim", "transfer",
+] as const;
 const EVENT_ROLES = [
   "swap", "trench_fee", "swap_fee",
   "bridge_deposit", "bridge_fee", "bridge_fill_expected", "bridge_fill_observed", "bridge_refund",
@@ -30,22 +33,37 @@ const EVENT_ROLES = [
   "wrap", "unwrap",
   "yield_pt", "yield_yt", "yield_py", "yield_lp", "yield_sy", "yield_claim",
   "token_launch",
+  "pools_fee", "pools_claim",
+  "wallet_transfer",
+  "creator_fee_claim", "holder_reward_claim", "reward_distribution",
+  "launch_cancel",
+  "vex_fee",
 ] as const;
 const EVENT_STATUSES = ["pending", "confirmed", "definitively_failed", "superseded_unproven"] as const;
 const CHAIN_FAMILIES = ["eip155", "solana"] as const;
 const FAILURE_CODES = ["route_not_found", "slippage", "deadline_expired", "insufficient_liquidity", "allowance_or_balance", "chain_unsupported", "simulation_reverted", "mined_revert", "broadcast_error", "confirmation_timeout", "unknown", "bridge_failed", "bridge_refunded", "solana_signature_expired", "venue_unavailable"] as const;
 
 const ROLES_BY_KIND: Record<(typeof EVENT_KINDS)[number], readonly (typeof EVENT_ROLES)[number][]> = {
-  swap: ["swap", "trench_fee", "swap_fee"],
-  bridge: ["bridge_deposit", "bridge_fee", "bridge_fill_expected", "bridge_fill_observed", "bridge_refund"],
+  swap: ["swap", "trench_fee", "swap_fee", "vex_fee"],
+  bridge: [
+    "bridge_deposit", "bridge_fee", "bridge_fill_expected", "bridge_fill_observed", "bridge_refund",
+    "vex_fee",
+  ],
   lend: ["lend_deposit", "lend_withdraw", "lend_borrow_operate"],
   prediction: ["predict_buy", "predict_sell", "predict_claim", "predict_close"],
   wrap: ["wrap", "unwrap"],
   yield: ["yield_pt", "yield_yt", "yield_py", "yield_lp", "yield_sy", "yield_claim"],
-  launch: ["token_launch", "trench_fee"],
+  launch: ["token_launch", "launch_cancel", "trench_fee", "pools_fee", "vex_fee"],
+  claim: ["pools_claim", "creator_fee_claim", "holder_reward_claim", "reward_distribution"],
+  transfer: ["wallet_transfer"],
 };
-const SECOND_LEG_ROLES: readonly string[] = ["yield_py", "yield_lp"];
-const INPUT_LEG_FORBIDDEN_ROLES: readonly string[] = ["yield_claim"];
+const SECOND_LEG_ROLES: readonly string[] = [
+  "yield_py", "yield_lp", "pools_claim", "creator_fee_claim", "holder_reward_claim",
+];
+const INPUT_LEG_FORBIDDEN_ROLES: readonly string[] = [
+  "yield_claim", "pools_claim", "creator_fee_claim", "holder_reward_claim", "reward_distribution",
+];
+const OUTPUT_LEG_FORBIDDEN_ROLES: readonly string[] = ["wallet_transfer"];
 
 const rawAmount = z.string().regex(/^\d+$/);
 const usdString = z.string().regex(/^\d+(\.\d+)?$/);
@@ -90,7 +108,14 @@ const eventShape = z.object({
 type EventShape = z.output<typeof eventShape>;
 
 const SECOND_LEG_FIELDS = ["tokenIn2", "tokenOut2", "amountIn2Raw", "amountOut2Raw", "executedIn2Raw", "executedOut2Raw"] as const;
-const INPUT_LEG_FIELDS = ["tokenIn", "amountInRaw", "executedInRaw"] as const;
+// BOTH input legs, exactly as the server refines them: a role that spends
+// nothing spends nothing on either side.
+const INPUT_LEG_FIELDS = [
+  "tokenIn", "amountInRaw", "executedInRaw", "tokenIn2", "amountIn2Raw", "executedIn2Raw",
+] as const;
+const OUTPUT_LEG_FIELDS = [
+  "tokenOut", "amountOutRaw", "executedOutRaw", "tokenOut2", "amountOut2Raw", "executedOut2Raw",
+] as const;
 
 function populated(event: EventShape, fields: readonly (keyof EventShape)[]): readonly (keyof EventShape)[] {
   return fields.filter((field) => event[field] !== null && event[field] !== undefined);
@@ -122,6 +147,11 @@ const serverEventSchema = eventShape.superRefine((event, ctx) => {
   if (INPUT_LEG_FORBIDDEN_ROLES.includes(event.eventRole)) {
     for (const field of populated(event, INPUT_LEG_FIELDS)) {
       addIssue(field, `role '${event.eventRole}' spends nothing and must not carry '${String(field)}'`);
+    }
+  }
+  if (OUTPUT_LEG_FORBIDDEN_ROLES.includes(event.eventRole)) {
+    for (const field of populated(event, OUTPUT_LEG_FIELDS)) {
+      addIssue(field, `role '${event.eventRole}' receives nothing and must not carry '${String(field)}'`);
     }
   }
   if (event.status === "superseded_unproven" && event.failureCode != null) {
@@ -625,6 +655,154 @@ describe("mapActivityToEvent — the widened vocabulary", () => {
       const row = { ...confirmedSwapRow(), kind, event_role: eventRole, protocol };
       const parsed = serverEventSchema.safeParse(mapActivityToEvent(row, { status: "confirmed" }));
       expect(parsed.success, `${kind}/${eventRole}: ${JSON.stringify(parsed.error?.issues)}`).toBe(true);
+    }
+  });
+});
+
+/**
+ * THE LAUNCHPAD FAMILY on the wire (migration 102, server migration 0018).
+ *
+ * The mapper passes the new roles through unchanged; what it must NOT do is
+ * declare a leg the server's role binding forbids, because that rejects the
+ * whole event and costs the row its report. Every case here validates against
+ * the vendored server schema above, which is the real assertion.
+ */
+describe("mapActivityToEvent: the launchpad family", () => {
+  /** A claim-kind row: pays two assets, spends nothing. */
+  function claimRow(eventRole: string): Record<string, unknown> {
+    return {
+      ...confirmedSwapRow(),
+      kind: "claim",
+      event_role: eventRole,
+      protocol: "pools",
+      token_in_address: null,
+      token_in_symbol: null,
+      token_in_decimals: null,
+      amount_in_human: null,
+      amount_in_raw: null,
+      executed_amount_in_human: null,
+      executed_amount_in_raw: null,
+      token_out2_address: "0x" + "3".repeat(40),
+      token_out2_symbol: "USDC",
+      token_out2_decimals: 6,
+      amount_out2_raw: "4500000",
+      executed_amount_out2_raw: "4499000",
+    };
+  }
+
+  it.each(["creator_fee_claim", "holder_reward_claim"])(
+    "carries both payout legs of a %s and no input leg at all",
+    (eventRole) => {
+      const event = mapActivityToEvent(claimRow(eventRole), { status: "confirmed" });
+
+      expect(event.kind).toBe("claim");
+      expect(event.eventRole).toBe(eventRole);
+      expect(event.executedOutRaw).toBe("2407113000000000000000");
+      expect(event.tokenOut2).toEqual({ address: "0x" + "3".repeat(40), symbol: "USDC", decimals: 6 });
+      expect(event.executedOut2Raw).toBe("4499000");
+      expect(event.tokenIn).toBeNull();
+      expect(event.amountInRaw).toBeNull();
+      expect(event.executedInRaw).toBeNull();
+      expect(serverEventSchema.safeParse(event).success).toBe(true);
+    },
+  );
+
+  it("strips an input leg a claim row should never have carried, rather than sending the event to be rejected", () => {
+    // The database forbids this shape (`agent_activity_claim_family_no_input_leg`).
+    // The mapper is the second guard, because the server rejects the WHOLE event
+    // over one forbidden field, and a lost estimate must never sink a real report.
+    const row = { ...claimRow("holder_reward_claim") };
+    row.token_in_address = "0x" + "9".repeat(40);
+    row.token_in_symbol = "WETH";
+    row.token_in_decimals = 18;
+    row.amount_in_raw = "1000";
+    row.executed_amount_in_raw = "1000";
+    row.token_in2_address = "0x" + "8".repeat(40);
+    row.token_in2_symbol = "DAI";
+    row.token_in2_decimals = 18;
+    row.amount_in2_raw = "500";
+
+    const event = mapActivityToEvent(row, { status: "confirmed" });
+
+    expect(event.tokenIn).toBeNull();
+    expect(event.amountInRaw).toBeNull();
+    expect(event.executedInRaw).toBeNull();
+    expect(event.tokenIn2).toBeNull();
+    expect(event.amountIn2Raw).toBeNull();
+    expect(event.executedIn2Raw).toBeNull();
+    expect(serverEventSchema.safeParse(event).success).toBe(true);
+  });
+
+  it("sends a reward_distribution with its distributed total and no second leg", () => {
+    // The caller is paid nothing, so the row has no second leg to declare - but
+    // the distributed total is a real fact about the transaction and the one
+    // amount a distribute has, so its OUTPUT amounts are optional, not forbidden.
+    const row = { ...claimRow("reward_distribution") };
+    row.token_out2_address = null;
+    row.token_out2_symbol = null;
+    row.token_out2_decimals = null;
+    row.amount_out2_raw = null;
+    row.executed_amount_out2_raw = null;
+
+    const event = mapActivityToEvent(row, { status: "confirmed" });
+
+    expect(event.eventRole).toBe("reward_distribution");
+    expect(event.executedOutRaw).toBe("2407113000000000000000");
+    expect(event.tokenOut2).toBeNull();
+    expect(event.executedOut2Raw).toBeNull();
+    expect(event.tokenIn).toBeNull();
+    expect(serverEventSchema.safeParse(event).success).toBe(true);
+  });
+
+  it("sends a launch_cancel on the launch kind, carrying the refund it returned", () => {
+    const event = mapActivityToEvent(
+      {
+        ...confirmedSwapRow(),
+        kind: "launch",
+        event_role: "launch_cancel",
+        protocol: "virtuals",
+        token_in_address: null,
+        token_in_symbol: null,
+        token_in_decimals: null,
+        amount_in_human: null,
+        amount_in_raw: null,
+        executed_amount_in_human: null,
+        executed_amount_in_raw: null,
+      },
+      { status: "confirmed" },
+    );
+
+    expect(event.kind).toBe("launch");
+    expect(event.eventRole).toBe("launch_cancel");
+    expect(event.executedOutRaw).toBe("2407113000000000000000");
+    expect(serverEventSchema.safeParse(event).success).toBe(true);
+  });
+
+  it.each([
+    ["swap", "kyberswap"],
+    ["bridge", "relay"],
+    ["launch", "pools"],
+  ])("sends a vex_fee leg on the %s arm the server admits it on", (kind, protocol) => {
+    const event = mapActivityToEvent(
+      { ...confirmedSwapRow(), kind, event_role: "vex_fee", protocol },
+      { status: "confirmed" },
+    );
+
+    expect(event.kind).toBe(kind);
+    expect(event.eventRole).toBe("vex_fee");
+    // A fee leg's single amount rides the row's own INPUT leg, exactly as every
+    // venue-named fee role's does.
+    expect(event.executedInRaw).toBe("1000000000000000000");
+    expect(serverEventSchema.safeParse(event).success).toBe(true);
+  });
+
+  it("would be REFUSED by the server on any other arm: the binding is the contract, not a convention", () => {
+    for (const kind of ["lend", "yield", "prediction", "wrap", "claim"] as const) {
+      const event = mapActivityToEvent(
+        { ...confirmedSwapRow(), kind, event_role: "vex_fee" },
+        { status: "confirmed" },
+      );
+      expect(serverEventSchema.safeParse(event).success).toBe(false);
     }
   });
 });

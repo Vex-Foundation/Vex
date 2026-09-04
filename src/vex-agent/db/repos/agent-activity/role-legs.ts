@@ -73,6 +73,25 @@ const AMOUNT_BEARING_ROLES: ReadonlySet<AgentActivityEventRole> = new Set([
   // proves its outputs only - the same asymmetry `yield_claim` has, one leg
   // wider (migration 082).
   "pools_claim",
+  // Migration 102's claim family, on exactly the `pools_claim` terms: a creator
+  // claiming the fees their launched token earned and a holder claiming the
+  // rewards a token streams both spend NOTHING and pay the launched token AND
+  // the asset it was paired against, so both prove their outputs only.
+  //
+  // `reward_distribution` is deliberately ABSENT. The caller of `distribute()`
+  // is paid nothing - the accrued balance goes to the holders - so there is no
+  // leg of theirs to be missing, and demanding one would hold every honest
+  // distribute for the full reporting grace and then re-sweep it forever for an
+  // amount that was never coming. Its output amounts are optional, which is a
+  // different statement from required-and-absent.
+  //
+  "creator_fee_claim",
+  "holder_reward_claim",
+  // A cancelled launch, under the row's-own-token rule below: the refund a
+  // cancel returns is the money the user cares about, and it must ride the
+  // terminal event or the server's single `pending -> terminal` merge window
+  // closes without it.
+  "launch_cancel",
 ]);
 
 export function isAmountBearingRole(role: AgentActivityEventRole): boolean {
@@ -110,9 +129,17 @@ export function roleLegsIncomplete(row: RoleLegRow): boolean {
   // the two amounts together, so a row carrying one and not the other has read
   // half a settlement - and a zero is a proven amount, not a missing one, which
   // is why the test is on the field's presence rather than on its value.
-  if (role === "pools_claim") {
+  if (role === "pools_claim" || role === "creator_fee_claim" || role === "holder_reward_claim") {
     if (!row.executedAmountOutRaw) return true;
     return Boolean(row.tokenOut2Address) && !row.executedAmountOut2Raw;
+  }
+  // A cancel that declared a refund token waits for the refund; one that
+  // declared none is not incomplete, it is a cancel with nothing to return.
+  // Reading the row's OWN token is what covers both shapes with one rule - the
+  // same asymmetry the LEND arm below uses, and the reason a cancel written
+  // before its refund decoder exists is not held forever.
+  if (role === "launch_cancel") {
+    return Boolean(row.tokenOutAddress) && !row.executedAmountOutRaw;
   }
 
   if (role === "lend_deposit" || role === "lend_withdraw" || role === "lend_borrow_operate") {

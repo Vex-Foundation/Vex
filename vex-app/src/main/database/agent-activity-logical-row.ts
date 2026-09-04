@@ -11,6 +11,20 @@
  * The SQL is intentionally written for the `aa` alias used by both readers.
  * Database kind<->role CHECKs reject a role filed under the wrong kind, so the
  * role is the narrowest stable discriminator for this projection.
+ *
+ * MIGRATION 102 adds four members and deliberately withholds a fifth. Each of
+ * `creator_fee_claim`, `holder_reward_claim`, `reward_distribution` and
+ * `launch_cancel` is a user ACTION with its own transaction: two claims the
+ * wallet is paid by, the permissionless distribute the wallet signs and is paid
+ * nothing for, and the creator's cancel of a launch that had not gone live.
+ * `vex_fee` is NOT here, for the reason the owner's 2026-08-05 revision gave
+ * about every other fee role: it is the fee LEG of one of those actions, folded
+ * onto its parent by the projection in `agent-scan-db-query.ts`, and rendering
+ * it beside the action it is 25 bps of presents one charge as two.
+ *
+ * The predicate carries no SQL comments on purpose - it is interpolated into
+ * two different statements, and the reasoning belongs to the module, not to the
+ * bytes sent to Postgres.
  */
 export const AGENT_ACTIVITY_LOGICAL_ROW_PREDICATE = `aa.event_role IN (
           'swap',
@@ -22,6 +36,8 @@ export const AGENT_ACTIVITY_LOGICAL_ROW_PREDICATE = `aa.event_role IN (
           'yield_lp', 'yield_sy', 'yield_claim',
           'token_launch',
           'pools_claim',
+          'creator_fee_claim', 'holder_reward_claim', 'reward_distribution',
+          'launch_cancel',
           'wallet_transfer',
           'tx_approve', 'tx_contract_call', 'tx_native_transfer', 'tx_spl_instruction_set'
         )`;

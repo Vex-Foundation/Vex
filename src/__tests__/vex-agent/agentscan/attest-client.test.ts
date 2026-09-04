@@ -15,7 +15,10 @@
  */
 import { afterEach, describe, it, expect, vi } from "vitest";
 
-import { postTokenAttestation } from "../../../vex-agent/agentscan/attest-client.js";
+import {
+  fetchTokenAttestationVerdict,
+  postTokenAttestation,
+} from "../../../vex-agent/agentscan/attest-client.js";
 
 const SIGNATURE = `0x${"ab".repeat(65)}`;
 const TX_HASH = `0x${"cd".repeat(32)}`;
@@ -43,6 +46,7 @@ afterEach(() => {
 
 const INPUT = {
   chainId: 4663,
+  launchpad: "pools_fun" as const,
   tokenAddress: TOKEN_ADDRESS,
   attestSignature: SIGNATURE,
   txHash: TX_HASH,
@@ -53,13 +57,19 @@ describe("postTokenAttestation — wire shape", () => {
     const mock = stubFetch(jsonResponse(200, { status: "accepted", verifyStatus: "verified" }));
     const outcome = await postTokenAttestation("http://localhost", INPUT);
 
-    expect(outcome).toEqual({ kind: "accepted" });
+    // ACCEPTED carries the QUEUE state the server named, not a verdict: the
+    // POST answers `{status:"accepted", verifyStatus}` and the verdict is read
+    // back separately.
+    expect(outcome).toEqual({ kind: "accepted", verifyStatus: "verified" });
     expect(mock).toHaveBeenCalledTimes(1);
     const [url, init] = mock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("http://localhost/v1/tokens/attest");
     expect((init.headers as Record<string, string>)["Authorization"]).toBeUndefined();
+    // The launchpad is on the wire and is NEVER defaulted here: it selects which
+    // creation proof the verifier applies, so the caller states it.
     expect(JSON.parse(init.body as string)).toEqual({
       chainId: 4663,
+      launchpad: "pools_fun",
       tokenAddress: TOKEN_ADDRESS.toLowerCase(),
       attestSignature: SIGNATURE,
       txHash: TX_HASH,
@@ -113,5 +123,78 @@ describe("postTokenAttestation — wire shape", () => {
     stubFetch(new Error(`upstream echoed ${SIGNATURE}`));
     const network = await postTokenAttestation("http://localhost", INPUT);
     expect(JSON.stringify(network)).not.toContain(SIGNATURE);
+  });
+});
+
+/**
+ * The verdict read-back. A 2xx on the POST proves only that the claim entered
+ * the verify queue; this route is the only place the server says whether the
+ * creation proof was checked and held.
+ */
+describe("fetchTokenAttestationVerdict", () => {
+  const VERDICT_INPUT = { chainId: 4663, tokenAddress: TOKEN_ADDRESS };
+
+  it("GETs the public token route with the address lowercased and no auth header", async () => {
+    const mock = stubFetch(jsonResponse(200, { status: "verified", recommended: true }));
+    const outcome = await fetchTokenAttestationVerdict("https://example.org/scan/", VERDICT_INPUT);
+
+    expect(outcome).toEqual({ kind: "verdict", status: "verified" });
+    const [url, init] = mock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(`https://example.org/scan/v1/tokens/4663/${TOKEN_ADDRESS.toLowerCase()}`);
+    expect((init.headers as Record<string, string> | undefined)?.["Authorization"]).toBeUndefined();
+  });
+
+  it.each(["unverified", "verified", "mismatch", "unverifiable", "revoked"])(
+    "carries the server's own status %s through unchanged",
+    async (status) => {
+      stubFetch(jsonResponse(200, { status }));
+      expect(await fetchTokenAttestationVerdict("http://localhost", VERDICT_INPUT)).toEqual({
+        kind: "verdict",
+        status,
+      });
+    },
+  );
+
+  it("reads a 404 as ABSENT: the honest answer for a token with no candidate row", async () => {
+    stubFetch(jsonResponse(404, { error: { code: "not_found", message: "token attestation not found" } }));
+    expect(await fetchTokenAttestationVerdict("http://localhost", VERDICT_INPUT)).toEqual({
+      kind: "absent",
+    });
+  });
+
+  it("refuses to store a status this build does not recognize", async () => {
+    // Inventing a verdict, or writing an unknown word into a CHECK-constrained
+    // column, are both worse than saying "ask again": the server never gave a
+    // verdict this build can name.
+    stubFetch(jsonResponse(200, { status: "provisionally_maybe" }));
+    const outcome = await fetchTokenAttestationVerdict("http://localhost", VERDICT_INPUT);
+    expect(outcome.kind).toBe("retryable");
+  });
+
+  it("maps 429 to retryable with Retry-After, 500 to retryable, and 400 to invalid", async () => {
+    stubFetch(jsonResponse(429, { error: { code: "rate_limited" } }, { "retry-after": "42" }));
+    expect(await fetchTokenAttestationVerdict("http://localhost", VERDICT_INPUT)).toMatchObject({
+      kind: "retryable",
+      status: 429,
+      retryAfterSeconds: 42,
+    });
+
+    stubFetch(jsonResponse(500, {}));
+    expect((await fetchTokenAttestationVerdict("http://localhost", VERDICT_INPUT)).kind).toBe(
+      "retryable",
+    );
+
+    stubFetch(jsonResponse(400, { error: { code: "validation_failed" } }));
+    expect((await fetchTokenAttestationVerdict("http://localhost", VERDICT_INPUT)).kind).toBe(
+      "invalid",
+    );
+  });
+
+  it("maps a network failure to retryable with a null status, and never throws", async () => {
+    stubFetch(new Error("ECONNREFUSED"));
+    expect(await fetchTokenAttestationVerdict("http://localhost", VERDICT_INPUT)).toMatchObject({
+      kind: "retryable",
+      status: null,
+    });
   });
 });

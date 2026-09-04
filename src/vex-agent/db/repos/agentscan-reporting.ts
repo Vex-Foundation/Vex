@@ -42,6 +42,12 @@ export interface AgentscanReportingState {
   readonly registerAttemptCount: number;
   readonly nextRegisterAttemptAt: string;
   readonly backfillEnqueuedAt: string | null;
+  /**
+   * Which reporting vocabulary this install's database carries (migration
+   * 102 stamps 2). Paired with `backfillEnqueuedAt` it is the gate on the
+   * launchpad-family roles: see `ELIGIBILITY_SQL`.
+   */
+  readonly vocabularyVersion: number;
   readonly stoppedReason: AgentscanStopReason | null;
   /** Display name AgentScan bound to this install (session/complete response). */
   readonly agentName: string | null;
@@ -63,14 +69,16 @@ export interface ClaimedOutboxEvent {
 }
 
 /**
- * The eligibility predicate — the single source of truth for what is reportable
- * at all. Kept as one fragment so the scan can never drift from the vocabulary
- * the server's closed enums accept.
+ * WHAT IS REPORTABLE AT ALL - the single source of truth for the diff scan,
+ * split by VOCABULARY VERSION because the two halves are gated differently.
  *
- * It is the FULL contract vocabulary minus one deliberate exclusion:
- * `allowance` and `allowance_reset` are absent because the server's role enum
- * does not contain them, so every such event would be rejected item by item.
+ * It is the contract vocabulary the server's closed enums accept, minus the
+ * deliberate exclusions named below:
+ *
+ * `allowance` / `allowance_reset` are absent because the server's role enum does
+ * not contain them, so every such event would be rejected item by item.
  * Approvals are still recorded locally; they simply have nowhere to go.
+ *
  * `wrap`/`unwrap` are in the server's vocabulary and DO have a producer in this
  * install now (the `WalletWrapPrepare`/`WalletWrapConfirm` pair). They are still
  * left out, and the gate is named rather than assumed: adding `'wrap'` to the
@@ -80,8 +88,22 @@ export interface ClaimedOutboxEvent {
  * items, and an amount it cannot verify costs strikes, so the vocabulary is
  * proven against the running server before rows are sent, not inferred from the
  * enum it publishes.
+ *
+ * `pools_fee` is likewise still absent, and that is a NAMED GAP rather than a
+ * decision: the server has admitted it on the `launch` arm since its own
+ * migration 0015, and no pools.fun launch fee this install charges has ever been
+ * reported. Closing it belongs with the lane that owns the pools launch writer,
+ * because the same change has to decide what the historical rows mean.
+ *
+ * `wallet_transfer` and the `transaction` kind's five roles are absent for the
+ * same reason as `wrap`: present in the server's vocabulary, never proven live.
  */
-const ELIGIBILITY_SQL = `
+const ELIGIBLE_STATUS_AND_FAMILY_SQL = `
+      a.status IN ('pending','confirmed','definitively_failed','superseded_unproven')
+  AND a.chain_family IN ('eip155','solana')`;
+
+/** The vocabulary every install has always reported. Ungated. */
+const ELIGIBLE_VOCABULARY_V1_SQL = `(
       a.kind IN ('swap','bridge','lend','prediction','yield','launch')
   AND a.event_role IN (
         'swap','swap_fee','trench_fee',
@@ -89,9 +111,68 @@ const ELIGIBILITY_SQL = `
         'lend_deposit','lend_withdraw','lend_borrow_operate',
         'predict_buy','predict_sell','predict_claim','predict_close',
         'yield_pt','yield_yt','yield_py','yield_lp','yield_sy','yield_claim',
-        'token_launch')
-  AND a.status IN ('pending','confirmed','definitively_failed','superseded_unproven')
-  AND a.chain_family IN ('eip155','solana')`;
+        'token_launch'))`;
+
+/**
+ * The launchpad family and the venue-independent fee leg (migration 102). Every
+ * arm mirrors the server's `ROLES_BY_KIND`: the claim kind carries the three new
+ * claim roles beside `pools_claim`, `launch_cancel` rides the launch kind, and
+ * `vex_fee` is admitted on swap, bridge and launch and nowhere else.
+ *
+ * `pools_claim` joins HERE rather than in V1 even though the role predates this
+ * migration: no install has ever reported one, so admitting it makes historical
+ * rows newly eligible, which is exactly the population the version gate exists
+ * to route through the controlled backfill.
+ */
+const ELIGIBLE_VOCABULARY_V2_SQL = `(
+      (a.kind = 'claim'
+       AND a.event_role IN ('pools_claim','creator_fee_claim','holder_reward_claim','reward_distribution'))
+   OR (a.kind = 'launch' AND a.event_role = 'launch_cancel')
+   OR (a.kind IN ('swap','bridge','launch') AND a.event_role = 'vex_fee'))`;
+
+/**
+ * The vocabulary version this build writes and reports. Migration 102 stamps the
+ * same number onto `agentscan_reporting_state.vocabulary_version`, so a build
+ * running against a database that has not applied it stays on V1 - it cannot
+ * report a role its own CHECK constraint would refuse to store.
+ */
+export const AGENTSCAN_VOCABULARY_VERSION = 2;
+
+/**
+ * THE BACKFILL GATE ON THE WIDENED VOCABULARY, and the defect it exists to
+ * prevent.
+ *
+ * Widening the reportable vocabulary makes rows that ALREADY EXIST newly
+ * eligible. The scan runs in two modes: the one-time BACKFILL (`backfill =
+ * TRUE`, "this is history") and the incremental tick (`backfill = FALSE`, "this
+ * just happened"). Whichever runs first claims the whole newly-eligible
+ * population, because a completed outbox row is never re-enqueued and never
+ * re-sent. If the incremental tick got there first, months of historical claim
+ * rows would reach the server labelled as live activity - a lie it has no way to
+ * detect and this install no way to correct.
+ *
+ * So the new vocabulary is admitted only when BOTH hold:
+ *   - the database carries the widening (`vocabulary_version >= 2`), and
+ *   - this scan is either the controlled backfill itself, or it runs after that
+ *     backfill has been marked complete (`backfill_enqueued_at IS NOT NULL`).
+ *
+ * That is the VS Code one-time-migration shape (a durable done-marker, the work
+ * skipped when it is present, the marker written after the work) applied to a
+ * set query: migration 102 resets the marker, the next periodic run enqueues the
+ * history under it, and every incremental tick before that mark refuses the new
+ * roles instead of stealing them.
+ *
+ * `$1` is the scan's own backfill flag, cast so Postgres reads it as a boolean
+ * in both the predicate and the inserted column.
+ */
+const ELIGIBILITY_SQL = `
+      ${ELIGIBLE_STATUS_AND_FAMILY_SQL}
+  AND (
+        ${ELIGIBLE_VOCABULARY_V1_SQL}
+     OR (${ELIGIBLE_VOCABULARY_V2_SQL}
+         AND s.vocabulary_version >= ${AGENTSCAN_VOCABULARY_VERSION}
+         AND ($1::boolean OR s.backfill_enqueued_at IS NOT NULL))
+      )`;
 
 /**
  * How long a confirmed row may wait for its executed amounts before it is
@@ -122,6 +203,27 @@ const BOTH_LEGS_ROLES_SQL = `(
 const LEND_ROLES_SQL = `('lend_deposit','lend_withdraw','lend_borrow_operate')`;
 
 /**
+ * The CLAIM-KIND roles that PAY the wallet, and therefore owe their payout
+ * before the terminal event is reported.
+ *
+ * `pools_claim` proved the shape: `collectAndClaim` returns the launched token
+ * and the asset it was paired against together, so a row carrying one and not
+ * the other has read half a settlement. Migration 102's `creator_fee_claim` and
+ * `holder_reward_claim` are that same shape under venue-independent names, and
+ * the AgentScan contract admits exactly these three on its second-output-leg
+ * allowlist (`SECOND_LEG_ROLES`).
+ *
+ * `reward_distribution` is deliberately NOT here. The caller of `distribute()`
+ * is paid nothing, so there is no leg of theirs to wait for; requiring one would
+ * hold every honest distribute for the full grace and then report it amountless
+ * anyway. Its amounts are optional on both sides of the wire.
+ *
+ * A zero is a PROVEN amount, not a missing one, which is why every test here is
+ * on the field's presence rather than on its value.
+ */
+const CLAIM_FAMILY_PAYOUT_ROLES_SQL = `('pools_claim','creator_fee_claim','holder_reward_claim')`;
+
+/**
  * "This row's role has every executed leg it requires" — the SQL mirror of
  * `roleLegsIncomplete` (`./agent-activity/role-legs.ts`), negated.
  *
@@ -132,12 +234,20 @@ const LEND_ROLES_SQL = `('lend_deposit','lend_withdraw','lend_borrow_operate')`;
  * row populated their tokens, the LEND roles require each FIRST leg on those
  * same terms (a vault row populates both token sides and needs both, a
  * direct-market row moves exactly ONE token and needs one), and a role that
- * bears no amounts is never incomplete.
+ * bears no amounts is never incomplete. The claim family proves its OUTPUTS
+ * only (it spends nothing), `launch_cancel` waits for the refund only when the
+ * row itself declared the token it is refunded in, and `reward_distribution`
+ * and `vex_fee` bear no required amounts at all.
  */
 const ROLE_LEGS_COMPLETE_SQL = `
   CASE
     WHEN a.event_role = 'yield_claim' THEN a.executed_amount_out_raw IS NOT NULL
     WHEN a.event_role = 'bridge_deposit' THEN a.executed_amount_in_raw IS NOT NULL
+    WHEN a.event_role IN ${CLAIM_FAMILY_PAYOUT_ROLES_SQL} THEN
+      a.executed_amount_out_raw IS NOT NULL
+      AND (a.token_out2_address IS NULL OR a.executed_amount_out2_raw IS NOT NULL)
+    WHEN a.event_role = 'launch_cancel' THEN
+      (a.token_out_address IS NULL OR a.executed_amount_out_raw IS NOT NULL)
     WHEN a.event_role IN ${LEND_ROLES_SQL} THEN
       (a.token_in_address IS NULL OR a.executed_amount_in_raw IS NOT NULL)
       AND (a.token_out_address IS NULL OR a.executed_amount_out_raw IS NOT NULL)
@@ -200,6 +310,7 @@ interface StateRow {
   register_attempt_count: number;
   next_register_attempt_at: Date;
   backfill_enqueued_at: Date | null;
+  vocabulary_version: number;
   stopped_reason: AgentscanStopReason | null;
   agent_name: string | null;
   last_handshake_at: Date | null;
@@ -217,6 +328,7 @@ function mapState(row: StateRow): AgentscanReportingState {
     registerAttemptCount: Number(row.register_attempt_count),
     nextRegisterAttemptAt: new Date(row.next_register_attempt_at).toISOString(),
     backfillEnqueuedAt: row.backfill_enqueued_at ? new Date(row.backfill_enqueued_at).toISOString() : null,
+    vocabularyVersion: Number(row.vocabulary_version),
     stoppedReason: row.stopped_reason,
     agentName: row.agent_name,
     lastHandshakeAt: row.last_handshake_at ? new Date(row.last_handshake_at).toISOString() : null,
@@ -408,12 +520,22 @@ export async function markBackfillEnqueued(): Promise<void> {
  *
  * A confirmed pair that is held back by `CONFIRMED_READINESS_SQL` is not lost:
  * the scan is a diff, so the next tick that finds it ready enqueues it then.
+ * The same is true of a row held back by the vocabulary gate: the controlled
+ * backfill picks it up, and every scan after that mark sees it.
  */
 export async function enqueueEligibleActivity(backfill: boolean): Promise<number> {
+  // The singleton has to exist before the CROSS JOIN below, or the scan reads
+  // zero state rows and enqueues nothing at all - a silent no-op, not an error.
+  await ensureSingleton();
   return execute(
     `INSERT INTO agentscan_outbox (activity_id, status, backfill)
-     SELECT a.id, a.status, $1
+     SELECT a.id, a.status, $1::boolean
        FROM agent_activity a
+      CROSS JOIN (
+             SELECT vocabulary_version, backfill_enqueued_at
+               FROM agentscan_reporting_state
+              WHERE id = 1
+           ) s
       WHERE ${ELIGIBILITY_SQL}
         AND ${CONFIRMED_READINESS_SQL}
         AND NOT EXISTS (SELECT 1 FROM agentscan_outbox o
