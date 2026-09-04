@@ -32,6 +32,20 @@ vi.mock("@tools/kyberswap/evm-utils.js", async () => ({
   decodeKyberSwapSettlement: vi.fn(),
 }));
 
+const mockResolveSelectedAddressForRead = vi.fn(
+  (..._args: unknown[]) => "0x1234567890AbcdEF1234567890aBcdef12345678",
+);
+vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
+  resolveSelectedAddressForRead: (...args: unknown[]) => mockResolveSelectedAddressForRead(...args),
+  resolveSelectedAddress: vi.fn(),
+  resolveSigningWallet: vi.fn(),
+  walletScopeErrorToResult: vi.fn(),
+}));
+
+// The wallet is FAKED like every other suite in this directory: without this the
+// handler resolves the selected wallet from the machine's real configuration, so
+// the executable cases passed only where a wallet happened to exist and answered
+// balance_unavailable on a clean runner (measured on CI run 33861355864).
 vi.mock("@tools/kyberswap/token-api/client.js", () => ({
   getKyberTokenApiClient: () => ({
     searchTokens: vi.fn().mockResolvedValue([]),
