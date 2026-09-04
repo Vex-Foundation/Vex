@@ -56,7 +56,9 @@ import type {
   PortfolioReadInput,
   PositionChainDto,
   PositionTokenDto,
+  SnapshotInFlightEntryDto,
 } from "@shared/schemas/portfolio.js";
+import { snapshotInFlightEntryDtoSchema } from "@shared/schemas/portfolio.js";
 import { familyForChainId } from "@shared/chains/display.js";
 import { sanitizeTokenName } from "@shared/token-name-sanitizer.js";
 import { solanaRouteMintFromPersistedAddress } from "@tools/solana-ecosystem/shared/solana-asset-identity.js";
@@ -149,6 +151,11 @@ interface TokenRow {
 interface SnapshotRow {
   readonly total: number | string | null;
   readonly at: string | Date | null;
+  /** From `proj_portfolio_snapshot_groups`; null for a group written before migration 101. */
+  readonly in_transit: number | string | null;
+  readonly unresolved_count: number | string | null;
+  /** The ledger as JSON TEXT, so it crosses the driver without a jsonb parser. */
+  readonly in_flight: string | null;
 }
 
 interface ChainBreakdownRow {
@@ -343,12 +350,69 @@ function toIso(value: string | Date): string {
   return value instanceof Date ? value.toISOString() : value;
 }
 
+/**
+ * One snapshot group, read as the three facts the card needs.
+ *
+ * `totalUsd` is SETTLED + IN TRANSIT. A group with no record in
+ * `proj_portfolio_snapshot_groups` - every group published before migration 101
+ * - reads as in transit 0, unresolved 0, no ledger, so its basis is exactly the
+ * settled figure the old code returned and the two bases stay comparable.
+ *
+ * The ledger arrives as JSON text written by this repository's own publisher,
+ * and it is still PARSED rather than trusted: a durable row that has crossed
+ * serialization is external input (rule 04), and it feeds a surface that shows
+ * the user money. A row that fails the schema degrades to "no ledger" and is
+ * logged; it never throws away the settled total beside it and never reaches
+ * the DTO half-formed.
+ */
+interface SnapshotBasis {
+  readonly totalUsd: number | null;
+  readonly settledUsd: number | null;
+  readonly inTransitUsd: number;
+  readonly unresolvedCount: number;
+  readonly inFlight: SnapshotInFlightEntryDto[];
+  readonly at: string | null;
+}
+
+function readSnapshotBasis(row: SnapshotRow | undefined): SnapshotBasis | null {
+  if (row === undefined) return null;
+  const settledUsd = toNumberOrNull(row.total);
+  const inTransitUsd = toNumber(row.in_transit);
+  const unresolvedCount = Math.max(0, Math.trunc(toNumber(row.unresolved_count)));
+  return {
+    totalUsd: settledUsd === null ? null : settledUsd + inTransitUsd,
+    settledUsd,
+    inTransitUsd,
+    unresolvedCount,
+    inFlight: parseInFlight(row.in_flight),
+    at: row.at !== null ? toIso(row.at) : null,
+  };
+}
+
+function parseInFlight(json: string | null): SnapshotInFlightEntryDto[] {
+  if (json === null) return [];
+  try {
+    const parsed = snapshotInFlightEntryDtoSchema.array().max(50).safeParse(JSON.parse(json));
+    if (parsed.success) return parsed.data;
+    log.warn(
+      "[portfolio-db] snapshot in-flight ledger failed its schema; reporting an empty ledger",
+    );
+  } catch {
+    log.warn("[portfolio-db] snapshot in-flight ledger is not valid JSON; reporting an empty ledger");
+  }
+  return [];
+}
+
 function emptyPortfolio(scope: PortfolioReadInput["scope"]): PortfolioDto {
   return {
     scope,
     walletCount: 0,
     liveTotalUsd: 0,
     snapshotTotalUsd: null,
+    snapshotSettledUsd: null,
+    snapshotInTransitUsd: null,
+    snapshotInFlight: null,
+    snapshotUnresolvedCount: null,
     pnlVsPrev: null,
     snapshotAt: null,
     tokens: [],
@@ -628,32 +692,53 @@ export async function getPortfolio(
       const chains = buildChainBreakdown(breakdownResult.rows);
 
       // (c) PnL across COMPLETE snapshot cycles: the latest TWO groups that
-      // cover EXACTLY the resolved address set (HAVING COUNT(DISTINCT)=N — a
+      // cover EXACTLY the resolved address set (HAVING COUNT(DISTINCT)=N - a
       // partial group for a subset of the wallets is ignored). Aggregate PnL is
-      // `latest.total − previous.total`, NOT SUM(pnl_vs_prev): per-wallet PnL
+      // `latest.basis - previous.basis`, NOT SUM(pnl_vs_prev): per-wallet PnL
       // baselines don't compose into a correct set total (and miss wallets with
       // no prior row). snapshot/PnL are null when the cycle(s) are absent.
+      //
+      // THE BASIS IS SETTLED + IN TRANSIT (migration 101). `total_usd` still
+      // means exactly what it always did - balances that were read - and the
+      // group's in-flight ledger is joined on beside it. Comparing settled
+      // alone across a cycle in which money left one chain and had not yet
+      // arrived on the other reports a loss the user did not take; that
+      // "$50 and -$150" reading is the whole reason the ledger exists.
+      //
+      // The three group columns come from CORRELATED SCALAR SUBQUERIES, not a
+      // join: the group record is one row per group and the query groups by
+      // exactly that key, so this stays a lookup and a group written before 101
+      // simply yields NULL rather than dropping out of the result.
       const snapshotResult = await client.query<SnapshotRow>(
-        `SELECT snapshot_group_id,
-                SUM(total_usd)::float8 AS total,
-                MAX(created_at)        AS at
-           FROM proj_portfolio_snapshots
-          WHERE wallet_address = ANY($1::text[])
-          GROUP BY snapshot_group_id
-         HAVING COUNT(DISTINCT wallet_address) = $2
+        `SELECT s.snapshot_group_id,
+                SUM(s.total_usd)::float8 AS total,
+                MAX(s.created_at)        AS at,
+                (SELECT g.in_transit_usd::float8
+                   FROM proj_portfolio_snapshot_groups g
+                  WHERE g.snapshot_group_id = s.snapshot_group_id) AS in_transit,
+                (SELECT g.unresolved_count
+                   FROM proj_portfolio_snapshot_groups g
+                  WHERE g.snapshot_group_id = s.snapshot_group_id) AS unresolved_count,
+                (SELECT g.in_flight::text
+                   FROM proj_portfolio_snapshot_groups g
+                  WHERE g.snapshot_group_id = s.snapshot_group_id) AS in_flight
+           FROM proj_portfolio_snapshots s
+          WHERE s.wallet_address = ANY($1::text[])
+          GROUP BY s.snapshot_group_id
+         HAVING COUNT(DISTINCT s.wallet_address) = $2
           ORDER BY at DESC
           LIMIT 2`,
         [addrParam, addresses.length],
       );
-      const latest = snapshotResult.rows[0];
-      const previous = snapshotResult.rows[1];
-      const snapshotTotalUsd = latest ? toNumberOrNull(latest.total) : null;
-      const previousTotalUsd = previous ? toNumberOrNull(previous.total) : null;
+      const latest = readSnapshotBasis(snapshotResult.rows[0]);
+      const previous = readSnapshotBasis(snapshotResult.rows[1]);
+      const snapshotTotalUsd = latest?.totalUsd ?? null;
       const pnlVsPrev =
-        snapshotTotalUsd !== null && previousTotalUsd !== null
-          ? snapshotTotalUsd - previousTotalUsd
+        latest?.totalUsd !== undefined && latest.totalUsd !== null
+        && previous?.totalUsd !== undefined && previous.totalUsd !== null
+          ? latest.totalUsd - previous.totalUsd
           : null;
-      const snapshotAt = latest && latest.at !== null ? toIso(latest.at) : null;
+      const snapshotAt = latest?.at ?? null;
 
       log.info(
         `[portfolio-db] getPortfolio ok scope=${input.scope} ` +
@@ -666,6 +751,10 @@ export async function getPortfolio(
         walletCount: addresses.length,
         liveTotalUsd,
         snapshotTotalUsd,
+        snapshotSettledUsd: latest?.settledUsd ?? null,
+        snapshotInTransitUsd: latest?.inTransitUsd ?? null,
+        snapshotInFlight: latest?.inFlight ?? null,
+        snapshotUnresolvedCount: latest?.unresolvedCount ?? null,
         pnlVsPrev,
         snapshotAt,
         tokens,

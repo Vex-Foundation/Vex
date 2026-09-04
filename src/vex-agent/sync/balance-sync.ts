@@ -13,7 +13,6 @@ import type { KhalaniToken, ChainFamily } from "@tools/khalani/types.js";
 import { listLocalChains } from "@tools/evm-chains/registry.js";
 import * as balancesRepo from "@vex-agent/db/repos/balances.js";
 import type { BalanceRow } from "@vex-agent/db/repos/balances.js";
-import { hasPendingActivityForWallets } from "@vex-agent/db/repos/agent-activity.js";
 import { resolveChainHint } from "./chains.js";
 import { enrichKhalaniBalancePrices } from "@tools/khalani/balance-price-enrichment.js";
 import { syncLocalChainForWallet } from "./local-chain-balance-sync.js";
@@ -25,7 +24,6 @@ import { runSingleFlightBalanceSync } from "./balance-sync/single-flight.js";
 import { getPool } from "@vex-agent/db/client.js";
 import {
   readActivityFence,
-  readPublicationBlockers,
   type ActivityFence,
 } from "./balance-sync/publication-gate.js";
 import { salvageRejectedEntries } from "./balance-sync/rejected-entry-salvage.js";
@@ -71,9 +69,10 @@ export interface FullSyncResult {
   /** Shared id tying this cycle's per-wallet snapshot rows together. */
   snapshotGroupId: string;
   /**
-   * Present iff `snapshots` is empty because publication was WITHHELD. The
-   * cycle still refreshed balances; only the snapshot was skipped, and callers
-   * that told the user "recorded" must read this before saying so.
+   * Present iff `snapshots` is empty because publication was SKIPPED. In-flight
+   * money is never the reason - it is accounted for inside the group. The cycle
+   * still refreshed balances, and callers that told the user "recorded" must
+   * read this before saying so.
    */
   snapshotSkippedReason?: PublicationSkipReason;
 }
@@ -452,7 +451,8 @@ async function syncKhalaniWalletBalances(
  *
  * - `"always"` - this caller (startup, the user's explicit refresh) wants an
  *   attempt at ITS OWN moment, so it will not adopt a run that started earlier;
- *   it queues and runs its own cycle. The attempt may still be withheld.
+ *   it queues and runs its own cycle. The attempt may still be skipped if the
+ *   activity table moved during the scan.
  * - `"when-settled"` - the periodic jobs, happy to adopt any in-flight run.
  */
 export type SnapshotPolicy = "always" | "when-settled";
@@ -464,16 +464,16 @@ export interface FullBalanceSyncOptions {
 /**
  * Full balance sync - both wallet families + portfolio snapshot.
  *
- * ## THE SNAPSHOT GUARD IS GROUP-WIDE AND SERIALIZED, DELIBERATELY
+ * ## THE GROUP IS PUBLISHED WHOLE AND SERIALIZED, DELIBERATELY
  *
  * The whole group is published in ONE short transaction that holds
- * `LOCK TABLE agent_activity IN SHARE MODE`, so the "nothing is in flight"
- * predicate is true AT THE INSTANT OF THE INSERT and stays true until commit.
- * The previous design evaluated it once, before a scan lasting minutes, which
- * a transaction starting mid-scan was simply invisible to. See
- * `./balance-sync/publication-gate.ts` for why a lock and not a re-read, and
- * for the transition fence that additionally catches a transaction which both
- * begins and settles inside the scan.
+ * `LOCK TABLE agent_activity IN SHARE MODE`, so the IN-FLIGHT LEDGER the group
+ * records is true AT THE INSTANT OF THE INSERT and stays true until commit.
+ * In-flight money does NOT withhold the group (owner decision 2026-09-04): it
+ * is named, priced where an estimate exists, and carried in the group's own
+ * record. See `./balance-sync/publication-gate.ts` for the standing bounds, for
+ * why a lock and not a re-read, and for the transition fence that catches a
+ * transaction which both begins and settles inside the scan.
  *
  * Deciding per wallet inside the loop would emit a HALF-POPULATED
  * `snapshotGroupId` group, and the group id exists precisely so a cycle can be
@@ -482,14 +482,13 @@ export interface FullBalanceSyncOptions {
  * portfolio whose wallets snapshot on different cycles produces a P&L delta that
  * spans a gap on some wallets and not others.
  *
- * ## BALANCES ARE STILL WRITTEN
+ * ## BALANCES ARE ALWAYS WRITTEN
  *
- * Only the SNAPSHOT is suppressed. `syncWalletBalances` →
- * `replaceBalancesForChain` runs unconditionally, so the live balance display
- * stays fresh while a transaction is in flight. Suppressing both would freeze
- * the user's portfolio for the whole duration of a pending swap. A publication
- * that is skipped - including one skipped because the lock was busy - is
- * REPORTED (`snapshotSkippedReason`), never silent.
+ * `syncWalletBalances` → `replaceBalancesForChain` runs unconditionally, so the
+ * live balance display stays fresh whatever the snapshot does. A publication
+ * that is skipped - by a settlement during the scan, a busy lock or an
+ * unreadable fence - is REPORTED (`snapshotSkippedReason`), never silent, and
+ * the next cycle takes the snapshot.
  */
 export function fullBalanceSync(options: FullBalanceSyncOptions = {}): Promise<FullSyncResult> {
   const policy = options.snapshot ?? "when-settled";
@@ -519,10 +518,12 @@ async function runFullBalanceSync(): Promise<FullSyncResult> {
   // established here, while the balances we are about to read are still true.
   const fenceAtCycleStart = await readCycleStartFence(walletAddresses);
 
-  // Cheap pre-flight, NOT the decision. It exists only so a cycle that is
-  // already obviously blocked does not pay for building per-wallet position
-  // breakdowns it will throw away. The authoritative check runs under the lock.
-  const preflightBlocked = fenceAtCycleStart === null || await isObviouslyBlocked(walletAddresses);
+  // The ONE thing that can still withhold a group before the lock is taken:
+  // without a cycle-start stamp the transition fence can prove nothing, so the
+  // cycle publishes nothing. In-flight money is deliberately NOT consulted here
+  // - it is accounted for in the group, not a reason to refuse one - so the
+  // per-wallet breakdowns below are built on every cycle that has a fence.
+  const fenceUnavailable = fenceAtCycleStart === null;
 
   // Project EVERY inventory wallet (≤3 EVM + ≤3 Solana), one snapshot each.
   // Every DTO is prepared HERE, outside any transaction: gathering is minutes
@@ -533,7 +534,7 @@ async function runFullBalanceSync(): Promise<FullSyncResult> {
     wallets.push(sync);
     aggregateTotalUsd += sync.totalUsd;
 
-    if (preflightBlocked) continue;
+    if (fenceUnavailable) continue;
 
     const positions = await buildPositionsBreakdown(family, address);
     const positionData = positions as { chains?: Array<{ chainId: number }> };
@@ -549,8 +550,8 @@ async function runFullBalanceSync(): Promise<FullSyncResult> {
     });
   }
 
-  const outcome: PublicationOutcome = preflightBlocked
-    ? await describePreflightBlock(walletAddresses, fenceAtCycleStart === null)
+  const outcome: PublicationOutcome = fenceUnavailable
+    ? { published: false, reason: "gate_probe_failed" }
     : await publishSnapshotGroup({
         snapshotGroupId,
         walletAddresses,
@@ -574,6 +575,8 @@ async function runFullBalanceSync(): Promise<FullSyncResult> {
     snapshots: snapshots.length,
     snapshotSkipped: !outcome.published,
     snapshotSkippedReason: outcome.published ? null : outcome.reason,
+    inTransitUsd: outcome.published ? outcome.ledger.inTransitUsd.toFixed(2) : null,
+    unresolvedCount: outcome.published ? outcome.ledger.unresolvedCount : null,
     totalUsd: aggregateTotalUsd.toFixed(2),
     snapshotGroupId,
   });
@@ -585,28 +588,6 @@ async function runFullBalanceSync(): Promise<FullSyncResult> {
     snapshotGroupId,
     ...(outcome.published ? {} : { snapshotSkippedReason: outcome.reason }),
   };
-}
-
-/**
- * The pre-flight already decided to withhold; this only ENUMERATES why, so the
- * report still names the blocking rows and can escalate one that has been
- * unreconciled past the threshold. It reads on the pool, deliberately outside
- * any lock: it informs a decision that is already made and can influence
- * nothing. A failure to enumerate downgrades the report, never the decision.
- */
-async function describePreflightBlock(
-  walletAddresses: readonly string[],
-  fenceUnavailable: boolean,
-): Promise<PublicationOutcome> {
-  const reason: PublicationSkipReason = fenceUnavailable
-    ? "gate_probe_failed"
-    : "in_flight_money_state";
-  try {
-    return { published: false, reason, blockers: await readPublicationBlockers(getPool(), walletAddresses) };
-  } catch (err) {
-    logger.warn("sync.balance.blocker_detail_failed", { error: describeFailureForLog(err) });
-    return { published: false, reason, blockers: [] };
-  }
 }
 
 /**
@@ -624,20 +605,6 @@ async function readCycleStartFence(
     // included - so only the canonical bounded summary may reach the log.
     logger.warn("sync.balance.activity_fence_failed", { error: describeFailureForLog(err) });
     return null;
-  }
-}
-
-/**
- * Pre-flight ONLY (see the call site). A failed probe answers "blocked", which
- * costs a snapshot and never risks one: guessing "settled" because the database
- * hiccuped is how a mid-settlement snapshot gets written.
- */
-async function isObviouslyBlocked(walletAddresses: readonly string[]): Promise<boolean> {
-  try {
-    return await hasPendingActivityForWallets(walletAddresses);
-  } catch (err) {
-    logger.warn("sync.balance.pending_probe_failed", { error: describeFailureForLog(err) });
-    return true;
   }
 }
 

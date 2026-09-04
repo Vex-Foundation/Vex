@@ -82,18 +82,16 @@ vi.mock("@vex-agent/db/repos/balances.js", () => ({
  */
 const mockDbQuery = vi.fn(async (sql: string) =>
   String(sql).includes("MAX(id)")
-    ? { rows: [{ max_id: "0", max_updated_at: "epoch", row_count: "0" }], rowCount: 1 }
+    ? {
+        rows: [{ max_id: "0", row_count: "0", pending_count: "0", confirmed_count: "0" }],
+        rowCount: 1,
+      }
     : { rows: [], rowCount: 0 },
 );
 const fakeDbClient = { query: (sql: string, params?: unknown[]) => mockDbQuery(sql, params) };
 vi.mock("@vex-agent/db/client.js", () => ({
   getPool: () => fakeDbClient,
   withTransaction: (fn: (c: unknown) => Promise<unknown>) => fn(fakeDbClient),
-}));
-
-const mockHasPendingActivity = vi.fn();
-vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
-  hasPendingActivityForWallets: (...a: unknown[]) => mockHasPendingActivity(...a),
 }));
 
 const { fullBalanceSync } = await import("../../../vex-agent/sync/balance-sync.js");
@@ -122,7 +120,6 @@ beforeEach(() => {
   mockListWallets.mockImplementation((family: string) =>
     family === "evm" ? [{ address: "0xWALLET" }] : [],
   );
-  mockHasPendingActivity.mockResolvedValue(false);
   mockInsertSnapshot.mockResolvedValue({ snapshotId: 1, pnlVsPrev: null });
 });
 
@@ -166,10 +163,6 @@ describe("overlapping callers", () => {
   });
 
   it("a manual refresh QUEUES behind a periodic run instead of overlapping it", async () => {
-    // The periodic run suppresses its snapshot (something is in flight) - which
-    // is exactly why the manual refresh must not adopt its result.
-    mockHasPendingActivity.mockResolvedValue(true);
-
     const periodic = fullBalanceSync({ snapshot: "when-settled" });
     const manual = fullBalanceSync({ snapshot: "always" });
 
@@ -186,16 +179,16 @@ describe("overlapping callers", () => {
     expect(maxConcurrentScans).toBe(1);
     // Sequential moments, not a contested one: the refresh got its OWN cycle
     // and its own group id rather than adopting an answer computed earlier.
-    //
-    // WP8 changed what the refresh's own cycle concludes. `"always"` no longer
-    // bypasses the guard, so with something still in flight BOTH runs withhold
-    // publication - the queue/join distinction is now about freshness (whose
-    // moment is evaluated), never about a licence to publish regardless.
-    expect(periodicResult.snapshots).toHaveLength(0);
-    expect(manualResult.snapshots).toHaveLength(0);
-    expect(manualResult.snapshotSkippedReason).toBe("in_flight_money_state");
+    // That is the whole remaining meaning of `"always"` - WHOSE moment is
+    // measured - and each moment publishes its own group.
+    expect(periodicResult.snapshots.length).toBeGreaterThan(0);
+    expect(manualResult.snapshots.length).toBeGreaterThan(0);
+    expect(manualResult.snapshotSkippedReason).toBeUndefined();
     expect(manualResult.snapshotGroupId).not.toBe(periodicResult.snapshotGroupId);
-    expect(mockInsertSnapshot).not.toHaveBeenCalled();
+    const groupIds = new Set(
+      mockInsertSnapshot.mock.calls.map((c) => (c[0] as { snapshotGroupId: string }).snapshotGroupId),
+    );
+    expect(groupIds.size).toBe(2);
   });
 
   it("a queued run still starts after the run ahead of it REJECTED", async () => {

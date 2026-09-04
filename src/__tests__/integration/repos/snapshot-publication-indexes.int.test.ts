@@ -18,7 +18,7 @@
  * WHERE THE SQL COMES FROM. The gate's seven-branch UNION is a private const
  * inside its own module, and re-typing 60 lines of money-path SQL into a test
  * would create a second source of truth that can drift silently. This file
- * therefore EXTRACTS the exact `BLOCKERS_SQL` and `MAX_BLOCKERS` text from the
+ * therefore EXTRACTS the exact `IN_FLIGHT_SQL` and `MAX_IN_FLIGHT` text from the
  * owner's source file and explains that, so the plan measured here is the plan
  * production gets. A rename breaks this test loudly, which is the correct
  * failure.
@@ -29,7 +29,7 @@
  * seeded, measured, then migrated to 098 by the same runner and measured again.
  * Both plans come from identical data, so the difference is the migration and
  * nothing else. Nothing is stubbed: same runner, same files, same Postgres, and
- * the blocker rows are read by the production `readPublicationBlockers`.
+ * the in-flight rows are read by the production `readInFlightMoney`.
  */
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
@@ -41,8 +41,8 @@ import pg from "pg";
 import { runMigrationsWithProgress } from "../../../lib/db/migrate-runner.js";
 import { getPackageRoot, getVexAgentMigrationsDir } from "@utils/package-assets.js";
 import {
-  readPublicationBlockers,
-  type PublicationBlocker,
+  readInFlightMoney,
+  type InFlightEntry,
 } from "@vex-agent/sync/balance-sync/publication-gate.js";
 
 /** What the ENGINE runtime loads: `dist/` when built, else the source tree. */
@@ -95,9 +95,9 @@ function extractNumber(name: string): number {
   return Number(match[1].replace(/_/g, ""));
 }
 
-const BLOCKERS_SQL = extractTemplate("BLOCKERS_SQL");
+const IN_FLIGHT_SQL = extractTemplate("IN_FLIGHT_SQL");
 const FENCE_SQL = extractTemplate("FENCE_SQL");
-const MAX_BLOCKERS = extractNumber("MAX_BLOCKERS");
+const MAX_IN_FLIGHT = extractNumber("MAX_IN_FLIGHT");
 
 // ── plan inspection ───────────────────────────────────────────────────────
 
@@ -177,8 +177,8 @@ function scansOf(plan: MeasuredPlan, table: string): MeasuredPlan["scans"] {
 }
 
 /** Blocker identity without the clock: parity must not depend on when we ran. */
-function identity(blockers: readonly PublicationBlocker[]): string[] {
-  return blockers.map((b) => `${b.kind}|${b.ref}|${b.detail ?? ""}|${String(b.unreconciled)}`).sort();
+function identity(entries: readonly InFlightEntry[]): string[] {
+  return entries.map((e) => `${e.kind}|${e.ref}|${e.detail ?? ""}|${e.standing}`).sort();
 }
 
 // ── seeding ───────────────────────────────────────────────────────────────
@@ -308,8 +308,8 @@ async function indexNames(table: string): Promise<string[]> {
 let planBefore: MeasuredPlan;
 let planAfter: MeasuredPlan;
 let fencePlan: MeasuredPlan;
-let blockersBefore: readonly PublicationBlocker[];
-let blockersAfter: readonly PublicationBlocker[];
+let blockersBefore: readonly InFlightEntry[];
+let blockersAfter: readonly InFlightEntry[];
 
 beforeAll(async () => {
   const base = process.env.VEX_DB_URL;
@@ -365,8 +365,8 @@ describe("098 wallet-address indexes for the publication gate", () => {
       expect(Number(count.rows[0]?.n)).toBe(ROWS_PER_TABLE);
     }
 
-    blockersBefore = await readPublicationBlockers(pool, PROBE_WALLETS);
-    planBefore = await measure(BLOCKERS_SQL, [PROBE_WALLETS, MAX_BLOCKERS]);
+    blockersBefore = (await readInFlightMoney(pool, PROBE_WALLETS)).entries;
+    planBefore = await measure(IN_FLIGHT_SQL, [PROBE_WALLETS, MAX_IN_FLIGHT + 1]);
     fencePlan = await measure(FENCE_SQL, [PROBE_WALLETS]);
 
     // THE DEFECT, stated as a plan: with no wallet index, at least one branch
@@ -420,7 +420,7 @@ describe("098 wallet-address indexes for the publication gate", () => {
 
   it("plans every wallet predicate through the named index, with no sequential scan left", async () => {
     await pool.query("ANALYZE");
-    planAfter = await measure(BLOCKERS_SQL, [PROBE_WALLETS, MAX_BLOCKERS]);
+    planAfter = await measure(IN_FLIGHT_SQL, [PROBE_WALLETS, MAX_IN_FLIGHT + 1]);
 
     for (const table of INTENT_TABLES) {
       const scans = scansOf(planAfter, table);
@@ -454,13 +454,13 @@ describe("098 wallet-address indexes for the publication gate", () => {
   }, 180_000);
 
   it("returns the SAME blockers before and after: an access path, not a semantic change", async () => {
-    blockersAfter = await readPublicationBlockers(pool, PROBE_WALLETS);
+    blockersAfter = (await readInFlightMoney(pool, PROBE_WALLETS)).entries;
 
     // Seeded shape: per wallet one pending activity, two `wallet_intents`
     // branches, one live transaction intent and one live wrap intent per
     // status, all seven well inside the gate's own bound.
     expect(blockersBefore.length).toBeGreaterThan(0);
-    expect(blockersBefore.length).toBeLessThan(MAX_BLOCKERS);
+    expect(blockersBefore.length).toBeLessThan(MAX_IN_FLIGHT);
     expect(identity(blockersAfter)).toEqual(identity(blockersBefore));
 
     const kinds = new Set(blockersAfter.map((b) => b.kind));

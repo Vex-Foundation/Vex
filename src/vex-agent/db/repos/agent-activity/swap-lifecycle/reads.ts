@@ -184,20 +184,6 @@ export async function listPendingProviderLogical(limit: number): Promise<AgentAc
  *
  * Uses the `status='pending'` partial index from migration 044.
  */
-export async function hasPendingActivityForWallets(
-  walletAddresses: readonly string[],
-): Promise<boolean> {
-  if (walletAddresses.length === 0) return false;
-  const row = await queryOne<{ exists: boolean }>(
-    `SELECT EXISTS(
-       SELECT 1 FROM agent_activity
-        WHERE status = 'pending' AND wallet_address = ANY($1::text[])
-     ) AS exists`,
-    [[...walletAddresses]],
-  );
-  return row?.exists === true;
-}
-
 export interface ListActivityFeedOptions {
   walletAddresses: string[];
   before?: { createdAt: string; id: number };

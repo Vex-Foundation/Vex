@@ -1,7 +1,7 @@
 /**
- * WP8 - publishing ONE portfolio snapshot group inside ONE short transaction.
+ * Publishing ONE portfolio snapshot group inside ONE short transaction.
  *
- * The gate's reasoning lives in `./publication-gate.ts`. This module owns the
+ * The accounting rules live in `./publication-gate.ts`. This module owns the
  * SEQUENCE, which is load-bearing and fixed:
  *
  *   1. every snapshot DTO is prepared by the CALLER, before `BEGIN`. Gathering
@@ -12,25 +12,38 @@
  *   3. `LOCK TABLE agent_activity IN SHARE MODE` - from here no activity row
  *      can be written until we commit, which is what makes step 4 a boundary
  *      rather than a stale reading.
- *   4. blockers + transition fence, under the lock.
- *   5. prior snapshots + the WHOLE group inserted, still under the lock.
+ *   4. the in-flight ledger + the transition fence, under the lock.
+ *   5. the per-wallet rows AND the group record, still under the lock.
  *   6. COMMIT.
+ *
+ * ## In-flight money is ACCOUNTED FOR, never a reason to withhold
+ *
+ * The ledger read in step 4 no longer decides whether to publish; it decides
+ * what the group SAYS. Only three things still withhold a group, and none of
+ * them is money in flight:
+ *
+ *   `activity_transition`  the group would mix reads from opposite sides of a
+ *                          settlement that happened during the scan;
+ *   `lock_unavailable`     the boundary could not be established;
+ *   `gate_probe_failed`    the ledger or the fence could not be evaluated -
+ *                          unknown stays fail-closed;
+ *   `publish_failed`       the insert itself failed. A defect, not a busy path.
  *
  * ## Nothing here may fail the balance refresh
  *
  * Balances are written per wallet-chain long before this runs and stay fresh
  * regardless. A snapshot that cannot be taken safely is a SKIP with a named
  * reason, never a thrown error that aborts the cycle - including a lock
- * timeout, a deadlock, and a gate probe that could not run. `publish_failed`
- * (an actual insert error) is the one skip logged at ERROR, because unlike the
- * others it indicates a defect rather than a busy money path.
+ * timeout, a deadlock, and a gate probe that could not run.
  *
  * ## Whole group or none
  *
- * Every row is inserted on the transaction's own client, so a failure at wallet
- * three rolls back wallets one and two with it. A half-populated
- * `snapshotGroupId` would break the aggregate stitch AND `pnl_vs_prev`, whose
- * per-wallet chain would then span a gap on some wallets and not others.
+ * Every row - the per-wallet snapshots AND the group record that carries the
+ * in-flight ledger - is inserted on the transaction's own client, so a failure
+ * at wallet three rolls back wallets one and two and the group record with
+ * them. A half-populated `snapshotGroupId` would break the aggregate stitch AND
+ * `pnl_vs_prev`; a group record without its rows (or rows without their record)
+ * would make the published total unreadable.
  */
 
 import { withTransaction } from "@vex-agent/db/client.js";
@@ -40,15 +53,15 @@ import logger from "@utils/logger.js";
 import {
   fencesMatch,
   readActivityFence,
-  readPublicationBlockers,
+  readInFlightMoney,
   type ActivityFence,
-  type PublicationBlocker,
+  type InFlightEntry,
 } from "./publication-gate.js";
 
 /**
  * How long the publisher waits for the activity table lock. Small on purpose:
- * a busy money path is exactly when a snapshot is unsafe, so waiting longer
- * buys nothing but a held pool client.
+ * holding a pool client behind a busy writer buys nothing, and the next cycle
+ * is minutes away.
  */
 export const PUBLICATION_LOCK_TIMEOUT_MS = 2_000;
 
@@ -73,9 +86,24 @@ export interface PublishedSnapshot {
   readonly pnlVsPrev: number | null;
 }
 
+/**
+ * The group's own record: what was measured, what is on its way, and what
+ * nobody could account for. Persisted to `proj_portfolio_snapshot_groups`
+ * (migration 101) in the same transaction as the per-wallet rows.
+ */
+export interface SnapshotGroupLedger {
+  /** Sum of the per-wallet `total_usd` rows: balances actually read. */
+  readonly settledUsd: number;
+  /** Sum of the `usdEstimate`s of the `in_transit` entries. Estimates only. */
+  readonly inTransitUsd: number;
+  /** `unresolved` entries. Listed, counted, and in NO total. */
+  readonly unresolvedCount: number;
+  readonly entries: readonly InFlightEntry[];
+  /** The ledger hit its bound and the oldest entries were kept. */
+  readonly truncated: boolean;
+}
+
 export type PublicationSkipReason =
-  /** Something is in flight, or its outcome is unproven. See `blockers`. */
-  | "in_flight_money_state"
   /** A transaction began and settled during the scan - the group would mix reads. */
   | "activity_transition"
   /** The activity table lock could not be taken within the bounded wait. */
@@ -86,12 +114,12 @@ export type PublicationSkipReason =
   | "publish_failed";
 
 export type PublicationOutcome =
-  | { readonly published: true; readonly rows: readonly PublishedSnapshot[] }
   | {
-      readonly published: false;
-      readonly reason: PublicationSkipReason;
-      readonly blockers: readonly PublicationBlocker[];
-    };
+      readonly published: true;
+      readonly rows: readonly PublishedSnapshot[];
+      readonly ledger: SnapshotGroupLedger;
+    }
+  | { readonly published: false; readonly reason: PublicationSkipReason };
 
 export interface PublishSnapshotGroupInput {
   readonly snapshotGroupId: string;
@@ -102,6 +130,11 @@ export interface PublishSnapshotGroupInput {
   readonly lockTimeoutMs?: number;
 }
 
+const INSERT_GROUP_SQL = `
+  INSERT INTO proj_portfolio_snapshot_groups
+    (snapshot_group_id, settled_usd, in_transit_usd, unresolved_count, in_flight)
+  VALUES ($1::uuid, $2, $3, $4, $5::jsonb)`;
+
 export async function publishSnapshotGroup(
   input: PublishSnapshotGroupInput,
 ): Promise<PublicationOutcome> {
@@ -111,14 +144,13 @@ export async function publishSnapshotGroup(
       await client.query(`SET LOCAL lock_timeout = ${lockTimeoutMs}`);
       await client.query("LOCK TABLE agent_activity IN SHARE MODE");
 
-      const blockers = await readPublicationBlockers(client, input.walletAddresses);
-      if (blockers.length > 0) {
-        return skip("in_flight_money_state", blockers);
-      }
+      // Read for the RECORD, not for a veto: what is in flight is part of the
+      // measurement this group publishes.
+      const inFlight = await readInFlightMoney(client, input.walletAddresses);
 
       const fenceNow = await readActivityFence(client, input.walletAddresses);
       if (!fencesMatch(input.fenceAtCycleStart, fenceNow)) {
-        return skip("activity_transition", []);
+        return skip("activity_transition");
       }
 
       const rows: PublishedSnapshot[] = [];
@@ -142,7 +174,17 @@ export async function publishSnapshotGroup(
           pnlVsPrev,
         });
       }
-      return { published: true as const, rows };
+
+      const ledger = summarizeLedger(rows, inFlight.entries, inFlight.truncated);
+      await client.query(INSERT_GROUP_SQL, [
+        input.snapshotGroupId,
+        ledger.settledUsd,
+        ledger.inTransitUsd,
+        ledger.unresolvedCount,
+        JSON.stringify(ledger.entries),
+      ]);
+
+      return { published: true as const, rows, ledger };
     });
   } catch (err) {
     return skipOnError(err, input.snapshotGroupId);
@@ -150,54 +192,92 @@ export async function publishSnapshotGroup(
 }
 
 /**
- * The gate's own read of the outcome above, plus the escalation the owner asked
- * for: a blocker older than `UNRECONCILED_AFTER_MS` is reported as needing
- * attention. It is still a blocker - age never releases publication.
+ * `settledUsd` is the sum of what was actually inserted, not of what was
+ * offered, so the record can never claim a wallet the group does not contain.
+ *
+ * `inTransitUsd` sums ONLY `in_transit` entries with a known estimate. An
+ * `unresolved` entry contributes nothing in either direction - it is money
+ * nobody can currently account for, and a portfolio must not assert it is
+ * there or that it is gone.
+ */
+function summarizeLedger(
+  rows: readonly PublishedSnapshot[],
+  entries: readonly InFlightEntry[],
+  truncated: boolean,
+): SnapshotGroupLedger {
+  let settledUsd = 0;
+  for (const row of rows) settledUsd += row.totalUsd;
+
+  let inTransitUsd = 0;
+  let unresolvedCount = 0;
+  for (const entry of entries) {
+    if (entry.standing === "unresolved") {
+      unresolvedCount += 1;
+      continue;
+    }
+    if (entry.usdEstimate !== null) inTransitUsd += entry.usdEstimate;
+  }
+  return { settledUsd, inTransitUsd, unresolvedCount, entries, truncated };
+}
+
+/**
+ * One transition signal per outcome, plus the ONE escalation this lane still
+ * has: money whose bound has passed is money a human should look at. It no
+ * longer withholds anything, so it is reported on a PUBLISHED group.
+ *
+ * The warn line carries the kind, the ref and the age and deliberately NOT the
+ * amount or the symbol: an operator needs to know which row to open, and a warn
+ * log is not the place to restate what the user holds.
  */
 export function logPublicationOutcome(
   outcome: PublicationOutcome,
   snapshotGroupId: string,
 ): void {
-  if (outcome.published) return;
-  const unreconciled = outcome.blockers.filter((b) => b.unreconciled);
+  if (outcome.published) {
+    const { ledger } = outcome;
+    logger.info("sync.balance.snapshot_published", {
+      snapshotGroupId,
+      wallets: outcome.rows.length,
+      settledUsd: ledger.settledUsd.toFixed(2),
+      inTransitUsd: ledger.inTransitUsd.toFixed(2),
+      inFlightCount: ledger.entries.length,
+      unresolvedCount: ledger.unresolvedCount,
+      inFlightTruncated: ledger.truncated,
+    });
+    if (ledger.unresolvedCount > 0) {
+      logger.warn("sync.balance.snapshot_unresolved_money", {
+        snapshotGroupId,
+        unresolvedCount: ledger.unresolvedCount,
+        unresolved: ledger.entries
+          .filter((entry) => entry.standing === "unresolved")
+          .map((entry) => ({ kind: entry.kind, ref: entry.ref, ageSeconds: entry.ageSeconds })),
+        hint: "counted and shown, excluded from every total until its outcome is proven",
+      });
+    }
+    return;
+  }
+
   const fields = {
     snapshotGroupId,
     reason: outcome.reason,
-    blockers: outcome.blockers.map((b) => ({
-      kind: b.kind,
-      ref: b.ref,
-      detail: b.detail,
-      ageSeconds: b.ageSeconds,
-    })),
-    unreconciledCount: unreconciled.length,
-    hint: "balances still refreshed; publication resumes once every money-path row terminalizes",
+    hint: "balances still refreshed; the next cycle takes the snapshot",
   };
   if (outcome.reason === "publish_failed") {
     logger.error("sync.balance.snapshot_publish_failed", fields);
     return;
   }
-  if (unreconciled.length > 0) {
-    // Named separately because it is no longer "a transaction in progress":
-    // something has been unproven for long enough to need a human, and until it
-    // is reconciled EVERY later snapshot is withheld.
-    logger.warn("sync.balance.snapshot_blocked_unreconciled", fields);
-    return;
-  }
   logger.info("sync.balance.snapshot_deferred", fields);
 }
 
-function skip(
-  reason: PublicationSkipReason,
-  blockers: readonly PublicationBlocker[],
-): PublicationOutcome {
-  return { published: false as const, reason, blockers };
+function skip(reason: PublicationSkipReason): PublicationOutcome {
+  return { published: false as const, reason };
 }
 
 function skipOnError(err: unknown, snapshotGroupId: string): PublicationOutcome {
   const code = pgErrorCode(err);
   if (code === LOCK_NOT_AVAILABLE || code === DEADLOCK_DETECTED) {
     logger.info("sync.balance.snapshot_lock_unavailable", { snapshotGroupId, code });
-    return skip("lock_unavailable", []);
+    return skip("lock_unavailable");
   }
   // The failure carries a Postgres connection string - password included - in
   // its message, so only the canonical bounded summary may reach the log.
@@ -205,7 +285,7 @@ function skipOnError(err: unknown, snapshotGroupId: string): PublicationOutcome 
     snapshotGroupId,
     error: describeFailureForLog(err),
   });
-  return skip("publish_failed", []);
+  return skip("publish_failed");
 }
 
 function pgErrorCode(err: unknown): string | null {
