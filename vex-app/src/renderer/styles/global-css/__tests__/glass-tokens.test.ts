@@ -14,12 +14,13 @@
  *     surface renders with no fill in one theme only;
  *  2. blur or saturation restated per theme, so the two themes drift apart in
  *     depth (geometry is theme-invariant by contract);
- *  3. the coverage order chip < rail < pane < overlay inverted by a retune, so
- *     a chip inside a rail reads denser than a terminal pane;
+ *  3. the coverage order chip < rail < card < pane < overlay inverted by a
+ *     retune, so a chip inside a rail reads denser than a terminal pane;
  *  4. a `border` slipping into a glass rule - the boxed look the owner
  *     rejected, one declaration away;
  *  5. a filtering tier nested in a filtering tier without the guard that
- *     strips the inner filter (a double GPU pass over the same pixels);
+ *     strips the inner filter (a double GPU pass over the same pixels) - the
+ *     one nesting that is the DESIGN, a card inside a rail, included;
  *  6. the @supports fallback losing a tint or losing the celeris selector
  *     (which would let shell.css's more specific celeris block out-rank it);
  *  7. glass.css imported before shell.css, or with layer(...), so the tokens
@@ -95,9 +96,12 @@ const chronos = ruleBody(shellCss, '[data-vex-shell="true"]');
 const celeris = ruleBody(shellCss, '[data-vex-shell="true"][data-vex-theme="celeris"]');
 
 /** The tiers, in coverage order; the classes and tint tokens share the names. */
-const TIERS = ["chip", "rail", "pane", "overlay"] as const;
-/** The tiers that carry a backdrop-filter; the chip is a plate by contract. */
-const FILTERING_TIERS = ["rail", "pane", "overlay"] as const;
+const TIERS = ["chip", "rail", "card", "pane", "overlay"] as const;
+/**
+ * The tiers that carry a backdrop-filter; the chip is a plate by contract.
+ * In the order the nesting guard lists them, which the guard test replays.
+ */
+const FILTERING_TIERS = ["rail", "card", "pane", "overlay"] as const;
 
 const PER_THEME_TOKENS = [
   ...TIERS.map((tier) => `--vex-glass-tint-${tier}`),
@@ -137,7 +141,7 @@ describe("glass tokens (shell.css)", () => {
   it.each([
     ["chronos", chronos],
     ["celeris", celeris],
-  ])("keeps the coverage order chip < rail < pane < overlay (%s)", (theme, body) => {
+  ])("keeps the coverage order chip < rail < card < pane < overlay (%s)", (theme, body) => {
     const alphas = TIERS.map((tier) =>
       alphaOf(declarationValue(body, `--vex-glass-tint-${tier}`), `${theme} ${tier}`),
     );
@@ -227,7 +231,11 @@ describe("glass classes (glass.css)", () => {
     expect(body).not.toContain("backdrop-filter");
   });
 
-  it("carries the pane and overlay elevation on the shadow tokens, not literals", () => {
+  it("carries the card, pane and overlay elevation on the shadow tokens, not literals", () => {
+    // The card keeps the lv1 it had as a solid card; the pane its lv2.
+    expect(declarationValue(ruleBody(glassCss, ".vex-glass-card"), "box-shadow")).toBe(
+      "var(--vex-glass-edge), var(--vex-glass-edge-ring), var(--shadow-lv1)",
+    );
     expect(declarationValue(ruleBody(glassCss, ".vex-glass-pane"), "box-shadow")).toBe(
       "var(--vex-glass-edge), var(--vex-glass-edge-ring), var(--shadow-lv2)",
     );
@@ -248,11 +256,13 @@ describe("glass classes (glass.css)", () => {
     const pairs = FILTERING_TIERS.flatMap((outer) =>
       FILTERING_TIERS.map((inner) => `.vex-glass-${outer} .vex-glass-${inner}`),
     );
-    // One rule lists all nine ordered pairs and declares both spellings none.
+    // One rule lists all sixteen ordered pairs and declares both spellings
+    // none. `.vex-glass-rail .vex-glass-card` is among them, and it is the
+    // BOOK rail's design: the rail blurs once, its cards are plates.
     const rule = new RegExp(
       `${pairs.map((pair) => pair.replace(/\./g, "\\.")).join(",\\s*")}\\s*\\{([^}]*)\\}`,
     ).exec(guard);
-    expect(rule, "nesting guard rule with all nine ordered pairs").not.toBeNull();
+    expect(rule, "nesting guard rule with all sixteen ordered pairs").not.toBeNull();
     const body = rule?.[1] ?? "";
     expect(declarationValue(body, "backdrop-filter")).toBe("none");
     expect(declarationValue(body, "-webkit-backdrop-filter")).toBe("none");
@@ -273,9 +283,11 @@ describe("glass classes (glass.css)", () => {
       const value = declarationValue(block, `--vex-glass-tint-${tier}`);
       expect(value, `${tier} fallback`).toMatch(/^var\(--vex-surface-[12]\)$/);
     }
-    // A chip on a rail of the same fill would vanish; it takes the raised step.
+    // A chip or a card on a rail of the same fill would vanish; both take
+    // the raised step.
     expect(declarationValue(block, "--vex-glass-tint-rail")).toBe("var(--vex-surface-1)");
     expect(declarationValue(block, "--vex-glass-tint-chip")).toBe("var(--vex-surface-2)");
+    expect(declarationValue(block, "--vex-glass-tint-card")).toBe("var(--vex-surface-2)");
   });
 
   it("gives the tab shell its chip/pane fills, top radius and a token transition", () => {
@@ -311,7 +323,13 @@ describe("glass classes (glass.css)", () => {
 });
 
 describe("compatibility aliases", () => {
-  /** Every `var(--x)` read in the renderer tree outside shell.css and this test. */
+  /**
+   * Every `var(--x)` read in the renderer's PRODUCTION tree, outside
+   * shell.css. Test files are not consumers: a spec that asserts a class
+   * is GONE spells the alias as text (StudioSidebar.test.tsx pins
+   * `bg-[var(--vex-rail)]` absent), and counting that would keep a dead
+   * alias alive.
+   */
   function consumersOf(alias: string): string[] {
     const hits: string[] = [];
     const needle = `var(${alias})`;
@@ -319,13 +337,11 @@ describe("compatibility aliases", () => {
       for (const entry of readdirSync(dir)) {
         const full = path.join(dir, entry);
         if (statSync(full).isDirectory()) {
-          walk(full);
+          if (entry !== "__tests__") walk(full);
           continue;
         }
         if (!/\.(tsx?|css)$/.test(entry)) continue;
-        if (full.endsWith(`global-css${path.sep}shell.css`) || full === fileURLToPath(import.meta.url)) {
-          continue;
-        }
+        if (full.endsWith(`global-css${path.sep}shell.css`)) continue;
         if (readFileSync(full, "utf8").includes(needle)) hits.push(path.relative(rendererDir, full));
       }
     };
@@ -333,13 +349,16 @@ describe("compatibility aliases", () => {
     return hits.sort();
   }
 
-  it("has deleted --vex-glass, which had no consumer left", () => {
-    expect(declarationValue(chronos, "--vex-glass")).toBeUndefined();
-    expect(declarationValue(celeris, "--vex-glass")).toBeUndefined();
-    expect(consumersOf("--vex-glass")).toEqual([]);
-  });
+  it.each(["--vex-glass", "--vex-rail"])(
+    "has deleted %s, which had no consumer left",
+    (alias) => {
+      expect(declarationValue(chronos, alias)).toBeUndefined();
+      expect(declarationValue(celeris, alias)).toBeUndefined();
+      expect(consumersOf(alias)).toEqual([]);
+    },
+  );
 
-  it.each(["--vex-rail", "--vex-rail-strong", "--vex-glass-strong"])(
+  it.each(["--vex-rail-strong", "--vex-glass-strong"])(
     "keeps %s only while a consumer still reads it (delete the alias when this fails)",
     (alias) => {
       expect(declarationValue(chronos, alias), `${alias} alias in chronos`).toBeDefined();
@@ -351,13 +370,11 @@ describe("compatibility aliases", () => {
   );
 
   it("points the surviving aliases at the tier they stand in for", () => {
-    expect(declarationValue(chronos, "--vex-rail")).toBe("var(--vex-glass-tint-rail)");
     expect(declarationValue(chronos, "--vex-glass-strong")).toBe("var(--vex-glass-tint-overlay)");
     // No tier equals 0.7, so this one keeps its literal in both themes until
     // its two consumers move (SidebarProfile foot, WelcomePortfolioPanel button).
     expect(alphaOf(declarationValue(chronos, "--vex-rail-strong"), "chronos rail-strong")).toBe(0.7);
     expect(alphaOf(declarationValue(celeris, "--vex-rail-strong"), "celeris rail-strong")).toBe(0.78);
-    expect(declarationValue(celeris, "--vex-rail")).toBeUndefined();
     expect(declarationValue(celeris, "--vex-glass-strong")).toBeUndefined();
   });
 });
