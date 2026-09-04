@@ -63,8 +63,9 @@ export interface ApprovedPrequoteAuthority {
  *
  * Structurally the typed channels the gate reads off the row - the safety
  * verdict, the fee-on-transfer tax, the Pendle term lock, the Jupiter fee
- * preview, the quote binding, and the quote-time spendability statement (whose
- * canonical form carries both balance legs AND the bound debit plan). Typed
+ * preview, the Vex fee statement, the quote binding, and the quote-time
+ * spendability statement (whose canonical form carries both balance legs AND
+ * the bound debit plan). Typed
  * with `unknown` rather than by importing six venue vocabularies: this module
  * digests values, it does not interpret them, and the producing site is
  * type-checked at the call.
@@ -74,6 +75,7 @@ export interface PrequoteDisclosure {
   readonly fotTax?: unknown;
   readonly termLock?: unknown;
   readonly feePreview?: unknown;
+  readonly vexFee?: unknown;
   readonly quoteBinding?: unknown;
   readonly spendability?: unknown;
 }

@@ -25,6 +25,7 @@ import type { LendBorrowRiskPreview } from "@tools/solana-ecosystem/jupiter/jupi
 import type { QuoteBindingPreview } from "../quote-authority/restore.js";
 import type { SpendabilityPreview } from "../quote-authority/spendability-contract.js";
 import type { ApprovedPrequoteAuthority } from "../prequote/approved-row-authority.js";
+import type { VexFeePreview } from "../prequote/fee-disclosure.js";
 import { evaluateLendBorrowRiskPreview } from "../solana-jupiter/borrow-risk-preview.js";
 import { summarizeProtocolError } from "./errors.js";
 import { isPreviewExecution } from "../capture-validator.js";
@@ -114,6 +115,12 @@ export type PrequoteGateDecision =
       readonly termLock: { readonly maturityIso: string } | undefined;
       /** Jupiter fee-bearing disclosure (W5 design §6 R4) for the approval preview (typed, unspoofable). */
       readonly feePreview: JupiterFeePreview | undefined;
+      /**
+       * The Vex fee statement the matched quote made, for the approval card
+       * (typed, unspoofable). Read off the matched row, never recomputed from
+       * args - so the fee a person approves is the fee the executor is held to.
+       */
+      readonly vexFee: VexFeePreview | undefined;
       /** Jupiter Lend Borrow LTV/health disclosure (B1) for the approval preview (typed, unspoofable). */
       readonly riskPreview: LendBorrowRiskPreview | undefined;
       /** The approved quote's card binding (typed, unspoofable) for a gated swap execute. */
@@ -192,6 +199,12 @@ export async function evaluatePrequoteGateDecision(
         message: `${toolId} cannot sign because direct EVM token symbol/decimals are unavailable. Re-check the chain and token address, then quote again.`,
       };
     }
+    // WHERE THE FUNDS LAND, onto the same typed channel that already carries the
+    // bridge assets and amount. Sourced from the gate's own identity (the
+    // DERIVED destination wallet), never from args.
+    const previewWithRecipient = bridgeTokenPreview !== undefined && decision.bridgeRecipient !== undefined
+      ? { ...bridgeTokenPreview, recipient: decision.bridgeRecipient }
+      : bridgeTokenPreview;
     return {
       kind: "allow",
       verdict: decision.verdict,
@@ -201,10 +214,11 @@ export async function evaluatePrequoteGateDecision(
       fotTax: decision.fotTax,
       termLock: decision.termLock,
       feePreview: decision.feePreview,
+      vexFee: decision.vexFee,
       riskPreview: undefined,
       quoteBinding: decision.quoteBinding,
       spendability: decision.spendability,
-      bridgeTokenPreview,
+      bridgeTokenPreview: previewWithRecipient,
       prequoteAuthority: decision.prequoteAuthority,
     };
   }
@@ -220,6 +234,7 @@ export async function evaluatePrequoteGateDecision(
     fotTax: undefined,
     termLock: undefined,
     feePreview: undefined,
+    vexFee: undefined,
     riskPreview: risk.riskPreview,
     quoteBinding: undefined,
     spendability: undefined,
@@ -312,6 +327,7 @@ export function evaluateApprovalGate(
   prequoteSpendability: SpendabilityPreview | undefined,
   prequoteBridgeTokenPreview: BridgeTokenIdentityPreview | undefined,
   prequoteAuthority: ApprovedPrequoteAuthority | undefined,
+  prequoteVexFee?: VexFeePreview,
 ): ToolResult | undefined {
   if (manifest.mutating && manifest.actionKind !== "local_write" && !context.approved && !isPreviewExecution(request.toolId, params)
     && context.sessionPermission === "restricted"
@@ -339,6 +355,7 @@ export function evaluateApprovalGate(
         fotTax?: number;
         termLock?: { maturityIso: string };
         feePreview?: JupiterFeePreview;
+        vexFee?: VexFeePreview;
         quoteBinding?: QuoteBindingPreview;
         spendability?: SpendabilityPreview;
         bridgeTokenPreview?: BridgeTokenIdentityPreview;
@@ -346,6 +363,7 @@ export function evaluateApprovalGate(
       if (prequoteFotTax !== undefined) prequote.fotTax = prequoteFotTax;
       if (prequoteTermLock !== undefined) prequote.termLock = prequoteTermLock;
       if (prequoteFeePreview !== undefined) prequote.feePreview = prequoteFeePreview;
+      if (prequoteVexFee !== undefined) prequote.vexFee = prequoteVexFee;
       if (prequoteQuoteBinding !== undefined) prequote.quoteBinding = prequoteQuoteBinding;
       if (prequoteSpendability !== undefined) prequote.spendability = prequoteSpendability;
       if (prequoteBridgeTokenPreview !== undefined) prequote.bridgeTokenPreview = prequoteBridgeTokenPreview;

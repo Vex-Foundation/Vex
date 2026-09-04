@@ -50,10 +50,10 @@ export { recordPrequoteFromQuote } from "./prequote/record.js";
 export {
   evaluatePrequoteGate,
   evaluateSwapPrequoteGate,
-  findFreshMatchedSwapPrequote,
+  findFreshMatchedPrequote,
 } from "./prequote/gate.js";
 export type {
   GateDecision,
-  MatchedSwapPrequote,
-  MatchedSwapPrequoteRefusal,
+  MatchedPrequote,
+  MatchedPrequoteRefusal,
 } from "./prequote/gate.js";

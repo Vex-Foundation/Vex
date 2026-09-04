@@ -96,6 +96,7 @@ export function buildApprovalIntentPreview(
             fotTax: input.result.prequote?.fotTax,
             termLock: input.result.prequote?.termLock,
             feePreview: input.result.prequote?.feePreview,
+            vexFee: input.result.prequote?.vexFee,
             quoteBinding: input.result.prequote?.quoteBinding,
             spendability: input.result.prequote?.spendability,
             bridgeTokenPreview: input.result.prequote?.bridgeTokenPreview,

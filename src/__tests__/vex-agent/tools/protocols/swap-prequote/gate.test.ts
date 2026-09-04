@@ -29,6 +29,7 @@ import { NATIVE_TOKEN_ADDRESS } from "@tools/kyberswap/constants.js";
 import { VexError, ErrorCodes } from "../../../../../errors.js";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 import type { SwapPrequote, SafetyVerdict } from "@vex-agent/db/repos/swap-prequotes.js";
+import { rowVexFee, venueSwapVexFee } from "../prequote/vex-fee-fixtures.js";
 
 // ── Mocks ─────────────────────────────────────────────────────────────────
 
@@ -94,7 +95,7 @@ function prequoteRow(verdict: SafetyVerdict, overrides: Partial<SwapPrequote> = 
     amount: "1",
     slippageBps: 50,
     safetyVerdict: verdict,
-    safetyDetail: {},
+    safetyDetail: { vexFee: rowVexFee() },
     routeRef: null,
     // Migration 095: a row that predates the claim lane reads as an
     // executable, unclaimed quote. It authorizes nothing on its own - the
@@ -145,6 +146,7 @@ function evmResult(
     routeSummary: { foo: "bar" },
     routerAddress: "0xROUTER",
     safety: { tokenIn: tokenInLeg, tokenOut: tokenOutLeg },
+    vexFee: venueSwapVexFee(),
     ...overrides,
   };
 }

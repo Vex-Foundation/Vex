@@ -75,7 +75,7 @@ vi.mock("@tools/solana-ecosystem/jupiter/jupiter-tokens/service.js", () => ({
 // ── Dynamic imports after mocks ───────────────────────────────────────────
 
 const { executeProtocolTool } = await import("@vex-agent/tools/protocols/runtime.js");
-const { findFreshMatchedSwapPrequote } = await import(
+const { findFreshMatchedPrequote } = await import(
   "@vex-agent/tools/protocols/swap-prequote.js"
 );
 const catalog = await import("@vex-agent/tools/protocols/catalog.js");
@@ -365,14 +365,14 @@ describe("a FRESH call keeps the newest-executable-row behaviour", () => {
 });
 
 describe("the handler's own re-read applies the same fence", () => {
-  // Jupiter has no atomic claim lane, so `findFreshMatchedSwapPrequote` is the
+  // Jupiter has no atomic claim lane, so `findFreshMatchedPrequote` is the
   // LAST reader between the gate and the signature. The gate ran earlier; a
   // quote recorded in that window would otherwise still hand the execute a fee
   // policy and a native ceiling nobody approved.
 
   it("returns the bound row when it is still the current one", async () => {
     const { boundAuthority } = await approveQ1();
-    const matched = await findFreshMatchedSwapPrequote(
+    const matched = await findFreshMatchedPrequote(
       "solana.swap.execute",
       SESSION_ID,
       SWAP_PARAMS,
@@ -387,7 +387,7 @@ describe("the handler's own re-read applies the same fence", () => {
   it("refuses a Q2 that landed between the gate and the re-read", async () => {
     const { boundAuthority } = await approveQ1();
     mockFindLatest.mockResolvedValue(row({ prequoteId: "prequote-Q2" }));
-    const matched = await findFreshMatchedSwapPrequote(
+    const matched = await findFreshMatchedPrequote(
       "solana.swap.execute",
       SESSION_ID,
       SWAP_PARAMS,
@@ -403,7 +403,7 @@ describe("the handler's own re-read applies the same fence", () => {
     mockFindLatest.mockResolvedValue(
       row({ safetyDetail: { feePreview: feePreview(), spendability: spendability("8000000") } }),
     );
-    const matched = await findFreshMatchedSwapPrequote(
+    const matched = await findFreshMatchedPrequote(
       "solana.swap.execute",
       SESSION_ID,
       SWAP_PARAMS,
@@ -416,7 +416,7 @@ describe("the handler's own re-read applies the same fence", () => {
 
   it("leaves a non-approval dispatch on the newest row", async () => {
     mockFindLatest.mockResolvedValue(row({ prequoteId: "prequote-Q2" }));
-    const matched = await findFreshMatchedSwapPrequote(
+    const matched = await findFreshMatchedPrequote(
       "solana.swap.execute",
       SESSION_ID,
       SWAP_PARAMS,

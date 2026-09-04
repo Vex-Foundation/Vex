@@ -15,12 +15,19 @@
  * expiry, no proposal id and no Vex fee, and its safety line carried an em
  * dash. Every assertion below goes red if one of those rows is dropped again.
  *
- * WHAT THIS FILE DELIBERATELY DOES NOT CLAIM. There is no "1 USDC" assertion.
- * Nothing bound to this intent carries the token's decimals or its symbol: the
- * bridge prequote stores addresses and a raw integer, and no typed extras
- * channel carries a descriptor. Asserting a human amount here would assert a
- * fact Vex does not have. The atomic amount and its unit key are what the card
- * can honestly show, and that is what is pinned.
+ * WHAT THIS FILE PINS ABOUT UNITS, corrected. An earlier version of this header
+ * said no typed channel carried the token's symbol or decimals. That was stale:
+ * the prequote gate resolves both from the contract and carries them, with the
+ * derived destination wallet and the quote's own Vex fee statement, on
+ * `ToolResult.prequote` (`runtime/gates.ts`, pinned by
+ * `src/__tests__/vex-agent/tools/bridge-token-identity-approval.test.ts`). What
+ * remains true is that the prequote ROW stores addresses and a raw integer.
+ *
+ * The fixture below is a HAND-WRITTEN DTO - it is the projection a durable row
+ * makes, not a card this suite built - so it must state what the real builders
+ * produce for this intent and nothing more. It therefore carries the fee line
+ * the gate channel renders and the destination-wallet row the gate derives,
+ * with the exact figures those builders emit.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -73,9 +80,19 @@ function bridgeSummary(
         toChain: "42161",
         toToken: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
         amountRaw: "1000000",
+        bridgeSourceAsset:
+          "EVM chain 8453 | erc20 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913 | USDC | 6 decimals | rpc_contract",
+        bridgeDestinationAsset:
+          "EVM chain 42161 | erc20 0xaf88d065e77c8cC2239327C5EDb3A432268e5831 | USDC | 6 decimals | rpc_contract",
+        bridgeDestinationWallet:
+          "Destination wallet 0x1234567890AbcdEF1234567890aBcdef12345678"
+          + " | your selected EVM wallet | derived by Vex, never a parameter",
+        bridgeAmount: "1 USDC | 1000000 raw units | 6 decimals",
         vexFee:
-          "0.25% (25 bps): 2500 raw units of fromToken, included in the "
-          + "amountRaw above (the venue is quoted for the remainder).",
+          "Vex fee 0.25% (25 bps): 0.0025 USDC | 2500 raw units | 6 decimals,"
+          + " taken on the input token as a separate transfer after the bridge confirms;"
+          + " 997500 raw units are bridged; paid to 0xe341f3da256C38356bce4Afd456d7fa36E356E94;"
+          + " stated by the matched quote and re-checked before signing.",
         safety: "UNVERIFIED - audit unavailable",
       },
     },
@@ -151,11 +168,31 @@ describe("the approval card carries what rule 90 binds", () => {
     expect(args).toContain("1000000");
   });
 
-  it("itemises the Vex fee as a number, not as a rate alone", () => {
+  it("itemises the Vex fee as a number, with the units needed to read it", () => {
     renderCard(bridgeSummary());
     const args = screen.getByTestId("critical-args").textContent ?? "";
     expect(args).toContain("25 bps");
-    expect(args).toContain("2500 raw units of fromToken");
+    expect(args).toContain("0.0025 USDC | 2500 raw units | 6 decimals");
+    // What is left after the fee, and where the fee goes.
+    expect(args).toContain("997500 raw units are bridged");
+    expect(args).toContain("paid to 0xe341f3da256C38356bce4Afd456d7fa36E356E94");
+  });
+
+  it("shows WHERE the funds land, and that the address is derived rather than supplied", () => {
+    // The destination wallet was bound into the prequote identity hash from the
+    // first day of the bridge lane and rendered on no card at all, so a person
+    // approving a cross-chain transfer could not see where it went.
+    renderCard(bridgeSummary());
+    const args = screen.getByTestId("critical-args").textContent ?? "";
+    expect(args).toContain("0x1234567890AbcdEF1234567890aBcdef12345678");
+    expect(args).toContain("your selected EVM wallet");
+    expect(args).toContain("derived by Vex, never a parameter");
+  });
+
+  it("shows the human amount with its symbol and decimals, not a bare integer", () => {
+    renderCard(bridgeSummary());
+    const args = screen.getByTestId("critical-args").textContent ?? "";
+    expect(args).toContain("1 USDC | 1000000 raw units | 6 decimals");
   });
 
   it("names the irreversible effect", () => {

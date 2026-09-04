@@ -39,6 +39,7 @@ import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 import { VexError, ErrorCodes } from "../../../../../errors.js";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 import type { SwapPrequote, SafetyVerdict } from "@vex-agent/db/repos/swap-prequotes.js";
+import { rowVexFee, venueBridgeVexFee } from "../prequote/vex-fee-fixtures.js";
 
 // ── Mocks ─────────────────────────────────────────────────────────────────
 
@@ -168,7 +169,7 @@ function bridgeRow(verdict: SafetyVerdict, overrides: Partial<SwapPrequote> = {}
     amount: "1000000",
     slippageBps: null,
     safetyVerdict: verdict,
-    safetyDetail: { bridge: true, note: "route-only; no token-safety check" },
+    safetyDetail: { bridge: true, note: "route-only; no token-safety check", vexFee: rowVexFee() },
     routeRef: null,
     // Migration 095: a row that predates the claim lane reads as an
     // executable, unclaimed quote. It authorizes nothing on its own - the
@@ -187,7 +188,7 @@ function bridgeRow(verdict: SafetyVerdict, overrides: Partial<SwapPrequote> = {}
 describe("bridge quote ↔ execute identity collision", () => {
   it("a recorded bridge_quote and a matching khalani.bridge execute collide (allow)", async () => {
     // 1) Record from the QUOTE params.
-    await mod.recordPrequoteFromQuote("khalani.quote.get", bridgeParams(), { quoteId: "q1" }, ctx());
+    await mod.recordPrequoteFromQuote("khalani.quote.get", bridgeParams(), { quoteId: "q1", vexFee: venueBridgeVexFee() }, ctx());
     const recorded = mockCreate.mock.calls[0]![0] as Record<string, unknown>;
     const recordedHash = recorded.matchHash as string;
 
@@ -204,7 +205,7 @@ describe("bridge quote ↔ execute identity collision", () => {
   });
 
   it("a different fromChain/toChain/token/amount/tradeType MISSES the recorded row", async () => {
-    await mod.recordPrequoteFromQuote("khalani.quote.get", bridgeParams(), { quoteId: "q1" }, ctx());
+    await mod.recordPrequoteFromQuote("khalani.quote.get", bridgeParams(), { quoteId: "q1", vexFee: venueBridgeVexFee() }, ctx());
     const recordedHash = (mockCreate.mock.calls[0]![0] as Record<string, unknown>).matchHash as string;
 
     const variants: Array<Record<string, unknown>> = [
@@ -234,7 +235,7 @@ describe("bridge quote ↔ execute identity collision", () => {
     // changes nothing - it can neither redirect the funds nor split the
     // quote/execute pair into two hashes that agree about an unauthorized
     // address, which is exactly what the params-bound version allowed.
-    await mod.recordPrequoteFromQuote("khalani.quote.get", bridgeParams(), { quoteId: "q1" }, ctx());
+    await mod.recordPrequoteFromQuote("khalani.quote.get", bridgeParams(), { quoteId: "q1", vexFee: venueBridgeVexFee() }, ctx());
     const [createCall] = mockCreate.mock.calls;
     if (!createCall) throw new Error("the quote recorded no prequote row");
     const recordedHash = (createCall[0] as Record<string, unknown>).matchHash as string;
@@ -262,7 +263,7 @@ describe("bridge quote ↔ execute identity collision", () => {
     // `khalani-refund-destination.test.ts` and
     // `khalani-referrer-fee-rejection.test.ts`. Asserting hash divergence for
     // them here would silently re-test a vector that no longer exists.
-    await mod.recordPrequoteFromQuote("khalani.quote.get", bridgeParams(), { quoteId: "q1" }, ctx());
+    await mod.recordPrequoteFromQuote("khalani.quote.get", bridgeParams(), { quoteId: "q1", vexFee: venueBridgeVexFee() }, ctx());
     const recordedHash = (mockCreate.mock.calls[0]![0] as Record<string, unknown>).matchHash as string;
 
     const tampered: Array<Record<string, unknown>> = [
@@ -285,7 +286,7 @@ describe("bridge quote ↔ execute identity collision", () => {
     // Both quote and execute omit the whole money/fee leg → identical defaults →
     // identical hash → allow. (Already implied by the base collision test, but
     // pinned explicitly as the positive counterpart to the exploit guard.)
-    await mod.recordPrequoteFromQuote("khalani.quote.get", bridgeParams(), { quoteId: "q1" }, ctx());
+    await mod.recordPrequoteFromQuote("khalani.quote.get", bridgeParams(), { quoteId: "q1", vexFee: venueBridgeVexFee() }, ctx());
     const recordedHash = (mockCreate.mock.calls[0]![0] as Record<string, unknown>).matchHash as string;
 
     resetMocks();
@@ -306,7 +307,7 @@ describe("bridge quote ↔ execute identity collision", () => {
       referrerFeeBps: "100",
       filler: "native-filler",
     };
-    await mod.recordPrequoteFromQuote("khalani.quote.get", bridgeParams(money), { quoteId: "q1" }, ctx());
+    await mod.recordPrequoteFromQuote("khalani.quote.get", bridgeParams(money), { quoteId: "q1", vexFee: venueBridgeVexFee() }, ctx());
     const recordedHash = (mockCreate.mock.calls[0]![0] as Record<string, unknown>).matchHash as string;
 
     resetMocks();
@@ -326,7 +327,7 @@ describe("bridge quote ↔ execute identity collision", () => {
     await mod.recordPrequoteFromQuote(
       "khalani.quote.get",
       bridgeParams({ referrerFeeBps: "100" }),
-      { quoteId: "q1" },
+      { quoteId: "q1", vexFee: venueBridgeVexFee() },
       ctx(),
     );
     const recordedHash = (mockCreate.mock.calls[0]![0] as Record<string, unknown>).matchHash as string;

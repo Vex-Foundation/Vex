@@ -31,6 +31,7 @@ import {
   sealRouteSnapshot,
 } from "@vex-agent/tools/protocols/quote-authority/snapshot.js";
 import { SPENDABILITY_CARD_VERSION } from "@vex-agent/tools/protocols/quote-authority/spendability-contract.js";
+import { rowVexFee } from "../prequote/vex-fee-fixtures.js";
 
 // ── Mocks: the DB only ────────────────────────────────────────────────────
 
@@ -191,7 +192,7 @@ function row(overrides: Partial<SwapPrequote> = {}): SwapPrequote {
     amount: "1",
     slippageBps: 50,
     safetyVerdict: "pass",
-    safetyDetail: {},
+    safetyDetail: { vexFee: rowVexFee() },
     routeRef: null,
     eligibilityKind: "executable",
     claimedAt: null,
@@ -209,7 +210,7 @@ beforeEach(() => {
 describe("the execute gate refuses a row whose two plans disagree", () => {
   it("blocks when the sealed plan carries a leg the card never stated", async () => {
     mockFindLatest.mockResolvedValue(row({
-      safetyDetail: { spendability: persistedSpendability(CARD_PLAN) },
+      safetyDetail: { vexFee: rowVexFee(), spendability: persistedSpendability(CARD_PLAN) },
       routeRef: kyberRouteRef(SEALED_PLAN_WITH_FEE_LEG),
     }));
 
@@ -232,7 +233,7 @@ describe("the execute gate refuses a row whose two plans disagree", () => {
 
   it("allows the same row when the two plans are the same plan", async () => {
     mockFindLatest.mockResolvedValue(row({
-      safetyDetail: { spendability: persistedSpendability(CARD_PLAN) },
+      safetyDetail: { vexFee: rowVexFee(), spendability: persistedSpendability(CARD_PLAN) },
       routeRef: kyberRouteRef(CARD_PLAN),
     }));
 
@@ -258,7 +259,7 @@ describe("a row with only one of the two plans passes through", () => {
       chainId: null,
       tokenIn: SOL_PARAMS.tokenIn,
       tokenOut: SOL_MINT,
-      safetyDetail: { spendability: persistedSpendability(undefined) },
+      safetyDetail: { vexFee: rowVexFee(), spendability: persistedSpendability(undefined) },
       routeRef: null,
     }));
 
@@ -273,7 +274,7 @@ describe("a row with only one of the two plans passes through", () => {
 
   it("allows an EVM row that seals a plan but persisted no card plan", async () => {
     mockFindLatest.mockResolvedValue(row({
-      safetyDetail: { spendability: persistedSpendability(undefined) },
+      safetyDetail: { vexFee: rowVexFee(), spendability: persistedSpendability(undefined) },
       routeRef: kyberRouteRef(SEALED_PLAN_WITH_FEE_LEG),
     }));
 
@@ -292,7 +293,7 @@ describe("a row with only one of the two plans passes through", () => {
     // claim/binding time), not turned into a disagreement it is not.
     const sealed = kyberRouteRef(CARD_PLAN);
     mockFindLatest.mockResolvedValue(row({
-      safetyDetail: { spendability: persistedSpendability(CARD_PLAN) },
+      safetyDetail: { vexFee: rowVexFee(), spendability: persistedSpendability(CARD_PLAN) },
       routeRef: { ...sealed, debitPlan: JSON.parse(JSON.stringify(SEALED_PLAN_WITH_FEE_LEG, bigintToString)) },
     }));
 

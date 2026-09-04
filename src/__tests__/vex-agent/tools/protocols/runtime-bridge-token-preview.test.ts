@@ -20,7 +20,15 @@ vi.mock("@vex-agent/tools/protocols/runtime/capture.js", () => ({
 vi.mock("@vex-agent/tools/protocols/swap-prequote.js", () => ({
   EXECUTE_GATE_TOOLS: { "relay.bridge": { kind: "bridge", provider: "relay" } },
   PREQUOTE_QUOTE_TOOLS: {},
-  evaluatePrequoteGate: async () => ({ kind: "allow", verdict: "unknown", prequoteId: "bridge-prequote" }),
+  evaluatePrequoteGate: async () => ({
+    kind: "allow",
+    verdict: "unknown",
+    prequoteId: "bridge-prequote",
+    // The DERIVED destination wallet the bridge identity bound. The gate is the
+    // only place that knows it: it is the session's selected wallet for the
+    // destination family, and it is already inside the match hash.
+    bridgeRecipient: { family: "eip155", address: "0xUserEvmWallet" },
+  }),
   recordPrequoteFromQuote: vi.fn(),
 }));
 vi.mock("@vex-agent/tools/protocols/bridge-token-identity.js", async (importOriginal) => {
@@ -92,7 +100,26 @@ describe("protocol runtime bridge token preview handoff", () => {
 
     expect(result.success).toBe(true);
     expect(mocks.handler).toHaveBeenCalledTimes(1);
-    expect(mocks.handler.mock.calls[0]?.[1]).toMatchObject({ bridgeTokenPreview: PREVIEW });
-    expect(result.data?.bridgeTokenPreview).toBe(PREVIEW);
+    expect(mocks.handler.mock.calls[0]?.[1]).toMatchObject({
+      bridgeTokenPreview: { ...PREVIEW, recipient: { family: "eip155", address: "0xUserEvmWallet" } },
+    });
+    expect(result.data?.bridgeTokenPreview).toMatchObject({ source: PREVIEW.source, amountRaw: "1500000" });
+  });
+
+  it("attaches the gate's DERIVED destination wallet to the preview channel", async () => {
+    // The token resolver reads contracts; WHERE the funds land is a fact about
+    // the session's selected wallets, so the gate is what attaches it. Before
+    // this, the derived destination was bound into the identity hash and shown
+    // to nobody.
+    const result = await executeProtocolTool({ toolId: "relay.bridge", params: PARAMS }, CONTEXT);
+
+    expect(result.success).toBe(true);
+    const preview = mocks.handler.mock.calls[0]?.[1] as ProtocolExecutionContext;
+    expect(preview.bridgeTokenPreview?.recipient).toEqual({
+      family: "eip155",
+      address: "0xUserEvmWallet",
+    });
+    // The resolver's own output is not mutated: the gate composes a new value.
+    expect(PREVIEW).not.toHaveProperty("recipient");
   });
 });

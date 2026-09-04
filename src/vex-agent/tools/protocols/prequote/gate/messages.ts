@@ -45,6 +45,28 @@ function approvalBindingMessages(
   };
 }
 
+/**
+ * The fee-statement refusal, worded once for every gated kind.
+ *
+ * Shared for the same reason the approval-binding refusals are: the cause does
+ * not vary by venue. A fee-bearing execute is matched to a quote that never
+ * stated what Vex takes from it, so there is nothing to put in front of a
+ * person and nothing for the executor to be held to. Only the way BACK differs,
+ * which is what `requote` carries.
+ */
+function feeDisclosureMissingMessage(
+  subject: string,
+  requote: string,
+): Record<"fee_disclosure_missing", string> {
+  return {
+    fee_disclosure_missing:
+      `${subject} blocked: the matched quote carries no Vex fee statement, so the fee this transaction would`
+      + " charge cannot be shown before signing and cannot be re-checked at signing time. This happens when the"
+      + " quote was recorded by an older build, or when the venue's own fee disclosure could not be read."
+      + ` Nothing was signed and nothing was broadcast. ${requote}`,
+  };
+}
+
 const SWAP_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
   gate_error:
     "Swap blocked: could not verify a fresh quote. Re-run the swap quote and retry.",
@@ -70,6 +92,7 @@ const SWAP_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
     "Swap blocked: the newest quote for these exact params did not authorize an execute - it was recorded as not executable (an unusable or too-costly route, or a wallet that could not pay for it). Re-run the swap quote and read the eligibility it returns before retrying; if it names a balance, fund the wallet first.",
   card_plan_disagreement:
     "Swap blocked: this quote carries two different transaction plans - the one the approval card would state and the one the quote's own route snapshot sealed. What a person would consent to is not what the execute would enforce, so nothing was signed and nothing was broadcast. Re-run the swap quote and retry.",
+  ...feeDisclosureMissingMessage("Swap", "Re-run the swap quote and retry."),
   ...approvalBindingMessages("Swap", "Re-run the swap quote and retry."),
 };
 
@@ -98,6 +121,7 @@ const BRIDGE_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
     "Bridge blocked: the newest bridge quote for these exact params did not authorize an execute - it was recorded as not executable. Re-run BridgeQuote and read the eligibility it returns before retrying.",
   card_plan_disagreement:
     "Bridge blocked: this quote carries two different transaction plans - the one the approval card would state and the one the quote's own route snapshot sealed. What a person would consent to is not what the execute would enforce, so nothing was signed and nothing was broadcast. Re-run BridgeQuote and retry.",
+  ...feeDisclosureMissingMessage("Bridge", "Re-run BridgeQuote and retry."),
   ...approvalBindingMessages("Bridge", "Re-run BridgeQuote and retry."),
 };
 
@@ -126,6 +150,7 @@ const REDEEM_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
     "Redeem blocked: the newest redeem quote for this PT did not authorize an execute - it was recorded as not executable. Re-run pendle__pt_quote and read the eligibility it returns before retrying.",
   card_plan_disagreement:
     "Redeem blocked: this quote carries two different transaction plans - the one the approval card would state and the one the quote's own route snapshot sealed. What a person would consent to is not what the execute would enforce, so nothing was signed and nothing was broadcast. Re-run pendle__pt_quote for this PT and retry.",
+  ...feeDisclosureMissingMessage("Redeem", "Re-run pendle__pt_quote for this PT and retry."),
   ...approvalBindingMessages("Redeem", "Re-run pendle__pt_quote for this PT and retry."),
 };
 
@@ -152,6 +177,7 @@ const MINT_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
     "Mint blocked: the newest mint quote for these params did not authorize an execute - it was recorded as not executable. Re-run pendle__py_quote (direction mint) and read the eligibility it returns before retrying.",
   card_plan_disagreement:
     "Mint blocked: this quote carries two different transaction plans - the one the approval card would state and the one the quote's own route snapshot sealed. What a person would consent to is not what the execute would enforce, so nothing was signed and nothing was broadcast. Re-run pendle__py_quote (direction mint) for this PT and retry.",
+  ...feeDisclosureMissingMessage("Mint", "Re-run pendle__py_quote (direction mint) for this PT and retry."),
   ...approvalBindingMessages("Mint", "Re-run pendle__py_quote (direction mint) for this PT and retry."),
 };
 
@@ -178,6 +204,7 @@ const REDEEM_PY_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
     "Redeem blocked: the newest redeem quote for these params did not authorize an execute - it was recorded as not executable. Re-run pendle__py_quote (direction redeem) and read the eligibility it returns before retrying.",
   card_plan_disagreement:
     "Redeem blocked: this quote carries two different transaction plans - the one the approval card would state and the one the quote's own route snapshot sealed. What a person would consent to is not what the execute would enforce, so nothing was signed and nothing was broadcast. Re-run pendle__py_quote (direction redeem) for this PT and retry.",
+  ...feeDisclosureMissingMessage("Redeem", "Re-run pendle__py_quote (direction redeem) for this PT and retry."),
   ...approvalBindingMessages("Redeem", "Re-run pendle__py_quote (direction redeem) for this PT and retry."),
 };
 
@@ -204,6 +231,7 @@ const LP_ADD_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
     "Add liquidity blocked: the newest add quote for this market did not authorize an execute - it was recorded as not executable. Re-run pendle__lp_quote (direction add) and read the eligibility it returns before retrying.",
   card_plan_disagreement:
     "Add liquidity blocked: this quote carries two different transaction plans - the one the approval card would state and the one the quote's own route snapshot sealed. What a person would consent to is not what the execute would enforce, so nothing was signed and nothing was broadcast. Re-run pendle__lp_quote (direction add) for this market and retry.",
+  ...feeDisclosureMissingMessage("Add liquidity", "Re-run pendle__lp_quote (direction add) for this market and retry."),
   ...approvalBindingMessages("Add liquidity", "Re-run pendle__lp_quote (direction add) for this market and retry."),
 };
 
@@ -230,6 +258,7 @@ const LP_REMOVE_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
     "Remove liquidity blocked: the newest remove quote for this market did not authorize an execute - it was recorded as not executable. Re-run pendle__lp_quote (direction remove) and read the eligibility it returns before retrying.",
   card_plan_disagreement:
     "Remove liquidity blocked: this quote carries two different transaction plans - the one the approval card would state and the one the quote's own route snapshot sealed. What a person would consent to is not what the execute would enforce, so nothing was signed and nothing was broadcast. Re-run pendle__lp_quote (direction remove) for this market and retry.",
+  ...feeDisclosureMissingMessage("Remove liquidity", "Re-run pendle__lp_quote (direction remove) for this market and retry."),
   ...approvalBindingMessages("Remove liquidity", "Re-run pendle__lp_quote (direction remove) for this market and retry."),
 };
 
@@ -265,6 +294,7 @@ const LEND_DEPOSIT_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
     "Vault deposit blocked: the newest vault quote for these params did not authorize an execute - it was recorded as not executable. Re-run morpho__vault_quote (direction deposit) and read the eligibility it returns before retrying.",
   card_plan_disagreement:
     "Vault deposit blocked: this quote carries two different transaction plans - the one the approval card would state and the one the quote's own route snapshot sealed. What a person would consent to is not what the execute would enforce, so nothing was signed and nothing was broadcast. Re-run morpho__vault_quote (direction deposit) for this vault and retry.",
+  ...feeDisclosureMissingMessage("Vault deposit", "Re-run morpho__vault_quote (direction deposit) for this vault and retry."),
   ...approvalBindingMessages("Vault deposit", "Re-run morpho__vault_quote (direction deposit) for this vault and retry."),
 };
 
@@ -292,6 +322,7 @@ const LEND_WITHDRAW_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
     "Vault withdrawal blocked: the newest vault quote for these params did not authorize an execute - it was recorded as not executable. Re-run morpho__vault_quote (direction withdraw) and read the eligibility it returns before retrying.",
   card_plan_disagreement:
     "Vault withdrawal blocked: this quote carries two different transaction plans - the one the approval card would state and the one the quote's own route snapshot sealed. What a person would consent to is not what the execute would enforce, so nothing was signed and nothing was broadcast. Re-run morpho__vault_quote (direction withdraw) for this vault and retry.",
+  ...feeDisclosureMissingMessage("Vault withdrawal", "Re-run morpho__vault_quote (direction withdraw) for this vault and retry."),
   ...approvalBindingMessages("Vault withdrawal", "Re-run morpho__vault_quote (direction withdraw) for this vault and retry."),
 };
 
@@ -335,6 +366,7 @@ const LEND_SUPPLY_COLLATERAL_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
     "Collateral supply blocked: the newest quote for this market did not authorize an execute - it was recorded as not executable. Re-run morpho__market_quote (direction supplyCollateral) and read the eligibility it returns before retrying.",
   card_plan_disagreement:
     "Collateral supply blocked: this quote carries two different transaction plans - the one the approval card would state and the one the quote's own route snapshot sealed. What a person would consent to is not what the execute would enforce, so nothing was signed and nothing was broadcast. Re-run morpho__market_quote (direction supplyCollateral) for this market, then retry.",
+  ...feeDisclosureMissingMessage("Collateral supply", "Re-run morpho__market_quote (direction supplyCollateral) for this market, then retry."),
   ...approvalBindingMessages("Collateral supply", "Re-run morpho__market_quote (direction supplyCollateral) for this market, then retry."),
 };
 
@@ -362,6 +394,7 @@ const LEND_WITHDRAW_COLLATERAL_BLOCK_MESSAGES: Record<GateBlockReason, string> =
     "Collateral withdrawal blocked: the newest quote for this market did not authorize an execute - it was recorded as not executable. Re-run morpho__market_quote (direction withdrawCollateral) and read the eligibility it returns before retrying.",
   card_plan_disagreement:
     "Collateral withdrawal blocked: this quote carries two different transaction plans - the one the approval card would state and the one the quote's own route snapshot sealed. What a person would consent to is not what the execute would enforce, so nothing was signed and nothing was broadcast. Re-run morpho__market_quote (direction withdrawCollateral) for this market, then retry.",
+  ...feeDisclosureMissingMessage("Collateral withdrawal", "Re-run morpho__market_quote (direction withdrawCollateral) for this market, then retry."),
   ...approvalBindingMessages("Collateral withdrawal", "Re-run morpho__market_quote (direction withdrawCollateral) for this market, then retry."),
 };
 
@@ -389,6 +422,7 @@ const LEND_BORROW_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
     "Borrow blocked: the newest quote for this market did not authorize an execute - it was recorded as not executable. Re-run morpho__market_quote (direction borrow) and read the eligibility it returns before retrying.",
   card_plan_disagreement:
     "Borrow blocked: this quote carries two different transaction plans - the one the approval card would state and the one the quote's own route snapshot sealed. What a person would consent to is not what the execute would enforce, so nothing was signed and nothing was broadcast. Re-run morpho__market_quote (direction borrow) for this market, then retry.",
+  ...feeDisclosureMissingMessage("Borrow", "Re-run morpho__market_quote (direction borrow) for this market, then retry."),
   ...approvalBindingMessages("Borrow", "Re-run morpho__market_quote (direction borrow) for this market, then retry."),
 };
 
@@ -415,6 +449,7 @@ const LEND_REPAY_BLOCK_MESSAGES: Record<GateBlockReason, string> = {
     "Repay blocked: the newest quote for this market did not authorize an execute - it was recorded as not executable. Re-run morpho__market_quote (direction repay) and read the eligibility it returns before retrying.",
   card_plan_disagreement:
     "Repay blocked: this quote carries two different transaction plans - the one the approval card would state and the one the quote's own route snapshot sealed. What a person would consent to is not what the execute would enforce, so nothing was signed and nothing was broadcast. Re-run morpho__market_quote (direction repay) for this market, then retry.",
+  ...feeDisclosureMissingMessage("Repay", "Re-run morpho__market_quote (direction repay) for this market, then retry."),
   ...approvalBindingMessages("Repay", "Re-run morpho__market_quote (direction repay) for this market, then retry."),
 };
 

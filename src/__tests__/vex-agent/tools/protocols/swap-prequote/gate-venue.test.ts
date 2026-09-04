@@ -5,6 +5,7 @@ import { NATIVE_TOKEN_ADDRESS } from "@tools/kyberswap/constants.js";
 import { ErrorCodes, VexError } from "../../../../../errors.js";
 import type { SwapPrequote, SafetyVerdict } from "@vex-agent/db/repos/swap-prequotes.js";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
+import { rowVexFee, venueSwapVexFee } from "../prequote/vex-fee-fixtures.js";
 
 type CreateMock = Mock<(input: unknown) => Promise<void>>;
 type ResolveMock = Mock<(...args: unknown[]) => string>;
@@ -79,7 +80,7 @@ function prequoteRow(verdict: SafetyVerdict, overrides: Partial<SwapPrequote> = 
     amount: "1",
     slippageBps: 50,
     safetyVerdict: verdict,
-    safetyDetail: {},
+    safetyDetail: { vexFee: rowVexFee() },
     routeRef: null,
     // Migration 095: a row that predates the claim lane reads as an
     // executable, unclaimed quote. It authorizes nothing on its own - the
@@ -210,6 +211,7 @@ beforeEach(() => {
         tokenIn: { address: ROBINHOOD_WETH, isNative: true },
         tokenOut: { address: GATE_TOKEN_OUT, isNative: false },
         safety: UNISWAP_SAFETY_PASS,
+        vexFee: venueSwapVexFee(),
       },
       ctx(),
     );
@@ -242,6 +244,7 @@ beforeEach(() => {
         tokenIn: { address: GATE_TOKEN_IN, isNative: false },
         tokenOut: { address: ROBINHOOD_WETH, isNative: true },
         safety: UNISWAP_SAFETY_PASS,
+        vexFee: venueSwapVexFee(),
       },
       ctx(),
     );
