@@ -85,7 +85,14 @@ describe("serveOverSocket peer EOF replay", () => {
     // close - the ambiguity the 2026-09-04 incident could not be attributed
     // through. The counters are zero because this peer sent no frame at all.
     expect(events.map((event) => event.kind)).toEqual(["peer_end", "closed"]);
-    expect(events[1]).toEqual({ kind: "closed", requests: 0, responses: 0 });
+    expect(events[1]).toEqual({
+      kind: "closed",
+      requests: 0,
+      responses: 0,
+      notifications: 0,
+      serverRequests: 0,
+      otherOutbound: 0,
+    });
     await handle.close();
     client.destroy();
     await new Promise<void>((resolve) => server.close(() => resolve()));

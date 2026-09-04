@@ -197,6 +197,97 @@ describe("the first outbound line", () => {
         kind: "first_response",
         id: "0",
         bytes: Buffer.byteLength(`${JSON.stringify(response)}\n`, "utf8"),
+        outbound: "response",
+      },
+    ]);
+  });
+
+  it("is published only after the writer accepted the line, never at the hand-off", async () => {
+    // THE DEFECT THIS PINS. The milestone used to be written the moment the
+    // frame was handed to the outbound writer, so a queue that was closing, or
+    // a write that never completed, still produced a `first response` line -
+    // the log claimed main's answer had left main while the bytes were still
+    // in main. The one question this line exists to answer was the one it
+    // could get wrong.
+    const parked: Array<() => void> = [];
+    const wire = new FakeDuplexTransport("accept_sync");
+    const events: SocketTransportLifecycleEvent[] = [];
+    const transport = new StudioSocketTransport(wire, {
+      onLifecycle: (event) => events.push(event),
+      writeLine: () =>
+        new Promise<void>((resolve) => {
+          parked.push(resolve);
+        }),
+    });
+    await transport.start();
+
+    const sent = transport.send({ jsonrpc: "2.0", id: 0, result: { ok: true } });
+    await Promise.resolve();
+    expect(events.some((event) => event.kind === "first_response")).toBe(false);
+
+    const [accept] = parked;
+    if (accept === undefined) throw new Error("the writer was never called");
+    accept();
+    await sent;
+
+    expect(events.filter((event) => event.kind === "first_response")).toHaveLength(1);
+  });
+
+  it("is not published at all when the writer refuses the line", async () => {
+    const wire = new FakeDuplexTransport("accept_sync");
+    const events: SocketTransportLifecycleEvent[] = [];
+    const transport = new StudioSocketTransport(wire, {
+      onLifecycle: (event) => events.push(event),
+      writeLine: () => Promise.reject(new Error("the outbound queue is closed")),
+    });
+    await transport.start();
+
+    await expect(
+      transport.send({ jsonrpc: "2.0", id: 0, result: { ok: true } }),
+    ).rejects.toThrow("the outbound queue is closed");
+    await transport.close();
+
+    expect(events.some((event) => event.kind === "first_response")).toBe(false);
+    // And it counted nothing either: a refused write is not a response.
+    expect(events.filter((event) => event.kind === "closed")).toEqual([
+      {
+        kind: "closed",
+        requests: 0,
+        responses: 0,
+        notifications: 0,
+        serverRequests: 0,
+        otherOutbound: 0,
+      },
+    ]);
+  });
+
+  it("names a notification as a notification rather than as this connection's answer", async () => {
+    // A progress notification can leave before the response it belongs to.
+    // Counting it as a response made `responses` a total of frames rather than
+    // of answers, and named the milestone after something it was not.
+    const test = harness();
+    await test.transport.start();
+
+    await test.transport.send({
+      jsonrpc: "2.0",
+      method: "notifications/progress",
+      params: { progressToken: 1, progress: 1 },
+    });
+    await test.transport.send({ jsonrpc: "2.0", id: 4, result: { ok: true } });
+    await test.transport.send({ jsonrpc: "2.0", id: 5, method: "sampling/createMessage" });
+    await test.transport.close();
+
+    const first = test.events.filter((event) => event.kind === "first_response");
+    expect(first).toHaveLength(1);
+    expect(first[0]).toMatchObject({ id: null, outbound: "notification" });
+    expect(test.events.filter((event) => event.kind === "closed")).toEqual([
+      {
+        kind: "closed",
+        requests: 0,
+        responses: 1,
+        notifications: 1,
+        serverRequests: 1,
+        otherOutbound: 0,
       },
     ]);
   });
@@ -230,7 +321,14 @@ describe("the peer half-close and the final counters", () => {
 
     const kinds = test.events.map((event) => event.kind);
     expect(kinds).toEqual(["first_request", "first_response", "peer_end", "closed"]);
-    expect(test.events[3]).toEqual({ kind: "closed", requests: 1, responses: 1 });
+    expect(test.events[3]).toEqual({
+      kind: "closed",
+      requests: 1,
+      responses: 1,
+      notifications: 0,
+      serverRequests: 0,
+      otherOutbound: 0,
+    });
   });
 
   it("reports closed exactly once even when the owner and the wire both tear down", async () => {
@@ -242,7 +340,14 @@ describe("the peer half-close and the final counters", () => {
     await test.transport.close();
 
     expect(test.events.filter((event) => event.kind === "closed")).toEqual([
-      { kind: "closed", requests: 0, responses: 0 },
+      {
+        kind: "closed",
+        requests: 0,
+        responses: 0,
+        notifications: 0,
+        serverRequests: 0,
+        otherOutbound: 0,
+      },
     ]);
   });
 

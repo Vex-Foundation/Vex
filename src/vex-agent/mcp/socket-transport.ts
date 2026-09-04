@@ -125,16 +125,54 @@ export type SocketTransportLifecycleEvent =
       readonly client: string | null;
       readonly protocolVersion: string | null;
     }
-  /** The FIRST outbound line handed to the wire. One per transport. */
-  | { readonly kind: "first_response"; readonly id: string | null; readonly bytes: number }
+  /**
+   * The FIRST outbound line the WIRE ACCEPTED. One per transport.
+   *
+   * Reported from the write's completion, not from the hand-off: the question
+   * this milestone exists to answer is "did main's answer leave main", and a
+   * line published before the writer took it answers a different one. A write
+   * that fails or lands on a closed queue therefore reports nothing, which is
+   * the honest reading of that log's silence.
+   */
+  | {
+      readonly kind: "first_response";
+      readonly id: string | null;
+      readonly bytes: number;
+      /** What the frame actually was. A notification is not an answer. */
+      readonly outbound: OutboundFrameKind;
+    }
   /** The peer half-closed. Latched, so it fires at most once. */
   | { readonly kind: "peer_end" }
   /** The `onclose` latch, with this connection's final counters. */
   | {
       readonly kind: "closed";
       readonly requests: number;
+      /** Answers to inbound requests. The counter the incident needed. */
       readonly responses: number;
+      /** Outbound frames that oblige nobody: progress, logging, cancelled. */
+      readonly notifications: number;
+      /** Frames this server sent that expect the PEER to answer. */
+      readonly serverRequests: number;
+      /** Outbound frames that are none of the three. Always zero in practice. */
+      readonly otherOutbound: number;
     };
+
+/**
+ * WHAT AN OUTBOUND FRAME IS, in JSON-RPC's own terms.
+ *
+ * The counters and the first-outbound milestone used to call every line a
+ * "response", so a progress notification leaving first was logged as this
+ * connection's first answer and a `responses` total silently included frames
+ * nobody had asked for. The classification is structural and matches the one
+ * `jsonRpcResponseKey` already makes for the drain accounting:
+ *
+ *   `response`       no `method`, an `id`, and exactly one of `result`/`error`
+ *   `server_request` a `method` AND an `id`: this server asking the peer
+ *   `notification`   a `method` and no `id`
+ *   `other`          none of the above. Our own defect if it ever appears,
+ *                    which is why it is counted rather than folded away.
+ */
+export type OutboundFrameKind = "response" | "notification" | "server_request" | "other";
 
 /**
  * The MCP methods this host will NAME in a log line, and nothing else.
@@ -278,8 +316,14 @@ export class StudioSocketTransport implements JsonRpcWireTransport {
 
   /** Inbound envelopes this transport queued. Reported on close. */
   private requestCount = 0;
-  /** Outbound lines this transport handed to the wire. Reported on close. */
+  /** Answers to inbound requests the wire ACCEPTED. Reported on close. */
   private responseCount = 0;
+  /** Outbound notifications the wire accepted. Reported on close. */
+  private notificationCount = 0;
+  /** Server-initiated requests the wire accepted. Reported on close. */
+  private serverRequestCount = 0;
+  /** Outbound frames that were none of the three. Reported on close. */
+  private otherOutboundCount = 0;
   /** The `first_request` one-shot latch. */
   private firstRequestReported = false;
   /** The `first_response` one-shot latch. */
@@ -375,29 +419,59 @@ export class StudioSocketTransport implements JsonRpcWireTransport {
       return Promise.resolve();
     }
     const line = `${JSON.stringify(message)}\n`;
-    // COUNTED AND REPORTED HERE, at the hand-off to the wire: this is the
-    // point after which the bytes are somebody else's, and "did main's answer
-    // leave main" is the exact question the log could not answer before.
-    this.responseCount += 1;
-    if (!this.firstResponseReported) {
+    // COUNTED AND REPORTED ON ACCEPTANCE, not here.
+    //
+    // "Did main's answer leave main" is the exact question the log could not
+    // answer, and a milestone written at the hand-off answers a weaker one: a
+    // frame handed to an outbound queue that is already closed, or to a write
+    // that rejects, never reached the peer at all, and a `first response` line
+    // for it is a false witness in the one log an incident is read from. The
+    // wire's completion callback and the writer's resolution are the two
+    // points at which the bytes are somebody else's; both run `accepted`.
+    const outbound = classifyOutboundFrame(message);
+    const accepted = (): void => {
+      this.countOutbound(outbound);
+      if (this.firstResponseReported) return;
       this.firstResponseReported = true;
       this.reportLifecycle({
         kind: "first_response",
         id: jsonRpcIdTag(readRecordField(message, "id")),
         bytes: Buffer.byteLength(line, "utf8"),
+        outbound,
       });
-    }
+    };
     if (this.writeLine !== undefined) {
-      return this.writeLine(line, progressCoalesceKey(message)).finally(() => {
-        this.settleIfDrained();
-      });
+      return this.writeLine(line, progressCoalesceKey(message))
+        .then(accepted)
+        .finally(() => {
+          this.settleIfDrained();
+        });
     }
     return new Promise<void>((resolve) => {
       this.wire.write(line, () => {
+        accepted();
         this.settleIfDrained();
         resolve();
       });
     });
+  }
+
+  /** One accepted outbound frame, on its own counter. */
+  private countOutbound(outbound: OutboundFrameKind): void {
+    switch (outbound) {
+      case "response":
+        this.responseCount += 1;
+        return;
+      case "notification":
+        this.notificationCount += 1;
+        return;
+      case "server_request":
+        this.serverRequestCount += 1;
+        return;
+      case "other":
+        this.otherOutboundCount += 1;
+        return;
+    }
   }
 
   /**
@@ -740,6 +814,9 @@ export class StudioSocketTransport implements JsonRpcWireTransport {
       kind: "closed",
       requests: this.requestCount,
       responses: this.responseCount,
+      notifications: this.notificationCount,
+      serverRequests: this.serverRequestCount,
+      otherOutbound: this.otherOutboundCount,
     });
     try {
       this.onclose?.();
@@ -787,6 +864,24 @@ function jsonRpcResponseKey(message: unknown): string | null {
   const record = message as Record<string, unknown>;
   if (typeof record["method"] === "string") return null;
   return requestIdKey(record["id"]);
+}
+
+/**
+ * What an outbound frame IS, structurally. See `OutboundFrameKind`.
+ *
+ * `result` and `error` are read as PRESENCE, not as content: a response whose
+ * `result` is `null` is still a response, and a frame carrying both is
+ * malformed rather than an answer.
+ */
+function classifyOutboundFrame(message: unknown): OutboundFrameKind {
+  if (typeof message !== "object" || message === null) return "other";
+  const record = message as Record<string, unknown>;
+  const hasId = "id" in record && record["id"] !== undefined;
+  if (typeof record["method"] === "string") return hasId ? "server_request" : "notification";
+  if (!hasId) return "other";
+  const hasResult = "result" in record && record["result"] !== undefined;
+  const hasError = "error" in record && record["error"] !== undefined;
+  return hasResult !== hasError ? "response" : "other";
 }
 
 /**

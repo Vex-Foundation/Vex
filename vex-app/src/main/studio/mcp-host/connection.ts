@@ -89,6 +89,21 @@ export type StudioCloseCause =
   | "stale"
   | "owner_close";
 
+/**
+ * The close cause of a teardown MAIN decided, from the cancel cause it used.
+ *
+ * `cancelled` and `disconnect` are not causes of their own: they are what a
+ * running tool call is told, and the connection-level reason behind them is
+ * main deciding (a serve failure, an outbound overflow, the host tearing
+ * down). Their honest name is `owner_close`, which is why it is the default
+ * the `closed` line has always fallen back to.
+ */
+function ownerCloseCause(cause: StudioCancelCause): StudioCloseCause {
+  if (cause === "lock") return "locked";
+  if (cause === "vex_quit") return "quit";
+  return "owner_close";
+}
+
 /** Which of the two wire implementations carries this connection. */
 export type StudioTransportKind = "front" | "socket";
 
@@ -240,6 +255,18 @@ export class StudioConnection {
   private servingSince: number | null = null;
   private requestCount = 0;
   private responseCount = 0;
+  /**
+   * The outbound frames that were NOT answers, kept apart from `responses`.
+   *
+   * They are logged only when they are non-zero: on an ordinary connection all
+   * three are zero and the `closed` line stays the line a reader knows, while
+   * a connection that did send them never hides it. `otherOutbound` is our own
+   * defect if it is ever anything but zero, which is why it has a name here
+   * rather than being folded into a neighbour.
+   */
+  private notificationCount = 0;
+  private serverRequestCount = 0;
+  private otherOutboundCount = 0;
 
   constructor(id: string, wire: StudioDuplexTransport, deps: StudioConnectionDeps) {
     this.id = id;
@@ -352,6 +379,20 @@ export class StudioConnection {
     this.closedLatch = true;
     this.cause = cause;
     this.phase = "closed";
+    // THE CAUSE IS LATCHED HERE, BEFORE THE FIRST AWAIT BELOW.
+    //
+    // `runDispose` awaits the served entry's close, and the peer's FIN can
+    // land inside that await: the transport then reports `peer_end` and, with
+    // nothing latched yet, WON the cause. An outbound overflow or a serve
+    // failure - main's own decisions, both of which reach here through
+    // `dispose` - would then be logged as the peer walking away, which is the
+    // one distinction this whole vocabulary exists to make.
+    //
+    // `noteCloseCause` still never overwrites, so every cause decided EARLIER
+    // (refused, wire_failure, peer_error, peer_end, stale, and the lock and
+    // quit latched by `destroyNow`) survives this line untouched. It only
+    // fills the gap that used to be filled by whatever arrived next.
+    this.noteCloseCause(ownerCloseCause(cause));
 
     this.releaseConnectionSlot();
     this.clearHandshakeTimer();
@@ -387,9 +428,7 @@ export class StudioConnection {
   destroyNow(cause: StudioCancelCause): void {
     // LATCHED FIRST, synchronously: an establish continuation that resumes
     // after this tick must see a closed connection, not a live one.
-    this.noteCloseCause(
-      cause === "lock" ? "locked" : cause === "vex_quit" ? "quit" : "owner_close",
-    );
+    this.noteCloseCause(ownerCloseCause(cause));
     this.closedLatch = true;
     this.cause = cause;
     this.releaseConnectionSlot();
@@ -524,9 +563,14 @@ export class StudioConnection {
         );
         return;
       case "first_response":
+        // NAMED FOR WHAT IT WAS. The milestone fires on the first outbound
+        // line the wire ACCEPTED, and that line is not always an answer: a
+        // progress notification can precede the response it belongs to, and
+        // logging it as this connection's first answer would misreport the one
+        // fact an incident is read for. `outbound` carries the difference.
         log.info(
           `[studio:mcp] first response id=${this.id} rpcId=${event.id ?? "none"} `
-            + `bytes=${String(event.bytes)}`,
+            + `bytes=${String(event.bytes)} outbound=${event.outbound}`,
         );
         return;
       case "peer_end":
@@ -535,6 +579,9 @@ export class StudioConnection {
       case "closed":
         this.requestCount = event.requests;
         this.responseCount = event.responses;
+        this.notificationCount = event.notifications;
+        this.serverRequestCount = event.serverRequests;
+        this.otherOutboundCount = event.otherOutbound;
         return;
     }
   };
@@ -554,6 +601,15 @@ export class StudioConnection {
           this.servingSince === null ? 0 : Date.now() - this.servingSince,
         )} `
         + `requests=${String(this.requestCount)} responses=${String(this.responseCount)}`
+        + (this.notificationCount === 0
+          ? ""
+          : ` notifications=${String(this.notificationCount)}`)
+        + (this.serverRequestCount === 0
+          ? ""
+          : ` serverRequests=${String(this.serverRequestCount)}`)
+        + (this.otherOutboundCount === 0
+          ? ""
+          : ` otherOutbound=${String(this.otherOutboundCount)}`)
         + (dropped === null ? "" : ` droppedFrames=${String(dropped())}`),
     );
   }

@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -37,6 +38,12 @@ import (
 // one sentence. The ERROR_PIPE_BUSY loop is the documented way to wait for an
 // instance of a pipe that IS there, which is what go-winio's tryDialPipe
 // (agents-colab/go-winio/pipe.go) does under its own context deadline.
+//
+// THE DEADLINE IS NOT THE ONLY WAY OUT. The wait runs under the caller's
+// context, which carries this process's SIGINT/SIGTERM/SIGHUP registration as
+// well as this bound, so a user who interrupts the bridge while its front is
+// saturated gets the teardown this program owns rather than four seconds of a
+// loop that observes nothing.
 const WindowsDialTimeout = 4 * time.Second
 
 // pipeBusyRetryInterval is the pause between ERROR_PIPE_BUSY attempts, the
@@ -150,20 +157,26 @@ const errorPipeBusy = syscall.Errno(231)
 // (run 33646484002) drives this exact path against a pipe served by a temporary
 // SECOND local account the job creates, where the host authentication below
 // refuses with `windows_host_not_current_user` and no byte is written.
-func dialPipe(path string) (handshake.Conn, error) {
-	return dialPipeWith(path, resolveServerUserSID, resolveCurrentUserSID)
+func dialPipe(ctx context.Context, path string) (handshake.Conn, error) {
+	return dialPipeWith(ctx, path, resolveServerUserSID, resolveCurrentUserSID)
 }
 
 // dialPipeWith is dialPipe with its identity sources injected, so the refusal
 // branches can be driven deterministically on a single-account runner. The
 // production call above is the only non-test caller.
-func dialPipeWith(path string, server serverSIDResolver, current userSIDResolver) (handshake.Conn, error) {
-	return dialPipeWithin(path, WindowsDialTimeout, server, current)
+func dialPipeWith(
+	ctx context.Context,
+	path string,
+	server serverSIDResolver,
+	current userSIDResolver,
+) (handshake.Conn, error) {
+	return dialPipeWithin(ctx, path, WindowsDialTimeout, server, current)
 }
 
 // dialPipeWithin is dialPipeWith with the bound injected, so the deadline
 // branch is driven in milliseconds rather than in four real seconds.
 func dialPipeWithin(
+	ctx context.Context,
 	path string,
 	budget time.Duration,
 	server serverSIDResolver,
@@ -173,9 +186,17 @@ func dialPipeWithin(
 	if err != nil {
 		return nil, &os.PathError{Op: "open", Path: path, Err: err}
 	}
-	handle, err := createPipeHandleWithin(name, budget)
+	// THE BOUND IS APPLIED HERE, on top of whatever the caller already
+	// carries: the deadline belongs to this transport and the cancellation
+	// belongs to the process, and a derived context is how both hold at once.
+	bounded, cancel := context.WithTimeout(ctx, budget)
+	defer cancel()
+	handle, err := createPipeHandleWithin(bounded, name, budget)
 	if err != nil {
 		if _, busy := asDialTimeout(err); busy {
+			return nil, err
+		}
+		if _, interrupted := asDialInterrupted(err); interrupted {
 			return nil, err
 		}
 		return nil, &os.PathError{Op: "open", Path: path, Err: err}
@@ -191,22 +212,33 @@ func dialPipeWithin(
 }
 
 // createPipeHandleWithin opens the pipe, waiting out ERROR_PIPE_BUSY until the
-// deadline.
+// context is done.
 //
 // THE SHAPE IS go-winio's tryDialPipe (agents-colab/go-winio/pipe.go line
 // 207), written against the standard library because this binary links nothing
-// else: attempt, return on success, return on any error that is not
-// ERROR_PIPE_BUSY, otherwise sleep a fixed interval and attempt again while
-// there is budget left. The deadline is checked BEFORE each attempt and after
-// each sleep, so the loop cannot overrun it by a whole interval.
+// else: check the context, attempt, return on success, return on any error
+// that is not ERROR_PIPE_BUSY, otherwise wait a fixed interval and attempt
+// again. It differs from go-winio's loop in ONE way, deliberately: go-winio
+// waits with `time.Sleep`, so a cancellation that lands mid-wait is not seen
+// until the sleep is over. Here the wait is a select on the context and the
+// timer, so the loop leaves within a scheduling quantum of the cancel rather
+// than within an interval of it. The context is checked BEFORE every attempt
+// and it is the only thing the wait can lose to, so the loop can neither
+// overrun its deadline nor outlive an interrupted process.
 //
-// Exhaustion is a dialTimeout, which carries its own sentence; every other
-// failure is the operating system's and keeps its errno so dialSentence can
-// name ENOENT and the rest.
-func createPipeHandleWithin(name *uint16, budget time.Duration) (syscall.Handle, error) {
-	deadline := time.Now().Add(budget)
+// Exhaustion is a dialTimeout and interruption is a dialInterrupted; each
+// carries its own sentence. Every other failure is the operating system's and
+// keeps its errno so dialSentence can name ENOENT and the rest.
+func createPipeHandleWithin(
+	ctx context.Context,
+	name *uint16,
+	budget time.Duration,
+) (syscall.Handle, error) {
 	attempts := 0
 	for {
+		if err := ctx.Err(); err != nil {
+			return syscall.InvalidHandle, dialGaveUp(err, budget, attempts)
+		}
 		handle, err := syscall.CreateFile(
 			name,
 			syscall.GENERIC_READ|syscall.GENERIC_WRITE,
@@ -223,15 +255,33 @@ func createPipeHandleWithin(name *uint16, budget time.Duration) (syscall.Handle,
 		if !errors.Is(err, errorPipeBusy) {
 			return syscall.InvalidHandle, err
 		}
-		if !time.Now().Add(pipeBusyRetryInterval).Before(deadline) {
-			return syscall.InvalidHandle, &dialTimeout{message: fmt.Sprintf(
-				"%s: every instance of the Vex Studio named pipe was busy for %s "+
-					"(%d attempts), so the Vex Studio bridge stopped without sending "+
-					"anything. Vex is running but its pipe front is not accepting new "+
-					"connections; close some Vex Studio MCP connections, or restart Vex, "+
-					"and connect again.",
-				dialTimeoutRefusalCode, budget, attempts)}
+		wait := time.NewTimer(pipeBusyRetryInterval)
+		select {
+		case <-ctx.Done():
+			wait.Stop()
+			return syscall.InvalidHandle, dialGaveUp(ctx.Err(), budget, attempts)
+		case <-wait.C:
 		}
-		time.Sleep(pipeBusyRetryInterval)
 	}
+}
+
+// dialGaveUp turns the context's reason for being done into the sentence the
+// user is shown, keeping "the pipe stayed busy for its whole budget" and "this
+// process was asked to stop" apart: the first is an endpoint state that asking
+// again can change, the second is not about the endpoint at all.
+func dialGaveUp(reason error, budget time.Duration, attempts int) error {
+	if errors.Is(reason, context.Canceled) {
+		return &dialInterrupted{message: fmt.Sprintf(
+			"%s: the Vex Studio bridge was asked to stop while it was waiting for a free "+
+				"instance of the Vex Studio named pipe (%d attempts), so it stopped without "+
+				"sending anything.",
+			dialInterruptedRefusalCode, attempts)}
+	}
+	return &dialTimeout{message: fmt.Sprintf(
+		"%s: every instance of the Vex Studio named pipe was busy for %s "+
+			"(%d attempts), so the Vex Studio bridge stopped without sending "+
+			"anything. Vex is running but its pipe front is not accepting new "+
+			"connections; close some Vex Studio MCP connections, or restart Vex, "+
+			"and connect again.",
+		dialTimeoutRefusalCode, budget, attempts)}
 }

@@ -50,18 +50,29 @@ interface Harness {
   readonly wireLifecycle: (event: SocketTransportLifecycleEvent) => void;
   readonly failWire: () => void;
   readonly infoLines: () => readonly string[];
+  /**
+   * Let a held `serveConnection().close()` finish.
+   *
+   * Only meaningful with `holdEntryClose`, and the point of the seam: the
+   * teardown's own await is where a late peer edge lands in production, so a
+   * test that wants to script that edge has to be able to stand inside it.
+   */
+  readonly releaseEntryClose: () => void;
 }
 
 interface HarnessOptions {
   readonly transportKind?: "front" | "socket";
   readonly droppedFrames?: (() => number) | null;
   readonly isStale?: () => boolean;
+  /** Park the served entry's `close()` until `releaseEntryClose` is called. */
+  readonly holdEntryClose?: boolean;
 }
 
 function harness(options: HarnessOptions = {}): Harness {
   const wire = new FakeDuplexTransport("accept_sync");
   let onLifecycle: ((event: SocketTransportLifecycleEvent) => void) | null = null;
   let onWireFailure: ((code: "invalid_json") => void) | null = null;
+  let releaseEntryClose: (() => void) | null = null;
   const connection = new StudioConnection("c-test", wire, {
     runCall: async () => ({ kind: "completed", result: { success: true, output: "ok" } }),
     acquireCallSlot: () => ({ ok: true, release: (): void => undefined }),
@@ -71,7 +82,15 @@ function harness(options: HarnessOptions = {}): Harness {
     serveConnection: (input): StudioConnectionHandle => {
       onLifecycle = input.onWireLifecycle;
       onWireFailure = input.onWireFailure;
-      return { close: async (): Promise<void> => undefined };
+      if (options.holdEntryClose !== true) {
+        return { close: async (): Promise<void> => undefined };
+      }
+      return {
+        close: (): Promise<void> =>
+          new Promise<void>((resolve) => {
+            releaseEntryClose = resolve;
+          }),
+      };
     },
     onClosed: (): void => undefined,
     transportKind: options.transportKind ?? "socket",
@@ -90,6 +109,10 @@ function harness(options: HarnessOptions = {}): Harness {
     },
     infoLines: () =>
       vi.mocked(log.info).mock.calls.map((call) => String(call[0])),
+    releaseEntryClose: () => {
+      if (releaseEntryClose === null) throw new Error("no entry close is held");
+      releaseEntryClose();
+    },
   };
 }
 
@@ -133,10 +156,22 @@ describe("a served connection whose peer half-closes", () => {
       client: "claude-code/2.1.260",
       protocolVersion: "2026-07-28",
     });
-    test.wireLifecycle({ kind: "first_response", id: "0", bytes: 733_120 });
+    test.wireLifecycle({
+      kind: "first_response",
+      id: "0",
+      bytes: 733_120,
+      outbound: "response",
+    });
     // THE INCIDENT'S OWN EDGE: the peer went away, main did not decide to.
     test.wireLifecycle({ kind: "peer_end" });
-    test.wireLifecycle({ kind: "closed", requests: 3, responses: 3 });
+    test.wireLifecycle({
+      kind: "closed",
+      requests: 3,
+      responses: 3,
+      notifications: 0,
+      serverRequests: 0,
+      otherOutbound: 0,
+    });
     await test.connection.dispose("disconnect");
 
     const lines = test.infoLines();
@@ -148,7 +183,9 @@ describe("a served connection whose peer half-closes", () => {
       "[studio:mcp] first request id=c-test method=initialize "
         + "client=claude-code/2.1.260 protocolVersion=2026-07-28",
     );
-    expect(lines[2]).toBe("[studio:mcp] first response id=c-test rpcId=0 bytes=733120");
+    expect(lines[2]).toBe(
+      "[studio:mcp] first response id=c-test rpcId=0 bytes=733120 outbound=response",
+    );
     expect(lines[3]).toMatch(
       /^\[studio:mcp\] closed id=c-test cause=peer_end servedMs=\d+ requests=3 responses=3$/,
     );
@@ -161,12 +198,59 @@ describe("a served connection whose peer half-closes", () => {
 
     expect(test.infoLines()[0]).toContain("transport=front");
 
-    test.wireLifecycle({ kind: "closed", requests: 1, responses: 1 });
+    test.wireLifecycle({
+      kind: "closed",
+      requests: 1,
+      responses: 1,
+      notifications: 0,
+      serverRequests: 0,
+      otherOutbound: 0,
+    });
     await test.connection.dispose("disconnect");
 
     expect(closedLine(test)).toMatch(
       /cause=owner_close servedMs=\d+ requests=1 responses=1 droppedFrames=2$/,
     );
+  });
+});
+
+describe("the closed line counts answers apart from everything else main sent", () => {
+  it("names notifications and server requests when there were any, and stays quiet when there were not", async () => {
+    // The counter used to be one total of outbound LINES called `responses`,
+    // so a connection that answered once and emitted eleven progress
+    // notifications reported twelve answers. `responses` is answers now, and
+    // the rest have their own names - printed only when they are non-zero, so
+    // the ordinary line stays the line a reader knows.
+    const busy = harness();
+    busy.wire.deliver(handshakeLine());
+    await settle();
+    busy.wireLifecycle({
+      kind: "closed",
+      requests: 4,
+      responses: 4,
+      notifications: 11,
+      serverRequests: 1,
+      otherOutbound: 0,
+    });
+    await busy.connection.dispose("disconnect");
+    expect(closedLine(busy)).toContain("responses=4 notifications=11 serverRequests=1");
+    expect(closedLine(busy)).not.toContain("otherOutbound");
+
+    vi.clearAllMocks();
+
+    const quiet = harness();
+    quiet.wire.deliver(handshakeLine());
+    await settle();
+    quiet.wireLifecycle({
+      kind: "closed",
+      requests: 1,
+      responses: 1,
+      notifications: 0,
+      serverRequests: 0,
+      otherOutbound: 0,
+    });
+    await quiet.connection.dispose("disconnect");
+    expect(closedLine(quiet)).toMatch(/requests=1 responses=1$/);
   });
 });
 
@@ -177,7 +261,14 @@ describe("the cause separates the peer from main's own decisions", () => {
     await settle();
 
     test.failWire();
-    test.wireLifecycle({ kind: "closed", requests: 1, responses: 0 });
+    test.wireLifecycle({
+      kind: "closed",
+      requests: 1,
+      responses: 0,
+      notifications: 0,
+      serverRequests: 0,
+      otherOutbound: 0,
+    });
     await test.connection.dispose("disconnect");
 
     expect(closedLine(test)).toContain("cause=wire_failure");
@@ -230,13 +321,75 @@ describe("the cause separates the peer from main's own decisions", () => {
     expect(closedLine(test)).toContain("cause=stale");
   });
 
+  it("a peer EOF arriving inside main's own teardown cannot rename it", async () => {
+    // THE RACE, SCRIPTED. `runDispose` awaits the served entry's close, and a
+    // killed or exiting peer's FIN lands inside that await often enough that
+    // the incident of 2026-09-04 could not be attributed at all: main decided
+    // to close (a serve failure, an outbound overflow), the transport reported
+    // `peer_end` while the teardown was still running, and the log named the
+    // peer. Here the entry's close is HELD open, the peer's edge is delivered
+    // while it is held, and the cause must still be main's.
+    const test = harness({ holdEntryClose: true });
+    test.wire.deliver(handshakeLine());
+    await settle();
+
+    const closing = test.connection.dispose("disconnect");
+    // Inside the await, exactly where the real edge arrives.
+    test.wireLifecycle({ kind: "peer_end" });
+    test.wireLifecycle({
+      kind: "closed",
+      requests: 2,
+      responses: 1,
+      notifications: 0,
+      serverRequests: 0,
+      otherOutbound: 0,
+    });
+    test.releaseEntryClose();
+    await closing;
+
+    expect(closedLine(test)).toMatch(
+      /^\[studio:mcp\] closed id=c-test cause=owner_close servedMs=\d+ requests=2 responses=1/,
+    );
+  });
+
+  it("a peer EOF decided BEFORE main's teardown still owns the cause", async () => {
+    // The other direction of the same latch, so the fix above cannot be a
+    // blanket relabel: when the peer left first, main's teardown is the
+    // consequence and must not overwrite it.
+    const test = harness({ holdEntryClose: true });
+    test.wire.deliver(handshakeLine());
+    await settle();
+
+    test.wireLifecycle({ kind: "peer_end" });
+    const closing = test.connection.dispose("disconnect");
+    test.wireLifecycle({
+      kind: "closed",
+      requests: 1,
+      responses: 1,
+      notifications: 0,
+      serverRequests: 0,
+      otherOutbound: 0,
+    });
+    test.releaseEntryClose();
+    await closing;
+
+    expect(closedLine(test)).toContain("cause=peer_end");
+  });
+
   it("a wire error closes with cause=peer_error", async () => {
     const test = harness();
     test.wire.deliver(handshakeLine());
     await settle();
 
     test.wire.emit("error", new Error("ECONNRESET"));
-    test.wireLifecycle({ kind: "closed", requests: 0, responses: 0 });
+    test.wireLifecycle({
+      kind: "closed",
+      requests: 0,
+      responses: 0,
+      notifications: 0,
+      serverRequests: 0,
+      otherOutbound: 0,
+    });
     await test.connection.dispose("disconnect");
 
     expect(closedLine(test)).toContain("cause=peer_error");
