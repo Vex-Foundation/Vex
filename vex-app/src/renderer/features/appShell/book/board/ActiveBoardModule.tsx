@@ -77,6 +77,36 @@ export const ACTIVE_BOARD_EMPTY = "No board yet - ask VEX to compose one";
 export const PROJECT_BOARD_EMPTY =
   "A board is a token radar VEX composes for you inside an Agent chat. A project has no chat, so there is no board here - open an Agent session to ask for one.";
 
+/**
+ * Where keyboard focus goes when `Switch to Agent` unmounts under the user.
+ *
+ * The button lives in the Studio shell, and the mode write it makes replaces
+ * that shell with the Agent one in the same commit; focus left on a removed
+ * node drops the user to `document.body`, outside every surface. The
+ * DOCUMENTED DESTINATION is the runtime-mode capsule (`RuntimeModeToggle`,
+ * `role="radiogroup"` named "Runtime mode"), the one control both shells mount
+ * for the same decision: its checked segment is the roving tab stop, it now
+ * reads "Agent", and the way back to Studio is one arrow key from it. Found by
+ * its accessible name and role rather than a ref, because the destination is
+ * another feature's control in a subtree this module never owns.
+ *
+ * A microtask, and not an effect, because this module is gone after the
+ * commit: the click is a React event, so React flushes the mode switch before
+ * the microtask runs (the same reasoning as `TerminalTabs`' rename field). If
+ * the Agent shell mounted no capsule (a collapsed Agent rail over an active
+ * session seats none), there is nothing to hand focus to and the microtask
+ * leaves it alone rather than guessing at a control this module cannot name.
+ */
+const RUNTIME_MODE_CHECKED_SEGMENT_SELECTOR =
+  '[role="radiogroup"][aria-label="Runtime mode"] [role="radio"][aria-checked="true"]';
+
+function handFocusToRuntimeModeControl(): void {
+  queueMicrotask(() => {
+    const segment = document.querySelector(RUNTIME_MODE_CHECKED_SEGMENT_SELECTOR);
+    if (segment instanceof HTMLElement) segment.focus();
+  });
+}
+
 export function ActiveBoardModule({
   scopeKind,
 }: {
@@ -105,12 +135,14 @@ export function ActiveBoardModule({
         {/* Not an authority change: `runtimeMode` only decides which surfaces
           * mount (the same write the approval row and the Studio keybinding
           * make). The session shown there is whichever the agent shell last
-          * had; this module names none. */}
+          * had; this module names none. The write unmounts this button, so
+          * focus is handed on deliberately (rule 08: focus after unmount). */}
         <button
           type="button"
           data-vex-area="active-board-switch-agent"
           onClick={() => {
             setRuntimeMode("agent");
+            handFocusToRuntimeModeControl();
           }}
           className="inline-flex items-center justify-center self-start rounded-lg border border-line-2 px-2.5 py-1.5 text-[12.5px] font-medium text-ink-secondary transition-colors duration-150 hover:border-line-3 hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
         >

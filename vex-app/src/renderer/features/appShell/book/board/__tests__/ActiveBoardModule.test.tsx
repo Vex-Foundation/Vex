@@ -12,6 +12,9 @@
  *  - A PROJECT RAIL HAS NO BOARD. Under the `project` scope the module says
  *    what a board is and where it is composed, offers the way there, and
  *    reads NOTHING from the store - a board retained there is a session's.
+ *  - SWITCH TO AGENT KEEPS KEYBOARD FOCUS. The button unmounts with the Studio
+ *    shell it lives in; focus is handed to the runtime-mode capsule the Agent
+ *    shell mounts, never dropped on `document.body`.
  *  - IT NEVER CALLS A SOCKET "LIVE" BEFORE A TICK LANDS. Holding a lease and
  *    receiving figures are two different facts; `live-connecting` and
  *    `live-degraded` get their own word, their own state attribute and their
@@ -19,9 +22,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ReactNode } from "react";
+import type { JSX, ReactNode } from "react";
+import { RuntimeModeToggle } from "../../../RuntimeModeToggle.js";
 import {
   ACTIVE_BOARD_EMPTY,
   ActiveBoardModule,
@@ -339,5 +343,62 @@ describe("ActiveBoardModule on a PROJECT rail (Studio parity decree)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Switch to Agent" }));
     expect(useUiStore.getState().runtimeMode).toBe("agent");
     expect(useBoardSurfaceStore.getState().modalBoard).toBeNull();
+  });
+});
+
+/**
+ * The shell, reduced to the one thing the focus contract is about: the Studio
+ * shell (this module, in the project rail) and the Agent shell (the runtime
+ * mode capsule) are ALTERNATE subtrees keyed on `runtimeMode`. Writing the
+ * mode unmounts the button the user pressed in the same commit that mounts
+ * the capsule.
+ */
+function ModeKeyedShell(): JSX.Element {
+  const runtimeMode = useUiStore((s) => s.runtimeMode);
+  const setRuntimeMode = useUiStore((s) => s.setRuntimeMode);
+  return runtimeMode === "studio" ? (
+    <ActiveBoardModule scopeKind="project" />
+  ) : (
+    <RuntimeModeToggle runtimeMode={runtimeMode} onChange={setRuntimeMode} />
+  );
+}
+
+describe("Switch to Agent keeps keyboard focus (rule 08: focus after unmount)", () => {
+  it("hands focus to the checked Agent segment of the runtime-mode capsule", async () => {
+    useUiStore.setState({ runtimeMode: "studio" });
+    render(<ModeKeyedShell />, { wrapper });
+
+    const control = screen.getByRole("button", { name: "Switch to Agent" });
+    control.focus();
+    expect(document.activeElement).toBe(control);
+    // Keyboard activation of a button is a click; the handler is the same.
+    fireEvent.click(control);
+
+    // The pressed control is gone with the Studio shell.
+    expect(screen.queryByRole("button", { name: "Switch to Agent" })).toBeNull();
+    expect(useUiStore.getState().runtimeMode).toBe("agent");
+
+    const agent = await screen.findByRole("radio", { name: "Agent" });
+    await waitFor(() => expect(document.activeElement).toBe(agent));
+    // A MEANINGFUL destination: the capsule's checked segment is its roving
+    // tab stop, reads the mode the user just chose, and is one arrow key from
+    // the way back to Studio.
+    expect(agent.getAttribute("aria-checked")).toBe("true");
+    expect(agent.tabIndex).toBe(0);
+    expect(agent.isConnected).toBe(true);
+    expect(document.activeElement).not.toBe(document.body);
+  });
+
+  it("with no capsule mounted, still switches the mode and hands focus nowhere it cannot name", async () => {
+    // The documented gap: the Agent shell seats no capsule over a collapsed
+    // rail with an active session. The handoff finds no destination and
+    // leaves focus alone rather than guessing at another feature's control.
+    useUiStore.setState({ runtimeMode: "studio" });
+    render(<ActiveBoardModule scopeKind="project" />, { wrapper });
+    const control = screen.getByRole("button", { name: "Switch to Agent" });
+    control.focus();
+    fireEvent.click(control);
+    expect(useUiStore.getState().runtimeMode).toBe("agent");
+    await waitFor(() => expect(screen.queryByRole("radio")).toBeNull());
   });
 });
