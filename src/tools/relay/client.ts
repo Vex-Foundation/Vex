@@ -35,6 +35,7 @@ import {
   type RelayQuoteRequest,
   type RelayQuoteResponse,
   type RelayStatusResponse,
+  type RelayTradeType,
 } from "./types.js";
 
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -75,6 +76,50 @@ function relayApiKey(): string | undefined {
  * keeping it would cost the quote itself.
  */
 const RELAY_REFERRER = "vex";
+
+/**
+ * The exact field set Vex puts on a `POST /quote/v2` body. `referrer` is
+ * deliberately absent: only `RelayClient.getQuote` adds it, only as the constant
+ * `RELAY_REFERRER`, and only when a key authorizes it.
+ */
+interface RelayQuoteBody {
+  user: string;
+  recipient: string;
+  refundTo: string;
+  originChainId: number;
+  destinationChainId: number;
+  originCurrency: string;
+  destinationCurrency: string;
+  amount: string;
+  tradeType: RelayTradeType;
+  slippageTolerance?: string;
+  ttl?: number;
+}
+
+/**
+ * Project a caller's quote request onto the canonical wire body by naming every
+ * field. Anything the caller carries beyond this list (a `referrer` above all,
+ * which would cost a keyless deployment its quote and would forge attribution on
+ * a keyed one) is dropped by construction rather than by the caller's discipline.
+ * Optional fields are attached only when present, so the keyless body stays
+ * byte-identical to the one measured against the live endpoint.
+ */
+function canonicalQuoteBody(request: RelayQuoteRequest): RelayQuoteBody {
+  const body: RelayQuoteBody = {
+    user: request.user,
+    recipient: request.recipient,
+    refundTo: request.refundTo,
+    originChainId: request.originChainId,
+    destinationChainId: request.destinationChainId,
+    originCurrency: request.originCurrency,
+    destinationCurrency: request.destinationCurrency,
+    amount: request.amount,
+    tradeType: request.tradeType,
+  };
+  if (request.slippageTolerance !== undefined) body.slippageTolerance = request.slippageTolerance;
+  if (request.ttl !== undefined) body.ttl = request.ttl;
+  return body;
+}
 
 /**
  * Canonical Relay intent-status path. Single source of truth: used both to build
@@ -236,17 +281,24 @@ export class RelayClient {
   }
 
   getQuote(request: RelayQuoteRequest): Promise<RelayQuoteResponse> {
+    // The wire body is a FIELD-BY-FIELD projection of the caller's request, not
+    // a spread of it: a caller object carrying an extra `referrer` (or any other
+    // unknown property) cannot reach Relay, because nothing but the named fields
+    // below is copied. TypeScript's excess-property check is a compile-time
+    // convenience and does not survive `unknown` sources or a widened variable,
+    // so the transport, not the type, owns this.
+    const canonical = canonicalQuoteBody(request);
     return this.request("/quote/v2", (raw) => RelayQuoteResponseSchema.parse(raw), {
       method: "POST",
       // `referrer` is Relay's integration-attribution field (their 2026-07-30
       // request): a constant identifier recorded against the quote and the
       // resulting transaction. Attribution only, never an app fee and never a
-      // caller/model input, so it stays transport-injected rather than trusted
-      // to each caller. It rides ONLY on a keyed request: Relay answers 401
+      // caller/model input, so it is added HERE, by the transport, and only as
+      // the constant. It rides ONLY on a keyed request: Relay answers 401
       // UNAUTHORIZED_QUOTE to a keyless body that claims a referrer, so a
       // keyless deployment would otherwise get no bridge quote at all. See
       // `RELAY_REFERRER` for the measurement.
-      body: (keyed) => (keyed ? { ...request, referrer: RELAY_REFERRER } : request),
+      body: (keyed) => (keyed ? { ...canonical, referrer: RELAY_REFERRER } : canonical),
     });
   }
 
