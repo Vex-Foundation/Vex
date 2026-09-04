@@ -173,6 +173,12 @@ export const POOLS_ENDPOINTS = {
   uploadImage: "pools-fun/launches/upload-image",
   devBuyQuote: "pools-fun/launches/dev-buy-quote",
   prepareLaunch: "pools-fun/launches/prepare",
+  // Reads added 2026-09-04. `launchAssets` is the authoritative tokenised-stock
+  // universe (the frontend bundle also ships a 200-entry CoinGecko fallback
+  // list, which is NOT authoritative); `holderRewards` is the fees-to-holders
+  // distributor read. Neither is under `/launches/`.
+  launchAssets: "pools-fun/launch-assets",
+  holderRewards: "pools-fun/holder-rewards",
 } as const;
 
 /**

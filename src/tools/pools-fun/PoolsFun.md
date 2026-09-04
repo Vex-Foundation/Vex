@@ -25,16 +25,18 @@ Blockscout-verified contract source; nothing is transcribed from a doc site
 | `constants.ts` | Base URL default, chain id and slug, contract addresses, server enums, limit caps, the 1 percent pool fee. |
 | `abi.ts` | Verified PartyLocker, PartyToken and `TokenLaunched` fragments. |
 | `evm/token-registration.ts` | The four on-chain reads behind `pools.token`, batched at one pinned block. |
+| `holder-rewards/read.ts` | The fees-to-holders AUTHORITY reads: the deployer's `DistributorDeployed` event (distributor + reward mode) and the distributor's `earned(wallet)` per leg, at one pinned block. Read-only; the claim and the permissionless distribute are not here. |
 
 Base URL is `services.poolsFunApiUrl` in the Vex config (default
 `https://api.bankr.bot`) because it is an environment endpoint, not a secret.
 
 ## Implemented reads (what this module actually calls)
 
-Two endpoints, both keyless public GETs. `cache-control: max-age=5` on discover;
-no documented rate limit; no auth anywhere in this module. Everything else the
-probe verified is in **Verified provider reference** below, recorded but not
-wired.
+Four endpoints, all keyless public GETs. `cache-control: max-age=5` on discover;
+no rate limit is documented on discover or the candles route, and
+`/pools-fun/holder-rewards` publishes 30 requests per 60 seconds in its own
+headers. No auth anywhere in this module. Everything else the probe verified is
+in **Verified provider reference** below, recorded but not wired.
 
 ### `GET /discover` - list, filter, screen, search
 
@@ -56,6 +58,19 @@ supplies or demands both (see Quirks).
 | `minTxCount24h` | integer | |
 | `maxAgeHours` | number | the fresh-launch filter (there is no curve stage to filter on). |
 | `deployer` / `feeRecipient` | address | |
+| `vexAttested` | the literal `true` ONLY | added 2026-09-04. Keeps rows carrying a Vex attestation. `vexAttested=false` is **HTTP 400** `Invalid input: expected "true"`, so this is an opt-in switch and the complement cannot be requested. Combinable with any `platform`; with `platform=sushi` it is always empty, because a sushi row can never be a gateway launch. |
+| `holderRewards` | the literal `true` ONLY | added 2026-09-04. Keeps rows that stream fees to holders. Same `"true"`-only contract and the same 400 on `false`. |
+
+An UNKNOWN key is silently ignored at HTTP 200 (`bogusParamXyz=1`, measured), so
+the client never relies on the provider to reject a typo: the manifest's strict
+param boundary does that first.
+
+**The app's five scope chips map onto these parameters**, read out of the
+frontend bundle (`bundle/index-Dvsce_I0.js`, functions `$Z` and `qZ`) rather
+than guessed: `All` = `platform=all`, `Pools` = `platform=poolsfun`, `Sushi` =
+`platform=sushi`, `Vex` = `platform=poolsfun&vexAttested=true`, `Fees to
+holders` = `platform=poolsfun&holderRewards=true`. There is no `platform=vex`:
+sending one is a hard 400 naming the three real values.
 
 Response: `{ results: Row[], nextCursor: string | null }`. Row:
 
@@ -67,8 +82,24 @@ feeRecipientAddress, feeRecipientXUsername, feeRecipientXProfileImageUrl,
 tweetUrl, websiteUrl, deployedAt (ISO), lastTradeAt (ISO),
 lastPriceEth, lastPriceUsd, marketCapUsd,
 vol1m, vol5m, vol1h, vol6h, vol24h, txCount24h,
-priceChange1m, priceChange5m, priceChange1h, priceChange6h, priceChange24h
+priceChange1m, priceChange5m, priceChange1h, priceChange6h, priceChange24h,
+vexAttested?, holderRewardsMode?, holderRewardsDistributor?,
+poolsFunBrand?, pairedStockIlliquid?
 ```
+
+The five keys with a `?` were added on 2026-09-04 and are **ABSENT rather than
+null** when they do not apply, which is why the validator makes each of them
+nullish-tolerant and the projection emits them only when the wire carried them.
+Counted over one 100-row page: `vexAttested` on 4, the holder-rewards pair on
+25, `poolsFunBrand` on 1, `pairedStockIlliquid` on 1.
+
+| row key | value | authority |
+|---|---|---|
+| `vexAttested` | `true` only | the LAUNCHPAD's claim about its own index. Vex's own attest record is the authority for an attestation Vex made. |
+| `holderRewardsMode` | `token` \| `paired` \| `both` | ECHO. The authority is the `rewardMode` argument of the `DistributorDeployed` event the suite's HolderRewardsDeployer emitted (plan v3 section 9). `pools__holder_rewards_get` reads it and reports any disagreement in words. |
+| `holderRewardsDistributor` | address; equals `feeRecipientAddress` on every row that carries it | ECHO of the same event's `distributor` argument. |
+| `poolsFunBrand` | `{status: "unofficial", revision: n}` | the launchpad's brand-collision check. Its own app renders it as a "Not official" warning badge when the revision matches the app's current brand revision, so it is a warning about the NAME and never a property of the contract. |
+| `pairedStockIlliquid` | `true` only | display only, and it has **NO launch-time authority**: a pair that was never listed has no liquidity history to be flagged from, so an absent flag is not a liquidity promise (plan v3 section 9). |
 
 ### `GET /discover/{tokenAddress}/ohlcv` - candles
 
@@ -84,6 +115,58 @@ today. Widen `aggregate` instead: `day x 3` covers ~8 years in 1000 candles.
 
 Response: `{ ohlcv: [[unixSeconds, open, high, low, close, volumeUsd], ...],
 pool: {address, network}, pair: {baseSymbol, quoteSymbol}, watermark?: {...} }`.
+
+### `GET /pools-fun/launch-assets` - the launchable stock universe
+
+`{"chain": "robinhood", "stocks": [{symbol, name, address}, ...]}`, 194 unique
+rows on 2026-09-04.
+
+**No pagination, no filters, no decimals, and a `chain` parameter that is
+ACCEPTED AND IGNORED** (`?chain=base` still answers with the Robinhood set), so
+the client sends no query at all. The tool's paging over it is Vex's own and
+says so: `totalCount`, `matchedCount`, `offset`, `hasMore` and `nextOffset`.
+
+The frontend bundle also ships a 200-entry CoinGecko-id fallback list. It is NOT
+authoritative and nothing reads it; this endpoint is.
+
+`pools__launch_assets_list` joins each row with `PartyFactory.pricingModeFor` and
+`allowedPairedAsset`, read for every asset at ONE pinned block, because the
+launchpad's list alone cannot answer whether a launch on that pair needs a
+signed price quote. Measured 2026-09-04 at block 54467839: 35 `CHAINLINK_STOCK`,
+159 `SIGNED_STOCK`, `allowedPairedAsset` true for all 194
+(`chain-launch-asset-pricing-modes.json`).
+
+### `GET /pools-fun/holder-rewards` - one fees-to-holders distributor
+
+`?token=<address>&wallet=<address>` (wallet optional). Rate limited to **30
+requests per 60 seconds** (`ratelimit-policy: 30;w=60`). Every amount on the
+response is a raw uint256 STRING and stays one.
+
+Three response classes, all measured:
+
+| case | status | body |
+|---|---|---|
+| a fees-to-holders token | 200 | `{token, distributor, pairedAsset, pairedSymbol, pairedDecimals, wallet, rewardMode, paysCallerBounty, conversion, earned, earnedPaired, walletExcluded, eligibleSupply, rewardRate, rewardRatePaired, periodFinish, periodFinishPaired, remainingStream, remainingStreamPaired, surplus, surplusPaired, buybackBacklog, lastBuybackAt, pendingFees{token,paired}, hasWorkToDistribute}` |
+| a token that never opted in | **404** | `{"error":"Not a fees-to-holders token"}` - a JSON 404 about a RESOURCE, not the HTML route-404 this API answers an unknown path with. `errors.ts` distinguishes the two. |
+| a `wallet` whose EIP-55 checksum is WRONG | **502** | `{"error":"Could not load holder rewards"}`, not the 400 a malformed address gets. The same address lowercased, and any correctly-checksummed one, answer 200. **The client therefore lowercases every address before sending it**, which removes the failure mode entirely. Captures: `holder-rewards-bad-checksum-wallet-502.json` and its control `holder-rewards-valid-checksum-wallet.json`. |
+
+The API's `rewardMode`, `distributor` and `earned` are all ECHOES. The
+authorities are the deployer's `DistributorDeployed` event and the distributor's
+own `earned(wallet)`; `holder-rewards/read.ts` reads both and the handler prints
+any disagreement rather than choosing.
+
+**Two distributor runtimes are live**, which is why every optional call there is
+`allowFailure`: the Sourcify-verified 13962-byte one (`0x25ff1A3D...`) has
+`earned` but NO `rewardMode()` and NO `earnedPaired(address)`, while the
+22171-byte one (`0xF7747B39...`, `0x7b53d176...`, not on Sourcify) has both. A
+missing `earnedPaired` means the distributor has no paired leg to read, never a
+zero balance.
+
+The reward-mode ordinals come from `HolderRewardsDeployer.modeFor(sentinel)`,
+read live: `FEES_TO_HOLDERS` -> 0 `token`, `FEES_TO_HOLDERS_PAIRED` -> 1
+`paired`, `FEES_TO_HOLDERS_BOTH` -> 2 `both`
+(`chain-holder-rewards-mode-ordinals.json`, and the same ordering the API
+publishes as `launches/config.holderRewardsPayoutModes`).
 
 ## Contracts (Robinhood Chain, chainId 4663)
 
@@ -645,13 +728,40 @@ or what the agent may do unattended.
 - **A USDG (ERC-20) prebuy is manual-form only and not implemented today.** It
   needs an approval leg, and an approval leg on an autonomous path is a second
   signature with its own failure modes. The agent path offers an ETH prebuy only.
-- **Tokenised stocks are not launchable.** `allowedPairedAsset(AAPL)` is false on
-  PartyFactory; the AAPL-paired rows in `/discover` belong to the OLDER sushi
-  launcher. WETH and USDG only, and the database CHECK enforces it.
+- **Tokenised stocks are not launchable BY VEX yet, though the provider now
+  allows them.** This bullet used to read "not launchable" full stop, measured
+  against the V1 factory. That is no longer true of the provider: on the V3
+  factory `allowedPairedAsset` is true for all 194 launch assets and
+  `pricingModeFor` gives each one a mode (`chain-launch-asset-pricing-modes.json`,
+  2026-09-04). What is still true is that VEX's launch path accepts WETH and USDG
+  only, and the database CHECK enforces it; widening it is the stock-pairing
+  launch lane's work, not this read module's. `pools__launch_assets_list` reports
+  the provider's universe, which is a read and takes no position on what Vex will
+  sign.
 - **The claim has no mission-autonomy ceiling.** It ships as an ordinary
   approval-gated mutating tool (owner directive 2026-08-19): no per-mission claim
   count, no in-flight tracking, no contract-hash material. A claim is bounded by
   the same approval every other mutating tool is bounded by.
+- **The `/discover` complement of `vexAttested` and `holderRewards` is not
+  offered**, because the provider does not serve it: `false` is a hard 400 and
+  the only accepted value is the literal `"true"`. "Tokens WITHOUT holder
+  rewards" is not a question this API can be asked, and inventing it client-side
+  would mean filtering a page down and reporting the result as the market's
+  answer.
+- **`GET /pools-fun/launch-assets` is exposed without a `chain` parameter**,
+  because the endpoint accepts one and ignores it. Offering a parameter that
+  changes nothing is worse than not offering it.
+- **The holder-rewards endpoint's `wallet` leg is used, but its amounts are not
+  the authority.** `earned(wallet)` on the distributor is (plan v3 A5), and the
+  API figure is shown beside it. They can differ legitimately: the reward streams
+  continuously, so two reads at two instants are two different true numbers.
+- **`pools__holder_rewards_get` reads only.** `POST /pools-fun/holder-rewards/
+  prepare` and `POST /pools-fun/holder-rewards` (Privy-authed) exist in the
+  frontend bundle and are the CLAIM path; they belong to the holder-rewards claim
+  lane, not to this read.
+- **No decimals are reported for a launch asset.** The endpoint carries none and
+  this module does not invent one: a caller that must render an amount reads
+  `decimals()` on the pair.
 - **`launched_tokens` is written by the launch path only.** A pools.fun token
   launched outside Vex will not appear there; `pools.my_launches` reads the
   launchpad's own deployer index instead, which does include it.

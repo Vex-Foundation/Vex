@@ -21,6 +21,8 @@ import { poolsLaunchPreviewHandler } from "./handlers/launch/preview.js";
 import { poolsLaunchRequestFormHandler } from "./handlers/launch/request-form.js";
 import { poolsLaunchExecuteHandler } from "./handlers/launch/execute.js";
 import { poolsClaimFeesHandler } from "./handlers/claim.js";
+import { poolsLaunchAssetsHandler } from "./handlers/launch-assets.js";
+import { poolsHolderRewardsGetHandler } from "./handlers/holder-rewards-get.js";
 
 export const POOLS_HANDLERS: Record<string, ProtocolHandler> = {
   "pools.tokens": (p, context) => poolsTokensHandler(p, context),
@@ -28,6 +30,11 @@ export const POOLS_HANDLERS: Record<string, ProtocolHandler> = {
   "pools.candles": (p, context) => poolsCandlesHandler(p, context),
   "pools.token": (p, context) => poolsTokenHandler(p, context),
   "pools.my_launches": (p, context) => poolsMyLaunchesHandler(p, context),
+  // The launchable stock universe, joined with the launch factory's pricing mode.
+  "pools.launch_assets": (p, context) => poolsLaunchAssetsHandler(p, context),
+  // Fees-to-holders state for one token, on-chain first. Reads only; the claim
+  // and the permissionless distribute are their own tools.
+  "pools.holder_rewards": (p, context) => poolsHolderRewardsGetHandler(p, context),
   "pools.launch_preview": (p, context) => poolsLaunchPreviewHandler(p, context),
   "pools.launch_request_form": (p, context) => poolsLaunchRequestFormHandler(p, context),
   // The ONE leg that signs. Its fee leg needs no adapter: the shared native-fee

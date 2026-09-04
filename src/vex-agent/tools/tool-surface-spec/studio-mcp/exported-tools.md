@@ -43,11 +43,11 @@ free. Both texts live on the tool
 
 ## Totals
 
-- exported tools: 167
+- exported tools: 169
 - internal: 27
-- protocol: 140 across 11 namespaces
+- protocol: 142 across 11 namespaces
 - always loaded: 27
-- read-only: 109
+- read-only: 111
 - destructive: 50
 
 ## Internal tools
@@ -193,14 +193,16 @@ free. Both texts live on the tool
 | name | title | lane | read only | destructive | always load | requires env | description bytes | returns | vex fee |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | pools__fees_claim | Claim pools.fun creator fees | protocol | no | yes | no | - | 1619 | - | - |
+| pools__holder_rewards_get | Read pools.fun holder rewards | protocol | yes | no | no | - | 2100 | - | none (read) |
+| pools__launch_assets_list | List pools.fun launchable stocks | protocol | yes | no | no | - | 1698 | - | none (read) |
 | pools__launch_execute | Launch a token on pools.fun | protocol | no | yes | no | - | 2801 | - | - |
 | pools__launch_preview | Price a pools.fun launch | protocol | no | no | no | - | 998 | - | - |
 | pools__launch_request_form | Ask the user to confirm a pools.fun launch | protocol | no | no | no | - | 902 | - | - |
 | pools__my_launches_list | List this wallet's pools.fun launches | protocol | yes | no | no | - | 1371 | - | none (read) |
 | pools__token_candles_list | Read pools.fun token candles | protocol | yes | no | no | - | 1006 | - | none (read) |
-| pools__token_get | Read one pools.fun token | protocol | yes | no | no | - | 1075 | - | none (read) |
-| pools__tokens_discover | Screen pools.fun tokens | protocol | yes | no | no | - | 1549 | - | none (read) |
-| pools__tokens_search | Search pools.fun tokens | protocol | yes | no | no | - | 928 | - | none (read) |
+| pools__token_get | Read one pools.fun token | protocol | yes | no | no | - | 1411 | - | none (read) |
+| pools__tokens_discover | Screen pools.fun tokens | protocol | yes | no | no | - | 2552 | - | none (read) |
+| pools__tokens_search | Search pools.fun tokens | protocol | yes | no | no | - | 1313 | - | none (read) |
 
 ### relay
 

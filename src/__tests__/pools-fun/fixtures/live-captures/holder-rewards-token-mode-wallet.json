@@ -1,0 +1,35 @@
+{
+  "endpoint": "https://api.bankr.bot/pools-fun/holder-rewards?token=0x11924d1dedab2d8d49480287898c902431809579&wallet=0x1111111111111111111111111111111111111111",
+  "capturedAt": "2026-09-04T18:33:25.235109Z",
+  "response": {
+    "token": "0x11924d1dedab2d8d49480287898c902431809579",
+    "distributor": "0xF7747B39B810BF12eF89C86dbC0Da72C1CCb60c1",
+    "pairedAsset": "0x1b0E319c6A659F002271B69dB8A7df2F911c153E",
+    "pairedSymbol": "GME",
+    "pairedDecimals": 18,
+    "wallet": "0x1111111111111111111111111111111111111111",
+    "rewardMode": "token",
+    "paysCallerBounty": true,
+    "conversion": "buyback",
+    "earned": "0",
+    "earnedPaired": "0",
+    "walletExcluded": false,
+    "eligibleSupply": "21411342948320499326971591",
+    "rewardRate": "0",
+    "rewardRatePaired": "0",
+    "periodFinish": 0,
+    "periodFinishPaired": 0,
+    "remainingStream": "0",
+    "remainingStreamPaired": "0",
+    "surplus": "0",
+    "surplusPaired": "0",
+    "buybackBacklog": "0",
+    "lastBuybackAt": 0,
+    "pendingFees": {
+      "token": "1431764556056763360821199",
+      "paired": "1421713186379108556"
+    },
+    "hasWorkToDistribute": true
+  },
+  "note": "The wallet leg, sent lowercase. 200 with the wallet echoed and its earned amounts."
+}

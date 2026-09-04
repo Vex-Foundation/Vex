@@ -123,6 +123,43 @@ went live. What each one pins, and must keep pinning through any refresh:
 They needed no sanitization: the launching wallet is not a member of the launch
 tuple, and the probe wallet was searched for in the raw bytes before copying.
 
+## The 2026-09-04 read-depth captures (PR4)
+
+The discover row shape grew five keys and two filters, and two undocumented read
+endpoints entered the tool surface. Each capture below pins one measured fact
+that no fixture in this folder pinned before.
+
+| file | endpoint | pins |
+|---|---|---|
+| `discover-vexattested-true.json` | `/discover?...&vexAttested=true` | the filter WORKS and every row of the page carries `vexAttested: true`; no row carries it as `false`, because the provider only ever sends the key when it is true. One row was sanitized, see below |
+| `discover-holderrewards-true.json` | `/discover?...&holderRewards=true` | the fees-to-holders filter, and all THREE reward modes in one page (`token`, `paired`, `both`) each beside its `holderRewardsDistributor`. It also carries a `nextCursor`, which is what the pagination test walks |
+| `discover-vexattested-false-400.json` | `/discover?...&vexAttested=false` | THE reason both new filters are opt-in switches rather than booleans: `false` is HTTP 400 `Invalid input: expected "true"`. There is no way to ask for the complement |
+| `discover-brand-unofficial-row.json` | `/discover?...&q=<address>` | `poolsFunBrand: {status: "unofficial", revision: 1}` on a real row - the brand-collision warning the pools.fun app renders as "Not official" |
+| `discover-paired-stock-illiquid-row.json` | `/discover?...&q=<address>` | `pairedStockIlliquid: true` on a real stock-paired row, alongside the `pairedStock` block it belongs to |
+| `launch-assets.json` | `GET /pools-fun/launch-assets` | the whole launchable-stock universe in ONE body: 194 rows of `{symbol, name, address}`, no cursor, no `limit`, and no decimals on any row |
+| `holder-rewards-token-mode.json` | `GET /pools-fun/holder-rewards?token=` | the `token`-mode response shape, every amount a raw base-unit STRING |
+| `holder-rewards-paired-mode.json` | same | the `paired` variant, with `conversion: "sellback"` where the token mode says `buyback` |
+| `holder-rewards-both-mode.json` | same | the `both` variant, and the non-zero paired-leg figures the token mode has as `"0"` |
+| `holder-rewards-token-mode-wallet.json` | `...&wallet=` | the wallet leg answering, with the wallet echoed and its `earned`/`earnedPaired`/`walletExcluded` populated |
+| `holder-rewards-not-a-holders-token-404.json` | same, on a token that never opted in | HTTP **404** `{"error":"Not a fees-to-holders token"}` - a JSON 404 about a RESOURCE, which is why the error mapper stopped calling every 404 a wrong route |
+| `holder-rewards-bad-checksum-wallet-502.json` | `...&wallet=<bad EIP-55 case>` | a mixed-case wallet whose checksum is WRONG is HTTP **502** `Could not load holder rewards`, not the 400 a malformed address gets. This is why the client lowercases every address before sending it |
+| `holder-rewards-valid-checksum-wallet.json` | `...&wallet=<same address, correct case>` | the control for the row above: the same address with a valid checksum answers 200, so the 502 is provably the checksum and not the wallet, the token or the parameter |
+| `chain-holder-rewards-mode-ordinals.json` | RPC, HolderRewardsDeployer | the MACHINE ARTIFACT behind the reward-mode names: `modeFor(sentinel)` for all three sentinels, plus the `DistributorDeployed` logs for a token-, a paired-, a both-mode and a no-rewards token. Rule 10 point 2 - no ordinal or mode name in the code is spelled from convention |
+| `chain-launch-asset-pricing-modes.json` | RPC, PartyFactory | `pricingModeFor` and `allowedPairedAsset` for every one of the 194 assets at ONE block. 35 `CHAINLINK_STOCK`, 159 `SIGNED_STOCK` |
+
+The two `chain-*.json` files are RPC reads rather than HTTP captures, so their
+`endpoint` names the node and the contract. They follow the same envelope and the
+same rule: they are re-measured, never edited.
+
+`discover-vexattested-true.json` is the third sanitized capture in this folder.
+A Vex attestation exists because Vex launched the token, so a page of attested
+rows is likely to contain one of our own wallets - this one did, in
+`deployerAddress` and `feeRecipientAddress` of a single row. The wallet was
+replaced consistently with `0x1111111111111111111111111111111111111111` and the
+envelope records it in `sanitization`. The property the capture pins is a
+RELATION and survives: every row of a `vexAttested=true` page carries
+`vexAttested: true`, and no row anywhere carries it as `false`.
+
 ## Regenerating
 
 ```

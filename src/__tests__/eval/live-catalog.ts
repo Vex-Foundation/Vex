@@ -30,6 +30,11 @@ import { liveProtocolManifests } from "./retrieval-eval-harness.js";
  * identities, so this is a pure +4 and every affected baseline was recaptured
  * in the same change.
  *
+ * 140 to 142 (2026-09-04): the pools.fun read-depth lane added
+ * `pools.launch_assets` and `pools.holder_rewards`. Both are new identities on
+ * a namespace that already existed, so this is a pure +2, and every affected
+ * baseline was recaptured in the same change.
+ *
  * A deliberate ratchet, not a duplicate of the catalog. It fails when the tool
  * surface changes without anyone noticing, which is the event that invalidates
  * every stored baseline in `baselines/`.
@@ -38,7 +43,7 @@ import { liveProtocolManifests } from "./retrieval-eval-harness.js";
  * and recapture the affected baselines with the lane's `--update` command. Do
  * not silence the test by deriving the number from the catalog.
  */
-export const PINNED_LIVE_CATALOG_TOOL_COUNT = 140;
+export const PINNED_LIVE_CATALOG_TOOL_COUNT = 142;
 
 /** Active manifests in advertised namespaces. Independent of process env. */
 export function liveCatalogToolCount(): number {

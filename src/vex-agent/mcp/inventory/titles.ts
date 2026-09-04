@@ -215,4 +215,6 @@ export const STUDIO_TOOL_TITLES: Readonly<Record<string, string>> = {
   pools__launch_request_form: "Ask the user to confirm a pools.fun launch",
   pools__launch_execute: "Launch a token on pools.fun",
   pools__fees_claim: "Claim pools.fun creator fees",
+  pools__launch_assets_list: "List pools.fun launchable stocks",
+  pools__holder_rewards_get: "Read pools.fun holder rewards",
 };

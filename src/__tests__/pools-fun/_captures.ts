@@ -66,6 +66,23 @@ export const CAPTURES = {
   prepareV3HoldersBoth: "launches-prepare-v3-holders-both",
   prepareV3StockNvda: "launches-prepare-v3-stock-nvda",
   launchConfigV3: "launches-config-v3",
+  // ── The 2026-09-04 read-depth captures (PR4) ──────────────────────
+  discoverVexAttested: "discover-vexattested-true",
+  discoverVexAttestedFalse400: "discover-vexattested-false-400",
+  discoverHolderRewards: "discover-holderrewards-true",
+  discoverBrandUnofficial: "discover-brand-unofficial-row",
+  discoverPairedStockIlliquid: "discover-paired-stock-illiquid-row",
+  launchAssets: "launch-assets",
+  holderRewardsTokenMode: "holder-rewards-token-mode",
+  holderRewardsPairedMode: "holder-rewards-paired-mode",
+  holderRewardsBothMode: "holder-rewards-both-mode",
+  holderRewardsWithWallet: "holder-rewards-token-mode-wallet",
+  holderRewardsNotAHoldersToken404: "holder-rewards-not-a-holders-token-404",
+  holderRewardsBadChecksumWallet502: "holder-rewards-bad-checksum-wallet-502",
+  holderRewardsValidChecksumWallet: "holder-rewards-valid-checksum-wallet",
+  /** RPC reads, not HTTP captures - the machine artifacts rule 10 point 2 requires. */
+  chainRewardModeOrdinals: "chain-holder-rewards-mode-ordinals",
+  chainLaunchAssetPricingModes: "chain-launch-asset-pricing-modes",
   prepareXUnresolvable: "launches-prepare-x-unresolvable-400",
   prepareInsufficientDevBuy: "launches-prepare-insufficient-dev-buy-400",
 } as const;

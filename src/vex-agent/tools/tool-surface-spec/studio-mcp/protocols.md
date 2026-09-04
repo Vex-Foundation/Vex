@@ -53,9 +53,9 @@ whether its provider key is configured on this machine.
 
 ## Totals
 
-- tools: 167
+- tools: 169
 - Vex tools: 27
-- protocol tools: 140 across 11 protocols
+- protocol tools: 142 across 11 protocols
 - destructive: 50
 
 ## Vex tools
@@ -201,6 +201,8 @@ whether its provider key is configured on this machine.
 | tool | title | access | destructive | requires env |
 | --- | --- | --- | --- | --- |
 | pools__fees_claim | Claim pools.fun creator fees | mutating | yes | - |
+| pools__holder_rewards_get | Read pools.fun holder rewards | read-only | no | - |
+| pools__launch_assets_list | List pools.fun launchable stocks | read-only | no | - |
 | pools__launch_execute | Launch a token on pools.fun | mutating | yes | - |
 | pools__launch_preview | Price a pools.fun launch | mutating | no | - |
 | pools__launch_request_form | Ask the user to confirm a pools.fun launch | mutating | no | - |
