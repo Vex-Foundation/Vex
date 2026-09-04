@@ -34,7 +34,7 @@ import { renderSpendability } from "../../tools/protocols/quote-authority/spenda
 import type { JupiterFeePreview } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/fee-swap.js";
 import type { LendBorrowRiskPreview } from "@tools/solana-ecosystem/jupiter/jupiter-lend/borrow-api/risk-preview-types.js";
 import { formatLamportsAsSol } from "@vex-agent/tools/protocols/amount-display.js";
-import { describeApprovalVexFee } from "./approval-vex-fee.js";
+import { describeApprovalVexFee, describeBoundVexFee } from "./approval-vex-fee.js";
 import type { ToolResult } from "../../tools/types.js";
 
 type ApprovalBridgeTokenPreview = NonNullable<
@@ -43,6 +43,10 @@ type ApprovalBridgeTokenPreview = NonNullable<
 
 type ApprovalSpendabilityPreview = NonNullable<
   NonNullable<ToolResult["prequote"]>["spendability"]
+>;
+
+type ApprovalVexFeePreview = NonNullable<
+  NonNullable<ToolResult["prequote"]>["vexFee"]
 >;
 
 /**
@@ -221,6 +225,18 @@ export interface IntentPreviewExtras {
    * balance on a card has no other way to know how old it is.
    */
   spendability?: ApprovalSpendabilityPreview;
+  /**
+   * The Vex fee statement the matched quote made. Sourced ONLY from the matched
+   * prequote's persisted `safetyDetail` through the prequote gate (NOT raw args
+   * - `vexFee` is deliberately NOT in PREVIEW_KEY_ALLOWLIST), so the rate, the
+   * amount and the receiver on the card are the store's and the model cannot
+   * state different ones.
+   *
+   * When it is present it WINS: the args-derived line is never emitted for a
+   * tool this channel covers, so one card can never carry two derivations of one
+   * money figure.
+   */
+  vexFee?: ApprovalVexFeePreview;
   /** Direct EVM bridge token identity, sourced by the gate rather than args. */
   bridgeTokenPreview?: ApprovalBridgeTokenPreview;
 }
@@ -335,15 +351,22 @@ export function buildIntentPreview(
     criticalArgs[key] = coerceSummaryValue(effective.args[key]);
   }
 
-  // Itemise the Vex platform fee AFTER allow-list extraction, from the venue's
-  // own product-owner rate constant applied to the amount being approved
-  // (`approval-vex-fee.ts`). `vexFee` is deliberately NOT in
-  // PREVIEW_KEY_ALLOWLIST, so a `fee`/`feeBps`/`feeReceiver` argument can never
-  // reach this line — the rate is ours, never the model's. Undefined for every
-  // tool that carries no Vex fee or discloses it elsewhere (Jupiter's richer
-  // `feeDisclosure` below; the Trench launch form), so the card grows no line
-  // rather than an empty or zero one.
-  const vexFee = describeApprovalVexFee(effective.toolName, effective.args);
+  // Itemise the Vex platform fee AFTER allow-list extraction. When the prequote
+  // gate carried the matched quote's OWN fee statement, that block is the line:
+  // it is what a person consents to and what the executor is re-checked against
+  // before signing, so no second derivation of the figure exists to disagree
+  // with it. Only a tool whose fee cannot be stated at quote time
+  // (`trench.trade_execute`) falls back to the rate-times-amount line.
+  //
+  // `vexFee` is deliberately NOT in PREVIEW_KEY_ALLOWLIST, so a
+  // `fee`/`feeBps`/`feeReceiver` argument can never reach this line - the rate
+  // is ours, never the model's. Undefined for every tool that carries no Vex fee
+  // or discloses it elsewhere (Jupiter's richer `feeDisclosure` below; the
+  // Trench launch form), so the card grows no line rather than an empty or zero
+  // one.
+  const vexFee = extras?.vexFee !== undefined
+    ? describeBoundVexFee(effective.toolName, extras.vexFee)
+    : describeApprovalVexFee(effective.toolName, effective.args);
   if (vexFee !== undefined) {
     criticalArgs.vexFee = vexFee;
   }
@@ -385,6 +408,16 @@ export function buildIntentPreview(
     const preview = extras.bridgeTokenPreview;
     criticalArgs.bridgeSourceAsset = renderBridgeAsset(preview.source);
     criticalArgs.bridgeDestinationAsset = renderBridgeAsset(preview.destination);
+    // WHERE THE FUNDS LAND. Derived by Vex from the session's selected wallet
+    // for the destination family and bound into the prequote identity hash; it
+    // is not a parameter, and saying so on the card is what keeps a reader from
+    // assuming the model chose it.
+    if (preview.recipient !== undefined) {
+      const walletFamily = preview.recipient.family === "solana" ? "Solana" : "EVM";
+      criticalArgs.bridgeDestinationWallet =
+        `Destination wallet ${preview.recipient.address} | your selected ${walletFamily} wallet`
+        + " | derived by Vex, never a parameter";
+    }
     criticalArgs.bridgeAmount = preview.amountHuman !== null
       ? `${preview.amountHuman} ${preview.source.symbol} | ${preview.amountRaw} raw units | ${preview.source.decimals} decimals`
       : preview.source.kind === "metadata_unavailable"

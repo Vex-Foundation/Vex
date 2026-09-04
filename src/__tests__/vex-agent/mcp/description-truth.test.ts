@@ -60,6 +60,20 @@ describe("I1 - the approval contract over MCP is stated, and the in-app wording 
     }
     expect(CANONICAL_MCP_APPROVAL_SENTENCE).toContain("never call it twice while you wait");
   });
+
+  it("names `pending` among the statuses a COMPLETED call carries, with its one action", () => {
+    // The measured omission: the sentence listed only `confirmed` and
+    // `confirmed_unrecorded`, while a completed bridge, swap, lend, trench or
+    // pools call routinely returns `pending` (relay
+    // `handlers/bridge/results.ts`, khalani bridge and its poll, both EVM swap
+    // executes, the Jupiter swap). An agent told `pending` is not a settled
+    // word re-sends a broadcast transaction, which is the double-spend this
+    // sentence exists to prevent.
+    for (const word of ["confirmed", "confirmed_unrecorded", "pending"]) {
+      expect(CANONICAL_MCP_APPROVAL_SENTENCE).toContain(word);
+    }
+    expect(CANONICAL_MCP_APPROVAL_SENTENCE).toContain("pending - poll it, never re-send");
+  });
 });
 
 describe("I6 - nothing a caller sends can redirect a bridge", () => {

@@ -29,7 +29,7 @@ const mockCreateAgentActivityPreBroadcastFailure = vi.fn();
 const mockMarkActivitySolanaBroadcast = vi.fn();
 const mockFailActivityEvent = vi.fn();
 const mockMarkBroadcastAccepted = vi.fn();
-const mockFindFreshMatchedSwapPrequote = vi.fn();
+const mockFindFreshMatchedPrequote = vi.fn();
 
 vi.mock("@tools/solana-ecosystem/jupiter/jupiter-tokens/service.js", () => ({
   searchJupiterTokens: vi.fn(),
@@ -69,7 +69,7 @@ vi.mock("@tools/solana-ecosystem/jupiter/jupiter-swaps/submit-prepared-tx.js", (
 }));
 
 vi.mock("@vex-agent/tools/protocols/swap-prequote.js", () => ({
-  findFreshMatchedSwapPrequote: (...args: unknown[]) => mockFindFreshMatchedSwapPrequote(...args),
+  findFreshMatchedPrequote: (...args: unknown[]) => mockFindFreshMatchedPrequote(...args),
 }));
 
 vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
@@ -253,7 +253,7 @@ describe("solana.swap.execute capture", () => {
       token: { address: q, symbol: q, decimals: 6 },
     }));
     mockGetSolanaConnection.mockReturnValue({ __fake: "connection" });
-    mockFindFreshMatchedSwapPrequote.mockResolvedValue(matchedPrequote());
+    mockFindFreshMatchedPrequote.mockResolvedValue(matchedPrequote());
     mockPrepareFeeBearingJupiterSwap.mockResolvedValue(preparedFeeBearingSwap());
     mockCreateAgentActivityIntent.mockResolvedValue({ executionId: 42, events: [{ id: 7 }] });
     mockPrepareVersionedTx.mockResolvedValue({
@@ -555,7 +555,7 @@ describe("solana.swap.execute capture", () => {
   });
 
   it("blocks with a clear message when no matching fee-bearing quote is found (no broadcast, no intent)", async () => {
-    mockFindFreshMatchedSwapPrequote.mockResolvedValue({ ok: false, reason: "no_quote" });
+    mockFindFreshMatchedPrequote.mockResolvedValue({ ok: false, reason: "no_quote" });
 
     const result = await CORE_HANDLERS["solana.swap.execute"](
       { tokenIn: "BonkMint", tokenOut: "SolMint", amountIn: "1000" },
@@ -736,7 +736,7 @@ describe("solana.swap.quote", () => {
     const quoted = swapPreparation(0);
     expect(quoted.knobs.slippageBps).toBe(VEX_DEFAULT_SLIPPAGE_BPS);
 
-    mockFindFreshMatchedSwapPrequote.mockResolvedValue(matchedPrequote());
+    mockFindFreshMatchedPrequote.mockResolvedValue(matchedPrequote());
     mockCreateAgentActivityIntent.mockResolvedValue({ executionId: 42, events: [{ id: 7 }] });
     mockPrepareVersionedTx.mockResolvedValue({
       serialized: new Uint8Array([1, 2, 3]),

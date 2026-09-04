@@ -29,6 +29,11 @@ export type GateBlockReason =
                        // and the plan its route snapshot sealed - and they are
                        // not the same plan, so consent and enforcement would
                        // describe different things
+  | "fee_disclosure_missing" // a FEE-BEARING gated execute matched a quote row
+                       // that carries no Vex fee statement, so what Vex takes
+                       // could be neither shown before signing nor re-checked
+                       // at signing time - fail closed rather than sign a fee
+                       // nobody stated
   // ── Approval-resume binding. The three below can fire ONLY on a dispatch
   // that resumes a decided approval card (`context.approvalId` present); a
   // fresh, non-approved call never reaches them. ──

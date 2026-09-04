@@ -41,6 +41,11 @@ import {
   type ApprovedPrequoteAuthority,
 } from "./approved-row-authority.js";
 import type { JupiterFeePreview } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/fee-swap.js";
+import {
+  isFeeBearingGatedExecute,
+  vexFeeFromSafetyDetail,
+  type VexFeePreview,
+} from "./fee-disclosure.js";
 import type { SafetyVerdict } from "@vex-agent/db/repos/swap-prequotes.js";
 import {
   feePreviewFromSafetyDetail,
@@ -79,7 +84,7 @@ export async function evaluatePrequoteGate(
     const sessionId = context.sessionId;
     if (!sessionId) return block("no_session", gateKind);
 
-    const { matchHash, family } = await computeGateMatch(gated, sessionId, params, context);
+    const { matchHash, family, bridgeRecipient } = await computeGateMatch(gated, sessionId, params, context);
 
     const selected = await selectAuthorizedRow(sessionId, matchHash, gateKind);
     if (!selected.ok) {
@@ -106,8 +111,17 @@ export async function evaluatePrequoteGate(
     }
     // Everything this row contributes to the approval card, read ONCE through
     // the one reader the resumed dispatch also uses - see `readRowDisclosure`.
-    const { fotTax, termLock, feePreview, quoteBinding, spendability } =
+    const { fotTax, termLock, feePreview, vexFee, quoteBinding, spendability } =
       readRowDisclosure(latest);
+    // FAIL CLOSED ON A FEE NOBODY STATED. A fee-bearing execute whose matched
+    // quote carries no Vex fee statement cannot show the human what Vex takes
+    // and gives the executor nothing to be held to before signing. Rows written
+    // by a build older than this lane land here, and the 15 minute freshness
+    // window is what bounds that: one fresh quote and the row carries the block.
+    if (vexFee === undefined && isFeeBearingGatedExecute(toolId)) {
+      logger.warn("protocol.prequote.gate.fee_disclosure_missing", { toolId, family });
+      return block("fee_disclosure_missing", gateKind);
+    }
     // ONE ROW, TWO DESCRIPTIONS OF THE SAME TRANSACTIONS. The card states the
     // plan carried by the spendability preview; the execute is held to the plan
     // sealed inside the route snapshot. Nothing but this comparison made them
@@ -135,6 +149,7 @@ export async function evaluatePrequoteGate(
       fotTax,
       termLock,
       feePreview,
+      vexFee,
       quoteBinding,
       spendability,
     });
@@ -156,6 +171,8 @@ export async function evaluatePrequoteGate(
     if (fotTax !== undefined) allow = { ...allow, fotTax };
     if (termLock !== undefined) allow = { ...allow, termLock };
     if (feePreview !== undefined) allow = { ...allow, feePreview };
+    if (vexFee !== undefined) allow = { ...allow, vexFee };
+    if (bridgeRecipient !== undefined) allow = { ...allow, bridgeRecipient };
     if (quoteBinding !== undefined) allow = { ...allow, quoteBinding };
     if (spendability !== undefined) allow = { ...allow, spendability };
     return allow;
@@ -194,11 +211,11 @@ export async function evaluateSwapPrequoteGate(
 /**
  * Why a re-read of the authorizing row found nothing it may execute on.
  *
- * `not_gated` is structural (the caller is not a gated `swap` execute) and can
+ * `not_gated` is structural (the caller is not a gated execute at all) and can
  * never be produced by a race; the other three are the SAME three guardrails
  * the gate itself applies, restated by the second reader.
  */
-export type MatchedSwapPrequoteRefusal =
+export type MatchedPrequoteRefusal =
   | "not_gated"
   | "no_quote"
   | "safety_fail"
@@ -218,7 +235,7 @@ export type ApprovalBindingRefusal =
   | "approved_disclosure_changed"
   | "approval_binding_missing";
 
-export type MatchedSwapPrequote =
+export type MatchedPrequote =
   | {
       readonly ok: true;
       readonly prequote: SwapPrequote;
@@ -229,22 +246,35 @@ export type MatchedSwapPrequote =
        * for a venue that measures no balances.
        */
       readonly spendability: SpendabilityPreview | undefined;
+      /**
+       * The Vex fee statement the matched row carries, parsed by the same owner
+       * the gate and the card use. This is what an executor re-derives its own
+       * disposition against before signing: the card stated THIS block, so a
+       * fee that no longer matches it is a fee nobody consented to.
+       *
+       * `undefined` only for a venue that carries no Vex fee on this channel -
+       * a fee-bearing execute never reaches an `ok: true` without one, because
+       * the gate refuses it first.
+       */
+      readonly vexFee: VexFeePreview | undefined;
     }
   | {
       readonly ok: false;
-      readonly reason: MatchedSwapPrequoteRefusal;
+      readonly reason: MatchedPrequoteRefusal;
       /** The recorded eligibility, present only on `not_executable`. */
       readonly eligibilityKind?: string;
     };
 
 /**
- * Re-read the authorizing `swap` prequote row for the EXECUTE HANDLER's own
+ * Re-read the authorizing prequote row for the EXECUTE HANDLER's own
  * trade-shape revalidation (W5 design §6 R4) - the fee-policy/swap-mode checks
  * must run on EVERY execute, not only when restricted-mode approval fires (a
  * full/autonomous-permission session skips the approval gate entirely, but
  * never the revalidation). Reuses `computeGateMatch` so the identity is
  * computed IDENTICALLY to the gate's own, and `selectAuthorizedRow` so the
- * guardrails cannot drift from the gate's.
+ * guardrails cannot drift from the gate's. It serves EVERY gated kind, not only
+ * swaps: a bridge executor needs the same re-read to hold its own fee leg to
+ * the statement the card carried.
  *
  * THE RACE THIS CLOSES. `evaluatePrequoteGate` runs first, in
  * `executeProtocolTool`, and approves the row that was latest THEN. This read
@@ -269,16 +299,16 @@ export type MatchedSwapPrequote =
  * fee preview and native-cost ceiling that row disclosed, so a newer row - even
  * an executable one - is `approval_row_superseded` rather than a substitute.
  */
-export async function findFreshMatchedSwapPrequote(
+export async function findFreshMatchedPrequote(
   toolId: string,
   sessionId: string,
   params: Record<string, unknown>,
   context: ProtocolExecutionContext,
-): Promise<MatchedSwapPrequote> {
+): Promise<MatchedPrequote> {
   const gated = EXECUTE_GATE_TOOLS[toolId];
-  if (!gated || gated.kind !== "swap") return { ok: false, reason: "not_gated" };
+  if (!gated) return { ok: false, reason: "not_gated" };
   const { matchHash } = await computeGateMatch(gated, sessionId, params, context);
-  const selected = await selectAuthorizedRow(sessionId, matchHash, "swap");
+  const selected = await selectAuthorizedRow(sessionId, matchHash, gated.kind);
   if (!selected.ok) return selected;
   // THE SECOND READER APPLIES THE SAME FENCE. The gate already refused a
   // resumed dispatch whose bound row moved, but the gate ran earlier and this
@@ -295,7 +325,12 @@ export async function findFreshMatchedSwapPrequote(
     }),
   );
   if (bindingFailure !== null) return { ok: false, reason: bindingFailure };
-  return { ok: true, prequote: selected.row, spendability: disclosure.spendability };
+  return {
+    ok: true,
+    prequote: selected.row,
+    spendability: disclosure.spendability,
+    vexFee: disclosure.vexFee,
+  };
 }
 
 /**
@@ -311,6 +346,7 @@ function readRowDisclosure(row: SwapPrequote): {
   readonly fotTax: number | undefined;
   readonly termLock: { readonly maturityIso: string } | undefined;
   readonly feePreview: JupiterFeePreview | undefined;
+  readonly vexFee: VexFeePreview | undefined;
   readonly quoteBinding: QuoteBindingPreview | undefined;
   readonly spendability: SpendabilityPreview | undefined;
 } {
@@ -325,6 +361,11 @@ function readRowDisclosure(row: SwapPrequote): {
     termLock: termLockFromSafetyDetail(row.safetyDetail),
     // Jupiter fee-bearing disclosure (W5 design section 6 R4), same channel.
     feePreview: feePreviewFromSafetyDetail(row.safetyDetail),
+    // The Vex fee statement the quote made (charged or skipped, the exact
+    // atomic amount, the token, the treasury, and when it is collected). Same
+    // channel, same source, re-parsed with the schema the recorder validated
+    // against - never recomputed from args.
+    vexFee: vexFeeFromSafetyDetail(row.safetyDetail),
     // The quote this execute would be bound to, for the approval card. Absent
     // when the row carries no readable executable snapshot - the venues that
     // record none keep their existing card exactly.

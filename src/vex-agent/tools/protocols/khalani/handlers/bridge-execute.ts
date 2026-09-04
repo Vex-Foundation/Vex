@@ -57,7 +57,11 @@ import {
 import { interpretPoll } from "./bridge-poll.js";
 import { quoteKhalaniBridgeRoute } from "./bridge-execute/quote.js";
 import { buildKhalaniDepositPlan } from "./bridge-execute/deposit-plan.js";
-import { nativeCostPreview, resolveKhalaniFeeDisclosure } from "./bridge-execute/fee-disclosure.js";
+import {
+  khalaniVexFeeStatementRefusal,
+  nativeCostPreview,
+  resolveKhalaniFeeDisclosure,
+} from "./bridge-execute/fee-disclosure.js";
 import { runKhalaniBridgeLegs } from "./bridge-execute/legs.js";
 import { runKhalaniVexFeeLeg } from "./bridge-execute/fee-leg.js";
 import { submitKhalaniDeposit } from "./bridge-execute/submit.js";
@@ -258,6 +262,24 @@ export async function executeKhalaniBridge(
         nativeCost: nativeCostPreview(nativeCost, plannedLegs === null),
       }, null, 2),
     };
+  }
+
+  // 7d. The bound Vex fee statement (rule 90: revalidate immediately before
+  // signing). The row states the fee a person approved; `vexFee` above is the
+  // disposition THIS call would execute on, derived from this call's own split
+  // and eligibility read. Any disagreement refuses here, before the plan is
+  // committed, before the in-flight guard, before the intent and before the
+  // signing wallet is resolved.
+  //
+  // Not a recorded failure row on purpose: this is an authorization refusal,
+  // not a bridge that failed, and the durable failure vocabulary has no code
+  // that says so. Recording `bridge_failed` would put a provider failure on the
+  // feed for a bridge that was never attempted.
+  const feeStatementRefusal = await khalaniVexFeeStatementRefusal({
+    params, context, sessionId, derivedNow: vexFee,
+  });
+  if (feeStatementRefusal !== null) {
+    return { success: false, output: `${toolId} failed: ${feeStatementRefusal}` };
   }
 
   // 8. Fail closed on the plan and on its native-cost classification. An

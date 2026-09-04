@@ -22,6 +22,10 @@ import {
   sealRouteSnapshot,
 } from "@vex-agent/tools/protocols/quote-authority/snapshot.js";
 import { computeApprovedMinOut } from "@tools/kyberswap/swap-price-floor.js";
+import { computeKyberVexFeeRaw } from "@tools/kyberswap/swap-vex-fee.js";
+import { buildKyberFeeDisclosure } from "@tools/kyberswap/fee-disclosure.js";
+import { KYBERSWAP_FEE_RECEIVER } from "@tools/kyberswap/constants.js";
+import { toVexFeePreview } from "@vex-agent/tools/protocols/prequote/fee-disclosure.js";
 
 /**
  * The default bound ceiling: well above every suite's prepared request, so a
@@ -51,6 +55,16 @@ export interface ApprovedClaimOptions {
   readonly legs?: readonly NativeDebitLegRole[];
   /** The per-gas ceiling every leg was quoted under. */
   readonly feeCap?: LegFeeCap;
+  /**
+   * The raw input amount the EXECUTE will parse from its own params, which is
+   * what the row's Vex fee block was stated over.
+   *
+   * A fee-bearing execute is refused before signing when its freshly derived fee
+   * statement is not the claimed row's (`tools/vex-fee/fee-revalidation.ts`), so
+   * a suite whose params imply a different atomic amount than the fixture route
+   * summary's `amountIn` must say so here - exactly as a real quote would have.
+   */
+  readonly amountInRaw?: bigint;
 }
 
 /**
@@ -87,6 +101,7 @@ export function approvedClaim(
     ok: true as const,
     prequoteId: "prequote-fixture",
     routeSummary,
+    vexFee: fixtureVexFeeBlock(options.amountInRaw ?? BigInt(readAmountIn(routeSummary))),
     snapshot: sealRouteSnapshot({
       v: ROUTE_SNAPSHOT_VERSION,
       provider: "kyberswap" as const,
@@ -116,4 +131,45 @@ function readAmountOut(routeSummary: unknown): string {
     throw new Error("approvedClaim: route summary must carry a string amountOut");
   }
   return amountOut;
+}
+
+/**
+ * The persisted Vex fee block a claimed row carries, for the suites that build
+ * their claim result inline rather than through {@link approvedClaim}.
+ *
+ * Built through the REAL venue builder and the REAL projection - so a fixture can never state a fee shape the
+ * recorder would have rejected, nor an amount the executor's own derivation
+ * would refuse.
+ *
+ * The token identity is a placeholder because the pre-sign comparison binds
+ * money fields only: the amount, the rate, the receiver and the two totals. A
+ * symbol that resolved differently between two reads describes the money, it
+ * does not decide it.
+ */
+export function fixtureVexFeeBlock(amountInRaw: bigint) {
+  const feeRaw = computeKyberVexFeeRaw(amountInRaw);
+  const block = toVexFeePreview("kyberswap.swap.quote", buildKyberFeeDisclosure({
+    tokenAddress: "0x0000000000000000000000000000000000000001",
+    tokenSymbol: "TKN",
+    tokenDecimals: 18,
+    feeRaw,
+    swappedRaw: amountInRaw - feeRaw,
+    totalRaw: amountInRaw,
+    receiver: KYBERSWAP_FEE_RECEIVER,
+  }));
+  if (block === undefined) {
+    throw new Error(`approvedClaim: fixture Vex fee block does not project for amountInRaw ${amountInRaw}`);
+  }
+  return block;
+}
+
+function readAmountIn(routeSummary: unknown): string {
+  if (typeof routeSummary !== "object" || routeSummary === null) {
+    throw new Error("approvedClaim: route summary must be an object");
+  }
+  const amountIn = (routeSummary as { amountIn?: unknown }).amountIn;
+  if (typeof amountIn !== "string") {
+    throw new Error("approvedClaim: route summary must carry a string amountIn");
+  }
+  return amountIn;
 }

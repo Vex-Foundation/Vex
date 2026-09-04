@@ -21,6 +21,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { ProtocolToolManifest } from "@vex-agent/tools/protocols/types.js";
 import type { SwapPrequote } from "@vex-agent/db/repos/swap-prequotes.js";
+import { rowVexFee } from "./prequote/vex-fee-fixtures.js";
 
 // ── Mock surface ──────────────────────────────────────────────────────
 
@@ -114,7 +115,11 @@ function prequoteRow(
     prequoteId: "prequote-1", sessionId: SESSION_ID, matchHash: "h".repeat(64),
     kind: "swap", family: "eip155", provider: "kyberswap", chainId: 8453,
     walletAddress: "0xWALLET", tokenIn: TOKEN_IN, tokenOut: TOKEN_OUT, amount: "1",
-    slippageBps: 50, safetyVerdict: verdict, safetyDetail, routeRef: null, eligibilityKind: "executable", claimedAt: null, claimedBy: null,
+    slippageBps: 50, safetyVerdict: verdict,
+    // KyberSwap is fee-bearing: without a fee statement the gate refuses the
+    // execute before any of the disclosures below can be observed.
+    safetyDetail: { vexFee: rowVexFee({ collection: "inside_route" }), ...safetyDetail },
+    routeRef: null, eligibilityKind: "executable", claimedAt: null, claimedBy: null,
     createdAt: "2026-06-04T10:00:00.000Z", expiresAt: "2099-01-01T00:00:00.000Z",
   };
 }
@@ -152,7 +157,7 @@ describe("executeProtocolTool — Stage 7 prequote gate", () => {
     mockFindLatest.mockResolvedValue(prequoteRow("pass"));
     const result = await executeProtocolTool({ toolId: "kyberswap.swap.execute", params: swapParams }, restrictedCtx);
     expect(result.pendingApproval).toBe(true);
-    expect(result.prequote).toEqual({ verdict: "pass" });
+    expect(result.prequote).toEqual({ verdict: "pass", vexFee: rowVexFee({ collection: "inside_route" }) });
     expect(handlerSpy).not.toHaveBeenCalled(); // gate allowed, approval gate paused
   });
 
@@ -160,7 +165,7 @@ describe("executeProtocolTool — Stage 7 prequote gate", () => {
     mockFindLatest.mockResolvedValue(prequoteRow("unknown"));
     const result = await executeProtocolTool({ toolId: "kyberswap.swap.execute", params: swapParams }, restrictedCtx);
     expect(result.pendingApproval).toBe(true);
-    expect(result.prequote).toEqual({ verdict: "unknown" });
+    expect(result.prequote).toEqual({ verdict: "unknown", vexFee: rowVexFee({ collection: "inside_route" }) });
   });
 
   // ── Stage 9 doctrine: fee-on-transfer is `pass` but still disclosed ──────
@@ -178,7 +183,7 @@ describe("executeProtocolTool — Stage 7 prequote gate", () => {
     );
     const result = await executeProtocolTool({ toolId: "kyberswap.swap.execute", params: swapParams }, restrictedCtx);
     expect(result.pendingApproval).toBe(true);
-    expect(result.prequote).toEqual({ verdict: "pass", fotTax: 60 });
+    expect(result.prequote).toEqual({ verdict: "pass", fotTax: 60, vexFee: rowVexFee({ collection: "inside_route" }) });
     expect(handlerSpy).not.toHaveBeenCalled();
   });
 
@@ -190,7 +195,7 @@ describe("executeProtocolTool — Stage 7 prequote gate", () => {
       }),
     );
     const result = await executeProtocolTool({ toolId: "kyberswap.swap.execute", params: swapParams }, restrictedCtx);
-    expect(result.prequote).toEqual({ verdict: "pass", fotTax: 75 });
+    expect(result.prequote).toEqual({ verdict: "pass", fotTax: 75, vexFee: rowVexFee({ collection: "inside_route" }) });
   });
 
   it("FIX 3: a clean pass (no FoT leg) carries NO fotTax — plain verdict only", async () => {
@@ -201,7 +206,7 @@ describe("executeProtocolTool — Stage 7 prequote gate", () => {
       }),
     );
     const result = await executeProtocolTool({ toolId: "kyberswap.swap.execute", params: swapParams }, restrictedCtx);
-    expect(result.prequote).toEqual({ verdict: "pass" });
+    expect(result.prequote).toEqual({ verdict: "pass", vexFee: rowVexFee({ collection: "inside_route" }) });
     expect(result.prequote).not.toHaveProperty("fotTax");
   });
 

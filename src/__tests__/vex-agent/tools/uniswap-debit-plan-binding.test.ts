@@ -146,7 +146,7 @@ vi.mock("@utils/logger.js", () => {
 
 const { UNISWAP_SWAP_HANDLERS } = await import("@vex-agent/tools/protocols/uniswap/handlers/swap.js");
 const { applySlippage } = await import("@tools/uniswap/quote.js");
-const { approvedUniswapSnapshot } = await import("./_uniswap-approved-snapshot.js");
+const { approvedUniswapSnapshot, approvedUniswapVexFee } = await import("./_uniswap-approved-snapshot.js");
 
 const execute = UNISWAP_SWAP_HANDLERS["uniswap.swap.execute"];
 if (execute === undefined) throw new Error("uniswap.swap.execute is not registered");
@@ -161,6 +161,18 @@ const TOKEN_OUT_LEG = { address: TOKEN_OUT, symbol: "TKN", decimals: 18, isNativ
 
 /** The ceiling the fixture quotes bind. Not the chain's, so the two are telling apart. */
 const APPROVED_CAP: LegFeeCap = { mode: "legacy", gasPriceWei: 4_242n };
+
+/** The row's Vex fee statement for this trade, re-checked before signing. */
+function approvedVexFee() {
+  return approvedUniswapVexFee({
+    chainId: CHAIN_ID,
+    tokenIn: TOKEN_IN_LEG,
+    tokenOut: TOKEN_OUT_LEG,
+    amountInRaw: AMOUNT_IN_RAW,
+    approvedAmountOutRaw: QUOTED_OUT,
+    approvedMinOutRaw: QUOTED_OUT,
+  });
+}
 
 async function snapshotBoundTo(
   legs: readonly NativeDebitLegRole[],
@@ -219,6 +231,7 @@ beforeEach(async () => {
   });
   claimUniswapExecutionSnapshot.mockResolvedValue({
     ok: true, prequoteId: "prequote-plan", snapshot: await snapshotBoundTo(["swap", "swap_fee"]),
+    vexFee: await approvedVexFee(),
   });
   quoteBestRoute.mockResolvedValue({
     route: { version: "v2" as const, path: [TOKEN_IN, TOKEN_OUT], amountOut: QUOTED_OUT },
@@ -251,6 +264,7 @@ describe("the transaction set is bound quote-to-execute", () => {
       ok: true,
       prequoteId: "prequote-plan",
       snapshot: await snapshotBoundTo(["allowance", "swap", "swap_fee"]),
+      vexFee: await approvedVexFee(),
     });
 
     const result = await run();

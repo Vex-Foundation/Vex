@@ -148,6 +148,67 @@ describe("bridge approval card", () => {
     expect(preview.criticalArgs.bridgeAmount).toBe("1.5 USDC | 1500000 raw units | 6 decimals");
   });
 
+  it.each([
+    ["relay.bridge", "eip155" as const, "0xUserEvmWallet", "EVM"],
+    ["khalani.bridge", "solana" as const, "SoLUserWa11etAddress", "Solana"],
+  ])("renders the DERIVED destination wallet for %s", (toolId, family, address, label) => {
+    // WHERE THE FUNDS LAND. The destination wallet is bound into the prequote
+    // identity hash (a wallet switch between quote and execute changes the hash
+    // and the gate refuses), yet no card ever showed it. `recipient` is
+    // rejected BY NAME as a parameter on both bridge aliases, so the card says
+    // where the address came from as well as what it is.
+    const preview = buildIntentPreview(
+      "execute_tool",
+      {
+        toolId,
+        params: { fromChain: "8453", fromToken: USDC, toChain: "4663", toToken: WETH, amountRaw: "1500000" },
+      },
+      {
+        prequoteVerdict: "unknown",
+        bridgeTokenPreview: { ...bridgePreview, recipient: { family, address } },
+      },
+    );
+
+    expect(preview.criticalArgs.bridgeDestinationWallet).toBe(
+      `Destination wallet ${address} | your selected ${label} wallet | derived by Vex, never a parameter`,
+    );
+  });
+
+  it("shows no destination row at all when the gate produced no bridge identity", () => {
+    const preview = buildIntentPreview(
+      "execute_tool",
+      { toolId: "relay.bridge", params: { amountRaw: "1500000" } },
+      { prequoteVerdict: "unknown", bridgeTokenPreview: bridgePreview },
+    );
+    expect(preview.criticalArgs).not.toHaveProperty("bridgeDestinationWallet");
+  });
+
+  it("never derives the destination wallet row from a caller-supplied recipient param", () => {
+    // Both bridge aliases reject `recipient` BY NAME upstream, so this argument
+    // cannot reach a real bridge execute at all. What is pinned here is that
+    // even if one arrived, the destination-wallet ROW is built from the gate's
+    // derived identity and states that address, never the argument's. (The bare
+    // `recipient` key stays allow-listed because other venues do honour it, and
+    // showing a supplied argument is exactly what an allow-listed arg is for.)
+    const preview = buildIntentPreview(
+      "execute_tool",
+      {
+        toolId: "relay.bridge",
+        params: { amountRaw: "1500000", recipient: "0xattacker" },
+      },
+      {
+        prequoteVerdict: "unknown",
+        bridgeTokenPreview: {
+          ...bridgePreview,
+          recipient: { family: "eip155", address: "0xUserEvmWallet" },
+        },
+      },
+    );
+    expect(preview.criticalArgs.bridgeDestinationWallet).toContain("0xUserEvmWallet");
+    expect(preview.criticalArgs.bridgeDestinationWallet).not.toContain("0xattacker");
+    expect(preview.criticalArgs.bridgeDestinationWallet).toContain("derived by Vex, never a parameter");
+  });
+
   it("renders typed metadata unavailability with raw amount and a signing block", () => {
     const unavailable: BridgeTokenIdentityPreview = {
       source: {

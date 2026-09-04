@@ -72,6 +72,61 @@ describe("vex_ToolDescribe returns one tool's whole contract", () => {
     }
   });
 
+  /**
+   * The same-provider half of the answer, which `provider` equality could not
+   * give. The gate reads its row under `kind` (and `lane` on the two shared
+   * lend kinds), so a Morpho vault quote cannot authorize a market supply and a
+   * Pendle PT quote cannot authorize an LP add. Publishing those pairings said
+   * the opposite about calls that move money. The whole enumeration lives in
+   * `tools/protocols/prequote/registry-quote-gate-mapping.test.ts`; these are
+   * the rows as the AGENT reads them, under their public names.
+   */
+  it.each([
+    ["morpho__market_borrow", "lend_borrow", "morpho__market_quote", "morpho__vault_quote"],
+    ["morpho__vault_deposit", "lend_deposit", "morpho__vault_quote", "morpho__market_quote"],
+    ["morpho__market_supply", "lend_deposit", "morpho__market_quote", "morpho__vault_quote"],
+    ["pendle__pt_redeem", "redeem", "pendle__pt_quote", "pendle__lp_quote"],
+    ["pendle__py_mint", "mint", "pendle__py_quote", "pendle__pt_quote"],
+    ["pendle__lp_add", "lp_add", "pendle__lp_quote", "pendle__py_quote"],
+  ])(
+    "%s names only the quote that can authorize it, not every quote of its provider",
+    (execute, prequoteKind, authorizing, refused) => {
+      const gate = contractOf(execute).quoteGate;
+      expect(gate).toMatchObject({ status: "gated", prequoteKind });
+      if (gate.status !== "gated") return;
+      expect(gate.authorizedBy).toEqual([authorizing]);
+      expect(gate.authorizedBy).not.toContain(refused);
+    },
+  );
+
+  it("answers a read and a local write `ungated`, never venue_resolved_per_call", () => {
+    // The false contract this replaces: EVERY internal row answered
+    // `venue_resolved_per_call`, which told a caller that `WalletBalances` and
+    // `TokenFind` resolve a venue and are authorized by a quote. Neither has a
+    // venue and neither spends anything.
+    for (const name of ["WalletBalances", "TokenFind", "WalletTrackToken"]) {
+      const gate = contractOf(name).quoteGate;
+      expect(gate.status).toBe("ungated");
+      expect(gate.note).toContain("moves no funds");
+    }
+  });
+
+  it("keeps venue_resolved_per_call for exactly the four mutating alias routers", () => {
+    const perCall = buildStudioInventory()
+      .filter((row) => {
+        const outcome = describeExportedTool({ name: row.publicName });
+        return outcome.ok && outcome.contract.quoteGate.status === "venue_resolved_per_call";
+      })
+      .map((row) => row.publicName)
+      .sort();
+    expect(perCall).toEqual([
+      "BridgeExecute",
+      "BridgeExecuteRelay",
+      "SwapExecute",
+      "SwapExecuteUniswap",
+    ]);
+  });
+
   it("reports an ungated protocol tool as ungated rather than unknown", () => {
     expect(contractOf("kyberswap__swap_quote").quoteGate).toMatchObject({ status: "ungated" });
   });

@@ -6,7 +6,9 @@
 
 import { getKyberAggregatorClient } from "@tools/kyberswap/aggregator/client.js";
 import { resolveChainSlug, slugToChainId } from "@tools/kyberswap/chains.js";
-import { META_AGGREGATION_ROUTER_V2 } from "@tools/kyberswap/constants.js";
+import { KYBERSWAP_FEE_RECEIVER, META_AGGREGATION_ROUTER_V2 } from "@tools/kyberswap/constants.js";
+import { buildKyberFeeDisclosure } from "@tools/kyberswap/fee-disclosure.js";
+import { computeKyberVexFeeRaw } from "@tools/kyberswap/swap-vex-fee.js";
 import { getKyberPublicClient, planKyberAllowance } from "@tools/kyberswap/evm-utils.js";
 import { resolveTokenMetadataStrict, requireFeature, type ResolvedKyberTokenMetadata } from "@tools/kyberswap/helpers.js";
 import { annotateNativeSymbol } from "@tools/evm-chains/native-currency.js";
@@ -302,6 +304,23 @@ export const quoteHandler: ProtocolHandler = async (p, context) => {
     };
   }
 
+  // THE FEE THIS QUOTE COMMITS TO. Stated here, at the quote, because this is
+  // the block the recorder persists on the prequote row, the gate carries to
+  // the approval card and the executor is re-checked against before signing.
+  // Derived from the SAME arithmetic the router performs (`computeKyberVexFeeRaw`
+  // states `floor(amountIn * 25 / 10000)`, measured against real captured
+  // calldata) and from the venue's own receiver constant - never from a param.
+  const vexFeeRaw = computeKyberVexFeeRaw(amountInAtomic);
+  const vexFee = buildKyberFeeDisclosure({
+    tokenAddress: tokenIn.address,
+    tokenSymbol: tokenIn.symbol,
+    tokenDecimals: tokenIn.decimals,
+    feeRaw: vexFeeRaw,
+    swappedRaw: amountInAtomic - vexFeeRaw,
+    totalRaw: amountInAtomic,
+    receiver: KYBERSWAP_FEE_RECEIVER,
+  });
+
   return {
     ...ok({
       summary,
@@ -311,6 +330,7 @@ export const quoteHandler: ProtocolHandler = async (p, context) => {
       routeSummary: route,
       routerAddress: response.data.routerAddress,
       safety,
+      vexFee,
       // The agent sees WHY, in the same object as the route. The snapshot
       // itself never appears here: it rides the private `quoteAuthority`
       // channel to the recorder and nowhere else.

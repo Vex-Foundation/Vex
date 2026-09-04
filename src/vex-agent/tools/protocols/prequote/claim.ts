@@ -34,6 +34,7 @@ import {
 } from "../quote-authority/uniswap.js";
 import type { RouteSnapshot } from "../quote-authority/snapshot.js";
 import { EXECUTE_GATE_TOOLS } from "./registry.js";
+import { vexFeeFromSafetyDetail, type VexFeePreview } from "./fee-disclosure.js";
 import { computeGateMatch } from "./gate/identity.js";
 
 export type ClaimedSwapSnapshot =
@@ -43,6 +44,18 @@ export type ClaimedSwapSnapshot =
       readonly snapshot: RouteSnapshot;
       /** The provider route summary parsed back from the digest-verified string. */
       readonly routeSummary: unknown;
+      /**
+       * The Vex fee statement the CLAIMED row carries - the same block the
+       * approval card stated, read back off the row this execute just consumed.
+       * The executor re-derives its own disposition and holds it to this one
+       * before signing (round 2): a fee that no longer matches the statement a
+       * person read is a fee nobody consented to.
+       *
+       * `undefined` for a venue that carries no Vex fee on this channel; a
+       * fee-bearing execute cannot reach here without one, because the gate
+       * refuses that row first.
+       */
+      readonly vexFee: VexFeePreview | undefined;
     }
   | { readonly ok: false; readonly refusal: SnapshotRefusal };
 
@@ -80,6 +93,7 @@ export async function claimSwapExecutionSnapshot(
     prequoteId: claimed.prequoteId,
     snapshot: restored.snapshot,
     routeSummary: restored.routeSummary,
+    vexFee: claimed.vexFee,
   };
 }
 
@@ -88,6 +102,18 @@ export type ClaimedUniswapSnapshot =
       readonly ok: true;
       readonly prequoteId: string;
       readonly snapshot: UniswapExecutionSnapshot;
+      /**
+       * The Vex fee statement the CLAIMED row carries - the same block the
+       * approval card stated, read back off the row this execute just consumed.
+       * The executor re-derives its own disposition and holds it to this one
+       * before signing (round 2): a fee that no longer matches the statement a
+       * person read is a fee nobody consented to.
+       *
+       * `undefined` for a venue that carries no Vex fee on this channel; a
+       * fee-bearing execute cannot reach here without one, because the gate
+       * refuses that row first.
+       */
+      readonly vexFee: VexFeePreview | undefined;
     }
   | { readonly ok: false; readonly refusal: SnapshotRefusal };
 
@@ -123,7 +149,12 @@ export async function claimUniswapExecutionSnapshot(
     UNISWAP_FRESH_QUOTE_TOOL,
   );
   if (bound !== null) return { ok: false, refusal: bound };
-  return { ok: true, prequoteId: claimed.prequoteId, snapshot: restored.snapshot };
+  return {
+    ok: true,
+    prequoteId: claimed.prequoteId,
+    snapshot: restored.snapshot,
+    vexFee: claimed.vexFee,
+  };
 }
 
 type ClaimedRow =
@@ -133,6 +164,8 @@ type ClaimedRow =
       readonly routeRef: unknown;
       /** The ROW's expiry - the deadline the card stated and the claim enforced. */
       readonly expiresAt: string;
+      /** The claimed row's Vex fee statement, read through the recorder's schema. */
+      readonly vexFee: VexFeePreview | undefined;
     }
   | { readonly ok: false; readonly refusal: SnapshotRefusal };
 
@@ -197,6 +230,7 @@ async function claimPrequoteRow(
       prequoteId: claimed.prequoteId,
       routeRef: claimed.routeRef,
       expiresAt: claimed.expiresAt,
+      vexFee: vexFeeFromSafetyDetail(claimed.safetyDetail),
     };
   }
 
@@ -222,6 +256,7 @@ async function claimPrequoteRow(
     prequoteId: claimed.prequoteId,
     routeRef: claimed.routeRef,
     expiresAt: claimed.expiresAt,
+    vexFee: vexFeeFromSafetyDetail(claimed.safetyDetail),
   };
 }
 

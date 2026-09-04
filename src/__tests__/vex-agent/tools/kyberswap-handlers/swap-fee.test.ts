@@ -16,10 +16,13 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { EvmWallet } from "@tools/wallet/multi-auth.js";
-import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
+import type { ProtocolExecutionContext, ProtocolHandler } from "@vex-agent/tools/protocols/types.js";
 
 type WalletResolveModule = typeof import("@vex-agent/tools/internal/wallet/resolve.js");
-import { KYBERSWAP_FEE_RECEIVER } from "@tools/kyberswap/constants.js";
+import { KYBERSWAP_FEE_BPS, KYBERSWAP_FEE_RECEIVER } from "@tools/kyberswap/constants.js";
+import { computeKyberVexFeeRaw } from "@tools/kyberswap/swap-vex-fee.js";
+import { toVexFeePreview } from "@vex-agent/tools/protocols/prequote/fee-disclosure.js";
+import { formatUnits } from "viem";
 
 const SESSION_EVM: EvmWallet = {
   family: "eip155" as const,
@@ -142,6 +145,13 @@ import { approvedClaim } from "../../../kyberswap/fixtures/route-build/approved-
 import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 import { KYBERSWAP_HANDLERS } from "../../../../vex-agent/tools/protocols/kyberswap/handlers.js";
 
+/** The quote handler, or a thrown message: a missing registration is a test-setup fact, never a silent `!`. */
+function quoteHandler(): ProtocolHandler {
+  const handler = KYBERSWAP_HANDLERS["kyberswap.swap.quote"];
+  if (handler === undefined) throw new Error("kyberswap.swap.quote is not registered");
+  return handler;
+}
+
 const TOKEN_A = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
 const TOKEN_B = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
 
@@ -195,7 +205,7 @@ describe("Vex integrator fee on KyberSwap route calls", () => {
   });
 
   it("quote handler sends the four fee fields with exact values", async () => {
-    const result = await KYBERSWAP_HANDLERS["kyberswap.swap.quote"]!(
+    const result = await quoteHandler()(
       { chain: "ethereum", tokenIn: TOKEN_A, tokenOut: TOKEN_B, amountIn: "1" },
       ctx({ sessionPermission: "restricted", approved: false }),
     );
@@ -207,6 +217,58 @@ describe("Vex integrator fee on KyberSwap route calls", () => {
     expect(params.feeReceiver).toBe(KYBERSWAP_FEE_RECEIVER);
   });
 
+  it("the quote STATES the fee it applied, with the arithmetic the router performs", async () => {
+    // The fee must be data on the quote, not a number recomputed later at
+    // render time: this block is what the recorder persists, what the approval
+    // card renders, and what the executor is re-checked against before signing.
+    const result = await quoteHandler()(
+      { chain: "ethereum", tokenIn: TOKEN_A, tokenOut: TOKEN_B, amountIn: "1" },
+      ctx({ sessionPermission: "restricted", approved: false }),
+    );
+    expect(result.success).toBe(true);
+
+    // `amountIn: "1"` at the mocked 18-decimal metadata is 1e18 raw units.
+    const amountInAtomic = 10n ** 18n;
+    const expectedFee = computeKyberVexFeeRaw(amountInAtomic);
+    const expected = {
+      charged: true,
+      bps: KYBERSWAP_FEE_BPS,
+      chargedOn: "currency_in",
+      tokenAddress: TOKEN_A,
+      tokenSymbol: "TKN",
+      tokenDecimals: 18,
+      feeAmountRaw: expectedFee.toString(),
+      feeAmountDecimal: formatUnits(expectedFee, 18),
+      receiver: KYBERSWAP_FEE_RECEIVER,
+      swappedAmountRaw: (amountInAtomic - expectedFee).toString(),
+      totalDebitedRaw: amountInAtomic.toString(),
+    };
+    expect(result.data?.vexFee).toMatchObject(expected);
+    // The agent reads the same block in the JSON it is handed, not a different one.
+    const output = JSON.parse(result.output ?? "{}") as { vexFee?: Record<string, unknown> };
+    expect(output.vexFee).toMatchObject(expected);
+
+    // The fee is a component of what the user is debited, never an extra
+    // charge beside it: the parts add up exactly.
+    expect(BigInt(expected.feeAmountRaw) + BigInt(expected.swappedAmountRaw))
+      .toBe(BigInt(expected.totalDebitedRaw));
+    // And it is NOT the provider's echo of the RATE: `extraFee.feeAmount` comes
+    // back as the literal "25", which as an amount would be 25 atomic units.
+    expect(expected.feeAmountRaw).not.toBe("25");
+  });
+
+  it("the quote's stated fee projects onto the persisted block, collected inside the route", async () => {
+    const result = await quoteHandler()(
+      { chain: "ethereum", tokenIn: TOKEN_A, tokenOut: TOKEN_B, amountIn: "1" },
+      ctx({ sessionPermission: "restricted", approved: false }),
+    );
+    const block = toVexFeePreview("kyberswap.swap.quote", result.data?.vexFee);
+    expect(block).toBeDefined();
+    // KyberSwap's router keeps the fee inside the swap transaction itself, and
+    // that fact comes from the quote-tool table rather than from the payload.
+    expect(block?.collection).toBe("inside_route");
+  });
+
   it("the execute makes NO route call at all - the fee the quote applied is the fee that executes", async () => {
     // Stronger than the fee-field comparison this replaces. The execute used
     // to fetch its own route, so the two calls' integrator-fee params had to
@@ -214,7 +276,7 @@ describe("Vex integrator fee on KyberSwap route calls", () => {
     // 2026-08-28 the execute BUILDS FROM THE QUOTE'S OWN ROUTE SUMMARY, so the
     // fee is the quoted one by construction - and the property to pin is that
     // no second, unpriced route call exists to diverge from it.
-    await KYBERSWAP_HANDLERS["kyberswap.swap.quote"]!(
+    await quoteHandler()(
       { chain: "ethereum", tokenIn: TOKEN_A, tokenOut: TOKEN_B, amountIn: "1" },
       ctx({ sessionPermission: "restricted", approved: false }),
     );

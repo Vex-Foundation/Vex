@@ -28,6 +28,7 @@ import type {
 } from "@vex-agent/db/repos/swap-prequotes.js";
 import type { ToolResult } from "@vex-agent/tools/types.js";
 import { SPENDABILITY_CARD_VERSION } from "@vex-agent/tools/protocols/quote-authority/spendability-contract.js";
+import { rowVexFee, venueSwapVexFee } from "../prequote/vex-fee-fixtures.js";
 
 // ── Mocks: the DB only ────────────────────────────────────────────────────
 
@@ -128,7 +129,7 @@ function row(overrides: Partial<SwapPrequote> = {}): SwapPrequote {
     amount: "1",
     slippageBps: 50,
     safetyVerdict: "pass",
-    safetyDetail: {},
+    safetyDetail: { vexFee: rowVexFee() },
     routeRef: null,
     eligibilityKind: "executable",
     claimedAt: null,
@@ -245,6 +246,7 @@ describe("the quote-time spendability facts reach the approval card", () => {
           tokenIn: { isHoneypot: false, isFOT: false, tax: 0 },
           tokenOut: { isHoneypot: false, isFOT: false, tax: 0 },
         },
+        vexFee: venueSwapVexFee(),
       },
       ctx(),
       { eligibilityKind: "executable", routeSnapshot: null, spendability } as ToolResult["quoteAuthority"],
@@ -256,7 +258,10 @@ describe("the quote-time spendability facts reach the approval card", () => {
 
   /** Push an allow decision through the real approval gate and card builder. */
   async function cardFor(safetyDetail: Record<string, unknown>): Promise<Record<string, unknown>> {
-    mockFindLatest.mockResolvedValue(row({ safetyDetail }));
+    // Every row this suite drives through the gate is a KyberSwap swap, which is
+    // fee-bearing: without a fee statement the gate refuses before any card is
+    // built. The spendability arrangement each case varies is layered on top.
+    mockFindLatest.mockResolvedValue(row({ safetyDetail: { vexFee: rowVexFee(), ...safetyDetail } }));
     const decision = await prequoteModule.evaluatePrequoteGate(
       "kyberswap.swap.execute",
       EVM_PARAMS,
@@ -278,6 +283,8 @@ describe("the quote-time spendability facts reach the approval card", () => {
       decision.quoteBinding,
       decision.spendability,
       undefined,
+      undefined,
+      decision.vexFee,
     );
     if (pending === undefined) throw new Error("expected a pending-approval result");
     const preview = buildApprovalIntentPreview({

@@ -156,7 +156,21 @@ vi.mock("@vex-agent/db/repos/agent-activity.js", async (importOriginal) => ({
   noteBridgeProviderObservation: (...a: unknown[]) => mockNoteBridgeProviderObservation(...a),
 }));
 
+// The bound quote the execute revalidates its Vex fee against, in the pre-sign
+// window. The gate has its own suites; this one drives the HANDLER, so the
+// re-read is a controlled answer and the default answer is the statement this
+// arrangement's own quote would have recorded.
+const mockFindFreshMatchedPrequote = vi.fn();
+vi.mock("@vex-agent/tools/protocols/prequote/gate.js", () => ({
+  findFreshMatchedPrequote: (...a: unknown[]) => mockFindFreshMatchedPrequote(...a),
+}));
+
 const { RELAY_BRIDGE_HANDLERS } = await import("@vex-agent/tools/protocols/relay/handlers/bridge.js");
+const {
+  boundChargedVexFee,
+  boundSkippedVexFee,
+  matchedPrequoteWithVexFee,
+} = await import("../../../tools/bridge-fee/bound-vex-fee.js");
 const { DependentLegGasEstimateError, DEPENDENT_LEG_ESTIMATE_MARKER } =
   await import("@tools/evm-chains/dependent-leg-gas-estimate.js");
 
@@ -218,6 +232,10 @@ function outputOf(result: { output: string }): Record<string, unknown> {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // The approved quote for these exact params stated this exact fee.
+  mockFindFreshMatchedPrequote.mockResolvedValue(matchedPrequoteWithVexFee(boundChargedVexFee({
+    feeAmountRaw: "2500000000000", netAmountRaw: "997500000000000", totalDebitedRaw: "1000000000000000",
+  })));
   mockGetCachedRelayChains.mockResolvedValue(CHAINS);
   mockGetQuote.mockResolvedValue(quote());
   mockAdapt.mockReturnValue(adaptedOk());
@@ -243,6 +261,109 @@ beforeEach(() => {
   mockAbort.mockResolvedValue([]);
   mockSign.mockImplementation(signAs("confirmed", "0xdep"));
   mockPin.mockResolvedValue({ inserted: true });
+});
+
+/** When a mock was first called, so ordering is asserted on facts, not on timing. */
+function firstCallOrder(mock: { mock: { invocationCallOrder: readonly number[] } }): number {
+  const [first] = mock.mock.invocationCallOrder;
+  if (first === undefined) throw new Error("expected this mock to have been called");
+  return first;
+}
+
+// ── The bound Vex fee statement (rule 90: revalidate immediately before sign) ──
+describe("relay.bridge - the fee must still match the statement the approval was granted on", () => {
+  /** Nothing signed, nothing planned, nothing broadcast, no in-flight guard taken. */
+  function assertNothingHappened(): void {
+    expect(mockSign).not.toHaveBeenCalled();
+    expect(mockCreateIntent).not.toHaveBeenCalled();
+    expect(mockCheckInFlight).not.toHaveBeenCalled();
+    expect(mockResolveStepClients).not.toHaveBeenCalled();
+  }
+
+  it("REFUSES before any signing when the card said a fee is taken and this bridge would skip it", async () => {
+    // The dust arm of the same divergence class as a token flagged
+    // fee-on-transfer after the card was shown: the row still says charged, the
+    // fresh derivation says nothing is taken, so the amount that would actually
+    // be bridged is not the amount the card stated.
+    mockAdapt.mockReturnValue(adaptedOk({
+      currencyIn: { symbol: "ETH", decimals: 18, currencyAddress: ZERO, amountRaw: "300", amountFormatted: "0.0000000000000003", amountUsd: null, minimumAmountRaw: null },
+    }));
+
+    const result = await runBridge({ ...PARAMS, amountRaw: "300" });
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("relay.bridge failed:");
+    expect(result.output).toContain("The Vex fee statement this approval was granted on no longer holds");
+    expect(result.output).toContain("Nothing was signed and nothing was broadcast");
+    expect(result.output).toContain("relay__bridge_quote_get");
+    // An authorization refusal is not a bridge that failed: no durable
+    // failure row is written for it, exactly as the prequote gate writes none.
+    expect(mockPreFail).not.toHaveBeenCalled();
+    assertNothingHappened();
+  });
+
+  it("REFUSES and names the moved amount when the bound fee is not the fee this bridge would take", async () => {
+    mockFindFreshMatchedPrequote.mockResolvedValue(matchedPrequoteWithVexFee(boundChargedVexFee({
+      feeAmountRaw: "2000000000000", netAmountRaw: "998000000000000", totalDebitedRaw: "1000000000000000",
+    })));
+
+    const result = await runBridge();
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("2000000000000 raw units");
+    expect(result.output).toContain("2500000000000 raw units");
+    assertNothingHappened();
+  });
+
+  it("REFUSES when the card stated no fee and this bridge would take one", async () => {
+    mockFindFreshMatchedPrequote.mockResolvedValue(
+      matchedPrequoteWithVexFee(boundSkippedVexFee({ totalDebitedRaw: "1000000000000000" })),
+    );
+
+    const result = await runBridge();
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("NO Vex fee would be taken");
+    assertNothingHappened();
+  });
+
+  it("FAILS CLOSED when the bound row carries no readable fee statement at all", async () => {
+    mockFindFreshMatchedPrequote.mockResolvedValue(matchedPrequoteWithVexFee(undefined));
+
+    const result = await runBridge();
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("no readable Vex fee statement");
+    assertNothingHappened();
+  });
+
+  it("REFUSES when the approved row was superseded while the approval waited", async () => {
+    mockFindFreshMatchedPrequote.mockResolvedValue({ ok: false, reason: "approval_row_superseded" });
+
+    const result = await runBridge();
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("no longer the current one");
+    assertNothingHappened();
+  });
+
+  it("proceeds to sign when the statement holds, and reads the row AFTER the quote", async () => {
+    const result = await runBridge();
+
+    expect(mockSign).toHaveBeenCalled();
+    expect(outputOf(result).status).toBe("pending");
+    // The comparison must see the disposition the deposit would use, so the
+    // quote is what it is compared against, not a pre-quote guess.
+    const readOrder = firstCallOrder(mockFindFreshMatchedPrequote);
+    expect(firstCallOrder(mockGetQuote)).toBeLessThan(readOrder);
+    expect(firstCallOrder(mockSign)).toBeGreaterThan(readOrder);
+  });
+
+  it("a dryRun never reads the bound row: it is a preview, it signs nothing", async () => {
+    await runBridge({ ...PARAMS, dryRun: true });
+    expect(mockFindFreshMatchedPrequote).not.toHaveBeenCalled();
+    expect(mockSign).not.toHaveBeenCalled();
+  });
 });
 
 // ── Pre-sign gates: each failure records a HASHLESS row + broadcasts NOTHING ──

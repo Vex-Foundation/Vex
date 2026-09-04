@@ -45,8 +45,9 @@ import { riskLevelFromActionKind } from "../tools/risk-level.js";
 import type { ActionKind } from "../tools/taxonomy.js";
 import {
   EXECUTE_GATE_TOOLS,
-  PREQUOTE_QUOTE_TOOLS,
+  quoteToolsAuthorizing,
 } from "../tools/protocols/prequote/registry.js";
+import { isMutatingProtocolAlias } from "../tools/mutating-aliases.js";
 import { EXPORTED_TOOL_SEARCH_NAME } from "./export-scope.js";
 import { EXPORTED_TOOL_SEARCH_PUBLIC_NAME } from "./tool-search-export.js";
 import { buildStudioInventory } from "./inventory/index.js";
@@ -285,22 +286,62 @@ function approvalCardFor(tool: StudioTool): { raised: boolean; note: string } {
 }
 
 /**
- * The quote tools whose fresh quote can authorize this execute.
+ * The quote-gate answer for an INTERNAL row.
  *
- * Both registries are keyed by the dotted `toolId`, so this answers for the
- * protocol lane and answers `venue_resolved_per_call` for an internal alias,
- * whose venue is resolved per call from the chain and whose own description
- * names its pair. That is a positive answer, not an absence, which is why every
- * arm carries the same `status` discriminant.
+ * `venue_resolved_per_call` is a claim about a venue and an authorizing quote,
+ * so only the four mutating alias routers may carry it: they are the internal
+ * tools that resolve a protocol venue per call and whose own description names
+ * the quote pair (`tools/mutating-aliases.ts`). Every other internal tool used
+ * to carry it too, which told a caller that `WalletBalances` and `TokenFind`
+ * resolve a venue and are authorized by a quote - two false contracts on a row
+ * that resolves nothing and spends nothing. A read and a local write answer
+ * `ungated` because no quote authorizes them: they move no funds. Anything else
+ * internal answers `ungated` too, because the prequote gate is keyed by
+ * protocol toolId and never sees it; its authority is the user's approval card,
+ * reported one field up in `approvalCard`.
  */
-function quoteGateFor(tool: StudioTool): QuoteGate {
-  if (tool.kind !== "protocol" || tool.toolId === undefined) {
+function internalQuoteGateFor(tool: StudioTool): QuoteGate {
+  if (isMutatingProtocolAlias(tool.publicName)) {
     return {
       status: "venue_resolved_per_call",
       note:
-        "The prequote registries are keyed by protocol toolId. An internal tool resolves its venue "
-        + "per call, and its own description names the quote that authorizes it.",
+        "The prequote registries are keyed by protocol toolId. This alias resolves its venue per "
+        + "call from the chain, and its own description names the quote that authorizes it.",
     };
+  }
+  const actionKind = actionKindFor(tool);
+  if (actionKind === "read" || actionKind === "local_write") {
+    return {
+      status: "ungated",
+      note:
+        "No quote gate, and no quote authorizes this call: it moves no funds. A "
+        + `${actionKind === "read" ? "read" : "local Vex write"} has no venue and nothing to price.`,
+    };
+  }
+  return {
+    status: "ungated",
+    note:
+      "No quote gate: the prequote registries are keyed by protocol toolId and this internal tool "
+      + "is not one of the venue-resolving aliases, so no prequote authorizes it. Where it can "
+      + "spend, the user's approval card is the authority - see `approvalCard`.",
+  };
+}
+
+/**
+ * The quote tools whose fresh quote can authorize this execute.
+ *
+ * `authorizedBy` is READ from the registry's own recorder-to-gate-row mapping
+ * (`prequote/registry.ts`, `quoteToolsAuthorizing`), never from provider
+ * equality: the gate reads its row under `kind` (and, on the two shared lend
+ * kinds, `lane`) as a predicate, so a quote of another direction is not a hash
+ * mismatch, it is never even looked at. Deriving this answer from `provider`
+ * alone advertised pairings the gate refuses - a vault quote for a market
+ * supply, a PT quote for an LP add - which is a false contract about what
+ * authorizes a call that moves money.
+ */
+function quoteGateFor(tool: StudioTool): QuoteGate {
+  if (tool.kind !== "protocol" || tool.toolId === undefined) {
+    return internalQuoteGateFor(tool);
   }
   const gate = EXECUTE_GATE_TOOLS[tool.toolId];
   if (gate === undefined) {
@@ -309,9 +350,8 @@ function quoteGateFor(tool: StudioTool): QuoteGate {
       note: "No quote gate: this tool is not registered as a gated execute.",
     };
   }
-  const authorizedBy = Object.entries(PREQUOTE_QUOTE_TOOLS)
-    .filter(([, registration]) => registration.provider === gate.provider)
-    .map(([quoteToolId]) => getProtocolManifest(quoteToolId)?.publicName ?? quoteToolId)
+  const authorizedBy = quoteToolsAuthorizing(gate)
+    .map((quoteToolId) => getProtocolManifest(quoteToolId)?.publicName ?? quoteToolId)
     .sort();
   return {
     status: "gated",

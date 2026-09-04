@@ -184,7 +184,7 @@ function matchedRow(overrides: { readonly approvedNativeRaw?: string } = {}): Ma
 
 const mockFindMatched = vi.fn<() => Promise<MatchedForTest>>(async () => matchedRow());
 vi.mock("@vex-agent/tools/protocols/swap-prequote.js", () => ({
-  findFreshMatchedSwapPrequote: () => mockFindMatched(),
+  findFreshMatchedPrequote: () => mockFindMatched(),
 }));
 
 const mockCreateIntent = vi.fn(async () => ({ executionId: "exec-1", events: [{ id: "event-1" }] }));

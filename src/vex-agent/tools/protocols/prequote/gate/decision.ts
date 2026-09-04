@@ -8,6 +8,7 @@ import type { QuoteBindingPreview } from "../../quote-authority/restore.js";
 import type { SpendabilityPreview } from "../../quote-authority/spendability-contract.js";
 import type { SafetyVerdict } from "@vex-agent/db/repos/swap-prequotes.js";
 import type { JupiterFeePreview } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/fee-swap.js";
+import type { VexFeePreview } from "../fee-disclosure.js";
 
 import { canonicalizeDebitPlan, type BoundDebitPlan } from "../../quote-authority/debit-plan.js";
 import type { ApprovedPrequoteAuthority } from "../approved-row-authority.js";
@@ -44,6 +45,31 @@ export type GateDecision =
        * sourced from the persisted prequote, never raw args.
        */
       readonly feePreview?: JupiterFeePreview;
+      /**
+       * The Vex fee statement the matched quote made: charged or skipped, the
+       * exact atomic amount, the token that pays it, the treasury that
+       * receives it and when it is collected. Read from the matched row's
+       * persisted `safetyDetail` through the schema the recorder validated
+       * against, NEVER recomputed from args - the whole point of the channel is
+       * that the card and the executor state ONE derivation of this number.
+       *
+       * Absent for a venue that carries no Vex fee on this channel. For a
+       * FEE-BEARING gated execute an absent statement is not an allow at all:
+       * the gate blocks with `fee_disclosure_missing`.
+       */
+      readonly vexFee?: VexFeePreview;
+      /**
+       * The DERIVED destination wallet a bridge identity binds - the selected
+       * wallet of the destination family, never a `recipient` parameter (the
+       * aliases reject that name). It is already inside the match hash, so a
+       * wallet switch between quote and execute changes the hash and the gate
+       * refuses; what was missing is that a person never SAW where the funds
+       * land. Absent on every non-bridge lane.
+       */
+      readonly bridgeRecipient?: {
+        readonly family: "eip155" | "solana";
+        readonly address: string;
+      };
       /**
        * What the approval card states this proposal is bound to: the quoted
        * output, the floor the fill may not go below, the tolerance, the

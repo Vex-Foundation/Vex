@@ -124,7 +124,7 @@ const { UNISWAP_SWAP_HANDLERS } = await import("@vex-agent/tools/protocols/unisw
 const { applySlippage } = await import("@tools/uniswap/quote.js");
 const { buildSwapTx } = await import("@tools/uniswap/execute.js");
 const { resolveUniswapDeployment } = await import("@tools/uniswap/chains.js");
-const { approvedUniswapSnapshot } = await import("./_uniswap-approved-snapshot.js");
+const { approvedUniswapSnapshot, approvedUniswapVexFee } = await import("./_uniswap-approved-snapshot.js");
 
 const execute = UNISWAP_SWAP_HANDLERS["uniswap.swap.execute"];
 if (execute === undefined) throw new Error("uniswap.swap.execute is not registered");
@@ -149,6 +149,18 @@ const TOKEN_OUT_LEG = { address: TOKEN_OUT, symbol: "TKN", decimals: 18, isNativ
 
 function freshRoute(amountOut: bigint) {
   return { route: { version: "v2" as const, path: [TOKEN_IN, TOKEN_OUT], amountOut }, priceImpact: 0.001 };
+}
+
+/** The row's Vex fee statement for this trade, re-checked before signing. */
+function approvedVexFee() {
+  return approvedUniswapVexFee({
+    chainId: CHAIN_ID,
+    tokenIn: TOKEN_IN_LEG,
+    tokenOut: TOKEN_OUT_LEG,
+    amountInRaw: AMOUNT_IN_RAW,
+    approvedAmountOutRaw: QUOTED_OUT,
+    approvedMinOutRaw: QUOTED_OUT,
+  });
 }
 
 async function approved() {
@@ -194,6 +206,7 @@ beforeEach(async () => {
   createAgentActivityPreBroadcastFailure.mockResolvedValue({ executionId: 999, event: {} });
   claimUniswapExecutionSnapshot.mockResolvedValue({
     ok: true, prequoteId: "prequote-1", snapshot: await approved(),
+    vexFee: await approvedVexFee(),
   });
   quoteBestRoute.mockResolvedValue(freshRoute(QUOTED_OUT));
 

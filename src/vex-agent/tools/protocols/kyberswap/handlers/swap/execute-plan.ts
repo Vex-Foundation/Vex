@@ -27,6 +27,11 @@ import type { RouteSnapshot } from "../../../quote-authority/snapshot.js";
 import { compareDebitPlanRoles } from "../../../quote-authority/debit-plan.js";
 import { KYBER_FRESH_QUOTE_TOOL } from "../../../quote-authority/refusal.js";
 import { computeKyberVexFeeRaw } from "@tools/kyberswap/swap-vex-fee.js";
+import { buildKyberFeeDisclosure } from "@tools/kyberswap/fee-disclosure.js";
+import { KYBERSWAP_FEE_RECEIVER } from "@tools/kyberswap/constants.js";
+import { revalidateVexFeeStatement } from "@tools/vex-fee/fee-revalidation.js";
+import { toVexFeePreview, type VexFeePreview } from "../../../prequote/fee-disclosure.js";
+import logger from "@utils/logger.js";
 import { ensureErc20Balance } from "@tools/evm-chains/erc20-balance-guard.js";
 import {
   measureKyberDebitPlan,
@@ -109,6 +114,12 @@ export interface PrepareSwapExecutionInput {
    * change: `intent_params` is already a sanitized, capped JSON blob.
    */
   readonly safetyCheckUnavailable: readonly SafetyCheckUnavailable[];
+  /**
+   * The Vex fee statement the CLAIMED row carries - the block the approval card
+   * stated and the row-disclosure digest covered. Held against this execution's
+   * own re-derivation before anything is signed; `undefined` fails closed.
+   */
+  readonly approvedVexFee: VexFeePreview | undefined;
 }
 
 /**
@@ -138,7 +149,7 @@ export async function prepareSwapExecution(input: PrepareSwapExecutionInput): Pr
     toolId, intentParams: p, sessionId, publicClient, walletAddress, chainId, slug,
     tokenIn, tokenOut, amountIn, amountInRaw, slippage, routerAddress,
     approvedSummary, approvedSnapshot,
-    safetyCheckUnavailable,
+    safetyCheckUnavailable, approvedVexFee,
   } = input;
 
   // The tolerance is part of the prequote identity, so the gate has already
@@ -271,6 +282,47 @@ export async function prepareSwapExecution(input: PrepareSwapExecutionInput): Pr
   // It is recorded even when `usdVexFeeEst` is undefined, which is what
   // makes an absent USD read as "price unknown" instead of "no fee".
   const vexFeeRaw = computeKyberVexFeeRaw(amountIn);
+
+  // ── THE VEX FEE STATEMENT THE HUMAN READ, held against this execution's ──
+  //
+  // On this venue the equality is expected to hold BY CONSTRUCTION, and that is
+  // exactly why it is asserted rather than assumed. The calldata guard above has
+  // already refused to go on unless the decoded description carries
+  // `desc.amount == amountIn`, `feeAmounts == [KYBERSWAP_FEE_BPS]`, `_FEE_IN_BPS`
+  // set, `_FEE_ON_DST` clear and partial fill forbidden, and the row's block was
+  // built at quote time from the same `computeKyberVexFeeRaw` over the same
+  // amount. So a difference here cannot be a market condition: it means the
+  // statement a person approved and the bytes this build will sign disagree,
+  // which is a Vex bug, and the swap must stop rather than sign the difference.
+  //
+  // Nothing in this phase has been signed - the intent row is created below and
+  // every signature happens in Phase B - so this refusal costs a fresh quote and
+  // no key. Both sides go through the recorder's own projection, so the two
+  // blocks compared are the same validated shape.
+  const feeVerdict = revalidateVexFeeStatement(
+    approvedVexFee,
+    toVexFeePreview("kyberswap.swap.quote", buildKyberFeeDisclosure({
+      tokenAddress: tokenIn.address,
+      tokenSymbol: tokenIn.symbol,
+      tokenDecimals: tokenIn.decimals,
+      feeRaw: vexFeeRaw,
+      swappedRaw: amountIn - vexFeeRaw,
+      totalRaw: amountIn,
+      receiver: KYBERSWAP_FEE_RECEIVER,
+    })),
+  );
+  if (!feeVerdict.ok) {
+    logger.warn("protocol.vex_fee.presign_refused", {
+      toolId,
+      reason: feeVerdict.reason,
+      movedFields: feeVerdict.movedFields,
+    });
+    throw new VexError(
+      ErrorCodes.KYBER_MALFORMED_PARAMS,
+      `Refused before signing: ${feeVerdict.summary} disagrees with the approved quote, which cannot happen on this venue.`,
+      "Nothing was signed. This is a Vex defect, not a market move: get a fresh kyberswap__swap_quote and report it if it repeats.",
+    );
+  }
 
   // ── Build the events plan BEFORE anything is signed (plan §11.1 step 1) ──
   const builtPlans: SwapEventPlan[] = [];

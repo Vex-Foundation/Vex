@@ -33,6 +33,7 @@ import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.
 
 import capture from "../../../kyberswap/fixtures/route-build/base-usdc-to-native-50bps.json" with { type: "json" };
 import { compliantRoutePaths } from "../../../kyberswap/fixtures/route-build/compliant-swap-build.js";
+import { fixtureVexFeeBlock } from "../../../kyberswap/fixtures/route-build/approved-quote.js";
 
 const SESSION_EVM = {
   family: "eip155" as const,
@@ -182,6 +183,10 @@ function claimed(amountOut: string = ROUTE_OUT, slippageBps = VEX_DEFAULT_SLIPPA
   return {
     ok: true as const,
     prequoteId: "prequote-1",
+    // The Vex fee statement the row carries. The execute re-derives its own and
+    // refuses before signing if the two disagree, so a claim without one is a
+    // claim no fee-bearing execute may run on.
+    vexFee: fixtureVexFeeBlock(BigInt(capture.routeSummary.amountIn)),
     routeSummary: summary,
     snapshot: sealRouteSnapshot({
       v: ROUTE_SNAPSHOT_VERSION,

@@ -33,6 +33,7 @@ import type { QuoteBindingPreview } from "./quote-authority/restore.js";
 import type { SpendabilityPreview } from "./quote-authority/spendability-contract.js";
 import type { BridgeTokenIdentityPreview } from "./bridge-token-identity.js";
 import type { ApprovedPrequoteAuthority } from "./prequote/approved-row-authority.js";
+import type { VexFeePreview } from "./prequote/fee-disclosure.js";
 import type { JupiterFeePreview } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/fee-swap.js";
 import type { LendBorrowRiskPreview } from "@tools/solana-ecosystem/jupiter/jupiter-lend/borrow-api/risk-preview-types.js";
 import { isExecutableNamespace, NAMESPACE_LIFECYCLE } from "./lifecycle.js";
@@ -287,6 +288,7 @@ export async function executeProtocolTool(
   let prequoteSpendability: SpendabilityPreview | undefined;
   let prequoteBridgeTokenPreview: BridgeTokenIdentityPreview | undefined;
   let prequoteAuthority: ApprovedPrequoteAuthority | undefined;
+  let prequoteVexFee: VexFeePreview | undefined;
   const prequoteDecision = await evaluatePrequoteGateDecision(request.toolId, params, scopedContext);
   if (prequoteDecision.kind === "block") {
     return withActionKind({ success: false, output: prequoteDecision.message }, effectiveActionKind);
@@ -300,6 +302,7 @@ export async function executeProtocolTool(
   prequoteSpendability = prequoteDecision.spendability;
   prequoteBridgeTokenPreview = prequoteDecision.bridgeTokenPreview;
   prequoteAuthority = prequoteDecision.prequoteAuthority;
+  prequoteVexFee = prequoteDecision.vexFee;
 
   // Approval gate - mutating tools require approval under restricted permission.
   // Preview (dryRun) is read-only simulation - skip approval. The pending
@@ -309,7 +312,7 @@ export async function executeProtocolTool(
     manifest, request, params, scopedContext,
     prequoteVerdict, prequoteFotTax, prequoteTermLock, prequoteFeePreview, prequoteRiskPreview,
     prequoteQuoteBinding, prequoteSpendability, prequoteBridgeTokenPreview,
-    prequoteAuthority,
+    prequoteAuthority, prequoteVexFee,
   );
   if (pendingApproval) {
     return withActionKind(pendingApproval, effectiveActionKind);

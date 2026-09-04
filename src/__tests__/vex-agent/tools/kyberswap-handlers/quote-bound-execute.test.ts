@@ -36,6 +36,7 @@ import type { FinalSignedRequest } from "@tools/evm-chains/staged-broadcast.js";
 
 import capture from "../../../kyberswap/fixtures/route-build/base-usdc-to-native-50bps.json" with { type: "json" };
 import { compliantRoutePaths } from "../../../kyberswap/fixtures/route-build/compliant-swap-build.js";
+import { fixtureVexFeeBlock } from "../../../kyberswap/fixtures/route-build/approved-quote.js";
 
 const SESSION_EVM = {
   family: "eip155" as const,
@@ -179,6 +180,10 @@ function claimedSnapshot(amountOut: string = QUOTED_OUT, slippageBps = SLIPPAGE_
   return {
     ok: true as const,
     prequoteId: "prequote-incident",
+    // The Vex fee statement the row carries. The execute re-derives its own and
+    // refuses before signing if the two disagree, so a claim without one is a
+    // claim no fee-bearing execute may run on.
+    vexFee: fixtureVexFeeBlock(BigInt(capture.routeSummary.amountIn)),
     routeSummary: summary,
     snapshot: sealRouteSnapshot({
       v: ROUTE_SNAPSHOT_VERSION,

@@ -9,6 +9,7 @@
 import type { ActionKind } from "./taxonomy.js";
 import type { SafetyVerdict } from "@vex-agent/db/repos/swap-prequotes.js";
 import type { JupiterFeePreview } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/fee-swap.js";
+import type { VexFeePreview } from "./protocols/prequote/fee-disclosure.js";
 import type { LendBorrowRiskPreview } from "@tools/solana-ecosystem/jupiter/jupiter-lend/borrow-api/risk-preview-types.js";
 
 // ── Tool definition (what LLM sees) ─────────────────────────────
@@ -609,6 +610,24 @@ export interface ToolResult {
      */
     readonly feePreview?: JupiterFeePreview;
     /**
+     * The Vex fee statement the matched quote made: charged or skipped, the
+     * exact atomic amount, the token that pays it, the treasury that receives
+     * it, and whether it is taken inside the transaction or as a separate
+     * transfer afterwards.
+     *
+     * It rides this typed channel because the alternative - the one this field
+     * replaces - was recomputing the fee from the tool ARGUMENTS at render
+     * time, which produced a number the executor did not charge and which no
+     * revalidation could catch (both sides recomputed the same wrong figure).
+     * Sourced from the matched prequote's persisted `safetyDetail`, never from
+     * args, so the model cannot state a rate, an amount or a receiver.
+     *
+     * Named beside its five siblings rather than behind a facade: it is one
+     * more typed projection of the SAME matched row they are, and splitting the
+     * tool vocabulary by line count would put one row's disclosure in two files.
+     */
+    readonly vexFee?: VexFeePreview;
+    /**
      * Bridge asset facts read at the pre-approval gate. EVM ERC-20 symbol and
      * decimals come from the contract; native identity comes from the chain
      * registry. Solana is explicitly marked as outside the EVM contract-read
@@ -641,6 +660,15 @@ export interface ToolResult {
       };
       readonly amountRaw: string;
       readonly amountHuman: string | null;
+      /**
+       * The DERIVED destination wallet the bridge identity bound: the selected
+       * wallet of the destination family, never a `recipient` parameter (both
+       * bridge aliases reject that name). Attached by the prequote gate.
+       */
+      readonly recipient?: {
+        readonly family: "eip155" | "solana";
+        readonly address: string;
+      };
     };
     /**
      * What the wallet could pay when the matched quote was taken: the source

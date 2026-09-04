@@ -21,6 +21,10 @@ import { buildUniswapQuoteSnapshot } from "@vex-agent/tools/protocols/uniswap/ha
 import type { UniswapExecutionSnapshot } from "@vex-agent/tools/protocols/quote-authority/uniswap.js";
 import { buildBoundDebitPlan } from "@vex-agent/tools/protocols/quote-authority/debit-plan.js";
 import type { LegFeeCap, NativeDebitLegRole } from "@tools/evm-chains/swap-native-debit.js";
+import {
+  toVexFeePreview,
+  type VexFeePreview,
+} from "@vex-agent/tools/protocols/prequote/fee-disclosure.js";
 
 /**
  * The transaction set a Uniswap quote binds, by the SAME rule
@@ -117,13 +121,40 @@ export async function approvedUniswapSnapshot(
   });
 }
 
+/**
+ * The Vex fee statement the ROW carries for that quote.
+ *
+ * Projected from the REAL charge through the recorder's REAL projection, so a
+ * fixture can never state a block the recorder would have rejected - and,
+ * because the execute re-derives the very same charge, an equal case here is
+ * equal for the same reason production's is.
+ */
+export async function approvedUniswapVexFee(input: ApprovedSnapshotInput): Promise<VexFeePreview> {
+  const charge = await resolveUniswapFeeCharge({
+    chainId: input.chainId,
+    tokenIn: input.tokenIn,
+    amountInRaw: input.amountInRaw,
+  });
+  const block = toVexFeePreview("uniswap.swap.quote", charge.disclosure);
+  if (block === undefined) throw new Error("approvedUniswapVexFee: the fixture charge does not project");
+  return block;
+}
+
 /** The claim result the store would hand an execute for that snapshot. */
 export async function claimedUniswapSnapshot(input: ApprovedSnapshotInput): Promise<{
   readonly ok: true;
   readonly prequoteId: string;
   readonly snapshot: UniswapExecutionSnapshot;
+  readonly vexFee: VexFeePreview;
 }> {
-  return { ok: true, prequoteId: "prequote-test", snapshot: await approvedUniswapSnapshot(input) };
+  return {
+    ok: true,
+    prequoteId: "prequote-test",
+    snapshot: await approvedUniswapSnapshot(input),
+    // A fee-bearing execute refuses before signing without it (rule 90), so a
+    // claim fixture without one authorizes nothing.
+    vexFee: await approvedUniswapVexFee(input),
+  };
 }
 
 /**

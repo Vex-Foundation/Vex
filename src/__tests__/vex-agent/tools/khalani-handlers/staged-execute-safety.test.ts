@@ -184,12 +184,24 @@ vi.mock("@tools/kyberswap/token-api/client.js", () => ({
 }));
 
 const mockLoggerWarn = vi.fn();
+// The bound quote the execute revalidates its Vex fee against before signing
+// (`khalaniVexFeeStatementRefusal`). Its own divergence cases live in
+// `bridge-fee-execute.test.ts`; here it answers with the statement this
+// arrangement's quote would have recorded, so the staged-execute properties
+// under test are reached.
+const mockFindFreshMatchedPrequote = vi.fn();
+vi.mock("@vex-agent/tools/protocols/prequote/gate.js", () => ({
+  findFreshMatchedPrequote: (...a: unknown[]) => mockFindFreshMatchedPrequote(...a),
+}));
+
 vi.mock("@utils/logger.js", () => {
   const stub = { warn: (...a: unknown[]) => mockLoggerWarn(...a), info: vi.fn(), debug: vi.fn(), error: vi.fn() };
   return { default: stub, logger: stub };
 });
 
 import { BRIDGE_HANDLERS } from "@vex-agent/tools/protocols/khalani/handlers/bridge.js";
+import { BRIDGE_FEE_RECEIVER_SOLANA } from "@tools/bridge-fee/index.js";
+import { boundChargedVexFee, matchedPrequoteWithVexFee } from "../../../tools/bridge-fee/bound-vex-fee.js";
 import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
 import { VexError } from "../../../../errors.js";
 import { classifyNativeValue } from "@tools/evm-chains/native-value-authorization/index.js";
@@ -246,6 +258,10 @@ function parse(out: string): Record<string, unknown> {
 
 describe("khalani.bridge — staged execute safety (W3a)", () => {
   beforeEach(() => {
+    mockFindFreshMatchedPrequote.mockResolvedValue(matchedPrequoteWithVexFee(boundChargedVexFee({
+      feeAmountRaw: "3750", netAmountRaw: "1496250", totalDebitedRaw: "1500000",
+      tokenAddress: FROM_TOKEN, tokenSymbol: "USDC", tokenDecimals: 6,
+    })));
     vi.clearAllMocks();
     mockResolveSelectedAddress.mockReturnValue(SESSION_EVM.address);
     mockResolveSigningWallet.mockReturnValue(SESSION_EVM);
@@ -570,6 +586,13 @@ describe("khalani.bridge — staged execute safety (W3a)", () => {
 
   it("Solana source stages the base58 signature + blockhash evidence via the Solana CAS (nonce NULL) — never the EVM CAS", async () => {
     mockGetChainFamily.mockImplementation((id: number) => (id === 8453 ? "solana" : "eip155"));
+    // A Solana source pays the Solana treasury, so the statement the approval
+    // was granted on names that receiver; the EVM one would legitimately refuse.
+    mockFindFreshMatchedPrequote.mockResolvedValue(matchedPrequoteWithVexFee(boundChargedVexFee({
+      feeAmountRaw: "3750", netAmountRaw: "1496250", totalDebitedRaw: "1500000",
+      tokenAddress: FROM_TOKEN, tokenSymbol: "USDC", tokenDecimals: 6,
+      receiver: BRIDGE_FEE_RECEIVER_SOLANA,
+    })));
     mockMarkActivitySolanaBroadcast.mockResolvedValue({ applied: true, row: { id: 100 } });
     mockSignStageKhalaniLeg.mockImplementation(async (_leg, _sc, _ch, _signer, hooks) => {
       await hooks.onHashStaged({

@@ -315,3 +315,121 @@ describe("kyberswap.swap.execute — the Vex fee recorded as a token amount", ()
     expect(swapLeg().vexFee?.amountRaw).toBe("25000");
   });
 });
+
+/**
+ * The same fee, checked against the statement the human approved, before the
+ * intent row exists and long before Phase B signs anything.
+ *
+ * On this venue equality holds BY CONSTRUCTION: the calldata guard (REAL in
+ * this suite) has already refused to continue unless the decoded description
+ * carries `desc.amount == amountIn` and `feeAmounts == [KYBERSWAP_FEE_BPS]` with
+ * the pinned receiver, and the row's block was stated at quote time from the
+ * same arithmetic over the same amount. So the assertion below can only fail
+ * when the row and the guard disagree, which is a Vex defect - and the refusal
+ * says exactly that, rather than blaming the market.
+ *
+ * "Before signing" is proved by `mockCreateAgentActivityIntent`: Phase A creates
+ * the intent as its LAST statement and every signature in Phase B is recorded
+ * against it, so a refusal that never reached the intent write never reached a
+ * key either.
+ */
+describe("kyberswap.swap.execute - the approved Vex fee statement is re-checked before signing", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockResolveSelectedAddress.mockReturnValue(SESSION_EVM.address);
+    mockResolveSigningWallet.mockReturnValue(SESSION_EVM);
+    mockReadErc20Metadata.mockImplementation(async (_slug: string, address: string) => ({
+      address, symbol: "USDC", name: "USD Coin", decimals: 6, isNative: false as const,
+    }));
+    planAllowance({ needsReset: false, needsApprove: false });
+    mockGetRoute.mockResolvedValue({
+      data: {
+        routeSummary: {
+          amountIn: capture.routeSummary.amountIn,
+          amountOut: ROUTE_OUT,
+          gasUsd: "0.01", routeID: "r1", checksum: "c1",
+          route: ROUTE_PATHS,
+        },
+        routerAddress: capture.routerAddress,
+      },
+    });
+    mockBuildRoute.mockResolvedValue(buildResponse());
+    mockCreateAgentActivityIntent.mockResolvedValue({ executionId: 42, events: [{ id: 100 }, { id: 101 }] });
+    mockSignStageBroadcast.mockResolvedValue({ kind: "confirmed", txHash: "0xswap", receipt: { logs: [] } });
+    mockDecodeKyberSwapSettlement.mockReturnValue({
+      amountInRaw: capture.routeSummary.amountIn,
+      amountOutRaw: capture.build.amountOut,
+    });
+  });
+
+  /** The claim the store hands back, carrying `vexFee` for `amountInRaw`. */
+  function claimStating(amountInRaw: bigint): void {
+    mockClaim.mockImplementation(
+      async (_toolId: unknown, _sessionId: unknown, params: Record<string, unknown>) =>
+        approvedClaim(
+          {
+            amountIn: capture.routeSummary.amountIn,
+            amountOut: ROUTE_OUT,
+            gasUsd: "0.01", routeID: "r1", checksum: "c1",
+            route: ROUTE_PATHS,
+          },
+          typeof params.slippageBps === "number" ? params.slippageBps : VEX_DEFAULT_SLIPPAGE_BPS,
+          { legs: approvedLegs, amountInRaw },
+        ),
+    );
+  }
+
+  it("executes when the row's statement is the fee this build will take", async () => {
+    claimStating(AMOUNT_IN_RAW);
+
+    const result = await execute();
+
+    expect(result.success, `handler output: ${result.output}`).toBe(true);
+    expect(swapLeg().vexFee?.amountRaw).toBe(EXPECTED_FEE_RAW.toString());
+  });
+
+  it("refuses before signing when the row states a different fee amount", async () => {
+    // A row stating the fee for TWICE this trade's input: the amount the router
+    // will actually keep is half what the card said. Nothing about the market
+    // can produce this, which is what the refusal tells the agent.
+    claimStating(AMOUNT_IN_RAW * 2n);
+
+    const result = await execute();
+
+    expect(result.success).toBe(false);
+    // Phase A never reached its last statement, so no execution was opened and
+    // Phase B never ran.
+    expect(mockCreateAgentActivityIntent).not.toHaveBeenCalled();
+    expect(mockSignStageBroadcast).not.toHaveBeenCalled();
+    expect(result.output).toContain("Refused before signing");
+    expect(result.output).toContain("the Vex fee amount");
+    expect(result.output).toContain("cannot happen on this venue");
+  });
+
+  it("fails closed when the claimed row carries no fee statement at all", async () => {
+    mockClaim.mockImplementation(
+      async (_toolId: unknown, _sessionId: unknown, params: Record<string, unknown>) => {
+        const claim = approvedClaim(
+          {
+            amountIn: capture.routeSummary.amountIn,
+            amountOut: ROUTE_OUT,
+            gasUsd: "0.01", routeID: "r1", checksum: "c1",
+            route: ROUTE_PATHS,
+          },
+          typeof params.slippageBps === "number" ? params.slippageBps : VEX_DEFAULT_SLIPPAGE_BPS,
+          { legs: approvedLegs, amountInRaw: AMOUNT_IN_RAW },
+        );
+        // The gate refuses a fee-bearing execute on a row in this state, so
+        // reaching the executor means it was bypassed. It signs nothing anyway.
+        return { ...claim, vexFee: undefined };
+      },
+    );
+
+    const result = await execute();
+
+    expect(result.success).toBe(false);
+    expect(mockCreateAgentActivityIntent).not.toHaveBeenCalled();
+    expect(mockSignStageBroadcast).not.toHaveBeenCalled();
+    expect(result.output).toContain("the approved quote states no Vex fee at all");
+  });
+});

@@ -44,6 +44,20 @@ export interface BridgeTokenIdentityPreview {
   readonly destination: BridgeAssetIdentity;
   readonly amountRaw: string;
   readonly amountHuman: string | null;
+  /**
+   * WHERE THE FUNDS LAND. The destination-family wallet the bridge identity
+   * derived and bound into its match hash - `resolveSelectedAddress(destFamily)`,
+   * never a `recipient` parameter, which both bridge aliases reject by name.
+   *
+   * Attached by the prequote gate (`runtime/gates.ts`) rather than by the token
+   * resolver, because it is a fact about the SESSION's selected wallets, not
+   * about the token contracts this preview otherwise reads. Absent when the gate
+   * produced no bridge identity for this call.
+   */
+  readonly recipient?: {
+    readonly family: "eip155" | "solana";
+    readonly address: string;
+  };
 }
 
 export function isVerifiedEvmBridgeAssetIdentity(

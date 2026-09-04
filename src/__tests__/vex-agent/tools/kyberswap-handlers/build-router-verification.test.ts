@@ -173,6 +173,7 @@ describe("FIX 1 — swap build-response router verification", () => {
         approvedClaim(
           approvedSummary,
           typeof params.slippageBps === "number" ? params.slippageBps : VEX_DEFAULT_SLIPPAGE_BPS,
+        { amountInRaw: 10n ** 18n },
         ),
     );
   });

@@ -32,8 +32,8 @@ import {
 import { resolveSolanaSwapInputAsset } from "@tools/solana-ecosystem/shared/solana-asset-identity.js";
 import { walletScopeErrorToResult } from "@vex-agent/tools/internal/wallet/resolve.js";
 import {
-  findFreshMatchedSwapPrequote,
-  type MatchedSwapPrequote,
+  findFreshMatchedPrequote,
+  type MatchedPrequote,
 } from "@vex-agent/tools/protocols/swap-prequote.js";
 import {
   createAgentActivityIntent,
@@ -127,11 +127,11 @@ export const swapExecuteHandler: ProtocolHandler = async (p, ctx): Promise<ToolR
   // THE READ IS GUARDED, not raw (Codex finding 6). The gate approved the row
   // that was latest at ITS instant; this read happens later, and a concurrent
   // quote for the same identity can have recorded a newer row in between.
-  // `findFreshMatchedSwapPrequote` re-applies the gate's own three guardrails
+  // `findFreshMatchedPrequote` re-applies the gate's own three guardrails
   // to whatever it finds, so a newer row that authorizes nothing refuses here
   // instead of being executed on. Jupiter has no atomic claim lane, so this is
   // the only remaining reader on the Solana path.
-  const matched = await findFreshMatchedSwapPrequote(toolId, sessionId, p, ctx);
+  const matched = await findFreshMatchedPrequote(toolId, sessionId, p, ctx);
   if (!matched.ok) return fail(`${toolId} failed: ${unauthorizedQuoteMessage(matched)}`);
   const persistedFeePreview = jupiterFeePreviewSchema.safeParse(matched.prequote.safetyDetail.feePreview);
   if (!persistedFeePreview.success) {
@@ -422,7 +422,7 @@ export const swapExecuteHandler: ProtocolHandler = async (p, ctx): Promise<ToolR
  * recovery: the row this execute would have used is gone or authorizes nothing,
  * and no retry of the execute alone can change that.
  */
-function unauthorizedQuoteMessage(refused: Extract<MatchedSwapPrequote, { ok: false }>): string {
+function unauthorizedQuoteMessage(refused: Extract<MatchedPrequote, { ok: false }>): string {
   switch (refused.reason) {
     case "no_quote":
       return "no matching fee-bearing quote found. Call solana__swap_quote first with the exact same params, then retry.";

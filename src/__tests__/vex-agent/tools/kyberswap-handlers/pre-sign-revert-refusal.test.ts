@@ -207,7 +207,7 @@ describe("kyberswap.swap.execute — pre-sign estimate revert (no prior leg)", (
         approvedClaim(
           routeResponse.data.routeSummary,
           typeof params.slippageBps === "number" ? params.slippageBps : VEX_DEFAULT_SLIPPAGE_BPS,
-        { legs: approvedLegs },
+        { legs: approvedLegs, amountInRaw: 10n ** 18n },
         ),
     );
     mockBuildRoute.mockResolvedValue({
@@ -362,7 +362,7 @@ describe("kyberswap.swap.execute — a pre-sign refusal of the SWAP leg unlocks 
         approvedClaim(
           routeResponse.data.routeSummary,
           typeof params.slippageBps === "number" ? params.slippageBps : VEX_DEFAULT_SLIPPAGE_BPS,
-        { legs: approvedLegs },
+        { legs: approvedLegs, amountInRaw: 10n ** 18n },
         ),
     );
     mockBuildRoute.mockResolvedValue({
@@ -469,7 +469,7 @@ describe("kyberswap.swap.execute — the genuinely-ambiguous paths are NOT colla
         approvedClaim(
           routeResponse.data.routeSummary,
           typeof params.slippageBps === "number" ? params.slippageBps : VEX_DEFAULT_SLIPPAGE_BPS,
-        { legs: approvedLegs },
+        { legs: approvedLegs, amountInRaw: 10n ** 18n },
         ),
     );
     mockBuildRoute.mockResolvedValue({
@@ -553,7 +553,7 @@ describe("kyberswap.swap.execute — the prior-leg (DependentLegGasEstimateError
         approvedClaim(
           routeResponse.data.routeSummary,
           typeof params.slippageBps === "number" ? params.slippageBps : VEX_DEFAULT_SLIPPAGE_BPS,
-        { legs: approvedLegs },
+        { legs: approvedLegs, amountInRaw: 10n ** 18n },
         ),
     );
     mockBuildRoute.mockResolvedValue({

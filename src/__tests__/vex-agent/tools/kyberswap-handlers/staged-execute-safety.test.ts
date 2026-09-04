@@ -190,7 +190,7 @@ describe("kyberswap.swap.execute — staged safety (FIX2-W2a)", () => {
         approvedClaim(
           routeResponse.data.routeSummary,
           typeof params.slippageBps === "number" ? params.slippageBps : VEX_DEFAULT_SLIPPAGE_BPS,
-        { legs: approvedLegs },
+        { legs: approvedLegs, amountInRaw: 10n ** 18n },
         ),
     );
     // REAL router calldata (re-encoded from a captured build): the handler

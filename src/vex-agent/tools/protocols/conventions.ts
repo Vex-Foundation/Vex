@@ -646,11 +646,25 @@ export const CANONICAL_HUMAN_AMOUNT_SENTENCE =
  * here is the vocabulary the wire uses. "executed" was NOT one of them, which is
  * the drift the pass-2 agent found (`transcripts/p1.txt:23-25`): the broker's
  * settled arms are `completed`, `declined`, `expired`, `refused`,
- * `dispatch_failed`, `indeterminate` and `not_queued` (`mcp/outcome.ts`), and a
- * COMPLETED call carries the tool's OWN status word - `confirmed` or
- * `confirmed_unrecorded` on every venue that settles one. The list below is the
- * rewrite that transcript proposed, so this sentence and the instructions block
- * (`studio/instructions/**`) name one vocabulary.
+ * `dispatch_failed`, `indeterminate` and `not_queued` (`mcp/outcome.ts`). The
+ * list below is the rewrite that transcript proposed, so this sentence and the
+ * instructions block (`studio/instructions/**`) name one vocabulary.
+ *
+ * `pending` IS ONE OF THOSE STATUS WORDS. The sentence named only `confirmed`
+ * and `confirmed_unrecorded`, and a completed call routinely carries neither:
+ * both bridges (`relay/handlers/bridge/results.ts`, `khalani/handlers/
+ * bridge-execute.ts` and its poll), both EVM swap executes on their broadcast
+ * and failure paths, the Jupiter swap, the lend pair, trench and pools all
+ * return `status: "pending"` from a call the broker settles as `completed`. An
+ * agent told `pending` is not a settled word reads a broadcast transaction as an
+ * unfinished call and sends it again - the double-spend this sentence exists to
+ * prevent. It now names the word and the one action it licenses: poll it, never
+ * re-send. The DEFINITION stays in the outcome vocabulary
+ * (`studio/instructions/shared-usage.ts`, `pending` under UNKNOWN), delivered
+ * once instead of per tool, because six always-loaded descriptions carry this
+ * sentence at 2047 of the 2048-character hot-set bound
+ * (`mcp/inventory/types.ts`) and the budget is the consumer's, not this
+ * sentence's.
  *
  * The card clause answers the second measured confusion: two sessions read their
  * own harness rule ("confirm before an irreversible action") against a card they
@@ -658,11 +672,11 @@ export const CANONICAL_HUMAN_AMOUNT_SENTENCE =
  * confirmation, and saying it here says it on every tool that raises one.
  */
 export const CANONICAL_MCP_APPROVAL_SENTENCE =
-  "APPROVAL: over MCP in a restricted project the call WAITS until the user answers the card in Vex, "
-  + "and that card IS the confirmation - do not ask for another in chat. It returns the settled "
-  + "outcome: executed (reported as this tool's own status, confirmed or confirmed_unrecorded), "
-  + "declined, expired, refused, dispatch_failed or indeterminate; never call it twice while you wait "
-  + "and never retry an indeterminate one. In a full project it executes directly under the user's "
+  "APPROVAL: over MCP in a restricted project the call WAITS until the user answers the Vex card, "
+  + "which IS the confirmation - do not ask for one again in chat. It returns the settled outcome: "
+  + "executed (this tool's own status: confirmed, confirmed_unrecorded or pending - poll it, never "
+  + "re-send), declined, expired, refused, dispatch_failed or indeterminate; never call it twice "
+  + "while you wait; never retry an indeterminate one. In a full project it executes directly under "
   + "standing permission.";
 
 /**

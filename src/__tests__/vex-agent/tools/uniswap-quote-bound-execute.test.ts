@@ -142,7 +142,7 @@ vi.mock("@utils/logger.js", () => {
 const { UNISWAP_SWAP_HANDLERS } = await import("@vex-agent/tools/protocols/uniswap/handlers/swap.js");
 const { applySlippage } = await import("@tools/uniswap/quote.js");
 const { UNISWAP_V2_ROUTER_ABI } = await import("@tools/uniswap/abis.js");
-const { approvedUniswapSnapshot } = await import("./_uniswap-approved-snapshot.js");
+const { approvedUniswapSnapshot, approvedUniswapVexFee } = await import("./_uniswap-approved-snapshot.js");
 const { snapshotRefusal } = await import("@vex-agent/tools/protocols/quote-authority/refusal.js");
 
 const execute = UNISWAP_SWAP_HANDLERS["uniswap.swap.execute"];
@@ -224,6 +224,17 @@ beforeEach(async () => {
   });
   claimUniswapExecutionSnapshot.mockResolvedValue({
     ok: true, prequoteId: "prequote-incident", snapshot: await approved(),
+    // The row's own Vex fee statement. The execute re-derives it and refuses
+    // before signing when the two disagree, so a claim without one signs
+    // nothing.
+    vexFee: await approvedUniswapVexFee({
+      chainId: CHAIN_ID,
+      tokenIn: TOKEN_IN_LEG,
+      tokenOut: TOKEN_OUT_LEG,
+      amountInRaw: AMOUNT_IN_RAW,
+      approvedAmountOutRaw: QUOTED_OUT,
+      approvedMinOutRaw: QUOTED_OUT,
+    }),
   });
   quoteBestRoute.mockResolvedValue(freshRoute(QUOTED_OUT));
 });
