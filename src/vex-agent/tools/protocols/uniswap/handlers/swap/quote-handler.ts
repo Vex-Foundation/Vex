@@ -3,12 +3,16 @@
  * SAFETY block the prequote extractor re-validates.
  */
 
-import { parseUnits, formatUnits } from "viem";
+import { getAddress, parseUnits, formatUnits, type Address } from "viem";
 
 import { getUniswapPublicClient } from "@tools/uniswap/evm-client.js";
 import { checkRouteFactories, probeFotSignal } from "@tools/uniswap/safety.js";
+import { readUniswapAllowance } from "@tools/uniswap/erc20.js";
+import { resolveSelectedAddress } from "@vex-agent/tools/internal/wallet/resolve.js";
+import logger from "@utils/logger.js";
 
 import type { ToolResult } from "../../../../types.js";
+import type { ProtocolExecutionContext } from "../../../types.js";
 import { str, ok } from "../../../handler-helpers.js";
 import { resolveUniswapFeeCharge } from "@tools/uniswap/fee/index.js";
 import { checkForbiddenFeeParams } from "./forbidden-params.js";
@@ -23,8 +27,23 @@ import { canonicalWrapPairRefusal } from "../../../wrap-pair-refusal.js";
 import { PREQUOTE_MAX_AGE_MS } from "../../../prequote/registry.js";
 import {
   classifyMeasuredImpact,
+  isExecutable,
   type QuoteEligibility,
 } from "../../../quote-authority/eligibility.js";
+import type { SpendabilityPreview } from "../../../quote-authority/spendability-contract.js";
+import { buildBoundDebitPlan, type BoundDebitPlan } from "../../../quote-authority/debit-plan.js";
+import {
+  estimateUniswapPlanGas,
+  planUniswapDebitLegs,
+  priceUniswapNativeDebit,
+  resolveUniswapLegFeeCap,
+  type UniswapSpendabilityClient,
+} from "./native-debit-plan.js";
+import {
+  judgeUniswapSpendability,
+  observeUniswapSwapSpendability,
+  uniswapSpendabilityNote,
+} from "./quote-spendability.js";
 
 /**
  * What this venue's impact measurement concluded. `null` is the STRUCTURAL
@@ -52,13 +71,44 @@ function impactNoteFor(verdict: ImpactVerdict): string {
     case "excessive_impact":
       return `This route gives up ${(verdict.priceImpactFraction * 100).toFixed(2)}% of the input's reference value, at or above the ${(verdict.ceilingFraction * 100).toFixed(0)}% ceiling.`
         + " This quote does NOT authorize an execute. Trade a smaller size or use a deeper pair.";
+    // The SPENDABILITY members are decided by `evaluateSpendability`, not by
+    // this venue's impact measurement, so they are never described as an impact
+    // outcome: each gets its own sentence from the one owner of that wording.
+    // Before WP2-U they fell into the `default` arm below and were reported as
+    // an unusable impact number, which is a different fact about a different
+    // problem.
+    case "insufficient_balance":
+    case "balance_unavailable":
+    case "gas_reserve_insufficient":
+      return uniswapSpendabilityNote(verdict);
     default:
       return "This venue's price-impact measurement did not produce a usable number, so the size of this trade cannot be checked"
         + " against a reference price. This quote does NOT authorize an execute. Request a fresh quote.";
   }
 }
 
-export async function uniswapSwapQuote(p: Record<string, unknown>): Promise<ToolResult> {
+/**
+ * The route verdict handed to the spendability evaluator when this venue could
+ * not measure impact at all.
+ *
+ * It states the ROUTE is fine, which is exactly what the structural
+ * non-measurability means here, and nothing else: the answer's own
+ * `eligibility` block is built separately and keeps `impactMeasured: false`, so
+ * this stand-in fraction is never rendered and never read as a measurement.
+ */
+const UNMEASURED_ROUTE_EXECUTABLE = {
+  kind: "executable",
+  priceImpactFraction: 0,
+  adverse: false,
+} as const satisfies QuoteEligibility;
+
+/** A spendability probe that threw. Unknown fails closed (contract C2.3). */
+const SPENDABILITY_PROBE_FAILED = "uniswap_spendability_probe_failed";
+
+export async function uniswapSwapQuote(
+  p: Record<string, unknown>,
+  context: ProtocolExecutionContext,
+): Promise<ToolResult> {
   // Rejected HERE as well as on the execute, so a quote can never appear to
   // authorize a fee override the execute would refuse.
   const forbidden = checkForbiddenFeeParams(p);
@@ -114,14 +164,40 @@ export async function uniswapSwapQuote(p: Record<string, unknown>): Promise<Tool
   const impact: ImpactVerdict = quoted.priceImpact === undefined
     ? null
     : classifyMeasuredImpact(quoted.priceImpact);
-  const executable = impact === null || impact.kind === "executable";
 
-  const snapshot = buildUniswapQuoteSnapshot({
+  // SPENDABILITY, and only for a route that is otherwise executable (the order
+  // `spendability.ts` states): an agent told the wallet is short before it is
+  // told the route is excessive-impact would go and fund a trade that re-funding
+  // cannot make safe.
+  const spendability = await measureSpendability({
+    routeEligibility: impact ?? UNMEASURED_ROUTE_EXECUTABLE,
+    context,
+    client,
+    deployment,
+    router: routerFor(deployment, quoted.route),
+    tokenIn,
+    tokenOut,
+    quoted,
+    charge: feeCharge,
+    principalRaw: amountIn,
+  });
+  const eligibility = spendability.eligibility;
+  const executable = isExecutable(eligibility);
+
+  // NO PLAN, NO SNAPSHOT. A quote that could not measure the transactions it
+  // would send can state a route and a price, but it cannot authorize an
+  // execute: the binding the execute is held to would be missing. MetaMask does
+  // the same with `batchTransactions: []` beside a kept quote
+  // (`transaction-pay-controller/src/utils/quotes.ts:762-775`). The only way to
+  // reach this arm with an executable verdict is a session with no selected
+  // wallet, for which the recorder writes no claimable row either.
+  const snapshot = spendability.debitPlan === undefined ? null : buildUniswapQuoteSnapshot({
     chainId: deployment.chainId,
     tokenIn,
     tokenOut,
     charge: feeCharge,
     quoted,
+    debitPlan: spendability.debitPlan,
     // Display/audit copy of the row's own TTL. `swap_prequotes.expires_at`,
     // written by the recorder, is the AUTHORITY the claim reads; these two
     // differ by the recorder's own latency and nothing decides on this one.
@@ -155,12 +231,25 @@ export async function uniswapSwapQuote(p: Record<string, unknown>): Promise<Tool
     // The agent sees WHY, in the same object as the route. `impactMeasured`
     // distinguishes "measured and fine" from "never measured" - a bare
     // `executable: true` cannot carry that difference.
-    eligibility: impact === null
-      ? { kind: "executable" as const, executable: true, impactMeasured: false }
-      : impact.kind === "executable"
-        ? { kind: impact.kind, executable: true, impactMeasured: true, adverse: impact.adverse }
-        : { kind: impact.kind, executable: false, impactMeasured: true },
+    // The agent sees the FINAL verdict - route AND wallet - in the same object
+    // as the route, plus how each half was decided. `impactMeasured`
+    // distinguishes "measured and fine" from "never measured"; `balanceChecked`
+    // does the same for the wallet, because a quote that could not read a
+    // balance must never look like one that read it and was satisfied.
+    eligibility: {
+      kind: eligibility.kind,
+      executable,
+      impactMeasured: impact !== null,
+      balanceChecked: spendability.checked,
+      ...(executable && impact !== null && impact.kind === "executable"
+        ? { adverse: impact.adverse }
+        : {}),
+    },
     impactNote: impactNoteFor(impact),
+    // What the WALLET half concluded, in its own sentence. Never folded into
+    // `impactNote`: they answer two different questions and an agent that reads
+    // one as the other funds the wrong problem.
+    eligibilityNote: spendability.note,
   });
 
   return {
@@ -172,8 +261,173 @@ export async function uniswapSwapQuote(p: Record<string, unknown>): Promise<Tool
       // same instant and this one never becomes claimable at all. The identity
       // comes from the answer's own `data` through the venue extractor - the one
       // owner of what a uniswap quote's identity is.
-      eligibilityKind: impact === null ? "executable" : impact.kind,
-      routeSnapshot: executable ? { ...snapshot } : null,
+      eligibilityKind: eligibility.kind,
+      routeSnapshot: executable && snapshot !== null ? { ...snapshot } : null,
+      // Quote-time facts only, and only for a quote that authorizes something:
+      // the recorder validates this and persists it in the row's bounded
+      // `safety_detail`, from which the approval card restores it. The card line
+      // says in words that the authoritative read happens before signing.
+      ...(spendability.preview === undefined ? {} : { spendability: spendability.preview }),
     },
   };
+}
+
+interface SpendabilityOutcome {
+  readonly eligibility: QuoteEligibility;
+  readonly preview: SpendabilityPreview | undefined;
+  readonly note: string;
+  /** Whether a wallet balance was actually read for this answer. */
+  readonly checked: boolean;
+  /**
+   * The transactions this quote would send and the ceiling they are priced
+   * under, when a wallet was resolved and the plan could be measured. It is what
+   * the snapshot binds and what the execute is later held to.
+   */
+  readonly debitPlan: BoundDebitPlan | undefined;
+}
+
+/**
+ * Read the wallet, price the whole plan, and judge - or say honestly that this
+ * quote answered no wallet.
+ *
+ * NO WALLET SELECTED is not a refusal here. The prequote recorder skips the row
+ * entirely when it cannot resolve a selected address
+ * (`prequote/record/swap.ts`), so no claimable authority exists for such a
+ * quote in the first place; refusing would replace a route the agent asked for
+ * with a wallet error it did not. What the answer must NOT do is imply a
+ * balance was checked, and `balanceChecked: false` plus its own sentence is
+ * exactly that statement.
+ *
+ * A THROW from any probe is `balance_unavailable`, never a pass: an exception
+ * crossing this boundary is precisely where "unavailable" gets caught somewhere
+ * generic and rendered as "fine" (rule 04, contract C2.3).
+ */
+async function measureSpendability(input: {
+  readonly routeEligibility: QuoteEligibility;
+  readonly context: ProtocolExecutionContext;
+  readonly client: ReturnType<typeof getUniswapPublicClient>;
+  readonly deployment: ReturnType<typeof requireDeployment>;
+  readonly router: Address;
+  readonly tokenIn: Parameters<typeof planUniswapDebitLegs>[0]["tokenIn"];
+  readonly tokenOut: Parameters<typeof planUniswapDebitLegs>[0]["tokenOut"];
+  readonly quoted: Parameters<typeof planUniswapDebitLegs>[0]["quoted"];
+  readonly charge: Parameters<typeof planUniswapDebitLegs>[0]["charge"];
+  readonly principalRaw: bigint;
+}): Promise<SpendabilityOutcome> {
+  const { routeEligibility } = input;
+  if (!isExecutable(routeEligibility)) {
+    return {
+      eligibility: routeEligibility,
+      preview: undefined,
+      checked: false,
+      debitPlan: undefined,
+      note: "The wallet's balance was not read: this route is not executable for a reason no balance would change.",
+    };
+  }
+
+  let wallet: Address;
+  try {
+    wallet = getAddress(
+      resolveSelectedAddress(input.context.walletResolution, input.context.walletPolicy, "eip155"),
+    );
+  } catch {
+    return {
+      eligibility: routeEligibility,
+      preview: undefined,
+      checked: false,
+      debitPlan: undefined,
+      note: "No EVM wallet is selected for this session, so nothing was read about balances and this quote states nothing about them."
+        + " Select a wallet and quote again to have the input balance and the whole native debit checked.",
+    };
+  }
+
+  const spendabilityClient: UniswapSpendabilityClient = input.client;
+  try {
+    const currentAllowance = input.tokenIn.isNative
+      ? 0n
+      : await readUniswapAllowance(input.client, input.tokenIn.address, wallet, input.router);
+    const planned = planUniswapDebitLegs({
+      deployment: input.deployment,
+      router: input.router,
+      recipient: wallet,
+      tokenIn: input.tokenIn,
+      tokenOut: input.tokenOut,
+      quoted: input.quoted,
+      charge: input.charge,
+      currentAllowance,
+    });
+    const legs = await estimateUniswapPlanGas({
+      client: spendabilityClient,
+      wallet,
+      legs: planned,
+      quotedSwapGas: input.quoted.route.gasEstimate,
+    });
+    const feeCap = await resolveUniswapLegFeeCap(spendabilityClient);
+    const nonce = await spendabilityClient.getTransactionCount({ address: wallet, blockTag: "pending" });
+    const debit = await priceUniswapNativeDebit({
+      client: spendabilityClient,
+      chainId: input.deployment.chainId,
+      wallet,
+      legs,
+      feeCap,
+      nonce,
+    });
+    const observation = await observeUniswapSwapSpendability({
+      client: spendabilityClient,
+      chainId: input.deployment.chainId,
+      wallet,
+      tokenIn: input.tokenIn,
+      // The FULL requested amount: the swap leg takes the router input and the
+      // fee leg takes the remainder, both out of this one asset.
+      sourceRequiredRaw: input.principalRaw,
+      debit,
+    });
+    // The plan the SNAPSHOT binds, built from the very legs just priced: the
+    // roles in broadcast order, each leg's PRICING BASIS, and the one ceiling
+    // every leg was costed at. Gas UNITS are never bound quote-to-execute
+    // (2.07x measured drift, WP2-K); the basis is, because a conservatively
+    // priced leg is a materially different statement to the person signing.
+    //
+    // A leg with NO figure at all cannot reach here: `priceUniswapNativeDebit`
+    // already refused the whole debit, `debit.ok` is false, and the plan is
+    // omitted so the ineligible quote seals nothing it could later authorize.
+    const boundLegs = legs.flatMap((leg) =>
+      leg.gas === null ? [] : [{ role: leg.role, pricing: leg.gas.pricing }],
+    );
+    const debitPlan = debit.ok && boundLegs.length === legs.length
+      ? buildBoundDebitPlan({ legs: boundLegs, feeCap })
+      : undefined;
+    const judged = judgeUniswapSpendability(observation, routeEligibility, debitPlan);
+    return {
+      eligibility: judged.eligibility,
+      preview: judged.preview,
+      checked: true,
+      debitPlan,
+      note: uniswapSpendabilityNote(
+        judged.eligibility,
+        debit.ok ? debit.conservativeRoles : [],
+      ),
+    };
+  } catch (err) {
+    logger.warn("uniswap.swap.quote.spendability_probe_failed", {
+      chainId: input.deployment.chainId,
+      error: err instanceof Error ? err.name : "unknown",
+    });
+    const eligibility: QuoteEligibility = {
+      kind: "balance_unavailable",
+      asset: {
+        chainId: input.deployment.chainId,
+        address: input.tokenIn.address,
+        symbol: input.tokenIn.symbol,
+      },
+      cause: SPENDABILITY_PROBE_FAILED,
+    };
+    return {
+      eligibility,
+      preview: undefined,
+      checked: true,
+      debitPlan: undefined,
+      note: uniswapSpendabilityNote(eligibility),
+    };
+  }
 }

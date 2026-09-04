@@ -156,10 +156,51 @@ function buildRelayViemChain(chain: RelayChain, rpcUrl: string): Chain {
   });
 }
 
+function resolveRelayOnlyChain(
+  chainId: number,
+  relayChains: readonly RelayChain[],
+): { readonly chain: RelayChain; readonly viemChain: Chain; readonly rpcUrl: string } {
+  const chain = relayChains.find((candidate) => candidate.id === chainId);
+  if (!chain) {
+    throw new VexError(
+      ErrorCodes.RELAY_UNSUPPORTED_CHAIN,
+      `Relay chain ${chainId} is not in the Relay registry - cannot resolve a public client.`,
+    );
+  }
+  const parsed = RelayChainRpcSchema.safeParse(chain);
+  const vmType = parsed.success ? parsed.data.vmType : chain.vmType;
+  if (vmType !== "evm") {
+    throw new VexError(
+      ErrorCodes.RELAY_UNSUPPORTED_CHAIN,
+      `Relay chain ${chainId} is not an EVM chain - Relay signing is EVM-only this phase.`,
+    );
+  }
+  const rpcUrl = parsed.success ? parsed.data.httpRpcUrl?.trim() : undefined;
+  if (!rpcUrl || !isSsrfSafePublicHttpsUrl(rpcUrl)) {
+    throw new VexError(
+      ErrorCodes.RELAY_UNSUPPORTED_CHAIN,
+      `Relay chain ${chainId} exposes no safe public HTTPS RPC - refusing to read against an untrusted or private endpoint.`,
+    );
+  }
+  return { chain, viemChain: buildRelayViemChain(chain, rpcUrl), rpcUrl };
+}
+
+/** Public-only client for approval-time contract identity reads on Relay-only EVM chains. */
+export function resolveRelayOnlyPublicClient(
+  chainId: number,
+  relayChains: readonly RelayChain[],
+): PublicClient<Transport, Chain> {
+  const resolved = resolveRelayOnlyChain(chainId, relayChains);
+  return createPublicClient({
+    chain: resolved.viemChain,
+    transport: http(resolved.rpcUrl, { timeout: EVM_RPC_TIMEOUT_MS, retryCount: EVM_RPC_RETRY_COUNT }),
+  }) as PublicClient<Transport, Chain>;
+}
+
 /**
  * Build origin-chain viem clients for a RELAY-ONLY EVM chain from its untrusted
  * `/chains` registry entry. Throws a `VexError` (fail-closed) when the chain is
- * not in the registry, is not EVM, or exposes no SSRF-safe public HTTPS RPC — the
+ * not in the registry, is not EVM, or exposes no SSRF-safe public HTTPS RPC - the
  * handler records that as a pre-sign failure, never a stranded pending plan.
  */
 export function resolveRelayOnlyStepClients(
@@ -167,40 +208,15 @@ export function resolveRelayOnlyStepClients(
   relayChains: readonly RelayChain[],
   privateKey: Hex,
 ): RelayStepClients {
-  const chain = relayChains.find((c) => c.id === chainId);
-  if (!chain) {
-    throw new VexError(
-      ErrorCodes.RELAY_UNSUPPORTED_CHAIN,
-      `Relay chain ${chainId} is not in the Relay registry — cannot resolve a signing client.`,
-    );
-  }
-
-  const parsed = RelayChainRpcSchema.safeParse(chain);
-  const vmType = parsed.success ? parsed.data.vmType : chain.vmType;
-  if (vmType !== "evm") {
-    throw new VexError(
-      ErrorCodes.RELAY_UNSUPPORTED_CHAIN,
-      `Relay chain ${chainId} is not an EVM chain — Relay signing is EVM-only this phase.`,
-    );
-  }
-
-  const httpRpcUrl = parsed.success ? parsed.data.httpRpcUrl?.trim() : undefined;
-  if (!httpRpcUrl || !isSsrfSafePublicHttpsUrl(httpRpcUrl)) {
-    throw new VexError(
-      ErrorCodes.RELAY_UNSUPPORTED_CHAIN,
-      `Relay chain ${chainId} exposes no safe public HTTPS RPC — refusing to sign against an untrusted or private endpoint.`,
-    );
-  }
-
-  const viemChain = buildRelayViemChain(chain, httpRpcUrl);
+  const resolved = resolveRelayOnlyChain(chainId, relayChains);
   const publicClient = createPublicClient({
-    chain: viemChain,
-    transport: http(httpRpcUrl, { timeout: EVM_RPC_TIMEOUT_MS, retryCount: EVM_RPC_RETRY_COUNT }),
+    chain: resolved.viemChain,
+    transport: http(resolved.rpcUrl, { timeout: EVM_RPC_TIMEOUT_MS, retryCount: EVM_RPC_RETRY_COUNT }),
   }) as PublicClient<Transport, Chain>;
   const walletClient = createWalletClient({
     account: privateKeyToAccount(privateKey),
-    chain: viemChain,
-    transport: http(httpRpcUrl, { timeout: EVM_RPC_TIMEOUT_MS, retryCount: EVM_RPC_RETRY_COUNT }),
+    chain: resolved.viemChain,
+    transport: http(resolved.rpcUrl, { timeout: EVM_RPC_TIMEOUT_MS, retryCount: EVM_RPC_RETRY_COUNT }),
   }) as WalletClient<Transport, Chain, Account>;
   return { publicClient, walletClient };
 }

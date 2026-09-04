@@ -71,18 +71,22 @@ vi.mock("@tools/khalani/client.js", () => ({
     getChains: vi.fn().mockResolvedValue(KHALANI_TEST_CHAINS),
     getTopTokens: vi.fn().mockResolvedValue([]),
     searchTokens: vi.fn().mockResolvedValue({ data: [] }),
+    // Strict balances boundary: `{ tokens, rejectedEntries }`, nothing refused.
     getTokenBalances: vi.fn().mockImplementation(async (_address: string, chainIds?: number[]) => {
       const chainId = chainIds?.[0] ?? 1;
-      return [
-        {
-          address: chainId === 20011000000 ? "So11111111111111111111111111111111111111112" : "native",
-          chainId,
-          symbol: chainId === 20011000000 ? "SOL" : "ETH",
-          name: chainId === 20011000000 ? "Solana" : "Ether",
-          decimals: chainId === 20011000000 ? 9 : 18,
-          extensions: { balance: "1000000000", price: { usd: "1.0" } },
-        },
-      ];
+      return {
+        tokens: [
+          {
+            address: chainId === 20011000000 ? "So11111111111111111111111111111111111111112" : "native",
+            chainId,
+            symbol: chainId === 20011000000 ? "SOL" : "ETH",
+            name: chainId === 20011000000 ? "Solana" : "Ether",
+            decimals: chainId === 20011000000 ? 9 : 18,
+            extensions: { balance: "1000000000", price: { usd: "1.0" } },
+          },
+        ],
+        rejectedEntries: [],
+      };
     }),
   }),
 }));

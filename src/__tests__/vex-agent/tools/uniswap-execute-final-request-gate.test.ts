@@ -17,6 +17,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { uniswapSpendabilityFake } from "./_uniswap-spendability-fake.js";
 import { getAddress, parseUnits, type Hex } from "viem";
 
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
@@ -35,6 +36,16 @@ const createAgentActivityIntent = vi.fn();
 const createAgentActivityPreBroadcastFailure = vi.fn();
 const signUniswapTransaction = vi.fn();
 
+vi.mock("@vex-agent/db/client.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@vex-agent/db/client.js")>()),
+  // Only the DATABASE is doubled. Since 2026-09-01 the spendability lane asks
+  // one durable question - has this wallet a broadcast of ours outstanding on a
+  // chain whose `pending` tag subtracts nothing - and this suite's chain is such
+  // an endpoint (measured). The capability table, the policy and the fail-closed
+  // verdict stay production code, driven by their own suites.
+  queryOne: vi.fn(async () => ({ in_flight: false })),
+}));
+
 vi.mock("@tools/uniswap/chains.js", () => ({
   resolveUniswapDeployment: vi.fn(() => ({
     key: "robinhood", name: "Robinhood Chain", chainId: CHAIN_ID, weth: WETH,
@@ -42,9 +53,12 @@ vi.mock("@tools/uniswap/chains.js", () => ({
   })),
   resolveUniswapChainId: vi.fn(() => CHAIN_ID),
 }));
+// WP2-U: the quote and every leg's pre-sign gate read balances and price the
+// leg plan through this client. A SOLVENT default keeps this suite's subject -
+// the final-request fence - the thing that decides its outcome.
 vi.mock("@tools/uniswap/evm-client.js", () => ({
-  getUniswapPublicClient: vi.fn(() => ({})),
-  getUniswapEvmClients: vi.fn(() => ({ publicClient: {}, walletClient: {} })),
+  getUniswapPublicClient: vi.fn(() => uniswapSpendabilityFake()),
+  getUniswapEvmClients: vi.fn(() => ({ publicClient: uniswapSpendabilityFake(), walletClient: {} })),
 }));
 vi.mock("@tools/uniswap/erc20.js", () => ({
   readUniswapErc20Metadata: vi.fn(async (_client: unknown, address: string) => ({
@@ -194,7 +208,12 @@ beforeEach(async () => {
       const shown: FinalSignedRequest = alteredRequest
         ? alteredRequest(tx)
         : { to: tx.to as `0x${string}`, data: tx.data, value: tx.value, gas: 300_000n, nonce: 9 };
-      await onBeforeSign(shown);
+      // A real prepared request always carries a fee price - WP2-U's debit gate
+      // refuses one that does not, because a cost nobody can state cannot be
+      // checked against the ceiling the swap was totalled under. The stand-in
+      // price matches this suite's fake chain (`uniswapSpendabilityFake`), so
+      // the FENCE stays the only thing deciding these outcomes.
+      await onBeforeSign({ gasPrice: 1_000n, ...shown });
     }
     return { serializedTransaction: "0xsigned" as Hex, txHash: "0xswap" as Hex, fromAddress: WALLET, nonce: 9 };
   });

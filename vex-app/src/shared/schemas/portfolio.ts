@@ -25,10 +25,13 @@
  * `balanceUsd: null` for UNPRICED holdings (no price source — owner decision:
  * show the funds instead of hiding them) and carry `amount`, the human token
  * quantity derived per row from `balance_raw / 10^decimals`. Token lines also
- * carry `tokenAddress` (nullable, optional/additive) — aggregation keys on
- * `(chain, normalized address)` server-side (symbol is display metadata,
- * never an aggregation key), so a spoofed token sharing a legitimate symbol
- * never coalesces into that token's line;
+ * carry `tokenAddress` (nullable, optional/additive). MAIN aggregates on the
+ * persisted `(chain, normalized address)` identity before projecting a
+ * route-compatible output address. Native SOL and wSOL therefore remain two
+ * rows even though both output Jupiter's wSOL route mint; no post-projection
+ * regrouping occurs, and each row retains its own source label and amount.
+ * For every ordinary token, a spoofed token sharing a legitimate symbol has
+ * a different persisted address and never coalesces into that token's line;
  * the renderer uses the address (never the self-declared symbol) to decide
  * whether a brand icon is authorized. Token lines also carry `tokenName`
  * (nullable, optional/additive) — the human-readable name ("USD Coin"),
@@ -45,12 +48,13 @@ import {
 } from "../token-name-sanitizer.js";
 
 /**
- * Token contract/mint address — the identity key that disambiguates two
- * DIFFERENT on-chain tokens sharing a self-declared symbol (the whole point
- * of this field: aggregation groups by address, never by symbol alone, so a
- * spoofed token cannot coalesce into a legitimate one's line). Bounded to
- * either shape addresses actually take in `proj_balances.token_address`: EVM
- * 0x-hex (40 hex chars) or Solana base58 (32-44 chars) — mirrors
+ * Route-compatible token contract/mint address. MAIN disambiguates and groups
+ * rows by their persisted address before filling this field. Native SOL is
+ * the one exception where the database-only System Program key projects to
+ * the same Jupiter route mint as wSOL; their already-distinct rows keep their
+ * own source metadata and amounts. Bounded to the same address shapes carried
+ * by the database and route layer: EVM 0x-hex (40 hex chars) or Solana base58
+ * (32-44 chars) - mirrors
  * `wallets/base-chain.ts`'s `evmAddressSchema`/`solanaAddressSchema` patterns
  * without importing them (this DTO field is chain-family-agnostic, unlike
  * those per-family wallet schemas). `null`/absent means the renderer could
@@ -133,8 +137,9 @@ const safeTokenNameSchema = z
   });
 
 /**
- * One aggregated position line — a single (chain, token, address) bucket
- * summed across every wallet in the resolved allow-list. `chainId` is `null`
+ * One aggregated position line - a single persisted (chain, token, address)
+ * bucket summed across every wallet in the resolved allow-list, then mapped
+ * to its route-compatible output address. `chainId` is `null`
  * when the DB chain id is absent or could not be coerced to a finite JS
  * number; `symbol` is `null` for rows without a token symbol. `balanceUsd` is
  * `null` for an UNPRICED holding (no price available); `amount` is the human

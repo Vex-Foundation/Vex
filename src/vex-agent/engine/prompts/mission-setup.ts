@@ -63,7 +63,7 @@ export function buildMissionSetupPrompt(
   lines.push("- **goal** — what the mission should achieve");
   lines.push("- **capitalSource** — where capital comes from (wallet, protocol, etc.)");
   lines.push("- **startingCapital** — amount and token to start with");
-  lines.push("- **deployedCapital** (optional, and strongly recommended whenever a success criterion mentions gain, loss, or a portfolio value) - the capital this mission actually puts to work, typed: amountRaw, decimals, chainId, assetAddress, assetSymbol. amountRaw is the integer base-unit amount as a string, so 1.5 ETH is \"1500000000000000000\" at 18 decimals. Save all five parts together or none, because a raw amount without its decimals cannot be read. startingCapital stays the plain-language sentence for the user; this is the machine-readable declaration the runtime measures against");
+  lines.push("- **deployedCapital** (optional; strongly recommended when success depends on gain, loss, or portfolio value) - machine-readable capital put to work: amountRaw, decimals, chainId, assetAddress, assetKind, assetSymbol. Save all six parts together or none. amountRaw is a base-unit integer string (1.5 ETH = \"1500000000000000000\" at 18 decimals). assetKind is native for the chain coin and token for contracts or SPL mints; wSOL is token despite sharing native SOL's route mint. startingCapital remains the user-facing description; the runtime measures this declaration.");
   lines.push("- **allowedWallets** — which wallets to use");
   lines.push("- **allowedChains** — which chains to operate on");
   lines.push("- **allowedProtocols** — which protocols to use");

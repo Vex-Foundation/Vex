@@ -3,7 +3,8 @@
  *
  * Pins the keep/drop/lift contract:
  *  - projectToken keeps identity, lifts priceUsd/balance/isRiskToken out of the
- *    open `extensions` bag, and drops `logoURI` + the rest of the bag.
+ *    open `extensions` bag, DERIVES the human amount and USD estimate for a
+ *    balance row, and drops `logoURI` + the rest of the bag.
  *  - projectChain keeps id/name/type + native symbol/decimals and drops
  *    rpcUrls/blockExplorers.
  * Plus a capture-safety fence: every Khalani read tool the projectors wire into
@@ -66,10 +67,16 @@ describe("khalani projectToken (P0-4 concise)", () => {
     expect(out.decimals).toBe(6);
   });
 
-  it("lifts priceUsd/balance/isRiskToken out of the extensions bag", () => {
+  it("lifts priceUsd/balance/isRiskToken and derives the human amount + USD estimate", () => {
     const out = projectToken(fullToken());
     expect(out.priceUsd).toBe("1.0001");
-    expect(out.balance).toBe("1500000");
+    // The atomic amount is preserved VERBATIM under its own name...
+    expect(out.balanceRaw).toBe("1500000");
+    // ...and the human amount is derived here, so the model never divides.
+    expect(out.balance).toBe("1.5");
+    expect(out.valueUsd).toBe("1.50015");
+    expect(out.priceUnavailable).toBeUndefined();
+    expect(out.unprojectableReason).toBeUndefined();
     expect(out.isRiskToken).toBe(false);
   });
 
@@ -100,6 +107,8 @@ describe("khalani projectToken (P0-4 concise)", () => {
     });
     expect(out).not.toHaveProperty("priceUsd");
     expect(out).not.toHaveProperty("balance");
+    expect(out).not.toHaveProperty("balanceRaw");
+    expect(out).not.toHaveProperty("valueUsd");
     expect(out).not.toHaveProperty("isRiskToken");
   });
 
@@ -121,6 +130,7 @@ describe("khalani projectToken (P0-4 concise)", () => {
     const out = projectToken(weird);
     expect(out).not.toHaveProperty("priceUsd");
     expect(out).not.toHaveProperty("balance");
+    expect(out).not.toHaveProperty("balanceRaw");
     expect(out.isRiskToken).toBe(true);
   });
 

@@ -25,15 +25,29 @@ import {
 import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
 import logger from "@utils/logger.js";
 import type { RelayLegs } from "./legs.js";
+import {
+  isVerifiedEvmBridgeAssetIdentity,
+  type BridgeAssetIdentity,
+} from "@vex-agent/tools/protocols/bridge-token-identity.js";
+import { formatUnits } from "viem";
 
 /** Repo leg input from an adapted quote side (quoted amounts - never executed truth). */
-export function relayLegInput(side: RelayQuoteSide, currencyAddress: string, rawFallback?: string): AgentActivityLegInput {
+export function relayLegInput(
+  side: RelayQuoteSide,
+  currencyAddress: string,
+  rawFallback?: string,
+  identity?: BridgeAssetIdentity,
+): AgentActivityLegInput {
+  const raw = side.amountRaw ?? rawFallback;
+  const direct = isVerifiedEvmBridgeAssetIdentity(identity) ? identity : null;
   return {
     tokenAddress: currencyAddress,
-    tokenSymbol: side.symbol ?? undefined,
-    tokenDecimals: side.decimals ?? undefined,
-    amountHuman: side.amountFormatted ?? undefined,
-    amountRaw: side.amountRaw ?? rawFallback,
+    tokenSymbol: direct?.symbol ?? side.symbol ?? undefined,
+    tokenDecimals: direct?.decimals ?? side.decimals ?? undefined,
+    amountHuman: direct !== null && raw !== null && raw !== undefined && /^\d+$/.test(raw)
+      ? formatUnits(BigInt(raw), direct.decimals)
+      : side.amountFormatted ?? undefined,
+    amountRaw: raw,
   };
 }
 

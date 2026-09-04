@@ -287,4 +287,57 @@ describe("a later quote supersedes an earlier one for the same identity", () => 
 
     expect(await repo.findLatestExecutableByMatch(sessionId, MATCH, "swap")).toBeNull();
   });
+
+  // ── Migration 097: the spendability vocabulary, live ───────────────────
+
+  describe("migration 099 widened the eligibility CHECK", () => {
+    // The lockstep test proves SQL text and TS union agree; only Postgres can
+    // prove the CONSTRAINT ITSELF admits the new values. Without this, a 097
+    // that failed to apply would leave the recorder's insert throwing inside a
+    // best-effort writer - and no superseding row would exist, which is the
+    // exact stale-authority hole 095 was written to close.
+    for (const eligibilityKind of [
+      "insufficient_balance",
+      "balance_unavailable",
+      "gas_reserve_insufficient",
+    ] as const) {
+      it(`accepts a row recorded as ${eligibilityKind}`, async () => {
+        const sessionId = await seedSession();
+        const id = await insertQuote(sessionId, { eligibilityKind });
+        const stored = await queryOne<{ eligibility_kind: string }>(
+          `SELECT eligibility_kind FROM swap_prequotes WHERE prequote_id = $1`,
+          [id],
+        );
+        expect(stored?.eligibility_kind).toBe(eligibilityKind);
+        // And it authorizes nothing: the claim predicate still refuses it.
+        expect(await repo.findLatestExecutableByMatch(sessionId, MATCH, "swap")).toBeNull();
+      });
+    }
+
+    it("still refuses a value outside the union - 097 widened, it did not open", async () => {
+      const sessionId = await seedSession();
+      await expect(
+        execute(
+          `INSERT INTO swap_prequotes (
+             prequote_id, session_id, match_hash, kind, family, provider,
+             chain_id, wallet_address, token_in, token_out, amount, slippage_bps,
+             safety_verdict, safety_detail, eligibility_kind, expires_at
+           ) VALUES ($1, $2, $3, 'swap', 'eip155', 'kyberswap', 8453,
+             '0x1234567890abcdef1234567890abcdef12345678', '0xaaa', '0xbbb', '10', 100,
+             'pass', '{}'::jsonb, 'not_a_real_eligibility', NOW() + INTERVAL '15 minutes')`,
+          [`prequote-097-${++counter}`, sessionId, MATCH],
+        ),
+      ).rejects.toThrow();
+    });
+
+    it("preserves the pre-097 values - the migration is expand-only", async () => {
+      const sessionId = await seedSession();
+      const id = await insertQuote(sessionId, { eligibilityKind: "oversize_snapshot" });
+      const stored = await queryOne<{ eligibility_kind: string }>(
+        `SELECT eligibility_kind FROM swap_prequotes WHERE prequote_id = $1`,
+        [id],
+      );
+      expect(stored?.eligibility_kind).toBe("oversize_snapshot");
+    });
+  });
 });

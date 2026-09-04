@@ -11,7 +11,10 @@
  * and a divergence there would let a draft hash as one thing and read as
  * another. One function, one set of rules, three importers.
  *
- * ALL FIVE PARTS OR NONE. Any missing or malformed part yields `null`, which is
+ * New declarations carry SIX parts, including structural `assetKind`. Legacy
+ * five-field declarations retain `assetKind: null`; that preserves their hash
+ * material while forcing ambiguous native/wrapped identities to fail closed.
+ * Any other missing or malformed part yields `null`, which is
  * byte-identical material to a mission that never declared capital at all. That
  * is the fail-closed state: absent means "not declared", and a partial
  * declaration must never read as a usable denominator.
@@ -31,11 +34,13 @@
  *     checksum rewrite must not dirty an acceptance.
  *   - Solana: a base58 mint, case PRESERVED. Base58 case IS identity there, and
  *     lowercasing a mint would produce an address that matches no balance row.
- *     The repo's canonical native-SOL representation is `SOL_MINT`
+ *     The mission contract's canonical native-SOL representation is `SOL_MINT`
  *     (`So11111111111111111111111111111111111111112`, see
  *     `@tools/solana-ecosystem/shared/solana-constants.ts`), which is itself a
- *     valid base58 mint - so Solana needs NO separate sentinel and none is
- *     invented here.
+ *     valid base58 mint. It remains the approval, hash and route identity.
+ *     `proj_balances` uses a separate database-only native storage key so a
+ *     wSOL holding can coexist. `assetKind` decides which row the baseline
+ *     reads; the address and display symbol never make that decision.
  *
  * `assetSymbol` is bounded to a strict charset with no whitespace, newlines or
  * markdown. It is model-written text that reaches the system prompt AND the
@@ -46,6 +51,7 @@
  */
 
 import { NATIVE_TOKEN_ADDRESS } from "@tools/kyberswap/constants.js";
+import { SOL_MINT } from "@tools/solana-ecosystem/shared/solana-constants.js";
 import { SOLANA_SYNTHETIC_CHAIN_ID } from "../../../constants/solana-chain.js";
 import { DEPLOYED_CAPITAL_BOUNDS, type DeployedCapital } from "../types.js";
 
@@ -83,7 +89,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 export function normalizeDeployedCapital(value: unknown): DeployedCapital | null {
   if (!isPlainObject(value)) return null;
 
-  const { amountRaw, decimals, chainId, assetAddress, assetSymbol } = value;
+  const { amountRaw, decimals, chainId, assetAddress, assetKind, assetSymbol } = value;
 
   if (typeof amountRaw !== "string") return null;
   const trimmedAmount = amountRaw.trim();
@@ -108,6 +114,22 @@ export function normalizeDeployedCapital(value: unknown): DeployedCapital | null
   const canonicalAddress = normalizeAssetAddress(chainId, trimmedAddress);
   if (canonicalAddress === null) return null;
 
+  const normalizedAssetKind = assetKind === undefined || assetKind === null
+    ? null
+    : assetKind === "native" || assetKind === "token"
+      ? assetKind
+      : null;
+  if (assetKind !== undefined && assetKind !== null && normalizedAssetKind === null) return null;
+  if (normalizedAssetKind === "native") {
+    const isCanonicalNative = chainId === SOLANA_SYNTHETIC_CHAIN_ID
+      ? canonicalAddress === SOL_MINT
+      : canonicalAddress === EVM_NATIVE_SENTINEL;
+    if (!isCanonicalNative) return null;
+  }
+  if (normalizedAssetKind === "token" && chainId !== SOLANA_SYNTHETIC_CHAIN_ID) {
+    if (canonicalAddress === EVM_NATIVE_SENTINEL) return null;
+  }
+
   if (typeof assetSymbol !== "string") return null;
   const trimmedSymbol = assetSymbol.trim();
   if (!ASSET_SYMBOL_PATTERN.test(trimmedSymbol)) return null;
@@ -117,6 +139,7 @@ export function normalizeDeployedCapital(value: unknown): DeployedCapital | null
     decimals,
     chainId,
     assetAddress: canonicalAddress,
+    assetKind: normalizedAssetKind,
     assetSymbol: trimmedSymbol,
   };
 }

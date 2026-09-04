@@ -18,6 +18,10 @@ import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/error
 import logger from "@utils/logger.js";
 import { formatRawAmount } from "@vex-agent/tools/protocols/amount-display.js";
 import type { KhalaniToken } from "@tools/khalani/types.js";
+import {
+  isVerifiedEvmBridgeAssetIdentity,
+  type BridgeAssetIdentity,
+} from "@vex-agent/tools/protocols/bridge-token-identity.js";
 
 export const KHALANI_TOKEN_PRICE_USD_SOURCE = "khalani_token_price";
 
@@ -69,6 +73,29 @@ export async function resolveKhalaniTokenInfo(
     });
     return null;
   }
+}
+
+/**
+ * Bridge money-path metadata. Price remains a fail-soft provider estimate, but
+ * every EVM symbol/decimals pair is replaced by a direct chain read. Solana
+ * keeps the existing registry path because an EVM contract read is not
+ * applicable to a mint.
+ */
+export async function resolveKhalaniBridgeTokenInfo(
+  tokenAddress: string,
+  chainId: number,
+  identity?: BridgeAssetIdentity,
+  dependencies: {
+    readonly resolveProvider?: typeof resolveKhalaniTokenInfo;
+  } = {},
+): Promise<KhalaniTokenInfo | null> {
+  const provider = await (dependencies.resolveProvider ?? resolveKhalaniTokenInfo)(tokenAddress, chainId);
+  if (!isVerifiedEvmBridgeAssetIdentity(identity)) return provider;
+  return {
+    symbol: identity.symbol,
+    decimals: identity.decimals,
+    ...(provider?.priceUsd === undefined ? {} : { priceUsd: provider.priceUsd }),
+  };
 }
 
 /**

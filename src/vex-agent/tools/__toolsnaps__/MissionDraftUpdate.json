@@ -37,7 +37,7 @@
           },
           "deployedCapital": {
             "additionalProperties": false,
-            "description": "The capital this mission actually puts to work, typed so the runtime can measure against it. Save all five parts together or none: a raw amount without its decimals cannot be read. Example: 3044 VEX at 18 decimals is amountRaw=\"3044000000000000000000\". This is a measurement base, not a spend limit. Send null to clear it.",
+            "description": "The capital this mission actually puts to work, typed so the runtime can measure against it. Save all six parts together or none: raw units require decimals and native-versus-token identity must be structural. wSOL is assetKind token even though it shares native SOL's route mint. Example: 3044 VEX at 18 decimals is amountRaw=\"3044000000000000000000\". This is a measurement base, not a spend limit. Send null to clear it.",
             "properties": {
               "amountRaw": {
                 "description": "Integer base-unit amount as a string, digits only. 1.5 ETH is \"1500000000000000000\".",
@@ -45,6 +45,14 @@
               },
               "assetAddress": {
                 "description": "Token contract address, or 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE for a chain's native coin. On solana this is the base58 mint, sent exactly as given (case matters).",
+                "type": "string"
+              },
+              "assetKind": {
+                "description": "Structural asset kind: native for the chain account coin, token for an ERC-20/SPL mint. wSOL is token.",
+                "enum": [
+                  "native",
+                  "token"
+                ],
                 "type": "string"
               },
               "assetSymbol": {
@@ -65,6 +73,7 @@
               "decimals",
               "chainId",
               "assetAddress",
+              "assetKind",
               "assetSymbol"
             ],
             "type": "object"

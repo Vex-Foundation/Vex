@@ -28,6 +28,10 @@
  * file; this module only assembles the handler map, so `UNISWAP_SWAP_HANDLERS`
  * stays the single import every caller already uses:
  *   - `swap/quote-handler.ts`     - `uniswap.swap.quote`
+ *   - `swap/native-debit-plan.ts` - the leg plan, its per-gas ceiling and the
+ *     whole native debit, shared by the quote and every pre-sign gate
+ *   - `swap/quote-spendability.ts` - the balance observation, the shared
+ *     spendability verdict, and the authoritative pre-sign debit gate
  *   - `swap/execute-handler.ts`   - `uniswap.swap.execute` orchestration
  *   - `swap/execute-plan.ts`      - the events plan + per-role calldata
  *   - `swap/execute-broadcast.ts` - one staged sign→persist→send→confirm stage
@@ -44,6 +48,6 @@ import { uniswapSwapQuote } from "./swap/quote-handler.js";
 import { executeUniswapSwap } from "./swap/execute-handler.js";
 
 export const UNISWAP_SWAP_HANDLERS: Record<string, ProtocolHandler> = {
-  "uniswap.swap.quote": (p) => uniswapSwapQuote(p),
+  "uniswap.swap.quote": (p, ctx) => uniswapSwapQuote(p, ctx),
   "uniswap.swap.execute": (p, ctx) => executeUniswapSwap(p, ctx),
 };

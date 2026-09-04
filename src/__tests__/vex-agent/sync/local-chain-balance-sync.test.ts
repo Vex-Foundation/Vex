@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createPublicClient, http, type Chain, type PublicClient, type Transport } from "viem";
 import { mainnet } from "viem/chains";
 
@@ -46,9 +46,65 @@ vi.mock("@vex-agent/db/repos/balances.js", () => ({
   replaceBalancesForChain: (...a: unknown[]) => mockReplace(...a),
 }));
 
+import { buildRobinhoodTokenBalancesUrl } from "@tools/blockscout/operation.js";
+import {
+  registerBlockscoutTransport,
+  type BlockscoutTransport,
+} from "@tools/blockscout/transport.js";
+
 const { syncLocalChainForWallet, resetLocalChainMetadataCache } = await import(
   "../../../vex-agent/sync/local-chain-balance-sync.js"
 );
+
+// ── Blockscout identity enumeration (WP6b) ──────────────────────
+//
+// The REAL client runs in every case here; only the Electron transport is
+// scripted, because that is the one boundary a Node test process cannot host.
+// The identity enumeration now gates the whole-chain replacement, so a suite
+// that left it unmounted would be testing the outage path everywhere.
+const encoder = new TextEncoder();
+
+/** One provider row, in the live shape measured in `BLOCKSCOUT.md`. */
+function providerRow(address: string, overrides: Record<string, unknown> = {}) {
+  return {
+    token: {
+      address_hash: address,
+      decimals: "18",
+      exchange_rate: null,
+      name: "Discovered",
+      reputation: "ok",
+      symbol: "DISC",
+      type: "ERC-20",
+      ...overrides,
+    },
+    token_id: null,
+    token_instance: null,
+    value: "1",
+  };
+}
+
+type TransportImplementation = BlockscoutTransport["fetchAddressTokenBalances"];
+
+let unregisterTransport: (() => void) | null = null;
+
+/** Mount one scripted answer for the whole case. Torn down in `afterEach`. */
+function mountBlockscout(implementation: TransportImplementation): void {
+  unregisterTransport?.();
+  unregisterTransport = registerBlockscoutTransport({
+    name: "electron_net",
+    fetchAddressTokenBalances: implementation,
+  });
+}
+
+/** A complete inventory answer carrying exactly these contract addresses. */
+function mountInventory(addresses: readonly string[]): void {
+  mountBlockscout(async (address) => ({
+    finalUrl: buildRobinhoodTokenBalancesUrl(address).toString(),
+    status: 200,
+    contentType: "application/json",
+    body: encoder.encode(JSON.stringify(addresses.map((entry) => providerRow(entry)))),
+  }));
+}
 
 // ── Fixtures ────────────────────────────────────────────────────
 const NATIVE = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE".toLowerCase();
@@ -122,6 +178,15 @@ beforeEach(() => {
     { chainId: "robinhood", baseToken: { address: SEED.VEX }, quoteToken: { address: SEED.USDG }, priceUsd: "0.5", priceNative: "0.5", liquidity: { usd: 50_000 } },
   ]);
   mockTracked.mockResolvedValue([]);
+  // Default: the indexer answers completely and knows nothing the seed list
+  // does not, so every legacy expectation below still describes a seed-and-pin
+  // scan - now under an enumeration the chain is allowed to call exhaustive.
+  mountInventory([]);
+});
+
+afterEach(() => {
+  unregisterTransport?.();
+  unregisterTransport = null;
 });
 
 describe("syncLocalChainForWallet", () => {
@@ -296,6 +361,124 @@ describe("syncLocalChainForWallet", () => {
 
     expect(res.skipped).toBe(false);
     expect(mockReplace).toHaveBeenCalledTimes(1);
+  });
+
+  // ── WP6b: the Blockscout identity union gates the replacement ──
+  //
+  // `replaceBalancesForChain` replaces the chain's WHOLE snapshot, so it may
+  // only run when the scan set was every holding. Before the union, 4663 could
+  // never be that set and wrote anyway; now the enumeration has to say so.
+
+  it("scans an indexer-discovered token the seed list and pins never knew", async () => {
+    mountInventory([NEW_TOKEN]);
+
+    const res = await syncLocalChainForWallet("eip155", WALLET, 4663);
+
+    expect(res.skipped).toBe(false);
+    const queried = new Set(balanceOfMulticallContracts()?.map((c) => c.address.toLowerCase()));
+    // 4 seed + the discovered token, with no pin involved at all.
+    expect(queried.size).toBe(5);
+    expect(queried.has(NEW_TOKEN.toLowerCase())).toBe(true);
+    expect(mockTracked).toHaveBeenCalledWith(WALLET, 4663);
+
+    const [, , rows] = mockReplace.mock.calls[0] as [string, number, Array<Record<string, unknown>>];
+    const discovered = rows.find((row) => String(row.tokenAddress).toLowerCase() === NEW_TOKEN.toLowerCase());
+    // The row exists because RPC answered for it. Its symbol and decimals are
+    // the chain's ("NEW", 18), never the indexer's ("DISC").
+    expect(discovered).toBeDefined();
+    expect(discovered?.tokenSymbol).toBe("NEW");
+    expect(discovered?.balanceRaw).toBe("2000000000000000000");
+  });
+
+  it("BLOCKS the whole-chain replacement when the indexer is unavailable", async () => {
+    mountBlockscout(async () => ({
+      finalUrl: buildRobinhoodTokenBalancesUrl(WALLET).toString(),
+      status: 403,
+      contentType: "text/html; charset=UTF-8",
+      body: encoder.encode("<html>challenge</html>"),
+    }));
+
+    const res = await syncLocalChainForWallet("eip155", WALLET, 4663);
+
+    // The last-good rows and their original timestamps survive: an outage must
+    // never be able to delete a holding and read back as "you hold none".
+    expect(res.skipped).toBe(true);
+    expect(res.tokensUpdated).toBe(0);
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it("BLOCKS the replacement when the indexer answer was over its row cap", async () => {
+    mountBlockscout(async () => ({
+      finalUrl: buildRobinhoodTokenBalancesUrl(WALLET).toString(),
+      status: 200,
+      contentType: "application/json",
+      body: encoder.encode(JSON.stringify(Array.from({ length: 501 }, () => null))),
+    }));
+
+    const res = await syncLocalChainForWallet("eip155", WALLET, 4663);
+
+    expect(res.skipped).toBe(true);
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it("BLOCKS the replacement when the indexer answer was unreadable", async () => {
+    mountBlockscout(async () => ({
+      finalUrl: buildRobinhoodTokenBalancesUrl(WALLET).toString(),
+      status: 200,
+      contentType: "application/json",
+      body: encoder.encode("{\"items\":[]}"),
+    }));
+
+    const res = await syncLocalChainForWallet("eip155", WALLET, 4663);
+
+    expect(res.skipped).toBe(true);
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it("BLOCKS the replacement on a PARTIAL answer, even though it carried real candidates", async () => {
+    mountBlockscout(async () => ({
+      finalUrl: buildRobinhoodTokenBalancesUrl(WALLET).toString(),
+      status: 200,
+      contentType: "application/json",
+      body: encoder.encode(
+        JSON.stringify([
+          providerRow(NEW_TOKEN),
+          // One row the provider's own contract could not satisfy: the rest of
+          // the array is still real, and the array is still not the inventory.
+          providerRow(SEED.VEX, { decimals: "not-a-number" }),
+        ]),
+      ),
+    }));
+
+    const res = await syncLocalChainForWallet("eip155", WALLET, 4663);
+
+    expect(res.skipped).toBe(true);
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it("BLOCKS the replacement when an RPC token read failed under a complete enumeration", async () => {
+    mountInventory([NEW_TOKEN]);
+    fakeClient.multicall.mockImplementation((args: { contracts: Array<{ address: string; functionName: string }> }) =>
+      Promise.resolve(
+        args.contracts.map((c) => {
+          const addr = c.address.toLowerCase();
+          if (c.functionName === "balanceOf") {
+            return addr === NEW_TOKEN.toLowerCase()
+              ? { status: "failure", error: new Error("execution reverted") }
+              : { status: "success", result: BALANCES[addr] };
+          }
+          if (c.functionName === "decimals") return { status: "success", result: DECIMALS[addr] };
+          return { status: "success", result: SYMBOLS[addr] };
+        }),
+      ),
+    );
+
+    const res = await syncLocalChainForWallet("eip155", WALLET, 4663);
+
+    // Both gates are required, and this is the second one: an exhaustive scan
+    // set that could not be fully READ is still not a replaceable snapshot.
+    expect(res.skipped).toBe(true);
+    expect(mockReplace).not.toHaveBeenCalled();
   });
 
   it("skips non-EVM families and unknown chains without any RPC call", async () => {

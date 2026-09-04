@@ -58,8 +58,8 @@ const mockDecodeKyberSwapSettlement = vi.fn(() => null as { amountInRaw: string;
 // Only the evm-utils BARREL is mocked; `evm/swap-calldata-guard.js` stays REAL,
 // so the fee line in the captured calldata is genuinely verified before the
 // handler records anything.
-vi.mock("@tools/kyberswap/evm-utils.js", () => ({
-  getKyberEvmClients: () => ({ publicClient: {}, walletClient: {} }),
+vi.mock("@tools/kyberswap/evm-utils.js", async () => ({
+  ...(await import("./evm-client.test-fixtures.js")).kyberEvmClientMocks(),
   readErc20Metadata: (...args: [string, string]) => mockReadErc20Metadata(...args),
   verifyRouterAddress: vi.fn(),
   planKyberAllowance: (...args: unknown[]) => mockPlanKyberAllowance(...args),
@@ -120,7 +120,22 @@ vi.mock("@utils/logger.js", () => {
   return { default: stub, logger: stub };
 });
 
-import { approvedClaim } from "../../../kyberswap/fixtures/route-build/approved-quote.js";
+import {
+  approvedClaim,
+  legsForAllowancePlan,
+} from "../../../kyberswap/fixtures/route-build/approved-quote.js";
+
+/**
+ * The transaction set the claimed quote bound, kept in step with whatever this
+ * suite's allowance mock answers: since WP2-B an execute whose leg set is not
+ * the approved one is refused, so `planAllowance` moves both together (a real
+ * change of allowance would have come with a fresh quote).
+ */
+let approvedLegs = legsForAllowancePlan({ needsReset: false, needsApprove: false });
+function planAllowance(plan: { needsReset: boolean; needsApprove: boolean }): void {
+  mockPlanKyberAllowance.mockResolvedValue(plan);
+  approvedLegs = legsForAllowancePlan(plan);
+}
 import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 import { KYBERSWAP_HANDLERS } from "@vex-agent/tools/protocols/kyberswap/handlers.js";
 import { KYBERSWAP_FEE_BPS } from "@tools/kyberswap/constants.js";
@@ -179,6 +194,9 @@ function buildResponse(over: Record<string, unknown> = {}) {
     data: {
       routerAddress: capture.routerAddress,
       data: capture.build.data as Hex,
+      // The provider's own gas figure for the swap leg. MEASURED live on Base
+      // 2026-08-31: `/route/build` answered `gas: "287581"` for a real USDC route.
+      gas: "287581",
       transactionValue: capture.build.transactionValue,
       amountIn: capture.build.amountIn,
       amountOut: capture.build.amountOut,
@@ -209,7 +227,7 @@ describe("kyberswap.swap.execute — the Vex fee recorded as a token amount", ()
     mockReadErc20Metadata.mockImplementation(async (_slug: string, address: string) => ({
       address, symbol: "USDC", name: "USD Coin", decimals: 6, isNative: false as const,
     }));
-    mockPlanKyberAllowance.mockResolvedValue({ needsReset: false, needsApprove: false });
+    planAllowance({ needsReset: false, needsApprove: false });
     const routeResponse = {
       data: {
         routeSummary: {
@@ -227,6 +245,7 @@ describe("kyberswap.swap.execute — the Vex fee recorded as a token amount", ()
         approvedClaim(
           routeResponse.data.routeSummary,
           typeof params.slippageBps === "number" ? params.slippageBps : VEX_DEFAULT_SLIPPAGE_BPS,
+        { legs: approvedLegs },
         ),
     );
     mockBuildRoute.mockResolvedValue(buildResponse());
@@ -280,7 +299,7 @@ describe("kyberswap.swap.execute — the Vex fee recorded as a token amount", ()
   });
 
   it("leaves every fee field unset on an allowance leg, which charges no Vex fee", async () => {
-    mockPlanKyberAllowance.mockResolvedValue({ needsReset: true, needsApprove: true });
+    planAllowance({ needsReset: true, needsApprove: true });
 
     await execute();
 

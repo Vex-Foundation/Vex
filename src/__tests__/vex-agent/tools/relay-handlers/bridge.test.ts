@@ -23,6 +23,30 @@ const SEL_EVM = "0x1111111111111111111111111111111111111111";
 const ZERO = "0x0000000000000000000000000000000000000000";
 const ERC20 = "0xc6911796042b15d7Fa4F6CDe69e245DdCd3d9c31";
 
+vi.mock("@vex-agent/tools/protocols/bridge-token-identity.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@vex-agent/tools/protocols/bridge-token-identity.js")>();
+  return {
+    ...actual,
+    resolveRelayBridgeTokenPreview: async (params: Record<string, unknown>) => {
+      const one = (chainId: number, tokenAddress: string) => tokenAddress === ZERO
+        ? {
+            family: "eip155" as const, kind: "native" as const, chainId, tokenAddress,
+            symbol: "ETH", decimals: 18, metadataSource: "chain_registry" as const, symbolSanitized: false,
+          }
+        : {
+            family: "eip155" as const, kind: "erc20" as const, chainId, tokenAddress,
+            symbol: "TOKEN", decimals: 18, metadataSource: "rpc_contract" as const, symbolSanitized: false,
+          };
+      return {
+        source: one(8453, String(params.fromToken)),
+        destination: one(4663, String(params.toToken)),
+        amountRaw: String(params.amountRaw),
+        amountHuman: "0.001",
+      };
+    },
+  };
+});
+
 // ── Relay client (getQuote + getIntentStatus) + cached chains ──
 const mockGetQuote = vi.fn();
 

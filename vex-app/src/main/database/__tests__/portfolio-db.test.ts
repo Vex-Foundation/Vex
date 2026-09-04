@@ -19,6 +19,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { SOLANA_NATIVE_PERSISTED_ADDRESS } from "@tools/solana-ecosystem/shared/solana-asset-identity.js";
 
 type QueryFn = (
   text: string,
@@ -79,6 +80,7 @@ const SESSION = "00000000-0000-4000-8000-00000000aaaa";
 const WALLET_A = "0xAAAAaaaaAAAAaaaaAAAAaaaaAAAAaaaaAAAAaaaa";
 const WALLET_B = "0xBBBBbbbbBBBBbbbbBBBBbbbbBBBBbbbbBBBBbbbb";
 const SOL_ADDR = "So11111111111111111111111111111111111111112";
+const SOLANA_CHAIN_ID = 20_011_000_000;
 
 function scopeOk(evmAddr: string | null, solAddr: string | null) {
   return {
@@ -867,6 +869,69 @@ describe("portfolio-db getPortfolio - address-correct aggregation (position bran
         balanceUsd: 1000,
         amount: null,
       },
+    ]);
+  });
+
+  it("keeps native SOL and wSOL separate while returning the route-compatible mint", async () => {
+    scriptPortfolioQueries({
+      live: "150",
+      tokens: [
+        {
+          chain_id: String(SOLANA_CHAIN_ID),
+          token_address: SOLANA_NATIVE_PERSISTED_ADDRESS,
+          token_symbol: "SOL",
+          usd: "100",
+          amount: "1",
+        },
+        {
+          chain_id: String(SOLANA_CHAIN_ID),
+          token_address: SOL_ADDR,
+          token_symbol: "wSOL",
+          usd: "50",
+          amount: "0.5",
+        },
+      ],
+      breakdown: [
+        {
+          chain_id: String(SOLANA_CHAIN_ID),
+          chain_total: "150",
+          token_address: SOLANA_NATIVE_PERSISTED_ADDRESS,
+          token_symbol: "SOL",
+          token_usd: "100",
+          token_amount: "1",
+        },
+        {
+          chain_id: String(SOLANA_CHAIN_ID),
+          chain_total: "150",
+          token_address: SOL_ADDR,
+          token_symbol: "wSOL",
+          token_usd: "50",
+          token_amount: "0.5",
+        },
+      ],
+      snapshot: null,
+    });
+
+    const result = await getPortfolio({ scope: "global" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.data.tokens).toHaveLength(2);
+    expect(result.data.tokens.map((token) => ({
+      symbol: token.symbol,
+      tokenAddress: token.tokenAddress,
+      amount: token.amount,
+    }))).toEqual([
+      { symbol: "SOL", tokenAddress: SOL_ADDR, amount: 1 },
+      { symbol: "wSOL", tokenAddress: SOL_ADDR, amount: 0.5 },
+    ]);
+    expect(result.data.chains[0]?.tokens.map((token) => ({
+      symbol: token.symbol,
+      tokenAddress: token.tokenAddress,
+      amount: token.amount,
+    }))).toEqual([
+      { symbol: "SOL", tokenAddress: SOL_ADDR, amount: 1 },
+      { symbol: "wSOL", tokenAddress: SOL_ADDR, amount: 0.5 },
     ]);
   });
 

@@ -203,16 +203,32 @@ describe("khalani manifest", () => {
     }
   });
 
-  // ── Canonical resolver ─────────────────────────────────────────
+  // ── Provider search versus signing-path resolver ───────────────
 
-  // Canonicality is claimed in exactly ONE place (2026-07-30). Both this
-  // manifest and `TokenFind` used to call themselves "the canonical … token
-  // resolver" while being the SAME engine, which read as two competing tools.
-  // The manifest now points AT the shortcut instead of competing with it.
-  it("khalani.tokens.search names TokenFind as the canonical resolver rather than itself", () => {
-    const tool = KHALANI_TOOLS.find(t => t.toolId === "khalani.tokens.search")!;
+  it("khalani.tokens.search refuses provider metadata as EVM signing authority", () => {
+    const tool = KHALANI_TOOLS.find(t => t.toolId === "khalani.tokens.search");
+    expect(tool).toBeDefined();
+    if (!tool) return;
     expect(tool.description).toContain("TokenFind");
-    expect(tool.description).toContain("canonical token resolver");
-    expect(tool.description).not.toContain("canonical cross-chain token resolver");
+    expect(tool.description).toContain("Use this when researching provider-listed candidates");
+    expect(tool.description).toContain("never to authorize an EVM amount or approval");
+    expect(tool.description).toContain("its symbol and decimals are provider metadata");
+    expect(tool.description).toContain("reads EVM symbol and decimals from the contract");
+    expect(tool.description).not.toContain("Use either before any EVM mutation");
+    expect(tool.description).not.toContain("there use `dexscreener__pairs_search`");
   });
+
+  it.each(["khalani.quote.get", "khalani.bridge"])(
+    "%s requires contract-origin EVM decimals",
+    (toolId) => {
+      const tool = KHALANI_TOOLS.find(t => t.toolId === toolId);
+      expect(tool).toBeDefined();
+      if (!tool) return;
+      expect(tool.description).toContain("independently re-reads EVM symbol and decimals from");
+      expect(tool.description).toContain("contract");
+      if (toolId === "khalani.bridge") {
+        expect(tool.description).toContain("provider-list decimals are never signing authority");
+      }
+    },
+  );
 });

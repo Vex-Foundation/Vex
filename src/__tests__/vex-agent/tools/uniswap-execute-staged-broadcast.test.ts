@@ -37,6 +37,7 @@
  *     a conflicting row is `confirmed_unrecorded`, not silently "confirmed".
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { uniswapSpendabilityFake } from "./_uniswap-spendability-fake.js";
 import { claimStandingInForTheParams } from "./_uniswap-approved-snapshot.js";
 import { InvalidParamsRpcError } from "viem";
 import { VexError, ErrorCodes } from "../../../errors.js";
@@ -48,6 +49,9 @@ const WALLET = "0x1111111111111111111111111111111111111111";
 const WETH = "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73";
 
 const ensureErc20Balance = vi.fn();
+const readUniswapErc20Metadata = vi.fn(async (_client: unknown, address: string) => ({
+  address, symbol: "TKN", decimals: 18, isNative: false,
+}));
 const readUniswapAllowance = vi.fn();
 const signUniswapTransaction = vi.fn();
 const broadcastUniswapTransaction = vi.fn();
@@ -76,13 +80,14 @@ vi.mock("@tools/uniswap/chains.js", () => ({
   })),
 }));
 vi.mock("@tools/uniswap/evm-client.js", () => ({
-  getUniswapPublicClient: vi.fn(() => ({})),
-  getUniswapEvmClients: vi.fn(() => ({ publicClient: {}, walletClient: {} })),
+  // WP2-U: the quote and every leg's pre-sign gate read balances and price the
+  // leg plan through this client. A SOLVENT default keeps each suite's own
+  // subject the thing that decides its outcome.
+  getUniswapPublicClient: vi.fn(() => uniswapSpendabilityFake()),
+  getUniswapEvmClients: vi.fn(() => ({ publicClient: uniswapSpendabilityFake(), walletClient: {} })),
 }));
 vi.mock("@tools/uniswap/erc20.js", () => ({
-  readUniswapErc20Metadata: vi.fn(async (_client: unknown, address: string) => ({
-    address, symbol: "TKN", decimals: 18, isNative: false,
-  })),
+  readUniswapErc20Metadata: (...args: [unknown, string]) => readUniswapErc20Metadata(...args),
   validateUniswapSpender: vi.fn(),
   readUniswapAllowance: (...args: unknown[]) => readUniswapAllowance(...args),
 }));
@@ -90,7 +95,12 @@ vi.mock("@tools/uniswap/quote.js", () => ({
   quoteBestRoute: vi.fn(async () => ({ route: { version: "v2", path: [TOKEN_IN, TOKEN_OUT], amountOut: 10n } })),
   applySlippage: vi.fn((amount: bigint) => amount),
 }));
-vi.mock("@tools/uniswap/execute.js", () => ({
+// Spread over the REAL module so the refusal classes this venue throws
+// (`UniswapFeeCapExceededError`, and the final-request refusal the loop
+// re-throws by identity) are the real ones; the overrides below stay this
+// suite's own seams.
+vi.mock("@tools/uniswap/execute.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tools/uniswap/execute.js")>()),
   NATIVE_TOKEN_ADDRESS: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
   buildSwapTx: vi.fn(() => ({ to: "0xrouter", data: "0x", value: 0n })),
   buildApproveTx: vi.fn(() => ({ to: "0xtoken", data: "0x", value: 0n })),
@@ -177,13 +187,30 @@ const context = {
 
 const SWAP_ONLY_PARAMS = { chain: "robinhood", tokenIn: TOKEN_IN, tokenOut: TOKEN_OUT, amountIn: "1" };
 
+
+/**
+ * The router allowance this suite's quote saw, kept in step with what the
+ * execute's own allowance read answers: since WP2-B the execute REFUSES a leg
+ * set that is not the approved one, so `setAllowance` moves both together (a
+ * real allowance change would have come with a fresh quote).
+ */
+let currentAllowance = 10n ** 30n;
+function setAllowance(value: bigint): void {
+  currentAllowance = value;
+  readUniswapAllowance.mockResolvedValue(value);
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   claimUniswapExecutionSnapshot.mockImplementation(
-    claimStandingInForTheParams({ chainId: 4663, weth: "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73" }),
+    claimStandingInForTheParams({
+      chainId: 4663,
+      weth: "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+      currentAllowance: () => currentAllowance,
+    }),
   );
   ensureErc20Balance.mockResolvedValue(undefined);
-  readUniswapAllowance.mockResolvedValue(10n ** 30n); // sufficient by default — one (swap) event
+  setAllowance(10n ** 30n); // sufficient by default - one (swap) event
   signUniswapTransaction.mockResolvedValue({ serializedTransaction: "0xsigned", txHash: "0xhash", fromAddress: WALLET, nonce: 1 });
   broadcastUniswapTransaction.mockResolvedValue("0xhash");
   waitForSuccessfulReceipt.mockResolvedValue({ logs: [] });
@@ -213,6 +240,20 @@ describe("C24 — dryRun is hard-rejected (five-field contract is final)", () =>
     const result = await execute({ ...SWAP_ONLY_PARAMS, dryRun: true }, context);
     expect(result.success).toBe(false);
     expect(result.output).toContain("does not support dryRun");
+    expect(createAgentActivityIntent).not.toHaveBeenCalled();
+    expect(signUniswapTransaction).not.toHaveBeenCalled();
+  });
+});
+
+describe("contract metadata is re-read before signing", () => {
+  it("refuses unreadable token metadata before claiming a quote or signing", async () => {
+    readUniswapErc20Metadata.mockRejectedValueOnce(new Error("symbol() unavailable"));
+
+    const result = await execute(SWAP_ONLY_PARAMS, context);
+
+    expect(result.success).toBe(false);
+    expect(createAgentActivityPreBroadcastFailure).toHaveBeenCalledTimes(1);
+    expect(claimUniswapExecutionSnapshot).not.toHaveBeenCalled();
     expect(createAgentActivityIntent).not.toHaveBeenCalled();
     expect(signUniswapTransaction).not.toHaveBeenCalled();
   });
@@ -340,7 +381,7 @@ describe("C16 — post-broadcast bookkeeping failures never become a generic fai
 describe("C17 — an ambiguous/reverted event aborts every downstream never-signed event", () => {
   beforeEach(() => {
     // Force a 2-event plan: allowance (idx 0) then swap (idx 1).
-    readUniswapAllowance.mockResolvedValue(0n);
+    setAllowance(0n);
     createAgentActivityIntent.mockResolvedValue({
       executionId: 2,
       events: [

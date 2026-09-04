@@ -9,12 +9,17 @@
 
 import type { Hex } from "viem";
 
+import type { FinalSignedRequest } from "@tools/evm-chains/staged-broadcast.js";
+
 import { getUniswapEvmClients } from "@tools/uniswap/evm-client.js";
 import {
   signUniswapTransaction,
   broadcastUniswapTransaction,
+  UniswapFeeCapExceededError,
+  UniswapLiveFeeMarketRefusal,
   type BuiltSwapTx,
   type SignedUniswapTransaction,
+  type UniswapLegFeeBounds,
 } from "@tools/uniswap/execute.js";
 import {
   assertFinalUniswapSwapRequest,
@@ -42,6 +47,7 @@ import logger from "@utils/logger.js";
 
 import { VexError, ErrorCodes } from "../../../../../../errors.js";
 import { uniswapFailureMessage } from "./error-output.js";
+import { UniswapPreSignDebitRefusal } from "./quote-spendability.js";
 
 /** A revert-mapping-shaped classification, widened to the full closed enum for repo assignment. */
 export interface Classification {
@@ -93,6 +99,16 @@ export async function runStagedBroadcast(
    * the one about to be signed.
    */
   approvedFinalRequest?: Omit<ApprovedFinalRequest, "builtTransaction">,
+  /**
+   * THE AUTHORITATIVE DEBIT READ for this leg (contract C2.6), passed for EVERY
+   * leg - an allowance leg spends native gas too, and a wallet that cannot pay
+   * for leg three must find out before leg one is signed. It runs inside the
+   * pre-sign window on the request that is about to be serialized, and a throw
+   * from it signs nothing.
+   */
+  debitGate?: (request: FinalSignedRequest) => Promise<void>,
+  /** The per-gas ceiling this execution's debit total was computed under. */
+  bounds?: UniswapLegFeeBounds,
 ): Promise<StageOutcome> {
   let signed: SignedUniswapTransaction;
   let broadcastHash: Hex;
@@ -103,14 +119,27 @@ export async function runStagedBroadcast(
       tx,
       priorLeg,
       (request) => reserveActivityEvmNonce(event.id, request),
-      approvedFinalRequest === undefined
+      approvedFinalRequest === undefined && debitGate === undefined
         ? undefined
         : async (request) => {
-            assertFinalUniswapSwapRequest(request, {
-              ...approvedFinalRequest,
-              builtTransaction: { to: tx.to, data: tx.data, value: tx.value },
-            });
+            // The PURE authority check first - it needs no network and refuses
+            // the wrong trade before a balance read is even worth taking - then
+            // the chain read that proves the wallet can still pay for what is
+            // left. Both run on the request that is about to be serialized.
+            if (approvedFinalRequest !== undefined) {
+              assertFinalUniswapSwapRequest(request, {
+                ...approvedFinalRequest,
+                builtTransaction: { to: tx.to, data: tx.data, value: tx.value },
+              });
+            }
+            if (debitGate !== undefined) {
+              // The WHOLE request, prices included: gas units times an unknown
+              // price is not money, and the gate both prices this leg from them
+              // and refuses a price above the approved ceiling.
+              await debitGate(request);
+            }
           },
+      bounds,
     );
   } catch (err) {
     // A leg whose estimate never succeeded after an approval THIS execute
@@ -128,6 +157,22 @@ export async function runStagedBroadcast(
     // the estimate refusal does, and the orchestrator's outer handler
     // finalizes the never-signed rows and renders the refusal verbatim.
     if (err instanceof UniswapFinalRequestRefusal) throw err;
+    // A SPENDABILITY refusal and a FEE-CEILING refusal are not router reverts
+    // either: nothing reverted, nothing was estimated wrong, and
+    // `classifyUniswapRevertError` would flatten both to `unknown` and replace
+    // the only sentence that says what was actually wrong. They leave this loop
+    // intact exactly as the estimate refusal does, and the orchestrator's outer
+    // handler finalizes the never-signed rows and renders the refusal verbatim.
+    if (err instanceof UniswapPreSignDebitRefusal) throw err;
+    if (err instanceof UniswapFeeCapExceededError) throw err;
+    // A LIVE FEE-MARKET refusal is the same shape: the pre-sign window could
+    // not show the approved ceiling still covers what the chain requires -
+    // because it is higher, because the market could not be read, or because
+    // the chain now prices gas in the other mode. All three are pre-sign facts,
+    // none is a router revert, and `classifyUniswapRevertError` would flatten
+    // every one of them to `unknown` - collapsing an unreadable provider into
+    // an unexpected failure is exactly what rule 90 forbids.
+    if (err instanceof UniswapLiveFeeMarketRefusal) throw err;
     // Sign-time only (prepare/estimate/local signing) - no `sendRawTransaction`
     // call has happened yet, so nothing was ever submitted to the network.
     // Unlike a broadcast failure (C15), a sign-time failure is UNAMBIGUOUSLY

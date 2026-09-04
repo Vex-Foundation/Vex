@@ -52,4 +52,8 @@ export {
   evaluateSwapPrequoteGate,
   findFreshMatchedSwapPrequote,
 } from "./prequote/gate.js";
-export type { GateDecision } from "./prequote/gate.js";
+export type {
+  GateDecision,
+  MatchedSwapPrequote,
+  MatchedSwapPrequoteRefusal,
+} from "./prequote/gate.js";

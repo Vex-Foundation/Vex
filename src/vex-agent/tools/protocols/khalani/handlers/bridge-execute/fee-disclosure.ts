@@ -19,9 +19,10 @@ import type { BridgeChainFamily } from "@vex-agent/db/repos/agent-activity.js";
 import {
   estimateUsd,
   humanizeAmount,
-  resolveKhalaniTokenInfo,
+  resolveKhalaniBridgeTokenInfo,
   type KhalaniTokenInfo,
 } from "../bridge-usd.js";
+import type { BridgeTokenIdentityPreview } from "@vex-agent/tools/protocols/bridge-token-identity.js";
 
 export interface KhalaniFeeDisclosureInput {
   readonly fromToken: string;
@@ -29,9 +30,12 @@ export interface KhalaniFeeDisclosureInput {
   readonly fromChainId: number;
   readonly toChainId: number;
   readonly fromFamily: BridgeChainFamily;
+  readonly toFamily: BridgeChainFamily;
   readonly feeSplit: BridgeFeeSplit;
   readonly chargeFee: boolean;
   readonly feeSkipReason: string | null;
+  readonly signal?: AbortSignal;
+  readonly tokenIdentity: BridgeTokenIdentityPreview;
 }
 
 export interface KhalaniFeeDisclosure {
@@ -53,8 +57,8 @@ export async function resolveKhalaniFeeDisclosure(
 ): Promise<KhalaniFeeDisclosure> {
   const { fromToken, toToken, feeSplit, chargeFee } = input;
   const [fromInfo, toInfo]: [KhalaniTokenInfo | null, KhalaniTokenInfo | null] = await Promise.all([
-    resolveKhalaniTokenInfo(fromToken, input.fromChainId),
-    resolveKhalaniTokenInfo(toToken, input.toChainId),
+    resolveKhalaniBridgeTokenInfo(fromToken, input.fromChainId, input.tokenIdentity.source),
+    resolveKhalaniBridgeTokenInfo(toToken, input.toChainId, input.tokenIdentity.destination),
   ]);
   const feeAmountHuman = humanizeAmount(feeSplit.feeRaw.toString(), fromInfo?.decimals);
   const usdVexFee = chargeFee ? estimateUsd(feeAmountHuman, fromInfo?.priceUsd) : undefined;

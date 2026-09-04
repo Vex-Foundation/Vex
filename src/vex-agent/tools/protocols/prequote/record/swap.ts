@@ -21,6 +21,7 @@ import type {
   PrequoteFamily,
 } from "@vex-agent/db/repos/swap-prequotes.js";
 
+import { parseSpendabilityPreview } from "../../quote-authority/spendability.js";
 import { PREQUOTE_MAX_AGE_MS } from "../registry.js";
 import { computePrequoteMatchHash } from "../identity/hash.js";
 import { extractQuote } from "../safety/extract.js";
@@ -33,6 +34,12 @@ const ELIGIBILITY_KINDS: ReadonlySet<string> = new Set<PrequoteEligibilityKind>(
   "excessive_impact",
   "oversize_snapshot",
   "provider_usd_invalid",
+  // Spendability (WP2, contract C2). A quote the wallet cannot pay for is
+  // recorded exactly like a quote whose route was unusable: as a superseding
+  // row that authorizes nothing.
+  "insufficient_balance",
+  "balance_unavailable",
+  "gas_reserve_insufficient",
 ]);
 
 /**
@@ -44,6 +51,34 @@ const ELIGIBILITY_KINDS: ReadonlySet<string> = new Set<PrequoteEligibilityKind>(
 function normalizeEligibilityKind(kind: string | undefined): PrequoteEligibilityKind {
   if (kind === undefined) return "executable";
   return ELIGIBILITY_KINDS.has(kind) ? (kind as PrequoteEligibilityKind) : "provider_usd_invalid";
+}
+
+/**
+ * Fold the quote-time spendability facts into the row's bounded safety block.
+ *
+ * VALIDATED BEFORE IT IS STORED, not on the way out only: the payload becomes
+ * part of what a human later reads on an approval card, so a malformed handoff
+ * must fail here - where the row is still being built - rather than survive to
+ * the card and be dropped there without anyone knowing a venue produced
+ * garbage. An unparseable payload leaves the block exactly as the quote's own
+ * safety extraction built it, and the card simply carries no spendability line.
+ *
+ * `spendability` is a RESERVED key of the safety block. A venue whose own
+ * safety detail used that name would have its value replaced here; none does,
+ * and the recorder is the one writer of this column.
+ */
+function withSpendability(
+  toolId: string,
+  safetyDetail: Record<string, unknown>,
+  spendability: unknown,
+): Record<string, unknown> {
+  if (spendability === undefined) return safetyDetail;
+  const parsed = parseSpendabilityPreview(spendability);
+  if (parsed === undefined) {
+    logger.warn("protocol.prequote.spendability_unreadable", { toolId });
+    return safetyDetail;
+  }
+  return { ...safetyDetail, spendability: parsed };
 }
 
 export async function recordSwapPrequote(
@@ -157,7 +192,7 @@ export async function recordSwapPrequote(
     amount: extracted.amount,
     slippageBps: extracted.slippageBps,
     safetyVerdict: extracted.verdict,
-    safetyDetail: extracted.safetyDetail,
+    safetyDetail: withSpendability(toolId, extracted.safetyDetail, quoteAuthority?.spendability),
     // The execution snapshot (`quote-authority/snapshot.ts`) when the venue
     // produced one: the route summary as a raw JSON string plus its digest, the
     // approved output and floor, and the tolerance the build must be POSTed

@@ -7,7 +7,16 @@ const CHAINS = [
 ];
 
 const mockGetChains = vi.fn().mockResolvedValue(CHAINS);
-const mockGetTokenBalances = vi.fn().mockResolvedValue([]);
+
+// `KhalaniClient.getTokenBalances` returns the STRICT balances response
+// (`{ tokens, rejectedEntries }`). Tests script the ENTRIES through
+// `mockTokenEntries`; a plain array means "these tokens, nothing refused", and a
+// full response object is passed through so a test can script rejections.
+const mockTokenEntries = vi.fn().mockResolvedValue([]);
+const mockGetTokenBalances = vi.fn(async (address: string, chainIds?: number[]) => {
+  const scripted = await mockTokenEntries(address, chainIds);
+  return Array.isArray(scripted) ? { tokens: scripted, rejectedEntries: [] } : scripted;
+});
 
 vi.mock("@tools/khalani/client.js", () => ({
   getKhalaniClient: () => ({
@@ -38,8 +47,8 @@ describe("Khalani balance scanner", () => {
     vi.clearAllMocks();
     clearKhalaniChainsCache();
     mockGetChains.mockResolvedValue(CHAINS);
-    mockGetTokenBalances.mockReset();
-    mockGetTokenBalances.mockResolvedValue([]);
+    mockTokenEntries.mockReset();
+    mockTokenEntries.mockResolvedValue([]);
     // Default: no native balance. Individual native-coverage tests override.
     mockGetBalance.mockReset();
     mockGetBalance.mockResolvedValue(0n);
@@ -53,7 +62,7 @@ describe("Khalani balance scanner", () => {
   });
 
   it("scans explicit EVM chains as individual Khalani balance calls", async () => {
-    mockGetTokenBalances.mockImplementation(async (_address: string, chainIds?: number[]) => {
+    mockTokenEntries.mockImplementation(async (_address: string, chainIds?: number[]) => {
       if (chainIds?.[0] === 1) {
         return [
           { chainId: 1, address: "0xUSDC", symbol: "USDC", name: "USD Coin", decimals: 6, extensions: { balance: "1000000", price: { usd: "1.0" } } },
@@ -81,7 +90,7 @@ describe("Khalani balance scanner", () => {
   });
 
   it("returns partial chain errors without dropping successful balances", async () => {
-    mockGetTokenBalances.mockImplementation(async (_address: string, chainIds?: number[]) => {
+    mockTokenEntries.mockImplementation(async (_address: string, chainIds?: number[]) => {
       if (chainIds?.[0] === 8453) throw new Error("upstream timeout");
       return [
         { chainId: 1, address: "0xUSDC", symbol: "USDC", name: "USD Coin", decimals: 6, extensions: { balance: "1000000", price: { usd: "1.0" } } },
@@ -104,7 +113,7 @@ describe("Khalani balance scanner", () => {
   // ── EVM native-balance coverage (Stage 4) ──────────────────────────
 
   it("adds a synthetic native entry for an EVM chain with a positive balance", async () => {
-    mockGetTokenBalances.mockResolvedValue([]); // no ERC-20s
+    mockTokenEntries.mockResolvedValue([]); // no ERC-20s
     mockGetBalance.mockResolvedValue(2_500000000000000000n); // 2.5 ETH
 
     const scan = await getTokenBalancesAcrossChains({
@@ -130,7 +139,7 @@ describe("Khalani balance scanner", () => {
   });
 
   it("skips a native entry when the balance is zero", async () => {
-    mockGetTokenBalances.mockResolvedValue([]);
+    mockTokenEntries.mockResolvedValue([]);
     mockGetBalance.mockResolvedValue(0n);
 
     const scan = await getTokenBalancesAcrossChains({
@@ -146,7 +155,7 @@ describe("Khalani balance scanner", () => {
   });
 
   it("does not double-add native when Khalani already returned a native entry", async () => {
-    mockGetTokenBalances.mockResolvedValue([
+    mockTokenEntries.mockResolvedValue([
       { chainId: 1, address: NATIVE_SENTINEL, symbol: "ETH", name: "Ether", decimals: 18, extensions: { balance: "1000000000000000000", price: { usd: "3000.0" } } },
     ]);
     mockGetBalance.mockResolvedValue(9_000000000000000000n); // would be added if not deduped
@@ -164,7 +173,7 @@ describe("Khalani balance scanner", () => {
   });
 
   it("native-RPC failure records a chainError and does NOT fail the read (token balances still returned)", async () => {
-    mockGetTokenBalances.mockResolvedValue([
+    mockTokenEntries.mockResolvedValue([
       { chainId: 1, address: "0xUSDC", symbol: "USDC", name: "USD Coin", decimals: 6, extensions: { balance: "1000000", price: { usd: "1.0" } } },
     ]);
     mockGetBalance.mockRejectedValue(new Error("HTTP 429 rate limited"));
@@ -186,7 +195,7 @@ describe("Khalani balance scanner", () => {
   });
 
   it("does not fetch native balances for the Solana family", async () => {
-    mockGetTokenBalances.mockResolvedValue([
+    mockTokenEntries.mockResolvedValue([
       { chainId: 20011000000, address: "So111", symbol: "SOL", name: "Solana", decimals: 9, extensions: { balance: "2000000000", price: { usd: "100.0" } } },
     ]);
 
@@ -210,7 +219,7 @@ describe("Khalani balance scanner", () => {
   // synthetic native rows even though the native RPC mock would return a positive
   // balance.
   it("does NOT add a synthetic native entry on the default (sync) path", async () => {
-    mockGetTokenBalances.mockResolvedValue([
+    mockTokenEntries.mockResolvedValue([
       { chainId: 1, address: "0xUSDC", symbol: "USDC", name: "USD Coin", decimals: 6, extensions: { balance: "1000000", price: { usd: "1.0" } } },
     ]);
     mockGetBalance.mockResolvedValue(5_000000000000000000n); // 5 ETH — would be added IF native ran
@@ -237,7 +246,7 @@ describe("Khalani balance scanner", () => {
     const RAW =
       '<!doctype html><html><body>Upstream 500 at https://rpc.secret-provider.io/v3/' +
       'mainnet?apiKey=sk_live_DEADBEEF1234567890&trace=abc viem@2.21.0</body></html>';
-    mockGetTokenBalances.mockResolvedValue([]); // isolate the native error
+    mockTokenEntries.mockResolvedValue([]); // isolate the native error
     mockGetBalance.mockRejectedValue(new Error(RAW));
 
     const scan = await getTokenBalancesAcrossChains({
@@ -272,7 +281,7 @@ describe("Khalani balance scanner", () => {
   });
 
   it("classifies a viem-style 429 (status field) as rate limited", async () => {
-    mockGetTokenBalances.mockResolvedValue([]);
+    mockTokenEntries.mockResolvedValue([]);
     // Mimic a viem HttpRequestError carrying a numeric status, no rate keyword in
     // the human message — classification must use the status, not substring luck.
     mockGetBalance.mockRejectedValue(
@@ -294,7 +303,7 @@ describe("Khalani balance scanner", () => {
   });
 
   it("classifies a timeout error as timeout", async () => {
-    mockGetTokenBalances.mockResolvedValue([]);
+    mockTokenEntries.mockResolvedValue([]);
     mockGetBalance.mockRejectedValue(
       Object.assign(new Error("The request took too long to respond and timed out."), {
         name: "TimeoutError",
@@ -312,7 +321,7 @@ describe("Khalani balance scanner", () => {
   });
 
   it("classifies a missing-RPC VexError (KHALANI_UNSUPPORTED_CHAIN) as missing RPC", async () => {
-    mockGetTokenBalances.mockResolvedValue([]);
+    mockTokenEntries.mockResolvedValue([]);
     // getChainRpcUrl throws a VexError with this code when a chain has no RPC URL.
     // The classifier keys off the structured `code`, not the human message.
     mockGetBalance.mockRejectedValue(

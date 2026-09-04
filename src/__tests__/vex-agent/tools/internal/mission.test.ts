@@ -407,6 +407,7 @@ describe("mission_stop tool", () => {
         decimals: 18,
         chainId: 4663,
         assetAddress: "0x0f9f0000000000000000000000000000000000ee",
+        assetKind: "token",
         assetSymbol: "VEX",
       };
       const result = await handleMissionDraftUpdate(
@@ -419,7 +420,7 @@ describe("mission_stop tool", () => {
 
     it("reports a LOCATED path when the model sends a partial deployedCapital", async () => {
       const result = await handleMissionDraftUpdate(
-        { deployedCapital: { amountRaw: "3044", decimals: 18, chainId: 4663, assetAddress: "0x0f9f0000000000000000000000000000000000ee" } },
+        { deployedCapital: { amountRaw: "3044", decimals: 18, chainId: 4663, assetAddress: "0x0f9f0000000000000000000000000000000000ee", assetKind: "token" } },
         { ...baseContext, missionRunId: null },
       );
       expect(result.success).toBe(false);

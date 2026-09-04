@@ -55,21 +55,21 @@ free. Both texts live on the tool
 | name | title | lane | read only | destructive | always load | requires env | description bytes | returns | vex fee |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | AgentScan | Review this wallet's recorded activity | internal | yes | no | yes | - | 2046 | yes | none |
-| BridgeExecute | Execute a cross-chain bridge | internal | no | yes | yes | - | 1942 | yes | 25 bps |
-| BridgeExecuteRelay | Execute a Relay bridge | internal | no | yes | yes | - | 1500 | yes | 25 bps |
-| BridgeQuote | Quote a cross-chain bridge | internal | yes | no | yes | - | 1411 | yes | none |
-| BridgeQuoteRelay | Quote a Relay bridge | internal | yes | no | yes | - | 632 | yes | none |
+| BridgeExecute | Execute a cross-chain bridge | internal | no | yes | yes | - | 2016 | yes | 25 bps |
+| BridgeExecuteRelay | Execute a Relay bridge | internal | no | yes | yes | - | 1938 | yes | 25 bps |
+| BridgeQuote | Quote a cross-chain bridge | internal | yes | no | yes | - | 1889 | yes | none |
+| BridgeQuoteRelay | Quote a Relay bridge | internal | yes | no | yes | - | 1110 | yes | none |
 | BridgeStatus | Check a bridge order's status | internal | yes | no | yes | - | 1548 | yes | none |
 | ChainRead | Read raw EVM chain data | internal | yes | no | yes | - | 1326 | yes | none |
-| SwapExecute | Execute a token swap | internal | no | yes | yes | - | 2008 | yes | 25 bps |
-| SwapExecuteUniswap | Execute a Uniswap swap | internal | no | yes | yes | - | 1212 | yes | 25 bps |
-| SwapQuote | Quote a token swap | internal | yes | no | yes | - | 1762 | yes | none |
-| SwapQuoteUniswap | Quote a Uniswap swap | internal | yes | no | yes | - | 717 | yes | none |
-| TokenCheck | Check an EVM token for honeypot and tax | internal | yes | no | yes | - | 553 | yes | none |
-| TokenFind | Find a token's address and decimals | internal | yes | no | yes | - | 1323 | yes | none |
+| SwapExecute | Execute a token swap | internal | no | yes | yes | - | 2048 | yes | 25 bps |
+| SwapExecuteUniswap | Execute a Uniswap swap | internal | no | yes | yes | - | 2047 | yes | 25 bps |
+| SwapQuote | Quote a token swap | internal | yes | no | yes | - | 2047 | yes | none |
+| SwapQuoteUniswap | Quote a Uniswap swap | internal | yes | no | yes | - | 2017 | yes | none |
+| TokenCheck | Check an EVM token for honeypot and tax | internal | yes | no | yes | - | 953 | yes | none |
+| TokenFind | Find a token's address and decimals | internal | yes | no | yes | - | 1956 | yes | none |
 | TwitterAccount | Read Twitter accounts and posts | internal | yes | no | yes | RETTIWT_API_KEY | 2039 | yes | none |
 | UnitsConvert | Convert token amounts and units | internal | yes | no | yes | - | 1393 | yes | none |
-| WalletBalances | Read wallet balances across chains | internal | yes | no | yes | - | 1990 | yes | none |
+| WalletBalances | Read wallet balances across chains | internal | yes | no | yes | - | 2032 | yes | none |
 | WalletEvmTransactionConfirm | Broadcast a prepared EVM transaction | internal | no | yes | yes | - | 2031 | yes | 25 bps |
 | WalletEvmTransactionPrepare | Prepare an EVM transaction | internal | no | no | yes | - | 1945 | yes | 25 bps |
 | WalletSendConfirm | Broadcast a prepared wallet transfer | internal | no | yes | yes | - | 1901 | yes | none |
@@ -95,7 +95,7 @@ free. Both texts live on the tool
 | dexscreener__losers_list | List top-losing DEX pairs | protocol | yes | no | no | - | 2329 | - | none (read) |
 | dexscreener__narratives_list | List trending DEX Screener narratives | protocol | yes | no | no | - | 2231 | - | none (read) |
 | dexscreener__pair_details_get | Read a pair's safety report | protocol | yes | no | no | - | 4668 | - | none (read) |
-| dexscreener__pair_get | Read one pair's live state | protocol | yes | no | no | - | 2973 | - | none (read) |
+| dexscreener__pair_get | Read one pair's live state | protocol | yes | no | no | - | 3707 | - | none (read) |
 | dexscreener__pairs_batch_get | Batch-read pairs or tokens | protocol | yes | no | no | - | 2623 | - | none (read) |
 | dexscreener__pairs_new_list | List newest DEX pairs | protocol | yes | no | no | - | 2352 | - | none (read) |
 | dexscreener__pairs_search | Search DEX pairs | protocol | yes | no | no | - | 2417 | - | none (read) |
@@ -104,21 +104,21 @@ free. Both texts live on the tool
 | dexscreener__spotlight_get | Read the DEX Screener spotlight feeds | protocol | yes | no | no | - | 2808 | - | none (read) |
 | dexscreener__token_pairs_list | List a token's DEX pools | protocol | yes | no | no | - | 3038 | - | none (read) |
 | dexscreener__tokens_screen | Screen tokens across chains | protocol | yes | no | no | - | 1994 | - | none (read) |
-| dexscreener__top_traders_list | Rank a pair's top wallets | protocol | yes | no | no | - | 5700 | - | none (read) |
+| dexscreener__top_traders_list | Rank a pair's top wallets | protocol | yes | no | no | - | 6552 | - | none (read) |
 | dexscreener__trades_list | List a pair's trades | protocol | yes | no | no | - | 4171 | - | none (read) |
 
 ### khalani
 
 | name | title | lane | read only | destructive | always load | requires env | description bytes | returns | vex fee |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| khalani__bridge_execute | Execute a Khalani bridge | protocol | no | yes | no | - | 3083 | - | - |
-| khalani__bridge_quote_get | Quote a Khalani bridge | protocol | yes | no | no | - | 1944 | - | none (read) |
+| khalani__bridge_execute | Execute a Khalani bridge | protocol | no | yes | no | - | 3472 | - | - |
+| khalani__bridge_quote_get | Quote a Khalani bridge | protocol | yes | no | no | - | 2304 | - | none (read) |
 | khalani__chains_list | List Khalani bridge chains | protocol | yes | no | no | - | 850 | - | none (read) |
 | khalani__order_get | Read one Khalani bridge order | protocol | yes | no | no | - | 990 | - | none (read) |
 | khalani__orders_list | List Khalani bridge orders | protocol | yes | no | no | - | 1066 | - | none (read) |
-| khalani__token_balances_get | Read Khalani-chain wallet balances | protocol | yes | no | no | - | 1813 | - | none (read) |
+| khalani__token_balances_get | Read Khalani-chain wallet balances | protocol | yes | no | no | - | 4836 | - | none (read) |
 | khalani__tokens_autocomplete | Parse a token phrase into Khalani tokens | protocol | yes | no | no | - | 964 | - | none (read) |
-| khalani__tokens_search | Search Khalani tokens | protocol | yes | no | no | - | 1253 | - | none (read) |
+| khalani__tokens_search | Search Khalani tokens | protocol | yes | no | no | - | 1060 | - | none (read) |
 | khalani__tokens_top_list | List top bridged tokens on Khalani | protocol | yes | no | no | - | 794 | - | none (read) |
 
 ### kyberswap
@@ -126,8 +126,8 @@ free. Both texts live on the tool
 | name | title | lane | read only | destructive | always load | requires env | description bytes | returns | vex fee |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | kyberswap__chains_list | List KyberSwap chains | protocol | yes | no | no | - | 776 | - | none (read) |
-| kyberswap__swap_execute | Execute a KyberSwap swap | protocol | no | yes | no | - | 3110 | yes | 25 bps |
-| kyberswap__swap_quote | Quote a KyberSwap swap | protocol | yes | no | no | - | 2569 | - | none (read) |
+| kyberswap__swap_execute | Execute a KyberSwap swap | protocol | no | yes | no | - | 3718 | yes | 25 bps |
+| kyberswap__swap_quote | Quote a KyberSwap swap | protocol | yes | no | no | - | 3591 | - | none (read) |
 | kyberswap__token_safety_check | Audit an EVM token with KyberSwap | protocol | yes | no | no | - | 1138 | - | none (read) |
 
 ### morpho
@@ -206,8 +206,8 @@ free. Both texts live on the tool
 
 | name | title | lane | read only | destructive | always load | requires env | description bytes | returns | vex fee |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| relay__bridge_execute | Execute a Relay cross-chain bridge | protocol | no | yes | no | - | 1990 | yes | 25 bps |
-| relay__bridge_quote_get | Quote a Relay cross-chain bridge | protocol | yes | no | no | - | 1685 | - | none (read) |
+| relay__bridge_execute | Execute a Relay cross-chain bridge | protocol | no | yes | no | - | 2478 | yes | 25 bps |
+| relay__bridge_quote_get | Quote a Relay cross-chain bridge | protocol | yes | no | no | - | 2094 | - | none (read) |
 
 ### solana
 
@@ -242,8 +242,8 @@ free. Both texts live on the tool
 | solana__predict_trades_list | Browse the global Jupiter prediction trade feed | protocol | yes | no | no | JUPITER_API_KEY | 906 | - | none (read) |
 | solana__predict_trading_status_get | Check Jupiter prediction trading status | protocol | yes | no | no | JUPITER_API_KEY | 604 | - | none (read) |
 | solana__predict_vault_get | Read the Jupiter prediction protocol vault | protocol | yes | no | no | JUPITER_API_KEY | 578 | - | none (read) |
-| solana__swap_execute | Execute a Jupiter swap | protocol | no | yes | no | JUPITER_API_KEY | 526 | - | 25 bps |
-| solana__swap_quote | Quote a Jupiter swap | protocol | yes | no | no | JUPITER_API_KEY | 1189 | - | none (read) |
+| solana__swap_execute | Execute a Jupiter swap | protocol | no | yes | no | JUPITER_API_KEY | 1222 | - | 25 bps |
+| solana__swap_quote | Quote a Jupiter swap | protocol | yes | no | no | JUPITER_API_KEY | 3052 | - | none (read) |
 | solana__token_prices_get | Read Solana token prices | protocol | yes | no | no | JUPITER_API_KEY | 637 | - | none (read) |
 | solana__tokens_discover | Discover new and trending Solana tokens | protocol | yes | no | no | JUPITER_API_KEY | 1123 | - | none (read) |
 | solana__tokens_search | Search Solana tokens by name | protocol | yes | no | no | JUPITER_API_KEY | 835 | - | none (read) |
@@ -267,8 +267,8 @@ free. Both texts live on the tool
 
 | name | title | lane | read only | destructive | always load | requires env | description bytes | returns | vex fee |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| uniswap__swap_execute | Execute a Uniswap V2/V3 swap | protocol | no | yes | no | - | 1059 | yes | 25 bps |
-| uniswap__swap_quote | Quote a Uniswap V2/V3 route | protocol | yes | no | no | - | 694 | - | none (read) |
+| uniswap__swap_execute | Execute a Uniswap V2/V3 swap | protocol | no | yes | no | - | 1442 | yes | 25 bps |
+| uniswap__swap_quote | Quote a Uniswap V2/V3 route | protocol | yes | no | no | - | 1790 | - | none (read) |
 
 ### virtuals
 

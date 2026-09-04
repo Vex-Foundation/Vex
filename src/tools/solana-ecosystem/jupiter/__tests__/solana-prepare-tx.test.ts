@@ -376,4 +376,62 @@ describe("prepareVersionedTx", () => {
     });
   });
 
+
+  /**
+   * The AUTHORITATIVE PRE-SIGN WINDOW (contract C2.6).
+   *
+   * Its whole value is WHERE it runs: after the signer and blockhash contracts
+   * hold, so the message it sees is the one that will be signed, and before any
+   * signature exists, so a refusal costs nothing. Both halves are asserted -
+   * the message it observes, and the fact that a throw leaves no signature.
+   */
+  describe("pre-sign window", () => {
+    it("runs on the FINAL message, after the blockhash is settled, and lets the signature through", async () => {
+      const seen: Array<{ blockhash: string; signer: string }> = [];
+      const tx = buildSoleSignerTx();
+
+      const prepared = await prepareVersionedTx(toBase64(tx), SIGNER, {
+        connection: makeFakeConnection(),
+        beforeSign: async ({ message, signer }) => {
+          seen.push({ blockhash: message.recentBlockhash, signer: signer.toBase58() });
+        },
+      });
+
+      // REPLACE mode swapped the blockhash BEFORE the hook ran, so the hook can
+      // price the transaction that is actually about to exist.
+      expect(seen).toEqual([{ blockhash: FRESH_BLOCKHASH, signer: SIGNER.publicKey.toBase58() }]);
+      expect(prepared.recentBlockhash).toBe(FRESH_BLOCKHASH);
+      expect(prepared.signature.length).toBeGreaterThan(0);
+    });
+
+    it("a refusal produces NO signature and NO prepared bytes", async () => {
+      const tx = buildSoleSignerTx();
+      const refusal = new VexError(ErrorCodes.SOLANA_INSUFFICIENT_BALANCE, "wallet drained since the quote");
+
+      await expect(
+        prepareVersionedTx(toBase64(tx), SIGNER, {
+          connection: makeFakeConnection(),
+          knownBlockhash: { blockhash: ORIGINAL_BLOCKHASH, lastValidBlockHeight: 1 },
+          beforeSign: async () => { throw refusal; },
+        }),
+      ).rejects.toBe(refusal);
+
+      // The caller's own copy is untouched: nothing signed it.
+      expect(tx.signatures[0]!.every((byte) => byte === 0)).toBe(true);
+    });
+
+    it("never runs when a signer contract already refused the transaction", async () => {
+      const beforeSign = vi.fn(async () => undefined);
+
+      await expect(
+        prepareVersionedTx(toBase64(buildTwoSignerTx()), SIGNER, {
+          connection: makeFakeConnection(),
+          beforeSign,
+        }),
+      ).rejects.toMatchObject({ code: ErrorCodes.SOLANA_TX_SOLE_SIGNER_VIOLATION });
+
+      expect(beforeSign).not.toHaveBeenCalled();
+    });
+  });
+
 });

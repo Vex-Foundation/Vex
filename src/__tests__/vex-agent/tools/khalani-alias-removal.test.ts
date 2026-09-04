@@ -16,7 +16,7 @@
 import { describe, expect, it } from "vitest";
 
 import { getToolDef, getAllTools } from "@vex-agent/tools/registry.js";
-import { KHALANI_INTERNAL_TO_PROTOCOL } from "@vex-agent/tools/registry/khalani.js";
+import { TOKEN_FIND_KHALANI_TOOL_ID } from "@vex-agent/tools/registry/khalani.js";
 import { getProtocolManifest, getProtocolHandler } from "@vex-agent/tools/protocols/catalog.js";
 import { TOOL_MAP_CATEGORIES } from "@vex-agent/tools/registry/tool-map.js";
 import { buildToolModelPrompt } from "@vex-agent/engine/prompts/tool-model.js";
@@ -40,7 +40,7 @@ describe("removed Khalani aliases are gone from every agent-facing surface", () 
   });
 
   it.each(REMOVED_ALIASES)("%s is not in the alias→protocol map", (alias) => {
-    expect(Object.keys(KHALANI_INTERNAL_TO_PROTOCOL)).not.toContain(alias);
+    expect(alias).not.toBe("TokenFind");
   });
 
   it.each(REMOVED_ALIASES)("%s is not offered in the Tool Map", (alias) => {
@@ -53,9 +53,10 @@ describe("removed Khalani aliases are gone from every agent-facing surface", () 
   });
 
   it("keeps TokenFind — the load-bearing one — fully wired", () => {
-    expect(KHALANI_INTERNAL_TO_PROTOCOL.TokenFind).toBe("khalani.tokens.search");
+    expect(TOKEN_FIND_KHALANI_TOOL_ID).toBe("khalani.tokens.search");
     expect(getToolDef("TokenFind")).toBeDefined();
     expect(buildToolModelPrompt()).toContain("TokenFind");
+    expect(buildToolModelPrompt()).toContain("EVM token identity router");
   });
 });
 

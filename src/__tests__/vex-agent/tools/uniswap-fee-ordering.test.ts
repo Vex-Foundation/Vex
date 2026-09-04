@@ -14,6 +14,7 @@
  */
 
 import assert from "node:assert/strict";
+import { uniswapSpendabilityFake } from "./_uniswap-spendability-fake.js";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { claimStandingInForTheParams } from "./_uniswap-approved-snapshot.js";
@@ -95,8 +96,16 @@ vi.mock("@tools/uniswap/chains.js", () => ({
   })),
 }));
 vi.mock("@tools/uniswap/evm-client.js", () => ({
-  getUniswapPublicClient: vi.fn(() => ({})),
-  getUniswapEvmClients: vi.fn(() => ({ publicClient: {}, walletClient: {} })),
+  // WP2-U: the quote and every leg's pre-sign gate read balances and price the
+  // leg plan through this client. A SOLVENT default keeps each suite's own
+  // subject the thing that decides its outcome.
+  getUniswapPublicClient: vi.fn(() => uniswapSpendabilityFake()),
+  // ACCOUNT and CHAIN are present because production's type guarantees both and
+  // the fee leg reads them to build its deferred signer (`fee/run.ts`).
+  getUniswapEvmClients: vi.fn(() => ({
+    publicClient: uniswapSpendabilityFake(),
+    walletClient: { account: { address: WALLET, type: "local" }, chain: { id: 4663 } },
+  })),
 }));
 vi.mock("@tools/uniswap/erc20.js", () => ({
   readUniswapErc20Metadata: vi.fn(async (_c: unknown, address: string) => ({
@@ -109,7 +118,12 @@ vi.mock("@tools/uniswap/quote.js", () => ({
   quoteBestRoute: (...a: unknown[]) => quoteBestRoute(...a),
   applySlippage: vi.fn((amount: bigint) => amount),
 }));
-vi.mock("@tools/uniswap/execute.js", () => ({
+// Spread over the REAL module so the refusal classes this venue throws
+// (`UniswapFeeCapExceededError`, and the final-request refusal the loop
+// re-throws by identity) are the real ones; the overrides below stay this
+// suite's own seams.
+vi.mock("@tools/uniswap/execute.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tools/uniswap/execute.js")>()),
   NATIVE_TOKEN_ADDRESS: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
   buildSwapTx: (...a: unknown[]) => buildSwapTx(...a),
   buildApproveTx: (...a: unknown[]) => buildApproveTx(...a),
@@ -221,15 +235,32 @@ function feeOutcome(kind: StagedBroadcastOutcome["kind"]): StagedBroadcastOutcom
   return { kind: "ambiguous", txHash: FEE_TX_HASH, stage: "confirm", reason: "rpc timeout" };
 }
 
+
+/**
+ * The router allowance this suite's quote saw, kept in step with what the
+ * execute's own allowance read answers: since WP2-B the execute REFUSES a leg
+ * set that is not the approved one, so `setAllowance` moves both together (a
+ * real allowance change would have come with a fresh quote).
+ */
+let currentAllowance = 10n ** 30n;
+function setAllowance(value: bigint): void {
+  currentAllowance = value;
+  readUniswapAllowance.mockResolvedValue(value);
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   claimUniswapExecutionSnapshot.mockImplementation(
-    claimStandingInForTheParams({ chainId: 4663, weth: "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73" }),
+    claimStandingInForTheParams({
+      chainId: 4663,
+      weth: "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+      currentAllowance: () => currentAllowance,
+    }),
   );
   plannedEvents = [];
   feeTxs = [];
   ensureErc20Balance.mockResolvedValue(undefined);
-  readUniswapAllowance.mockResolvedValue(10n ** 30n);
+  setAllowance(10n ** 30n);
   quoteBestRoute.mockResolvedValue({ route: { version: "v2", path: [TOKEN_IN, TOKEN_OUT], amountOut: 10n } });
   buildSwapTx.mockReturnValue({ to: "0xrouter", data: "0x", value: 0n });
   buildApproveTx.mockReturnValue({ to: "0xtoken", data: "0x", value: 0n });
@@ -497,7 +528,11 @@ describe("quote / execute parity", () => {
 
     vi.clearAllMocks();
     claimUniswapExecutionSnapshot.mockImplementation(
-      claimStandingInForTheParams({ chainId: 4663, weth: "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73" }),
+      claimStandingInForTheParams({
+      chainId: 4663,
+      weth: "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+      currentAllowance: () => currentAllowance,
+    }),
     );
     beforeEachDefaults();
     const executed = await execute(ERC20_PARAMS, context);
@@ -536,7 +571,7 @@ describe("a caller-supplied fee parameter is rejected BY NAME", () => {
 /** Re-arm the mocks the parity test clears mid-way through its own assertions. */
 function beforeEachDefaults(): void {
   ensureErc20Balance.mockResolvedValue(undefined);
-  readUniswapAllowance.mockResolvedValue(10n ** 30n);
+  setAllowance(10n ** 30n);
   quoteBestRoute.mockResolvedValue({ route: { version: "v2", path: [TOKEN_IN, TOKEN_OUT], amountOut: 10n } });
   buildSwapTx.mockReturnValue({ to: "0xrouter", data: "0x", value: 0n });
   signUniswapTransaction.mockResolvedValue({ serializedTransaction: "0xsigned", txHash: "0xswap", fromAddress: WALLET, nonce: 1 });

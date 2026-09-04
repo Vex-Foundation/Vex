@@ -13,6 +13,7 @@ import { PublicKey } from "@solana/web3.js";
 import { z } from "zod";
 
 import type { SolanaBalanceRpc } from "@tools/solana-ecosystem/balances/read-wallet-balances.js";
+import { SOLANA_NATIVE_PERSISTED_ADDRESS } from "@tools/solana-ecosystem/shared/solana-asset-identity.js";
 import type { BalanceRow } from "@vex-agent/db/repos/balances.js";
 
 import splResponse from "../../fixtures/solana/spl-response.json" with { type: "json" };
@@ -151,7 +152,7 @@ describe("syncSolanaWalletBalances", () => {
     expect(rows.every((row) => row.chainId === SOLANA_SYNTHETIC_CHAIN_ID)).toBe(true);
 
     const byAddress = new Map(rows.map((row) => [row.tokenAddress, row]));
-    expect(byAddress.get(SOL_MINT)).toMatchObject({
+    expect(byAddress.get(SOLANA_NATIVE_PERSISTED_ADDRESS)).toMatchObject({
       balanceRaw: "96740111",
       decimals: 9,
       tokenSymbol: "SOL",
@@ -265,7 +266,7 @@ describe("syncSolanaWalletBalances", () => {
     expect(mockReplaceBalancesForChain).not.toHaveBeenCalled();
   });
 
-  it("folds a wSOL token account into the native row instead of colliding on the primary key", async () => {
+  it("persists native SOL and wSOL under distinct keys without merging their balances", async () => {
     const wsolAccount: ProbeAccount = {
       pubkey: "9WSo1TokenAccountFixturePubkey1111111111111",
       account: {
@@ -286,9 +287,19 @@ describe("syncSolanaWalletBalances", () => {
       rpc: scriptedRpc({ spl: () => Promise.resolve([...accountsOf(splResponse), wsolAccount]) }),
     });
     const rows = writtenRows();
-    const solRows = rows.filter((row) => row.tokenAddress === SOL_MINT);
-    expect(solRows).toHaveLength(1);
-    expect(solRows[0]).toMatchObject({ balanceRaw: "1096740111" });
+    const native = rows.find((row) => row.tokenAddress === SOLANA_NATIVE_PERSISTED_ADDRESS);
+    const wrapped = rows.find((row) => row.tokenAddress === SOL_MINT);
+    expect(native).toMatchObject({
+      balanceRaw: "96740111",
+      tokenSymbol: "SOL",
+      tokenName: "Solana",
+    });
+    expect(wrapped).toMatchObject({
+      balanceRaw: "1000000000",
+      tokenSymbol: "wSOL",
+      tokenName: "Wrapped SOL",
+    });
+    expect(native?.tokenAddress).not.toBe(wrapped?.tokenAddress);
     expect(new Set(rows.map((row) => row.tokenAddress)).size).toBe(rows.length);
   });
 

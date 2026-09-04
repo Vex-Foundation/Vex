@@ -144,6 +144,7 @@ describe("mission schemas", () => {
       decimals: 18,
       chainId: 4663,
       assetAddress: "0x0f9f0000000000000000000000000000000000ee",
+      assetKind: "token" as const,
       assetSymbol: "VEX",
       amountHuman: "3044",
     };
@@ -159,6 +160,12 @@ describe("mission schemas", () => {
       ).toBe(true);
     });
 
+    it("accepts a null assetKind only for legacy transport", () => {
+      expect(
+        missionDeployedCapitalSchema.safeParse({ ...VALID, assetKind: null }).success,
+      ).toBe(true);
+    });
+
     it.each([
       ["a numeric amountRaw", { amountRaw: 3044 }],
       ["a non-digit amountRaw", { amountRaw: "3044.5" }],
@@ -168,6 +175,8 @@ describe("mission schemas", () => {
       ["an out-of-range decimals", { decimals: 37 }],
       ["a zero chainId", { chainId: 0 }],
       ["an over-long assetAddress", { assetAddress: "a".repeat(129) }],
+      ["an absent assetKind", { assetKind: undefined }],
+      ["an invalid assetKind", { assetKind: "wrapped" }],
       ["a symbol outside the ticker charset", { assetSymbol: "VE X" }],
       ["a symbol with a newline", { assetSymbol: "VEX\ninjected" }],
       ["an over-long symbol", { assetSymbol: "V".repeat(33) }],

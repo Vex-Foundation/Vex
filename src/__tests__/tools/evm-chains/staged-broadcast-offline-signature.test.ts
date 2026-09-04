@@ -208,3 +208,109 @@ describe("the deferred arm signs OFFLINE - no provider call after the fence", ()
     expect(state.methods).toEqual([]);
   });
 });
+
+/**
+ * THE ORDERING THE MONEY PATH DEPENDS ON: the last pre-sign callback MAY read
+ * the chain, and after it resolves nothing may.
+ *
+ * The authoritative debit read belongs in this window and nowhere earlier
+ * (contract C2.6): only here is the transaction that will be signed already
+ * fixed. What must not exist is a provider call AFTER the callback, because a
+ * balance validated at the end of the callback has to still be the balance the
+ * bytes commit to.
+ *
+ * The two arms differ, and both are pinned so the difference cannot widen
+ * unnoticed:
+ *   - the DEFERRED arm signs offline, so the window is EMPTY;
+ *   - the EAGER arm goes through viem's wallet action, which awaits one
+ *     `eth_chainId` of its own (viem 2.54.3). That single round trip belongs to
+ *     viem, not to any Vex gate, and it is the whole residual.
+ */
+describe("the last pre-sign callback may read the chain; nothing after it may", () => {
+  function hooksWith(onBeforeSign: () => Promise<void>) {
+    return {
+      onNonceReserved: vi.fn(async (request: { nodePendingNonce: number }) => request.nodePendingNonce),
+      onHashStaged: vi.fn(async () => undefined),
+      onAccepted: vi.fn(async () => undefined),
+      onBeforeSign: vi.fn(onBeforeSign),
+    };
+  }
+
+  it("deferred: the hook's own reads are allowed and the window after it is EMPTY", async () => {
+    const state = { armed: false, methods: [] as string[] };
+    const publicClient = fakePublicClient();
+    const walletClient = createWalletClient({
+      account: ACCOUNT,
+      chain: TEST_CHAIN,
+      transport: throwingTransport(state),
+    });
+    const order: string[] = [];
+    // The authoritative read the venue adapters will do here. It is a REAL
+    // await inside the hook, so if the fence were placed before the hook rather
+    // than after it, this call would be the failure instead of the proof.
+    const authoritativeRead = vi.fn(async () => {
+      order.push("authoritative-read");
+      return 10n ** 18n;
+    });
+    const hooks = hooksWith(async () => {
+      await authoritativeRead();
+      order.push("gate-resolved");
+      state.armed = true;
+    });
+    const signer: DeferredEvmSigner = {
+      kind: "deferred",
+      address: ACCOUNT.address,
+      chain: TEST_CHAIN,
+      onBeforeSign: async () => {
+        order.push("authority-fence");
+      },
+      createSigner: async () => walletClient,
+    };
+
+    const outcome = await signStageBroadcast(publicClient, signer, { to: TO, data: "0x" }, hooks);
+
+    expect(outcome.kind).toBe("confirmed");
+    expect(hooks.onBeforeSign).toHaveBeenCalledTimes(1);
+    expect(authoritativeRead).toHaveBeenCalledTimes(1);
+    // The authority fence, then the key, then the caller's debit gate, then the
+    // signature - and nothing at all on the wire after the gate.
+    expect(order).toEqual(["authority-fence", "authoritative-read", "gate-resolved"]);
+    expect(state.methods).toEqual([]);
+    expect(publicClient.sendRawTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("eager: the only traffic after the gate is viem's own chain-identity read", async () => {
+    const state = { armed: false, methods: [] as string[] };
+    const publicClient = fakePublicClient();
+    // A PERMISSIVE recording transport: the point here is to COUNT what happens
+    // after the gate, not to forbid it, so the eager arm can complete and the
+    // residual can be named exactly.
+    const walletClient = Object.assign(
+      createWalletClient({
+        account: ACCOUNT,
+        chain: TEST_CHAIN,
+        transport: custom({
+          request: async ({ method }: { method: string }) => {
+            if (state.armed) state.methods.push(method);
+            if (method === "eth_chainId") return `0x${TEST_CHAIN.id.toString(16)}`;
+            throw new Error(`unexpected provider call: ${method}`);
+          },
+        }),
+      }),
+      // Preparation is not what is under test here, and on the eager arm it runs
+      // on the WALLET client; stubbing it keeps the recording transport a
+      // measurement of the post-gate window only.
+      { prepareTransactionRequest: vi.fn(async () => preparedRequest()) },
+    );
+    const hooks = hooksWith(async () => {
+      state.armed = true;
+    });
+
+    const outcome = await signStageBroadcast(publicClient, walletClient, { to: TO, data: "0x" }, hooks);
+
+    expect(outcome.kind).toBe("confirmed");
+    // Exactly one, and it is viem's, not ours. A second entry here means Vex
+    // grew a call in the window a pre-sign balance read must be able to trust.
+    expect(state.methods).toEqual(["eth_chainId"]);
+  });
+});

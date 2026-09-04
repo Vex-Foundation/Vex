@@ -23,7 +23,22 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { approvedClaim } from "../../../kyberswap/fixtures/route-build/approved-quote.js";
+import {
+  approvedClaim,
+  legsForAllowancePlan,
+} from "../../../kyberswap/fixtures/route-build/approved-quote.js";
+
+/**
+ * The transaction set the claimed quote bound, kept in step with whatever this
+ * suite's allowance mock answers: since WP2-B an execute whose leg set is not
+ * the approved one is refused, so `planAllowance` moves both together (a real
+ * change of allowance would have come with a fresh quote).
+ */
+let approvedLegs = legsForAllowancePlan({ needsReset: false, needsApprove: false });
+function planAllowance(plan: { needsReset: boolean; needsApprove: boolean }): void {
+  mockPlanKyberAllowance.mockResolvedValue(plan);
+  approvedLegs = legsForAllowancePlan(plan);
+}
 import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
@@ -52,8 +67,8 @@ const mockReadErc20Metadata = vi.fn(async (_slug: string, address: string) => ({
 const mockPlanKyberAllowance = vi.fn();
 const mockSignStageBroadcast = vi.fn();
 
-vi.mock("@tools/kyberswap/evm-utils.js", () => ({
-  getKyberEvmClients: () => ({ publicClient: {}, walletClient: {} }),
+vi.mock("@tools/kyberswap/evm-utils.js", async () => ({
+  ...(await import("./evm-client.test-fixtures.js")).kyberEvmClientMocks(),
   readErc20Metadata: (...args: [string, string]) => mockReadErc20Metadata(...args),
   verifyRouterAddress: vi.fn(),
   planKyberAllowance: (...args: unknown[]) => mockPlanKyberAllowance(...args),
@@ -156,7 +171,7 @@ beforeEach(() => {
   mockReadErc20Metadata.mockImplementation(async (_slug: string, address: string) => ({
     address, symbol: "TKN", name: "Token", decimals: 18, isNative: false as const,
   }));
-  mockPlanKyberAllowance.mockResolvedValue({ needsReset: false, needsApprove: false });
+  planAllowance({ needsReset: false, needsApprove: false });
   const routeResponse = {
     data: {
       routeSummary: {
@@ -174,6 +189,7 @@ beforeEach(() => {
       approvedClaim(
         routeResponse.data.routeSummary,
         typeof params.slippageBps === "number" ? params.slippageBps : VEX_DEFAULT_SLIPPAGE_BPS,
+        { legs: approvedLegs },
       ),
   );
   mockBuildRoute.mockResolvedValue({
@@ -183,6 +199,9 @@ beforeEach(() => {
         srcToken: TOKEN_A, dstToken: TOKEN_B, dstReceiver: SESSION_EVM.address,
         amountIn: 10n ** 18n, quotedNetOutRaw: "999000", slippageBps: 50,
       }),
+      // The provider's own gas figure for the swap leg. MEASURED live on Base
+      // 2026-08-31: `/route/build` answered `gas: "287581"` for a real USDC route.
+      gas: "287581",
       transactionValue: "0",
       amountIn: "1000000", amountOut: "999000",
       amountInUsd: "1", amountOutUsd: "1", gasUsd: "0.1",
@@ -223,7 +242,7 @@ describe("kyberswap.swap.execute — the SWAP leg's mined-revert reason", () => 
 describe("kyberswap.swap.execute — an APPROVE leg's mined-revert reason is not the swap's", () => {
   beforeEach(() => {
     // A USDT-style reset-then-approve plan: allowance_reset, allowance, swap.
-    mockPlanKyberAllowance.mockResolvedValue({ needsReset: true, needsApprove: true });
+    planAllowance({ needsReset: true, needsApprove: true });
     mockCreateAgentActivityIntent.mockResolvedValue({
       executionId: 215, events: [{ id: 200 }, { id: 201 }, { id: 202 }],
     });

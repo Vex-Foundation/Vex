@@ -99,6 +99,7 @@ import {
   SCREEN_LIMIT_MAX,
   SCREEN_LIMIT_MIN,
 } from "../manifests/screen-params.js";
+import { liquidityInterpretation } from "./liquidity-interpretation.js";
 
 /** The deadline one provider page gets. The channels answer in well under this. */
 const SCREEN_TIMEOUT_MS = 20_000;
@@ -758,6 +759,18 @@ async function runBoard(
 
   return ok({
     ...envelope,
+    /*
+     * THE CAUSAL QUALIFIER, ONCE, AT THE ENVELOPE.
+     *
+     * Every row here carries a `liquidityUsd`, and every one of them is a
+     * price mark of that pool's reserves rather than a deposit ledger. The
+     * statement is about what the FIELD means and does not vary per row, so it
+     * is stated once instead of being copied onto each row.
+     */
+    liquidityInterpretation: liquidityInterpretation({
+      appliesTo: "every_row_in_this_answer",
+      reserves: null,
+    }),
     // Set here rather than inside `buildScreenEnvelope`, whose input contract
     // is owned by the client layer: the sanitization happens at shaping time,
     // so the shaping layer is what knows which field paths were touched.

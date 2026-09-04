@@ -30,10 +30,20 @@ import {
   renderQuoteBinding,
   type QuoteBindingPreview,
 } from "../../tools/protocols/quote-authority/restore.js";
+import { renderSpendability } from "../../tools/protocols/quote-authority/spendability.js";
 import type { JupiterFeePreview } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/fee-swap.js";
 import type { LendBorrowRiskPreview } from "@tools/solana-ecosystem/jupiter/jupiter-lend/borrow-api/risk-preview-types.js";
 import { formatLamportsAsSol } from "@vex-agent/tools/protocols/amount-display.js";
 import { describeApprovalVexFee } from "./approval-vex-fee.js";
+import type { ToolResult } from "../../tools/types.js";
+
+type ApprovalBridgeTokenPreview = NonNullable<
+  NonNullable<ToolResult["prequote"]>["bridgeTokenPreview"]
+>;
+
+type ApprovalSpendabilityPreview = NonNullable<
+  NonNullable<ToolResult["prequote"]>["spendability"]
+>;
 
 /**
  * Allow-list of `tool_call.arguments` keys eligible for the preview
@@ -200,6 +210,19 @@ export interface IntentPreviewExtras {
    * refuses it rather than confirming a line whose meaning has changed.
    */
   quoteBinding?: QuoteBindingPreview;
+  /**
+   * What the wallet could pay when the matched quote was taken (WP2). Sourced
+   * ONLY from the matched prequote's persisted `safetyDetail` (NOT raw args -
+   * `spendability` is deliberately NOT in PREVIEW_KEY_ALLOWLIST), so the
+   * Required / Current figures on the card are the store's figures.
+   *
+   * Rendered into `criticalArgs.spendability`. The line states that the numbers
+   * are quote-time and are re-read before signing, because a person reading a
+   * balance on a card has no other way to know how old it is.
+   */
+  spendability?: ApprovalSpendabilityPreview;
+  /** Direct EVM bridge token identity, sourced by the gate rather than args. */
+  bridgeTokenPreview?: ApprovalBridgeTokenPreview;
 }
 
 /** Render a swap safety verdict for the approval preview's `criticalArgs.safety`. */
@@ -351,6 +374,24 @@ export function buildIntentPreview(
     criticalArgs.quoteBinding = renderQuoteBinding(extras.quoteBinding);
   }
 
+  // WP2: what the wallet could pay when the quote was taken. Rendered next to
+  // the quote binding, because the two answer the two halves of "is this trade
+  // real": what it promises, and whether it can be funded.
+  if (extras?.spendability !== undefined) {
+    criticalArgs.spendability = renderSpendability(extras.spendability);
+  }
+
+  if (extras?.bridgeTokenPreview !== undefined) {
+    const preview = extras.bridgeTokenPreview;
+    criticalArgs.bridgeSourceAsset = renderBridgeAsset(preview.source);
+    criticalArgs.bridgeDestinationAsset = renderBridgeAsset(preview.destination);
+    criticalArgs.bridgeAmount = preview.amountHuman !== null
+      ? `${preview.amountHuman} ${preview.source.symbol} | ${preview.amountRaw} raw units | ${preview.source.decimals} decimals`
+      : preview.source.kind === "metadata_unavailable"
+        ? `${preview.amountRaw} raw units | human amount unavailable because source contract decimals could not be read | signing blocked`
+        : `${preview.amountRaw} raw units; human amount unavailable on this non-EVM source lane`;
+  }
+
   if (extras?.termLock !== undefined) {
     const ms = Date.parse(extras.termLock.maturityIso);
     if (Number.isFinite(ms)) {
@@ -439,6 +480,19 @@ export function buildIntentPreview(
     preview.namespace = namespace;
   }
   return preview;
+}
+
+function renderBridgeAsset(
+  asset: ApprovalBridgeTokenPreview["source"],
+): string {
+  if (asset.family === "solana") {
+    return `Solana chain ${asset.chainId} | mint ${asset.tokenAddress} | EVM contract metadata not applicable`;
+  }
+  if (asset.kind === "metadata_unavailable") {
+    return `EVM chain ${asset.chainId} | token ${asset.tokenAddress} | metadata unavailable (${asset.metadataErrorCode ?? "contract_metadata_unavailable"}) | ${asset.metadataSource} | signing blocked until authoritative symbol and decimals are available`;
+  }
+  const sanitized = asset.symbolSanitized ? " | invisible control characters removed" : "";
+  return `EVM chain ${asset.chainId} | ${asset.kind} ${asset.tokenAddress} | ${asset.symbol} | ${asset.decimals} decimals | ${asset.metadataSource}${sanitized}`;
 }
 
 export interface PolicySnapshot {
