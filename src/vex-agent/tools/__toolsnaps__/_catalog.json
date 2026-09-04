@@ -184,6 +184,8 @@
     "virtuals.get",
     "virtuals.graduations",
     "virtuals.list",
+    "virtuals.trade.execute",
+    "virtuals.trade.quote",
     "virtuals.trades"
   ],
   "requiresEnvGates": [

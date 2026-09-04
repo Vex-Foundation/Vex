@@ -1,7 +1,7 @@
 {
   "version": "virtuals-v1",
   "namespace": "virtuals",
-  "description": "Retrieval-verification dataset for the virtuals namespace: read-only agent-token screening, single-agent detail, the graduation feed, the genesis sale calendar, the bonding-curve trade tape and pool price candles. Blind rows describe the research outcome without naming the brand; protocol-aware rows name it.",
+  "description": "Retrieval-verification dataset for the virtuals namespace: read-only agent-token screening, single-agent detail, the graduation feed, the genesis sale calendar, the bonding-curve trade tape, pool price candles, and (PR-C2) the two bonding-curve TRADE tools. Blind rows describe the outcome without naming the brand; protocol-aware rows name it. The trade rows deliberately separate PRICING from SIGNING: an agent that asks what something would cost must reach the quote, and one that says buy must reach the execute, so a row that reaches the wrong half is a retrieval defect and not a near miss.",
   "queries": [
     {
       "query": "screen agent tokens on Robinhood Chain by market cap and tell me which ones already left the bonding curve",
@@ -298,6 +298,150 @@
       "expectedCoverageGroups": [
         [
           "virtuals.candles"
+        ]
+      ]
+    },
+    {
+      "query": "what would half a VIRTUAL buy me of this agent token that is still on its bonding curve",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "virtuals.trade.quote"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "virtuals.trade.quote"
+        ]
+      ]
+    },
+    {
+      "query": "price selling my agent tokens back to the bonding curve before I commit to anything",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "virtuals.trade.quote"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "virtuals.trade.quote"
+        ]
+      ]
+    },
+    {
+      "query": "is the anti-sniper tax still active on this launch and how much would it take right now",
+      "awareness": "blind",
+      "scenario": "token_safety",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "virtuals.trade.quote"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "virtuals.trade.quote"
+        ]
+      ]
+    },
+    {
+      "query": "quote a virtuals bonding curve buy on base and show me the floor the contract will enforce",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "virtuals.trade.quote"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "virtuals.trade.quote"
+        ]
+      ]
+    },
+    {
+      "query": "virtuals agent trade quote for a sell on robinhood chain",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "virtuals.trade.quote"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "virtuals.trade.quote"
+        ]
+      ]
+    },
+    {
+      "query": "buy into this agent that has not graduated yet, using the quote I just took",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "virtuals.trade.execute"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "virtuals.trade.execute"
+        ]
+      ]
+    },
+    {
+      "query": "sell my agent tokens back to the bonding curve now",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "virtuals.trade.execute"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "virtuals.trade.execute"
+        ]
+      ]
+    },
+    {
+      "query": "execute the virtuals curve trade I just quoted",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "virtuals.trade.execute"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "virtuals.trade.execute"
+        ]
+      ]
+    },
+    {
+      "query": "ape into this virtuals launch on base with one VIRTUAL",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "virtuals.trade.execute"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "virtuals.trade.execute"
+        ]
+      ]
+    },
+    {
+      "query": "price and then buy this virtuals agent token on its bonding curve",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "workflow",
+      "expectedToolIds": [
+        "virtuals.trade.quote",
+        "virtuals.trade.execute"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "virtuals.trade.quote"
+        ],
+        [
+          "virtuals.trade.execute"
         ]
       ]
     }

@@ -4,7 +4,7 @@
   "datasetId": "tool-discovery-pools",
   "datasetVersion": "pools-v1",
   "status": "captured",
-  "capturedAt": "2026-09-04T18:02:21.200Z",
+  "capturedAt": "2026-09-04T20:59:07.486Z",
   "metrics": {
     "overall": {
       "count": 19,

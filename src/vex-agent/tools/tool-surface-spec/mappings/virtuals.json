@@ -30,6 +30,16 @@
       "toolId": "virtuals.candles",
       "publicName": "virtuals__agent_candles_list",
       "rationale": "Same shape as the trades read: one agent's OHLCV history, listed with a bound and a backwards cursor. `candles` is the term every other price-history tool in the tree uses (pools ohlcv, dexscreener bars), so the noun stays consistent across namespaces."
+    },
+    {
+      "toolId": "virtuals.trade.quote",
+      "publicName": "virtuals__agent_trade_quote",
+      "rationale": "Names the resource and the operation, by FAMILY rather than by chain or side. One curve surface serves base and robinhood and both directions, so `agent_trade` is the resource and `quote` the canonical read verb - the same pairing every other venue uses for the priced half of a two-step trade."
+    },
+    {
+      "toolId": "virtuals.trade.execute",
+      "publicName": "virtuals__agent_trade_execute",
+      "rationale": "The signing half of the same pair, under the canonical `execute` verb. Deliberately NOT split into buy/sell tools: the side is a parameter the prequote identity binds, and two tools would double the surface while making a buy quote look able to authorize a sell execute."
     }
   ]
 }

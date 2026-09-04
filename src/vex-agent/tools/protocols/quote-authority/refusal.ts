@@ -65,6 +65,7 @@ const REFUSAL_CAUSE: Record<SnapshotRefusalKind, string> = {
 /** The quote tool a refusal points the agent back at, per venue. */
 export const KYBER_FRESH_QUOTE_TOOL = "kyberswap__swap_quote";
 export const UNISWAP_FRESH_QUOTE_TOOL = "uniswap__swap_quote";
+export const VIRTUALS_FRESH_QUOTE_TOOL = "virtuals__agent_trade_quote";
 
 /**
  * Build the typed refusal. One sentence shape: what happened, then what to do.

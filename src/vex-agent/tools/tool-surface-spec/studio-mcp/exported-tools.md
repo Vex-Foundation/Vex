@@ -43,12 +43,12 @@ free. Both texts live on the tool
 
 ## Totals
 
-- exported tools: 169
+- exported tools: 171
 - internal: 27
-- protocol: 142 across 11 namespaces
+- protocol: 144 across 11 namespaces
 - always loaded: 27
-- read-only: 111
-- destructive: 50
+- read-only: 112
+- destructive: 51
 
 ## Internal tools
 
@@ -276,6 +276,8 @@ free. Both texts live on the tool
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | virtuals__agent_candles_list | Read a Virtuals agent's price candles | protocol | yes | no | no | - | 1611 | - | none (read) |
 | virtuals__agent_get | Read one Virtuals agent token | protocol | yes | no | no | - | 1365 | - | none (read) |
+| virtuals__agent_trade_execute | Trade a Virtuals agent on its bonding curve | protocol | no | yes | no | - | 1524 | - | - |
+| virtuals__agent_trade_quote | Price a Virtuals bonding-curve trade | protocol | yes | no | no | - | 1576 | - | none (read) |
 | virtuals__agent_trades_list | Read a Virtuals agent's curve trade tape | protocol | yes | no | no | - | 1331 | - | none (read) |
 | virtuals__agents_discover | Screen Virtuals agent tokens | protocol | yes | no | no | - | 2039 | - | none (read) |
 | virtuals__genesis_launches_list | Browse the Virtuals Genesis calendar | protocol | yes | no | no | - | 1291 | - | none (read) |

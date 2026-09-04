@@ -27,11 +27,15 @@ import {
   snapshotRefusal,
   type SnapshotRefusal,
 } from "../quote-authority/restore.js";
-import { UNISWAP_FRESH_QUOTE_TOOL } from "../quote-authority/refusal.js";
+import { UNISWAP_FRESH_QUOTE_TOOL, VIRTUALS_FRESH_QUOTE_TOOL } from "../quote-authority/refusal.js";
 import {
   restoreUniswapSnapshot,
   type UniswapExecutionSnapshot,
 } from "../quote-authority/uniswap.js";
+import {
+  restoreVirtualsSnapshot,
+  type VirtualsExecutionSnapshot,
+} from "../quote-authority/virtuals.js";
 import type { RouteSnapshot } from "../quote-authority/snapshot.js";
 import { EXECUTE_GATE_TOOLS } from "./registry.js";
 import { vexFeeFromSafetyDetail, type VexFeePreview } from "./fee-disclosure.js";
@@ -316,4 +320,64 @@ function sameInstant(a: string, b: string): boolean {
   const left = Date.parse(a);
   const right = Date.parse(b);
   return Number.isFinite(left) && Number.isFinite(right) && left === right;
+}
+
+export type ClaimedVirtualsSnapshot =
+  | {
+      readonly ok: true;
+      readonly prequoteId: string;
+      readonly snapshot: VirtualsExecutionSnapshot;
+      /**
+       * The Vex fee statement the CLAIMED row carries, when the venue puts one
+       * on this channel. Virtuals does not: its SELL fee is a rate on proceeds
+       * that do not exist until settlement, which the `currency_in` block cannot
+       * express, so the fee is bound INSIDE the execution snapshot instead and
+       * `compareVirtualsExecutionInputs` is what holds the signature to it.
+       */
+      readonly vexFee: VexFeePreview | undefined;
+    }
+  | { readonly ok: false; readonly refusal: SnapshotRefusal };
+
+/**
+ * Claim the approved Virtuals curve quote for exactly one execute.
+ *
+ * The row lifecycle is the shared one - one quote, one execute, newest wins,
+ * bound to the approved `prequote_id` whenever a human approved a card. What
+ * differs is only what a restored snapshot MEANS here: the contracts and their
+ * implementations, the side, the amounts, the fee, the taxes, the accepted
+ * anti-sniper bound and the floor the locally built calldata must carry.
+ */
+export async function claimVirtualsExecutionSnapshot(
+  toolId: string,
+  sessionId: string,
+  params: Record<string, unknown>,
+  context: ProtocolExecutionContext,
+  claimedBy: string,
+): Promise<ClaimedVirtualsSnapshot> {
+  const claimed = await claimPrequoteRow(
+    toolId, sessionId, params, context, claimedBy, VIRTUALS_FRESH_QUOTE_TOOL,
+  );
+  if (!claimed.ok) return { ok: false, refusal: claimed.refusal };
+
+  const restored = restoreVirtualsSnapshot(claimed.routeRef);
+  if (!restored.ok) return { ok: false, refusal: restored.refusal };
+  const bound = boundSnapshotRefusal(
+    context,
+    {
+      digest: restored.snapshot.digest,
+      // The APPROVED FLOOR on this venue is the contract floor - the
+      // `amountOutMin_` the chain enforces - so that is what the card stated and
+      // what the binding is re-checked against.
+      approvedMinOutRaw: restored.snapshot.contractFloorRaw,
+      expiresAt: claimed.expiresAt,
+    },
+    VIRTUALS_FRESH_QUOTE_TOOL,
+  );
+  if (bound !== null) return { ok: false, refusal: bound };
+  return {
+    ok: true,
+    prequoteId: claimed.prequoteId,
+    snapshot: restored.snapshot,
+    vexFee: claimed.vexFee,
+  };
 }
