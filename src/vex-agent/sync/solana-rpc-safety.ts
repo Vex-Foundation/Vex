@@ -149,6 +149,14 @@ function isPrivateIpv6(host: string): boolean {
  * that pass {@link isSsrfSafeRpcUrl}. De-duplicated, order preserved. An empty
  * result means "no safe RPC" — the caller reports unverifiable and the row
  * stays pending (fail-closed).
+ *
+ * THE ONE ORDERING OWNER. Callers grow the CANDIDATE SET, never add a second
+ * selector: the bridge verifier's `resolveVerificationRpcs` puts the user's own
+ * RPC overrides and the local chain registry in `curated` (the app's own
+ * configuration, used as configured) and the Khalani, Relay and viem-bundled
+ * chain registries in `providerRegistry` (untrusted, SSRF-filtered here), and
+ * each bucket keeps its internal order. Two registries naming the same endpoint
+ * cost one probe, not two.
  */
 export function selectVerificationRpcUrls(input: {
   readonly curated: readonly string[];

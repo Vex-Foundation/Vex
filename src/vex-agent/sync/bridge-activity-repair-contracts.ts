@@ -173,7 +173,13 @@ export interface FillVerificationInput {
   /** The chain the leg MUST have executed on (fill → stored destination; refund → stored origin). */
   readonly expectedChainId: number;
   readonly chainFamily: BridgeChainFamily;
-  /** The owning protocol — selects the RIGHT provider registry for RPC selection (relay `/chains` vs khalani `/v1/chains`). */
+  /**
+   * The owning protocol. It selects the provider registry for a NON-EVM
+   * destination (relay `/chains` vs khalani `/v1/chains`); an EVM destination
+   * consults every registry the app trusts for that chain id, because whose
+   * registry lists an endpoint says nothing about whether it can answer for the
+   * chain (see `resolveVerificationRpcs`).
+   */
   readonly protocol: string;
   /** Stored destination token — executed amounts are trusted ONLY if transfer evidence decodes against it. */
   readonly tokenOutAddress: string | null;

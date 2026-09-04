@@ -446,6 +446,23 @@ describe("selectVerificationRpcUrls — curated first, SSRF-filtered fallback", 
     expect(result).toEqual(["https://shared.example", "https://other.example"]);
   });
 
+  it("keeps the five candidate sources in their fixed order and probes a shared endpoint once", () => {
+    // The buckets the bridge verifier fills: `curated` = the user's own override
+    // then the local registry (the app's own config, used as configured);
+    // `providerRegistry` = Khalani, Relay, then viem's bundled default (untrusted,
+    // SSRF-filtered). Khalani and viem naming the same endpoint costs one probe.
+    const result = selectVerificationRpcUrls({
+      curated: ["https://mine.example", "https://local.example"],
+      providerRegistry: ["https://arb1.arbitrum.io/rpc", "https://arbitrum-one.publicnode.com", "https://arb1.arbitrum.io/rpc"],
+    });
+    expect(result).toEqual([
+      "https://mine.example",
+      "https://local.example",
+      "https://arb1.arbitrum.io/rpc",
+      "https://arbitrum-one.publicnode.com",
+    ]);
+  });
+
   it("returns [] when nothing is safe (fail-closed → verifier reports unverifiable)", () => {
     expect(selectVerificationRpcUrls({ curated: [], providerRegistry: ["http://x.local", "https://10.0.0.1"] })).toEqual([]);
   });

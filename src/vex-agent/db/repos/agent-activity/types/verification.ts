@@ -100,11 +100,21 @@ export const VERIFICATION_REASONS = [
   "unreadable_transaction_meta",
   "no_blockhash_evidence",
   "block_height_unavailable",
-  // ── The bridge verifier's four-way split of the old `receipt_unavailable` ──
+  // ── The bridge verifier's five-way split of the old `receipt_unavailable` ──
   /** An endpoint echoed the right chain and answered "no receipt yet" — WAIT. */
   "fill_not_mined",
   /** No endpoint ever answered — we cannot see this chain at all. */
   "rpc_unreachable",
+  /**
+   * An endpoint ANSWERED and REFUSED the request: a JSON-RPC error response,
+   * not a transport failure. Measured origin (owner's install, 2026-09-04): a
+   * public endpoint served `eth_chainId` for Arbitrum One and returned
+   * `-32602 archive request` for a month-old receipt. That is a statement about
+   * THIS ENDPOINT, not about the chain, and calling it `rpc_unreachable` is what
+   * let a row re-probe the same refusing URL 1227 times. Surfaces must say "an
+   * endpoint refused the request", never "chain unreachable".
+   */
+  "rpc_refused_request",
   /** Every endpoint answered `eth_chainId` with a different chain than the one we need. */
   "chain_echo_mismatch",
   /**
