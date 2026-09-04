@@ -13,6 +13,11 @@
  * FIRST so it survives the agent-facing length cap, and the HTTP status is
  * preserved onto the error so the shared contract classifies from the status.
  *
+ * REFERRER GATE: the `referrer` attribution field is sent on a quote ONLY when
+ * an API key is configured. Measured 2026-09-04: Relay answers 401
+ * UNAUTHORIZED_QUOTE to a keyless quote body that carries one, and 200 to the
+ * same body without it. Details on `RELAY_REFERRER`.
+ *
  * QUOTE MIGRATION (Wave-2 W2): quotes go to `POST /quote/v2` — v1 `POST /quote`
  * is deprecated. v2 adds a top-level `requestId` and per-side USD under
  * `details{}`; the step/status shapes are unchanged, so this is endpoint-path +
@@ -46,7 +51,29 @@ function relayApiKey(): string | undefined {
   return key !== undefined && key.length > 0 ? key : undefined;
 }
 
-/** Relay integration-attribution identifier, sent as `referrer` on every quote. */
+/**
+ * Relay integration-attribution identifier, sent as `referrer` ONLY on a keyed
+ * quote.
+ *
+ * MEASURED 2026-09-04, `POST https://api.relay.link/quote/v2`, two independent
+ * captures (one of them through the real `relay.quote.get` handler): a body
+ * carrying `referrer: "vex"` with no `x-api-key` answers HTTP 401
+ * `{"message":"Please provide an api key","errorCode":"UNAUTHORIZED_QUOTE"}`,
+ * while the byte-identical body WITHOUT `referrer` answers HTTP 200. Relay
+ * treats the field as a registered-integration claim, so an unauthenticated
+ * caller may not make it.
+ *
+ * Relay documents `referrer` only as attribution: the webhook payload "echoes
+ * the value supplied on the originating quote request, or `null` if no referrer
+ * was provided" (docs.relay.link, API Guides > Webhooks), and the key page
+ * calls the key "Optional API key for authentication and higher rate limits"
+ * (docs.relay.link, References > API > Rate Limits and API keys). Nothing Vex
+ * depends on rides on it: the Vex fee is a SEPARATE transfer, never Relay's
+ * `appFees`, and the prequote identity hash binds `referrer` as a stable empty
+ * for Relay (see prequote/identity/relay-bridge.ts). Dropping it keyless
+ * therefore costs attribution on keyless deployments and nothing else, while
+ * keeping it would cost the quote itself.
+ */
 const RELAY_REFERRER = "vex";
 
 /**
@@ -170,19 +197,29 @@ export class RelayClient {
   private async request<T>(
     path: string,
     validate: (raw: unknown) => T,
-    options: { method?: "GET" | "POST"; query?: Record<string, string | undefined>; body?: unknown } = {},
+    options: {
+      method?: "GET" | "POST";
+      query?: Record<string, string | undefined>;
+      /**
+       * Built FROM the same per-request key read that fills `x-api-key`, so a
+       * key-gated body field (see `RELAY_REFERRER`) can never disagree with the
+       * header that authorizes it.
+       */
+      body?: (keyed: boolean) => unknown;
+    } = {},
   ): Promise<T> {
     try {
       const apiKey = relayApiKey();
+      const body = options.body === undefined ? undefined : options.body(apiKey !== undefined);
       const headers: Record<string, string> = {
-        ...(options.body === undefined ? {} : { "Content-Type": "application/json" }),
+        ...(body === undefined ? {} : { "Content-Type": "application/json" }),
         ...(apiKey === undefined ? {} : { "x-api-key": apiKey }),
       };
       const response = await fetchWithTimeout(this.url(path, options.query), {
         method: options.method ?? "GET",
         timeoutMs: REQUEST_TIMEOUT_MS,
         headers: Object.keys(headers).length === 0 ? undefined : headers,
-        body: options.body === undefined ? undefined : JSON.stringify(options.body),
+        body: body === undefined ? undefined : JSON.stringify(body),
       });
       if (!response.ok) {
         throw relayHttpError(response.status, await readErrorBody(response), apiKey !== undefined);
@@ -203,10 +240,13 @@ export class RelayClient {
       method: "POST",
       // `referrer` is Relay's integration-attribution field (their 2026-07-30
       // request): a constant identifier recorded against the quote and the
-      // resulting transaction. Attribution only — it is NOT an app fee and
-      // never a caller/model input, so it is injected here, transport-side,
-      // on EVERY quote rather than trusted to each caller.
-      body: { ...request, referrer: RELAY_REFERRER },
+      // resulting transaction. Attribution only, never an app fee and never a
+      // caller/model input, so it stays transport-injected rather than trusted
+      // to each caller. It rides ONLY on a keyed request: Relay answers 401
+      // UNAUTHORIZED_QUOTE to a keyless body that claims a referrer, so a
+      // keyless deployment would otherwise get no bridge quote at all. See
+      // `RELAY_REFERRER` for the measurement.
+      body: (keyed) => (keyed ? { ...request, referrer: RELAY_REFERRER } : request),
     });
   }
 

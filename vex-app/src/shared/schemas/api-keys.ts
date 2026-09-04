@@ -8,9 +8,14 @@
  *     to show the form at all).
  *   - TAVILY_API_KEY (optional)
  *   - RETTIWT_API_KEY (optional)
- *   - RELAY_API_KEY (optional) — bridging works fully WITHOUT it; a key only
- *     raises Relay's rate limits. It is deliberately not a tool prerequisite,
- *     so no relay manifest declares it as a required env.
+ *   - RELAY_API_KEY (optional) - bridging works WITHOUT it: a key raises
+ *     Relay's per-key rate limits and, measured 2026-09-04 against
+ *     `POST api.relay.link/quote/v2`, is what lets a quote carry Relay's
+ *     `referrer` attribution field (a keyless body claiming one is answered
+ *     401 UNAUTHORIZED_QUOTE, so keyless quotes are sent without it - see
+ *     `src/tools/relay/client.ts`). Attribution is the only thing a keyless
+ *     deployment gives up; it is deliberately not a tool prerequisite, so no
+ *     relay manifest declares it as a required env.
  */
 
 import { z } from "zod";
