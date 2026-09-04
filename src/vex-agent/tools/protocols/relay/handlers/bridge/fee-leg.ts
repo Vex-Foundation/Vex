@@ -14,11 +14,18 @@
 
 import {
   BRIDGE_FEE_RECEIVER_EVM,
+  bridgeFeeStatementChangedMessage,
   buildBridgeFeeDisclosure,
   buildBridgeFeeSkippedDisclosure,
   buildEvmBridgeFeeTransfer,
+  checkBridgeFeeStatementUnchanged,
+  missingBridgeFeeStatementMessage,
+  unauthorizedBridgeQuoteMessage,
+  VEX_FEE_STATEMENT_CHANGED_REASON,
+  VEX_FEE_STATEMENT_MISSING_REASON,
   type BridgeFeeDisclosure,
 } from "@tools/bridge-fee/index.js";
+import { findFreshMatchedPrequote } from "@vex-agent/tools/protocols/prequote/gate.js";
 import type { RelayQuoteSide } from "@tools/relay/quote.js";
 import type { RelayStepClients } from "@tools/relay/execute.js";
 import { signStageBroadcast } from "@tools/kyberswap/evm/staged-broadcast.js";
@@ -35,6 +42,8 @@ import logger from "@utils/logger.js";
 import { relayFeeUsdEstimate } from "../bridge-output.js";
 import type { OriginBroadcast } from "./broadcast.js";
 import type { RelayLegs } from "./legs.js";
+import { BRIDGE_TOOL_ID } from "./constants.js";
+import type { ProtocolExecutionContext } from "../../../types.js";
 import type { FeeNotTaken } from "./results.js";
 import { abortRemaining } from "./recording.js";
 import {
@@ -78,6 +87,70 @@ export function relayFeeDisclosure(
     receiver: BRIDGE_FEE_RECEIVER_EVM,
     feeUsdEstimate: relayFeeUsdEstimate(inSide, legs.feeSplit.feeRaw, identity) ?? undefined,
   });
+}
+
+/** The quote tool an agent must call again when this bridge refuses to sign. */
+const RELAY_QUOTE_TOOL_NAME = "relay__bridge_quote_get";
+
+/**
+ * Hold this bridge to the Vex fee statement its approval was granted on, in the
+ * pre-sign window.
+ *
+ * WHY IT RE-DERIVES AND THEN COMPARES, rather than consuming the bound block:
+ * the disposition depends on facts that can move between the quote and the
+ * signature (a token flagged fee-on-transfer or a honeypot after the card was
+ * shown), and consuming the row would hand a treasury transfer to exactly the
+ * token the fresh eligibility read just declined. Re-deriving alone is what Vex
+ * did before this check and is equally wrong: it signs a fee nobody was shown.
+ * So both are computed and any disagreement REFUSES.
+ *
+ * Returns the agent-facing refusal, or `null` when this call may proceed.
+ * `null` is also the answer when the tool is not prequote-gated at all - there
+ * is then no approved statement in existence to contradict, and inventing a
+ * refusal for a channel that does not apply would fail bridges for a build
+ * fact, not a money fact.
+ *
+ * Nothing here signs, records or reserves anything: it runs BEFORE the intent,
+ * the in-flight guard and the signing wallet, so a refusal leaves the world
+ * exactly as it found it.
+ */
+export async function relayVexFeeStatementRefusal(input: {
+  readonly params: Record<string, unknown>;
+  readonly context: ProtocolExecutionContext;
+  readonly sessionId: string;
+  /** The disposition this call would actually execute on, freshly derived. */
+  readonly derivedNow: BridgeFeeDisclosure;
+}): Promise<string | null> {
+  const matched = await findFreshMatchedPrequote(
+    BRIDGE_TOOL_ID,
+    input.sessionId,
+    input.params,
+    input.context,
+  );
+  if (!matched.ok) {
+    // Destructured so the literal narrows: `not_gated` is the one refusal that
+    // is not a refusal at all, it says this tool carries no prequote channel.
+    const { reason, eligibilityKind } = matched;
+    if (reason === "not_gated") return null;
+    return unauthorizedBridgeQuoteMessage({ reason, eligibilityKind }, RELAY_QUOTE_TOOL_NAME);
+  }
+  if (matched.vexFee === undefined) {
+    logger.warn("relay.bridge.vex_fee_statement_missing", { reason: VEX_FEE_STATEMENT_MISSING_REASON });
+    return missingBridgeFeeStatementMessage(RELAY_QUOTE_TOOL_NAME);
+  }
+  const check = checkBridgeFeeStatementUnchanged({
+    statedOnCard: matched.vexFee,
+    derivedNow: input.derivedNow,
+  });
+  if (check.ok) return null;
+  // The FIELD only. The two values include a treasury address and the amounts a
+  // card showed; the bounded reason plus the field name is what an operator
+  // needs, and the agent gets the rest in the refusal itself.
+  logger.warn("relay.bridge.vex_fee_statement_changed", {
+    reason: VEX_FEE_STATEMENT_CHANGED_REASON,
+    field: check.field,
+  });
+  return bridgeFeeStatementChangedMessage(check, RELAY_QUOTE_TOOL_NAME);
 }
 
 /** Disclosure for every path where the bridge did not complete - nothing is ever charged there. */

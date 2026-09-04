@@ -77,7 +77,13 @@ import {
   stepSummaries,
   type RelayLegs,
 } from "./bridge/legs.js";
-import { feeNotTaken, NO_FEE_COLLECTION, relayFeeDisclosure, runRelayVexFeeLeg } from "./bridge/fee-leg.js";
+import {
+  feeNotTaken,
+  NO_FEE_COLLECTION,
+  relayFeeDisclosure,
+  relayVexFeeStatementRefusal,
+  runRelayVexFeeLeg,
+} from "./bridge/fee-leg.js";
 import { runOriginBroadcasts, type OriginBroadcast } from "./bridge/broadcast.js";
 import { maybeAutoPin, relayLegInput } from "./bridge/recording.js";
 import { failPreSign, inFlightResult, pendingResult } from "./bridge/results.js";
@@ -296,6 +302,27 @@ async function relayBridge(
       requestId: adapted.requestId,
     });
   }
+
+  // ── The bound Vex fee statement (rule 90: revalidate immediately before
+  // signing) ──
+  //
+  // FIRST of the pre-sign gates, and deliberately not a recorded failure row:
+  // this is an AUTHORIZATION refusal, not a bridge that failed. The durable
+  // failure vocabulary (`AgentActivityFailureCode`) has no code for "the
+  // approval no longer holds", and borrowing `bridge_failed` would tell the
+  // feed a provider rejected a bridge that was never attempted. The prequote
+  // gate refuses the same class of state without recording either.
+  //
+  // It runs AFTER the quote (so the disclosure compared is the one the deposit
+  // would use) and BEFORE the in-flight guard, the intent, the signing wallet
+  // and every broadcast, so a refusal signs nothing and reserves nothing.
+  const feeStatementRefusal = await relayVexFeeStatementRefusal({
+    params,
+    context,
+    sessionId,
+    derivedNow: relayFeeDisclosure(legs, adapted.currencyIn, tokenIdentity.source),
+  });
+  if (feeStatementRefusal !== null) return fail(`${BRIDGE_TOOL_ID} failed: ${feeStatementRefusal}`);
 
   // ── Pre-sign gates (fail-closed, hashless failure row, C1) ──
   if (!correlation.ok) {

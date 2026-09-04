@@ -24,6 +24,8 @@
  *   - `evm-fee-transfer.ts`    ERC-20 `transfer` / native value transfer
  *   - `solana-fee-transfer.ts` SPL transfer to the treasury ATA (Token-2022 aware)
  *   - `fee-disclosure.ts`      the one agent-facing disclosure shape
+ *   - `fee-revalidation.ts`    holding an execute to the fee statement its
+ *                              approval was granted on
  */
 
 export {
@@ -57,3 +59,15 @@ export {
   evaluateEvmBridgeFeeEligibility,
   type BridgeFeeEligibility,
 } from "./fee-eligibility.js";
+
+export {
+  bridgeFeeStatementChangedMessage,
+  checkBridgeFeeStatementUnchanged,
+  missingBridgeFeeStatementMessage,
+  unauthorizedBridgeQuoteMessage,
+  VEX_FEE_STATEMENT_CHANGED_REASON,
+  VEX_FEE_STATEMENT_MISSING_REASON,
+  type BridgeFeeStatementCheck,
+  type BridgeFeeStatementDivergence,
+  type BridgeFeeStatementField,
+} from "./fee-revalidation.js";

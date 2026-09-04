@@ -80,7 +80,21 @@ vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
   notePendingReason: vi.fn(async () => ({ applied: true })),
 }));
 
+// The bound quote the execute revalidates its Vex fee against, in the pre-sign
+// window. The gate has its own suites; this one drives the HANDLER, so the
+// re-read is a controlled answer and the default answer is the statement this
+// arrangement's own quote would have recorded.
+const mockFindFreshMatchedPrequote = vi.fn();
+vi.mock("@vex-agent/tools/protocols/prequote/gate.js", () => ({
+  findFreshMatchedPrequote: (...a: unknown[]) => mockFindFreshMatchedPrequote(...a),
+}));
+
 const { RELAY_BRIDGE_HANDLERS } = await import("@vex-agent/tools/protocols/relay/handlers/bridge.js");
+const {
+  boundChargedVexFee,
+  boundSkippedVexFee,
+  matchedPrequoteWithVexFee,
+} = await import("../../tools/bridge-fee/bound-vex-fee.js");
 
 const CTX: ProtocolExecutionContext = {
   sessionPermission: "full",
@@ -122,6 +136,9 @@ function out(result: { output: string }) {
 }
 
 beforeEach(() => {
+  mockFindFreshMatchedPrequote.mockResolvedValue(matchedPrequoteWithVexFee(boundChargedVexFee({
+    feeAmountRaw: "2500000000000", netAmountRaw: "997500000000000", totalDebitedRaw: "1000000000000000",
+  })));
   vi.clearAllMocks();
   mockGetCachedRelayChains.mockResolvedValue(CHAINS);
   mockGetQuote.mockResolvedValue({ steps: [depositStepDef.step], requestId: "0xreq" } as unknown as RelayQuoteResponse);
