@@ -184,6 +184,7 @@ describe("a create renders the project's files", () => {
       expect([...byPath.entries()].sort()).toEqual([
         [".mcp.json", "written"],
         [".vex/protocols.md", "written"],
+        [".vex/vex-guide.md", "written"],
         ["AGENTS.md", "written"],
         ["CLAUDE.md", "written"],
       ]);

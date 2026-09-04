@@ -32,6 +32,7 @@ import {
 import {
   STUDIO_CLAUDE_MD_PATH,
   STUDIO_PROTOCOLS_DOC_PATH,
+  STUDIO_VEX_GUIDE_PATH,
 } from "@vex-agent/studio/installer/render/index.js";
 import type { StudioAgentId } from "@shared/schemas/projects.js";
 import type { StudioArtifactKind } from "@shared/schemas/studio-installer.js";
@@ -70,7 +71,7 @@ export type StudioArtifactPlan =
     readonly kind: Exclude<StudioArtifactKind, "agent-config">;
     /**
      * `remove` is reachable ONLY from `buildStudioTeardownPlan` (B0). The
-     * install planner still emits these three unconditionally as installs -
+     * install planner still emits these four unconditionally as installs -
      * they describe the project itself, not any one client - so a project being
      * DELETED must never be planned by that path.
      */
@@ -160,6 +161,17 @@ export function buildStudioPlan(options: {
       relativePath: STUDIO_AGENTS_MD_RELATIVE_PATH,
     },
     {
+      // The half of the protocol `AGENTS.md` cannot carry under Codex's 32 KiB
+      // budget. Unconditional for the same reason as the block: every client is
+      // told to read it, and Claude Code imports it from `CLAUDE.md`.
+      key: "vex-guide",
+      kind: "vex-guide",
+      operation: "install",
+      agent: null,
+      agentId: null,
+      relativePath: STUDIO_VEX_GUIDE_PATH,
+    },
+    {
       key: "claude-md",
       kind: "claude-md",
       operation: "install",
@@ -185,10 +197,10 @@ export function buildStudioPlan(options: {
  * else (stage B0).
  *
  * A SEPARATE FUNCTION, not a mode of `buildStudioPlan`, and that separation is
- * the point. The install planner appends `AGENTS.md`, `CLAUDE.md` and
- * `.vex/protocols.md` UNCONDITIONALLY, because they describe the project rather
- * than any one client. Running it for a project being deleted and filtering to
- * `remove` would silently drop those three - which is how a deleted project
+ * the point. The install planner appends `AGENTS.md`, `.vex/vex-guide.md`,
+ * `CLAUDE.md` and `.vex/protocols.md` UNCONDITIONALLY, because they describe the
+ * project rather than any one client. Running it for a project being deleted and
+ * filtering to `remove` would silently drop those four - which is how a deleted project
  * ends up still carrying an `AGENTS.md` managed block telling the next coding
  * agent that this repository is connected to Vex and which wallets it may
  * spend. That block is a claim of live authority, and leaving it behind is a
@@ -242,7 +254,7 @@ export function buildStudioTeardownPlan(options: {
   return { artifacts, unsupported: [] };
 }
 
-/** The three project-level artifacts, keyed exactly as the install planner keys them. */
+/** The four project-level artifacts, keyed exactly as the install planner keys them. */
 const INSTRUCTION_ARTIFACTS: Readonly<
   Record<
     string,
@@ -253,6 +265,7 @@ const INSTRUCTION_ARTIFACTS: Readonly<
   >
 > = {
   "agents-md": { kind: "agents-md", relativePath: STUDIO_AGENTS_MD_RELATIVE_PATH },
+  "vex-guide": { kind: "vex-guide", relativePath: STUDIO_VEX_GUIDE_PATH },
   "claude-md": { kind: "claude-md", relativePath: STUDIO_CLAUDE_MD_PATH },
   "protocols-doc": { kind: "protocols-doc", relativePath: STUDIO_PROTOCOLS_DOC_PATH },
 };

@@ -45,22 +45,36 @@ export type {
 export {
   STUDIO_MANAGED_BLOCK_MAX_BYTES,
   STUDIO_PROTOCOLS_DOC_PATH,
+  inspectStudioFencedDocument,
   inspectStudioManagedBlock,
   studioManagedBlockOwnership,
+  mergeStudioFencedDocument,
   mergeStudioManagedBlock,
   removeStudioManagedBlock,
+  renderStudioFencedDocument,
   renderStudioManagedBlock,
   renderStudioManagedBody,
   studioManagedBodyHash,
 } from "./managed-block.js";
 export {
+  STUDIO_VEX_GUIDE_PATH,
+  inspectStudioVexGuide,
+  mergeStudioVexGuide,
+  renderStudioVexGuide,
+  renderStudioVexGuideBody,
+} from "./vex-guide.js";
+export {
   STUDIO_AGENTS_MD_PATH,
   STUDIO_CLAUDE_MD_IMPORT,
+  STUDIO_CLAUDE_MD_IMPORTS,
   STUDIO_CLAUDE_MD_PATH,
-  claudeMdImportsAgents,
-  mergeClaudeMdImport,
-  removeClaudeMdImport,
+  STUDIO_VEX_GUIDE_IMPORT,
+  claudeMdMissingStudioImports,
+  studioClaudeMdDeletedImports,
+  mergeClaudeMdImports,
+  removeClaudeMdImports,
   renderFreshClaudeMd,
+  studioClaudeMdImportSetHash,
 } from "./claude-md.js";
 export type {
   StudioInstallationEnvironment,

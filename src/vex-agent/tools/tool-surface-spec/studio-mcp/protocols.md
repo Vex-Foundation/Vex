@@ -47,7 +47,9 @@ whole, including a description your client truncated. Units are PER FIELD -
 human decimals or raw smallest units - so read the field description and
 never guess. AGENTS.md in this project carries the rest of the protocol: the
 permission level in force, the outcome vocabulary, the Vex fee and the task
-shapes.
+shapes. `.vex/vex-guide.md`, which AGENTS.md tells you to read at the start
+of a session, carries one block per protocol: its chains, its fee and
+whether its provider key is configured on this machine.
 
 ## Totals
 

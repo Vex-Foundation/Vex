@@ -159,9 +159,10 @@ import {
   type StudioWritableAgent,
 } from "@vex-agent/studio/agents.js";
 import {
-  mergeClaudeMdImport,
+  mergeClaudeMdImports,
   mergeStudioAgentConfig,
   mergeStudioManagedBlock,
+  mergeStudioVexGuide,
   readStudioOwnedRegion,
   studioManagedBlockOwnership,
   studioTomlHeader,
@@ -470,7 +471,23 @@ async function installProjectArtifacts(
     ownership.bodyHash,
   );
 
-  const claudeMd = mergeClaudeMdImport(USER_CLAUDE_MD);
+  // The second managed document, seeded exactly as the installer writes it: a
+  // deleted project must not leave a file behind that tells the next agent this
+  // repository is connected to Vex.
+  const guide = mergeStudioVexGuide("", brief, { overwriteDrift: false });
+  if (guide.status !== "rendered") throw new Error("vex-guide seed did not render");
+  const guideOwnership = studioManagedBlockOwnership(guide.text);
+  if (guideOwnership.kind !== "intact") throw new Error("vex-guide seed is not intact");
+  await installArtifact(
+    project.projectId,
+    project.directory,
+    "vex-guide",
+    ".vex/vex-guide.md",
+    guide.text,
+    guideOwnership.bodyHash,
+  );
+
+  const claudeMd = mergeClaudeMdImports(USER_CLAUDE_MD);
   if (claudeMd.status !== "rendered") throw new Error("CLAUDE.md seed did not render");
   await installArtifact(
     project.projectId,
@@ -1081,6 +1098,7 @@ describe("deleteProject: the drain", () => {
         "agents-md",
         "claude-md",
         "protocols-doc",
+        "vex-guide",
       ]);
       expect(await exists(path.join(project.directory, ".vex/protocols.md"))).toBe(true);
       expect(runtime.trashItem).not.toHaveBeenCalled();
@@ -1536,7 +1554,7 @@ describe("deleteProject: bytes Vex cannot prove it authored", () => {
     );
 
     // The user's own `@AGENTS.md` import line, likewise pre-existing.
-    const claudeMd = mergeClaudeMdImport(USER_CLAUDE_MD);
+    const claudeMd = mergeClaudeMdImports(USER_CLAUDE_MD);
     if (claudeMd.status !== "rendered") throw new Error("CLAUDE.md seed did not render");
     await installArtifact(
       project.projectId,
