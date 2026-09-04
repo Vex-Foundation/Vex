@@ -17,18 +17,23 @@
  * below), so `approve(stranger, unlimited)` on the user's origin token planned
  * and signed cleanly, and the standing allowance outlived the bridge.
  *
- * WHAT IS BOUND HERE AND WHAT IS NOT. This planner receives the provider plan,
- * the chain and the Vex fee leg. It can therefore prove every plan-INTERNAL
- * fact (rule 1: canonical `approve`, no native value, spender == this plan's
- * own deposit target, at most one GRANT). It CANNOT yet prove the Vex-DERIVED
- * facts (rule 2: the token is the origin currency and the allowance is exactly
- * the bridged principal) because `ContractCallDepositPlan` carries neither the
- * origin token nor the amount, and the caller passes neither: the handler holds
- * both as `fromToken` and `bridgedAmountRaw` (it already hands them to
- * `authorizeKhalaniPlanNativeValue`). Wiring them into this planner and calling
- * `verifyApproveStepBindsPlanAmount` is the named follow-up; deriving the
- * principal here from `vexFee.feeRaw` was rejected because inverting a floored
- * bps split yields a RANGE, and a money bound must be exact.
+ * BOTH RULES ARE BOUND HERE. Rule 1 (canonical `approve`, no native value,
+ * spender == this plan's own deposit target, at most one GRANT) needs only the
+ * provider plan. Rule 2 (the approval targets the ORIGIN token, is sent from
+ * the selected wallet, and grants EXACTLY the principal Vex decided to bridge)
+ * needs numbers no provider supplied, so the caller hands them in as
+ * {@link KhalaniDepositOriginBinding} - the same `fromToken`, `fromAddress` and
+ * `bridgedAmountRaw` the handler already gives `authorizeKhalaniPlanNativeValue`.
+ * The binding is a REQUIRED parameter, not an optional one: a caller that could
+ * omit it would silently plan an unbound allowance, which is the exact hole this
+ * module closes. Deriving the principal here from `vexFee.feeRaw` was rejected
+ * because inverting a floored bps split yields a RANGE, and a money bound must
+ * be exact.
+ *
+ * The binding is CHAIN-SCOPED by construction: every EVM leg this planner
+ * builds is normalized onto `sourceChain` (`normalizeEvmApproval` rejects a
+ * switch to any other chain), so comparing an approval's `to` against the
+ * origin token address compares two addresses on the same chain.
  *
  * VEX FEE LEG (`src/tools/bridge-fee`): when a fee is charged, the plan gains
  * ONE extra leg APPENDED AFTER the deposit — Vex's own transfer of 25 bps of
@@ -62,6 +67,8 @@ import { decodeErc20Approve, type ApprovedSpender } from "@tools/evm-chains/erc2
 import {
   refuseApproveStep,
   verifyApproveStepAuthorizesDeposit,
+  verifyApproveStepBindsPlanAmount,
+  type ApproveAmountBinding,
   type Erc20ApproveStepVerdict,
 } from "@tools/evm-chains/erc20-approve-step-guard.js";
 import {
@@ -76,6 +83,48 @@ import {
   type KhalaniVexFeeLeg,
   type NormalizedEvmTx,
 } from "./staged-leg.js";
+
+/**
+ * What VEX itself decided about this bridge, as opposed to anything the
+ * provider echoed back. Rule 2 of the approve binding is checked against these
+ * three fields and nothing else.
+ */
+export interface KhalaniDepositOriginBinding {
+  /**
+   * The source-chain token being bridged, in the provider-native spelling the
+   * user's `fromToken` parameter carried. A native alias means the origin asset
+   * has no token contract, so no approval in the plan can be legitimate.
+   */
+  readonly fromToken: string;
+  /** The selected wallet every leg will be signed from. */
+  readonly wallet: string;
+  /**
+   * The amount actually being deposited (post Vex fee split), in smallest
+   * units, exactly as the handler derived it for the quote.
+   */
+  readonly bridgedAmountRaw: string;
+}
+
+/**
+ * Turn the caller's binding into the guard's rule-2 input. An unreadable or
+ * non-positive principal becomes `null`, which the guard refuses as
+ * `principal_not_derivable` rather than binding an allowance to a number Vex
+ * could not read.
+ */
+function approveAmountBinding(origin: KhalaniDepositOriginBinding): ApproveAmountBinding {
+  let principalRaw: bigint | null = null;
+  try {
+    const parsed = BigInt(origin.bridgedAmountRaw);
+    principalRaw = parsed > 0n ? parsed : null;
+  } catch {
+    principalRaw = null;
+  }
+  return {
+    originToken: isNativeTransferToken(origin.fromToken) ? null : origin.fromToken,
+    wallet: origin.wallet,
+    principalRaw,
+  };
+}
 
 /**
  * Classify an EVM leg's `tx.value` with only what the planner can prove
@@ -120,7 +169,11 @@ function contractCallApprovedSpenders(
   return approved;
 }
 
-function planContractCallLegs(plan: ContractCallDepositPlan, chain: KhalaniChain): KhalaniStagedLeg[] {
+function planContractCallLegs(
+  plan: ContractCallDepositPlan,
+  chain: KhalaniChain,
+  origin: KhalaniDepositOriginBinding,
+): KhalaniStagedLeg[] {
   const family: ChainFamily = chain.type;
   const legs: KhalaniStagedLeg[] = [];
   for (const approval of plan.approvals) {
@@ -158,46 +211,64 @@ function planContractCallLegs(plan: ContractCallDepositPlan, chain: KhalaniChain
       nativeValue: planLegNativeValue(chain.id, tx),
     });
   }
-  assertApprovalsAuthorizeDeposit(legs);
+  assertApprovalsAuthorizeDeposit(legs, origin);
   return attachContractCallDepositEvidence(legs);
 }
 
 /**
- * Rule 1 of the approve binding, across the whole CONTRACT_CALL plan: every
- * approval leg is a canonical, value-free `approve` naming this plan's OWN
- * deposit target, and at most one of them GRANTS an allowance.
+ * BOTH rules of the approve binding, across the whole CONTRACT_CALL plan.
+ *
+ * Rule 1 (plan-internal): every approval leg is a canonical, value-free
+ * `approve` naming this plan's OWN deposit target, and at most one of them
+ * GRANTS an allowance.
+ *
+ * Rule 2 (Vex-derived): every GRANT is on the origin token, from the selected
+ * wallet, for EXACTLY the principal Vex asked the venue to bridge. An unlimited
+ * allowance, a larger one and a smaller one all refuse, and so does a grant on
+ * a token that is not the origin currency.
  *
  * Grants are counted rather than approval legs, because a plan may legitimately
  * carry an `approve(spender, 0)` reset alongside its grant: non-standard tokens
  * require the reset, the leg role vocabulary already names it
  * (`allowance_reset`), and the confirm site replays resets on purpose. A reset
- * is bound to the deposit target exactly like a grant, so allowing it grants no
- * authority to anyone new.
+ * is bound to the deposit target exactly like a grant (rule 1), and is exempt
+ * from rule 2 BY DEFINITION: it grants no allowance at all, so binding its zero
+ * to the principal would refuse the one sequence a non-standard token needs.
  *
  * Throws: this runs inside the planner, whose whole contract is to throw a
  * typed `VexError` before any leg reaches a signer, a nonce or a durable row.
  */
-function assertApprovalsAuthorizeDeposit(legs: readonly KhalaniStagedLeg[]): void {
+function assertApprovalsAuthorizeDeposit(
+  legs: readonly KhalaniStagedLeg[],
+  origin: KhalaniDepositOriginBinding,
+): void {
   const deposit = legs.find((leg) => leg.kind === "evm" && leg.isDeposit);
   const depositTarget = deposit !== undefined && deposit.kind === "evm" ? deposit.tx.to : null;
+  const amountBinding = approveAmountBinding(origin);
   let grants = 0;
   for (const leg of legs) {
     if (leg.kind !== "evm" || leg.isDeposit || leg.purpose !== "bridge") continue;
-    let verdict: Erc20ApproveStepVerdict = verifyApproveStepAuthorizesDeposit(
-      { to: leg.tx.to, data: leg.tx.data, value: leg.tx.value ?? 0n, from: leg.tx.expectedFrom },
-      { depositTarget },
-    );
-    if (verdict.ok && verdict.allowance !== 0n && ++grants > 1) {
-      verdict = refuseApproveStep(
-        "extra_approve_step",
-        "the plan grants a token allowance more than once, and one deposit needs at most one grant",
-      );
+    const call = {
+      to: leg.tx.to,
+      data: leg.tx.data,
+      value: leg.tx.value ?? 0n,
+      from: leg.tx.expectedFrom,
+    };
+    let verdict: Erc20ApproveStepVerdict = verifyApproveStepAuthorizesDeposit(call, { depositTarget });
+    if (verdict.ok && verdict.allowance !== 0n) {
+      grants += 1;
+      verdict = grants > 1
+        ? refuseApproveStep(
+          "extra_approve_step",
+          "the plan grants a token allowance more than once, and one deposit needs at most one grant",
+        )
+        : verifyApproveStepBindsPlanAmount(call, amountBinding);
     }
     if (!verdict.ok) {
       throw new VexError(
         ErrorCodes.KHALANI_DEPOSIT_FAILED,
         `Refused before signing the Khalani token approval: ${verdict.detail}. Nothing was signed or broadcast.`,
-        "The provider's approval did not match the deposit plan. Take a fresh khalani__bridge_quote for this route and retry.",
+        "The provider's approval did not match the deposit plan. Take a fresh khalani__bridge_quote_get for this route and retry.",
       );
     }
   }
@@ -337,14 +408,18 @@ function planVexFeeLeg(fee: KhalaniVexFeeLeg, sourceChain: KhalaniChain): Khalan
  * `deposit` leg (the hash the caller later submits to Khalani).
  *
  * `vexFee`, when present, is APPENDED as the final leg — see the module doc for
- * why it must run after the deposit and never before it. Pass `null` (or omit)
- * when the fee floors to zero: a zero-value transfer would burn gas and move
- * nothing.
+ * why it must run after the deposit and never before it. Pass `null` when the
+ * fee floors to zero: a zero-value transfer would burn gas and move nothing.
+ *
+ * `origin` carries Vex's own view of the bridge (origin token, wallet, post-fee
+ * principal) and is REQUIRED: it is what rule 2 of the approve binding is
+ * checked against, so it has no default that could silently skip the check.
  */
 export function planKhalaniDepositLegs(
   plan: DepositPlan,
   sourceChain: KhalaniChain,
-  vexFee: KhalaniVexFeeLeg | null = null,
+  vexFee: KhalaniVexFeeLeg | null,
+  origin: KhalaniDepositOriginBinding,
 ): KhalaniStagedLeg[] {
   if (plan.kind === "PERMIT2") {
     throw new VexError(
@@ -355,7 +430,7 @@ export function planKhalaniDepositLegs(
   }
   const legs = plan.kind === "TRANSFER"
     ? planTransferLeg(plan, sourceChain)
-    : planContractCallLegs(plan, sourceChain);
+    : planContractCallLegs(plan, sourceChain, origin);
 
   const depositCount = legs.filter((leg) => leg.isDeposit).length;
   if (depositCount === 0) {

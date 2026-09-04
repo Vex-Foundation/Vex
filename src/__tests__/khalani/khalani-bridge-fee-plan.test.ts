@@ -38,6 +38,14 @@ function evmSend(to: string, data: string, deposit: boolean) {
  */
 const NET_AMOUNT = 1_496_250n;
 
+/**
+ * Vex's own view of the bridge, which the planner binds the approval to
+ * (`@tools/evm-chains/erc20-approve-step-guard.ts` rule 2). The plans here
+ * approve exactly `NET_AMOUNT` of `USDC_BASE` from `WALLET`, which is what a
+ * live plan does, so the fee-leg cases stay about ORDERING.
+ */
+const ORIGIN = { fromToken: USDC_BASE, wallet: WALLET, bridgedAmountRaw: NET_AMOUNT.toString() };
+
 /** `approve(address,uint256)`. `ERC20_ABI` carries only the transfer surface. */
 const APPROVE_ABI = [{
   type: "function", name: "approve", stateMutability: "nonpayable",
@@ -77,7 +85,7 @@ function solanaPlan(): DepositPlan {
 
 describe("planKhalaniDepositLegs — fee leg ordering (EVM)", () => {
   it("APPENDS the fee transfer AFTER the deposit, never before it", () => {
-    const legs = planKhalaniDepositLegs(evmPlan(), BASE, { tokenAddress: USDC_BASE, feeRaw: FEE });
+    const legs = planKhalaniDepositLegs(evmPlan(), BASE, { tokenAddress: USDC_BASE, feeRaw: FEE }, ORIGIN);
 
     expect(legs.map((l) => l.purpose)).toEqual(["bridge", "bridge", "vex_fee"]);
     const depositIndex = legs.findIndex((l) => l.isDeposit);
@@ -89,7 +97,7 @@ describe("planKhalaniDepositLegs — fee leg ordering (EVM)", () => {
   });
 
   it("the fee leg is a plain ERC-20 transfer to the pinned treasury — no approval involved", () => {
-    const legs = planKhalaniDepositLegs(evmPlan(), BASE, { tokenAddress: USDC_BASE, feeRaw: FEE });
+    const legs = planKhalaniDepositLegs(evmPlan(), BASE, { tokenAddress: USDC_BASE, feeRaw: FEE }, ORIGIN);
     const feeLeg = legs.at(-1)!;
     if (feeLeg.kind !== "evm") throw new Error("expected an evm fee leg");
 
@@ -102,7 +110,7 @@ describe("planKhalaniDepositLegs — fee leg ordering (EVM)", () => {
   });
 
   it("a NATIVE input fee leg is a value transfer, not an ERC-20 call", () => {
-    const legs = planKhalaniDepositLegs(evmPlan(), BASE, { tokenAddress: "native", feeRaw: FEE });
+    const legs = planKhalaniDepositLegs(evmPlan(), BASE, { tokenAddress: "native", feeRaw: FEE }, ORIGIN);
     const feeLeg = legs.at(-1)!;
     if (feeLeg.kind !== "evm") throw new Error("expected an evm fee leg");
 
@@ -112,7 +120,7 @@ describe("planKhalaniDepositLegs — fee leg ordering (EVM)", () => {
   });
 
   it("records the fee leg under its own `bridge_fee` event_role", () => {
-    const legs = planKhalaniDepositLegs(evmPlan(), BASE, { tokenAddress: USDC_BASE, feeRaw: FEE });
+    const legs = planKhalaniDepositLegs(evmPlan(), BASE, { tokenAddress: USDC_BASE, feeRaw: FEE }, ORIGIN);
     const feeLeg = legs.at(-1)!;
     // Migration 050 added the role. Before it the leg was labelled `allowance`,
     // which was untrue in the durable record the agent reads back.
@@ -124,7 +132,7 @@ describe("planKhalaniDepositLegs — fee leg ordering (EVM)", () => {
     // `sync/bridge-activity-repair-production-deps.ts` correlates the provider
     // order by selecting the sibling row with `event_role='bridge_deposit'`. A
     // second such row would hand the sweep the FEE hash as the deposit hash.
-    const legs = planKhalaniDepositLegs(evmPlan(), BASE, { tokenAddress: USDC_BASE, feeRaw: FEE });
+    const legs = planKhalaniDepositLegs(evmPlan(), BASE, { tokenAddress: USDC_BASE, feeRaw: FEE }, ORIGIN);
     const depositRoles = legs.filter((l) => l.role === "bridge_deposit");
     expect(depositRoles).toHaveLength(1);
     expect(depositRoles[0]!.purpose).toBe("bridge");
@@ -133,21 +141,23 @@ describe("planKhalaniDepositLegs — fee leg ordering (EVM)", () => {
 
 describe("planKhalaniDepositLegs — fee of zero is SKIPPED entirely", () => {
   it("plans no fee leg at all rather than a zero-value transfer", () => {
-    const legs = planKhalaniDepositLegs(evmPlan(), BASE, { tokenAddress: USDC_BASE, feeRaw: 0n });
+    const legs = planKhalaniDepositLegs(evmPlan(), BASE, { tokenAddress: USDC_BASE, feeRaw: 0n }, ORIGIN);
     expect(legs.map((l) => l.purpose)).toEqual(["bridge", "bridge"]);
     expect(legs.some((l) => l.purpose === "vex_fee")).toBe(false);
   });
 
   it("plans no fee leg when the caller passes null (dust / declined token)", () => {
-    expect(planKhalaniDepositLegs(evmPlan(), BASE, null)).toHaveLength(2);
-    // Omitted argument behaves identically — the pre-fee call sites are unchanged.
-    expect(planKhalaniDepositLegs(evmPlan(), BASE)).toHaveLength(2);
+    // `null` is now spelled at every call site: the fee argument lost its
+    // default when the origin binding became a required fourth parameter, so a
+    // caller can no longer omit the binding the approve rules are checked
+    // against (`@tools/evm-chains/erc20-approve-step-guard.ts`).
+    expect(planKhalaniDepositLegs(evmPlan(), BASE, null, ORIGIN)).toHaveLength(2);
   });
 });
 
 describe("planKhalaniDepositLegs — Solana fee leg", () => {
   it("appends an UNBUILT descriptor after the deposit (the planner stays network-free)", () => {
-    const legs = planKhalaniDepositLegs(solanaPlan(), SOLANA, { tokenAddress: "SoMeMint", feeRaw: FEE });
+    const legs = planKhalaniDepositLegs(solanaPlan(), SOLANA, { tokenAddress: "SoMeMint", feeRaw: FEE }, ORIGIN);
 
     expect(legs).toHaveLength(2);
     expect(legs[0]!.isDeposit).toBe(true);
@@ -166,12 +176,12 @@ describe("planKhalaniDepositLegs — the deposit invariant survives the extra le
       kind: "CONTRACT_CALL",
       approvals: [evmSend(ROUTER, "0xaa", true), evmSend(ROUTER, "0xbb", true)],
     } as unknown as DepositPlan;
-    expect(() => planKhalaniDepositLegs(twoDeposits, BASE, { tokenAddress: USDC_BASE, feeRaw: FEE })).toThrow();
+    expect(() => planKhalaniDepositLegs(twoDeposits, BASE, { tokenAddress: USDC_BASE, feeRaw: FEE }, ORIGIN)).toThrow();
 
     const noDeposit = {
       kind: "CONTRACT_CALL",
       approvals: [evmSend(USDC_BASE, "0x095ea7b3", false)],
     } as unknown as DepositPlan;
-    expect(() => planKhalaniDepositLegs(noDeposit, BASE, { tokenAddress: USDC_BASE, feeRaw: FEE })).toThrow();
+    expect(() => planKhalaniDepositLegs(noDeposit, BASE, { tokenAddress: USDC_BASE, feeRaw: FEE }, ORIGIN)).toThrow();
   });
 });

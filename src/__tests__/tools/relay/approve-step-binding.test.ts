@@ -42,6 +42,7 @@ const { planRelayStepTx } = await import("@tools/relay/execute.js");
 const { classifyRelayBridgeSteps } = await import("@tools/relay/step-policy.js");
 
 import type { RelayStepNativeValueContext } from "@tools/relay/native-value.js";
+import { RelayQuoteResponseSchema, RelayStepSchema } from "@tools/relay/types.js";
 import type { RelayQuoteResponse, RelayStep } from "@tools/relay/types.js";
 
 const ORIGIN = 8453;
@@ -67,23 +68,23 @@ function approveData(spender: string, allowance: bigint): string {
 }
 
 function approveStep(data: string, over: { to?: string; value?: string } = {}): RelayStep {
-  return {
+  return RelayStepSchema.parse({
     id: "approve",
     kind: "transaction",
     items: [{ data: { to: over.to ?? USDC, value: over.value ?? "0", data, chainId: ORIGIN } }],
-  } as unknown as RelayStep;
+  });
 }
 
 function depositStep(): RelayStep {
-  return {
+  return RelayStepSchema.parse({
     id: "deposit",
     kind: "transaction",
     items: [{ data: { to: DEPOSIT_TARGET, value: "0", data: "0xe8017952", chainId: ORIGIN } }],
-  } as unknown as RelayStep;
+  });
 }
 
 function quote(...steps: RelayStep[]): RelayQuoteResponse {
-  return { steps } as unknown as RelayQuoteResponse;
+  return RelayQuoteResponseSchema.parse({ steps });
 }
 
 function allowanceContext(over: Partial<RelayStepNativeValueContext> = {}): RelayStepNativeValueContext {
@@ -176,11 +177,11 @@ describe("planRelayStepTx - the allowance is bound to the principal Vex derived"
   }
 
   it("refuses an approval whose declared sender is not the selected wallet", () => {
-    const step = {
+    const step = RelayStepSchema.parse({
       id: "approve",
       kind: "transaction",
       items: [{ data: { from: STRANGER, to: USDC, value: "0", data: approveData(DEPOSIT_TARGET, PRINCIPAL), chainId: ORIGIN } }],
-    } as unknown as RelayStep;
+    });
     // The planner's own sender check fires first; either way nothing is signed.
     expect(() => planRelayStepTx(step, ORIGIN, WALLET, allowanceContext())).toThrow(/sender|wallet/i);
   });

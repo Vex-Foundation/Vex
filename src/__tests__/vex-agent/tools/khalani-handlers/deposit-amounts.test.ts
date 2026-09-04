@@ -19,6 +19,13 @@ const DEPOSITORY = "0x2222222222222222222222222222222222222222";
 const STRANGER = "0x3333333333333333333333333333333333333333";
 const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 
+/**
+ * The origin binding the planner needs. Every plan here is approval-free (the
+ * approved-spender stamps are stated directly, see below), so the binding is
+ * never the subject of these cases.
+ */
+const ORIGIN = { fromToken: TOKEN, wallet: WALLET, bridgedAmountRaw: "1000000" };
+
 function padded(address: string): string {
   return `0x${"0".repeat(24)}${address.slice(2).toLowerCase()}`;
 }
@@ -62,6 +69,8 @@ function transferPlanLegs(token: string, amount: string) {
   return planKhalaniDepositLegs(
     { kind: "TRANSFER", depositAddress: DEPOSITORY, amount, token, chainId: 8453 },
     CHAIN,
+    null,
+    ORIGIN,
   );
 }
 
@@ -76,6 +85,8 @@ function contractCallPlanLegs(approvals: unknown[] = []) {
       }] as never,
     },
     CHAIN,
+    null,
+    ORIGIN,
   );
 }
 

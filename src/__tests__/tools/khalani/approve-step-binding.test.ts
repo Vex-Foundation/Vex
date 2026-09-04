@@ -13,12 +13,12 @@
  * signature, and no `agent_activity` row either, since the handler creates rows
  * from the returned plan.
  *
- * WHAT THIS PLANNER CANNOT YET PROVE, and the reason it is not asserted here:
- * `ContractCallDepositPlan` carries only the approvals, and the caller passes
- * the chain and the fee leg, so the origin token and the bridged principal do
- * not reach this function. The allowance bound (`verifyApproveStepBindsPlanAmount`)
- * therefore runs on Relay only until `fromToken` and `bridgedAmountRaw` are
- * threaded in from the handler, which is the named follow-up.
+ * BOTH RULES ARE ASSERTED HERE. The caller now hands the planner Vex's own view
+ * of the bridge (`KhalaniDepositOriginBinding`: the origin token, the selected
+ * wallet, and the post-fee principal the handler quoted), so the allowance bound
+ * `verifyApproveStepBindsPlanAmount` runs on Khalani exactly as it does on
+ * Relay: an allowance that is unlimited, larger, or smaller than the principal
+ * refuses, and so does an approval on any token that is not the origin currency.
  *
  * Shapes are live: the 2026-09-04 `/v1/deposit/build` CONTRACT_CALL plan for
  * Base USDC approved EXACTLY the quoted input to the deposit call's own target,
@@ -29,7 +29,12 @@ import { describe, expect, it } from "vitest";
 import { encodeFunctionData, getAddress } from "viem";
 
 import { planKhalaniDepositLegs } from "@tools/khalani/bridge-executor.js";
-import type { DepositPlan, KhalaniChain } from "@tools/khalani/types.js";
+import type {
+  ContractCallDepositPlan,
+  EvmApproval,
+  KhalaniChain,
+  TransferDepositPlan,
+} from "@tools/khalani/types.js";
 
 const USDC = getAddress("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913");
 const DEPOSIT_TARGET = getAddress("0x1A7c327d0f402AEf2eD3D20D1141bD71BA1C317B");
@@ -39,6 +44,15 @@ const BASE: KhalaniChain = { id: 8453, name: "Base", type: "eip155" } as Khalani
 
 const PRINCIPAL = 5_000_000n;
 const UNLIMITED = (1n << 256n) - 1n;
+const FOREIGN_TOKEN = getAddress("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48");
+
+/**
+ * What Vex itself decided: the origin currency of this bridge, the selected
+ * wallet, and the exact post-fee principal it asked Khalani to move. Every
+ * number here is Vex's own, which is what makes rule 2 a BOUND rather than a
+ * restatement of what the provider sent back.
+ */
+const ORIGIN = { fromToken: USDC, wallet: WALLET, bridgedAmountRaw: PRINCIPAL.toString() };
 
 const APPROVE_ABI = [{
   type: "function", name: "approve", stateMutability: "nonpayable",
@@ -50,16 +64,16 @@ function approveData(spender: string, allowance: bigint): string {
   return encodeFunctionData({ abi: APPROVE_ABI, functionName: "approve", args: [getAddress(spender), allowance] });
 }
 
-function send(to: string, data: string, deposit: boolean, value?: string) {
+function send(to: string, data: string, deposit: boolean, value?: string): EvmApproval {
   return {
-    type: "eip1193_request" as const,
+    type: "eip1193_request",
     deposit,
     request: { method: "eth_sendTransaction", params: [{ from: WALLET, to, data, ...(value ? { value } : {}) }] },
   };
 }
 
-function contractCallPlan(...approvals: unknown[]): DepositPlan {
-  return { kind: "CONTRACT_CALL", approvals } as unknown as DepositPlan;
+function contractCallPlan(...approvals: EvmApproval[]): ContractCallDepositPlan {
+  return { kind: "CONTRACT_CALL", approvals };
 }
 
 /** The deposit call of the live plan: the target every approval must name. */
@@ -70,6 +84,8 @@ describe("planKhalaniDepositLegs - a CONTRACT_CALL approval must authorize this 
     const legs = planKhalaniDepositLegs(
       contractCallPlan(send(USDC, approveData(DEPOSIT_TARGET, PRINCIPAL), false), depositCall),
       BASE,
+      null,
+      ORIGIN,
     );
     expect(legs.map((leg) => leg.role)).toEqual(["allowance", "bridge_deposit"]);
   });
@@ -85,6 +101,8 @@ describe("planKhalaniDepositLegs - a CONTRACT_CALL approval must authorize this 
         depositCall,
       ),
       BASE,
+      null,
+      ORIGIN,
     );
     expect(legs.map((leg) => leg.role)).toEqual(["allowance_reset", "allowance", "bridge_deposit"]);
   });
@@ -106,11 +124,35 @@ describe("planKhalaniDepositLegs - a CONTRACT_CALL approval must authorize this 
         send(USDC, approveData(DEPOSIT_TARGET, PRINCIPAL), false),
         depositCall,
       ]],
+    // Rule 2: the allowance is bound to the principal VEX derived, so the
+    // genuine deposit target buys the provider nothing. An unlimited grant to
+    // the real router still leaves standing authority behind after the bridge,
+    // which is the whole reason a wallet calls those out.
+    ["an UNLIMITED allowance granted to the genuine deposit target",
+      [send(USDC, approveData(DEPOSIT_TARGET, UNLIMITED), false), depositCall]],
+    ["an allowance LARGER than the principal, on the genuine deposit target",
+      [send(USDC, approveData(DEPOSIT_TARGET, PRINCIPAL + 1n), false), depositCall]],
+    ["an allowance SMALLER than the principal, which could not fund the deposit",
+      [send(USDC, approveData(DEPOSIT_TARGET, PRINCIPAL - 1n), false), depositCall]],
+    ["an approval on a token that is not the origin currency",
+      [send(FOREIGN_TOKEN, approveData(DEPOSIT_TARGET, PRINCIPAL), false), depositCall]],
+    ["an approval sent from an address that is not the selected wallet",
+      [
+        {
+          type: "eip1193_request" as const,
+          deposit: false,
+          request: {
+            method: "eth_sendTransaction",
+            params: [{ from: STRANGER, to: USDC, data: approveData(DEPOSIT_TARGET, PRINCIPAL) }],
+          },
+        },
+        depositCall,
+      ]],
   ];
 
   for (const [label, approvals] of refused) {
     it(`refuses ${label}, returning no legs to sign`, () => {
-      expect(() => planKhalaniDepositLegs(contractCallPlan(...approvals), BASE))
+      expect(() => planKhalaniDepositLegs(contractCallPlan(...approvals), BASE, null, ORIGIN))
         .toThrow(/refused before signing the khalani token approval/i);
     });
   }
@@ -120,6 +162,8 @@ describe("planKhalaniDepositLegs - a CONTRACT_CALL approval must authorize this 
       planKhalaniDepositLegs(
         contractCallPlan(send(USDC, approveData(STRANGER, UNLIMITED), false), depositCall),
         BASE,
+        null,
+        ORIGIN,
       );
       expect.unreachable("an approval to a stranger must not plan");
     } catch (err) {
@@ -135,25 +179,95 @@ describe("planKhalaniDepositLegs - a CONTRACT_CALL approval must authorize this 
       contractCallPlan(send(USDC, approveData(DEPOSIT_TARGET, PRINCIPAL), false), depositCall),
       BASE,
       { tokenAddress: USDC, feeRaw: 12_500n },
+      ORIGIN,
     );
     expect(legs.map((leg) => leg.purpose)).toEqual(["bridge", "bridge", "vex_fee"]);
   });
 });
 
+describe("planKhalaniDepositLegs - rule 2 binds the allowance to Vex's own principal", () => {
+  it("names the exact allowance and the exact principal in the refusal", () => {
+    try {
+      planKhalaniDepositLegs(
+        contractCallPlan(send(USDC, approveData(DEPOSIT_TARGET, UNLIMITED), false), depositCall),
+        BASE,
+        null,
+        ORIGIN,
+      );
+      expect.unreachable("an unlimited allowance must not plan");
+    } catch (err) {
+      const error = err as { code?: string; message?: string; hint?: string };
+      expect(error.code).toBe("KHALANI_DEPOSIT_FAILED");
+      expect(error.message).toContain(UNLIMITED.toString());
+      expect(error.message).toContain(PRINCIPAL.toString());
+      expect(error.message).toMatch(/nothing was signed or broadcast/i);
+      // The same remediation the Relay side gives: re-quote this route.
+      expect(error.hint).toMatch(/khalani__bridge_quote/);
+    }
+  });
+
+  it("refuses when Vex derived no readable principal at all", () => {
+    // Fail-closed: an allowance can only be bound to a number Vex actually has.
+    expect(() => planKhalaniDepositLegs(
+      contractCallPlan(send(USDC, approveData(DEPOSIT_TARGET, PRINCIPAL), false), depositCall),
+      BASE,
+      null,
+      { ...ORIGIN, bridgedAmountRaw: "" },
+    )).toThrow(/refused before signing the khalani token approval/i);
+  });
+
+  it("refuses every approval when the origin asset is the native currency", () => {
+    // A native origin has no token contract, so no approval in the plan can be
+    // legitimate however well-formed it looks.
+    expect(() => planKhalaniDepositLegs(
+      contractCallPlan(send(USDC, approveData(DEPOSIT_TARGET, PRINCIPAL), false), depositCall),
+      BASE,
+      null,
+      { ...ORIGIN, fromToken: "native" },
+    )).toThrow(/refused before signing the khalani token approval/i);
+  });
+
+  it("plans the reset-then-grant sequence: the zero reset is exempt, the grant is bound", () => {
+    const legs = planKhalaniDepositLegs(
+      contractCallPlan(
+        send(USDC, approveData(DEPOSIT_TARGET, 0n), false),
+        send(USDC, approveData(DEPOSIT_TARGET, PRINCIPAL), false),
+        depositCall,
+      ),
+      BASE,
+      null,
+      ORIGIN,
+    );
+    expect(legs.map((leg) => leg.role)).toEqual(["allowance_reset", "allowance", "bridge_deposit"]);
+  });
+
+  it("refuses a reset whose grant is unlimited, so the reset alone plans nothing", () => {
+    expect(() => planKhalaniDepositLegs(
+      contractCallPlan(
+        send(USDC, approveData(DEPOSIT_TARGET, 0n), false),
+        send(USDC, approveData(DEPOSIT_TARGET, UNLIMITED), false),
+        depositCall,
+      ),
+      BASE,
+      null,
+      ORIGIN,
+    )).toThrow(/refused before signing the khalani token approval/i);
+  });
+});
+
 describe("planKhalaniDepositLegs - a TRANSFER deposit has no approval to bind", () => {
   it("plans the single Vex-built transfer, as the live TRANSFER plan describes it", () => {
-    const legs = planKhalaniDepositLegs(
-      {
-        kind: "TRANSFER",
-        depositAddress: "0x4cC2210F9534DD393bfF110B826571871fda57E9",
-        token: USDC,
-        amount: PRINCIPAL.toString(),
-        chainId: 8453,
-      } as unknown as DepositPlan,
-      BASE,
-    );
+    const transfer: TransferDepositPlan = {
+      kind: "TRANSFER",
+      depositAddress: "0x4cC2210F9534DD393bfF110B826571871fda57E9",
+      token: USDC,
+      amount: PRINCIPAL.toString(),
+      chainId: 8453,
+    };
+    const legs = planKhalaniDepositLegs(transfer, BASE, null, ORIGIN);
     expect(legs).toHaveLength(1);
-    expect(legs[0]!.isDeposit).toBe(true);
+    const first = legs.at(0);
+    expect(first?.isDeposit).toBe(true);
     // No approval leg exists, so no allowance is granted to anyone by this plan.
     expect(legs.filter((leg) => leg.role === "allowance")).toHaveLength(0);
   });
