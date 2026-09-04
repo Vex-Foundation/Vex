@@ -437,6 +437,51 @@ describe("the other sections", () => {
     }
   });
 
+  it("mounts NO runtime-mode capsule without an active project - the welcome screen's wordmark is the seat then", async () => {
+    // Owner decree 2026-09-04: with no project the Studio welcome carries the
+    // Agent | Studio capsule under its wordmark, and this header mounts none,
+    // so the page keeps exactly ONE `Runtime mode` radiogroup. Revert the
+    // condition and this case goes red.
+    renderSidebar({ activeProjectId: null });
+    await screen.findByText("No projects yet.");
+    expect(screen.queryByRole("radiogroup", { name: "Runtime mode" })).toBeNull();
+  });
+
+  it("carries the runtime-mode capsule while a project is open - the only way back once the welcome is gone", async () => {
+    const project = makeProject({ name: "vex-core" });
+    projectsListMock.mockResolvedValue({ ok: true, data: [project] });
+    renderSidebar({ activeProjectId: project.id });
+    await screen.findByTestId("explorer-tree");
+    expect(screen.getByRole("radiogroup", { name: "Runtime mode" })).not.toBeNull();
+    expect(screen.getByRole("radio", { name: "Agent" })).not.toBeNull();
+  });
+
+  it("keeps the WIDE projects section wide with NO project open: the title, the row, the words", async () => {
+    // Regression 2026-09-04. The capsule's `activeProjectId !== null` guard was
+    // applied to the projects region as well, so the wide rail beside the
+    // welcome screen painted the 56px form: a lone glyph, no "Projects"
+    // disclosure, no rows, while the welcome list showed the project. Wide is
+    // the COLUMN's fact and nothing about the project decides it; the only
+    // wide chrome the welcome takes over is the capsule (the case above).
+    // Revert the guard and this goes red.
+    const project = makeProject({ name: "vex-core" });
+    projectsListMock.mockResolvedValue({ ok: true, data: [project] });
+    renderSidebar({ activeProjectId: null });
+
+    // The project NAME as text is what the 56px form drops (it names its rows
+    // by `aria-label` alone), so its presence is the wide form's proof.
+    const row = (await screen.findByText("vex-core")).closest("button");
+    expect(row).not.toBeNull();
+    expect(row?.textContent).toContain("restricted");
+    const header = screen.getByText("Projects").closest(".vex-disclosure-row");
+    expect(header).not.toBeNull();
+    expect(header?.getAttribute("aria-expanded")).toBe("true");
+    // The rest of the wide chrome rides the same fact: the settings and theme
+    // controls in the foot stay reachable from the welcome screen.
+    expect(screen.getByRole("button", { name: "Open settings" })).not.toBeNull();
+    expect(screen.queryByRole("radiogroup", { name: "Runtime mode" })).toBeNull();
+  });
+
   it("has NO explorer section without an active project", async () => {
     projectsListMock.mockResolvedValue({
       ok: true,
@@ -1324,6 +1369,92 @@ describe("the rail's project-wide file search", () => {
       expect(document.activeElement).toBe(field);
     } finally {
       vi.useRealTimers();
+    }
+  });
+});
+
+/**
+ * THE GLASS RAIL (redesign 2026-09-04). The owner marked four boxes on the
+ * left rail: the explorer pane's frame, the pane header's rule and plate, the
+ * token card's frame and the rule above it. All four are gone; what separates
+ * the regions now is spacing and the register step between a 14px section
+ * title, an 11px uppercase pane title and 13px rows. The rail's glass is a
+ * NAMED CLASS from styles/global-css/glass.css, which is what lets the design
+ * guard keep its utility ban with no whitelist entry for this file.
+ *
+ * These are class-chain assertions on the rendered tree for the same reason
+ * the flex-chain case above is: jsdom lays nothing out, and a stroke is a
+ * class here, so the class IS the contract.
+ */
+describe("the glass rail", () => {
+  it("wears the rail tier of glass as a class, not a utility", async () => {
+    renderSidebar();
+    await screen.findByTestId("sidebar-profile");
+    const rail = screen.getByLabelText("Studio projects sidebar");
+    expect(rail.classList.contains("vex-glass-rail")).toBe(true);
+    expect(rail.classList.contains("vex-sidebar")).toBe(true);
+    expect(rail.className).not.toMatch(/backdrop-blur/);
+    expect(rail.className).not.toContain("bg-[var(--vex-rail)]");
+  });
+
+  it("frames the explorer pane with spacing alone: no rounded box, no stroke", async () => {
+    const project = makeProject({ name: "vex-core" });
+    projectsListMock.mockResolvedValue({ ok: true, data: [project] });
+    renderSidebar({ activeProjectId: project.id });
+    const tree = await screen.findByTestId("explorer-tree");
+
+    // The pane wrapper is the tree's parent; the header is its sibling.
+    const pane = tree.parentElement;
+    expect(pane).not.toBeNull();
+    expect(pane?.className).not.toMatch(/(?:^|\s)border(?:-|\s|$)/);
+    expect(pane?.className).not.toContain("rounded");
+    const header = screen.getByLabelText("Refresh").closest("div.flex.h-8");
+    expect(header).not.toBeNull();
+    expect(header?.className).not.toMatch(/border-b/);
+    expect(header?.className).not.toContain("bg-surface-sidebar");
+    // No stroke anywhere on the walk from the tree up to the rail.
+    const rail = screen.getByLabelText("Studio projects sidebar");
+    let node: HTMLElement | null = tree.parentElement;
+    while (node !== null && node !== rail) {
+      expect(node.className).not.toMatch(/(?:^|\s)border(?:-[a-z])/);
+      node = node.parentElement;
+    }
+  });
+
+  it("threads the explorer disclosure's body through the flex chain", async () => {
+    const project = makeProject({ name: "vex-core" });
+    projectsListMock.mockResolvedValue({ ok: true, data: [project] });
+    renderSidebar({ activeProjectId: project.id });
+    const tree = await screen.findByTestId("explorer-tree");
+    const body = tree.closest(".vex-disclosure-body");
+    expect(body).not.toBeNull();
+    expect(body?.className).toContain("min-h-0");
+    expect(body?.className).toContain("flex-1");
+  });
+
+  it("separates the token widget from the list by spacing, not a rule", async () => {
+    renderSidebar();
+    await screen.findByTestId("sidebar-profile");
+    const rail = screen.getByLabelText("Studio projects sidebar");
+    const strokes = Array.from(rail.querySelectorAll<HTMLElement>("*")).filter((el) =>
+      /(?:^|\s)border-t(?:\s|$|-\[)/.test(el.className),
+    );
+    expect(strokes.map((el) => el.className)).toEqual([]);
+  });
+
+  it("turns ONE chevron on the section headers instead of swapping glyphs", async () => {
+    const project = makeProject({ name: "vex-core" });
+    projectsListMock.mockResolvedValue({ ok: true, data: [project] });
+    renderSidebar({ activeProjectId: project.id });
+    await screen.findByTestId("explorer-tree");
+    const headers = screen.getAllByRole("button", { expanded: true });
+    const sections = headers.filter((el) => el.classList.contains("vex-disclosure-row"));
+    expect(sections).toHaveLength(2);
+    for (const section of sections) {
+      const chevron = section.querySelector("svg.vex-twistie");
+      expect(chevron).not.toBeNull();
+      expect(chevron?.classList.contains("rotate-90")).toBe(true);
+      expect(section.querySelectorAll("svg.vex-twistie")).toHaveLength(1);
     }
   });
 });

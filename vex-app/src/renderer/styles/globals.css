@@ -10,6 +10,7 @@
 @import "./global-css/base.css";
 @import "./global-css/onboarding.css";
 @import "./global-css/shell.css";
+@import "./global-css/glass.css";
 @import "./global-css/landing-motifs.css";
 @import "./global-css/motion-primitives.css";
 @import "./global-css/chronos-motion.css";
