@@ -666,6 +666,14 @@ export const CANONICAL_HUMAN_AMOUNT_SENTENCE =
  * (`mcp/inventory/types.ts`) and the budget is the consumer's, not this
  * sentence's.
  *
+ * THAT 2047 IS BYTES AS WELL AS CHARACTERS, and the two readings have stopped
+ * agreeing. The measured cut is by characters, so characters remain the
+ * contract; but `SwapExecute` and `SwapQuote` each carry a U+2192 arrow, which
+ * puts them at 2045 characters and 2047 UTF-8 bytes - one byte of headroom
+ * under the same number. Adding a word to this sentence therefore spends both
+ * budgets at once, and `__tests__/vex-agent/mcp/inventory.test.ts` asserts both
+ * so a non-ASCII edit cannot cross either unnoticed.
+ *
  * The card clause answers the second measured confusion: two sessions read their
  * own harness rule ("confirm before an irreversible action") against a card they
  * had already been told about, and hesitated (pass 2, A-8). The card IS the

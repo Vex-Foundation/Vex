@@ -377,6 +377,44 @@ describe("the description budget (O23)", () => {
     expect(characters).toBeLessThanOrEqual(ALWAYS_LOADED_DESCRIPTION_MAX_CHARACTERS);
   });
 
+  /**
+   * THE SAME BOUND, COUNTED IN BYTES.
+   *
+   * The measured cut is by CHARACTERS - four independent counts on four tools
+   * landed on 2048 characters of the original string, which is why the bound
+   * above is the contract. This is the second reading of it, and it is not
+   * ceremony: the hot set is NO LONGER pure ASCII. `SwapExecute` and `SwapQuote`
+   * each carry a U+2192 arrow, so they sit at 2045 characters but 2047 UTF-8
+   * bytes - ONE byte under the same number. A description is authored in
+   * characters and travels as bytes, so an edit that swaps two ASCII characters
+   * for one arrow keeps the character count falling and pushes the byte count
+   * over, and any client that counts the encoded string rather than the code
+   * points would cut a tool contract mid-word with nothing here noticing.
+   *
+   * Asserting both readings costs one comparison and closes that gap whichever
+   * way a client counts.
+   */
+  it.each(
+    buildStudioInventory()
+      .filter((tool) => tool.alwaysLoad)
+      .map((tool) => [tool.publicName, byteLength(tool.description)] as const),
+  )("%s fits the same bound in UTF-8 bytes (%i bytes)", (_name, bytes) => {
+    expect(bytes).toBeLessThanOrEqual(ALWAYS_LOADED_DESCRIPTION_MAX_CHARACTERS);
+  });
+
+  it("keeps the byte reading honest: the hot set is not pure ASCII", () => {
+    // If every description were ASCII the byte lint above would be a copy of
+    // the character one. It is not - measured 2026-09-04, `SwapExecute` and
+    // `SwapQuote` carry a U+2192 arrow. The assertion is on the COUNT rather
+    // than on those two names, so an arrow moving to another tool is not a
+    // failure; only a hot set that went back to pure ASCII is, and the honest
+    // answer to that failure is to delete this case, not to add a character.
+    const differing = buildStudioInventory()
+      .filter((tool) => tool.alwaysLoad)
+      .filter((tool) => byteLength(tool.description) !== [...tool.description].length);
+    expect(differing.length).toBeGreaterThan(0);
+  });
+
   it("bounds every always-loaded description and no protocol one", () => {
     // The bound is the HOT SET's, deliberately: a protocol description is
     // loaded through a client's own tool-search step, which does not re-cut it.

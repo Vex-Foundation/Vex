@@ -28,9 +28,10 @@ import type { JsonSchema } from "../../tools/types.js";
  * preconditions still lead, and the field-by-field result list moves out to
  * `vex_ToolDescribe`, whose RESULT no client truncates.
  *
- * CHARACTERS, not bytes, because that is what was measured. Every description
- * is ASCII today, so the two counts agree; the lint asserts the character
- * count so it stays right if one ever stops being ASCII.
+ * CHARACTERS, not bytes, because that is what was measured. The hot set is
+ * NOT pure ASCII: `SwapExecute` and `SwapQuote` carry a U+2192 arrow, so they
+ * sit at 2045 characters and 2047 UTF-8 bytes. The lint asserts BOTH counts
+ * against the bound, so a non-ASCII edit cannot cross it in bytes unnoticed.
  *
  * The bound applies to the HOT SET only. A protocol description is loaded by a
  * client's own tool-search step, after which nothing re-cuts it.
