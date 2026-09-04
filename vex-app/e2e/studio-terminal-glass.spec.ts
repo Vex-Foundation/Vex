@@ -22,6 +22,13 @@
  *    pass per frame; whether that is visible is measured as frames per second
  *    while a 30 000-line burst lands and while the scrollback is wheeled, and
  *    written next to the gutter numbers for the same before/after comparison.
+ *  - THE ANSWER TO OSC 11. xterm tells a program that asks for the background
+ *    colour whatever `theme.background` says, alpha dropped, and Claude Code
+ *    (in `auto`), bat, delta and nvim pick light or dark from that answer. The
+ *    shell asks, the reply travels the real pty round trip, and the file the
+ *    shell writes is asserted to classify light in celeris and dark in
+ *    chronos. A reverse-video sample is measured alongside, since its glyphs
+ *    take the same token's RGB.
  *
  * ## The completion signal for the burst
  *
@@ -46,7 +53,6 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Page, TestInfo } from "@playwright/test";
-import sharp from "sharp";
 import {
   test,
   expect,
@@ -59,96 +65,23 @@ import {
   tourTo,
   TOUR_SKIP_REASON,
 } from "./fixtures/studio-shell.js";
-
-/** Lines the burst writes. Thirty times the 1000-row scrollback, so the buffer wraps. */
-const BURST_LINES = 30_000;
-/** How long the burst may take on a cold, loaded box before the run counts as wedged. */
-const BURST_TIMEOUT_MS = 90_000;
-/** Wheel ticks and their spacing while measuring scroll frames. */
-const WHEEL_TICKS = 60;
-const WHEEL_TICK_DELTA = -120;
-const WHEEL_TICK_GAP_MS = 16;
+import {
+  measureContrast,
+  measureGutter,
+  measureReverseVideo,
+  measureScrollbar,
+  measureThroughput,
+  probeOsc11,
+  readPaneFacts,
+  durationMs,
+  type CaptureClip,
+  type Contrast,
+  type GutterMeasurement,
+  type Osc11Reply,
+  type ReverseVideoResult,
+} from "./fixtures/terminal-glass-probes.js";
 
 const OUT_DIR = process.env["VEX_GLASS_OUT"] ?? "";
-
-interface GutterMeasurement {
-  readonly viewportWidth: number;
-  readonly sidebarRight: number;
-  readonly centerLeft: number;
-  readonly paneLeft: number;
-  readonly gridLeft: number;
-  /** Sidebar right edge to the first terminal column, in CSS px. */
-  readonly gutter: number;
-  /** Column edge to pane edge (the workspace padding). */
-  readonly columnPadding: number;
-  /** Pane edge to the first column (the pane's own inset). */
-  readonly paneInset: number;
-}
-
-interface PaneFacts {
-  readonly renderer: "webgl" | "dom";
-  /** Whether this environment can hand out a WebGL2 context at all. */
-  readonly webgl2Available: boolean;
-  readonly paneBackdropFilter: string;
-  readonly paneBackground: string;
-  readonly hostBackground: string;
-  readonly foreground: string;
-}
-
-interface Throughput {
-  readonly burstLines: number;
-  readonly burstMs: number;
-  readonly burstFrames: number;
-  readonly burstFps: number;
-  /** Frames painted in the second after the cwd marker landed. */
-  readonly settleFrames: number;
-  readonly wheelTicks: number;
-  readonly wheelMs: number;
-  readonly wheelFrames: number;
-  readonly wheelFps: number;
-  readonly scrolledPx: number;
-}
-
-/**
- * The terminal's scrollbar as PAINTED. xterm 6 mounts VS Code's
- * ScrollableElement, so the bar is a real `.slider` element sized inline and
- * coloured by scrollbars.css; none of that is readable in jsdom.
- */
-interface ScrollbarFacts {
-  /** The vestigial `.xterm-viewport`'s own native gutter, in CSS px. 0 means gone. */
-  readonly viewportGutter: number;
-  readonly trackWidth: number;
-  readonly sliderWidth: number;
-  /** The transparent inset each side of the thumb (the slider's padding). */
-  readonly sliderInset: number;
-  readonly sliderRadius: string;
-  readonly sliderBackground: string;
-  /** `--vex-scrollbar-thumb` resolved in the track's own scope, for comparison. */
-  readonly tokenBackground: string;
-  /**
-   * xterm's injected `<style>` elements inside the terminal, and how many of
-   * them the document actually applied. The renderer's CSP (`style-src
-   * 'self'`) refuses inline sheets, which is why the slider's colour cannot
-   * come from the palette bridge and lives in scrollbars.css instead.
-   */
-  readonly injectedSheets: { readonly count: number; readonly applied: number };
-  /** The track's class list right after the wheel, with the pointer still over the grid. */
-  readonly classesAfterWheel: string;
-  /** The track's class list once the pointer left and the idle hide ran. */
-  readonly classesAfterLeave: string;
-  /** The track's class list once the pointer came back over the grid. */
-  readonly classesOnHover: string;
-  /** The show/fade transition duration under `prefers-reduced-motion: reduce`. */
-  readonly reducedMotionTransition: string;
-}
-
-interface Contrast {
-  readonly theme: string;
-  readonly sample: { readonly mean: [number, number, number]; readonly extreme: [number, number, number] };
-  readonly foreground: [number, number, number];
-  readonly contrastMean: number;
-  readonly contrastWorst: number;
-}
 
 /** Hide the tour navigator (QA scaffolding, never a shipped surface) for a capture. */
 async function withTourHidden<T>(page: Page, run: () => Promise<T>): Promise<T> {
@@ -164,328 +97,6 @@ async function withTourHidden<T>(page: Page, run: () => Promise<T>): Promise<T> 
       if (tour instanceof HTMLElement) tour.style.visibility = "";
     });
   }
-}
-
-async function measureGutter(page: Page, width: number, height: number): Promise<GutterMeasurement> {
-  await page.setViewportSize({ width, height });
-  // The grid refits on resize through a ResizeObserver; give it two frames.
-  await page.evaluate(
-    () => new Promise<void>((resolve) => {
-      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-    }),
-  );
-  const measured = await page.evaluate(() => {
-    const sidebar = document.querySelector('[data-vex-area="studio-sidebar"]');
-    const center = document.querySelector('[data-vex-area="studio-center"]');
-    const pane = document.querySelector("[data-vex-workspace-card] > div");
-    const grid = document.querySelector(".vex-terminal-surface--active .xterm-screen");
-    if (!sidebar || !center || !pane || !grid) return null;
-    return {
-      sidebarRight: sidebar.getBoundingClientRect().right,
-      centerLeft: center.getBoundingClientRect().left,
-      paneLeft: pane.getBoundingClientRect().left,
-      gridLeft: grid.getBoundingClientRect().left,
-    };
-  });
-  expect(measured, `no measurable studio layout at ${String(width)}px`).not.toBeNull();
-  if (measured === null) throw new Error("unreachable");
-  return {
-    viewportWidth: width,
-    ...measured,
-    gutter: measured.gridLeft - measured.sidebarRight,
-    columnPadding: measured.paneLeft - measured.centerLeft,
-    paneInset: measured.gridLeft - measured.paneLeft,
-  };
-}
-
-async function readPaneFacts(page: Page): Promise<PaneFacts> {
-  return page.evaluate(() => {
-    const surface = document.querySelector<HTMLElement>(".vex-terminal-surface--active");
-    const pane = document.querySelector<HTMLElement>("[data-vex-workspace-card] > div");
-    const host = surface?.parentElement?.parentElement ?? null;
-    const probe = document.createElement("span");
-    probe.style.color = "var(--vex-alias-term-foreground)";
-    document.body.appendChild(probe);
-    const foreground = getComputedStyle(probe).color;
-    probe.remove();
-    const paneStyle = pane === null ? null : getComputedStyle(pane);
-    const gl = document.createElement("canvas").getContext("webgl2");
-    return {
-      renderer: surface?.querySelector("canvas") ? "webgl" : "dom",
-      webgl2Available: gl !== null,
-      paneBackdropFilter: paneStyle?.backdropFilter ?? "",
-      paneBackground: paneStyle?.backgroundColor ?? "",
-      hostBackground: host === null ? "" : getComputedStyle(host).backgroundColor,
-      foreground,
-    } as const;
-  });
-}
-
-/** Count animation frames on the page until `stop` is called. */
-async function startFrameCounter(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    const w = window as unknown as { __vexFrames?: { count: number; running: boolean; start: number } };
-    const state = { count: 0, running: true, start: performance.now() };
-    w.__vexFrames = state;
-    const tick = (): void => {
-      if (!state.running) return;
-      state.count += 1;
-      requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
-  });
-}
-
-async function readFrameCounter(page: Page): Promise<{ frames: number; ms: number }> {
-  return page.evaluate(() => {
-    const w = window as unknown as { __vexFrames?: { count: number; running: boolean; start: number } };
-    const state = w.__vexFrames;
-    if (state === undefined) return { frames: 0, ms: 0 };
-    return { frames: state.count, ms: performance.now() - state.start };
-  });
-}
-
-async function stopFrameCounter(page: Page): Promise<{ frames: number; ms: number }> {
-  return page.evaluate(() => {
-    const w = window as unknown as { __vexFrames?: { count: number; running: boolean; start: number } };
-    const state = w.__vexFrames;
-    if (state === undefined) return { frames: 0, ms: 0 };
-    state.running = false;
-    return { frames: state.count, ms: performance.now() - state.start };
-  });
-}
-
-async function measureThroughput(page: Page): Promise<Throughput> {
-  await focusTerminalGrid(page);
-  const marker = `glassdone${Date.now().toString(36)}`;
-  // The HEADER's location line, not the whole center: under the DOM renderer
-  // `.xterm-rows` carries the typed command, marker included, so a poll on
-  // the center's text matched before Enter had even landed (measured:
-  // burstMs 17, burstFrames 0).
-  const location = page
-    .locator('[data-vex-area="studio-center"]')
-    .locator("p:has([data-vex-terminal-shell])");
-
-  await page.keyboard.type(
-    `seq 1 ${String(BURST_LINES)}; mkdir -p ${marker}; cd ${marker}`,
-  );
-  await startFrameCounter(page);
-  const t0 = Date.now();
-  await page.keyboard.press("Enter");
-  await expect
-    .poll(async () => await location.textContent(), { timeout: BURST_TIMEOUT_MS })
-    .toContain(marker);
-  const burstMs = Date.now() - t0;
-  const burst = await readFrameCounter(page);
-
-  // The burst's tail is still being parsed and painted when the cwd lands
-  // (the shell moved on the moment `seq` finished writing); count the frames
-  // of the second after it as well, so a renderer that stalls on the tail
-  // shows up as a low settle count.
-  await page.waitForTimeout(1_000);
-  const settled = await stopFrameCounter(page);
-
-  // Wheel the scrollback from the bottom upwards and count the frames painted.
-  // xterm 6 scrolls through a ScrollableElement (VS Code's), so the viewport's
-  // own scrollTop never moves; the vertical slider's offset is what does.
-  const grid = page.locator(".vex-terminal-surface--active .xterm-screen");
-  const box = await grid.boundingBox();
-  expect(box, "no terminal grid to wheel").not.toBeNull();
-  if (box === null) throw new Error("unreachable");
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  const sliderTop = async (): Promise<number> =>
-    page.evaluate(() => {
-      const slider = document.querySelector<HTMLElement>(
-        ".vex-terminal-surface--active .xterm-scrollable-element > .scrollbar.vertical > .slider",
-      );
-      return slider === null ? Number.NaN : Number.parseFloat(slider.style.top || "0");
-    });
-  const scrollBefore = await sliderTop();
-  await startFrameCounter(page);
-  const w0 = Date.now();
-  for (let tick = 0; tick < WHEEL_TICKS; tick += 1) {
-    await page.mouse.wheel(0, WHEEL_TICK_DELTA);
-    await page.waitForTimeout(WHEEL_TICK_GAP_MS);
-  }
-  const wheelMs = Date.now() - w0;
-  const wheel = await stopFrameCounter(page);
-  const scrollAfter = await sliderTop();
-
-  return {
-    burstLines: BURST_LINES,
-    burstMs,
-    burstFrames: burst.frames,
-    burstFps: Math.round((burst.frames / burst.ms) * 1000),
-    settleFrames: settled.frames - burst.frames,
-    wheelTicks: WHEEL_TICKS,
-    wheelMs,
-    wheelFrames: wheel.frames,
-    wheelFps: Math.round((wheel.frames / wheel.ms) * 1000),
-    scrolledPx: Math.round(scrollBefore - scrollAfter),
-  };
-}
-
-const TRACK_SELECTOR =
-  ".vex-terminal-surface--active .xterm-scrollable-element > .scrollbar.vertical";
-
-async function trackClasses(page: Page): Promise<string> {
-  return page.evaluate(
-    (selector) => document.querySelector(selector)?.className ?? "",
-    TRACK_SELECTOR,
-  );
-}
-
-/**
- * Read the bar with the pointer still over the grid (the wheel just ran, so
- * VS Code's state machine holds it `visible`), then prove the auto-hide: the
- * pointer leaves, the 500ms idle hide runs and the track turns `invisible`;
- * the pointer returns and it is `visible` again. Reduced motion is emulated
- * last and undone before returning, so the capture that follows is unaffected.
- */
-async function measureScrollbar(page: Page, gridBox: { x: number; y: number; width: number; height: number }): Promise<ScrollbarFacts> {
-  const geometry = await page.evaluate((selector) => {
-    const viewport = document.querySelector<HTMLElement>(".vex-terminal-surface--active .xterm-viewport");
-    const track = document.querySelector<HTMLElement>(selector);
-    const slider = track?.querySelector<HTMLElement>(".slider") ?? null;
-    const probe = document.createElement("span");
-    probe.style.backgroundColor = "var(--vex-scrollbar-thumb)";
-    (track ?? document.body).appendChild(probe);
-    const tokenBackground = getComputedStyle(probe).backgroundColor;
-    probe.remove();
-    const sliderStyle = slider === null ? null : getComputedStyle(slider);
-    const sheets = [...document.querySelectorAll<HTMLStyleElement>(".vex-terminal-surface--active style")];
-    const injectedSheets = {
-      count: sheets.length,
-      applied: sheets.filter((sheet) => (sheet.sheet?.cssRules.length ?? 0) > 0).length,
-    };
-    return {
-      injectedSheets,
-      viewportGutter: viewport === null ? Number.NaN : viewport.offsetWidth - viewport.clientWidth,
-      trackWidth: track?.offsetWidth ?? Number.NaN,
-      sliderWidth: slider?.offsetWidth ?? Number.NaN,
-      sliderInset: sliderStyle === null ? Number.NaN : Number.parseFloat(sliderStyle.paddingLeft),
-      sliderRadius: sliderStyle?.borderRadius ?? "",
-      sliderBackground: sliderStyle?.backgroundColor ?? "",
-      tokenBackground,
-      classesAfterWheel: track?.className ?? "",
-    };
-  }, TRACK_SELECTOR);
-
-  // Leave the terminal: the hide is scheduled 500ms after the pointer goes
-  // and the fade takes 800ms; the class flips at the schedule, not the fade.
-  // `invisible` contains `visible`, so the states are matched on word
-  // boundaries, never by substring.
-  await page.mouse.move(2, 2);
-  await expect.poll(() => trackClasses(page), { timeout: 5_000 }).toMatch(/\binvisible\b/);
-  const classesAfterLeave = await trackClasses(page);
-
-  await page.mouse.move(gridBox.x + gridBox.width / 2, gridBox.y + gridBox.height / 2);
-  await expect
-    .poll(async () => /\bvisible\b/.test(await trackClasses(page)), { timeout: 5_000 })
-    .toBe(true);
-  const classesOnHover = await trackClasses(page);
-
-  await page.emulateMedia({ reducedMotion: "reduce" });
-  const reducedMotionTransition = await page.evaluate(
-    (selector) => {
-      const track = document.querySelector<HTMLElement>(selector);
-      return track === null ? "" : getComputedStyle(track).transitionDuration;
-    },
-    TRACK_SELECTOR,
-  );
-  await page.emulateMedia({ reducedMotion: null });
-
-  return { ...geometry, classesAfterLeave, classesOnHover, reducedMotionTransition };
-}
-
-/** A computed `transition-duration` ("0.01ms", "1e-05s", "0.8s") in milliseconds. */
-function durationMs(value: string): number {
-  const match = /^([0-9.e+-]+)(ms|s)$/.exec(value.trim());
-  if (match === null) throw new Error(`not a duration: ${value}`);
-  const amount = Number(match[1]);
-  return match[2] === "s" ? amount * 1000 : amount;
-}
-
-function relativeLuminance([r, g, b]: [number, number, number]): number {
-  const channel = (value: number): number => {
-    const s = value / 255;
-    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
-  };
-  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
-}
-
-function contrastRatio(a: [number, number, number], b: [number, number, number]): number {
-  const la = relativeLuminance(a);
-  const lb = relativeLuminance(b);
-  const [hi, lo] = la > lb ? [la, lb] : [lb, la];
-  return Math.round(((hi + 0.05) / (lo + 0.05)) * 100) / 100;
-}
-
-function parseRgb(css: string): [number, number, number] {
-  const match = /rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/.exec(css);
-  if (match === null) throw new Error(`not an rgb() colour: ${css}`);
-  return [Number(match[1]), Number(match[2]), Number(match[3])];
-}
-
-/**
- * Contrast of the terminal foreground over the pane as PAINTED: the mean of
- * the blank region's pixels and the extreme one (brightest on a dark theme,
- * darkest on a light one), since the wallpaper under glass is not uniform.
- */
-async function measureContrast(
-  page: Page,
-  theme: string,
-  foregroundCss: string,
-): Promise<Contrast> {
-  const grid = page.locator(".vex-terminal-surface--active .xterm-screen");
-  const box = await grid.boundingBox();
-  expect(box).not.toBeNull();
-  if (box === null) throw new Error("unreachable");
-  // The lower half of the grid is blank right after a `clear`.
-  const clip = {
-    x: Math.round(box.x + box.width * 0.1),
-    y: Math.round(box.y + box.height * 0.55),
-    width: Math.round(box.width * 0.8),
-    height: Math.round(box.height * 0.4),
-  };
-  const png = await withTourHidden(page, () => page.screenshot({ clip }));
-  const { data, info } = await sharp(png).raw().toBuffer({ resolveWithObject: true });
-  const foreground = parseRgb(foregroundCss);
-  const fgLum = relativeLuminance(foreground);
-  let sumR = 0;
-  let sumG = 0;
-  let sumB = 0;
-  let extreme: [number, number, number] = [0, 0, 0];
-  let extremeLum = fgLum > 0.5 ? -1 : 2;
-  const pixels = info.width * info.height;
-  for (let i = 0; i < pixels; i += 1) {
-    const px: [number, number, number] = [
-      data[i * info.channels] ?? 0,
-      data[i * info.channels + 1] ?? 0,
-      data[i * info.channels + 2] ?? 0,
-    ];
-    sumR += px[0];
-    sumG += px[1];
-    sumB += px[2];
-    const lum = relativeLuminance(px);
-    // Worst case is the pixel closest in luminance to the foreground.
-    if (fgLum > 0.5 ? lum > extremeLum : lum < extremeLum) {
-      extremeLum = lum;
-      extreme = px;
-    }
-  }
-  const mean: [number, number, number] = [
-    Math.round(sumR / pixels),
-    Math.round(sumG / pixels),
-    Math.round(sumB / pixels),
-  ];
-  return {
-    theme,
-    sample: { mean, extreme },
-    foreground,
-    contrastMean: contrastRatio(foreground, mean),
-    contrastWorst: contrastRatio(foreground, extreme),
-  };
 }
 
 /**
@@ -555,6 +166,9 @@ test("Studio terminal on glass: backdrop shows through, gutter and scroll throug
   test.skip(!(await tourIsPresent(page)), TOUR_SKIP_REASON);
 
   const dir = outDir(testInfo);
+  // The probes take their screenshots through here, so the tour navigator is
+  // hidden by the surface that owns it rather than by the measurement.
+  const capture: CaptureClip = (clip) => withTourHidden(page, () => page.screenshot({ clip }));
   const report: Record<string, unknown> = {};
   const save = (): void => {
     fs.writeFileSync(path.join(dir, "glass-measurements.json"), JSON.stringify(report, null, 2));
@@ -599,8 +213,18 @@ test("Studio terminal on glass: backdrop shows through, gutter and scroll throug
   await page.keyboard.type("clear");
   await page.keyboard.press("Enter");
   await page.waitForTimeout(400);
-  const contrasts: Contrast[] = [await measureContrast(page, theme, facts.foreground)];
+  const contrasts: Contrast[] = [await measureContrast(page, theme, facts.foreground, capture)];
   report["contrasts"] = contrasts;
+  save();
+
+  /* ---- 3b. WHAT THE TERMINAL TELLS A PROGRAM, and reverse video --------- */
+  const osc11: Osc11Reply[] = [await probeOsc11(page, theme, dir)];
+  const reverseVideo: ReverseVideoResult[] = [await measureReverseVideo(page, theme, facts, capture)];
+  report["osc11"] = osc11;
+  report["reverseVideo"] = reverseVideo;
+  await withTourHidden(page, () =>
+    page.screenshot({ path: path.join(dir, `terminal-osc11-${theme}.png`) }),
+  );
   save();
 
   /* ---- 4. THROUGHPUT: a 30 000-line burst, then the wheel -------------- */
@@ -625,7 +249,9 @@ test("Studio terminal on glass: backdrop shows through, gutter and scroll throug
     await page.keyboard.press("Enter");
     await page.waitForTimeout(400);
     const celerisFacts = await readPaneFacts(page);
-    contrasts.push(await measureContrast(page, "celeris", celerisFacts.foreground));
+    contrasts.push(await measureContrast(page, "celeris", celerisFacts.foreground, capture));
+    osc11.push(await probeOsc11(page, "celeris", dir));
+    reverseVideo.push(await measureReverseVideo(page, "celeris", celerisFacts, capture));
     const celerisShot = path.join(dir, "terminal-glass-celeris.png");
     await withTourHidden(page, () => page.screenshot({ path: celerisShot }));
     (report["screenshots"] as Record<string, string>)["celeris"] = celerisShot;
@@ -666,5 +292,32 @@ test("Studio terminal on glass: backdrop shows through, gutter and scroll throug
   // the pane as painted, at its worst sampled pixel, never below 7:1.
   for (const contrast of contrasts) {
     expect(contrast.contrastWorst, `${contrast.theme} contrastWorst`).toBeGreaterThanOrEqual(7);
+  }
+
+  // THE OSC 11 ANSWER (both themes; the light one is the claim, so a skipped
+  // celeris is a failure here rather than a note). xterm answers from
+  // `theme.background` with the alpha dropped, and Claude Code in `auto` mode
+  // picks its theme from that answer by the rule `probeOsc11` applies. A
+  // pane that answered black in light mode got dark chrome painted over it.
+  expect(
+    osc11.map((reply) => reply.theme).sort(),
+    `celerisSkipped: ${String(report["celerisSkipped"] ?? "no")}`,
+  ).toEqual(["celeris", "chronos"]);
+  for (const reply of osc11) {
+    expect(reply.claudeCodeTheme, `${reply.theme} OSC 11 answered ${reply.raw}`).toBe(
+      reply.theme === "celeris" ? "light" : "dark",
+    );
+  }
+
+  // REVERSE VIDEO: the glyphs take the background token's RGB, made opaque by
+  // the WebGL renderer, so with the token carrying the pane's surface they
+  // read against the foreground-coloured box. Before the token carried an
+  // RGB the light theme painted black glyphs on a near-black box (1.6:1).
+  // Under the DOM renderer (xvfb: no WebGL2) the sample is unmeasurable and
+  // is recorded as such; the floor holds wherever the WebGL renderer paints.
+  for (const sample of reverseVideo) {
+    if (!sample.measured) continue;
+    expect(sample.glyphPixels, `${sample.theme} reverse video shows no glyphs`).toBeGreaterThan(0);
+    expect(sample.contrast, `${sample.theme} reverse video contrast`).toBeGreaterThanOrEqual(4.5);
   }
 });
