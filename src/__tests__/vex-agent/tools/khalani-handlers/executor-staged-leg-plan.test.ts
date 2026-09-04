@@ -53,8 +53,23 @@ describe("bridge-executor — planKhalaniDepositLegs", () => {
     expect(() => planKhalaniDepositLegs({ kind: "PERMIT2", permit: {}, transferDetails: {} }, BASE_CHAIN)).toThrow(/PERMIT2/);
   });
 
-  it("requires exactly one deposit leg", async () => {
+  it("plans nothing from a CONTRACT_CALL with no deposit leg", async () => {
+    // The refusal now comes from the approval binding rather than the
+    // deposit-count rule: a non-deposit call in a plan that makes no deposit
+    // authorizes nothing, so it is refused before the count is reached
+    // (`@tools/evm-chains/erc20-approve-step-guard.ts`). Same fail-closed
+    // outcome, an earlier and more specific cause.
     const plan = { kind: "CONTRACT_CALL" as const, approvals: [{ type: "eip1193_request" as const, request: { method: "eth_sendTransaction", params: [{ to: EVM_ADDRESS, data: "0xdead" }] } }] };
-    expect(() => planKhalaniDepositLegs(plan, BASE_CHAIN)).toThrow(/deposit=true/);
+    expect(() => planKhalaniDepositLegs(plan, BASE_CHAIN)).toThrow(/token approval/i);
+  });
+
+  it("still refuses a plan that marks more than one deposit leg", async () => {
+    const depositCall = (data: string) => ({
+      type: "eip1193_request" as const,
+      request: { method: "eth_sendTransaction", params: [{ to: EVM_ADDRESS, data }] },
+      deposit: true,
+    });
+    const plan = { kind: "CONTRACT_CALL" as const, approvals: [depositCall("0xdead"), depositCall("0xbeef")] };
+    expect(() => planKhalaniDepositLegs(plan, BASE_CHAIN)).toThrow(/more than one action with deposit=true/);
   });
 });

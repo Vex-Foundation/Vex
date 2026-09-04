@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { decodeFunctionData, getAddress } from "viem";
+import { decodeFunctionData, encodeFunctionData, getAddress } from "viem";
 
 import { ERC20_ABI } from "../../constants/chain.js";
 import { VEX_TREASURY_EVM } from "../../lib/vex-treasury.js";
@@ -32,12 +32,37 @@ function evmSend(to: string, data: string, deposit: boolean) {
   };
 }
 
-/** approve(router, netAmount) then the deposit call — the shape Khalani returns. */
+/**
+ * The net amount the deposit call moves, and therefore the allowance the
+ * approval grants. Live Khalani `CONTRACT_CALL` plans approve EXACTLY this.
+ */
+const NET_AMOUNT = 1_496_250n;
+
+/** `approve(address,uint256)`. `ERC20_ABI` carries only the transfer surface. */
+const APPROVE_ABI = [{
+  type: "function", name: "approve", stateMutability: "nonpayable",
+  inputs: [{ name: "spender", type: "address" }, { name: "amount", type: "uint256" }],
+  outputs: [{ name: "", type: "bool" }],
+}] as const;
+
+/**
+ * approve(router, netAmount) then the deposit call, the shape Khalani returns.
+ *
+ * The approval carries REAL `approve` calldata naming the deposit target,
+ * because the planner now refuses an approval it cannot bind to the deposit
+ * (`@tools/evm-chains/erc20-approve-step-guard.ts`). The previous bare selector
+ * `0x095ea7b3` was never a decodable call, so it can no longer stand in for one.
+ */
 function evmPlan(): DepositPlan {
+  const approveData = encodeFunctionData({
+    abi: APPROVE_ABI,
+    functionName: "approve",
+    args: [getAddress(ROUTER), NET_AMOUNT],
+  });
   return {
     kind: "CONTRACT_CALL",
     approvals: [
-      evmSend(USDC_BASE, "0x095ea7b3", false),
+      evmSend(USDC_BASE, approveData, false),
       evmSend(ROUTER, "0xdeadbeef", true),
     ],
   } as unknown as DepositPlan;

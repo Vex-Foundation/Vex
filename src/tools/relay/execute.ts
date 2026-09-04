@@ -44,8 +44,10 @@ import {
   createDynamicWalletClient,
 } from "@tools/khalani/evm-client.js";
 import { checkNativeValueAuthorizedForCall } from "@tools/evm-chains/native-value-authorization/index.js";
+import { verifyApproveStepBindsPlanAmount } from "@tools/evm-chains/erc20-approve-step-guard.js";
 import { VexError, ErrorCodes } from "../../errors.js";
 import logger from "../../utils/logger.js";
+import { RELAY_NATIVE_CURRENCY } from "./chains.js";
 import { getRelayClient, RELAY_INTENT_STATUS_PATH } from "./client.js";
 import { resolveRelayOnlyStepClients } from "./chain-client.js";
 import {
@@ -130,6 +132,14 @@ export interface PlannedRelayStepTx {
  *     signature, so the gate is a property of the planner rather than a
  *     convention every caller has to remember (Khalani puts the same check
  *     inside its own signer, `signStageEvmLeg`).
+ *   - an ALLOWANCE step is bound to what Vex itself derived
+ *     (`@tools/evm-chains/erc20-approve-step-guard.ts`, rule 2): the approval
+ *     must be on the origin token, from the selected wallet, for EXACTLY the
+ *     principal Vex asked Relay to bridge. Until this existed the spender, the
+ *     token and the allowance were decoded only AFTER signing, to record
+ *     evidence, so `approve(stranger, unlimited)` on the user's origin token
+ *     signed cleanly. The cross-step half (one approval per quote, spender ==
+ *     the deposit step's target) runs earlier, in `./step-policy.ts`.
  *
  * `nativeValue` is REQUIRED: what Vex derived about this step's outflow cannot
  * be inferred from the step, and a caller who omits it must not compile.
@@ -199,6 +209,35 @@ export function planRelayStepTx(
       ErrorCodes.NATIVE_VALUE_UNAUTHORIZED,
       relayNativeValueRefusal(nativeValue.role, authorized.reason),
     );
+  }
+
+  // THE APPROVE BINDING (rule 2). Runs after the native-value gate, on the same
+  // canonicalized tuple, and still before `signStageBroadcast`: a refusal here
+  // reserves no nonce and signs nothing. `originCurrency` and `bridgedAmountRaw`
+  // are Vex's own derivations, never the quote's echo, which is what makes this
+  // a bound rather than a restatement of the provider's intent.
+  if (nativeValue.role === "allowance") {
+    const verdict = verifyApproveStepBindsPlanAmount(
+      { to, data: data.data, value, from: data.from },
+      {
+        originToken: nativeValue.originCurrency.toLowerCase() === RELAY_NATIVE_CURRENCY
+          ? null
+          : nativeValue.originCurrency,
+        wallet: expectedFrom,
+        // Only EXACT_INPUT makes `bridgedAmountRaw` the INPUT amount, which is
+        // the only thing an allowance may be bound to. On any other trade type
+        // Relay chooses the input and Vex has derived nothing about it, so the
+        // guard fails closed rather than binding to an output.
+        principalRaw: nativeValue.tradeType === "EXACT_INPUT" ? BigInt(nativeValue.bridgedAmountRaw) : null,
+      },
+    );
+    if (!verdict.ok) {
+      throw new VexError(
+        ErrorCodes.RELAY_BRIDGE_FAILED,
+        `Refused before signing the Relay token approval: ${verdict.detail}. Nothing was signed or broadcast for this step.`,
+        "The provider's approval did not match the plan Vex approved. Get a fresh relay__bridge_quote_get for this route and retry; if the same approval comes back, bridge this route with khalani__bridge_execute instead.",
+      );
+    }
   }
 
   return { to, data: data.data as Hex, value };

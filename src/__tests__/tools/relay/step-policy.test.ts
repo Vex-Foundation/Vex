@@ -8,6 +8,7 @@
  */
 
 import { describe, it, expect } from "vitest";
+import { encodeFunctionData, getAddress } from "viem";
 
 import { classifyRelayBridgeSteps, type RelayStepRejectionReason } from "@tools/relay/step-policy.js";
 import type { RelayQuoteResponse } from "@tools/relay/types.js";
@@ -17,8 +18,26 @@ const DEST = 4663;
 const OTHER = 1;
 const TO = "0x2222222222222222222222222222222222222222";
 
+const APPROVE_ABI = [{
+  type: "function", name: "approve", stateMutability: "nonpayable",
+  inputs: [{ name: "spender", type: "address" }, { name: "amount", type: "uint256" }],
+  outputs: [{ name: "", type: "bool" }],
+}] as const;
+
+/** A canonical `approve(spender, allowance)` blob, as the live quotes carry it. */
+function approveData(spender: string = TO, allowanceRaw = 5_000_000n): string {
+  return encodeFunctionData({ abi: APPROVE_ABI, functionName: "approve", args: [getAddress(spender), allowanceRaw] });
+}
+
+/**
+ * An `approve` step carries REAL approve calldata naming the deposit target:
+ * since the cross-step binding landed, an approval whose blob is not a
+ * canonical `approve` for this plan's own deposit is rejected, so a `0x`
+ * placeholder would test the wrong rule.
+ */
 function step(id: string, kind: string, chainIds: number[]) {
-  return { id, kind, items: chainIds.map((chainId) => ({ data: { to: TO, value: "0", data: "0x", chainId } })) };
+  const data = id === "approve" ? approveData() : "0x";
+  return { id, kind, items: chainIds.map((chainId) => ({ data: { to: TO, value: "0", data, chainId } })) };
 }
 function quote(...steps: unknown[]): RelayQuoteResponse {
   return { steps } as unknown as RelayQuoteResponse;

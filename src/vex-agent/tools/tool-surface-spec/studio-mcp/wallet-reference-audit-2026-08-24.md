@@ -92,6 +92,26 @@ of the reference behavior, with evidence)
   only - our commit-time re-decode + re-simulate means nothing unsafe
   signs; intent TTL bounds the staleness window.
 
+  CORRECTION (2026-09-04). That sentence was true of the swap venues and
+  FALSE of the bridges when it was written: Relay and Khalani signed a
+  provider approve step after checking only the chain, the sender, the
+  address shape and the native value, and decoded the spender and the
+  allowance afterwards, to record evidence. What is true NOW is the
+  approve step: `@tools/evm-chains/erc20-approve-step-guard.ts` binds it
+  before any signer, on both venues, to a canonical `approve` with no
+  native value whose spender is the plan's own deposit target, and on
+  Relay additionally to the origin token and to an allowance EXACTLY
+  equal to the principal Vex derived. Rabby's approval card is the
+  reference for which three fields matter (token, spender, amount);
+  unlike Rabby, Vex has no human at the step, so the bound replaces the
+  human rather than informing one. STILL OPEN, and not claimed anywhere:
+  the deposit step's own calldata is not decoded on either venue (a
+  selector table needs the live captures archived on 2026-09-04), the
+  Khalani planner cannot yet bind the allowance to the principal because
+  neither the origin token nor the bridged amount reaches it, and the
+  ERC-20 receipt rule in `bridge-deposit-evidence.ts` still has a
+  ceiling but no floor.
+
 ## Reference caveat
 
 Rabby's full rule list lives in `@rabby-wallet/rabby-security-engine`

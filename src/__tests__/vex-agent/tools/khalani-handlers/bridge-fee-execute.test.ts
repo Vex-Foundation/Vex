@@ -22,6 +22,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { encodeFunctionData, getAddress } from "viem";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 
 const SESSION_EVM = {
@@ -33,6 +34,16 @@ const SESSION_EVM = {
 const FROM_TOKEN = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 const TO_TOKEN = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831";
 const ROUTER = "0x1111111111111111111111111111111111111111";
+
+const APPROVE_ABI = [{
+  type: "function", name: "approve", stateMutability: "nonpayable",
+  inputs: [{ name: "spender", type: "address" }, { name: "amount", type: "uint256" }],
+  outputs: [{ name: "", type: "bool" }],
+}] as const;
+
+function approveCalldata(spender: string, allowance: bigint): string {
+  return encodeFunctionData({ abi: APPROVE_ABI, functionName: "approve", args: [getAddress(spender), allowance] });
+}
 const FUTURE = Math.floor(Date.now() / 1000) + 3600;
 
 vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
@@ -235,7 +246,11 @@ beforeEach(() => {
   }));
   mockBuildDeposit.mockResolvedValue({
     kind: "CONTRACT_CALL",
-    approvals: [evmSend(FROM_TOKEN, "0x095ea7b3", false), evmSend(ROUTER, "0xdeadbeef", true)],
+    // A REAL `approve(router, netAmount)`: the planner refuses an approval it
+    // cannot bind to the deposit call it precedes
+    // (`@tools/evm-chains/erc20-approve-step-guard.ts`), so the bare selector
+    // this fixture used to carry is no longer a plannable approval.
+    approvals: [evmSend(FROM_TOKEN, approveCalldata(ROUTER, 1_496_250n), false), evmSend(ROUTER, "0xdeadbeef", true)],
   });
   mockSearchTokens.mockImplementation(async (address: string) => ({
     data: [{ address, chainId: address === FROM_TOKEN ? 8453 : 42161, symbol: "USDC", decimals: 6, extensions: { price: { usd: "1" } } }],

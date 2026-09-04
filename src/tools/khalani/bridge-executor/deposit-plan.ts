@@ -9,6 +9,27 @@
  * treasury ATA's existence, both network reads, so `./leg-signing.ts`
  * materializes it against the same per-chain RPC it already signs on.
  *
+ * APPROVE BINDING (`@tools/evm-chains/erc20-approve-step-guard.ts`): a
+ * CONTRACT_CALL plan's approval legs are bound to the deposit call BEFORE the
+ * plan is returned, so nothing downstream can sign an approval this plan does
+ * not need. Until this landed the spender and the allowance were decoded only
+ * to STAMP the deposit leg with evidence (`contractCallApprovedSpenders`
+ * below), so `approve(stranger, unlimited)` on the user's origin token planned
+ * and signed cleanly, and the standing allowance outlived the bridge.
+ *
+ * WHAT IS BOUND HERE AND WHAT IS NOT. This planner receives the provider plan,
+ * the chain and the Vex fee leg. It can therefore prove every plan-INTERNAL
+ * fact (rule 1: canonical `approve`, no native value, spender == this plan's
+ * own deposit target, at most one GRANT). It CANNOT yet prove the Vex-DERIVED
+ * facts (rule 2: the token is the origin currency and the allowance is exactly
+ * the bridged principal) because `ContractCallDepositPlan` carries neither the
+ * origin token nor the amount, and the caller passes neither: the handler holds
+ * both as `fromToken` and `bridgedAmountRaw` (it already hands them to
+ * `authorizeKhalaniPlanNativeValue`). Wiring them into this planner and calling
+ * `verifyApproveStepBindsPlanAmount` is the named follow-up; deriving the
+ * principal here from `vexFee.feeRaw` was rejected because inverting a floored
+ * bps split yields a RANGE, and a money bound must be exact.
+ *
  * VEX FEE LEG (`src/tools/bridge-fee`): when a fee is charged, the plan gains
  * ONE extra leg APPENDED AFTER the deposit — Vex's own transfer of 25 bps of
  * the input token to the treasury. It is last on purpose: the deposit is
@@ -38,6 +59,11 @@ import type {
   TransferDepositPlan,
 } from "../types.js";
 import { decodeErc20Approve, type ApprovedSpender } from "@tools/evm-chains/erc20-approval.js";
+import {
+  refuseApproveStep,
+  verifyApproveStepAuthorizesDeposit,
+  type Erc20ApproveStepVerdict,
+} from "@tools/evm-chains/erc20-approve-step-guard.js";
 import {
   assertEvmApproval,
   classifyEvmApprovalRole,
@@ -132,7 +158,49 @@ function planContractCallLegs(plan: ContractCallDepositPlan, chain: KhalaniChain
       nativeValue: planLegNativeValue(chain.id, tx),
     });
   }
+  assertApprovalsAuthorizeDeposit(legs);
   return attachContractCallDepositEvidence(legs);
+}
+
+/**
+ * Rule 1 of the approve binding, across the whole CONTRACT_CALL plan: every
+ * approval leg is a canonical, value-free `approve` naming this plan's OWN
+ * deposit target, and at most one of them GRANTS an allowance.
+ *
+ * Grants are counted rather than approval legs, because a plan may legitimately
+ * carry an `approve(spender, 0)` reset alongside its grant: non-standard tokens
+ * require the reset, the leg role vocabulary already names it
+ * (`allowance_reset`), and the confirm site replays resets on purpose. A reset
+ * is bound to the deposit target exactly like a grant, so allowing it grants no
+ * authority to anyone new.
+ *
+ * Throws: this runs inside the planner, whose whole contract is to throw a
+ * typed `VexError` before any leg reaches a signer, a nonce or a durable row.
+ */
+function assertApprovalsAuthorizeDeposit(legs: readonly KhalaniStagedLeg[]): void {
+  const deposit = legs.find((leg) => leg.kind === "evm" && leg.isDeposit);
+  const depositTarget = deposit !== undefined && deposit.kind === "evm" ? deposit.tx.to : null;
+  let grants = 0;
+  for (const leg of legs) {
+    if (leg.kind !== "evm" || leg.isDeposit || leg.purpose !== "bridge") continue;
+    let verdict: Erc20ApproveStepVerdict = verifyApproveStepAuthorizesDeposit(
+      { to: leg.tx.to, data: leg.tx.data, value: leg.tx.value ?? 0n, from: leg.tx.expectedFrom },
+      { depositTarget },
+    );
+    if (verdict.ok && verdict.allowance !== 0n && ++grants > 1) {
+      verdict = refuseApproveStep(
+        "extra_approve_step",
+        "the plan grants a token allowance more than once, and one deposit needs at most one grant",
+      );
+    }
+    if (!verdict.ok) {
+      throw new VexError(
+        ErrorCodes.KHALANI_DEPOSIT_FAILED,
+        `Refused before signing the Khalani token approval: ${verdict.detail}. Nothing was signed or broadcast.`,
+        "The provider's approval did not match the deposit plan. Take a fresh khalani__bridge_quote for this route and retry.",
+      );
+    }
+  }
 }
 
 /**

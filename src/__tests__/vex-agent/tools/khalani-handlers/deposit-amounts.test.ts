@@ -79,19 +79,28 @@ function contractCallPlanLegs(approvals: unknown[] = []) {
   );
 }
 
-/** `approve(spender, 2^256-1)` on `token` - the approval leg of a CONTRACT_CALL plan. */
-function approvalOf(token: string, spender: string, amount = (1n << 256n) - 1n) {
-  return {
-    type: "eip1193_request",
-    request: {
-      method: "eth_sendTransaction",
-      params: [{
-        to: token,
-        data: `0x095ea7b3${padded(spender).slice(2)}${amount.toString(16).padStart(64, "0")}`,
-      }],
-    },
-  };
+/**
+ * The approved spenders stamped on a planned CONTRACT_CALL deposit leg.
+ *
+ * These used to be built by handing the planner an `approve(spender, amount)`
+ * leg. The planner now REFUSES an approval whose spender is not the plan's own
+ * deposit target (`@tools/evm-chains/erc20-approve-step-guard.ts`), so a plan
+ * naming STRANGER can no longer exist and cannot be used as a fixture. The
+ * subject of these cases is the CONFIRM-SITE rule over the stamp, not the
+ * planner, so the stamp is stated directly instead of smuggled through a plan
+ * the planner is right to reject.
+ */
+function withApprovedSpenders(
+  legs: ReturnType<typeof contractCallPlanLegs>,
+  approvedSpenders: ReadonlyArray<{ token: string; spender: string; amountRaw: bigint }>,
+): ReturnType<typeof contractCallPlanLegs> {
+  return legs.map((leg) => {
+    if (leg.kind !== "evm" || !leg.isDeposit || leg.depositEvidence?.kind !== "provider_contract_call") return leg;
+    return { ...leg, depositEvidence: { ...leg.depositEvidence, approvedSpenders } };
+  }) as ReturnType<typeof contractCallPlanLegs>;
 }
+
+const UNLIMITED = (1n << 256n) - 1n;
 
 async function runLoop(args: {
   stagedLegs: ReturnType<typeof transferPlanLegs>;
@@ -193,7 +202,7 @@ describe("khalani.bridge deposit amounts", () => {
 
   it("admits a spender this bridge approved FOR THE INPUT TOKEN", async () => {
     await runLoop({
-      stagedLegs: contractCallPlanLegs([approvalOf(TOKEN, STRANGER)]),
+      stagedLegs: withApprovedSpenders(contractCallPlanLegs(), [{ token: TOKEN, spender: STRANGER, amountRaw: UNLIMITED }]),
       logs: [transferLog(WALLET, STRANGER, 700_000n)],
     });
     expect(mockConfirm).toHaveBeenCalledWith(DEPOSIT_ROW_ID, { executedAmountInRaw: "700000" });
@@ -202,7 +211,7 @@ describe("khalani.bridge deposit amounts", () => {
   it("declines a transfer to a spender that was only approved for a DIFFERENT token", async () => {
     const otherToken = "0x1f9840a85d5af5bf1d1762f925bdaddc4201f984";
     await runLoop({
-      stagedLegs: contractCallPlanLegs([approvalOf(otherToken, STRANGER)]),
+      stagedLegs: withApprovedSpenders(contractCallPlanLegs(), [{ token: otherToken, spender: STRANGER, amountRaw: UNLIMITED }]),
       logs: [transferLog(WALLET, STRANGER, 700_000n)],
     });
     expect(mockConfirm).toHaveBeenCalledWith(DEPOSIT_ROW_ID, {});
@@ -211,7 +220,7 @@ describe("khalani.bridge deposit amounts", () => {
 
   it("declines a transfer above the spender's effective allowance", async () => {
     await runLoop({
-      stagedLegs: contractCallPlanLegs([approvalOf(TOKEN, STRANGER, 500_000n)]),
+      stagedLegs: withApprovedSpenders(contractCallPlanLegs(), [{ token: TOKEN, spender: STRANGER, amountRaw: 500_000n }]),
       logs: [transferLog(WALLET, STRANGER, 700_000n)],
     });
     expect(mockConfirm).toHaveBeenCalledWith(DEPOSIT_ROW_ID, {});
@@ -220,9 +229,9 @@ describe("khalani.bridge deposit amounts", () => {
 
   it("declines a spender whose allowance the plan reset to zero after granting it", async () => {
     await runLoop({
-      stagedLegs: contractCallPlanLegs([
-        approvalOf(TOKEN, STRANGER, 900_000n),
-        approvalOf(TOKEN, STRANGER, 0n),
+      stagedLegs: withApprovedSpenders(contractCallPlanLegs(), [
+        { token: TOKEN, spender: STRANGER, amountRaw: 900_000n },
+        { token: TOKEN, spender: STRANGER, amountRaw: 0n },
       ]),
       logs: [transferLog(WALLET, STRANGER, 700_000n)],
     });
