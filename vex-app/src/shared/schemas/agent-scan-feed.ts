@@ -43,8 +43,10 @@
  * vocabularies are CLOSED and their arrays hard-capped. `statuses` and
  * `chainFamily` are enums here precisely because a value outside the set can
  * only be a bug or an attack — there is nothing to degrade gracefully to.
- * `sessionId` NARROWS the read; it can never widen it (main always applies the
- * inventory wallet allow-list first — see `agent-scan-db.ts`).
+ * `sessionId` and `projectId` NARROW the read; neither can ever widen it (main
+ * always applies the inventory wallet allow-list first, and a project's
+ * addresses are INTERSECTED with it - see `agent-scan-db.ts`). They are
+ * mutually exclusive, refused by name rather than silently reduced to one.
  *
  * AMOUNT HONESTY. A leg carries the requested and executed columns as AUDIT
  * data and, separately, `displayAmount` — the ONE value that leg may honestly
@@ -201,8 +203,40 @@ export const agentScanFiltersSchema = z
      * so this is an additional `AND`, never a replacement scope.
      */
     sessionId: z.string().uuid().optional(),
+    /**
+     * NARROWS the read to one Vex Studio project's OWN wallet selection, which
+     * MAIN resolves from `project_wallets` (`agent-scan-db.ts`) - the renderer
+     * sends an id, never an address. Like `sessionId` it can only ever narrow:
+     * the inventory allow-list stays the unconditional `$1` predicate and the
+     * project's resolved addresses are INTERSECTED with it as an additional
+     * `AND`, so quoting a project id can never reach a wallet the inventory
+     * does not already hold.
+     *
+     * A project that no longer exists, or whose stored selection has drifted
+     * from the inventory, is a typed REFUSAL (`projects.not_found` /
+     * `projects.wallet_drift`) - never an empty page, which on an audit
+     * surface would read as "this project never did anything".
+     */
+    projectId: z.string().uuid().optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((filters, ctx) => {
+    // TWO SCOPES ARE NOT A SCOPE. A project's activity is not one session's,
+    // so a request carrying both is a caller bug or a probe of the
+    // intersection; rule 90 says such a field is refused BY NAME rather than
+    // silently dropped down to one of the two. Refusing here is also what
+    // keeps `agent-scan-db.ts` total: at most ONE narrowing scope can ever
+    // reach the query builder.
+    if (filters.sessionId !== undefined && filters.projectId !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["projectId"],
+        message:
+          "projectId cannot be combined with sessionId: a read is narrowed to "
+          + "a session or to a project, never to both.",
+      });
+    }
+  });
 export type AgentScanFilters = z.infer<typeof agentScanFiltersSchema>;
 
 export const agentScanReadInputSchema = z

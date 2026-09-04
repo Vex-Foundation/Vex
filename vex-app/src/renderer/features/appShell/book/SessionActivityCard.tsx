@@ -1,9 +1,18 @@
 /**
- * ACTIVITY — the session rail's "what has the agent DONE here?" card. It
+ * ACTIVITY - the BOOK rail's "what has the agent DONE here?" card, for a
+ * session AND (since the Studio parity decree, 2026-09-04) for a project. It
  * replaces the retired MOVES block and, with it, the whole `listMoves`
  * pipeline: this card reads the SAME `agent_activity` feed the Agent Scan
- * screen reads (`useAgentScanInfinite`, narrowed by `sessionId`), so the rail
- * and the audit screen can never disagree about what happened.
+ * screen reads (`useAgentScanInfinite`, narrowed by `sessionId` or by
+ * `projectId`), so the rail and the audit screen can never disagree about what
+ * happened.
+ *
+ * THE SCOPE IS AN INPUT, AND IT IS A WIRE FILTER - never a renderer-side
+ * filter over a global feed. The card sends the id; MAIN resolves the wallets
+ * (`agent-scan-db.ts` intersects a project's own selection with the inventory
+ * allow-list) and refuses an unknown or drifted project by name. A card that
+ * received no scope, or that fell back to the unscoped feed on a miss, would
+ * put another project's executions under this project's name.
  *
  * ACCEPTED DATA-SCOPE CHANGE (owner-approved): legacy `proj_activity`-only
  * rows — pre-`agent_activity` history — no longer appear on this card. The
@@ -18,8 +27,10 @@
  * shown as a settled amount. The explorer URL is the pre-built, main-resolved
  * one; this file NEVER derives a URL from a chain id and a hash.
  *
- * "View all" opens the Agent Scan screen PRESET to this session — the preset
- * renders there as a visible, non-clearable scope chip.
+ * "View all" opens the Agent Scan screen PRESET to this scope - the preset
+ * renders there as a visible, non-clearable scope chip naming the session or
+ * the project, so a narrowed audit feed is never mistaken for the whole
+ * history.
  */
 
 import { useMemo, type JSX, type MouseEvent } from "react";
@@ -29,8 +40,10 @@ import {
   IconChevronRight,
   IconArrowUpRight,
 } from "../../../components/icons/index.js";
+import type { AgentScanFilters } from "@shared/schemas/agent-scan-feed.js";
 import { useAgentScanInfinite } from "../../../lib/api/portfolio.js";
 import { useUiStore } from "../../../stores/uiStore.js";
+import type { ShellRoute } from "../../../stores/uiStore/shell-route.js";
 import { ProtocolMark } from "../../../components/common/ProtocolMark.js";
 import { resolveProtocolMark } from "../../../lib/protocol-marks.js";
 import { ActivityBadge } from "../ActivityBadge.js";
@@ -45,17 +58,62 @@ import { CardStateNote, PortfolioCard } from "./portfolio/PortfolioCard.js";
 /** The card shows the newest few; the Agent Scan screen has the full feed. */
 const VISIBLE_ROWS = 5;
 
+/**
+ * The rail scopes this card can honestly read - the two members of
+ * `BOOK_SECTION_SCOPES.activity`. Closed: there is no global arm, because a
+ * rail always names whose executions it is showing.
+ */
+export type ActivityCardScope =
+  | { readonly kind: "session"; readonly sessionId: string }
+  | { readonly kind: "project"; readonly projectId: string };
+
+/**
+ * The wire filter for a scope. Total over the union (no default), so a new
+ * member is a compile error here rather than an unscoped - global - read.
+ */
+function activityFiltersFor(scope: ActivityCardScope): AgentScanFilters {
+  switch (scope.kind) {
+    case "session":
+      return { sessionId: scope.sessionId };
+    case "project":
+      return { projectId: scope.projectId };
+  }
+}
+
+/** The Agent Scan route this scope opens, with the same narrowing preserved. */
+function agentScanRouteFor(
+  scope: ActivityCardScope,
+  origin: { x: number; y: number; width: number; height: number },
+): Extract<ShellRoute, { kind: "agentScan" }> {
+  return scope.kind === "session"
+    ? { kind: "agentScan", origin, sessionId: scope.sessionId }
+    : { kind: "agentScan", origin, projectId: scope.projectId };
+}
+
 export function SessionActivityCard({
-  sessionId,
+  scope,
 }: {
-  readonly sessionId: string;
+  /** Wallet scope this card reads - never session or project state read inside. */
+  readonly scope: ActivityCardScope;
 }): JSX.Element {
   const setShellRoute = useUiStore((s) => s.setShellRoute);
 
-  // MEMOIZED on the session id: `filters` is part of the query key, so a
+  // MEMOIZED on the scope's identity: `filters` is part of the query key, so a
   // fresh object every render would mint a new cache entry and refetch the
   // feed on every render (the hook's own docblock warns about exactly this).
-  const filters = useMemo(() => ({ sessionId }), [sessionId]);
+  // Keying on the id and not the object also keeps two projects' feeds in two
+  // cache entries, never one shared entry the last render happened to fill.
+  const scopeId = scope.kind === "session" ? scope.sessionId : scope.projectId;
+  const scopeKind = scope.kind;
+  // Deps are the scope's IDENTITY (kind + id), not the object: callers re-mint
+  // the object every render, and a new object would be a new query key.
+  const filters = useMemo(
+    () =>
+      scopeKind === "session"
+        ? activityFiltersFor({ kind: "session", sessionId: scopeId })
+        : activityFiltersFor({ kind: "project", projectId: scopeId }),
+    [scopeKind, scopeId],
+  );
   const query = useAgentScanInfinite(filters);
 
   const firstPage: Result<AgentScanDto> | undefined = query.data?.pages[0];
@@ -67,20 +125,34 @@ export function SessionActivityCard({
 
   const openAgentScan = (event: MouseEvent<HTMLButtonElement>): void => {
     const rect = event.currentTarget.getBoundingClientRect();
-    setShellRoute({
-      kind: "agentScan",
-      origin: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-      sessionId,
-    });
+    setShellRoute(
+      agentScanRouteFor(scope, {
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
+      }),
+    );
   };
 
   let body: JSX.Element;
   if (query.isLoading) {
     body = <CardStateNote tone="loading">Loading…</CardStateNote>;
-  } else if (
-    query.isError ||
-    (firstPage !== undefined && !firstPage.ok)
-  ) {
+  } else if (firstPage !== undefined && !firstPage.ok) {
+    // A REFUSAL IS NOT A LOADING FAILURE. `projects.not_found` and
+    // `projects.wallet_drift` are typed, user-actionable answers from main
+    // ("that project is gone", "the saved wallet no longer matches your
+    // inventory") and they say what to do next; collapsing them into
+    // "couldn't load" would leave the user with a card that never fills and
+    // no reason. The sentence is main's own, whole and redacted at source.
+    body = (
+      <CardStateNote tone="warn">
+        {firstPage.error.userActionable
+          ? firstPage.error.message
+          : "Couldn't load activity."}
+      </CardStateNote>
+    );
+  } else if (query.isError) {
     body = <CardStateNote tone="warn">Couldn&apos;t load activity.</CardStateNote>;
   } else if (
     firstPage !== undefined &&
@@ -96,7 +168,9 @@ export function SessionActivityCard({
   } else if (entries.length === 0) {
     body = (
       <CardStateNote>
-        Nothing executed on-chain in this session yet.
+        {scope.kind === "session"
+          ? "Nothing executed on-chain in this session yet."
+          : "Nothing executed on-chain for this project yet."}
       </CardStateNote>
     );
   } else {

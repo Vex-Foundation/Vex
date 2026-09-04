@@ -15,6 +15,14 @@
  * `agentScan` therefore has its OWN arm rather than sharing the payload-free
  * memory|sessions|howItWorks arm.
  *
+ * PROJECT SCOPE (Studio parity decree, 2026-09-04). `agentScan` can ALSO be
+ * narrowed to one Vex Studio project, from the project rail's own Activity
+ * card. Session and project are mutually exclusive - two arms, not two
+ * nullable ids - and `agentScanRouteScope` below is the one reader that turns
+ * a route into the closed scope union. The narrowing itself is enforced in
+ * MAIN (`agent-scan-db.ts` intersects the project's wallets with the inventory
+ * allow-list); this route only says which read was asked for.
+ *
  * The token-history screen's `returnTo` is an OBJECT, not a bare string, so a
  * return to the All-assets screen carries the scope it was opened in. A bare
  * `"assets"` string re-minted the GLOBAL screen on close, silently widening a
@@ -96,11 +104,28 @@ export type ShellRoute =
       readonly kind: "memory" | "sessions" | "howItWorks";
       readonly origin: ShellScreenOrigin | null;
     }
+  /**
+   * AGENT SCAN, in its two mutually exclusive narrowings. TWO members rather
+   * than one member with two nullable ids: a route carrying BOTH a session and
+   * a project is not a scope, and the wire schema
+   * (`agentScanFiltersSchema`) refuses it by name - a shape that cannot
+   * represent it here is what keeps the renderer from ever constructing that
+   * request. Read the scope through `agentScanRouteScope`, never by
+   * re-deciding what a null means at each consumer.
+   */
   | {
       readonly kind: "agentScan";
       readonly origin: ShellScreenOrigin | null;
       /** `null` = the full global feed; a uuid narrows it to one session. */
       readonly sessionId: string | null;
+      readonly projectId?: undefined;
+    }
+  | {
+      readonly kind: "agentScan";
+      readonly origin: ShellScreenOrigin | null;
+      readonly sessionId?: null;
+      /** A uuid narrows the feed to ONE Vex Studio project's own wallets. */
+      readonly projectId: string;
     }
   | {
       readonly kind: "assets";
@@ -119,3 +144,57 @@ export type ShellRoute =
       readonly token: ShellRouteToken;
       readonly returnTo: ShellRouteReturnTo;
     };
+
+/**
+ * WHAT AN OPEN AGENT SCAN SCREEN IS NARROWED TO - the closed union every
+ * consumer of the route reads instead of interpreting two nullable ids.
+ *
+ * It mirrors the wire contract's own narrowings (`agentScanFiltersSchema`:
+ * `sessionId` XOR `projectId`, the inventory allow-list applying underneath
+ * both), so a member added to one and not the other is a compile error rather
+ * than a screen that silently opens the GLOBAL feed. Widening by accident is
+ * the failure this type exists to prevent: on an audit surface it shows one
+ * project's user every wallet Vex knows about.
+ */
+export type AgentScanRouteScope =
+  | { readonly kind: "global" }
+  | { readonly kind: "session"; readonly sessionId: string }
+  | { readonly kind: "project"; readonly projectId: string };
+
+/** The global feed, hoisted so callers share one frozen literal. */
+export const GLOBAL_AGENT_SCAN_SCOPE: AgentScanRouteScope = { kind: "global" };
+
+/**
+ * The scope an open Agent Scan route describes.
+ *
+ * The ONE place a route's ids become a scope. `projectId` is checked FIRST and
+ * the two are mutually exclusive by construction, so there is no ordering
+ * question and no reachable state in which both are set.
+ */
+export function agentScanRouteScope(
+  route: Extract<ShellRoute, { kind: "agentScan" }>,
+): AgentScanRouteScope {
+  if (route.projectId !== undefined) {
+    return { kind: "project", projectId: route.projectId };
+  }
+  return route.sessionId === null || route.sessionId === undefined
+    ? GLOBAL_AGENT_SCAN_SCOPE
+    : { kind: "session", sessionId: route.sessionId };
+}
+
+/**
+ * The scope's identity for a React `key` and for the screen's own remount
+ * decision. Distinct per scope member AND per id: swapping between the global
+ * feed, a session preset and a project preset must remount the screen rather
+ * than reuse filter state that belonged to another scope.
+ */
+export function agentScanScopeKey(scope: AgentScanRouteScope): string {
+  switch (scope.kind) {
+    case "global":
+      return "global";
+    case "session":
+      return `session:${scope.sessionId}`;
+    case "project":
+      return `project:${scope.projectId}`;
+  }
+}
