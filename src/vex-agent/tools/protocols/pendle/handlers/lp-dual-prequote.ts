@@ -1,5 +1,5 @@
 /**
- * The DUAL-LP family's prequote record + gate — the DRY-RUN-IN-TOOL pattern
+ * The DUAL-LP family's prequote record + gate - the DRY-RUN-IN-TOOL pattern
  * (R5d card E3), mirroring `./sy-prequote.ts` one-for-one.
  *
  * `pendle.lp.removeDual` (LP → token + PT) and `pendle.lp.addKeepYt` (token → LP
@@ -11,16 +11,16 @@
  * WHAT DIFFERS FROM THE SY MODULE, and why:
  *
  *   - IDENTITY. The SY family had to ADAPT a swap-shaped builder into its R5d
- *     kind. These two kinds — `lp_remove_dual` / `lp_add_keep_yt`, migration 054
- *     — already ARE the identity (`prequote/identity/hash.ts`), so the match
+ *     kind. These two kinds - `lp_remove_dual` / `lp_add_keep_yt`, migration 054
+ *     - already ARE the identity (`prequote/identity/hash.ts`), so the match
  *     input is built directly and there is no second shape to keep in step.
  *   - RESOLVED INPUTS, not raw params. The builder takes the chain id, the
  *     RESOLVED market address and the resolved counterpart token the handler has
  *     already computed, because the handler must resolve them anyway (to refuse
  *     a matured destination, and to default `tokenOut` to the market's
  *     underlying). Both sides of the contract run the SAME handler code in the
- *     SAME order, so the two digests collide by construction — the property that
- *     matters — while a second catalogue lookup inside the gate is avoided.
+ *     SAME order, so the two digests collide by construction - the property that
+ *     matters - while a second catalogue lookup inside the gate is avoided.
  *     `slippageBps` is still read from the raw params through the shared
  *     canonicalizer, so an omitted value normalizes identically on both sides.
  *   - PROVIDER is plain `"pendle"`, matching the rest of the LP family. The SY
@@ -30,12 +30,12 @@
  *
  * Doctrine, unchanged from the SY module because it is the doctrine and not a
  * detail: the recorder is BEST-EFFORT (a failure is logged structurally and
- * never alters the dry run's result — safe, because the gate fails closed) and
+ * never alters the dry run's result - safe, because the gate fails closed) and
  * the gate is FAIL-CLOSED (any throw, missing row, or fresh `fail` verdict
  * BLOCKS). `safetyVerdict` is `unknown` deliberately: a Convert route proves the
  * action is routable, and nothing more.
  *
- * NEVER persist or log raw provider/HTTP/DB/error text — only bounded structural
+ * NEVER persist or log raw provider/HTTP/DB/error text - only bounded structural
  * labels.
  */
 
@@ -54,7 +54,7 @@ import { canonSlippageBpsWithDefault } from "../../prequote/slippage.js";
 import { PREQUOTE_MAX_AGE_MS } from "../../prequote/registry.js";
 import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 
-/** The venue label bound into every dual-LP digest — the LP family's own. */
+/** The venue label bound into every dual-LP digest - the LP family's own. */
 export const PENDLE_LP_DUAL_PREQUOTE_PROVIDER = "pendle";
 
 /** Which of the two dual actions a record/gate call is for. */
@@ -64,7 +64,7 @@ export type PendleLpDualKind = "lp_remove_dual" | "lp_add_keep_yt";
  * The already-resolved legs a dual-LP identity binds. Every field here is a
  * value the handler DERIVED (a resolved chain id, a checksummed market address
  * from the catalogue, the output token after the underlying default) rather than
- * a raw model-supplied string — the raw params contribute only `slippageBps`,
+ * a raw model-supplied string - the raw params contribute only `slippageBps`,
  * through the shared canonicalizer.
  */
 export interface PendleLpDualLegs {
@@ -84,7 +84,7 @@ export interface PendleLpDualLegs {
 
 /**
  * ONE function, called by BOTH the recorder and the gate, so the two sides can
- * never disagree about the mapping — the only property a match hash needs.
+ * never disagree about the mapping - the only property a match hash needs.
  */
 export function buildLpDualMatchInput(
   kind: PendleLpDualKind,
@@ -115,7 +115,7 @@ export function buildLpDualMatchInput(
  * Convert's own enum strings and the second instrument is the market's own.
  */
 export interface PendleLpDualRouteRef {
-  /** The market's PT (dual remove) or YT (keep-YT add) — the second output leg. */
+  /** The market's PT (dual remove) or YT (keep-YT add) - the second output leg. */
   readonly secondLeg: string;
   readonly aggregator: string | null;
 }
@@ -123,7 +123,7 @@ export interface PendleLpDualRouteRef {
 /**
  * Record the prequote a later execute must match. Called ONLY after the dry run
  * has fully validated the route (Router pin, sender/value/approval binds, the
- * calldata intent bind and BOTH price floors) — an unsafe route must never leave
+ * calldata intent bind and BOTH price floors) - an unsafe route must never leave
  * an authorization behind.
  *
  * Never throws to the caller.
@@ -168,7 +168,7 @@ export async function recordPendleLpDualPrequote(
 
 /**
  * The gate's answer. A block carries a bounded structural `reason` for the log
- * and the agent-facing `message` the handler surfaces — never row contents,
+ * and the agent-facing `message` the handler surfaces - never row contents,
  * addresses, or raw error text.
  */
 export type PendleLpDualGateDecision =
@@ -182,7 +182,7 @@ function blockMessage(toolId: string, reason: BlockReason): string {
   switch (reason) {
     case "no_quote":
       return (
-        `${toolId} blocked: no fresh dry run for these exact params — the execute must use EXACTLY the same `
+        `${toolId} blocked: no fresh dry run for these exact params - the execute must use EXACTLY the same `
         + `chain, market, token leg, amountIn and slippageBps (same value, or omitted on both sides). ${dryRun}`
       );
     case "safety_fail":

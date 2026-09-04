@@ -7,7 +7,7 @@
  * `provider: "pendle"` bound in, so their match-hashes collide. The market (and
  * its YT + underlyingAsset) is resolved from the PT anchor through the SAME
  * chain-scoped market lookup on both sides, so neither side reimplements the
- * mapping. These are their OWN identity paths — they never reuse the swap,
+ * mapping. These are their OWN identity paths - they never reuse the swap,
  * bridge, or matured-redeem builder.
  *
  * Any throw (missing field, unsupported chain, unresolved market) propagates:
@@ -71,7 +71,7 @@ async function resolvePyLeg(params: Record<string, unknown>, context: ProtocolEx
 /**
  * Build the canonical Pendle MINT identity (token → PT+YT). Reads `tokenIn` (the
  * payment token) plus the shared PY leg. The receiver is ALWAYS the selected EVM
- * wallet — the calldata intent binding asserts receiver == wallet before signing.
+ * wallet - the calldata intent binding asserts receiver == wallet before signing.
  */
 export async function buildPendleMintIdentity(
   sessionId: string,
@@ -102,7 +102,7 @@ export async function buildPendleMintIdentity(
 
 /**
  * Build the canonical Pendle PRE-EXPIRY REDEEM identity (PT+YT → token). The
- * output token is `tokenOut` when provided, else the market's underlyingAsset —
+ * output token is `tokenOut` when provided, else the market's underlyingAsset -
  * resolved identically on both sides so a quote-without-tokenOut authorizes an
  * execute-without-tokenOut. A divergent `outputToken` produces a different digest
  * → gate BLOCK.

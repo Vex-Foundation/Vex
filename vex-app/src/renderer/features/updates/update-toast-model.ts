@@ -1,18 +1,39 @@
 /**
- * Pure projection of an `UpdateStatus` onto the generic sticky-toast entry:
- * which statuses toast at all, the title/body copy, the leading mark, the
- * action row, the ARIA role, and what Escape means per state. The impure
- * halves (mutations, snooze state, store writes) live in UpdateLayer /
- * UpdateToastSurface.
+ * Pure projection of an `UpdateStatus` onto the NOTIFICATION vocabulary: which
+ * statuses notify at all, the title and body copy, the severity, the progress,
+ * the action row, whether the user may dismiss it, and what Escape means per
+ * state. The impure halves (mutations, snooze state, the handle's lifetime)
+ * live in UpdateLayer / UpdateToastSurface.
+ *
+ * ## B2.2: the sticky slot became a model client
+ *
+ * This used to build a `StickyToastEntry` for a second, independent
+ * bottom-right region with its own store, its own `role`, its own dismiss
+ * affordance and its own glyph vocabulary. That region is gone. What the
+ * updater needs from a notification surface - stay until I say otherwise,
+ * carry an action row, show a progress bar, refuse to be dismissed while the
+ * decision is still the user's to make - is exactly what `sticky`,
+ * `actions`, `progress` and `dismissible` are, so the update toast is now the
+ * model's first sticky client rather than a parallel implementation of it.
+ *
+ * Two deliberate consequences, both of them the point rather than fallout:
+ *
+ *  - the ARIA role is gone from here. Announcement belongs to
+ *    `NotificationAnnouncer`, which speaks once per model event; the old
+ *    `role: critical ? "alert" : "status"` is now carried by SEVERITY, which
+ *    is what the announcer routes on (a critical update is a `warning`, and
+ *    warnings are announced assertively).
+ *  - the download PERCENT left the message. It lives in `progress` alone, so a
+ *    tick moves the bar without rewriting the sentence - and therefore without
+ *    the announcer speaking a new number every few hundred milliseconds.
  */
 
 import type { UpdateStatus } from "@shared/schemas/updater.js";
 import type {
-  StickyToastAction,
-  StickyToastEntry,
-  StickyToastIcon,
-  ToastTone,
-} from "../../lib/toast.js";
+  NotificationActionRank,
+  NotificationProgressInput,
+  NotificationSeverity,
+} from "../../lib/notifications/types.js";
 
 /** The five states that render a toast; `current/checking/idle` render nothing. */
 export type ToastableUpdateStatus = Extract<
@@ -56,6 +77,15 @@ export type UpdateToastActionId =
   | "try-again"
   | "dismiss-error";
 
+/** One action as the surface will bind it: identity, copy, rank, availability. */
+export interface UpdateToastAction {
+  readonly id: UpdateToastActionId;
+  readonly label: string;
+  readonly rank: NotificationActionRank;
+  /** A mutation for this toast is already in flight. */
+  readonly disabled: boolean;
+}
+
 export function titleFor(status: ToastableUpdateStatus): string {
   switch (status.kind) {
     case "available":
@@ -77,12 +107,17 @@ export function titleFor(status: ToastableUpdateStatus): string {
   }
 }
 
+/**
+ * The body sentence. INVARIANT for `downloading`: it carries no percentage.
+ * The number is `progressFor`'s, and putting it here too would make every tick
+ * a message change, which the announcer would speak.
+ */
 export function bodyFor(status: ToastableUpdateStatus): string {
   switch (status.kind) {
     case "available":
       return "Downloads the update. You choose when to restart.";
     case "downloading":
-      return `${Math.round(status.percent)}% complete.`;
+      return "Downloading in the background.";
     case "downloaded":
       return `Vex ${status.latestVersion} is ready. Restart to finish installing.`;
     case "blockedByOperation":
@@ -92,66 +127,87 @@ export function bodyFor(status: ToastableUpdateStatus): string {
   }
 }
 
-function iconFor(status: ToastableUpdateStatus): StickyToastIcon {
+/**
+ * What the announcer routes on, replacing the old ARIA role.
+ *
+ * A critical update is a `warning` (assertive) where an ordinary one is
+ * `info` (polite) - the same split the retired `role: alert | status` made. A
+ * BLOCKED step is a warning and not an error: nothing failed, the update is
+ * waiting for a financial or destructive operation to finish, which is the
+ * updater behaving correctly.
+ */
+export function severityFor(status: ToastableUpdateStatus): NotificationSeverity {
   switch (status.kind) {
-    case "downloading":
-      return "dot";
-    case "downloaded":
-      return "check";
-    case "blockedByOperation":
     case "error":
+      return "error";
+    case "blockedByOperation":
       return "warning";
     case "available":
-      return "download";
+      return isCritical(status) ? "warning" : "info";
+    case "downloading":
+    case "downloaded":
+      return "info";
   }
 }
 
-function toneFor(status: ToastableUpdateStatus): ToastTone {
-  return status.kind === "blockedByOperation" || status.kind === "error"
-    ? "error"
-    : "neutral";
+/** Determinate progress while downloading; nothing in any other state. */
+export function progressFor(
+  status: ToastableUpdateStatus,
+): NotificationProgressInput | null {
+  if (status.kind !== "downloading") return null;
+  return { total: 100, worked: status.percent };
 }
 
-function actionsFor(
+export function actionsFor(
   status: ToastableUpdateStatus,
   busy: boolean,
-): readonly StickyToastAction[] {
+): readonly UpdateToastAction[] {
   switch (status.kind) {
     case "available": {
-      const actions: StickyToastAction[] = [
-        { id: "release-notes", label: "Release notes", kind: "link" },
+      const actions: UpdateToastAction[] = [
+        {
+          id: "release-notes",
+          label: "Release notes",
+          rank: "secondary",
+          disabled: false,
+        },
       ];
       if (!isCritical(status)) {
-        actions.push({ id: "later", label: "Later", kind: "ghost" });
+        actions.push({ id: "later", label: "Later", rank: "secondary", disabled: false });
       }
       actions.push({
         id: "update-now",
         label: "Update now",
-        kind: "accent",
+        rank: "primary",
         disabled: busy,
       });
       return actions;
     }
     case "downloading":
-      return [{ id: "cancel", label: "Cancel", kind: "ghost", disabled: busy }];
+      return [{ id: "cancel", label: "Cancel", rank: "secondary", disabled: busy }];
     case "downloaded":
       return [
-        { id: "later", label: "Later", kind: "ghost" },
+        { id: "later", label: "Later", rank: "secondary", disabled: false },
         {
           id: "restart",
           label: "Restart & install",
-          kind: "accent",
+          rank: "primary",
           disabled: busy,
         },
       ];
     case "blockedByOperation":
       return [
-        { id: "try-again", label: "Try again", kind: "accent", disabled: busy },
+        { id: "try-again", label: "Try again", rank: "primary", disabled: busy },
       ];
     case "error":
       return [
-        { id: "release-notes", label: "Open download page", kind: "link" },
-        { id: "try-again", label: "Try again", kind: "accent", disabled: busy },
+        {
+          id: "release-notes",
+          label: "Open download page",
+          rank: "secondary",
+          disabled: false,
+        },
+        { id: "try-again", label: "Try again", rank: "primary", disabled: busy },
       ];
   }
 }
@@ -175,36 +231,27 @@ export function escapeActionFor(
 }
 
 /**
- * Build the sticky entry for one status. `id` is the status kind: state
- * changes remount (entrance replays), progress ticks update in place.
+ * Whether the USER may remove the toast, and the same question as "does
+ * Escape do anything here".
+ *
+ * They are one rule, not two that happen to agree: a dismissal IS the escape
+ * action (snooze, or dismiss-error), so a state with no escape action has no
+ * meaning for dismissal either and must not offer the control. Downloading, a
+ * blocked step and a critical update are exactly those states - removing their
+ * toast would take away the only Cancel / Try again / Update now the user has
+ * and leave the operation running unattended.
  */
-export function buildUpdateToastEntry(
-  status: ToastableUpdateStatus,
-  busy: boolean,
-  onAction: (actionId: string) => void,
-): StickyToastEntry {
-  const critical = isCritical(status);
-  const summary =
-    status.kind === "available" && status.summary !== undefined
-      ? ` ${status.summary}`
-      : "";
-  return {
-    id: `update-${status.kind}`,
-    title: titleFor(status),
-    text: `${bodyFor(status)}${summary}`,
-    tone: toneFor(status),
-    icon: iconFor(status),
-    ...(status.kind === "downloading" ? { progress: status.percent } : {}),
-    actions: actionsFor(status, busy),
-    onAction,
-    ...(status.kind === "error"
-      ? {
-          dismiss: {
-            label: "Dismiss update notification",
-            onDismiss: () => onAction("dismiss-error"),
-          },
-        }
-      : {}),
-    role: critical ? "alert" : "status",
-  };
+export function isDismissible(status: ToastableUpdateStatus): boolean {
+  return escapeActionFor(status) !== null;
+}
+
+/**
+ * The identity that decides when a NEW notification is raised rather than the
+ * live one updated: the state plus the version it is about. Percent and busy
+ * changes stay inside one notification (handle updates); a state change or a
+ * newer release replaces it, which is what replays the entrance.
+ */
+export function toastIdentity(status: ToastableUpdateStatus): string {
+  const version = "latestVersion" in status ? status.latestVersion : "";
+  return `${status.kind}:${version}`;
 }

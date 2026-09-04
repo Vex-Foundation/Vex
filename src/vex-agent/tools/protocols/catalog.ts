@@ -1,10 +1,10 @@
 /**
- * Protocol tool catalog — aggregator over per-namespace manifest/handler bundles.
+ * Protocol tool catalog - aggregator over per-namespace manifest/handler bundles.
  *
  * Registration model (PR1): each namespace exports its own `*_TOOLS` manifest
  * array and `*_HANDLERS` record (see `./<namespace>/manifest.ts` + `./<namespace>/handlers.ts`).
  * This file binds them into a single `NAMESPACE_MODULES` table that everything
- * else derives from — `PROTOCOL_TOOLS`, `MANIFEST_BY_ID`, `HANDLER_BY_ID`,
+ * else derives from - `PROTOCOL_TOOLS`, `MANIFEST_BY_ID`, `HANDLER_BY_ID`,
  * and the namespace availability helpers below.
  *
  * Adding a new protocol = one row in `NAMESPACE_MODULES` + its own
@@ -13,7 +13,7 @@
  *
  * `getProtocolManifest` + `getProtocolHandler` are O(1) `Map.get` lookups
  * (pre-PR1 they were O(n) `Array.find` / record access). Duplicate `toolId`
- * registration throws at module load time — this is the structural guard
+ * registration throws at module load time - this is the structural guard
  * that `registry-completeness.test.ts` relies on.
  */
 
@@ -110,7 +110,7 @@ const HANDLER_BY_ID = new Map<string, ProtocolHandler>();
 for (const mod of NAMESPACE_MODULES) {
   for (const manifest of mod.manifests) {
     if (MANIFEST_BY_ID.has(manifest.toolId)) {
-      // Fail loud at module load — better than silent shadowing in PROTOCOL_TOOLS.
+      // Fail loud at module load - better than silent shadowing in PROTOCOL_TOOLS.
       throw new Error(
         `Duplicate protocol toolId in NAMESPACE_MODULES: "${manifest.toolId}" appears in multiple namespaces`,
       );

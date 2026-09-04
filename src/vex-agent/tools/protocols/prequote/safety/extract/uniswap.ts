@@ -1,5 +1,5 @@
 /**
- * Uniswap quote extraction (uniswap.swap.quote) — factory/liquidity/FoT signals.
+ * Uniswap quote extraction (uniswap.swap.quote) - factory/liquidity/FoT signals.
  */
 
 import { z } from "zod";
@@ -9,11 +9,11 @@ import type { SafetyVerdict } from "@vex-agent/db/repos/swap-prequotes.js";
 
 import type { ExtractedQuote } from "./extracted-quote.js";
 
-// ── Uniswap quote result (uniswap.swap.quote) — factory/liquidity/FoT signals ──
+// ── Uniswap quote result (uniswap.swap.quote) - factory/liquidity/FoT signals ──
 //
 // Uniswap has no honeypot oracle, so on chains without one Vex derives its own
 // conservative signals at quote time (see @tools/uniswap/safety). Verdict map
-// (LOCKED #5 — doctrine unchanged; unknown = allowed-with-approval-warning):
+// (LOCKED #5 - doctrine unchanged; unknown = allowed-with-approval-warning):
 //   - factory check failed        → unknown (never pass without confirmation),
 //   - factory not allowlisted      → fail (integrity: a spoofed pool),
 //   - factory ok + liquidity ≥ min + not FoT → pass,
@@ -41,7 +41,7 @@ const UniswapQuoteResultSchema = z.object({
 /**
  * Identity leg for a uniswap quote token: a native leg records the SAME
  * sentinel the gate canonicalizes execute-time "native"/ETH input to
- * (`evmLegIdentity` in gate/identity.ts) — the uniswap quote echoes its routing
+ * (`evmLegIdentity` in gate/identity.ts) - the uniswap quote echoes its routing
  * WETH address for a native leg, which would otherwise never hash-match the
  * execute. A verbatim WETH-address quote still records verbatim: an ERC-20
  * WETH swap is a genuinely different trade from a native-ETH swap.

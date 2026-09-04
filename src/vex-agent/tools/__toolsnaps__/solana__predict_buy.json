@@ -7,7 +7,7 @@
         "additionalProperties": false,
         "properties": {
           "amountUsdc": {
-            "description": "Amount to spend, in whole/fractional USDC dollars (human-readable, e.g. 10 for $10) — not raw atomic units.",
+            "description": "Amount to spend, in whole/fractional USDC dollars (human-readable, e.g. 10 for $10) - not raw atomic units.",
             "type": "number"
           },
           "marketId": {

@@ -3,14 +3,14 @@ import { getKyberChains } from "@tools/kyberswap/chains.js";
 
 /**
  * Swap-supported EVM chain slugs for the kyberswap entry's `summary`,
- * derived from the LIVE registry at module load (owner add-on, 2026-07-23) —
+ * derived from the LIVE registry at module load (owner add-on, 2026-07-23) -
  * never hand-written, so a future chain add/drop in `@tools/kyberswap/chains.ts`
  * flows into the built protocols prompt automatically. Filtered to
  * `aggregator: true` (the feature `kyberswap.swap.execute` actually needs),
  * not just "every registry entry," so a hypothetical future chain added for a
  * different feature without aggregator support is correctly excluded. Kept
  * reveal-consistent (Agent Scan plan v3 §11.2 / C30): this line names ONLY
- * KyberSwap chains — it must never mention Uniswap; the existing "if
+ * KyberSwap chains - it must never mention Uniswap; the existing "if
  * KyberSwap cannot route, a backup venue is offered automatically in the
  * failure message" wording already covers the off-registry case.
  */

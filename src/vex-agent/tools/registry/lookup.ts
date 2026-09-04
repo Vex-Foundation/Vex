@@ -1,11 +1,11 @@
 /**
- * Tool registry lookup — the master TOOLS aggregation + by-name lookup API.
+ * Tool registry lookup - the master TOOLS aggregation + by-name lookup API.
  *
  * Concatenates the per-domain `ToolDef` arrays into the single ordered master
  * array and exposes the lookup functions (`getToolDef`, `isInternalTool`,
  * `isMutatingTool`, `getPressureSafety`, `getActionKind`, `getAllTools`).
  *
- * Order matters — the LLM sees tools in the aggregation order, which can
+ * Order matters - the LLM sees tools in the aggregation order, which can
  * subtly bias proactive selection. This module is the canonical owner of the
  * master array; `registry.ts` re-exports it.
  */
@@ -33,7 +33,7 @@ import { LONG_MEMORY_TOOLS } from "./long-memory.js";
 import { PLAN_TOOLS } from "./plan.js";
 import { BOARD_TOOLS } from "./board.js";
 
-// Order matters — the LLM sees tools in this order, which can subtly bias
+// Order matters - the LLM sees tools in this order, which can subtly bias
 // proactive selection. Protocol discovery comes first because it is the
 // structured entry point into protocol-specific capabilities.
 export const TOOLS: readonly ToolDef[] = [
@@ -77,7 +77,7 @@ export function isMutatingTool(name: string): boolean {
 
 /**
  * Look up the `pressureSafety` classification for a tool. Returns `undefined`
- * when the tool name is not registered — caller decides whether unknown
+ * when the tool name is not registered - caller decides whether unknown
  * tools are dispatched through (legacy behavior) or denied. The dispatcher
  * currently returns `null` (proceed) on undefined so the routing layer can
  * produce a descriptive "unknown tool" error rather than a pressure error.
@@ -88,7 +88,7 @@ export function getPressureSafety(name: string): ToolDef["pressureSafety"] | und
 
 /**
  * Look up the action taxonomy (`actionKind`) for an internal tool. Returns
- * `undefined` only for unregistered names — the field is REQUIRED on `ToolDef`.
+ * `undefined` only for unregistered names - the field is REQUIRED on `ToolDef`.
  * Used by `dispatchTool` as the fallback stamp for `ToolResult.actionKind`;
  * `executeProtocolTool` overrides with the derived target classification.
  */

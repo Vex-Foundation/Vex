@@ -11,6 +11,47 @@
   machine: official tarball under `~/.local/go` (add `~/.local/go/bin` to
   PATH in build scripts only).
 
+### `bridge/` builds TWO binaries, and not for the same targets
+
+The artifact table has one owner, `vex-app/scripts/bridge-artifact.mjs`
+(`BRIDGE_ARTIFACTS`); `bridge/build.sh` mirrors it in bash because bash cannot
+import it, and a drift test parses both and fails when they disagree. Everything
+else in the chain - the build wrapper's caller, the freshness manifest, the
+staging preflight, the afterPack re-inspection, doctor - reads the table.
+
+| artifact | Go package | targets | packaged as |
+| --- | --- | --- | --- |
+| `vex-mcp` | `./cmd/vex-mcp` | all six triples | `resources/bridge/vex-mcp[.exe]` |
+| `vex-pipe-front` | `./cmd/vex-pipe-front` | `windows-amd64`, `windows-arm64` | `resources/bridge/vex-pipe-front.exe` |
+
+Consequences a developer will actually meet:
+
+- `bridge/build.sh <goos> <goarch>` CLEARS `bridge/dist/<goos>-<goarch>/`
+  before it writes, so an artifact that stops being built for a triple, or one
+  left behind by an older checkout, does not linger beside the current outputs.
+  Every consumer (freshness, staging, doctor, the dev-mode resolver) addresses
+  the artifacts by name from the table; nothing reads that directory whole.
+- On Linux and macOS, `pnpm build:bridge:dev` still produces exactly one
+  binary. `vex-pipe-front` is Windows-only by design, and
+  `locateStudioPipeFront()` answers `unsupported_platform` (not an error) on
+  every other platform.
+- `bridge/dist/<triple>/build-manifest.json` is format v2: it carries a
+  per-artifact digest map (`artifacts: { name -> { sha256, bytes } }`) instead
+  of the old single `artifactDigest`. Any manifest written before this change
+  reads as STALE and is rewritten by the next build - the manifest version is an
+  input to the freshness stamp, so an old record can never read as fresh.
+
+**NAMED OMISSION: the `windows-arm64` pipe front is built, stamped and
+verified, but NOT SHIPPED.** `electron-builder.release.yml` sets
+`win.target.arch: [x64]` ("x64 only for the first Windows release; arm64
+later"), so the release job packages only `windows-amd64` and the arm64 front
+never leaves the build machine. It is still built by `bridge/build.sh` with no
+arguments, staged by the CI matrix and held to the same gates, so that adding
+`arm64` to the release profile later is a one-line change against artifacts
+that have been green all along rather than a first attempt on release day. The
+internal `electron-builder.yml` profile does package `win arm64`, so the arm64
+front IS exercised end to end by `pnpm --dir vex-app make`.
+
 Two build-time Vite flags for design/QA work on the renderer. Both are baked in
 at build time (`import.meta.env`), so release builds — made without them — do
 not contain the code paths at all. Neither flag touches the main process, IPC,
@@ -89,6 +130,74 @@ Toast buttons walk realistic transitions locally ("Update now" → downloading,
 the blocked step). Code: `src/renderer/features/updates/UpdaterPreview.tsx`.
 
 Use it to design/review the updater element without publishing a release.
+
+## Accepted transitive-dependency warnings
+
+Two warnings show up on a clean install / boot and are DELIBERATELY not fixed.
+Measured 2026-09-01; this section is their one home, so please update it here
+rather than re-deriving the chain in a new doc.
+
+### `[INEFFECTIVE_DYNAMIC_IMPORT] ... approval-runtime.ts` (build:main)
+
+Accepted as cosmetic (coordinator decision 2026-09-01, measured). The warning
+is only about chunk co-location: the module's static importers (`reject.ts`,
+`resume.ts`, `engine/index.ts`) live entirely inside the lazy island main only
+ever reaches by dynamic import, so `pg` is provably NOT in main's startup
+graph - the eagerness the warning hints at cannot occur. Every fix path was
+closed by measurement: making the five dynamic sites static would pull `pg`
+into main's startup graph (forbidden by the test-enforced direct-module
+discipline in `run-tool-boundary.test.ts`), leaf-only imports cannot cover the
+three orchestrator functions `approval-runtime.ts` itself owns, and relocating
+those would restructure the approval decision path for a cosmetic warning.
+
+### `bigint: Failed to load bindings, pure JS will be used (try npm run rebuild?)`
+
+- **Chain** (`pnpm why bigint-buffer`, repo root):
+  `bigint-buffer@1.1.5 <- @solana/buffer-layout-utils@0.2.0 <- @solana/spl-token@0.4.14 <- @vex/vex`.
+  It is a production dependency of the Solana token path, not a dev tool.
+- **Why the warning fires**: the package's `install` script is
+  `node-gyp rebuild || echo "Couldn't build bindings..."`. pnpm@10 does not run
+  dependency lifecycle scripts unless the package is listed in
+  `pnpm.onlyBuiltDependencies`; `bigint-buffer` is not, so no `build/` dir is
+  produced and `require('bindings')('bigint_buffer')` throws at load. The
+  package then `console.warn`s once and takes its pure-JS branch.
+- **Disposition: the JS fallback is KEPT ON PURPOSE, and building the native
+  addon would be a REGRESSION.** `pnpm audit --prod` reports
+  [GHSA-3gc7-fjrx-p6mg](https://github.com/advisories/GHSA-3gc7-fjrx-p6mg)
+  (high, "Buffer Overflow via `toBigIntLE()`") against `bigint-buffer <=1.1.5`
+  with **`Patched versions: <0.0.0`** - the package is unmaintained and no fix
+  will ever ship. The overflow is in the native N-API C code
+  (`src/bigint-buffer.c`); `dist/node.js` only reaches it when `converter` is
+  defined. With no bindings built, every entry point takes the
+  `Buffer`/`BigInt` JS branch and the vulnerable C code is never loaded.
+  Adding `bigint-buffer` to `onlyBuiltDependencies` would compile and activate
+  it, and would additionally require an Electron-ABI rebuild per packaged
+  target and arch.
+- **Perf caveat**: the JS branch round-trips through a hex string
+  (`Buffer.reverse()` + `toString('hex')` + `BigInt()`) instead of a direct
+  word copy, so each u64 conversion is materially slower than native. This is
+  confined to SPL token amount encode/decode - a handful of calls per balance
+  read or transfer, not a hot loop - so the cost is not measurable in app
+  behavior. Revisit only if a Solana path ever converts amounts in bulk.
+- **Removal condition**: drops out when `@solana/spl-token` stops depending on
+  `@solana/buffer-layout-utils`, or when that package drops `bigint-buffer`.
+  Do not attempt a standalone upgrade: there is no patched version to upgrade
+  to.
+
+### `punycode` deprecation noise
+
+- **Chain** (`pnpm --dir vex-app why punycode`): `punycode@2.3.1`, reached only
+  through **devDependencies** - `tr46 <- whatwg-url <- data-urls <- jsdom`
+  (and `vitest`), plus `uri-js <- ajv@6 <- @develar/schema-utils <-
+  app-builder-lib <- electron-builder`.
+- **Disposition: documentation only.** Both roots are test/build tooling, so
+  nothing here reaches the packaged runtime. The chain is entirely inside
+  `jsdom`/`vitest` and `electron-builder`; there is no one-line fix we own,
+  and forcing a resolution would override the tooling's own pins for zero
+  runtime benefit.
+- **Removal condition**: clears itself when `electron-builder` moves off
+  `ajv@6` and jsdom's `tr46` drops the userland `punycode` shim. No tracking
+  action needed on our side.
 
 ## Notes
 

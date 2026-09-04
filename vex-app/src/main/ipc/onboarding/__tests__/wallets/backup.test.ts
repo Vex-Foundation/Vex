@@ -6,6 +6,7 @@
  * validation) without touching real keystores or filesystem.
  */
 
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createTestWebContents,
@@ -19,6 +20,15 @@ type Handler = (
 ) => Promise<unknown>;
 
 const handlers = new Map<string, Handler>();
+
+/**
+ * `resolveBackupDir` proves containment with `baseReal + path.sep`, so the
+ * fixtures below are resolved and joined the same way the real caller's
+ * `fs.realpath` results would be. A POSIX literal never carries a drive or a
+ * backslash, so on win32 the containment check would refuse every candidate
+ * for a reason that has nothing to do with the policy under test.
+ */
+const BACKUPS = path.resolve("/home/user/.config/vex/backups");
 
 const mockGenerateEvm = vi.fn();
 const mockGenerateSolana = vi.fn();
@@ -79,7 +89,11 @@ vi.mock("electron", () => ({
 }));
 
 vi.mock("@vex-lib/wallet.js", () => ({
-  BACKUPS_DIR: "/home/user/.config/vex/backups",
+  // A getter, because a `vi.mock` factory is hoisted above this file's own
+  // bindings and must not read `BACKUPS` at definition time.
+  get BACKUPS_DIR(): string {
+    return BACKUPS;
+  },
   listAvailableBackups: () => mockListAvailableBackups(),
   restoreFromBackupArchive: (args: unknown) => mockRestoreFromBackupArchive(args),
 }));
@@ -289,13 +303,13 @@ describe("walletRestoreFromBackup handler", () => {
 describe("walletOpenBackupFolder handler", () => {
   it("rejects paths outside ${CONFIG_DIR}/backups (realpath-safe)", async () => {
     mockRealpath
-      .mockResolvedValueOnce("/home/user/.config/vex/backups")
-      .mockResolvedValueOnce("/etc/passwd-secret");
+      .mockResolvedValueOnce(BACKUPS)
+      .mockResolvedValueOnce(path.resolve("/etc/passwd-secret"));
     registerWalletHandlers();
     const fn = handlers.get(CH.onboarding.walletOpenBackupFolder)!;
     const result = (await fn(trustedSender, {
       requestId: "r8",
-      payload: { backupDir: "/etc/passwd-secret" },
+      payload: { backupDir: path.resolve("/etc/passwd-secret") },
     })) as { ok: boolean; error?: { code: string } };
     expect(result.ok).toBe(false);
     expect(result.error?.code).toBe("validation.invalid_input");
@@ -304,21 +318,19 @@ describe("walletOpenBackupFolder handler", () => {
 
   it("opens the path when realpath stays inside the backups base + is a directory", async () => {
     mockRealpath
-      .mockResolvedValueOnce("/home/user/.config/vex/backups")
-      .mockResolvedValueOnce("/home/user/.config/vex/backups/T123");
+      .mockResolvedValueOnce(BACKUPS)
+      .mockResolvedValueOnce(path.join(BACKUPS, "T123"));
     mockStat.mockResolvedValue({ isDirectory: () => true });
     mockShellOpenPath.mockResolvedValue("");
     registerWalletHandlers();
     const fn = handlers.get(CH.onboarding.walletOpenBackupFolder)!;
     const result = (await fn(trustedSender, {
       requestId: "r9",
-      payload: { backupDir: "/home/user/.config/vex/backups/T123" },
+      payload: { backupDir: path.join(BACKUPS, "T123") },
     })) as { ok: boolean; data?: { ok: boolean } };
     expect(result.ok).toBe(true);
     expect(result.data?.ok).toBe(true);
-    expect(mockShellOpenPath).toHaveBeenCalledWith(
-      "/home/user/.config/vex/backups/T123"
-    );
+    expect(mockShellOpenPath).toHaveBeenCalledWith(path.join(BACKUPS, "T123"));
   });
 
   it("passes the realpath-resolved candidate to shell.openPath, not the raw input", async () => {
@@ -326,8 +338,8 @@ describe("walletOpenBackupFolder handler", () => {
     // still points inside backups base. Handler MUST hand the
     // resolved path to shell.openPath to avoid the TOCTOU swap.
     mockRealpath
-      .mockResolvedValueOnce("/home/user/.config/vex/backups")
-      .mockResolvedValueOnce("/home/user/.config/vex/backups/T-real");
+      .mockResolvedValueOnce(BACKUPS)
+      .mockResolvedValueOnce(path.join(BACKUPS, "T-real"));
     mockStat.mockResolvedValue({ isDirectory: () => true });
     mockShellOpenPath.mockResolvedValue("");
     registerWalletHandlers();
@@ -335,15 +347,13 @@ describe("walletOpenBackupFolder handler", () => {
     const result = (await fn(trustedSender, {
       requestId: "r10",
       payload: {
-        backupDir: "/home/user/.config/vex/backups/symlink-alias",
+        backupDir: path.join(BACKUPS, "symlink-alias"),
       },
     })) as { ok: boolean };
     expect(result.ok).toBe(true);
-    expect(mockShellOpenPath).toHaveBeenCalledWith(
-      "/home/user/.config/vex/backups/T-real"
-    );
+    expect(mockShellOpenPath).toHaveBeenCalledWith(path.join(BACKUPS, "T-real"));
     expect(mockShellOpenPath).not.toHaveBeenCalledWith(
-      "/home/user/.config/vex/backups/symlink-alias"
+      path.join(BACKUPS, "symlink-alias")
     );
   });
 });

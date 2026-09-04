@@ -1,5 +1,5 @@
 /**
- * `trench.images` handler — READ-ONLY listing of the user's image locker (C2).
+ * `trench.images` handler - READ-ONLY listing of the user's image locker (C2).
  *
  * METADATA ONLY, and that is a rule rather than an optimisation (rule 07):
  * the bytes live in the desktop app's own store under userData, they are
@@ -9,7 +9,7 @@
  * verified against the authorization record before anything is signed.
  *
  * The metadata itself is an ordinary DB-backed read through
- * `db/repos/launch-images.ts` (Lane A) — deliberately NOT a new
+ * `db/repos/launch-images.ts` (Lane A) - deliberately NOT a new
  * `ProtocolExecutionContext` seam. The locker is GLOBAL, so the read is
  * unscoped: an image belongs to the user, not to a session or a mission.
  *
@@ -40,7 +40,7 @@ interface LockerImageRow {
 }
 
 const EMPTY_LOCKER_GUIDANCE =
-  "The image locker is empty. A Trench launch requires an image and you cannot upload one — " +
+  "The image locker is empty. A Trench launch requires an image and you cannot upload one - " +
   "ask the user to add an image in the TRENCH PHOTOS card on the right side of the app, then " +
   "check again. Do not attempt a launch until an image is available.";
 
@@ -57,7 +57,7 @@ export async function trenchImagesHandler(p: Record<string, unknown>) {
   } catch (err) {
     return fail(
       `The image locker could not be read (${trenchFailureDetail("trench__images_list", err)}). ` +
-        `Do not launch without confirming an image — retry the listing first.`,
+        `Do not launch without confirming an image - retry the listing first.`,
     );
   }
 

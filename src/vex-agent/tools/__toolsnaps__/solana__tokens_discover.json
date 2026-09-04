@@ -7,7 +7,7 @@
         "additionalProperties": false,
         "properties": {
           "category": {
-            "description": "Category: recent (freshly launched tokens, newest first — measured live: ages 10-175 s since mint, createdAt on every row; use for brand-new/fresh tokens), toptrending (most price movement), toptraded (highest volume), toporganicscore (highest real/organic activity), verified (Jupiter-verified), lst (liquid staking), stocks (tokenized equities, e.g. Ondo, Remora).",
+            "description": "Category: recent (freshly launched tokens, newest first - measured live: ages 10-175 s since mint, createdAt on every row; use for brand-new/fresh tokens), toptrending (most price movement), toptraded (highest volume), toporganicscore (highest real/organic activity), verified (Jupiter-verified), lst (liquid staking), stocks (tokenized equities, e.g. Ondo, Remora).",
             "enum": [
               "toptrending",
               "toptraded",
@@ -30,7 +30,7 @@
             "type": "string"
           },
           "limit": {
-            "description": "Max rows returned (default 20). Server-side for the top* categories; applied Vex-side for recent/lst/verified/stocks with returned/totalMatched/hasMore accounting — nothing is silently dropped.",
+            "description": "Max rows returned (default 20). Server-side for the top* categories; applied Vex-side for recent/lst/verified/stocks with returned/totalMatched/hasMore accounting - nothing is silently dropped.",
             "type": "number"
           },
           "minLiquidity": {

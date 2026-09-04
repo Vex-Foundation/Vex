@@ -154,6 +154,14 @@ export function SplitPane({
           axisLength: length,
         };
         event.currentTarget.setPointerCapture(event.pointerId);
+        // THE SEAM STAYS LIT FOR THE WHOLE DRAG. Pointer capture means the
+        // cursor leaves the 8px strip almost immediately, so `:hover` goes
+        // false while the user is still dragging and the feedback vanishes at
+        // exactly the moment it is being acted on. A DOM attribute rather than
+        // React state, for the reason the shell's own handle uses one: a drag
+        // emits a move per frame, and re-rendering the whole split to paint a
+        // 1px line would make the resize the most expensive thing on screen.
+        event.currentTarget.setAttribute("data-dragging", "");
       },
     [axisLength, horizontal, sizes],
   );
@@ -183,6 +191,7 @@ export function SplitPane({
   const endDrag = useCallback((event: PointerEvent<HTMLDivElement>): void => {
     if (dragRef.current === null) return;
     dragRef.current = null;
+    event.currentTarget.removeAttribute("data-dragging");
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
@@ -250,7 +259,15 @@ export function SplitPane({
                 onKeyDown={handleKeyDown(index)}
                 className={cn(
                   "relative shrink-0 bg-line-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  "motion-safe:transition-colors hover:bg-accent-primary",
+                  // THE SEAM HIGHLIGHT, on the same curve as the shell's own
+                  // handle (`.vex-shell-handle::before` in shell.css): the
+                  // shared motion tokens rather than Tailwind's defaults, so
+                  // every resizable edge in the app settles identically.
+                  // `motion-safe:` is the reduced-motion honouring - the colour
+                  // still changes, it just stops animating.
+                  "motion-safe:transition-colors motion-safe:duration-[var(--vex-duration-fast)]",
+                  "motion-safe:ease-[var(--vex-ease-out)]",
+                  "hover:bg-accent-primary data-[dragging]:bg-accent-primary",
                   // A 1px stroke with a comfortable grab zone around it: the
                   // visible line is the border, the padding is the target.
                   horizontal ? "w-px cursor-col-resize" : "h-px cursor-row-resize",

@@ -16,10 +16,13 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  HIGHLIGHT_BUDGET_LINES_LISTED,
   HIGHLIGHT_MAX_TOKENS,
   type HighlightMessage,
   type HighlightRequest,
   type HighlightResponse,
+  type HighlightSuccess,
+  type TokenLine,
 } from "../highlight-protocol.js";
 import {
   defaultHighlighterPort,
@@ -28,6 +31,47 @@ import {
   UnavailableHighlighterPort,
   WorkerHighlighterPort,
 } from "../highlighter-port.js";
+
+/**
+ * A well-formed success from the worker, and the outcome it should become.
+ *
+ * Written as two builders rather than as literals at every call site BECAUSE
+ * the wire grew a field: each of the dozen literals had to be edited to carry
+ * the budget report, and the next additive change would edit them all again.
+ * The cases that are ABOUT a field pass it; the cases that only need a valid
+ * answer say so once, here.
+ *
+ * The budget fields default to "no line ran out of clock", and the total
+ * defaults to the length of the list, which is the shape the real worker
+ * produces below the list bound. A case proving the bound passes both and makes
+ * them differ deliberately.
+ */
+function success(
+  requestId: number,
+  lines: readonly TokenLine[],
+  longLines: number,
+  budgetExceededLines: readonly number[] = [],
+  budgetExceededTotal: number = budgetExceededLines.length,
+): HighlightSuccess {
+  return {
+    kind: "result",
+    requestId,
+    ok: true,
+    lines,
+    longLines,
+    budgetExceededLines,
+    budgetExceededTotal,
+  };
+}
+
+function succeeded(
+  lines: readonly TokenLine[],
+  longLines: number,
+  budgetExceededLines: readonly number[] = [],
+  budgetExceededTotal: number = budgetExceededLines.length,
+): HighlightOutcome {
+  return { ok: true, lines, longLines, budgetExceededLines, budgetExceededTotal };
+}
 
 /**
  * A worker that records instead of running.
@@ -145,7 +189,7 @@ describe("WorkerHighlighterPort", () => {
 
     // Answered in REVERSE. A port that assumed FIFO would hand the second
     // file's tokens to the first tab.
-    worker?.answer({ kind: "result", requestId: idB ?? 0, ok: true, lines: [[]], longLines: 1 });
+    worker?.answer(success(idB ?? 0, [[]], 1));
     worker?.answer({
       kind: "result",
       requestId: idA ?? 0,
@@ -153,7 +197,7 @@ describe("WorkerHighlighterPort", () => {
       reason: "tokenize_failed",
     });
 
-    await expect(second).resolves.toEqual({ ok: true, lines: [[]], longLines: 1 });
+    await expect(second).resolves.toEqual(succeeded([[]], 1));
     await expect(first).resolves.toEqual({ ok: false, reason: "tokenize_failed" });
     port.dispose();
   });
@@ -173,10 +217,10 @@ describe("WorkerHighlighterPort", () => {
     const worker = FakeWorker.built[0];
     worker?.answer({ kind: "ready" });
     // An id nobody is waiting for: the fence, and it must not throw.
-    worker?.answer({ kind: "result", requestId: 999, ok: true, lines: [[]], longLines: 0 });
+    worker?.answer(success(999, [[]], 0));
     const id = worker?.posted[0]?.requestId ?? 0;
-    worker?.answer({ kind: "result", requestId: id, ok: true, lines: [[]], longLines: 0 });
-    await expect(pending).resolves.toEqual({ ok: true, lines: [[]], longLines: 0 });
+    worker?.answer(success(id, [[]], 0));
+    await expect(pending).resolves.toEqual(succeeded([[]], 0));
     port.dispose();
   });
 
@@ -269,7 +313,7 @@ describe("WorkerHighlighterPort", () => {
     expect(worker?.cancelled).toEqual([id]);
 
     // A result that was already on its way in is dropped rather than published.
-    worker?.answer({ kind: "result", requestId: id, ok: true, lines: [[]], longLines: 1 });
+    worker?.answer(success(id, [[]], 1));
     await expect(handle.outcome).resolves.toEqual({ ok: false, reason: "cancelled" });
     port.dispose();
   });
@@ -289,10 +333,10 @@ describe("WorkerHighlighterPort", () => {
     // A DIFFERENT caller is untouched: they do not share a slot.
     const secondId = worker?.posted[1]?.requestId ?? 0;
     const otherId = worker?.posted[2]?.requestId ?? 0;
-    worker?.answer({ kind: "result", requestId: secondId, ok: true, lines: [[]], longLines: 0 });
-    worker?.answer({ kind: "result", requestId: otherId, ok: true, lines: [[]], longLines: 1 });
-    await expect(second.outcome).resolves.toEqual({ ok: true, lines: [[]], longLines: 0 });
-    await expect(other.outcome).resolves.toEqual({ ok: true, lines: [[]], longLines: 1 });
+    worker?.answer(success(secondId, [[]], 0));
+    worker?.answer(success(otherId, [[]], 1));
+    await expect(second.outcome).resolves.toEqual(succeeded([[]], 0));
+    await expect(other.outcome).resolves.toEqual(succeeded([[]], 1));
     port.dispose();
   });
 
@@ -301,8 +345,8 @@ describe("WorkerHighlighterPort", () => {
     const first = port.highlight({ ...ask, caller: "tab-1" });
     const worker = FakeWorker.built[0];
     const id = worker?.posted[0]?.requestId ?? 0;
-    worker?.answer({ kind: "result", requestId: id, ok: true, lines: [[]], longLines: 0 });
-    await expect(first.outcome).resolves.toEqual({ ok: true, lines: [[]], longLines: 0 });
+    worker?.answer(success(id, [[]], 0));
+    await expect(first.outcome).resolves.toEqual(succeeded([[]], 0));
 
     // The settled request is not cancelled retroactively by the next ask.
     port.highlight({ ...ask, caller: "tab-1" });
@@ -340,6 +384,8 @@ describe("WorkerHighlighterPort", () => {
       requestId: worker.posted[0]?.requestId,
       ok: true,
       longLines: 0,
+      budgetExceededLines: [],
+      budgetExceededTotal: 0,
       lines: [[{ text: "a" }]],
     });
     await expect(pending).resolves.toEqual({ ok: false, reason: "malformed_result" });
@@ -359,13 +405,7 @@ describe("WorkerHighlighterPort", () => {
 
     // A late answer from the terminated worker must resolve nothing a second
     // time; the pending map was cleared, so this is a no-op by construction.
-    worker?.answer({
-      kind: "result",
-      requestId: worker.posted[0]?.requestId ?? 0,
-      ok: true,
-      lines: [[]],
-      longLines: 0,
-    });
+    worker?.answer(success(worker.posted[0]?.requestId ?? 0, [[]], 0));
     await expect(port.highlight(ask).outcome).resolves.toEqual({
       ok: false,
       reason: "worker_unavailable",
@@ -405,47 +445,112 @@ describe("the response ceilings", () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     // Two lines for a three-line file: the tail would be silently lost.
     await expect(
-      answerWith((requestId) => ({ kind: "result", requestId, ok: true, lines: [[], []], longLines: 0 })),
+      answerWith((requestId) => success(requestId, [[], []], 0)),
     ).resolves.toEqual({ ok: false, reason: "malformed_result" });
   });
 
   it("refuses an answer with MORE lines than the text that was sent", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     await expect(
-      answerWith((requestId) => ({
-        kind: "result",
-        requestId,
-        ok: true,
-        lines: [[], [], [], []],
-        longLines: 0,
-      })),
+      answerWith((requestId) => success(requestId, [[], [], [], []], 0)),
     ).resolves.toEqual({ ok: false, reason: "malformed_result" });
   });
 
   it("accepts the EXACT count", async () => {
     await expect(
-      answerWith((requestId) => ({
-        kind: "result",
-        requestId,
-        ok: true,
-        lines: [[], [], []],
-        longLines: 0,
-      })),
-    ).resolves.toEqual({ ok: true, lines: [[], [], []], longLines: 0 });
+      answerWith((requestId) => success(requestId, [[], [], []], 0)),
+    ).resolves.toEqual(succeeded([[], [], []], 0));
   });
 
   it("refuses a long-line count larger than the file has lines", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     // The count is shown to the user as a count of THEIR file's lines.
     await expect(
-      answerWith((requestId) => ({
-        kind: "result",
-        requestId,
-        ok: true,
-        lines: [[], [], []],
-        longLines: 4,
-      })),
+      answerWith((requestId) => success(requestId, [[], [], []], 4)),
     ).resolves.toEqual({ ok: false, reason: "malformed_result" });
+  });
+
+  /**
+   * THE BUDGET REPORT'S CEILINGS.
+   *
+   * These numbers are not decoration: the chip announces the count as a count
+   * of the user's own lines and sends them to the FIRST one. A number outside
+   * the file points at a line that is not there, and an unordered list makes
+   * "the first" whichever the worker happened to put first. Both fail closed.
+   */
+  it("accepts a well-formed budget report and carries it through", async () => {
+    await expect(
+      answerWith((requestId) => success(requestId, [[], [], []], 0, [1, 3])),
+    ).resolves.toEqual(succeeded([[], [], []], 0, [1, 3]));
+  });
+
+  it("refuses a budget count larger than the file has lines", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    await expect(
+      answerWith((requestId) => success(requestId, [[], [], []], 0, [1], 4)),
+    ).resolves.toEqual({ ok: false, reason: "malformed_result" });
+  });
+
+  // ONE `answerWith` per case: it reads `FakeWorker.built[0]`, and a second
+  // port in the same case would be `built[1]` and never answered.
+  it("refuses a line number past the end of the file", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    // The chip would send the reader to line 4 of a three-line file.
+    await expect(
+      answerWith((requestId) => success(requestId, [[], [], []], 0, [4])),
+    ).resolves.toEqual({ ok: false, reason: "malformed_result" });
+  });
+
+  it("refuses line number zero, because the list is 1-BASED", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    // A zero is an off-by-one in the worker's own indexing.
+    await expect(
+      answerWith((requestId) => success(requestId, [[], [], []], 0, [0])),
+    ).resolves.toEqual({ ok: false, reason: "malformed_result" });
+  });
+
+  it("refuses line numbers that do not ascend", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    // Out of order, "the first" would be whichever the worker listed first.
+    await expect(
+      answerWith((requestId) => success(requestId, [[], [], []], 0, [3, 1])),
+    ).resolves.toEqual({ ok: false, reason: "malformed_result" });
+  });
+
+  it("refuses a repeated line number, which is one line counted twice", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    await expect(
+      answerWith((requestId) => success(requestId, [[], [], []], 0, [2, 2])),
+    ).resolves.toEqual({ ok: false, reason: "malformed_result" });
+  });
+
+  it("refuses a list LONGER than the count that summarises it", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    // The one direction that would hide lines from the user: the chip would
+    // announce one line while the worker itself found two.
+    await expect(
+      answerWith((requestId) => success(requestId, [[], [], []], 0, [1, 2], 1)),
+    ).resolves.toEqual({ ok: false, reason: "malformed_result" });
+  });
+
+  it("refuses a list over the wire's own bound", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const lines = Array.from({ length: HIGHLIGHT_BUDGET_LINES_LISTED + 1 }, () => []);
+    const numbers = lines.map((_unused, at) => at + 1);
+    const port = makePort();
+    const pending = port.highlight({ ...ask, text: numbers.map(String).join("\n") }).outcome;
+    const worker = FakeWorker.built[0];
+    worker?.answer(
+      success(worker.posted[0]?.requestId ?? 0, lines, 0, numbers, numbers.length),
+    );
+    await expect(pending).resolves.toEqual({ ok: false, reason: "malformed_result" });
+    port.dispose();
+  });
+
+  it("accepts a TRUNCATED list beside a larger count, which is the bound reporting itself", async () => {
+    await expect(
+      answerWith((requestId) => success(requestId, [[], [], []], 0, [1, 2], 3)),
+    ).resolves.toEqual(succeeded([[], [], []], 0, [1, 2], 3));
   });
 
   it("carries the token bound to the worker, so the worker can refuse first", () => {

@@ -4,7 +4,7 @@
  * WHY THIS EXISTS. A live session (2026-07-30) called
  * `execute_tool {toolId: "dexscreener.search", query: "robinhood", limit: "10"}`.
  * Once the flat-args lift put `limit` in the params bag (see `./flat-args.ts`),
- * the strict gate answered `expected number, got string` — correct, and still a
+ * the strict gate answered `expected number, got string` - correct, and still a
  * burnt call over a value that means exactly one number and nothing else. JSON
  * tool-call arguments are stringly-typed at the model's end often enough that
  * `"10"` for a count is a spelling mistake, not an intent mistake.
@@ -12,7 +12,7 @@
  * WHY THIS IS SAFE ON A MONEY REPO. Amounts here travel as STRING params by
  * design (rule 90: a raw amount must carry its own precision and must not pass
  * through a float), so a param the manifest DECLARED `type: "number"` is
- * structurally non-monetary — limits, counts, offsets, thresholds, page
+ * structurally non-monetary - limits, counts, offsets, thresholds, page
  * numbers, ids. This module only ever looks at declared-number params, so no
  * amount is in its reach. That invariant was FALSE when this was written:
  * `solana.swap.quote/execute` declared `amount` as `type: "number"` (human
@@ -23,12 +23,12 @@
  * `src/__tests__/vex-agent/tools/protocol-param-numeric-string.test.ts`.
  *
  * LOSSLESS ONLY, AND THE TEST IS THE ROUND-TRIP. A string is rewritten only
- * when `String(Number(trimmed)) === trimmed` — the number, printed back,
+ * when `String(Number(trimmed)) === trimmed` - the number, printed back,
  * reproduces exactly what was sent. That admits `"10"`, `"0"`, `"-3"`, `"2.5"`
  * and refuses every ambiguous or lossy spelling: `""`, `"0x10"`, `"1,000"`,
  * `"010"`, `"2.50"`, `"1e3"`, `"10.5abc"`, `"NaN"`, `"Infinity"`. A refused
  * value is left exactly as the model sent it, so the unchanged
- * `validateProtocolParams` gate — with its type, range, and unit contracts —
+ * `validateProtocolParams` gate - with its type, range, and unit contracts -
  * still runs after this and still names the real problem. Nothing ambiguous is
  * ever guessed at: a near-miss costs the same precise error it costs today.
  *

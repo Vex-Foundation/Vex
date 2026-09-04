@@ -28,7 +28,7 @@ export function impliedApyPercent(market: PendleMarket): string | null {
 }
 
 /**
- * The route output for a KNOWN token — never `outputs[0]`.
+ * The route output for a KNOWN token - never `outputs[0]`.
  *
  * The provider's `outputs` order is its OWN canonical order and does not echo
  * the request (measured 2026-07-28, `calldata/price-floor.ts`), so reading a leg

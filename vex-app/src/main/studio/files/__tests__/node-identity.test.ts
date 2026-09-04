@@ -7,6 +7,7 @@
  * that are always read together.
  */
 
+import path from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
@@ -165,10 +166,19 @@ describe("structural path refusals", () => {
 });
 
 describe("mapping a watcher's absolute path back", () => {
-  const root = "/home/u/Vex/projects/p-1";
+  /**
+   * Both arguments are RESOLVED, and both are built with `path.join`, because
+   * that is what the caller supplies: `watcher.ts` passes `options.realRoot`
+   * (a realpath) and a native absolute path the OS watcher reported. A POSIX
+   * literal is not such a value on win32 - it lacks a drive and uses the wrong
+   * separator - so it would exercise a shape production never produces while
+   * saying nothing about containment. What the test still proves on every
+   * lane is the OUTPUT contract: the result is POSIX-separated.
+   */
+  const root = path.resolve("/home/u/Vex/projects/p-1");
 
   it("produces a POSIX project-relative path", () => {
-    expect(toProjectRelative(root, `${root}/src/a.ts`)).toBe("src/a.ts");
+    expect(toProjectRelative(root, path.join(root, "src", "a.ts"))).toBe("src/a.ts");
   });
 
   it("maps the ROOT itself to the empty path", () => {
@@ -178,16 +188,21 @@ describe("mapping a watcher's absolute path back", () => {
   it("DROPS a path that is not inside the project", () => {
     // A sibling directory whose name shares the root's prefix. A raw string
     // prefix test would accept this.
-    expect(toProjectRelative(root, "/home/u/Vex/projects/p-10/a.ts")).toBeNull();
-    expect(toProjectRelative(root, "/etc/passwd")).toBeNull();
+    expect(
+      toProjectRelative(root, path.resolve("/home/u/Vex/projects/p-10", "a.ts")),
+    ).toBeNull();
+    expect(toProjectRelative(root, path.resolve("/etc/passwd"))).toBeNull();
   });
 
   it("accepts a differently-cased ROOT and keeps the ENTRY's own case", () => {
     // What a case-insensitive filesystem can report. The entry's case is the
     // part a case-only rename changes, so it must survive exactly.
-    expect(toProjectRelative(root, "/home/u/vex/PROJECTS/p-1/src/README.md")).toBe(
-      "src/README.md",
-    );
+    expect(
+      toProjectRelative(
+        root,
+        path.join(path.resolve("/home/u/vex/PROJECTS/p-1"), "src", "README.md"),
+      ),
+    ).toBe("src/README.md");
   });
 
   it("PRESERVES the operating system's own spelling of a name", () => {
@@ -205,8 +220,8 @@ describe("mapping a watcher's absolute path back", () => {
     const decomposed = "cafe\u0301.txt";
     const composed = "caf\u00e9.txt";
     expect(decomposed).not.toBe(composed);
-    expect(toProjectRelative(root, `${root}/${decomposed}`)).toBe(decomposed);
-    expect(toProjectRelative(root, `${root}/${composed}`)).toBe(composed);
+    expect(toProjectRelative(root, path.join(root, decomposed))).toBe(decomposed);
+    expect(toProjectRelative(root, path.join(root, composed))).toBe(composed);
   });
 });
 

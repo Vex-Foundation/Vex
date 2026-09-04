@@ -1,5 +1,5 @@
 /**
- * The three identifiers every `bridge/` module shares — the namespace, the
+ * The three identifiers every `bridge/` module shares - the namespace, the
  * mutating tool id, and the chain family Relay's EVM-only surface records.
  *
  * Extracted verbatim from `../bridge.ts` as part of a façade-preserving

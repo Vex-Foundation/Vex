@@ -41,8 +41,9 @@ import {
   STUDIO_PROJECTS_ERROR,
   STUDIO_PROJECTS_LOADING,
   STUDIO_PROJECTS_RETRY,
-  STUDIO_PROJECTS_SEARCH_EMPTY,
   STUDIO_PROJECTS_SECTION,
+  STUDIO_SHOW_FEWER_PROJECTS,
+  studioShowAllProjectsLabel,
 } from "../studio-copy.js";
 import { ProjectRailRow } from "./ProjectRailRow.js";
 
@@ -56,6 +57,16 @@ const ROW_MENU_ENTRIES: readonly MenuEntry[] = [
   { id: "delete", label: STUDIO_PROJECT_MENU_DELETE, danger: true },
 ];
 
+/**
+ * Rows shown before the list offers the rest.
+ *
+ * The rail's height is shared with the explorer pane below, and an unbounded
+ * project list would push the tree out of the column entirely (rule 05: every
+ * growing list has an explicit bound). Five rows plus a control that says how
+ * many exist - nothing is hidden, and one click shows everything.
+ */
+export const STUDIO_PROJECTS_COLLAPSED_ROWS = 5;
+
 export interface StudioProjectsSectionProps {
   readonly projects: readonly ProjectDto[];
   readonly activeProjectId: string | null;
@@ -65,8 +76,9 @@ export interface StudioProjectsSectionProps {
   readonly hasError: boolean;
   readonly onRetry: () => void;
   readonly onSelect: (projectId: string) => void;
-  /** True while a search query is narrowing the list (changes the empty copy). */
-  readonly searching: boolean;
+  /** Show every row rather than the first {@link STUDIO_PROJECTS_COLLAPSED_ROWS}. */
+  readonly showAll: boolean;
+  readonly onShowAllChange: (showAll: boolean) => void;
 }
 
 export function StudioProjectsSection({
@@ -77,7 +89,8 @@ export function StudioProjectsSection({
   hasError,
   onRetry,
   onSelect,
-  searching,
+  showAll,
+  onShowAllChange,
 }: StudioProjectsSectionProps): JSX.Element {
   const [openMenuProjectId, setOpenMenuProjectId] = useState<string | null>(null);
   const closeMenu = useCallback(() => setOpenMenuProjectId(null), []);
@@ -104,6 +117,7 @@ export function StudioProjectsSection({
     return (
       <ListPlaceholder
         sidebarOpen={!collapsed}
+        register="sentence"
         text={STUDIO_PROJECTS_LOADING}
         icon={
           <DotmSquare3
@@ -120,11 +134,28 @@ export function StudioProjectsSection({
   if (hasError) {
     // NEVER a blank rail. The line states what failed and offers the one action
     // that can fix it; `role="status"` announces it without stealing focus.
+    //
+    // COLLAPSED it is the glyph alone, named by `aria-label`: the 56px spine
+    // renders no text, and a Retry whose word cannot fit would be a control the
+    // user can press without being able to read what it does. Expanding the
+    // rail is one click away and brings the sentence and the action with it.
+    if (collapsed) {
+      return (
+        <div
+          role="status"
+          aria-label={STUDIO_PROJECTS_ERROR}
+          title={STUDIO_PROJECTS_ERROR}
+          className="flex items-center justify-center p-3 text-warning"
+        >
+          <IconWarning size={16} />
+        </div>
+      );
+    }
     return (
       <div role="status" className="flex flex-col items-start gap-2 p-3">
         <span className="flex items-center gap-2 text-[12px] leading-[18px] text-warning">
           <IconWarning size={14} />
-          {!collapsed ? STUDIO_PROJECTS_ERROR : null}
+          {STUDIO_PROJECTS_ERROR}
         </span>
         <button
           type="button"
@@ -141,11 +172,17 @@ export function StudioProjectsSection({
     return (
       <ListPlaceholder
         sidebarOpen={!collapsed}
-        text={searching ? STUDIO_PROJECTS_SEARCH_EMPTY : STUDIO_PROJECTS_EMPTY}
+        register="sentence"
+        text={STUDIO_PROJECTS_EMPTY}
         icon={<IconArchive size={18} />}
       />
     );
   }
+
+  const bounded =
+    showAll || projects.length <= STUDIO_PROJECTS_COLLAPSED_ROWS
+      ? projects
+      : projects.slice(0, STUDIO_PROJECTS_COLLAPSED_ROWS);
 
   return (
     // `collapsed` here suppresses RailGroup's own eyebrow and gives the group
@@ -158,7 +195,7 @@ export function StudioProjectsSection({
       collapsed
       headingId="studio-sidebar-projects"
     >
-      {projects.map((project) => (
+      {bounded.map((project) => (
         <li key={project.id}>
           <ProjectRailRow
             project={project}
@@ -194,6 +231,22 @@ export function StudioProjectsSection({
           />
         </li>
       ))}
+      {/* The bound, said out loud, with the whole count in it. Collapsed the
+        * rail carries no words at all, so the rows are simply all shown there
+        * (the spine scrolls). */}
+      {collapsed || projects.length <= STUDIO_PROJECTS_COLLAPSED_ROWS ? null : (
+        <li>
+          <button
+            type="button"
+            onClick={() => onShowAllChange(!showAll)}
+            className="mt-0.5 flex h-7 w-full items-center rounded-lg px-2 text-left text-[12px] leading-[18px] text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
+          >
+            {showAll
+              ? STUDIO_SHOW_FEWER_PROJECTS
+              : studioShowAllProjectsLabel(projects.length)}
+          </button>
+        </li>
+      )}
     </RailGroup>
   );
 }

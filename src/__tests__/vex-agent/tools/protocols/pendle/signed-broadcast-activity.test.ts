@@ -1,5 +1,5 @@
 /**
- * The Pendle activity spine (card B1) — `sendPendleRouterTx` is the ONE place a
+ * The Pendle activity spine (card B1) - `sendPendleRouterTx` is the ONE place a
  * Pendle Router call is signed, and now also the one place it is RECORDED.
  *
  * These are the four cases the card requires be driven by a test, and each one
@@ -9,10 +9,10 @@
  *      we believe it to be, an untracked transaction with real funds behind it
  *      is strictly worse than no transaction at all.
  *   2. CLAIM CREDIT. A claim spends nothing, so a receipt that mined
- *      successfully but credited nothing decodable is NOT a successful claim —
+ *      successfully but credited nothing decodable is NOT a successful claim -
  *      confirming it would book income that does not exist.
  *   3. AMBIGUITY NEVER TERMINALIZES. A send/receipt failure leaves the row
- *      `pending` — never `definitively_failed`, never re-broadcast — and returns
+ *      `pending` - never `definitively_failed`, never re-broadcast - and returns
  *      the exact refuse-to-retry sentence.
  *   4. THE HASH IS NEVER SWALLOWED (H-4). Once the node has returned a hash,
  *      every branch carries it, including the ones that fail afterwards.
@@ -208,7 +208,7 @@ describe("a claim is confirmed ONLY on a decoded credit", () => {
     ...BASE_PLAN,
     toolId: "pendle.claim",
     eventRole: "yield_claim",
-    // NO tokenIn, ever — a claim spends nothing.
+    // NO tokenIn, ever - a claim spends nothing.
     tokenOut: { tokenAddress: USDC, tokenDecimals: 6 },
   } as const;
 
@@ -240,7 +240,7 @@ describe("a claim is confirmed ONLY on a decoded credit", () => {
     expect(result.kind === "unproven" && result.message).toMatch(/[Dd]o not retry/);
   });
 
-  it("a wallet OUTFLOW is not a credit — a claim that only paid gas-token out stays pending", async () => {
+  it("a wallet OUTFLOW is not a credit - a claim that only paid gas-token out stays pending", async () => {
     const c = clients("ok", { status: "success", logs: [transfer(USDC, WALLET, ZERO, 500n)] });
     const result = await sendPendleRouterTx(c.publicClient, c.walletClient, tx, CLAIM_PLAN);
     expect(result).toMatchObject({ kind: "unproven", reason: "no_credit" });
@@ -257,7 +257,7 @@ describe("an ambiguous broadcast leaves the row pending", () => {
 
     expect(result).toMatchObject({ kind: "unproven", reason: "ambiguous", txHash: EXPECTED_HASH, executionId: 7 });
     expect(result.kind === "unproven" && result.message).toBe(
-      "Cannot prove whether this broadcast landed — do not retry; this attempt is recorded as pending and resolves automatically.",
+      "Cannot prove whether this broadcast landed - do not retry; this attempt is recorded as pending and resolves automatically.",
     );
     expect(result.kind === "unproven" && result.message).toBe(PENDLE_AMBIGUOUS_BROADCAST_MESSAGE);
   });
@@ -382,7 +382,7 @@ describe("executed amounts come from the receipt, never from the plan", () => {
     }));
   });
 
-  it("a py.mint whose SECOND leg cannot be proven stays pending — never half-confirmed", async () => {
+  it("a py.mint whose SECOND leg cannot be proven stays pending - never half-confirmed", async () => {
     const plan = {
       ...BASE_PLAN,
       toolId: "pendle.py.mint",
@@ -457,7 +457,7 @@ describe("recordPendleRefusal persists the Option-C second leg when the refusal 
     expect(call.event).toMatchObject({ tokenIn2: { tokenAddress: YT, tokenDecimals: 18 } });
   });
 
-  it("omits both second legs when the refusal never learned them — an unresolved market", async () => {
+  it("omits both second legs when the refusal never learned them - an unresolved market", async () => {
     // The commonest PY refusal: the market did not resolve, so the YT address
     // is exactly what is missing. The row must still be writable.
     await recordPendleRefusal(

@@ -109,7 +109,10 @@ beforeEach(() => {
   });
   mocks.isPortFree.mockResolvedValue(true);
   mocks.composePull.mockResolvedValue(spawnResult());
-  mocks.waitForHealth.mockResolvedValue(true);
+  mocks.waitForHealth.mockResolvedValue({
+    verdict: "usable",
+    message: "Postgres on 127.0.0.1:27432 is this install's database.",
+  });
   mocks.waitForEmbeddingsRuntimeReady.mockResolvedValue({
     kind: "ready",
     observedDim: 384,
@@ -229,7 +232,10 @@ describe("composeUp - reused-stack convergence branch (port-busy path)", () => {
       downResult: spawnResult(),
       upResult: spawnResult({ code: 1, stderr: STALE_STDERR }),
     });
-    mocks.waitForHealth.mockResolvedValueOnce(false);
+    mocks.waitForHealth.mockResolvedValueOnce({
+      verdict: "unreachable",
+      message: "127.0.0.1:27432 did not answer usably: timeout expired.",
+    });
 
     const result = await composeUp(deps, { pgPort: 27432 });
 

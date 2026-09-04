@@ -2,7 +2,7 @@
  * `khalani.bridge` Vex fee leg (step 13b of the staged-execute contract,
  * split out in 0R.4, refactor-only). The fee leg is planned LAST and driven
  * OUTSIDE the bridge loop: its outcome must never fail, abort, or delay the
- * bridge. Every path returns a report — none throws, none aborts the logical
+ * bridge. Every path returns a report - none throws, none aborts the logical
  * row, none marks the bridge failed.
  */
 
@@ -36,7 +36,7 @@ export interface KhalaniFeeLegInput {
   readonly signer: ChainWallet;
   readonly fromChainId: number;
   readonly fromChainName: string;
-  /** Appended in place — the handler renders the same array in its result. */
+  /** Appended in place - the handler renders the same array in its result. */
   readonly recordedLegs: RecordedLeg[];
 }
 
@@ -85,7 +85,7 @@ export async function runKhalaniVexFeeLeg(input: KhalaniFeeLegInput): Promise<Ve
       recordedLegs.push({ role: "vex_fee", chain: fromChainName, txHash: outcome.txHash, explorerUrl, status: "reverted" });
       return {
         collection: "reverted",
-        collectionNote: "The bridge went through. The Vex fee transfer reverted, so no fee was collected — your bridge is unaffected.",
+        collectionNote: "The bridge went through. The Vex fee transfer reverted, so no fee was collected - your bridge is unaffected.",
       };
     }
     if (outcome.kind === "ambiguous") {
@@ -102,7 +102,7 @@ export async function runKhalaniVexFeeLeg(input: KhalaniFeeLegInput): Promise<Ve
     let legStatus = "confirmed";
     try {
       // R1 Step 3b: Vex COMPOSED this transfer, so the amount recorded on its own
-      // intent row is the exact atomic amount that was signed — not a quote and
+      // intent row is the exact atomic amount that was signed - not a quote and
       // not the provider's word. It is therefore one of the few legs whose
       // executed amount may be written at return time.
       const confirmResult = await confirmActivityEvent(
@@ -140,7 +140,7 @@ export async function runKhalaniVexFeeLeg(input: KhalaniFeeLegInput): Promise<Ve
     recordedLegs.push({ role: "vex_fee", chain: fromChainName, txHash: null, status: "not_attempted" });
     return {
       collection: "not_attempted",
-      collectionNote: "The bridge went through. The Vex fee transfer was refused before signing, so no fee was collected — your bridge is unaffected.",
+      collectionNote: "The bridge went through. The Vex fee transfer was refused before signing, so no fee was collected - your bridge is unaffected.",
     };
   }
 }

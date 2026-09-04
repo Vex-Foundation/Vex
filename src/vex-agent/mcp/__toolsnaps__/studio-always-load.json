@@ -25,9 +25,9 @@
     "WalletTrackToken",
     "WalletWrapConfirm",
     "WalletWrapPrepare",
-    "WebResearch",
     "lighter_core_onboarding_status",
     "lighter_rhc_onboarding_status",
+    "vex_ToolDescribe",
     "vex_ToolSearch"
   ]
 }

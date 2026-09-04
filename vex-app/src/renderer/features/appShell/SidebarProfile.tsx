@@ -8,9 +8,9 @@
  *
  * The name line is the user's own "Vex setup" `displayName` once set; before
  * that it is a gentle ask ("What should Vex call you?"). The healthy-runtime
- * subtitle speaks the serif hallmark; any other state speaks plain
- * telemetry. Screen rows route through `setShellRoute` with the trigger
- * row's rect as the expand origin.
+ * subtitle speaks the serif hallmark; any other state speaks its own SENTENCE
+ * (`RUNTIME_STATUS_SENTENCES`), never the bare status word. Screen rows route
+ * through `setShellRoute` with the trigger row's rect as the expand origin.
  */
 
 import {
@@ -50,6 +50,38 @@ type ProfileMenuScreen = "memory" | "sessions" | "agentScan" | "howItWorks";
 
 /** Chronos hallmark — the healthy-runtime subtitle. Test-pinned copy. */
 export const NIGHT_SHIFT_MESSAGE = "The night shift is active.";
+
+/** The runtime states the foot can be in, derived from the health read. */
+export type RuntimeStatusState =
+  | "connecting"
+  | "unavailable"
+  | "connected"
+  | "degraded"
+  | "not_ready";
+
+/**
+ * WHAT IS WRONG, IN A SENTENCE - one per state, the same shape the Studio host
+ * status card uses (`studio/studio-copy.ts`, `STUDIO_HOST_CAUSE_SENTENCES`).
+ *
+ * The foot used to print the bare status word ("DEGRADED" in every walk shot of
+ * the UX audit), which answers none of rule 08's questions: not what could not
+ * be completed, not why, not whether it is the user's move. Each sentence here
+ * says what is not working and the reason, in the terms the derivation actually
+ * has (`main/ipc/system.ts`: `degraded` is an unfinished setup, `not_ready` is
+ * an offline network), and none of them names a path, a port or a payload.
+ *
+ * The short word survives where a word is the right size: the menu's runtime
+ * provenance row and the trigger's accessible name.
+ */
+export const RUNTIME_STATUS_SENTENCES: Readonly<
+  Record<RuntimeStatusState, string>
+> = {
+  connecting: "Vex is still checking its local runtime.",
+  unavailable: "Vex could not read its local runtime status.",
+  connected: NIGHT_SHIFT_MESSAGE,
+  degraded: "Vex setup is not finished, so some things will not work yet.",
+  not_ready: "Vex is offline, so anything that needs the network will not work.",
+};
 
 /** Two-line menu row body: label over its hint subline. */
 function entryLabel(label: string, hint: string, attention = false): ReactNode {
@@ -223,7 +255,9 @@ export function SidebarProfile({
       aria-haspopup="menu"
       aria-expanded={open}
       aria-label={`Vex - ${runtime.label}. Open menu`}
-      title={sidebarOpen ? undefined : runtime.label}
+      // The collapsed spine renders no subtitle, so the tooltip is the only
+      // carrier of the reason there: it speaks the sentence, not the word.
+      title={sidebarOpen ? undefined : runtime.sentence}
       onClick={() => setOpen((prev) => !prev)}
       className={cn(
         "flex w-full items-center transition-colors hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent-primary",
@@ -259,11 +293,13 @@ export function SidebarProfile({
               // chrome (owner 6a, ratified 2026-08-21), so the line is now
               // marked by its TIER against the tertiary telemetry beside it.
               <span className="truncate text-[12px] leading-tight text-ink-secondary">
-                {NIGHT_SHIFT_MESSAGE}
+                {runtime.sentence}
               </span>
             ) : (
-              <span className="vex-micro truncate leading-tight text-ink-tertiary">
-                {runtime.label}
+              // NOT `truncate`: a sentence that says what is wrong is worth two
+              // lines of the foot, and a clipped cause is the defect again.
+              <span className="text-[12px] leading-tight text-ink-tertiary">
+                {runtime.sentence}
               </span>
             )}
           </span>
@@ -308,25 +344,35 @@ interface RuntimeStatusInput {
   readonly result: Result<HealthReport> | undefined;
 }
 
-/** Status derivation — ONE short word (test-pinned; casing is CSS-only). */
-function getRuntimeStatus({ loading, result }: RuntimeStatusInput): {
+/**
+ * Status derivation - the short word (test-pinned; casing is CSS-only) plus
+ * the sentence that says what it MEANS. Both come from one read so the two
+ * surfaces can never disagree about the state they are describing.
+ */
+export function getRuntimeStatus({ loading, result }: RuntimeStatusInput): {
+  readonly state: RuntimeStatusState;
   readonly label: string;
+  readonly sentence: string;
   /** True only when the runtime is verifiably connected and healthy. */
   readonly live: boolean;
 } {
-  if (loading || result === undefined) {
-    return { label: "Connecting", live: false };
-  }
-  if (!result.ok) {
-    return { label: "Unavailable", live: false };
-  }
-  if (result.data.overall === "ok") {
-    return { label: "Connected", live: true };
-  }
-  return {
-    label: result.data.overall === "degraded" ? "Degraded" : "Not ready",
-    live: false,
-  };
+  const of = (
+    state: RuntimeStatusState,
+    label: string,
+    live: boolean,
+  ): {
+    readonly state: RuntimeStatusState;
+    readonly label: string;
+    readonly sentence: string;
+    readonly live: boolean;
+  } => ({ state, label, sentence: RUNTIME_STATUS_SENTENCES[state], live });
+
+  if (loading || result === undefined) return of("connecting", "Connecting", false);
+  if (!result.ok) return of("unavailable", "Unavailable", false);
+  if (result.data.overall === "ok") return of("connected", "Connected", true);
+  return result.data.overall === "degraded"
+    ? of("degraded", "Degraded", false)
+    : of("not_ready", "Not ready", false);
 }
 
 interface NameLineInput {

@@ -19,7 +19,15 @@ import type { HostPort } from "../host-service.js";
 import type { LaunchProbe, PtyAdapter, PtySpawner } from "../types.js";
 
 export class ScriptedPty implements PtyAdapter {
-  readonly pid = 4242;
+  /**
+   * MUTABLE, and read live, because the real adapter's is a live getter over
+   * node-pty's - and on Windows that getter answers `0` until ConPTY connects.
+   * A fake with a frozen pid cannot express the deferral at all, which is how a
+   * suite stays green while the product publishes `0` forever.
+   *
+   * `deferPid()` puts it in that state; `resolvePid()` completes the connection.
+   */
+  pid = 4242;
   process = "bash";
   paused = false;
   killed = false;
@@ -29,6 +37,17 @@ export class ScriptedPty implements PtyAdapter {
 
   private dataListeners: Array<(data: string) => void> = [];
   private exitListeners: Array<(event: { exitCode: number; signal?: number }) => void> = [];
+  private errorListeners: Array<(error: Error) => void> = [];
+
+  /** Model a pty whose pid is not knowable yet: Windows, before ConPTY connects. */
+  deferPid(): void {
+    this.pid = 0;
+  }
+
+  /** The connection completed and the real pid is now readable. */
+  resolvePid(pid = 4242): void {
+    this.pid = pid;
+  }
 
   onData(listener: (data: string) => void): { dispose(): void } {
     this.dataListeners.push(listener);
@@ -46,6 +65,15 @@ export class ScriptedPty implements PtyAdapter {
     return {
       dispose: () => {
         this.exitListeners = this.exitListeners.filter((item) => item !== listener);
+      },
+    };
+  }
+
+  onError(listener: (error: Error) => void): { dispose(): void } {
+    this.errorListeners.push(listener);
+    return {
+      dispose: () => {
+        this.errorListeners = this.errorListeners.filter((item) => item !== listener);
       },
     };
   }
@@ -105,9 +133,30 @@ export class ScriptedPty implements PtyAdapter {
   }
 
   exit(exitCode: number, signal?: number): void {
+    // A PROCESS REPORTS ITS EXIT ONCE. Recording it here is what stops a later
+    // `kill` from synthesising a second exit over the top of this one: a real
+    // pty answers a kill aimed at an already-dead process with nothing, and a
+    // fake that answers with `exitCode: 0` silently rewrites the code the test
+    // just declared - which made "the shell exited 3" indistinguishable from
+    // "the shell exited 0" for every scenario where a kill follows an exit.
+    this.exitReported = true;
     for (const listener of [...this.exitListeners]) {
       listener(signal === undefined ? { exitCode } : { exitCode, signal });
     }
+  }
+
+  /**
+   * The data socket failed with an error node-pty would have RETHROWN.
+   *
+   * The fake delivers it to the host's subscribers ONLY. It does not model the
+   * rethrow itself, because the rethrow is the production spawner's to prevent
+   * (`node-pty-spawner.ts` registers the second `error` listener node-pty counts)
+   * and there is no socket here to count listeners on. What this proves is the
+   * half that lives in the host: that the terminal ends instead of hanging, and
+   * that nothing propagates out of the callback.
+   */
+  failSocket(error: Error): void {
+    for (const listener of [...this.errorListeners]) listener(error);
   }
 }
 
@@ -144,15 +193,32 @@ export function scriptedSpawner(pty: ScriptedPty): {
 export function scriptedSpawnerPool(): {
   spawn: PtySpawner;
   ptys: ScriptedPty[];
-  calls: Array<{ executable: string; args: readonly string[]; cwd: string }>;
+  calls: Array<{
+    executable: string;
+    args: readonly string[];
+    cwd: string;
+    /**
+     * THE COMPOSED ENVIRONMENT node-pty was actually handed - base, overlay and
+     * the host's assertions, after `buildTerminalEnvironment`. Recorded because
+     * a revive's overlay is only observable here: the request carries it, the
+     * launch carries it, and the only place it becomes a fact about a process
+     * is the spawn.
+     */
+    env: Record<string, string>;
+  }>;
 } {
   const ptys: ScriptedPty[] = [];
-  const calls: Array<{ executable: string; args: readonly string[]; cwd: string }> = [];
+  const calls: Array<{
+    executable: string;
+    args: readonly string[];
+    cwd: string;
+    env: Record<string, string>;
+  }> = [];
   return {
     ptys,
     calls,
     spawn: (executable, args, options) => {
-      calls.push({ executable, args, cwd: options.cwd });
+      calls.push({ executable, args, cwd: options.cwd, env: options.env });
       const pty = new ScriptedPty();
       ptys.push(pty);
       return pty;

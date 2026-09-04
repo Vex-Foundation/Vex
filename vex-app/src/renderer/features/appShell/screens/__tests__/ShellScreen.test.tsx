@@ -10,7 +10,11 @@
  *      `data-vex-morph` ("trigger" with an origin rect, "center" without,
  *      "reduced" under prefers-reduced-motion). Classes/attrs only — the
  *      animation frames themselves are not assertable in jsdom;
- *   3. Escape (from anywhere — the listener rides window) fires `onClose`;
+ *   3. Escape (from anywhere - the listener rides window) fires `onClose`, but
+ *      ONLY while this screen owns the key: never over an already-handled
+ *      event, never while a native `<dialog>` is open above it, and never
+ *      twice for one instance (the host animates the screen out, so the
+ *      listener outlives the close);
  *   4. reduced motion renders the final frame safely (no enter animation
  *      required for the content to be present), with or without an origin;
  *   5. the optional `header` slot replaces the serif H1 while `title` keeps
@@ -107,6 +111,98 @@ describe("ShellScreen", () => {
     // Other keys never close.
     fireEvent.keyDown(window, { key: "Enter" });
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves Escape to a native dialog open above it, and does not swallow the key", () => {
+    const onClose = vi.fn();
+    render(
+      <ShellScreen title="Settings" origin={null} onClose={onClose}>
+        <p>preferences</p>
+      </ShellScreen>,
+    );
+
+    // A modal dialog opened OVER the screen. The regression this pins: the
+    // screen took the key and called `preventDefault`, which suppresses the
+    // platform's own close request, so the dialog stayed open with the user's
+    // Escape swallowed - measured in the Studio keyboard walk, where the
+    // creator opened over a Settings screen that was still animating out.
+    const dialog = document.createElement("dialog");
+    dialog.setAttribute("aria-label", "New project");
+    document.body.append(dialog);
+    dialog.showModal();
+
+    const escape = new KeyboardEvent("keydown", {
+      key: "Escape",
+      bubbles: true,
+      cancelable: true,
+    });
+    window.dispatchEvent(escape);
+
+    expect(onClose).not.toHaveBeenCalled();
+    // Not merely "did not close": the key must reach the platform untouched.
+    expect(escape.defaultPrevented).toBe(false);
+
+    dialog.close();
+    dialog.remove();
+    // With the dialog gone the screen owns Escape again.
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks to close once per instance, so a screen animating out stops taking Escape", () => {
+    const onClose = vi.fn();
+    render(
+      <ShellScreen title="Settings" origin={null} onClose={onClose}>
+        <p>preferences</p>
+      </ShellScreen>,
+    );
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+
+    // The host (`ShellScreens`) animates the screen out, so this component and
+    // its window listener outlive the close. A second Escape belongs to
+    // whatever is on screen next.
+    const second = new KeyboardEvent("keydown", {
+      key: "Escape",
+      bubbles: true,
+      cancelable: true,
+    });
+    window.dispatchEvent(second);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(second.defaultPrevented).toBe(false);
+  });
+
+  it("closes once when the round close key was used, not again on a following Escape", () => {
+    const onClose = vi.fn();
+    render(
+      <ShellScreen title="Sessions" origin={null} onClose={onClose}>
+        <p>ledger</p>
+      </ShellScreen>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Close Sessions" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("never takes an Escape a nearer owner already handled", () => {
+    const onClose = vi.fn();
+    render(
+      <ShellScreen title="Sessions" origin={null} onClose={onClose}>
+        <p>ledger</p>
+      </ShellScreen>,
+    );
+
+    const handled = new KeyboardEvent("keydown", {
+      key: "Escape",
+      bubbles: true,
+      cancelable: true,
+    });
+    handled.preventDefault();
+    window.dispatchEvent(handled);
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it("renders the `header` slot in place of the serif H1 while `title` still names the dialog and close key", () => {

@@ -5,7 +5,7 @@
  *
  * Vex signs ONLY origin steps; the destination fill is solver-signed and
  * externally observed. Any early end returns a finished `ToolResult` built by
- * `./results.js` — this module owns the sequencing, not the wording.
+ * `./results.js` - this module owns the sequencing, not the wording.
  *
  * Extracted verbatim from `../bridge.ts` as part of a façade-preserving
  * structural split (SPEC wave 0R.2). `../bridge.ts` remains the public entry
@@ -62,7 +62,7 @@ import {
 
 export interface OriginBroadcast {
   /**
-   * `vex_fee` is Vex's OWN treasury transfer, not a Relay step — surfaced with
+   * `vex_fee` is Vex's OWN treasury transfer, not a Relay step - surfaced with
    * its own display role so the agent can tell it apart from a real approval
    * (the durable row records it under `allowance`, the closest existing
    * `event_role`; see `BRIDGE_FEE_ACTIVITY_EVENT_ROLE`).
@@ -70,7 +70,7 @@ export interface OriginBroadcast {
   readonly role: RelayStepRole | "vex_fee";
   readonly txHash: string;
   // `confirmed_unrecorded` (m5-relay / Phase-1 C41): the origin tx confirmed
-  // on-chain but Vex's durable confirm write did NOT apply — never present it as
+  // on-chain but Vex's durable confirm write did NOT apply - never present it as
   // an ordinary confirmation.
   readonly status: "confirmed" | "confirmed_unrecorded" | "broadcast_unconfirmed" | "reverted";
 }
@@ -156,7 +156,7 @@ export async function runOriginBroadcasts(input: OriginBroadcastInput): Promise<
   // Read-after-write anchor for the NEXT origin leg: the approve leg this loop
   // just confirmed is exactly the state the deposit leg's pre-sign estimate
   // depends on, and the estimating node does not always have it yet (live
-  // 2026-07-25, deposit `0xc96bfee1…` — `dependent-leg-gas-estimate.ts`).
+  // 2026-07-25, deposit `0xc96bfee1…` - `dependent-leg-gas-estimate.ts`).
   let priorLeg: ConfirmedPriorLeg | undefined;
   // Where the approve steps of THIS bridge let a token be pulled to, each bound
   // to the token its own approval named. Together with the deposit call's own
@@ -194,9 +194,9 @@ export async function runOriginBroadcasts(input: OriginBroadcastInput): Promise<
           const res = await markActivityBroadcast(legRow.id, handles);
           if (!res.applied) {
             // A CAS miss means the row is no longer the pending/hashless row we
-            // expect — refuse to broadcast an UNTRACKED transaction (throwing
+            // expect - refuse to broadcast an UNTRACKED transaction (throwing
             // here aborts signStageBroadcast BEFORE sendRawTransaction).
-            throw new Error(`markActivityBroadcast CAS miss for leg ${legRow.id} — refusing to broadcast untracked`);
+            throw new Error(`markActivityBroadcast CAS miss for leg ${legRow.id} - refusing to broadcast untracked`);
           }
         },
         onAccepted: async () => {
@@ -261,7 +261,7 @@ export async function runOriginBroadcasts(input: OriginBroadcastInput): Promise<
         };
       }
 
-      // confirmed on origin — but never present an UNRECORDED confirmation as
+      // confirmed on origin - but never present an UNRECORDED confirmation as
       // ordinary (m5-relay / Phase-1 C41): the on-chain tx is confirmed, yet if
       // the durable confirm CAS misses to a non-confirmed state (the row is no
       // longer the pending row we expect), Vex's own record did not capture it.
@@ -308,7 +308,7 @@ export async function runOriginBroadcasts(input: OriginBroadcastInput): Promise<
       }
     }
   } catch (err) {
-    // The intent already exists — abort the remaining never-signed rows (incl. the
+    // The intent already exists - abort the remaining never-signed rows (incl. the
     // logical row) and return with the SAME executionId; never create a second one.
     const safe = summarizeProtocolError(err).message;
     await abortRemaining(executionId, currentIndex, safe);

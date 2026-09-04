@@ -14,43 +14,39 @@ import { CH, EV } from "@shared/ipc/channels.js";
 import type { TerminalHostAvailability } from "@shared/schemas/terminal.js";
 import { getProject } from "../database/projects/read.js";
 import { log } from "../logger/index.js";
+import { CONFIG_DIR } from "../paths/config-dir.js";
 import { resolveProjectDirectory, resolveProjectsRoot } from "./projects-root.js";
+import { resolveShellLaunch } from "./shell-catalogue.js";
 import { TerminalDomain, type ProjectActivation } from "./terminals.js";
 
 /**
- * The shell Vex launches.
- *
- * The user's own `$SHELL` (or `ComSpec` on Windows) with NO arguments. Not a
- * login shell: `-l` re-runs the user's login profile inside an app that already
- * inherited its environment, which duplicates PATH entries and re-prints motd
- * banners into every new terminal. VS Code's default is the same.
- *
- * The fallbacks are the POSIX and Windows guaranteed shells rather than a
- * fancier one, because a fallback that is not present turns "your shell is
- * unset" into "the terminal is broken".
- */
-function resolveShell(): { executable: string; args: string[] } {
-  if (process.platform === "win32") {
-    return { executable: process.env.ComSpec ?? "cmd.exe", args: [] };
-  }
-  return { executable: process.env.SHELL ?? "/bin/sh", args: [] };
-}
-
-/**
- * A project's working directory, derived in MAIN from its slug.
+ * A project's working directory AND its on-screen name, derived in MAIN.
  *
  * The renderer sends a project id and never a path, and `getProject` reads
  * ACTIVE projects only - so a tombstoned project resolves to `null` here and
  * its terminal is refused, without this module needing to know what a tombstone
  * is.
+ *
+ * BOTH FACTS COME FROM ONE READ, deliberately. The directory is where the pty
+ * spawns; the label is what the pty host renders when the shell sits at that
+ * directory (`pty-host/display-cwd.ts` owns the rendering, main owns the name).
+ * Reading them separately would let a rename land between the two and produce a
+ * terminal whose header names a different project than the one it runs in.
+ *
+ * The label is the project's SLUG - the same name the projects list and the
+ * explorer already show. It is display text: no handler accepts it back.
  */
-async function resolveProjectCwd(projectId: string): Promise<string | null> {
+async function resolveProjectLocation(
+  projectId: string,
+): Promise<{ directory: string; label: string } | null> {
   const correlationId = `terminal-cwd-${projectId}`;
   const rootOutcome = await resolveProjectsRoot(correlationId);
   if (!rootOutcome.ok) return null;
   const project = await getProject(projectId, correlationId);
   if (!project.ok || project.data === null) return null;
-  return resolveProjectDirectory(rootOutcome.data, project.data.slug);
+  const directory = resolveProjectDirectory(rootOutcome.data, project.data.slug);
+  if (directory === null) return null;
+  return { directory, label: project.data.slug };
 }
 
 /**
@@ -58,7 +54,7 @@ async function resolveProjectCwd(projectId: string): Promise<string | null> {
  *
  * `getProject` is the repository's ACTIVE-ONLY read - `deleted_at IS NULL` in
  * the statement - and it is the same read the rest of this file already trusts
- * for `resolveProjectCwd`. It answers `ok(null)` for a tombstone and for an id
+ * for `resolveProjectLocation`. It answers `ok(null)` for a tombstone and for an id
  * that names nothing alike, which is exactly the `absent` this domain refuses
  * on. A failed read is never `absent`: it becomes `unreadable`, and the domain
  * fails closed on it rather than treating an unreachable database as consent.
@@ -86,9 +82,13 @@ let instance: TerminalDomain | null = null;
 /** The process-wide terminal domain, created on first use. */
 export function terminalDomain(): TerminalDomain {
   instance ??= new TerminalDomain({
-    resolveProjectCwd,
+    // The dir this app instance actually resolved, read HERE because wiring is
+    // this file's job: the domain is given the answer and never asks the
+    // environment for it.
+    configDir: CONFIG_DIR,
+    resolveProjectLocation,
     readProjectActivation,
-    resolveShell,
+    resolveShellLaunch: (shellId) => resolveShellLaunch(shellId),
     postPort: (target, channel, payload, transfer) => {
       // `postMessage` is the only Electron API that can move a MessagePort into
       // a renderer process; `send` would structured-clone the payload and drop

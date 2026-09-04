@@ -222,6 +222,7 @@ describe("an abandoned request leaves nothing running", () => {
         kind: "revive",
         projectId: "p1",
         windowId: "w1",
+        projectLabel: "p1",
         assignments,
       });
 
@@ -276,6 +277,7 @@ describe("an abandoned request leaves nothing running", () => {
       kind: "revive",
       projectId: "p1",
       windowId: "w1",
+      projectLabel: "p1",
       assignments: ids.map((from, index) => ({ from, to: `p${String(index)}` })),
     });
 

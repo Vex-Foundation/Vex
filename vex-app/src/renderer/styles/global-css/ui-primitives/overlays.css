@@ -17,104 +17,50 @@ dialog.vex-dialog::backdrop {
   backdrop-filter: var(--vex-mask-blur);
 }
 
-/* ── Toast ─────────────────────────────────────────────────────────────────
- * Transient top-center banner on a dark plate in BOTH themes. CSS-only exit:
- * the fade delay (3000ms) and duration (1000ms) MUST equal HOLD_MS/FADE_MS
- * in components/ui/toast.tsx - the component unmounts at their sum. */
-.vex-toast {
+/* ── Notification toast stack ──────────────────────────────────────────────
+ * The app's ONE floating notification surface (lib/notifications), on the dark
+ * chrome plate in both themes, stacked top-center: at most three, plus the
+ * "+N more" report. The pre-model single-slot banner and the bottom-right
+ * sticky card were folded into it in B2.2, so this is the only fixed toast
+ * region left and nothing has to be offset around anything else.
+ *
+ * This sheet owns ONLY the enter and the exit; the HOLD belongs to the model
+ * (PURGE_MS per severity, paused by hover and focus, never for a sticky one).
+ * INVARIANT: the exit fade below must run for exactly TOAST_EXIT_MS
+ * (notification-model.ts) - the model removes the node when that elapses, so a
+ * longer fade is cut off and a shorter one leaves an invisible node holding a
+ * slot. */
+.vex-notification-stack {
   position: fixed;
   top: 120px;
   left: 50%;
-  /* Above the lightbox backdrop (1000): failures reported over a preview
-   * must stay readable. */
-  z-index: 1100;
-  /* Announcement only - never hit-testable, even between fade end and the
-   * throttled background-tab unmount timer. */
-  pointer-events: none;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  max-width: min(560px, calc(100vw - 48px));
-  padding: 12px 16px;
-  border-radius: 14px;
-  background: var(--vex-alias-toast-bg);
-  color: var(--vex-alias-label-on-chrome);
-  font-size: 14px;
-  line-height: 22px;
-  box-shadow: var(--shadow-lv3);
-  transform: translateX(-50%);
-  animation:
-    vex-toast-in 160ms ease-out,
-    vex-toast-fade 1000ms ease 3000ms forwards;
-}
-
-.vex-toast-icon {
-  display: grid;
-  place-items: center;
-  flex: none;
-}
-
-.vex-toast[data-tone="warning"] .vex-toast-icon {
-  color: var(--vex-alias-state-warn);
-}
-
-.vex-toast[data-tone="error"] .vex-toast-icon {
-  color: var(--vex-alias-state-error);
-}
-
-.vex-toast-text {
-  min-width: 0;
-}
-
-@keyframes vex-toast-in {
-  from {
-    opacity: 0;
-    transform: translate(-50%, -6px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translate(-50%, 0);
-  }
-}
-
-@keyframes vex-toast-fade {
-  to {
-    opacity: 0;
-  }
-}
-
-/* Reduced motion drops the slide-in; the delayed fade (opacity, not
- * movement) still ends the banner before the timed unmount. */
-@media (prefers-reduced-motion: reduce) {
-  .vex-toast {
-    animation: vex-toast-fade 1000ms ease 3000ms forwards;
-  }
-}
-
-/* ── Sticky toast ──────────────────────────────────────────────────────────
- * Persistent bottom-right sibling of .vex-toast on the same dark plate in
- * BOTH themes. No timed exit: the owning feature clears the store entry.
- * Hit-testable (it carries actions), unlike the transient announcement. */
-.vex-toast-sticky {
-  position: fixed;
-  right: 16px;
-  bottom: 16px;
   z-index: 1100;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  width: 320px;
-  max-width: calc(100vw - 48px);
-  padding: 14px 16px;
+  align-items: stretch;
+  gap: 8px;
+  width: min(420px, calc(100vw - 48px));
+  transform: translateX(-50%);
+}
+
+.vex-notification-toast {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
   border-radius: 14px;
   background: var(--vex-alias-toast-bg);
   color: var(--vex-alias-label-on-chrome);
   box-shadow: var(--shadow-lv3);
-  animation: vex-toast-sticky-in 160ms ease-out;
+  animation: vex-notification-toast-in 160ms ease-out;
 }
 
-@keyframes vex-toast-sticky-in {
+.vex-notification-toast[data-phase="exiting"] {
+  animation: vex-toast-fade 200ms ease forwards;
+  pointer-events: none;
+}
+
+@keyframes vex-notification-toast-in {
   from {
     opacity: 0;
     transform: translateY(6px);
@@ -126,23 +72,63 @@ dialog.vex-dialog::backdrop {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .vex-toast-sticky {
-    animation: none;
+@keyframes vex-toast-fade {
+  to {
+    opacity: 0;
   }
 }
 
-/* White-alpha literals: the plate is dark in both themes, so the theme-
- * flipping interactive/skeleton aliases would go invisible in celeris. */
-.vex-toast-sticky-ghost {
+.vex-notification-toast-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  margin-top: 1px;
+}
+
+.vex-notification-toast[data-severity="warning"] .vex-notification-toast-icon {
+  color: var(--vex-alias-state-warn);
+}
+
+.vex-notification-toast[data-severity="error"] .vex-notification-toast-icon {
+  color: var(--vex-alias-state-error);
+}
+
+.vex-notification-stack-overflow {
+  align-self: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--vex-alias-toast-bg);
+  color: var(--vex-alias-label-on-chrome);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+/* Reduced motion drops the entrance (movement) and keeps the exit fade
+ * (opacity only, and timed to the model's node removal). This block only
+ * takes effect because these elements carry the base.css opt-out attribute -
+ * see the contract there. */
+@media (prefers-reduced-motion: reduce) {
+  .vex-notification-toast {
+    animation: none;
+  }
+
+  .vex-notification-toast[data-phase="exiting"] {
+    animation: vex-toast-fade 200ms ease forwards;
+  }
+}
+
+/* Plate-local controls for the toast rows. White-alpha literals: the plate is
+ * dark in both themes, so the theme-flipping interactive/skeleton aliases
+ * would go invisible in celeris. */
+.vex-notification-ghost {
   transition: background-color 100ms ease;
 }
 
-.vex-toast-sticky-ghost:hover:not(:disabled) {
+.vex-notification-ghost:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.08);
 }
 
-.vex-toast-sticky-track {
+.vex-notification-track {
   background: rgba(255, 255, 255, 0.14);
 }
 
@@ -164,7 +150,9 @@ dialog.vex-dialog::backdrop {
   white-space: pre-line;
   overflow-wrap: break-word;
   pointer-events: none;
-  animation: vex-tooltip-in 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  /* Was `150ms cubic-bezier(0.4, 0, 0.2, 1)`: the base step and the standard
+   * curve, spelled by hand. Tokens now, so the family stays closed. */
+  animation: vex-tooltip-in var(--vex-duration-base) var(--vex-ease-standard);
 }
 
 .vex-tooltip[data-side="right"],

@@ -8,14 +8,14 @@
  * every downstream decision inherits the mistake. Every parser here returns the
  * offending PARAM NAME and what it would have accepted.
  *
- * The same rule already governs fee parameters on the money path — a
+ * The same rule already governs fee parameters on the money path - a
  * caller-supplied one is refused by name so an attempted overcharge surfaces
  * instead of vanishing. This is the read-side application of it.
  *
  * This COMPLEMENTS the protocol runtime rather than duplicating it. The runtime
  * (`protocols/runtime/params.ts`) already refuses an undeclared KEY and a
  * wrong-typed value, by name. What it cannot see is a well-typed value that is
- * outside the domain — `sort: "yield"`, `order: "sideways"`, `limit: -5`,
+ * outside the domain - `sort: "yield"`, `order: "sideways"`, `limit: -5`,
  * `expiryBefore: "next tuesday"`. Those are rejected here, by name, with the
  * accepted set spelled out.
  *
@@ -121,7 +121,7 @@ function readCsv(raw: unknown, param: string, max: number): PendleReadParams<str
     return reject(
       param,
       `\`${param}\` accepts at most ${max} comma-separated values; ${items.length} were supplied. `
-      + "Narrow the list and retry — Vex will not silently drop the extras.",
+      + "Narrow the list and retry - Vex will not silently drop the extras.",
     );
   }
   return { ok: true, value: items.length > 0 ? items : undefined };
@@ -130,7 +130,7 @@ function readCsv(raw: unknown, param: string, max: number): PendleReadParams<str
 /**
  * Comma-separated chain slugs/ids → chain ids. An unsupported chain is REFUSED
  * by name with the supported list, rather than quietly producing a view that
- * omits it — "no markets on solana" and "we do not read solana" are different
+ * omits it - "no markets on solana" and "we do not read solana" are different
  * answers.
  */
 function readChains(raw: unknown, param: string): PendleReadParams<number[] | undefined> {
@@ -212,12 +212,12 @@ export interface PendleYieldsQuery {
   fields: PendleYieldField[] | undefined;
 }
 
-/** Default page size. There is NO hard ceiling — the caller sets its own. */
+/** Default page size. There is NO hard ceiling - the caller sets its own. */
 export const PENDLE_YIELDS_DEFAULT_LIMIT = 20;
 
 /**
  * How many category filters one call may carry. NAMED and exported because the
- * bound is now enforced by a rejection instead of a silent `.slice` — a limit
+ * bound is now enforced by a rejection instead of a silent `.slice` - a limit
  * an agent can be told about is a contract; one that quietly drops values is a
  * bug that reports success.
  */

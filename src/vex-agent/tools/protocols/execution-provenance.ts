@@ -1,7 +1,7 @@
 /**
  * Trusted-provenance reader for {@link ProtocolExecutionContext} (C0).
  *
- * The provenance fields on the execution context are optional — most dispatch
+ * The provenance fields on the execution context are optional - most dispatch
  * paths (chat, previews, maintenance) legitimately have no mission and no
  * approval to name. A path that MUST bind provenance into an authorization
  * record therefore cannot just read the fields: `undefined` would quietly

@@ -15,6 +15,30 @@ export const PACKAGED_BRIDGE_SUBPATH: "bridge";
 
 export type BridgeGoos = "darwin" | "windows" | "linux";
 export type BridgeGoarch = "amd64" | "arm64";
+export type BridgeTarget = `${BridgeGoos}-${BridgeGoarch}`;
+
+export interface BridgeArtifact {
+  readonly name: string;
+  readonly cmd: string;
+  readonly targets: readonly BridgeTarget[];
+}
+
+export const BRIDGE_TARGETS: readonly BridgeTarget[];
+export const BRIDGE_ARTIFACTS: readonly BridgeArtifact[];
+
+export function artifactBinaryName(artifact: BridgeArtifact, goos: BridgeGoos): string;
+export function builtArtifactPath(
+  repoRoot: string,
+  artifact: BridgeArtifact,
+  goos: BridgeGoos,
+  goarch: BridgeGoarch,
+): string;
+/**
+ * Accepts plain strings, like `goTargetFor`: refusing an unknown triple BY NAME
+ * is this function's job, so a signature that only admitted known values would
+ * put the check out of reach of every caller that has a string to validate.
+ */
+export function artifactsFor(goos: string, goarch: string): readonly BridgeArtifact[];
 export type BridgeExecutableFormat = "elf" | "macho" | "pe";
 
 export interface BridgeInspection {
@@ -23,12 +47,6 @@ export interface BridgeInspection {
   readonly arch: BridgeGoarch;
 }
 
-export function bridgeBinaryName(goos: BridgeGoos): string;
-export function builtBridgePath(
-  repoRoot: string,
-  goos: BridgeGoos,
-  goarch: BridgeGoarch,
-): string;
 export function stagedBridgeDir(appRoot: string, electronArch: "x64" | "arm64"): string;
 export function goTargetFor(
   electronPlatform: string,

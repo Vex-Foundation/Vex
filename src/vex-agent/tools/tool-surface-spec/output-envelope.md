@@ -46,7 +46,7 @@ The reason is visible in the live ambiguous arm of a real broadcast path:
 
 > `protocols/kyberswap/handlers/swap/execute-broadcast.ts:126`:
 > "`${toolId}`: broadcast of the `${plan.eventRole}` transaction
-> (`${outcome.txHash}`) could not be confirmed yet — it may still settle
+> (`${outcome.txHash}`) could not be confirmed yet - it may still settle
 > on-chain. Do not retry; this attempt is recorded as pending and will resolve
 > automatically. You can verify it now yourself with chain_read (action
 > tx_receipt, chain=`${chainId}`, txHash=`${outcome.txHash}`)."
@@ -268,7 +268,7 @@ does not redefine `enumField`; it re-exports it:
 > `tools/protocols/handler-helpers.ts:17`: `export { enumField } from "../internal/types.js";`
 >
 > `handler-helpers.ts:7-8`: "`enumField` is re-exported from
-> `tools/internal/types.ts` where it already exists — same helper, one source of
+> `tools/internal/types.ts` where it already exists - same helper, one source of
 > truth."
 
 **Design: apply the identical treatment to `ok` and `fail`.** The definitions

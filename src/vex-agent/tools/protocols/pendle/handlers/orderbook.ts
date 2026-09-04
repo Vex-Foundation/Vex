@@ -1,8 +1,8 @@
 /**
- * `pendle.orderbook` — the resting limit-order depth on one Pendle market.
+ * `pendle.orderbook` - the resting limit-order depth on one Pendle market.
  *
  * WHY A READ-ONLY TOOL IS THE WHOLE POINT. Every Pendle convert quote Vex builds
- * pins `useLimitOrder: false` — a deliberate safety pin, because filling a limit
+ * pins `useLimitOrder: false` - a deliberate safety pin, because filling a limit
  * order widens the calldata Vex would have to decode before signing. The cost is
  * price quality on 83 of 84 whitelisted markets, and until now the agent could
  * not even see what it was giving up (G-11/G-12). This tool shows the depth and
@@ -13,7 +13,7 @@
  *   - a market that is NOT limit-order whitelisted answers HTTP 404, not an
  *     empty book. Live-verified on the deepest chain-1 market. So an empty book
  *     from this tool means "whitelisted, nothing resting", and a 404 becomes
- *     `whitelisted: false` — an answer, not a failure.
+ *     `whitelisted: false` - an answer, not a failure.
  *   - sizes are raw base units of the market's PY unit with NO decimals on this
  *     endpoint. They are resolved through the injected asset lookup or shipped
  *     explicitly unreadable; they are never rendered at an assumed 18.
@@ -49,7 +49,7 @@ const TOOL_ID = "pendle.orderbook";
  * only when the wording happens to survive an edit.
  */
 const AMM_ONLY_NOTE =
-  "Vex Pendle quotes are AMM-only; resting orders here may offer a better price — Vex cannot fill them.";
+  "Vex Pendle quotes are AMM-only; resting orders here may offer a better price - Vex cannot fill them.";
 
 interface ProjectedLevel {
   impliedApyPercent: string | null;
@@ -75,7 +75,7 @@ function projectLevel(level: PendleReadOrderbookLevel, decimals: number | null):
  * Long-yield entries are ranked by the highest implied APY and short-yield by
  * the lowest, because that is what the numbers are. Which side benefits a given
  * trade depends on the direction the agent is taking, and this tool does not
- * claim to know it — nothing here is a recommendation.
+ * claim to know it - nothing here is a recommendation.
  */
 function bestLevel(levels: readonly ProjectedLevel[], pick: "highest" | "lowest"): ProjectedLevel | null {
   let best: ProjectedLevel | null = null;
@@ -111,13 +111,13 @@ export async function pendleOrderbook(
   if (lookup.status !== "found") {
     // No book call: the endpoint would answer 404 for an address the catalogue
     // does not carry, and that 404 would be indistinguishable from "not
-    // whitelisted" — two different answers.
+    // whitelisted" - two different answers.
     return ok(marketAbsenceAnswer(lookup.status, chain, q.market, "market", asOf));
   }
 
   const market = lookup.market;
   const assetFacts = await resolveAssetFacts(assets, q.chainId);
-  // Sizes are denominated in the market's PY unit — PT and YT share it. SY is the
+  // Sizes are denominated in the market's PY unit - PT and YT share it. SY is the
   // documented fallback when the catalogue does not carry the PT.
   const sizeUnit: PendleReadToken | null =
     readToken(market.pt, assetFacts.facts) ?? readToken(market.sy, assetFacts.facts);
@@ -147,7 +147,7 @@ export async function pendleOrderbook(
     if (err instanceof VexError && err.httpStatus === 404) {
       return ok({
         summary:
-          `${trustedText(market.name) ?? "This market"} on ${chain} has NO limit-order book — Pendle has not ` +
+          `${trustedText(market.name) ?? "This market"} on ${chain} has NO limit-order book - Pendle has not ` +
           "whitelisted it for limit orders, so all of its liquidity is AMM liquidity and a Pendle quote already sees it.",
         ...identity,
         whitelisted: false,
@@ -210,6 +210,6 @@ function summarize(
     `${label} on ${chain}: ${longCount} long-yield and ${shortCount} short-yield level(s) resting` +
     (long === undefined || long === null ? "" : `, best long-yield ${long}%`) +
     (short === undefined || short === null ? "" : `, best short-yield ${short}%`) +
-    ". Vex cannot fill these — its quotes are AMM-only."
+    ". Vex cannot fill these - its quotes are AMM-only."
   );
 }

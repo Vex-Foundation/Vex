@@ -33,7 +33,17 @@ import { createElement, StrictMode, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { readQueue, resetComposerQueueForTest } from "../../../lib/composer-queue.js";
 import { resetDraftsForTest } from "../../../lib/composer-drafts.js";
-import { getToastSnapshot } from "../../../lib/toast.js";
+import { notifications } from "../../../lib/notifications/index.js";
+
+/**
+ * The transient toast is a notification-model entry since B2.2: the store that
+ * held one message and forgot it is gone, so the assertions read the model's
+ * newest retained item instead of a slot.
+ */
+function latestToastText(): string | null {
+  return notifications.getSnapshot().items[0]?.message ?? null;
+}
+
 import { useBoardAskIntentStore } from "../Board/board-ask-intent.js";
 
 const mockSteer = vi.fn();
@@ -155,6 +165,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  notifications.reset();
   cleanup();
   useBoardAskIntentStore.setState({ intent: null });
   Object.defineProperty(window, "vex", {
@@ -202,7 +213,7 @@ describe("board Ask VEX through the resident composer", () => {
     });
     expect(mockMutateAsync).not.toHaveBeenCalled();
     expect(readQueue(SESSION)).toHaveLength(0);
-    expect(getToastSnapshot()).not.toBeNull();
+    expect(latestToastText()).not.toBeNull();
   });
 
   it("3. steering refused: the question QUEUES rather than being dropped", async () => {

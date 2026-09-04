@@ -12,7 +12,7 @@ import type { LegVerdictDetail } from "./verdict.js";
 import type { SafetyVerdict } from "@vex-agent/db/repos/swap-prequotes.js";
 import type { ExtractedQuote } from "./extracted-quote.js";
 
-// EVM safety legs — structural re-validation of the kyberswap quote safety
+// EVM safety legs - structural re-validation of the kyberswap quote safety
 // block (we do NOT import the handler-local QuoteSafetyLeg type).
 const EvmNativeLegSchema = z.object({ native: z.literal(true) });
 const EvmAuditLegSchema = z.object({
@@ -35,7 +35,7 @@ const EvmSafetySchema = z.object({
 });
 type EvmLeg = z.infer<typeof EvmLegSchema>;
 
-/** Bounded reason class — only the four literals the handler emits survive. */
+/** Bounded reason class - only the four literals the handler emits survive. */
 const EVM_CHECK_FAILED_REASONS = new Set([
   "timeout",
   "rate_limited",
@@ -46,7 +46,7 @@ const EVM_CHECK_FAILED_REASONS = new Set([
 /**
  * Per-leg EVM verdict + bounded detail. Mirrors the ONE hard-abort in
  * `executeKyberSwap`: a CONFIRMED honeypot (`isHoneypot === true`) → fail. Per
- * owner doctrine that is the ONLY hard safety block for a swap — fee-on-transfer
+ * owner doctrine that is the ONLY hard safety block for a swap - fee-on-transfer
  * / high tax is NOT a fail (the model decides on fee-bearing tokens, even in
  * full-autonomous + full-agent modes). The bounded detail STILL discloses
  * `{ isHoneypot, isFOT, tax }` so the model/human can see the fee-on-transfer in
@@ -69,7 +69,7 @@ function evmLegVerdict(leg: EvmLeg): LegVerdictDetail {
   };
 }
 
-// EVM quote result (kyberswap.swap.quote) — token addresses + chainId + safety.
+// EVM quote result (kyberswap.swap.quote) - token addresses + chainId + safety.
 const EvmQuoteResultSchema = z.object({
   chainId: z.number(),
   tokenIn: z.object({ address: z.string() }),
@@ -122,7 +122,7 @@ export function extractEvm(
   // No route facts are persisted here. A quote-time price floor used to ride
   // the `route_ref` column so `kyberswap.swap.execute` could hold the build to
   // it; that comparison was a zero tolerance stacked on the caller's own
-  // `slippageBps` and was removed by owner decision (2026-07-25) — see
+  // `slippageBps` and was removed by owner decision (2026-07-25) - see
   // `@tools/kyberswap/swap-price-floor.js`. The execute now derives its floor
   // from the FRESH route it just fetched, so nothing needs carrying across.
   return {

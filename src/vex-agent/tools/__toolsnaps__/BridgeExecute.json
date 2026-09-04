@@ -1,13 +1,13 @@
 {
   "definition": {
     "function": {
-      "description": "Execute a REAL cross-chain bridge. SPENDS REAL FUNDS AND IS IRREVERSIBLE: it signs and broadcasts a deposit from the user's wallet on the source chain. APPROVAL: in a RESTRICTED session it signs nothing - it comes back asking for approval and runs only after the user confirms; in a FULL-permission session the user's standing permission is the authority and it executes directly. Use this when the user has seen a BridgeQuote and wants the funds actually moved. PRECONDITIONS, each refused BY NAME: a fresh matching BridgeQuote on the SAME provider, with identical params, within 15 minutes, or the call is blocked with \"no fresh bridge quote for these exact params\"; fromToken/toToken resolved to addresses with TokenFind; and `amountRaw` in RAW base units read together with that token's decimals. `refundTo`, `referrer`, `referrerFeeBps`, `routeId` and `depositMethod` are NOT parameters and a caller-supplied value is rejected by name - the route is auto-selected and the refund address is derived from the source wallet, so neither the fee nor the destination can be redirected. Venue comes from Khalani's live chain registry: Khalani when it serves both sides, Relay otherwise, which is how Robinhood Chain routes. Vex charges 25 bps of the input token as a SEPARATE transfer that runs only after the deposit lands, so a bridge that does not happen is never charged. RETURNS status, summary, message, fromChain, toChain, legs (role, chain, txHash, status) and vexFee; on the Khalani route also orderId, depositTxHash, route, etaSeconds, amountIn/amountOut and nativeCost, and on the Relay route requestId, providerStatus, amounts and inTxHashes. IT NEVER REPORTS SUCCESS: a deposit that broadcast is not a delivered bridge. `status` is pending, filled_unverified, failed or refunded, delivery is verified by a background tracker, and every arm says the same thing - do NOT re-bridge. Follow the order with BridgeStatus.",
+      "description": "Execute a REAL bridge. SPENDS REAL FUNDS AND IS IRREVERSIBLE: it signs and broadcasts a deposit from the user's wallet on the source chain. APPROVAL: over MCP in a restricted project the call WAITS until the user answers the card in Vex, and that card IS the confirmation - do not ask for another in chat. It returns the settled outcome: executed (reported as this tool's own status, confirmed or confirmed_unrecorded), declined, expired, refused, dispatch_failed or indeterminate; never call it twice while you wait and never retry an indeterminate one. In a full project it executes directly under the user's standing permission. Run BridgeQuote first. That quote authorizes THIS tool whichever venue it chose; BridgeQuoteRelay authorizes only BridgeExecuteRelay, and each namespaced khalani__/relay__ execute takes its own pair's quote. PRECONDITIONS, each refused BY NAME: a fresh BridgeQuote on the SAME provider with identical params, within 15 minutes; fromToken/toToken resolved with TokenFind; `amountRaw` in RAW base units at that token's decimals. The route, the refund address and the destination are derived from the source and the selected destination wallet; no parameter can redirect them: a caller-supplied `refundTo`, `referrer`, `referrerFeeBps`, `routeId`, `depositMethod` or `recipient` is rejected by name. `fromAddress` redirects nothing either: the session wallet signs only for itself. Venue comes from Khalani's live chain registry: Khalani when it serves both sides, Relay otherwise, which is how Robinhood Chain routes. Vex charges 25 bps of the input token as a SEPARATE transfer after the deposit lands; a bridge that never happens is never charged. RETURNS status, summary and the fields named in the result. IT NEVER REPORTS SUCCESS: a broadcast deposit is not a delivered bridge. `status` is pending, filled_unverified, failed or refunded, and every arm says do NOT re-bridge. Full contract: vex_ToolDescribe.",
       "name": "BridgeExecute",
       "parameters": {
         "additionalProperties": false,
         "properties": {
           "amountRaw": {
-            "description": "Amount in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Get the token's decimals from TokenFind / khalani.tokens.search, which returns decimals per chain — a raw amount next to a token whose decimals you have not read is a thousandfold error waiting to happen.",
+            "description": "Amount in raw atomic units of fromToken (e.g. USDC has 6 decimals, so 1 USDC = \"1000000\"). Get the token's decimals from TokenFind / khalani.tokens.search, which returns decimals per chain - a raw amount next to a token whose decimals you have not read is a thousandfold error waiting to happen.",
             "type": "string"
           },
           "filler": {
@@ -24,10 +24,6 @@
           },
           "fromToken": {
             "description": "Source token address.",
-            "type": "string"
-          },
-          "recipient": {
-            "description": "Destination recipient override (defaults to your dest-chain wallet).",
             "type": "string"
           },
           "toChain": {

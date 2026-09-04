@@ -38,7 +38,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
       { key: "query", type: "string", required: true, description: "Search keyword or phrase, e.g. \"bitcoin\" or \"super bowl\"." },
       { key: "provider", type: "string", description: "Provider: kalshi, polymarket, or bisonfi (Jupiter Forecast). Default polymarket." },
       { key: "includeMarkets", type: "boolean", description: "Include each event's nested markets array (default false - lean; use solana__predict_event_get for one event's markets)." },
-      { key: "limit", type: "number", description: "Max results, 1-20 (default 20). The provider ignores this param upstream — Vex enforces the requested count locally." },
+      { key: "limit", type: "number", description: "Max results, 1-20 (default 20). The provider ignores this param upstream - Vex enforces the requested count locally." },
     ],
     exampleParams: { query: "bitcoin" },
     requiresEnv: "JUPITER_API_KEY",
@@ -68,10 +68,10 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
     mutating: false,
     actionKind: "read",
     params: [
-      { key: "walletAddress", type: "string", description: "The wallet ACCOUNT to read, as a Solana address (not a token mint or a position key). Defaults to the session's selected Solana wallet — omit it to read your own. Under session scope a DIFFERENT address is rejected." },
+      { key: "walletAddress", type: "string", description: "The wallet ACCOUNT to read, as a Solana address (not a token mint or a position key). Defaults to the session's selected Solana wallet - omit it to read your own. Under session scope a DIFFERENT address is rejected." },
       { key: "marketPubkey", type: "string", description: "Filter by on-chain market account." },
       { key: "marketId", type: "string", description: "Filter by external market ID." },
-      { key: "isYes", type: "boolean", description: "Filter by side — true for YES, false for NO." },
+      { key: "isYes", type: "boolean", description: "Filter by side - true for YES, false for NO." },
       { key: "limit", type: "number", description: "Max results, 1-100 (default 20)." },
       { key: "offset", type: "number", description: "Skip first N results for pagination." },
     ],
@@ -88,7 +88,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
     mutating: false,
     actionKind: "read",
     params: [
-      { key: "walletAddress", type: "string", description: "The wallet ACCOUNT to read, as a Solana address (not a token mint or a position key). Defaults to the session's selected Solana wallet — omit it to read your own. Under session scope a DIFFERENT address is rejected." },
+      { key: "walletAddress", type: "string", description: "The wallet ACCOUNT to read, as a Solana address (not a token mint or a position key). Defaults to the session's selected Solana wallet - omit it to read your own. Under session scope a DIFFERENT address is rejected." },
       { key: "positionPubkey", type: "string", description: "Filter to one position's history." },
       { key: "id", type: "number", description: "Filter to a single history event ID." },
       { key: "limit", type: "number", description: "Max results, 1-100 (default 20)." },
@@ -109,7 +109,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
     params: [
       { key: "marketId", type: "string", required: true, description: "Market ID (from solana__predict_events_discover or solana__predict_events_search)." },
       { key: "side", type: "string", required: true, description: "Side: yes or no." },
-      { key: "amountUsdc", type: "number", required: true, description: "Amount to spend, in whole/fractional USDC dollars (human-readable, e.g. 10 for $10) — not raw atomic units." },
+      { key: "amountUsdc", type: "number", required: true, description: "Amount to spend, in whole/fractional USDC dollars (human-readable, e.g. 10 for $10) - not raw atomic units." },
     ],
     exampleParams: { marketId: "abc123", side: "yes", amountUsdc: 10 },
     requiresEnv: "JUPITER_API_KEY",
@@ -154,7 +154,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
     mutating: true,
     actionKind: "user_wallet_broadcast",
     params: [
-      { key: "minSellPriceSlippageBps", type: "number", unit: "bps", required: true, description: "Slippage tolerance applied to EACH sell in this batch, in basis points (0-1000; e.g. 100 = 1%). Vex caps slippage at 1000 bps (10%) and rejects anything above rather than clamping. Required by the provider — there is no default, so pick a value you accept across every position closed." },
+      { key: "minSellPriceSlippageBps", type: "number", unit: "bps", required: true, description: "Slippage tolerance applied to EACH sell in this batch, in basis points (0-1000; e.g. 100 = 1%). Vex caps slippage at 1000 bps (10%) and rejects anything above rather than clamping. Required by the provider - there is no default, so pick a value you accept across every position closed." },
     ],
     exampleParams: { minSellPriceSlippageBps: 100 },
     requiresEnv: "JUPITER_API_KEY",
@@ -170,7 +170,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
     actionKind: "read",
     params: [
       { key: "eventId", type: "string", required: true, description: "Event ID (from solana__predict_events_discover or solana__predict_events_search)." },
-      { key: "includeMarkets", type: "boolean", description: "Include the event's nested markets array (default false — lean)." },
+      { key: "includeMarkets", type: "boolean", description: "Include the event's nested markets array (default false - lean)." },
     ],
     exampleParams: { eventId: "abc123" },
     requiresEnv: "JUPITER_API_KEY",
@@ -229,7 +229,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
     mutating: false,
     actionKind: "read",
     params: [
-      { key: "walletAddress", type: "string", description: "The wallet ACCOUNT to read, as a Solana address (not a token mint or a position key). Defaults to the session's selected Solana wallet — omit it to read your own. Under session scope a DIFFERENT address is rejected." },
+      { key: "walletAddress", type: "string", description: "The wallet ACCOUNT to read, as a Solana address (not a token mint or a position key). Defaults to the session's selected Solana wallet - omit it to read your own. Under session scope a DIFFERENT address is rejected." },
       { key: "limit", type: "number", description: "Max results, 1-100 (default 20)." },
       { key: "offset", type: "number", description: "Skip first N results for pagination." },
     ],
@@ -276,7 +276,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
     mutating: false,
     actionKind: "read",
     params: [
-      { key: "limit", type: "number", required: true, description: "Max results, 1-100. Required — this feed has no upstream owner/market scope, so an explicit window is required to avoid an unbounded response." },
+      { key: "limit", type: "number", required: true, description: "Max results, 1-100. Required - this feed has no upstream owner/market scope, so an explicit window is required to avoid an unbounded response." },
       { key: "offset", type: "number", description: "Skip first N results for pagination." },
     ],
     exampleParams: { limit: 20 },
@@ -293,7 +293,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
     mutating: false,
     actionKind: "read",
     params: [
-      { key: "walletAddress", type: "string", description: "The wallet ACCOUNT to read, as a Solana address (not a token mint or a position key). Defaults to the session's selected Solana wallet — omit it to read your own. Under session scope a DIFFERENT address is rejected." },
+      { key: "walletAddress", type: "string", description: "The wallet ACCOUNT to read, as a Solana address (not a token mint or a position key). Defaults to the session's selected Solana wallet - omit it to read your own. Under session scope a DIFFERENT address is rejected." },
     ],
     exampleParams: {},
     requiresEnv: "JUPITER_API_KEY",
@@ -308,7 +308,7 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
     mutating: false,
     actionKind: "read",
     params: [
-      { key: "walletAddress", type: "string", description: "The wallet ACCOUNT to read, as a Solana address (not a token mint or a position key). Defaults to the session's selected Solana wallet — omit it to read your own. Under session scope a DIFFERENT address is rejected." },
+      { key: "walletAddress", type: "string", description: "The wallet ACCOUNT to read, as a Solana address (not a token mint or a position key). Defaults to the session's selected Solana wallet - omit it to read your own. Under session scope a DIFFERENT address is rejected." },
       { key: "interval", type: "string", required: true, description: "Interval: 24h, 1w, or 1m." },
       { key: "count", type: "number", description: "Number of data points to return, 1-100 (Vex owner-wide cap; provider default 10 when omitted)." },
     ],
@@ -355,9 +355,9 @@ export const PREDICT_TOOLS: readonly ProtocolToolManifest[] = [
     mutating: false,
     actionKind: "read",
     params: [
-      { key: "walletAddress", type: "string", required: true, description: "The wallet ACCOUNT to base recommendations on, as a Solana address — any wallet, not only your own." },
+      { key: "walletAddress", type: "string", required: true, description: "The wallet ACCOUNT to base recommendations on, as a Solana address - any wallet, not only your own." },
       { key: "provider", type: "string", description: "Provider: kalshi, polymarket, or bisonfi (Jupiter Forecast). Default polymarket." },
-      { key: "includeMarkets", type: "boolean", description: "Include each recommended event's nested markets array (default false — lean)." },
+      { key: "includeMarkets", type: "boolean", description: "Include each recommended event's nested markets array (default false - lean)." },
     ],
     exampleParams: { walletAddress: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM" },
     requiresEnv: "JUPITER_API_KEY",

@@ -1,5 +1,5 @@
 /**
- * Execution capture — capture validation / projection / audit recording.
+ * Execution capture - capture validation / projection / audit recording.
  *
  * Extracted verbatim from `../runtime.ts` as part of a façade-preserving
  * structural split. `executeProtocolTool` (in the runtime façade) calls
@@ -27,7 +27,7 @@ export async function captureExecution(
   durationMs: number,
   existingExecutionId?: number,
 ): Promise<void> {
-  // Defense-in-depth: preview results are NOT mutations — skip entire capture pipeline
+  // Defense-in-depth: preview results are NOT mutations - skip entire capture pipeline
   if (result.data?.dryRun === true) return;
 
   const { completeExecutionIntentWith, recordExecution, getById } = await import("@vex-agent/db/repos/executions.js");
@@ -40,7 +40,7 @@ export async function captureExecution(
   // Agent Scan (plan §11.1 step 4): a handler that already created its OWN
   // `protocol_executions` intent row BEFORE broadcasting (the Kyber/Uniswap
   // execute handlers) embeds that id as `_executionId` on the returned
-  // ToolResult.data — the SAME underscore-prefixed internal-metadata
+  // ToolResult.data - the SAME underscore-prefixed internal-metadata
   // convention as `_tradeCapture`. Reusing it here (exactly like the explicit
   // `existingExecutionId` param) keeps post-handler capture from creating a
   // SECOND audit row for the same attempt.
@@ -49,7 +49,7 @@ export async function captureExecution(
   // `existingExecutionId` (a trusted internal call parameter the runtime
   // itself computes before invoking a handler), `_executionId` arrives on an
   // adopted ONLY when the referenced `protocol_executions` row's own
-  // `tool_id`/`namespace` match the tool CURRENTLY executing — a mismatch
+  // `tool_id`/`namespace` match the tool CURRENTLY executing - a mismatch
   // (or a missing row) is logged and this capture falls through to creating
   // a FRESH execution row instead, exactly as if no id had been supplied.
   // This can never adopt a foreign/forged intent.
@@ -73,7 +73,7 @@ export async function captureExecution(
     tradeCapture, externalRefs, durationMs,
   );
   if (priorExecutionId !== undefined) {
-    // Short, DB-only, under the session control lock — the handler's broadcast
+    // Short, DB-only, under the session control lock - the handler's broadcast
     // is already finished by the time capture runs, so nothing external happens
     // inside it. An `intent` row is unresolved money state for the compaction
     // safe-moment gate; settling it must be strictly ordered against that gate
@@ -82,7 +82,7 @@ export async function captureExecution(
     // A NULL session is deliberately completed WITHOUT the lock: the gate is
     // session-scoped, so such a row is outside it by construction and there is
     // no key to serialize on. (Widening the gate to a global scan would block
-    // unrelated sessions — see the KNOWN GAP in
+    // unrelated sessions - see the KNOWN GAP in
     // `db/repos/approval-intents/money-state.ts`.)
     const completion = {
       executionId: priorExecutionId,
@@ -107,7 +107,7 @@ export async function captureExecution(
     }
   }
 
-  // Enqueue sync runs for this namespace (only on success — failed mutations don't need projection refresh)
+  // Enqueue sync runs for this namespace (only on success - failed mutations don't need projection refresh)
   if (result.success && executionId > 0) {
     try {
       const { getJobsForNamespace, enqueueRun } = await import("@vex-agent/db/repos/sync.js");
@@ -127,7 +127,7 @@ export async function captureExecution(
   // Failed mutations go to protocol_executions audit log but NOT to activity/positions/lots
   if (executionId > 0 && result.success) {
     // Validate capture contract before sending to projection pipeline
-    // For fanOut:"items" tools, validate items (not summary) — summary intentionally lacks per-item identity
+    // For fanOut:"items" tools, validate items (not summary) - summary intentionally lacks per-item identity
     const contract = MUTATION_MATRIX.get(toolId);
     const itemsToValidate = contract?.fanOut === "items" && Array.isArray(tradeCaptureItems) && tradeCaptureItems.length > 0
       ? tradeCaptureItems
@@ -136,7 +136,7 @@ export async function captureExecution(
     if (!allValid) {
       logger.warn("protocol.execute.capture_validation_failed", {
         toolId, namespace, executionId,
-        hint: "Capture blocked by validator — not sent to projection pipeline",
+        hint: "Capture blocked by validator - not sent to projection pipeline",
       });
       return;
     }

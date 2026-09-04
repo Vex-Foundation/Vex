@@ -28,6 +28,7 @@ import {
   approvalPreviewSchema,
   approvalRiskLevelSchema,
   approvalStatusSchema,
+  requestedByClientSchema,
   type ApprovalActionKind,
   type ApprovalDecision,
   type ApprovalExecutionStatus,
@@ -136,6 +137,13 @@ interface ApprovalRow {
    */
   readonly intent_origin: string | null;
   readonly intent_project_id: string | null;
+  /**
+   * `policy_json ->> 'requestedByClient'`, extracted in SQL so the raw policy
+   * blob never crosses into this process as an object to be re-projected. Null
+   * for an agent-originated approval, for a Studio client that declared no
+   * usable name, and for a row written before the field existed.
+   */
+  readonly intent_requested_by_client: string | null;
 }
 
 /**
@@ -162,6 +170,7 @@ const APPROVAL_ROW_COLUMNS = [
   "i.execution_status AS intent_execution_status",
   "i.origin AS intent_origin",
   "i.project_id AS intent_project_id",
+  "i.policy_json ->> 'requestedByClient' AS intent_requested_by_client",
 ].join(", ");
 
 const APPROVAL_FROM_CLAUSE =
@@ -265,6 +274,22 @@ function normaliseIntentExecutionStatus(
  * blobs / bigint cannot leak via the preview path even if the engine writes
  * a malformed row).
  */
+/**
+ * The recorded MCP client name, or null.
+ *
+ * The engine already sanitized and bounded this value before storing it
+ * (`sanitizeRequestingClientName`), and this is the READ side of a durable
+ * column, so it is re-checked here rather than trusted: a row written by
+ * another build, or edited, must not put control characters or an unbounded
+ * string into a card a human decides from. Failing to null claims less, which
+ * the renderer then states honestly.
+ */
+function normaliseRequestedByClient(raw: string | null): string | null {
+  if (raw === null) return null;
+  const parsed = requestedByClientSchema.safeParse(raw);
+  return parsed.success && parsed.data.length > 0 ? parsed.data : null;
+}
+
 function normaliseIntentPreview(raw: unknown): ApprovalPreview | null {
   if (raw === null || raw === undefined) return null;
   const parsed = approvalPreviewSchema.safeParse(raw);
@@ -298,6 +323,7 @@ function toDto(row: ApprovalRow): ApprovalSummaryDto {
     executionStatus: normaliseIntentExecutionStatus(row.intent_execution_status),
     origin: normaliseIntentOrigin(row.intent_origin),
     projectId: row.intent_project_id,
+    requestedByClient: normaliseRequestedByClient(row.intent_requested_by_client),
   };
 }
 

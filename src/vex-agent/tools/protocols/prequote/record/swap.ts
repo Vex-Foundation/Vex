@@ -1,5 +1,5 @@
 /**
- * Swap prequote recording — the token-safety-verdict path shared by kyberswap,
+ * Swap prequote recording - the token-safety-verdict path shared by kyberswap,
  * uniswap, jupiter and the Trench Express curve quote.
  */
 
@@ -56,7 +56,7 @@ export async function recordSwapPrequote(
   quoteAuthority?: ToolResult["quoteAuthority"],
 ): Promise<void> {
   // Resolve the SELECTED address (never decrypts a key). A wallet-scope throw
-  // (no wallet selected for this family) is a valid skip — fail-closed, never
+  // (no wallet selected for this family) is a valid skip - fail-closed, never
   // fabricate.
   let walletAddress: string;
   try {
@@ -104,7 +104,7 @@ export async function recordSwapPrequote(
 
   // W5 (design §6 R4): Jupiter fee-bearing tail, read from the QUOTE PARAMS
   // (same convention as `slippageBps` below) so it stays in lockstep with the
-  // gate, which reads the SAME knobs from the execute params. Best-effort — a
+  // gate, which reads the SAME knobs from the execute params. Best-effort - a
   // malformed knob (e.g. an out-of-range tipLamports) is a bounded skip, never
   // a thrown recorder failure; every non-Jupiter provider leaves this
   // `undefined` (the hash tail then canonicalizes to "").
@@ -124,13 +124,13 @@ export async function recordSwapPrequote(
   // are omitted (output-to-self == the resolved selected wallet; approveExact
   // false). `slippageBps` is read from the QUOTE PARAMS (not the echoed quote
   // response) so it stays in lockstep with the gate, which reads it from the
-  // execute params. Solana has no recipient/approveExact concept — self/false
+  // execute params. Solana has no recipient/approveExact concept - self/false
   // are inert constants there.
   const matchHash = computePrequoteMatchHash({
     kind: "swap",
     sessionId,
     family: registered.family,
-    // Venue binding (LOCKED #4) — the quoting provider is part of the identity.
+    // Venue binding (LOCKED #4) - the quoting provider is part of the identity.
     provider: registered.provider,
     chainId: extracted.chainId,
     walletAddress,

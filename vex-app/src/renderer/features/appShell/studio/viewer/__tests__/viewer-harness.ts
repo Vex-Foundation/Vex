@@ -34,6 +34,25 @@ interface HeldHighlight {
   cancelled: boolean;
 }
 
+/** What a test says about the per-line highlighting clock, if anything. */
+export interface BudgetReport {
+  /** 1-based line numbers that stopped early, ascending. */
+  readonly lines?: readonly number[];
+  /** The exact count. Defaults to `lines.length`; pass it to exceed the list. */
+  readonly total?: number;
+}
+
+function resolveBudget(budget: BudgetReport): {
+  readonly budgetExceededLines: readonly number[];
+  readonly budgetExceededTotal: number;
+} {
+  const lines = budget.lines ?? [];
+  return {
+    budgetExceededLines: lines,
+    budgetExceededTotal: budget.total ?? lines.length,
+  };
+}
+
 export class FakeHighlighterPort implements HighlighterPort {
   readonly asks: HighlightAsk[] = [];
   readonly held: HeldHighlight[] = [];
@@ -43,7 +62,13 @@ export class FakeHighlighterPort implements HighlighterPort {
 
   /** When false, every request resolves at once with {@link autoOutcome}. */
   manual = true;
-  autoOutcome: HighlightOutcome = { ok: true, lines: [], longLines: 0 };
+  autoOutcome: HighlightOutcome = {
+    ok: true,
+    lines: [],
+    longLines: 0,
+    budgetExceededLines: [],
+    budgetExceededTotal: 0,
+  };
 
   highlight(ask: HighlightAsk): HighlightHandle {
     this.asks.push(ask);
@@ -74,16 +99,24 @@ export class FakeHighlighterPort implements HighlighterPort {
     this.disposals += 1;
   }
 
-  /** Answer the OLDEST outstanding request with tokens. */
-  settleOldest(lines: readonly TokenLine[] = [], longLines = 0): void {
-    this.#take().settle({ ok: true, lines, longLines });
+  /**
+   * Answer the OLDEST outstanding request with tokens.
+   *
+   * `budget` carries the per-line clock's verdict, defaulting to "no line ran
+   * out" so the many callers that are not about that bound stay unchanged. Its
+   * `total` defaults to the length of its `lines`, which is the shape the real
+   * worker produces below the fifty-number list bound; a caller proving the
+   * bound passes both and makes them differ on purpose.
+   */
+  settleOldest(lines: readonly TokenLine[] = [], longLines = 0, budget: BudgetReport = {}): void {
+    this.#take().settle({ ok: true, lines, longLines, ...resolveBudget(budget) });
   }
 
   /** Answer the NEWEST outstanding request, so a stale one can be left behind. */
-  settleNewest(lines: readonly TokenLine[] = [], longLines = 0): void {
+  settleNewest(lines: readonly TokenLine[] = [], longLines = 0, budget: BudgetReport = {}): void {
     const held = this.held.pop();
     if (held === undefined) throw new Error("no highlight is in flight");
-    held.settle({ ok: true, lines, longLines });
+    held.settle({ ok: true, lines, longLines, ...resolveBudget(budget) });
   }
 
   failOldest(reason: HighlightUnavailableReason): void {
@@ -188,8 +221,17 @@ export function refused(
   };
 }
 
-/** A read that never got an answer. Distinct from a refusal: retry is real. */
-export function transportFailure(): Result<FilesOutcome<FileContent>> {
+/**
+ * A call that never got an answer. Distinct from a refusal: retry is real.
+ *
+ * GENERIC BECAUSE THE FAILURE BRANCH CARRIES NO PAYLOAD. `Result<T>` mentions
+ * `T` only on its `ok: true` side, so one envelope is the honest answer for
+ * every channel on this surface: the read channel takes the default, and the
+ * reveal channel names `FilesOutcome<null>` at the call site. The alternative
+ * was a cast at the second caller, which would have asserted a shape rather
+ * than stating one.
+ */
+export function transportFailure<T = FilesOutcome<FileContent>>(): Result<T> {
   return {
     ok: false,
     error: {

@@ -21,13 +21,13 @@ export interface FailedChain {
 }
 
 /**
- * Model-facing failure detail for the READ path — the REAL cause, scrubbed and
+ * Model-facing failure detail for the READ path - the REAL cause, scrubbed and
  * bounded (owner decree 2026-08-02). This is what lands in
  * {@link FailedChain.reason}, so "this chain could not be read" now says WHY:
  * a catalogue that would not parse and an RPC that timed out are different
  * answers, and the static vocabulary gave "unexpected error" for both.
  *
- * The provider's body is still untrusted — it is SCRUBBED by
+ * The provider's body is still untrusted - it is SCRUBBED by
  * `summarizeProtocolError` (the runtime's single owner of that redaction),
  * not hidden. Kept as its own small wrapper rather than importing the write
  * path's twin: this module is deliberately free of the wallet/RPC/viem imports

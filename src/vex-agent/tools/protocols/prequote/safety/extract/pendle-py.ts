@@ -1,5 +1,5 @@
 /**
- * Pendle PY quote extraction (pendle.py.quote) — mint / pre-expiry redeem (P4).
+ * Pendle PY quote extraction (pendle.py.quote) - mint / pre-expiry redeem (P4).
  */
 
 import { z } from "zod";
@@ -14,12 +14,12 @@ import {
   PENDLE_LIQUIDITY_FLOOR_USD,
 } from "./pendle-thresholds.js";
 
-// ── Pendle PY quote result (pendle.py.quote) — mint / pre-expiry redeem (P4) ─────
+// ── Pendle PY quote result (pendle.py.quote) - mint / pre-expiry redeem (P4) ─────
 //
 // A PY quote previews a mint (token → PT+YT) or a pre-expiry redeem (PT+YT →
 // token). The verdict reuses the PT market-quality signals: liquidity floor +
 // price-impact magnitude. A MINT also enforces expiry sanity (you cannot mint
-// into an expired market) and emits `termLock { maturityIso }` — the minted PT is
+// into an expired market) and emits `termLock { maturityIso }` - the minted PT is
 // a committed term. A pre-expiry redeem is an EXIT, so it carries no term-lock and
 // no expiry gate.
 
@@ -89,7 +89,7 @@ export function extractPendlePyQuote(
     safetyDetail.priceImpact = { checked: true, magnitude: mag, high: mag > PENDLE_IMPACT_HIGH };
   }
 
-  // Expiry sanity + term-lock — MINT only (a redeem is an exit).
+  // Expiry sanity + term-lock - MINT only (a redeem is an exit).
   if (d.direction === "mint") {
     const expiryMs = d.expiry ? Date.parse(d.expiry) : NaN;
     if (!Number.isFinite(expiryMs)) {
@@ -101,7 +101,7 @@ export function extractPendlePyQuote(
     } else {
       legs.push("pass");
       safetyDetail.expiry = { checked: true, expired: false };
-      // The minted PT commits funds until maturity — surface the typed,
+      // The minted PT commits funds until maturity - surface the typed,
       // unspoofable term-lock to the approval preview.
       safetyDetail.termLock = { maturityIso: new Date(expiryMs).toISOString() };
     }

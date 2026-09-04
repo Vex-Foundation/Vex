@@ -285,7 +285,7 @@ every provider.
 The fallback is already the established Vex reasoning for cross-parameter rules:
 
 > `injected-protocol-tools.ts:70-73`: "The description is the channel every
-> provider carries verbatim — and it is the same sentence `discover_tools` puts
+> provider carries verbatim - and it is the same sentence `discover_tools` puts
 > on the `constraints` row and the runtime rejects with, so the model never sees
 > the rule stated two ways."
 

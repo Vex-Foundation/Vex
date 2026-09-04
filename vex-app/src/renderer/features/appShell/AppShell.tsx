@@ -23,7 +23,7 @@ import { useUiStore, type RuntimeMode } from "../../stores/uiStore.js";
 import {
   BOOK_COLLAPSED,
   computeShellColumns,
-  SIDEBAR_AUTO_COLLAPSE,
+  shouldAutoCollapseSidebar,
   WELCOME_PORTFOLIO_WIDTH,
   type ShellColumns,
 } from "../../lib/shell-columns.js";
@@ -167,7 +167,7 @@ function ShellFrame({
   // below the breakpoint flips the ephemeral re-expand override instead of
   // the persisted preference. Crossing back into wide clears the override so
   // the next narrow entry starts at the rail again.
-  const narrow = viewport < SIDEBAR_AUTO_COLLAPSE;
+  const narrow = shouldAutoCollapseSidebar(viewport);
   useEffect(() => {
     if (!narrow) setSidebarNarrowExpanded(false);
   }, [narrow, setSidebarNarrowExpanded]);

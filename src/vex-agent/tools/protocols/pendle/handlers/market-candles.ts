@@ -1,5 +1,5 @@
 /**
- * `pendle.market.candles` — OHLCV for one Pendle asset (PT, YT or LP).
+ * `pendle.market.candles` - OHLCV for one Pendle asset (PT, YT or LP).
  *
  * Three provider quirks are handled here rather than left for the agent, each
  * live-verified rather than read off the docs (G-07):
@@ -7,13 +7,13 @@
  *  1. The candles arrive as a CSV STRING inside the JSON body. The read shelf
  *     decodes it under a hard row cap; this handler reports that cap as an
  *     explicit truncation rather than shipping a silent prefix.
- *  2. Row timestamps are unix SECONDS while the REQUEST window must be ISO — a
+ *  2. Row timestamps are unix SECONDS while the REQUEST window must be ISO - a
  *     seconds bound is a live 400. The window params here are ISO, matching
  *     `pendle.market.history`, and the rows are re-serialised to ISO so one tool
  *     never speaks two time formats.
  *  3. A candle with no trades carries an EMPTY volume column, and for LP assets
  *     Pendle documents volume on this endpoint as always 0. Both stay `null`
- *     with a sentence pointing at the market series for the real figure — a
+ *     with a sentence pointing at the market series for the real figure - a
  *     rendered 0 would read as a measured absence of trading.
  */
 
@@ -97,7 +97,7 @@ export async function pendleMarketCandles(
       ? {
           truncationNote:
             "Pendle returned more rows than Vex decodes in one read. The rows shown are the start of the window, and " +
-            "the rest are NOT included — narrow `from`/`to`, or use a coarser `timeFrame`.",
+            "the rest are NOT included - narrow `from`/`to`, or use a coarser `timeFrame`.",
         }
       : {}),
     firstClose: first?.close ?? null,
@@ -114,7 +114,7 @@ export async function pendleMarketCandles(
     candles,
     asOf: new Date(nowMs).toISOString(),
     nextStep:
-      "These are provider price marks for one asset, not executable quotes — a PT's price is what it last traded at, " +
+      "These are provider price marks for one asset, not executable quotes - a PT's price is what it last traded at, " +
       "not what you would receive. For the current rate call pendle__market_get, and for the APY/TVL series behind " +
       "these prices call pendle__market_history_get.",
   });

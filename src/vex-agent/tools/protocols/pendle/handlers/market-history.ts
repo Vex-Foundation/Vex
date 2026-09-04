@@ -1,10 +1,10 @@
 /**
- * `pendle.market.history` — the APY / TVL / price series behind one market.
+ * `pendle.market.history` - the APY / TVL / price series behind one market.
  *
  * This is the read a fixed-yield decision actually turns on: an implied APY is
  * only high or low relative to where it has been, and before this tool the agent
  * could see today's number and nothing else (G-06). Every value leaves with its
- * unit in the field NAME — Pendle returns APYs as decimal fractions (0.0228 =
+ * unit in the field NAME - Pendle returns APYs as decimal fractions (0.0228 =
  * 2.28%) and a bare 0.0228 in agent-facing output is a unit trap.
  *
  * The statistics are computed HERE rather than asked of the provider, because
@@ -68,7 +68,7 @@ interface FieldStats {
   last: string | number | null;
   /**
    * Relative change from the first point to the last, in percent. Null when the
-   * first value is zero — a change against nothing is undefined, and emitting
+   * first value is zero - a change against nothing is undefined, and emitting
    * "Infinity" or 0 there would be a claim the data does not support.
    */
   changePercent: string | null;
@@ -164,7 +164,7 @@ export async function pendleMarketHistory(
     timeFrame: q.timeFrame,
     fields: q.fields.map((field) => HISTORY_FIELD_OUTPUT[field].key),
     requestedWindow: { from: q.fromIso ?? null, to: q.toIso ?? null },
-    /** What the provider says it actually applied — not necessarily what was asked. */
+    /** What the provider says it actually applied - not necessarily what was asked. */
     appliedWindow: { from: series.timestampStart, to: series.timestampEnd },
     count: rows.length,
     total: series.total,

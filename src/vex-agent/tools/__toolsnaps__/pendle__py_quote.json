@@ -7,11 +7,11 @@
         "additionalProperties": false,
         "properties": {
           "amountIn": {
-            "description": "Human-readable amount — mint: the payment token amount; redeem: the PT+YT pair amount to burn.",
+            "description": "Human-readable amount - mint: the payment token amount; redeem: the PT+YT pair amount to burn.",
             "type": "string"
           },
           "chain": {
-            "description": "Chain slug or id — one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc').",
+            "description": "Chain slug or id - one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc').",
             "type": "string"
           },
           "direction": {
@@ -19,7 +19,7 @@
             "type": "string"
           },
           "pt": {
-            "description": "The market's PT (principal token) CONTRACT ADDRESS — the anchor that resolves the market and its YT.",
+            "description": "The market's PT (principal token) CONTRACT ADDRESS - the anchor that resolves the market and its YT.",
             "type": "string"
           },
           "slippageBps": {

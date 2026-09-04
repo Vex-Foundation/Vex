@@ -17,7 +17,11 @@ import type {
 } from "@shared/schemas/approvals.js";
 import { riskChipClasses } from "./risk.js";
 import {
+  APPROVAL_ACTOR_FIELD_LABEL,
+  APPROVAL_EXPIRY_FIELD_LABEL,
   APPROVAL_PROJECT_FIELD_LABEL,
+  APPROVAL_PROPOSAL_FIELD_LABEL,
+  approvalActorLine,
   approvalProjectDetail,
   approvalProjectDisplay,
 } from "../approvals/approvals-copy.js";
@@ -118,6 +122,12 @@ export function ApprovalDetails({
   projectName = null,
   signedGlint = false,
 }: ApprovalDetailsProps): JSX.Element {
+  const actorLine = approvalActorLine({
+    origin: summary.origin,
+    requestedByClient: summary.requestedByClient,
+    projectId: summary.projectId,
+    projectName,
+  });
   return (
     <>
       <header className="flex flex-wrap items-center gap-2 border-b border-[var(--vex-line)] px-4 py-3">
@@ -162,29 +172,67 @@ export function ApprovalDetails({
         ) : null}
       </header>
       <div className="space-y-3 px-4 py-3">
-        {/* PROVENANCE (B0/B4c). Rendered only when the approval actually
-            carries a project - an agent-mode approval has none, and an empty
-            "Project: -" row would invent a fact. The NAME is what the user
-            reads; the ID rides in the title and the accessible name, because
-            a name can be edited or belong to a tombstoned project and the id
-            cannot. */}
-        {summary.projectId !== null ? (
-          <dl
-            data-testid="approval-project"
-            className="grid grid-cols-[max-content_1fr] gap-x-3 font-mono text-[11px]"
-          >
+        {/* THE BOUND FACTS (rule 90: an approval binds at least the actor and
+            whether an agent proposed it, the resource, the expiry and the
+            proposal identity). They are ROW-LEVEL facts of the durable intent,
+            not `criticalArgs`: the card's `preview_json` is what the Studio
+            authority digest covers and what the pre-dispatch revalidation
+            rebuilds from the tool call alone, so a field the rebuild cannot
+            reproduce would make every Studio dispatch refuse on card mismatch.
+            Rendering them here puts them in front of the human without
+            touching what the digest binds.
+
+            Each row renders only when the approval CARRIES that fact - an
+            agent-mode approval has no project, a legacy row has no expiry, and
+            an empty "Project: -" would invent one. */}
+        <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 font-mono text-[11px]">
+          {actorLine !== null ? (
+            <div data-testid="approval-actor" className="contents">
+              <dt className="uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
+                {APPROVAL_ACTOR_FIELD_LABEL}
+              </dt>
+              <dd className="break-all text-[var(--vex-text-2)]">{actorLine}</dd>
+            </div>
+          ) : null}
+          {/* PROVENANCE (B0/B4c). The NAME is what the user reads; the ID rides
+              in the title and the accessible name, because a name can be
+              edited or belong to a tombstoned project and the id cannot. */}
+          {summary.projectId !== null ? (
+            <div data-testid="approval-project" className="contents">
+              <dt className="uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
+                {APPROVAL_PROJECT_FIELD_LABEL}
+              </dt>
+              <dd
+                className="break-all text-[var(--vex-text-2)]"
+                title={approvalProjectDetail(summary.projectId, projectName)}
+                aria-label={approvalProjectDetail(summary.projectId, projectName)}
+              >
+                {approvalProjectDisplay(summary.projectId, projectName)}
+              </dd>
+            </div>
+          ) : null}
+          <div data-testid="approval-proposal" className="contents">
             <dt className="uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
-              {APPROVAL_PROJECT_FIELD_LABEL}
+              {APPROVAL_PROPOSAL_FIELD_LABEL}
             </dt>
-            <dd
-              className="break-all text-[var(--vex-text-2)]"
-              title={approvalProjectDetail(summary.projectId, projectName)}
-              aria-label={approvalProjectDetail(summary.projectId, projectName)}
-            >
-              {approvalProjectDisplay(summary.projectId, projectName)}
-            </dd>
-          </dl>
-        ) : null}
+            <dd className="break-all text-[var(--vex-text-2)]">{summary.id}</dd>
+          </div>
+          {/* The instant this approval stops being decidable, carried WHOLE and
+              in UTC exactly as the durable row states it. Not localized and not
+              rendered as "in 9 minutes": a countdown computed in the renderer
+              is a second source of truth for the one deadline the engine's
+              sweep and the broker's timer already own. */}
+          {summary.expiresAt !== null ? (
+            <div data-testid="approval-expiry" className="contents">
+              <dt className="uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
+                {APPROVAL_EXPIRY_FIELD_LABEL}
+              </dt>
+              <dd className="break-all text-[var(--vex-text-2)]">
+                {summary.expiresAt}
+              </dd>
+            </div>
+          ) : null}
+        </dl>
         {summary.reasoningPreview.trim().length > 0 ? (
           <p className="italic text-[var(--vex-text-2)]">
             {summary.reasoningPreview}

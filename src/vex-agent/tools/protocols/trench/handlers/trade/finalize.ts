@@ -6,7 +6,7 @@
  * The decode DECLINES rather than guesses (rule 90). A confirmed buy whose
  * `Bought` log cannot be read, and a confirmed sell whose ETH proceeds the
  * `Sold` cross-check could not prove, both return `confirmed_pending_amounts`
- * and leave the row for the repair sweep — the quote estimate is NEVER
+ * and leave the row for the repair sweep - the quote estimate is NEVER
  * presented as a settlement.
  */
 
@@ -51,7 +51,7 @@ export interface FinalizeConfirmedSwapOutcome {
 export async function finalizeConfirmedSwap(x: FinalizeConfirmedSwapInput): Promise<FinalizeConfirmedSwapOutcome> {
   const { side, token, walletAddress, chainId, tokenDecimals, amountInHuman, amountInRaw, executionId, txHash } = x;
 
-  // Auto-pin the ACQUIRED token (buy only) — fail-soft, BEFORE decode, so a
+  // Auto-pin the ACQUIRED token (buy only) - fail-soft, BEFORE decode, so a
   // confirmed-but-undecodable buy still gets tracked.
   if (side === "buy") {
     try {
@@ -67,7 +67,7 @@ export async function finalizeConfirmedSwap(x: FinalizeConfirmedSwapInput): Prom
   if (side === "buy") {
     const decoded = decodeCurveBuy({ logs: x.logs, diamond: DIAMOND, wallet: walletAddress, token });
     if (!decoded) {
-      // Confirmed on-chain but the acquired amount is undecodable now — leave
+      // Confirmed on-chain but the acquired amount is undecodable now - leave
       // the row pending for the repair sweep; NEVER assert an amount.
       return { result: confirmedPendingAmounts(executionId, txHash, "the acquired token amount could not be decoded yet"), ethOutRaw: null };
     }
@@ -78,7 +78,7 @@ export async function finalizeConfirmedSwap(x: FinalizeConfirmedSwapInput): Prom
     const decoded = decodeCurveSell({ logs: x.logs, diamond: DIAMOND, wallet: walletAddress, token, amountInRaw });
     // FIX 1 (rule 90): the ETH proceeds are executed truth ONLY when the Sold
     // token-leg cross-check proved the positional mapping. When it declines, the
-    // input (tokens) is executed but the OUTPUT (ETH) is UNKNOWN — surface it as
+    // input (tokens) is executed but the OUTPUT (ETH) is UNKNOWN - surface it as
     // pending, NEVER the quote estimate, and leave the row for the repair sweep.
     if (!decoded || decoded.ethOutRaw === null) {
       logger.info("trench.trade_execute.sell_eth_out_pending", { executionId, txHash });
@@ -134,8 +134,8 @@ export async function finalizeConfirmedSwap(x: FinalizeConfirmedSwapInput): Prom
 
 /**
  * Confirm the swap row's executed amounts. Returns `true` when the write did NOT
- * land as a fresh CAS-applied confirmation — a throw, or a CAS miss that is not a
- * benign already-confirmed-with-the-same-amounts race — so the caller can report
+ * land as a fresh CAS-applied confirmation - a throw, or a CAS miss that is not a
+ * benign already-confirmed-with-the-same-amounts race - so the caller can report
  * `confirmed_unrecorded` instead of a clean confirm (mirrors the swap venues).
  */
 async function confirmSwapRow(
@@ -168,7 +168,7 @@ async function confirmSwapRow(
 export function confirmedPendingAmounts(executionId: number, txHash: string, why: string): ToolResult {
   return {
     success: true,
-    output: `${TOOL_ID}: trade confirmed on-chain (tx ${txHash}) but ${why} — check the transaction hash for the exact amounts.`,
+    output: `${TOOL_ID}: trade confirmed on-chain (tx ${txHash}) but ${why} - check the transaction hash for the exact amounts.`,
     data: { _executionId: executionId, txHash, status: "confirmed_pending_amounts" },
   };
 }

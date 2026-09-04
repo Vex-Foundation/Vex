@@ -5,14 +5,14 @@
  * `./prequote/` (registry, identity hash/bridge, safety extraction, recorder,
  * execute gate); this file preserves the original public surface so existing
  * importers (`./runtime.ts`, the prequote tests) keep working unchanged. Read
- * the per-module docs for behavior — this file only re-exports.
+ * the per-module docs for behavior - this file only re-exports.
  *
- * RECORDER — for a SUCCESSFUL swap QUOTE this records a deterministic
+ * RECORDER - for a SUCCESSFUL swap QUOTE this records a deterministic
  * match-hash + a 3-state token-safety verdict + a bounded `safetyDetail` row
  * (best-effort; never alters the quote's ToolResult). A missing prequote is
- * safe — the Stage-7 gate blocks the execute instead.
+ * safe - the Stage-7 gate blocks the execute instead.
  *
- * GATE (`evaluateSwapPrequoteGate`) — before a swap EXECUTE broadcasts, this
+ * GATE (`evaluateSwapPrequoteGate`) - before a swap EXECUTE broadcasts, this
  * enforces quote-before-transaction. It BLOCKS on (no fresh matching `swap`
  * prequote) OR (a fresh `fail` row); both `pass` AND `unknown` PASS the gate.
  * The gate is the INVERSE of the recorder: the recorder swallows errors, the
@@ -46,7 +46,7 @@ export { extractQuote } from "./prequote/safety/extract.js";
 // ── Recorder ──────────────────────────────────────────────────────────────
 export { recordPrequoteFromQuote } from "./prequote/record.js";
 
-// ── Stage 7 — execute-time prequote gate ────────────────────────────────────
+// ── Stage 7 - execute-time prequote gate ────────────────────────────────────
 export {
   evaluatePrequoteGate,
   evaluateSwapPrequoteGate,

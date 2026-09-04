@@ -11,7 +11,7 @@
 
 import type { JSX, KeyboardEvent, RefObject } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { EASE_STANDARD } from "../../lib/motion.js";
+import { EASE_STANDARD } from "../../lib/motion/index.js";
 import {
   resolveSubmitKeyGesture,
   useSubmitKeyBehavior,

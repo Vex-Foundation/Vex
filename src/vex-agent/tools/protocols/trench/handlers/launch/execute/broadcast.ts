@@ -4,14 +4,14 @@
  * One reason to change: what happens between "we are allowed to sign" and "we
  * know what happened". The three outcomes are deliberately not symmetric:
  *
- *   CONFIRMED  decode the identity, write `launched_tokens` (the PRIMARY path —
+ *   CONFIRMED  decode the identity, write `launched_tokens` (the PRIMARY path -
  *              the identity-repair sweep is crash recovery, not the normal
  *              route), then charge the Vex fee LAST.
  *   REVERTED   fail the row, abort the fee leg. A launch that did not happen is
  *              never charged for.
  *   AMBIGUOUS  do NOTHING terminal. The intent keeps its hash at
  *              `broadcast_pending` for the repair sweep, and the fee is never
- *              signed. A launch marked failed is one a user may retry — and this
+ *              signed. A launch marked failed is one a user may retry - and this
  *              create may already have minted their token.
  */
 
@@ -78,10 +78,10 @@ export async function broadcastLaunch(x: BroadcastLaunchInput): Promise<ToolResu
   // `signStageBroadcast` signs BEFORE it calls `onHashStaged`, so a throw from
   // that hook is NOT a pre-sign refusal: a signed transaction exists, with a
   // consumed nonce, that was never sent. Telling the user "nothing was signed"
-  // there would be false — and it is the one sentence they would act on.
+  // there would be false - and it is the one sentence they would act on.
   let signedLocally = false;
 
-  // Durable activity BEFORE any broadcast — a crash mid-flight must leave a row,
+  // Durable activity BEFORE any broadcast - a crash mid-flight must leave a row,
   // not an invisible spend. The fee event is appended LAST so its row order
   // matches its broadcast order.
   let executionId: number;
@@ -113,18 +113,18 @@ export async function broadcastLaunch(x: BroadcastLaunchInput): Promise<ToolResu
         const res = await markActivityBroadcast(launchRowId, handles);
         if (!res.applied) {
           throw new Error(
-            `agent_activity: markActivityBroadcast CAS miss for event ${launchRowId} — refusing to broadcast untracked`,
+            `agent_activity: markActivityBroadcast CAS miss for event ${launchRowId} - refusing to broadcast untracked`,
           );
         }
         // Persist the SIGNED hash on the intent too. `markBroadcastPendingWith`
         // has `tx_hash IS NULL` in its predicate, so a retry can never overwrite
-        // an already-staged hash — losing the first would destroy the only
+        // an already-staged hash - losing the first would destroy the only
         // evidence of a create that may already be mined.
         const staged = await withTransaction(async (client) => {
           await acquireSessionControlLock(client, x.sessionId);
           return markBroadcastPendingWith(client, x.intentId, x.sessionId, handles.txHash);
         });
-        // A CAS MISS MEANS SOMEONE ELSE OWNS THIS INTENT — a concurrent
+        // A CAS MISS MEANS SOMEONE ELSE OWNS THIS INTENT - a concurrent
         // executor already staged a hash, or the row is no longer `consuming`.
         // Throwing here aborts the broadcast with nothing sent (this hook runs
         // BEFORE `sendRawTransaction`); continuing would sign a second create
@@ -133,7 +133,7 @@ export async function broadcastLaunch(x: BroadcastLaunchInput): Promise<ToolResu
         if (staged === null) {
           // The activity row ALREADY carries the staged hash (the
           // `markActivityBroadcast` above), and `abortPlannedEvents` only
-          // finalizes rows with `tx_hash IS NULL` — so the generic abort below
+          // finalizes rows with `tx_hash IS NULL` - so the generic abort below
           // cannot reach this row and it would stay `pending` forever, with the
           // repair sweep chasing a hash that was never sent. Terminalize it
           // here, by name, as the one thing it actually is.
@@ -145,12 +145,12 @@ export async function broadcastLaunch(x: BroadcastLaunchInput): Promise<ToolResu
           await failActivityEvent(launchRowId, {
             failureCode: "broadcast_error",
             failureReason:
-              "SignedNotBroadcast:cas_miss — signed locally but never broadcast; "
+              "SignedNotBroadcast:cas_miss - signed locally but never broadcast; "
               + "another executor owns this launch intent",
           });
           throw new Error(
             `token_launch_intents: markBroadcastPendingWith CAS miss for intent ${x.intentId} `
-              + "— another executor owns this launch; refusing to broadcast",
+              + "- another executor owns this launch; refusing to broadcast",
           );
         }
       },
@@ -170,23 +170,23 @@ export async function broadcastLaunch(x: BroadcastLaunchInput): Promise<ToolResu
     );
     return fail(
       signedLocally
-        ? `${TOOL_ID}: the launch transaction was signed locally but never broadcast — ${safeDetail(err)}. `
+        ? `${TOOL_ID}: the launch transaction was signed locally but never broadcast - ${safeDetail(err)}. `
           + "Nothing was sent to the network and no funds moved."
-        : `${TOOL_ID}: the launch was refused before signing — ${safeDetail(err)}. Nothing was signed.`,
+        : `${TOOL_ID}: the launch was refused before signing - ${safeDetail(err)}. Nothing was signed.`,
     );
   }
 
   if (outcome.kind === "ambiguous") {
     logger.info("trench.launch_execute.ambiguous", { executionId, txHash: outcome.txHash });
-    // Migration 067: the launch row stays pending — say why, in the closed
+    // Migration 067: the launch row stays pending - say why, in the closed
     // vocabulary, so the fallback knows it is chasing INCLUSION here, not a
     // decode.
     await noteHandlerPendingReason(TOOL_ID, launchRowId, "broadcast_ambiguous_confirm");
-    await abortRemaining(executionId, 1, "launch ambiguous — a fee is never charged for an unproven launch");
+    await abortRemaining(executionId, 1, "launch ambiguous - a fee is never charged for an unproven launch");
     return {
       success: false,
       output:
-        `${TOOL_ID}: the launch transaction (${outcome.txHash}) could not be confirmed yet — it may still `
+        `${TOOL_ID}: the launch transaction (${outcome.txHash}) could not be confirmed yet - it may still `
         + "settle, and it may already have created your token. DO NOT retry; this attempt is recorded as "
         + "pending and will resolve automatically. Verify with ChainRead tx_receipt.",
       data: { _executionId: executionId, txHash: outcome.txHash, status: "pending" },
@@ -198,7 +198,7 @@ export async function broadcastLaunch(x: BroadcastLaunchInput): Promise<ToolResu
       failureCode: "mined_revert",
       failureReason: "the launch transaction reverted on-chain",
     });
-    await abortRemaining(executionId, 1, "launch reverted — the fee leg was never signed");
+    await abortRemaining(executionId, 1, "launch reverted - the fee leg was never signed");
     await settleLaunchFailure(x.intentId, x.sessionId, "MinedRevert:create");
     return {
       success: false,
@@ -229,9 +229,9 @@ function buildLaunchEvent(x: BroadcastLaunchInput) {
       amountRaw: x.plan.txParams.value.toString(),
     },
     // The prebuy is a LEG WITHIN this launch, never a second `swap` row for the
-    // same tx hash — one create emits both `TokenCreated` and `Bought`.
+    // same tx hash - one create emits both `TokenCreated` and `Bought`.
     routeProvenance: {
-      // R1 Step 5a — a launch has NO router to match and no input token to
+      // R1 Step 5a - a launch has NO router to match and no input token to
       // value: the token does not exist yet when this row is written. Its
       // decoder works from the receipt's own logs, so the hint names the
       // decoder and the chain and deliberately claims nothing more.
@@ -278,19 +278,19 @@ async function finalizeConfirmedLaunch(
     await abortRemaining(
       executionId,
       1,
-      "launch identity undecodable — the Vex fee is never charged for a launch we cannot prove",
+      "launch identity undecodable - the Vex fee is never charged for a launch we cannot prove",
     );
     return {
       success: true,
       output:
         `${TOOL_ID}: the launch confirmed on-chain (tx ${txHash}), but the new token's address could not `
-        + "be decoded from the receipt yet. It will be filled in automatically — check the transaction "
+        + "be decoded from the receipt yet. It will be filled in automatically - check the transaction "
         + "for the address in the meantime.",
       data: { _executionId: executionId, txHash, status: "confirmed_pending_identity" },
     };
   }
 
-  // The prebuy is denominated in what was SPENT — native ETH, at 18 decimals —
+  // The prebuy is denominated in what was SPENT - native ETH, at 18 decimals -
   // and that number is the AUTHORIZED one, known before the broadcast. The
   // tokens the prebuy acquired are a different quantity in a different unit;
   // they belong on the activity row's executed OUTPUT leg, never here.
@@ -298,11 +298,11 @@ async function finalizeConfirmedLaunch(
   // writer: the intent must then stay claimable for the repair sweep.
   let intentMayConfirm = true;
   // The VEX badge's proof. Signable ONLY here, while the launch's signing
-  // clients are open — see `./attribute.ts`. Never fails a launch.
+  // clients are open - see `./attribute.ts`. Never fails a launch.
   let attestSignature: string | null = null;
   const prebuyWei = x.request.prebuyWei;
   const hasPrebuy = prebuyWei > 0n;
-  // No prebuy means zero tokens were acquired — a proven amount, not a missing
+  // No prebuy means zero tokens were acquired - a proven amount, not a missing
   // one. `null` means a prebuy happened whose `Bought` event did not decode.
   const tokensOutRaw = hasPrebuy ? decoded.prebuyTokensOutRaw : 0n;
 
@@ -310,7 +310,7 @@ async function finalizeConfirmedLaunch(
     // ORDER: the durable identity index FIRST. It is idempotent, and it is the
     // record the user's launch history is built from; confirming the intent
     // first and crashing would leave a `confirmed` launch with no
-    // `launched_tokens` row and nothing to recover it — the repair sweep's
+    // `launched_tokens` row and nothing to recover it - the repair sweep's
     // candidate query only sees `broadcast_pending`
     // (`sync/launch-identity-repair.ts`).
     await launchedTokens.record({
@@ -321,7 +321,7 @@ async function finalizeConfirmedLaunch(
       symbol: x.request.symbol,
       imageRef: x.request.imageId,
       createTxHash: txHash,
-      // Raw amounts travel WITH their decimals and their token, always — and
+      // Raw amounts travel WITH their decimals and their token, always - and
       // with no prebuy all three stay null rather than pairing a null amount
       // with a decimals value that implies one exists.
       initialBuyRaw: hasPrebuy ? prebuyWei.toString() : null,
@@ -335,11 +335,11 @@ async function finalizeConfirmedLaunch(
     // `agent-activity/swap-lifecycle.ts`): the native value spent AND the
     // tokens the launch produced. Confirming with the input leg alone threw
     // into this catch on EVERY launch, which left Agent Scan pending forever.
-    // When the prebuy's amount is unproven the row STAYS pending on purpose —
-    // the status-only repair sweep finalizes it — because inventing an output
+    // When the prebuy's amount is unproven the row STAYS pending on purpose -
+    // the status-only repair sweep finalizes it - because inventing an output
     // amount is the one thing worse than a late row.
     if (tokensOutRaw === null) {
-      // The amount is unproven, but WHICH TOKEN was created is not — so the
+      // The amount is unproven, but WHICH TOKEN was created is not - so the
       // identity is written even though the row stays pending. Without it the
       // launch is missing from its own token's history for as long as the
       // amount stays unknown, which may be forever.
@@ -367,14 +367,14 @@ async function finalizeConfirmedLaunch(
       // A CAS MISS HERE IS THE STATUS-ONLY SWEEP HAVING WON THE RACE: it
       // confirms a pending row from its hash after ~90s and writes no amounts,
       // so the row is `confirmed` with a NULL token. Benign, but only if it is
-      // repaired NOW — nothing revisits a confirmed row.
+      // repaired NOW - nothing revisits a confirmed row.
       const landed = finalized.applied
         || await fillLaunchOutputIdentityOnConfirmed(launchRowId, identity);
       if (!landed) {
         // Neither writer could land the identity. Confirming the intent would
         // remove it from the sweep's claimable set with the token still
         // unwritten and nothing left able to repair it, so the intent STAYS
-        // pending. The launch itself is unaffected — it happened.
+        // pending. The launch itself is unaffected - it happened.
         logger.warn("trench.launch_execute.identity_write_lost", { executionId, txHash });
         intentMayConfirm = false;
       }
@@ -400,7 +400,7 @@ async function finalizeConfirmedLaunch(
 
   // After the money is settled: make the new token visible to `WalletBalances`
   // without the agent having to pin it by hand. A local DB write that can never
-  // fail, delay or reorder the launch — see `./track.js`.
+  // fail, delay or reorder the launch - see `./track.js`.
   await pinLaunchedToken(x.walletAddress, decoded.tokenAddress);
 
   // LAST, after the money is settled: claiming the badge is cosmetic and must
@@ -425,7 +425,7 @@ async function finalizeConfirmedLaunch(
     vexFee,
     /**
      * Grounding (U6), not a reading: a token that `create()` just minted is on
-     * its bonding curve BY DEFINITION — graduation is a later, separate event.
+     * its bonding curve BY DEFINITION - graduation is a later, separate event.
      * Stating it here stops the agent inferring curve state from the absence of
      * a field and calling a fresh token "graduated" or "unknown".
      */
@@ -445,7 +445,7 @@ async function finalizeConfirmedLaunch(
  * read.
  *
  * A raw amount without its decimals is unreadable (rule 90), and a freshly
- * created token's decimals are not knowable before it exists — so they are read
+ * created token's decimals are not knowable before it exists - so they are read
  * from the token itself. A failed read degrades the DISPLAY string only; the
  * raw amount and its provenance are unaffected, and no decimals value is
  * guessed.
@@ -487,7 +487,7 @@ async function chargeVexFee(
       feeRowId,
       publicClient: x.publicClient,
       signer: x.walletClient,
-      // Anchor the fee's gas estimate on the block the launch confirmed in —
+      // Anchor the fee's gas estimate on the block the launch confirmed in -
       // the same dependent-leg discipline the approve→sell path uses.
       priorLeg: priorLegAnchorFrom(outcome.receipt.blockNumber),
     });

@@ -7,7 +7,7 @@
         "additionalProperties": false,
         "properties": {
           "assets": {
-            "description": "Comma-separated list of asset identifiers to filter to — matches the underlying asset mint address, Earn share-token (jlToken) mint, symbol, or provider lending id. Case-insensitive for symbol. Omit for all markets.",
+            "description": "Comma-separated list of asset identifiers to filter to - matches the underlying asset mint address, Earn share-token (jlToken) mint, symbol, or provider lending id. Case-insensitive for symbol. Omit for all markets.",
             "type": "string"
           },
           "minSupplyRate": {

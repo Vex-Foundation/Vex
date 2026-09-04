@@ -17,7 +17,7 @@
  *    DOM while leaving the accessibility tree.
  *
  * Surfaces deliberately NOT here: menus, popovers and dialogs (GlobalApprovals,
- * GlobalErrorBanner, the context-meter panel, PositionChains' network browser).
+ * the notification center, the context-meter panel, PositionChains' network browser).
  * They are overlay surfaces with their own enter animation, not in-flow height
  * reveals, and giving them a height animation would fight their positioning.
  */

@@ -33,7 +33,7 @@
             "type": "string"
           },
           "walletFamily": {
-            "description": "Which wallet FAMILY to read — 'eip155', 'solana', or 'all'. Default 'all' aggregates your EVM + Solana wallets. This is a wallet family, not a chain: chains go in `chainIds`.",
+            "description": "Which wallet FAMILY to read - 'eip155', 'solana', or 'all'. Default 'all' aggregates your EVM + Solana wallets. This is a wallet family, not a chain: chains go in `chainIds`.",
             "enum": [
               "eip155",
               "solana",

@@ -15,7 +15,7 @@
  *   estBuyTaxPct = 99 * (remainingSeconds / durationSeconds) + 1
  *
  * PRODUCT RULE (surfaced to the model, enforced in the prompt): the agent must
- * NOT buy a graduated token while `windowActive` — it should wait out
+ * NOT buy a graduated token while `windowActive` - it should wait out
  * `remainingSeconds` or inform the user. This is TIER A detection: purely
  * time-based from `lpCreatedAt` + `antiSniperTaxType` (no on-chain read).
  *
@@ -67,7 +67,7 @@ export function computeAntiSniper(
   nowMs: number = Date.now(),
 ): AntiSniperStatus {
   // Whitelist the KNOWN enum {0,1,2} (contract-source-verified). Any other
-  // finite value is future API drift with UNKNOWN tax semantics — it must
+  // finite value is future API drift with UNKNOWN tax semantics - it must
   // degrade to not-applicable/unknown (estBuyTaxPct null), never to
   // "residual flat tax, safe to buy".
   const type = typeof antiSniperTaxType === "number" &&

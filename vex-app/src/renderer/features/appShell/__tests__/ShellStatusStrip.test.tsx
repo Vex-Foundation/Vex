@@ -12,7 +12,7 @@
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Result } from "@shared/ipc/result.js";
 import type { StudioHostStatus } from "@shared/schemas/studio.js";
@@ -37,7 +37,6 @@ vi.mock("../SessionExportControl.js", () => ({
   SessionExportControl: ({ activeSessionId }: { activeSessionId: string | null }) =>
     activeSessionId === null ? null : <div data-testid="export-control" />,
 }));
-vi.mock("../GlobalErrorBanner.js", () => ({ GlobalErrorBanner: () => null }));
 vi.mock("../GlobalApprovals.js", () => ({
   GlobalApprovals: () => <div data-testid="approvals-badge" />,
 }));
@@ -72,15 +71,32 @@ describe("the centre word", () => {
   it("agent mode takes it from DeskRuleTapeState", () => {
     renderStrip("agent");
     expect(screen.getByTestId("desk-rule-word")).not.toBeNull();
-    expect(screen.queryByLabelText("Vex Studio host status")).toBeNull();
+    expect(screen.queryByLabelText(/Vex Studio host status$/)).toBeNull();
   });
 
   it("studio mode takes it from the host status", () => {
     renderStrip("studio");
     expect(screen.queryByTestId("desk-rule-word")).toBeNull();
-    expect(screen.getByLabelText("Vex Studio host status").textContent).toContain(
+    expect(screen.getByLabelText(/Vex Studio host status$/).textContent).toContain(
       "Running 2 connected",
     );
+  });
+
+  it("the word is the PILL, and the pill opens its card in the strip", () => {
+    // The audit's finding I7: the word sat alone with no sentence and no
+    // action. The strip's job here is only that the control it mounts is the
+    // pill; the card's per-cause contents are `StudioHostStatusPill.test.tsx`.
+    useStudioHostStatusMock.mockReturnValue({
+      data: { ok: true, data: makeHostStatus({ state: "locked" }) },
+    });
+    renderStrip("studio");
+    const pill = screen.getByLabelText(/Vex Studio host status$/);
+    expect(pill.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(pill);
+    expect(
+      screen.getByRole("group", { name: "Vex Studio host status details" })
+        .textContent,
+    ).toContain("Vex is locked");
   });
 
   it.each([
@@ -120,16 +136,25 @@ describe("the centre word", () => {
   ])("renders %o as its word and cause", (status, word, cause) => {
     useStudioHostStatusMock.mockReturnValue({ data: { ok: true, data: status } });
     renderStrip("studio");
-    const el = screen.getByLabelText("Vex Studio host status");
-    expect(el.textContent).toContain(word);
-    if (cause === null) {
-      expect(el.getAttribute("title")).toBeNull();
-    } else {
-      // The cause reaches BOTH audiences: a pointer user through the title and
-      // assistive tech through the visually-hidden span. A bare "Unavailable"
-      // is the "unexpected error" the product rules forbid.
-      expect(el.getAttribute("title")).toBe(cause);
-      expect(el.textContent).toContain(cause);
+    const pill = screen.getByLabelText(/Vex Studio host status$/);
+    expect(pill.textContent).toContain(word);
+    if (cause !== null) {
+      // The cause reaches BOTH audiences, which is what the bare word never
+      // did: assistive tech hears it from the live region without touching
+      // anything, and a pointer or keyboard user reads it in the card.
+      // The strip also mounts the notification announcer's live regions, so
+      // the assertion is over every polite region rather than "the" one.
+      expect(
+        screen
+          .getAllByRole("status")
+          .map((el) => el.textContent ?? "")
+          .join(" "),
+      ).toContain(cause);
+      fireEvent.click(pill);
+      expect(
+        screen.getByRole("group", { name: "Vex Studio host status details" })
+          .textContent,
+      ).toContain(cause);
     }
   });
 
@@ -140,7 +165,7 @@ describe("the centre word", () => {
         <ShellStatusStrip runtimeMode="studio" activeSessionId={null} />
       </QueryClientProvider>,
     );
-    expect(screen.getByLabelText("Vex Studio host status").textContent).toContain(
+    expect(screen.getByLabelText(/Vex Studio host status$/).textContent).toContain(
       "Checking",
     );
     unmount();
@@ -149,11 +174,13 @@ describe("the centre word", () => {
       data: { ok: false, error: makeError("nope") },
     });
     renderStrip("studio");
-    const el = screen.getByLabelText("Vex Studio host status");
-    expect(el.textContent).toContain("Unknown");
-    expect(el.getAttribute("title")).toBe(
-      "Vex could not read the Studio host status.",
-    );
+    const pill = screen.getByLabelText(/Vex Studio host status$/);
+    expect(pill.textContent).toContain("Unknown");
+    fireEvent.click(pill);
+    expect(
+      screen.getByRole("group", { name: "Vex Studio host status details" })
+        .textContent,
+    ).toContain("Vex could not read the Studio host status.");
   });
 });
 

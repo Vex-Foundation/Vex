@@ -1,14 +1,14 @@
 /**
- * `LoopDefer` handler — writes a pending wake row and emits the
+ * `LoopDefer` handler - writes a pending wake row and emits the
  * `defer_until` engine signal. Turn-loop consumes the signal to tear down
  * the current batch and flip the mission run (or full-autonomous session)
  * to `paused_wake`; the wake executor then resumes at `due_at`.
  *
  * ## Two session shapes park through this tool (owner decree 2026-08-03)
  *
- *   - MISSION RUN — the wake row references the run; the run row is parked in
+ *   - MISSION RUN - the wake row references the run; the run row is parked in
  *     `paused_wake` by the turn loop and the executor claims it by run status.
- *   - FULL-AUTONOMOUS AGENT SESSION — `missionRunId: null`. There is no run row,
+ *   - FULL-AUTONOMOUS AGENT SESSION - `missionRunId: null`. There is no run row,
  *     so the wake row IS the park and the executor claims the session lease
  *     (`wake/executor/agent-session.ts`). It goes through
  *     `enqueueSessionScopedWake` so the operator-stop gate and the INSERT commit
@@ -16,27 +16,27 @@
  *
  * Withholding this tool from agent sessions was the live "unlimited thoughts"
  * pathology: an agent waiting for a bridge had no way to sleep, so it polled.
- * Restricted agent sessions stay excluded — a human is in the loop there and a
+ * Restricted agent sessions stay excluded - a human is in the loop there and a
  * defer would just stall the conversation.
  *
  * ## Validation is layered
  *
- *   1. Zod schema — argument shape, bounds, and the XOR between `after_ms` /
+ *   1. Zod schema - argument shape, bounds, and the XOR between `after_ms` /
  *      `wake_at`. A single flat `.refine` so one error message covers "missing
  *      both" and "both present".
- *   2. Runtime defense-in-depth — `ctx.sessionKind`, `ctx.missionRunId` and
+ *   2. Runtime defense-in-depth - `ctx.sessionKind`, `ctx.missionRunId` and
  *      `ctx.sessionPermission` must match the visibility gate. Even though
  *      `getOpenAITools` hides the tool where it does not apply, the dispatcher
  *      also runs on operator-resume and script paths where the visibility
  *      filter is bypassed, so the handler re-checks.
- *   3. Wake-time bounds — applied to the RESOLVED absolute time, so `after_ms`
+ *   3. Wake-time bounds - applied to the RESOLVED absolute time, so `after_ms`
  *      and `wake_at` cannot express different waits.
  *
  * ## A rejected `watch` NEVER fails the defer
  *
  * The single most damaging behavior of the previous implementation: an
  * unsupported watch type failed the whole call, so the run did not park and the
- * model stayed in the loop — the exact failure the tool exists to prevent. A
+ * model stayed in the loop - the exact failure the tool exists to prevent. A
  * watch is an optimization over the timer. When it cannot be honoured, the
  * defer still parks on its timer and the refusal comes back as a named warning.
  *
@@ -51,7 +51,7 @@
  *
  * One-pending-per-session is enforced at the DB level (partial unique
  * index, see migration 011). `loopWakeRepo.enqueue` returns `null` when
- * the conflict fires — we surface that back to the model as a soft
+ * the conflict fires - we surface that back to the model as a soft
  * no-op so it doesn't double-enqueue on retry.
  */
 
@@ -72,7 +72,7 @@ import { registerBuiltInWakeWatchEvaluators } from "@vex-agent/engine/wake/watch
  *
  * The minimum is not cosmetic: the wake executor ticks every 2 s, so a
  * sub-second defer is a busy-loop that costs a full park/resume cycle to buy
- * nothing. The maximum is 24 h and now binds `wake_at` too — it previously
+ * nothing. The maximum is 24 h and now binds `wake_at` too - it previously
  * bound only `after_ms`, so the same wait was expressible one way and refused
  * the other, and a model could schedule itself five years out.
  */
@@ -128,19 +128,19 @@ export async function handleLoopDefer(
   params: Record<string, unknown>,
   context: InternalToolContext,
 ): Promise<ToolResult> {
-  // Layer 1 — Zod argument shape.
+  // Layer 1 - Zod argument shape.
   const parsed = LoopDeferArgs.safeParse(params);
   if (!parsed.success) {
     return fail(`LoopDefer: ${formatZodIssueForModel(parsed.error.issues[0], params)}`);
   }
   const { after_ms, wake_at, reason, watch } = parsed.data;
 
-  // Layer 2 — runtime defense-in-depth.
+  // Layer 2 - runtime defense-in-depth.
   const shape = resolveDeferShape(context);
   if (shape === null) {
     return fail(
       "LoopDefer is only available inside an active mission run or a Full-Autonomous "
-      + "agent session. A restricted agent session waits for the user instead — end your "
+      + "agent session. A restricted agent session waits for the user instead - end your "
       + "turn with a normal reply.",
     );
   }
@@ -151,7 +151,7 @@ export async function handleLoopDefer(
     );
   }
 
-  // Layer 3 — resolve the absolute wake time, then bound it. Both input forms
+  // Layer 3 - resolve the absolute wake time, then bound it. Both input forms
   // land on the SAME bounds; `after_ms` is relative to the runtime clock and
   // `wake_at` is parsed as an absolute UTC instant (Zod already required the
   // designator, so this is never NaN and never local-time).
@@ -214,11 +214,11 @@ export async function handleLoopDefer(
   }
 
   if (row === null) {
-    // Partial unique index blocked the insert — a pending wake for this
+    // Partial unique index blocked the insert - a pending wake for this
     // session already exists. Surface loudly so the model doesn't think
     // its new request "took" while the old one still runs.
     return fail(
-      "LoopDefer: a pending wake already exists for this session. Only one pending wake per session is allowed — wait for it to fire or rely on user preemption.",
+      "LoopDefer: a pending wake already exists for this session. Only one pending wake per session is allowed - wait for it to fire or rely on user preemption.",
     );
   }
 
@@ -282,7 +282,7 @@ async function enqueueAgentSessionDefer(
 /**
  * Build the wake payload from the requested watch conditions.
  *
- * Rejections are RETURNED, never thrown: see the module header — a watch that
+ * Rejections are RETURNED, never thrown: see the module header - a watch that
  * cannot be armed must degrade the defer to its timer, not cancel it. When no
  * condition survives, the payload is `null` and the row is a plain timed wake,
  * byte-identical to one the model never attached a watch to.

@@ -26,7 +26,7 @@ export function legFor(token: UniswapToken): NonNullable<PlannedEvent["tokenIn"]
     : { tokenAddress: token.address, tokenSymbol: token.symbol, tokenDecimals: token.decimals };
 }
 
-/** A route/validation failure before anything could be signed — hashless `definitively_failed` row. NEVER called once the intent already exists (C18) — see `abortRemainingPlans` for that path. */
+/** A route/validation failure before anything could be signed - hashless `definitively_failed` row. NEVER called once the intent already exists (C18) - see `abortRemainingPlans` for that path. */
 export async function failPreBroadcast(
   p: Record<string, unknown>,
   event: {
@@ -65,11 +65,11 @@ export async function failPreBroadcast(
 
 /**
  * Finalize every planned event from `fromIndex` onward that was NEVER signed
- * (C17 / Codex final-review finding 3) — an early return after an
+ * (C17 / Codex final-review finding 3) - an early return after an
  * ambiguous/reverted broadcast, or a post-intent failure, must not leave
  * downstream rows permanently `pending` with no `submit_attempted_at` (the
  * repair sweep's candidate query excludes exactly those rows forever).
- * Best-effort: a throw here is logged, never propagated — the caller has
+ * Best-effort: a throw here is logged, never propagated - the caller has
  * already decided its own return value and must not flip to a misleading
  * result just because this bookkeeping call failed.
  *

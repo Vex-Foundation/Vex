@@ -20,12 +20,16 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import type { BridgeArtifact, BridgeGoarch, BridgeGoos } from "../../../../scripts/bridge-artifact.mjs";
 import {
+  BRIDGE_ARTIFACTS,
+  BRIDGE_TARGETS,
   GO_ARCH_BY_ELECTRON_ARCH,
   GOOS_BY_ELECTRON_PLATFORM,
   PACKAGED_BRIDGE_SUBPATH,
-  bridgeBinaryName,
-  builtBridgePath,
+  artifactBinaryName,
+  artifactsFor,
+  builtArtifactPath,
   goTargetFor,
   inspectExecutable,
 } from "../../../../scripts/bridge-artifact.mjs";
@@ -42,6 +46,45 @@ const FROZEN_TARGETS = [
   "linux-amd64",
   "linux-arm64",
 ];
+
+/**
+ * Every triple as a typed pair, so the cross-product test below can call the
+ * table's functions without casting a `split()` result back into the domain
+ * vocabulary. Asserted against `BRIDGE_TARGETS` itself, so this list cannot
+ * silently fall behind the table it enumerates.
+ */
+const TRIPLES: readonly (readonly [BridgeGoos, BridgeGoarch])[] = [
+  ["darwin", "arm64"],
+  ["darwin", "amd64"],
+  ["windows", "amd64"],
+  ["windows", "arm64"],
+  ["linux", "amd64"],
+  ["linux", "arm64"],
+];
+
+/** The artifact with this name, or a failure naming it. */
+function artifactNamed(name: string): BridgeArtifact {
+  const found = BRIDGE_ARTIFACTS.find((artifact) => artifact.name === name);
+  if (found === undefined) throw new Error(`the artifact table has no entry named ${name}`);
+  return found;
+}
+
+/**
+ * The ARTIFACTS block of `bridge/build.sh`, parsed as data.
+ *
+ * The bash mirror is the ONE place the artifact table is restated, because
+ * `build.sh` cannot import an `.mjs` module. Parsing it here is what turns
+ * "keep these two in sync" from a comment into a failing test.
+ */
+function buildScriptArtifacts(): { name: string; cmd: string; targets: string[] }[] {
+  const script = readFileSync(BUILD_SCRIPT, "utf8");
+  const block = /^ARTIFACTS=\(\n([\s\S]*?)^\)$/m.exec(script);
+  expect(block, "bridge/build.sh no longer declares an ARTIFACTS=( ... ) block").not.toBeNull();
+  return [...(block?.[1] ?? "").matchAll(/^\s*"([^"]+)"\s*$/gm)].map((match) => {
+    const [name, cmd, ...targets] = String(match[1]).split(/\s+/);
+    return { name: String(name), cmd: String(cmd), targets };
+  });
+}
 
 describe("the frozen packaging identity", () => {
   it("maps every Electron platform and arch Vex packages, and nothing else", () => {
@@ -65,12 +108,23 @@ describe("the frozen packaging identity", () => {
 
   it("packages at the contract path, with the Windows extension", () => {
     expect(PACKAGED_BRIDGE_SUBPATH).toBe("bridge");
-    expect(bridgeBinaryName("windows")).toBe("vex-mcp.exe");
-    expect(bridgeBinaryName("darwin")).toBe("vex-mcp");
-    expect(bridgeBinaryName("linux")).toBe("vex-mcp");
-    expect(builtBridgePath("/repo", "darwin", "arm64")).toBe(
-      path.join("/repo", "bridge", "dist", "darwin-arm64", "vex-mcp"),
-    );
+    const mcp = artifactNamed("vex-mcp");
+    const front = artifactNamed("vex-pipe-front");
+    expect({
+      mcpWindows: artifactBinaryName(mcp, "windows"),
+      mcpDarwin: artifactBinaryName(mcp, "darwin"),
+      mcpLinux: artifactBinaryName(mcp, "linux"),
+      frontWindows: artifactBinaryName(front, "windows"),
+      mcpBuilt: builtArtifactPath("/repo", mcp, "darwin", "arm64"),
+      frontBuilt: builtArtifactPath("/repo", front, "windows", "arm64"),
+    }).toEqual({
+      mcpWindows: "vex-mcp.exe",
+      mcpDarwin: "vex-mcp",
+      mcpLinux: "vex-mcp",
+      frontWindows: "vex-pipe-front.exe",
+      mcpBuilt: path.join("/repo", "bridge", "dist", "darwin-arm64", "vex-mcp"),
+      frontBuilt: path.join("/repo", "bridge", "dist", "windows-arm64", "vex-pipe-front.exe"),
+    });
   });
 
   it("the build wrapper builds exactly the frozen target union", () => {
@@ -95,6 +149,57 @@ describe("the frozen packaging identity", () => {
     expect(script).toContain("GOARM64=v8.0");
     expect(script).toContain("-trimpath");
     expect(script).toContain("-buildvcs=false");
+  });
+});
+
+describe("the artifact table", () => {
+  it("names, for EVERY triple, exactly the binaries that triple carries", () => {
+    // One table-driven assertion over the whole cross-product rather than a
+    // test per triple: the risk is a triple that quietly gains or loses an
+    // artifact, and a per-triple test can only fail for the triples someone
+    // remembered to write.
+    expect(TRIPLES.map(([goos, goarch]) => `${goos}-${goarch}`)).toEqual([...BRIDGE_TARGETS]);
+    const surface = Object.fromEntries(
+      TRIPLES.map(([goos, goarch]) => [
+        `${goos}-${goarch}`,
+        artifactsFor(goos, goarch).map((artifact) => artifactBinaryName(artifact, goos)),
+      ]),
+    );
+    expect(surface).toEqual({
+      "darwin-arm64": ["vex-mcp"],
+      "darwin-amd64": ["vex-mcp"],
+      "windows-amd64": ["vex-mcp.exe", "vex-pipe-front.exe"],
+      "windows-arm64": ["vex-mcp.exe", "vex-pipe-front.exe"],
+      "linux-amd64": ["vex-mcp"],
+      "linux-arm64": ["vex-mcp"],
+    });
+  });
+
+  it("refuses a triple it builds nothing for, rather than returning an empty set", () => {
+    // An empty list is what every consumer would read as "all zero artifacts
+    // verified" - a gate that passes vacuously is worse than no gate.
+    expect(() => artifactsFor("freebsd", "amd64")).toThrow(/builds nothing for freebsd-amd64/);
+    expect(() => artifactsFor("windows", "riscv64")).toThrow(/builds nothing for windows-riscv64/);
+  });
+
+  it("stays byte-for-byte in sync with the bash mirror in bridge/build.sh", () => {
+    // The drift this catches is silent and expensive: build.sh emitting one
+    // set of binaries while every Node-side gate verifies another.
+    expect(buildScriptArtifacts()).toEqual(
+      BRIDGE_ARTIFACTS.map((artifact) => ({
+        name: artifact.name,
+        cmd: artifact.cmd,
+        targets: [...artifact.targets],
+      })),
+    );
+  });
+
+  it("clears the target directory before writing, so an artifact dropped from the table does not linger", () => {
+    // Without the clear, an artifact that stops being built for a triple, or
+    // one left behind by an older checkout, would sit beside the current
+    // outputs until someone deleted it by hand.
+    const script = readFileSync(BUILD_SCRIPT, "utf8");
+    expect(script).toMatch(/rm -rf "\$out_dir"\s*\n\s*mkdir -p "\$out_dir"/);
   });
 });
 

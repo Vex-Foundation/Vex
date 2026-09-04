@@ -23,6 +23,7 @@ import { market } from "./market.js";
 import { lighterTrading } from "./lighter-trading.js";
 import { studio } from "./studio.js";
 import { onboarding } from "./onboarding.js";
+import { search } from "./search.js";
 import { secrets } from "./secrets.js";
 import { settings } from "./settings.js";
 import { support } from "./support.js";
@@ -49,4 +50,5 @@ export const shellBridge = {
   studio,
   terminal,
   files,
+  search,
 } satisfies VexShellBridge;

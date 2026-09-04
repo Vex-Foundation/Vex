@@ -1,5 +1,5 @@
 /**
- * The term-mobility family's prequote record + gate — the DRY-RUN-IN-TOOL
+ * The term-mobility family's prequote record + gate - the DRY-RUN-IN-TOOL
  * pattern (R5d card E4), for `pendle.pt.rollover`, `pendle.lp.transfer` and
  * `pendle.lp.toPt`.
  *
@@ -33,7 +33,7 @@
  *     it proves nothing about token safety, and there is no honeypot check for a
  *     Pendle market. Claiming `pass` would assert something nobody computed.
  *
- * NEVER persist or log raw provider/HTTP/DB/error text — only bounded structural
+ * NEVER persist or log raw provider/HTTP/DB/error text - only bounded structural
  * labels.
  */
 
@@ -70,7 +70,7 @@ import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-po
  */
 export const PENDLE_TERM_PREQUOTE_PROVIDER = "pendle-term";
 
-/** Which term-mobility action a prequote belongs to — also its DB `kind`. */
+/** Which term-mobility action a prequote belongs to - also its DB `kind`. */
 export type PendleTermAction = "pt_rollover" | "lp_transfer" | "lp_to_pt";
 
 /**
@@ -104,7 +104,7 @@ function requireAddr(raw: string, label: string): string {
 
 /**
  * Build the kind's match input. ONE function, called by BOTH the recorder and
- * the gate, so the two sides can never disagree about which field is which — the
+ * the gate, so the two sides can never disagree about which field is which - the
  * only property a match hash actually needs.
  *
  * Throws (never guesses) on a missing leg, an unsupported chain, a malformed
@@ -125,7 +125,7 @@ export function buildPendleTermMatchInput(
   const destination = requireAddr(legs.destination, "destination leg");
   // `lp_to_pt` is the ONE action whose two legs are different token TYPES of the
   // same market, so an equal pair there means the market resolved to itself as
-  // its own PT — as impossible as a rollover into the PT it starts from.
+  // its own PT - as impossible as a rollover into the PT it starts from.
   if (source.toLowerCase() === destination.toLowerCase()) {
     throw new VexError(ErrorCodes.PENDLE_TOKEN_NOT_FOUND, "Pendle term identity has the same address on both legs.");
   }
@@ -167,7 +167,7 @@ export interface PendleTermRouteRef {
  * Record the prequote a later execute must match. Called by the handlers ONLY
  * after the dry run has fully validated the route (Router pin, sender/value/
  * approval binds, reflector pin where applicable, per-leg calldata bind and the
- * price floor) — an unsafe route must never leave an authorization behind.
+ * price floor) - an unsafe route must never leave an authorization behind.
  *
  * Never throws to the caller.
  */
@@ -218,7 +218,7 @@ export async function recordPendleTermPrequote(
 
 /**
  * The gate's answer. A block carries a bounded structural `reason` for the log
- * and the agent-facing `message` the handler surfaces — never row contents,
+ * and the agent-facing `message` the handler surfaces - never row contents,
  * addresses, or raw error text.
  */
 export type PendleTermGateDecision =
@@ -230,7 +230,7 @@ function blockMessage(toolId: string, reason: "no_quote" | "safety_fail" | "gate
   switch (reason) {
     case "no_quote":
       return (
-        `${toolId} blocked: no fresh dry run for these exact params — the execute must use EXACTLY the same `
+        `${toolId} blocked: no fresh dry run for these exact params - the execute must use EXACTLY the same `
         + `chain, source and destination legs, amountIn and slippageBps (same value, or omitted on both sides). ${dryRun}`
       );
     case "safety_fail":

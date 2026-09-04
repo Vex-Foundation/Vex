@@ -12,7 +12,7 @@
  * query is mocked here rather than passed as a prop.
  */
 
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createElement } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -43,34 +43,6 @@ vi.mock("../../../lib/api/sessions.js", async (importOriginal) => {
 });
 
 const { SessionExportControl } = await import("../SessionExportControl.js");
-
-// JSDOM does not implement `HTMLDialogElement.showModal()` — the dialog stays
-// without the `open` attribute and Testing Library's a11y tree hides every
-// descendant from `getByRole`. Same polyfill as ReportIssueDialog's tests;
-// SessionExportDialog shares the same native-`<dialog>` primitive.
-beforeAll(() => {
-  const proto = HTMLDialogElement.prototype as unknown as {
-    showModal?: () => void;
-    close?: () => void;
-    show?: () => void;
-  };
-  if (typeof proto.showModal !== "function") {
-    proto.showModal = function showModalPolyfill(this: HTMLDialogElement): void {
-      this.setAttribute("open", "");
-    };
-  }
-  if (typeof proto.close !== "function") {
-    proto.close = function closePolyfill(this: HTMLDialogElement): void {
-      this.removeAttribute("open");
-      this.dispatchEvent(new Event("close"));
-    };
-  }
-  if (typeof proto.show !== "function") {
-    proto.show = function showPolyfill(this: HTMLDialogElement): void {
-      this.setAttribute("open", "");
-    };
-  }
-});
 
 const exportMarkdown = vi.fn();
 

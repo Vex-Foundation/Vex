@@ -15,7 +15,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { formatSpawnTrace } from "../node-pty-spawner.js";
+import { formatSpawnTrace, isFatalPtyError } from "../node-pty-spawner.js";
 
 const SECRET = "ghp_liveTokenThatMustNotAppearAnywhere";
 
@@ -63,5 +63,49 @@ describe("the spawn trace", () => {
 
   it("survives an environment with no variables at all", () => {
     expect(() => formatSpawnTrace("/bin/sh", [], "/tmp", {})).not.toThrow();
+  });
+});
+
+/**
+ * WHICH SOCKET ERRORS ARE THE TERMINAL'S DEATH, as node-pty itself decides it.
+ *
+ * node-pty's socket handler returns early for `EAGAIN` and for `EIO`/`errno 5`
+ * and THROWS everything else (`unixTerminal.js:102-124`,
+ * `windowsTerminal.js:92-101`). The seam forwards exactly the throwing set, so
+ * this table is that source read back: get it wrong in one direction and a clean
+ * shell exit is reported as a terminal failure, get it wrong in the other and
+ * the failure the seam exists for is swallowed.
+ */
+describe("the fatal-error classification", () => {
+  function withCode(message: string, code?: string): Error {
+    const error = new Error(message);
+    if (code !== undefined) Object.assign(error, { code });
+    return error;
+  }
+
+  it.each([
+    // Startup noise from a tty.ReadStream, twice, on every Unix spawn.
+    ["EAGAIN", "read EAGAIN", "EAGAIN", false],
+    // The last process in the terminal closed it. The exit event carries this.
+    ["EIO", "read EIO", "EIO", false],
+    ["errno 5", "read errno 5", "errno 5", false],
+    ["ECONNRESET", "read ECONNRESET", "ECONNRESET", true],
+    ["EPIPE", "write EPIPE", "EPIPE", true],
+    ["EBADF", "read EBADF", "EBADF", true],
+  ])("treats %s as fatal=%j", (_label, message, code, fatal) => {
+    expect(isFatalPtyError(withCode(message, code))).toBe(fatal);
+  });
+
+  it("treats an error with NO code as fatal, because node-pty throws it", () => {
+    // node-pty only inspects `err.code`; an error without one falls straight
+    // through to the rethrow, so the seam must forward it or it becomes an
+    // uncaught exception in the host.
+    expect(isFatalPtyError(withCode("something went wrong"))).toBe(true);
+  });
+
+  it("does not match a code merely because the MESSAGE mentions one", () => {
+    // The classification reads `err.code`, exactly as node-pty does. A message
+    // that happens to contain "EIO" is not an EIO.
+    expect(isFatalPtyError(withCode("EIO appears in this message", "ECONNRESET"))).toBe(true);
   });
 });

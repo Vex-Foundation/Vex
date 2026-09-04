@@ -413,6 +413,44 @@ export type VexErrorCode =
    * `retryable: true, userActionable: true`.
    */
   | "projects.slug_cleanup_pending"
+  /**
+   * B3 - cross-platform path semantics. Five refusals that used to be reported
+   * as one of the two blanket root errors, split because they have five
+   * different remedies and four of them are reachable only on Windows or macOS.
+   *
+   *  - `projects.root_unverifiable` - the configured root and the recorded root
+   *    could not be PROVEN to be the same directory: the recorded one could not
+   *    be inspected (moved, deleted, an offline network drive), or the
+   *    filesystem supplied no `dev`/`ino` identity for it (both zero, as Node
+   *    reports on some Windows network and FAT volumes). Distinct from
+   *    `root_changed`, which asserts they ARE different and asks the user to
+   *    restore a configured value. `retryable: true, userActionable: true`.
+   *
+   *  - `projects.root_permission_denied` - `mkdir` of the project folder was
+   *    refused with EACCES/EPERM. The folder exists and the fix is a permission,
+   *    not the "does the location exist" advice `root_unavailable` gives.
+   *    `retryable: false, userActionable: true`.
+   *
+   *  - `projects.root_out_of_space`   - ENOSPC/EDQUOT on the volume holding the
+   *    projects root. `retryable: false, userActionable: true`.
+   *
+   *  - `projects.root_path_invalid`   - the root path itself is not usable on
+   *    this system (EINVAL, ENOTDIR, ENAMETOOLONG): a component is a file, a
+   *    character this filesystem forbids, or a path past the length limit. The
+   *    realistic cause is a `projectsRoot` override written on another platform.
+   *    `retryable: false, userActionable: true`.
+   *
+   *  - `projects.name_reserved`       - the project name derives a folder name
+   *    the Win32 path namespace reserves for a device (CON, PRN, AUX, NUL,
+   *    COM0-9, LPT0-9). Refused on EVERY platform: the folder outlives the
+   *    machine it was created on, and a Linux-created `con/` cannot be opened
+   *    on Windows. `retryable: false, userActionable: true`.
+   */
+  | "projects.root_unverifiable"
+  | "projects.root_permission_denied"
+  | "projects.root_out_of_space"
+  | "projects.root_path_invalid"
+  | "projects.name_reserved"
   | "internal.contract_violation"
   | "internal.cancelled"
   | "internal.unexpected";

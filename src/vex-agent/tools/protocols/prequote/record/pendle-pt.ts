@@ -1,5 +1,5 @@
 /**
- * Pendle PT prequote recording (Wave 5) — `pendle.pt.quote` records either a
+ * Pendle PT prequote recording (Wave 5) - `pendle.pt.quote` records either a
  * `swap` or a matured `redeem`.
  */
 
@@ -21,8 +21,8 @@ import { familyToChainFamily, writePrequoteRow } from "./row.js";
 
 /**
  * Record a Pendle prequote (Wave 5). The single `pendle.pt.quote` tool records
- * EITHER a `swap` prequote (buy / early-exit sell — Convert action `swap`) OR a
- * `redeem` prequote (matured PT — Convert action `redeem-py`), decided from the
+ * EITHER a `swap` prequote (buy / early-exit sell - Convert action `swap`) OR a
+ * `redeem` prequote (matured PT - Convert action `redeem-py`), decided from the
  * echoed `action`. A redeem uses the dedicated redeem identity (never the swap or
  * bridge one). Best-effort: a wallet-scope / identity throw is a bounded skip.
  */
@@ -54,7 +54,7 @@ export async function recordPendlePrequote(
   }
   const expiresAt = new Date(Date.now() + PREQUOTE_MAX_AGE_MS).toISOString();
 
-  // Redeem path — dedicated identity (provider/wallet/chainId/pt/yt/amount/receiver).
+  // Redeem path - dedicated identity (provider/wallet/chainId/pt/yt/amount/receiver).
   if (extracted.action === "redeem") {
     let identity;
     try {
@@ -88,7 +88,7 @@ export async function recordPendlePrequote(
     return;
   }
 
-  // Swap path (buy / early-exit sell) — same money/safety leg as the other swaps:
+  // Swap path (buy / early-exit sell) - same money/safety leg as the other swaps:
   // recipient defaults to self, approveExact false, slippage from the quote params.
   const matchHash = computePrequoteMatchHash({
     kind: "swap",

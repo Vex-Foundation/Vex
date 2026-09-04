@@ -58,6 +58,7 @@ import {
 } from "./book/portfolio/portfolio-motion.js";
 import { BookRailFrame } from "./book/BookRailFrame.js";
 import { StudioBookRail } from "./book/StudioBookRail.js";
+import { StudioBookRailFrame } from "./book/StudioBookRailFrame.js";
 import { WelcomePortfolioPanel } from "./book/portfolio/WelcomePortfolioPanel.js";
 import {
   ReorderableSection,
@@ -135,13 +136,13 @@ export function BookPanel({
       return <WelcomePortfolioPanel bookOpen={bookOpen} onToggle={onToggle} />;
     }
     return (
-      <BookRailFrame
-        label="Project instrument"
+      <StudioBookRailFrame
+        projectId={activeProjectId}
         bookOpen={bookOpen}
         onToggle={onToggle}
       >
         <StudioBookRail projectId={activeProjectId} />
-      </BookRailFrame>
+      </StudioBookRailFrame>
     );
   }
 

@@ -1,10 +1,10 @@
 /**
- * Khalani has NO slippage surface — and says so BY NAME.
+ * Khalani has NO slippage surface - and says so BY NAME.
  *
  * Khalani's `/v1/quotes` field list carries no slippage tolerance: a route is
  * filled by a filler at the quoted route price, inside the route's own
  * deadline. Until the audit (SPEC §2.4 item 21) the generic bridge aliases
- * accepted `slippageBps` on the Khalani branch and silently DROPPED it — the
+ * accepted `slippageBps` on the Khalani branch and silently DROPPED it - the
  * one param an agent sets specifically to bound its downside, answered with
  * silence. An agent that set it believed it had constrained its loss and had
  * not.
@@ -18,7 +18,7 @@ import { resolveBridgeVenue } from "@tools/relay/bridge-venue.js";
 
 /** The ONE agent-facing sentence, shared by every Khalani bridge entry point. */
 export const KHALANI_SLIPPAGE_UNSUPPORTED_REASON =
-  "slippageBps is not an accepted parameter on a Khalani bridge — a Khalani route is filled by a "
+  "slippageBps is not an accepted parameter on a Khalani bridge - a Khalani route is filled by a "
   + "filler at the quoted route price, so Khalani exposes no slippage tolerance and the value would "
   + "have had no effect. NO slippage protection applies on Khalani routes: your protection is the "
   + "quoted route itself and its deadline, so compare the quoted amountOut and re-quote if the "

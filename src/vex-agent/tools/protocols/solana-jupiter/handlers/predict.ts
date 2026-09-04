@@ -53,7 +53,7 @@ export const PREDICT_HANDLERS: Record<string, ProtocolHandler> = {
     if (!sortDirection.ok) return sortDirection.result;
     // Lean markets (W1-C, transport optimization P1): the agent's own
     // preference is both the projection toggle below AND, as of P1, the
-    // actual upstream request — the SDK/provider genuinely honor this param
+    // actual upstream request - the SDK/provider genuinely honor this param
     // (CORRECTED, see fixtures/prediction-events-search.meta.md CORRECTION:
     // the earlier "the provider ignores this param" claim was a rate-limit
     // artifact of keyless probing, not real provider behavior). The projector
@@ -82,7 +82,7 @@ export const PREDICT_HANDLERS: Record<string, ProtocolHandler> = {
     const provider = strictEnumField(p, "provider", PREDICT_PROVIDER);
     if (!provider.ok) return provider.result;
     // Lean markets (W1-C): search's events carry the same always-nested
-    // markets[] as /events (fixture-confirmed) — same lean-by-default
+    // markets[] as /events (fixture-confirmed) - same lean-by-default
     // treatment, enforced by the projector below. Unlike `.events`/`.event`
     // (P1), this preference is NOT also passed upstream: neither the docs
     // nor the SDK's `JupiterPredictionSearchEventsParams` expose an
@@ -94,10 +94,10 @@ export const PREDICT_HANDLERS: Record<string, ProtocolHandler> = {
       limit: window.limit,
     }));
     // LIVE FACT (coordinator, 2026-07-24, 4s spacing): /events/search ignores
-    // `limit` entirely — 1/2/20 all returned the same 10-row response. Vex
+    // `limit` entirely - 1/2/20 all returned the same 10-row response. Vex
     // cannot trust the provider to honor the requested window, so the
     // agent's requested count is enforced LOCALLY by slicing the (always
-    // up-to-10-row) response — still a legitimate, honored agent contract,
+    // up-to-10-row) response - still a legitimate, honored agent contract,
     // just enforced client-side instead of upstream (see resolveSearchWindow).
     const windowed = result.data.slice(0, window.limit);
     // Pagination class `bounded_non_pageable` (parameter-vocabulary.md 4.1):
@@ -127,7 +127,7 @@ export const PREDICT_HANDLERS: Record<string, ProtocolHandler> = {
     const id = str(p, "marketId");
     if (!id) return fail("Missing required: marketId");
     // Regional-block mapping (FIX-D): the last of the domain's 18 reads to
-    // get wrapPredictionRead — flagged as a gap in P1's delta log because it
+    // get wrapPredictionRead - flagged as a gap in P1's delta log because it
     // pre-dates W1-C's 5-handler rollout and P1's 16-handler count.
     const market = await wrapPredictionRead(() => getJupiterPredictionMarket(id));
     return ok({ ...market, pricing: projectMarketPricing(market.pricing) });
@@ -170,7 +170,7 @@ export const PREDICT_HANDLERS: Record<string, ProtocolHandler> = {
     return ok({ ...result, data: result.data.map(convertPredictionHistoryEventMoney) });
   },
   // buy/sell/claim/closeAll (W5 migration 049): converted to the staged
-  // `agent_activity` write path — see `../predict-execute.ts`'s module doc
+  // `agent_activity` write path - see `../predict-execute.ts`'s module doc
   // for the full write-sequence contract (`../predict-execute-close-all.ts`
   // for the N-row closeAll fan-out). `capture: "none"` in
   // mutation-matrix.ts (no more `_tradeCapture`/`_tradeCaptureItems`); every
@@ -183,7 +183,7 @@ export const PREDICT_HANDLERS: Record<string, ProtocolHandler> = {
     const id = str(p, "eventId");
     if (!id) return fail("Missing required: eventId");
     // Lean markets (W1-C, transport optimization P1): same treatment as
-    // `.events` — the agent's preference is now also the actual upstream
+    // `.events` - the agent's preference is now also the actual upstream
     // request (see `.events`'s comment above for the correction evidence).
     const includeMarkets = bool(p, "includeMarkets") ?? false;
     const event = await wrapPredictionRead(() => getJupiterPredictionEvent({ eventId: id, includeMarkets }));
@@ -192,7 +192,7 @@ export const PREDICT_HANDLERS: Record<string, ProtocolHandler> = {
   "solana.predict.position": async (p) => {
     const pk = str(p, "positionPubkey");
     if (!pk) return fail("Missing required: positionPubkey");
-    // Regional-block mapping (FIX-D) — see `.market`'s comment above.
+    // Regional-block mapping (FIX-D) - see `.market`'s comment above.
     return ok(toPredictView(await wrapPredictionRead(() => getJupiterPredictionPosition(pk))));
   },
 };

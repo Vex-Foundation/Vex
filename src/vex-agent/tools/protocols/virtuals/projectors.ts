@@ -1,5 +1,5 @@
 /**
- * Virtuals agent projectors — the ONLY place raw Virtuals payload becomes
+ * Virtuals agent projectors - the ONLY place raw Virtuals payload becomes
  * model-facing tool output. This is a COMPLETE trust boundary:
  *
  * - STRUCTURAL fields are narrowed into TRUSTED SHAPES via `trusted-fields.ts`:
@@ -89,11 +89,11 @@ function ageDaysFrom(trustedIso: string | null, nowMs: number): number | null {
 }
 
 const UNDERGRAD_WARNING =
-  "UNDERGRAD — bonding-curve pre-graduation: illiquid, LP not locked, may never graduate. Extreme caution; prefer graduated (AVAILABLE) agents.";
+  "UNDERGRAD - bonding-curve pre-graduation: illiquid, LP not locked, may never graduate. Extreme caution; prefer graduated (AVAILABLE) agents.";
 
 /** Degrade note when upstream sends structural values outside the trusted shapes. */
 function unrecognizedFieldsNote(dropped: readonly string[]): string {
-  return `Upstream sent unrecognized ${dropped.join("/")} value(s) — dropped; treat this row with caution.`;
+  return `Upstream sent unrecognized ${dropped.join("/")} value(s) - dropped; treat this row with caution.`;
 }
 
 // ── Trusted structural snapshot of one agent ───────────────────────
@@ -167,7 +167,7 @@ function resolveTradingRoute(fields: TrustedAgentFields): VirtualsTradingRoute {
       namespace: null,
       quoteToken: null,
       quoteSymbol: "VIRTUAL",
-      note: "Pre-graduation bonding curve — not routable via standard venue tools yet.",
+      note: "Pre-graduation bonding curve - not routable via standard venue tools yet.",
     };
   }
   return {
@@ -367,7 +367,7 @@ export interface ConciseGenesis {
 export function projectGenesis(genesis: VirtualsGenesis): ConciseGenesis {
   return {
     id: genesis.id,
-    // Strict identifier tokens — genesis statuses (FINALIZED/CANCELLED/...) and
+    // Strict identifier tokens - genesis statuses (FINALIZED/CANCELLED/...) and
     // ids are machine identifiers; anything outside the shape is dropped.
     genesisId: trustedIdentifier(genesis.genesisId, 40),
     status: trustedIdentifier(genesis.status, 32),

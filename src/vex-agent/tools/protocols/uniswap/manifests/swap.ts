@@ -2,13 +2,14 @@ import type { ProtocolToolManifest } from "../../types.js";
 import { UNISWAP_SWAP_DISCOVERY } from "../../embeddings/uniswap/swap.js";
 import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 import { CANONICAL_CHAIN_SENTENCE } from "../../conventions.js";
+import { UNISWAP_SWAP_VEX_FEE } from "../../../vex-fee-notes.js";
 
 // C24 (Codex final-review round 1, finding 8): the five-field contract is
-// FINAL — no `dryRun`. A preview is `uniswap.swap.quote`; the execute always
+// FINAL - no `dryRun`. A preview is `uniswap.swap.quote`; the execute always
 // broadcasts. The handler hard-rejects a caller that still passes `dryRun`
 // (the runtime's `RESERVED_RUNTIME_PARAM_KEYS` always accepts that key
 // regardless of manifest declaration, so omitting it here is not sufficient
-// on its own — mirrors kyberswap.swap.execute).
+// on its own - mirrors kyberswap.swap.execute).
 const SWAP_EXECUTION_PARAMS = [
   { key: "chain", type: "string" as const, required: true, description: `The chain to swap on. ${CANONICAL_CHAIN_SENTENCE} Robinhood Chain is \`robinhood\` / \`4663\`.` },
   { key: "tokenIn", type: "string" as const, required: true, description: "Input token CONTRACT ADDRESS or native ETH/native. Uniswap has no symbol search." },
@@ -23,12 +24,12 @@ export const UNISWAP_SWAP_TOOLS: readonly ProtocolToolManifest[] = [
     publicName: "uniswap__swap_quote",
     namespace: "uniswap",
     lifecycle: "active",
-    description: "Get the best Uniswap route across V2 + V3. Returns the output amount, the route, price impact, gas, and token-safety signals (factory allowlist, liquidity, fee-on-transfer). Read-only, no execution. Covers the EVM chains with a verified Vex Uniswap deployment; pass token ADDRESSES. Vex charges 25 bps (0.25%) on the input token: the quoted output is for amountIn MINUS that fee (see swapAmountRaw and the vexFee block), while amountIn stays the total debited. The rate and receiver are fixed — passing fee, feeBps, feeReceiver or feeAmount is rejected by name. KyberSwap is Vex's primary swap route. Use this when KyberSwap cannot serve the pair, or when its quote failed for a routing reason.",
+    description: "Get the best Uniswap route across V2 + V3. Returns the output amount, the route, price impact, gas, and token-safety signals (factory allowlist, liquidity, fee-on-transfer). Read-only, no execution. Covers the EVM chains with a verified Vex Uniswap deployment; pass token ADDRESSES. Vex charges 25 bps (0.25%) on the input token: the quoted output is for amountIn MINUS that fee (see swapAmountRaw and the vexFee block), while amountIn stays the total debited. The rate and receiver are fixed - passing fee, feeBps, feeReceiver or feeAmount is rejected by name. KyberSwap is Vex's primary swap route. Use this when KyberSwap cannot serve the pair, or when its quote failed for a routing reason.",
     mutating: false,
     actionKind: "read",
     params: [
       { key: "chain", type: "string", required: true, description: `The chain to quote on. ${CANONICAL_CHAIN_SENTENCE} Robinhood Chain is \`robinhood\` / \`4663\`.` },
-      { key: "tokenIn", type: "string", required: true, description: "Input token CONTRACT ADDRESS or native ETH/native. Uniswap has no symbol search — resolve a symbol to its address first." },
+      { key: "tokenIn", type: "string", required: true, description: "Input token CONTRACT ADDRESS or native ETH/native. Uniswap has no symbol search - resolve a symbol to its address first." },
       { key: "tokenOut", type: "string", required: true, description: "Output token CONTRACT ADDRESS or native ETH/native." },
       { key: "amountIn", type: "string", required: true, description: "Amount in human-readable units. This is the TOTAL debited: the route is priced for this amount minus Vex's 25 bps fee." },
       { key: "slippageBps", type: "number", unit: "bps", description: `Slippage tolerance in basis points (1 bps = 0.01%); default ${VEX_DEFAULT_SLIPPAGE_BPS} = ${VEX_DEFAULT_SLIPPAGE_BPS / 100}%, which fits deep, liquid pairs. It pins the minimum output the resulting swap will enforce, and is the ONLY price protection that trade has. Pass the SAME value to uniswap__swap_execute, or omit it on both - a mismatch blocks the execute. On a thin or volatile pair (new listings, memecoins, small pools) ${VEX_DEFAULT_SLIPPAGE_BPS} bps often fails at execute time, in one of two ways. USUALLY it fails for FREE: the router's "Too little received" / "INSUFFICIENT_OUTPUT_AMOUNT" comes back from the pre-sign gas estimate, so nothing is signed and NO gas is spent, and the activity row records failure code slippage. LESS OFTEN the pool moves after that estimate passes: the router REVERTS once mined, the row records mined_revert, and the gas IS spent. After either, re-quote with a higher slippageBps rather than abandoning the pair - and since the usual failure costs nothing, a tighter tolerance is the cheap thing to try first. Vex caps it at 1000 (10%) and REJECTS anything above rather than clamping; every increase widens the worst-case price you accept.` },
@@ -44,6 +45,8 @@ export const UNISWAP_SWAP_TOOLS: readonly ProtocolToolManifest[] = [
     description: "Execute a Uniswap swap (best V2/V3 route, exact-input). SPENDS FUNDS: it signs and broadcasts from your wallet and requires approval before it runs. Returns the transaction hash and the executed amounts. Pass token ADDRESSES (no symbol search). REQUIRES a fresh matching uniswap__swap_quote first. Execution handles the ERC-20 allowance automatically (exact-amount approve to the allowlisted router, with a reset-to-zero first for tokens that require it; native input needs none) - there is NO separate approve tool and none is needed. Vex charges 25 bps (0.25%) on the input token as a SEPARATE transfer signed only AFTER the swap confirms, so a swap that fails is never charged: the router swaps amountIn MINUS the fee and the wallet is debited amountIn in total (the vexFee block in the result reports what was collected). The rate and receiver are fixed - passing fee, feeBps, feeReceiver or feeAmount is rejected by name. KyberSwap is Vex's primary swap route. Use this when KyberSwap cannot serve the pair, or when its quote failed for a routing reason.",
     mutating: true,
     actionKind: "user_wallet_broadcast",
+    returns: "Returns the transaction hash and the executed amounts.",
+    vexFee: UNISWAP_SWAP_VEX_FEE,
     params: SWAP_EXECUTION_PARAMS,
     exampleParams: { chain: "robinhood", tokenIn: "0x8Ff92566f2e81BDd68EDfAa8cde73942A723796b", tokenOut: "0xc6911796042b15d7Fa4F6CDe69e245DdCd3d9c31", amountIn: "100", slippageBps: VEX_DEFAULT_SLIPPAGE_BPS },
     discovery: UNISWAP_SWAP_DISCOVERY["uniswap.swap.execute"],

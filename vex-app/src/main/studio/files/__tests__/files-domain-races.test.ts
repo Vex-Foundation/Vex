@@ -176,6 +176,11 @@ beforeEach(async () => {
     publish: (windowId, event) => {
       events.push({ windowId, event });
     },
+    // This suite is about watcher and subscription RACES and never deletes. The
+    // capability is still named rather than defaulted, so a delete added here
+    // later fails loudly instead of quietly doing nothing.
+    trashItem: () => Promise.reject(new Error("no trash in this suite")),
+    revealItem: () => undefined,
   });
 });
 
@@ -345,19 +350,44 @@ describe("a window that goes away while its own watch is in flight", () => {
 
   it("does NOT refuse a DIFFERENT window's watch that was in flight at the same time", async () => {
     // The invalidation is per window. A release must not cancel a watch some
-    // other window is legitimately waiting on.
-    // Both join ONE native subscribe - that is the single-flight the watcher
-    // owns - so both are in flight behind the same gate.
-    const forA = beginWatch(WINDOW_A);
+    // other window is legitimately waiting on, and it must not reap the entry
+    // that watch is joining.
+    //
+    // THE ORDER MATTERS, AND IT IS THE SURVIVING WINDOW THAT GOES FIRST. B
+    // opens the entry and parks inside the native subscribe, which
+    // `native.calls() === 1` proves it has reached; from that moment until B
+    // publishes, B holds the entry's join reservation, so no interleaving of A
+    // can leave the entry collectable. Starting A first and waiting on the same
+    // signal would prove only that A is parked - A's gate says nothing about
+    // where B is - and on a slow machine B could still be inside `locate`'s
+    // real filesystem work when the release lands, in which case A's refusal
+    // legitimately collects the entry and B builds a SECOND watcher behind a
+    // gate this test never opens. That is what timed the win32 lane out on run
+    // 33602264566: the test's ordering hole, not the domain's fence.
     const forB = beginWatch(WINDOW_B);
     await until("the native subscribe to be requested", () => native.calls() === 1);
 
+    // A asks for the same project, then goes away mid-acquisition.
+    const forA = beginWatch(WINDOW_A);
     await domain.releaseWindow(WINDOW_A);
     native.gates[0]?.resolve();
 
-    expect(await forA).toEqual({ ok: false, code: "watcher_unavailable" });
+    // B FIRST, because B being served is the headline invariant AND because a
+    // regression that refuses B strands A behind a second native gate nothing
+    // opens: awaiting A first would report that regression as a 15 s timeout
+    // instead of as the one-line assertion it is.
     expect((await forB).ok).toBe(true);
+    // A's CODE is the proof of the interleaving, not merely of the outcome:
+    // `watcher_unavailable` is minted only by the publication fence, which A
+    // reaches only after `entryFor` handed it the same LIVE entry. Had the
+    // release reaped that entry, A's refusal would read `project_closed`.
+    expect(await forA).toEqual({ ok: false, code: "watcher_unavailable" });
     expect(domain.watchedProjectCount).toBe(1);
+    // ONE native watch, ever, and it is still held. A second subscribe would
+    // mean the release reaped the entry B was joining and B had to start the
+    // operating system over, which is the defect this test owns.
+    expect(native.calls()).toBe(1);
+    expect(native.unsubscribes()).toBe(0);
   });
 });
 
@@ -421,6 +451,11 @@ describe("a read that is still working when the project closes underneath it", (
       pollForRoot: () => () => undefined,
       rootExists: () => Promise.resolve(true),
       publish: () => undefined,
+      // The trash is INJECTED (see `os-trash.ts`): this suite drives the real
+      // filesystem without Electron, so a suite that never deletes still has
+      // to name the capability it is not using.
+      trashItem: () => Promise.reject(new Error("no trash in this suite")),
+      revealItem: () => undefined,
     });
 
     try {
@@ -469,6 +504,11 @@ describe("a read in flight when a delete begins", () => {
       pollForRoot: () => () => undefined,
       rootExists: () => Promise.resolve(true),
       publish: () => undefined,
+      // The trash is INJECTED (see `os-trash.ts`): this suite drives the real
+      // filesystem without Electron, so a suite that never deletes still has
+      // to name the capability it is not using.
+      trashItem: () => Promise.reject(new Error("no trash in this suite")),
+      revealItem: () => undefined,
     });
 
     try {

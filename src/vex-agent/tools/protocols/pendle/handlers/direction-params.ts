@@ -12,7 +12,7 @@
  *
  * The mirror defect is the ABSENT one: a `direction:"add"` with no `tokenIn`
  * reached `resolveInputToken("")` and surfaced as `Pendle input token "" is not
- * a valid address` — our own missing-parameter refusal dressed up as a bad
+ * a valid address` - our own missing-parameter refusal dressed up as a bad
  * address. Both are named here, by param, with the direction that would have
  * accepted them.
  */

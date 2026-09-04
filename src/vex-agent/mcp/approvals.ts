@@ -95,6 +95,12 @@ export interface StudioEnqueueInput {
    * moment the row would be written rather than the state before the tool ran.
    */
   readonly readStudioRuntimeAvailability: () => StudioRuntimeAvailability;
+  /**
+   * The `clientInfo.name` the calling MCP client declared, so the approval card
+   * can NAME the actor (rule 90). Untrusted self-declared display text; the
+   * enqueue path sanitizes it and stores it as provenance only.
+   */
+  readonly requestedByClient?: string;
 }
 
 /**
@@ -153,6 +159,9 @@ export async function enqueueStudioApprovalIntent(
         ? {}
         : { preparedApprovalBinding: input.result.preparedApprovalBinding }),
       origin: "studio_mcp",
+      ...(input.requestedByClient === undefined
+        ? {}
+        : { requestedByClient: input.requestedByClient }),
       projectId: input.scope.projectId,
       scopeVersion: input.scope.scopeVersion,
     },

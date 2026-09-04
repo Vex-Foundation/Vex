@@ -43,6 +43,7 @@ export type {
   StudioManagedBlockOwnership,
 } from "./managed-block.js";
 export {
+  STUDIO_MANAGED_BLOCK_MAX_BYTES,
   STUDIO_PROTOCOLS_DOC_PATH,
   inspectStudioManagedBlock,
   studioManagedBlockOwnership,
@@ -61,6 +62,13 @@ export {
   removeClaudeMdImport,
   renderFreshClaudeMd,
 } from "./claude-md.js";
+export type {
+  StudioInstallationEnvironment,
+} from "../../instructions/installation-environment.js";
+export {
+  resolveStudioInstallationEnvironment,
+  studioDeclaredEnvironmentKeys,
+} from "../../instructions/installation-environment.js";
 export type {
   StudioBriefInventory,
   StudioBriefPermission,

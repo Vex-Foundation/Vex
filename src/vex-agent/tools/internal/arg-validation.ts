@@ -5,8 +5,8 @@
  * dialect to the model:
  *
  *  1. RENDERING a Zod rejection the model can act on. zod 4 NEVER puts the
- *     field name in `issue.message` — `"Too small: expected string to have >=1
- *     characters"` names nothing — so `issue.path` is MANDATORY in every
+ *     field name in `issue.message` - `"Too small: expected string to have >=1
+ *     characters"` names nothing - so `issue.path` is MANDATORY in every
  *     rendered error. A pathless `issues.map(i => i.message).join("; ")` tells
  *     the model that something was too small and leaves it to guess what.
  *  2. NORMALIZING the model's habit of filling every advertised field with an
@@ -14,7 +14,7 @@
  *     an empty OPTIONAL value means absent; rejecting it teaches nothing and
  *     loses the criteria the model did supply.
  *
- * Values are NEVER echoed back — only their SHAPE (rule 06). A query, an
+ * Values are NEVER echoed back - only their SHAPE (rule 06). A query, an
  * address, or a note is user content, and an error message is a log line, a
  * transcript entry, and a prompt input all at once.
  *
@@ -40,7 +40,7 @@ export interface DropEmptyModelValuesOptions {
    * Keys that must survive normalization even when empty, at EVERY depth.
    *
    * A discriminator (`action`, `view`, …) selects the contract: dropping an
-   * empty one turns "unrecognised action" — which names the legal actions —
+   * empty one turns "unrecognised action" - which names the legal actions -
    * into "missing key", which does not. A generic drop must never do that, so
    * the carve-out is per-schema rather than a hardcoded field name.
    */
@@ -52,7 +52,7 @@ export interface DropEmptyModelValuesOptions {
    * some it is a distinct INSTRUCTION: `MissionDraftUpdate` uses `null` to
    * CLEAR a draft field, so dropping it would turn a clear into a no-op and the
    * agent would be told the field was updated when it still holds the old
-   * value. Off by default — a contract that means it opts in.
+   * value. Off by default - a contract that means it opts in.
    */
   readonly preserveNull?: boolean;
 }
@@ -62,7 +62,7 @@ export interface DropEmptyModelValuesOptions {
  *
  * Applied as a PRE-VALIDATION step. Nothing is invented: a dropped key was
  * blank, so the schema then applies exactly the rule it applies to an omitted
- * key — optional fields disappear, REQUIRED fields still fail (as missing, with
+ * key - optional fields disappear, REQUIRED fields still fail (as missing, with
  * the "it arrived empty" note supplied by {@link formatZodIssueForModel}, which
  * reads the ORIGINAL params). A non-object input is returned untouched so Zod
  * reports the real type error.
@@ -110,7 +110,7 @@ export function describeReceivedValue(
   return `a ${typeof current}`;
 }
 
-/** The shape of a zod issue this module needs — kept structural so any zod version fits. */
+/** The shape of a zod issue this module needs - kept structural so any zod version fits. */
 export interface ModelFacingZodIssue {
   readonly path: readonly PropertyKey[];
   readonly message: string;
@@ -118,14 +118,14 @@ export interface ModelFacingZodIssue {
 
 /**
  * A rejection the model can act on: WHERE (the path), WHAT WAS EXPECTED (the
- * schema's own message — custom refinements carry the good ones), and HOW THE
+ * schema's own message - custom refinements carry the good ones), and HOW THE
  * VALUE ARRIVED, by shape.
  *
  * The shape matters because the commonest failing call is a field the model
  * considers blank rather than supplied: naming "an empty string" and the
  * empty-means-absent rule turns a mystery into an instruction.
  *
- * Pass the RAW params — the ones as they arrived, before any normalization —
+ * Pass the RAW params - the ones as they arrived, before any normalization -
  * so a field that was dropped for being empty can still say so.
  */
 export function formatZodIssueForModel(
@@ -148,13 +148,13 @@ export function formatZodIssueForModel(
  * An EMPTY value always earns one: it carries the empty-means-absent
  * instruction, which is the single most useful thing this boundary can say.
  * Otherwise the note is suppressed when the schema's own message already names
- * the type that arrived — zod's "expected number, received string" needs no
+ * the type that arrived - zod's "expected number, received string" needs no
  * "(received a string)" after it, and "limit must be a positive whole number …
  * (received a number)" reads as a contradiction rather than a diagnosis.
  */
 function shapeNote(received: string, message: string): string {
   if (received.startsWith("an empty")) {
-    return ` — it arrived as ${received}, and an empty value means ABSENT at this boundary: `
+    return ` - it arrived as ${received}, and an empty value means ABSENT at this boundary: `
       + "supply a real value or omit the field entirely";
   }
   const typeWord = received.replace(/^an? /, "");

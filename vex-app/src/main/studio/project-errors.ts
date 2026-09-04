@@ -56,6 +56,29 @@ export function projectsRootChangedError(correlationId: string): VexError {
   );
 }
 
+/**
+ * Vex could not PROVE the configured root is the recorded one.
+ *
+ * Deliberately NOT `projects.root_changed`: that error tells the user to
+ * restore a root they changed, and this situation is not that. It is reached
+ * when the recorded folder cannot be inspected (moved, deleted, an unavailable
+ * network drive) or when the filesystem supplies no identity for it at all
+ * (`dev` and `ino` both zero, which Node reports on some Windows network and
+ * FAT volumes). Telling somebody with an unmounted drive to edit `config.json`
+ * would send them to fix the one thing that is not broken.
+ *
+ * Retryable, because the usual cause is a volume that comes back.
+ */
+export function projectsRootUnverifiableError(correlationId: string): VexError {
+  return projectsError(
+    "projects.root_unverifiable",
+    "Vex could not confirm that the projects folder is the same folder your projects were " +
+      "created in, so it did not touch them. This usually means the folder is on a drive that " +
+      "is not currently available, or it was moved. Reconnect or restore the folder and try again.",
+    { correlationId, retryable: true, userActionable: true },
+  );
+}
+
 /** The projects root could not be created or resolved on disk. */
 export function projectsRootUnavailableError(correlationId: string): VexError {
   return projectsError(
@@ -79,6 +102,73 @@ export function projectSlugTakenError(
     "projects.slug_taken",
     `A folder named "${slug}" already exists in your Vex Studio projects. ` +
       "Nothing was changed. Choose a different project name.",
+    { correlationId, retryable: false, userActionable: true },
+  );
+}
+
+/**
+ * The projects root exists but this user may not write in it (EACCES/EPERM).
+ *
+ * NOT `projects.root_unavailable`: "check that the location exists and is a
+ * folder" sends someone to look at a folder that is plainly there. Permission
+ * is a different fix, and saying so is the difference between a two-minute
+ * `chmod` and an afternoon.
+ *
+ * Not retryable: nothing about waiting changes a permission bit.
+ */
+export function projectsRootPermissionDeniedError(correlationId: string): VexError {
+  return projectsError(
+    "projects.root_permission_denied",
+    "Vex is not allowed to create a folder inside your projects root, so nothing was created. " +
+      "Grant your user account write permission on that folder (on macOS, also check that Vex " +
+      "has access to the location in System Settings), then try again.",
+    { correlationId, retryable: false, userActionable: true },
+  );
+}
+
+/** The volume holding the projects root is full (ENOSPC/EDQUOT). */
+export function projectsRootOutOfSpaceError(correlationId: string): VexError {
+  return projectsError(
+    "projects.root_out_of_space",
+    "There is no free space left on the drive holding your projects folder, so the project " +
+      "folder could not be created. Nothing was created. Free some space and try again.",
+    { correlationId, retryable: false, userActionable: true },
+  );
+}
+
+/**
+ * The projects root path is not a usable path on this system (EINVAL,
+ * ENOTDIR, ENAMETOOLONG).
+ *
+ * The distinct case worth naming: a `projectsRoot` override that is legal text
+ * on the machine it was typed on and illegal on the machine reading it - a
+ * Windows path with a character NTFS forbids, a component that is a reserved
+ * device name, a path past the system's length limit, or a component that
+ * turned out to be a file.
+ */
+export function projectsRootPathInvalidError(correlationId: string): VexError {
+  return projectsError(
+    "projects.root_path_invalid",
+    "Your projects root is not a usable folder path on this system, so no project folder could " +
+      "be created. Nothing was created. Check the projectsRoot value in config.json: a component " +
+      "may be a file rather than a folder, contain a character this system forbids, or be too long.",
+    { correlationId, retryable: false, userActionable: true },
+  );
+}
+
+/**
+ * The name derives a folder name Windows reserves for a device.
+ *
+ * Refused on EVERY platform even though only Windows enforces it: the folder
+ * outlives the machine it was created on. The message names the actual set
+ * rather than only the name the user typed, because "con" surprises people.
+ */
+export function projectNameReservedError(correlationId: string): VexError {
+  return projectsError(
+    "projects.name_reserved",
+    "That name becomes a folder name Windows reserves for a device (CON, PRN, AUX, NUL, COM0-COM9 " +
+      "and LPT0-LPT9). Vex refuses it on every system, because a project folder with that name " +
+      "could not be opened if you ever moved it to a Windows machine. Choose a different name.",
     { correlationId, retryable: false, userActionable: true },
   );
 }

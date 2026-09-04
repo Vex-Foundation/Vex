@@ -20,8 +20,11 @@
  * portfolio card suites).
  */
 
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { Result } from "@shared/ipc/result.js";
+import type { ProjectList } from "@shared/schemas/projects.js";
 
 function scopeProbe(testid: string) {
   return ({ scope }: { readonly scope: Record<string, unknown> }) => (
@@ -72,21 +75,45 @@ const { useUiStore } = await import("../../../stores/uiStore.js");
 const PROJECT = "9c1b0e8e-0000-4000-8000-0000000000ab";
 const SESSION = "44444444-4444-4444-8444-444444444444";
 
+/**
+ * The projects read the STUDIO rail's header makes, stubbed at the bridge.
+ *
+ * The Studio header names itself with the OPEN PROJECT'S name, which is a
+ * domain read and therefore goes through the repository's async-data layer
+ * (`useProjects`) like every other one. Production mounts the whole shell under
+ * the app's `QueryClientProvider` (`main.tsx`), so this harness supplies the
+ * same provider rather than mocking the hook away: a rail that reads its own
+ * name is the behaviour under test, and a mocked hook would prove the router
+ * against a shell the app never renders.
+ */
+const projectsListMock = vi.fn<() => Promise<Result<ProjectList>>>();
+
 function mountStudio(projectId: string | null, activeSessionId: string | null = null) {
   // Only the MODE selection - the beforeEach owns the order defaults, so a
   // test that seeds an order is not silently reset here.
   useUiStore.setState({ runtimeMode: "studio", activeProjectId: projectId });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+  });
   return render(
-    <BookPanel
-      activeSessionId={activeSessionId}
-      bookOpen
-      onToggle={() => undefined}
-    />,
+    <QueryClientProvider client={client}>
+      <BookPanel
+        activeSessionId={activeSessionId}
+        bookOpen
+        onToggle={() => undefined}
+      />
+    </QueryClientProvider>,
   );
 }
 
 beforeEach(() => {
   window.localStorage.clear();
+  projectsListMock.mockReset();
+  projectsListMock.mockResolvedValue({ ok: true, data: [] });
+  Object.defineProperty(window, "vex", {
+    configurable: true,
+    value: { projects: { list: projectsListMock } },
+  });
   useUiStore.setState({
     runtimeMode: "agent",
     activeProjectId: null,
@@ -154,6 +181,43 @@ describe("Studio rail - the agent instruments are absent", () => {
   it("names the rail for what it is instrumenting", () => {
     mountStudio(PROJECT);
     expect(screen.getByLabelText("Project instrument")).not.toBeNull();
+  });
+
+  it("heads the rail with the OPEN PROJECT'S name, with the build stamp at the foot", async () => {
+    // A3. The one line above a user's wallets used to be the app version,
+    // which names the build rather than the thing the numbers belong to. The
+    // version is not gone - it moved to the foot, where a build stamp belongs -
+    // so this asserts both halves, in order, on one rail.
+    const { makeProject } = await import("../studio/__tests__/studio-fixtures.js");
+    projectsListMock.mockResolvedValue({
+      ok: true,
+      data: [makeProject({ id: PROJECT, name: "vex-core" })],
+    });
+    mountStudio(PROJECT);
+
+    const rail = screen.getByLabelText("Project instrument");
+    await waitFor(() => {
+      expect(rail.textContent).toContain("vex-core");
+    });
+
+    // DOM order is the reading order: the name heads the rail, the stamp floors
+    // it. Reading both out of ONE ordered walk says which comes first without
+    // depending on the class names either one happens to carry.
+    const spans = Array.from(rail.querySelectorAll("span"));
+    const nameAt = spans.findIndex((node) => node.textContent === "vex-core");
+    const stampAt = spans.findIndex((node) => /^v\d/.test(node.textContent ?? ""));
+    expect(nameAt).toBeGreaterThanOrEqual(0);
+    expect(stampAt).toBeGreaterThan(nameAt);
+  });
+
+  it("shows NO headline while the projects read is still in flight", () => {
+    // A name is a claim about which project these numbers belong to. Until the
+    // read answers there is no confirmed project, so the header carries no
+    // headline rather than a placeholder standing in for one.
+    projectsListMock.mockReturnValue(new Promise(() => undefined));
+    mountStudio(PROJECT);
+    const rail = screen.getByLabelText("Project instrument");
+    expect(rail.textContent).not.toContain("vex-core");
   });
 });
 

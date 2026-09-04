@@ -1,5 +1,5 @@
 /**
- * Relay protocol handlers — aggregates the module handler maps.
+ * Relay protocol handlers - aggregates the module handler maps.
  */
 
 import type { ProtocolHandler } from "../types.js";

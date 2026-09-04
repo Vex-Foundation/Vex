@@ -24,11 +24,29 @@ body,
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Respect reduced-motion preference (WCAG AA) */
+/* Respect reduced-motion preference (WCAG AA).
+ *
+ * ONE documented opt-out: `data-vex-motion-opacity`.
+ *
+ * The catch-all collapses every animation to 0.01ms with `!important`, which
+ * no element-level media query can outrank - so it was also collapsing the
+ * toast's exit FADE, an opacity change with no movement in it, which reduced
+ * motion neither asks for nor benefits from. Worse, that fade is timed against
+ * a JS owner that removes the node when it ends, so the "reduced" behaviour
+ * was an abrupt disappearance rather than the gentler one the toast's own
+ * reduced-motion rule was written to give.
+ *
+ * CONTRACT for the attribute, and it is a contract rather than an escape
+ * hatch: an element may carry it ONLY if it defines its own
+ * `prefers-reduced-motion: reduce` rule that removes every transform and every
+ * movement and leaves at most an opacity change. Vestibular safety is why the
+ * catch-all exists; opting out of the sweep does not opt out of that. Current
+ * holders, both of which do exactly that: `.vex-toast` and
+ * `.vex-notification-toast` (ui-primitives/overlays.css). */
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  *:not([data-vex-motion-opacity]),
+  *:not([data-vex-motion-opacity])::before,
+  *:not([data-vex-motion-opacity])::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;

@@ -13,7 +13,7 @@
  *  1. GAS INCLUDES THE L1 DATA FEE. The row used to store `buildResp.data.
  *     gasUsd` alone, which is the L2-EXECUTION cost only. Most supported chains
  *     are OP-stack, where `l1FeeUsd` "can rival or exceed gasUsd"
- *     (`helpers.ts`'s own note) — so the stored gas was materially understated.
+ *     (`helpers.ts`'s own note) - so the stored gas was materially understated.
  *     `l1FeeUsd` lives on the ROUTE SUMMARY, not the build response (see
  *     `tools/kyberswap/aggregator/types.ts`), which is why it was easy to miss
  *     at the write site.
@@ -39,7 +39,7 @@ const BPS_DENOMINATOR = 10_000;
 
 export interface KyberSwapCostEstimate {
   /**
-   * Network gas in USD — L2 execution PLUS the L1 data fee where the chain has
+   * Network gas in USD - L2 execution PLUS the L1 data fee where the chain has
    * one. `undefined` when either component is present but unreadable: an
    * understated gas figure is worse than none, because it reads as complete.
    */
@@ -49,12 +49,12 @@ export interface KyberSwapCostEstimate {
 }
 
 export interface KyberSwapCostInput {
-  /** `buildResp.data.gasUsd` — L2 execution only. */
+  /** `buildResp.data.gasUsd` - L2 execution only. */
   readonly gasUsd: string;
-  /** `routeSummary.l1FeeUsd` — absent on chains with no L1 data fee. */
+  /** `routeSummary.l1FeeUsd` - absent on chains with no L1 data fee. */
   readonly l1FeeUsd: string | undefined;
   /**
-   * `buildResp.data.amountInUsd` — the USD value of the FULL input amount, which
+   * `buildResp.data.amountInUsd` - the USD value of the FULL input amount, which
    * is the base the integrator fee is charged on: `swap-calldata-guard.ts`
    * refuses to sign unless the decoded calldata charges exactly
    * `KYBERSWAP_FEE_BPS`, in bps mode (`FLAG_FEE_IN_BPS`), on the SOURCE token
@@ -77,7 +77,7 @@ function totalGasUsd(gasUsd: string, l1FeeUsd: string | undefined): string | und
   if (l2 === null) return undefined;
   if (l1FeeUsd === undefined) return renderUsd(l2);
   const l1 = finite(l1FeeUsd);
-  // Present but unreadable — refuse rather than silently report L2-only as if
+  // Present but unreadable - refuse rather than silently report L2-only as if
   // it were the whole cost.
   if (l1 === null) return undefined;
   return renderUsd(l2 + l1);
@@ -95,7 +95,7 @@ function finite(value: string): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-/** Compact fixed-point for a NUMERIC column, trailing zeros trimmed — matches `estimateUsd`'s rendering. */
+/** Compact fixed-point for a NUMERIC column, trailing zeros trimmed - matches `estimateUsd`'s rendering. */
 function renderUsd(value: number): string | undefined {
   if (!Number.isFinite(value)) return undefined;
   return value.toFixed(6).replace(/\.?0+$/, "") || "0";

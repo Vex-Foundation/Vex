@@ -7,7 +7,7 @@
  * hash material.
  *
  * VENUE-BOUND scheme (LOCKED Wave-2 correction #4): `provider`/venue IS part of
- * the identity — it is the LAST field of both the swap and the bridge hash
+ * the identity - it is the LAST field of both the swap and the bridge hash
  * material. On EVM the provider does NOT derive from `family` (kyberswap and
  * uniswap are both eip155; khalani and relay both bridge), so binding it is what
  * stops a kyberswap quote from authorizing a uniswap execute (or a khalani quote
@@ -86,7 +86,7 @@ export type { SyMintMatchInput, SyRedeemMatchInput } from "./hash/pendle-sy.js";
 export type { SwapMatchInput } from "./hash/swap.js";
 
 /**
- * Discriminated on `kind` — swap / bridge / redeem / mint / redeem_py / lp_add /
+ * Discriminated on `kind` - swap / bridge / redeem / mint / redeem_py / lp_add /
  * lp_remove identities never collide, and neither do the seven R5d kinds
  * (sy_mint / sy_redeem / lp_remove_dual / lp_add_keep_yt / pt_rollover /
  * lp_transfer / lp_to_pt), each of which carries its tag as the FIRST material
@@ -136,7 +136,7 @@ export type PrequoteMatchInput =
  * `canonAmount`.
  *
  * Stage 9 swap tail (FIXED order, appended after `amount`): `recipient`
- * (family-canonical address — where the output lands), `approveExact` (stable
+ * (family-canonical address - where the output lands), `approveExact` (stable
  * "1"/"0" allowance token), and `slippageBps` (integer string, or "" when
  * omitted). The recorder defaults `recipient`/`approveExact` to the executor's
  * omitted-value defaults (self / false) since the quote can't carry them, so a

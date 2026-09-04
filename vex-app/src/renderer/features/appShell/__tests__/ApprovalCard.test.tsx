@@ -71,6 +71,7 @@ function makeSummary(
     executionStatus: null,
     origin: null,
     projectId: null,
+    requestedByClient: null,
     ...over,
   };
 }

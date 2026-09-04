@@ -63,7 +63,10 @@ import type {
 } from "@shared/schemas/projects.js";
 import type { SessionPermission } from "@shared/schemas/sessions.js";
 import type { StudioAgentId } from "@shared/schemas/studio-agent-ids.js";
-import type { StudioRenderOutcome } from "@shared/schemas/studio-installer.js";
+import type {
+  StudioProjectRefreshFailure,
+  StudioRenderOutcome,
+} from "@shared/schemas/studio-installer.js";
 import { Button } from "../../../../components/ui/button.js";
 import {
   Dialog,
@@ -72,17 +75,21 @@ import {
   DialogDescription,
   DialogFooter,
   DialogHeader,
+  DialogPinnedSlot,
   DialogTitle,
 } from "../../../../components/ui/dialog.js";
+import { useLiveAnnouncer } from "../../../../components/ui/live-region.js";
+import { SubmitError } from "../../../../components/ui/submit-error.js";
 import { useProject, useUpdateProjectScope } from "../../../../lib/api/projects.js";
 import { useAvailableWallets } from "../../../../lib/api/wallet-inventory.js";
 import type { WalletSelectOption } from "../../SessionWalletSelect.js";
-import { SubmitError } from "../../SessionCreator/FormSections.js";
+import { FullAccessConsent } from "./FullAccessConsent.js";
 import {
   orderedAgents,
   ProjectAgentFieldset,
   ProjectPermissionFieldset,
   ProjectWalletFieldset,
+  selectedWalletLabels,
 } from "./ProjectScopeFields.js";
 import { RenderOutcomePanel } from "./RenderOutcomePanel.js";
 import { SELECTABLE_STUDIO_AGENT_IDS } from "./studio-agent-catalogue.js";
@@ -100,6 +107,7 @@ import {
   PROJECT_SETTINGS_UNCHANGED,
   PROJECT_SETTINGS_UNREADABLE,
   projectFolderLine,
+  renderReportAnnouncement,
 } from "./projects-copy.js";
 
 /**
@@ -157,17 +165,38 @@ export function ProjectSettingsDialog({
       : null;
 
   const [draft, setDraft] = useState<ScopeDraft | null>(null);
+  /**
+   * The Full-access grant in the CURRENT draft has been acknowledged.
+   *
+   * Same contract as the creator's: bound to the proposal the strip prints, so
+   * every edit to the permission or the wallets drops it, and it is dropped
+   * again whenever the form is re-seeded (a reload after a conflict, or the
+   * fresh row a save returns). Never persisted - a project that is already Full
+   * access still asks before it is saved as Full access again, because a save is
+   * what re-states the grant to main.
+   */
+  const [fullAccessAcknowledged, setFullAccessAcknowledged] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [conflictState, setConflictState] = useState<ScopeConflictState>({
     kind: "none",
   });
   const [render, setRender] = useState<StudioRenderOutcome | null>(null);
   /**
+   * The save COMMITTED and main could not read the project back. The row this
+   * dialog reseeds itself from is then the committed one, whose file status may
+   * already be behind, so the report says so rather than presenting it as
+   * current.
+   */
+  const [refreshFailure, setRefreshFailure] =
+    useState<StudioProjectRefreshFailure | null>(null);
+  /**
    * Single-flight for the reload. The disabled button is the affordance; this
    * is the guard, because a keyboard repeat or a re-render racing the state
    * update must not put two reads in flight against one conflict.
    */
   const reloadingRef = useRef(false);
+  /** Announced from the submit path; see `components/ui/live-region.tsx`. */
+  const { announce, region: liveRegion } = useLiveAnnouncer();
 
   /** The conflict pane is on screen: as a refusal, or mid-reload. */
   const showingConflict = conflictState.kind !== "none";
@@ -186,6 +215,9 @@ export function ProjectSettingsDialog({
   /** Seed the form from a loaded project. The one place a draft is born. */
   const seedFrom = useCallback((loaded: ProjectDto): void => {
     const selectable = new Set(SELECTABLE_STUDIO_AGENT_IDS);
+    // A fresh draft is a fresh proposal, so any acknowledgement given for the
+    // previous one goes with it.
+    setFullAccessAcknowledged(false);
     setDraft({
       permission: loaded.permission,
       evmWalletId: loaded.wallets.evm?.id ?? null,
@@ -203,9 +235,11 @@ export function ProjectSettingsDialog({
     if (!open) {
       setDraft(null);
       setEditingVersion(null);
+      setFullAccessAcknowledged(false);
       setSubmitError(null);
       setConflictState({ kind: "none" });
       setRender(null);
+      setRefreshFailure(null);
       reloadingRef.current = false;
       return;
     }
@@ -235,6 +269,64 @@ export function ProjectSettingsDialog({
   const dirty =
     draft !== null && stored !== null && !sameScope(draft, stored);
   const pending = updateMutation.isPending;
+  /**
+   * A SAVE HAS BEEN ANSWERED and its answer is still on screen: the render
+   * report, or the refusal that took its place. Both are the reply to the Save
+   * the user pressed, and neither is cleared by editing the form again - only a
+   * fresh submit, a conflict reload or reopening the dialog takes one down.
+   */
+  const outcomeOnScreen = render !== null || submitError !== null;
+  /**
+   * THE IDLE SENTENCE'S OWN STATE (rule 08: idle, loading, success, failure).
+   *
+   * "Nothing has changed yet" is true only against the SAVED values, and after
+   * a save the form is re-seeded from them - so the sentence became true again
+   * the instant the report of that save appeared and printed a stale idle
+   * prompt over a fresh outcome (live test 2026-09-03, A4, shot 38). It belongs
+   * to the idle state alone: no unsaved edit AND no answer standing. Same rule
+   * deepseek's approval surfaces keep - the outcome replaces the prompt, and
+   * the prompt never lingers over the outcome - and the same one VS Code's
+   * settings editor keeps by clearing `pendingSettingUpdate` on the resolved
+   * write and re-deriving the modified label from the CONFIGURED value
+   * (`settingsEditor2.ts`, `updateChangedSetting` / `updateModifiedLabelForKey`).
+   */
+  const showUnchangedNotice = !dirty && !outcomeOnScreen;
+  /** The scope this form would SAVE grants Full access. */
+  const grantingFullAccess = draft !== null && draft.permission === "full";
+  const consentMissing = grantingFullAccess && !fullAccessAcknowledged;
+  const walletLabels =
+    draft === null
+      ? []
+      : selectedWalletLabels(
+          draft.evmWalletId,
+          draft.solanaWalletId,
+          inventory.evm,
+          inventory.solana,
+        );
+
+  /**
+   * The one funnel every edit passes through, so an acknowledgement cannot
+   * survive a change to the proposal it was given for.
+   *
+   * Compared field by field rather than dropped unconditionally: toggling an
+   * AGENT is not a change to what the strip states, and re-asking for the grant
+   * because the user checked a coding agent would teach them to tick the box
+   * without reading it.
+   */
+  const applyDraft = useCallback(
+    (next: ScopeDraft): void => {
+      if (
+        draft === null ||
+        draft.permission !== next.permission ||
+        draft.evmWalletId !== next.evmWalletId ||
+        draft.solanaWalletId !== next.solanaWalletId
+      ) {
+        setFullAccessAcknowledged(false);
+      }
+      setDraft(next);
+    },
+    [draft],
+  );
 
   /**
    * Leave the conflict by READING THE PROJECT AGAIN.
@@ -266,6 +358,7 @@ export function ProjectSettingsDialog({
         setEditingVersion(null);
         setSubmitError(null);
         setRender(null);
+        setRefreshFailure(null);
         setConflictState({ kind: "none" });
         return;
       }
@@ -275,6 +368,7 @@ export function ProjectSettingsDialog({
       seedFrom(result.data);
       setSubmitError(null);
       setRender(null);
+      setRefreshFailure(null);
       setConflictState({ kind: "none" });
     } finally {
       reloadingRef.current = false;
@@ -299,8 +393,12 @@ export function ProjectSettingsDialog({
       ) {
         return;
       }
+      // THE GATE, where the wire input is built. Same reasoning as the
+      // creator's: the disabled Save is the affordance, this is the rule.
+      if (draft.permission === "full" && !fullAccessAcknowledged) return;
       setSubmitError(null);
       setRender(null);
+      setRefreshFailure(null);
       const input: ProjectUpdateScopeInput = {
         projectId,
         expectedScopeVersion: editingVersion,
@@ -313,21 +411,32 @@ export function ProjectSettingsDialog({
         if (result.error.code === SCOPE_CONFLICT_CODE) {
           // ITS OWN PANE, and no resubmit. See the module note.
           setConflictState({ kind: "conflict" });
+          // The pane REPLACES the form, so a screen-reader user whose focus is
+          // still on the Save button that just vanished is told why.
+          announce("error", PROJECT_SCOPE_CONFLICT_BODY);
           return;
         }
         setSubmitError(result.error.message);
+        announce("error", result.error.message);
         return;
       }
       // The write landed. The dialog stays open on the render report: the save
       // succeeded AND some file may have been refused, and both are true.
       setRender(result.data.render);
+      setRefreshFailure(result.data.refreshFailure);
       seedFrom(result.data.project);
+      announce(
+        result.data.render.runFailure !== null ? "error" : "info",
+        renderReportAnnouncement(result.data.render),
+      );
     },
     [
+      announce,
       conflictState.kind,
       dirty,
       draft,
       editingVersion,
+      fullAccessAcknowledged,
       pending,
       projectId,
       seedFrom,
@@ -359,6 +468,20 @@ export function ProjectSettingsDialog({
             </DialogDescription>
           </DialogHeader>
 
+          {/* THE CONSEQUENCE of the scope this form would save, above the
+            * scroll region. Suppressed under the conflict pane: nothing can be
+            * saved there, so a strip about a grant would describe an action the
+            * dialog is refusing to perform. */}
+          {!showingConflict && grantingFullAccess ? (
+            <FullAccessConsent
+              displayPath={project?.displayPath ?? null}
+              walletLabels={walletLabels}
+              acknowledged={fullAccessAcknowledged}
+              disabled={pending}
+              onAcknowledgedChange={setFullAccessAcknowledged}
+            />
+          ) : null}
+
           <DialogBody className="gap-6 px-8">
             {showingConflict ? null : <SettingsBody
               project={project}
@@ -369,15 +492,26 @@ export function ProjectSettingsDialog({
               draft={draft}
               pending={pending}
               inventory={inventory}
-              dirty={dirty}
-              onDraftChange={setDraft}
+              showUnchangedNotice={showUnchangedNotice}
+              onDraftChange={applyDraft}
             />}
 
-            {!showingConflict ? <SubmitError submitError={submitError} /> : null}
-            {!showingConflict && render !== null ? (
-              <RenderOutcomePanel render={render} />
-            ) : null}
           </DialogBody>
+
+          {liveRegion}
+
+          {/* PINNED, outside the body's scroll: the refusal and the render
+            * report answer the Save the user just pressed, and as the body's
+            * last children they were painted below the fold of a form taller
+            * than the dialog. */}
+          {!showingConflict && (submitError !== null || render !== null) ? (
+            <DialogPinnedSlot className="px-8">
+              <SubmitError submitError={submitError} />
+              {render !== null ? (
+                <RenderOutcomePanel render={render} refreshFailure={refreshFailure} />
+              ) : null}
+            </DialogPinnedSlot>
+          ) : null}
 
           <DialogFooter className="border-line-2 px-8 py-4">
             {showingConflict ? (
@@ -415,7 +549,7 @@ export function ProjectSettingsDialog({
                 </Button>
                 <Button
                   type="submit"
-                  disabled={!dirty || pending}
+                  disabled={!dirty || consentMissing || pending}
                   className="h-10 px-6"
                 >
                   {pending ? PROJECT_SETTINGS_PENDING : PROJECT_SETTINGS_SUBMIT}
@@ -436,7 +570,7 @@ function SettingsBody({
   draft,
   pending,
   inventory,
-  dirty,
+  showUnchangedNotice,
   onDraftChange,
 }: {
   readonly project: ProjectDto | null;
@@ -448,7 +582,8 @@ function SettingsBody({
     readonly evm: readonly WalletSelectOption[];
     readonly solana: readonly WalletSelectOption[];
   };
-  readonly dirty: boolean;
+  /** The form is idle: nothing edited, and no answer to a Save on screen. */
+  readonly showUnchangedNotice: boolean;
   readonly onDraftChange: (next: ScopeDraft) => void;
 }): JSX.Element | null {
   // Four reachable states, not one: still loading, the read failed, the read
@@ -493,9 +628,11 @@ function SettingsBody({
         onAgentsChange={(agents) => onDraftChange({ ...draft, agents })}
         disabled={pending}
       />
-      {/* Only while nothing has changed: printed beside a dirty form it would
-        * contradict the enabled Save button sitting under it. */}
-      {!dirty ? (
+      {/* THE IDLE SENTENCE, and only in the idle state. Beside a dirty form it
+        * would contradict the enabled Save button sitting under it; over a
+        * render report it would say nothing had changed above the account of
+        * what Vex just changed. See `showUnchangedNotice` at the owner. */}
+      {showUnchangedNotice ? (
         <p className="text-xs text-ink-tertiary">{PROJECT_SETTINGS_UNCHANGED}</p>
       ) : null}
     </>

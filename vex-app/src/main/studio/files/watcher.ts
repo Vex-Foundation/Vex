@@ -69,6 +69,12 @@
  *    before the new one is created, so the process never holds two recursive
  *    watches of the same tree.
  *
+ * Which failure is which is a PER-PLATFORM question, because the three pinned
+ * backends describe failure in three different vocabularies - inotify in errno
+ * names, FSEvents in strerror text, ReadDirectoryChangesW in neither. See
+ * `classifyWatcherFailure`, which owns that translation and is the only place
+ * that knows a platform exists.
+ *
  * ## Suspend and resume
  *
  * A missing root is polled for with `fs.watchFile`, at a deliberately odd
@@ -191,30 +197,94 @@ export function resetFileWatcherLogOnceForTests(): void {
   loggedOnce.clear();
 }
 
+export type WatcherFailureClass =
+  | "os_watch_limit"
+  | "os_file_limit"
+  | "root_missing"
+  | "io_error";
+
 /**
- * Classify a native watcher failure.
+ * Classify a native watcher failure, IN THE VOCABULARY OF THE BACKEND THAT
+ * RAISED IT.
  *
- * CODE FIRST, message second. @parcel/watcher 2.6.0's inotify backend was
- * probed and its `subscribe` rejection for a missing directory carries NO
- * `code` at all (the message is "Bad file descriptor"), so a classifier that
- * trusted `code` alone would call an exhausted-resource failure an ordinary one
- * and restart into it five times. The message match is a fallback for exactly
- * that gap and is anchored on the errno NAMES, which the backends do put in
- * their text.
+ * The three backends this product pins (`native-adapters.ts`) do not describe
+ * failure the same way, and a classifier written for one of them is wrong on
+ * the other two. Read out of the installed @parcel/watcher 2.6.0 sources:
+ *
+ *  - LINUX / inotify raises errno-shaped failures, and its messages carry the
+ *    errno NAME (`inotify_add_watch: ENOSPC`). Some carry no `code` at all -
+ *    probed: a `subscribe` rejection for a missing directory has none, only the
+ *    message "Bad file descriptor" - which is why the name match exists.
+ *  - DARWIN / fs-events raises `WatcherError(strerror(errno))`
+ *    (`src/macos/FSEventsBackend.cc:198,202`): the message is the errno's TEXT
+ *    ("No space left on device"), never its name, so every `ENOSPC`-shaped
+ *    match in the Linux row misses here. It also has three event-loss errors,
+ *    all ending "File system must be re-scanned"
+ *    (`FSEventsBackend.cc:84,86,88`).
+ *  - WIN32 / ReadDirectoryChangesW has NO errno at all
+ *    (`src/windows/WindowsBackend.cc`): overflow is `ERROR_NOTIFY_ENUM_DIR`,
+ *    surfaced as "Buffer overflow. Some events may have been lost.", and every
+ *    remaining Win32 status collapses into the literal string "Unknown error".
+ *
+ * WHAT THIS DELIBERATELY DOES NOT DO. Event-loss failures - the Win32 buffer
+ * overflow and the three macOS re-scan errors - stay `io_error`, which is the
+ * RESTART path, because that is the correct remedy: the restart bumps the
+ * generation and emits a `watcher_restarted` resync, telling the consumer to
+ * re-list exactly the tree it just lost events for. They are NOT routed to the
+ * exhausted-limit path, which is terminal and would take file watching away for
+ * the life of the instance over a recoverable burst.
+ *
+ * Nor does an unrecognised failure guess. Win32 in particular cannot express
+ * "too many open handles" as anything but "Unknown error", so no win32 row
+ * claims `os_file_limit`: an honest `io_error` restarts a bounded number of
+ * times and reports the cap, where a guess would declare watching permanently
+ * unavailable on the first unexplained hiccup.
+ *
+ * The `code` check runs on every platform and first: an errno carried on the
+ * error object means what it says wherever it appears, including on failures
+ * raised by Node rather than by the backend.
  */
 export function classifyWatcherFailure(
   cause: unknown,
-): "os_watch_limit" | "os_file_limit" | "root_missing" | "io_error" {
+  platform: NodeJS.Platform = process.platform,
+): WatcherFailureClass {
   const code = typeof cause === "object" && cause !== null
     ? (cause as { code?: unknown }).code
     : undefined;
+  if (code === "ENOSPC") return "os_watch_limit";
+  if (code === "EMFILE" || code === "ENFILE") return "os_file_limit";
+  if (code === "ENOENT" || code === "ENOTDIR") return "root_missing";
+
   const message = cause instanceof Error ? cause.message : String(cause ?? "");
-  if (code === "ENOSPC" || message.includes("ENOSPC")) return "os_watch_limit";
-  if (code === "EMFILE" || code === "ENFILE"
-    || message.includes("EMFILE") || message.includes("ENFILE")) {
+
+  if (platform === "darwin") {
+    // strerror text, not errno names.
+    if (message.includes("No space left on device")) return "os_watch_limit";
+    if (message.includes("Too many open files")) return "os_file_limit";
+    if (message.includes("No such file or directory")) return "root_missing";
+    if (message.includes("Not a directory")) return "root_missing";
+    return "io_error";
+  }
+
+  if (platform === "win32") {
+    // The root was replaced by a file, or was never a directory: suspend and
+    // poll, which is what `root_missing` means here. A deleted root does not
+    // reach this function at all - the backend's ERROR_ACCESS_DENIED branch
+    // emits a `delete` for the root instead, which `onNative` turns into a
+    // suspend. "Error opening directory" is NOT classified: the backend folds
+    // a missing path and a denied path into one message, and `io_error` is
+    // right either way, because a restart re-checks `rootExists` and suspends
+    // on its own if the path is simply gone.
+    if (message.includes("Not a directory")) return "root_missing";
+    return "io_error";
+  }
+
+  // linux / inotify, and the default for any platform without a pinned backend.
+  if (message.includes("ENOSPC")) return "os_watch_limit";
+  if (message.includes("EMFILE") || message.includes("ENFILE")) {
     return "os_file_limit";
   }
-  if (code === "ENOENT" || message.includes("ENOENT")) return "root_missing";
+  if (message.includes("ENOENT")) return "root_missing";
   return "io_error";
 }
 

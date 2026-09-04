@@ -7,7 +7,7 @@
         "additionalProperties": false,
         "properties": {
           "market": {
-            "description": "Which Borrow market: \"main\" or \"ethena\" (default \"main\"). Vault ids are scoped per market — the same vaultId in a different market is a different vault. An unrecognized value is rejected.",
+            "description": "Which Borrow market: \"main\" or \"ethena\" (default \"main\"). Vault ids are scoped per market - the same vaultId in a different market is a different vault. An unrecognized value is rejected.",
             "type": "string"
           },
           "vaultIds": {

@@ -1,5 +1,5 @@
 /**
- * `trench.tokens` handler — REST-only launchpad token browser (READ-ONLY).
+ * `trench.tokens` handler - REST-only launchpad token browser (READ-ONLY).
  *
  * Server-side status/sort/limit/page go to the launchpad API; creator and
  * rug-flag filters are applied CLIENT-SIDE here over the fetched window. The
@@ -118,7 +118,7 @@ export async function trenchTokensHandler(
   ) {
     return fail(
       `"minCurveProgressPct" (${minCurveRead.value}) must not be greater than "maxCurveProgressPct" `
-        + `(${maxCurveRead.value}) — that band can never match a token.`,
+        + `(${maxCurveRead.value}) - that band can never match a token.`,
     );
   }
 

@@ -15,11 +15,16 @@
  * another Vex is already serving. Stealing that last one would leave the other
  * Vex's bridges talking to nothing, so it refuses startup instead.
  *
- * ## Windows keeps only the fourth check
+ * ## Windows uses NONE of them
  *
  * A named pipe is not a filesystem entry: there is no parent directory to
- * verify, no symlink to refuse, and NOTHING TO UNLINK, because the name exists
- * only while a server holds it. `refuseLiveEndpoint` is that path.
+ * verify, no symlink to refuse and NOTHING TO UNLINK, because the name exists
+ * only while a server holds it. The fourth check used to survive as a connect
+ * probe, and it no longer does: the pipe front reads `firstInstance` back from
+ * the created handle and reports whether IT created the pipe or joined one
+ * somebody else owns (`pipe-front-protocol.md` section 6.2), which answers the
+ * same question from the operating system instead of from a round trip that
+ * can race the answer.
  */
 
 import { chmodSync, lstatSync, mkdirSync, realpathSync, unlinkSync } from "node:fs";
@@ -355,29 +360,6 @@ function probeEndpointLiveness(endpoint: string): Promise<boolean> {
       settle(false);
     });
   });
-}
-
-/**
- * Is another Vex already serving this endpoint? The WHOLE stale check on
- * Windows, where the endpoint is a named pipe.
- *
- * A pipe has no filesystem entry to `lstat`, no parent directory whose
- * ownership and mode gate its removal, and NOTHING TO UNLINK: the name exists
- * only while a server holds it, and the operating system reclaims it when that
- * server closes. So the four checks `clearStaleEndpoint` performs collapse to
- * the one that still has meaning - a connect probe - and a pipe that answers
- * means another Vex owns it. Startup refuses rather than racing it, exactly as
- * it does for a live socket: stealing the name would leave the other Vex's
- * bridges talking to nothing.
- *
- * Returns `null` when the name is free, or the sentence that refuses startup.
- */
-export async function refuseLiveEndpoint(endpoint: string): Promise<string | null> {
-  if (!(await probeEndpointLiveness(endpoint))) return null;
-  return (
-    `${endpoint} is already served by a running Vex. Two Vex installations `
-    + "cannot share one Studio endpoint; close the other one first."
-  );
 }
 
 /**

@@ -11,15 +11,10 @@
  *                        arriving from nothing and decelerating into place.
  *   --vex-ease-inout     full-surface reveals (the Chronos Gate curtain).
  *
- * INVARIANT, three files. `--vex-ease-out` and `--vex-ease-inout` are declared
- * in `shell.css` (:root) and only CONSUMED here; `--vex-ease-standard` is
- * declared here because this sheet owns the transcript's motion.
- * `lib/motion.ts` mirrors all three as JS tuples for the Motion call sites
- * (EASE_STANDARD / EASE_OUT / EASE_INOUT). A curve changed in one place and
- * not the others splits the family - change every site together. */
-:root {
-  --vex-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
-}
+ * All three are DECLARED in `tokens.css`, alongside the `--vex-duration-*`
+ * scale, and only CONSUMED here; `lib/motion/index.ts` is their JS mirror
+ * (EASE_STANDARD / EASE_OUT / EASE_INOUT) for the Motion call sites. Both
+ * halves are asserted by `__tests__/motion-tokens.test.ts`. */
 
 /* Desk entry settle — a live-appended transcript row settles onto the page.
  * One-shot, applied ONLY to rows appended after mount (history pagination
@@ -211,6 +206,66 @@
 
 @media (prefers-reduced-motion: reduce) {
   .vex-expand {
+    transition: none;
+  }
+}
+
+/* ============================================================ *
+ *  STATE-CHANGE PRIMITIVES (B5.2 motion pass)                   *
+ * ============================================================ */
+
+/* SURFACE ENTRANCE - a panel, card or workspace arriving in place.
+ *
+ * The vocabulary is the reference one (deepseek-harness Toast/Tooltip): a
+ * short opacity ramp plus a few pixels of rise, transform and opacity only, no
+ * scale and no bounce. `both` holds the start frame so the first painted frame
+ * is already the "from" state rather than a flash of the settled one.
+ *
+ * IT ALSO COVERS AN UN-HIDE, which is why Studio can use it on a workspace it
+ * never unmounts: a CSS animation restarts when an element leaves
+ * `display: none`, so the same class plays on becoming visible and stays inert
+ * across the re-renders in between.
+ *
+ * REDUCED MOTION. base.css already clamps this globally; the primitive states
+ * its own collapse so it is complete on its own. */
+@keyframes vex-surface-enter {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.vex-surface-enter {
+  animation: vex-surface-enter var(--vex-duration-base) var(--vex-ease-out) both;
+}
+
+/* TINT FEEDBACK - selection and hover fills settling in rather than snapping.
+ * Colour only: nothing here may move a box, because these classes ride list
+ * rows that a pointer is travelling across. */
+.vex-tint {
+  transition:
+    background-color var(--vex-duration-fast) var(--vex-ease-standard),
+    border-color var(--vex-duration-fast) var(--vex-ease-standard),
+    color var(--vex-duration-fast) var(--vex-ease-standard);
+}
+
+/* TWISTIE - the expand/collapse chevron of a tree row. One transform, so the
+ * rotation cannot reflow the row it sits in. */
+.vex-twistie {
+  transition: transform var(--vex-duration-base) var(--vex-ease-standard);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vex-surface-enter {
+    animation: none;
+  }
+
+  .vex-tint,
+  .vex-twistie {
     transition: none;
   }
 }

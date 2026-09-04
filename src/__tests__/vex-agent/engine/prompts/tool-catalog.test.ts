@@ -1,5 +1,5 @@
 /**
- * `buildToolCatalogPrompt` regression — Tool Map renders the right
+ * `buildToolCatalogPrompt` regression - Tool Map renders the right
  * categories + names for each of the 3 modes (agent / mission setup /
  * mission run) and the 4 pressure bands (normal / warning /
  * barrier / critical).
@@ -30,7 +30,7 @@ function makeCtx(overrides: Partial<ToolVisibilityContext> = {}): ToolVisibility
   };
 }
 
-describe("buildToolCatalogPrompt — visibility-aware Tool Map", () => {
+describe("buildToolCatalogPrompt - visibility-aware Tool Map", () => {
   describe("agent chat, normal band", () => {
     it("renders all expected categories + tools", () => {
       const out = buildToolCatalogPrompt(makeCtx());
@@ -39,15 +39,15 @@ describe("buildToolCatalogPrompt — visibility-aware Tool Map", () => {
 
       // Reads / orientation visible
       // The `execute_tool` ToolDef is retired outright (the merge completed the
-      // `registry/visibility.ts`) — discovered tools are injected as real functions —
+      // `registry/visibility.ts`) - discovered tools are injected as real functions -
       // and the category no longer advertises an execution wrapper at all.
       expect(out).toContain("**Protocol tool search:** ToolSearch");
       expect(out).not.toContain("execute_tool");
       expect(out).toContain("**Live state reads:** WalletBalances, ChainRead, AgentScan");
 
       // Memory visible (read tools at normal band)
-      expect(out).toContain("**Session memory — this conversation/mission only:** SessionMemorySearch, SessionMemoryResolve");
-      expect(out).toContain("**Long-term memory recall — durable cross-session lessons (search/get/history):** MemorySearch, MemoryGet, MemoryHistory");
+      expect(out).toContain("**Session memory - this conversation/mission only:** SessionMemorySearch, SessionMemoryResolve");
+      expect(out).toContain("**Long-term memory recall - durable cross-session lessons (search/get/history):** MemorySearch, MemoryGet, MemoryHistory");
 
       // Wallet transfers visible at normal band
       expect(out).toContain("**Wallet transfers:** WalletSendPrepare, WalletSendConfirm");
@@ -58,7 +58,7 @@ describe("buildToolCatalogPrompt — visibility-aware Tool Map", () => {
       // `LoopDefer` IS present here: makeCtx is a FULL-permission agent session,
       // and owner decree 2026-08-03 gave those sessions the ability to wait
       // (`requiresAutonomousLoop`). Its absence was the "unlimited thoughts"
-      // incident — an agent waiting on a bridge with no way to sleep.
+      // incident - an agent waiting on a bridge with no way to sleep.
       expect(out).toContain("LoopDefer");
 
       // The compaction category is absent while nothing is prepared
@@ -80,7 +80,7 @@ describe("buildToolCatalogPrompt — visibility-aware Tool Map", () => {
         makeCtx({ contextUsageBand: "barrier", hasCompactionSummaryReady: true }),
       );
       expect(ready).toContain(
-        "**Context compaction — applies the prepared summary:** CompactApply",
+        "**Context compaction - applies the prepared summary:** CompactApply",
       );
 
       // Mutating categories disappear (MemorySuggest is pressureSafety
@@ -117,9 +117,9 @@ describe("buildToolCatalogPrompt — visibility-aware Tool Map", () => {
       }));
 
       expect(out).toContain("**Mission run stop:** MissionStop");
-      // Labelled as the WAITING pattern, not a mission-run scheduling niche —
+      // Labelled as the WAITING pattern, not a mission-run scheduling niche -
       // full agent sessions get the same tool.
-      expect(out).toContain("**Waiting — park the loop until an event you cannot make happen sooner:** LoopDefer");
+      expect(out).toContain("**Waiting - park the loop until an event you cannot make happen sooner:** LoopDefer");
       expect(out).not.toContain("Mission setup draft");
     });
   });
@@ -132,12 +132,12 @@ describe("buildToolCatalogPrompt — visibility-aware Tool Map", () => {
         contextUsageBand: "critical",
       }));
 
-      // MissionStop is safe_at_barrier — survives at critical
+      // MissionStop is safe_at_barrier - survives at critical
       expect(out).toContain("**Mission run stop:** MissionStop");
       // LoopDefer is safe_at_barrier too (owner decree 2026-08-03): stripping the
       // one tool that STOPS the loop at ≥88% context, while telling the model to
       // "continue with read-only work", was the incident. Deferring writes one row
-      // and ends the slice — the cheapest possible context action.
+      // and ends the slice - the cheapest possible context action.
       expect(out).toContain("LoopDefer");
       // Nothing prepared ⇒ no compaction category, even at critical.
       expect(out).not.toContain("Context compaction");
@@ -153,7 +153,7 @@ describe("buildToolCatalogPrompt — visibility-aware Tool Map", () => {
     it("renders categories in TOOL_MAP_CATEGORIES declared order", () => {
       const out = buildToolCatalogPrompt(makeCtx());
       const lines = out.split("\n").filter(l => l.startsWith("**"));
-      // First content line MUST be Protocol tool search per declared order —
+      // First content line MUST be Protocol tool search per declared order -
       // this catches an accidental alphabetical sort (which would put
       // "Khalani" or another K-label earlier).
       expect(lines[0]).toMatch(/^\*\*Protocol tool search:/);
@@ -162,7 +162,7 @@ describe("buildToolCatalogPrompt — visibility-aware Tool Map", () => {
     it("preserves tool order within Wallet transfers (prepare before confirm)", () => {
       const out = buildToolCatalogPrompt(makeCtx());
       expect(out).toContain("**Wallet transfers:** WalletSendPrepare, WalletSendConfirm");
-      // NOT alphabetical (confirm < prepare) — that would break the
+      // NOT alphabetical (confirm < prepare) - that would break the
       // 2-step transfer workflow signal codex flagged.
       expect(out).not.toContain("WalletSendConfirm, WalletSendPrepare");
     });
@@ -179,22 +179,22 @@ describe("buildToolCatalogPrompt — visibility-aware Tool Map", () => {
     it("hides the Session memory category when the session has no narrative chunks", () => {
       const out = buildToolCatalogPrompt(makeCtx({ hasSessionMemory: false }));
       expect(out).not.toContain("Session memory");
-      // Renamed tool names built from parts — the S9 grep gate bans the raw
+      // Renamed tool names built from parts - the S9 grep gate bans the raw
       // pre-rename literals repo-wide.
       expect(out).not.toContain(["session", "memory", "search"].join("_"));
       expect(out).not.toContain(["session", "memory", "resolve", "item"].join("_"));
-      // Only the session-memory tools are gated — other read categories remain.
+      // Only the session-memory tools are gated - other read categories remain.
       expect(out).toContain("Long-term memory recall");
     });
 
     it("shows the Session memory category once the session has narrative chunks", () => {
       const out = buildToolCatalogPrompt(makeCtx({ hasSessionMemory: true }));
       expect(out).toContain(
-        "**Session memory — this conversation/mission only:** SessionMemorySearch, SessionMemoryResolve",
+        "**Session memory - this conversation/mission only:** SessionMemorySearch, SessionMemoryResolve",
       );
     });
 
-    it("never renders the retired pre-rename session-memory tool names (S9 — names from parts)", () => {
+    it("never renders the retired pre-rename session-memory tool names (S9 - names from parts)", () => {
       const out = buildToolCatalogPrompt(makeCtx({ hasSessionMemory: true }));
       expect(out).not.toContain(["memory", "recall"].join("_"));
       expect(out).not.toContain(["mark", "outstanding", "resolved"].join("_"));

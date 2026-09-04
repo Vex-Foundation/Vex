@@ -57,7 +57,7 @@ export interface FinalizeConfirmedSwapOutcome {
 export async function finalizeConfirmedSwap(x: FinalizeConfirmedSwapInput): Promise<FinalizeConfirmedSwapOutcome> {
   const { deployment, tokenIn, tokenOut, executionId, txHash } = x;
 
-  // Auto-pin (fail-soft) — Codex final-review round 4, finding 3: runs
+  // Auto-pin (fail-soft) - Codex final-review round 4, finding 3: runs
   // IMMEDIATELY after on-chain confirmation, BEFORE decoding, so a
   // confirmed-but-undecodable settlement can never skip it. The spent
   // token-in is never pinned. Never allowed to fail the swap result.
@@ -89,13 +89,13 @@ export async function finalizeConfirmedSwap(x: FinalizeConfirmedSwapInput): Prom
     : null;
 
   // C38 (Codex final-review round 3, finding 2): the swap ALREADY
-  // confirmed on-chain at this point — a throw from the decoder itself
+  // confirmed on-chain at this point - a throw from the decoder itself
   // must NEVER escape to the generic outer post-intent catch (C18), which
   // returns a result WITHOUT the tx hash and would silently lose the
   // known hash for a swap that genuinely succeeded. Treat a throw exactly
   // like a fully-undecoded receipt (falls through to the SAME
   // `confirmed_pending_amounts` branch below, which already preserves the
-  // tx hash) — mirrors Kyber's identical defensive catch around its own
+  // tx hash) - mirrors Kyber's identical defensive catch around its own
   // settlement decoder.
   let decoded: ReturnType<typeof decodeUniswapExecutedLegs>;
   try {
@@ -123,7 +123,7 @@ export async function finalizeConfirmedSwap(x: FinalizeConfirmedSwapInput): Prom
       outputPayload: null,
       result: {
         success: true,
-        output: `${TOOL_ID}: swap confirmed on-chain (tx ${txHash}) but the executed amounts could not be decoded yet — check the transaction hash for the exact amounts. The record will finalize automatically.${deliveryVerdict ? ` ${deliveryVerdict}` : ""}`,
+        output: `${TOOL_ID}: swap confirmed on-chain (tx ${txHash}) but the executed amounts could not be decoded yet - check the transaction hash for the exact amounts. The record will finalize automatically.${deliveryVerdict ? ` ${deliveryVerdict}` : ""}`,
         data: { txHash, _executionId: executionId, status: "confirmed_pending_amounts" },
       },
     };
@@ -131,7 +131,7 @@ export async function finalizeConfirmedSwap(x: FinalizeConfirmedSwapInput): Prom
 
   // C34 (Codex final-review round 2, finding 6): the DECODED net
   // settlement amount, never the request echo (`amountInRaw`, the raw
-  // requested-string param) — a fee-on-transfer token or partial fill can
+  // requested-string param) - a fee-on-transfer token or partial fill can
   // make the executed input differ from what was requested, and the
   // success message must never contradict the persisted `agent_activity`
   // truth.
@@ -185,7 +185,7 @@ export async function finalizeConfirmedSwap(x: FinalizeConfirmedSwapInput): Prom
 }
 
 /**
- * C16: the swap already confirmed on-chain — a DB write hiccup recording that
+ * C16: the swap already confirmed on-chain - a DB write hiccup recording that
  * MUST NEVER read as the swap itself failing. `status` distinguishes
  * "confirmed" (our own record matches) from "confirmed_unrecorded" (on-chain
  * truth is settled; only our bookkeeping write failed) so a caller can tell the
@@ -204,11 +204,11 @@ async function recordExecutedAmounts(
     const confirmResult = await confirmActivityEvent(eventId, amounts);
     // C41 (Codex final-review round 3, finding 6): a CAS MISS (the row
     // was no longer `pending`) is not automatically a success just
-    // because nothing threw — a conflicting terminal row (e.g. a
+    // because nothing threw - a conflicting terminal row (e.g. a
     // concurrent repair-sweep write) must NOT be reported as an ordinary
     // confirmed swap. The one exception is a genuine idempotent retry:
     // the row is already `confirmed` with the SAME executed amounts this
-    // call just computed — real recorded confirmation, not a conflict.
+    // call just computed - real recorded confirmation, not a conflict.
     if (!confirmResult.applied) {
       const alreadyRecorded = confirmResult.row.status === "confirmed"
         && confirmResult.row.executedAmountInRaw === amounts.executedAmountInRaw

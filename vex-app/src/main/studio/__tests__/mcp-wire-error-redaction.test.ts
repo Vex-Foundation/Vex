@@ -27,6 +27,8 @@ import path from "node:path";
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { SKIP_UNIX_ENDPOINT_SUITES } from "./unix-endpoint-gate.js";
+
 const logCalls: unknown[][] = [];
 const record = (...args: unknown[]): void => {
   logCalls.push(args);
@@ -57,6 +59,7 @@ const {
   configureStudioMcpHost,
   shutdownStudioMcpHost,
   startStudioMcpHost,
+  openStudioMcpAdmission,
   studioMcpHostEndpoint,
   resetStudioMcpHostForTests,
 } = await import("../mcp-host.js");
@@ -89,6 +92,7 @@ beforeEach(async () => {
     runCall: async () => ({ kind: "completed", result: { success: true, output: "ok" } }),
     projectExists: async () => true,
   });
+  openStudioMcpAdmission();
   expect((await startStudioMcpHost()).started).toBe(true);
 });
 
@@ -160,7 +164,7 @@ function open(target: string): Promise<Peer> {
   });
 }
 
-describe("a peer that puts its own bytes in a malformed frame", () => {
+describe.skipIf(SKIP_UNIX_ENDPOINT_SUITES)("a peer that puts its own bytes in a malformed frame", () => {
   it("logs the CODE and never the frame", async () => {
     await writeAndSettle(`{not json ${SENTINEL}\n`);
 

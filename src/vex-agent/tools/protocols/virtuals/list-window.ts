@@ -2,12 +2,12 @@
  * The bounded paged scan behind `virtuals.list` / `virtuals.graduations`, and
  * the `windowNote` that discloses exactly which slice was searched.
  *
- * WHY THIS EXISTS (audit F1, SPEC §2.6 W9a — the blocking finding). The
+ * WHY THIS EXISTS (audit F1, SPEC §2.6 W9a - the blocking finding). The
  * handlers fetched ONE page of 50 rows sorted by market cap and then applied a
  * CLIENT-SIDE status filter. Live on BASE: `meta.pagination.total = 54785`, and
  * the status distribution of page 1 was `{"AVAILABLE": 50}`. So
  * `virtuals.list {chain:"base", status:"undergrad"}` returned
- * `{matched: 0, count: 0, agents: []}` — always, structurally, because
+ * `{matched: 0, count: 0, agents: []}` - always, structurally, because
  * bonding-curve agents have low market caps and can never appear in the top 50
  * by mcap. The manifest advertised that filter as first-class, and the agent
  * read "no bonding-curve agents on Base" from a 54,785-row chain.

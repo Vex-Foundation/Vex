@@ -2,7 +2,7 @@
  * Solana/Jupiter prediction-market request-param validation (F2).
  *
  * Extracted from `handlers/predict.ts` once its handler map pushed the file
- * over the factory's 500-line hard cap — a clean split by responsibility
+ * over the factory's 500-line hard cap - a clean split by responsibility
  * (request-param validation vs. handler orchestration), not an arbitrary
  * line-count chop: `resolvePredictionWindow` was already exported and reused
  * by `handlers/predict-orders.ts` (W1-D); `strictEnumField` is reused by
@@ -31,7 +31,7 @@ export type PredictionWindowResult =
 /**
  * Resolve `limit`/`offset` into the SDK's `start`/`end` window for
  * events/positions/history (`handlers/predict.ts`) and orders (W1-D,
- * `handlers/predict-orders.ts`) — one shared reject-not-clamp validator
+ * `handlers/predict-orders.ts`) - one shared reject-not-clamp validator
  * instead of a drifting per-file copy. Rejects (never clamps) an
  * out-of-range `limit` (integer, 1-100) or a negative `offset` with a clear,
  * handler-level error.
@@ -55,7 +55,7 @@ export function resolvePredictionWindow(p: Record<string, unknown>): PredictionW
 // ── /events/search local window (F2) ───────────────────────────────
 //
 // LIVE FACT (coordinator, 2026-07-24, 4s-spaced probing): `/events/search`
-// ignores its own `limit` query param entirely — 1, 2, and 20 all returned
+// ignores its own `limit` query param entirely - 1, 2, and 20 all returned
 // the identical 10-row response. `resolvePredictionWindow`'s domain-wide
 // 1-100 bound also does not apply here: search has its own stricter,
 // SDK-validated 1-20 range (`validateJupiterPredictionSearchEventsParams`).
@@ -70,7 +70,7 @@ export type SearchWindowResult =
 /**
  * Resolve `.search`'s agent-requested result count. The handler still
  * validates + forwards `limit` to the SDK (so a future provider fix is a
- * no-op change on our side), but — because the provider ignores it live —
+ * no-op change on our side), but - because the provider ignores it live -
  * the handler enforces the agent's requested window LOCALLY by slicing the
  * response after the fact. Reject-not-clamp (owner rule): an out-of-range
  * value fails clearly instead of silently defaulting or being dropped.
@@ -95,13 +95,13 @@ export type StrictEnumResult<T extends string> =
 /**
  * Validate an OPTIONAL enum param and reject a PRESENT-but-invalid value
  * with a clear error, instead of `enumField`'s own silent "any invalid value
- * becomes `undefined`" behavior — which would otherwise make an agent's
+ * becomes `undefined`" behavior - which would otherwise make an agent's
  * mistyped enum value indistinguishable from the param being omitted
  * entirely (owner rule: reject out-of-range/invalid values, never silently
  * default). An ABSENT param still resolves to `undefined` ("no filter"),
- * matching `enumField`'s existing behavior for that case exactly — only the
+ * matching `enumField`'s existing behavior for that case exactly - only the
  * present-but-invalid case changes. Used by `handlers/predict.ts` AND
- * `handlers/predict-social.ts`. Scoped to this domain's own handlers — the
+ * `handlers/predict-social.ts`. Scoped to this domain's own handlers - the
  * shared `enumField` helper itself (used by every protocol handler in the
  * repo) is left unchanged; a repo-wide behavior change is a larger,
  * unrequested refactor outside this card.

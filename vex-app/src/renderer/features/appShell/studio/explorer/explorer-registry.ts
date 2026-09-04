@@ -46,8 +46,15 @@ export class ExplorerRegistry {
 
   /**
    * @param defer how a zero-consumer teardown is postponed past a StrictMode
-   * remount. The default is `queueMicrotask`; a test injects a manual pump when
-   * it wants to observe the window in between.
+   * remount. The default is a microtask; a test injects a manual pump when it
+   * wants to observe the window in between.
+   *
+   * The default WRAPS `queueMicrotask` instead of storing the function: stored
+   * on the instance and invoked as `this.#defer(run)`, the platform function
+   * receives the registry as its receiver and Chromium throws
+   * "TypeError: Illegal invocation" (Node's implementation ignores the
+   * receiver, which is why vitest never saw it and closing a file tab crashed
+   * the workspace in the built app).
    */
   constructor(defer: (run: () => void) => void = (run) => queueMicrotask(run)) {
     this.#defer = defer;

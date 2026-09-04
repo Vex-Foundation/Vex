@@ -1,5 +1,5 @@
 /**
- * `pendle.py.mint` — split ONE payment token into an EQUAL amount of PT and YT
+ * `pendle.py.mint` - split ONE payment token into an EQUAL amount of PT and YT
  * in a single transaction (Convert action `mint-py`, `mintPyFromToken`).
  *
  * Fresh Convert re-fetch → `selectSafeRoute` fund-safety extractor (Router pin,
@@ -88,7 +88,7 @@ export async function executePendleMint(p: Record<string, unknown>, context: Pro
 
     if (p.dryRun === true) {
       const response = await getPendleClient().convertMulti(chainId, {
-        receiver: PENDLE_ROUTER, // placeholder — dry-run never signs
+        receiver: PENDLE_ROUTER, // placeholder - dry-run never signs
         inputs: [{ token: tokenIn.address, amount: amountWei.toString() }],
         outputs: [ptAddress, ytAddress],
         slippage: slippage.fraction,
@@ -121,12 +121,12 @@ export async function executePendleMint(p: Record<string, unknown>, context: Pro
     const intent: PendleTxIntent = {
       action: "py-mint",
       wallet,
-      // The tolerance this route is held to — see calldata/price-floor.ts.
+      // The tolerance this route is held to - see calldata/price-floor.ts.
       slippageBps: slippage.bps,
       inputToken: tokenIn.address,
       inputAmountWei: amountWei,
       isNative: tokenIn.isNative,
-      // mintPyFromToken carries the YT at arg 1 — bind it to the quoted market's YT.
+      // mintPyFromToken carries the YT at arg 1 - bind it to the quoted market's YT.
       expectedYt: ytAddress,
       ptAddress: getAddress(ptAddress),
     };
@@ -144,7 +144,7 @@ export async function executePendleMint(p: Record<string, unknown>, context: Pro
       });
       await ensurePendleAllowanceExact(publicClient, walletClient, tokenIn.address, PENDLE_ROUTER, amountWei);
     }
-    // Read BEFORE signing — the staged row's legs need their decimals.
+    // Read BEFORE signing - the staged row's legs need their decimals.
     const assetMap = await buildAssetMap(chainId);
     const quotedPtOut = outputAmountFor(route.outputs, ptAddress);
     const quotedYtOut = outputAmountFor(route.outputs, ytAddress);
@@ -152,7 +152,7 @@ export async function executePendleMint(p: Record<string, unknown>, context: Pro
     const ytDec = assetMap.get(ytAddress.toLowerCase())?.decimals ?? null;
 
     // OPTION C (migration 053): a mint is 1 → 2, so BOTH out legs are staged on
-    // the one row. `yield_py` populates exactly ONE side — the OUT side here —
+    // the one row. `yield_py` populates exactly ONE side - the OUT side here -
     // and confirming it requires proving both of them.
     const broadcast = await sendPendleRouterTx(
       publicClient,
@@ -170,7 +170,7 @@ export async function executePendleMint(p: Record<string, unknown>, context: Pro
     txHash = broadcast.txHash;
     if (broadcast.kind !== "confirmed") return unsettledResult(toolId, broadcast);
 
-    // The DECODED mint — both minted legs proven from the receipt's own logs.
+    // The DECODED mint - both minted legs proven from the receipt's own logs.
     const ptOut = broadcast.executed.amountOutRaw ?? quotedPtOut;
     const ytOut = broadcast.executed.amountOut2Raw ?? quotedYtOut;
 

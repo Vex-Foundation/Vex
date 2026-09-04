@@ -91,15 +91,19 @@ describe("bridge_quote — a refused param is answered BY NAME, before normaliza
   });
 
   it("normalizes an empty OPTIONAL away instead of burning the call", async () => {
+    // `recipient` used to be the second optional here. It is no longer a
+    // parameter of any bridge tool (the destination is derived from the
+    // selected wallet), and an empty `recipient` is refused BY NAME as the
+    // attempt it is - `bridge-recipient-alias-refusal.test.ts` pins that. The
+    // hygiene rule this case guards is for optionals that still exist.
     vi.mocked(executeProtocolTool).mockClear();
     const result = await aliases.handleBridgeQuote(
-      { ...VALID_BRIDGE, recipient: "", tradeType: "" },
+      { ...VALID_BRIDGE, tradeType: "" },
       ctx,
     );
     expect(result.success).toBe(true);
-    // Dropped, not forwarded as an empty destination.
+    // Dropped, not forwarded as an empty trade type.
     const forwarded = vi.mocked(executeProtocolTool).mock.calls[0]?.[0].params;
-    expect(forwarded).not.toHaveProperty("recipient");
     expect(forwarded).not.toHaveProperty("tradeType");
   });
 

@@ -11,6 +11,8 @@ import { makeTestContext } from "../../tools/_test-context.js";
 import {
   buildIntentPreview,
   buildPolicySnapshot,
+  sanitizeRequestingClientName,
+  REQUESTING_CLIENT_NAME_MAX,
 } from "@vex-agent/engine/core/approval-intent-preview.js";
 
 describe("buildIntentPreview", () => {
@@ -71,6 +73,78 @@ describe("buildIntentPreview", () => {
     });
     expect(preview.criticalArgs.amountRaw).toBe("1000000");
     expect(preview.criticalArgs.vexFee).toContain("2500 raw units of fromToken");
+  });
+
+  /**
+   * THE DEFECT THIS PINS (live test pass 2, I-2): a real approval card for a
+   * 1 USDC bridge raised over MCP carried no fee line at all. The MCP surface
+   * exports the ACTION ALIAS `BridgeExecute`, admission never rewrites the call
+   * name, and the alias router resolves the venue later and asynchronously, so
+   * the dotted venue id the fee table was keyed on never reached it. A human
+   * was asked to approve a transfer whose 25 bps Vex fee was itemised nowhere.
+   *
+   * Revert the alias cases in `approval-vex-fee.ts` and these go red.
+   */
+  it.each([
+    ["BridgeExecute", "the alias the MCP surface actually exports"],
+    ["BridgeExecuteRelay", "the venue-pinned alias"],
+    ["relay.bridge", "the resolved venue id"],
+    ["khalani.bridge", "the other resolved venue id"],
+  ])("itemises the bridge fee for %s (%s)", (toolName) => {
+    const preview = buildIntentPreview(toolName, {
+      fromChain: "8453",
+      toChain: "42161",
+      fromToken: "0xUSDC",
+      toToken: "0xUSDC",
+      amountRaw: "1000000",
+    });
+    expect(preview.criticalArgs.vexFee).toContain("0.25% (25 bps)");
+    expect(preview.criticalArgs.vexFee).toContain("2500 raw units of fromToken");
+  });
+
+  it("itemises the Uniswap fee under the alias name too", () => {
+    const preview = buildIntentPreview("SwapExecuteUniswap", {
+      chain: "base",
+      tokenIn: "ETH",
+      tokenOut: "0xUSDC",
+      amountIn: "2",
+    });
+    expect(preview.criticalArgs.vexFee).toContain("0.005 ETH");
+  });
+
+  /**
+   * `SwapExecute` routes to either Jupiter (which discloses a richer
+   * `feePreview` of its own) or KyberSwap, and the choice is not known when
+   * this line is written. NO line is the honest outcome; a rate stated before
+   * the venue is chosen could name a rate the executor does not charge.
+   */
+  it("states no fee for SwapExecute, whose venue is not yet decided", () => {
+    const preview = buildIntentPreview("SwapExecute", {
+      chain: "base",
+      tokenIn: "ETH",
+      tokenOut: "0xUSDC",
+      amountIn: "2",
+    });
+    expect(preview.criticalArgs).not.toHaveProperty("vexFee");
+  });
+
+  /**
+   * Rule 90 and the owner decree: no em dash in copy a human reads. The fee
+   * line is human-facing card copy, and the measured card carried one.
+   */
+  it("puts no em dash in the fee line a human reads", () => {
+    const bridge = buildIntentPreview("BridgeExecute", {
+      fromToken: "0xUSDC",
+      amountRaw: "1000000",
+    });
+    const swap = buildIntentPreview("kyberswap.swap.execute", {
+      tokenIn: "ETH",
+      amountIn: "1.5",
+    });
+    for (const line of [bridge.criticalArgs.vexFee, swap.criticalArgs.vexFee]) {
+      expect(typeof line).toBe("string");
+      expect(line).not.toContain(String.fromCharCode(0x2014));
+    }
   });
 
   it("carries NO vexFee key for a tool that has no Vex fee (tolerant reader)", () => {
@@ -175,7 +249,7 @@ describe("buildIntentPreview — Stage 7 prequote verdict binding (R5)", () => {
       { inputToken: "SOL", outputToken: "USDC", amount: 1 },
       { prequoteVerdict: "unknown" },
     );
-    expect(preview.criticalArgs.safety).toBe("UNVERIFIED — audit unavailable");
+    expect(preview.criticalArgs.safety).toBe("UNVERIFIED - audit unavailable");
   });
 
   it("omits safety when no extras are passed (non-swap / non-gated path)", () => {
@@ -204,7 +278,7 @@ describe("buildIntentPreview — Stage 7 prequote verdict binding (R5)", () => {
       { chain: "base", tokenIn: "0xAAA", tokenOut: "0xBBB", amountIn: "1", safety: "pass" },
       { prequoteVerdict: "unknown" },
     );
-    expect(preview.criticalArgs.safety).toBe("UNVERIFIED — audit unavailable");
+    expect(preview.criticalArgs.safety).toBe("UNVERIFIED - audit unavailable");
   });
 });
 
@@ -217,7 +291,7 @@ describe("buildIntentPreview — Stage 9 fee-on-transfer disclosure (FIX 3)", ()
       { chain: "base", tokenIn: "0xAAA", tokenOut: "0xBBB", amountIn: "1" },
       { prequoteVerdict: "pass", fotTax: 60 },
     );
-    expect(preview.criticalArgs.safety).toBe("pass — fee-on-transfer 60%");
+    expect(preview.criticalArgs.safety).toBe("pass - fee-on-transfer 60%");
   });
 
   it("a clean pass (no fotTax) renders a plain 'pass' — no FoT suffix", () => {
@@ -234,7 +308,7 @@ describe("buildIntentPreview — Stage 9 fee-on-transfer disclosure (FIX 3)", ()
     // preview; with no extras the safety label is absent entirely.
     const preview = buildIntentPreview(
       "kyberswap.swap.execute",
-      { chain: "base", tokenIn: "0xAAA", tokenOut: "0xBBB", amountIn: "1", fotTax: 60, safety: "pass — fee-on-transfer 60%" },
+      { chain: "base", tokenIn: "0xAAA", tokenOut: "0xBBB", amountIn: "1", fotTax: 60, safety: "pass - fee-on-transfer 60%" },
     );
     expect(preview.criticalArgs).not.toHaveProperty("safety");
     expect(preview.criticalArgs).not.toHaveProperty("fotTax");
@@ -381,8 +455,8 @@ describe("buildIntentPreview — execute_tool wrapper unwrap", () => {
       amountIn: "1.0",
       slippageBps: 50,
       vexFee:
-        "0.25% (25 bps) — 0.0025 ETH. Taken on the input token and included in the amountIn "
-        + "above — the route is priced for the remainder, so the quoted output is already net of it.",
+        "0.25% (25 bps): 0.0025 ETH. Taken on the input token and included in the amountIn "
+        + "above; the route is priced for the remainder, so the quoted output is already net of it.",
     });
   });
 
@@ -459,6 +533,9 @@ describe("buildPolicySnapshot", () => {
       contextUsageBand: "warning",
       missionId: "mission-1",
       missionRunId: "run-1",
+      // Nobody external asked: this is Vex's own agent loop, so the snapshot
+      // records no client and the card names none rather than inventing one.
+      requestedByClient: null,
     });
   });
 
@@ -476,5 +553,92 @@ describe("buildPolicySnapshot", () => {
   it("captures contextUsageBand at enqueue time (not re-derived later)", () => {
     const snap = buildPolicySnapshot({ ...baseContext, contextUsageBand: "critical" });
     expect(snap.contextUsageBand).toBe("critical");
+  });
+});
+
+/**
+ * WHO ASKED, as the approval card will show it.
+ *
+ * The name is the one field on the card that an EXTERNAL PROCESS chooses for
+ * itself (an MCP client's `initialize` handshake), so these are boundary tests
+ * rather than formatting tests: every case below is a value another process can
+ * put on the wire, and the assertion is what a human ends up reading because
+ * of it.
+ */
+describe("sanitizeRequestingClientName", () => {
+  const context: InternalToolContext = makeTestContext({
+    sessionId: "00000000-0000-4000-8000-000000000002",
+  });
+
+  it("keeps a plain client name, trimmed", () => {
+    expect(sanitizeRequestingClientName("  Claude Code  ")).toBe("Claude Code");
+  });
+
+  // Control characters are refused because the actor row is a LINE a human
+  // reads on a money-path card: a newline inside the name forges a second one.
+  it.each([
+    ["a newline", "Claude Code\nVEX APPROVED"],
+    ["a carriage return", "Claude\rCode"],
+    ["a NUL", "Claude\u0000Code"],
+    ["an ANSI escape introducer", "\u001b[31mClaude Code"],
+    ["DEL", "Claude\u007fCode"],
+  ])("refuses %s rather than rendering it", (_label, name) => {
+    expect(sanitizeRequestingClientName(name)).toBeNull();
+  });
+
+  it.each([
+    ["a number", 42],
+    ["undefined", undefined],
+    ["an object", { name: "Claude Code" }],
+    ["the empty string", ""],
+    ["whitespace only", "   "],
+  ])("refuses %s", (_label, value) => {
+    expect(sanitizeRequestingClientName(value)).toBeNull();
+  });
+
+  it("keeps a name exactly at the bound", () => {
+    const name = "c".repeat(REQUESTING_CLIENT_NAME_MAX);
+    expect(sanitizeRequestingClientName(name)).toBe(name);
+  });
+
+  /**
+   * The invariant a "just shorten it" change would break: "Claude Cod..." and
+   * "Claude Code" read the same to a human deciding a transfer, and only one of
+   * them is a name that person can verify. An over-long name is DROPPED whole,
+   * and the card then says "an MCP client", which claims less rather than more.
+   */
+  it("DROPS an over-long name whole, never shortens it", () => {
+    const name = "c".repeat(REQUESTING_CLIENT_NAME_MAX + 1);
+    expect(sanitizeRequestingClientName(name)).toBeNull();
+  });
+
+  it("carries a sanitized name onto the policy snapshot the card reads", () => {
+    expect(buildPolicySnapshot(context, " Claude Code ").requestedByClient).toBe(
+      "Claude Code",
+    );
+  });
+
+  it("records no client for Vex's own agent loop", () => {
+    expect(buildPolicySnapshot(context).requestedByClient).toBeNull();
+  });
+
+  it("records no client when the declared name is unusable", () => {
+    expect(
+      buildPolicySnapshot(context, "Claude\nCode").requestedByClient,
+    ).toBeNull();
+  });
+
+  /**
+   * The card must never show a fee, a rate or a destination that came from the
+   * client's NAME. Nothing branches on this value; it lands in `policy_json`
+   * and stops there.
+   */
+  it("keeps the client name out of the preview the digest binds", () => {
+    const preview = buildIntentPreview("WalletSendConfirm", {
+      intentId: "int-1",
+      clientName: "Claude Code",
+    });
+    expect(preview.criticalArgs).not.toHaveProperty("clientName");
+    expect(preview.criticalArgs).not.toHaveProperty("requestedByClient");
   });
 });

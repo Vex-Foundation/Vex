@@ -1,12 +1,12 @@
 /**
- * Wallet send — PRESENCE/EXISTING input checks for prepare + confirm.
+ * Wallet send - PRESENCE/EXISTING input checks for prepare + confirm.
  *
  * Parsing + required/walletFamily/chain/positive-amountIn for prepare, and the
  * required walletFamily/intentId for confirm. The model-facing param keys are
  * `walletFamily` and `amountIn` (SPEC §1.1/§1.3); the internal value keeps the
  * name `network` because that is the stored `wallet_intents` column. These are the SAME checks the
  * handlers ran inline pre-split, in the SAME order. Recipient (`to`) is NOT
- * stricter-validated here — chain-specific recipient validation happens later
+ * stricter-validated here - chain-specific recipient validation happens later
  * in the executors.
  */
 
@@ -37,7 +37,7 @@ export function validatePrepareParams(
 
   // Named ONE AT A TIME, and a wrong type said as a wrong type. `str()` gives
   // "" for both absent and wrong-typed, so the old combined "Missing required:
-  // walletFamily, to, amountIn" told a model that sent `amountIn: 1.5` (a number — the
+  // walletFamily, to, amountIn" told a model that sent `amountIn: 1.5` (a number - the
   // shape it holds after arithmetic) that it had sent nothing. On the send
   // path that is a burnt turn on a transfer the user is waiting for.
   const missing =

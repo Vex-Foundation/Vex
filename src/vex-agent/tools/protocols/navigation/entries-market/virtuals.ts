@@ -10,7 +10,7 @@ export const VIRTUALS_NAVIGATION: ProtocolNamespaceNavigation = {
   whenToUse:
     "Use when the user names an agent token, asks what just graduated, or asks what is launching on Virtuals: screen agents on one chain, read one agent in full, watch the graduation feed, or browse the genesis calendar. Always read the anti-sniper window before buying.",
   preferInstead:
-    "Use `dexscreener` for general multi-chain pair/liquidity research, and `SwapQuote`/`SwapExecute` (or `solana.*` on Solana) to execute the trade — Virtuals never executes.",
+    "Use `dexscreener` for general multi-chain pair/liquidity research, and `SwapQuote`/`SwapExecute` (or `solana.*` on Solana) to execute the trade - Virtuals never executes.",
   declaration: {
     identity: "Virtuals is read-only intelligence for Virtuals agents and agent tokens across the chains indexed by the provider.",
     read: "Screen virtuals agents and agent tokens, inspect robinhood agent tokens or one agent in depth, read market cap, holder count and concentration, check the anti-sniper buy-tax window and exact venue, follow recent virtuals graduations or what just graduated, and browse the fresh graduations feed, genesis calendar, launch schedule, and genesis sales.",

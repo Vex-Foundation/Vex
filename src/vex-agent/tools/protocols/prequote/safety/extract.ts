@@ -5,7 +5,7 @@
  * handler-local `QuoteSafetyLeg` type from kyberswap/handlers/swap.ts (it is not
  * exported); we structurally re-validate instead.
  *
- * NEVER persist or log raw provider/HTTP/DB/error text — only bounded structural
+ * NEVER persist or log raw provider/HTTP/DB/error text - only bounded structural
  * labels.
  *
  * This file is the public entry point and routes a quote toolId to its VENUE
@@ -47,7 +47,7 @@ export function extractQuote(
   if (toolId === "solana.swap.quote") return extractSolana(params, data);
   // Trench Express curve quote shares the EVM quote shape ({ chainId,
   // tokenIn.address, tokenOut.address, safety }), so it records the same
-  // swap-identity fields — one native leg, one unchecked token leg (verdict
+  // swap-identity fields - one native leg, one unchecked token leg (verdict
   // `unknown`). No new prequote kind.
   if (toolId === "trench.trade_quote") return extractEvm(params, data);
   return null;

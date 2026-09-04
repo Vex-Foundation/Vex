@@ -1,11 +1,11 @@
 /**
- * Wallet send — outcome finalisation (audit writes + ToolResult shape).
+ * Wallet send - outcome finalisation (audit writes + ToolResult shape).
  *
  * Translates an `ExecuteOutcome` into the operator-facing `ToolResult` while
  * persisting the audit-state transition. The tx (when broadcast) is already
  * real on-chain; audit-row drift is logged structurally but never changes the
  * `ToolResult` (Codex puzzle-5 phase-4 final review point 1). Raw RPC / wallet
- * cause text is always reduced to an `ErrorKind:hash` fingerprint — never
+ * cause text is always reduced to an `ErrorKind:hash` fingerprint - never
  * surfaced or logged verbatim.
  */
 
@@ -23,7 +23,7 @@ import { fail, failWith } from "./results.js";
  *
  * `txHash` / `chain` / `status` are always present (both the EVM and Solana
  * executors emit them post-normalisation). `blockNumber` is EVM-specific and
- * `explorerUrl` is Solana-specific — included only when the executor supplied
+ * `explorerUrl` is Solana-specific - included only when the executor supplied
  * a value of the right type. Everything else the executors carry
  * (`_executionId`, `_explorerRefs`) is deliberately dropped from the
  * model-visible `output` and stays under `data`.
@@ -47,7 +47,7 @@ interface WalletSendOutput {
 
 /**
  * `txHash` is taken from the strongly-typed `outcome.txHash` (guaranteed on the
- * confirmed path) — NOT from the loose `data` boundary, which would fall back to
+ * confirmed path) - NOT from the loose `data` boundary, which would fall back to
  * `""` and silently coerce a missing hash. `chain`/`status` still come from
  * `data` (the executors emit them post-normalisation; no guaranteed typed field
  * exists on the outcome for them).
@@ -96,7 +96,7 @@ export async function finalizeOutcome(
       return finalizeConfirmed(intentId, sessionId, outcome);
     case "chain_failed":
       await markFailedChecked(intentId, sessionId, outcome, outcome.txHash);
-      // A reverted tx is still real on-chain — attach a linkable ref
+      // A reverted tx is still real on-chain - attach a linkable ref
       // (metadata-only; the `output` string is byte-identical to `fail(...)`).
       return failWith(
         `Wallet transfer reverted on-chain. Error hash: ${outcome.errorHash}. Tx hash: ${outcome.txHash}.`,
@@ -109,7 +109,7 @@ export async function finalizeOutcome(
         { errorKind: "ConfirmationUnknown", errorHash: outcome.errorHash },
         outcome.txHash,
       );
-      // Broadcast succeeded (hash exists) even though confirmation is unknown —
+      // Broadcast succeeded (hash exists) even though confirmation is unknown -
       // keep the tx linkable so the operator can check the explorer.
       return failWith(
         `Wallet transfer broadcast but confirmation unknown. Error hash: ${outcome.errorHash}. Tx hash: ${outcome.txHash}.`,
@@ -125,10 +125,10 @@ export async function finalizeOutcome(
 
 /**
  * `markFailed` returns `null` on CAS miss (status was already
- * non-`consuming` when this write ran). That is an audit/status drift —
+ * non-`consuming` when this write ran). That is an audit/status drift -
  * caller-side log it structurally so the operator notices. The original
  * outcome (failed transfer) still surfaces to the agent via the
- * `ToolResult` returned by `finalizeOutcome` — the audit log entry is
+ * `ToolResult` returned by `finalizeOutcome` - the audit log entry is
  * the only place the inconsistency is visible.
  *
  * Codex puzzle-5 phase-4 final review point 1.
@@ -232,7 +232,7 @@ async function finalizeConfirmed(
       }
     }
     if (!markedExecuted) {
-      // CAS miss — status was not 'consuming' at write time. Possible
+      // CAS miss - status was not 'consuming' at write time. Possible
       // operator-side mutation or process-restart inconsistency. Tx is
       // still real on-chain; surface via structural audit log + flip the
       // row to `audit_failed` so phase 7 reconcile tooling sees it.
@@ -252,7 +252,7 @@ async function finalizeConfirmed(
       errorKind: sum.errorKind,
       errorHash: sum.errorHash,
     });
-    // Preserve the underlying cause as the audit reason — the structural
+    // Preserve the underlying cause as the audit reason - the structural
     // ErrorKind:hash label matches the failure_reason format used on
     // pre/post-broadcast failure paths.
     auditReason = `${sum.errorKind}:${sum.errorHash}`;
@@ -280,7 +280,7 @@ async function finalizeConfirmed(
 
 /**
  * Best-effort `markAuditFailed` for the `consuming` row when markExecuted
- * could not flip to `executed`. Returns silently — the tx is already
+ * could not flip to `executed`. Returns silently - the tx is already
  * on-chain; the audit row drift is logged but does not change the
  * `ToolResult` (Codex puzzle-5 phase-4 final review point 1). The reason
  * threads through from the original markExecuted outcome (throw cause OR

@@ -104,7 +104,7 @@ export function selectProtocolTools(
     ];
     warnings.push(
       `Requested ${publicNames.length} names but ${repeated.map((n) => `"${n}"`).join(", ")} `
-      + `${repeated.length === 1 ? "was" : "were"} repeated — each tool is selected once.`,
+      + `${repeated.length === 1 ? "was" : "were"} repeated - each tool is selected once.`,
     );
   }
 
@@ -138,7 +138,7 @@ export function selectProtocolTools(
         publicName,
         status: "rejected",
         reason:
-          `"${publicName}" is mutating and context pressure is at the barrier — the dispatcher `
+          `"${publicName}" is mutating and context pressure is at the barrier - the dispatcher `
           + "would refuse it right now. Select a read-only or preview tool in the same protocol, "
           + "or select it again after the context is compacted.",
       });

@@ -1,7 +1,7 @@
 {
   "definition": {
     "function": {
-      "description": "Trace the full version chain (root → head) of a long-term memory entry from any id in the chain, plus its reinforcement timeline (when it was first promoted, last reinforced, and its outcome version). Use this when you have a historical id (e.g. from MemoryGet's supersededBy/supersedesId) and want to see how the lesson evolved and whether the current head is still active. Returns compact metadata (no full content — use MemoryGet for that). Read-only. Does not require the embeddings service.",
+      "description": "Trace the full version chain (root → head) of a long-term memory entry from any id in the chain, plus its reinforcement timeline (when it was first promoted, last reinforced, and its outcome version). Use this when you have a historical id (e.g. from MemoryGet's supersededBy/supersedesId) and want to see how the lesson evolved and whether the current head is still active. Returns compact metadata (no full content - use MemoryGet for that). Read-only. Does not require the embeddings service.",
       "name": "MemoryHistory",
       "parameters": {
         "additionalProperties": false,

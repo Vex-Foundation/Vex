@@ -1,5 +1,5 @@
 /**
- * Session memory tools — per-session narrative memory layer (PR2).
+ * Session memory tools - per-session narrative memory layer (PR2).
  *
  * Two tools:
  *   - `SessionMemorySearch`: semantic search over THIS session's narrative
@@ -11,7 +11,7 @@
  *     read_only (the operation is small and bounded, and resolving outstanding
  *     items at pressure is a sensible pre-compact wrap-up).
  *
- * Both are gated by `visibility.requiresSessionMemory` — hidden from the tool
+ * Both are gated by `visibility.requiresSessionMemory` - hidden from the tool
  * catalog until the session has active narrative chunks (a fresh session has
  * nothing to recall). The handlers still short-circuit on empty state as
  * defense-in-depth (visibility controls only what the LLM sees).
@@ -31,9 +31,9 @@ export const SESSION_MEMORY_TOOLS: readonly ToolDef[] = [
     visibility: { requiresSessionMemory: true },
     description: [
       "Semantic recall over THIS SESSION's narrative memory chunks. Each chunk is a 4-section markdown body (what happened / what I did / what I tried / outstanding items) produced automatically when the conversation was compacted.",
-      "Per-session only — does NOT reach earlier sessions. For durable cross-session lessons use `MemorySearch`.",
+      "Per-session only - does NOT reach earlier sessions. For durable cross-session lessons use `MemorySearch`.",
       "Use when you forgot what you tried earlier in this mission, want to avoid repeating a failed approach, or need to check past tool outcomes that no longer fit in the live transcript.",
-      "Write SEMANTIC INTENT in English, not keywords (translate the user's intent first — embedding retrieval is significantly stronger on English).",
+      "Write SEMANTIC INTENT in English, not keywords (translate the user's intent first - embedding retrieval is significantly stronger on English).",
       "✓ \"previous attempts to debug Kyber quote timeout and what we learned\"",
       "✗ \"kyber\"",
       "✓ \"wallet balance checks earlier in the mission and their outcomes\"",
@@ -65,10 +65,10 @@ export const SESSION_MEMORY_TOOLS: readonly ToolDef[] = [
     actionKind: "local_write",
     visibility: { requiresSessionMemory: true },
     description: [
-      "Close a single outstanding item on a session memory chunk. Use when a previously-open follow-up (pending tx, awaiting decision, lookup needed) is now done — keeps the resume packet's Outstanding section honest across compacts.",
+      "Close a single outstanding item on a session memory chunk. Use when a previously-open follow-up (pending tx, awaiting decision, lookup needed) is now done - keeps the resume packet's Outstanding section honest across compacts.",
       "memory_id is the chunk id from SessionMemorySearch output. outstanding_item_id is the UUID of the specific item to resolve (shown in the chunk's Outstanding section). resolution_note is a short (≤500-char) explanation persisted for audit and future recall.",
-      "Bounded: resolving one item never affects siblings — chunks with multiple outstanding items remain partially open. The chunk's body_md is re-rendered and re-embedded so future SessionMemorySearch reflects the resolved state. Concurrent-resolution-safe (transactional row lock).",
-      "Pressure-band rule: still callable at barrier/critical (read_only classification) because closing outstanding work is a sensible pre-compact wrap-up — it actually reduces resume-packet noise.",
+      "Bounded: resolving one item never affects siblings - chunks with multiple outstanding items remain partially open. The chunk's body_md is re-rendered and re-embedded so future SessionMemorySearch reflects the resolved state. Concurrent-resolution-safe (transactional row lock).",
+      "Pressure-band rule: still callable at barrier/critical (read_only classification) because closing outstanding work is a sensible pre-compact wrap-up - it actually reduces resume-packet noise.",
       "It returns one confirmation sentence naming the resolved item and its chunk theme, not a result object. Two variants say the item WAS resolved but its chunk could not be re-embedded, so the durable write stands while future semantic recall still reflects the old text - read those as a partial success, not a failure.",
     ].join(" "),
     parameters: {
@@ -85,7 +85,7 @@ export const SESSION_MEMORY_TOOLS: readonly ToolDef[] = [
         resolution_note: {
           type: "string",
           description:
-            "Short note (≤500 chars) explaining how the item was resolved. Write it in English — the note is persisted and re-embedded into the chunk body for future recall.",
+            "Short note (≤500 chars) explaining how the item was resolved. Write it in English - the note is persisted and re-embedded into the chunk body for future recall.",
         },
       },
       required: ["memory_id", "outstanding_item_id", "resolution_note"],

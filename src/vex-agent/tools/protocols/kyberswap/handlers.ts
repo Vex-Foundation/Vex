@@ -1,5 +1,5 @@
 /**
- * KyberSwap protocol handlers — aggregator.
+ * KyberSwap protocol handlers - aggregator.
  *
  * One module: swap (chains/tokens/swap). Limit-order + zap handlers were
  * deleted (Agent Scan plan §4.2/§1.4-5).

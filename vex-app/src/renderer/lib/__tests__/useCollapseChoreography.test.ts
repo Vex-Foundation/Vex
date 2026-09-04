@@ -54,6 +54,41 @@ describe("useCollapseChoreography", () => {
     expect(result.current.frozenWidth).toBe(342);
   });
 
+  it("reduced motion settles in the same commit instead of waiting for a fade that is not playing", async () => {
+    // base.css clamps the 150ms fade to 0.01ms under this preference, so the
+    // timer would be a wait for nothing: the rail took 150ms to appear behind
+    // an already-finished fade. The instant path is what "degrades to an
+    // instant state change" means for a JS-owned half of a CSS pair.
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn((query: string) => ({
+        matches: query.includes("prefers-reduced-motion"),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    );
+    try {
+      // `lib/motion/reduced-motion.ts` keeps ONE MediaQueryList for the window,
+      // so the stub above only reaches a module graph that has not read the
+      // preference yet - hence the reset and the dynamic import.
+      vi.resetModules();
+      const { useCollapseChoreography: hook } = await import(
+        "../useCollapseChoreography.js"
+      );
+      const { result, rerender } = renderHook(
+        ({ collapsed }) => hook(collapsed, 280),
+        { initialProps: { collapsed: false } },
+      );
+
+      rerender({ collapsed: true });
+      // No timer advance: the rail is already there, and nothing is fading.
+      expect(result.current).toMatchObject({ wide: false, fading: false });
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("expanding remounts wide content immediately and disarms the rail entry", () => {
     const { result, rerender } = renderHook(
       ({ collapsed }) => useCollapseChoreography(collapsed, 280),

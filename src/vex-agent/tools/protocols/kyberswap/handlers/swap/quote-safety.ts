@@ -2,9 +2,9 @@
  * Read-only token safety surfacing for kyberswap.swap.quote (Stage 6b).
  *
  * The quote is informational: it surfaces honeypot / fee-on-transfer risk so
- * the agent can see EVM token danger at quote time. It NEVER aborts — gating
+ * the agent can see EVM token danger at quote time. It NEVER aborts - gating
  * stays in kyberswap.swap.execute. Each leg is one of:
- *  - { native: true }                   native sentinel — no honeypot concept
+ *  - { native: true }                   native sentinel - no honeypot concept
  *  - { isHoneypot, isFOT, tax }          live token API audit
  *  - { checkFailed: true, reason }       fail-soft: bounded reason class only
  */
@@ -40,7 +40,7 @@ export interface QuoteSafety {
  *
  * Defensive: treats the value as `unknown`, inspects only a VexError `code`, a
  * numeric `status`, and lowercased keyword matches on a string `message`. The
- * raw message text is NEVER returned or logged — only one of the four bounded
+ * raw message text is NEVER returned or logged - only one of the four bounded
  * literals leaves this function.
  */
 export function classifySafetyCheckFailure(err: unknown): SafetyCheckFailureReason {
@@ -69,7 +69,7 @@ export function classifySafetyCheckFailure(err: unknown): SafetyCheckFailureReas
  *
  * Native tokens have no honeypot concept and are marked, not checked.
  * Any failure of the (untrusted, network) honeypot check is swallowed into a
- * bounded `{ checkFailed: true, reason }` marker — raw provider/HTTP text
+ * bounded `{ checkFailed: true, reason }` marker - raw provider/HTTP text
  * (URLs, HTML, keys, status bodies) is never propagated into the log payload
  * or the quote output.
  */

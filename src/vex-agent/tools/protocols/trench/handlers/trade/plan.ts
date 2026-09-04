@@ -1,7 +1,7 @@
 /**
  * Trench Express execute planning: turn a resolved buy/sell into the ordered
- * broadcast legs + their pre-broadcast `agent_activity` event rows, and — for
- * the payable BUY — run the native-value authorization gate as the last thing
+ * broadcast legs + their pre-broadcast `agent_activity` event rows, and - for
+ * the payable BUY - run the native-value authorization gate as the last thing
  * before the legs are handed to the staged broadcaster.
  *
  * BUY: one payable `buy` leg (ETH principal in `tx.value`).
@@ -123,10 +123,10 @@ export function buildTradePlan(input: BuildTradePlanInput): TradeLegPlan[] {
           tokenOut: curveTokenLeg(input, { amountHuman: formatUnits(input.expectedOutRaw, input.tokenDecimals), amountRaw: input.expectedOutRaw }),
           // The BUY input is `msg.value`, NOT an on-chain Transfer from the
           // wallet, so the repair sweep cannot reconstruct the input leg from
-          // logs alone — persist the planned raw input for the settlement decoder.
+          // logs alone - persist the planned raw input for the settlement decoder.
           routeProvenance: {
             plannedInputRaw: input.amountInRaw.toString(), side: input.side,
-            // R1 Step 5a — the decoder identity and the Diamond this call is
+            // R1 Step 5a - the decoder identity and the Diamond this call is
             // sent to, persisted at intent time. A BUY's input IS `msg.value`,
             // so the declared value is recorded; a SELL's is zero and recording
             // it would tell a decoder nothing it does not already know.
@@ -142,7 +142,7 @@ export function buildTradePlan(input: BuildTradePlanInput): TradeLegPlan[] {
     ];
   }
 
-  // SELL — approve then sell.
+  // SELL - approve then sell.
   const approveData = buildApproveCalldata(DIAMOND, input.amountInRaw);
   const sellData = buildSellCalldata(input.token, input.amountInRaw, input.minOut, input.deadline);
   return [
@@ -165,7 +165,7 @@ export function buildTradePlan(input: BuildTradePlanInput): TradeLegPlan[] {
         // Sold cross-check amount (proves the event's ETH-leg positional mapping).
         routeProvenance: {
           plannedInputRaw: input.amountInRaw.toString(), side: input.side,
-          // R1 Step 5a — same decoder and Diamond; no declared value, because a
+          // R1 Step 5a - same decoder and Diamond; no declared value, because a
           // SELL sends none.
           ...settlementDecodeProvenance({
             decoder: "trench_trade",

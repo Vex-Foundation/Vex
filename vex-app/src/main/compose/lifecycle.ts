@@ -32,11 +32,7 @@ import {
   inspectDockerEndpointPolicy,
   isPortFree,
 } from "./preflight.js";
-import {
-  HEALTH_TIMEOUT_MS,
-  isOurProjectActive,
-  waitForHealth,
-} from "./health.js";
+import { isOurProjectActive, waitForHealth } from "./health.js";
 import {
   clearStaleSecretCache,
   STALE_BIND_MOUNT_RE,
@@ -60,6 +56,7 @@ export type ComposeUpKind =
   | "running"
   | "reused"
   | "port_collision"
+  | "foreign_listener"
   | "unhealthy"
   | "failed";
 
@@ -254,12 +251,31 @@ export async function composeUp(
         }
       }
 
-      const dbHealthy = await waitForHealth({
+      const dbHealth = await waitForHealth({
         pgPort,
         pgPasswordPath: rendered.pgPasswordComposePath,
+        installId: rendered.installId,
         ...(signal !== undefined ? { signal } : {}),
         ...(onLogLine !== undefined ? { onLogLine } : {}),
       });
+      if (dbHealth.verdict === "foreign_listener") {
+        // Terminal. Never probe further and never let this stack be
+        // reported reusable: the app would migrate and write into
+        // another install's database.
+        return {
+          kind: "foreign_listener",
+          composeOutPath: rendered.outPath,
+          installId: rendered.installId,
+          message: dbHealth.message,
+          pgPort,
+          embedPort: rendered.embedPort,
+          pgPasswordPath: rendered.pgPasswordComposePath,
+          embeddingsReadiness: null,
+          previousInstallHoldingPorts: false,
+          conflictPorts: [],
+        };
+      }
+      const dbHealthy = dbHealth.verdict === "usable";
       const embedReady = dbHealthy
         ? await waitForEmbeddingsRuntimeReady({
             embedPort: rendered.embedPort,
@@ -275,8 +291,7 @@ export async function composeUp(
         message: reusable
           ? `Reusing existing vex-${rendered.installId} compose project (pg :${pgPort}, embeddings :${rendered.embedPort}).`
           : `Existing vex stack found but a service is not yet healthy. ${
-              embedReady?.message ??
-              "Postgres did not accept a connection in time."
+              embedReady?.message ?? dbHealth.message
             }`,
         pgPort,
         embedPort: rendered.embedPort,
@@ -495,20 +510,35 @@ export async function composeUp(
   }
 
   onLogLine?.("stdout", "Waiting for Postgres to accept connections…");
-  const dbHealthy = await waitForHealth({
+  const dbHealth = await waitForHealth({
     pgPort,
     pgPasswordPath: renderedAfterRecovery.pgPasswordComposePath,
+    installId: renderedAfterRecovery.installId,
     ...(signal !== undefined ? { signal } : {}),
     ...(onLogLine !== undefined ? { onLogLine } : {}),
   });
-  if (!dbHealthy) {
+  if (dbHealth.verdict === "foreign_listener") {
+    // Terminal, and never `running`: the stack we started is not what
+    // answers on the port the app would connect to.
+    return {
+      kind: "foreign_listener",
+      composeOutPath: renderedAfterRecovery.outPath,
+      installId: renderedAfterRecovery.installId,
+      message: dbHealth.message,
+      pgPort,
+      embedPort: renderedAfterRecovery.embedPort,
+      pgPasswordPath: renderedAfterRecovery.pgPasswordComposePath,
+      embeddingsReadiness: null,
+      previousInstallHoldingPorts: false,
+      conflictPorts: [],
+    };
+  }
+  if (dbHealth.verdict !== "usable") {
     return {
       kind: "unhealthy",
       composeOutPath: renderedAfterRecovery.outPath,
       installId: renderedAfterRecovery.installId,
-      message: `Stack started but Postgres did not accept a TCP connection within ${
-        HEALTH_TIMEOUT_MS / 1000
-      }s.`,
+      message: dbHealth.message,
       pgPort,
       embedPort: renderedAfterRecovery.embedPort,
       pgPasswordPath: renderedAfterRecovery.pgPasswordComposePath,

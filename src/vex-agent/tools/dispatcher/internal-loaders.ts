@@ -2,11 +2,11 @@
 //
 // Table-driven lazy loader map (PR1 replacement for the 25-case switch).
 // Each entry imports exactly one internal-tool module and returns the
-// named handler. Lazy imports keep startup cost low — a handler module is
+// named handler. Lazy imports keep startup cost low - a handler module is
 // only parsed when its tool is actually dispatched.
 //
 // Adding a new internal tool: add a row here. `registry-completeness.test.ts`
-// asserts every ToolDef with `kind: "internal"` has a loader entry — EXCEPT
+// asserts every ToolDef with `kind: "internal"` has a loader entry - EXCEPT
 // the direct-dispatch tools that `routeToolCall` handles via a dedicated
 // branch above: the `ToolSearch` meta-tool, the internal `execute_tool` envelope and the
 // MUTATING protocol-aliases (`MUTATING_PROTOCOL_ALIAS_ROUTERS`, e.g. `SwapExecute`).
@@ -39,41 +39,41 @@ export const INTERNAL_TOOL_LOADERS: Readonly<Record<string, InternalHandlerLoade
   lighter_core_onboarding_status: async () =>
     (await import("../internal/lighter-onboarding.js")).handleLighterCoreOnboardingStatus,
 
-  // Khalani direct read alias (the other three were removed 2026-07-30 — their
+  // Khalani direct read alias (the other three were removed 2026-07-30 - their
   // protocol tools remain reachable through ToolSearch)
   TokenFind: async () => (await import("../internal/khalani.js")).handleTokenFind,
 
-  // Deterministic money math — no provider, no wallet, always available
+  // Deterministic money math - no provider, no wallet, always available
   UnitsConvert: async () => (await import("../internal/units-convert.js")).handleUnitsConvert,
 
-  // Action-named read-only aliases (Stage 8a) — quote/preview/status routers
+  // Action-named read-only aliases (Stage 8a) - quote/preview/status routers
   SwapQuote: async () => (await import("../internal/action-aliases.js")).handleSwapQuote,
-  // Uniswap venue quote — always available (owner decision D4).
+  // Uniswap venue quote - always available (owner decision D4).
   SwapQuoteUniswap: async () => (await import("../internal/action-aliases.js")).handleSwapQuoteUniswap,
   TokenCheck: async () => (await import("../internal/action-aliases.js")).handleTokenCheck,
   BridgeStatus: async () => (await import("../internal/action-aliases.js")).handleBridgeStatus,
   BridgeQuote: async () => (await import("../internal/action-aliases.js")).handleBridgeQuote,
-  // Relay venue bridge preview — always available (owner decision D4).
+  // Relay venue bridge preview - always available (owner decision D4).
   BridgeQuoteRelay: async () => (await import("../internal/action-aliases.js")).handleBridgeQuoteRelay,
 
   // Mission
   MissionDraftUpdate: async () => (await import("../internal/mission.js")).handleMissionDraftUpdate,
   MissionStop: async () => (await import("../internal/mission.js")).handleMissionStop,
 
-  // Autonomy primitives — mission wake
+  // Autonomy primitives - mission wake
   LoopDefer: async () => (await import("../internal/loop-defer.js")).handleLoopDefer,
 
-  // Per-session memory layer — agent-driven recall + outstanding-item closing
+  // Per-session memory layer - agent-driven recall + outstanding-item closing
   SessionMemorySearch: async () =>
     (await import("../internal/session-memory/search.js")).handleSessionMemorySearch,
   SessionMemoryResolve: async () =>
     (await import("../internal/session-memory/resolve-item.js")).handleSessionMemoryResolveItem,
 
-  // Long-term memory (v2) — agent-facing candidate write-door (stages, not writes)
+  // Long-term memory (v2) - agent-facing candidate write-door (stages, not writes)
   MemorySuggest: async () =>
     (await import("../internal/long-memory/suggest.js")).handleLongMemorySuggest,
 
-  // Long-term memory (v2) — cross-session recall (S3)
+  // Long-term memory (v2) - cross-session recall (S3)
   MemorySearch: async () =>
     (await import("../internal/long-memory/search.js")).handleLongMemorySearch,
   MemoryGet: async () =>
@@ -81,16 +81,16 @@ export const INTERNAL_TOOL_LOADERS: Readonly<Record<string, InternalHandlerLoade
   MemoryHistory: async () =>
     (await import("../internal/long-memory/history.js")).handleLongMemoryHistory,
 
-  // Compaction — queues the prepared cutover; the runner performs it
+  // Compaction - queues the prepared cutover; the runner performs it
   CompactApply: async () => (await import("../internal/compact/apply.js")).handleCompactApply,
 
-  // Plan mode — author/refine the session's action plan (gated by requiresPlanMode)
+  // Plan mode - author/refine the session's action plan (gated by requiresPlanMode)
   PlanWrite: async () => (await import("../internal/plan/write.js")).handlePlanWrite,
 
   // Board presentation - terminal tool, staged and consumed by the turn loop
   BoardCompose: async () => (await import("../internal/board/index.js")).handleBoardCompose,
 
-  // EVM on-chain forensics — receipts + ERC-721 mint detection
+  // EVM on-chain forensics - receipts + ERC-721 mint detection
   ChainRead: async () => (await import("../internal/chain-read.js")).handleChainRead,
 
   // Wallet

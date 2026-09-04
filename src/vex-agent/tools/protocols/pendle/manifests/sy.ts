@@ -1,13 +1,13 @@
 /**
  * Pendle SY wrap / unwrap manifests (R5d card D3).
  *
- * SY ("Standardised Yield") is Pendle's wrapper around a yield-bearing asset —
+ * SY ("Standardised Yield") is Pendle's wrapper around a yield-bearing asset -
  * the token PT and YT are actually minted from, and the token the `pendle.pt.redeem`
  * Router fallback pays out. `pendle.sy.redeem` is therefore THE recovery path for
  * that fallback: the two descriptions name each other on purpose.
  *
  * Both tools take the corpus rank-8 param set (chain, sy, the direction's token
- * leg — `tokenIn` on the mint, `tokenOut` on the redeem — amountIn,
+ * leg - `tokenIn` on the mint, `tokenOut` on the redeem - amountIn,
  * slippageBps, dryRun) and use the DRY-RUN-IN-TOOL prequote pattern: one toolId
  * both quotes and executes. See `../handlers/sy-prequote.ts`.
  */
@@ -20,7 +20,7 @@ const CHAIN_PARAM = {
   key: "chain",
   type: "string" as const,
   required: true,
-  description: "Chain slug or id — one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc').",
+  description: "Chain slug or id - one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc').",
 };
 
 const SY_PARAM = {
@@ -63,7 +63,7 @@ export const PENDLE_SY_TOOLS: readonly ProtocolToolManifest[] = [
         key: "tokenIn",
         type: "string",
         required: true,
-        description: "The payment token CONTRACT ADDRESS to wrap — the INPUT leg (ERC-20; pass the chain's wrapped-native token for native exposure).",
+        description: "The payment token CONTRACT ADDRESS to wrap - the INPUT leg (ERC-20; pass the chain's wrapped-native token for native exposure).",
       },
       { key: "amountIn", type: "string", required: true, description: "Amount of the payment token in human-readable units." },
       SLIPPAGE_PARAM,
@@ -95,7 +95,7 @@ export const PENDLE_SY_TOOLS: readonly ProtocolToolManifest[] = [
         key: "tokenOut",
         type: "string",
         required: true,
-        description: "The token CONTRACT ADDRESS to receive — the OUTPUT leg (ERC-20; pass the chain's wrapped-native token for native exposure).",
+        description: "The token CONTRACT ADDRESS to receive - the OUTPUT leg (ERC-20; pass the chain's wrapped-native token for native exposure).",
       },
       { key: "amountIn", type: "string", required: true, description: "Amount of SY to unwrap, in human-readable units." },
       SLIPPAGE_PARAM,

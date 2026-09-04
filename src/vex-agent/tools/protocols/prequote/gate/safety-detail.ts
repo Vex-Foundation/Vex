@@ -28,7 +28,7 @@ export function termLockFromSafetyDetail(
 /**
  * Extract the Jupiter fee-bearing disclosure (W5 design §6 R4) from a matched
  * swap prequote's bounded `safetyDetail`, for the approval preview. Re-parsed
- * with the SAME Zod schema the recorder validated against — the detail is
+ * with the SAME Zod schema the recorder validated against - the detail is
  * `Record<string, unknown>` (round-trips through the DB as JSONB), so it is
  * treated as untrusted here too. A non-Jupiter detail naturally yields
  * undefined.

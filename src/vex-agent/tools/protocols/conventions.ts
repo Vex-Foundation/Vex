@@ -1,5 +1,5 @@
 /**
- * THE PARAM CONVENTION — one vocabulary for every agent-facing tool surface.
+ * THE PARAM CONVENTION - one vocabulary for every agent-facing tool surface.
  *
  * This module is the single home for the cross-cutting naming/format rules the
  * tool audit (`agents_dm/tool-audit-2026-08/SPEC.md` §1) settled on: which
@@ -20,7 +20,7 @@
  * Deliberate non-goals: no runtime validation lives here (the boundary owner is
  * `runtime/params.ts`), and no provider translation lives here (a provider that
  * needs a numeric id, an UPPERCASE enum, or a slug in a URL path converts inside
- * its own adapter — the manifest always advertises the canonical spelling).
+ * its own adapter - the manifest always advertises the canonical spelling).
  */
 
 import { getKyberChains } from "@tools/kyberswap/chains.js";
@@ -43,7 +43,7 @@ const SOLANA_FAMILY_SLUG = "solana";
  * Derived, never hand-listed: the KyberSwap registry (`src/tools/kyberswap/chains.ts`)
  * is the broadest slug table in the tree and already carries every chain the
  * local registry covers (Robinhood 4663). A chain that exists ONLY in
- * `src/tools/evm-chains/registry.ts` would therefore be missing here — the
+ * `src/tools/evm-chains/registry.ts` would therefore be missing here - the
  * manifest-lint suite asserts that coverage so the gap fails a test instead of
  * silently narrowing what an agent may say.
  */
@@ -59,7 +59,7 @@ export const CANONICAL_CHAIN_SLUGS: ReadonlySet<string> = new Set<string>([
 
 /**
  * Every param key the convention permits, with the reason it exists. Adding a
- * key is a deliberate edit HERE, not an accident in a manifest — the linter
+ * key is a deliberate edit HERE, not an accident in a manifest - the linter
  * reports any other key against the tool that introduced it.
  */
 export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
@@ -67,7 +67,7 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   ["fromChain", "bridge source chain; pairs with fromToken"],
   ["toChain", "bridge destination chain; pairs with toToken"],
   ["chainIds", "a LIST of chains (comma-separated string, or string[] where declared)"],
-  ["walletFamily", "wallet FAMILY (eip155|solana|all) — never a chain"],
+  ["walletFamily", "wallet FAMILY (eip155|solana|all) - never a chain"],
   ["tokenIn", "swap input token: EVM contract address or ETH/native; Solana symbol or mint"],
   ["tokenOut", "swap output token, same grammar as tokenIn"],
   ["fromToken", "bridge source token; pairs with fromChain"],
@@ -618,13 +618,13 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
  * say what to write instead costs the agent another call.
  */
 export const BANNED_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
-  ["amount", "use `amountIn` (human decimals) or `amountRaw` (base units) — the bare key meant both, 10^6 apart"],
+  ["amount", "use `amountIn` (human decimals) or `amountRaw` (base units) - the bare key meant both, 10^6 apart"],
   ["inputToken", "use `tokenIn`"],
   ["outputToken", "use `tokenOut`"],
-  ["chainId", "use `chain` — the key said Id while the value was a slug"],
+  ["chainId", "use `chain` - the key said Id while the value was a slug"],
   ["chains", "use `chainIds`"],
-  ["address", "use `tokenAddress` (a contract) or `walletAddress` (an account) — the bare key meant both"],
-  ["network", "use `walletFamily` — it selects a wallet family, not a chain"],
+  ["address", "use `tokenAddress` (a contract) or `walletAddress` (an account) - the bare key meant both"],
+  ["network", "use `walletFamily` - it selects a wallet family, not a chain"],
   ["wallet", "use `walletFamily`"],
   ["search", "use `query` - one free-text key across the fleet (owner decision D1)"],
 ]);
@@ -632,9 +632,9 @@ export const BANNED_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
 /**
  * Param keys that carry a chain VALUE and therefore need the chain sentence.
  *
- * Also the allowlist for the two normalizations `runtime/params.ts` performs —
+ * Also the allowlist for the two normalizations `runtime/params.ts` performs -
  * a JSON number becomes its decimal string, and a declared `enum` matches
- * case-insensitively — because a chain value is the one thing in this
+ * case-insensitively - because a chain value is the one thing in this
  * vocabulary whose spelling carries no meaning of its own.
  */
 export const CHAIN_VALUE_PARAM_KEYS: readonly string[] = ["chain", "fromChain", "toChain"];
@@ -655,11 +655,125 @@ export const CANONICAL_CHAIN_SENTENCE =
  * to get them rather than guessing 18.
  */
 export const CANONICAL_RAW_AMOUNT_SENTENCE =
-  "Raw base units as an integer string (not human decimals) — read the token's decimals from `TokenFind` first.";
+  "Raw base units as an integer string (not human decimals) - read the token's decimals from `TokenFind` first.";
 
 /** The one sentence a HUMAN-amount param ends with. */
 export const CANONICAL_HUMAN_AMOUNT_SENTENCE =
-  "In HUMAN decimal units (e.g. \"1.5\") — not wei, lamports, or any other base unit.";
+  "In HUMAN decimal units (e.g. \"1.5\") - not wei, lamports, or any other base unit.";
+
+/**
+ * THE APPROVAL SENTENCE every fund-moving tool description carries.
+ *
+ * Hoisted because the copies that existed described the IN-APP loop ("it comes
+ * back asking for approval") while the Studio MCP surface does the opposite:
+ * `runStudioCall` enqueues the intent and BLOCKS the call on the approval
+ * broker, then hands back the settled result whole
+ * (`vex-app/src/main/studio/approval-service.ts`). An agent told the call
+ * "comes back" reads a blocked call as a hang and a settled result as a
+ * proposal, and the two mistakes it then makes - calling again, and retrying an
+ * indeterminate outcome - are the two this sentence exists to prevent.
+ *
+ * The outcome words are the broker's own, so the vocabulary the agent reads
+ * here is the vocabulary the wire uses. "executed" was NOT one of them, which is
+ * the drift the pass-2 agent found (`transcripts/p1.txt:23-25`): the broker's
+ * settled arms are `completed`, `declined`, `expired`, `refused`,
+ * `dispatch_failed`, `indeterminate` and `not_queued` (`mcp/outcome.ts`), and a
+ * COMPLETED call carries the tool's OWN status word - `confirmed` or
+ * `confirmed_unrecorded` on every venue that settles one. The list below is the
+ * rewrite that transcript proposed, so this sentence and the instructions block
+ * (`studio/instructions/**`) name one vocabulary.
+ *
+ * The card clause answers the second measured confusion: two sessions read their
+ * own harness rule ("confirm before an irreversible action") against a card they
+ * had already been told about, and hesitated (pass 2, A-8). The card IS the
+ * confirmation, and saying it here says it on every tool that raises one.
+ */
+export const CANONICAL_MCP_APPROVAL_SENTENCE =
+  "APPROVAL: over MCP in a restricted project the call WAITS until the user answers the card in Vex, "
+  + "and that card IS the confirmation - do not ask for another in chat. It returns the settled "
+  + "outcome: executed (reported as this tool's own status, confirmed or confirmed_unrecorded), "
+  + "declined, expired, refused, dispatch_failed or indeterminate; never call it twice while you wait "
+  + "and never retry an indeterminate one. In a full project it executes directly under the user's "
+  + "standing permission.";
+
+/**
+ * WHO BROADCASTS, on a prepare -> confirm pair. The measured defect I-1.
+ *
+ * `WalletSendPrepare` over MCP returned "Transfer prepared; Vex will confirm it
+ * automatically." and nothing followed: that automatic follow-up is the IN-APP
+ * turn loop's trusted handoff (`engine/core/turn-loop-tool-batch/
+ * prepared-follow-up.ts`), and the MCP lane has no turn loop to run it. An agent
+ * that believes the sentence waits forever; the only path that works is calling
+ * the confirm tool itself, which is where the approval card is raised (pass 2,
+ * `transcripts/i12.txt`, and the same question asked in `p2.txt:11` and
+ * `p3.txt:89`).
+ *
+ * All four pairs (send, wrap, generic EVM, generic Solana) state the SAME rule,
+ * because an agent that learns it on one pair must not have to re-derive it on
+ * the next. Only the send pair has an in-app auto-dispatch at all, and its own
+ * prepare RESULT says which lane ran it, so no description promises a follow-up
+ * the reader cannot observe.
+ */
+export function canonicalPrepareHandoffSentence(confirmToolName: string): string {
+  return (
+    "WHO BROADCASTS: preparing sends nothing and raises no card. Only "
+    + `\`${confirmToolName}\`, run with this intentId, moves funds, and THAT call raises the card. `
+    + "Over MCP nothing dispatches it for you: you call it yourself before the intent expires."
+  );
+}
+
+/** The confirm half of {@link canonicalPrepareHandoffSentence}. */
+export const CANONICAL_CONFIRM_HANDOFF_SENTENCE =
+  "WHO CALLS THIS: you do, with the intentId prepare returned - over MCP Vex dispatches nothing on "
+  + "your behalf.";
+
+/**
+ * THE BRIDGE-DESTINATION SENTENCE, shared by all four bridge tools (the Khalani
+ * and Relay quote and execute manifests) as the `rejectedParams` answer for
+ * `recipient`.
+ *
+ * A bridge destination is a fund destination in exactly the sense the refund
+ * destination is (`@tools/khalani/request.js`), and rule 90 is explicit: a
+ * value that can redirect funds never originates from model input. Both wallet
+ * references agree - MetaMask's bridge controller quotes for the SELECTED
+ * account (`bridge-controller.ts`, `#getMultichainSelectedAccount`) and Rabby's
+ * bridge flow has no recipient input at all (`Bridge/hooks/context.tsx` reads
+ * `state.account.currentAccount.address`) - so the capability is REMOVED rather
+ * than disclosed.
+ *
+ * It lives in `rejectedParams`, not in `params`: the untrusted boundary
+ * (`runtime/params.ts`) rejects an undeclared key BEFORE the handler and BEFORE
+ * the prequote gate, so this is the only place the explanation is read by the
+ * agent that tried it. The handlers reject the key again, by name and WITH the
+ * resolved destination address, for any path that reaches them.
+ *
+ * The remedy clause is a separate constant because BOTH texts end with it: the
+ * refusal an agent reads must always name the tool that CAN send somewhere
+ * else, or the agent's next move is to look for another way to set the
+ * destination.
+ */
+const BRIDGE_RECIPIENT_REMEDY =
+  "To move funds elsewhere, bridge to your wallet and then send with WalletSendPrepare, "
+  + "which the user approves.";
+
+export const BRIDGE_DERIVED_RECIPIENT_SENTENCE =
+  "A bridge always delivers to the wallet selected for this project on the destination chain, so the "
+  + "destination is derived and never taken from tool input. "
+  + BRIDGE_RECIPIENT_REMEDY;
+
+/**
+ * The bridge handlers' own refusal for a supplied `recipient`, naming the
+ * parameter AND the address the bridge will actually deliver to.
+ *
+ * It carries the SAME remedy clause the manifest sentence ends with, so the
+ * boundary answer and the handler answer cannot drift. Only the handler can
+ * state the address, because only the handler has resolved it; that is why both
+ * texts exist rather than one.
+ */
+export function bridgeRecipientRefusal(toolId: string, destinationAddress: string): string {
+  return `${toolId} failed: recipient is not a parameter: a bridge delivers to the wallet selected for `
+    + `this project on the destination chain (${destinationAddress}). ${BRIDGE_RECIPIENT_REMEDY}`;
+}
 
 /**
  * The shared slippage paragraph, hoisted from six near-verbatim copies.

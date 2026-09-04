@@ -1,8 +1,8 @@
 /**
- * Pendle protocol manifest — fixed-yield PT + variable YT + PY mint/redeem + LP
+ * Pendle protocol manifest - fixed-yield PT + variable YT + PY mint/redeem + LP
  * single-token add/remove across 11 chains.
  *
- * Read: market screening and position valuation, plus the market-data surface —
+ * Read: market screening and position valuation, plus the market-data surface -
  * one market's detail and accepted tokens, its APY/TVL history and price
  * candles, its limit-order depth, the wallet's merkle reward accruals, and asset
  * price marks. Every one of those is read-only and none of them signs anything.
@@ -21,7 +21,7 @@
  * The SY, dual-LP and term-mobility families carry their quote INSIDE the tool:
  * one toolId both quotes and executes, selected by a `dryRun` param, rather than
  * the separate `*.quote` manifest the older families use. It is still the same
- * prequote gate — the dry run records the authorization the broadcast requires.
+ * prequote gate - the dry run records the authorization the broadcast requires.
  */
 
 import type { ProtocolToolManifest } from "../types.js";

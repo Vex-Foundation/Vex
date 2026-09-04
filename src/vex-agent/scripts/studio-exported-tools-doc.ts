@@ -21,6 +21,15 @@
  * document carries the exported CONTRACT - name, title, lane, annotations,
  * always-load and the required environment variable - plus each description's
  * byte length, which is the number the O23 budget lint is about.
+ *
+ * THE SAME ARGUMENT DECIDES THE TWO CONTRACT COLUMNS. `returns` and `vexFee`
+ * are authored TEXT (a result shape is up to 1.4 KB, a fee sentence several
+ * hundred bytes), and reproducing them for 168 tools would roughly double this
+ * file with prose that already has one home - the same second-stale-source
+ * mistake the descriptions are kept out for. What the columns carry instead is
+ * whether the fact EXISTS, and for a fee the rate itself, because an unauthored
+ * money fact is exactly what a reviewer needs to see in a diff. The text is
+ * read from `vex_ToolDescribe`, whose result no client truncates.
  */
 
 import { readFileSync, realpathSync, writeFileSync } from "node:fs";
@@ -28,6 +37,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { buildStudioInventory } from "../mcp/inventory/index.js";
+import { authoredContractFields, resolveVexFee } from "../mcp/tool-describe-export.js";
 import type { StudioTool } from "../mcp/inventory/types.js";
 
 const DOC_PATH = join(
@@ -41,6 +51,22 @@ function cell(value: string): string {
   return value.replace(/\|/g, "\\|");
 }
 
+/**
+ * The fee cell: the RATE when one is charged, `none` for an authored free path,
+ * `none (read)` for the read lane's derived answer, and `-` for a tool that has
+ * authored nothing and can spend. The four are deliberately distinguishable,
+ * because `-`, `none` and a derived `none` are different facts about money.
+ *
+ * Read through `resolveVexFee`, the same function `vex_ToolDescribe` answers
+ * from, so this table cannot drift from what the tool tells an agent.
+ */
+function feeCell(tool: StudioTool): string {
+  const { fee, derived } = resolveVexFee(tool);
+  if (fee === undefined) return "-";
+  if ("none" in fee) return derived ? "none (read)" : "none";
+  return `${String(fee.bps)} bps`;
+}
+
 function row(tool: StudioTool): string {
   return [
     "",
@@ -52,6 +78,8 @@ function row(tool: StudioTool): string {
     tool.alwaysLoad ? "yes" : "no",
     tool.requiresEnv ?? "-",
     String(Buffer.byteLength(tool.description, "utf8")),
+    authoredContractFields(tool).returns === undefined ? "-" : "yes",
+    feeCell(tool),
     "",
   ].join(" | ").trim();
 }
@@ -89,7 +117,22 @@ export function renderExportedToolsDoc(): string {
     "",
     "`description bytes` is the length of the WHOLE description the tool exports.",
     "Nothing is cut at the source; the budget lint asserts the risk class and the",
-    "preconditions appear inside the first 2000 bytes.",
+    "preconditions appear inside the first 2000 bytes, and an ALWAYS-LOADED",
+    "description additionally fits whole inside the 2048 CHARACTERS a client",
+    "shows before truncating (measured 2026-09-03;",
+    "`ALWAYS_LOADED_DESCRIPTION_MAX_CHARACTERS`). `vex_ToolDescribe` returns any",
+    "tool's whole contract in a RESULT, which no client truncates.",
+    "",
+    "`returns` says whether the tool authored a machine-readable result shape,",
+    "and `vex fee` is the fee `vex_ToolDescribe` answers with: the RATE when Vex",
+    "charges, `none` for a path authored as free, `none (read)` for a read-only",
+    "tool, whose free answer is DERIVED from its action classification rather",
+    "than authored, and `-` when nothing is authored on a tool that can spend.",
+    "Those last two are DIFFERENT FACTS and are never collapsed: on a spending",
+    "tool `vex_ToolDescribe` reports an unauthored fee as unknown, never as",
+    "free. Both texts live on the tool",
+    "(`ToolDef` and `ProtocolToolManifest`) and are read whole from",
+    "`vex_ToolDescribe`, not reproduced here.",
     "",
     "## Totals",
     "",
@@ -102,8 +145,8 @@ export function renderExportedToolsDoc(): string {
     "",
     "## Internal tools",
     "",
-    "| name | title | lane | read only | destructive | always load | requires env | description bytes |",
-    "| --- | --- | --- | --- | --- | --- | --- | --- |",
+    "| name | title | lane | read only | destructive | always load | requires env | description bytes | returns | vex fee |",
+    "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ...internal.map(row),
     "",
     "## Protocol tools",
@@ -114,8 +157,8 @@ export function renderExportedToolsDoc(): string {
     lines.push(
       `### ${namespace}`,
       "",
-      "| name | title | lane | read only | destructive | always load | requires env | description bytes |",
-      "| --- | --- | --- | --- | --- | --- | --- | --- |",
+      "| name | title | lane | read only | destructive | always load | requires env | description bytes | returns | vex fee |",
+      "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
       ...protocol.filter((t) => t.namespace === namespace).map(row),
       "",
     );

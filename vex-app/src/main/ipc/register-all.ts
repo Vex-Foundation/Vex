@@ -30,7 +30,9 @@ import { registerLongMemoryHandlers } from "./long-memory.js";
 import { registerMarketHandlers } from "./market.js";
 import { registerLighterTradingHandlers } from "./lighter-trading.js";
 import { registerStudioHandlers } from "./studio.js";
+import { registerStudioBridgeReadinessHandlers } from "./studio-bridge-readiness.js";
 import { registerStudioFilesHandlers } from "./studio-files.js";
+import { registerStudioSearchHandlers } from "./studio-search.js";
 import { registerStudioTerminalHandlers } from "./studio-terminal.js";
 import { registerMemoryHandlers } from "./memory.js";
 import { registerMemoryInspectorHandlers } from "./memory-inspector.js";
@@ -175,6 +177,11 @@ export function registerAllIpcHandlers(): () => Promise<void> {
   // cache; the transitions are published by the MCP host itself and broadcast
   // by the host-status bridge, started in index.ts.
   teardowns.push(...registerStudioHandlers());
+  // B1.6: does this installation have a `vex-mcp` bridge binary at all? A
+  // read-only probe (one `access`, plus the Go pin and `go env GOVERSION` only
+  // on a from-source run whose binary is missing) behind the Studio welcome
+  // screen's diagnostic and its re-check button.
+  teardowns.push(...registerStudioBridgeReadinessHandlers());
   // B2: the Vex Studio terminal CONTROL plane. Main mints terminal ids, holds
   // the lifecycle gate's `terminal` lease per live terminal, enforces the
   // per-project and global bounds, and mints the data-plane MessagePort. The
@@ -185,6 +192,11 @@ export function registerAllIpcHandlers(): () => Promise<void> {
   // watcher however many subscriptions ride it), and enforces the read bound on
   // the open handle. Read-only: there is no write channel on this surface.
   teardowns.push(...registerStudioFilesHandlers());
+  // Vex Studio's GO TO FILE surface. Ranks every file NAME in a project from a
+  // main-side index whose lifetime is one opening of the rail's search, so it
+  // holds no watcher and takes the `fileOperation` lease per query exactly as
+  // a listing does. Read-only, and not even a read of contents.
+  teardowns.push(...registerStudioSearchHandlers());
   // Agent integration stage 7-1: read-only Track-2 compaction status for the
   // runtime bar. The Track-2 executor itself is owned by main and started in
   // `index.ts` (see `setupCompactWorker`), not here. Stage 7-2a extends this
@@ -269,7 +281,7 @@ export function registerAllIpcHandlers(): () => Promise<void> {
   // next one may depend on it having finished.
   globalCleanup.add(async () => {
     for (const t of teardowns) await t();
-  });
+  }, "ipc-handler-teardowns");
 
   return teardownAgentBridges;
 }

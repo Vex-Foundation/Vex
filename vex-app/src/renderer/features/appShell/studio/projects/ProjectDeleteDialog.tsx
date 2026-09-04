@@ -122,11 +122,14 @@ import { Button } from "../../../../components/ui/button.js";
 import {
   Dialog,
   DialogBody,
+  DialogConsequence,
   DialogContent,
   DialogDescription,
   DialogFooter,
+  DialogPinnedSlot,
   DialogHeader,
   DialogTitle,
+  DIALOG_INITIAL_FOCUS,
 } from "../../../../components/ui/dialog.js";
 import { Input } from "../../../../components/ui/input.js";
 import { Label } from "../../../../components/ui/label.js";
@@ -134,8 +137,9 @@ import { IconWarning } from "../../../../components/icons/index.js";
 import { cn } from "../../../../lib/utils.js";
 import { showToast } from "../../../../lib/toast.js";
 import { useDeleteProject } from "../../../../lib/api/projects.js";
-import { peekProjectTerminals } from "../workspace/project-terminals.js";
-import { SubmitError } from "../../SessionCreator/FormSections.js";
+import { peekProjectTerminals } from "../workspace/workspace-handles.js";
+import { useLiveAnnouncer } from "../../../../components/ui/live-region.js";
+import { SubmitError } from "../../../../components/ui/submit-error.js";
 import { ArtifactOutcomeList } from "./RenderOutcomePanel.js";
 import {
   PROJECT_CANCEL,
@@ -143,6 +147,10 @@ import {
   PROJECT_DELETE_CLEANUP_TITLE,
   PROJECT_DELETE_CONFIRM_LABEL,
   PROJECT_DELETE_CONFIRM_MISMATCH,
+  PROJECT_DELETE_CONSEQUENCE_FOLDER_KEPT,
+  PROJECT_DELETE_CONSEQUENCE_FOLDER_TRASHED,
+  PROJECT_DELETE_CONSEQUENCE_UNDO,
+  PROJECT_DELETE_CONSEQUENCE_UNDO_TRASHED,
   PROJECT_DELETE_OUTCOME_SENTENCES,
   PROJECT_DELETE_PENDING,
   PROJECT_DELETE_RETRY,
@@ -157,8 +165,10 @@ import {
   projectDeleteAttemptsLine,
   projectDeleteBody,
   projectDeleteConfirmPrompt,
+  projectDeleteConsequenceWhat,
   projectDeletedToast,
   projectDeleteTerminalsLine,
+  projectFolderLine,
 } from "./projects-copy.js";
 
 /**
@@ -270,6 +280,8 @@ export function ProjectDeleteDialog({
   const [typedName, setTypedName] = useState("");
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<ProjectDeleteResult | null>(null);
+  /** Announced from the confirm path; see `components/ui/live-region.tsx`. */
+  const { announce, region: liveRegion } = useLiveAnnouncer();
   /**
    * The row this dialog SUBMITTED AGAINST, kept once an outcome left the dialog
    * open about a project the list is dropping. Null until that happens, so the
@@ -376,6 +388,10 @@ export function ProjectDeleteDialog({
     });
     if (!result.ok) {
       setSubmitError(result.error.message);
+      // The visible line is no longer a live region (see
+      // `components/ui/submit-error.tsx`), so the refusal is announced from
+      // here, where it is SET.
+      announce("error", result.error.message);
       return;
     }
     setOutcome(result.data);
@@ -409,6 +425,7 @@ export function ProjectDeleteDialog({
       }
     }
   }, [
+    announce,
     deleteMutation,
     nameMatches,
     onClose,
@@ -442,6 +459,35 @@ export function ProjectDeleteDialog({
             {projectDeleteBody(name)}
           </DialogDescription>
         </DialogHeader>
+
+        {/* THE CONSEQUENCE, above the scroll region and above the typed
+          * confirmation, in the WARNING register that Delete keeps to itself
+          * (audit A10). It tracks the checkbox: the folder line and the undo
+          * line both change the moment the action stops being "Vex forgets this
+          * project" and becomes "your files move to the trash". The terminal
+          * COUNT stays below with its own rule - it is omitted, never guessed,
+          * when this window cannot see the project's shells - while the strip's
+          * sentence is true at any count. */}
+        <DialogConsequence data-vex-consent="delete">
+          <span className="font-medium">
+            {projectDeleteConsequenceWhat(name)}
+          </span>
+          {row !== null ? (
+            <span className="truncate font-mono text-[11px] text-ink-secondary">
+              {projectFolderLine(row.displayPath)}
+            </span>
+          ) : null}
+          <span className="text-ink-secondary">
+            {trashChoice
+              ? PROJECT_DELETE_CONSEQUENCE_FOLDER_TRASHED
+              : PROJECT_DELETE_CONSEQUENCE_FOLDER_KEPT}
+          </span>
+          <span className="text-ink-secondary">
+            {trashChoice
+              ? PROJECT_DELETE_CONSEQUENCE_UNDO_TRASHED
+              : PROJECT_DELETE_CONSEQUENCE_UNDO}
+          </span>
+        </DialogConsequence>
 
         <DialogBody className="gap-4">
           {liveTerminalCount !== null ? (
@@ -524,10 +570,22 @@ export function ProjectDeleteDialog({
             ) : null}
           </div>
 
-          <SubmitError submitError={submitError} />
-
           {outcome !== null ? <DeleteOutcome outcome={outcome} /> : null}
         </DialogBody>
+
+        {/* PINNED, not the last child of the scrolling body. A refusal for a
+         * destructive action has to be next to the button the user just
+         * pressed; inside the body it sat below the fold of a dialog tall
+         * enough to scroll, which is how a "delete failed" line ends up never
+         * being painted. Same one-line pattern as the other project dialogs;
+         * announcement stays with the live region below. */}
+        {submitError !== null ? (
+          <DialogPinnedSlot>
+            <SubmitError submitError={submitError} />
+          </DialogPinnedSlot>
+        ) : null}
+
+        {liveRegion}
 
         <DialogFooter className="border-line-2">
           <Button
@@ -535,8 +593,11 @@ export function ProjectDeleteDialog({
             variant="ghost"
             onClick={onClose}
             disabled={pending}
-            // The safer choice takes focus (rule 08).
-            autoFocus
+            // The safer choice takes focus (rule 08). `DialogContent` moves
+            // focus here after `showModal()`; React's `autoFocus` prop cannot,
+            // because React never renders it as the attribute the focusing
+            // steps read.
+            {...DIALOG_INITIAL_FOCUS}
             className="text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary"
           >
             {PROJECT_CANCEL}

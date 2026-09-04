@@ -63,7 +63,11 @@
 import {
   FILES_LIST_PAGE_DEFAULT,
   FILES_LIST_PAGE_MAX,
+  fileNameRefusal,
+  type FileDeleteMode,
+  type FileDeleteResult,
   type FileListing,
+  type FileNode,
   type FilesErrorCode,
   type FilesEvent,
   type FilesOutcome,
@@ -72,12 +76,25 @@ import {
 } from "@shared/schemas/files.js";
 import type { Result } from "@shared/ipc/result.js";
 import {
+  createProjectNode,
+  deleteProjectNode,
   listProjectChildren,
   onProjectFilesEvent,
+  renameProjectNode,
   unwatchProjectFiles,
   watchProjectFiles,
 } from "../../../../lib/api/files.js";
-import { EMPTY_PROJECT, WATCH_FAILED, listingErrorText } from "./explorer-copy.js";
+import {
+  EMPTY_PROJECT,
+  MUTATION_CANCELLED,
+  MUTATION_TRANSPORT_FAILED,
+  WATCH_FAILED,
+  listingErrorText,
+  mutationErrorText,
+  nameRefusalText,
+  nameTakenText,
+} from "./explorer-copy.js";
+import { publishFileRename } from "../workspace/file-rename-signal.js";
 import { SingleFlightQueue } from "./explorer-listing-queue.js";
 import { ExplorerModel } from "./explorer-model.js";
 import {
@@ -228,8 +245,25 @@ export class ExplorerSession {
 
   readonly #reportedDuplicates = new Set<string>();
 
+  /**
+   * THE SELECTION, which in this tree is also the keyboard cursor.
+   *
+   * One row, because the tree is single-select: the ring marks it,
+   * `aria-selected` announces it, F2 renames it, and the header's New file
+   * creates in it. VS Code keeps focus and selection as two traits
+   * (`listWidget.ts:1411` and `:1503`) because its lists are multi-select;
+   * collapsing them is the honest model for a tree that can never hold two.
+   */
   #focusedRowId: string | null = null;
-  #selectedRowId: string | null = null;
+  /**
+   * The row whose FILE the workspace has open, or `null`.
+   *
+   * NOT the selection. An open file stays open while the user arrows somewhere
+   * else, and announcing it as the selected row told an assistive reader about
+   * a row the keyboard was not on (live test 2026-09-03, I-5). It is a
+   * decoration, and the tree marks it with an attribute of its own.
+   */
+  #openedRowId: string | null = null;
 
   /**
    * ONE counter over everything a consumer renders from: the model's rows AND
@@ -427,8 +461,8 @@ export class ExplorerSession {
     return this.#focusedRowId;
   }
 
-  getSelectedRowId(): string | null {
-    return this.#selectedRowId;
+  getOpenedRowId(): string | null {
+    return this.#openedRowId;
   }
 
   setFocusedRowId(rowId: string | null): void {
@@ -437,10 +471,30 @@ export class ExplorerSession {
     this.#emitState();
   }
 
-  setSelectedRowId(rowId: string | null): void {
-    if (this.#selectedRowId === rowId) return;
-    this.#selectedRowId = rowId;
+  setOpenedRowId(rowId: string | null): void {
+    if (this.#openedRowId === rowId) return;
+    this.#openedRowId = rowId;
     this.#emitState();
+  }
+
+  /**
+   * WHERE A NEW ENTRY GOES when it is created from `rowId`.
+   *
+   * VS Code's rule, in the one place both routes read it from
+   * (`fileActions.ts:931-938`): the selected DIRECTORY takes the new entry, a
+   * FILE gives it to its parent, and nothing selected means the project root.
+   * Creating "inside" a file is not a thing, and refusing the action on a file
+   * row would make it feel arbitrary from a row the user has just selected.
+   *
+   * Both callers are covered: the row menu passes the row it was opened on,
+   * and the explorer header passes {@link getFocusedRowId}. A row that is not a
+   * filesystem entry (a notice, a load-more, the name box) answers `null` here
+   * through `parentOf`, which is the root - the same answer as no selection.
+   */
+  createParentId(rowId: string | null): string | null {
+    if (rowId === null) return null;
+    const node = this.model.nodeOf(rowId);
+    return node !== null && node.kind === "directory" ? rowId : this.model.parentOf(rowId);
   }
 
   /* ----------------------- lifecycle ----------------------- */
@@ -493,6 +547,16 @@ export class ExplorerSession {
     this.#generation += 1;
     this.#listingGeneration += 1;
     await this.#teardownSubscription();
+    // THE NAME BOX DOES NOT SURVIVE, even though the rows do.
+    //
+    // Expansion, selection and scroll are the user's state and are worth
+    // keeping; a half-typed name is too, but it CANNOT BE HONOURED - a commit
+    // is fenced by the listing generation this line just bumped, so a box left
+    // open would take a name, spin, and be dropped in silence. Worse, a commit
+    // already in flight leaves the box `submitting` for ever, because the
+    // handler that would clear it returns at that same fence. Closing here is
+    // what makes the fence safe to return from.
+    this.model.closeEdit();
     this.model.markAllStale();
     this.#setState("inactive");
   }
@@ -503,6 +567,9 @@ export class ExplorerSession {
     this.#generation += 1;
     this.#listingGeneration += 1;
     await this.#teardownSubscription();
+    // Same reason as `deactivate`: a box nothing can commit must not be left
+    // holding a spinner that no owner will ever clear.
+    this.model.closeEdit();
     this.#setState("disposed");
     this.#unsubscribeModel();
     this.#stateListeners.clear();
@@ -579,6 +646,276 @@ export class ExplorerSession {
     this.#refresh.reset();
     this.#notifyResync();
     this.#runFullRefresh();
+  }
+
+  /* ----------------------- writes ----------------------- */
+
+  /**
+   * Open the name box for a NEW entry under `parentId`.
+   *
+   * The parent is expanded and LISTED first when it is neither: an edit row
+   * inside an unresolved folder would be the only row in it, which reads as
+   * "this folder is empty" about a folder nobody has looked in. Awaiting the
+   * listing is what makes the box appear beside the names it must not collide
+   * with - which is the whole reason VS Code puts it in the tree rather than in
+   * a dialog.
+   */
+  async beginCreate(parentId: string | null, kind: "file" | "directory"): Promise<boolean> {
+    if (this.#state === "disposed" || this.#state === "inactive") return false;
+    if (parentId !== null) {
+      if (!this.model.isExpanded(parentId)) this.expand(parentId);
+      if (!this.model.isResolved(parentId)) await this.#queue.whenIdle();
+    } else if (!this.model.isResolved(null)) {
+      await this.#queue.whenIdle();
+    }
+    return this.model.openEdit({
+      intent: kind === "directory" ? "createFolder" : "createFile",
+      parentId,
+      targetId: null,
+      initialName: "",
+    });
+  }
+
+  /** Open the name box ON an existing row, seeded with its current name. */
+  beginRename(nodeId: string): boolean {
+    const node = this.model.nodeOf(nodeId);
+    if (node === null) return false;
+    return this.model.openEdit({
+      intent: "rename",
+      parentId: this.model.parentOf(nodeId),
+      targetId: nodeId,
+      initialName: node.name,
+    });
+  }
+
+  /** Abandon the open name box. Nothing was written; nothing is undone. */
+  cancelEdit(): void {
+    this.model.closeEdit();
+  }
+
+  /**
+   * Live validation for the open name box, as the user types.
+   *
+   * Returns the sentence to show, or `null`. The SHARED rule decides the
+   * characters (`fileNameRefusal`, which main enforces again), and the sibling
+   * check is this side's own early message: it reads the rows already listed,
+   * so it is exact for a fully loaded directory and can only be too permissive
+   * for a paged one - never too strict. Main answers `name_exists` from the
+   * disk either way, so a collision this cannot see is still refused.
+   */
+  validateEditName(name: string): string | null {
+    const refusal = fileNameRefusal(name);
+    if (refusal !== null) return name === "" ? null : nameRefusalText(refusal);
+    const edit = this.model.getEdit();
+    if (edit === null) return null;
+    const current = edit.targetId === null ? null : this.model.nodeOf(edit.targetId);
+    if (current !== null && current.name === name) return null;
+    return this.#siblingNamed(edit.parentId, name) ? nameTakenText(name) : null;
+  }
+
+  /**
+   * COMMIT the open name box: create or rename, then reconcile.
+   *
+   * The whole state machine for one row lives here, and each transition is a
+   * decision rather than a convenience:
+   *
+   *  - a name the shared rule refuses never reaches main. The box stays open
+   *    with the reason on it.
+   *  - the box goes `submitting` rather than closing, so the typed name is
+   *    still on screen if main refuses and the user has nothing to retype.
+   *  - a REFUSAL reopens the box with main's sentence. It is the row's own
+   *    state, never a toast: a toast puts the reason somewhere other than the
+   *    name that caused it, and disappears before a user reading the tree sees
+   *    it.
+   *  - a SUCCESS applies main's own `FileNode` - the same shape a listing
+   *    produces, from the same `lstat` - so the row that appears now and the row
+   *    the watcher's refresh produces in 500 ms are the same row, merged by
+   *    node id rather than duplicated.
+   *  - the parent is marked for refresh EITHER WAY, because main's order is
+   *    main's: a directory that took the row optimistically still needs the
+   *    re-list to put it in the right place, and one that refused the insert
+   *    (it is paged) needs the re-list to show it at all.
+   */
+  async commitEdit(name: string): Promise<void> {
+    const edit = this.model.getEdit();
+    if (edit === null || edit.submitting) return;
+
+    const refusal = fileNameRefusal(name);
+    if (refusal !== null) {
+      this.model.setEditMessage(nameRefusalText(refusal));
+      return;
+    }
+    // A rename to the name it already has is not a change. Closing is the
+    // honest answer: sending it would spend a write and an approval-shaped
+    // round trip to do nothing.
+    const target = edit.targetId === null ? null : this.model.nodeOf(edit.targetId);
+    if (edit.intent === "rename" && target !== null && target.name === name) {
+      this.model.closeEdit();
+      return;
+    }
+
+    const generation = this.#listingGeneration;
+    this.model.setEditSubmitting(true);
+    if (edit.targetId !== null) this.model.setPending(edit.targetId, "renaming");
+
+    let result: Awaited<ReturnType<typeof createProjectNode>>;
+    try {
+      result =
+        edit.intent === "rename" && edit.targetId !== null
+          ? await renameProjectNode({
+              projectId: this.projectId,
+              nodeId: edit.targetId,
+              name,
+            })
+          : await createProjectNode({
+              projectId: this.projectId,
+              parentNodeId: edit.parentId,
+              name,
+              kind: edit.intent === "createFolder" ? "directory" : "file",
+            });
+    } catch (cause) {
+      console.warn(`explorer: ${edit.intent} in project ${this.projectId} rejected`, cause);
+      this.#failEdit(edit.targetId, MUTATION_TRANSPORT_FAILED, generation);
+      return;
+    }
+
+    // THE PUBLICATION FENCE, the same one every listing passes. A session that
+    // deactivated, was suspended or was closed while the write was in flight
+    // must not reopen a name box over a tree that is gone. The WRITE still
+    // happened - main owns that - and the watcher's own event is what shows it
+    // when the session comes back.
+    if (generation !== this.#listingGeneration) return;
+
+    if (!result.ok) {
+      const cancelled = result.error.code === "internal.cancelled";
+      this.#failEdit(
+        edit.targetId,
+        cancelled ? MUTATION_CANCELLED : MUTATION_TRANSPORT_FAILED,
+        generation,
+      );
+      return;
+    }
+    if (!result.data.ok) {
+      this.#failEdit(edit.targetId, mutationErrorText(result.data.code), generation);
+      return;
+    }
+
+    this.model.closeEdit();
+    // THE TAB FOLLOWS THE FILE. Announced from here rather than from
+    // `#applyMutatedNode` because this is the only scope that still holds the
+    // path the entry had BEFORE the write (`target` was read before the round
+    // trip), and announced only now because main has CONFIRMED it: a refused
+    // rename renamed nothing. The workspace decides what to do with it - it
+    // owns what a tab is - and drops the signal when no tab holds that path.
+    // See `workspace/file-rename-signal.ts`.
+    if (edit.intent === "rename" && target !== null) {
+      publishFileRename(this.projectId, target.path, {
+        title: result.data.value.name,
+        relativePath: result.data.value.path,
+        nodeId: result.data.value.nodeId,
+      });
+    }
+    this.#applyMutatedNode(edit.parentId, edit.targetId, result.data.value);
+  }
+
+  /**
+   * Delete one node. The CALLER has already confirmed it with the user.
+   *
+   * This function does not ask: consent is a UI act with a dialog behind it
+   * (`ExplorerDeleteDialog`), and a session that could pop its own confirmation
+   * would be a second owner of the one decision that must not be automatic.
+   * What it owns is the optimistic state and the honest reporting of what came
+   * back - including `trash_unavailable`, which means the entry is STILL THERE
+   * and the caller may offer permanent removal as a second decision.
+   */
+  async deleteNode(
+    nodeId: string,
+    mode: FileDeleteMode,
+  ): Promise<
+    | { readonly ok: true; readonly value: FileDeleteResult }
+    | { readonly ok: false; readonly code: FilesErrorCode | null; readonly message: string }
+  > {
+    const generation = this.#listingGeneration;
+    const parentId = this.model.parentOf(nodeId);
+    this.model.setPending(nodeId, "deleting");
+
+    let result: Awaited<ReturnType<typeof deleteProjectNode>>;
+    try {
+      result = await deleteProjectNode({ projectId: this.projectId, nodeId, mode });
+    } catch (cause) {
+      console.warn(`explorer: delete in project ${this.projectId} rejected`, cause);
+      this.model.setPending(nodeId, null);
+      return { ok: false, code: null, message: MUTATION_TRANSPORT_FAILED };
+    }
+
+    if (generation !== this.#listingGeneration) {
+      // The tree this row belonged to is gone. The DELETE still happened or did
+      // not on its own terms; there is no row left to report onto.
+      return { ok: false, code: null, message: MUTATION_TRANSPORT_FAILED };
+    }
+    this.model.setPending(nodeId, null);
+
+    if (!result.ok) {
+      const cancelled = result.error.code === "internal.cancelled";
+      return {
+        ok: false,
+        code: null,
+        message: cancelled ? MUTATION_CANCELLED : MUTATION_TRANSPORT_FAILED,
+      };
+    }
+    if (!result.data.ok) {
+      return {
+        ok: false,
+        code: result.data.code,
+        message: mutationErrorText(result.data.code),
+      };
+    }
+
+    // The row goes NOW rather than in 500 ms - the same reason the watcher's
+    // own `deleted` change removes it immediately - and the parent is refreshed
+    // so its counts settle against main's.
+    this.model.removeNode(nodeId);
+    this.#markRefreshTarget(parentId);
+    return { ok: true, value: result.data.value };
+  }
+
+  /** Reopen the name box with a refusal on it, and stop showing the row as busy. */
+  #failEdit(targetId: string | null, message: string, generation: number): void {
+    if (generation !== this.#listingGeneration) return;
+    if (targetId !== null) this.model.setPending(targetId, null);
+    this.model.setEditSubmitting(false);
+    this.model.setEditMessage(message);
+  }
+
+  /**
+   * Put main's confirmed node into the tree, and schedule the reorder.
+   *
+   * A RENAME is a remove plus an insert, because the node id is derived from
+   * the path and a renamed entry therefore has a NEW token. That is also what
+   * the watcher will report (measured on this platform: a rename arrives as
+   * `delete <old>` followed by `create <new>`; there is no rename event), so
+   * the optimistic path and the authoritative path do the same two things and
+   * the second is idempotent.
+   */
+  #applyMutatedNode(parentId: string | null, targetId: string | null, node: FileNode): void {
+    if (targetId !== null) this.model.removeNode(targetId);
+    const applied = this.model.applyCreatedNode(parentId, node);
+    // THE NEW ROW BECOMES THE SELECTION, which is VS Code's answer too
+    // (`fileActions.ts:961`: a created folder is `select`ed). The keyboard is
+    // then already on what the user just made, so the next key acts on it.
+    if (applied) this.setFocusedRowId(node.nodeId);
+    // ALWAYS, even when the row was applied: this model never sorts (order is
+    // main's), so the row it just appended is in the right folder and the wrong
+    // place until the re-list arrives.
+    this.#markRefreshTarget(parentId);
+  }
+
+  /** Does a listed sibling already carry this name? The optimistic check only. */
+  #siblingNamed(parentId: string | null, name: string): boolean {
+    for (const child of this.model.childNamesOf(parentId)) {
+      if (child === name) return true;
+    }
+    return false;
   }
 
   /** The header's Collapse All. Collapsed directories are also forgotten. */

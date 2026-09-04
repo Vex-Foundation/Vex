@@ -8,11 +8,14 @@
 // learn where to connect. The frozen wire is
 // `studio-mcp/bridge-endpoint-contract.md`.
 //
-// NO RETRY, anywhere. A retry would blur the host's locked-listener lifecycle:
-// a bridge that reconnected after a lock would be talking to a Vex that
-// deliberately stopped accepting, and a retry after an ack refusal would
-// repeat a decision the host already made. One attempt, one sentence, one
-// distinct exit code.
+// NO RETRY, anywhere. Every way this program can fail is TERMINAL for the
+// attempt it was making. A refusal the host sent - `locked` above all, which
+// the host answers as a typed handshake refusal while its listener stays up -
+// is a decision that has already been made about this connection, and
+// repeating the request repeats the answer. A local refusal is this program's
+// own decision about the endpoint, and it does not change by being asked
+// again. One attempt, one sentence, one distinct exit code; the client
+// reconnects when its user acts, not when this process guesses.
 package main
 
 import (
@@ -87,23 +90,41 @@ func run() int {
 	if plan.Kind == endpoint.KindRefused {
 		return fail(exitEndpointRefused, fmt.Sprintf("%s: %s", plan.Code, plan.Message))
 	}
-	// THE WINDOWS RUNTIME GATE (contract 1.6). Derivation, the pipe name and
-	// the override syntax are planned and vector-tested exactly as before; the
-	// TRANSPORT is refused until a Windows runner measures its pipe security
-	// descriptor. One flag, one code, both sides of the wire.
-	if gated := endpoint.UnprovenWindowsTransport(plan); gated != nil {
-		return fail(exitEndpointRefused, fmt.Sprintf("%s: %s", gated.Code, gated.Message))
-	}
+	// WHERE THE WINDOWS CHECK MOVED (contract 1.6). The plan-time transport
+	// gate stood here while the pipe's security descriptor was unmeasured. It
+	// is measured now (the matrix on endpoint.WindowsTransportProven), and the
+	// control that replaces it is stronger rather than weaker: dialEndpoint
+	// opens the pipe with SECURITY_IDENTIFICATION SQOS and then authenticates
+	// the SERVER - GetNamedPipeServerProcessId, its token's user SID against
+	// ours - refusing locally before the handshake writes a byte. A constant
+	// could only ever say "not yet"; that check looks at who is actually there.
 	var directoryIdentity *endpoint.DirectoryChainIdentity
 	if plan.Kind == endpoint.KindUnix {
 		directoryIdentity, err = endpoint.CaptureDirectoryChain(plan.ParentDir)
 		if err != nil {
+			// AN ABSENT DIRECTORY IS NOT A SWAPPED ONE. Its sentence is
+			// completed here rather than in the endpoint package, because only
+			// this process knows whether its client forwarded the variable the
+			// other derivation reads.
+			var missing *endpoint.DirectoryMissingError
+			if errors.As(err, &missing) {
+				_, forwarded := os.LookupEnv("XDG_RUNTIME_DIR")
+				return fail(exitEndpointRefused,
+					endpoint.EndpointDirectoryMissingRefusal(missing.Path, forwarded))
+			}
 			return fail(exitEndpointRefused, err.Error())
 		}
 	}
 
 	conn, err := dialEndpoint(plan)
 	if err != nil {
+		// A LOCAL REFUSAL IS NOT A DIAL FAILURE. Windows host authentication
+		// runs after the pipe opened and before anything was written; the
+		// endpoint was reachable and Vex declined it, which is exit 2's
+		// meaning and not exit 3's.
+		if refusal, ok := asLocalRefusal(err); ok {
+			return fail(exitEndpointRefused, refusal.Error())
+		}
 		return fail(exitDialFailed, dialSentence(plan.Path, err))
 	}
 	if directoryIdentity != nil {
@@ -186,10 +207,11 @@ func resolveProjectID() (string, error) {
 // UNIX: an ordinary dial with the contract's connect bound.
 //
 // WINDOWS: `dialPipe`, in the build-tagged `dial_windows.go` - CreateFile with
-// FILE_FLAG_OVERLAPPED, handed to `os.NewFile`. It is UNREACHABLE at runtime
-// while endpoint.WindowsTransportProven is false; run() refuses the plan
-// before this function is called, and the guard below is the second, local
-// copy of that decision.
+// FILE_FLAG_OVERLAPPED and SECURITY_IDENTIFICATION SQOS, the server's user SID
+// authenticated against ours, the handle handed to `os.NewFile`. It is REACHED
+// at runtime since the section 1.6 transport gate opened; the second, local
+// copy of that gate stood here and went with it, because with
+// endpoint.WindowsTransportProven true it could refuse nothing.
 //
 // The connect bound does NOT apply on Windows. CreateFile has no timeout
 // parameter and stdlib exposes no WaitNamedPipe, so a pipe that exists but is
@@ -205,9 +227,6 @@ func dialEndpoint(plan endpoint.Plan) (handshake.Conn, error) {
 		if runtime.GOOS != "windows" {
 			return nil, fmt.Errorf("refusing to open the named pipe %s on %s: "+
 				"named pipes exist on Windows only", plan.Path, runtime.GOOS)
-		}
-		if !endpoint.WindowsTransportProven {
-			return nil, errors.New("the Vex Studio Windows named-pipe transport is not enabled")
 		}
 		return dialPipe(plan.Path)
 	}
@@ -248,12 +267,17 @@ func derivePlan() (endpoint.Plan, error) {
 // rest honest rather than guessing.
 func dialSentence(path string, err error) string {
 	switch {
+	// NEITHER OF THESE MEANS "LOCKED". A locked Vex keeps its listener up and
+	// answers the handshake with the typed `locked` refusal, which leaves this
+	// program at exit 7 with the host's own sentence. Attributing a lock here
+	// would send the user to unlock an app that is not running.
 	case errors.Is(err, syscall.ENOENT):
-		return fmt.Sprintf("no Vex Studio host is listening at %s. Start Vex, unlock it, "+
-			"and connect again.", path)
+		return fmt.Sprintf("no Vex Studio host is listening at %s: the endpoint does not exist. "+
+			"Vex is not running, or it is running for a different configuration directory. "+
+			"Start Vex and connect again.", path)
 	case errors.Is(err, syscall.ECONNREFUSED):
-		return fmt.Sprintf("the Vex Studio endpoint at %s is not accepting connections. "+
-			"Vex is starting, locked, or shutting down.", path)
+		return fmt.Sprintf("the Vex Studio endpoint at %s exists but is not accepting "+
+			"connections. Vex is starting up or shutting down.", path)
 	case errors.Is(err, syscall.EACCES), errors.Is(err, syscall.EPERM):
 		return fmt.Sprintf("permission denied connecting to %s. The endpoint belongs to "+
 			"another user's Vex.", path)

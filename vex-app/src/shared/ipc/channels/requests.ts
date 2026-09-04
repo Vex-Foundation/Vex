@@ -610,6 +610,22 @@ export const CH = {
    */
   studio: {
     hostStatus: "vex:studio:hostStatus",
+    /**
+     * Does this installation HAVE a `vex-mcp` bridge binary, and when it does
+     * not, what is the one thing the user can do about it? Read-only and
+     * idempotent: the handler stats a path, and on a from-source run
+     * additionally reads the Go pin out of `bridge/build.sh` and asks `go` for
+     * its own version.
+     *
+     * Deliberately a PULL with no push twin, unlike `hostStatus`. The answer
+     * changes only when somebody installs a toolchain or runs a build OUTSIDE
+     * Vex, which no event in this process observes. A watcher would be a
+     * second source of truth for a fact the user's own re-check establishes.
+     *
+     * The renderer learns closed state codes plus two pattern-bounded version
+     * tokens. It never learns where the binary is, or is not.
+     */
+    bridgeReadiness: "vex:studio:bridgeReadiness",
   },
 
   /**
@@ -648,14 +664,37 @@ export const CH = {
     persistWorkspace: "vex:terminal:persistWorkspace",
     readWorkspace: "vex:terminal:readWorkspace",
     availability: "vex:terminal:availability",
+    shellCatalogue: "vex:terminal:shellCatalogue",
   },
 
   /**
    * Vex Studio project files (stage B3a).
    *
-   * READ-ONLY. There is no write, rename, create or delete channel here, and
-   * that is a product decision rather than an omission: mutating a user's repo
-   * from the tree is an approval-gated action that does not yet have one.
+   * Through B3a this block read "READ-ONLY... mutating a user's repo from the
+   * tree is an approval-gated action that does not yet have one". THE GATE NOW
+   * EXISTS (stage EXP-1), so `create`, `rename` and `delete` exist with it, and
+   * every constraint the original refusal named is met by their DESIGN:
+   *
+   *  - THE USER IS THE ACTOR AND THE APPROVER. These are the user's own files
+   *    in the user's own project, and the authority is the window the request
+   *    came from (`ctx.event.sender.id`), never a model: nothing on the agent
+   *    surface can reach these channels, and no tool proposes them.
+   *  - DELETE IS CONFIRMED AND GOES TO THE TRASH. The renderer sends one only
+   *    from its own consent dialog, and `mode` carries the disposition that
+   *    dialog described; permanent removal is a second explicit choice, never a
+   *    silent fallback from a trash that refused.
+   *  - VEX'S OWN ARTIFACTS ARE REFUSED BY NAME. `AGENTS.md`, `CLAUDE.md`, every
+   *    agent config the installer writes and everything under `.vex/` answer
+   *    `vex_managed`: those files have an owner (the installer, and Repair), and
+   *    a tree that let the user rename one would leave durable provenance
+   *    pointing at a path that no longer exists.
+   *  - NO CHANNEL TAKES A PATH, INCLUDING THESE. A create names a PARENT token
+   *    plus one entry name; a rename names a node token plus one entry name. A
+   *    rename therefore cannot move anything, and no request can address a
+   *    destination outside the project because none can address a destination.
+   *  - WRITES ARE SERIALISED PER PROJECT behind a bounded deadline, and the
+   *    resolved path is re-derived, re-walked for symlinks and re-checked for
+   *    containment immediately before the syscall - not once at admission.
    *
    * Every request addresses an opaque `FileNodeId` minted by main; no channel
    * on this surface accepts a path. `watchFile`/`unwatchFile` are the
@@ -674,6 +713,36 @@ export const CH = {
     watchFile: "vex:files:watchFile",
     unwatchFile: "vex:files:unwatchFile",
     ackEvent: "vex:files:ackEvent",
+    create: "vex:files:create",
+    rename: "vex:files:rename",
+    delete: "vex:files:delete",
+    // READ-ONLY, and the only channel here whose effect is outside this app:
+    // main resolves the node through the same authority chain a read uses and
+    // asks the desktop to show it. It discloses a path the user is already
+    // looking at, to the user, so it raises no approval of its own.
+    revealInFileManager: "vex:files:revealInFileManager",
+  },
+
+  /**
+   * Vex Studio's GO TO FILE surface: rank every file NAME in a project against
+   * a query, from a main-side index.
+   *
+   * Separate from `files` rather than a sixth method on it because the two own
+   * different things. `files` serves one directory, one file or one
+   * subscription at a time and holds no state between calls; this holds an
+   * INDEX with a lifetime - one opening of the rail's search - and its own
+   * disposal rules. `releaseSession` is that lifetime's explicit end, and the
+   * index owner also expires an unreleased session on a timer, so a renderer
+   * that crashed cannot strand several MiB of names in main.
+   *
+   * A match carries a project-relative path for DISPLAY and an opaque node
+   * token for opening, minted per response under the project's current epoch.
+   * Nothing here reads a byte of any file: opening a match is a `files.readFile`
+   * with that token, which re-derives and re-checks the path on its own.
+   */
+  search: {
+    fileNames: "vex:search:fileNames",
+    releaseSession: "vex:search:releaseSession",
   },
 
   // Cancellation

@@ -66,19 +66,107 @@
  * precisely VS Code's `editor.maxTokenizationLineLength` behaviour, so there
  * is no hand-rolled line splitting here - only the COUNT, which shiki does not
  * report and the viewer must show.
+ *
+ * ## The per-line WALL-CLOCK budget is stated here, not inherited silently
+ *
+ * vscode-textmate stops scanning a line once `Date.now()` says it has spent
+ * longer than `tokenizeTimeLimit` on it, and returns what it has: the rest of
+ * the line arrives as one token carrying the scope the scanner was in when the
+ * clock ran out. Byte-exact, and quietly under-coloured. MEASURED in the
+ * installed packages rather than assumed:
+ * `@shikijs/primitive/dist/index.mjs:620` defaults the option to 500 and hands
+ * it to `grammar.tokenizeLine2` at :654; `@shikijs/vscode-textmate/dist/
+ * index.js:1794-1822` is the `Date.now()` loop guard that abandons the line and
+ * returns `new TokenizeStringResult(stack, true)`.
+ *
+ * That default is inherited by whoever calls `codeToTokensBase` without saying
+ * otherwise, which makes every colour this module produces a function of how
+ * busy the machine was. {@link LINE_TIME_BUDGET_MS} names the value we adopt
+ * and {@link TokenizerOptions.lineTimeBudgetMs} lets a caller who needs a
+ * deterministic tokenization ask for one, so the budget is a policy on the
+ * record instead of a library default nobody wrote down.
+ *
+ * ## WHY THIS MODULE DRIVES THE GRAMMAR ITSELF INSTEAD OF `codeToTokensBase`
+ *
+ * The budget being a stated policy was only half the problem. The other half is
+ * that a line it abandons is INDISTINGUISHABLE, in shiki's output, from a line
+ * that finished: `grammar.tokenizeLine2` returns
+ * `{ tokens, ruleStack, stoppedEarly }`
+ * (`@shikijs/vscode-textmate/dist/index.js:2438-2445`, the flag itself built at
+ * :1788-1822), and shiki's `_tokenizeWithTheme` reads only `result.tokens` and
+ * `result.ruleStack` (`@shikijs/primitive/dist/index.mjs:618-711`, the drop at
+ * :654 and :705). `codeToTokensBase` therefore CANNOT report it, and the viewer
+ * used to show a half-coloured line as a fully highlighted one.
+ *
+ * A token-coverage check over shiki's output cannot recover the fact either,
+ * and this was MEASURED rather than assumed: `getBinaryResult(ruleStack,
+ * lineLength)` closes the last token at the line's end, so an abandoned line is
+ * covered edge to edge exactly like a finished one. The only signal left is "the
+ * last token is suspiciously long", which a long string literal, a base64 blob
+ * or a minified tail produces with no clock involved. `shiki-tokenizer.test.ts`
+ * pins that: on a line the budget abandoned, the tokens still concatenate to the
+ * whole line.
+ *
+ * So the flag has to come from the grammar, and shiki hands the grammar over:
+ * `HighlighterCore` extends `ShikiPrimitive`, whose `getLanguage(name): Grammar`
+ * and `setTheme(name): { theme, colorMap }` are public
+ * (`@shikijs/types/dist/index.d.mts:782` and :787). {@link tokenizeThroughGrammar}
+ * drives them line by line and keeps `stoppedEarly`.
+ *
+ * This is VS CODE'S OWN SEAM, not an invention: `agents-colab/vscode/src/vs/
+ * workbench/services/textMate/browser/tokenizationSupport/
+ * textMateTokenizationSupport.ts:53` calls `this._grammar.tokenizeLine2(line,
+ * state, 500)` directly and branches on `stoppedEarly` at :61-65, keeping the
+ * partial tokens on screen. We keep them too, which is deliverable and rule
+ * both: the colours found before the clock ran out are real colours.
+ *
+ * ## AN ABANDONED LINE DOES NOT COLOUR THE NEXT ONE
+ *
+ * VS Code's second rule, adopted here: on `stoppedEarly` it keeps the partial
+ * tokens AND returns the state from the START of the line
+ * (`textMateTokenizationSupport.ts:62-66`, "return the state at the beginning of
+ * the line"), so a following line is never coloured from a rule stack the
+ * scanner did not finish walking. Shiki propagates `result.ruleStack`
+ * unconditionally; this module does not.
+ *
+ * The reason is that the half-walked stack is not a fact about the FILE, it is a
+ * fact about where a wall clock happened to stop. A line beginning with a
+ * backtick, abandoned after its first match, hands the next line a stack that
+ * says "inside a template literal" - and the rest of the file goes string-
+ * coloured because a machine was busy for a millisecond. Under the pre-line
+ * state the damage stops at the line the clock actually hit: that line keeps the
+ * colours found before the budget ran out, and the file after it is coloured by
+ * the grammar alone. Both policies are guesses about an unfinished scan; only
+ * one of them is bounded to the line it happened on.
+ *
+ * MEASURED, not reasoned: `shiki-tokenizer.test.ts` builds exactly that file and
+ * pins both sides. Under the propagating policy the line after the abandoned one
+ * arrives as a single `token-string-expression` run; under this one it is
+ * `const` in the keyword colour with no string colour anywhere on it. The same
+ * file with the clock OFF is string-coloured under both, because nothing was
+ * abandoned - which is the other half of the contract: this changes NOTHING on
+ * the path where the scan finished.
+ *
+ * The budget report is untouched by any of it: an abandoned line is still
+ * counted and still listed, because what the chip reports is that the clock ran
+ * out, not what was done about the state afterwards.
  */
 
 import {
+  applyColorReplacements,
   createCssVariablesTheme,
   createHighlighterCore,
+  resolveColorReplacements,
   type HighlighterCore,
 } from "@shikijs/core";
 import { createJavaScriptRegexEngine } from "@shikijs/engine-javascript";
-import type { LanguageRegistration, ThemedToken } from "@shikijs/types";
-import type {
-  HighlightToken,
-  TokenizeResult,
-  TokenLine,
+import type { LanguageRegistration } from "@shikijs/types";
+import type { StateStack } from "@shikijs/vscode-textmate";
+import {
+  HIGHLIGHT_BUDGET_LINES_LISTED,
+  type HighlightToken,
+  type TokenizeResult,
+  type TokenLine,
 } from "./highlight-protocol.js";
 import { HOT_LANGUAGES, PLAIN_LANGUAGE, type HotLanguageId } from "./language-of-path.js";
 
@@ -139,6 +227,31 @@ const FONT_STYLE_BOLD = 2;
 const FONT_STYLE_UNDERLINE = 4;
 
 /**
+ * How a binary token's 32 bits carry its colour and its font style.
+ *
+ * `tokenizeLine2` returns a `Uint32Array` of `[startIndex, metadata]` pairs, and
+ * these two accessors are what turn the metadata half into the fields
+ * {@link projectLines} reads. Read out of the installed
+ * `@shikijs/vscode-textmate/dist/index.js:592-628` (`EncodedTokenMetadata`,
+ * `FONT_STYLE_MASK` 30720 at offset 11, `FOREGROUND_MASK` 16744448 at offset
+ * 15), and copied as literals for the same reason the font-style flags above
+ * are: the upstream masks are `const enum` members, which `isolatedModules`
+ * forbids importing as values. The package is a declared dependency now (the
+ * `StateStack` import below), so the declaration is no longer the obstacle - the
+ * `const enum` still is.
+ *
+ * The layout is not trusted on the strength of that reading. The colocated
+ * suite tokenizes real files through BOTH this path and shiki's own
+ * `codeToTokensBase` and asserts the projections are identical, so a mask that
+ * drifted in a shiki upgrade turns every colour wrong and the suite red, which
+ * is the only assertion about bit fields that is worth anything.
+ */
+const FOREGROUND_MASK = 16_744_448;
+const FOREGROUND_OFFSET = 15;
+const FONT_STYLE_MASK = 30_720;
+const FONT_STYLE_OFFSET = 11;
+
+/**
  * How a grammar module is fetched, keyed by language id.
  *
  * Every specifier is a STRING LITERAL. A computed specifier
@@ -181,6 +294,18 @@ const GRAMMAR_LOADERS: Readonly<Record<HotLanguageId, GrammarLoader>> = {
   solidity: () => import("@shikijs/langs/solidity"),
 };
 
+/**
+ * How long tokenizing ONE line may take before vscode-textmate abandons the
+ * rest of it, in milliseconds. Zero disables the clock entirely.
+ *
+ * 500 is shiki's own default, kept deliberately: it is the guard that stops a
+ * pathological grammar-and-line pair from freezing the highlight worker, and a
+ * viewer that paints a file once per tab can afford half a second a line. The
+ * value is written down here so raising or removing it is a decision someone
+ * makes, and so the only place that spends this budget is visible in one grep.
+ */
+export const LINE_TIME_BUDGET_MS = 500;
+
 /** The tokenizer's outcome. A refusal is an ANSWER, never a thrown error. */
 export type TokenizeOutcome =
   | { readonly ok: true; readonly result: TokenizeResult }
@@ -217,6 +342,17 @@ export interface TokenizerOptions {
    * without breaking a real grammar on disk. Production passes nothing.
    */
   readonly loaders?: Readonly<Partial<Record<string, GrammarLoader>>>;
+  /**
+   * The per-line wall-clock budget, in milliseconds. Defaults to
+   * {@link LINE_TIME_BUDGET_MS}; zero disables the clock.
+   *
+   * Injected because the budget makes a token's COLOUR depend on the machine's
+   * load: a line that runs out of clock keeps its bytes and loses the rest of
+   * its colours, with nothing said about it. A caller that asserts on colours -
+   * the colocated suite does - asks for zero and gets a tokenization that is a
+   * function of the grammar alone.
+   */
+  readonly lineTimeBudgetMs?: number;
 }
 
 /**
@@ -230,6 +366,7 @@ export interface TokenizerOptions {
 export function createTokenizer(options: TokenizerOptions = {}): ShikiTokenizer {
   const loaders: Readonly<Partial<Record<string, GrammarLoader>>> =
     options.loaders ?? GRAMMAR_LOADERS;
+  const lineTimeBudgetMs = options.lineTimeBudgetMs ?? LINE_TIME_BUDGET_MS;
 
   let core: HighlighterCore | null = null;
   /**
@@ -325,12 +462,14 @@ export function createTokenizer(options: TokenizerOptions = {}): ShikiTokenizer 
       if (disposed) return { ok: false, reason: "tokenize_failed" };
 
       try {
-        const lines = instance.codeToTokensBase(text, {
-          lang: language,
-          theme: THEME_NAME,
-          tokenizeMaxLineLength: maxLineLength,
-        });
-        return projectLines(lines, text, maxLineLength, maxTokens);
+        const tokenized = tokenizeThroughGrammar(
+          instance,
+          text,
+          language,
+          maxLineLength,
+          lineTimeBudgetMs,
+        );
+        return projectLines(tokenized, text, maxLineLength, maxTokens);
       } catch (cause: unknown) {
         warn(`tokenizing ${language} failed`, cause);
         return { ok: false, reason: "tokenize_failed" };
@@ -371,6 +510,152 @@ function warn(message: string, cause: unknown): void {
   console.warn(`studio viewer highlight: ${message}`, cause);
 }
 
+/* ------------------------------------------------------------------ *
+ * Driving the grammar
+ * ------------------------------------------------------------------ */
+
+/**
+ * The per-line rule stack the grammar threads from one line to the next.
+ *
+ * Named through its own package now that `@shikijs/vscode-textmate` is a
+ * DECLARED dependency of this app (10.0.2, MIT, shiki's own fork of Microsoft's
+ * `vscode-textmate`, and already the exact copy shiki 4.4.3 resolves): the type
+ * this loop threads is the one thing about this library the module states in its
+ * own signature, and a structural derivation through
+ * `ReturnType<...>["ruleStack"]` said the same thing while hiding where it came
+ * from. The import is TYPE-ONLY - no runtime edge is added, and the masks and
+ * font-style flags above stay copied literals because those are `const enum`
+ * members that `isolatedModules` still forbids importing as values.
+ */
+type LineState = StateStack;
+
+/**
+ * One styled run as the grammar produced it, before the wire shape.
+ *
+ * Deliberately the THREE fields {@link projectLines} reads and no more. Shiki's
+ * `ThemedToken` also carries an `offset` into the file and an optional
+ * `explanation`; neither reaches the viewer, and computing an offset we would
+ * never read is an invariant to get wrong for nothing.
+ */
+export interface TokenizedToken {
+  readonly content: string;
+  /** Empty string is shiki's own "no colour", normalised to `null` later. */
+  readonly color?: string;
+  /** TextMate font-style bits. Absent means none. */
+  readonly fontStyle?: number;
+}
+
+/** A whole file, tokenized, with the per-line clock's verdict on each line. */
+export interface TokenizedLines {
+  readonly lines: readonly (readonly TokenizedToken[])[];
+  /** 1-based, ascending, at most {@link HIGHLIGHT_BUDGET_LINES_LISTED} entries. */
+  readonly budgetExceededLines: readonly number[];
+  /** Exact. Above the array's length means the rest were not listed. */
+  readonly budgetExceededTotal: number;
+}
+
+/**
+ * Tokenize a whole file line by line, THROUGH the grammar, keeping the flag
+ * shiki drops.
+ *
+ * This is `@shikijs/primitive`'s `_tokenizeWithTheme` reproduced over the
+ * options this module actually passes - no `includeExplanation`, no
+ * `grammarState`, no `grammarContextCode`, no offsets - plus the one thing that
+ * function cannot return: WHICH lines vscode-textmate abandoned. See the module
+ * header for why the flag cannot be recovered any other way.
+ *
+ * Every rule it reproduces is reproduced deliberately, and each is the source of
+ * a defect if it drifts:
+ *
+ *  - an EMPTY line is an empty array, never a call into the grammar;
+ *  - a line at or above `maxLineLength` is one token whose colour is the empty
+ *    string, tokenized by nobody. `isOverLength` is the same comparison
+ *    `plainTokenize` and `projectLines` use, so the three agree about which
+ *    lines are long by construction;
+ *  - the rule stack CARRIES across both of those, so a template literal opened
+ *    before a blank line is still open after it;
+ *  - a zero-width token is skipped, which is what keeps a run of them from
+ *    becoming empty spans in the DOM.
+ *
+ * The line split is this folder's ONE definition (`/\r?\n/`), shared with
+ * `plainTokenize`, `projectLines` and `countLines` on the wire, so the count the
+ * port checks and the count produced here cannot disagree.
+ */
+function tokenizeThroughGrammar(
+  instance: HighlighterCore,
+  text: string,
+  language: string,
+  maxLineLength: number,
+  lineTimeBudgetMs: number,
+): TokenizedLines {
+  const { theme, colorMap } = instance.setTheme(THEME_NAME);
+  const grammar = instance.getLanguage(language);
+  // Shiki's own resolution, called rather than assumed: the css-variables theme
+  // declares no replacements today, and asking the library keeps that a fact
+  // about the theme instead of a guess baked into this loop.
+  const replacements = resolveColorReplacements(theme, {});
+
+  const lines: TokenizedToken[][] = [];
+  const budgetExceededLines: number[] = [];
+  let budgetExceededTotal = 0;
+  let state: LineState | null = null;
+
+  for (const [index, line] of text.split(/\r?\n/).entries()) {
+    if (line === "") {
+      lines.push([]);
+      continue;
+    }
+    if (isOverLength(line.length, maxLineLength)) {
+      lines.push([{ content: line, color: "", fontStyle: 0 }]);
+      continue;
+    }
+
+    const result = grammar.tokenizeLine2(line, state, lineTimeBudgetMs);
+    if (result.stoppedEarly) {
+      budgetExceededTotal += 1;
+      if (budgetExceededLines.length < HIGHLIGHT_BUDGET_LINES_LISTED) {
+        budgetExceededLines.push(index + 1);
+      }
+    }
+
+    const built: TokenizedToken[] = [];
+    const count = result.tokens.length / 2;
+    for (let i = 0; i < count; i += 1) {
+      const startIndex = result.tokens[2 * i] ?? 0;
+      const nextStartIndex = i + 1 < count ? (result.tokens[2 * i + 2] ?? 0) : line.length;
+      // A zero-width run. Shiki skips these and so do we.
+      if (startIndex === nextStartIndex) continue;
+      const metadata = result.tokens[2 * i + 1] ?? 0;
+      built.push({
+        // A PARSING slice: it extracts the run the grammar delimited, which is
+        // the opposite of hiding content - every byte of the line lands in
+        // exactly one token, and `projectLines` proves that per line.
+        content: line.slice(startIndex, nextStartIndex),
+        color: applyColorReplacements(colorMap[foregroundOf(metadata)] ?? "", replacements),
+        fontStyle: fontStyleOf(metadata),
+      });
+    }
+    lines.push(built);
+    // THE REWIND. A line the clock abandoned hands the NEXT line the state it
+    // started from, never the stack the scanner was standing in when the budget
+    // ran out. VS Code's rule, and the module header measures both sides of it.
+    // The partial tokens above are kept either way.
+    if (!result.stoppedEarly) state = result.ruleStack;
+  }
+
+  return { lines, budgetExceededLines, budgetExceededTotal };
+}
+
+/** The colour-map index in a binary token's metadata. */
+function foregroundOf(metadata: number): number {
+  return (metadata & FOREGROUND_MASK) >>> FOREGROUND_OFFSET;
+}
+
+/** The TextMate font-style bits in a binary token's metadata. */
+function fontStyleOf(metadata: number): number {
+  return (metadata & FONT_STYLE_MASK) >>> FONT_STYLE_OFFSET;
+}
+
 /**
  * Split plain text into one uncoloured token per line.
  *
@@ -396,7 +681,11 @@ export function plainTokenize(text: string, maxLineLength: number): TokenizeResu
     if (isOverLength(raw.length, maxLineLength)) longLines += 1;
     lines.push(raw.length === 0 ? [] : [plainToken(raw)]);
   }
-  return { lines, longLines };
+  // NO budget accounting on the uncoloured split, for the reason the long-line
+  // bound is reported and this one is not: no clock was spent, because no line
+  // was scanned. Reporting zero here is the honest statement that this text was
+  // never given to a grammar.
+  return { lines, longLines, budgetExceededLines: [], budgetExceededTotal: 0 };
 }
 
 /**
@@ -456,11 +745,12 @@ function plainToken(text: string): HighlightToken {
  * imports it.
  */
 export function projectLines(
-  lines: readonly (readonly ThemedToken[])[],
+  tokenized: TokenizedLines,
   text: string,
   maxLineLength: number,
   maxTokens: number,
 ): TokenizeOutcome {
+  const lines = tokenized.lines;
   const sourceLines = text.split(/\r?\n/);
 
   if (lines.length !== sourceLines.length) {
@@ -468,6 +758,10 @@ export function projectLines(
       `the tokenizer returned ${String(lines.length)} line(s) for a ${String(sourceLines.length)}-line file; showing it plain`,
       null,
     );
+    // The budget report is DROPPED with the projection it describes. Its line
+    // numbers index a tokenization this branch just decided not to trust, and
+    // pointing at line 812 of a file being shown plain would be a bound
+    // reporting itself against the wrong file.
     return boundedPlain(text, maxLineLength, maxTokens);
   }
 
@@ -516,8 +810,22 @@ export function projectLines(
       null,
     );
   }
+  if (tokenized.budgetExceededTotal > 0) {
+    warn(
+      `${String(tokenized.budgetExceededTotal)} line(s) ran out of highlighting budget and are partly coloured, first at line ${String(tokenized.budgetExceededLines[0] ?? 0)}`,
+      null,
+    );
+  }
 
-  return { ok: true, result: { lines: projected, longLines } };
+  return {
+    ok: true,
+    result: {
+      lines: projected,
+      longLines,
+      budgetExceededLines: tokenized.budgetExceededLines,
+      budgetExceededTotal: tokenized.budgetExceededTotal,
+    },
+  };
 }
 
 /**

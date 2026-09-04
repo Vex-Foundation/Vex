@@ -22,9 +22,9 @@ import { resolveInjectedProtocolTool } from "../registry/injected-protocol-tools
  * wrapper itself is `mutating: false`); a missing/unknown target is treated as
  * non-mutating. For a MUTATING protocol-alias (Stage 8b, e.g. `SwapExecute`) the
  * answer ALSO comes from the resolved TARGET manifest, so the mission
- * auto-retry-unsafe stamp reflects the target — not a generic alias default.
+ * auto-retry-unsafe stamp reflects the target - not a generic alias default.
  * For other internal tools it is the registry `mutating` flag. Preview / dryRun
- * targets are stamped conservatively (a mutating manifest stamps regardless) —
+ * targets are stamped conservatively (a mutating manifest stamps regardless) -
  * safer to over-stamp than to miss a broadcast.
  *
  * This predicate must classify SIDE-EFFECT RISK, not validate args. A router
@@ -40,14 +40,14 @@ export function dispatchTargetIsMutating(call: ToolCallRequest): boolean {
     if (!toolId) return false;
     return getProtocolManifest(toolId)?.mutating === true;
   }
-  // Injected discovered-tool lane — the manifest resolved from the mapped
+  // Injected discovered-tool lane - the manifest resolved from the mapped
   // function name is the side-effect authority, exactly as for `execute_tool`.
   const injected = resolveInjectedProtocolTool(call.name);
   if (injected) return injected.mutating;
   if (isMutatingProtocolAlias(call.name)) {
     const router = MUTATING_PROTOCOL_ALIAS_ROUTERS[call.name];
     try {
-      // No session scope at this classification-only call site — a router
+      // No session scope at this classification-only call site - a router
       // that NEEDS it (the hidden Uniswap pair) always throws here, which
       // correctly falls back to the registry's static `mutating` flag below.
       const target = router(call.args, undefined);
@@ -66,7 +66,7 @@ export function dispatchTargetIsMutating(call: ToolCallRequest): boolean {
       }
       return getProtocolManifest(target.toolId)?.mutating === true;
     } catch {
-      // Un-routable args are NOT a side-effect signal — fall back to the
+      // Un-routable args are NOT a side-effect signal - fall back to the
       // alias's registry classification (mutating) so the stamp is conservative.
       return isMutatingTool(call.name);
     }

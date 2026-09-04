@@ -3,7 +3,7 @@ import { PENDLE_YT_DISCOVERY } from "../../embeddings/pendle/yt.js";
 import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 
 const YT_SWAP_PARAMS = [
-  { key: "chain", type: "string" as const, required: true, description: "Chain slug or id — one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')." },
+  { key: "chain", type: "string" as const, required: true, description: "Chain slug or id - one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')." },
   { key: "tokenIn", type: "string" as const, required: true, description: "Input token CONTRACT ADDRESS (ERC-20; use WETH for ETH). Buy: the payment token. Sell: the YT address." },
   { key: "tokenOut", type: "string" as const, required: true, description: "Output token CONTRACT ADDRESS. Buy: the YT address. Sell: the payment token." },
   { key: "amountIn", type: "string" as const, required: true, description: "Amount of tokenIn in human-readable units." },
@@ -22,7 +22,7 @@ export const PENDLE_YT_TOOLS: readonly ProtocolToolManifest[] = [
     mutating: false,
     actionKind: "read",
     params: [
-      { key: "chain", type: "string", required: true, description: "Chain slug or id — one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')." },
+      { key: "chain", type: "string", required: true, description: "Chain slug or id - one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')." },
       { key: "tokenIn", type: "string", required: true, description: "Input token address (payment token for a buy; YT address for a sell)." },
       { key: "tokenOut", type: "string", required: true, description: "Output token address (YT for a buy; payment token for a sell)." },
       { key: "amountIn", type: "string", required: true, description: "Amount of tokenIn in human-readable units." },
@@ -67,9 +67,9 @@ export const PENDLE_YT_TOOLS: readonly ProtocolToolManifest[] = [
     mutating: true,
     actionKind: "user_wallet_broadcast",
     params: [
-      { key: "chain", type: "string", required: true, description: "Chain slug or id — one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')." },
-      { key: "market", type: "string", description: "Optional MARKET CONTRACT ADDRESS to scope the claim to one market — the way to reach a market the unscoped sweep reported in skippedMarkets (no cap applies to a scoped claim). Omit to sweep up to 10 held markets on the chain." },
-      { key: "dryRun", type: "boolean", description: "Preview the positions that would be claimed — including eligibleMarkets and skippedMarkets — without executing." },
+      { key: "chain", type: "string", required: true, description: "Chain slug or id - one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc')." },
+      { key: "market", type: "string", description: "Optional MARKET CONTRACT ADDRESS to scope the claim to one market - the way to reach a market the unscoped sweep reported in skippedMarkets (no cap applies to a scoped claim). Omit to sweep up to 10 held markets on the chain." },
+      { key: "dryRun", type: "boolean", description: "Preview the positions that would be claimed - including eligibleMarkets and skippedMarkets - without executing." },
     ],
     exampleParams: { chain: "ethereum" },
     discovery: PENDLE_YT_DISCOVERY["pendle.claim"],

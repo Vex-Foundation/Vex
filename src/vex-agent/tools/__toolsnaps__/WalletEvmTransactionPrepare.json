@@ -1,7 +1,7 @@
 {
   "definition": {
     "function": {
-      "description": "Prepare an ARBITRARY EVM transaction for approval. It SPENDS NOTHING and signs nothing: it decodes the calldata, simulates it, records one durable intent and hands back its id. THE INTENT IS WHAT GETS APPROVED, so the decoded effects and the fee caps recorded here are exactly what the user is shown and confirms. Use this when the user wants to send a transaction Vex has no dedicated tool for, and before any call to `WalletEvmTransactionConfirm` - confirm has no other way to obtain an intentId. DECODE IS FAIL CLOSED: the v1 set is ERC-20 transfer/approve/transferFrom/increaseAllowance/permit, Permit2 approve/permit/transferFrom at the canonical Permit2 address for the chain, and a plain native transfer with `data` of `0x` sent to an address that has no code. An unknown selector, a malformed layout, a Permit2 call to any other address, or empty calldata sent to a contract is REFUSED BY NAME before an intent exists; router and aggregator calldata is deliberately outside v1. A caller-supplied `from`, fee payer or fee receiver is refused by name too: the sender is the wallet selected for this session. VEX FEE: Vex charges 25 bps (0.25%) of this transaction's own valueWei, as a SEPARATE transfer to the Vex treasury that runs only AFTER the transaction confirms, with its own bounded network fee on top of the transaction's. A zero-value transaction - every ERC-20 transfer and every approve - pays NOTHING. Nor is anything charged when the 25 bps would be at or below what its own collection transfer could cost at the gas caps you set: Vex does not take a fee that costs the user more to collect than it is worth. Whichever applies is shown ON THE APPROVAL CARD, with its amount, the treasury address and that extra network-fee ceiling, or the explicit reason no fee is taken. The fee is not a parameter and cannot be set, redirected or waived by a caller. RETURNS intentId, chain, chainId, walletAddress, status 'prepared', expiresAt, the decoded effects, the approval preview, approvedFeeBounds echoing the caps you supplied, and vexFee stating the charge or the reason there is none. The intent is scoped to this session, expires in 10 minutes, and binds the wallet selected right now; if that selection changes, confirm refuses rather than signing from another address.",
+      "description": "Prepare an EVM transaction Vex has no dedicated tool for, within the CLOSED decode set below. It SPENDS NOTHING and signs nothing: it decodes the calldata, simulates it, records one durable intent and returns its id. THE INTENT IS WHAT GETS APPROVED: the decoded effects and the fee caps recorded here are exactly what the user is shown and confirms. WHO BROADCASTS: preparing sends nothing and raises no card. Only `WalletEvmTransactionConfirm`, run with this intentId, moves funds, and THAT call raises the card. Over MCP nothing dispatches it for you: you call it yourself before the intent expires. TWO CALLS: call once WITHOUT the fee caps for the refusal that names them and carries the network estimate as a labelled hint, then again with the caps. DECODE IS FAIL CLOSED: the v1 set is ERC-20 transfer/approve/transferFrom/increaseAllowance/permit, Permit2 approve/permit/transferFrom at the canonical Permit2 address for the chain, and a plain native transfer with `data` of `0x` sent to an address that has no code. An unknown selector, a malformed layout, a Permit2 call to any other address, or empty calldata sent to a contract is REFUSED BY NAME before an intent exists; router and aggregator calldata is outside v1. A caller-supplied `from`, fee payer or fee receiver is refused by name too: the sender is the wallet selected for this session. VEX FEE: 25 bps (0.25%) of this transaction's own valueWei, a SEPARATE treasury transfer signed only AFTER it confirms, under its own bounded network fee. A zero-value transaction - every ERC-20 transfer and every approve - pays NOTHING. It is no parameter: it cannot be set, redirected or waived. The intent is scoped to this session, expires in 10 minutes, and binds the wallet selected right now; if that selection changes, confirm refuses rather than signing from another address. RETURNS the intent id, its status and the fields named in the result. Full contract: vex_ToolDescribe.",
       "name": "WalletEvmTransactionPrepare",
       "parameters": {
         "additionalProperties": false,
@@ -15,19 +15,19 @@
             "type": "string"
           },
           "gasLimit": {
-            "description": "Maximum gas UNITS, as a decimal integer string. REQUIRED fee cap. Vex never derives a spending limit from a network estimate, so calling without the caps refuses by name and returns the current estimate as a labelled hint you can choose from.",
+            "description": "Maximum gas UNITS, as a decimal integer string. The second call passes this plus EITHER the 1559 pair (`maxFeePerGasWei` with `maxPriorityFeePerGasWei`, required TOGETHER) OR the legacy `gasPriceWei` - never both pricing modes. REQUIRED IN EFFECT, optional in the schema: Vex never derives a spending limit from a network estimate, so a call without the caps is refused by name and returns the current estimate as a labelled hint you choose from. That refusal is the first call of the two-call workflow.",
             "type": "string"
           },
           "gasPriceWei": {
-            "description": "LEGACY cap on the price per gas unit, in RAW wei as a decimal integer string, for chains without EIP-1559. Mutually exclusive with the 1559 pair. REQUIRED fee cap. Vex never derives a spending limit from a network estimate, so calling without the caps refuses by name and returns the current estimate as a labelled hint you can choose from.",
+            "description": "LEGACY cap on the price per gas unit, in RAW wei as a decimal integer string, for chains without EIP-1559. Mutually exclusive with the 1559 pair. REQUIRED IN EFFECT, optional in the schema: Vex never derives a spending limit from a network estimate, so a call without the caps is refused by name and returns the current estimate as a labelled hint you choose from. That refusal is the first call of the two-call workflow.",
             "type": "string"
           },
           "maxFeePerGasWei": {
-            "description": "EIP-1559 cap on the total price per gas unit, in RAW wei as a decimal integer string. Pass this with maxPriorityFeePerGasWei, or pass gasPriceWei instead, never both. REQUIRED fee cap. Vex never derives a spending limit from a network estimate, so calling without the caps refuses by name and returns the current estimate as a labelled hint you can choose from.",
+            "description": "EIP-1559 cap on the total price per gas unit, in RAW wei as a decimal integer string. Pass this with maxPriorityFeePerGasWei, or pass gasPriceWei instead, never both. REQUIRED IN EFFECT, optional in the schema: Vex never derives a spending limit from a network estimate, so a call without the caps is refused by name and returns the current estimate as a labelled hint you choose from. That refusal is the first call of the two-call workflow.",
             "type": "string"
           },
           "maxPriorityFeePerGasWei": {
-            "description": "EIP-1559 cap on the validator tip per gas unit, in RAW wei as a decimal integer string. Cannot exceed maxFeePerGasWei. REQUIRED fee cap. Vex never derives a spending limit from a network estimate, so calling without the caps refuses by name and returns the current estimate as a labelled hint you can choose from.",
+            "description": "EIP-1559 cap on the validator tip per gas unit, in RAW wei as a decimal integer string. Cannot exceed maxFeePerGasWei. REQUIRED IN EFFECT, optional in the schema: Vex never derives a spending limit from a network estimate, so a call without the caps is refused by name and returns the current estimate as a labelled hint you choose from. That refusal is the first call of the two-call workflow.",
             "type": "string"
           },
           "to": {
@@ -41,8 +41,7 @@
         },
         "required": [
           "chain",
-          "to",
-          "gasLimit"
+          "to"
         ],
         "type": "object"
       }

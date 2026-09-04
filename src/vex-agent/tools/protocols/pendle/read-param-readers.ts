@@ -10,14 +10,14 @@
  * accepted.
  *
  * Two of them guard an unsafe sink. A chain and an address here become URL PATH
- * segments, and they arrive from tool params — ultimately from model output. The
+ * segments, and they arrive from tool params - ultimately from model output. The
  * check is "is this a chain we support" and "is this an address", not "is this
  * safe to encode": percent-encoding a non-address still leaves it addressing
  * something.
  *
  * `read-params.ts` (the portfolio-shaped read tools) carries its own private
  * copies of several of these. Collapsing the two sets onto this module is a
- * deliberate follow-up, not an oversight — it would mean editing a file another
+ * deliberate follow-up, not an oversight - it would mean editing a file another
  * card owns.
  */
 
@@ -48,7 +48,7 @@ export function readOptionalString(raw: unknown): string | undefined {
 export function requireChain(raw: unknown, param = "chain"): PendleReadParams<number> {
   const value = readOptionalString(raw);
   if (value === undefined) {
-    return reject(param, `\`${param}\` is required — name the Pendle chain (for example 'ethereum' or 42161).`);
+    return reject(param, `\`${param}\` is required - name the Pendle chain (for example 'ethereum' or 42161).`);
   }
   const chainId = resolvePendleChainId(value.toLowerCase());
   if (chainId === undefined) {
@@ -62,7 +62,7 @@ export function requireChain(raw: unknown, param = "chain"): PendleReadParams<nu
 export function requireAddressParam(raw: unknown, param: string): PendleReadParams<string> {
   const value = readOptionalString(raw);
   if (value === undefined) {
-    return reject(param, `\`${param}\` is required — pass a 0x-prefixed 40-hex contract address.`);
+    return reject(param, `\`${param}\` is required - pass a 0x-prefixed 40-hex contract address.`);
   }
   if (!ADDRESS_PATTERN.test(value)) {
     return reject(
@@ -124,7 +124,7 @@ export function readOptionalInteger(
 /**
  * The window guard shared by the two series tools.
  *
- * The point count is COMPUTED, and the refusal quotes it — "that window is 8,761
+ * The point count is COMPUTED, and the refusal quotes it - "that window is 8,761
  * hourly points, the cap is 1,440" tells an agent exactly how to narrow, where a
  * bare "too large" does not. An open-ended window (no `from`) cannot be bounded
  * here; the caller bounds the RESULT instead and reports truncation explicitly.
@@ -141,7 +141,7 @@ export function checkSeriesWindow(
   }
   if (fromMs === undefined) return { ok: true, value: true };
   const end = toMs ?? nowMs;
-  if (end <= fromMs) return reject("from", "`from` is in the future — it must be earlier than `to` (or than now).");
+  if (end <= fromMs) return reject("from", "`from` is in the future - it must be earlier than `to` (or than now).");
 
   const points = Math.ceil((end - fromMs) / TIME_FRAME_MS[timeFrame]) + 1;
   if (points > maxPoints) {

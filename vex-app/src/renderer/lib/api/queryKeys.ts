@@ -288,6 +288,13 @@ export const marketKeys = {
 export const studioKeys = {
   all: ["studio"] as const,
   hostStatus: () => ["studio", "hostStatus"] as const,
+  /**
+   * Bridge readiness (B1.6), and it is NOT kept live by any event. The answer
+   * moves only when somebody installs a Go toolchain or runs a build outside
+   * Vex, which nothing in main observes. Read on Studio entry, re-read when the
+   * user presses re-check.
+   */
+  bridgeReadiness: () => ["studio", "bridgeReadiness"] as const,
 };
 
 /**

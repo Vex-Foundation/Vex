@@ -1,5 +1,5 @@
 /**
- * Pendle market/asset resolution — the SINGLE deterministic source for
+ * Pendle market/asset resolution - the SINGLE deterministic source for
  * PT → market / YT / expiry / liquidity and PT/token → USD price, SCOPED to one
  * chain.
  *
@@ -47,7 +47,7 @@ export async function resolveYtForPt(chainId: number, ptAddress: string): Promis
  * `/v1/{chainId}/assets/all`. The `chainId` re-check is defence in depth: the
  * endpoint is already scoped, but a foreign row must never leak into this map
  * (the same address on another chain carries different decimals and price).
- * Raises `PENDLE_INVALID_RESPONSE` if the catalogue is unreadable — callers must
+ * Raises `PENDLE_INVALID_RESPONSE` if the catalogue is unreadable - callers must
  * not mistake that for "this chain has no assets".
  */
 export async function buildAssetMap(chainId: number): Promise<Map<string, PendleAsset>> {

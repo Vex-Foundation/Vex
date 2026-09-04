@@ -73,7 +73,11 @@ export function GlobalApprovals(): JSX.Element | null {
   const rows = useMemo<ReadonlyArray<ApprovalPendingGlobalDto> | null>(() => {
     const data = query.data;
     if (data === undefined || data.ok === false) return null;
-    return [...data.data].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    // NEWEST FIRST. The panel is an inbox and the row a user just caused is
+    // the one they came for, so it leads - and it is therefore also the row
+    // whose Reject the shared dialog focuses through its named autofocus
+    // target, so focus lands on the newest card's safer action.
+    return [...data.data].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }, [query.data]);
 
   // The cross-mode announcement (B4c). Owned HERE, above the mode dispatch:

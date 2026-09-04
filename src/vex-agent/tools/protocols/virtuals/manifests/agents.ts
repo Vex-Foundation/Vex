@@ -3,7 +3,7 @@ import { CANONICAL_CHAIN_SENTENCE } from "../../conventions.js";
 import { VIRTUALS_CHAIN_SLUGS } from "../chain-param.js";
 import { VIRTUALS_AGENTS_DISCOVERY } from "../../embeddings/virtuals/agents.js";
 
-// Virtuals Protocol agent-token intelligence — READ-ONLY. Discovery surface for
+// Virtuals Protocol agent-token intelligence - READ-ONLY. Discovery surface for
 // agent tokens on Robinhood (chain 4663), Base, Solana, and Ethereum. Trades
 // route through the EXISTING venue tools named by each result's `tradingRoute`
 // hint (uniswap on Robinhood; kyberswap on Base/ETH; solana on Solana).
@@ -24,7 +24,7 @@ const VIRTUALS_CHAIN_PARAM: ProtocolParamDef = {
   required: true,
   enum: VIRTUALS_CHAIN_SLUGS,
   description:
-    "REQUIRED. The one chain to list — Virtuals indexes exactly four: "
+    "REQUIRED. The one chain to list - Virtuals indexes exactly four: "
     + `${VIRTUALS_CHAIN_SLUGS.join(", ")}. ${CANONICAL_CHAIN_SENTENCE}`,
 };
 
@@ -41,11 +41,11 @@ export const VIRTUALS_AGENTS_TOOLS: readonly ProtocolToolManifest[] = [
     params: [
       VIRTUALS_CHAIN_PARAM,
       { key: "status", type: "string", enum: ["undergrad", "graduated", "all"], description: "Client-side status filter applied to the fetched window: undergrad (bonding curve), graduated (AVAILABLE), or all (default). An unrecognised value is rejected, not ignored." },
-      { key: "sortBy", type: "string", enum: ["mcap", "volume", "newest", "recentGraduation"], description: "Sort order, always descending: mcap (default), volume, newest, or recentGraduation. It decides WHICH rows the window contains, so pair it with status — sortBy: newest is what surfaces UNDERGRAD agents. An unrecognised value is rejected, not folded to mcap." },
-      { key: "sort", type: "string", enum: ["mcap", "volume", "newest", "recentGraduation"], description: "Alias of sortBy, accepted for compatibility. Same values. Send ONE of the two, never both — a silently dropped spelling is indistinguishable from one that was honoured." },
+      { key: "sortBy", type: "string", enum: ["mcap", "volume", "newest", "recentGraduation"], description: "Sort order, always descending: mcap (default), volume, newest, or recentGraduation. It decides WHICH rows the window contains, so pair it with status - sortBy: newest is what surfaces UNDERGRAD agents. An unrecognised value is rejected, not folded to mcap." },
+      { key: "sort", type: "string", enum: ["mcap", "volume", "newest", "recentGraduation"], description: "Alias of sortBy, accepted for compatibility. Same values. Send ONE of the two, never both - a silently dropped spelling is indistinguishable from one that was honoured." },
       { key: "limit", type: "number", description: "Max agents to return after filtering (default 20, max 100). Paging stops once this many rows match. Out of range is rejected, not clamped." },
       { key: "page", type: "number", description: "1-based FIRST provider page of the window (default 1). The reply's windowNote names the next page to continue from." },
-      { key: "pageSize", type: "number", description: "Rows fetched per provider page (default 100, max 200 — the provider's proven ceiling). Up to 5 pages are scanned per call, so pageSize x 5 bounds how deep one call reads." },
+      { key: "pageSize", type: "number", description: "Rows fetched per provider page (default 100, max 200 - the provider's proven ceiling). Up to 5 pages are scanned per call, so pageSize x 5 bounds how deep one call reads." },
     ],
     // `sortBy` and `sort` are the SAME knob under two spellings. Accepting both
     // and letting one win is the silent-drop pattern this wave removes

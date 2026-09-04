@@ -78,10 +78,6 @@
    * grain overlay riding on top. */
   --vex-rail: rgba(10, 13, 24, 0.55);
   --vex-rail-strong: rgba(10, 13, 24, 0.7);
-  /* Brand motion curves as named tokens — CSS and framer share one source
-   * (the landing GSAP engine's Out / InOut). */
-  --vex-ease-out: cubic-bezier(0.25, 1, 0.5, 1);
-  --vex-ease-inout: cubic-bezier(0.76, 0, 0.24, 1);
   /* shadcn projection — stock Button/Input/Dialog inside the shell speak
    * the brand automatically (same mechanism as the onboarding scope). */
   --color-primary: var(--vex-accent);
@@ -150,7 +146,7 @@
   display: grid;
   grid-template-rows: 100%;
   overflow: hidden;
-  transition: grid-template-columns 300ms var(--vex-ease-inout);
+  transition: grid-template-columns var(--vex-duration-reveal) var(--vex-ease-inout);
 }
 .vex-shell-frame[data-dragging] {
   transition: none;
@@ -170,10 +166,42 @@
   cursor: col-resize;
   z-index: 30;
   touch-action: none;
-  transition: left 300ms var(--vex-ease-inout);
+  transition: left var(--vex-duration-reveal) var(--vex-ease-inout);
 }
 .vex-shell-frame[data-dragging] .vex-shell-handle {
   transition: none;
+}
+
+/* THE SEAM HIGHLIGHT - VS Code's sash feedback, adopted (sash.css
+ * `.monaco-sash:before` + the `.hover` / `.active` rules): the hit strip is
+ * 8px wide because a pointer needs that, but what LIGHTS UP is a 2px line on
+ * the actual column border, so the feedback sits where the edge will move and
+ * not where the mouse happens to be. Painted on a pseudo-element that never
+ * hit-tests, so it cannot eat the drag it is advertising.
+ *
+ * Both sides get it. The BOOK side already had its 12x32 pill and the sidebar
+ * side had NO resting feedback at all - the strip was invisible until the
+ * cursor changed - which is the gap this closes.
+ *
+ * Rejected from VS Code: the hover DELAY (`hoverDelayer`, `globalHoverDelay`).
+ * It exists to keep corner sashes from flickering when a pointer crosses two
+ * of them; our two handles are far apart and never orthogonal, so a delay
+ * would only make the seam feel unresponsive. */
+.vex-shell-handle::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  margin-left: -1px;
+  pointer-events: none;
+  background: transparent;
+  transition: background-color var(--vex-duration-fast) var(--vex-ease-out);
+}
+.vex-shell-handle:hover::before,
+.vex-shell-handle[data-dragging]::before {
+  background: color-mix(in oklab, var(--vex-accent) 55%, transparent);
 }
 .vex-shell-handle[data-side="book"]::after {
   content: "";
@@ -188,7 +216,7 @@
   background: var(--vex-surface-2);
   border: 1px solid var(--vex-line-strong);
   opacity: 0;
-  transition: opacity 300ms var(--vex-ease-inout);
+  transition: opacity var(--vex-duration-reveal) var(--vex-ease-inout);
 }
 .vex-shell-handle[data-side="book"]:hover::after,
 .vex-shell-handle[data-side="book"][data-dragging]::after {
@@ -198,6 +226,7 @@
 @media (prefers-reduced-motion: reduce) {
   .vex-shell-frame,
   .vex-shell-handle,
+  .vex-shell-handle::before,
   .vex-shell-handle[data-side="book"]::after {
     transition: none;
   }
@@ -220,19 +249,22 @@
  * content holds its frozen expanded layout (inline width set by the
  * component) and fades in place (.vex-sidebar-fading) while the sliding
  * grid track clips it; the rail layout only applies after the fade settles
- * (COLLAPSE_SETTLE_MS in SessionsList.tsx = the 150ms here). At settle the
- * rail controls enter the 56px spine from the former rail-edge offset over
- * the track transition's second half; the bottom-pinned foot only fades.
- * A cold-collapsed render gets neither class (static rail). */
+ * (TIMING PAIR: `COLLAPSE_SETTLE_MS` in lib/useCollapseChoreography.ts is
+ * `DURATION_BASE_MS`, the JS mirror of the `--vex-duration-base` below - the
+ * JS unmounts the wide content when this fade ends, so the two move together
+ * or not at all). At settle the rail controls enter the 56px spine from the
+ * former rail-edge offset over the track transition's second half; the
+ * bottom-pinned foot only fades. A cold-collapsed render gets neither class
+ * (static rail). */
 .vex-sidebar-fading > * {
   opacity: 0;
-  transition: opacity 150ms var(--vex-ease-inout);
+  transition: opacity var(--vex-duration-base) var(--vex-ease-inout);
 }
 .vex-sidebar-rail-in [data-rail-control] {
-  animation: vex-rail-in 150ms var(--vex-ease-inout) backwards;
+  animation: vex-rail-in var(--vex-duration-base) var(--vex-ease-inout) backwards;
 }
 .vex-sidebar-rail-in [data-rail-foot] {
-  animation: vex-rail-fade-in 150ms var(--vex-ease-inout) backwards;
+  animation: vex-rail-fade-in var(--vex-duration-base) var(--vex-ease-inout) backwards;
 }
 @keyframes vex-rail-in {
   from {

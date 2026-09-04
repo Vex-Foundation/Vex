@@ -1,7 +1,9 @@
 package endpoint
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 )
@@ -22,6 +24,45 @@ type DirectoryChainIdentity struct {
 func EndpointAncestorChangedRefusal(path string) string {
 	return fmt.Sprintf("%s: The Vex Studio endpoint ancestor %s changed before use.",
 		RefuseEndpointAncestorChanged, path)
+}
+
+// DirectoryMissingError is the endpoint directory NOT BEING THERE, which is a
+// different fact from an ancestor that changed, and now says so.
+//
+// A distinct type rather than a distinct string because cmd/vex-mcp adds one
+// clause this package cannot know: whether this process was given an
+// XDG_RUNTIME_DIR at all. Callers match it with errors.As.
+type DirectoryMissingError struct {
+	// Path is the endpoint directory, absolute, as the plan named it.
+	Path string
+}
+
+func (err *DirectoryMissingError) Error() string {
+	return EndpointDirectoryMissingRefusal(err.Path, true)
+}
+
+// EndpointDirectoryMissingRefusal is the sentence for an endpoint directory
+// that does not exist.
+//
+// WHY IT IS NOT "changed before use". A client that scrubs the environment
+// derives the tmpdir form while the app, which can see XDG_RUNTIME_DIR, listens
+// under it. The bridge then captured the chain for a /tmp/vex-studio-<uid> that
+// had never existed and reported that its ancestor CHANGED - a sentence
+// describing a swap attack, printed for an ordinary "Vex is somewhere else".
+// The /run/user/<uid> rung in endpoint.go is what stops the two sides
+// diverging; this is what the user is told when a directory is absent anyway.
+//
+// xdgRuntimeDirForwarded reports whether THIS process received the variable. It
+// gates the second clause, because naming a cause that does not apply is the
+// same defect in a smaller font.
+func EndpointDirectoryMissingRefusal(path string, xdgRuntimeDirForwarded bool) string {
+	sentence := fmt.Sprintf("%s: The Vex Studio endpoint directory %s does not exist. "+
+		"Vex is not running for this configuration", RefuseEndpointDirectoryMissing, path)
+	if xdgRuntimeDirForwarded {
+		return sentence + "."
+	}
+	return sentence + ", or it is listening under XDG_RUNTIME_DIR, which this " +
+		"client did not forward to the bridge."
 }
 
 func ancestorPaths(path string) []string {
@@ -53,6 +94,12 @@ func CaptureDirectoryChain(parentDir string) (*DirectoryChainIdentity, error) {
 	abs, err := filepath.Abs(parentDir)
 	if err != nil {
 		return nil, fmt.Errorf("%s", EndpointAncestorChangedRefusal(parentDir))
+	}
+	// ABSENT IS NOT CHANGED, and it is reported first: every check below fails
+	// on a missing directory too, and the sentence they carry describes a
+	// replacement that never happened.
+	if _, statErr := os.Lstat(abs); errors.Is(statErr, fs.ErrNotExist) {
+		return nil, &DirectoryMissingError{Path: abs}
 	}
 	resolved, err := filepath.EvalSymlinks(abs)
 	if err != nil {

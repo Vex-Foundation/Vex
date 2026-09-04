@@ -1,5 +1,5 @@
 /**
- * Pendle PY handlers — quote (read) + mint / pre-expiry redeem (mutating).
+ * Pendle PY handlers - quote (read) + mint / pre-expiry redeem (mutating).
  *
  * This file is the PY family's PUBLIC ENTRY POINT; each tool's implementation
  * lives in `./py/`.
@@ -7,7 +7,7 @@
  * PY = the PT+YT pair. `pendle.py.mint` splits ONE payment token into an EQUAL
  * amount of PT and YT in a single transaction (Convert action `mint-py`,
  * `mintPyFromToken`). `pendle.py.redeem` burns an EQUAL PT+YT pair back to a token
- * BEFORE expiry (Convert action `redeem-py`, `redeemPyToToken`) — distinct from
+ * BEFORE expiry (Convert action `redeem-py`, `redeemPyToToken`) - distinct from
  * `pendle.pt.redeem`, which redeems a MATURED PT (PT only, no YT).
  *
  * Both mutating paths mirror the PT/YT discipline: fresh Convert re-fetch →

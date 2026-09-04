@@ -1,6 +1,6 @@
 /**
  * The ONE place the prediction PAYOUT asset is stated for the handler layer
- * (phase-3 W2, live-gate DEFECT 7) — the `agent_activity` out-leg identity and
+ * (phase-3 W2, live-gate DEFECT 7) - the `agent_activity` out-leg identity and
  * the agent-facing sentence that goes with it.
  *
  * It exists because three call sites needed the same three facts and had all
@@ -13,7 +13,7 @@
  * returns (`newPayoutUsd`, `payoutAmountUsd`) is a USD-DENOMINATED ESTIMATE,
  * not a chain-proven atomic quantity. It was previously written verbatim into
  * `amountRaw`, which only ever looked right because JupUSD happens to be
- * 6-decimal and dollar-pegged — a coincidence, not a proof. Until the phase-4
+ * 6-decimal and dollar-pegged - a coincidence, not a proof. Until the phase-4
  * keeper/order-status lane can read the real settled quantity, the row carries
  * the payout ASSET plus the USD estimate in `usd_out_est` (which is honestly
  * labelled as an estimate) and NO raw/human token amount at all. An absent
@@ -28,7 +28,7 @@ import {
 
 /**
  * The out-leg token IDENTITY for every prediction payout row. Amount fields
- * are intentionally absent — see the module doc.
+ * are intentionally absent - see the module doc.
  */
 export const PREDICTION_PAYOUT_LEG = {
   tokenAddress: JUPITER_PREDICTION_PAYOUT_MINT,
@@ -54,6 +54,6 @@ export const PREDICTION_PAYOUT_ASSET = {
 export const PREDICTION_PAYOUT_SETTLEMENT_NOTE =
   `Payout settles in ${JUPITER_PREDICTION_PAYOUT_SYMBOL} `
   + `(mint ${JUPITER_PREDICTION_PAYOUT_MINT}, ${JUPITER_PREDICTION_PAYOUT_DECIMALS} decimals), `
-  + "not USDC, and it arrives in a later keeper transaction rather than this one — "
+  + "not USDC, and it arrives in a later keeper transaction rather than this one - "
   + "the settled amount is unknown until it lands, so no payout amount is recorded yet. "
   + `Use solana__swap_execute to convert ${JUPITER_PREDICTION_PAYOUT_SYMBOL} to USDC once it arrives.`;

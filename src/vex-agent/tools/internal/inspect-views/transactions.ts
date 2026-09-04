@@ -1,5 +1,5 @@
 /**
- * Agent Scan — transactions view: the unified tx feed (PRIMARY view, Agent
+ * Agent Scan - transactions view: the unified tx feed (PRIMARY view, Agent
  * Scan plan v3 §1.9/§4.2 output-polish).
  *
  * FUSES `agent_activity` (new-format swap attempts: pending/confirmed/
@@ -14,7 +14,7 @@
  * row gets a compact human `summary` line up front (amounts with symbols,
  * USD labeled as an estimate, status, short tx hash) ahead of the full
  * machine fields. Rows with a resolvable chain+hash also feed `_explorerRefs`
- * (metadata-only, model-invisible — same mechanism `wallet/send` uses for a
+ * (metadata-only, model-invisible - same mechanism `wallet/send` uses for a
  * linkable-but-uncaptured tx ref) so the desktop app can render a real
  * explorer deep link without this module needing its own chain→URL map.
  */
@@ -32,7 +32,7 @@ export interface InspectTransactionsParams {
   limit?: number;
 }
 
-/** Bounded set of explorer refs derived from this page's rows — same shape `wallet/send` attaches under `data._explorerRefs`. */
+/** Bounded set of explorer refs derived from this page's rows - same shape `wallet/send` attaches under `data._explorerRefs`. */
 function buildExplorerRefs(items: readonly TransactionRow[]): Array<{ chain: string; txRef: string }> {
   const seen = new Set<string>();
   const refs: Array<{ chain: string; txRef: string }> = [];
@@ -45,7 +45,7 @@ function buildExplorerRefs(items: readonly TransactionRow[]): Array<{ chain: str
   };
   for (const item of items) {
     // A bridge logical row fans its on-chain hashes across its legs (deposit,
-    // fill, refund, extra fills) — each on its OWN chain. Derive a ref from
+    // fill, refund, extra fills) - each on its OWN chain. Derive a ref from
     // EVERY leg, not only the row's top-level fill hash, so a pending deposit /
     // refund / extra-fill link is never invisible (Codex FIX-ROUND-1 finding
     // 13). The canonical fill leg is included in `legs`, so the top-level hash
@@ -70,12 +70,12 @@ function shortHash(hash: string | null | undefined): string | null {
 
 /**
  * One amount leg (`amount token`). When the row's `amountBasis` is a quote
- * (`estimated` — Q2 for bridges, R5 for a lend/prediction/swap confirmation
+ * (`estimated` - Q2 for bridges, R5 for a lend/prediction/swap confirmation
  * without decoder-proven executed legs) it is marked explicitly (`~… est.`)
  * so a quoted amount never reads as an executed quantity (Codex FIX-ROUND-1
  * finding 12 / R14, extended to every kind by W5/R5).
  *
- * `legChainId` is the chain THIS leg settled on — the source chain for a
+ * `legChainId` is the chain THIS leg settled on - the source chain for a
  * bridge's input leg, the destination chain for its output leg. It exists only
  * to annotate the chain-agnostic `NATIVE` sentinel with the real gas-asset
  * ticker, so `0.0004 NATIVE` reads `0.0004 NATIVE (ETH)`. Annotation happens
@@ -102,7 +102,7 @@ function usdEstimate(value: number | null | undefined): string | null {
 /**
  * The Vex fee clause for a human summary line (owner decree 2026-08-03).
  *
- * The fee fields were already on every row, but only in the raw spread — the
+ * The fee fields were already on every row, but only in the raw spread - the
  * summary the agent reads first never mentioned them, so "what did that cost
  * me?" had no answer at a glance.
  *
@@ -110,7 +110,7 @@ function usdEstimate(value: number | null | undefined): string | null {
  * USD estimate alone: `usdVexFeeEst` is nullable precisely when no trustworthy
  * price existed, and a summary that showed only USD would print "no fee" for a
  * fee that was charged. And it renders nothing at all when there is no fee
- * amount — a failed attempt is not charged, and inventing a "fee: 0" line would
+ * amount - a failed attempt is not charged, and inventing a "fee: 0" line would
  * assert something the record does not say.
  */
 function vexFeeClause(row: TransactionRow): string | null {
@@ -122,7 +122,7 @@ function vexFeeClause(row: TransactionRow): string | null {
   return usd ? `Vex fee ${fee} (${usd})` : `Vex fee ${fee}`;
 }
 
-/** Chain display for a bridge route endpoint — slug preferred, numeric id as fallback. */
+/** Chain display for a bridge route endpoint - slug preferred, numeric id as fallback. */
 function routeEndpoint(slug: string | null | undefined, id: number | null | undefined): string | null {
   return slug ?? (id != null ? String(id) : null);
 }
@@ -149,7 +149,7 @@ function summarizeBridge(row: TransactionRow, hash: string | null): string {
   const amount = inLeg && outLeg ? `${inLeg} → ${outLeg}` : (inLeg ?? outLeg ?? null);
   const head = amount != null ? `Bridging ${amount} (${route})` : `Bridge ${route}`;
 
-  const parts = [`${head} via ${venue} — ${status}`];
+  const parts = [`${head} via ${venue} - ${status}`];
   const usd = usdEstimate(row.valueUsd ?? null);
   if (usd) parts.push(usd);
   if (row.failureCode) parts.push(`(${row.failureCode})`);
@@ -160,7 +160,7 @@ function summarizeBridge(row: TransactionRow, hash: string | null): string {
   const stalled = observed ? null : stalledVerificationClause(row);
   if (stalled) parts.push(stalled);
   if (hash) parts.push(`tx ${hash}`);
-  return parts.join(" — ");
+  return parts.join(" - ");
 }
 
 /**
@@ -173,14 +173,14 @@ const STALLED_ATTEMPTS = 20;
  * The agent-facing half of the Wave P stall surfacing (migration 065).
  *
  * A `pending` row tells the agent nothing about WHY it is pending. If Vex has
- * been unable to verify it — most often `no_safe_rpc`, which is permanent for
- * that chain, not transient — the agent will keep waiting or, worse, re-broadcast
+ * been unable to verify it - most often `no_safe_rpc`, which is permanent for
+ * that chain, not transient - the agent will keep waiting or, worse, re-broadcast
  * a transaction that may already have settled. That is the exact blind-retry
  * failure the agent-facing-errors decree exists to stop, applied to a NON-error.
  *
  * The clause therefore states three things and no more: that VERIFICATION (not
  * the transaction) stalled, the verifier's own reason verbatim, and the two
- * instructions that follow from it. It never claims the transaction failed —
+ * instructions that follow from it. It never claims the transaction failed -
  * an unverifiable transaction's outcome is UNKNOWN, and saying otherwise about
  * real funds is the thing the never-auto-fail policy forbids.
  */
@@ -196,18 +196,18 @@ function stalledVerificationClause(row: TransactionRow): string | null {
 
 
 /**
- * WHAT THE CHAIN OBSERVATION ESTABLISHED — the clause that answers "why is this
+ * WHAT THE CHAIN OBSERVATION ESTABLISHED - the clause that answers "why is this
  * not moving?" before the agent spends a `LoopDefer` cycle guessing.
  *
  * It runs BEFORE the stall clause because these are CONCLUSIVE observations: we
- * looked and learned something definite. A stall is the opposite — "we could not
- * look" — and reporting both would describe one observation as a conclusion and
+ * looked and learned something definite. A stall is the opposite - "we could not
+ * look" - and reporting both would describe one observation as a conclusion and
  * a failure at once.
  *
  * THE COPY IS BOUNDED BY WHAT THE LANE ACTUALLY PROVED:
  *
  * - `in_mempool` is the HEALTHY answer, and the instruction that matters is "do
- *   not re-broadcast" — re-broadcasting a mempool-resident transaction is how a
+ *   not re-broadcast" - re-broadcasting a mempool-resident transaction is how a
  *   user pays for the same action twice.
  * - `nonce_superseded` establishes only that ANOTHER transaction from this
  *   wallet used this nonce and that THIS hash has no receipt. It does NOT
@@ -217,7 +217,7 @@ function stalledVerificationClause(row: TransactionRow): string | null {
  *   so this line must never claim it.
  *
  * NO CHECK INTERVAL IS STATED. The row's real cadence is 5 s for its first ten
- * minutes and 30 s after, derived from `submit_attempted_at` — which this read
+ * minutes and 30 s after, derived from `submit_attempted_at` - which this read
  * model does not carry. A fixed "every 5s" would therefore be FALSE for any
  * older row, and inventing a cadence is exactly the claim-beyond-the-evidence
  * this file spends its other clauses avoiding.
@@ -239,12 +239,12 @@ function chainObservationClause(row: TransactionRow): string | null {
   if (reason === "in_mempool") {
     return (
       "in the mempool, not yet mined: a node knows this transaction and it is "
-      + "waiting for inclusion. Vex is re-checking it automatically — do not re-broadcast"
+      + "waiting for inclusion. Vex is re-checking it automatically - do not re-broadcast"
     );
   }
   if (reason === "nonce_superseded") {
     return (
-      "this transaction hash appears superseded — another transaction from the same "
+      "this transaction hash appears superseded - another transaction from the same "
       + "wallet has already used its nonce, and this hash has no receipt. What the "
       + "replacement did has not been checked, so it may or may not have completed "
       + "this action. Do not retry until you have checked the wallet/token state"
@@ -253,7 +253,7 @@ function chainObservationClause(row: TransactionRow): string | null {
   if (reason === "tx_unknown_to_node") {
     return (
       "no node we asked has heard of this transaction yet. That is not proof it was "
-      + "dropped — it may be sitting in a mempool we did not query — so Vex keeps "
+      + "dropped - it may be sitting in a mempool we did not query - so Vex keeps "
       + "checking. Do not re-broadcast"
     );
   }
@@ -265,14 +265,14 @@ export function summarizeTransactionRowForTest(row: TransactionRow): string {
   return summarize(row);
 }
 
-/** Compact human line for one row — leads the item, full fields follow. */
+/** Compact human line for one row - leads the item, full fields follow. */
 function summarize(row: TransactionRow): string {
   const hash = shortHash(row.txHash);
 
   if (row.source === "failure") {
     // Failure rows carry no economics (never produced a fill).
     const label = row.toolId ?? row.namespace;
-    return hash ? `${label} failed (tx ${hash})` : `${label} failed — no tx broadcast`;
+    return hash ? `${label} failed (tx ${hash})` : `${label} failed - no tx broadcast`;
   }
 
   // Only the agent_activity bridge LOGICAL row carries the route endpoints,
@@ -286,7 +286,7 @@ function summarize(row: TransactionRow): string {
   const chain = row.chain ?? "unknown chain";
   const venue = row.protocol ?? row.namespace;
   // Swap/lend/prediction rows (R5): a confirmed row without decoder-proven
-  // executed legs falls back to the quote, marked `~… est.` — never a bare
+  // executed legs falls back to the quote, marked `~… est.` - never a bare
   // executed-looking quantity for an attempt the decoder couldn't prove.
   const estimated = row.amountBasis === "estimated";
   // Single-chain row: both legs settled on the row's own chain.
@@ -295,7 +295,7 @@ function summarize(row: TransactionRow): string {
   const route = inLeg && outLeg ? `${inLeg} → ${outLeg}` : (inLeg ?? outLeg ?? venue);
   const status = row.status ?? "confirmed";
 
-  const parts = [`${route} via ${venue} on ${chain} — ${status}`];
+  const parts = [`${route} via ${venue} on ${chain} - ${status}`];
   const usd = usdEstimate(row.valueUsd ?? null);
   if (usd) parts.push(usd);
   if (status === "definitively_failed" && row.failureCode) parts.push(`(${row.failureCode})`);
@@ -308,7 +308,7 @@ function summarize(row: TransactionRow): string {
   const stalled = observed ? null : stalledVerificationClause(row);
   if (stalled) parts.push(stalled);
   if (hash) parts.push(`tx ${hash}`);
-  return parts.join(" — ");
+  return parts.join(" - ");
 }
 
 export async function inspectTransactions(
@@ -320,7 +320,7 @@ export async function inspectTransactions(
   const { decodeCursor, CursorError } = await import("@vex-agent/db/repos/transactions-cursor.js");
 
   // Decode the opaque cursor at the boundary. Malformed input is rejected with a
-  // bounded failure — never crashes the tool, never echoes the raw cursor.
+  // bounded failure - never crashes the tool, never echoes the raw cursor.
   let cursor = null;
   if (params.cursor !== undefined && params.cursor !== "") {
     try {

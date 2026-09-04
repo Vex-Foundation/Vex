@@ -1,5 +1,5 @@
 /**
- * Manifest convention linter — freezes the param/description convention.
+ * Manifest convention linter - freezes the param/description convention.
  *
  * Same shape as `_embedding-lint.ts`: pure functions, no IO, driven by
  * `__tests__/vex-agent/tools/protocols/manifest-lint.test.ts`, which iterates
@@ -197,7 +197,7 @@ export function withoutAllowlisted(issues: readonly ManifestLintIssue[]): Manife
   return issues.filter((issue) => !allowed.has(allowlistKey(issue)));
 }
 
-/** Allowlist entries no longer matched by any live violation — delete them. */
+/** Allowlist entries no longer matched by any live violation - delete them. */
 export function staleAllowlistKeys(issues: readonly ManifestLintIssue[]): string[] {
   const live = new Set(issues.map(allowlistKey));
   return MANIFEST_LINT_ALLOWLIST.map(allowlistKey).filter((key) => !live.has(key));

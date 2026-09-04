@@ -1,8 +1,8 @@
 /**
- * Capture validator — runtime boundary check for _tradeCapture contracts.
+ * Capture validator - runtime boundary check for _tradeCapture contracts.
  *
  * Called by runtime.ts after handler return, before projection pipeline.
- * Blocks capture:"full" results that lack required fields — fail-loud
+ * Blocks capture:"full" results that lack required fields - fail-loud
  * instead of silent null-fill in downstream.
  */
 
@@ -13,13 +13,13 @@ import logger from "@utils/logger.js";
 /**
  * Validate a capture against its mutation contract.
  * Returns true if capture is valid and should proceed to projection pipeline.
- * Returns false if capture is invalid — caller should skip projection.
+ * Returns false if capture is invalid - caller should skip projection.
  */
 export function validateCaptureContract(
   toolId: string,
   tradeCapture: Record<string, unknown> | null,
 ): boolean {
-  // Synthetic captures (settlement_sync.*) are NOT in MUTATION_MATRIX — route
+  // Synthetic captures (settlement_sync.*) are NOT in MUTATION_MATRIX - route
   // them to their own allowlist+required-field contract instead of the
   // fail-open unknown-tool path below. Unknown synthetic tool-ids and
   // missing wallet/position/valuation fields reject (fail-closed). See B-006.
@@ -42,16 +42,16 @@ export function validateCaptureContract(
 
   const contract = MUTATION_MATRIX.get(toolId);
   if (!contract) {
-    // Tool not in matrix — non-mutating or unknown. Let it through (no contract to validate against).
+    // Tool not in matrix - non-mutating or unknown. Let it through (no contract to validate against).
     return true;
   }
 
   if (contract.capture === "none") {
-    // No capture expected — nothing to validate.
+    // No capture expected - nothing to validate.
     return true;
   }
 
-  // capture === "full" — handler must provide _tradeCapture
+  // capture === "full" - handler must provide _tradeCapture
   if (!tradeCapture) {
     logger.error("capture.validator.missing_capture", {
       toolId,
@@ -61,7 +61,7 @@ export function validateCaptureContract(
     return false;
   }
 
-  // Validate expectedType (type is now a required field — always present after field check)
+  // Validate expectedType (type is now a required field - always present after field check)
   const actualType = typeof tradeCapture.type === "string" ? tradeCapture.type : "";
   if (actualType && !isExpectedType(contract, actualType)) {
     logger.error("capture.validator.unexpected_type", {
