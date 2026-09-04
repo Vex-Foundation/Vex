@@ -1,5 +1,5 @@
 {
-  "toolCount": 167,
+  "toolCount": 206,
   "tools": [
     {
       "alwaysLoad": true,
@@ -1327,6 +1327,70 @@
       "readOnlyHint": true,
       "requiresEnv": "TAVILY_API_KEY",
       "title": "Search and read the web"
+    },
+    {
+      "alwaysLoad": true,
+      "descriptionBytes": 1135,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "amountIn": {
+            "description": "Optional target collateral for a named trade in human USDC decimals, for example \"1\" or \"11\". Requires marketId or marketSymbol. Never pass a direct deposit or funding amount here; use ToolSearch once to select lighter.deposit.prepare and pass the user's amount unchanged.",
+            "type": "string"
+          },
+          "marketId": {
+            "description": "Optional Lighter Core market id. Provide at most one of marketId or marketSymbol, and include amountIn when checking a market minimum.",
+            "type": "number"
+          },
+          "marketSymbol": {
+            "description": "Optional Lighter Core market symbol, for example SUI. Provide at most one of marketSymbol or marketId, and include amountIn when checking a market minimum.",
+            "type": "string"
+          },
+          "walletAddress": {
+            "description": "Optional 0x-prefixed EVM wallet address to check. Omit to use the session's selected Vex wallet. Never a private key.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "kind": "internal",
+      "publicName": "lighter_core_onboarding_status",
+      "readOnlyHint": true,
+      "requiresEnv": null,
+      "title": "Check Lighter Core onboarding readiness"
+    },
+    {
+      "alwaysLoad": true,
+      "descriptionBytes": 1134,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "amountIn": {
+            "description": "Optional target collateral for a named trade in human USDG decimals, for example \"1\" or \"11\". Requires marketId or marketSymbol. Never pass a direct deposit or funding amount here; use ToolSearch once to select lighter.deposit.prepare and pass the user's amount unchanged.",
+            "type": "string"
+          },
+          "marketId": {
+            "description": "Optional Lighter RHC market id. Provide at most one of marketId or marketSymbol, and include amountIn when checking a market minimum.",
+            "type": "number"
+          },
+          "marketSymbol": {
+            "description": "Optional Lighter RHC market symbol, for example SUI. Provide at most one of marketSymbol or marketId, and include amountIn when checking a market minimum.",
+            "type": "string"
+          },
+          "walletAddress": {
+            "description": "Optional 0x-prefixed EVM wallet address to check. Omit to use the session's selected Vex wallet. Never a private key.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "kind": "internal",
+      "publicName": "lighter_rhc_onboarding_status",
+      "readOnlyHint": true,
+      "requiresEnv": null,
+      "title": "Check Robinhood Chain Lighter readiness"
     },
     {
       "alwaysLoad": true,
@@ -5068,6 +5132,1561 @@
       "requiresEnv": null,
       "title": "Audit an EVM token with KyberSwap",
       "toolId": "kyberswap.tokens.check"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 536,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "accountIndex": {
+            "description": "Optional Lighter account index as a safe non-negative integer. Provide exactly one of accountIndex or walletAddress.",
+            "type": "number"
+          },
+          "activeOnly": {
+            "description": "Optional Lighter account filter forwarded to the public account endpoint when supported.",
+            "type": "boolean"
+          },
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "environment": {
+            "description": "Optional public Lighter environment to read: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc for conversational Lighter requests. Any other value is rejected.",
+            "enum": [
+              "core",
+              "rhc"
+            ],
+            "type": "string"
+          },
+          "walletAddress": {
+            "description": "Optional 0x-prefixed L1 EVM wallet address that owns the Lighter account. Provide exactly one of walletAddress or accountIndex.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "lighter",
+      "publicName": "lighter__account_get",
+      "readOnlyHint": true,
+      "requiresEnv": null,
+      "title": "Read a Lighter account",
+      "toolId": "lighter.account.get"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 1174,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "amountIn": {
+            "description": "Optional target collateral for an explicitly requested trade, in human settlement-asset decimals (USDC on Core or USDG on RHC, both 6 decimals), for example \"11\". This is not a direct deposit amount. Never pass a user's request to deposit or fund an exact amount here; call lighter__deposit_prepare with that amount unchanged instead. Pass a known trade amount with marketSymbol or marketId so Vex checks the live market minimum before comparing current collateral with the target. Omit during amount-free setup discovery. Never ask the user for account or API-key indexes.",
+            "type": "string"
+          },
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "environment": {
+            "description": "Optional public Lighter environment to read: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc for conversational Lighter requests. Any other value is rejected.",
+            "enum": [
+              "core",
+              "rhc"
+            ],
+            "type": "string"
+          },
+          "marketId": {
+            "description": "Optional numeric Lighter market id from lighter__markets_list. When omitted, the market list reads the environment's visible markets.",
+            "type": "number"
+          },
+          "marketSymbol": {
+            "description": "Optional market symbol such as ETH or ETH/USDC. Use this for conversational order previews when the user names an asset instead of a market id; Vex resolves it against live Lighter markets. Also pass marketType when the symbol can exist as both a perpetual and spot product.",
+            "type": "string"
+          },
+          "walletAddress": {
+            "description": "Optional 0x-prefixed EVM wallet address to check. Omit to use the session's selected Vex wallet (resolved address-only). Never a private key.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "lighter",
+      "publicName": "lighter__account_onboarding_status",
+      "readOnlyHint": true,
+      "requiresEnv": null,
+      "title": "Check Lighter account onboarding readiness",
+      "toolId": "lighter.account.onboarding.status"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 518,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "accountIndex": {
+            "description": "Required Lighter account index as a safe non-negative integer. This is public account-index metadata, not a private credential.",
+            "type": "number"
+          },
+          "apiKeyIndex": {
+            "description": "Optional Lighter API-key index from 0 to 255. Omit it to request the provider's all-keys sentinel, which is useful for nonce planning before a future signer path.",
+            "type": "number"
+          },
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "environment": {
+            "description": "Optional public Lighter environment to read: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc for conversational Lighter requests. Any other value is rejected.",
+            "enum": [
+              "core",
+              "rhc"
+            ],
+            "type": "string"
+          },
+          "limit": {
+            "description": "Max API-key metadata rows to return (default 25, max 50). Out-of-range values are rejected.",
+            "type": "number"
+          }
+        },
+        "required": [
+          "accountIndex"
+        ],
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "lighter",
+      "publicName": "lighter__api_keys_inspect",
+      "readOnlyHint": true,
+      "requiresEnv": null,
+      "title": "Inspect Lighter API-key registrations",
+      "toolId": "lighter.apiKeys.inspect"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 483,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "countBack": {
+            "description": "Provider candle row cap for the requested range (max 500). Vex also shows at most 100 newest rows in the agent response.",
+            "type": "number"
+          },
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "endTimestamp": {
+            "description": "Window end as a JavaScript epoch-milliseconds integer. It must be greater than startTimestamp or the call is rejected.",
+            "type": "number"
+          },
+          "environment": {
+            "description": "Optional public Lighter environment to read: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc for conversational Lighter requests. Any other value is rejected.",
+            "enum": [
+              "core",
+              "rhc"
+            ],
+            "type": "string"
+          },
+          "marketId": {
+            "description": "Numeric Lighter market id from lighter__markets_list, as an integer from 0 to 65535. It names the order book to read.",
+            "type": "number"
+          },
+          "resolution": {
+            "description": "Candle bucket size accepted by Lighter: 1m, 5m, 15m, 30m, 1h, 4h, 12h, 1d, or 1w. Unsupported values are rejected.",
+            "enum": [
+              "1m",
+              "5m",
+              "15m",
+              "30m",
+              "1h",
+              "4h",
+              "12h",
+              "1d",
+              "1w"
+            ],
+            "type": "string"
+          },
+          "setTimestampToEnd": {
+            "description": "Optional Lighter candle flag controlling whether returned timestamps point at the candle end instead of its start.",
+            "type": "boolean"
+          },
+          "startTimestamp": {
+            "description": "Window start as a JavaScript epoch-milliseconds integer. Seconds-scale Unix timestamps are rejected before any provider request.",
+            "type": "number"
+          }
+        },
+        "required": [
+          "marketId",
+          "resolution",
+          "startTimestamp",
+          "endTimestamp"
+        ],
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "lighter",
+      "publicName": "lighter__candles_list",
+      "readOnlyHint": true,
+      "requiresEnv": null,
+      "title": "Read Lighter market candles",
+      "toolId": "lighter.candles"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 817,
+      "destructiveHint": true,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "intentId": {
+            "description": "Session-scoped Lighter deposit intent id produced by lighter__deposit_prepare. The approved deposit path refuses ids from other sessions.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "intentId"
+        ],
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "lighter",
+      "publicName": "lighter__deposit",
+      "readOnlyHint": false,
+      "requiresEnv": null,
+      "title": "Execute an approved Lighter deposit",
+      "toolId": "lighter.deposit"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 1005,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "amountIn": {
+            "description": "Exact settlement amount to transfer from the Vex wallet into Lighter, in human decimals: USDC on Core or USDG on Robinhood Chain (both use 6 decimals), for example \"11\". A request to deposit 5 means amountIn \"5\" even when Lighter already has a balance; never subtract existing collateral or reinterpret this as a target account total. Minimum 1 settlement token; a smaller deposit is not credited.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "environment": {
+            "description": "Optional Lighter environment for the persisted preview: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc. Any other value is rejected.",
+            "enum": [
+              "core",
+              "rhc"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "amountIn"
+        ],
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "lighter",
+      "publicName": "lighter__deposit_prepare",
+      "readOnlyHint": false,
+      "requiresEnv": null,
+      "title": "Prepare a Lighter deposit approval",
+      "toolId": "lighter.deposit.prepare"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 919,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "environment": {
+            "description": "Optional public Lighter environment to read: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc for conversational Lighter requests. Any other value is rejected.",
+            "enum": [
+              "core",
+              "rhc"
+            ],
+            "type": "string"
+          },
+          "intentId": {
+            "description": "Optional Lighter deposit intent id returned by lighter__deposit_prepare. Omit to list every unresolved deposit intent for the selected Vex wallet and environment.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "lighter",
+      "publicName": "lighter__deposit_status",
+      "readOnlyHint": true,
+      "requiresEnv": null,
+      "title": "Check a Lighter deposit's status",
+      "toolId": "lighter.deposit.status"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 724,
+      "destructiveHint": true,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "intentId": {
+            "description": "Session-scoped Lighter key-registration intent id produced by lighter__key_register_prepare.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "intentId"
+        ],
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "lighter",
+      "publicName": "lighter__key_register",
+      "readOnlyHint": false,
+      "requiresEnv": null,
+      "title": "Register an approved Lighter trading key",
+      "toolId": "lighter.key.register"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 1016,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "environment": {
+            "description": "Optional Lighter environment for the persisted preview: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc. Any other value is rejected.",
+            "enum": [
+              "core",
+              "rhc"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "lighter",
+      "publicName": "lighter__key_register_prepare",
+      "readOnlyHint": false,
+      "requiresEnv": null,
+      "title": "Prepare a Lighter trading-key approval",
+      "toolId": "lighter.key.register.prepare"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 773,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "intentId": {
+            "description": "Session-scoped Lighter key-registration intent id returned by lighter__key_register_prepare or the approved registration result.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "intentId"
+        ],
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "lighter",
+      "publicName": "lighter__key_register_status",
+      "readOnlyHint": true,
+      "requiresEnv": null,
+      "title": "Check a Lighter key registration's status",
+      "toolId": "lighter.key.register.status"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 594,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "environment": {
+            "description": "Optional public Lighter environment to read: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc for conversational Lighter requests. Any other value is rejected.",
+            "enum": [
+              "core",
+              "rhc"
+            ],
+            "type": "string"
+          },
+          "filter": {
+            "description": "Optional market-type filter accepted by Lighter: all, spot, or perp. The value is exact and unsupported values are rejected.",
+            "enum": [
+              "all",
+              "spot",
+              "perp"
+            ],
+            "type": "string"
+          },
+          "marketId": {
+            "description": "Numeric Lighter market id from lighter__markets_list, as an integer from 0 to 65535. It names the order book to read.",
+            "type": "number"
+          }
+        },
+        "required": [
+          "marketId"
+        ],
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "lighter",
+      "publicName": "lighter__market_get",
+      "readOnlyHint": true,
+      "requiresEnv": null,
+      "title": "Read one Lighter market",
+      "toolId": "lighter.market.get"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 549,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "environment": {
+            "description": "Optional public Lighter environment to read: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc for conversational Lighter requests. Any other value is rejected.",
+            "enum": [
+              "core",
+              "rhc"
+            ],
+            "type": "string"
+          },
+          "filter": {
+            "description": "Optional market-type filter accepted by Lighter: all, spot, or perp. The value is exact and unsupported values are rejected.",
+            "enum": [
+              "all",
+              "spot",
+              "perp"
+            ],
+            "type": "string"
+          },
+          "limit": {
+            "description": "Max market rows to return after the provider response is read (default 25, max 50). Out-of-range values are rejected.",
+            "type": "number"
+          },
+          "marketId": {
+            "description": "Optional numeric Lighter market id from lighter__markets_list. When omitted, the market list reads the environment's visible markets.",
+            "type": "number"
+          },
+          "page": {
+            "description": "1-based page over Vex's deterministic market ordering (default 1, max 1000). Pair it with nextPage to continue broad lists.",
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "lighter",
+      "publicName": "lighter__markets_list",
+      "readOnlyHint": true,
+      "requiresEnv": null,
+      "title": "List Lighter markets",
+      "toolId": "lighter.markets"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 503,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "accountIndex": {
+            "description": "Optional account index. Omit to use the account bound to the default saved Vex-managed Lighter trading credential. Derived read-only authorization refuses account mismatches.",
+            "type": "number"
+          },
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "environment": {
+            "description": "Optional public Lighter environment to read: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc for conversational Lighter requests. Any other value is rejected.",
+            "enum": [
+              "core",
+              "rhc"
+            ],
+            "type": "string"
+          },
+          "filter": {
+            "description": "Optional market-type filter accepted by Lighter: all, spot, or perp. The value is exact and unsupported values are rejected.",
+            "enum": [
+              "all",
+              "spot",
+              "perp"
+            ],
+            "type": "string"
+          },
+          "limit": {
+            "description": "Max account order/trade rows to return (default 25, max 50). Out-of-range values are rejected.",
+            "type": "number"
+          },
+          "marketId": {
+            "description": "Optional numeric Lighter market id from lighter__markets_list. When omitted, the market list reads the environment's visible markets.",
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "lighter",
+      "publicName": "lighter__open_orders_list",
+      "readOnlyHint": true,
+      "requiresEnv": null,
+      "title": "List open Lighter orders",
+      "toolId": "lighter.openOrders"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 487,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "intentId": {
+            "description": "Session-scoped exact Lighter order lifecycle intent produced by the matching prepare tool.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "intentId"
+        ],
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "lighter",
+      "publicName": "lighter__order_cancel",
+      "readOnlyHint": false,
+      "requiresEnv": null,
+      "title": "Cancel an approved Lighter order",
+      "toolId": "lighter.order.cancel"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 537,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "intentId": {
+            "description": "Session-scoped exact Lighter order lifecycle intent produced by the matching prepare tool.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "intentId"
+        ],
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "lighter",
+      "publicName": "lighter__order_cancel_all",
+      "readOnlyHint": false,
+      "requiresEnv": null,
+      "title": "Cancel all approved Lighter orders",
+      "toolId": "lighter.order.cancelAll"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 533,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "accountIndex": {
+            "description": "Optional saved Lighter account index. Omit when exactly one managed account exists in the selected environment.",
+            "type": "number"
+          },
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "environment": {
+            "description": "Optional Lighter environment for the persisted preview: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc. Any other value is rejected.",
+            "enum": [
+              "core",
+              "rhc"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "lighter",
+      "publicName": "lighter__order_cancel_all_prepare",
+      "readOnlyHint": false,
+      "requiresEnv": null,
+      "title": "Prepare approval to cancel all Lighter orders",
+      "toolId": "lighter.order.cancelAll.prepare"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 503,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "accountIndex": {
+            "description": "Optional saved Lighter account index. Omit when exactly one managed account exists in the selected environment.",
+            "type": "number"
+          },
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "environment": {
+            "description": "Optional Lighter environment for the persisted preview: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc. Any other value is rejected.",
+            "enum": [
+              "core",
+              "rhc"
+            ],
+            "type": "string"
+          },
+          "marketId": {
+            "description": "Exact Lighter market index of the active provider order.",
+            "type": "number"
+          },
+          "orderId": {
+            "description": "Exact decimal provider order_id string from authenticated Lighter open orders. It is never converted to a JavaScript number.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "marketId",
+          "orderId"
+        ],
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "lighter",
+      "publicName": "lighter__order_cancel_prepare",
+      "readOnlyHint": false,
+      "requiresEnv": null,
+      "title": "Prepare a Lighter order-cancellation approval",
+      "toolId": "lighter.order.cancel.prepare"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 573,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "intentId": {
+            "description": "Session-scoped Lighter order execution intent id produced by lighter__order_create_prepare. The approved create path refuses ids from other sessions.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "intentId"
+        ],
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "lighter",
+      "publicName": "lighter__order_create",
+      "readOnlyHint": false,
+      "requiresEnv": null,
+      "title": "Submit an approved Lighter order",
+      "toolId": "lighter.order.create"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 667,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "environment": {
+            "description": "Optional Lighter environment for the persisted preview: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc. Any other value is rejected.",
+            "enum": [
+              "core",
+              "rhc"
+            ],
+            "type": "string"
+          },
+          "previewId": {
+            "description": "Optional session-scoped Lighter order preview id returned by lighter__order_preview. Omit for normal 'prepare that order' requests; Vex uses the latest fresh preview in this session and environment.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "lighter",
+      "publicName": "lighter__order_create_prepare",
+      "readOnlyHint": false,
+      "requiresEnv": null,
+      "title": "Prepare a Lighter order approval",
+      "toolId": "lighter.order.create.prepare"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 483,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "accountIndex": {
+            "description": "Optional account index. Omit to use the account bound to the default saved Vex-managed Lighter trading credential. Derived read-only authorization refuses account mismatches.",
+            "type": "number"
+          },
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "environment": {
+            "description": "Optional public Lighter environment to read: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc for conversational Lighter requests. Any other value is rejected.",
+            "enum": [
+              "core",
+              "rhc"
+            ],
+            "type": "string"
+          },
+          "filter": {
+            "description": "Optional market-type filter accepted by Lighter: all, spot, or perp. The value is exact and unsupported values are rejected.",
+            "enum": [
+              "all",
+              "spot",
+              "perp"
+            ],
+            "type": "string"
+          },
+          "limit": {
+            "description": "Max account order/trade rows to return (default 25, max 50). Out-of-range values are rejected.",
+            "type": "number"
+          },
+          "marketId": {
+            "description": "Optional numeric Lighter market id from lighter__markets_list. When omitted, the market list reads the environment's visible markets.",
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "lighter",
+      "publicName": "lighter__order_history_list",
+      "readOnlyHint": true,
+      "requiresEnv": null,
+      "title": "Read Lighter order history",
+      "toolId": "lighter.orderHistory"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 494,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "intentId": {
+            "description": "Session-scoped exact Lighter order lifecycle intent produced by the matching prepare tool.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "intentId"
+        ],
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "lighter",
+      "publicName": "lighter__order_modify",
+      "readOnlyHint": false,
+      "requiresEnv": null,
+      "title": "Modify an approved Lighter limit order",
+      "toolId": "lighter.order.modify"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 552,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "accountIndex": {
+            "description": "Optional saved Lighter account index. Omit when exactly one managed account exists in the selected environment.",
+            "type": "number"
+          },
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "environment": {
+            "description": "Optional Lighter environment for the persisted preview: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc. Any other value is rejected.",
+            "enum": [
+              "core",
+              "rhc"
+            ],
+            "type": "string"
+          },
+          "marketId": {
+            "description": "Exact Lighter market index of the active provider order.",
+            "type": "number"
+          },
+          "orderId": {
+            "description": "Exact decimal provider order_id string from authenticated Lighter open orders. It is never converted to a JavaScript number.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "price": {
+            "description": "Replacement limit price in human market units, converted exactly using current Lighter market precision.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "totalBaseAmountIn": {
+            "description": "Replacement total order size in human market units. This is the new total size, not the remaining size, and cannot be below the amount already filled.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "marketId",
+          "orderId",
+          "totalBaseAmountIn",
+          "price"
+        ],
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "lighter",
+      "publicName": "lighter__order_modify_prepare",
+      "readOnlyHint": false,
+      "requiresEnv": null,
+      "title": "Prepare a Lighter order-modification approval",
+      "toolId": "lighter.order.modify.prepare"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 1870,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "accountIndex": {
+            "description": "Optional account index. Omit to use the account bound to the default saved Vex-managed Lighter trading credential. Derived read-only authorization refuses account mismatches.",
+            "type": "number"
+          },
+          "apiKeyIndex": {
+            "description": "Optional Lighter API-key index override. Omit for normal order previews; Vex attempts to resolve a public trading API-key index for later approval preparation, but a missing trading key does not block the read-only preview. This does not require or expose API private key material.",
+            "type": "number"
+          },
+          "baseAmountIn": {
+            "description": "Order size in the BASE asset as a human decimal string, for example 0.25. Vex converts it exactly using live Lighter size decimals and refuses rounding.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "environment": {
+            "description": "Optional public Lighter environment to read: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc for conversational Lighter requests. Any other value is rejected.",
+            "enum": [
+              "core",
+              "rhc"
+            ],
+            "type": "string"
+          },
+          "marketId": {
+            "description": "Optional numeric Lighter market id from lighter__markets_list. When omitted, the market list reads the environment's visible markets.",
+            "type": "number"
+          },
+          "marketSymbol": {
+            "description": "Optional market symbol such as ETH or ETH/USDC. Use this for conversational order previews when the user names an asset instead of a market id; Vex resolves it against live Lighter markets. Also pass marketType when the symbol can exist as both a perpetual and spot product.",
+            "type": "string"
+          },
+          "marketType": {
+            "description": "Optional exact Lighter product type for this order preview: perp or spot. Include it when resolving marketSymbol so a spot request cannot silently select the same asset's perpetual market. With marketId, the live market detail must match this value or the preview is refused.",
+            "enum": [
+              "perp",
+              "spot"
+            ],
+            "type": "string"
+          },
+          "orderExpiry": {
+            "description": "Exact order expiry as a JavaScript epoch-milliseconds integer. Use orderExpiryOffsetMinutes instead when the user says a relative expiry such as '30 minutes from now'. Vex requires the final expiry to be between 5 minutes and 30 days from preview time and requires at least 5 minutes to remain at actual submission for every order whose signed wire expiry is non-nil.",
+            "type": "number"
+          },
+          "orderExpiryOffsetMinutes": {
+            "description": "Preferred for relative expiries such as '30 minutes from now'. Whole minutes from preview time, between 5 and 43200. For an ordinary limit with no user-stated duration, use 1440 (one day), matching the trade ticket default; always preserve an explicit duration. Do not invent a duration for a trigger-limit order. Do not combine with orderExpiry.",
+            "type": "number"
+          },
+          "orderType": {
+            "description": "Optional native Lighter order type. Use market for an immediate market order; limit for a priced order; stop-loss or take-profit for a market-trigger protective order; and stop-loss-limit or take-profit-limit for a trigger that places a priced limit order. Every stop-loss and take-profit variant is perpetual-only, reduce-only, and requires triggerPrice. Limit, stop-loss-limit, and take-profit-limit support immediate-or-cancel, good-till-time, and post-only. TWAP and entry-with-attached-protection remain unavailable.",
+            "enum": [
+              "limit",
+              "market",
+              "stop-loss",
+              "stop-loss-limit",
+              "take-profit",
+              "take-profit-limit"
+            ],
+            "type": "string"
+          },
+          "price": {
+            "description": "Exact human-decimal order price. For market it is the immediate worst acceptable price. For plain limit it is the limit price. For stop-loss or take-profit it is the hard execution bound after the trigger. For stop-loss-limit or take-profit-limit it is the limit price activated after the trigger, which may rest and may never fill. It is never the trigger price itself.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "reduceOnly": {
+            "description": "Optional reduce-only flag. Defaults to false. When true, Vex requires live account position evidence that the side reduces the current position.",
+            "type": "boolean"
+          },
+          "side": {
+            "description": "Order side to preview: buy or sell. If the user does not say which direction, ask a short clarification instead of guessing. Unsupported values are rejected.",
+            "enum": [
+              "buy",
+              "sell"
+            ],
+            "type": "string"
+          },
+          "timeInForce": {
+            "description": "Optional for an ordinary limit order: when omitted, Vex uses good-till-time so any unfilled amount can remain open until filled, canceled, or expired. Preserve an explicit immediate-or-cancel, good-till-time, or post-only selection exactly. Required for stop-loss-limit and take-profit-limit orders. Market, stop-loss, and take-profit previews may omit it and resolve only to immediate-or-cancel. Post-only trigger limits are conditional maker instructions and are not rejected against the current book before activation.",
+            "enum": [
+              "good-till-time",
+              "immediate-or-cancel",
+              "post-only"
+            ],
+            "type": "string"
+          },
+          "triggerPrice": {
+            "description": "Required for stop-loss, stop-loss-limit, take-profit, and take-profit-limit orders and forbidden for ordinary market and limit orders. Human decimal trigger price. Vex verifies it is on the protective side of the live market for the current perpetual position.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "side",
+          "baseAmountIn",
+          "price"
+        ],
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "lighter",
+      "publicName": "lighter__order_preview",
+      "readOnlyHint": true,
+      "requiresEnv": null,
+      "title": "Preview a Lighter order",
+      "toolId": "lighter.order.preview"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 936,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "environment": {
+            "description": "Optional public Lighter environment to read: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc for conversational Lighter requests. Any other value is rejected.",
+            "enum": [
+              "core",
+              "rhc"
+            ],
+            "type": "string"
+          },
+          "intentId": {
+            "description": "Optional Lighter create-order or lifecycle intent id to check, from a prepare tool or earlier status report. Omit for a bounded check of unresolved local intents in the environment.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "lighter",
+      "publicName": "lighter__order_status",
+      "readOnlyHint": true,
+      "requiresEnv": null,
+      "title": "Check a Lighter order action's status",
+      "toolId": "lighter.order.status"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 537,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "environment": {
+            "description": "Optional public Lighter environment to read: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc for conversational Lighter requests. Any other value is rejected.",
+            "enum": [
+              "core",
+              "rhc"
+            ],
+            "type": "string"
+          },
+          "limit": {
+            "description": "Max ask rows and max bid rows to return (default 25, max 50). The response reports provider totals and truncation flags.",
+            "type": "number"
+          },
+          "marketId": {
+            "description": "Numeric Lighter market id from lighter__markets_list, as an integer from 0 to 65535. It names the order book to read.",
+            "type": "number"
+          }
+        },
+        "required": [
+          "marketId"
+        ],
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "lighter",
+      "publicName": "lighter__orderbook_get",
+      "readOnlyHint": true,
+      "requiresEnv": null,
+      "title": "Read a Lighter order book",
+      "toolId": "lighter.orderbook"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 535,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "intentId": {
+            "description": "Session-scoped exact Lighter order lifecycle intent produced by the matching prepare tool.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "intentId"
+        ],
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "lighter",
+      "publicName": "lighter__position_close",
+      "readOnlyHint": false,
+      "requiresEnv": null,
+      "title": "Close an approved Lighter position",
+      "toolId": "lighter.position.close"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 602,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "accountIndex": {
+            "description": "Optional saved Lighter account index. Omit when exactly one managed account exists in the selected environment.",
+            "type": "number"
+          },
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "environment": {
+            "description": "Optional Lighter environment for the persisted preview: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc. Any other value is rejected.",
+            "enum": [
+              "core",
+              "rhc"
+            ],
+            "type": "string"
+          },
+          "marketId": {
+            "description": "Exact Lighter market index of the active provider order.",
+            "type": "number"
+          },
+          "slippageBps": {
+            "description": "Explicit maximum slippage in basis points from 1 through 500. Vex refuses the close unless visible live depth can fill the entire position inside this bound.",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "marketId",
+          "slippageBps"
+        ],
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "lighter",
+      "publicName": "lighter__position_close_prepare",
+      "readOnlyHint": false,
+      "requiresEnv": null,
+      "title": "Prepare a Lighter position-close approval",
+      "toolId": "lighter.position.close.prepare"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 1108,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "accountIndex": {
+            "description": "Optional account index. Omit to use the account bound to the default saved Vex-managed Lighter trading credential. Derived read-only authorization refuses account mismatches.",
+            "type": "number"
+          },
+          "apiKeyIndex": {
+            "description": "Optional Lighter API-key index override. Omit for normal order previews; Vex attempts to resolve a public trading API-key index for later approval preparation, but a missing trading key does not block the read-only preview. This does not require or expose API private key material.",
+            "type": "number"
+          },
+          "baseAmountIn": {
+            "description": "Order size in the BASE asset as a human decimal string, for example 0.25. Vex converts it exactly using live Lighter size decimals and refuses rounding.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "environment": {
+            "description": "Optional public Lighter environment to read: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc for conversational Lighter requests. Any other value is rejected.",
+            "enum": [
+              "core",
+              "rhc"
+            ],
+            "type": "string"
+          },
+          "marketId": {
+            "description": "Optional numeric Lighter market id from lighter__markets_list. When omitted, the market list reads the environment's visible markets.",
+            "type": "number"
+          },
+          "marketSymbol": {
+            "description": "Optional market symbol such as ETH or ETH/USDC. Use this for conversational order previews when the user names an asset instead of a market id; Vex resolves it against live Lighter markets. Also pass marketType when the symbol can exist as both a perpetual and spot product.",
+            "type": "string"
+          },
+          "orderExpiry": {
+            "description": "Exact order expiry as a JavaScript epoch-milliseconds integer. Use orderExpiryOffsetMinutes instead when the user says a relative expiry such as '30 minutes from now'. Vex requires the final expiry to be between 5 minutes and 30 days from preview time and requires at least 5 minutes to remain at actual submission for every order whose signed wire expiry is non-nil.",
+            "type": "number"
+          },
+          "orderExpiryOffsetMinutes": {
+            "description": "Preferred for relative expiries such as '30 minutes from now'. Whole minutes from preview time, between 5 and 43200. For an ordinary limit with no user-stated duration, use 1440 (one day), matching the trade ticket default; always preserve an explicit duration. Do not invent a duration for a trigger-limit order. Do not combine with orderExpiry.",
+            "type": "number"
+          },
+          "side": {
+            "description": "Order side to preview: buy or sell. If the user does not say which direction, ask a short clarification instead of guessing. Unsupported values are rejected.",
+            "enum": [
+              "buy",
+              "sell"
+            ],
+            "type": "string"
+          },
+          "stopLossPrice": {
+            "description": "Exact human-decimal worst execution-price bound after the stop-loss triggers.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "stopLossTriggerPrice": {
+            "description": "Exact human-decimal stop-loss trigger price. Vex never guesses it.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "takeProfitPrice": {
+            "description": "Exact human-decimal worst execution-price bound after the take-profit triggers.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "takeProfitTriggerPrice": {
+            "description": "Exact human-decimal take-profit trigger price. Vex never guesses it.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "side",
+          "baseAmountIn",
+          "stopLossTriggerPrice",
+          "stopLossPrice",
+          "takeProfitTriggerPrice",
+          "takeProfitPrice"
+        ],
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "lighter",
+      "publicName": "lighter__position_protect",
+      "readOnlyHint": true,
+      "requiresEnv": null,
+      "title": "Preview Lighter position protection",
+      "toolId": "lighter.position.protect"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 529,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "accountIndex": {
+            "description": "Optional Lighter account index as a safe non-negative integer. Provide exactly one of accountIndex or walletAddress.",
+            "type": "number"
+          },
+          "activeOnly": {
+            "description": "Optional Lighter account filter forwarded to the public account endpoint when supported.",
+            "type": "boolean"
+          },
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "environment": {
+            "description": "Optional public Lighter environment to read: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc for conversational Lighter requests. Any other value is rejected.",
+            "enum": [
+              "core",
+              "rhc"
+            ],
+            "type": "string"
+          },
+          "walletAddress": {
+            "description": "Optional 0x-prefixed L1 EVM wallet address that owns the Lighter account. Provide exactly one of walletAddress or accountIndex.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "lighter",
+      "publicName": "lighter__positions_list",
+      "readOnlyHint": true,
+      "requiresEnv": null,
+      "title": "List Lighter positions",
+      "toolId": "lighter.positions"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 472,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "environment": {
+            "description": "Optional public Lighter environment to read: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc for conversational Lighter requests. Any other value is rejected.",
+            "enum": [
+              "core",
+              "rhc"
+            ],
+            "type": "string"
+          },
+          "limit": {
+            "description": "Max recent trade rows to return (default 25, max 50). Out-of-range values are rejected, not clamped.",
+            "type": "number"
+          },
+          "marketId": {
+            "description": "Numeric Lighter market id from lighter__markets_list, as an integer from 0 to 65535. It names the order book to read.",
+            "type": "number"
+          }
+        },
+        "required": [
+          "marketId"
+        ],
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "lighter",
+      "publicName": "lighter__recent_trades_list",
+      "readOnlyHint": true,
+      "requiresEnv": null,
+      "title": "Read recent public Lighter trades",
+      "toolId": "lighter.recentTrades"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 462,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "environment": {
+            "description": "Optional public Lighter environment to read: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc for conversational Lighter requests. Any other value is rejected.",
+            "enum": [
+              "core",
+              "rhc"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "lighter",
+      "publicName": "lighter__system_get",
+      "readOnlyHint": true,
+      "requiresEnv": null,
+      "title": "Read Lighter system status",
+      "toolId": "lighter.system"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 522,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "accountIndex": {
+            "description": "Optional account index. Omit to use the account bound to the default saved Vex-managed Lighter trading credential. Derived read-only authorization refuses account mismatches.",
+            "type": "number"
+          },
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "environment": {
+            "description": "Optional public Lighter environment to read: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc for conversational Lighter requests. Any other value is rejected.",
+            "enum": [
+              "core",
+              "rhc"
+            ],
+            "type": "string"
+          },
+          "limit": {
+            "description": "Max account order/trade rows to return (default 25, max 50). Out-of-range values are rejected.",
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "lighter",
+      "publicName": "lighter__trades_list",
+      "readOnlyHint": true,
+      "requiresEnv": null,
+      "title": "Read Lighter account trades",
+      "toolId": "lighter.trades"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 729,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "intentId": {
+            "description": "Session-scoped environment-bound withdrawal intent produced by lighter__withdraw_prepare.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "intentId"
+        ],
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "lighter",
+      "publicName": "lighter__withdraw",
+      "readOnlyHint": false,
+      "requiresEnv": null,
+      "title": "Submit an approved Lighter withdrawal",
+      "toolId": "lighter.withdraw"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 685,
+      "destructiveHint": true,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "claimId": {
+            "description": "Session-scoped environment-bound manual settlement claim id produced by lighter__withdraw_claim_prepare.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "claimId"
+        ],
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "lighter",
+      "publicName": "lighter__withdraw_claim",
+      "readOnlyHint": false,
+      "requiresEnv": null,
+      "title": "Broadcast an approved Lighter withdrawal claim",
+      "toolId": "lighter.withdraw.claim"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 586,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "intentId": {
+            "description": "Environment-bound claimable withdrawal intent. An exact earlier-session intent may be recovered only when it belongs to the currently selected wallet; the new manual claim receives its own current-session approval.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "intentId"
+        ],
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "lighter",
+      "publicName": "lighter__withdraw_claim_prepare",
+      "readOnlyHint": false,
+      "requiresEnv": null,
+      "title": "Prepare a Lighter withdrawal-claim approval",
+      "toolId": "lighter.withdraw.claim.prepare"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 668,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "amountIn": {
+            "description": "Exact stablecoin amount to withdraw in human decimals, for example \"2\": USDC for environment=core or USDG for environment=rhc. Vex proves the environment-specific live minimum, collateral safety, owner destination, delay, and settlement gateway before approval.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "environment": {
+            "description": "Optional Lighter environment for the persisted preview: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc. Any other value is rejected.",
+            "enum": [
+              "core",
+              "rhc"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "amountIn"
+        ],
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "lighter",
+      "publicName": "lighter__withdraw_prepare",
+      "readOnlyHint": false,
+      "requiresEnv": null,
+      "title": "Prepare a Lighter withdrawal approval",
+      "toolId": "lighter.withdraw.prepare"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 851,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "intentId": {
+            "description": "Optional Core or RHC withdrawal intent id from lighter__withdraw_prepare or lighter__withdraw. Exact ids may be recovered from an earlier session only when they belong to the selected wallet.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "lighter",
+      "publicName": "lighter__withdraw_status",
+      "readOnlyHint": true,
+      "requiresEnv": null,
+      "title": "Check a Lighter withdrawal's status",
+      "toolId": "lighter.withdraw.status"
     },
     {
       "alwaysLoad": false,

@@ -1,0 +1,32 @@
+{
+  "definition": {
+    "function": {
+      "description": "Execute one exact approved immediate account-wide Lighter cancellation. Direct calls are refused. The privileged runtime requires the entire active-order set to remain unchanged, revalidates key and nonce, reserves the nonce atomically, signs TxType 16 with time_in_force 0 and time 0, stages identity before one submission, and never retries ambiguity. Returns completion only after zero active orders plus exact terminal evidence for every approved order, with fills reported separately; otherwise returns a pending or ambiguous state.",
+      "name": "lighter__order_cancel_all",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "intentId": {
+            "description": "Session-scoped exact Lighter order lifecycle intent produced by the matching prepare tool.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "intentId"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "external_post",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": true,
+    "namespace": "lighter",
+    "requiresEnv": null,
+    "toolId": "lighter.order.cancelAll"
+  }
+}

@@ -67,6 +67,8 @@ const DOC_NAME_TO_LIVE_NAME: Readonly<Record<string, string>> = {
   web_research: "WebResearch",
   twitter_account: "TwitterAccount",
   units_convert: "UnitsConvert",
+  lighter_rhc_onboarding_status: "lighter_rhc_onboarding_status",
+  lighter_core_onboarding_status: "lighter_core_onboarding_status",
   session_memory_search: "SessionMemorySearch",
   session_memory_resolve_item: "SessionMemoryResolve",
   long_memory_suggest: "MemorySuggest",

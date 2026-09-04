@@ -1,0 +1,33 @@
+{
+  "definition": {
+    "function": {
+      "description": "Read Lighter public system status and system configuration for Core or Robinhood Chain. Use when checking whether an environment is reachable, matching a market-data read to a network id, or reviewing public fee/cooldown configuration before deeper reads. Returns status code, network id, timestamp, pool indexes, cooldown periods, and public integrator fee ceilings. Read-only: no account lookup, credentials, wallet, signer, order, deposit, or withdrawal path.",
+      "name": "lighter__system_get",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "environment": {
+            "description": "Optional public Lighter environment to read: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc for conversational Lighter requests. Any other value is rejected.",
+            "enum": [
+              "core",
+              "rhc"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "lighter",
+    "requiresEnv": null,
+    "toolId": "lighter.system"
+  }
+}

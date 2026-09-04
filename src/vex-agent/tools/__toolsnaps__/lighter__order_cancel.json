@@ -1,0 +1,32 @@
+{
+  "definition": {
+    "function": {
+      "description": "Execute one exact approved Lighter order cancellation. Direct calls are refused. After approval, the privileged runtime revalidates the unchanged active order, registered key, and nonce; atomically reserves the nonce; signs TxType 15 locally; persists transaction identity before one sendTx; and never retries ambiguity. Returns canceled only from exact provider inactive-order evidence, with executed, remaining, and average-fill amounts; otherwise returns a pending or ambiguous state.",
+      "name": "lighter__order_cancel",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "intentId": {
+            "description": "Session-scoped exact Lighter order lifecycle intent produced by the matching prepare tool.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "intentId"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "external_post",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": true,
+    "namespace": "lighter",
+    "requiresEnv": null,
+    "toolId": "lighter.order.cancel"
+  }
+}

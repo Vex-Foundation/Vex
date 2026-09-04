@@ -1,0 +1,32 @@
+{
+  "definition": {
+    "function": {
+      "description": "Approval-gated Lighter order create resume target for a prepared execution intent. Call this only through the approval card that lighter__order_create_prepare enqueues; no direct call should be made without a prepared intent and approval-resume context. An approved call signs the exact prepared order with the local trading key and submits it to Lighter, so real funds move on the exchange. Returns the recorded approval decision plus the execution state: sequencer_pending, provider-confirmed order state, or an ambiguous outcome that must be reconciled before any retry.",
+      "name": "lighter__order_create",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "intentId": {
+            "description": "Session-scoped Lighter order execution intent id produced by lighter__order_create_prepare. The approved create path refuses ids from other sessions.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "intentId"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "external_post",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": true,
+    "namespace": "lighter",
+    "requiresEnv": null,
+    "toolId": "lighter.order.create"
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "definition": {
+    "function": {
+      "description": "Prepare a separate settlement-wallet approval for one exact claimable Core USDC or RHC USDG withdrawal. Use when reconciliation reports that exact withdrawal as claimable. It requires the selected wallet to equal the fixed owner, exact pending amount, reviewed environment-specific gateway implementation/code and enabled asset-3 token mapping, successful zero-value call simulation, fresh fees, and enough ETH for the disclosed hard fee ceiling. Returns a durable claim id, amount, settlement network, fee ceiling, expiry, and separate host approval card. It never signs or broadcasts.",
+      "name": "lighter__withdraw_claim_prepare",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "intentId": {
+            "description": "Environment-bound claimable withdrawal intent. An exact earlier-session intent may be recovered only when it belongs to the currently selected wallet; the new manual claim receives its own current-session approval.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "intentId"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "approval_prepare",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "lighter",
+    "requiresEnv": null,
+    "toolId": "lighter.withdraw.claim.prepare"
+  }
+}

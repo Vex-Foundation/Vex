@@ -849,6 +849,167 @@
         }
       ]
     },
+    "lighter": {
+      "aliases": [
+        "lighter",
+        "rhc lighter",
+        "lighter core",
+        "lighter market data",
+        "lighter order book"
+      ],
+      "discoveryHints": [
+        "lighter markets",
+        "lighter market id",
+        "rhc order book",
+        "lighter recent trades",
+        "lighter candles",
+        "lighter system status",
+        "set up my lighter account",
+        "get me ready for lighter perps",
+        "withdraw from lighter"
+      ],
+      "exampleQueries": [
+        "ToolSearch(query=\"set up my lighter account\", namespace=\"lighter\")",
+        "ToolSearch(query=\"I want to trade perps on lighter\", namespace=\"lighter\")",
+        "ToolSearch(query=\"withdraw USDG from lighter rhc\", namespace=\"lighter\")",
+        "ToolSearch(query=\"rhc order book depth\", namespace=\"lighter\")"
+      ],
+      "facets": [
+        {
+          "label": "Get ready to trade",
+          "summary": "Inspect the selected wallet, ask only for the desired USDC deposit, then prepare the approval-gated deposit and managed local trading credential setup.",
+          "toolPrefixes": [
+            "lighter.account.onboarding",
+            "lighter.deposit",
+            "lighter.key.register"
+          ],
+          "hints": [
+            "set up my lighter account",
+            "get me ready to trade on lighter",
+            "I want to trade perps on lighter",
+            "fund my lighter account",
+            "finish lighter setup"
+          ]
+        },
+        {
+          "label": "Markets and system",
+          "summary": "Check Lighter environment status/config and list or inspect public markets.",
+          "toolPrefixes": [
+            "lighter.system",
+            "lighter.markets",
+            "lighter.market"
+          ],
+          "hints": [
+            "lighter status",
+            "lighter markets",
+            "market id",
+            "core config",
+            "rhc config"
+          ]
+        },
+        {
+          "label": "Depth and trade tape",
+          "summary": "Read public order book depth and recent trades for one Lighter market.",
+          "toolPrefixes": [
+            "lighter.orderbook",
+            "lighter.recentTrades"
+          ],
+          "hints": [
+            "order book",
+            "bid ask depth",
+            "recent trades",
+            "latest fills",
+            "trade tape"
+          ]
+        },
+        {
+          "label": "Candles",
+          "summary": "Read OHLCV candle history for one Lighter market using epoch-millisecond windows.",
+          "toolPrefixes": [
+            "lighter.candles"
+          ],
+          "hints": [
+            "candles",
+            "ohlcv",
+            "price history",
+            "chart",
+            "volatility"
+          ]
+        },
+        {
+          "label": "Accounts and positions",
+          "summary": "Read public Lighter account state, positions, and API-key metadata by account index or owning wallet address.",
+          "toolPrefixes": [
+            "lighter.account",
+            "lighter.positions",
+            "lighter.apiKeys"
+          ],
+          "hints": [
+            "lighter account",
+            "lighter positions",
+            "account collateral",
+            "account by wallet address",
+            "api key metadata"
+          ]
+        },
+        {
+          "label": "My orders and fills",
+          "summary": "Read authenticated open orders, order history, and account trade fills using the configured read-only token.",
+          "toolPrefixes": [
+            "lighter.openOrders",
+            "lighter.orderHistory",
+            "lighter.trades"
+          ],
+          "hints": [
+            "my open orders",
+            "lighter order history",
+            "my fills",
+            "account trades",
+            "resting orders"
+          ]
+        },
+        {
+          "label": "Order preview and approval-gated create",
+          "summary": "Preview an exact Lighter order from live data, then prepare and place it only through the user-approved card.",
+          "toolPrefixes": [
+            "lighter.order"
+          ],
+          "hints": [
+            "preview lighter order",
+            "limit buy on lighter",
+            "place lighter order",
+            "prepare trade approval",
+            "approval gated order"
+          ]
+        },
+        {
+          "label": "Position protection and close",
+          "summary": "Prepare approval-gated stop-loss and take-profit protection or a full close of an existing Lighter position.",
+          "toolPrefixes": [
+            "lighter.position"
+          ],
+          "hints": [
+            "protect my position",
+            "stop loss and take profit",
+            "close my lighter position"
+          ]
+        },
+        {
+          "label": "Secure withdrawals and claims",
+          "summary": "Prepare, execute, and reconcile approval-gated Core USDC or RHC USDG withdrawals, including a separately approved gateway claim only when required.",
+          "toolPrefixes": [
+            "lighter.withdraw"
+          ],
+          "hints": [
+            "withdraw from lighter",
+            "cash out lighter collateral",
+            "withdraw rhc usdg",
+            "check lighter withdrawal",
+            "claim pending lighter withdrawal"
+          ]
+        }
+      ]
+    },
     "virtuals": {
       "aliases": [
         "virtuals",
@@ -1147,6 +1308,43 @@
     "dexscreener.candles": "ec4208a537b585fbbe9fe738762e0c19e8acda5aef87535a108ba8944d26633d",
     "dexscreener.trades": "4c2b77b44fac2cd2611b2d022ffa98282ed8d84b8925bae6836ad402bd2218fd",
     "dexscreener.top.traders": "9f1027005be3b748c1e1a8b2fcfda5bb57b1e9db11ac07e54a4e7ce7fb202c17",
+    "lighter.account.onboarding.status": "483ac5c242ea2d55b0fb7b4acff02fa3761e8427e907869b979639694028b31d",
+    "lighter.system": "9db026c6e755f444cfaf6ee7a26a7c8452a75147ca1414932309c8be07899f6f",
+    "lighter.markets": "c55bb0dcb87152305d6ab01b061c38508b2f5c3b635199832bc1eba994a36662",
+    "lighter.market.get": "6beb628842e21b06d4e5aa29b5d901f711ecc5129a43b63f2192bae9d3f61bf1",
+    "lighter.account.get": "90ddbb680c0ffba71309c5d28f705a7ad58fde0cd283823cddd27696c2b3b172",
+    "lighter.positions": "727ea5a686665ff718768f776396fd8ed0873345866ab3254c29e561a16131af",
+    "lighter.openOrders": "3de8362c3a7d3d9cf76dcb916b2e9fd4642bb599963ac44552221ae1fbccf0c3",
+    "lighter.orderHistory": "1df80f8020ffbf90af7ba877e1740a68451dd22c7a41fa11ab988dff080391d5",
+    "lighter.trades": "796ca25ee93cfc39000412178fc4ee2a4884d55330e5eefe5893f2186bb13919",
+    "lighter.apiKeys.inspect": "c08be5fd04cd1d3b051bdad16482828d3e09a3c79e8b61c6ff8cb851ad4f731a",
+    "lighter.order.preview": "9e02c08aec59ada6a88004358b311ae4d33361d499cbf0200676342a279d601f",
+    "lighter.position.protect": "71bbe9e074b390cc914466298ef825c5da2cd25b820bba6c59214eb0b7348d83",
+    "lighter.deposit.status": "8c5b7081db1c859962c7e629603a5aca3ecc1d8ff39530255fab4fb1b7942999",
+    "lighter.withdraw.status": "48a40afb3e5fc089601055005ada88146652ff369f074440f3b89254a75f0301",
+    "lighter.key.register.status": "0d1746fa920592d4e1a071e5adb5ba95b5f3ea3bcb19d779ab0465d03973aa6f",
+    "lighter.order.status": "3d7f430c22717e0861e808d3e2bcee0c8a4b9d04b659ef30fbfcd12aa39419dc",
+    "lighter.orderbook": "b638f5afcbd92ec0b8804e9ec69d097a0f377c3324bf0e8db2f6516348c9cacf",
+    "lighter.recentTrades": "10d74d77a13bc63941b3e51621a3d701b4039070cb3b29abf25c50fe90b97031",
+    "lighter.candles": "46e3c0bd2fc589109b7be5aec77cdb1c4bd17ac4001d057c17712bbc2fe3cb2d",
+    "lighter.order.cancel.prepare": "fbbc0c74e4af388f2c4d6be70bbfecc532c84b21989b5310fe4703ba09d8a8ec",
+    "lighter.order.cancel": "00b5cf1c903debb40034420551e10c8d7d4fea09024b61df9f4ff62737c11846",
+    "lighter.order.modify.prepare": "13fe34a83924642429ad418489a70282f707a617bec2adcb9063d173243d73a2",
+    "lighter.order.modify": "1821351b475b50d631da5dc1baaff01eed8f58656b33b1c2195cfeb30d63379a",
+    "lighter.order.cancelAll.prepare": "9c3936f3f444ed9b85309210af3b8b011946208542903cdead636349f4cdc314",
+    "lighter.order.cancelAll": "728971ef0121c496b7b0ef052f35f2225f0fd8d9f54082dc31d1db4ee3f74944",
+    "lighter.position.close.prepare": "8bfa26df72a4566d79956241b76e99170e0440914a9a9129f5b7b1e35d48da0e",
+    "lighter.position.close": "1b18f3838f1649a496d827c11610dd8ff2633d8dcc18ed6347905159271f273a",
+    "lighter.withdraw.claim.prepare": "428cfd0f4fbab441dc543a0f5862c97e228a4d17ffa234165edc4f92b060bb55",
+    "lighter.withdraw.claim": "30f7678c563bd4c12d5e097cda6c3df92dd23d2bfbd134f27c5f942cb17a229f",
+    "lighter.withdraw.prepare": "0fa0e50b97a1ebcb6f352bba3be2618883915a28842d06f7ea1994710eab9ec4",
+    "lighter.withdraw": "6026e43005ef53a5c842713cb0f76664e294fa08ba697e4dfa43109c5bf59095",
+    "lighter.key.register.prepare": "1eb2d6f703d50d3b1d357e08f761a338054ef3ecfa1139be3dab50fba2a8a665",
+    "lighter.key.register": "2dacb59168fde681fd673dc17dcd4751ae1b2e2f22e530d302b58339fcbb7ab7",
+    "lighter.deposit.prepare": "753b47639833b0a12185d9e8634bc5fbae3ad6fc38f7080c1cf470251270e340",
+    "lighter.deposit": "bcda9d97610d91df739b29215fbdac2b548088c92a8575eca6e880102cd39ccf",
+    "lighter.order.create.prepare": "e712ac9814b996867844d84472e7bb0bb80439f2f4f4824cc8d2a5af30f64170",
+    "lighter.order.create": "d705f138b96a4f302fa269a7269e19cffa8197dbec91858554c4930c2b232388",
     "virtuals.list": "827651cdcace4fd40b8c3cf05147d61e3eba6bb2ea962257482952c78f113e90",
     "virtuals.get": "26bcb6d71aa60b679becb0bbce98a0b0a75da9dd19dd84cce43f0616252c765c",
     "virtuals.graduations": "bc197ab90815817bc775c07adfa43fba73fa25894d9432039475b2e539ed0c36",

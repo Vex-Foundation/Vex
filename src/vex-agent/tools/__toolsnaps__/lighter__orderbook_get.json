@@ -1,0 +1,44 @@
+{
+  "definition": {
+    "function": {
+      "description": "Read public resting order book orders for one Lighter market on Core or Robinhood Chain. Use when the user asks for current bids, asks, spread context, or visible liquidity around a known market id before making a market decision. Returns bounded ask and bid rows with order id, owner account index, price, initial size, remaining size, raw epoch-millisecond expiry, ISO expiry, provider totals, and truncation flags. Prefer the ISO expiry for user-facing output. Read-only: this does not place, cancel, sign, fill, deposit, or withdraw.",
+      "name": "lighter__orderbook_get",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "environment": {
+            "description": "Optional public Lighter environment to read: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc for conversational Lighter requests. Any other value is rejected.",
+            "enum": [
+              "core",
+              "rhc"
+            ],
+            "type": "string"
+          },
+          "limit": {
+            "description": "Max ask rows and max bid rows to return (default 25, max 50). The response reports provider totals and truncation flags.",
+            "type": "number"
+          },
+          "marketId": {
+            "description": "Numeric Lighter market id from lighter__markets_list, as an integer from 0 to 65535. It names the order book to read.",
+            "type": "number"
+          }
+        },
+        "required": [
+          "marketId"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "lighter",
+    "requiresEnv": null,
+    "toolId": "lighter.orderbook"
+  }
+}

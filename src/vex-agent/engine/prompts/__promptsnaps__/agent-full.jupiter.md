@@ -337,10 +337,10 @@ Coverage follows the provider's index; name the chain. Narratives are aggregated
 ### lighter
 Lighter is a perp-trading venue with Core and Robinhood Chain environments, managed wallet-funded onboarding, local encrypted trading credentials, and approval-gated deposits, orders, withdrawals, and claims.
 Read: Read public environment status, markets, market detail, order books, recent trades, candles, public account state, authenticated account orders and fills, managed onboarding readiness, and durable deposit, withdrawal, key-registration, and order status.
-Quote: Preview exact Lighter orders from live market and account data before any approval. Managed onboarding also computes the exact settlement-asset top-up needed before a deposit is prepared.
-Act: Prepare approvals for deposits, key registration, order create/cancel/modify/cancel-all, full-position close, secure withdrawals, and manual settlement claims; execute only through the matching user-approved card.
-When it applies: Use it when the user wants to set up Lighter, trade perps on Lighter, inspect Core or Robinhood Chain Lighter markets or account state, manage active Lighter orders, or withdraw Lighter collateral to the selected wallet.
-Characteristics and limits: The environment stays explicit once selected, normal users never paste trading keys, account/API-key indexes are resolved internally for managed setup, previews are read-only, and every fund-moving or exchange-state-changing action remains approval-gated.
+Quote: Use a Lighter order preview to review exact terms from live market and account data before any approval. Managed onboarding also computes the exact settlement-asset top-up needed before a deposit is prepared.
+Act: Prepare trade approval for order create/cancel/modify/cancel-all, plus approvals for deposits, key registration, full-position close, secure withdrawals, and manual settlement claims; execute only through the matching user-approved card.
+When it applies: Use it when the user says "set up my Lighter account", wants to trade perps on Lighter, inspect Core or Robinhood Chain Lighter markets or account state, manage active Lighter orders, or withdraw from Lighter to the selected wallet.
+Characteristics and limits: Core USDC and RHC USDG settlement stay environment-specific. The environment stays explicit once selected, normal users never paste trading keys, account/API-key indexes are resolved internally for managed setup, previews are read-only, and every fund-moving or exchange-state-changing action remains approval-gated.
 Covers Lighter Core and Lighter on Robinhood Chain with environment-specific settlement assets: Ethereum USDC for Core and Robinhood Chain USDG for RHC.
 Contains mutating tools (may require approval).
 

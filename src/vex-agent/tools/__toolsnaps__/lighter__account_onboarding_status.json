@@ -1,0 +1,49 @@
+{
+  "definition": {
+    "function": {
+      "description": "Report the selected Vex wallet's managed Lighter trade readiness on Core or Robinhood Chain and the minimal setup steps still required. Do not use this tool to resize a direct deposit request: when the user says deposit or fund an explicit amount, call lighter__deposit_prepare with that amount unchanged. Omit walletAddress to use the selected wallet; never ask for account, API-key, nonce, fingerprint, or key material. Read-only: for an explicitly requested trade it checks the live market quote minimum, wallet-owned Lighter collateral, the environment-specific settlement asset (Ethereum USDC or Robinhood Chain USDG), native ETH gas balance, gateway allowance, live deposit minimum, and exact locally managed trading-credential readiness. Returns deterministic trade-funding and trading-access routes. A sub-minimum trade/top-up or insufficient settlement balance stops before preparation. Eligible trade funding may route to lighter__deposit_prepare; once funding and account ownership are proven, missing managed access may route separately to lighter__key_register_prepare. This tool moves no funds and signs nothing. Provide at most one of: marketId, marketSymbol.",
+      "name": "lighter__account_onboarding_status",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "amountIn": {
+            "description": "Optional target collateral for an explicitly requested trade, in human settlement-asset decimals (USDC on Core or USDG on RHC, both 6 decimals), for example \"11\". This is not a direct deposit amount. Never pass a user's request to deposit or fund an exact amount here; call lighter__deposit_prepare with that amount unchanged instead. Pass a known trade amount with marketSymbol or marketId so Vex checks the live market minimum before comparing current collateral with the target. Omit during amount-free setup discovery. Never ask the user for account or API-key indexes.",
+            "type": "string"
+          },
+          "environment": {
+            "description": "Optional public Lighter environment to read: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc for conversational Lighter requests. Any other value is rejected.",
+            "enum": [
+              "core",
+              "rhc"
+            ],
+            "type": "string"
+          },
+          "marketId": {
+            "description": "Optional numeric Lighter market id from lighter__markets_list. When omitted, the market list reads the environment's visible markets.",
+            "type": "number"
+          },
+          "marketSymbol": {
+            "description": "Optional market symbol such as ETH or ETH/USDC. Use this for conversational order previews when the user names an asset instead of a market id; Vex resolves it against live Lighter markets. Also pass marketType when the symbol can exist as both a perpetual and spot product.",
+            "type": "string"
+          },
+          "walletAddress": {
+            "description": "Optional 0x-prefixed EVM wallet address to check. Omit to use the session's selected Vex wallet (resolved address-only). Never a private key.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "lighter",
+    "requiresEnv": null,
+    "toolId": "lighter.account.onboarding.status"
+  }
+}

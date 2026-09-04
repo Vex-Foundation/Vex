@@ -1,0 +1,32 @@
+{
+  "definition": {
+    "function": {
+      "description": "Execute one exact approved Lighter limit-order modification. Direct calls are refused. The privileged runtime revalidates the unchanged order, active market precision, registered key, and nonce; atomically reserves the nonce; signs TxType 17 locally; stages identity before one sendTx; and never retries ambiguity. Returns completion only from exact provider evidence carrying the requested total size and price, including terminal fill outcomes; otherwise returns a pending or ambiguous state.",
+      "name": "lighter__order_modify",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "intentId": {
+            "description": "Session-scoped exact Lighter order lifecycle intent produced by the matching prepare tool.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "intentId"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "external_post",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": true,
+    "namespace": "lighter",
+    "requiresEnv": null,
+    "toolId": "lighter.order.modify"
+  }
+}

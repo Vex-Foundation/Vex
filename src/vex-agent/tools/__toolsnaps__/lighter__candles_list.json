@@ -1,0 +1,74 @@
+{
+  "definition": {
+    "function": {
+      "description": "Read public OHLCV candles for one Lighter market on Core or Robinhood Chain using epoch-millisecond start/end timestamps. Use when the user asks for chart history, recent price movement, volatility, or candle data after choosing a market id. Returns provider rows bounded by countBack and the newest projected rows, plus provider row count, requested window, resolution, countBack, and truncation disclosure. Read-only: no account lookup, signing, order, deposit, or withdrawal path.",
+      "name": "lighter__candles_list",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "countBack": {
+            "description": "Provider candle row cap for the requested range (max 500). Vex also shows at most 100 newest rows in the agent response.",
+            "type": "number"
+          },
+          "endTimestamp": {
+            "description": "Window end as a JavaScript epoch-milliseconds integer. It must be greater than startTimestamp or the call is rejected.",
+            "type": "number"
+          },
+          "environment": {
+            "description": "Optional public Lighter environment to read: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc for conversational Lighter requests. Any other value is rejected.",
+            "enum": [
+              "core",
+              "rhc"
+            ],
+            "type": "string"
+          },
+          "marketId": {
+            "description": "Numeric Lighter market id from lighter__markets_list, as an integer from 0 to 65535. It names the order book to read.",
+            "type": "number"
+          },
+          "resolution": {
+            "description": "Candle bucket size accepted by Lighter: 1m, 5m, 15m, 30m, 1h, 4h, 12h, 1d, or 1w. Unsupported values are rejected.",
+            "enum": [
+              "1m",
+              "5m",
+              "15m",
+              "30m",
+              "1h",
+              "4h",
+              "12h",
+              "1d",
+              "1w"
+            ],
+            "type": "string"
+          },
+          "setTimestampToEnd": {
+            "description": "Optional Lighter candle flag controlling whether returned timestamps point at the candle end instead of its start.",
+            "type": "boolean"
+          },
+          "startTimestamp": {
+            "description": "Window start as a JavaScript epoch-milliseconds integer. Seconds-scale Unix timestamps are rejected before any provider request.",
+            "type": "number"
+          }
+        },
+        "required": [
+          "marketId",
+          "resolution",
+          "startTimestamp",
+          "endTimestamp"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "lighter",
+    "requiresEnv": null,
+    "toolId": "lighter.candles"
+  }
+}

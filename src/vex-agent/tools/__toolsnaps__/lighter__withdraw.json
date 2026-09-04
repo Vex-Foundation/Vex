@@ -1,0 +1,32 @@
+{
+  "definition": {
+    "function": {
+      "description": "Execute one exact prepared Core-USDC or RHC-USDG secure withdrawal. Use when the trusted approval from lighter__withdraw_prepare resumes; direct calls, crossed environments, and mismatched approvals are refused. Vex reruns environment-specific live preflight, matches the encrypted local credential to its registered public key, reserves the shared nonce, signs only TxType 13 asset 3 route 0 in the reviewed domain, persists structural identity before one provider submission, and never blindly retries ambiguity. Returns the durable intent id, signer and submitted hashes, provider acceptance details or an ambiguous state, and reconciliation guidance. Real funds move only after approval; API acceptance is not final delivery.",
+      "name": "lighter__withdraw",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "intentId": {
+            "description": "Session-scoped environment-bound withdrawal intent produced by lighter__withdraw_prepare.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "intentId"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "external_post",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": true,
+    "namespace": "lighter",
+    "requiresEnv": null,
+    "toolId": "lighter.withdraw"
+  }
+}

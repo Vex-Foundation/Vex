@@ -1,0 +1,93 @@
+{
+  "definition": {
+    "function": {
+      "description": "Use only to preview and prepare one native Lighter one-cancels-the-other group that protects an existing perpetual position with exactly two same-size reduce-only children: one stop-loss and one take-profit. Explicit trigger and hard execution-bound prices for both legs, exact side, size, and expiry are required. Vex verifies the live position, persists both child identities, and shows one approval card. After approval it submits one native grouped transaction and calls protection active only when both exact children are proven from authenticated account evidence. Returns status, previewId, matchHash, expiresAt, the exact two-leg preview, approvalReady, userGuidance, and safety; when managed trading is ready it also returns the approval follow-up. It never emulates sibling cancellation, creates an entry order, automatically retries uncertainty, or supports OTO/OTOCO here. Provide at most one of: marketId, marketSymbol. Provide at most one of: orderExpiry, orderExpiryOffsetMinutes. Provide at least one of: marketId, marketSymbol. Provide at least one of: orderExpiry, orderExpiryOffsetMinutes.",
+      "name": "lighter__position_protect",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "accountIndex": {
+            "description": "Optional account index. Omit to use the account bound to the default saved Vex-managed Lighter trading credential. Derived read-only authorization refuses account mismatches.",
+            "type": "number"
+          },
+          "apiKeyIndex": {
+            "description": "Optional Lighter API-key index override. Omit for normal order previews; Vex attempts to resolve a public trading API-key index for later approval preparation, but a missing trading key does not block the read-only preview. This does not require or expose API private key material.",
+            "type": "number"
+          },
+          "baseAmountIn": {
+            "description": "Order size in the BASE asset as a human decimal string, for example 0.25. Vex converts it exactly using live Lighter size decimals and refuses rounding.",
+            "type": "string"
+          },
+          "environment": {
+            "description": "Optional public Lighter environment to read: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc for conversational Lighter requests. Any other value is rejected.",
+            "enum": [
+              "core",
+              "rhc"
+            ],
+            "type": "string"
+          },
+          "marketId": {
+            "description": "Optional numeric Lighter market id from lighter__markets_list. When omitted, the market list reads the environment's visible markets.",
+            "type": "number"
+          },
+          "marketSymbol": {
+            "description": "Optional market symbol such as ETH or ETH/USDC. Use this for conversational order previews when the user names an asset instead of a market id; Vex resolves it against live Lighter markets. Also pass marketType when the symbol can exist as both a perpetual and spot product.",
+            "type": "string"
+          },
+          "orderExpiry": {
+            "description": "Exact order expiry as a JavaScript epoch-milliseconds integer. Use orderExpiryOffsetMinutes instead when the user says a relative expiry such as '30 minutes from now'. Vex requires the final expiry to be between 5 minutes and 30 days from preview time and requires at least 5 minutes to remain at actual submission for every order whose signed wire expiry is non-nil.",
+            "type": "number"
+          },
+          "orderExpiryOffsetMinutes": {
+            "description": "Preferred for relative expiries such as '30 minutes from now'. Whole minutes from preview time, between 5 and 43200. For an ordinary limit with no user-stated duration, use 1440 (one day), matching the trade ticket default; always preserve an explicit duration. Do not invent a duration for a trigger-limit order. Do not combine with orderExpiry.",
+            "type": "number"
+          },
+          "side": {
+            "description": "Order side to preview: buy or sell. If the user does not say which direction, ask a short clarification instead of guessing. Unsupported values are rejected.",
+            "enum": [
+              "buy",
+              "sell"
+            ],
+            "type": "string"
+          },
+          "stopLossPrice": {
+            "description": "Exact human-decimal worst execution-price bound after the stop-loss triggers.",
+            "type": "string"
+          },
+          "stopLossTriggerPrice": {
+            "description": "Exact human-decimal stop-loss trigger price. Vex never guesses it.",
+            "type": "string"
+          },
+          "takeProfitPrice": {
+            "description": "Exact human-decimal worst execution-price bound after the take-profit triggers.",
+            "type": "string"
+          },
+          "takeProfitTriggerPrice": {
+            "description": "Exact human-decimal take-profit trigger price. Vex never guesses it.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "side",
+          "baseAmountIn",
+          "stopLossTriggerPrice",
+          "stopLossPrice",
+          "takeProfitTriggerPrice",
+          "takeProfitPrice"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "lighter",
+    "requiresEnv": null,
+    "toolId": "lighter.position.protect"
+  }
+}
