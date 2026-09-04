@@ -20,10 +20,14 @@
  * is always safe. `rescheduleOutbox` overrides the stamp when the server
  * answered with its own `Retry-After`.
  *
- * Every claim carries the `registration_generation` it ran under, and every
- * TERMINAL write of those rows (`markOutboxSent`, `markOutboxRejected`,
- * `rescheduleOutbox`) is fenced by it - see `writeOutboxAtGeneration` for the
- * in-flight send a 401 reset would otherwise lose.
+ * ONE GENERATION PER TICK, READ WITH THE CREDENTIALS. The lane reads
+ * `agentHash`, `ingestToken` and `registration_generation` in a single
+ * `getReportingState()` and carries that generation into the incremental
+ * enqueue, the claim and every TERMINAL write (`markOutboxSent`,
+ * `markOutboxRejected`, `rescheduleOutbox`). Each of them applies only while the
+ * singleton still carries it - see `writeOutboxAtGeneration` for the in-flight
+ * send a 401 reset would otherwise lose, and `enqueueEligibleActivity` for the
+ * insert that reset would be unable to relabel.
  *
  * ── What never goes in here ────────────────────────────────────────────────
  *
@@ -97,41 +101,37 @@ export interface ClaimedOutboxEvent {
 }
 
 /**
- * One claim transaction's rows PLUS the registration generation they were
- * claimed under - the fence every terminal write of those rows carries back.
+ * What one claim attempt did, at the generation the caller asked for.
  *
- * The generation belongs to the BATCH, not to the row: it is one fact read once
- * per claim, and putting a copy of it on every event would invite a caller to
- * mix generations from two claims inside one write.
+ * THE GENERATION IS AN INPUT, NOT A RESULT, and round 3 had that backwards.
+ * It argued that reading the generation under the claim's own share lock is
+ * exact where passing the lane's earlier read down would wrongly refuse a batch
+ * whose generation had moved. That argument is wrong, because the generation
+ * does not belong to the claim: it belongs to the `agentHash` and `ingestToken`
+ * the lane read in the same `getReportingState()`, and a batch claimed at G+1
+ * is about to be sent under G's credentials. Adopting the newer generation at
+ * the claim let the whole stale tick proceed - including the UNFENCED
+ * incremental enqueue that ran before it, which inserts `backfill = FALSE` rows
+ * AFTER the reset that would have relabelled them, so nothing can ever relabel
+ * them and this install's history reaches the server as live activity.
+ *
+ * A stale tick therefore refuses ONCE and stops. It does not repeat forever:
+ * the next tick calls `getReportingState()` again and works at the current
+ * generation with the credentials that belong to it.
  */
-export interface ClaimedOutboxBatch {
-  /**
-   * `registration_generation` as of the claim, read under a SHARE lock on the
-   * state singleton INSIDE the claim's own transaction.
-   *
-   * Read there rather than passed down from the lane's earlier
-   * `getReportingState()`, and the difference is not cosmetic. A reset that
-   * commits between the lane's state read and the claim leaves the lane holding
-   * G while the rows it goes on to claim have already been relabelled at G+1;
-   * every terminal write would then be refused as stale, the batch would be sent
-   * to the server and immediately re-owed, and the lane would repeat that on
-   * every tick that reuses the same stale read. Reading under the claim's own
-   * lock cannot observe a generation NEWER than the rows it claimed (a reset
-   * either commits before the share lock is taken, and is seen, or waits behind
-   * the whole claim), and cannot observe an older one either.
-   */
-  readonly registrationGeneration: number;
-  readonly events: readonly ClaimedOutboxEvent[];
-}
+export type ClaimOutboxOutcome =
+  | { readonly kind: "claimed"; readonly events: readonly ClaimedOutboxEvent[] }
+  | { readonly kind: "stale_generation" };
 
 /**
- * What a fenced terminal outbox write did.
+ * What a fenced outbox write did - the incremental enqueue as well as every
+ * terminal write.
  *
  * `stale_generation` is an ORDINARY outcome, not an error: a registration reset
- * committed while this batch was in flight, so the rows the write refers to have
- * already been relabelled as owed history and belong to a different (or
- * abandoned) identity. The write applies to nothing and the caller reports the
- * rows as still owed.
+ * committed since the caller read the state this work was decided against, so
+ * the rows in question have already been relabelled as owed history and belong
+ * to a different (or abandoned) identity. The write applies to nothing and the
+ * caller reports the rows as still owed.
  */
 export type OutboxWriteOutcome =
   | { readonly kind: "applied"; readonly rows: number }
@@ -378,6 +378,16 @@ const CONFIRMED_READINESS_SQL = `
 /** Exponential claim backoff: 30 s · 2^n, capped at 1 h (exponent clamped so POWER stays finite). */
 const CLAIM_BACKOFF_SQL = `LEAST(30 * POWER(2, LEAST(o.attempt_count, 20)), 3600)`;
 
+/**
+ * The generation predicate restated inside a fenced statement's own SQL, so the
+ * row write and the fence are evaluated by ONE statement against ONE committed
+ * state rather than by two. Every caller of it has already taken the singleton
+ * `FOR SHARE` in the same transaction; the predicate is the second half of that
+ * guard, never a substitute for it.
+ */
+const GENERATION_UNCHANGED_SQL = (param: string) =>
+  `(SELECT registration_generation FROM agentscan_reporting_state WHERE id = 1) = ${param}::int`;
+
 async function ensureSingleton(): Promise<void> {
   await execute(
     `INSERT INTO agentscan_reporting_state (id) VALUES (1) ON CONFLICT (id) DO NOTHING`,
@@ -621,7 +631,7 @@ export async function markStopped(reason: AgentscanStopReason): Promise<void> {
  * The same is true of a row held back by the vocabulary gate: the controlled
  * backfill picks it up, and every scan after that mark sees it.
  */
-const ENQUEUE_ELIGIBLE_SQL = `
+const enqueueEligibleSql = (generationPredicate: string): string => `
      INSERT INTO agentscan_outbox (activity_id, status, backfill)
      SELECT a.id, a.status, $1::boolean
        FROM agent_activity a
@@ -632,15 +642,62 @@ const ENQUEUE_ELIGIBLE_SQL = `
            ) s
       WHERE ${ELIGIBILITY_SQL}
         AND ${CONFIRMED_READINESS_SQL}
+        AND ${generationPredicate}
         AND NOT EXISTS (SELECT 1 FROM agentscan_outbox o
                          WHERE o.activity_id = a.id AND o.status = a.status)
      ON CONFLICT (activity_id, status) DO NOTHING`;
 
-export async function enqueueEligibleActivity(backfill: boolean): Promise<number> {
+/**
+ * The controlled backfill's own enqueue. No generation predicate here: its
+ * caller (`enqueueBackfillAndMark`) already holds the singleton `FOR UPDATE`
+ * and has compared the generation itself before reaching this statement.
+ */
+const ENQUEUE_BACKFILL_SQL = enqueueEligibleSql("TRUE");
+
+/** The incremental scan's enqueue, fenced on the lane's credential generation. */
+const ENQUEUE_INCREMENTAL_SQL = enqueueEligibleSql(GENERATION_UNCHANGED_SQL("$2"));
+
+/**
+ * THE INCREMENTAL SCAN IS FENCED ON THE LANE'S CREDENTIAL GENERATION.
+ *
+ * The defect it closes (Codex final review, round 3): a reset can RELABEL rows
+ * that already exist, but it can do nothing about a row inserted AFTER it
+ * commits. The push lane reads registered state at G, passes its guards, and a
+ * concurrent 401 reset then commits G+1 and relabels every non-rejected row as
+ * owed history. If the stale lane goes on to run an UNFENCED incremental scan,
+ * it inserts a previously absent `(activity_id, status)` pair as
+ * `backfill = FALSE` after that relabel. The controlled backfill cannot repair
+ * it either - its enqueue is the same diff, and the pair is already taken by the
+ * `UNIQUE (activity_id, status)` row - so the row is permanently mislabelled and
+ * is later sent to the server as live activity. No later reset needs to happen
+ * for that to be the end state: an exhausted rate budget or a retryable send
+ * failure is enough to leave the row sitting there.
+ *
+ * So the scan takes the singleton `FOR SHARE` (a reset holds it exclusively, so
+ * a scan arriving mid-reset waits and then reads the new generation) and inserts
+ * only while `registration_generation` still equals what the caller read
+ * alongside its credentials. When it moved, nothing is inserted and the caller
+ * is told `stale_generation`; the next tick re-reads state and scans at the
+ * current generation.
+ */
+export async function enqueueEligibleActivity(
+  backfill: boolean,
+  expectedGeneration: number,
+): Promise<OutboxWriteOutcome> {
   // The singleton has to exist before the CROSS JOIN below, or the scan reads
   // zero state rows and enqueues nothing at all - a silent no-op, not an error.
   await ensureSingleton();
-  return execute(ENQUEUE_ELIGIBLE_SQL, [backfill]);
+  return withTransaction(async (client) => {
+    const state = await queryOneWith<{ registration_generation: number }>(
+      client,
+      `SELECT registration_generation FROM agentscan_reporting_state WHERE id = 1 FOR SHARE`,
+    );
+    if (state === null || Number(state.registration_generation) !== expectedGeneration) {
+      return { kind: "stale_generation", rows: 0 } as const;
+    }
+    const rows = await executeWith(client, ENQUEUE_INCREMENTAL_SQL, [backfill, expectedGeneration]);
+    return { kind: "applied", rows } as const;
+  });
 }
 
 /** What one attempt at the controlled backfill did, whether or not it got to mark. */
@@ -714,7 +771,7 @@ export async function enqueueBackfillAndMark(input: {
       return { enqueued: 0, marked: false, declined: "already_marked" as const };
     }
 
-    const enqueued = await executeWith(client, ENQUEUE_ELIGIBLE_SQL, [true]);
+    const enqueued = await executeWith(client, ENQUEUE_BACKFILL_SQL, [true]);
     await executeWith(
       client,
       `UPDATE agentscan_reporting_state
@@ -730,19 +787,25 @@ export async function enqueueBackfillAndMark(input: {
 
 /**
  * Claim up to `limit` due rows (backfill first, then oldest), stamping the
- * retry backoff before the caller sends. Returns each claimed pair with its
- * live `agent_activity` row for payload building, PLUS the registration
- * generation the claim ran under.
+ * retry backoff before the caller sends, PROVIDED the registration generation
+ * the caller read with its credentials is still current. Returns each claimed
+ * pair with its live `agent_activity` row for payload building.
+ *
+ * Claiming rows the caller cannot legitimately send is worse than claiming
+ * nothing: the claim stamps a backoff on rows a reset has just re-owed, and the
+ * batch would go out under credentials the reset replaced. So a moved generation
+ * claims nothing and answers `stale_generation` - see `ClaimOutboxOutcome`.
  *
  * ONE TRANSACTION, AND THE LOCK ORDER IS STATE THEN OUTBOX. Every writer that
  * touches both the singleton and the outbox takes them in that order
  * (`resetForReRegistration` / `resetIdentityForRecovery` via their state UPDATE,
- * `enqueueBackfillAndMark` via `FOR UPDATE`, the fenced terminal writes via
- * `FOR SHARE`), so no pair of them can deadlock. The share lock here is what
- * makes the returned generation exact rather than merely conservative - see
- * `ClaimedOutboxBatch.registrationGeneration`.
+ * `enqueueBackfillAndMark` via `FOR UPDATE`, the fenced incremental enqueue and
+ * the fenced terminal writes via `FOR SHARE`), so no pair of them can deadlock.
  */
-export async function claimDueOutbox(limit: number): Promise<ClaimedOutboxBatch> {
+export async function claimDueOutbox(
+  limit: number,
+  expectedGeneration: number,
+): Promise<ClaimOutboxOutcome> {
   await ensureSingleton();
   return withTransaction(async (client) => {
     const state = await queryOneWith<{ registration_generation: number }>(
@@ -750,7 +813,9 @@ export async function claimDueOutbox(limit: number): Promise<ClaimedOutboxBatch>
       `SELECT registration_generation FROM agentscan_reporting_state WHERE id = 1 FOR SHARE`,
     );
     if (state === null) throw new Error("agentscan_reporting_state singleton missing after ensure");
-    const registrationGeneration = Number(state.registration_generation);
+    if (Number(state.registration_generation) !== expectedGeneration) {
+      return { kind: "stale_generation" } as const;
+    }
 
     const claimed = await queryWith<{
       id: string | number;
@@ -762,6 +827,7 @@ export async function claimDueOutbox(limit: number): Promise<ClaimedOutboxBatch>
       `WITH claimed AS (
          SELECT o.id FROM agentscan_outbox o
           WHERE o.sent_at IS NULL AND o.rejected_at IS NULL AND o.next_attempt_at <= NOW()
+            AND ${GENERATION_UNCHANGED_SQL("$2")}
           ORDER BY o.backfill DESC, o.id ASC
           LIMIT $1
           FOR UPDATE SKIP LOCKED
@@ -773,9 +839,9 @@ export async function claimDueOutbox(limit: number): Promise<ClaimedOutboxBatch>
          FROM claimed
         WHERE o.id = claimed.id
        RETURNING o.id, o.activity_id, o.status, o.backfill`,
-      [limit],
+      [limit, expectedGeneration],
     );
-    if (claimed.length === 0) return { registrationGeneration, events: [] };
+    if (claimed.length === 0) return { kind: "claimed", events: [] } as const;
 
     const activityIds = [...new Set(claimed.map((c) => Number(c.activity_id)))];
     const activityRows = await queryWith<Record<string, unknown>>(
@@ -786,7 +852,7 @@ export async function claimDueOutbox(limit: number): Promise<ClaimedOutboxBatch>
     const byId = new Map(activityRows.map((r) => [Number(r.id), r]));
 
     return {
-      registrationGeneration,
+      kind: "claimed",
       events: claimed.map((c) => ({
         outboxId: Number(c.id),
         activityId: Number(c.activity_id),
@@ -794,7 +860,7 @@ export async function claimDueOutbox(limit: number): Promise<ClaimedOutboxBatch>
         backfill: c.backfill,
         activity: byId.get(Number(c.activity_id)) ?? null,
       })),
-    };
+    } as const;
   });
 }
 
@@ -811,8 +877,11 @@ export async function claimDueOutbox(limit: number): Promise<ClaimedOutboxBatch>
  * `resetIdentityForRecovery` it is worse than a gap: the event stays attached to
  * the identity that was abandoned and never reaches the new one.
  *
- * `registration_generation` already fenced the backfill transaction; this
- * extends the same fence to an in-flight SEND. Two halves, and both are needed:
+ * `atGeneration` is the generation the lane read ALONGSIDE the `agentHash` and
+ * `ingestToken` this batch was sent under, handed down through the claim (which
+ * refuses at any other generation), so a terminal write is fenced on the
+ * credentials that produced it rather than on whatever the claim happened to
+ * observe. Two halves, and both are needed:
  *
  *   - `SELECT ... FOR SHARE` on the singleton SERIALIZES this write against a
  *     reset. A reset holds the row exclusively (its own UPDATE), so a write that
@@ -857,13 +926,10 @@ async function writeOutboxAtGeneration(
   });
 }
 
-/** The generation predicate restated inside a terminal write's own UPDATE. */
-const GENERATION_UNCHANGED_SQL = (param: string) =>
-  `(SELECT registration_generation FROM agentscan_reporting_state WHERE id = 1) = ${param}::int`;
-
 /**
  * Server accepted (or deduplicated) these events - terminal, never resent,
- * PROVIDED the registration generation has not moved since they were claimed.
+ * PROVIDED the registration generation has not moved since the lane read the
+ * credentials this batch went out under.
  */
 export async function markOutboxSent(
   outboxIds: number[],

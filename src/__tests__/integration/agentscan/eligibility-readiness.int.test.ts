@@ -17,6 +17,7 @@
 import { afterEach, beforeEach, describe, it, expect } from "vitest";
 
 import { seedIntent, cleanupSeeded } from "../agent-scan/_fixtures.js";
+import { enqueueAtCurrentGeneration, claimAtCurrentGeneration } from "./_reporting-tick.js";
 
 type ActivityRepo = typeof import("../../../vex-agent/db/repos/agent-activity.js");
 type ReportingRepo = typeof import("../../../vex-agent/db/repos/agentscan-reporting.js");
@@ -168,7 +169,7 @@ async function setColumns(activityId: number, columns: Record<string, string | n
 /** How many rows the scan enqueued for this activity id, at whatever status it holds. */
 async function enqueuedFor(activityId: number): Promise<number> {
   const repo = await reportingRepo();
-  await repo.enqueueEligibleActivity(false);
+  await enqueueAtCurrentGeneration(false);
   const { queryOne } = await sql();
   const row = await queryOne<{ count: string }>(
     `SELECT COUNT(*)::text AS count FROM agentscan_outbox WHERE activity_id = $1`,
@@ -642,8 +643,8 @@ describe("migration 078 — the outbox status CHECK and the settled block time",
     );
     expect(stored?.settled_block_time).toBeNull();
 
-    await reporting.enqueueEligibleActivity(false);
-    const claimed = (await reporting.claimDueOutbox(10)).events.filter((c) => c.activityId === id);
+    await enqueueAtCurrentGeneration(false);
+    const claimed = (await claimAtCurrentGeneration()).filter((c) => c.activityId === id);
     const confirmedPair = claimed.find((c) => c.status === "confirmed");
     expect(confirmedPair?.activity).toBeTruthy();
     const event = mapActivityToEvent(confirmedPair?.activity ?? {}, { status: "confirmed" });

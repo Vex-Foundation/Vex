@@ -34,33 +34,62 @@ const INVALID_BATCH_HOLD_SECONDS = 3600;
  * The incremental scan-then-drain step: shared verbatim by the periodic
  * lane's non-backfill tick and the push lane's `runAgentscanIncremental`, so
  * there is exactly one place that enqueues an incremental diff and drains it.
+ *
+ * `atGeneration` is read in the SAME `getReportingState()` as `agentHash` and
+ * `ingestToken` - it is the generation those credentials belong to, and the
+ * enqueue is fenced on it. Without that fence a lane that passed its guards at
+ * generation G could insert a brand-new `backfill = FALSE` row AFTER a 401 reset
+ * committed G+1, and no reset can relabel a row that did not exist when it ran;
+ * that row is then permanently live activity. A stale enqueue therefore inserts
+ * nothing, drains nothing and ends the tick. It refuses ONCE, never forever:
+ * the next tick calls `getReportingState()` again and runs at the current
+ * generation with the credentials that belong to it.
  */
 export async function drainIncremental(
   client: AgentscanClient,
   agentHash: string,
   ingestToken: string,
+  atGeneration: number,
 ): Promise<Pick<AgentscanReportResult, "enqueued" | "sent" | "rejected" | "deferred">> {
-  const enqueued = await reportingRepo.enqueueEligibleActivity(false);
-  const drain = await drainOutbox(client, agentHash, ingestToken);
-  return { enqueued, ...drain };
+  const enqueued = await reportingRepo.enqueueEligibleActivity(false, atGeneration);
+  if (enqueued.kind === "stale_generation") {
+    logger.warn("agentscan.report.enqueue_stale_generation", {
+      reason: "registration_reset_since_state_read",
+      atGeneration,
+    });
+    return { enqueued: 0, sent: 0, rejected: 0, deferred: 0 };
+  }
+  const drain = await drainOutbox(client, agentHash, ingestToken, atGeneration);
+  return { enqueued: enqueued.rows, ...drain };
 }
 
 export async function drainOutbox(
   client: AgentscanClient,
   agentHash: string,
   ingestToken: string,
+  atGeneration: number,
 ): Promise<{ sent: number; rejected: number; deferred: number }> {
   let sent = 0;
   let rejected = 0;
   let deferred = 0;
 
   for (let batch = 0; batch < AGENTSCAN_MAX_BATCHES_PER_TICK; batch++) {
-    // The generation travels with the batch from here to every terminal write
-    // below: a registration reset that lands while this batch is in flight must
-    // make those writes apply to nothing, or a row the reset re-owed is marked
-    // sent behind its back and dropped from the full resend.
-    const { events: claimed, registrationGeneration } =
-      await reportingRepo.claimDueOutbox(AGENTSCAN_BATCH_LIMIT);
+    // The lane's credential generation travels from the caller into the claim
+    // and on to every terminal write below: a registration reset that lands
+    // while this batch is in flight must make those writes apply to nothing, or
+    // a row the reset re-owed is marked sent behind its back and dropped from
+    // the full resend. A claim at any other generation would be a batch sent
+    // under credentials the reset replaced, so it claims nothing and the tick
+    // ends here; the next tick re-reads state.
+    const claim = await reportingRepo.claimDueOutbox(AGENTSCAN_BATCH_LIMIT, atGeneration);
+    if (claim.kind === "stale_generation") {
+      logger.warn("agentscan.report.claim_stale_generation", {
+        reason: "registration_reset_since_state_read",
+        atGeneration,
+      });
+      break;
+    }
+    const claimed = claim.events;
     if (claimed.length === 0) break;
 
     // One envelope carries one backfill flag — a mixed claim is split.
@@ -78,7 +107,7 @@ export async function drainOutbox(
         stop = true;
         break;
       }
-      const outcome = await sendGroup(client, agentHash, ingestToken, group, registrationGeneration);
+      const outcome = await sendGroup(client, agentHash, ingestToken, group, atGeneration);
       sent += outcome.sent;
       rejected += outcome.rejected;
       deferred += outcome.deferred;
@@ -96,7 +125,8 @@ export async function drainOutbox(
 /**
  * One HTTP batch and every verdict it can produce.
  *
- * `atGeneration` is the `registration_generation` the rows were claimed under.
+ * `atGeneration` is the `registration_generation` the lane read its credentials
+ * at, and the one the claim required.
  * Every terminal write carries it, and a `stale_generation` answer means a
  * registration reset committed while this request was in flight: the rows are
  * already relabelled as owed history under a different (or abandoned) identity,

@@ -200,11 +200,16 @@ export async function runAgentscanReport(
       return { skipped: null, enqueued: 0, backfillEnqueued: false, ...NOTHING_DRAIN };
     }
     if (outcome.enqueued > 0) logger.info("agentscan.report.backfill_enqueued", { rows: outcome.enqueued });
-    const drain = await drainOutbox(client, agentHash, ingestToken);
+    const drain = await drainOutbox(client, agentHash, ingestToken, state.registrationGeneration);
     return { skipped: null, enqueued: outcome.enqueued, backfillEnqueued: true, ...drain };
   }
 
-  const incremental = await drainIncremental(client, agentHash, ingestToken);
+  const incremental = await drainIncremental(
+    client,
+    agentHash,
+    ingestToken,
+    state.registrationGeneration,
+  );
   return { skipped: null, backfillEnqueued: false, ...incremental };
 }
 
@@ -246,6 +251,14 @@ export async function runAgentscanIncremental(
   if (backfillOwed(state)) return { skipped: "unregistered", ...NOTHING };
 
   const client = deps.buildClient(baseUrl);
-  const incremental = await drainIncremental(client, state.agentHash, state.ingestToken);
+  // The generation comes from the SAME read as the credentials above, so the
+  // enqueue, the claim and every terminal write are all fenced on the identity
+  // this tick decided to send under - see `drainIncremental`.
+  const incremental = await drainIncremental(
+    client,
+    state.agentHash,
+    state.ingestToken,
+    state.registrationGeneration,
+  );
   return { skipped: null, backfillEnqueued: false, ...incremental };
 }

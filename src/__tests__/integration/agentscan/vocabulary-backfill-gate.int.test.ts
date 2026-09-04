@@ -32,6 +32,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { seedIntent, cleanupSeeded } from "../agent-scan/_fixtures.js";
+import { enqueueAtCurrentGeneration } from "./_reporting-tick.js";
 
 type ActivityRepo = typeof import("../../../vex-agent/db/repos/agent-activity.js");
 type ReportingRepo = typeof import("../../../vex-agent/db/repos/agentscan-reporting.js");
@@ -157,7 +158,7 @@ describe("the widened vocabulary waits for its own backfill", () => {
     const legacy = await seedPending("swap", "swap");
     const family = await seedPending("claim", "creator_fee_claim");
 
-    await repo.enqueueEligibleActivity(false);
+    await enqueueAtCurrentGeneration(false);
 
     // The vocabulary every install has always reported is untouched by the gate:
     // holding it back would stop live reporting for a migration it has nothing
@@ -185,7 +186,7 @@ describe("the widened vocabulary waits for its own backfill", () => {
 
     // A row that arrives after the backfill is live activity, and is labelled so.
     const fresh = await seedPending("claim", "reward_distribution");
-    await repo.enqueueEligibleActivity(false);
+    await enqueueAtCurrentGeneration(false);
 
     expect(await outboxFor(fresh)).toEqual([{ backfill: false }]);
   });
@@ -195,8 +196,8 @@ describe("the widened vocabulary waits for its own backfill", () => {
     const repo = await reportingRepo();
     const family = await seedPending("claim", "creator_fee_claim");
 
-    const first = await repo.enqueueEligibleActivity(true);
-    const second = await repo.enqueueEligibleActivity(true);
+    const first = await enqueueAtCurrentGeneration(true);
+    const second = await enqueueAtCurrentGeneration(true);
 
     expect(first).toBeGreaterThan(0);
     expect(second).toBe(0);
@@ -210,8 +211,8 @@ describe("the widened vocabulary waits for its own backfill", () => {
     const repo = await reportingRepo();
     const family = await seedPending("claim", "pools_claim");
 
-    await repo.enqueueEligibleActivity(false);
-    await repo.enqueueEligibleActivity(true);
+    await enqueueAtCurrentGeneration(false);
+    await enqueueAtCurrentGeneration(true);
 
     expect(await outboxFor(family)).toEqual([]);
   });
@@ -243,9 +244,9 @@ describe("the two scans racing on one database", () => {
 
     await Promise.all([
       runControlledBackfill(),
-      repo.enqueueEligibleActivity(false),
-      repo.enqueueEligibleActivity(false),
-      repo.enqueueEligibleActivity(false),
+      enqueueAtCurrentGeneration(false),
+      enqueueAtCurrentGeneration(false),
+      enqueueAtCurrentGeneration(false),
     ]);
 
     for (const id of family) {
@@ -266,13 +267,13 @@ describe("the two scans racing on one database", () => {
     await stateAfterMigration();
     const repo = await reportingRepo();
     const before = await seedPending("claim", "creator_fee_claim");
-    await repo.enqueueEligibleActivity(true);
+    await enqueueAtCurrentGeneration(true);
     // ...crash here, no mark.
 
     // An incremental tick in the crash window still refuses the new roles, so a
     // row written during it is not stolen either.
     const during = await seedPending("claim", "holder_reward_claim");
-    await repo.enqueueEligibleActivity(false);
+    await enqueueAtCurrentGeneration(false);
     expect(await outboxFor(during)).toEqual([]);
 
     // The next periodic run re-enters the same branch and completes it.
@@ -397,7 +398,7 @@ describe("the backfill mark against a concurrent registration reset", () => {
 
     // A family row that arrives after the backfill is live activity...
     const fresh = await seedPending("claim", "creator_fee_claim");
-    await repo.enqueueEligibleActivity(false);
+    await enqueueAtCurrentGeneration(false);
     expect(await outboxFor(fresh)).toEqual([{ backfill: false }]);
 
     // ...and is still unsent when the server forgets this install.

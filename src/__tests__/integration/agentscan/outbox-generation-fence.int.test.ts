@@ -37,9 +37,11 @@
  * the write really did succeed downstream, and it is still not allowed to clear
  * the dirty flag if the model's `versionId` moved while it was in flight.
  */
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { seedIntent, cleanupSeeded } from "../agent-scan/_fixtures.js";
+import type { AgentscanClient, SendOutcome } from "@vex-agent/agentscan/client.js";
+import { enqueueAtCurrentGeneration, claimAtCurrentGeneration } from "./_reporting-tick.js";
 
 type ReportingRepo = typeof import("../../../vex-agent/db/repos/agentscan-reporting.js");
 
@@ -99,6 +101,16 @@ interface OutboxRow {
   attempt_count: number;
 }
 
+/** Every outbox row for one activity, with the label the scan gave it. */
+async function outboxRowsFor(activityId: number): Promise<{ id: number; backfill: boolean }[]> {
+  const { query } = await sql();
+  const rows = await query<{ id: string; backfill: boolean }>(
+    `SELECT id::text, backfill FROM agentscan_outbox WHERE activity_id = $1 ORDER BY id`,
+    [activityId],
+  );
+  return rows.map((r) => ({ id: Number(r.id), backfill: r.backfill }));
+}
+
 async function outboxRow(outboxId: number): Promise<OutboxRow> {
   const { queryOne } = await sql();
   const row = await queryOne<OutboxRow>(
@@ -110,34 +122,32 @@ async function outboxRow(outboxId: number): Promise<OutboxRow> {
   return row;
 }
 
+/** A registered install with an identity, as every tick below starts from. */
+async function registerInstall(): Promise<number> {
+  const repo = await reportingRepo();
+  const { execute } = await sql();
+  await repo.ensureIdentity(() => IDENTITY);
+  await execute(`UPDATE agentscan_reporting_state SET registered_at = NOW() WHERE id = 1`, []);
+  return (await repo.getReportingState()).registrationGeneration;
+}
+
 /**
- * "Request A": a registered install claims its batch, which is the moment the
- * generation the send is fenced by is fixed. Returns the row and that fence.
+ * "Request A": a registered install claims its batch under the generation it
+ * read its credentials at, which is the fence the send carries.
  */
 async function claimOneAsRegisteredInstall(): Promise<{
   outboxId: number;
   activityId: number;
   atGeneration: number;
 }> {
-  const repo = await reportingRepo();
-  const { execute } = await sql();
-  await repo.ensureIdentity(() => IDENTITY);
-  await execute(
-    `UPDATE agentscan_reporting_state SET registered_at = NOW() WHERE id = 1`,
-    [],
-  );
+  const atGeneration = await registerInstall();
   const activityId = await seedEligibleSwap();
-  expect(await repo.enqueueEligibleActivity(false)).toBe(1);
+  expect(await enqueueAtCurrentGeneration(false)).toBe(1);
 
-  const batch = await repo.claimDueOutbox(10);
-  const claimed = batch.events[0];
+  const claimed = (await claimAtCurrentGeneration())[0];
   if (claimed === undefined) throw new Error("expected one claimed row");
   expect(claimed.backfill).toBe(false);
-  return {
-    outboxId: claimed.outboxId,
-    activityId,
-    atGeneration: batch.registrationGeneration,
-  };
+  return { outboxId: claimed.outboxId, activityId, atGeneration };
 }
 
 describe("a terminal outbox write is fenced by the generation it was claimed under", () => {
@@ -163,9 +173,8 @@ describe("a terminal outbox write is fenced by the generation it was claimed und
     expect(row.attempt_count).toBe(0);
 
     // And it is genuinely reclaimable, not merely unsent-looking.
-    const reclaimed = await repo.claimDueOutbox(10);
-    expect(reclaimed.events.map((c) => c.outboxId)).toEqual([outboxId]);
-    expect(reclaimed.registrationGeneration).toBe(atGeneration + 1);
+    const reclaimed = await claimAtCurrentGeneration();
+    expect(reclaimed.map((c) => c.outboxId)).toEqual([outboxId]);
   });
 
   it("the event is still owed to the NEW identity after resetIdentityForRecovery", async () => {
@@ -193,8 +202,7 @@ describe("a terminal outbox write is fenced by the generation it was claimed und
     }));
     expect(reborn.agentHash).toBe("d".repeat(64));
 
-    const reclaimed = await repo.claimDueOutbox(10);
-    const owed = reclaimed.events[0];
+    const owed = (await claimAtCurrentGeneration())[0];
     if (owed === undefined) throw new Error("expected the event to be owed to the new identity");
     expect(owed.outboxId).toBe(outboxId);
     expect(owed.activityId).toBe(activityId);
@@ -218,7 +226,7 @@ describe("a terminal outbox write is fenced by the generation it was claimed und
     const row = await outboxRow(outboxId);
     expect(row.rejected_at).toBeNull();
     expect(row.backfill).toBe(true);
-    expect((await repo.claimDueOutbox(10)).events.map((c) => c.outboxId)).toEqual([outboxId]);
+    expect((await claimAtCurrentGeneration()).map((c) => c.outboxId)).toEqual([outboxId]);
   });
 
   it("a stale RESCHEDULE does not push the new identity's resend an hour out", async () => {
@@ -238,7 +246,7 @@ describe("a terminal outbox write is fenced by the generation it was claimed und
     const row = await outboxRow(outboxId);
     expect(row.next_attempt_at.getTime()).toBe(dueAfterReset.getTime());
     // Due now, as the reset left it - not an hour from now.
-    expect((await repo.claimDueOutbox(10)).events).toHaveLength(1);
+    expect(await claimAtCurrentGeneration()).toHaveLength(1);
 
     // And the same call under the CURRENT generation still works: the fence
     // refuses staleness, not rescheduling.
@@ -248,7 +256,7 @@ describe("a terminal outbox write is fenced by the generation it was claimed und
       kind: "applied",
       rows: 1,
     });
-    expect((await repo.claimDueOutbox(10)).events).toHaveLength(0);
+    expect(await claimAtCurrentGeneration()).toHaveLength(0);
   });
 
   /**
@@ -307,6 +315,153 @@ describe("a terminal outbox write is fenced by the generation it was claimed und
     const row = await outboxRow(outboxId);
     expect(row.sent_at).toBeNull();
     expect(row.backfill).toBe(true);
+  });
+});
+
+/**
+ * THE INSERT A RESET CANNOT REACH (Codex final review, round 3).
+ *
+ * Round 3 fenced the TERMINAL writes and captured the generation inside the
+ * claim, which left the step before them - the incremental diff scan - running
+ * unfenced under a generation the lane had already outlived:
+ *
+ *   1. the push lane reads registered state at G and passes its guards;
+ *   2. a concurrent 401 reset commits G+1, relabelling every existing
+ *      non-rejected outbox row as owed history;
+ *   3. the stale lane runs the incremental scan, which INSERTS a previously
+ *      absent `(activity_id, status)` pair as `backfill = FALSE`;
+ *   4. the claim adopts G+1 - so nothing downstream objects - although the send
+ *      still carries G's credentials;
+ *   5. the send never completes (rate budget spent, or a retryable failure), so
+ *      no second reset comes to relabel anything;
+ *   6. the controlled backfill cannot replace that row: its enqueue is the same
+ *      diff and `UNIQUE (activity_id, status)` is already taken.
+ *
+ * A reset can relabel rows; it cannot relabel a row inserted after it committed.
+ * The row is then this install's history, sent to the server as live activity.
+ */
+describe("the incremental scan is fenced by the generation the lane read its credentials at", () => {
+  it("a stale incremental tick inserts nothing, sends nothing, and leaves the pair to the backfill", async () => {
+    const repo = await reportingRepo();
+    // The lane's own `getReportingState()`: credentials AND generation, held.
+    const staleGeneration = await registerInstall();
+
+    // The concurrent 401 recovery, one transaction: relabel plus bump.
+    await repo.resetForReRegistration();
+    expect((await repo.getReportingState()).registrationGeneration).toBe(staleGeneration + 1);
+
+    // A pair the outbox has NEVER seen - the population a reset cannot relabel.
+    const activityId = await seedEligibleSwap();
+
+    const sendEvents = vi.fn(
+      async (): Promise<SendOutcome> => ({
+        kind: "retryable",
+        status: 503,
+        retryAfterSeconds: null,
+        detail: "unavailable",
+      }),
+    );
+    const client: AgentscanClient = { sendEvents };
+    const { drainIncremental } = await import("@vex-agent/sync/agentscan-report/drain.js");
+
+    const result = await drainIncremental(
+      client,
+      IDENTITY.agentHash,
+      IDENTITY.ingestToken,
+      staleGeneration,
+    );
+
+    expect(result).toEqual({ enqueued: 0, sent: 0, rejected: 0, deferred: 0 });
+    // No row at all, so no `backfill = false` row - and nothing was sent under
+    // the credentials the reset replaced.
+    expect(await outboxRowsFor(activityId)).toEqual([]);
+    expect(sendEvents).not.toHaveBeenCalled();
+
+    // The repo says why, rather than reporting a silent zero.
+    expect(await repo.enqueueEligibleActivity(false, staleGeneration)).toEqual({
+      kind: "stale_generation",
+      rows: 0,
+    });
+
+    // Nothing is lost: the controlled backfill that the reset made owed picks
+    // the pair up and labels it history, which is the label the stale tick
+    // would have made unreachable forever.
+    expect(await enqueueAtCurrentGeneration(true)).toBe(1);
+    const backfilled = await outboxRowsFor(activityId);
+    expect(backfilled).toHaveLength(1);
+    expect(backfilled[0]?.backfill).toBe(true);
+  });
+
+  it("a claim at a stale generation claims nothing and leaves the row due and unstamped", async () => {
+    const repo = await reportingRepo();
+    const staleGeneration = await registerInstall();
+    const activityId = await seedEligibleSwap();
+    expect(await enqueueAtCurrentGeneration(false)).toBe(1);
+
+    await repo.resetForReRegistration();
+
+    // Claiming here would stamp a backoff on a row the reset just re-owed and
+    // hand it to a send carrying the replaced credentials.
+    expect(await repo.claimDueOutbox(10, staleGeneration)).toEqual({ kind: "stale_generation" });
+
+    const outboxId = (await outboxRowsFor(activityId))[0]?.id;
+    if (outboxId === undefined) throw new Error("expected the enqueued row to survive the reset");
+    const row = await outboxRow(outboxId);
+    expect(row.attempt_count).toBe(0);
+    expect(row.backfill).toBe(true);
+    expect(row.sent_at).toBeNull();
+
+    // Due now for the tick that reads the CURRENT generation.
+    expect((await claimAtCurrentGeneration()).map((c) => c.outboxId)).toEqual([outboxId]);
+  });
+
+  /**
+   * THE SERIALIZATION, with two clients: the scan takes the singleton
+   * `FOR SHARE`, so a reset holding it `FOR UPDATE` parks the scan (observed
+   * through `pg_stat_activity`, never slept for) and the scan then reads the
+   * moved generation and inserts nothing. Without the share lock the INSERT
+   * could commit against a pre-reset snapshot and produce exactly the
+   * unreachable `backfill = false` row this suite exists for.
+   */
+  it("serializes a reset that lands while the incremental scan is parked, and the scan inserts nothing", async () => {
+    const repo = await reportingRepo();
+    const { getPool } = await sql();
+    const staleGeneration = await registerInstall();
+    const activityId = await seedEligibleSwap();
+
+    const blocker = await getPool().connect();
+    let scan: Promise<{ kind: string; rows: number }>;
+    try {
+      await blocker.query("BEGIN");
+      await blocker.query(
+        "SELECT registration_generation FROM agentscan_reporting_state WHERE id = 1 FOR UPDATE",
+      );
+
+      scan = repo.enqueueEligibleActivity(false, staleGeneration);
+      await waitForBlockedBackend();
+
+      await blocker.query(
+        `UPDATE agentscan_reporting_state
+            SET registered_at = NULL,
+                backfill_enqueued_at = NULL,
+                backfill_vocabulary_version = NULL,
+                registration_generation = registration_generation + 1,
+                updated_at = NOW()
+          WHERE id = 1`,
+      );
+      await blocker.query(
+        `UPDATE agentscan_outbox
+            SET sent_at = NULL, attempt_count = 0, next_attempt_at = NOW(),
+                backfill = TRUE, last_error = NULL
+          WHERE rejected_at IS NULL`,
+      );
+      await blocker.query("COMMIT");
+    } finally {
+      blocker.release();
+    }
+
+    expect(await scan).toEqual({ kind: "stale_generation", rows: 0 });
+    expect(await outboxRowsFor(activityId)).toEqual([]);
   });
 });
 
