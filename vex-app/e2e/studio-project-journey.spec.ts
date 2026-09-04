@@ -41,9 +41,7 @@ import path from "node:path";
 
 import type { Page, TestInfo } from "@playwright/test";
 import { test, expect, type VexDatabaseFixture } from "./fixtures/vex-app-with-database.js";
-
-/** Same pairing `studio.spec.ts` uses: build flag on the build, promise on the run. */
-const TOUR_REQUIRED = process.env.VEX_E2E_REQUIRE_TOUR === "1";
+import { tourIsPresent, tourTo, TOUR_SKIP_REASON } from "./fixtures/studio-shell.js";
 
 /**
  * The one console error every load emits, from the renderer's own `<meta>` CSP.
@@ -111,14 +109,6 @@ async function shot(
   name: string,
 ): Promise<void> {
   await page.screenshot({ path: testInfo.outputPath(`${name}.png`) });
-}
-
-/** Jump to a view through the diagnostic setup tour. */
-async function tourTo(page: Page, view: string): Promise<void> {
-  const tour = page.locator("[data-vex-setup-tour]");
-  await expect(tour).toBeVisible();
-  await tour.getByRole("button", { name: view, exact: true }).click();
-  await expect(page.locator(`[data-vex-screen="${view}"]`)).toBeVisible();
 }
 
 /** Read one project's file status back through the real bridge. */
@@ -204,25 +194,14 @@ test("Studio journey: create a project, see its report, open it and get a termin
   await page.setViewportSize({ width: 1440, height: 900 });
   await expect(page.locator('[data-vex-screen="systemCheck"]')).toBeVisible();
 
-  const tourPresent = (await page.locator("[data-vex-setup-tour]").count()) > 0;
-  if (TOUR_REQUIRED && !tourPresent) {
-    throw new Error(
-      "VEX_E2E_REQUIRE_TOUR=1 declares this run must cover the Studio journey, " +
-        "but the built bundle renders no `[data-vex-setup-tour]`. Rebuild with " +
-        "`VITE_VEX_SETUP_TOUR=1 pnpm --dir vex-app build` and rerun.",
-    );
-  }
-  test.skip(
-    !tourPresent,
-    "this journey reaches the shell through the diagnostic setup tour, which is " +
-      "baked in at build time: rebuild with `VITE_VEX_SETUP_TOUR=1 pnpm --dir " +
-      "vex-app build` and rerun",
-  );
+  test.skip(!(await tourIsPresent(page)), TOUR_SKIP_REASON);
 
   /* ---- 2. Studio, and the creator ------------------------------------ */
 
   await tourTo(page, "appShell");
   const shell = page.locator('[data-vex-screen="appShell"]');
+  // The page-wide locator resolves to the ONE capsule: on the agent welcome
+  // it sits under the vex wordmark (owner decree 2026-09-04).
   await page
     .getByRole("radiogroup", { name: "Runtime mode" })
     .getByRole("radio", { name: "Studio" })
@@ -359,6 +338,14 @@ test("Studio journey: create a project, see its report, open it and get a termin
   expect(box?.width ?? 0).toBeGreaterThan(200);
   expect(box?.height ?? 0).toBeGreaterThan(200);
   await expect(page.locator('[data-vex-area="studio-welcome"]')).toHaveCount(0);
+  // The welcome took its capsule with it and the rail header now carries the
+  // one copy: the way back to Agent survives the project opening.
+  await expect(
+    page
+      .locator('[data-vex-area="studio-sidebar"]')
+      .getByRole("radiogroup", { name: "Runtime mode" }),
+  ).toBeVisible();
+  await expect(page.getByRole("radiogroup", { name: "Runtime mode" })).toHaveCount(1);
   await shot(page, testInfo, "02-project-open");
 
   /* ---- console errors, across the whole journey ---------------------- */
