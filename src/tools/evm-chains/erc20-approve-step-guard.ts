@@ -110,7 +110,13 @@ export type Erc20ApproveStepRefusalReason =
   /** Vex derived no principal for this plan, so no allowance can be bound. */
   | "principal_not_derivable"
   /** More than one approve step in one plan. */
-  | "extra_approve_step";
+  | "extra_approve_step"
+  /** An approval is sequenced at or after the deposit it claims to fund. */
+  | "approve_after_deposit"
+  /** A zero reset with no grant behind it: the plan asks for a bare revocation. */
+  | "allowance_reset_without_grant"
+  /** A zero reset sequenced after the grant it would cancel. */
+  | "allowance_reset_after_grant";
 
 export type Erc20ApproveStepVerdict =
   | { readonly ok: true; readonly spender: Address; readonly allowance: bigint }
@@ -246,7 +252,8 @@ export function verifyApproveStepAuthorizesDeposit(
 
 /**
  * RULE 2 (Vex-derived): the approval is on the origin token, from the selected
- * wallet, for EXACTLY the principal Vex decided to bridge.
+ * wallet, and - WHEN IT GRANTS ANYTHING - for EXACTLY the principal Vex decided
+ * to bridge.
  *
  * Exact equality, both directions. A larger allowance (unlimited most of all)
  * leaves standing authority behind after the bridge; a smaller one cannot fund
@@ -255,8 +262,20 @@ export function verifyApproveStepAuthorizesDeposit(
  * refuses no honest route. If a venue is ever MEASURED to need more than the
  * principal, the bound moves to that measured figure derived from the quote,
  * never to unlimited.
+ *
+ * A ZERO ALLOWANCE (`approve(spender, 0)`) is the one exemption, and it is an
+ * exemption from the EQUALITY ONLY. A non-standard token requires the reset
+ * before a new grant, so binding its zero to the principal would refuse the one
+ * sequence such a token needs. Everything else still applies to it: the reset
+ * must be a canonical value-free `approve` on the ORIGIN token, from the
+ * SELECTED wallet, naming this plan's own deposit target (rule 1). Signing a
+ * reset on a foreign token, from a foreign sender, or on a native origin is
+ * signing an unauthorized state change on the user's own asset and burning gas
+ * for it, which is why none of those checks is waived. The sequence rule
+ * ({@link verifyApprovalSequence}) is what stops a bare reset with no grant
+ * behind it from planning at all.
  */
-export function verifyApproveStepBindsPlanAmount(
+export function verifyApproveStepBindsPlan(
   call: ApproveStepCall,
   plan: ApproveAmountBinding,
 ): Erc20ApproveStepVerdict {
@@ -291,17 +310,119 @@ export function verifyApproveStepBindsPlanAmount(
       "the approval would be sent from an address that is not the selected wallet",
     );
   }
-  if (plan.principalRaw === null) {
+  if (approve.allowance !== 0n && plan.principalRaw === null) {
     return refuseApproveStep(
       "principal_not_derivable",
       "Vex derived no input amount for this bridge, so the allowance cannot be bound",
     );
   }
-  if (approve.allowance !== plan.principalRaw) {
+  if (approve.allowance !== 0n && approve.allowance !== plan.principalRaw) {
     return refuseApproveStep(
       "allowance_not_principal",
       `the approval grants ${approve.allowance} where the deposit needs exactly ${plan.principalRaw}`,
     );
   }
   return { ok: true, spender: approve.spender, allowance: approve.allowance };
+}
+
+/**
+ * One approval as the ORDERING rule sees it: where it sits in the plan, and
+ * whether it grants anything.
+ */
+export interface ApprovalSequenceEntry {
+  /**
+   * The approval's position in the plan, in the order the venue will sign:
+   * a Relay step index, a Khalani leg index. Positions only have to be
+   * comparable within one plan.
+   */
+  readonly position: number;
+  /** The allowance the approval encodes. Zero is a reset, anything else a grant. */
+  readonly allowance: bigint;
+}
+
+/** The sequence rule's own verdict. It binds no single call, so it names none. */
+export type ApprovalSequenceVerdict =
+  | { readonly ok: true }
+  | {
+      readonly ok: false;
+      readonly reason: Erc20ApproveStepRefusalReason;
+      readonly detail: string;
+    };
+
+/**
+ * THE ORDER, across the whole plan: `reset -> exact grant -> deposit` is the
+ * only approval shape a bridge may sign, and every shorter prefix of it.
+ *
+ * WHY ORDER IS A MONEY RULE AND NOT BOOKKEEPING. Rule 1 binds each approval to
+ * this plan's own deposit target and rule 2 binds the grant to the principal,
+ * but neither looks at WHEN the approval is signed. A plan whose allowance
+ * already covers the deposit can therefore let the deposit succeed and then
+ * hand Vex a fresh `approve(target, principal)` to sign AFTERWARDS: a standing
+ * allowance the bridge did not need, created after the only transaction that
+ * justified it, and outliving it. A reset with no grant behind it is the mirror
+ * image - the user's bridge becomes a bare allowance revocation on their own
+ * token, which is a state change nobody asked for and gas nobody authorized.
+ *
+ * The accepted shapes, exhaustively: no approval at all (Relay omits the step
+ * when the allowance already covers the deposit, and every native-origin quote
+ * measured live carries none); one grant before the deposit; one reset followed
+ * by one grant, both before the deposit. Everything else refuses.
+ *
+ * `depositPosition` is `null` when the plan makes no deposit CALL, which makes
+ * every approval in it illegitimate for the same reason rule 1 gives.
+ */
+export function verifyApprovalSequence(
+  approvals: readonly ApprovalSequenceEntry[],
+  depositPosition: number | null,
+): ApprovalSequenceVerdict {
+  if (approvals.length === 0) return { ok: true };
+  if (depositPosition === null) {
+    return {
+      ok: false,
+      reason: "plan_has_no_deposit_call",
+      detail: "the plan makes no deposit call, so no token approval in it is legitimate",
+    };
+  }
+  const late = approvals.find((entry) => entry.position >= depositPosition);
+  if (late !== undefined) {
+    return {
+      ok: false,
+      reason: "approve_after_deposit",
+      detail: "a token approval is sequenced at or after the deposit it claims to fund, so it would leave a standing allowance the bridge never needed",
+    };
+  }
+  const grants = approvals.filter((entry) => entry.allowance !== 0n);
+  const resets = approvals.filter((entry) => entry.allowance === 0n);
+  if (grants.length > 1) {
+    return {
+      ok: false,
+      reason: "extra_approve_step",
+      detail: `the plan grants a token allowance ${grants.length} times, and one deposit needs at most one grant`,
+    };
+  }
+  if (resets.length > 1) {
+    return {
+      ok: false,
+      reason: "extra_approve_step",
+      detail: `the plan resets the allowance ${resets.length} times, and one deposit needs at most one reset`,
+    };
+  }
+  const grant = grants.at(0);
+  const reset = resets.at(0);
+  if (reset === undefined) return { ok: true };
+  if (grant === undefined) {
+    return {
+      ok: false,
+      reason: "allowance_reset_without_grant",
+      detail: "the plan revokes an allowance and never grants one, so it is a bare approval change rather than the approval a deposit needs",
+    };
+  }
+  if (reset.position > grant.position) {
+    return {
+      ok: false,
+      reason: "allowance_reset_after_grant",
+      detail: "the plan resets the allowance after granting it, which would leave the deposit unfunded",
+    };
+  }
+  return { ok: true };
 }

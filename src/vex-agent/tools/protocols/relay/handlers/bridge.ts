@@ -85,7 +85,8 @@ import {
   runRelayVexFeeLeg,
 } from "./bridge/fee-leg.js";
 import { runOriginBroadcasts, type OriginBroadcast } from "./bridge/broadcast.js";
-import { maybeAutoPin, relayLegInput } from "./bridge/recording.js";
+import { withholdFeeOnDepositShortfall } from "@vex-agent/tools/protocols/bridge-deposit-evidence.js";
+import { abortRemaining, maybeAutoPin, relayLegInput } from "./bridge/recording.js";
 import { failPreSign, inFlightResult, pendingResult } from "./bridge/results.js";
 import {
   noteHandlerPendingReason,
@@ -506,7 +507,21 @@ async function relayBridge(
   // own fill tracking (separate lifecycles sharing one plan). Its outcome
   // NEVER changes the bridge's: a fee that does not land is missed Vex
   // revenue on a bridge that DID happen.
-  const feeCollection = feeLegIndex === -1
+  // A DEPOSIT SHORTFALL MAKES THE FEE LEG INELIGIBLE. The fee is charged for
+  // bridging the principal the user consented to; a deposit whose own receipt
+  // proves less than that did not perform it, so no fee signer runs, no nonce
+  // is reserved, and the planned fee row is aborted rather than left pending.
+  // The bridge itself is untouched: the deposit landed and the fill is still
+  // the provider's to make.
+  const feeCollection = run.depositShortfall !== null
+    ? await withholdFeeOnDepositShortfall({
+      shortfall: run.depositShortfall,
+      executionId,
+      feeLegIndex,
+      logScope: "relay.bridge",
+      abortPlannedFeeRow: (fromIndex, reason) => abortRemaining(executionId, fromIndex, reason),
+    })
+    : feeLegIndex === -1
     ? NO_FEE_COLLECTION
     : await runRelayVexFeeLeg({
         executionId,

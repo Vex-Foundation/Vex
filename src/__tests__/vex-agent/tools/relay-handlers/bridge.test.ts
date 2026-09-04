@@ -23,6 +23,15 @@ const SEL_EVM = "0x1111111111111111111111111111111111111111";
 const ZERO = "0x0000000000000000000000000000000000000000";
 const ERC20 = "0xc6911796042b15d7Fa4F6CDe69e245DdCd3d9c31";
 
+// The origin-token fee eligibility probe reaches a live token API. Only that
+// one export is replaced; everything else in the barrel (the fee split, the
+// activity role, the treasury transfer builder) stays real, because the fee
+// ARITHMETIC is part of what these tests assert.
+vi.mock("@tools/bridge-fee/index.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@tools/bridge-fee/index.js")>();
+  return { ...actual, evaluateEvmBridgeFeeEligibility: async () => ({ charge: true } as const) };
+});
+
 vi.mock("@vex-agent/tools/protocols/bridge-token-identity.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@vex-agent/tools/protocols/bridge-token-identity.js")>();
   return {
@@ -909,5 +918,85 @@ describe("relay leg resolution — model-supplied params reach output only throu
     );
     expect(result.success).toBe(false);
     expect(result.output).not.toContain("sk-or-v1-abcdef0123456789");
+  });
+});
+
+// ── The receipt floor makes the Vex fee leg ineligible ─────────────────────
+//
+// A deposit that moved LESS than the principal the user consented to did not
+// perform the operation the fee is charged for (rule 90: take a fee only after
+// the operation it charges for succeeds). `floor - 1` on an ERC-20 origin:
+// nothing with a `vex_fee` role reaches `signStageBroadcast`, so no nonce is
+// reserved and nothing is staged for it, and the planned fee row is aborted.
+
+describe("relay.bridge - a deposit below the receipt floor is never charged a fee", () => {
+  const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+  const DEPOSIT_TARGET = "0x2222222222222222222222222222222222222222";
+  const padded = (address: string): string => `0x${"0".repeat(24)}${address.slice(2).toLowerCase()}`;
+  /** The post-fee principal for a 1,000,000-unit ERC-20 bridge at 25 bps. */
+  const PRINCIPAL = 997_500n;
+  const ERC20_PARAMS = { ...PARAMS, fromToken: ERC20, amountRaw: "1000000" };
+
+  /** Every leg confirms; the deposit's receipt carries one Transfer of `moved`. */
+  function signWithDepositTransfer(moved: bigint) {
+    return async (
+      _p: unknown, _w: unknown, tx: { to: string },
+      hooks: { onHashStaged: (h: unknown) => Promise<void>; onAccepted: () => Promise<void> },
+    ) => {
+      await hooks.onHashStaged({ txHash: "0xdep", fromAddress: SEL_EVM, nonce: 1 });
+      await hooks.onAccepted();
+      return {
+        kind: "confirmed",
+        txHash: "0xdep",
+        receipt: {
+          blockNumber: 1n,
+          logs: [{
+            address: ERC20,
+            topics: [TRANSFER_TOPIC, padded(SEL_EVM), padded(DEPOSIT_TARGET)],
+            data: `0x${moved.toString(16).padStart(64, "0")}`,
+          }],
+        },
+      };
+    };
+  }
+
+  beforeEach(() => {
+    mockFindFreshMatchedPrequote.mockResolvedValue(matchedPrequoteWithVexFee(boundChargedVexFee({
+      feeAmountRaw: "2500", netAmountRaw: "997500", totalDebitedRaw: "1000000",
+    })));
+    mockAdapt.mockReturnValue(adaptedOk({
+      currencyIn: {
+        symbol: "USDC", decimals: 6, currencyAddress: ERC20, amountRaw: "997500",
+        amountFormatted: "0.9975", amountUsd: "1.00", minimumAmountRaw: null,
+      },
+    }));
+    mockPlanStepTx.mockReturnValue({ to: DEPOSIT_TARGET, data: "0xe8017952", value: 0n });
+  });
+
+  it("signs the fee leg when the deposit moved the whole principal (positive control)", async () => {
+    mockSign.mockImplementation(signWithDepositTransfer(PRINCIPAL));
+
+    const result = await runBridge(ERC20_PARAMS);
+
+    // Two signatures: the deposit, then the Vex fee transfer.
+    expect(mockSign).toHaveBeenCalledTimes(2);
+    expect(outputOf(result).vexFee).toBeDefined();
+  });
+
+  it("signs NOTHING for the fee when the deposit moved one unit less than the principal", async () => {
+    mockSign.mockImplementation(signWithDepositTransfer(PRINCIPAL - 1n));
+
+    const result = await runBridge(ERC20_PARAMS);
+
+    // The deposit signed; the fee leg never reached the signer, so no nonce was
+    // reserved for it and nothing was staged or broadcast under its row.
+    expect(mockSign).toHaveBeenCalledTimes(1);
+    // The planned fee row is aborted rather than left pending forever.
+    expect(mockAbort).toHaveBeenCalled();
+    // The tool result names BOTH figures, so the human can compare them.
+    const body = JSON.stringify(outputOf(result));
+    expect(body).toContain("997499");
+    expect(body).toContain("997500");
+    expect(body).toMatch(/No Vex fee was taken/i);
   });
 });

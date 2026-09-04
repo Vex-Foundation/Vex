@@ -26,7 +26,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { encodeFunctionData, getAddress } from "viem";
+import { encodeAbiParameters, encodeFunctionData, getAddress } from "viem";
 
 import { planKhalaniDepositLegs } from "@tools/khalani/bridge-executor.js";
 import type {
@@ -270,5 +270,107 @@ describe("planKhalaniDepositLegs - a TRANSFER deposit has no approval to bind", 
     expect(first?.isDeposit).toBe(true);
     // No approval leg exists, so no allowance is granted to anyone by this plan.
     expect(legs.filter((leg) => leg.role === "allowance")).toHaveLength(0);
+  });
+});
+
+// ── The order, by LEG ORDER ────────────────────────────────────────────────
+
+describe("planKhalaniDepositLegs - reset then grant then deposit, and nothing else", () => {
+  const rejected: readonly (readonly [string, EvmApproval[]])[] = [
+    ["a grant sequenced AFTER the deposit", [depositCall, send(USDC, approveData(DEPOSIT_TARGET, PRINCIPAL), false)]],
+    ["a reset sequenced AFTER the deposit", [depositCall, send(USDC, approveData(DEPOSIT_TARGET, 0n), false)]],
+    ["a reset-only plan, which grants nothing the deposit could spend", [
+      send(USDC, approveData(DEPOSIT_TARGET, 0n), false),
+      depositCall,
+    ]],
+    ["a reset placed after its own grant", [
+      send(USDC, approveData(DEPOSIT_TARGET, PRINCIPAL), false),
+      send(USDC, approveData(DEPOSIT_TARGET, 0n), false),
+      depositCall,
+    ]],
+    ["two resets before the grant", [
+      send(USDC, approveData(DEPOSIT_TARGET, 0n), false),
+      send(USDC, approveData(DEPOSIT_TARGET, 0n), false),
+      send(USDC, approveData(DEPOSIT_TARGET, PRINCIPAL), false),
+      depositCall,
+    ]],
+  ];
+
+  for (const [label, approvals] of rejected) {
+    it(`refuses ${label}, returning no legs to sign`, () => {
+      expect(() => planKhalaniDepositLegs(contractCallPlan(...approvals), BASE, null, ORIGIN))
+        .toThrow(/refused before signing the khalani token approval/i);
+    });
+  }
+});
+
+// ── A zero reset gets every check except the amount ─────────────────────────
+
+describe("planKhalaniDepositLegs - a reset is bound like a grant, minus the amount", () => {
+  const resetNegatives: readonly (readonly [string, EvmApproval, typeof ORIGIN])[] = [
+    ["a reset on a token that is not the origin currency",
+      send(FOREIGN_TOKEN, approveData(DEPOSIT_TARGET, 0n), false), ORIGIN],
+    ["a reset sent from an address that is not the selected wallet",
+      {
+        type: "eip1193_request" as const,
+        deposit: false,
+        request: {
+          method: "eth_sendTransaction",
+          params: [{ from: STRANGER, to: USDC, data: approveData(DEPOSIT_TARGET, 0n) }],
+        },
+      },
+      ORIGIN],
+    ["a reset when the origin asset is the chain's native currency",
+      send(USDC, approveData(DEPOSIT_TARGET, 0n), false), { ...ORIGIN, fromToken: "native" }],
+    ["a reset naming a spender the plan never calls",
+      send(USDC, approveData(STRANGER, 0n), false), ORIGIN],
+  ];
+
+  for (const [label, reset, origin] of resetNegatives) {
+    it(`refuses ${label}`, () => {
+      expect(() => planKhalaniDepositLegs(
+        contractCallPlan(reset, send(USDC, approveData(DEPOSIT_TARGET, PRINCIPAL), false), depositCall),
+        BASE,
+        null,
+        origin,
+      )).toThrow(/refused before signing the khalani token approval/i);
+    });
+  }
+});
+
+// ── The deposit call itself ────────────────────────────────────────────────
+
+describe("planKhalaniDepositLegs - the deposit selector is recorded, not trusted", () => {
+  it("plans the live CONTRACT_CALL deposit whose selector no authority confirms", () => {
+    // `0xf3125a1f` is unverified: the target is unverified on the Base explorer
+    // and on Sourcify, and Khalani publishes no deposit ABI. Refusing it would
+    // break honest traffic, so it is recorded and the receipt floor guards the
+    // money instead.
+    const legs = planKhalaniDepositLegs(
+      contractCallPlan(send(USDC, approveData(DEPOSIT_TARGET, PRINCIPAL), false), depositCall),
+      BASE,
+      null,
+      ORIGIN,
+    );
+    expect(legs.filter((leg) => leg.isDeposit)).toHaveLength(1);
+  });
+
+  it("refuses a CONFIRMED deposit selector that would move less than the principal", () => {
+    // `depositErc20(address,address,uint256,bytes32)` is confirmed against the
+    // verified RelayDepository source; a Khalani plan that used it would be
+    // bound exactly as the Relay one is.
+    const body = encodeAbiParameters(
+      [{ type: "address" }, { type: "address" }, { type: "uint256" }, { type: "bytes32" }],
+      [WALLET, USDC, 1n, `0x${"11".repeat(32)}`],
+    );
+    expect(() => planKhalaniDepositLegs(
+      contractCallPlan(
+        send(USDC, approveData(DEPOSIT_TARGET, PRINCIPAL), false),
+        send(DEPOSIT_TARGET, `0xe8017952${body.slice(2)}`, true),
+      ),
+      BASE,
+      null,
+      ORIGIN,
+    )).toThrow(/refused before signing the khalani deposit/i);
   });
 });

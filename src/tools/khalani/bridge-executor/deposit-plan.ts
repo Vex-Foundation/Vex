@@ -65,12 +65,17 @@ import type {
 } from "../types.js";
 import { decodeErc20Approve, type ApprovedSpender } from "@tools/evm-chains/erc20-approval.js";
 import {
-  refuseApproveStep,
+  verifyApprovalSequence,
   verifyApproveStepAuthorizesDeposit,
-  verifyApproveStepBindsPlanAmount,
+  verifyApproveStepBindsPlan,
+  type ApprovalSequenceEntry,
   type ApproveAmountBinding,
   type Erc20ApproveStepVerdict,
 } from "@tools/evm-chains/erc20-approve-step-guard.js";
+import {
+  logUnverifiedDepositSelector,
+  verifyBridgeDepositCalldata,
+} from "@tools/evm-chains/bridge-deposit-calldata.js";
 import {
   assertEvmApproval,
   classifyEvmApprovalRole,
@@ -211,42 +216,62 @@ function planContractCallLegs(
       nativeValue: planLegNativeValue(chain.id, tx),
     });
   }
-  assertApprovalsAuthorizeDeposit(legs, origin);
+  assertPlanAuthorizesDeposit(legs, chain, origin);
   return attachContractCallDepositEvidence(legs);
 }
 
 /**
- * BOTH rules of the approve binding, across the whole CONTRACT_CALL plan.
+ * BOTH rules of the approve binding, THE ORDER, and the deposit call itself,
+ * across the whole CONTRACT_CALL plan.
  *
  * Rule 1 (plan-internal): every approval leg is a canonical, value-free
- * `approve` naming this plan's OWN deposit target, and at most one of them
- * GRANTS an allowance.
+ * `approve` naming this plan's OWN deposit target.
  *
- * Rule 2 (Vex-derived): every GRANT is on the origin token, from the selected
- * wallet, for EXACTLY the principal Vex asked the venue to bridge. An unlimited
- * allowance, a larger one and a smaller one all refuse, and so does a grant on
- * a token that is not the origin currency.
+ * Rule 2 (Vex-derived): every approval - GRANT OR RESET - is on the origin
+ * token and from the selected wallet, and every GRANT is for EXACTLY the
+ * principal Vex asked the venue to bridge. An unlimited allowance, a larger one
+ * and a smaller one all refuse, and so does an approval on a token that is not
+ * the origin currency, from a sender that is not the wallet, or on a native
+ * origin that has no token to approve. A ZERO RESET is exempt from the amount
+ * equality and from NOTHING ELSE: `approve(x, 0)` on somebody else's token, or
+ * from somebody else's account, is still an unauthorized state change on the
+ * user's own asset and still burns their gas, so the reset gets every check a
+ * grant gets except the one that is meaningless for it.
  *
- * Grants are counted rather than approval legs, because a plan may legitimately
- * carry an `approve(spender, 0)` reset alongside its grant: non-standard tokens
- * require the reset, the leg role vocabulary already names it
- * (`allowance_reset`), and the confirm site replays resets on purpose. A reset
- * is bound to the deposit target exactly like a grant (rule 1), and is exempt
- * from rule 2 BY DEFINITION: it grants no allowance at all, so binding its zero
- * to the principal would refuse the one sequence a non-standard token needs.
+ * THE ORDER (`verifyApprovalSequence`): the approvals must form
+ * `reset -> exact grant -> deposit` or a prefix of it, by LEG ORDER. A grant
+ * sequenced after the deposit is a standing allowance created after the only
+ * transaction that justified it; a reset with no grant behind it is a bare
+ * revocation the bridge never needed.
+ *
+ * THE DEPOSIT CALL (`verifyBridgeDepositCalldata`): what the deposit is asked
+ * to move, for a selector an authoritative source confirms. Khalani's
+ * `CONTRACT_CALL` selector is NOT confirmed today (see that module's table), so
+ * the plan records it and logs it once rather than refusing honest traffic, and
+ * the receipt floor stays the money guard.
  *
  * Throws: this runs inside the planner, whose whole contract is to throw a
  * typed `VexError` before any leg reaches a signer, a nonce or a durable row.
  */
-function assertApprovalsAuthorizeDeposit(
+function assertPlanAuthorizesDeposit(
   legs: readonly KhalaniStagedLeg[],
+  chain: KhalaniChain,
   origin: KhalaniDepositOriginBinding,
 ): void {
-  const deposit = legs.find((leg) => leg.kind === "evm" && leg.isDeposit);
+  const depositIndex = legs.findIndex((leg) => leg.kind === "evm" && leg.isDeposit);
+  const deposit = depositIndex === -1 ? undefined : legs[depositIndex];
   const depositTarget = deposit !== undefined && deposit.kind === "evm" ? deposit.tx.to : null;
   const amountBinding = approveAmountBinding(origin);
-  let grants = 0;
-  for (const leg of legs) {
+  function refuse(detail: string): never {
+    throw new VexError(
+      ErrorCodes.KHALANI_DEPOSIT_FAILED,
+      `Refused before signing the Khalani token approval: ${detail}. Nothing was signed or broadcast.`,
+      "The provider's approval did not match the deposit plan. Take a fresh khalani__bridge_quote_get for this route and retry.",
+    );
+  }
+
+  const approvals: ApprovalSequenceEntry[] = [];
+  for (const [index, leg] of legs.entries()) {
     if (leg.kind !== "evm" || leg.isDeposit || leg.purpose !== "bridge") continue;
     const call = {
       to: leg.tx.to,
@@ -254,22 +279,39 @@ function assertApprovalsAuthorizeDeposit(
       value: leg.tx.value ?? 0n,
       from: leg.tx.expectedFrom,
     };
-    let verdict: Erc20ApproveStepVerdict = verifyApproveStepAuthorizesDeposit(call, { depositTarget });
-    if (verdict.ok && verdict.allowance !== 0n) {
-      grants += 1;
-      verdict = grants > 1
-        ? refuseApproveStep(
-          "extra_approve_step",
-          "the plan grants a token allowance more than once, and one deposit needs at most one grant",
-        )
-        : verifyApproveStepBindsPlanAmount(call, amountBinding);
-    }
+    const bound: Erc20ApproveStepVerdict = verifyApproveStepAuthorizesDeposit(call, { depositTarget });
+    if (!bound.ok) refuse(bound.detail);
+    const planned = verifyApproveStepBindsPlan(call, amountBinding);
+    if (!planned.ok) refuse(planned.detail);
+    approvals.push({ position: index, allowance: bound.allowance });
+  }
+
+  const sequence = verifyApprovalSequence(approvals, depositIndex === -1 ? null : depositIndex);
+  if (!sequence.ok) refuse(sequence.detail);
+
+  if (deposit !== undefined && deposit.kind === "evm") {
+    const verdict = verifyBridgeDepositCalldata(
+      { to: deposit.tx.to, data: deposit.tx.data, value: deposit.tx.value ?? 0n },
+      {
+        originToken: amountBinding.originToken,
+        wallet: origin.wallet,
+        principalRaw: amountBinding.principalRaw,
+      },
+    );
     if (!verdict.ok) {
       throw new VexError(
         ErrorCodes.KHALANI_DEPOSIT_FAILED,
-        `Refused before signing the Khalani token approval: ${verdict.detail}. Nothing was signed or broadcast.`,
-        "The provider's approval did not match the deposit plan. Take a fresh khalani__bridge_quote_get for this route and retry.",
+        `Refused before signing the Khalani deposit: ${verdict.detail}. Nothing was signed or broadcast.`,
+        "The provider's deposit call did not match the plan Vex approved. Take a fresh khalani__bridge_quote_get for this route and retry.",
       );
+    }
+    if (!verdict.bound) {
+      logUnverifiedDepositSelector({
+        venue: "khalani.bridge",
+        chainId: chain.id,
+        selector: verdict.selector,
+        target: deposit.tx.to,
+      });
     }
   }
 }

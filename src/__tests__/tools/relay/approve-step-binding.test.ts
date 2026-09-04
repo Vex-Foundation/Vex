@@ -41,6 +41,8 @@ vi.mock("@tools/relay/client.js", () => ({
 const { planRelayStepTx } = await import("@tools/relay/execute.js");
 const { classifyRelayBridgeSteps } = await import("@tools/relay/step-policy.js");
 
+import { encodeAbiParameters } from "viem";
+
 import type { RelayStepNativeValueContext } from "@tools/relay/native-value.js";
 import { RelayQuoteResponseSchema, RelayStepSchema } from "@tools/relay/types.js";
 import type { RelayQuoteResponse, RelayStep } from "@tools/relay/types.js";
@@ -75,11 +77,30 @@ function approveStep(data: string, over: { to?: string; value?: string } = {}): 
   });
 }
 
-function depositStep(): RelayStep {
+/**
+ * `depositErc20(depositor, token, amount, id)` as the live Relay quotes carry
+ * it: selector `0xe8017952`, four words, the requested input as the amount.
+ * The signature is the one published in the verified `RelayDepository` source
+ * for this very target address.
+ */
+function depositErc20Data(over: { depositor?: string; token?: string; amount?: bigint } = {}): string {
+  const body = encodeAbiParameters(
+    [{ type: "address" }, { type: "address" }, { type: "uint256" }, { type: "bytes32" }],
+    [
+      getAddress(over.depositor ?? WALLET),
+      getAddress(over.token ?? USDC),
+      over.amount ?? PRINCIPAL,
+      `0x${"11".repeat(32)}`,
+    ],
+  );
+  return `0xe8017952${body.slice(2)}`;
+}
+
+function depositStep(data: string = depositErc20Data()): RelayStep {
   return RelayStepSchema.parse({
     id: "deposit",
     kind: "transaction",
-    items: [{ data: { to: DEPOSIT_TARGET, value: "0", data: "0xe8017952", chainId: ORIGIN } }],
+    items: [{ data: { to: DEPOSIT_TARGET, value: "0", data, chainId: ORIGIN } }],
   });
 }
 
@@ -186,12 +207,13 @@ describe("planRelayStepTx - the allowance is bound to the principal Vex derived"
     expect(() => planRelayStepTx(step, ORIGIN, WALLET, allowanceContext())).toThrow(/sender|wallet/i);
   });
 
-  it("leaves the deposit step alone: the binding is a rule about approvals only", () => {
+  it("plans the live deposit step: the approve rules are about approvals only", () => {
+    const data = depositErc20Data();
     const tx = planRelayStepTx(depositStep(), ORIGIN, WALLET, allowanceContext({
       role: "bridge_deposit",
       originCurrency: USDC,
     }));
-    expect(tx).toEqual({ to: DEPOSIT_TARGET, data: "0xe8017952", value: 0n });
+    expect(tx).toEqual({ to: DEPOSIT_TARGET, data, value: 0n });
   });
 
   it("states the refusal and the remedy inside the message the agent reads", () => {
@@ -204,5 +226,101 @@ describe("planRelayStepTx - the allowance is bound to the principal Vex derived"
       expect(error.message).toMatch(/nothing was signed or broadcast/i);
       expect(error.hint).toMatch(/fresh relay__bridge_quote_get/);
     }
+  });
+});
+
+// ── The order, by STEP INDEX ────────────────────────────────────────────────
+//
+// Rule 1 and rule 2 both look at ONE approval. Neither looks at WHEN it is
+// signed, and Relay broadcasts its steps in quote order, so an approval that
+// sits after the deposit is a standing allowance created after the only
+// transaction that justified it. A reset with no grant behind it is the mirror
+// image: the user's bridge becomes a bare revocation on their own token.
+
+describe("classifyRelayBridgeSteps - reset then grant then deposit, and nothing else", () => {
+  it("accepts reset then grant then deposit, the sequence a non-standard token needs", () => {
+    const result = classifyRelayBridgeSteps(
+      quote(
+        approveStep(approveData(DEPOSIT_TARGET, 0n)),
+        approveStep(approveData(DEPOSIT_TARGET, PRINCIPAL)),
+        depositStep(),
+      ),
+      ORIGIN,
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  const rejected: readonly (readonly [string, RelayStep[]])[] = [
+    ["a grant sequenced AFTER the deposit", [depositStep(), approveStep(approveData(DEPOSIT_TARGET, PRINCIPAL))]],
+    ["a reset sequenced AFTER the deposit", [
+      depositStep(),
+      approveStep(approveData(DEPOSIT_TARGET, 0n)),
+    ]],
+    ["a reset-only quote, which grants nothing the deposit could spend", [
+      approveStep(approveData(DEPOSIT_TARGET, 0n)),
+      depositStep(),
+    ]],
+    ["a reset placed after its own grant", [
+      approveStep(approveData(DEPOSIT_TARGET, PRINCIPAL)),
+      approveStep(approveData(DEPOSIT_TARGET, 0n)),
+      depositStep(),
+    ]],
+    ["two grants to the deposit target", [
+      approveStep(approveData(DEPOSIT_TARGET, PRINCIPAL)),
+      approveStep(approveData(DEPOSIT_TARGET, PRINCIPAL)),
+      depositStep(),
+    ]],
+  ];
+
+  for (const [label, steps] of rejected) {
+    it(`rejects ${label}, pre-intent, with no step list to sign`, () => {
+      const result = classifyRelayBridgeSteps(quote(...steps), ORIGIN);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.reason).toBe("approve_not_bound_to_deposit");
+      expect("steps" in result).toBe(false);
+    });
+  }
+});
+
+// ── The deposit call itself ────────────────────────────────────────────────
+//
+// The exact allowance proves what the depository MAY pull; only the deposit
+// calldata proves what it is ASKED to pull. Relay's two deposit selectors come
+// from the verified `RelayDepository` source for the very address every live
+// capture calls, so both are bound before signing.
+
+describe("planRelayStepTx - the deposit moves exactly the principal", () => {
+  const depositContext = (over: Partial<RelayStepNativeValueContext> = {}): RelayStepNativeValueContext =>
+    allowanceContext({ role: "bridge_deposit", ...over });
+
+  it("plans the live ERC-20 deposit: the origin token, the wallet, the exact principal", () => {
+    const data = depositErc20Data();
+    expect(planRelayStepTx(depositStep(data), ORIGIN, WALLET, depositContext()))
+      .toEqual({ to: DEPOSIT_TARGET, data, value: 0n });
+  });
+
+  const refused: readonly (readonly [string, string])[] = [
+    ["a deposit of one unit against the whole quote", depositErc20Data({ amount: 1n })],
+    ["a deposit of one unit less than the principal", depositErc20Data({ amount: PRINCIPAL - 1n })],
+    ["a deposit of MORE than the principal", depositErc20Data({ amount: PRINCIPAL + 1n })],
+    ["a deposit of a token that is not the origin currency", depositErc20Data({ token: DAI })],
+    ["a deposit credited to somebody who is not the selected wallet", depositErc20Data({ depositor: STRANGER })],
+    ["a confirmed selector with an argument body that will not decode", "0xe801795200"],
+  ];
+
+  for (const [label, data] of refused) {
+    it(`refuses ${label} without producing a signable transaction`, () => {
+      expect(() => planRelayStepTx(depositStep(data), ORIGIN, WALLET, depositContext()))
+        .toThrow(/refused before signing the relay deposit/i);
+    });
+  }
+
+  it("records rather than refuses a selector no authority confirms", () => {
+    // Refusing an unconfirmed selector would break honest traffic the moment
+    // Relay upgrades its router, on nothing but our own ignorance. The receipt
+    // floor stays the money guard for it.
+    const data = `0xabcdef01${"00".repeat(32)}`;
+    expect(planRelayStepTx(depositStep(data), ORIGIN, WALLET, depositContext()))
+      .toEqual({ to: DEPOSIT_TARGET, data, value: 0n });
   });
 });

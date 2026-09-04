@@ -111,10 +111,41 @@ of the reference behavior, with evidence)
   is bound to the principal. Rabby's approval card is the reference for
   which three fields matter (token, spender, amount); unlike Rabby, Vex
   has no human at the step, so the bound replaces the human rather than
-  informing one. STILL OPEN, and not claimed anywhere: the deposit step's
-  own calldata is not decoded on either venue (a selector table needs the
-  live captures archived on 2026-09-04), and the ERC-20 receipt rule in
-  `bridge-deposit-evidence.ts` still has a ceiling but no floor.
+  informing one.
+
+  SECOND CORRECTION (2026-09-04). The two items the paragraph
+  above left open are now closed, and the exact shape of each matters:
+
+  - THE ORDER. `reset -> exact grant -> deposit`, or a prefix of it, is
+    the only approval shape either venue signs
+    (`verifyApprovalSequence`). Relay orders by step index and Khalani by
+    leg order, so a grant sequenced AFTER the deposit (a standing
+    allowance created after the only transaction that justified it) and a
+    reset with no grant behind it (a bare revocation the bridge never
+    needed) both refuse pre-sign. A reset now gets every rule-2 check
+    except the amount equality: on the origin token, from the selected
+    wallet, naming this plan's deposit target.
+  - THE DEPOSIT CALLDATA. `@tools/evm-chains/bridge-deposit-calldata.ts`
+    binds the deposit call to the plan for every selector whose SIGNATURE
+    an authoritative source confirms. Relay's `0xe8017952`
+    (`depositErc20(address,address,uint256,bytes32)`), its three-argument
+    overload and `0x49290c1c` (`depositNative(address,bytes32)`) come
+    from the VERIFIED `RelayDepository` source the Base explorer
+    publishes for `0x4cD00e387622c35bDDB9B4C962C136462338BC31`, the very
+    address every live capture calls. Khalani's `0xf3125a1f` is NOT
+    confirmed: its target is unverified on that explorer and on Sourcify
+    and Khalani publishes no deposit ABI, so it is recorded as
+    `deposit_selector_unverified` and logged once rather than refused -
+    refusing honest traffic on our own ignorance is a worse failure than
+    leaving the money guard to the receipt.
+  - THE RECEIPT FLOOR. `bridge-deposit-evidence.ts` now has a floor as
+    well as a ceiling: the proven ERC-20 amount must EQUAL the quoted
+    principal unless the token has a MEASURED deduction in
+    `FEE_ON_TRANSFER_DEDUCTIONS` (empty, absolute atomic units, never a
+    percentage). A shortfall is a `deposit_short` outcome that records
+    the row for review without an amount and makes the Vex fee leg
+    INELIGIBLE on both venues, so a deposit of one unit against a
+    million-unit quote can no longer pay a full fixed fee.
 
 ## Reference caveat
 

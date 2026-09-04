@@ -20,9 +20,13 @@ vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
   provenLegAmounts: vi.fn(),
 }));
 
-const { proveErc20DepositAmount, authorizedDepositRecipients } = await import(
-  "@vex-agent/tools/protocols/bridge-deposit-evidence.js"
-);
+const {
+  authorizedDepositRecipients,
+  bridgeDepositFloor,
+  FEE_ON_TRANSFER_DEDUCTIONS,
+  proveErc20DepositAmount,
+  withholdFeeOnDepositShortfall,
+} = await import("@vex-agent/tools/protocols/bridge-deposit-evidence.js");
 type DepositTransferLog =
   import("@vex-agent/tools/protocols/bridge-deposit-evidence.js").DepositTransferLog;
 
@@ -59,6 +63,7 @@ function transferLog(args: {
 function request(overrides: Partial<Parameters<typeof proveErc20DepositAmount>[0]> = {}) {
   return proveErc20DepositAmount({
     logs: [transferLog({})],
+    chainId: 8453,
     tokenAddress: TOKEN,
     senderAddress: WALLET,
     recipients: [{ address: DEPOSITORY, maxAmountRaw: null }],
@@ -149,15 +154,19 @@ describe("proveErc20DepositAmount", () => {
     expect(outcome).toEqual({ kind: "proven", amountRaw: "1000000" });
   });
 
-  it("accepts a fee-on-transfer shortfall only while ONE candidate remains", () => {
-    // The token skimmed its own fee to a third party, so the deposit log carries
-    // less than the plan. The deposit transfer is still the single candidate.
+  it("reports a fee-on-transfer shortfall as SHORT, because no deduction is measured for this token", () => {
+    // This case used to assert `proven: 990000` against a
+    // quoted 1,000,000, and that acceptance is exactly the hole: the amount was
+    // declared, the full fixed Vex fee then followed, and the user consented to
+    // a card that said the whole 1,000,000 would travel. "Some tokens skim a
+    // fee" is not evidence about THIS token; only a measured entry in
+    // `FEE_ON_TRANSFER_DEDUCTIONS` lowers the floor, and it is empty.
     const feeSkim = transferLog({ to: STRANGER, amount: 10_000n });
     const outcome = request({
       logs: [feeSkim, transferLog({ amount: 990_000n })],
       expectedAmountRaw: "1000000",
     });
-    expect(outcome).toEqual({ kind: "proven", amountRaw: "990000" });
+    expect(outcome).toEqual({ kind: "short", provenAmountRaw: "990000", quotedAmountRaw: "1000000" });
   });
 
   it("declines a fee-on-transfer shortfall that leaves two possible deposits", () => {
@@ -177,6 +186,23 @@ describe("proveErc20DepositAmount", () => {
       ],
     });
     expect(outcome).toEqual({ kind: "proven", amountRaw: "1000000" });
+  });
+
+  it("reports a one-unit deposit against the whole quote as SHORT, not as an amount", () => {
+    // The shape that used to pay a full fixed fee for a bridge that moved
+    // nothing worth the name.
+    expect(request({ logs: [transferLog({ amount: 1n })] }))
+      .toEqual({ kind: "short", provenAmountRaw: "1", quotedAmountRaw: "1000000" });
+  });
+
+  it("proves the exact quoted principal, which is the floor", () => {
+    expect(request({ logs: [transferLog({ amount: 1_000_000n })] }))
+      .toEqual({ kind: "proven", amountRaw: "1000000" });
+  });
+
+  it("reports one unit below the floor as SHORT", () => {
+    expect(request({ logs: [transferLog({ amount: 999_999n })] }))
+      .toEqual({ kind: "short", provenAmountRaw: "999999", quotedAmountRaw: "1000000" });
   });
 
   it("declines an empty receipt", () => {
@@ -240,12 +266,24 @@ describe("proveErc20DepositAmount - the allowance is an absolute ceiling", () =>
     { address: STRANGER, maxAmountRaw },
   ];
 
-  it("proves a transfer within the spender's effective allowance", () => {
+  it("proves a transfer to a spender when it also reaches the quoted floor", () => {
+    // The allowance is the CEILING for a spender recipient; the quoted
+    // principal is still the FLOOR, so the two only agree at the principal
+    // itself. That is the live shape: the approve guard binds the allowance to
+    // exactly the amount being bridged.
+    const outcome = request({
+      logs: [transferLog({ to: STRANGER, amount: 1_000_000n })],
+      recipients: spenderRecipients(1_000_000n),
+    });
+    expect(outcome).toEqual({ kind: "proven", amountRaw: "1000000" });
+  });
+
+  it("reports a transfer inside the allowance but under the quote as SHORT", () => {
     const outcome = request({
       logs: [transferLog({ to: STRANGER, amount: 400_000n })],
       recipients: spenderRecipients(400_000n),
     });
-    expect(outcome).toEqual({ kind: "proven", amountRaw: "400000" });
+    expect(outcome).toEqual({ kind: "short", provenAmountRaw: "400000", quotedAmountRaw: "1000000" });
   });
 
   it("declines a transfer larger than the spender could ever have pulled", () => {
@@ -262,5 +300,82 @@ describe("proveErc20DepositAmount - the allowance is an absolute ceiling", () =>
       recipients: spenderRecipients(10_000_000n),
     });
     expect(outcome).toEqual({ kind: "declined", reason: "no_candidate_transfer", candidateCount: 0 });
+  });
+});
+
+// ── The floor and its fee-on-transfer table ────────────────────────────────
+
+describe("bridgeDepositFloor - the deposit floor and the table that may lower it", () => {
+  it("ships with an EMPTY table, so the floor is the quote itself", () => {
+    expect(FEE_ON_TRANSFER_DEDUCTIONS.size).toBe(0);
+    expect(bridgeDepositFloor({ chainId: 8453, tokenAddress: TOKEN, quotedRaw: 1_000_000n }))
+      .toBe(1_000_000n);
+  });
+
+  it("lowers the floor by the MEASURED absolute deduction for that chain and token", () => {
+    const measured = new Map<string, bigint>([[`8453:${TOKEN.toLowerCase()}`, 2_500n]]);
+    expect(bridgeDepositFloor({ chainId: 8453, tokenAddress: TOKEN, quotedRaw: 1_000_000n, deductions: measured }))
+      .toBe(997_500n);
+  });
+
+  it("keeps the deduction ABSOLUTE: ten times the trade gets the same allowance, not ten times it", () => {
+    // Rule 90: a money tolerance is absolute, never a percentage that grows
+    // with trade size. The same 2,500 units on a ten-times-larger trade.
+    const measured = new Map<string, bigint>([[`8453:${TOKEN.toLowerCase()}`, 2_500n]]);
+    expect(bridgeDepositFloor({ chainId: 8453, tokenAddress: TOKEN, quotedRaw: 10_000_000n, deductions: measured }))
+      .toBe(9_997_500n);
+  });
+
+  it("does not apply another chain's measurement to this chain", () => {
+    const measured = new Map<string, bigint>([[`1:${TOKEN.toLowerCase()}`, 2_500n]]);
+    expect(bridgeDepositFloor({ chainId: 8453, tokenAddress: TOKEN, quotedRaw: 1_000_000n, deductions: measured }))
+      .toBe(1_000_000n);
+  });
+
+  it("does not apply another token's measurement to this token", () => {
+    const measured = new Map<string, bigint>([[`8453:${OTHER_TOKEN.toLowerCase()}`, 2_500n]]);
+    expect(bridgeDepositFloor({ chainId: 8453, tokenAddress: TOKEN, quotedRaw: 1_000_000n, deductions: measured }))
+      .toBe(1_000_000n);
+  });
+});
+
+// ── The fee decision for a short deposit ───────────────────────────────────
+
+describe("withholdFeeOnDepositShortfall - a short bridge is never charged", () => {
+  const shortfall = { provenAmountRaw: "999999", quotedAmountRaw: "1000000" };
+
+  it("aborts the planned fee row and takes no fee", async () => {
+    const aborted: Array<readonly [number, string]> = [];
+    const collection = await withholdFeeOnDepositShortfall({
+      shortfall,
+      executionId: 42,
+      feeLegIndex: 2,
+      logScope: "relay.bridge",
+      abortPlannedFeeRow: async (fromIndex, reason) => {
+        aborted.push([fromIndex, reason]);
+      },
+    });
+    expect(collection.collection).toBe("not_attempted");
+    expect(aborted).toHaveLength(1);
+    expect(aborted[0]?.[0]).toBe(2);
+  });
+
+  it("names BOTH figures in the note the agent and the human read", async () => {
+    const collection = await withholdFeeOnDepositShortfall({
+      shortfall, executionId: 42, feeLegIndex: 2, logScope: "khalani.bridge",
+      abortPlannedFeeRow: async () => undefined,
+    });
+    expect(collection.collectionNote).toContain("999999");
+    expect(collection.collectionNote).toContain("1000000");
+    expect(collection.collectionNote).toMatch(/no vex fee was taken/i);
+  });
+
+  it("aborts nothing when this bridge planned no fee row at all", async () => {
+    let called = false;
+    await withholdFeeOnDepositShortfall({
+      shortfall, executionId: 42, feeLegIndex: -1, logScope: "relay.bridge",
+      abortPlannedFeeRow: async () => { called = true; },
+    });
+    expect(called).toBe(false);
   });
 });

@@ -44,7 +44,11 @@ import {
   createDynamicWalletClient,
 } from "@tools/khalani/evm-client.js";
 import { checkNativeValueAuthorizedForCall } from "@tools/evm-chains/native-value-authorization/index.js";
-import { verifyApproveStepBindsPlanAmount } from "@tools/evm-chains/erc20-approve-step-guard.js";
+import { verifyApproveStepBindsPlan } from "@tools/evm-chains/erc20-approve-step-guard.js";
+import {
+  logUnverifiedDepositSelector,
+  verifyBridgeDepositCalldata,
+} from "@tools/evm-chains/bridge-deposit-calldata.js";
 import { VexError, ErrorCodes } from "../../errors.js";
 import logger from "../../utils/logger.js";
 import { RELAY_NATIVE_CURRENCY } from "./chains.js";
@@ -144,6 +148,21 @@ export interface PlannedRelayStepTx {
  * `nativeValue` is REQUIRED: what Vex derived about this step's outflow cannot
  * be inferred from the step, and a caller who omits it must not compile.
  */
+/**
+ * The principal VEX derived for this bridge, or `null` when it derived none
+ * this gate may bind to. Only EXACT_INPUT makes `bridgedAmountRaw` the INPUT
+ * amount; on any other trade type Relay chooses the input, and an amount Vex
+ * cannot read at all is not a bound either.
+ */
+function relayDerivedPrincipal(nativeValue: RelayStepNativeValueContext): bigint | null {
+  if (nativeValue.tradeType !== "EXACT_INPUT") return null;
+  try {
+    return BigInt(nativeValue.bridgedAmountRaw);
+  } catch {
+    return null;
+  }
+}
+
 export function planRelayStepTx(
   step: RelayStep,
   originChainId: number,
@@ -216,19 +235,24 @@ export function planRelayStepTx(
   // reserves no nonce and signs nothing. `originCurrency` and `bridgedAmountRaw`
   // are Vex's own derivations, never the quote's echo, which is what makes this
   // a bound rather than a restatement of the provider's intent.
+  const originToken = nativeValue.originCurrency.toLowerCase() === RELAY_NATIVE_CURRENCY
+    ? null
+    : nativeValue.originCurrency;
+  // Only EXACT_INPUT makes `bridgedAmountRaw` the INPUT amount, which is the
+  // only thing an allowance or a deposit principal may be bound to. On any
+  // other trade type Relay chooses the input and Vex has derived nothing about
+  // it.
+  const derivedPrincipal = relayDerivedPrincipal(nativeValue);
+
   if (nativeValue.role === "allowance") {
-    const verdict = verifyApproveStepBindsPlanAmount(
+    const verdict = verifyApproveStepBindsPlan(
       { to, data: data.data, value, from: data.from },
       {
-        originToken: nativeValue.originCurrency.toLowerCase() === RELAY_NATIVE_CURRENCY
-          ? null
-          : nativeValue.originCurrency,
+        originToken,
         wallet: expectedFrom,
-        // Only EXACT_INPUT makes `bridgedAmountRaw` the INPUT amount, which is
-        // the only thing an allowance may be bound to. On any other trade type
-        // Relay chooses the input and Vex has derived nothing about it, so the
-        // guard fails closed rather than binding to an output.
-        principalRaw: nativeValue.tradeType === "EXACT_INPUT" ? BigInt(nativeValue.bridgedAmountRaw) : null,
+        // A `null` principal fails the guard closed rather than binding an
+        // allowance to an output amount.
+        principalRaw: derivedPrincipal,
       },
     );
     if (!verdict.ok) {
@@ -237,6 +261,36 @@ export function planRelayStepTx(
         `Refused before signing the Relay token approval: ${verdict.detail}. Nothing was signed or broadcast for this step.`,
         "The provider's approval did not match the plan Vex approved. Get a fresh relay__bridge_quote_get for this route and retry; if the same approval comes back, bridge this route with khalani__bridge_execute instead.",
       );
+    }
+  }
+
+  // THE DEPOSIT BINDING (`@tools/evm-chains/bridge-deposit-calldata.ts`). The
+  // exact allowance proves what the depository MAY pull; only the deposit
+  // calldata proves what it is being ASKED to pull. Both Relay deposit
+  // selectors are confirmed against the verified `RelayDepository` source, so a
+  // deposit that names another token, credits another account, or moves an
+  // amount that is not the principal refuses HERE, before any nonce or
+  // signature. A selector no authority confirms is recorded and logged once,
+  // never refused: the receipt floor is the money guard for it.
+  if (nativeValue.role === "bridge_deposit") {
+    const verdict = verifyBridgeDepositCalldata(
+      { to, data: data.data, value },
+      { originToken, wallet: expectedFrom, principalRaw: derivedPrincipal },
+    );
+    if (!verdict.ok) {
+      throw new VexError(
+        ErrorCodes.RELAY_BRIDGE_FAILED,
+        `Refused before signing the Relay deposit: ${verdict.detail}. Nothing was signed or broadcast for this step.`,
+        "The provider's deposit call did not match the plan Vex approved. Get a fresh relay__bridge_quote_get for this route and retry; if the same call comes back, bridge this route with khalani__bridge_execute instead.",
+      );
+    }
+    if (!verdict.bound) {
+      logUnverifiedDepositSelector({
+        venue: "relay.bridge",
+        chainId: originChainId,
+        selector: verdict.selector,
+        target: to,
+      });
     }
   }
 

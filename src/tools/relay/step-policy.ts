@@ -25,8 +25,10 @@
  *    step. Any non-origin chainId → reject BEFORE any intent/sign.
  *  - Role map (closed): `approve` → `allowance`, `deposit` → `bridge_deposit`
  *    (the `agent_activity` roles W-SPINE's repo exposes). Truthful roles only.
- *  - AT MOST ONE approve step, and its spender MUST be the deposit step's own
- *    target (`@tools/evm-chains/erc20-approve-step-guard.ts`, rule 1). This is
+ *  - THE APPROVAL SHAPE IS `reset -> exact grant -> deposit`, or a prefix of
+ *    it: at most one grant, at most one reset before it, and every approval
+ *    strictly BEFORE the deposit step. Each approval's spender MUST be the
+ *    deposit step's own target (`@tools/evm-chains/erc20-approve-step-guard.ts`, rule 1). This is
  *    the CROSS-STEP half of the approve binding, and it lives here because this
  *    is the only place that sees the whole step list: a quote whose approval
  *    hands the user's origin token to an address the plan never calls is
@@ -37,8 +39,9 @@
  */
 
 import {
-  refuseApproveStep,
+  verifyApprovalSequence,
   verifyApproveStepAuthorizesDeposit,
+  type ApprovalSequenceEntry,
   type Erc20ApproveStepVerdict,
 } from "@tools/evm-chains/erc20-approve-step-guard.js";
 
@@ -151,8 +154,16 @@ function stepTransaction(entry: RelaySignableStep): RelayStepItemData | null {
 }
 
 /**
- * Rule 1 of the approve binding across the WHOLE step list: at most one approve
- * step, and it may only authorize the deposit step this same quote carries.
+ * Rule 1 of the approve binding across the WHOLE step list, plus THE ORDER.
+ *
+ * Every approval step must be a canonical, value-free `approve` naming this
+ * quote's own deposit target (rule 1,
+ * `verifyApproveStepAuthorizesDeposit`), and the approvals as a set must form
+ * the only shape a bridge may sign: `reset -> exact grant -> deposit`, or any
+ * shorter prefix of it (`verifyApprovalSequence`). Relay's own order is the
+ * STEP INDEX, which is the order the handler broadcasts in, so an approval that
+ * sits at or after the deposit step is an allowance created after the only
+ * transaction that justified it.
  *
  * Returns the rejection, or `null` when the steps bind. A quote with no approve
  * step binds trivially: Relay omits the step when the allowance already covers
@@ -161,62 +172,51 @@ function stepTransaction(entry: RelaySignableStep): RelayStepItemData | null {
 function bindApproveStepsToDeposit(
   signable: readonly RelaySignableStep[],
 ): RelayStepPolicyResult | null {
-  const approvals = signable.filter((entry) => entry.role === "allowance");
-  // `.at()` rather than an index: it reports the absence in the type, so the
-  // empty and the two-approval cases are both handled instead of asserted away.
-  const approval = approvals.at(0);
-  const secondApproval = approvals.at(1);
-  if (approval === undefined) return null;
+  const rejection = (entry: RelaySignableStep, detail: string): RelayStepPolicyResult => ({
+    ok: false,
+    reason: "approve_not_bound_to_deposit",
+    stepId: entry.stepId,
+    detail: `Relay step "${entry.stepId}" is a token approval Vex will not sign: ${detail}. Nothing was signed. Get a fresh relay__bridge_quote_get for this route and retry.`,
+  });
 
-  const rejection = (entry: RelaySignableStep, verdict: Erc20ApproveStepVerdict): RelayStepPolicyResult | null => {
-    if (verdict.ok) return null;
-    return {
-      ok: false,
-      reason: "approve_not_bound_to_deposit",
-      stepId: entry.stepId,
-      detail: `Relay step "${entry.stepId}" is a token approval Vex will not sign: ${verdict.detail}. Nothing was signed. Get a fresh relay__bridge_quote_get for this route and retry.`,
-    };
-  };
+  const depositIndex = signable.findIndex((entry) => entry.role === "bridge_deposit");
+  const depositEntry = signable.at(depositIndex === -1 ? signable.length : depositIndex);
+  const depositTx = depositEntry === undefined ? null : stepTransaction(depositEntry);
+  const approvalEntries: ApprovalSequenceEntry[] = [];
 
-  if (secondApproval !== undefined) {
-    return rejection(
-      secondApproval,
-      refuseApproveStep("extra_approve_step", `the quote carries ${approvals.length} approval steps, and one bridge needs at most one`),
-    );
-  }
-
-  const deposit = signable.find((entry) => entry.role === "bridge_deposit");
-  const depositTx = deposit ? stepTransaction(deposit) : null;
-  const approvalTx = stepTransaction(approval);
-  if (approvalTx === null) {
-    // The loop above already proved every signable step carries exactly one
-    // origin transaction, so this is unreachable today. It refuses rather than
-    // passing, because an approval whose transaction this gate could not read
-    // is an approval it did not check.
-    return rejection(
-      approval,
-      refuseApproveStep("not_canonical_approve", "the approval step carries no transaction to read"),
-    );
-  }
-
-  let value: bigint;
-  try {
-    value = BigInt(approvalTx.value);
-  } catch {
-    // `planRelayStepTx` owns the canonicalization refusal; a value that is not
-    // an integer is refused here too, because this gate must not admit a step
-    // whose native charge it could not read.
-    return rejection(
-      approval,
-      refuseApproveStep("approve_carries_native_value", "its native value is not an integer, so Vex cannot read what it would send"),
-    );
-  }
-
-  return rejection(
-    approval,
-    verifyApproveStepAuthorizesDeposit(
+  for (const [index, entry] of signable.entries()) {
+    if (entry.role !== "allowance") continue;
+    const approvalTx = stepTransaction(entry);
+    if (approvalTx === null) {
+      // The classifier above already proved every signable step carries exactly
+      // one origin transaction, so this is unreachable today. It refuses rather
+      // than passing, because an approval whose transaction this gate could not
+      // read is an approval it did not check.
+      return rejection(entry, "the approval step carries no transaction to read");
+    }
+    let value: bigint;
+    try {
+      value = BigInt(approvalTx.value);
+    } catch {
+      // `planRelayStepTx` owns the canonicalization refusal; a value that is not
+      // an integer is refused here too, because this gate must not admit a step
+      // whose native charge it could not read.
+      return rejection(entry, "its native value is not an integer, so Vex cannot read what it would send");
+    }
+    const verdict: Erc20ApproveStepVerdict = verifyApproveStepAuthorizesDeposit(
       { to: approvalTx.to, data: approvalTx.data, value },
       { depositTarget: depositTx?.to ?? null },
-    ),
-  );
+    );
+    if (!verdict.ok) return rejection(entry, verdict.detail);
+    approvalEntries.push({ position: index, allowance: verdict.allowance });
+  }
+
+  const sequence = verifyApprovalSequence(approvalEntries, depositIndex === -1 ? null : depositIndex);
+  if (!sequence.ok) {
+    // The LAST approval is the one the sequence rule objects to on every shape
+    // it names, so it is the step the message points at.
+    const offending = signable.filter((entry) => entry.role === "allowance").at(-1);
+    if (offending !== undefined) return rejection(offending, sequence.detail);
+  }
+  return null;
 }

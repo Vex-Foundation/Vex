@@ -178,12 +178,21 @@ describe("khalani.bridge deposit amounts", () => {
     expect(mockDecline).toHaveBeenCalledWith(DEPOSIT_ROW_ID, "amounts_undecodable");
   });
 
-  it("takes a fee-on-transfer shortfall while one candidate remains", async () => {
-    await runLoop({
+  it("records a fee-on-transfer shortfall for review instead of declaring it", async () => {
+    // This case used to declare 990,000 of a quoted
+    // 1,000,000 and let the full fixed Vex fee follow. No deduction is measured
+    // for this token, so the deposit is SHORT: the row keeps no executed
+    // amount, it is marked for review, and the caller withholds the fee.
+    const run = await runLoop({
       stagedLegs: transferPlanLegs(TOKEN, "1000000"),
       logs: [transferLog(WALLET, STRANGER, 10_000n), transferLog(WALLET, DEPOSITORY, 990_000n)],
     });
-    expect(mockConfirm).toHaveBeenCalledWith(DEPOSIT_ROW_ID, { executedAmountInRaw: "990000" });
+    expect(mockConfirm).toHaveBeenCalledWith(DEPOSIT_ROW_ID, {});
+    expect(mockDecline).toHaveBeenCalledWith(DEPOSIT_ROW_ID, "amounts_incomplete");
+    expect(run.outcome).toBe("confirmed");
+    if (run.outcome === "confirmed") {
+      expect(run.depositShortfall).toEqual({ provenAmountRaw: "990000", quotedAmountRaw: "1000000" });
+    }
   });
 
   it("stamps a native TRANSFER from the value Vex signed", async () => {
@@ -194,12 +203,38 @@ describe("khalani.bridge deposit amounts", () => {
     expect(mockConfirm).toHaveBeenCalledWith(DEPOSIT_ROW_ID, { executedAmountInRaw: "7000" });
   });
 
-  it("proves a CONTRACT_CALL deposit from the transfer into the call target", async () => {
-    await runLoop({
+  it("proves a CONTRACT_CALL deposit that moved the whole quoted principal", async () => {
+    const run = await runLoop({
       stagedLegs: contractCallPlanLegs(),
-      logs: [transferLog(WALLET, DEPOSITORY, 800_000n)],
+      logs: [transferLog(WALLET, DEPOSITORY, 1_000_000n)],
     });
-    expect(mockConfirm).toHaveBeenCalledWith(DEPOSIT_ROW_ID, { executedAmountInRaw: "800000" });
+    expect(mockConfirm).toHaveBeenCalledWith(DEPOSIT_ROW_ID, { executedAmountInRaw: "1000000" });
+    if (run.outcome === "confirmed") expect(run.depositShortfall).toBeNull();
+  });
+
+  it("records a CONTRACT_CALL deposit ONE UNIT below the floor as short, and signs no fee", async () => {
+    // `floor - 1`: the exact shape that used to pay a full fixed fee for a
+    // bridge that moved less than the user consented to.
+    const run = await runLoop({
+      stagedLegs: contractCallPlanLegs(),
+      logs: [transferLog(WALLET, DEPOSITORY, 999_999n)],
+    });
+    expect(mockConfirm).toHaveBeenCalledWith(DEPOSIT_ROW_ID, {});
+    expect(mockDecline).toHaveBeenCalledWith(DEPOSIT_ROW_ID, "amounts_incomplete");
+    expect(run.outcome).toBe("confirmed");
+    if (run.outcome === "confirmed") {
+      expect(run.depositShortfall).toEqual({ provenAmountRaw: "999999", quotedAmountRaw: "1000000" });
+    }
+  });
+
+  it("records a one-unit CONTRACT_CALL deposit against the whole quote as short", async () => {
+    const run = await runLoop({
+      stagedLegs: contractCallPlanLegs(),
+      logs: [transferLog(WALLET, DEPOSITORY, 1n)],
+    });
+    if (run.outcome === "confirmed") {
+      expect(run.depositShortfall).toEqual({ provenAmountRaw: "1", quotedAmountRaw: "1000000" });
+    }
   });
 
   it("declines a CONTRACT_CALL deposit whose transfer exceeds the quoted bound", async () => {
@@ -214,9 +249,9 @@ describe("khalani.bridge deposit amounts", () => {
   it("admits a spender this bridge approved FOR THE INPUT TOKEN", async () => {
     await runLoop({
       stagedLegs: withApprovedSpenders(contractCallPlanLegs(), [{ token: TOKEN, spender: STRANGER, amountRaw: UNLIMITED }]),
-      logs: [transferLog(WALLET, STRANGER, 700_000n)],
+      logs: [transferLog(WALLET, STRANGER, 1_000_000n)],
     });
-    expect(mockConfirm).toHaveBeenCalledWith(DEPOSIT_ROW_ID, { executedAmountInRaw: "700000" });
+    expect(mockConfirm).toHaveBeenCalledWith(DEPOSIT_ROW_ID, { executedAmountInRaw: "1000000" });
   });
 
   it("declines a transfer to a spender that was only approved for a DIFFERENT token", async () => {

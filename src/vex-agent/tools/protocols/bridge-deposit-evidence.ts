@@ -23,6 +23,19 @@
  *     allowance when the recipient is a spender. Both bounds are ABSOLUTE, in
  *     raw units, so neither can scale with trade size and hide a real overspend.
  *
+ * AND THEN THE FLOOR. A ceiling alone is one-sided: it stops an overspend and
+ * says nothing about an UNDERSPEND. A deposit of one atomic unit against a
+ * million-unit quote used to be "proven" and then paid the whole fixed Vex fee,
+ * while the card the user consented to said the whole amount would travel. So
+ * the proven amount must EQUAL the quoted principal, minus only a deduction
+ * this repository has MEASURED for that exact (chain, token) pair
+ * ({@link FEE_ON_TRANSFER_DEDUCTIONS}, empty by default, absolute atomic units
+ * and never a percentage - a percentage tolerance scales with trade size, which
+ * is exactly what a money bound must not do). Anything below that floor is a
+ * `deposit_short` outcome carrying both figures: the venue records it for
+ * review, states both numbers in the tool result, and NO fee leg runs, because
+ * a fee is charged for an operation that succeeded as quoted.
+ *
  * Zero candidates or more than one: no amount, and a NAMED decline the caller
  * records and logs. Vex-built knowledge (a Khalani `TRANSFER` plan Vex composed
  * itself) NARROWS which candidate is ours through `expectedAmountRaw`; it never
@@ -60,6 +73,8 @@ export interface DepositTransferLog {
 
 export interface Erc20DepositEvidence {
   readonly logs: readonly DepositTransferLog[];
+  /** The chain the deposit settled on - half the key of the fee-on-transfer table. */
+  readonly chainId: number;
   /** The input token of the activity event whose amount is being established. */
   readonly tokenAddress: string;
   /** The wallet that signed the deposit. */
@@ -136,6 +151,42 @@ export function authorizedDepositRecipients(args: {
   return recipients;
 }
 
+/**
+ * The ONLY tokens whose deposits may prove LESS than the quoted principal, and
+ * exactly how much less, per chain.
+ *
+ * EMPTY BY DEFAULT, and that is the design rather than a placeholder. A
+ * fee-on-transfer token skims a deduction the sender cannot see in the quote,
+ * so its honest deposit really is short - but "some tokens do that" is not
+ * evidence about the token in front of us. An entry is added only when the
+ * deduction has been MEASURED on that chain for that token, and it is recorded
+ * in ABSOLUTE atomic units (rule 90: a money tolerance is absolute, never a
+ * percentage that grows with trade size).
+ *
+ * Key: lowercase `${chainId}:${tokenAddress}`.
+ */
+export const FEE_ON_TRANSFER_DEDUCTIONS: ReadonlyMap<string, bigint> = new Map<string, bigint>();
+
+/**
+ * The least a deposit of `quotedRaw` may prove and still count as the deposit
+ * the user consented to.
+ *
+ * `deductions` exists so the rule can be exercised against a MEASURED table
+ * without a checked-in entry standing in for a measurement; production always
+ * uses {@link FEE_ON_TRANSFER_DEDUCTIONS}, which is empty, so the floor is the
+ * quote itself.
+ */
+export function bridgeDepositFloor(args: {
+  readonly chainId: number;
+  readonly tokenAddress: string;
+  readonly quotedRaw: bigint;
+  readonly deductions?: ReadonlyMap<string, bigint>;
+}): bigint {
+  const table = args.deductions ?? FEE_ON_TRANSFER_DEDUCTIONS;
+  const deduction = table.get(`${args.chainId}:${args.tokenAddress.trim().toLowerCase()}`) ?? 0n;
+  return args.quotedRaw - deduction;
+}
+
 /** Why no amount could be declared. Named, so a decline is debuggable without the payload. */
 export type DepositEvidenceDeclineReason =
   /** No log satisfied every condition. */
@@ -147,6 +198,16 @@ export type DepositEvidenceDeclineReason =
 
 export type DepositEvidenceOutcome =
   | { readonly kind: "proven"; readonly amountRaw: string }
+  | {
+      /**
+       * The receipt proved a transfer, and it moved LESS than the plan bridged.
+       * A distinct outcome rather than a decline: the amount is known, which is
+       * precisely why the shortfall can be named and the fee withheld.
+       */
+      readonly kind: "short";
+      readonly provenAmountRaw: string;
+      readonly quotedAmountRaw: string;
+    }
   | {
       readonly kind: "declined";
       readonly reason: DepositEvidenceDeclineReason;
@@ -218,7 +279,7 @@ export function proveErc20DepositAmount(evidence: Erc20DepositEvidence): Deposit
     : parseRawAmount(evidence.expectedAmountRaw);
   if (expected !== null) {
     const exact = candidates.filter((amount) => amount === expected);
-    if (exact.length === 1) return { kind: "proven", amountRaw: expected.toString() };
+    if (exact.length === 1) return floored(expected, bound, evidence);
   }
 
   if (candidates.length === 0) {
@@ -231,7 +292,30 @@ export function proveErc20DepositAmount(evidence: Erc20DepositEvidence): Deposit
       candidateCount: candidates.length,
     };
   }
-  return { kind: "proven", amountRaw: candidates[0]!.toString() };
+  return floored(candidates[0]!, bound, evidence);
+}
+
+/**
+ * THE RECEIPT FLOOR. The single proven candidate is the amount only when it
+ * reaches the quoted principal, less a deduction MEASURED for this exact
+ * (chain, token) pair. Everything below is a named shortfall carrying both
+ * figures, which is what makes the fee leg ineligible and gives the human the
+ * two numbers to compare.
+ */
+function floored(
+  amount: bigint,
+  quoted: bigint,
+  evidence: Erc20DepositEvidence,
+): DepositEvidenceOutcome {
+  const floor = bridgeDepositFloor({
+    chainId: evidence.chainId,
+    tokenAddress: evidence.tokenAddress,
+    quotedRaw: quoted,
+  });
+  if (amount < floor) {
+    return { kind: "short", provenAmountRaw: amount.toString(), quotedAmountRaw: quoted.toString() };
+  }
+  return { kind: "proven", amountRaw: amount.toString() };
 }
 
 /**
@@ -243,16 +327,102 @@ export function proveErc20DepositAmount(evidence: Erc20DepositEvidence): Deposit
 export type DepositSettlement =
   | { readonly kind: "proven"; readonly evidence: LegAmountEvidence }
   | {
+      /**
+       * The receipt proved a transfer BELOW the quoted principal. The row is
+       * confirmed without amounts and marked for review, and the venue's fee
+       * leg is ineligible - see {@link DepositShortfall}.
+       */
+      readonly kind: "short";
+      readonly provenAmountRaw: string;
+      readonly quotedAmountRaw: string;
+    }
+  | {
       readonly kind: "declined";
       readonly reason: DepositEvidenceDeclineReason;
       readonly candidateCount: number;
     };
 
+/**
+ * What a venue hands its fee decision when the deposit came up short: the two
+ * figures the human has to compare, and nothing else.
+ *
+ * THE RULE IT CARRIES (rule 90, "take a fee only after the operation it charges
+ * for succeeds"): a bridge that moved less than the principal the user
+ * consented to did not do what the fee is charged for, so no fee signer runs,
+ * no nonce is reserved, and the planned fee row is aborted. The bridge itself
+ * is NOT failed by this: the deposit landed, and the destination fill is still
+ * the provider's to make.
+ */
+export interface DepositShortfall {
+  readonly provenAmountRaw: string;
+  readonly quotedAmountRaw: string;
+}
+
+/** The shortfall a settlement carries, or `null` when the deposit met the floor. */
+export function depositShortfallOf(settlement: DepositSettlement): DepositShortfall | null {
+  return settlement.kind === "short"
+    ? { provenAmountRaw: settlement.provenAmountRaw, quotedAmountRaw: settlement.quotedAmountRaw }
+    : null;
+}
+
+/**
+ * The sentence both venues put in front of the agent and the human when a
+ * deposit came up short. One owner, so the two surfaces cannot drift.
+ */
+export function depositShortfallNote(shortfall: DepositShortfall): string {
+  return `The bridge deposit moved ${shortfall.provenAmountRaw} raw units where the quote bridged ${shortfall.quotedAmountRaw}. No Vex fee was taken and the deposit is recorded for review; do not re-bridge, and check the transaction on the explorer before bridging this route again.`;
+}
+
+/** What a venue's fee surface takes: the collection state and its note. */
+export interface WithheldFeeCollection {
+  readonly collection: "not_attempted";
+  readonly collectionNote: string;
+}
+
+/**
+ * THE FEE DECISION FOR A SHORT DEPOSIT, owned once for both venues.
+ *
+ * It takes no signer, no wallet and no nonce owner BY CONSTRUCTION: the only
+ * effect it can have is aborting the planned fee row, so a bridge that came up
+ * short cannot reach a signature through this path however the caller wires it.
+ * The caller's own branch is `shortfall === null ? runFeeLeg(...) : this`, so
+ * the fee leg is never even constructed.
+ *
+ * The planned fee row is ABORTED rather than left planned: a row nobody will
+ * ever sign must not sit pending forever, and the abort is what releases it.
+ */
+export async function withholdFeeOnDepositShortfall(args: {
+  readonly shortfall: DepositShortfall;
+  readonly executionId: number;
+  /** Index of the planned fee row, or -1 when this bridge charges no fee. */
+  readonly feeLegIndex: number;
+  readonly logScope: string;
+  readonly abortPlannedFeeRow: (fromIndex: number, reason: string) => Promise<void>;
+}): Promise<WithheldFeeCollection> {
+  logger.warn(`${args.logScope}.fee_withheld_deposit_short`, {
+    executionId: args.executionId,
+    proven: args.shortfall.provenAmountRaw,
+    quoted: args.shortfall.quotedAmountRaw,
+  });
+  if (args.feeLegIndex !== -1) {
+    await args.abortPlannedFeeRow(args.feeLegIndex, "deposit proved less than the quoted principal");
+  }
+  return { collection: "not_attempted", collectionNote: depositShortfallNote(args.shortfall) };
+}
+
 /** Adapt a receipt verdict into the settlement the confirm-site writer takes. */
 export function receiptDepositSettlement(outcome: DepositEvidenceOutcome): DepositSettlement {
-  return outcome.kind === "proven"
-    ? { kind: "proven", evidence: { kind: "decoded_and_bounded", amountRaw: outcome.amountRaw } }
-    : { kind: "declined", reason: outcome.reason, candidateCount: outcome.candidateCount };
+  if (outcome.kind === "proven") {
+    return { kind: "proven", evidence: { kind: "decoded_and_bounded", amountRaw: outcome.amountRaw } };
+  }
+  if (outcome.kind === "short") {
+    return {
+      kind: "short",
+      provenAmountRaw: outcome.provenAmountRaw,
+      quotedAmountRaw: outcome.quotedAmountRaw,
+    };
+  }
+  return { kind: "declined", reason: outcome.reason, candidateCount: outcome.candidateCount };
 }
 
 export interface DepositSettlementRecord {
@@ -294,14 +464,33 @@ export async function confirmDepositWithProvenAmounts(
   // Everything below is MONEY bookkeeping on a row whose STATUS question the
   // confirm above already answered. A failure here must never be reported as an
   // unrecorded confirmation, so each writer carries its own failure.
-  if (record.settlement.kind === "declined") {
-    logger.info(`${record.logScope}.deposit_amount_declined`, {
-      id: record.eventId,
-      reason: record.settlement.reason,
-      candidates: record.settlement.candidateCount,
-    });
+  if (record.settlement.kind !== "proven") {
+    // A SHORTFALL is a known amount that contradicts the plan, and a DECLINE is
+    // an amount nothing could read. Both leave the row without an executed
+    // amount, and both mark it for the review that owns the difference; the
+    // reason vocabulary they stamp is the durable one this repository already
+    // has (`amounts_incomplete` / `amounts_undecodable`), so recording a
+    // shortfall needs no migration and invents no wire value. The two figures
+    // of a shortfall travel in the log line and in the tool result, which is
+    // where a human compares them.
+    if (record.settlement.kind === "short") {
+      logger.warn(`${record.logScope}.deposit_short`, {
+        id: record.eventId,
+        proven: record.settlement.provenAmountRaw,
+        quoted: record.settlement.quotedAmountRaw,
+      });
+    } else {
+      logger.info(`${record.logScope}.deposit_amount_declined`, {
+        id: record.eventId,
+        reason: record.settlement.reason,
+        candidates: record.settlement.candidateCount,
+      });
+    }
     try {
-      await noteSettlementDeclined(record.eventId, "amounts_undecodable");
+      await noteSettlementDeclined(
+        record.eventId,
+        record.settlement.kind === "short" ? "amounts_incomplete" : "amounts_undecodable",
+      );
     } catch (error) {
       logger.warn(`${record.logScope}.deposit_decline_note_failed`, {
         id: record.eventId,

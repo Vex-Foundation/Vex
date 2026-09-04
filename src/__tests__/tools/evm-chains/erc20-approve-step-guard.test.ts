@@ -22,8 +22,9 @@ import { encodeFunctionData, getAddress } from "viem";
 
 import {
   refuseApproveStep,
+  verifyApprovalSequence,
   verifyApproveStepAuthorizesDeposit,
-  verifyApproveStepBindsPlanAmount,
+  verifyApproveStepBindsPlan,
   type ApproveStepCall,
   type Erc20ApproveStepRefusalReason,
   type Erc20ApproveStepVerdict,
@@ -61,7 +62,7 @@ function verifyApproveStep(
 ): Erc20ApproveStepVerdict {
   const bound = verifyApproveStepAuthorizesDeposit(call, { depositTarget: plan.depositTarget });
   if (!bound.ok) return bound;
-  return verifyApproveStepBindsPlanAmount(call, {
+  return verifyApproveStepBindsPlan(call, {
     originToken: plan.originToken,
     wallet: plan.wallet,
     principalRaw: plan.principalRaw,
@@ -82,13 +83,16 @@ function verifyApproveStep(
 // `null` and NO approve step in such a plan is legitimate.
 
 type DepositKind = "relay_deposit_tx" | "khalani_contract_call" | "khalani_transfer";
-type AllowanceKind = "equal" | "larger" | "unlimited" | "smaller";
+type AllowanceKind = "equal" | "larger" | "unlimited" | "smaller" | "reset";
 
 const ALLOWANCES: Readonly<Record<AllowanceKind, bigint>> = {
   equal: PRINCIPAL,
   larger: PRINCIPAL + 1n,
   unlimited: UNLIMITED,
   smaller: PRINCIPAL - 1n,
+  // The `approve(spender, 0)` a non-standard token needs before a new grant.
+  // Exempt from the amount EQUALITY and from nothing else.
+  reset: 0n,
 };
 
 const DEPOSIT_TARGETS: Readonly<Record<DepositKind, string | null>> = {
@@ -107,7 +111,7 @@ interface Cell {
 
 const CROSS_PRODUCT: readonly Cell[] = (["relay_deposit_tx", "khalani_contract_call", "khalani_transfer"] as const)
   .flatMap((deposit) => (["native", "erc20"] as const)
-    .flatMap((origin) => (["equal", "larger", "unlimited", "smaller"] as const)
+    .flatMap((origin) => (["equal", "larger", "unlimited", "smaller", "reset"] as const)
       .map((allowance): Cell => {
         // A plan with no deposit call refuses first, whatever the origin asset
         // or the amount: there is nothing in it an allowance could serve.
@@ -115,13 +119,16 @@ const CROSS_PRODUCT: readonly Cell[] = (["relay_deposit_tx", "khalani_contract_c
         // A native origin moves its money as `tx.value`; there is no token to
         // approve, so an approve step on one is a step Vex never asked for.
         if (origin === "native") return { origin, deposit, allowance, refusal: "approve_on_native_origin" };
-        return { origin, deposit, allowance, refusal: allowance === "equal" ? null : "allowance_not_principal" };
+        // A zero reset passes rule 2's amount check by definition; every other
+        // amount must equal the principal exactly.
+        if (allowance === "equal" || allowance === "reset") return { origin, deposit, allowance, refusal: null };
+        return { origin, deposit, allowance, refusal: "allowance_not_principal" };
       })));
 
 describe("approve-step guard - the state cross-product", () => {
   it("covers every origin x deposit-kind x allowance cell exactly once", () => {
-    expect(CROSS_PRODUCT).toHaveLength(24);
-    expect(new Set(CROSS_PRODUCT.map((c) => `${c.origin}/${c.deposit}/${c.allowance}`)).size).toBe(24);
+    expect(CROSS_PRODUCT).toHaveLength(30);
+    expect(new Set(CROSS_PRODUCT.map((c) => `${c.origin}/${c.deposit}/${c.allowance}`)).size).toBe(30);
   });
 
   for (const cell of CROSS_PRODUCT) {
@@ -138,7 +145,7 @@ describe("approve-step guard - the state cross-product", () => {
         },
       );
       if (cell.refusal === null) {
-        expect(verdict).toEqual({ ok: true, spender: DEPOSIT_TARGET, allowance: PRINCIPAL });
+        expect(verdict).toEqual({ ok: true, spender: DEPOSIT_TARGET, allowance });
       } else {
         expect(verdict.ok).toBe(false);
         if (!verdict.ok) expect(verdict.reason).toBe(cell.refusal);
@@ -181,8 +188,12 @@ describe("approve-step guard - rule 1, the spender must be this plan's deposit",
 });
 
 describe("approve-step guard - rule 2, the token, the sender and the exact allowance", () => {
-  const bind = (call: ApproveStepCall, principalRaw: bigint | null = PRINCIPAL): Erc20ApproveStepVerdict =>
-    verifyApproveStepBindsPlanAmount(call, { originToken: USDC, wallet: WALLET, principalRaw });
+  const bind = (
+    call: ApproveStepCall,
+    principalRaw: bigint | null = PRINCIPAL,
+    originToken: string | null = USDC,
+  ): Erc20ApproveStepVerdict =>
+    verifyApproveStepBindsPlan(call, { originToken, wallet: WALLET, principalRaw });
 
   it("refuses an approval on a token that is not the origin currency", () => {
     const verdict = bind({ to: DAI, data: approveData(DEPOSIT_TARGET, PRINCIPAL), value: 0n });
@@ -211,6 +222,126 @@ describe("approve-step guard - rule 2, the token, the sender and the exact allow
     expect(verdict.ok).toBe(false);
     if (!verdict.ok) expect(verdict.detail).toContain(`${UNLIMITED}`);
     if (!verdict.ok) expect(verdict.detail).toContain(`${PRINCIPAL}`);
+  });
+});
+
+// ── The zero reset: exempt from the amount, from nothing else ───────────────
+//
+// A non-standard token requires `approve(spender, 0)` before a new grant, so
+// binding the reset's zero to the principal would refuse the one sequence such
+// a token needs. Everything ELSE a grant must satisfy, a reset must satisfy:
+// `approve(x, 0)` on a token the user is not bridging, or from an account that
+// is not theirs, is an unauthorized state change on their own asset paid for
+// with their own gas.
+
+describe("approve-step guard - a zero reset gets every check except the amount", () => {
+  const reset = (over: Partial<ApproveStepCall> = {}): ApproveStepCall => ({
+    to: USDC, data: approveData(DEPOSIT_TARGET, 0n), value: 0n, from: WALLET, ...over,
+  });
+
+  it("accepts the reset a non-standard token needs, on the origin token, from the wallet", () => {
+    expect(bindReset(reset())).toEqual({ ok: true, spender: DEPOSIT_TARGET, allowance: 0n });
+  });
+
+  it("refuses a reset on a token that is not the origin currency", () => {
+    const verdict = bindReset(reset({ to: DAI }));
+    expect(verdict.ok).toBe(false);
+    if (!verdict.ok) expect(verdict.reason).toBe("token_not_origin_currency");
+  });
+
+  it("refuses a reset sent from an address that is not the selected wallet", () => {
+    const verdict = bindReset(reset({ from: STRANGER }));
+    expect(verdict.ok).toBe(false);
+    if (!verdict.ok) expect(verdict.reason).toBe("sender_not_selected_wallet");
+  });
+
+  it("refuses a reset when the origin asset is the chain's native currency", () => {
+    const verdict = verifyApproveStepBindsPlan(reset(), { originToken: null, wallet: WALLET, principalRaw: PRINCIPAL });
+    expect(verdict.ok).toBe(false);
+    if (!verdict.ok) expect(verdict.reason).toBe("approve_on_native_origin");
+  });
+
+  it("refuses a reset whose spender is not this plan's deposit target", () => {
+    const verdict = verifyApproveStepAuthorizesDeposit(
+      { to: USDC, data: approveData(STRANGER, 0n), value: 0n },
+      { depositTarget: DEPOSIT_TARGET },
+    );
+    expect(verdict.ok).toBe(false);
+    if (!verdict.ok) expect(verdict.reason).toBe("spender_not_deposit_target");
+  });
+
+  it("accepts a reset even when Vex derived no principal: zero binds to nothing", () => {
+    expect(verifyApproveStepBindsPlan(reset(), { originToken: USDC, wallet: WALLET, principalRaw: null }).ok).toBe(true);
+  });
+
+  function bindReset(call: ApproveStepCall): Erc20ApproveStepVerdict {
+    return verifyApproveStepBindsPlan(call, { originToken: USDC, wallet: WALLET, principalRaw: PRINCIPAL });
+  }
+});
+
+// ── The order: reset -> exact grant -> deposit, and nothing else ────────────
+
+describe("verifyApprovalSequence - the only approval shape a bridge may sign", () => {
+  const GRANT = PRINCIPAL;
+
+  it("accepts a plan with no approval at all", () => {
+    expect(verifyApprovalSequence([], 0)).toEqual({ ok: true });
+  });
+
+  it("accepts one grant before the deposit", () => {
+    expect(verifyApprovalSequence([{ position: 0, allowance: GRANT }], 1)).toEqual({ ok: true });
+  });
+
+  it("accepts reset then grant, both before the deposit", () => {
+    expect(verifyApprovalSequence(
+      [{ position: 0, allowance: 0n }, { position: 1, allowance: GRANT }],
+      2,
+    )).toEqual({ ok: true });
+  });
+
+  it("refuses a grant sequenced AFTER the deposit", () => {
+    const verdict = verifyApprovalSequence([{ position: 1, allowance: GRANT }], 0);
+    expect(verdict.ok).toBe(false);
+    if (!verdict.ok) expect(verdict.reason).toBe("approve_after_deposit");
+  });
+
+  it("refuses a reset-only plan, which is a bare revocation", () => {
+    const verdict = verifyApprovalSequence([{ position: 0, allowance: 0n }], 1);
+    expect(verdict.ok).toBe(false);
+    if (!verdict.ok) expect(verdict.reason).toBe("allowance_reset_without_grant");
+  });
+
+  it("refuses a reset sequenced after its grant, which would leave the deposit unfunded", () => {
+    const verdict = verifyApprovalSequence(
+      [{ position: 0, allowance: GRANT }, { position: 1, allowance: 0n }],
+      2,
+    );
+    expect(verdict.ok).toBe(false);
+    if (!verdict.ok) expect(verdict.reason).toBe("allowance_reset_after_grant");
+  });
+
+  it("refuses two grants", () => {
+    const verdict = verifyApprovalSequence(
+      [{ position: 0, allowance: GRANT }, { position: 1, allowance: GRANT }],
+      2,
+    );
+    expect(verdict.ok).toBe(false);
+    if (!verdict.ok) expect(verdict.reason).toBe("extra_approve_step");
+  });
+
+  it("refuses two resets", () => {
+    const verdict = verifyApprovalSequence(
+      [{ position: 0, allowance: 0n }, { position: 1, allowance: 0n }, { position: 2, allowance: GRANT }],
+      3,
+    );
+    expect(verdict.ok).toBe(false);
+    if (!verdict.ok) expect(verdict.reason).toBe("extra_approve_step");
+  });
+
+  it("refuses any approval in a plan that makes no deposit call", () => {
+    const verdict = verifyApprovalSequence([{ position: 0, allowance: GRANT }], null);
+    expect(verdict.ok).toBe(false);
+    if (!verdict.ok) expect(verdict.reason).toBe("plan_has_no_deposit_call");
   });
 });
 

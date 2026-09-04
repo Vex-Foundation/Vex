@@ -355,6 +355,45 @@ describe("khalani.bridge — leg ordering: deposit first, fee last", () => {
     expect(mockSubmitDeposit).not.toHaveBeenCalled();
   });
 
+  it("a deposit ONE UNIT BELOW the quoted principal means NO treasury transfer at all", async () => {
+    // The receipt floor (`bridge-deposit-evidence.ts`). The deposit landed, so
+    // the bridge is not failed; it moved less than the card the user consented
+    // to said it would, so the fee it charges for is not owed. `floor - 1` is
+    // the exact shape that used to pay a full fixed fee.
+    const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+    const padded = (address: string): string => `0x${"0".repeat(24)}${address.slice(2).toLowerCase()}`;
+    mockSignStageKhalaniLeg.mockImplementation(async (leg: KhalaniStagedLeg, _c, _ch, _s, hooks) => {
+      callLog.push(`sign:${leg.purpose}:${leg.role}`);
+      await hooks.onHashStaged({ txHash: `0x${leg.purpose}`, fromAddress: SESSION_EVM.address, nonce: 1 });
+      await hooks.onAccepted();
+      return {
+        kind: "confirmed",
+        txHash: `0x${leg.purpose}`,
+        settledAtBlock: null,
+        receiptLogs: leg.isDeposit
+          ? [{
+            address: FROM_TOKEN,
+            topics: [TRANSFER_TOPIC, padded(SESSION_EVM.address), padded(ROUTER)],
+            data: `0x${(1_496_249n).toString(16).padStart(64, "0")}`,
+          }]
+          : null,
+      };
+    });
+
+    const result = await execute();
+
+    // Nothing with `vex_fee` purpose ever reached the signer, so no nonce was
+    // reserved and no treasury transfer was staged or broadcast for it.
+    expect(signedLegs().some((l) => l.purpose === "vex_fee")).toBe(false);
+    expect(callLog).not.toContain("sign:vex_fee:bridge_fee");
+    expect(mockMarkActivityBroadcast.mock.calls.map((c) => c[0])).not.toContain(102);
+    // The tool result names BOTH figures, so the human can compare them.
+    const fee = parse(result.output).vexFee as Record<string, unknown>;
+    expect(fee.collection).toBe("not_attempted");
+    expect(String(fee.collectionNote)).toContain("1496249");
+    expect(String(fee.collectionNote)).toContain("1496250");
+  });
+
   it("an AMBIGUOUS deposit means no treasury transfer, and the fee row is aborted below the logical row", async () => {
     mockSignStageKhalaniLeg.mockImplementation(async (leg: KhalaniStagedLeg, _c, _ch, _s, hooks) => {
       await hooks.onHashStaged({ txHash: "0xh", fromAddress: SESSION_EVM.address, nonce: 1 });
