@@ -25,6 +25,8 @@ import {
   startStudioMcpHost,
 } from "../studio/mcp-host.js";
 import { log } from "../logger/index.js";
+import { ensureEngineDbUrl } from "../database/engine-db-readiness.js";
+import { requestStudioRuntimeRetry } from "../studio/readiness.js";
 
 let unlockedMasterPassword: string | null = null;
 
@@ -232,6 +234,10 @@ export async function unlockSecretSession(
     // decides. The settlement barrier gates handshakes and calls on its own, so
     // an unlock during startup does not open the door early.
     reopenStudioHostIfSafe();
+    // An unlock is the other moment a user is waiting for Studio, and by now
+    // the database that a boot-time initialization may have been missing is
+    // usually up. No-op when Studio is already ready.
+    requestStudioRuntimeRetry();
     return ok({ unlocked: true });
   } catch (cause) {
     if (!unlockedRuntimeChanged) {
@@ -346,6 +352,23 @@ export function resetStudioDispatchPoisonForTests(): void {
 async function advanceStudioDispatchGenerationSafely(
   phase: "lock" | "unlock" | "retry",
 ): Promise<boolean> {
+  // THE ENGINE POOL'S URL FIRST, and this is not a nicety. The pool is lazy and
+  // reads `process.env.VEX_DB_URL` at first use; unset, it falls back to a
+  // development database nobody runs. On a cold start this call is the FIRST
+  // engine query in the process - it happens on the unlock, before any IPC
+  // handler has pointed the pool anywhere - so without this the advance failed
+  // against the fallback and poisoned the fence for as long as it took the
+  // recovery pass to come round. When the local database genuinely is not up
+  // yet, the outcome is the same poison as before, with the honest reason.
+  const dbUrl = await ensureEngineDbUrl(SESSION_LOCAL_CORRELATION_ID);
+  if (!dbUrl.ok) {
+    log.warn(
+      `[secrets-session] studio dispatch generation not advanced on ${phase}: `
+        + "database_unavailable",
+    );
+    poisonStudioDispatch();
+    return false;
+  }
   try {
     const { advanceStudioDispatchGeneration } = await import(
       "@vex-agent/engine/core/approval-runtime.js"
@@ -450,6 +473,12 @@ async function runStudioRecoveryPass(): Promise<void> {
     await refuseStudioIntentsSafely(refusalCause);
   }
   stopStudioRecoveryWhenClear();
+  // A settlement bridge whose start-up did not finish gets another chance from
+  // the same pass: the two failures share one cause (a database that was not
+  // up yet), so the poll that already exists for the fence is the natural place
+  // to retry the runtime rather than a second timer beside it. The hook is a
+  // no-op when Studio is already ready or has no live bridge.
+  requestStudioRuntimeRetry();
   reopenStudioHostIfSafe();
 }
 

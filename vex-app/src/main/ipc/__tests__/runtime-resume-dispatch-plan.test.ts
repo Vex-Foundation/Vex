@@ -24,7 +24,7 @@ vi.mock("../../database/mission-runs-db.js", () => ({
 vi.mock("@vex-agent/db/repos/session-plans.js", () => ({
   getActivePlan: (...a: unknown[]) => mockGetActivePlan(...a),
 }));
-vi.mock("../runtime/_ensure-engine-db-url.js", () => ({
+vi.mock("../../database/engine-db-readiness.js", () => ({
   ensureEngineDbUrl: (...a: unknown[]) => mockEnsureDbUrl(...a),
 }));
 vi.mock("../runtime/_emit-control-state.js", () => ({

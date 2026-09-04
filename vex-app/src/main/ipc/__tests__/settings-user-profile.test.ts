@@ -51,7 +51,7 @@ vi.mock("../../telemetry/sentry-lifecycle.js", () => ({
 vi.mock("../../logger/index.js", () => ({
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
-vi.mock("../runtime/_ensure-engine-db-url.js", () => ({
+vi.mock("../../database/engine-db-readiness.js", () => ({
   ensureEngineDbUrl: (...args: unknown[]) => mocks.ensureEngineDbUrl(...args),
 }));
 vi.mock("@vex-agent/db/repos/soul.js", () => ({

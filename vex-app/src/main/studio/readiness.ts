@@ -209,6 +209,38 @@ export function markStudioRuntimeShuttingDown(): void {
   announceReadiness();
 }
 
+/**
+ * THE RE-ENTRY SEAM: how a Studio runtime that did not finish starting gets
+ * another chance without the session layer importing the bridge.
+ *
+ * The bridge owns the initialization; the secret session owns the moments at
+ * which trying again is worth it (an unlock, and the recovery pass that already
+ * polls while the dispatch fence is unproven). A static import in that
+ * direction would close an import cycle - the bridge reads the session's
+ * predicates - so the bridge REGISTERS its retry here, at the flag both sides
+ * already depend on, and the session merely asks.
+ *
+ * One hook for the life of a bridge setup, cleared by its teardown, so a
+ * request made after teardown reaches nothing. A hook that throws must not
+ * abort the caller's recovery pass.
+ */
+let retryHook: (() => void) | null = null;
+
+export function setStudioRuntimeRetryHook(hook: (() => void) | null): void {
+  retryHook = hook;
+}
+
+/** Ask the current bridge to try its unfinished initialization again. */
+export function requestStudioRuntimeRetry(): void {
+  const hook = retryHook;
+  if (hook === null) return;
+  try {
+    hook();
+  } catch (cause) {
+    log.warn("[studio:readiness] studio runtime retry request failed", cause);
+  }
+}
+
 function ownsEpoch(callerEpoch: number, transition: string): boolean {
   if (callerEpoch === epoch) return true;
   log.warn(
@@ -220,6 +252,7 @@ function ownsEpoch(callerEpoch: number, transition: string): boolean {
 
 /** Test seam: back to the pre-barrier state, on a fresh epoch. */
 export function resetStudioReadinessForTests(): void {
+  retryHook = null;
   epoch += 1;
   readiness = { ready: false, code: "starting", cause: STARTING_CAUSE };
   announceReadiness();

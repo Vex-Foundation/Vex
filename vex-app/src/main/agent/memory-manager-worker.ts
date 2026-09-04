@@ -27,7 +27,7 @@ import { randomUUID } from "node:crypto";
 import type { MemoryManagerExecutorHandle } from "@vex-agent/engine/memory-manager/executor.js";
 import { log } from "../logger/index.js";
 import { probeMemoryJobsReady } from "../database/memory-jobs-db.js";
-import { ensureEngineDbUrl } from "../ipc/runtime/_ensure-engine-db-url.js";
+import { ensureEngineDbUrl } from "../database/engine-db-readiness.js";
 import { migrationsApplied } from "../database/migrations-applied.js";
 
 const SUPERVISOR_INTERVAL_MS = 30_000;

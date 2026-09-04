@@ -49,7 +49,7 @@ vi.mock("electron", () => ({
   app: { isPackaged: true },
 }));
 
-vi.mock("../runtime/_ensure-engine-db-url.js", () => ({
+vi.mock("../../database/engine-db-readiness.js", () => ({
   ensureEngineDbUrl: mocks.ensureEngineDbUrl,
 }));
 vi.mock("@vex-agent/engine/compaction/apply/index.js", () => ({

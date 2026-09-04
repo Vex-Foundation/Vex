@@ -32,6 +32,13 @@
  *      everything until step 3 - so from the moment it exists, no Studio
  *      dispatch can slip through this window. A registration that FAILS leaves
  *      Studio unready for good (fail closed), with a bounded retry.
+ *   1b. THE ENGINE DATABASE IS AWAITED. Steps 2 and 3 read and write Studio
+ *      rows, and on a cold start the database does not exist yet: compose is
+ *      triggered by the renderer, ten to twenty seconds after this runs. So the
+ *      bridge WAITS for `whenEngineDbReady` instead of spending three bounded
+ *      attempts against a database that has not been started yet and then
+ *      declaring Studio unavailable for the session. The wait ends only when
+ *      the database is ready or when this bridge's teardown aborts it.
  *   2. THE ABANDONED-DISPATCH RECONCILER runs, in bounded pages. A Studio row
  *      left `dispatching` belongs to a process that died holding it, and
  *      process start is the one moment at which that is provable - which is
@@ -46,9 +53,10 @@
  * engine that never had a main process; restoring it on a shutting-down main
  * would open the fence at the worst possible moment.
  *
- * Teardown also cancels the owned retry timer and invalidates the readiness
- * EPOCH, so a retry already in flight cannot mark a shutting-down process
- * ready, and stops the engine's terminal-write repair owner.
+ * Teardown also cancels the owned retry timer, ABORTS the database wait and
+ * invalidates the readiness EPOCH, so neither a retry nor a wait already in
+ * flight can mark a shutting-down process ready, and stops the engine's
+ * terminal-write repair owner.
  *
  * ## The event is a SIGNAL, the row is the truth
  *
@@ -78,11 +86,17 @@ import { projectDeleteRuntimeDeps } from "../studio/project-delete-runtime.js";
 import { repairUnfinishedProjectCleanups } from "../studio/project-delete.js";
 import {
   beginStudioReadinessEpoch,
+  currentStudioReadinessEpoch,
   isStudioRuntimeReady,
   markStudioFenceUninitialized,
   markStudioRuntimeReady,
   markStudioRuntimeShuttingDown,
+  setStudioRuntimeRetryHook,
 } from "../studio/readiness.js";
+import {
+  EngineDbWaitAbortedError,
+  whenEngineDbReady,
+} from "../database/engine-db-readiness.js";
 
 /**
  * DENY, as a value rather than a lambda per call site, so the predicate this
@@ -136,15 +150,27 @@ export function setupStudioSettlementBridge(): () => void {
   // The token every transition of THIS initialization must present. A retry
   // that outlives the teardown below holds a stale one and cannot move the flag.
   const epoch = beginStudioReadinessEpoch();
-  readyBarrier = initializeStudioRuntime(epoch);
+  // ONE controller for the whole lifecycle, owned here and aborted by the
+  // teardown below. It is what ends an unbounded database wait; the wait has no
+  // deadline of its own on purpose (see the header).
+  initializationAbort = new AbortController();
+  // The re-entry the secret session asks for on an unlock and on its recovery
+  // pass. Registered at setup rather than only after the bounded retry gives
+  // up, so there is one hook with one owner and nothing to arm later.
+  setStudioRuntimeRetryHook(retryStudioRuntimeInitialization);
+  readyBarrier = initializeStudioRuntime(epoch, initializationAbort.signal);
 
   return () => {
     off();
     readyBarrier = null;
+    setStudioRuntimeRetryHook(null);
     // Cancel the owned retry BEFORE invalidating the epoch, so the timer is
     // gone rather than merely neutered, and idempotently: a second teardown
     // clears nothing and logs nothing.
     cancelDispatchPreflightRetry();
+    // Ends the database wait, which is otherwise unbounded by design.
+    initializationAbort?.abort();
+    initializationAbort = null;
     markStudioRuntimeShuttingDown();
     // Synchronous, for the same reason as the deny at setup: a teardown that
     // waited on a dynamic import would leave the previous predicate live across
@@ -202,23 +228,75 @@ export async function awaitStudioRuntimeReady(
 const STUDIO_BARRIER_TIMEOUT_MS = 15_000;
 
 /**
- * Register the fence, reconcile, then open Studio. The whole sequence is
- * best-effort in the sense that it never throws at its caller - main must boot
- * regardless - but every failure leaves Studio CLOSED rather than open.
+ * Register the fence, WAIT FOR THE DATABASE, reconcile, then open Studio. The
+ * whole sequence is best-effort in the sense that it never throws at its caller
+ * - main must boot regardless - but every failure leaves Studio CLOSED rather
+ * than open.
  */
-async function initializeStudioRuntime(epoch: number): Promise<void> {
-  const registered = await registerDispatchPreflight();
-  if (!registered) {
-    markStudioFenceUninitialized(epoch);
-    scheduleDispatchPreflightRetry(epoch);
-    return;
+async function initializeStudioRuntime(
+  epoch: number,
+  signal: AbortSignal,
+): Promise<void> {
+  initializationInFlight = true;
+  try {
+    const registered = await registerDispatchPreflight();
+    if (!registered) {
+      markStudioFenceUninitialized(epoch);
+      scheduleDispatchPreflightRetry(epoch, signal);
+      return;
+    }
+    try {
+      // UNBOUNDED on purpose, and cancellable: on a cold start the local
+      // Postgres appears when the renderer triggers compose, long after this
+      // point. Giving up here is what used to leave Studio unavailable for the
+      // whole session; the boot deadline lives in `awaitStudioRuntimeReady`,
+      // which opens the window without opening the fence.
+      await whenEngineDbReady({ signal });
+    } catch (cause) {
+      if (cause instanceof EngineDbWaitAbortedError) return;
+      log.warn(
+        "[agent:studio-settlement-bridge] database readiness wait failed",
+        cause,
+      );
+      return;
+    }
+    await completeStudioRuntime(epoch, signal, 0);
+  } catch (cause) {
+    // The barrier is awaited by boot (`awaitStudioRuntimeReady`), so a
+    // rejection here would take the whole start-up down over a Studio step
+    // whose only correct failure mode is a Studio that stays closed.
+    log.warn(
+      "[agent:studio-settlement-bridge] studio runtime initialization failed",
+      cause,
+    );
+  } finally {
+    initializationInFlight = false;
   }
+}
+
+/**
+ * Everything that needs the database: repair the durable refusal a previous
+ * lock owes, reconcile abandoned dispatches, then open Studio.
+ *
+ * `retriesUsed` is the bounded retry counter for failures that happen AFTER the
+ * database is ready - a genuinely transient import or query failure - and is
+ * deliberately not spent on a database that has not started yet.
+ */
+async function completeStudioRuntime(
+  epoch: number,
+  signal: AbortSignal,
+  retriesUsed: number,
+): Promise<void> {
+  if (signal.aborted) return;
   if (!(await repairPendingStudioRefusal())) {
     markStudioFenceUninitialized(epoch);
-    scheduleDispatchPreflightRetry(epoch);
+    scheduleDispatchPreflightRetry(epoch, signal, retriesUsed);
     return;
   }
   await reconcileAbandonedDispatches();
+  // The epoch is checked INSIDE readiness, at the moment of the write, not
+  // here: a teardown can land during the awaits above, and a check performed
+  // before them would prove nothing about the state now.
   markStudioRuntimeReady(epoch);
   log.info("[agent:studio-settlement-bridge] studio runtime ready");
 
@@ -238,10 +316,39 @@ async function initializeStudioRuntime(epoch: number): Promise<void> {
 }
 
 /**
- * The registration retry. It exists because a failed dynamic import is
- * typically transient, and the alternative is a Studio that stays closed for
- * the whole session. Bounded, and it stops at the first success; a teardown
- * clears it through the same `readyBarrier` reset that stops the barrier.
+ * Try an initialization that never finished, ONE more time.
+ *
+ * Called by the secret session through the readiness retry hook: an unlock, and
+ * the recovery pass that already polls while the dispatch fence is unproven,
+ * are the two moments at which a user is waiting for Studio and something in
+ * the process may have changed. It is a no-op when there is no live bridge,
+ * when Studio is already ready, or when an initialization is still running, so
+ * the caller does not have to know any of that.
+ */
+export function retryStudioRuntimeInitialization(): void {
+  const controller = initializationAbort;
+  if (readyBarrier === null || controller === null) return;
+  if (controller.signal.aborted) return;
+  if (isStudioRuntimeReady() || initializationInFlight) return;
+  cancelDispatchPreflightRetry();
+  log.info(
+    "[agent:studio-settlement-bridge] retrying studio runtime initialization",
+  );
+  readyBarrier = initializeStudioRuntime(
+    currentStudioReadinessEpoch(),
+    controller.signal,
+  );
+}
+
+/**
+ * The post-database retry. It exists because a failed dynamic import or a
+ * single failed query is typically transient, and the alternative is a Studio
+ * that stays closed until the user restarts. Bounded, it stops at the first
+ * success, and a teardown clears it.
+ *
+ * When it IS exhausted, Studio is not dead for the session: the readiness retry
+ * hook registered at setup brings it back on the next unlock or on the secret
+ * session's recovery pass.
  */
 const PREFLIGHT_RETRY_MS = 5_000;
 const PREFLIGHT_RETRY_ATTEMPTS = 3;
@@ -254,17 +361,29 @@ const PREFLIGHT_RETRY_ATTEMPTS = 3;
  */
 let preflightRetryTimer: NodeJS.Timeout | null = null;
 
+/**
+ * The lifecycle's abort owner, and the guard that stops a re-entry from
+ * starting a second initialization beside a live one.
+ */
+let initializationAbort: AbortController | null = null;
+let initializationInFlight = false;
+
 function cancelDispatchPreflightRetry(): void {
   if (preflightRetryTimer === null) return;
   clearTimeout(preflightRetryTimer);
   preflightRetryTimer = null;
 }
 
-function scheduleDispatchPreflightRetry(epoch: number, attempt = 1): void {
-  if (attempt > PREFLIGHT_RETRY_ATTEMPTS) {
+function scheduleDispatchPreflightRetry(
+  epoch: number,
+  signal: AbortSignal,
+  retriesUsed = 0,
+): void {
+  if (retriesUsed >= PREFLIGHT_RETRY_ATTEMPTS) {
     log.error(
-      "[agent:studio-settlement-bridge] preflight registration gave up; "
-        + "Vex Studio stays unavailable this session",
+      "[agent:studio-settlement-bridge] studio runtime initialization did not "
+        + "complete after its bounded retries; Vex Studio stays unavailable "
+        + "until the next unlock retries it",
     );
     return;
   }
@@ -272,22 +391,22 @@ function scheduleDispatchPreflightRetry(epoch: number, attempt = 1): void {
   const timer = setTimeout(() => {
     preflightRetryTimer = null;
     void (async () => {
-      if (readyBarrier === null) return;
-      if (await registerDispatchPreflight()) {
-        if (!(await repairPendingStudioRefusal())) {
-          markStudioFenceUninitialized(epoch);
-          scheduleDispatchPreflightRetry(epoch, attempt + 1);
+      if (readyBarrier === null || signal.aborted) return;
+      initializationInFlight = true;
+      try {
+        if (await registerDispatchPreflight()) {
+          await completeStudioRuntime(epoch, signal, retriesUsed + 1);
           return;
         }
-        await reconcileAbandonedDispatches();
-        // The epoch is checked INSIDE readiness, at the moment of the write,
-        // not here: a teardown can land during the awaits above, and a check
-        // performed before them would prove nothing about the state now.
-        markStudioRuntimeReady(epoch);
-        log.info("[agent:studio-settlement-bridge] studio runtime ready (retry)");
-        return;
+        scheduleDispatchPreflightRetry(epoch, signal, retriesUsed + 1);
+      } catch (cause) {
+        log.warn(
+          "[agent:studio-settlement-bridge] studio runtime retry failed",
+          cause,
+        );
+      } finally {
+        initializationInFlight = false;
       }
-      scheduleDispatchPreflightRetry(epoch, attempt + 1);
     })();
   }, PREFLIGHT_RETRY_MS);
   // A retry must never hold the process open by itself.

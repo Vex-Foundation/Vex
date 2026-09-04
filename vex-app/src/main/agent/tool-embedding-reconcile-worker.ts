@@ -37,7 +37,7 @@ import { randomUUID } from "node:crypto";
 import type { ReconcileReport } from "@vex-agent/tools/protocols/embeddings/reembed.js";
 import { log } from "../logger/index.js";
 import { probeToolEmbeddingsReady } from "../database/tool-embeddings-db.js";
-import { ensureEngineDbUrl } from "../ipc/runtime/_ensure-engine-db-url.js";
+import { ensureEngineDbUrl } from "../database/engine-db-readiness.js";
 import { migrationsApplied } from "../database/migrations-applied.js";
 
 /** Base supervisor cadence (gate wait + first retry delay). */

@@ -43,7 +43,7 @@ vi.mock("electron", () => {
   };
 });
 
-vi.mock("../../runtime/_ensure-engine-db-url.js", () => ({
+vi.mock("../../../database/engine-db-readiness.js", () => ({
   ensureEngineDbUrl: (...a: unknown[]) => mockEnsureEngineDbUrl(...a),
 }));
 vi.mock("../../runtime/_emit-control-state.js", () => ({

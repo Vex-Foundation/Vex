@@ -21,6 +21,44 @@ vi.mock("../../logger/index.js", () => ({
 vi.mock("../../studio/approval-refusals.js", () => ({
   repairPendingStudioRefusal: vi.fn().mockResolvedValue(true),
 }));
+/**
+ * THE DATABASE, as the bridge actually sees it: the real
+ * `database/engine-db-readiness.ts` owner over a faked compose boundary. Only
+ * the two facts it reads are mocked - the connection config compose writes, and
+ * the migration latch the migrate runner sets - so the wait, its single-flight
+ * poll and its abort are the production ones.
+ */
+let poolConfig: {
+  readonly host: string;
+  readonly port: number;
+  readonly database: string;
+  readonly user: string;
+  readonly password: string;
+} | null = null;
+let migrationsDone = false;
+vi.mock("../../database/db-config.js", () => ({
+  buildPoolConfig: () => Promise.resolve(poolConfig),
+}));
+vi.mock("../../database/migrations-applied.js", () => ({
+  migrationsApplied: () => migrationsDone,
+  markMigrationsApplied: () => {
+    migrationsDone = true;
+  },
+}));
+vi.mock("@vex-agent/db/client.js", () => ({ closePool: () => Promise.resolve() }));
+
+/** Compose has finished: the password file is readable and the port is known. */
+function databaseIsUp(): void {
+  poolConfig = {
+    host: "127.0.0.1",
+    port: 5433,
+    database: "vex",
+    user: "vex",
+    password: "test-password",
+  };
+  migrationsDone = true;
+}
+
 let secretSessionUnlocked = true;
 let studioTransitioning = false;
 let studioPoisoned = false;
@@ -69,8 +107,15 @@ const { setupStudioSettlementBridge, awaitStudioRuntimeReady } = await import(
 const { repairPendingStudioRefusal } = await import(
   "../../studio/approval-refusals.js"
 );
-const { isStudioRuntimeReady, studioReadiness, resetStudioReadinessForTests } =
-  await import("../../studio/readiness.js");
+const {
+  isStudioRuntimeReady,
+  studioReadiness,
+  resetStudioReadinessForTests,
+  requestStudioRuntimeRetry,
+} = await import("../../studio/readiness.js");
+const { resetEngineDbReadinessForTests } = await import(
+  "../../database/engine-db-readiness.js"
+);
 /**
  * The REAL registry, deliberately unmocked: it is an import-free module, so
  * reading it here costs nothing and proves what the engine would actually see.
@@ -87,6 +132,11 @@ beforeEach(() => {
   studioTransitioning = false;
   studioPoisoned = false;
   resetStudioReadinessForTests();
+  resetEngineDbReadinessForTests();
+  // Every pre-existing case describes a warm start: the database is already up
+  // when the bridge starts. The cold start has its own describe below.
+  databaseIsUp();
+  delete process.env.VEX_DB_URL;
   reconcileAbandonedStudioDispatches.mockResolvedValue([]);
   reconcileUnstartedStudioApprovals.mockResolvedValue([]);
   vi.mocked(repairPendingStudioRefusal).mockResolvedValue(true);
@@ -94,6 +144,8 @@ beforeEach(() => {
 
 afterEach(() => {
   resetStudioReadinessForTests();
+  resetEngineDbReadinessForTests();
+  delete process.env.VEX_DB_URL;
   // The registry is process-wide: one case's predicate must not decide the
   // next case's dispatch.
   setRealPreflight(null);
@@ -275,5 +327,148 @@ describe("the registration retry is OWNED, and a teardown ends it", () => {
     await vi.waitFor(() => {
       expect(disposeStudioWriteRepair).toHaveBeenCalled();
     });
+  });
+});
+
+/**
+ * THE COLD START, which is the shape of the owner's 2026-09-04 boot log.
+ *
+ * `whenReady` runs the bridge at t+0.3 s; the local Postgres only exists once
+ * the RENDERER triggers compose, which finished at t+15.6 s on that machine.
+ * The bridge's bounded retry was written for a transient failed import - three
+ * attempts, 5 s apart - so it gave up at t+15.4 s, 265 ms before the database
+ * came up, and Vex Studio reported UNAVAILABLE for the rest of the session.
+ *
+ * The wait is now unbounded and cancellable, and the bounded retry is spent
+ * only on failures that happen after the database is ready.
+ */
+describe("the database is not up yet", () => {
+  it("waits as long as the database takes, then opens Studio", async () => {
+    vi.useFakeTimers();
+    try {
+      poolConfig = null;
+      migrationsDone = false;
+      const teardown = setupStudioSettlementBridge();
+      await vi.advanceTimersByTimeAsync(0);
+      // The fence is registered without a database, exactly as before.
+      expect(trace).toEqual(["preflight"]);
+      const registered = setStudioDispatchPreflight.mock.calls[0]?.[0] as
+        | (() => boolean)
+        | undefined;
+      expect(registered?.()).toBe(false);
+
+      // Twenty seconds of a database that is still starting: the old bound
+      // would have given up at 15 s and logged "stays unavailable this session".
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(isStudioRuntimeReady()).toBe(false);
+      expect(repairPendingStudioRefusal).not.toHaveBeenCalled();
+      expect(reconcileAbandonedStudioDispatches).not.toHaveBeenCalled();
+
+      // Compose finishes and the migrations land.
+      databaseIsUp();
+      await vi.advanceTimersByTimeAsync(1_000);
+
+      expect(isStudioRuntimeReady()).toBe(true);
+      expect(trace).toEqual(["preflight", "reconcile", "reconcile_unstarted"]);
+      expect(registered?.()).toBe(true);
+      teardown();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("logs the wait ONCE, however many times it polls", async () => {
+    vi.useFakeTimers();
+    try {
+      poolConfig = null;
+      migrationsDone = false;
+      const teardown = setupStudioSettlementBridge();
+      await vi.advanceTimersByTimeAsync(10_000);
+      const { log } = await import("../../logger/index.js");
+      const waitLines = vi
+        .mocked(log.info)
+        .mock.calls.filter((call) => String(call[0]).includes("waiting for the database"));
+      expect(waitLines).toHaveLength(1);
+      teardown();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a teardown during the wait ABORTS it, and Studio never opens", async () => {
+    vi.useFakeTimers();
+    try {
+      poolConfig = null;
+      migrationsDone = false;
+      const teardown = setupStudioSettlementBridge();
+      await vi.advanceTimersByTimeAsync(2_000);
+      teardown();
+
+      // The database comes up AFTER the process decided to go away. Nothing
+      // must reach it, and nothing may mark a shutting-down process ready.
+      databaseIsUp();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(isStudioRuntimeReady()).toBe(false);
+      expect(repairPendingStudioRefusal).not.toHaveBeenCalled();
+      expect(reconcileAbandonedStudioDispatches).not.toHaveBeenCalled();
+      const readiness = studioReadiness();
+      expect(readiness.ready).toBe(false);
+      if (readiness.ready) return;
+      expect(readiness.code).toBe("shutting_down");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+/**
+ * AFTER the database is ready, a failure IS what the bounded retry was written
+ * for. What changed is the end of that road: an exhausted retry no longer means
+ * "unavailable this session", because the secret session asks the bridge to try
+ * again on the next unlock and on the recovery pass it already runs.
+ */
+describe("a failure after the database is ready", () => {
+  it("retries three times, then hands the re-entry to the next unlock", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.mocked(repairPendingStudioRefusal).mockResolvedValue(false);
+      const teardown = setupStudioSettlementBridge();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(repairPendingStudioRefusal).toHaveBeenCalledTimes(1);
+
+      // Three retries, 5 s apart, and then it stops rather than spinning.
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(repairPendingStudioRefusal).toHaveBeenCalledTimes(4);
+      expect(isStudioRuntimeReady()).toBe(false);
+      const { log } = await import("../../logger/index.js");
+      expect(vi.mocked(log.error).mock.calls.some((call) =>
+        String(call[0]).includes("bounded retries"),
+      )).toBe(true);
+
+      // The unlock re-entry: whatever was transient has passed.
+      vi.mocked(repairPendingStudioRefusal).mockResolvedValue(true);
+      requestStudioRuntimeRetry();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(isStudioRuntimeReady()).toBe(true);
+      teardown();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("the re-entry is a no-op once Studio is ready, and after a teardown", async () => {
+    const teardown = setupStudioSettlementBridge();
+    await awaitStudioRuntimeReady();
+    expect(isStudioRuntimeReady()).toBe(true);
+    const callsWhenReady = vi.mocked(repairPendingStudioRefusal).mock.calls.length;
+    requestStudioRuntimeRetry();
+    await Promise.resolve();
+    expect(repairPendingStudioRefusal).toHaveBeenCalledTimes(callsWhenReady);
+
+    teardown();
+    requestStudioRuntimeRetry();
+    await Promise.resolve();
+    expect(repairPendingStudioRefusal).toHaveBeenCalledTimes(callsWhenReady);
+    expect(isStudioRuntimeReady()).toBe(false);
   });
 });

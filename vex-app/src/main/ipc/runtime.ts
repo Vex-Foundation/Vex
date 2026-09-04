@@ -10,8 +10,7 @@
  *
  * Original 498-line monolith split into 9 files:
  *
- *   _errors.ts                 — dbUnavailableError, controlFailedError.
- *   _ensure-engine-db-url.ts   — engine pool URL sync helper.
+ *   _errors.ts                 - controlFailedError.
  *   _emit-control-state.ts     — post-commit bus emit.
  *   get-state.ts               — read-only DTO read.
  *   request-pause.ts           — enqueue-only.
