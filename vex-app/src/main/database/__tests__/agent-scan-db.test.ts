@@ -256,6 +256,22 @@ describe("getAgentScan row selection", () => {
     }
   });
 
+  // Migration 102. The four family roles are user ACTIONS with their own
+  // transactions; `vex_fee` is the LEG of one of them and must stay off this
+  // list, or the same charge renders beside the action it is 25 bps of - the
+  // exact defect the owner's 2026-08-05 revision recorded.
+  it("admits the launchpad family as actions and still fails closed for its fee leg", () => {
+    for (const role of [
+      "creator_fee_claim",
+      "holder_reward_claim",
+      "reward_distribution",
+      "launch_cancel",
+    ]) {
+      expect(AGENT_ACTIVITY_LOGICAL_ROW_PREDICATE).toContain(`'${role}'`);
+    }
+    expect(AGENT_ACTIVITY_LOGICAL_ROW_PREDICATE).not.toContain("'vex_fee'");
+  });
+
   it("projects the fee leg onto its parent UNCONDITIONALLY - no fee leg is its own row now", async () => {
     // The projection used to skip a fee leg that was already its own ledger
     // entry. With no fee leg rendering as a row, that guard would hide the
@@ -266,7 +282,12 @@ describe("getAgentScan row selection", () => {
       // Migration 088 adds `tx_vex_fee`: the generic EVM signing lane's fee leg
       // is a child of the transaction it charges for, so the parent reports it
       // here rather than the leg rendering as a row of its own.
-      "fee.event_role IN ('bridge_fee','swap_fee','trench_fee','pools_fee','tx_vex_fee')",
+      // Migration 102 adds `vex_fee`: the venue-independent name for the same
+      // leg on the swap, bridge and launch arms. It is excluded from the
+      // logical-row allow-list above and folded here, and the two have to move
+      // together - excluded but not folded hides a real charge, folded but not
+      // excluded shows it twice.
+      "fee.event_role IN ('bridge_fee','swap_fee','trench_fee','pools_fee','tx_vex_fee','vex_fee')",
     );
     expect(sql).toContain("fee.status     = 'confirmed'");
     // The deleted guard was the logical-row predicate applied to the `fee`

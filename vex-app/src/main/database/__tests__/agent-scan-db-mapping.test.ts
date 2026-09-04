@@ -592,3 +592,89 @@ describe("mapAgentScanRow fees, failures and bounds", () => {
     expect(entry.stalledReason).toBeNull();
   });
 });
+
+/**
+ * MIGRATION 102 on the feed row: the venue-independent `vex_fee` leg folds onto
+ * the action it charges for, on every arm the server admits it on, and a
+ * claim-family action with no fee child reports none.
+ *
+ * The projection itself is SQL (`agent-scan-db-query.ts`, pinned by text in
+ * `agent-scan-db.test.ts` and proven against real Postgres for the agent feed in
+ * `src/__tests__/integration/agent-scan/vex-fee-projection.int.test.ts`). What
+ * this suite owns is the last hop: that a folded fee survives the row -> DTO
+ * mapping and the IPC output schema, so the charge actually reaches the user.
+ */
+describe("mapAgentScanRow: the launchpad family and its folded fee", () => {
+  const FOLDED_FEE = {
+    vex_fee_source: "separate_leg" as const,
+    vex_fee_token_symbol: "VIRTUAL",
+    vex_fee_amount_human: "0.0025",
+    vex_fee_usd_est: "0.0087",
+  };
+
+  it.each([
+    ["swap", "swap", "virtuals"],
+    ["bridge", "bridge_fill_expected", "relay"],
+    ["launch", "token_launch", "pools"],
+  ])(
+    "carries ONE %s row whose fee came from its separate vex_fee leg",
+    (activity_kind, event_role, protocol) => {
+      const entry = mapValid(row({ activity_kind, event_role, protocol, ...FOLDED_FEE }));
+
+      expect(entry.activityKind).toBe(activity_kind);
+      expect(entry.eventRole).toBe(event_role);
+      expect(entry.vexFee).toEqual({ tokenSymbol: "VIRTUAL", amountHuman: "0.0025" });
+      expect(entry.usdFeeEst).toBe("0.0087");
+    },
+  );
+
+  it.each(["creator_fee_claim", "holder_reward_claim", "reward_distribution"])(
+    "reports NO fee on a %s, because the claim family charges none",
+    (event_role) => {
+      const entry = mapValid(
+        row({
+          activity_kind: "claim",
+          event_role,
+          protocol: "pools",
+          token_in_address: null,
+          token_in_symbol: null,
+          token_in_decimals: null,
+          amount_in_human: null,
+          amount_in_raw: null,
+          executed_amount_in_human: null,
+          executed_amount_in_raw: null,
+          usd_in_est: null,
+        }),
+      );
+
+      expect(entry.activityKind).toBe("claim");
+      expect(entry.eventRole).toBe(event_role);
+      // Not "0", not an empty object: a fee that was never charged has no
+      // reading, and the renderer prints nothing rather than a zero it invented.
+      expect(entry.vexFee).toBeNull();
+      expect(entry.usdFeeEst).toBeNull();
+    },
+  );
+
+  it("carries a launch_cancel as its own action with the refund it returned", () => {
+    const entry = mapValid(
+      row({
+        activity_kind: "launch",
+        event_role: "launch_cancel",
+        protocol: "virtuals",
+        token_in_address: null,
+        token_in_symbol: null,
+        token_in_decimals: null,
+        amount_in_human: null,
+        amount_in_raw: null,
+        executed_amount_in_human: null,
+        executed_amount_in_raw: null,
+        usd_in_est: null,
+      }),
+    );
+
+    expect(entry.activityKind).toBe("launch");
+    expect(entry.eventRole).toBe("launch_cancel");
+    expect(entry.vexFee).toBeNull();
+  });
+});

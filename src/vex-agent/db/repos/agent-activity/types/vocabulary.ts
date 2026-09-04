@@ -189,7 +189,49 @@ export type AgentActivityEventRole =
    * this lane, and the database enforces the gap rather than trusting the
    * writer to observe it.
    */
-  | "tx_vex_fee";
+  | "tx_vex_fee"
+  /**
+   * Migration 102 - the LAUNCHPAD FAMILY, named by what happened rather than by
+   * the venue it happened at (owner decision 2026-09-04). A second launchpad
+   * does not mint a second copy of every role, and the venue-named roles
+   * (`trench_fee`, `pools_fee`, `pools_claim`) stay for the history already
+   * written under them.
+   *
+   * `creator_fee_claim` is the launch creator taking their share of the trading
+   * fees their token earned, and `holder_reward_claim` a holder taking their
+   * share of a token's reward stream. Both pay TWO assets - the launched token
+   * and the asset it was paired against - so both join the second-OUTPUT-leg
+   * allowlist beside `pools_claim`, and both spend NOTHING, which the database
+   * enforces (`agent_activity_claim_family_no_input_leg`).
+   *
+   * `reward_distribution` is the PERMISSIONLESS call that pushes a
+   * distributor's accrued rewards out to every holder. It is not a claim of the
+   * caller's: they are paid nothing, so it carries no second leg, and its
+   * output amounts are OPTIONAL rather than required - the distributed total is
+   * a real fact about the transaction and the one amount a distribute has.
+   */
+  | "creator_fee_claim"
+  | "holder_reward_claim"
+  | "reward_distribution"
+  /**
+   * Migration 102 - the creator ending a launch before it goes live. It rides
+   * the `launch` kind because it is the same operation's terminal move on the
+   * same contract, and the refund it produces is the only leg it carries.
+   */
+  | "launch_cancel"
+  /**
+   * Migration 102 - the VENUE-INDEPENDENT name for Vex's own integrator fee
+   * leg. The venue-named fee roles each say WHERE the fee was taken, while this one
+   * says only that Vex charged it, which is what a new venue needs and all the
+   * fold read model ever asks.
+   *
+   * Admitted on the `swap`, `bridge` and `launch` arms and no others, mirroring
+   * the AgentScan contract's own binding (`packages/contract/src/role-binding.ts`).
+   * `tx_vex_fee` is deliberately NOT folded into it: that role lives on the
+   * `transaction` kind, which the AgentScan contract does not have, so the two
+   * are not interchangeable even though they name the same kind of charge.
+   */
+  | "vex_fee";
 
 /** Chain family discriminator (045) — drives the nonce matrix + explorer-link resolution. */
 export type BridgeChainFamily = "eip155" | "solana";

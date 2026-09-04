@@ -200,6 +200,22 @@ export const AGENT_ACTIVITY_EVENT_ROLES = [
   // confirms. A CHILD LEG of the transaction execution, never its own feed row.
   // EVM-only by database CHECK - the Solana pair on this lane charges nothing.
   "tx_vex_fee",
+  // Migration 102: the LAUNCHPAD FAMILY, named by what happened rather than by
+  // the venue it happened at (owner decision 2026-09-04). A creator claiming the
+  // fees their launched token earned, a holder claiming the rewards a token
+  // streams, the permissionless call that pushes those rewards out to everyone,
+  // and the creator ending a launch before it goes live. The venue-named roles
+  // (`trench_fee`, `pools_fee`, `pools_claim`) stay for the history already
+  // written under them, so nothing a user has seen changes label.
+  "creator_fee_claim",
+  "holder_reward_claim",
+  "reward_distribution",
+  "launch_cancel",
+  // Migration 102: the venue-INDEPENDENT name for Vex's own integrator fee leg,
+  // admitted on the swap, bridge and launch arms. Like every other fee role it
+  // is a CHILD LEG of the action it charges for and never its own feed row -
+  // `agent-activity-logical-row.ts` is where that is enforced.
+  "vex_fee",
 ] as const;
 export type AgentActivityEventRole = (typeof AGENT_ACTIVITY_EVENT_ROLES)[number];
 

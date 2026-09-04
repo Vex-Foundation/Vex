@@ -49,12 +49,13 @@ async function seedBridgeWithFeeLeg(
   feeStatus: "pending" | "confirmed",
   logicalStatus: "pending" | "confirmed" | "definitively_failed" = "pending",
   extraFeeLegs = 0,
+  feeRole: "bridge_fee" | "vex_fee" = "bridge_fee",
 ): Promise<Seeded> {
   const repo = await import("../../../vex-agent/db/repos/agent-activity.js");
   const sessionId = `vex-fee-projection-${randomUUID()}`;
   const walletAddress = `0x${randomUUID().replace(/-/g, "").padEnd(40, "0").slice(0, 40)}`;
   const feeLeg = {
-    eventRole: "bridge_fee" as const,
+    eventRole: feeRole,
     chainId: CHAIN_ID,
     chainSlug: "base",
     chainFamily: "eip155" as const,
@@ -114,7 +115,7 @@ async function seedBridgeWithFeeLeg(
   // nonce) are exactly what the staged-broadcast primitives exist to satisfy,
   // and a fixture that bypassed them would prove the projection works on rows
   // production can never produce.
-  const feeLegs = result.legs.filter((leg) => leg.eventRole === "bridge_fee");
+  const feeLegs = result.legs.filter((leg) => leg.eventRole === feeRole);
   let nonce = 1;
   for (const leg of feeLegs) {
     await repo.markActivityBroadcast(leg.id, {
@@ -354,5 +355,145 @@ describe("Vex fee — the separate leg reaches the logical feed row", () => {
       row?.vexFeeTokenDecimals,
     ].filter((value) => value !== null && value !== undefined);
     expect(populated).toHaveLength(4);
+  });
+});
+
+/**
+ * MIGRATION 102: the venue-INDEPENDENT `vex_fee` leg, on every arm the AgentScan
+ * contract admits it on (swap, bridge, launch) and no others.
+ *
+ * The role rename is not cosmetic for this projection. Two lists have to move
+ * together - the logical-row exclusion that keeps the leg from becoming its own
+ * feed entry, and the fee lateral that folds it onto its parent. Excluded but
+ * not folded hides a charge the user really paid; folded but not excluded shows
+ * one charge as two, which is the live screenshot the owner's 2026-08-05
+ * revision was written from.
+ */
+describe("Vex fee: the venue-independent vex_fee leg folds on every admitted arm", () => {
+  const SWAP_IN_RAW = "1000000000000000000";
+  const VEX_FEE_RAW = "2500000000000000";
+  const VEX_FEE_HUMAN = "0.0025";
+
+  /** One same-kind execution: the action row plus a `vex_fee` child leg at index 1. */
+  async function seedWithVexFeeLeg(
+    kind: "swap" | "launch",
+    actionRole: "swap" | "token_launch",
+    protocol: string,
+  ): Promise<SeededLaunch> {
+    const repo = await import("../../../vex-agent/db/repos/agent-activity.js");
+    const intent = await seedIntent(`${protocol}.action`);
+    const common = {
+      protocolExecutionId: intent.protocolExecutionId,
+      kind,
+      protocol,
+      chainId: CHAIN_ID,
+      chainSlug: "base",
+      chainFamily: "eip155" as const,
+      walletAddress: intent.walletAddress,
+      sessionId: intent.sessionId,
+    };
+    const action = await repo.createPendingActivityEvent({
+      ...common,
+      eventIndex: 0,
+      eventRole: actionRole,
+      tokenIn: {
+        tokenAddress: "0x0000000000000000000000000000000000000000",
+        tokenSymbol: "ETH",
+        tokenDecimals: 18,
+        amountRaw: SWAP_IN_RAW,
+        amountHuman: "1.0",
+      },
+    });
+    const feeLeg = await repo.createPendingActivityEvent({
+      ...common,
+      eventIndex: 1,
+      eventRole: "vex_fee",
+      tokenIn: {
+        tokenAddress: "0x0000000000000000000000000000000000000000",
+        tokenSymbol: "ETH",
+        tokenDecimals: 18,
+        amountRaw: VEX_FEE_RAW,
+        amountHuman: VEX_FEE_HUMAN,
+      },
+    });
+
+    await repo.markActivityBroadcast(feeLeg.id, {
+      txHash: `0x${String(feeLeg.id).padStart(64, "3")}`,
+      fromAddress: intent.walletAddress,
+      nonce: 1,
+    });
+    await repo.confirmActivityEvent(feeLeg.id, {
+      executedAmountInRaw: VEX_FEE_RAW,
+      executedAmountInHuman: VEX_FEE_HUMAN,
+    });
+
+    return {
+      logicalId: action.id,
+      feeLegId: feeLeg.id,
+      walletAddress: intent.walletAddress,
+      sessionId: intent.sessionId,
+    };
+  }
+
+  it.each([
+    ["swap", "swap", "kyberswap"],
+    ["launch", "token_launch", "pools"],
+  ] as const)("shows ONE %s row carrying the fee its vex_fee leg paid", async (kind, role, protocol) => {
+    const seeded = await seedWithVexFeeLeg(kind, role, protocol);
+    const rows = await feedRows(seeded);
+
+    expect(rows.map((r) => r.id)).toEqual([seeded.logicalId]);
+    expect(rows.some((r) => r.id === seeded.feeLegId)).toBe(false);
+    expect(rows[0]?.vexFeeAmountRaw).toBe(VEX_FEE_RAW);
+    expect(rows[0]?.vexFeeAmountHuman).toBe(VEX_FEE_HUMAN);
+    expect(rows[0]?.vexFeeTokenSymbol).toBe("ETH");
+  });
+
+  it("folds a vex_fee leg onto a BRIDGE's logical row, exactly as bridge_fee is folded", async () => {
+    const seeded = await seedBridgeWithFeeLeg("confirmed", "pending", 0, "vex_fee");
+    const rows = await feedRows(seeded);
+
+    expect(rows.map((r) => r.id)).toEqual([seeded.logicalId]);
+    expect(rows[0]?.vexFeeAmountRaw).toBe(FEE_RAW);
+    expect(rows[0]?.vexFeeTokenSymbol).toBe("ETH");
+  });
+
+  it("reports NO fee on a claim-family row, because the claim family charges none", async () => {
+    const repo = await import("../../../vex-agent/db/repos/agent-activity.js");
+    const intent = await seedIntent("pools.claim");
+    // A claim spends nothing (migration 102's
+    // `agent_activity_claim_family_no_input_leg`), so the row is seeded with its
+    // payout only and there is no sibling fee leg to find.
+    const claim = await repo.createPendingActivityEvent({
+      protocolExecutionId: intent.protocolExecutionId,
+      eventIndex: 0,
+      eventRole: "holder_reward_claim",
+      kind: "claim",
+      protocol: "pools",
+      chainId: CHAIN_ID,
+      chainSlug: "base",
+      chainFamily: "eip155",
+      walletAddress: intent.walletAddress,
+      sessionId: intent.sessionId,
+      tokenOut: {
+        tokenAddress: "0x1234567890abcdef1234567890abcdef12345678",
+        tokenSymbol: "PUSSY",
+        tokenDecimals: 18,
+        amountRaw: "105721000000000000000000",
+        amountHuman: "105721",
+      },
+    });
+
+    const rows = await feedRows({
+      logicalId: claim.id,
+      walletAddress: intent.walletAddress,
+      sessionId: intent.sessionId,
+    });
+
+    expect(rows.map((r) => r.id)).toEqual([claim.id]);
+    // Not zero and not an empty object: a fee that was never charged has no
+    // reading at all.
+    expect(rows[0]?.vexFeeAmountRaw).toBeNull();
+    expect(rows[0]?.vexFeeTokenSymbol).toBeNull();
   });
 });

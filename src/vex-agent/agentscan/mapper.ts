@@ -94,11 +94,42 @@ type ExecutedSlot = "primary_input" | "primary_output" | "second_input" | "secon
  */
 const DISPUTED_SETTLEMENT_SOURCE = "conflict_quarantined";
 
-/** Mirrors the server's `SECOND_LEG_ROLES` — it rejects a second leg on any other role. */
-const SECOND_LEG_ROLES = new Set(["yield_py", "yield_lp"]);
+/**
+ * Mirrors the server's `SECOND_LEG_ROLES` (`packages/contract/src/role-binding.ts`),
+ * which rejects the whole event over a second leg on any other role.
+ *
+ * The three claim roles pay TWO assets (the launched token and the asset it was
+ * paired against), which is the same second-output-leg shape the Pendle split
+ * roles use. `reward_distribution` is deliberately absent on both sides: the
+ * caller of `distribute()` is paid nothing, so a second leg on it would be
+ * evidence the writer decoded the wrong transaction.
+ */
+const SECOND_LEG_ROLES = new Set([
+  "yield_py",
+  "yield_lp",
+  "pools_claim",
+  "creator_fee_claim",
+  "holder_reward_claim",
+]);
 
-/** Mirrors the server's `INPUT_LEG_FORBIDDEN_ROLES` — a claim spends nothing. */
-const INPUT_LEG_FORBIDDEN_ROLES = new Set(["yield_claim"]);
+/**
+ * Mirrors the server's `INPUT_LEG_FORBIDDEN_ROLES`: a claim spends nothing, on
+ * either side, and a distribute takes nothing from its caller but gas, which
+ * this ledger does not model as a leg.
+ *
+ * This is the OUTGOING half of the same rule migration 102 enforces on write
+ * (`agent_activity_claim_family_no_input_leg`). It covers `pools_claim` too,
+ * which that CHECK deliberately does not: rows already exist under that role, so
+ * the database cannot refuse them retroactively, but nothing obliges this mapper
+ * to declare an input leg the server would reject the event over.
+ */
+const INPUT_LEG_FORBIDDEN_ROLES = new Set([
+  "yield_claim",
+  "pools_claim",
+  "creator_fee_claim",
+  "holder_reward_claim",
+  "reward_distribution",
+]);
 
 export interface AgentscanTokenRef {
   readonly address: string;
@@ -157,7 +188,11 @@ export function mapActivityToEvent(
     ? tokenRef(activity.token_in_address, activity.token_in_symbol, activity.token_in_decimals, evm)
     : null;
   const tokenOut = tokenRef(activity.token_out_address, activity.token_out_symbol, activity.token_out_decimals, evm);
-  const tokenIn2 = secondLegAllowed
+  // BOTH gates, not just the second-leg one: a role that spends nothing spends
+  // nothing on either side, and the three claim roles are on both lists. The
+  // database already forbids these columns on those roles (migrations 082/102),
+  // so this is the structural guarantee rather than the only one.
+  const tokenIn2 = secondLegAllowed && inputLegAllowed
     ? tokenRef(activity.token_in2_address, activity.token_in2_symbol, activity.token_in2_decimals, evm)
     : null;
   const tokenOut2 = secondLegAllowed
