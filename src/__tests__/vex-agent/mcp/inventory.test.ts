@@ -75,14 +75,14 @@ describe("the exported inventory covers exactly the export scope", () => {
     // 168 -> 167: `WebResearch` left the export (owner decision 2026-09-03).
     // Every client that connects has its own web search, so the exported copy
     // was a duplicate that cost a provider key and 2 KB of context.
-    // 167 -> 169: the two pools.fun read tools of the read-depth lane -
-    // `pools__launch_assets_list` (the launchable tokenised stocks, joined with
-    // the launch factory's pricing mode per pair) and `pools__holder_rewards_get`
-    // (what a fees-to-holders token owes one wallet, read from the distributor
-    // the suite's deployer emitted). Both are read-only and neither signs.
-    expect(inventory).toHaveLength(169);
+    // 167 -> 171 on the integration of the launchpads arc: the two pools.fun
+    // read tools of the read-depth lane (`pools__launch_assets_list`,
+    // `pools__holder_rewards_get`) and the two Virtuals market-history reads
+    // (`virtuals__agent_trades_list`, `virtuals__agent_candles_list`). All four
+    // are read-only and none signs.
+    expect(inventory).toHaveLength(171);
     expect(inventory.filter((t) => t.kind === "internal")).toHaveLength(27);
-    expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(142);
+    expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(144);
   });
 
   it("keeps WebResearch OUT of tools/list while the in-app registry keeps it", () => {

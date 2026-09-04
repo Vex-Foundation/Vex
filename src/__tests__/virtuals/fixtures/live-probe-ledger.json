@@ -1,0 +1,1229 @@
+{
+ "_provenance": "One row per live probe of api.virtuals.io / vp-api.virtuals.io / api.geckoterminal.com on 2026-09-04, from the three probe runs under agents-colab/agents_dm/virtuals-probe-2026-09-04{,b}/ and virtuals-reads-2026-09-04/. `total` is the provider's own meta.pagination.total for that request. This is the machine artifact the filter-and-operator table test reads: a filter that did NOT change the total is a filter the provider ignored.",
+ "probes": [
+  {
+   "name": "base_rh",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=ROBINHOOD&pagination%5BpageSize%5D=1&sort%5B0%5D=mcapInVirtual:desc",
+   "status": 200,
+   "total": 25307
+  },
+  {
+   "name": "base_base",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=1&sort%5B0%5D=mcapInVirtual:desc",
+   "status": 200,
+   "total": 56915
+  },
+  {
+   "name": "base_sol",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=SOLANA&pagination%5BpageSize%5D=1&sort%5B0%5D=mcapInVirtual:desc",
+   "status": 200,
+   "total": 610
+  },
+  {
+   "name": "base_eth",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=ETH&pagination%5BpageSize%5D=1&sort%5B0%5D=mcapInVirtual:desc",
+   "status": 200,
+   "total": 2
+  },
+  {
+   "name": "base_nochain",
+   "url": "https://api.virtuals.io/api/virtuals?pagination%5BpageSize%5D=1",
+   "status": 200,
+   "total": 82834
+  },
+  {
+   "name": "base_badchain",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=FOO&pagination%5BpageSize%5D=1",
+   "status": 200,
+   "total": 0
+  },
+  {
+   "name": "f_bogus",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=1&filters%5BbogusKeyXyz%5D=1",
+   "status": 200,
+   "total": 56915
+  },
+  {
+   "name": "f_status_num1",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=1&filters%5Bstatus%5D=1",
+   "status": 200,
+   "total": 55764
+  },
+  {
+   "name": "f_status_num2",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=1&filters%5Bstatus%5D=2",
+   "status": 200,
+   "total": 956
+  },
+  {
+   "name": "f_status_num3",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=1&filters%5Bstatus%5D=3",
+   "status": 200,
+   "total": 56915
+  },
+  {
+   "name": "f_status_av",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=1&filters%5Bstatus%5D=AVAILABLE",
+   "status": 200,
+   "total": 56915
+  },
+  {
+   "name": "f_status_ug",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=1&filters%5Bstatus%5D=UNDERGRAD",
+   "status": 200,
+   "total": 56915
+  },
+  {
+   "name": "f_status_eq_av",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=1&filters%5Bstatus%5D%5B%24eq%5D=AVAILABLE",
+   "status": 200,
+   "total": 56915
+  },
+  {
+   "name": "f_status_in",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=1&filters%5Bstatus%5D%5B%24in%5D%5B0%5D=AVAILABLE&filters%5Bstatus%5D%5B%24in%5D%5B1%5D=UNDERGRAD",
+   "status": 200,
+   "total": 56915
+  },
+  {
+   "name": "f_verified",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=1&filters%5BisVerified%5D=true",
+   "status": 200,
+   "total": 45
+  },
+  {
+   "name": "f_mcap_gte",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=1&filters%5BmcapInVirtual%5D%5B%24gte%5D=100000",
+   "status": 200,
+   "total": 125
+  },
+  {
+   "name": "f_mcap_gte0",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=1&filters%5BmcapInVirtual%5D%5B%24gte%5D=0",
+   "status": 200,
+   "total": 56912
+  },
+  {
+   "name": "f_mcap_bogusop",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=1&filters%5BmcapInVirtual%5D%5B%24zzz%5D=100000",
+   "status": 400,
+   "total": null
+  },
+  {
+   "name": "f_name_containsi",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=1&filters%5Bname%5D%5B%24containsi%5D=vex",
+   "status": 200,
+   "total": 51
+  },
+  {
+   "name": "f_symbol_eq",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=1&filters%5Bsymbol%5D%5B%24eq%5D=VEX",
+   "status": 200,
+   "total": 10
+  },
+  {
+   "name": "f_holder_gte",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=1&filters%5BholderCount%5D%5B%24gte%5D=1000",
+   "status": 200,
+   "total": 536
+  },
+  {
+   "name": "f_vol24_gte",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=1&filters%5Bvolume24h%5D%5B%24gte%5D=10000",
+   "status": 200,
+   "total": 21
+  },
+  {
+   "name": "f_pcp24_gte",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=1&filters%5BpriceChangePercent24h%5D%5B%24gte%5D=10",
+   "status": 200,
+   "total": 8
+  },
+  {
+   "name": "f_created_gte",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=1&filters%5BcreatedAt%5D%5B%24gte%5D=2026-08-01",
+   "status": 200,
+   "total": 2198
+  },
+  {
+   "name": "f_lp_notnull",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=1&filters%5BlpCreatedAt%5D%5B%24notNull%5D=true",
+   "status": 200,
+   "total": 952
+  },
+  {
+   "name": "f_top10_lte",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=1&filters%5Btop10HolderPercentage%5D%5B%24lte%5D=20",
+   "status": 200,
+   "total": 7304
+  },
+  {
+   "name": "chain_ARB",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=ARB&pagination%5BpageSize%5D=1",
+   "status": 200,
+   "total": 0
+  },
+  {
+   "name": "chain_BSC",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BSC&pagination%5BpageSize%5D=1",
+   "status": 200,
+   "total": 0
+  },
+  {
+   "name": "chain_POLYGON",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=POLYGON&pagination%5BpageSize%5D=1",
+   "status": 200,
+   "total": 0
+  },
+  {
+   "name": "chain_XLAYER",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=XLAYER&pagination%5BpageSize%5D=1",
+   "status": 200,
+   "total": 0
+  },
+  {
+   "name": "chain_ARC",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=ARC&pagination%5BpageSize%5D=1",
+   "status": 200,
+   "total": 0
+  },
+  {
+   "name": "chain_ABSTRACT",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=ABSTRACT&pagination%5BpageSize%5D=1",
+   "status": 200,
+   "total": 0
+  },
+  {
+   "name": "st_0",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bstatus%5D=0&pagination%5BpageSize%5D=1",
+   "status": 401,
+   "total": null
+  },
+  {
+   "name": "st_4",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bstatus%5D=4&pagination%5BpageSize%5D=1",
+   "status": 200,
+   "total": 195
+  },
+  {
+   "name": "st_5",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bstatus%5D=5&pagination%5BpageSize%5D=1",
+   "status": 200,
+   "total": 82589
+  },
+  {
+   "name": "f_factory_v5",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=1&filters%5Bfactory%5D=BONDING_V5",
+   "status": 200,
+   "total": 19463
+  },
+  {
+   "name": "f_factory_in",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=1&filters%5Bfactory%5D%5B%24in%5D%5B0%5D=BONDING_V5&filters%5Bfactory%5D%5B%24in%5D%5B1%5D=ERC20_PRO",
+   "status": 200,
+   "total": 19467
+  },
+  {
+   "name": "f_genesis_notnull",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=1&filters%5Bgenesis%5D%5Bid%5D%5B%24notNull%5D=true",
+   "status": 200,
+   "total": 338
+  },
+  {
+   "name": "f_margin",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=1&filters%5BhasMarginTrading%5D=true",
+   "status": 200,
+   "total": 0
+  },
+  {
+   "name": "f_founder",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=1&filters%5BhasFounderVideo%5D=true",
+   "status": 200,
+   "total": 197
+  },
+  {
+   "name": "f_devcommit",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=1&filters%5BisDevCommitted%5D=true",
+   "status": 200,
+   "total": 177
+  },
+  {
+   "name": "f_staking",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=1&filters%5BstakingAddress%5D%5B%24notNull%5D=true",
+   "status": 200,
+   "total": 14
+  },
+  {
+   "name": "f_revenue",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=1&filters%5BrevenueConnectWallet%5D%5B%24notNull%5D=true",
+   "status": 200,
+   "total": 6
+  },
+  {
+   "name": "f_li_sniper",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=1&filters%5BlaunchInfo%5D%5BantiSniperTaxType%5D%5B%24ne%5D=0&filters%5BlaunchInfo%5D%5BantiSniperTaxType%5D%5B%24notNull%5D=true",
+   "status": 200,
+   "total": 17591
+  },
+  {
+   "name": "f_li_airdrop",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=1&filters%5BlaunchInfo%5D%5BairdropPercent%5D%5B%24gt%5D=0",
+   "status": 200,
+   "total": 787
+  },
+  {
+   "name": "f_li_radar",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=1&filters%5BlaunchInfo%5D%5BlaunchRadarEnabled%5D%5B%24eq%5D=true",
+   "status": 200,
+   "total": 20
+  },
+  {
+   "name": "f_li_robotics",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=1&filters%5BlaunchInfo%5D%5BisRobotics%5D%5B%24eq%5D=true",
+   "status": 200,
+   "total": 520
+  },
+  {
+   "name": "f_cat_notin",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=1&filters%5Bcategory%5D%5B%24notIn%5D%5B0%5D=X_LAUNCH&filters%5Bcategory%5D%5B%24notIn%5D%5B1%5D=ACP_LAUNCH",
+   "status": 200,
+   "total": 34614
+  },
+  {
+   "name": "f_launchedat",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=1&filters%5BlaunchedAt%5D%5B%24gte%5D=2026-08-01",
+   "status": 200,
+   "total": 2199
+  },
+  {
+   "name": "f_role",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=1&filters%5Brole%5D=AGENT",
+   "status": 200,
+   "total": 0
+  },
+  {
+   "name": "sort_bogus",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&sort%5B0%5D=zzzNotAField:desc&pagination%5BpageSize%5D=1",
+   "status": 400,
+   "total": null
+  },
+  {
+   "name": "ps_500",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=500",
+   "status": 200,
+   "total": 56915
+  },
+  {
+   "name": "ps_1000",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=1000",
+   "status": 200,
+   "total": 56915
+  },
+  {
+   "name": "deep_page",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=100&pagination%5Bpage%5D=560",
+   "status": 200,
+   "total": 56915
+  },
+  {
+   "name": "rh_margin",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=ROBINHOOD&filters%5BhasMarginTrading%5D=true&pagination%5BpageSize%5D=1",
+   "status": 200,
+   "total": 0
+  },
+  {
+   "name": "sortA",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=2&sort%5B0%5D=holderCount:desc&sort%5B1%5D=volume24h:desc&sort%5B2%5D=priceChangePercent24h:desc&sort%5B3%5D=top10HolderPercentage:desc&sort%5B4%5D=totalValueLocked:desc&sort%5B5%5D=virtualTokenValue:desc",
+   "status": 200,
+   "total": 56915
+  },
+  {
+   "name": "sortB",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=2&sort%5B0%5D=mindshare:desc&sort%5B1%5D=netVolume24h:desc&sort%5B2%5D=level:desc&sort%5B3%5D=launchedAt:desc&sort%5B4%5D=devHoldingPercentage:desc&sort%5B5%5D=holderCountPercent24h:desc&sort%5B6%5D=circulatingSupply:desc",
+   "status": 200,
+   "total": 56915
+  },
+  {
+   "name": "sortC",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=2&sort%5B0%5D=volume1h:desc&sort%5B1%5D=volume5m:desc&sort%5B2%5D=volume6h:desc&sort%5B3%5D=priceChangePercent1h:desc&sort%5B4%5D=priceChangePercent5m:desc&sort%5B5%5D=priceChangePercent6h:desc&sort%5B6%5D=virtualsPoolVol24h:desc",
+   "status": 200,
+   "total": 56915
+  },
+  {
+   "name": "sortD",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=2&sort%5B0%5D=fdvInVirtual:desc&sort%5B1%5D=liquidityUsd:desc&sort%5B2%5D=lpCreatedAt:desc&sort%5B3%5D=createdAt:desc&sort%5B4%5D=mcapInVirtual:desc&sort%5B5%5D=totalSupply:desc&sort%5B6%5D=updatedAt:desc",
+   "status": 400,
+   "total": null
+  },
+  {
+   "name": "sortD2",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=3&sort%5B0%5D=fdvInVirtual:desc&sort%5B1%5D=liquidityUsd:desc&sort%5B2%5D=lpCreatedAt:desc&sort%5B3%5D=createdAt:desc&sort%5B4%5D=mcapInVirtual:desc&sort%5B5%5D=updatedAt:desc",
+   "status": 200,
+   "total": 56915
+  },
+  {
+   "name": "sort_holder_asc",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=3&sort%5B0%5D=holderCount:desc",
+   "status": 200,
+   "total": 56915
+  },
+  {
+   "name": "geneses",
+   "url": "https://api.virtuals.io/api/geneses?pagination%5BpageSize%5D=2&sort%5B0%5D=id:desc",
+   "status": 200,
+   "total": 363
+  },
+  {
+   "name": "geneses_params",
+   "url": "https://api.virtuals.io/api/geneses/parameters",
+   "status": 200,
+   "total": null
+  },
+  {
+   "name": "vex_detail",
+   "url": "https://api.virtuals.io/api/virtuals/96200?populate%5B0%5D=image&populate%5B1%5D=genesis&populate%5B2%5D=launchInfo&populate%5B3%5D=creator&populate%5B4%5D=vibesInfo&populate%5B5%5D=tags&populate%5B6%5D=framework",
+   "status": 200,
+   "total": null
+  },
+  {
+   "name": "tokenomics_params",
+   "url": "https://api.virtuals.io/api/virtuals/96200/tokenomics/parameters",
+   "status": 200,
+   "total": null
+  },
+  {
+   "name": "launch_ep",
+   "url": "https://api.virtuals.io/api/virtuals/96200/launch?buyAmount=100",
+   "status": 403,
+   "total": null
+  },
+  {
+   "name": "kl_c0",
+   "url": "https://vp-api.virtuals.io/vp-api/klines?tokenAddress=0x8Ff92566f2e81BDd68EDfAa8cde73942A723796b&granularity=3600&start=1788431103000&end=1788517503000&limit=10&chainID=0",
+   "status": 200,
+   "total": null
+  },
+  {
+   "name": "kl_c2",
+   "url": "https://vp-api.virtuals.io/vp-api/klines?tokenAddress=0x8Ff92566f2e81BDd68EDfAa8cde73942A723796b&granularity=3600&start=1788431103000&end=1788517503000&limit=10&chainID=2",
+   "status": 200,
+   "total": null
+  },
+  {
+   "name": "tr_c2",
+   "url": "https://vp-api.virtuals.io/vp-api/trades?tokenAddress=0x8Ff92566f2e81BDd68EDfAa8cde73942A723796b&limit=3&chainID=2",
+   "status": 200,
+   "total": null
+  },
+  {
+   "name": "kl_tibbir",
+   "url": "https://vp-api.virtuals.io/vp-api/klines?tokenAddress=0xA4A2E2ca3fBfE21aed83471D28b6f65A233C6e00&granularity=3600&start=1788344728000&end=1788517527000&limit=5&chainID=0",
+   "status": 200,
+   "total": null
+  },
+  {
+   "name": "tr_tibbir",
+   "url": "https://vp-api.virtuals.io/vp-api/trades?tokenAddress=0xA4A2E2ca3fBfE21aed83471D28b6f65A233C6e00&limit=2&chainID=0",
+   "status": 200,
+   "total": null
+  },
+  {
+   "name": "api2_list",
+   "url": "https://api2.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=1",
+   "status": 200,
+   "total": 56915
+  },
+  {
+   "name": "undergrad_top",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&filters%5Bstatus%5D=1&sort%5B0%5D=volume24h:desc&pagination%5BpageSize%5D=1",
+   "status": 200,
+   "total": 55764
+  },
+  {
+   "name": "kl_ug",
+   "url": "https://vp-api.virtuals.io/vp-api/klines?tokenAddress=0xE0835d6fB05B0Ad916296504aCf569240807F70c&granularity=3600&start=1788431149000&end=1788517549000&limit=5&chainID=0",
+   "status": 200,
+   "total": null
+  },
+  {
+   "name": "tr_ug",
+   "url": "https://vp-api.virtuals.io/vp-api/trades?tokenAddress=0xE0835d6fB05B0Ad916296504aCf569240807F70c&limit=2&chainID=0",
+   "status": 200,
+   "total": null
+  },
+  {
+   "name": "kl_g60",
+   "url": "https://vp-api.virtuals.io/vp-api/klines?tokenAddress=0xE0835d6fB05B0Ad916296504aCf569240807F70c&granularity=60&start=1788495962000&end=1788517562000&limit=5&chainID=0",
+   "status": 200,
+   "total": null
+  },
+  {
+   "name": "kl_secs",
+   "url": "https://vp-api.virtuals.io/vp-api/klines?tokenAddress=0xE0835d6fB05B0Ad916296504aCf569240807F70c&granularity=60&start=1788495963&end=1788517563&limit=5&chainID=0",
+   "status": 200,
+   "total": null
+  },
+  {
+   "name": "b_unfiltered",
+   "url": "https://api.virtuals.io/api/virtuals?pagination%5BpageSize%5D=1",
+   "status": 200,
+   "total": 82837
+  },
+  {
+   "name": "b_status2_nochain",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bstatus%5D=2&pagination%5BpageSize%5D=1",
+   "status": 200,
+   "total": 1085
+  },
+  {
+   "name": "b_status5_nochain",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bstatus%5D=5&pagination%5BpageSize%5D=1",
+   "status": 200,
+   "total": 82592
+  },
+  {
+   "name": "b_status6",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bstatus%5D=6&pagination%5BpageSize%5D=1",
+   "status": 200,
+   "total": 82837
+  },
+  {
+   "name": "b_ps2000",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=2000",
+   "status": 200,
+   "total": 56915
+  },
+  {
+   "name": "b_ps10000",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&pagination%5BpageSize%5D=10000",
+   "status": 200,
+   "total": 56915
+  },
+  {
+   "name": "b_tr_vex_c1",
+   "url": "https://vp-api.virtuals.io/vp-api/trades?tokenAddress=0x8Ff92566f2e81BDd68EDfAa8cde73942A723796b&limit=5&chainID=1",
+   "status": 200,
+   "total": null
+  },
+  {
+   "name": "b_tr_vex_c3",
+   "url": "https://vp-api.virtuals.io/vp-api/trades?tokenAddress=0x8Ff92566f2e81BDd68EDfAa8cde73942A723796b&limit=5&chainID=3",
+   "status": 200,
+   "total": null
+  },
+  {
+   "name": "b_tr_vex_c4",
+   "url": "https://vp-api.virtuals.io/vp-api/trades?tokenAddress=0x8Ff92566f2e81BDd68EDfAa8cde73942A723796b&limit=5&chainID=4663",
+   "status": 200,
+   "total": null
+  },
+  {
+   "name": "b_tr_vex_nochain",
+   "url": "https://vp-api.virtuals.io/vp-api/trades?tokenAddress=0x8Ff92566f2e81BDd68EDfAa8cde73942A723796b&limit=5",
+   "status": 200,
+   "total": null
+  },
+  {
+   "name": "b_tr_cmns_c1",
+   "url": "https://vp-api.virtuals.io/vp-api/trades?tokenAddress=AMUgSjmdFsS8Y3JeL32u7A45Fpt8YF9xKaiwW5uGHdXk&limit=5&chainID=1",
+   "status": 200,
+   "total": null
+  },
+  {
+   "name": "b_kl_tibbir_tight",
+   "url": "https://vp-api.virtuals.io/vp-api/klines?tokenAddress=0xA4A2E2ca3fBfE21aed83471D28b6f65A233C6e00&granularity=60&start=1788515425000&end=1788522625000&limit=20&chainID=0",
+   "status": 200,
+   "total": null
+  },
+  {
+   "name": "b_kl_tibbir_wide",
+   "url": "https://vp-api.virtuals.io/vp-api/klines?tokenAddress=0xA4A2E2ca3fBfE21aed83471D28b6f65A233C6e00&granularity=3600&start=1785930625000&end=1788522625000&limit=100&chainID=0",
+   "status": 200,
+   "total": null
+  },
+  {
+   "name": "b_tr_tibbir_c0",
+   "url": "https://vp-api.virtuals.io/vp-api/trades?tokenAddress=0xA4A2E2ca3fBfE21aed83471D28b6f65A233C6e00&limit=5&chainID=0",
+   "status": 200,
+   "total": null
+  },
+  {
+   "name": "b_fresh_undergrad",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&filters%5Bstatus%5D=1&sort%5B0%5D=createdAt:desc&pagination%5BpageSize%5D=1",
+   "status": 200,
+   "total": 55764
+  },
+  {
+   "name": "b_tr_tibbir_pretoken",
+   "url": "https://vp-api.virtuals.io/vp-api/trades?tokenAddress=0x2Add0704eF5436a1eC0d02FCb19Eb880ce553CBa&limit=5&chainID=0",
+   "status": 200,
+   "total": null
+  },
+  {
+   "name": "b_kl_tibbir_pretoken",
+   "url": "https://vp-api.virtuals.io/vp-api/klines?tokenAddress=0x2Add0704eF5436a1eC0d02FCb19Eb880ce553CBa&granularity=3600&start=1785930725000&end=1788522725000&limit=50&chainID=0",
+   "status": 200,
+   "total": null
+  },
+  {
+   "name": "b_ico_pledge_virtual",
+   "url": "https://api.virtuals.io/api/ico-pledge-history/virtual/38486",
+   "status": 400,
+   "total": null
+  },
+  {
+   "name": "b_initial_purchase",
+   "url": "https://api.virtuals.io/api/virtuals/initial-purchase?factory=BONDING_V5&initialPurchasedAmount=0&chain=BASE",
+   "status": 400,
+   "total": null
+  },
+  {
+   "name": "b_vault_assets",
+   "url": "https://api.virtuals.io/api/virtuals/vault-assets?chain=BASE&vaultAddress=0x60a203ddcDE45fbfb325bdeEA93824B5726b4dF8",
+   "status": 200,
+   "total": null
+  },
+  {
+   "name": "b_delegated_tokens",
+   "url": "https://api.virtuals.io/api/virtuals/me/delegated-tokens?walletAddress=0x32e7c4AFEA4f868A53EC51435C92eD80625EeB33",
+   "status": 403,
+   "total": null
+  },
+  {
+   "name": "b_erc20pro_launch_amounts",
+   "url": "https://api.virtuals.io/api/virtuals/96200/erc20pro/launch-amounts?targetFdvUsd=1000000",
+   "status": 403,
+   "total": null
+  },
+  {
+   "name": "b_isPreCommit",
+   "url": "https://api.virtuals.io/api/virtuals?filters%5Bchain%5D=BASE&filters%5BvibesInfo%5D%5Bstatus%5D=PRECOMMIT&pagination%5BpageSize%5D=1",
+   "status": 200,
+   "total": 19
+  },
+  {
+   "name": "b_geneses_notfinalized",
+   "url": "https://api.virtuals.io/api/geneses?filters%5Bstatus%5D%5B%24ne%5D=FINALIZED&pagination%5BpageSize%5D=3&sort%5B0%5D=startsAt:desc",
+   "status": 200,
+   "total": 218
+  },
+  {
+   "name": "sort_asc",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=3&sort[0]=holderCount:asc",
+   "status": 200,
+   "total": 56925
+  },
+  {
+   "name": "sort_desc",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=3&sort[0]=holderCount:desc",
+   "status": 200,
+   "total": 56925
+  },
+  {
+   "name": "sort_bogus_dir",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&sort[0]=holderCount:sideways",
+   "status": 200,
+   "total": 56925
+  },
+  {
+   "name": "sort_nodir",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=3&sort[0]=holderCount",
+   "status": 400,
+   "total": null
+  },
+  {
+   "name": "sort_multi_ab",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=3&sort[0]=level:desc&sort[1]=holderCount:desc",
+   "status": 200,
+   "total": 56925
+  },
+  {
+   "name": "sort_multi_ba",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=3&sort[0]=holderCount:desc&sort[1]=level:desc",
+   "status": 200,
+   "total": 56925
+  },
+  {
+   "name": "addr_or_eqi",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=2&filters[$or][0][tokenAddress][$eqi]=0xa4a2e2ca3fbfe21aed83471d28b6f65a233c6e00&filters[$or][1][preToken][$eqi]=0xa4a2e2ca3fbfe21aed83471d28b6f65a233c6e00",
+   "status": 200,
+   "total": 1
+  },
+  {
+   "name": "addr_or_pretoken",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=2&filters[$or][0][tokenAddress][$eqi]=0x2add0704ef5436a1ec0d02fcb19eb880ce553cba&filters[$or][1][preToken][$eqi]=0x2add0704ef5436a1ec0d02fcb19eb880ce553cba",
+   "status": 200,
+   "total": 1
+  },
+  {
+   "name": "addr_token_eqi",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=2&filters[tokenAddress][$eqi]=0xa4a2e2ca3fbfe21aed83471d28b6f65a233c6e00",
+   "status": 200,
+   "total": 1
+  },
+  {
+   "name": "addr_token_eq_wrongcase",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=2&filters[tokenAddress][$eq]=0xa4a2e2ca3fbfe21aed83471d28b6f65a233c6e00",
+   "status": 200,
+   "total": 1
+  },
+  {
+   "name": "wallet_eqi",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=2&filters[walletAddress][$eqi]=0x80a8F11201Bc1962D0Dfff0a5B9C49B14bb2b7c2",
+   "status": 200,
+   "total": 1
+  },
+  {
+   "name": "creator_id",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=2&filters[creator][id][$eq]=208532",
+   "status": 200,
+   "total": 56925
+  },
+  {
+   "name": "creator_bogus",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=2&filters[creator][zzz][$eq]=1",
+   "status": 200,
+   "total": 56925
+  },
+  {
+   "name": "genesis_startsat",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&filters[genesis][startsAt][$gte]=2026-01-01",
+   "status": 200,
+   "total": 1
+  },
+  {
+   "name": "genesis_status",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&filters[genesis][status][$eq]=FINALIZED",
+   "status": 200,
+   "total": 143
+  },
+  {
+   "name": "p_nocache",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&noCache=true",
+   "status": 200,
+   "total": 56925
+  },
+  {
+   "name": "p_skipstats",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&skipStats=true",
+   "status": 200,
+   "total": 56925
+  },
+  {
+   "name": "p_sparkline",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&sparkline=true",
+   "status": 200,
+   "total": 56925
+  },
+  {
+   "name": "p_range24h",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&range24h=true",
+   "status": 200,
+   "total": 56925
+  },
+  {
+   "name": "p_populate_all",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&populate[0]=image&populate[1]=launchInfo&populate[2]=creator&populate[3]=genesis&populate[4]=vibesInfo&populate[5]=tokenomics.project&populate[6]=tags&populate[7]=framework",
+   "status": 200,
+   "total": 56925
+  },
+  {
+   "name": "role_onchain",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&filters[role][$eq]=ON_CHAIN",
+   "status": 200,
+   "total": 3392
+  },
+  {
+   "name": "role_bogus",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&filters[role][$eq]=ZZZ_NOT_A_ROLE",
+   "status": 200,
+   "total": 0
+  },
+  {
+   "name": "cat_xlaunch",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&filters[category][$eq]=X_LAUNCH",
+   "status": 200,
+   "total": 60
+  },
+  {
+   "name": "cat_bogus",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&filters[category][$eq]=ZZZ_NOT_A_CAT",
+   "status": 200,
+   "total": 0
+  },
+  {
+   "name": "factory_bogus",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&filters[factory][$eq]=ZZZ_NOT_A_FACTORY",
+   "status": 200,
+   "total": 0
+  },
+  {
+   "name": "factory_robotic",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&filters[factory][$eq]=ROBOTIC",
+   "status": 200,
+   "total": 0
+  },
+  {
+   "name": "factory_robotics",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&filters[factory][$eq]=ROBOTICS",
+   "status": 200,
+   "total": 0
+  },
+  {
+   "name": "factory_erc20pro",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&filters[factory][$eq]=ERC20_PRO",
+   "status": 200,
+   "total": 4
+  },
+  {
+   "name": "factory_bonding",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&filters[factory][$eq]=BONDING",
+   "status": 200,
+   "total": 15326
+  },
+  {
+   "name": "li_needacf",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&filters[launchInfo][needAcf][$eq]=true",
+   "status": 200,
+   "total": 1223
+  },
+  {
+   "name": "li_p60",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&filters[launchInfo][isProject60days][$eq]=true",
+   "status": 200,
+   "total": 52
+  },
+  {
+   "name": "li_launchmode",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&filters[launchInfo][launchMode][$eq]=0",
+   "status": 200,
+   "total": 18785
+  },
+  {
+   "name": "li_feedelegation",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&filters[launchInfo][feeDelegationType][$notNull]=true",
+   "status": 200,
+   "total": 12669
+  },
+  {
+   "name": "li_bogus",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&filters[launchInfo][zzzBogus][$eq]=true",
+   "status": 500,
+   "total": null
+  },
+  {
+   "name": "status_eq_num2",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&filters[status][$eq]=2",
+   "status": 200,
+   "total": 56925
+  },
+  {
+   "name": "status_in_12",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&filters[status][$in][0]=1&filters[status][$in][1]=2",
+   "status": 200,
+   "total": 56925
+  },
+  {
+   "name": "status_7",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&filters[status]=7",
+   "status": 200,
+   "total": 56925
+  },
+  {
+   "name": "status_4_base",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&filters[status]=4",
+   "status": 200,
+   "total": 195
+  },
+  {
+   "name": "status_5_base",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&filters[status]=5",
+   "status": 200,
+   "total": 56689
+  },
+  {
+   "name": "vibes_bogus",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&filters[vibesInfo][status]=ZZZ",
+   "status": 200,
+   "total": 0
+  },
+  {
+   "name": "vibes_ico",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&filters[vibesInfo][status]=ICO",
+   "status": 200,
+   "total": 0
+  },
+  {
+   "name": "ps_20001",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=20001",
+   "status": 524,
+   "total": null
+  },
+  {
+   "name": "page_99999",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&pagination[page]=99999",
+   "status": 200,
+   "total": 56926
+  },
+  {
+   "name": "gt_pool_rh_vex",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x817f16F5D8da83d1B089B082c0172af3923618dA",
+   "status": 200,
+   "total": null
+  },
+  {
+   "name": "gt_ohlcv_rh_vex_day",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x817f16F5D8da83d1B089B082c0172af3923618dA/ohlcv/day?aggregate=1&limit=5",
+   "status": 200,
+   "total": null
+  },
+  {
+   "name": "gt_ohlcv_rh_vex_hour",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x817f16F5D8da83d1B089B082c0172af3923618dA/ohlcv/hour?aggregate=1&limit=5",
+   "status": 200,
+   "total": null
+  },
+  {
+   "name": "gt_ohlcv_rh_vex_minute",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x817f16F5D8da83d1B089B082c0172af3923618dA/ohlcv/minute?aggregate=1&limit=5",
+   "status": 200,
+   "total": null
+  },
+  {
+   "name": "gt_ohlcv_rh_vex_hour4",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x817f16F5D8da83d1B089B082c0172af3923618dA/ohlcv/hour?aggregate=4&limit=3&currency=usd&token=base",
+   "status": 200,
+   "total": null
+  },
+  {
+   "name": "gt_ohlcv_badtf",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x817f16F5D8da83d1B089B082c0172af3923618dA/ohlcv/week?limit=2",
+   "status": 429,
+   "total": null
+  },
+  {
+   "name": "gt_ohlcv_limit2000",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x817f16F5D8da83d1B089B082c0172af3923618dA/ohlcv/hour?limit=2000",
+   "status": 429,
+   "total": null
+  },
+  {
+   "name": "gt_ohlcv_badagg",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x817f16F5D8da83d1B089B082c0172af3923618dA/ohlcv/hour?aggregate=7&limit=2",
+   "status": 429,
+   "total": null
+  },
+  {
+   "name": "gt_ohlcv_base_tibbir",
+   "url": "https://api.geckoterminal.com/api/v2/networks/base/pools/0x0c3b466104545efa096b8f944c1e524E1d0D4888/ohlcv/hour?limit=3",
+   "status": 429,
+   "total": null
+  },
+  {
+   "name": "gt_trades_base_tibbir",
+   "url": "https://api.geckoterminal.com/api/v2/networks/base/pools/0x0c3b466104545efa096b8f944c1e524E1d0D4888/trades?trade_volume_in_usd_greater_than=0",
+   "status": 429,
+   "total": null
+  },
+  {
+   "name": "gt_pool_base_bonding_pair",
+   "url": "https://api.geckoterminal.com/api/v2/networks/base/pools/0xad9A35259AE9aa983CE75082130Af7d00347C191",
+   "status": 429,
+   "total": null
+  },
+  {
+   "name": "gt_networks",
+   "url": "https://api.geckoterminal.com/api/v2/networks?page=1",
+   "status": 429,
+   "total": null
+  },
+  {
+   "name": "fac_ERC20",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&filters[factory]=ERC20",
+   "status": 200,
+   "total": 30
+  },
+  {
+   "name": "fac_BONDING",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&filters[factory]=BONDING",
+   "status": 200,
+   "total": 15326
+  },
+  {
+   "name": "fac_BONDING_V2",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&filters[factory]=BONDING_V2",
+   "status": 200,
+   "total": 112
+  },
+  {
+   "name": "fac_BONDING_V3",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&filters[factory]=BONDING_V3",
+   "status": 200,
+   "total": 3
+  },
+  {
+   "name": "fac_BONDING_V4",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&filters[factory]=BONDING_V4",
+   "status": 200,
+   "total": 21630
+  },
+  {
+   "name": "fac_BONDING_V5",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&filters[factory]=BONDING_V5",
+   "status": 200,
+   "total": 19473
+  },
+  {
+   "name": "fac_ERC20_PRO",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&filters[factory]=ERC20_PRO",
+   "status": 200,
+   "total": 4
+  },
+  {
+   "name": "fac_ROBOTIC_BONDING_V4",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&filters[factory]=ROBOTIC_BONDING_V4",
+   "status": 200,
+   "total": 0
+  },
+  {
+   "name": "fac_ROBOTIC_BONDING_V3",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&filters[factory]=ROBOTIC_BONDING_V3",
+   "status": 200,
+   "total": 0
+  },
+  {
+   "name": "fac_ROBOTIC_BONDING_V2",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&filters[factory]=ROBOTIC_BONDING_V2",
+   "status": 200,
+   "total": 0
+  },
+  {
+   "name": "fac_ROBOTIC_ERC20_PRO",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&filters[factory]=ROBOTIC_ERC20_PRO",
+   "status": 200,
+   "total": 0
+  },
+  {
+   "name": "fac_VIBES_BONDING_V2",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&filters[factory]=VIBES_BONDING_V2",
+   "status": 200,
+   "total": 47
+  },
+  {
+   "name": "fac_SOL_METEORA",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&filters[factory]=SOL_METEORA",
+   "status": 200,
+   "total": 0
+  },
+  {
+   "name": "fac_sol_meteora_solana",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=SOLANA&pagination[pageSize]=1&filters[factory]=SOL_METEORA",
+   "status": 200,
+   "total": 98
+  },
+  {
+   "name": "ps_20001",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=20001",
+   "status": 524,
+   "total": null
+  },
+  {
+   "name": "page_99999",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&pagination[page]=99999",
+   "status": 200,
+   "total": 56926
+  },
+  {
+   "name": "status_3_base",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&filters[status]=3",
+   "status": 200,
+   "total": 56926
+  },
+  {
+   "name": "search_union",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=2&filters[$or][0][name][$contains]=Ribbita&filters[$or][1][symbol][$contains]=Ribbita&filters[$or][2][tokenAddress][$contains]=Ribbita&filters[$or][3][preToken][$contains]=Ribbita",
+   "status": 200,
+   "total": 7
+  },
+  {
+   "name": "name_contains_case",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&filters[name][$contains]=ribbita",
+   "status": 200,
+   "total": 5
+  },
+  {
+   "name": "name_containsi_case",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&pagination[pageSize]=1&filters[name][$containsi]=ribbita",
+   "status": 200,
+   "total": 5
+  },
+  {
+   "name": "ug_base_sparkline",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=BASE&filters[status]=1&sort[0]=volume24h:desc&pagination[pageSize]=1&sparkline=true&range24h=true",
+   "status": 200,
+   "total": 55775
+  },
+  {
+   "name": "detail_sparkline_135655",
+   "url": "https://api.virtuals.io/api/virtuals/135655?sparkline=true&range24h=true",
+   "status": 200,
+   "total": null
+  },
+  {
+   "name": "tr_ug_base_0x1984ed",
+   "url": "https://vp-api.virtuals.io/vp-api/trades?tokenAddress=0x1984edF491D3399FBc09E6d0856E01fF3721f952&limit=5&chainID=0&tradeSideOption=0",
+   "status": 200,
+   "total": null
+  },
+  {
+   "name": "kl_ug_base_0x1984ed",
+   "url": "https://vp-api.virtuals.io/vp-api/klines?tokenAddress=0x1984edF491D3399FBc09E6d0856E01fF3721f952&granularity=3600&limit=10&chainID=0",
+   "status": 200,
+   "total": null
+  },
+  {
+   "name": "ug_solana_sparkline",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=SOLANA&filters[status]=1&sort[0]=volume24h:desc&pagination[pageSize]=1&sparkline=true",
+   "status": 200,
+   "total": 569
+  },
+  {
+   "name": "tr_ug_solana_GpjfBr",
+   "url": "https://vp-api.virtuals.io/vp-api/trades?tokenAddress=GpjfBrAwQL9wArUfxXK4BjqqArXFZZfLpLnxL5HMvirt&limit=5&chainID=1&tradeSideOption=0",
+   "status": 200,
+   "total": null
+  },
+  {
+   "name": "ug_rh_sparkline",
+   "url": "https://api.virtuals.io/api/virtuals?filters[chain]=ROBINHOOD&filters[status]=1&sort[0]=volume24h:desc&pagination[pageSize]=1&sparkline=true",
+   "status": 200,
+   "total": 25225
+  },
+  {
+   "name": "tr_ug_rh_0x72E936",
+   "url": "https://vp-api.virtuals.io/vp-api/trades?tokenAddress=0x72E936815982A577386e8fcDe94f5C9335836C88&limit=5&chainID=2&tradeSideOption=0",
+   "status": 200,
+   "total": null
+  },
+  {
+   "name": "tr_side1",
+   "url": "https://vp-api.virtuals.io/vp-api/trades?tokenAddress=0x1984edF491D3399FBc09E6d0856E01fF3721f952&limit=3&chainID=0&tradeSideOption=1",
+   "status": 200,
+   "total": null
+  },
+  {
+   "name": "tr_side2",
+   "url": "https://vp-api.virtuals.io/vp-api/trades?tokenAddress=0x1984edF491D3399FBc09E6d0856E01fF3721f952&limit=3&chainID=0&tradeSideOption=2",
+   "status": 200,
+   "total": null
+  },
+  {
+   "name": "tr_limit200",
+   "url": "https://vp-api.virtuals.io/vp-api/trades?tokenAddress=0x1984edF491D3399FBc09E6d0856E01fF3721f952&limit=200&chainID=0",
+   "status": 200,
+   "total": null
+  },
+  {
+   "name": "gen_sort_startsat",
+   "url": "https://api.virtuals.io/api/geneses?pagination[pageSize]=2&sort[0]=startsAt:desc",
+   "status": 200,
+   "total": 363
+  },
+  {
+   "name": "gen_status_in",
+   "url": "https://api.virtuals.io/api/geneses?pagination[pageSize]=1&filters[status][$in][0]=STARTED&filters[status][$in][1]=PROCESSING",
+   "status": 200,
+   "total": 0
+  },
+  {
+   "name": "gen_status_started",
+   "url": "https://api.virtuals.io/api/geneses?pagination[pageSize]=1&filters[status]=STARTED",
+   "status": 200,
+   "total": 0
+  },
+  {
+   "name": "gen_bogus_sort",
+   "url": "https://api.virtuals.io/api/geneses?pagination[pageSize]=1&sort[0]=zzz:desc",
+   "status": 200,
+   "total": 363
+  },
+  {
+   "name": "gen_ps_1000",
+   "url": "https://api.virtuals.io/api/geneses?pagination[pageSize]=1000",
+   "status": 200,
+   "total": 363
+  },
+  {
+   "name": "gen_virtual_chain",
+   "url": "https://api.virtuals.io/api/geneses?pagination[pageSize]=1&filters[virtual][chain]=BASE",
+   "status": 200,
+   "total": 360
+  },
+  {
+   "name": "gen_status_finalized",
+   "url": "https://api.virtuals.io/api/geneses?pagination[pageSize]=1&filters[status]=FINALIZED",
+   "status": 200,
+   "total": 145
+  },
+  {
+   "name": "gen_status_cancelled",
+   "url": "https://api.virtuals.io/api/geneses?pagination[pageSize]=1&filters[status]=CANCELLED",
+   "status": 200,
+   "total": 33
+  },
+  {
+   "name": "gen_status_bogus",
+   "url": "https://api.virtuals.io/api/geneses?pagination[pageSize]=1&filters[status]=ZZZ",
+   "status": 200,
+   "total": 0
+  },
+  {
+   "name": "gen_startsat_gte",
+   "url": "https://api.virtuals.io/api/geneses?pagination[pageSize]=1&filters[startsAt][$gte]=2026-01-01",
+   "status": 200,
+   "total": 4
+  },
+  {
+   "name": "gen_all_200",
+   "url": "https://api.virtuals.io/api/geneses?pagination[pageSize]=200&sort[0]=id:desc",
+   "status": 200,
+   "total": 363
+  },
+  {
+   "name": "gt_ohlcv_base_tibbir",
+   "url": "https://api.geckoterminal.com/api/v2/networks/base/pools/0x0c3b466104545efa096b8f944c1e524E1d0D4888/ohlcv/hour?limit=3",
+   "status": 200,
+   "total": null
+  },
+  {
+   "name": "gt_ohlcv_badtf",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x817f16F5D8da83d1B089B082c0172af3923618dA/ohlcv/week?limit=2",
+   "status": 400,
+   "total": null
+  },
+  {
+   "name": "gt_ohlcv_limit2000",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x817f16F5D8da83d1B089B082c0172af3923618dA/ohlcv/hour?limit=2000",
+   "status": 400,
+   "total": null
+  },
+  {
+   "name": "gt_ohlcv_badagg",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x817f16F5D8da83d1B089B082c0172af3923618dA/ohlcv/hour?aggregate=7&limit=2",
+   "status": 400,
+   "total": null
+  },
+  {
+   "name": "gt_pool_base_bonding_pair",
+   "url": "https://api.geckoterminal.com/api/v2/networks/base/pools/0xad9A35259AE9aa983CE75082130Af7d00347C191",
+   "status": 404,
+   "total": null
+  },
+  {
+   "name": "gt_ohlcv_solana_pool",
+   "url": "https://api.geckoterminal.com/api/v2/networks/solana/pools/2Lbmw3eru759d1FYzuob1PG57Mm7THdZYDuQHjN1dtXd/ohlcv/hour?limit=3",
+   "status": 200,
+   "total": null
+  }
+ ]
+}

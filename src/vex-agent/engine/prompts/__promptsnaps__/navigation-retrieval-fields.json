@@ -898,6 +898,22 @@
             "genesis calendar",
             "upcoming launches"
           ]
+        },
+        {
+          "label": "Trade tape and price history",
+          "summary": "Read one agent's bonding-curve trade tape and its pool's OHLCV candles, per chain and lifecycle stage.",
+          "toolPrefixes": [
+            "virtuals.trades",
+            "virtuals.candles"
+          ],
+          "hints": [
+            "trade tape",
+            "recent trades",
+            "price chart",
+            "candles",
+            "ohlcv",
+            "price history"
+          ]
         }
       ]
     },
@@ -1151,6 +1167,8 @@
     "virtuals.get": "26bcb6d71aa60b679becb0bbce98a0b0a75da9dd19dd84cce43f0616252c765c",
     "virtuals.graduations": "bc197ab90815817bc775c07adfa43fba73fa25894d9432039475b2e539ed0c36",
     "virtuals.geneses": "7a54634df55374059206cae91d2ac6ee5487e3e63e0ee7290a241a3c210460a3",
+    "virtuals.trades": "95398d631a02a0d9b3116cf7a28228b96455ff01a57f969eaa6eac997a42a64e",
+    "virtuals.candles": "754389b1f925e55008d1d76131bb107d908eaf1363adbc3eed2af5817d8e9388",
     "pendle.yields": "9681172f6045d1b721f4ab636069ae9767322c1a55291c93ff48250958295d27",
     "pendle.position.value": "014a5b81cc8d6321564e454bd6ca9d9f987da6d59a9d628555d92e13c4d4f1f2",
     "pendle.market.get": "853b5c4a9927984549d7c95eea7502af64a863af575d4c6c8ea412187ca7b00d",

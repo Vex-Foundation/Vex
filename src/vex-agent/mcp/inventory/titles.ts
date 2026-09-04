@@ -140,6 +140,8 @@ export const STUDIO_TOOL_TITLES: Readonly<Record<string, string>> = {
   virtuals__agent_get: "Read one Virtuals agent token",
   virtuals__graduations_list: "List recent Virtuals graduations",
   virtuals__genesis_launches_list: "Browse the Virtuals Genesis calendar",
+  virtuals__agent_trades_list: "Read a Virtuals agent's curve trade tape",
+  virtuals__agent_candles_list: "Read a Virtuals agent's price candles",
 
   // ── pendle ────────────────────────────────────────────────────────────────
   pendle__markets_discover: "Screen Pendle yield markets",

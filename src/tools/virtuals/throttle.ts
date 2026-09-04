@@ -19,7 +19,12 @@
  * timers.
  */
 
-/** Conservative per-minute allowance (undocumented API — stay well under). */
+/**
+ * Conservative per-minute allowance for the Strapi API (undocumented - stay
+ * well under). Callers that front a DIFFERENT host pass their own
+ * `ratePerMinute`: `candles/geckoterminal.ts` measured a 429 after five calls
+ * spaced 1.2 s apart, so it runs its own bucket an order of magnitude slower.
+ */
 const RATE_PER_MINUTE = 60;
 
 /** Cache freshness. Agent metrics move slowly; payloads are large. */
@@ -119,12 +124,19 @@ export class VirtualsThrottle {
   private readonly ttlMs: number;
 
   constructor(
-    options: { maxCacheEntries?: number; ttlMs?: number; deps?: Partial<ThrottleDeps> } = {},
+    options: {
+      maxCacheEntries?: number;
+      ttlMs?: number;
+      /** Requests per minute AND bucket capacity. Defaults to the Strapi rate. */
+      ratePerMinute?: number;
+      deps?: Partial<ThrottleDeps>;
+    } = {},
   ) {
     this.deps = { ...REAL_DEPS, ...options.deps };
     this.maxCacheEntries = options.maxCacheEntries ?? DEFAULT_MAX_CACHE_ENTRIES;
     this.ttlMs = options.ttlMs ?? DEFAULT_TTL_MS;
-    this.bucket = new TokenBucket(RATE_PER_MINUTE, RATE_PER_MINUTE, this.deps);
+    const rate = options.ratePerMinute ?? RATE_PER_MINUTE;
+    this.bucket = new TokenBucket(rate, rate, this.deps);
   }
 
   /** Default TTL for a cached response (exposed so the client can pass it in). */

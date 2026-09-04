@@ -4,7 +4,7 @@
   "datasetId": "tool-discovery-solana",
   "datasetVersion": "solana-v1",
   "status": "captured",
-  "capturedAt": "2026-09-04T19:03:56.919Z",
+  "capturedAt": "2026-09-04T18:02:30.422Z",
   "metrics": {
     "overall": {
       "count": 68,
@@ -176,6 +176,6 @@
   "notes": [
     "dataset tool-discovery-solana@solana-v1, mode lexical, 68 cases evaluated.",
     "overall recall@1 0.441, recall@5 0.603, coverage@5 0.603, mrr@5 0.497, groupMrr@5 0.497.",
-    "Measured delta: none, metrics are identical to the previous baseline."
+    "Measured delta vs previous baseline (solana-v1, captured 2026-08-28T10:37:09.877Z): 8 metric values moved; overall recall@5 0.603 -> 0.603, overall mrr@5 0.496 -> 0.497, case count 68 -> 68."
   ]
 }

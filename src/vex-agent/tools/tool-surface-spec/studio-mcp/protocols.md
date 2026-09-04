@@ -284,7 +284,9 @@ whether its provider key is configured on this machine.
 
 | tool | title | access | destructive | requires env |
 | --- | --- | --- | --- | --- |
+| virtuals__agent_candles_list | Read a Virtuals agent's price candles | read-only | no | - |
 | virtuals__agent_get | Read one Virtuals agent token | read-only | no | - |
+| virtuals__agent_trades_list | Read a Virtuals agent's curve trade tape | read-only | no | - |
 | virtuals__agents_discover | Screen Virtuals agent tokens | read-only | no | - |
 | virtuals__genesis_launches_list | Browse the Virtuals Genesis calendar | read-only | no | - |
 | virtuals__graduations_list | List recent Virtuals graduations | read-only | no | - |

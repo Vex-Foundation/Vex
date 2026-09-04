@@ -1,0 +1,10 @@
+{
+ "data": {
+  "reserveAmountTiers": [
+   21000,
+   42000,
+   100000
+  ]
+ },
+ "_provenance": "api.virtuals.io GET /api/geneses/parameters captured 2026-09-04."
+}
