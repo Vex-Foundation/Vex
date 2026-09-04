@@ -1,18 +1,28 @@
 /**
- * CANARY - the pending-activity snapshot probe must never log a raw throw.
+ * CANARY - the snapshot's cycle-start probe must never log a raw throw.
  *
  * `fullBalanceSync({ snapshot: "when-settled" })` - the PERIODIC/worker policy,
- * which is the one the background pipeline actually uses - asks
- * `hasPendingActivityForWallets` whether any row is still in flight. That probe
- * talks to Postgres, and a driver/connection failure carries the connection
- * string (and therefore the password) in its message. The site logged
- * `err.message` verbatim, so a DB outage wrote the credential into the log file;
- * the logger performs no redaction of its own (rule 06).
+ * which is the one the background pipeline actually uses - stamps the activity
+ * fence before the scan. That probe talks to Postgres, and a driver/connection
+ * failure carries the connection string (and therefore the password) in its
+ * message. Such a site once logged `err.message` verbatim, so a DB outage wrote
+ * the credential into the log file; the logger performs no redaction of its own
+ * (rule 06).
  *
- * This suite drives the REAL probe path (`isObviouslyBlocked`, WP8's renamed
- * pre-flight) by rejecting it, and asserts that not one fragment of the
- * secret-bearing text survives into the emitted log line. The pre-existing
- * IPC-level canary cannot see this: it mocks `refreshPortfolioNow` wholesale.
+ * The probe this suite drove originally was the pre-flight pending-activity
+ * read, which is gone: in-flight money no longer withholds a snapshot, so there
+ * is nothing for it to pre-flight. `readCycleStartFence` is the SAME risk on
+ * the SAME cycle - a Postgres call whose failure is summarized into a warn log
+ * and whose unknown answer must fail closed - so the canary moved to it rather
+ * than being deleted with its subject. The pre-existing IPC-level canary cannot
+ * see this: it mocks `refreshPortfolioNow` wholesale.
+ *
+ * THE FILENAME still says "pending probe" and the subject no longer does.
+ * Renaming it to `balance-sync-fence-probe-redaction.test.ts` reads to
+ * `scripts/check-test-unsafe-escapes.mjs` as a test DELETION and needs a
+ * reviewed entry in `scripts/deleted-test-allowlist.mjs`, which this lane does
+ * not own. The rename is a follow-up for whoever owns that allowlist; the
+ * coverage is here and complete either way.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -63,25 +73,27 @@ vi.mock("@vex-agent/db/repos/balances.js", () => ({
 }));
 
 /**
- * WP8 - the snapshot group is published inside ONE transaction that locks
- * `agent_activity` and re-checks the gate under that lock. These suites are
- * about sync/single-flight, not about the gate, so the fake client answers
- * "nothing in flight, and the activity generation did not move".
+ * The snapshot group is published inside ONE transaction that locks
+ * `agent_activity` and reads the in-flight ledger under that lock. This suite
+ * is about the cycle-start probe, so the fake client answers "nothing in
+ * flight, and the activity generation did not move" - except when
+ * `fenceRejection` is armed, which is the path under test.
  */
-const mockDbQuery = vi.fn(async (sql: string) =>
-  String(sql).includes("MAX(id)")
-    ? { rows: [{ max_id: "0", max_updated_at: "epoch", row_count: "0" }], rowCount: 1 }
-    : { rows: [], rowCount: 0 },
-);
+let fenceRejection: Error | null = null;
+const mockDbQuery = vi.fn(async (sql: string) => {
+  if (String(sql).includes("MAX(id)")) {
+    if (fenceRejection !== null) throw fenceRejection;
+    return {
+      rows: [{ max_id: "0", row_count: "0", pending_count: "0", confirmed_count: "0" }],
+      rowCount: 1,
+    };
+  }
+  return { rows: [], rowCount: 0 };
+});
 const fakeDbClient = { query: (sql: string, params?: unknown[]) => mockDbQuery(sql, params) };
 vi.mock("@vex-agent/db/client.js", () => ({
   getPool: () => fakeDbClient,
   withTransaction: (fn: (c: unknown) => Promise<unknown>) => fn(fakeDbClient),
-}));
-
-const mockHasPendingActivity = vi.fn();
-vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
-  hasPendingActivityForWallets: (...a: unknown[]) => mockHasPendingActivity(...a),
 }));
 
 const { fullBalanceSync } = await import("../../../vex-agent/sync/balance-sync.js");
@@ -95,6 +107,7 @@ const SECRET_BEARING_MESSAGE =
 
 beforeEach(() => {
   vi.clearAllMocks();
+  fenceRejection = null;
   mockScan.mockResolvedValue({ tokens: [], scannedChainIds: [], chainErrors: [] });
   mockGetCachedKhalaniChains.mockResolvedValue([{ id: 8453, name: "Base", type: "eip155" }]);
   mockListWallets.mockImplementation((family: string) =>
@@ -102,19 +115,19 @@ beforeEach(() => {
   );
 });
 
-function pendingProbeLogLine(): string {
-  const call = mockWarn.mock.calls.find(([event]) => event === "sync.balance.pending_probe_failed");
+function fenceProbeLogLine(): string {
+  const call = mockWarn.mock.calls.find(([event]) => event === "sync.balance.activity_fence_failed");
   expect(call, "the probe failure must still be logged").toBeDefined();
   return JSON.stringify(call);
 }
 
-describe("pending-activity probe failure logging", () => {
+describe("cycle-start fence probe failure logging", () => {
   it("carries NO fragment of a secret-bearing rejection into the log line", async () => {
-    mockHasPendingActivity.mockRejectedValue(new Error(SECRET_BEARING_MESSAGE));
+    fenceRejection = new Error(SECRET_BEARING_MESSAGE);
 
     await fullBalanceSync({ snapshot: "when-settled" });
 
-    const line = pendingProbeLogLine();
+    const line = fenceProbeLogLine();
     expect(line).not.toContain(SECRET_PASSWORD);
     expect(line).not.toContain("postgres://");
     expect(line).not.toContain("eyJhbGciOiJIUzI1NiJ9");
@@ -122,30 +135,32 @@ describe("pending-activity probe failure logging", () => {
   });
 
   it("redacts a secret carried only on the `cause` of a wrapping throw", async () => {
-    mockHasPendingActivity.mockRejectedValue(
-      new Error("pending probe failed", { cause: new Error(SECRET_BEARING_MESSAGE) }),
-    );
+    fenceRejection = new Error("fence probe failed", { cause: new Error(SECRET_BEARING_MESSAGE) });
 
     await fullBalanceSync({ snapshot: "when-settled" });
 
-    const line = pendingProbeLogLine();
+    const line = fenceProbeLogLine();
     expect(line).not.toContain(SECRET_PASSWORD);
     expect(line).not.toContain("postgres://");
   });
 
   it("bounds a pathologically long rejection instead of writing it whole", async () => {
-    mockHasPendingActivity.mockRejectedValue(new Error("x".repeat(20_000)));
+    fenceRejection = new Error("x".repeat(20_000));
 
     await fullBalanceSync({ snapshot: "when-settled" });
 
-    expect(pendingProbeLogLine().length).toBeLessThan(2_000);
+    expect(fenceProbeLogLine().length).toBeLessThan(2_000);
   });
 
   it("still refuses the snapshot when the probe throws (conservative direction)", async () => {
-    mockHasPendingActivity.mockRejectedValue(new Error(SECRET_BEARING_MESSAGE));
+    fenceRejection = new Error(SECRET_BEARING_MESSAGE);
 
     const result = await fullBalanceSync({ snapshot: "when-settled" });
 
+    // Without a cycle-start stamp the transition fence can prove nothing, so
+    // unknown stays fail-closed. This is the ONE probe failure that still
+    // withholds a group; in-flight money never does.
     expect(result.snapshots).toHaveLength(0);
+    expect(result.snapshotSkippedReason).toBe("gate_probe_failed");
   });
 });

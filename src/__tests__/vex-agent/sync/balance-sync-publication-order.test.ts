@@ -80,7 +80,10 @@ const fakeClient = {
     if (sql === "COMMIT") trace.push("commit");
     if (sql === "ROLLBACK") trace.push("rollback");
     if (sql.includes("MAX(id)")) {
-      return { rows: [{ max_id: "0", max_updated_at: "epoch", row_count: "0" }], rowCount: 1 };
+      return {
+        rows: [{ max_id: "0", row_count: "0", pending_count: "0", confirmed_count: "0" }],
+        rowCount: 1,
+      };
     }
     return { rows: [], rowCount: 0 };
   },
@@ -98,10 +101,6 @@ vi.mock("@vex-agent/db/client.js", () => ({
       throw err;
     }
   },
-}));
-
-vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
-  hasPendingActivityForWallets: vi.fn().mockResolvedValue(false),
 }));
 
 const { fullBalanceSync } = await import("../../../vex-agent/sync/balance-sync.js");

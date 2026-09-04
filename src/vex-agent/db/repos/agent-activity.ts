@@ -227,7 +227,6 @@ export {
   // Wave P: the PROVIDER-lane rearm set (logical bridge rows), whose candidate
   // predicates are disjoint from every on-chain set.
   listPendingProviderLogical,
-  hasPendingActivityForWallets,
   listSolanaStagedPending,
   listActivityFeed,
   existsForExecutionId,

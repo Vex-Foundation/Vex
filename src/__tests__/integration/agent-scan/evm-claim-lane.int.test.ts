@@ -28,7 +28,6 @@ import {
   confirmLaunchWithOutputIdentity,
   failActivityEvent,
   createPendingActivityEvent,
-  hasPendingActivityForWallets,
   markActivityBroadcast,
   markSupersededUnproven,
   mintClaimToken,
@@ -336,11 +335,11 @@ describe("the A6 terminalization refuses until BOTH clocks have elapsed", () => 
   });
 });
 
-describe("F6 — the frozen portfolio snapshot is released by the STATUS, not by a weakened guard", () => {
-  it("blocks while the row is pending and stops blocking once it is superseded_unproven", async () => {
-    const { id, walletAddress } = await pendingRow(TEN_MINUTES_MS);
+describe("F6 - an in-flight row leaves the snapshot ledger by its STATUS, not by a weakened predicate", () => {
+  it("is pending until superseded_unproven, which is the status the in-flight ledger keys on", async () => {
+    const { id } = await pendingRow(TEN_MINUTES_MS);
 
-    expect(await hasPendingActivityForWallets([walletAddress])).toBe(true);
+    expect(await column(id, "status")).toBe("pending");
 
     const claim = await claimDuePendingEvm();
     const token = claim.claimed.find((c) => c.row.id === id)?.claimToken ?? "";
@@ -358,9 +357,9 @@ describe("F6 — the frozen portfolio snapshot is released by the STATUS, not by
     );
     expect(result.applied).toBe(true);
 
-    // The guard's own predicate (`status = 'pending'`) is unchanged by one
-    // character — the row simply stopped matching it.
-    expect(await hasPendingActivityForWallets([walletAddress])).toBe(false);
+    // The ledger's own predicate (`status = 'pending'`, publication-gate.ts) is
+    // unchanged by one character: the row simply stopped matching it.
+    expect(await column(id, "status")).toBe("superseded_unproven");
   });
 });
 

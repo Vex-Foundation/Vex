@@ -1,19 +1,23 @@
 /**
- * Integration: the WP8 snapshot publication gate against REAL Postgres.
+ * Integration: the snapshot publication gate and its IN-FLIGHT LEDGER against
+ * REAL Postgres.
  *
  * The unit suite (`__tests__/vex-agent/sync/balance-sync-snapshot-publication`)
- * proves OUR ordering - lock before predicate, predicate before insert, insert
- * while the lock is held. It structurally cannot prove the three things that
- * belong to the server, and the whole design rests on them:
+ * proves OUR ordering and OUR arithmetic - lock before ledger, ledger before
+ * insert, insert while the lock is held, standing bounds, totals. It
+ * structurally cannot prove the four things that belong to the server, and the
+ * whole design rests on them:
  *
- *  1. the seven-branch UNION parses against the real schema and its predicates
- *     match production row shapes (a gate whose fixtures only ever encode the
- *     empty collection proves nothing);
+ *  1. the seven-branch UNION parses against the real schema and both its
+ *     predicates AND its money columns match production row shapes (a ledger
+ *     whose fixtures only ever encode the empty collection proves nothing);
  *  2. `LOCK TABLE agent_activity IN SHARE MODE` genuinely BLOCKS the writer the
  *     gate exists to exclude - Postgres's conflict matrix, not our call order;
  *  3. `SET LOCAL lock_timeout` makes that lock fail with SQLSTATE 55P03, which
  *     `publishSnapshotGroup` maps to `lock_unavailable` instead of failing the
- *     balance refresh.
+ *     balance refresh;
+ *  4. the group record and the per-wallet rows commit or roll back TOGETHER,
+ *     against the real constraints of migration 101.
  *
  * Real SQL, real CHECK constraints, real `NOW()`, real lock waits.
  */
@@ -25,8 +29,8 @@ import type { PoolClient } from "pg";
 import { execute, getPool, queryOne, query } from "@vex-agent/db/client.js";
 import {
   readActivityFence,
-  readPublicationBlockers,
-  type PublicationBlocker,
+  readInFlightMoney,
+  type InFlightEntry,
 } from "@vex-agent/sync/balance-sync/publication-gate.js";
 import { publishSnapshotGroup } from "@vex-agent/sync/balance-sync/snapshot-publication.js";
 import { makeSession, resetDb } from "../setup/fixtures.js";
@@ -70,6 +74,30 @@ async function insertAgentActivity(
      RETURNING id`,
     [executionId, opts.walletAddress ?? WALLET, sessionId, status,
      `0xhash-${executionId}`, opts.createdAt ?? null],
+  );
+  return row?.id ?? 0;
+}
+
+/**
+ * The owner's row: a cross-chain fill whose provider never conclusively
+ * reported. `normalized_route` and `provider_order_id` are constrained to this
+ * event role (migration 045), and the money lives on the OUTPUT columns.
+ */
+async function insertBridgeFill(sessionId: string): Promise<number> {
+  const executionId = await insertProtocolExecution(sessionId);
+  const row = await queryOne<{ id: number }>(
+    `INSERT INTO agent_activity
+       (protocol_execution_id, event_role, kind, protocol, chain_id,
+        wallet_address, session_id, status,
+        from_chain_id, to_chain_id, chain_family, normalized_route, provider_order_id,
+        token_in_symbol, amount_in_human, usd_in_est,
+        token_out_symbol, amount_out_human, usd_out_est)
+     VALUES ($1, 'bridge_fill_expected', 'bridge', 'khalani', 8453, $2, $3, 'pending',
+             8453, 42161, 'eip155', 'base:8453->arbitrum:42161', 'order-132',
+             'USDC', '151.0', 151.00,
+             'USDC', '150.5', 150.25)
+     RETURNING id`,
+    [executionId, WALLET, sessionId],
   );
   return row?.id ?? 0;
 }
@@ -141,19 +169,19 @@ async function insertWrapIntent(
   return intentId;
 }
 
-/** Read the gate the way production does: inside a transaction. */
-async function blockersNow(): Promise<readonly PublicationBlocker[]> {
+/** Read the ledger the way production does: inside a transaction. */
+async function inFlightNow(): Promise<readonly InFlightEntry[]> {
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
-    return await readPublicationBlockers(client, WALLETS);
+    return (await readInFlightMoney(client, WALLETS)).entries;
   } finally {
     await client.query("ROLLBACK").catch(() => undefined);
     client.release();
   }
 }
 
-const kindsNow = async () => (await blockersNow()).map((b) => b.kind).sort();
+const kindsNow = async () => (await inFlightNow()).map((e) => e.kind).sort();
 
 function draft(address: string) {
   return {
@@ -172,6 +200,13 @@ async function snapshotCount(): Promise<number> {
   return Number(row?.n ?? "0");
 }
 
+async function groupRecordCount(): Promise<number> {
+  const row = await queryOne<{ n: string }>(
+    "SELECT COUNT(*)::text AS n FROM proj_portfolio_snapshot_groups",
+  );
+  return Number(row?.n ?? "0");
+}
+
 let sessionId: string;
 
 beforeEach(async () => {
@@ -181,28 +216,28 @@ beforeEach(async () => {
 
 // ── 1. The UNION parses, and every predicate matches a production row ────
 
-describe("the gate SQL against the real schema", () => {
+describe("the ledger SQL against the real schema", () => {
   it("returns nothing for wallets with no money-path rows at all", async () => {
-    expect(await blockersNow()).toEqual([]);
+    expect(await inFlightNow()).toEqual([]);
   });
 
-  it("blocks on a PENDING agent_activity row", async () => {
+  it("records a PENDING agent_activity row", async () => {
     await insertAgentActivity(sessionId, "pending");
     expect(await kindsNow()).toEqual(["agent_activity_pending"]);
   });
 
-  it("does NOT block on terminalized activity", async () => {
+  it("records nothing for terminalized activity", async () => {
     await insertAgentActivity(sessionId, "confirmed");
     await insertAgentActivity(sessionId, "definitively_failed");
-    expect(await blockersNow()).toEqual([]);
+    expect(await inFlightNow()).toEqual([]);
   });
 
   it("ignores another wallet's pending activity", async () => {
     await insertAgentActivity(sessionId, "pending", { walletAddress: "0xsomeone-else" });
-    expect(await blockersNow()).toEqual([]);
+    expect(await inFlightNow()).toEqual([]);
   });
 
-  it("blocks on a live wallet_intent and RELEASES an expired pending one", async () => {
+  it("records a live wallet_intent and OMITS an expired pending one", async () => {
     await insertWalletIntent(sessionId, { status: "consuming" });
     expect(await kindsNow()).toEqual(["wallet_intent_live"]);
 
@@ -210,10 +245,10 @@ describe("the gate SQL against the real schema", () => {
     // An expired `pending` is dead - `consumeIfPending` filters on
     // `expires_at > NOW()`, so it can never be claimed and must not block forever.
     await insertWalletIntent(sessionId, { status: "pending", expiresInMs: -60_000 });
-    expect(await blockersNow()).toEqual([]);
+    expect(await inFlightNow()).toEqual([]);
   });
 
-  it("blocks on a wallet_intent whose outcome is unproven", async () => {
+  it("records a wallet_intent whose outcome is unproven", async () => {
     const activityId = await insertAgentActivity(sessionId, "confirmed");
     await insertWalletIntent(sessionId, {
       status: "broadcast_unconfirmed",
@@ -223,12 +258,12 @@ describe("the gate SQL against the real schema", () => {
     expect(await kindsNow()).toEqual(["wallet_confirmation_unknown"]);
   });
 
-  it("blocks on a live wallet_transaction_intent", async () => {
+  it("records a live wallet_transaction_intent", async () => {
     await insertTransactionIntent(sessionId, { status: "consuming" });
     expect(await kindsNow()).toEqual(["wallet_transaction_intent_live"]);
   });
 
-  it("blocks on a broadcast-unconfirmed wallet_transaction_intent", async () => {
+  it("records a broadcast-unconfirmed wallet_transaction_intent", async () => {
     await insertTransactionIntent(sessionId, {
       status: "broadcast_unconfirmed",
       txHash: "0xdef",
@@ -236,17 +271,17 @@ describe("the gate SQL against the real schema", () => {
     expect(await kindsNow()).toEqual(["wallet_transaction_intent_live"]);
   });
 
-  it("releases an executed wallet_transaction_intent", async () => {
+  it("omits an executed wallet_transaction_intent", async () => {
     await insertTransactionIntent(sessionId, { status: "executed", txHash: "0xdef" });
-    expect(await blockersNow()).toEqual([]);
+    expect(await inFlightNow()).toEqual([]);
   });
 
-  it("blocks on a live wallet_wrap_intent, including review_required", async () => {
+  it("records a live wallet_wrap_intent, including review_required", async () => {
     await insertWrapIntent(sessionId, { status: "review_required", txHash: "0x123" });
     expect(await kindsNow()).toEqual(["wallet_wrap_intent_live"]);
   });
 
-  it("reports every blocking row at once, across tables", async () => {
+  it("reports every in-flight row at once, across tables", async () => {
     await insertAgentActivity(sessionId, "pending");
     await insertWalletIntent(sessionId, { status: "consuming" });
     await insertTransactionIntent(sessionId, { status: "consuming" });
@@ -259,33 +294,93 @@ describe("the gate SQL against the real schema", () => {
     ]);
   });
 
-  it("computes ageSeconds and the unreconciled escalation from real NOW()", async () => {
+  it("computes ageSeconds and the standing from real NOW() and real expires_at", async () => {
     await insertTransactionIntent(sessionId, {
       status: "broadcast_unconfirmed",
       txHash: "0xold",
       createdAt: new Date(Date.now() - 20 * 60_000).toISOString(),
     });
-    const [blocker] = await blockersNow();
-    expect(blocker?.ageSeconds).toBeGreaterThan(15 * 60);
-    // Age escalates the report; it never releases publication.
-    expect(blocker?.unreconciled).toBe(true);
+    const [entry] = await inFlightNow();
+    expect(entry?.ageSeconds).toBeGreaterThan(15 * 60);
+    // 20 minutes is well inside the 2 h bound for a confirmation-unknown row:
+    // still on its way, not yet something a human must open.
+    expect(entry?.standing).toBe("in_transit");
+  });
+
+  it("calls a broadcast-unconfirmed row UNRESOLVED once its 2 h bound has passed", async () => {
+    // The real schema is what makes this case worth an integration test: a
+    // `broadcast_unconfirmed` row is caught by the LIVE branch, whose default
+    // rule is the row's own `expires_at` - and `expires_at` bounds the
+    // APPROVAL, which stopped being the relevant clock the moment the
+    // transaction left. With an unexpired approval and a three-hour-old
+    // broadcast, the two rules disagree, and only the age rule is right.
+    await insertTransactionIntent(sessionId, {
+      status: "broadcast_unconfirmed",
+      txHash: "0xancient",
+      expiresInMs: 600_000,
+      createdAt: new Date(Date.now() - 3 * 60 * 60_000).toISOString(),
+    });
+    const [entry] = await inFlightNow();
+    expect(entry?.kind).toBe("wallet_transaction_intent_live");
+    expect(entry?.standing).toBe("unresolved");
+  });
+
+  it("carries the EXPECTED OUTPUT leg of a bridge fill, priced, from real columns", async () => {
+    await insertBridgeFill(sessionId);
+
+    const [entry] = await inFlightNow();
+
+    // The input has already left the wallet, so the money in transit is what is
+    // expected to ARRIVE. Read from the real `amount_out_human` /
+    // `token_out_symbol` / `usd_out_est` columns of migrations 044 and 045.
+    expect(entry).toMatchObject({
+      kind: "agent_activity_pending",
+      detail: "bridge_fill_expected",
+      standing: "in_transit",
+      amountHuman: "150.5",
+      symbol: "USDC",
+      usdEstimate: 150.25,
+    });
+  });
+
+  it("converts a wrap intent's base units through its real decimals column", async () => {
+    await insertWrapIntent(sessionId, { status: "consuming" });
+
+    const [entry] = await inFlightNow();
+
+    // The fixture stores `amount_raw = '1'` at 18 decimals: one wei.
+    expect(entry?.amountHuman).toBe("0.000000000000000001");
+    expect(entry?.symbol).toBe("WETH");
+    // The table carries no price, and "not priced" is not "worth zero".
+    expect(entry?.usdEstimate).toBeNull();
+  });
+
+  it("reports NULL amounts for a generic transaction intent rather than inventing one", async () => {
+    await insertTransactionIntent(sessionId, { status: "consuming" });
+
+    const [entry] = await inFlightNow();
+
+    // `wallet_transaction_intents` is calldata-shaped: it has no amount and no
+    // asset column at all, and the ledger says so.
+    expect(entry).toMatchObject({ amountHuman: null, symbol: null, usdEstimate: null });
   });
 });
 
 // ── The fence, against real column types ────────────────────────────────
 
 describe("the activity fence", () => {
-  it("moves when a row is INSERTED and when a row TRANSITIONS", async () => {
+  it("moves when a row is INSERTED and when a row SETTLES", async () => {
     const before = await readActivityFence(getPool(), WALLETS);
 
     const id = await insertAgentActivity(sessionId, "pending");
     const afterInsert = await readActivityFence(getPool(), WALLETS);
     expect(afterInsert.maxId).not.toBe(before.maxId);
     expect(afterInsert.rowCount).not.toBe(before.rowCount);
+    expect(afterInsert.pendingCount).not.toBe(before.pendingCount);
 
-    // A pure status transition on an EXISTING row: max_id and count are
-    // unchanged, so only updated_at can catch a transaction that both began
-    // and settled during the scan.
+    // A pure status transition on an EXISTING row: max_id and row_count are
+    // unchanged, and the per-status counts are what catch a transaction that
+    // both began and settled during the scan.
     await execute(
       `UPDATE agent_activity
           SET status = 'confirmed', tx_hash = '0xh', confirmed_at = NOW(),
@@ -297,7 +392,32 @@ describe("the activity fence", () => {
     const afterUpdate = await readActivityFence(getPool(), WALLETS);
     expect(afterUpdate.maxId).toBe(afterInsert.maxId);
     expect(afterUpdate.rowCount).toBe(afterInsert.rowCount);
-    expect(afterUpdate.maxUpdatedAt).not.toBe(afterInsert.maxUpdatedAt);
+    expect(afterUpdate.pendingCount).not.toBe(afterInsert.pendingCount);
+    expect(afterUpdate.confirmedCount).not.toBe(afterInsert.confirmedCount);
+  });
+
+  it("does NOT move for a bridge-sweep bookkeeping touch on a pending row", async () => {
+    const id = await insertBridgeFill(sessionId);
+    const before = await readActivityFence(getPool(), WALLETS);
+
+    // The exact write the sweep's candidate claim performs every five minutes,
+    // forever, on a row that has not moved
+    // (`bridge-activity-repair-production-deps.ts`), plus the verification
+    // bookkeeping's own columns. Under the previous `MAX(updated_at)` fence
+    // this tripped `activity_transition` on a cycle where no money moved.
+    await execute(
+      `UPDATE agent_activity
+          SET last_attempted_at = NOW(),
+              updated_at = NOW() + interval '5 minutes',
+              last_checked_at = NOW(),
+              verification_attempts = verification_attempts + 1,
+              last_verification_reason = 'provider_unreachable',
+              provider_status = 'published'
+        WHERE id = $1`,
+      [id],
+    );
+
+    expect(await readActivityFence(getPool(), WALLETS)).toEqual(before);
   });
 });
 
@@ -396,6 +516,7 @@ describe("publishSnapshotGroup against a contended table", () => {
     // fail the balance refresh.
     expect(outcome.reason).toBe("lock_unavailable");
     expect(await snapshotCount()).toBe(0);
+    expect(await groupRecordCount()).toBe(0);
   });
 
   it("SET LOCAL lock_timeout really raises SQLSTATE 55P03 on the LOCK", async () => {
@@ -440,24 +561,78 @@ describe("publishSnapshotGroup against a contended table", () => {
       "SELECT snapshot_group_id FROM proj_portfolio_snapshots",
     );
     expect(new Set(rows.map((r) => r.snapshot_group_id))).toEqual(new Set([groupId]));
+    // And exactly one record for that group, with an empty ledger.
+    expect(await groupRecordCount()).toBe(1);
+    const group = await queryOne<{ in_transit_usd: string; in_flight: unknown[] }>(
+      "SELECT in_transit_usd::text, in_flight FROM proj_portfolio_snapshot_groups",
+    );
+    expect(Number(group?.in_transit_usd)).toBe(0);
+    expect(group?.in_flight).toEqual([]);
   });
 
-  it("writes NOTHING when a pending row appears - real gate, real insert path", async () => {
+  it("publishes WITH a pending bridge row, and records it - real ledger, real insert path", async () => {
+    await insertBridgeFill(sessionId);
+    // Stamped AFTER the row exists: the row was already in flight when the
+    // cycle began, which is the owner's case. A row that appears DURING the
+    // scan is a fence violation and is covered by the next test.
     const fence = await readActivityFence(getPool(), WALLETS);
-    await insertAgentActivity(sessionId, "pending");
+    const groupId = randomUUID();
 
     const outcome = await publishSnapshotGroup({
-      snapshotGroupId: randomUUID(),
+      snapshotGroupId: groupId,
       walletAddresses: WALLETS,
       fenceAtCycleStart: fence,
       drafts: [draft(WALLET)],
     });
 
+    expect(outcome.published).toBe(true);
+    expect(await snapshotCount()).toBe(1);
+
+    // The group record, read back from the real table with its real types.
+    const group = await queryOne<{
+      settled_usd: string;
+      in_transit_usd: string;
+      unresolved_count: number;
+      in_flight: Array<Record<string, unknown>>;
+    }>(
+      `SELECT settled_usd::text, in_transit_usd::text, unresolved_count, in_flight
+         FROM proj_portfolio_snapshot_groups WHERE snapshot_group_id = $1`,
+      [groupId],
+    );
+    expect(Number(group?.settled_usd)).toBeCloseTo(100, 6);
+    expect(Number(group?.in_transit_usd)).toBeCloseTo(150.25, 6);
+    expect(group?.unresolved_count).toBe(0);
+    expect(group?.in_flight).toHaveLength(1);
+    expect(group?.in_flight[0]).toMatchObject({
+      kind: "agent_activity_pending",
+      detail: "bridge_fill_expected",
+      standing: "in_transit",
+      amountHuman: "150.5",
+      symbol: "USDC",
+    });
+  });
+
+  it("writes NO group record when a per-wallet insert fails", async () => {
+    const fence = await readActivityFence(getPool(), WALLETS);
+    const groupId = randomUUID();
+
+    // `wallet_family` is CHECKed against ('eip155','solana') by migration 027,
+    // so the second draft's insert is refused by the SERVER - a real failure
+    // mid-group, not a stubbed one.
+    const outcome = await publishSnapshotGroup({
+      snapshotGroupId: groupId,
+      walletAddresses: WALLETS,
+      fenceAtCycleStart: fence,
+      drafts: [draft(WALLET), { ...draft("0xsecond"), walletFamily: "not_a_family" }],
+    });
+
     expect(outcome.published).toBe(false);
     if (outcome.published) throw new Error("unreachable");
-    // The blocker is found before the fence is even compared.
-    expect(outcome.reason).toBe("in_flight_money_state");
+    expect(outcome.reason).toBe("publish_failed");
+    // Whole group or none, the record included: a record whose per-wallet rows
+    // do not exist would make the published total unreadable.
     expect(await snapshotCount()).toBe(0);
+    expect(await groupRecordCount()).toBe(0);
   });
 
   it("refuses when the activity generation moved during the scan", async () => {
@@ -476,5 +651,6 @@ describe("publishSnapshotGroup against a contended table", () => {
     if (outcome.published) throw new Error("unreachable");
     expect(outcome.reason).toBe("activity_transition");
     expect(await snapshotCount()).toBe(0);
+    expect(await groupRecordCount()).toBe(0);
   });
 });

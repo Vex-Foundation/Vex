@@ -209,6 +209,39 @@ export const positionChainDtoSchema = z
 export type PositionChainDto = z.infer<typeof positionChainDtoSchema>;
 
 /**
+ * One thing the portfolio's money is currently inside, as recorded by the
+ * snapshot group that published it (`proj_portfolio_snapshot_groups`,
+ * migration 101).
+ *
+ *  - `kind`/`ref`/`detail` - structural identity only: which table, which row,
+ *    and its status or event role. Never provider text.
+ *  - `standing` - `in_transit` while the row's age is inside the bound for its
+ *    kind (`sync/balance-sync/publication-gate.ts` owns that table);
+ *    `unresolved` once it has passed. An `unresolved` entry is SHOWN and
+ *    COUNTED and is in NO total, in either direction: money whose outcome
+ *    nobody can prove must not be asserted as present or as lost.
+ *  - `amountHuman`/`symbol` - the human token quantity as a STRING with its
+ *    unit beside it. `null` when the owning table records no amount (a generic
+ *    calldata proposal carries none, and the ledger says so rather than
+ *    inventing one).
+ *  - `usdEstimate` - a display ESTIMATE, never a settlement figure. `null`
+ *    means "not priced", which is not the same as 0.
+ */
+export const snapshotInFlightEntryDtoSchema = z
+  .object({
+    kind: z.string(),
+    ref: z.string(),
+    detail: z.string().nullable(),
+    standing: z.enum(["in_transit", "unresolved"]),
+    ageSeconds: z.number(),
+    amountHuman: z.string().nullable(),
+    symbol: z.string().nullable(),
+    usdEstimate: z.number().nullable(),
+  })
+  .strict();
+export type SnapshotInFlightEntryDto = z.infer<typeof snapshotInFlightEntryDtoSchema>;
+
+/**
  * Portfolio read result for one scope.
  *
  *  - `walletCount`     — number of resolved addresses in the allow-list
@@ -218,12 +251,38 @@ export type PositionChainDto = z.infer<typeof positionChainDtoSchema>;
  *  - `snapshotTotalUsd`/`pnlVsPrev`/`snapshotAt` — the most recent COMPLETE
  *                        snapshot group covering exactly the resolved address
  *                        set; all `null` when no such snapshot exists.
+ *                        `snapshotTotalUsd` is SETTLED + IN TRANSIT, so a
+ *                        portfolio mid-bridge reads as the money the user still
+ *                        owns rather than as a loss, and `pnlVsPrev` compares
+ *                        that same basis across the latest two groups.
+ *  - `snapshotSettledUsd`/`snapshotInTransitUsd` - the two halves of that
+ *                        total, kept separate so a surface can show them
+ *                        separately. Settled is measured; in transit is a sum
+ *                        of ESTIMATES. `null` alongside `snapshotTotalUsd`;
+ *                        in-transit is 0 for a group published before migration
+ *                        101, which carries no group record.
+ *  - `snapshotInFlight`  - that group's in-flight ledger, at most 50 entries
+ *                        (the publisher's own bound; an overflow keeps the
+ *                        oldest and is reported in the sync log). An EMPTY
+ *                        array means "a group exists and nothing was in
+ *                        flight"; `null` means there is no group to report on.
+ *  - `snapshotUnresolvedCount` - entries in that ledger whose standing is
+ *                        `unresolved`. They are in NO total; a surface showing
+ *                        the total must say separately that they exist.
  *  - `tokens`          — per-(chain,token) live lines, biggest USD first,
  *                        capped at 500 (defensive bound, never expected to hit).
  *                        `balanceUsd: null` marks an unpriced holding.
  *  - `chains`          — per-chain breakdown for the chain switcher:
  *                        non-negative totals (0 = unpriced-only chain),
  *                        top-3 tokens each, bounded at 64 chains.
+ *
+ * The four ledger fields are OPTIONAL on the wire and REQUIRED of the producer:
+ * `getPortfolio` always emits all four, so a consumer sees `null` (no complete
+ * group covers the resolved address set) or a value. `undefined` exists only so
+ * that a DTO literal written before these fields still type-checks, and no
+ * surface may treat it as a distinct state. A group published before migration
+ * 101 has no group record, so its ledger reads as settled = total, in transit
+ * 0, unresolved 0, no entries.
  */
 export const portfolioDtoSchema = z
   .object({
@@ -231,6 +290,10 @@ export const portfolioDtoSchema = z
     walletCount: z.number().int().nonnegative(),
     liveTotalUsd: z.number(),
     snapshotTotalUsd: z.number().nullable(),
+    snapshotSettledUsd: z.number().nullable().optional(),
+    snapshotInTransitUsd: z.number().nullable().optional(),
+    snapshotInFlight: z.array(snapshotInFlightEntryDtoSchema).max(50).nullable().optional(),
+    snapshotUnresolvedCount: z.number().int().nonnegative().nullable().optional(),
     pnlVsPrev: z.number().nullable(),
     snapshotAt: z.string().datetime({ offset: true }).nullable(),
     tokens: z.array(positionTokenDtoSchema).max(500),
