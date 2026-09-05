@@ -4,7 +4,7 @@
   "datasetId": "tool-discovery-virtuals",
   "datasetVersion": "virtuals-v3",
   "status": "captured",
-  "capturedAt": "2026-09-05T13:28:40.656Z",
+  "capturedAt": "2026-09-05T14:41:19.921Z",
   "metrics": {
     "overall": {
       "count": 42,
@@ -176,12 +176,6 @@
   "notes": [
     "dataset tool-discovery-virtuals@virtuals-v3, mode lexical, 42 cases evaluated.",
     "overall recall@1 0.452, recall@5 0.667, coverage@5 0.667, mrr@5 0.537, groupMrr@5 0.531.",
-    "Measured delta vs previous baseline (virtuals-v2, captured 2026-09-05T11:43:15.126Z): 38 metric values moved; overall recall@5 0.706 -> 0.667, overall mrr@5 0.503 -> 0.537, case count 34 -> 42."
-  ],
-  "reconciliation": {
-    "reconciledAt": "2026-09-05T13:28:40.656Z",
-    "previousVersion": "virtuals-v2",
-    "previousCaseCount": 34,
-    "reason": "Previous baseline was captured against dataset virtuals-v2 (34 cases) on 2026-09-05T11:43:15.126Z; the canonical dataset is now virtuals-v3 (42 cases). The baseline was STALE: it was never recaptured after the dataset changed, so this update re-anchors it against the current dataset. The dataset contract and its quality floors were NOT changed."
-  }
+    "Measured delta: none, metrics are identical to the previous baseline."
+  ]
 }

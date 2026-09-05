@@ -4,24 +4,24 @@
   "datasetId": "tool-discovery-kyberswap",
   "datasetVersion": "kyberswap-v1",
   "status": "captured",
-  "capturedAt": "2026-09-05T13:28:27.621Z",
+  "capturedAt": "2026-09-05T14:41:08.193Z",
   "metrics": {
     "overall": {
       "count": 20,
       "recall1": 0.2,
-      "recall5": 0.35,
-      "coverage5": 0.35,
-      "mrr5": 0.263,
-      "groupMrr5": 0.263
+      "recall5": 0.4,
+      "coverage5": 0.4,
+      "mrr5": 0.273,
+      "groupMrr5": 0.273
     },
     "awareness": {
       "blind": {
         "count": 12,
         "recall1": 0.167,
-        "recall5": 0.167,
-        "coverage5": 0.167,
-        "mrr5": 0.167,
-        "groupMrr5": 0.167
+        "recall5": 0.25,
+        "coverage5": 0.25,
+        "mrr5": 0.183,
+        "groupMrr5": 0.183
       },
       "protocolAware": {
         "count": 8,
@@ -36,10 +36,10 @@
       "single": {
         "count": 20,
         "recall1": 0.2,
-        "recall5": 0.35,
-        "coverage5": 0.35,
-        "mrr5": 0.263,
-        "groupMrr5": 0.263
+        "recall5": 0.4,
+        "coverage5": 0.4,
+        "mrr5": 0.273,
+        "groupMrr5": 0.273
       },
       "cross": {
         "count": 0,
@@ -158,10 +158,10 @@
       "token_safety": {
         "count": 5,
         "recall1": 0.2,
-        "recall5": 0.4,
-        "coverage5": 0.4,
-        "mrr5": 0.3,
-        "groupMrr5": 0.3
+        "recall5": 0.6,
+        "coverage5": 0.6,
+        "mrr5": 0.34,
+        "groupMrr5": 0.34
       },
       "workflow": {
         "count": 0,
@@ -175,7 +175,7 @@
   },
   "notes": [
     "dataset tool-discovery-kyberswap@kyberswap-v1, mode lexical, 20 cases evaluated.",
-    "overall recall@1 0.2, recall@5 0.35, coverage@5 0.35, mrr@5 0.263, groupMrr@5 0.263.",
+    "overall recall@1 0.2, recall@5 0.4, coverage@5 0.4, mrr@5 0.273, groupMrr@5 0.273.",
     "Measured delta: none, metrics are identical to the previous baseline."
   ]
 }
