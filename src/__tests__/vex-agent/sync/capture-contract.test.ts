@@ -134,11 +134,18 @@ describe("capture contract — structural coverage", () => {
     // real and irreversible consequence, but there is no chain, no signature
     // and no receipt - so it lands in the same "no portfolio impact, no
     // capture" class rather than in a new one invented for one tool.
+    // `virtuals.launch.preview` (PR-C3) is the pools preview's exact shape on a
+    // third launchpad: it writes an advisory `previewed` intent the database
+    // keeps non-live (migration 082's CHECK, which migration 110 leaves
+    // untouched), opens no key and sends nothing. Its three siblings are
+    // deliberately absent - `launch.execute` and `launch.cancel` broadcast, and
+    // `launch.status` is read-only and writes nothing at all.
     expect(getToolsByKind("utility").map(([id]) => id).sort()).toEqual([
       "launchpads.image_publish",
       "pools.launch_preview",
       "pools.launch_request_form",
       "trench.launch_request_form",
+      "virtuals.launch.preview",
     ]);
   });
 

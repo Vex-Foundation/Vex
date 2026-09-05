@@ -32,9 +32,14 @@ export function liveCatalogToolCount(): number {
  * every affected baseline was recaptured in the same change; 151 with the
  * pools.fun holder-rewards MUTATIONS (`pools.holder_rewards_claim`,
  * `pools.holder_rewards_distribute`), again two new identities on an existing
- * namespace, so a pure +2 and every affected baseline recaptured here.
+ * namespace, so a pure +2 and every affected baseline recaptured here; 155 with
+ * the Virtuals AGENT-LAUNCH family (`virtuals.launch.preview` / `.execute` /
+ * `.status` / `.cancel`) - four rather than two because the venue's launch
+ * takes two transactions and only the first is Vex's, so the state between
+ * them needs its own read and its own exit. Four new identities on an existing
+ * namespace, a pure +4, and every affected baseline recaptured in this change.
  */
-export const PINNED_LIVE_CATALOG_TOOL_COUNT = 151;
+export const PINNED_LIVE_CATALOG_TOOL_COUNT = 155;
 
 /**
  * The candidate count every dense and lexical measurement must have seen.

@@ -74,10 +74,50 @@ const POOLS_ATTRIBUTION_SIGN_SITE = resolve(
 );
 const POOLS_ATTRIBUTION_MESSAGE_BUILDER = resolve(ROOT, "tools/pools-fun/attribution.ts");
 
+/**
+ * The Virtuals agent-launch lane, admitted 2026-09-05 (PR-C3). A FOURTH
+ * text-signing site, and the reasoning is deliberately different from the
+ * pools one above.
+ *
+ * WHAT IT SIGNS. AgentScan's own canonical message,
+ * `VEX-attest:<chainId>:<lowercased token>` - the SAME shape trench.express
+ * signs, not a venue-prefixed variant. That is not a shortcut: the AgentScan
+ * attestation registry recovers a signer from exactly that string
+ * (`packages/contract/src/attest.ts`), and a signature over any other bytes is
+ * refused DEFINITIVELY - which is precisely why `pools_attest_signature`, over
+ * the domain-bound pools string, cannot be shipped there and why
+ * `launched_tokens` gained a third signature column at all (migration 110).
+ *
+ * WHY THE SHARED SHAPE IS NOT THE REPLAY HAZARD the pools comment describes.
+ * That hazard was two venues on ONE chain producing byte-identical strings for
+ * a badge claimed at a venue backend. This message binds a chain AND a token
+ * address, which is unique on its chain, and AgentScan dispatches its creation
+ * proof on the `launchpad` the claim is posted with - for Virtuals, the
+ * `preLaunch` transaction (`tx.from == recovered signer`, `tx.to` in the
+ * BondingV5 allowlist, a `PreLaunched` in the receipt). A trench signature
+ * re-presented as a Virtuals claim fails that proof, and the converse.
+ *
+ * WHY NOT REUSE THE TRENCH BUILDER. It pins the chain to `TRENCH_CHAIN_ID`,
+ * and Virtuals launches on Base 8453 as well as 4663; it also lives inside the
+ * subtree the Trench retirement removes. Importing it would couple a live money
+ * path to a lane being deleted, for a function that cannot express one of this
+ * lane's two chains.
+ *
+ * NOTE FOR THE POOLS LAUNCH LANE: pools.fun owes AgentScan the same canonical
+ * signature and has only its venue-prefixed one today. When that lands it
+ * should reuse THIS builder rather than mint a fifth literal owner.
+ */
+const VIRTUALS_ATTRIBUTION_SIGN_SITE = resolve(
+  ROOT,
+  "vex-agent/tools/protocols/virtuals/handlers/launch/attribute.ts",
+);
+const VIRTUALS_ATTEST_MESSAGE_BUILDER = resolve(ROOT, "tools/virtuals/launch/attest-message.ts");
+
 const ALLOWED_SIGNING_MODULES = [
   HANDSHAKE_SIGNING_MODULE,
   TRENCH_ATTRIBUTION_SIGN_SITE,
   POOLS_ATTRIBUTION_SIGN_SITE,
+  VIRTUALS_ATTRIBUTION_SIGN_SITE,
 ];
 
 /**
@@ -310,6 +350,7 @@ describe("signing-oracle guard — only the named modules may produce VEX-attest
     const attestLiteralElsewhere = findRawStringViolations(files, "VEX-attest:", [
       TRENCH_ATTRIBUTION_MESSAGE_BUILDER,
       POOLS_ATTRIBUTION_MESSAGE_BUILDER,
+      VIRTUALS_ATTEST_MESSAGE_BUILDER,
     ]);
     expect(attestLiteralElsewhere).toEqual([]);
 
