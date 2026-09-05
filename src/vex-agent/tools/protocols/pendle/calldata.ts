@@ -1,30 +1,30 @@
 /**
- * Pendle broadcast fund-safety extractor — PUBLIC BARREL.
+ * Pendle broadcast fund-safety extractor - PUBLIC BARREL.
  *
  * Before ANY Pendle broadcast, the chosen Convert route (or claim) is validated
  * against the caller's intent. Nothing is signed unless EVERY check passes; a
- * failure throws `PENDLE_UNSAFE_TX` (our own fixed text — the upstream body
+ * failure throws `PENDLE_UNSAFE_TX` (our own fixed text - the upstream body
  * never leaks here).
  *
  * The implementation was split by responsibility in R5a; this file keeps the
  * public contract so every existing import continues to resolve unchanged.
  * Reach for the module that owns what you are changing:
  *
- *   ./calldata/decode.ts      — "what does this calldata actually say?"
+ *   ./calldata/decode.ts      - "what does this calldata actually say?"
  *                               FULL ABI decode, the limit-fill and pendleSwap
  *                               invariants, and the recursive `callAndReflect`
  *                               walk.
- *   ./calldata/bind-route.ts  — "is this the trade the caller asked for?"
+ *   ./calldata/bind-route.ts  - "is this the trade the caller asked for?"
  *                               Router pin, sender/value/approval binds, the
  *                               intent↔calldata comparison, route selection.
- *   ./calldata/bind-reflect.ts— the same question for a `callAndReflect` body:
+ *   ./calldata/bind-reflect.ts - the same question for a `callAndReflect` body:
  *                               the per-chain reflector pin, the per-leg
  *                               receiver/market/spend binds, and the reflect
  *                               echo cross-check.
- *   ./calldata/price-floor.ts — "at a price they authorised?" The per-selector,
+ *   ./calldata/price-floor.ts - "at a price they authorised?" The per-selector,
  *                               per-field minimum-output binding table, the
  *                               floor arithmetic, and the `price_floor` refusal.
- *   ./calldata/bind-claim.ts  — the income-sweep claim, which has its own ABI,
+ *   ./calldata/bind-claim.ts  - the income-sweep claim, which has its own ABI,
  *                               its own response shape, and no route at all.
  */
 

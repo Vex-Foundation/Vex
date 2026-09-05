@@ -28,6 +28,7 @@ import { STUDIO_AGENT_IDS } from "./studio-agent-ids.js";
 import { sessionPermissionSchema } from "./sessions.js";
 import {
   studioFilesStatusSchema,
+  studioProjectRefreshFailureSchema,
   studioRenderOutcomeSchema,
 } from "./studio-installer.js";
 
@@ -228,38 +229,69 @@ export type ProjectUpdateScopeInput = z.infer<
   typeof projectUpdateScopeInputSchema
 >;
 
-/** `create` returns the full, freshly persisted project. */
-export const projectCreateResultSchema = projectDtoSchema;
-export type ProjectCreateResult = z.infer<typeof projectCreateResultSchema>;
-
 /**
- * `updateScope` returns the persisted project AND what the file reconciliation
- * that the edit triggered actually did (stage A5b).
+ * ONE RESULT SHAPE for every call that changes a project and then reconciles
+ * its files: `create`, `updateScope` and `repairFiles`.
  *
- * ONE RESULT, TWO FACTS, on purpose. A scope edit rewrites the files in the
- * user's repository, and those writes can refuse: a foreign entry at the Vex
- * path, a drifted managed block, a malformed config. Returning only the row
- * would show a green "saved" while a config the user is relying on was left
- * untouched. `render` is never optional and never empty - a run that rendered
- * nothing says so with `trigger: "superseded"`.
+ * ONE RESULT, THREE FACTS, on purpose.
+ *
+ *   - `project` is the row as Vex holds it. Whenever the caller could re-read
+ *     it after the file work, this is the RE-READ row: the render advances the
+ *     durable last-rendered marker, so returning the row as it looked before
+ *     the render would show "Vex has never completed a pass over these files"
+ *     directly above a report of the pass that just completed.
+ *   - `render` is what the reconciliation DID, per artifact. A create, a scope
+ *     edit and a repair all write into the user's repository, and those writes
+ *     can refuse: a foreign entry at the Vex path, a drifted managed block, a
+ *     malformed config. Returning only the row would show a green "saved" while
+ *     a config the user relies on was left untouched. It is never optional and
+ *     never empty - a run that rendered nothing says so through `trigger` and
+ *     `runFailure`.
+ *   - `refreshFailure` is the one case the first bullet cannot honour: the
+ *     change COMMITTED and the re-read did not answer. `project` is then the
+ *     committed row, which is real but may already be behind, and this field is
+ *     what lets the caller say so and refresh its caches instead of presenting
+ *     a possibly stale row as current. It is NOT a render failure and does not
+ *     share a field with one.
+ *
+ * The three inputs differ (`create` takes a name, `updateScope` takes an
+ * expected version, `repairFiles` takes an id) and the trigger recorded in
+ * `render` differs. The RESULT does not, because the user is owed the same
+ * answer from all three.
  */
-export const projectUpdateScopeResultSchema = z
+export const projectRenderEnvelopeSchema = z
   .object({
     project: projectDtoSchema,
     render: studioRenderOutcomeSchema,
+    refreshFailure: studioProjectRefreshFailureSchema.nullable(),
   })
   .strict();
+export type ProjectRenderEnvelope = z.infer<typeof projectRenderEnvelopeSchema>;
+
+/**
+ * `create` returns the envelope: the persisted project AND what the render
+ * that creating it triggered actually did.
+ *
+ * It used to return the project alone, and creation rendered nothing at all -
+ * so a dialog that promises "Vex writes an MCP config for each agent you
+ * select" produced a project whose every artifact read `missing`, and the only
+ * way to get the files the dialog had already promised was to find Repair.
+ */
+export const projectCreateResultSchema = projectRenderEnvelopeSchema;
+export type ProjectCreateResult = z.infer<typeof projectCreateResultSchema>;
+
+/** `updateScope` returns the same envelope. */
+export const projectUpdateScopeResultSchema = projectRenderEnvelopeSchema;
 export type ProjectUpdateScopeResult = z.infer<
   typeof projectUpdateScopeResultSchema
 >;
 
 /**
- * `repairFiles` returns the same pair: the project as it now reads, and what
- * the reconciliation did. Repair is the ONLY path that overwrites a drifted
- * managed block, which is why it is an explicit user action with its own
- * channel rather than a retry of `updateScope`.
+ * `repairFiles` returns the same envelope. Repair is the ONLY path that
+ * overwrites a drifted managed block, which is why it is an explicit user
+ * action with its own channel rather than a retry of `updateScope`.
  */
-export const projectRepairFilesResultSchema = projectUpdateScopeResultSchema;
+export const projectRepairFilesResultSchema = projectRenderEnvelopeSchema;
 export type ProjectRepairFilesResult = z.infer<
   typeof projectRepairFilesResultSchema
 >;
@@ -271,8 +303,10 @@ export {
   studioArtifactStatusSchema,
   studioFilesStatusSchema,
   studioInstallerWarningSchema,
+  studioProjectRefreshFailureSchema,
   studioRefusalReasonSchema,
   studioRenderOutcomeSchema,
+  studioRunFailureSchema,
 } from "./studio-installer.js";
 export type {
   ProjectRepairFilesInput,
@@ -281,8 +315,11 @@ export type {
   StudioArtifactStatus,
   StudioFilesStatus,
   StudioInstallerWarning,
+  StudioProjectRefreshFailure,
   StudioRefusalReason,
   StudioRenderOutcome,
+  StudioRenderTriggerName,
+  StudioRunFailure,
 } from "./studio-installer.js";
 
 /** `get` returns null for an unknown id (the caller held a stale view). */

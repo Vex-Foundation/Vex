@@ -1,5 +1,5 @@
 /**
- * Bridge capability snapshot — the live data behind the DYNAMIC bridge-routing
+ * Bridge capability snapshot - the live data behind the DYNAMIC bridge-routing
  * prompt section (R13 / B7).
  *
  * WHY THIS EXISTS: the system prompt's bridge chain list must reflect Khalani's
@@ -10,7 +10,7 @@
  *
  * TRUST BOUNDARY: the rendered list lands in the SYSTEM PROMPT of a financial
  * agent. LIVE provider data decides PRESENCE; a TRUSTED curated map decides the
- * WORDING — arbitrary provider name strings never enter the prompt. The result
+ * WORDING - arbitrary provider name strings never enter the prompt. The result
  * is sanitized defensively anyway (family-filtered to eip155 + solana,
  * curated-mapped, control chars stripped, deduped, sorted, length-bounded).
  *
@@ -30,14 +30,14 @@ import logger from "@utils/logger.js";
 
 // ── Freshness thresholds (B7) ───────────────────────────────────────
 
-/** Single-flight refresh cadence — a snapshot younger than this is not re-fetched. */
+/** Single-flight refresh cadence - a snapshot younger than this is not re-fetched. */
 export const BRIDGE_CAPABILITY_REFRESH_TTL_MS = 15 * 60_000;
 /** Older than this → still rendered, but with an explicit staleness note. */
 export const BRIDGE_CAPABILITY_STALE_AFTER_MS = 60 * 60_000;
 /** Older than this (or never fetched) → the conservative fallback line only. */
 export const BRIDGE_CAPABILITY_ABSENT_AFTER_MS = 24 * 60 * 60_000;
 
-/** Robinhood Chain — Khalani does not cover it; Relay is the only bridge route. */
+/** Robinhood Chain - Khalani does not cover it; Relay is the only bridge route. */
 const ROBINHOOD_CHAIN_ID = 4663;
 /** Defensive ceiling on the rendered chain count (guards an oversized upstream list). */
 const MAX_BRIDGE_CHAIN_NAMES = 64;
@@ -46,7 +46,7 @@ const MAX_BRIDGE_CHAIN_NAMES = 64;
 //
 // Keyed by live Khalani `/v1/chains` ids (ground truth 2026-07-23). LIVE data
 // decides which of these appear; this map decides the WORDS. A live id absent
-// here is OMITTED (+ a debug log) — an unknown provider name never reaches the
+// here is OMITTED (+ a debug log) - an unknown provider name never reaches the
 // system prompt. eip155 + solana only (bitcoin id 0 / tron id 728126428 are
 // served live but Vex cannot sign them, and the Khalani client already skips
 // those families; the family filter below is defense-in-depth).
@@ -100,7 +100,7 @@ export interface BridgeCapabilityFetchers {
 // ── Pure projections (system-prompt trust boundary) ─────────────────
 
 /**
- * Strip control chars + newlines and trim — the last defense before a name
+ * Strip control chars + newlines and trim - the last defense before a name
  * reaches the system prompt. Curated names are already clean; this is the
  * boundary contract, not a bet on the input.
  */
@@ -182,7 +182,7 @@ function defaultFetchers(): BridgeCapabilityFetchers {
 }
 
 /**
- * One refresh attempt. NEVER throws — a Khalani fetch failure keeps the last
+ * One refresh attempt. NEVER throws - a Khalani fetch failure keeps the last
  * good snapshot untouched; a Relay health failure conservatively drops the
  * Robinhood line. `lastSuccessfulAt` advances only when Khalani chains (the
  * mandatory payload) are fetched successfully.
@@ -193,7 +193,7 @@ async function performRefresh(): Promise<void> {
     khalaniChains = await fetchers.fetchKhalaniChains();
   } catch (err) {
     // Scrub through the canonical boundary (m1): a provider error can carry URLs,
-    // bodies, and auth headers — never log it bare.
+    // bodies, and auth headers - never log it bare.
     logger.warn("bridge_capability.khalani_refresh_failed", {
       error: summarizeProtocolError(err).message,
     });
@@ -238,7 +238,7 @@ export function triggerBridgeCapabilityRefresh(nowMs: number = Date.now()): Prom
 /**
  * Prompt-seam accessor: kicks a background single-flight refresh when stale and
  * returns the CURRENT classified view immediately (stale-while-revalidate). Never
- * blocks on the network, never throws — a cold start renders the fallback line
+ * blocks on the network, never throws - a cold start renders the fallback line
  * while the first fetch settles for the next turn.
  */
 export async function getBridgeCapabilityView(nowMs: number = Date.now()): Promise<BridgeCapabilityView> {

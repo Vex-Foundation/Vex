@@ -13,6 +13,32 @@
 import type { JsonSchema } from "../../tools/types.js";
 
 /**
+ * THE WHOLE-TEXT BOUND on an always-loaded description, in CHARACTERS.
+ *
+ * MEASURED, not chosen (clarity review 2026-09-03, prompt 4): Claude Code cuts
+ * every MCP tool description at exactly 2048 characters of the original string
+ * and appends `… [truncated]`. Four independent counts on four different tools
+ * landed on the same 2048, mid-word each time, and the part lost was the tail -
+ * the RETURNS section of six always-loaded descriptions.
+ *
+ * The cut is the CLIENT's, so Vex cannot make it non-destructive; what Vex owns
+ * is the authoring. The budget is the consumer's property (CLAUDE.md,
+ * "FORBIDDEN: silent content cutting"), so an always-loaded description is
+ * written to fit whole rather than shipped to be cut: the risk class and the
+ * preconditions still lead, and the field-by-field result list moves out to
+ * `vex_ToolDescribe`, whose RESULT no client truncates.
+ *
+ * CHARACTERS, not bytes, because that is what was measured. The hot set is
+ * NOT pure ASCII: `SwapExecute` and `SwapQuote` carry a U+2192 arrow, so they
+ * sit at 2045 characters and 2047 UTF-8 bytes. The lint asserts BOTH counts
+ * against the bound, so a non-ASCII edit cannot cross it in bytes unnoticed.
+ *
+ * The bound applies to the HOT SET only. A protocol description is loaded by a
+ * client's own tool-search step, after which nothing re-cuts it.
+ */
+export const ALWAYS_LOADED_DESCRIPTION_MAX_CHARACTERS = 2048;
+
+/**
  * The MCP tool annotations Vex emits, pinned to owner decision O7.
  *
  * DELIBERATELY only two fields. `idempotentHint` and `openWorldHint` are
@@ -56,8 +82,10 @@ export interface StudioTool {
   /**
    * The WHOLE description, exactly as the registry or the canonical protocol
    * projection produces it. Never cut here: O23 puts the critical facts first
-   * and makes the 2000-byte budget a lint over the source text, not a slice at
-   * this boundary.
+   * and makes the 2000-byte head budget a lint over the source text, not a
+   * slice at this boundary, and an always-loaded description is additionally
+   * authored to fit whole inside
+   * {@link ALWAYS_LOADED_DESCRIPTION_MAX_CHARACTERS}.
    */
   readonly description: string;
   /** The argument contract, from the same projection the in-app lane uses. */

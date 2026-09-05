@@ -8,7 +8,7 @@
  * own mount and unmount, and it registers a feed the store must cut.
  */
 
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useEffect, type JSX } from "react";
 import { BoardModalHost } from "../BoardModalHost.js";
@@ -20,22 +20,6 @@ import {
 import { boardRefOf, type BoardRef } from "../board-surface-contracts.js";
 import { useUiStore } from "../../../../stores/uiStore.js";
 import { boardSpec } from "./boardFixture.js";
-
-beforeAll(() => {
-  // jsdom ships HTMLDialogElement without showModal/close; lib.dom already
-  // types both, so the polyfill assigns real methods with no cast.
-  const proto = HTMLDialogElement.prototype;
-  if (typeof proto.showModal !== "function") {
-    proto.showModal = function showModalPolyfill(this: HTMLDialogElement): void {
-      this.setAttribute("open", "");
-    };
-  }
-  if (typeof proto.close !== "function") {
-    proto.close = function closePolyfill(this: HTMLDialogElement): void {
-      this.removeAttribute("open");
-    };
-  }
-});
 
 function ref(sessionId: string, messageId: number): BoardRef {
   return boardRefOf(

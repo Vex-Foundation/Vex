@@ -1,24 +1,24 @@
 /**
- * Solana/Jupiter prediction-market PROJECTOR — which fields an agent sees.
+ * Solana/Jupiter prediction-market PROJECTOR - which fields an agent sees.
  *
- * Extracted from `handlers/predict.ts` — mirrors the `core.ts` → `projectors.ts`
+ * Extracted from `handlers/predict.ts` - mirrors the `core.ts` → `projectors.ts`
  * / `lend.ts` → `lend-projector.ts` split already used by the sibling
  * token/lend domains in this package.
  *
  * ONE responsibility: `toPredictView` and the `project*` functions curate
  * events/positions/orders/trades/profiles down to the fields the agent reasons
- * over — they carry heavy, agent-irrelevant payload otherwise (imageUrl /
+ * over - they carry heavy, agent-irrelevant payload otherwise (imageUrl /
  * rulesPdf blobs, marketResultPubkey account addresses, metadata noise).
  *
- * The SECOND responsibility this file used to carry — what the numbers MEAN
- * (micro-USD conversion, token-unit labelling, history-event money) — now
+ * The SECOND responsibility this file used to carry - what the numbers MEAN
+ * (micro-USD conversion, token-unit labelling, history-event money) - now
  * lives in the sibling `predict-money.ts`. Projection decides what to show;
  * that module decides what a number is. `convertPredictionHistoryEventMoney`
  * and `microUsdToDollarString` moved there with it.
  *
  * NOT advertised as guaranteed output (verified against manifest + discovery):
  * imageUrl, rulesPdf, marketResultPubkey, event metadata.{slug,series,closeTime,imageUrl}.
- * An event's `markets` array is opt-in (W1-C, default false) — see
+ * An event's `markets` array is opt-in (W1-C, default false) - see
  * `PredictViewOptions.includeMarkets` below.
  */
 
@@ -89,7 +89,7 @@ function projectEventMetadata(metadata: unknown): Record<string, unknown> | unde
 /**
  * Curate market metadata, keeping title/subtitle/eventId. Used ONLY for the
  * genuinely-nested `marketMetadata` REFERENCE object embedded in Order/
- * Position/History rows — NOT for a top-level Market object, which is FLAT
+ * Position/History rows - NOT for a top-level Market object, which is FLAT
  * on the wire (see `projectMarket` below).
  */
 function projectMarketMetadata(metadata: unknown): Record<string, unknown> | undefined {
@@ -101,7 +101,7 @@ function projectMarketMetadata(metadata: unknown): Record<string, unknown> | und
  * Curate a single market: keep marketId/status/result/timings/title + the
  * converted pricing; drop imageUrl + marketResultPubkey.
  *
- * FIXTURE-CORRECTED (W1-A, 2026-07-23): the wire Market object is FLAT — no
+ * FIXTURE-CORRECTED (W1-A, 2026-07-23): the wire Market object is FLAT - no
  * nested `metadata` key exists at all (three independent live captures
  * confirmed this). The pre-fixture handler read `title`/`status`/`result` via
  * a `market.metadata` sub-object that is always `undefined` in production,
@@ -122,27 +122,27 @@ function projectMarket(market: unknown): unknown {
  * Lean-markets toggle (W1-C). `includeMarkets` here is OUR client-side
  * decision of whether to keep the already-fetched markets in the
  * agent-facing view. This projector is the enforcement point for the
- * agent-facing contract regardless of what the provider returns — it never
+ * agent-facing contract regardless of what the provider returns - it never
  * fabricates a `markets` array that was not actually fetched (see
  * `projectEvent`'s `Array.isArray` guard below).
  *
  * CORRECTED (F2, see fixtures/prediction-events-search.meta.md CORRECTION):
- * the original "the provider ignores includeMarkets — three captures were
- * byte-for-byte identical" claim (W0-D, re-affirmed W1-A) was WRONG — a
+ * the original "the provider ignores includeMarkets - three captures were
+ * byte-for-byte identical" claim (W0-D, re-affirmed W1-A) was WRONG - a
  * rate-limit artifact of keyless 0.5-RPS probing. Re-verified with 4s
  * spacing: `includeMarkets=false` DOES omit markets upstream (897 B vs
  * 2361 B); omitted defaults to `true` server-side.
  *
  * TRANSPORT OPTIMIZATION (P1): `.events`/`.event` (`handlers/predict.ts`) now
  * pass the agent's actual `includeMarkets` value upstream instead of always
- * requesting `true` — the provider genuinely honors it, so a lean request no
+ * requesting `true` - the provider genuinely honors it, so a lean request no
  * longer fetches-then-discards the markets array. `.search`/`.suggestedEvents`
  * still cannot: neither the docs nor the SDK's params types expose an
  * `includeMarkets` query param on `/events/search` or `/events/suggested`
  * (LIVE-GATE FIX 1: pubkey moved from a path segment to a query param, see
  * `client/read.ts`) at all. Either way, this projector's own
  * `options.includeMarkets` filtering is unaffected by what the provider
- * actually sent — the agent-facing contract stays identical.
+ * actually sent - the agent-facing contract stays identical.
  */
 export interface PredictViewOptions {
   /** Keep each event's nested `markets[]` in the projected view. Default false (lean). */
@@ -163,7 +163,7 @@ function projectEvent(event: Record<string, unknown>, options: PredictViewOption
  * Curate a single position: keep exposure/PnL/claim fields (money converted)
  * + curated metadata; drop noise. `contractsMicro`/`contractsDecimal` are
  * preserved WHEN the wire response includes them (F2): the docs mark the
- * bare legacy `contracts` field "must not be used for accounting" — dropping
+ * bare legacy `contracts` field "must not be used for accounting" - dropping
  * its exact-accounting siblings here would silently degrade every position
  * to that imprecise legacy count. Both are optional on the wire type;
  * `pick()` only keeps a key that is actually present, so an older response
@@ -197,10 +197,10 @@ const ORDER_MONEY_FIELDS = [
  * Curate a single prediction Order (`GET /orders`, `GET /orders/{orderPubkey}`,
  * W1-D): converts its money fields to the W1-B convention and curates the
  * nested `eventMetadata`/`marketMetadata` refs the same way `projectPosition`
- * already does, then drops `bump` (PDA seed) + `marketIdHash` — pure
+ * already does, then drops `bump` (PDA seed) + `marketIdHash` - pure
  * internal-account noise with zero decision-relevant content for an agent
  * (owner rule: field projection is always allowed). This is a brand-new
- * tool's output shape — unlike `solana.predict.market` (which deliberately
+ * tool's output shape - unlike `solana.predict.market` (which deliberately
  * stays raw, W1-B, to avoid narrowing an ALREADY-established agent-facing
  * contract), there is no pre-existing shape to break here, so building it on
  * the domain's established curated-projection convention is the safe
@@ -224,7 +224,7 @@ export function projectPredictionOrder(order: JupiterPredictionOrder): Record<st
  * Convert a global trade-feed row's money fields (`GET /trades`, W1-D):
  * `amountUsd`/`priceUsd` follow the same domain-wide "all USD fields are
  * micro-USD" convention (docs §2) as every other endpoint. No field-set
- * change beyond the money conversion — every other field (ids, side, action,
+ * change beyond the money conversion - every other field (ids, side, action,
  * titles, imageUrl) passes through untouched.
  */
 export function projectPredictionTrade(trade: JupiterPredictionTrade): Record<string, unknown> {
@@ -244,11 +244,11 @@ const PROFILE_MONEY_FIELDS = [
 /**
  * Convert a trader Profile's money fields to the W1-B convention.
  * `predictionsCount`/`correctPredictions`/`wrongPredictions`/
- * `totalActiveContracts`(`Micro`/`Decimal`) pass through untouched — these are
+ * `totalActiveContracts`(`Micro`/`Decimal`) pass through untouched - these are
  * quantity/count fields, not USD amounts (no `Usd` suffix), and
  * `totalActiveContracts` already carries its OWN provider-supplied
  * `*Micro`/`*Decimal` contract-quantity siblings per the docs'
- * three-parallel-representation convention — a different field family from
+ * three-parallel-representation convention - a different field family from
  * the money convention this function applies.
  */
 export function projectPredictionProfile(profile: JupiterPredictionProfileResponse): Record<string, unknown> {
@@ -274,11 +274,11 @@ const LEADERBOARD_ENTRY_MONEY_FIELDS = [
  * untouched: unlike every other money field in this domain it carries no
  * confirmed micro-USD unit evidence (it's a percentage, not a USD amount, and
  * neither the docs nor a fixture clarify whether it's already a plain decimal
- * percent string or some other scaled representation) — guessing risks
+ * percent string or some other scaled representation) - guessing risks
  * fabricating a wrong number, the same reasoning W1-B applied to History's
  * unconfirmed `realizedPnl`/`transferAmountToken` fields. `predictionsCount`/
  * `correctPredictions`/`wrongPredictions`/`period`/`periodStart`/`periodEnd`
- * are quantity/label fields, not money — also left untouched.
+ * are quantity/label fields, not money - also left untouched.
  */
 export function projectPredictionLeaderboardEntry(
   entry: JupiterPredictionLeaderboardEntry,
@@ -311,7 +311,7 @@ export function projectPredictionLeaderboardsSummary(
  * Returns the input untouched for non-object values so it is safe to map over
  * arrays of mixed/unknown shape without producing `null` holes.
  * `options.includeMarkets` only affects the event branch (positions never
- * carry a `markets` array) — see {@link PredictViewOptions}.
+ * carry a `markets` array) - see {@link PredictViewOptions}.
  */
 export function toPredictView(item: unknown, options: PredictViewOptions = {}): unknown {
   if (!isRecord(item)) return item;

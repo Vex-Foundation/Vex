@@ -1,16 +1,16 @@
 /**
- * `pendle.claim` — the INCOME SWEEP (`redeemDueInterestAndRewardsV2`): accrued
+ * `pendle.claim` - the INCOME SWEEP (`redeemDueInterestAndRewardsV2`): accrued
  * YT interest + rewards and LP rewards for the wallet's positions on ONE chain,
  * in a single transaction.
  *
- * Which markets it sweeps — and which eligible ones the per-transaction cap
- * leaves out, always reported, never silent — is owned by `../../claim-targets.ts`.
+ * Which markets it sweeps - and which eligible ones the per-transaction cap
+ * leaves out, always reported, never silent - is owned by `../../claim-targets.ts`.
  * There is nothing to quote (no prequote), but the claim is approval-gated,
  * Router-pinned, and FULL-decoded via `assertClaimSafe` before signing: funds
  * land on the wallet by protocol (no receiver arg exists), the only external-call
  * surface (`swaps`) is bound empty, and the ONLY allowance a claim may grant is
  * the market's own SY, exact-amount, to the pinned Router (source-verified: the
- * Router pulls the freshly-redeemed SY interest — ActionMiscV3.sol:117-126).
+ * Router pulls the freshly-redeemed SY interest - ActionMiscV3.sol:117-126).
  */
 
 import { getAddress, type Hex } from "viem";
@@ -70,7 +70,7 @@ export async function pendleClaim(p: Record<string, unknown>, context: ProtocolE
     }
 
     // Every claim states what it is NOT claiming (eligible total + the exact
-    // markets left out) — a sweep that silently stops at its cap is a lie by
+    // markets left out) - a sweep that silently stops at its cap is a lie by
     // omission when the manifest says "every held market".
     if (p.dryRun === true) {
       return ok({
@@ -116,34 +116,34 @@ export async function pendleClaim(p: Record<string, unknown>, context: ProtocolE
     const intent: PendleClaimIntent = { wallet: signerAddr, intendedYts, intendedMarkets };
     const claim = assertClaimSafe(intent, response);
 
-    // Codex: never broadcast an all-empty effective claim — nothing is accruing.
+    // Codex: never broadcast an all-empty effective claim - nothing is accruing.
     if (claim.yts.length === 0 && claim.markets.length === 0) {
       return ok({ claimed: false, chain: chainSlug, reason: "no accrued interest or rewards to claim right now" });
     }
 
     const { publicClient, walletClient } = getPendleEvmClients(chainId, signer.privateKey as Hex);
     // Grant EXACTLY the validated SY approvals (source-verified: the Router pulls
-    // the freshly-redeemed SY interest from the wallet — ActionMiscV3.sol:124).
+    // the freshly-redeemed SY interest from the wallet - ActionMiscV3.sol:124).
     // `assertClaimSafe` already restricted these to the intended markets' SYs;
     // the spender is hard-pinned to the Router inside ensurePendleAllowanceExact.
     for (const approval of response.tokenApprovals) {
       await ensurePendleAllowanceExact(publicClient, walletClient, getAddress(approval.token), PENDLE_ROUTER, BigInt(approval.amount));
     }
     /**
-     * THE CREDIT ANCHOR. A claim has NO input leg — nothing is spent — so the
+     * THE CREDIT ANCHOR. A claim has NO input leg - nothing is spent - so the
      * only evidence that it did anything is a decoded ERC-20 CREDIT to the
      * wallet, and the decoder needs a token to prove that credit against.
      *
      * A sweep can span up to `MAX_CLAIM_MARKETS` markets, but migration 053
      * binds the Option-C second-leg columns to `yield_py`/`yield_lp` ONLY, so a
      * claim row can name exactly ONE. It names the first DECODED tuple's
-     * `tokenRedeemSy` — the market's underlying, and by `assertClaimSafe`'s own
+     * `tokenRedeemSy` - the market's underlying, and by `assertClaimSafe`'s own
      * bind the ONLY token the Router may redeem that SY into, i.e. exactly what
      * lands in the wallet (ActionMiscV3.sol:117-126).
      *
      * This deliberately UNDERSTATES: a multi-market sweep whose first market
      * accrued nothing stays `pending` even though a later one paid. That is the
-     * fail-safe direction — an unproven claim reported as pending costs a
+     * fail-safe direction - an unproven claim reported as pending costs a
      * re-check, whereas a claim confirmed on an unproven credit is a fabricated
      * income record. Widening it needs a second-leg role binding, not a guess.
      */
@@ -183,7 +183,7 @@ export async function pendleClaim(p: Record<string, unknown>, context: ProtocolE
       success: true,
       output: JSON.stringify({
         txHash, claimed: true, chain: chainSlug,
-        // The PROVEN credit, decoded from the receipt — and the one token it was
+        // The PROVEN credit, decoded from the receipt - and the one token it was
         // proven against, so "0.42" is never mistaken for the whole sweep.
         creditToken: creditAnchor,
         executedCredit: claimedHuman.toString(),
@@ -204,7 +204,7 @@ export async function pendleClaim(p: Record<string, unknown>, context: ProtocolE
     };
   } catch (err) {
     // H-4: a throw AFTER the node returned a hash must never read as "nothing
-    // happened" — the sweep may already be on-chain.
+    // happened" - the sweep may already be on-chain.
     if (txHash !== undefined) return broadcastUnconfirmedFailure(toolId, txHash, err);
     return fail(`Pendle claim failed (${failureDetail(toolId, err)})`);
   }

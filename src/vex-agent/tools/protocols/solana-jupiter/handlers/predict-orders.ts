@@ -1,7 +1,7 @@
 /**
  * Solana/Jupiter prediction pre-trade visibility & order handlers (W1-D).
  *
- * New read-only tools wired from the existing SDK surface — orderbook,
+ * New read-only tools wired from the existing SDK surface - orderbook,
  * trading-status, orders (list/single/status), and the global trade feed.
  * Every SDK client/service function these call already existed
  * (`prediction-api/client/read.ts` + `service.ts`); this card only adds the
@@ -10,7 +10,7 @@
  * (reject-not-clamp `limit`/`offset` window, shared via
  * `resolvePredictionWindow`).
  *
- * Kept in a SIBLING file, not `handlers/predict.ts` — that file is already at
+ * Kept in a SIBLING file, not `handlers/predict.ts` - that file is already at
  * 470/500 lines per W1-C's own delta log, and `recon-prediction-packets.md`
  * (Packet D) explicitly recommends a new handler file here to stay under the
  * factory's 500-line hard cap.
@@ -43,7 +43,7 @@ export const PREDICT_ORDER_HANDLERS: Record<string, ProtocolHandler> = {
     if (!marketId) return fail("Missing required: marketId");
     const orderbook = await wrapPredictionRead(() => getJupiterPredictionOrderbook(marketId));
     // Docs: the response body can be a literal `null` when Jupiter's own
-    // upstream orderbook-data fetch fails (its documented 502 semantic) — a
+    // upstream orderbook-data fetch fails (its documented 502 semantic) - a
     // real, expected "no data" case. `{...null}` silently degrades to an
     // empty object in JS, so this is checked explicitly instead of letting
     // that happen.
@@ -53,10 +53,10 @@ export const PREDICT_ORDER_HANDLERS: Record<string, ProtocolHandler> = {
       );
     }
     // yes_dollars/no_dollars are already decimal-dollar mirrors of yes/no
-    // (native price-level units) — no unit-scale risk here, unlike W1-B's
+    // (native price-level units) - no unit-scale risk here, unlike W1-B's
     // targets (see predict-projector.ts's header + W1-B's DOCS-GAP note on
     // orderbook's native array NOT being a linear micro-USD scale). Passed
-    // through in full — depth-array length is uncapped upstream (no
+    // through in full - depth-array length is uncapped upstream (no
     // limit/depth param exists) and the owner rule forbids inventing a
     // silent client-side cap.
     return ok(orderbook);
@@ -74,7 +74,7 @@ export const PREDICT_ORDER_HANDLERS: Record<string, ProtocolHandler> = {
     const window = resolvePredictionWindow(p);
     if (!window.ok) return window.result;
     // No server-side status/marketId/side filter exists upstream (confirmed
-    // absent from the OpenAPI spec) — this returns the owner's full order
+    // absent from the OpenAPI spec) - this returns the owner's full order
     // list within the requested window, unfiltered beyond that.
     const result = await wrapPredictionRead(() => getJupiterPredictionOrders({
       ownerPubkey: owner,
@@ -99,7 +99,7 @@ export const PREDICT_ORDER_HANDLERS: Record<string, ProtocolHandler> = {
   "solana.predict.trades": async (p) => {
     // Owner rule: no default-N truncation. `/trades` is a GLOBAL, unfiltered
     // feed with ZERO upstream params (no owner/market/time scope, no
-    // pagination) — unlike `.orders`/`.events`/`.positions`/`.history`,
+    // pagination) - unlike `.orders`/`.events`/`.positions`/`.history`,
     // each naturally scoped to one wallet or one market, silently defaulting
     // this window to 20 would truncate an unbounded response the agent never
     // asked to bound. `limit` is REQUIRED here (F2); `resolvePredictionWindow`'s
@@ -112,7 +112,7 @@ export const PREDICT_ORDER_HANDLERS: Record<string, ProtocolHandler> = {
     const window = resolvePredictionWindow(p);
     if (!window.ok) return window.result;
     // `/trades` is a global, unfiltered feed with ZERO upstream params (no
-    // owner/market/time scope, no pagination) — the whole feed is fetched
+    // owner/market/time scope, no pagination) - the whole feed is fetched
     // every call regardless, and THIS handler imposes the agent-controlled
     // window client-side. Not a silent/undisclosed cap: the manifest states
     // the required window explicitly (same convention as every other list

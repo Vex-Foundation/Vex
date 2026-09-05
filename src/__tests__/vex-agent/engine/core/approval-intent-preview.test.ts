@@ -1,17 +1,43 @@
 /**
- * Approval intent preview + policy snapshot builders — pure-function tests.
+ * The approval intent preview builder - pure-function tests.
  *
  * Puzzle 5 phase 2 (2026-05-23). Pins the renderer-safe projection:
  * allow-listed keys only, coerced scalars, no nested blobs / bigints / leaks.
+ *
+ * Its two siblings own the other two builders in the same module, split out
+ * when this file passed the 750-line gate (2026-09-04):
+ * `approval-intent-preview-policy-snapshot.test.ts` and
+ * `approval-intent-preview-client-name.test.ts`.
  */
 
 import { describe, it, expect } from "vitest";
-import type { InternalToolContext } from "@vex-agent/tools/internal/types.js";
-import { makeTestContext } from "../../tools/_test-context.js";
-import {
-  buildIntentPreview,
-  buildPolicySnapshot,
-} from "@vex-agent/engine/core/approval-intent-preview.js";
+import { buildIntentPreview } from "@vex-agent/engine/core/approval-intent-preview.js";
+
+/**
+ * The Vex fee statement a matched quote made, as the prequote gate hands it to
+ * the card. It is HOST-SIDE data: it never comes from `args`, which is the
+ * whole reason a spoofed `feeBps` cannot move the line below.
+ */
+function boundVexFee(
+  overrides: Record<string, unknown> = {},
+): NonNullable<Parameters<typeof buildIntentPreview>[2]>["vexFee"] {
+  return {
+    v: "vex-fee-v1",
+    charged: true,
+    bps: 25,
+    chargedOn: "currency_in",
+    tokenAddress: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    tokenSymbol: "USDC",
+    tokenDecimals: 6,
+    feeAmountRaw: "2500",
+    feeAmountDecimal: "0.0025",
+    receiver: "0xTREASURY",
+    totalDebitedRaw: "1000000",
+    netAmountRaw: "997500",
+    collection: "separate_transfer_after_success",
+    ...overrides,
+  } as NonNullable<Parameters<typeof buildIntentPreview>[2]>["vexFee"];
+}
 
 describe("buildIntentPreview", () => {
   it("returns toolName + allow-listed criticalArgs for a wallet transfer call", () => {
@@ -44,33 +70,197 @@ describe("buildIntentPreview", () => {
     expect(preview.criticalArgs.tokenIn).toBe("USDC");
   });
 
-  it("itemises the Vex fee on an EVM swap card, from OUR rate not the model's", () => {
+  it("itemises the Vex fee on an EVM swap card, from the matched quote not the model", () => {
+    const preview = buildIntentPreview(
+      "kyberswap.swap.execute",
+      {
+        chain: "base",
+        tokenIn: "ETH",
+        tokenOut: "0xdeadbeef",
+        amountIn: "1.5",
+        feeBps: 9999,
+        feeReceiver: "0xattacker",
+      },
+      { vexFee: boundVexFee({ collection: "inside_route" }) },
+    );
+    expect(preview.criticalArgs.vexFee).toContain("0.25% (25 bps)");
+    // The exact figures the quote committed to, with what is needed to read them.
+    expect(preview.criticalArgs.vexFee).toContain("0.0025 USDC | 2500 raw units | 6 decimals");
+    expect(preview.criticalArgs.vexFee).toContain("997500 raw units are swapped");
+    expect(preview.criticalArgs.vexFee).toContain("paid to 0xTREASURY");
+    // The spoof attempt reaches neither the fee line nor any other arg.
+    expect(preview.criticalArgs.vexFee).not.toContain("9999");
+    expect(preview.criticalArgs.vexFee).not.toContain("0xattacker");
+    expect(preview.criticalArgs).not.toHaveProperty("feeBps");
+    expect(preview.criticalArgs).not.toHaveProperty("feeReceiver");
+  });
+
+  it("states NO fee line for a fee-bearing venue when the channel carries nothing", () => {
+    // The args-derived line is gone for these ids: a card that recomputed the
+    // fee from `amountIn` is exactly the second derivation this channel removed.
+    // In production the gate refuses such a call outright, so no card is built.
     const preview = buildIntentPreview("kyberswap.swap.execute", {
       chain: "base",
       tokenIn: "ETH",
       tokenOut: "0xdeadbeef",
       amountIn: "1.5",
-      feeBps: 9999,
-      feeReceiver: "0xattacker",
     });
-    expect(preview.criticalArgs.vexFee).toContain("0.25% (25 bps)");
-    expect(preview.criticalArgs.vexFee).toContain("0.00375 ETH");
-    // The spoof attempt reaches neither the fee line nor any other arg.
-    expect(preview.criticalArgs.vexFee).not.toContain("9999");
-    expect(preview.criticalArgs).not.toHaveProperty("feeBps");
-    expect(preview.criticalArgs).not.toHaveProperty("feeReceiver");
+    expect(preview.criticalArgs).not.toHaveProperty("vexFee");
   });
 
-  it("projects a bridge's amountRaw AND its fee — the amount being signed", () => {
-    const preview = buildIntentPreview("relay.bridge", {
-      fromChain: "base",
-      toChain: "arbitrum",
-      fromToken: "0xUSDC",
-      toToken: "0xUSDC",
-      amountRaw: "1000000",
+  it("keeps the generic swap card at its current supplied-args and quote boundary", () => {
+    const preview = buildIntentPreview(
+      "kyberswap.swap.execute",
+      {
+        chain: "base",
+        tokenIn: "0x1111111111111111111111111111111111111111",
+        tokenOut: "0x2222222222222222222222222222222222222222",
+        amountIn: "1.5",
+      },
+      {
+        quoteBinding: {
+          cardVersion: "kyber-quote-v1",
+          snapshotId: "prequote-1",
+          digest: "a".repeat(64),
+          approvedAmountOutHuman: "2.5",
+          approvedMinOutHuman: "2.4",
+          approvedMinOutRaw: "2400000",
+          tokenOutSymbol: "QUOTE_TIME_SYMBOL",
+          effectiveSlippageBps: 400,
+          expiresAt: "2026-08-31T12:00:00.000Z",
+        },
+      },
+    );
+
+    expect(preview.criticalArgs).toMatchObject({
+      chain: "base",
+      tokenIn: "0x1111111111111111111111111111111111111111",
+      tokenOut: "0x2222222222222222222222222222222222222222",
+      amountIn: "1.5",
     });
+    expect(preview.criticalArgs.quoteBinding).toContain("QUOTE_TIME_SYMBOL");
+    expect(preview.criticalArgs).not.toHaveProperty("tokenInDecimals");
+    expect(preview.criticalArgs).not.toHaveProperty("tokenOutDecimals");
+    expect(preview.criticalArgs).not.toHaveProperty("amountInRaw");
+  });
+
+  it("projects a bridge's amountRaw AND its fee, the amount being signed", () => {
+    const preview = buildIntentPreview(
+      "relay.bridge",
+      {
+        fromChain: "base",
+        toChain: "arbitrum",
+        fromToken: "0xUSDC",
+        toToken: "0xUSDC",
+        amountRaw: "1000000",
+      },
+      { vexFee: boundVexFee() },
+    );
     expect(preview.criticalArgs.amountRaw).toBe("1000000");
-    expect(preview.criticalArgs.vexFee).toContain("2500 raw units of fromToken");
+    expect(preview.criticalArgs.vexFee).toContain("2500 raw units");
+    expect(preview.criticalArgs.vexFee).toContain("997500 raw units are bridged");
+  });
+
+  /**
+   * THE DEFECT THIS PINS (live test pass 2, I-2): a real approval card for a
+   * 1 USDC bridge raised over MCP carried no fee line at all. The MCP surface
+   * exports the ACTION ALIAS `BridgeExecute`, admission never rewrites the call
+   * name, and the alias router resolves the venue later and asynchronously, so
+   * the dotted venue id the fee table was keyed on never reached it. A human
+   * was asked to approve a transfer whose 25 bps Vex fee was itemised nowhere.
+   *
+   * Revert the alias cases in `approval-vex-fee.ts` and these go red.
+   */
+  it.each([
+    ["BridgeExecute", "the alias the MCP surface actually exports"],
+    ["BridgeExecuteRelay", "the venue-pinned alias"],
+    ["relay.bridge", "the resolved venue id"],
+    ["khalani.bridge", "the other resolved venue id"],
+  ])("itemises the bridge fee for %s (%s)", (toolName) => {
+    const preview = buildIntentPreview(
+      toolName,
+      {
+        fromChain: "8453",
+        toChain: "42161",
+        fromToken: "0xUSDC",
+        toToken: "0xUSDC",
+        amountRaw: "1000000",
+      },
+      { vexFee: boundVexFee() },
+    );
+    expect(preview.criticalArgs.vexFee).toContain("0.25% (25 bps)");
+    expect(preview.criticalArgs.vexFee).toContain("2500 raw units");
+    expect(preview.criticalArgs.vexFee).toContain("after the bridge confirms");
+  });
+
+  it("itemises the Uniswap fee under the alias name too", () => {
+    const preview = buildIntentPreview(
+      "SwapExecuteUniswap",
+      { chain: "base", tokenIn: "ETH", tokenOut: "0xUSDC", amountIn: "2" },
+      { vexFee: boundVexFee() },
+    );
+    expect(preview.criticalArgs.vexFee).toContain("after the swap confirms");
+  });
+
+  /**
+   * THE SECOND HALF OF THE SAME DEFECT (I-2). `SwapExecute` is the name the MCP
+   * surface exports for an EVM swap, and its card carried NO fee line at all,
+   * on the stated ground that the venue was not yet decided. It IS decided -
+   * `routeSwap` resolves it synchronously before the gate runs - and the typed
+   * channel is name-independent, so the resolved venue's own statement reaches
+   * the alias card unchanged.
+   */
+  it("itemises the fee for SwapExecute, the alias whose card carried none", () => {
+    const preview = buildIntentPreview(
+      "SwapExecute",
+      { chain: "base", tokenIn: "ETH", tokenOut: "0xUSDC", amountIn: "2" },
+      { vexFee: boundVexFee({ collection: "inside_route" }) },
+    );
+    expect(preview.criticalArgs.vexFee).toContain("0.25% (25 bps)");
+    expect(preview.criticalArgs.vexFee).toContain("inside this transaction");
+    expect(preview.criticalArgs.vexFee).toContain("997500 raw units are swapped");
+  });
+
+  it("states a fee that is NOT taken, which the args-derived line could not express", () => {
+    const preview = buildIntentPreview(
+      "BridgeExecute",
+      { fromToken: "0xUSDC", amountRaw: "1000000" },
+      {
+        vexFee: {
+          v: "vex-fee-v1",
+          charged: false,
+          bps: 0,
+          reason: "the origin token is flagged as a honeypot, so Vex does not transfer it",
+          totalDebitedRaw: "1000000",
+          netAmountRaw: "1000000",
+          collection: "separate_transfer_after_success",
+        },
+      },
+    );
+    expect(preview.criticalArgs.vexFee).toContain("Vex fee: none on this bridge");
+    expect(preview.criticalArgs.vexFee).toContain("honeypot");
+    expect(preview.criticalArgs.vexFee).toContain("the full 1000000 raw units are bridged");
+  });
+
+  /**
+   * Rule 90 and the owner decree: no em dash in copy a human reads. The fee
+   * line is human-facing card copy, and the measured card carried one.
+   */
+  it("puts no em dash in the fee line a human reads", () => {
+    const bridge = buildIntentPreview(
+      "BridgeExecute",
+      { fromToken: "0xUSDC", amountRaw: "1000000" },
+      { vexFee: boundVexFee() },
+    );
+    const swap = buildIntentPreview(
+      "kyberswap.swap.execute",
+      { tokenIn: "ETH", amountIn: "1.5" },
+      { vexFee: boundVexFee({ collection: "inside_route" }) },
+    );
+    for (const line of [bridge.criticalArgs.vexFee, swap.criticalArgs.vexFee]) {
+      expect(typeof line).toBe("string");
+      expect(line).not.toContain(String.fromCharCode(0x2014));
+    }
   });
 
   it("carries NO vexFee key for a tool that has no Vex fee (tolerant reader)", () => {
@@ -78,13 +268,15 @@ describe("buildIntentPreview", () => {
     expect(preview.criticalArgs).not.toHaveProperty("vexFee");
   });
 
-  it("unwraps an injected/execute_tool wrapper before pricing the fee", () => {
-    const preview = buildIntentPreview("execute_tool", {
-      toolId: "uniswap.swap.execute",
-      params: { tokenIn: "ETH", amountIn: "2" },
-    });
+  it("unwraps an injected/execute_tool wrapper before rendering the fee", () => {
+    const preview = buildIntentPreview(
+      "execute_tool",
+      { toolId: "uniswap.swap.execute", params: { tokenIn: "ETH", amountIn: "2" } },
+      { vexFee: boundVexFee() },
+    );
     expect(preview.toolName).toBe("uniswap.swap.execute");
-    expect(preview.criticalArgs.vexFee).toContain("0.005 ETH");
+    // The unwrapped TARGET id decides the noun, not the meta-tool name.
+    expect(preview.criticalArgs.vexFee).toContain("after the swap confirms");
   });
 
   it("drops keys outside the allowlist (defense-in-depth against leak)", () => {
@@ -175,7 +367,7 @@ describe("buildIntentPreview — Stage 7 prequote verdict binding (R5)", () => {
       { inputToken: "SOL", outputToken: "USDC", amount: 1 },
       { prequoteVerdict: "unknown" },
     );
-    expect(preview.criticalArgs.safety).toBe("UNVERIFIED — audit unavailable");
+    expect(preview.criticalArgs.safety).toBe("UNVERIFIED - audit unavailable");
   });
 
   it("omits safety when no extras are passed (non-swap / non-gated path)", () => {
@@ -204,7 +396,7 @@ describe("buildIntentPreview — Stage 7 prequote verdict binding (R5)", () => {
       { chain: "base", tokenIn: "0xAAA", tokenOut: "0xBBB", amountIn: "1", safety: "pass" },
       { prequoteVerdict: "unknown" },
     );
-    expect(preview.criticalArgs.safety).toBe("UNVERIFIED — audit unavailable");
+    expect(preview.criticalArgs.safety).toBe("UNVERIFIED - audit unavailable");
   });
 });
 
@@ -217,7 +409,7 @@ describe("buildIntentPreview — Stage 9 fee-on-transfer disclosure (FIX 3)", ()
       { chain: "base", tokenIn: "0xAAA", tokenOut: "0xBBB", amountIn: "1" },
       { prequoteVerdict: "pass", fotTax: 60 },
     );
-    expect(preview.criticalArgs.safety).toBe("pass — fee-on-transfer 60%");
+    expect(preview.criticalArgs.safety).toBe("pass - fee-on-transfer 60%");
   });
 
   it("a clean pass (no fotTax) renders a plain 'pass' — no FoT suffix", () => {
@@ -234,7 +426,7 @@ describe("buildIntentPreview — Stage 9 fee-on-transfer disclosure (FIX 3)", ()
     // preview; with no extras the safety label is absent entirely.
     const preview = buildIntentPreview(
       "kyberswap.swap.execute",
-      { chain: "base", tokenIn: "0xAAA", tokenOut: "0xBBB", amountIn: "1", fotTax: 60, safety: "pass — fee-on-transfer 60%" },
+      { chain: "base", tokenIn: "0xAAA", tokenOut: "0xBBB", amountIn: "1", fotTax: 60, safety: "pass - fee-on-transfer 60%" },
     );
     expect(preview.criticalArgs).not.toHaveProperty("safety");
     expect(preview.criticalArgs).not.toHaveProperty("fotTax");
@@ -371,18 +563,16 @@ describe("buildIntentPreview — execute_tool wrapper unwrap", () => {
     expect(preview.namespace).toBe("kyberswap");
     // criticalArgs come from nested `params`, not the wrapper args. Stage 9:
     // `slippageBps` is now allow-listed (it is bound into the prequote identity
-    // and surfaced to the human), so it appears in the preview. The engine-owned
-    // `vexFee` line rides alongside them (see `approval-vex-fee.ts`) — it is not
-    // an arg, so it survives the unwrap on the TARGET tool's identity.
+    // and surfaced to the human), so it appears in the preview. NO `vexFee` key:
+    // this venue's fee is stated by its matched quote and reaches the card on
+    // the typed channel, which this call does not supply, and the card no longer
+    // derives a second figure of its own from the arguments.
     expect(preview.criticalArgs).toEqual({
       chain: "base",
       tokenIn: "ETH",
       tokenOut: "USDC",
       amountIn: "1.0",
       slippageBps: 50,
-      vexFee:
-        "0.25% (25 bps) — 0.0025 ETH. Taken on the input token and included in the amountIn "
-        + "above — the route is priced for the remainder, so the quoted output is already net of it.",
     });
   });
 
@@ -438,43 +628,5 @@ describe("buildIntentPreview — execute_tool wrapper unwrap", () => {
     expect(preview.toolName).toBe("some_other_tool");
     // criticalArgs come from wrapper args (params is not in allowlist; toolId neither)
     expect(preview.criticalArgs).toEqual({});
-  });
-});
-
-describe("buildPolicySnapshot", () => {
-  const baseContext: InternalToolContext = makeTestContext({
-    sessionId: "00000000-0000-4000-8000-000000000001",
-    missionRunId: "run-1",
-    missionId: "mission-1",
-    sessionKind: "mission",
-    contextUsageBand: "warning",
-  });
-
-  it("snapshots the documented policy fields verbatim", () => {
-    const snap = buildPolicySnapshot(baseContext);
-    expect(snap).toEqual({
-      permission: "restricted",
-      sessionKind: "mission",
-      missionRunActive: true,
-      contextUsageBand: "warning",
-      missionId: "mission-1",
-      missionRunId: "run-1",
-    });
-  });
-
-  it("derives missionRunActive=false when missionRunId is null", () => {
-    const snap = buildPolicySnapshot({ ...baseContext, missionRunId: null });
-    expect(snap.missionRunActive).toBe(false);
-    expect(snap.missionRunId).toBeNull();
-  });
-
-  it("captures permission='full' in the approval audit snapshot", () => {
-    const snap = buildPolicySnapshot({ ...baseContext, sessionPermission: "full" });
-    expect(snap.permission).toBe("full");
-  });
-
-  it("captures contextUsageBand at enqueue time (not re-derived later)", () => {
-    const snap = buildPolicySnapshot({ ...baseContext, contextUsageBand: "critical" });
-    expect(snap.contextUsageBand).toBe("critical");
   });
 });

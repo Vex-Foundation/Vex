@@ -3,9 +3,9 @@
  *
  * Khalani serves ZERO USD in quotes and orders (live-verified). To stamp a USD
  * estimate on a recorded bridge, we resolve it ourselves from the ONLY Khalani
- * surface that carries it — `GET /v1/tokens` `extensions.price.usd` — at the
+ * surface that carries it - `GET /v1/tokens` `extensions.price.usd` - at the
  * moment we record, then multiply by the human token amount. Every lookup is
- * fail-soft: a miss yields `null` USD (a NAMED, accepted degradation — never a
+ * fail-soft: a miss yields `null` USD (a NAMED, accepted degradation - never a
  * fabricated figure) and the caller records the token amounts only.
  *
  * The `usd_source` marker (`KHALANI_TOKEN_PRICE_USD_SOURCE`) makes the provenance
@@ -18,10 +18,14 @@ import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/error
 import logger from "@utils/logger.js";
 import { formatRawAmount } from "@vex-agent/tools/protocols/amount-display.js";
 import type { KhalaniToken } from "@tools/khalani/types.js";
+import {
+  isVerifiedEvmBridgeAssetIdentity,
+  type BridgeAssetIdentity,
+} from "@vex-agent/tools/protocols/bridge-token-identity.js";
 
 export const KHALANI_TOKEN_PRICE_USD_SOURCE = "khalani_token_price";
 
-/** Resolved token facts for one side of a bridge — any field may be absent. */
+/** Resolved token facts for one side of a bridge - any field may be absent. */
 export interface KhalaniTokenInfo {
   readonly symbol?: string;
   readonly decimals?: number;
@@ -69,6 +73,29 @@ export async function resolveKhalaniTokenInfo(
     });
     return null;
   }
+}
+
+/**
+ * Bridge money-path metadata. Price remains a fail-soft provider estimate, but
+ * every EVM symbol/decimals pair is replaced by a direct chain read. Solana
+ * keeps the existing registry path because an EVM contract read is not
+ * applicable to a mint.
+ */
+export async function resolveKhalaniBridgeTokenInfo(
+  tokenAddress: string,
+  chainId: number,
+  identity?: BridgeAssetIdentity,
+  dependencies: {
+    readonly resolveProvider?: typeof resolveKhalaniTokenInfo;
+  } = {},
+): Promise<KhalaniTokenInfo | null> {
+  const provider = await (dependencies.resolveProvider ?? resolveKhalaniTokenInfo)(tokenAddress, chainId);
+  if (!isVerifiedEvmBridgeAssetIdentity(identity)) return provider;
+  return {
+    symbol: identity.symbol,
+    decimals: identity.decimals,
+    ...(provider?.priceUsd === undefined ? {} : { priceUsd: provider.priceUsd }),
+  };
 }
 
 /**

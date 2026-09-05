@@ -28,7 +28,7 @@ import { randomUUID } from "node:crypto";
 import type { WakeExecutorHandle } from "@vex-agent/engine/wake/executor.js";
 import { log } from "../logger/index.js";
 import { probeLoopWakeReady } from "../database/wake-db.js";
-import { ensureEngineDbUrl } from "../ipc/runtime/_ensure-engine-db-url.js";
+import { ensureEngineDbUrl } from "../database/engine-db-readiness.js";
 import { migrationsApplied } from "../database/migrations-applied.js";
 
 const SUPERVISOR_INTERVAL_MS = 30_000;

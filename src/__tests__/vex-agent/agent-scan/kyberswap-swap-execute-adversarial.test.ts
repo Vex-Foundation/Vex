@@ -88,20 +88,53 @@ const estimateGas = vi.fn();
 // so a stub returning only `{ nonce }` hands the swap leg a transaction with no
 // target and no calldata - which the gate correctly refuses, and which no real
 // node ever returns.
+// Echoes the request it was asked to prepare, plus what a node fills in: the
+// nonce and the fee prices (the WP2 pre-sign gate refuses a request with no
+// fee price, fail closed). The per-test beforeEach re-installs this shape.
 const prepareTransactionRequest = vi.fn(
-  async (...args: unknown[]) => ({ ...(args[0] as Record<string, unknown>), nonce: 1 }),
+  async (...args: unknown[]) => ({
+    maxFeePerGas: 7_000_000n,
+    maxPriorityFeePerGas: 1_000_000n,
+    ...(args[0] as Record<string, unknown>),
+    nonce: 1,
+  }),
 );
 const signTransaction = vi.fn().mockResolvedValue("0x1234");
 const fakeWalletClient = {
-  account: { address: SESSION_EVM.address },
-  chain: {},
+  // The deferred arm (WP2) signs OFFLINE through the account's own signer and
+  // asserts the signer matches the prepared identity, so the fake account
+  // carries a signer and the chain carries a real id.
+  account: {
+    address: SESSION_EVM.address,
+    type: "local",
+    signTransaction: (...a: unknown[]) => signTransaction(...a),
+  },
+  chain: { id: 1 },
   prepareTransactionRequest: (...a: unknown[]) => prepareTransactionRequest(...a),
   signTransaction: (...a: unknown[]) => signTransaction(...a),
 };
 const fakePublicClient = {
+  // The deferred arm prepares on the PUBLIC client (the wallet key is not in
+  // hand yet), then the gate sees the prepared request.
+  prepareTransactionRequest: (...a: unknown[]) => prepareTransactionRequest(...a),
+  chain: { id: 1 },
   sendRawTransaction: (...a: unknown[]) => sendRawTransaction(...a),
   waitForTransactionReceipt: (...a: unknown[]) => waitForTransactionReceipt(...a),
   estimateGas: (...a: unknown[]) => estimateGas(...a),
+  // The WP2 pre-sign debit gate reads live balances and fee pricing on this
+  // same client before every leg. A solvent wallet and stable fees keep these
+  // adversarial cases exercising what they exist to pin - the BROADCAST
+  // failure modes - instead of refusing upstream on an unreadable balance.
+  getBalance: vi.fn(async () => 10n ** 18n),
+  readContract: vi.fn(async (parameters: { functionName: string }) => {
+    if (parameters.functionName === "balanceOf") return 10n ** 24n;
+    throw new Error(`unexpected readContract in adversarial fake: ${parameters.functionName}`);
+  }),
+  estimateFeesPerGas: vi.fn(async () => ({
+    maxFeePerGas: 7_000_000n,
+    maxPriorityFeePerGas: 1_000_000n,
+  })),
+  getGasPrice: vi.fn(async () => 6_000_000n),
 };
 
 // `signStageBroadcast` stays REAL (importActual) — only the client factory
@@ -174,7 +207,8 @@ vi.mock("@vex-agent/db/repos/tracked-tokens.js", () => ({
 // broadcast-path behaviour under test is reached.
 const mockClaim = vi.fn();
 vi.mock("@vex-agent/tools/protocols/prequote/claim.js", () => ({
-  claimSwapExecutionSnapshot: (...args: unknown[]) => mockClaim(...args),
+  commitPrequoteClaim: vi.fn(async () => ({ ok: true })),
+  readSwapExecutionSnapshot: (...args: unknown[]) => mockClaim(...args),
 }));
 
 vi.mock("@utils/logger.js", () => {
@@ -221,6 +255,9 @@ describe("kyberswap.swap.execute — adversarial (FIX2-W0)", () => {
         approvedClaim(
           approvedSummary,
           typeof params.slippageBps === "number" ? params.slippageBps : VEX_DEFAULT_SLIPPAGE_BPS,
+          // The atomic amount the execute parses from `amountIn: "1"` at 18
+          // decimals, which is what the row's Vex fee block was stated over.
+          { amountInRaw: 10n ** 18n },
         ),
     );
     // REAL router calldata (re-encoded from a captured build) — the handler
@@ -234,6 +271,8 @@ describe("kyberswap.swap.execute — adversarial (FIX2-W0)", () => {
           amountIn: 10n ** 18n, quotedNetOutRaw: "999000", slippageBps: 50,
         }),
         transactionValue: "0",
+        // The WP2 debit plan prices the swap leg from the build's own gas figure.
+        gas: "287581",
         amountIn: "1000000", amountOut: "999000",
         amountInUsd: "1", amountOutUsd: "1", gasUsd: "0.1",
       },
@@ -253,7 +292,11 @@ describe("kyberswap.swap.execute — adversarial (FIX2-W0)", () => {
 
     prepareTransactionRequest
       .mockReset()
+      // A real node fills the fee prices during preparation, and the WP2
+      // pre-sign gate refuses (fail closed) a prepared request carrying none.
       .mockImplementation(async (...args: unknown[]) => ({
+        maxFeePerGas: 7_000_000n,
+        maxPriorityFeePerGas: 1_000_000n,
         ...(args[0] as Record<string, unknown>), nonce: 1,
       }));
     signTransaction.mockReset().mockResolvedValue("0x1234");

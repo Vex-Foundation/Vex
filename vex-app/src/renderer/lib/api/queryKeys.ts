@@ -288,6 +288,13 @@ export const marketKeys = {
 export const studioKeys = {
   all: ["studio"] as const,
   hostStatus: () => ["studio", "hostStatus"] as const,
+  /**
+   * Bridge readiness (B1.6), and it is NOT kept live by any event. The answer
+   * moves only when somebody installs a Go toolchain or runs a build outside
+   * Vex, which nothing in main observes. Read on Studio entry, re-read when the
+   * user presses re-check.
+   */
+  bridgeReadiness: () => ["studio", "bridgeReadiness"] as const,
 };
 
 /**
@@ -303,6 +310,17 @@ export const imageKeys = {
   all: ["images"] as const,
   list: () => ["images", "list"] as const,
   thumb: (imageId: string) => ["images", "thumb", imageId] as const,
+};
+
+/**
+ * The user's own backdrop under the glass shell. ONE key: there is exactly
+ * one backdrop per installation, so `current` is the whole surface. The shell
+ * wall and the Settings row read the same entry, and a pick or clear writes
+ * the new record straight into it - one source of truth in the cache.
+ */
+export const shellBackdropKeys = {
+  all: ["shell-backdrop"] as const,
+  current: () => ["shell-backdrop", "current"] as const,
 };
 
 /**

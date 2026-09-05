@@ -5,6 +5,7 @@
  * cleanup + (here) the support service, then re-load the handler module.
  */
 
+import path from "node:path";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
 // `vi.resetModules()` cold-loads the complete IPC/schema graph in each case;
@@ -30,7 +31,15 @@ const mkdirMock = vi.fn();
 const realpathMock = vi.fn();
 const statMock = vi.fn();
 
-const FAKE_USER_DATA = "/fake/user-data";
+/**
+ * `resolveContainedLogsDir` builds its candidate with `path.join` and proves
+ * containment with `path.sep`, so these fixtures are resolved and joined the
+ * same way. A POSIX literal would make the realpath mock miss its key on
+ * win32 (`\\fake\\user-data\\logs` never equals `/fake/user-data/logs`) and the
+ * handler would report `internal.unexpected` for a reason that has nothing to
+ * do with containment.
+ */
+const FAKE_USER_DATA = path.resolve("/fake/user-data");
 
 vi.mock("electron", () => ({
   ipcMain: {
@@ -208,8 +217,8 @@ describe("registerSupportHandler", () => {
 // ── openLogsFolder (error-diagnostics plan D-FOLDER / §3.6) ──────────────────
 
 const REQ_5 = "55555555-aaaa-4aaa-8aaa-555555555555";
-const REAL_USER_DATA = "/real/user-data";
-const REAL_LOGS_DIR = "/real/user-data/logs";
+const REAL_USER_DATA = path.resolve("/real/user-data");
+const REAL_LOGS_DIR = path.join(REAL_USER_DATA, "logs");
 
 describe("registerSupportHandler - openLogsFolder", () => {
   beforeEach(() => {
@@ -221,7 +230,7 @@ describe("registerSupportHandler - openLogsFolder", () => {
     // Default: containment holds — logs dir resolves inside userData.
     realpathMock.mockReset().mockImplementation(async (p: unknown) => {
       if (p === FAKE_USER_DATA) return REAL_USER_DATA;
-      if (p === `${FAKE_USER_DATA}/logs`) return REAL_LOGS_DIR;
+      if (p === path.join(FAKE_USER_DATA, "logs")) return REAL_LOGS_DIR;
       throw new Error(`unexpected realpath: ${String(p)}`);
     });
   });
@@ -231,7 +240,7 @@ describe("registerSupportHandler - openLogsFolder", () => {
     const result = await fn(trustedSender, { requestId: REQ_5, payload: {} });
     expect(result).toEqual({ ok: true, data: { opened: true } });
     // mkdir ensures the dir exists before realpath.
-    expect(mkdirMock).toHaveBeenCalledWith(`${FAKE_USER_DATA}/logs`, {
+    expect(mkdirMock).toHaveBeenCalledWith(path.join(FAKE_USER_DATA, "logs"), {
       recursive: true,
     });
     // shell.openPath receives the RESOLVED path, never the joined candidate.
@@ -243,7 +252,7 @@ describe("registerSupportHandler - openLogsFolder", () => {
     realpathMock.mockImplementation(async (p: unknown) => {
       if (p === FAKE_USER_DATA) return REAL_USER_DATA;
       // Symlink swap: logs dir resolves OUTSIDE userData.
-      return "/evil/elsewhere";
+      return path.resolve("/evil/elsewhere");
     });
     const fn = await loadAndRegister("vex:support:openLogsFolder");
     const result = (await fn(trustedSender, {

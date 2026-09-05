@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ── Mocks ───────────────────────────────────────────────────────
 // `listWallets` drives which wallets the background sync projects (puzzle 5
-// phase 5E-1 — sync iterates the whole inventory, NOT just the primary).
+// phase 5E-1 - sync iterates the whole inventory, NOT just the primary).
 const mockListWallets = vi.fn();
 vi.mock("@tools/wallet/inventory.js", () => ({
   listWallets: (family: string) => mockListWallets(family),
@@ -14,7 +14,7 @@ vi.mock("@tools/khalani/balances.js", () => ({
   getTokenBalancesAcrossChains: (...args: unknown[]) => mockScan(...args),
 }));
 
-// Khalani dynamic registry — drives the Khalani-first partition in
+// Khalani dynamic registry - drives the Khalani-first partition in
 // syncWalletBalances (and resolveChainHint via sync/chains.js). Default fixture
 // below does NOT contain 4663, so 4663 routes to the local path.
 const mockGetCachedKhalaniChains = vi.fn();
@@ -60,15 +60,34 @@ vi.mock("@vex-agent/db/repos/balances.js", () => ({
   getSnapshotHistory: vi.fn().mockResolvedValue([]),
 }));
 
-// Wave P: `fullBalanceSync` consults the group-wide pending predicate before it
-// may snapshot. Default is "nothing pending" so every pre-existing case keeps
-// exercising the snapshot path unchanged.
-const mockHasPendingActivity = vi.fn();
-vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
-  hasPendingActivityForWallets: (...a: unknown[]) => mockHasPendingActivity(...a),
+/**
+ * The snapshot group is published inside ONE transaction that locks
+ * `agent_activity` and reads the in-flight ledger under that lock. These suites
+ * are about sync/single-flight, not about the ledger, so the fake client
+ * answers "nothing in flight, and the activity generation did not move";
+ * `ledgerRows` lets a single case say otherwise.
+ */
+let ledgerRows: Record<string, unknown>[] = [];
+const mockDbQuery = vi.fn(async (sql: string) => {
+  const text = String(sql);
+  if (text.includes("MAX(id)")) {
+    return {
+      rows: [{ max_id: "0", row_count: "0", pending_count: "0", confirmed_count: "0" }],
+      rowCount: 1,
+    };
+  }
+  if (text.includes("agent_activity_pending")) {
+    return { rows: ledgerRows, rowCount: ledgerRows.length };
+  }
+  return { rows: [], rowCount: 0 };
+});
+const fakeDbClient = { query: (sql: string, params?: unknown[]) => mockDbQuery(sql, params) };
+vi.mock("@vex-agent/db/client.js", () => ({
+  getPool: () => fakeDbClient,
+  withTransaction: (fn: (c: unknown) => Promise<unknown>) => fn(fakeDbClient),
 }));
 
-const { syncWalletBalances, fullBalanceSync, selectiveBalanceSync } = await import(
+const { syncWalletBalances, fullBalanceSync, selectiveBalanceSync, computeBalanceUsd } = await import(
   "../../../vex-agent/sync/balance-sync.js"
 );
 
@@ -96,7 +115,7 @@ beforeEach(() => {
   mockGetBalancesByChain.mockResolvedValue([]);
   mockGetLatestSnapshot.mockResolvedValue(null);
   mockInsertSnapshot.mockResolvedValue({ snapshotId: 1, pnlVsPrev: null });
-  mockHasPendingActivity.mockResolvedValue(false);
+  ledgerRows = [];
   // Default inventory: one EVM + one Solana wallet.
   mockListWallets.mockImplementation((family: string) =>
     family === "solana"
@@ -140,7 +159,7 @@ describe("syncWalletBalances", () => {
   it("never requests the native top-up (no includeNative) so it cannot delete cached native rows", async () => {
     const NATIVE_SENTINEL = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
     // Even though a real RPC would report 5 ETH, the sync scan returns ERC-20s
-    // only — the mock proves syncWalletBalances asks for a native-free scan.
+    // only - the mock proves syncWalletBalances asks for a native-free scan.
     mockScan.mockResolvedValue({
       tokens: [
         { chainId: 1, address: "0xUSDC", symbol: "USDC", name: "USD Coin", decimals: 6, extensions: { balance: "1000000", price: { usd: "1.0" } } },
@@ -218,7 +237,7 @@ describe("fullBalanceSync", () => {
 // never actually held, and every later `pnlVsPrev` is computed against it. The
 // guard therefore suppresses the snapshot for the WHOLE cycle, never per wallet.
 
-describe("fullBalanceSync — snapshot guard", () => {
+describe("fullBalanceSync - in-flight money is accounted for, not a veto", () => {
   const threeWallets = (family: string) =>
     family === "solana"
       ? [{ id: "sol_1", address: SOL_A, label: "S1", createdAt: "" }]
@@ -227,83 +246,93 @@ describe("fullBalanceSync — snapshot guard", () => {
           { id: "evm_2", address: EVM_B, label: "E2", createdAt: "" },
         ];
 
-  it("skips the snapshot GROUP-WIDE while any pending activity exists", async () => {
+  const pendingBridge = {
+    kind: "agent_activity_pending",
+    ref: "132",
+    detail: "bridge_fill_expected",
+    since: new Date(),
+    expires_at: null,
+    amount_text: "150",
+    amount_decimals: null,
+    symbol: "USDC",
+    usd_est: "150",
+  };
+
+  it("publishes the WHOLE group while a bridge leg is still in flight", async () => {
     mockListWallets.mockImplementation(threeWallets);
-    mockHasPendingActivity.mockResolvedValue(true);
-
-    const result = await fullBalanceSync();
-
-    // Not one partial group — ZERO snapshot rows. A half-populated
-    // snapshotGroupId is the failure this guard exists to prevent.
-    expect(mockInsertSnapshot).not.toHaveBeenCalled();
-    expect(result.snapshots).toEqual([]);
-  });
-
-  it("still refreshes balances for every wallet while pending", async () => {
-    mockListWallets.mockImplementation(threeWallets);
-    mockHasPendingActivity.mockResolvedValue(true);
-
-    const result = await fullBalanceSync();
-
-    // Suppressing balances too would freeze the portfolio display for the whole
-    // duration of a pending swap. Only the SNAPSHOT is deferred.
-    expect(result.wallets).toHaveLength(3);
-    expect(mockScan).toHaveBeenCalled();
-  });
-
-  it("asks the predicate ONCE, before the wallet loop, for every wallet at once", async () => {
-    mockListWallets.mockImplementation(threeWallets);
-
-    await fullBalanceSync();
-
-    expect(mockHasPendingActivity).toHaveBeenCalledTimes(1);
-    expect(mockHasPendingActivity.mock.calls[0]?.[0]).toEqual(
-      expect.arrayContaining([EVM_A, EVM_B, SOL_A]),
-    );
-  });
-
-  it("resumes the full snapshot group once everything has terminalized", async () => {
-    mockListWallets.mockImplementation(threeWallets);
-    mockHasPendingActivity.mockResolvedValue(true);
-    await fullBalanceSync();
-    expect(mockInsertSnapshot).not.toHaveBeenCalled();
-
-    mockHasPendingActivity.mockResolvedValue(false);
+    ledgerRows = [pendingBridge];
     let n = 0;
     mockInsertSnapshot.mockImplementation(async () => ({ snapshotId: ++n, pnlVsPrev: null }));
 
-    const resumed = await fullBalanceSync();
+    const result = await fullBalanceSync();
 
-    // The whole group lands in ONE cycle, so `pnlVsPrev` is never computed from
-    // a snapshot set that covers only some of the wallets.
-    expect(resumed.snapshots).toHaveLength(3);
+    // The reversed decision: one unreported bridge row used to withhold every
+    // snapshot indefinitely. It is now a named line in the group's own record.
+    expect(result.snapshots).toHaveLength(3);
+    expect(result.snapshotSkippedReason).toBeUndefined();
     const groupIds = new Set(
       mockInsertSnapshot.mock.calls.map((c) => (c[0] as { snapshotGroupId: string }).snapshotGroupId),
     );
     expect(groupIds.size).toBe(1);
   });
 
-  it("snapshot:'always' bypasses the guard without even asking", async () => {
+  it("still refreshes balances for every wallet", async () => {
     mockListWallets.mockImplementation(threeWallets);
-    mockHasPendingActivity.mockResolvedValue(true);
-
-    // `initSync`'s startup snapshot is authoritative by design, and so is a
-    // user-initiated refresh — both mean "record what is true right now".
-    const result = await fullBalanceSync({ snapshot: "always" });
-
-    expect(mockHasPendingActivity).not.toHaveBeenCalled();
-    expect(result.snapshots).toHaveLength(3);
-  });
-
-  it("a failed pending probe defers the snapshot — it never guesses 'settled'", async () => {
-    mockListWallets.mockImplementation(threeWallets);
-    mockHasPendingActivity.mockRejectedValue(new Error("db unavailable"));
+    ledgerRows = [pendingBridge];
 
     const result = await fullBalanceSync();
 
-    // A missing snapshot is recoverable on the next cycle; a wrong one poisons
-    // `pnlVsPrev` for every cycle after it.
+    expect(result.wallets).toHaveLength(3);
+    expect(mockScan).toHaveBeenCalled();
+  });
+
+  it("reads the ledger ONCE, under the lock, for every wallet at once", async () => {
+    mockListWallets.mockImplementation(threeWallets);
+
+    await fullBalanceSync();
+
+    const ledgerCalls = mockDbQuery.mock.calls.filter(([sql]) =>
+      String(sql).includes("agent_activity_pending"),
+    );
+    expect(ledgerCalls).toHaveLength(1);
+    expect(ledgerCalls[0]?.[1]?.[0]).toEqual(expect.arrayContaining([EVM_A, EVM_B, SOL_A]));
+    // Under the lock, not before it: read outside, the answer is stale the
+    // instant it returns.
+    const sqlOrder = mockDbQuery.mock.calls.map(([sql]) => String(sql));
+    const lockAt = sqlOrder.findIndex((sql) => sql.includes("LOCK TABLE agent_activity"));
+    const ledgerAt = sqlOrder.findIndex((sql) => sql.includes("agent_activity_pending"));
+    expect(lockAt).toBeGreaterThanOrEqual(0);
+    expect(lockAt).toBeLessThan(ledgerAt);
+  });
+
+  it("snapshot:'always' passes through the same publication path", async () => {
+    mockListWallets.mockImplementation(threeWallets);
+    ledgerRows = [pendingBridge];
+    let n = 0;
+    mockInsertSnapshot.mockImplementation(async () => ({ snapshotId: ++n, pnlVsPrev: null }));
+
+    // "always" survives only as a FRESHNESS distinction for single-flight; it
+    // does not bypass the lock, the ledger or the fence, and it no longer needs
+    // to, because in-flight money does not withhold a group from either policy.
+    const result = await fullBalanceSync({ snapshot: "always" });
+
+    expect(result.snapshots).toHaveLength(3);
+    expect(result.wallets).toHaveLength(3);
+  });
+
+  it("a failed cycle-start fence defers the snapshot - it never guesses 'settled'", async () => {
+    mockListWallets.mockImplementation(threeWallets);
+    mockDbQuery.mockImplementationOnce(async () => {
+      throw new Error("db unavailable");
+    });
+
+    const result = await fullBalanceSync();
+
+    // Without the stamp the transition fence can prove nothing. A missing
+    // snapshot is recoverable on the next cycle; a group that mixes reads from
+    // opposite sides of a settlement poisons `pnlVsPrev` for every cycle after.
     expect(mockInsertSnapshot).not.toHaveBeenCalled();
+    expect(result.snapshotSkippedReason).toBe("gate_probe_failed");
     expect(result.wallets).toHaveLength(3);
   });
 });
@@ -345,7 +374,7 @@ describe("local-chain routing", () => {
   it("full EVM sync also invokes the local direct-RPC path for chain 4663", async () => {
     await syncWalletBalances("eip155", EVM_A);
     expect(mockLocalSync).toHaveBeenCalledWith("eip155", EVM_A, 4663);
-    // Khalani still scanned with the all-chains filter — unchanged.
+    // Khalani still scanned with the all-chains filter - unchanged.
     expect(mockScan).toHaveBeenCalledWith({ address: EVM_A, family: "eip155", chainIds: undefined });
   });
 
@@ -376,7 +405,7 @@ describe("local-chain routing", () => {
   });
 
   // ── Khalani-first partition (Codex final-review item 2) ────────
-  it("Khalani WINS when its registry lists 4663 — local path not used", async () => {
+  it("Khalani WINS when its registry lists 4663 - local path not used", async () => {
     mockGetCachedKhalaniChains.mockResolvedValue([
       { id: 1, name: "Ethereum", type: "eip155" },
       { id: 4663, name: "Robinhood Chain", type: "eip155" },
@@ -401,5 +430,32 @@ describe("local-chain routing", () => {
     // 4663 still syncs via the local path during a Khalani outage.
     expect(mockLocalSync).toHaveBeenCalledWith("eip155", EVM_A, 4663);
     expect(mockScan).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The `balanceUsd` column of a projected row.
+ *
+ * MIGRATED 2026-08-31 from `khalani-price-fallback.test.ts`, which owned this
+ * arithmetic while it lived beside the price fallback. The fallback moved to
+ * `tools/khalani/balance-price-enrichment.ts` and works on provider rows, so
+ * the DB-row arithmetic stayed here with its only consumer, the sync mapper.
+ */
+describe("computeBalanceUsd", () => {
+  it("returns null rather than a guessed value when decimals are unknown", () => {
+    expect(computeBalanceUsd("1000000000000000000", null, 5)).toBe(null);
+  });
+
+  it("returns null for a zero balance and for a missing price", () => {
+    expect(computeBalanceUsd("0", 18, 5)).toBe(null);
+    expect(computeBalanceUsd("1000000000000000000", 18, null)).toBe(null);
+  });
+
+  it("returns null rather than throwing on an unparseable raw amount", () => {
+    expect(computeBalanceUsd("not-an-integer", 18, 5)).toBe(null);
+  });
+
+  it("converts a raw amount at its decimals", () => {
+    expect(computeBalanceUsd("400000", 6, 1.00014)).toBeCloseTo(0.400056, 6);
   });
 });

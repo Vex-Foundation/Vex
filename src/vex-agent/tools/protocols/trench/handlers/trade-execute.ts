@@ -1,5 +1,5 @@
 /**
- * `trench.trade_execute` handler — curve BUY/SELL on Robinhood Chain (4663).
+ * `trench.trade_execute` handler - curve BUY/SELL on Robinhood Chain (4663).
  *
  * This file is the PUBLIC ENTRY POINT and owns only the ordering of the money
  * path; each stage lives in the `trade/` sibling folder:
@@ -57,7 +57,7 @@ export async function trenchTradeExecuteHandler(
   const sessionId = context.sessionId;
   if (!sessionId) return fail(`${TOOL_ID} requires an active session.`);
 
-  // Address-only resolve FIRST (never decrypts) — so a later failure still
+  // Address-only resolve FIRST (never decrypts) - so a later failure still
   // records the real wallet_address.
   let walletAddress: Address;
   try {
@@ -69,7 +69,7 @@ export async function trenchTradeExecuteHandler(
   const chainConfig = getLocalChain(chainId);
   if (!chainConfig) return fail(`Robinhood Chain (${chainId}) is not in the local chain registry.`);
 
-  // Full signing wallet (decrypts) — only now that the call may broadcast.
+  // Full signing wallet (decrypts) - only now that the call may broadcast.
   let signer;
   try {
     signer = resolveSigningWallet(context.walletResolution, context.walletPolicy, "eip155");
@@ -102,7 +102,7 @@ export async function trenchTradeExecuteHandler(
 
     // ── The Vex fee's charge base, per side ──
     // BUY: the ETH the user spends is known now, so the fee comes OFF the input
-    // and the curve is quoted for the remainder — the disclosed output is then
+    // and the curve is quoted for the remainder - the disclosed output is then
     // post-fee and is what actually arrives.
     // SELL: the base is the ETH RECEIVED, which does not exist yet. The row is
     // planned from the quote so it exists before broadcast; the leg that is
@@ -112,7 +112,7 @@ export async function trenchTradeExecuteHandler(
     curveInHuman = side === "buy" ? formatEther(curveInRaw) : amountInHuman;
 
     // FRESH, deterministic curve quote taken immediately before building the
-    // floor — the ONLY input to `min`, never a caller number, never zero. On a
+    // floor - the ONLY input to `min`, never a caller number, never zero. On a
     // buy this is the POST-fee amount.
     const expectedOutRaw = await readCurveQuote(publicClient, { token, side, amountInRaw: curveInRaw });
     const minOut = curveMinOut(expectedOutRaw, slippageBps);

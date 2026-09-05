@@ -524,6 +524,16 @@ export const RESOLVE_TOOLS: readonly ProtocolToolManifest[] = [
       + "chain the answer is always absent and the request is not worth spending. An absent "
       + "blurb returns the provider's own reason code, not an error, and \"nothing was "
       + "written\" is reported apart from \"the provider faulted\". "
+      + "EVERY ANSWER CARRIES `liquidityInterpretation`, AND `liquidityUsd` CANNOT SHOW A "
+      + "DEPOSIT OR A WITHDRAWAL. That figure is the CURRENT PRICE mark of the pool's "
+      + "reserves, so it moves whenever the price moves with the reserves untouched: "
+      + "`establishesLiquidityAddedOrRemoved` is `false` as a field, not as a caveat. "
+      + "MEASURED: one pool read twice as 210K then 223K over an interval in which the price "
+      + "rose about 10.7 percent was reported to a user as \"someone added to the pool\", "
+      + "which the price move alone accounts for. Ask for `fields: reserves` to get the "
+      + "per-side token amounts, which change on a deposit and not on a price move, and use "
+      + "dexscreener__trades_list with `eventType: liquidity` for the pool's actual add and "
+      + "remove events. "
       + "One snapshot measures about one kilobyte, which is what makes this the right tool "
       + "for polling a position rather than a screening board. Use this when the pair or token "
       + "is already identified and the question is its state right now; use the screening tools "
@@ -660,11 +670,15 @@ export const RESOLVE_TOOLS: readonly ProtocolToolManifest[] = [
       + `${ROW_BOUNDED_TEXT_CLAUSE} ${SCREEN_EXTERNAL_CONTENT_CLAUSE} ${SCREEN_SOURCE_OBSERVATION_CLAUSE}`,
     mutating: false,
     actionKind: "read",
-    // `chain` and `chainIds` are two spellings of one scoping decision.
-    // Declared rather than left in prose so discovery can show the exclusion
-    // and the runtime enforces it instead of the handler guessing which one
-    // the fan-out should honour.
-    exclusiveParamGroups: [["chain", "chainIds"]],
+    // `chain` and `chainIds` are two spellings of one scoping decision, and
+    // naming NEITHER is a legitimate call: the handler issues one unscoped
+    // cross-chain request and words its own summary "across every chain".
+    // AT MOST ONE, therefore, and not the exactly-one spelling this replaces,
+    // which made the schema contradict both the description and the handler.
+    // An external Codex agent paid for that disagreement on the live MCP walk
+    // of 2026-09-04: its first `pairs_search` named no chain and was refused
+    // with "none of them is set" for a call the tool documents as valid.
+    atMostOne: [["chain", "chainIds"]],
     params: [...PAIRS_SEARCH_PARAMS],
     exampleParams: { query: "PEPE", chain: "solana", limit: 10 },
     discovery: DEXSCREENER_RESOLVE_DISCOVERY["dexscreener.search"],
@@ -677,14 +691,18 @@ export const RESOLVE_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description:
       "List the indexed pools for `tokenAddress` on `chain`, ordered by liquidity "
-      + "descending; the provider serves a bounded window of at most 30 pools, so a "
+      + `descending; the provider serves a bounded window of at most ${SEARCH_PROVIDER_WINDOW} pools, so a `
       + "high-pool-count token is partially covered and the envelope says so. Use this to "
       + "pick the canonical venue before charting, trading, or deep analysis. Returns "
       + "per-pool `liquiditySharePct` and `volumeSharePct`, `venueCount`, "
       + "`totalLiquidityUsd`, and `deepestPair` as an explicit summary. `deepestPair` "
       + "means deepest among the returned window, never a global claim; `resolutionBasis` "
-      + "is echoed. When the token trades in more pools than the window, `providerCapped` "
-      + "is set with narrowing advice. A forked chain carrying the same address can "
+      + "is echoed. When the token trades in more pools than the window, the reply reports "
+      + "it in the canonical way: `truncated: true` with a `truncationNote` naming the "
+      + "reason and what remains reachable, alongside `providerCapped`, "
+      + "`providerCappedAdvice` and `providerWindow`. Those pools were never sent, so no "
+      + "limit, offset, cursor or repeat call reaches them; never report the list as this "
+      + "token's complete pool set while `truncated` is true. A forked chain carrying the same address can "
       + "appear; rows are chain-tagged and a `chain` filter narrows server-side. "
       + "EVERY SHARE AND TOTAL IS OVER THE RETURNED WINDOW, never over the token's real "
       + "pool set: `liquiditySharePct` is a pool's share of `totalLiquidityUsd`, which is "

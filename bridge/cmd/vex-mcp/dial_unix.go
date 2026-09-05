@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"runtime"
 
@@ -16,7 +17,7 @@ import (
 // syntax on a unix target by name (`override_pipe_on_unix`), dialEndpoint
 // re-checks runtime.GOOS at the dial site, and this build-tagged stub means a
 // unix binary contains no code that could open one at all.
-func dialPipe(path string) (handshake.Conn, error) {
+func dialPipe(_ context.Context, path string) (handshake.Conn, error) {
 	return nil, fmt.Errorf("named pipes do not exist on %s; refusing to open %s",
 		runtime.GOOS, path)
 }

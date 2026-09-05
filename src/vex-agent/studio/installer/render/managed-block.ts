@@ -19,22 +19,25 @@
  * The body REUSES `STUDIO_SAFETY_PREFIX` from `mcp/instructions.ts` and the
  * extracted `STUDIO_USAGE_NOTES` directly. An agent reading this file and an
  * agent reading the MCP handshake receive the same words, from the same source.
+ *
+ * TWO DOCUMENTS, ONE FENCE (2026-09-04). `.vex/vex-guide.md` carries the
+ * sections `AGENTS.md` no longer can (`vex-guide.ts`) and is managed with
+ * exactly this machinery: the same markers, the same digest, the same drift
+ * rule, the same repair-only overwrite. The generic half lives here and takes
+ * the body as an argument; each document adds only its own composition, so
+ * there is one drift contract rather than two that could disagree.
  */
 
 import { createHash } from "node:crypto";
 
-import { STUDIO_SAFETY_PREFIX } from "../../../mcp/instructions.js";
-import { STUDIO_USAGE_NOTES } from "../../instructions/shared-usage.js";
 import type { StudioProjectBrief } from "../../instructions/project-brief.js";
 import {
-  STUDIO_BUG_REPORT_NOTE,
-  STUDIO_BUILDING_APPS_NOTE,
-  STUDIO_WHAT_VEX_MCP_IS,
-  renderStudioAuthorityBrief,
+  STUDIO_COMMON_JOBS_NOTE,
+  STUDIO_READ_ON_START_NOTE,
+  STUDIO_YOUR_POSITION_NOTE,
   renderStudioBlockTitle,
-  renderStudioChangeLog,
+  renderStudioHowToWorkWithVexMcp,
   renderStudioProjectIdentity,
-  renderStudioToolSurface,
 } from "../../instructions/project-brief.js";
 import type { StudioRenderResult } from "./facts.js";
 import { rendered } from "./facts.js";
@@ -52,8 +55,8 @@ const END_MARKER = "<!-- vex:studio:end -->";
  * Only the HASH is the drift contract: it digests the body, and the version sits
  * outside the body, so bumping Vex does not by itself read as a human edit.
  */
-function beginMarker(brief: StudioProjectBrief, bodyHash: string): string {
-  return `${BEGIN_PREFIX}vex=${brief.vexVersion} hash=${bodyHash}${BEGIN_SUFFIX}`;
+function beginMarker(vexVersion: string, bodyHash: string): string {
+  return `${BEGIN_PREFIX}vex=${vexVersion} hash=${bodyHash}${BEGIN_SUFFIX}`;
 }
 
 /** The hash recorded in an existing marker, or null when it has none. */
@@ -69,66 +72,111 @@ const HASH_CHARS = 16;
 export const STUDIO_PROTOCOLS_DOC_PATH = ".vex/protocols.md";
 
 /**
- * The generated body, without the markers.
+ * The generated body, without the markers: THE AUTHORITY CORE.
  *
- * DETERMINISTIC IN ITS INPUTS, not project-independent. The generic half
- * (safety prefix, usage notes) is the same words every client gets at handshake;
- * the project half (what the server is, how large the surface is, which
- * authority was granted and when, what changed, how to report a bug) comes from
- * the `brief` the privileged caller resolved. Everything is INSIDE the hash, so
- * a stale count, an edited change note or a tampered authority line is drift
- * like any other byte.
+ * WHAT BELONGS HERE, since the 2026-09-04 split: the text an agent must have in
+ * context on the turn it acts, without going and fetching anything. The
+ * permission level in force, the wallets, how tools are found and named, what a
+ * result means, what Vex charges, the safety rules, the task shapes, and what
+ * each read tool actually knows. Everything an agent can read WHEN IT NEEDS IT
+ * moved WHOLE into `.vex/vex-guide.md` (`renderStudioVexGuideBody`), which the
+ * first section here tells it to open.
+ *
+ * DETERMINISTIC IN ITS INPUTS, and project-only. The generic half (safety
+ * prefix, usage notes) is the same words every client gets at handshake; the
+ * project half (what the server is, how large the surface is, which authority
+ * was granted and when, what changed for this project) comes from the `brief`
+ * the privileged caller resolved. Nothing here depends on the INSTALLATION any
+ * more - which provider keys this machine has is a fact about the protocol
+ * blocks, and they live in the guide - so this body is the same bytes on every
+ * machine for the same project. Everything is INSIDE the hash, so a stale
+ * count, an edited change note or a tampered authority line is drift like any
+ * other byte.
  */
 export function renderStudioManagedBody(brief: StudioProjectBrief): string {
   return [
-    // 1. Title.
     renderStudioBlockTitle(brief),
     "",
     "This repository is connected to Vex, a self-custodial crypto agent. The Vex",
-    "tools reach REAL wallets on REAL chains.",
+    "tools reach REAL wallets on REAL chains. This section is the authority: what",
+    "this project may do, how to call the tools, what a result means, how to do",
+    "the usual jobs, and what you actually know. The two files named below carry",
+    "the rest, and this section is not complete without the first of them.",
     "",
-    // 2. Change log FIRST (owner decision 2026-08-25, Next.js style).
-    renderStudioChangeLog(brief),
+    // 1. The pointer, FIRST: the sections that are not here, and when to read them.
+    STUDIO_READ_ON_START_NOTE,
     "",
-    // 3. What this project is.
+    // 2. This project: the level in force, the wallets, the binding.
     renderStudioProjectIdentity(brief),
     "",
-    // 4. The authority it holds, and since when.
-    renderStudioAuthorityBrief(brief),
+    // 3. The protocol: discovery, names, outcomes, fees, the shared rules.
+    renderStudioHowToWorkWithVexMcp(brief),
     "",
-    // 5. What the server is.
-    STUDIO_WHAT_VEX_MCP_IS,
+    // 4. The task shapes, in MCP names.
+    STUDIO_COMMON_JOBS_NOTE,
     "",
-    // 6. The surface and how to navigate it, with LIVE counts.
-    renderStudioToolSurface(brief),
-    "",
-    // 7. The safety rules, verbatim from the one source every client sees.
-    "## Safety rules",
-    "",
-    STUDIO_SAFETY_PREFIX,
-    "",
-    // 8. Building on the tools.
-    STUDIO_BUILDING_APPS_NOTE,
-    "",
-    // 9. Reporting a Vex bug.
-    STUDIO_BUG_REPORT_NOTE,
+    // 5. What each read tool actually knows.
+    STUDIO_YOUR_POSITION_NOTE,
     "",
     "---",
     "",
-    "This section is generated by Vex. Edit it and Vex will report drift and stop",
-    "regenerating it until you ask for a repair; text outside the markers is yours.",
+    "AGENTS: this section is generated by Vex, between the `vex:studio:begin` and",
+    "`vex:studio:end` comment markers. NEVER edit between them, even when asked -",
+    "Vex reports the edit as drift and stops regenerating the section until the",
+    "user asks Vex for a repair. Text outside the markers belongs to the user.",
   ].join("\n");
 }
+
+/**
+ * THE BYTE BOUND on the managed body. 24 KiB, and the number is a MEASUREMENT
+ * of a client's loader, not a taste.
+ *
+ * Codex reads `AGENTS.md` under `project_doc_max_bytes`, which defaults to
+ * 32,768 (`agents-colab/codex/codex-rs/config/defaults.toml:8`). That budget is
+ * a TOTAL across every `AGENTS.md` from the project root down to the cwd, and
+ * the loader TRUNCATES the file that crosses it -
+ * `read_agents_md` does `data.truncate(remaining)` and logs
+ * "project doc exceeds remaining budget; truncating"
+ * (`codex-rs/core/src/agents_md.rs`). There is no include mechanism and no
+ * warning to the model: the official guide's own advice for a long file is to
+ * split it. Before 2026-09-04 a fresh block was 36,687 bytes, so a Codex user
+ * got it CUT inside the protocol catalogue, losing every section below it.
+ *
+ * 32,768 minus an 8 KiB RESERVE = 24,576. The reserve is not slack: the budget
+ * is shared with the user's own text around our fence in the same file, and
+ * with any ancestor `AGENTS.md` above the project root, neither of which Vex
+ * writes or can measure.
+ *
+ * `managed-block.test.ts` renders the LONGEST project half the store can hand
+ * this renderer - eight selected wallets, `STUDIO_CHANGE_NOTE_LIMIT` notes each
+ * at the 400-character `project_change_notes.summary` bound - and fails when
+ * that render exceeds the bound. NOTHING IS EVER CUT TO FIT: exceeding it fails
+ * that test, and the shortening decision is to move a whole section into
+ * `.vex/vex-guide.md` - never the permission paragraph, never the outcome
+ * table, never a shortened sentence.
+ */
+export const STUDIO_MANAGED_BLOCK_MAX_BYTES = 24_576;
 
 /** The digest recorded in the opening marker. */
 export function studioManagedBodyHash(body: string): string {
   return createHash("sha256").update(body, "utf8").digest("hex").slice(0, HASH_CHARS);
 }
 
-/** The complete managed block, markers included, newline-terminated. */
+/**
+ * One managed body, FENCED: markers, digest, newline-terminated.
+ *
+ * The GENERIC half, shared by `AGENTS.md` and `.vex/vex-guide.md`. It knows
+ * nothing about which document it is fencing, which is what keeps the drift
+ * contract single: both files are hashed the same way, so an edit inside either
+ * fence is caught by the same rule and repaired by the same explicit action.
+ */
+export function renderStudioFencedDocument(body: string, vexVersion: string): string {
+  return `${beginMarker(vexVersion, studioManagedBodyHash(body))}\n${body}\n${END_MARKER}\n`;
+}
+
+/** The complete `AGENTS.md` managed block, markers included, newline-terminated. */
 export function renderStudioManagedBlock(brief: StudioProjectBrief): string {
-  const body = renderStudioManagedBody(brief);
-  return `${beginMarker(brief, studioManagedBodyHash(body))}\n${body}\n${END_MARKER}\n`;
+  return renderStudioFencedDocument(renderStudioManagedBody(brief), brief.vexVersion);
 }
 
 /** What an existing `AGENTS.md` currently holds in the Vex fence. */
@@ -179,29 +227,44 @@ export function studioManagedBlockOwnership(
   return { kind: "intact", bodyHash: actualHash };
 }
 
-export function inspectStudioManagedBlock(
+/**
+ * The fence's state against the body Vex WOULD render now.
+ *
+ * Generic, like the renderer: `desiredBody` is whichever document's body the
+ * caller composed, so `AGENTS.md` and `.vex/vex-guide.md` answer "is this still
+ * ours, and is it current" through one implementation.
+ */
+export function inspectStudioFencedDocument(
   existing: string,
-  brief: StudioProjectBrief,
+  desiredBody: string,
 ): StudioManagedBlockState {
   const ownership = studioManagedBlockOwnership(existing);
   if (ownership.kind !== "intact") return ownership;
 
-  // The one question that needs the brief.
+  // The one question that needs the desired text.
   const found = locateManagedBlock(existing);
   const body = typeof found === "object" && found !== undefined ? found.body : "";
-  return { kind: "intact", upToDate: body === renderStudioManagedBody(brief) };
+  return { kind: "intact", upToDate: body === desiredBody };
+}
+
+export function inspectStudioManagedBlock(
+  existing: string,
+  brief: StudioProjectBrief,
+): StudioManagedBlockState {
+  return inspectStudioFencedDocument(existing, renderStudioManagedBody(brief));
 }
 
 /**
- * `AGENTS.md` with the Vex block present and current.
+ * A file with the Vex fence present and current, whichever document it carries.
  *
- * An absent block is APPENDED; an intact block is replaced in place; a DRIFTED
- * block is left exactly as the user left it unless `overwriteDrift` says this is
- * an explicit Repair. Text outside the fence is never touched.
+ * An absent fence is APPENDED; an intact one is replaced in place; a DRIFTED one
+ * is left exactly as the user left it unless `overwriteDrift` says this is an
+ * explicit Repair. Text outside the fence is never touched.
  */
-export function mergeStudioManagedBlock(
+export function mergeStudioFencedDocument(
   existing: string,
-  brief: StudioProjectBrief,
+  body: string,
+  vexVersion: string,
   options: { readonly overwriteDrift: boolean },
 ): StudioRenderResult {
   const found = locateManagedBlock(existing);
@@ -211,7 +274,7 @@ export function mergeStudioManagedBlock(
     return { status: "refused", reason: "malformed_managed_block", detail: found };
   }
 
-  const block = renderStudioManagedBlock(brief);
+  const block = renderStudioFencedDocument(body, vexVersion);
 
   if (found === undefined) {
     // Exactly one blank line between the user's text and the Vex fence.
@@ -234,7 +297,26 @@ export function mergeStudioManagedBlock(
   return next === existing ? { status: "unchanged" } : rendered(next);
 }
 
-/** `AGENTS.md` with the Vex block removed and every other byte preserved. */
+/** `AGENTS.md` with the Vex block present and current. */
+export function mergeStudioManagedBlock(
+  existing: string,
+  brief: StudioProjectBrief,
+  options: { readonly overwriteDrift: boolean },
+): StudioRenderResult {
+  return mergeStudioFencedDocument(
+    existing,
+    renderStudioManagedBody(brief),
+    brief.vexVersion,
+    options,
+  );
+}
+
+/**
+ * A managed file with the Vex fence removed and every other byte preserved.
+ *
+ * Generic, like the fence itself: it locates the markers, not a document, so
+ * `AGENTS.md` and `.vex/vex-guide.md` are taken back out the same way.
+ */
 export function removeStudioManagedBlock(existing: string): StudioRenderResult {
   const found = locateManagedBlock(existing);
   if (typeof found === "string") {

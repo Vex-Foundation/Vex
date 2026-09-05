@@ -9,7 +9,7 @@ export const UNISWAP_NAVIGATION: ProtocolNamespaceNavigation = {
   // (catalog.ts derives that list FROM this flag),
   // `buildDiscoverNamespaceDescription()`'s static schema text,
   // `discoverProtocolCapabilities`'s candidate filter, and the built
-  // `# Available Protocol Namespaces` prompt section — so these tools now
+  // `# Available Protocol Namespaces` prompt section - so these tools now
   // discover normally instead of only through the internal aliases.
   //
   // Available is not preferred: `preferInstead` below, and the Tool Map

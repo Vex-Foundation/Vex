@@ -8,11 +8,11 @@ import {
 } from "../market-read-params.js";
 
 /**
- * `pendle.prices.assets` — USD marks for Pendle assets on one chain.
+ * `pendle.prices.assets` - USD marks for Pendle assets on one chain.
  *
  * The description separates a MARK from a QUOTE explicitly. Pendle's own docs
  * warn against using its quote endpoint as a price oracle; the mirror-image
- * mistake — treating a display snapshot as a tradable price — is the one this
+ * mistake - treating a display snapshot as a tradable price - is the one this
  * tool could invite, so it is refused in words.
  *
  * Contract only; registration, passage and facet live where `market-get.ts` names them.
@@ -23,7 +23,7 @@ export const PENDLE_PRICES_ASSETS_TOOL: ProtocolToolManifest = {
   namespace: "pendle",
   lifecycle: "active",
   description:
-    "USD price marks for Pendle assets on ONE chain — principal tokens (PT), yield tokens (YT), LP tokens and " +
+    "USD price marks for Pendle assets on ONE chain - principal tokens (PT), yield tokens (YT), LP tokens and " +
     "standardised-yield (SY) tokens - including assets the wallet does not hold. Use this when the user asks what a " +
     "PT, YT, LP or SY token is worth in dollars, or when you need to mark a position you are not trading. Name " +
     "specific assets with `ids`, or " +
@@ -51,7 +51,7 @@ export const PENDLE_PRICES_ASSETS_TOOL: ProtocolToolManifest = {
       key: "ids",
       type: "string",
       description:
-        `Comma-separated asset ids to price — bare 0x addresses or 'chainId-0xaddress' composites, at most ` +
+        `Comma-separated asset ids to price - bare 0x addresses or 'chainId-0xaddress' composites, at most ` +
         `${PENDLE_PRICES_MAX_IDS} per call. An id belonging to a different chain than \`chain\` is rejected by name. ` +
         "Omit to page through the chain's assets instead.",
     },

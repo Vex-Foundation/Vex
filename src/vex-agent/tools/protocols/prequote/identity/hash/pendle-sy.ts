@@ -12,7 +12,7 @@ import { canonAddress, canonAmount } from "./canonicalize.js";
  * kind left the DB gate reads unable to tell the two directions apart, and left
  * both indistinguishable from an ordinary swap prequote at the `kind` predicate.
  *
- * The DIRECTION is bound by the kind tag itself — the FIRST material element —
+ * The DIRECTION is bound by the kind tag itself - the FIRST material element -
  * so a mint digest can never equal a redeem digest even when `sy`, `token`,
  * `amount` and slippage are identical. `sy`/`token` are therefore named by ROLE,
  * not by in/out leg: swapping the legs is no longer what distinguishes them.
@@ -23,12 +23,12 @@ import { canonAddress, canonAmount } from "./canonicalize.js";
 export interface SyMintMatchInput {
   readonly kind: "sy_mint";
   readonly sessionId: string;
-  /** VENUE binding — "pendle-sy", never plain "pendle". */
+  /** VENUE binding - "pendle-sy", never plain "pendle". */
   readonly provider: string;
   readonly chainId: number;
   /** Selected EVM wallet (signer). */
   readonly walletAddress: string;
-  /** Where the minted SY lands (the wallet — no Pendle manifest takes a recipient). */
+  /** Where the minted SY lands (the wallet - no Pendle manifest takes a recipient). */
   readonly receiver: string;
   /** The SY being wrapped INTO. */
   readonly sy: string;
@@ -51,7 +51,7 @@ export interface SyMintMatchInput {
 export interface SyRedeemMatchInput {
   readonly kind: "sy_redeem";
   readonly sessionId: string;
-  /** VENUE binding — "pendle-sy", never plain "pendle". */
+  /** VENUE binding - "pendle-sy", never plain "pendle". */
   readonly provider: string;
   readonly chainId: number;
   /** Selected EVM wallet (signer). */

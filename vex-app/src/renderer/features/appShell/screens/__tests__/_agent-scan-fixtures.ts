@@ -19,6 +19,23 @@ import type {
   AgentScanEntry,
 } from "@shared/schemas/agent-scan-feed.js";
 import type { Result } from "@shared/ipc/result.js";
+import type { AgentScanRouteScope } from "../../../../stores/uiStore/shell-route.js";
+
+/** The three scope presets the screen can be opened with. */
+export const GLOBAL_SCOPE: AgentScanRouteScope = { kind: "global" };
+export const SCOPE_SESSION_ID = "00000000-0000-4000-8000-0000000000ac";
+export const SCOPE_PROJECT_ID = "00000000-0000-4000-8000-0000000000b7";
+export const SESSION_SCOPE: AgentScanRouteScope = {
+  kind: "session",
+  sessionId: SCOPE_SESSION_ID,
+};
+export const PROJECT_SCOPE: AgentScanRouteScope = {
+  kind: "project",
+  projectId: SCOPE_PROJECT_ID,
+};
+
+/** The project name the mocked `useProject` resolves for `PROJECT_SCOPE`. */
+export const PROJECT_NAME = "Trading";
 
 export function entry(
   overrides: Partial<AgentScanEntry> & { readonly id: string },

@@ -7,7 +7,7 @@
  * `solana.tokens.trending` (default limit 20) that routinely runs to tens of KB
  * for fields a trading agent never acts on.
  *
- * This pure projector strips that noise at the handler seam — BEFORE `ok()` — so
+ * This pure projector strips that noise at the handler seam - BEFORE `ok()` - so
  * the model sees a lean, decision-relevant row: identity, price/market-cap/
  * liquidity, holder + organic-trading signals, the safety audit flags the agent
  * uses, tags/launchpad, age, and a concise per-interval stats subset.
@@ -16,8 +16,8 @@
  * case for the dropped social URLs or raw provider sub-objects (the icon is
  * re-surfaced as a single bounded `logoUrl` the renderer can display). (Both
  * wiring tools are `mutating:false` / `actionKind:"read"` with no
- * `_tradeCapture`, so projecting the `ok()` arg — which trims both the output
- * string and the unused `data` — is safe; see CC-3 / P0-3 in the tool-output
+ * `_tradeCapture`, so projecting the `ok()` arg - which trims both the output
+ * string and the unused `data` - is safe; see CC-3 / P0-3 in the tool-output
  * eval.)
  *
  * `options.statsInterval` (W1-G) is the one shaping knob this projector does
@@ -41,7 +41,7 @@ import type {
 // ── Concise output shapes ────────────────────────────────────────
 
 /**
- * Concise per-interval swap stats — the price/volume/flow signals a trading
+ * Concise per-interval swap stats - the price/volume/flow signals a trading
  * agent acts on, lifted from a verbose `JupiterTokenSwapStats` block. Every
  * field is `number | null` because Jupiter may omit or null any of them.
  */
@@ -57,7 +57,7 @@ export interface ConciseJupiterTokenStats {
   numTraders: number | null;
 }
 
-/** Concise per-token safety audit — the flags the agent uses for safety. */
+/** Concise per-token safety audit - the flags the agent uses for safety. */
 export interface ConciseJupiterTokenAudit {
   isSus: boolean | null;
   mintAuthorityDisabled: boolean | null;
@@ -65,7 +65,7 @@ export interface ConciseJupiterTokenAudit {
   topHoldersPercentage: number | null;
   devBalancePercentage: number | null;
   /**
-   * How many other tokens this token's deployer has minted — a serial-launcher
+   * How many other tokens this token's deployer has minted - a serial-launcher
    * / rug signal Jupiter ships inside the same audit block as the flags above.
    * A high count next to a fresh `createdAt` is the classic pattern. `null`
    * when Jupiter did not audit the mint.
@@ -88,7 +88,7 @@ export interface ConciseJupiterToken {
   decimals: number;
   usdPrice: number | null;
   /**
-   * Solana block the `usdPrice` was observed at — the only staleness handle on
+   * Solana block the `usdPrice` was observed at - the only staleness handle on
    * the quote. `null` when Jupiter omitted it.
    */
   priceBlockId: number | null;
@@ -126,7 +126,7 @@ export interface ConciseJupiterToken {
 export interface ProjectJupiterTokenOptions {
   /**
    * Which stats window(s) to keep; `"all"` (the default when omitted)
-   * preserves every interval block — the pre-existing behaviour before this
+   * preserves every interval block - the pre-existing behaviour before this
    * option existed. A single interval (e.g. `"1h"`) drops the other three,
    * cutting the common "what's trending right now" payload roughly 4x
    * without touching row count (recon-synth-tokens.md §3).
@@ -146,7 +146,7 @@ function boolOrNull(value: boolean | null | undefined): boolean | null {
   return typeof value === "boolean" ? value : null;
 }
 
-/** Max length of a surfaced logo URL — bounds the field against an oversized icon. */
+/** Max length of a surfaced logo URL - bounds the field against an oversized icon. */
 const MAX_LOGO_URL_LEN = 512;
 
 /**
@@ -244,7 +244,7 @@ function keepStatsInterval(
  * open `[key: string]: unknown` passthrough bag.
  *
  * `options.statsInterval` (default `"all"`) additionally narrows the kept
- * stats blocks to a single interval — see {@link ProjectJupiterTokenOptions}.
+ * stats blocks to a single interval - see {@link ProjectJupiterTokenOptions}.
  */
 export function projectJupiterToken(
   token: JupiterMintInformation,

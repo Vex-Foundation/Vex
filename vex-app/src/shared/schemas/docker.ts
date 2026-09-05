@@ -77,6 +77,13 @@ export const composeUpKindSchema = z.enum([
   "running",
   "reused",
   "port_collision",
+  // The published Postgres port is served by a database that is not this
+  // install's. Distinct from `port_collision` (the port was already busy
+  // before we published it) and from `unhealthy` (our own stack, not
+  // serving yet): only this one means the app would otherwise have
+  // migrated and written into another install's data. See
+  // `main/compose/pg-listener-identity.ts`.
+  "foreign_listener",
   "unhealthy",
   "failed",
 ]);

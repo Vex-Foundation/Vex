@@ -1,0 +1,181 @@
+{
+  "version": "launchpads-v1",
+  "mode": "lexical",
+  "datasetId": "tool-discovery-launchpads",
+  "datasetVersion": "launchpads-v1",
+  "status": "captured",
+  "capturedAt": "2026-09-05T13:29:03.101Z",
+  "metrics": {
+    "overall": {
+      "count": 9,
+      "recall1": 0.444,
+      "recall5": 0.778,
+      "coverage5": 0.667,
+      "mrr5": 0.583,
+      "groupMrr5": 0.528
+    },
+    "awareness": {
+      "blind": {
+        "count": 6,
+        "recall1": 0.333,
+        "recall5": 0.833,
+        "coverage5": 0.667,
+        "mrr5": 0.542,
+        "groupMrr5": 0.458
+      },
+      "protocolAware": {
+        "count": 3,
+        "recall1": 0.667,
+        "recall5": 0.667,
+        "coverage5": 0.667,
+        "mrr5": 0.667,
+        "groupMrr5": 0.667
+      }
+    },
+    "intentShapes": {
+      "single": {
+        "count": 8,
+        "recall1": 0.375,
+        "recall5": 0.75,
+        "coverage5": 0.75,
+        "mrr5": 0.531,
+        "groupMrr5": 0.531
+      },
+      "cross": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "compare": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "workflow": {
+        "count": 1,
+        "recall1": 1,
+        "recall5": 1,
+        "coverage5": 0,
+        "mrr5": 1,
+        "groupMrr5": 0.5
+      }
+    },
+    "scenarios": {
+      "account_history": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "bridge": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "evm_lp": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "evm_swap": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "limit_order": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "market_research": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "prediction_discovery": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "prediction_trading": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "rewards": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "solana_lend": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "solana_swap": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "token_safety": {
+        "count": 0,
+        "recall1": 0,
+        "recall5": 0,
+        "coverage5": 0,
+        "mrr5": 0,
+        "groupMrr5": 0
+      },
+      "workflow": {
+        "count": 9,
+        "recall1": 0.444,
+        "recall5": 0.778,
+        "coverage5": 0.667,
+        "mrr5": 0.583,
+        "groupMrr5": 0.528
+      }
+    }
+  },
+  "notes": [
+    "dataset tool-discovery-launchpads@launchpads-v1, mode lexical, 9 cases evaluated.",
+    "overall recall@1 0.444, recall@5 0.778, coverage@5 0.667, mrr@5 0.583, groupMrr@5 0.528.",
+    "Measured delta: none, metrics are identical to the previous baseline."
+  ]
+}

@@ -46,6 +46,7 @@ import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal } from "@xterm/xterm";
 import { TERMINAL_SCROLLBACK_ROWS } from "@shared/schemas/terminal.js";
+import { openTerminalLink } from "../../../../lib/api/terminal-links.js";
 import {
   observeTerminalTheme,
   prefersReducedMotion,
@@ -101,9 +102,19 @@ export interface TerminalRegistryOptions {
   readonly webglLoader?: WebglAddonLoader;
   readonly rendererPreference?: RendererPreference;
   /**
-   * Where a clicked link goes. The default routes through `window.open`, which
-   * main's `setWindowOpenHandler` turns into an allowlisted `shell.openExternal`
-   * - the renderer never decides that a URL may be opened.
+   * Where a clicked link goes.
+   *
+   * The default is the `vex.terminalLinks` channel: main applies the
+   * terminal-link policy and asks the user, in a NATIVE dialog showing the
+   * whole host and the whole URL, once per host per window per run. The
+   * renderer never decides that a URL may be opened and never gets a window
+   * handle. Injected so a test can observe the call without a bridge.
+   *
+   * IT WAS `window.open`, and that was the defect: xterm's own OSC 8 handler
+   * runs `confirm()` and `window.open`, and `setWindowOpenHandler` serves a
+   * CLOSED allowlist of Vex's own destinations, so every dexscreener link
+   * Claude Code printed produced an ugly renderer confirm and then nothing
+   * (owner's Windows session, 17.png/18.png).
    */
   readonly openLink?: (url: string) => void;
 }
@@ -120,7 +131,12 @@ export class TerminalRegistry {
     this.#openLink =
       options.openLink ??
       ((url) => {
-        window.open(url, "_blank", "noopener,noreferrer");
+        // Fire and forget by DESIGN: every outcome - opened, declined, refused
+        // by name - is main's to surface through its own dialog, and a renderer
+        // that awaited it would only be able to say something main already
+        // said. The rejection path is a transport failure and is swallowed
+        // rather than thrown into an xterm event handler.
+        void openTerminalLink(url).catch(() => undefined);
       });
   }
 
@@ -281,12 +297,34 @@ export class TerminalRegistry {
       // host cannot reproduce after a reattach.
       scrollback: TERMINAL_SCROLLBACK_ROWS,
       allowProposedApi: true,
+      // WITHOUT THIS THE PANE PAINTS OPAQUE BLACK. The palette's background is
+      // alpha 0 so the card surface and the brand watermark show through; with
+      // `allowTransparency` at its default (false) xterm composites every cell
+      // onto its own opaque background instead, and the watermark the pane
+      // renders underneath is never visible. The WebGL renderer honours the
+      // flag (`@xterm/addon-webgl` 0.19.0 passes it into the texture atlas and
+      // returns NULL_COLOR for cell backgrounds), so this is not a
+      // renderer-specific escape hatch. See `terminal-palette.ts` for why the
+      // token is spelled `#00000000` rather than `transparent`.
+      allowTransparency: true,
       convertEol: false,
       cursorBlink: !prefersReducedMotion(),
       // The library's only inertial behaviour. Reduced motion collapses it.
       smoothScrollDuration: prefersReducedMotion() ? 0 : 125,
       fontFamily: readMonoFontFamily(),
       theme: readTerminalTheme(document.documentElement),
+      // THE OSC 8 PATH, which is a DIFFERENT path from the web-links addon
+      // below and was the one that was broken. A shell that emits the
+      // hyperlink escape sequence (Claude Code does, `gh` does, modern `ls`
+      // does) is linkified by xterm's own `OscLinkProvider`, whose default
+      // activation is `confirm()` + `window.open`
+      // (`@xterm/xterm/src/browser/OscLinkProvider.ts:114-129`) and never
+      // touches the addon. Both now end at the same owner.
+      linkHandler: {
+        activate: (_event, text) => {
+          this.#openLink(text);
+        },
+      },
     });
 
     const fit = new FitAddon();

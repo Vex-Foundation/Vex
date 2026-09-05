@@ -21,6 +21,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FileNode } from "@shared/schemas/files.js";
+import type { FileOpenMode } from "../../workspace/types.js";
 import { ExplorerRegistry } from "../explorer-registry.js";
 import { ExplorerTree } from "../ExplorerTree.js";
 import {
@@ -101,7 +102,8 @@ function standardTree(): void {
 }
 
 async function mountTree(
-  onOpenFile: (node: FileNode) => void = () => undefined,
+  onOpenFile: (node: FileNode, mode: FileOpenMode) => void = () => undefined,
+  driftedPaths?: ReadonlyMap<string, string>,
 ): Promise<void> {
   render(
     <StrictMode>
@@ -110,6 +112,7 @@ async function mountTree(
         onOpenFile={onOpenFile}
         registry={registry}
         viewport={testViewport}
+        driftedPaths={driftedPaths}
       />
     </StrictMode>,
   );
@@ -317,6 +320,65 @@ describe("aria", () => {
     expect(rowFor("readme.md").getAttribute("aria-selected")).toBe("true");
     expect(rowFor("src").getAttribute("aria-selected")).toBe("false");
   });
+
+  /**
+   * `aria-selected` FOLLOWS THE KEYBOARD, and the open file is a decoration.
+   *
+   * Measured on the built app (live test 2026-09-03, I-5): the attribute
+   * marked the OPEN FILE, so a user arrowing down the tree heard one row
+   * announced as selected however far they moved, while `aria-activedescendant`
+   * named a different row entirely. A single-select tree has one selection and
+   * it is where the keyboard is (`listWidget.ts:203-218` renders the attribute
+   * off the selection trait, which its mouse controller and its keyboard both
+   * move).
+   *
+   * The open file keeps its own marker, so "which file is open" is still on
+   * the row without being announced as the selection.
+   */
+  it("moves aria-selected with the KEYBOARD and marks the open file separately", async () => {
+    standardTree();
+    const opened: string[] = [];
+    await mountTree((node) => opened.push(node.path));
+
+    fireEvent.click(rowFor("readme.md"));
+    await flush();
+    expect(opened).toEqual(["readme.md"]);
+    expect(rowFor("readme.md").getAttribute("data-vex-explorer-open")).toBe("true");
+
+    fireEvent.keyDown(tree(), { key: "ArrowDown" });
+    await flush();
+
+    // The selection moved with the key; nothing else was opened.
+    expect(rowFor("tsconfig.json").getAttribute("aria-selected")).toBe("true");
+    expect(rowFor("readme.md").getAttribute("aria-selected")).toBe("false");
+    expect(opened).toEqual(["readme.md"]);
+    // ... and the open file is still marked as the open file.
+    expect(rowFor("readme.md").getAttribute("data-vex-explorer-open")).toBe("true");
+    expect(rowFor("tsconfig.json").hasAttribute("data-vex-explorer-open")).toBe(false);
+  });
+
+  /**
+   * END MOVES THE SELECTION, not only the active descendant (live test
+   * 2026-09-03, A-1: "the tree's End key does nothing; Home works"). The
+   * keystroke always reached `moveFocus:last` - `explorer-keys.test.ts` has
+   * proved that mapping since the table was written - so the report is about
+   * what the tree SHOWED and ANNOUNCED, which was the open file. This asserts
+   * the announced row, which is the half that was wrong.
+   */
+  it("End selects the LAST row and Home the first", async () => {
+    standardTree();
+    await mountTree();
+
+    fireEvent.keyDown(tree(), { key: "End" });
+    await flush();
+    expect(rowFor("tsconfig.json").getAttribute("aria-selected")).toBe("true");
+    expect(rowFor("src").getAttribute("aria-selected")).toBe("false");
+
+    fireEvent.keyDown(tree(), { key: "Home" });
+    await flush();
+    expect(rowFor("src").getAttribute("aria-selected")).toBe("true");
+    expect(rowFor("tsconfig.json").getAttribute("aria-selected")).toBe("false");
+  });
 });
 
 describe("keyboard", () => {
@@ -489,6 +551,127 @@ describe("mouse", () => {
     await flush();
     expect(rowFor("src").getAttribute("aria-expanded")).toBe("false");
   });
+
+  /**
+   * THE GESTURE DECIDES THE MODE, which is the whole of the preview contract on
+   * this side: a single click asks for a throwaway tab, a double click asks for
+   * a kept one. VS Code's own split, from the same two DOM events
+   * (`multiEditorTabsControl.ts:1125-1150` pins on `DBLCLICK`).
+   *
+   * A DOUBLE CLICK ALSO FIRES A SINGLE ONE, and the sequence asserted here is
+   * the one the browser really produces - preview, then pinned - because the
+   * workspace's promotion rule (`addFileTab` pins an already-open path) is
+   * written against exactly that pair. A test that fired only `dblclick` would
+   * be proving a sequence no user can generate.
+   */
+  it("a single click asks for a PREVIEW and a double click for a KEPT tab", async () => {
+    standardTree();
+    const opened: { path: string; mode: FileOpenMode }[] = [];
+    await mountTree((node, mode) => opened.push({ path: node.path, mode }));
+
+    fireEvent.click(rowFor("src"));
+    await flush();
+
+    fireEvent.click(rowFor("alpha.ts"));
+    await flush();
+    expect(opened).toEqual([{ path: "src/alpha.ts", mode: "preview" }]);
+
+    fireEvent.click(rowFor("beta.ts"));
+    fireEvent.doubleClick(rowFor("beta.ts"));
+    await flush();
+    expect(opened.slice(1)).toEqual([
+      { path: "src/beta.ts", mode: "preview" },
+      { path: "src/beta.ts", mode: "pinned" },
+    ]);
+  });
+
+  /**
+   * ENTER IS PINNED, and that is a deliberate difference from the click beside
+   * it: VS Code reads `editorOptions.pinned` off its open event and its list
+   * sets it for a keyboard open (`explorerView.ts:532-549`), because a user who
+   * arrowed to a file and pressed Enter has CHOSEN it rather than browsed past
+   * it.
+   */
+  it("Enter opens a file PINNED, unlike the single click", async () => {
+    standardTree();
+    const opened: { path: string; mode: FileOpenMode }[] = [];
+    await mountTree((node, mode) => opened.push({ path: node.path, mode }));
+
+    fireEvent.click(rowFor("src"));
+    await flush();
+
+    const tree = screen.getByRole("tree");
+    tree.focus();
+    fireEvent.keyDown(tree, { key: "ArrowDown" });
+    await flush();
+    fireEvent.keyDown(tree, { key: "Enter" });
+    await flush();
+
+    expect(opened).toEqual([{ path: "src/alpha.ts", mode: "pinned" }]);
+  });
+
+  /**
+   * A PREVIEW OPEN LEAVES FOCUS IN THE TREE, even when the surface that mounts
+   * for it drops focus on the floor.
+   *
+   * Measured on the built app (live test 2026-09-03, I-5): after a single
+   * click on a file row `document.activeElement` was `body`, so F2, Delete and
+   * Shift+F10 did nothing at all until the user pressed Ctrl+Shift+E to get
+   * back. The steal happens OUTSIDE this component - the preview mounts
+   * elsewhere - so the open callback here blurs the tree the way that surface
+   * did, which is the only honest way to reproduce a foreign steal in jsdom.
+   *
+   * The rule is VS Code's split (`listService.ts:717-733`): a pointer open
+   * passes `preserveFocus: true`, a double click and Enter pass `false`.
+   */
+  it("keeps focus in the tree when a preview open drops it", async () => {
+    standardTree();
+    await mountTree(() => {
+      // What the built app did: focus ends up on `body`.
+      (document.activeElement as HTMLElement | null)?.blur();
+    });
+
+    fireEvent.click(rowFor("src"));
+    await flush();
+    const row = rowFor("alpha.ts");
+    fireEvent.mouseDown(row);
+    fireEvent.click(row);
+    await flush();
+
+    expect(document.activeElement).toBe(tree());
+    // The proof that this focus is the useful kind: the write keys work from
+    // it, which is exactly what the live pass found broken.
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "F2" });
+    await flush();
+    expect(screen.getByRole("textbox")).toBeTruthy();
+    fireEvent.keyDown(screen.getByRole("textbox"), { key: "Escape" });
+    await flush();
+  });
+
+  /**
+   * AND IT NEVER STEALS. The repair's permission is `studioFocusPermission`'s
+   * and VS Code's `EditorPart.shouldRestoreFocus`: take focus only when
+   * NOTHING holds it. A user who clicked straight on into another surface
+   * keeps their focus there.
+   */
+  it("does NOT take focus back from a surface that claimed it", async () => {
+    standardTree();
+    const elsewhere = document.createElement("button");
+    document.body.append(elsewhere);
+    await mountTree(() => {
+      elsewhere.focus();
+    });
+
+    fireEvent.click(rowFor("src"));
+    await flush();
+    const row = rowFor("alpha.ts");
+    fireEvent.mouseDown(row);
+    fireEvent.click(row);
+    await flush();
+
+    expect(document.activeElement).toBe(elsewhere);
+    elsewhere.remove();
+  });
 });
 
 describe("paging", () => {
@@ -598,14 +781,108 @@ describe("notices", () => {
 });
 
 describe("motion", () => {
-  it("guards the twistie transition behind motion-reduce", async () => {
+  it("rotates the twistie through the shared motion primitive", async () => {
     standardTree();
     await mountTree();
 
     const twistie = rowFor("src").querySelector("svg");
     expect(twistie).not.toBeNull();
-    // The one animated property in this feature. A user who asked the OS for
-    // less motion must not get a rotation on every expand.
-    expect(twistie?.getAttribute("class") ?? "").toContain("motion-reduce:transition-none");
+    // CONTRACT CHANGE (B5.2 motion pass). The guard used to be a per-call-site
+    // `motion-reduce:transition-none` utility next to a hardcoded
+    // `duration-150`. Both moved into `.vex-twistie`, which states the duration
+    // as `--vex-duration-base` and its own reduced-motion collapse ONCE; the
+    // promise to the user is unchanged - a user who asked the OS for less
+    // motion gets no rotation on expand - and the CSS half of it is asserted by
+    // styles/global-css/__tests__/motion-tokens.test.ts.
+    expect(twistie?.getAttribute("class") ?? "").toContain("vex-twistie");
+    expect(twistie?.getAttribute("class") ?? "").not.toContain("duration-150");
+  });
+
+  it("settles the row fill through the shared tint primitive", async () => {
+    standardTree();
+    await mountTree();
+
+    // Selection and hover share one fill, so the row - not the glyph - is what
+    // carries the colour transition.
+    expect(rowFor("src").getAttribute("class") ?? "").toContain("vex-tint");
+  });
+
+  it("fades a row in on mount, so unfolding a folder is a ramp rather than a cut", async () => {
+    standardTree();
+    await mountTree();
+
+    // `vex-surface-enter` is the house entrance (motion-primitives.css), the
+    // seat of the reference tree's mount fade (deepseek `Rows.module.css`
+    // `row-in`). Every row carries it: the children a folder unfolds are rows
+    // mounting, and that mount is the choreography. Keyed by row id, a
+    // re-render never replays it.
+    expect(rowFor("src").getAttribute("class") ?? "").toContain("vex-surface-enter");
+    expect(rowFor("readme.md").getAttribute("class") ?? "").toContain("vex-surface-enter");
+  });
+});
+
+/**
+ * DECORATIONS: a drifted Vex-managed FILE carries the badge too (finding A7).
+ *
+ * VS Code's explorer puts this class of fact on the resource it is ABOUT
+ * (`explorerDecorationsProvider.ts`, exercised in `explorerView.test.ts` by
+ * calling `provideDecorations(stat)` per state), not only on the root above it.
+ * Ours said "something Vex wrote has drifted" on the project row and left the
+ * user to guess which file.
+ *
+ * The tree does not DECIDE any of this: the project owns the drift fact and the
+ * sidebar hands down a path map, which is why these cases drive the prop
+ * directly rather than inventing a second source of truth to assert against.
+ */
+describe("drift decorations", () => {
+  it("badges the named file, in words, and leaves every other row alone", async () => {
+    standardTree();
+    await mountTree(
+      () => undefined,
+      new Map([["readme.md", "readme.md: Edited since Vex wrote it"]]),
+    );
+
+    const badged = rowFor("readme.md");
+    expect(
+      within(badged).getByText("readme.md: Edited since Vex wrote it"),
+    ).not.toBeNull();
+    expect(badged.querySelector("[data-vex-file-drift]")).not.toBeNull();
+    // The dot is colour-only, so the words are what assistive technology gets.
+    expect(
+      rowFor("tsconfig.json").querySelector("[data-vex-file-drift]"),
+    ).toBeNull();
+  });
+
+  it("decorates by PATH, not by name: a same-named file elsewhere is clean", async () => {
+    // Two `alpha.ts` would be one bug: the map is keyed by the project-relative
+    // path precisely because names repeat across folders.
+    standardTree();
+    await mountTree(
+      () => undefined,
+      new Map([["src/alpha.ts", "alpha.ts: Missing from the project folder"]]),
+    );
+    fireEvent.click(rowFor("src"));
+    await flush();
+
+    expect(
+      rowFor("src/alpha.ts".split("/")[1] ?? "alpha.ts").querySelector(
+        "[data-vex-file-drift]",
+      ),
+    ).not.toBeNull();
+    expect(rowFor("beta.ts").querySelector("[data-vex-file-drift]")).toBeNull();
+  });
+
+  it("never badges a DIRECTORY, even when a drifted path names one", async () => {
+    // A folder is not a Vex-managed artifact, and a badge on one would claim a
+    // state no project DTO reports.
+    standardTree();
+    await mountTree(() => undefined, new Map([["src", "src: Edited since Vex wrote it"]]));
+    expect(rowFor("src").querySelector("[data-vex-file-drift]")).toBeNull();
+  });
+
+  it("renders no decoration slot at all with no map (every other mount)", async () => {
+    standardTree();
+    await mountTree();
+    expect(document.querySelector("[data-vex-file-drift]")).toBeNull();
   });
 });

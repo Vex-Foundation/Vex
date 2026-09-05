@@ -5,7 +5,7 @@
  *
  * Vex signs ONLY origin steps; the destination fill is solver-signed and
  * externally observed. Any early end returns a finished `ToolResult` built by
- * `./results.js` — this module owns the sequencing, not the wording.
+ * `./results.js` - this module owns the sequencing, not the wording.
  *
  * Extracted verbatim from `../bridge.ts` as part of a façade-preserving
  * structural split (SPEC wave 0R.2). `../bridge.ts` remains the public entry
@@ -38,9 +38,11 @@ import {
 import {
   authorizedDepositRecipients,
   confirmDepositWithProvenAmounts,
+  depositShortfallOf,
   proveErc20DepositAmount,
   receiptDepositSettlement,
   type DepositSettlement,
+  type DepositShortfall,
   type DepositTransferLog,
 } from "@vex-agent/tools/protocols/bridge-deposit-evidence.js";
 import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
@@ -62,7 +64,7 @@ import {
 
 export interface OriginBroadcast {
   /**
-   * `vex_fee` is Vex's OWN treasury transfer, not a Relay step — surfaced with
+   * `vex_fee` is Vex's OWN treasury transfer, not a Relay step - surfaced with
    * its own display role so the agent can tell it apart from a real approval
    * (the durable row records it under `allowance`, the closest existing
    * `event_role`; see `BRIDGE_FEE_ACTIVITY_EVENT_ROLE`).
@@ -70,7 +72,7 @@ export interface OriginBroadcast {
   readonly role: RelayStepRole | "vex_fee";
   readonly txHash: string;
   // `confirmed_unrecorded` (m5-relay / Phase-1 C41): the origin tx confirmed
-  // on-chain but Vex's durable confirm write did NOT apply — never present it as
+  // on-chain but Vex's durable confirm write did NOT apply - never present it as
   // an ordinary confirmation.
   readonly status: "confirmed" | "confirmed_unrecorded" | "broadcast_unconfirmed" | "reverted";
 }
@@ -81,7 +83,16 @@ export interface OriginBroadcast {
  * already built.
  */
 export type OriginBroadcastRun =
-  | { readonly kind: "confirmed"; readonly broadcasts: OriginBroadcast[] }
+  | {
+      readonly kind: "confirmed";
+      readonly broadcasts: OriginBroadcast[];
+      /**
+       * The deposit's receipt proved LESS than the quote bridged, or `null`
+       * when it met the floor. A shortfall makes the Vex fee leg ineligible
+       * (`bridge-deposit-evidence.ts`): the caller must not run it.
+       */
+      readonly depositShortfall: DepositShortfall | null;
+    }
   | { readonly kind: "ended"; readonly result: ToolResult };
 
 export interface OriginBroadcastInput {
@@ -138,6 +149,7 @@ function relayDepositSettlement(args: {
   }
   return receiptDepositSettlement(proveErc20DepositAmount({
     logs: args.logs,
+    chainId: legs.originChainId,
     tokenAddress: legs.originCurrency,
     senderAddress: args.senderAddress,
     recipients: authorizedDepositRecipients({
@@ -156,13 +168,16 @@ export async function runOriginBroadcasts(input: OriginBroadcastInput): Promise<
   // Read-after-write anchor for the NEXT origin leg: the approve leg this loop
   // just confirmed is exactly the state the deposit leg's pre-sign estimate
   // depends on, and the estimating node does not always have it yet (live
-  // 2026-07-25, deposit `0xc96bfee1…` — `dependent-leg-gas-estimate.ts`).
+  // 2026-07-25, deposit `0xc96bfee1…` - `dependent-leg-gas-estimate.ts`).
   let priorLeg: ConfirmedPriorLeg | undefined;
   // Where the approve steps of THIS bridge let a token be pulled to, each bound
   // to the token its own approval named. Together with the deposit call's own
   // target, the ones naming the ORIGIN currency are the only recipients a
   // deposit transfer may pay for its amount to count as proven.
   const approvedSpenders: ApprovedSpender[] = [];
+  // What the deposit's own receipt proved against what the plan bridged. Set
+  // once, on the deposit leg, and read by the caller's fee decision.
+  let depositShortfall: DepositShortfall | null = null;
   try {
     for (let i = 0; i < signable.length; i++) {
       currentIndex = i;
@@ -194,9 +209,9 @@ export async function runOriginBroadcasts(input: OriginBroadcastInput): Promise<
           const res = await markActivityBroadcast(legRow.id, handles);
           if (!res.applied) {
             // A CAS miss means the row is no longer the pending/hashless row we
-            // expect — refuse to broadcast an UNTRACKED transaction (throwing
+            // expect - refuse to broadcast an UNTRACKED transaction (throwing
             // here aborts signStageBroadcast BEFORE sendRawTransaction).
-            throw new Error(`markActivityBroadcast CAS miss for leg ${legRow.id} — refusing to broadcast untracked`);
+            throw new Error(`markActivityBroadcast CAS miss for leg ${legRow.id} - refusing to broadcast untracked`);
           }
         },
         onAccepted: async () => {
@@ -261,7 +276,7 @@ export async function runOriginBroadcasts(input: OriginBroadcastInput): Promise<
         };
       }
 
-      // confirmed on origin — but never present an UNRECORDED confirmation as
+      // confirmed on origin - but never present an UNRECORDED confirmation as
       // ordinary (m5-relay / Phase-1 C41): the on-chain tx is confirmed, yet if
       // the durable confirm CAS misses to a non-confirmed state (the row is no
       // longer the pending row we expect), Vex's own record did not capture it.
@@ -277,17 +292,21 @@ export async function runOriginBroadcasts(input: OriginBroadcastInput): Promise<
         // signed, or the single ERC-20 `Transfer` bound to the wallet, the
         // authorized recipient and the quoted amount
         // (`bridge-deposit-evidence.ts`). Anything else declines by name.
-        const confirmResult = stepEntry.role === "bridge_deposit"
+        const settlement = stepEntry.role === "bridge_deposit"
+          ? relayDepositSettlement({
+            legs, txParams, approvedSpenders,
+            logs: outcome.receipt.logs,
+            senderAddress: input.expectedFrom,
+          })
+          : null;
+        if (settlement !== null) depositShortfall = depositShortfallOf(settlement);
+        const confirmResult = settlement !== null
           ? await confirmDepositWithProvenAmounts({
             eventId: legRow.id,
             role: stepEntry.role,
             txHash: outcome.txHash,
             chainId: legs.originChainId,
-            settlement: relayDepositSettlement({
-              legs, txParams, approvedSpenders,
-              logs: outcome.receipt.logs,
-              senderAddress: input.expectedFrom,
-            }),
+            settlement,
             logScope: "relay.bridge",
           })
           : await confirmActivityEvent(
@@ -308,7 +327,7 @@ export async function runOriginBroadcasts(input: OriginBroadcastInput): Promise<
       }
     }
   } catch (err) {
-    // The intent already exists — abort the remaining never-signed rows (incl. the
+    // The intent already exists - abort the remaining never-signed rows (incl. the
     // logical row) and return with the SAME executionId; never create a second one.
     const safe = summarizeProtocolError(err).message;
     await abortRemaining(executionId, currentIndex, safe);
@@ -342,5 +361,5 @@ export async function runOriginBroadcasts(input: OriginBroadcastInput): Promise<
     };
   }
 
-  return { kind: "confirmed", broadcasts };
+  return { kind: "confirmed", broadcasts, depositShortfall };
 }

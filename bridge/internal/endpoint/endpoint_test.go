@@ -1,14 +1,47 @@
 package endpoint_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
 
+	"github.com/Vex-Foundation/vex/bridge/internal/configdir"
 	"github.com/Vex-Foundation/vex/bridge/internal/endpoint"
 	"github.com/Vex-Foundation/vex/bridge/internal/vectors"
 )
+
+// shortTempDir is t.TempDir for the cases whose subject is a path the planner
+// must accept, not refuse for its length.
+//
+// t.TempDir is unusable for those on macOS: it builds on TMPDIR, which is
+// per-user and per-boot (`/var/folders/df/djsxfhc17x95674wsm_g8s980000gn/T`),
+// then appends the TEST'S OWN NAME plus a random suffix. A socket path under it
+// is comfortably over the 103-byte sun_path bound before the fixture adds a
+// single directory, so the plan refuses `path_too_long` ahead of whatever check
+// the case is actually about. `/tmp` is the short root on every unix Vex
+// supports (on macOS it is the symlink to `/private/tmp`, which is short too),
+// and it is named literally because os.TempDir would hand back the long TMPDIR
+// again.
+//
+// Not realpathed on purpose: these cases assert refusal CODES, never a path
+// echoed back, and lstat resolves an intermediate `/tmp` link on its own - so
+// resolving here would only make the path longer for no assertion's benefit.
+// A case that compares a PATH must resolve its root instead (see identity_test).
+func shortTempDir(t *testing.T) string {
+	t.Helper()
+	root, err := os.MkdirTemp("/tmp", "vex-endpoint-")
+	if err != nil {
+		t.Fatalf("creating a short temporary root: %v", err)
+	}
+	t.Cleanup(func() {
+		if removeErr := os.RemoveAll(root); removeErr != nil {
+			t.Errorf("removing the temporary root %s: %v", root, removeErr)
+		}
+	})
+	return root
+}
 
 func load(t *testing.T) *vectors.File {
 	t.Helper()
@@ -325,8 +358,16 @@ func TestProbeFilesystemDoesNotFollowASymlink(t *testing.T) {
 }
 
 // The refusal the symlink probe produces, through the planner rather than the
-// probe alone: a symlinked XDG_RUNTIME_DIR is not private, so the plan falls
-// through to the tmpdir form instead of binding inside the link.
+// probe alone: a symlinked XDG_RUNTIME_DIR is not private, so the plan leaves
+// it for the next rung instead of binding inside the link.
+//
+// WHICH RUNG IT LANDS ON IS THE MACHINE'S ANSWER, NOT THIS TEST'S SUBJECT. The
+// derivation now probes /run/user/<uid> when the variable is unusable, and this
+// case runs against the REAL filesystem with the REAL uid, so a developer
+// machine with a systemd session lands there and a container without one lands
+// on the tmpdir form. The invariant asserted is the one the case exists for -
+// the plan never binds inside the link - plus the plan being exactly the rung
+// the same real probe says it should be.
 func TestSymlinkedRuntimeDirIsNotPrivate(t *testing.T) {
 	root := t.TempDir()
 	target := filepath.Join(root, "run")
@@ -352,9 +393,29 @@ func TestSymlinkedRuntimeDirIsNotPrivate(t *testing.T) {
 	if plan.ParentDir == link {
 		t.Fatal("the plan bound inside the SYMLINK; a link is not a private runtime directory")
 	}
-	if !plan.CreateParent {
-		t.Fatal("the plan did not fall through to the host-owned tmpdir form")
+	if plan.ParentDir == target {
+		t.Fatal("the plan bound inside the link's TARGET; the probe followed the link")
 	}
+
+	systemdDir := fmt.Sprintf("%s/%d", endpoint.LinuxRuntimeDirRoot, os.Getuid())
+	if isPrivateOnThisMachine(systemdDir) {
+		if plan.ParentDir != systemdDir || plan.CreateParent {
+			t.Fatalf("this machine has a private %s; the plan is %+v", systemdDir, plan)
+		}
+		return
+	}
+	if !plan.CreateParent {
+		t.Fatalf("no private %s here, so the plan must be the host-owned tmpdir form; got %+v",
+			systemdDir, plan)
+	}
+}
+
+// isPrivateOnThisMachine answers the same question the planner asks about
+// /run/user/<uid>, through the same probe, so a test expectation cannot drift
+// from the rule it is predicting.
+func isPrivateOnThisMachine(dir string) bool {
+	facts := endpoint.ProbeFilesystem(dir)
+	return facts != nil && facts.IsDirectory && facts.UID == os.Getuid() && facts.Mode&0o077 == 0
 }
 
 // The same rule at the OVERRIDE's parent, where the refusal is named rather
@@ -370,7 +431,7 @@ func TestSymlinkedOverrideParentIsRefusedByName(t *testing.T) {
 		// proven on every platform by TestProbeFilesystemDoesNotFollowASymlink.
 		t.Skip("unix socket override arm cannot address a Windows filesystem")
 	}
-	root := t.TempDir()
+	root := shortTempDir(t)
 	target := filepath.Join(root, "real")
 	if err := os.Mkdir(target, 0o700); err != nil {
 		t.Fatalf("creating the target directory: %v", err)
@@ -380,10 +441,21 @@ func TestSymlinkedOverrideParentIsRefusedByName(t *testing.T) {
 		t.Skipf("this filesystem does not support symlinks: %v", err)
 	}
 
+	override := filepath.Join(link, "s.sock")
+	// The subject is the parent-not-directory refusal, which planOverride only
+	// reaches AFTER the sun_path bound. A fixture over the bound would refuse
+	// path_too_long and quietly stop testing the lstat rule, so the precondition
+	// is asserted rather than assumed.
+	if len(override) > endpoint.SunPathMaxBytes {
+		t.Fatalf("the fixture override path is %d bytes, over the %d-byte sun_path bound: "+
+			"this case would refuse path_too_long before the parent check it exists to prove",
+			len(override), endpoint.SunPathMaxBytes)
+	}
+
 	plan := endpoint.Derive(endpoint.Input{
 		GOOS:               "linux",
 		ConfigDirHashInput: "/home/alice/.config/vex",
-		Env:                map[string]string{endpoint.OverrideEnv: filepath.Join(link, "s.sock")},
+		Env:                map[string]string{endpoint.OverrideEnv: override},
 		Tmpdir:             "/tmp",
 		UID:                os.Getuid(),
 		ProbeDirectory:     endpoint.ProbeFilesystem,
@@ -396,61 +468,53 @@ func TestSymlinkedOverrideParentIsRefusedByName(t *testing.T) {
 	}
 }
 
-// THE WINDOWS TRANSPORT IS PLANNED BUT NOT OPENED (contract 1.6).
+// THE WINDOWS TRANSPORT IS OPEN, AND WHAT GETS DIALLED IS THE DERIVED NAME
+// (contract 1.6).
 //
-// The two halves are asserted together on purpose: the derivation, the pipe
-// name and the override syntax must keep working exactly as the vectors pin
-// them, AND the transport must be refused by name. A change that disabled
-// Windows by breaking the plan would pass one half and fail this test.
-func TestWindowsTransportIsGatedUntilProven(t *testing.T) {
-	if endpoint.WindowsTransportProven {
-		t.Fatal("WindowsTransportProven is true; it may only be flipped by extending " +
-			"the required bridge-windows CI job with the contract 1.6 proof matrix")
+// This was TestWindowsTransportIsGatedUntilProven, the anti-flip test: it
+// asserted the flag false and the plan-time refusal by code. Both went with the
+// flip - UnprovenWindowsTransport has no caller left and its code has no
+// producer - and the same assertion now points the other way, because the
+// flag's danger reversed direction. While it was false, an unmeasured transport
+// could be opened by a one-word edit; now that it is true, the failure mode is
+// the two owners DISAGREEING. This test and the host's "has the transport OPEN,
+// and serves the pipe the derivation names"
+// (vex-app/src/main/studio/__tests__/mcp-host-endpoint.test.ts) are halves of
+// one check: either flag false while the other is true is a rejected change.
+//
+// THE MATRIX BEHIND THE true, all measured (contract 1.6): rows 1, 2, 3, 7 and
+// 8 on bridge-windows run 33646484002; row 4's host half on vex-app-windows run
+// 33650332655; rows 5 and 6 on bridge-windows run 33663385959.
+func TestWindowsTransportIsProvenAndTheDerivedPipeIsDialled(t *testing.T) {
+	if !endpoint.WindowsTransportProven {
+		t.Fatal("WindowsTransportProven is false while the host's " +
+			"WINDOWS_TRANSPORT_PROVEN is true: the two owners are one decision " +
+			"and they change together (contract 1.6)")
 	}
 
+	const windowsConfigDir = `C:\Users\alice\AppData\Roaming\vex`
 	plan := endpoint.Derive(endpoint.Input{
 		GOOS:               "windows",
-		ConfigDirHashInput: `C:\Users\alice\AppData\Roaming\vex`,
+		ConfigDirHashInput: windowsConfigDir,
 		Env:                map[string]string{},
 		Tmpdir:             `C:\Temp`,
 		UID:                -1,
 		ProbeDirectory:     func(string) *endpoint.DirFacts { return nil },
 	})
-	// The PATTERN survives the gate: still a pipe, still the derived name.
 	if plan.Kind != endpoint.KindPipe {
-		t.Fatalf("the windows plan is %+v; derivation must be unchanged", plan)
+		t.Fatalf("the windows plan is %+v; it must be the pipe the bridge dials", plan)
 	}
 
-	gated := endpoint.UnprovenWindowsTransport(plan)
-	if gated == nil {
-		t.Fatal("a pipe plan must be refused while the transport is unproven")
-	}
-	if gated.Kind != endpoint.KindRefused {
-		t.Fatalf("the gate returned kind %q", gated.Kind)
-	}
-	if gated.Code != endpoint.RefuseWindowsPendingPlatformProof {
-		t.Fatalf("the gate refused with %q, want %q",
-			gated.Code, endpoint.RefuseWindowsPendingPlatformProof)
-	}
-	if len(gated.Message) < 40 {
-		t.Fatalf("the refusal must carry a sentence naming the remedy; got %q", gated.Message)
-	}
-
-	// A UNIX plan is untouched by the gate: this refuses one transport, not
-	// every plan that reaches it.
-	unix := endpoint.Derive(endpoint.Input{
-		GOOS:               "linux",
-		ConfigDirHashInput: "/home/alice/.config/vex",
-		Env:                map[string]string{},
-		Tmpdir:             "/tmp",
-		UID:                1000,
-		ProbeDirectory:     func(string) *endpoint.DirFacts { return nil },
-	})
-	if unix.Kind != endpoint.KindUnix {
-		t.Fatalf("the linux plan is %+v", unix)
-	}
-	if endpoint.UnprovenWindowsTransport(unix) != nil {
-		t.Fatal("the windows gate refused a unix plan")
+	// A diff that opened the transport by ALTERING the derivation would ship a
+	// pipe name no vector describes, and fails here rather than on a user's
+	// machine. The dial of a REAL pipe is measured where a pipe can exist:
+	// TestPipeDialSupportsConcurrentDuplex, TestPipeHandleTakesARealDeadline,
+	// TestPipeAckDeadlineFiresOnASilentHost,
+	// TestPipeDrainDeadlineFiresOnASilentHost and
+	// TestClosingThePipeCancelsABlockedRead in cmd/vex-mcp/dial_windows_test.go,
+	// which are rows 5 and 6 of the matrix (bridge-windows run 33663385959).
+	if want := endpoint.PipeName(windowsConfigDir); plan.Path != want {
+		t.Fatalf("the plan dials %q, want the derived %q", plan.Path, want)
 	}
 }
 
@@ -495,5 +559,129 @@ func TestPipeOverrideIsRefusedOnEveryUnixTarget(t *testing.T) {
 	})
 	if win.Kind != endpoint.KindPipe || win.Path != `\\.\pipe\vex-studio-abc` {
 		t.Fatalf("win32 pipe override planned %+v", win)
+	}
+}
+
+// THE ORDER, AS A PROPERTY: two private runtime directories, and the one both
+// processes can READ wins (contract 1.2, rows 1 and 2).
+//
+// A vector row pins the answer for one machine shape. This pins the reason:
+// the app half sees a custom XDG_RUNTIME_DIR (WSLg's /mnt/wslg/runtime-dir is
+// the measured example) and the bridge half, spawned by a client that scrubs
+// the environment, sees nothing - and both must still name ONE endpoint. With
+// the variable consulted first they named two, each inside a directory that
+// passed the privacy gate, which is exactly why the gate alone was not enough.
+func TestPrivateRunUserWinsOverACustomXDGTheLauncherMayDrop(t *testing.T) {
+	const configDir = "/home/alice/.config/vex"
+	const customXDG = "/mnt/wslg/runtime-dir"
+	systemdDir := fmt.Sprintf("%s/%d", endpoint.LinuxRuntimeDirRoot, 1000)
+	bothPrivate := func(dir string) *endpoint.DirFacts {
+		if dir == customXDG || dir == systemdDir {
+			return &endpoint.DirFacts{IsDirectory: true, UID: 1000, Mode: 0o700}
+		}
+		return nil
+	}
+	plan := func(env map[string]string) endpoint.Plan {
+		return endpoint.Derive(endpoint.Input{
+			GOOS:               "linux",
+			ConfigDirHashInput: configDir,
+			Env:                env,
+			Tmpdir:             "/tmp",
+			UID:                1000,
+			ProbeDirectory:     bothPrivate,
+		})
+	}
+
+	app := plan(map[string]string{"XDG_RUNTIME_DIR": customXDG})
+	scrubbed := plan(map[string]string{})
+	if app != scrubbed {
+		t.Fatalf("the two halves derived DIFFERENT endpoints: app %+v, scrubbed %+v", app, scrubbed)
+	}
+	if app.ParentDir != systemdDir || app.CreateParent {
+		t.Fatalf("the plan is %+v; contract 1.2 row 1 names %s, created by the system", app, systemdDir)
+	}
+	if want := configdir.JoinPosix(systemdDir, endpoint.FileName(configDir)); app.Path != want {
+		t.Fatalf("path %q, want %q", app.Path, want)
+	}
+}
+
+// ROW 2 STILL SERVES THE SYSTEMS IT EXISTS FOR: no /run/user/<uid>, so a
+// custom private XDG_RUNTIME_DIR is the only private runtime directory the
+// machine offers, and the plan uses it rather than falling to the tmpdir form.
+func TestCustomXDGIsUsedWhenThereIsNoPrivateRunUser(t *testing.T) {
+	const configDir = "/home/alice/.config/vex"
+	const customXDG = "/mnt/wslg/runtime-dir"
+	for _, row := range []struct {
+		name       string
+		systemdDir *endpoint.DirFacts
+	}{
+		{"absent", nil},
+		{"owned by another user", &endpoint.DirFacts{IsDirectory: true, UID: 0, Mode: 0o700}},
+		{"readable by the group", &endpoint.DirFacts{IsDirectory: true, UID: 1000, Mode: 0o750}},
+		{"not a directory", &endpoint.DirFacts{IsDirectory: false, UID: 1000, Mode: 0o700}},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			plan := endpoint.Derive(endpoint.Input{
+				GOOS:               "linux",
+				ConfigDirHashInput: configDir,
+				Env:                map[string]string{"XDG_RUNTIME_DIR": customXDG},
+				Tmpdir:             "/tmp",
+				UID:                1000,
+				ProbeDirectory: func(dir string) *endpoint.DirFacts {
+					switch dir {
+					case customXDG:
+						return &endpoint.DirFacts{IsDirectory: true, UID: 1000, Mode: 0o700}
+					case fmt.Sprintf("%s/%d", endpoint.LinuxRuntimeDirRoot, 1000):
+						return row.systemdDir
+					}
+					return nil
+				},
+			})
+			if plan.ParentDir != customXDG || plan.CreateParent {
+				t.Fatalf("plan %+v; contract 1.2 row 2 names %s, created by the system",
+					plan, customXDG)
+			}
+		})
+	}
+}
+
+// THE RESIDUAL DIVERGENCE, MEASURED RATHER THAN ASSERTED AWAY (contract 1.2).
+//
+// No private /run/user/<uid> and a custom private XDG_RUNTIME_DIR the client
+// drops: the host lands on row 2 and this side on row 3, and no fact both
+// processes read closes it. The test exists so the gap is a KNOWN quantity
+// with an owner - the rendezvous file named in 1.2 - rather than a surprise on
+// a user's machine, and so that a future change which closes it fails here and
+// is forced to update the contract in the same diff.
+func TestTheCustomXDGResidualDivergenceIsWhatTheContractSays(t *testing.T) {
+	const configDir = "/home/alice/.config/vex"
+	const customXDG = "/mnt/wslg/runtime-dir"
+	onlyCustom := func(dir string) *endpoint.DirFacts {
+		if dir == customXDG {
+			return &endpoint.DirFacts{IsDirectory: true, UID: 1000, Mode: 0o700}
+		}
+		return nil
+	}
+	plan := func(env map[string]string) endpoint.Plan {
+		return endpoint.Derive(endpoint.Input{
+			GOOS:               "linux",
+			ConfigDirHashInput: configDir,
+			Env:                env,
+			Tmpdir:             "/tmp",
+			UID:                1000,
+			ProbeDirectory:     onlyCustom,
+		})
+	}
+	host := plan(map[string]string{"XDG_RUNTIME_DIR": customXDG})
+	scrubbed := plan(map[string]string{})
+	if host.ParentDir != customXDG {
+		t.Fatalf("the host half is %+v, want the custom runtime directory", host)
+	}
+	if scrubbed.ParentDir != "/tmp/vex-studio-1000" || !scrubbed.CreateParent {
+		t.Fatalf("the scrubbed half is %+v, want the tmpdir form", scrubbed)
+	}
+	if host.Path == scrubbed.Path {
+		t.Fatal("the residual divergence contract 1.2 names is CLOSED: update section 1.2, " +
+			"its follow-up and this test in the same change")
 	}
 }

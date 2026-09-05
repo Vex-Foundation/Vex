@@ -17,7 +17,7 @@ import {
 import { log } from "../../logger/index.js";
 import { registerHandler } from "../register-handler.js";
 import { controlFailedError } from "../runtime/_errors.js";
-import { ensureEngineDbUrl } from "../runtime/_ensure-engine-db-url.js";
+import { ensureEngineDbUrl } from "../../database/engine-db-readiness.js";
 import { emitControlStateAfterChange } from "../runtime/_emit-control-state.js";
 
 export function registerMissionRenewHandler(): () => void {

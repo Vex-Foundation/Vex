@@ -5,25 +5,25 @@
  * §3/R2b, migration 049) write their durable truth DIRECTLY to
  * `agent_activity` through the staged Solana seam (K2:
  * `prepareVersionedTx` + `markActivitySolanaBroadcast` +
- * `broadcastStagedSolanaTx`) instead of the legacy `_tradeCapture` pipeline —
+ * `broadcastStagedSolanaTx`) instead of the legacy `_tradeCapture` pipeline -
  * `capture: "none"` in `mutation-matrix.ts`, the same flip already applied to
  * kyberswap/uniswap/khalani/relay. The Jupiter Lend Earn `/deposit` and
  * `/withdraw` endpoints return a TRANSACTION-ONLY response
- * (`{ transaction: string }` — no `blockhashWithMetadata`), so
+ * (`{ transaction: string }` - no `blockhashWithMetadata`), so
  * `prepareVersionedTx` always runs in its REPLACE/MANDATORY-HEIGHT mode
- * (design REVISION 2 R2b) — one code path, no discriminated heightless
+ * (design REVISION 2 R2b) - one code path, no discriminated heightless
  * variant.
  *
  * Write sequence per mutation (design §2/R2, verbatim order):
- *   1. request the unsigned provider tx — a rejection here is a PRE-broadcast
+ *   1. request the unsigned provider tx - a rejection here is a PRE-broadcast
  *      failure (nothing was ever recorded): `createAgentActivityPreBroadcastFailure`.
- *   2. `createAgentActivityIntent` — record BEFORE signing.
- *   3. `prepareVersionedTx` (sign-only, REPLACE mode) — a throw here is a
+ *   2. `createAgentActivityIntent` - record BEFORE signing.
+ *   3. `prepareVersionedTx` (sign-only, REPLACE mode) - a throw here is a
  *      POST-INTENT failure: `failActivityEvent` on the row already created,
  *      NEVER a second intent row.
- *   4. `markActivitySolanaBroadcast` — persist the signature + blockhash
+ *   4. `markActivitySolanaBroadcast` - persist the signature + blockhash
  *      evidence BEFORE the submit call (CAS).
- *   5. `broadcastStagedSolanaTx` on the RPC lane — a Lend transaction is
+ *   5. `broadcastStagedSolanaTx` on the RPC lane - a Lend transaction is
  *      built by the Lend API and carries NO tip, so it cannot use Jupiter's
  *      `/tx/v1/submit` (which requires one and silently dropped these
  *      transactions on real funds before 2026-07-24); the type system now
@@ -32,13 +32,13 @@
  *      `pending` and the Solana sweep (K3) resolves it later via the
  *      canonical local signature.
  * The in-turn result is truthful-pending (`success:false`) for every outcome
- * where the bytes may be in flight — this handler never fabricates a confirm.
+ * where the bytes may be in flight - this handler never fabricates a confirm.
  * The ONE exception is a DEFINITIVE rejection (the node answered and refused
  * before broadcasting), which is reported as a rejection rather than as
  * pending, because nothing went on-chain. `solana.lend.positions`/
  * `solana.lend.rates` are unaffected reads.
  *
- * `solana.lend.withdraw` fronts TWO provider primitives behind one tool — the
+ * `solana.lend.withdraw` fronts TWO provider primitives behind one tool - the
  * amount-denominated `/withdraw` and the shares-denominated `/redeem` used for
  * a dust-free full exit. Both run the SAME write sequence above; only the
  * unsigned-transaction request differs. See the params section below
@@ -89,7 +89,7 @@ function lendFailureMessage(err: unknown): string {
 interface StagedLendMutationInput {
   readonly toolId: string;
   readonly eventRole: AgentActivityEventRole;
-  /** Which leg the asset/amount occupies on the `agent_activity` row — `in` for a deposit, `out` for a withdraw. */
+  /** Which leg the asset/amount occupies on the `agent_activity` row - `in` for a deposit, `out` for a withdraw. */
   readonly direction: "in" | "out";
   readonly actionLabel: string;
   readonly asset: string;
@@ -103,13 +103,13 @@ interface StagedLendMutationInput {
 
 /**
  * The shared K2 staged-seam orchestration for a single Vex-signed Solana
- * lend mutation (deposit or withdraw) — see the module doc's numbered
+ * lend mutation (deposit or withdraw) - see the module doc's numbered
  * write sequence.
  */
 async function executeStagedLendMutation(input: StagedLendMutationInput): Promise<ToolResult> {
   // The leg's token metadata (symbol/decimals + the exact-decimal
   // `amountHuman`) is COSMETIC provenance owned by `../activity-token-leg.ts`
-  // — it can never fail this mutation. Resolved CONCURRENTLY with the provider
+  // - it can never fail this mutation. Resolved CONCURRENTLY with the provider
   // request so it adds no latency to a funded call, and BEFORE the intent
   // write so the row carries it from creation (the repo stores `amountHuman`
   // verbatim and derives nothing, so a leg written without it stays null
@@ -134,7 +134,7 @@ async function executeStagedLendMutation(input: StagedLendMutationInput): Promis
     ...(input.direction === "in" ? { tokenIn: leg } : { tokenOut: leg }),
   };
 
-  // 1. The unsigned provider tx was requested BEFORE anything was recorded —
+  // 1. The unsigned provider tx was requested BEFORE anything was recorded -
   // a rejection is pre-broadcast (nothing to record was ever signed).
   if (!requested.ok) {
     // W4: classified on what the provider actually SAID. Filing every
@@ -167,7 +167,7 @@ async function executeStagedLendMutation(input: StagedLendMutationInput): Promis
   });
   const eventRow = events[0]!;
 
-  // 3. Sign-only (REPLACE mode — Jupiter Lend Earn responses carry no
+  // 3. Sign-only (REPLACE mode - Jupiter Lend Earn responses carry no
   // blockhash metadata to VERIFY against). A throw here is a POST-INTENT
   // failure: finalize the EXISTING row, never a second intent (design R2).
   let prepared: PreparedSolanaTx;
@@ -179,7 +179,7 @@ async function executeStagedLendMutation(input: StagedLendMutationInput): Promis
     await failActivityEvent(eventRow.id, { failureCode: "unknown", failureReason: reason });
     return {
       success: false,
-      output: `${input.toolId} failed: ${reason} — recorded (execution ${executionId}); nothing was broadcast.`,
+      output: `${input.toolId} failed: ${reason} - recorded (execution ${executionId}); nothing was broadcast.`,
       data: { _executionId: executionId },
     };
   }
@@ -195,13 +195,13 @@ async function executeStagedLendMutation(input: StagedLendMutationInput): Promis
     logger.warn(`${input.toolId}.staging_cas_miss`, { executionId, eventId: eventRow.id });
     return {
       success: false,
-      output: `${input.toolId}: an internal error left this ${input.actionLabel.toLowerCase()} unrecorded before broadcast — refusing to submit untracked. Check execution ${executionId}; do not retry blindly.`,
+      output: `${input.toolId}: an internal error left this ${input.actionLabel.toLowerCase()} unrecorded before broadcast - refusing to submit untracked. Check execution ${executionId}; do not retry blindly.`,
       data: { _executionId: executionId },
     };
   }
 
   // 5. Broadcast over RPC. A signature mismatch or an ambiguous transport
-  // failure NEVER terminalizes the row here — the canonical local signature
+  // failure NEVER terminalizes the row here - the canonical local signature
   // stays; the Solana sweep (K3) resolves the row later.
   const broadcast = await broadcastStagedSolanaTx({
     toolId: input.toolId, rowId: eventRow.id, prepared, lane: { kind: "rpc" },
@@ -209,10 +209,10 @@ async function executeStagedLendMutation(input: StagedLendMutationInput): Promis
   if (broadcast.kind === "rejected_before_broadcast") {
     // The node ANSWERED and refused (preflight/simulation): nothing went to
     // the network. Reporting this as "pending confirmation" would be a lie.
-    // The row still stays pending — the sweep owns terminality (design D4).
+    // The row still stays pending - the sweep owns terminality (design D4).
     return {
       success: false,
-      output: `${input.toolId}: this ${input.actionLabel.toLowerCase()} was rejected before broadcast — nothing went on-chain: ${broadcast.reason}. Recorded (execution ${executionId}); do not retry until the cause is fixed.`,
+      output: `${input.toolId}: this ${input.actionLabel.toLowerCase()} was rejected before broadcast - nothing went on-chain: ${broadcast.reason}. Recorded (execution ${executionId}); do not retry until the cause is fixed.`,
       data: {
         _executionId: executionId,
         status: "rejected_before_broadcast",
@@ -223,7 +223,7 @@ async function executeStagedLendMutation(input: StagedLendMutationInput): Promis
 
   return {
     success: false,
-    output: `${input.actionLabel} broadcast (signature ${prepared.signature}) — confirmation pending, tracked automatically. Do not retry.`,
+    output: `${input.actionLabel} broadcast (signature ${prepared.signature}) - confirmation pending, tracked automatically. Do not retry.`,
     data: {
       _executionId: executionId,
       status: "pending",
@@ -240,7 +240,7 @@ async function executeStagedLendMutation(input: StagedLendMutationInput): Promis
 // The Earn API exposes TWO withdrawal primitives and the difference is
 // financial, not cosmetic: `/withdraw` is denominated in the UNDERLYING asset,
 // `/redeem` in the position's SHARES. An amount-denominated "full" withdrawal
-// can never reach zero — the vault accrues interest between the balance read
+// can never reach zero - the vault accrues interest between the balance read
 // and the signed execution, and a live funded exit left 5 shares
 // (0.000005 USDC) stranded. Redeeming the position's exact current share
 // balance is therefore the only dust-free exit, which is what `withdrawAll`
@@ -295,9 +295,9 @@ function resolveEarnWithdrawIntent(p: Record<string, unknown>): EarnWithdrawInte
 
 /** The position a full exit will redeem, resolved from the wallet's live Earn positions. */
 interface EarnFullExitTarget {
-  /** Exact atomic share balance to send to `/redeem` — the position's CURRENT value, not a stored one. */
+  /** Exact atomic share balance to send to `/redeem` - the position's CURRENT value, not a stored one. */
   readonly shares: string;
-  /** The underlying value of those shares at read time. REQUESTED/display magnitude only — executed truth comes from the settlement decoder. */
+  /** The underlying value of those shares at read time. REQUESTED/display magnitude only - executed truth comes from the settlement decoder. */
   readonly underlyingAssets: string;
 }
 
@@ -308,7 +308,7 @@ type EarnFullExitTargetResolution =
 /**
  * Find the ONE Earn position a full exit should redeem, matched on wallet AND
  * underlying asset. Every ambiguous or empty outcome is a NAMED refusal that
- * names the alternative the agent can take on its own — this handler never
+ * names the alternative the agent can take on its own - this handler never
  * picks a position on the caller's behalf, because closing the wrong one moves
  * real funds.
  *
@@ -322,7 +322,7 @@ async function resolveEarnFullExitTarget(asset: string, addr: string): Promise<E
   // `ownerAddress` is re-checked even though the query is scoped to one wallet:
   // `/earn/positions` takes a users LIST, so the response shape can carry rows
   // this wallet does not own. `token.assetAddress` is the UNDERLYING mint the
-  // agent passes as `asset` (`token.address` is the jlToken — a different
+  // agent passes as `asset` (`token.address` is the jlToken - a different
   // address, never the match key).
   const matches = positions.filter(
     (pos) => pos.ownerAddress === addr && pos.token.assetAddress === asset,
@@ -345,7 +345,7 @@ async function resolveEarnFullExitTarget(asset: string, addr: string): Promise<E
       ),
     };
   }
-  // Exactly one match at this point — both other cardinalities returned above.
+  // Exactly one match at this point - both other cardinalities returned above.
   // The explicit guard (not a destructure) keeps the stricter vex-app compile
   // (`noUncheckedIndexedAccess`) satisfied without a non-null assertion.
   const position = matches[0];
@@ -368,7 +368,7 @@ async function resolveEarnFullExitTarget(asset: string, addr: string): Promise<E
       ok: false,
       result: fail(
         `solana__lend_earn_withdraw: Jupiter reported a share balance for the ${asset} Earn position that is not a `
-        + "whole number of shares — refusing to redeem a magnitude it cannot prove. Withdraw a specific amount instead.",
+        + "whole number of shares - refusing to redeem a magnitude it cannot prove. Withdraw a specific amount instead.",
       ),
     };
   }
@@ -402,7 +402,7 @@ export const LEND_HANDLERS: Record<string, ProtocolHandler> = {
     const positions = await getJupiterLendEarnPositions(addr);
     // /earn/earnings' `positions` param wants the Earn/vault position token
     // (`token.address`), not the underlying asset mint (`token.assetAddress`)
-    // — confirmed by earn-api/JupiterLendEarnApi.md and the upstream OpenAPI
+    // - confirmed by earn-api/JupiterLendEarnApi.md and the upstream OpenAPI
     // spec (developers.jup.ag/docs/openapi-spec/lend/lend.yaml).
     const posAddresses = positions.map(pos => pos.token.address).filter(Boolean);
     const earningsResult = posAddresses.length > 0
@@ -460,7 +460,7 @@ export const LEND_HANDLERS: Record<string, ProtocolHandler> = {
       });
     }
 
-    // Full exit — resolved AFTER the wallet (5D-protocols p2: the owner/signer
+    // Full exit - resolved AFTER the wallet (5D-protocols p2: the owner/signer
     // is settled before any provider call) and BEFORE the staged seam, so the
     // intent leg can carry the position's underlying value as the requested
     // magnitude. The write sequence itself is the SAME seam the amount path

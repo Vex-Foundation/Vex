@@ -9,7 +9,7 @@ import { canonAddress, canonAmount } from "./canonicalize.js";
 /**
  * Canonical bridge trade direction. `EXACT_INPUT`/`EXACT_OUTPUT` mirror
  * `parseTradeType` in khalani/request; `EXPECTED_OUTPUT` is a DISTINCT Relay
- * value (Wave-2 W2, R10) — Relay's recommended plain-bridge mode. Bound verbatim
+ * value (Wave-2 W2, R10) - Relay's recommended plain-bridge mode. Bound verbatim
  * into `bridgeHashMaterial`, so an `EXPECTED_OUTPUT` quote↔execute produces a
  * digest distinct from `EXACT_INPUT` (no longer collapsed). Widening this union
  * is additive: Khalani's `parseBridgeTradeType` still returns only the first two.
@@ -19,7 +19,7 @@ export type BridgeTradeType = "EXACT_INPUT" | "EXACT_OUTPUT" | "EXPECTED_OUTPUT"
 /**
  * Cross-chain bridge trade identity (Stage 8c). Computed IDENTICALLY at bridge
  * QUOTE record-time (`khalani.quote.get`) and bridge EXECUTE gate-time
- * (`khalani.bridge`) — both go through the SAME shared builder
+ * (`khalani.bridge`) - both go through the SAME shared builder
  * (`buildBridgeIdentity`) so the digests collide. Chain IDs are normalized to
  * numeric Khalani chain IDs; addresses/tokens are canonicalized per the SOURCE
  * (from*) or DEST (to*) family; `recipient`/`tradeType` carry the bridge
@@ -41,7 +41,7 @@ export interface BridgeMatchInput {
    * VENUE binding (LOCKED Wave-2 correction #4). The bridge provider (e.g.
    * "khalani" | "relay") is bound into the hash so a Khalani quote can never
    * authorize a Relay execute for the same route (and vice-versa). Relay gets
-   * its OWN bridge identity path — it does NOT reuse Khalani's.
+   * its OWN bridge identity path - it does NOT reuse Khalani's.
    */
   readonly provider: string;
   /** Family of the SOURCE chain (where the deposit signs). Canonicalizes from*. */
@@ -56,11 +56,11 @@ export interface BridgeMatchInput {
   readonly recipient: string;
   readonly fromToken: string;
   readonly toToken: string;
-  /** Amount in smallest units (wei/lamports) — bridge amounts are integers. */
+  /** Amount in smallest units (wei/lamports) - bridge amounts are integers. */
   readonly amount: string;
   readonly tradeType: BridgeTradeType;
   /**
-   * Refund address — a SOURCE-chain address (canonicalized under the source
+   * Refund address - a SOURCE-chain address (canonicalized under the source
    * family). Defaults to `sourceWallet` (mirrors `prepareQuoteRequest`, where an
    * omitted `refundTo` falls back to the resolved `fromAddress`).
    */
@@ -104,11 +104,11 @@ export function bridgeHashMaterial(input: BridgeMatchInput): string {
     canonAddress(input.destFamily, input.toToken),
     canonAmount(input.amount),
     input.tradeType,
-    // Money/fee tail (8c) — FIXED order: refundTo, referrer, referrerFeeBps,
+    // Money/fee tail (8c) - FIXED order: refundTo, referrer, referrerFeeBps,
     // filler. `refundTo` is a SOURCE-chain address (source-family canonical);
     // `referrer` is an EVM address (lowercase); `referrerFeeBps` is already the
     // canonical integer string from the builder; `filler` is an OPAQUE provider
-    // name (case-preserved, trim-only — NOT an address, per Khalani docs). Each
+    // name (case-preserved, trim-only - NOT an address, per Khalani docs). Each
     // is "" when omitted/defaulted so an all-omitting quote↔execute collide.
     canonAddress(input.sourceFamily, input.refundTo),
     input.referrer === "" ? "" : canonAddress("eip155", input.referrer),

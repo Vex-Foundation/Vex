@@ -13,11 +13,20 @@ import {
   systemPrefersDark,
   type VexTheme,
 } from "./theme.js";
-import { coerceBookWidth, coerceSidebarWidth } from "./layout.js";
+import { coerceRuntimeMode, DEFAULT_RUNTIME_MODE } from "./runtime-mode.js";
+import {
+  coerceBookWidth,
+  coerceSidebarWidth,
+  coerceStudioRailExplorerShare,
+  STUDIO_RAIL_EXPLORER_SHARE_DEFAULT,
+} from "./layout.js";
+import { coerceStudioFileTabs } from "./studio-file-tabs.js";
 
 /** Hard bounds on the persisted BOOK rail order (user-writable localStorage). */
 const MAX_BOOK_SECTION_ENTRIES = 32;
 const MAX_BOOK_SECTION_ID_LENGTH = 32;
+/** Hard bound on the persisted Studio project id, as the schemas bound it. */
+const MAX_PROJECT_ID_LENGTH = 64;
 
 /**
  * THE persisted-field list. One source of truth for BOTH directions.
@@ -32,8 +41,37 @@ const MAX_BOOK_SECTION_ID_LENGTH = 32;
  *
  * Adding a slot here is the ONLY way to make it persist. A slot that is absent
  * is ephemeral in both directions by construction.
+ *
+ * ## `runtimeMode` and `activeProjectId` ARE on the list, and why that is safe
+ *
+ * They used to be the named example above of what must never come back from
+ * storage, and the reason was correct as stated: the merge used to spread the
+ * whole payload, so ANY slot could be injected into, unvalidated. That is what
+ * the whitelist plus the per-key coercion below answers. Studio's welcome copy
+ * promises "Studio is where you left it when you come back", and a mode plus a
+ * project id are exactly the LAST LOCATION that promise is about.
+ *
+ * Both are validated rather than trusted, in two stages:
+ *
+ *  - here, on the way in: the mode is narrowed to its closed union
+ *    (`coerceRuntimeMode`) and the id to a bounded plain string
+ *    (`coerceActiveProjectId`). Nothing else can reach either slot.
+ *  - and by EXISTENCE, in `StudioCenter`'s stale-selection repair, which runs
+ *    against a SETTLED project list and gives up a selection naming a project
+ *    that is not in it. So a hand-written or stale id opens nothing: Studio
+ *    falls back to the welcome, in Studio mode, with the recents.
+ *
+ * That two-stage shape is VS Code's own window restore rather than an
+ * invention: the last workspace path is stored, and
+ * `workspacesHistoryMainService` validates every remembered entry against the
+ * filesystem before it is offered or opened. A remembered location is a HINT
+ * that must survive being wrong; it is never an authority, and it grants
+ * nothing - opening a project goes through the same IPC, the same capability
+ * checks and the same main-side validation as a click on the rail.
  */
 export const PERSISTED_UI_KEYS = [
+  "runtimeMode",
+  "activeProjectId",
   "themePreference",
   "sidebarOpen",
   "bookOpen",
@@ -44,6 +82,8 @@ export const PERSISTED_UI_KEYS = [
   "bookSectionOrder",
   "studioBookSectionOrder",
   "bookTab",
+  "studioRailExplorerShare",
+  "studioFileTabs",
 ] as const satisfies readonly (keyof UiState)[];
 
 export type PersistedUiKey = (typeof PERSISTED_UI_KEYS)[number];
@@ -78,6 +118,24 @@ function coerceSectionOrder(value: unknown): readonly string[] {
     entries.push(entry);
   }
   return entries;
+}
+
+/**
+ * THE LAST STUDIO PROJECT, coerced from user-writable storage.
+ *
+ * Bounded exactly as every project id is bounded at the process boundary
+ * (`z.string().min(1).max(64)` in the projects and terminal schemas), so a
+ * payload cannot make a downstream reader carry an unbounded string. Anything
+ * that is not such a string - a number, an object, an empty or over-long
+ * string, an absent key - degrades to `null`, which is the welcome screen.
+ *
+ * A value that PASSES here is still only a candidate: `StudioCenter` drops it
+ * when the settled project list does not contain it. See the whitelist note.
+ */
+export function coerceActiveProjectId(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  if (value.length === 0 || value.length > MAX_PROJECT_ID_LENGTH) return null;
+  return value;
 }
 
 /**
@@ -131,6 +189,26 @@ export function coerceBookTab(value: unknown): BookTab {
 //       ids. Seed [] - the same "no custom order, use the default" a fresh
 //       install gets. Expand-only like every hop above: an older payload
 //       gains the key, nothing is rewritten.
+//   v17: `runtimeMode` and `activeProjectId` added - the LAST STUDIO LOCATION,
+//       so a relaunch returns to the project the user left open instead of the
+//       Agent welcome. Expand-only like every hop above: an older payload
+//       gains the two keys seeded with the values a fresh install has (agent
+//       mode, no project), and nothing already stored is rewritten. A reader
+//       from before this hop simply ignores two keys it does not whitelist,
+//       which is what makes the rollout reader-before-writer safe within one
+//       deploy.
+//   v18: `studioFileTabs` added - the OPEN FILE TABS' own persisted home, per
+//       project. The terminal snapshot deliberately carries no file tab
+//       (`toPersistedLayout`) and its restore channel answers null for a
+//       project with no live terminal, so a file-only workspace could never
+//       come back through it; VS Code keeps editor state in workbench storage
+//       for the same reason. Seed `{}` - no remembered tabs, which is what a
+//       fresh install has. Expand-only like every hop above, and a reader from
+//       before it simply ignores a key it does not whitelist.
+//   v16: `studioRailExplorerShare` added (the Studio rail's vertical split
+//       between the PROJECTS list and the EXPLORER pane, which used to be a
+//       fixed 256px box). Seed the default so an upgrading install hydrates
+//       into a defined share rather than `undefined`.
 export function migrateUiState(persisted: unknown, version: number): unknown {
   if (persisted === null || typeof persisted !== "object") {
     return persisted;
@@ -169,6 +247,22 @@ export function migrateUiState(persisted: unknown, version: number): unknown {
   }
   if (version < 15 && !("studioBookSectionOrder" in next)) {
     next = { ...next, studioBookSectionOrder: [] };
+  }
+  if (version < 16 && !("studioRailExplorerShare" in next)) {
+    next = {
+      ...next,
+      studioRailExplorerShare: STUDIO_RAIL_EXPLORER_SHARE_DEFAULT,
+    };
+  }
+  if (version < 17 && !("runtimeMode" in next)) {
+    next = {
+      ...next,
+      runtimeMode: DEFAULT_RUNTIME_MODE,
+      activeProjectId: null,
+    };
+  }
+  if (version < 18 && !("studioFileTabs" in next)) {
+    next = { ...next, studioFileTabs: {} };
   }
   return next;
 }
@@ -235,7 +329,22 @@ export function mergeUiState(persisted: unknown, current: UiState): UiState {
     bookSectionOrder,
     studioBookSectionOrder,
     bookTab: coerceBookTab(incoming?.bookTab),
+    // THE LAST STUDIO LOCATION, narrowed before it reaches the shell's
+    // top-level mode dispatch and the centre's selection. See the whitelist
+    // note: the id is a candidate here and is confirmed against the settled
+    // project list by `StudioCenter` before anything is opened.
+    runtimeMode: coerceRuntimeMode(incoming?.runtimeMode),
+    activeProjectId: coerceActiveProjectId(incoming?.activeProjectId),
     sidebarWidth: coerceSidebarWidth(incoming?.sidebarWidth),
     bookWidth: coerceBookWidth(incoming?.bookWidth),
+    studioRailExplorerShare: coerceStudioRailExplorerShare(
+      incoming?.studioRailExplorerShare,
+    ),
+    // THE FILE TABS' HOME, and the widest untrusted surface on this list: a
+    // record of records, whose leaves are PATHS. Every bound and every refusal
+    // is stated in `uiStore/studio-file-tabs.ts`; what survives it is still
+    // only a candidate, re-resolved segment by segment through main before a
+    // tab exists.
+    studioFileTabs: coerceStudioFileTabs(incoming?.studioFileTabs),
   };
 }

@@ -70,6 +70,7 @@ const DECLARED = {
   decimals: 18,
   chainId: 4663,
   assetAddress: "0x0f9f0000000000000000000000000000000000ee",
+  assetKind: "token" as const,
   assetSymbol: "VEX",
 };
 
@@ -172,6 +173,7 @@ describe("missions-db deployedCapital projection", () => {
       ["a malformed address", { ...DECLARED, assetAddress: "not-an-address" }],
       ["a truncated EVM address", { ...DECLARED, assetAddress: "0xdeadbeef" }],
       ["an over-long address", { ...DECLARED, assetAddress: "0x".padEnd(200, "a") }],
+      ["an invalid asset kind", { ...DECLARED, assetKind: "wrapped" }],
       ["an empty symbol", { ...DECLARED, assetSymbol: "" }],
       ["an over-long symbol", { ...DECLARED, assetSymbol: "V".repeat(33) }],
       ["a symbol with whitespace", { ...DECLARED, assetSymbol: "VE X" }],
@@ -215,6 +217,21 @@ describe("missions-db deployedCapital projection", () => {
         },
       });
       expect(capital?.assetAddress).toBe(SOL_MINT);
+      expect(capital?.assetKind).toBe("token");
+    });
+
+    it("retains a legacy five-field declaration as structurally ambiguous", async () => {
+      const { assetKind: _omitted, ...legacy } = DECLARED;
+      const capital = await projectCapital({ deployedCapital: legacy });
+      expect(capital?.assetKind).toBeNull();
+    });
+
+    it("accepts its own normalized legacy output on a second pass", async () => {
+      const { assetKind: _omitted, ...legacy } = DECLARED;
+      const firstPass = await projectCapital({ deployedCapital: legacy });
+      expect(firstPass?.assetKind).toBeNull();
+
+      expect(await projectCapital({ deployedCapital: firstPass })).toEqual(firstPass);
     });
 
     it("rejects a Solana mint declared on an EVM chain id (wrong family)", async () => {
@@ -238,12 +255,20 @@ describe("missions-db deployedCapital projection", () => {
         deployedCapital: {
           ...DECLARED,
           assetAddress: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+          assetKind: "native",
           assetSymbol: "ETH",
         },
       });
       expect(capital?.assetAddress).toBe(
         "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
       );
+      expect(capital?.assetKind).toBe("native");
+    });
+
+    it("rejects a native kind for an ordinary token address", async () => {
+      expect(
+        await projectCapital({ deployedCapital: { ...DECLARED, assetKind: "native" } }),
+      ).toBeNull();
     });
   });
 

@@ -11,7 +11,7 @@
             "type": "string"
           },
           "chain": {
-            "description": "Chain slug or id — one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc'). Both legs are on ONE chain; none of these tools bridges.",
+            "description": "Chain slug or id - one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc'). Both legs are on ONE chain; none of these tools bridges.",
             "type": "string"
           },
           "dryRun": {
@@ -23,7 +23,7 @@
             "type": "string"
           },
           "pt": {
-            "description": "OPTIONAL check: the PT contract address you expect to receive. Must be this market's own PT — a PT from any other market is refused by name. Omit it and Vex uses the market's PT.",
+            "description": "OPTIONAL check: the PT contract address you expect to receive. Must be this market's own PT - a PT from any other market is refused by name. Omit it and Vex uses the market's PT.",
             "type": "string"
           },
           "slippageBps": {

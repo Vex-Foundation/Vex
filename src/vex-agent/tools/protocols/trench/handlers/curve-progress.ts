@@ -2,7 +2,7 @@
  * `trench.tokens` curve-progress enrichment (READ-ONLY, opt-in).
  *
  * Turns "how close is this token to graduating?" into a number the hunting flow
- * can filter on. Everything is read from chain — no provider field, and no
+ * can filter on. Everything is read from chain - no provider field, and no
  * hard-coded denominator.
  *
  * AUTHORITATIVE + PINNED. One block number is pinned per call and used for BOTH
@@ -14,7 +14,7 @@
  *   progress_i             = ethReserve_i / graduationEthReserve_i × 100
  *
  * FAIL CLOSED. If the authoritative threshold cannot be read, the filter is
- * refused with a reason — it never falls back to the anchored 7.5 ETH constant.
+ * refused with a reason - it never falls back to the anchored 7.5 ETH constant.
  * A hunting filter quietly denominated by a stale constant is the rule-90 trap.
  *
  * BOUNDED BATCH. `walkTokens` can return up to 600 rows (20 pages × 30), so the
@@ -40,7 +40,7 @@ import type { TokenRow } from "./list.js";
 const ROBINHOOD_CHAIN_ID = 4663;
 const DIAMOND = TRENCH_DIAMOND_ADDRESS as Address;
 
-/** Max tokens per multicall — mirrors the provider's 30-row page cap. */
+/** Max tokens per multicall - mirrors the provider's 30-row page cap. */
 export const CURVE_BATCH_CHUNK = 30;
 
 /** One token's same-block curve read: reserve + its own fakeEth, or an explicit miss. */
@@ -64,7 +64,7 @@ export interface CurveSnapshot {
 
 export interface CurveEnrichment {
   readonly rows: TokenRow[];
-  /** Curve tokens whose on-chain read reverted/failed — dropped. */
+  /** Curve tokens whose on-chain read reverted/failed - dropped. */
   readonly unreadable: number;
   /** Readable rows dropped because they fell outside the min/max band. */
   readonly filtered: number;
@@ -123,7 +123,7 @@ async function readFakepoolStatsBatch(
  * Graduated rows are 100 (past the curve; their `fakepool_stats` reverts by
  * design). A curve row with a good read is measured against its OWN same-block
  * denominator; a curve row whose read failed is UNREADABLE and dropped.
- * `snapshot.reads[i]` is positionally aligned with `rows[i]`. Pure — all I/O
+ * `snapshot.reads[i]` is positionally aligned with `rows[i]`. Pure - all I/O
  * lives in {@link readCurveSnapshot}.
  */
 export function applyCurveProgress(

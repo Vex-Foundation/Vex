@@ -147,17 +147,35 @@ describe("khalani validation equivalence (Zod conversion)", () => {
       );
     });
 
-    it("accepts Infinity for numeric fields (original asNumber accepted non-NaN numbers; Zod 4 z.number() would wrongly reject Infinity)", () => {
+    it("still accepts Infinity for a plain numeric field like chain.id", () => {
+      // `asNumber` keeps its original non-NaN semantics: Zod 4's `z.number()`
+      // would wrongly reject Infinity, and a chain id has no 0..36 bound.
       const result = validateChainsResponse([
         {
           type: "eip155",
           id: Infinity,
           name: "X",
-          nativeCurrency: { name: "E", symbol: "ETH", decimals: -Infinity },
+          nativeCurrency: { name: "E", symbol: "ETH", decimals: 18 },
         },
       ]);
       expect(result[0].id).toBe(Infinity);
-      expect(result[0].nativeCurrency.decimals).toBe(-Infinity);
+    });
+
+    it("REFUSES Infinity for decimals, which is not a plain numeric field", () => {
+      // WP1: `Number.isInteger` is the primitive that rejects Infinity, and an
+      // Infinity scale poisons every amount derived from it. Decimals therefore
+      // validate through `asTokenDecimals`, not `asNumber`.
+      expectKhalaniError(
+        () => validateChainsResponse([
+          {
+            type: "eip155",
+            id: 1,
+            name: "X",
+            nativeCurrency: { name: "E", symbol: "ETH", decimals: -Infinity },
+          },
+        ]),
+        "Invalid Khalani response: chain.nativeCurrency.decimals must be a whole number of decimals between 0 and 36",
+      );
     });
 
     it("rejects NaN and non-number for numeric fields (missing chain.id)", () => {

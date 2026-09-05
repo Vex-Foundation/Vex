@@ -15,7 +15,7 @@ import { fileViewerRegistry } from "../viewer/index.js";
 import {
   publishProjectTerminals,
   takeProjectTerminals,
-} from "../workspace/project-terminals.js";
+} from "../workspace/workspace-handles.js";
 import {
   bindStudioRegistryTeardown,
   disposeStudioRegistries,

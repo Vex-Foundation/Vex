@@ -1,0 +1,141 @@
+/**
+ * The TERMINAL-LINK policy, as a table.
+ *
+ * Its own file rather than rows appended to `url.test.ts`, because it is a
+ * second, separate policy over the same subject: `isAllowedExternalUrl` decides
+ * whether one of VEX'S OWN destinations may be opened with nobody asked, and
+ * this decides whether a link a USER'S SHELL printed may even be offered to
+ * them. Mixing their tables would invite the next reader to mix the functions.
+ *
+ * Every refusal is asserted BY NAME. A test that only checked "it said no"
+ * would stay green if two rules swapped their reasons, and the reason is what
+ * the user is told.
+ */
+
+import { describe, expect, it } from "vitest";
+import {
+  isAllowedExternalUrl,
+  isUserOpenableTerminalLink,
+  type TerminalLinkPolicyRefusal,
+} from "../url.js";
+
+const MAX = 4096;
+
+function refusal(raw: string): TerminalLinkPolicyRefusal | "allowed" {
+  const decision = isUserOpenableTerminalLink(raw, MAX);
+  return decision.kind === "allowed" ? "allowed" : decision.reason;
+}
+
+describe("isUserOpenableTerminalLink", () => {
+  it("allows the shape a shell actually prints, and hands back the RAW string", () => {
+    // The link from the owner's session, verbatim. Long path, mixed case hex.
+    const raw =
+      "https://dexscreener.com/robinhood/0xf65e8fc9b4bff74ba8a6abaf89cff67ede6faf3ac6a6df2c8ba0c792ad41a58f";
+    const decision = isUserOpenableTerminalLink(raw, MAX);
+    expect(decision).toEqual({
+      kind: "allowed",
+      url: raw,
+      asciiHost: "dexscreener.com",
+    });
+  });
+
+  it.each([
+    // Every one of these is a MEASURED divergence of `new URL(raw).href` from
+    // `raw` on this runtime, and the reason the policy hands back the raw
+    // string for the caller to open. Re-serialising is lossy; a user consents
+    // to the text they were shown, so that text is what must be opened.
+    ["https://EXAMPLE.com/Path", "host case"],
+    ["https://example.com:443/x", "an explicit default port"],
+    ["https://example.com", "a missing trailing slash"],
+    ["https://example.com/a\\b", "a backslash the parser rewrites to a slash"],
+  ])("returns %j unchanged, though re-serialising it would lose %s", (raw) => {
+    expect(new URL(raw).href).not.toBe(raw); // the trap this avoids
+    const decision = isUserOpenableTerminalLink(raw, MAX);
+    expect(decision.kind === "allowed" && decision.url).toBe(raw);
+  });
+
+  it("allows http as well as https", () => {
+    expect(refusal("http://localhost:3000/")).toBe("allowed");
+  });
+
+  it.each([
+    ["file:///etc/passwd", "a local file the OS would open in an editor"],
+    ["javascript:alert(1)", "script"],
+    ["vscode://file/etc/passwd", "another application's protocol handler"],
+    ["mailto:someone@example.com", "a mail client"],
+    ["ftp://example.com/x", "a legacy handler"],
+    ["app://vex/index.html", "Vex's own internal protocol"],
+  ])("refuses %s by name", (raw) => {
+    expect(refusal(raw)).toBe("terminal_link_scheme_refused");
+  });
+
+  it("refuses embedded credentials, which is how a host is spoofed", () => {
+    // Reads as PayPal to a human; resolves to `evil.example`.
+    expect(refusal("https://www.paypal.com@evil.example/login")).toBe(
+      "terminal_link_credentials_refused",
+    );
+    expect(refusal("https://user:secret@example.com/")).toBe(
+      "terminal_link_credentials_refused",
+    );
+  });
+
+  it("names the host the URL RESOLVES to, not the one the text suggests", () => {
+    // Measured: the WHATWG parser reinterprets a triple slash rather than
+    // producing an empty host, so `http:///etc/passwd` goes to a machine called
+    // `etc`. The policy allows it - it is a well-formed http link that will
+    // simply fail to resolve - and reports the host the consent dialog must
+    // show, which is the one the browser will actually contact.
+    const decision = isUserOpenableTerminalLink("http:///etc/passwd", MAX);
+    expect(decision).toEqual({
+      kind: "allowed",
+      url: "http:///etc/passwd",
+      asciiHost: "etc",
+    });
+  });
+
+  it.each([
+    "not a url at all",
+    "https:// example.com",
+    "https://example.com/a b",
+    "https://example.com/\u0000",
+  ])("refuses unparsable or control-bearing input: %j", (raw) => {
+    expect(refusal(raw)).toBe("terminal_link_unparsable");
+  });
+
+  it("refuses a link whose validated string would differ from the opened one", () => {
+    // The URL parser strips leading/trailing C0 and tab/newline ANYWHERE before
+    // parsing, so this parses as a perfectly good https URL. The caller opens
+    // the RAW text, so accepting it would validate one string and open another.
+    const raw = "\thttps://example.com/\n";
+    expect(new URL(raw).protocol).toBe("https:"); // it really does parse
+    expect(refusal(raw)).toBe("terminal_link_unparsable");
+  });
+
+  it("refuses a link past the bound instead of shortening it", () => {
+    const long = `https://example.com/${"a".repeat(MAX)}`;
+    expect(refusal(long)).toBe("terminal_link_too_long");
+    // And the bound is inclusive at the edge, so a link of exactly MAX is fine.
+    const exact = `https://example.com/${"a".repeat(MAX - "https://example.com/".length)}`;
+    expect(exact).toHaveLength(MAX);
+    expect(refusal(exact)).toBe("allowed");
+  });
+
+  it("punycodes an internationalised host, so the caller can show both spellings", () => {
+    const decision = isUserOpenableTerminalLink("https://münchen.example/x", MAX);
+    expect(decision.kind === "allowed" && decision.asciiHost).toBe(
+      "xn--mnchen-3ya.example",
+    );
+  });
+
+  it("is a SEPARATE policy from the app-link allowlist, in both directions", () => {
+    // A shell's link is openable here and is NOT on Vex's own allowlist ...
+    expect(refusal("https://dexscreener.com/x")).toBe("allowed");
+    expect(isAllowedExternalUrl("https://dexscreener.com/x", ["projectvex.ai"])).toBe(
+      false,
+    );
+    // ... and this policy grants nothing to the allowlist's callers either: it
+    // never consults one, so widening it cannot widen that.
+    expect(refusal("http://localhost:1/")).toBe("allowed");
+    expect(isAllowedExternalUrl("http://localhost:1/", ["localhost"])).toBe(false);
+  });
+});

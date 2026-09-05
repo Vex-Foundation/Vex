@@ -10,7 +10,7 @@ export const TRENCH_NAVIGATION: ProtocolNamespaceNavigation = {
   whenToUse:
     "Use when the user names Trench, asks what just launched on Robinhood Chain, or wants to buy, sell or launch a curve token: quote then trade against the curve, screen or search the registry, read a token's trade tape, price a launch, launch one, or review their own launches. Trades and launches spend real ETH, are approval-gated, and a launch requires an image the user pre-staged in the app.",
   preferInstead:
-    "Use `kyberswap` to trade tokens that already trade in a standard AMM pool, and `dexscreener` for broader pair research. A graduated Trench token trades in a WETH-paired DEX pool on Robinhood Chain; where that pool is indexed, research it with `dexscreener`. `virtuals` is a different launchpad (VIRTUAL-paired agent tokens) — Trench tokens never appear there.",
+    "Use `kyberswap` to trade tokens that already trade in a standard AMM pool, and `dexscreener` for broader pair research. A graduated Trench token trades in a WETH-paired DEX pool on Robinhood Chain; where that pool is indexed, research it with `dexscreener`. `virtuals` is a different launchpad (VIRTUAL-paired agent tokens) - Trench tokens never appear there.",
   declaration: {
     identity: "Trench Express is a bonding-curve launchpad whose registry, curve trading, and launch lifecycle are native to the product.",
     read: "Browse the Trench Express launchpad, screen new launches on Trench, resolve a named token by address, inspect curve state, read a trade tape, list staged images in the Trench image locker, and review my Trench launches.",

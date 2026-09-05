@@ -184,12 +184,24 @@ vi.mock("@tools/kyberswap/token-api/client.js", () => ({
 }));
 
 const mockLoggerWarn = vi.fn();
+// The bound quote the execute revalidates its Vex fee against before signing
+// (`khalaniVexFeeStatementRefusal`). Its own divergence cases live in
+// `bridge-fee-execute.test.ts`; here it answers with the statement this
+// arrangement's quote would have recorded, so the staged-execute properties
+// under test are reached.
+const mockFindFreshMatchedPrequote = vi.fn();
+vi.mock("@vex-agent/tools/protocols/prequote/gate.js", () => ({
+  findFreshMatchedPrequote: (...a: unknown[]) => mockFindFreshMatchedPrequote(...a),
+}));
+
 vi.mock("@utils/logger.js", () => {
   const stub = { warn: (...a: unknown[]) => mockLoggerWarn(...a), info: vi.fn(), debug: vi.fn(), error: vi.fn() };
   return { default: stub, logger: stub };
 });
 
 import { BRIDGE_HANDLERS } from "@vex-agent/tools/protocols/khalani/handlers/bridge.js";
+import { BRIDGE_FEE_RECEIVER_SOLANA } from "@tools/bridge-fee/index.js";
+import { boundChargedVexFee, matchedPrequoteWithVexFee } from "../../../tools/bridge-fee/bound-vex-fee.js";
 import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
 import { VexError } from "../../../../errors.js";
 import { classifyNativeValue } from "@tools/evm-chains/native-value-authorization/index.js";
@@ -208,6 +220,18 @@ function zeroValueAuthorization(to: string) {
 const FROM_TOKEN = "0xAAA0000000000000000000000000000000000000";
 const TO_TOKEN = "0xBBB0000000000000000000000000000000000000";
 const FUTURE = Math.floor(Date.now() / 1000) + 3600;
+const EVM_TOKEN_PREVIEW = {
+  source: {
+    family: "eip155", kind: "erc20", chainId: 8453, tokenAddress: FROM_TOKEN,
+    symbol: "USDC", decimals: 6, metadataSource: "rpc_contract", symbolSanitized: false,
+  },
+  destination: {
+    family: "eip155", kind: "erc20", chainId: 42161, tokenAddress: TO_TOKEN,
+    symbol: "USDC", decimals: 6, metadataSource: "rpc_contract", symbolSanitized: false,
+  },
+  amountRaw: "1500000",
+  amountHuman: "1.5",
+} as const;
 
 function ctx(over: Partial<ProtocolExecutionContext> = {}): ProtocolExecutionContext {
   return {
@@ -216,6 +240,7 @@ function ctx(over: Partial<ProtocolExecutionContext> = {}): ProtocolExecutionCon
     walletResolution: { source: "default" },
     walletPolicy: { kind: "none" },
     sessionId: "session-1",
+    bridgeTokenPreview: EVM_TOKEN_PREVIEW,
     ...over,
   } as ProtocolExecutionContext;
 }
@@ -233,6 +258,10 @@ function parse(out: string): Record<string, unknown> {
 
 describe("khalani.bridge — staged execute safety (W3a)", () => {
   beforeEach(() => {
+    mockFindFreshMatchedPrequote.mockResolvedValue(matchedPrequoteWithVexFee(boundChargedVexFee({
+      feeAmountRaw: "3750", netAmountRaw: "1496250", totalDebitedRaw: "1500000",
+      tokenAddress: FROM_TOKEN, tokenSymbol: "USDC", tokenDecimals: 6,
+    })));
     vi.clearAllMocks();
     mockResolveSelectedAddress.mockReturnValue(SESSION_EVM.address);
     mockResolveSigningWallet.mockReturnValue(SESSION_EVM);
@@ -300,9 +329,50 @@ describe("khalani.bridge — staged execute safety (W3a)", () => {
     expect(mockFailActivityEvent).not.toHaveBeenCalled();
   });
 
+  it("no routeId/depositMethod params: quotes with NO route filter, takes the BEST route, and lets that route dictate the deposit method", async () => {
+    // `routeId` and `depositMethod` stopped being parameters of this tool (the
+    // quote can never bind either, so the prequote gate blocked every call that
+    // set one). What replaces them has to be the same on the wire: no route
+    // filter goes out, the best-index rule picks from what the quote returned,
+    // and `buildDeposit` sends no deposit method at all.
+    mockGetQuotes.mockResolvedValueOnce({
+      quoteId: "q1",
+      routes: [
+        { routeId: "r1", type: "Across", depositMethods: ["CONTRACT_CALL"], quote: { amountIn: "1500000", amountOut: "1400000", expectedDurationSeconds: 9, validBefore: FUTURE, quoteExpiresAt: FUTURE } },
+        { routeId: "r2", type: "Across", depositMethods: ["PERMIT2"], quote: { amountIn: "1500000", amountOut: "1499000", expectedDurationSeconds: 2, validBefore: FUTURE, quoteExpiresAt: FUTURE } },
+      ],
+    });
+    mockResolveRouteBestIndex.mockReturnValue(1);
+
+    await execute();
+
+    // ONE argument: the request. The second `{ routes: [...] }` argument only
+    // ever carried the caller's `routeId`.
+    expect(mockGetQuotes).toHaveBeenCalledTimes(1);
+    expect(mockGetQuotes.mock.calls[0]).toHaveLength(1);
+    // The route is the one the best-index rule chose, not the first returned.
+    expect(mockResolveRouteBestIndex).toHaveBeenCalledTimes(1);
+    const [depositCall] = mockBuildDeposit.mock.calls;
+    expect(depositCall).toBeDefined();
+    const deposit = (depositCall?.[0] ?? {}) as Record<string, unknown>;
+    expect(deposit.quoteId).toBe("q1");
+    expect(deposit.routeId).toBe("r2");
+    expect(deposit).not.toHaveProperty("depositMethod");
+  });
+
   it("CAS miss on markActivityBroadcast aborts BEFORE submit — same _executionId", async () => {
     mockMarkActivityBroadcast.mockResolvedValue({ applied: false, row: { id: 100 } });
-    const result = await execute();
+    const result = await execute({}, ctx({
+      bridgeTokenPreview: {
+        source: {
+          family: "solana", kind: "solana", chainId: 8453, tokenAddress: FROM_TOKEN,
+          symbol: null, decimals: null, metadataSource: "solana_not_read_by_evm_contract_resolver", symbolSanitized: false,
+        },
+        destination: EVM_TOKEN_PREVIEW.destination,
+        amountRaw: "1500000",
+        amountHuman: null,
+      },
+    }));
     expect(result.success).toBe(false);
     expect(parse(result.output)._executionId).toBe(42);
     expect(mockMarkActivityBroadcast).toHaveBeenCalledTimes(1);
@@ -516,6 +586,13 @@ describe("khalani.bridge — staged execute safety (W3a)", () => {
 
   it("Solana source stages the base58 signature + blockhash evidence via the Solana CAS (nonce NULL) — never the EVM CAS", async () => {
     mockGetChainFamily.mockImplementation((id: number) => (id === 8453 ? "solana" : "eip155"));
+    // A Solana source pays the Solana treasury, so the statement the approval
+    // was granted on names that receiver; the EVM one would legitimately refuse.
+    mockFindFreshMatchedPrequote.mockResolvedValue(matchedPrequoteWithVexFee(boundChargedVexFee({
+      feeAmountRaw: "3750", netAmountRaw: "1496250", totalDebitedRaw: "1500000",
+      tokenAddress: FROM_TOKEN, tokenSymbol: "USDC", tokenDecimals: 6,
+      receiver: BRIDGE_FEE_RECEIVER_SOLANA,
+    })));
     mockMarkActivitySolanaBroadcast.mockResolvedValue({ applied: true, row: { id: 100 } });
     mockSignStageKhalaniLeg.mockImplementation(async (_leg, _sc, _ch, _signer, hooks) => {
       await hooks.onHashStaged({

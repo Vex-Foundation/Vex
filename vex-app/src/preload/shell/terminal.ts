@@ -568,6 +568,10 @@ export const terminal = {
     return invokeWithSchema(CH.terminal.readWorkspace, input, terminalProjectInputSchema);
   },
 
+  getShellCatalogue() {
+    return invokeWithSchema(CH.terminal.shellCatalogue, {});
+  },
+
   getAvailability() {
     return invokeWithSchema(CH.terminal.availability, {});
   },

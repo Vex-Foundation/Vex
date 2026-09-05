@@ -16,11 +16,11 @@
  * The "View all" footer measures its OWN rect and opens the All-assets
  * ShellScreen morphing out of the exact row pressed - carrying the SAME scope
  * this card is showing, so the full register can never be wider than the card
- * that led to it. The All-assets ROUTE still carries a `string | null` session
- * id and cannot express a project, so under a project scope the footer is not
- * rendered at all: `sessionId: null` on that route means the GLOBAL aggregate,
- * and offering a door that silently widens a project's money view to every
- * wallet Vex knows about is worse than not offering the door.
+ * that led to it. Since the Studio parity decree the All-assets ROUTE has a
+ * project arm of its own (`assetsRouteFor`, two mutually exclusive arms like
+ * Agent Scan), so the door is offered under every scope: a project's register
+ * opens narrowed to the project's own wallets, never widened to the global
+ * aggregate.
  *
  * Dust (sub-cent priced) rows are filtered out BEFORE the top-5 cut, per the
  * `hideDustBalances` uiStore preference - a dust row must never consume a
@@ -35,6 +35,10 @@ import {
 } from "../../../../components/icons/index.js";
 import { usePortfolio } from "../../../../lib/api/portfolio.js";
 import { useUiStore } from "../../../../stores/uiStore.js";
+import {
+  assetsRouteFor,
+  type AssetsRouteScope,
+} from "../../../../stores/uiStore/shell-route.js";
 import { CardStateNote, PortfolioCard } from "./PortfolioCard.js";
 import {
   portfolioReadInputFor,
@@ -57,14 +61,6 @@ export function BalancesCard({
   readonly scope: PortfolioCardScope;
 }): JSX.Element {
   const query = usePortfolio(portfolioReadInputFor(scope));
-  // The All-assets SHELL ROUTE still carries a `string | null` session id.
-  // Derived here, locally and visibly, rather than through a shared adapter:
-  // a project scope has no session id, and the one thing that must not happen
-  // is a general helper quietly turning one into the global aggregate for
-  // every caller. See the module doc for why a project scope hides the door
-  // instead of walking through it.
-  const routeSessionId = scope.kind === "session" ? scope.sessionId : null;
-  const canOpenAllAssets = scope.kind !== "project";
   const setShellRoute = useUiStore((s) => s.setShellRoute);
   const hideDustBalances = useUiStore((s) => s.hideDustBalances);
   const result = query.data;
@@ -81,11 +77,14 @@ export function BalancesCard({
   const openAllAssets = (event: MouseEvent<HTMLButtonElement>): void => {
     // The footer row's own viewport rect anchors the screen's expand morph.
     const rect = event.currentTarget.getBoundingClientRect();
-    setShellRoute({
-      kind: "assets",
-      origin: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-      sessionId: routeSessionId,
-    });
+    setShellRoute(
+      assetsRouteFor(assetsScopeOf(scope), {
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
+      }),
+    );
   };
 
   return (
@@ -100,7 +99,7 @@ export function BalancesCard({
         <CardStateNote>
           {scope.kind === "project"
             ? "No balances in this project's wallets yet - fund them and your holdings appear here."
-            : routeSessionId === null
+            : scope.kind === "global"
               ? "No balances yet - fund a wallet and your holdings appear here."
               : "No balances in this session's wallets yet - fund them and your holdings appear here."}
         </CardStateNote>
@@ -115,7 +114,6 @@ export function BalancesCard({
               />
             ))}
           </ul>
-          {canOpenAllAssets ? (
           <button
             type="button"
             onClick={openAllAssets}
@@ -124,9 +122,24 @@ export function BalancesCard({
             View all assets
             <IconChevronRight size={13} />
           </button>
-          ) : null}
         </>
       )}
     </PortfolioCard>
   );
+}
+
+/**
+ * The register scope this card's read opens. Total over the card scope union;
+ * a project card's register covers the project's WHOLE selection (the route
+ * carries no `walletId`), which is the scope the rail mounts the card for.
+ */
+function assetsScopeOf(scope: PortfolioCardScope): AssetsRouteScope {
+  switch (scope.kind) {
+    case "global":
+      return { kind: "global" };
+    case "session":
+      return { kind: "session", sessionId: scope.sessionId };
+    case "project":
+      return { kind: "project", projectId: scope.projectId };
+  }
 }

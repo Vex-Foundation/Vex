@@ -1,5 +1,5 @@
 /**
- * The 13-point calldata verifier: every point, and the adversarial matrix.
+ * The 15-point calldata verifier: every point, and the adversarial matrix.
  *
  * WHAT THIS SUITE IS FOR. The launch path signs calldata a third-party backend
  * produced, with the user's key and the user's money. The verifier is the only
@@ -17,7 +17,7 @@ import { describe, expect, it } from "vitest";
 import { encodeFunctionData, getAddress, type Address, type Hex } from "viem";
 
 import { POOLS_GATEWAY_ABI } from "@tools/pools-fun/abi.js";
-import { POOLS_GATEWAY_ADDRESS } from "@tools/pools-fun/constants.js";
+import { POOLS_LAUNCH_SUITE_VERSION, poolsLaunchSuite } from "@tools/pools-fun/constants.js";
 import {
   decodeLaunchCalldata,
   verifyPoolsLaunchCalldata,
@@ -34,7 +34,24 @@ import type {
 import { POOLS_VERIFIER_POINTS } from "@tools/pools-fun/launch/verifier-types.js";
 import type { PoolsPrepareResponse } from "@tools/pools-fun/types.js";
 
-const GATEWAY = getAddress(POOLS_GATEWAY_ADDRESS);
+const SUITE = poolsLaunchSuite();
+const GATEWAY = getAddress(SUITE.gateway);
+const FACTORY = getAddress(SUITE.factory);
+const LOCKER = getAddress(SUITE.locker);
+/** The gateway's live fees-to-holders sentinels, as measured on V3. */
+const HOLDERS_TOKEN = getAddress("0x968b0c1e896fB1DdB2042957Fc0614c67AB7FFc2");
+const HOLDERS_PAIRED = getAddress("0x968b0c1e896Fb1DdB2042957FC0614c67AB7ffC3");
+const HOLDERS_BOTH = getAddress("0x968b0c1e896fB1ddB2042957fC0614C67Ab7Ffc4");
+/** The anchored block's timestamp, and a signed quote that is fresh at it. */
+const BLOCK_TIME = 1_788_523_600n;
+const EMPTY_ATTESTATION = {
+  asset: "0x0000000000000000000000000000000000000000" as Address,
+  underlyingPriceUsdE18: 0n,
+  expectedUiMultiplier: 0n,
+  observedAt: 0n,
+  expiresAt: 0n,
+  pricingEpoch: 0n,
+} as const;
 const WETH = getAddress("0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73");
 const WALLET = getAddress("0x33eF6673BD80cB11fcC41b82Bc2181E65cC4d2fA");
 const STRANGER = getAddress("0x9999999999999999999999999999999999999999");
@@ -64,6 +81,11 @@ function baseTuple(over: Partial<PoolsLaunchTuple> = {}): PoolsLaunchTuple {
     erc20DevBuyAmountIn: 0n,
     devBuyMinOut: DEV_BUY_OUT,
     expectedFeeWei: FEE_WEI,
+    // The V3 tuple's last two members. A WETH launch carries the all-zero
+    // attestation and an empty signature - the shape measured on every one of
+    // the three live V3 prepares.
+    priceAttestation: EMPTY_ATTESTATION,
+    priceSignature: "0x" as Hex,
     ...over,
   };
 }
@@ -105,16 +127,27 @@ function response(tuple: PoolsLaunchTuple, over: Partial<PoolsPrepareResponse> =
 function anchors(over: Partial<PoolsChainAnchors> = {}): PoolsChainAnchors {
   return {
     blockNumber: 39_620_464n,
-    gatewayVersion: 1n,
-    gatewayFactory: getAddress("0x626C3d09B65bF5d1D40E0D5F25e19fa49783B3D4"),
+    blockTimestamp: BLOCK_TIME,
+    gatewayVersion: BigInt(POOLS_LAUNCH_SUITE_VERSION),
+    gatewayFactory: FACTORY,
+    factoryLocker: LOCKER,
     gatewayPaused: false,
     gatewayDeploymentFeeWei: FEE_WEI,
     gatewayMinFeeWei: 1_000_000_000_000n,
     gatewayMaxFeeWei: 10_000_000_000_000_000n,
     gatewayWeth: WETH,
+    feesToHoldersSentinels: { token: HOLDERS_TOKEN, paired: HOLDERS_PAIRED, both: HOLDERS_BOTH },
     pairedAssetAllowed: true,
+    pricingMode: "CORE_CHAINLINK",
     startTick: -197_600,
     startTickLive: true,
+    signedStartTick: null,
+    signedStartTickError: null,
+    priceSigner: getAddress("0xc4559C672617395292a5878D3200B9c3d46EaCc7"),
+    pricingEpoch: 197n,
+    assetMaxQuoteAgeSeconds: null,
+    minSignedQuoteAgeSeconds: 30n,
+    maxSignedQuoteAgeSeconds: 120n,
     computedTokenAddress: TOKEN,
     nativeBalanceWei: 10n ** 18n,
     ...over,
@@ -147,9 +180,9 @@ function expectation(over: Partial<PoolsVerifierExpectation> = {}): PoolsVerifie
     symbol: "VEXFLAM",
     pairedAsset: "weth",
     pairedAssetAddress: WETH,
-    feeRecipient: WALLET,
+    feeRecipient: { kind: "address", address: WALLET },
     launcher: WALLET,
-    gatewayVersion: 1n,
+    gatewayVersion: BigInt(POOLS_LAUNCH_SUITE_VERSION),
     imageUrl: "https://example.test/flamingo.jpg",
     devBuy: { mode: "native", amountWei: PREBUY_WEI },
     ...over,
@@ -168,6 +201,8 @@ function input(over: Partial<VerifyPoolsCalldataInput> = {}): VerifyPoolsCalldat
     gasBoundWei: GAS_BOUND,
     vexFeeWei: VEX_FEE,
     gatewayAddress: GATEWAY,
+    factoryAddress: FACTORY,
+    lockerAddress: LOCKER,
     ...over,
   };
 }
@@ -189,7 +224,7 @@ describe("the happy path passes every point", () => {
     expect(result.tuple.feeRecipient).toBe(WALLET);
   });
 
-  it("checks ALL 13 points, with none silently skipped", () => {
+  it("checks ALL 15 points, with none silently skipped", () => {
     const result = verifyPoolsLaunchCalldata(input());
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -315,8 +350,15 @@ describe("point 4 - the response must mirror the calldata (show one thing, sign 
   });
 
   it("refuses a recipient that is a STRANGER rather than the intended wallet", () => {
+    // MOVED FROM POINT 4 TO POINT 15 with the V3 suite, deliberately. A tuple
+    // recipient may now legitimately be a fees-to-holders SENTINEL, which is not
+    // a wallet anyone owns, so "is this the recipient we intended" stopped being
+    // an address comparison and became a question about the caller's INTENT.
+    // Point 4 still owns the mirror (response versus calldata) and the zero
+    // rejection; point 15 owns which non-zero recipient is right. The refusal is
+    // as strict as before - only its name changed.
     const tuple = baseTuple({ feeRecipient: STRANGER });
-    expectViolation(verifyPoolsLaunchCalldata(input({ response: response(tuple) })), "response_mirrors_calldata");
+    expectViolation(verifyPoolsLaunchCalldata(input({ response: response(tuple) })), "fee_recipient_mode");
   });
 });
 

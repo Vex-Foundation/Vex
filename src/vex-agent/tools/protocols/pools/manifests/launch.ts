@@ -15,7 +15,7 @@ export const POOLS_LAUNCH_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "pools",
     lifecycle: "active",
     description:
-      "Price a pools.fun token launch on Robinhood Chain (4663) before committing to it, and record the preview. Use this when the user is considering a launch and wants to know what it costs: it reads the gateway's CURRENT deployment fee, prices an optional ETH prebuy, and returns the whole cost breakdown as raw amounts with their decimals, plus Vex's 25 bps fee on the native launch value. ADVISORY, and it says so: the final token ADDRESS cannot be known here, because the image determines the metadata link, which determines the salt, which determines the address - the address is settled only when the launch is actually prepared. This writes a local preview record so the run can be reviewed later; it spends nothing, signs nothing, takes no image lock, and can never turn into a launch by itself. Read the numbers as an estimate of a launch, not as a launch that is about to happen.",
+      "Price a pools.fun token launch on Robinhood Chain (4663) before committing to it, and record the preview. Use this when the user is considering a launch and wants to know what it costs: it reads the gateway's CURRENT deployment fee, prices an optional ETH prebuy, and returns the whole cost breakdown as raw amounts with their decimals, plus Vex's 25 bps fee on the native launch value. ADVISORY, and it says so: the final token ADDRESS cannot be known here, because the image determines the metadata link, which determines the salt, which determines the address - the address is settled only when the launch is actually prepared. This writes a local preview record so the run can be reviewed later; it spends nothing, signs nothing, takes no image lock, raises NO approval card (a local record is not a spend, which is why it is flagged mutating and not destructive), and can never turn into a launch by itself. Read the numbers as an estimate of a launch, not as a launch that is about to happen.",
     mutating: true,
     // `local_write`, not `read`: this writes a durable preview row. It carries
     // no authorization and no transaction hash, so it never reaches an approval
@@ -31,7 +31,7 @@ export const POOLS_LAUNCH_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "pools",
     lifecycle: "active",
     description:
-      "Ask the user to confirm a pools.fun token launch in the app's launch form, on Robinhood Chain (4663). Use this when a launch should happen but the agent may not authorize spending by itself: it opens the two-stage form pre-filled with the proposed name, symbol, pair and prebuy, and parks the turn until the user submits or cancels. The user can edit every field, pick the image, and choose where the creator fee stream goes before anything is signed. Returns the identifier of the parked launch request and when it expires. THE FORM ITSELF IS THE APPROVAL: submitting it is what authorizes the launch, so this tool creates a request and never a transaction. It spends nothing on its own.",
+      "Ask the user to confirm a pools.fun token launch in the app's launch form, on Robinhood Chain (4663). Use this when a launch should happen but the agent may not authorize spending by itself: it opens the two-stage form pre-filled with the proposed name, symbol, pair and prebuy, and parks the turn until the user submits or cancels. The user can edit every field, pick the image, and choose where the creator fee stream goes before anything is signed. Returns the identifier of the parked launch request and when it expires. THE FORM ITSELF IS THE APPROVAL: submitting it is what authorizes the launch, so this tool creates a request and never a transaction, and raises no approval card of its own. In an in-app chat the form REPLACES the card for pools__launch_execute; over MCP that form does not exist, so pools__launch_execute takes the ordinary approval card instead. It spends nothing on its own.",
     mutating: true,
     actionKind: "local_write",
     params: [...POOLS_LAUNCH_FIELD_PARAMS],
@@ -56,7 +56,7 @@ export const POOLS_LAUNCH_TOOLS: readonly ProtocolToolManifest[] = [
       + "tick, the pinned metadata and image, the token address, the prebuy, the exact value, and the wallet's "
       + "balance - and REFUSES BY NAME if any of them disagrees. The creator fee stream always goes to the user's own "
       + "session wallet on this path; there is no recipient parameter. AN IMAGE IS REQUIRED on this path: pass the "
-      + "imageId of a picture the user staged in the image locker (list them with trench__images_list, which reads the "
+      + "imageId of a picture the user staged in the image locker (list them with launchpads__images_list, which reads the "
       + "locker both launchpads share), because a token launched without one renders blank on pools.fun forever and "
       + "that cannot be undone - without an imageId this tool REFUSES and launches nothing. It runs ONLY under explicit authority: in a "
       + "FULL-permission chat session the user's permission is the authority and this executes directly; in a "

@@ -41,9 +41,12 @@ import type {
 import type { ProjectDto } from "@shared/schemas/projects.js";
 import {
   boundStudioChangeNotes,
-  claudeMdImportsAgents,
+  claudeMdMissingStudioImports,
+  studioClaudeMdDeletedImports,
   inspectStudioManagedBlock,
+  inspectStudioVexGuide,
   readStudioOwnedRegion,
+  STUDIO_VEX_GUIDE_PATH,
   type StudioProjectBrief,
   type StudioProjectFacts,
 } from "@vex-agent/studio/installer/render/index.js";
@@ -77,7 +80,6 @@ import {
 import { locateStudioBridge } from "./installer/bridge-path.js";
 import { resolveArtifactPath } from "./installer/paths.js";
 import {
-  STUDIO_AGENTS_MD_RELATIVE_PATH,
   buildStudioPlan,
   studioGeneratorFingerprint,
   type StudioArtifactPlan,
@@ -92,8 +94,13 @@ import {
 
 export { __resetStudioRenderQueuesForTests } from "./installer/queue.js";
 
-/** Why a render is running. `repair` is the only trigger that overwrites drift. */
-export type StudioRenderTrigger = "scope_update" | "repair";
+/**
+ * Why a render is running. `repair` is the only trigger that overwrites drift.
+ *
+ * `superseded` is deliberately NOT a member: it is an ANSWER a run can give,
+ * never a reason a caller can ask for one.
+ */
+export type StudioRenderTrigger = "create" | "scope_update" | "repair";
 
 /**
  * Render (or repair) one project's files.
@@ -114,12 +121,15 @@ export async function renderProjectFiles(
     whenSuperseded: () =>
       ok({
         // A superseded job never read a scope, so it reports the one fact it
-        // has: it did nothing, and the newer job owns the result.
+        // has: it did nothing, and the newer job owns the result. That is not a
+        // FAILURE - the work is being done by the job that overtook this one -
+        // so `runFailure` stays null and `trigger` carries the answer.
         scopeVersion: 1,
         completed: false,
         trigger: "superseded",
         artifacts: [],
         warnings: [],
+        runFailure: null,
       }),
   });
 }
@@ -157,14 +167,18 @@ async function runRenderAdmitted(
 
   const bridge = await locateStudioBridge();
   if (bridge.kind === "unavailable") {
+    // A RUN FAILURE, not a warning. This used to report itself as a
+    // `launch_required` warning with a null agent, which put "Vex reconciled
+    // this project's files" and "Select a coding agent to get one" above a
+    // footnote saying the opposite. Nothing was written and nothing CAN be
+    // written until the binary is there, so that is the headline.
     return ok({
       scopeVersion: scope.scopeVersion,
       completed: false,
-      trigger: trigger === "repair" ? "repair" : "scope_update",
+      trigger,
       artifacts: [],
-      warnings: [
-        { kind: "launch_required", agentId: null, detail: bridge.detail },
-      ],
+      warnings: [],
+      runFailure: { kind: "bridge_unavailable", detail: bridge.detail },
     });
   }
 
@@ -211,23 +225,25 @@ async function runRenderAdmitted(
     },
   };
 
-  // TWO PASSES, AND `AGENTS.md` IS THE SECOND ONE.
+  // TWO PASSES, AND `.vex/vex-guide.md` IS THE SECOND ONE.
   //
-  // The managed block PROMISES its reader, in `renderStudioChangeLog`, that
-  // "every regeneration that changed anything adds a line here". With one pass
-  // that was false by construction: the brief was built before reconciliation
-  // and the note was appended after it, so the line describing a run only ever
+  // The guide PROMISES its reader, in its "What's new" section, that "every
+  // regeneration that changed anything adds a line here". With one pass that
+  // was false by construction: the brief was built before reconciliation and
+  // the note was appended after it, so the line describing a run only ever
   // appeared in the NEXT run's file. A reader comparing the change log against
   // what had just happened to their repo saw the previous change, which is
   // exactly the "silent rewrite" the section exists to rule out.
   //
   // So every other artifact is reconciled first, THIS run's note is composed
-  // from what those artifacts actually did, and `AGENTS.md` is rendered last
-  // from a brief that already carries it.
+  // from what those artifacts actually did, and the guide is rendered last from
+  // a brief that already carries it. The SECOND pass moved from `AGENTS.md` to
+  // the guide on 2026-09-04 with the change log itself: the block no longer
+  // carries a note, so its bytes no longer depend on this run's outcome.
   const firstPass = await reconcileStudioArtifacts({
     projectDirectory: directory.data,
     plan: {
-      artifacts: plan.artifacts.filter((artifact) => artifact.kind !== "agents-md"),
+      artifacts: plan.artifacts.filter((artifact) => artifact.kind !== "vex-guide"),
       unsupported: plan.unsupported,
     },
     facts,
@@ -237,23 +253,64 @@ async function runRenderAdmitted(
     io,
   });
 
-  // The note is composed ONLY when the first pass changed something. Injecting
-  // one unconditionally would change the block on every run, which would write
-  // `AGENTS.md`, which would justify the note: a self-fulfilling loop that
-  // rewrites a user's file forever. `AGENTS.md` is named in the summary because
-  // a note that lands in the block is itself a change to the block.
+  // THE INVARIANT: a file the current scope version rendered is NEVER reported
+  // as predating it.
+  //
+  // The change log lives INSIDE the hashed fence of `.vex/vex-guide.md`, and the
+  // drift check (`enrichProjectFiles` -> `inspectArtifact`) re-renders that
+  // document from the DURABLE change notes to decide `current` versus `stale`.
+  // So the note this run bakes into the guide and the note it stores afterwards
+  // must be the same line, byte for byte, or the project reports its own freshly
+  // written file as out of date forever. Two ways that used to fail, both closed
+  // here:
+  //
+  //   1. ORDER. The summary in the file listed the first pass's files and then
+  //      the guide; the summary stored afterwards listed the SAME files in PLAN
+  //      order, where `.vex/vex-guide.md` precedes `CLAUDE.md` and
+  //      `.vex/protocols.md`. Composing the pending summary through
+  //      `orderByPlan` - the same ordering the stored one goes through - makes
+  //      the two identical whenever the guide is written.
+  //   2. THE NOTE-FREE REWRITE. A scope edit that moves nothing but the guide
+  //      (a Vex update, a protocol key appearing) leaves the first pass
+  //      unchanged, so no note reached the file - and one was stored anyway,
+  //      because the run DID change something. `vexGuideNeedsRewrite` asks the
+  //      guide itself whether it is about to be rewritten for reasons other
+  //      than the note, so those runs compose their note too.
+  //
+  // The note is still never injected into an otherwise no-op run: injecting one
+  // unconditionally would change the block on every run, which would write
+  // `AGENTS.md`, which would justify the note - a self-fulfilling loop that
+  // rewrites a user's file forever.
   const firstPassChanged = firstPass.artifacts.some(
     (outcome) => outcome.status === "written" || outcome.status === "removed",
   );
-  const pendingNote = firstPassChanged
+  const noteFreeBrief = buildProjectBrief(scope, notesOutcome.data);
+  const rewritingGuide =
+    firstPassChanged
+    || (await vexGuideNeedsRewrite(
+      directory.data,
+      plan,
+      noteFreeBrief,
+      provenance,
+      trigger === "repair",
+    ));
+  const pendingNote = rewritingGuide
     ? {
       version: appVersion(),
       date: isoDate(new Date()),
       summary: summarizeRun(
-        [
+        orderByPlan(plan, [
           ...firstPass.artifacts,
-          { status: "written", path: STUDIO_AGENTS_MD_RELATIVE_PATH },
-        ],
+          {
+            status: "written",
+            kind: "vex-guide",
+            agentId: null,
+            path: STUDIO_VEX_GUIDE_PATH,
+            // The run has not written it yet; `created` versus `updated` does
+            // not reach the summary, which names paths only.
+            change: "updated",
+          },
+        ]),
         trigger,
       ),
     }
@@ -262,14 +319,15 @@ async function runRenderAdmitted(
   const secondPass = await reconcileStudioArtifacts({
     projectDirectory: directory.data,
     plan: {
-      artifacts: plan.artifacts.filter((artifact) => artifact.kind === "agents-md"),
+      artifacts: plan.artifacts.filter((artifact) => artifact.kind === "vex-guide"),
       unsupported: [],
     },
     facts,
-    brief: buildProjectBrief(
-      scope,
-      pendingNote === null ? notesOutcome.data : [pendingNote, ...notesOutcome.data],
-    ),
+    // The SAME brief the rewrite prediction above asked its question with when
+    // there is no note to inject, so the two cannot answer differently.
+    brief: pendingNote === null
+      ? noteFreeBrief
+      : buildProjectBrief(scope, [pendingNote, ...notesOutcome.data]),
     provenance,
     repair: trigger === "repair",
     io,
@@ -287,22 +345,37 @@ async function runRenderAdmitted(
     (outcome) => outcome.status === "written" || outcome.status === "removed",
   );
 
+  // THE REPORTED FLAG IS THE MARKER'S, NOT THE RECONCILER'S.
+  //
+  // `recordCompleteRender` is guarded on the scope version: a scope edit that
+  // committed while the files were being written means this run rendered an
+  // older authority, so the UPDATE matches no row and the marker stays where it
+  // was. That refusal is the whole point of the guard, and reporting
+  // `completed: true` over it would tell the user their project is up to date
+  // while the durable record says a reconciliation is still owed - the exact
+  // disagreement the marker exists to prevent.
+  let completed = result.completed;
   if (result.completed) {
-    // Guarded on the scope version: a scope edit that committed while the files
-    // were being written means this run rendered an older authority, and
-    // claiming it would mark the project up to date when it is not.
     const advanced = await recordCompleteRender(
       projectId,
       scope.scopeVersion,
       studioGeneratorFingerprint(appVersion()),
     );
     if (!advanced.ok) return advanced;
+    if (!advanced.data) {
+      completed = false;
+      log.info(
+        `[studio:installer] the render marker was not advanced: the scope moved during the run `
+          + `projectId=${projectId} scopeVersion=${String(scope.scopeVersion)} `
+          + `correlationId=${correlationId}`,
+      );
+    }
   }
 
   if (changed) {
     // Persisted from the ACTUAL outcomes, not from `pendingNote`. The two agree
-    // whenever `AGENTS.md` was written, which is the case where the file and
-    // the store both carry the line. If the block refused (a half-open fence,
+    // whenever the guide was written, which is the case where the file and
+    // the store both carry the line. If the guide refused (a half-open fence,
     // say), the file was not rewritten at all, so the store keeps the honest
     // record of what the run really did and the next render shows it.
     const note = await appendChangeNote(projectId, {
@@ -319,10 +392,11 @@ async function runRenderAdmitted(
 
   return ok({
     scopeVersion: scope.scopeVersion,
-    completed: result.completed,
-    trigger: trigger === "repair" ? "repair" : "scope_update",
+    completed,
+    trigger,
     artifacts: [...result.artifacts],
     warnings: [...result.warnings],
+    runFailure: null,
   });
 }
 
@@ -377,6 +451,51 @@ export async function enrichProjectFiles(
     generatorFingerprint: project.files.generatorFingerprint,
     artifacts,
   };
+}
+
+/**
+ * Would `AGENTS.md`'s managed block be rewritten by this run even if no change
+ * note were injected into it?
+ *
+ * Asked with the NOTE-FREE brief, and answered by the same inspection the
+ * sidebar badge reads, so "the run is about to rewrite the block" and "the badge
+ * says the block is behind the scope" can never be two different answers.
+ *
+ * The mapping is the reconciler's own behaviour, not a second policy:
+ * `missing` and `stale` are written, a `drifted` block is left alone unless this
+ * is an explicit Repair, and an `unreadable` (malformed fence) block is refused
+ * rather than rewritten.
+ *
+ * COSTS ONE EXTRA READ of a file the second pass is about to read anyway.
+ * Renders are user-triggered and rare; a wrong drift badge on every project is
+ * the expensive side.
+ */
+async function vexGuideNeedsRewrite(
+  projectDirectory: string,
+  plan: StudioPlan,
+  briefWithoutPendingNote: StudioProjectBrief,
+  provenance: ReadonlyMap<string, { entryHash: string | null; contentHash: string }>,
+  repair: boolean,
+): Promise<boolean> {
+  const artifact = plan.artifacts.find(
+    (candidate) => candidate.kind === "vex-guide" && candidate.operation === "install",
+  );
+  if (artifact === undefined) return false;
+  const status = await inspectArtifact(
+    projectDirectory,
+    artifact,
+    briefWithoutPendingNote,
+    provenance,
+  );
+  switch (status.state) {
+    case "missing":
+    case "stale":
+      return true;
+    case "drifted":
+      return repair;
+    default:
+      return false;
+  }
 }
 
 async function inspectArtifact(
@@ -448,16 +567,48 @@ async function inspectArtifact(
       }
       break;
     }
-    case "claude-md":
-      return claudeMdImportsAgents(read.text)
-        ? { ...base, state: "current", detail: null }
-        : recorded === undefined
-          ? { ...base, state: "missing", detail: null }
-          : {
-            ...base,
-            state: "drifted",
-            detail: "the @AGENTS.md import Vex added is gone",
-          };
+    case "vex-guide": {
+      const state = inspectStudioVexGuide(read.text, brief);
+      switch (state.kind) {
+        case "absent":
+          return { ...base, state: "missing", detail: null };
+        case "malformed":
+          return { ...base, state: "unreadable", detail: state.detail };
+        case "drifted":
+          return { ...base, state: "drifted", detail: "the Vex section was edited" };
+        case "intact":
+          return state.upToDate
+            ? { ...base, state: "current", detail: null }
+            : {
+              ...base,
+              state: "stale",
+              detail: "the guide predates this project's current settings",
+            };
+      }
+      break;
+    }
+    case "claude-md": {
+      const missing = claudeMdMissingStudioImports(read.text);
+      if (missing.length === 0) return { ...base, state: "current", detail: null };
+      // A file Vex has no record of is not yet installed; one it DOES have a
+      // record of is missing a line that either the user removed or that Vex
+      // has only started writing since. Both are answered by a render, and the
+      // reconciler is the owner of that distinction (`decideClaudeMd`); the
+      // badge says the file is behind, which is true either way.
+      if (recorded === undefined) return { ...base, state: "missing", detail: null };
+      const deleted = studioClaudeMdDeletedImports(read.text, recorded.entryHash);
+      return deleted.length > 0
+        ? {
+          ...base,
+          state: "drifted",
+          detail: `the ${deleted.join(" and ")} import Vex added is gone`,
+        }
+        : {
+          ...base,
+          state: "stale",
+          detail: `${missing.join(" and ")} has not been added yet`,
+        };
+    }
     case "protocols-doc": {
       if (read.text === renderStudioProtocolsDoc()) {
         return { ...base, state: "current", detail: null };
@@ -548,9 +699,10 @@ function buildProjectBrief(
  *
  * Listing all of them is safe by construction, not by luck. The artifact roster
  * is CLOSED - one config path per agent in the registry plus `AGENTS.md`,
- * `CLAUDE.md` and `.vex/protocols.md` - and the longest possible line, every
- * artifact of the full roster written in one run, is 296 characters against the
- * 400-character `project_change_notes.summary` CHECK (migration 089).
+ * `.vex/vex-guide.md`, `CLAUDE.md` and `.vex/protocols.md` - and the longest
+ * possible line, every artifact of the full roster written in one run, is 315
+ * characters against the 400-character `project_change_notes.summary` CHECK
+ * (migration 089).
  * `studio-change-note-bound.test.ts` re-measures that against the live registry
  * so a future agent whose path pushes the worst case over the column bound
  * fails a test here rather than an INSERT in front of a user.
@@ -564,7 +716,11 @@ function summarizeRun(
     .map((outcome) => outcome.path)
     .filter((path): path is string => path !== null);
 
-  const prefix = trigger === "repair" ? "repaired" : "updated";
+  // One word per trigger. `created` is no longer than the `repaired` that
+  // `studio-change-note-bound.test.ts` already measures the worst case against,
+  // so the new trigger cannot push a line past the column's CHECK.
+  const prefix =
+    trigger === "repair" ? "repaired" : trigger === "create" ? "created" : "updated";
   if (touched.length === 0) return `${prefix} this project's Vex files`;
   return `${prefix} ${touched.join(", ")}`;
 }

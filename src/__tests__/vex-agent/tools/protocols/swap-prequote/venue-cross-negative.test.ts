@@ -15,6 +15,7 @@ import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 
 import type { SwapPrequote, SafetyVerdict } from "@vex-agent/db/repos/swap-prequotes.js";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
+import { rowVexFee, venueSwapVexFee } from "../prequote/vex-fee-fixtures.js";
 
 type CreateMock = Mock<(input: unknown) => Promise<void>>;
 type ResolveMock = Mock<(...args: unknown[]) => string>;
@@ -73,6 +74,7 @@ function uniswapQuoteResult(overrides: Record<string, unknown> = {}): Record<str
       liquidity: { checked: true, usd: 50_000, aboveThreshold: true },
       fot: { suspected: false },
     },
+    vexFee: venueSwapVexFee(),
     ...overrides,
   };
 }
@@ -92,7 +94,7 @@ function prequoteRow(verdict: SafetyVerdict, overrides: Partial<SwapPrequote> = 
     amount: "1",
     slippageBps: 50,
     safetyVerdict: verdict,
-    safetyDetail: {},
+    safetyDetail: { vexFee: rowVexFee() },
     routeRef: null,
     // Migration 095: a row that predates the claim lane reads as an
     // executable, unclaimed quote. It authorizes nothing on its own - the

@@ -11,7 +11,7 @@
             "type": "string"
           },
           "chain": {
-            "description": "Chain — Robinhood Chain / \"robinhood\" (the only chain; defaults to robinhood).",
+            "description": "Chain - Robinhood Chain / \"robinhood\" (the only chain; defaults to robinhood).",
             "type": "string"
           },
           "slippageBps": {

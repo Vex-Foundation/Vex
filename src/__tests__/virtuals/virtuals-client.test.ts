@@ -135,10 +135,22 @@ describe("listVirtuals", () => {
     expect(lastUrl()).toContain("pagination[pageSize]=200");
   });
 
+  // PR-C1 moved every server-side screen under one `filters` bag, so the
+  // client has ONE place that decides which `filters[...]` expressions exist.
   it("passes filters[isVerified] only when provided", async () => {
     mockOk(FIXTURE_LIST);
-    await client.listVirtuals({ chain: "BASE", isVerified: true });
+    await client.listVirtuals({ chain: "BASE", filters: { isVerified: true } });
     expect(lastUrl()).toContain("filters[isVerified]=true");
+  });
+
+  it("omits every filter expression when no filters were asked for", async () => {
+    mockOk(FIXTURE_LIST);
+    await client.listVirtuals({ chain: "BASE" });
+    const url = lastUrl();
+    expect(url).toContain("filters[chain]=BASE");
+    // The chain filter is the only one the API demands; nothing else may be
+    // invented, because an unasked-for filter silently narrows the population.
+    expect(url.match(/filters%5B/g) ?? url.match(/filters\[/g) ?? []).toHaveLength(1);
   });
 
   it("parses agents + pagination", async () => {

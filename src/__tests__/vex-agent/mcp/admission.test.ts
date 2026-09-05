@@ -172,7 +172,16 @@ describe("name resolution and refusals", () => {
     expect(dispatched).toBe(false);
   });
 
-  it.each(["execute_tool", "MemorySearch", "SessionMemorySearch", "PlanWrite", "CompactApply"])(
+  it.each([
+    "execute_tool",
+    "MemorySearch",
+    "SessionMemorySearch",
+    "PlanWrite",
+    "CompactApply",
+    // Registered for the in-app agent, deliberately not exported: the client
+    // that called this has its own web search (owner decision 2026-09-03).
+    "WebResearch",
+  ])(
     "refuses %s as not exported, without dispatching",
     async (name) => {
       const context = buildProjectToolContext(scope("full"));

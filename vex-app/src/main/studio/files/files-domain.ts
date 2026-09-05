@@ -97,8 +97,11 @@ import {
   FILES_EVENTS_OUTSTANDING_MAX,
   FILES_SUBSCRIPTIONS_PER_WINDOW_MAX,
   FILES_WATCHERS_MAX,
+  type FileDeleteMode,
+  type FileDeleteResult,
   type FileListing,
   type FileContent,
+  type FileNode,
   type FilesEvent,
   type FilesErrorCode,
   type FilesOutcome,
@@ -119,6 +122,7 @@ import {
   projectNodeEpoch,
   resolveFileNodeId,
 } from "./node-id.js";
+import { ProjectFileMutations, type TrashItem } from "./mutations.js";
 import { PROJECT_ROOT_RELATIVE, realProjectDirectory, resolveNodePath } from "./node-path.js";
 import { readFileForViewer } from "./read.js";
 import {
@@ -145,6 +149,16 @@ export interface ProjectFilesLocation {
   readonly projectDirectory: string;
 }
 
+/**
+ * Show an absolute path in the operating system's file manager, selecting it.
+ *
+ * Synchronous and reportless, which is the platform's own shape
+ * (`shell.showItemInFolder` returns `void` and tells no one whether a file
+ * manager exists). The caller therefore promises only that it asked; see
+ * `revealInFileManager`.
+ */
+export type RevealItem = (absolutePath: string) => void;
+
 export interface FilesDomainDependencies {
   /**
    * Where the project's files are as the DATABASE says, or `null` when the
@@ -158,6 +172,21 @@ export interface FilesDomainDependencies {
   readonly rootExists: (directory: string) => Promise<boolean>;
   /** Deliver one event to one window. A destroyed window is the caller's problem. */
   readonly publish: (windowId: string, event: FilesEvent) => void;
+  /**
+   * Move a path to the OS trash. INJECTED, exactly as `project-delete.ts`
+   * injects it and for the same reason: `os-trash.ts` imports `electron`, and
+   * this module's own real-filesystem suite must run without it.
+   */
+  readonly trashItem: TrashItem;
+  /**
+   * Show one absolute path in the desktop's file manager. INJECTED for the
+   * same reason `trashItem` is: the production capability is Electron's
+   * `shell.showItemInFolder`, and this module's real-filesystem suite must run
+   * without Electron.
+   */
+  readonly revealItem: RevealItem;
+  /** Test seam: how long a mutation waits for this project's write lock. */
+  readonly mutationTimeoutMs?: number;
 }
 
 interface Subscription {
@@ -224,9 +253,26 @@ export class FilesDomain {
   private readonly inFlightWatches = new Map<string, Set<string>>();
   private readonly unregisterCloseHook: () => void;
   private admitting = true;
+  /**
+   * The WRITE half of this surface. See `mutations.ts`.
+   *
+   * It is handed this domain's own `locate` and `stillAuthorised` rather than
+   * re-deriving anything: the authority chain has one implementation, and a
+   * write that could reach a syscall having skipped a link of it is the exact
+   * defect the token design exists to make impossible.
+   */
+  private readonly mutations: ProjectFileMutations;
 
   constructor(deps: FilesDomainDependencies) {
     this.deps = deps;
+    this.mutations = new ProjectFileMutations({
+      locate: (projectId, nodeId) => this.locate(projectId, nodeId),
+      stillAuthorised: (projectId, epoch) => this.stillAuthorised(projectId, epoch),
+      trashItem: deps.trashItem,
+      ...(deps.mutationTimeoutMs === undefined
+        ? {}
+        : { timeoutMs: deps.mutationTimeoutMs }),
+    });
     // Step 6 of a project delete closes this project's watcher, AFTER the
     // tombstone has committed.
     this.unregisterCloseHook = registerProjectCloseHook((projectId) =>
@@ -408,6 +454,121 @@ export class FilesDomain {
       return { ok: false, code: "project_closed" };
     }
     return content;
+  }
+
+  /**
+   * SHOW ONE NODE IN THE DESKTOP'S FILE MANAGER.
+   *
+   * A read-only operation whose effect is outside this application, and the
+   * whole of its safety is that it reaches the operating system with a path
+   * THIS process derived: the renderer sends a project and a node token, and
+   * `locate` re-establishes the same authority chain a read uses - active row,
+   * anchored realpath, token verification, symlink-free walk, containment -
+   * before anything is handed to the desktop. No caller can name a path here,
+   * so no caller can reveal one outside the project.
+   *
+   * NO APPROVAL, stated rather than assumed. It writes nothing, returns no
+   * bytes, and discloses a path the user is already looking at, to the user
+   * whose window asked for it. The actor is the person, not a model: nothing on
+   * the agent surface reaches this channel.
+   *
+   * THE FINAL COMPONENT MAY BE A SYMLINK, unlike a read. A read is refused
+   * because opening a link would serve bytes from wherever it points; revealing
+   * selects the LINK ITSELF in its own parent directory, and every parent above
+   * it was proven link-free by the walk. Nothing outside the project is
+   * displayed by showing an entry that is inside it.
+   *
+   * A SUCCESSFUL OUTCOME MEANS THE ASK WENT OUT. The platform API reports
+   * nothing back - not whether a file manager exists, not whether it opened -
+   * so claiming more would be inventing a fact this process cannot have.
+   */
+  async revealInFileManager(input: {
+    readonly projectId: string;
+    readonly nodeId: string;
+  }): Promise<FilesOutcome<null>> {
+    const leased = acquireProjectLease(input.projectId, "fileOperation");
+    if (!leased.ok) return { ok: false, code: "project_closed" };
+    try {
+      const located = await this.locate(input.projectId, input.nodeId);
+      if (!located.ok) return { ok: false, code: located.code };
+      // THE FENCE, and here it guards a SIDE EFFECT rather than a payload: a
+      // project deleted while this request was walking the filesystem must not
+      // have one of its paths opened in a file manager afterwards.
+      if (!this.stillAuthorised(input.projectId, located.epoch)) {
+        return { ok: false, code: "project_closed" };
+      }
+      this.deps.revealItem(located.absolutePath);
+      return { ok: true, value: null };
+    } finally {
+      leased.lease.release();
+    }
+  }
+
+  /* ---------------------------------------------------------------- *
+   * Writes
+   * ---------------------------------------------------------------- */
+
+  /**
+   * The three mutations, each under the SAME drained `fileOperation` lease a
+   * read takes.
+   *
+   * The lease is what makes step 3 of a project delete wait for a write already
+   * in flight, exactly as it waits for a read: a rename halfway through when
+   * the tombstone commits would leave the provenance store describing a file
+   * under a name that no longer exists. Nothing new is admitted behind it,
+   * because the gate closed admission in step 1 and the acquisition here is
+   * itself the admission check.
+   *
+   * These three methods are the only growth this file takes for the write half.
+   * The mechanics - names, the managed-artifact refusal, the write lock, the
+   * trash, the last-moment re-resolution - all live in `mutations.ts`, and what
+   * stays here is the lease, which is this module's own responsibility and
+   * cannot move without splitting the lifecycle owner in two.
+   */
+  async createNode(input: {
+    readonly projectId: string;
+    readonly parentNodeId: string | null;
+    readonly name: string;
+    readonly kind: "file" | "directory";
+    readonly signal?: AbortSignal;
+  }): Promise<FilesOutcome<FileNode>> {
+    const leased = acquireProjectLease(input.projectId, "fileOperation");
+    if (!leased.ok) return { ok: false, code: "project_closed" };
+    try {
+      return await this.mutations.create(input);
+    } finally {
+      leased.lease.release();
+    }
+  }
+
+  async renameNode(input: {
+    readonly projectId: string;
+    readonly nodeId: string;
+    readonly name: string;
+    readonly signal?: AbortSignal;
+  }): Promise<FilesOutcome<FileNode>> {
+    const leased = acquireProjectLease(input.projectId, "fileOperation");
+    if (!leased.ok) return { ok: false, code: "project_closed" };
+    try {
+      return await this.mutations.rename(input);
+    } finally {
+      leased.lease.release();
+    }
+  }
+
+  async deleteNode(input: {
+    readonly projectId: string;
+    readonly nodeId: string;
+    readonly mode: FileDeleteMode;
+    readonly signal?: AbortSignal;
+  }): Promise<FilesOutcome<FileDeleteResult>> {
+    const leased = acquireProjectLease(input.projectId, "fileOperation");
+    if (!leased.ok) return { ok: false, code: "project_closed" };
+    try {
+      return await this.mutations.delete(input);
+    } finally {
+      leased.lease.release();
+    }
   }
 
   /* ---------------------------------------------------------------- *

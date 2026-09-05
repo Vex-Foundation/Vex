@@ -99,11 +99,18 @@ export type SafetyVerdict = "pass" | "fail" | "unknown";
 /**
  * The closed quote-eligibility union, mirrored from
  * `tools/protocols/quote-authority/eligibility.ts`. Only `executable` may be
- * claimed by an execute; the other four are the REASONS a quote authorized
+ * claimed by an execute; the other seven are the REASONS a quote authorized
  * nothing, recorded so a later ineligible quote still supersedes an older
  * priced one for the same identity.
  *
- * Held in lockstep with the SQL CHECK (migration 095) by
+ * The last three are SPENDABILITY reasons (WP2, contract C2): the wallet could
+ * not pay the principal, a balance could not be read at all, or the native
+ * balance did not cover the swap's full fee debit. `balance_unavailable` is
+ * deliberately its own member and is never merged into `insufficient_balance` -
+ * an unreadable balance and a known shortfall are different facts with
+ * different remedies.
+ *
+ * Held in lockstep with the SQL CHECK (migration 095, widened by 097) by
  * `__tests__/vex-agent/db/repos/swap-prequotes-kind-lockstep.test.ts`.
  */
 export type PrequoteEligibilityKind =
@@ -111,7 +118,10 @@ export type PrequoteEligibilityKind =
   | "unpriceable_output"
   | "excessive_impact"
   | "oversize_snapshot"
-  | "provider_usd_invalid";
+  | "provider_usd_invalid"
+  | "insufficient_balance"
+  | "balance_unavailable"
+  | "gas_reserve_insufficient";
 
 export interface SwapPrequote {
   prequoteId: string;
@@ -341,11 +351,12 @@ export async function findLatestExecutableByMatch(
   return row ? mapRow(row) : null;
 }
 
-// ── claimForExecute (atomic, single-use) ────────────────────────────────
+// ── read, then claim (atomic, single-use) ────────────────────
 
 /**
- * The claimable predicate, shared by the claim and by the diagnosis below so
- * the two can never disagree about what "claimable" means.
+ * The claimable predicate, shared by the non-destructive read, the claim and
+ * the diagnosis below so the three can never disagree about what "claimable"
+ * means.
  *
  * `NOT EXISTS (newer row for this identity)` is the supersession clause: a
  * later quote for the same (session, match_hash, kind) makes every earlier one
@@ -366,7 +377,46 @@ const CLAIMABLE_PREDICATE = `
     )`;
 
 /**
- * Consume a prequote for exactly one execute.
+ * The exact row a claim would consume, read WITHOUT consuming it.
+ *
+ * This exists because of the ordering the money path requires (review finding,
+ * 2026-09-04): an executor must be able to re-derive its fee statement and its
+ * router input against the row that authorizes the fill, and REFUSE, before the
+ * row is spent. Claiming first turned every divergence into a burnt quote - the
+ * refusal was correct and the retry got `already_claimed`.
+ *
+ * It applies the SAME predicate the claim applies, so a row this read returns is
+ * a row the claim would have taken at that instant. It is deliberately NOT
+ * authority: the claim re-evaluates the predicate atomically, and between the
+ * two statements a concurrent execute or a newer quote can still take the row
+ * away. That is a typed refusal, not a fill.
+ *
+ * Identity is asserted, never assumed: `matchHash` and `kind` are what tie a
+ * stored id to the trade the params describe, so a bound id belonging to another
+ * trade reads as `null` here exactly as it claims nothing below.
+ */
+export async function findClaimableForExecute(
+  sessionId: string,
+  prequoteId: string,
+  matchHash: string,
+  kind: PrequoteKind,
+): Promise<SwapPrequote | null> {
+  const row = await queryOne<Record<string, unknown>>(
+    `SELECT ${SELECT_COLUMNS} FROM swap_prequotes AS p
+      WHERE p.prequote_id = $1
+        AND p.session_id = $2
+        AND p.match_hash = $3
+        AND p.kind = $4
+        AND ${CLAIMABLE_PREDICATE}`,
+    [prequoteId, sessionId, matchHash, kind],
+  );
+  return row ? mapRow(row) : null;
+}
+
+/**
+ * Consume ONE named prequote row for exactly one execute, after its caller has
+ * already compared everything the row disclosed against what this execution
+ * would actually do.
  *
  * ONE statement, so the read of the claimable predicate and the write of the
  * claim cannot be separated by another caller: Postgres serializes concurrent
@@ -374,58 +424,57 @@ const CLAIMABLE_PREDICATE = `
  * committed claim and matches zero rows. Exactly one caller ever receives a
  * row.
  *
+ * FOUR things are asserted, and each closes a different substitution:
+ *
+ *   `prequote_id` + `session_id` - the row the caller read and compared, owned
+ *      by the session that quoted it.
+ *   `match_hash` + `kind`        - the TRADE that row authorizes. A bound id
+ *      belonging to another trade matches zero rows and consumes nothing.
+ *   `CLAIMABLE_PREDICATE`        - still unclaimed, unexpired, executable and
+ *      current (a quote recorded while the human decided supersedes it).
+ *   `safety_detail`              - THE DISCLOSURE FENCE. The caller compared the
+ *      fee statement, the spendability plan and the safety detail this row
+ *      carried; this makes the claim itself conditional on that block still
+ *      being byte-equal, so a row rewritten between the read and the claim
+ *      matches zero rows and is diagnosed `disclosure_changed` rather than
+ *      claimed silently. Postgres `jsonb` equality is canonical (key order and
+ *      whitespace are normalised at write time), so passing the block read back
+ *      IS the digest comparison, with no second column to keep in step.
+ *
  * Returns `null` when the row was not claimable for ANY reason. The caller asks
  * `diagnoseUnclaimable` for the reason - deliberately a second, non-atomic read,
  * because it feeds a refusal message only and must never decide anything.
+ *
+ * `claimedBy` is the caller's correlation for the audit trail; it is stored on
+ * the row and never used to decide anything.
  */
-export async function claimForExecute(
-  sessionId: string,
-  prequoteId: string,
-  claimedBy: string,
-): Promise<SwapPrequote | null> {
+export async function claimVerifiedRowForExecute(input: {
+  readonly sessionId: string;
+  readonly prequoteId: string;
+  readonly matchHash: string;
+  readonly kind: PrequoteKind;
+  /** The `safetyDetail` block the caller read and compared against. */
+  readonly expectedDisclosure: Record<string, unknown>;
+  readonly claimedBy: string;
+}): Promise<SwapPrequote | null> {
   const row = await queryOne<Record<string, unknown>>(
     `UPDATE swap_prequotes AS p
-        SET claimed_at = NOW(), claimed_by = $3
+        SET claimed_at = NOW(), claimed_by = $6
       WHERE p.prequote_id = $1
         AND p.session_id = $2
+        AND p.match_hash = $3
+        AND p.kind = $4
+        AND p.safety_detail = $5::jsonb
         AND ${CLAIMABLE_PREDICATE}
       RETURNING ${SELECT_COLUMNS}`,
-    [prequoteId, sessionId, claimedBy],
-  );
-  return row ? mapRow(row) : null;
-}
-
-/**
- * Consume THE ROW AN APPROVAL WAS BOUND TO, for exactly one execute.
- *
- * The difference from `claimForExecute` is the identity predicate, and it is the
- * whole point: an approval names one `prequote_id`, and this claim succeeds only
- * if that row is still the CURRENT executable row for the trade identity the
- * caller recomputed. A Q2 recorded while the human was deciding makes the bound
- * row non-current through the shared `CLAIMABLE_PREDICATE`, so the resumed
- * execute refuses instead of silently filling against a quote nobody approved.
- *
- * `matchHash` and `kind` are asserted rather than assumed: they are what ties the
- * stored id to the trade the params describe, so a bound id belonging to another
- * trade matches zero rows and consumes nothing.
- */
-export async function claimBoundForExecute(
-  sessionId: string,
-  prequoteId: string,
-  matchHash: string,
-  kind: PrequoteKind,
-  claimedBy: string,
-): Promise<SwapPrequote | null> {
-  const row = await queryOne<Record<string, unknown>>(
-    `UPDATE swap_prequotes AS p
-        SET claimed_at = NOW(), claimed_by = $3
-      WHERE p.prequote_id = $1
-        AND p.session_id = $2
-        AND p.match_hash = $4
-        AND p.kind = $5
-        AND ${CLAIMABLE_PREDICATE}
-      RETURNING ${SELECT_COLUMNS}`,
-    [prequoteId, sessionId, claimedBy, matchHash, kind],
+    [
+      input.prequoteId,
+      input.sessionId,
+      input.matchHash,
+      input.kind,
+      jsonb(input.expectedDisclosure),
+      input.claimedBy,
+    ],
   );
   return row ? mapRow(row) : null;
 }
@@ -436,17 +485,23 @@ export type UnclaimableReason =
   | "already_claimed"
   | "expired"
   | "not_executable"
-  | "superseded";
+  | "superseded"
+  | "disclosure_changed";
 
 /**
  * Explain a failed claim for the agent-facing refusal. Read-only and
  * advisory: the claim itself already decided, and a state that changed between
  * the two statements can only make this message less specific, never let an
  * unclaimed row through.
+ *
+ * `expectedDisclosure` is the block the caller compared against, so a claim that
+ * missed on the disclosure fence alone is reported as what it is rather than as
+ * the conservative `superseded`.
  */
 export async function diagnoseUnclaimable(
   sessionId: string,
   prequoteId: string,
+  expectedDisclosure: Record<string, unknown>,
 ): Promise<UnclaimableReason> {
   const row = await queryOne<Record<string, unknown>>(
     `SELECT
@@ -459,18 +514,20 @@ export async function diagnoseUnclaimable(
              AND newer.match_hash = p.match_hash
              AND newer.kind = p.kind
              AND (newer.created_at, newer.prequote_id) > (p.created_at, p.prequote_id)
-        )                                       AS superseded
+        )                                       AS superseded,
+        (p.safety_detail IS DISTINCT FROM $3::jsonb) AS disclosure_changed
        FROM swap_prequotes AS p
       WHERE p.prequote_id = $1 AND p.session_id = $2`,
-    [prequoteId, sessionId],
+    [prequoteId, sessionId, jsonb(expectedDisclosure)],
   );
   if (row === null) return "missing";
   if (row.claimed === true) return "already_claimed";
   if (row.expired === true) return "expired";
   if (row.ineligible === true) return "not_executable";
   if (row.superseded === true) return "superseded";
+  if (row.disclosure_changed === true) return "disclosure_changed";
   // The claim's own predicate and this read disagree only when the row became
   // claimable again between the two statements, which nothing does. Report the
-  // conservative reason rather than inventing a sixth state.
+  // conservative reason rather than inventing a seventh state.
   return "superseded";
 }

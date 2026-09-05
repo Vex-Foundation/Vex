@@ -51,8 +51,8 @@ const mockPlanKyberAllowance = vi.fn();
 const mockSignStageBroadcast = vi.fn();
 const mockDecodeSettlement = vi.fn();
 
-vi.mock("@tools/kyberswap/evm-utils.js", () => ({
-  getKyberEvmClients: () => ({ publicClient: { readContract: vi.fn() }, walletClient: {} }),
+vi.mock("@tools/kyberswap/evm-utils.js", async () => ({
+  ...(await import("./evm-client.test-fixtures.js")).kyberEvmClientMocks(),
   readErc20Metadata: (...args: [string, string]) => mockReadErc20Metadata(...args),
   verifyRouterAddress: vi.fn(),
   planKyberAllowance: (...args: unknown[]) => mockPlanKyberAllowance(...args),
@@ -121,7 +121,8 @@ vi.mock("@vex-agent/db/repos/tracked-tokens.js", () => ({
 // behaviour under test.
 const mockClaim = vi.fn();
 vi.mock("@vex-agent/tools/protocols/prequote/claim.js", () => ({
-  claimSwapExecutionSnapshot: (...args: unknown[]) => mockClaim(...args),
+  commitPrequoteClaim: vi.fn(async () => ({ ok: true })),
+  readSwapExecutionSnapshot: (...args: unknown[]) => mockClaim(...args),
 }));
 
 const mockLoggerWarn = vi.fn();
@@ -184,6 +185,7 @@ beforeEach(() => {
       approvedClaim(
         routeResponse.data.routeSummary,
         typeof params.slippageBps === "number" ? params.slippageBps : VEX_DEFAULT_SLIPPAGE_BPS,
+        { amountInRaw: 10n ** 18n },
       ),
   );
   mockBuildRoute.mockResolvedValue({
@@ -193,6 +195,9 @@ beforeEach(() => {
         srcToken: TOKEN_A, dstToken: TOKEN_B, dstReceiver: SESSION_EVM.address,
         amountIn: 10n ** 18n, quotedNetOutRaw: "999000", slippageBps: 50,
       }),
+      // The provider's own gas figure for the swap leg. MEASURED live on Base
+      // 2026-08-31: `/route/build` answered `gas: "287581"` for a real USDC route.
+      gas: "287581",
       transactionValue: "0",
       amountIn: "1000000", amountOut: "999000",
       amountInUsd: "1", amountOutUsd: "1", gasUsd: "0.1",

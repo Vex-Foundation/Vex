@@ -81,11 +81,39 @@ describe("Safety Contract — untrusted tool output and destinations", () => {
     expect(prompt).toContain("fee-on-transfer tax before you commit");
   });
 
-  it("names ONE preferred resolver in the token-verification step, not an either/or", () => {
+  it("names ONE capability-routed EVM resolver and contract metadata authority", () => {
     const prompt = buildSafetyContractPrompt();
     expect(prompt).not.toContain("`TokenFind` or `khalani__tokens_search`");
-    expect(prompt).toContain("Primary: `TokenFind`");
-    expect(prompt).toContain("same engine as `khalani__tokens_search`");
+    expect(prompt).toContain("EVM: `TokenFind`");
+    expect(prompt).toContain("routes to the chain's available identity source");
+    expect(prompt).toContain("For EVM, continue only when `mutationReady` is true");
+    expect(prompt).toContain("contract `symbol`/`decimals`");
+  });
+
+  it("distinguishes bridge metadata approval from the current swap card", () => {
+    const prompt = buildSafetyContractPrompt();
+    expect(prompt).toContain("Bridge cards re-read/show contract `symbol`/`decimals`");
+    expect(prompt).toContain("swap cards show one quote-time contract symbol");
+    expect(prompt).toContain("no decimals/atomic input");
+    expect(prompt).toContain("EVM swaps re-read both contracts");
+    expect(prompt).toContain("refusing unreadable metadata pre-sign");
+    expect(prompt).toContain("card is not proof");
+    expect(prompt).not.toContain("Approval shows chain, address, contract symbol/decimals");
+  });
+
+  it("keeps Solana mint resolution separate from the EVM mutationReady contract", () => {
+    const prompt = buildSafetyContractPrompt();
+    expect(prompt).toContain("For Solana, use an exact verified mint");
+    expect(prompt).toContain("never auto-select an ambiguous symbol");
+    expect(prompt).not.toContain("For Solana, continue only when `mutationReady` is true");
+  });
+
+  it("states the frozen human balance and atomic balanceRaw unit contract", () => {
+    const prompt = buildSafetyContractPrompt();
+    expect(prompt).toContain("`balance` is the exact full-precision HUMAN amount string");
+    expect(prompt).toContain("`balanceRaw` is the decimal atomic-unit string beside `decimals`");
+    expect(prompt).toContain("Never divide `balance`");
+    expect(prompt).not.toContain("`balance` and other machine fields are RAW base units");
   });
 });
 

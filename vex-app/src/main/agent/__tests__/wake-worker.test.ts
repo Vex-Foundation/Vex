@@ -20,7 +20,7 @@ vi.mock("../../logger/index.js", () => ({
 vi.mock("../../database/wake-db.js", () => ({
   probeLoopWakeReady: vi.fn(),
 }));
-vi.mock("../../ipc/runtime/_ensure-engine-db-url.js", () => ({
+vi.mock("../../database/engine-db-readiness.js", () => ({
   ensureEngineDbUrl: vi.fn(),
 }));
 // Migrations are the bootstrap gate every worker now consults; these tests are

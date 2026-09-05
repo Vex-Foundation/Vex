@@ -2,7 +2,7 @@
  * Vex's OWN view of a Khalani order, merged onto the provider's (W9b).
  *
  * WHY THIS EXISTS. `BridgeStatus` / `khalani.orders.get` was a pure provider
- * pass-through: it returned Khalani's order object and nothing else — no
+ * pass-through: it returned Khalani's order object and nothing else - no
  * `_executionId`, no Vex leg list, no fee-collection outcome, no note that the
  * logical row is still awaiting Vex's own on-chain verification. Meanwhile the
  * bridge result the agent got a turn earlier deliberately reported
@@ -14,7 +14,7 @@
  * FAIL-SOFT BY CONTRACT. The provider order is the answer; the Vex view is
  * correlation. A DB miss, an unrecorded order (a bridge someone else made with
  * the same wallet), or a query failure degrades to `null` with a stated reason
- * — never to a failed status read, and never to a fabricated leg list.
+ * - never to a failed status read, and never to a fabricated leg list.
  */
 
 import type { AgentActivityEvent } from "@vex-agent/db/repos/agent-activity.js";
@@ -29,7 +29,7 @@ export interface KhalaniOrderLegView {
 }
 
 export interface KhalaniOrderCorrelation {
-  /** `protocol_execution_id` — the id every Vex leg of this bridge shares. */
+  /** `protocol_execution_id` - the id every Vex leg of this bridge shares. */
   readonly _executionId: number;
   /** The logical row's status, which is what Vex's own verification decides. */
   readonly vexStatus: string;
@@ -74,7 +74,7 @@ function buildNote(logical: AgentActivityEvent, providerStatus: string | null): 
   const provider = providerStatus === null ? "the provider's" : `Khalani's "${providerStatus}"`;
   if (logical.status === "pending") {
     return `Vex has not yet verified this bridge on-chain (logical row still pending), so ${provider} `
-      + "view can be ahead of Vex's. Vex finalizes the record itself — do not re-bridge.";
+      + "view can be ahead of Vex's. Vex finalizes the record itself - do not re-bridge.";
   }
   return `Vex's own record for this bridge is ${logical.status}; compare it with ${provider} view `
     + "before concluding anything about the funds.";
@@ -98,7 +98,7 @@ export async function describeKhalaniOrderCorrelation(
       return {
         correlation: null,
         correlationNote:
-          "No Vex activity record is attached to this order id — it was not bridged through this "
+          "No Vex activity record is attached to this order id - it was not bridged through this "
           + "Vex instance, or the deposit never reached the submit step. The provider view below is "
           + "the only view available.",
       };

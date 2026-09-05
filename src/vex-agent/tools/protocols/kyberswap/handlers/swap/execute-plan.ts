@@ -4,7 +4,7 @@
  * breakdown, the per-leg event plan, and the atomic intent creation.
  *
  * NOTHING here has been signed. Every failure THROWS, and the caller's single
- * catch records it with `failPreBroadcast` (C18: pre-intent only) — which is
+ * catch records it with `failPreBroadcast` (C18: pre-intent only) - which is
  * exactly why the intent creation is the LAST statement of this phase.
  */
 
@@ -24,8 +24,21 @@ import {
 import { deriveRouteFirstHops } from "@tools/kyberswap/evm/swap-source-transfer-binding.js";
 import { KYBER_BUILD_REDERIVATION_ALLOWANCE_RAW } from "@tools/kyberswap/swap-price-floor.js";
 import type { RouteSnapshot } from "../../../quote-authority/snapshot.js";
+import { compareDebitPlanRoles } from "../../../quote-authority/debit-plan.js";
+import { KYBER_FRESH_QUOTE_TOOL } from "../../../quote-authority/refusal.js";
 import { computeKyberVexFeeRaw } from "@tools/kyberswap/swap-vex-fee.js";
+import { buildKyberFeeDisclosure } from "@tools/kyberswap/fee-disclosure.js";
+import { KYBERSWAP_FEE_RECEIVER } from "@tools/kyberswap/constants.js";
+import { revalidateVexFeeStatement, VexFeeStatementRefusal } from "@tools/vex-fee/fee-revalidation.js";
+import { toVexFeePreview, type VexFeePreview } from "../../../prequote/fee-disclosure.js";
+import logger from "@utils/logger.js";
 import { ensureErc20Balance } from "@tools/evm-chains/erc20-balance-guard.js";
+import {
+  measureKyberDebitPlan,
+  sourceAssetOf,
+  type KyberDebitPlan,
+  type KyberPlannedLeg,
+} from "./quote-spendability.js";
 import type { ResolvedKyberTokenMetadata } from "@tools/kyberswap/helpers.js";
 import type { KyberChainSlug } from "@tools/kyberswap/types.js";
 import {
@@ -60,6 +73,15 @@ export interface PreparedSwapExecution {
    * is what lets it sit inside the staged broadcast's pre-sign window.
    */
   readonly swapGuard: { readonly built: BuiltKyberSwap; readonly approved: ApprovedKyberSwap };
+  /**
+   * The measured native-debit plan for THIS execute: the bound leg set with the
+   * gas each leg is authorized for, the reserve's measured gas, and the source
+   * requirement. The pre-sign gate on every leg prices it at that leg's own
+   * request and compares the total against a fresh `pending` balance read
+   * (contract C2.6). It is measured HERE, in the pre-intent phase, so a chain
+   * read that fails refuses cleanly with nothing signed.
+   */
+  readonly debitPlan: KyberDebitPlan;
 }
 
 export interface PrepareSwapExecutionInput {
@@ -86,12 +108,54 @@ export interface PrepareSwapExecutionInput {
   readonly approvedSnapshot: RouteSnapshot;
   /**
    * Legs whose honeypot/FoT check could not run (W2b). Persisted onto the
-   * activity row's `intent_params` under a Vex-authored `_`-prefixed key —
-   * same established pattern as the Jupiter lend `/operate` delta shape — so
+   * activity row's `intent_params` under a Vex-authored `_`-prefixed key -
+   * same established pattern as the Jupiter lend `/operate` delta shape - so
    * the record itself says the swap ran without that protection. No schema
    * change: `intent_params` is already a sanitized, capped JSON blob.
    */
   readonly safetyCheckUnavailable: readonly SafetyCheckUnavailable[];
+  /**
+   * The Vex fee statement the CLAIMED row carries - the block the approval card
+   * stated and the row-disclosure digest covered. Held against this execution's
+   * own re-derivation before anything is signed; `undefined` fails closed.
+   */
+  readonly approvedVexFee: VexFeePreview | undefined;
+  /**
+   * Consume the approved prequote row, called at the LAST point in this phase
+   * that writes nothing: after the calldata guard, the fee-statement comparison
+   * and the debit-plan comparison, immediately before the durable intent.
+   *
+   * It is an injected callback rather than a repo call because the row identity
+   * belongs to the handler that read it (`prequote/claim.ts` issues the ticket)
+   * and this phase owns only WHEN the consumption is safe. A refusal is thrown
+   * like every other failure here, so the caller's single catch records it
+   * pre-intent with nothing signed.
+   */
+  readonly commitApprovedQuote: () => Promise<
+    { readonly ok: true } | { readonly ok: false; readonly refusal: { readonly message: string } }
+  >;
+}
+
+/**
+ * The debit role of a planned event.
+ *
+ * Explicit rather than a default, because a role this build cannot classify is a
+ * transaction whose money it cannot account for - and silently filing it as
+ * `swap` would put an unknown debit into a total a signature is gated on.
+ */
+function debitRole(eventRole: AgentActivityEventRole): KyberPlannedLeg["role"] {
+  switch (eventRole) {
+    case "allowance_reset":
+    case "allowance":
+    case "swap":
+      return eventRole;
+    default:
+      throw new VexError(
+        ErrorCodes.KYBER_MALFORMED_PARAMS,
+        `Refused before signing: this swap plan contains an unrecognised ${eventRole} transaction, whose cost cannot be accounted for.`,
+        "Nothing was signed. Request a fresh kyberswap__swap_quote.",
+      );
+  }
 }
 
 export async function prepareSwapExecution(input: PrepareSwapExecutionInput): Promise<PreparedSwapExecution> {
@@ -99,7 +163,7 @@ export async function prepareSwapExecution(input: PrepareSwapExecutionInput): Pr
     toolId, intentParams: p, sessionId, publicClient, walletAddress, chainId, slug,
     tokenIn, tokenOut, amountIn, amountInRaw, slippage, routerAddress,
     approvedSummary, approvedSnapshot,
-    safetyCheckUnavailable,
+    safetyCheckUnavailable, approvedVexFee,
   } = input;
 
   // The tolerance is part of the prequote identity, so the gate has already
@@ -115,12 +179,19 @@ export async function prepareSwapExecution(input: PrepareSwapExecutionInput): Pr
   }
 
   if (!tokenIn.isNative) {
+    // GATE ONE of two. A cheap early refusal so gas is not burned approving a
+    // transfer that cannot succeed; it reads `latest`, which is the state this
+    // preflight has always read, and it is NOT the authorization - that is the
+    // pre-sign gate below (contract C2.6). The chain id travels so the
+    // observation it produces is a statement about a chain rather than about
+    // nothing.
     await ensureErc20Balance(publicClient, {
       token: tokenIn.address,
       owner: walletAddress,
       required: amountIn,
       decimals: tokenIn.decimals,
       label: tokenIn.symbol,
+      chainId,
     });
   }
 
@@ -147,12 +218,12 @@ export async function prepareSwapExecution(input: PrepareSwapExecutionInput): Pr
   // ── Pre-sign calldata assertion (the ONE gate on the opaque blob) ──
   // KyberSwap embeds the price protection inside calldata WE did not
   // build, so it is decoded and held to the floor THIS fresh route implies
-  // at the caller's own slippage — plus the fee line, the flags, the
+  // at the caller's own slippage - plus the fee line, the flags, the
   // target, the spender and the native value. Runs BEFORE the intent is
   // created, so a refusal is a clean pre-broadcast failure with nothing
   // signed and nothing broadcast. It bounds what the BUILD may do to the
   // trade; it does not second-guess where the market moved since the
-  // quote — `slippageBps` owns that.
+  // quote - `slippageBps` owns that.
   const swapGuard = {
     built: {
       calldata: buildResp.data.data as Hex,
@@ -174,7 +245,7 @@ export async function prepareSwapExecution(input: PrepareSwapExecutionInput): Pr
       freshMinOutRaw: BigInt(approvedSnapshot.approvedMinOutRaw),
       floorAllowanceRaw: KYBER_BUILD_REDERIVATION_ALLOWANCE_RAW,
       // The pools of the very route summary posted to `/route/build`
-      // above — never a second, fresher route, which would let the guard
+      // above - never a second, fresher route, which would let the guard
       // bless a build against a route the agent never approved.
       routeFirstHops: deriveRouteFirstHops(approvedSummary.route),
     },
@@ -188,7 +259,7 @@ export async function prepareSwapExecution(input: PrepareSwapExecutionInput): Pr
         : ErrorCodes.KYBER_UNSAFE_BUILD,
       // Kept SHORT on purpose: `summarizeProtocolError` joins message +
       // hint and caps the pair at 200 chars, so a verbose reason silently
-      // truncates away the actionable tail — the one part of a refusal the
+      // truncates away the actionable tail - the one part of a refusal the
       // agent must always receive.
       `Refused before signing: ${verdict.reason}.`,
       verdict.kind === "price_floor"
@@ -199,7 +270,7 @@ export async function prepareSwapExecution(input: PrepareSwapExecutionInput): Pr
 
   // C21 (Codex final-review finding 6): the native-in "requested" leg
   // recorded on the swap event is the SIGNED transaction's own declared
-  // value (`transactionValue`), never a locally re-derived `amountIn` —
+  // value (`transactionValue`), never a locally re-derived `amountIn` -
   // this is also what the settlement decoder treats as the EXECUTED
   // truth for a native leg (Kyber is exact-input, so the two coincide by
   // construction, but the build response is the authoritative source).
@@ -208,8 +279,8 @@ export async function prepareSwapExecution(input: PrepareSwapExecutionInput): Pr
     ? formatUnits(BigInt(buildResp.data.transactionValue), tokenIn.decimals)
     : amountInRaw;
 
-  // The durable cost breakdown (migration 050). Derived here — AFTER the
-  // calldata guard above accepted the build — so "25 bps of the input, on
+  // The durable cost breakdown (migration 050). Derived here - AFTER the
+  // calldata guard above accepted the build - so "25 bps of the input, on
   // the source token" is a proven property of the payload about to be
   // signed rather than an assumption.
   const swapCosts = estimateKyberSwapCostsUsd({
@@ -220,11 +291,60 @@ export async function prepareSwapExecution(input: PrepareSwapExecutionInput): Pr
   // The same fee as a FACT rather than a USD estimate (migration 050
   // Part 2). `amountIn` is the very bigint the guard just pinned to
   // `desc.amount`, and the guard also pinned the rate, the source-side
-  // charge and the no-partial-fill flag — so this is the router's own
+  // charge and the no-partial-fill flag - so this is the router's own
   // arithmetic over proven inputs, not a re-derivation of a provider hint.
   // It is recorded even when `usdVexFeeEst` is undefined, which is what
   // makes an absent USD read as "price unknown" instead of "no fee".
   const vexFeeRaw = computeKyberVexFeeRaw(amountIn);
+
+  // ── THE VEX FEE STATEMENT THE HUMAN READ, held against this execution's ──
+  //
+  // On this venue the equality is expected to hold BY CONSTRUCTION, and that is
+  // exactly why it is asserted rather than assumed. The calldata guard above has
+  // already refused to go on unless the decoded description carries
+  // `desc.amount == amountIn`, `feeAmounts == [KYBERSWAP_FEE_BPS]`, `_FEE_IN_BPS`
+  // set, `_FEE_ON_DST` clear and partial fill forbidden, and the row's block was
+  // built at quote time from the same `computeKyberVexFeeRaw` over the same
+  // amount. So a difference here cannot be a market condition: it means the
+  // statement a person approved and the bytes this build will sign disagree,
+  // which is a Vex bug, and the swap must stop rather than sign the difference.
+  //
+  // Nothing in this phase has been signed - the intent row is created below and
+  // every signature happens in Phase B - so this refusal costs a fresh quote and
+  // no key. Both sides go through the recorder's own projection, so the two
+  // blocks compared are the same validated shape.
+  const feeVerdict = revalidateVexFeeStatement(
+    approvedVexFee,
+    toVexFeePreview("kyberswap.swap.quote", buildKyberFeeDisclosure({
+      tokenAddress: tokenIn.address,
+      tokenSymbol: tokenIn.symbol,
+      tokenDecimals: tokenIn.decimals,
+      feeRaw: vexFeeRaw,
+      swappedRaw: amountIn - vexFeeRaw,
+      totalRaw: amountIn,
+      receiver: KYBERSWAP_FEE_RECEIVER,
+    })),
+  );
+  if (!feeVerdict.ok) {
+    logger.warn("protocol.vex_fee.presign_refused", {
+      toolId,
+      reason: feeVerdict.reason,
+      movedFields: feeVerdict.movedFields,
+    });
+    // Thrown as the TYPED refusal so the reason reaches the tool result's data
+    // and not only this log line: an agent that cannot tell a moved fee
+    // statement from any other build failure cannot pick the right remedy.
+    throw new VexFeeStatementRefusal(
+      ErrorCodes.KYBER_MALFORMED_PARAMS,
+      `Refused before signing: ${feeVerdict.summary} disagrees with the approved quote, which cannot happen on this venue.`,
+      "Nothing was signed. This is a Vex defect, not a market move: get a fresh kyberswap__swap_quote and report it if it repeats.",
+      {
+        reason: feeVerdict.reason,
+        movedFields: feeVerdict.movedFields,
+        remediation: `Get a fresh ${KYBER_FRESH_QUOTE_TOOL} and approve that one.`,
+      },
+    );
+  }
 
   // ── Build the events plan BEFORE anything is signed (plan §11.1 step 1) ──
   const builtPlans: SwapEventPlan[] = [];
@@ -266,9 +386,9 @@ export async function prepareSwapExecution(input: PrepareSwapExecutionInput): Pr
       usdOutEst: buildResp.data.amountOutUsd,
       // `usd_fee_est` is FROZEN for the migration-050 dual-write window:
       // it keeps receiving `gasUsd` alone, byte-identical to its
-      // pre-050 behavior, so old readers are unaffected. The honest gas —
+      // pre-050 behavior, so old readers are unaffected. The honest gas -
       // L2 execution PLUS the L1 data fee, which on an OP-stack chain can
-      // rival or exceed it — goes to `usd_network_gas_est`, so the two
+      // rival or exceed it - goes to `usd_network_gas_est`, so the two
       // legitimately differ on those chains. A later contract migration
       // drops `usd_fee_est`.
       usdFeeEst: buildResp.data.gasUsd,
@@ -278,7 +398,7 @@ export async function prepareSwapExecution(input: PrepareSwapExecutionInput): Pr
       // was actually collected, so summing confirmed rows is honest revenue.
       usdVexFeeEst: swapCosts.usdVexFeeEst,
       // Charged on the SOURCE token and taken OUT of the input, so this is
-      // a component of `tokenIn.amountRaw` above — never an extra debit.
+      // a component of `tokenIn.amountRaw` above - never an extra debit.
       vexFee: {
         tokenAddress: tokenIn.address,
         tokenSymbol: tokenIn.symbol,
@@ -295,7 +415,7 @@ export async function prepareSwapExecution(input: PrepareSwapExecutionInput): Pr
         // does not read it and `amount_out_raw` keeps its meaning (the build
         // response's own amountOut).
         approvedMinOutRaw: approvedSnapshot.approvedMinOutRaw,
-        // R1 Step 5a — the decode inputs, persisted at INTENT time. The router
+        // R1 Step 5a - the decode inputs, persisted at INTENT time. The router
         // is the one `verifyRouterAddress` accepted above, not a value echoed
         // back from the build; the declared value is the signed transaction's
         // own, and it is recorded only when the input really is native, because
@@ -309,6 +429,62 @@ export async function prepareSwapExecution(input: PrepareSwapExecutionInput): Pr
       },
     },
   });
+
+  // The debit plan, measured over the legs just built. It shares its derivation
+  // with the quote-time preview (`quote-spendability.ts`), so the number a human
+  // read on the card and the number the signature is gated on cannot come from
+  // two different pieces of arithmetic.
+  const plannedLegs = builtPlans.map((plan): KyberPlannedLeg => ({
+    role: debitRole(plan.eventRole),
+    to: plan.txParams.to,
+    data: plan.txParams.data,
+    valueWei: plan.txParams.value ?? 0n,
+  }));
+
+  // ── THE TRANSACTION SET THE HUMAN APPROVED ──
+  //
+  // The allowance legs come from a FRESH allowance read, so this set can
+  // genuinely differ from the quote's: an allowance granted or spent between the
+  // quote and the execute turns one transaction into three, or three into one.
+  // A wallet that happens to be solvent for the wider set is not a wallet that
+  // authorized it, so the difference is refused by name and the way out is a
+  // fresh quote (rule 90: approval binds to the exact parameters and is
+  // revalidated immediately before signing).
+  const planDrift = compareDebitPlanRoles(
+    approvedSnapshot.debitPlan,
+    plannedLegs.map((leg) => leg.role),
+    KYBER_FRESH_QUOTE_TOOL,
+  );
+  if (planDrift) {
+    throw new VexError(ErrorCodes.KYBER_MALFORMED_PARAMS, planDrift.message, planDrift.hint);
+  }
+
+  const debitPlan = await measureKyberDebitPlan(publicClient, {
+    chainId,
+    wallet: walletAddress,
+    legs: plannedLegs,
+    approvedPlan: approvedSnapshot.debitPlan,
+    swapGasEstimate: BigInt(buildResp.data.gas),
+    source: sourceAssetOf(tokenIn),
+    sourceRequiredRaw: amountIn.toString(10),
+  });
+
+  // ── ONLY NOW is the approved quote consumed ──
+  //
+  // Everything this execution could compare has been compared: the build's
+  // calldata against the approved route, the fee statement against the card's,
+  // and the transaction set against the approved debit plan. A refusal above
+  // this line leaves `claimed_at` and `claimed_by` null and the quote reusable,
+  // which is what makes the "get a fresh quote" remedy in those refusals a
+  // remedy rather than a dead end. Nothing has been signed either way: every
+  // signature happens in Phase B.
+  const consumed = await input.commitApprovedQuote();
+  if (!consumed.ok) {
+    throw new VexError(
+      ErrorCodes.KYBER_PRICE_FLOOR_VIOLATED,
+      consumed.refusal.message,
+    );
+  }
 
   const created = await createAgentActivityIntent({
     toolId,
@@ -324,5 +500,6 @@ export async function prepareSwapExecution(input: PrepareSwapExecutionInput): Pr
     plans: builtPlans,
     buildResp,
     swapGuard,
+    debitPlan,
   };
 }

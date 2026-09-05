@@ -357,7 +357,7 @@ describe("highlighting", () => {
     const lines = [[{ text: "hello", color: null, italic: false, bold: false, underline: false }]];
     highlighter.settleOldest(lines, 2);
     await flush();
-    expect(session.getHighlight()).toEqual({ kind: "highlighted", lines, longLines: 2 });
+    expect(session.getHighlight()).toEqual({ kind: "highlighted", lines, longLines: 2, budgetExceededLines: [], budgetExceededTotal: 0 });
   });
 
   it("does not highlight a file whose language has no grammar", async () => {
@@ -407,7 +407,7 @@ describe("highlighting", () => {
 
     highlighter.settleOldest([], 0);
     await flush();
-    expect(session.getHighlight()).toEqual({ kind: "highlighted", lines: [], longLines: 0 });
+    expect(session.getHighlight()).toEqual({ kind: "highlighted", lines: [], longLines: 0, budgetExceededLines: [], budgetExceededTotal: 0 });
   });
 
   it("drops a result that resolved before dispose but LANDS after it", async () => {

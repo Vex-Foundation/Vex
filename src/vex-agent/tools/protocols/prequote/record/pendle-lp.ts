@@ -1,5 +1,5 @@
 /**
- * Pendle LP prequote recording (P5) — `pendle.lp.quote` records either an
+ * Pendle LP prequote recording (P5) - `pendle.lp.quote` records either an
  * `lp_add` or an `lp_remove`.
  */
 
@@ -16,11 +16,12 @@ import { computePrequoteMatchHash } from "../identity/hash.js";
 import { buildPendleLpAddIdentity, buildPendleLpRemoveIdentity } from "../identity/pendle-lp.js";
 import { extractPendleLpQuote } from "../safety/extract.js";
 import { writePrequoteRow } from "./row.js";
+import { PENDLE_LP_QUOTE_GATE_TARGETS } from "./gate-targets.js";
 
 /**
  * Record a Pendle LP prequote (P5). `pendle.lp.quote` records EITHER an `lp_add`
- * prequote (direction "add" — token → LP) OR an `lp_remove` prequote (direction
- * "remove" — LP → token), decided from the echoed `direction`. Each uses its
+ * prequote (direction "add" - token → LP) OR an `lp_remove` prequote (direction
+ * "remove" - LP → token), decided from the echoed `direction`. Each uses its
  * dedicated identity (never the swap / mint / redeem one). Best-effort: a
  * wallet-scope / identity throw is a bounded skip.
  */
@@ -52,7 +53,7 @@ export async function recordPendleLpPrequote(
       prequoteId: `prequote-${randomUUID()}`,
       sessionId,
       matchHash: computePrequoteMatchHash(identity),
-      kind: "lp_add",
+      kind: PENDLE_LP_QUOTE_GATE_TARGETS[extracted.direction].kind,
       family: registered.family,
       provider: registered.provider,
       chainId: identity.chainId,
@@ -74,7 +75,7 @@ export async function recordPendleLpPrequote(
     return;
   }
 
-  // Remove (direction "remove") — dedicated lp_remove identity.
+  // Remove (direction "remove") - dedicated lp_remove identity.
   let identity;
   try {
     identity = await buildPendleLpRemoveIdentity(sessionId, params, context);
@@ -87,7 +88,7 @@ export async function recordPendleLpPrequote(
     prequoteId: `prequote-${randomUUID()}`,
     sessionId,
     matchHash: computePrequoteMatchHash(identity),
-    kind: "lp_remove",
+    kind: PENDLE_LP_QUOTE_GATE_TARGETS[extracted.direction].kind,
     family: registered.family,
     provider: registered.provider,
     chainId: identity.chainId,

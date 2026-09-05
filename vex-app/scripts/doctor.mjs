@@ -6,14 +6,34 @@
  *   - Node version satisfies engines.node
  *   - On WSL2: WSLg active OR `$DISPLAY` set OR fallback X server reachable
  *   - Electron binary cached (avoid first-run download surprise mid-session)
+ *   - The shell that will run `bridge/build.sh` resolves (Git for Windows on
+ *     Windows, never the System32 `bash.exe` that is WSL's launcher)
+ *   - The Vex Studio bridge for THIS platform and architecture is built and
+ *     still matches the sources and the pinned Go toolchain
+ *
+ * The bridge check is a VERIFICATION, not a build: `predev` runs
+ * `build:bridge:dev` first, so by the time doctor speaks the build has already
+ * had its chance and a failure here means it did not produce what it should
+ * have. Running doctor on its own (`pnpm doctor`) reports the same fact
+ * without building anything.
  *
  * Exits 0 if everything OK, 1 with actionable instructions otherwise.
  */
 
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { execSync } from "node:child_process";
-import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+import {
+  BRIDGE_BUILD_SCRIPT,
+  evaluateBridgeFreshness,
+  hostGoTarget,
+  resolveBuildShell,
+  resolveGoToolchain,
+} from "./bridge-freshness.mjs";
+
+const APP_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const REPO_ROOT = path.resolve(APP_ROOT, "..");
 
 const RED = "\x1b[31m";
 const YELLOW = "\x1b[33m";
@@ -137,6 +157,79 @@ function checkElectronBinary() {
   }
 }
 
+// ── Vex Studio bridge ─────────────────────────────────────────────────────
+const REBUILD_HINT = "Build it: pnpm --dir vex-app run build:bridge:dev";
+
+function checkStudioBridge() {
+  let target;
+  try {
+    target = hostGoTarget();
+  } catch (error) {
+    warn(
+      `Studio bridge: ${error.message}`,
+      "Vex will run, but Studio writes no coding-agent config files on this machine."
+    );
+    return;
+  }
+  const { goos, goarch } = target;
+
+  // WHICH bash will run the build, named before anything else about the
+  // bridge: on Windows a PATH lookup finds WSL's launcher, and a developer
+  // reading "the bridge is stale" deserves to know which shell the rebuild
+  // will actually use - or that there is none.
+  const shell = resolveBuildShell();
+  if (shell.kind === "refused") {
+    const [headline, ...rest] = shell.message.split("\n");
+    fail(
+      `Studio bridge build shell: ${headline}`,
+      rest.map((line) => line.trim()).filter(Boolean).join("\n  ")
+    );
+  } else {
+    ok(`Studio bridge build shell: ${shell.command} (${shell.source})`);
+  }
+
+  const toolchain = resolveGoToolchain(REPO_ROOT);
+  if (toolchain.kind === "refused") {
+    // The refusal already carries its own remediation - installing the right
+    // Go, not re-running a build that cannot work yet - so no rebuild hint is
+    // appended here.
+    const [headline, ...rest] = toolchain.message.split("\n");
+    fail(
+      `Studio bridge (${goos}-${goarch}): ${headline}`,
+      rest.map((line) => line.trim()).filter(Boolean).join("\n  ")
+    );
+    return;
+  }
+
+  const freshness = evaluateBridgeFreshness({
+    repoRoot: REPO_ROOT,
+    goos,
+    goarch,
+    goVersion: toolchain.version,
+  });
+  if (freshness.kind === "fresh") {
+    // One sentence per artifact, by name: on Windows the triple carries the
+    // MCP bridge AND the named-pipe front, and "the bridge is fine" would be a
+    // sentence that no longer says which binaries were actually checked.
+    for (const entry of freshness.artifacts) {
+      ok(
+        `Studio bridge: ${entry.name} at ${path.relative(REPO_ROOT, entry.file)} built with `
+          + `${toolchain.version} and current with the sources`
+      );
+    }
+    return;
+  }
+  fail(
+    `Studio bridge (${goos}-${goarch}) is not usable: ${freshness.reason}`,
+    [
+      `Expected ${freshness.artifacts.map((entry) => path.relative(REPO_ROOT, entry.file)).join(", ")}, `
+        + `built by ${BRIDGE_BUILD_SCRIPT} with Go ${toolchain.version}.`,
+      REBUILD_HINT,
+      "Without it, Vex Studio writes no coding-agent config files at all.",
+    ].join("\n  ")
+  );
+}
+
 // ── Build artifacts (optional sanity) ─────────────────────────────────────
 function checkBuildArtifacts() {
   const distMain = path.join(process.cwd(), "dist", "main", "index.js");
@@ -156,6 +249,7 @@ console.log(`\n${BLUE}vex-app doctor${RESET} — preflight checks\n`);
 checkNode();
 checkDisplay();
 checkElectronBinary();
+checkStudioBridge();
 checkBuildArtifacts();
 
 if (exitCode !== 0) {

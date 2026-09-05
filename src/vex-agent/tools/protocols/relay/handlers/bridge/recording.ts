@@ -3,7 +3,7 @@
  * staged broadcast itself: projecting a quote side into a leg input, attaching
  * the provider order id, aborting never-signed rows, and the fail-soft token pin.
  *
- * Every function here is best-effort by contract — a throw must never flip the
+ * Every function here is best-effort by contract - a throw must never flip the
  * caller's result.
  *
  * Extracted verbatim from `../bridge.ts` as part of a façade-preserving
@@ -25,15 +25,29 @@ import {
 import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
 import logger from "@utils/logger.js";
 import type { RelayLegs } from "./legs.js";
+import {
+  isVerifiedEvmBridgeAssetIdentity,
+  type BridgeAssetIdentity,
+} from "@vex-agent/tools/protocols/bridge-token-identity.js";
+import { formatUnits } from "viem";
 
-/** Repo leg input from an adapted quote side (quoted amounts — never executed truth). */
-export function relayLegInput(side: RelayQuoteSide, currencyAddress: string, rawFallback?: string): AgentActivityLegInput {
+/** Repo leg input from an adapted quote side (quoted amounts - never executed truth). */
+export function relayLegInput(
+  side: RelayQuoteSide,
+  currencyAddress: string,
+  rawFallback?: string,
+  identity?: BridgeAssetIdentity,
+): AgentActivityLegInput {
+  const raw = side.amountRaw ?? rawFallback;
+  const direct = isVerifiedEvmBridgeAssetIdentity(identity) ? identity : null;
   return {
     tokenAddress: currencyAddress,
-    tokenSymbol: side.symbol ?? undefined,
-    tokenDecimals: side.decimals ?? undefined,
-    amountHuman: side.amountFormatted ?? undefined,
-    amountRaw: side.amountRaw ?? rawFallback,
+    tokenSymbol: direct?.symbol ?? side.symbol ?? undefined,
+    tokenDecimals: direct?.decimals ?? side.decimals ?? undefined,
+    amountHuman: direct !== null && raw !== null && raw !== undefined && /^\d+$/.test(raw)
+      ? formatUnits(BigInt(raw), direct.decimals)
+      : side.amountFormatted ?? undefined,
+    amountRaw: raw,
   };
 }
 
@@ -71,7 +85,7 @@ export async function attachRequestIdBestEffort(executionId: number, requestId: 
 /**
  * Abort never-signed downstream rows (best-effort; a throw here must not flip
  * the caller's result). `toIndexExclusive` bounds the abort to
- * `event_index < toIndexExclusive` — used to finalize ONLY the Vex fee row
+ * `event_index < toIndexExclusive` - used to finalize ONLY the Vex fee row
  * while leaving the logical `bridge_fill_expected` row pending for the W4
  * sweep, since an in-flight bridge must keep its guard.
  */

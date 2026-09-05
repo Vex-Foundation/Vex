@@ -23,12 +23,28 @@
  * under the Trench Express mark the app already pairs with that name
  * (`TokenLaunchDialog` renders the same resolution beside the same words). A
  * launch REQUIRES an image from this locker, so two cards sent the user hunting
- * for the reason a launch refused. `TokenLaunchButton` is composed unchanged —
+ * for the reason a launch refused. `TokenLaunchButton` is composed unchanged -
  * the agent-driven `AgentLaunchFormHost` path is a separate flow and keeps
  * working.
+ *
+ * TWO SCOPES, TWO COMPONENTS (Studio parity decree, 2026-09-04).
+ * The locker is GLOBAL - `useLockerImages` takes no scope - so a
+ * project rail SEES the same images a session rail does. It may do nothing
+ * else with them. A user-origin launch is attributed to a session id on the
+ * signing path, and a project has none of its own that this card may borrow
+ * (its `backingSessionId` is an owner decision, not a rail's); and a project
+ * LAUNCHPAD is BROWSE-ONLY by decision, so upload and delete are not offered
+ * there either. The scope decides the card's MODE here, in one place:
+ * `session` mounts `SessionLocker` (read, upload, delete, the launchpad chips
+ * and the launch action); `project` mounts `ProjectLocker`, which calls ONLY
+ * the read query, renders non-deletable tiles, and says where a launch is
+ * signed from. The split is two components rather than one with branches
+ * because hooks cannot be conditional: a browse-only rail must not instantiate
+ * the upload and delete mutations at all, and the only way to prove that is
+ * for the component it mounts not to call them.
  */
 
-import { useState, type JSX } from "react";
+import { useState, type JSX, type ReactNode } from "react";
 import type { VexError } from "@shared/ipc/result.js";
 import type { ImageOnchainVariant } from "@shared/schemas/images.js";
 import { IconPlus } from "../../../components/icons/index.js";
@@ -45,18 +61,112 @@ import {
   type LaunchPlatform,
 } from "../TokenLaunchDialog/LaunchPlatformChips.js";
 import { CardStateNote, PortfolioCard } from "./portfolio/PortfolioCard.js";
-import { ImageThumb } from "./image-locker/ImageThumb.js";
+import { ImageThumb, type ImageThumbRemoval } from "./image-locker/ImageThumb.js";
+
+/**
+ * What the rail is mounted for. Closed: the card has a real read for both,
+ * and no host may hand it a scope it would have to invent a session for.
+ */
+export type ImageLockerScope =
+  | { readonly kind: "session"; readonly sessionId: string }
+  | { readonly kind: "project"; readonly projectId: string };
+
+/** What a project rail says in the seat the launch action holds for a session. */
+export const LAUNCH_FROM_AGENT_SESSION_NOTE =
+  "A token launch is signed from an Agent session. Images staged here are ready for one.";
+
+/** What an EMPTY locker says on a browse-only rail, where nothing can be added. */
+export const PROJECT_LOCKER_EMPTY_NOTE =
+  "No images in the locker yet. A launch needs an image, and the agent can't make one; stage one from an Agent session's Launchpad.";
 
 export function ImageLockerCard({
-  sessionId,
+  scope,
 }: {
-  /**
-   * Scopes a user-origin launch to the open session. REQUIRED-nullable: every
-   * host must decide, because `null` means "this launch answers no session"
-   * and that is a lifecycle fact, not an omission.
-   */
-  readonly sessionId: string | null;
+  /** Decides the card's mode: `session` can launch, `project` browses. */
+  readonly scope: ImageLockerScope;
 }): JSX.Element {
+  return scope.kind === "session" ? (
+    <SessionLocker sessionId={scope.sessionId} />
+  ) : (
+    <ProjectLocker />
+  );
+}
+
+/**
+ * The card's shell and its read states, shared by both modes. What differs
+ * between the modes is what a tile may do, what the empty state asks for, and
+ * what sits under the grid; each mode hands those in.
+ */
+function LockerFrame({
+  query,
+  removal,
+  platform,
+  emptyNote,
+  children,
+}: {
+  readonly query: ReturnType<typeof useLockerImages>;
+  readonly removal: ImageThumbRemoval | null;
+  /** Whose mark the card wears: the venue about to receive a launch. */
+  readonly platform: LaunchPlatform;
+  readonly emptyNote: ReactNode;
+  readonly children: ReactNode;
+}): JSX.Element {
+  const result = query.data;
+  const images = result?.ok === true ? result.data.images : [];
+
+  return (
+    <PortfolioCard
+      eyebrow="Launchpad"
+      leading={<ProtocolMark mark={resolveProtocolMark(platform)} size={16} />}
+      trailing={images.length > 0 ? `${images.length}` : undefined}
+    >
+      {query.isLoading ? (
+        <CardStateNote tone="loading">Loading…</CardStateNote>
+      ) : (result !== undefined && !result.ok) || query.isError ? (
+        <CardStateNote tone="warn">Couldn&apos;t read your image locker.</CardStateNote>
+      ) : images.length === 0 ? (
+        <CardStateNote>{emptyNote}</CardStateNote>
+      ) : (
+        <ul className="grid grid-cols-3 gap-1.5">
+          {images.map((image) => (
+            <ImageThumb key={image.imageId} image={image} removal={removal} />
+          ))}
+        </ul>
+      )}
+      {children}
+    </PortfolioCard>
+  );
+}
+
+/**
+ * The PROJECT mode: one read, no mutation. Nothing here may subscribe to an
+ * upload or a delete, and nothing here renders a control that would need one.
+ */
+function ProjectLocker(): JSX.Element {
+  const query = useLockerImages();
+  return (
+    <LockerFrame
+      query={query}
+      removal={null}
+      platform="trench"
+      emptyNote={PROJECT_LOCKER_EMPTY_NOTE}
+    >
+      {/* The seat the launch action holds for a session. A PROJECT rail has
+          no session to sign from, so it carries the sentence that says so. */}
+      <div className="mt-2.5 border-t border-line-2 pt-2.5">
+        <p
+          data-vex-area="launchpad-browse-note"
+          className="text-[11px] leading-relaxed text-ink-tertiary"
+        >
+          {LAUNCH_FROM_AGENT_SESSION_NOTE}
+        </p>
+      </div>
+    </LockerFrame>
+  );
+}
+
+/** The SESSION mode: the locker the user stages from, and the launch opener. */
+function SessionLocker({ sessionId }: { readonly sessionId: string }): JSX.Element {
   const query = useLockerImages();
   const upload = useUploadLockerImage();
   const remove = useDeleteLockerImage();
@@ -71,8 +181,6 @@ export function ImageLockerCard({
   // starts, so a stale message never sits under a fresh upload.
   const [notice, setNotice] = useState<string | null>(null);
 
-  const result = query.data;
-  const images = result?.ok === true ? result.data.images : [];
   const busy = upload.isPending;
 
   function runUpload(): void {
@@ -99,7 +207,7 @@ export function ImageLockerCard({
       {
         onSuccess: (outcome) => {
           // A refusal ("a live launch still uses this image") arrives as a
-          // failed Result and is shown verbatim — main already wrote a message
+          // failed Result and is shown verbatim - main already wrote a message
           // that names the launch holding it and what state it is in.
           if (!outcome.ok) setNotice(outcome.error.message);
         },
@@ -117,33 +225,17 @@ export function ImageLockerCard({
   }
 
   return (
-    <PortfolioCard
-      eyebrow="Launchpad"
-      leading={<ProtocolMark mark={resolveProtocolMark(platform)} size={16} />}
-      trailing={images.length > 0 ? `${images.length}` : undefined}
-    >
-      {query.isLoading ? (
-        <CardStateNote tone="loading">Loading…</CardStateNote>
-      ) : (result !== undefined && !result.ok) || query.isError ? (
-        <CardStateNote tone="warn">Couldn&apos;t read your image locker.</CardStateNote>
-      ) : images.length === 0 ? (
-        <CardStateNote>
+    <LockerFrame
+      query={query}
+      removal={{ onDelete: runDelete, deleting: remove.isPending }}
+      platform={platform}
+      emptyNote={
+        <>
           A launch needs an image, and the agent can&apos;t make one. Add one
           here so a mission can launch without you.
-        </CardStateNote>
-      ) : (
-        <ul className="grid grid-cols-3 gap-1.5">
-          {images.map((image) => (
-            <ImageThumb
-              key={image.imageId}
-              image={image}
-              onDelete={runDelete}
-              deleting={remove.isPending}
-            />
-          ))}
-        </ul>
-      )}
-
+        </>
+      }
+    >
       {notice !== null ? (
         <p className="mt-2 text-[11px] leading-relaxed text-warning-label">
           {notice}
@@ -171,7 +263,7 @@ export function ImageLockerCard({
           onPlatformChange={setPlatform}
         />
       </div>
-    </PortfolioCard>
+    </LockerFrame>
   );
 }
 

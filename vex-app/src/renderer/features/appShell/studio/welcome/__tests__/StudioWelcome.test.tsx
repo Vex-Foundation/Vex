@@ -4,14 +4,32 @@
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { StrictMode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Result } from "@shared/ipc/result.js";
 import type { ProjectList } from "@shared/schemas/projects.js";
-import { makeError, makeProject } from "../../__tests__/studio-fixtures.js";
+import type { StudioBridgeReadiness } from "@shared/schemas/studio-bridge-readiness.js";
+import {
+  makeArtifact,
+  makeError,
+  makeProject,
+} from "../../__tests__/studio-fixtures.js";
+import {
+  STUDIO_WELCOME_AGENT_POINTER,
+  STUDIO_WELCOME_LEAD,
+  STUDIO_WELCOME_NEXT,
+} from "../../studio-copy.js";
 
 const projectsListMock = vi.fn<() => Promise<Result<ProjectList>>>();
+const bridgeReadinessMock =
+  vi.fn<() => Promise<Result<StudioBridgeReadiness>>>();
 
 const { StudioWelcome } = await import("../StudioWelcome.js");
 const { useUiStore } = await import("../../../../../stores/uiStore.js");
@@ -19,11 +37,11 @@ const { useUiStore } = await import("../../../../../stores/uiStore.js");
 function renderWelcome(props: {
   readonly onCreateProject?: () => void;
   readonly onSelectProject?: (id: string) => void;
-}): void {
+}): { container: HTMLElement } {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
-  render(
+  return render(
     <StrictMode>
       <QueryClientProvider client={client}>
         <StudioWelcome
@@ -39,21 +57,86 @@ beforeEach(() => {
   useUiStore.setState({ runtimeMode: "studio" });
   projectsListMock.mockReset();
   projectsListMock.mockResolvedValue({ ok: true, data: [] });
+  // The healthy default, so every existing case describes a machine whose
+  // bridge is fine and the readiness panel renders nothing.
+  bridgeReadinessMock.mockReset();
+  bridgeReadinessMock.mockResolvedValue({ ok: true, data: { kind: "ready" } });
   Object.defineProperty(window, "vex", {
     configurable: true,
-    value: { projects: { list: projectsListMock } },
+    value: {
+      projects: { list: projectsListMock },
+      studio: { getBridgeReadiness: bridgeReadinessMock },
+    },
   });
 });
 
 describe("what Studio is", () => {
-  it("states it in two sentences, with no roadmap copy", () => {
+  it("states it in THREE hero lines, with no roadmap copy", () => {
     renderWelcome({});
     expect(screen.getByRole("heading", { name: "Vex Studio" })).not.toBeNull();
-    expect(
-      screen.getByText(/A Studio project is a folder on your disk/),
-    ).not.toBeNull();
-    expect(screen.getByText(/nothing runs until you start it/)).not.toBeNull();
+    // 1. what a project is, 2. what creating one does, 3. the way back.
+    expect(screen.getByText(STUDIO_WELCOME_LEAD)).not.toBeNull();
+    expect(screen.getByText(STUDIO_WELCOME_NEXT)).not.toBeNull();
+    expect(screen.getByText(STUDIO_WELCOME_AGENT_POINTER)).not.toBeNull();
     expect(screen.queryByText(/coming soon/i)).toBeNull();
+  });
+});
+
+describe("the second action", () => {
+  it("opens the project the list returned FIRST", async () => {
+    const first = makeProject({ name: "vex-core" });
+    projectsListMock.mockResolvedValue({
+      ok: true,
+      data: [first, makeProject({ name: "trading-agent" })],
+    });
+    const onSelectProject = vi.fn();
+    renderWelcome({ onSelectProject });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Open vex-core" }));
+    expect(onSelectProject).toHaveBeenCalledWith(first.id);
+  });
+
+  it("is absent when there is nothing to open", async () => {
+    renderWelcome({});
+    await screen.findByText("No projects yet.");
+    expect(screen.queryByRole("button", { name: /^Open / })).toBeNull();
+  });
+});
+
+describe("a row's state", () => {
+  it("hears the drift sentence where the dot is the only signal", async () => {
+    projectsListMock.mockResolvedValue({
+      ok: true,
+      data: [
+        makeProject({
+          name: "vex-core",
+          files: {
+            lastRenderedScopeVersion: 1,
+            generatorFingerprint: "test",
+            artifacts: [makeArtifact("drifted")],
+          },
+        }),
+      ],
+    });
+    renderWelcome({});
+    // The dot is colour-only and aria-hidden, so the words are what assistive
+    // technology gets - and they are the SAME sentence the rail row uses.
+    expect(
+      await screen.findByText("vex-core: Edited since Vex wrote it"),
+    ).not.toBeNull();
+  });
+
+  it("says so when Vex's files are untouched", async () => {
+    projectsListMock.mockResolvedValue({
+      ok: true,
+      data: [makeProject({ name: "vex-core" })],
+    });
+    renderWelcome({});
+    expect(
+      await screen.findByText(
+        "Vex's files in this project are as Vex wrote them",
+      ),
+    ).not.toBeNull();
   });
 });
 
@@ -84,10 +167,11 @@ describe("the project list", () => {
     renderWelcome({});
     await screen.findByText("vex-core");
 
-    const titles = screen
+    // Scoped to the LIST: the hero's second action is also a button naming a
+    // project, and it is not part of the list's order.
+    const titles = within(screen.getByRole("list"))
       .getAllByRole("button")
-      .map((el) => el.textContent ?? "")
-      .filter((text) => text.includes("vex-core") || text.includes("trading-agent") || text.includes("wallet-tools"));
+      .map((el) => el.textContent ?? "");
     expect(titles[0]).toContain("vex-core");
     expect(titles[1]).toContain("trading-agent");
     expect(titles[2]).toContain("wallet-tools");
@@ -123,19 +207,25 @@ describe("the project list", () => {
 });
 
 describe("the way back to the agent shell", () => {
-  it("renders the SAME runtime-mode capsule the agent hero renders", () => {
-    renderWelcome({});
+  it("is the mode capsule itself, seated directly under the wordmark, and NOT a plain button", () => {
+    // Owner decree 2026-09-04: the Agent | Studio switch sits under the vex
+    // wordmark on the welcome screen. This screen renders only while no
+    // project is active, and the Studio rail header mounts its capsule only
+    // while one is, so the page keeps exactly one radiogroup named "Runtime
+    // mode" (e2e/studio.spec.ts pins the count). The stand-in button is gone.
+    const { container } = renderWelcome({});
     const group = screen.getByRole("radiogroup", { name: "Runtime mode" });
-    const segments = screen.getAllByRole("radio");
-    expect(group.contains(segments[0] ?? null)).toBe(true);
-    expect(segments.map((el) => el.textContent)).toEqual(["Agent", "Studio"]);
-    // Studio is the mode we are in, so Studio is the checked segment.
     expect(
       screen.getByRole("radio", { name: "Studio" }).getAttribute("aria-checked"),
     ).toBe("true");
+    // The seat, not merely the presence: mark -> capsule -> heading.
+    const heading = container.querySelector('[data-vex-area="studio-welcome"] h1');
+    expect(heading?.previousElementSibling).toBe(group);
+    expect(group.previousElementSibling?.tagName.toLowerCase()).toBe("svg");
+    expect(screen.queryByRole("button", { name: "Back to Agent mode" })).toBeNull();
   });
 
-  it("choosing Agent leaves Studio - without it the screen is a one-way door", () => {
+  it("the capsule leaves Studio - without it the screen is a one-way door", () => {
     renderWelcome({});
     fireEvent.click(screen.getByRole("radio", { name: "Agent" }));
     expect(useUiStore.getState().runtimeMode).toBe("agent");
@@ -152,5 +242,61 @@ describe("a REJECTED projects read", () => {
     const line = await screen.findByRole("status");
     expect(line.textContent).toBe("Vex could not read your projects.");
     expect(screen.queryByText("No projects yet.")).toBeNull();
+  });
+});
+
+describe("the bridge diagnostic", () => {
+  it("is checked on entry, without the user asking for it", async () => {
+    renderWelcome({});
+    await waitFor(() => {
+      expect(bridgeReadinessMock).toHaveBeenCalled();
+    });
+  });
+
+  it("is absent when the bridge is there", async () => {
+    renderWelcome({});
+    await screen.findByText("No projects yet.");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("appears above the create CTA when the bridge is missing", async () => {
+    bridgeReadinessMock.mockResolvedValue({
+      ok: true,
+      data: {
+        kind: "missing_dev",
+        platform: "linux",
+        requiredGoVersion: "go1.27.0",
+        go: { kind: "present" },
+      },
+    });
+    renderWelcome({ onCreateProject: () => undefined });
+
+    const alert = await screen.findByRole("alert");
+    const cta = screen.getByRole("button", { name: "New project" });
+    // A project created without a bridge gets no coding-agent config files at
+    // all, so the diagnostic has to be readable BEFORE the button that makes
+    // one. DOCUMENT_POSITION_FOLLOWING means the CTA comes after the alert.
+    expect(
+      alert.compareDocumentPosition(cta) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeGreaterThan(0);
+  });
+
+  it("does not steal the project list's own status line", async () => {
+    projectsListMock.mockResolvedValue({
+      ok: false,
+      error: makeError("db down"),
+    });
+    bridgeReadinessMock.mockResolvedValue({
+      ok: true,
+      data: { kind: "missing_packaged" },
+    });
+    renderWelcome({});
+
+    // Two independent failures, two independent surfaces: the bridge alert and
+    // the project list's status line. Neither replaces the other.
+    const line = await screen.findByRole("status");
+    expect(line.textContent).toBe("Vex could not read your projects.");
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("Reinstall Vex");
   });
 });

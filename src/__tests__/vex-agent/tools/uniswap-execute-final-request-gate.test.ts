@@ -17,6 +17,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { uniswapSpendabilityFake } from "./_uniswap-spendability-fake.js";
 import { getAddress, parseUnits, type Hex } from "viem";
 
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
@@ -30,10 +31,20 @@ const ROUTER = getAddress("0x89e5db8b5aa49aa85ac63f691524311aeb649eba");
 const CHAIN_ID = 4663;
 
 const quoteBestRoute = vi.fn();
-const claimUniswapExecutionSnapshot = vi.fn();
+const readUniswapExecutionSnapshot = vi.fn();
 const createAgentActivityIntent = vi.fn();
 const createAgentActivityPreBroadcastFailure = vi.fn();
 const signUniswapTransaction = vi.fn();
+
+vi.mock("@vex-agent/db/client.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@vex-agent/db/client.js")>()),
+  // Only the DATABASE is doubled. Since 2026-09-01 the spendability lane asks
+  // one durable question - has this wallet a broadcast of ours outstanding on a
+  // chain whose `pending` tag subtracts nothing - and this suite's chain is such
+  // an endpoint (measured). The capability table, the policy and the fail-closed
+  // verdict stay production code, driven by their own suites.
+  queryOne: vi.fn(async () => ({ in_flight: false })),
+}));
 
 vi.mock("@tools/uniswap/chains.js", () => ({
   resolveUniswapDeployment: vi.fn(() => ({
@@ -42,9 +53,12 @@ vi.mock("@tools/uniswap/chains.js", () => ({
   })),
   resolveUniswapChainId: vi.fn(() => CHAIN_ID),
 }));
+// WP2-U: the quote and every leg's pre-sign gate read balances and price the
+// leg plan through this client. A SOLVENT default keeps this suite's subject -
+// the final-request fence - the thing that decides its outcome.
 vi.mock("@tools/uniswap/evm-client.js", () => ({
-  getUniswapPublicClient: vi.fn(() => ({})),
-  getUniswapEvmClients: vi.fn(() => ({ publicClient: {}, walletClient: {} })),
+  getUniswapPublicClient: vi.fn(() => uniswapSpendabilityFake()),
+  getUniswapEvmClients: vi.fn(() => ({ publicClient: uniswapSpendabilityFake(), walletClient: {} })),
 }));
 vi.mock("@tools/uniswap/erc20.js", () => ({
   readUniswapErc20Metadata: vi.fn(async (_client: unknown, address: string) => ({
@@ -98,8 +112,9 @@ vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
   walletScopeErrorToResult: vi.fn((err: unknown) => ({ success: false, output: String(err) })),
 }));
 vi.mock("@vex-agent/tools/protocols/prequote/claim.js", () => ({
-  claimSwapExecutionSnapshot: vi.fn(),
-  claimUniswapExecutionSnapshot: (...args: unknown[]) => claimUniswapExecutionSnapshot(...args),
+  commitPrequoteClaim: vi.fn(async () => ({ ok: true })),
+  readSwapExecutionSnapshot: vi.fn(),
+  readUniswapExecutionSnapshot: (...args: unknown[]) => readUniswapExecutionSnapshot(...args),
 }));
 vi.mock("@utils/logger.js", () => {
   const stub = { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() };
@@ -110,7 +125,7 @@ const { UNISWAP_SWAP_HANDLERS } = await import("@vex-agent/tools/protocols/unisw
 const { applySlippage } = await import("@tools/uniswap/quote.js");
 const { buildSwapTx } = await import("@tools/uniswap/execute.js");
 const { resolveUniswapDeployment } = await import("@tools/uniswap/chains.js");
-const { approvedUniswapSnapshot } = await import("./_uniswap-approved-snapshot.js");
+const { approvedUniswapSnapshot, approvedUniswapVexFee } = await import("./_uniswap-approved-snapshot.js");
 
 const execute = UNISWAP_SWAP_HANDLERS["uniswap.swap.execute"];
 if (execute === undefined) throw new Error("uniswap.swap.execute is not registered");
@@ -135,6 +150,18 @@ const TOKEN_OUT_LEG = { address: TOKEN_OUT, symbol: "TKN", decimals: 18, isNativ
 
 function freshRoute(amountOut: bigint) {
   return { route: { version: "v2" as const, path: [TOKEN_IN, TOKEN_OUT], amountOut }, priceImpact: 0.001 };
+}
+
+/** The row's Vex fee statement for this trade, re-checked before signing. */
+function approvedVexFee() {
+  return approvedUniswapVexFee({
+    chainId: CHAIN_ID,
+    tokenIn: TOKEN_IN_LEG,
+    tokenOut: TOKEN_OUT_LEG,
+    amountInRaw: AMOUNT_IN_RAW,
+    approvedAmountOutRaw: QUOTED_OUT,
+    approvedMinOutRaw: QUOTED_OUT,
+  });
 }
 
 async function approved() {
@@ -178,8 +205,9 @@ beforeEach(async () => {
     ],
   });
   createAgentActivityPreBroadcastFailure.mockResolvedValue({ executionId: 999, event: {} });
-  claimUniswapExecutionSnapshot.mockResolvedValue({
+  readUniswapExecutionSnapshot.mockResolvedValue({
     ok: true, prequoteId: "prequote-1", snapshot: await approved(),
+    vexFee: await approvedVexFee(),
   });
   quoteBestRoute.mockResolvedValue(freshRoute(QUOTED_OUT));
 
@@ -194,7 +222,12 @@ beforeEach(async () => {
       const shown: FinalSignedRequest = alteredRequest
         ? alteredRequest(tx)
         : { to: tx.to as `0x${string}`, data: tx.data, value: tx.value, gas: 300_000n, nonce: 9 };
-      await onBeforeSign(shown);
+      // A real prepared request always carries a fee price - WP2-U's debit gate
+      // refuses one that does not, because a cost nobody can state cannot be
+      // checked against the ceiling the swap was totalled under. The stand-in
+      // price matches this suite's fake chain (`uniswapSpendabilityFake`), so
+      // the FENCE stays the only thing deciding these outcomes.
+      await onBeforeSign({ gasPrice: 1_000n, ...shown });
     }
     return { serializedTransaction: "0xsigned" as Hex, txHash: "0xswap" as Hex, fromAddress: WALLET, nonce: 9 };
   });

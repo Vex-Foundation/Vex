@@ -48,7 +48,7 @@ import {
   type ReactNode,
 } from "react";
 import { AnimatePresence, motion, useReducedMotion, useWillChange } from "motion/react";
-import { SPRING_SNAPPY } from "../../lib/motion.js";
+import { SPRING_SNAPPY } from "../../lib/motion/index.js";
 import { cn } from "../../lib/utils.js";
 
 /** A named shape. Consumers define which of these their states map onto. */

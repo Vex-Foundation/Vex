@@ -31,6 +31,24 @@ import type { IProcessEnvironment } from "./types.js";
  *  - `SNAP*` and `GDK_PIXBUF_*` are Linux packaging leakage: a Snap-confined
  *    Vex exports loader paths that break unrelated binaries launched from its
  *    terminal. VS Code strips exactly these for exactly this reason.
+ *
+ * WHAT VEX'S OWN INTEGRATION NEEDS COMES BACK THROUGH THE OVERLAY, not through
+ * an exception here. `VEX_CONFIG_DIR` is the live case: main sets it per
+ * terminal from the directory it RESOLVED
+ * (`main/studio/terminals.ts: studioTerminalEnvironmentOverlay`), which is the
+ * split VS Code makes between `sanitizeProcessEnvironment` and the workbench's
+ * `createTerminalEnvironment`. Preserving the launcher's value instead would
+ * export whatever the launcher happened to set, including nothing.
+ *
+ * `CLAUDE_CODE_*` IS DELIBERATELY NOT DENIED (rejected 2026-09-03). Vex
+ * launched from inside a Claude Code session passes that session's markers -
+ * `CLAUDE_CODE_CHILD_SESSION` among them - into every terminal, and Claude
+ * Code inside one then reports its transcript saving off. Stripping them would
+ * be Vex deleting a THIRD PARTY'S configuration out of a user's shell, and a
+ * user who exported those variables on purpose would find them missing with no
+ * signal. The deny-list removes what THIS process set, which is the rule VS
+ * Code follows and the only one that stays correct as other tools' variables
+ * appear.
  */
 const DENIED_PATTERNS: readonly RegExp[] = [
   /^ELECTRON_.+$/,
@@ -46,6 +64,12 @@ const DENIED_PATTERNS: readonly RegExp[] = [
  * `GDK_PIXBUF_*` variable is something a user's shell benefits from. It exists
  * as a named, testable constant rather than an implicit absence so that adding
  * an exception is a visible decision with a place to write down its reason.
+ *
+ * IT STAYED EMPTY when `VEX_CONFIG_DIR` had to reach Studio terminals. A
+ * preserve entry would have carried the LAUNCHER's value - absent on every
+ * install that never sets one - while the overlay carries the value the app
+ * actually resolved. Preserve answers "keep what we inherited"; the question
+ * was "assert what we resolved", and those are different questions.
  */
 export const TERMINAL_ENV_PRESERVE: readonly string[] = [];
 

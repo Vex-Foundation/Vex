@@ -1,5 +1,5 @@
 /**
- * Khalani read-only handlers — chains, tokens, quotes, orders.
+ * Khalani read-only handlers - chains, tokens, quotes, orders.
  *
  * ONE non-Khalani read lives here, deliberately: `khalani.tokens.balances`
  * answers its `solana` family from Solana's own RPC through the shared snapshot
@@ -14,12 +14,15 @@
  */
 
 import { getKhalaniClient } from "@tools/khalani/client.js";
+import { enrichKhalaniBalancePrices } from "@tools/khalani/balance-price-enrichment.js";
 import {
   getCachedKhalaniChains,
+  getChain,
   getChainFamily,
   resolveChainId,
 } from "@tools/khalani/chains.js";
 import {
+  calculateTokensTotalUsd,
   getSelectedChainIdsForFamily,
   getTokenBalancesAcrossChains,
   parseBalanceChainSelection,
@@ -36,40 +39,50 @@ import {
   splitBridgeAmountForFee,
   type BridgeFeeSplit,
 } from "@tools/bridge-fee/index.js";
-import { estimateUsd, humanizeAmount, resolveKhalaniTokenInfo } from "./bridge-usd.js";
+import { estimateUsd, humanizeAmount, resolveKhalaniBridgeTokenInfo } from "./bridge-usd.js";
 import { VexError, ErrorCodes } from "../../../../../errors.js";
 import type { ChainFamily, KhalaniChain } from "@tools/khalani/types.js";
 import { getLocalChain, resolveLocalChainId } from "@tools/evm-chains/registry.js";
 import {
   readSolanaWalletSnapshot,
-  type SolanaBalanceRow,
   type SolanaWalletSnapshotReader,
 } from "@tools/solana-ecosystem/balances/wallet-snapshot.js";
 import { SOLANA_SYNTHETIC_CHAIN_ID } from "../../../../../constants/solana-chain.js";
+import {
+  REJECTED_ENTRIES_NOTE,
+  boundRejectedEntries,
+} from "@vex-agent/wallet-inventory/rejected-entries.js";
+import {
+  computeWalletCompleteness,
+  type InventorySource,
+} from "@vex-agent/wallet-inventory/completeness.js";
 
 import type { ProtocolHandler, ProtocolExecutionContext } from "../../types.js";
 import type { ToolResult } from "../../../types.js";
 import { resolveSelectedAddress, walletScopeErrorToResult } from "../../../internal/wallet/resolve.js";
 import { str, toResultData } from "../../handler-helpers.js";
+import { bridgeRecipientRefusal } from "../../conventions.js";
 import { projectChain, projectChains, projectQuoteRoutes, projectToken, projectTokens } from "../projectors.js";
+import { solanaRowToWalletToken } from "../../../internal/wallet/solana-row.js";
 import { venueFallbackNoteOnKhalaniFailure } from "./fallback.js";
 import { resolveKhalaniPrequoteRoute } from "@tools/khalani/prequote-route-guard.js";
 import { renderProtocolFailureOutput, summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
 import { readStringOrArrayParam } from "../../runtime/list-params.js";
 import { describeKhalaniOrderCorrelation } from "../order-correlation.js";
 import { throwIfAborted } from "@utils/cancellation.js";
+import { resolveKhalaniBridgeTokenPreviewFromResolved } from "@vex-agent/tools/protocols/bridge-token-identity.js";
 
 // ── Shared helpers (exported for bridge handler) ────────────────
 
 /**
  * A chain filter for the Khalani READ tools, resolved STRICTLY against the
- * Khalani registry — the capability boundary in `tools/evm-chains/resolver.ts`
+ * Khalani registry - the capability boundary in `tools/evm-chains/resolver.ts`
  * is deliberate and stays closed here: a Khalani read must never treat a
  * local-only chain as Khalani-supported.
  *
  * What DOES change is the answer the agent gets when it names one. `TokenFind
  * chainIds:"robinhood"` used to die on the strict resolver's bare "Unsupported
- * chain: robinhood" — indistinguishable from a typo, and it sent the agent
+ * chain: robinhood" - indistinguishable from a typo, and it sent the agent
  * looking for a better spelling of a chain no spelling can reach through this
  * tool. Robinhood Chain is a chain Vex fully supports; it is only Khalani's
  * token registry that does not cover it. So a LOCAL chain is named as such,
@@ -85,7 +98,7 @@ function assertNotLocalOnlyChain(part: string, chains: KhalaniChain[]): void {
   const name = config?.name ?? part;
   throw new VexError(
     ErrorCodes.KHALANI_UNSUPPORTED_CHAIN,
-    `${name} (${localId}) is not in Khalani's registry — this tool cannot resolve tokens there.`,
+    `${name} (${localId}) is not in Khalani's registry - this tool cannot resolve tokens there.`,
     `Use dexscreener__pairs_search (chain slug ${part.trim().toLowerCase()}) for a symbol → address lookup, `
     + 'WalletTrackToken action:"list" for the tracked/seed token set, or '
     + `WalletBalances chainIds:"${part.trim().toLowerCase()}" for the tokens you actually hold.`,
@@ -93,7 +106,7 @@ function assertNotLocalOnlyChain(part: string, chains: KhalaniChain[]): void {
 }
 
 /**
- * A list param the model may spell as a comma-string OR as a JSON array — the
+ * A list param the model may spell as a comma-string OR as a JSON array - the
  * manifest declares `acceptsStringArray` on both `chainIds` and `orderIds`, and
  * this is the reader that honours it. Rejections carry the reader's own
  * by-position message rather than degrading to "no filter".
@@ -141,7 +154,7 @@ export function resolveWalletAddress(
   const explicit = str(params, "walletAddress");
   if (!explicit) return selected;
   // Default resolution may query an arbitrary explicit address. A session scope
-  // is locked to its selected wallet — an explicit address must match it
+  // is locked to its selected wallet - an explicit address must match it
   // (Codex 5B #2); generic recipient/quote fields are separate params.
   if (context.walletResolution.source === "default") return explicit;
   if (!walletAddressesEqual(familyToInventory(walletFamily), explicit, selected)) {
@@ -156,26 +169,6 @@ export function resolveWalletAddress(
 // ── khalani.tokens.balances ──────────────────────────────────────
 
 /**
- * A Solana balance row as this tool emits it.
- *
- * SEPARATE from `ConciseKhalaniToken` on purpose: Solana mint metadata is
- * genuinely optional, so `symbol` / `name` stay NULLABLE and a mint no source
- * can label is reported honestly rather than relabelled with its own address.
- * `ConciseKhalaniToken` is deliberately NOT widened - its Khalani rows always
- * carry both labels, and widening it would make every other Khalani read tool
- * claim a nullability it does not have.
- */
-interface SolanaBalanceTokenRow {
-  symbol: string | null;
-  name: string | null;
-  address: string;
-  chainId: number;
-  decimals: number;
-  priceUsd?: string;
-  balance?: string;
-}
-
-/**
  * One TOKEN ACCOUNT the Solana read could not trust. Never folded into a token
  * row: the holdings behind these accounts are ABSENT from `tokens`, and an
  * agent that cannot see that would read the gap as "you hold none of it".
@@ -188,18 +181,6 @@ interface AccountReadError {
 
 /** Same bound and reason as the `WalletBalances` snapshot's own account-error cap. */
 const MAX_ACCOUNT_ERRORS = 20;
-
-function solanaRowToTokenRow(row: SolanaBalanceRow): SolanaBalanceTokenRow {
-  return {
-    symbol: row.symbol,
-    name: row.name,
-    address: row.mint,
-    chainId: SOLANA_SYNTHETIC_CHAIN_ID,
-    decimals: row.decimals,
-    balance: row.amountRaw,
-    ...(row.priceUsd !== null ? { priceUsd: String(row.priceUsd) } : {}),
-  };
-}
 
 /**
  * The narrow, optional dependency this handler takes so a test can drive the
@@ -262,7 +243,29 @@ export async function handleTokenBalances(
         });
       } else accountErrorsOmitted += 1;
     }
-    const tokens = snapshot.rows.map(solanaRowToTokenRow);
+    const tokens = snapshot.rows.map(solanaRowToWalletToken);
+    // The SAME owner `WalletBalances` computes its axes with, over the same
+    // evidence: this surface and that one answer for one wallet, and an agent
+    // that reads both must not find two different completeness contracts.
+    // The snapshot service enumerates every token ACCOUNT the wallet owns plus
+    // the account balance, so the source is exhaustive; a read that FAILED
+    // never reaches here (the catch above returns a failure result), so there
+    // is no failed source to record and no `failedChainIds` entry to invent.
+    const completeness = computeWalletCompleteness({
+      rows: tokens,
+      sources: [{
+        chainId: SOLANA_SYNTHETIC_CHAIN_ID,
+        source: "solana_rpc_accounts",
+        result: "read",
+        exhaustive: true,
+        observedAt: new Date().toISOString(),
+      }],
+      tokenErrorCount: 0,
+      // The CAP must not shrink the axis: an account error the 20-row bound
+      // left out still cost the inventory a holding.
+      accountErrorCount: accountErrors.length + accountErrorsOmitted,
+      rejectedEntries: [],
+    });
     const payload = {
       address,
       wallet: walletFamily,
@@ -272,6 +275,14 @@ export async function handleTokenBalances(
       chainErrors: [],
       accountErrors,
       ...(accountErrorsOmitted > 0 ? { accountErrorsOmitted } : {}),
+      ...completeness,
+      // A Solana read never crosses the Khalani balances boundary, so it has no
+      // refusals to report. The fields are PRESENT and empty rather than
+      // absent: an absent field would read as "no answer" on the one surface
+      // whose EVM half does report refusals.
+      rejectedEntryCount: 0,
+      rejectedEntries: [],
+      truncated: false,
       tokens,
     };
     return {
@@ -285,30 +296,90 @@ export async function handleTokenBalances(
   // top-up, like WalletBalances. Only the sync/projection path stays
   // native-free (it full-replaces proj_balances).
   const scan = await getTokenBalancesAcrossChains({ address, family: walletFamily, chainIds, includeNative: true });
+  // Fill the prices Khalani left null, through the SAME pass the background
+  // sync and `WalletBalances` run (`tools/khalani/balance-price-enrichment.ts`).
+  // Without it the two agent-visible balance surfaces could answer different
+  // prices for the same token at the same moment. Khalani's own prices win,
+  // row order is the scan's, provider failures are fail-soft per chain, and
+  // the compatibility total is recomputed off the enriched rows so it cannot
+  // disagree with what the rows show.
+  const enrichedTokens = (
+    await enrichKhalaniBalancePrices(scan.tokens, { signal: context.abortSignal })
+  ).rows.map((row) => row.token);
+  const totalUsd = calculateTokensTotalUsd(enrichedTokens);
+  // Entries the balances boundary refused for their `decimals` alone. They are
+  // holdings the wallet really has, so reporting them is the difference between
+  // "we could not read the scale of this token" and "you hold none of it"; the
+  // bad scale itself is never echoed and never guessed (C1.2).
+  const rejectedEntries = scan.rejectedEntries ?? [];
+  const rejected = boundRejectedEntries(rejectedEntries);
+  const truncated = rejected.rejectedEntriesOmitted !== undefined;
+  const disclosure = {
+    ...rejected,
+    truncated,
+    ...(truncated ? { truncationNote: REJECTED_ENTRIES_NOTE } : {}),
+  };
+  // Same fields, same owner and the same meanings as `WalletBalances` (C3):
+  // the two agent-visible balance surfaces must not diverge on what "complete"
+  // means. A chain that failed is evidence of an UNKNOWN holding set, so it is
+  // recorded as a failed source with `observedAt: null` (C3.5 - a failed read
+  // observed nothing and is never stamped fresh) and lands in `failedChainIds`.
+  const khalaniObservedAt = new Date().toISOString();
+  const inventorySources: InventorySource[] = [
+    ...scan.scannedChainIds.map((scannedChainId): InventorySource => ({
+      chainId: scannedChainId,
+      source: "khalani_registry_scan",
+      result: "read",
+      exhaustive: true,
+      observedAt: khalaniObservedAt,
+    })),
+    ...scan.chainErrors.map((chainError): InventorySource => ({
+      chainId: chainError.chainId,
+      source: "khalani_registry_scan",
+      result: "failed",
+      exhaustive: true,
+      observedAt: null,
+    })),
+  ];
+  // Rows are the FULL projected set and the rejections are the FULL list, both
+  // taken before any display bound: a cap on what is SHOWN must never be able
+  // to move a completeness field.
+  const projectedTokens = projectTokens(enrichedTokens);
+  const completeness = computeWalletCompleteness({
+    rows: projectedTokens,
+    sources: inventorySources,
+    tokenErrorCount: 0,
+    accountErrorCount: 0,
+    rejectedEntries,
+  });
   return {
     success: true,
     output: JSON.stringify({
       address,
       wallet: walletFamily,
-      count: scan.tokens.length,
-      totalUsd: scan.totalUsd,
+      count: enrichedTokens.length,
+      totalUsd,
       scannedChainIds: scan.scannedChainIds,
       chainErrors: scan.chainErrors,
       // An EVM scan reads no Solana token accounts, so the field is present and
       // empty rather than absent: an absent field would read as "no answer".
       accountErrors: [],
+      ...completeness,
+      ...disclosure,
       // Project to concise token rows (P0-4): the balances path is where
       // `extensions.balance` lives, so the lifted balance/price stay surfaced.
-      tokens: projectTokens(scan.tokens),
+      tokens: projectedTokens,
     }, null, 2),
     data: {
       address,
       wallet: walletFamily,
-      totalUsd: scan.totalUsd,
+      totalUsd,
       scannedChainIds: scan.scannedChainIds,
       chainErrors: scan.chainErrors,
       accountErrors: [],
-      tokens: scan.tokens,
+      ...completeness,
+      ...disclosure,
+      tokens: enrichedTokens,
     },
   };
 }
@@ -319,7 +390,7 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
   "khalani.chains.list": async (params) => {
     const refresh = params.refresh === true;
     const chains = await getCachedKhalaniChains(refresh);
-    // Project to concise chain rows (P0-4): drop rpcUrls/blockExplorers — the
+    // Project to concise chain rows (P0-4): drop rpcUrls/blockExplorers - the
     // internal rpc/explorer resolvers read those off the cached registry, not
     // this output.
     return {
@@ -351,7 +422,7 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
     if (!chainIdsRead.ok) return chainIdsRead.result;
     const chainIds = await parseChainIds(chainIdsRead.value);
     const result = await getKhalaniClient().searchTokens(query, chainIds);
-    // Project to concise token rows (P0-4) — this is the hot pre-mutation
+    // Project to concise token rows (P0-4) - this is the hot pre-mutation
     // contract-resolver path, so the surfaced address + price signal matters.
     return {
       success: true,
@@ -369,7 +440,7 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
     const chainIds = await parseChainIds(chainIdsRead.value);
     const limit = typeof params.limit === "number" ? params.limit : undefined;
     const result = await getKhalaniClient().autocompleteToken(keyword, { chainIds, limit });
-    // Project to concise rows (P0-4): each entry nests a FULL chain AND token —
+    // Project to concise rows (P0-4): each entry nests a FULL chain AND token -
     // project both, keep the semantic fields (description/amount/usdAmount) and
     // the top-level parse hints (parsed/nextSlots).
     return {
@@ -406,7 +477,7 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
     // (see the two policy blocks in `@tools/khalani/request.js`). Rejecting
     // here matters as much as on the execute: the prequote gate binds the
     // money/fee leg, so a quote carrying either is what would later let a
-    // matching execute through — an attacker who sets the SAME value on the
+    // matching execute through - an attacker who sets the SAME value on the
     // quote and the execute gets two colliding hashes and a passing gate. No
     // such quote can be recorded in the first place.
     const forbiddenParam = findCallerSuppliedForbiddenParam(params);
@@ -417,11 +488,11 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
       };
     }
 
-    // Pre-quote route guard (R9 — same wiring as the execute handler): a local
+    // Pre-quote route guard (R9 - same wiring as the execute handler): a local
     // chain routes statically to Relay; a nonlocal endpoint absent from the
     // LIVE registry is a typed no-route that surfaces the route-bound Relay
     // fallback note (previously the raw resolver throw returned a bare
-    // message with no alternative — live-smoke finding, 2026-07-23).
+    // message with no alternative - live-smoke finding, 2026-07-23).
     let prequote: Awaited<ReturnType<typeof resolveKhalaniPrequoteRoute>>;
     try {
       prequote = await resolveKhalaniPrequoteRoute(fromChain, toChain);
@@ -434,7 +505,7 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
     if (prequote.outcome === "static_relay") {
       return {
         success: false,
-        output: "This route touches a local chain (e.g. Robinhood) that Khalani does not serve — use the Relay bridge tools directly for it.",
+        output: "This route touches a local chain (e.g. Robinhood) that Khalani does not serve - use the Relay bridge tools directly for it.",
       };
     }
     if (prequote.outcome === "no_route") {
@@ -445,19 +516,18 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
       };
     }
 
-    // Per-session wallet scope (5D-protocols p4) — the quote uses the session's
+    // Per-session wallet scope (5D-protocols p4) - the quote uses the session's
     // selected source/dest wallets, not the primary. Read-only (no signing).
     const chains = await getCachedKhalaniChains();
-    let fromChainId: number;
+    const { fromChainId, toChainId } = prequote;
     let fromFamily: "eip155" | "solana";
     let toFamily: "eip155" | "solana";
     try {
-      fromChainId = resolveChainId(fromChain, chains);
       fromFamily = getChainFamily(fromChainId, chains);
-      toFamily = getChainFamily(resolveChainId(toChain, chains), chains);
+      toFamily = getChainFamily(toChainId, chains);
     } catch (err) {
       // Locally authored, but it echoes the MODEL-SUPPLIED fromChain/toChain
-      // verbatim — untrusted input reaching an output sink, so it goes through
+      // verbatim - untrusted input reaching an output sink, so it goes through
       // the same boundary as provider text.
       return { success: false, output: renderProtocolFailureOutput("khalani.quote.get", summarizeProtocolError(err)) };
     }
@@ -474,12 +544,23 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
     ) {
       return { success: false, output: "The provided fromAddress does not match the session's selected wallet for the source chain." };
     }
-    const explicitRecipient = str(params, "recipient") || undefined;
+    // The DESTINATION is derived, never supplied - the same policy the execute
+    // applies, so the quote prices the bridge that can actually run. A dest
+    // family with no selected wallet fails closed rather than quoting to an
+    // address nobody authorized. See the bridge-destination policy in
+    // `@tools/khalani/request.js`.
     let recipient: string;
     try {
-      recipient = explicitRecipient ?? resolveSelectedAddress(context.walletResolution, context.walletPolicy, toFamily);
+      recipient = resolveSelectedAddress(context.walletResolution, context.walletPolicy, toFamily);
     } catch (err) {
       return walletScopeErrorToResult(err);
+    }
+    // A supplied `recipient` is REJECTED BY NAME, with the address a bridge on
+    // this route would deliver to. Rejecting on the QUOTE matters as much as on
+    // the execute: the prequote gate binds the quote's params, so a quote that
+    // accepted a destination is what would later authorize an execute to it.
+    if (str(params, "recipient") !== "") {
+      return { success: false, output: bridgeRecipientRefusal("khalani__bridge_quote_get", recipient) };
     }
 
     const prepared = await prepareQuoteRequest({
@@ -497,7 +578,7 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
       filler: str(params, "filler") || undefined,
     });
 
-    // Vex integrator fee — the SAME split the execute applies, so the quoted
+    // Vex integrator fee - the SAME split the execute applies, so the quoted
     // `amountOut` is what the user actually receives and the disclosed fee is
     // the fee that will actually be taken. Resolved through the shared
     // `@tools/bridge-fee` module, never re-derived here.
@@ -522,7 +603,7 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
 
     // Read-only quote: a Khalani no-route (empty routes[]) or a fallback-eligible
     // exception is a FAILURE that surfaces the Relay fallback note. No
-    // activity row is written (a read miss records nothing — R15).
+    // activity row is written (a read miss records nothing - R15).
     let outcome: ReturnType<typeof classifyKhalaniQuoteResponse>;
     try {
       outcome = classifyKhalaniQuoteResponse(await getKhalaniClient().getQuotes(quoteRequest));
@@ -539,9 +620,18 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
       return { success: false, output: `khalani__bridge_quote_get: Khalani has no route for this pair.${fallbackNote}` };
     }
 
-    // Fee disclosure (fail-soft token facts — a lookup miss degrades the human
+    // Fee disclosure (fail-soft token facts - a lookup miss degrades the human
     // amount and USD to null, never to a fabricated figure).
-    const fromInfo = await resolveKhalaniTokenInfo(fromToken, fromChainId);
+    const tokenIdentity = await resolveKhalaniBridgeTokenPreviewFromResolved({
+      fromChain: getChain(fromChainId, chains),
+      toChain: getChain(toChainId, chains),
+      fromToken,
+      toToken,
+      amountRaw: prepared.request.amount,
+      chains,
+      signal: context.abortSignal,
+    });
+    const fromInfo = await resolveKhalaniBridgeTokenInfo(fromToken, fromChainId, tokenIdentity.source);
     const vexFee = chargeFee
       ? buildBridgeFeeDisclosure({
           tokenAddress: fromToken,
@@ -568,10 +658,11 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
         routeCount: outcome.routes.length,
         routes: projectQuoteRoutes(outcome.routes, Date.now()),
         vexFee,
+        tokenMetadata: tokenIdentity,
         expiryNote: "khalani__bridge_execute re-quotes and hard-fails with deadline_expired once expiresAtUnixSeconds "
-          + "passes — treat expiresInSeconds as the window you have to act in, not a guarantee the same route survives.",
+          + "passes - treat expiresInSeconds as the window you have to act in, not a guarantee the same route survives.",
       }, null, 2),
-      data: { quoteId: outcome.quoteId, routes: outcome.routes, vexFee },
+      data: { quoteId: outcome.quoteId, routes: outcome.routes, vexFee, tokenMetadata: tokenIdentity },
     };
   },
 
@@ -602,7 +693,7 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
     if (!orderId) return { success: false, output: "Missing required parameter: orderId" };
 
     const order = await getKhalaniClient().getOrderById(orderId);
-    // W9b — merge Vex's OWN record with the provider's. A status check that
+    // W9b - merge Vex's OWN record with the provider's. A status check that
     // shows only Khalani's view can contradict the `filled_unverified` the
     // bridge tool returned a turn earlier, with nothing reconciling the two.
     // Fail-soft: the provider order is always the answer, the correlation is

@@ -19,7 +19,7 @@ import {
 const { assertAcceptedContract } = await import(
   "../../../../vex-agent/engine/mission/acceptance.js"
 );
-const { computeContractHash } = await import(
+const { computeContractHash, LEGACY_V6_CONTRACT_HASH_VERSION } = await import(
   "../../../../vex-agent/engine/mission/contract-hash.js"
 );
 const { missionToDraft } = await import(
@@ -84,6 +84,34 @@ describe("assertAcceptedContract — status outcomes", () => {
       expect(outcome.contractHash).toBe(currentHash);
       expect(outcome.contractHashVersion).toBe(1);
     }
+  });
+
+  it("returns accepted for a v6 declaration that never stored assetKind", async () => {
+    const acceptedHash = "0b2633813c1300cc87e56b177797eb04011bee4dd9253ea8d06caba6e9428914";
+    mockGetMissionForUpdate.mockResolvedValueOnce(makeMission({
+      capitalSourceJson: {
+        type: "wallet",
+        amount: "500 USDC",
+        deployedCapital: {
+          amountRaw: "3044000000000000000000",
+          decimals: 18,
+          chainId: 4663,
+          assetAddress: "0x0f9f0000000000000000000000000000000000ee",
+          assetSymbol: "VEX",
+        },
+      },
+      acceptedContractHash: acceptedHash,
+      acceptedContractAt: "2026-05-22T11:00:00.000Z",
+      acceptedContractBy: "host",
+      contractHashVersion: LEGACY_V6_CONTRACT_HASH_VERSION,
+    }));
+
+    const outcome = await assertAcceptedContract({ missionId: "mission-1" });
+
+    expect(outcome.outcome).toBe("accepted");
+    if (outcome.outcome !== "accepted") return;
+    expect(outcome.contractHash).toBe(acceptedHash);
+    expect(outcome.contractHashVersion).toBe(LEGACY_V6_CONTRACT_HASH_VERSION);
   });
 
   it("opens and closes a transaction (BEGIN + COMMIT) for the gate read", async () => {

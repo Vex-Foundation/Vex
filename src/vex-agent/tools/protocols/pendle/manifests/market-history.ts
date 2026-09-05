@@ -4,7 +4,7 @@ import { PENDLE_READ_HISTORY_FIELDS } from "@tools/pendle/read/types.js";
 import { PENDLE_HISTORY_DEFAULT_FIELDS, PENDLE_READ_MAX_SERIES_POINTS } from "../market-read-params.js";
 
 /**
- * `pendle.market.history` — the time series behind a market's headline rate.
+ * `pendle.market.history` - the time series behind a market's headline rate.
  *
  * The selectable field list is generated from the live-verified allowlist rather
  * than restated, so the description can never drift from what the endpoint
@@ -18,13 +18,13 @@ export const PENDLE_MARKET_HISTORY_TOOL: ProtocolToolManifest = {
   namespace: "pendle",
   lifecycle: "active",
   description:
-    "Time series for ONE Pendle market — implied APY, underlying APY, TVL, PT/YT/LP price, traded volume and pool " +
+    "Time series for ONE Pendle market - implied APY, underlying APY, TVL, PT/YT/LP price, traded volume and pool " +
     "composition, at hourly, daily or weekly resolution. This is how you tell whether today's fixed rate is high or " +
     "low for this market before locking it until expiry; the current rate alone cannot answer that. Returns one row " +
     "per point with the unit in every field name (APYs as percent values, USD as exact decimal strings), plus min, " +
     "max, first, last and the relative change per requested field. The window is bounded: a request covering more " +
     `than ${PENDLE_READ_MAX_SERIES_POINTS} points is rejected by name so nothing is truncated silently. Historical ` +
-    "rates describe the past and do not predict the rate you will get — quote the trade for that. Read-only.",
+    "rates describe the past and do not predict the rate you will get - quote the trade for that. Read-only.",
   mutating: false,
   actionKind: "read",
   params: [
@@ -52,7 +52,7 @@ export const PENDLE_MARKET_HISTORY_TOOL: ProtocolToolManifest = {
       type: "string",
       description:
         `Comma-separated series fields. Default: ${PENDLE_HISTORY_DEFAULT_FIELDS.join(",")}. Selectable: ` +
-        `${PENDLE_READ_HISTORY_FIELDS.join(", ")}. An unknown field is rejected by name — Pendle serves only these. ` +
+        `${PENDLE_READ_HISTORY_FIELDS.join(", ")}. An unknown field is rejected by name - Pendle serves only these. ` +
         "Ask for fewer fields to spend fewer compute units.",
     },
     {

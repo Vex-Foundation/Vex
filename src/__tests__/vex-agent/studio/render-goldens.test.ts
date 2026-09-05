@@ -37,19 +37,22 @@ import {
   type StudioWritableAgent,
 } from "@vex-agent/studio/agents.js";
 import {
-  mergeClaudeMdImport,
+  mergeClaudeMdImports,
   mergeStudioAgentConfig,
   mergeStudioManagedBlock,
-  removeClaudeMdImport,
+  mergeStudioVexGuide,
+  removeClaudeMdImports,
   removeStudioAgentConfig,
   removeStudioManagedBlock,
   renderFreshClaudeMd,
   renderStudioAgentConfig,
   renderStudioManagedBlock,
+  renderStudioVexGuide,
 } from "@vex-agent/studio/installer/render/index.js";
 
 import {
   STUDIO_TEST_BRIEF,
+  STUDIO_TEST_ENVIRONMENT,
   STUDIO_TEST_FACTS,
   existingConfigFixture,
 } from "./render-fixtures.js";
@@ -509,11 +512,13 @@ describe("JSON merges", () => {
  * of the fresh file, the bytes after a merge into a user's existing file, and
  * the bytes after a remove. `AGENTS.md` is the one file whose content changes
  * with the project, so its goldens are rendered from the fixed
- * `STUDIO_TEST_BRIEF` rather than from a live inventory.
+ * `STUDIO_TEST_BRIEF` and the fixed `STUDIO_TEST_ENVIRONMENT` rather than from a
+ * live inventory or the machine's own provider keys.
  */
-describe("AGENTS.md and CLAUDE.md", () => {
+describe("AGENTS.md, .vex/vex-guide.md and CLAUDE.md", () => {
   const USER_AGENTS = "# Contributing\n\nRun the tests before you push.\n";
   const USER_CLAUDE = "# My rules\n\nBe brief.\n";
+  const USER_GUIDE = "# My notes\n\nKept outside the markers.\n";
 
   it("renders the committed AGENTS.md goldens", () => {
     compareGolden("AGENTS.fresh.md", renderStudioManagedBlock(STUDIO_TEST_BRIEF));
@@ -529,22 +534,56 @@ describe("AGENTS.md and CLAUDE.md", () => {
     );
   });
 
-  it("renders the committed CLAUDE.md goldens", () => {
-    compareGolden("CLAUDE.fresh.md", textOf(renderFreshClaudeMd(), "CLAUDE.md fresh"));
-    compareGolden("CLAUDE.existing.md", USER_CLAUDE);
-    const merged = textOf(mergeClaudeMdImport(USER_CLAUDE), "CLAUDE.md merge");
-    compareGolden("CLAUDE.merged.md", merged);
+  /**
+   * The second managed document. Its goldens are the DIFF a reviewer reads when
+   * a section moves between the two files: a section leaving `AGENTS.fresh.md`
+   * has to land, whole, in `VEXGUIDE.fresh.md` in the same commit.
+   */
+  it("renders the committed .vex/vex-guide.md goldens", () => {
     compareGolden(
-      "CLAUDE.removed.md",
-      textOf(removeClaudeMdImport(merged), "CLAUDE.md remove"),
+      "VEXGUIDE.fresh.md",
+      renderStudioVexGuide(STUDIO_TEST_BRIEF, STUDIO_TEST_ENVIRONMENT),
+    );
+    compareGolden("VEXGUIDE.existing.md", USER_GUIDE);
+    const merged = textOf(
+      mergeStudioVexGuide(USER_GUIDE, STUDIO_TEST_BRIEF, {
+        overwriteDrift: false,
+        environment: STUDIO_TEST_ENVIRONMENT,
+      }),
+      ".vex/vex-guide.md merge",
+    );
+    compareGolden("VEXGUIDE.merged.md", merged);
+    compareGolden(
+      "VEXGUIDE.removed.md",
+      textOf(removeStudioManagedBlock(merged), ".vex/vex-guide.md remove"),
     );
   });
 
-  it("returns AGENTS.md to the user's original bytes after merge then remove", () => {
+  it("renders the committed CLAUDE.md goldens", () => {
+    compareGolden("CLAUDE.fresh.md", textOf(renderFreshClaudeMd(), "CLAUDE.md fresh"));
+    compareGolden("CLAUDE.existing.md", USER_CLAUDE);
+    const merged = textOf(mergeClaudeMdImports(USER_CLAUDE), "CLAUDE.md merge");
+    compareGolden("CLAUDE.merged.md", merged);
+    compareGolden(
+      "CLAUDE.removed.md",
+      textOf(removeClaudeMdImports(merged), "CLAUDE.md remove"),
+    );
+  });
+
+  it("returns each file to the user's original bytes after merge then remove", () => {
     const merged = textOf(
       mergeStudioManagedBlock(USER_AGENTS, STUDIO_TEST_BRIEF, { overwriteDrift: false }),
       "AGENTS.md merge",
     );
     expect(textOf(removeStudioManagedBlock(merged), "AGENTS.md remove")).toBe(USER_AGENTS);
+
+    const mergedGuide = textOf(
+      mergeStudioVexGuide(USER_GUIDE, STUDIO_TEST_BRIEF, {
+        overwriteDrift: false,
+        environment: STUDIO_TEST_ENVIRONMENT,
+      }),
+      ".vex/vex-guide.md merge",
+    );
+    expect(textOf(removeStudioManagedBlock(mergedGuide), "guide remove")).toBe(USER_GUIDE);
   });
 });

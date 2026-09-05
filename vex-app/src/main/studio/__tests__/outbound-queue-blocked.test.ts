@@ -14,63 +14,34 @@
  * entry per request while blocked, and everything settles on close.
  */
 
-import { EventEmitter } from "node:events";
-
 import { describe, expect, it } from "vitest";
+
+import { FakeDuplexTransport } from "@vex-agent/mcp/duplex-transport-fake.js";
 
 import {
   StudioOutboundQueue,
   STUDIO_MAX_PENDING_OUTBOUND,
 } from "../mcp-host/outbound-queue.js";
-import { testSocket } from "./socket-test-adapter.js";
 
 /**
- * A socket whose writable side is BLOCKED on demand.
+ * A wire whose writable side is BLOCKED on demand.
  *
- * `write` returns `false` and does NOT invoke its callback while blocked, which
- * is exactly what Node does when the high-water mark is exceeded: the caller is
- * told it is now buffering, and `drain` is the only thing that unblocks it.
+ * The shared fake in its `hold` policy: `write` returns `false` and does NOT
+ * invoke its callback, which is exactly what Node does when the high-water mark
+ * is exceeded - the caller is told it is now buffering, and `drain` is the only
+ * thing that unblocks it. `unblock()` runs the held callbacks and announces
+ * `drain`; `refusedWrites` counts the refusals, which is what turns "the writer
+ * was blocked" from a hope into an assertion.
  */
-class BlockedSocket extends EventEmitter {
-  destroyed = false;
-  writableEnded = false;
-  blocked = true;
-  readonly written: string[] = [];
-  /** Callbacks Node has not called yet because the write is still buffered. */
-  private readonly pendingCallbacks: (() => void)[] = [];
-  /** How many times `write` reported "I am buffering". */
-  acceptedFalseCount = 0;
-
-  write(line: string, callback?: () => void): boolean {
-    this.written.push(line);
-    if (this.blocked) {
-      this.acceptedFalseCount += 1;
-      if (callback !== undefined) this.pendingCallbacks.push(callback);
-      return false;
-    }
-    callback?.();
-    return true;
-  }
-
-  /** Flush: run the deferred callbacks and announce `drain`. */
-  unblock(): void {
-    this.blocked = false;
-    const callbacks = this.pendingCallbacks.splice(0, this.pendingCallbacks.length);
-    for (const callback of callbacks) callback();
-    this.emit("drain");
-  }
-
-  destroy(): void {
-    this.destroyed = true;
-    this.emit("close");
-  }
+function blockedWire(): FakeDuplexTransport {
+  return new FakeDuplexTransport("hold");
 }
 
-function makeQueue(socket: BlockedSocket, options: {
+function makeQueue(socket: FakeDuplexTransport, options: {
   readonly maxPending?: number;
   readonly onOverflow?: (reason: string, pending: number) => void;
 } = {}): StudioOutboundQueue {
-  return new StudioOutboundQueue(testSocket(socket), {
+  return new StudioOutboundQueue(socket, {
     ...(options.maxPending === undefined ? {} : { maxPending: options.maxPending }),
     ...(options.onOverflow === undefined
       ? {}
@@ -89,7 +60,7 @@ function tick(): Promise<void> {
 
 describe("the outbound queue behind a writer that returned false", () => {
   it("PROVES the write was refused and holds the rest pending", async () => {
-    const socket = new BlockedSocket();
+    const socket = blockedWire();
     const queue = makeQueue(socket);
 
     const first = queue.enqueue('{"id":1}\n');
@@ -97,7 +68,7 @@ describe("the outbound queue behind a writer that returned false", () => {
     await tick();
 
     // THE MECHANISM: Node said "I am buffering" for the frame in flight.
-    expect(socket.acceptedFalseCount).toBe(1);
+    expect(socket.refusedWrites).toBe(1);
     expect(socket.written).toHaveLength(1);
     // The writer is parked on `drain`, so frame two is still queued and no
     // second `write` has been issued behind the first one's bytes.
@@ -111,7 +82,7 @@ describe("the outbound queue behind a writer that returned false", () => {
   });
 
   it("keeps progress for one request at ONE queued entry while blocked", async () => {
-    const socket = new BlockedSocket();
+    const socket = blockedWire();
     const queue = makeQueue(socket);
 
     // The first frame is taken by the writer immediately and blocks there.
@@ -127,7 +98,7 @@ describe("the outbound queue behind a writer that returned false", () => {
     // CONSTANT under a stalled peer: 500 ticks, one queued entry, and the entry
     // carries the NEWEST value rather than the oldest.
     expect(queue.pendingCount()).toBe(1);
-    expect(socket.acceptedFalseCount).toBe(1);
+    expect(socket.refusedWrites).toBe(1);
 
     socket.unblock();
     await tick();
@@ -137,7 +108,7 @@ describe("the outbound queue behind a writer that returned false", () => {
   });
 
   it("fails the connection when RESPONSES alone reach the pending bound", async () => {
-    const socket = new BlockedSocket();
+    const socket = blockedWire();
     const overflows: { reason: string; pending: number }[] = [];
     const queue = makeQueue(socket, {
       onOverflow: (reason, pending) => {
@@ -157,7 +128,7 @@ describe("the outbound queue behind a writer that returned false", () => {
   });
 
   it("drops progress at the bound but never a response", async () => {
-    const socket = new BlockedSocket();
+    const socket = blockedWire();
     let overflowCount = 0;
     const queue = makeQueue(socket, {
       maxPending: 4,
@@ -180,26 +151,82 @@ describe("the outbound queue behind a writer that returned false", () => {
     expect(overflowCount).toBe(0);
   });
 
+  /**
+   * THE FOUR ANSWERS, at the seam that gives them.
+   *
+   * Every `enqueue` resolves, deliberately, so an ordinary disconnect is not an
+   * unhandled rejection in the SDK's write path. The consumer above turns
+   * acceptance into a `first response` line and a counter, so resolution alone
+   * is not an answer it can use: the outcome is the answer, and each of the
+   * four is produced here by the state that actually causes it.
+   */
+  it("names WHICH of its five settle edges each frame took", async () => {
+    const socket = blockedWire();
+    const queue = makeQueue(socket, { maxPending: 2 });
+
+    // Taken by the writer and parked on a `drain` that has not come.
+    const inFlight = queue.enqueue('{"id":0}\n');
+    await tick();
+    const queued = queue.enqueue('{"progress":1}\n', "progress:PT1");
+    // A newer frame for the same request REPLACES the queued one.
+    await expect(queue.enqueue('{"progress":2}\n', "progress:PT1")).resolves.toBe(
+      "coalesced",
+    );
+    void queue.enqueue('{"id":1}\n');
+    // At the bound, and expendable.
+    await expect(queue.enqueue('{"progress":9}\n', "progress:PT9")).resolves.toBe(
+      "dropped",
+    );
+
+    socket.unblock();
+    await expect(inFlight).resolves.toBe("accepted");
+    await expect(queued).resolves.toBe("accepted");
+
+    queue.close();
+    // Admission is closed: the frame never reaches the wire and says so.
+    await expect(queue.enqueue('{"id":2}\n')).resolves.toBe("closed");
+  });
+
+  /**
+   * THE CASE WITH NO DRAIN IN IT AT ALL.
+   *
+   * `write` refused, `drain` never fires, and then the connection closes. Every
+   * outstanding enqueue must still SETTLE - resolve, not reject, and not hang.
+   * A rejection would surface as an unhandled error during an ordinary
+   * disconnect; a hang would strand the SDK's write path and, behind it, the
+   * teardown that releases a blocked approval.
+   */
   it("settles every outstanding frame on close rather than rejecting", async () => {
-    const socket = new BlockedSocket();
+    const socket = blockedWire();
     const queue = makeQueue(socket);
+    let drained = false;
+    socket.on("drain", () => {
+      drained = true;
+    });
 
     const inFlight = queue.enqueue('{"id":1}\n');
     const queued = queue.enqueue('{"id":2}\n');
     await tick();
     expect(queue.pendingCount()).toBe(1);
+    // The premise, asserted rather than assumed: the wire refused, and nothing
+    // has told the writer it may continue.
+    expect(socket.refusedWrites).toBe(1);
+    expect(drained).toBe(false);
 
     queue.close();
     // The queued one settles at once; the in-flight one settles when the socket
     // announces its close, which is the connection teardown it is waiting on.
-    await queued;
+    // NEITHER is acceptance: the bytes are still in this process.
+    await expect(queued).resolves.toBe("closed");
     socket.destroy();
-    await inFlight;
+    await expect(inFlight).resolves.toBe("closed");
     expect(queue.pendingCount()).toBe(0);
 
     // Admission is closed: a frame produced by a teardown handler resolves and
     // never joins a queue nobody will drain.
     await queue.enqueue('{"id":3}\n');
     expect(queue.pendingCount()).toBe(0);
+    // And it settled without one: no `drain` ever happened on this wire.
+    expect(drained).toBe(false);
   });
 });

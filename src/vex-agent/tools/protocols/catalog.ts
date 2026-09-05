@@ -1,10 +1,10 @@
 /**
- * Protocol tool catalog — aggregator over per-namespace manifest/handler bundles.
+ * Protocol tool catalog - aggregator over per-namespace manifest/handler bundles.
  *
  * Registration model (PR1): each namespace exports its own `*_TOOLS` manifest
  * array and `*_HANDLERS` record (see `./<namespace>/manifest.ts` + `./<namespace>/handlers.ts`).
  * This file binds them into a single `NAMESPACE_MODULES` table that everything
- * else derives from — `PROTOCOL_TOOLS`, `MANIFEST_BY_ID`, `HANDLER_BY_ID`,
+ * else derives from - `PROTOCOL_TOOLS`, `MANIFEST_BY_ID`, `HANDLER_BY_ID`,
  * and the namespace availability helpers below.
  *
  * Adding a new protocol = one row in `NAMESPACE_MODULES` + its own
@@ -13,7 +13,7 @@
  *
  * `getProtocolManifest` + `getProtocolHandler` are O(1) `Map.get` lookups
  * (pre-PR1 they were O(n) `Array.find` / record access). Duplicate `toolId`
- * registration throws at module load time — this is the structural guard
+ * registration throws at module load time - this is the structural guard
  * that `registry-completeness.test.ts` relies on.
  */
 
@@ -45,6 +45,8 @@ import { TRENCH_TOOLS } from "./trench/manifest.js";
 import { TRENCH_HANDLERS } from "./trench/handlers.js";
 import { POOLS_TOOLS } from "./pools/manifest.js";
 import { POOLS_HANDLERS } from "./pools/handlers.js";
+import { LAUNCHPADS_TOOLS } from "./launchpads/manifest.js";
+import { LAUNCHPADS_HANDLERS } from "./launchpads/handlers.js";
 import { INDEXIFY_TOOLS } from "./indexify/manifest.js";
 import { INDEXIFY_HANDLERS } from "./indexify/handlers.js";
 
@@ -62,6 +64,7 @@ export const PROTOCOL_NAMESPACE_ALLOWLIST: readonly ProtocolNamespace[] = [
   "morpho",
   "trench",
   "pools",
+  "launchpads",
   "indexify",
 ] as const;
 
@@ -99,6 +102,7 @@ export const NAMESPACE_MODULES: readonly NamespaceModule[] = [
   { namespace: "morpho", manifests: MORPHO_TOOLS, handlers: MORPHO_HANDLERS },
   { namespace: "trench", manifests: TRENCH_TOOLS, handlers: TRENCH_HANDLERS },
   { namespace: "pools", manifests: POOLS_TOOLS, handlers: POOLS_HANDLERS },
+  { namespace: "launchpads", manifests: LAUNCHPADS_TOOLS, handlers: LAUNCHPADS_HANDLERS },
   { namespace: "indexify", manifests: INDEXIFY_TOOLS, handlers: INDEXIFY_HANDLERS },
 ];
 
@@ -110,7 +114,7 @@ const HANDLER_BY_ID = new Map<string, ProtocolHandler>();
 for (const mod of NAMESPACE_MODULES) {
   for (const manifest of mod.manifests) {
     if (MANIFEST_BY_ID.has(manifest.toolId)) {
-      // Fail loud at module load — better than silent shadowing in PROTOCOL_TOOLS.
+      // Fail loud at module load - better than silent shadowing in PROTOCOL_TOOLS.
       throw new Error(
         `Duplicate protocol toolId in NAMESPACE_MODULES: "${manifest.toolId}" appears in multiple namespaces`,
       );
@@ -208,6 +212,9 @@ export const NAMESPACE_DEFAULTS: Record<ProtocolNamespace, NamespaceDefault> = {
   // Read-only launchpad intelligence; no tool here holds, moves, or reports a
   // position, so nothing it returns belongs in portfolio capture.
   pools: "non_portfolio",
+  // The shared image locker and its publication step. Nothing here holds,
+  // moves or reports a position; a picture is not a balance.
+  launchpads: "non_portfolio",
   // Custodial social-index venue: stack trades move the linked Indexify
   // account's USDC and holdings report positions, so the namespace is a
   // trading one even though nothing is signed locally.

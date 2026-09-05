@@ -1,41 +1,100 @@
 /**
- * The PROJECT-DEPENDENT half of the `AGENTS.md` managed block.
+ * The `AGENTS.md` managed block: THE VEX MCP PROTOCOL, addressed to the agent.
  *
- * `shared-usage.ts` holds what is true of this server for every project. This
- * module holds what is true of ONE project, and it owns the SECTION ORDER the
- * owner co-designed on 2026-08-25 (see `renderStudioProjectSections`): change
- * log first, then what the project is, then the authority it holds, then what
- * the server is, then the tool surface, the safety rules, how to build on the
- * tools, and finally how to report a Vex bug.
+ * ONE CONTENT, ONE RENDERER, THREE CARRIERS. `AGENTS.md` is its home;
+ * `CLAUDE.md` reaches it through the `@AGENTS.md` and `@.vex/vex-guide.md`
+ * imports the installer maintains, and the
+ * per-agent context redirects the catalogue writes point at the same file. There
+ * is no identity layer and no second wording: what an agent is told about Vex is
+ * this text, and the handshake string shares its rules from one source
+ * (`shared-usage.ts`).
  *
- * WHY THE CHANGE LOG IS AT THE TOP. Next.js-style: the first thing a reader
- * (human or model) sees is what moved since they last looked. A regeneration
- * that changed anything is visible before any of the unchanging prose, so a
- * silent rewrite is impossible to mistake for a file nobody touched.
+ * TWO DOCUMENTS SINCE 2026-09-04, one renderer. `renderStudioManagedBody`
+ * composes the AUTHORITY CORE - the text that must be in context on every turn
+ * - and `renderStudioVexGuideBody` composes the companion `.vex/vex-guide.md`.
+ * The sections below say which file each one lands in; every section is WHOLE
+ * in exactly one of them, and none was shortened by the split.
+ *
+ *   AGENTS.md, in composition order:
+ *     1. Read these on start         - the two companion files, and when
+ *     2. This project                - the level in force, wallets, agents, id
+ *     3. How to work with Vex MCP    - discovery, names, outcomes, fees
+ *     4. How to do the common jobs   - the task shapes, in MCP names
+ *     5. Your position               - what each read tool actually knows
+ *
+ *   .vex/vex-guide.md:
+ *     1. What's new in Vex <version> - `changelog.ts`, versioned
+ *        This file                   - the project's own rolling change log
+ *     2. Protocols available         - `protocol-blocks.ts`
+ *     3. Building on Vex MCP         - what an app inherits
+ *     4. Reporting Vex bugs          - the bounty, and ASK FIRST
+ *
+ * WHY THE POINTER IS FIRST. A reader who never learns that the guide exists
+ * cannot read it, and Codex truncates rather than splits, so the section whose
+ * absence hides the other file goes in the bytes most likely to survive. The
+ * change logs keep their Next.js-style position at the top of the file each one
+ * describes: a regeneration that changed anything is visible before any of the
+ * unchanging prose, so a silent rewrite is impossible to mistake for a file
+ * nobody touched.
  *
  * PURE, AND FACT-DRIVEN. Nothing here reads a database, a socket or the live
- * inventory. Every project-specific value arrives as a `StudioProjectBrief`
- * that the privileged main process resolved: the tool counts - overall AND per
- * protocol - come from the LIVE inventory at render time and are never pinned
- * literals, the dates come from the project row, the version comes from the
- * app, and the change notes come from the durable provenance store. That is
- * what keeps the goldens byte-stable while the shipped file still tells the
- * truth about the machine it was written on.
+ * environment. Every project-specific value arrives as a `StudioProjectBrief`
+ * that the privileged main process resolved, and every installation-specific
+ * value as a `StudioInstallationEnvironment` the caller resolved: the tool
+ * counts come from the LIVE inventory at render time and are never pinned
+ * literals, the dates come from the project row, the version comes from the app,
+ * and the change notes come from the durable provenance store. That is what
+ * keeps the goldens byte-stable while the shipped file still tells the truth
+ * about the machine it was written on.
  */
 
+import { WALLET_INTENT_TTL_MS } from "../../tools/internal/wallet/send-types.js";
+import { PREQUOTE_MAX_AGE_MS } from "../../tools/protocols/prequote/registry.js";
 import {
+  STUDIO_CHANGELOG_VERSION_LIMIT,
+  studioChangelogWindow,
+  studioTaggedHeading,
+} from "./changelog.js";
+import {
+  STUDIO_FEE_NOTE,
+  STUDIO_ONE_SOURCE_IN_BLOCK,
+  STUDIO_SAFETY_RULES,
   STUDIO_USAGE_AMOUNTS,
-  STUDIO_USAGE_ERRORS,
   STUDIO_USAGE_FINDING_TOOLS,
+  STUDIO_USAGE_PROJECT_SCOPE,
+  STUDIO_USAGE_TRUNCATION,
   STUDIO_USAGE_UNAVAILABLE_TOOLS,
+  renderStudioOutcomeVocabulary,
 } from "./shared-usage.js";
+
+/** Minutes a quote stays fresh, from the constant the gate itself enforces. */
+const QUOTE_FRESH_MINUTES = String(Math.round(PREQUOTE_MAX_AGE_MS / 60_000));
+
+/** Minutes a prepared wallet intent lives, from the constant that sets it. */
+const INTENT_TTL_MINUTES = String(Math.round(WALLET_INTENT_TTL_MS / 60_000));
+
+/**
+ * How long an approval card can keep a call waiting, in MINUTES.
+ *
+ * Written out rather than imported because `APPROVAL_TTL_MS` lives in
+ * `engine/core/approval-runtime/enqueue.ts`, a module that owns durable
+ * approval rows and pulls the database with it; this file must stay importable
+ * by the MCP server and the installer without that graph. The number is not
+ * left unchecked for that: `__tests__/vex-agent/studio/managed-block.test.ts`
+ * reads the constant's own source line and fails when the two disagree.
+ *
+ * Stated at all because the live test (2026-09-03, p1.txt lines 92-94) measured
+ * an agent that could not tell whether a 15-minute quote survives a pending
+ * card, and had no wait time anywhere to reason from.
+ */
+const APPROVAL_CARD_WAIT_MINUTES = "60";
 
 /**
  * A project's granted authority, in the DURABLE vocabulary.
  *
- * `full` is the stored value; the block RENDERS it as "autonomous", which is
- * what it operationally means to an agent holding it. The stored word is not
- * renamed here, because it is a durable database value and this is display copy.
+ * `full` is the stored value; the block RENDERS it as full access, which is what
+ * it operationally means to an agent holding it. The stored word is not renamed
+ * here, because it is a durable database value and this is display copy.
  */
 export type StudioBriefPermission = "restricted" | "full";
 
@@ -80,7 +139,7 @@ export interface StudioBriefInventory {
   readonly protocols: readonly StudioBriefProtocol[];
 }
 
-/** One entry in the block's change log. */
+/** One entry in the block's PROJECT change log. */
 export interface StudioChangeNote {
   /** The Vex version that wrote it, e.g. `0.2.6`. */
   readonly version: string;
@@ -91,7 +150,7 @@ export interface StudioChangeNote {
 }
 
 /**
- * How many change-log entries the block keeps.
+ * How many project change-log entries the block keeps.
  *
  * A BOUND, not a truncation: the section says how many it retains and that
  * older entries are dropped, so a reader can tell exactly what is not there.
@@ -138,31 +197,73 @@ export function boundStudioChangeNotes(
   return notes.slice(0, STUDIO_CHANGE_NOTE_LIMIT);
 }
 
-/** Section 1: the title. */
+/** The title. */
 export function renderStudioBlockTitle(brief: StudioProjectBrief): string {
   return `# Vex Studio - project "${brief.projectName}"`;
 }
 
 /**
- * Section 2: the change log, FIRST.
+ * What changed in VEX, for the reader who has just been handed a regenerated
+ * file. Lives in `.vex/vex-guide.md`.
  *
- * The first render says so explicitly rather than showing an empty list: "no
- * entries" and "nothing has ever changed" are different statements, and only
- * one of them is true of a file that has just been created.
+ * TWO AXES, ONE PER FILE SINCE 2026-09-04. The Vex notes here come from
+ * `changelog.ts`, authored with the change and shipped with the build; the
+ * PROJECT notes (`renderStudioThisFileLog`) come from the durable provenance
+ * store and say what the user did. They were one section while both lived in
+ * `AGENTS.md`. The split that moved the Vex notes into the guide kept each one
+ * whole and moved neither's words: the project log stays beside the file it
+ * describes, and the Vex log travels with the sections it announces.
  */
-export function renderStudioChangeLog(brief: StudioProjectBrief): string {
+export function renderStudioWhatsNewInVex(brief: StudioProjectBrief): string {
   const lines = [
-    "## Change log (this file)",
+    `## What's new in Vex ${brief.vexVersion}`,
     "",
-    `Newest first. Vex keeps the last ${String(STUDIO_CHANGE_NOTE_LIMIT)} entries and`,
-    "drops older ones; nothing else is hidden. Every regeneration that changed",
-    "anything adds a line here, so a Vex update or a settings edit is visible rather",
-    "than a silent rewrite.",
+    `The notes below cover the last ${String(STUDIO_CHANGELOG_VERSION_LIMIT)} Vex versions that changed anything`,
+    "an agent can see. A section or protocol block that one of them names carries",
+    "its version beside its own heading.",
     "",
-    "THIS FILE DOES NOT GROW. A Vex update regenerates this managed section IN",
-    "PLACE - the block is rewritten, never appended to - and the bounded change log",
-    "above is what keeps the file the same size across updates. Text outside the",
-    "markers is never touched.",
+    "A note whose subject is a section of `AGENTS.md` names a heading in THAT",
+    "file; the sections below are this one's.",
+    "",
+  ];
+
+  const notes = studioChangelogWindow();
+  if (notes.length === 0) {
+    lines.push("- Nothing has changed in the agent-visible surface yet.");
+  } else {
+    for (const note of notes) {
+      lines.push(
+        `- **Vex ${note.version}, ${note.kind}** \`${note.subject}\`: ${note.text}`,
+      );
+    }
+  }
+  return lines.join("\n");
+}
+
+/**
+ * What changed for THIS PROJECT: the rolling log of what Vex wrote and when.
+ *
+ * Sits directly under the Vex notes, in `.vex/vex-guide.md`, exactly as it did
+ * under them in the single block - same `###` heading, same words, same place
+ * relative to the section above it. The two axes were designed as one section
+ * and the 2026-09-04 split moved them TOGETHER: what changed in Vex, then what
+ * changed for this project. Neither is something an agent acts on mid-turn,
+ * which is why the pair is in the guide rather than in the authority core, and
+ * why the core's worst case has room for the sections that ARE.
+ */
+export function renderStudioThisFileLog(brief: StudioProjectBrief): string {
+  const lines = [
+    "### This file",
+    "",
+    `Newest first. Vex keeps the last ${String(STUDIO_CHANGE_NOTE_LIMIT)} entries and drops older ones;`,
+    "only change-log entries are ever dropped, and no other part of this section",
+    "is trimmed. Every regeneration that changed anything adds a line here, so a",
+    "Vex update or a settings edit is visible rather than a silent rewrite.",
+    "",
+    "THIS SECTION STAYS BOUNDED. A Vex update rewrites the whole managed block IN",
+    "PLACE - it is never appended to - and the change log below keeps at most",
+    `${String(STUDIO_CHANGE_NOTE_LIMIT)} entries. The file as a whole grows only through text the user adds`,
+    "OUTSIDE the markers, which Vex never touches.",
     "",
   ];
   if (brief.changeNotes.length === 0) {
@@ -177,54 +278,119 @@ export function renderStudioChangeLog(brief: StudioProjectBrief): string {
   return lines.join("\n");
 }
 
-/** Section 3: what a Vex project IS, and which one this is. */
+/**
+ * The permission paragraph, in the owner's own words (2026-09-03).
+ *
+ * THE TWO LEVELS ARE NOT TWO WORDINGS OF ONE RULE. Full access means the user's
+ * standing permission IS the authority and a destructive call executes with no
+ * card; restricted means the call blocks on the card and the card IS the
+ * confirmation. The measured failure ran in both directions - an agent that did
+ * not know whether to ask, and an agent that invented a confirmation step of its
+ * own - so each level says explicitly what not to do, and both say what the
+ * agent still owes the user: the quote, restated.
+ */
+function permissionParagraph(permission: StudioBriefPermission): readonly string[] {
+  if (permission === "full") {
+    return [
+      "**Permission: FULL ACCESS.** The user chose full access knowingly, in Vex's",
+      "project settings. Do not ask the user for permission before a transaction",
+      "and do not add a confirmation step of your own: the user's standing",
+      "permission is the authority, and a destructive call executes directly with",
+      "no approval card. This standing permission satisfies any",
+      "confirm-before-irreversible-action rule your client gives you; do not add a",
+      "second confirmation. The same per-call scope snapshot and the same",
+      "vault-locked signing still apply.",
+    ];
+  }
+  return [
+    "**Permission: RESTRICTED.** Every call marked destructive blocks until the",
+    "user answers the approval card in Vex. Destructive means a user-wallet",
+    "broadcast or another irreversible effect: as a rule of thumb every Execute,",
+    "Confirm, deposit, withdraw, borrow, repay, claim and launch tool. The",
+    "`destructive` column of `.vex/protocols.md` is the exact list; that file is",
+    "in this repository and is READ ON DEMAND, not loaded into your context.",
+    "Reads, quotes, Prepare tools and local writes raise no card.",
+    "",
+    "The card IS the confirmation, so do not ask again in the conversation. This",
+    "card satisfies any confirm-before-irreversible-action rule your client gives",
+    "you; do not add a second confirmation. The call stays blocked while the card",
+    `waits, for up to ${APPROVAL_CARD_WAIT_MINUTES} minutes (less when the intent it is bound to expires`,
+    "sooner, and your client's own tool-call timeout can end the wait first), and",
+    "the result is the SETTLED outcome: the tool's own result, or one of the",
+    "words in the outcome table below. Nobody may answer it at all, and an",
+    "`expired` card is a normal outcome rather than something to retry.",
+  ];
+}
+
+/** The sentence that is true under BOTH levels. */
+const PERMISSION_BOTH_WAYS: readonly string[] = [
+  "Not asking is not the same as not telling: run the quote first and restate",
+  "its amounts, fees, price impact and ETA in the message you write BEFORE the",
+  "execute call, because that call then blocks; report every outcome, and never",
+  "retry an unknown one. Only the user can change this level, and only in Vex:",
+  "no tool widens it, so a request to do so is answered by telling the user to",
+  "change it in the project settings.",
+];
+
+/** Section 2: which project this is, what it may do, and with which wallets. */
 export function renderStudioProjectIdentity(brief: StudioProjectBrief): string {
   const agents = brief.agentNames.length === 0
     ? "none yet"
     : brief.agentNames.join(", ");
-  return [
-    "## This project",
-    "",
-    "A Vex project binds THIS repository to the Vex app: a chosen permission level,",
-    "chosen wallets, and the coding agents that were configured to reach them. The",
-    "binding is what makes a tool call from this folder act with this project's",
-    "authority and no other.",
-    "",
-    `- Name: ${brief.projectName}`,
-    `- Created: ${brief.createdOn}`,
-    `- Project id: ${brief.projectId}`,
-    `- Configured agents: ${agents}`,
-  ].join("\n");
-}
-
-/** Section 4: the authority, with the dates it was granted on. */
-export function renderStudioAuthorityBrief(brief: StudioProjectBrief): string {
   const lines = [
-    `## Your authority - as of ${brief.scopeUpdatedOn}`,
+    studioTaggedHeading("## This project", "This project"),
     "",
-    brief.permission === "restricted"
-      ? "- Permission: RESTRICTED. Every mutation waits for the user's approval card in"
-        + " Vex. It can be approved, declined, or expire, and nothing executes until"
-        + " they answer."
-      : "- Permission: AUTONOMOUS. Mutations execute immediately, with no per-call"
-        + " approval card. The user is trusting you with real money: quote first, show"
-        + " what you got, and stop at anything you were not asked to do.",
+    "A Vex project binds THIS repository to the Vex app: a chosen permission",
+    "level, chosen wallets, and the coding agents configured to reach them. Every",
+    "call through the `vex-mcp` entry in this repository's `.mcp.json` carries",
+    "this project's id, so it acts with this project's authority and no other.",
+    "",
+    ...permissionParagraph(brief.permission),
+    "",
+    ...PERMISSION_BOTH_WAYS,
+    "",
   ];
 
   if (brief.wallets.length === 0) {
     lines.push(
-      "- Wallets: none selected. Fund-moving calls have no wallet to act with until",
-      "  the user selects one in Vex.",
+      "No wallet is selected for this project. A tool that needs one refuses by",
+      "name until the user selects a wallet in Vex under Wallets and then in the",
+      "project settings.",
     );
   } else {
+    lines.push("Selected wallets, chosen by the user for this project:", "");
     for (const wallet of brief.wallets) {
-      lines.push(`- Wallet (${wallet.family}): ${wallet.address}`);
+      lines.push(`- ${wallet.family}: \`${wallet.address}\``);
     }
+    const families = new Set(brief.wallets.map((wallet) => wallet.family));
+    if (!families.has("evm")) {
+      lines.push(
+        "- No EVM wallet is selected: a tool that needs one refuses by name; the",
+        "  user adds one in Vex under Wallets and then in the project settings.",
+      );
+    }
+    if (!families.has("solana")) {
+      lines.push(
+        "- No Solana wallet is selected: a tool that needs one refuses by name;",
+        "  the user adds one in Vex under Wallets and then in the project settings.",
+      );
+    }
+    lines.push(
+      "",
+      "These are the wallets selected RIGHT NOW, and a selection change makes a",
+      "pending intent refuse rather than sign from a different address. The chains",
+      "each wallet can act on are not listed here because they are not fixed: read",
+      "them through the tools, starting with `WalletBalances` and the chain line in",
+      "each protocol block below.",
+    );
   }
 
   lines.push(
-    `- Granted: ${brief.createdOn}`,
-    `- Last updated: ${brief.scopeUpdatedOn}`,
+    "",
+    `- Project id: \`${brief.projectId}\``,
+    `- Configured agents: ${agents}`,
+    `- Created: ${brief.createdOn}`,
+    `- Scope last changed: ${brief.scopeUpdatedOn}`,
     "",
     "This scope is read FRESH ON EVERY CALL and the user can change it at any",
     "moment. The lines above are context, not a guarantee: read each result rather",
@@ -233,33 +399,30 @@ export function renderStudioAuthorityBrief(brief: StudioProjectBrief): string {
   return lines.join("\n");
 }
 
-/** Section 5: what the server is and where the keys live. */
-export const STUDIO_WHAT_VEX_MCP_IS = [
-  "## What Vex MCP is",
-  "",
-  "`vex` is a LOCAL MCP server inside the Vex desktop app, a self-custodial crypto",
-  "agent. It is alive while the app is running and unreachable when the app is",
-  "closed - a failed connection means \"start Vex\", not \"the tool is broken\".",
-  "",
-  "This repository connects to it through the `vex-mcp` bridge named in this",
-  "project's agent config, so every call arrives already bound to this project.",
-  "Private keys NEVER leave the Vex app: signing happens inside it and requires an",
-  "unlocked vault, and every action is registered locally in Vex where the user can",
-  "read it back.",
-].join("\n");
-
-/** Section 6: the surface, with LIVE counts, and how to navigate it. */
-export function renderStudioToolSurface(brief: StudioProjectBrief): string {
+/** Section 3: the protocol itself - how to find, name, call and read Vex tools. */
+export function renderStudioHowToWorkWithVexMcp(brief: StudioProjectBrief): string {
   const { inventory } = brief;
   const lines = [
-    "## The tool surface and how to navigate it",
+    studioTaggedHeading("## How to work with Vex MCP", "How to work with Vex MCP"),
     "",
-    `${String(inventory.alwaysLoadedCount)} tools are ALWAYS LOADED - they are in`,
-    "`tools/list` without you asking for anything, and they are named in full",
-    "below rather than summarized, so you never search for one you already hold.",
-    `Another ${String(inventory.searchableCount)} protocol tools across`,
-    `${String(inventory.protocols.length)} protocols are discoverable through`,
-    "`vex_ToolSearch`, which is read-only and runs nothing.",
+    "`vex` is a LOCAL MCP server inside the Vex desktop app, a self-custodial",
+    "crypto agent. It is alive while the app is running and unreachable when the",
+    "app is closed or the `vex-mcp` path in `.mcp.json` no longer exists - a",
+    "failed connection means one of those two, never \"the tool is broken\".",
+    "Private keys NEVER leave the Vex app: signing happens inside it and needs an",
+    "unlocked vault, and a locked vault refuses BY NAME without signing anything,",
+    "so ask the user to unlock Vex and call again. REFUSES BY NAME, here and",
+    "everywhere below, means exactly this: the result names the precondition that",
+    "failed, nothing was signed and nothing moved, so the remedy is the named one",
+    "rather than a second attempt at the same call. Every action is registered",
+    "locally in Vex, where the user can read it back.",
+    "",
+    "### Finding a tool",
+    "",
+    `${String(inventory.alwaysLoadedCount)} tools are ALWAYS LOADED - they are in \`tools/list\` with full schemas,`,
+    "and they are named in full below so you never search for one you already",
+    `hold. Another ${String(inventory.searchableCount)} protocol tools across ${String(inventory.protocols.length)} protocols are in \`tools/list\``,
+    "too, and your client may list those with DEFERRED schemas.",
     "",
     "Always loaded:",
     "",
@@ -273,87 +436,265 @@ export function renderStudioToolSurface(brief: StudioProjectBrief): string {
   }
   lines.push(
     "",
+    "Each protocol has its own block further down, with its chains, its tools and",
+    "whether its provider key is configured here.",
+    "",
     STUDIO_USAGE_FINDING_TOOLS,
     "",
-    "There is NO generic execute tool - do not invent one; this surface does not",
-    "have it.",
+    "`vex_ToolSearch` FINDS a tool: each row carries the `publicName`, the",
+    "namespace, whether it mutates, a one-line summary and its availability. It",
+    "carries no argument contract. `vex_ToolDescribe` returns the WHOLE contract",
+    "of ONE tool: the full description, the input schema, the risk class, whether",
+    "it raises the approval card, the Vex fee, what it returns, and which quote",
+    "authorizes an execute.",
     "",
-    "Protocols and their tool counts:",
+    STUDIO_USAGE_TRUNCATION,
     "",
-  );
-  if (inventory.protocols.length === 0) {
-    lines.push("- (none exported by this build)");
-  } else {
-    for (const protocol of inventory.protocols) {
-      lines.push(`- ${protocol.name}: ${String(protocol.toolCount)}`);
-    }
-  }
-  lines.push(
+    "No tool signs calldata Vex has not decoded, and there is no generic execute",
+    "tool to invent. The generic Prepare and Confirm pairs exist for a",
+    "transaction Vex has no dedicated tool for, and they accept only a CLOSED",
+    "decode set that each Prepare description lists in full for its chain family.",
     "",
-    // The amounts discipline, the four failure words and the unavailable-tool
-    // contract come VERBATIM from the shared usage notes - the same words the
-    // MCP handshake sends. One source, so a file and a handshake can never tell
-    // an agent two different things about units or about what "declined" means.
+    "### Amounts",
+    "",
     STUDIO_USAGE_AMOUNTS,
     "",
-    STUDIO_USAGE_ERRORS,
+    "### What a result means",
+    "",
+    "Every result says what happened, in a word this server or a tool actually",
+    "emits. Read the word, place it in its bucket, and follow THAT WORD's own",
+    "verdict on calling again - the words in one bucket do not share one:",
+    "",
+    renderStudioOutcomeVocabulary(),
+    "",
+    "### What Vex charges",
+    "",
+    STUDIO_FEE_NOTE,
+    "",
+    "### When a tool cannot run",
     "",
     STUDIO_USAGE_UNAVAILABLE_TOOLS,
     "",
-    "Every protocol, tool and argument contract: `.vex/protocols.md`.",
+    "### Scope",
+    "",
+    STUDIO_USAGE_PROJECT_SCOPE,
+    "",
+    "### The safety rules",
+    "",
+    STUDIO_SAFETY_RULES,
+    "",
+    STUDIO_ONE_SOURCE_IN_BLOCK,
   );
   return lines.join("\n");
 }
 
-/** Section 8: what an app built on these tools inherits, and what it cannot escape. */
-export const STUDIO_BUILDING_APPS_NOTE = [
-  "## Building applications on these tools",
+/**
+ * Section 4: the task shapes, in MCP names.
+ *
+ * ADAPTED FROM THE APP'S OWN PROMPT LAYER (`engine/prompts/task-shapes.ts`,
+ * `buildTaskShapesPrompt`), which is what Vex's in-app agent is told. The
+ * substance is that layer's - venue routing, the same-venue quote gate, the wrap
+ * pair being 1:1 and fee-free, price protection binding the quote you were
+ * SHOWN, never re-bridging a delivery that is still pending - restated in the
+ * names an MCP client actually sees, which differ (`SwapQuote` / `SwapExecute`
+ * rather than the in-app tool ids). It is authored rather than imported because
+ * the prompt layer's text names in-app tools and branches on session
+ * availability that has no meaning here; the two numbers that must not drift are
+ * imported from the constants the gates enforce (`PREQUOTE_MAX_AGE_MS`,
+ * `WALLET_INTENT_TTL_MS`) rather than written out.
+ */
+export const STUDIO_COMMON_JOBS_NOTE = [
+  studioTaggedHeading("## How to do the common jobs", "How to do the common jobs"),
   "",
-  "Anything you build calls the same tools the same way: MCP IS the API. There is",
-  "NO separate REST endpoint, and writing an HTTP wrapper around a wallet would",
-  "only be a way around the door.",
+  `A quote is fresh for ${QUOTE_FRESH_MINUTES} minutes and authorizes only the execute in its OWN`,
+  "pair, on the same venue, with identical parameters. A prepared wallet intent",
+  `lives ${INTENT_TTL_MINUTES} minutes, is single-use, and is bound to the wallet that was selected`,
+  "when it was prepared.",
   "",
-  "Spawn the same `vex-mcp` bridge command this project's agent config already",
-  "invokes, or point an MCP client SDK at it, and call tools by their `publicName`.",
+  "### Balances",
   "",
-  "Your app INHERITS EVERY RESTRICTION automatically, because there is no other",
-  "door: the same per-call scope snapshot, the same approval card on a mutation in",
-  "a restricted project (your app waits on the user's decision exactly as you do),",
-  "the same vault-locked signing, and the same local registration of every action.",
+  "`WalletBalances` with no arguments scans the selected wallets on every",
+  "reachable chain; narrow it to one chain to confirm that a transfer landed. It",
+  "is read-only and raises no card. Report the chains that errored rather than",
+  "silently dropping them, and convert with `UnitsConvert`, never in your head.",
   "",
-  "SIGNING SOMETHING VEX HAS NO DEDICATED TOOL FOR. Two generic pairs exist for",
-  "exactly this: `WalletEvmTransactionPrepare` + `WalletEvmTransactionConfirm` on",
-  "EVM, and `WalletSolanaTransactionPrepare` + `WalletSolanaTransactionConfirm` on",
-  "Solana. Prepare DECODES and simulates the transaction fail-closed - it",
-  "signs nothing, holds no key - and records a durable intent; Confirm signs",
-  "and broadcasts that intent only after the same decoded effect the user",
-  "approved revalidates. Every safety property holds through them: the approval",
-  "card in a restricted project, the digest binding between what was shown and",
-  "what is signed, and the fee caps.",
+  "### Swap",
   "",
-  "THE DECODE SET IS CLOSED, AND IT IS NOT \"anything\". On EVM the v1 set is",
-  "ERC-20 `transfer` / `approve` / `transferFrom` / `increaseAllowance` / `permit`,",
-  "Permit2 `approve` / `permit` / `transferFrom` at the canonical Permit2 address",
-  "for that chain, and a plain native transfer whose `data` is `0x` sent to an",
-  "address that has no code. An unknown selector, a malformed layout, a Permit2",
-  "call to any other address, or empty calldata sent to a contract is REFUSED BY",
-  "NAME before an intent exists. ROUTER AND AGGREGATOR CALLDATA IS DELIBERATELY",
-  "OUTSIDE v1: do not plan an app around signing it through these tools, and do",
-  "not try to reshape a swap into an approve to get past the decoder. If what you",
-  "need is outside the set, say so to the user rather than working around it.",
+  "`TokenFind` resolves each token to a CONTRACT ADDRESS on the exact chain, then",
+  "`SwapQuote`, then `SwapExecute` with identical parameters including the same",
+  "slippage. That pair is the one you normally need: it routes EVM trades to",
+  "KyberSwap and Solana to Jupiter itself. The Uniswap pair forces Uniswap, for a",
+  "chain with a verified Vex deployment where KyberSwap cannot route. Restate the",
+  "quote's expected output, price impact, gas and safety verdicts before",
+  "executing. Slippage binds the quote you were SHOWN: the execute writes that",
+  "floor into the calldata and refuses BY NAME rather than filling worse. So",
+  "RE-QUOTE AT THE SAME SLIPPAGE FIRST. Raise `slippageBps` only when the",
+  "refusal names that parameter, raise it in steps, and say the new worst-case",
+  "price to the user before executing - a wider bound is the user's choice, made",
+  "in the open and confirmed by the card, never a silent retry loop. On EVM a",
+  "quote is refused at or above 15% price impact and when the venue cannot price",
+  "the output in USD; on Solana there are no USD figures at all, so only the",
+  "impact rule applies. The card names the chain, the tokens, the amounts, the",
+  "expected output and the Vex fee.",
+  "",
+  "### Bridge",
+  "",
+  "`BridgeQuote` then `BridgeExecute` is the normal pair, and it picks the venue",
+  "itself: Khalani when it serves both sides, Relay otherwise, which is how",
+  "Robinhood Chain routes. The quote authorizes `BridgeExecute` whichever venue",
+  "it chose. `BridgeQuoteRelay` then `BridgeExecuteRelay` exists only to FORCE",
+  "Relay, which is EVM-only. `amountRaw` is in RAW base units, read together with",
+  "that token's decimals. A BRIDGE NEVER REPORTS SUCCESS: a deposit that",
+  "broadcast is not a delivered bridge. The outcome table above carries the",
+  "bridge words themselves - the ONE state that means DELIVERED, the states",
+  "that mean the money is coming back, and the read that resolves each. Read",
+  "it; do NOT re-bridge.",
+  "",
+  "### Send",
+  "",
+  "`WalletSendPrepare` records an intent that signs nothing, holds no key and",
+  "raises no card; it returns an `intentId`. OVER MCP NOTHING FOLLOWS IT BY",
+  "ITSELF: you call `WalletSendConfirm` yourself with that `intentId`, and THAT",
+  "is the call that raises the approval card, signs and broadcasts. Ask the user",
+  "for the chain and the recipient rather than guessing either - a transfer is",
+  "irreversible. The card names chain, recipient, amount and token. Of the",
+  "failure outcomes, `failed before broadcast` is the only one that is safe to",
+  "prepare again.",
+  "",
+  "### Wrap",
+  "",
+  "A native to wrapped-native pair (ETH/WETH, BNB/WBNB, POL/WPOL, AVAX/WAVAX) is",
+  "not a trade: `WalletWrapPrepare` then `WalletWrapConfirm`, exactly 1:1, no",
+  "route, no slippage and NO Vex fee. `amountRaw` is in raw units.",
+  "",
+  "### A transaction Vex has no dedicated tool for",
+  "",
+  "`WalletEvmTransactionPrepare` + `WalletEvmTransactionConfirm` on EVM, and",
+  "`WalletSolanaTransactionPrepare` + `WalletSolanaTransactionConfirm` on Solana,",
+  "are the only paths for something Vex has no dedicated tool for. Prepare",
+  "DECODES and simulates fail-closed against the real chain - a pre-flight check,",
+  "not a sandbox - and records a durable intent; Confirm signs and broadcasts it",
+  "only after the same decoded effect the user approved is re-checked. The decode",
+  "set is CLOSED, and router or aggregator calldata is deliberately outside it.",
+  "The fee caps are yours to supply and are never derived from a network",
+  "estimate; call `vex_ToolDescribe` on the Prepare tool for which caps it",
+  "requires and how to obtain the current estimate.",
+  "",
+  "### A destructive tool with no quote counterpart",
+  "",
+  "Some destructive calls have nothing to quote - a rewards claim has no price,",
+  "no size and no counterparty. State the expected effect from the READ tools",
+  "first (what is claimable, what it is worth, what the gas will cost), say it to",
+  "the user, and only then call. A claim is an ordinary approval-gated on-chain",
+  "transaction that costs gas, so say so before claiming a dust balance.",
+  "",
+  "### Research",
+  "",
+  "Answer through all three layers before reporting: identity and discovery",
+  "(which chain, which contract), depth and price sanity, then narrative and",
+  "safety. If a layer is unreachable, continue through the others and say which",
+  "layer was unavailable and why. DexScreener indexing lags by minutes to hours",
+  "for brand-new tokens, so fresh discovery can precede indexed pair research.",
+  "Name the exact chain and contract identity, the source freshness, the observed",
+  "liquidity, the missing coverage, and whether the result is research or an",
+  "executable quote. A provider label is not proof.",
 ].join("\n");
 
-/** Section 9: where a real Vex bug goes, and who decides that it goes there. */
+/**
+ * THE POINTER SECTION: the two managed files this one does not carry, and the
+ * instruction to open them.
+ *
+ * WHY IT EXISTS AT ALL (2026-09-04). Codex loads `AGENTS.md` under a TOTAL
+ * budget of `project_doc_max_bytes` (32 KiB by default,
+ * `codex-rs/config/defaults.toml`) across the root-to-cwd chain and TRUNCATES
+ * the last file at whatever remains (`codex-rs/core/src/agents_md.rs`). It has
+ * no import mechanism, so a longer file is not split for it - it is CUT, mid
+ * sentence, with no notice to the model or the user. Claude Code has imports
+ * and no such cap, which is why `CLAUDE.md` can pull both files in and every
+ * other client must be TOLD to read them. Being told is the whole mechanism
+ * here, so this section says which file, when, and what is in it.
+ *
+ * FIRST IN THE BLOCK, deliberately: it is the one section whose absence makes
+ * the others unfindable, and the first bytes of the file are the bytes a
+ * truncating loader is most likely to keep.
+ */
+export const STUDIO_READ_ON_START_NOTE = [
+  studioTaggedHeading("## Read these on start", "Read these on start"),
+  "",
+  "Two files in this repository carry the rest of the Vex protocol. Neither is",
+  "in your context by itself: open them with your own file-reading tool.",
+  "",
+  "- `.vex/vex-guide.md` - READ IT AT THE START OF A SESSION, before your first",
+  "  Vex call. What changed in Vex and what Vex last changed in this project,",
+  "  every protocol available here with its chains, its fee and whether its",
+  "  provider key is configured on this machine, what an app you build on Vex",
+  "  inherits, and how a Vex bug is reported.",
+  "- `.vex/protocols.md` - READ IT ON DEMAND: the tool-by-tool inventory, with",
+  "  each tool's read-only and destructive hints and the key it needs.",
+  "",
+  "Claude Code imports the guide through `CLAUDE.md` and already has it. Every",
+  "other client, Codex included, reads it because this line says so.",
+].join("\n");
+
+/** Section 6: what each read tool actually knows, and what it does not. */
+export const STUDIO_YOUR_POSITION_NOTE = [
+  studioTaggedHeading("## Your position", "Your position"),
+  "",
+  "You have no standing view of this user's money. Three read tools give three",
+  "different, partial views, and mistaking one for another is how an agent",
+  "reports a balance that stopped being true three turns ago.",
+  "",
+  "- `WalletBalances` is a LIVE SNAPSHOT at the moment of the call. Never carry a",
+  "  balance across turns and never do arithmetic on a stale one; call it again.",
+  "- `AgentScan` is the history of YOUR OWN moves - swaps, bridges, transfers,",
+  "  balance snapshots and the protocol-call log, recorded locally in Vex. It is",
+  "  where you answer \"what did that cost?\", Vex fee fields included.",
+  "- `ChainRead` is chain facts, EVM only, and its three actions are the whole",
+  "  set: a transaction receipt, an ERC-721 mint recovered from a receipt, and",
+  "  one ERC-20 balance read from the token contract. There is no raw call, and",
+  "  it knows nothing about Vex's own records.",
+  "",
+  "For anything Vex has no dedicated tool for, the generic Prepare/Confirm pairs",
+  "are the whole answer, within their closed decode set.",
+].join("\n");
+
+/** Section 7: what an app built on these tools inherits, and cannot escape. */
+export const STUDIO_BUILDING_APPS_NOTE = [
+  "## Building on Vex MCP",
+  "",
+  "Anything you build calls the same tools the same way: MCP IS the API. There is",
+  "NO separate REST endpoint. Do not put an HTTP wrapper in front of the bridge:",
+  "it would expose the user's wallet to whoever can reach the wrapper, and every",
+  "call would still arrive through this same door anyway.",
+  "",
+  "Spawn the same `vex-mcp` bridge command `.mcp.json` invokes - read the path",
+  "from that file rather than hard-coding it, because Vex may relocate the binary",
+  "- or point an MCP client SDK at it, and call tools by their `publicName`.",
+  "",
+  "Your app INHERITS EVERY RESTRICTION automatically, because there is no other",
+  "door: the same per-call scope snapshot, the same approval card on a destructive",
+  "call in a restricted project (your app blocks on the user's decision exactly as",
+  "you do), the same vault-locked signing, the same fee caps, the same digest",
+  "binding between what was shown and what is signed, and the same local",
+  "registration of every action.",
+].join("\n");
+
+/** Section 8: where a real Vex bug goes, and who decides that it goes there. */
 export const STUDIO_BUG_REPORT_NOTE = [
   "## Reporting Vex bugs (bounty)",
   "",
   "If a Vex tool is genuinely broken - wrong result, wrong units, a crash, an",
-  "approval that never arrives - you may ASK the user whether they want to report",
-  "it as a pull request or issue on https://github.com/Vex-Foundation/Vex. Vex pays",
-  "a bounty in USDC or VEX token for real, reproducible reports; the user claims it",
-  "on Discord with the link to their PR.",
+  "approval card that never appears in Vex even though the call is waiting on one",
+  "- you may ASK the user whether they want to report it as a pull request or an",
+  "issue on https://github.com/Vex-Foundation/Vex. Vex pays a bounty in USDC or",
+  "VEX token for real, reproducible reports; the user claims it on the Vex",
+  "Discord with the link to their pull request or issue.",
   "",
   "ASK FIRST, ALWAYS. Never open a report, never send a diagnostic anywhere, and",
-  "never publish anything about this project on your own initiative. Nothing about",
-  "this machine leaves it without the user's word.",
+  "never publish anything about this project on your own initiative: no",
+  "diagnostic, log, wallet address or project detail goes anywhere the task",
+  "itself does not require - an issue tracker, a forum, a chat, a gist - without",
+  "the user's word. Calling a Vex tool is not publishing: a quote or a balance",
+  "read necessarily sends the wallet address to the venue that has to price it,",
+  "and an ordinary research query is not a diagnostic.",
 ].join("\n");

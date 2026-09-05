@@ -1,13 +1,13 @@
 {
   "definition": {
     "function": {
-      "description": "The 'what just graduated' feed: recently graduated (AVAILABLE) Virtuals agent tokens on ONE chain (base, solana, robinhood, or ethereum), newest first by graduation time. Use this when the user asks what just graduated or wants to catch a fresh graduation before buying, because a graduation is exactly when the anti-sniper buy tax is at its worst. Returns `agents` alongside chain, matched, totalOnChain, count, `window` and a `windowNote`; each row carries the same fields virtuals__agents_discover returns, including the live antiSniper block (windowActive, remainingSeconds, estBuyTaxPct) - never buy while windowActive is true. WINDOWED the same way: up to 5 pages of pageSize rows from page, with the windowNote naming the exact slice searched and the page to continue from, so an empty result is a statement about that window and never about the chain. Continuation is the same prose-plus-numbers pair, not a cursor: `window` carries firstPage, lastPage, pagesFetched, pageSize, rowsScanned, total and `exhausted`, and `windowNote` says it in words. `exhausted: true` is the only end-of-list signal; otherwise call again with page set to window.lastPage + 1. Out-of-range limit, page or pageSize is REJECTED by name, not clamped. Read-only.",
+      "description": "The 'what just graduated' feed: Virtuals agent tokens that most recently left the bonding curve on ONE chain (base, robinhood, solana, ethereum), newest first by graduation time. Use this when the user asks what just graduated or wants to catch a fresh graduation. The graduated population is selected SERVER-SIDE (the provider's own lpCreatedAt-is-set definition) and ordered by lpCreatedAt descending, so the reply is a whole answer rather than a slice: `count`, `totalMatched`, `page`, `pageSize`, `pageCount`, `hasMore` and `nextPage` when there is one. Rows carry the same fields virtuals__agents_discover returns. Note that the anti-sniper tax runs on the BONDING CURVE and is long over by the time an agent graduates, so a fresh graduation is not a taxed buy - each row's antiSniper block says so explicitly. Out-of-range limit, pageSize or page is REJECTED by name, not clamped. Read-only. Provide at most one of: limit, pageSize.",
       "name": "virtuals__graduations_list",
       "parameters": {
         "additionalProperties": false,
         "properties": {
           "chain": {
-            "description": "REQUIRED. The one chain to list — Virtuals indexes exactly four: base, solana, robinhood, ethereum. Chain slug/alias, or the numeric chain id `TokenFind` returns (e.g. `base` or `8453`).",
+            "description": "REQUIRED. The one chain to list - Virtuals indexes exactly four: base, solana, robinhood, ethereum. Chain slug/alias, or the numeric chain id `TokenFind` returns (e.g. `base` or `8453`).",
             "enum": [
               "base",
               "solana",
@@ -17,15 +17,15 @@
             "type": "string"
           },
           "limit": {
-            "description": "Max graduations to return (default 20, max 100). Out of range is rejected, not clamped.",
+            "description": "Rows to return on this page (default 20, max 100). This is OUR bound, not the provider's - it served a 10,000-row page live - because an agent row is large. Filtering is server-side, so a smaller page is not a smaller search: `totalMatched` says how many rows the filter found and `nextPage` reaches the rest. Out of range is rejected, not clamped.",
             "type": "number"
           },
           "page": {
-            "description": "1-based FIRST provider page of the window (default 1). The reply's windowNote names the next page to continue from.",
+            "description": "1-based provider page (default 1). The reply's `nextPage` names the next one.",
             "type": "number"
           },
           "pageSize": {
-            "description": "Rows fetched per provider page (default 100, max 200). Up to 5 pages are scanned per call.",
+            "description": "Alias of `limit`, accepted for compatibility - the same knob now that filtering happens server-side. Send either spelling, never both spellings in the same call.",
             "type": "number"
           }
         },

@@ -1,5 +1,5 @@
 /**
- * `pendle.pt.redeem` — a MATURED PT back to its accounting asset.
+ * `pendle.pt.redeem` - a MATURED PT back to its accounting asset.
  *
  * TWO PATHS, DELIVERING DIFFERENT ASSETS (P1-13). Convert's `redeemPyToToken`
  * pays the market's UNDERLYING; the API-independent `redeemPyToSy` fallback on
@@ -9,7 +9,7 @@
  *
  * EXIT PATH (R5b): the position this tool exists for is matured, so the market
  * is resolved through the EXIT resolver rather than the active-only one. The
- * fallback is GATED on proven maturity (P1-14) — `redeemPyToSy` burns PT alone,
+ * fallback is GATED on proven maturity (P1-14) - `redeemPyToSy` burns PT alone,
  * which pre-expiry must revert.
  */
 
@@ -49,7 +49,7 @@ export async function executePendleRedeem(p: Record<string, unknown>, context: P
   const chain = str(p, "chain"), tokenInRaw = str(p, "tokenIn"), amountInRaw = str(p, "amountIn");
   if (!chain || !tokenInRaw || !amountInRaw) return fail("Missing required: chain, tokenIn (PT), amountIn");
   // Hoisted for the catch (pattern: `internal/wallet/send-execute-evm.ts`). BOTH
-  // redeem paths broadcast — the Convert path and the `redeemPyToSy` fallback —
+  // redeem paths broadcast - the Convert path and the `redeemPyToSy` fallback -
   // and each is followed by a read-back that can throw. Declaring this inside
   // the `try` (as it was) put the hash out of the catch's reach.
   let txHash: Hex | undefined;
@@ -60,7 +60,7 @@ export async function executePendleRedeem(p: Record<string, unknown>, context: P
     const chainSlug = chainEntry.slug;
     const sessionId = context.sessionId;
     if (!sessionId) return fail(`${toolId} requires an active session.`);
-    // PT decimals read ON-CHAIN (unified with the swap input path) — NEVER from the
+    // PT decimals read ON-CHAIN (unified with the swap input path) - NEVER from the
     // global asset map: a cross-chain address collision there would feed parseUnits
     // and corrupt a real broadcast amount. resolveInputToken reads decimals from the
     // resolved chain's client (a PT is a plain ERC-20, never native).
@@ -68,7 +68,7 @@ export async function executePendleRedeem(p: Record<string, unknown>, context: P
     const ptAddress = ptToken.address;
     const ptDecimals = ptToken.decimals;
     // EXIT PATH (R5b): the whole point of redeem is a MATURED PT, which the
-    // active-only resolver could never see (G-02/D18 — the position the tool
+    // active-only resolver could never see (G-02/D18 - the position the tool
     // exists for was unreachable by the tool). An inactive row is believed only
     // on a parseable, past expiry; anything else is refused by name inside the
     // resolver.
@@ -109,9 +109,9 @@ export async function executePendleRedeem(p: Record<string, unknown>, context: P
     const slippage = resolvePendleSlippage("pendle.pt.redeem", num(p, "slippageBps"));
 
     let outHuman = 0;
-    /** What the Convert route ADVERTISED — reported beside the fill, never as it. */
+    /** What the Convert route ADVERTISED - reported beside the fill, never as it. */
     let quotedOutHuman = 0;
-    /** RAW base-unit output amount for the capture — the DECODED credit. */
+    /** RAW base-unit output amount for the capture - the DECODED credit. */
     let outAmountRaw = "0";
     let usedFallback = false;
     /**
@@ -119,7 +119,7 @@ export async function executePendleRedeem(p: Record<string, unknown>, context: P
      * deliver DIFFERENT tokens: Convert's `redeemPyToToken` pays the market's
      * underlying, while the `redeemPyToSy` fallback pays SY. The capture used to
      * record `underlyingAsset` for BOTH, so a fallback redeem booked an asset the
-     * wallet does not hold — with amount "0" and the full input USD attached to
+     * wallet does not hold - with amount "0" and the full input USD attached to
      * it. Same tool, same params, a different asset, and nothing in the record
      * said so.
      */
@@ -151,7 +151,7 @@ export async function executePendleRedeem(p: Record<string, unknown>, context: P
       const intent: PendleTxIntent = {
         action: "redeem",
         wallet,
-        // The tolerance this route is held to — see calldata/price-floor.ts.
+        // The tolerance this route is held to - see calldata/price-floor.ts.
         slippageBps: slippage.bps,
         inputToken: ptAddress,
         inputAmountWei: amountWei,
@@ -189,7 +189,7 @@ export async function executePendleRedeem(p: Record<string, unknown>, context: P
       // API-independent fallback (matured PT only): redeemPyToSy on the pinned Router.
       // GATE FIRST (P1-14): this branch is reached for ANY non-`redeem-py` answer,
       // including a healthy `"swap"` and any transport failure, and redeemPyToSy
-      // burns PT alone — which pre-expiry MUST revert. Refuse by name instead of
+      // burns PT alone - which pre-expiry MUST revert. Refuse by name instead of
       // approving the PT and broadcasting a doomed call.
       assertPtMaturedForFallback(market.expiry);
       usedFallback = true;
@@ -201,7 +201,7 @@ export async function executePendleRedeem(p: Record<string, unknown>, context: P
       }
       deliveredAsset = getAddress(market.sy);
       deliveredPath = "router_fallback_redeemPyToSy";
-      // The floor needs the SY exchange rate (share-based SY — see
+      // The floor needs the SY exchange rate (share-based SY - see
       // redeem-fallback.ts); built BEFORE the approval so a rate-read refusal
       // leaves no allowance behind.
       const plan = await buildRedeemPyToSyPlan({
@@ -233,7 +233,7 @@ export async function executePendleRedeem(p: Record<string, unknown>, context: P
       );
       txHash = broadcast.txHash;
       if (broadcast.kind !== "confirmed") return unsettledResult(toolId, broadcast);
-      // The fallback now HAS a measured output — the decoded SY credit.
+      // The fallback now HAS a measured output - the decoded SY credit.
       outAmountRaw = broadcast.executed.amountOutRaw ?? "0";
       outHuman = humanAmount(outAmountRaw, syDecimals);
     }

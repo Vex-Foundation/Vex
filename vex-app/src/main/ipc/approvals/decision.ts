@@ -24,7 +24,7 @@ import {
 } from "@shared/schemas/approvals.js";
 import { log } from "../../logger/index.js";
 import { registerHandler } from "../register-handler.js";
-import { ensureEngineDbUrl } from "../runtime/_ensure-engine-db-url.js";
+import { ensureEngineDbUrl } from "../../database/engine-db-readiness.js";
 import { dispatchPreparedMission } from "../mission/_engine-dispatch.js";
 import {
   approvalsDispatchFailedError,

@@ -1,5 +1,5 @@
 /**
- * Uniswap protocol handlers — aggregates the module handler maps.
+ * Uniswap protocol handlers - aggregates the module handler maps.
  */
 
 import type { ProtocolHandler } from "../types.js";

@@ -22,16 +22,30 @@ const mockReadErc20Metadata = vi.fn(async (_slug: string, address: string) => ({
   address, symbol: "TKN", name: "Token", decimals: 18, isNative: false as const,
 }));
 
-vi.mock("@tools/kyberswap/evm-utils.js", () => ({
-  getKyberEvmClients: () => ({ publicClient: {}, walletClient: {} }),
+vi.mock("@tools/kyberswap/evm-utils.js", async () => ({
+  ...(await import("./evm-client.test-fixtures.js")).kyberEvmClientMocks(),
   readErc20Metadata: (...args: [string, string]) => mockReadErc20Metadata(...args),
   verifyRouterAddress: vi.fn(),
-  planKyberAllowance: vi.fn(),
+  planKyberAllowance: vi.fn().mockResolvedValue({ needsReset: false, needsApprove: false }),
   buildApproveCalldata: vi.fn(),
   signStageBroadcast: vi.fn(),
   decodeKyberSwapSettlement: vi.fn(),
 }));
 
+const mockResolveSelectedAddressForRead = vi.fn(
+  (..._args: unknown[]) => "0x1234567890AbcdEF1234567890aBcdef12345678",
+);
+vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
+  resolveSelectedAddressForRead: (...args: unknown[]) => mockResolveSelectedAddressForRead(...args),
+  resolveSelectedAddress: vi.fn(),
+  resolveSigningWallet: vi.fn(),
+  walletScopeErrorToResult: vi.fn(),
+}));
+
+// The wallet is FAKED like every other suite in this directory: without this the
+// handler resolves the selected wallet from the machine's real configuration, so
+// the executable cases passed only where a wallet happened to exist and answered
+// balance_unavailable on a clean runner (measured on CI run 33861355864).
 vi.mock("@tools/kyberswap/token-api/client.js", () => ({
   getKyberTokenApiClient: () => ({
     searchTokens: vi.fn().mockResolvedValue([]),
@@ -40,8 +54,26 @@ vi.mock("@tools/kyberswap/token-api/client.js", () => ({
 }));
 
 const mockGetRoute = vi.fn();
+/**
+ * The quote asks `/route/build` for the ACTUAL transaction shape so the native
+ * debit can be priced from the call that would really run. `gas` is required by
+ * the provider's own response validator, so a build without it is a response the
+ * client would already have refused. MEASURED live on Base 2026-08-31.
+ */
+const mockBuildRoute = vi.fn().mockResolvedValue({
+  data: {
+    amountIn: "10000000", amountInUsd: "10", amountOut: "21335790672285165158400", amountOutUsd: "9.99",
+    gas: "287581", gasUsd: "0.0042",
+    data: "0xdeadbeef",
+    routerAddress: "0x6131B5fae19EA4f9D964eAc0408E4408b66337b5",
+    transactionValue: "0",
+  },
+});
 vi.mock("@tools/kyberswap/aggregator/client.js", () => ({
-  getKyberAggregatorClient: () => ({ getRoute: (...a: unknown[]) => mockGetRoute(...a), buildRoute: vi.fn() }),
+  getKyberAggregatorClient: () => ({
+    getRoute: (...a: unknown[]) => mockGetRoute(...a),
+    buildRoute: (...a: unknown[]) => mockBuildRoute(...a),
+  }),
 }));
 
 vi.mock("@utils/logger.js", () => {
@@ -50,7 +82,11 @@ vi.mock("@utils/logger.js", () => {
 });
 
 import { KYBERSWAP_HANDLERS } from "@vex-agent/tools/protocols/kyberswap/handlers.js";
-import { digestSnapshotRaw } from "@vex-agent/tools/protocols/quote-authority/snapshot.js";
+import {
+  digestRouteSnapshot,
+  digestSnapshotRaw,
+} from "@vex-agent/tools/protocols/quote-authority/snapshot.js";
+import { boundDebitPlanSchema } from "@vex-agent/tools/protocols/quote-authority/debit-plan.js";
 import { computeApprovedMinOut } from "@tools/kyberswap/swap-price-floor.js";
 import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 
@@ -125,7 +161,17 @@ describe("an executable quote", () => {
     const snapshot = required(result.quoteAuthority?.routeSnapshot, "a stored route snapshot");
     const raw = String(snapshot.raw);
     expect(snapshot.provider).toBe("kyberswap");
-    expect(snapshot.digest).toBe(digestSnapshotRaw(raw));
+    // The digest covers the stored bytes AND the transaction set this quote
+    // bound (WP2-B), so it is no longer the bytes' own hash alone.
+    const debitPlan = boundDebitPlanSchema.parse(snapshot.debitPlan);
+    // Recomputed over the FULL bound field set (the seal covers the floor,
+    // the slippage and the expiry too, not only bytes + plan).
+    expect(snapshot.digest).toBe(
+      digestRouteSnapshot({ ...(snapshot as Parameters<typeof digestRouteSnapshot>[0]), raw, debitPlan }),
+    );
+    expect(snapshot.digest).not.toBe(digestSnapshotRaw(raw));
+    // A quote with no allowance to grant sends exactly one transaction.
+    expect(debitPlan.legs.map((leg) => leg.role)).toEqual(["swap"]);
     // The stored string parses back to the provider's own summary, verbatim.
     expect(JSON.parse(raw)).toEqual(priced.data.routeSummary);
     expect(snapshot.approvedAmountOutRaw).toBe(AMOUNT_OUT);

@@ -265,16 +265,38 @@ describe("session Markdown export", () => {
     ).toBe("key [redacted]-2026-07-12.md");
   });
 
-  it("writes a private temporary file and atomically renames it", async () => {
+  it("writes a temporary file and atomically renames it", async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), "vex-md-export-"));
     dirs.push(dir);
     const destination = path.join(dir, "session.md");
     await writeMarkdownAtomically(destination, "# Session\n");
 
     expect(await readFile(destination, "utf8")).toBe("# Session\n");
-    expect((await stat(destination)).mode & 0o777).toBe(0o600);
     expect(await readdir(dir)).toEqual(["session.md"]);
   });
+
+  /**
+   * POSIX mode bits are kernel-enforced on macOS and Linux. On Windows libuv
+   * maps `mode` onto the read-only attribute alone, so the group/other bits
+   * that make the export private have no NTFS representation and the check
+   * would measure nothing there.
+   *
+   * `it.skipIf` rather than an inline `if`: a skipped test is visible in the
+   * reporter, while a swallowed assertion reports as PASSING on the one
+   * platform where it proved nothing. The atomic-rename and no-leftover-temp
+   * contract above still runs on all three lanes.
+   */
+  it.skipIf(process.platform === "win32")(
+    "gives the exported transcript mode 0600",
+    async () => {
+      const dir = await mkdtemp(path.join(os.tmpdir(), "vex-md-export-"));
+      dirs.push(dir);
+      const destination = path.join(dir, "session.md");
+      await writeMarkdownAtomically(destination, "# Session\n");
+
+      expect((await stat(destination)).mode & 0o777).toBe(0o600);
+    },
+  );
 
   it("cleans the temporary file when the final rename fails", async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), "vex-md-export-"));

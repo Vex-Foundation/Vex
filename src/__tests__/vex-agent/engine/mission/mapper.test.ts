@@ -241,6 +241,7 @@ describe("mission mapper", () => {
       decimals: 18,
       chainId: 4663,
       assetAddress: "0x0f9f0000000000000000000000000000000000ee",
+      assetKind: "token" as const,
       assetSymbol: "VEX",
     };
 
@@ -292,7 +293,7 @@ describe("mission mapper", () => {
       const context = draftToPromptContext(makeMission({
         capitalSourceJson: { type: "wallet", amount: "500 USDC", deployedCapital: DECLARED },
       }));
-      expect(context).toContain("**Deployed capital:** 3044 VEX (raw 3044000000000000000000 at 18 decimals) on chain 4663, asset 0x0f9f0000000000000000000000000000000000ee. This is the declared measurement base, not a spend limit.");
+      expect(context).toContain("**Deployed capital:** 3044 VEX (raw 3044000000000000000000 at 18 decimals) on chain 4663, asset 0x0f9f0000000000000000000000000000000000ee, kind token. This is the declared measurement base, not a spend limit.");
     });
 
     it("omits the prompt line entirely when nothing was declared", () => {

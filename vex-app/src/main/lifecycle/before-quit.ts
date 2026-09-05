@@ -13,6 +13,7 @@
 
 import { app, BrowserWindow, dialog } from "electron";
 import { globalCleanup } from "./cleanup-registry.js";
+import { QUIT_TOTAL_DEADLINE_MS, runQuitStage } from "./quit-stage.js";
 import { log } from "../logger/index.js";
 
 /**
@@ -120,7 +121,14 @@ export function installBeforeQuitHook(): void {
     event.preventDefault();
     void (async () => {
       try {
-        await globalCleanup.runAll();
+        // THE BACKSTOP THAT GUARANTEES THE PROCESS LEAVES. Every task inside
+        // the registry already carries its own deadline; this bounds the whole
+        // set, so a participant that escapes its own budget still cannot hold
+        // `will-quit` open forever. `runQuitStage` names whatever it abandons
+        // and never rejects, so `app.exit(0)` is reached on every path.
+        await runQuitStage("globalCleanup.runAll", QUIT_TOTAL_DEADLINE_MS, () =>
+          globalCleanup.runAll(),
+        );
       } catch (err) {
         log.error("[will-quit] cleanup failed", err);
       } finally {

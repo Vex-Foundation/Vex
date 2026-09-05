@@ -111,14 +111,26 @@ describe("writeProvider", () => {
     expect(readDotenvFileValue("AGENT_MODEL", envFile)).toBe("new-model");
   });
 
-  it("writes the non-secret env file with mode 0o600", async () => {
-    if (process.platform === "win32") return;
-    await writeProvider(
-      { provider: "openrouter", apiKey: "sk-or-test", model: "x" },
-      { envFile },
-    );
-    expect(statSync(envFile).mode & 0o777).toBe(0o600);
-  });
+  /**
+   * POSIX mode bits are kernel-enforced on macOS and Linux. On Windows libuv
+   * maps `mode` onto the read-only attribute alone, so the group/other bits
+   * this asserts have no NTFS representation and the check measures nothing
+   * there - see the per-platform note in `compose/electron-secret-adapter.ts`.
+   *
+   * `it.skipIf` rather than a bare early `return`: a skipped test is visible
+   * in the reporter, while an early return reports as PASSING on the one
+   * platform where it proved nothing.
+   */
+  it.skipIf(process.platform === "win32")(
+    "writes the non-secret env file with mode 0o600",
+    async () => {
+      await writeProvider(
+        { provider: "openrouter", apiKey: "sk-or-test", model: "x" },
+        { envFile },
+      );
+      expect(statSync(envFile).mode & 0o777).toBe(0o600);
+    },
+  );
 
   it("returns the locked-vault error before writing non-secret config", async () => {
     sessionMocks.writeUnlockedSecrets.mockReturnValue({

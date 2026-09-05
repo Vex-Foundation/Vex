@@ -1,5 +1,5 @@
 /**
- * Build the MCP server over ONE accepted socket.
+ * Build the MCP server over ONE accepted wire.
  *
  * Split from the host because it is not host state: it owns the dynamic import
  * of the engine's transport and server modules, the close-before-ready latch,
@@ -39,12 +39,17 @@ export function serveOverSocket(
       import("@vex-agent/mcp/socket-transport.js"),
       import("@vex-agent/mcp/server.js"),
     ]);
-    const transport = new StudioSocketTransport(input.socket, {
+    const transport = new StudioSocketTransport(input.wire, {
       remainder: input.remainder,
       writeLine: input.writeLine,
       onFailure: (failure) => {
         input.onWireFailure(failure.kind);
       },
+      // The transport is the OWNER of the two transitions only it can see - an
+      // inbound envelope reaching the queue and an outbound line reaching the
+      // wire - and the connection is the owner of the LINE. This is the wire
+      // between them; nothing here decides anything.
+      onLifecycle: input.onWireLifecycle,
     });
     // The dynamic import is the widest await in the whole establish chain.
     // A lock inside it must not be overtaken into a serving connection.
@@ -74,7 +79,7 @@ export function serveOverSocket(
     // persistent fact, so replay it after `serveStudioMcpConnection`
     // synchronously starts the transport. The method is idempotent when the
     // live listener also saw it.
-    if (input.socket.readableEnded) transport.notifyPeerEnd();
+    if (input.wire.readableEnded) transport.notifyPeerEnd();
     if (closed || deps.epoch !== deps.currentEpoch()) await inner.close();
   })().catch((cause: unknown) => {
     // THE SERVE PATH FAILED TO EXIST. Before this, a failed SDK import or a

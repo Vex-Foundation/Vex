@@ -1,7 +1,7 @@
 {
   "definition": {
     "function": {
-      "description": "Cross-chain token search: resolve a symbol, name, or address to exact token metadata across Khalani's chains. This is the engine behind `TokenFind`, the canonical token resolver - prefer that shortcut (one call, its schema already in front of you); reach for this tool only when `TokenFind` is not enough. Use either before any EVM mutation to get exact contract addresses. Its chain universe is KHALANI-REGISTERED CHAINS ONLY and that set is dynamic - list it with `khalani__chains_list` rather than assuming it. App-local chains such as Robinhood Chain (4663) are NOT resolvable here; there use `dexscreener__pairs_search` (symbol to address lookup on the chain slug), `WalletTrackToken` (save a token so Vex tracks it on app-local chains, action:\"list\" for the tracked set), or `WalletBalances` (the tokens the wallet actually holds). RETURNS `count` and `tokens`, one concise row per match: `symbol`, `name`, `address`, `chainId`, `decimals`, plus `priceUsd`, `balance` and `isRiskToken` when the provider carried them. A ticker can match SEVERAL contracts across chains, so pick the row whose `chainId` is the chain you are about to act on rather than the first row. The provider answers with its own match set in one reply; there is no pagination.",
+      "description": "Search Khalani's own cross-chain token registry by symbol, name, or address. Use this when researching provider-listed candidates on Khalani-registered chains, never to authorize an EVM amount or approval: its symbol and decimals are provider metadata. For any EVM mutation use the stable TokenFind tool with exactly one target chain; TokenFind routes Khalani-covered and local chains itself, reads EVM symbol and decimals from the contract, reports ambiguity and provider caps, and refuses mutation readiness when identity is incomplete. This tool's chain universe is KHALANI-REGISTERED CHAINS ONLY and dynamic; list it with `khalani__chains_list`. Robinhood Chain (4663) is outside this raw provider surface, so do not route it manually from here. RETURNS `count` and `tokens`, one concise provider row per match: `symbol`, `name`, `address`, `chainId`, `decimals`, plus `priceUsd`, `balance` and `isRiskToken` when carried. A ticker can match several contracts across chains. The provider answers with its own match set in one reply; there is no pagination.",
       "name": "khalani__tokens_search",
       "parameters": {
         "additionalProperties": false,
@@ -18,7 +18,7 @@
                 "type": "array"
               }
             ],
-            "description": "Comma-separated chain IDs or aliases. Accepts either a comma-separated string (\"1,8453\") or an array of strings ([\"1\",\"8453\"]) — the two are equivalent."
+            "description": "Comma-separated chain IDs or aliases. Accepts either a comma-separated string (\"1,8453\") or an array of strings ([\"1\",\"8453\"]) - the two are equivalent."
           },
           "query": {
             "description": "Search phrase or token address.",

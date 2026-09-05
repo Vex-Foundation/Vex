@@ -27,9 +27,11 @@ import {
 import {
   authorizedDepositRecipients,
   confirmDepositWithProvenAmounts,
+  depositShortfallOf,
   proveErc20DepositAmount,
   receiptDepositSettlement,
   type DepositSettlement,
+  type DepositShortfall,
 } from "@vex-agent/tools/protocols/bridge-deposit-evidence.js";
 import logger from "@utils/logger.js";
 import { VexError, ErrorCodes } from "../../../../../../errors.js";
@@ -63,13 +65,23 @@ export interface KhalaniLegLoopInput {
   readonly sessionId: string;
   readonly params: Record<string, unknown>;
   readonly pendingBase: KhalaniBridgePendingBase;
-  /** Appended in place — the handler renders the same array in its result. */
+  /** Appended in place - the handler renders the same array in its result. */
   readonly recordedLegs: RecordedLeg[];
 }
 
 export type KhalaniLegLoopOutcome =
   /** Every bridge leg confirmed on-chain; `depositTxHash` is `undefined` only in the unreachable no-deposit case. */
-  | { readonly outcome: "confirmed"; readonly depositTxHash: string | undefined; readonly currentIndex: number }
+  | {
+      readonly outcome: "confirmed";
+      readonly depositTxHash: string | undefined;
+      readonly currentIndex: number;
+      /**
+       * The deposit's receipt proved LESS than the quote bridged, or `null`
+       * when it met the floor. A shortfall makes the Vex fee leg ineligible
+       * (`bridge-deposit-evidence.ts`): the caller must not run it.
+       */
+      readonly depositShortfall: DepositShortfall | null;
+    }
   /** The loop stopped and the handler must return this result verbatim. */
   | { readonly outcome: "halted"; readonly result: ToolResult; readonly currentIndex: number };
 
@@ -111,6 +123,7 @@ function khalaniDepositSettlement(
     });
   return receiptDepositSettlement(proveErc20DepositAmount({
     logs: outcome.receiptLogs,
+    chainId: input.fromChainId,
     tokenAddress: evidence.kind === "vex_built_erc20_transfer" ? evidence.token : input.fromToken,
     senderAddress: input.signer.address,
     recipients,
@@ -128,12 +141,15 @@ export async function runKhalaniBridgeLegs(input: KhalaniLegLoopInput): Promise<
   } = input;
 
   let depositTxHash: string | undefined;
+  // What the deposit's own receipt proved against what the plan bridged. Read
+  // by the caller's fee decision: a shortfall makes the Vex fee leg ineligible.
+  let depositShortfall: DepositShortfall | null = null;
   let currentIndex = 0;
   // Read-after-write anchor for the NEXT leg: the allowance this loop just
   // confirmed is exactly the state the deposit leg's pre-sign estimate depends
   // on, and the estimating node does not always have it yet (live 2026-07-24,
   // allowance `0x2445ce73…` confirmed, deposit refused with "ERC20: transfer
-  // amount exceeds allowance", immediate retry succeeded — see
+  // amount exceeds allowance", immediate retry succeeded - see
   // `dependent-leg-gas-estimate.ts`). `null` for Solana legs: no EVM anchor.
   let priorLeg: ConfirmedPriorLeg | undefined;
   try {
@@ -148,12 +164,12 @@ export async function runKhalaniBridgeLegs(input: KhalaniLegLoopInput): Promise<
       if (outcome.kind === "ambiguous") {
         logger.info("khalani.bridge.leg_ambiguous", { id: legRow.id, role: stagedLeg.role, stage: outcome.stage });
         recordedLegs.push({ role: stagedLeg.role, chain: fromChainName, txHash: outcome.txHash, explorerUrl: txExplorerUrl(fromChainId, chains, outcome.txHash), status: "broadcast_unconfirmed" });
-        // Do NOT submit to Khalani — the deposit hash is staged.
+        // Do NOT submit to Khalani - the deposit hash is staged.
         if (stagedLeg.isDeposit) {
           // Blocker 1: an ambiguous DEPOSIT hash MAY have landed on-chain. The
           // logical `bridge_fill_expected` row + the in-flight guard MUST stay
           // pending so W4's null-order-id recovery reconciles the deposit hash
-          // against the provider — terminalizing it here would release the guard
+          // against the provider - terminalizing it here would release the guard
           // mid-flight and permit a duplicate bridge. Abort ONLY the never-signed
           // sibling legs strictly BELOW the expected-fill event index (normally
           // none, since the deposit is the last broadcast leg); the exclusive
@@ -163,7 +179,7 @@ export async function runKhalaniBridgeLegs(input: KhalaniLegLoopInput): Promise<
         } else {
           // An upstream allowance ended ambiguously and NO deposit was broadcast,
           // so nothing is in flight; abort the whole remaining plan (including the
-          // logical row) to release the guard — W4 cannot recover a row that has
+          // logical row) to release the guard - W4 cannot recover a row that has
           // no staged deposit hash.
           await abortRemaining(executionId, i + 1, `earlier ${stagedLeg.role} ambiguous`);
         }
@@ -171,7 +187,7 @@ export async function runKhalaniBridgeLegs(input: KhalaniLegLoopInput): Promise<
           outcome: "halted", currentIndex,
           result: bridgeResult({
             ...pendingBase, success: false, status: "pending",
-            message: `The ${stagedLeg.role} transaction (${outcome.txHash}) could not be confirmed yet — it may still settle on-chain. Do not re-bridge; this attempt is recorded and tracked automatically.`,
+            message: `The ${stagedLeg.role} transaction (${outcome.txHash}) could not be confirmed yet - it may still settle on-chain. Do not re-bridge; this attempt is recorded and tracked automatically.`,
             legs: recordedLegs, depositTxHash: stagedLeg.isDeposit ? outcome.txHash : undefined,
           }),
         };
@@ -194,7 +210,7 @@ export async function runKhalaniBridgeLegs(input: KhalaniLegLoopInput): Promise<
         };
       }
 
-      // Confirmed on-chain — record the leg from its own receipt, but RESPECT
+      // Confirmed on-chain - record the leg from its own receipt, but RESPECT
       // the CAS result (m5, mirrors Phase-1 C41): a miss that is not a benign
       // already-confirmed-with-the-SAME-hash race means Vex's own record of the
       // (real) on-chain settlement did not persist, so the leg is reported
@@ -206,13 +222,17 @@ export async function runKhalaniBridgeLegs(input: KhalaniLegLoopInput): Promise<
         // deposit leg declares only what its own receipt proves, or declines by
         // name (`bridge-deposit-evidence.ts`). Confirming a leg proves inclusion
         // and never, on its own, the principal it carried.
-        const confirmResult = stagedLeg.isDeposit
+        const settlement = stagedLeg.isDeposit
+          ? khalaniDepositSettlement(stagedLeg, outcome, input)
+          : null;
+        if (settlement !== null) depositShortfall = depositShortfallOf(settlement);
+        const confirmResult = settlement !== null
           ? await confirmDepositWithProvenAmounts({
             eventId: legRow.id,
             role: legRow.eventRole,
             txHash: outcome.txHash,
             chainId: fromChainId,
-            settlement: khalaniDepositSettlement(stagedLeg, outcome, input),
+            settlement,
             logScope: "khalani.bridge",
           })
           : await confirmActivityEvent(
@@ -241,14 +261,14 @@ export async function runKhalaniBridgeLegs(input: KhalaniLegLoopInput): Promise<
     };
   }
 
-  return { outcome: "confirmed", depositTxHash, currentIndex };
+  return { outcome: "confirmed", depositTxHash, currentIndex, depositShortfall };
 }
 
 /**
  * A post-intent failure (e.g. a CAS-miss throw) NEVER creates a second
  * execution: the remaining never-signed rows are aborted and the SAME
  * execution id is returned. The three named branches are refusals that signed
- * NOTHING — reporting them as an interruption of unknown scope is what turned
+ * NOTHING - reporting them as an interruption of unknown scope is what turned
  * a transient RPC lag into a permanent, funded-looking failure (live
  * 2026-07-24), so each says so explicitly instead.
  */
@@ -276,7 +296,7 @@ async function renderPostIntentFailure(
   }
   // The signer's native-value backstop. Step 8 should already have refused
   // this plan, so reaching here means the exposure changed AFTER the intent
-  // was recorded — but it is still a refusal that signed nothing.
+  // was recorded - but it is still a refusal that signed nothing.
   if (err instanceof VexError && err.code === ErrorCodes.NATIVE_VALUE_UNAUTHORIZED) {
     return bridgeResult({
       ...pendingBase, success: false, status: "not_attempted",
@@ -286,7 +306,7 @@ async function renderPostIntentFailure(
   }
   // The signer's gas-ceiling backstop (W6/6a), same shape and same reasoning
   // as the native-value branch above. Carried here rather than left to the
-  // generic tail because `safeMessage` is capped — the cap holds the numbers,
+  // generic tail because `safeMessage` is capped - the cap holds the numbers,
   // this sentence holds the action.
   if (err instanceof VexError && err.code === ErrorCodes.PROVIDER_GAS_LIMIT_EXCESSIVE) {
     return bridgeResult({
@@ -297,7 +317,7 @@ async function renderPostIntentFailure(
   }
   return bridgeResult({
     ...pendingBase, success: false, status: "pending",
-    message: `An internal error interrupted the bridge after it was recorded — ${safeMessage}. Check the record (execution ${executionId}) before any further action; do not re-bridge.`,
+    message: `An internal error interrupted the bridge after it was recorded - ${safeMessage}. Check the record (execution ${executionId}) before any further action; do not re-bridge.`,
     legs: recordedLegs, depositTxHash,
   });
 }

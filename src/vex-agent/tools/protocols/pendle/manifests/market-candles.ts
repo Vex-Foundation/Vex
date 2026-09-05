@@ -3,7 +3,7 @@ import { PENDLE_MARKET_READ_DISCOVERY } from "../../embeddings/pendle/market-rea
 import { PENDLE_READ_MAX_SERIES_POINTS } from "../market-read-params.js";
 
 /**
- * `pendle.market.candles` — OHLCV for one PT / YT / LP asset.
+ * `pendle.market.candles` - OHLCV for one PT / YT / LP asset.
  *
  * The description names the endpoint's documented volume defect up front (LP
  * volume is always 0 here) so an agent never concludes "this pool does not
@@ -17,7 +17,7 @@ export const PENDLE_MARKET_CANDLES_TOOL: ProtocolToolManifest = {
   namespace: "pendle",
   lifecycle: "active",
   description:
-    "Price candles (open/high/low/close/volume) for ONE Pendle asset — a PT, a YT or an LP token — at hourly, daily " +
+    "Price candles (open/high/low/close/volume) for ONE Pendle asset - a PT, a YT or an LP token - at hourly, daily " +
     "or weekly resolution. Use it to see how a PT's price has moved before buying or exiting one. RETURNS " +
     "`summary`, `chain`, `asset`, `timeFrame`, `currency`, `requestedWindow` with its `from` and `to`, `count`, " +
     "`total`, `truncated` and a `truncationNote` when it is true, `firstClose`, `lastClose`, " +

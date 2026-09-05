@@ -208,6 +208,48 @@ describe("agentScanReadInputSchema", () => {
     ).toBe(false);
   });
 
+  it("requires projectId to be a uuid", () => {
+    expect(
+      agentScanReadInputSchema.safeParse({ filters: { projectId: "not-a-uuid" } })
+        .success,
+    ).toBe(false);
+    expect(
+      agentScanReadInputSchema.safeParse({
+        filters: { projectId: "33333333-4444-4555-8666-777777777777" },
+      }).success,
+    ).toBe(true);
+  });
+
+  it("REFUSES sessionId and projectId together, BY NAME - two scopes are not a scope", () => {
+    const parsed = agentScanReadInputSchema.safeParse({
+      filters: {
+        sessionId: "11111111-2222-4333-8444-555555555555",
+        projectId: "33333333-4444-4555-8666-777777777777",
+      },
+    });
+    expect(parsed.success).toBe(false);
+    if (parsed.success) return;
+    // Rule 90: a forbidden combination is refused by NAME, never silently
+    // reduced to one of the two - a request that quietly dropped one id would
+    // read a scope the caller never asked for.
+    const issue = parsed.error.issues[0];
+    expect(issue?.path).toEqual(["filters", "projectId"]);
+    expect(issue?.message).toContain("projectId");
+    expect(issue?.message).toContain("sessionId");
+  });
+
+  it("accepts a projectId beside the ordinary filters", () => {
+    expect(
+      agentScanReadInputSchema.safeParse({
+        filters: {
+          kinds: ["swap"],
+          statuses: ["confirmed"],
+          projectId: "33333333-4444-4555-8666-777777777777",
+        },
+      }).success,
+    ).toBe(true);
+  });
+
   it("rejects unknown top-level and filter keys", () => {
     expect(agentScanReadInputSchema.safeParse({ walletAddress: "0x1" }).success).toBe(
       false,

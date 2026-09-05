@@ -3,11 +3,58 @@
 package main
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"os"
 	"syscall"
+	"time"
 
 	"github.com/Vex-Foundation/vex/bridge/internal/handshake"
 )
+
+// WindowsDialTimeout bounds the whole CreateFile attempt, including every
+// ERROR_PIPE_BUSY retry below.
+//
+// WHY A BOUND EXISTS AT ALL. CreateFile against a named pipe whose every
+// instance is busy returns ERROR_PIPE_BUSY immediately, so a client that wants
+// to wait must loop - and a loop without a deadline is an unbounded wait
+// inside somebody else's budget. Claude Code kills an MCP server that has not
+// come up within MCP_TIMEOUT (default 30 s), and a bridge that spent that
+// budget inside an open() reports nothing at all: the user sees "connection
+// timeout" with no cause, which is exactly the 2026-09-04 incident's shape.
+//
+// WHY FOUR SECONDS. The unix side bounds its connect at endpoint.DialTimeout
+// = 2 s. Windows is given twice that for one measured reason: the server here
+// is not a kernel socket backlog but the vex-pipe-front CHILD PROCESS, which
+// must post a fresh pipe instance through its accept loop after each
+// connection, so a burst of clients can find every instance busy for a
+// scheduling quantum that unix never spends. Four seconds is far longer than
+// that and still leaves at least 20 s of a default 30 s client budget for the
+// 5 s handshake ack and the first tools/list, which is the request this
+// connection actually exists to answer.
+//
+// It is NOT a retry (main.go's "NO RETRY, anywhere"): one dial, one deadline,
+// one sentence. The ERROR_PIPE_BUSY loop is the documented way to wait for an
+// instance of a pipe that IS there, which is what go-winio's tryDialPipe
+// (agents-colab/go-winio/pipe.go) does under its own context deadline.
+//
+// THE DEADLINE IS NOT THE ONLY WAY OUT. The wait runs under the caller's
+// context, which carries this process's SIGINT/SIGTERM/SIGHUP registration as
+// well as this bound, so a user who interrupts the bridge while its front is
+// saturated gets the teardown this program owns rather than four seconds of a
+// loop that observes nothing.
+const WindowsDialTimeout = 4 * time.Second
+
+// pipeBusyRetryInterval is the pause between ERROR_PIPE_BUSY attempts, the
+// same 10 ms go-winio's tryDialPipe uses. It is a poll rather than
+// WaitNamedPipe because the standard library exposes no WaitNamedPipe and this
+// binary links nothing beyond it (cmd/vex-pipe-front/imports_test.go).
+const pipeBusyRetryInterval = 10 * time.Millisecond
+
+// dialTimeoutRefusalCode names the bound in the sentence, so a support
+// transcript can match the message back to this rule.
+const dialTimeoutRefusalCode = "windows_pipe_busy_timeout"
 
 // Impersonation-level flags for CreateFile, absent from stdlib `syscall`.
 // Values and spelling match golang.org/x/sys/windows and WinBase.h.
@@ -15,6 +62,17 @@ const (
 	securitySQOSPresent    = 0x00100000 // SECURITY_SQOS_PRESENT
 	securityIdentification = 0x00010000 // SECURITY_IDENTIFICATION (SecurityIdentification << 16)
 )
+
+// errorPipeBusy is ERROR_PIPE_BUSY (winerror.h, 231): "All pipe instances are
+// busy." CreateFile returns it when the pipe NAME exists and every instance
+// the server has posted is already connected, which is the one dial failure a
+// client is meant to wait out rather than report.
+//
+// DEFINED LOCALLY for the same reason the SQOS flags above are: stdlib
+// `syscall` does not export it on windows (verified against the installed
+// go1.27.0 tree), and this binary deliberately links no third-party package.
+// The value is the one golang.org/x/sys/windows and go-winio carry.
+const errorPipeBusy = syscall.Errno(231)
 
 // dialPipe opens the Vex Studio named pipe for OVERLAPPED (asynchronous) I/O.
 //
@@ -76,40 +134,154 @@ const (
 // = 0x100000, SECURITY_IDENTIFICATION = SecurityIdentification << 16 with
 // SecurityIdentification = 1, i.e. 0x10000), verified in the vendored copy
 // inside the installed go1.27.0 tree. They are DEFINED LOCALLY below because
-// stdlib `syscall` does not export them and this module deliberately has no
-// dependencies.
+// stdlib `syscall` does not export them and THIS BINARY deliberately links no
+// third-party package. The claim is now binary-level rather than module-level:
+// the module requires go-winio and golang.org/x/sys for the packaged
+// `vex-pipe-front`, and `bridge/cmd/vex-pipe-front/imports_test.go` holds
+// `vex-mcp` to the standard library plus this module on every release target.
 //
 // NECESSARY, NOT SUFFICIENT. SQOS bounds what a hostile server can do with
 // our token; it does not tell us WHO the server is. The load-bearing
 // anti-squatting control is HOST AUTHENTICATION - GetNamedPipeServerProcessId
-// followed by a comparison of the server process token's SID against the
-// current user's, or an equivalent reviewed mechanism - and it is NOT
-// IMPLEMENTED HERE. It is Windows-runtime code that cannot be exercised on
-// the Linux development and CI hosts, and the transport is runtime-disabled,
-// so it is named as a REQUIRED-BEFORE-FLIP item in contract section 1.6
-// rather than written blind. Do not flip endpoint.WindowsTransportProven
-// until that check exists and its test runs on the `bridge-windows` job.
+// followed by a comparison of the server process token's user SID against
+// this process's - and it now runs HERE, in dialPipeWith, between CreateFile
+// returning a handle and that handle becoming a Conn the handshake could
+// write to. Its rationale, its citations and its limits live in
+// hostauth_windows.go.
 //
-// NONE OF THIS IS PROVEN ON A RUNNER YET. endpoint.WindowsTransportProven is
-// false, so this function is unreachable at runtime; the `bridge-windows` CI
-// job compiles it, and the contract's section 1.6 matrix is what must run
-// before the flag flips.
-func dialPipe(path string) (handshake.Conn, error) {
+// MEASURED ON A RUNNER, AND REACHED AT RUNTIME. endpoint.WindowsTransportProven
+// is true, so this is the production dial. The `bridge-windows` job proves it
+// on a real pipe rather than by construction: rows 5 and 6 of the contract's
+// 1.6 matrix (run 33663385959) drive this handle's overlapped duplex, its
+// deadlines and its close cancellation from dial_windows_test.go, and row 7
+// (run 33646484002) drives this exact path against a pipe served by a temporary
+// SECOND local account the job creates, where the host authentication below
+// refuses with `windows_host_not_current_user` and no byte is written.
+func dialPipe(ctx context.Context, path string) (handshake.Conn, error) {
+	return dialPipeWith(ctx, path, resolveServerUserSID, resolveCurrentUserSID)
+}
+
+// dialPipeWith is dialPipe with its identity sources injected, so the refusal
+// branches can be driven deterministically on a single-account runner. The
+// production call above is the only non-test caller.
+func dialPipeWith(
+	ctx context.Context,
+	path string,
+	server serverSIDResolver,
+	current userSIDResolver,
+) (handshake.Conn, error) {
+	return dialPipeWithin(ctx, path, WindowsDialTimeout, server, current)
+}
+
+// dialPipeWithin is dialPipeWith with the bound injected, so the deadline
+// branch is driven in milliseconds rather than in four real seconds.
+func dialPipeWithin(
+	ctx context.Context,
+	path string,
+	budget time.Duration,
+	server serverSIDResolver,
+	current userSIDResolver,
+) (handshake.Conn, error) {
 	name, err := syscall.UTF16PtrFromString(path)
 	if err != nil {
 		return nil, &os.PathError{Op: "open", Path: path, Err: err}
 	}
-	handle, err := syscall.CreateFile(
-		name,
-		syscall.GENERIC_READ|syscall.GENERIC_WRITE,
-		0,   // no sharing: this is a client handle to one pipe instance
-		nil, // default security attributes; the handle is not inherited
-		syscall.OPEN_EXISTING,
-		syscall.FILE_FLAG_OVERLAPPED|securitySQOSPresent|securityIdentification,
-		0,
-	)
+	// THE BOUND IS APPLIED HERE, on top of whatever the caller already
+	// carries: the deadline belongs to this transport and the cancellation
+	// belongs to the process, and a derived context is how both hold at once.
+	bounded, cancel := context.WithTimeout(ctx, budget)
+	defer cancel()
+	handle, err := createPipeHandleWithin(bounded, name, budget)
 	if err != nil {
+		if _, busy := asDialTimeout(err); busy {
+			return nil, err
+		}
+		if _, interrupted := asDialInterrupted(err); interrupted {
+			return nil, err
+		}
 		return nil, &os.PathError{Op: "open", Path: path, Err: err}
 	}
+	// BEFORE os.NewFile, therefore before any caller can hold something
+	// writable: on refusal the raw handle is closed here and nothing this
+	// process knows - the project id above all - has reached the pipe.
+	if refusal := authenticatePipeHost(handle, path, server, current); refusal != nil {
+		_ = syscall.CloseHandle(handle)
+		return nil, refusal
+	}
 	return os.NewFile(uintptr(handle), path), nil
+}
+
+// createPipeHandleWithin opens the pipe, waiting out ERROR_PIPE_BUSY until the
+// context is done.
+//
+// THE SHAPE IS go-winio's tryDialPipe (agents-colab/go-winio/pipe.go line
+// 207), written against the standard library because this binary links nothing
+// else: check the context, attempt, return on success, return on any error
+// that is not ERROR_PIPE_BUSY, otherwise wait a fixed interval and attempt
+// again. It differs from go-winio's loop in ONE way, deliberately: go-winio
+// waits with `time.Sleep`, so a cancellation that lands mid-wait is not seen
+// until the sleep is over. Here the wait is a select on the context and the
+// timer, so the loop leaves within a scheduling quantum of the cancel rather
+// than within an interval of it. The context is checked BEFORE every attempt
+// and it is the only thing the wait can lose to, so the loop can neither
+// overrun its deadline nor outlive an interrupted process.
+//
+// Exhaustion is a dialTimeout and interruption is a dialInterrupted; each
+// carries its own sentence. Every other failure is the operating system's and
+// keeps its errno so dialSentence can name ENOENT and the rest.
+func createPipeHandleWithin(
+	ctx context.Context,
+	name *uint16,
+	budget time.Duration,
+) (syscall.Handle, error) {
+	attempts := 0
+	for {
+		if err := ctx.Err(); err != nil {
+			return syscall.InvalidHandle, dialGaveUp(err, budget, attempts)
+		}
+		handle, err := syscall.CreateFile(
+			name,
+			syscall.GENERIC_READ|syscall.GENERIC_WRITE,
+			0,   // no sharing: this is a client handle to one pipe instance
+			nil, // default security attributes; the handle is not inherited
+			syscall.OPEN_EXISTING,
+			syscall.FILE_FLAG_OVERLAPPED|securitySQOSPresent|securityIdentification,
+			0,
+		)
+		attempts++
+		if err == nil {
+			return handle, nil
+		}
+		if !errors.Is(err, errorPipeBusy) {
+			return syscall.InvalidHandle, err
+		}
+		wait := time.NewTimer(pipeBusyRetryInterval)
+		select {
+		case <-ctx.Done():
+			wait.Stop()
+			return syscall.InvalidHandle, dialGaveUp(ctx.Err(), budget, attempts)
+		case <-wait.C:
+		}
+	}
+}
+
+// dialGaveUp turns the context's reason for being done into the sentence the
+// user is shown, keeping "the pipe stayed busy for its whole budget" and "this
+// process was asked to stop" apart: the first is an endpoint state that asking
+// again can change, the second is not about the endpoint at all.
+func dialGaveUp(reason error, budget time.Duration, attempts int) error {
+	if errors.Is(reason, context.Canceled) {
+		return &dialInterrupted{message: fmt.Sprintf(
+			"%s: the Vex Studio bridge was asked to stop while it was waiting for a free "+
+				"instance of the Vex Studio named pipe (%d attempts), so it stopped without "+
+				"sending anything.",
+			dialInterruptedRefusalCode, attempts)}
+	}
+	return &dialTimeout{message: fmt.Sprintf(
+		"%s: every instance of the Vex Studio named pipe was busy for %s "+
+			"(%d attempts), so the Vex Studio bridge stopped without sending "+
+			"anything. Vex is running but its pipe front is not accepting new "+
+			"connections; close some Vex Studio MCP connections, or restart Vex, "+
+			"and connect again.",
+		dialTimeoutRefusalCode, budget, attempts)}
 }

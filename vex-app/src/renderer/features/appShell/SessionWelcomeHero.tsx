@@ -1,13 +1,26 @@
 /**
  * Welcome stage crown - the rebrand hero (accepted mockup, 2026-08-20): the
- * vx script mark over a micro-label date eyebrow, the time-of-day greeting
- * headline, and the Agent | Studio runtime-mode toggle. The toggle itself lives
- * in `RuntimeModeToggle.tsx`: the Studio welcome screen mounts the same
- * control, so this hero is one of its two callers, not its owner. The parent
- * (`SessionPanel`) seats this directly above the composer and centers the
- * column; the "BACKED BY" footer band is retired. Load-in rides the one-shot
- * `.vex-rise` choreography; the composer and chips stagger on sibling
- * elements.
+ * vx script mark over a micro-label date eyebrow and the time-of-day greeting
+ * headline. The parent (`SessionPanel`) seats this directly above the composer
+ * and centers the column; the "BACKED BY" footer band is retired. Load-in
+ * rides the one-shot `.vex-rise` choreography; the composer and chips stagger
+ * on sibling elements.
+ *
+ * THE MODE CAPSULE SITS UNDER THE WORDMARK WHILE NO SESSION IS ACTIVE (owner
+ * decree 2026-09-04: "the Agent | Studio switch also under the vex wordmark on
+ * the welcome screen, as it was before"). The `Runtime mode` radiogroup still
+ * has exactly ONE home per page, and the seat is decided by ONE store fact,
+ * `activeSessionId`: null, the capsule is here under the mark; non-null, the
+ * agent rail header (`AgentSidebarHeader`) carries it and this hero mounts
+ * none. Both consumers read the same field, which is what keeps the count at
+ * one without a second flag (e2e/studio.spec.ts pins the count). An IDLE
+ * session still shows this hero (`SessionPanel` keeps the hero phase for a
+ * session with no transcript), and in that state the capsule is the rail's,
+ * not this hero's - a session is active, so the rail is its seat.
+ *
+ * deepseek's `EmptyHero`/`HeroShell` seats one primary choice directly under
+ * the brand mark in the hero stack and keeps everything else quiet; the
+ * capsule takes that seat here (mark -> capsule -> eyebrow -> headline).
  */
 
 import { useState, type JSX } from "react";
@@ -32,9 +45,6 @@ function eyebrowDate(): string {
 }
 
 export function SessionWelcomeHero(): JSX.Element {
-  const runtimeMode = useUiStore((s) => s.runtimeMode);
-  const setRuntimeMode = useUiStore((s) => s.setRuntimeMode);
-
   // Headline greeting (owner decision 2026-08-20, rotating pools): the
   // Vex-setup displayName through the SAME profile read SidebarProfile uses,
   // failing closed to the nameless draw for every non-success state. The
@@ -50,6 +60,12 @@ export function SessionWelcomeHero(): JSX.Element {
   const [rand01] = useState(() => Math.random());
   const [hour] = useState(() => new Date().getHours());
   const headline = pickGreeting(hour, displayName, rand01);
+  // The capsule takes the mode and the setter as props by contract; this hero
+  // holds the store subscription. `activeSessionId` is the ONE fact that seats
+  // the capsule (module note): null here, non-null in the rail header.
+  const runtimeMode = useUiStore((s) => s.runtimeMode);
+  const setRuntimeMode = useUiStore((s) => s.setRuntimeMode);
+  const activeSessionId = useUiStore((s) => s.activeSessionId);
 
   return (
     <div className="relative z-10 flex w-full flex-col items-center px-8 pb-2 text-center">
@@ -60,6 +76,9 @@ export function SessionWelcomeHero(): JSX.Element {
         <span aria-hidden className="text-brand-mark">
           <VexMark size={64} />
         </span>
+        {activeSessionId === null ? (
+          <RuntimeModeToggle runtimeMode={runtimeMode} onChange={setRuntimeMode} />
+        ) : null}
         <span
           className="vex-micro-label vex-micro-label--wide uppercase text-ink-secondary"
           title={PREVIEW_TITLE}
@@ -69,10 +88,6 @@ export function SessionWelcomeHero(): JSX.Element {
         <h1 className="font-display text-[30px] font-medium leading-[38px] tracking-[-0.01em] text-ink-primary">
           {headline}
         </h1>
-        <RuntimeModeToggle
-          runtimeMode={runtimeMode}
-          onChange={setRuntimeMode}
-        />
       </div>
     </div>
   );

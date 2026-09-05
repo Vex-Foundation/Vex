@@ -16,10 +16,19 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { ChainFamily } from "@tools/khalani/types.js";
 
 const mockScan = vi.fn();
+// The shared Khalani price enrichment now runs on this path too, so its ONE
+// provider boundary is scripted to answer nothing: rows Khalani left unpriced
+// stay unpriced, and no test in this suite reaches the network.
+vi.mock("@tools/dexscreener/price-read.js", () => ({
+  readTokensPairs: () => Promise.resolve([]),
+  readTokenPools: () => Promise.resolve([]),
+}));
+
 vi.mock("@tools/khalani/balances.js", async (importOriginal) => {
   const original = await importOriginal<typeof import("@tools/khalani/balances.js")>();
   return {
     getSelectedChainIdsForFamily: original.getSelectedChainIdsForFamily,
+    calculateTokensTotalUsd: original.calculateTokensTotalUsd,
     parseBalanceChainSelection: async (raw: string | undefined) => {
       if (!raw) return { rawProvided: false, byFamily: new Map() };
       return { rawProvided: true, byFamily: new Map<ChainFamily, number[]>() };
@@ -44,12 +53,29 @@ vi.mock("@tools/evm-chains/balances.js", () => ({
 
 const mockScanSet = vi.fn();
 vi.mock("@vex-agent/sync/local-chain-balance-sync.js", () => ({
-  buildTokenScanSet: (...a: unknown[]) => mockScanSet(...a),
+  buildLocalChainInventory: (...a: unknown[]) => mockScanSet(...a),
 }));
 
 vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
   resolveSelectedAddressForRead: () => "0xWALLET",
 }));
+
+import { buildLocalChainScanSet } from "@vex-agent/wallet-inventory/local-chain.js";
+
+/**
+ * The enumeration the mocked sync lane answers with: a seeds-and-pins scan set,
+ * built by the REAL union owner so the shape under test is never a hand-written
+ * imitation of it. No indexer, which is exactly the state a local chain reports
+ * when Blockscout answered nothing.
+ */
+function scanSetOf(addresses: readonly string[], chainId = 4663) {
+  return buildLocalChainScanSet({
+    chainId,
+    seedAddresses: addresses,
+    pinnedAddresses: [],
+    indexer: null,
+  });
+}
 
 const { handleWalletBalances } = await import(
   "../../../../../vex-agent/tools/internal/wallet/read.js"
@@ -82,16 +108,32 @@ function localRead() {
   };
 }
 
-type Row = { symbol: string; priceUsd?: string; priceUnavailable?: boolean };
+type Row = { symbol: string; priceUsd?: string | null; priceUnavailable?: boolean };
 
 /** Only the fields these tests assert on; the handler emits more. */
 type Snapshot = {
   tokens: Row[];
   tokenCount: number;
   unpricedOmitted?: number;
+  unpricedHeldCount: number;
+  inventorySources: Array<{ chainId: number; observedAt: string | null }>;
   truncated: boolean;
   truncationNote?: string;
 };
+
+/**
+ * A snapshot with its per-chain observation times replaced by a constant, so
+ * two live reads taken milliseconds apart can be compared field for field.
+ */
+function withNormalisedObservationTimes(snapshot: Snapshot): Snapshot {
+  return {
+    ...snapshot,
+    inventorySources: snapshot.inventorySources.map((source) => ({
+      ...source,
+      observedAt: source.observedAt === null ? null : "OBSERVED_AT",
+    })),
+  };
+}
 
 async function tokensFor(params: Record<string, unknown>): Promise<Row[]> {
   const res = await handleWalletBalances({ walletFamily: "eip155", chainIds: "robinhood", ...params }, CONTEXT);
@@ -102,7 +144,7 @@ async function tokensFor(params: Record<string, unknown>): Promise<Row[]> {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockScanSet.mockResolvedValue([]);
+  mockScanSet.mockResolvedValue(scanSetOf([]));
   mockReadLocal.mockResolvedValue(localRead());
 });
 
@@ -115,9 +157,8 @@ describe("wallet_balances concise+limit - unpriced holdings are never silently c
     expect(tokens.slice(0, 2).every((t) => t.priceUnavailable === undefined)).toBe(true);
     // The marker states WHY there is no USD figure, so "no price feed" can
     // never read as "not held".
-    expect(tokens[2]).toMatchObject({ symbol: "UNP", priceUnavailable: true });
+    expect(tokens[2]).toMatchObject({ symbol: "UNP", priceUnavailable: true, priceUsd: null });
     expect(tokens[3]).toMatchObject({ symbol: "UN2", priceUnavailable: true });
-    expect(tokens[2]!.priceUsd).toBeUndefined();
   });
 
   it("treats a provider price of '0' as PRICED - a zero quote is a feed, not a missing one", async () => {
@@ -215,10 +256,16 @@ describe("wallet_balances concise+limit - unpriced holdings are never silently c
     expect("unpricedOmitted" in snap).toBe(false);
   });
 
-  it("detailed mode (the default) returns every row untouched, unmarked", async () => {
+  it("detailed mode (the default) returns every row untouched and in scan order", async () => {
     const detailed = await tokensFor({});
     expect(detailed.map((t) => t.symbol)).toEqual(["AAA", "UNP", "BBB", "CCC", "UN2", "DDD"]);
-    expect(detailed.some((t) => t.priceUnavailable !== undefined)).toBe(false);
+    // `priceUnavailable` is now a ROW-LEVEL fact (WP1 C1.5): it means "this row
+    // has no usable price feed", on every format, so it is no longer a proxy
+    // for "the concise trim ran". The invariants this test owns are the full
+    // row set, the untouched order, and `truncated`; the marker is asserted for
+    // what it now means, which is that the PRICED rows never carry it.
+    expect(detailed.filter((t) => t.priceUnavailable === true).map((t) => t.symbol))
+      .toEqual(["UNP", "UN2"]);
 
     const explicitDetailedWithLimit = await tokensFor({ response_format: "detailed", limit: 1 });
     expect(explicitDetailedWithLimit).toEqual(detailed);
@@ -227,7 +274,13 @@ describe("wallet_balances concise+limit - unpriced holdings are never silently c
   it("concise WITHOUT a limit still returns every row untouched", async () => {
     const tokens = await tokensFor({ response_format: "concise" });
     expect(tokens.map((t) => t.symbol)).toEqual(["AAA", "UNP", "BBB", "CCC", "UN2", "DDD"]);
-    expect(tokens.some((t) => t.priceUnavailable !== undefined)).toBe(false);
+    // `priceUnavailable` is now a ROW-LEVEL fact (WP1 C1.5): it means "this row
+    // has no usable price feed", on every format, so it is no longer a proxy
+    // for "the concise trim ran". The invariants this test owns are the full
+    // row set, the untouched order, and `truncated`; the marker is asserted for
+    // what it now means, which is that the PRICED rows never carry it.
+    expect(tokens.filter((t) => t.priceUnavailable === true).map((t) => t.symbol))
+      .toEqual(["UNP", "UN2"]);
   });
 });
 
@@ -256,14 +309,20 @@ describe("wallet_balances - the detailed default (D17 R2) and `truncated` (D16)"
     return snap;
   }
 
-  it("`{limit: N}` with NO response_format returns every row, unmarked and untruncated", async () => {
+  it("`{limit: N}` with NO response_format returns every row, unranked and untruncated", async () => {
     const snap = await snapshotFor({ limit: 2 });
 
     // The whole point of R2: `limit` is inert under the default format. If this
     // ever returns 4 rows, the default was flipped and a wallet read started
     // hiding holdings nobody asked it to hide.
     expect(snap.tokens.map((t) => t.symbol)).toEqual(["AAA", "UNP", "BBB", "CCC", "UN2", "DDD"]);
-    expect(snap.tokens.some((t) => t.priceUnavailable !== undefined)).toBe(false);
+    // `priceUnavailable` is now a ROW-LEVEL fact (WP1 C1.5): it means "this row
+    // has no usable price feed", on every format, so it is no longer a proxy
+    // for "the concise trim ran". The invariants this test owns are the full
+    // row set, the untouched order, and `truncated`; the marker is asserted for
+    // what it now means, which is that the PRICED rows never carry it.
+    expect(snap.tokens.filter((t) => t.priceUnavailable === true).map((t) => t.symbol))
+      .toEqual(["UNP", "UN2"]);
     expect(snap.truncated).toBe(false);
     expect(snap.truncationNote).toBeUndefined();
   });
@@ -273,10 +332,20 @@ describe("wallet_balances - the detailed default (D17 R2) and `truncated` (D16)"
     const conciseNoLimit = await snapshotFor({ response_format: "concise" });
 
     // Not just the token list: every field, so `truncated`, the omission
-    // counters and the totals are all proven equivalent, which is what makes
-    // "only the label differs" a measured claim rather than a reading of
-    // `trimTokens`.
-    expect(conciseNoLimit).toEqual(bare);
+    // counters, the completeness axes and the totals are all proven
+    // equivalent, which is what makes "only the label differs" a measured
+    // claim rather than a reading of `trimTokens`.
+    //
+    // `inventorySources[].observedAt` is the ONE legitimately time-varying
+    // field - two calls read the chain at two different moments, and stamping
+    // them with one clock would be the lie C3.5 forbids - so it is normalised
+    // rather than compared, and its PRESENCE is asserted separately below.
+    expect(withNormalisedObservationTimes(conciseNoLimit)).toEqual(
+      withNormalisedObservationTimes(bare),
+    );
+    for (const source of bare.inventorySources) {
+      expect(typeof source.observedAt).toBe("string");
+    }
   });
 
   it("`truncated` is present as false on the detailed path", async () => {
@@ -363,6 +432,11 @@ describe("wallet_balances - the detailed default (D17 R2) and `truncated` (D16)"
     if (!snap) throw new Error("wallet_balances returned no snapshot for the eip155 wallet");
 
     expect(snap.unpricedOmitted).toBe(5);
+    // The two figures answer different questions and must not be confused:
+    // `unpricedOmitted` is what the CAP dropped, `unpricedHeldCount` is how
+    // many unpriced holdings the wallet actually has. Only the second is
+    // reported on the detailed path, where nothing is dropped at all.
+    expect(snap.unpricedHeldCount).toBe(25);
     expect(snap.truncated).toBe(true);
     // Rows past the 20-row unpriced cap cannot come back through `limit`; the
     // note must send the agent to `detailed`, not to a bigger limit.

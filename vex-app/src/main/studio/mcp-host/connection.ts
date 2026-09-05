@@ -1,5 +1,11 @@
 /**
- * ONE Vex Studio MCP connection, from accepted socket to settled teardown.
+ * ONE Vex Studio MCP connection, from accepted wire to settled teardown.
+ *
+ * The wire is a `StudioDuplexTransport` (`@vex-agent/mcp/duplex-transport.js`),
+ * not a `net.Socket`: on Unix it is the socket adapter next door, and on
+ * Windows it will be a pipe-front channel. Everything below is written against
+ * that contract, and the comments that say "socket" describe the semantics the
+ * contract inherits from Node streams, which every implementation owes.
  *
  * The lifecycle owner. Everything a connection acquires is acquired here and
  * released here, exactly once, whichever of the six teardown causes fires
@@ -33,25 +39,76 @@
  * the abort reason's TYPE and answers `cancelled` itself.
  */
 
-import type { Socket } from "node:net";
-
 import type { StudioToolCall } from "@vex-agent/mcp/admission.js";
+import type {
+  StudioDuplexTransport,
+  StudioWriteOutcome,
+} from "@vex-agent/mcp/duplex-transport.js";
 import type {
   RunStudioCallOptions,
   StudioCallOutcome,
   StudioCancelCause,
 } from "@vex-agent/mcp/outcome.js";
 import type { StudioConnectionHandle } from "@vex-agent/mcp/server.js";
+import { safeWireTag, type SocketTransportLifecycleEvent } from "@vex-agent/mcp/socket-transport.js";
 import type { StudioWireErrorCode } from "@vex-agent/mcp/wire-errors.js";
 
 import { log } from "../../logger/index.js";
 import {
   encodeStudioHandshakeAck,
+  handshakeTimeoutRefusal,
   parseStudioHandshake,
   STUDIO_HANDSHAKE_DEADLINE_MS,
   type StudioHandshakeRefused,
 } from "./handshake.js";
 import { StudioOutboundQueue } from "./outbound-queue.js";
+
+/**
+ * WHY THIS CONNECTION ENDED, as a closed vocabulary the log can be read by.
+ *
+ * The vocabulary exists to separate THE PEER LEAVING from MAIN DECIDING, which
+ * the structural log could not distinguish at all: a killed bridge and a lock
+ * both arrived as a destroyed wire, and the incident of 2026-09-04 could not be
+ * attributed from the log for exactly that reason.
+ *
+ *   `peer_end`    the peer half-closed and the transport drained (a killed
+ *                 client and an ordinary one-shot session both land here)
+ *   `peer_error`  the wire raised `error`
+ *   `wire_failure` framing: over-long line, unparseable JSON, queue overflow
+ *   `refused`     a typed handshake refusal was written
+ *   `locked`      the secret-session lock destroyed this connection
+ *   `quit`        application quit destroyed this connection
+ *   `stale`       the host's admission epoch moved on mid-establish
+ *   `owner_close` main closed for its own reason (serve failure, outbound
+ *                 overflow, host teardown). The honest default.
+ */
+export type StudioCloseCause =
+  | "peer_end"
+  | "peer_error"
+  | "wire_failure"
+  | "refused"
+  | "locked"
+  | "quit"
+  | "stale"
+  | "owner_close";
+
+/**
+ * The close cause of a teardown MAIN decided, from the cancel cause it used.
+ *
+ * `cancelled` and `disconnect` are not causes of their own: they are what a
+ * running tool call is told, and the connection-level reason behind them is
+ * main deciding (a serve failure, an outbound overflow, the host tearing
+ * down). Their honest name is `owner_close`, which is why it is the default
+ * the `closed` line has always fallen back to.
+ */
+function ownerCloseCause(cause: StudioCancelCause): StudioCloseCause {
+  if (cause === "lock") return "locked";
+  if (cause === "vex_quit") return "quit";
+  return "owner_close";
+}
+
+/** Which of the two wire implementations carries this connection. */
+export type StudioTransportKind = "front" | "socket";
 
 /** The contract's per-connection in-flight bound. */
 export const STUDIO_MAX_INFLIGHT_PER_CONNECTION = 8;
@@ -103,16 +160,39 @@ export interface StudioConnectionDeps {
   readonly serveConnection: (input: ServeConnectionInput) => StudioConnectionHandle;
   /** Called exactly once when this connection is fully torn down. */
   readonly onClosed: (connection: StudioConnection) => void;
+  /**
+   * Which wire implementation the host accepted this connection on.
+   *
+   * The connection cannot ask the wire: the whole point of
+   * `StudioDuplexTransport` is that nothing below the host knows which of the
+   * two it is holding. The HOST knows, because it built it, so it says.
+   */
+  readonly transportKind: StudioTransportKind;
+  /**
+   * Frames the relay dropped for this connection, for the front wire only, or
+   * `null` on a wire that has no such class of event.
+   */
+  readonly droppedFrames: (() => number) | null;
 }
 
 export interface ServeConnectionInput {
-  readonly socket: Socket;
+  readonly wire: StudioDuplexTransport;
   readonly remainder: Buffer;
   readonly projectId: string;
   readonly runCall: StudioRunCall;
   readonly cancelCause: () => StudioCancelCause;
-  readonly writeLine: (line: string, progressKey: string | null) => Promise<void>;
+  /**
+   * The connection's ONE outbound writer, answering with the outcome its queue
+   * actually took. `accepted` is the only one the transport may count or turn
+   * into this connection's `first response` line.
+   */
+  readonly writeLine: (
+    line: string,
+    progressKey: string | null,
+  ) => Promise<StudioWriteOutcome>;
   readonly onWireFailure: (code: StudioWireErrorCode) => void;
+  /** The transport's own lifecycle transitions, for this connection's log. */
+  readonly onWireLifecycle: (event: SocketTransportLifecycleEvent) => void;
   /**
    * The serve path could not be built or has failed terminally. The OWNER
    * closes; the server builder never destroys a socket it does not own.
@@ -120,9 +200,21 @@ export interface ServeConnectionInput {
   readonly onServeFailure: (message: string) => void;
 }
 
+/**
+ * A project id as a log tag, or `unknown`.
+ *
+ * The id is the PEER'S string, and it reaches a log line, so it passes the
+ * same gate every other peer-authored token does. A real Studio project id is
+ * a UUID and clears it; anything that does not is reported as absent rather
+ * than carried or cut.
+ */
+function projectTag(projectId: string): string {
+  return safeWireTag(projectId) ?? "unknown";
+}
+
 export class StudioConnection {
   readonly id: string;
-  private readonly socket: Socket;
+  private readonly wire: StudioDuplexTransport;
   private readonly deps: StudioConnectionDeps;
   private readonly outbound: StudioOutboundQueue;
 
@@ -162,14 +254,38 @@ export class StudioConnection {
    * "the connection is torn down". Every caller now awaits the same run.
    */
   private disposal: Promise<void> | null = null;
+  /**
+   * THE FIRST DECISION WINS.
+   *
+   * A close has one cause: whatever decided it. Everything after that decision
+   * - the wire's `close` edge, a late framing error, the host's own teardown -
+   * is consequence, so `noteCloseCause` latches and never overwrites.
+   */
+  private closeCause: StudioCloseCause | null = null;
+  /** `Date.now()` when the phase became serving, or `null` if it never did. */
+  private servingSince: number | null = null;
+  private requestCount = 0;
+  private responseCount = 0;
+  /**
+   * The outbound frames that were NOT answers, kept apart from `responses`.
+   *
+   * They are logged only when they are non-zero: on an ordinary connection all
+   * three are zero and the `closed` line stays the line a reader knows, while
+   * a connection that did send them never hides it. `otherOutbound` is our own
+   * defect if it is ever anything but zero, which is why it has a name here
+   * rather than being folded into a neighbour.
+   */
+  private notificationCount = 0;
+  private serverRequestCount = 0;
+  private otherOutboundCount = 0;
 
-  constructor(id: string, socket: Socket, deps: StudioConnectionDeps) {
+  constructor(id: string, wire: StudioDuplexTransport, deps: StudioConnectionDeps) {
     this.id = id;
-    this.socket = socket;
+    this.wire = wire;
     this.deps = deps;
     // Registered AT ACQUISITION, before anything can fail: the queue is the
-    // socket's only writer and must be closed on every path out of here.
-    this.outbound = new StudioOutboundQueue(socket, {
+    // wire's only writer and must be closed on every path out of here.
+    this.outbound = new StudioOutboundQueue(wire, {
       onOverflow: (reason, pending) => {
         log.warn(
           `[studio:mcp] outbound overflow id=${this.id} reason=${reason} `
@@ -179,22 +295,21 @@ export class StudioConnection {
       },
     });
 
-    socket.setNoDelay(true);
-    socket.on("error", this.handleSocketError);
-    socket.on("close", this.handleSocketClose);
-    socket.on("data", this.handleHandshakeData);
+    // `setNoDelay` moved to the wire's own construction
+    // (`node-socket-transport.ts`): it is socket mechanics, not connection
+    // lifecycle state, and a wire that is not a socket has no such setting.
+    wire.on("error", this.handleSocketError);
+    wire.on("close", this.handleSocketClose);
+    wire.on("data", this.handleHandshakeData);
 
     this.handshakeTimer = setTimeout(() => {
       this.handshakeTimer = null;
       if (this.phase !== "handshaking") return;
       log.warn(`[studio:mcp] handshake deadline id=${this.id}`);
-      void this.refuse({
-        kind: "refused",
-        code: "malformed",
-        message:
-          `No Vex Studio handshake arrived within ${String(STUDIO_HANDSHAKE_DEADLINE_MS)} ms. `
-          + "Send the handshake line first and wait for the ack.",
-      });
+      // The line itself is authored ONCE, in `handshake.ts`, because the
+      // Windows front relays the same bytes from `HELLO` when it owns this
+      // timer. Two copies would be two authors of a refusal a bridge parses.
+      void this.refuse(handshakeTimeoutRefusal());
     }, STUDIO_HANDSHAKE_DEADLINE_MS);
     this.handshakeTimer.unref?.();
   }
@@ -233,9 +348,10 @@ export class StudioConnection {
     // makes "no handshake is parsed after this point" a property rather than a
     // race with the kernel.
     this.phase = "refusing";
+    this.noteCloseCause("refused");
     this.clearHandshakeTimer();
-    this.socket.off("data", this.handleHandshakeData);
-    if (!this.socket.destroyed) this.socket.pause();
+    this.wire.off("data", this.handleHandshakeData);
+    if (!this.wire.destroyed) this.wire.pause();
     this.buffered = Buffer.alloc(0);
     // A refused connection never becomes established, so its reservation goes
     // back immediately rather than at teardown: the next handshake in the same
@@ -274,10 +390,24 @@ export class StudioConnection {
     this.closedLatch = true;
     this.cause = cause;
     this.phase = "closed";
+    // THE CAUSE IS LATCHED HERE, BEFORE THE FIRST AWAIT BELOW.
+    //
+    // `runDispose` awaits the served entry's close, and the peer's FIN can
+    // land inside that await: the transport then reports `peer_end` and, with
+    // nothing latched yet, WON the cause. An outbound overflow or a serve
+    // failure - main's own decisions, both of which reach here through
+    // `dispose` - would then be logged as the peer walking away, which is the
+    // one distinction this whole vocabulary exists to make.
+    //
+    // `noteCloseCause` still never overwrites, so every cause decided EARLIER
+    // (refused, wire_failure, peer_error, peer_end, stale, and the lock and
+    // quit latched by `destroyNow`) survives this line untouched. It only
+    // fills the gap that used to be filled by whatever arrived next.
+    this.noteCloseCause(ownerCloseCause(cause));
 
     this.releaseConnectionSlot();
     this.clearHandshakeTimer();
-    this.socket.off("data", this.handleHandshakeData);
+    this.wire.off("data", this.handleHandshakeData);
     this.outbound.close();
 
     // The entry's close tears down the pinned instance and calls the
@@ -289,7 +419,11 @@ export class StudioConnection {
         log.warn(`[studio:mcp] connection close failed id=${this.id}`, cause2);
       });
     }
-    if (!this.socket.destroyed) this.socket.destroy();
+    if (!this.wire.destroyed) this.wire.destroy();
+    // AFTER the entry's close, so the transport has announced its own `closed`
+    // and the counters below are final rather than a snapshot of a teardown in
+    // progress.
+    this.logClosed();
     this.deps.onClosed(this);
   }
 
@@ -305,15 +439,17 @@ export class StudioConnection {
   destroyNow(cause: StudioCancelCause): void {
     // LATCHED FIRST, synchronously: an establish continuation that resumes
     // after this tick must see a closed connection, not a live one.
+    this.noteCloseCause(ownerCloseCause(cause));
     this.closedLatch = true;
     this.cause = cause;
     this.releaseConnectionSlot();
     this.clearHandshakeTimer();
     this.outbound.close();
-    if (!this.socket.destroyed) this.socket.destroy();
+    if (!this.wire.destroyed) this.wire.destroy();
   }
 
   private readonly handleSocketError = (error: Error): void => {
+    this.noteCloseCause("peer_error");
     log.warn(`[studio:mcp] socket error id=${this.id}: ${error.message}`);
   };
 
@@ -340,8 +476,8 @@ export class StudioConnection {
     // transport exists spans an ack write and a dynamic import of the MCP SDK,
     // which is easily long enough for a client's `initialize` to land in it.
     // The transport resumes the socket once its own listeners are attached.
-    this.socket.off("data", this.handleHandshakeData);
-    this.socket.pause();
+    this.wire.off("data", this.handleHandshakeData);
+    this.wire.pause();
     this.buffered = Buffer.alloc(0);
     // THE ESTABLISHED BOUND, claimed HERE and SYNCHRONOUSLY. This is the last
     // point before an await, so it is the only place the claim can be atomic
@@ -383,8 +519,16 @@ export class StudioConnection {
     }
 
     this.phase = "serving";
+    this.servingSince = Date.now();
+    // THE FIRST INFO LINE THIS HOST HAS EVER EMITTED PER CONNECTION. Before
+    // it, a connection that was accepted, admitted and then silently starved
+    // was indistinguishable in the log from one that never got this far.
+    log.info(
+      `[studio:mcp] serving id=${this.id} project=${projectTag(projectId)} `
+        + `transport=${this.deps.transportKind}`,
+    );
     this.served = this.deps.serveConnection({
-      socket: this.socket,
+      wire: this.wire,
       remainder,
       projectId,
       runCall: this.boundedRunCall,
@@ -392,8 +536,10 @@ export class StudioConnection {
       writeLine: (line, progressKey) =>
         this.outbound.enqueue(line, progressKey ?? undefined),
       onWireFailure: (message) => {
+        this.noteCloseCause("wire_failure");
         log.warn(`[studio:mcp] wire failure id=${this.id}: ${message}`);
       },
+      onWireLifecycle: this.handleWireLifecycle,
       onServeFailure: (message) => {
         log.error(`[studio:mcp] serve failure id=${this.id}: ${message}`);
         void this.dispose(this.cause);
@@ -406,16 +552,96 @@ export class StudioConnection {
   }
 
   /**
+   * The transport's transitions, as this connection's structural log.
+   *
+   * The OWNER of the line is here rather than in the transport because the
+   * transport is engine code with no logger and no connection id, and because
+   * one owner emitting each transition once is what rule 05 asks for. The
+   * counters are carried from the transport's own `closed` event, which fires
+   * before this connection finishes tearing down on every teardown path.
+   */
+  private readonly handleWireLifecycle = (
+    event: SocketTransportLifecycleEvent,
+  ): void => {
+    switch (event.kind) {
+      case "first_request":
+        log.info(
+          `[studio:mcp] first request id=${this.id} method=${event.method}`
+            + (event.client === null ? "" : ` client=${event.client}`)
+            + (event.protocolVersion === null
+              ? ""
+              : ` protocolVersion=${event.protocolVersion}`),
+        );
+        return;
+      case "first_response":
+        // NAMED FOR WHAT IT WAS. The milestone fires on the first outbound
+        // line the wire ACCEPTED, and that line is not always an answer: a
+        // progress notification can precede the response it belongs to, and
+        // logging it as this connection's first answer would misreport the one
+        // fact an incident is read for. `outbound` carries the difference.
+        log.info(
+          `[studio:mcp] first response id=${this.id} rpcId=${event.id ?? "none"} `
+            + `bytes=${String(event.bytes)} outbound=${event.outbound}`,
+        );
+        return;
+      case "peer_end":
+        this.noteCloseCause("peer_end");
+        return;
+      case "closed":
+        this.requestCount = event.requests;
+        this.responseCount = event.responses;
+        this.notificationCount = event.notifications;
+        this.serverRequestCount = event.serverRequests;
+        this.otherOutboundCount = event.otherOutbound;
+        return;
+    }
+  };
+
+  /** Latch the first decided cause. Later events are consequence, not cause. */
+  private noteCloseCause(cause: StudioCloseCause): void {
+    if (this.closeCause !== null) return;
+    this.closeCause = cause;
+  }
+
+  /** The one `closed` line, emitted by `runDispose` once the counters settled. */
+  private logClosed(): void {
+    const dropped = this.deps.droppedFrames;
+    log.info(
+      `[studio:mcp] closed id=${this.id} cause=${this.closeCause ?? "owner_close"} `
+        + `servedMs=${String(
+          this.servingSince === null ? 0 : Date.now() - this.servingSince,
+        )} `
+        + `requests=${String(this.requestCount)} responses=${String(this.responseCount)}`
+        + (this.notificationCount === 0
+          ? ""
+          : ` notifications=${String(this.notificationCount)}`)
+        + (this.serverRequestCount === 0
+          ? ""
+          : ` serverRequests=${String(this.serverRequestCount)}`)
+        + (this.otherOutboundCount === 0
+          ? ""
+          : ` otherOutbound=${String(this.otherOutboundCount)}`)
+        + (dropped === null ? "" : ` droppedFrames=${String(dropped())}`),
+    );
+  }
+
+  /**
    * Is this connection finished, for any reason an establish continuation
    * cares about? Its own teardown, or the host's lifecycle moving on.
    */
   private isOver(): boolean {
     if (this.closedLatch || this.disposed) return true;
+    let stale: boolean;
     try {
-      return this.deps.isStale();
+      stale = this.deps.isStale();
     } catch {
-      return true;
+      stale = true;
     }
+    // The host's lifecycle moved on under an establish that had not published
+    // yet. It is neither the peer leaving nor a decision about THIS connection,
+    // so it gets its own name rather than the `owner_close` default.
+    if (stale) this.noteCloseCause("stale");
+    return stale;
   }
 
   /** Give the established-connection reservation back. Idempotent. */

@@ -54,6 +54,7 @@ function makeRow(
     executionStatus: null,
     origin: null,
     projectId: null,
+    requestedByClient: null,
     projectName: null,
     sessionTitle: "Alpha session",
     ...over,

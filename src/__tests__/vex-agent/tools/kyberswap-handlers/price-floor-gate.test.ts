@@ -33,6 +33,7 @@ import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.
 
 import capture from "../../../kyberswap/fixtures/route-build/base-usdc-to-native-50bps.json" with { type: "json" };
 import { compliantRoutePaths } from "../../../kyberswap/fixtures/route-build/compliant-swap-build.js";
+import { fixtureVexFeeBlock } from "../../../kyberswap/fixtures/route-build/approved-quote.js";
 
 const SESSION_EVM = {
   family: "eip155" as const,
@@ -62,8 +63,8 @@ const mockDecodeKyberSwapSettlement = vi.fn(() => null as { amountInRaw: string;
 
 // NOTE: only the evm-utils BARREL is mocked. `evm/swap-calldata-guard.js` is
 // imported directly by the handler and stays REAL — it is the unit under test.
-vi.mock("@tools/kyberswap/evm-utils.js", () => ({
-  getKyberEvmClients: () => ({ publicClient: {}, walletClient: {} }),
+vi.mock("@tools/kyberswap/evm-utils.js", async () => ({
+  ...(await import("./evm-client.test-fixtures.js")).kyberEvmClientMocks(),
   readErc20Metadata: (...args: [string, string]) => mockReadErc20Metadata(...args),
   verifyRouterAddress: vi.fn(),
   planKyberAllowance: vi.fn().mockResolvedValue({ needsReset: false, needsApprove: false }),
@@ -117,7 +118,8 @@ vi.mock("@vex-agent/db/repos/tracked-tokens.js", () => ({
 // drive the real handler unchanged.
 const mockClaim = vi.fn();
 vi.mock("@vex-agent/tools/protocols/prequote/claim.js", () => ({
-  claimSwapExecutionSnapshot: (...args: unknown[]) => mockClaim(...args),
+  commitPrequoteClaim: vi.fn(async () => ({ ok: true })),
+  readSwapExecutionSnapshot: (...args: unknown[]) => mockClaim(...args),
 }));
 
 vi.mock("@utils/logger.js", () => {
@@ -132,7 +134,20 @@ import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-po
 import {
   ROUTE_SNAPSHOT_VERSION,
   encodeRouteSnapshotRaw,
+  sealRouteSnapshot,
 } from "@vex-agent/tools/protocols/quote-authority/snapshot.js";
+import { buildBoundDebitPlan } from "@vex-agent/tools/protocols/quote-authority/debit-plan.js";
+
+/**
+ * The transaction set this suite's quote bound, matching the allowance plan its
+ * own mocks produce - the execute refuses a set that is not the approved one
+ * (WP2-B). The ceiling is high enough that no prepared request here is above it;
+ * the ceiling itself is the subject of its own suite.
+ */
+const APPROVED_PLAN = buildBoundDebitPlan({
+  legs: [{ role: "swap" as const, pricing: "measured" as const }],
+  feeCap: { mode: "eip1559", maxFeePerGasWei: 10n ** 15n, maxPriorityFeePerGasWei: 10n ** 15n },
+});
 
 const TOKEN_IN = getAddress(capture.request.tokenIn);
 const TOKEN_OUT = capture.request.tokenOut;
@@ -169,12 +184,15 @@ function claimed(amountOut: string = ROUTE_OUT, slippageBps = VEX_DEFAULT_SLIPPA
   return {
     ok: true as const,
     prequoteId: "prequote-1",
+    // The Vex fee statement the row carries. The execute re-derives its own and
+    // refuses before signing if the two disagree, so a claim without one is a
+    // claim no fee-bearing execute may run on.
+    vexFee: fixtureVexFeeBlock(BigInt(capture.routeSummary.amountIn)),
     routeSummary: summary,
-    snapshot: {
+    snapshot: sealRouteSnapshot({
       v: ROUTE_SNAPSHOT_VERSION,
       provider: "kyberswap" as const,
       raw: encoded.raw,
-      digest: encoded.digest,
       approvedAmountOutRaw: amountOut,
       approvedMinOutRaw: computeApprovedMinOut(amountOut, slippageBps).toString(),
       approvedAmountOutHuman: "0.005376",
@@ -183,7 +201,8 @@ function claimed(amountOut: string = ROUTE_OUT, slippageBps = VEX_DEFAULT_SLIPPA
       effectiveSlippageBps: slippageBps,
       expiresAt: "2026-08-28T10:00:00.000Z",
       eligibility: { kind: "executable" as const, priceImpactFraction: 0.001, adverse: false },
-    },
+      debitPlan: APPROVED_PLAN,
+    }),
   };
 }
 
@@ -225,6 +244,9 @@ function buildResponse(calldata: Hex = capture.build.data as Hex, amountOut = ca
     data: {
       routerAddress: capture.routerAddress,
       data: calldata,
+      // The provider's own gas figure for the swap leg. MEASURED live on Base
+      // 2026-08-31: `/route/build` answered `gas: "287581"` for a real USDC route.
+      gas: "287581",
       transactionValue: capture.build.transactionValue,
       amountIn: capture.build.amountIn,
       amountOut,

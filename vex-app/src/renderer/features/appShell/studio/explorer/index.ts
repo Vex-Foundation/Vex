@@ -12,6 +12,8 @@
  * share one process-wide registry.
  */
 
+import { EXPLORER_TREE_LABEL } from "./explorer-copy.js";
+
 export { ExplorerTree, type ExplorerTreeProps } from "./ExplorerTree.js";
 export { ExplorerHeader, type ExplorerHeaderProps } from "./ExplorerHeader.js";
 export { ExplorerRegistry, explorerRegistry } from "./explorer-registry.js";
@@ -22,3 +24,35 @@ export type {
   ExplorerLoadMoreRow,
   ExplorerNoticeRow,
 } from "./explorer-rows.js";
+
+/**
+ * PUT KEYBOARD FOCUS ON THE PROJECT TREE. `Ctrl+Shift+E`'s owner.
+ *
+ * Returns whether a tree was there to focus. `false` is an ordinary answer -
+ * the rail is collapsed, or no project is open, so there is no tree - and the
+ * caller must be able to tell, because a shortcut that did nothing must leave
+ * the keystroke alone rather than swallow it.
+ *
+ * IT FINDS THE TREE BY ITS PUBLIC SEMANTICS, `role="tree"` plus the accessible
+ * name the tree gives itself, rather than by a handle the component registers.
+ * Two reasons, and the second is the one that decided it: the tree already
+ * declares exactly one focusable element by contract (`ExplorerTree`'s
+ * container is its ONE tab stop, everything else in it is
+ * `aria-activedescendant`), so the element this selects is the element a Tab
+ * key would reach; and a registration would be a second source of truth for
+ * "which tree is on screen" that the sidebar's own conditional render already
+ * answers.
+ *
+ * `preventScroll`, as `ExplorerTree`'s own pointer handler uses: the tree
+ * scrolls itself to the focused row, and a focus that also scrolled would fight
+ * that reveal.
+ */
+export function focusStudioExplorer(): boolean {
+  if (typeof document === "undefined") return false;
+  const tree = document.querySelector<HTMLElement>(
+    `[role="tree"][aria-label="${EXPLORER_TREE_LABEL}"]`,
+  );
+  if (tree === null) return false;
+  tree.focus({ preventScroll: true });
+  return true;
+}

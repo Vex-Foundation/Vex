@@ -15,7 +15,7 @@
  */
 
 import { StrictMode } from "react";
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RenderResult } from "@testing-library/react";
 import type { TerminalWorkspaceRestore } from "@shared/schemas/terminal.js";
@@ -24,7 +24,7 @@ import { TerminalRegistry } from "../terminal-registry.js";
 import {
   clearProjectTerminals,
   peekProjectWorkspaceLifecycle,
-} from "../../workspace/project-terminals.js";
+} from "../../workspace/workspace-handles.js";
 import type { WorkspaceCloseOutcome } from "../../workspace/close-lifecycle.js";
 import {
   installMatchMedia,
@@ -38,10 +38,39 @@ const noWebgl = { webglLoader: () => Promise.reject(new Error("no gl in jsdom"))
 let bridge: TerminalBridgeStub;
 let registry: TerminalRegistry;
 
+/**
+ * The terminal a project's OWN AUTO-OPEN creates on mount.
+ *
+ * Opening a project auto-creates its first terminal, so every workspace below
+ * starts with ONE shell in it before a single `openTerminals` gesture is made,
+ * and every commit, kill sweep and pane count here includes it. It is named
+ * `a0` so it sorts ahead of the `a1`, `a2`... these cases open deliberately,
+ * which keeps the ordered `ops` and `kills` assertions readable.
+ */
+const AUTO_TERMINAL = { terminalId: "a0", pid: 0, shellName: "a0", displayCwd: "p1" } as const;
+
 beforeEach(() => {
+  // FAKE TIMERS FOR THE WHOLE FILE, and the reason is the subject of the file.
+  //
+  // The controller's background save is debounced by `PERSIST_DEBOUNCE_MS`
+  // (400ms). Every case below asserts an EXACT persist trace, and on a real
+  // clock that trace silently depends on the suite finishing its setup inside
+  // 400ms of wall time: a slow runner lets the ordinary debounced save fire
+  // before the close is even asked for, and the case then sees two persists
+  // where it asserted one. That is what failed on the macOS lane and passed on
+  // Linux - the assertion was right and the ordering was assumed.
+  //
+  // Frozen here so no case can inherit that assumption: the debounce fires only
+  // where a case advances the clock ON PURPOSE, which is what makes
+  // "the close is what wrote this" a proven precondition rather than a race the
+  // fast machines happen to win. VS Code faces the same debounced `_saveState`
+  // and answers it the same way, with `runWithFakedTimers` around every
+  // assertion on what the save wrote.
+  vi.useFakeTimers();
   installMatchMedia();
   installResizeObserver();
   bridge = installTerminalBridge();
+  bridge.nextCreate = { ok: true, value: AUTO_TERMINAL };
   registry = new TerminalRegistry(noWebgl);
   // The index is a MODULE SINGLETON. A close handler left behind by the
   // previous test would be taken by this one and would kill into a dead tree.
@@ -60,11 +89,32 @@ function renderController(projectId: string): RenderResult {
   );
 }
 
-/** Let the mount's restore settle, so persistence is no longer latched. */
+/**
+ * Let the mount's restore settle, so persistence is no longer latched AND the
+ * project's auto-opened first terminal has landed.
+ *
+ * The bootstrap is issued from the restore's own continuation, so it needs a
+ * turn of its own after the read resolves; asserting before it lands would be a
+ * race rather than a starting point.
+ */
 async function settleRestore(): Promise<void> {
   await act(async () => {
-    await Promise.resolve();
-    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(0);
+  });
+}
+
+/**
+ * Let the clock run PAST the persistence debounce, on purpose.
+ *
+ * The one gesture that makes the ordinary background save happen. Named so a
+ * case that wants that save says so, and a case that does not gets the frozen
+ * clock `beforeEach` installed.
+ */
+async function runOutTheDebounce(): Promise<void> {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(5_000);
   });
 }
 
@@ -81,13 +131,13 @@ async function openTerminals(
   for (const [index, terminalId] of terminalIds.entries()) {
     bridge.nextCreate = {
       ok: true,
-      value: { terminalId, pid: 100 + index, shellName: terminalId, cwd: "/w" },
+      value: { terminalId, pid: 100 + index, shellName: terminalId, displayCwd: "p1" },
     };
     await act(async () => {
       within(view.container)
         .getByRole("button", { name: "New terminal" })
         .click();
-      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(0);
     });
   }
 }
@@ -114,7 +164,16 @@ async function closeWorkspace(projectId: string): Promise<WorkspaceCloseOutcome>
 
 describe("closing a workspace ENDS its shells", () => {
   it("kills every terminal of the closed project and none of another's", async () => {
+    // Mounted one at a time, so each project's own auto-opened terminal gets a
+    // distinct id: the bootstrap reads `nextCreate` when its create is issued,
+    // which is after the restore, so two simultaneous mounts would both be
+    // answered with the same pty.
     const first = renderController("p1");
+    await settleRestore();
+    bridge.nextCreate = {
+      ok: true,
+      value: { terminalId: "b0", pid: 10, shellName: "b0", displayCwd: "p1" },
+    };
     const second = renderController("p2");
     await settleRestore();
     await openTerminals(first, ["a1", "a2"]);
@@ -122,7 +181,8 @@ describe("closing a workspace ENDS its shells", () => {
 
     await closeWorkspace("p1");
 
-    expect(bridge.kills.toSorted()).toEqual(["a1", "a2"]);
+    expect(bridge.kills.toSorted()).toEqual(["a0", "a1", "a2"]);
+    expect(bridge.kills).not.toContain("b0");
     // The other kept-alive workspace is untouched: a close is one project's
     // decision, and hidden workspaces keep their live ptys. Its lifecycle is
     // still published, so the index did not lose it to a neighbour's
@@ -137,13 +197,13 @@ describe("closing a workspace ENDS its shells", () => {
     await openTerminals(view, ["a1"]);
 
     expect(await closeWorkspace("p1")).toEqual({ ok: true });
-    expect(bridge.kills).toEqual(["a1"]);
+    expect(bridge.kills).toEqual(["a0", "a1"]);
 
     // The handle SURVIVES the close (a failed close has to be retryable), so
     // the phase - not the registry - is what stops a second commit and a
     // second kill.
     expect(await closeWorkspace("p1")).toEqual({ ok: true });
-    expect(bridge.kills).toEqual(["a1"]);
+    expect(bridge.kills).toEqual(["a0", "a1"]);
     expect(bridge.ops.filter((op) => op.startsWith("persist:")).length).toBe(1);
   });
 
@@ -157,7 +217,7 @@ describe("closing a workspace ENDS its shells", () => {
 
     bridge.nextCreate = {
       ok: true,
-      value: { terminalId: "a1", pid: 1, shellName: "a1", cwd: "/w" },
+      value: { terminalId: "a1", pid: 1, shellName: "a1", displayCwd: "p1" },
     };
     await act(async () => {
       document
@@ -172,7 +232,7 @@ describe("closing a workspace ENDS its shells", () => {
 
     // StrictMode's mount -> cleanup -> mount republishes the handler, and the
     // identity-checked unregister must not have left a second one behind.
-    expect(bridge.kills).toEqual(["a1"]);
+    expect(bridge.kills).toEqual(["a0", "a1"]);
   });
 });
 
@@ -189,7 +249,6 @@ describe("the close ORDERING: commit the buffers, THEN kill", () => {
    * persist and it must be the first entry.
    */
   it("persists the FULL workspace before the first kill, and nothing after it", async () => {
-    vi.useFakeTimers();
     const view = renderController("p1");
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
@@ -197,7 +256,7 @@ describe("the close ORDERING: commit the buffers, THEN kill", () => {
     for (const [index, terminalId] of ["a1", "a2"].entries()) {
       bridge.nextCreate = {
         ok: true,
-        value: { terminalId, pid: index, shellName: terminalId, cwd: "/w" },
+        value: { terminalId, pid: index, shellName: terminalId, displayCwd: "p1" },
       };
       await act(async () => {
         within(view.container)
@@ -211,8 +270,12 @@ describe("the close ORDERING: commit the buffers, THEN kill", () => {
 
     await closeWorkspace("p1");
 
-    expect(bridge.ops[0]).toBe("persist:p1:2");
-    expect(bridge.ops.slice(1).toSorted()).toEqual(["kill:a1", "kill:a2"]);
+    expect(bridge.ops[0]).toBe("persist:p1:3");
+    expect(bridge.ops.slice(1).toSorted()).toEqual([
+      "kill:a0",
+      "kill:a1",
+      "kill:a2",
+    ]);
 
     // ---- now drive every writer that could clobber it ----
     await act(async () => {
@@ -235,9 +298,9 @@ describe("the close ORDERING: commit the buffers, THEN kill", () => {
     });
 
     expect(bridge.ops.filter((op) => op.startsWith("persist:"))).toEqual([
-      "persist:p1:2",
+      "persist:p1:3",
     ]);
-    expect(bridge.ops.indexOf("persist:p1:2")).toBe(0);
+    expect(bridge.ops.indexOf("persist:p1:3")).toBe(0);
   });
 
   it("writes NOTHING when the restore has not landed, so the snapshot survives", async () => {
@@ -277,6 +340,7 @@ function savedWorkspace(): TerminalWorkspaceRestore {
       terminalId,
       title: terminalId,
       shellName: "bash",
+      displayCwd: null,
       droppedRows: 0,
       reducedRows: 0,
     })),
@@ -288,10 +352,11 @@ describe("reopening a closed project REVIVES through the existing path", () => {
   it("spawns a fresh set carrying the snapshot, not a reattach of the dead ids", async () => {
     bridge.savedWorkspace = savedWorkspace();
     const first = renderController("p1");
-    await waitFor(() => {
-      expect(bridge.reviveCount).toBe(1);
-    });
     await settleRestore();
+    // The revive is issued by the restore itself, so settling the restore is
+    // what proves it happened - a poll on a frozen clock would only prove the
+    // poll's own timeout.
+    expect(bridge.reviveCount).toBe(1);
     // The first revive keeps the snapshot's ids, and they are the LIVE ptys.
     expect([...bridge.livePtys].toSorted()).toEqual(["t1", "t2"]);
 
@@ -304,10 +369,8 @@ describe("reopening a closed project REVIVES through the existing path", () => {
 
     const attachesBeforeReopen = bridge.attaches.length;
     renderController("p1");
-    await waitFor(() => {
-      expect(bridge.reviveCount).toBe(2);
-    });
     await settleRestore();
+    expect(bridge.reviveCount).toBe(2);
 
     // A SECOND revive, because nothing of the project is live any more - which
     // is the same condition main's `deriveOpen` applies. The ids are new, so
@@ -337,7 +400,7 @@ describe("a close whose COMMIT was refused destroys nothing", () => {
     const view = renderController("p1");
     await settleRestore();
     await openTerminals(view, ["a1", "a2"]);
-    expect([...bridge.livePtys].toSorted()).toEqual(["a1", "a2"]);
+    expect([...bridge.livePtys].toSorted()).toEqual(["a0", "a1", "a2"]);
 
     bridge.nextPersist = { ok: false, code: "host_unavailable" };
     const outcome = await closeWorkspace("p1");
@@ -345,7 +408,7 @@ describe("a close whose COMMIT was refused destroys nothing", () => {
     // THE DATA-LOSS ASSERTION FIRST, so a regression names the loss rather
     // than the outcome shape: not "no kill was recorded" but the shells are
     // still RUNNING, with the buffers that were never committed.
-    expect([...bridge.livePtys].toSorted()).toEqual(["a1", "a2"]);
+    expect([...bridge.livePtys].toSorted()).toEqual(["a0", "a1", "a2"]);
     expect(bridge.kills).toEqual([]);
     expect(outcome).toEqual({ ok: false, failure: "persist_refused" });
   });
@@ -360,7 +423,7 @@ describe("a close whose COMMIT was refused destroys nothing", () => {
 
     // An ERROR, not a status: the user asked for something, it did not happen,
     // and their shells are still running.
-    const alert = await within(view.container).findByRole("alert");
+    const alert = within(view.container).getByRole("alert");
     expect(alert.textContent).toContain("nothing was closed");
     expect(alert.textContent).toContain("still running");
   });
@@ -375,7 +438,7 @@ describe("a close whose COMMIT was refused destroys nothing", () => {
 
     bridge.nextPersist = { ok: true };
     expect(await closeWorkspace("p1")).toEqual({ ok: true });
-    expect(bridge.kills).toEqual(["a1"]);
+    expect(bridge.kills).toEqual(["a0", "a1"]);
     expect([...bridge.livePtys]).toEqual([]);
   });
 
@@ -388,7 +451,7 @@ describe("a close whose COMMIT was refused destroys nothing", () => {
     const refused = await closeWorkspace("p1");
     expect(refused).toEqual({ ok: false, failure: "kill_incomplete" });
     // The commit DID happen, so the retry is safe and the user is told so.
-    expect(bridge.ops[0]).toBe("persist:p1:2");
+    expect(bridge.ops[0]).toBe("persist:p1:3");
     expect([...bridge.livePtys]).toEqual(["a1"]);
 
     // `unknown_terminal` is not a failure: it is the outcome a kill asked for,
@@ -414,14 +477,13 @@ describe("a close whose COMMIT was refused destroys nothing", () => {
  */
 describe("the close's commit is the LAST one for its workspace", () => {
   it("marks it FINAL, while the debounced background save is not", async () => {
-    vi.useFakeTimers();
     const view = renderController("p1");
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
     });
     bridge.nextCreate = {
       ok: true,
-      value: { terminalId: "a1", pid: 1, shellName: "a1", cwd: "/w" },
+      value: { terminalId: "a1", pid: 1, shellName: "a1", displayCwd: "p1" },
     };
     await act(async () => {
       within(view.container).getByRole("button", { name: "New terminal" }).click();
@@ -442,8 +504,8 @@ describe("the close's commit is the LAST one for its workspace", () => {
     // The close's commit, and it is the one carrying the flag.
     expect(bridge.persistFinals).toEqual([false, true]);
     expect(bridge.ops.filter((op) => op.startsWith("persist:"))).toEqual([
-      "persist:p1:1",
-      "persist:p1:1",
+      "persist:p1:2",
+      "persist:p1:2",
     ]);
   });
 });
@@ -472,14 +534,17 @@ describe("a close that failed AFTER the commit never persists again", () => {
     await settleRestore();
     await openTerminals(view, ["a1", "a2"]);
 
+    // Still inside the debounce window, so every persist below is a CLOSE's.
+    expect(bridge.ops).toEqual([]);
+
     bridge.killRefusals.set("a1", "host_unavailable");
     expect(await closeWorkspace("p1")).toEqual({
       ok: false,
       failure: "kill_incomplete",
     });
-    // The commit happened and it carried BOTH terminals; a2 is gone and a1
-    // survived its refused kill.
-    expect(bridge.ops[0]).toBe("persist:p1:2");
+    // The commit happened and it carried EVERY terminal; a0 and a2 are gone
+    // and a1 survived its refused kill.
+    expect(bridge.ops[0]).toBe("persist:p1:3");
     expect([...bridge.livePtys]).toEqual(["a1"]);
 
     bridge.killRefusals.delete("a1");
@@ -489,22 +554,21 @@ describe("a close that failed AFTER the commit never persists again", () => {
     // panes. A second one here would have been reconciled against a workspace
     // where only a1 was left running, and a2's scrollback would be gone.
     expect(bridge.ops.filter((op) => op.startsWith("persist:"))).toEqual([
-      "persist:p1:2",
+      "persist:p1:3",
     ]);
     expect(bridge.persisted).toHaveLength(1);
     expect(
       bridge.persisted[0]?.groups.flatMap((group) =>
         group.panes.map((pane) => pane.terminalId),
       ),
-    ).toEqual(["a1", "a2"]);
+    ).toEqual(["a0", "a1", "a2"]);
     // The retry killed exactly what was outstanding: a1 twice in total (the
     // refused attempt and the one that worked), a2 once.
-    expect(bridge.kills).toEqual(["a1", "a2", "a1"]);
+    expect(bridge.kills).toEqual(["a0", "a1", "a2", "a1"]);
     expect([...bridge.livePtys]).toEqual([]);
   });
 
   it("suppresses the debounce and the visibility flush while the retry is owed", async () => {
-    vi.useFakeTimers();
     const view = renderController("p1");
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
@@ -512,7 +576,7 @@ describe("a close that failed AFTER the commit never persists again", () => {
     for (const [index, terminalId] of ["a1", "a2"].entries()) {
       bridge.nextCreate = {
         ok: true,
-        value: { terminalId, pid: index, shellName: terminalId, cwd: "/w" },
+        value: { terminalId, pid: index, shellName: terminalId, displayCwd: "p1" },
       };
       await act(async () => {
         within(view.container).getByRole("button", { name: "New terminal" }).click();
@@ -525,7 +589,7 @@ describe("a close that failed AFTER the commit never persists again", () => {
       await lifecycleOf("p1").close();
     });
     expect(bridge.ops.filter((op) => op.startsWith("persist:"))).toEqual([
-      "persist:p1:2",
+      "persist:p1:3",
     ]);
 
     // Every background writer, driven while the workspace sits in
@@ -545,7 +609,7 @@ describe("a close that failed AFTER the commit never persists again", () => {
     });
 
     expect(bridge.ops.filter((op) => op.startsWith("persist:"))).toEqual([
-      "persist:p1:2",
+      "persist:p1:3",
     ]);
   });
 
@@ -595,7 +659,7 @@ describe("a shell the host says belongs to ANOTHER window", () => {
     // reported as success.
     expect([...bridge.livePtys]).toEqual(["a1"]);
 
-    const alert = await within(view.container).findByRole("alert");
+    const alert = within(view.container).getByRole("alert");
     expect(alert.textContent).toContain("another Vex window");
     // No retry from this window can change whose shell it is, so the row does
     // not offer one.
@@ -617,7 +681,7 @@ describe("the failure notice carries the retry it tells the user to make", () =>
 
     bridge.killRefusals.set("a1", "host_unavailable");
     await closeWorkspace("p1");
-    const alert = await within(view.container).findByRole("alert");
+    const alert = within(view.container).getByRole("alert");
     expect(alert.textContent).toContain("Try closing again");
 
     bridge.killRefusals.delete("a1");
@@ -631,7 +695,7 @@ describe("the failure notice carries the retry it tells the user to make", () =>
     // that carried them was not rewritten.
     expect([...bridge.livePtys]).toEqual([]);
     expect(bridge.ops.filter((op) => op.startsWith("persist:"))).toEqual([
-      "persist:p1:2",
+      "persist:p1:3",
     ]);
     expect(within(view.container).queryByRole("alert")).toBeNull();
   });
@@ -641,9 +705,13 @@ describe("the failure notice carries the retry it tells the user to make", () =>
     await settleRestore();
     await openTerminals(view, ["a1"]);
 
+    // Still inside the debounce window, so the two writes asserted below are
+    // the refused close's and the retry's, and nothing else.
+    expect(bridge.ops).toEqual([]);
+
     bridge.nextPersist = { ok: false, code: "host_unavailable" };
     await closeWorkspace("p1");
-    const alert = await within(view.container).findByRole("alert");
+    const alert = within(view.container).getByRole("alert");
 
     bridge.nextPersist = { ok: true };
     await act(async () => {
@@ -655,7 +723,12 @@ describe("the failure notice carries the retry it tells the user to make", () =>
     // Nothing was on disk, so this retry DOES commit - a second write, which
     // is the right number here because the first was REFUSED and left the
     // snapshot untouched - and only then kills.
-    expect(bridge.ops).toEqual(["persist:p1:1", "persist:p1:1", "kill:a1"]);
+    expect(bridge.ops).toEqual([
+      "persist:p1:2",
+      "persist:p1:2",
+      "kill:a0",
+      "kill:a1",
+    ]);
     expect([...bridge.livePtys]).toEqual([]);
   });
 });
@@ -678,20 +751,29 @@ describe("the LATE-CREATE fence: nothing escapes the kill set", () => {
     bridge.deferCreate = true;
     bridge.nextCreate = {
       ok: true,
-      value: { terminalId: "late", pid: 9, shellName: "late", cwd: "/w" },
+      value: { terminalId: "late", pid: 9, shellName: "late", displayCwd: "p1" },
     };
     await act(async () => {
       within(view.container).getByRole("button", { name: "New terminal" }).click();
-      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(0);
     });
-    expect(bridge.creates.length).toBe(2);
+    // Three: the project's own bootstrap, the deliberate `a1`, and the held
+    // one this case is about.
+    expect(bridge.creates.length).toBe(3);
+    // THE PRECONDITION, stated rather than assumed: still inside the debounce
+    // window, so every persist the trace below shows is the CLOSE'S. Read on a
+    // real clock this line was the whole flake - a runner slow enough to cross
+    // `PERSIST_DEBOUNCE_MS` here had already written an ordinary background
+    // save, and the "exactly one persist" assertion at the end was then
+    // counting two correct writes.
+    expect(bridge.ops).toEqual([]);
 
     // The close JOINS that create rather than racing it, so it cannot resolve
     // before the late pty has been dealt with.
     let settled: WorkspaceCloseOutcome | null = null;
     await act(async () => {
       const running = lifecycleOf("p1").close();
-      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(0);
       bridge.settleCreates();
       settled = await running;
     });
@@ -700,17 +782,34 @@ describe("the LATE-CREATE fence: nothing escapes the kill set", () => {
     // The late terminal was created and then ENDED by its own publication
     // fence. Neither pty is left running, and the layout that was committed
     // never contained the late one.
-    expect(bridge.kills.toSorted()).toEqual(["a1", "late"]);
+    expect(bridge.kills.toSorted()).toEqual(["a0", "a1", "late"]);
     expect([...bridge.livePtys]).toEqual([]);
-    // The COMMITTED LAYOUT holds one pane, not two: the late terminal never
-    // published, so it is not in the snapshot - and the commit still happened
-    // before the shell it saved was ended.
+    // The COMMITTED LAYOUT holds the two published panes and not the late one,
+    // which never published - and the commit still happened before the shell it
+    // saved was ended.
     expect(bridge.ops.filter((op) => op.startsWith("persist:"))).toEqual([
-      "persist:p1:1",
+      "persist:p1:2",
     ]);
-    expect(bridge.ops.indexOf("persist:p1:1")).toBeLessThan(
+    expect(bridge.ops.indexOf("persist:p1:2")).toBeLessThan(
       bridge.ops.indexOf("kill:a1"),
     );
+
+    // ---- and the fence HOLDS past the close, which is the other half ----
+    //
+    // A frozen clock proves no background save RACED the close; it cannot by
+    // itself prove none is still ARMED behind it. The debounce was armed by the
+    // opens above and `runClose` disarms it on entry, so running the clock out
+    // here is what makes that disarm observable rather than assumed. A write
+    // landing now is the data loss the whole ordering exists to prevent: the
+    // host reconciles a layout against what is live, and the kills above left
+    // nothing live to reconcile against.
+    await runOutTheDebounce();
+    expect(bridge.ops.filter((op) => op.startsWith("persist:"))).toEqual([
+      "persist:p1:2",
+    ]);
+    // ONE commit, and it is the close's own FINAL one, not a background save
+    // that happened to carry the same panes.
+    expect(bridge.persistFinals).toEqual([true]);
   });
 
   /**
@@ -730,7 +829,7 @@ describe("the LATE-CREATE fence: nothing escapes the kill set", () => {
     bridge.deferCreate = true;
     bridge.nextCreate = {
       ok: true,
-      value: { terminalId: "late", pid: 9, shellName: "late", cwd: "/w" },
+      value: { terminalId: "late", pid: 9, shellName: "late", displayCwd: "p1" },
     };
     await act(async () => {
       within(view.container).getByRole("button", { name: "New terminal" }).click();
@@ -751,7 +850,7 @@ describe("the LATE-CREATE fence: nothing escapes the kill set", () => {
     // close failed, so it stays running - that is the failed-state contract.
     // `late` is referenced by nothing and nobody has ever seen its id, so it
     // is gone.
-    expect([...bridge.livePtys]).toEqual(["a1"]);
+    expect([...bridge.livePtys]).toEqual(["a0", "a1"]);
     expect(bridge.kills).toEqual(["late"]);
   });
 
@@ -763,7 +862,7 @@ describe("the LATE-CREATE fence: nothing escapes the kill set", () => {
     bridge.deferCreate = true;
     bridge.nextCreate = {
       ok: true,
-      value: { terminalId: "late", pid: 9, shellName: "late", cwd: "/w" },
+      value: { terminalId: "late", pid: 9, shellName: "late", displayCwd: "p1" },
     };
     await act(async () => {
       within(view.container).getByRole("button", { name: "New terminal" }).click();
@@ -778,7 +877,7 @@ describe("the LATE-CREATE fence: nothing escapes the kill set", () => {
       bridge.settleCreates();
       await running;
     });
-    expect([...bridge.livePtys].toSorted()).toEqual(["a1", "late"]);
+    expect([...bridge.livePtys].toSorted()).toEqual(["a0", "a1", "late"]);
 
     // The id was NOT dropped with the failed attempt: it is swept again, and
     // this time the host ends it.
@@ -786,7 +885,7 @@ describe("the LATE-CREATE fence: nothing escapes the kill set", () => {
     bridge.nextPersist = { ok: true };
     expect(await closeWorkspace("p1")).toEqual({ ok: true });
     expect([...bridge.livePtys]).toEqual([]);
-    expect(bridge.kills).toEqual(["late", "late", "a1"]);
+    expect(bridge.kills).toEqual(["late", "late", "a0", "a1"]);
   });
 
   it("REFUSES a new terminal gesture made while the workspace is closing", async () => {
@@ -863,9 +962,9 @@ describe("a SECOND close JOINS the first", () => {
     expect(settledOrder.toSorted()).toEqual(["first", "second"]);
     // ONE commit and ONE kill, not two of each.
     expect(bridge.ops.filter((op) => op.startsWith("persist:"))).toEqual([
-      "persist:p1:1",
+      "persist:p1:2",
     ]);
-    expect(bridge.kills).toEqual(["a1"]);
+    expect(bridge.kills).toEqual(["a0", "a1"]);
   });
 });
 
@@ -882,14 +981,13 @@ describe("the DELETION latch", () => {
    * project's terminal scrollback.
    */
   it("suppresses the unmount flush, the debounce and the visibility flush", async () => {
-    vi.useFakeTimers();
     const view = renderController("p1");
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
     });
     bridge.nextCreate = {
       ok: true,
-      value: { terminalId: "a1", pid: 1, shellName: "a1", cwd: "/w" },
+      value: { terminalId: "a1", pid: 1, shellName: "a1", displayCwd: "p1" },
     };
     await act(async () => {
       within(view.container).getByRole("button", { name: "New terminal" }).click();

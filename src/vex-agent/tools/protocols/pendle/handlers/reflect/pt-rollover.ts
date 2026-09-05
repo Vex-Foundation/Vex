@@ -1,5 +1,5 @@
 /**
- * `pendle.pt.rollover` — PT → later-expiry PT.
+ * `pendle.pt.rollover` - PT → later-expiry PT.
  *
  * A `callAndReflect` body carrying whole Router calls as `bytes`, so the route
  * is bound by `selectSafeReflectRoute` (the E2 card owns that binder; this
@@ -97,10 +97,10 @@ export async function executePendlePtRollover(
     };
 
     if (fromPt === toPt) {
-      return refuse("route_not_found", `${toolId}: fromPt and toPt are the same PT — a roll must change maturity.`);
+      return refuse("route_not_found", `${toolId}: fromPt and toPt are the same PT - a roll must change maturity.`);
     }
 
-    // SOURCE — exit-shaped: a matured PT is exactly what a roll leaves behind.
+    // SOURCE - exit-shaped: a matured PT is exactly what a roll leaves behind.
     const source = await resolveExitMarketByPt(chainId, fromPt);
     if (!source || !source.market.address) {
       return refuse(
@@ -108,7 +108,7 @@ export async function executePendlePtRollover(
         "No Pendle market on this chain has that fromPt - check pendle__markets_discover (includeMatured:true covers expired markets).",
       );
     }
-    // DESTINATION — buy-shaped: ACTIVE ONLY, and maturity is named as the reason.
+    // DESTINATION - buy-shaped: ACTIVE ONLY, and maturity is named as the reason.
     const destination = await resolveMarketByPt(chainId, toPt);
     if (!destination || !destination.address) {
       return refuse(
@@ -168,7 +168,7 @@ export async function executePendlePtRollover(
       wallet,
       inputToken: fromPt,
       inputAmountWei: amountWei,
-      // The tolerance every leg is held to — see calldata/price-floor.ts.
+      // The tolerance every leg is held to - see calldata/price-floor.ts.
       slippageBps: slippage.bps,
       // In EXECUTION order: leg 1 sells out of the source market, the final leg
       // buys into the destination.
@@ -244,7 +244,7 @@ export async function executePendlePtRollover(
     const broadcast = await sendPendleRouterTx(
       publicClient,
       walletClient,
-      // A reflect route spends an ERC20 PT, never native — the binder refuses a
+      // A reflect route spends an ERC20 PT, never native - the binder refuses a
       // non-zero value outright.
       { to: getAddress(route.tx.to), data: route.tx.data as Hex, value: 0n },
       {

@@ -18,7 +18,7 @@
 
 import { useEffect, useState, type JSX } from "react";
 import { motion, useReducedMotion } from "motion/react";
-import { EASE_INOUT, EASE_STANDARD } from "../../lib/motion.js";
+import { EASE_INOUT, EASE_STANDARD } from "../../lib/motion/index.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { useSetupOrchestrator } from "./useSetupOrchestrator.js";
 import { GateActs } from "./ChronosGate/GateActs.js";

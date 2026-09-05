@@ -101,6 +101,13 @@ describe("result barrel surface", () => {
       "images.not_found",
       "images.in_use",
       "images.store_unavailable",
+      // The user backdrop under the glass shell: PNG/JPEG only (the measured
+      // nativeImage decode set), 8 MiB stat gate, decode proof, one image.
+      "shellBackdrop.too_large",
+      "shellBackdrop.too_small",
+      "shellBackdrop.unsupported_format",
+      "shellBackdrop.undecodable",
+      "shellBackdrop.store_unavailable",
       "tokenLaunch.preview_stale",
       "tokenLaunch.value_ceiling_exceeded",
       "tokenLaunch.launch_count_exceeded",
@@ -117,6 +124,11 @@ describe("result barrel surface", () => {
       "projects.backing_session_integrity",
       "projects.deleting",
       "projects.slug_cleanup_pending",
+      "projects.root_unverifiable",
+      "projects.root_permission_denied",
+      "projects.root_out_of_space",
+      "projects.root_path_invalid",
+      "projects.name_reserved",
       "internal.contract_violation",
       "internal.cancelled",
       "internal.unexpected",
@@ -154,6 +166,9 @@ describe("result barrel surface", () => {
       "market",
       "studio",
       "images",
+      // The user's own wallpaper: a preference with a byte store behind it,
+      // held apart from `images` because nothing downstream signs over it.
+      "shellBackdrop",
       "tokenLaunch",
       // P3: a routing/ownership label only. `poolsLaunch` mints no error code
       // of its own — its refusals map onto codes that already exist, so the

@@ -9,7 +9,9 @@
  */
 
 import { setBugReportSink, resetBugReportSink } from "@vex-agent/engine/support/bug-report-registry.js";
+import { registerBlockscoutTransport } from "@tools/blockscout/transport.js";
 import { registerDexScreenerTransport } from "@tools/dexscreener/transport.js";
+import { createBlockscoutBridgeTransport } from "../blockscout-bridge/index.js";
 import { createDexScreenerBridgeTransport } from "../dexscreener-bridge/index.js";
 import { mountBoardDetailsService } from "../market/board-details-service.js";
 import { mountBoardSparklineService } from "../market/board-sparkline-service.js";
@@ -84,6 +86,19 @@ export function setupAgentBridges(): () => Promise<void> {
   // throws by name and every autonomous launch fails closed: correct, but
   // the locker would be inert.
   teardowns.push(mountLaunchImageByteResolver());
+
+  // Robinhood Blockscout bridge - claim the operation-specific transport slot
+  // used to enumerate ERC-20 identities on chain 4663. The handle opens no
+  // request eagerly. Teardown closes admission by unregistering first, then
+  // aborts and drains every request that was already admitted.
+  const blockscoutBridge = createBlockscoutBridgeTransport();
+  const unregisterBlockscout = registerBlockscoutTransport(
+    blockscoutBridge.transport,
+  );
+  teardowns.push(async () => {
+    unregisterBlockscout();
+    await blockscoutBridge.dispose();
+  });
 
   // DexScreener site bridge - claim the single transport slot so the 18
   // dexscreener tools reach the gated site hosts through Chromium instead of

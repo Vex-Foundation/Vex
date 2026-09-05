@@ -139,6 +139,8 @@ export function createHighlightQueue(options: HighlightQueueOptions): HighlightQ
             ok: true,
             lines: outcome.result.lines,
             longLines: outcome.result.longLines,
+            budgetExceededLines: outcome.result.budgetExceededLines,
+            budgetExceededTotal: outcome.result.budgetExceededTotal,
           });
           continue;
         }

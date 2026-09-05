@@ -1,0 +1,538 @@
+/**
+ * THE STUDIO KEYBOARD CONTRACT, as a table.
+ *
+ * One row per shortcut, pure data; one pure function that turns a key event
+ * plus a context into an INTENT or `null`. The hook owns the effects
+ * (`useStudioKeybindings.ts`), the owners own the actions, and this module owns
+ * the mapping - the same split `explorer/explorer-keys.ts` already uses for the
+ * tree, so Studio has one answer for "what does this key do" and it is
+ * table-tested without a DOM.
+ *
+ * ## Why these keys and not others
+ *
+ * They are VS Code's, wherever Studio has the same surface, so a VS Code user's
+ * hands already know them. The four with no VS Code counterpart (`Focus
+ * explorer` matches, `Back to Agent mode` and `New project` are ours) follow the
+ * same grammar: Ctrl-or-Cmd plus Shift for a thing that CREATES or MOVES you,
+ * Ctrl-or-Cmd alone for a thing that toggles what is already there.
+ *
+ * ## Codes, not keys
+ *
+ * Every chord names a `KeyboardEvent.code` (`Digit5`, `Backquote`, `KeyW`),
+ * never a `key`. `key` is what the layout PRODUCES: Shift+5 is `%` on a US
+ * keyboard and `(` on a French one, and a table written against `key` would
+ * bind Split terminal on one layout and nothing on another. `code` is the
+ * physical key, which is what VS Code's ScanCode model resolves against
+ * (`base/common/keybindings.ts`, `ScanCodeChord`) and what a shortcut printed
+ * as `Ctrl+Shift+5` actually promises.
+ *
+ * ## Alt is never part of a Studio chord, and is always disqualifying
+ *
+ * Not an omission: on many European layouts AltGr IS Ctrl+Alt, so a user typing
+ * a Polish `ę` (AltGr+E) or a `@` on a German keyboard sends an event with both
+ * `ctrlKey` and `altKey` set. A resolver that ignored `altKey` would swallow
+ * those keystrokes into `Focus explorer` and the user could not type. Every row
+ * requires Alt to be UP.
+ *
+ * ## macOS is NOT "Cmd wherever Windows has Ctrl"
+ *
+ * That substitution is right for most rows and WRONG for the four VS Code
+ * itself writes a `mac:` override for, so this table writes the same four
+ * overrides and for the same reasons, read out of the checkout:
+ *
+ *  - Toggle terminal is `Ctrl+\`` on macOS, not `Cmd+\``
+ *    (`terminal.contribution.ts:128-129`, `KeyMod.WinCtrl` - which is the
+ *    literal Control key on macOS, not Cmd);
+ *  - New terminal is `Ctrl+Shift+\`` on macOS for the same reason
+ *    (`terminalActions.ts:1218`);
+ *  - Split terminal is `Cmd+\` on macOS with `Ctrl+Shift+5` as a SECONDARY
+ *    chord (`terminalActions.ts:1057-1061`), because Cmd+Shift+5 is macOS's
+ *    own screenshot capture;
+ *  - Next/previous tab stay on Control, because Cmd+Tab is the macOS
+ *    application switcher and never reaches a window.
+ *
+ * A row therefore carries an optional {@link StudioMacOverride}. Off macOS the
+ * override is not consulted at all, which is why {@link StudioChord.control}
+ * only ever appears inside one.
+ *
+ * ## `when`: where a binding applies
+ *
+ * VS Code resolves a keypress against a context and skips every rule whose
+ * `when` clause the context does not satisfy
+ * (`platform/keybinding/common/keybindingResolver.ts:380-399`). Studio's
+ * context is much smaller than a context-key service and is deliberately not
+ * one: the surface that holds focus, plus whether a modal dialog is open.
+ *
+ * A MODAL DIALOG SUSPENDS EVERY BINDING. It does not swallow the keystroke -
+ * the event is left alone and the dialog's own handlers still see it - Studio
+ * simply takes no shortcut while a decision is pending. Rule 08's floor for
+ * dangerous actions is that they cannot submit from stale state, and a
+ * `Ctrl+W` that closed a tab underneath an open Delete-project dialog is
+ * exactly that class of surprise.
+ */
+
+import type { StudioPlatform } from "./keybindings-labels.js";
+
+/**
+ * WHAT A SHORTCUT ASKS FOR. Never what it does: the owners decide that.
+ *
+ * A closed union, exhaustively handled by the hook's dispatch, so a row added
+ * here without a handler is a type error rather than a key that does nothing.
+ */
+export type StudioIntent =
+  | "newTerminal"
+  | "toggleTerminal"
+  | "splitTerminal"
+  | "focusExplorer"
+  | "goToFile"
+  | "toggleRail"
+  | "closeTab"
+  | "keepTabOpen"
+  | "nextTab"
+  | "previousTab"
+  | "toggleStudioAgent"
+  | "newProject";
+
+/**
+ * The Studio surface holding keyboard focus.
+ *
+ * `workspace` is the project column outside a terminal and outside the viewer
+ * (the tab strip, the panel header); `none` is everything else, including the
+ * agent-mode shell and the welcome screen.
+ */
+export type StudioSurface = "rail" | "terminal" | "viewer" | "workspace" | "none";
+
+/**
+ * A chord as the table states it.
+ *
+ * `ctrlOrCmd` is ONE flag and not two, because the platform decides which
+ * physical modifier satisfies it: Cmd on macOS, Ctrl everywhere else. Two flags
+ * would let a row ask for both and there is no such Studio shortcut.
+ */
+export interface StudioChord {
+  /** A `KeyboardEvent.code`. See the module note on codes vs keys. */
+  readonly code: string;
+  readonly ctrlOrCmd: boolean;
+  readonly shift: boolean;
+  /**
+   * The LITERAL Control key, which on macOS is a different physical key from
+   * Cmd. Defaults to false and is meaningful only inside a
+   * {@link StudioMacOverride}: off macOS Control IS `ctrlOrCmd`, so a
+   * non-macOS chord setting both would be asking for one key twice. The table
+   * test enumerates that no row does.
+   */
+  readonly control?: boolean;
+}
+
+/**
+ * What a row means on macOS, where it means something else.
+ *
+ * `primary` is the chord the label spells and the watermark shows; `secondary`
+ * is an additional chord that resolves to the same intent and is deliberately
+ * NOT shown, exactly as VS Code shows one keybinding per command while
+ * accepting both.
+ */
+export interface StudioMacOverride {
+  readonly primary: StudioChord;
+  readonly secondary?: StudioChord;
+}
+
+/** One row of the contract. */
+export interface StudioKeybinding {
+  readonly intent: StudioIntent;
+  readonly chord: StudioChord;
+  /** macOS overrides, present only where VS Code itself writes one. */
+  readonly mac?: StudioMacOverride;
+  /**
+   * The surfaces this binding applies on. `"anywhere"` means every surface,
+   * including `none`; a list means exactly those.
+   */
+  readonly when: "anywhere" | readonly StudioSurface[];
+  /**
+   * What the action is CALLED where it is shown to a user (the empty-workspace
+   * watermark). Sentence case, verb first, like every other action label in
+   * Studio.
+   */
+  readonly action: string;
+  /**
+   * THE ROW IS RESERVED, NOT WIRED: no owner answers this intent and none is
+   * expected to until the product grows the surface it names.
+   *
+   * A reserved row exists so its chord is CLAIMED - proved against the Electron
+   * menu accelerators, spelled in the labels, and unavailable to a future row
+   * that would collide with it - while Studio takes nothing when it is pressed.
+   *
+   * It is a fact about the ROW and it lives here rather than being inferred at
+   * a call site, because two consumers need it and they must not disagree: the
+   * hook (which finds no handler and leaves the event completely alone) and
+   * {@link studioTerminalSkipChords} (which must NOT ask xterm to refuse a key
+   * nothing will act on - that is how `Ctrl+\`` ended up reaching neither
+   * Studio nor the shell). `useStudioKeybindings.test.tsx` asserts the two
+   * agree by enumeration, so a row that gains an owner and keeps this flag is a
+   * red test rather than a dead key.
+   */
+  readonly reserved?: true;
+}
+
+/** The surfaces a tab shortcut applies on: the workspace and its two panels. */
+const IN_WORKSPACE: readonly StudioSurface[] = ["workspace", "terminal", "viewer"];
+
+/**
+ * THE TABLE. Order is the order the watermark lists them in.
+ *
+ * VS Code counterparts, verified in the checkout at
+ * `contrib/terminal/browser/terminalActions.ts:1214-1221` (New terminal),
+ * `terminal.contribution.ts:128-129` (Toggle terminal) and
+ * `terminalActions.ts:1053-1064` (Split terminal).
+ */
+export const STUDIO_KEYBINDINGS: readonly StudioKeybinding[] = [
+  {
+    intent: "newTerminal",
+    chord: { code: "Backquote", ctrlOrCmd: true, shift: true },
+    mac: { primary: { code: "Backquote", ctrlOrCmd: false, shift: true, control: true } },
+    when: "anywhere",
+    action: "New terminal",
+  },
+  {
+    intent: "toggleTerminal",
+    chord: { code: "Backquote", ctrlOrCmd: true, shift: false },
+    mac: { primary: { code: "Backquote", ctrlOrCmd: false, shift: false, control: true } },
+    when: "anywhere",
+    action: "Toggle terminal panel",
+    // RESERVED. It names a terminal PANEL that can be shown and hidden, which
+    // is VS Code's layout and not Studio's: here the workspace IS the terminal
+    // surface and there is nothing for the chord to fold away. See
+    // `useStudioKeybindings.ts` for the full reasoning, and `reserved` above
+    // for what the flag obliges.
+    reserved: true,
+  },
+  {
+    // Terminal-only, as in VS Code, where Split's `when` is
+    // `TerminalContextKeys.focus`: there is no answer to "split which one?"
+    // when no terminal has focus.
+    intent: "splitTerminal",
+    chord: { code: "Digit5", ctrlOrCmd: true, shift: true },
+    mac: {
+      primary: { code: "Backslash", ctrlOrCmd: true, shift: false },
+      secondary: { code: "Digit5", ctrlOrCmd: false, shift: true, control: true },
+    },
+    when: ["terminal"],
+    action: "Split terminal",
+  },
+  {
+    intent: "focusExplorer",
+    chord: { code: "KeyE", ctrlOrCmd: true, shift: true },
+    when: "anywhere",
+    action: "Focus explorer",
+  },
+  {
+    intent: "goToFile",
+    chord: { code: "KeyP", ctrlOrCmd: true, shift: false },
+    when: "anywhere",
+    action: "Go to file",
+  },
+  {
+    intent: "toggleRail",
+    chord: { code: "KeyB", ctrlOrCmd: true, shift: false },
+    when: "anywhere",
+    action: "Toggle sidebar",
+  },
+  {
+    intent: "closeTab",
+    chord: { code: "KeyW", ctrlOrCmd: true, shift: false },
+    when: IN_WORKSPACE,
+    action: "Close tab",
+  },
+  {
+    // KEEP THE PREVIEW TAB, VS Code's `workbench.action.keepEditor`.
+    //
+    // VS CODE'S OWN CHORD IS `Ctrl+K Enter`, A CHORD SEQUENCE, and this table
+    // has no sequences: a row is one chord, and `resolveStudioKeybinding` is a
+    // pure function of ONE event with no prefix state to carry between two
+    // presses. Adding that machinery for a single row would put a
+    // "waiting for the second key" mode into every keystroke Studio sees, so
+    // this is an INTERIM SINGLE CHORD (coordinator decision, 2026-09-02) and
+    // the row moves to `Ctrl+K Enter` if and when the table gains sequences.
+    //
+    // `Ctrl+Enter` is free: it collides with no Electron menu accelerator
+    // (the collision proof below enumerates them) and Studio binds no other
+    // Enter. Cmd+Enter on macOS is the ordinary substitution - there is no VS
+    // Code `mac:` override to copy here, because the chord it overrides does
+    // not exist there either.
+    intent: "keepTabOpen",
+    chord: { code: "Enter", ctrlOrCmd: true, shift: false },
+    // NOT `IN_WORKSPACE`, and the missing surface is `terminal`. VS Code's
+    // `workbench.action.keepEditor` is an EDITOR command
+    // (`when: activeEditorIsPreview`), and there is no preview terminal to
+    // keep. Leaving `terminal` in cost the shell a key: the chord was in the
+    // skip list, so xterm refused to encode `Ctrl+Enter`, and the hook then
+    // found `pinActiveTab()` returning false on a terminal tab and declined it
+    // too - a keystroke that reached neither Studio nor the pty. Claude Code
+    // and every REPL that binds Ctrl+Enter to "submit" need it.
+    when: ["workspace", "viewer"],
+    action: "Keep tab open",
+  },
+  {
+    intent: "nextTab",
+    chord: { code: "Tab", ctrlOrCmd: true, shift: false },
+    // Cmd+Tab is the macOS application switcher and never reaches a window.
+    mac: { primary: { code: "Tab", ctrlOrCmd: false, shift: false, control: true } },
+    when: IN_WORKSPACE,
+    action: "Next tab",
+  },
+  {
+    intent: "previousTab",
+    chord: { code: "Tab", ctrlOrCmd: true, shift: true },
+    mac: { primary: { code: "Tab", ctrlOrCmd: false, shift: true, control: true } },
+    when: IN_WORKSPACE,
+    action: "Previous tab",
+  },
+  {
+    // THE DOOR BOTH WAYS, and it is deliberately ONE chord rather than two.
+    //
+    // It was `Back to Agent mode`, a one-way trip: a user in an Agent session
+    // had no chord into Studio at all (measured in the after-audit, N1). The
+    // second chord that would have fixed it is a second thing to learn for a
+    // gesture the user already thinks of as one - "the other mode" - so this
+    // row keeps its chord and its labels (every UX-5b platform spelling is
+    // unchanged) and gains the return direction. That is VS Code's own grammar
+    // for a pair of surfaces the user moves between: `Ctrl+\`` toggles the
+    // panel, it does not open it and leave you to find the way out.
+    //
+    // The row applies `anywhere` because the surface it returns FROM is not a
+    // Studio surface at all.
+    intent: "toggleStudioAgent",
+    chord: { code: "KeyA", ctrlOrCmd: true, shift: true },
+    when: "anywhere",
+    action: "Switch Agent and Studio",
+  },
+  {
+    intent: "newProject",
+    chord: { code: "KeyN", ctrlOrCmd: true, shift: true },
+    when: "anywhere",
+    action: "New project",
+  },
+];
+
+/** The shape the resolver reads. A `KeyboardEvent` satisfies it structurally. */
+export interface StudioKeyEvent {
+  readonly code: string;
+  readonly ctrlKey: boolean;
+  readonly metaKey: boolean;
+  readonly shiftKey: boolean;
+  readonly altKey: boolean;
+}
+
+/** Everything outside the event that decides whether a binding applies. */
+export interface StudioKeyContext {
+  readonly surface: StudioSurface;
+  /** A modal dialog is open, so every Studio binding is suspended. */
+  readonly dialogOpen: boolean;
+  readonly platform: StudioPlatform;
+}
+
+/** Whether a binding's `when` admits this surface. */
+function appliesOn(binding: StudioKeybinding, surface: StudioSurface): boolean {
+  return binding.when === "anywhere" || binding.when.includes(surface);
+}
+
+/**
+ * THE CHORDS a row is reached by ON THIS PLATFORM, primary first.
+ *
+ * Off macOS this is always the single base chord: {@link StudioKeybinding.mac}
+ * exists precisely because macOS is the platform whose answer differs, and
+ * consulting it elsewhere would bind the literal Control key on Windows, where
+ * Control is already the primary modifier.
+ */
+export function studioChordsFor(
+  binding: StudioKeybinding,
+  platform: StudioPlatform,
+): readonly StudioChord[] {
+  const override = binding.mac;
+  if (platform !== "darwin" || override === undefined) return [binding.chord];
+  return override.secondary === undefined
+    ? [override.primary]
+    : [override.primary, override.secondary];
+}
+
+/**
+ * The chord a row is SPELLED as on this platform: the primary, always.
+ *
+ * A secondary chord resolves but is not advertised, which is VS Code's own
+ * split between `primary` and `secondary` in a keybinding registration.
+ */
+export function studioPrimaryChord(
+  binding: StudioKeybinding,
+  platform: StudioPlatform,
+): StudioChord {
+  const [primary] = studioChordsFor(binding, platform);
+  // `studioChordsFor` never returns an empty list; the fallback exists only
+  // because a tuple index is `T | undefined` under `noUncheckedIndexedAccess`.
+  return primary ?? binding.chord;
+}
+
+/**
+ * Whether the event's modifiers are exactly this chord's.
+ *
+ * EXACTLY, in every direction, and the third direction is what the macOS
+ * overrides added: a chord without Shift does not match a keypress with Shift
+ * held (`Ctrl+Shift+W` is not `Close tab`); Cmd and Ctrl never stand in for
+ * each other; and on macOS the literal Control key must be in exactly the
+ * state the chord asks for, so `Ctrl+\`` (Toggle terminal) and `Cmd+\`` (no
+ * Studio binding at all) cannot be confused.
+ */
+function modifiersMatch(
+  chord: StudioChord,
+  event: StudioKeyEvent,
+  platform: StudioPlatform,
+): boolean {
+  if (event.altKey) return false;
+  if (event.shiftKey !== chord.shift) return false;
+  const wantsControl = chord.control ?? false;
+  if (platform === "darwin") {
+    return event.metaKey === chord.ctrlOrCmd && event.ctrlKey === wantsControl;
+  }
+  // Off macOS Control IS the primary modifier, so a chord cannot ask for both
+  // and Meta (Windows/Super) is never part of a Studio chord.
+  if (wantsControl) return false;
+  return event.ctrlKey === chord.ctrlOrCmd && !event.metaKey;
+}
+
+/**
+ * Resolve a key press to a Studio intent, or `null` for "not ours".
+ *
+ * `null` is the whole contract on the way out: the hook does nothing and does
+ * not touch the event, so a key Studio has no binding for reaches the terminal,
+ * the tree, the text field or the browser exactly as it would have.
+ *
+ * At most one binding can match any (chord, surface) pair - the table test
+ * proves it by enumeration - so the first match is the only match and no
+ * precedence rule is needed. VS Code needs one (`_findCommand` walks its
+ * candidates backwards so the last registered rule wins) because users and
+ * extensions add rules to its table at runtime; nothing adds a row to this one.
+ */
+export function resolveStudioKeybinding(
+  event: StudioKeyEvent,
+  context: StudioKeyContext,
+): StudioIntent | null {
+  if (context.dialogOpen) return null;
+  for (const binding of STUDIO_KEYBINDINGS) {
+    if (!appliesOn(binding, context.surface)) continue;
+    for (const chord of studioChordsFor(binding, context.platform)) {
+      if (chord.code !== event.code) continue;
+      if (!modifiersMatch(chord, event, context.platform)) continue;
+      return binding.intent;
+    }
+  }
+  return null;
+}
+
+/* ------------------------------------------------------------------ *
+ * The skip-shell list
+ * ------------------------------------------------------------------ */
+
+/**
+ * THE CHORDS XTERM MUST REFUSE TO SEND TO THE SHELL, derived from the table.
+ *
+ * This is VS Code's `commandsToSkipShell`
+ * (`terminalConfigurationService.ts:57`, consulted by the custom key event
+ * handler in `terminalInstance.ts:1167`) with the one difference our smaller
+ * model allows: VS Code needs a hand-maintained list of command IDs because its
+ * table is open - users and extensions add rules to it - so it cannot derive
+ * "which commands are the workbench's" from the keybindings. Ours is closed and
+ * carries its own `when`, so the list is a PROJECTION of the table and cannot
+ * drift from it. `DEFAULT_COMMANDS_TO_SKIP_SHELL` and its test
+ * (`terminalInstance.test.ts:421`) are the shape this replaces.
+ *
+ * ## A CHORD IS ONLY REFUSED WHEN SOMETHING WILL ACT ON IT
+ *
+ * The projection used to be "every row whose `when` mentions the workspace OR
+ * the terminal", and it cost the shell two keys, both found by review and both
+ * of the same shape - refused by xterm, then declined by the hook, so the
+ * keystroke reached NEITHER Studio nor the pty:
+ *
+ *  - `Ctrl+\`` (`toggleTerminal`) has no owner at all. It is a reserved row;
+ *    see {@link StudioKeybinding.reserved}.
+ *  - `Ctrl+Enter` (`keepTabOpen`) applied on the terminal surface, where
+ *    "keep the preview tab" has no meaning and the workspace answers `false`.
+ *    Its `when` no longer lists `terminal`.
+ *
+ * So the derivation is now exactly the resolver's own question, asked for the
+ * `terminal` surface: WOULD `resolveStudioKeybinding` return an intent here,
+ * and is that intent one an owner answers. VS Code's handler asks the same two
+ * things in the same order - `softDispatch` resolves a command, and only a
+ * resolved command in `commandsToSkipShell` returns `false`
+ * (`terminalInstance.ts:1149-1170`).
+ *
+ * `SKIP_SHELL_SURFACE` is `terminal` alone and not `terminal` plus `workspace`,
+ * because {@link StudioKeyContext.surface} is resolved INNERMOST FIRST
+ * (`studioSurfaceOf`): an element inside a terminal answers `terminal`, never
+ * `workspace`, so a row that does not list `terminal` is a row the resolver
+ * would not match for a keypress made in a shell. A wider skip list is a list
+ * of keys refused on behalf of a binding that will not fire.
+ *
+ * @param handledIntents - the intents an owner answers, from
+ * `studioBoundIntents()`. Passed in rather than imported so this module stays
+ * the pure table it is: the handler map is the hook's fact, and importing it
+ * here would point the table at its own consumer.
+ */
+const SKIP_SHELL_SURFACE: StudioSurface = "terminal";
+
+/**
+ * MEMOISED per (handler set, platform), not rebuilt per keystroke: this is
+ * consulted once for every key a user presses into a shell. Keyed weakly on the
+ * set so a test's throwaway set is collected with it.
+ */
+const skipChordCache = new WeakMap<
+  ReadonlySet<StudioIntent>,
+  Map<StudioPlatform, readonly StudioChord[]>
+>();
+
+export function studioTerminalSkipChords(
+  platform: StudioPlatform,
+  handledIntents: ReadonlySet<StudioIntent>,
+): readonly StudioChord[] {
+  let byPlatform = skipChordCache.get(handledIntents);
+  if (byPlatform === undefined) {
+    byPlatform = new Map<StudioPlatform, readonly StudioChord[]>();
+    skipChordCache.set(handledIntents, byPlatform);
+  }
+  const cached = byPlatform.get(platform);
+  if (cached !== undefined) return cached;
+
+  const chords: StudioChord[] = [];
+  for (const binding of STUDIO_KEYBINDINGS) {
+    if (binding.reserved === true) continue;
+    if (!handledIntents.has(binding.intent)) continue;
+    if (!appliesOn(binding, SKIP_SHELL_SURFACE)) continue;
+    chords.push(...studioChordsFor(binding, platform));
+  }
+  const frozen: readonly StudioChord[] = chords;
+  byPlatform.set(platform, frozen);
+  return frozen;
+}
+
+/**
+ * Is this keypress one Studio takes from a terminal?
+ *
+ * The predicate `XtermHost` hands to `attachCustomKeyEventHandler`. It answers
+ * from the same chords {@link resolveStudioKeybinding} would resolve on the
+ * `terminal` surface, so a chord cannot be refused by one and ignored by the
+ * other - which is the drift the derivation exists to make impossible.
+ *
+ * What is NOT here is the point of it: `Ctrl+C` without a selection, `Ctrl+D`,
+ * `Ctrl+R`, `Ctrl+L`, `Ctrl+Enter`, `Ctrl+\` and every other control character
+ * belong to the shell, and a Studio that took them would have broken the
+ * terminal to gain a shortcut.
+ */
+export function isStudioTerminalChord(
+  event: StudioKeyEvent,
+  platform: StudioPlatform,
+  handledIntents: ReadonlySet<StudioIntent>,
+): boolean {
+  for (const chord of studioTerminalSkipChords(platform, handledIntents)) {
+    if (chord.code !== event.code) continue;
+    if (modifiersMatch(chord, event, platform)) return true;
+  }
+  return false;
+}

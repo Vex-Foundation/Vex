@@ -34,7 +34,7 @@
 import type { PoolClient } from "pg";
 
 import { log } from "../logger/index.js";
-import { ensureEngineDbUrl } from "../ipc/runtime/_ensure-engine-db-url.js";
+import { ensureEngineDbUrl } from "../database/engine-db-readiness.js";
 import { studioCorrelationId } from "./approval-broker.js";
 
 /** The six machine causes migration 086 accepts, as the callers name them. */
@@ -114,12 +114,45 @@ export async function repairPendingStudioRefusal(): Promise<boolean> {
     }
     return true;
   } catch (cause) {
+    if (isUndefinedTable(cause)) {
+      // NOT A FAILURE, and the log must not call it one. On a fresh database
+      // this runs before migrations create `studio_runtime_gate`, the retry a
+      // few seconds later succeeds, and a boot line reading "startup repair
+      // failed" for the ordinary first-run sequence teaches users and
+      // developers to ignore the line that matters when it is real.
+      log.info(
+        `[studio:refusals] startup repair deferred: the Studio runtime gate is `
+          + `not migrated yet; the retry will repair it `
+          + `correlationId=${correlationId}`,
+      );
+      return false;
+    }
     log.warn(
       `[studio:refusals] startup repair failed correlationId=${correlationId}`,
       cause,
     );
     return false;
   }
+}
+
+/** Postgres `undefined_table` - the Studio tables are not migrated yet. */
+const PG_UNDEFINED_TABLE = "42P01";
+
+/**
+ * Is this the PRE-MIGRATION state rather than a fault?
+ *
+ * The code is Postgres's own (`memory-inspector-db.ts` classifies the same
+ * one), which is why the message text is never matched: it is localised, it
+ * names the relation, and a substring match on it would break on the first
+ * database whose locale differs.
+ */
+function isUndefinedTable(cause: unknown): boolean {
+  return (
+    typeof cause === "object"
+    && cause !== null
+    && "code" in cause
+    && (cause as { code?: unknown }).code === PG_UNDEFINED_TABLE
+  );
 }
 
 /** Refuse ONE pending Studio intent. `true` when the CAS actually committed. */

@@ -65,7 +65,7 @@ vi.mock("@vex-lib/wallet.js", () => ({
   listWallets: (...a: unknown[]) => mocks.listWallets(...a),
 }));
 
-vi.mock("../runtime/_ensure-engine-db-url.js", () => ({
+vi.mock("../../database/engine-db-readiness.js", () => ({
   ensureEngineDbUrl: (...a: unknown[]) => mocks.ensureEngineDbUrl(...a),
 }));
 

@@ -37,6 +37,7 @@ import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 import { VexError, ErrorCodes } from "../../../../../errors.js";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 import type { SwapPrequote, SafetyVerdict } from "@vex-agent/db/repos/swap-prequotes.js";
+import { rowVexFee, venueBridgeVexFee } from "../prequote/vex-fee-fixtures.js";
 
 // ── Mocks ─────────────────────────────────────────────────────────────────
 
@@ -166,7 +167,7 @@ function bridgeRow(verdict: SafetyVerdict, overrides: Partial<SwapPrequote> = {}
     amount: "1000000",
     slippageBps: null,
     safetyVerdict: verdict,
-    safetyDetail: { bridge: true, note: "route-only; no token-safety check" },
+    safetyDetail: { bridge: true, note: "route-only; no token-safety check", vexFee: rowVexFee() },
     routeRef: null,
     // Migration 095: a row that predates the claim lane reads as an
     // executable, unclaimed quote. It authorizes nothing on its own - the

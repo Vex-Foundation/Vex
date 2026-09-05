@@ -1,5 +1,5 @@
 /**
- * `pendle.lp.quote` — the read half of the single-token LP surface: what an add
+ * `pendle.lp.quote` - the read half of the single-token LP surface: what an add
  * (token → LP) or a remove (LP → token) would deliver.
  *
  * INSTRUMENT GUARD (fail-closed, BEFORE any Convert call): the `market` must
@@ -62,8 +62,8 @@ export async function pendleLpQuote(p: Record<string, unknown>, context: Protoco
     return fail("direction must be 'add' (token → LP) or 'remove' (LP → token).");
   }
   // Direction-conditional token params: refused BY NAME rather than ignored
-  // (W9d). `tokenOut` stays optional on a remove — it defaults to the market's
-  // underlying — so only the add leg's `tokenIn` is required here.
+  // (W9d). `tokenOut` stays optional on a remove - it defaults to the market's
+  // underlying - so only the add leg's `tokenIn` is required here.
   const directionTokens = LP_DIRECTION_TOKENS[direction];
   const inapplicable = inapplicableTokenParamRefusal(p, directionTokens);
   if (inapplicable !== null) return fail(inapplicable);
@@ -146,7 +146,7 @@ export async function pendleLpQuote(p: Record<string, unknown>, context: Protoco
       : market.underlyingAsset
         ? getAddress(market.underlyingAsset)
         : null;
-    if (!outputToken) return fail("No output token — pass tokenOut (the market has no underlying to default to).");
+    if (!outputToken) return fail("No output token - pass tokenOut (the market has no underlying to default to).");
     const amountWei = parseUnits(amountInRaw, lpToken.decimals);
     const response = await client.convertMulti(chainId, {
       receiver,

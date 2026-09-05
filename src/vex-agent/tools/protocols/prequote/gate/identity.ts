@@ -15,6 +15,7 @@ import { resolveSelectedAddress } from "@vex-agent/tools/internal/wallet/resolve
 import { resolveUniswapChainId } from "@tools/uniswap/chains.js";
 import { resolvePendleChainId } from "@tools/pendle/chains.js";
 import { resolveLocalChainId } from "@tools/evm-chains/registry.js";
+import { MORPHO_MARKET_LANE } from "../identity/lane.js";
 import {
   canonicalizeJupiterFeeTail,
   resolveJupiterFeeSwapKnobs,
@@ -25,6 +26,7 @@ import { VexError, ErrorCodes } from "../../../../../errors.js";
 import type { ProtocolExecutionContext } from "../../types.js";
 import type { ExecuteGateRegistration } from "../registry.js";
 import { computePrequoteMatchHash } from "../identity/hash.js";
+import type { BridgeMatchInput } from "../identity/hash.js";
 import { assertBridgeParamsBindable, buildBridgeIdentity } from "../identity/bridge.js";
 import { buildRelayBridgeIdentity } from "../identity/relay-bridge.js";
 import { buildPendleRedeemIdentity } from "../identity/pendle-redeem.js";
@@ -62,7 +64,7 @@ const BORROW_DIRECTION_BY_KIND: Partial<Record<ExecuteGateRegistration["kind"], 
  * uniformly from the execute params for both families, matching the recorder).
  *
  * Etap 4: `approveExact` was REMOVED from the kyberswap swap/zap manifests
- * (approvals are now always exact — see `ensureKyberAllowance`), so the
+ * (approvals are now always exact - see `ensureKyberAllowance`), so the
  * dispatcher rejects it as an unknown param before this gate ever runs. The
  * field is kept in the identity (constant `false` in practice) to keep old
  * match-hashes stable and to document the doctrine; do NOT rely on it as a live
@@ -76,7 +78,7 @@ interface GateIdentity {
   readonly amount: string;
   /** Output recipient (execute param if non-empty, else the selected wallet). */
   readonly recipient: string;
-  /** Allowance behavior — true iff the execute set `approveExact`. */
+  /** Allowance behavior - true iff the execute set `approveExact`. */
   readonly approveExact: boolean;
 }
 
@@ -98,7 +100,7 @@ function evmLegIdentity(param: string): string {
  * Build the EVM trade identity from validated execute params. Throws on a bare
  * symbol. `selectedWallet` is the resolved signer (output-to-self default).
  *
- * Stage 9: `recipient` mirrors `executeKyberSwap` — `str(p,"recipient")` if a
+ * Stage 9: `recipient` mirrors `executeKyberSwap` - `str(p,"recipient")` if a
  * non-empty string, else the selected wallet (self). `approveExact` mirrors
  * `p.approveExact === true`; since Etap 4 removed it from the kyberswap manifests
  * the dispatcher rejects it upstream, so `params.approveExact` is undefined here
@@ -138,7 +140,7 @@ function buildEvmIdentity(
     chainId = resolved;
   } else if (provider === "trench") {
     // Trench Express is a LOCAL chain (Robinhood 4663), not a Kyber-supported
-    // chain — resolve via the local registry (network-free). An omitted chain
+    // chain - resolve via the local registry (network-free). An omitted chain
     // defaults to robinhood, matching the recorder which reads chainId from the
     // quote output (always 4663). Throws → caught upstream → fail-closed block.
     const resolved = resolveLocalChainId(chainParam || "robinhood");
@@ -168,10 +170,10 @@ function buildEvmIdentity(
  * which returns `.address` = mint) so the gate mint matches the recorded mint.
  * A resolve failure throws → caught upstream → gate_error block.
  *
- * Stage 9: Jupiter execute has no recipient/approveExact param — pin `recipient`
+ * Stage 9: Jupiter execute has no recipient/approveExact param - pin `recipient`
  * to the selected wallet (self) and `approveExact` to false, matching the
  * recorder's Solana constants. (If Jupiter ever gained such params, treat them
- * like EVM — read from the execute params here.)
+ * like EVM - read from the execute params here.)
  */
 async function buildSolanaIdentity(
   params: Record<string, unknown>,
@@ -198,6 +200,35 @@ async function buildSolanaIdentity(
 }
 
 /**
+ * What a gated execute's identity computation yields: the hash the row is looked
+ * up by, the family label for the logs, and - on the bridge lanes - the DERIVED
+ * destination wallet that identity binds.
+ *
+ * The recipient is here because it is already computed and already bound into
+ * the match hash, yet the approval card never showed it. It is
+ * `resolveSelectedAddress(destinationFamily)`, never a parameter (`recipient` is
+ * rejected by name at the alias), so surfacing it tells a person WHERE the funds
+ * land without giving anything the model can state a way in.
+ */
+export interface GateMatch {
+  readonly matchHash: string;
+  readonly family: PrequoteFamily;
+  readonly bridgeRecipient?: {
+    readonly family: PrequoteFamily;
+    readonly address: string;
+  };
+}
+
+/** One shape for both bridge identity builders, so their exposure cannot drift. */
+function bridgeMatch(identity: BridgeMatchInput): GateMatch {
+  return {
+    matchHash: computePrequoteMatchHash(identity),
+    family: identity.sourceFamily,
+    bridgeRecipient: { family: identity.destFamily, address: identity.recipient },
+  };
+}
+
+/**
  * Compute the match-hash + the family label for a gated EXECUTE call. Swap
  * branches on EVM/Solana identity builders (sync EVM, async Solana resolve);
  * bridge uses the SHARED `buildBridgeIdentity` so its hash collides with the
@@ -209,22 +240,22 @@ export async function computeGateMatch(
   sessionId: string,
   params: Record<string, unknown>,
   context: ProtocolExecutionContext,
-): Promise<{ matchHash: string; family: PrequoteFamily }> {
+): Promise<GateMatch> {
   if (gated.kind === "bridge") {
-    // Relay has its OWN identity path (LOCKED #4) — no Khalani identity reuse and
+    // Relay has its OWN identity path (LOCKED #4) - no Khalani identity reuse and
     // no khalani-only unbindable params. Khalani fail-closes FIRST on execute-
     // only params the quote can never bind, before building the identity.
     if (gated.provider === "relay") {
       const identity = await buildRelayBridgeIdentity(sessionId, params, context);
-      return { matchHash: computePrequoteMatchHash(identity), family: identity.sourceFamily };
+      return bridgeMatch(identity);
     }
     assertBridgeParamsBindable(params);
     const identity = await buildBridgeIdentity(sessionId, params, context);
-    return { matchHash: computePrequoteMatchHash(identity), family: identity.sourceFamily };
+    return bridgeMatch(identity);
   }
 
   if (gated.kind === "redeem") {
-    // Pendle PT redeem — its OWN identity path (G2#3). Resolves YT from the PT via
+    // Pendle PT redeem - its OWN identity path (G2#3). Resolves YT from the PT via
     // the SAME market lookup the recorder uses, so the digests collide. A resolve/
     // wallet-scope throw propagates → caught upstream → fail-closed block.
     const identity = await buildPendleRedeemIdentity(sessionId, params, context);
@@ -232,21 +263,21 @@ export async function computeGateMatch(
   }
 
   if (gated.kind === "mint") {
-    // Pendle PY mint — its OWN identity path (P4). Resolves the market (+ YT) from
+    // Pendle PY mint - its OWN identity path (P4). Resolves the market (+ YT) from
     // the PT anchor via the SAME lookup the recorder uses, so the digests collide.
     const identity = await buildPendleMintIdentity(sessionId, params, context);
     return { matchHash: computePrequoteMatchHash(identity), family: gated.family };
   }
 
   if (gated.kind === "redeem_py") {
-    // Pendle PRE-EXPIRY PY redeem — its OWN identity path (P4). Binds the output
+    // Pendle PRE-EXPIRY PY redeem - its OWN identity path (P4). Binds the output
     // token (default underlying) so a divergent output blocks.
     const identity = await buildPendleRedeemPyIdentity(sessionId, params, context);
     return { matchHash: computePrequoteMatchHash(identity), family: gated.family };
   }
 
   if (gated.kind === "lp_add") {
-    // Pendle LP single-token add — its OWN identity path (P5). Binds the market
+    // Pendle LP single-token add - its OWN identity path (P5). Binds the market
     // (validated against active markets) + input token + slippage, so a divergent
     // market/token/slippage blocks. The distinct kind makes an add unmixable from
     // a remove.
@@ -255,7 +286,7 @@ export async function computeGateMatch(
   }
 
   if (gated.kind === "lp_remove") {
-    // Pendle LP single-token remove — its OWN identity path (P5). Binds the output
+    // Pendle LP single-token remove - its OWN identity path (P5). Binds the output
     // token (default underlying) so a divergent output blocks.
     const identity = await buildPendleLpRemoveIdentity(sessionId, params, context);
     return { matchHash: computePrequoteMatchHash(identity), family: gated.family };
@@ -269,7 +300,7 @@ export async function computeGateMatch(
     // which, and it must be read here rather than guessed from the params: a
     // gate that inferred the lane from which key happened to be present would
     // let a caller choose its own identity path.
-    const identity = gated.lane === "market"
+    const identity = gated.lane === MORPHO_MARKET_LANE
       ? buildMorphoBorrowIdentityFor(
         gated.kind === "lend_deposit" ? "supply" : "withdraw",
         sessionId,
@@ -305,7 +336,7 @@ export async function computeGateMatch(
       ? buildEvmIdentity(params, walletAddress, gated.provider)
       : await buildSolanaIdentity(params, walletAddress);
   // W5 (design §6 R4): Jupiter fee-bearing tail, read from the EXECUTE params
-  // via the SAME canonicalization the recorder used on the quote params — a
+  // via the SAME canonicalization the recorder used on the quote params - a
   // fee/tip/DEX-filter/maxAccounts/wrap substitution between quote and
   // execute produces a different digest → BLOCK. "" for every other provider.
   const jupiterTail =
@@ -316,14 +347,14 @@ export async function computeGateMatch(
     kind: "swap",
     sessionId,
     family: gated.family,
-    // Venue binding (LOCKED #4) — the execute provider must equal the quote's.
+    // Venue binding (LOCKED #4) - the execute provider must equal the quote's.
     provider: gated.provider,
     chainId: identity.chainId,
     walletAddress,
     tokenIn: identity.tokenIn,
     tokenOut: identity.tokenOut,
     amount: identity.amount,
-    // Stage 9 money/safety leg — read from the EXECUTE params (recipient/
+    // Stage 9 money/safety leg - read from the EXECUTE params (recipient/
     // approveExact via the identity builder; slippageBps read uniformly here,
     // matching the recorder which reads the quote params).
     recipient: identity.recipient,

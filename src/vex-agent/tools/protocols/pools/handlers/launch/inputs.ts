@@ -106,12 +106,13 @@ export interface PoolsLaunchInputsOptions {
 /**
  * The refusal an imageless agent launch gets. Exported so the tests pin the
  * words the agent actually reads, and so the remedy stays one string: the locker
- * is SHARED by both launchpads, so `trench.images` is the tool that lists it.
+ * is SHARED by every launchpad, so the launchpad-neutral `launchpads.images` is
+ * the tool that lists it.
  */
 export const MISSING_IMAGE_REASON =
   "A pools.fun launch through the agent requires a picture from the image locker, and this call had no "
-  + "\"imageId\". Nothing was launched. List the staged images with trench__images_list (the locker is shared by both "
-  + "launchpads) and pass the id of the one the user wants, or ask the user to stage one on the image card if "
+  + "\"imageId\". Nothing was launched. List the staged images with launchpads__images_list (one locker, shared by "
+  + "every launchpad) and pass the id of the one the user wants, or ask the user to stage one on the image card if "
   + "the locker is empty. You can never create or supply an image yourself, and a token launched without one "
   + "renders blank on pools.fun forever, which cannot be undone.";
 

@@ -1,5 +1,5 @@
 /**
- * Tool dispatcher — routes tool calls to the correct handler.
+ * Tool dispatcher - routes tool calls to the correct handler.
  *
  * The engine calls dispatchTool() for every tool call from the LLM.
  * Dispatcher decides: internal tool → direct handler, or
@@ -7,7 +7,7 @@
  *
  * Internal tool handlers are lazy-imported so a dispatch for one handler
  * never forces the rest of the internal tool modules into memory. PR1
- * replaced a 25-case `switch` with a typed `INTERNAL_TOOL_LOADERS` map —
+ * replaced a 25-case `switch` with a typed `INTERNAL_TOOL_LOADERS` map -
  * same lazy semantics, data-driven, and the completeness test structurally
  * catches orphaned entries.
  *
@@ -33,7 +33,7 @@ import {
 import { TOOL_ABORTED_BY_USER_STOP_OUTPUT } from "@vex-agent/engine/core/turn-loop-tool-batch/results.js";
 import logger from "@utils/logger.js";
 
-// Compatibility façade re-exports — preserve the dispatcher's public surface.
+// Compatibility façade re-exports - preserve the dispatcher's public surface.
 export { checkPressureDeny } from "./dispatcher/pressure-gate.js";
 export { checkPlanAcceptanceDeny } from "./dispatcher/plan-acceptance-gate.js";
 export { dispatchTargetIsMutating } from "./dispatcher/mutating-targets.js";
@@ -41,7 +41,7 @@ export { INTERNAL_TOOL_LOADERS } from "./dispatcher/internal-loaders.js";
 
 /**
  * What the model is told when it emits `execute_tool` anyway. Names the real
- * cause and the ONE way forward (rule 04) — the model's next move is
+ * cause and the ONE way forward (rule 04) - the model's next move is
  * `ToolSearch`, whose rows come back as callable functions.
  *
  * THIS REFUSAL IS LOAD-BEARING, not a leftover of the retired ToolDef. The
@@ -55,14 +55,14 @@ const MODEL_EXECUTE_TOOL_REFUSAL =
   "execute_tool is not callable. Protocol tools are called DIRECTLY by their " +
   "own name: run ToolSearch with a query describing what you need, and " +
   "every tool it returns is added to your tool list as a real function whose " +
-  "arguments ARE its parameters — no toolId, no params wrapper.";
+  "arguments ARE its parameters - no toolId, no params wrapper.";
 
 /**
  * Stamp `result.actionKind` from the registry fallback when the handler did
  * not set it. Preserves a handler-set value (e.g. `executeProtocolTool` which
  * derives from the TARGET protocol manifest, not from the `execute_tool`
  * wrapper's own classification). Leaves `actionKind` undefined when the tool
- * name is not registered — the routing layer already returns an "unknown
+ * name is not registered - the routing layer already returns an "unknown
  * tool" error in that case and policy consumers can treat absent `actionKind`
  * as the conservative "unknown" signal.
  *
@@ -79,7 +79,7 @@ function withActionKindFallback(result: ToolResult, toolName: string): ToolResul
  * Dispatch a tool call to the appropriate handler.
  *
  * Returns a ToolResult that the engine feeds back to the LLM.
- * Never throws — errors are caught and returned as failed results.
+ * Never throws - errors are caught and returned as failed results.
  */
 export async function dispatchTool(
   request: ToolCallRequest,
@@ -136,7 +136,7 @@ export async function dispatchTool(
   // rejected with a synthetic error. The soft filter (LLM-visible tool catalog
   // projection) is the first layer; this is the runtime safety net for tools
   // the model emits anyway. The bypass flag is threaded through so this gate
-  // and the catalog filter agree exactly — `!== true` keeps every context that
+  // and the catalog filter agree exactly - `!== true` keeps every context that
   // omits the field on today's barrier.
   if (context.contextUsageBand) {
     const denied = checkPressureDeny(
@@ -172,7 +172,7 @@ export async function dispatchTool(
       durationMs,
     });
 
-    // `durationMs` is stamped only on the paths that actually executed —
+    // `durationMs` is stamped only on the paths that actually executed -
     // the two early-deny gates above return without it (see ToolResult).
     return { ...withActionKindFallback(result, call.name), durationMs };
   } catch (err) {
@@ -201,7 +201,7 @@ export async function dispatchTool(
     // place that never knows which venue threw. Routing it through the canonical
     // summarizer rather than interpolating `err.message` raw means an SDK error
     // that embedded a URL, a request/response body or an auth header cannot
-    // reach the model or the structured logs from here either — and the agent
+    // reach the model or the structured logs from here either - and the agent
     // gets the classified cause plus its remediation instead of a bare string.
     const summary = summarizeProtocolError(err);
 

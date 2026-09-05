@@ -6,7 +6,7 @@
  * exists: it writes a durable pre-broadcast failure row so a refused trade is
  * still auditable. `handlePostIntentFailure` covers a throw AFTER the intent
  * exists: it finalizes the refused leg with its real failure code, aborts every
- * planned leg behind it — so a failed row can never strand as pending — and only
+ * planned leg behind it - so a failed row can never strand as pending - and only
  * then returns.
  *
  * A leg that was already broadcast is never classified as a pre-sign refusal
@@ -51,7 +51,7 @@ export async function handlePostIntentFailure(x: PostIntentFailureInput): Promis
   const safeMessage = safeDetail(err);
   const refusedRole = plans[currentIndex]?.eventRole ?? "swap";
   // Finalize the refused leg with its real code (best-effort), then abort the
-  // rest — before returning, so a failed row can never strand as pending.
+  // rest - before returning, so a failed row can never strand as pending.
   const preSignForRow = legBroadcastAttempted ? null : classifyPreSignRevert(err);
   if (preSignForRow && events[currentIndex]) {
     try {
@@ -62,7 +62,7 @@ export async function handlePostIntentFailure(x: PostIntentFailureInput): Promis
     } catch (rowErr) {
       // Best-effort: the abort below still runs, so the row cannot strand as
       // pending. But a silent swallow here hid the one case where the refusal
-      // code never reached the record — every sibling logs, and so does this.
+      // code never reached the record - every sibling logs, and so does this.
       logger.warn("trench.trade_execute.fail_event_write_failed", {
         executionId,
         eventId: events[currentIndex]!.id,
@@ -89,7 +89,7 @@ export async function handlePostIntentFailure(x: PostIntentFailureInput): Promis
   }
   return {
     success: false,
-    output: `${TOOL_ID}: an internal error interrupted the trade after it was recorded — ${safeMessage}. Check the record (execution ${executionId}) before any further action.`,
+    output: `${TOOL_ID}: an internal error interrupted the trade after it was recorded - ${safeMessage}. Check the record (execution ${executionId}) before any further action.`,
     data: { _executionId: executionId, status: "pending" },
   };
 }

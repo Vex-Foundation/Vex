@@ -114,7 +114,18 @@ const COVERAGE_BY_NAMESPACE: Readonly<Partial<Record<ProtocolNamespace, Protocol
   },
   virtuals: {
     namespace: "virtuals",
-    line: `Coverage: ${virtualsManifestChainValues().join(", ")}.`,
+    // Coverage is not uniform across the four chains, and the differences are
+    // MEASURED, not assumed (`src/tools/virtuals/Virtuals.md`): the API indexes
+    // all four, the curve trade tape exists only where the provider's own SDK
+    // numbers a chain, and candles need an indexed pool. Naming only the chain
+    // list would tell the agent that every tool works everywhere, which is the
+    // exact wrong thing to believe before spending a call.
+    line:
+      `Coverage: ${virtualsManifestChainValues().join(", ")} for screening, detail, graduations and `
+      + "genesis. Narrower per capability: trade tape base and solana only; candles for graduated "
+      + "agents everywhere but ethereum, and for bonding agents on solana only. Trades execute "
+      + "elsewhere - kyberswap on base/ethereum, uniswap on robinhood, solana tools on solana; an "
+      + "EVM bonding curve has no venue tool yet.",
   },
 } as const;
 

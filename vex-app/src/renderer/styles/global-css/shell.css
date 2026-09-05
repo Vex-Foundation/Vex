@@ -3,7 +3,7 @@
  * root. The room's back wall is the current shell photo backdrop (ShellBackdrop,
  * owner-decreed 2026-07-20 — this deliberately supersedes the earlier
  * "zero photography" law); the columns float over it as glass (the two
- * rails + composer, guard-whitelisted backdrop-blur). Depth on solid
+ * rails + composer, wearing the glass tiers of global-css/glass.css). Depth on solid
  * surfaces still comes from the three luminance steps + white hairlines —
  * never resting glow. One accent family rooted at the brand #0000c0
  * (tokens v2); the only sanctioned gradient is the selection beam
@@ -59,29 +59,104 @@
    * like the three --vex-pin-* lines above it, so status-contrast.test.ts can
    * resolve the partner out of tokens.css and re-measure both themes. */
   --vex-pin-hover: color-mix(in oklab, var(--vex-alias-state-warn) 85%, var(--vex-alias-label-primary));
-  /* Glass instrument surface — user-sanctioned translucent ink for the
-   * floating Signal Console composer (SessionComposer), paired with
-   * backdrop-blur over the current shell backdrop (guard-whitelisted).
-   * --vex-glass-strong is the focus step (.vex-console:focus-within). */
-  --vex-glass: rgba(11, 15, 29, 0.66);
-  --vex-glass-strong: rgba(11, 15, 29, 0.82);
-  /* Side-rail surface — the two rails (SessionsList / BookPanel) wear a
-   * softer, more translucent tint than the composer glass so the current
-   * shell backdrop shows through them and they merge into one canvas with the
-   * center column instead of reading as bordered panels (owner review: NO
-   * separating stroke at all — pure glass, the tint step is the only edge).
-   * Backdrop-blur is guard-whitelisted for legibility over the photo.
-   * --vex-rail-strong anchors the brand strip + footer registry bands. */
-  /* macOS-clean ink glass (owner decree, 2026-07-20): re-tuned to the exact
-   * ink hue (#0a0d18 base, matching --vex-surface-0) instead of the previous
-   * off-hue navy-grey, and deepened slightly so text stays legible without a
-   * grain overlay riding on top. */
-  --vex-rail: rgba(10, 13, 24, 0.55);
+  /* GLASS TIERS (glass redesign 2026-09-04). Every translucent surface in the
+   * shell is one of four named tiers, consumed ONLY through the classes in
+   * global-css/glass.css (.vex-glass-rail / -pane / -chip / -overlay); no TSX
+   * carries a backdrop-blur utility any more (shell-design-guard BANNED list).
+   * Tints are alpha literals on purpose: glass is a veil over a photo, not a
+   * solid surface token, and both themes' veils live side by side below.
+   *
+   * Alpha ORDER is the contract, pinned by __tests__/glass-tokens.test.ts:
+   * chip < rail < card < pane < overlay. A chip sits INSIDE a rail (its
+   * coverage compounds with the rail's, which is what makes it read as a
+   * plate); a pane hosts a terminal, so its veil is denser than a rail's; an
+   * overlay screen covers everything and is nearly opaque.
+   *
+   * THE CARD (owner decision 2026-09-04: "the Settings glaze on every plain
+   * card"). The BOOK cards (POSITION, WALLETS, BALANCES, ACTIVITY, SESSION,
+   * PROJECT, LAUNCHPAD, the inspect and Board surfaces) were opaque
+   * `--vex-surface-1` plates with a stroke; they now wear the card tier.
+   * Its density is chosen for where it lands: inside a rail its filter is
+   * stripped (glass.css law 2) and its tint compounds with the rail's, and
+   * 0.55 + 0.6 covers 1 - 0.45 x 0.4 = 0.82 of the wall, which is the
+   * Settings overlay's own 0.82 - the look the owner pointed at. Standing
+   * alone over the welcome wall (the floating Portfolio stack has no rail
+   * under it) the card keeps its own 18px blur and reads at 0.6, next to
+   * the 0.7 handle button beside it. Celeris: 0.6 + 0.66 covers 0.864,
+   * against the 0.85 overlay.
+   *
+   * Readings behind the numbers (owner reference screenshots, 2026-09-04):
+   * macOS Terminal over El Capitan reads at roughly 0.6 coverage with the
+   * wallpaper still legible through it; kitty's panes sit near 0.55 and go
+   * visibly denser where two overlap; Hyper/verminal is the dense end at
+   * roughly 0.78. The rail keeps today's owner-approved 0.55; the pane sits
+   * at the macOS end of that bracket (coordinator decision 2026-09-04: the
+   * owner reviews the pane tint on the built app, one token change if it
+   * is rejected).
+   *
+   * The ink hue is the room's own (#0a0d18, --vex-surface-0) for rail, pane
+   * and chip; the overlay keeps the composer's slightly bluer ink
+   * (#0b0f1d) it has always worn. */
+  --vex-glass-tint-rail: rgba(10, 13, 24, 0.55);
+  --vex-glass-tint-card: rgba(10, 13, 24, 0.6);
+  --vex-glass-tint-pane: rgba(10, 13, 24, 0.62);
+  --vex-glass-tint-chip: rgba(10, 13, 24, 0.42);
+  --vex-glass-tint-overlay: rgba(11, 15, 29, 0.82);
+  /* EDGE LIGHT, NEVER BORDERS. A glass surface carries no separating stroke
+   * (owner review of the rails: pure glass, the tint step is the only
+   * edge). What it may carry is the light a real pane catches: a 1px top
+   * highlight (--vex-glass-edge) and, on free-standing tiers, a hairline
+   * inner ring (--vex-glass-edge-ring). Both are INSET box-shadows so they
+   * never change layout and never resolve to a `border`. */
+  --vex-glass-edge: inset 0 1px 0 0 rgba(255, 255, 255, 0.07);
+  --vex-glass-edge-ring: inset 0 0 0 1px rgba(255, 255, 255, 0.045);
+  /* Blur radii and saturation are GEOMETRY, theme-invariant, declared once
+   * here and never in the celeris block (the test forbids a per-theme
+   * override, so the two themes cannot drift apart in depth). The rail
+   * radius is today's `backdrop-blur-xl` (24px) so the approved rails do not
+   * move. There is NO chip radius: a chip is by definition inside another
+   * tier, whose filter has already blurred the backdrop, and the nesting
+   * bound in glass.css forbids a second filter on top of it. The saturation
+   * lift is small (a blur averages colour and greys it; the screenshots show
+   * the wallpaper through the pane at or just under its own saturation, never
+   * boosted, so a stronger web-glass lift would read false). */
+  --vex-glass-blur-rail: 24px;
+  --vex-glass-blur-card: 18px;
+  --vex-glass-blur-pane: 18px;
+  --vex-glass-blur-overlay: 32px;
+  --vex-glass-saturate: 120%;
+  /* THE WALL'S OWN VEIL (ShellBackdrop's ink layer over the artwork, wearing
+   * .vex-backdrop-veil below). It is the stage light, not a glass tier: light
+   * while the welcome stage is on (the artwork is the protagonist), deep
+   * behind an active session transcript, whose messages read STRAIGHT off
+   * the wall with nothing else between them and the photo.
+   *
+   * It compounds with every tier above it, and that product is what the
+   * glass actually shows of the artwork. Measured in the built app
+   * (e2e/studio-terminal-glass.spec.ts, 2026-09-04): a 0.62 chronos pane over
+   * the 0.8 veil leaves 7.6% of the night artwork, and because that artwork
+   * is dark with bright highlights (mean 22/41/75, peaks to 234) the
+   * highlights still read as ridges through the pane. The same 0.8 WHITE
+   * veil under a 0.72 celeris pane leaves 5.6% of a mid-tone day artwork
+   * (mean 156/190/180, darks to 28): 7 levels of structure on a 247 white,
+   * which is a flat card. No tint retune can recover that (the rail is
+   * pinned at 0.6 and the pane must stay denser than the rail), so the
+   * override below is where the light theme's glass is decided. */
+  --vex-backdrop-veil-idle: 0.3;
+  --vex-backdrop-veil-dim: 0.8;
+  /* COMPATIBILITY ALIASES, each with a named consumer and a removal
+   * condition (glass-tokens.test.ts fails the moment an alias has no
+   * `var()` consumer left, which is the signal to delete it here):
+   *  - --vex-rail: DELETED (2026-09-04) - its last consumer, BookRailFrame,
+   *    wears .vex-glass-rail like the two left rails.
+   *  - --vex-glass-strong: screens/ShellScreen.tsx until it wears
+   *    .vex-glass-overlay.
+   *  - --vex-rail-strong: SidebarProfile.tsx foot (moves to .vex-glass-chip)
+   *    and book/portfolio/WelcomePortfolioPanel.tsx round button (a solid
+   *    plate on a bordered button, not a glass tier; it needs its own
+   *    decision). No new tier equals its 0.7, so it keeps its literal. */
   --vex-rail-strong: rgba(10, 13, 24, 0.7);
-  /* Brand motion curves as named tokens — CSS and framer share one source
-   * (the landing GSAP engine's Out / InOut). */
-  --vex-ease-out: cubic-bezier(0.25, 1, 0.5, 1);
-  --vex-ease-inout: cubic-bezier(0.76, 0, 0.24, 1);
+  --vex-glass-strong: var(--vex-glass-tint-overlay);
   /* shadcn projection — stock Button/Input/Dialog inside the shell speak
    * the brand automatically (same mechanism as the onboarding scope). */
   --color-primary: var(--vex-accent);
@@ -94,14 +169,37 @@
   --color-muted-foreground: var(--vex-text-3);
 }
 
-/* Celeris glass: the rail/console glass flips to white over the day
- * artwork. Alpha literals stay literals (glass is a veil over a photo, not
- * a solid surface token); both themes' values live here side by side. */
+/* Celeris glass: every veil flips to white over the day artwork, in the
+ * same chip < rail < card < pane < overlay order. The top highlight stays white
+ * (a lit edge on white glass) while the inner ring flips to a faint INK
+ * hairline, because a white ring on white glass is invisible. Blur and
+ * saturation are not restated here: geometry is theme-invariant. */
 [data-vex-shell="true"][data-vex-theme="celeris"] {
-  --vex-rail: rgba(255, 255, 255, 0.6);
+  --vex-glass-tint-rail: rgba(255, 255, 255, 0.6);
+  --vex-glass-tint-card: rgba(255, 255, 255, 0.66);
+  --vex-glass-tint-pane: rgba(255, 255, 255, 0.72);
+  --vex-glass-tint-chip: rgba(255, 255, 255, 0.5);
+  --vex-glass-tint-overlay: rgba(255, 255, 255, 0.85);
+  --vex-glass-edge: inset 0 1px 0 0 rgba(255, 255, 255, 0.55);
+  --vex-glass-edge-ring: inset 0 0 0 1px rgba(10, 13, 24, 0.06);
   --vex-rail-strong: rgba(255, 255, 255, 0.78);
-  --vex-glass: rgba(255, 255, 255, 0.66);
-  --vex-glass-strong: rgba(255, 255, 255, 0.85);
+}
+
+/* Celeris in STUDIO: the wall dims less, so the day artwork survives the
+ * pane (owner review of the built app, 2026-09-04: "glass only on dark
+ * mode"). Scoped to Studio on purpose: there every reading surface is a
+ * glass pane carrying its own veil, so the wall's deep dim only doubles a
+ * veil that already exists. The Agent transcript has no such pane (its
+ * messages sit on the wall) and keeps the 0.8 in both themes; chronos
+ * Studio keeps it too, because the owner approved that look as is.
+ *
+ * 0.45 leaves 55% of the artwork under the wall and 15.4% under the 0.72
+ * pane: 18 levels of structure on a 243 white, which is the same order the
+ * chronos pane shows (16 levels between its mean and its brightest pixel).
+ * The terminal ink (#2b3040) over the darkest artwork pixel in the sampled
+ * region still clears 7:1 by arithmetic; the spec measures it. */
+[data-vex-shell="true"][data-vex-theme="celeris"][data-vex-runtime-mode="studio"] {
+  --vex-backdrop-veil-dim: 0.45;
 }
 
 /* Shell scrollbar — the onboarding recipe (38%/60% accent thumb) under the
@@ -150,7 +248,7 @@
   display: grid;
   grid-template-rows: 100%;
   overflow: hidden;
-  transition: grid-template-columns 300ms var(--vex-ease-inout);
+  transition: grid-template-columns var(--vex-duration-reveal) var(--vex-ease-inout);
 }
 .vex-shell-frame[data-dragging] {
   transition: none;
@@ -170,10 +268,42 @@
   cursor: col-resize;
   z-index: 30;
   touch-action: none;
-  transition: left 300ms var(--vex-ease-inout);
+  transition: left var(--vex-duration-reveal) var(--vex-ease-inout);
 }
 .vex-shell-frame[data-dragging] .vex-shell-handle {
   transition: none;
+}
+
+/* THE SEAM HIGHLIGHT - VS Code's sash feedback, adopted (sash.css
+ * `.monaco-sash:before` + the `.hover` / `.active` rules): the hit strip is
+ * 8px wide because a pointer needs that, but what LIGHTS UP is a 2px line on
+ * the actual column border, so the feedback sits where the edge will move and
+ * not where the mouse happens to be. Painted on a pseudo-element that never
+ * hit-tests, so it cannot eat the drag it is advertising.
+ *
+ * Both sides get it. The BOOK side already had its 12x32 pill and the sidebar
+ * side had NO resting feedback at all - the strip was invisible until the
+ * cursor changed - which is the gap this closes.
+ *
+ * Rejected from VS Code: the hover DELAY (`hoverDelayer`, `globalHoverDelay`).
+ * It exists to keep corner sashes from flickering when a pointer crosses two
+ * of them; our two handles are far apart and never orthogonal, so a delay
+ * would only make the seam feel unresponsive. */
+.vex-shell-handle::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  margin-left: -1px;
+  pointer-events: none;
+  background: transparent;
+  transition: background-color var(--vex-duration-fast) var(--vex-ease-out);
+}
+.vex-shell-handle:hover::before,
+.vex-shell-handle[data-dragging]::before {
+  background: color-mix(in oklab, var(--vex-accent) 55%, transparent);
 }
 .vex-shell-handle[data-side="book"]::after {
   content: "";
@@ -188,7 +318,7 @@
   background: var(--vex-surface-2);
   border: 1px solid var(--vex-line-strong);
   opacity: 0;
-  transition: opacity 300ms var(--vex-ease-inout);
+  transition: opacity var(--vex-duration-reveal) var(--vex-ease-inout);
 }
 .vex-shell-handle[data-side="book"]:hover::after,
 .vex-shell-handle[data-side="book"][data-dragging]::after {
@@ -198,6 +328,7 @@
 @media (prefers-reduced-motion: reduce) {
   .vex-shell-frame,
   .vex-shell-handle,
+  .vex-shell-handle::before,
   .vex-shell-handle[data-side="book"]::after {
     transition: none;
   }
@@ -216,23 +347,38 @@
   display: none;
 }
 
+/* The wall's veil density, keyed on the stage attribute ShellBackdrop stamps
+ * (`data-vex-backdrop-dimmed`) and resolved through the tokens above, so a
+ * theme or a mode can repoint it without a JS read. The 900ms opacity
+ * transition stays on the element (ShellBackdrop.tsx): it is the deepen's
+ * cinematic timing, not a density decision. */
+.vex-backdrop-veil {
+  opacity: var(--vex-backdrop-veil-idle);
+}
+[data-vex-backdrop-dimmed="true"] > .vex-backdrop-veil {
+  opacity: var(--vex-backdrop-veil-dim);
+}
+
 /* SIDEBAR COLLAPSE CHOREOGRAPHY — slide + crossfade, not a morph: the
  * content holds its frozen expanded layout (inline width set by the
  * component) and fades in place (.vex-sidebar-fading) while the sliding
  * grid track clips it; the rail layout only applies after the fade settles
- * (COLLAPSE_SETTLE_MS in SessionsList.tsx = the 150ms here). At settle the
- * rail controls enter the 56px spine from the former rail-edge offset over
- * the track transition's second half; the bottom-pinned foot only fades.
- * A cold-collapsed render gets neither class (static rail). */
+ * (TIMING PAIR: `COLLAPSE_SETTLE_MS` in lib/useCollapseChoreography.ts is
+ * `DURATION_BASE_MS`, the JS mirror of the `--vex-duration-base` below - the
+ * JS unmounts the wide content when this fade ends, so the two move together
+ * or not at all). At settle the rail controls enter the 56px spine from the
+ * former rail-edge offset over the track transition's second half; the
+ * bottom-pinned foot only fades. A cold-collapsed render gets neither class
+ * (static rail). */
 .vex-sidebar-fading > * {
   opacity: 0;
-  transition: opacity 150ms var(--vex-ease-inout);
+  transition: opacity var(--vex-duration-base) var(--vex-ease-inout);
 }
 .vex-sidebar-rail-in [data-rail-control] {
-  animation: vex-rail-in 150ms var(--vex-ease-inout) backwards;
+  animation: vex-rail-in var(--vex-duration-base) var(--vex-ease-inout) backwards;
 }
 .vex-sidebar-rail-in [data-rail-foot] {
-  animation: vex-rail-fade-in 150ms var(--vex-ease-inout) backwards;
+  animation: vex-rail-fade-in var(--vex-duration-base) var(--vex-ease-inout) backwards;
 }
 @keyframes vex-rail-in {
   from {

@@ -1,8 +1,9 @@
 import type { Result } from "../../../ipc/result.js";
+import type { StudioBridgeReadiness } from "../../../schemas/studio-bridge-readiness.js";
 import type { StudioHostStatus } from "../../../schemas/studio.js";
 
 /**
- * `vex.studio.*` - read-only Vex Studio host-status surface (stage B0).
+ * `vex.studio.*` - the read-only Vex Studio surface.
  *
  * The renderer reads the first value through `getHostStatus` and keeps it live
  * via `onHostStatus` (main-pushed, Zod-validated at the preload boundary).
@@ -28,4 +29,17 @@ export interface StudioBridge {
   readonly onHostStatus: (
     cb: (status: StudioHostStatus) => void,
   ) => () => void;
+  /**
+   * Does this installation have a `vex-mcp` bridge binary, and when it does
+   * not, the one thing the user can do about it (stage B1.6).
+   *
+   * A PULL with no subscription twin, unlike the host status: the answer moves
+   * only when somebody installs a toolchain or runs a build outside Vex, which
+   * nothing in this process observes. The re-check button calls this again.
+   *
+   * Read-only and idempotent, so calling it repeatedly is safe. It carries
+   * closed state codes and, on a from-source run, two pattern-bounded Go
+   * version tokens. It never carries a filesystem path.
+   */
+  readonly getBridgeReadiness: () => Promise<Result<StudioBridgeReadiness>>;
 }

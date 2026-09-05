@@ -62,15 +62,15 @@ export async function handleTwitterAccount(
     );
   } catch (error) {
     // Provider error text is untrusted content, not diagnostics: it selects a
-    // Vex-owned code and is then discarded. The vocabulary — including the
-    // auth/rate-limit distinction the agent acts on — lives in
+    // Vex-owned code and is then discarded. The vocabulary - including the
+    // auth/rate-limit distinction the agent acts on - lives in
     // `@tools/twitter-account/failure.ts`.
     return fail(`TwitterAccount: ${twitterFailureMessage(classifyTwitterFailure(error))}`);
   }
 }
 
 /**
- * The search request as it was RESOLVED — `withinHours` already turned into a
+ * The search request as it was RESOLVED - `withinHours` already turned into a
  * UTC `startDate`, `cashtags` already folded into `includeWords`. The agent
  * asked in one vocabulary and X was asked in another; echoing the second is
  * what lets an empty result be diagnosed instead of read as "nobody is talking

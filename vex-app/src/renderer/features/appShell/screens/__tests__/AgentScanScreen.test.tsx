@@ -26,6 +26,7 @@ import type { AgentScanDto } from "@shared/schemas/agent-scan-feed.js";
 import type { Result } from "@shared/ipc/result.js";
 import {
   availablePage,
+  GLOBAL_SCOPE,
   entry,
   installJsdomGeometry,
   restoreJsdomGeometry,
@@ -35,6 +36,17 @@ import {
 const mockUseAgentScanInfinite = vi.hoisted(() => vi.fn());
 vi.mock("../../../../lib/api/portfolio.js", () => ({
   useAgentScanInfinite: mockUseAgentScanInfinite,
+}));
+
+/**
+ * The project NAME read is mocked, not provided through a QueryClient: it is a
+ * LABEL for the scope chip and nothing about it belongs to this suite's
+ * subject. `useProject` is disabled for every non-project scope in the screen,
+ * so a global or session mount never consults it.
+ */
+const mockUseProject = vi.hoisted(() => vi.fn());
+vi.mock("../../../../lib/api/projects.js", () => ({
+  useProject: mockUseProject,
 }));
 
 const { AgentScanScreen } = await import("../AgentScanScreen.js");
@@ -62,7 +74,7 @@ function mockQuery(
 
 function mountScreen(): void {
   render(
-    <AgentScanScreen origin={null} sessionId={null} onClose={() => undefined} />,
+    <AgentScanScreen origin={null} scope={GLOBAL_SCOPE} onClose={() => undefined} />,
   );
 }
 
@@ -74,6 +86,8 @@ function lastFilters(): unknown {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // The disabled-query shape `useProject` returns for a non-project scope.
+  mockUseProject.mockReturnValue({ data: undefined });
   installJsdomGeometry();
 });
 

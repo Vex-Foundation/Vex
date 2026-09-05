@@ -6,6 +6,7 @@
  * validation) without touching real keystores or filesystem.
  */
 
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createTestWebContents,
@@ -19,6 +20,14 @@ type Handler = (
 ) => Promise<unknown>;
 
 const handlers = new Map<string, Handler>();
+
+/**
+ * The handler builds `archiveDir` with `path.join(BACKUPS_DIR, id)`, so the
+ * expectation is built the same way rather than spelled as a POSIX literal -
+ * on win32 `path.join` returns backslashes and a literal would compare a path
+ * the handler can never produce.
+ */
+const BACKUPS = path.resolve("/home/user/.config/vex/backups");
 
 const mockGenerateEvm = vi.fn();
 const mockGenerateSolana = vi.fn();
@@ -79,7 +88,11 @@ vi.mock("electron", () => ({
 }));
 
 vi.mock("@vex-lib/wallet.js", () => ({
-  BACKUPS_DIR: "/home/user/.config/vex/backups",
+  // A getter, because a `vi.mock` factory is hoisted above this file's own
+  // bindings and must not read `BACKUPS` at definition time.
+  get BACKUPS_DIR(): string {
+    return BACKUPS;
+  },
   listAvailableBackups: () => mockListAvailableBackups(),
   restoreFromBackupArchive: (args: unknown) => mockRestoreFromBackupArchive(args),
 }));
@@ -250,7 +263,7 @@ describe("walletRestoreArchive handler", () => {
         legacy: true,
       },
     ],
-    backupDir: "/home/user/.config/vex/backups/2026-05-28T10-00-00-000Z",
+    backupDir: path.join(BACKUPS, "2026-05-28T10-00-00-000Z"),
     vaultRestored: true,
     vaultLocked: false,
   };
@@ -277,8 +290,7 @@ describe("walletRestoreArchive handler", () => {
     // archiveDir is joined under BACKUPS_DIR from the opaque id.
     expect(mockRestoreFromBackupArchive).toHaveBeenCalledWith(
       expect.objectContaining({
-        archiveDir:
-          "/home/user/.config/vex/backups/2026-05-28T10-00-00-000Z",
+        archiveDir: path.join(BACKUPS, "2026-05-28T10-00-00-000Z"),
         password: "test-password-12",
       })
     );
@@ -462,7 +474,7 @@ describe("walletRestoreArchive schema validation", () => {
       filesRestored: [],
       walletsRestored: [],
       vaultLocked: false,
-      backupDir: "/home/user/.config/vex/backups/x",
+      backupDir: path.join(BACKUPS, "x"),
     });
     expect(leaked.success).toBe(false);
   });

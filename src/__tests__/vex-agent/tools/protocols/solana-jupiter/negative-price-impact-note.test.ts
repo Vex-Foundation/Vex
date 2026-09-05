@@ -27,15 +27,34 @@ vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
   }),
 }));
 
+const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+
 vi.mock("@tools/solana-ecosystem/jupiter/jupiter-tokens/service.js", () => ({
   requireJupiterResolvedTokenWithSafety: async (raw: string) => ({
-    token: { address: raw, symbol: raw === "SOL" ? "SOL" : "USDC", name: raw, decimals: 9 },
+    token: {
+      address: raw === "SOL" ? SESSION_ADDRESS : USDC_MINT,
+      symbol: raw === "SOL" ? "SOL" : "USDC",
+      name: raw,
+      decimals: 9,
+    },
     safety: null,
   }),
 }));
 
+/**
+ * WP2-J: the quote now reads the wallet before it answers, so this suite has a
+ * FUNDED wallet and a real (fee-only) message. Anything else would leave every
+ * case on the fail-closed `balance_unavailable` branch and stop the note under
+ * test from being the only thing that varies.
+ */
 vi.mock("@tools/solana-ecosystem/shared/solana-transaction.js", () => ({
-  getSolanaConnection: () => ({}),
+  getSolanaConnection: () => ({
+    getBalance: async () => 2_000_000_000,
+    getFeeForMessage: async () => ({ context: { slot: 1 }, value: 5_000 }),
+    getParsedTokenAccountsByOwner: async () => ({ value: [] }),
+    getAccountInfo: async () => null,
+    getMinimumBalanceForRentExemption: async () => 2_039_280,
+  }),
 }));
 
 const mockPrepare = vi.fn();
@@ -51,6 +70,7 @@ vi.mock("@utils/logger.js", () => {
   return { default: stub, logger: stub };
 });
 
+import * as web3 from "@solana/web3.js";
 import { swapQuoteHandler } from "@vex-agent/tools/protocols/solana-jupiter/handlers/core/swap-quote-handler.js";
 import { NEGATIVE_PRICE_IMPACT_NOTE } from "@vex-agent/tools/protocols/price-impact-note.js";
 
@@ -65,8 +85,19 @@ function ctx(over: Partial<ProtocolExecutionContext> = {}): ProtocolExecutionCon
 }
 
 /** `priceImpactPct` is the provider's FRACTION string; `null` = provider gave nothing readable. */
+function feeOnlyMessage() {
+  const { ComputeBudgetProgram, PublicKey, TransactionMessage, VersionedTransaction } = web3;
+  const message = new TransactionMessage({
+    payerKey: new PublicKey(SESSION_ADDRESS),
+    recentBlockhash: PublicKey.default.toBase58(),
+    instructions: [ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1 })],
+  }).compileToV0Message();
+  return new VersionedTransaction(message);
+}
+
 function mockQuote(priceImpactPct: string | null): void {
   mockPrepare.mockResolvedValue({
+    unsignedTx: feeOnlyMessage(),
     raw: {
       inAmount: "1000000000",
       outAmount: "1000000000",
@@ -97,6 +128,9 @@ describe("solana.swap.quote - negative price impact carries its meaning", () => 
 
     expect(summary).toContain("Price impact -2.00%.");
     expect(summary).toContain(NEGATIVE_PRICE_IMPACT_NOTE);
+    // The precondition for this whole suite: the scripted wallet funds the
+    // quote, so the note is the only sentence that varies between cases.
+    expect(summary).not.toContain("NOT EXECUTABLE");
     // The note follows the number it explains, never replaces it.
     expect(summary.indexOf(NEGATIVE_PRICE_IMPACT_NOTE)).toBeGreaterThan(summary.indexOf("Price impact"));
   });

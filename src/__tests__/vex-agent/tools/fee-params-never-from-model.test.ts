@@ -210,8 +210,15 @@ describe("no fee-bearing field originates from tool params", () => {
       // address on the quote and the execute, so the hashes collide). Vex now
       // derives it from the selected source wallet.
       expect(keys).not.toContain("refundTo");
-      // The legitimate money leg must survive the removal.
-      expect(keys).toContain("recipient");
+      // `recipient` went the SAME way (bridge-destination policy): a bridge
+      // delivers to the wallet selected for this project on the destination
+      // chain, so the destination is derived and the key is refused by name.
+      // The full boundary table lives in
+      // `protocols/bridge-recipient-derived.test.ts`.
+      expect(keys).not.toContain("recipient");
+      // The params a caller legitimately varies must survive the removals.
+      expect(keys).toContain("amountRaw");
+      expect(keys).toContain("toToken");
     }
   });
 
@@ -222,7 +229,8 @@ describe("no fee-bearing field originates from tool params", () => {
       const properties = (alias?.parameters as { properties?: Record<string, unknown> })?.properties ?? {};
       expect(Object.keys(properties)).not.toContain("referrer");
       expect(Object.keys(properties)).not.toContain("referrerFeeBps");
-      expect(Object.keys(properties)).toContain("recipient");
+      expect(Object.keys(properties)).not.toContain("recipient");
+      expect(Object.keys(properties)).toContain("amountRaw");
     }
   });
 

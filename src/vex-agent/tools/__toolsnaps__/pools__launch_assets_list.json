@@ -1,0 +1,47 @@
+{
+  "definition": {
+    "function": {
+      "description": "List the tokenised stocks a pools.fun token can be launched paired against on Robinhood Chain (4663), and how each one is priced. Use it before a stock-paired launch, or to answer which stocks the launchpad supports. Returns one row per stock with its symbol, name and contract address, plus two facts read live from the launch factory at one pinned block that the launchpad's own list does not carry: pricingMode and launchable. pricingMode is the factory's own enum: NONE, CORE_CHAINLINK, CHAINLINK_STOCK, SIGNED_STOCK. CORE_CHAINLINK and CHAINLINK_STOCK pairs are priced from a feed and their launch carries an EMPTY price attestation. SIGNED_STOCK pairs require a backend-signed price quote that the factory accepts only 30 to 120 seconds after the price was observed, so a launch on one of those has to be prepared, verified and broadcast inside that window and re-prepared when it lapses. Most of this list is SIGNED_STOCK (159 of 194 when measured), so assume the time-boxed path unless the row says otherwise. launchable is the factory's allowedPairedAsset flag for the pair. A row whose factory read did not answer reports pricingModeUnavailable instead of a mode, which means UNKNOWN and never NONE. The launchpad serves this list for Robinhood only and paginates nothing, so the paging here is Vex's: the reply carries totalCount (every stock the launchpad listed), matchedCount (after your filters), the offset it served, hasMore and nextOffset, plus pricingModeCounts over the whole list. Nothing is dropped silently - every row past the page is one request away. Page size is 1 to 200, default 50. Rows carry no decimals: read them on-chain when an amount must be rendered. Read-only.",
+      "name": "pools__launch_assets_list",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "description": "Rows returned, 1-200. Defaults to 50. This bound is Vex's, not the launchpad's - the endpoint returns everything in one body - and every row past it is reachable with offset.",
+            "type": "number"
+          },
+          "offset": {
+            "description": "Zero-based index into the filtered list, for the next page. Pass back the nextOffset from a previous reply and keep query and pricingMode identical, or the offset walks a different list.",
+            "type": "number"
+          },
+          "pricingMode": {
+            "description": "Keep only pairs on this factory pricing mode. SIGNED_STOCK lists the pairs whose launch needs a signed price quote inside the factory's 30-to-120-second window; CHAINLINK_STOCK lists the feed-priced ones whose launch carries an empty attestation. The filter is refused by name when the factory reads did not answer, because filtering on a mode nothing was read for would return a list that looks authoritative and is not.",
+            "enum": [
+              "NONE",
+              "CORE_CHAINLINK",
+              "CHAINLINK_STOCK",
+              "SIGNED_STOCK"
+            ],
+            "type": "string"
+          },
+          "query": {
+            "description": "Case-insensitive substring matched against both the stock symbol and its company name, applied by Vex after the launchpad's full list is fetched. At most 64 characters. Use it to check whether one stock is launchable rather than paging the whole list.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "pools",
+    "requiresEnv": null,
+    "toolId": "pools.launch_assets"
+  }
+}

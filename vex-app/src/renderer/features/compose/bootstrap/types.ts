@@ -23,6 +23,7 @@ export type Phase =
       message: string;
       previousInstallHoldingPorts: boolean;
     }
+  | { kind: "error.foreign_listener"; message: string }
   | { kind: "error.unhealthy"; message: string }
   | { kind: "error.failed"; message: string }
   | { kind: "error.cancelled" };

@@ -20,6 +20,13 @@
  * THE MODULE HOLDS NO LEASE. Live figures reach it through the overlay the
  * modal's lease holder publishes; with no modal open there is no lease, and
  * the module honestly shows the composed snapshot and says so.
+ *
+ * SESSION RAIL ONLY. A board is composed by VEX inside an Agent chat
+ * transcript and carries that session's identity (`BoardRef.sessionId`); a
+ * project has no transcript, so the Studio project rail mounts no Board tab
+ * and never reaches this module (owner decision 2026-09-04: "in Vex Studio's
+ * right sidebar we show only Portfolio"). `BookRailStack` is where that
+ * branch lives; this module has one caller and one scope.
  */
 
 import { useEffect, useMemo, type JSX } from "react";
@@ -62,9 +69,16 @@ const LIVE_STATE_LABEL = {
 /** What the module says when this session has composed no board yet. */
 export const ACTIVE_BOARD_EMPTY = "No board yet - ask VEX to compose one";
 
+/**
+ * The module's plate: the glass CARD tier the rest of the rail's cards wear
+ * (glass.css; inside the rail it is a tinted plate, the rail blurs for it).
+ */
+const CARD_CLASS = "vex-glass-card rounded-xl px-3 py-3";
+
 export function ActiveBoardModule(): JSX.Element {
   const pinnedBoard = useBoardSurfaceStore((s) => s.pinnedBoard);
   const latestBoard = useBoardSurfaceStore((s) => s.latestBoard);
+
   // Pinned wins for the module; the dot is how a newer board announces itself.
   const board = pinnedBoard ?? latestBoard;
 
@@ -74,7 +88,7 @@ export function ActiveBoardModule(): JSX.Element {
         data-vex-area="active-board"
         data-state="empty"
         aria-label="Active board"
-        className="rounded-xl border border-line-2 bg-surface-1 px-3 py-3"
+        className={CARD_CLASS}
       >
         <p
           data-vex-area="active-board-empty"
@@ -165,7 +179,7 @@ function ActiveBoard({ board }: { readonly board: BoardRef }): JSX.Element {
       data-live={held ? "true" : "false"}
       data-live-state={liveState}
       aria-label={`Active board: ${board.title}`}
-      className="flex flex-col gap-2.5 rounded-xl border border-line-2 bg-surface-1 px-3 py-3"
+      className={cn(CARD_CLASS, "flex flex-col gap-2.5")}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">

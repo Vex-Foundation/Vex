@@ -1,22 +1,22 @@
 /**
- * `pendle.market.get` — everything an agent needs about ONE Pendle market
+ * `pendle.market.get` - everything an agent needs about ONE Pendle market
  * before it quotes: identity, maturity, the tokens the market accepts, and
  * Pendle's own live PT/YT rates.
  *
  * It exists because both halves were previously unreachable. The accepted-token
- * sets are what a convert request must be built against — an off-list `tokenOut`
+ * sets are what a convert request must be built against - an off-list `tokenOut`
  * is the documented cause of Pendle's "tokenOut must be in the SY token out
- * list" 400 (G-05) — and the only way to learn a current PT/YT rate was a 5-CU
+ * list" 400 (G-05) - and the only way to learn a current PT/YT rate was a 5-CU
  * convert quote, which Pendle's own docs say not to use as a price source (G-04).
  *
  * THREE ANSWERS THIS TOOL MUST KEEP DISTINCT:
  *   - the market is MATURED. `swapping-prices` answers HTTP 404 for it, which is
- *     a definitive provider verdict about a live market that no longer trades —
+ *     a definitive provider verdict about a live market that no longer trades -
  *     so the identity and the accepted tokens are still returned, `rates` is
  *     null, and a sentence says why. It is not an error.
  *   - the market is NOT in the catalogue, and the catalogue was read to
- *     exhaustion — a determined absence.
- *   - the market was not found but the walk ran out of page budget — absence is
+ *     exhaustion - a determined absence.
+ *   - the market was not found but the walk ran out of page budget - absence is
  *     UNPROVEN and must be reported as such (rules/90: refuse rather than guess).
  */
 
@@ -43,8 +43,8 @@ const TOOL_ID = "pendle.market.get";
 
 /**
  * Accepted-token lists are bounded because the live ones are long: the recorded
- * chain-1 body carries ~150 `tokensIn`. The cap is EXPLICIT — the total and a
- * `truncated` flag travel with every list — because the owner rule is that an
+ * chain-1 body carries ~150 `tokensIn`. The cap is EXPLICIT - the total and a
+ * `truncated` flag travel with every list - because the owner rule is that an
  * agent-facing output is never silently trimmed.
  */
 const MAX_ACCEPTED_TOKENS = 25;
@@ -77,7 +77,7 @@ function acceptsTruncationNote(accepts: Record<string, BoundedTokenList>): strin
   const bounded = Object.entries(accepts).filter(([, list]) => list.truncated);
   if (bounded.length === 0) return undefined;
   return (
-    `Long token lists are capped at ${MAX_ACCEPTED_TOKENS} entries each — ` +
+    `Long token lists are capped at ${MAX_ACCEPTED_TOKENS} entries each - ` +
     bounded.map(([name, list]) => `${name} shows ${list.tokens.length} of ${list.total}`).join(", ") +
     ". The entries kept are the first Pendle returned; nothing was dropped silently, and a token absent from the " +
     "shown slice may still be accepted."
@@ -107,7 +107,7 @@ function projectRates(prices: PendleReadSwappingPrices, asOf: string): Projected
   };
 }
 
-/** A null leg means Pendle says that swap cannot be done — never a rate of zero. */
+/** A null leg means Pendle says that swap cannot be done - never a rate of zero. */
 function nullLegNote(rates: ProjectedRates): string | undefined {
   const missing = (["underlyingToPt", "ptToUnderlying", "underlyingToYt", "ytToUnderlying"] as const).filter(
     (leg) => rates[leg] === null,
@@ -115,11 +115,11 @@ function nullLegNote(rates: ProjectedRates): string | undefined {
   if (missing.length === 0) return undefined;
   return (
     `Pendle returned no rate for ${missing.join(", ")}. That means the swap cannot currently be done ` +
-    "(usually thin liquidity) — it is NOT a rate of zero, and it must not be quoted as one."
+    "(usually thin liquidity) - it is NOT a rate of zero, and it must not be quoted as one."
   );
 }
 
-/** True only for a definitive provider verdict — a 404 the request earned. */
+/** True only for a definitive provider verdict - a 404 the request earned. */
 function isDefinitiveNotFound(err: unknown): boolean {
   return err instanceof VexError && err.httpStatus === 404;
 }
@@ -225,7 +225,7 @@ export async function pendleMarketGet(
     partial,
     asOf,
     nextStep:
-      "Rates here are Pendle's own pre-trade source — cheaper and more honest than a convert quote, which Pendle says " +
+      "Rates here are Pendle's own pre-trade source - cheaper and more honest than a convert quote, which Pendle says " +
       "not to use as a price. For the trend behind them call pendle__market_history_get; for resting limit-order depth call " +
       "pendle__market_orderbook_get; to trade, call pendle__pt_quote / pendle__yt_quote with a tokenIn and tokenOut from `accepts`. " +
       "Amounts on the quote and trade tools are HUMAN units, not base units.",
@@ -240,7 +240,7 @@ function legsNote(legs: Record<string, PendleReadToken | null>, lookupFailure: s
       ? "Pendle's market catalogue does not publish them"
       : `the asset catalogue could not be read (${lookupFailure})`;
   return (
-    `Decimals are not known for: ${unknown.map(([name]) => name).join(", ")} — ${cause}. ` +
+    `Decimals are not known for: ${unknown.map(([name]) => name).join(", ")} - ${cause}. ` +
     "This does not block trading: every Pendle quote and trade tool takes amounts in HUMAN units."
   );
 }
@@ -260,7 +260,7 @@ function summarize(
       ? "no live implied APY"
       : `implied APY ${rates.impliedApyPercent}%`;
   return (
-    `${label} on ${chain} — ${matured ? "MATURED" : "active"}, ${term}, ${rate}.` +
+    `${label} on ${chain} - ${matured ? "MATURED" : "active"}, ${term}, ${rate}.` +
     (partial ? " Part of this answer could not be read; see the notes." : "")
   );
 }

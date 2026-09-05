@@ -23,6 +23,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { rowVexFee } from "./protocols/prequote/vex-fee-fixtures.js";
 
 // ── Prequote repo (no DB) — the gate's two reads are controlled per test ────
 const existsFreshFailByMatch = vi.fn().mockResolvedValue(false);
@@ -165,7 +166,7 @@ describe("swap_execute alias × Stage-7 gate — fresh prequote present", () => 
       amount: "0.5",
       slippageBps: 50,
       safetyVerdict: verdict,
-      safetyDetail: {},
+      safetyDetail: { vexFee: rowVexFee({ collection: "inside_route" }) },
       routeRef: null,
     // Migration 095: a row that predates the claim lane reads as an
     // executable, unclaimed quote. It authorizes nothing on its own - the
@@ -182,7 +183,7 @@ describe("swap_execute alias × Stage-7 gate — fresh prequote present", () => 
     findLatestFreshByMatch.mockResolvedValue(freshRow("pass"));
     const result = await dispatchTool({ name: "swap_execute", args: swapArgs(), toolCallId: "g4" }, ctx());
     expect(result.pendingApproval).toBe(true);
-    expect(result.prequote).toEqual({ verdict: "pass" });
+    expect(result.prequote).toEqual({ verdict: "pass", vexFee: rowVexFee({ collection: "inside_route" }) });
     expect(result.actionKind).toBe("user_wallet_broadcast");
     expect(swapHandler).not.toHaveBeenCalled();
   });
@@ -191,7 +192,7 @@ describe("swap_execute alias × Stage-7 gate — fresh prequote present", () => 
     findLatestFreshByMatch.mockResolvedValue(freshRow("unknown"));
     const result = await dispatchTool({ name: "swap_execute", args: swapArgs(), toolCallId: "g5" }, ctx());
     expect(result.pendingApproval).toBe(true);
-    expect(result.prequote).toEqual({ verdict: "unknown" });
+    expect(result.prequote).toEqual({ verdict: "unknown", vexFee: rowVexFee({ collection: "inside_route" }) });
     expect(swapHandler).not.toHaveBeenCalled();
   });
 

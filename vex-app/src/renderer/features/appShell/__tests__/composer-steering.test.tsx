@@ -13,7 +13,17 @@ import { createElement, type FormEvent, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { readQueue, resetComposerQueueForTest } from "../../../lib/composer-queue.js";
 import { resetDraftsForTest } from "../../../lib/composer-drafts.js";
-import { getToastSnapshot } from "../../../lib/toast.js";
+import { notifications } from "../../../lib/notifications/index.js";
+
+/**
+ * The transient toast is a notification-model entry since B2.2: the store that
+ * held one message and forgot it is gone, so the assertions read the model's
+ * newest retained item instead of a slot.
+ */
+function latestToastText(): string | null {
+  return notifications.getSnapshot().items[0]?.message ?? null;
+}
+
 import { TranscriptMessage } from "../TranscriptMessage.js";
 
 const mockSteer = vi.fn();
@@ -77,7 +87,10 @@ beforeEach(() => {
     chat: { steer: mockSteer },
   };
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  notifications.reset();
+});
 
 describe("mid-turn submit steers the live turn", () => {
   it("queued_live: the text is on the tape, so it never ALSO queues, and the toast says when it lands", async () => {
@@ -92,7 +105,7 @@ describe("mid-turn submit steers the live turn", () => {
     });
     expect(readQueue(SESSION)).toHaveLength(0);
     await waitFor(() =>
-      expect(getToastSnapshot()?.text).toBe(
+      expect(latestToastText()).toBe(
         "Steering queued - the agent reads it at its next step.",
       ),
     );

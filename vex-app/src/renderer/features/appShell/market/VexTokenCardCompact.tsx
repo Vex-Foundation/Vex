@@ -32,18 +32,29 @@ import {
 } from "../../../lib/format.js";
 
 /**
- * This rail widget's plate. `Board/TokenCard.tsx` once held a verbatim copy of
- * this string and a comment calling the two cards siblings whose geometry had
- * to stay in step. THEY HAVE FORKED, deliberately (board v2): the board card
- * grew a logo, a hero price treatment and a stat block, so it owns its own
- * padding and rhythm now. Changing this line no longer implies changing that
- * one, and the invariant that used to be claimed here is gone rather than
- * quietly false. What the two still share is the GRAMMAR - the same surface,
- * hairline and radius tokens, the same micro-label register, the same display
- * numerals, the same semantic delta tones - so they still read as one family.
+ * This rail widget's plate: a GLASS CHIP (`.vex-glass-chip`, glass.css), the
+ * one tier defined for a card inside a glass rail. Its edge is the inset
+ * light the class paints, never a stroke - the rail redesign (2026-09-04)
+ * took the four boxes out of the left rail and this frame was one of them.
+ *
+ * `Board/TokenCard.tsx` once held a verbatim copy of the old plate string and
+ * a comment calling the two cards siblings whose geometry had to stay in
+ * step. THEY HAVE FORKED, deliberately (board v2): the board card grew a
+ * logo, a hero price treatment and a stat block, and is a solid layer-1 card
+ * on a solid board, so it owns its own surface, padding and rhythm. What the
+ * two still share is the GRAMMAR - the same radius token, the same micro-label
+ * register, the same display numerals, the same semantic delta tones - so they
+ * still read as one family.
+ *
+ * The plate and its padding are two strings because the data card puts the
+ * padding on the LINK inside the plate rather than on the plate itself: the
+ * link's hover fill and focus ring are Tailwind utilities, and `glass.css` is
+ * unlayered author CSS that beats every utility on the same element (the
+ * HARD RULE in `styles/globals.css`). A ring on the chip element would be
+ * painted over by the chip's own box-shadow; on the inner link it draws.
  */
-const CARD_CLASS =
-  "rounded-xl border border-line-2 bg-surface-1 px-3 py-2.5";
+const CHIP_CLASS = "rounded-xl vex-glass-chip";
+const PLATE_PADDING = "px-3 py-2.5";
 
 // The $VEX DexScreener pair — a renderer-local literal by design: the
 // market IPC schema (`@shared/schemas/market.js`) deliberately carries no
@@ -65,7 +76,7 @@ export function VexTokenCardCompact(): JSX.Element {
         data-vex-area="vex-token-compact"
         data-state="error"
         aria-label="VEX market data unavailable"
-        className={CARD_CLASS}
+        className={cn(CHIP_CLASS, PLATE_PADDING)}
       >
         <div className="flex items-center gap-2">
           <VexMark />
@@ -89,7 +100,7 @@ export function VexTokenCardCompact(): JSX.Element {
         data-vex-area="vex-token-compact"
         data-state="loading"
         aria-label="Loading VEX price"
-        className={CARD_CLASS}
+        className={cn(CHIP_CLASS, PLATE_PADDING)}
       >
         <div className="flex items-center gap-2">
           <VexMark />
@@ -127,6 +138,7 @@ function CompactBody({
       aria-label={`VEX token price ${priceLabel}, 24 hour change ${deltaLabel}${
         snapshot.stale ? ", data delayed" : ""
       }`}
+      className={CHIP_CLASS}
     >
       {/* target=_blank never opens a child window: main's
        * setWindowOpenHandler denies + routes allowlisted hosts (dexscreener.com
@@ -138,8 +150,10 @@ function CompactBody({
         rel="noopener noreferrer"
         aria-label="Open $VEX on DexScreener"
         className={cn(
-          CARD_CLASS,
-          "block transition-colors hover:border-accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary",
+          PLATE_PADDING,
+          // The hover cue is the rail's own row wash, settled through
+          // `vex-tint`, rather than a border the chip no longer has.
+          "vex-tint block rounded-xl hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary",
         )}
       >
         <div className="flex items-center justify-between gap-2">

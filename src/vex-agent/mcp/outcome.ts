@@ -103,4 +103,19 @@ export interface RunStudioCallOptions {
    * away without saying why".
    */
   readonly cancelCause?: () => StudioCancelCause;
+  /**
+   * The `clientInfo.name` this call's MCP client declared in its `initialize`
+   * handshake, so an approval card can NAME the actor that proposed the action
+   * rather than leaving the row blank (rule 90).
+   *
+   * UNTRUSTED, SELF-DECLARED DISPLAY TEXT. Another process chose it; nothing
+   * may branch on it, and the enqueue path sanitizes it before it is stored.
+   * Absent when the client sent no usable name - the card then says "an MCP
+   * client", which is the honest claim.
+   *
+   * It is NOT on the Vex Studio handshake line (`{v, projectId}`): the client
+   * name arrives inside the MCP `initialize` the SDK server consumes, so the
+   * server module is the only place that can read it.
+   */
+  readonly clientName?: string;
 }

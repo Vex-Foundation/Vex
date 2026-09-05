@@ -16,9 +16,12 @@
  */
 
 import { StrictMode, type JSX } from "react";
+import type { Result } from "@shared/ipc/result.js";
+import type { FilesOutcome } from "@shared/schemas/files.js";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkspaceFileTab } from "../../workspace/types.js";
+import { notifications } from "../../../../../lib/notifications/index.js";
 import { FileViewer } from "../FileViewer.js";
 import { FileViewerRegistry } from "../file-viewer-registry.js";
 import { VIEWER_HIGHLIGHT_MAX_BYTES } from "../file-viewer-session.js";
@@ -42,9 +45,58 @@ let tree: FilesApiFake;
 let highlighter: FakeHighlighterPort;
 let registry: FileViewerRegistry;
 let clipboard: { writeText: ReturnType<typeof vi.fn> };
+/**
+ * The reveal channel, as this suite drives it.
+ *
+ * A fake at the RENDERER's own seam (`lib/api/files.ts`), because what the
+ * component owns is the ask and what it does with the answer; the boundary and
+ * the resolution are proved in `main/ipc/__tests__/studio-files-reveal-ipc.test.ts`
+ * and `main/studio/files/__tests__/files-real-fs.test.ts`.
+ */
+let reveal: RevealFake;
+
+class RevealFake {
+  readonly asks: { projectId: string; nodeId: string }[] = [];
+  answer: Result<FilesOutcome<null>> = { ok: true, data: { ok: true, value: null } };
+  /**
+   * When true a reveal HOLDS until the test answers it by index.
+   *
+   * A fake that resolved immediately could never show a stale answer being
+   * dropped, because the second ask could not exist while the first was still
+   * in flight - the same reason {@link FakeHighlighterPort} holds.
+   */
+  manual = false;
+  readonly held: ((result: Result<FilesOutcome<null>>) => void)[] = [];
+  readonly rejects: ((error: unknown) => void)[] = [];
+
+  call(input: { projectId: string; nodeId: string }): Promise<Result<FilesOutcome<null>>> {
+    this.asks.push(input);
+    if (!this.manual) return Promise.resolve(this.answer);
+    return new Promise((resolve, reject) => {
+      this.held.push(resolve);
+      this.rejects.push(reject);
+    });
+  }
+
+  /** Answer the ask made at `index`, oldest first, in any order the test likes. */
+  settleAt(index: number, result: Result<FilesOutcome<null>>): void {
+    const settle = this.held[index];
+    if (settle === undefined) throw new Error(`no reveal in flight at ${String(index)}`);
+    settle(result);
+  }
+
+  /** Reject the ask made at `index`: a bridge that never answered at all. */
+  rejectAt(index: number, error: Error = new Error("the bridge rejected")): void {
+    const fail = this.rejects[index];
+    if (fail === undefined) throw new Error(`no reveal in flight at ${String(index)}`);
+    fail(error);
+  }
+}
 
 vi.mock("../../../../../lib/api/files.js", () => ({
   readProjectFile: (projectId: string, nodeId: string) => files.readFile(projectId, nodeId),
+  revealProjectNodeInFileManager: (input: { projectId: string; nodeId: string }) =>
+    reveal.call(input),
   listProjectChildren: (input: Parameters<FilesApiFake["listChildren"]>[0]) =>
     tree.listChildren(input),
   watchProjectFiles: (input: Parameters<FilesApiFake["watchFile"]>[0]) => tree.watchFile(input),
@@ -73,6 +125,10 @@ beforeEach(() => {
     createHighlighter: () => highlighter,
     explorers: new ExplorerRegistry(),
   });
+  reveal = new RevealFake();
+  // The window's model is module-level and shared by every suite in the
+  // process; the reveal tests read it, so each one starts from empty.
+  notifications.reset();
   clipboard = { writeText: vi.fn(() => Promise.resolve()) };
   Object.defineProperty(navigator, "clipboard", {
     configurable: true,
@@ -83,6 +139,9 @@ beforeEach(() => {
 
 afterEach(() => {
   registry.disposeAll();
+  // Also clears the purge timers a raised notification armed, so a suite that
+  // raised one leaves no timer behind.
+  notifications.reset();
   vi.restoreAllMocks();
 });
 
@@ -105,14 +164,18 @@ function View({
 }
 
 /** Mount and let the read plus its publication settle. */
-async function mount(props: Parameters<typeof View>[0] = {}): Promise<void> {
+async function mount(
+  props: Parameters<typeof View>[0] = {},
+): Promise<ReturnType<typeof render>> {
+  let view!: ReturnType<typeof render>;
   await act(async () => {
-    render(<View {...props} />);
+    view = render(<View {...props} />);
     await Promise.resolve();
   });
   await act(async () => {
     await Promise.resolve();
   });
+  return view;
 }
 
 function lineTexts(): string[] {
@@ -148,6 +211,58 @@ describe("the header strip", () => {
     // would silently normalise line endings the file actually contains.
     expect(clipboard.writeText).toHaveBeenCalledWith("line one\r\nline two\n");
     expect(screen.getByText("Copied")).toBeTruthy();
+  });
+
+  /**
+   * AUDIT A13, measured twice. `data/blob.bin` and `assets/image.png` have no
+   * extension any grammar claims, so the path-derived language is `text` and
+   * the header read `Plain text` directly above a body saying the bytes are not
+   * text at all. The first fix covered only `binary`; the walk that measured it
+   * again hit `invalid_utf8`, which is a different refusal with the same lie on
+   * top. The header now takes its word from the refusal whenever the refusal
+   * establishes what the thing IS.
+   */
+  it.each([
+    ["binary", "data/blob.bin", "Binary"],
+    ["invalid_utf8", "assets/image.png", "Not UTF-8"],
+    ["not_a_file", "dev/pipe", "Not a file"],
+  ] as const)(
+    "labels a %s refusal by its detected kind, never Plain text",
+    async (code, relativePath, label) => {
+      files.responder = () => refused(code);
+      await mount({ tab: { ...TAB, relativePath, title: "x" } });
+      expect(screen.getByText(label)).toBeTruthy();
+      expect(screen.queryByText("Plain text")).toBeNull();
+    },
+  );
+
+  /**
+   * A SIZE IS A KIND HERE TOO, and this is the contract change from the first
+   * pass. A 3 MiB file main refused unread is `Too large` in the header: the
+   * viewer never saw a byte of it, so `TypeScript` would be the path's guess
+   * printed above a body that says the file was not read.
+   */
+  it("names the size refusal in the kind slot rather than guessing from the path", async () => {
+    files.responder = () => refused("too_large", 3_145_728);
+    await mount();
+    expect(screen.getByText("Too large")).toBeTruthy();
+    expect(screen.queryByText("TypeScript")).toBeNull();
+  });
+
+  it("keeps the path-derived language on a refusal about the environment", async () => {
+    // `project_closed` says nothing about the file; the header keeps the only
+    // honest answer it has.
+    files.responder = () => refused("project_closed");
+    await mount();
+    expect(screen.getByText("TypeScript")).toBeTruthy();
+  });
+
+  it("marks the viewer as a keyboard surface the Studio table can resolve", async () => {
+    files.responder = () => ok(contentOf("const a = 1;\n"));
+    await mount();
+    expect(
+      screen.getByTestId("file-viewer").getAttribute("data-vex-key-surface"),
+    ).toBe("viewer");
   });
 
   it("disables Copy when there is nothing to copy", async () => {
@@ -211,10 +326,27 @@ describe("refusals are answers about the file", () => {
  * ------------------------------------------------------------------ */
 
 describe("the chip names every bound", () => {
-  it("says why a file with no grammar has no colour", async () => {
+  /**
+   * CONTRACT CHANGE (audit A11, second pass): a file whose language has no
+   * grammar reports NOTHING. The first pass demoted the sentence to quiet copy
+   * and the audit measured it again on `generated/file-005.txt`, because a
+   * grammar sentence on a file with no grammar is noise in either register.
+   * The chip keeps its meaning for the rows that are real - a dead highlighter,
+   * the size limit, long lines - which is what it was losing.
+   */
+  it("says NOTHING about grammar on a file whose kind has none", async () => {
     files.responder = () => ok(contentOf("plain words\n"));
     await mount({ tab: { ...TAB, relativePath: "notes.txt" } });
-    expect(screen.getByTestId("file-viewer-chip").textContent).toContain("no grammar");
+    // Not a chip, not quiet copy, not a live region: nothing ran, nothing was
+    // bounded, and the header already says `Plain text`.
+    expect(screen.queryByTestId("file-viewer-chip")).toBeNull();
+    expect(screen.queryByTestId("file-viewer-secondary-note")).toBeNull();
+    expect(screen.queryByText(/no grammar/)).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
+    // The content is still there in full. Silence is about the state, never
+    // about the file.
+    // The trailing newline's empty last line included: nothing was trimmed.
+    expect(lineTexts()).toEqual(["plain words", ""]);
   });
 
   it("names the size AND the limit when the file is too large to highlight", async () => {
@@ -250,7 +382,9 @@ describe("the chip names every bound", () => {
       await Promise.resolve();
     });
     const chip = screen.getByTestId("file-viewer-chip").textContent ?? "";
-    expect(chip).toContain("3 lines are over 20000 characters");
+    // The bound is grouped (audit A12): a five-digit number in a sentence is
+    // read at a glance as `20,000` and counted digit by digit as `20000`.
+    expect(chip).toContain("3 lines are over 20,000 characters");
   });
 
   it("shows NO chip when the whole file is highlighted with nothing to report", async () => {
@@ -261,6 +395,84 @@ describe("the chip names every bound", () => {
       await Promise.resolve();
     });
     expect(screen.queryByTestId("file-viewer-chip")).toBeNull();
+    expect(screen.queryByTestId("file-viewer-secondary-note")).toBeNull();
+  });
+
+  /**
+   * PARTLY HIGHLIGHTED (UX-8): the state that used to render as silence.
+   *
+   * vscode-textmate abandons a line whose scan outruns the per-line clock and
+   * hands back what it has, so the row arrives byte-exact and half-coloured.
+   * The viewer showed it as if it were finished, which is the one thing a
+   * highlighter must not do: a reader who notices grey in the middle of a line
+   * and is told nothing has no reason to trust the colour anywhere else.
+   *
+   * BOTH REGISTERS at once, and that is the design. The chip announces WHICH
+   * lines, because that is a fact about this file worth pointing at; the quiet
+   * note explains what the budget IS, because a definition does not deserve an
+   * announcement on every file that hits it.
+   */
+  it("names the partly highlighted lines and where the first one is", async () => {
+    files.responder = () => ok(contentOf("const a = 1;\n"));
+    await mount();
+    await act(async () => {
+      highlighter.settleOldest(
+        [
+          [
+            {
+              text: "const a = 1;",
+              color: "var(--x)",
+              italic: false,
+              bold: false,
+              underline: false,
+            },
+          ],
+        ],
+        0,
+        { lines: [7, 812], total: 3 },
+      );
+      await Promise.resolve();
+    });
+
+    const chip = screen.getByTestId("file-viewer-chip").textContent ?? "";
+    // The COUNT is the total, never the length of the list the worker sent.
+    expect(chip).toContain("3 lines ran out of highlighting time");
+    expect(chip).toContain("first at line 7");
+    // And the budget is explained quietly, in words, under it.
+    const note = screen.getByTestId("file-viewer-secondary-note").textContent ?? "";
+    expect(note).toContain("half a second");
+    expect(note).toContain("Every character is still there.");
+    // THE PARTIAL COLOURS STAY, which is what VS Code does with the same
+    // result. Removing them would report the bound by taking away the thing the
+    // bound partly delivered.
+    expect(lineTexts()).toContain("const a = 1;");
+  });
+
+  it("says ONE line in the singular", async () => {
+    files.responder = () => ok(contentOf("const a = 1;\n"));
+    await mount();
+    await act(async () => {
+      highlighter.settleOldest([[]], 0, { lines: [2] });
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId("file-viewer-chip").textContent).toContain(
+      "1 line ran out of highlighting time, first at line 2.",
+    );
+  });
+
+  it("says nothing about the budget when no line ran out of it", async () => {
+    files.responder = () => ok(contentOf("const a = 1;\n"));
+    await mount();
+    await act(async () => {
+      highlighter.settleOldest([[]], 3);
+      await Promise.resolve();
+    });
+    const chip = screen.getByTestId("file-viewer-chip").textContent ?? "";
+    // The long-line bound is a DIFFERENT bound: it must not drag the budget
+    // explanation onto every file with a minified line in it.
+    expect(chip).toContain("20,000 characters");
+    expect(chip).not.toContain("highlighting time");
+    expect(screen.queryByTestId("file-viewer-secondary-note")).toBeNull();
   });
 });
 
@@ -379,5 +591,207 @@ describe("mounting", () => {
     });
     expect(registry.consumerCount(TAB.tabId)).toBe(0);
     expect(registry.sessionCount()).toBe(0);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Reveal in the file manager (audit A14)
+ * ------------------------------------------------------------------ */
+
+describe("the kind menu reveals the file", () => {
+  /** Open the header's kind menu and hand back its one row. */
+  async function openMenu(): Promise<HTMLElement> {
+    const trigger = screen.getByTestId("file-viewer-kind");
+    await act(async () => {
+      fireEvent.click(trigger);
+      await Promise.resolve();
+    });
+    return screen.getByText("Reveal in file manager");
+  }
+
+  /** Open the menu and press the reveal row: one ask. */
+  async function askReveal(): Promise<void> {
+    const row = await openMenu();
+    await act(async () => {
+      fireEvent.click(row);
+      await Promise.resolve();
+    });
+  }
+
+  it("asks main for the TAB'S NODE, and never for a path", async () => {
+    files.responder = () => ok(contentOf("const a = 1;\n"));
+    await mount();
+
+    const row = await openMenu();
+    await act(async () => {
+      fireEvent.click(row);
+      await Promise.resolve();
+    });
+
+    // The node token and the project, which is everything the renderer has.
+    expect(reveal.asks).toEqual([{ projectId: "p1", nodeId: "node-1" }]);
+    // A reveal that worked says nothing: the user watched a window appear.
+    expect(screen.queryByTestId("file-viewer-reveal-note")).toBeNull();
+  });
+
+  /**
+   * THE STATE THE ACTION EXISTS FOR. A file too large to open in the viewer is
+   * exactly the one a person wants to open somewhere else, so the row is there
+   * on a refusal rather than disabled with the body's apology.
+   */
+  it("offers the row on a refused read", async () => {
+    files.responder = () => refused("too_large", 3_145_728);
+    await mount();
+    const row = await openMenu();
+    await act(async () => {
+      fireEvent.click(row);
+      await Promise.resolve();
+    });
+    expect(reveal.asks).toEqual([{ projectId: "p1", nodeId: "node-1" }]);
+  });
+
+  it("says what happened when main refuses, in the file's own terms", async () => {
+    files.responder = () => ok(contentOf("const a = 1;\n"));
+    await mount();
+    reveal.answer = { ok: true, data: { ok: false, code: "not_found" } };
+
+    const row = await openMenu();
+    await act(async () => {
+      fireEvent.click(row);
+      await Promise.resolve();
+    });
+
+    const note = screen.getByTestId("file-viewer-reveal-note");
+    expect(note.textContent).toContain("no longer on disk");
+    // ANNOUNCED: the user pressed something and it did not happen.
+    expect(note.getAttribute("role")).toBe("alert");
+    // A REFUSAL STAYS CONTEXTUAL. It is main's answer about THIS file, decided
+    // against the node it resolved, and it goes stale with the tab - so it
+    // must not also be raised app-wide, where it would outlive its subject.
+    expect(notifications.getSnapshot().items).toEqual([]);
+  });
+
+  /**
+   * A CALL THAT NEVER REACHED MAIN IS NOT AN ANSWER ABOUT THIS FILE.
+   *
+   * The file service is reached by the explorer and the terminal too, and the
+   * user has to be able to re-read the failure after this tab is gone. So it
+   * leaves the viewer entirely and is raised into the project-scoped
+   * notification model, naming its own file.
+   */
+  it("reports a service it could not reach in the notifications, not over the file", async () => {
+    files.responder = () => ok(contentOf("const a = 1;\n"));
+    await mount();
+    reveal.answer = transportFailure<FilesOutcome<null>>();
+
+    await askReveal();
+
+    expect(screen.queryByTestId("file-viewer-reveal-note")).toBeNull();
+    const raised = notifications.getSnapshot().items;
+    expect(raised).toHaveLength(1);
+    const item = raised[0];
+    expect(item?.severity).toBe("error");
+    expect(item?.scope).toEqual({ kind: "project", projectId: "p1" });
+    expect(item?.source).toBe("studio.viewer");
+    expect(item?.title).toBe("The file service could not be reached");
+    // It names its OWN file: the row is read in a center that has no tab.
+    expect(item?.message).toContain("src/a.ts");
+    expect(item?.message).toContain("could not reach the file service");
+    // Traceable to main's log record for the same request.
+    expect(item?.correlationId).toBe("test-correlation");
+  });
+
+  it("reports a bridge that rejected the same way, with no invented correlation", async () => {
+    files.responder = () => ok(contentOf("const a = 1;\n"));
+    await mount();
+    reveal.manual = true;
+
+    await askReveal();
+    await act(async () => {
+      reveal.rejectAt(0);
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByTestId("file-viewer-reveal-note")).toBeNull();
+    const item = notifications.getSnapshot().items[0];
+    expect(item?.message).toContain("could not reach the file service");
+    // A rejected bridge carries no envelope, so there is nothing to correlate.
+    expect(item?.correlationId).toBeNull();
+  });
+
+  /**
+   * TWO REVEALS, ANSWERED BACKWARDS. The tab never changed, so a fence built
+   * on the tab alone lets the older answer land last and stand as the current
+   * one. Only the ask's own generation can drop it.
+   */
+  it("keeps the NEWEST reveal's answer when two settle out of order", async () => {
+    files.responder = () => ok(contentOf("const a = 1;\n"));
+    await mount();
+    reveal.manual = true;
+
+    await askReveal();
+    await askReveal();
+    expect(reveal.asks).toHaveLength(2);
+
+    await act(async () => {
+      reveal.settleAt(1, { ok: true, data: { ok: false, code: "outside_project" } });
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId("file-viewer-reveal-note").textContent).toContain(
+      "resolves outside the project folder",
+    );
+
+    await act(async () => {
+      reveal.settleAt(0, { ok: true, data: { ok: false, code: "not_found" } });
+      await Promise.resolve();
+    });
+
+    const note = screen.getByTestId("file-viewer-reveal-note");
+    expect(note.textContent).toContain("resolves outside the project folder");
+    expect(note.textContent).not.toContain("no longer on disk");
+  });
+
+  /**
+   * A RENAME KEEPS THE TAB AND REPLACES ITS NODE. An answer about the node the
+   * user asked about is not an answer about the one now open in the same tab,
+   * so the tab id alone is not the identity the publication is bound to.
+   */
+  it("drops an answer whose node the tab replaced while it was in flight", async () => {
+    files.responder = () => ok(contentOf("const a = 1;\n"));
+    const view = await mount();
+    reveal.manual = true;
+
+    await askReveal();
+    expect(reveal.asks).toEqual([{ projectId: "p1", nodeId: "node-1" }]);
+
+    const renamed: WorkspaceFileTab = {
+      ...TAB,
+      nodeId: "node-2",
+      title: "b.ts",
+      relativePath: "src/b.ts",
+    };
+    await act(async () => {
+      view.rerender(<View tab={renamed} />);
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      reveal.settleAt(0, { ok: true, data: { ok: false, code: "not_found" } });
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByTestId("file-viewer-reveal-note")).toBeNull();
+  });
+
+  it("names the trigger for a screen reader and reports whether it is open", async () => {
+    files.responder = () => ok(contentOf("const a = 1;\n"));
+    await mount();
+    const trigger = screen.getByRole("button", { name: "File actions" });
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    await act(async () => {
+      fireEvent.click(trigger);
+      await Promise.resolve();
+    });
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
   });
 });

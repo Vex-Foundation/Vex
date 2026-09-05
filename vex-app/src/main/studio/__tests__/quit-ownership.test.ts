@@ -49,8 +49,11 @@ describe("Studio quit ownership", () => {
 
   it("keeps the ordered quit sequence in one place, in order", () => {
     const source = read("index.ts");
-    const shutdown = source.indexOf("await shutdownStudioMcpHost()");
-    const refuse = source.indexOf('refuseAllPendingStudioIntents("vex_quit")');
+    // The first two steps are anchored on their QUIT STAGE NAMES rather than
+    // on the call spelling: the name is what the quit log prints, so a rename
+    // that breaks the log breaks this too.
+    const shutdown = source.indexOf('"studio-mcp-host"');
+    const refuse = source.indexOf('"studio-pending-refusals"');
     const broker = source.indexOf("disposeStudioApprovalBroker()");
     const poison = source.indexOf("disposeStudioDispatchPoisonRetry()");
 
@@ -64,8 +67,15 @@ describe("Studio quit ownership", () => {
 
     // And each appears exactly once, so there is no second ordering to argue
     // with this one.
-    expect(source.split("await shutdownStudioMcpHost()")).toHaveLength(2);
+    expect(source.split('"studio-mcp-host"')).toHaveLength(2);
     expect(source.split("disposeStudioApprovalBroker()")).toHaveLength(2);
+    // Each of those steps is a BOUNDED, named participant. An unbounded
+    // `await` here is what let one wedged owner hold `will-quit` open with
+    // nothing in the log to name it.
+    expect(source).toMatch(/runQuitStage\(\s*"studio-mcp-host",/);
+    expect(source).toMatch(/runQuitStage\(\s*"studio-pending-refusals",/);
+    expect(source).not.toContain("await shutdownStudioMcpHost()");
+    expect(source).not.toContain('await refuseAllPendingStudioIntents("vex_quit")');
   });
 
   it("locks the secret session with the `vex_quit` cause on both quit hooks", () => {

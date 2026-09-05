@@ -3,7 +3,7 @@
  *
  * Collapses runs of whitespace into a single space and trims the result.
  * Used by per-protocol manifests when authoring multi-line passage strings
- * with template literals — the helper keeps the source readable while the
+ * with template literals - the helper keeps the source readable while the
  * stored value stays compact.
  *
  * Replaces the previously duplicated `kyberEmbeddingText` /

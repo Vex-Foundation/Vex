@@ -1,27 +1,27 @@
 /**
- * Long-term memory tools (memory v2) — the agent-facing write-door into
+ * Long-term memory tools (memory v2) - the agent-facing write-door into
  * cross-session candidate memory.
  *
  * `MemorySuggest` is the ONLY agent-facing write tool in the v2 memory
- * system (S2). It STAGES a candidate — it does NOT write memory directly — and
+ * system (S2). It STAGES a candidate - it does NOT write memory directly - and
  * an async manager (S4) reviews, dedupes, and decides promotion. Namespaced
  * `long_memory_*` to stay distinct from per-session `memory_*` and the legacy
  * `knowledge_*` surface (which stays live until the S9 cutover).
  *
  * Classification rationale (memory-system/s2-plan.md §3):
- * - `mutating: false` — a LOCAL candidate write, NOT an approval-gated external
+ * - `mutating: false` - a LOCAL candidate write, NOT an approval-gated external
  *   mutation. `mutating: true` would wrongly trigger approval in restricted
  *   sessions (the dispatcher's internal mutating-approval gate); session-memory
  *   local-writes use `mutating: false` for the same reason.
- * - `pressureSafety: "mutating"` — still blocked at barrier/critical so the
+ * - `pressureSafety: "mutating"` - still blocked at barrier/critical so the
  *   agent does not suggest while compaction is urgent.
- * - `actionKind: "local_write"` — a Vex-local DB write (candidate staging).
- * - `visibility: {}` — always visible in every session context.
+ * - `actionKind: "local_write"` - a Vex-local DB write (candidate staging).
+ * - `visibility: {}` - always visible in every session context.
  *
- * The three READ tools (S3) — `MemorySearch` / `MemoryGet` /
- * `MemoryHistory` — are the cross-session RECALL door. All are
+ * The three READ tools (S3) - `MemorySearch` / `MemoryGet` /
+ * `MemoryHistory` - are the cross-session RECALL door. All are
  * `mutating:false`, `pressureSafety:"read_only"`, `actionKind:"read"`,
- * `visibility:{}` (always visible — unlike session memory's
+ * `visibility:{}` (always visible - unlike session memory's
  * `requiresSessionMemory` gate). `MemorySearch` hides its strategy
  * (vector + dual-trace + rerank); fresh un-consolidated candidates surface as
  * de-weighted soft signals (`notConsolidated:true`), never as fact.
@@ -41,14 +41,14 @@ export const LONG_MEMORY_TOOLS: readonly ToolDef[] = [
     visibility: {},
     description: [
       // WHAT
-      "Propose a durable, cross-session LESSON for long-term memory — a trading insight, a strategy/risk lesson, a stable user preference, or a project fact or constraint. Write title and summary in English (embedding retrieval is significantly stronger on English).",
+      "Propose a durable, cross-session LESSON for long-term memory - a trading insight, a strategy/risk lesson, a stable user preference, or a project fact or constraint. Write title and summary in English (embedding retrieval is significantly stronger on English).",
       "Use this when something just learned would change how a LATER session acts: a strategy that worked or failed for a stated reason, a risk rule the user set, a preference they expressed, or a protocol constraint you had to discover the hard way. A fact that only matters for the rest of this conversation does not belong here.",
       // HOW IT WORKS
       "This does NOT write memory directly. It STAGES a candidate; an async manager later reviews it, dedupes it, and decides whether to promote it into long-term memory. You get back a candidateId and status, not a stored memory.",
-      // DO NOT (steering — reject policy advertised so you rarely trip it)
-      "Never include secrets (keys, seeds, API tokens) — a candidate carrying one is REJECTED and nothing is stored. Do NOT record live values (current balances, prices, gas, amounts, open quotes) — memory is for the durable LESSON, not the snapshot, and a candidate that reads as live state is REJECTED. Persisted memory text is English-only: a candidate whose title/summary/content does not read as English is REJECTED — translate the durable lesson into English and re-suggest. Wallet and transaction addresses are auto-masked, so the lesson survives without the raw value.",
+      // DO NOT (steering - reject policy advertised so you rarely trip it)
+      "Never include secrets (keys, seeds, API tokens) - a candidate carrying one is REJECTED and nothing is stored. Do NOT record live values (current balances, prices, gas, amounts, open quotes) - memory is for the durable LESSON, not the snapshot, and a candidate that reads as live state is REJECTED. Persisted memory text is English-only: a candidate whose title/summary/content does not read as English is REJECTED - translate the durable lesson into English and re-suggest. Wallet and transaction addresses are auto-masked, so the lesson survives without the raw value.",
       // EVIDENCE
-      "Attach evidence_refs (protocol execution / capture ids, with optional instrumentKey / positionKey) when the lesson came from a real trade — it makes the lesson far stronger downstream. source_refs is pointer-only (messageIds / toolCallIds) provenance from this session.",
+      "Attach evidence_refs (protocol execution / capture ids, with optional instrumentKey / positionKey) when the lesson came from a real trade - it makes the lesson far stronger downstream. source_refs is pointer-only (messageIds / toolCallIds) provenance from this session.",
       // response_format
       "response_format: 'concise' (default) returns the candidate id + status; 'detailed' adds redaction counts, the derived source tier, and the dual-trace retrieval window.",
     ].join(" "),
@@ -67,7 +67,7 @@ export const LONG_MEMORY_TOOLS: readonly ToolDef[] = [
         summary: {
           type: "string",
           description:
-            "1-3 sentences in English stating the durable lesson. This is ALSO the retrieval representation — title + summary are the embedding input, so write retrieval-quality semantic text using stable protocol/ticker names (and their common synonyms), never live balances, prices, amounts, or transient quotes.",
+            "1-3 sentences in English stating the durable lesson. This is ALSO the retrieval representation - title + summary are the embedding input, so write retrieval-quality semantic text using stable protocol/ticker names (and their common synonyms), never live balances, prices, amounts, or transient quotes.",
         },
         content_md: {
           type: "string",
@@ -139,14 +139,14 @@ export const LONG_MEMORY_TOOLS: readonly ToolDef[] = [
     visibility: {},
     description: [
       // WHAT
-      "Semantic recall over LONG-TERM, cross-session memory — durable lessons, strategies, risk rules, observed user preferences, and stable protocol facts learned in earlier sessions. This is how you remember what a previous session figured out.",
+      "Semantic recall over LONG-TERM, cross-session memory - durable lessons, strategies, risk rules, observed user preferences, and stable protocol facts learned in earlier sessions. This is how you remember what a previous session figured out.",
       "Use this when the user refers to something settled earlier that is not in this transcript, before committing to a strategy or a risk size they may already have ruled on, and before repeating an approach an earlier session may already have tried. For what happened earlier in THIS session, use `SessionMemorySearch` instead.",
       // HOW IT WORKS (strategy hidden on purpose)
       "Hides its retrieval strategy: it blends promoted long-term entries (source:'long_memory') with FRESH un-consolidated signals from this and recent sessions (source:'memory_candidate', notConsolidated:true). A confirmed long-term lesson always outranks a fresh candidate at equal relevance; a much stronger fresh match can still surface. Treat notConsolidated results as soft hints, never as established fact.",
       // QUERY GUIDANCE
       "Write SEMANTIC INTENT in English, not keywords (embedding retrieval is significantly stronger on English; translate the user's intent first). ✓ 'user trading risk preferences and position sizing rules' ✗ 'risk'. Returns only active, non-expired memory.",
       // RESPONSE
-      "response_format: 'concise' (default) → source, id, kind, title, similarity, score (+ notConsolidated on fresh signals); 'detailed' adds summary, content, tags, validUntil, maturity, source tier, evidence. Results found through the knowledge graph (1-hop from a direct hit) carry via:'via_graph(entity)' and no inline content — use MemoryGet on their id when the lead matters. If results were truncated to the inline cap, the response says so and asks you to refine — there is no overflow fetch.",
+      "response_format: 'concise' (default) → source, id, kind, title, similarity, score (+ notConsolidated on fresh signals); 'detailed' adds summary, content, tags, validUntil, maturity, source tier, evidence. Results found through the knowledge graph (1-hop from a direct hit) carry via:'via_graph(entity)' and no inline content - use MemoryGet on their id when the lead matters. If results were truncated to the inline cap, the response says so and asks you to refine - there is no overflow fetch.",
     ].join(" "),
     parameters: {
       type: "object",
@@ -222,7 +222,7 @@ export const LONG_MEMORY_TOOLS: readonly ToolDef[] = [
     visibility: {},
     description: [
       "Trace the full version chain (root → head) of a long-term memory entry from any id in the chain, plus its reinforcement timeline (when it was first promoted, last reinforced, and its outcome version).",
-      "Use this when you have a historical id (e.g. from MemoryGet's supersededBy/supersedesId) and want to see how the lesson evolved and whether the current head is still active. Returns compact metadata (no full content — use MemoryGet for that).",
+      "Use this when you have a historical id (e.g. from MemoryGet's supersededBy/supersedesId) and want to see how the lesson evolved and whether the current head is still active. Returns compact metadata (no full content - use MemoryGet for that).",
       "Read-only. Does not require the embeddings service.",
     ].join(" "),
     parameters: {

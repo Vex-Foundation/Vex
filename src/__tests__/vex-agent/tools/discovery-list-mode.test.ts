@@ -6,7 +6,10 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { discoverProtocolCapabilities } from "../../../vex-agent/tools/protocols/runtime.js";
-import { isRankedDiscoveryItem } from "../../../vex-agent/tools/protocols/discovery.js";
+import {
+  MAX_DISCOVERY_LIMIT,
+  isRankedDiscoveryItem,
+} from "../../../vex-agent/tools/protocols/discovery.js";
 import {
   PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST,
   PROTOCOL_TOOLS,
@@ -110,8 +113,15 @@ describe("ToolSearch namespace listing mode", () => {
     expect(page.count).toBe(1);
     expect(page.totalCount).toBe(expected.length);
     expect(page.hasMore).toBe(true);
+    // A2 (live test 2026-09-03): the warning names the route that always works
+    // in this mode. "Increase limit" alone dead-ends at MAX_DISCOVERY_LIMIT,
+    // and a caller already there reads the rest of the namespace as
+    // unreachable; an unbounded listing is complete by construction (owner
+    // directive D2), so omitting `limit` is what the warning points at.
     expect(page.warnings).toEqual([
-      `Showing first 1 of ${expected.length} tools in "${namespace}". Increase limit to see the rest.`,
+      `Showing first 1 of ${expected.length} tools in "${namespace}". `
+      + `A limit is capped at ${MAX_DISCOVERY_LIMIT}; OMIT limit to receive the whole `
+      + "namespace in one answer. No row is unreachable.",
     ]);
   });
 

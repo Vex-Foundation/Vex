@@ -65,7 +65,7 @@ import type {
 import type { ToolResult } from "@vex-agent/tools/types.js";
 
 import { log } from "../logger/index.js";
-import { ensureEngineDbUrl } from "../ipc/runtime/_ensure-engine-db-url.js";
+import { ensureEngineDbUrl } from "../database/engine-db-readiness.js";
 import {
   isSecretSessionUnlocked,
   isStudioDispatchPoisoned,
@@ -273,6 +273,13 @@ async function runStudioCallAdmitted(
         options.signal ? { abortSignal: options.signal } : {},
       ),
       readStudioRuntimeAvailability,
+      // WHO ASKED. Carried from the MCP `initialize` handshake so the card a
+      // human decides from names the actor instead of leaving the row blank.
+      // It is untrusted display text and the enqueue path sanitizes it; this
+      // function only forwards it.
+      ...(options.clientName === undefined
+        ? {}
+        : { requestedByClient: options.clientName }),
     });
   } catch (cause: unknown) {
     reserved.reservation.release();

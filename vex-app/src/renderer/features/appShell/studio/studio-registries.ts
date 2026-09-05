@@ -36,7 +36,7 @@
 import { explorerRegistry } from "./explorer/index.js";
 import { terminalRegistry } from "./terminal/index.js";
 import { fileViewerRegistry } from "./viewer/index.js";
-import { clearProjectTerminals } from "./workspace/project-terminals.js";
+import { clearProjectTerminals } from "./workspace/workspace-handles.js";
 
 /**
  * Dispose every Studio registry. Idempotent: each registry's `disposeAll`

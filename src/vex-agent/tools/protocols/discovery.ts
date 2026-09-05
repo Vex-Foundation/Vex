@@ -30,7 +30,7 @@ import type { ScoredManifest } from "./lexical-score.js";
  * Ranked rows returned when the caller names no limit. Owner decree
  * (2026-08-03, revised same day): default 5, because every ranked row now
  * carries the FULL manifest (params with required/enum/unit, exampleParams,
- * constraints) and is injected as a callable function schema — five complete
+ * constraints) and is injected as a callable function schema - five complete
  * manifests are a working set, not a shortlist. The agent RAISES the limit
  * itself (up to MAX_DISCOVERY_LIMIT) whenever the job needs more; the limit
  * param description says so explicitly.
@@ -39,7 +39,7 @@ export const DEFAULT_DISCOVERY_LIMIT = 5;
 
 /**
  * Hard ceiling on a caller-supplied `limit` (owner clarification 2026-08-03:
- * the default of 10 is an EXAMPLE — the agent asks for as many tools as the
+ * the default of 10 is an EXAMPLE - the agent asks for as many tools as the
  * job needs, up to this maximum).
  *
  * 20 is not arbitrary: every ranked row is re-materialized as a real function
@@ -50,7 +50,7 @@ export const DEFAULT_DISCOVERY_LIMIT = 5;
  * that cap would silently truncate the working set the agent just asked for.
  *
  * Enforced by REJECTION at the model boundary
- * (`dispatcher/discover-tools-args.ts` — a supplied param is answered by name,
+ * (`dispatcher/discover-tools-args.ts` - a supplied param is answered by name,
  * never silently clamped) and clamped here as defense-in-depth for internal
  * callers that bypass that boundary.
  */
@@ -62,7 +62,7 @@ export const MAX_DISCOVERY_LIMIT = 20;
  *
  * DERIVED, not chosen. The owner's flow (directive D2, 2026-08-04) is "agent
  * może pobrać pełny namespace protokołu", so the bound must fit the LARGEST
- * advertised namespace — solana, 34 tools. 40 = 34 + a six-tool tail, so a
+ * advertised namespace - solana, 34 tools. 40 = 34 + a six-tool tail, so a
  * whole-namespace select can be mixed with a little earlier work without being
  * refused. `tool-search-select.test.ts` derives both facts from
  * `PROTOCOL_TOOLS`, so a future 41-tool namespace fails the suite instead of
@@ -71,7 +71,7 @@ export const MAX_DISCOVERY_LIMIT = 20;
  * A bound is still required, and is a real safety property rather than caution:
  * fetching all 107 advertised manifests in one call costs 461,857 chars (~45% of
  * a 256k window) before history. The measured ceiling AT this bound is 322,594
- * chars for the 40 largest manifests in the catalog — a set no real namespace
+ * chars for the 40 largest manifests in the catalog - a set no real namespace
  * contains (`probes/worst-legal-flow.ts`).
  *
  * `MAX_DISCOVERED_TOOLS_PER_SESSION` must be >= this value, which is what
@@ -114,14 +114,14 @@ export function toManifestRow(
     exampleParams: manifest.exampleParams,
   };
   // Absent unless the manifest declares a cross-param group (exactly-one,
-  // at-most-one, or at-least-one) — a tool without them pays nothing.
+  // at-most-one, or at-least-one) - a tool without them pays nothing.
   const constraints = describeParamGroupConstraints(manifest);
   if (constraints.length > 0) row.constraints = constraints;
-  // Only emit the advisory flag when it would be true — keeps payloads
+  // Only emit the advisory flag when it would be true - keeps payloads
   // minimal and gives the model a clear "absent = available" rule.
   // While a live preparation bypasses the barrier the dispatcher WILL allow
   // these calls, so tagging them unavailable would be a lie that steers the
-  // model away from tools it can actually use. `critical` still tags — the
+  // model away from tools it can actually use. `critical` still tags - the
   // bypass never extends there.
   const bypassed = preparationBypassesBarrier && contextUsageBand === "barrier";
   if (
@@ -147,14 +147,14 @@ function toDiscoveryItem(
 }
 
 /**
- * Why a manifest may or may not be reached through discovery — the FOUR gates
+ * Why a manifest may or may not be reached through discovery - the FOUR gates
  * `discoverProtocolCapabilities` applies to its candidates, shared so
  * select mode cannot become a bypass that hands the model a manifest
  * `executeProtocolTool` would then hard-reject.
  *
  * A discriminated result rather than a boolean, deliberately: a boolean cannot
  * tell select mode WHY a name failed, so the caller would have to re-derive
- * every gate to write a real-cause rejection — duplicating exactly what this
+ * every gate to write a real-cause rejection - duplicating exactly what this
  * extraction unifies. `missingEnv` carries env var NAMES only; a name
  * is configuration, a value is a secret (rule 06).
  */
@@ -202,8 +202,8 @@ function toDiscoveryListItem(manifest: ProtocolToolManifest): ProtocolDiscoveryL
 
 /**
  * Why a namespace is empty, when we can say. `solana` listed as empty with no
- * reason and no remedy while `getMissingEnvForNamespace` — the function that
- * produces both — sat unused. Env var NAMES only: a name is configuration, a
+ * reason and no remedy while `getMissingEnvForNamespace` - the function that
+ * produces both - sat unused. Env var NAMES only: a name is configuration, a
  * value is a secret (rule 06).
  */
 function describeEmptyNamespace(namespace: ProtocolNamespace): string {
@@ -241,7 +241,7 @@ function describeEmptyNamespace(namespace: ProtocolNamespace): string {
  */
 function buildListNextStep(firstPublicName: string): string {
   return "These rows are names + one-line summaries only. To get the FULL parameter schema of any"
-    + " of them — and make them callable — select them by name:"
+    + " of them - and make them callable - select them by name:"
     + ` ToolSearch(query="select:${firstPublicName}") (up to ${MAX_SELECT_TOOL_NAMES} names per`
     + " call, comma-separated, the whole namespace at once is fine)."
     + " A selected tool is callable from your NEXT message, not from this one.";
@@ -258,15 +258,21 @@ function buildNamespaceListing(
   const warnings: string[] = [];
   if (all.length === 0) warnings.push(describeEmptyNamespace(namespace));
   if (tools.length < all.length) {
+    // "Increase limit" alone is a DEAD END here: a caller already at
+    // `MAX_DISCOVERY_LIMIT` cannot raise it, and the rest of the namespace
+    // would read as unreachable. The route that always works in this mode is
+    // to drop `limit` entirely, because an unbounded listing is complete by
+    // construction (owner directive D2), so that is what the warning names.
     warnings.push(
       `Showing first ${tools.length} of ${all.length} tools in "${namespace}". `
-      + "Increase limit to see the rest.",
+      + `A limit is capped at ${MAX_DISCOVERY_LIMIT}; OMIT limit to receive the whole `
+      + "namespace in one answer. No row is unreachable.",
     );
   }
   return {
     // FIRST key of the envelope: `JSON.stringify` preserves insertion order and
     // the model reads the string front-to-back. An empty listing gets no
-    // pointer — there is nothing to describe.
+    // pointer - there is nothing to describe.
     ...(firstPublicName === undefined ? {} : { nextStep: buildListNextStep(firstPublicName) }),
     success: true,
     count: tools.length,
@@ -310,7 +316,7 @@ function resolveRequestedNamespace(
  * The sentence that keeps "nothing is silently dropped" true when the session
  * cap evicts an earlier round.
  *
- * Shared by BOTH recording paths — `ToolSearch` query mode and select mode —
+ * Shared by BOTH recording paths - `ToolSearch` query mode and select mode -
  * because the eviction is a property of the session cap, not of the mode that
  * happened to trigger it. Surfacing it on only one path is what let a tool the
  * model had been told was callable stop being callable with no signal, and one
@@ -330,7 +336,7 @@ export function buildDisplacementWarning(displaced: readonly string[]): string |
   const names = displaced.map((id) => getProtocolManifest(id)?.publicName ?? id);
   return (
     `${names.map((name) => `"${name}"`).join(", ")} ${displaced.length === 1 ? "is" : "are"} `
-    + "no longer callable by name — this session keeps the most recent "
+    + "no longer callable by name - this session keeps the most recent "
     + `${MAX_DISCOVERED_TOOLS_PER_SESSION} discovered tools. Search for or select them again if `
     + "you still need them."
   );
@@ -342,7 +348,7 @@ export function buildDisplacementWarning(displaced: readonly string[]): string |
  *
  * Exported because `ToolSearch` select mode is the only caller and it lives in
  * the dispatcher lane (`dispatcher/tool-search-select.ts`), while the gate it
- * explains — {@link evaluateManifestDiscoverability} — is owned here. Keeping
+ * explains - {@link evaluateManifestDiscoverability} - is owned here. Keeping
  * the gate and its wording in one module is what stops a rejection reason from
  * drifting away from the condition that produced it.
  */
@@ -352,7 +358,7 @@ export function describeManifestRejection(
 ): string {
   switch (outcome.reason) {
     case "env_missing":
-      // Env var NAMES only — a name is configuration, a value is a secret.
+      // Env var NAMES only - a name is configuration, a value is a secret.
       return `"${publicName}" is unavailable right now: set ${outcome.missingEnv?.join(", ")} to enable it.`;
     case "not_advertised":
       return `"${publicName}" is not reachable through ToolSearch. `
@@ -398,7 +404,7 @@ export async function discoverProtocolCapabilities(
   if (request.list === true) {
     if (typeof resolvedNamespace !== "string") {
       return buildDiscoveryFailure(
-        `A listing requires a namespace — listing every protocol at once is not available. ${buildDiscoverNamespaceDescription()}`,
+        `A listing requires a namespace - listing every protocol at once is not available. ${buildDiscoverNamespaceDescription()}`,
       );
     }
     // The CLAMPED limit only when the caller actually named one. `limit` above
@@ -441,7 +447,24 @@ export async function discoverProtocolCapabilities(
     warnings.push("No protocol capabilities matched the query/filter.");
   }
   if (scoredTools.length > tools.length) {
-    warnings.push(`Showing first ${tools.length} of ${scoredTools.length} matching capabilities. Increase limit to see more.`);
+    // A2 (live test 2026-09-03): this warning used to say only "Increase limit
+    // to see more". At `MAX_DISCOVERY_LIMIT` that is a promise the surface
+    // cannot keep, and a live agent read "20 of 74" as a dead end and reported
+    // the rest as unreachable. Query mode has no cursor by design, so the
+    // honest continuation is a NARROWING route, and it is named here rather
+    // than left for the model to infer: a namespace listing (complete by
+    // construction) or a tighter query. The bound itself is unchanged; what
+    // changes is that the reader can now tell how to reach what was left out,
+    // which is the test the silent-cutting decree applies.
+    warnings.push(
+      `Showing first ${tools.length} of ${scoredTools.length} matching capabilities. `
+      + (limit < MAX_DISCOVERY_LIMIT
+        ? `Raise limit (up to ${MAX_DISCOVERY_LIMIT}) to see more, or narrow: `
+        : `${MAX_DISCOVERY_LIMIT} rows is the most one query returns and there is no cursor, so narrow instead: `)
+      + "pass `namespace` alone to list one protocol in full, or ask a tighter query "
+      + "(the action plus the asset or chain, not a broad topic). "
+      + "None of the remaining matches are unreachable.",
+    );
   }
 
   return {

@@ -41,10 +41,19 @@ vi.mock("@tools/evm-chains/registry.js", () => ({
       : undefined,
 }));
 
+// The shared Khalani price enrichment now runs on this path too, so its ONE
+// provider boundary is scripted to answer nothing: rows Khalani left unpriced
+// stay unpriced, and no test in this suite reaches the network.
+vi.mock("@tools/dexscreener/price-read.js", () => ({
+  readTokensPairs: () => Promise.resolve([]),
+  readTokenPools: () => Promise.resolve([]),
+}));
+
 vi.mock("@tools/khalani/balances.js", async (importOriginal) => {
   const original = await importOriginal<typeof import("@tools/khalani/balances.js")>();
   return {
     getSelectedChainIdsForFamily: original.getSelectedChainIdsForFamily,
+    calculateTokensTotalUsd: original.calculateTokensTotalUsd,
     // No Khalani chains at all: this suite is about the LOCAL side.
     parseBalanceChainSelection: async () => ({ rawProvided: false, byFamily: new Map() }),
     getTokenBalancesAcrossChains: async ({ family }: { family: ChainFamily }) => ({
@@ -64,7 +73,7 @@ vi.mock("@tools/evm-chains/resolver.js", () => ({
 
 const mockScanSet = vi.fn();
 vi.mock("@vex-agent/sync/local-chain-balance-sync.js", () => ({
-  buildTokenScanSet: (...a: unknown[]) => mockScanSet(...a),
+  buildLocalChainInventory: (...a: unknown[]) => mockScanSet(...a),
 }));
 
 const mockReadLocal = vi.fn();
@@ -75,6 +84,23 @@ vi.mock("@tools/evm-chains/balances.js", () => ({
 vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
   resolveSelectedAddressForRead: () => "0xWALLET",
 }));
+
+import { buildLocalChainScanSet } from "@vex-agent/wallet-inventory/local-chain.js";
+
+/**
+ * The enumeration the mocked sync lane answers with: a seeds-and-pins scan set,
+ * built by the REAL union owner so the shape under test is never a hand-written
+ * imitation of it. No indexer, which is exactly the state a local chain reports
+ * when Blockscout answered nothing.
+ */
+function scanSetOf(addresses: readonly string[], chainId = 4663) {
+  return buildLocalChainScanSet({
+    chainId,
+    seedAddresses: addresses,
+    pinnedAddresses: [],
+    indexer: null,
+  });
+}
 
 const { handleWalletBalances } = await import(
   "../../../../../vex-agent/tools/internal/wallet/read.js"
@@ -102,7 +128,7 @@ function oneDollarPerChain() {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockScanSet.mockResolvedValue([]);
+  mockScanSet.mockResolvedValue(scanSetOf([]));
   mockReadLocal.mockResolvedValue(oneDollarPerChain());
 });
 

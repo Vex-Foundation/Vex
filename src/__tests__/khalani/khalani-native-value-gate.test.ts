@@ -88,6 +88,18 @@ const BASE_CHAIN = {
 const DEPOSIT_TARGET: Address = getAddress("0xaAaAaAaaAaAaAaaAaAAAAAAAAaaaAaAaAaaAaaAa");
 const UNDISCLOSED_NATIVE_CHARGE = 1_000_000_000_000_000n; // the live 1e15 wei
 
+/**
+ * The origin binding the planner needs for the approve rules. Every plan in
+ * this suite is native-origin and carries no approval leg, so the binding is
+ * never the subject here - it names the native asset, which is exactly what an
+ * approval-free plan bridges.
+ */
+const ORIGIN = {
+  fromToken: "0x0000000000000000000000000000000000000000",
+  wallet: getAddress("0x33eF6673BD80cB11fcC41b82Bc2181E65cC4d2fA"),
+  bridgedAmountRaw: "3000000000000000",
+};
+
 const noopHooks = {
   onNonceReserved: vi.fn(async (request: { nodePendingNonce: number }) => request.nodePendingNonce),
   onHashStaged: vi.fn(async () => {}),
@@ -216,6 +228,8 @@ describe("legitimate legs still sign", () => {
         chainId: 8453,
       },
       BASE_CHAIN,
+      null,
+      ORIGIN,
     );
 
     expect(legs).toHaveLength(1);
@@ -251,6 +265,8 @@ describe("legitimate legs still sign", () => {
         ],
       },
       BASE_CHAIN,
+      null,
+      ORIGIN,
     );
 
     const leg = legs[0]!;
@@ -276,6 +292,8 @@ describe("legitimate legs still sign", () => {
         ],
       },
       BASE_CHAIN,
+      null,
+      ORIGIN,
     );
 
     const leg = legs[0]!;

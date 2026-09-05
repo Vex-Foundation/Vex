@@ -1,5 +1,5 @@
 /**
- * `pendle.pt.quote` — the read half of the PT surface: what a buy, sell or
+ * `pendle.pt.quote` - the read half of the PT surface: what a buy, sell or
  * redeem would deliver, previewed through Convert.
  *
  * INSTRUMENT GUARD (fail-closed, BEFORE any Convert call): one leg must be a PT
@@ -7,7 +7,7 @@
  * can never record a generic swap identity that would authorize a same-legged
  * execute on the wrong instrument.
  *
- * Upstream error text NEVER reaches the model — only bounded, code-keyed detail.
+ * Upstream error text NEVER reaches the model - only bounded, code-keyed detail.
  */
 
 import { parseUnits } from "viem";
@@ -50,7 +50,7 @@ export async function pendlePtQuote(p: Record<string, unknown>, context: Protoco
     // guard: a quote with NO PT leg must never record a generic swap identity
     // that could authorize a same-legged execute on the wrong instrument.
     // R5b matrix. PT as OUT is a BUY, which is active-only. PT as IN is a sell
-    // OR a redeem — and on a MATURED PT it can only be a redeem (Convert answers
+    // OR a redeem - and on a MATURED PT it can only be a redeem (Convert answers
     // `redeem-py`), which is an allowed exit, so the in-leg resolves the matured
     // catalogue too. `pt.sell`'s own execute stays active-only and refuses by
     // name, so a matured quote can only ever authorize the redeem.

@@ -19,7 +19,10 @@
 import type { Result } from "@shared/ipc/result.js";
 import type {
   FileContent,
+  FileDeleteMode,
+  FileDeleteResult,
   FileListing,
+  FileNode,
   FilesEvent,
   FilesOutcome,
   FilesSubscription,
@@ -63,6 +66,63 @@ export function unwatchProjectFiles(
   subscriptionId: string,
 ): Promise<Result<FilesOutcome<null>>> {
   return window.vex.files.unwatchFile({ subscriptionId });
+}
+
+/**
+ * Show one node in the operating system's file manager.
+ *
+ * The renderer never learns where the project is on disk: it names the node it
+ * is already displaying and main resolves the rest. A refusal is a statement
+ * about that node - it is gone, its path leaves the project, the project was
+ * closed - and the caller says so rather than retrying.
+ */
+export function revealProjectNodeInFileManager(input: {
+  projectId: string;
+  nodeId: string;
+}): Promise<Result<FilesOutcome<null>>> {
+  return window.vex.files.revealInFileManager(input);
+}
+
+/**
+ * Create one entry in a directory. `parentNodeId: null` is the project root.
+ *
+ * DELIBERATELY NOT A MUTATION HOOK. The explorer session already owns this
+ * project's tree, its watcher subscription and its optimistic state, and a
+ * cache layer here would be a second owner deciding when that tree is stale -
+ * the ownership mistake the read side of this file already refuses for the same
+ * reason.
+ */
+export function createProjectNode(input: {
+  projectId: string;
+  parentNodeId: string | null;
+  name: string;
+  kind: "file" | "directory";
+}): Promise<Result<FilesOutcome<FileNode>>> {
+  return window.vex.files.createNode(input);
+}
+
+/** Rename one entry in place. The parent directory never changes. */
+export function renameProjectNode(input: {
+  projectId: string;
+  nodeId: string;
+  name: string;
+}): Promise<Result<FilesOutcome<FileNode>>> {
+  return window.vex.files.renameNode(input);
+}
+
+/**
+ * Delete one entry, with the disposition the user's confirmation described.
+ *
+ * `trash_unavailable` means the entry is still there: the caller offers
+ * permanent removal as a SECOND decision rather than retrying with a different
+ * mode on the user's behalf.
+ */
+export function deleteProjectNode(input: {
+  projectId: string;
+  nodeId: string;
+  mode: FileDeleteMode;
+}): Promise<Result<FilesOutcome<FileDeleteResult>>> {
+  return window.vex.files.deleteNode(input);
 }
 
 /** Events for one subscription. Returns an idempotent cleanup. */

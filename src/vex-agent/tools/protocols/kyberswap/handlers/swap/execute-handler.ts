@@ -1,5 +1,5 @@
 /**
- * `kyberswap.swap.execute` — the orchestrator.
+ * `kyberswap.swap.execute` - the orchestrator.
  *
  * It owns the order in which authority is acquired and evidence is gathered:
  * preview guard → wallet ADDRESS (never decrypts) → chain → tokens → signing
@@ -7,7 +7,7 @@
  * then does Phase A (`execute-plan.ts`) build and record the intent, and Phase
  * B (`execute-broadcast.ts`) sign and broadcast it.
  *
- * Everything before the intent exists fails through `failPreBroadcast` — a
+ * Everything before the intent exists fails through `failPreBroadcast` - a
  * hashless `definitively_failed` row; everything after it fails through the
  * post-intent handler, which never opens a second execution (C18).
  */
@@ -35,13 +35,13 @@ import { describeUnavailableSafetyCheck, type SafetyCheckUnavailable } from "./s
 import { venueFallbackNoteOnFailure } from "./fallback-messaging.js";
 import { resolveKyberSlippageBps } from "./slippage.js";
 import type { KyberGetRouteResponse } from "./route-request.js";
-import { claimSwapExecutionSnapshot } from "../../../prequote/claim.js";
+import { readSwapExecutionSnapshot, commitPrequoteClaim } from "../../../prequote/claim.js";
 
 export const executeHandler: ProtocolHandler = async (p, context): Promise<ToolResult> => {
   const toolId = "kyberswap.swap.execute";
 
   // Defensive guard against the spine-inherited `previewSupport:true`
-  // matrix row (this manifest declares no `dryRun` param) — a caller that
+  // matrix row (this manifest declares no `dryRun` param) - a caller that
   // still passes `dryRun` must NEVER reach a real broadcast just because
   // the runtime treated the call as a preview.
   if (p.dryRun === true) {
@@ -52,13 +52,13 @@ export const executeHandler: ProtocolHandler = async (p, context): Promise<ToolR
   if (!chain || !tokenInRaw || !tokenOutRaw || !amountInRaw) return fail("Missing required: chain, tokenIn, tokenOut, amountIn");
 
   // The prequote gate (executeProtocolTool) already blocks this tool
-  // without a session — sessionId is guaranteed present here.
+  // without a session - sessionId is guaranteed present here.
   const sessionId = context.sessionId;
   if (!sessionId) return fail(`${toolId} requires an active session.`);
 
   // C22 (Codex final-review finding 7): resolve the signer's ADDRESS ONLY
   // (never decrypts) BEFORE token resolution, so a token-resolution failure
-  // — or anything after it — records the REAL wallet_address, never an
+  // - or anything after it - records the REAL wallet_address, never an
   // empty string. The full (decrypting) signing wallet is resolved later,
   // only once we know the call may actually broadcast.
   let walletAddress: Address;
@@ -89,13 +89,13 @@ export const executeHandler: ProtocolHandler = async (p, context): Promise<ToolR
     // though the tokens never resolved.
     return failPreBroadcast(toolId, p, sessionId, walletAddress, chainId, slug, undefined, undefined, err, false);
   }
-  // Agent-facing labels only — see the quote handler's note. The persisted
+  // Agent-facing labels only - see the quote handler's note. The persisted
   // leg symbols (`legInput`, the activity event plan) keep the canonical
   // `NATIVE` sentinel.
   const tokenInLabel = annotateNativeSymbol(tokenIn.symbol, chainId);
   const tokenOutLabel = annotateNativeSymbol(tokenOut.symbol, chainId);
 
-  // Full signing wallet (decrypts) — resolved only now that the call may
+  // Full signing wallet (decrypts) - resolved only now that the call may
   // actually need to sign. Re-validates the SAME session/policy scope the
   // address-only resolution above already checked.
   let signer: ChainWallet;
@@ -108,10 +108,10 @@ export const executeHandler: ProtocolHandler = async (p, context): Promise<ToolR
 
   const { publicClient, walletClient } = getKyberEvmClients(slug, signer.privateKey);
 
-  // Token safety gate — the ONLY hard block here is a CONFIRMED honeypot
+  // Token safety gate - the ONLY hard block here is a CONFIRMED honeypot
   // (owner doctrine, UNCHANGED). FoT/high-tax is warn-only. A THROW from the
   // check itself means the safety check is UNAVAILABLE: still fail-soft, but
-  // NO LONGER SILENT (W2b) — every unavailable leg is disclosed in the result
+  // NO LONGER SILENT (W2b) - every unavailable leg is disclosed in the result
   // and persisted on the activity row, because a swap that ran without
   // honeypot protection and never said so is the failure mode this fixes.
   const safetyCheckUnavailable: SafetyCheckUnavailable[] = [];
@@ -165,7 +165,13 @@ export const executeHandler: ProtocolHandler = async (p, context): Promise<ToolR
   // The claim is single-use and atomic, so a second execute of the same quote
   // is a typed refusal rather than a second fill, and a later quote for the
   // same trade supersedes this one even when it is unexpired and unclaimed.
-  const claimed = await claimSwapExecutionSnapshot(toolId, sessionId, p, context, `${toolId}:${sessionId}`);
+  //
+  // It is READ here and CLAIMED in Phase A, after the build, the calldata guard,
+  // the fee-statement comparison and the debit-plan comparison have all passed
+  // (review finding, 2026-09-04). Claiming here spent the approved quote on the way out
+  // of a correct refusal, and the retry the refusal asked for got
+  // `already_claimed`.
+  const claimed = await readSwapExecutionSnapshot(toolId, sessionId, p, context);
   if (!claimed.ok) {
     return failPreBroadcast(
       toolId, p, sessionId, walletAddress, chainId, slug,
@@ -183,7 +189,7 @@ export const executeHandler: ProtocolHandler = async (p, context): Promise<ToolR
 
   // ── Phase A (pre-intent): balance/allowance-read/build + plan
   // construction + the atomic intent creation. ANY failure in this phase
-  // uses `failPreBroadcast` — nothing has been signed yet, so a fresh
+  // uses `failPreBroadcast` - nothing has been signed yet, so a fresh
   // pre-broadcast-failure row is correct (C18: failPreBroadcast is
   // pre-intent ONLY).
   let prepared;
@@ -193,6 +199,14 @@ export const executeHandler: ProtocolHandler = async (p, context): Promise<ToolR
       tokenIn, tokenOut, amountIn, amountInRaw, slippage, routerAddress,
       approvedSummary, approvedSnapshot: claimed.snapshot,
       safetyCheckUnavailable,
+      // The row's own Vex fee statement, carried into Phase A so the fee this
+      // build will sign can be held to the one the card stated.
+      approvedVexFee: claimed.vexFee,
+      // Consumed by Phase A at its last non-destructive point: after every
+      // comparison, immediately before the durable intent. Phase A throws its
+      // refusal, which the catch below records exactly as any other pre-intent
+      // failure - with nothing signed and, on a divergence, nothing claimed.
+      commitApprovedQuote: () => commitPrequoteClaim(claimed.claim, `${toolId}:${sessionId}`),
     });
   } catch (err) {
     return failPreBroadcast(toolId, p, sessionId, walletAddress, chainId, slug, legInput(tokenIn), legInput(tokenOut), err, true);

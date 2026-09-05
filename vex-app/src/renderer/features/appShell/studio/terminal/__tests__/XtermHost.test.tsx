@@ -202,16 +202,16 @@ describe("XtermHost data path", () => {
     expect(bufferText("t1")).toContain("output the user came back to read");
   });
 
-  it("raises title and cwd changes without re-subscribing on every parent render", async () => {
+  it("raises title and directory changes without re-subscribing on every parent render", async () => {
     const onTitleChange = vi.fn();
-    const onCwdChange = vi.fn();
+    const onDisplayCwdChange = vi.fn();
     const view = render(
       <XtermHost
         terminalId="t1"
         visible
         registry={registry}
         onTitleChange={onTitleChange}
-        onCwdChange={onCwdChange}
+        onDisplayCwdChange={onDisplayCwdChange}
       />,
     );
 
@@ -224,7 +224,7 @@ describe("XtermHost data path", () => {
         visible
         registry={registry}
         onTitleChange={onTitleChange}
-        onCwdChange={(value) => onCwdChange(value)}
+        onDisplayCwdChange={(value: string) => onDisplayCwdChange(value)}
       />,
     );
     expect(bridge.attaches).toEqual(["t1"]);
@@ -232,12 +232,16 @@ describe("XtermHost data path", () => {
 
     await act(async () => {
       bridge.emitProperty("t1", { property: "title", value: "vim README.md" });
-      bridge.emitProperty("t1", { property: "cwd", value: "/repo/src" });
+      // The LABEL the host derived, which is what this property now carries.
+      // A raw path can no longer reach this callback: the union has no `cwd`
+      // member, so the old spelling is a type error rather than a test that
+      // quietly kept asserting on a value the wire stopped sending.
+      bridge.emitProperty("t1", { property: "displayCwd", value: "src" });
       await settle();
     });
 
     expect(onTitleChange).toHaveBeenCalledWith("vim README.md");
-    expect(onCwdChange).toHaveBeenCalledWith("/repo/src");
+    expect(onDisplayCwdChange).toHaveBeenCalledWith("src");
   });
 });
 
@@ -313,5 +317,386 @@ describe("XtermHost lifecycle", () => {
     const mark = container.querySelector("svg.text-brand-mark");
     expect(mark).not.toBeNull();
     expect(mark?.getAttribute("aria-hidden")).toBe("true");
+  });
+});
+
+/**
+ * THE SKIP-SHELL HANDLER, against a real xterm.
+ *
+ * This is the one assertion that could not be made anywhere else. The table's
+ * suite proves which chords Studio owns and the hook's suite proves what it
+ * does with them, and both were green while `Ctrl+W` in a terminal reached the
+ * shell as `0x17` and never reached the document at all: the missing step was
+ * xterm's own key handling, which is why the terminal here is real and only the
+ * bridge is a double.
+ *
+ * The pattern is VS Code's own (`terminalInstance.test.ts:370`, "custom key
+ * event handler should handle commands in DEFAULT_COMMANDS_TO_SKIP_SHELL"),
+ * with one deliberate difference: theirs captures the handler and calls it,
+ * while this dispatches a real `keydown` at xterm's textarea, so what is
+ * asserted is what xterm DID with the key rather than what our callback
+ * returned.
+ */
+describe("XtermHost and the chords Studio owns", () => {
+  /** xterm's own input element, by the class xterm gives it. */
+  function textarea(): HTMLTextAreaElement {
+    const node = document.querySelector<HTMLTextAreaElement>("textarea.xterm-helper-textarea");
+    if (node === null) throw new Error("xterm rendered no textarea");
+    return node;
+  }
+
+  function typeChord(init: KeyboardEventInit): KeyboardEvent {
+    const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });
+    textarea().dispatchEvent(event);
+    return event;
+  }
+
+  function sentToShell(): string {
+    return bridge.writes.map((write) => write.data).join("");
+  }
+
+  it("does not send a Studio chord to the shell, and does not cancel it either", () => {
+    render(<XtermHost terminalId="t1" visible registry={registry} platform="linux" />);
+    sizeThePane();
+
+    // Ctrl+W. The shell's own meaning for it is "erase the last word", which is
+    // exactly what the user got instead of the tab closing.
+    const closeTab = typeChord({ key: "w", code: "KeyW", keyCode: 87, ctrlKey: true });
+    // Ctrl+Tab and Ctrl+Shift+Tab, the two the strip never saw at all.
+    const nextTab = typeChord({ key: "Tab", code: "Tab", keyCode: 9, ctrlKey: true });
+    const previousTab = typeChord({
+      key: "Tab",
+      code: "Tab",
+      keyCode: 9,
+      ctrlKey: true,
+      shiftKey: true,
+    });
+    // The new-terminal chord.
+    const newTerminal = typeChord({
+      key: "`",
+      code: "Backquote",
+      keyCode: 192,
+      ctrlKey: true,
+      shiftKey: true,
+    });
+
+    // NOTHING REACHED THE PTY.
+    expect(sentToShell()).toBe("");
+    // AND NOTHING WAS CANCELLED. The hook that owns the table is a bubble-phase
+    // listener on `document` and returns early on a defaultPrevented event, so
+    // a refusal that also cancelled would swallow the chord it just protected.
+    for (const event of [closeTab, nextTab, previousTab, newTerminal]) {
+      expect(event.defaultPrevented, event.code).toBe(false);
+    }
+  });
+
+  it("still sends the shell its own control keys", () => {
+    render(<XtermHost terminalId="t1" visible registry={registry} platform="linux" />);
+    sizeThePane();
+
+    // Ctrl+C, and it must arrive as the interrupt byte. A terminal that could
+    // not interrupt a runaway command would be a broken terminal, whatever the
+    // shortcut table gained.
+    typeChord({ key: "c", code: "KeyC", keyCode: 67, ctrlKey: true });
+
+    expect(sentToShell()).toBe("\u0003");
+  });
+
+  it("withdraws the refusal when the pane unmounts", () => {
+    const view = render(
+      <XtermHost terminalId="t1" visible registry={registry} platform="linux" />,
+    );
+    sizeThePane();
+    const entry = registry.acquire("t1");
+    registry.release("t1");
+    view.unmount();
+
+    // The terminal outlives the component (the registry owns it), so a policy
+    // left attached would be applied by a host that is no longer driving it.
+    // XTERM'S OWN ANSWER IS THE EVIDENCE: it cancels a key it handles, and the
+    // three tests above turn on a refused chord NOT being cancelled. The pty
+    // is not the evidence here - the input subscription went with the unmount,
+    // so nothing would be written whatever xterm decided.
+    const event = new KeyboardEvent("keydown", {
+      key: "w",
+      code: "KeyW",
+      keyCode: 87,
+      ctrlKey: true,
+      cancelable: true,
+    });
+    expect(entry.terminal.textarea).not.toBeNull();
+    entry.terminal.textarea?.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * The key path: what reaches the shell, and what Studio takes
+ * ------------------------------------------------------------------ */
+
+/**
+ * A keypress as xterm's own handler sees it.
+ *
+ * `keyCode` is DEFINED rather than passed to the constructor because jsdom
+ * exposes it as a getter, and xterm's `evaluateKeyboardEvent` reads it: without
+ * it the library encodes NOTHING and every assertion below would pass against a
+ * terminal that had simply ignored the key. Measured while writing this suite,
+ * not assumed.
+ */
+function typeInto(
+  terminal: { textarea?: HTMLTextAreaElement | undefined },
+  spec: {
+    code: string;
+    key: string;
+    keyCode: number;
+    ctrl?: boolean;
+    shift?: boolean;
+    meta?: boolean;
+  },
+): void {
+  const event = new KeyboardEvent("keydown", {
+    code: spec.code,
+    key: spec.key,
+    ctrlKey: spec.ctrl ?? false,
+    shiftKey: spec.shift ?? false,
+    metaKey: spec.meta ?? false,
+    bubbles: true,
+    cancelable: true,
+  });
+  Object.defineProperty(event, "keyCode", { get: () => spec.keyCode });
+  Object.defineProperty(event, "which", { get: () => spec.keyCode });
+  terminal.textarea?.dispatchEvent(event);
+}
+
+/** The bytes the pty was sent, joined. */
+function sentBytes(): string {
+  return bridge.writes.map((write) => write.data).join("");
+}
+
+/** ETX, which is what `Ctrl+C` means to a shell. */
+const INTERRUPT = "\u0003";
+
+describe("XtermHost key path", () => {
+  /**
+   * THE CODEX-REVIEW DEFECT, as an experiment on the real library.
+   *
+   * `Ctrl+Enter` was in the skip list on behalf of `keepTabOpen`, an intent
+   * that returns false on a terminal tab. xterm refused to encode it and no
+   * owner acted, so the keystroke reached NEITHER Studio NOR the pty. Claude
+   * Code, and every REPL that binds Ctrl+Enter to submit, lost the key.
+   *
+   * Revert either half of the fix - put `terminal` back in `keepTabOpen`'s
+   * `when`, or drop the reserved/handled filter in `studioTerminalSkipChords` -
+   * and this goes red: the bridge sees nothing.
+   */
+  it("lets Ctrl+Enter reach the pty", async () => {
+    render(<XtermHost terminalId="t1" visible registry={registry} platform="win32" />);
+    sizeThePane();
+    const entry = registry.acquire("t1");
+    registry.release("t1");
+
+    await act(async () => {
+      typeInto(entry.terminal, { code: "Enter", key: "Enter", keyCode: 13, ctrl: true });
+      await settle();
+    });
+
+    expect(sentBytes()).toBe("\r");
+  });
+
+  /**
+   * `Ctrl+\`` is the other key the projection ate, and it cannot be asserted the
+   * same way: xterm encodes NO sequence for that chord (measured - the library
+   * writes nothing for it even when it processes the event). So the observable
+   * is the seam itself, which is all this component controls: the handler
+   * ALLOWS xterm to process the key rather than refusing it on behalf of an
+   * intent nothing answers.
+   */
+  it("does not refuse Ctrl+Backquote on Studio's behalf", () => {
+    // Held on an object rather than in a `let`, so reading it back keeps its
+    // declared type: TypeScript narrows a `let` that is only ever assigned
+    // inside a callback to `null`, and working around that with an assertion
+    // would be an assertion covering a real possibility (nothing attached).
+    // The `throw` below covers it honestly instead.
+    const captured: { handler: ((event: KeyboardEvent) => boolean) | null } = {
+      handler: null,
+    };
+    const entry = registry.acquire("t1");
+    const original = entry.terminal.attachCustomKeyEventHandler.bind(entry.terminal);
+    entry.terminal.attachCustomKeyEventHandler = (fn) => {
+      captured.handler = fn;
+      original(fn);
+    };
+    registry.release("t1");
+
+    render(<XtermHost terminalId="t1" visible registry={registry} platform="win32" />);
+    const press = captured.handler;
+    if (press === null) throw new Error("the host attached no key handler");
+
+    const chord = (code: string): KeyboardEvent =>
+      new KeyboardEvent("keydown", { code, ctrlKey: true, cancelable: true });
+
+    // Reserved, so nothing will act on it: the shell gets the key.
+    expect(press(chord("Backquote"))).toBe(true);
+    // Bound and applicable on a terminal: Studio takes it, exactly as before.
+    expect(press(chord("KeyW"))).toBe(false);
+  });
+
+  it("keeps Ctrl+C an interrupt when nothing is selected", async () => {
+    render(<XtermHost terminalId="t1" visible registry={registry} platform="win32" />);
+    sizeThePane();
+    const entry = registry.acquire("t1");
+    registry.release("t1");
+
+    await act(async () => {
+      typeInto(entry.terminal, { code: "KeyC", key: "c", keyCode: 67, ctrl: true });
+      await settle();
+    });
+
+    // The clipboard table must never cost the terminal its interrupt.
+    expect(sentBytes()).toBe(INTERRUPT);
+  });
+
+  it("copies and clears instead, once there IS a selection", async () => {
+    const written: string[] = [];
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: (text: string) => {
+          written.push(text);
+          return Promise.resolve();
+        },
+      },
+    });
+
+    render(<XtermHost terminalId="t1" visible registry={registry} platform="win32" />);
+    sizeThePane();
+    const entry = registry.acquire("t1");
+    registry.release("t1");
+
+    await act(async () => {
+      bridge.emitData("t1", "pick me up");
+      await settle();
+    });
+    act(() => {
+      entry.terminal.selectAll();
+    });
+    expect(entry.terminal.hasSelection()).toBe(true);
+
+    await act(async () => {
+      typeInto(entry.terminal, { code: "KeyC", key: "c", keyCode: 67, ctrl: true });
+      await settle();
+    });
+
+    expect(written.join("")).toContain("pick me up");
+    // AND THE INTERRUPT WAS NOT SENT. Both halves matter: a copy that also
+    // killed the running command would be worse than no copy at all.
+    expect(sentBytes()).toBe("");
+    expect(entry.terminal.hasSelection()).toBe(false);
+  });
+
+  it("pastes on Ctrl+Shift+V, into the pty like any other input", async () => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { readText: () => Promise.resolve("echo hello") },
+    });
+
+    render(<XtermHost terminalId="t1" visible registry={registry} platform="win32" />);
+    sizeThePane();
+    const entry = registry.acquire("t1");
+    registry.release("t1");
+
+    await act(async () => {
+      typeInto(entry.terminal, {
+        code: "KeyV",
+        key: "V",
+        keyCode: 86,
+        ctrl: true,
+        shift: true,
+      });
+      await settle();
+    });
+
+    expect(sentBytes()).toBe("echo hello");
+  });
+
+  it("says WHY when the clipboard is denied, and sends nothing", async () => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { readText: () => Promise.reject(new Error("denied")) },
+    });
+
+    render(<XtermHost terminalId="t1" visible registry={registry} platform="win32" />);
+    sizeThePane();
+    const entry = registry.acquire("t1");
+    registry.release("t1");
+
+    await act(async () => {
+      typeInto(entry.terminal, {
+        code: "KeyV",
+        key: "V",
+        keyCode: 86,
+        ctrl: true,
+        shift: true,
+      });
+      await settle();
+    });
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("denied");
+    expect(alert.textContent).not.toContain("nexpected");
+    expect(sentBytes()).toBe("");
+  });
+});
+
+describe("XtermHost link path", () => {
+  /**
+   * THE DEFECT FROM THE OWNER'S SESSION (17.png, 18.png).
+   *
+   * xterm's OSC 8 provider activates through `options.linkHandler`, and with
+   * none set it runs `confirm()` and `window.open`
+   * (`@xterm/xterm/src/browser/OscLinkProvider.ts:114-129`) - the renderer
+   * dialog the owner saw, followed by nothing, because main's window-open
+   * handler serves a closed allowlist of Vex's own destinations. Remove the
+   * `linkHandler` from `terminal-registry.ts` and both assertions go red.
+   *
+   * The renderer's whole contract is "it ASKED, with the exact string".
+   * Whether a browser opens is main's authority, and is proved on main's side.
+   */
+  it("routes an activated link to the bridge and never to window.open", () => {
+    const openSpy = vi.fn();
+    Object.defineProperty(window, "open", { configurable: true, value: openSpy });
+
+    render(<XtermHost terminalId="t1" visible registry={registry} />);
+    const entry = registry.acquire("t1");
+    registry.release("t1");
+
+    const raw = "https://dexscreener.com/robinhood/0xf65E8?a=1%2B2";
+    const activate = entry.terminal.options.linkHandler?.activate;
+    expect(activate).toBeTypeOf("function");
+    activate?.(new MouseEvent("click"), raw, {
+      start: { x: 1, y: 1 },
+      end: { x: 1, y: 1 },
+    });
+
+    // The RAW string, byte for byte: re-serialising a URL is lossy.
+    expect(bridge.openedLinks).toEqual([raw]);
+    expect(openSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("XtermHost on glass", () => {
+  it("paints no surface of its own and keeps the grid inset from the pane edge", () => {
+    const { container } = render(<XtermHost terminalId="t1" visible registry={registry} />);
+    const root = container.firstElementChild;
+    expect(root).not.toBeNull();
+    // The pane above is the surface; a fill here would sit between the glass
+    // and the alpha-0 canvas and turn the pane back into a card.
+    expect(root?.className).toContain("bg-transparent");
+    expect(root?.className).not.toMatch(/\bbg-surface-/);
+    // The registry's wrapper fills its container's box, so the inset the text
+    // keeps from the pane's edge light is the container's margin.
+    const wrapper = container.querySelector("[data-terminal-id]");
+    expect(wrapper?.parentElement?.className).toContain("mx-2");
+    expect(wrapper?.parentElement?.className).toContain("mb-2");
   });
 });

@@ -13,6 +13,9 @@
  *    ONE producer of `approved: true`, the approval runtime's resumed Studio
  *    dispatch, which runs only after the human decided and only after the
  *    dispatch slot was claimed under the stop gate and the dispatch generation.
+ *  - `toolLane: "mcp"`, the one field that says which surface dispatched. It
+ *    authorizes nothing; it exists so a prepared action does not promise an
+ *    automatic follow-up on a lane whose turn loop does not exist here.
  *  - `modelOriginated: true`, because everything on this surface was emitted by
  *    an external coding agent's model. It is what keeps the `execute_tool`
  *    envelope closed on this path even if admission were bypassed.
@@ -29,6 +32,7 @@ import type { InternalToolContext } from "../tools/internal/types.js";
 import type { WalletResolution } from "@tools/wallet/multi-auth.js";
 import type { ProjectScope } from "./project-scope.js";
 import type { ApprovedQuoteAuthority } from "../tools/protocols/quote-authority/approved-authority.js";
+import type { ApprovedPrequoteAuthority } from "../tools/protocols/prequote/approved-row-authority.js";
 
 /**
  * Build the wallet resolution for a project.
@@ -72,6 +76,13 @@ export interface ProjectToolContextOptions {
    */
   readonly approvedQuoteAuthority?: ApprovedQuoteAuthority | null;
   /**
+   * WHICH PREQUOTE ROW that approval was gated on, and the digest of what the
+   * row disclosed on the card. Same producer and same trust as `approvalId`: it
+   * fences the rerun prequote gate to that exact row, so a quote recorded while
+   * the card waited cannot replace the disclosure a person decided on.
+   */
+  readonly approvedPrequoteAuthority?: ApprovedPrequoteAuthority | null;
+  /**
    * Cancellation for the MCP call that owns this dispatch. ABSENT means "no
    * cancellation", never "cancelled" - same contract as every other producer of
    * `InternalToolContext.abortSignal`.
@@ -92,12 +103,24 @@ export function buildProjectToolContext(
     ...(opts.approvedQuoteAuthority === undefined || opts.approvedQuoteAuthority === null
       ? {}
       : { approvedQuoteAuthority: opts.approvedQuoteAuthority }),
+    ...(opts.approvedPrequoteAuthority === undefined || opts.approvedPrequoteAuthority === null
+      ? {}
+      : { approvedPrequoteAuthority: opts.approvedPrequoteAuthority }),
     missionRunId: null,
     missionId: null,
     planMode: false,
     sessionKind: "agent",
     contextUsageBand: "normal",
     modelOriginated: true,
+    // THE LANE, host-side. It changes exactly one thing: a prepare whose
+    // follow-up confirm has no dispatcher on this surface says so in its own
+    // message instead of promising an automatic one (`tools/internal/types.ts`,
+    // `toolLane`). It gates nothing and grants nothing.
+    toolLane: "mcp",
+    // The project this call runs for. Host-side evidence from the authoritative
+    // scope snapshot; the lane that accepts an `imagePath` resolves the project
+    // ROOT from it at the moment of use.
+    studioProjectId: scope.projectId,
     sourceSurface: "mcp_local",
     sourceSession: scope.backingSessionId,
     walletResolution: buildProjectWalletResolution(scope.wallets),

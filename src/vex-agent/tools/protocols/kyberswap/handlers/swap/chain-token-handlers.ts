@@ -1,5 +1,5 @@
 /**
- * The read-only chain and token lookups of the KyberSwap namespace —
+ * The read-only chain and token lookups of the KyberSwap namespace -
  * `kyberswap.chains`, `kyberswap.tokens.check`. No wallet, no signing, no
  * session state.
  */
@@ -73,7 +73,7 @@ export const CHAIN_TOKEN_HANDLERS: Record<string, ProtocolHandler> = {
   },
 
   "kyberswap.tokens.check": async (p) => {
-    // `tokenAddress`, never the retired `address` — the fleet convention key.
+    // `tokenAddress`, never the retired `address` - the fleet convention key.
     // The runtime rejects an unknown param by name before this runs, so a call
     // still spelling it `address` is refused rather than silently read here.
     const chain = str(p, "chain"), tokenAddress = str(p, "tokenAddress");

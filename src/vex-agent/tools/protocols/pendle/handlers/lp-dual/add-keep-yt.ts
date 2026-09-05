@@ -1,13 +1,13 @@
 /**
- * `pendle.lp.addKeepYt` — token → LP + kept YT, the two-output entry.
+ * `pendle.lp.addKeepYt` - token → LP + kept YT, the two-output entry.
  *
- * Convert labels this plain `"add-liquidity"` — the SAME string a single-token
- * add returns — so the response's action field cannot tell them apart. What can,
+ * Convert labels this plain `"add-liquidity"` - the SAME string a single-token
+ * add returns - so the response's action field cannot tell them apart. What can,
  * and does, is the METHOD row in `calldata/bind-route.ts`: an `lp-add-keep-yt`
  * intent accepts only `addLiquiditySingleTokenKeepYt` calldata.
  *
  * BUY-SHAPED (R5b matrix): liquidity cannot be added after expiry, so this stays
- * ACTIVE-ONLY and names maturity as the refusal reason. Prequote-gated — see
+ * ACTIVE-ONLY and names maturity as the refusal reason. Prequote-gated - see
  * `../lp-dual-prequote.ts`.
  */
 
@@ -81,7 +81,7 @@ export async function executePendleLpAddKeepYt(
     // BUY-SHAPED destination (R5b matrix): adding liquidity after expiry is
     // impossible, so the financial resolver stays ACTIVE-ONLY and the reason is
     // NAMED from the read-only classification lane. `lp.add`'s refusal is reused
-    // deliberately — its recommended next step ("to exit an existing LP position
+    // deliberately - its recommended next step ("to exit an existing LP position
     // use pendle.lp.remove") is the right advice for this tool as well.
     const market = await resolveMarketByAddress(chainId, marketAddress);
     if (!market || !market.address) {
@@ -215,7 +215,7 @@ export async function executePendleLpAddKeepYt(
         intentParams: p,
         tokenIn: legInput(tokenIn.address, assetMap.get(tokenIn.address.toLowerCase())?.symbol, tokenIn.decimals, amountWei.toString(), inHuman.toString()),
         tokenOut: legInput(marketAddr, assetMap.get(marketAddr.toLowerCase())?.symbol, lpDec, quotedLpRaw, quotedLpHuman.toString()),
-        // Option-C second leg — the kept YT, staged with the intent.
+        // Option-C second leg - the kept YT, staged with the intent.
         tokenOut2: legInput(ytAddress, assetMap.get(ytAddress.toLowerCase())?.symbol, ytDec, quotedYtRaw, quotedYtHuman.toString()),
         ...(inUsd !== null ? { usdInEst: String(inUsd) } : {}),
         routeProvenance: { action: "lp-add-keep-yt", aggregator: route.data.aggregatorType, market: marketAddr, ytAddress },

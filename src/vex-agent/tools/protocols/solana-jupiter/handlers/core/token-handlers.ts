@@ -1,11 +1,11 @@
 /**
- * Jupiter read handlers — prices, token search, token trending.
+ * Jupiter read handlers - prices, token search, token trending.
  *
  * Extracted verbatim from `../core.ts` as part of a façade-preserving
  * structural split; `../core.ts` assembles these into `CORE_HANDLERS`.
  *
  * This module owns the concise-projection wiring (`projectJupiterTokens`) for
- * the two read tools — the capture-safety fence pinned by
+ * the two read tools - the capture-safety fence pinned by
  * `solana-jupiter-projectors.test.ts` lives here now.
  */
 
@@ -50,20 +50,20 @@ const VALID_CATEGORIES = new Set<string>([
   "stocks",
 ]);
 const VALID_INTERVALS = new Set<JupiterTokenInterval>(["5m", "1h", "6h", "24h"]);
-// Vex-side output-shaping knob (never sent to Jupiter) — see projectors.ts's
+// Vex-side output-shaping knob (never sent to Jupiter) - see projectors.ts's
 // `ProjectJupiterTokenOptions.statsInterval`. "all" is Vex's own escape hatch.
 const VALID_STATS_INTERVALS = new Set<JupiterTokenStatsInterval>(["5m", "1h", "6h", "24h", "all"]);
 
 export const TOKEN_READ_HANDLERS: Record<string, ProtocolHandler> = {
-  // Core — prices
+  // Core - prices
   //
   // Two mutually-exclusive lookup shapes: `mints` (raw addresses, unchanged
   // fast path) or `queries` (symbols/names/mints, resolved via
-  // `getJupiterPricesForTokenQueries` — collapses the former
+  // `getJupiterPricesForTokenQueries` - collapses the former
   // tokens.search → prices two-hop into one call). Jupiter's `/price/v3`
   // silently omits any id it cannot price rather than erroring or returning
   // a null placeholder (confirmed live: `price-v3-bogus-mint.json` fixture
-  // returns `200 {}` for an unresolvable mint) — both branches diff the
+  // returns `200 {}` for an unresolvable mint) - both branches diff the
   // request against the response and surface an explicit `missing` list so
   // that silent omission never reaches the agent unexplained.
   "solana.prices": async (p) => {
@@ -87,7 +87,7 @@ export const TOKEN_READ_HANDLERS: Record<string, ProtocolHandler> = {
     return fail("Missing required parameter: mints or queries.");
   },
 
-  // Core — token search
+  // Core - token search
   "solana.tokens.search": async (p) => {
     const q = str(p, "query");
     if (!q) return fail("Missing required parameter: query");
@@ -107,14 +107,14 @@ export const TOKEN_READ_HANDLERS: Record<string, ProtocolHandler> = {
     if (filterError) return fail(filterError);
 
     // Project the raw ~40-field JupiterMintInformation to the concise signal
-    // set before emitting (P0-3c) — read tool, no _tradeCapture, safe to trim.
-    // Threshold filters (Vex-side, no server-side equivalent — W1-G) apply to
+    // set before emitting (P0-3c) - read tool, no _tradeCapture, safe to trim.
+    // Threshold filters (Vex-side, no server-side equivalent - W1-G) apply to
     // the raw array BEFORE projection.
     const tokens = filterJupiterTokensByThreshold(await searchJupiterTokens(q), filters);
     return ok(projectJupiterTokens(tokens, { statsInterval }));
   },
 
-  // Core — token trending (routes to category, recent, or tag)
+  // Core - token trending (routes to category, recent, or tag)
   "solana.tokens.trending": async (p) => {
     const category = str(p, "category") || "toptrending";
     const interval = (str(p, "interval") || "1h") as JupiterTokenInterval;
@@ -131,14 +131,14 @@ export const TOKEN_READ_HANDLERS: Record<string, ProtocolHandler> = {
 
     // Vex-side output-shaping knob (W1-G): defaults to the resolved `interval`
     // above so a caller who only sets `interval` gets a matching single stats
-    // window, not all four — explicit "all" opts back into every window.
+    // window, not all four - explicit "all" opts back into every window.
     const rawStatsInterval = str(p, "statsInterval");
     const statsInterval = (rawStatsInterval || interval) as JupiterTokenStatsInterval;
     if (!VALID_STATS_INTERVALS.has(statsInterval)) {
       return fail("Unknown statsInterval '" + rawStatsInterval + "'. Valid stats intervals: 5m, 1h, 6h, 24h, all.");
     }
 
-    // Vex-side threshold filters (W1-G) — Jupiter has no server-side
+    // Vex-side threshold filters (W1-G) - Jupiter has no server-side
     // organicScore/liquidity/verification filter on any read endpoint
     // (recon-docs-tokens.md §7); applied to the raw array BEFORE projection.
     const filters: JupiterTokenThresholdFilters = {
@@ -156,7 +156,7 @@ export const TOKEN_READ_HANDLERS: Record<string, ProtocolHandler> = {
     // applied here as a VISIBLE window: the pre-fix recent branch ignored the
     // advertised `limit` entirely and a bare live call measured 27,970 B.
     // Windowing is accounted, never
-    // silent — `totalMatched`/`hasMore` expose what the window holds back.
+    // silent - `totalMatched`/`hasMore` expose what the window holds back.
     const windowed = (tokens: readonly unknown[]): {
       returned: number;
       totalMatched: number;

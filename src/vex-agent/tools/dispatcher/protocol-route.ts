@@ -39,7 +39,7 @@ export async function routeToolCall(
   context: InternalToolContext,
 ): Promise<ToolResult> {
   // Phase 4d safety stamp: durably mark the mission run auto-retry-UNSAFE
-  // BEFORE any mutating tool runs (sticky double-spend gate — an error after a
+  // BEFORE any mutating tool runs (sticky double-spend gate - an error after a
   // side effect can then never auto-retry). FAIL-CLOSED: if the stamp write
   // throws we propagate, so dispatchTool's catch returns a failed result and
   // the mutating handler never executes. Read-only tools and non-mission
@@ -74,7 +74,7 @@ export async function routeToolCall(
 
     // Envelope resolution: `{toolId, params:{…}}` is the contract, but a model
     // that sent the params FLAT is understood (manifest-declared keys only) and
-    // one that sent neither is told which mistake it made — see
+    // one that sent neither is told which mistake it made - see
     // `protocols/runtime/flat-args.ts`. The strict param gate is unchanged.
     const resolved = resolveExecuteToolParams(toolId, call.args);
     if (!resolved.ok) {
@@ -91,7 +91,7 @@ export async function routeToolCall(
   // A discovered manifest is offered to the model as a real function whose
   // name is the dotted toolId with `.` mapped to `__`; a call to it is
   // reverse-mapped and enters the SAME `executeProtocolTool` pipeline as
-  // `execute_tool` — param validation → prequote gate → approval gate →
+  // `execute_tool` - param validation → prequote gate → approval gate →
   // handler. Every gate keys off the RESOLVED MANIFEST, never this name.
   // The function's arguments ARE the params: unlike `execute_tool` there is no
   // `{toolId, params}` envelope to resolve, because the injected schema IS the
@@ -121,9 +121,9 @@ export async function routeToolCall(
           // refusal to its own call. The discovery hint, however, names the
           // CANONICAL toolId whenever the name resolved to a manifest: telling
           // a model to search for a spelling the catalog has retired
-          // is advice that cannot succeed. When the name resolves to NOTHING —
+          // is advice that cannot succeed. When the name resolves to NOTHING -
           // a stale mechanically-mangled spelling from before the publicName
-          // rename, a typo, a hallucination — there IS no live name to select:
+          // rename, a typo, a hallucination - there IS no live name to select:
           // under the one-separator grammar the old inversion would fabricate
           // one (`kyberswap__swap_quote` → `kyberswap.swap_quote`, a tool that
           // does not exist). The model is pointed at a SEARCH by the spelling it
@@ -143,7 +143,7 @@ export async function routeToolCall(
     );
   }
 
-  // Mutating protocol-alias branch (Stage 8b — e.g. `SwapExecute`). DEDICATED path:
+  // Mutating protocol-alias branch (Stage 8b - e.g. `SwapExecute`). DEDICATED path:
   // resolve the TARGET protocol toolId + translated params via the router, then
   // dispatch DIRECTLY through `executeProtocolTool`. This deliberately SKIPS
   // `routeInternalTool`'s internal mutating-approval gate so approval is owned
@@ -153,9 +153,9 @@ export async function routeToolCall(
   // the typed `prequote.verdict` for the restricted-mode approval preview, and
   // the TARGET manifest's `actionKind`). The target was already used for the
   // mission auto-retry-unsafe stamp (`dispatchTargetIsMutating`) and the
-  // pressure-deny used the alias's `mutating` pressureSafety (equivalent — the
+  // pressure-deny used the alias's `mutating` pressureSafety (equivalent - the
   // router only ever resolves to mutating targets). A router throw is a bounded
-  // failure ToolResult — NO target is dispatched on an un-routable request.
+  // failure ToolResult - NO target is dispatched on an un-routable request.
   if (isMutatingProtocolAlias(call.name)) {
     const router = MUTATING_PROTOCOL_ALIAS_ROUTERS[call.name];
     let target: ResolvedAliasTarget;
@@ -167,7 +167,7 @@ export async function routeToolCall(
       if (err instanceof MutatingAliasRouteError) {
         return { success: false, output: err.message };
       }
-      throw err; // unexpected — let dispatchTool's catch produce a failed result
+      throw err; // unexpected - let dispatchTool's catch produce a failed result
     }
     return executeProtocolTool(
       { toolId: target.toolId, params: target.params },
@@ -175,7 +175,7 @@ export async function routeToolCall(
     );
   }
 
-  // Internal tools — route by name
+  // Internal tools - route by name
   if (!isInternalTool(call.name)) {
     return { success: false, output: `Unknown tool: ${call.name}` };
   }
@@ -198,7 +198,7 @@ async function routeInternalTool(
     });
     return {
       success: false,
-      output: `${call.name} requires approval — mutating tool in restricted permission mode.`,
+      output: `${call.name} requires approval - mutating tool in restricted permission mode.`,
       pendingApproval: true,
     };
   }

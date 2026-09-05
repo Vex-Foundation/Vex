@@ -31,11 +31,7 @@ import {
   PARTY_FACTORY_TOKEN_LAUNCHED_ABI,
   POOLS_GATEWAY_LAUNCH_EVENT_ABI,
 } from "@tools/pools-fun/abi.js";
-import {
-  POOLS_CHAIN_ID,
-  POOLS_FACTORY_ADDRESS,
-  POOLS_GATEWAY_ADDRESS,
-} from "@tools/pools-fun/constants.js";
+import { POOLS_CHAIN_ID, poolsLaunchSuite } from "@tools/pools-fun/constants.js";
 import * as stagedBroadcast from "@tools/evm-chains/staged-broadcast.js";
 import * as tokenRegistration from "@tools/pools-fun/evm/token-registration.js";
 import * as activity from "@vex-agent/db/repos/agent-activity.js";
@@ -49,8 +45,10 @@ import * as attribution from "@vex-agent/tools/protocols/pools/handlers/launch/e
 import { broadcastPoolsLaunch } from "@vex-agent/tools/protocols/pools/handlers/launch/execute/broadcast.js";
 import type { PoolsLaunchPlan } from "@vex-agent/tools/protocols/pools/handlers/launch/execute/plan.js";
 
-const GATEWAY = getAddress(POOLS_GATEWAY_ADDRESS);
-const FACTORY = getAddress(POOLS_FACTORY_ADDRESS);
+const SUITE = poolsLaunchSuite();
+const GATEWAY = getAddress(SUITE.gateway);
+const FACTORY = getAddress(SUITE.factory);
+const LOCKER = getAddress(SUITE.locker);
 const WALLET = getAddress("0x33eF6673BD80cB11fcC41b82Bc2181E65cC4d2fA");
 const STRANGER = getAddress("0x9999999999999999999999999999999999999999");
 const TOKEN = getAddress("0x01e685d39e6bf52ad0c421a4be1e092ce684e6bb");
@@ -123,6 +121,8 @@ function plan(): PoolsLaunchPlan {
     predictedPoolAddress: POOL,
     metadataUri: METADATA_URI,
     imageLanded: true,
+    gas: { limit: 0n, priceWei: 0n, boundWei: 0n },
+    simulateOnly: false,
     binding: {
       name: "Vex Flamingo",
       symbol: "VEXFLAM",

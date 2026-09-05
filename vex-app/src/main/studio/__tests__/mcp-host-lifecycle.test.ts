@@ -1,28 +1,27 @@
 /**
  * THE HOST'S LIFECYCLE RACES, driven through the real socket.
  *
- * Four failures live here, and every one of them is a race that a
- * component test cannot see because it needs the real asynchronous gaps:
+ * Every case here is a race a component test cannot see, because it needs the
+ * real asynchronous gaps:
  *
- *   1. A LOCK INSIDE `startStudioMcpHost`. Start is a chain of awaits (the
- *      stale-endpoint probe is a network round trip with a 1 s ceiling), and a
- *      lock that lands inside it used to be overtaken: the continuation went on
- *      to bind and publish a listener that the lock had already finished
- *      tearing down, leaving a listening socket on a locked Vex.
+ *   1. A LOCK INSIDE A BIND. A bind is a chain of awaits (the stale-endpoint
+ *      probe alone is a network round trip with a 1 s ceiling). A lock inside it
+ *      must NOT stop the bind any more - the listener and admission are separate
+ *      owners - and it must not be overtaken into an OPEN door either: the
+ *      listener publishes, and the peer that connects is refused with `locked`.
  *
- *   2. A LOCK INSIDE the connection establish chain. The project check and the
+ *   2. A QUIT INSIDE A BIND. Quit is the one teardown that still invalidates a
+ *      bind. The continuation closes what it acquired, removes the endpoint file
+ *      it created, and publishes nothing.
+ *
+ *   3. A LOCK INSIDE the connection establish chain. The project check and the
  *      dynamic import of the MCP SDK are both awaits between "handshake parsed"
  *      and "serving". A lock inside either used to produce a serving connection
  *      after the lock had destroyed every socket it knew about.
  *
- *   3. TWO HANDSHAKES AT THE CAP. The established bound used to be counted
+ *   4. TWO HANDSHAKES AT THE CAP. The established bound used to be counted
  *      after the asynchronous project check, so two connections at 15 could both
  *      observe 15 and both proceed, yielding 17.
- *
- *   4. AN UNLOCK BEHIND A STALE START. `startStudioMcpHost` handed the single
- *      in-flight attempt to every caller. A lock invalidated that attempt's
- *      captured epoch, so it could only refuse - and the unlock's own call
- *      joined it, was told the host did not start, and left nothing running.
  *
  * The endpoint is a temp path under `VEX_STUDIO_SOCKET`, which also exercises
  * the override's own validation.
@@ -71,13 +70,15 @@ import {
   lockStudioMcpHost,
   shutdownStudioMcpHost,
   startStudioMcpHost,
+  openStudioMcpAdmission,
   studioMcpConnectionCount,
   studioMcpHostEndpoint,
-  studioMcpLifecycleEpoch,
+  studioMcpAdmissionEpoch,
   studioMcpReservedConnectionCount,
   resetStudioMcpHostForTests,
   STUDIO_MAX_CONNECTIONS,
 } from "../mcp-host.js";
+import { SKIP_UNIX_ENDPOINT_SUITES } from "./unix-endpoint-gate.js";
 
 interface JsonRecord {
   [key: string]: unknown;
@@ -183,6 +184,7 @@ beforeEach(() => {
     runCall: (projectId, call, options) => runCallImpl(projectId, call, options),
     projectExists: (projectId) => projectExistsImpl(projectId),
   });
+  openStudioMcpAdmission();
 });
 
 afterEach(async () => {
@@ -198,17 +200,88 @@ function endpoint(): string {
   return value;
 }
 
-describe("a lock that lands inside start", () => {
-  it("publishes NO listener and NO endpoint", async () => {
-    // `runStart` runs synchronously as far as its first await, which is the
-    // stale-endpoint probe. So the host is suspended inside that probe when the
-    // lock below runs, and the lock is what this test is about.
+describe.skipIf(SKIP_UNIX_ENDPOINT_SUITES)("a lock that lands inside a bind", () => {
+  it("still publishes the listener, and refuses the peer with `locked`", async () => {
+    // `runBind` runs as far as its first await, which is the stale-endpoint
+    // probe. The host is suspended inside that probe when the lock below runs.
+    const held = createGate();
+    staleProbe.gate = held.wait;
     const starting = startStudioMcpHost();
-    const epochBefore = studioMcpLifecycleEpoch();
+    await sleep(50);
+
+    const epochBefore = studioMcpAdmissionEpoch();
+    lockStudioMcpHost();
+    // The ADMISSION fence moved. The bind did not care.
+    expect(studioMcpAdmissionEpoch()).toBeGreaterThan(epochBefore);
+
+    held.open();
+    const started = await starting;
+    expect(started.started).toBe(true);
+    expect(studioMcpHostEndpoint()).not.toBeNull();
+
+    // THE REAL PROPERTY: the door is shut even though the building is open. The
+    // peer is answered, told the truth, and closed - and it never sent a byte.
+    const client = await LineClient.open(endpoint());
+    const ack = await client.nextMessage();
+    expect(ack).toMatchObject({ ok: false, code: "locked" });
+    await waitFor(() => client.isClosed());
+    expect(studioMcpReservedConnectionCount()).toBe(0);
+    client.destroy();
+  }, 20_000);
+
+  it("serves again after an unlock, on the SAME listener", async () => {
+    expect((await startStudioMcpHost()).started).toBe(true);
+    const bound = endpoint();
 
     lockStudioMcpHost();
-    expect(studioMcpLifecycleEpoch()).toBeGreaterThan(epochBefore);
+    // IDENTITY: a relock keeps the endpoint, so a bridge that reconnects finds
+    // the same address rather than racing a rebind.
+    expect(studioMcpHostEndpoint()).toBe(bound);
 
+    openStudioMcpAdmission();
+    expect(studioMcpHostEndpoint()).toBe(bound);
+    const client = await LineClient.open(bound);
+    client.sendHandshake();
+    expect(await client.nextMessage()).toEqual({ ok: true });
+    client.destroy();
+  }, 20_000);
+});
+
+describe.skipIf(SKIP_UNIX_ENDPOINT_SUITES)("concurrent binds", () => {
+  it("hands two callers ONE attempt and changes no admission", async () => {
+    // LOCKED FIRST, so the property under test is observable: a bind must not
+    // reopen the door it found closed.
+    lockStudioMcpHost();
+    const held = createGate();
+    staleProbe.gate = held.wait;
+    const first = startStudioMcpHost();
+    const second = startStudioMcpHost();
+    // SINGLE-FLIGHT: the second caller joins the attempt in flight.
+    expect(second).toBe(first);
+
+    held.open();
+    const results = await Promise.all([first, second]);
+    expect(results[0]?.started).toBe(true);
+    expect(results[1]).toBe(results[0]);
+
+    // A start NEVER opens the door: the lock above still stands, so the
+    // listener is up and every connect is refused with `locked`.
+    const client = await LineClient.open(endpoint());
+    expect(await client.nextMessage()).toMatchObject({ ok: false, code: "locked" });
+    client.destroy();
+  }, 20_000);
+});
+
+describe.skipIf(SKIP_UNIX_ENDPOINT_SUITES)("a quit that lands inside a bind", () => {
+  it("publishes NO listener and NO endpoint", async () => {
+    const held = createGate();
+    staleProbe.gate = held.wait;
+    const starting = startStudioMcpHost();
+    await sleep(50);
+
+    await shutdownStudioMcpHost();
+
+    held.open();
     const started = await starting;
     expect(started.started).toBe(false);
     expect(studioMcpHostEndpoint()).toBeNull();
@@ -218,103 +291,10 @@ describe("a lock that lands inside start", () => {
     const socketPath = process.env["VEX_STUDIO_SOCKET"];
     if (socketPath === undefined) throw new Error("no endpoint configured");
     await expect(LineClient.open(socketPath)).rejects.toBeDefined();
-  });
-
-  it("starts normally once the lock is over", async () => {
-    lockStudioMcpHost();
-    const started = await startStudioMcpHost();
-    expect(started.started).toBe(true);
-    const client = await LineClient.open(endpoint());
-    client.sendHandshake();
-    expect(await client.nextMessage()).toEqual({ ok: true });
-    client.destroy();
-  });
-});
-
-describe("an unlock that arrives while a STALE start attempt is still running", () => {
-  it("starts the listener under the NEW epoch once the stale attempt settles", async () => {
-    // THE DEFECT THIS PINS. `startStudioMcpHost` returned the in-flight attempt
-    // to every caller. A lock invalidated that attempt's captured epoch, so all
-    // it could still do was refuse - and the unlock's own call joined it,
-    // received that refusal, and left NOTHING running. Vex came back unlocked
-    // with no MCP listener until something else asked again.
-    const held = createGate();
-    staleProbe.gate = held.wait;
-
-    // Attempt one, suspended inside the stale-endpoint probe.
-    const stale = startStudioMcpHost();
-    await sleep(50);
-
-    const epochBefore = studioMcpLifecycleEpoch();
-    lockStudioMcpHost();
-    expect(studioMcpLifecycleEpoch()).toBeGreaterThan(epochBefore);
-
-    // The unlock asks while the stale attempt is STILL suspended. It must not
-    // be handed that attempt's refusal.
-    staleProbe.gate = null;
-    const afterUnlock = startStudioMcpHost();
-
-    held.open();
-    const staleResult = await stale;
-    // The stale attempt still refuses. That half was always correct.
-    expect(staleResult.started).toBe(false);
-
-    // THE PROPERTY: the current epoch's caller got a listener.
-    const started = await afterUnlock;
-    expect(started.started).toBe(true);
-    expect(studioMcpHostEndpoint()).not.toBeNull();
-
-    // And it is a REAL listener, not just a published field.
-    const client = await LineClient.open(endpoint());
-    client.sendHandshake();
-    expect(await client.nextMessage()).toEqual({ ok: true });
-    client.destroy();
-  }, 20_000);
-
-  it("gives two callers in the same epoch ONE queued start, not a chain", async () => {
-    const held = createGate();
-    staleProbe.gate = held.wait;
-    const stale = startStudioMcpHost();
-    await sleep(50);
-
-    lockStudioMcpHost();
-    staleProbe.gate = null;
-    const first = startStudioMcpHost();
-    const second = startStudioMcpHost();
-    // SINGLE-FLIGHT PER EPOCH: the second caller joins the queued attempt
-    // rather than queueing another one behind it.
-    expect(second).toBe(first);
-
-    held.open();
-    await stale;
-    const results = await Promise.all([first, second]);
-    expect(results[0]?.started).toBe(true);
-    expect(results[1]).toBe(results[0]);
-    expect(studioMcpConnectionCount()).toBe(0);
-  }, 20_000);
-
-  it("still refuses when a SECOND lock lands while the follow-up is queued", async () => {
-    const held = createGate();
-    staleProbe.gate = held.wait;
-    const stale = startStudioMcpHost();
-    await sleep(50);
-
-    lockStudioMcpHost();
-    staleProbe.gate = null;
-    const queued = startStudioMcpHost();
-    // The world moved again before the queued attempt could begin. It must not
-    // bind a listener for a lifecycle nobody asked for.
-    lockStudioMcpHost();
-
-    held.open();
-    await stale;
-    const result = await queued;
-    expect(result.started).toBe(false);
-    expect(studioMcpHostEndpoint()).toBeNull();
   }, 20_000);
 });
 
-describe("a lock that lands inside connection establish", () => {
+describe.skipIf(SKIP_UNIX_ENDPOINT_SUITES)("a lock that lands inside connection establish", () => {
   it("never reaches serving, and closes the connection it acquired", async () => {
     // The project check is HELD, which is the widest await in the establish
     // chain and the one a lock is most likely to land inside.
@@ -342,7 +322,7 @@ describe("a lock that lands inside connection establish", () => {
   }, 20_000);
 });
 
-describe("the established-connection reservation", () => {
+describe.skipIf(SKIP_UNIX_ENDPOINT_SUITES)("the established-connection reservation", () => {
   it("refuses the 17th of two handshakes racing at the cap", async () => {
     expect((await startStudioMcpHost()).started).toBe(true);
     const clients: LineClient[] = [];

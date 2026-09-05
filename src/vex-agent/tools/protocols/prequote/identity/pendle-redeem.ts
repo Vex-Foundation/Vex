@@ -1,7 +1,7 @@
 /**
  * Pendle PT redeem identity builder (Wave 5, LOCKED G2#3).
  *
- * Pendle redeem gets its OWN identity path — it does NOT reuse the Khalani/Relay
+ * Pendle redeem gets its OWN identity path - it does NOT reuse the Khalani/Relay
  * bridge builder. The Pendle QUOTE recorder (`pendle.pt.quote`, when Convert
  * returns action `redeem-py`) and the redeem EXECUTE gate (`pendle.pt.redeem`)
  * both build an IDENTICAL redeem identity from the same PT/amount/receiver, with
@@ -37,7 +37,7 @@ function pStr(params: Record<string, unknown>, key: string): string {
  * The PT is read from `ptAddress` (recorder) or `tokenIn` (execute gate); the
  * amount from `amount` or `amountIn`; the chain from `chain` via the SAME
  * network-free registry both sides use, so record and gate agree on the id. The
- * receiver is ALWAYS the selected EVM wallet — no `recipient` param exists on any
+ * receiver is ALWAYS the selected EVM wallet - no `recipient` param exists on any
  * Pendle manifest (Codex cleanup), and the calldata intent binding asserts
  * receiver == wallet before signing. YT is resolved from the PT via the
  * chain-scoped active-market lookup.
@@ -65,7 +65,7 @@ export async function buildPendleRedeemIdentity(
     throw new VexError(ErrorCodes.PENDLE_TOKEN_NOT_FOUND, "Pendle redeem PT is not a valid address.");
   }
 
-  // EXIT PATH (R5b): a redeem identity must be buildable for a MATURED PT —
+  // EXIT PATH (R5b): a redeem identity must be buildable for a MATURED PT -
   // otherwise the quote records nothing and the execute gate blocks the very
   // position the tool exists for. Both sides call THIS builder, so record and
   // gate keep colliding by construction; only WHICH markets can produce an

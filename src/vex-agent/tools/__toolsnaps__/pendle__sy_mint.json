@@ -11,7 +11,7 @@
             "type": "string"
           },
           "chain": {
-            "description": "Chain slug or id — one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc').",
+            "description": "Chain slug or id - one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc').",
             "type": "string"
           },
           "dryRun": {
@@ -27,7 +27,7 @@
             "type": "string"
           },
           "tokenIn": {
-            "description": "The payment token CONTRACT ADDRESS to wrap — the INPUT leg (ERC-20; pass the chain's wrapped-native token for native exposure).",
+            "description": "The payment token CONTRACT ADDRESS to wrap - the INPUT leg (ERC-20; pass the chain's wrapped-native token for native exposure).",
             "type": "string"
           }
         },

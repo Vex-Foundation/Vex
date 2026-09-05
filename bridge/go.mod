@@ -11,3 +11,8 @@ module github.com/Vex-Foundation/vex/bridge
 // GOTOOLCHAIN=local (no download) and refuses any GOVERSION other than the
 // pinned patch. Every packaging and CI path calls that script.
 go 1.27.0
+
+require (
+	github.com/Microsoft/go-winio v0.6.2
+	golang.org/x/sys v0.10.0
+)

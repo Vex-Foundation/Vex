@@ -136,6 +136,32 @@ describe("abortPlannedEvents", () => {
     expect(mockSettleLinkedActivityRowsWith).toHaveBeenCalledTimes(1);
   });
 
+  it("binds the EXCLUSIVE upper bound so a single row can be aborted alone", async () => {
+    // The fee-withholding path aborts `[feeLegIndex, feeLegIndex + 1)`: the fee
+    // row and nothing else, because the logical `bridge_fill_expected` row sits
+    // at the next index and its deposit reached the provider.
+    mockQuery.mockResolvedValueOnce([activityRow({ id: 9, event_index: 3 })]);
+    const rows = await repo.abortPlannedEvents(42, 3, "deposit proved less than the quoted principal", 4);
+
+    const sql = lastSql();
+    expect(sql).toMatch(/event_index\s*>=\s*\$2/);
+    expect(sql).toMatch(/event_index\s*<\s*\$4/);
+    expect(lastParams()).toEqual([
+      42,
+      3,
+      "not attempted: deposit proved less than the quoted principal",
+      4,
+    ]);
+    // Only the fee row came back: the row at `event_index` 4 is outside the
+    // range the statement can touch, so it stays pending for the W4 sweep.
+    expect(rows.map((row) => row.id)).toEqual([9]);
+  });
+
+  it("passes a NULL bound when no upper bound is given, so the range stays open", async () => {
+    await repo.abortPlannedEvents(42, 1, "earlier leg reverted");
+    expect(lastParams()[3]).toBeNull();
+  });
+
   // THE LENGTH CAP WAS REMOVED, THE REDACTION WAS NOT (funded live audit,
   // 2026-08-18). The old 500-char slice cut a Morpho failure exactly where its
   // standing-allowance disclosure and remediation began, so the ledger and the

@@ -2,7 +2,7 @@ import type { ProtocolToolManifest } from "../../types.js";
 import { PENDLE_MARKET_READ_DISCOVERY } from "../../embeddings/pendle/market-reads.js";
 
 /**
- * `pendle.rewards.merkle` — merkle-distributed rewards, read-only forever.
+ * `pendle.rewards.merkle` - merkle-distributed rewards, read-only forever.
  *
  * TWO CONTRACTS ARE ENCODED IN THIS MANIFEST, not just in the handler:
  *   - the description states that Vex cannot claim these, because the public
@@ -27,7 +27,7 @@ export const PENDLE_REWARDS_MERKLE_TOOL: ProtocolToolManifest = {
   namespace: "pendle",
   lifecycle: "active",
   description:
-    "List the merkle-distributed Pendle rewards accrued to the session wallet — per reward token, with the raw amount " +
+    "List the merkle-distributed Pendle rewards accrued to the session wallet - per reward token, with the raw amount " +
     "and its decimals, the accrual window, the chain, and a USD value where the token can be priced. These are " +
     "campaign and incentive rewards distributed off-market, separate from the YT interest and LP rewards that " +
     "pendle__rewards_claim sweeps on-chain. Use this when the user asks about unclaimed Pendle incentives, campaign or " +
@@ -40,7 +40,7 @@ export const PENDLE_REWARDS_MERKLE_TOOL: ProtocolToolManifest = {
     "and an exact human figure, `valueUsd`, and the accrual `window` with its `from` and `to`. Read " +
     "`totalIsPartial` before quoting a total: rows Pendle could not price are counted but not valued. " +
     "VEX CANNOT CLAIM THEM: Pendle's public API publishes the amount but not the merkle " +
-    "proof a claim transaction needs, so no Vex tool can ever execute this claim — claim at app.pendle.finance " +
+    "proof a claim transaction needs, so no Vex tool can ever execute this claim - claim at app.pendle.finance " +
     "instead. Reads the session's own wallet only; it takes no wallet address. Rows beyond the cap are reported " +
     "in `truncated` and are not reachable by paging; narrow with `chain` instead. Read-only.",
   mutating: false,
@@ -50,7 +50,7 @@ export const PENDLE_REWARDS_MERKLE_TOOL: ProtocolToolManifest = {
       key: "chain",
       type: "string",
       description:
-        "Optional chain slug or numeric id (e.g. 'ethereum', 42161) to narrow the list to ONE chain. Omit it to see every chain's rewards in one call — there is no chainIds list here, and no 'all' literal to pass. An unsupported chain is rejected by name.",
+        "Optional chain slug or numeric id (e.g. 'ethereum', 42161) to narrow the list to ONE chain. Omit it to see every chain's rewards in one call - there is no chainIds list here, and no 'all' literal to pass. An unsupported chain is rejected by name.",
     },
   ],
   exampleParams: { chain: "ethereum" },

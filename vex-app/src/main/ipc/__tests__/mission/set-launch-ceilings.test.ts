@@ -38,7 +38,7 @@ vi.mock("electron", () => {
 vi.mock("@vex-agent/engine/mission/set-launch-ceilings.js", () => ({
   setMissionLaunchCeilings: (...a: unknown[]) => mockSetMissionLaunchCeilings(...a),
 }));
-vi.mock("../../runtime/_ensure-engine-db-url.js", () => ({
+vi.mock("../../../database/engine-db-readiness.js", () => ({
   ensureEngineDbUrl: (...a: unknown[]) => mockEnsureEngineDbUrl(...a),
 }));
 vi.mock("../../../logger/index.js", () => ({

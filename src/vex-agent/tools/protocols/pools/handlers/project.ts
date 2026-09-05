@@ -15,6 +15,15 @@
  *
  * `poolId` becomes `pool` because on both launchers the value IS the SushiSwap
  * V3 pool address, verified against `PartyLocker.getPoolInfo`.
+ *
+ * WHAT THE FIVE NEWEST FIELDS ARE, AND ARE NOT (REPORT.md section 3): every one
+ * of `vexAttested`, `holderRewardsMode`, `holderRewardsDistributor`,
+ * `poolsFunBrand` and `pairedStockIlliquid` is the LAUNCHPAD's claim about its
+ * own index. They are projected because they are what a screener screens on,
+ * and each carries its authority in the tool description rather than in a
+ * silently-trusted value: the holder-rewards pair is proven on-chain by
+ * `pools__holder_rewards_get`, and `pairedStockIlliquid` has no launch-time
+ * authority at all (plan v3 section 9).
  */
 
 import type { PoolsToken } from "@tools/pools-fun/types.js";
@@ -94,6 +103,36 @@ export interface PoolsTokenRow {
    * not be resolved. "Could not tell" is never encoded as `false`.
    */
   isOwnLaunch?: boolean;
+  /**
+   * The launchpad's own claim that this token carries a Vex attestation.
+   * PRESENT ONLY WHEN THE LAUNCHPAD SAYS SO - absent means it makes no claim,
+   * never that it denies one, because the wire has no `false` value for this.
+   */
+  vexAttested?: true;
+  /**
+   * Which fee legs this token streams to its holders, as the launchpad labels
+   * it: `token`, `paired` or `both`. Present only on opted-in tokens.
+   *
+   * THE LAUNCHPAD'S CLAIM. The mode's authority is the `DistributorDeployed`
+   * event of the suite's HolderRewardsDeployer, which `pools__holder_rewards_get`
+   * reads; this row field is the echo you screen a list with.
+   */
+  holderRewardsMode?: string;
+  /** The distributor contract the launchpad names. Same echo caveat as the mode. */
+  holderRewardsDistributor?: string;
+  /**
+   * The launchpad's brand warning, present only on rows it flags. The pools.fun
+   * app renders `status: "unofficial"` as a "Not official" badge: it is a
+   * BRAND-COLLISION warning about the token's name, not a contract property.
+   */
+  poolsFunBrand?: { status: string; revision: number | null };
+  /**
+   * The launchpad's flag that the tokenised stock this token is paired against
+   * is illiquid. DISPLAY ONLY and present only when flagged; a launch cannot be
+   * decided on its absence, because a pair that was never listed has no
+   * liquidity history to be flagged from.
+   */
+  pairedStockIlliquid?: true;
 }
 
 export function projectToken(row: PoolsToken, now: number): PoolsTokenRow {
@@ -128,6 +167,20 @@ export function projectToken(row: PoolsToken, now: number): PoolsTokenRow {
     image: row.imageUri,
     website: row.websiteUrl,
     tweet: row.tweetUrl,
+    // ── The five 2026-09-04 fields, EMITTED ONLY WHEN THE WIRE CARRIED THEM ──
+    //
+    // Absence is the provider's own encoding here: it sends `vexAttested` and
+    // `pairedStockIlliquid` only when true, and the holder-rewards pair only on
+    // opted-in tokens. Emitting `false`/`null` instead would convert "the
+    // launchpad says nothing" into "the launchpad says no" on 96 rows out of
+    // 100, which is the tri-state mistake `isOwnLaunch` already exists to avoid.
+    ...(row.vexAttested === true ? { vexAttested: true as const } : {}),
+    ...(row.holderRewardsMode !== null ? { holderRewardsMode: row.holderRewardsMode } : {}),
+    ...(row.holderRewardsDistributor !== null
+      ? { holderRewardsDistributor: row.holderRewardsDistributor }
+      : {}),
+    ...(row.poolsFunBrand !== null ? { poolsFunBrand: row.poolsFunBrand } : {}),
+    ...(row.pairedStockIlliquid === true ? { pairedStockIlliquid: true as const } : {}),
   };
 }
 

@@ -105,6 +105,7 @@ import {
   siteError,
 } from "@tools/dexscreener/site-errors.js";
 import { fail, num, ok, str } from "../../handler-helpers.js";
+import { liquidityInterpretation } from "./liquidity-interpretation.js";
 import { readStringList } from "../../runtime/list-params.js";
 import type { ProtocolHandler } from "../../types.js";
 import {
@@ -716,6 +717,33 @@ async function runPairGet(
       // note is the honest text for that basis, and it is emitted below.
       + `${resolutionBasis === "deepest_of_search_window" ? `, resolved from token ${resolvedFrom ?? ""} as the deepest of the ${matchedInWindow ?? 0} pools for that token inside the ${searchWindowSize ?? 0}-row search window the provider returned` : ""}.`,
     pair: row,
+    /*
+     * THE CAUSAL QUALIFIER TRAVELS WITH THE NUMBER.
+     *
+     * MEASURED, live session 2026-08-30: this tool's `liquidityUsd` was read
+     * twice on one pool, 210K then 223K, over an interval in which the price
+     * rose about 10.7 percent, and the answer that reached the user was
+     * "someone added to the pool". Nothing on that payload said the figure is
+     * a price mark of the reserves and therefore moves on price alone, so
+     * there was no caveat to ignore. `liquidityInterpretation` is that
+     * statement as FIELDS, and it names the reserve amounts and the tool that
+     * can actually establish an add or a remove.
+     */
+    liquidityInterpretation: liquidityInterpretation({
+      liquidityUsd: row.liquidityUsd,
+      reserves: groups.includes("reserves")
+        ? {
+            baseTokens: row.liquidityBaseTokens ?? null,
+            quoteTokens: row.liquidityQuoteTokens ?? null,
+          }
+        : null,
+      ...((row.notApplicableInputs ?? []).includes("liquidityUsd")
+        ? {
+            notApplicableReason:
+              "This row is a bonding-curve row: it has no liquidity pool, so there is no pool liquidity to report and none was withheld.",
+          }
+        : {}),
+    }),
     window,
     resolvedPair,
     resolutionBasis,
@@ -1557,6 +1585,18 @@ async function runPairsBatch(
   const hasTokens = parsed.identities.some((one) => one.kind === "token");
 
   return ok({
+    /*
+     * THE CAUSAL QUALIFIER, ONCE, AT THE ENVELOPE.
+     *
+     * Every row here carries a `liquidityUsd`, and every one of them is a
+     * price mark of that pool's reserves rather than a deposit ledger. The
+     * statement is about what the FIELD means and does not vary per row, so it
+     * is stated once instead of being copied onto each row.
+     */
+    liquidityInterpretation: liquidityInterpretation({
+      appliesTo: "every_row_in_this_answer",
+      reserves: null,
+    }),
     // EVERY NUMBER HERE IS READ OFF THE RECONCILED SETS ABOVE, and each clause
     // names the mechanism that produced it. The previous template mixed two
     // nouns under one name and attributed a dedupe collapse to thresholds that
@@ -2041,6 +2081,18 @@ async function runPairsSearch(
   const droppedByThreshold = totalOf(filtered.droppedByFilter);
 
   return ok({
+    /*
+     * THE CAUSAL QUALIFIER, ONCE, AT THE ENVELOPE.
+     *
+     * Every row here carries a `liquidityUsd`, and every one of them is a
+     * price mark of that pool's reserves rather than a deposit ledger. The
+     * statement is about what the FIELD means and does not vary per row, so it
+     * is stated once instead of being copied onto each row.
+     */
+    liquidityInterpretation: liquidityInterpretation({
+      appliesTo: "every_row_in_this_answer",
+      reserves: null,
+    }),
     summary:
       `${rows.length} of ${filtered.kept.length} matching pairs for "${query}" `
       + `${chains.length === 0 ? "across every chain" : `on ${chains.join(", ")}`}, `
@@ -2265,7 +2317,48 @@ async function runTokenPairs(
     ? `deepest WITHHELD (${PRICE_DIVERGENCE_SELECTION_WITHHELD_REASON})`
     : `deepest ${deepest === null ? "not determinable" : `${deepest.dexId} at ${usd(deepest.liquidityUsd)}`}`;
 
+  // TWO INDEPENDENT REASONS pools are missing from this reply, and they are not
+  // interchangeable. `limit` held back pools that are ALREADY IN HAND: one
+  // larger limit shows them and costs no request. The PROVIDER WINDOW cut pools
+  // that never arrived: no limit, offset or cursor reaches them, and every
+  // share, total and `deepestPair` here stands on the sample that did arrive.
+  //
+  // Both are `truncated` under `tool-surface-spec/output-envelope.md` section 3
+  // ("these are gone unless you narrow"). Reporting only the first is what let
+  // a FULL provider window answer `truncated: false` while pools were missing,
+  // which is the one canonical key a reader keys on before reading any of the
+  // provider-specific blocks below.
+  //
+  // The window cap is a fact about THIS TOKEN only when the token is actually
+  // in the window, which is the same guard `providerCapped` applies further
+  // down: a ticker passed as an address fills the window with other tokens and
+  // says nothing about the token that was asked for.
+  const limitHeldRowsBack = filtered.kept.length > rows.length;
+  const windowCappedThisToken = result.providerCapped && matching.length > 0;
+  const truncationNote = [
+    limitHeldRowsBack
+      ? `${filtered.kept.length - rows.length} further matching pools were returned by the provider and are not shown. Raise limit to see them; they need no further request.`
+      : null,
+    windowCappedThisToken
+      ? `The provider filled its ${SEARCH_PROVIDER_WINDOW}-row window for this token, so pools beyond it were never sent and NO limit, offset or cursor reaches them. Every share, total, venueCount and deepestPair here is computed over the ${matching.length} pools that did arrive, which is a sample and not this token's pool set. This channel has no continuation to narrow into: to go further, name a pool you already know with dexscreener__pair_get or dexscreener__pairs_batch_get, and read windowSemantics for what these figures do and do not claim.`
+      : null,
+  ]
+    .filter((part): part is string => part !== null)
+    .join(" ");
+
   return ok({
+    /*
+     * THE CAUSAL QUALIFIER, ONCE, AT THE ENVELOPE.
+     *
+     * Every row here carries a `liquidityUsd`, and every one of them is a
+     * price mark of that pool's reserves rather than a deposit ledger. The
+     * statement is about what the FIELD means and does not vary per row, so it
+     * is stated once instead of being copied onto each row.
+     */
+    liquidityInterpretation: liquidityInterpretation({
+      appliesTo: "every_row_in_this_answer",
+      reserves: null,
+    }),
     summary:
       `${rows.length} of ${matching.length} indexed pools for ${tokenAddress} on ${chain}, `
       + `${usd(totalLiquidityUsd)} liquidity across ${venueCount} `
@@ -2281,14 +2374,12 @@ async function runTokenPairs(
     matchedAfterFilters: filtered.kept.length,
     /**
      * The canonical envelope key (`tool-surface-spec/output-envelope.md`
-     * section 3). True when `limit` held back pools that are already in hand.
+     * section 3). True when `limit` held back pools that are already in hand,
+     * AND when the provider's own window cut pools that never arrived; see
+     * `truncationNote`, which names whichever reason applied.
      */
-    truncated: filtered.kept.length > rows.length,
-    ...(filtered.kept.length > rows.length
-      ? {
-          truncationNote: `${filtered.kept.length - rows.length} further matching pools were returned by the provider and are not shown. Raise limit to see them; they need no further request.`,
-        }
-      : {}),
+    truncated: limitHeldRowsBack || windowCappedThisToken,
+    ...(truncationNote === "" ? {} : { truncationNote }),
     hasMore: false,
     pagination: {
       mode: "bounded_non_pageable",
@@ -2356,8 +2447,8 @@ async function runTokenPairs(
     // pools than the window can carry": a confident claim about a token the
     // call never found. The cap is a fact about the token only when the token
     // is actually in the window.
-    providerCapped: result.providerCapped && matching.length > 0,
-    ...(result.providerCapped && matching.length > 0
+    providerCapped: windowCappedThisToken,
+    ...(windowCappedThisToken
       ? {
           providerCappedAdvice: `This token has more pools than the provider's ${SEARCH_PROVIDER_WINDOW}-row window can carry, and there is no continuation. The pools shown are the ones the provider ranked highest for the address; treat the shares as a sample. dexscreener__pairs_batch_get can refresh specific pools you already know about.`,
         }

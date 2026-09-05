@@ -25,7 +25,7 @@ const mockRelease = vi.fn();
 vi.mock("../../database/mission-runs-db.js", () => ({
   getActiveRunForSession: (...a: unknown[]) => mockGetActiveRun(...a),
 }));
-vi.mock("../runtime/_ensure-engine-db-url.js", () => ({
+vi.mock("../../database/engine-db-readiness.js", () => ({
   ensureEngineDbUrl: (...a: unknown[]) => mockEnsureDbUrl(...a),
 }));
 vi.mock("../runtime/_emit-control-state.js", () => ({

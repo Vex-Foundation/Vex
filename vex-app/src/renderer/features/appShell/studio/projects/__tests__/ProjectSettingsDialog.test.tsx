@@ -34,9 +34,18 @@ import {
 } from "../../__tests__/studio-fixtures.js";
 import { ProjectSettingsDialog } from "../ProjectSettingsDialog.js";
 import {
+  FULL_ACCESS_ACKNOWLEDGEMENT,
+  FULL_ACCESS_CONSEQUENCE_UNDO,
+  FULL_ACCESS_CONSEQUENCE_WHAT,
+  fullAccessWalletsLine,
   PROJECT_SCOPE_CONFLICT_RELOAD,
   PROJECT_SCOPE_CONFLICT_RELOADING,
   PROJECT_SCOPE_CONFLICT_TITLE,
+  PROJECT_SETTINGS_UNCHANGED,
+  PROJECT_WALLET_EVM_LABEL,
+  PROJECT_WALLET_SOLANA_LABEL,
+  PROJECT_WALLETS_UNSELECTED,
+  RENDER_OUTCOME_TITLE,
 } from "../projects-copy.js";
 
 const getMock = vi.fn<() => Promise<Result<ProjectGetResult>>>();
@@ -85,15 +94,24 @@ beforeEach(() => {
   });
 });
 
-function renderSettings(): void {
+function renderSettings(): {
+  /** Re-render the same tree with a different `projectId` (null closes it). */
+  readonly setProjectId: (next: string | null) => void;
+} {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
-  render(
+  const tree = (projectId: string | null) => (
     <QueryClientProvider client={client}>
-      <ProjectSettingsDialog projectId={STORED.id} onClose={() => undefined} />
-    </QueryClientProvider>,
+      <ProjectSettingsDialog projectId={projectId} onClose={() => undefined} />
+    </QueryClientProvider>
   );
+  const { rerender } = render(tree(STORED.id));
+  return {
+    setProjectId: (next) => {
+      rerender(tree(next));
+    },
+  };
 }
 
 function saveButton(): HTMLButtonElement {
@@ -105,6 +123,19 @@ function saveButton(): HTMLButtonElement {
 /** Wait for the form to be seeded from the loaded project. */
 async function loaded(): Promise<void> {
   await screen.findByRole("checkbox", { name: /Codex CLI/ });
+}
+
+/** The consent strip's acknowledgement checkbox, or null when no strip is up. */
+function consentCheckbox(): HTMLInputElement | null {
+  const node = document.querySelector("[data-vex-consent-acknowledge]");
+  return node instanceof HTMLInputElement ? node : null;
+}
+
+/** Give the Full-access grant its acknowledgement. Throws if there is none. */
+function acknowledgeFullAccess(): void {
+  const box = consentCheckbox();
+  if (box === null) throw new Error("no Full access acknowledgement on screen");
+  fireEvent.click(box);
 }
 
 describe("loading and the dirty gate", () => {
@@ -133,7 +164,9 @@ describe("the wire input", () => {
           trigger: "scope_update",
           artifacts: [],
           warnings: [],
+          runFailure: null,
         },
+        refreshFailure: null,
       },
     });
     renderSettings();
@@ -165,13 +198,18 @@ describe("the wire input", () => {
           trigger: "scope_update",
           artifacts: [],
           warnings: [],
+          runFailure: null,
         },
+        refreshFailure: null,
       },
     });
     renderSettings();
     await loaded();
 
     fireEvent.click(screen.getByRole("radio", { name: /Full access/ }));
+    // CONTRACT CHANGE (2026-09-02): a scope that grants Full access is
+    // acknowledged before it can be saved, so this case now walks the gate.
+    acknowledgeFullAccess();
     fireEvent.click(saveButton());
     await waitFor(() => {
       expect(updateMock).toHaveBeenCalled();
@@ -194,7 +232,17 @@ describe("the scope conflict", () => {
       await screen.findByRole("button", { name: PROJECT_SCOPE_CONFLICT_RELOAD }),
     ).not.toBeNull();
     expect(screen.queryByRole("button", { name: /^Save$/ })).toBeNull();
-    expect(screen.getByText(/wrote nothing/)).not.toBeNull();
+    // The pane's copy is PRINTED once, and the same sentence is also spoken
+    // once through the dialog's live region (the pane replaces the form under
+    // the user's focus, so a screen reader is told why). Filtered rather than
+    // matched loosely, so this stays an assertion about the visible pane.
+    const printed = screen
+      .getAllByText(/wrote nothing/)
+      .filter((node) => node.closest("[data-vex-live-region]") === null);
+    expect(printed).toHaveLength(1);
+    expect(
+      document.querySelector("[data-vex-live-region]")?.textContent,
+    ).toContain("Error: Someone or something else saved a change");
   });
 
   it("never resubmits on a scope conflict", async () => {
@@ -251,15 +299,191 @@ describe("the scope conflict", () => {
           trigger: "scope_update",
           artifacts: [],
           warnings: [],
+          runFailure: null,
         },
+        refreshFailure: null,
       },
     });
     fireEvent.click(screen.getByRole("checkbox", { name: /Cursor/ }));
+    // The reloaded project is Full access, so the re-seeded draft grants it and
+    // the second save walks the acknowledgement gate. The reload is exactly the
+    // moment the grant must be re-stated: this form's values now come from a
+    // project the user did not compose.
+    acknowledgeFullAccess();
     fireEvent.click(saveButton());
     await waitFor(() => {
       expect(updateMock).toHaveBeenCalledTimes(2);
     });
     expect(updateMock.mock.calls[1]?.[0].expectedScopeVersion).toBe(9);
+  });
+});
+
+describe("the Full-access consent gate", () => {
+  it("shows no strip for a Restricted draft and one the moment it grants", async () => {
+    renderSettings();
+    await loaded();
+    expect(consentCheckbox()).toBeNull();
+
+    fireEvent.click(screen.getByRole("radio", { name: /Full access/ }));
+    const strip = document.querySelector('[data-vex-consent="full-access"]');
+    expect(strip).not.toBeNull();
+    expect(strip?.textContent).toContain(FULL_ACCESS_CONSEQUENCE_WHAT);
+    expect(strip?.textContent).toContain(FULL_ACCESS_ACKNOWLEDGEMENT);
+    // WHAT, TO WHAT, and whether it can be undone: all three, always.
+    expect(strip?.textContent).toContain(STORED.displayPath);
+    expect(strip?.textContent).toContain(FULL_ACCESS_CONSEQUENCE_UNDO);
+  });
+
+  it("keeps Save disabled until the grant is acknowledged", async () => {
+    renderSettings();
+    await loaded();
+
+    fireEvent.click(screen.getByRole("radio", { name: /Full access/ }));
+    // The form IS dirty - the permission changed - so only the missing
+    // acknowledgement can be holding the button.
+    expect(saveButton().disabled).toBe(true);
+    acknowledgeFullAccess();
+    expect(saveButton().disabled).toBe(false);
+  });
+
+  it("refuses a save that never had the acknowledgement, not just the press", async () => {
+    renderSettings();
+    await loaded();
+
+    fireEvent.click(screen.getByRole("radio", { name: /Full access/ }));
+    // Past the disabled button entirely: submitting the FORM is what a stray
+    // Enter, a queued event or a synthetic dispatch does, and the gate has to
+    // hold there because that is where the wire input is built.
+    const form = document.querySelector("form");
+    if (form === null) throw new Error("no form");
+    fireEvent.submit(form);
+    await Promise.resolve();
+    expect(updateMock).not.toHaveBeenCalled();
+  });
+
+  it("drops the acknowledgement when the proposal changes, in both directions", async () => {
+    renderSettings();
+    await loaded();
+
+    fireEvent.click(screen.getByRole("radio", { name: /Full access/ }));
+    acknowledgeFullAccess();
+    expect(consentCheckbox()?.checked).toBe(true);
+
+    // Back to Restricted and forward again: the second grant is a NEW grant.
+    fireEvent.click(screen.getByRole("radio", { name: /Restricted/ }));
+    expect(consentCheckbox()).toBeNull();
+    fireEvent.click(screen.getByRole("radio", { name: /Full access/ }));
+    expect(consentCheckbox()?.checked).toBe(false);
+    expect(saveButton().disabled).toBe(true);
+  });
+
+  it("keeps the acknowledgement across an edit the strip does not describe", async () => {
+    renderSettings();
+    await loaded();
+
+    fireEvent.click(screen.getByRole("radio", { name: /Full access/ }));
+    acknowledgeFullAccess();
+    // An agent is not part of what the strip states, so re-asking here would
+    // train the user to tick the box without reading it.
+    fireEvent.click(screen.getByRole("checkbox", { name: /Cursor/ }));
+    expect(consentCheckbox()?.checked).toBe(true);
+    expect(saveButton().disabled).toBe(false);
+  });
+});
+
+/* ------------- the grant over a NON-EMPTY wallet inventory ---------------- */
+
+/**
+ * The wallets half of the grant, which every other case in this file leaves
+ * unexercised: its inventory is empty, so the fieldset renders its "no wallets
+ * yet" branch and there is no control to change.
+ *
+ * That matters because the wallets are the half of `Full access` that reaches
+ * the user's KEYS rather than their disk. Two properties are asserted here and
+ * nowhere else: the strip names the wallets it is granting over, and changing
+ * that selection drops an acknowledgement already given. Without the second,
+ * a user could acknowledge a grant naming one wallet and save a grant naming
+ * another.
+ */
+const EVM_WALLET = {
+  id: "evm-1",
+  address: "0x1111111111111111111111111111111111111111",
+  label: "Treasury",
+};
+const SOLANA_WALLET = {
+  id: "sol-1",
+  address: "So11111111111111111111111111111111111111112",
+  label: "Trading",
+};
+
+/** Seed the inventory BEFORE the dialog mounts; the query reads it once. */
+function withWallets(): void {
+  walletsMock.mockResolvedValue({
+    ok: true,
+    data: { evm: [EVM_WALLET], solana: [SOLANA_WALLET] },
+  });
+}
+
+/** Pick an option in one wallet select, driven through its real combobox. */
+async function selectWallet(name: string, optionLabel: RegExp): Promise<void> {
+  fireEvent.click(await screen.findByRole("combobox", { name }));
+  fireEvent.click(screen.getByRole("option", { name: optionLabel }));
+}
+
+describe("the Full-access grant over a wallet inventory", () => {
+  it("names the wallets the grant covers, and says so when none is selected", async () => {
+    withWallets();
+    renderSettings();
+    await loaded();
+    fireEvent.click(screen.getByRole("radio", { name: /Full access/ }));
+
+    // The stored project holds no wallet, so the strip must say the selection
+    // is empty AND that anything selected below joins the grant - silence here
+    // would let a wallet be added under an acknowledgement already given.
+    expect(document.querySelector('[data-vex-consent="full-access"]')?.textContent)
+      .toContain(fullAccessWalletsLine([]));
+
+    await selectWallet(PROJECT_WALLET_EVM_LABEL, /Treasury/);
+    expect(document.querySelector('[data-vex-consent="full-access"]')?.textContent)
+      .toContain(fullAccessWalletsLine([EVM_WALLET.label]));
+    // The LABEL, never the address: a truncated hex string is not something a
+    // person deciding what an agent may spend from recognises.
+    expect(document.querySelector('[data-vex-consent="full-access"]')?.textContent)
+      .not.toContain(EVM_WALLET.address);
+  });
+
+  it("drops an acknowledgement when the wallet selection changes under it", async () => {
+    withWallets();
+    renderSettings();
+    await loaded();
+    fireEvent.click(screen.getByRole("radio", { name: /Full access/ }));
+    await selectWallet(PROJECT_WALLET_EVM_LABEL, /Treasury/);
+    acknowledgeFullAccess();
+    expect(saveButton().disabled).toBe(false);
+
+    // Adding a second wallet CHANGES what was acknowledged. The consent was
+    // given for a grant over Treasury alone.
+    await selectWallet(PROJECT_WALLET_SOLANA_LABEL, /Trading/);
+    expect(consentCheckbox()?.checked).toBe(false);
+    expect(saveButton().disabled).toBe(true);
+    expect(document.querySelector('[data-vex-consent="full-access"]')?.textContent)
+      .toContain(fullAccessWalletsLine([EVM_WALLET.label, SOLANA_WALLET.label]));
+  });
+
+  it("refuses the save the changed selection un-acknowledged, at the submit path", async () => {
+    withWallets();
+    renderSettings();
+    await loaded();
+    fireEvent.click(screen.getByRole("radio", { name: /Full access/ }));
+    await selectWallet(PROJECT_WALLET_EVM_LABEL, /Treasury/);
+    acknowledgeFullAccess();
+    await selectWallet(PROJECT_WALLET_SOLANA_LABEL, /Trading/);
+
+    const form = document.querySelector("form");
+    if (form === null) throw new Error("no form");
+    fireEvent.submit(form);
+    await Promise.resolve();
+    expect(updateMock).not.toHaveBeenCalled();
   });
 });
 
@@ -360,7 +584,9 @@ describe("the render report", () => {
               detail: "Pass --mcp-config-file when you start Kimi.",
             },
           ],
+          runFailure: null,
         },
+        refreshFailure: null,
       },
     });
     renderSettings();
@@ -384,5 +610,141 @@ describe("the render report", () => {
     expect(
       screen.getByText("Pass --mcp-config-file when you start Kimi."),
     ).not.toBeNull();
+  });
+});
+
+/* ------------------- the idle sentence, and its state (A4) ---------------- */
+
+/**
+ * RED ON REVERT: put `!dirty` back in place of `showUnchangedNotice` in
+ * `SettingsBody` and both cases here fail on their first assertion. A save
+ * re-seeds the form from the row it returns, so the form is clean again the
+ * moment the report lands and the idle prompt printed itself directly above
+ * the account of what Vex had just written (live test 2026-09-03, A4).
+ *
+ * WHICH MECHANISM TAKES THE REPORT DOWN: it is REPLACED, never dismissed.
+ * Nothing in this dialog or in `RenderOutcomePanel` offers a dismissal; the
+ * report is cleared only by the next submit, by the conflict reload, or by the
+ * dialog closing. So a later edit cannot bring the sentence back on its own,
+ * which is what the second case pins.
+ */
+function savedResult(): Result<ProjectUpdateScopeResult> {
+  return {
+    ok: true,
+    data: {
+      project: { ...STORED, scopeVersion: 8, agents: ["codex", "cursor"] },
+      render: {
+        scopeVersion: 8,
+        completed: true,
+        trigger: "scope_update",
+        artifacts: [
+          {
+            status: "written",
+            kind: "agent-config",
+            agentId: "cursor",
+            path: ".cursor/mcp.json",
+            change: "created",
+          },
+        ],
+        warnings: [],
+        runFailure: null,
+      },
+      refreshFailure: null,
+    },
+  };
+}
+
+describe("the idle sentence", () => {
+  it("gives way to the report of the save that made the form clean again", async () => {
+    updateMock.mockResolvedValue(savedResult());
+    renderSettings();
+    await loaded();
+    // The idle state, before anything is asked of Vex.
+    expect(screen.getByText(PROJECT_SETTINGS_UNCHANGED)).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: /Cursor/ }));
+    expect(screen.queryByText(PROJECT_SETTINGS_UNCHANGED)).toBeNull();
+    fireEvent.click(saveButton());
+
+    // The report is on screen and the form is clean against the SAVED row -
+    // which is exactly the state that used to print "Nothing has changed yet"
+    // above it.
+    expect(await screen.findByText(RENDER_OUTCOME_TITLE)).not.toBeNull();
+    expect(saveButton().disabled).toBe(true);
+    expect(screen.queryByText(PROJECT_SETTINGS_UNCHANGED)).toBeNull();
+  });
+
+  it("stays away until the report is gone, not merely until the form is clean", async () => {
+    updateMock.mockResolvedValue(savedResult());
+    const { setProjectId } = renderSettings();
+    await loaded();
+    fireEvent.click(screen.getByRole("checkbox", { name: /Cursor/ }));
+    fireEvent.click(saveButton());
+    await screen.findByText(RENDER_OUTCOME_TITLE);
+
+    // A later edit, and then the same edit undone: the form is clean against
+    // the saved values again while the report of that save still stands. The
+    // sentence must not come back under it.
+    fireEvent.click(screen.getByRole("checkbox", { name: /Cursor/ }));
+    expect(saveButton().disabled).toBe(false);
+    expect(screen.queryByText(PROJECT_SETTINGS_UNCHANGED)).toBeNull();
+    fireEvent.click(screen.getByRole("checkbox", { name: /Cursor/ }));
+    expect(saveButton().disabled).toBe(true);
+    expect(screen.getByText(RENDER_OUTCOME_TITLE)).not.toBeNull();
+    expect(screen.queryByText(PROJECT_SETTINGS_UNCHANGED)).toBeNull();
+
+    // Closing and reopening is one of the three paths that clears the report
+    // (the others are the next submit and the conflict reload). With it gone
+    // the dialog is idle again, and says so.
+    setProjectId(null);
+    setProjectId(STORED.id);
+    await loaded();
+    expect(screen.queryByText(RENDER_OUTCOME_TITLE)).toBeNull();
+    expect(screen.getByText(PROJECT_SETTINGS_UNCHANGED)).not.toBeNull();
+  });
+});
+
+/* -------------- the wallets a project would be saved without (A7) --------- */
+
+describe("an unselected wallet picker", () => {
+  it("says the project will hold no wallet while wallets exist to pick", async () => {
+    withWallets();
+    renderSettings();
+    await loaded();
+
+    // The stored project selected neither, and nothing selected one for it:
+    // pre-selecting the only wallet per chain was rejected (see
+    // `PROJECT_WALLETS_UNSELECTED`), so the dialog states the consequence.
+    expect(
+      document
+        .querySelector('[data-vex-project-wallets="picker"]')
+        ?.getAttribute("data-vex-project-wallets-selection"),
+    ).toBe("none");
+    expect(screen.getByText(PROJECT_WALLETS_UNSELECTED)).not.toBeNull();
+  });
+
+  it("goes silent as soon as one family is selected", async () => {
+    withWallets();
+    renderSettings();
+    await loaded();
+    await selectWallet(PROJECT_WALLET_EVM_LABEL, /Treasury/);
+    expect(screen.queryByText(PROJECT_WALLETS_UNSELECTED)).toBeNull();
+  });
+
+  it("says nothing when the project already holds a wallet", async () => {
+    withWallets();
+    getMock.mockResolvedValue({
+      ok: true,
+      data: {
+        ...STORED,
+        wallets: {
+          evm: { id: EVM_WALLET.id, address: EVM_WALLET.address },
+          solana: null,
+        },
+      },
+    });
+    renderSettings();
+    await loaded();
+    expect(screen.queryByText(PROJECT_WALLETS_UNSELECTED)).toBeNull();
   });
 });

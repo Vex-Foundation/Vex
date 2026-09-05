@@ -4,11 +4,11 @@
  *
  * The provider models the FULL Borrow lifecycle (create/deposit/withdraw/
  * borrow/repay) through ONE endpoint via the sign of two deltas
- * (`colAmount`, `debtAmount` — see `../../../../tools/solana-ecosystem/
+ * (`colAmount`, `debtAmount` - see `../../../../tools/solana-ecosystem/
  * jupiter/jupiter-lend/borrow-api/JupiterLendBorrowApi.md`). Exposing THAT
  * raw signed-delta shape directly as agent params would fail the cold-start
  * standard (an agent would have to know the MIN_I128 sentinel by heart to
- * withdraw everything) — this module owns the translation from six
+ * withdraw everything) - this module owns the translation from six
  * intent-labeled, mutually-exclusive params
  * (depositAmountRaw/withdrawAmountRaw/withdrawAll for collateral,
  * borrowAmountRaw/repayAmountRaw/repayAll for debt) to the provider's signed
@@ -16,11 +16,11 @@
  * (`handlers/lend-borrow.ts`) and the pre-approval risk-preview evaluator
  * (`borrow-risk-preview.ts`) so the two never drift.
  *
- * `agent_activity`'s `tokenIn`/`tokenOut` legs (one slot each, per-row —
+ * `agent_activity`'s `tokenIn`/`tokenOut` legs (one slot each, per-row -
  * same shape a swap uses) can record AT MOST one incoming and one outgoing
  * leg per operate call. The provider's docs' own combo matrix only
  * demonstrates one true two-leg combo ("Deposit + borrow": collateral IN +
- * debt OUT) — a same-direction combo (deposit+repay, or withdraw+borrow)
+ * debt OUT) - a same-direction combo (deposit+repay, or withdraw+borrow)
  * would need TWO "in" or TWO "out" slots, which the ledger cannot represent
  * faithfully. `resolveBorrowOperateRequest` REJECTS that combination with a
  * clear error (reject-not-clamp) rather than silently recording only one leg.
@@ -66,9 +66,9 @@ export type BorrowOperateParamResolution =
 // ── Versioned intent-params effects payload ────────────────────────
 //
 // w5-design.md §1: "the /operate delta shape lives in intent_params, not in
-// the role vocabulary" — `lend_borrow_operate` is ONE role covering many
+// the role vocabulary" - `lend_borrow_operate` is ONE role covering many
 // distinct delta shapes (deposit/withdraw/borrow/repay/combos/close-alls),
-// so the intent-params record — not a new role per shape — is the durable,
+// so the intent-params record - not a new role per shape - is the durable,
 // audit-facing description of what a specific call actually did. `effects`
 // is deliberately a NORMALIZED array (one entry per touched leg, never the
 // raw provider-signed strings) so a future consumer (K7's feed, an
@@ -82,7 +82,7 @@ export const BORROW_OPERATE_EFFECTS_VERSION = 1;
 export interface BorrowOperateEffect {
   readonly leg: "collateral" | "debt";
   readonly direction: "in" | "out";
-  /** `null` for a close-all sentinel — see `BorrowOperateLeg.amountRaw`. */
+  /** `null` for a close-all sentinel - see `BorrowOperateLeg.amountRaw`. */
   readonly amountRaw: string | null;
   readonly closeAll: boolean;
 }
@@ -91,7 +91,7 @@ export interface BorrowOperateEffect {
  * A `type` alias, deliberately NOT an `interface`. TypeScript gives an object
  * type alias an implicit index signature but withholds one from an interface,
  * so this shape is assignable to the `Record<string, unknown>` that the
- * `intentParams` boundary takes — without the `as unknown as` cast the call
+ * `intentParams` boundary takes - without the `as unknown as` cast the call
  * site used to need. Same fields, same strictness, one fewer escape hatch on a
  * money path.
  */
@@ -109,7 +109,7 @@ function toEffect(leg: BorrowOperateLeg, kind: BorrowOperateEffect["leg"]): Borr
 
 /**
  * The strict, versioned `intent_params` payload for a resolved
- * `/operate` request — the durable record of "what this call actually did"
+ * `/operate` request - the durable record of "what this call actually did"
  * (see the module note above). Used for BOTH the intent-creation and the
  * pre-broadcast-failure recording call, so a rejected request's audit trail
  * shows the SAME normalized shape a succeeded one would have recorded.
@@ -146,10 +146,10 @@ function assertPositiveIntegerAmount(name: string, value: string): bigint | Tool
 //
 // The delta's SIGN (which param produces a positive vs. negative provider
 // delta) and its WALLET-relative DIRECTION (in = wallet sends, out = wallet
-// receives — `AgentActivityLegInput`'s tokenIn/tokenOut convention) are two
+// receives - `AgentActivityLegInput`'s tokenIn/tokenOut convention) are two
 // INDEPENDENT axes that happen to align for collateral (deposit > 0 = in;
-// withdraw < 0 = out) but INVERT for debt (borrow > 0 = OUT — the wallet
-// RECEIVES the borrowed token; repay < 0 = IN — the wallet SENDS the
+// withdraw < 0 = out) but INVERT for debt (borrow > 0 = OUT - the wallet
+// RECEIVES the borrowed token; repay < 0 = IN - the wallet SENDS the
 // repayment). Each param name is paired explicitly with its own direction
 // below rather than assumed from a generic "in/out" naming.
 
@@ -160,7 +160,7 @@ interface LegParamNames {
   /** Param that produces a NEGATIVE provider delta (withdrawAmountRaw | repayAmountRaw). */
   readonly negativeName: string;
   readonly negativeDirection: "in" | "out";
-  /** Boolean sentinel param (withdrawAll | repayAll) — always the MOST NEGATIVE delta, so shares `negativeDirection`. */
+  /** Boolean sentinel param (withdrawAll | repayAll) - always the MOST NEGATIVE delta, so shares `negativeDirection`. */
   readonly closeAllName: string;
 }
 
@@ -182,7 +182,7 @@ function resolveLeg(p: Record<string, unknown>, names: LegParamNames): LegResolu
   }
   if (closeAll) {
     // MIN_I128 on either field means "close that leg entirely" (repay all
-    // debt incl. dust / withdraw all collateral) — same sentinel value
+    // debt incl. dust / withdraw all collateral) - same sentinel value
     // either way; only the FIELD it is assigned to differs.
     return {
       ok: true,
@@ -217,7 +217,7 @@ function resolveLeg(p: Record<string, unknown>, names: LegParamNames): LegResolu
  * Resolve the six intent-labeled params into the provider's `colAmount`/
  * `debtAmount` signed strings + `vaultId`/`positionId`/`market`. Shared by
  * the `solana.lend.borrowOperate` handler and the pre-approval risk-preview
- * evaluator — the ONE place this translation happens.
+ * evaluator - the ONE place this translation happens.
  */
 export function resolveBorrowOperateRequest(p: Record<string, unknown>): BorrowOperateParamResolution {
   const vaultId = num(p, "vaultId");
@@ -249,7 +249,7 @@ export function resolveBorrowOperateRequest(p: Record<string, unknown>): BorrowO
   });
   if (!collateral.ok) return collateral;
   // Debt: borrow (debtAmount > 0) = wallet RECEIVES the borrowed token =
-  // "out"; repay (debtAmount < 0) = wallet SENDS the repayment = "in" — the
+  // "out"; repay (debtAmount < 0) = wallet SENDS the repayment = "in" - the
   // INVERSE of collateral's sign↔direction pairing (see the module doc above
   // `resolveLeg`).
   const debt = resolveLeg(p, {
@@ -265,7 +265,7 @@ export function resolveBorrowOperateRequest(p: Record<string, unknown>): BorrowO
     return {
       ok: false,
       result: fail(
-        "Nothing to do — provide at least one of depositAmountRaw, withdrawAmountRaw, withdrawAll, "
+        "Nothing to do - provide at least one of depositAmountRaw, withdrawAmountRaw, withdrawAll, "
         + "borrowAmountRaw, repayAmountRaw, repayAll.",
       ),
     };
@@ -275,7 +275,7 @@ export function resolveBorrowOperateRequest(p: Record<string, unknown>): BorrowO
       ok: false,
       result: fail(
         `Cannot combine a collateral ${collateral.leg.direction === "in" ? "deposit" : "withdrawal"} with a debt `
-        + `${debt.leg.direction === "in" ? "repayment" : "borrow"} in one call — both would move in the same `
+        + `${debt.leg.direction === "in" ? "repayment" : "borrow"} in one call - both would move in the same `
         + "direction and the activity ledger records at most one incoming and one outgoing leg per call. "
         + "Call these as two separate solana__lend_borrow_operate calls.",
       ),

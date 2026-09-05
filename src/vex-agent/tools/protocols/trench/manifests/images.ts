@@ -1,7 +1,7 @@
 import type { ProtocolToolManifest } from "../../types.js";
 import { TRENCH_IMAGES_DISCOVERY } from "../../embeddings/trench/images.js";
 
-// `trench.images` — READ-ONLY listing of the user's pre-uploaded launch
+// `trench.images` - READ-ONLY listing of the user's pre-uploaded launch
 // images (contract C2). METADATA ONLY: the bytes live in the desktop app's
 // own store and never enter the model's context (rule 07).
 //

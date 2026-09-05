@@ -191,8 +191,10 @@ describe("mission state prompts", () => {
   describe("deployed capital guidance", () => {
     it("documents deployedCapital as an optional typed field in the setup prompt", () => {
       const prompt = buildMissionSetupPrompt(makeMissionContext());
-      expect(prompt).toContain("- **deployedCapital** (optional, and strongly recommended whenever a success criterion mentions gain, loss, or a portfolio value)");
-      expect(prompt).toContain("Save all five parts together or none, because a raw amount without its decimals cannot be read");
+      expect(prompt).toContain("- **deployedCapital** (optional; strongly recommended when success depends on gain, loss, or portfolio value)");
+      expect(prompt).toContain("amountRaw, decimals, chainId, assetAddress, assetKind, assetSymbol");
+      expect(prompt).toContain("Save all six parts together or none");
+      expect(prompt).toContain("wSOL is token despite sharing native SOL's route mint");
     });
 
     it("tells the model what the warnings list means in the setup prompt", () => {

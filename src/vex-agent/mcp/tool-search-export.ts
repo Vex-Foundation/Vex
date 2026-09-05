@@ -18,7 +18,11 @@
  *    listed (it is in `tools/list` too) and is marked `available: false` with
  *    the env NAMES that would enable it - never their values (rule 07);
  *  - the same `limit` bounds apply and an out-of-range limit is refused by
- *    name, never clamped.
+ *    name, never clamped;
+ *  - every row is filtered through `isExportedProtocolTool`, the SAME predicate
+ *    `tools/list` and admission use, so this search can never advertise a tool
+ *    the surface would then refuse. A dropped row is named in `warnings` with
+ *    its reason, never silently removed.
  *
  * The compact row projection is shared with the in-app lane
  * (`protocols/discovery/rows.ts`), so the two surfaces cannot drift.
@@ -33,6 +37,7 @@ import {
 } from "../tools/protocols/discovery.js";
 import { toNamespaceRow, toQueryRow } from "../tools/protocols/discovery/rows.js";
 import { getProtocolManifest } from "../tools/protocols/catalog.js";
+import { isExportedProtocolTool } from "./export-scope.js";
 import { TOOL_SEARCH_SELECT_PREFIX } from "../tools/registry/protocol.js";
 import type { JsonSchema } from "../tools/types.js";
 import type {
@@ -88,16 +93,22 @@ export const EXPORTED_TOOL_SEARCH_DESCRIPTION =
   "Search the Vex protocol tool catalog. READ-ONLY: it runs no protocol tool, "
   + "signs nothing and moves no funds; it only tells you which tools exist and "
   + "what they take. Use it to find the right tool before calling it. Every "
-  + "tool it returns is already in this server's tools/list and is callable "
-  + "directly by the `publicName` in each row, so there is no select or "
-  + "activation step. Call it with EXACTLY ONE of `query` (an intent phrase, "
-  + "for example \"bridge USDC from Base to Solana\") or `namespace` (a protocol "
-  + "name, to list every tool it has). `limit` is optional and must be a whole "
+  + "tool it returns is in this server's tools/list. Call it by the `publicName` "
+  + "in each row, prefixed the way your client prefixes MCP tools (Claude Code: "
+  + "`mcp__vex__<publicName>`); if your client lists protocol tools with "
+  + "deferred schemas, load the schema the way your client does before calling. "
+  + "For the whole contract of any tool call vex_ToolDescribe. Call this search "
+  + "with EXACTLY ONE of `query` (an intent phrase, for example "
+  + "\"bridge USDC from Base to Solana\") or `namespace` (a protocol name, to "
+  + "list every tool it has). `limit` is optional and must be a whole "
   + `number between 1 and ${MAX_DISCOVERY_LIMIT} (default ${DEFAULT_DISCOVERY_LIMIT} `
   + "for `query`, and the whole namespace for `namespace` unless you name one); "
-  + "an out-of-range limit is refused rather than quietly reduced. `totalCount` "
-  + "is always how many tools matched and `hasMore` says whether the limit left "
-  + "any out, so raise `limit` to see the rest. Rows for a "
+  + "an out-of-range limit is refused rather than quietly reduced. One query "
+  + "answer is bounded and there is NO CURSOR: `totalCount` is always how many "
+  + "tools matched and `hasMore` says whether the limit left any out. Rows it "
+  + "left out are not out of reach - narrow instead, either by passing "
+  + "`namespace` alone to list one protocol in full or by asking a tighter "
+  + "query, or raise `limit`. Rows for a "
   + "tool whose provider key is not configured in this Vex installation carry "
   + "`available: false` and the environment variable NAMES that would enable "
   + "it; the tool still appears, and calling it answers with the same fact.";
@@ -131,7 +142,9 @@ export const EXPORTED_TOOL_SEARCH_INPUT_SCHEMA: JsonSchema = {
         `Maximum rows to return, 1 to ${MAX_DISCOVERY_LIMIT}. Applies to both `
         + `modes: default ${DEFAULT_DISCOVERY_LIMIT} with \`query\`, and the whole `
         + "namespace with `namespace` when omitted. `totalCount` and `hasMore` "
-        + "report what a limit left out. Out-of-range values are refused, not clamped.",
+        + "report what a limit left out; there is no cursor, so reach the rest by "
+        + "raising this limit or by narrowing with `namespace` alone or a tighter "
+        + "query. Out-of-range values are refused, not clamped.",
     },
   },
   additionalProperties: false,
@@ -153,8 +166,9 @@ function refuse(message: string): ExportedToolSearchOutcome {
 const SELECT_REFUSAL =
   `vex_ToolSearch does not support \`${TOOL_SEARCH_SELECT_PREFIX}\`: it is a read-only catalog `
   + "search and cannot make a tool callable, because every exported tool is already in this "
-  + "server's tools/list. Call the tool by the `publicName` this search returns. "
-  + "This call was NOT run.";
+  + "server's tools/list. Call the tool by the `publicName` this search returns, prefixed the way "
+  + "your client prefixes MCP tools; if your client defers protocol schemas, load the schema the "
+  + "way your client does. This call was NOT run.";
 
 interface ExportedToolSearchArgs {
   readonly query?: string;
@@ -281,9 +295,29 @@ function unmetEnvFor(toolId: string): readonly string[] | undefined {
 }
 
 /**
+ * The sentence that keeps a withheld row from being a silent cut: it names each
+ * dropped tool and the real reason, so a caller that counted the rows can tell
+ * exactly what is missing and that asking again will not produce it.
+ */
+function buildWithheldWarning(withheld: readonly string[]): string {
+  return (
+    `${withheld.map((name) => `"${name}"`).join(", ")} `
+    + `${withheld.length === 1 ? "matched this search but is" : "matched this search but are"} `
+    + "not exported by Vex Studio: "
+    + `${withheld.length === 1 ? "it operates" : "they operate"} on state that only exists inside `
+    + "the Vex desktop app (the local image locker), which this surface cannot reach. "
+    + `${withheld.length === 1 ? "It is" : "They are"} not in this server's tools/list and calling `
+    + `${withheld.length === 1 ? "it" : "them"} is refused. The counts in this answer exclude `
+    + `${withheld.length === 1 ? "it" : "them"}. Where a Vex tool needs a picture here, pass a `
+    + "file path inside your own project instead."
+  );
+}
+
+/**
  * Run one exported catalog search. Never records anything, never mutates any
  * session state, and never returns a row the runtime would refuse for a reason
- * the row does not state.
+ * the row does not state - including a row for a tool this surface does not
+ * export at all.
  */
 export async function searchExportedTools(
   rawArgs: Record<string, unknown>,
@@ -301,23 +335,53 @@ export async function searchExportedTools(
     availability: "include-unavailable",
   });
 
-  const tools: ExportedToolSearchRow[] = result.tools.map((item) => {
+  const tools: ExportedToolSearchRow[] = [];
+  const withheld: string[] = [];
+  for (const item of result.tools) {
+    // The ONE export predicate, the same one `tools/list` enumerates through and
+    // the same one admission refuses on. A row this search returned for a tool
+    // the surface does not export would advertise a call that admission then
+    // refuses - the drift `isExportedProtocolTool` exists to make impossible.
+    if (!isExportedProtocolTool(item.toolId)) {
+      withheld.push(item.publicName);
+      continue;
+    }
     const row = isRankedDiscoveryItem(item) ? toQueryRow(item) : toNamespaceRow(item);
     const missingEnv = unmetEnvFor(item.toolId);
-    if (missingEnv === undefined) return row;
-    return { ...row, available: false, requiresEnv: missingEnv };
-  });
+    tools.push(missingEnv === undefined ? row : { ...row, available: false, requiresEnv: missingEnv });
+  }
+
+  // The counts describe the EXPORTED set, not the catalog match set. `count` is
+  // the rows actually returned; `totalCount` is discovery's match total minus
+  // the withheld rows this answer observed. That subtraction keeps
+  // `totalCount - count` equal to discovery's own `totalCount - count`, so
+  // `hasMore` stays exactly as true as it was and can never turn a real
+  // remaining row into "nothing more" (rule 05 / the silent-cutting decree).
+  //
+  // KNOWN AND BOUNDED IMPRECISION, stated rather than hidden: only withheld
+  // rows INSIDE this answer's window can be subtracted, so when a withheld
+  // manifest ranks below the limit in query mode it stays counted in
+  // `totalCount`. The error is therefore at most the size of
+  // `NON_EXPORTED_PROTOCOL_TOOLS` and always in the SAFE direction (a total
+  // that is too high, never too low), and the `withheld` warning names every
+  // row this answer actually dropped so the reader can tell exactly what was
+  // left out and why. Making it exact needs a candidate-set filter inside
+  // `discoverProtocolCapabilities`, which this module does not own.
+  const totalCount = result.totalCount - withheld.length;
+  const warnings = withheld.length === 0
+    ? result.warnings
+    : [...result.warnings, buildWithheldWarning(withheld)];
 
   const { retrieval } = result;
   return {
     ok: true,
     result: {
       success: result.success,
-      count: result.count,
-      totalCount: result.totalCount,
+      count: tools.length,
+      totalCount,
       hasMore: result.hasMore,
       tools,
-      warnings: result.warnings,
+      warnings,
       ...(retrieval === undefined
         ? {}
         : {

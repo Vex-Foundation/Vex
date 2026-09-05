@@ -78,6 +78,28 @@ button.vex-disclosure-leading {
   color: var(--vex-alias-label-secondary);
 }
 
+/* Disclosure body: the content a row reveals mounts with the reference's
+ * row-in (deepseek Rows.module.css `row-in 150ms`): opacity only, no height
+ * animation, no stagger. Stable keys on the children keep already-visible
+ * rows from replaying it. The chevron itself rides `.vex-twistie`
+ * (motion-primitives.css) plus `rotate-90` when open, the pattern
+ * ExplorerRow already uses, so no second transform transition lives here. */
+.vex-disclosure-body {
+  animation: vex-disclosure-row-in var(--vex-duration-base) var(--vex-ease-standard);
+}
+
+@keyframes vex-disclosure-row-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vex-disclosure-body {
+    animation: none;
+  }
+}
+
 /* ── State dot ─────────────────────────────────────────────────────────────
  * Solid states: same-color halo (::before, 0.10 opacity) around a 6/10
  * core; color rides currentColor set per state. Ongoing: pixel chase with

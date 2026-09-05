@@ -1,5 +1,5 @@
 /**
- * `user_submit` — the launch the HUMAN deployed from the dialog, and the only
+ * `user_submit` - the launch the HUMAN deployed from the dialog, and the only
  * launch path the agent is not in.
  *
  * NOT A TOOL. There is no `ProtocolExecutionContext`, no tool call, no
@@ -10,7 +10,7 @@
  *
  * ── Why this is a separate entry rather than a flag on the agent handler ────
  *
- * The two paths differ in the ONE place that matters — where the authorized
+ * The two paths differ in the ONE place that matters - where the authorized
  * record lives:
  *
  *   AGENT PATH   authorize and execute happen in a single invocation. The
@@ -27,12 +27,12 @@
  * ── The stored snapshot is UNTRUSTED INPUT ─────────────────────────────────
  *
  * Reading it back is a real, deliberate narrowing of the doctrine in
- * `./authorization.ts` — see the box there, which now scopes itself to the
+ * `./authorization.ts` - see the box there, which now scopes itself to the
  * agent paths and explains this exception rather than being quietly
  * contradicted. The compensating controls are exactly three:
  *
  *   1. the blob is a JSONB value written by another process, so EVERY field is
- *      validated before it is read (`parseStoredBinding`) — a malformed or
+ *      validated before it is read (`parseStoredBinding`) - a malformed or
  *      partially-written record refuses instead of being destructured;
  *   2. it is never the source of what gets signed. The transaction is built by
  *      a FRESH re-derivation (fee re-read at a new anchored block, image bytes
@@ -42,7 +42,7 @@
  *      that was somehow tampered with still cannot be spent twice.
  *
  * What an attacker with write access to that row gains is the ability to make a
- * launch REFUSE (by making the re-derivation disagree) — not the ability to
+ * launch REFUSE (by making the re-derivation disagree) - not the ability to
  * make one happen on different terms, because the terms come from the
  * re-derivation and the money from the user's own signed transaction.
  */
@@ -77,7 +77,7 @@ const ENTRY_ID = "Trench launch form submission";
 const NATIVE_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
 
 /**
- * The fee seam, WIRED — deliberately not the agent handler's `DEFAULT_DEPS`.
+ * The fee seam, WIRED - deliberately not the agent handler's `DEFAULT_DEPS`.
  *
  * That default plans no fee, which is the right default for a tool whose fee
  * module might not be wired yet, and exactly the wrong one here: a launch that
@@ -134,14 +134,14 @@ export async function executeUserSubmittedLaunch(
   if (!eligibility.ok) return fail(eligibility.reason);
 
   // `authorizationJson` is typed `unknown` by the read model precisely because
-  // the database guarantees nothing about a JSONB blob's shape — so it goes
+  // the database guarantees nothing about a JSONB blob's shape - so it goes
   // straight to the validator, never destructured on the way.
   const stored = parseStoredBinding(intent.authorizationJson);
   if (!stored.ok) {
     return fail(
       `${ENTRY_ID}: the authorization recorded when you submitted this launch is incomplete `
         + `(${stored.reason}), so there is nothing to check this deployment against. Nothing was `
-        + "signed — please fill the form again.",
+        + "signed - please fill the form again.",
     );
   }
 
@@ -200,8 +200,8 @@ export async function executeUserSubmittedLaunch(
   }
 
   // RE-DERIVE FROM FIRST PRINCIPLES. Fresh anchored block, fee re-read there,
-  // image bytes re-resolved and re-hashed, calldata re-encoded. This — not the
-  // stored blob — is what will actually be signed.
+  // image bytes re-resolved and re-hashed, calldata re-encoded. This - not the
+  // stored blob - is what will actually be signed.
   const rederived = await buildLaunchPlan({
     request: validated.value,
     sessionId: input.sessionId,
@@ -218,7 +218,7 @@ export async function executeUserSubmittedLaunch(
 
   // THE LAST GATE: the fresh derivation must match what the human consented to.
   // A creation fee that moved, an image swapped in the locker, a permission
-  // downgraded, or substituted calldata all refuse here — and the comparison is
+  // downgraded, or substituted calldata all refuse here - and the comparison is
   // against the SNAPSHOT, never against another plan built in this same call,
   // which would compare the new plan with itself and gate nothing.
   const unchanged = checkLaunchAuthorizationUnchanged(stored.binding, rederived.plan.binding);
@@ -250,7 +250,7 @@ export async function executeUserSubmittedLaunch(
  * this reader is the single place that changes when it does.
  */
 function storedAuthorizationOf(intent: TokenLaunchIntent): unknown {
-  // Direct typed read — the read-model exposure landed with the writer support,
+  // Direct typed read - the read-model exposure landed with the writer support,
   // so the interim widening accessor collapsed to the field it promised.
   return intent.authorizationJson ?? null;
 }
@@ -261,8 +261,8 @@ type Eligibility = { readonly ok: true } | { readonly ok: false; readonly reason
  * Cross-check the consent record against the intent row's own columns.
  *
  * Both were written by the same submit, so they cannot legitimately disagree.
- * When they do, the record is not describing the launch it is attached to —
- * evidence of tampering or of a writer bug — and either one is refusal-worthy
+ * When they do, the record is not describing the launch it is attached to -
+ * evidence of tampering or of a writer bug - and either one is refusal-worthy
  * on a path where the record is the gate.
  *
  * Only fields the row actually carries are checked; the row has no first-class
@@ -299,9 +299,9 @@ function checkRecordAgreesWithRow(
  * Which intents this entry may execute.
  *
  * `user_submit` is the ONLY kind this entry executes. It covers both origins
- * that put a human in front of the form — `user` (they opened the dialog) and
+ * that put a human in front of the form - `user` (they opened the dialog) and
  * `agent_requested_form` (the agent asked, the human filled it and clicked
- * Deploy) — because the authorizing act is identical in both: a person read the
+ * Deploy) - because the authorizing act is identical in both: a person read the
  * consent modal and confirmed.
  *
  * `full_autonomy` and `approval_card` are deliberately excluded: those belong to
@@ -313,7 +313,7 @@ function checkEligibleForUserSubmit(intent: TokenLaunchIntent): Eligibility {
     return {
       ok: false,
       reason:
-        `${ENTRY_ID}: this launch is ${intent.status}, not awaiting deployment — `
+        `${ENTRY_ID}: this launch is ${intent.status}, not awaiting deployment - `
         + "it was already deployed, cancelled, or it expired. Nothing was signed.",
     };
   }
@@ -344,7 +344,7 @@ const REQUIRED_STRING_FIELDS = [
  *
  * It is a JSONB blob written by a different process, so it is untrusted input
  * in exactly the sense rule 03 means: validated at the boundary, then passed
- * inward as a trusted typed value. A missing or wrong-typed field REFUSES —
+ * inward as a trusted typed value. A missing or wrong-typed field REFUSES -
  * silently defaulting one would let a half-written record authorize a launch
  * whose terms nobody ever agreed to.
  */
@@ -373,7 +373,7 @@ export function parseStoredBinding(value: unknown): StoredBindingResult {
     return { ok: false, reason: `it names chain ${String(record.chainId)}, not Robinhood Chain` };
   }
 
-  // Explicit construction from the fields verified above — each `as` below is
+  // Explicit construction from the fields verified above - each `as` below is
   // backed by a typeof/shape check earlier in this function, so no unchecked
   // shape assertion survives (no-any policy: `as unknown as` is banned here).
   return {
@@ -403,7 +403,7 @@ export function parseStoredBinding(value: unknown): StoredBindingResult {
 
 /**
  * The launch request, rebuilt from the intent row and the validated snapshot,
- * then passed through the SAME boundary validator the agent path uses — so the
+ * then passed through the SAME boundary validator the agent path uses - so the
  * two paths cannot disagree about what a legal launch request is.
  */
 function requestParamsFrom(binding: LaunchAuthorizationBinding): Record<string, unknown> {
@@ -412,14 +412,14 @@ function requestParamsFrom(binding: LaunchAuthorizationBinding): Record<string, 
     symbol: binding.symbol,
     description: binding.description,
     // The boundary validator's contract is "omit the parameter or supply
-    // values" — an empty array is refused BY NAME there (it cannot mean both
+    // values" - an empty array is refused BY NAME there (it cannot mean both
     // 'none' and 'no filter'). The binding stores `[]` to mean none, so a
-    // link-less consent must rebuild as ABSENCE, not as an empty list —
+    // link-less consent must rebuild as ABSENCE, not as an empty list -
     // otherwise every launch without links refuses (proven by the funded
     // UI-path probe, 2026-08-02).
     ...(binding.links.length > 0 ? { links: [...binding.links] } : {}),
     imageId: binding.imageId,
-    // The validator's parameter is `prebuy`, a decimal ETH string — the same
+    // The validator's parameter is `prebuy`, a decimal ETH string - the same
     // one a user or the agent supplies. Naming it anything else here would let
     // the re-derivation silently plan a ZERO prebuy and refuse as "drift",
     // blaming the user's consent for a bug in this adapter.

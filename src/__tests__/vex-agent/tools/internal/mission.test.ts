@@ -75,12 +75,12 @@ describe("mission_draft_update tool", () => {
     expect(result.data).toEqual(expect.objectContaining({
       ready: true,
       nextAction:
-        "The draft is ready — tell the user they can start the mission with the Start mission button in the host UI.",
+        "The draft is ready - tell the user they can start the mission with the Start mission button in the host UI.",
     }));
   });
 
   it("passes stop condition updates through the setup boundary", async () => {
-    // Puzzle 04: draft can be `ready` once the list is non-empty —
+    // Puzzle 04: draft can be `ready` once the list is non-empty -
     // acceptance is a separate host gate (mission.acceptContract → mig
     // 023 `accepted_contract_hash`). The setup boundary surfaces the
     // current draft as-is; no model-facing acceptance flag is exposed.
@@ -155,7 +155,7 @@ describe("mission_draft_update tool", () => {
 
     expect(result.success).toBe(true);
     expect(result.data?.nextAction).toBe(
-      "The draft is ready — tell the user they can continue the mission with the Continue button in the host UI.",
+      "The draft is ready - tell the user they can continue the mission with the Continue button in the host UI.",
     );
   });
 
@@ -195,7 +195,7 @@ describe("mission_draft_update tool", () => {
     );
 
     expect(result.success).toBe(true);
-    // response_format is tool-only — it must not leak into the setup patch.
+    // response_format is tool-only - it must not leak into the setup patch.
     expect(mockApplyMissionPatch).toHaveBeenCalledWith("mission-1", { title: "SOL Flip" });
 
     // Output string (model-facing) drops the bulky currentDraft but keeps nextAction.
@@ -206,10 +206,10 @@ describe("mission_draft_update tool", () => {
     expect(output.ready).toBe(true);
     expect(output.missingFields).toEqual([]);
     expect(output.nextAction).toBe(
-      "The draft is ready — tell the user they can start the mission with the Start mission button in the host UI.",
+      "The draft is ready - tell the user they can start the mission with the Start mission button in the host UI.",
     );
 
-    // result.data (host-facing) is untouched — currentDraft still present.
+    // result.data (host-facing) is untouched - currentDraft still present.
     expect(result.data).toEqual({
       missionId: "mission-1",
       status: "ready",
@@ -217,7 +217,7 @@ describe("mission_draft_update tool", () => {
       missingFields: [],
       currentDraft: { title: "SOL Flip" },
       nextAction:
-        "The draft is ready — tell the user they can start the mission with the Start mission button in the host UI.",
+        "The draft is ready - tell the user they can start the mission with the Start mission button in the host UI.",
     });
   });
 
@@ -237,14 +237,14 @@ describe("mission_draft_update tool", () => {
     );
 
     expect(result.success).toBe(true);
-    // response_format is stripped before the setup patch — only draft fields pass through.
+    // response_format is stripped before the setup patch - only draft fields pass through.
     expect(mockApplyMissionPatch).toHaveBeenCalledWith("mission-1", { title: "SOL Flip" });
 
     // Output string carries currentDraft in detailed mode, still with nextAction.
     const output = JSON.parse(result.output) as Record<string, unknown>;
     expect(output.currentDraft).toEqual({ title: "SOL Flip" });
     expect(output.nextAction).toBe(
-      "The draft is ready — tell the user they can start the mission with the Start mission button in the host UI.",
+      "The draft is ready - tell the user they can start the mission with the Start mission button in the host UI.",
     );
 
     // result.data (host-facing) is identical regardless of response_format.
@@ -255,7 +255,7 @@ describe("mission_draft_update tool", () => {
       missingFields: [],
       currentDraft: { title: "SOL Flip" },
       nextAction:
-        "The draft is ready — tell the user they can start the mission with the Start mission button in the host UI.",
+        "The draft is ready - tell the user they can start the mission with the Start mission button in the host UI.",
     });
   });
 });
@@ -407,6 +407,7 @@ describe("mission_stop tool", () => {
         decimals: 18,
         chainId: 4663,
         assetAddress: "0x0f9f0000000000000000000000000000000000ee",
+        assetKind: "token",
         assetSymbol: "VEX",
       };
       const result = await handleMissionDraftUpdate(
@@ -419,7 +420,7 @@ describe("mission_stop tool", () => {
 
     it("reports a LOCATED path when the model sends a partial deployedCapital", async () => {
       const result = await handleMissionDraftUpdate(
-        { deployedCapital: { amountRaw: "3044", decimals: 18, chainId: 4663, assetAddress: "0x0f9f0000000000000000000000000000000000ee" } },
+        { deployedCapital: { amountRaw: "3044", decimals: 18, chainId: 4663, assetAddress: "0x0f9f0000000000000000000000000000000000ee", assetKind: "token" } },
         { ...baseContext, missionRunId: null },
       );
       expect(result.success).toBe(false);

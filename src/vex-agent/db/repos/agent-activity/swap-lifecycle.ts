@@ -314,7 +314,6 @@ export {
   listPendingOlderThan,
   listPendingByIds,
   listPendingProviderLogical,
-  hasPendingActivityForWallets,
   listSolanaStagedPending,
   listActivityFeed,
   existsForExecutionId,

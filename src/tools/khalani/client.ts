@@ -10,6 +10,7 @@ import type {
   KhalaniErrorBody,
   KhalaniOrder,
   KhalaniToken,
+  KhalaniTokenBalancesResponse,
   OrdersResponse,
   QuoteRequest,
   QuoteStreamRoute,
@@ -31,6 +32,7 @@ import {
   validateSubmitResponse,
   validateTokenSearchResponse,
   validateTokensResponse,
+  validateTokenBalancesResponse,
 } from "./validation.js";
 
 interface RequestOptions {
@@ -172,33 +174,35 @@ export class KhalaniClient {
     );
   }
 
-  getTokenBalances(address: string, chainIds?: number[]): Promise<KhalaniToken[]> {
+  /**
+   * Wallet balances. Unlike the curated token lists, this array is
+   * attacker-reachable (anyone can airdrop a token), so it uses the per-entry
+   * boundary: entries refused for their `decimals` alone come back in
+   * `rejectedEntries` instead of failing the whole call.
+   */
+  getTokenBalances(address: string, chainIds?: number[]): Promise<KhalaniTokenBalancesResponse> {
     return this.request(
       `/v1/tokens/balances/${encodeURIComponent(address)}`,
-      validateTokensResponse,
+      validateTokenBalancesResponse,
       { query: { chainIds: chainIds?.join(",") } },
     );
   }
 
-  getQuotes(request: QuoteRequest, opts?: { routes?: string[] }): Promise<QuoteResponse> {
+  // No route filter: the route comes from the quote (the handler re-quotes and
+  // takes the best route), so no caller pins one and the `routes` query that
+  // once carried a caller-chosen routeId is gone with the parameter.
+  getQuotes(request: QuoteRequest): Promise<QuoteResponse> {
     return this.request(
       "/v1/quotes",
       validateQuoteResponse,
-      {
-        method: "POST",
-        query: { routes: opts?.routes?.join(",") },
-        body: request,
-      },
+      { method: "POST", body: request },
     );
   }
 
-  async *streamQuotes(request: QuoteRequest, opts?: { routes?: string[] }): AsyncGenerator<QuoteStreamRoute> {
+  async *streamQuotes(request: QuoteRequest): AsyncGenerator<QuoteStreamRoute> {
     try {
       const response = await fetchWithTimeout(
-        this.buildUrl("/v1/quotes", {
-          mode: "stream",
-          routes: opts?.routes?.join(","),
-        }),
+        this.buildUrl("/v1/quotes", { mode: "stream" }),
         {
           method: "POST",
           headers: {

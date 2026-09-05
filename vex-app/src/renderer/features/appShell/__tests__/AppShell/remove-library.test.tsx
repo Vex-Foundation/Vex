@@ -73,28 +73,6 @@ const missionGetDraftMock = vi.fn();
 const runtimeGetStateMock = vi.fn();
 
 beforeAll(() => {
-  const proto = HTMLDialogElement.prototype as unknown as {
-    showModal?: () => void;
-    close?: () => void;
-    show?: () => void;
-  };
-  if (typeof proto.showModal !== "function") {
-    proto.showModal = function showModalPolyfill(this: HTMLDialogElement): void {
-      this.setAttribute("open", "");
-    };
-  }
-  if (typeof proto.close !== "function") {
-    proto.close = function closePolyfill(this: HTMLDialogElement): void {
-      this.removeAttribute("open");
-      this.dispatchEvent(new Event("close"));
-    };
-  }
-  if (typeof proto.show !== "function") {
-    proto.show = function showPolyfill(this: HTMLDialogElement): void {
-      this.setAttribute("open", "");
-    };
-  }
-
   // jsdom does not implement ResizeObserver, which SessionsList uses for
   // fit-to-height. The component's effect feature-detects it, so without a
   // stub it just leaves containerHeight at 0 (the planned fallback) — but

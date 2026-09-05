@@ -33,7 +33,7 @@ export type LongMemoryRecallOutcome =
 export async function recallLongMemory(
   input: LongMemorySearchInput,
 ): Promise<LongMemoryRecallOutcome> {
-  // 2. Embed (fail-loud — no non-embedded fallback).
+  // 2. Embed (fail-loud - no non-embedded fallback).
   let config;
   try {
     config = loadEmbeddingConfig();

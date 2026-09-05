@@ -252,4 +252,68 @@ describe("VexTokenCardCompact", () => {
     expect(spark).not.toBeNull();
     expect(spark?.tagName.toLowerCase()).not.toBe("svg");
   });
+
+  /**
+   * THE PLATE IS A GLASS CHIP, NOT A BOX (rail redesign 2026-09-04). The card
+   * frame was one of the four strokes the owner marked on the left rail; the
+   * chip tier of glass.css carries its edge as inset light instead. Every
+   * state wears the same chip, and the data card's LINK keeps its focus ring
+   * on the inner element, where a Tailwind ring is not painted over by the
+   * chip's own unlayered box-shadow.
+   */
+  it("wears the glass chip without a stroke in every state, and keeps the link's focus ring", async () => {
+    setMarket(vi.fn().mockResolvedValue({ ok: true, data: snapshot() }));
+    const { container } = render(createElement(VexTokenCardCompact), {
+      wrapper: makeWrapper(freshClient()),
+    });
+    await waitFor(() => {
+      expect(
+        container.querySelector('[data-vex-area="vex-token-compact"][data-state="data"]'),
+      ).not.toBeNull();
+    });
+    const plate = container.querySelector('[data-vex-area="vex-token-compact"]');
+    expect(plate?.classList.contains("vex-glass-chip")).toBe(true);
+    expect(plate?.classList.contains("rounded-xl")).toBe(true);
+    expect(plate?.className).not.toMatch(/(?:^|\s)border(?:-|\s|$)/);
+    expect(plate?.className).not.toContain("bg-surface-1");
+    const link = container.querySelector("a");
+    expect(link?.className).toContain("focus-visible:ring-2");
+    expect(link?.className).not.toContain("border");
+    expect(link?.classList.contains("vex-glass-chip")).toBe(false);
+    expect(link?.className).toContain("hover:bg-interactive-hover");
+  });
+
+  it.each([
+    ["loading", { ok: true, data: null } satisfies SnapshotResult],
+    [
+      "error",
+      {
+        ok: false,
+        error: {
+          code: "internal.unexpected",
+          domain: "market",
+          message: "boom",
+          retryable: false,
+          userActionable: false,
+          redacted: true,
+          correlationId: "c",
+        },
+      } satisfies SnapshotResult,
+    ],
+  ] as const)("the %s state is the same glass chip", async (state, answer) => {
+    setMarket(vi.fn().mockResolvedValue(answer));
+    const { container } = render(createElement(VexTokenCardCompact), {
+      wrapper: makeWrapper(freshClient()),
+    });
+    await waitFor(() => {
+      expect(
+        container.querySelector(
+          `[data-vex-area="vex-token-compact"][data-state="${state}"]`,
+        ),
+      ).not.toBeNull();
+    });
+    const plate = container.querySelector('[data-vex-area="vex-token-compact"]');
+    expect(plate?.classList.contains("vex-glass-chip")).toBe(true);
+    expect(plate?.className).not.toMatch(/(?:^|\s)border(?:-|\s|$)/);
+  });
 });

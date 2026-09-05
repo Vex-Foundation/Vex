@@ -59,8 +59,33 @@ function testTransport(): Transport {
   return http("http://127.0.0.1:1");
 }
 
+/** The prices PREPARATION puts on the request, which are not the caller's. */
+const PREPARED_FEES = {
+  maxFeePerGas: 1_500_000_000n,
+  maxPriorityFeePerGas: 100_000_000n,
+};
+
+/**
+ * What preparation returns. Its price fields are OPTIONAL in the type because a
+ * request carries exactly one pricing mode, and the legacy case below returns
+ * the other one.
+ */
+interface PreparedRequest {
+  to: typeof ALTERED.to;
+  data: Hex;
+  value: bigint;
+  gas: bigint;
+  nonce: number;
+  chain: Chain;
+  maxFeePerGas?: bigint;
+  maxPriorityFeePerGas?: bigint;
+  gasPrice?: bigint;
+}
+
 function harness() {
-  const prepared = { ...ALTERED, gas: 30_000n, nonce: 7, chain: CHAIN };
+  const prepared: PreparedRequest = {
+    ...ALTERED, ...PREPARED_FEES, gas: 30_000n, nonce: 7, chain: CHAIN,
+  };
 
   const publicClient = Object.assign(
     createPublicClient({ chain: CHAIN, transport: testTransport() }),
@@ -105,6 +130,11 @@ const EXPECTED_FINAL: FinalSignedRequest = {
   value: ALTERED.value,
   gas: gasLimitWithHeadroom(21_000n),
   nonce: 7,
+  // The prices the REQUEST carries. A gate that must decide whether the wallet
+  // can pay needs them: gas units times an unknown price is not money.
+  gasPrice: undefined,
+  maxFeePerGas: PREPARED_FEES.maxFeePerGas,
+  maxPriorityFeePerGas: PREPARED_FEES.maxPriorityFeePerGas,
 };
 
 describe("the EAGER arm gates on the prepared request", () => {
@@ -123,6 +153,36 @@ describe("the EAGER arm gates on the prepared request", () => {
     expect(EXPECTED_FINAL.to).not.toBe(REQUESTED.to);
     expect(EXPECTED_FINAL.data).not.toBe(REQUESTED.data);
     expect(EXPECTED_FINAL.value).not.toBe(REQUESTED.value);
+  });
+
+  it("shows the gate the prices preparation set, not a mode the request does not carry", async () => {
+    const h = harness();
+
+    await signStageBroadcast(h.publicClient, h.walletClient, REQUESTED, h.hooks);
+
+    const shown = h.hooks.onBeforeSign.mock.calls[0]?.[0];
+    if (shown === undefined) throw new Error("the gate was never called");
+    expect(shown.maxFeePerGas).toBe(PREPARED_FEES.maxFeePerGas);
+    expect(shown.maxPriorityFeePerGas).toBe(PREPARED_FEES.maxPriorityFeePerGas);
+    // Exactly one pricing mode is populated. `undefined` is a real state - a
+    // gate told `0n` here would price the transaction as free.
+    expect(shown.gasPrice).toBeUndefined();
+  });
+
+  it("shows a legacy-priced request its gasPrice and no 1559 fields", async () => {
+    const h = harness();
+    const legacyPrepared: PreparedRequest = {
+      ...ALTERED, gasPrice: 2_500_000_000n, gas: 30_000n, nonce: 7, chain: CHAIN,
+    };
+    h.walletClient.prepareTransactionRequest.mockResolvedValueOnce(legacyPrepared);
+
+    await signStageBroadcast(h.publicClient, h.walletClient, REQUESTED, h.hooks);
+
+    const shown = h.hooks.onBeforeSign.mock.calls[0]?.[0];
+    if (shown === undefined) throw new Error("the gate was never called");
+    expect(shown.gasPrice).toBe(2_500_000_000n);
+    expect(shown.maxFeePerGas).toBeUndefined();
+    expect(shown.maxPriorityFeePerGas).toBeUndefined();
   });
 
   it("a gate that refuses the prepared request signs nothing and broadcasts nothing", async () => {

@@ -111,6 +111,52 @@ export function studioReadiness(): StudioReadiness {
   return readiness;
 }
 
+type StudioReadinessListener = () => void;
+
+const readinessListeners = new Set<StudioReadinessListener>();
+
+/**
+ * THE TRANSITION SEAM, and why the barrier needs one.
+ *
+ * The MCP host DERIVES admission from this flag rather than copying it, so a
+ * late `markStudioRuntimeReady` already changes what the next handshake is
+ * told. What it cannot change by itself is what the renderer was last TOLD: the
+ * host publishes its status from transition sites IT owns, and a barrier that
+ * opened through its own retry path is not one of them. Without this seam, an
+ * unlock that happened while the barrier was still closed would leave the
+ * status strip reading "still starting" until some unrelated host transition
+ * happened to republish it.
+ *
+ * A listener is a NOTIFICATION, never a value: subscribers re-read
+ * `studioReadiness()` themselves, so there is one source of truth and no
+ * payload to keep in sync. The set is bounded by its callers - the host
+ * registers exactly one for the life of the process - and returns an idempotent
+ * unsubscribe. A listener that throws must not stop the transition that
+ * notified it: this runs inside boot and teardown sequences where an exception
+ * would abort the caller mid-way.
+ */
+export function onStudioReadinessChange(
+  listener: StudioReadinessListener,
+): () => void {
+  readinessListeners.add(listener);
+  let removed = false;
+  return (): void => {
+    if (removed) return;
+    removed = true;
+    readinessListeners.delete(listener);
+  };
+}
+
+function announceReadiness(): void {
+  for (const listener of [...readinessListeners]) {
+    try {
+      listener();
+    } catch {
+      // Contained on purpose - see the doc above.
+    }
+  }
+}
+
 export function isStudioRuntimeReady(): boolean {
   return readiness.ready;
 }
@@ -125,6 +171,7 @@ export function isStudioRuntimeReady(): boolean {
 export function beginStudioReadinessEpoch(): number {
   epoch += 1;
   readiness = { ready: false, code: "starting", cause: STARTING_CAUSE };
+  announceReadiness();
   return epoch;
 }
 
@@ -137,16 +184,25 @@ export function currentStudioReadinessEpoch(): number {
  * The barrier completed: preflight registered AND reconciliation finished.
  * Ignored, and LOGGED, when the caller's epoch is stale - which is what a
  * retry timer that outlived its teardown holds.
+ *
+ * RETURNS WHETHER IT COMMITTED, because the caller has work that belongs
+ * strictly after a successful transition: the ready log the user reads, and
+ * the project-cleanup repair it launches. A caller that could not tell a
+ * commit from a refusal announced a ready Studio, and started new database
+ * work, on a process whose teardown had already invalidated its epoch.
  */
-export function markStudioRuntimeReady(callerEpoch: number): void {
-  if (!ownsEpoch(callerEpoch, "ready")) return;
+export function markStudioRuntimeReady(callerEpoch: number): boolean {
+  if (!ownsEpoch(callerEpoch, "ready")) return false;
   readiness = { ready: true };
+  announceReadiness();
+  return true;
 }
 
 /** The preflight could not be registered. Studio stays closed. */
 export function markStudioFenceUninitialized(callerEpoch: number): void {
   if (!ownsEpoch(callerEpoch, "fence_uninitialized")) return;
   readiness = { ready: false, code: "fence_uninitialized", cause: FENCE_CAUSE };
+  announceReadiness();
 }
 
 /**
@@ -157,6 +213,39 @@ export function markStudioFenceUninitialized(callerEpoch: number): void {
 export function markStudioRuntimeShuttingDown(): void {
   epoch += 1;
   readiness = { ready: false, code: "shutting_down", cause: SHUTDOWN_CAUSE };
+  announceReadiness();
+}
+
+/**
+ * THE RE-ENTRY SEAM: how a Studio runtime that did not finish starting gets
+ * another chance without the session layer importing the bridge.
+ *
+ * The bridge owns the initialization; the secret session owns the moments at
+ * which trying again is worth it (an unlock, and the recovery pass that already
+ * polls while the dispatch fence is unproven). A static import in that
+ * direction would close an import cycle - the bridge reads the session's
+ * predicates - so the bridge REGISTERS its retry here, at the flag both sides
+ * already depend on, and the session merely asks.
+ *
+ * One hook for the life of a bridge setup, cleared by its teardown, so a
+ * request made after teardown reaches nothing. A hook that throws must not
+ * abort the caller's recovery pass.
+ */
+let retryHook: (() => void) | null = null;
+
+export function setStudioRuntimeRetryHook(hook: (() => void) | null): void {
+  retryHook = hook;
+}
+
+/** Ask the current bridge to try its unfinished initialization again. */
+export function requestStudioRuntimeRetry(): void {
+  const hook = retryHook;
+  if (hook === null) return;
+  try {
+    hook();
+  } catch (cause) {
+    log.warn("[studio:readiness] studio runtime retry request failed", cause);
+  }
 }
 
 function ownsEpoch(callerEpoch: number, transition: string): boolean {
@@ -170,6 +259,8 @@ function ownsEpoch(callerEpoch: number, transition: string): boolean {
 
 /** Test seam: back to the pre-barrier state, on a fresh epoch. */
 export function resetStudioReadinessForTests(): void {
+  retryHook = null;
   epoch += 1;
   readiness = { ready: false, code: "starting", cause: STARTING_CAUSE };
+  announceReadiness();
 }

@@ -25,6 +25,7 @@ import type { AgentScanDto } from "@shared/schemas/agent-scan-feed.js";
 import type { Result } from "@shared/ipc/result.js";
 import {
   availablePage,
+  GLOBAL_SCOPE,
   entry,
   installJsdomGeometry,
   restoreJsdomGeometry,
@@ -34,6 +35,17 @@ import {
 const mockUseAgentScanInfinite = vi.hoisted(() => vi.fn());
 vi.mock("../../../../lib/api/portfolio.js", () => ({
   useAgentScanInfinite: mockUseAgentScanInfinite,
+}));
+
+/**
+ * The project NAME read is mocked, not provided through a QueryClient: it is a
+ * LABEL for the scope chip and nothing about it belongs to this suite's
+ * subject. `useProject` is disabled for every non-project scope in the screen,
+ * so a global or session mount never consults it.
+ */
+const mockUseProject = vi.hoisted(() => vi.fn());
+vi.mock("../../../../lib/api/projects.js", () => ({
+  useProject: mockUseProject,
 }));
 
 const { AgentScanScreen } = await import("../AgentScanScreen.js");
@@ -54,12 +66,14 @@ function mockQuery(
 
 function mountScreen(): void {
   render(
-    <AgentScanScreen origin={null} sessionId={null} onClose={() => undefined} />,
+    <AgentScanScreen origin={null} scope={GLOBAL_SCOPE} onClose={() => undefined} />,
   );
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // The disabled-query shape `useProject` returns for a non-project scope.
+  mockUseProject.mockReturnValue({ data: undefined });
   installJsdomGeometry();
 });
 
@@ -161,6 +175,40 @@ describe("AgentScanScreen - rows and audit detail", () => {
     expect(screen.getByText("base → arbitrum")).not.toBeNull();
   });
 
+  /**
+   * OWNER RULE V1 (2026-09-04). A fee transfer that is still in flight carries no
+   * amount, and the detail line used to render nothing at all for it - so money
+   * that may still leave the wallet was invisible on the only surface that shows
+   * this row. The line now names the attempt's state instead of inventing a
+   * number, which would be the opposite error.
+   */
+  it("names a PENDING Vex fee attempt on the detail line instead of falling silent", () => {
+    mockQuery([
+      availablePage([
+        entry({
+          id: "1",
+          activityKind: "swap",
+          eventRole: "swap",
+          status: "pending",
+          vexFee: {
+            tokenSymbol: null,
+            amountHuman: null,
+            status: "pending",
+            txHash: `0x${"ab".repeat(32)}`,
+            chainId: 8453,
+            chainFamily: "eip155",
+          },
+          usdFeeEst: null,
+        }),
+      ]),
+    ]);
+    mountScreen();
+    fireEvent.click(screen.getByRole("button", { name: /Show details/ }));
+
+    expect(screen.getByText("Vex fee")).not.toBeNull();
+    expect(screen.getByText("attempt pending")).not.toBeNull();
+  });
+
   it("expands to the audit detail: legs with their own explorer links, Vex fee, and the failure reason", () => {
     mockQuery([
       availablePage([
@@ -171,7 +219,14 @@ describe("AgentScanScreen - rows and audit detail", () => {
           status: "failed",
           failureCode: "bridge_failed",
           failureReason: "destination fill reverted",
-          vexFee: { tokenSymbol: "USDC", amountHuman: "0.05" },
+          vexFee: {
+            tokenSymbol: "USDC",
+            amountHuman: "0.05",
+            status: "confirmed",
+            txHash: "0xfee",
+            chainId: 8453,
+            chainFamily: "eip155",
+          },
           usdFeeEst: "0.05",
           providerOrderId: "ord_9",
           legs: [

@@ -93,7 +93,7 @@ const SYNC_JOBS = [
   // universe, daily at 00:00 UTC. The 300s interval is only how often the
   // branch CHECKS; once-per-day, catch-up-after-downtime, and
   // one-owner-per-window all live in the workflow's own window claim
-  // (z500_sync_runs, migration 099) so they survive restarts by
+  // (z500_sync_runs, migration 110) so they survive restarts by
   // construction. Skips without claiming while INDEXIFY_API_KEY is absent.
   // edit_allocation is its only mutation — it never trades or rebalances.
   { namespace: "_global", syncType: "z500_allocation_sync", readToolId: null, strategy: "periodic", intervalSeconds: 300 },

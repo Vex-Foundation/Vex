@@ -4,8 +4,10 @@
  * Pins (Codex 8c requirements #3/#4 + identical quote↔execute identity):
  *   - Discriminated match-hash: a swap and a bridge with otherwise-similar
  *     values NEVER collide; bridge determinism; per-field sensitivity for every
- *     bridge field (fromChainId/toChainId/fromToken/toToken/amount/recipient/
- *     tradeType/sourceWallet); recipient + tradeType defaults applied identically.
+ *     bridge field (fromChainId/toChainId/fromToken/toToken/amount/
+ *     tradeType/sourceWallet); recipient is DERIVED on both sides (never a
+ *     param, so it cannot move the hash) and the tradeType default is applied
+ *     identically.
  *   - Bridge recording: a khalani.quote.get success records ONE kind='bridge'
  *     row with verdict='unknown' + the shared bridge identity; malformed →
  *     no row (no throw); wallet-unresolved → skip.
@@ -13,7 +15,7 @@
  *     prequote → allow; a thrown identity build / DB read → fail-closed block;
  *     gate reads kind='bridge'.
  *   - Identity collision: a recorded bridge_quote then a matching khalani.bridge
- *     execute → SAME match-hash (allow); a different chain/token/amount/recipient/
+ *     execute → SAME match-hash (allow); a different chain/token/amount/
  *     tradeType → different hash (block).
  *   - Money/fee binding (8c security fix): refundTo/referrer/referrerFeeBps/filler
  *     are bound into the identity. EXPLOIT GUARD — a quote without refundTo does
@@ -37,6 +39,7 @@ import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 import { VexError, ErrorCodes } from "../../../../../errors.js";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 import type { SwapPrequote, SafetyVerdict } from "@vex-agent/db/repos/swap-prequotes.js";
+import { rowVexFee, venueBridgeVexFee } from "../prequote/vex-fee-fixtures.js";
 
 // ── Mocks ─────────────────────────────────────────────────────────────────
 
@@ -166,7 +169,7 @@ function bridgeRow(verdict: SafetyVerdict, overrides: Partial<SwapPrequote> = {}
     amount: "1000000",
     slippageBps: null,
     safetyVerdict: verdict,
-    safetyDetail: { bridge: true, note: "route-only; no token-safety check" },
+    safetyDetail: { bridge: true, note: "route-only; no token-safety check", vexFee: rowVexFee() },
     routeRef: null,
     // Migration 095: a row that predates the claim lane reads as an
     // executable, unclaimed quote. It authorizes nothing on its own - the
@@ -185,7 +188,7 @@ function bridgeRow(verdict: SafetyVerdict, overrides: Partial<SwapPrequote> = {}
 describe("bridge quote ↔ execute identity collision", () => {
   it("a recorded bridge_quote and a matching khalani.bridge execute collide (allow)", async () => {
     // 1) Record from the QUOTE params.
-    await mod.recordPrequoteFromQuote("khalani.quote.get", bridgeParams(), { quoteId: "q1" }, ctx());
+    await mod.recordPrequoteFromQuote("khalani.quote.get", bridgeParams(), { quoteId: "q1", vexFee: venueBridgeVexFee() }, ctx());
     const recorded = mockCreate.mock.calls[0]![0] as Record<string, unknown>;
     const recordedHash = recorded.matchHash as string;
 
@@ -201,8 +204,8 @@ describe("bridge quote ↔ execute identity collision", () => {
     expect(gateHash).toBe(recordedHash);
   });
 
-  it("a different fromChain/toChain/token/amount/recipient/tradeType MISSES the recorded row", async () => {
-    await mod.recordPrequoteFromQuote("khalani.quote.get", bridgeParams(), { quoteId: "q1" }, ctx());
+  it("a different fromChain/toChain/token/amount/tradeType MISSES the recorded row", async () => {
+    await mod.recordPrequoteFromQuote("khalani.quote.get", bridgeParams(), { quoteId: "q1", vexFee: venueBridgeVexFee() }, ctx());
     const recordedHash = (mockCreate.mock.calls[0]![0] as Record<string, unknown>).matchHash as string;
 
     const variants: Array<Record<string, unknown>> = [
@@ -211,7 +214,6 @@ describe("bridge quote ↔ execute identity collision", () => {
       { fromToken: "0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB" },
       { toToken: "DifferentMintXYZ" },
       { amountRaw: "2000000" },
-      { recipient: "ADifferentRecipient" },
       { tradeType: "EXACT_OUTPUT" },
     ];
     for (const v of variants) {
@@ -224,6 +226,28 @@ describe("bridge quote ↔ execute identity collision", () => {
       await mod.evaluatePrequoteGate("khalani.bridge", bridgeParams(v), ctx());
       expect(gateHash, `variant ${JSON.stringify(v)} should not collide`).not.toBe(recordedHash);
     }
+  });
+
+  it("a supplied recipient CANNOT move the hash - the destination is derived on both sides", async () => {
+    // `recipient` is not a bridge parameter any more (bridge-destination
+    // policy): the tools refuse the key, and the identity binds the derived
+    // dest-family wallet. A caller who smuggles one past the tool surface
+    // changes nothing - it can neither redirect the funds nor split the
+    // quote/execute pair into two hashes that agree about an unauthorized
+    // address, which is exactly what the params-bound version allowed.
+    await mod.recordPrequoteFromQuote("khalani.quote.get", bridgeParams(), { quoteId: "q1", vexFee: venueBridgeVexFee() }, ctx());
+    const [createCall] = mockCreate.mock.calls;
+    if (!createCall) throw new Error("the quote recorded no prequote row");
+    const recordedHash = (createCall[0] as Record<string, unknown>).matchHash as string;
+
+    resetMocks();
+    let gateHash = "";
+    mockFindLatest.mockImplementation(async (_s, h) => {
+      gateHash = h;
+      return bridgeRow("unknown", { matchHash: h });
+    });
+    await mod.evaluatePrequoteGate("khalani.bridge", bridgeParams({ recipient: "ADifferentRecipient" }), ctx());
+    expect(gateHash).toBe(recordedHash);
   });
 
   it("EXPLOIT GUARD: a caller-variable param cannot be changed between quote and execute", async () => {
@@ -239,7 +263,7 @@ describe("bridge quote ↔ execute identity collision", () => {
     // `khalani-refund-destination.test.ts` and
     // `khalani-referrer-fee-rejection.test.ts`. Asserting hash divergence for
     // them here would silently re-test a vector that no longer exists.
-    await mod.recordPrequoteFromQuote("khalani.quote.get", bridgeParams(), { quoteId: "q1" }, ctx());
+    await mod.recordPrequoteFromQuote("khalani.quote.get", bridgeParams(), { quoteId: "q1", vexFee: venueBridgeVexFee() }, ctx());
     const recordedHash = (mockCreate.mock.calls[0]![0] as Record<string, unknown>).matchHash as string;
 
     const tampered: Array<Record<string, unknown>> = [
@@ -262,7 +286,7 @@ describe("bridge quote ↔ execute identity collision", () => {
     // Both quote and execute omit the whole money/fee leg → identical defaults →
     // identical hash → allow. (Already implied by the base collision test, but
     // pinned explicitly as the positive counterpart to the exploit guard.)
-    await mod.recordPrequoteFromQuote("khalani.quote.get", bridgeParams(), { quoteId: "q1" }, ctx());
+    await mod.recordPrequoteFromQuote("khalani.quote.get", bridgeParams(), { quoteId: "q1", vexFee: venueBridgeVexFee() }, ctx());
     const recordedHash = (mockCreate.mock.calls[0]![0] as Record<string, unknown>).matchHash as string;
 
     resetMocks();
@@ -283,7 +307,7 @@ describe("bridge quote ↔ execute identity collision", () => {
       referrerFeeBps: "100",
       filler: "native-filler",
     };
-    await mod.recordPrequoteFromQuote("khalani.quote.get", bridgeParams(money), { quoteId: "q1" }, ctx());
+    await mod.recordPrequoteFromQuote("khalani.quote.get", bridgeParams(money), { quoteId: "q1", vexFee: venueBridgeVexFee() }, ctx());
     const recordedHash = (mockCreate.mock.calls[0]![0] as Record<string, unknown>).matchHash as string;
 
     resetMocks();
@@ -303,7 +327,7 @@ describe("bridge quote ↔ execute identity collision", () => {
     await mod.recordPrequoteFromQuote(
       "khalani.quote.get",
       bridgeParams({ referrerFeeBps: "100" }),
-      { quoteId: "q1" },
+      { quoteId: "q1", vexFee: venueBridgeVexFee() },
       ctx(),
     );
     const recordedHash = (mockCreate.mock.calls[0]![0] as Record<string, unknown>).matchHash as string;

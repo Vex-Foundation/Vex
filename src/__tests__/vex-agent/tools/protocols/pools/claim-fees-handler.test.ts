@@ -29,8 +29,9 @@ import {
 } from "viem";
 
 import { PARTY_LOCKER_CLAIMED_EVENT_ABI } from "@tools/pools-fun/abi.js";
-import { POOLS_LOCKER_ADDRESS } from "@tools/pools-fun/constants.js";
+import { POOLS_SUITES } from "@tools/pools-fun/constants.js";
 import * as readClaim from "@tools/pools-fun/claim/read-claim.js";
+import * as tokenRegistration from "@tools/pools-fun/evm/token-registration.js";
 import * as evmClient from "@tools/evm-chains/evm-client.js";
 import * as stagedBroadcast from "@tools/evm-chains/staged-broadcast.js";
 import * as activity from "@vex-agent/db/repos/agent-activity.js";
@@ -41,7 +42,8 @@ import { POOLS_HANDLERS } from "@vex-agent/tools/protocols/pools/handlers.js";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 import { makeProtocolContext } from "../../_test-context.js";
 
-const LOCKER = getAddress(POOLS_LOCKER_ADDRESS);
+const SUITE = POOLS_SUITES.find((s) => s.version === 1)!;
+const LOCKER = getAddress(SUITE.locker);
 const WALLET = getAddress("0x33eF6673BD80cB11fcC41b82Bc2181E65cC4d2fA");
 const TOKEN = getAddress("0x01e685d39e6bf52ad0c421a4be1e092ce684e6bb");
 const POOL = getAddress("0x50136d4174129585ec766eacf2f00cd1856690ca");
@@ -79,6 +81,7 @@ let confirmed: Record<string, unknown>[] = [];
 let failedRows: { failureCode: string }[] = [];
 let pendingReasons: string[] = [];
 let logs: { address: string; topics: string[]; data: string }[];
+let registration: tokenRegistration.PoolsLockerRegistration;
 
 function context(over: Partial<ProtocolExecutionContext> = {}): ProtocolExecutionContext {
   return makeProtocolContext({ sessionId: "sess-1", sessionPermission: "full", approved: true, ...over });
@@ -95,6 +98,7 @@ beforeEach(() => {
     ok: true,
     context: {
       blockNumber: BLOCK,
+      suite: SUITE,
       pairedAsset: USDG,
       poolAddress: POOL,
       feeRecipient: WALLET,
@@ -109,6 +113,30 @@ beforeEach(() => {
   outcome = { kind: "confirmed", txHash: TX_HASH, receipt: { logs, blockNumber: BLOCK } } as never;
 
   vi.spyOn(walletResolve, "resolveSelectedAddress").mockReturnValue(WALLET);
+  // WHICH SUITE HOLDS THE TOKEN is now the handler's first question, and its
+  // four outcomes are the four ways a claim can be refused before any locker is
+  // addressed. Defaulted to a clean V1 registration here; the refusal cases
+  // below override it.
+  registration = {
+    status: "registered",
+    suite: SUITE,
+    launcher: WALLET,
+    info: {
+      pairedAssetAddress: USDG,
+      pool: POOL,
+      creator: WALLET,
+      feeRecipient: WALLET,
+      lockedPositionIds: [],
+      feeSplitAvailable: true,
+      feeSplitBps: { creator: 2000, platform: 2500, buyback: 3000, community: 2500, stockCreator: 2000, stockProtocol: 8000 },
+    },
+  };
+  vi.spyOn(tokenRegistration, "readPoolsOnChainSnapshot").mockImplementation(async () => ({
+    blockNumber: BLOCK.toString(),
+    locker: registration,
+    decimals: { status: "ok", value: 18 },
+    metadataUri: { status: "ok", value: null },
+  }));
   vi.spyOn(readClaim, "readPoolsClaimContext").mockImplementation(async () => contextResult);
   vi.spyOn(readClaim, "simulatePoolsClaim").mockImplementation(async () => simulation);
   vi.spyOn(evmClient, "getLocalPublicClient").mockReturnValue({

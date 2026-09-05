@@ -1,5 +1,5 @@
 /**
- * Mission internal tool handlers — mission draft updates and MissionStop.
+ * Mission internal tool handlers - mission draft updates and MissionStop.
  *
  * MissionStop is the only model-driven way to stop a mission.
  * Returns an engineSignal that the turn-loop uses to finalize the run.
@@ -33,7 +33,7 @@ const MissionDraftUpdateArgs = z
     goal: z.string().trim().min(1).max(MAX_STRING_LENGTH).nullable().optional(),
     capitalSource: z.string().trim().min(1).max(MAX_STRING_LENGTH).nullable().optional(),
     startingCapital: z.string().trim().min(1).max(MAX_STRING_LENGTH).nullable().optional(),
-    // C3 - all five parts or none. Bounds mirror DEPLOYED_CAPITAL_BOUNDS so the
+    // C3 - all six parts or none. Bounds mirror DEPLOYED_CAPITAL_BOUNDS so the
     // model gets a located zod path (e.g. `deployedCapital.decimals`) instead of
     // a silent drop; the identity/family rules are applied afterwards by the one
     // shared normalizer in `engine/mission/deployed-capital.ts`.
@@ -42,6 +42,7 @@ const MissionDraftUpdateArgs = z
       decimals: z.number().int().min(0).max(36),
       chainId: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
       assetAddress: z.string().trim().min(1).max(128),
+      assetKind: z.enum(["native", "token"]),
       assetSymbol: z.string().trim().min(1).max(32),
     }).strict().nullable().optional(),
     allowedWallets: z.array(z.string().trim().min(1).max(MAX_ARRAY_ITEM_LENGTH)).max(MAX_ARRAY_ITEMS).nullable().optional(),
@@ -70,13 +71,13 @@ export async function handleMissionDraftUpdate(
     return fail("MissionDraftUpdate requires an existing mission draft");
   }
 
-  // response_format is a tool-only param read off RAW params — MissionDraftUpdateArgs
+  // response_format is a tool-only param read off RAW params - MissionDraftUpdateArgs
   // is .strict() and must not see it. Default to 'concise' server-side because LLMs
   // frequently omit the knob even when the schema declares a default.
   const responseFormat: ResponseFormat = readResponseFormat(params, "concise");
   const { response_format: _ignored, ...patchParams } = params;
 
-  // Empty means ABSENT here too — eleven nullable-optional fields make this the
+  // Empty means ABSENT here too - eleven nullable-optional fields make this the
   // schema most exposed to the model's habit of filling every advertised field.
   // `null` is PRESERVED: it is this contract's explicit "clear the field", and
   // dropping it would silently turn a clear into a no-op.
@@ -91,15 +92,15 @@ export async function handleMissionDraftUpdate(
 
   const result = await applyMissionPatch(context.missionId, parsed.data);
   const latestRun = result.ready ? await missionRunsRepo.getRunBySession(context.sessionId) : null;
-  // The host UI owns activation now (Start / Continue buttons) — surface a
+  // The host UI owns activation now (Start / Continue buttons) - surface a
   // button-language hint, never a slash command the user could type.
   const nextAction = result.ready
     ? latestRun
-      ? "The draft is ready — tell the user they can continue the mission with the Continue button in the host UI."
-      : "The draft is ready — tell the user they can start the mission with the Start mission button in the host UI."
+      ? "The draft is ready - tell the user they can continue the mission with the Continue button in the host UI."
+      : "The draft is ready - tell the user they can start the mission with the Start mission button in the host UI."
     : null;
 
-  // Output string is the model-facing surface — gate the bulky currentDraft
+  // Output string is the model-facing surface - gate the bulky currentDraft
   // behind response_format='detailed'. nextAction stays in BOTH modes.
   // result.data is the host-facing structured block and stays complete and
   // unchanged (the renderer / tests read every field, incl. currentDraft).
@@ -173,7 +174,7 @@ export async function handleMissionStop(
 
   return {
     success: true,
-    output: `Mission stop requested: ${reason} — ${summary}`,
+    output: `Mission stop requested: ${reason} - ${summary}`,
     data: { reason, summary, evidence },
     engineSignal: {
       type: "stop_mission",

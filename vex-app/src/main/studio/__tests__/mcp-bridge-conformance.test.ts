@@ -2,17 +2,30 @@
  * THE BRIDGE CONFORMANCE TEST: the BUILT Go binary against the REAL host.
  *
  * Every other test in this arc proves one side of the wire against a fixture.
- * This one proves the two sides against each other, through a real process,
- * a real unix socket and the real handshake: the Go bridge re-derives the
- * endpoint, sends its own handshake bytes, and relays MCP frames that the
+ * This one proves the two sides against each other, through a real process, a
+ * real transport and the real handshake: the Go bridge re-derives or is handed
+ * the endpoint, sends its own handshake bytes, and relays MCP frames that the
  * TypeScript host's own parser and transport answer.
  *
  * It is the only test that can catch a class the vectors cannot: two
  * implementations that each match the fixture but disagree about something the
  * fixture does not name.
  *
- * SKIPPED, cleanly, when `bridge/dist/linux-amd64/vex-mcp` is absent, so a
- * checkout without a Go toolchain still goes green.
+ * TWO ARMS, ONE PER TRANSPORT, each quarantined by NAME rather than by a silent
+ * early return, so the reporter shows which one a runner did not meet:
+ *
+ *   - THE UNIX ARM, on linux/x64, over an `AF_UNIX` socket in a 0700 temp
+ *     directory. It carries the whole exit-code and refusal table.
+ *   - THE WIN32 ARM, on win32/x64, over a REAL NAMED PIPE bound by the REAL
+ *     `vex-pipe-front.exe` that the REAL host spawns, dialled by the REAL built
+ *     `vex-mcp.exe`. That is row 4 of the contract's 1.6 matrix, whose host
+ *     half was measured by `front-real-binary.test.ts` on run 33650332655 and
+ *     whose BRIDGE half had no test until this arm: a client of ours had never
+ *     spoken to a host of ours over a pipe. It runs on the `vex-app-windows`
+ *     lane, which builds both artifacts.
+ *
+ * SKIPPED, cleanly, when this platform's built binary is absent, so a checkout
+ * without a Go toolchain still goes green.
  *
  * REQUIRED, and therefore FAILING instead of skipping, when
  * `VEX_REQUIRE_BRIDGE_CONFORMANCE=1` is set. CI builds the binary in the job
@@ -29,7 +42,7 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync } from "node:f
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { StudioToolCall } from "@vex-agent/mcp/admission.js";
 import type {
@@ -47,8 +60,34 @@ import {
   resetStudioMcpHostForTests,
   shutdownStudioMcpHost,
   startStudioMcpHost,
+  openStudioMcpAdmission,
   studioMcpHostEndpoint,
 } from "../mcp-host.js";
+
+/**
+ * THE ONLY SEAM IN THIS FILE, and it replaces nothing: on win32 it hands the
+ * REAL resolver the development layout, because `locateStudioPipeFront()` with
+ * no arguments reads `app.isPackaged` and vitest is not an Electron runtime.
+ * The path the win32 arm spawns is therefore still the one production computes
+ * from `bridge/build.sh`'s output, and `pipe-front-path.test.ts` still owns the
+ * resolution rules themselves. On every other platform the real module is
+ * returned untouched, so the unix arm's graph is exactly what it was.
+ *
+ * The repo root is recomputed inside the factory on purpose: `vi.mock` hoists
+ * its call above this module's own bindings, so the `REPO_ROOT` below is still
+ * in its temporal dead zone when the factory runs.
+ */
+vi.mock("../installer/bridge-path.js", async () => {
+  const actual = await vi.importActual<typeof import("../installer/bridge-path.js")>(
+    "../installer/bridge-path.js",
+  );
+  if (process.platform !== "win32") return actual;
+  const repoRoot = path.resolve(__dirname, "..", "..", "..", "..", "..");
+  return {
+    ...actual,
+    locateStudioPipeFront: () => actual.locateStudioPipeFront({ packaged: false, repoRoot }),
+  };
+});
 
 const PROJECT_ID = "3f2504e0-4f89-41d3-9a0c-0305e82c3301";
 const MISSING_PROJECT_ID = "11111111-2222-4333-8444-555555555555";
@@ -75,28 +114,40 @@ const STUDIO_BRIDGE_DIAGNOSTIC_MAX_BYTES = (
     ),
   ) as { limits: Record<string, number> }
 ).limits["bridgeDiagnosticMaxBytes"] as number;
-const BRIDGE_BINARY = path.join(REPO_ROOT, "bridge", "dist", "linux-amd64", "vex-mcp");
+/**
+ * The built bridge for THIS runner, in the dev layout `bridge/build.sh` writes.
+ * Both arms spawn the same program; only the transport under it differs.
+ */
+const BRIDGE_BINARY =
+  process.platform === "win32"
+    ? path.join(REPO_ROOT, "bridge", "dist", "windows-amd64", "vex-mcp.exe")
+    : path.join(REPO_ROOT, "bridge", "dist", "linux-amd64", "vex-mcp");
 
 /**
- * The artifact is linux-amd64, so this suite runs where that binary runs.
- * `describe.skipIf` rather than a silent early return: a skipped suite is
- * visible in the reporter, an early return is not.
+ * Each arm runs where its artifact runs. `describe.skipIf` rather than a silent
+ * early return: a skipped suite is visible in the reporter, an early return is
+ * not.
  */
-function unavailableBecause(): string | null {
-  if (process.platform !== "linux") {
-    return `the bridge artifact is linux-amd64 and this runner is ${process.platform}`;
+function unavailableBecause(platform: "linux" | "win32"): string | null {
+  const triple = platform === "win32" ? "windows-amd64" : "linux-amd64";
+  if (process.platform !== platform) {
+    return `this arm needs the ${triple} bridge and this runner is ${process.platform}`;
   }
   if (process.arch !== "x64") {
-    return `the bridge artifact is linux-amd64 and this runner is ${process.arch}`;
+    return `this arm needs the ${triple} bridge and this runner is ${process.arch}`;
   }
   if (!existsSync(BRIDGE_BINARY)) {
-    return `the built bridge is missing at ${BRIDGE_BINARY}; run \`bridge/build.sh linux amd64\``;
+    return `the built bridge is missing at ${BRIDGE_BINARY}; run \`bridge/build.sh ${
+      platform === "win32" ? "windows" : "linux"
+    } amd64\``;
   }
   return null;
 }
 
-const unavailableReason = unavailableBecause();
+const unavailableReason = unavailableBecause("linux");
 const unavailable = unavailableReason !== null;
+const windowsUnavailableReason = unavailableBecause("win32");
+const windowsUnavailable = windowsUnavailableReason !== null;
 
 /**
  * CI sets this. When it is set, an unavailable artifact FAILS rather than
@@ -110,10 +161,17 @@ describe("the bridge conformance precondition", () => {
       expect(conformanceRequired).toBe(false);
       return;
     }
+    // THIS RUNNER'S OWN ARM, not the unix one everywhere: the promise the flag
+    // makes is that the platform it was set on actually exercised its
+    // transport. Asserting the linux arm on the Windows lane would fail a lane
+    // that is doing exactly what it was asked to, and asserting nothing there
+    // would let the win32 arm skip silently on a required job - the precise
+    // hole this precondition exists to close.
+    const reason = process.platform === "win32" ? windowsUnavailableReason : unavailableReason;
     expect(
-      unavailableReason,
+      reason,
       "VEX_REQUIRE_BRIDGE_CONFORMANCE=1 promises this suite actually ran, and it did not: "
-        + String(unavailableReason),
+        + String(reason),
     ).toBeNull();
   });
 });
@@ -285,6 +343,7 @@ describe.skipIf(unavailable)("the built Go bridge against the real Studio host",
       runCall: (projectId, call, options) => runCallImpl(projectId, call, options),
       projectExists: (projectId) => projectExistsImpl(projectId),
     });
+    openStudioMcpAdmission();
     const started = await startStudioMcpHost();
     expect(started.started).toBe(true);
     expect(studioMcpHostEndpoint()).not.toBeNull();
@@ -526,3 +585,178 @@ describe.skipIf(unavailable)("the built Go bridge against the real Studio host",
     expect(exit.code).toBe(12);
   });
 });
+
+/**
+ * THE WIN32 ARM: the real built `vex-mcp.exe` against the real host, over a
+ * real named pipe bound by the real `vex-pipe-front.exe`.
+ *
+ * WHY IT EXISTS AND WHAT IT CLOSES. Row 4 of the contract's 1.6 matrix is a
+ * native pipe round trip. Its HOST half was measured on run 33650332655 by
+ * `front-real-binary.test.ts` - the front binds, reports its readback-confirmed
+ * flags, relays main's refusal to a real pipe client. Its BRIDGE half had no
+ * test at all: every frame the Go bridge and the TypeScript host have ever
+ * exchanged travelled over a unix socket. A pipe is not a socket in the two
+ * places this arc has already been bitten - it is message-mode with small
+ * kernel buffers, and it has NO half-close - so a relay that is correct on
+ * `AF_UNIX` is not thereby correct here.
+ *
+ * THE OVERRIDE, NOT THE DERIVED NAME, on purpose. The derivation is pinned by
+ * the vectors on both sides and the derived pipe is what the CI matrix
+ * measured; what this arm needs instead is ISOLATION, exactly as the unix arm
+ * takes a temp directory rather than the real endpoint. A developer's own Vex
+ * may already own the derived name, and `firstInstance` would then fail the
+ * bind - a green suite would be reporting the wrong machine's pipe.
+ *
+ * THE RESOLVER SEAM. `locateStudioPipeFront()` reads `app.isPackaged` when it
+ * is given nothing, and there is no Electron runtime under vitest. The mock
+ * hands the REAL resolver the dev layout instead of replacing it, so the path
+ * this arm spawns is still the one production computes from
+ * `bridge/build.sh`'s output, and `pipe-front-path.test.ts` still owns the
+ * resolution rules themselves. On linux the real function is passed through
+ * untouched.
+ */
+describe.skipIf(windowsUnavailable)(
+  "the built Go bridge against the real Studio host, over the Windows pipe",
+  () => {
+    let pipeName = "";
+    let pipeNames = 0;
+
+    afterAll(() => {
+      delete process.env["VEX_STUDIO_SOCKET"];
+    });
+
+    beforeEach(async () => {
+      // A FRESH NAME PER TEST, and BOTH halves of that are load-bearing.
+      //
+      // Unique per RUN keeps two suites, or two developers on one machine, off
+      // a name whose first instance is exclusive by design. Unique per TEST
+      // adds the thing this suite got wrong: a name is released by the front
+      // PROCESS exiting, and while `shutdownStudioMcpHost` now waits for that
+      // exit, a front that ignores the signal ends its wait at
+      // `FRONT_EXIT_WAIT_MS` and the corpse may still hold the old name. Per
+      // test, that costs the next case nothing.
+      //
+      // It does NOT replace the supervisor's wait, and it must not be read as
+      // covering for it. In the product the name is DERIVED from the config
+      // directory - `endpoint.PipeName` - so every launch and every restart
+      // reuses one name, and only the wait makes a quit-and-relaunch or a
+      // crash-restart bind. This suite would be green with a per-test name and
+      // a broken supervisor, which is exactly why the supervisor's own suite
+      // owns that proof (`front-supervisor.test.ts`, "the pipe name is
+      // released by the EXIT, not by the kill").
+      pipeNames += 1;
+      pipeName = `\\\\.\\pipe\\vex-studio-conformance-${process.pid}`
+        + `-${Date.now().toString(36)}-${String(pipeNames)}`;
+      process.env["VEX_STUDIO_SOCKET"] = pipeName;
+
+      runCallImpl = async () => ({ kind: "completed", result: { success: true, output: "ok" } });
+      projectExistsImpl = async (projectId) => projectId === PROJECT_ID;
+      resetStudioMcpHostForTests();
+      markStudioRuntimeReady(beginStudioReadinessEpoch());
+      configureStudioMcpHost({
+        runCall: (projectId, call, options) => runCallImpl(projectId, call, options),
+        projectExists: (projectId) => projectExistsImpl(projectId),
+      });
+      openStudioMcpAdmission();
+      const started = await startStudioMcpHost();
+      // The front bound the pipe AND Windows confirmed its flags on readback:
+      // the host publishes nothing on a BOUND that did not (contract 1.6).
+      expect(started.started).toBe(true);
+      expect(studioMcpHostEndpoint()).toBe(pipeName);
+    });
+
+    afterEach(async () => {
+      for (const child of spawned.splice(0)) child.destroy();
+      await shutdownStudioMcpHost();
+      resetStudioMcpHostForTests();
+      resetStudioReadinessForTests();
+    });
+
+    // Generous for the same reason the unix arm's first case is: the host
+    // dynamically imports the MCP SDK on the first connection, and here the
+    // front process has to come up as well.
+    it("handshakes and relays a full initialize round trip over the pipe", async () => {
+      const child = bridge({ VEX_PROJECT_ID: PROJECT_ID });
+      child.send(initialize(1));
+      const response = await child.responseFor(1, 60_000);
+      const result = response["result"] as Record<string, unknown>;
+      expect(result["protocolVersion"]).toBe("2025-06-18");
+      expect(result["serverInfo"]).toMatchObject({ name: "vex-studio" });
+      // The ack is consumed by the bridge on this transport too: a leaked
+      // `{"ok":true}` would corrupt the client's parser.
+      expect(response["jsonrpc"]).toBe("2.0");
+      expect(child.stderr()).toBe("");
+    }, 90_000);
+
+    it("relays a LARGE frame with every byte intact through the front", async () => {
+      // THE PIPE-SPECIFIC RISK. This payload crosses a message-mode pipe with
+      // 4096-byte kernel buffers and then the front's four framed planes before
+      // it reaches main. A relay that reframed, re-chunked into a lost boundary
+      // or dropped a partial message would pass every unix test and fail here.
+      const payload = "z".repeat(512 * 1024);
+      let observed = "";
+      runCallImpl = async (_projectId, call) => {
+        observed = String((call.args as Record<string, unknown>)["query"] ?? "");
+        return { kind: "completed", result: { success: true, output: `${observed.length}` } };
+      };
+
+      const child = bridge({ VEX_PROJECT_ID: PROJECT_ID });
+      child.send(initialize(1));
+      await child.responseFor(1, 60_000);
+      child.send({ jsonrpc: "2.0", method: "notifications/initialized" });
+      child.send({
+        jsonrpc: "2.0",
+        id: 2,
+        method: "tools/call",
+        params: { name: "vex_ToolSearch", arguments: { query: payload } },
+      });
+      const response = await child.responseFor(2, 60_000);
+      expect(response["error"]).toBeUndefined();
+      // The bytes the HOST saw, not the bridge's self-report.
+      expect(observed.length).toBe(payload.length);
+      expect(observed).toBe(payload);
+    }, 90_000);
+
+    it("prints ONE actionable line and exit 5 for unknown_project over the pipe", async () => {
+      // The refusal path across the front: main composes the ack, the front
+      // relays it byte for byte, and the bridge turns it into the contract's
+      // exit code rather than a dial failure.
+      const child = bridge({ VEX_PROJECT_ID: MISSING_PROJECT_ID });
+      const exit = await child.waitForExit(60_000);
+      expect(exit.code).toBe(5);
+      const stderr = child.stderr();
+      expect(stderr.trimEnd().split("\n")).toHaveLength(1);
+      expect(stderr).toMatch(/^vex-mcp: /);
+    }, 90_000);
+
+    it("exits 0 on stdin EOF after the drain a pipe cannot half-close", async () => {
+      // CONTRACT 3.5's SECOND BRANCH, which only this transport reaches. On a
+      // unix socket the bridge half-closes and the host's FIN ends the drain
+      // early. A pipe has no half-close, so the drain runs to its 5000 ms bound
+      // and the connection is then closed fully - and that is a CLEAN exit 0,
+      // not a relay failure, which is exactly the distinction a client would
+      // otherwise see collapse into exit 11.
+      const child = bridge({ VEX_PROJECT_ID: PROJECT_ID });
+      child.send(initialize(1));
+      await child.responseFor(1, 60_000);
+      child.endStdin();
+      const exit = await child.waitForExit(30_000);
+      expect(exit.code).toBe(0);
+      // AND THE BOUND IS REPORTED, which is where this arm differs from the
+      // unix one. The host is never TOLD the client's input ended, so it holds
+      // its side and the 5000 ms drain is the only thing that ends the session.
+      // The contract's bounds table requires the fact on stderr "rather than
+      // presented as a clean close", and section 3.5 requires the outcome to
+      // record WHICH of the two branches ran - so a silent stderr here would be
+      // the bridge presenting an elapsed bound as a clean close. The unix arm's
+      // `expect(child.stderr()).toBe("")` is correct THERE precisely because
+      // the half-close ends its drain early. `relayExit`'s own table test in
+      // `bridge/cmd/vex-mcp/relay_exit_test.go` pins the mapping on Linux; this
+      // asserts the real binary took that branch over the real pipe.
+      const stderr = child.stderr();
+      expect(stderr.trimEnd().split("\n")).toHaveLength(1);
+      expect(stderr).toMatch(/^vex-mcp: /);
+      expect(stderr).toContain("a named pipe has no half-close");
+    }, 90_000);
+  },
+);

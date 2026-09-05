@@ -11,7 +11,7 @@
             "type": "string"
           },
           "chain": {
-            "description": "Chain slug or id — one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc').",
+            "description": "Chain slug or id - one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc').",
             "type": "string"
           },
           "dryRun": {
@@ -19,7 +19,7 @@
             "type": "boolean"
           },
           "market": {
-            "description": "The Pendle MARKET (LP) CONTRACT ADDRESS — the LP anchor liquidity is added to or removed from.",
+            "description": "The Pendle MARKET (LP) CONTRACT ADDRESS - the LP anchor liquidity is added to or removed from.",
             "type": "string"
           },
           "slippageBps": {

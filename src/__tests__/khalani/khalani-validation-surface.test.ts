@@ -3,7 +3,7 @@
  * structural split into `validation/` (chains+tokens / quotes / deposits /
  * submit+orders / errors).
  *
- * Guards the PUBLIC export surface against drift: the exact 13-key set and the
+ * Guards the PUBLIC export surface against drift: the exact 14-key set and the
  * `typeof` of each export (all functions). `parseKhalaniErrorBody`,
  * `parseKhalaniErrorPayload` and `isSolanaAddressLike` are consumed by the
  * Khalani client/helpers, so they are pinned alongside the strict response
@@ -28,12 +28,13 @@ const EXPECTED_KEYS = [
   "validateQuoteResponse",
   "validateQuoteStreamRoute",
   "validateSubmitResponse",
+  "validateTokenBalancesResponse",
   "validateTokenSearchResponse",
   "validateTokensResponse",
 ] as const;
 
 describe("khalani validation barrel surface", () => {
-  it("exposes exactly the expected 13 exports", () => {
+  it("exposes exactly the expected 14 exports", () => {
     expect(Object.keys(barrel).sort()).toEqual([...EXPECTED_KEYS]);
   });
 

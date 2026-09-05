@@ -50,7 +50,7 @@ vi.mock("@vex-agent/engine/core/runner/recover.js", () => ({
   runPreparedMissionRecover: vi.fn(),
 }));
 
-vi.mock("../../runtime/_ensure-engine-db-url.js", () => ({
+vi.mock("../../../database/engine-db-readiness.js", () => ({
   ensureEngineDbUrl: (...a: unknown[]) => mockEnsureEngineDbUrl(...a),
 }));
 

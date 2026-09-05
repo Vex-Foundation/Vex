@@ -191,12 +191,12 @@ export function draftToPromptContext(m: Mission): string {
   // display; when it cannot read the pair we render the raw pair ONLY and never
   // guess a figure, because a wrong amount next to money is worse than none.
   if (draft.deployedCapital !== null) {
-    const { amountRaw, decimals, chainId, assetAddress, assetSymbol } = draft.deployedCapital;
+    const { amountRaw, decimals, chainId, assetAddress, assetKind, assetSymbol } = draft.deployedCapital;
     const human = formatRawAmount(amountRaw, decimals);
     const figure = human === null ? `${assetSymbol}` : `${human} ${assetSymbol}`;
     lines.push(
       `**Deployed capital:** ${figure} (raw ${amountRaw} at ${decimals} decimals) on chain ${chainId}, ` +
-        `asset ${assetAddress}. This is the declared measurement base, not a spend limit.`,
+        `asset ${assetAddress}, kind ${assetKind ?? "legacy-ambiguous"}. This is the declared measurement base, not a spend limit.`,
     );
   }
   if (draft.riskProfile) lines.push(`**Risk:** ${draft.riskProfile}`);

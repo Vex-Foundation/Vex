@@ -5,7 +5,7 @@
  * (profile/banner image URLs, entities, pinned tweets, full participant lists)
  * that routinely push tool output past 25 KB while carrying little signal for
  * the agent. This module curates the output string
- * BEFORE `ok()` — the only lever, since the internal-tool `data` is dropped at
+ * BEFORE `ok()` - the only lever, since the internal-tool `data` is dropped at
  * the batch loop and only the `output` string reaches the model.
  *
  * THIS PROJECTION IS THE ONLY SHAPE (W2B). The `response_format: "detailed"`
@@ -49,7 +49,7 @@ export interface ConciseTweetAuthor {
   isVerified?: boolean;
 }
 
-/** Concise tweet — drops entities/conversationId/replyTo/bookmarkCount. */
+/** Concise tweet - drops entities/conversationId/replyTo/bookmarkCount. */
 export interface ConciseTweet {
   id?: string;
   url?: string;
@@ -81,7 +81,7 @@ export interface ConciseUser {
   description?: string;
 }
 
-/** Concise space — participant arrays dropped, only counts kept. */
+/** Concise space - participant arrays dropped, only counts kept. */
 export interface ConciseSpace {
   id?: string;
   state?: string;
@@ -143,7 +143,7 @@ export function projAuthor(u: unknown): ConciseTweetAuthor | undefined {
   };
 }
 
-/** Shallow projection of a nested quoted/retweeted tweet — no recursion. */
+/** Shallow projection of a nested quoted/retweeted tweet - no recursion. */
 function projNestedTweet(t: unknown): ConciseNestedTweet | undefined {
   if (!isRecord(t)) return undefined;
   const author = isRecord(t.tweetBy) ? { userName: optString(t.tweetBy.userName) } : undefined;
@@ -188,7 +188,7 @@ export function projTweet(t: unknown): ConciseTweet {
   return projected;
 }
 
-/** Concise user projection — keeps `description` for top-level user lists. */
+/** Concise user projection - keeps `description` for top-level user lists. */
 export function projUser(u: unknown): ConciseUser {
   if (!isRecord(u)) return {};
   const projected: ConciseUser = {
@@ -204,7 +204,7 @@ export function projUser(u: unknown): ConciseUser {
   return projected;
 }
 
-/** Concise space projection — participant arrays dropped, only counts kept. */
+/** Concise space projection - participant arrays dropped, only counts kept. */
 export function projSpace(s: unknown): ConciseSpace {
   if (!isRecord(s)) return {};
   const projected: ConciseSpace = {
@@ -234,7 +234,7 @@ export function projSpace(s: unknown): ConciseSpace {
 type TweetSearchParams = Extract<TwitterAccountParams, { action: "tweet_search" }>;
 
 /**
- * What the search actually asked X for, AFTER normalization — the derived
+ * What the search actually asked X for, AFTER normalization - the derived
  * `startDate` behind `withinHours` and the `includeWords` behind `cashtags`.
  * Echoing the resolved values is what makes "no results" diagnosable: an agent
  * can see whether its own floor or window emptied the payload.
@@ -296,7 +296,7 @@ function nextCursor(data: Record<string, unknown>): string {
 /**
  * Actions whose EMPTY list is unknown rather than zero. X's private API
  * routinely auth-walls liker and reply lists, and an auth-walled list arrives
- * at this seam byte-identical to a genuinely empty one — we cannot tell them
+ * at this seam byte-identical to a genuinely empty one - we cannot tell them
  * apart here, so the note is unconditional on empty rather than guessed at.
  */
 const UNKNOWN_WHEN_EMPTY_ACTIONS: ReadonlySet<string> = new Set([
@@ -304,11 +304,11 @@ const UNKNOWN_WHEN_EMPTY_ACTIONS: ReadonlySet<string> = new Set([
   "tweet_replies",
 ]);
 
-/** Vex-authored and STATIC — never interpolates provider text. */
+/** Vex-authored and STATIC - never interpolates provider text. */
 const EMPTY_LIST_UNKNOWN_NOTE =
   "0 rows here means UNKNOWN, not zero: X frequently auth-walls liker and reply "
   + "lists, and that is indistinguishable from a genuinely empty list at this seam. "
-  + "Do not report 'no likes' or 'no replies' from this payload — cross-check "
+  + "Do not report 'no likes' or 'no replies' from this payload - cross-check "
   + "likeCount / replyCount via tweet_details before saying anything about the count.";
 
 function emptyListNote(action: string, rowCount: number): { emptyResultNote?: string } {
@@ -347,7 +347,7 @@ function envelope<T extends object>(
 /**
  * Project a Twitter/X client result into the shape the agent reads. `action`
  * drives the payload; `rateLimit` and the cursor `next` are preserved. `data`
- * is narrowed defensively — the client output originates from an external API.
+ * is narrowed defensively - the client output originates from an external API.
  */
 export function projectTwitterResult(
   result: TwitterAccountResult,
@@ -388,7 +388,7 @@ export function projectTwitterResult(
     });
   }
 
-  // Unknown action — preserve the raw payload instead of silently dropping it.
+  // Unknown action - preserve the raw payload instead of silently dropping it.
   // Its shape is unknown, so no path can be named honestly; the warning still
   // leads the payload.
   return envelope(result, [], options, { data: result.data });

@@ -31,8 +31,11 @@ import {
   DialogDescription,
   DialogFooter,
   DialogHeader,
+  DialogPinnedSlot,
   DialogTitle,
 } from "../../components/ui/dialog.js";
+import { useLiveAnnouncer } from "../../components/ui/live-region.js";
+import { SubmitError } from "../../components/ui/submit-error.js";
 import { useCreateSession } from "../../lib/api/sessions.js";
 import { useAvailableWallets } from "../../lib/api/session-wallets.js";
 import { useUiStore } from "../../stores/uiStore.js";
@@ -41,7 +44,6 @@ import {
   ModeFieldset,
   NameField,
   PermissionFieldset,
-  SubmitError,
   WalletFieldset,
 } from "./SessionCreator/FormSections.js";
 
@@ -77,6 +79,9 @@ export function SessionCreator({
   const [selectedSolanaWalletId, setSelectedSolanaWalletId] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const nameRef = useRef<HTMLInputElement | null>(null);
+  // Announcement is driven by the SUBMIT PATH below, never by a role on the
+  // error paragraph - see `components/ui/live-region.tsx`.
+  const { announce, region: liveRegion } = useLiveAnnouncer();
 
   // Reset state on every (re)open so the next opening starts clean.
   useEffect(() => {
@@ -128,6 +133,7 @@ export function SessionCreator({
         if (!outcome.ok) {
           setSigningState("idle");
           setSubmitError(outcome.error.message);
+          announce("error", outcome.error.message);
           return;
         }
         setSigningState("signed");
@@ -150,6 +156,7 @@ export function SessionCreator({
       }
     },
     [
+      announce,
       completeSessionCreate,
       createMutation,
       createSessionInitialTurn,
@@ -204,9 +211,19 @@ export function SessionCreator({
               onEvmChange={setSelectedEvmWalletId}
               onSolanaChange={setSelectedSolanaWalletId}
             />
-
-            <SubmitError submitError={submitError} />
           </DialogBody>
+
+          {liveRegion}
+
+          {/* PINNED, beside the button that produced it: this form is taller
+            * than the dialog, so a refusal rendered as the body's last child
+            * was painted below the fold under a Create button that had not
+            * moved. */}
+          {submitError !== null ? (
+            <DialogPinnedSlot className="px-8">
+              <SubmitError submitError={submitError} />
+            </DialogPinnedSlot>
+          ) : null}
 
           <DialogFooter className="border-line-2 px-8 py-4">
             <Button

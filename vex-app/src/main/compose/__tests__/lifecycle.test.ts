@@ -13,6 +13,7 @@ describe("compose lifecycle result shapes", () => {
       "running",
       "reused",
       "port_collision",
+      "foreign_listener",
       "unhealthy",
       "failed",
     ];

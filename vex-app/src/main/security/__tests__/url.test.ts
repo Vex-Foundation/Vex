@@ -192,7 +192,12 @@ describe("isAllowedExternalUrl", () => {
 });
 
 describe("resolveAppUrl", () => {
-  const root = "/var/app/dist/renderer";
+  // `installAppProtocolHandler` hands `resolveAppUrl` a root that went through
+  // the SAME `path.resolve` it injects, so the containment prefix and the
+  // resolved candidate speak one platform's separator. Resolving the fixture
+  // root reproduces that contract on win32, where a POSIX literal could never
+  // prefix-match a drive-rooted backslash path.
+  const root = path.resolve("/var/app/dist/renderer");
   const args = (rawUrl: string) => ({
     rawUrl,
     expectedHost: "vex",
@@ -210,7 +215,7 @@ describe("resolveAppUrl", () => {
     const out = resolveAppUrl(args("app://vex/assets/main.css"));
     expect(out.kind).toBe("ok");
     if (out.kind === "ok") {
-      expect(out.absolutePath).toBe(`${root}/assets/main.css`);
+      expect(out.absolutePath).toBe(path.join(root, "assets", "main.css"));
     }
   });
 

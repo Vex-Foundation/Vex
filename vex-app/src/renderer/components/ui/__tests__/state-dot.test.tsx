@@ -37,3 +37,37 @@ describe("StateDot", () => {
     });
   });
 });
+
+describe("StateDot's optional label", () => {
+  it("keeps the exact element it renders today when no label is given", () => {
+    const { container } = render(<StateDot state="done" />);
+    // Every existing call site pairs the dot with visible text, so the
+    // unlabelled form must not grow a wrapper under them.
+    expect(container.firstElementChild?.classList.contains("vex-state-dot")).toBe(
+      true,
+    );
+    expect(container.querySelector(".sr-only")).toBeNull();
+  });
+
+  it("carries the state in words for a site with no visible verdict", () => {
+    const { container } = render(<StateDot state="warning" label="Drifted" />);
+    // The dot is colour-only and aria-hidden. A surface whose ONLY state
+    // signal is the dot - a terminal tab, say - owes assistive technology the
+    // word, and this is where it goes.
+    const dot = container.querySelector(".vex-state-dot");
+    expect(dot?.getAttribute("data-state")).toBe("warning");
+    expect(dot?.getAttribute("aria-hidden")).toBe("true");
+    expect(container.querySelector(".sr-only")?.textContent).toBe("Drifted");
+  });
+
+  it("labels the ongoing chase the same way", () => {
+    const { container } = render(<StateDot state="ongoing" label="Running" />);
+    expect(container.querySelector(".vex-state-matrix")).not.toBeNull();
+    expect(container.querySelector(".sr-only")?.textContent).toBe("Running");
+  });
+
+  it("treats an empty label as no label, never as an empty announcement", () => {
+    const { container } = render(<StateDot state="error" label="" />);
+    expect(container.querySelector(".sr-only")).toBeNull();
+  });
+});

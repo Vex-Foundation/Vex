@@ -1,0 +1,63 @@
+{
+ "code": 0,
+ "data": {
+  "Trades": [
+   {
+    "chainID": 0,
+    "txSender": "0x33ef6673bd80cb11fcc41b82bc2181e65cc4d2fa",
+    "txHash": "0x42b74f0a706bc1fd48cfda26cf5413bd0f30d07d2ba5bb07d63f181165601321",
+    "tokenAddress": "0x1984edf491d3399fbc09e6d0856e01ff3721f952",
+    "isBuy": false,
+    "agentTokenAmt": "10000",
+    "virtualTokenAmt": "0.8766472852825719",
+    "price": "0.0000876647285283",
+    "timestamp": 1788533585
+   },
+   {
+    "chainID": 0,
+    "txSender": "0x179f573886518b073a05f74c7b13229157bd0bcd",
+    "txHash": "0x2f3dfaf46334ee7e2c9edd5819aed0c0e9dcea1857304420830e8393dfe8cdf3",
+    "tokenAddress": "0x1984edf491d3399fbc09e6d0856e01ff3721f952",
+    "isBuy": false,
+    "agentTokenAmt": "12867.859628252801",
+    "virtualTokenAmt": "1.1281422906573963",
+    "price": "0.0000876713240002",
+    "timestamp": 1788533365
+   },
+   {
+    "chainID": 0,
+    "txSender": "0x6596800788dc2283958d5ba546acd9c6ac415999",
+    "txHash": "0xdee3faf754203ab4fe88f29cd83eeb3e52be58749e7eaf790fbfeae0b6e55fc6",
+    "tokenAddress": "0x1984edf491d3399fbc09e6d0856e01ff3721f952",
+    "isBuy": false,
+    "agentTokenAmt": "500000.0000000000006224",
+    "virtualTokenAmt": "43.9097492579955901",
+    "price": "0.000087819498516",
+    "timestamp": 1788532099
+   },
+   {
+    "chainID": 0,
+    "txSender": "0x33ef6673bd80cb11fcc41b82bc2181e65cc4d2fa",
+    "txHash": "0xd2fb25c209863a20972e506a2b3537c7b34092d63f318aabc36850876bf692ed",
+    "tokenAddress": "0x1984edf491d3399fbc09e6d0856e01ff3721f952",
+    "isBuy": true,
+    "agentTokenAmt": "33767.4930618782848644",
+    "virtualTokenAmt": "2.97",
+    "price": "0.0000879544120897",
+    "timestamp": 1788530301
+   },
+   {
+    "chainID": 0,
+    "txSender": "0xd9e9643b7adf9754f5b1d079adeff4ce1d88f67d",
+    "txHash": "0x988d4738b4442e3a2b4928afe1c91dbc748a0d9509dd745c1ddfada71f2dfe79",
+    "tokenAddress": "0x1984edf491d3399fbc09e6d0856e01ff3721f952",
+    "isBuy": false,
+    "agentTokenAmt": "2052.27562088",
+    "virtualTokenAmt": "0.1804878320148691",
+    "price": "0.0000879452205048",
+    "timestamp": 1788499387
+   }
+  ]
+ },
+ "_provenance": "vp-api.virtuals.io GET /vp-api/trades?tokenAddress=0x1984edF4...&limit=5&chainID=0&tradeSideOption=0 captured 2026-09-04 (a BONDING agent on Base)."
+}

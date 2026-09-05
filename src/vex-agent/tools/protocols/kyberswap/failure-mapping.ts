@@ -1,28 +1,28 @@
 /**
- * KyberSwap failure → Agent Scan mapping (plan §4.1/§11.2; REVISION 1 —
+ * KyberSwap failure → Agent Scan mapping (plan §4.1/§11.2; REVISION 1 -
  * reveal-on-execute-revert design).
  *
  * Four classifications: the first two of the SAME caught (pre-broadcast)
  * error, the third of a MINED on-chain outcome (never a caught error), the
  * fourth of an ALREADY-CLASSIFIED pre-sign estimate revert:
- *   - `mapKyberFailureToActivityCode` — the closed 11-member `agent_activity`
+ *   - `mapKyberFailureToActivityCode` - the closed 11-member `agent_activity`
  *     `failure_code` enum (`db/repos/agent-activity.ts`), for recording.
- *   - `deriveKyberFallbackSignal` — the coordinator-fixed fallback-eligible input
+ *   - `deriveKyberFallbackSignal` - the coordinator-fixed fallback-eligible input
  *     shape (`tools/registry/venue-fallback-eligibility.ts`'s
  *     `KyberFallbackSignal`), for deciding whether to point the agent at the
  *     `SwapQuoteUniswap`/`SwapExecuteUniswap` venue from a caught
  *     PRE-BROADCAST VexError.
- *   - `deriveKyberMinedRevertFallbackSignal` — the same fallback-eligible input
+ *   - `deriveKyberMinedRevertFallbackSignal` - the same fallback-eligible input
  *     shape, but derived from the staged broadcast loop's `outcome.kind ===
  *     "reverted"` (a MINED revert has no caught error to read). Role-scoped
  *     (REVISION 1 R1): produces the signal ONLY for the `swap` leg role.
- *   - `deriveKyberPreSignRevertFallbackSignal` — the same fallback-eligible input
+ *   - `deriveKyberPreSignRevertFallbackSignal` - the same fallback-eligible input
  *     shape for a PRE-SIGN `eth_estimateGas` revert already classified by
  *     `evm-chains/pre-sign-revert-refusal.ts`. Role-scoped like the mined
  *     revert, and additionally gated on nothing having been broadcast.
  *
  * Neither of the first two re-derives `mapAggregatorError`'s VexError mapping
- * (`tools/kyberswap/aggregator/errors.ts`) — both read the ALREADY-MAPPED
+ * (`tools/kyberswap/aggregator/errors.ts`) - both read the ALREADY-MAPPED
  * VexError's `code` + the raw numeric Kyber code carried in `externalName`
  * (set by `withMeta` at the mapping site). `deriveKyberFallbackSignal` now also
  * reads `httpStatus`, because the status is the one field the error contract
@@ -89,7 +89,7 @@ function deriveVenueUnavailable(err: VexError): KyberFallbackSignal | null {
 
 /**
  * Map a caught error from the quote/build/allowance-read path to the closed
- * `agent_activity.failure_code` enum. Never throws — an unrecognized error
+ * `agent_activity.failure_code` enum. Never throws - an unrecognized error
  * shape maps to `"unknown"`, the enum's catch-all.
  */
 export function mapKyberFailureToActivityCode(err: unknown): AgentActivityFailureCode {
@@ -107,7 +107,7 @@ export function mapKyberFailureToActivityCode(err: unknown): AgentActivityFailur
       case ErrorCodes.KYBER_UNSAFE_BUILD:
         return "route_not_found";
       // The built calldata's own `minReturnAmount` sits below the floor the
-      // FRESH route implies at the caller's own `slippageBps` — the build
+      // FRESH route implies at the caller's own `slippageBps` - the build
       // widened the tolerance we asked for. A genuine slippage abort, never
       // the generic build-rejection bucket. It is NOT a "the price moved"
       // refusal: that comparison was removed (see `swap-price-floor.ts`).
@@ -135,12 +135,12 @@ export function mapKyberFailureToActivityCode(err: unknown): AgentActivityFailur
 /**
  * Derive the `isVenueFallbackWorthwhile` input from a caught error, or
  * `null` when the error is not a Kyber-route-class failure at all (e.g. a
- * wallet-resolution error) — callers must treat `null` as "not eligible"
+ * wallet-resolution error) - callers must treat `null` as "not eligible"
  * without needing a second branch.
  *
  * `tokenInputsValidated` must be supplied by the caller (true only once BOTH
  * tokens passed address/native validation + on-chain metadata resolution
- * BEFORE the Kyber call) — this module never guesses it. It does not gate the
+ * BEFORE the Kyber call) - this module never guesses it. It does not gate the
  * locally-derived kinds, which can only be reached after both tokens resolved.
  */
 export function deriveKyberFallbackSignal(
@@ -174,11 +174,11 @@ export function deriveKyberFallbackSignal(
 /**
  * Derive the `swap_mined_revert` reveal signal for a MINED on-chain revert of
  * the staged broadcast loop (`outcome.kind === "reverted"` in
- * `kyberswap.swap.execute`) — a structurally different signal from
+ * `kyberswap.swap.execute`) - a structurally different signal from
  * `deriveKyberFallbackSignal` above (which reads a caught PRE-BROADCAST
  * VexError; a mined revert is a `StagedBroadcastOutcome`, never thrown).
  *
- * Produced ONLY for the `swap` leg role (REVISION 1 R1 — the shared-branch
+ * Produced ONLY for the `swap` leg role (REVISION 1 R1 - the shared-branch
  * bug): an `allowance`/`allowance_reset` leg reverting is an ERC-20 approve
  * failure, categorically unrelated to route/venue selection, and must NEVER
  * reveal. The role is encoded in this function's input (coordinator-fixed),
@@ -192,7 +192,7 @@ export function deriveKyberMinedRevertFallbackSignal(
 
 /**
  * Derive the `pre_sign_revert` reveal signal for a leg the chain refused at
- * the PRE-SIGN `eth_estimateGas` — the third structurally distinct source, and
+ * the PRE-SIGN `eth_estimateGas` - the third structurally distinct source, and
  * the only one where nothing of ours ever reached the network.
  *
  * Both gates are encoded here (coordinator-fixed), not left to an informal
@@ -201,7 +201,7 @@ export function deriveKyberMinedRevertFallbackSignal(
  *     refused is an ERC-20 approve condition, categorically unrelated to
  *     route/venue selection.
  *   - `legBroadcastAttempted` must be false. Once this leg's hash was staged,
- *     bytes went to the wire and the refusal is no longer a pre-sign one — the
+ *     bytes went to the wire and the refusal is no longer a pre-sign one - the
  *     same discriminator the refusal wording itself turns on.
  * Which failure codes such a refusal may reveal on is the classifier's own
  * closed set (`venue-fallback-eligibility.ts`); this function does not filter

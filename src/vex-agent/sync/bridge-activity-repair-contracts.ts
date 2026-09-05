@@ -27,6 +27,48 @@ import type {
 export const BRIDGE_SWEEP_BATCH_LIMIT = 25;
 
 /**
+ * THE BUDGET FOR VERIFYING ONE LEG OF ONE ROW, deadline-enforced by the
+ * verifier itself (`bridge-activity-repair-verification.ts`).
+ *
+ * WHAT IT REPLACES, measured against the code it replaces: each candidate had a
+ * 15 s transport timeout AND one transport retry, so six candidates could hold
+ * the shared sync worker for 6 x 15 s x 2 = 180 s on ONE leg, and the sweep
+ * takes {@link BRIDGE_SWEEP_BATCH_LIMIT} rows per run. External review measured
+ * that worst case at roughly 75 minutes of shared-worker occupancy before
+ * registry overhead, while balance and settlement sync wait behind the same
+ * drain.
+ *
+ * WHY 20 s. A row that cannot conclude blocks nothing and loses nothing: it
+ * stays pending and is retried on the next 120 s tick (`sync/seed.ts`), so the
+ * budget only has to be long enough for the CANDIDATE LIST to do its job. At
+ * {@link BRIDGE_RPC_CANDIDATE_TIMEOUT_MS} per candidate, 20 s abandons two hung
+ * endpoints and still reaches a third; a candidate that ANSWERS (a refusal, a
+ * chain-echo mismatch, a receipt) costs milliseconds, so the common path still
+ * walks all five sources. It also bounds one leg at one sixth of the sweep
+ * cadence, which is the property that matters: no single row can occupy the
+ * shared worker for a whole tick.
+ *
+ * Exactly ONE leg verification runs before a row can stay pending (the primary
+ * fill, or the refund); the additional-hash loop in
+ * `bridge-activity-repair-terminalize.ts` runs only AFTER a fill has verified,
+ * which means every endpoint just answered.
+ */
+export const BRIDGE_LEG_VERIFICATION_DEADLINE_MS = 20_000;
+
+/**
+ * Per-candidate transport bound inside the leg budget above. A healthy public
+ * endpoint answers `eth_chainId` in well under a second (live-probed
+ * 2026-09-04) and an archive receipt read in a few; 8 s is generous for both and
+ * small enough that abandoning a hung endpoint still leaves the next candidate
+ * its turn.
+ *
+ * TRANSPORT RETRY IS ZERO (viem's `retryCount`), and that is the point: the
+ * CANDIDATE LIST is the fallback. Retrying the same unresponsive endpoint spends
+ * the budget on the endpoint least likely to answer.
+ */
+export const BRIDGE_RPC_CANDIDATE_TIMEOUT_MS = 8_000;
+
+/**
  * The `last_verification_reason` vocabulary is owned by the column's own repo
  * module (`db/repos/agent-activity/types.ts`), beside the read side that derives
  * `stalledVerification` from it — this family only consumes it. Re-exported here
@@ -173,7 +215,13 @@ export interface FillVerificationInput {
   /** The chain the leg MUST have executed on (fill → stored destination; refund → stored origin). */
   readonly expectedChainId: number;
   readonly chainFamily: BridgeChainFamily;
-  /** The owning protocol — selects the RIGHT provider registry for RPC selection (relay `/chains` vs khalani `/v1/chains`). */
+  /**
+   * The owning protocol. It selects the provider registry for a NON-EVM
+   * destination (relay `/chains` vs khalani `/v1/chains`); an EVM destination
+   * consults every registry the app trusts for that chain id, because whose
+   * registry lists an endpoint says nothing about whether it can answer for the
+   * chain (see `resolveVerificationRpcs`).
+   */
   readonly protocol: string;
   /** Stored destination token — executed amounts are trusted ONLY if transfer evidence decodes against it. */
   readonly tokenOutAddress: string | null;

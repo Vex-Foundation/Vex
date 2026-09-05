@@ -72,6 +72,12 @@ vi.mock("@vex-agent/engine/core/approval-runtime.js", () => ({
 vi.mock("../../studio/approval-refusals.js", () => ({
   refuseAllPendingStudioIntents: vi.fn().mockResolvedValue(0),
 }));
+// The advance now resolves the engine pool's URL first, so this file states the
+// database is reachable and keeps testing the lock STATE MACHINE. The
+// unavailable branch is pinned in `session-studio-lock.test.ts`.
+vi.mock("../../database/engine-db-readiness.js", () => ({
+  ensureEngineDbUrl: () => Promise.resolve({ ok: true, data: undefined }),
+}));
 
 vi.mock("../../paths/config-dir.js", () => ({
   ENV_FILE: "/tmp/vex-test-env",

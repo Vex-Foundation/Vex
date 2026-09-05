@@ -87,6 +87,8 @@
     "kyberswap.swap.execute",
     "kyberswap.swap.quote",
     "kyberswap.tokens.check",
+    "launchpads.image_publish",
+    "launchpads.images",
     "morpho.market.borrow",
     "morpho.market.get",
     "morpho.market.quote",
@@ -137,6 +139,8 @@
     "pendle.yt.sell",
     "pools.candles",
     "pools.claim_fees",
+    "pools.holder_rewards",
+    "pools.launch_assets",
     "pools.launch_execute",
     "pools.launch_preview",
     "pools.launch_request_form",
@@ -192,10 +196,13 @@
     "trench.trades",
     "uniswap.swap.execute",
     "uniswap.swap.quote",
+    "virtuals.candles",
+    "virtuals.creator_fees",
     "virtuals.geneses",
     "virtuals.get",
     "virtuals.graduations",
-    "virtuals.list"
+    "virtuals.list",
+    "virtuals.trades"
   ],
   "requiresEnvGates": [
     "INDEXIFY_API_KEY",

@@ -677,11 +677,11 @@ describe("every terminal input is VALIDATED AT THE PRELOAD GATE", () => {
     const rows: Array<{ what: string; call: () => Promise<unknown> }> = [
       {
         what: "create with a non-integer geometry",
-        call: () => terminal.create({ projectId: "p1", cols: 80.5, rows: 24 }),
+        call: () => terminal.create({ projectId: "p1", shellId: "bash", cols: 80.5, rows: 24 }),
       },
       {
         what: "create with an empty projectId",
-        call: () => terminal.create({ projectId: "", cols: 80, rows: 24 }),
+        call: () => terminal.create({ projectId: "", shellId: "bash", cols: 80, rows: 24 }),
       },
       {
         what: "resize past the column bound",

@@ -4,7 +4,7 @@
  *
  * `decimals` is `null` when the chain's asset catalogue does not carry the
  * token. That is a real state and it is reported, never replaced with an assumed
- * 18 — the assumption is what turned a 6-decimal balance into a 10^12 error.
+ * 18 - the assumption is what turned a 6-decimal balance into a 10^12 error.
  */
 
 import type { PendleAsset } from "@tools/pendle/types.js";

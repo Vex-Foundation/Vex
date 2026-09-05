@@ -48,6 +48,50 @@ const SunPathMaxBytes = 103
 // endpoint. Validated before any dial; never silently ignored.
 const OverrideEnv = "VEX_STUDIO_SOCKET"
 
+// LinuxRuntimeDirRoot is the systemd per-user runtime root, PROBED rather than
+// assumed, and PREFERRED over $XDG_RUNTIME_DIR.
+//
+// It is the rung that keeps this binary and the app from disagreeing, and the
+// order is the half of that which was measured wrong first: probing the
+// directory only AFTER the variable failed still lets the two sides diverge,
+// because a private CUSTOM XDG_RUNTIME_DIR (WSLg's /mnt/wslg/runtime-dir on
+// some distributions) is a directory the app can see and this process cannot.
+// The app bound there while this bridge, spawned without the variable, found
+// /run/user/<uid> private and dialled that. Same privacy gate, two endpoints,
+// no rendezvous. The environment-INDEPENDENT fact is therefore consulted
+// first, and the variable only decides where a system that has no
+// /run/user/<uid> puts its runtime directory.
+//
+// THE RESIDUAL, NAMED RATHER THAN CLOSED (contract 1.2): a machine with no
+// private /run/user/<uid> AND a custom private XDG_RUNTIME_DIR the launcher
+// drops still diverges. No fact both processes read describes that directory,
+// and the follow-up is a rendezvous file, not another environment rung.
+//
+// WHY THE VARIABLE CANNOT BE THE SHARED FACT. XDG_RUNTIME_DIR is an
+// environment variable, and an MCP client is free to
+// spawn this bridge with an environment that does not carry it. Codex CLI does
+// exactly that, by design rather than by accident: create_env_for_mcp_server
+// (codex-rs/rmcp-client/src/utils.rs:16) builds a stdio MCP server's
+// environment from the DEFAULT_ENV_VARS ALLOWLIST (same file, :163 - HOME,
+// LOGNAME, PATH, SHELL, USER, __CF_USER_TEXT_ENCODING, LANG, LC_ALL, TERM,
+// TMPDIR, TZ, and no XDG_RUNTIME_DIR) plus that server's own config env map,
+// and
+// codex-rs/core/src/spawn.rs:83 env_clear()s before applying it. So the app
+// derived /run/user/<uid> from the variable IT could see while this bridge
+// fell through to <tmpdir>/vex-studio-<uid>, and the client saw a broken pipe.
+//
+// The derivation is therefore a pure function of (uid, config directory,
+// XDG_RUNTIME_DIR, and the FILESYSTEM facts of /run/user/<uid>). That last
+// term is the one both sides read identically whatever their environment says,
+// and it is held to the SAME isPrivateDirectory gate as the variable's own
+// directory: a directory, owned by this uid, with no group or other bits,
+// which is the systemd guarantee that makes it a safe socket home.
+//
+// The Codex dialect could also carry `env = { XDG_RUNTIME_DIR = ... }` in the
+// config Vex writes, and that is NOT the fix: it would freeze one login
+// session's value into a file that outlives the session.
+const LinuxRuntimeDirRoot = "/run/user"
+
 // DialTimeout bounds the connect attempt to the endpoint this package planned.
 //
 // Short on purpose: the socket is local, so anything slower than this is a
@@ -72,51 +116,62 @@ const (
 	RefusePathTooLong             RefusalCode = "path_too_long"
 	RefuseEndpointAncestorChanged RefusalCode = "endpoint_ancestor_changed"
 
-	// RefuseWindowsPendingPlatformProof is the RUNTIME gate of section 1.6,
-	// not a planning outcome: Derive still plans the pipe, and the vectors
-	// still pin its name and syntax. See WindowsTransportProven.
-	RefuseWindowsPendingPlatformProof RefusalCode = "windows_pending_platform_proof"
+	// RefuseEndpointDirectoryMissing is the BRIDGE-SIDE half of the ancestor
+	// check, split out because the old code lied about the commonest case: a
+	// client that reached CaptureDirectoryChain for a directory that was never
+	// there was told the ancestor "changed before use". The host never emits
+	// it - it CREATES its parent directory (contract 1.2) - so unlike the
+	// changed-sentence it is this side's own vocabulary, exercised by
+	// TestEndpointDirectoryMissingRefusal. Same failure class and therefore
+	// the same exit code as every other local refusal.
+	RefuseEndpointDirectoryMissing RefusalCode = "endpoint_directory_missing"
+
+	// `windows_pending_platform_proof` was the section 1.6 runtime gate's
+	// code and left this set when the gate opened: no path can produce it,
+	// and it never crossed the wire - it was this process refusing its own
+	// plan, printed to stderr as exit 2. An older bridge binary still emits
+	// its own copy against a newer host, which changes nothing here, because
+	// nothing on either side ever PARSED the code out of that line.
 )
 
-// WindowsTransportProven is the one flag that admits the Windows named-pipe
-// transport at RUNTIME, on this side of the wire. It is false, and it is a
-// constant rather than configuration because no environment variable may open
-// a transport whose security descriptor has never been measured.
+// WindowsTransportProven records that the Windows named-pipe transport is
+// ADMITTED at runtime, on this side of the wire. It stays a constant rather
+// than configuration for the reason it always was: no environment variable
+// decides whether a wallet opens a transport.
 //
-// WHY FALSE. libuv - which is what Node's `server.listen` reaches on win32 -
-// creates the pipe with a NULL security descriptor and WITHOUT
-// PIPE_REJECT_REMOTE_CLIENTS. The resulting default SD grants Everyone, and
-// the anonymous logon, READ access. Duplex is denied to a second user, so the
-// handshake still cannot be driven; a READ-ONLY connect is not, and on a
-// self-custodial wallet that is a cross-user handshake-slot exhaustion vector
-// plus an unmeasured remote-client posture. Rule 90 fails closed until a
-// Windows runner measures it.
+// WHY TRUE. The eight-row proof matrix of contract section 1.6 was MEASURED on
+// the required Windows CI jobs, not argued: rows 1, 2, 3, 7 and 8 on
+// `bridge-windows` run 33646484002 (second-user duplex denial paired against a
+// control pipe, a read-only cross-user connect denied with no instance
+// consumed, rejectRemote confirmed by readback and the loopback redirector
+// refused, a foreign user's first-server squat failing the front's bind closed
+// and refused by TestHostAuthRefusesAForeignUsersServer, and impersonation
+// level 1 - identification); row 4's host half on `vex-app-windows` run
+// 33650332655; rows 5 and 6 on `bridge-windows` run 33663385959, which is where
+// THIS side's overlapped duplex, deadlines and close cancellation were measured
+// on a real pipe handle (cmd/vex-mcp/dial_windows_test.go).
 //
-// FLIPPING IT IS MECHANICAL, NOT EDITORIAL: the proof matrix in contract
-// section 1.6 runs on the REQUIRED `bridge-windows` CI job. Extending that job
-// with the matrix is the only way this constant may become true, on either
-// side of the wire.
-const WindowsTransportProven = false
+// The libuv reasoning this gate was closed for describes a pipe Vex no longer
+// creates: the host's vex-pipe-front child binds it under its own PROTECTED
+// two-ACE descriptor and reports back only what Windows CONFIRMED on readback.
+//
+// IT STAYS OPEN MECHANICALLY, NOT EDITORIALLY. The host carries the identical
+// flag (WINDOWS_TRANSPORT_PROVEN in vex-app/src/main/studio/mcp-host/
+// endpoint.ts) and the two are ONE decision: a reviewer who sees either flag
+// false while the other is true rejects the change, in that direction as much
+// as in the other. Closing the transport again is a contract change (section 5)
+// carrying both owners, never an edit to one constant.
+const WindowsTransportProven = true
 
-// UnprovenWindowsTransport is the gate both the dial site and the host's
-// listen site apply to a planned pipe. It returns the refusal, or nil when the
-// plan may proceed.
+// UnprovenWindowsTransport stood here: the plan-time gate that refused a pipe
+// plan while WindowsTransportProven was false. It went with the flip, because a
+// branch that cannot fire is not a control - with the constant true its only
+// statement was `return nil`, and its refusal code had no producer left.
 //
-// It is deliberately separate from Derive: the derivation, the pipe name and
-// the override syntax stay vector-tested exactly as they were, and only the
-// act of touching the transport is refused.
-func UnprovenWindowsTransport(plan Plan) *Plan {
-	if plan.Kind != KindPipe || WindowsTransportProven {
-		return nil
-	}
-	refusal := refuse(RefuseWindowsPendingPlatformProof,
-		"The Vex Studio Windows named-pipe transport is not enabled: its pipe "+
-			"security descriptor has not been measured on a Windows runner, and "+
-			"Vex will not open a wallet transport whose cross-user access is "+
-			"unproven. Use Vex Studio on Linux or macOS. The Vex Studio bridge "+
-			"did not start.")
-	return &refusal
-}
+// What guards the dial now is measured rather than assumed, and it runs on
+// EVERY pipe dial rather than once at plan time: the SQOS client flags and the
+// server-SID host authentication in dial_windows.go and hostauth_windows.go,
+// with the front's readback-confirmed descriptor on the host's side.
 
 // DirFacts is one directory as the planner sees it. Mode carries permission
 // bits only (stat.Mode().Perm()).
@@ -189,8 +244,8 @@ func FileName(configDir string) string {
 // data directory; the security boundary is the pipe's default security
 // descriptor plus this wire's handshake, not a secret name.
 //
-// DERIVING the name is not permission to OPEN it: see UnprovenWindowsTransport
-// and contract section 1.6.
+// DERIVING the name is not permission to TRUST what answers on it: see
+// cmd/vex-mcp/hostauth_windows.go and contract section 1.6.
 func PipeName(configDir string) string {
 	return fmt.Sprintf(`\\.\pipe\vex-studio-%s`, Hash(configDir))
 }
@@ -249,21 +304,35 @@ func Derive(in Input) Plan {
 
 	name := FileName(in.ConfigDirHashInput)
 
-	// Linux: the XDG runtime directory, but only when the system actually gave
-	// us a private one. Those are the four ways it stops being private.
+	// Linux: THE FILESYSTEM FACT FIRST, THE ENVIRONMENT SECOND (contract 1.2).
+	//
+	// Both rungs are held to the same privacy gate; what the order decides is
+	// which one wins when they name DIFFERENT directories, and only one of the
+	// two is a fact both processes read identically. See LinuxRuntimeDirRoot
+	// for why the variable cannot be that fact.
 	if in.GOOS == "linux" {
+		systemdRuntimeDir := configdir.JoinPosix(LinuxRuntimeDirRoot, fmt.Sprintf("%d", in.UID))
+		if isPrivateDirectory(in.ProbeDirectory(systemdRuntimeDir), in.UID) {
+			return planPrivateRuntimeDir(systemdRuntimeDir, name)
+		}
+
+		// NO /run/user/<uid>, SO THE VARIABLE IS THE ONLY PRIVATE RUNTIME
+		// DIRECTORY THIS SYSTEM OFFERS. A distribution that puts one somewhere
+		// else (WSLg's /mnt/wslg/runtime-dir) is served here rather than
+		// pushed down to the tmpdir form. It is also the rung carrying the
+		// residual divergence contract 1.2 names by hand: when a launcher
+		// drops the variable AND there is no /run/user/<uid>, this side and
+		// the other derive different endpoints, and no fact available to both
+		// closes it.
 		runtimeDir := in.Env["XDG_RUNTIME_DIR"]
 		if runtimeDir != "" && strings.HasPrefix(runtimeDir, "/") &&
 			isPrivateDirectory(in.ProbeDirectory(runtimeDir), in.UID) {
-			candidate := configdir.JoinPosix(runtimeDir, name)
-			if !withinSunPath(candidate) {
-				return refuse(RefusePathTooLong, sunPathMessage(candidate))
-			}
-			return Plan{Kind: KindUnix, Path: candidate, ParentDir: runtimeDir}
+			return planPrivateRuntimeDir(runtimeDir, name)
 		}
 	}
 
-	// macOS always, and Linux when XDG_RUNTIME_DIR is unset, relative, not a
+	// macOS always, and Linux when neither runtime directory is private: no
+	// /run/user/<uid>, and an XDG_RUNTIME_DIR that is unset, relative, not a
 	// directory, not ours, or readable by anyone else.
 	parent := configdir.JoinPosix(in.Tmpdir, fmt.Sprintf("vex-studio-%d", in.UID))
 	candidate := configdir.JoinPosix(parent, name)
@@ -271,6 +340,17 @@ func Derive(in Input) Plan {
 		return refuse(RefusePathTooLong, sunPathMessage(candidate))
 	}
 	return Plan{Kind: KindUnix, Path: candidate, ParentDir: parent, CreateParent: true}
+}
+
+// planPrivateRuntimeDir plans inside a system-owned private runtime directory.
+// CreateParent stays false for both callers: the system created these and the
+// planner only verified them.
+func planPrivateRuntimeDir(runtimeDir string, name string) Plan {
+	candidate := configdir.JoinPosix(runtimeDir, name)
+	if !withinSunPath(candidate) {
+		return refuse(RefusePathTooLong, sunPathMessage(candidate))
+	}
+	return Plan{Kind: KindUnix, Path: candidate, ParentDir: runtimeDir}
 }
 
 func planOverride(value string, in Input) Plan {

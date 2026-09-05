@@ -60,6 +60,7 @@ import {
   isEnoent,
   isInside,
   verifyDirectoryChain,
+  type DirectoryIdentity,
 } from "./paths.js";
 
 /**
@@ -99,6 +100,64 @@ export type ConfinedWrite =
     readonly reason: StudioRefusalReason;
     readonly detail: string;
   };
+
+/**
+ * THE RENAME CONTENTION POLICY, in the shape rule 04 requires.
+ *
+ * ELIGIBLE FAILURE CLASSES: `EPERM`, `EACCES` and `EBUSY` raised by `rename`
+ * alone. Nothing else is retried, and no other syscall in this module retries.
+ *
+ * WHY THOSE THREE. On Windows a file that another process has open without
+ * `FILE_SHARE_DELETE` cannot be renamed over: the call fails with a sharing
+ * violation, which libuv surfaces as `EPERM` (sometimes `EACCES`, and `EBUSY`
+ * for a directory or a mapped file). The processes that hold a project's config
+ * file open are exactly the ones a Studio project attracts - the user's editor
+ * saving in the background, a file-syncing client, an antivirus scanner that
+ * opened the file the moment we created it, another coding agent - and every
+ * one of them lets go within milliseconds. A single attempt turns that into a
+ * failed repair the user has no way to interpret.
+ *
+ * ATTEMPTS AND BACKOFF: the first attempt plus at most three retries, at 20ms,
+ * 45ms and 90ms, each jittered by +/-25% so two Vex windows racing the same
+ * scanner do not resynchronise on every retry. Worst case under 200ms of extra
+ * latency on a path the user is already waiting on.
+ *
+ * IDEMPOTENCY: `rename(temp, target)` is safe to repeat. Either it has not
+ * happened (the temp file is still there, which is what the failure means) or
+ * it has, and then there is no error to retry.
+ *
+ * THE CONFINEMENT DISCIPLINE IS NOT WEAKENED BY THE RETRY. Each attempt
+ * re-runs `verifyDirectoryChain` immediately before its own `rename`. A retry
+ * that reused the first attempt's proof would be a write against a chain last
+ * checked 150ms ago, which is precisely the window the pair exists to close.
+ *
+ * OBSERVABILITY: exhaustion logs once with the errno and the attempt count, and
+ * returns a NAMED refusal (`file_locked`) rather than the generic `io_error`.
+ * Retrying is not silent recovery: the user is told what class of program was
+ * probably holding the file.
+ *
+ * AFTER EXHAUSTION: no further attempt is made anywhere. The installer's
+ * reconcile pass is the retry owner above this level, and it runs on an
+ * explicit user action.
+ */
+const RENAME_RETRY_DELAYS_MS: readonly number[] = [20, 45, 90];
+
+/** Sharing-violation and permission classes worth one more look. */
+function isRenameContention(cause: unknown): boolean {
+  if (typeof cause !== "object" || cause === null) return false;
+  const code = (cause as { code?: unknown }).code;
+  return code === "EPERM" || code === "EACCES" || code === "EBUSY";
+}
+
+function jittered(delayMs: number): number {
+  return Math.round(delayMs * (0.75 + Math.random() * 0.5));
+}
+
+async function delay(ms: number): Promise<void> {
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
 
 /** SHA-256, hex. One digest function for provenance, drift and the source check. */
 export function hashText(text: string): string {
@@ -368,16 +427,11 @@ export async function replaceConfinedFile(options: {
       await applyMode(tempPath, options.mode);
     }
 
-    // THE LAST CHECK BEFORE THE ONE IRREVERSIBLE SYSCALL. Everything above took
-    // time - a read, a digest, a write, an fsync - and `rename` resolves its
-    // path string afresh. If any directory on the way became a different
-    // directory in that window, the rename would land outside the project.
-    const swapped = await verifyDirectoryChain(captured.chain);
-    if (swapped !== null) {
+    const refused = await renameIntoPlace(captured.chain, tempPath, absolutePath, relativeLabel);
+    if (refused !== null) {
       await discardTemp(tempPath);
-      return { kind: "refused", reason: swapped.reason, detail: swapped.detail };
+      return refused;
     }
-    await rename(tempPath, absolutePath);
   } catch (cause) {
     await discardTemp(tempPath);
     log.warn(
@@ -391,6 +445,72 @@ export async function replaceConfinedFile(options: {
   }
 
   return { kind: "written", hash: hashText(options.text) };
+}
+
+/**
+ * Move the prepared temp file onto the target, re-proving the parent chain
+ * before EVERY attempt.
+ *
+ * Returns `null` when the file is in place, a refusal when the chain moved or
+ * the target stayed locked for the whole budget, and THROWS every other
+ * filesystem failure to the caller's `catch`, which owns the generic
+ * `io_error` reporting and the temp-file cleanup.
+ *
+ * The re-verification inside the loop is the reason this is a function rather
+ * than a `for` around the bare `rename`: the last check must be the last thing
+ * that happens before the syscall, on the fourth attempt exactly as on the
+ * first. See `captureDirectoryChain` for what that pair does and does not
+ * close, and `RENAME_RETRY_DELAYS_MS` for the retry policy.
+ */
+async function renameIntoPlace(
+  chain: readonly DirectoryIdentity[],
+  tempPath: string,
+  absolutePath: string,
+  relativeLabel: string,
+): Promise<{ kind: "refused"; reason: StudioRefusalReason; detail: string } | null> {
+  for (let attempt = 0; attempt <= RENAME_RETRY_DELAYS_MS.length; attempt++) {
+    // THE LAST CHECK BEFORE THE ONE IRREVERSIBLE SYSCALL. Everything above took
+    // time - a read, a digest, a write, an fsync, and possibly a retry wait -
+    // and `rename` resolves its path string afresh. If any directory on the way
+    // became a different directory in that window, the rename would land
+    // outside the project.
+    const swapped = await verifyDirectoryChain(chain);
+    if (swapped !== null) {
+      return { kind: "refused", reason: swapped.reason, detail: swapped.detail };
+    }
+
+    try {
+      await rename(tempPath, absolutePath);
+      return null;
+    } catch (cause) {
+      if (!isRenameContention(cause)) throw cause;
+      const wait = RENAME_RETRY_DELAYS_MS[attempt];
+      if (wait === undefined) {
+        log.warn(
+          `[studio:installer] ${relativeLabel} stayed locked across `
+            + `${String(RENAME_RETRY_DELAYS_MS.length + 1)} attempts `
+            + describeIoFailure(cause),
+        );
+        return {
+          kind: "refused",
+          reason: "file_locked",
+          detail:
+            `"${relativeLabel}" is held open by another program - an editor, a file-syncing `
+            + "or antivirus tool, or a coding agent - or Vex is not allowed to write in that "
+            + "folder. Nothing was changed. Close whatever has the file open and run the "
+            + "repair again.",
+        };
+      }
+      await delay(jittered(wait));
+    }
+  }
+  // Unreachable: the loop either returns or exhausts through the `undefined`
+  // branch above. Kept as a fail-closed guard rather than an assertion.
+  return {
+    kind: "refused",
+    reason: "file_locked",
+    detail: `"${relativeLabel}" could not be replaced and was left as it was.`,
+  };
 }
 
 async function readCurrentDigest(

@@ -1,16 +1,16 @@
 /**
  * Swap/bridge prequote recording (Stage 6c / 8c).
  *
- * RECORDER — for a SUCCESSFUL swap QUOTE this module computes:
+ * RECORDER - for a SUCCESSFUL swap QUOTE this module computes:
  *   1. a deterministic match-hash over the trade identity (reused verbatim by
  *      the Stage-7 execute gate so record-time and gate-time hashes collide),
  *   2. a 3-state token-safety verdict (`pass` | `fail` | `unknown`),
  *   3. a bounded, structural-only `safetyDetail` payload,
  * then records a `swap_prequotes` row. Recording is best-effort: any failure is
  * swallowed (logged structurally) so it never alters the quote's ToolResult. A
- * missing prequote is safe — the Stage-7 gate blocks the execute instead.
+ * missing prequote is safe - the Stage-7 gate blocks the execute instead.
  *
- * NEVER persist or log raw provider/HTTP/DB/error text — only bounded structural
+ * NEVER persist or log raw provider/HTTP/DB/error text - only bounded structural
  * labels.
  *
  * This file is the public entry point and dispatches by the registered `kind`;
@@ -35,12 +35,12 @@ import { recordSwapPrequote } from "./record/swap.js";
 
 /**
  * Record a prequote from a successful quote. Best-effort: resolves the would-be
- * signing address (skips on a wallet-scope throw — never fabricates an address),
+ * signing address (skips on a wallet-scope throw - never fabricates an address),
  * validates + extracts the quote, computes the match-hash + verdict, and writes
  * the row. Never throws to the caller; structural logs only. Dispatches by the
  * registered `kind`: a `swap` quote records a token-safety verdict; a `bridge`
  * quote always records verdict `unknown` (a Khalani route proves availability,
- * NOT token safety — Codex requirement #3).
+ * NOT token safety - Codex requirement #3).
  *
  * `quoteAuthority` is the quote handler's PRIVATE snapshot handoff (never model
  * context). It carries the route snapshot to persist and the eligibility that

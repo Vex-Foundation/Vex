@@ -7,10 +7,10 @@ import { canonAddress, canonAmount } from "./canonicalize.js";
 
 /**
  * Pendle PT redeem trade identity (Wave 5). A matured-PT redemption is NEITHER a
- * swap nor a bridge — it has no slippage/route surface and its risk leg is the
+ * swap nor a bridge - it has no slippage/route surface and its risk leg is the
  * PT+YT pair, not a token-in/token-out pair. Computed IDENTICALLY at the Pendle
  * QUOTE record-time (`pendle.pt.quote`, when Convert returns action `redeem-py`)
- * and the Pendle redeem EXECUTE gate-time (`pendle.pt.redeem`) — both resolve the
+ * and the Pendle redeem EXECUTE gate-time (`pendle.pt.redeem`) - both resolve the
  * YT from the PT through the SAME market lookup, so the digests collide. Never
  * reuses the Khalani/Relay bridge identity (Codex G2#3).
  *
@@ -28,7 +28,7 @@ import { canonAddress, canonAmount } from "./canonicalize.js";
 export interface RedeemMatchInput {
   readonly kind: "redeem";
   readonly sessionId: string;
-  /** VENUE binding — "pendle". A redeem quote can never authorize another venue. */
+  /** VENUE binding - "pendle". A redeem quote can never authorize another venue. */
   readonly provider: string;
   readonly chainId: number;
   /** Selected EVM wallet (signer). */
@@ -46,7 +46,7 @@ export interface RedeemMatchInput {
 }
 
 /**
- * Pendle PT ROLLOVER identity (R5d). `PT(market A) → PT(market B)` — a maturity
+ * Pendle PT ROLLOVER identity (R5d). `PT(market A) → PT(market B)` - a maturity
  * roll. Its own kind: both PTs are free parameters, and binding only one of them
  * would let a quote for a roll into one maturity authorize an execute rolling
  * into another.
@@ -57,9 +57,9 @@ export interface RedeemMatchInput {
 export interface PtRolloverMatchInput {
   readonly kind: "pt_rollover";
   readonly sessionId: string;
-  /** VENUE binding — "pendle". */
+  /** VENUE binding - "pendle". */
   readonly provider: string;
-  /** Both legs are on ONE chain — a rollover is not a bridge. */
+  /** Both legs are on ONE chain - a rollover is not a bridge. */
   readonly chainId: number;
   /** Selected EVM wallet (signer). */
   readonly walletAddress: string;

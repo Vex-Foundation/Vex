@@ -35,6 +35,7 @@ async function startProcess(): Promise<{
       executable: "bash",
       args: [],
       cwd: CWD,
+      projectLabel: "proj",
       cols: 80,
       rows: 24,
       env: {},

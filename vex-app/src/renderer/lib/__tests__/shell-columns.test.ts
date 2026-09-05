@@ -9,8 +9,10 @@ import {
   computeShellColumns,
   SIDEBAR_COLLAPSED,
   SIDEBAR_DEFAULT,
+  SIDEBAR_AUTO_COLLAPSE,
   SIDEBAR_MAX,
   SIDEBAR_MIN,
+  shouldAutoCollapseSidebar,
 } from "../shell-columns.js";
 
 // Numeric preference form (0 = closed); helpers keep the scenario names readable.
@@ -139,5 +141,33 @@ describe("computeShellColumns", () => {
     const restored = computeShellColumns(1920, open(SIDEBAR_DEFAULT), open(BOOK_DEFAULT));
     expect(restored.book).toBe(BOOK_DEFAULT);
     expect(restored.sidebar).toBe(SIDEBAR_DEFAULT);
+  });
+});
+
+/**
+ * THE COLLAPSE THRESHOLD, at the seam and one pixel on each side.
+ *
+ * Which side of this line a viewport falls on decides what the user SEES, not
+ * merely how wide a column is: the collapsed rail renders no section titles, no
+ * chevrons and no placeholder sentences (finding B4). Rule 08 asks for layout
+ * thresholds to be tested at the seam and immediately on both sides, and the
+ * comparison used to be an inline `<` inside the shell frame where no test could
+ * reach it without mounting the whole app.
+ */
+describe("shouldAutoCollapseSidebar", () => {
+  it("puts the seam itself on the WIDE side", () => {
+    // `<`, not `<=`: exactly 1024 is a wide window.
+    expect(shouldAutoCollapseSidebar(SIDEBAR_AUTO_COLLAPSE)).toBe(false);
+  });
+
+  it("flips on the pixel below the seam and nowhere else nearby", () => {
+    expect(shouldAutoCollapseSidebar(SIDEBAR_AUTO_COLLAPSE - 1)).toBe(true);
+    expect(shouldAutoCollapseSidebar(SIDEBAR_AUTO_COLLAPSE + 1)).toBe(false);
+  });
+
+  it("holds at the extremes a real window can reach", () => {
+    expect(shouldAutoCollapseSidebar(0)).toBe(true);
+    expect(shouldAutoCollapseSidebar(320)).toBe(true);
+    expect(shouldAutoCollapseSidebar(3840)).toBe(false);
   });
 });

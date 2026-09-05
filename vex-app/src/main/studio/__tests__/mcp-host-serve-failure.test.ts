@@ -14,6 +14,18 @@
  * The fix routes the failure to the connection OWNER. This suite proves the
  * three things the owner is responsible for: the socket is destroyed, the
  * reservation is released, and the registry is clean.
+ *
+ * WHY IT IS GATED OFF WIN32. Those three facts are HOST facts: the slot is
+ * reserved by the handshake parser inside the accepted-connection path and
+ * released by the host's registry, and nothing but `startStudioListener` can
+ * produce such a connection - there is no seam that hands the host an already
+ * accepted socket. So the suite needs a real bound endpoint, and on Windows it
+ * cannot have one: `startStudioMcpHost` refuses the unix override by name
+ * (`override_invalid_pipe`) and the pipe transport is refused by the section
+ * 1.6 gate until a Windows runner measures it. It failed there as
+ * `expected false to be true` on `started`. What IS provable without a
+ * listener stays ungated: `serveOverSocket`'s own failure handling runs over
+ * the transport seam in `mcp-host-serve-peer-end.test.ts`.
  */
 
 import { connect, type Socket } from "node:net";
@@ -29,6 +41,7 @@ vi.mock("@vex-agent/mcp/server.js", () => ({
   },
 }));
 
+import { SKIP_UNIX_ENDPOINT_SUITES } from "./unix-endpoint-gate.js";
 import {
   beginStudioReadinessEpoch,
   markStudioRuntimeReady,
@@ -38,6 +51,7 @@ import {
   configureStudioMcpHost,
   shutdownStudioMcpHost,
   startStudioMcpHost,
+  openStudioMcpAdmission,
   studioMcpConnectionCount,
   studioMcpHostEndpoint,
   studioMcpReservedConnectionCount,
@@ -73,6 +87,7 @@ beforeEach(() => {
       return true;
     },
   });
+  openStudioMcpAdmission();
 });
 
 afterEach(async () => {
@@ -81,7 +96,7 @@ afterEach(async () => {
   resetStudioReadinessForTests();
 });
 
-describe("a server that cannot be constructed", () => {
+describe.skipIf(SKIP_UNIX_ENDPOINT_SUITES)("a server that cannot be constructed", () => {
   it("closes the connection, releases its slot and clears the registry", async () => {
     expect((await startStudioMcpHost()).started).toBe(true);
     const endpoint = studioMcpHostEndpoint();

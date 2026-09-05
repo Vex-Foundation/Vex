@@ -25,6 +25,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { uniswapSpendabilityFake } from "./_uniswap-spendability-fake.js";
 import { getAddress, parseUnits } from "viem";
 
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
@@ -38,6 +39,16 @@ const CHAIN_ID = 4663;
 
 const quoteBestRoute = vi.fn();
 
+vi.mock("@vex-agent/db/client.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@vex-agent/db/client.js")>()),
+  // Only the DATABASE is doubled. Since 2026-09-01 the spendability lane asks
+  // one durable question - has this wallet a broadcast of ours outstanding on a
+  // chain whose `pending` tag subtracts nothing - and this suite's chain is such
+  // an endpoint (measured). The capability table, the policy and the fail-closed
+  // verdict stay production code, driven by their own suites.
+  queryOne: vi.fn(async () => ({ in_flight: false })),
+}));
+
 vi.mock("@tools/uniswap/chains.js", () => ({
   resolveUniswapDeployment: vi.fn(() => ({
     key: "robinhood", name: "Robinhood Chain", chainId: CHAIN_ID, weth: WETH,
@@ -46,8 +57,11 @@ vi.mock("@tools/uniswap/chains.js", () => ({
   resolveUniswapChainId: vi.fn(() => CHAIN_ID),
 }));
 vi.mock("@tools/uniswap/evm-client.js", () => ({
-  getUniswapPublicClient: vi.fn(() => ({})),
-  getUniswapEvmClients: vi.fn(() => ({ publicClient: {}, walletClient: {} })),
+  // WP2-U: the quote and every leg's pre-sign gate read balances and price the
+  // leg plan through this client. A SOLVENT default keeps each suite's own
+  // subject the thing that decides its outcome.
+  getUniswapPublicClient: vi.fn(() => uniswapSpendabilityFake()),
+  getUniswapEvmClients: vi.fn(() => ({ publicClient: uniswapSpendabilityFake(), walletClient: {} })),
 }));
 vi.mock("@tools/uniswap/erc20.js", () => ({
   readUniswapErc20Metadata: vi.fn(async (_client: unknown, address: string) => ({

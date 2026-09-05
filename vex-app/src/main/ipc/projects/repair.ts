@@ -45,6 +45,11 @@ export function registerProjectsRepairFilesHandler(): () => void {
 
       // Re-read AFTER the render so the returned row carries the marker the run
       // just advanced and the file status the run just produced.
+      //
+      // A FAILED RE-READ IS STILL AN ERROR HERE, unlike on `create` and
+      // `updateScope`. Those two commit a row of their own and can therefore
+      // answer with it plus a `refreshFailure`; repair commits no row, so there
+      // is no project to return and `refreshFailure` has nothing to qualify.
       const project = await getProject(input.projectId, ctx.requestId);
       if (!project.ok) return err(project.error);
       if (project.data === null) return err(projectNotFoundError(ctx.requestId));
@@ -52,6 +57,7 @@ export function registerProjectsRepairFilesHandler(): () => void {
       return ok({
         project: await withProjectFiles(project.data, ctx.requestId),
         render: render.data,
+        refreshFailure: null,
       });
     },
   });

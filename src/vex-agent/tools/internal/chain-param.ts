@@ -4,7 +4,7 @@
  * Its own module because BOTH halves of the swap pair depend on it and they
  * live in different files: the read-only quotes in `internal/action-aliases.ts`
  * and the MUTATING executes in `../mutating-aliases.ts`. Batch 1 widened only
- * the quotes, and the split was the defect — an agent could quote with
+ * the quotes, and the split was the defect - an agent could quote with
  * `chain: 8453` and have the execute of the same trade refused with "expected
  * string, received number". A quote/execute asymmetry on a money path is a
  * silent dead end: the model has no way to learn that the two halves of one
@@ -28,7 +28,7 @@ import { z } from "zod";
  */
 export const ChainParam = z
   .union([z.string(), z.number()], {
-    error: 'chain is required — a chain slug (e.g. "base") or a chain id (e.g. 8453)',
+    error: 'chain is required - a chain slug (e.g. "base") or a chain id (e.g. 8453)',
   })
   .transform((value) => String(value).trim())
   .refine((value) => value.length > 0, { message: "chain is required" });

@@ -50,6 +50,49 @@ export interface KhalaniToken {
   };
 }
 
+/**
+ * One wallet-balance entry the Khalani balances boundary REFUSED to admit as a
+ * {@link KhalaniToken}, because its `decimals` failed the strict token-decimals
+ * rule (whole number, 0 to 36 inclusive).
+ *
+ * The entry is reported instead of dropped: identity and the exact raw balance
+ * are provider facts that survive a bad scale, and losing them silently would
+ * turn an unpriceable holding into an invisible one. The invalid `decimals`
+ * value itself is NEVER echoed and NEVER guessed - no downstream consumer may
+ * substitute 18 for it (frozen contract C1.2).
+ *
+ * `balanceRaw` is `null` when the provider did not supply an EXACT integer
+ * amount for the entry. A null here means the holding's size is unknown, which
+ * is a strictly worse state than an unpriced one: a consumer that replaces
+ * durable rows must not do so for that chain (see `sync/balance-sync.ts`).
+ */
+export interface KhalaniRejectedTokenBalanceEntry {
+  /** Index of the entry inside the provider array it arrived in. */
+  entryIndex: number;
+  chainId: number;
+  address: string;
+  name: string;
+  symbol: string;
+  /** Exact atomic amount as an unsigned decimal string, or `null` when absent or inexact. */
+  balanceRaw: string | null;
+  reason: "token_decimals_invalid";
+}
+
+/**
+ * Response of the wallet-balances endpoint: the entries that passed the STRICT
+ * boundary, plus every entry it refused, with the reason.
+ *
+ * Unlike the curated token lists (`/v1/tokens`, search, autocomplete), this
+ * array is attacker-reachable: anyone can mint a token and airdrop it into a
+ * wallet. All-or-nothing strictness here would let one hostile entry blank a
+ * funded wallet's chain, so the boundary is strict PER ENTRY and reports what
+ * it refused.
+ */
+export interface KhalaniTokenBalancesResponse {
+  tokens: KhalaniToken[];
+  rejectedEntries: KhalaniRejectedTokenBalanceEntry[];
+}
+
 export interface TokenSearchResponse {
   data: KhalaniToken[];
 }

@@ -31,8 +31,12 @@ import {
 } from "@vex-agent/tools/protocols/quote-authority/restore.js";
 import {
   ROUTE_SNAPSHOT_VERSION,
-  digestSnapshotRaw,
+  sealRouteSnapshot,
 } from "@vex-agent/tools/protocols/quote-authority/snapshot.js";
+import {
+  buildBoundDebitPlan,
+  type BoundDebitPlan,
+} from "@vex-agent/tools/protocols/quote-authority/debit-plan.js";
 
 const TOKEN_IN = "0x8Ff92566f2e81BDd68EDfAa8cde73942A723796b";
 const TOKEN_OUT = "0xc6911796042b15d7Fa4F6CDe69e245DdCd3d9c31";
@@ -57,9 +61,25 @@ function fields(overrides: Partial<UniswapSnapshotFields> = {}): UniswapSnapshot
     approvedMinOutHuman: "298185.715",
     slippageBps: 500,
     expiresAt: "2026-08-28T10:15:00.000Z",
+    debitPlan: PLAN,
     ...overrides,
   };
 }
+
+/**
+ * The transaction set a quote for this pair binds: an allowance the router does
+ * not have yet, the swap, and the Vex fee transfer, all under one ceiling.
+ */
+const PLAN: BoundDebitPlan = buildBoundDebitPlan({
+  legs: [
+    { role: "allowance", pricing: "measured" as const },
+    // The first-time ERC-20 case, ratified: the swap cannot be simulated before
+    // its allowance lands, so its UNITS are unknown and the leg says so.
+    { role: "swap", pricing: "conservative" as const },
+    { role: "swap_fee", pricing: "measured" as const },
+  ],
+  feeCap: { mode: "eip1559", maxFeePerGasWei: 11_210_000n, maxPriorityFeePerGasWei: 1_210_000n },
+});
 
 function inputsFrom(f: UniswapSnapshotFields): UniswapExecutionInputs {
   return {
@@ -99,6 +119,40 @@ describe("the snapshot codec", () => {
     ["the approved floor", { approvedMinOutRaw: "1" }],
     ["the tolerance", { slippageBps: 1000 }],
     ["the fee amount", { fee: { disposition: "charged" as const, amountRaw: "1", disclosureText: "x" } }],
+    // WP2-B: the transaction set and the per-gas ceiling are money facts, so a
+    // row edited to add a leg or lift a ceiling fails exactly like a tampered
+    // amount does.
+    ["the bound leg set", {
+      debitPlan: buildBoundDebitPlan({
+        legs: [
+          { role: "allowance_reset" as const, pricing: "measured" as const },
+          { role: "allowance" as const, pricing: "measured" as const },
+          { role: "swap" as const, pricing: "conservative" as const },
+          { role: "swap_fee" as const, pricing: "measured" as const },
+        ],
+        feeCap: { mode: "eip1559" as const, maxFeePerGasWei: 11_210_000n, maxPriorityFeePerGasWei: 1_210_000n },
+      }),
+    }],
+    ["the bound gas-price ceiling", {
+      debitPlan: buildBoundDebitPlan({
+        legs: [
+          { role: "allowance" as const, pricing: "measured" as const },
+          { role: "swap" as const, pricing: "conservative" as const },
+          { role: "swap_fee" as const, pricing: "measured" as const },
+        ],
+        feeCap: { mode: "eip1559" as const, maxFeePerGasWei: 999_000_000n, maxPriorityFeePerGasWei: 1_210_000n },
+      }),
+    }],
+    ["a leg's pricing basis", {
+      debitPlan: buildBoundDebitPlan({
+        legs: [
+          { role: "allowance" as const, pricing: "measured" as const },
+          { role: "swap" as const, pricing: "measured" as const },
+          { role: "swap_fee" as const, pricing: "measured" as const },
+        ],
+        feeCap: { mode: "eip1559" as const, maxFeePerGasWei: 11_210_000n, maxPriorityFeePerGasWei: 1_210_000n },
+      }),
+    }],
   ])("refuses a durable row whose %s was edited underneath it", (_what, patch) => {
     const sealed = sealUniswapSnapshot(fields());
     const tampered = { ...sealed, ...patch };
@@ -119,6 +173,31 @@ describe("the snapshot codec", () => {
     expect(restoreUniswapSnapshot({ provider: "uniswap" })).toMatchObject({
       ok: false, refusal: { kind: "snapshot_unreadable" },
     });
+  });
+
+  it("refuses a row from the format that bound no transaction set, BY NAME", () => {
+    // A v1 row: everything this build reads except the plan. It is not merely
+    // unreadable - it is a quote that authorized a price and left the
+    // transaction set free, and the agent is told exactly that.
+    const sealed = sealUniswapSnapshot(fields());
+    const { debitPlan: _dropped, ...v1 } = sealed;
+
+    const restored = restoreUniswapSnapshot({ ...v1, v: 1 });
+
+    expect(restored.ok).toBe(false);
+    if (restored.ok) return;
+    expect(restored.refusal.kind).toBe("snapshot_version_unsupported");
+    expect(restored.refusal.message).toContain("did not bind the transactions");
+    expect(restored.refusal.message).toContain("uniswap__swap_quote");
+  });
+
+  it("refuses a plan whose shape this build cannot read, rather than ignoring it", () => {
+    const sealed = sealUniswapSnapshot(fields());
+
+    expect(restoreUniswapSnapshot({ ...sealed, debitPlan: { legs: [], reserve: sealed.debitPlan.reserve } }))
+      .toMatchObject({ ok: false, refusal: { kind: "snapshot_unreadable" } });
+    expect(restoreUniswapSnapshot({ ...sealed, debitPlan: undefined }))
+      .toMatchObject({ ok: false, refusal: { kind: "snapshot_unreadable" } });
   });
 
   it("recognises its own rows and no one else's", () => {
@@ -152,13 +231,15 @@ describe("the approval card", () => {
       amountOut: "100", amountIn: "1", tokenIn: TOKEN_IN, tokenOut: TOKEN_OUT,
       routeID: "r1", checksum: "c1",
     });
-    const kyberRef = {
-      v: ROUTE_SNAPSHOT_VERSION, provider: "kyberswap", raw, digest: digestSnapshotRaw(raw),
+    const kyberRef = sealRouteSnapshot({
+      v: ROUTE_SNAPSHOT_VERSION, provider: "kyberswap", raw,
       approvedAmountOutRaw: "100", approvedMinOutRaw: "95",
       approvedAmountOutHuman: "100", approvedMinOutHuman: "95",
       tokenOutSymbol: "OUT", effectiveSlippageBps: 500,
-      expiresAt: "2026-08-28T10:15:00.000Z", eligibility: { kind: "executable" },
-    };
+      expiresAt: "2026-08-28T10:15:00.000Z",
+      eligibility: { kind: "executable", priceImpactFraction: 0.001, adverse: false },
+      debitPlan: PLAN,
+    });
 
     const binding = readQuoteBindingPreview("prequote-1", kyberRef, "2026-08-28T10:20:00.000Z");
 
@@ -291,6 +372,12 @@ describe("the digest is a function of the bound fields only", () => {
       digestUniswapSnapshot(fields({ approvedMinOutRaw: "2" })),
       digestUniswapSnapshot(fields({ slippageBps: 1 })),
       digestUniswapSnapshot(fields({ expiresAt: "2026-01-01T00:00:00.000Z" })),
+      digestUniswapSnapshot(fields({
+        debitPlan: buildBoundDebitPlan({
+          legs: [{ role: "swap", pricing: "measured" as const }],
+          feeCap: { mode: "legacy", gasPriceWei: 1n },
+        }),
+      })),
     ];
 
     expect(new Set([base, ...others]).size).toBe(others.length + 1);

@@ -4,7 +4,7 @@
  * ONE owner for the money convention an activity row must satisfy: the agent
  * reading its OWN feed has to see the token's `symbol`/`decimals` plus BOTH
  * the exact-decimal human amount AND its raw atomic sibling. A raw mint
- * string next to a bare integer is not readable provenance — verified live on
+ * string next to a bare integer is not readable provenance - verified live on
  * the owner's funded wallet, where lend rows carried only `tokenAddress` +
  * `amountRaw` ("500000") and the agent could not tell it had deposited
  * 0.5 USDC. The `agent_activity` repo stores `amountHuman` VERBATIM
@@ -12,10 +12,10 @@
  * and derives nothing, so an omitted field is null forever.
  *
  * Two entry points, one rule:
- *   - `buildActivityTokenLeg` — the caller ALREADY holds the token's
+ *   - `buildActivityTokenLeg` - the caller ALREADY holds the token's
  *     symbol/decimals (a swap's resolved `TokenMetadata`; a Borrow vault's own
  *     `supplyToken`/`borrowToken` descriptor, fetched before `/operate` runs).
- *   - `resolveActivityTokenLeg` — the caller holds only a mint (Lend Earn's
+ *   - `resolveActivityTokenLeg` - the caller holds only a mint (Lend Earn's
  *     `asset` param), so metadata is resolved through the Jupiter tokens
  *     service (well-known table → process token cache → tokens API).
  *
@@ -28,7 +28,7 @@
  *
  * String math only. `amountHuman` is formatted with
  * `atomicToExactDecimalString` (BigInt), never `Number`/`parseFloat`/
- * `tokenAmountToUi` — u64 amounts routinely exceed `Number.MAX_SAFE_INTEGER`
+ * `tokenAmountToUi` - u64 amounts routinely exceed `Number.MAX_SAFE_INTEGER`
  * and a STORED money field must be exact, not approximate.
  */
 
@@ -54,7 +54,7 @@ export interface ActivityTokenLegSource {
   readonly tokenDecimals?: number;
   /**
    * Atomic base units of the token's own `decimals`. Absent when the magnitude
-   * is genuinely unknown in advance — a Borrow close-all/repay-all sentinel is
+   * is genuinely unknown in advance - a Borrow close-all/repay-all sentinel is
    * provider-computed, and a pre-broadcast failure may never have had one.
    */
   readonly amountRaw?: string;
@@ -71,8 +71,8 @@ function logMetadataUnavailable(mint: string, err: unknown): void {
 
 /**
  * `undefined` when the pair cannot produce an EXACT decimal string. Both
- * inputs are untrusted at this point — `decimals` comes from a provider
- * payload and `amountRaw` may be a provider-computed string — so a bad pair
+ * inputs are untrusted at this point - `decimals` comes from a provider
+ * payload and `amountRaw` may be a provider-computed string - so a bad pair
  * drops the human field rather than corrupting it or throwing.
  */
 function exactAmountHuman(amountRaw: string, decimals: number): string | undefined {

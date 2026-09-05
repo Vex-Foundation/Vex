@@ -261,6 +261,7 @@ describe("patch-parser", () => {
       decimals: 18,
       chainId: 4663,
       assetAddress: "0x0F9F0000000000000000000000000000000000EE",
+      assetKind: "token" as const,
       assetSymbol: "VEX",
     };
 

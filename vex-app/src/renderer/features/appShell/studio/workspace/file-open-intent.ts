@@ -27,6 +27,7 @@
 
 import { create } from "zustand";
 import type { FileNode } from "@shared/schemas/files.js";
+import type { FileOpenMode } from "./types.js";
 
 export interface FileOpenIntent {
   /** Consume-once key. */
@@ -35,6 +36,17 @@ export interface FileOpenIntent {
   readonly projectId: string;
   /** The node as the tree held it, token included. */
   readonly node: FileNode;
+  /**
+   * WHICH KIND OF OPEN the gesture meant: a single click in the tree is a
+   * PREVIEW, a double click and every other route is PINNED.
+   *
+   * It travels in the envelope rather than being decided by the consumer,
+   * because the gesture is the only thing that knows: by the time the
+   * controller reads this, the click is long over. Defaulted to `"pinned"` by
+   * {@link publishFileOpen}, so a caller that has not chosen keeps the
+   * behaviour it had before previews existed.
+   */
+  readonly mode: FileOpenMode;
 }
 
 interface FileOpenIntentState {
@@ -90,10 +102,21 @@ export const useFileOpenIntentStore = create<FileOpenIntentState>((set, get) => 
  *
  * Returns the intent id, so a caller that wants to cancel its own request can
  * name it rather than clearing whatever happens to be parked.
+ *
+ * `mode` DEFAULTS TO PINNED. The default is the compatibility promise: every
+ * route that opens a file - the tree's activation, a search hit, anything a
+ * later lane adds - keeps opening a kept tab until it deliberately asks for a
+ * preview.
  */
-export function publishFileOpen(projectId: string, node: FileNode): string {
+export function publishFileOpen(
+  projectId: string,
+  node: FileNode,
+  mode: FileOpenMode = "pinned",
+): string {
   const intentId = nextFileOpenIntentId();
-  useFileOpenIntentStore.getState().publishFileOpenIntent({ intentId, projectId, node });
+  useFileOpenIntentStore
+    .getState()
+    .publishFileOpenIntent({ intentId, projectId, node, mode });
   return intentId;
 }
 

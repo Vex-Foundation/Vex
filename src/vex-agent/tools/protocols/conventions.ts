@@ -1,5 +1,5 @@
 /**
- * THE PARAM CONVENTION — one vocabulary for every agent-facing tool surface.
+ * THE PARAM CONVENTION - one vocabulary for every agent-facing tool surface.
  *
  * This module is the single home for the cross-cutting naming/format rules the
  * tool audit (`agents_dm/tool-audit-2026-08/SPEC.md` §1) settled on: which
@@ -20,7 +20,7 @@
  * Deliberate non-goals: no runtime validation lives here (the boundary owner is
  * `runtime/params.ts`), and no provider translation lives here (a provider that
  * needs a numeric id, an UPPERCASE enum, or a slug in a URL path converts inside
- * its own adapter — the manifest always advertises the canonical spelling).
+ * its own adapter - the manifest always advertises the canonical spelling).
  */
 
 import { getKyberChains } from "@tools/kyberswap/chains.js";
@@ -43,7 +43,7 @@ const SOLANA_FAMILY_SLUG = "solana";
  * Derived, never hand-listed: the KyberSwap registry (`src/tools/kyberswap/chains.ts`)
  * is the broadest slug table in the tree and already carries every chain the
  * local registry covers (Robinhood 4663). A chain that exists ONLY in
- * `src/tools/evm-chains/registry.ts` would therefore be missing here — the
+ * `src/tools/evm-chains/registry.ts` would therefore be missing here - the
  * manifest-lint suite asserts that coverage so the gap fails a test instead of
  * silently narrowing what an agent may say.
  */
@@ -59,7 +59,7 @@ export const CANONICAL_CHAIN_SLUGS: ReadonlySet<string> = new Set<string>([
 
 /**
  * Every param key the convention permits, with the reason it exists. Adding a
- * key is a deliberate edit HERE, not an accident in a manifest — the linter
+ * key is a deliberate edit HERE, not an accident in a manifest - the linter
  * reports any other key against the tool that introduced it.
  */
 export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
@@ -67,7 +67,7 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   ["fromChain", "bridge source chain; pairs with fromToken"],
   ["toChain", "bridge destination chain; pairs with toToken"],
   ["chainIds", "a LIST of chains (comma-separated string, or string[] where declared)"],
-  ["walletFamily", "wallet FAMILY (eip155|solana|all) — never a chain"],
+  ["walletFamily", "wallet FAMILY (eip155|solana|all) - never a chain"],
   ["tokenIn", "swap input token: EVM contract address or ETH/native; Solana symbol or mint"],
   ["tokenOut", "swap output token, same grammar as tokenIn"],
   ["fromToken", "bridge source token; pairs with fromChain"],
@@ -129,6 +129,53 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   ["fields", "comma-separated row field GROUPS to keep, to bound a large result"],
   ["topTokens", "how many CHILD rows to embed inside each parent row on a grouped read (a narrative's leading pairs); distinct from `limit`, which bounds the parent rows, and from `include`, which names side reads rather than a depth"],
   ["listedOnly", "keep only rows the protocol itself lists/curates; excludes permissionless dust"],
+
+  // -- Virtuals agent screening (PR-C1) ----------------------------
+  //
+  // Every key below is one MEASURED server-side filter of the Virtuals agent
+  // endpoint. They are named rather than folded into an opaque `filters` bag
+  // for the reason the morpho block gives, and with one extra reason specific
+  // to this provider: it SILENTLY IGNORES an unknown `filters[...]` key and
+  // answers with the whole population, so an undeclared screen is not an error
+  // there - it is a wrong answer that looks right.
+  ["searchScope", "what `query` matches on a Virtuals read: text (name/symbol), address (token or curve token), or any"],
+  ["creatorWallet", "the wallet that LAUNCHED an agent; distinct from `walletAddress`, which is the account a tool acts for"],
+  ["factory", "which launch-contract family produced a token; declared as an `enum`"],
+  ["role", "an agent's declared role (ENTERTAINMENT, ON_CHAIN, ...); declared as an `enum`"],
+  ["vibesStatus", "the vibes/ICO lane state of an agent; declared as an `enum`"],
+  ["isVerified", "keep only rows carrying the provider's anti-impersonation badge"],
+  ["hasGraduated", "keep only agents that have left the bonding curve for an AMM pool"],
+  ["hasGenesis", "keep only agents that came through a genesis points sale"],
+  ["hasStaking", "keep only agents with a staking contract"],
+  ["hasMarginTrading", "keep only agents the venue lists for margin trading"],
+  ["hasFounderVideo", "keep only agents whose founder published a video pitch"],
+  ["hasRevenueConnect", "keep only agents with a revenue-connect wallet configured"],
+  ["isDevCommitted", "keep only agents whose developer made the on-platform commitment"],
+  ["hasAntiSniperTax", "keep only launches that CONFIGURED a non-zero anti-sniper tax type"],
+  ["hasAirdrop", "keep only launches that reserved a non-zero airdrop percentage"],
+  ["needAcf", "keep only launches that used Automated Capital Formation"],
+  ["isProject60days", "keep only launches in the 60-day project programme"],
+  ["launchRadarEnabled", "keep only launches that opted into Launch Radar"],
+  ["isRobotics", "keep only robotics agents; the working screen, since the ROBOTIC_* factory values match nothing"],
+  ["includeLaunchX", "keep ONLY the X_LAUNCH / ACP_LAUNCH tagged agents"],
+  ["excludeLaunchX", "drop the X_LAUNCH / ACP_LAUNCH tagged agents, as the provider's own UI does"],
+  ["minMcapInVirtual", "floor on market cap, denominated in the VIRTUAL token and NOT in USD"],
+  ["maxMcapInVirtual", "ceiling on market cap, denominated in the VIRTUAL token and NOT in USD"],
+  ["minHolderCount", "floor on the holder count"],
+  ["maxHolderCount", "ceiling on the holder count"],
+  ["minVolume24h", "floor on 24-hour volume, in USD"],
+  ["maxVolume24h", "ceiling on 24-hour volume, in USD"],
+  ["minPriceChangePercent24h", "floor on the 24-hour price change, as a SIGNED PERCENT"],
+  ["maxPriceChangePercent24h", "ceiling on the 24-hour price change, as a SIGNED PERCENT"],
+  ["minTop10HolderPercentage", "floor on top-10 holder concentration, as a PERCENT"],
+  ["maxTop10HolderPercentage", "ceiling on top-10 holder concentration, as a PERCENT"],
+  ["createdAfter", "keep only rows created at or after this date"],
+  ["launchedAfter", "keep only rows whose token started trading at or after this date"],
+  ["genesisStartsAfter", "keep only rows whose linked genesis sale starts at or after this date"],
+  ["genesisStartsBefore", "keep only rows whose linked genesis sale starts at or before this date"],
+  ["includePriceSeries", "attach the provider's own 24-hour price samples to each row; off by default because it widens every row"],
+  ["beforeTimestampSeconds", "walk a candle history BACKWARDS: return buckets strictly before this unix-seconds mark"],
+  ["currency", "which side a candle series is denominated in; declared as an `enum`"],
 
   // -- Lending-market reads (morpho, batch 1) ----------------------
   //
@@ -519,6 +566,22 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   ["minCurveProgressPct", "floor on bonding-curve completion, as a PERCENT"],
   ["maxCurveProgressPct", "ceiling on bonding-curve completion, as a PERCENT"],
 
+  // -- pools.fun launch badges and the factory's pricing axis (PR4) ---
+  //
+  // Three keys, each the PROVIDER's own spelling rather than a Vex invention.
+  // `vexAttested` and `holderRewards` are the launchpad's two opt-in discover
+  // switches: measured at `src/tools/pools-fun/PoolsFun.md` lines 61-62, the
+  // endpoint accepts the literal `true` only and answers HTTP 400 on `false`,
+  // so the complement genuinely cannot be requested and a generic boolean
+  // spelling would promise a filter the provider does not serve. `pricingMode`
+  // is the launch factory's own enum over the paired asset (CORE_CHAINLINK,
+  // CHAINLINK_STOCK, SIGNED_STOCK - 35 and 159 of 194 assets when measured,
+  // PoolsFun.md lines 233-242), and it decides whether a launch needs a
+  // time-boxed signed price attestation, so it is an axis a caller screens on.
+  ["vexAttested", "pools.fun opt-in switch keeping only launches carrying a Vex attestation; the provider accepts the literal true only"],
+  ["holderRewards", "pools.fun opt-in switch keeping only tokens that stream their fees to holders; same true-only contract as vexAttested"],
+  ["pricingMode", "the pools.fun launch factory's own pricing enum for a paired asset; decides whether a launch needs a signed price attestation"],
+
   // -- Time-series and deep-read shaping (DexScreener deep dive, S4) ---
   //
   // These describe reading ONE pool's history rather than screening a
@@ -602,13 +665,13 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
  * say what to write instead costs the agent another call.
  */
 export const BANNED_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
-  ["amount", "use `amountIn` (human decimals) or `amountRaw` (base units) — the bare key meant both, 10^6 apart"],
+  ["amount", "use `amountIn` (human decimals) or `amountRaw` (base units) - the bare key meant both, 10^6 apart"],
   ["inputToken", "use `tokenIn`"],
   ["outputToken", "use `tokenOut`"],
-  ["chainId", "use `chain` — the key said Id while the value was a slug"],
+  ["chainId", "use `chain` - the key said Id while the value was a slug"],
   ["chains", "use `chainIds`"],
-  ["address", "use `tokenAddress` (a contract) or `walletAddress` (an account) — the bare key meant both"],
-  ["network", "use `walletFamily` — it selects a wallet family, not a chain"],
+  ["address", "use `tokenAddress` (a contract) or `walletAddress` (an account) - the bare key meant both"],
+  ["network", "use `walletFamily` - it selects a wallet family, not a chain"],
   ["wallet", "use `walletFamily`"],
   ["search", "use `query` - one free-text key across the fleet (owner decision D1)"],
 ]);
@@ -616,9 +679,9 @@ export const BANNED_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
 /**
  * Param keys that carry a chain VALUE and therefore need the chain sentence.
  *
- * Also the allowlist for the two normalizations `runtime/params.ts` performs —
+ * Also the allowlist for the two normalizations `runtime/params.ts` performs -
  * a JSON number becomes its decimal string, and a declared `enum` matches
- * case-insensitively — because a chain value is the one thing in this
+ * case-insensitively - because a chain value is the one thing in this
  * vocabulary whose spelling carries no meaning of its own.
  */
 export const CHAIN_VALUE_PARAM_KEYS: readonly string[] = ["chain", "fromChain", "toChain"];
@@ -639,11 +702,147 @@ export const CANONICAL_CHAIN_SENTENCE =
  * to get them rather than guessing 18.
  */
 export const CANONICAL_RAW_AMOUNT_SENTENCE =
-  "Raw base units as an integer string (not human decimals) — read the token's decimals from `TokenFind` first.";
+  "Raw base units as an integer string (not human decimals) - read the token's decimals from `TokenFind` first.";
 
 /** The one sentence a HUMAN-amount param ends with. */
 export const CANONICAL_HUMAN_AMOUNT_SENTENCE =
-  "In HUMAN decimal units (e.g. \"1.5\") — not wei, lamports, or any other base unit.";
+  "In HUMAN decimal units (e.g. \"1.5\") - not wei, lamports, or any other base unit.";
+
+/**
+ * THE APPROVAL SENTENCE every fund-moving tool description carries.
+ *
+ * Hoisted because the copies that existed described the IN-APP loop ("it comes
+ * back asking for approval") while the Studio MCP surface does the opposite:
+ * `runStudioCall` enqueues the intent and BLOCKS the call on the approval
+ * broker, then hands back the settled result whole
+ * (`vex-app/src/main/studio/approval-service.ts`). An agent told the call
+ * "comes back" reads a blocked call as a hang and a settled result as a
+ * proposal, and the two mistakes it then makes - calling again, and retrying an
+ * indeterminate outcome - are the two this sentence exists to prevent.
+ *
+ * The outcome words are the broker's own, so the vocabulary the agent reads
+ * here is the vocabulary the wire uses. "executed" was NOT one of them, which is
+ * the drift the pass-2 agent found (`transcripts/p1.txt:23-25`): the broker's
+ * settled arms are `completed`, `declined`, `expired`, `refused`,
+ * `dispatch_failed`, `indeterminate` and `not_queued` (`mcp/outcome.ts`). The
+ * list below is the rewrite that transcript proposed, so this sentence and the
+ * instructions block (`studio/instructions/**`) name one vocabulary.
+ *
+ * `pending` IS ONE OF THOSE STATUS WORDS. The sentence named only `confirmed`
+ * and `confirmed_unrecorded`, and a completed call routinely carries neither:
+ * both bridges (`relay/handlers/bridge/results.ts`, `khalani/handlers/
+ * bridge-execute.ts` and its poll), both EVM swap executes on their broadcast
+ * and failure paths, the Jupiter swap, the lend pair, trench and pools all
+ * return `status: "pending"` from a call the broker settles as `completed`. An
+ * agent told `pending` is not a settled word reads a broadcast transaction as an
+ * unfinished call and sends it again - the double-spend this sentence exists to
+ * prevent. It now names the word and the one action it licenses: poll it, never
+ * re-send. The DEFINITION stays in the outcome vocabulary
+ * (`studio/instructions/shared-usage.ts`, `pending` under UNKNOWN), delivered
+ * once instead of per tool, because six always-loaded descriptions carry this
+ * sentence at 2047 of the 2048-character hot-set bound
+ * (`mcp/inventory/types.ts`) and the budget is the consumer's, not this
+ * sentence's.
+ *
+ * THAT 2047 IS BYTES AS WELL AS CHARACTERS, and the two readings have stopped
+ * agreeing. The measured cut is by characters, so characters remain the
+ * contract; but `SwapExecute` and `SwapQuote` each carry a U+2192 arrow, which
+ * puts them at 2045 characters and 2047 UTF-8 bytes - one byte of headroom
+ * under the same number. Adding a word to this sentence therefore spends both
+ * budgets at once, and `__tests__/vex-agent/mcp/inventory.test.ts` asserts both
+ * so a non-ASCII edit cannot cross either unnoticed.
+ *
+ * The card clause answers the second measured confusion: two sessions read their
+ * own harness rule ("confirm before an irreversible action") against a card they
+ * had already been told about, and hesitated (pass 2, A-8). The card IS the
+ * confirmation, and saying it here says it on every tool that raises one.
+ */
+export const CANONICAL_MCP_APPROVAL_SENTENCE =
+  "APPROVAL: over MCP in a restricted project the call WAITS until the user answers the Vex card, "
+  + "which IS the confirmation - do not ask for one again in chat. It returns the settled outcome: "
+  + "executed (this tool's own status: confirmed, confirmed_unrecorded or pending - poll it, never "
+  + "re-send), declined, expired, refused, dispatch_failed or indeterminate; never call it twice "
+  + "while you wait; never retry an indeterminate one. In a full project it executes directly under "
+  + "standing permission.";
+
+/**
+ * WHO BROADCASTS, on a prepare -> confirm pair. The measured defect I-1.
+ *
+ * `WalletSendPrepare` over MCP returned "Transfer prepared; Vex will confirm it
+ * automatically." and nothing followed: that automatic follow-up is the IN-APP
+ * turn loop's trusted handoff (`engine/core/turn-loop-tool-batch/
+ * prepared-follow-up.ts`), and the MCP lane has no turn loop to run it. An agent
+ * that believes the sentence waits forever; the only path that works is calling
+ * the confirm tool itself, which is where the approval card is raised (pass 2,
+ * `transcripts/i12.txt`, and the same question asked in `p2.txt:11` and
+ * `p3.txt:89`).
+ *
+ * All four pairs (send, wrap, generic EVM, generic Solana) state the SAME rule,
+ * because an agent that learns it on one pair must not have to re-derive it on
+ * the next. Only the send pair has an in-app auto-dispatch at all, and its own
+ * prepare RESULT says which lane ran it, so no description promises a follow-up
+ * the reader cannot observe.
+ */
+export function canonicalPrepareHandoffSentence(confirmToolName: string): string {
+  return (
+    "WHO BROADCASTS: preparing sends nothing and raises no card. Only "
+    + `\`${confirmToolName}\`, run with this intentId, moves funds, and THAT call raises the card. `
+    + "Over MCP nothing dispatches it for you: you call it yourself before the intent expires."
+  );
+}
+
+/** The confirm half of {@link canonicalPrepareHandoffSentence}. */
+export const CANONICAL_CONFIRM_HANDOFF_SENTENCE =
+  "WHO CALLS THIS: you do, with the intentId prepare returned - over MCP Vex dispatches nothing on "
+  + "your behalf.";
+
+/**
+ * THE BRIDGE-DESTINATION SENTENCE, shared by all four bridge tools (the Khalani
+ * and Relay quote and execute manifests) as the `rejectedParams` answer for
+ * `recipient`.
+ *
+ * A bridge destination is a fund destination in exactly the sense the refund
+ * destination is (`@tools/khalani/request.js`), and rule 90 is explicit: a
+ * value that can redirect funds never originates from model input. Both wallet
+ * references agree - MetaMask's bridge controller quotes for the SELECTED
+ * account (`bridge-controller.ts`, `#getMultichainSelectedAccount`) and Rabby's
+ * bridge flow has no recipient input at all (`Bridge/hooks/context.tsx` reads
+ * `state.account.currentAccount.address`) - so the capability is REMOVED rather
+ * than disclosed.
+ *
+ * It lives in `rejectedParams`, not in `params`: the untrusted boundary
+ * (`runtime/params.ts`) rejects an undeclared key BEFORE the handler and BEFORE
+ * the prequote gate, so this is the only place the explanation is read by the
+ * agent that tried it. The handlers reject the key again, by name and WITH the
+ * resolved destination address, for any path that reaches them.
+ *
+ * The remedy clause is a separate constant because BOTH texts end with it: the
+ * refusal an agent reads must always name the tool that CAN send somewhere
+ * else, or the agent's next move is to look for another way to set the
+ * destination.
+ */
+const BRIDGE_RECIPIENT_REMEDY =
+  "To move funds elsewhere, bridge to your wallet and then send with WalletSendPrepare, "
+  + "which the user approves.";
+
+export const BRIDGE_DERIVED_RECIPIENT_SENTENCE =
+  "A bridge always delivers to the wallet selected for this project on the destination chain, so the "
+  + "destination is derived and never taken from tool input. "
+  + BRIDGE_RECIPIENT_REMEDY;
+
+/**
+ * The bridge handlers' own refusal for a supplied `recipient`, naming the
+ * parameter AND the address the bridge will actually deliver to.
+ *
+ * It carries the SAME remedy clause the manifest sentence ends with, so the
+ * boundary answer and the handler answer cannot drift. Only the handler can
+ * state the address, because only the handler has resolved it; that is why both
+ * texts exist rather than one.
+ */
+export function bridgeRecipientRefusal(toolId: string, destinationAddress: string): string {
+  return `${toolId} failed: recipient is not a parameter: a bridge delivers to the wallet selected for `
+    + `this project on the destination chain (${destinationAddress}). ${BRIDGE_RECIPIENT_REMEDY}`;
+}
 
 /**
  * The shared slippage paragraph, hoisted from six near-verbatim copies.

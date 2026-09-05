@@ -13,6 +13,8 @@ import {
   preSignRefusalGuidance,
 } from "@tools/evm-chains/pre-sign-revert-refusal.js";
 import { UniswapFinalRequestRefusal } from "@tools/uniswap/final-request-guard.js";
+import { UniswapFeeCapExceededError, UniswapLiveFeeMarketRefusal } from "@tools/uniswap/execute.js";
+import { UniswapPreSignDebitRefusal } from "./quote-spendability.js";
 import { effectiveMaxSlippageBps } from "@vex-agent/tools/protocols/slippage-policy.js";
 import type { AgentActivityEvent } from "@vex-agent/db/repos/agent-activity.js";
 import logger from "@utils/logger.js";
@@ -33,15 +35,15 @@ export function ambiguousBroadcastResult(input: {
     success: false,
     // "Do not retry" is the safety-critical half and never moves. The
     // second half gives the agent a READ it can perform itself instead
-    // of waiting on the sweep — the alternative to waiting must never
+    // of waiting on the sweep - the alternative to waiting must never
     // be a re-broadcast.
-    output: `${TOOL_ID}: broadcast of the ${input.eventRole} transaction (${input.txHash}) could not be confirmed yet — it may still settle on-chain. Do not retry; this attempt is recorded as pending and will resolve automatically. You can verify it now yourself with ChainRead (action tx_receipt, chain=${input.chainId}, txHash=${input.txHash}).`,
+    output: `${TOOL_ID}: broadcast of the ${input.eventRole} transaction (${input.txHash}) could not be confirmed yet - it may still settle on-chain. Do not retry; this attempt is recorded as pending and will resolve automatically. You can verify it now yourself with ChainRead (action tx_receipt, chain=${input.chainId}, txHash=${input.txHash}).`,
     data: { _executionId: input.executionId, txHash: input.txHash, status: "pending" },
   };
 }
 
 /**
- * A sign-time refusal never reached the network — no bytes, no gas, no
+ * A sign-time refusal never reached the network - no bytes, no gas, no
  * possible duplicate. Calling it a transaction that "failed" made the agent
  * read a routine, recoverable slippage refusal as a lost trade, with no remedy
  * named (`evm-chains/pre-sign-revert-refusal.ts` carries the incident).
@@ -69,7 +71,7 @@ export function preSignRefusalResult(input: {
 
 /**
  * Only a MINED revert reaches here, so the reason is one of
- * `mined-revert-reason.ts`'s self-terminating sentences — no sentence period is
+ * `mined-revert-reason.ts`'s self-terminating sentences - no sentence period is
  * added after it.
  */
 export function minedRevertResult(input: {
@@ -85,7 +87,7 @@ export function minedRevertResult(input: {
 }
 
 /**
- * C18 (Codex final-review round 1, finding 3): the intent already exists —
+ * C18 (Codex final-review round 1, finding 3): the intent already exists -
  * finalize what's left, SAME `_executionId`, never a second execution (never
  * `failPreBroadcast` here).
  */
@@ -103,10 +105,10 @@ export async function postIntentFailureResult(input: {
   // A leg refused because its estimate never succeeded after an allowance
   // this same execute confirmed is not an unexpected internal failure:
   // nothing was signed for it, the never-signed rows are finalized "not
-  // attempted" (the confirmed approval row is untouched — it has a hash),
+  // attempted" (the confirmed approval row is untouched - it has a hash),
   // and re-running is safe.
   if (err instanceof DependentLegGasEstimateError) {
-    // ERC-20 input — the common shape, and the one the native-input fix did
+    // ERC-20 input - the common shape, and the one the native-input fix did
     // not reach: with an approval leg in front, a genuine price-guard refusal
     // arrives ONLY here, and the RPC-lag wording named no parameter the agent
     // could change. A POOL-STATE reason that survived every retry is
@@ -146,6 +148,50 @@ export async function postIntentFailureResult(input: {
       output: `${TOOL_ID}: the ${input.refusedRole} step was refused before signing. ${uniswapFailureMessage(err)} Recorded as execution ${executionId}.`,
       data: {
         _executionId: executionId, status: "not_attempted", retryable: true,
+        failureCode: err.kind,
+      },
+    };
+  }
+  // The AUTHORITATIVE DEBIT GATE refused: the wallet no longer covers what is
+  // still to be broadcast, or that cost could not be verified at all. Nothing
+  // was signed, so this is `not_attempted` like the two refusals above, and the
+  // refusal's own sentence - which states required, held and missing - is
+  // rendered verbatim rather than replaced by canned guidance for a revert that
+  // never happened. `retryable` follows the refusal: a shortfall repeats
+  // unchanged, an unreadable balance may not.
+  if (err instanceof UniswapPreSignDebitRefusal) {
+    return {
+      success: false,
+      output: `${TOOL_ID}: the ${input.refusedRole} step was refused before signing. ${uniswapFailureMessage(err)} Recorded as execution ${executionId}.`,
+      data: {
+        _executionId: executionId, status: "not_attempted", retryable: err.retryable,
+        failureCode: "allowance_or_balance",
+      },
+    };
+  }
+  // The chain's current price left the ceiling this execution's debit total was
+  // computed under. Nothing was signed; the way out is a fresh quote, not a
+  // retry at whatever the node now asks for.
+  if (err instanceof UniswapFeeCapExceededError) {
+    return {
+      success: false,
+      output: `${TOOL_ID}: the ${input.refusedRole} step was refused before signing. ${uniswapFailureMessage(err)} Recorded as execution ${executionId}.`,
+      data: { _executionId: executionId, status: "not_attempted", retryable: false },
+    };
+  }
+  // The LIVE fee market could not be shown to still fit the approved ceiling.
+  // Nothing was signed, so `not_attempted` like the refusals above, and the
+  // refusal's own sentence - which names which of the three happened and the
+  // way out - is rendered verbatim. `retryable` comes off the refusal because
+  // the three differ exactly there: an unreachable node may answer next time, a
+  // risen price and a changed pricing mode need a fresh quote. Reducing an
+  // unreadable market to "failed unexpectedly" is the collapse rule 90 forbids.
+  if (err instanceof UniswapLiveFeeMarketRefusal) {
+    return {
+      success: false,
+      output: `${TOOL_ID}: the ${input.refusedRole} step was refused before signing. ${uniswapFailureMessage(err)} Recorded as execution ${executionId}.`,
+      data: {
+        _executionId: executionId, status: "not_attempted", retryable: err.retryable,
         failureCode: err.kind,
       },
     };

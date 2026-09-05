@@ -29,6 +29,12 @@
  * lines are not highlighted" instead of leaving the user to wonder why one row
  * looks different.
  *
+ * `budgetExceededLines` and `budgetExceededTotal` are the third bound reporting
+ * itself, and the one that used to be invisible: vscode-textmate abandons a line
+ * whose scan runs past the per-line clock and hands the remainder back under
+ * whatever scope it was in, so the line arrives byte-exact and partly
+ * uncoloured. See {@link HighlightSuccess.budgetExceededLines}.
+ *
  * `maxTokens` is the whole-file bound, and it is REFUSED rather than trimmed: a
  * file over it comes back as `{ ok: false, reason: "too_many_tokens" }` and the
  * viewer shows every byte of it as plain text. It is enforced inside the
@@ -67,6 +73,25 @@
  * which is all a highlighter provides.
  */
 export const HIGHLIGHT_MAX_TOKENS = 250_000;
+
+/**
+ * How many budget-exceeded line NUMBERS a result carries.
+ *
+ * The count is always exact - `budgetExceededTotal` is every line that stopped
+ * early, however many there are - and this bounds only the LIST of numbers that
+ * travels beside it. A minified bundle read with the line bound disabled could
+ * put one entry here per line of the file, and a list that grows with the file
+ * is a second unbounded array crossing the worker boundary beside the tokens.
+ *
+ * Fifty, because the list exists to POINT AT the lines: the chip names the
+ * first, and a reader who wants to see the rest scrolls to them. It is not the
+ * count and it never stands in for the count, so nothing the user is told
+ * depends on where this number sits. The bound reports itself the same way
+ * every other one here does: `budgetExceededTotal` above
+ * `budgetExceededLines.length` means the numbers past the fiftieth were not
+ * listed, and exactly how many were left out is `total - lines.length`.
+ */
+export const HIGHLIGHT_BUDGET_LINES_LISTED = 50;
 
 /**
  * How many lines a text has, by the ONE definition this folder uses.
@@ -146,7 +171,7 @@ export interface HighlightRequest {
   readonly maxTokens: number;
 }
 
-/** A tokenized file: every line, in order, plus the reported long-line count. */
+/** A tokenized file: every line, in order, plus the reported bounds. */
 export interface HighlightSuccess {
   readonly kind: "result";
   readonly requestId: number;
@@ -154,6 +179,24 @@ export interface HighlightSuccess {
   readonly lines: readonly TokenLine[];
   /** How many lines were too long to tokenize. The bound reporting itself. */
   readonly longLines: number;
+  /**
+   * WHICH lines the per-line clock ran out on, 1-based and ascending.
+   *
+   * vscode-textmate stops scanning a line once it has spent longer than the
+   * budget on it and returns what it has, with the unscanned remainder emitted
+   * as one token carrying whatever scope the scanner was in. The bytes are all
+   * there; the colours past that point are not. Before this field existed the
+   * viewer showed such a line as if it were fully highlighted, which is the
+   * silent partial this reports.
+   *
+   * AT MOST {@link HIGHLIGHT_BUDGET_LINES_LISTED} entries - the FIRST that many,
+   * in file order. `budgetExceededTotal` is the exact count and is authoritative;
+   * a total above this array's length means the later numbers were not listed,
+   * and how many is the difference.
+   */
+  readonly budgetExceededLines: readonly number[];
+  /** How many lines stopped early, exactly. Never bounded, never a sample. */
+  readonly budgetExceededTotal: number;
 }
 
 export interface HighlightFailure {
@@ -210,6 +253,16 @@ export type HighlightResponse = HighlightReady | HighlightSuccess | HighlightFai
  *
  * Deliberately NARROW: it proves the discriminants, the array-ness of `lines`
  * and the field types of every token, which is exactly what the renderer reads.
+ *
+ * THE ADDITIVE-CHANGE RULE, and this is the versioning this wire has. Both ends
+ * ship in one bundle, so a field added to a success is REQUIRED here from the
+ * moment it is added rather than tolerated as optional. A worker chunk from
+ * before the change then fails this guard, the port answers `malformed_result`
+ * and the viewer shows honest plain text - which is the fail-closed outcome a
+ * half-applied protocol change is supposed to produce. An optional field would
+ * instead let a stale worker render a file that LOOKS fully highlighted while
+ * the bound it no longer reports goes unsaid, which is exactly the silence
+ * `budgetExceededLines` exists to end.
  */
 export function isHighlightResponse(value: unknown): value is HighlightResponse {
   if (typeof value !== "object" || value === null) return false;
@@ -221,6 +274,8 @@ export function isHighlightResponse(value: unknown): value is HighlightResponse 
     readonly ok?: unknown;
     readonly lines?: unknown;
     readonly longLines?: unknown;
+    readonly budgetExceededLines?: unknown;
+    readonly budgetExceededTotal?: unknown;
     readonly reason?: unknown;
   };
   if (typeof result.requestId !== "number") return false;
@@ -233,6 +288,9 @@ export function isHighlightResponse(value: unknown): value is HighlightResponse 
   }
   if (result.ok !== true) return false;
   if (typeof result.longLines !== "number") return false;
+  if (typeof result.budgetExceededTotal !== "number") return false;
+  if (!Array.isArray(result.budgetExceededLines)) return false;
+  if (!result.budgetExceededLines.every((line) => typeof line === "number")) return false;
   if (!Array.isArray(result.lines)) return false;
   return result.lines.every(isTokenLine);
 }
@@ -262,4 +320,7 @@ function isHighlightToken(value: unknown): boolean {
 export interface TokenizeResult {
   readonly lines: readonly TokenLine[];
   readonly longLines: number;
+  /** See {@link HighlightSuccess.budgetExceededLines}. Same bound, same meaning. */
+  readonly budgetExceededLines: readonly number[];
+  readonly budgetExceededTotal: number;
 }

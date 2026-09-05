@@ -27,6 +27,7 @@
 export const STUDIO_TOOL_TITLES: Readonly<Record<string, string>> = {
   // ── Internal tools ────────────────────────────────────────────────────────
   vex_ToolSearch: "Search the protocol tool catalog",
+  vex_ToolDescribe: "Read one tool's whole contract",
   TokenFind: "Find a token's address and decimals",
   SwapQuote: "Quote a token swap",
   SwapExecute: "Execute a token swap",
@@ -38,7 +39,6 @@ export const STUDIO_TOOL_TITLES: Readonly<Record<string, string>> = {
   BridgeQuote: "Quote a cross-chain bridge",
   BridgeQuoteRelay: "Quote a Relay bridge",
   BridgeExecuteRelay: "Execute a Relay bridge",
-  WebResearch: "Search and read the web",
   TwitterAccount: "Read Twitter accounts and posts",
   AgentScan: "Review this wallet's recorded activity",
   ChainRead: "Read raw EVM chain data",
@@ -140,6 +140,9 @@ export const STUDIO_TOOL_TITLES: Readonly<Record<string, string>> = {
   virtuals__agent_get: "Read one Virtuals agent token",
   virtuals__graduations_list: "List recent Virtuals graduations",
   virtuals__genesis_launches_list: "Browse the Virtuals Genesis calendar",
+  virtuals__agent_trades_list: "Read a Virtuals agent's curve trade tape",
+  virtuals__agent_candles_list: "Read a Virtuals agent's price candles",
+  virtuals__creator_fees_get: "Read a Virtuals agent creator's fee status",
 
   // ── pendle ────────────────────────────────────────────────────────────────
   pendle__markets_discover: "Screen Pendle yield markets",
@@ -215,6 +218,8 @@ export const STUDIO_TOOL_TITLES: Readonly<Record<string, string>> = {
   pools__launch_request_form: "Ask the user to confirm a pools.fun launch",
   pools__launch_execute: "Launch a token on pools.fun",
   pools__fees_claim: "Claim pools.fun creator fees",
+  pools__launch_assets_list: "List pools.fun launchable stocks",
+  pools__holder_rewards_get: "Read pools.fun holder rewards",
 
   // ── indexify ──────────────────────────────────────────────────────────────
   indexify__stacks_discover: "Browse Indexify stacks",

@@ -58,8 +58,8 @@ const mockDecodeKyberSwapSettlement = vi.fn(() => null as { amountInRaw: string;
 // Only the evm-utils BARREL is mocked; `evm/swap-calldata-guard.js` stays REAL,
 // so the fee line in the captured calldata is genuinely verified before the
 // handler records anything.
-vi.mock("@tools/kyberswap/evm-utils.js", () => ({
-  getKyberEvmClients: () => ({ publicClient: {}, walletClient: {} }),
+vi.mock("@tools/kyberswap/evm-utils.js", async () => ({
+  ...(await import("./evm-client.test-fixtures.js")).kyberEvmClientMocks(),
   readErc20Metadata: (...args: [string, string]) => mockReadErc20Metadata(...args),
   verifyRouterAddress: vi.fn(),
   planKyberAllowance: (...args: unknown[]) => mockPlanKyberAllowance(...args),
@@ -111,8 +111,10 @@ vi.mock("@vex-agent/db/repos/tracked-tokens.js", () => ({
 // back a real snapshot of this file's own route so the handler reaches the
 // behaviour under test.
 const mockClaim = vi.fn();
+const mockCommitPrequoteClaim = vi.fn();
 vi.mock("@vex-agent/tools/protocols/prequote/claim.js", () => ({
-  claimSwapExecutionSnapshot: (...args: unknown[]) => mockClaim(...args),
+  commitPrequoteClaim: (...args: unknown[]) => mockCommitPrequoteClaim(...args),
+  readSwapExecutionSnapshot: (...args: unknown[]) => mockClaim(...args),
 }));
 
 vi.mock("@utils/logger.js", () => {
@@ -120,7 +122,22 @@ vi.mock("@utils/logger.js", () => {
   return { default: stub, logger: stub };
 });
 
-import { approvedClaim } from "../../../kyberswap/fixtures/route-build/approved-quote.js";
+import {
+  approvedClaim,
+  legsForAllowancePlan,
+} from "../../../kyberswap/fixtures/route-build/approved-quote.js";
+
+/**
+ * The transaction set the claimed quote bound, kept in step with whatever this
+ * suite's allowance mock answers: since WP2-B an execute whose leg set is not
+ * the approved one is refused, so `planAllowance` moves both together (a real
+ * change of allowance would have come with a fresh quote).
+ */
+let approvedLegs = legsForAllowancePlan({ needsReset: false, needsApprove: false });
+function planAllowance(plan: { needsReset: boolean; needsApprove: boolean }): void {
+  mockPlanKyberAllowance.mockResolvedValue(plan);
+  approvedLegs = legsForAllowancePlan(plan);
+}
 import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 import { KYBERSWAP_HANDLERS } from "@vex-agent/tools/protocols/kyberswap/handlers.js";
 import { KYBERSWAP_FEE_BPS } from "@tools/kyberswap/constants.js";
@@ -179,6 +196,9 @@ function buildResponse(over: Record<string, unknown> = {}) {
     data: {
       routerAddress: capture.routerAddress,
       data: capture.build.data as Hex,
+      // The provider's own gas figure for the swap leg. MEASURED live on Base
+      // 2026-08-31: `/route/build` answered `gas: "287581"` for a real USDC route.
+      gas: "287581",
       transactionValue: capture.build.transactionValue,
       amountIn: capture.build.amountIn,
       amountOut: capture.build.amountOut,
@@ -209,7 +229,7 @@ describe("kyberswap.swap.execute — the Vex fee recorded as a token amount", ()
     mockReadErc20Metadata.mockImplementation(async (_slug: string, address: string) => ({
       address, symbol: "USDC", name: "USD Coin", decimals: 6, isNative: false as const,
     }));
-    mockPlanKyberAllowance.mockResolvedValue({ needsReset: false, needsApprove: false });
+    planAllowance({ needsReset: false, needsApprove: false });
     const routeResponse = {
       data: {
         routeSummary: {
@@ -227,6 +247,7 @@ describe("kyberswap.swap.execute — the Vex fee recorded as a token amount", ()
         approvedClaim(
           routeResponse.data.routeSummary,
           typeof params.slippageBps === "number" ? params.slippageBps : VEX_DEFAULT_SLIPPAGE_BPS,
+        { legs: approvedLegs },
         ),
     );
     mockBuildRoute.mockResolvedValue(buildResponse());
@@ -236,6 +257,7 @@ describe("kyberswap.swap.execute — the Vex fee recorded as a token amount", ()
       amountInRaw: capture.routeSummary.amountIn,
       amountOutRaw: capture.build.amountOut,
     });
+    mockCommitPrequoteClaim.mockResolvedValue({ ok: true });
   });
 
   it("records the exact fee the router keeps, with its token and decimals", async () => {
@@ -280,7 +302,7 @@ describe("kyberswap.swap.execute — the Vex fee recorded as a token amount", ()
   });
 
   it("leaves every fee field unset on an allowance leg, which charges no Vex fee", async () => {
-    mockPlanKyberAllowance.mockResolvedValue({ needsReset: true, needsApprove: true });
+    planAllowance({ needsReset: true, needsApprove: true });
 
     await execute();
 
@@ -294,5 +316,278 @@ describe("kyberswap.swap.execute — the Vex fee recorded as a token amount", ()
     // ...while the swap leg in the SAME execution still carries the fee, so the
     // difference is a real signal and not a blanket omission.
     expect(swapLeg().vexFee?.amountRaw).toBe("25000");
+  });
+});
+
+/**
+ * The same fee, checked against the statement the human approved, before the
+ * intent row exists and long before Phase B signs anything.
+ *
+ * On this venue equality holds BY CONSTRUCTION: the calldata guard (REAL in
+ * this suite) has already refused to continue unless the decoded description
+ * carries `desc.amount == amountIn` and `feeAmounts == [KYBERSWAP_FEE_BPS]` with
+ * the pinned receiver, and the row's block was stated at quote time from the
+ * same arithmetic over the same amount. So the assertion below can only fail
+ * when the row and the guard disagree, which is a Vex defect - and the refusal
+ * says exactly that, rather than blaming the market.
+ *
+ * "Before signing" is proved by `mockCreateAgentActivityIntent`: Phase A creates
+ * the intent as its LAST statement and every signature in Phase B is recorded
+ * against it, so a refusal that never reached the intent write never reached a
+ * key either.
+ */
+describe("kyberswap.swap.execute - the approved Vex fee statement is re-checked before signing", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockResolveSelectedAddress.mockReturnValue(SESSION_EVM.address);
+    mockResolveSigningWallet.mockReturnValue(SESSION_EVM);
+    mockReadErc20Metadata.mockImplementation(async (_slug: string, address: string) => ({
+      address, symbol: "USDC", name: "USD Coin", decimals: 6, isNative: false as const,
+    }));
+    planAllowance({ needsReset: false, needsApprove: false });
+    mockGetRoute.mockResolvedValue({
+      data: {
+        routeSummary: {
+          amountIn: capture.routeSummary.amountIn,
+          amountOut: ROUTE_OUT,
+          gasUsd: "0.01", routeID: "r1", checksum: "c1",
+          route: ROUTE_PATHS,
+        },
+        routerAddress: capture.routerAddress,
+      },
+    });
+    mockBuildRoute.mockResolvedValue(buildResponse());
+    mockCreateAgentActivityIntent.mockResolvedValue({ executionId: 42, events: [{ id: 100 }, { id: 101 }] });
+    mockSignStageBroadcast.mockResolvedValue({ kind: "confirmed", txHash: "0xswap", receipt: { logs: [] } });
+    mockDecodeKyberSwapSettlement.mockReturnValue({
+      amountInRaw: capture.routeSummary.amountIn,
+      amountOutRaw: capture.build.amountOut,
+    });
+    mockCommitPrequoteClaim.mockResolvedValue({ ok: true });
+  });
+
+  /** The claim the store hands back, carrying `vexFee` for `amountInRaw`. */
+  function claimStating(amountInRaw: bigint): void {
+    mockClaim.mockImplementation(
+      async (_toolId: unknown, _sessionId: unknown, params: Record<string, unknown>) =>
+        approvedClaim(
+          {
+            amountIn: capture.routeSummary.amountIn,
+            amountOut: ROUTE_OUT,
+            gasUsd: "0.01", routeID: "r1", checksum: "c1",
+            route: ROUTE_PATHS,
+          },
+          typeof params.slippageBps === "number" ? params.slippageBps : VEX_DEFAULT_SLIPPAGE_BPS,
+          { legs: approvedLegs, amountInRaw },
+        ),
+    );
+  }
+
+  it("executes when the row's statement is the fee this build will take", async () => {
+    claimStating(AMOUNT_IN_RAW);
+
+    const result = await execute();
+
+    expect(result.success, `handler output: ${result.output}`).toBe(true);
+    expect(swapLeg().vexFee?.amountRaw).toBe(EXPECTED_FEE_RAW.toString());
+  });
+
+  it("refuses before signing when the row states a different fee amount", async () => {
+    // A row stating the fee for TWICE this trade's input: the amount the router
+    // will actually keep is half what the card said. Nothing about the market
+    // can produce this, which is what the refusal tells the agent.
+    claimStating(AMOUNT_IN_RAW * 2n);
+
+    const result = await execute();
+
+    expect(result.success).toBe(false);
+    // Phase A never reached its last statement, so no execution was opened and
+    // Phase B never ran.
+    expect(mockCreateAgentActivityIntent).not.toHaveBeenCalled();
+    expect(mockSignStageBroadcast).not.toHaveBeenCalled();
+    expect(result.output).toContain("Refused before signing");
+    expect(result.output).toContain("the Vex fee amount");
+    expect(result.output).toContain("cannot happen on this venue");
+  });
+
+  it("fails closed when the claimed row carries no fee statement at all", async () => {
+    mockClaim.mockImplementation(
+      async (_toolId: unknown, _sessionId: unknown, params: Record<string, unknown>) => {
+        const claim = approvedClaim(
+          {
+            amountIn: capture.routeSummary.amountIn,
+            amountOut: ROUTE_OUT,
+            gasUsd: "0.01", routeID: "r1", checksum: "c1",
+            route: ROUTE_PATHS,
+          },
+          typeof params.slippageBps === "number" ? params.slippageBps : VEX_DEFAULT_SLIPPAGE_BPS,
+          { legs: approvedLegs, amountInRaw: AMOUNT_IN_RAW },
+        );
+        // The gate refuses a fee-bearing execute on a row in this state, so
+        // reaching the executor means it was bypassed. It signs nothing anyway.
+        return { ...claim, vexFee: undefined };
+      },
+    );
+
+    const result = await execute();
+
+    expect(result.success).toBe(false);
+    expect(mockCreateAgentActivityIntent).not.toHaveBeenCalled();
+    expect(mockSignStageBroadcast).not.toHaveBeenCalled();
+    expect(result.output).toContain("the approved quote states no Vex fee at all");
+  });
+});
+
+/**
+ * Read, compare, THEN claim.
+ *
+ * KyberSwap used to claim the approved row in the handler, before Phase A had
+ * fetched the build, run the calldata guard or compared the fee statement. Every
+ * refusal in this phase therefore spent the quote, and the retry those refusals
+ * instruct the agent to make got `already_claimed`. The claim is now the last
+ * thing Phase A does that writes anything - after the guard, the fee comparison
+ * and the debit-plan comparison, immediately before the durable intent.
+ */
+describe("kyberswap.swap.execute - a refused execute leaves the approved quote unconsumed", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockResolveSelectedAddress.mockReturnValue(SESSION_EVM.address);
+    mockResolveSigningWallet.mockReturnValue(SESSION_EVM);
+    mockReadErc20Metadata.mockImplementation(async (_slug: string, address: string) => ({
+      address, symbol: "USDC", name: "USD Coin", decimals: 6, isNative: false as const,
+    }));
+    planAllowance({ needsReset: false, needsApprove: false });
+    mockGetRoute.mockResolvedValue({
+      data: {
+        routeSummary: {
+          amountIn: capture.routeSummary.amountIn,
+          amountOut: ROUTE_OUT,
+          gasUsd: "0.01", routeID: "r1", checksum: "c1",
+          route: ROUTE_PATHS,
+        },
+        routerAddress: capture.routerAddress,
+      },
+    });
+    mockBuildRoute.mockResolvedValue(buildResponse());
+    mockCreateAgentActivityIntent.mockResolvedValue({ executionId: 42, events: [{ id: 100 }, { id: 101 }] });
+    mockSignStageBroadcast.mockResolvedValue({ kind: "confirmed", txHash: "0xswap", receipt: { logs: [] } });
+    mockDecodeKyberSwapSettlement.mockReturnValue({
+      amountInRaw: capture.routeSummary.amountIn,
+      amountOutRaw: capture.build.amountOut,
+    });
+    mockCommitPrequoteClaim.mockResolvedValue({ ok: true });
+    claimFor(AMOUNT_IN_RAW);
+  });
+
+  /** The row the store hands back, stating the fee for `amountInRaw`. */
+  function claimFor(amountInRaw: bigint): void {
+    mockClaim.mockImplementation(
+      async (_toolId: unknown, _sessionId: unknown, params: Record<string, unknown>) =>
+        approvedClaim(
+          {
+            amountIn: capture.routeSummary.amountIn,
+            amountOut: ROUTE_OUT,
+            gasUsd: "0.01", routeID: "r1", checksum: "c1",
+            route: ROUTE_PATHS,
+          },
+          typeof params.slippageBps === "number" ? params.slippageBps : VEX_DEFAULT_SLIPPAGE_BPS,
+          { legs: approvedLegs, amountInRaw },
+        ),
+    );
+  }
+
+  it("does not claim the row when the fee statement disagrees with the build", async () => {
+    claimFor(AMOUNT_IN_RAW * 2n);
+
+    const result = await execute();
+
+    expect(result.success).toBe(false);
+    expect(mockCommitPrequoteClaim).not.toHaveBeenCalled();
+    expect(mockCreateAgentActivityIntent).not.toHaveBeenCalled();
+    expect(mockSignStageBroadcast).not.toHaveBeenCalled();
+  });
+
+  it("does not claim the row when the build itself is refused", async () => {
+    // A build whose router is not the one Vex verified: the calldata guard (real
+    // in this suite) refuses it. The quote must survive that refusal too.
+    mockBuildRoute.mockResolvedValue(buildResponse({ data: "0xdeadbeef" }));
+
+    const result = await execute();
+
+    expect(result.success).toBe(false);
+    expect(mockCommitPrequoteClaim).not.toHaveBeenCalled();
+  });
+
+  it("claims the row that was read, once, immediately before the intent", async () => {
+    const result = await execute();
+
+    expect(result.success, `handler output: ${result.output}`).toBe(true);
+    expect(mockCommitPrequoteClaim).toHaveBeenCalledTimes(1);
+    const [ticket, claimedBy] = mockCommitPrequoteClaim.mock.calls[0] as [{ prequoteId: string }, string];
+    expect(ticket.prequoteId).toBe("prequote-fixture");
+    expect(claimedBy).toContain("kyberswap.swap.execute");
+    // The order is the contract: the claim writes, then the intent.
+    const [claimOrder] = mockCommitPrequoteClaim.mock.invocationCallOrder;
+    const [intentOrder] = mockCreateAgentActivityIntent.mock.invocationCallOrder;
+    if (claimOrder === undefined || intentOrder === undefined) {
+      throw new Error("both the claim and the intent write must have been called");
+    }
+    expect(claimOrder).toBeLessThan(intentOrder);
+  });
+
+  it("refuses without signing when a concurrent execute won the same row", async () => {
+    mockCommitPrequoteClaim.mockResolvedValue({
+      ok: false,
+      refusal: { kind: "already_claimed", message: "Refused before signing: this quote has already been claimed." },
+    });
+
+    const result = await execute();
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("already been claimed");
+    expect(mockCreateAgentActivityIntent).not.toHaveBeenCalled();
+    expect(mockSignStageBroadcast).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The typed reason must reach the RESULT, not only the log line. KyberSwap
+   * throws its refusal out of Phase A, so the reason travels on the thrown
+   * `VexFeeStatementRefusal` and is merged into the result's data by the
+   * pre-broadcast recorder.
+   */
+  it("carries the typed fee reason on the tool result", async () => {
+    claimFor(AMOUNT_IN_RAW * 2n);
+
+    const result = await execute();
+
+    const refusal = (result.data as Record<string, unknown>)._vexFeeRefusal as Record<string, unknown>;
+    expect(refusal.reason).toBe("vex_fee_statement_changed");
+    expect(refusal.movedFields).toContain("feeAmountRaw");
+    expect(String(refusal.remediation)).toContain("kyberswap__swap_quote");
+    expect(JSON.stringify(refusal)).not.toMatch(/0x[0-9a-fA-F]{40}/);
+  });
+
+  /**
+   * PIN, DO NOT RE-DERIVE (fixed decision 2026-09-04, recorded beside
+   * `vexFeePreviewSchema`).
+   *
+   * KyberSwap has no separate fee leg at all: the fee is inside the router
+   * calldata the pre-sign guard accepted, so the amount that is signed cannot
+   * differ from the compared statement by construction, and nothing after the
+   * comparison can raise it. What is signed is the build response's own bytes.
+   */
+  it("signs the build's bytes, with the fee inside them and nothing re-derived", async () => {
+    const result = await execute();
+    expect(result.success, `handler output: ${result.output}`).toBe(true);
+
+    expect(mockSignStageBroadcast).toHaveBeenCalledTimes(1);
+    const signedCall = mockSignStageBroadcast.mock.calls[0];
+    if (signedCall === undefined) throw new Error("the swap leg must have been signed");
+    const request = signedCall[2] as { readonly to: string; readonly data: string };
+    expect(request.data).toBe(capture.build.data);
+    expect(request.to.toLowerCase()).toBe(getAddress(capture.routerAddress).toLowerCase());
+    // The fee the row recorded is the router's own arithmetic over the amount
+    // the guard pinned, and the disclosure says it is taken inside the route.
+    expect(swapLeg().vexFee?.amountRaw).toBe(EXPECTED_FEE_RAW.toString());
   });
 });

@@ -1,0 +1,49 @@
+{
+  "endpoint": "https://api.bankr.bot/discover?chain=robinhood&platform=all&limit=5&q=0x02297ba5864276c1a95e1ad6218cd8cc5ceb7945",
+  "capturedAt": "2026-09-04T18:31:20.502440Z",
+  "response": {
+    "results": [
+      {
+        "tokenAddress": "0x02297ba5864276c1a95e1ad6218cd8cc5ceb7945",
+        "poolId": "0x5c80bdd4226084f91729e7dab93ebbddde50c4a6",
+        "chain": "robinhood",
+        "name": "Pools",
+        "symbol": "POOLS",
+        "decimals": null,
+        "imageUri": "https://ipfs.io/ipfs/bafkreieh35k2pfa6w4a2hduai7l3q4r3gt3trciqzoy2a5ixh26h6iypwy",
+        "totalSupply": null,
+        "deployerAddress": "0x973316cccac1d5ea30d3b25d35f27eae6532b337",
+        "deployerXUsername": null,
+        "deployerXProfileImageUrl": null,
+        "feeRecipientAddress": "0x973316cccac1d5ea30d3b25d35f27eae6532b337",
+        "feeRecipientXUsername": null,
+        "feeRecipientXProfileImageUrl": null,
+        "tweetUrl": null,
+        "websiteUrl": null,
+        "deployedAt": "2026-08-31T10:05:48.000Z",
+        "lastPriceEth": 2.025590969e-09,
+        "lastPriceUsd": 5.002225068791134e-06,
+        "marketCapUsd": 5002.225068791134,
+        "lastTradeAt": "2026-08-31T16:41:17.000Z",
+        "vol1m": 0,
+        "vol5m": 0,
+        "vol1h": 0,
+        "vol6h": 0,
+        "vol24h": 0,
+        "txCount24h": 0,
+        "priceChange1m": 0,
+        "priceChange5m": 0,
+        "priceChange1h": 0,
+        "priceChange6h": 0,
+        "priceChange24h": 0,
+        "pairedAsset": "weth",
+        "platform": "poolsfun",
+        "poolsFunBrand": {
+          "status": "unofficial",
+          "revision": 1
+        }
+      }
+    ],
+    "nextCursor": null
+  }
+}

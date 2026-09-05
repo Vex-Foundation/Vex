@@ -1,7 +1,7 @@
 /**
  * `khalani.bridge` USD/token facts and Vex-fee disclosure (step 7 of the
  * staged-execute contract, split out in 0R.4, refactor-only). Khalani serves
- * no USD, so these are resolved here — BEFORE the dryRun branch — which is
+ * no USD, so these are resolved here - BEFORE the dryRun branch - which is
  * what makes the preview disclose the SAME fee the execute charges, and the
  * dryRun preview of the native-cost breakdown.
  */
@@ -9,19 +9,33 @@
 import {
   BRIDGE_FEE_RECEIVER_EVM,
   BRIDGE_FEE_RECEIVER_SOLANA,
+  bridgeFeeStatementChangedMessage,
   buildBridgeFeeDisclosure,
   buildBridgeFeeSkippedDisclosure,
+  checkBridgeFeeStatementUnchanged,
+  missingBridgeFeeStatementMessage,
+  unauthorizedBridgeQuoteMessage,
+  unregisteredBridgeFeeGateMessage,
+  VEX_FEE_GATE_UNREGISTERED_REASON,
+  VEX_FEE_QUOTE_UNAUTHORIZED_REASON,
+  VEX_FEE_STATEMENT_CHANGED_REASON,
+  VEX_FEE_STATEMENT_MISSING_REASON,
   type BridgeFeeDisclosure,
+  type BridgeFeeRefusal,
   type BridgeFeeSplit,
 } from "@tools/bridge-fee/index.js";
+import { findFreshMatchedPrequote } from "@vex-agent/tools/protocols/prequote/gate.js";
+import logger from "@utils/logger.js";
 import type { KhalaniPlanNativeValue } from "@tools/khalani/deposit-native-value.js";
 import type { BridgeChainFamily } from "@vex-agent/db/repos/agent-activity.js";
 import {
   estimateUsd,
   humanizeAmount,
-  resolveKhalaniTokenInfo,
+  resolveKhalaniBridgeTokenInfo,
   type KhalaniTokenInfo,
 } from "../bridge-usd.js";
+import type { BridgeTokenIdentityPreview } from "@vex-agent/tools/protocols/bridge-token-identity.js";
+import type { ProtocolExecutionContext } from "../../../types.js";
 
 export interface KhalaniFeeDisclosureInput {
   readonly fromToken: string;
@@ -29,9 +43,12 @@ export interface KhalaniFeeDisclosureInput {
   readonly fromChainId: number;
   readonly toChainId: number;
   readonly fromFamily: BridgeChainFamily;
+  readonly toFamily: BridgeChainFamily;
   readonly feeSplit: BridgeFeeSplit;
   readonly chargeFee: boolean;
   readonly feeSkipReason: string | null;
+  readonly signal?: AbortSignal;
+  readonly tokenIdentity: BridgeTokenIdentityPreview;
 }
 
 export interface KhalaniFeeDisclosure {
@@ -53,8 +70,8 @@ export async function resolveKhalaniFeeDisclosure(
 ): Promise<KhalaniFeeDisclosure> {
   const { fromToken, toToken, feeSplit, chargeFee } = input;
   const [fromInfo, toInfo]: [KhalaniTokenInfo | null, KhalaniTokenInfo | null] = await Promise.all([
-    resolveKhalaniTokenInfo(fromToken, input.fromChainId),
-    resolveKhalaniTokenInfo(toToken, input.toChainId),
+    resolveKhalaniBridgeTokenInfo(fromToken, input.fromChainId, input.tokenIdentity.source),
+    resolveKhalaniBridgeTokenInfo(toToken, input.toChainId, input.tokenIdentity.destination),
   ]);
   const feeAmountHuman = humanizeAmount(feeSplit.feeRaw.toString(), fromInfo?.decimals);
   const usdVexFee = chargeFee ? estimateUsd(feeAmountHuman, fromInfo?.priceUsd) : undefined;
@@ -76,9 +93,100 @@ export async function resolveKhalaniFeeDisclosure(
   return { fromInfo, toInfo, feeAmountHuman, usdVexFee, vexFee };
 }
 
+/** The tool id the prequote channel gates, and the quote tool an agent recalls. */
+const KHALANI_BRIDGE_TOOL_ID = "khalani.bridge";
+const KHALANI_QUOTE_TOOL_NAME = "khalani__bridge_quote_get";
+
+/**
+ * Hold this bridge to the Vex fee statement its approval was granted on, in the
+ * pre-sign window (rule 90).
+ *
+ * The disposition is decided at QUOTE time on this venue too (skipping the fee
+ * changes the amount Khalani is quoted for, so it cannot be deferred), which is
+ * exactly why it can move: the same params quoted twice can straddle a token
+ * being flagged fee-on-transfer or a honeypot. The row states what a person
+ * approved, this call states what would actually happen, and a disagreement
+ * REFUSES rather than picking one.
+ *
+ * Returns the typed refusal, or `null` when the call may proceed. Every refusal
+ * carries its bounded reason so the public result can state WHY instead of
+ * collapsing into a generic bridge failure.
+ *
+ * `not_gated` IS A REFUSAL HERE (review finding, 2026-09-04). Answering `null` turned the
+ * loss of this tool's registry mapping into permission to sign a fee, and this
+ * handler is gated by construction: the prequote row is its entire fee
+ * authority. Rule 07, fail closed.
+ *
+ * Runs before the deposit plan is committed, before the in-flight guard, before
+ * the intent and before the signing wallet is resolved, so a refusal signs
+ * nothing, broadcasts nothing and reserves nothing.
+ */
+export async function khalaniVexFeeStatementRefusal(input: {
+  readonly params: Record<string, unknown>;
+  readonly context: ProtocolExecutionContext;
+  readonly sessionId: string;
+  /** The disposition this call would actually execute on, freshly derived. */
+  readonly derivedNow: BridgeFeeDisclosure;
+}): Promise<BridgeFeeRefusal | null> {
+  const matched = await findFreshMatchedPrequote(
+    KHALANI_BRIDGE_TOOL_ID,
+    input.sessionId,
+    input.params,
+    input.context,
+  );
+  if (!matched.ok) {
+    // Destructured so the literal narrows.
+    const { reason, eligibilityKind } = matched;
+    if (reason === "not_gated") {
+      logger.error("khalani.bridge.vex_fee_gate_unregistered", {
+        reason: VEX_FEE_GATE_UNREGISTERED_REASON,
+        toolId: KHALANI_BRIDGE_TOOL_ID,
+      });
+      return {
+        reason: VEX_FEE_GATE_UNREGISTERED_REASON,
+        movedFields: [],
+        message: unregisteredBridgeFeeGateMessage(KHALANI_BRIDGE_TOOL_ID),
+        remediation: "Report this build defect; a re-quote cannot clear it.",
+      };
+    }
+    return {
+      reason: VEX_FEE_QUOTE_UNAUTHORIZED_REASON,
+      movedFields: [],
+      message: unauthorizedBridgeQuoteMessage({ reason, eligibilityKind }, KHALANI_QUOTE_TOOL_NAME),
+      remediation: `Call ${KHALANI_QUOTE_TOOL_NAME} again and approve the fresh quote.`,
+    };
+  }
+  if (matched.vexFee === undefined) {
+    logger.warn("khalani.bridge.vex_fee_statement_missing", { reason: VEX_FEE_STATEMENT_MISSING_REASON });
+    return {
+      reason: VEX_FEE_STATEMENT_MISSING_REASON,
+      movedFields: [],
+      message: missingBridgeFeeStatementMessage(KHALANI_QUOTE_TOOL_NAME),
+      remediation: `Call ${KHALANI_QUOTE_TOOL_NAME} again and approve the fresh quote.`,
+    };
+  }
+  const check = checkBridgeFeeStatementUnchanged({
+    statedOnCard: matched.vexFee,
+    derivedNow: input.derivedNow,
+  });
+  if (check.ok) return null;
+  // The FIELD only: the two values carry a treasury address and the amounts the
+  // card showed, and the agent receives those in the refusal itself.
+  logger.warn("khalani.bridge.vex_fee_statement_changed", {
+    reason: VEX_FEE_STATEMENT_CHANGED_REASON,
+    field: check.field,
+  });
+  return {
+    reason: VEX_FEE_STATEMENT_CHANGED_REASON,
+    movedFields: [check.field],
+    message: bridgeFeeStatementChangedMessage(check, KHALANI_QUOTE_TOOL_NAME),
+    remediation: `Call ${KHALANI_QUOTE_TOOL_NAME} again and approve the fresh quote.`,
+  };
+}
+
 /**
  * The native-cost block the dryRun preview carries. A preview that cannot show
- * the breakdown says so and says why — silence would read as "no native charge",
+ * the breakdown says so and says why - silence would read as "no native charge",
  * which is exactly the misreading that let an undisclosed 1e15 wei through.
  */
 export function nativeCostPreview(

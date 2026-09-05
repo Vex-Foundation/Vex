@@ -1,16 +1,19 @@
 import type { ProtocolToolManifest } from "../../types.js";
 import { RELAY_BRIDGE_DISCOVERY } from "../../embeddings/relay/bridge.js";
 import {
+  BRIDGE_DERIVED_RECIPIENT_SENTENCE,
   CANONICAL_CHAIN_SENTENCE,
   CANONICAL_RAW_AMOUNT_SENTENCE,
   CANONICAL_SLIPPAGE_PARAGRAPH,
 } from "../../conventions.js";
 import { BRIDGE_FEE_BPS } from "@tools/bridge-fee/index.js";
+import { BRIDGE_TOKEN_METADATA_RESULT_DESCRIPTION } from "../../bridge-token-identity-contract.js";
+import { BRIDGE_VEX_FEE } from "../../../vex-fee-notes.js";
 
 /**
  * The ONE raw-amount description both Relay bridge tools declare (W5b). It ends
  * with the shared convention sentence, which names `TokenFind` as the decimals
- * source — rule 90: a raw amount that travels without the decimals needed to
+ * source - rule 90: a raw amount that travels without the decimals needed to
  * read it is a thousandfold error waiting to happen.
  */
 const AMOUNT_RAW_DESCRIPTION =
@@ -39,7 +42,15 @@ const BRIDGE_PARAMS = [
   { key: "toChain", type: "string" as const, required: true, description: `Destination chain. ${CANONICAL_CHAIN_SENTENCE} Robinhood Chain is \`robinhood\` / \`4663\`.` },
   { key: "toToken", type: "string" as const, required: true, description: "Destination token address, or native ETH/native." },
   { key: "amountRaw", type: "string" as const, required: true, description: AMOUNT_RAW_DESCRIPTION },
-  { key: "recipient", type: "string" as const, description: "Destination recipient (default: your wallet)." },
+  // `recipient` is deliberately NOT exposed: a bridge delivers to the wallet
+  // selected for this project on the destination chain (Relay v1 is EVM-only,
+  // so that is the selected EVM wallet), derived through
+  // `resolveSelectedAddress`. A destination a model can choose is a destination
+  // an injection can choose, and in a FULL project no approval card shows it.
+  // Declared in `rejectedParams` on both tools so the untrusted boundary
+  // answers the attempt with the remedy; the handler rejects it again by name,
+  // with the address. See the bridge-destination policy in
+  // `@tools/khalani/request.js`, which both bridge families share.
   // `refundTo` is deliberately NOT exposed: it decides where funds land when a
   // bridge FAILS, and a model-chosen fund destination is the same vector as a
   // model-chosen fee. Vex derives it from the selected source wallet; the
@@ -61,23 +72,27 @@ export const RELAY_BRIDGE_TOOLS: readonly ProtocolToolManifest[] = [
     description:
       "PREVIEW a Relay cross-chain bridge without signing or sending anything. Use this before recommending a "
       + "bridge, and whenever the question is what would arrive on the other side, what it would cost, or how long "
-      + "it would take. Resolve token addresses first; `amountRaw` is in the source token's smallest units. "
+      + "it would take. Resolve each EVM token with TokenFind on its exact chain first; continue only from a mutation-ready identity. `amountRaw` is in the source token's smallest units. The quote path independently reads EVM symbol and decimals from the contract; provider-list decimals are used only for price estimates. "
       + `${RELAY_VEX_FEE_SENTENCE} `
       + "RETURNS `serviceable` plus the reason when a route is degraded, `fromChain`/`toChain` and their chain ids, "
       + "`amounts.in` and `amounts.out` each with token, human `amount`, `amountRaw` and a NULLABLE `usd` estimate, "
       + "`bridgedAmount` (the post-fee amount actually sent), `minimumAmountOutRaw`, `estimatedTimeSeconds`, "
       + "`totalImpactPercent`, `appliedSlippagePercent`, `steps`, `vexFee`, `feeUsdByBucket` and the `requestId` the "
-      + "execute correlates against. Every USD figure is an estimate, never a traded price. Read-only. "
+      + `execute correlates against. ${BRIDGE_TOKEN_METADATA_RESULT_DESCRIPTION} Every USD figure is an estimate, never a traded price. Read-only. `
+      + "`recipient` and `refundTo` are NOT parameters and are rejected by name: the bridge delivers to the "
+      + "wallet selected for this project on the destination chain, and a failed bridge refunds to the source "
+      + "wallet. "
       + "Relay is the ONLY bridge that reaches Robinhood Chain (4663), which Khalani does not cover. For every other "
       + "route Khalani is Vex's primary bridge: use this when Khalani does not cover the route, or when its quote "
       + "failed for a routing reason.",
     mutating: false,
     actionKind: "read",
-    // The same five-plus-two contract as the execute, minus `dryRun`. Declared
+    // The same five-plus-one contract as the execute, minus `dryRun`. Declared
     // once so the chain sentence and the fee prose cannot drift between the
     // lane that prices a bridge and the lane that signs one.
     params: BRIDGE_PARAMS,
     exampleParams: { fromChain: "base", fromToken: "native", toChain: "robinhood", toToken: "native", amountRaw: "1000000000000000" },
+    rejectedParams: { recipient: BRIDGE_DERIVED_RECIPIENT_SENTENCE },
     discovery: RELAY_BRIDGE_DISCOVERY["relay.quote.get"],
   },
   {
@@ -86,32 +101,39 @@ export const RELAY_BRIDGE_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "relay",
     lifecycle: "active",
     // States the truthful async contract: the call returns while the
-    // destination fill is still in progress — a returned bridge is NOT yet
+    // destination fill is still in progress - a returned bridge is NOT yet
     // confirmed. Venue preference mirrors relay.quote.get.
     description:
       "Execute a REAL Relay cross-chain bridge. SPENDS FUNDS: it signs and broadcasts the origin-chain deposit from "
       + "the user's wallet, requires approval before it runs, and cannot be undone; the solver then fills on the "
-      + "destination. REQUIRES a fresh matching relay__bridge_quote_get first. `amountRaw` is in the source token's smallest "
-      + `units. ${RELAY_VEX_FEE_SENTENCE} `
+      + "destination. REQUIRES a fresh matching relay__bridge_quote_get first. Resolve each EVM token with TokenFind on its exact chain and continue only from a mutation-ready identity. `amountRaw` is in the source token's smallest "
+      + `units. The approval gate independently reads EVM symbol and decimals from the contract and refuses unavailable metadata; provider-list decimals are never signing authority. ${RELAY_VEX_FEE_SENTENCE} `
       + "THE CALL RETURNS BEFORE THE BRIDGE IS FINAL, and this is the fact to act on: the destination fill is still "
       + "in progress, so the result comes back with `status: \"pending\"` and success false. Vex's background sweep "
       + "owns confirmation and finalizes the record once the fill is independently verified. Do NOT re-bridge and do "
       + "NOT poll this tool in a loop. "
+      + `With \`dryRun: true\`, ${BRIDGE_TOKEN_METADATA_RESULT_DESCRIPTION} `
       + "RETURNS `status`, a `message` stating what is known, `requestId`, `legs[]` (role, chain, txHash, status), "
       + "`inTxHashes` for the origin broadcasts Vex signed, `txHashes` for any destination fill seen, `amounts.in` "
       + "and `amounts.out`, and `vexFee` with its collection outcome. `providerStatus` is Relay's own last reported "
       + "state and `providerStatusUnreachable` true means no status could be read this turn, which is NOT the same "
       + "as still pending. "
+      + "`recipient` and `refundTo` are NOT parameters and are rejected by name: the bridge delivers to the "
+      + "wallet selected for this project on the destination chain, and a failed bridge refunds to the source "
+      + "wallet. "
       + "Relay is the ONLY bridge that reaches Robinhood Chain (4663), which Khalani does not cover. For every other "
       + "route Khalani is Vex's primary bridge: use this when Khalani does not cover the route, or when its quote "
       + "failed for a routing reason.",
     mutating: true,
     actionKind: "user_wallet_broadcast",
+    returns: "RETURNS `status`, a `message` stating what is known, `requestId`, `legs[]` (role, chain, txHash, status), `inTxHashes` for the origin broadcasts Vex signed, `txHashes` for any destination fill seen, `amounts.in` and `amounts.out`, and `vexFee` with its collection outcome. `providerStatus` is Relay's own last reported state and `providerStatusUnreachable` true means no status could be read this turn, which is NOT the same as still pending.",
+    vexFee: BRIDGE_VEX_FEE,
     params: [
       ...BRIDGE_PARAMS,
       { key: "dryRun", type: "boolean", description: "If true, fetch the route without signing." },
     ],
     exampleParams: { fromChain: "base", fromToken: "native", toChain: "robinhood", toToken: "native", amountRaw: "1000000000000000" },
+    rejectedParams: { recipient: BRIDGE_DERIVED_RECIPIENT_SENTENCE },
     discovery: RELAY_BRIDGE_DISCOVERY["relay.bridge"],
   },
 ];

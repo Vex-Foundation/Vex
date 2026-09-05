@@ -61,10 +61,6 @@ vi.mock("@vex-agent/db/repos/balances.js", () => ({
   getSnapshotHistory: vi.fn().mockResolvedValue([]),
 }));
 
-vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
-  hasPendingActivityForWallets: vi.fn().mockResolvedValue(false),
-}));
-
 const { syncWalletBalances, selectiveBalanceSync } = await import(
   "../../../vex-agent/sync/balance-sync.js"
 );

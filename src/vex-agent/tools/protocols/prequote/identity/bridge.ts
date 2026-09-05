@@ -7,15 +7,15 @@
  * identity so their match-hashes collide. Both tools receive the SAME
  * alias-translated params (the `BridgeQuote` and `bridge` aliases translate to
  * the same khalani param keys), so this builder is purely params- + context-
- * driven and is the SINGLE source of bridge identity — neither side reimplements
+ * driven and is the SINGLE source of bridge identity - neither side reimplements
  * the field extraction or the defaults.
  *
  * Defaults (mirror the khalani bridge/quote handlers + `prepareQuoteRequest`):
  *   - chain ids   : `resolveChainId(from/toChain, chains)` → numeric Khalani id,
  *   - source/dest family: `getChainFamily(chainId, chains)`,
  *   - sourceWallet: `resolveSelectedAddress(..., sourceFamily)` (the signer),
- *   - recipient   : explicit `params.recipient`, else the dest-family selected
- *                   wallet (`resolveSelectedAddress(..., destFamily)`),
+ *   - recipient   : ALWAYS the dest-family selected wallet
+ *                   (`resolveSelectedAddress(..., destFamily)`) - never a param,
  *   - tradeType   : "EXACT_OUTPUT" iff params.tradeType === "EXACT_OUTPUT",
  *                   else "EXACT_INPUT" (same as `parseTradeType`),
  *   - refundTo    : explicit `params.refundTo`, else `sourceWallet` (mirrors
@@ -26,7 +26,7 @@
  *   - referrerFeeBps: explicit `params.referrerFeeBps` canonicalized via
  *                   `canonReferrerFeeBps`, else "",
  *   - filler      : explicit `params.filler`, else "" (opaque provider NAME, not
- *                   an address — case-preserved by the hash).
+ *                   an address - case-preserved by the hash).
  *
  * Tokens/amount/money-fee fields are passed through (the hash canonicalizes per
  * leg family / per field). Any throw (unresolved chain, wallet-scope, invalid
@@ -59,7 +59,7 @@ function parseBridgeTradeType(raw: string): BridgeTradeType {
  * into the same integer the handler accepts, producing false-negative gate
  * blocks). We reproduce the handler's parse so quote↔execute collide whenever
  * the handler would treat the fees as equal. Empty/omitted → "" (stable token).
- * An invalid value THROWS — the recorder skips, the gate fails closed (BLOCK),
+ * An invalid value THROWS - the recorder skips, the gate fails closed (BLOCK),
  * mirroring `parseReferrerFeeBps` rejecting it before any broadcast.
  */
 function canonReferrerFeeBps(raw: string): string {
@@ -103,21 +103,25 @@ export async function buildBridgeIdentity(
   // Source signer = the session's selected wallet for the source family.
   const sourceWallet = resolveSelectedAddress(context.walletResolution, context.walletPolicy, sourceFamily);
 
-  // Recipient default mirrors the bridge handler: explicit recipient honored,
-  // else the dest-family selected wallet (fail-closed if neither resolves).
-  const explicitRecipient = bridgeStr(params, "recipient");
-  const recipient = explicitRecipient !== ""
-    ? explicitRecipient
-    : resolveSelectedAddress(context.walletResolution, context.walletPolicy, destFamily);
+  // DERIVED, never read from params - the same hole `refundTo` had, and the
+  // same fix: binding a MODEL-supplied destination let an attacker who set the
+  // same address on the quote AND the execute collide the hashes and pass the
+  // gate. The bridge tools no longer accept the key at all (both manifests
+  // refuse it at the boundary, both handlers reject it by name), so binding the
+  // derived value keeps the identity honest about where the funds would land.
+  // Unchanged for every legitimate call - an omitted `recipient` already
+  // resolved to the dest-family wallet - so persisted hashes do not move.
+  // Fail-closed when the destination family has no selected wallet.
+  const recipient = resolveSelectedAddress(context.walletResolution, context.walletPolicy, destFamily);
 
-  // Money/fee leg (8c security fix) — bound so a quote cannot authorize an
+  // Money/fee leg (8c security fix) - bound so a quote cannot authorize an
   // execute that redirects refunds or changes the fee. Defaults mirror
   // `prepareQuoteRequest`: refundTo falls back to the source wallet (== the
   // resolved fromAddress under a session); referrer/referrerFeeBps/filler are
   // absent → "". referrerFeeBps is canonicalized to the handler's numeric
   // identity (throws on an invalid value → recorder skip / gate fail-closed).
   //
-  // NOTE: `referrer`/`referrerFeeBps` can no longer be SUPPLIED — the tool and
+  // NOTE: `referrer`/`referrerFeeBps` can no longer be SUPPLIED - the tool and
   // alias surfaces dropped them and both Khalani handlers reject them by name
   // (bridge referral-fee policy in `@tools/khalani/request.js`), so in practice
   // these always read "". The binding is kept deliberately: it costs nothing,
@@ -129,8 +133,8 @@ export async function buildBridgeIdentity(
   // colliding hashes, so the gate passed a redirected refund. The tool and
   // alias surfaces no longer accept the key at all and both handlers reject it
   // by name; binding the derived value keeps the identity honest about where a
-  // refund would land. Unchanged for every legitimate call — an omitted
-  // `refundTo` already resolved to the source wallet — so persisted hashes do
+  // refund would land. Unchanged for every legitimate call - an omitted
+  // `refundTo` already resolved to the source wallet - so persisted hashes do
   // not move.
   const refundTo = sourceWallet;
   const referrer = bridgeStr(params, "referrer");
@@ -140,7 +144,7 @@ export async function buildBridgeIdentity(
   return {
     kind: "bridge",
     sessionId,
-    // Venue binding (LOCKED #4) — Khalani's own bridge identity path.
+    // Venue binding (LOCKED #4) - Khalani's own bridge identity path.
     provider: "khalani",
     sourceFamily,
     destFamily,
@@ -156,11 +160,11 @@ export async function buildBridgeIdentity(
     referrer,
     referrerFeeBps,
     filler,
-    // Khalani has NO slippage surface — `khalani.bridge` accepts no
+    // Khalani has NO slippage surface - `khalani.bridge` accepts no
     // `slippageBps` and forwards none, so the identity binds the stable empty
     // on BOTH sides and Khalani quote↔execute pairs collide exactly as before.
     // (The generic `bridge`/`BridgeQuote` aliases declare a `slippageBps` arg
-    // for their Relay branch; on the Khalani branch it is REJECTED BY NAME —
+    // for their Relay branch; on the Khalani branch it is REJECTED BY NAME -
     // Khalani is filler-bound and the param would have had no effect, so
     // accepting it silently told the agent it had bought price protection it
     // did not have.)
@@ -170,7 +174,7 @@ export async function buildBridgeIdentity(
 
 /**
  * EXECUTE-ONLY khalani.bridge params the bridge QUOTE (`khalani.quote.get`) has
- * NO counterpart for — they can never be quote-bound, so they can never appear
+ * NO counterpart for - they can never be quote-bound, so they can never appear
  * in the prequote identity. `routeId` pins a specific route; `depositMethod`
  * picks the on-chain deposit path. Both materially change the broadcast but are
  * invisible to the quote, so binding them is impossible by construction.
@@ -181,7 +185,7 @@ const BRIDGE_UNBINDABLE_PARAMS = ["routeId", "depositMethod"] as const;
  * Fail closed if a bridge EXECUTE carries an unbindable execute-only param. This
  * runs in the gate (the single broadcast chokepoint), so it protects BOTH the
  * `bridge` alias and the direct `execute_tool({ toolId:"khalani.bridge" })`
- * path — even though the alias surface no longer exposes these params. A
+ * path - even though the alias surface no longer exposes these params. A
  * non-empty value → `GateIdentityError("unbindable_param")` (caught upstream →
  * bounded BLOCK before approval).
  */

@@ -213,6 +213,7 @@ describe("the emergency ceiling recovers the consumer's screen", () => {
               executable: "bash",
               args: [],
               cwd: CWD,
+              projectLabel: "proj",
               cols: 80,
               rows: 24,
               env: {},

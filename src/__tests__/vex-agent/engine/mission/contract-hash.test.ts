@@ -7,11 +7,13 @@ import {
   LEGACY_V3_CONTRACT_HASH_VERSION,
   LEGACY_V4_CONTRACT_HASH_VERSION,
   LEGACY_V5_CONTRACT_HASH_VERSION,
+  LEGACY_V6_CONTRACT_HASH_VERSION,
   buildContractMaterial,
   isKnownContractHashVersion,
   canonicalStringify,
   computeContractHash,
 } from "../../../../vex-agent/engine/mission/contract-hash.js";
+import { normalizeDeployedCapital } from "../../../../vex-agent/engine/mission/deployed-capital.js";
 import type { DeployedCapital, MissionDraft } from "../../../../vex-agent/engine/types.js";
 
 function makeDraft(overrides: Partial<MissionDraft> = {}): MissionDraft {
@@ -294,8 +296,8 @@ describe("contract-hash", () => {
     });
 
     it("is the version produced for a new draft", () => {
-      expect(CONTRACT_HASH_VERSION).toBe(6);
-      expect(buildContractMaterial(makeDraft()).v).toBe(6);
+      expect(CONTRACT_HASH_VERSION).toBe(7);
+      expect(buildContractMaterial(makeDraft()).v).toBe(7);
     });
 
     it("carries the ceiling pair in the canonical material", () => {
@@ -303,7 +305,7 @@ describe("contract-hash", () => {
         makeDraft({ maxLaunchValueRaw: "2000000000000000", maxLaunchValueDecimals: 18 }),
       );
       expect(material).toMatchObject({
-        v: 6,
+        v: 7,
         maxLaunchValueRaw: "2000000000000000",
         maxLaunchValueDecimals: 18,
       });
@@ -328,15 +330,16 @@ describe("contract-hash", () => {
       });
     });
 
-    it("hashes v3, v4, v5 and v6 of the same draft differently (the whole point of each bump)", () => {
+    it("hashes v3 through v7 of the same draft differently (the whole point of each bump)", () => {
       const draft = makeDraft();
       const hashes = [
         computeContractHash(draft, LEGACY_V3_CONTRACT_HASH_VERSION),
         computeContractHash(draft, LEGACY_V4_CONTRACT_HASH_VERSION),
         computeContractHash(draft, LEGACY_V5_CONTRACT_HASH_VERSION),
+        computeContractHash(draft, LEGACY_V6_CONTRACT_HASH_VERSION),
         computeContractHash(draft, CONTRACT_HASH_VERSION),
       ];
-      expect(new Set(hashes).size).toBe(4);
+      expect(new Set(hashes).size).toBe(5);
     });
 
     // ── C6b: the count ceiling, and why v4 had to freeze ──────────
@@ -366,7 +369,7 @@ describe("contract-hash", () => {
 
     it("carries the count ceiling in the current material and changes the hash when it moves", () => {
       const material = buildContractMaterial(makeDraft({ maxLaunchCount: 3 }));
-      expect(material).toMatchObject({ v: 6, maxLaunchCount: 3 });
+      expect(material).toMatchObject({ v: 7, maxLaunchCount: 3 });
       expect(computeContractHash(makeDraft({ maxLaunchCount: 3 }))).not.toBe(
         computeContractHash(makeDraft({ maxLaunchCount: 4 })),
       );
@@ -398,10 +401,10 @@ describe("contract-hash", () => {
       // The single allowlist `commit-start`, `diff`, `renew` and `acceptance`
       // all gate on — a bump that forgot one of them used to mean a mission of
       // that vintage could never start, renew, or stop showing as dirty.
-      for (const version of [1, 2, 3, 4, 5, 6]) {
+      for (const version of [1, 2, 3, 4, 5, 6, 7]) {
         expect(isKnownContractHashVersion(version)).toBe(true);
       }
-      expect(isKnownContractHashVersion(7)).toBe(false);
+      expect(isKnownContractHashVersion(8)).toBe(false);
       expect(isKnownContractHashVersion(null)).toBe(false);
     });
 
@@ -476,14 +479,66 @@ describe("contract-hash", () => {
       decimals: 18,
       chainId: 4663,
       assetAddress: "0x0f9f0000000000000000000000000000000000ee",
+      assetKind: "token" as const,
       assetSymbol: "VEX",
     };
 
-    it("carries the declaration as one nested object in v6 material", () => {
+    it("carries the structural declaration as one nested object in v7 material", () => {
       expect(buildContractMaterial(makeDraft({ deployedCapital: DECLARED }))).toMatchObject({
-        v: 6,
+        v: 7,
         deployedCapital: DECLARED,
       });
+    });
+
+    it("reproduces frozen v6 material without assetKind", () => {
+      const material = buildContractMaterial(
+        makeDraft({ deployedCapital: DECLARED }),
+        LEGACY_V6_CONTRACT_HASH_VERSION,
+      );
+      expect(material).toMatchObject({
+        v: 6,
+        deployedCapital: {
+          amountRaw: DECLARED.amountRaw,
+          decimals: DECLARED.decimals,
+          chainId: DECLARED.chainId,
+          assetAddress: DECLARED.assetAddress,
+          assetSymbol: DECLARED.assetSymbol,
+        },
+      });
+      expect(material.deployedCapital).not.toHaveProperty("assetKind");
+    });
+
+    it("normalizes its own legacy output idempotently", () => {
+      const legacyWithoutAssetKind = {
+        amountRaw: DECLARED.amountRaw,
+        decimals: DECLARED.decimals,
+        chainId: DECLARED.chainId,
+        assetAddress: DECLARED.assetAddress,
+        assetSymbol: DECLARED.assetSymbol,
+      };
+
+      const firstPass = normalizeDeployedCapital(legacyWithoutAssetKind);
+      expect(firstPass).toMatchObject({ ...legacyWithoutAssetKind, assetKind: null });
+      expect(normalizeDeployedCapital(firstPass)).toEqual(firstPass);
+    });
+
+    it("reproduces the accepted v6 hash from a declaration that never had assetKind", () => {
+      const legacyWithoutAssetKind = asDeclaration({
+        amountRaw: DECLARED.amountRaw,
+        decimals: DECLARED.decimals,
+        chainId: DECLARED.chainId,
+        assetAddress: DECLARED.assetAddress,
+        assetSymbol: DECLARED.assetSymbol,
+      });
+      const normalizedDraft = makeDraft({
+        deployedCapital: normalizeDeployedCapital(legacyWithoutAssetKind),
+      });
+
+      expect(computeContractHash(normalizedDraft, LEGACY_V6_CONTRACT_HASH_VERSION)).toBe(
+        "48e78f0f24f14ec9225a50abfe7e4e89b16e3ad457ae730f458ddcb373bafb07",
+      );
+      expect(buildContractMaterial(normalizedDraft, LEGACY_V6_CONTRACT_HASH_VERSION))
+        .toMatchObject({ deployedCapital: legacyWithoutAssetKind });
     });
 
     it("hashes null for a mission that declared nothing", () => {
@@ -502,13 +557,14 @@ describe("contract-hash", () => {
       );
     });
 
-    it("changes the hash when ANY of the five parts moves", () => {
+    it("changes the hash when ANY of the six parts moves", () => {
       const baseline = computeContractHash(makeDraft({ deployedCapital: DECLARED }));
       const variants = [
         { ...DECLARED, amountRaw: "3045000000000000000000" },
         { ...DECLARED, decimals: 6 },
         { ...DECLARED, chainId: 8453 },
         { ...DECLARED, assetAddress: "0x0f9f0000000000000000000000000000000000ef" },
+        { ...DECLARED, assetKind: "native" as const },
         { ...DECLARED, assetSymbol: "VEX2" },
       ];
       for (const variant of variants) {
@@ -607,9 +663,16 @@ describe("contract-hash", () => {
 
     it("accepts the EVM native sentinel and canonicalizes it to lowercase", () => {
       expect(buildContractMaterial(makeDraft({
-        deployedCapital: { ...DECLARED, assetAddress: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE" },
+        deployedCapital: {
+          ...DECLARED,
+          assetAddress: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+          assetKind: "native",
+        },
       }))).toMatchObject({
-        deployedCapital: { assetAddress: "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" },
+        deployedCapital: {
+          assetAddress: "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          assetKind: "native",
+        },
       });
     });
 

@@ -16,7 +16,15 @@
  * native<->wrapped-native pair - while `amountInUsd` is a real number. The
  * previous derivation turned that into `priceImpact = 1` (a 100% loss that
  * still quoted), which is the pathology this union replaces.
+ *
+ * SPENDABILITY joined this union rather than forming a second one (contract
+ * C2): "can this quote authorize an execute" already had exactly one owner, and
+ * a parallel executability answer living beside it would be a second source of
+ * truth on the money path. The three spendability members are classified by
+ * `./spendability.ts`, which runs only AFTER a route is otherwise executable.
  */
+
+import type { AssetRef, Shortfall } from "./spendability-contract.js";
 
 /**
  * Fractional impact at which the quote is disclosed as adverse but still
@@ -95,6 +103,53 @@ export type QuoteEligibility =
       readonly kind: "provider_usd_invalid";
       /** Which leg(s) the provider did not state usably. */
       readonly leg: "input" | "output" | "both";
+    }
+  /**
+   * The wallet cannot pay the swap's PRINCIPAL out of the source asset.
+   *
+   * The route is still returned and still model-visible: both wallet
+   * references keep a route they cannot fund rather than hiding it (MetaMask
+   * `transaction-pay-controller/src/utils/quotes.ts:762-775` keeps the quote
+   * bundle with the error attached). What changes is the AUTHORITY - this
+   * quote seeds no claimable prequote, so a successful quote can never again
+   * be read as a confirmation that the balance was there.
+   */
+  | {
+      readonly kind: "insufficient_balance";
+      readonly required: Shortfall;
+      readonly current: Shortfall;
+      readonly missing: Shortfall;
+    }
+  /**
+   * A balance the swap depends on could NOT BE READ.
+   *
+   * Never merged into `insufficient_balance` (contract C2.3): "the wallet is
+   * short" and "we do not know what the wallet holds" are different facts with
+   * different remedies, and merging them is exactly the collapse rule 04
+   * forbids. MetaMask keeps them apart too, as separate members of
+   * `QuoteErrorReason` (`transaction-pay-controller/src/types.ts:505-510`).
+   * Fails closed: an unreadable balance is never `executable`.
+   */
+  | {
+      readonly kind: "balance_unavailable";
+      readonly asset: AssetRef;
+      /** BOUNDED structural cause class - never raw provider or RPC text. */
+      readonly cause: string;
+    }
+  /**
+   * The native balance covers the principal but not the swap's FULL native
+   * debit: every fee leg the swap will broadcast plus the measured follow-up
+   * reserve (contract C2.5).
+   *
+   * Distinct from `insufficient_balance` because the remedy is distinct: the
+   * trade size may be fine and the wallet may merely need gas. An ERC-20 swap
+   * reaches this member too - a token swap still pays its gas in native.
+   */
+  | {
+      readonly kind: "gas_reserve_insufficient";
+      readonly required: Shortfall;
+      readonly current: Shortfall;
+      readonly missing: Shortfall;
     };
 
 /** The eligibility kinds that are NOT executable, as a runtime-checkable name. */

@@ -3,7 +3,8 @@
  *
  * Encodes the owner decision recorded in
  * `tool-surface-spec/mcp-export-scope.md`: the whole agent tool surface EXCEPT
- * the session-bound groups. Memory and engine/runtime tools are agent-session
+ * the session-bound groups and the few tools an MCP client already carries
+ * itself. Memory and engine/runtime tools are agent-session
  * concerns (missions, plan mode, session memory, compaction) bound to the
  * in-app session lifecycle; an external coding agent brings its own planning
  * and memory, and MCP 2026-07-28 requires a `tools/list` that does not vary by
@@ -12,10 +13,15 @@
  * exports as a READ-ONLY catalog search (owner decision D2) through its own
  * adapter, never through the in-app dispatch lane.
  *
- * Written as an EXCLUSION list on purpose. A new tool is exported by default,
- * so adding one that IS session-bound fails the parity test by name and forces
- * the decision to be recorded here and in the doc, rather than silently
- * shipping an unreviewed name to external agents.
+ * Protocol tools export by namespace, with ONE named exception set
+ * ({@link NON_EXPORTED_PROTOCOL_TOOLS}) for tools whose only input lives inside
+ * the desktop app and which a caller without that app can therefore never
+ * satisfy.
+ *
+ * Both lists are written as EXCLUSION lists on purpose. A new tool is exported
+ * by default, so adding one that IS session-bound or app-bound fails the parity
+ * test by name and forces the decision to be recorded here and in the doc,
+ * rather than silently shipping an unreviewed name to external agents.
  *
  * Stage A4's inventory (`tools/list`) consumes this module; the executor's
  * admission refuses everything it excludes.
@@ -56,10 +62,41 @@ export const NON_EXPORTED_INTERNAL_TOOLS: ReadonlySet<string> = new Set([
   // external agent could only stage boards nobody can see (merge decision
   // 2026-08-25).
   "BoardCompose",
+  // Research: every MCP client that connects (Claude Code, Codex CLI, Gemini
+  // CLI) carries its own web search and fetch; exporting a Tavily-keyed
+  // duplicate costs a key the user does not need and 2 KB of every session's
+  // context. The tool itself is UNCHANGED for the in-app Vex agent, which has
+  // no client search of its own (owner decision 2026-09-03).
+  "WebResearch",
 ]);
 
 /** The read-only catalog-search tool, exported through its own adapter. */
 export const EXPORTED_TOOL_SEARCH_NAME = "ToolSearch";
+
+/**
+ * Protocol tools (by `toolId`, not publicName) that are NOT exported.
+ *
+ * The launchpads namespace owns the user's local IMAGE LOCKER, and these two
+ * tools are the locker's own surface: `launchpads__images_list` lists the
+ * pictures the user staged inside the Vex desktop app, and
+ * `launchpads__image_publish` publishes locker bytes to a public
+ * content-addressed host. An external coding agent on the Studio MCP surface
+ * has no locker and no way to stage one - on that surface a launch tool takes
+ * an `imagePath` inside the agent's OWN project directory instead. Exporting
+ * the locker tools to a surface that can never satisfy them would advertise a
+ * capability guaranteed to refuse, which is worse than not advertising it at
+ * all: the agent spends a call and a turn to learn what `tools/list` could have
+ * told it for free. Both tools are UNCHANGED for the in-app Vex agent, which
+ * IS the locker's owner.
+ *
+ * An id here need not be registered in the catalog: an unregistered id already
+ * answers false below, so this set is a second, EARLIER reason to answer false,
+ * and it stays correct whether or not the manifests exist in a given tree.
+ */
+export const NON_EXPORTED_PROTOCOL_TOOLS: ReadonlySet<string> = new Set([
+  "launchpads.images",
+  "launchpads.image_publish",
+]);
 
 /**
  * True iff `name` is a registered internal tool the MCP surface exports.
@@ -77,13 +114,20 @@ export function isExportedInternalTool(name: string): boolean {
 /**
  * True iff `toolId` is a protocol manifest the MCP surface exports.
  *
- * EVERY namespace exports (doc: "Protocol tools YES, all namespaces"), so the
- * question is only whether the catalog registers the id. Reachability is a
- * separate concern the runtime owns: a reserved or deprecated namespace still
- * refuses execution, and an env-unmet manifest answers
- * `configuration_unavailable` rather than disappearing from the list.
+ * Two questions, in this order: is the id on the named exclusion set
+ * ({@link NON_EXPORTED_PROTOCOL_TOOLS}), and does the catalog register it.
+ * Every OTHER namespace exports in full. Reachability is a separate concern the
+ * runtime owns: a reserved or deprecated namespace still refuses execution, and
+ * an env-unmet manifest answers `configuration_unavailable` rather than
+ * disappearing from the list.
+ *
+ * This is the ONE enumerator predicate: `listExportedTools` (which builds
+ * `tools/list`), `admitStudioCall` (which dispatches) and `searchExportedTools`
+ * (which advertises) all consult it, so no surface can ever show or run a tool
+ * another surface withholds.
  */
 export function isExportedProtocolTool(toolId: string): boolean {
+  if (NON_EXPORTED_PROTOCOL_TOOLS.has(toolId)) return false;
   return getProtocolManifest(toolId) !== undefined;
 }
 

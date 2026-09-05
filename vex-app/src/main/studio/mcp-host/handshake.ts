@@ -169,6 +169,28 @@ export function lockedRefusal(cause: string): StudioHandshakeRefused {
   return { kind: "refused", code: "locked", message: cause };
 }
 
+/**
+ * The refusal for a peer that never sent its handshake line.
+ *
+ * ONE AUTHOR, TWO TRANSPORTS. On the direct-socket path `StudioConnection`'s
+ * own 5 s timer writes it. On the Windows front path the FRONT owns that timer,
+ * because the front is the process that accepts and the deadline is measured
+ * from `Accept` (`pipe-front-protocol.md` section 9) - so main hands it these
+ * exact bytes in `HELLO`'s `timeoutRefusalBytes` and the front relays them
+ * verbatim. Main authors every refusal line the external peer sees, and this
+ * function is where that promise is kept for the one line main cannot write
+ * itself.
+ */
+export function handshakeTimeoutRefusal(): StudioHandshakeRefused {
+  return {
+    kind: "refused",
+    code: "malformed",
+    message:
+      `No Vex Studio handshake arrived within ${String(STUDIO_HANDSHAKE_DEADLINE_MS)} ms. `
+      + "Send the handshake line first and wait for the ack.",
+  };
+}
+
 /** The refusal for connection 17, and for handshake-pending socket 5. */
 export function atCapacityRefusal(limit: number, what: string): StudioHandshakeRefused {
   return {

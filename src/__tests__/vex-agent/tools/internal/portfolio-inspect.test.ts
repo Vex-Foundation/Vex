@@ -37,7 +37,7 @@ vi.mock("@vex-agent/db/repos/mission-runs.js", () => ({
 }));
 
 // Mock ONLY resolveSelectedAddressSetForRead (the read-side resolver the
-// agent_scan handler uses — mission setup may READ its own wallet) so the handler
+// agent_scan handler uses - mission setup may READ its own wallet) so the handler
 // test controls the wallet set; keep the REAL walletScopeErrorToResult so
 // fail-closed behaviour is real.
 vi.mock("../../../../vex-agent/tools/internal/wallet/resolve.js", async () => {
@@ -76,7 +76,7 @@ describe("agent_scan tool", () => {
     expect(r.output).toContain("Invalid view");
   });
 
-  // Deleted views (Agent Scan plan v3 §1.9/§4.7 — the profit-computation
+  // Deleted views (Agent Scan plan v3 §1.9/§4.7 - the profit-computation
   // system and the LP/position/order lifecycle views are gone; the agent
   // reads history through `transactions`): open_positions, closed_positions,
   // orders, lots, profits, unrealized, bridges, lp_history,
@@ -100,7 +100,7 @@ describe("agent_scan tool", () => {
     });
 
     // `proj_activity.input_amount`/`output_amount` are written VERBATIM from
-    // each tool's `_tradeCapture` (activity-populator.ts) — no unit
+    // each tool's `_tradeCapture` (activity-populator.ts) - no unit
     // normalisation anywhere. The only live writers of those fields are the
     // Pendle handlers, and they write RAW base units deliberately (the spot
     // lot projector BigInt()s them). rules/90: a raw amount must travel with
@@ -120,8 +120,9 @@ describe("agent_scan tool", () => {
       mockGetActivities.mockResolvedValueOnce([activityRow()]);
       const r = await handleAgentScan({ view: "activity" }, ctx);
       const [row] = r.data!.activities as Array<Record<string, unknown>>;
-      expect(row!.input).toBe("1047061 PT-wstETH (raw base units — resolve decimals before quoting)");
-      expect(row!.output).toBe("2000000 USDC (raw base units — resolve decimals before quoting)");
+      expect(row, "agent_scan projected no activity row").toBeDefined();
+      expect(row?.input).toBe("1047061 PT-wstETH (raw base units - resolve decimals before quoting)");
+      expect(row?.output).toBe("2000000 USDC (raw base units - resolve decimals before quoting)");
     });
 
     it("leaves a non-raw-source row's amounts exactly as before", async () => {
@@ -162,7 +163,7 @@ describe("agent_scan tool", () => {
     });
   });
 
-  describe("summary — balances-only (no PnL)", () => {
+  describe("summary - balances-only (no PnL)", () => {
     it("aggregates totalUsd + open position count + latest snapshot, with no PnL fields", async () => {
       mockGetTotalUsd.mockResolvedValueOnce(5000);
       mockGetOpen.mockResolvedValueOnce([{ id: 1 }, { id: 2 }]);
@@ -214,6 +215,7 @@ describe("agent_scan tool", () => {
       deployedCapitalAtStart: {
         chainId: 4663,
         assetAddress: "0x0f9f",
+        assetKind: "token",
         assetSymbol: "VEX",
         declaredAmountRaw: "3044000000000000000000",
         declaredDecimals: 18,
@@ -260,6 +262,7 @@ describe("agent_scan tool", () => {
       expect((dataOf(r).now as Record<string, unknown>).totalUsdEstimate).toBe(34.4);
       expect(dataOf(r).changeSinceStartUsdEstimate).toBeCloseTo(2.3, 6);
       const deployed = dataOf(r).deployedCapital as Record<string, unknown>;
+      expect(deployed.assetKind).toBe("token");
       expect(deployed.declaredAmountHuman).toBe("3044");
       expect(deployed.heldAtStartHuman).toBe("6802.264854");
       expect(String(dataOf(r).note)).toContain("not trade PnL");

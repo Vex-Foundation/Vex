@@ -1,7 +1,7 @@
 import type { ProtocolToolManifest } from "../../types.js";
 import { TRENCH_MY_LAUNCHES_DISCOVERY } from "../../embeddings/trench/my-launches.js";
 
-// The user's OWN Trench Express launches — READ-ONLY, and read from Vex's local
+// The user's OWN Trench Express launches - READ-ONLY, and read from Vex's local
 // `launched_tokens` index rather than the launchpad API. There is deliberately
 // no `wallet` parameter: the wallet is resolved server-side from the session's
 // selection, so the model cannot widen the read to somebody else's history.

@@ -98,6 +98,14 @@ export type VexDomain =
    */
   | "images"
   /**
+   * The user's own BACKDROP under the glass shell. A preference with a byte
+   * store behind it: one image per installation, PNG/JPEG only (the measured
+   * `nativeImage` decode set), served through the app protocol. Held apart
+   * from `images` because nothing downstream signs over it and nothing
+   * refuses to delete it.
+   */
+  | "shellBackdrop"
+  /**
    * Trench Express TOKEN LAUNCH (contracts C0/C5). Covers the preview, submit
    * and cancel handlers behind the launch dialog.
    *
@@ -319,6 +327,36 @@ export type VexErrorCode =
   | "images.in_use"
   | "images.store_unavailable"
   /**
+   * User backdrop (glass shell). All five are `redacted: true` and never echo
+   * a filesystem path: main owns the picker, so no path exists on the
+   * renderer's side to leak.
+   *
+   *  - `shellBackdrop.too_large`          - the picked file is over the 8 MiB
+   *                                         stat gate; refused before a byte is
+   *                                         read. `retryable: false`.
+   *  - `shellBackdrop.too_small`          - empty, or shorter than any image
+   *                                         header. `retryable: false`.
+   *  - `shellBackdrop.unsupported_format` - the MAGIC BYTES are not PNG or
+   *                                         JPEG (WebP included: Electron 42's
+   *                                         `nativeImage` cannot decode it,
+   *                                         measured), or the header carries no
+   *                                         readable dimensions.
+   *                                         `retryable: false`.
+   *  - `shellBackdrop.undecodable`        - the sniff passed but `nativeImage`
+   *                                         could not decode the bytes, or the
+   *                                         decoded size is outside the
+   *                                         640x360..8192 band. A corrupt file
+   *                                         is never painted. `retryable: false`.
+   *  - `shellBackdrop.store_unavailable`  - the CONFIG_DIR byte store or the
+   *                                         preferences pointer could not be
+   *                                         read or written. `retryable: true`.
+   */
+  | "shellBackdrop.too_large"
+  | "shellBackdrop.too_small"
+  | "shellBackdrop.unsupported_format"
+  | "shellBackdrop.undecodable"
+  | "shellBackdrop.store_unavailable"
+  /**
    * TOKEN LAUNCH refusals (C0/C5/C6b). Every one of these carries its NUMBERS
    * in the message — a money refusal that does not say by how much is not
    * actionable.
@@ -413,6 +451,44 @@ export type VexErrorCode =
    * `retryable: true, userActionable: true`.
    */
   | "projects.slug_cleanup_pending"
+  /**
+   * B3 - cross-platform path semantics. Five refusals that used to be reported
+   * as one of the two blanket root errors, split because they have five
+   * different remedies and four of them are reachable only on Windows or macOS.
+   *
+   *  - `projects.root_unverifiable` - the configured root and the recorded root
+   *    could not be PROVEN to be the same directory: the recorded one could not
+   *    be inspected (moved, deleted, an offline network drive), or the
+   *    filesystem supplied no `dev`/`ino` identity for it (both zero, as Node
+   *    reports on some Windows network and FAT volumes). Distinct from
+   *    `root_changed`, which asserts they ARE different and asks the user to
+   *    restore a configured value. `retryable: true, userActionable: true`.
+   *
+   *  - `projects.root_permission_denied` - `mkdir` of the project folder was
+   *    refused with EACCES/EPERM. The folder exists and the fix is a permission,
+   *    not the "does the location exist" advice `root_unavailable` gives.
+   *    `retryable: false, userActionable: true`.
+   *
+   *  - `projects.root_out_of_space`   - ENOSPC/EDQUOT on the volume holding the
+   *    projects root. `retryable: false, userActionable: true`.
+   *
+   *  - `projects.root_path_invalid`   - the root path itself is not usable on
+   *    this system (EINVAL, ENOTDIR, ENAMETOOLONG): a component is a file, a
+   *    character this filesystem forbids, or a path past the length limit. The
+   *    realistic cause is a `projectsRoot` override written on another platform.
+   *    `retryable: false, userActionable: true`.
+   *
+   *  - `projects.name_reserved`       - the project name derives a folder name
+   *    the Win32 path namespace reserves for a device (CON, PRN, AUX, NUL,
+   *    COM0-9, LPT0-9). Refused on EVERY platform: the folder outlives the
+   *    machine it was created on, and a Linux-created `con/` cannot be opened
+   *    on Windows. `retryable: false, userActionable: true`.
+   */
+  | "projects.root_unverifiable"
+  | "projects.root_permission_denied"
+  | "projects.root_out_of_space"
+  | "projects.root_path_invalid"
+  | "projects.name_reserved"
   | "internal.contract_violation"
   | "internal.cancelled"
   | "internal.unexpected";

@@ -27,7 +27,7 @@
             "type": "string"
           },
           "fields": {
-            "description": "Comma-separated row field groups to keep: identity, apy, liquidity, expiry, legs, points, protocols — or 'all' (default). Use it to keep large result sets small.",
+            "description": "Comma-separated row field groups to keep: identity, apy, liquidity, expiry, legs, points, protocols - or 'all' (default). Use it to keep large result sets small.",
             "type": "string"
           },
           "includeMatured": {
@@ -43,11 +43,11 @@
             "type": "boolean"
           },
           "limit": {
-            "description": "Max markets to return (default 20). There is NO hidden ceiling — hasMore and nextOffset report what is left.",
+            "description": "Max markets to return (default 20). There is NO hidden ceiling - hasMore and nextOffset report what is left.",
             "type": "number"
           },
           "maxDaysToExpiry": {
-            "description": "Maximum whole days until maturity — find the nearest maturities.",
+            "description": "Maximum whole days until maturity - find the nearest maturities.",
             "type": "number"
           },
           "maxImpliedApyPercent": {
@@ -67,7 +67,7 @@
             "type": "number"
           },
           "minLiquidityUsd": {
-            "description": "Minimum market liquidity in USD — screen out thin markets you could not exit.",
+            "description": "Minimum market liquidity in USD - screen out thin markets you could not exit.",
             "type": "number"
           },
           "offset": {

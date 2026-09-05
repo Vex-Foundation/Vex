@@ -162,7 +162,7 @@ function parseSelectList(raw: string): ToolSearchArgsResult {
 }
 
 /**
- * True for a JSON OBJECT root — the only shape these arguments can take.
+ * True for a JSON OBJECT root - the only shape these arguments can take.
  *
  * `null` is `typeof "object"`, and an array is an object too. Both reach here
  * for real: the provider paths accept an arbitrary JSON root and dispatch it

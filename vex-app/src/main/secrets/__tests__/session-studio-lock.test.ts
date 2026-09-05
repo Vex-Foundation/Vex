@@ -63,9 +63,12 @@ vi.mock("../../studio/mcp-host.js", () => ({
     order.push("host_lock");
     lockStudioMcpHost(cause);
   },
+  openStudioMcpAdmission: () => {
+    order.push("host_unlock");
+  },
   startStudioMcpHost: () => {
     order.push("host_start");
-    return Promise.resolve({ started: false, reason: "not in this test" });
+    return Promise.resolve({ started: true, endpoint: "/tmp/not-in-this-test" });
   },
 }));
 vi.mock("../../studio/approval-refusals.js", () => ({
@@ -81,6 +84,32 @@ vi.mock("../../paths/config-dir.js", () => ({
 vi.mock("../../logger/index.js", () => ({
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
+/**
+ * THE DATABASE URL GATE the advance now passes through. `false` here is a
+ * process whose local Postgres has not come up yet - the cold-start state the
+ * unlock used to run its advance against a fallback URL in.
+ */
+let engineDbUrlAvailable = true;
+vi.mock("../../database/engine-db-readiness.js", () => ({
+  ensureEngineDbUrl: (correlationId: string) =>
+    Promise.resolve(
+      engineDbUrlAvailable
+        ? { ok: true, data: undefined }
+        : {
+            ok: false,
+            error: {
+              code: "internal.unexpected",
+              domain: "database",
+              message: "Database unavailable. Verify services are running and retry.",
+              retryable: true,
+              userActionable: true,
+              redacted: true,
+              correlationId,
+            },
+          },
+    ),
+}));
+
 vi.mock("@utils/env.js", () => ({
   clearKeystorePasswordProvider: () => {
     order.push("revoke_signing");
@@ -94,6 +123,7 @@ const session = await import("../session.js");
 beforeEach(() => {
   order.length = 0;
   vi.clearAllMocks();
+  engineDbUrlAvailable = true;
   session.resetStudioDispatchPoisonForTests();
   advanceStudioDispatchGeneration.mockResolvedValue({ ok: true, generation: "2" });
   refuseAllPendingStudioIntents.mockResolvedValue(1);
@@ -198,13 +228,15 @@ describe("the poison and its bounded retry", () => {
     expect(session.hasPendingStudioRefusalRepair()).toBe(true);
     expect(session.isStudioDispatchPoisoned()).toBe(true);
 
-    // A fresh generation is necessary but not sufficient. The listener must
-    // not reopen while the durable quit refusal remains unwritten.
+    // A fresh generation is necessary but not sufficient. ADMISSION must not
+    // reopen while the durable quit refusal remains unwritten. (The listener
+    // itself is not part of this decision any more: it stays bound, refusing
+    // every peer with the typed `locked` ack.)
     order.length = 0;
     await session.unlockSecretSession("pw");
     expect(session.isSecretSessionUnlocked()).toBe(true);
     expect(session.isStudioDispatchPoisoned()).toBe(true);
-    expect(order).not.toContain("host_start");
+    expect(order).not.toContain("host_unlock");
 
     const advancesBeforeRepair = advanceStudioDispatchGeneration.mock.calls.length;
     refuseAllPendingStudioIntents.mockResolvedValue(2);
@@ -218,7 +250,7 @@ describe("the poison and its bounded retry", () => {
     );
     expect(session.hasPendingStudioRefusalRepair()).toBe(false);
     expect(session.isStudioDispatchPoisoned()).toBe(false);
-    expect(order).toContain("host_start");
+    expect(order).toContain("host_unlock");
   });
 });
 
@@ -261,6 +293,49 @@ describe("unlockSecretSession", () => {
     const outcome = await pending;
     expect(outcome.ok).toBe(true);
     expect(session.isStudioDispatchPoisoned()).toBe(true);
+  });
+
+  /**
+   * THE COLD START, replayed. On the owner's machine the unlock ran ~2 s after
+   * `whenReady`, while Postgres only appeared when the renderer triggered
+   * compose 15 s later. The advance therefore ran against the engine's fallback
+   * URL, failed with a bare `errorName: 'error'`, and poisoned the fence until
+   * the recovery pass came round 12 s later.
+   */
+  it("does not call the engine at all when the database url is unavailable, and says why", async () => {
+    engineDbUrlAvailable = false;
+    const outcome = await session.unlockSecretSession("pw");
+    expect(outcome.ok).toBe(true);
+    // The engine was never asked: no query against a fallback database.
+    expect(advanceStudioDispatchGeneration).not.toHaveBeenCalled();
+    expect(session.isStudioDispatchPoisoned()).toBe(true);
+    const { log } = await import("../../logger/index.js");
+    expect(vi.mocked(log.warn).mock.calls.some((call) =>
+      String(call[0]).includes("database_unavailable"),
+    )).toBe(true);
+  });
+
+  it("the recovery pass advances once the database appears, and clears the poison", async () => {
+    vi.useFakeTimers();
+    try {
+      engineDbUrlAvailable = false;
+      await session.unlockSecretSession("pw");
+      expect(session.isStudioDispatchPoisoned()).toBe(true);
+
+      // Still down one pass later: nothing is advanced, nothing is cleared.
+      await vi.advanceTimersByTimeAsync(12_000);
+      expect(advanceStudioDispatchGeneration).not.toHaveBeenCalled();
+      expect(session.isStudioDispatchPoisoned()).toBe(true);
+
+      // Docker finishes; the very next pass advances against the REAL database.
+      engineDbUrlAvailable = true;
+      await vi.advanceTimersByTimeAsync(12_000);
+      expect(advanceStudioDispatchGeneration).toHaveBeenCalledTimes(1);
+      expect(session.isStudioDispatchPoisoned()).toBe(false);
+    } finally {
+      session.disposeStudioDispatchPoisonRetry();
+      vi.useRealTimers();
+    }
   });
 
   it("a successful unlock advance CLEARS a poison left by a failed lock advance", async () => {

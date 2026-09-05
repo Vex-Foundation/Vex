@@ -1,5 +1,5 @@
 /**
- * Wallet send — shared types + helpers for prepare/confirm.
+ * Wallet send - shared types + helpers for prepare/confirm.
  *
  * `ExecuteOutcome` discriminated union (Codex puzzle-5 phase-4 review v3
  * GREEN LIGHT): post-broadcast tx hash is transported structurally; the
@@ -33,7 +33,7 @@ export type ExecuteOutcome =
   | {
       readonly kind: "confirmation_unknown";
       readonly txHash: string;
-      /** Same chain identity as `chain_failed` — a broadcast tx still links. */
+      /** Same chain identity as `chain_failed` - a broadcast tx still links. */
       readonly chain: string;
       readonly errorKind: string;
       readonly errorHash: string;
@@ -45,7 +45,7 @@ export type ExecuteOutcome =
     };
 
 /**
- * Structural error fingerprint — `${ErrorKind}` + `${shortSha256(message)}`.
+ * Structural error fingerprint - `${ErrorKind}` + `${shortSha256(message)}`.
  * Mirrors the approval-runtime helpers.ts pattern (Codex puzzle-5 phase-3
  * review point 6: logs/transcript MUST never carry raw cause text).
  */

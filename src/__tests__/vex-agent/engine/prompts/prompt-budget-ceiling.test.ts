@@ -20,10 +20,37 @@ function context(overrides: Partial<EngineContext>): EngineContext {
   };
 }
 
+/**
+ * REVIEWED CEILING MOVE, launchpads namespace (PR2 of the launchpads arc).
+ *
+ * +1062 bytes on the agent modes, +1128 on mission setup, +1224 on mission run.
+ * The cost is one advertised namespace card plus two prompt lines, and it was
+ * measured, not estimated: the numbers below are exactly what
+ * `buildPromptStack` produces today.
+ *
+ * WHAT THE BYTES BUY. `launchpads` is the launchpad-neutral half of a token
+ * launch - one image locker shared by every launchpad, and the public
+ * content-addressed host a launch's image URL points at. Without a card the
+ * model cannot find the locker at all, and a mission that discovers an empty
+ * locker at signing time has already wasted itself: the whole point of the
+ * planning obligation in the mission-setup line is that the user is still
+ * present to fix it.
+ *
+ * WHAT WAS DONE TO KEEP IT SMALL, so this is not read later as an unbounded
+ * grant: the namespace does NOT set `advertiseFacetsInPrompt` (its two facets
+ * cost nothing here and are reachable through ToolSearch), its declaration
+ * prose was tightened by about 250 bytes against the first draft, and the two
+ * mission-prompt lines it touches were rewritten to be launchpad-neutral rather
+ * than added alongside the Trench ones. The Trench retirement lane removes the
+ * Trench card and its lines, which returns more than this costs.
+ */
 const MODES = [
-  // REVIEWED BUDGET DIFF, second upstream merge (2026-09-02): upstream's own
-  // reviewed +523 B/mode composes on the values below exactly, and the six
-  // figures are MEASURED on the merged tree, not summed. Earlier provenance:
+  // REVIEWED BUDGET DIFF, third upstream merge (2026-09-05): the launchpads
+  // arc's own reviewed declaration block (+1,486/mode agent, +1,540 mission —
+  // upstream's own reviewed budget) composes on the values below, and the six
+  // figures are MEASURED on the merged tree, not summed. Earlier: second
+  // upstream merge (2026-09-02), upstream's reviewed +523 B/mode composed
+  // exactly. Earlier provenance:
   // merge of the Indexify integration onto post-D-DS9 main (2026-08-28),
   // where two independent reviewed diffs composed:
   //  - Indexify (2026-08-26): +1,956 bytes in every mode — one static block
@@ -37,12 +64,12 @@ const MODES = [
   //    this merge.
   // The six values below are MEASURED on the merged tree, not summed from the
   // two diffs.
-  { name: "agent / restricted", context: context({}), ceiling: 59_252 },
-  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 59_953 },
-  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 65_675 },
-  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 65_694 },
-  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 64_291 },
-  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 64_106 },
+  { name: "agent / restricted", context: context({}), ceiling: 60_738 },
+  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 61_439 },
+  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 67_215 },
+  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 67_234 },
+  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 65_939 },
+  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 65_754 },
 ] as const;
 
 beforeAll(() => {
@@ -241,6 +268,37 @@ describe("static prompt byte ceilings", () => {
       //     silently shrinking an unrelated namespace's honesty clauses to fund
       //     it would be exactly the kind of hidden cost this ceiling exists to
       //     surface.
+      // REVIEWED BUDGET DIFF, PR-C1 (Virtuals read depth, 2026-09-04). NET +424
+      // in every mode, which is itself the proof that only namespace-level text
+      // moved:
+      //
+      //   agent / restricted          57,296 -> 57,720  (+424)
+      //   agent / full                57,997 -> 58,421  (+424)
+      //   mission setup / restricted  63,719 -> 64,131  (+412)
+      //   mission setup / full        63,738 -> 64,150  (+412)
+      //   mission run / restricted    62,335 -> 62,759  (+424)
+      //   mission run / full          62,150 -> 62,574  (+424)
+      //
+      // WHAT WAS ADDED, and it is two things only. First, the Virtuals COVERAGE
+      // line in `prompts/chain-coverage.ts` stopped being a bare chain list.
+      // The old line said "Coverage: base, solana, robinhood, ethereum." and
+      // that sentence was false the moment the namespace gained a trade tape
+      // and a candle read: the tape exists on two of the four chains and the
+      // candles exist per LIFECYCLE STAGE as well as per chain (measured; see
+      // `src/tools/virtuals/Virtuals.md`). A chain list that implies six tools
+      // work on four chains costs more than 300 bytes the first time an agent
+      // spends a call proving otherwise. Second, the Virtuals namespace
+      // DECLARATION gained its third facet (trade tape and price history) and
+      // three retrieval terms, which is what makes the two new tools findable
+      // at all - the declaration teaches capabilities, never tool names.
+      //
+      // WHY COMPRESSION WAS INSUFFICIENT. The line was already rewritten once
+      // to fit: the first draft was 370 bytes and named every cell of the
+      // capability matrix; it now names only the cells where a capability is
+      // ABSENT, because a present capability is discoverable and an absent one
+      // is not. Dropping the per-capability sentence entirely was the
+      // alternative and it re-introduces the false claim above. No other
+      // namespace's prose was touched to fund this.
       // The coordinator reviews this diff.
       expect(bytes).toBeLessThanOrEqual(mode.ceiling);
     });

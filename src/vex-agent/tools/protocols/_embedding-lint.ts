@@ -3,20 +3,20 @@
  *
  * Complements `__tests__/vex-agent/tools/embedding-text-style.test.ts`,
  * which checks forbidden technical jargon and word-count budget. This
- * module focuses on **passage shape** — does the passage carry the
+ * module focuses on **passage shape** - does the passage carry the
  * structural cues the dense retriever and LLM need to disambiguate
  * during tool discovery:
  *
- *   - **`Use when:` / `Use this when:`** — verb-first imperative anchor.
+ *   - **`Use when:` / `Use this when:`** - verb-first imperative anchor.
  *     Without it, passages lapse into descriptive prose and the dense
  *     retriever loses the signal "this passage explains a use case".
- *   - **`Example queries:` / `Example:`** — concrete query examples
+ *   - **`Example queries:` / `Example:`** - concrete query examples
  *     diversify intent across paraphrases and keep dense recall grounded in
  *     real agent phrasing.
- *   - **No banned phrases** — `"can be used to"`, `"this tool"`,
+ *   - **No banned phrases** - `"can be used to"`, `"this tool"`,
  *     `"wrapper around"`, `"helper for"` are passive/meta phrasings
  *     that pull embeddings toward boilerplate centroids.
- *   - **Mutating tools include an action verb in the first sentence** —
+ *   - **Mutating tools include an action verb in the first sentence** -
  *     keeps passages grounded in execution intent rather than read-only
  *     description (which would mismatch user "swap"/"buy"/"bridge"
  *     intent at retrieval time). The verb list is an OPEN enumeration,
@@ -43,10 +43,10 @@ const MIN_LENGTH = 50;
 const MAX_LENGTH = 800;
 
 const BANNED_PHRASES: readonly { phrase: string; reason: string }[] = [
-  { phrase: "can be used to", reason: "passive — write verb-first imperative ('Swap a token...' not 'Can be used to swap...')" },
-  { phrase: "this tool", reason: "meta-talk — describe the action, not the tool wrapper" },
-  { phrase: "wrapper around", reason: "implementation detail — describe the user-facing action" },
-  { phrase: "helper for", reason: "downplays — name the action directly" },
+  { phrase: "can be used to", reason: "passive - write verb-first imperative ('Swap a token...' not 'Can be used to swap...')" },
+  { phrase: "this tool", reason: "meta-talk - describe the action, not the tool wrapper" },
+  { phrase: "wrapper around", reason: "implementation detail - describe the user-facing action" },
+  { phrase: "helper for", reason: "downplays - name the action directly" },
 ];
 
 const ACTION_VERB_PATTERN = /\b(Run|Execute|Submit|Bridge|Swap|Buy|Sell|Mint|Send|Place|Cancel|Withdraw|Deposit|Move|Transfer|Borrow|Lend|Stake|Unstake|Claim|Open|Close|Approve|Set|Trade|Purchase|Redeem|Bid|Ask|Add|Remove|Migrate|Convert|Exit|Enter|Rebalance|Repay|Settle|Sign|Issue|Burn|Lock|Unlock|Fill|Take|Make|Post|Create|Update|Delete|Pay|Reward|Vote|Wrap|Unwrap|Roll)\b/i;
@@ -99,7 +99,7 @@ export function lintEmbeddingPassage(
     if (lowered.includes(phrase)) {
       issues.push({
         toolId, rule: "banned-phrase",
-        message: `contains banned phrase "${phrase}" — ${reason}`,
+        message: `contains banned phrase "${phrase}" - ${reason}`,
       });
     }
   }

@@ -4,7 +4,7 @@
  * Pendle builds the Router calldata for us and embeds its own minimum-output
  * inside it. Until R5a nothing decoded that number: `decodeRouterCall` read the
  * receiver, the market/YT, the spend and the tuple tokens, and `assertRouteSafe`
- * asserted every one of them — so a response that was correct in EVERY field we
+ * asserted every one of them - so a response that was correct in EVERY field we
  * checked, carrying `minPtOut = 1`, was signable. The base URL is config-driven
  * (`client.ts` → `loadConfig().services.pendleApiUrl`), so this was never a
  * claim about Pendle's own infrastructure; it was an unbound money parameter.
@@ -14,7 +14,7 @@
  * decoded value to it before anything is signed. It is the Pendle counterpart of
  * `@tools/kyberswap/evm/swap-calldata-guard.ts`'s `price_floor` verdict.
  *
- * All amounts are RAW atomic units carried as bigints / decimal strings — never
+ * All amounts are RAW atomic units carried as bigints / decimal strings - never
  * `number`, never floats. Decimals deliberately do NOT enter the arithmetic: the
  * comparison is raw-to-raw within ONE token (the calldata's min-out against the
  * same route output's amount), so there is no unit to get wrong. Decimals are
@@ -37,13 +37,13 @@ import { type DecodedReflectCall, type DecodedRouterCall } from "./decode.js";
  *
  * `decode.ts`'s shared `unsafe()` hint ("the quoted transaction did not match
  * the requested trade") is right for a tampered receiver or a wrong market, and
- * says almost nothing here — this was the weakest of the five money-refusal
+ * says almost nothing here - this was the weakest of the five money-refusal
  * surfaces. It states the SAME shape the slippage remedy does (what refused it,
  * what to change, whether a retry can succeed) with the one instruction
  * inverted, because the inversion is the whole point:
  *
  * THIS IS NOT MARKET SLIPPAGE. The floor is DERIVED FROM the caller's own
- * `slippageBps` and Pendle's own quoted outputs — so calldata below it means the
+ * `slippageBps` and Pendle's own quoted outputs - so calldata below it means the
  * built transaction is worse than the tolerance already granted. Raising
  * `slippageBps` would LOWER the floor and let exactly that calldata through: the
  * one instruction that is correct for a `slippage` revert is the dangerous one
@@ -54,12 +54,12 @@ import { type DecodedReflectCall, type DecodedRouterCall } from "./decode.js";
 export const PENDLE_PRICE_FLOOR_REMEDY =
   "Vex refused this before signing, so nothing was sent and re-running cannot duplicate it. "
   + "The transaction Pendle built protects less output than the route it quoted implies at the slippageBps this call already passed. "
-  + "Get a FRESH quote and try once more — a stale route is the benign cause. "
+  + "Get a FRESH quote and try once more - a stale route is the benign cause. "
   + "Do NOT raise slippageBps to get past it: that lowers this floor and accepts the very calldata that was refused. "
   + "If a fresh quote is refused the same way, treat this route as unusable and take another action or venue.";
 
 /**
- * A price-floor refusal — the same `PENDLE_UNSAFE_TX` code and message shape
+ * A price-floor refusal - the same `PENDLE_UNSAFE_TX` code and message shape
  * `decode.ts`'s `unsafe()` produces, carrying the floor-specific remedy above
  * instead of the generic one.
  */
@@ -73,7 +73,7 @@ function unsafeFloor(reason: string): never {
 
 /**
  * Vex's slack when comparing our floor against the provider's embedded one, in
- * RAW OUTPUT UNITS. One unit — the granularity of the floor arithmetic itself —
+ * RAW OUTPUT UNITS. One unit - the granularity of the floor arithmetic itself -
  * and ABSOLUTE, never a percentage, so it cannot scale with trade size and hide
  * a real loss (rules/90, "Money-Path Discipline").
  *
@@ -84,11 +84,11 @@ function unsafeFloor(reason: string): never {
  * MEASURED FOR PENDLE 2026-07-27, quote-only, 11 chain-1 convert captures across
  * all eight shipped action families plus an aggregator-engaged route: Pendle
  * embeds `floor(output × (10000 − slippageBps) / 10000)` and our independently
- * computed floor matched it to the ATOMIC UNIT — delta 0, not 1 — on ten of
+ * computed floor matched it to the ATOMIC UNIT - delta 0, not 1 - on ten of
  * eleven. The eleventh, `addLiquiditySingleToken`, errs SAFE: its minLpOut sat
  * 2791205212855374 raw units ABOVE our floor (a ~0.5% haircut against the 1%
  * requested). So the allowance is currently pure margin against rounding drift,
- * not a number any honest route needs — which is exactly how a floor allowance
+ * not a number any honest route needs - which is exactly how a floor allowance
  * should look. It stays at one unit rather than zero because a provider that
  * rounds the other way on some future market must not be refused by one wei.
  */
@@ -106,7 +106,7 @@ export type PendleMinOutLocation =
 /**
  * Which of the route's declared outputs a single min-out field protects.
  *
- * `"all"` for every currently shipped selector — measured, not assumed. Eight of
+ * `"all"` for every currently shipped selector - measured, not assumed. Eight of
  * the nine have exactly one output; `mintPyFromToken` has two (PT and YT) under
  * ONE `minPyOut`, and they are EQUAL by protocol. Covering "all" is therefore
  * both correct today and fail-closed on drift: a route that grows an output leg
@@ -119,7 +119,7 @@ export type PendleMinOutCoverage =
   | readonly number[]
   /**
    * The single route output whose token equals the one {@link source} names in
-   * the calldata — used by a DUAL selector, where each field protects one
+   * the calldata - used by a DUAL selector, where each field protects one
    * specific leg.
    */
   | { readonly kind: "outputMatching"; readonly source: PendleMinOutTokenSource }
@@ -140,7 +140,7 @@ export type PendleMinOutCoverage =
  * `[PT, underlying]` both returned `[PT, underlying]`, and `add-liquidity`
  * keep-YT returned `[LP, YT]` whichever way it was asked. So an index row would
  * encode an undocumented provider convention that we cannot influence and did
- * not verify across markets — and getting it backwards is not a refusal, it is a
+ * not verify across markets - and getting it backwards is not a refusal, it is a
  * min-out checked against the WRONG leg's floor (on the dual remove those two
  * amounts differ by ~14x, so a swapped pair would wave through a route paying a
  * fraction of the quote). Resolving by token cannot silently mismatch: if the
@@ -149,11 +149,11 @@ export type PendleMinOutCoverage =
 export type PendleMinOutTokenSource =
   /** `TokenOutput.tokenOut` from the tuple at `index`. */
   | { readonly kind: "tokenOutputTuple"; readonly index: number }
-  /** The `market` argument at `index` — for an LP leg the market IS the LP token. */
+  /** The `market` argument at `index` - for an LP leg the market IS the LP token. */
   | { readonly kind: "marketArg"; readonly index: number };
 
 export interface PendleMinOutBinding {
-  /** The calldata parameter's own name — what a refusal names to the agent. */
+  /** The calldata parameter's own name - what a refusal names to the agent. */
   readonly field: string;
   readonly location: PendleMinOutLocation;
   readonly coversOutputs: PendleMinOutCoverage;
@@ -161,7 +161,7 @@ export interface PendleMinOutBinding {
 
 /**
  * EVERY economically material minimum-output field of EVERY allowed Router
- * selector, as DATA the guard iterates — not prose, and not a switch someone can
+ * selector, as DATA the guard iterates - not prose, and not a switch someone can
  * extend a selector without touching.
  *
  * LIVE-VERIFIED 2026-07-27 (chain 1, wstETH market, 100 bps, quote-only). The
@@ -182,8 +182,8 @@ export interface PendleMinOutBinding {
  *
  * CORRECTION TO THE PLAN'S PREMISE, measured rather than assumed: `mintPyFromToken`
  * carries ONE `minPyOut`, not a `minPtOut`/`minYtOut` pair. A PY mint produces an
- * EQUAL amount of PT and YT — the live capture returned two outputs with
- * identical amounts — so one number bounds both legs. Binding it against BOTH
+ * EQUAL amount of PT and YT - the live capture returned two outputs with
+ * identical amounts - so one number bounds both legs. Binding it against BOTH
  * outputs keeps each leg independently checked and fails closed if a response
  * ever reports a divergent pair, which by protocol it should not.
  */
@@ -220,7 +220,7 @@ export const PENDLE_MIN_OUT_BINDINGS: Readonly<
   //
   // Six of these sat EXACTLY on `floor(output × (10000 − 100) / 10000)` in the
   // captures (delta 0). The LP-add-shaped ones (keep-YT's two, the transfer's
-  // final minLpOut) sat ABOVE our floor — they err SAFE, exactly as
+  // final minLpOut) sat ABOVE our floor - they err SAFE, exactly as
   // `addLiquiditySingleToken` does in the R5a captures.
   mintSyFromToken: [{ field: "minSyOut", location: { kind: "arg", index: 2 }, coversOutputs: "all" }],
   redeemSyToToken: [
@@ -281,7 +281,7 @@ export const PENDLE_MIN_OUT_BINDINGS: Readonly<
  *
  * Delegates to `@tools/kyberswap/swap-price-floor.ts`'s `computeApprovedMinOut`
  * ON PURPOSE. It is the same arithmetic, and a per-venue copy of a money formula
- * is precisely how venues drift apart — the argument `gas-limit-headroom.ts`
+ * is precisely how venues drift apart - the argument `gas-limit-headroom.ts`
  * makes for keeping ONE headroom multiplier. What is venue-specific is the
  * ALLOWANCE, and that lives here as {@link PENDLE_FLOOR_ALLOWANCE_RAW}, exactly
  * as KyberSwap keeps its own. The delegate also re-validates both inputs and
@@ -290,7 +290,7 @@ export const PENDLE_MIN_OUT_BINDINGS: Readonly<
  *
  * Its `RangeError`/`TypeError` is re-raised as a NAMED refusal, because a bare
  * throw from here would be caught by `selectSafeRoute`'s per-route loop and
- * reported as the generic "no route passed the fund-safety checks" — losing the
+ * reported as the generic "no route passed the fund-safety checks" - losing the
  * actual cause at exactly the boundary where it matters.
  */
 export function computePendleFloorRaw(outputRaw: string, slippageBps: number): bigint {
@@ -355,7 +355,7 @@ function coverageToken(args: readonly unknown[], source: PendleMinOutTokenSource
 /**
  * Resolve the EXACTLY ONE route output a token-keyed coverage rule selects.
  *
- * Fails closed on any ambiguity — zero matches (the calldata protects a leg the
+ * Fails closed on any ambiguity - zero matches (the calldata protects a leg the
  * route does not declare) and more than one (two outputs of the same token, so
  * "the other one" is not well defined) are both refusals, never a guess.
  */
@@ -398,7 +398,7 @@ function coveredOutputs(
  * BEFORE any floor arithmetic runs.
  *
  * WHY THIS IS NOT REDUNDANT WITH THE FLOOR. `assertRouteFloorBound` ties a
- * min-out field to a route output by TOKEN only when the selector names one —
+ * min-out field to a route output by TOKEN only when the selector names one -
  * i.e. through a `TokenOutput` tuple. The bare-`uint256` selectors
  * (`mintSyFromToken`, `removeLiquiditySinglePt`, `swapExactSyForPt`,
  * `addLiquiditySingleSy`, …) name no token anywhere in the calldata, so under
@@ -409,8 +409,8 @@ function coveredOutputs(
  * selectors: `sy.mint`, `lp.toPt`, `pt.rollover`, `lp.transfer`.
  *
  * The fix is to make the caller DECLARE what the response is allowed to say. The
- * match is EXACT — same number of outputs, and a one-to-one pairing by token
- * address — so an extra leg, a missing leg, or a substituted token is a refusal
+ * match is EXACT - same number of outputs, and a one-to-one pairing by token
+ * address - so an extra leg, a missing leg, or a substituted token is a refusal
  * rather than a differently-shaped floor. Order is not part of the contract:
  * the provider's `outputs` order is its OWN canonical order (measured
  * 2026-07-28, see {@link PendleMinOutTokenSource}).
@@ -458,7 +458,7 @@ export function assertRouteFloorBound(
     const declared = readMinOutField(call.args, binding);
     const outputs = coveredOutputs(route.outputs, binding.coversOutputs, binding.field, call.args);
     if (outputs.length === 0) {
-      return unsafeFloor(`price_floor: ${binding.field} cannot be checked — the route declares no output`);
+      return unsafeFloor(`price_floor: ${binding.field} cannot be checked - the route declares no output`);
     }
     const calldataToken = calldataOutputToken(call.args, binding);
     for (const output of outputs) {
@@ -481,7 +481,7 @@ export function assertRouteFloorBound(
  * The receiver a reflect leg is allowed to pay out to.
  *
  * DOCUMENTED EXCEPTION, LEG 1 ONLY. A `callAndReflect` action runs its first leg
- * INTO the reflector contract, which then hands the proceeds to the final leg —
+ * INTO the reflector contract, which then hands the proceeds to the final leg -
  * live-captured 2026-07-27, where leg 1's receiver was the reflector
  * `0x30544e00cf296b34a9ee59e5540ae2f9cccd55dd` and the final leg's was the
  * wallet. Every leg after the first must land on the wallet, so proceeds can
@@ -514,7 +514,7 @@ export function reflectLegReceiverIsAllowed(
  *     cannot be re-derived from the quote, and R5a refuses to invent one: the
  *     leg must simply carry a NON-ZERO minimum, so an intermediate stripped to
  *     zero can never be signed. Pinning a real intermediate floor needs the
- *     inner-leg layouts R5d probes — named here, not silently skipped.
+ *     inner-leg layouts R5d probes - named here, not silently skipped.
  */
 export function assertReflectFloorBound(
   reflect: DecodedReflectCall,

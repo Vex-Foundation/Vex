@@ -45,7 +45,7 @@ seam:
 
 > `injected-protocol-tools.ts:19-23`: "Injection is a VISIBILITY decision only.
 > Which manifests may be shown is decided here [...]; whether a call may RUN is
-> decided, unchanged, by `executeProtocolTool` off the RESOLVED MANIFEST —
+> decided, unchanged, by `executeProtocolTool` off the RESOLVED MANIFEST -
 > never off the function name."
 
 Resolution direction is therefore fixed: a public name or a deprecated alias

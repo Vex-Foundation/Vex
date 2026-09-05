@@ -19,8 +19,46 @@ import {
   clearKeystorePasswordProvider,
 } from "@utils/env.js";
 import { ENV_FILE, SECRETS_VAULT_FILE } from "../paths/config-dir.js";
-import { lockStudioMcpHost, startStudioMcpHost } from "../studio/mcp-host.js";
+import {
+  lockStudioMcpHost,
+  openStudioMcpAdmission,
+  startStudioMcpHost,
+} from "../studio/mcp-host.js";
 import { log } from "../logger/index.js";
+import { ensureEngineDbUrl } from "../database/engine-db-readiness.js";
+import { requestStudioRuntimeRetry } from "../studio/readiness.js";
+import {
+  beginStudioSessionTransition,
+  cancelStudioSessionTransition,
+  clearPendingRefusalCause,
+  clearStudioGenerationPoison,
+  ensureStudioRecoveryTimer,
+  isStudioDispatchPoisoned,
+  isStudioSessionTransitionInProgress,
+  needsStudioGenerationAdvance,
+  pendingStudioRefusalCause,
+  poisonStudioDispatch as poisonStudioDispatchFence,
+  retainPendingRefusalCause,
+  stopStudioRecoveryWhenClear,
+  type SecretSessionLockCause,
+} from "../studio/session-dispatch-fence.js";
+
+/**
+ * THE FENCE FACADE. The Studio dispatch poison, its recovery timer, the
+ * session-transition flag and the owed-refusal cause moved to
+ * `studio/session-dispatch-fence.ts` (one lifecycle, one owner, its own tests);
+ * this module stays the entry point every existing consumer already imports -
+ * the quit cleanup, the approval service, the settlement bridge's preflight -
+ * so the move changed no caller.
+ */
+export {
+  disposeStudioDispatchPoisonRetry,
+  hasPendingStudioRefusalRepair,
+  isStudioDispatchPoisoned,
+  isStudioSessionTransitionInProgress,
+  resetStudioDispatchPoisonForTests,
+  type SecretSessionLockCause,
+} from "../studio/session-dispatch-fence.js";
 
 let unlockedMasterPassword: string | null = null;
 
@@ -178,10 +216,10 @@ export function initializeMasterPassword(
     unlockedMasterPassword = password;
     applyUnlockedRuntime(password);
     stripManagedSecretsFromDotenvFile(ENV_FILE);
-    // First-time setup also establishes an unlocked session, so the listener
-    // gets the same start as an ordinary unlock. It refuses itself when the
-    // readiness barrier is not open yet.
-    void startStudioMcpHost();
+    // First-time setup also establishes an unlocked session, so admission
+    // opens exactly the way an ordinary unlock opens it. The listener itself
+    // was bound at app-ready and is untouched here.
+    reopenStudioHostIfSafe();
     return ok({ kind: existed ? "unchanged" : "set" });
   } catch (cause) {
     return toPublicError(cause);
@@ -220,112 +258,29 @@ export async function unlockSecretSession(
     // handled by poisoning (below) rather than ignored. The await is what lets
     // the poison be set before this call reports success.
     await advanceStudioDispatchGenerationSafely("unlock");
-    // The MCP listener exists only while Vex is unlocked, and only once the A3
-    // readiness barrier reports ready - `startStudioMcpHost` re-checks that
-    // itself and refuses with the barrier's own sentence, so an unlock during
-    // startup does not open the door early. Not awaited: a socket that cannot
-    // bind is a diagnostic, never a reason to fail an unlock the vault already
-    // completed.
+    // MCP ADMISSION opens here, and only here: the listener was bound at
+    // app-ready and stays bound across a relock, so what an unlock changes is
+    // who may be served, not whether a socket exists. It opens only once this
+    // unlock's generation advance has committed and no dispatch poison or
+    // unwritten refusal is outstanding, which is what `reopenStudioHostIfSafe`
+    // decides. The settlement barrier gates handshakes and calls on its own, so
+    // an unlock during startup does not open the door early.
     reopenStudioHostIfSafe();
+    // An unlock is the other moment a user is waiting for Studio, and by now
+    // the database that a boot-time initialization may have been missing is
+    // usually up. No-op when Studio is already ready.
+    requestStudioRuntimeRetry();
     return ok({ unlocked: true });
   } catch (cause) {
     if (!unlockedRuntimeChanged) {
       cancelStudioSessionTransition();
-    } else if (studioSessionTransitionInProgress) {
+    } else if (isStudioSessionTransitionInProgress()) {
       // The runtime changed but the durable generation did not complete. Keep
       // the transition closed and let the recovery owner prove a fresh fence.
       poisonStudioDispatch();
     }
     return toPublicError(cause);
   }
-}
-
-/**
- * ## The POISON, and why a failed advance is not a shrug
- *
- * The durable dispatch generation is the fence: a queued Studio action may only
- * dispatch while the generation it recorded at enqueue is still current, so a
- * lock or an unlock ADVANCES it and every intent from before is refused. That
- * works exactly as long as the advance commits.
- *
- * When it does not - PostgreSQL is down while the user locks Vex - the old
- * generation stays current. The lock still scrubs and still revokes signing, so
- * nothing can be signed; but once the database comes back, a pre-lock intent's
- * recorded generation matches again and its slot claim would succeed. The fence
- * silently never moved.
- *
- * So a failed advance POISONS the runtime: no new Studio approval may be queued
- * (`isStudioRuntimeAvailable` in `studio/approval-service.ts`), and no approved
- * Studio intent may dispatch (the engine's dispatch preflight, registered in
- * `agent/studio-settlement-bridge.ts`). Only a SUCCESSFUL advance clears it,
- * and a bounded retry keeps trying so recovery does not wait for the user's
- * next lock or unlock.
- */
-let studioGenerationPoisoned = false;
-/**
- * Synchronous authority transition. Set before lock or unlock reaches its
- * first await and cleared only by a committed generation advance. It closes
- * the non-signing dispatch window that secret scrubbing alone cannot close.
- */
-let studioSessionTransitionInProgress = false;
-/**
- * A lock/quit refusal sweep that has not yet committed. The typed cause is
- * retained verbatim so a recovery pass writes the same durable audit fact.
- */
-let studioPendingRefusalCause: SecretSessionLockCause | null = null;
-let studioPoisonRetryTimer: NodeJS.Timeout | null = null;
-/**
- * SINGLE-FLIGHT for the retry. An advance is a database round trip that can
- * take longer than the retry interval when the database is the thing that is
- * unwell; without this, a slow database would accumulate one concurrent
- * advance per tick, each writing the same monotonic row.
- */
-let studioPoisonRetryInFlight = false;
-
-/** Bounded retry cadence while poisoned. Short: this blocks real work. */
-const STUDIO_POISON_RETRY_MS = 12_000;
-
-/**
- * Can Vex currently prove its Studio lock fence?
- *
- * Read by the enqueue predicate and by the engine's dispatch preflight. `true`
- * means an advance failed and no later advance has succeeded, so both refuse.
- */
-export function isStudioDispatchPoisoned(): boolean {
-  return (
-    studioGenerationPoisoned
-    || studioSessionTransitionInProgress
-    || studioPendingRefusalCause !== null
-  );
-}
-
-/** Main-side preflight fact, exported so dispatch checks it explicitly. */
-export function isStudioSessionTransitionInProgress(): boolean {
-  return studioSessionTransitionInProgress;
-}
-
-/** Test and readiness seam for the durable refusal-repair obligation. */
-export function hasPendingStudioRefusalRepair(): boolean {
-  return studioPendingRefusalCause !== null;
-}
-
-/**
- * Stop the retry timer. Owned by the ordered quit cleanup; idempotent, so a
- * second quit hook or a test teardown is safe.
- */
-export function disposeStudioDispatchPoisonRetry(): void {
-  if (studioPoisonRetryTimer === null) return;
-  clearInterval(studioPoisonRetryTimer);
-  studioPoisonRetryTimer = null;
-}
-
-/** Test seam: forget the poison and its timer between cases. */
-export function resetStudioDispatchPoisonForTests(): void {
-  disposeStudioDispatchPoisonRetry();
-  studioGenerationPoisoned = false;
-  studioSessionTransitionInProgress = false;
-  studioPendingRefusalCause = null;
-  studioPoisonRetryInFlight = false;
 }
 
 /**
@@ -341,12 +296,29 @@ export function resetStudioDispatchPoisonForTests(): void {
 async function advanceStudioDispatchGenerationSafely(
   phase: "lock" | "unlock" | "retry",
 ): Promise<boolean> {
+  // THE ENGINE POOL'S URL FIRST, and this is not a nicety. The pool is lazy and
+  // reads `process.env.VEX_DB_URL` at first use; unset, it falls back to a
+  // development database nobody runs. On a cold start this call is the FIRST
+  // engine query in the process - it happens on the unlock, before any IPC
+  // handler has pointed the pool anywhere - so without this the advance failed
+  // against the fallback and poisoned the fence for as long as it took the
+  // recovery pass to come round. When the local database genuinely is not up
+  // yet, the outcome is the same poison as before, with the honest reason.
+  const dbUrl = await ensureEngineDbUrl(SESSION_LOCAL_CORRELATION_ID);
+  if (!dbUrl.ok) {
+    log.warn(
+      `[secrets-session] studio dispatch generation not advanced on ${phase}: `
+        + "database_unavailable",
+    );
+    poisonStudioDispatch();
+    return false;
+  }
   try {
     const { advanceStudioDispatchGeneration } = await import(
       "@vex-agent/engine/core/approval-runtime.js"
     );
     const pendingRefusalReason =
-      phase === "unlock" ? null : studioPendingRefusalCause;
+      phase === "unlock" ? null : pendingStudioRefusalCause();
     const advanced = await advanceStudioDispatchGeneration(
       pendingRefusalReason,
     );
@@ -356,6 +328,9 @@ async function advanceStudioDispatchGenerationSafely(
       return false;
     }
     clearStudioGenerationPoison();
+    // The all-clear is the fence's; whether admission may OPEN also depends on
+    // the vault session, which is this module's own state.
+    reopenStudioHostIfSafe();
     return true;
   } catch (err) {
     log.warn(`[secrets-session] studio dispatch advance failed on ${phase}`, err);
@@ -364,58 +339,33 @@ async function advanceStudioDispatchGenerationSafely(
   }
 }
 
+/**
+ * The session's own binding of the fence's two schedulers: the fence owns the
+ * timer and its single-flight, this module owns what the pass DOES, so the pass
+ * is handed in rather than imported back across the boundary.
+ */
 function poisonStudioDispatch(): void {
-  const wasPoisoned = studioGenerationPoisoned;
-  studioGenerationPoisoned = true;
-  if (!wasPoisoned) {
-    log.warn(
-      "[secrets-session] studio dispatch fence UNPROVEN: queueing and dispatch "
-        + "are refused until an advance succeeds",
-    );
-  }
-  ensureStudioRecoveryTimer();
+  poisonStudioDispatchFence(runStudioRecoveryPass);
 }
 
-function ensureStudioRecoveryTimer(): void {
-  if (studioPoisonRetryTimer !== null) return;
-  studioPoisonRetryTimer = setInterval(() => {
-    if (studioPoisonRetryInFlight) return;
-    studioPoisonRetryInFlight = true;
-    void runStudioRecoveryPass().finally(() => {
-      studioPoisonRetryInFlight = false;
-    });
-  }, STUDIO_POISON_RETRY_MS);
-  // The retry must never hold the process open by itself.
-  studioPoisonRetryTimer.unref?.();
+function ensureStudioRecoveryRetry(): void {
+  ensureStudioRecoveryTimer(runStudioRecoveryPass);
 }
 
-function clearStudioGenerationPoison(): void {
-  if (studioGenerationPoisoned) {
-    log.info("[secrets-session] studio dispatch fence proven again");
-  }
-  studioGenerationPoisoned = false;
-  studioSessionTransitionInProgress = false;
-  stopStudioRecoveryWhenClear();
-  reopenStudioHostIfSafe();
-}
-
-function beginStudioSessionTransition(): void {
-  studioSessionTransitionInProgress = true;
-}
-
-function cancelStudioSessionTransition(): void {
-  studioSessionTransitionInProgress = false;
-  stopStudioRecoveryWhenClear();
-}
-
-function stopStudioRecoveryWhenClear(): void {
-  if (!isStudioDispatchPoisoned()) {
-    disposeStudioDispatchPoisonRetry();
-  }
-}
-
-function reopenStudioHostIfSafe(): void {
+/**
+ * Open Studio MCP admission if - and only if - this session may serve calls:
+ * the vault is unlocked and the dispatch fence is neither poisoned nor owed a
+ * durable refusal. Exported because app-ready has the same question to ask
+ * about a session that was already unlocked before the host was configured.
+ */
+export function reopenStudioHostIfSafe(): void {
   if (!isSecretSessionUnlocked() || isStudioDispatchPoisoned()) return;
+  openStudioMcpAdmission();
+  // The listener is normally already bound (app-ready binds it once and only
+  // quit closes it). An app-ready bind that FAILED - a stale endpoint a crashed
+  // Vex left behind, a config directory that was not private yet - has no other
+  // retry site, and an unlock is exactly when a user expects Studio back. It is
+  // idempotent and single-flight, so a bound host does nothing here.
   void startStudioMcpHost();
 }
 
@@ -425,14 +375,20 @@ function reopenStudioHostIfSafe(): void {
  * never pretends a failed generation moved.
  */
 async function runStudioRecoveryPass(): Promise<void> {
-  if (studioGenerationPoisoned || studioSessionTransitionInProgress) {
+  if (needsStudioGenerationAdvance()) {
     await advanceStudioDispatchGenerationSafely("retry");
   }
-  const refusalCause = studioPendingRefusalCause;
+  const refusalCause = pendingStudioRefusalCause();
   if (refusalCause !== null) {
     await refuseStudioIntentsSafely(refusalCause);
   }
   stopStudioRecoveryWhenClear();
+  // A settlement bridge whose start-up did not finish gets another chance from
+  // the same pass: the two failures share one cause (a database that was not
+  // up yet), so the poll that already exists for the fence is the natural place
+  // to retry the runtime rather than a second timer beside it. The hook is a
+  // no-op when Studio is already ready or has no live bridge.
+  requestStudioRuntimeRetry();
   reopenStudioHostIfSafe();
 }
 
@@ -473,19 +429,6 @@ async function invalidateProviderCache(): Promise<void> {
     log.warn("[secrets-session] resetProvider after lock failed", err);
   }
 }
-
-/**
- * WHY the session is being locked, as a TRUSTED value.
- *
- * The two causes write DIFFERENT durable audit rows and must not be confused:
- * a user locking Vex is `lock`, and the application leaving is `vex_quit`. The
- * quit hooks used to call this with the default, so a quit stamped `lock` on
- * every pending Studio intent it happened to reach first, racing the ordered
- * quit cleanup's own `vex_quit` pass for the same rows. One caller, one cause,
- * threaded all the way to `approval_intents.refusal_reason` and to the cause
- * each blocked MCP call is told.
- */
-export type SecretSessionLockCause = "lock" | "vex_quit";
 
 /**
  * Relock the secret session. Scrubs the cached master password and every
@@ -532,8 +475,8 @@ export async function lockSecretSession(
   // a sweep is owed and the trusted cause it must write.
   retainPendingRefusalCause(cause);
   scrubUnlockedRuntime();
-  // STEP 2, SYNCHRONOUS, and BEFORE the first await. The listener stops
-  // admitting and every registered socket is destroyed with the trusted cause
+  // STEP 2, SYNCHRONOUS, and BEFORE the first await. ADMISSION closes and
+  // every registered socket is destroyed with the trusted cause
   // `lock`, which is what each blocked MCP call's abort chain will report and
   // what the broker writes into `approval_intents.refusal_reason` - the same
   // reason the global refusal pass below uses, so their CAS race cannot settle
@@ -570,32 +513,13 @@ async function refuseStudioIntentsSafely(
       ensureStudioRecoveryRetry();
       return;
     }
-    if (studioPendingRefusalCause === effectiveCause) {
-      studioPendingRefusalCause = null;
-    }
+    clearPendingRefusalCause(effectiveCause);
     stopStudioRecoveryWhenClear();
     reopenStudioHostIfSafe();
   } catch (err) {
     log.warn("[secrets-session] studio refusal on lock failed", err);
     ensureStudioRecoveryRetry();
   }
-}
-
-function retainPendingRefusalCause(
-  cause: SecretSessionLockCause,
-): SecretSessionLockCause {
-  // Quit is the terminal and more specific transition. A user-lock cleanup
-  // already in flight must never overwrite it with the weaker earlier cause.
-  if (studioPendingRefusalCause === "vex_quit" || cause === "vex_quit") {
-    studioPendingRefusalCause = "vex_quit";
-  } else {
-    studioPendingRefusalCause = "lock";
-  }
-  return studioPendingRefusalCause;
-}
-
-function ensureStudioRecoveryRetry(): void {
-  ensureStudioRecoveryTimer();
 }
 
 /**
@@ -614,8 +538,8 @@ export function adoptUnlockedPassword(password: string): void {
   applyUnlockedRuntime(password);
   unlockedMasterPassword = password;
   stripManagedSecretsFromDotenvFile(ENV_FILE);
-  // A restore leaves the session unlocked, so the listener belongs up again.
-  void startStudioMcpHost();
+  // A restore leaves the session unlocked, so admission belongs open again.
+  reopenStudioHostIfSafe();
 }
 
 export function requireUnlockedMasterPassword(): Result<string> {

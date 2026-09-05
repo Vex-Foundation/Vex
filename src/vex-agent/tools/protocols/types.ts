@@ -1,20 +1,22 @@
 /**
- * Protocol tool types — manifest-driven discover+execute system.
+ * Protocol tool types - manifest-driven discover+execute system.
  *
  * Each protocol (khalani, kyberswap, solana, ...) provides:
- * 1. Manifests — declarative tool metadata (params, mutating, description)
- * 2. Handlers — async functions that call TS clients directly
+ * 1. Manifests - declarative tool metadata (params, mutating, description)
+ * 2. Handlers - async functions that call TS clients directly
  *
  * The LLM interacts via two meta-tools:
  * - ToolSearch → search / select / list manifests by query or namespace
  * - executeProtocolTool → call handler by toolId with params
  */
 
-import type { ToolResult } from "../types.js";
+import type { ToolResult, ToolVexFee } from "../types.js";
 import type { ActionKind } from "../taxonomy.js";
 import type { Permission, WalletPolicy } from "@vex-agent/engine/types.js";
 import type { WalletResolution } from "@tools/wallet/multi-auth.js";
 import type { ApprovedQuoteAuthority } from "./quote-authority/approved-authority.js";
+import type { ApprovedPrequoteAuthority } from "./prequote/approved-row-authority.js";
+import type { BridgeTokenIdentityPreview } from "./bridge-token-identity.js";
 
 // ── Protocol namespaces ──────────────────────────────────────────
 
@@ -30,6 +32,7 @@ export type ProtocolNamespace =
   | "morpho"
   | "trench"
   | "pools"
+  | "launchpads"
   | "indexify";
 
 /**
@@ -37,7 +40,7 @@ export type ProtocolNamespace =
  *
  * Post-PR1 only `"active"` is inhabited. The previous `"declared"` variant
  * was zero-ref in the repo (no manifest used it) and has been removed from
- * the union — follow-up manifests that need a "declared but not yet
+ * the union - follow-up manifests that need a "declared but not yet
  * executable" state should add a new variant here *and* provide at least
  * one real manifest plus matching discovery / runtime behaviour.
  */
@@ -58,7 +61,7 @@ export interface ToolDiscoveryMetadata {
   sourceClass?: "specialized_market" | "general_web" | "social" | "protocol_native" | "onchain_verification";
   sideEffectLevel?: "none" | "low" | "high";
   /**
-   * Chains where this tool operates — used as a low-weight lexical search
+   * Chains where this tool operates - used as a low-weight lexical search
    * field so queries like "swap on plasma" or "bridge to monad" recall the
    * right tool even when the chain is not enumerated in the description or
    * embedding text.
@@ -100,10 +103,10 @@ export interface ProtocolParamDef {
    * Domain unit of a NUMERIC param, when the bare `type` is too weak to
    * express the contract. Only meaningful on `type: "number"`.
    *
-   * `"bps"` — basis points: a WHOLE, non-negative number (1 bps = 0.01%).
+   * `"bps"` - basis points: a WHOLE, non-negative number (1 bps = 0.01%).
    * Enforced at the manifest boundary by `runtime/bps-param.ts`, called from
    * `validateProtocolParams`. This exists because `z.number()` happily accepts
-   * `0.5`, and a fractional bps is not a smaller tolerance — Jupiter answers a
+   * `0.5`, and a fractional bps is not a smaller tolerance - Jupiter answers a
    * non-integer `slippageBps` with `otherAmountThreshold = 0`, i.e. a swap that
    * accepts ANY output including near-zero. The failure is silent: the quote
    * looks normal. Declare this on EVERY basis-point param so a model-supplied
@@ -120,7 +123,7 @@ export interface ProtocolParamDef {
    * comma-separated string (`chainIds`, `dexIds`, `labels`, `tokenAddresses`).
    * Measured in the persona gate (`call-records.json`, first record):
    * `dexscreener.profiles {chainIds: ["solana"]}` was rejected in 78 bytes while
-   * `chainIds: "solana"` answered in 5,215 — a whole call spent on a spelling a
+   * `chainIds: "solana"` answered in 5,215 - a whole call spent on a spelling a
    * JSON tool call makes natural.
    *
    * Deliberately per-param rather than blanket: a param that means exactly ONE
@@ -129,7 +132,7 @@ export interface ProtocolParamDef {
    *
    * The flag is read in two places and nowhere else: `runtime/params.ts` widens
    * the boundary check to a validated `string[]`, and the ProtocolParamDef →
-   * JSON-schema compiler emits an `anyOf` union. `type` STAYS `"string"` — this
+   * JSON-schema compiler emits an `anyOf` union. `type` STAYS `"string"` - this
    * is a capability, not a second type.
    */
   acceptsStringArray?: true;
@@ -137,18 +140,18 @@ export interface ProtocolParamDef {
    * The CLOSED set of values this param accepts, when prose was the only place
    * the set existed. `virtuals.list.chain` is the live case: an UPPERCASE value
    * list written in a description, unenforced at the boundary, and absent from
-   * the compiled JSON schema — so a model that followed every other chain param
+   * the compiled JSON schema - so a model that followed every other chain param
    * in the tree sent `base` and burnt the call.
    *
    * Read in exactly three places: `runtime/params.ts` rejects an off-list value
    * NAMING the allowed values, `paramsToJsonSchema` compiles it into the JSON
    * Schema `enum` keyword, and `discovery.ts` ships it on the param row. Values
-   * are matched EXACTLY (case-sensitive) — a provider that wants a different
+   * are matched EXACTLY (case-sensitive) - a provider that wants a different
    * casing converts inside its own adapter (see `conventions.ts`).
    *
    * ONE deliberate exception: a param whose key is in `CHAIN_VALUE_PARAM_KEYS`
    * matches CASE-INSENSITIVELY and is rewritten to the declared spelling,
-   * for the same reason the chain number→string normalization exists — every
+   * for the same reason the chain number→string normalization exists - every
    * other chain param in the tree advertises a lowercase slug, so
    * `virtuals.list`'s UPPERCASE list burnt calls from models that had read
    * forty manifests spelling it the other way. Case is not a distinction a
@@ -206,7 +209,7 @@ export interface ProtocolToolManifest {
    * Grammar `<namespace>__<resource_action>`, enforced in production by
    * `./public-name-gate.ts`: lowercase `[a-z0-9_]`, at most 64 characters,
    * EXACTLY ONE double underscore, marking the namespace boundary. The
-   * projection is therefore a TABLE, not a string transform — the old
+   * projection is therefore a TABLE, not a string transform - the old
    * dot-to-double-underscore mangling is not invertible under this grammar
    * (`kyberswap__swap_quote` would invert to `kyberswap.SwapQuote`, not to the
    * real `kyberswap.swap.quote`), so no code may derive either identity from the
@@ -220,7 +223,7 @@ export interface ProtocolToolManifest {
   publicName: string;
   /** Protocol namespace */
   namespace: ProtocolNamespace;
-  /** Lifecycle state — see {@link ToolLifecycle}. */
+  /** Lifecycle state - see {@link ToolLifecycle}. */
   lifecycle: ToolLifecycle;
   /**
    * Params this tool structurally CANNOT support, each mapped to the reason,
@@ -230,7 +233,7 @@ export interface ProtocolToolManifest {
    * These keys are deliberately NOT declared in `params`: declaring them would
    * advertise them in the tool schema as if they worked. The boundary
    * (`runtime/params.ts`) rejects any undeclared key BEFORE a handler runs, so
-   * a handler-side check for them is unreachable in production — this is where
+   * a handler-side check for them is unreachable in production - this is where
    * the explanation has to live to be seen at all.
    *
    * Use it for a filter a model will reasonably reach for because a sibling
@@ -245,8 +248,8 @@ export interface ProtocolToolManifest {
   /** Whether this tool modifies state */
   mutating: boolean;
   /**
-   * Action taxonomy — explicit side-effect classification (see `../taxonomy.ts`).
-   * REQUIRED — every protocol tool MUST be deliberately classified. Mirrors
+   * Action taxonomy - explicit side-effect classification (see `../taxonomy.ts`).
+   * REQUIRED - every protocol tool MUST be deliberately classified. Mirrors
    * the `ToolDef.actionKind` invariant; the compiler enforces classification
    * at registration time so puzzle 5 phase 2+ (approval intents, audit) can
    * make policy decisions from a stable per-manifest classifier.
@@ -266,7 +269,7 @@ export interface ProtocolToolManifest {
   /**
    * Mutually exclusive param sets: EXACTLY ONE member of each group must be
    * present in a call. Retires the 15+ hand-written prose XOR sentences and
-   * their hand-written handler checks (SPEC §1.7) — including
+   * their hand-written handler checks (SPEC §1.7) - including
    * `borrowOperate`'s same-direction ban, which is documented nowhere today.
    *
    * Enforced once, at the boundary, by `runtime/params.ts`, and rendered as a
@@ -274,14 +277,14 @@ export interface ProtocolToolManifest {
    * call rather than an error after it.
    *
    * EXACTLY one, not at-most one: a group whose members may legitimately ALL be
-   * absent is not an exclusive group and must not be declared here — express
+   * absent is not an exclusive group and must not be declared here - express
    * that with `required` on nothing and a sentence in the params' own
    * descriptions. Members must be declared params of this manifest
    * (`_manifest-lint.ts` territory).
    */
   exclusiveParamGroups?: readonly (readonly string[])[];
   /**
-   * AT MOST ONE member of each group may be present — zero is legal.
+   * AT MOST ONE member of each group may be present - zero is legal.
    *
    * The weaker sibling of {@link ProtocolToolManifest.exclusiveParamGroups},
    * and the shape most real multi-leg tools actually have.
@@ -294,7 +297,7 @@ export interface ProtocolToolManifest {
    * sat unenforced in the allowlist until this field existed.
    *
    * Combine with {@link ProtocolToolManifest.atLeastOneOf} to express
-   * "at most one per leg, and at least one leg overall" — the two fields
+   * "at most one per leg, and at least one leg overall" - the two fields
    * together are what `exclusiveParamGroups` cannot say.
    *
    * A group may also encode a CROSS-leg ban: borrowOperate's two direction
@@ -310,7 +313,7 @@ export interface ProtocolToolManifest {
    */
   atMostOne?: readonly (readonly string[])[];
   /**
-   * AT LEAST ONE member of each group must be present — two or more is legal.
+   * AT LEAST ONE member of each group must be present - two or more is legal.
    *
    * The complement of {@link ProtocolToolManifest.atMostOne}: it forbids the
    * EMPTY call for a tool whose params are individually optional. Without it
@@ -318,14 +321,35 @@ export interface ProtocolToolManifest {
    * already spent a call; with it, the rule is a schema fact and a boundary
    * rejection that names every acceptable key.
    *
-   * `required: true` on any single param cannot express this — the point is
+   * `required: true` on any single param cannot express this - the point is
    * that any ONE of several alternatives suffices.
    *
    * Same six surfaces as {@link ProtocolToolManifest.atMostOne}.
    */
   atLeastOneOf?: readonly (readonly string[])[];
-  /** Optional discovery metadata for improved retrieval — filled incrementally per tool. */
+  /** Optional discovery metadata for improved retrieval - filled incrementally per tool. */
   discovery?: ToolDiscoveryMetadata;
+  /**
+   * THE RESULT SHAPE as its own field, so `vex_ToolDescribe` can serve it from
+   * a RESULT - which no client truncates - rather than from a description a
+   * client may have cut at 2048 characters.
+   *
+   * A protocol description averages well over that bound, and the RETURNS
+   * sentence sits in its TAIL, which is exactly the part a client drops. The
+   * value is the description's own result text; the manifest lint asserts the
+   * description still contains it verbatim, so the two cannot drift.
+   *
+   * Optional and filled incrementally, executes first. ABSENT means "not
+   * authored yet", which `vex_ToolDescribe` reports as absent - never as
+   * "returns nothing".
+   */
+  returns?: string;
+  /**
+   * VEX'S OWN FEE on this tool, from the venue constant that charges it
+   * (`tools/vex-fee-notes.ts`). See {@link ToolVexFee}: an ABSENT field is
+   * unauthored and is never reported as free.
+   */
+  vexFee?: ToolVexFee;
 }
 
 // ── Protocol handler (what executes the tool) ────────────────────
@@ -351,12 +375,12 @@ export interface ProtocolExecutionContext {
    */
   walletResolution: WalletResolution;
   walletPolicy: WalletPolicy;
-  /** Session ID — passed to execution capture for audit trail */
+  /** Session ID - passed to execution capture for audit trail */
   sessionId?: string;
   /**
    * TRUSTED PROVENANCE (C0). Threaded by the dispatcher from
    * `InternalToolContext`; a handler can never derive these from model input,
-   * which is exactly why they are here — an authorization record that binds
+   * which is exactly why they are here - an authorization record that binds
    * "which mission / which approval authorized this spend" must be built from
    * host-side evidence.
    *
@@ -369,7 +393,7 @@ export interface ProtocolExecutionContext {
    * All three are OPTIONAL because legacy dispatch paths (chat, maintenance,
    * previews) genuinely have no mission or approval to name; `undefined` and
    * `null` both mean absent. A path that REQUIRES provenance must not read
-   * these directly — call `requireExecutionProvenance` from
+   * these directly - call `requireExecutionProvenance` from
    * `./execution-provenance.js`, which refuses by name instead of silently
    * authorizing an unbound spend.
    */
@@ -384,11 +408,26 @@ export interface ProtocolExecutionContext {
    */
   approvedQuoteAuthority?: ApprovedQuoteAuthority | null;
   /**
+   * WHICH PREQUOTE ROW that approval authorized, and what that row disclosed,
+   * threaded from the same host-side envelope as `approvalId`. The prequote
+   * gate requires the row it matches to be exactly this one, still current and
+   * still stating the same disclosure, so a quote recorded while the card
+   * waited cannot become the row a resumed execute is gated on. Absent on every
+   * live turn.
+   */
+  approvedPrequoteAuthority?: ApprovedPrequoteAuthority | null;
+  /**
+   * Bridge token facts produced by the runtime's direct metadata gate for this
+   * exact dispatch. Model params cannot populate this channel. A mutating
+   * bridge handler refuses to sign when it is absent or unavailable.
+   */
+  bridgeTokenPreview?: BridgeTokenIdentityPreview;
+  /**
    * The provider's id for THIS tool call, threaded by the dispatcher from
    * `ToolCallRequest.toolCallId`. Host-side evidence like the provenance above:
    * a model-supplied id could park a form whose result answers a DIFFERENT call.
    *
-   * Only a handler that must ANSWER ITS OWN CALL LATER needs it —
+   * Only a handler that must ANSWER ITS OWN CALL LATER needs it -
    * `trench.launch_request_form` parks the turn on §C3b and the eventual result
    * must address exactly this call, or the turn can never close. Optional
    * because dispatch paths that were never a model tool call (previews,
@@ -414,7 +453,7 @@ export interface ProtocolExecutionContext {
   preparationBypassesBarrier?: boolean;
   /**
    * Operator Stop for the turn that owns this dispatch, threaded verbatim from
-   * `InternalToolContext.abortSignal` — see that field's doc for the full
+   * `InternalToolContext.abortSignal` - see that field's doc for the full
    * contract, the never-interrupt clause, and the list of producers that
    * deliberately leave it unset.
    *
@@ -442,6 +481,19 @@ export interface ProtocolExecutionContext {
    * today's behaviour; only the A2 mapper sets `studio_mcp` explicitly.
    */
   approvalSurface?: ApprovalSurface;
+  /**
+   * The Vex Studio project this dispatch runs for, when the surface has one.
+   *
+   * Trusted provenance (C0), carried with `missionId` and `approvalId` and
+   * subject to the same rule: host-side evidence, never model input. Only the
+   * Studio MCP mapper sets it; every in-app lane omits it, because there is no
+   * project there.
+   *
+   * A lane that accepts a model-supplied file path resolves the project ROOT
+   * from this id at the moment of use. It is an identifier, not an authority:
+   * it says WHERE a project lives, never that the caller may read it.
+   */
+  studioProjectId?: string | null;
 }
 
 /** The consent surfaces a protocol dispatch can be answered on. */
@@ -456,7 +508,7 @@ export interface ProtocolExecuteRequest {
 
 // ── Coverage matrix types ───────────────────────────────────────
 //
-// `CaptureKind` (the coarse capture-semantics classification — trade/
+// `CaptureKind` (the coarse capture-semantics classification - trade/
 // projection/audit/utility) lives in `mutation-matrix.ts`, the matrix's own
 // module, now that the PnL role split (pnl_spot/pnl_perps/pnl_prediction) and
 // the valuation tri-state are gone (Agent Scan plan §4.3/§11.4).

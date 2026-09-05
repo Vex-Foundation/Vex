@@ -26,8 +26,10 @@ import { z } from "zod";
  * It is part of the stored value and therefore of the approval's request digest,
  * so an approval recorded under a different field set cannot be re-read as this
  * one: an unparseable block is absent, and an absent block on a claim lane means
- * the pre-binding behaviour (newest-executable), which is what historical rows
- * legitimately need.
+ * a refusal: `claim.ts` refuses an unbound approval (`unbound_approval`) and
+ * the prequote gate refuses it on resume (`approval_binding_missing`), so a
+ * historical approval recorded before the binding re-quotes instead of
+ * executing against a row nobody saw.
  */
 export const APPROVED_QUOTE_AUTHORITY_VERSION = "quote-authority-v1";
 

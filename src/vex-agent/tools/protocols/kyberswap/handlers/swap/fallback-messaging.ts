@@ -1,5 +1,5 @@
 /**
- * Venue-fallback messaging — the ONE place this venue decides whether a
+ * Venue-fallback messaging - the ONE place this venue decides whether a
  * KyberSwap failure is one a SECOND VENUE can actually remedy, and what the
  * agent is told about it.
  *
@@ -32,7 +32,7 @@ import {
   deriveKyberPreSignRevertFallbackSignal,
 } from "../../failure-mapping.js";
 
-/** The ONE sentence naming the alternative venue — shared so a second copy cannot drift from the tool names it must name exactly. */
+/** The ONE sentence naming the alternative venue - shared so a second copy cannot drift from the tool names it must name exactly. */
 const FALLBACK_VENUE_AVAILABLE_SUFFIX =
   " Uniswap is an alternative venue for this trade: quote it with SwapQuoteUniswap, then execute with SwapExecuteUniswap.";
 
@@ -65,7 +65,7 @@ const RETRY_KYBER_FIRST_REASONS: ReadonlySet<KyberVenueUnavailableReason> = new 
 
 /**
  * On a KyberSwap failure a second venue can remedy, return the suffix naming
- * Uniswap. Returns "" for every other failure — the caller still gets the base
+ * Uniswap. Returns "" for every other failure - the caller still gets the base
  * message, unpolluted by advice that would not help.
  *
  * `sessionId` is retained in the signature and deliberately unused: it was the
@@ -92,13 +92,13 @@ export function venueFallbackNoteOnFailure(
 
 /**
  * On a PRE-SIGN gas-estimate revert of the `swap` leg with nothing broadcast,
- * return the suffix APPENDED to the refusal (never replacing it — the chain's
+ * return the suffix APPENDED to the refusal (never replacing it - the chain's
  * reason and the remedy stay the primary content).
  *
  * It reuses the quote-stage sentence rather than the execute-stage one on
  * purpose: the execute-stage wording exists to stop an agent resubmitting a
  * route whose gas was already burned, and here nothing was signed, spent, or
- * broadcast — there is no such warning to give.
+ * broadcast - there is no such warning to give.
  *
  * Both gates (`swap` role, nothing broadcast) live in
  * `deriveKyberPreSignRevertFallbackSignal`; the admitted failure codes live in
@@ -117,7 +117,7 @@ export function venueFallbackNoteOnPreSignRevert(input: {
 
 /**
  * On a `swap`-role MINED on-chain revert (`outcome.kind === "reverted"` in the
- * staged broadcast loop), return the EXECUTE-stage suffix — distinct wording
+ * staged broadcast loop), return the EXECUTE-stage suffix - distinct wording
  * from `venueFallbackNoteOnFailure`'s quote-stage suffix so the agent does not
  * blindly resubmit the identical failing Kyber route on the other venue.
  * `eventRole` gates construction of the signal at
@@ -129,5 +129,5 @@ export function venueFallbackNoteOnPreSignRevert(input: {
 export function venueFallbackNoteOnMinedRevert(eventRole: AgentActivityEventRole, _sessionId: string): string {
   const signal = deriveKyberMinedRevertFallbackSignal(eventRole);
   if (!signal || !isVenueFallbackWorthwhile(signal)) return "";
-  return " The gas for this attempt was spent and nothing was swapped. A mined revert on a swap is most often the price guard: the pool moved past the minimum output written into the calldata after the pre-sign estimate passed. FIRST re-quote the SAME Kyber route with a higher slippageBps (Vex caps it at 1000) — switching venue does not fix a price-guard revert, another venue at the same tolerance reverts the same way. If a fresh Kyber quote is then refused for a ROUTING reason rather than price, Uniswap is the alternative venue: SwapQuoteUniswap.";
+  return " The gas for this attempt was spent and nothing was swapped. A mined revert on a swap is most often the price guard: the pool moved past the minimum output written into the calldata after the pre-sign estimate passed. FIRST re-quote the SAME Kyber route with a higher slippageBps (Vex caps it at 1000) - switching venue does not fix a price-guard revert, another venue at the same tolerance reverts the same way. If a fresh Kyber quote is then refused for a ROUTING reason rather than price, Uniswap is the alternative venue: SwapQuoteUniswap.";
 }

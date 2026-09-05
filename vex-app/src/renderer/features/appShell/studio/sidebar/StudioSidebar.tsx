@@ -8,29 +8,60 @@
  * `SidebarProfile` foot. Only the CONTENT between them is different, which is
  * exactly the difference a user should perceive when the mode changes.
  *
- * The section structure follows VS Code's Explorer viewlet, where the tree is
- * wrapped by a view pane whose title is the root folder's name and whose header
- * carries the tree's own actions (`explorerView.ts`). Ours does the same: the
- * EXPLORER disclosure names the active project and contains `ExplorerHeader`
- * plus `ExplorerTree`.
+ * ## The collapsed rail is ICONS ONLY
  *
- * ## Two things about the EXPLORER section
+ * deepseek's `SidebarRoot` states the contract this follows: collapsing the
+ * column leaves one icon per control and nothing else, with tooltips and
+ * accessible names carrying the words (`SidebarRoot.tsx:130-170`); VS Code's
+ * activity bar is the same rule. The rail used to render the PROJECTS
+ * disclosure at 56px, which bled its chevron and the first letters of its title
+ * ("Pro") into the spine. Collapsed now renders the icon rows and the
+ * icon-shaped New Project key; every section title, chevron, count and
+ * placeholder sentence is wide-only.
  *
- * It is HIDDEN with the `hidden` attribute, not unmounted, whenever a project
- * is active: unmounting the tree would release its explorer session, drop its
- * watcher and throw away every folder the user expanded. Without ANY active
- * project there is nothing to render, so it is absent - there is no session to
- * preserve in that case.
+ * ## The explorer is a PANE, not a box
+ *
+ * VS Code's explorer is a view pane that takes the view's height
+ * (`explorerView.ts:293-296`: `layoutBody(height)` hands the whole height to
+ * the tree). Ours did the opposite - a fixed 256px window inside a scrolling
+ * rail, which is half empty on a small project and a keyhole on a real one. The
+ * list region is now a vertical `SplitPane`: the PROJECTS list above, the
+ * explorer pane below taking the rest, and a real separator between them whose
+ * share is a persisted UI preference (`uiStore.studioRailExplorerShare`).
+ *
+ * The EXPLORER section is HIDDEN with the `hidden` attribute, not unmounted,
+ * whenever a project is active: unmounting the tree would release its explorer
+ * session, drop its watcher and throw away every folder the user expanded.
+ * Without ANY active project there is nothing to render, so it is absent -
+ * there is no session to preserve in that case. The same rule is why a live
+ * SEARCH hides the body rather than replacing it.
  *
  * ## Search
  *
- * The rail search filters the PROJECT rows by name. It does not search the
- * explorer: the tree owns its own type-ahead over its own rows, and one field
- * driving two different search models would produce results the user cannot
- * attribute to either.
+ * ONE field over two kinds of thing - project names and the open project's
+ * files - with grouped results, the shape deepseek's `WorkspaceBrowser` search
+ * uses. The file half is a MAIN-SIDE NAME INDEX over the whole project
+ * (`use-rail-file-index.ts`), merged with the nodes the explorer has already
+ * loaded: so there is an honest answer while the index builds, and a row the
+ * user can already see in the tree wins over the same file found by search.
+ *
+ * The index has a SESSION lifetime - walked when the search opens, reused for
+ * every keystroke, released when it closes - which is what VS Code's quick open
+ * does with its own file-query cache. Its bounds AND ITS AGE are stated on
+ * screen (`rail-search-model.ts`, `StudioRailSearchResults.tsx`): nothing
+ * reconciles it from the filesystem, so a user who just created a file is told
+ * when the answer was collected and that reopening the search picks it up.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type JSX,
+} from "react";
 import type { FileNode } from "@shared/schemas/files.js";
 import type { ProjectDto } from "@shared/schemas/projects.js";
 import {
@@ -40,17 +71,23 @@ import {
   IconPanelLeft,
   IconPlus,
   IconSearch,
+  IconSettings,
+  IconThemeDark,
+  IconThemeLight,
 } from "../../../../components/icons/index.js";
 import { RailRow, RailSearchField } from "../../../../components/ui/rail-list.js";
 import { DisclosureRow } from "../../../../components/ui/disclosure-row.js";
+import { SplitPane } from "../../../../components/ui/split-pane.js";
 import { useCollapseChoreography } from "../../../../lib/useCollapseChoreography.js";
 import { useQuietScrollbars } from "../../../../lib/useQuietScrollbars.js";
 import { useScrollbarVisibility } from "../../../../lib/useScrollbarVisibility.js";
 import { cn } from "../../../../lib/utils.js";
 import { useProjects } from "../../../../lib/api/projects.js";
+import { useUiStore } from "../../../../stores/uiStore.js";
 import { SidebarHomeSigil } from "../../SidebarHomeSigil.js";
 import { SidebarProfile } from "../../SidebarProfile.js";
 import { SidebarIconButton } from "../../SessionRows.js";
+import { RuntimeModeToggle } from "../../RuntimeModeToggle.js";
 import { VexTokenCardCompact } from "../../market/VexTokenCardCompact.js";
 import {
   ExplorerHeader,
@@ -60,20 +97,96 @@ import {
 } from "../explorer/index.js";
 import { openProjectCreator } from "../projects/index.js";
 import { publishFileOpen } from "../workspace/file-open-intent.js";
+import type { FileOpenMode } from "../workspace/types.js";
 import {
+  projectFileDriftLabel,
+  STUDIO_DRIFT_SENTENCES,
   STUDIO_EXPLORER_SECTION,
   STUDIO_PROJECTS_SECTION,
   STUDIO_NEW_PROJECT_LABEL,
+  STUDIO_RAIL_SETTINGS_LABEL,
+  STUDIO_RAIL_SPLIT_LABEL,
+  STUDIO_SEARCH_CLEAR_LABEL,
   STUDIO_SEARCH_CLOSE_LABEL,
   STUDIO_SEARCH_OPEN_LABEL,
   STUDIO_SEARCH_PLACEHOLDER,
   STUDIO_SIDEBAR_COLLAPSE_LABEL,
   STUDIO_SIDEBAR_EXPAND_LABEL,
   STUDIO_SIDEBAR_LABEL,
+  studioThemeToggleLabel,
   STUDIO_WELCOME_ROW_LABEL,
 } from "../studio-copy.js";
-import { filterProjectsByName } from "./project-row-model.js";
+import { driftedArtifactPaths } from "./project-row-model.js";
+import {
+  deriveRailSearchResults,
+  railSearchHitCount,
+  RAIL_SEARCH_SCAN_MAX,
+} from "./rail-search-model.js";
 import { StudioProjectsSection } from "./StudioProjectsSection.js";
+import { StudioRailSearchResults } from "./StudioRailSearchResults.js";
+import { useRailFileIndex } from "./use-rail-file-index.js";
+
+/** The listbox id the search field's `aria-controls` points at. */
+const SEARCH_LISTBOX_ID = "studio-rail-search-results";
+
+/** What the reader below answers with. */
+interface LoadedFileRead {
+  readonly nodes: readonly FileNode[];
+  /** The model's read stopped at the cap; files past it were never examined. */
+  readonly truncated: boolean;
+}
+
+/** Nothing loaded, and a STABLE identity so the snapshot never churns. */
+const NO_NODES: LoadedFileRead = { nodes: [], truncated: false };
+
+/* ------------------------------------------------------------------ *
+ * The one thing this rail publishes to the rest of Studio
+ * ------------------------------------------------------------------ */
+
+/**
+ * The mounted rail's "open the search and focus it", or null when no rail is
+ * mounted.
+ *
+ * A REGISTERED HANDLE rather than a DOM query, unlike the explorer's focus,
+ * and the difference is what each surface can be reached by. The explorer tree
+ * is always rendered when it exists, so an element is there to focus; the
+ * search FIELD does not exist until the search is open and the rail is wide,
+ * so `Ctrl+P` has to change component state before there is anything to put a
+ * caret in. That state has exactly one owner and this is the narrowest way to
+ * ask it.
+ *
+ * Module-scope and single-slot because the shell mounts exactly one Studio
+ * rail. The registration is identity-checked on the way out, like every other
+ * single-slot registration in this feature, so a rail that unmounted after its
+ * successor mounted cannot delete the successor's handle.
+ */
+let railSearchFocus: (() => void) | null = null;
+
+function publishStudioRailSearchFocus(focus: () => void): () => void {
+  railSearchFocus = focus;
+  return () => {
+    if (railSearchFocus === focus) railSearchFocus = null;
+  };
+}
+
+/**
+ * OPEN THE RAIL'S UNIFIED SEARCH AND FOCUS IT. `Ctrl+P`'s owner.
+ *
+ * Returns whether a rail was mounted to answer. `false` is an ordinary answer -
+ * Studio is not the active shell - and the caller must be able to tell, so a
+ * shortcut nothing answered leaves the keystroke alone instead of eating it.
+ *
+ * Studio's ONE search is the rail's: it spans projects and the loaded file
+ * tree, which is the surface `Go to file` means here. There is no second quick
+ * open to build, and building one would be a second answer to the same
+ * question (see this file's header on the unified search).
+ */
+export function focusStudioRailSearch(): boolean {
+  const focus = railSearchFocus;
+  if (focus === null) return false;
+  focus();
+  return true;
+}
 
 export interface StudioSidebarProps {
   /**
@@ -115,6 +228,14 @@ export function StudioSidebar({
     width,
   );
 
+  const runtimeMode = useUiStore((state) => state.runtimeMode);
+  const setRuntimeMode = useUiStore((state) => state.setRuntimeMode);
+  const theme = useUiStore((state) => state.theme);
+  const setThemePreference = useUiStore((state) => state.setThemePreference);
+  const setShellRoute = useUiStore((state) => state.setShellRoute);
+  const explorerShare = useUiStore((state) => state.studioRailExplorerShare);
+  const setExplorerShare = useUiStore((state) => state.setStudioRailExplorerShare);
+
   const columnRef = useRef<HTMLElement | null>(null);
   const { quiet, onPointerEnter, onPointerLeave } = useQuietScrollbars(columnRef);
   const listScrollRef = useRef<HTMLDivElement | null>(null);
@@ -122,24 +243,21 @@ export function StudioSidebar({
 
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchText, setSearchText] = useState("");
+  const [activeHit, setActiveHit] = useState(-1);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   useEffect((): void => {
     if (searchOpen) searchInputRef.current?.focus();
   }, [searchOpen]);
 
-  // Section open state is COMPONENT-LOCAL on purpose: the plan persists no
-  // Studio layout preference in this stage, and a disclosure the store
-  // remembered would be a persisted slot the whitelist does not carry.
+  // Section open state is COMPONENT-LOCAL on purpose: it is a disclosure, not a
+  // geometry the user drags. The SPLIT's share is the persisted preference.
   const [projectsOpen, setProjectsOpen] = useState(true);
   const [explorerOpen, setExplorerOpen] = useState(true);
+  const [showAllProjects, setShowAllProjects] = useState(false);
 
   const allProjects: readonly ProjectDto[] = useMemo(
     () => (query.data !== undefined && query.data.ok ? query.data.data : []),
     [query.data],
-  );
-  const visibleProjects = useMemo(
-    () => (searchOpen ? filterProjectsByName(allProjects, searchText) : allProjects),
-    [allProjects, searchOpen, searchText],
   );
   // A failed projects read is its OWN state, and both shapes of failure reach
   // it: a settled `ok: false` Result, and a REJECTED call that leaves no
@@ -161,9 +279,40 @@ export function StudioSidebar({
       ? null
       : (allProjects.find((project) => project.id === activeProjectId) ?? null);
 
+  const activeRegistry = explorerRegistry ?? windowExplorerRegistry;
+  const searching = searchOpen && searchText.trim().length > 0;
+
+  // The files half of the search reads the OPEN project's loaded nodes. Only
+  // while a query is live: a rail with no search open does not walk the tree.
+  const loadedFiles = useLoadedFileNodes(
+    activeRegistry,
+    searching ? activeProjectId : null,
+  );
+  // The project-wide half. Its session opens with the search and closes with
+  // it, so the walk happens once per opening rather than once per keystroke.
+  const indexedFiles = useRailFileIndex(activeProjectId, searching, searchText);
+  const results = useMemo(
+    () =>
+      deriveRailSearchResults(
+        allProjects,
+        loadedFiles.nodes,
+        searchText,
+        loadedFiles.truncated,
+        indexedFiles,
+      ),
+    [allProjects, loadedFiles, searchText, indexedFiles],
+  );
+  const hitCount = railSearchHitCount(results);
+
   const closeSearch = useCallback((): void => {
     setSearchOpen(false);
     setSearchText("");
+    setActiveHit(-1);
+  }, []);
+  const clearSearch = useCallback((): void => {
+    setSearchText("");
+    setActiveHit(-1);
+    searchInputRef.current?.focus();
   }, []);
 
   // The magnifier on a collapsed rail expands it first - a search field has no
@@ -178,13 +327,92 @@ export function StudioSidebar({
     else setSearchOpen(true);
   }, [collapsed, searchOpen, onToggleSidebar, closeSearch]);
 
+  /**
+   * `Ctrl+P`'s owner: OPEN the search and put the caret in it. Never close it.
+   *
+   * Deliberately not `toggleSearch`. The magnifier is a toggle because a
+   * pointer press on an open search means "put this away"; `Go to file` means
+   * one thing only, and a second press that closed the field would make the
+   * shortcut a coin flip depending on state the user cannot see from the
+   * keyboard. When the field is already open this re-focuses and SELECTS, so a
+   * second press starts a fresh query over the old text rather than appending
+   * to it - VS Code's Quick Open behaves the same way.
+   *
+   * The collapsed branch mirrors the magnifier's, and it is the only place the
+   * rail is expanded: a search field has no room on the 56px spine. The
+   * `searchOpen` effect above lands the focus in that case, because the input
+   * does not exist yet at this point.
+   */
+  const focusSearch = useCallback((): void => {
+    if (collapsed) {
+      onToggleSidebar();
+      setSearchOpen(true);
+      return;
+    }
+    if (!searchOpen) {
+      setSearchOpen(true);
+      return;
+    }
+    const input = searchInputRef.current;
+    input?.focus();
+    input?.select();
+  }, [collapsed, onToggleSidebar, searchOpen]);
+
+  useEffect(() => publishStudioRailSearchFocus(focusSearch), [focusSearch]);
+
+  /**
+   * Park a file for the workspace, in the mode the GESTURE asked for.
+   *
+   * `mode` defaults to `"pinned"`, which is what every route but the tree's
+   * single click means: a search hit the user picked out of a list is a file
+   * they chose, not one they browsed past. Only `ExplorerTree` passes
+   * `"preview"`, and only for a single click.
+   */
   const handleOpenFile = useCallback(
-    (node: FileNode): void => {
+    (node: FileNode, mode: FileOpenMode = "pinned"): void => {
       if (activeProjectId === null) return;
-      publishFileOpen(activeProjectId, node);
+      publishFileOpen(activeProjectId, node, mode);
     },
     [activeProjectId],
   );
+
+  const moveActiveHit = useCallback(
+    (direction: "next" | "previous" | "first" | "last"): void => {
+      if (hitCount === 0) {
+        setActiveHit(-1);
+        return;
+      }
+      setActiveHit((current) => {
+        if (direction === "first") return 0;
+        if (direction === "last") return hitCount - 1;
+        if (direction === "next") return current + 1 >= hitCount ? 0 : current + 1;
+        return current <= 0 ? hitCount - 1 : current - 1;
+      });
+    },
+    [hitCount],
+  );
+
+  const openHit = useCallback(
+    (index: number): void => {
+      const project = results.projects[index];
+      if (project !== undefined) {
+        closeSearch();
+        onSelectProject(project.id);
+        return;
+      }
+      const node = results.files[index - results.projects.length];
+      if (node === undefined) return;
+      closeSearch();
+      handleOpenFile(node);
+    },
+    [closeSearch, handleOpenFile, onSelectProject, results],
+  );
+
+  // Enter with nothing highlighted opens the FIRST hit, which is what a user
+  // who typed a name and pressed Enter is asking for.
+  const activateHit = useCallback((): void => {
+    openHit(activeHit < 0 ? 0 : activeHit);
+  }, [activeHit, openHit]);
 
   const retry = useCallback((): void => {
     void query.refetch();
@@ -193,7 +421,6 @@ export function StudioSidebar({
   // The header's actions act on the session the TREE holds. `peek` reads it
   // without taking a reference, which is what keeps the header a sibling of the
   // tree rather than a second owner of its lifetime.
-  const activeRegistry = explorerRegistry ?? windowExplorerRegistry;
   const refreshExplorer = useCallback((): void => {
     if (activeProjectId === null) return;
     activeRegistry.peek(activeProjectId)?.refreshNow();
@@ -203,6 +430,148 @@ export function StudioSidebar({
     activeRegistry.peek(activeProjectId)?.collapseAll();
   }, [activeRegistry, activeProjectId]);
 
+  /**
+   * The header's New file / New folder, which create WHERE THE USER IS.
+   *
+   * VS Code's `explorer.newFile` reads the explorer's context before it opens
+   * the name box (`fileActions.ts:931-938`): the selected directory takes the
+   * new entry, a selected file gives it to its parent, and only an empty
+   * selection means the root. Creating at the root with a folder selected -
+   * which is what these two used to do - put `inner.ts` beside `src` for a
+   * user who had just clicked `src` (live test 2026-09-03, I-4).
+   *
+   * The rule itself lives on the SESSION (`createParentId`), so the header and
+   * the row menu cannot answer it differently, and both go through
+   * `beginCreate` like every other create - the session opens the name box,
+   * validates against the siblings, and commits - so the header gains a route
+   * to the write and never a second way of performing it.
+   */
+  const createInExplorer = useCallback(
+    (kind: "file" | "directory"): void => {
+      if (activeProjectId === null) return;
+      const session = activeRegistry.peek(activeProjectId);
+      if (session === null) return;
+      void session.beginCreate(session.createParentId(session.getFocusedRowId()), kind);
+    },
+    [activeRegistry, activeProjectId],
+  );
+  const createExplorerFile = useCallback((): void => {
+    createInExplorer("file");
+  }, [createInExplorer]);
+  const createExplorerFolder = useCallback((): void => {
+    createInExplorer("directory");
+  }, [createInExplorer]);
+
+  // The project owns the drift fact (it is read from disk on every project
+  // read); the tree only decorates the file it names.
+  const driftedPaths = useMemo((): ReadonlyMap<string, string> => {
+    if (activeProject === null) return new Map();
+    const labelled = new Map<string, string>();
+    for (const [path, state] of driftedArtifactPaths(activeProject)) {
+      const sentence = STUDIO_DRIFT_SENTENCES[state];
+      if (sentence === undefined) continue;
+      labelled.set(path, projectFileDriftLabel(fileNameOf(path), sentence));
+    }
+    return labelled;
+  }, [activeProject]);
+
+  const projectsRegion = (
+    <div
+      ref={listScrollRef}
+      className="vex-scroll vex-scroll-overlay min-h-0 flex-1 overflow-y-auto overflow-x-clip px-2 py-3"
+      data-vex-rail-pane="projects"
+      data-rail-control
+    >
+      {wide ? (
+        <DisclosureRow
+          icon={<IconFolderOpen size={14} />}
+          title={STUDIO_PROJECTS_SECTION}
+          open={projectsOpen}
+          expandable
+          expandOnRowClick
+          onToggle={() => setProjectsOpen((open) => !open)}
+        >
+          <StudioProjectsSection
+            projects={allProjects}
+            activeProjectId={activeProjectId}
+            collapsed={false}
+            isLoading={query.isLoading}
+            hasError={readFailed}
+            onRetry={retry}
+            onSelect={onSelectProject}
+            showAll={showAllProjects}
+            onShowAllChange={setShowAllProjects}
+          />
+        </DisclosureRow>
+      ) : (
+        // COLLAPSED: the rows only. No disclosure title, no chevron, nothing
+        // that can bleed a truncated word into the 56px spine.
+        <StudioProjectsSection
+          projects={allProjects}
+          activeProjectId={activeProjectId}
+          collapsed
+          isLoading={query.isLoading}
+          hasError={readFailed}
+          onRetry={retry}
+          onSelect={onSelectProject}
+          showAll
+          onShowAllChange={setShowAllProjects}
+        />
+      )}
+
+      <div className="mt-2">
+        <RailRow
+          selected={activeProjectId === null}
+          collapsed={!wide}
+          icon={<IconHome size={16} />}
+          leading={<IconHome size={14} />}
+          title={STUDIO_WELCOME_ROW_LABEL}
+          onSelect={onSelectWelcome}
+          label={STUDIO_WELCOME_ROW_LABEL}
+        />
+      </div>
+    </div>
+  );
+
+  const explorerPane =
+    activeProject === null ? null : (
+      <div className="flex h-full min-h-0 flex-col px-2 pb-3" data-vex-rail-pane="explorer">
+        <DisclosureRow
+          icon={<IconFolderOpen size={14} />}
+          title={STUDIO_EXPLORER_SECTION}
+          open={explorerOpen}
+          expandable
+          expandOnRowClick
+          onToggle={() => setExplorerOpen((open) => !open)}
+          className="flex min-h-0 flex-1 flex-col"
+          bodyClassName="flex min-h-0 flex-1 flex-col"
+        >
+          {/* The pane takes the rest of the rail, as VS Code's explorer view
+            * takes its view's height. It titles itself with the ROOT PROJECT'S
+            * NAME, which is what that view pane does too. No frame around it:
+            * the pane is spacing on the rail's glass, and the register step
+            * between the section title, the pane header and the rows is what
+            * separates them (the rail redesign took the four boxes out). */}
+          <div className="mt-1 flex min-h-0 flex-1 flex-col overflow-hidden">
+            <ExplorerHeader
+              title={activeProject.name}
+              onRefresh={refreshExplorer}
+              onCollapseAll={collapseExplorer}
+              onCreateFile={createExplorerFile}
+              onCreateFolder={createExplorerFolder}
+            />
+            <ExplorerTree
+              projectId={activeProject.id}
+              onOpenFile={handleOpenFile}
+              registry={activeRegistry}
+              driftedPaths={driftedPaths}
+              className="min-h-0 flex-1"
+            />
+          </div>
+        </DisclosureRow>
+      </div>
+    );
+
   return (
     <aside
       ref={columnRef}
@@ -210,10 +579,12 @@ export function StudioSidebar({
       onPointerLeave={onPointerLeave}
       aria-label={STUDIO_SIDEBAR_LABEL}
       className={cn(
-        // The same glass rail as the sessions sidebar (--vex-rail +
-        // guard-whitelisted backdrop-blur, no separating stroke). Studio is the
-        // same room, not a second application.
-        "vex-sidebar relative flex h-full flex-col bg-[var(--vex-rail)] backdrop-blur-xl",
+        // The same glass rail as the sessions sidebar: the rail tier of
+        // `glass.css` (tint, blur and the inset edge light, no separating
+        // stroke), named as a class so the design guard's utility ban holds
+        // without a whitelist entry. Studio is the same room, not a second
+        // application.
+        "vex-sidebar vex-glass-rail relative flex h-full flex-col",
         fading && "vex-sidebar-fading",
         railIn && "vex-sidebar-rail-in",
         quiet && "vex-quiet-bars",
@@ -232,9 +603,20 @@ export function StudioSidebar({
       >
         <SidebarHomeSigil sidebarOpen={wide} />
         <div
-          className={cn("flex items-center", wide ? "gap-0.5" : "flex-col gap-0.5")}
+          className={cn("flex items-center", wide ? "gap-1" : "flex-col gap-0.5")}
           data-rail-control
         >
+          {/* THE WAY BACK, while a project is open. With no project the
+            * Studio welcome screen carries the capsule under its wordmark
+            * (owner decree 2026-09-04) and this header mounts none, so the
+            * `Runtime mode` radiogroup is unique on the page; `activeProjectId`
+            * is the one fact both seats read. Inside a project the welcome is
+            * gone and this header is the only rendered path back to agent
+            * mode. Wide-only because it is words, not an icon; the collapsed
+            * rail reaches it by expanding. */}
+          {wide && activeProjectId !== null ? (
+            <RuntimeModeToggle runtimeMode={runtimeMode} onChange={setRuntimeMode} />
+          ) : null}
           <SidebarIconButton
             label={searchOpen ? STUDIO_SEARCH_CLOSE_LABEL : STUDIO_SEARCH_OPEN_LABEL}
             onClick={toggleSearch}
@@ -256,16 +638,28 @@ export function StudioSidebar({
         <div className="px-3 pt-1 pb-2">
           <RailSearchField
             value={searchText}
-            onChange={setSearchText}
+            onChange={(value) => {
+              setSearchText(value);
+              setActiveHit(-1);
+            }}
             onClose={closeSearch}
+            onClear={clearSearch}
             placeholder={STUDIO_SEARCH_PLACEHOLDER}
             label={STUDIO_SEARCH_PLACEHOLDER}
             closeLabel={STUDIO_SEARCH_CLOSE_LABEL}
+            clearLabel={STUDIO_SEARCH_CLEAR_LABEL}
             inputRef={(el) => {
               searchInputRef.current = el;
             }}
             icon={<IconSearch size={14} />}
             closeIcon={<IconClose size={12} />}
+            combobox={{
+              listboxId: SEARCH_LISTBOX_ID,
+              activeOptionId: activeHit < 0 ? null : searchOptionId(activeHit),
+              expanded: searching && hitCount > 0,
+              onMove: moveActiveHit,
+              onActivate: activateHit,
+            }}
           />
         </div>
       ) : null}
@@ -290,82 +684,131 @@ export function StudioSidebar({
           </button>
       </div>
 
-      <div
-        ref={listScrollRef}
-        className="vex-scroll vex-scroll-overlay min-h-0 flex-1 overflow-y-auto overflow-x-clip px-2 py-3"
-        data-rail-control
-      >
-        <DisclosureRow
-          icon={<IconFolderOpen size={14} />}
-          title={STUDIO_PROJECTS_SECTION}
-          open={projectsOpen}
-          expandable
-          expandOnRowClick
-          onToggle={() => setProjectsOpen((open) => !open)}
-        >
-          <StudioProjectsSection
-            projects={visibleProjects}
-            activeProjectId={activeProjectId}
-            collapsed={!wide}
-            isLoading={query.isLoading}
-            hasError={readFailed}
-            onRetry={retry}
-            onSelect={onSelectProject}
-            searching={searchOpen && searchText.trim().length > 0}
-          />
-        </DisclosureRow>
+      {searching ? (
+        <StudioRailSearchResults
+          results={results}
+          listboxId={SEARCH_LISTBOX_ID}
+          activeIndex={activeHit}
+          optionId={searchOptionId}
+          onOpenProject={(projectId) => {
+            closeSearch();
+            onSelectProject(projectId);
+          }}
+          onOpenFile={(node) => {
+            closeSearch();
+            handleOpenFile(node);
+          }}
+          fileSearchAvailable={activeProjectId !== null}
+        />
+      ) : null}
 
-        <div className="mt-2">
-          <RailRow
-            selected={activeProjectId === null}
-            collapsed={!wide}
-            icon={<IconHome size={16} />}
-            leading={<IconHome size={14} />}
-            title={STUDIO_WELCOME_ROW_LABEL}
-            onSelect={onSelectWelcome}
-            label={STUDIO_WELCOME_ROW_LABEL}
-          />
-        </div>
-
-        {activeProject !== null ? (
-          <div className="mt-2" hidden={!wide}>
-            <DisclosureRow
-              icon={<IconFolderOpen size={14} />}
-              title={STUDIO_EXPLORER_SECTION}
-              open={explorerOpen}
-              expandable
-              expandOnRowClick
-              onToggle={() => setExplorerOpen((open) => !open)}
-            >
-              <div className="mt-1 flex h-64 flex-col overflow-hidden rounded-lg border border-line-3">
-                {/* The pane titles itself with the ROOT PROJECT'S NAME, as
-                  * VS Code's explorer view pane does. */}
-                <ExplorerHeader
-                  title={activeProject.name}
-                  onRefresh={refreshExplorer}
-                  onCollapseAll={collapseExplorer}
-                />
-                <ExplorerTree
-                  projectId={activeProject.id}
-                  onOpenFile={handleOpenFile}
-                  registry={activeRegistry}
-                  className="min-h-0 flex-1"
-                />
-              </div>
-            </DisclosureRow>
-          </div>
-        ) : null}
+      {/* HIDDEN, never unmounted, while the search shows results: unmounting
+        * the tree would release the explorer session and lose every folder the
+        * user expanded. */}
+      <div className="flex min-h-0 flex-1 flex-col" hidden={searching}>
+        {wide && explorerPane !== null ? (
+          <SplitPane
+            orientation="vertical"
+            sizes={[1 - explorerShare, explorerShare]}
+            onResize={(next) => {
+              const share = next[1];
+              if (share !== undefined) setExplorerShare(share);
+            }}
+            minPaneSize={96}
+            separatorLabel={() => STUDIO_RAIL_SPLIT_LABEL}
+            className="min-h-0 flex-1"
+          >
+            {projectsRegion}
+            {explorerPane}
+          </SplitPane>
+        ) : (
+          projectsRegion
+        )}
       </div>
 
       {wide ? (
-        <div className="border-t border-[var(--vex-line)] px-3 py-3">
+        // Spacing alone separates the widget from the list above it; the rule
+        // that used to sit here was the fourth box of the old rail.
+        <div className="px-3 py-3">
           <VexTokenCardCompact />
         </div>
       ) : null}
 
       <footer className="flex flex-col" data-rail-foot>
+        {wide ? (
+          <div className="flex items-center gap-1 px-3 pt-2">
+            <SidebarIconButton
+              label={STUDIO_RAIL_SETTINGS_LABEL}
+              onClick={() => {
+                setShellRoute({ kind: "settings", origin: null, section: null });
+              }}
+            >
+              <IconSettings size={16} />
+            </SidebarIconButton>
+            <SidebarIconButton
+              label={studioThemeToggleLabel(theme === "chronos" ? "light" : "dark")}
+              onClick={() => {
+                setThemePreference(theme === "chronos" ? "celeris" : "chronos");
+              }}
+            >
+              {theme === "chronos" ? (
+                <IconThemeLight size={16} />
+              ) : (
+                <IconThemeDark size={16} />
+              )}
+            </SidebarIconButton>
+          </div>
+        ) : null}
         <SidebarProfile sidebarOpen={wide} />
       </footer>
     </aside>
+  );
+}
+
+/** Stable per-index DOM id, so `aria-activedescendant` always resolves. */
+function searchOptionId(index: number): string {
+  return `${SEARCH_LISTBOX_ID}-option-${String(index)}`;
+}
+
+/** The last segment of a project-relative POSIX path. */
+function fileNameOf(path: string): string {
+  const cut = path.lastIndexOf("/");
+  return cut === -1 ? path : path.slice(cut + 1);
+}
+
+/**
+ * The open project's loaded file nodes, tracked through the session's own
+ * revision counter.
+ *
+ * A READER, never an owner: it `peek`s the session the tree already holds
+ * rather than acquiring one, so a search cannot start a watcher or keep a
+ * project alive. With no project (or no live query) it subscribes to nothing
+ * and answers with the same empty array every time, which is what
+ * `useSyncExternalStore` needs to avoid an infinite re-render.
+ */
+function useLoadedFileNodes(
+  registry: ExplorerRegistry,
+  projectId: string | null,
+): LoadedFileRead {
+  const session = projectId === null ? null : registry.peek(projectId) ?? null;
+  const subscribe = useCallback(
+    (onChange: () => void): (() => void) => {
+      if (session === null) return () => undefined;
+      return session.subscribeRevision(onChange);
+    },
+    [session],
+  );
+  const revision = useSyncExternalStore(
+    subscribe,
+    () => session?.getRevision() ?? 0,
+    () => 0,
+  );
+  return useMemo(
+    () =>
+      session === null ? NO_NODES : session.model.loadedNodes(RAIL_SEARCH_SCAN_MAX),
+    // The revision IS the dependency: the model mutates in place, so nothing
+    // else here changes when a folder finishes listing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [session, revision],
   );
 }

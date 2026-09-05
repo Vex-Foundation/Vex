@@ -1,5 +1,5 @@
 /**
- * Pendle TERM-MOBILITY manifests (R5d card E4) — the three tools that move a
+ * Pendle TERM-MOBILITY manifests (R5d card E4) - the three tools that move a
  * position between maturities or between position TYPES without ever leaving
  * Pendle:
  *
@@ -13,8 +13,8 @@
  *
  * NO `keepYt` PARAM on `pendle.lp.transfer`. The R5d card allowed one only if
  * the live captures showed a zero-price-impact keep-YT transfer variant; they do
- * not — `transfer-liquidity` probed as `[LP(mktA)] → [LP(mktB)]`, a single output
- * leg, on both the chain-1 and chain-143 captures — so the param is omitted
+ * not - `transfer-liquidity` probed as `[LP(mktA)] → [LP(mktB)]`, a single output
+ * leg, on both the chain-1 and chain-143 captures - so the param is omitted
  * rather than accepted and ignored. `LpTransferMatchInput` records the same
  * finding on the identity side.
  *
@@ -31,7 +31,7 @@ const CHAIN_PARAM = {
   key: "chain",
   type: "string" as const,
   required: true,
-  description: "Chain slug or id — one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc'). Both legs are on ONE chain; none of these tools bridges.",
+  description: "Chain slug or id - one of Pendle's 11 chains (e.g. 'ethereum', 'arbitrum', 'base', 'bsc'). Both legs are on ONE chain; none of these tools bridges.",
 };
 
 const SLIPPAGE_PARAM = {
@@ -151,7 +151,7 @@ export const PENDLE_REFLECT_TOOLS: readonly ProtocolToolManifest[] = [
       {
         key: "pt",
         type: "string",
-        description: "OPTIONAL check: the PT contract address you expect to receive. Must be this market's own PT — a PT from any other market is refused by name. Omit it and Vex uses the market's PT.",
+        description: "OPTIONAL check: the PT contract address you expect to receive. Must be this market's own PT - a PT from any other market is refused by name. Omit it and Vex uses the market's PT.",
       },
       AMOUNT_PARAM,
       SLIPPAGE_PARAM,

@@ -28,8 +28,22 @@
  * project folder and wins that race can still redirect the final open. What the
  * walk closes is the whole standing case - a link that is simply THERE, which
  * is what a checked-out repository or a careless build actually produces. The
- * reader additionally opens with `O_NOFOLLOW` on the final component, which
- * closes the common half of the residual.
+ * reader closes the common half of the residual itself, in
+ * `no-follow-open.ts`: a standing link is refused before the open, and after
+ * the open the handle's identity is proved against the path's before a byte is
+ * read.
+ *
+ * ## The platform note, because the flag is not portable
+ *
+ * `O_NOFOLLOW` is POSIX-only - Node 22 does not define it on win32 - so on
+ * Windows the pre-open `lstat` and the post-open identity check are the whole
+ * enforcement rather than a belt beside a brace. That check compares
+ * `(dev, ino)` from `bigint` stats, which on Windows are the volume serial
+ * number and the 64-bit file ID. ReFS file IDs are 128 bits and Microsoft
+ * documents that the 64-bit form it exposes is not guaranteed unique there, so
+ * the check is sound on local NTFS (where the volume serial plus the file ID
+ * identify a file, and NTFS keeps the ID until deletion) and is the best
+ * available Node mitigation elsewhere, not a proof against an active race.
  */
 
 import { lstat, realpath } from "node:fs/promises";

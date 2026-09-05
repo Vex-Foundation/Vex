@@ -135,7 +135,7 @@ describe("G2 - publicName mapping gate", () => {
     );
   });
 
-  it("the mapped surface is the whole 136-tool catalog (drift alarm, not a cap)", () => {
+  it("the mapped surface is the whole 147-tool catalog (drift alarm, not a cap)", () => {
     // Not a limit: a Batch-2 addition updates this number together with its
     // mapping row, so the count and the map can never diverge silently.
     // 137 before the Batch 2 near-duplicate merges (owner decision D7) retired
@@ -159,10 +159,22 @@ describe("G2 - publicName mapping gate", () => {
     // `pair.details`, `candles`, `trades` and `top.traders`. All four are new
     // identities - no toolId is reclaimed, because none of the retired
     // public-API tools answered any part of what they answer.
-    // 140 before the Indexify integration, which added the 13-tool `indexify`
-    // namespace (10 reads, trade_execute, order_resolve, stack_create) — the
-    // tree's first custodial API venue. All new identities.
-    expect(PROTOCOL_TOOLS.length).toBe(153);
+    // 140 before PR-C1, which added the two Virtuals market-history reads
+    // (`virtuals.trades`, `virtuals.candles`). Both are new identities with
+    // their own mapping rows in `mappings/virtuals.json`.
+    // 142 before the launchpads arc's wave 1-2 merge. Five read tools arrived
+    // across that arc: the two pools.fun reads (`pools.launch_assets`,
+    // `pools.holder_rewards`), the two Virtuals market-history reads
+    // (`virtuals.trades`, `virtuals.candles`) and the Virtuals creator-fee read
+    // (`virtuals.creator_fees`). The market-history pair is already counted in
+    // the 142 above, which the PR-C1 lane raised on its own, so the delta this
+    // merge records is the remaining three. Every one is a new identity with
+    // its own mapping row; nothing was reclaimed or retired.
+    // 147 before the integrate/indexify merge, which adds the 13-tool
+    // `indexify` namespace (10 reads, trade_execute, order_resolve,
+    // stack_create) — the tree's first custodial API venue. All new
+    // identities with mapping rows in `mappings/indexify.json`.
+    expect(PROTOCOL_TOOLS.length).toBe(160);
   });
 });
 

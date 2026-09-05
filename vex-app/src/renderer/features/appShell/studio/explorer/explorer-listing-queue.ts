@@ -83,6 +83,36 @@ export class SingleFlightQueue<TRequest> {
     this.#queue.length = 0;
   }
 
+  /**
+   * Resolve once nothing is queued and nothing is in flight.
+   *
+   * For a caller that must SEE the result of work it just enqueued - opening a
+   * name box inside a folder it has only now asked to be listed, where an edit
+   * row in an unresolved folder would read as "this folder is empty". It is
+   * deliberately not a way to await ONE request: the queue coalesces by key, so
+   * the request a caller enqueued may legitimately have been dropped in favour
+   * of an identical one, and "my listing finished" is not a question this queue
+   * can answer honestly. "Nothing is outstanding" is.
+   *
+   * It resolves on the NEXT idle, never later: a queue that is fed continuously
+   * would starve a waiter that insisted on its own request, and a caller here
+   * is doing one interactive thing.
+   */
+  whenIdle(): Promise<void> {
+    if (!this.#draining && this.#queue.length === 0) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      this.#idleWaiters.push(resolve);
+    });
+  }
+
+  readonly #idleWaiters: Array<() => void> = [];
+
+  #releaseIdleWaiters(): void {
+    if (this.#idleWaiters.length === 0) return;
+    const waiters = this.#idleWaiters.splice(0, this.#idleWaiters.length);
+    for (const resolve of waiters) resolve();
+  }
+
   async #drain(): Promise<void> {
     if (this.#draining) return;
     this.#draining = true;
@@ -98,6 +128,7 @@ export class SingleFlightQueue<TRequest> {
       }
     } finally {
       this.#draining = false;
+      this.#releaseIdleWaiters();
     }
   }
 }

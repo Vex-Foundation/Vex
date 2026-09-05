@@ -71,6 +71,24 @@ export interface WorkspacePane {
   readonly terminalId: string;
   /** Share of the group's split axis, 0..1. Relative so a restore fits any size. */
   readonly relativeSize: number;
+  /**
+   * WHERE THIS SHELL IS, as the panel header says it. `null` means not known
+   * yet, which `terminalLocationLabel` renders by name.
+   *
+   * THE ONE OWNER of that fact in the renderer, and it lives on the PANE
+   * because the fact is per terminal: a group of four split shells is four
+   * directories, and a field on the tab could only hold one of them. Seeded at
+   * restore from `TerminalWorkspaceRestore` (main asked the host for it) and
+   * when a terminal is created, then superseded by every `displayCwd` property
+   * event through `setPaneDisplayCwd`. VS Code's `TerminalInstance` holds the
+   * same single `_cwd` per instance, seeded from `attachPersistentProcess.cwd`
+   * on reconnect and overwritten by `ProcessPropertyType.Cwd`.
+   *
+   * It is NOT persisted: `toPersistedLayout` writes topology, and a directory
+   * saved from a previous session would be restored onto a shell that has since
+   * been spawned somewhere else.
+   */
+  readonly displayCwd: string | null;
 }
 
 /** A terminal tab: an ordered set of panes split along one axis. */
@@ -105,7 +123,38 @@ export interface WorkspaceFileTab {
    */
   readonly nodeId: string;
   readonly dirty: boolean;
+  /**
+   * PREVIEW, VS Code's model: this tab is the workspace's single throwaway
+   * slot, and the next preview open REPLACES it in place.
+   *
+   * `true` means preview. ABSENT MEANS PINNED, and the absence is the
+   * migration: every file tab that existed before this field - one restored
+   * from an older layout, one built by a caller that has not chosen a mode -
+   * reads as pinned, which is the state those tabs actually had. Expand-only,
+   * like every uiStore hop: a reader gains a field, nothing is rewritten.
+   *
+   * Read it through {@link isPreviewFileTab} rather than by testing the field,
+   * so "absent is pinned" is decided in one place.
+   *
+   * NEVER SET BY A CALLER. `addFileTab` assigns it from the open's
+   * {@link FileOpenMode}, the same way `addPane` owns a pane's share rather
+   * than trusting the one it was handed: a caller that could write this field
+   * could put two previews in one workspace, which is the one invariant the
+   * whole preview model rests on.
+   */
+  readonly preview?: boolean;
 }
+
+/**
+ * HOW a file is opened.
+ *
+ * `"pinned"` is the DEFAULT everywhere - a caller that does not choose gets the
+ * behaviour Studio had before previews existed, so adding the mode changed no
+ * existing gesture. `"preview"` is the explorer's single click: it opens a tab
+ * that the next single click replaces, so browsing a tree does not leave a
+ * strip full of files nobody asked to keep.
+ */
+export type FileOpenMode = "preview" | "pinned";
 
 export type WorkspaceTab = WorkspaceTerminalGroup | WorkspaceFileTab;
 

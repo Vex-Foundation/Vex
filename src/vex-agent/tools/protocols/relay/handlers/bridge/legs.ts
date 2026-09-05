@@ -34,7 +34,7 @@ export interface RelayLegs {
    * actually receives. Equal to `requestedAmount` when no fee is taken.
    */
   amount: string;
-  /** The caller's `amountRaw` verbatim — the TOTAL debited across all legs. */
+  /** The caller's `amountRaw` verbatim - the TOTAL debited across all legs. */
   requestedAmount: string;
   feeSplit: BridgeFeeSplit;
   /** Non-null when no fee is taken; the plain-language reason, disclosed to the agent. */
@@ -51,7 +51,7 @@ export interface RelayLegs {
   slippageBps: number;
 }
 
-/** Distinct tx chainIds per step — the structural shape the prequote recorder re-validates. */
+/** Distinct tx chainIds per step - the structural shape the prequote recorder re-validates. */
 export function stepSummaries(quote: RelayQuoteResponse): Array<{ id: string; kind: string; chainIds: number[] }> {
   return quote.steps.map((step) => {
     const chainIds = new Set<number>();
@@ -67,7 +67,7 @@ export function stepSummaries(quote: RelayQuoteResponse): Array<{ id: string; ki
  * The text is locally authored, but `resolveRelayChainId`/`toRelayCurrency`
  * echo the MODEL-SUPPLIED `fromChain`/`toChain`/token values verbatim
  * (`Relay does not support chain "<input>".`), so a model-injected URL or
- * key-shaped string would otherwise reach tool output unredacted — untrusted
+ * key-shaped string would otherwise reach tool output unredacted - untrusted
  * input at an output sink.
  */
 export async function resolveLegs(
@@ -92,7 +92,7 @@ export async function resolveLegs(
   const originChainId = resolveRelayChainId(fromChain, chains);
   const originCurrency = toRelayCurrency(fromToken);
 
-  // Vex integrator fee (`@tools/bridge-fee`) — resolved HERE so the quote
+  // Vex integrator fee (`@tools/bridge-fee`) - resolved HERE so the quote
   // handler and the execute handler can never disagree about what Relay was
   // asked for. Relay is quoted for the POST-fee amount; the fee leaves later,
   // as Vex's own transfer, only if the deposit actually lands.
@@ -138,9 +138,20 @@ function resolveSlippageBps(params: Record<string, unknown>): number {
   return resolved.bps;
 }
 
-export function buildRequest(legs: RelayLegs, user: string, params: Record<string, unknown>): RelayQuoteRequest {
-  const recipient = str(params, "recipient") || user;
-  // DERIVED, never read from params — the same refund-destination policy the
+/**
+ * The outbound Relay quote request.
+ *
+ * `user` is the session's selected EVM wallet, and it is BOTH the source and -
+ * because Relay v1 is EVM-only - the destination and the refund address. None
+ * of the three is read from params: a destination a model can choose is a
+ * destination an injection can choose (bridge-destination policy in
+ * `@tools/khalani/request.js`), and both handlers reject a supplied `recipient`
+ * by name before this builder is reached.
+ */
+export function buildRequest(legs: RelayLegs, user: string): RelayQuoteRequest {
+  // DERIVED, never read from params - the destination is the selected wallet.
+  const recipient = user;
+  // DERIVED, never read from params - the same refund-destination policy the
   // Khalani path applies (`@tools/khalani/request.js`). `refundTo` decides where
   // funds land when a bridge FAILS and is absent from the approval preview's
   // allowlist, so a model-chosen value would redirect a refund with no human
@@ -148,7 +159,7 @@ export function buildRequest(legs: RelayLegs, user: string, params: Record<strin
   // where it came from, which needs no authorization. Callers that supply the
   // key are rejected by name upstream.
   const refundTo = user;
-  // The VALIDATED value from `resolveLegs`, never the raw param — this is the
+  // The VALIDATED value from `resolveLegs`, never the raw param - this is the
   // last hop before the provider, and it must carry exactly what the prequote
   // identity bound. ALWAYS sent (W4a): omitting it lets Relay auto-compute the
   // tolerance, which would hand our price protection to the provider.
@@ -169,7 +180,7 @@ export function buildRequest(legs: RelayLegs, user: string, params: Record<strin
 
 /**
  * The route endpoints, built from the SAME (chainId, family, toRelayCurrency)
- * tuples W5's `resolveRelayRevealRoute` uses (key-consistency contract) — so the
+ * tuples W5's `resolveRelayRevealRoute` uses (key-consistency contract) - so the
  * stored `normalized_route` round-trips with the reveal key and W4's
  * `clearRelayRouteReveal` hits. Diverging would only fail closed (the reveal
  * never applies), never over-grant.

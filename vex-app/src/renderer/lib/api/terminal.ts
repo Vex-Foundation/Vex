@@ -23,16 +23,31 @@ import type {
   TerminalOutcome,
   TerminalProperty,
   TerminalResyncReason,
+  TerminalShellCatalogue,
+  TerminalShellId,
   TerminalWorkspaceLayout,
   TerminalWorkspaceRestore,
 } from "@shared/schemas/terminal.js";
 
 export function createTerminal(input: {
   projectId: string;
+  shellId: TerminalShellId;
   cols: number;
   rows: number;
 }): Promise<Result<TerminalCreateResult>> {
   return window.vex.terminal.create(input);
+}
+
+/**
+ * The shells the picker may offer. Advisory: main re-resolves the chosen id.
+ *
+ * A plain call rather than a query hook, for the same reason the rest of this
+ * module is: the answer is read when a picker opens, and caching it behind an
+ * invalidation policy would make the list stale precisely when the user has
+ * just installed the shell they are looking for.
+ */
+export function readShellCatalogue(): Promise<Result<TerminalShellCatalogue>> {
+  return window.vex.terminal.getShellCatalogue();
 }
 
 export function writeTerminal(

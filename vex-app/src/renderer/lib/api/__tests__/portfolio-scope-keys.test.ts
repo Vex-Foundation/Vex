@@ -23,7 +23,6 @@ import type { PortfolioReadInput } from "@shared/schemas/portfolio.js";
 import { portfolioKeys } from "../queryKeys.js";
 import {
   portfolioReadInputFor,
-  sessionPortfolioScope,
   type PortfolioCardScope,
 } from "../../../features/appShell/book/portfolio/portfolio-scope.js";
 
@@ -132,13 +131,5 @@ describe("portfolioReadInputFor", () => {
     expect(
       portfolioReadInputFor({ kind: "session", sessionId: PROJECT_A }),
     ).toEqual({ scope: "session", sessionId: PROJECT_A });
-  });
-
-  it("turns a raw active-session id into the scope the cards used to derive", () => {
-    expect(sessionPortfolioScope(null)).toEqual({ kind: "global" });
-    expect(sessionPortfolioScope(PROJECT_A)).toEqual({
-      kind: "session",
-      sessionId: PROJECT_A,
-    });
   });
 });

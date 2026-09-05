@@ -26,7 +26,9 @@
 
 import type { TerminalErrorCode, TerminalProperty } from "@shared/schemas/terminal.js";
 import type {
+  TerminalCreateValue,
   TerminalHostAvailability,
+  TerminalShellCatalogue,
   TerminalWorkspaceLayout,
   TerminalWorkspaceRestore,
 } from "@shared/schemas/terminal.js";
@@ -35,14 +37,25 @@ import { vi } from "vitest";
 type Unsubscribe = () => void;
 type EventKind = "data" | "resync" | "property" | "exit" | "refused";
 
-export interface CreateAnswer {
-  readonly terminalId: string;
-  readonly pid: number;
-  readonly shellName: string;
-  readonly cwd: string;
-}
+/**
+ * What a `create` answers, ALIASED to the shared contract rather than restated.
+ *
+ * It used to be a hand-written interface carrying `cwd: string`, a field the
+ * wire schema does not have and has not had since the directory became a label.
+ * A double describing a shape the boundary would refuse proves only that the
+ * caller works against a message main can never send.
+ */
+export type CreateAnswer = TerminalCreateValue;
 
 export interface TerminalBridgeStub {
+  /**
+   * Urls handed to `vex.terminalLinks.open`, in order.
+   *
+   * The assertion a link test can honestly make: the RENDERER asked, with the
+   * exact string the terminal produced. Whether a browser opened is main's
+   * business and is proved in `main/ipc/__tests__/terminal-links-ipc.test.ts`.
+   */
+  readonly openedLinks: string[];
   readonly writes: { terminalId: string; data: string }[];
   readonly resizes: { terminalId: string; cols: number; rows: number }[];
   readonly attaches: string[];
@@ -74,6 +87,16 @@ export interface TerminalBridgeStub {
   nextCreate: { ok: true; value: CreateAnswer } | { ok: false; code: TerminalErrorCode };
   /** What `readWorkspace` returns. `null` means "nothing to revive". */
   savedWorkspace: TerminalWorkspaceRestore | null;
+  /**
+   * Make `readWorkspace` REFUSE, with this code.
+   *
+   * A refused read is a different fact from an empty one - Vex does not know
+   * what the project holds, rather than knowing it holds nothing - and the
+   * controller now acts on that difference: it says so, and it does NOT
+   * auto-open the first terminal over a layout it could not read. A stub that
+   * can only ever succeed cannot reach that branch at all.
+   */
+  readWorkspaceFailure: TerminalErrorCode | null;
   /**
    * Completion callbacks handed to the data subscriber and not yet called.
    *
@@ -229,6 +252,22 @@ const AVAILABILITY: TerminalHostAvailability = {
   responsive: true,
 };
 
+/**
+ * The catalogue the double answers with.
+ *
+ * `system_default` plus one shell that is NOT installed, so a component under
+ * test meets both rows without a test having to build a catalogue by hand.
+ * `defaultShellId` is `system_default`, which is what the real main returns.
+ */
+const SHELL_CATALOGUE: TerminalShellCatalogue = {
+  shells: [
+    { id: "system_default", label: "Default shell", available: true },
+    { id: "bash", label: "bash", available: true },
+    { id: "fish", label: "fish", available: false },
+  ],
+  defaultShellId: "system_default",
+};
+
 /** Install a recording `window.vex.terminal`. Returns the control surface. */
 export function installTerminalBridge(): TerminalBridgeStub {
   // ONE MAP PER EVENT KIND, each typed with its real payload. A single
@@ -285,6 +324,7 @@ export function installTerminalBridge(): TerminalBridgeStub {
   }
 
   const stub: TerminalBridgeStub = {
+    openedLinks: [],
     writes: [],
     resizes: [],
     attaches: [],
@@ -297,9 +337,13 @@ export function installTerminalBridge(): TerminalBridgeStub {
     pendingDataCompletions: [],
     nextCreate: {
       ok: true,
-      value: { terminalId: "t1", pid: 4242, shellName: "bash", cwd: "/w" },
+      // `displayCwd` is the LABEL the host reports at spawn - here, the project
+      // the test controller opens - and it is what seeds the panel header
+      // before any property event exists.
+      value: { terminalId: "t1", pid: 4242, shellName: "bash", displayCwd: "p1" },
     },
     savedWorkspace: null,
+    readWorkspaceFailure: null,
     nextPersist: { ok: true },
     deferPersist: false,
     pendingPersists: [],
@@ -496,6 +540,15 @@ export function installTerminalBridge(): TerminalBridgeStub {
     readWorkspace: vi.fn(async (input: { projectId: string }) => {
       // Same rule as `create`: the snapshot this read answers with is the one
       // that existed when the read was issued.
+      const failure = stub.readWorkspaceFailure;
+      if (failure !== null) {
+        if (stub.deferReadWorkspace) {
+          await new Promise<void>((resolve) => {
+            stub.pendingReads.push(resolve);
+          });
+        }
+        return { ok: true as const, data: { ok: false as const, code: failure } };
+      }
       const template = stub.savedWorkspace;
       if (template === null) {
         if (stub.deferReadWorkspace) {
@@ -530,6 +583,7 @@ export function installTerminalBridge(): TerminalBridgeStub {
       opens.set(input.projectId, promise);
       return { ok: true as const, data: { ok: true as const, value: await promise } };
     }),
+    getShellCatalogue: vi.fn(async () => ({ ok: true as const, data: SHELL_CATALOGUE })),
     getAvailability: vi.fn(async () => ({ ok: true as const, data: AVAILABILITY })),
     onAvailability: () => () => undefined,
     onTerminalsLost: (cb: (terminalIds: readonly string[]) => void) => {
@@ -546,10 +600,34 @@ export function installTerminalBridge(): TerminalBridgeStub {
   Object.defineProperty(window, "vex", {
     configurable: true,
     writable: true,
-    value: { terminal },
+    // `terminalLinks` rides along because the registry creates every terminal
+    // with a link handler, and a clicked link with no bridge under it would
+    // throw inside an xterm event callback rather than failing an assertion.
+    // Recorded, never performed: opening a link is main's authority and this
+    // double has none.
+    value: { terminal, terminalLinks: makeTerminalLinksStub(stub) },
   });
 
   return stub;
+}
+
+/** The `vex.terminalLinks` double: records the urls, answers `opened`. */
+function makeTerminalLinksStub(stub: TerminalBridgeStub): {
+  open: (input: { url: string }) => Promise<unknown>;
+} {
+  return {
+    open(input) {
+      stub.openedLinks.push(input.url);
+      return Promise.resolve({
+        ok: true,
+        data: {
+          kind: "opened",
+          host: { ascii: "example.com", display: "example.com" },
+          asked: true,
+        },
+      });
+    },
+  };
 }
 
 /** Give an element a measurable box, which jsdom otherwise reports as 0x0. */
