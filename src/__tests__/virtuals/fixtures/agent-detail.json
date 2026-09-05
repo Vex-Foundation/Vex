@@ -1,0 +1,251 @@
+{
+ "data": {
+  "id": 96200,
+  "uid": "b444745a-014a-47f5-b7e4-3ec6c2881908",
+  "createdAt": "2026-07-03T16:34:58.003Z",
+  "walletAddress": "0x32e7c4AFEA4f868A53EC51435C92eD80625EeB33",
+  "name": "ProjectVex",
+  "description": "![Upload](https://s3.ap-southeast-1.amazonaws.com/virtualprotocolcdn/vex_og_home_c16539bccf.jpg)",
+  "sentientWalletAddress": null,
+  "category": "IP MIRROR",
+  "role": "",
+  "daoAddress": "0x715dA6B1a2B96fF47610de4AD3736105cc77B70D",
+  "tokenAddress": "0x8Ff92566f2e81BDd68EDfAa8cde73942A723796b",
+  "virtualId": "3",
+  "status": "AVAILABLE",
+  "symbol": "VEX",
+  "lpAddress": "0x817f16F5D8da83d1B089B082c0172af3923618dA",
+  "veTokenAddress": "0x121c6C95697C9cFbD737989B589b71b26aB9d2b4",
+  "totalValueLocked": "250326",
+  "preToken": "0x8Ff92566f2e81BDd68EDfAa8cde73942A723796b",
+  "preTokenPair": "0xFB899EFC1Ad4128118cD33Eb3A0d912aceC6c8eE",
+  "aidesc": null,
+  "firstMessage": null,
+  "socials": {
+   "VIDEO_PITCH": {
+    "TWEET_URL": "https://x.com/ProjectVEXai/status/2073086337226600842",
+    "VIDEO_URL": "https://video.twimg.com/amplify_video/2073086261976563713/vid/avc1/1920x1080/C5S5qx3WfBAFWtBw.mp4",
+    "THUMBNAIL_URL": "https://pbs.twimg.com/amplify_video_thumb/2073086261976563713/img/RR5EccBZAKssXj8L.jpg"
+   },
+   "VERIFIED_LINKS": {
+    "TWITTER": "https://x.com/ProjectVEXai",
+    "WEBSITE": "https://www.projectvex.ai"
+   },
+   "VERIFIED_USERNAMES": {
+    "TWITTER": "ProjectVEXai"
+   }
+  },
+  "tbaAddress": "0x4201615ca3b32141AC09C124f59D86DEfd4437c7",
+  "chain": "ROBINHOOD",
+  "level": 1,
+  "valueFx": 0,
+  "mindshare": null,
+  "migrateTokenAddress": null,
+  "lpCreatedAt": "2026-07-03T17:04:23.406Z",
+  "stakingAddress": null,
+  "agentStakingContract": null,
+  "merkleDistributor": null,
+  "isVerified": false,
+  "airdropMerkleDistributor": null,
+  "isDevCommitted": false,
+  "tokenUtility": "> **① Agent Identity (ERC-8004)** - Agents are registered on-chain via ERC-8004, with verification results posted as attestations. Identity and reputation live on top of $VEX.\n> **② Bond** - Becoming a copyable strategist requires staking a per-identity $VEX bond - the sybil-defense layer that sets qualification, boost, and priority.\n> **③ Execution Fee** - A transparent, volume-based fee on trades executed through VEX, shown as a line item, never hidden in slippage.\n> **④ Buyback** - Execution fees and copy settlement flow to open-market $VEX buybacks from day one. No emissions, no inflation.\n> **⑤ Subscription** - Free / Pro / Advanced / Team tiers, from local chat to always-on autonomous runtime.",
+  "showFounderVideo": false,
+  "roadmap": "**Roadmap**\n\n**Next (sequential)**\n\n* Desktop app launch - local runtime, custody separation, multi-chain (EVM + Solana), live integrations: Polymarket, Jupiter, KyberSwap, Khalani, DexScreener\n\n1. **ERC-8004 identity attestation** - on-chain agent identity registration with externalized verification results\n2. **Verifiable record layer** - rejection rows, per-row hashes, sequence numbers, and thesis hashes, with day-one public timestamping and on-chain Merkle anchoring under completeness commitments\n3. **Verified copy trading** - bond vaults and the copy qualification gate open the market; followers copy only proven strategists, each within their own policy limits",
+  "additionalDetails": "",
+  "revenueConnectWallet": null,
+  "acpAgentId": null,
+  "v3AcpAgentId": null,
+  "netVolume24h": 0,
+  "factory": "BONDING_V5",
+  "launchedAt": "2026-07-03T16:34:51.000Z",
+  "hasMarginTrading": false,
+  "shouldDisplayLaunchTime": true,
+  "taxRecipient": null,
+  "usdcV3PoolAddress": "0x4fA27693a052863bb5e9D3E63bA02857442A1Ecf",
+  "overview": "> VEX - the verifiable AI agent for on-chain capital. Most agents ask for your trust; VEX proves it. The model proposes, but the runtime decides what actually executes: every action is enforced by your own rules before signing - preventing hallucinated trades, wrong wallets, or oversized positions - and recorded to a tamper-proof, on-chain-anchored audit log. The result is a track record that's provably complete and impossible to rewrite. Enforce your AI. Prove every trade.",
+  "metadata": null,
+  "image": {
+   "id": 107090,
+   "name": "96200_ProjectVex.png",
+   "alternativeText": null,
+   "caption": null,
+   "width": 8000,
+   "height": 8000,
+   "formats": {
+    "large": {
+     "ext": ".png",
+     "url": "https://s3.ap-southeast-1.amazonaws.com/virtualprotocolcdn/large_96200_Project_Vex_ca4b84436d.png",
+     "hash": "large_96200_Project_Vex_ca4b84436d",
+     "mime": "image/png",
+     "name": "large_96200_ProjectVex.png",
+     "path": null,
+     "size": 59.91,
+     "width": 1000,
+     "height": 1000,
+     "sizeInBytes": 59913
+    },
+    "small": {
+     "ext": ".png",
+     "url": "https://s3.ap-southeast-1.amazonaws.com/virtualprotocolcdn/small_96200_Project_Vex_ca4b84436d.png",
+     "hash": "small_96200_Project_Vex_ca4b84436d",
+     "mime": "image/png",
+     "name": "small_96200_ProjectVex.png",
+     "path": null,
+     "size": 25.46,
+     "width": 500,
+     "height": 500,
+     "sizeInBytes": 25458
+    },
+    "medium": {
+     "ext": ".png",
+     "url": "https://s3.ap-southeast-1.amazonaws.com/virtualprotocolcdn/medium_96200_Project_Vex_ca4b84436d.png",
+     "hash": "medium_96200_Project_Vex_ca4b84436d",
+     "mime": "image/png",
+     "name": "medium_96200_ProjectVex.png",
+     "path": null,
+     "size": 44.31,
+     "width": 750,
+     "height": 750,
+     "sizeInBytes": 44305
+    },
+    "thumbnail": {
+     "ext": ".png",
+     "url": "https://s3.ap-southeast-1.amazonaws.com/virtualprotocolcdn/thumbnail_96200_Project_Vex_ca4b84436d.png",
+     "hash": "thumbnail_96200_Project_Vex_ca4b84436d",
+     "mime": "image/png",
+     "name": "thumbnail_96200_ProjectVex.png",
+     "path": null,
+     "size": 6.7,
+     "width": 156,
+     "height": 156,
+     "sizeInBytes": 6703
+    }
+   },
+   "hash": "96200_Project_Vex_ca4b84436d",
+   "ext": ".png",
+   "mime": "image/png",
+   "size": 156.65,
+   "url": "https://s3.ap-southeast-1.amazonaws.com/virtualprotocolcdn/96200_Project_Vex_ca4b84436d.png",
+   "previewUrl": null,
+   "provider": "aws-s3",
+   "provider_metadata": null,
+   "createdAt": "2026-07-03T15:42:47.618Z",
+   "updatedAt": "2026-07-03T15:42:47.618Z"
+  },
+  "genesis": null,
+  "tags": [],
+  "framework": null,
+  "tokenomics": [
+   {
+    "id": 30152,
+    "name": "Team",
+    "description": "Default Team Vesting",
+    "isLocked": true,
+    "amount": 250000000,
+    "linearStartTimestampRelative": [
+     0,
+     1
+    ],
+    "linearEndTimestampRelative": 12960001,
+    "linearBips": [
+     1666,
+     8334
+    ],
+    "numOfUnlocksForEachLinear": [
+     1,
+     5
+    ],
+    "startsAt": "2027-07-03T15:18:41.213Z",
+    "project": {
+     "id": 3224,
+     "unlockerAddress": "0x1B0d0843578dEdb0f3aF84a0C29Aaf3d0D30A6d0",
+     "futureTokenAddress": "0x4B2bac38c8705DCfca39C7bF7f64a9a8BAdfEbC8",
+     "trackerTokenAddress": "0xd70E6f1C7dB2Af192C4f01A499b083f2BF526d8D",
+     "tokenAddress": "0x8Ff92566f2e81BDd68EDfAa8cde73942A723796b",
+     "createdAt": "2026-07-03T16:35:27.310Z",
+     "updatedAt": "2026-07-03T16:35:27.310Z",
+     "chain": "ROBINHOOD"
+    },
+    "recipients": [
+     {
+      "id": 37705,
+      "recipientAddress": "0x32e7c4AFEA4f868A53EC51435C92eD80625EeB33",
+      "amount": 250000000,
+      "actualId": "0",
+      "createdAt": "2026-07-03T15:18:41.417Z",
+      "updatedAt": "2026-07-03T16:35:44.218Z",
+      "amountClaimed": null
+     }
+    ],
+    "releases": [
+     {
+      "id": 38728,
+      "type": "LINEAR",
+      "duration": 6,
+      "startsAt": "2027-07-03T15:18:41.213Z",
+      "bips": 10000,
+      "durationUnit": "months",
+      "createdAt": "2026-07-03T15:18:41.398Z",
+      "updatedAt": "2026-07-03T15:18:41.398Z"
+     }
+    ]
+   }
+  ],
+  "launchInfo": {
+   "launchMode": 0,
+   "antiSniperTaxType": 1,
+   "airdropPercent": 0,
+   "needAcf": true,
+   "isProject60days": false,
+   "launchRadarEnabled": false,
+   "isRobotics": false,
+   "feeDelegationType": null,
+   "feeDelegatedRecipient": null,
+   "feeDelegationVaultAddress": null,
+   "feeDelegationClaimed": false
+  },
+  "tokenomicsStatus": {
+   "hasUnlocked": false,
+   "daysFromFirstUnlock": 302
+  },
+  "totalSupply": 1000000000,
+  "displayRevenue": false,
+  "initialPurchasedAmount": "0",
+  "initialPurchase": "0",
+  "initialPairAmount": null,
+  "allowUpdateLaunchDate": true,
+  "virtualTokenValue": "6576470588235294",
+  "priceChangePercent24h": 14.37,
+  "liquidityUsd": 363360.39,
+  "volume24h": 408860.12,
+  "holderCount": 5798,
+  "devHoldingPercentage": 2.58,
+  "holderCountPercent24h": -0.65,
+  "mcapInVirtual": 6576539.705882353,
+  "fdvInVirtual": 6576539.705882353,
+  "top10HolderPercentage": 57.3,
+  "priceChangePercent5m": -0.66,
+  "priceChangePercent1h": -6.71,
+  "priceChangePercent6h": -5.09,
+  "volume5m": 234.3,
+  "volume1h": 6274.76,
+  "volume6h": 108678.15,
+  "virtualsPoolVol24h": 408860.12,
+  "virtualsPoolVol5m": 234.3,
+  "virtualsPoolVol1h": 6274.76,
+  "virtualsPoolVol6h": 108678.15,
+  "circulatingSupply": 750000000,
+  "isDelegatedOwner": false,
+  "creator": {
+   "id": 604341,
+   "email": "te***st@e***.invalid",
+   "username": "did:privy:testfixture000000000000",
+   "userSocials": [
+    {
+     "walletAddress": "0x32e7c4AFEA4f868A53EC51435C92eD80625EeB33"
+    }
+   ]
+  }
+ },
+ "_provenance": "api.virtuals.io GET /api/virtuals/96200?populate[...] captured 2026-09-04 (virtuals-probe-2026-09-04/captures/vex_detail.json). projectMembers removed (third-party socials); creator reduced to the shape the list endpoint sends, with fake email/username. Em dashes in the provider's free text were replaced with plain hyphens to satisfy the repository's em-dash gate; the fields they appear in (overview, tokenUtility, roadmap) are DROPPED by the projection under test, so the substitution changes nothing the tests assert."
+}

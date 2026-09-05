@@ -22,6 +22,18 @@ vi.mock("../../studio/approval-refusals.js", () => ({
   repairPendingStudioRefusal: vi.fn().mockResolvedValue(true),
 }));
 /**
+ * The project-cleanup repair, mocked because it is the WORK a teardown must
+ * not be able to start. It is launched after the barrier opens and never
+ * awaited into readiness, so counting its calls is the only way to see it.
+ */
+const repairUnfinishedProjectCleanups = vi.fn((_deps: unknown) =>
+  Promise.resolve(),
+);
+vi.mock("../../studio/project-delete.js", () => ({
+  repairUnfinishedProjectCleanups: (deps: unknown) =>
+    repairUnfinishedProjectCleanups(deps),
+}));
+/**
  * THE DATABASE, as the bridge actually sees it: the real
  * `database/engine-db-readiness.ts` owner over a faked compose boundary. Only
  * the two facts it reads are mocked - the connection config compose writes, and
@@ -232,6 +244,68 @@ describe("the readiness barrier", () => {
     teardown();
   });
 
+  /**
+   * TEARDOWN NEVER PUBLISHES READINESS.
+   *
+   * The reconciliation is awaited, so a teardown can land inside it. The write
+   * itself was already epoch-fenced, but everything the caller did AFTERWARDS
+   * was not: it logged a ready Studio the user reads as an open one, and it
+   * launched the project-cleanup repair - fresh database work - on a process
+   * that had just decided to go away. The transition now reports whether it
+   * committed, and both of those live strictly after that answer. The same
+   * held INSIDE the helper: the announcement of the first scan's rows and the
+   * second reconciliation query both ran before anyone re-read the abort, so
+   * the checks are now between every await and every published effect.
+   */
+  it("publishes NOTHING when a teardown lands during the reconciliation", async () => {
+    let releaseScan = (): void => {};
+    const scanning = new Promise<void>((resolve) => {
+      releaseScan = () => {
+        resolve();
+      };
+    });
+    reconcileAbandonedStudioDispatches.mockImplementation(async () => {
+      await scanning;
+      return [];
+    });
+
+    const teardown = setupStudioSettlementBridge();
+    await vi.waitFor(() => {
+      expect(trace).toEqual(["preflight", "reconcile"]);
+    });
+
+    teardown();
+    releaseScan();
+    // Well past every microtask the continuation could still be sitting on.
+    await vi.waitFor(() => {
+      expect(disposeStudioWriteRepair).toHaveBeenCalled();
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(isStudioRuntimeReady()).toBe(false);
+    const readiness = studioReadiness();
+    expect(readiness.ready).toBe(false);
+    if (readiness.ready) return;
+    expect(readiness.code).toBe("shutting_down");
+    // No ready log for a Studio that is not open ...
+    const { log } = await import("../../logger/index.js");
+    const readyLines = vi
+      .mocked(log.info)
+      .mock.calls.filter((call) => String(call[0]).includes("studio runtime ready"));
+    expect(readyLines).toEqual([]);
+    // ... and no new work started behind it.
+    expect(repairUnfinishedProjectCleanups).not.toHaveBeenCalled();
+    // Nor INSIDE the reconciliation itself: the scan that was in flight when
+    // the teardown landed neither announces its committed rows nor starts the
+    // second reconciliation query. Both used to run because the abort and the
+    // epoch were only consulted once the whole helper had returned.
+    expect(announceStudioReconciliations).not.toHaveBeenCalled();
+    expect(reconcileUnstartedStudioApprovals).not.toHaveBeenCalled();
+    expect(announceStudioUnstartedRefusals).not.toHaveBeenCalled();
+    expect(trace).toEqual(["preflight", "reconcile"]);
+  });
+
   it("DENIES after teardown instead of restoring the engine default", async () => {
     const teardown = setupStudioSettlementBridge();
     await awaitStudioRuntimeReady();
@@ -319,6 +393,76 @@ describe("the registration retry is OWNED, and a teardown ends it", () => {
     }
   });
 
+  /**
+   * THE REGISTRATION THAT WAS ALREADY IN FLIGHT.
+   *
+   * Teardown clears the retry timer and then invalidates the epoch, but the
+   * registration it did not wait for answers afterwards. A `false` from that
+   * late answer used to arm a fresh timer at a call site the teardown had
+   * already passed, so the lifecycle ended owning a timer nobody could cancel.
+   * The arming itself now refuses a stale epoch and an aborted signal.
+   */
+  it("arms NOTHING when the teardown lands inside the first registration", async () => {
+    vi.useFakeTimers();
+    try {
+      let teardown: (() => void) | null = null;
+      setStudioDispatchPreflight.mockImplementationOnce(() => {
+        // The teardown lands while this registration is in flight.
+        teardown?.();
+        throw new Error("engine import failed");
+      });
+      teardown = setupStudioSettlementBridge();
+      await vi.advanceTimersByTimeAsync(0);
+
+      // No timer survives the lifecycle that just ended.
+      expect(vi.getTimerCount()).toBe(0);
+      trace.length = 0;
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(trace).toEqual([]);
+      expect(isStudioRuntimeReady()).toBe(false);
+      const readiness = studioReadiness();
+      expect(readiness.ready).toBe(false);
+      if (readiness.ready) return;
+      expect(readiness.code).toBe("shutting_down");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("arms NOTHING when the teardown lands inside a RETRY registration", async () => {
+    vi.useFakeTimers();
+    try {
+      let teardown: (() => void) | null = null;
+      setStudioDispatchPreflight
+        .mockImplementationOnce(() => {
+          throw new Error("engine import failed");
+        })
+        .mockImplementationOnce(() => {
+          // The retry's own registration is the one the teardown interrupts.
+          teardown?.();
+          throw new Error("engine import failed again");
+        });
+      teardown = setupStudioSettlementBridge();
+      await vi.advanceTimersByTimeAsync(0);
+      // The first failure armed exactly one retry, which is the timer under
+      // test: it must not be replaced by another one.
+      expect(vi.getTimerCount()).toBe(1);
+
+      await vi.advanceTimersByTimeAsync(6_000);
+      expect(vi.getTimerCount()).toBe(0);
+      expect(trace).toEqual(["preflight", "preflight"]);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(trace).toEqual(["preflight", "preflight"]);
+      expect(isStudioRuntimeReady()).toBe(false);
+      const readiness = studioReadiness();
+      expect(readiness.ready).toBe(false);
+      if (readiness.ready) return;
+      expect(readiness.code).toBe("shutting_down");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("disposes the engine write-repair owner on teardown", async () => {
     const teardown = setupStudioSettlementBridge();
     await awaitStudioRuntimeReady();
@@ -371,6 +515,58 @@ describe("the database is not up yet", () => {
       expect(isStudioRuntimeReady()).toBe(true);
       expect(trace).toEqual(["preflight", "reconcile", "reconcile_unstarted"]);
       expect(registered?.()).toBe(true);
+      teardown();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /**
+   * THE RETRY WAITS TOO, which is the other half of the owner's boot log.
+   *
+   * A registration that fails once and succeeds on the retry used to go
+   * STRAIGHT to the database work: the retry spent its bounded budget at 5, 10
+   * and 15 s against a database compose had not started, and Studio was
+   * declared unavailable for the session 265 ms before it came up. Every
+   * registration path now funnels through the same unbounded wait, so the
+   * bounded budget is only ever spent on failures that happen after the
+   * database is ready.
+   */
+  it("makes the RETRY path wait for the database too", async () => {
+    vi.useFakeTimers();
+    try {
+      poolConfig = null;
+      migrationsDone = false;
+      // The first registration fails, which is what arms the retry.
+      setStudioDispatchPreflight.mockImplementationOnce(() => {
+        throw new Error("engine import failed");
+      });
+      const teardown = setupStudioSettlementBridge();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(trace).toEqual(["preflight"]);
+
+      // The retry fires at 5 s and registers successfully, and then WAITS: the
+      // database is twenty seconds away.
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(trace).toEqual(["preflight", "preflight"]);
+      expect(repairPendingStudioRefusal).not.toHaveBeenCalled();
+      expect(reconcileAbandonedStudioDispatches).not.toHaveBeenCalled();
+      expect(isStudioRuntimeReady()).toBe(false);
+
+      databaseIsUp();
+      await vi.advanceTimersByTimeAsync(1_000);
+
+      expect(isStudioRuntimeReady()).toBe(true);
+      // No unlock, no recovery pass: the wait itself finished the boot.
+      expect(repairPendingStudioRefusal).toHaveBeenCalledTimes(1);
+      // And the bounded budget is untouched by the wait, so it is still there
+      // for a genuinely transient post-database failure.
+      const { log: bridgeLog } = await import("../../logger/index.js");
+      expect(
+        vi
+          .mocked(bridgeLog.error)
+          .mock.calls.some((call) => String(call[0]).includes("bounded retries")),
+      ).toBe(false);
       teardown();
     } finally {
       vi.useRealTimers();

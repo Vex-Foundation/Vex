@@ -1,0 +1,17 @@
+{
+  "endpoint": "https://api.bankr.bot/discover?chain=robinhood&platform=poolsfun&limit=5&vexAttested=false",
+  "capturedAt": "2026-09-04T18:31:18.376149Z",
+  "httpStatus": 400,
+  "response": {
+    "error": "Invalid parameters",
+    "details": [
+      {
+        "code": "invalid_value",
+        "message": "Invalid input: expected \"true\"",
+        "path": [
+          "vexAttested"
+        ]
+      }
+    ]
+  }
+}

@@ -21,12 +21,12 @@ function context(overrides: Partial<EngineContext>): EngineContext {
 }
 
 const MODES = [
-  { name: "agent / restricted", context: context({}), ceiling: 57_296 },
-  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 57_997 },
-  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 63_719 },
-  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 63_738 },
-  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 62_335 },
-  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 62_150 },
+  { name: "agent / restricted", context: context({}), ceiling: 57_720 },
+  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 58_421 },
+  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 64_131 },
+  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 64_150 },
+  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 62_759 },
+  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 62_574 },
 ] as const;
 
 beforeAll(() => {
@@ -225,6 +225,37 @@ describe("static prompt byte ceilings", () => {
       //     silently shrinking an unrelated namespace's honesty clauses to fund
       //     it would be exactly the kind of hidden cost this ceiling exists to
       //     surface.
+      // REVIEWED BUDGET DIFF, PR-C1 (Virtuals read depth, 2026-09-04). NET +424
+      // in every mode, which is itself the proof that only namespace-level text
+      // moved:
+      //
+      //   agent / restricted          57,296 -> 57,720  (+424)
+      //   agent / full                57,997 -> 58,421  (+424)
+      //   mission setup / restricted  63,719 -> 64,131  (+412)
+      //   mission setup / full        63,738 -> 64,150  (+412)
+      //   mission run / restricted    62,335 -> 62,759  (+424)
+      //   mission run / full          62,150 -> 62,574  (+424)
+      //
+      // WHAT WAS ADDED, and it is two things only. First, the Virtuals COVERAGE
+      // line in `prompts/chain-coverage.ts` stopped being a bare chain list.
+      // The old line said "Coverage: base, solana, robinhood, ethereum." and
+      // that sentence was false the moment the namespace gained a trade tape
+      // and a candle read: the tape exists on two of the four chains and the
+      // candles exist per LIFECYCLE STAGE as well as per chain (measured; see
+      // `src/tools/virtuals/Virtuals.md`). A chain list that implies six tools
+      // work on four chains costs more than 300 bytes the first time an agent
+      // spends a call proving otherwise. Second, the Virtuals namespace
+      // DECLARATION gained its third facet (trade tape and price history) and
+      // three retrieval terms, which is what makes the two new tools findable
+      // at all - the declaration teaches capabilities, never tool names.
+      //
+      // WHY COMPRESSION WAS INSUFFICIENT. The line was already rewritten once
+      // to fit: the first draft was 370 bytes and named every cell of the
+      // capability matrix; it now names only the cells where a capability is
+      // ABSENT, because a present capability is discoverable and an absent one
+      // is not. Dropping the per-capability sentence entirely was the
+      // alternative and it re-introduces the false claim above. No other
+      // namespace's prose was touched to fund this.
       // The coordinator reviews this diff.
       expect(bytes).toBeLessThanOrEqual(mode.ceiling);
     });

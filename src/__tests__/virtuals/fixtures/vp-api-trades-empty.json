@@ -1,0 +1,7 @@
+{
+ "code": 0,
+ "data": {
+  "Trades": []
+ },
+ "_provenance": "vp-api.virtuals.io GET /vp-api/trades for a GRADUATED agent - empty on every chainID probed (virtuals-probe-2026-09-04b/captures/b_tr_vex_c4.json)."
+}

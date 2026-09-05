@@ -4,15 +4,15 @@
   "datasetId": "tool-discovery-solana",
   "datasetVersion": "solana-v1",
   "status": "captured",
-  "capturedAt": "2026-08-28T10:37:09.877Z",
+  "capturedAt": "2026-09-05T08:03:46.516Z",
   "metrics": {
     "overall": {
       "count": 68,
       "recall1": 0.441,
       "recall5": 0.603,
       "coverage5": 0.603,
-      "mrr5": 0.496,
-      "groupMrr5": 0.496
+      "mrr5": 0.497,
+      "groupMrr5": 0.497
     },
     "awareness": {
       "blind": {
@@ -20,8 +20,8 @@
         "recall1": 0.235,
         "recall5": 0.382,
         "coverage5": 0.382,
-        "mrr5": 0.284,
-        "groupMrr5": 0.284
+        "mrr5": 0.285,
+        "groupMrr5": 0.285
       },
       "protocolAware": {
         "count": 34,
@@ -38,8 +38,8 @@
         "recall1": 0.441,
         "recall5": 0.603,
         "coverage5": 0.603,
-        "mrr5": 0.496,
-        "groupMrr5": 0.496
+        "mrr5": 0.497,
+        "groupMrr5": 0.497
       },
       "cross": {
         "count": 0,
@@ -72,8 +72,8 @@
         "recall1": 0.563,
         "recall5": 0.688,
         "coverage5": 0.688,
-        "mrr5": 0.609,
-        "groupMrr5": 0.609
+        "mrr5": 0.606,
+        "groupMrr5": 0.606
       },
       "bridge": {
         "count": 0,
@@ -152,8 +152,8 @@
         "recall1": 0.5,
         "recall5": 1,
         "coverage5": 1,
-        "mrr5": 0.688,
-        "groupMrr5": 0.688
+        "mrr5": 0.708,
+        "groupMrr5": 0.708
       },
       "token_safety": {
         "count": 2,
@@ -175,7 +175,7 @@
   },
   "notes": [
     "dataset tool-discovery-solana@solana-v1, mode lexical, 68 cases evaluated.",
-    "overall recall@1 0.441, recall@5 0.603, coverage@5 0.603, mrr@5 0.496, groupMrr@5 0.496.",
-    "Measured delta: none, metrics are identical to the previous baseline."
+    "overall recall@1 0.441, recall@5 0.603, coverage@5 0.603, mrr@5 0.497, groupMrr@5 0.497.",
+    "Measured delta vs previous baseline (solana-v1, captured 2026-09-04T21:22:16.845Z): 4 metric values moved; overall recall@5 0.603 -> 0.603, overall mrr@5 0.497 -> 0.497, case count 68 -> 68."
   ]
 }

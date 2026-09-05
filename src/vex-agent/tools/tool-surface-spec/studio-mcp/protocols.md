@@ -53,9 +53,9 @@ whether its provider key is configured on this machine.
 
 ## Totals
 
-- tools: 167
+- tools: 172
 - Vex tools: 27
-- protocol tools: 140 across 11 protocols
+- protocol tools: 145 across 11 protocols
 - destructive: 50
 
 ## Vex tools
@@ -201,6 +201,8 @@ whether its provider key is configured on this machine.
 | tool | title | access | destructive | requires env |
 | --- | --- | --- | --- | --- |
 | pools__fees_claim | Claim pools.fun creator fees | mutating | yes | - |
+| pools__holder_rewards_get | Read pools.fun holder rewards | read-only | no | - |
+| pools__launch_assets_list | List pools.fun launchable stocks | read-only | no | - |
 | pools__launch_execute | Launch a token on pools.fun | mutating | yes | - |
 | pools__launch_preview | Price a pools.fun launch | mutating | no | - |
 | pools__launch_request_form | Ask the user to confirm a pools.fun launch | mutating | no | - |
@@ -282,7 +284,10 @@ whether its provider key is configured on this machine.
 
 | tool | title | access | destructive | requires env |
 | --- | --- | --- | --- | --- |
+| virtuals__agent_candles_list | Read a Virtuals agent's price candles | read-only | no | - |
 | virtuals__agent_get | Read one Virtuals agent token | read-only | no | - |
+| virtuals__agent_trades_list | Read a Virtuals agent's curve trade tape | read-only | no | - |
 | virtuals__agents_discover | Screen Virtuals agent tokens | read-only | no | - |
+| virtuals__creator_fees_get | Read a Virtuals agent creator's fee status | read-only | no | - |
 | virtuals__genesis_launches_list | Browse the Virtuals Genesis calendar | read-only | no | - |
 | virtuals__graduations_list | List recent Virtuals graduations | read-only | no | - |

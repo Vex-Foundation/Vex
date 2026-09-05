@@ -48,7 +48,7 @@ import { evaluateRelayRouteHealth } from "@tools/relay/health.js";
 import { assertRelayQuoteCorrelation } from "@tools/relay/correlation.js";
 import { classifyRelayBridgeSteps } from "@tools/relay/step-policy.js";
 import { pollRelayIntentStatus, resolveRelayStepClients, type RelayStepClients } from "@tools/relay/execute.js";
-import { BRIDGE_FEE_ACTIVITY_EVENT_ROLE } from "@tools/bridge-fee/index.js";
+import { BRIDGE_FEE_ACTIVITY_EVENT_ROLE, bridgeFeeRefusalData } from "@tools/bridge-fee/index.js";
 import type { RelayQuoteResponse } from "@tools/relay/types.js";
 import { loadConfig } from "@config/store.js";
 import {
@@ -85,7 +85,8 @@ import {
   runRelayVexFeeLeg,
 } from "./bridge/fee-leg.js";
 import { runOriginBroadcasts, type OriginBroadcast } from "./bridge/broadcast.js";
-import { maybeAutoPin, relayLegInput } from "./bridge/recording.js";
+import { withholdFeeOnDepositShortfall } from "@vex-agent/tools/protocols/bridge-deposit-evidence.js";
+import { abortRemaining, maybeAutoPin, relayLegInput } from "./bridge/recording.js";
 import { failPreSign, inFlightResult, pendingResult } from "./bridge/results.js";
 import {
   noteHandlerPendingReason,
@@ -322,7 +323,17 @@ async function relayBridge(
     sessionId,
     derivedNow: relayFeeDisclosure(legs, adapted.currencyIn, tokenIdentity.source),
   });
-  if (feeStatementRefusal !== null) return fail(`${BRIDGE_TOOL_ID} failed: ${feeStatementRefusal}`);
+  if (feeStatementRefusal !== null) {
+    // The TYPED reason travels on the result, not only in the log line above: a
+    // moved fee statement, a missing one and an unregistered gate have three
+    // different remedies, and collapsing them into "bridge failed" leaves an
+    // agent guessing which one it is looking at.
+    return {
+      success: false,
+      output: `${BRIDGE_TOOL_ID} failed: ${feeStatementRefusal.message}`,
+      data: bridgeFeeRefusalData(feeStatementRefusal),
+    };
+  }
 
   // ── Pre-sign gates (fail-closed, hashless failure row, C1) ──
   if (!correlation.ok) {
@@ -506,7 +517,25 @@ async function relayBridge(
   // own fill tracking (separate lifecycles sharing one plan). Its outcome
   // NEVER changes the bridge's: a fee that does not land is missed Vex
   // revenue on a bridge that DID happen.
-  const feeCollection = feeLegIndex === -1
+  // A DEPOSIT SHORTFALL MAKES THE FEE LEG INELIGIBLE. The fee is charged for
+  // bridging the principal the user consented to; a deposit whose own receipt
+  // proves less than that did not perform it, so no fee signer runs, no nonce
+  // is reserved, and the planned fee row is aborted rather than left pending.
+  // The bridge itself is untouched: the deposit landed and the fill is still
+  // the provider's to make.
+  const feeCollection = run.depositShortfall !== null
+    ? await withholdFeeOnDepositShortfall({
+      shortfall: run.depositShortfall,
+      executionId,
+      feeLegIndex,
+      logScope: "relay.bridge",
+      // Exactly the fee row: the logical `bridge_fill_expected` row sits after
+      // it and must stay pending, because the deposit itself reached the
+      // provider and its reconciliation is still owed.
+      abortPlannedFeeRow: (fromIndex, reason, toIndexExclusive) =>
+        abortRemaining(executionId, fromIndex, reason, toIndexExclusive),
+    })
+    : feeLegIndex === -1
     ? NO_FEE_COLLECTION
     : await runRelayVexFeeLeg({
         executionId,

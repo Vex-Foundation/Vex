@@ -19,6 +19,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -116,7 +117,17 @@ func run() int {
 		}
 	}
 
-	conn, err := dialEndpoint(plan)
+	// THE DIAL'S CANCELLATION CHANNEL. `signals` above is the relay's, and a
+	// second Notify registration receives its OWN copy of every signal rather
+	// than stealing from the first, so this context can end a dial that is
+	// waiting on a busy pipe without taking the interrupt away from the relay
+	// teardown that runs later. Stopped as soon as the dial is over: from
+	// there on the relay owns the interrupt.
+	dialCtx, stopDialSignals := signal.NotifyContext(
+		context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP,
+	)
+	conn, err := dialEndpoint(dialCtx, plan)
+	stopDialSignals()
 	if err != nil {
 		// A LOCAL REFUSAL IS NOT A DIAL FAILURE. Windows host authentication
 		// runs after the pipe opened and before anything was written; the
@@ -202,6 +213,21 @@ func resolveProjectID() (string, error) {
 	return value, nil
 }
 
+// isDialTimeout reports whether the dial gave up on its own bound.
+func isDialTimeout(err error) bool {
+	_, ok := asDialTimeout(err)
+	return ok
+}
+
+// dialTimeoutSentence is the bounded dial's own message, verbatim.
+func dialTimeoutSentence(err error) string {
+	timeout, ok := asDialTimeout(err)
+	if !ok {
+		return err.Error()
+	}
+	return timeout.Error()
+}
+
 // dialEndpoint opens the planned endpoint, on either transport.
 //
 // UNIX: an ordinary dial with the contract's connect bound.
@@ -213,12 +239,19 @@ func resolveProjectID() (string, error) {
 // copy of that gate stood here and went with it, because with
 // endpoint.WindowsTransportProven true it could refuse nothing.
 //
-// The connect bound does NOT apply on Windows. CreateFile has no timeout
-// parameter and stdlib exposes no WaitNamedPipe, so a pipe that exists but is
-// saturated blocks in the open rather than failing fast. That difference is
-// named in the contract's Windows section rather than papered over with a
-// goroutine that would leak a blocked open.
-func dialEndpoint(plan endpoint.Plan) (handshake.Conn, error) {
+// BOTH TRANSPORTS DIAL UNDER THE CALLER'S CONTEXT, which carries this
+// process's signal registration. Unix keeps its `endpoint.DialTimeout` as the
+// dialer's own bound and gains the interrupt; Windows derives its deadline
+// inside `dialPipe`, because the bound is that transport's own.
+//
+// THE CONNECT BOUND IS DIFFERENT ON WINDOWS, not absent. CreateFile has no
+// timeout parameter and stdlib exposes no WaitNamedPipe, so `dialPipe` bounds
+// itself: it waits out ERROR_PIPE_BUSY under `WindowsDialTimeout` in the shape
+// go-winio's tryDialPipe uses, and gives up with its own named sentence rather
+// than spending an MCP client's whole startup budget inside an open. It is
+// still one attempt with one deadline - not a retry - and no goroutine is left
+// holding a blocked open.
+func dialEndpoint(ctx context.Context, plan endpoint.Plan) (handshake.Conn, error) {
 	if plan.Kind == endpoint.KindPipe {
 		// DEFENSIVE, at the dial site itself: a pipe plan must never be
 		// opened on a unix target. planOverride refuses pipe syntax off
@@ -228,9 +261,10 @@ func dialEndpoint(plan endpoint.Plan) (handshake.Conn, error) {
 			return nil, fmt.Errorf("refusing to open the named pipe %s on %s: "+
 				"named pipes exist on Windows only", plan.Path, runtime.GOOS)
 		}
-		return dialPipe(plan.Path)
+		return dialPipe(ctx, plan.Path)
 	}
-	conn, err := net.DialTimeout("unix", plan.Path, endpoint.DialTimeout)
+	dialer := net.Dialer{Timeout: endpoint.DialTimeout}
+	conn, err := dialer.DialContext(ctx, "unix", plan.Path)
 	if err != nil {
 		return nil, err
 	}
@@ -267,6 +301,20 @@ func derivePlan() (endpoint.Plan, error) {
 // rest honest rather than guessing.
 func dialSentence(path string, err error) string {
 	switch {
+	// THE BOUND THIS PROCESS OWNS, and it already wrote its own sentence. It
+	// is first because it is the only case here that is a decision rather
+	// than an errno, and its message names the pipe, the budget and the code.
+	case isDialTimeout(err):
+		return dialTimeoutSentence(err)
+	// AN INTERRUPTED DIAL IS NOT A BROKEN ENDPOINT. The user (or the client
+	// supervising this process) asked it to stop while it was still opening,
+	// and saying "cannot connect" would blame a host that was never asked.
+	case errors.Is(err, context.Canceled):
+		if interrupted, ok := asDialInterrupted(err); ok {
+			return interrupted.Error()
+		}
+		return fmt.Sprintf("the connection to the Vex Studio host at %s was interrupted "+
+			"before it opened.", path)
 	// NEITHER OF THESE MEANS "LOCKED". A locked Vex keeps its listener up and
 	// answers the handshake with the typed `locked` refusal, which leaves this
 	// program at exit 7 with the host's own sentence. Attributing a lock here

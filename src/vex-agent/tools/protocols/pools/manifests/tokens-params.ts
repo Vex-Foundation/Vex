@@ -11,6 +11,18 @@
  * that Vex filtered a page down to nothing, and the handler echoes the active
  * filters so the emptiness is attributable either way.
  *
+ * THE LAUNCHPAD'S OWN BADGES MAP ONTO THESE PARAMETERS, and the mapping was read
+ * out of the pools.fun frontend bundle rather than guessed (`bundle/
+ * index-Dvsce_I0.js`, functions `$Z`/`qZ`): its five scope chips are
+ *   All   -> platform=all
+ *   Pools -> platform=poolsfun
+ *   Sushi -> platform=sushi
+ *   Vex   -> platform=poolsfun + vexAttested=true
+ *   Fees to holders -> platform=poolsfun + holderRewards=true
+ * There is no `platform=vex`: sending one is HTTP 400 naming the three real
+ * values. So `vexAttested` and `holderRewards` are separate boolean filters
+ * here, combinable with any platform, exactly as the app sends them.
+ *
  * Kept in its own file (trench precedent) because the wide filter surface is the
  * part of a manifest that grows.
  */
@@ -145,6 +157,18 @@ export const POOLS_TOKENS_PARAMS: readonly ProtocolParamDef[] = [
     type: "number",
     description:
       "Keep only tokens launched within this many hours. This is the fresh-launch filter on pools.fun: there is no bonding curve or graduation stage to filter on, so age is what separates a brand new token from an established one.",
+  },
+  {
+    key: "vexAttested",
+    type: "boolean",
+    description:
+      "true keeps only tokens the launchpad marks as carrying a Vex attestation. This is an OPT-IN SWITCH, not a two-sided filter: the launchpad accepts only true, so false (or omitting it) means the filter is not applied and there is no way to ask for the tokens WITHOUT an attestation. The flag is the launchpad's own claim about its index; the attestation itself is a signature Vex published for a launch it made.",
+  },
+  {
+    key: "holderRewards",
+    type: "boolean",
+    description:
+      "true keeps only tokens that stream their fees to holders (fees to holders, opted in at launch and locked from then on). Same opt-in switch as vexAttested: only true is accepted, false or omitted means unfiltered, and the complement cannot be requested. Rows that match carry holderRewardsMode (token, paired or both) and holderRewardsDistributor. Combining it with vexAttested asks for tokens that are BOTH, which matched nothing when this was measured - that is a fact about the market, not a rejected filter.",
   },
   {
     key: "deployerAddress",

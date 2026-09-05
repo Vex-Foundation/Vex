@@ -11,6 +11,7 @@
  */
 
 import { describe, it, expect, vi, afterEach } from "vitest";
+import { POOLS_SUITES } from "@tools/pools-fun/constants.js";
 import { POOLS_HANDLERS } from "@vex-agent/tools/protocols/pools/handlers.js";
 import { getPoolsFunClient } from "@tools/pools-fun/client.js";
 import { validateDiscoverPage } from "@tools/pools-fun/validation.js";
@@ -40,6 +41,10 @@ const REGISTERED: PoolsOnChainSnapshot = {
   metadataUri: { status: "ok", value: "ipfs://example" },
   locker: {
     status: "registered",
+    // V1: the legacy split, so the "community bucket 0" wording of the newer
+    // pools is exercised separately below rather than everywhere.
+    suite: POOLS_SUITES.find((suite) => suite.version === 1)!,
+    launcher: "0x5793b76e33669334701c60297500fd05300e13af",
     info: {
       pairedAssetAddress: "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
       pool: "0x50136d4174129585ec766eacf2f00cd1856690ca",
@@ -68,7 +73,46 @@ const LOCKER_UNAVAILABLE: PoolsOnChainSnapshot = {
   blockNumber: "39620464",
   decimals: { status: "ok", value: 18 },
   metadataUri: { status: "unavailable" },
-  locker: { status: "unavailable" },
+  locker: {
+    status: "unavailable",
+    detail:
+      "these pools.fun suites did not answer at this block: V3 (locker silent). Whether this token is "
+      + "registered with any suite was NOT determined - this is a failed read, not a token without a "
+      + "registration.",
+  },
+};
+
+/** The registered fixture's locker info, or a loud failure if the fixture stops being registered. */
+function registeredInfo(snapshot: PoolsOnChainSnapshot) {
+  if (snapshot.locker.status !== "registered") throw new Error("fixture is not a registered snapshot");
+  return snapshot.locker.info;
+}
+
+/** A V3 token: the case that came back "unregistered / older sushi launcher" before the repair. */
+const REGISTERED_V3: PoolsOnChainSnapshot = {
+  ...REGISTERED,
+  locker: {
+    status: "registered",
+    suite: POOLS_SUITES.find((suite) => suite.version === 3)!,
+    launcher: "0x33eF6673BD80cB11fcC41b82Bc2181E65cC4d2fA",
+    info: {
+      ...registeredInfo(REGISTERED),
+      // The measured V2/V3 split: creator 90 percent, community bucket ZERO.
+      feeSplitBps: {
+        creator: 9000, platform: 500, buyback: 500, community: 0,
+        stockCreator: 9000, stockProtocol: 1000,
+      },
+    },
+  },
+};
+
+/** Two suites claiming one token: a state no set of pool fields describes. */
+const AMBIGUOUS: PoolsOnChainSnapshot = {
+  ...REGISTERED,
+  locker: {
+    status: "ambiguous",
+    detail: "2 pools.fun suites (V1, V3) both hold this token's LP and name a launcher for it.",
+  },
 };
 
 async function token(params: Record<string, unknown>) {
@@ -122,7 +166,12 @@ describe("pools.token declines instead of emitting zeroes", () => {
     const data = JSON.parse(res.output) as { onchain: Record<string, unknown> };
 
     expect(data.onchain.lockerStatus).toBe("unregistered");
-    expect(String(data.onchain.lockerNote)).toContain("answered and has no entry");
+    // The wording changed with the suite table. It used to say the LOCKER
+    // answered and had no entry, and then blame the sushi launcher for it -
+    // which is how a V3 token was described as a sushi token. It now says every
+    // known suite was asked, and names none of them as the launcher.
+    expect(String(data.onchain.lockerNote)).toContain("not registered with any pools.fun suite Vex knows");
+    expect(String(data.onchain.lockerNote)).not.toContain("sushi");
     expect(data.onchain).not.toHaveProperty("pool");
     expect(data.onchain).not.toHaveProperty("creator");
     expect(JSON.stringify(data.onchain)).not.toContain(ZERO);
@@ -161,6 +210,8 @@ describe("pools.token declines instead of emitting zeroes", () => {
       ...REGISTERED,
       locker: {
         status: "registered",
+        suite: POOLS_SUITES.find((suite) => suite.version === 1)!,
+        launcher: "0x5793b76e33669334701c60297500fd05300e13af",
         info: { ...REGISTERED.locker.status === "registered" ? REGISTERED.locker.info : ({} as never),
           feeSplitAvailable: false, feeSplitBps: null },
       },
@@ -192,5 +243,68 @@ describe("pools.token declines instead of emitting zeroes", () => {
     const res = await token({ tokenAddress: POOLS_TOKEN });
     const data = JSON.parse(res.output) as { api: Record<string, unknown> };
     expect(String(data.api.unavailable)).toContain("no row for this address");
+  });
+});
+
+/**
+ * The V2/V3 split, and the sentence that keeps a legitimate zero from reading as
+ * a failed read.
+ *
+ * The split moved with the suites: V1 pools split 2000/2500/3000/2500 with a
+ * real community bucket, and pools created on V2/V3 split 9000/500/500/0. A
+ * reader who knows the old numbers sees `community: 0` and assumes the field did
+ * not load, so the zero is stated in words - and the older wording is kept for
+ * the older pools rather than rewritten for all of them.
+ */
+describe("pools.token reports the suite and the live split", () => {
+  it("names the suite that holds a V3 token, with its addresses", async () => {
+    stubDiscoverCapture();
+    stubSnapshot(REGISTERED_V3);
+
+    const data = JSON.parse((await token({ tokenAddress: POOLS_TOKEN })).output) as {
+      onchain: Record<string, Record<string, unknown>>;
+    };
+    expect(data.onchain.lockerStatus).toBe("registered");
+    expect(data.onchain.suite!.version).toBe(3);
+    expect(data.onchain.suite!.locker).toBe(POOLS_SUITES.find((s) => s.version === 3)!.locker);
+    expect(data.onchain.suite!.holderRewardsDeployer).toBeDefined();
+  });
+
+  it("says 'community bucket 0 on this pool' when the live split has none", async () => {
+    stubDiscoverCapture();
+    stubSnapshot(REGISTERED_V3);
+
+    const data = JSON.parse((await token({ tokenAddress: POOLS_TOKEN })).output) as {
+      onchain: Record<string, unknown>;
+    };
+    expect((data.onchain.feeSplitBps as Record<string, number>).community).toBe(0);
+    expect(String(data.onchain.feeSplitNote)).toContain("community bucket 0 on this pool");
+    expect(String(data.onchain.feeSplitNote)).toContain("not an unread field");
+  });
+
+  it("keeps the legacy wording for a V1 pool that really has a community bucket", async () => {
+    stubDiscoverCapture();
+    stubSnapshot(REGISTERED);
+
+    const data = JSON.parse((await token({ tokenAddress: POOLS_TOKEN })).output) as {
+      onchain: Record<string, unknown>;
+    };
+    expect((data.onchain.feeSplitBps as Record<string, number>).community).toBe(2500);
+    expect(String(data.onchain.feeSplitNote)).toContain("non-zero community bucket");
+  });
+
+  it("emits NO pool fields when two suites claim the token", async () => {
+    // A contradiction has no set of pool fields that describes it, and printing
+    // one suite's answer would hide the disagreement rather than report it.
+    stubDiscoverCapture();
+    stubSnapshot(AMBIGUOUS);
+
+    const data = JSON.parse((await token({ tokenAddress: POOLS_TOKEN })).output) as {
+      onchain: Record<string, unknown>;
+    };
+    expect(data.onchain.lockerStatus).toBe("ambiguous");
+    expect(data.onchain).not.toHaveProperty("pool");
+    expect(data.onchain).not.toHaveProperty("feeSplitBps");
+    expect(String(data.onchain.lockerNote)).toContain("V1, V3");
   });
 });

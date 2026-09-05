@@ -62,7 +62,7 @@ export function BookInspectPanel({
     <section
       data-vex-area="book-inspect"
       aria-label={`Tool call: ${inspect.toolName}`}
-      className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden rounded-xl border border-line-2 bg-surface-1 p-4 shadow-lv1"
+      className="vex-glass-card flex min-h-0 flex-1 flex-col gap-3 overflow-hidden rounded-xl p-4"
     >
       <header className="flex items-center justify-between gap-2">
         <h3 className="vex-micro-label vex-micro-label--wide uppercase text-ink-secondary">

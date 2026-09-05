@@ -154,6 +154,38 @@
       "intentShape": "single",
       "expectedToolIds": ["pools.launch_execute"],
       "expectedCoverageGroups": [["pools.launch_execute"]]
+    },
+    {
+      "query": "which tokenised stocks can a new coin be paired with when it is created on the Robinhood Chain launchpad",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["pools.launch_assets"],
+      "expectedCoverageGroups": [["pools.launch_assets"]]
+    },
+    {
+      "query": "list the pools.fun launch pairs and say which of them need a freshly signed price at launch",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": ["pools.launch_assets"],
+      "expectedCoverageGroups": [["pools.launch_assets"]]
+    },
+    {
+      "query": "what have I earned so far just by holding this coin that shares its trading fees with holders",
+      "awareness": "blind",
+      "scenario": "rewards",
+      "intentShape": "single",
+      "expectedToolIds": ["pools.holder_rewards"],
+      "expectedCoverageGroups": [["pools.holder_rewards"]]
+    },
+    {
+      "query": "read the fees-to-holders state for this pools.fun token and tell me what the distributor owes my wallet",
+      "awareness": "protocol-aware",
+      "scenario": "rewards",
+      "intentShape": "single",
+      "expectedToolIds": ["pools.holder_rewards"],
+      "expectedCoverageGroups": [["pools.holder_rewards"]]
     }
   ]
 }

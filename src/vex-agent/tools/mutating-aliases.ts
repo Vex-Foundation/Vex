@@ -54,6 +54,36 @@ import { khalaniSlippageRejection } from "./protocols/khalani/slippage-unsupport
 import { bridgeRecipientAliasRefusal } from "./protocols/bridge-recipient-param.js";
 import { resolveUniswapDeployment } from "@tools/uniswap/chains.js";
 
+/**
+ * THE ALIASES WHOSE TARGET IS FIXED, and the protocol tool each one always
+ * resolves to.
+ *
+ * `SwapExecute` and `BridgeExecute` are routers: they choose a venue per call
+ * (`classifySwapFamily`, `resolveBridgeVenue`). These two are not - naming the
+ * venue is the whole point of them, so their router returns ONE toolId
+ * unconditionally and refuses everything it cannot route there.
+ *
+ * Declared here because the published contract needs it: `vex_ToolDescribe`
+ * described every mutating alias as `venue_resolved_per_call`, which said of
+ * these two that the venue and therefore the authorizing quote are decided at
+ * call time. They are not, and an agent reading that has no way to learn which
+ * quote to take before a call that moves money. The routers below return these
+ * values, so the description and the routing cannot disagree.
+ */
+export const FIXED_MUTATING_ALIAS_TARGETS = {
+  SwapExecuteUniswap: "uniswap.swap.execute",
+  BridgeExecuteRelay: "relay.bridge",
+} as const satisfies Readonly<Record<string, string>>;
+
+/**
+ * The protocol toolId `name` always resolves to, or `undefined` when it is a
+ * genuine router (or not an alias at all).
+ */
+export function fixedTargetOfMutatingAlias(name: string): string | undefined {
+  const targets: Readonly<Record<string, string | undefined>> = FIXED_MUTATING_ALIAS_TARGETS;
+  return targets[name];
+}
+
 /** A resolved target for a mutating protocol-alias. */
 export interface ResolvedAliasTarget {
   readonly toolId: string;
@@ -252,7 +282,7 @@ function routeSwapExecuteUniswap(
     amountIn: a.amountIn,
     ...(a.slippageBps !== undefined ? { slippageBps: a.slippageBps } : {}),
   };
-  return { toolId: "uniswap.swap.execute", params };
+  return { toolId: FIXED_MUTATING_ALIAS_TARGETS.SwapExecuteUniswap, params };
 }
 
 // ── BridgeExecute - Khalani cross-chain bridge EXECUTE router ─────────────────────
@@ -459,7 +489,7 @@ function routeBridgeExecuteRelay(
   };
   if (a.tradeType !== undefined) params.tradeType = a.tradeType;
   if (a.slippageBps !== undefined) params.slippageBps = a.slippageBps;
-  return { toolId: "relay.bridge", params };
+  return { toolId: FIXED_MUTATING_ALIAS_TARGETS.BridgeExecuteRelay, params };
 }
 
 // ── Registry ──────────────────────────────────────────────────────────────

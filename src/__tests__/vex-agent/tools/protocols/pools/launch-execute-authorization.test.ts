@@ -25,9 +25,8 @@ import { getPoolsFunClient } from "@tools/pools-fun/client.js";
 import { POOLS_GATEWAY_ABI } from "@tools/pools-fun/abi.js";
 import {
   POOLS_CHAIN_ID,
-  POOLS_FACTORY_ADDRESS,
-  POOLS_GATEWAY_ADDRESS,
-  POOLS_LOCKER_ADDRESS,
+  POOLS_LAUNCH_SUITE_VERSION,
+  poolsLaunchSuite,
 } from "@tools/pools-fun/constants.js";
 import { nativeValueCallFingerprint } from "@tools/evm-chains/native-value-authorization/index.js";
 import type { PoolsLaunchTuple } from "@tools/pools-fun/launch/verifier-types.js";
@@ -51,8 +50,12 @@ import { makeProtocolContext } from "../../_test-context.js";
 /** A real PNG header - the sniffer reads magic bytes, not a file name. */
 const PNG_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00]);
 
-const GATEWAY = getAddress(POOLS_GATEWAY_ADDRESS);
-const FACTORY = getAddress(POOLS_FACTORY_ADDRESS);
+const SUITE = poolsLaunchSuite();
+const GATEWAY = getAddress(SUITE.gateway);
+const FACTORY = getAddress(SUITE.factory);
+const LOCKER = getAddress(SUITE.locker);
+/** The block timestamp the attestation bounds are judged against. */
+const BLOCK_TIME = 1_787_054_000n;
 const WETH = getAddress("0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73");
 const WALLET = getAddress("0x33eF6673BD80cB11fcC41b82Bc2181E65cC4d2fA");
 const STRANGER = getAddress("0x9999999999999999999999999999999999999999");
@@ -94,6 +97,17 @@ function tuple(over: Partial<PoolsLaunchTuple> = {}): PoolsLaunchTuple {
     erc20DevBuyAmountIn: 0n,
     devBuyMinOut: DEV_BUY_OUT,
     expectedFeeWei: FEE_WEI,
+    // A WETH launch carries the all-zero attestation and no signature - the
+    // shape all three live V3 prepares have.
+    priceAttestation: {
+      asset: "0x0000000000000000000000000000000000000000" as Address,
+      underlyingPriceUsdE18: 0n,
+      expectedUiMultiplier: 0n,
+      observedAt: 0n,
+      expiresAt: 0n,
+      pricingEpoch: 0n,
+    },
+    priceSignature: "0x" as Hex,
     ...over,
   };
 }
@@ -128,10 +142,10 @@ function prepareResponse(
   };
 }
 
-/** The ten anchored reads, in the order `readPoolsChainAnchors` asks for them. */
+/** The twenty anchored reads, in the order `readPoolsChainAnchors` asks for them. */
 function anchorReads(over: Partial<Record<number, unknown>> = {}): unknown[] {
   const results: unknown[] = [
-    1n, // VERSION
+    BigInt(POOLS_LAUNCH_SUITE_VERSION), // VERSION
     FACTORY,
     false, // paused
     FEE_WEI,
@@ -139,8 +153,18 @@ function anchorReads(over: Partial<Record<number, unknown>> = {}): unknown[] {
     10_000_000_000_000_000n, // MAX
     WETH,
     TOKEN, // computeTokenAddress
+    LOCKER, // factory.locker
     true, // allowedPairedAsset
     [-197_600, true], // startTickFor
+    getAddress("0x968b0c1e896fB1DdB2042957Fc0614c67AB7FFc2"), // FEES_TO_HOLDERS
+    getAddress("0x968b0c1e896Fb1DdB2042957FC0614c67AB7ffC3"), // FEES_TO_HOLDERS_PAIRED
+    getAddress("0x968b0c1e896fB1ddB2042957fC0614C67Ab7Ffc4"), // FEES_TO_HOLDERS_BOTH
+    1, // pricingModeFor -> CORE_CHAINLINK
+    { feed: WETH, maxPriceAge: 86_400, fallbackTick: 0, set: true, mode: 1, maxQuoteAge: 0 },
+    getAddress("0xc4559C672617395292a5878D3200B9c3d46EaCc7"), // priceSigner
+    197n, // pricingEpoch
+    30, // MIN_SIGNED_QUOTE_AGE
+    120, // MAX_SIGNED_QUOTE_AGE
   ];
   return results.map((result, index) =>
     index in over
@@ -193,7 +217,7 @@ beforeEach(() => {
 
   vi.spyOn(getPoolsFunClient(), "launchConfig").mockImplementation(async () => ({
     deploymentFeeWei: FEE_WEI.toString(),
-    gatewayVersion: 1,
+    gatewayVersion: POOLS_LAUNCH_SUITE_VERSION,
   }));
   vi.spyOn(getPoolsFunClient(), "prepareLaunch").mockImplementation(async () => response);
 
@@ -231,6 +255,7 @@ beforeEach(() => {
 
   vi.spyOn(evmClient, "getLocalPublicClient").mockReturnValue({
     getBlockNumber: async () => BLOCK,
+    getBlock: async () => ({ number: BLOCK, timestamp: BLOCK_TIME }),
     multicall: async () => anchors,
     getBalance: async () => balanceWei,
     simulateContract: async () => ({
@@ -415,8 +440,12 @@ describe("the verifier gates BEFORE any authorization exists", () => {
   });
 
   it("refuses a fee recipient the response redirected to someone else", async () => {
+    // Named `fee_recipient_mode` since the V3 suite: `feeRecipient` may now be a
+    // fees-to-holders sentinel, so "is this the right recipient" became a
+    // question about the caller's intent rather than an address comparison. The
+    // refusal is as absolute as before, which is what this asserts.
     response = prepareResponse(tuple({ feeRecipient: STRANGER }));
-    expect(await expectRefusedWithoutAuthorization()).toContain("feeRecipient");
+    expect(await expectRefusedWithoutAuthorization()).toContain("fee_recipient_mode");
   });
 
   it("refuses a dev-buy floor that is not the EXACT simulated fill", async () => {
@@ -435,7 +464,10 @@ describe("the verifier gates BEFORE any authorization exists", () => {
   });
 
   it("refuses when the pair is no longer allowlisted on-chain", async () => {
-    anchors = anchorReads({ 8: false });
+    // Index 9: the batch gained `factory.locker` at index 8 with the suite
+    // triangle, so this row moved. Indices here are the batch's ORDER, which is
+    // exactly the coupling that makes a reordered batch fail loudly.
+    anchors = anchorReads({ 9: false });
     expect(await expectRefusedWithoutAuthorization()).toContain("paired_asset_allowlisted");
   });
 
@@ -497,6 +529,7 @@ describe("the verifier gates BEFORE any authorization exists", () => {
 
   vi.spyOn(evmClient, "getLocalPublicClient").mockReturnValue({
       getBlockNumber: async () => BLOCK,
+      getBlock: async () => ({ number: BLOCK, timestamp: BLOCK_TIME }),
       multicall: async () => anchors,
       getBalance: async () => balanceWei,
       simulateContract: async () => {
@@ -586,9 +619,9 @@ describe("the X-handle recipient: manual path only, and sanity-checked", () => {
   });
 
   it.each([
-    ["the launch gateway itself", POOLS_GATEWAY_ADDRESS],
-    ["the launchpad factory", POOLS_FACTORY_ADDRESS],
-    ["the fee locker", POOLS_LOCKER_ADDRESS],
+    ["the launch gateway itself", SUITE.gateway],
+    ["the launchpad factory", SUITE.factory],
+    ["the fee locker", SUITE.locker],
   ])("refuses a resolution to %s - fees there can never be claimed", async (_label, address) => {
     const planned = await planWithHandle(address);
     expect(planned.ok).toBe(false);
@@ -604,5 +637,136 @@ describe("the X-handle recipient: manual path only, and sanity-checked", () => {
     // A fee stream that quietly went to the launching wallet instead of where
     // the user aimed it is the exact defect this path exists to avoid.
     expect(planned.plan.binding.feeRecipient).not.toBe(WALLET);
+  });
+});
+
+/**
+ * `simulateOnly` - the edge of signing, and the proof that it stops there.
+ *
+ * WHY THIS MODE EXISTS. A launch is irreversible, so the only way to exercise
+ * the real money path - the real prepare, the real anchored reads, all fifteen
+ * verifier points, a real gas estimate over the real bytes - is a mode that runs
+ * every one of them and then stops. Owner rule, 2026-09-04: no builder or
+ * harness executes a launch; launch paths are verified to the edge of signing.
+ *
+ * WHAT THESE TESTS ASSERT IS ABSENCE, which is the whole product of the mode:
+ * no signing client is opened, no intent row is written, no authorization is
+ * consumed, no broadcaster is called. Those are the four things standing between
+ * a verified plan and a token existing, and each is checked separately so a
+ * regression in one cannot hide behind the others.
+ */
+describe("simulateOnly stops at the edge of signing", () => {
+  it("returns the would-be launch, and NEVER opens a signer", async () => {
+    const openSigner = vi.spyOn(signingClients, "openLaunchSigningClients");
+    let broadcasterCalled = false;
+
+    const result = await poolsLaunchExecuteHandler(
+      { ...VALID_PARAMS, simulateOnly: true },
+      context(),
+      {
+        broadcast: async () => {
+          broadcasterCalled = true;
+          return { success: true, output: "broadcast" };
+        },
+      },
+    );
+
+    expect(result.success).toBe(true);
+    // THE KEY WAS NEVER TOUCHED. `openLaunchSigningClients` is the one call that
+    // decrypts the keystore, so a zero call count here is the assertion the
+    // whole mode is for - not the absence of a transaction hash, which a broken
+    // broadcaster would also produce.
+    expect(openSigner).not.toHaveBeenCalled();
+    expect(written, "no intent row may be created").toHaveLength(0);
+    expect(consumed, "no authorization may be consumed").toHaveLength(0);
+    expect(broadcasterCalled, "the broadcaster must not run").toBe(false);
+  });
+
+  it("says it launched nothing, in the words the model reads", async () => {
+    const result = await poolsLaunchExecuteHandler(
+      { ...VALID_PARAMS, simulateOnly: true },
+      context(),
+      { broadcast: async () => ({ success: true, output: "broadcast" }) },
+    );
+    const data = (result as { data: Record<string, unknown> }).data;
+    expect(data.simulateOnly).toBe(true);
+    expect(data.launched).toBe(false);
+    expect(data.verifier).toBe("passed");
+    // A success with a predicted token address is exactly the shape a model
+    // could read as "the token exists". The note has to close that off, and the
+    // prepare's real side effect has to be disclosed rather than implied.
+    expect(String(data.note)).toContain("NOTHING WAS SIGNED");
+    expect(String(data.note)).toContain("no token exists at the predicted address");
+    expect(String(data.note)).toContain("different token address");
+  });
+
+  it("carries the fingerprint, value, fee and gas ceiling a real launch would have used", async () => {
+    const result = await poolsLaunchExecuteHandler(
+      { ...VALID_PARAMS, simulateOnly: true },
+      context(),
+      { broadcast: async () => ({ success: true, output: "broadcast" }) },
+    );
+    const data = (result as { data: Record<string, unknown> }).data;
+
+    // The fingerprint is the identity of the exact bytes a launch would sign, so
+    // it is what makes this simulation comparable to a later real launch.
+    expect(data.calldataFingerprint).toBe(
+      nativeValueCallFingerprint({
+        chainId: POOLS_CHAIN_ID,
+        to: GATEWAY,
+        data: response.data as Hex,
+        valueWei: BigInt(response.value),
+      }),
+    );
+    expect(data.gateway).toBe(GATEWAY);
+    expect(data.gatewayVersion).toBe(String(POOLS_LAUNCH_SUITE_VERSION));
+    expect(data.valueWei).toBe(response.value);
+    expect(data.deploymentFeeWei).toBe(FEE_WEI.toString());
+    expect(data.prebuyWei).toBe(PREBUY_WEI.toString());
+    // A CEILING, gas limit x price, so the caller does not have to re-estimate -
+    // a second estimate at a later block would describe a different launch.
+    expect(BigInt(String((data.gas as Record<string, string>).boundWei))).toBeGreaterThan(0n);
+  });
+
+  it("still REFUSES a launch the verifier rejects - a simulation is not a bypass", async () => {
+    // The mode skips signing, never checking. A `simulateOnly` that reported a
+    // would-be launch for calldata the verifier refused would be worse than
+    // useless: it would say a launch is ready when it is not.
+    response = prepareResponse(tuple({ feeRecipient: STRANGER }));
+    const result = await poolsLaunchExecuteHandler(
+      { ...VALID_PARAMS, simulateOnly: true },
+      context(),
+      { broadcast: async () => ({ success: true, output: "broadcast" }) },
+    );
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("fee_recipient_mode");
+    expect(written).toHaveLength(0);
+  });
+
+  it("refuses a non-boolean simulateOnly rather than treating it as false", async () => {
+    // `simulateOnly: "true"` must never be read as "not true" and quietly sign.
+    const result = await poolsLaunchExecuteHandler(
+      { ...VALID_PARAMS, simulateOnly: "yes" },
+      context(),
+      { broadcast: async () => ({ success: true, output: "broadcast" }) },
+    );
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("simulateOnly");
+  });
+
+  it("without the flag, the ordinary path still signs and broadcasts", async () => {
+    // The control. A flag that accidentally defaulted to true would disable
+    // launches entirely, and every assertion above would still pass.
+    const openSigner = vi.spyOn(signingClients, "openLaunchSigningClients");
+    let broadcasterCalled = false;
+    await poolsLaunchExecuteHandler({ ...VALID_PARAMS }, context(), {
+      broadcast: async () => {
+        broadcasterCalled = true;
+        return { success: true, output: "broadcast" };
+      },
+    });
+    expect(openSigner).toHaveBeenCalled();
+    expect(broadcasterCalled).toBe(true);
+    expect(consumed).toHaveLength(1);
   });
 });

@@ -77,6 +77,65 @@ export interface PoolsToken {
   priceChange1h: number | null;
   priceChange6h: number | null;
   priceChange24h: number | null;
+  /**
+   * The provider's own claim that this token carries a Vex attestation.
+   *
+   * PRESENT ONLY WHEN TRUE on the wire (4 rows of a 100-row page, 2026-09-04),
+   * so the absence of the key is "the launchpad makes no such claim", never
+   * "the launchpad says no". Typed `boolean | null` and normalised to `null`
+   * when absent so that the difference survives into the projection.
+   *
+   * It is the LAUNCHPAD's statement about its own index, not a Vex-side proof:
+   * the authority for an attestation Vex made is Vex's own attest record.
+   */
+  vexAttested: boolean | null;
+  /**
+   * Which legs a fees-to-holders token streams to its holders, as the launchpad
+   * labels it: `token`, `paired` or `both`. Absent on tokens that did not opt in.
+   *
+   * DISPLAY-GRADE, AND DELIBERATELY NOT AN ENUM HERE. The MODE authority is the
+   * `DistributorDeployed(token, distributor, uint8 rewardMode)` event emitted by
+   * the suite's HolderRewardsDeployer (plan v3 section 9); this field is the
+   * provider's echo of it, and `pools__holder_rewards_get` reports any
+   * disagreement in words rather than silently preferring one.
+   */
+  holderRewardsMode: string | null;
+  /**
+   * The distributor contract the launchpad names for this token. Equal to the
+   * row's `feeRecipientAddress` on every row that carries it (measured).
+   *
+   * Still an ECHO: the on-chain answer is the deployer's event, and the read
+   * tool cross-checks this value against it.
+   */
+  holderRewardsDistributor: string | null;
+  /**
+   * The launchpad's own brand check, present only on rows it flags:
+   * `{status: "unofficial", revision: n}`. The pools.fun web app renders it as a
+   * "Not official" warning badge, so it is a WARNING about brand collision and
+   * not a property of the token's contract.
+   */
+  poolsFunBrand: PoolsFunBrand | null;
+  /**
+   * The launchpad's flag that the tokenised stock this token is paired against
+   * is illiquid. Present only when true (1 row of 100, measured).
+   *
+   * DISPLAY ONLY, and it has NO launch-time authority (plan v3 section 9): a
+   * pair that is not yet listed has no liquidity history to be flagged from, so
+   * an absent flag is not a liquidity promise.
+   */
+  pairedStockIlliquid: boolean | null;
+}
+
+/**
+ * The launchpad's brand verdict on a row.
+ *
+ * `status` is kept as a string rather than a literal union: the only value
+ * measured is `"unofficial"`, and a second verdict the provider invents must
+ * reach the agent as the provider's own word instead of taking the page down.
+ */
+export interface PoolsFunBrand {
+  status: string;
+  revision: number | null;
 }
 
 /** A `/discover` page: rows plus the opaque cursor for the next one. */
@@ -277,6 +336,84 @@ export interface PoolsDiscoverParams {
   maxAgeHours?: number;
   deployerAddress?: string;
   feeRecipientAddress?: string;
+  /**
+   * Keep only rows the launchpad marks `vexAttested`.
+   *
+   * ONLY `true` IS SENDABLE. The provider accepts the literal string `"true"`
+   * and answers anything else - including `false` - with HTTP 400
+   * `Invalid input: expected "true"` (measured 2026-09-04). So this is an
+   * opt-in switch: `false`/absent means the filter is not applied, and there is
+   * no way to ask for the complement.
+   */
+  vexAttested?: boolean;
+  /**
+   * Keep only rows that stream fees to holders. Same `"true"`-only contract as
+   * {@link PoolsDiscoverParams.vexAttested}.
+   */
+  holderRewards?: boolean;
+}
+
+/** `/pools-fun/launch-assets` - one launchable tokenised stock. */
+export interface PoolsLaunchAsset {
+  readonly symbol: string;
+  readonly name: string;
+  readonly address: string;
+}
+
+/**
+ * `/pools-fun/launch-assets` - the launchable stock universe.
+ *
+ * No pagination and no `limit`: the endpoint returns the WHOLE list in one body
+ * (194 rows on 2026-09-04) and ignores a `chain` parameter, always answering for
+ * Robinhood. `decimals` is not carried by any row.
+ */
+export interface PoolsLaunchAssets {
+  readonly chain: string;
+  readonly stocks: readonly PoolsLaunchAsset[];
+}
+
+/**
+ * `GET /pools-fun/holder-rewards?token=` - the launchpad's view of one
+ * fees-to-holders token's distributor.
+ *
+ * EVERY AMOUNT IS A RAW BASE-UNIT STRING and stays a string: these are uint256
+ * values and `Number` would lose them (rule 90). The identity fields
+ * (`token`, `distributor`) are strict; everything else is display-tolerant,
+ * because this whole object is the provider's ECHO of state whose authority is
+ * the distributor contract itself.
+ *
+ * `wallet` echoes the address the request asked about, or is `null` when none
+ * was sent. The client lowercases it first: a mixed-case address with a WRONG
+ * EIP-55 checksum makes this endpoint answer HTTP 502 rather than a named 400
+ * (measured 2026-09-04, see `PoolsFun.md`).
+ */
+export interface PoolsHolderRewards {
+  readonly token: string;
+  readonly distributor: string;
+  readonly pairedAsset: string | null;
+  readonly pairedSymbol: string | null;
+  readonly pairedDecimals: number | null;
+  readonly wallet: string | null;
+  /** `token` | `paired` | `both` as the provider spells it. An ECHO; the event is the authority. */
+  readonly rewardMode: string | null;
+  readonly paysCallerBounty: boolean | null;
+  readonly conversion: string | null;
+  readonly earned: string | null;
+  readonly earnedPaired: string | null;
+  readonly walletExcluded: boolean | null;
+  readonly eligibleSupply: string | null;
+  readonly rewardRate: string | null;
+  readonly rewardRatePaired: string | null;
+  readonly periodFinish: number | null;
+  readonly periodFinishPaired: number | null;
+  readonly remainingStream: string | null;
+  readonly remainingStreamPaired: string | null;
+  readonly surplus: string | null;
+  readonly surplusPaired: string | null;
+  readonly buybackBacklog: string | null;
+  readonly lastBuybackAt: number | null;
+  readonly pendingFees: { readonly token: string | null; readonly paired: string | null } | null;
+  readonly hasWorkToDistribute: boolean | null;
 }
 
 /** `/discover/{token}/ohlcv` params. */

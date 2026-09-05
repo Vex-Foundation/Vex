@@ -1,0 +1,7 @@
+{
+ "code": 0,
+ "data": {
+  "Klines": []
+ },
+ "_provenance": "vp-api.virtuals.io GET /vp-api/klines for a BONDING agent whose trade tape was non-empty in the same session - the endpoint returned an empty series to all 12 probed combinations."
+}

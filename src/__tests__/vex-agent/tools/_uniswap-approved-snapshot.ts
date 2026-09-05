@@ -140,8 +140,8 @@ export async function approvedUniswapVexFee(input: ApprovedSnapshotInput): Promi
   return block;
 }
 
-/** The claim result the store would hand an execute for that snapshot. */
-export async function claimedUniswapSnapshot(input: ApprovedSnapshotInput): Promise<{
+/** The non-destructive READ result the store would hand an execute for that snapshot. */
+export async function readUniswapSnapshotFixture(input: ApprovedSnapshotInput): Promise<{
   readonly ok: true;
   readonly prequoteId: string;
   readonly snapshot: UniswapExecutionSnapshot;
@@ -158,20 +158,23 @@ export async function claimedUniswapSnapshot(input: ApprovedSnapshotInput): Prom
 }
 
 /**
- * A `claimUniswapExecutionSnapshot` stand-in that answers with the quote THIS
+ * A `readUniswapExecutionSnapshot` stand-in that answers with the quote THIS
  * call would have produced: it resolves the params' own legs through the same
  * resolver the handler uses, so a suite that swaps a native leg in and out of
  * its params needs no second fixture.
  *
- * Suites whose subject IS the binding drive the claim explicitly instead.
+ * It stands in for the READ, which consumes nothing: the separate
+ * `commitPrequoteClaim` is what a suite mocks when the consumption is its
+ * subject. Suites whose subject IS the binding drive the read explicitly
+ * instead.
  */
-export function claimStandingInForTheParams(deployment: {
+export function readStandingInForTheParams(deployment: {
   readonly chainId: number;
   readonly weth: string;
   readonly approvedAmountOutRaw?: bigint;
   readonly approvedMinOutRaw?: bigint;
   /**
-   * The allowance the quote saw, read AT CLAIM TIME so a suite that changes its
+   * The allowance the quote saw, read AT READ TIME so a suite that changes its
    * allowance mock between tests gets a snapshot bound to the matching leg set.
    */
   readonly currentAllowance?: () => bigint;
@@ -180,7 +183,7 @@ export function claimStandingInForTheParams(deployment: {
     const dep = { chainId: deployment.chainId, weth: deployment.weth } as UniswapDeployment;
     const tokenIn = await resolveUniswapToken(dep, String(params.tokenIn));
     const tokenOut = await resolveUniswapToken(dep, String(params.tokenOut));
-    return claimedUniswapSnapshot({
+    return readUniswapSnapshotFixture({
       chainId: deployment.chainId,
       tokenIn,
       tokenOut,

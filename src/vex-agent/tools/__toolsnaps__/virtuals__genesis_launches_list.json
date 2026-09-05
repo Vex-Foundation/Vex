@@ -1,22 +1,61 @@
 {
   "definition": {
     "function": {
-      "description": "Browse the Virtuals GENESIS calendar - the points-sale events that precede an agent-token launch, mostly on Base, newest first. Use this when the user asks what is launching soon on Virtuals, or wants the history of a sale; a token that already trades is virtuals__agents_discover instead. Returns `geneses` alongside count, total, page and pageSize, one row per event: id, genesisId, status, startsAt, endsAt, totalParticipants, totalVirtuals, and the linked `agent` (id, name, symbol, chain, status, tokenAddress, isVerified) or null when none is linked. Unlike the agent feeds this reads ONE provider page per call and reports it back as page/pageSize with no window scan, so ask for an older page explicitly. CONTINUATION COMES IN TWO PARTS. Within the page: `returned` (rows you got), `fetched` (rows the provider page actually held) and `truncated`, true when `limit` dropped rows off the page that was already fetched - with the defaults (limit 20, pageSize 100) that is 80 rows - and a `truncationNote` then names the knob that brings them back. Across pages: `hasMore` with `nextPage`, present only when hasMore is true; pass nextPage back rather than computing it. The exception worth knowing: the provider may omit its own total, page or pageSize, and without all three there is no honest hasMore, so the reply OMITS hasMore and nextPage and carries a `continuationNote` naming the missing number instead. Read that as UNKNOWN, never as the end of the calendar - request the next page to find out. `filtersApplied` is always `{}`: this read has no filters. Read a suspicious far-future date as spam rather than as a scheduled launch. Read-only.",
+      "description": "Browse the Virtuals GENESIS calendar - the points-sale events that precede an agent-token launch, mostly on Base. Use this when the user asks what is launching soon on Virtuals or wants the history of a sale; a token that already trades is virtuals__agents_discover instead. Returns `geneses` alongside count, totalMatched, page, pageSize, hasMore and `reserveAmountTiers`. Filter by `status` and by the agent's `chain`, order by id, startsAt or endsAt in either direction, and page with limit/pageSize and page. Each row carries id, genesisId, status, startsAt, endsAt, totalParticipants, totalPoints, totalVirtuals, the on-chain genesisAddress and genesisTx, and the linked `agent` (id, name, symbol, chain, status, token and preToken addresses, isVerified) or null. The reply also carries `reserveAmountTiers`, the VIRTUAL reserve targets a sale can be configured for, straight from the provider's own parameters endpoint. Continuation is `hasMore` plus `nextPage`; when the provider omits its own total, page or pageSize the reply OMITS both and carries a `continuationNote` naming the missing number - read that as UNKNOWN, never as the end of the calendar. Read a suspicious far-future date as spam rather than as a scheduled launch. The reply also carries a `participation` block saying that ENTERING a genesis sale is NOT supported here, with the measured reason: `Genesis.participate(pointAmt, virtualsAmt)` takes the VIRTUAL immediately and never validates `pointAmt`, while the agent-token allocation and any refund are written by a factory-role-only backend path, so a self-custodial call would spend real funds against points Vex cannot obtain or prove. The block names where a sale is entered instead. Read-only. Provide at most one of: limit, pageSize.",
       "name": "virtuals__genesis_launches_list",
       "parameters": {
         "additionalProperties": false,
         "properties": {
+          "chain": {
+            "description": "Only sales whose agent is on this chain. Chain slug/alias, or the numeric chain id `TokenFind` returns (e.g. `base` or `8453`).",
+            "enum": [
+              "base",
+              "solana",
+              "robinhood",
+              "ethereum"
+            ],
+            "type": "string"
+          },
           "limit": {
-            "description": "Max geneses to return (default 20, max 100). Out of range is rejected, not clamped.",
+            "description": "Rows to return on this page (default 20, max 100). This is OUR bound, not the provider's - it served a 10,000-row page live - because an agent row is large. Filtering is server-side, so a smaller page is not a smaller search: `totalMatched` says how many rows the filter found and `nextPage` reaches the rest. Out of range is rejected, not clamped.",
             "type": "number"
           },
           "page": {
-            "description": "1-based page for older genesis events (default 1).",
+            "description": "1-based provider page (default 1). The reply's `nextPage` names the next one.",
             "type": "number"
           },
           "pageSize": {
-            "description": "Rows fetched from the provider for this page (default 100, max 200).",
+            "description": "Alias of `limit`, accepted for compatibility - the same knob now that filtering happens server-side. Send either spelling, never both spellings in the same call.",
             "type": "number"
+          },
+          "sortBy": {
+            "description": "id (default), startsAt or endsAt. Closed on purpose: unlike the agents endpoint, this one does NOT validate the sort attribute - an unknown key is accepted and silently ignored.",
+            "enum": [
+              "id",
+              "startsAt",
+              "endsAt"
+            ],
+            "type": "string"
+          },
+          "sortDirection": {
+            "description": "asc or desc (default desc).",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "description": "Sale lifecycle. Live counts on 2026-09-04: FINALIZED 145, CANCELLED 33. An unknown value returns zero rows with no error upstream, which is why the set is closed here.",
+            "enum": [
+              "CANCELLED",
+              "FAILED",
+              "FINALIZED",
+              "PREPROCESSING",
+              "PROCESSING",
+              "STARTED"
+            ],
+            "type": "string"
           }
         },
         "type": "object"

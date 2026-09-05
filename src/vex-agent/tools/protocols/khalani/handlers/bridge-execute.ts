@@ -55,6 +55,7 @@ import {
   type RecordedLeg,
 } from "./bridge-support.js";
 import { interpretPoll } from "./bridge-poll.js";
+import { bridgeFeeRefusalData } from "@tools/bridge-fee/index.js";
 import { quoteKhalaniBridgeRoute } from "./bridge-execute/quote.js";
 import { buildKhalaniDepositPlan } from "./bridge-execute/deposit-plan.js";
 import {
@@ -64,6 +65,7 @@ import {
 } from "./bridge-execute/fee-disclosure.js";
 import { runKhalaniBridgeLegs } from "./bridge-execute/legs.js";
 import { runKhalaniVexFeeLeg } from "./bridge-execute/fee-leg.js";
+import { withholdFeeOnDepositShortfall } from "@vex-agent/tools/protocols/bridge-deposit-evidence.js";
 import { submitKhalaniDeposit } from "./bridge-execute/submit.js";
 import type { KhalaniBridgePendingBase } from "./bridge-execute/types.js";
 import {
@@ -279,7 +281,15 @@ export async function executeKhalaniBridge(
     params, context, sessionId, derivedNow: vexFee,
   });
   if (feeStatementRefusal !== null) {
-    return { success: false, output: `${toolId} failed: ${feeStatementRefusal}` };
+    // The TYPED reason travels on the result, not only in the log line: a moved
+    // fee statement, a missing one and an unregistered gate have three different
+    // remedies, and collapsing them into "bridge failed" leaves an agent
+    // guessing which one it is looking at.
+    return {
+      success: false,
+      output: `${toolId} failed: ${feeStatementRefusal.message}`,
+      data: bridgeFeeRefusalData(feeStatementRefusal),
+    };
   }
 
   // 8. Fail closed on the plan and on its native-cost classification. An
@@ -450,10 +460,26 @@ export async function executeKhalaniBridge(
   // risk. An ambiguous broadcast is left unresolved for the receipt sweep
   // exactly like any other staged transaction - a blind retry could charge the
   // user twice.
-  const feeOutcome = await runKhalaniVexFeeLeg({
-    executionId, feeLegIndex, stagedLegs, intentLegs: intent.legs,
-    sourceChain, chains, signer, fromChainId, fromChainName, recordedLegs,
-  });
+  // A DEPOSIT SHORTFALL MAKES THE FEE LEG INELIGIBLE. The fee is charged for
+  // bridging the principal the user consented to; a deposit whose own receipt
+  // proves less than that did not perform it, so no fee signer runs, no nonce
+  // is reserved, and the planned fee row is aborted rather than left pending.
+  const feeOutcome = legLoop.depositShortfall !== null
+    ? await withholdFeeOnDepositShortfall({
+      shortfall: legLoop.depositShortfall,
+      executionId,
+      feeLegIndex,
+      logScope: "khalani.bridge",
+      // Exactly the fee row: the logical `bridge_fill_expected` row sits after
+      // it and must stay pending, because the deposit itself reached the
+      // provider and its reconciliation is still owed.
+      abortPlannedFeeRow: (fromIndex, reason, toIndexExclusive) =>
+        abortRemaining(executionId, fromIndex, reason, toIndexExclusive),
+    })
+    : await runKhalaniVexFeeLeg({
+      executionId, feeLegIndex, stagedLegs, intentLegs: intent.legs,
+      sourceChain, chains, signer, fromChainId, fromChainName, recordedLegs,
+    });
 
   // 16. In-turn order poll - truthful, never fabricated (R6/B4/Q2).
   const poll = await pollKhalaniOrderToTerminal(pollOrderId, context.abortSignal);

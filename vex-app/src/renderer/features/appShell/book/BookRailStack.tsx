@@ -4,11 +4,25 @@
  *
  * OWNER PARITY DECREE (screenshots, 2026-09-04): the Studio project rail IS
  * the agent session rail, scoped to the project's selected wallets - the same
- * Portfolio/Board toggle, the same POSITION card with its chain chips and its
- * refresh control, the same WALLETS and BALANCES cards, the same drag- and
- * keyboard-reorderable sections. Before this file the two rails were two
- * component trees over two id unions, which is how they drifted into two
- * different answers to "what does this rail show".
+ * POSITION card with its chain chips and its refresh control, the same
+ * WALLETS and BALANCES cards, the same drag- and keyboard-reorderable
+ * sections. Before this file the two rails were two component trees over two
+ * id unions, which is how they drifted into two different answers to "what
+ * does this rail show".
+ *
+ * ONE INSTRUMENT THE PROJECT RAIL DOES NOT HAVE (owner decision, later the
+ * same day: "in Vex Studio's right sidebar we show only Portfolio; Board
+ * disappears"). A board is composed inside an Agent chat and carries that
+ * session's identity; a project has no chat. So the session rail mounts the
+ * Portfolio/Board toggle and the project rail mounts the Portfolio stack
+ * ALONE, with no tab strip: a one-tab strip would be a control that selects
+ * nothing. This is the VS Code `viewPaneContainer` shape - one container,
+ * and a pane a location cannot host is not registered there rather than
+ * shown empty, so its listeners never exist there either: the tab strip,
+ * the `bookTab` preference and the Board store's unseen dot live in the
+ * session-only `SessionBookInstruments` below, and a project rail creates no
+ * Board-store subscription. A project rail never clears `bookTab`, so the
+ * session rail comes back on the tab the user left it on.
  *
  * The structure is the reference's (deepseek-harness
  * `packages/interaction/README.md`: one surface over a neutral seam, the host
@@ -183,20 +197,6 @@ export function BookRailStack({
   // pattern, shared with WelcomePortfolioPanel).
   const [reduced] = useState(prefersReducedMotion);
 
-  // The BOOK's two instruments (A13). The tab is a PERSISTED preference and
-  // the control below is its ONLY writer; the board surfaces never switch it.
-  // It is ONE preference for both rails on purpose: the toggle is the same
-  // object to the user, and a second key would leave Studio on a stale tab.
-  const bookTab = useUiStore((state) => state.bookTab);
-  const setBookTab = useUiStore((state) => state.setBookTab);
-  // The dot is a SESSION fact: a board arrives from a session transcript and
-  // the Board tab of a project rail never holds one, so a dot lit by a
-  // session's board must not survive into Studio and announce a board that
-  // tab cannot show.
-  const boardUnseen = useBoardSurfaceStore(
-    (state) => scope.kind === "session" && state.unseenBoardKey !== null,
-  );
-
   const { order, setOrder, registry } = useRailOrder(scope);
   const reorder = useBookSectionReorder(order, setOrder, registry);
   // Same macOS overlay bar as the transcript - one shared utility, one hook.
@@ -217,6 +217,37 @@ export function BookRailStack({
     scope.kind === "session" &&
     inspect.sessionId === scope.sessionId;
 
+  // The Portfolio stack, the instrument BOTH rails have; the session rail
+  // seats it in its Portfolio tab, the project rail seats it directly.
+  const portfolio = (
+    <motion.ul
+      variants={stackVariants}
+      initial={reduced ? false : "hidden"}
+      animate="show"
+      role="list"
+      ref={stackRef}
+      className="vex-scroll vex-scroll-overlay flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto"
+    >
+      {order.map((id, index) => (
+        <ReorderableSection
+          key={id}
+          id={id}
+          label={BOOK_SECTION_LABEL[id]}
+          index={index}
+          count={order.length}
+          reorder={reorder}
+        >
+          {renderBookSection(id, scope)}
+        </ReorderableSection>
+      ))}
+      {/* The keyboard path's spoken confirmation - the same
+          visually-hidden live-region idiom the Turn Island uses. */}
+      <li aria-live="polite" className="sr-only">
+        {reorder.announcement}
+      </li>
+    </motion.ul>
+  );
+
   return (
     <>
       {inspecting && inspect !== null ? (
@@ -230,80 +261,91 @@ export function BookRailStack({
         data-vex-rail-scope={scope.kind}
         className={cn("flex min-h-0 flex-1 flex-col", inspecting && "hidden")}
       >
-        <Tabs
-          value={bookTab}
-          onValueChange={(next) => {
-            // The ONLY writer of this preference. Nothing in the board
-            // surfaces switches the rail's tab: a newly composed board lights
-            // the dot below and waits to be chosen (A13).
-            setBookTab(coerceBookTab(next));
-          }}
-          idScope="book"
-          keepMounted
-          className="min-h-0 flex-1"
-        >
-          <TabsList className="self-start">
-            <TabsTrigger value="portfolio">Portfolio</TabsTrigger>
-            <TabsTrigger value="board">
-              Board
-              {/* The unseen dot. Set by a LIVE board arrival only, and spoken
-                  as words beside it, because a 6px dot is not information a
-                  screen-reader user can reach. */}
-              {boardUnseen ? (
-                <span
-                  data-vex-area="book-board-unseen"
-                  className="ml-1.5 inline-flex items-center"
-                >
-                  <span
-                    aria-hidden
-                    className="h-[6px] w-[6px] rounded-full bg-accent-primary"
-                  />
-                  <span className="sr-only">, new board</span>
-                </span>
-              ) : null}
-            </TabsTrigger>
-          </TabsList>
-          {/* KEEP-MOUNTED: the Portfolio stack owns scroll offsets, running
-              queries and card state that a tab switch must not throw away. */}
-          <TabsContent
-            value="portfolio"
-            className="mt-3 flex min-h-0 flex-1 flex-col"
-          >
-            <motion.ul
-              variants={stackVariants}
-              initial={reduced ? false : "hidden"}
-              animate="show"
-              role="list"
-              ref={stackRef}
-              className="vex-scroll vex-scroll-overlay flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto"
-            >
-              {order.map((id, index) => (
-                <ReorderableSection
-                  key={id}
-                  id={id}
-                  label={BOOK_SECTION_LABEL[id]}
-                  index={index}
-                  count={order.length}
-                  reorder={reorder}
-                >
-                  {renderBookSection(id, scope)}
-                </ReorderableSection>
-              ))}
-              {/* The keyboard path's spoken confirmation - the same
-                  visually-hidden live-region idiom the Turn Island uses. */}
-              <li aria-live="polite" className="sr-only">
-                {reorder.announcement}
-              </li>
-            </motion.ul>
-          </TabsContent>
-          <TabsContent
-            value="board"
-            className="vex-scroll vex-scroll-overlay mt-3 min-h-0 flex-1 overflow-y-auto"
-          >
-            <ActiveBoardModule scopeKind={scope.kind} />
-          </TabsContent>
-        </Tabs>
+        {scope.kind === "session" ? (
+          <SessionBookInstruments>{portfolio}</SessionBookInstruments>
+        ) : (
+          portfolio
+        )}
       </div>
     </>
+  );
+}
+
+/**
+ * The SESSION rail's two instruments (A13): the Portfolio/Board tab strip
+ * around the stack it is handed, and the Board module.
+ *
+ * SESSION-ONLY BY CONSTRUCTION, not by selector. Everything the Board
+ * instrument reads lives here - the persisted `bookTab` (this control is its
+ * ONLY writer; the board surfaces never switch it) and the Board store's
+ * unseen dot - so a project rail, which never mounts this component, holds
+ * no Board-store subscription at all. A selector returning `false` under
+ * project scope would have prevented the rerender but not the subscription
+ * (`useSyncExternalStore` subscribes on mount regardless of what the
+ * selector yields); the VS Code `viewPaneContainer` answer is that a pane a
+ * location cannot host is never constructed there, and its listeners with
+ * it. `studio-rail-portfolio-only.test.tsx` counts the subscriptions.
+ */
+function SessionBookInstruments({
+  children: portfolio,
+}: {
+  readonly children: ReactNode;
+}): JSX.Element {
+  const bookTab = useUiStore((state) => state.bookTab);
+  const setBookTab = useUiStore((state) => state.setBookTab);
+  // The unseen dot: set by a LIVE board arrival, a session fact.
+  const boardUnseen = useBoardSurfaceStore(
+    (state) => state.unseenBoardKey !== null,
+  );
+  return (
+    <Tabs
+      value={bookTab}
+      onValueChange={(next) => {
+        // The ONLY writer of this preference. Nothing in the board
+        // surfaces switches the rail's tab: a newly composed board
+        // lights the dot below and waits to be chosen (A13).
+        setBookTab(coerceBookTab(next));
+      }}
+      idScope="book"
+      keepMounted
+      className="min-h-0 flex-1"
+    >
+      <TabsList className="self-start">
+        <TabsTrigger value="portfolio">Portfolio</TabsTrigger>
+        <TabsTrigger value="board">
+          Board
+          {/* The unseen dot. Set by a LIVE board arrival only, and
+              spoken as words beside it, because a 6px dot is not
+              information a screen-reader user can reach. */}
+          {boardUnseen ? (
+            <span
+              data-vex-area="book-board-unseen"
+              className="ml-1.5 inline-flex items-center"
+            >
+              <span
+                aria-hidden
+                className="h-[6px] w-[6px] rounded-full bg-accent-primary"
+              />
+              <span className="sr-only">, new board</span>
+            </span>
+          ) : null}
+        </TabsTrigger>
+      </TabsList>
+      {/* KEEP-MOUNTED: the Portfolio stack owns scroll offsets, running
+          queries and card state that a tab switch must not throw
+          away. */}
+      <TabsContent
+        value="portfolio"
+        className="mt-3 flex min-h-0 flex-1 flex-col"
+      >
+        {portfolio}
+      </TabsContent>
+      <TabsContent
+        value="board"
+        className="vex-scroll vex-scroll-overlay mt-3 min-h-0 flex-1 overflow-y-auto"
+      >
+        <ActiveBoardModule />
+      </TabsContent>
+    </Tabs>
   );
 }

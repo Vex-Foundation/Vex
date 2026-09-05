@@ -57,14 +57,14 @@ export class FakeDuplexTransport extends EventEmitter implements StudioDuplexTra
   refusedWrites = 0;
 
   private policy: FakeWritePolicy;
-  private readonly heldCallbacks: (() => void)[] = [];
+  private readonly heldCallbacks: ((error?: Error | null) => void)[] = [];
 
   constructor(policy: FakeWritePolicy = "accept_deferred") {
     super();
     this.policy = policy;
   }
 
-  write(line: string, callback?: () => void): boolean {
+  write(line: string, callback?: (error?: Error | null) => void): boolean {
     this.written.push(line);
     switch (this.policy) {
       case "accept_sync":

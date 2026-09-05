@@ -76,6 +76,23 @@ import type { FrontPlanes } from "./front-planes.js";
  */
 export const FRONT_MAX_PENDING_WRITES = 8;
 
+/**
+ * How long a connection may sit with bytes to send and no credit before main
+ * says so, ONCE.
+ *
+ * The number is VS Code's `ProtocolConstants.TimeoutTime` reasoning at a
+ * shorter scale: 5 s is `KeepAliveSendTime`, the interval at which a healthy
+ * peer is expected to have done something. A `tools/list` for the Studio
+ * surface is on the order of eleven 64 KiB windows, so a front that
+ * acknowledges normally passes through this state many times for a few
+ * milliseconds each; five seconds inside it is not pacing, it is a stall.
+ *
+ * It WARNS and does nothing else. The connection is not torn down: an
+ * acknowledgement that arrives at six seconds is still a working connection,
+ * and this is diagnostics, not policy.
+ */
+export const FRONT_CREDIT_STALL_WARN_MS = 5_000;
+
 /** One logical `write()`, and where its chunks have got to. */
 interface PendingWrite {
   readonly kind: "data";
@@ -126,6 +143,16 @@ interface RelayConnection {
   /** The write whose `write()` returned `false`. `drain` waits on it. */
   blocking: PendingWrite | null;
 
+  /* ---- diagnostics ---- */
+  /**
+   * The credit-stall watch, owned by this record and cleared on the first
+   * acknowledgement that releases window bytes, and on close. ONE warn per
+   * connection, ever: `warned` is never reset.
+   */
+  stallTimer: NodeJS.Timeout | null;
+  stallSince: number;
+  stallWarned: boolean;
+
   /* ---- lifecycle ---- */
   destroyed: boolean;
   closeRaised: boolean;
@@ -174,15 +201,9 @@ export class FrontRelay {
   private closed = false;
 
   /** Frames naming a connection this relay no longer has. Counted, never dispatched. */
-  private droppedFrames = 0;
 
   constructor(deps: FrontRelayDeps) {
     this.deps = deps;
-  }
-
-  /** Frames dropped for an unknown or closed connection. Exposed for the tests. */
-  get droppedFrameCount(): number {
-    return this.droppedFrames;
   }
 
   /** Logical connections the relay still holds. Exposed for the bound tests. */
@@ -318,6 +339,9 @@ export class FrontRelay {
       lastAck: 0n,
       awaitingAck: [],
       blocking: null,
+      stallTimer: null,
+      stallSince: 0,
+      stallWarned: false,
       destroyed: false,
       closeRaised: false,
       pendingClose: null,
@@ -356,6 +380,7 @@ export class FrontRelay {
     }
     connection.lastAck = ack;
 
+    const outstandingBefore = connection.outstanding;
     // CUMULATIVE RELEASE, popping while the head is covered - VS Code's
     // `_outgoingUnackMsg` shape.
     while (connection.unacked.length > 0) {
@@ -364,6 +389,12 @@ export class FrontRelay {
       connection.unacked.shift();
       connection.outstanding -= head.bytes;
     }
+
+    // WINDOW BYTES CAME BACK, so whatever was blocked is not stalled. A
+    // repeated acknowledgement that released nothing leaves the watch armed,
+    // because it is not progress. `pump()` below re-arms if the connection is
+    // still blocked after this release.
+    if (connection.outstanding < outstandingBefore) this.clearStallWatch(connection);
 
     // A logical write settles only when the acknowledgement covers its FINAL
     // sequence. An earlier ack releases window bytes and settles nothing.
@@ -382,9 +413,9 @@ export class FrontRelay {
   private handlePeerClosed(id: number, through: bigint): void {
     const connection = this.connections.get(id);
     if (connection === undefined) {
-      this.droppedFrames += 1;
       return;
     }
+
     connection.pendingClose = { through };
     // THE CLOSE EDGE IS DELAYED until plane 6 has delivered through that
     // sequence (protocol 6.3). Control and data are different pipes with no
@@ -443,6 +474,11 @@ export class FrontRelay {
     }
     connection.readEnded = true;
     connection.transport.readableEnded = true;
+    // THE PEER LEFT, AND THE LOG NOW SAYS SO. A killed `vex-mcp.exe` reaches
+    // the front as a read `io.EOF`, which is a HALF-close and produced no
+    // event at all: main's own teardown four milliseconds later was the only
+    // trace, and it read exactly like main deciding to close.
+    log.info(`[studio:front] peer half-closed connection=${String(id)}`);
     // The WRITABLE side is preserved. A peer that half-closes is saying "no
     // more requests", not "no more answers" (protocol 7.1).
     connection.transport.emit("end");
@@ -460,7 +496,7 @@ export class FrontRelay {
       // The host guards every write on `destroyed` and `writableEnded`, so
       // this is a defensive branch. It is COUNTED rather than silent: a caller
       // that reaches it has a bug worth seeing in the structural log.
-      this.droppedFrames += 1;
+      connection.transport.droppedFrames += 1;
       return false;
     }
 
@@ -610,7 +646,14 @@ export class FrontRelay {
 
     const chunk = head.chunks[head.sent];
     if (chunk === undefined) return false;
-    if (connection.outstanding + chunk.length > FRONT_CREDIT_BYTES) return false;
+    if (connection.outstanding + chunk.length > FRONT_CREDIT_BYTES) {
+      // THE ONE PLACE CREDIT BLOCKS A WRITE. Everything else that stops the
+      // pump is main's own state (destroyed, nothing pending, no plane), so
+      // this is the only edge that means "the front owes us an
+      // acknowledgement".
+      this.armStallWatch(connection);
+      return false;
+    }
 
     const sequence = this.deps.planes.writeData({
       connection: connection.id,
@@ -679,6 +722,10 @@ export class FrontRelay {
   private raiseClose(connection: RelayConnection, reason: string): void {
     if (connection.closeRaised) return;
     connection.closeRaised = true;
+    // THE ONE CLEANUP POINT for this connection's watch: `destroy`,
+    // `finishClose` and `closeAll` all arrive here, and none of them may leave
+    // a timer that would warn about a connection that is gone.
+    this.clearStallWatch(connection);
     connection.transport.destroyed = true;
     log.info(`[studio:front] connection closed reason=${reason}`);
     // ASYNCHRONOUS, as a socket's own `close` is. `StudioConnection.runDispose`
@@ -689,6 +736,42 @@ export class FrontRelay {
     });
   }
 
+  /**
+   * Start this connection's credit-stall watch, if it is not already running
+   * and has not already warned.
+   *
+   * ONE WARN PER CONNECTION, EVER. A connection that is genuinely stuck would
+   * otherwise repeat the line every five seconds for as long as it lived,
+   * which is a log that has stopped being evidence. The pattern is VS Code's
+   * heartbeat ladder: a bounded, one-shot statement about a peer that stopped
+   * doing what it is expected to do.
+   */
+  private armStallWatch(connection: RelayConnection): void {
+    if (connection.stallWarned || connection.stallTimer !== null) return;
+    if (connection.destroyed || connection.closeRaised) return;
+    connection.stallSince = Date.now();
+    const timer = setTimeout(() => {
+      connection.stallTimer = null;
+      if (connection.destroyed || connection.closeRaised) return;
+      if (connection.stallWarned) return;
+      connection.stallWarned = true;
+      log.warn(
+        `[studio:front] write blocked on credit connection=${String(connection.id)} `
+          + `waitedMs=${String(Date.now() - connection.stallSince)} `
+          + `queuedBytes=${String(unsentBytes(connection))}`,
+      );
+    }, FRONT_CREDIT_STALL_WARN_MS);
+    timer.unref?.();
+    connection.stallTimer = timer;
+  }
+
+  /** Stop the watch. `stallWarned` survives, because the bound is per connection. */
+  private clearStallWatch(connection: RelayConnection): void {
+    if (connection.stallTimer === null) return;
+    clearTimeout(connection.stallTimer);
+    connection.stallTimer = null;
+  }
+
   private live(id: number): RelayConnection | null {
     const connection = this.connections.get(id);
     if (connection === undefined || connection.destroyed) {
@@ -697,11 +780,35 @@ export class FrontRelay {
       // may well have written a `WRITE_DONE` a microsecond before main decided
       // to close. Dropped and counted, exactly as the front does with main's
       // late frames.
-      this.droppedFrames += 1;
+      // ATTRIBUTED to the connection as well when the record survives, so its
+      // own `closed` line can report what it lost. A frame for an id the relay
+      // has forgotten entirely has nobody to attribute it to.
+      if (connection !== undefined) connection.transport.droppedFrames += 1;
       return null;
     }
     return connection;
   }
+}
+
+/**
+ * Bytes this connection has accepted for plane 5 and not yet written.
+ *
+ * The chunks already on the wire and awaiting an acknowledgement are NOT
+ * counted: they left main, and the number is meant to answer "how much is main
+ * still holding for this peer".
+ */
+function unsentBytes(connection: RelayConnection): number {
+  let total = 0;
+  for (const item of connection.pending) {
+    if (item.kind !== "data") continue;
+    for (let index = item.sent; index < item.chunks.length; index += 1) {
+      // The index is inside the array by construction; reading it through a
+      // guard is what keeps that construction checked rather than asserted.
+      const chunk = item.chunks[index];
+      if (chunk !== undefined) total += chunk.length;
+    }
+  }
+  return total;
 }
 
 /**
@@ -732,6 +839,12 @@ export class FrontRelayTransport
   destroyed = false;
   writableEnded = false;
   readableEnded = false;
+  /**
+   * Frames the relay dropped naming THIS connection, for the host's `closed`
+   * line. A public field written by the relay, exactly as the three latches
+   * above are: the relay is the one writer.
+   */
+  droppedFrames = 0;
 
   constructor(relay: FrontRelay, id: number) {
     super();

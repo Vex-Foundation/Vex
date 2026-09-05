@@ -15,7 +15,7 @@
  * regression guard for exactly that.
  */
 import { describe, it, expect, vi } from "vitest";
-import { getAddress } from "viem";
+import { encodeFunctionData, getAddress } from "viem";
 
 // `execute.ts` imports the Relay client module; nothing here polls, but the
 // module must load without a configured client.
@@ -40,12 +40,28 @@ const USDC = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 /** The post-Vex-fee amount Vex asked Relay to bridge (0.001 ETH minus 25 bps). */
 const BRIDGED_WEI = "997500000000000";
 
-function step(value: string, data = "0x"): RelayStep {
+function step(value: string, data = "0x", to: string = TO): RelayStep {
   return {
     id: "deposit",
     kind: "transaction",
-    items: [{ data: { to: TO, value, data, chainId: ORIGIN } }],
+    items: [{ data: { to, value, data, chainId: ORIGIN } }],
   } as unknown as RelayStep;
+}
+
+/**
+ * A REAL `approve(deposit target, principal)` blob. The suite used to pass the
+ * bare selector `0x095ea7b3`, which the approve-step guard now refuses as
+ * non-canonical calldata (viem decodes a 4-byte body as nothing at all), so
+ * these cases would have been testing the wrong refusal.
+ */
+const APPROVE_ABI = [{
+  type: "function", name: "approve", stateMutability: "nonpayable",
+  inputs: [{ name: "spender", type: "address" }, { name: "amount", type: "uint256" }],
+  outputs: [{ name: "", type: "bool" }],
+}] as const;
+
+function approveData(allowanceRaw: bigint, spender: string = TO): string {
+  return encodeFunctionData({ abi: APPROVE_ABI, functionName: "approve", args: [getAddress(spender), allowanceRaw] });
 }
 
 function nativeInDeposit(over: Partial<RelayStepNativeValueContext> = {}): RelayStepNativeValueContext {
@@ -99,9 +115,12 @@ describe("planRelayStepTx — native value must be authorized before signing", (
   it("an allowance step signs at zero value and is REFUSED at any non-zero value", () => {
     // An allowance leg has no principal to claim — it grants a spend, it does
     // not move the user's money — so ANY native value on it is unattributable.
-    const approve: RelayStepNativeValueContext = nativeInDeposit({ role: "allowance" });
-    expect(planRelayStepTx(step("0", "0x095ea7b3"), ORIGIN, FROM, approve).value).toBe(0n);
-    expect(() => planRelayStepTx(step("1", "0x095ea7b3"), ORIGIN, FROM, approve))
+    // An ERC-20 origin, because a native origin has no approval step at all
+    // (measured: every native-origin Relay quote carries only a deposit step).
+    const approve: RelayStepNativeValueContext = erc20Deposit({ role: "allowance" });
+    const data = approveData(BigInt(approve.bridgedAmountRaw));
+    expect(planRelayStepTx(step("0", data, USDC), ORIGIN, FROM, approve).value).toBe(0n);
+    expect(() => planRelayStepTx(step("1", data, USDC), ORIGIN, FROM, approve))
       .toThrow(/could not be attributed/i);
   });
 

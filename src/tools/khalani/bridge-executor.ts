@@ -41,6 +41,9 @@ export {
 
 export { parseBigintish } from "./bridge-executor/approval-normalization.js";
 
-export { planKhalaniDepositLegs } from "./bridge-executor/deposit-plan.js";
+export {
+  planKhalaniDepositLegs,
+  type KhalaniDepositOriginBinding,
+} from "./bridge-executor/deposit-plan.js";
 
 export { signStageKhalaniLeg } from "./bridge-executor/leg-signing.js";

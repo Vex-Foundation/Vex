@@ -17,6 +17,7 @@ import type { BridgeMatchInput } from "../identity/hash.js";
 import { buildBridgeIdentity } from "../identity/bridge.js";
 import { buildRelayBridgeIdentity, isValidRelayQuoteShape } from "../identity/relay-bridge.js";
 import { writePrequoteRow } from "./row.js";
+import { BRIDGE_QUOTE_GATE_TARGET } from "./gate-targets.js";
 import { withVexFee } from "../fee-disclosure.js";
 
 /**
@@ -81,7 +82,7 @@ export async function recordBridgePrequote(
     prequoteId: `prequote-${randomUUID()}`,
     sessionId,
     matchHash,
-    kind: "bridge",
+    kind: BRIDGE_QUOTE_GATE_TARGET.kind,
     // Bridge prequote `family` is the SOURCE family (where the signer lives) -
     // mirrors the verdict provider/family pairing the gate reads back by kind.
     family: identity.sourceFamily,

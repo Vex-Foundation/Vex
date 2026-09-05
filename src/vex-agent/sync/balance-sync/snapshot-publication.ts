@@ -13,7 +13,8 @@
  *      can be written until we commit, which is what makes step 4 a boundary
  *      rather than a stale reading.
  *   4. the in-flight ledger + the transition fence, under the lock.
- *   5. the per-wallet rows AND the group record, still under the lock.
+ *   5. the per-wallet snapshot rows, the group record AND the group's
+ *      per-wallet in-flight rows, still under the lock.
  *   6. COMMIT.
  *
  * ## In-flight money is ACCOUNTED FOR, never a reason to withhold
@@ -38,8 +39,9 @@
  *
  * ## Whole group or none
  *
- * Every row - the per-wallet snapshots AND the group record that carries the
- * in-flight ledger - is inserted on the transaction's own client, so a failure
+ * Every row - the per-wallet snapshots, the group record that carries the
+ * in-flight ledger, and that group's per-wallet in-flight rows - is inserted on
+ * the transaction's own client, so a failure
  * at wallet three rolls back wallets one and two and the group record with
  * them. A half-populated `snapshotGroupId` would break the aggregate stitch AND
  * `pnl_vs_prev`; a group record without its rows (or rows without their record)
@@ -56,6 +58,8 @@ import {
   readInFlightMoney,
   type ActivityFence,
   type InFlightEntry,
+  type InFlightLedger,
+  type WalletInFlightTotals,
 } from "./publication-gate.js";
 
 /**
@@ -94,12 +98,26 @@ export interface PublishedSnapshot {
 export interface SnapshotGroupLedger {
   /** Sum of the per-wallet `total_usd` rows: balances actually read. */
   readonly settledUsd: number;
-  /** Sum of the `usdEstimate`s of the `in_transit` entries. Estimates only. */
+  /**
+   * Sum of the `in_transit` USD estimates across EVERY in-flight row of every
+   * wallet in the group. Estimates only, and never the sum of the bounded
+   * `entries` list - see `perWallet`.
+   */
   readonly inTransitUsd: number;
-  /** `unresolved` entries. Listed, counted, and in NO total. */
+  /** `unresolved` rows across every wallet. Listed, counted, and in NO total. */
   readonly unresolvedCount: number;
+  /**
+   * The group's in-flight accounting SPLIT BY WALLET, aggregated by the server
+   * over all rows. This is what makes a portfolio read for a SUBSET of the
+   * group's wallets honest: it sums only the rows that belong to the wallets it
+   * was asked about, instead of inheriting the group's total.
+   */
+  readonly perWallet: readonly WalletInFlightTotals[];
+  /** The bounded DISPLAY list, oldest first, each entry naming its wallet. */
   readonly entries: readonly InFlightEntry[];
-  /** The ledger hit its bound and the oldest entries were kept. */
+  /** Every in-flight row in the group, displayed or not. */
+  readonly totalCount: number;
+  /** `totalCount` exceeded the display bound; the oldest entries were kept. */
   readonly truncated: boolean;
 }
 
@@ -130,10 +148,33 @@ export interface PublishSnapshotGroupInput {
   readonly lockTimeoutMs?: number;
 }
 
+/**
+ * `in_flight_total_count` is the number of rows the ledger FOUND, which is not
+ * the length of `in_flight`: the list is bounded at 50 and the count is not.
+ * A reader compares the two to know whether it is looking at the whole list,
+ * so no consumer is ever handed a short list as if it were the truth.
+ */
 const INSERT_GROUP_SQL = `
   INSERT INTO proj_portfolio_snapshot_groups
-    (snapshot_group_id, settled_usd, in_transit_usd, unresolved_count, in_flight)
-  VALUES ($1::uuid, $2, $3, $4, $5::jsonb)`;
+    (snapshot_group_id, settled_usd, in_transit_usd, unresolved_count, in_flight,
+     in_flight_total_count)
+  VALUES ($1::uuid, $2, $3, $4, $5::jsonb, $6)`;
+
+/**
+ * One row per wallet that has anything in flight (migration 102). A wallet with
+ * no row has nothing in flight, which is the same answer a group written before
+ * this migration gives - so the reader needs no version branch.
+ *
+ * Written as ONE statement over a JSON array rather than a loop: the wallet
+ * count is bounded by the group, and a per-wallet round trip inside the
+ * activity-table lock would hold it for no reason.
+ */
+const INSERT_GROUP_WALLETS_SQL = `
+  INSERT INTO proj_portfolio_snapshot_group_wallets
+    (snapshot_group_id, wallet_address, entry_count, unresolved_count, in_transit_usd)
+  SELECT $1::uuid, w.wallet_address, w.entry_count, w.unresolved_count, w.in_transit_usd
+    FROM jsonb_to_recordset($2::jsonb)
+      AS w(wallet_address text, entry_count int, unresolved_count int, in_transit_usd numeric)`;
 
 export async function publishSnapshotGroup(
   input: PublishSnapshotGroupInput,
@@ -175,13 +216,18 @@ export async function publishSnapshotGroup(
         });
       }
 
-      const ledger = summarizeLedger(rows, inFlight.entries, inFlight.truncated);
+      const ledger = summarizeLedger(rows, inFlight);
       await client.query(INSERT_GROUP_SQL, [
         input.snapshotGroupId,
         ledger.settledUsd,
         ledger.inTransitUsd,
         ledger.unresolvedCount,
         JSON.stringify(ledger.entries),
+        ledger.totalCount,
+      ]);
+      await client.query(INSERT_GROUP_WALLETS_SQL, [
+        input.snapshotGroupId,
+        toWalletRowsJson(ledger.perWallet),
       ]);
 
       return { published: true as const, rows, ledger };
@@ -192,32 +238,55 @@ export async function publishSnapshotGroup(
 }
 
 /**
+ * The per-wallet rows in the COLUMN vocabulary of migration 102.
+ * `jsonb_to_recordset` matches its record definition to the JSON keys by name,
+ * so the mapping is written here, once and explicitly, rather than by renaming
+ * the domain type to please a SQL function.
+ */
+function toWalletRowsJson(perWallet: readonly WalletInFlightTotals[]): string {
+  return JSON.stringify(
+    perWallet.map((wallet) => ({
+      wallet_address: wallet.walletAddress,
+      entry_count: wallet.entryCount,
+      unresolved_count: wallet.unresolvedCount,
+      in_transit_usd: wallet.inTransitUsd,
+    })),
+  );
+}
+
+/**
  * `settledUsd` is the sum of what was actually inserted, not of what was
  * offered, so the record can never claim a wallet the group does not contain.
  *
- * `inTransitUsd` sums ONLY `in_transit` entries with a known estimate. An
- * `unresolved` entry contributes nothing in either direction - it is money
- * nobody can currently account for, and a portfolio must not assert it is
- * there or that it is gone.
+ * The two in-flight figures are summed from the SERVER'S PER-WALLET
+ * AGGREGATES, never from `entries`. `entries` is a bounded display list, and
+ * deriving a total from it would silently drop every row past the bound out of
+ * the portfolio - the defect this shape exists to close. An `unresolved` row
+ * contributes to no total in either direction: it is money nobody can currently
+ * account for, and a portfolio must not assert it is there or that it is gone.
  */
 function summarizeLedger(
   rows: readonly PublishedSnapshot[],
-  entries: readonly InFlightEntry[],
-  truncated: boolean,
+  inFlight: InFlightLedger,
 ): SnapshotGroupLedger {
   let settledUsd = 0;
   for (const row of rows) settledUsd += row.totalUsd;
 
   let inTransitUsd = 0;
   let unresolvedCount = 0;
-  for (const entry of entries) {
-    if (entry.standing === "unresolved") {
-      unresolvedCount += 1;
-      continue;
-    }
-    if (entry.usdEstimate !== null) inTransitUsd += entry.usdEstimate;
+  for (const wallet of inFlight.perWallet) {
+    inTransitUsd += wallet.inTransitUsd;
+    unresolvedCount += wallet.unresolvedCount;
   }
-  return { settledUsd, inTransitUsd, unresolvedCount, entries, truncated };
+  return {
+    settledUsd,
+    inTransitUsd,
+    unresolvedCount,
+    perWallet: inFlight.perWallet,
+    entries: inFlight.entries,
+    totalCount: inFlight.totalCount,
+    truncated: inFlight.truncated,
+  };
 }
 
 /**
@@ -228,6 +297,10 @@ function summarizeLedger(
  * The warn line carries the kind, the ref and the age and deliberately NOT the
  * amount or the symbol: an operator needs to know which row to open, and a warn
  * log is not the place to restate what the user holds.
+ *
+ * `unresolvedCount` counts EVERY unresolved row; `unresolved` lists only those
+ * that fit the display bound. The two are logged side by side so a shorter list
+ * beside a larger count reads as "there are more", never as the whole set.
  */
 export function logPublicationOutcome(
   outcome: PublicationOutcome,
@@ -240,7 +313,9 @@ export function logPublicationOutcome(
       wallets: outcome.rows.length,
       settledUsd: ledger.settledUsd.toFixed(2),
       inTransitUsd: ledger.inTransitUsd.toFixed(2),
-      inFlightCount: ledger.entries.length,
+      inFlightCount: ledger.totalCount,
+      inFlightShown: ledger.entries.length,
+      walletsWithMoneyInFlight: ledger.perWallet.length,
       unresolvedCount: ledger.unresolvedCount,
       inFlightTruncated: ledger.truncated,
     });

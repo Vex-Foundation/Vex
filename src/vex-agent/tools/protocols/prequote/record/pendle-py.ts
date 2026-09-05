@@ -16,6 +16,7 @@ import { computePrequoteMatchHash } from "../identity/hash.js";
 import { buildPendleMintIdentity, buildPendleRedeemPyIdentity } from "../identity/pendle-py.js";
 import { extractPendlePyQuote } from "../safety/extract.js";
 import { writePrequoteRow } from "./row.js";
+import { PENDLE_PY_QUOTE_GATE_TARGETS } from "./gate-targets.js";
 
 /**
  * Record a Pendle PY prequote (P4). `pendle.py.quote` records EITHER a `mint`
@@ -52,7 +53,7 @@ export async function recordPendlePyPrequote(
       prequoteId: `prequote-${randomUUID()}`,
       sessionId,
       matchHash: computePrequoteMatchHash(identity),
-      kind: "mint",
+      kind: PENDLE_PY_QUOTE_GATE_TARGETS[extracted.direction].kind,
       family: registered.family,
       provider: registered.provider,
       chainId: identity.chainId,
@@ -87,7 +88,7 @@ export async function recordPendlePyPrequote(
     prequoteId: `prequote-${randomUUID()}`,
     sessionId,
     matchHash: computePrequoteMatchHash(identity),
-    kind: "redeem_py",
+    kind: PENDLE_PY_QUOTE_GATE_TARGETS[extracted.direction].kind,
     family: registered.family,
     provider: registered.provider,
     chainId: identity.chainId,

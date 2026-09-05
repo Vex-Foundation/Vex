@@ -20,6 +20,7 @@ import type { ToolResult } from "../../../../types.js";
 import { kyberFailureMessage } from "./error-output.js";
 import { PROTOCOL } from "./protocol-id.js";
 import { venueFallbackNoteOnFailure } from "./fallback-messaging.js";
+import { vexFeeRefusalData, vexFeeRefusalOf } from "@tools/vex-fee/fee-revalidation.js";
 
 /** A route/validation failure before anything could be signed - hashless `definitively_failed` row. */
 export async function failPreBroadcast(
@@ -56,10 +57,17 @@ export async function failPreBroadcast(
     },
   });
   const fallbackNote = venueFallbackNoteOnFailure(err, sessionId, tokenInputsValidated);
+  // The typed fee-statement reason, when the thrown value carried one. Merged
+  // under the same Vex-authored `_` prefix `_executionId` already uses, so the
+  // documented result shape is unchanged for every other failure.
+  const feeRefusal = vexFeeRefusalOf(err);
   return {
     success: false,
     output: `${toolId} failed: ${failureReason}.${fallbackNote}`,
-    data: { _executionId: executionId },
+    data: {
+      _executionId: executionId,
+      ...(feeRefusal ? vexFeeRefusalData(feeRefusal) : {}),
+    },
   };
 }
 

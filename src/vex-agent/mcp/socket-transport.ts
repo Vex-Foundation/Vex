@@ -62,7 +62,10 @@
  * a typed over-limit error and a closed connection.
  */
 
-import type { StudioDuplexTransport } from "./duplex-transport.js";
+import type {
+  StudioDuplexTransport,
+  StudioWriteOutcome,
+} from "./duplex-transport.js";
 
 import type { InvalidJsonReason } from "./wire-errors.js";
 
@@ -106,6 +109,152 @@ export type SocketTransportFailure =
   | { readonly kind: "queue_overflow"; readonly queued: number }
   | { readonly kind: "socket_error"; readonly message: string };
 
+/**
+ * What a connection's OWNER needs in its structural log, and nothing else.
+ *
+ * The transport is the only place that sees an inbound envelope reach the
+ * queue and an outbound line reach the wire, so it is the owner of those two
+ * transitions (rule 05). It does not log: this module is engine code with no
+ * logger, and the host owns the line vocabulary. Every string here is
+ * SANITISED peer content or `null` - see `safeWireTag`.
+ */
+export type SocketTransportLifecycleEvent =
+  /** The FIRST inbound envelope this transport queued. One per transport. */
+  | {
+      readonly kind: "first_request";
+      /** A member of `STUDIO_KNOWN_MCP_METHODS`, or `"other"`. NEVER the peer's. */
+      readonly method: StudioLoggableMethod;
+      /** `name/version` from `initialize`, else `null`. */
+      readonly client: string | null;
+      readonly protocolVersion: string | null;
+    }
+  /**
+   * The FIRST outbound line the WIRE ACCEPTED. One per transport.
+   *
+   * Reported from the write's completion, not from the hand-off: the question
+   * this milestone exists to answer is "did main's answer leave main", and a
+   * line published before the writer took it answers a different one. A write
+   * that fails or lands on a closed queue therefore reports nothing, which is
+   * the honest reading of that log's silence.
+   */
+  | {
+      readonly kind: "first_response";
+      readonly id: string | null;
+      readonly bytes: number;
+      /** What the frame actually was. A notification is not an answer. */
+      readonly outbound: OutboundFrameKind;
+    }
+  /** The peer half-closed. Latched, so it fires at most once. */
+  | { readonly kind: "peer_end" }
+  /** The `onclose` latch, with this connection's final counters. */
+  | {
+      readonly kind: "closed";
+      readonly requests: number;
+      /** Answers to inbound requests. The counter the incident needed. */
+      readonly responses: number;
+      /** Outbound frames that oblige nobody: progress, logging, cancelled. */
+      readonly notifications: number;
+      /** Frames this server sent that expect the PEER to answer. */
+      readonly serverRequests: number;
+      /** Outbound frames that are none of the three. Always zero in practice. */
+      readonly otherOutbound: number;
+    };
+
+/**
+ * WHAT AN OUTBOUND FRAME IS, in JSON-RPC's own terms.
+ *
+ * The counters and the first-outbound milestone used to call every line a
+ * "response", so a progress notification leaving first was logged as this
+ * connection's first answer and a `responses` total silently included frames
+ * nobody had asked for. The classification is structural and matches the one
+ * `jsonRpcResponseKey` already makes for the drain accounting:
+ *
+ *   `response`       no `method`, an `id`, and exactly one of `result`/`error`
+ *   `server_request` a `method` AND an `id`: this server asking the peer
+ *   `notification`   a `method` and no `id`
+ *   `other`          none of the above. Our own defect if it ever appears,
+ *                    which is why it is counted rather than folded away.
+ */
+export type OutboundFrameKind = "response" | "notification" | "server_request" | "other";
+
+/**
+ * The MCP methods this host will NAME in a log line, and nothing else.
+ *
+ * A method name arrives from the peer, and `mcp-wire-error-redaction.test.ts`
+ * holds the whole host to "no byte the peer chose reaches the log": a client
+ * is free to call `tools/<a secret it just leaked>` and the line that reported
+ * it would leak it too. A closed set authored HERE answers the only question
+ * the log actually needs - was this `initialize`, a call, a listing, or
+ * something else - out of this repository's own vocabulary.
+ *
+ * The members are the client-to-server requests and notifications of the MCP
+ * specification the pinned SDK serves. An addition is an intentional change to
+ * this vocabulary, which is why the set is spelled rather than derived.
+ */
+export const STUDIO_KNOWN_MCP_METHODS = [
+  "initialize",
+  "ping",
+  "completion/complete",
+  "logging/setLevel",
+  "prompts/list",
+  "prompts/get",
+  "resources/list",
+  "resources/templates/list",
+  "resources/read",
+  "resources/subscribe",
+  "resources/unsubscribe",
+  "tools/list",
+  "tools/call",
+  "notifications/initialized",
+  "notifications/cancelled",
+  "notifications/progress",
+  "notifications/roots/list_changed",
+] as const;
+
+/** A method the log may name, or the honest `other` for everything else. */
+export type StudioLoggableMethod = (typeof STUDIO_KNOWN_MCP_METHODS)[number] | "other";
+
+const KNOWN_MCP_METHODS: ReadonlySet<string> = new Set(STUDIO_KNOWN_MCP_METHODS);
+
+/**
+ * The loggable name of an inbound method.
+ *
+ * `other` is not a failure and not an error: an unknown method is answered in
+ * band by the SDK with a JSON-RPC error, and the log's job here is only to say
+ * that the frame arrived and was not one of the calls that matter.
+ */
+export function loggableMcpMethod(value: unknown): StudioLoggableMethod {
+  if (typeof value !== "string" || !KNOWN_MCP_METHODS.has(value)) return "other";
+  // The narrowing is the set membership above: every member of the set is a
+  // member of the union by construction.
+  return value as StudioLoggableMethod;
+}
+
+/**
+ * The bound on any peer-authored token that may reach a log line.
+ *
+ * A method name, a client name or a protocol version is the PEER'S string. A
+ * log line is a shape a human and a support transcript read, so a value that
+ * could carry a newline, a control character or a kilobyte of text is not
+ * carried at all: `safeWireTag` answers `null` and the owner logs the absence.
+ * Nothing is cut - an oversized or unusual value is REPLACED, never truncated.
+ */
+export const STUDIO_WIRE_TAG_MAX_CHARS = 64;
+
+/**
+ * One peer-authored token, or `null` when it may not reach a log.
+ *
+ * The accepted set is what MCP method names, client names and protocol
+ * versions are actually spelled with. Anything else - a space, a quote, a
+ * newline, a non-ASCII byte, a value past the bound - answers `null`.
+ */
+export function safeWireTag(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  if (value.length === 0 || value.length > STUDIO_WIRE_TAG_MAX_CHARS) return null;
+  if (!/^[A-Za-z0-9._:@/+-]+$/.test(value)) return null;
+  return value;
+}
+
 export interface SocketTransportOptions {
   /** Bytes already read past the handshake newline. Fed before any socket data. */
   readonly remainder?: Buffer;
@@ -126,8 +275,25 @@ export interface SocketTransportOptions {
    * queue, `send()` frames the message and hands the line to it rather than
    * writing. `progressKey` is non-null for a `notifications/progress` frame,
    * which is the only class the queue may coalesce.
+   *
+   * The writer ANSWERS WITH AN OUTCOME rather than a bare resolution, because
+   * its promise settles on five different edges and only one of them is the
+   * bytes leaving this process (`StudioWriteOutcome`). A milestone or a counter
+   * built on the resolution alone would claim an answer left main while it sat
+   * in a closed queue.
    */
-  readonly writeLine?: (line: string, progressKey: string | null) => Promise<void>;
+  readonly writeLine?: (
+    line: string,
+    progressKey: string | null,
+  ) => Promise<StudioWriteOutcome>;
+  /**
+   * The connection lifecycle transitions, for the OWNER'S structural log.
+   *
+   * Reporting only, exactly like `onFailure`: nothing here decides anything,
+   * and a callback that throws is swallowed rather than becoming a second
+   * failure path.
+   */
+  readonly onLifecycle?: (event: SocketTransportLifecycleEvent) => void;
 }
 
 /**
@@ -154,8 +320,26 @@ export class StudioSocketTransport implements JsonRpcWireTransport {
   private readonly shutdownDeadlineMs: number;
   private readonly onFailure: ((failure: SocketTransportFailure) => void) | undefined;
   private readonly writeLine:
-    | ((line: string, progressKey: string | null) => Promise<void>)
+    | ((line: string, progressKey: string | null) => Promise<StudioWriteOutcome>)
     | undefined;
+  private readonly onLifecycle:
+    | ((event: SocketTransportLifecycleEvent) => void)
+    | undefined;
+
+  /** Inbound envelopes this transport queued. Reported on close. */
+  private requestCount = 0;
+  /** Answers to inbound requests the wire ACCEPTED. Reported on close. */
+  private responseCount = 0;
+  /** Outbound notifications the wire accepted. Reported on close. */
+  private notificationCount = 0;
+  /** Server-initiated requests the wire accepted. Reported on close. */
+  private serverRequestCount = 0;
+  /** Outbound frames that were none of the three. Reported on close. */
+  private otherOutboundCount = 0;
+  /** The `first_request` one-shot latch. */
+  private firstRequestReported = false;
+  /** The `first_response` one-shot latch. */
+  private firstResponseReported = false;
 
   /** Bytes read but not yet terminated by a newline. Bounded by `maxLineBytes`. */
   private inbound: Buffer;
@@ -189,6 +373,7 @@ export class StudioSocketTransport implements JsonRpcWireTransport {
     this.shutdownDeadlineMs = options.shutdownDeadlineMs ?? STUDIO_SHUTDOWN_DEADLINE_MS;
     this.onFailure = options.onFailure;
     this.writeLine = options.writeLine;
+    this.onLifecycle = options.onLifecycle;
     this.inbound = options.remainder === undefined
       ? Buffer.alloc(0)
       : Buffer.from(options.remainder);
@@ -246,17 +431,99 @@ export class StudioSocketTransport implements JsonRpcWireTransport {
       return Promise.resolve();
     }
     const line = `${JSON.stringify(message)}\n`;
-    if (this.writeLine !== undefined) {
-      return this.writeLine(line, progressCoalesceKey(message)).finally(() => {
-        this.settleIfDrained();
+    // COUNTED AND REPORTED ON ACCEPTANCE, not here, and not on resolution.
+    //
+    // "Did main's answer leave main" is the exact question the log could not
+    // answer, and a milestone written at the hand-off answers a weaker one: a
+    // frame handed to an outbound queue that is already closed never reached
+    // the peer at all, and a `first response` line for it is a false witness
+    // in the one log an incident is read from. Nor is the writer's RESOLUTION
+    // the answer: the host's queue settles every frame it closed, coalesced or
+    // dropped at its bound, deliberately, so a disconnect is not an unhandled
+    // rejection. Only the `accepted` outcome means the bytes are somebody
+    // else's problem now.
+    const outbound = classifyOutboundFrame(message);
+    const accepted = (): void => {
+      this.countOutbound(outbound);
+      if (this.firstResponseReported) return;
+      this.firstResponseReported = true;
+      this.reportLifecycle({
+        kind: "first_response",
+        id: jsonRpcIdTag(readRecordField(message, "id")),
+        bytes: Buffer.byteLength(line, "utf8"),
+        outbound,
       });
+    };
+    const settle = (outcome: StudioWriteOutcome): void => {
+      // ONE OUTCOME OUT OF FOUR. The owner's queue resolves for a frame it
+      // coalesced, dropped at its bound, or swallowed on close, and it says
+      // which; a milestone written on any of those is a false witness in the
+      // log an incident is read from.
+      if (outcome === "accepted") accepted();
+    };
+    // The DRAIN accounting settles on EVERY edge, acceptance or not, and a
+    // writer that rejects discharges this frame's hold too: leaving it
+    // outstanding would hold a finished connection open to its deadline for a
+    // frame nobody is waiting for any more.
+    const settleDrain = (): void => {
+      this.settleIfDrained();
+    };
+    if (this.writeLine !== undefined) {
+      return this.writeLine(line, progressCoalesceKey(message))
+        .then(settle)
+        .finally(settleDrain);
     }
-    return new Promise<void>((resolve) => {
-      this.wire.write(line, () => {
-        this.settleIfDrained();
-        resolve();
+    return this.writeToWire(line).then(settle).finally(settleDrain);
+  }
+
+  /**
+   * Write one line straight to the wire, with the SAME outcome vocabulary the
+   * owner's queue answers in.
+   *
+   * The standalone path (no host queue) still has to distinguish the bytes
+   * leaving from the wire going away underneath them: `close` and `error`
+   * settle it so a teardown cannot strand `send`, and neither of them is
+   * acceptance. Ordering is the queue's, not this module's, so there is no
+   * `drain` parking here - a refused write's callback still runs when Node
+   * flushes it.
+   */
+  private writeToWire(line: string): Promise<StudioWriteOutcome> {
+    return new Promise<StudioWriteOutcome>((resolve) => {
+      let settled = false;
+      const done = (outcome: StudioWriteOutcome): void => {
+        if (settled) return;
+        settled = true;
+        this.wire.off("close", gone);
+        this.wire.off("error", gone);
+        resolve(outcome);
+      };
+      const gone = (): void => {
+        done("closed");
+      };
+      this.wire.once("close", gone);
+      this.wire.once("error", gone);
+      this.wire.write(line, (error) => {
+        done(error === undefined || error === null ? "accepted" : "closed");
       });
     });
+  }
+
+  /** One accepted outbound frame, on its own counter. */
+  private countOutbound(outbound: OutboundFrameKind): void {
+    switch (outbound) {
+      case "response":
+        this.responseCount += 1;
+        return;
+      case "notification":
+        this.notificationCount += 1;
+        return;
+      case "server_request":
+        this.serverRequestCount += 1;
+        return;
+      case "other":
+        this.otherOutboundCount += 1;
+        return;
+    }
   }
 
   /**
@@ -346,6 +613,7 @@ export class StudioSocketTransport implements JsonRpcWireTransport {
   readonly notifyPeerEnd = (): void => {
     if (this.peerEnded) return;
     this.peerEnded = true;
+    this.reportLifecycle({ kind: "peer_end" });
     // A socket whose writable side is already finished cannot carry an answer,
     // so there is nothing to drain FOR. Happens when the listener was built
     // without `allowHalfOpen`, where Node ends the writable side on FIN.
@@ -434,6 +702,14 @@ export class StudioSocketTransport implements JsonRpcWireTransport {
         return;
       }
       this.queue.push(decoded);
+      // QUEUED, not delivered: the question the incident could not answer is
+      // whether the frame reached this transport at all, and it did so here,
+      // before the consumer had any say in it.
+      this.requestCount += 1;
+      if (!this.firstRequestReported) {
+        this.firstRequestReported = true;
+        this.reportLifecycle(describeFirstRequest(decoded));
+      }
       if (this.queue.length >= this.maxQueuedMessages) this.pauseReading();
       this.scheduleDrain();
     }
@@ -538,13 +814,9 @@ export class StudioSocketTransport implements JsonRpcWireTransport {
   }
 
   /** The framing error line, through the owner's serialized writer when set. */
-  private writeFramingLine(line: string): Promise<void> {
+  private writeFramingLine(line: string): Promise<StudioWriteOutcome> {
     if (this.writeLine !== undefined) return this.writeLine(line, null);
-    return new Promise<void>((resolve) => {
-      this.wire.write(line, () => {
-        resolve();
-      });
-    });
+    return this.writeToWire(line);
   }
 
   /** The contract's shutdown deadline, as a promise that cleans up its timer. */
@@ -553,6 +825,14 @@ export class StudioSocketTransport implements JsonRpcWireTransport {
       const timer = setTimeout(resolve, this.shutdownDeadlineMs);
       timer.unref?.();
     });
+  }
+
+  private reportLifecycle(event: SocketTransportLifecycleEvent): void {
+    try {
+      this.onLifecycle?.(event);
+    } catch {
+      // Reporting must never become a second failure path.
+    }
   }
 
   private reportFailure(failure: SocketTransportFailure): void {
@@ -576,6 +856,16 @@ export class StudioSocketTransport implements JsonRpcWireTransport {
     if (this.closeAnnounced) return;
     this.closeAnnounced = true;
     this.queue.length = 0;
+    // BEFORE `onclose`, so the owner's `closed` line carries settled counters
+    // whichever of the six teardown causes ran.
+    this.reportLifecycle({
+      kind: "closed",
+      requests: this.requestCount,
+      responses: this.responseCount,
+      notifications: this.notificationCount,
+      serverRequests: this.serverRequestCount,
+      otherOutbound: this.otherOutboundCount,
+    });
     try {
       this.onclose?.();
     } catch {
@@ -622,6 +912,82 @@ function jsonRpcResponseKey(message: unknown): string | null {
   const record = message as Record<string, unknown>;
   if (typeof record["method"] === "string") return null;
   return requestIdKey(record["id"]);
+}
+
+/**
+ * What an outbound frame IS, structurally. See `OutboundFrameKind`.
+ *
+ * `result` and `error` are read as PRESENCE, not as content: a response whose
+ * `result` is `null` is still a response, and a frame carrying both is
+ * malformed rather than an answer.
+ */
+function classifyOutboundFrame(message: unknown): OutboundFrameKind {
+  if (typeof message !== "object" || message === null) return "other";
+  const record = message as Record<string, unknown>;
+  const hasId = "id" in record && record["id"] !== undefined;
+  if (typeof record["method"] === "string") return hasId ? "server_request" : "notification";
+  if (!hasId) return "other";
+  const hasResult = "result" in record && record["result"] !== undefined;
+  const hasError = "error" in record && record["error"] !== undefined;
+  return hasResult !== hasError ? "response" : "other";
+}
+
+/**
+ * A JSON-RPC id as a log tag, or `null`.
+ *
+ * A numeric id is its own decimal; a STRING id is peer content and passes
+ * `safeWireTag` like every other peer-authored token.
+ */
+function jsonRpcIdTag(id: unknown): string | null {
+  if (typeof id === "number" && Number.isFinite(id)) return String(id);
+  return safeWireTag(id);
+}
+
+/** One field of a decoded envelope, or `undefined`. Never throws on a non-object. */
+function readRecordField(value: unknown, field: string): unknown {
+  if (typeof value !== "object" || value === null) return undefined;
+  return (value as Record<string, unknown>)[field];
+}
+
+/**
+ * The `first_request` event for one decoded envelope.
+ *
+ * The method is a member of this repository's own closed set or `other`; the
+ * peer's spelling never survives. `initialize` is the only method whose params
+ * are read, and only for the two fields the 2026-07-28 era carries in either
+ * place: `clientInfo` and `protocolVersion`. NOTHING else from params is looked
+ * at, and both survivors pass `safeWireTag`, so neither can author a log line.
+ *
+ * WHY THESE TWO ARE CARRIED AT ALL, when a method name is not. A client's
+ * `clientInfo.name` is not payload the user typed: it is the identifier the
+ * client process declares for itself, and this repository already puts it in
+ * front of a human on a durable surface - the approval card's
+ * `requestedByClient` (`approval-service.ts`) - so treating it as unloggable
+ * here would be inconsistent with a decision already taken. `protocolVersion`
+ * is a dated string from a published specification. Both are still bounded and
+ * character-restricted, because "not payload" is not the same as "trusted".
+ */
+function describeFirstRequest(message: unknown): SocketTransportLifecycleEvent {
+  const method = loggableMcpMethod(readRecordField(message, "method"));
+  if (method !== "initialize") {
+    return { kind: "first_request", method, client: null, protocolVersion: null };
+  }
+  const params = readRecordField(message, "params");
+  const meta = readRecordField(params, "_meta");
+  const info = readRecordField(params, "clientInfo")
+    ?? readRecordField(meta, "io.modelcontextprotocol/clientInfo");
+  const name = safeWireTag(readRecordField(info, "name"));
+  const version = safeWireTag(readRecordField(info, "version"));
+  const protocolVersion = safeWireTag(
+    readRecordField(params, "protocolVersion")
+      ?? readRecordField(meta, "io.modelcontextprotocol/protocolVersion"),
+  );
+  return {
+    kind: "first_request",
+    method,
+    client: name === null ? null : `${name}/${version ?? "unknown"}`,
+    protocolVersion,
+  };
 }
 
 /** The typed encoding of a JSON-RPC id, or `null` when there is no usable id. */

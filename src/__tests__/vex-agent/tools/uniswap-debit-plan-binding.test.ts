@@ -55,7 +55,7 @@ const CHAIN_GAS_PRICE_WEI = 9_999n;
 
 const quoteBestRoute = vi.fn();
 const runStagedBroadcast = vi.fn();
-const claimUniswapExecutionSnapshot = vi.fn();
+const readUniswapExecutionSnapshot = vi.fn();
 const createAgentActivityIntent = vi.fn();
 const createAgentActivityPreBroadcastFailure = vi.fn();
 const readUniswapAllowance = vi.fn();
@@ -136,8 +136,9 @@ vi.mock("@vex-agent/tools/protocols/uniswap/handlers/swap/execute-broadcast.js",
   runStagedBroadcast: (...args: unknown[]) => runStagedBroadcast(...args),
 }));
 vi.mock("@vex-agent/tools/protocols/prequote/claim.js", () => ({
-  claimSwapExecutionSnapshot: vi.fn(),
-  claimUniswapExecutionSnapshot: (...args: unknown[]) => claimUniswapExecutionSnapshot(...args),
+  commitPrequoteClaim: vi.fn(async () => ({ ok: true })),
+  readSwapExecutionSnapshot: vi.fn(),
+  readUniswapExecutionSnapshot: (...args: unknown[]) => readUniswapExecutionSnapshot(...args),
 }));
 vi.mock("@utils/logger.js", () => {
   const stub = { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() };
@@ -229,7 +230,7 @@ beforeEach(async () => {
   runStagedBroadcast.mockResolvedValue({
     kind: "confirmed", txHash: "0xswap", receipt: { logs: [] }, settledAtBlock: 1n,
   });
-  claimUniswapExecutionSnapshot.mockResolvedValue({
+  readUniswapExecutionSnapshot.mockResolvedValue({
     ok: true, prequoteId: "prequote-plan", snapshot: await snapshotBoundTo(["swap", "swap_fee"]),
     vexFee: await approvedVexFee(),
   });
@@ -260,7 +261,7 @@ describe("the transaction set is bound quote-to-execute", () => {
     // The mirror case: the quote was answered when an approve was needed, and
     // by execute time the allowance is in place. Fewer transactions is still a
     // different plan, and the card's disclosed debit no longer describes it.
-    claimUniswapExecutionSnapshot.mockResolvedValue({
+    readUniswapExecutionSnapshot.mockResolvedValue({
       ok: true,
       prequoteId: "prequote-plan",
       snapshot: await snapshotBoundTo(["allowance", "swap", "swap_fee"]),

@@ -54,6 +54,7 @@
  */
 
 import { canonAddress, canonAmount } from "./canonicalize.js";
+import { MORPHO_MARKET_LANE } from "../lane.js";
 
 /**
  * Canonicalize a Morpho Blue market id (a bytes32 hex string) for the hash. Hex
@@ -156,12 +157,12 @@ export interface LendRepayMatchInput extends MorphoBorrowLegBase {
  */
 export interface LendMarketSupplyMatchInput extends MorphoBorrowLegBase {
   readonly kind: "lend_deposit";
-  readonly lane: "market";
+  readonly lane: typeof MORPHO_MARKET_LANE;
 }
 
 export interface LendMarketWithdrawMatchInput extends MorphoBorrowLegBase {
   readonly kind: "lend_withdraw";
-  readonly lane: "market";
+  readonly lane: typeof MORPHO_MARKET_LANE;
 }
 
 export type MorphoBorrowMatchInput =

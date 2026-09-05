@@ -71,6 +71,32 @@ export interface StudioDuplexTransportEvents {
 
 export type StudioDuplexTransportEvent = keyof StudioDuplexTransportEvents;
 
+/**
+ * WHAT HAPPENED TO ONE OUTBOUND LINE, as the writer knows it.
+ *
+ * A promise that merely RESOLVES says nothing: the Studio outbound queue
+ * settles every outstanding frame on close, on coalesce and at the pending
+ * bound, precisely so an ordinary disconnect does not surface as an unhandled
+ * rejection in the SDK's write path. VS Code's `NodeSocket.drain()`
+ * (`agents-colab/vscode/src/vs/base/parts/ipc/node/ipc.net.ts`) resolves the
+ * same way on `close`, `end`, `error`, `timeout` and `drain` alike - it is a
+ * QUIESCENCE signal, and VS Code can afford not to distinguish because nothing
+ * downstream claims the bytes left the process. Ours does: the `first_response`
+ * milestone and the outbound counters exist to answer "did main's answer leave
+ * main" in the one log an incident is read from, so the writer must say WHICH
+ * of the five settle edges it took.
+ *
+ *   `accepted`  the wire reported the peer-side write complete. The only
+ *               outcome that may publish a milestone or move a counter.
+ *   `coalesced` a newer progress frame replaced a queued one for the same
+ *               request. The content is delivered under the EARLIER frame's
+ *               obligation, so this caller's frame is not its own event.
+ *   `dropped`   refused at the pending bound and never queued.
+ *   `closed`    the queue was closed, or the wire went away, before the bytes
+ *               were the peer's problem.
+ */
+export type StudioWriteOutcome = "accepted" | "coalesced" | "dropped" | "closed";
+
 export interface StudioDuplexTransport {
   /** Attach a listener for every occurrence of `event`. */
   on<E extends StudioDuplexTransportEvent>(
@@ -98,13 +124,16 @@ export interface StudioDuplexTransport {
    * frame into a scheduled turn.
    *
    * `callback` means THE PEER-SIDE WRITE COMPLETED - the bytes left this
-   * process for the peer, as `net.Socket`'s own write callback means. It does
-   * NOT mean "queued internally". An implementation that relays through another
-   * process (the Windows pipe-front) may only run it once that process has
-   * reported the pipe write complete; running it on hand-off to the relay would
-   * make the outbound queue believe a frame is delivered while it sits in
-   * somebody else's buffer, and the queue's bound would stop bounding anything
-   * real.
+   * process for the peer, as `net.Socket`'s own write callback means - and its
+   * argument is `net.Socket`'s own: an `Error` (or any non-null value) means
+   * the write FAILED and the frame is not the peer's. A caller that reads the
+   * callback as unconditional acceptance would count a frame the socket threw
+   * away. It does NOT mean "queued internally". An implementation that relays
+   * through another process (the Windows pipe-front) may only run it once that
+   * process has reported the pipe write complete; running it on hand-off to
+   * the relay would make the outbound queue believe a frame is delivered while
+   * it sits in somebody else's buffer, and the queue's bound would stop
+   * bounding anything real.
    *
    * It may be invoked SYNCHRONOUSLY or on a later turn - both orders occur in
    * practice, and a caller that assumed one of them once stranded the outbound
@@ -115,7 +144,7 @@ export interface StudioDuplexTransport {
    * than none: it tells the one writer to send the next frame into a buffer
    * that is still full, which is how a bounded queue becomes an unbounded one.
    */
-  write(line: string, callback?: () => void): boolean;
+  write(line: string, callback?: (error?: Error | null) => void): boolean;
 
   /**
    * Half-close: the WRITABLE side is closed, the peer observes `end`, and the
