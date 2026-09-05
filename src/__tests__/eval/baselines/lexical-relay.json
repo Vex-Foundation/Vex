@@ -4,24 +4,24 @@
   "datasetId": "tool-discovery-relay",
   "datasetVersion": "relay-v1",
   "status": "captured",
-  "capturedAt": "2026-09-05T08:03:43.988Z",
+  "capturedAt": "2026-09-05T08:52:01.172Z",
   "metrics": {
     "overall": {
       "count": 11,
       "recall1": 0.273,
-      "recall5": 0.727,
-      "coverage5": 0.727,
-      "mrr5": 0.412,
-      "groupMrr5": 0.389
+      "recall5": 0.636,
+      "coverage5": 0.636,
+      "mrr5": 0.389,
+      "groupMrr5": 0.367
     },
     "awareness": {
       "blind": {
         "count": 6,
         "recall1": 0.167,
-        "recall5": 0.5,
-        "coverage5": 0.5,
-        "mrr5": 0.25,
-        "groupMrr5": 0.25
+        "recall5": 0.333,
+        "coverage5": 0.333,
+        "mrr5": 0.208,
+        "groupMrr5": 0.208
       },
       "protocolAware": {
         "count": 5,
@@ -36,10 +36,10 @@
       "single": {
         "count": 9,
         "recall1": 0.222,
-        "recall5": 0.778,
-        "coverage5": 0.778,
-        "mrr5": 0.393,
-        "groupMrr5": 0.393
+        "recall5": 0.667,
+        "coverage5": 0.667,
+        "mrr5": 0.365,
+        "groupMrr5": 0.365
       },
       "cross": {
         "count": 0,
@@ -78,10 +78,10 @@
       "bridge": {
         "count": 11,
         "recall1": 0.273,
-        "recall5": 0.727,
-        "coverage5": 0.727,
-        "mrr5": 0.412,
-        "groupMrr5": 0.389
+        "recall5": 0.636,
+        "coverage5": 0.636,
+        "mrr5": 0.389,
+        "groupMrr5": 0.367
       },
       "evm_lp": {
         "count": 0,
@@ -175,7 +175,7 @@
   },
   "notes": [
     "dataset tool-discovery-relay@relay-v1, mode lexical, 11 cases evaluated.",
-    "overall recall@1 0.273, recall@5 0.727, coverage@5 0.727, mrr@5 0.412, groupMrr@5 0.389.",
+    "overall recall@1 0.273, recall@5 0.636, coverage@5 0.636, mrr@5 0.389, groupMrr@5 0.367.",
     "Measured delta: none, metrics are identical to the previous baseline."
   ]
 }

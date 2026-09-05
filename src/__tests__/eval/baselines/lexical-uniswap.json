@@ -4,15 +4,15 @@
   "datasetId": "tool-discovery-uniswap",
   "datasetVersion": "uniswap-v1",
   "status": "captured",
-  "capturedAt": "2026-09-05T08:03:47.860Z",
+  "capturedAt": "2026-09-05T08:52:05.036Z",
   "metrics": {
     "overall": {
       "count": 12,
-      "recall1": 0.083,
+      "recall1": 0,
       "recall5": 0.333,
       "coverage5": 0.333,
-      "mrr5": 0.163,
-      "groupMrr5": 0.163
+      "mrr5": 0.107,
+      "groupMrr5": 0.107
     },
     "awareness": {
       "blind": {
@@ -25,21 +25,21 @@
       },
       "protocolAware": {
         "count": 5,
-        "recall1": 0.2,
+        "recall1": 0,
         "recall5": 0.8,
         "coverage5": 0.8,
-        "mrr5": 0.39,
-        "groupMrr5": 0.39
+        "mrr5": 0.257,
+        "groupMrr5": 0.257
       }
     },
     "intentShapes": {
       "single": {
         "count": 12,
-        "recall1": 0.083,
+        "recall1": 0,
         "recall5": 0.333,
         "coverage5": 0.333,
-        "mrr5": 0.163,
-        "groupMrr5": 0.163
+        "mrr5": 0.107,
+        "groupMrr5": 0.107
       },
       "cross": {
         "count": 0,
@@ -93,11 +93,11 @@
       },
       "evm_swap": {
         "count": 12,
-        "recall1": 0.083,
+        "recall1": 0,
         "recall5": 0.333,
         "coverage5": 0.333,
-        "mrr5": 0.163,
-        "groupMrr5": 0.163
+        "mrr5": 0.107,
+        "groupMrr5": 0.107
       },
       "limit_order": {
         "count": 0,
@@ -175,7 +175,7 @@
   },
   "notes": [
     "dataset tool-discovery-uniswap@uniswap-v1, mode lexical, 12 cases evaluated.",
-    "overall recall@1 0.083, recall@5 0.333, coverage@5 0.333, mrr@5 0.163, groupMrr@5 0.163.",
-    "Measured delta vs previous baseline (uniswap-v1, captured 2026-09-04T21:22:21.398Z): 16 metric values moved; overall recall@5 0.417 -> 0.333, overall mrr@5 0.179 -> 0.163, case count 12 -> 12."
+    "overall recall@1 0, recall@5 0.333, coverage@5 0.333, mrr@5 0.107, groupMrr@5 0.107.",
+    "Measured delta: none, metrics are identical to the previous baseline."
   ]
 }

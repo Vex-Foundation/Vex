@@ -4,7 +4,7 @@
   "datasetId": "tool-discovery-seed",
   "datasetVersion": "v3-agent-116",
   "status": "captured",
-  "capturedAt": "2026-09-05T08:03:32.155Z",
+  "capturedAt": "2026-09-05T08:51:50.512Z",
   "metrics": {
     "overall": {
       "count": 109,
@@ -20,8 +20,8 @@
         "recall1": 0.404,
         "recall5": 0.577,
         "coverage5": 0.5,
-        "mrr5": 0.467,
-        "groupMrr5": 0.422
+        "mrr5": 0.466,
+        "groupMrr5": 0.421
       },
       "protocolAware": {
         "count": 57,
@@ -62,8 +62,8 @@
         "recall1": 0.533,
         "recall5": 0.733,
         "coverage5": 0.333,
-        "mrr5": 0.617,
-        "groupMrr5": 0.362
+        "mrr5": 0.613,
+        "groupMrr5": 0.361
       }
     },
     "scenarios": {
@@ -168,8 +168,8 @@
         "recall1": 0.471,
         "recall5": 0.706,
         "coverage5": 0.294,
-        "mrr5": 0.559,
-        "groupMrr5": 0.327
+        "mrr5": 0.556,
+        "groupMrr5": 0.325
       }
     }
   },
