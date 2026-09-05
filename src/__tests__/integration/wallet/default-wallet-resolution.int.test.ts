@@ -12,11 +12,14 @@
  * the wallet - is kept honest HERE instead, over an inventory this file owns
  * end to end and creates itself.
  *
- * Representative surface: `trench.tokens`, the read-only discovery surface whose
+ * Representative surface: `pools.tokens`, the read-only discovery surface whose
  * own-launch flag is the reason default-source resolution reaches a browsing
- * handler at all. The trench PROVIDER is stubbed (it is an external HTTP
- * dependency and not the subject); everything between the context and the
- * wallet address is real.
+ * handler at all. It replaced `trench.tokens` here when migration 108 retired
+ * that launchpad; the property under test is the same tri-state
+ * (`resolveOwnDeployer` -> `applyOwnLaunchFlag`), on the venue that still
+ * exists. The pools.fun PROVIDER is stubbed (it is an external HTTP dependency
+ * and not the subject); everything between the context and the wallet address
+ * is real.
  *
  * The two cases are ordered on purpose and share one config dir: the empty
  * inventory is the state a fresh dir starts in, and the wallet is created
@@ -62,12 +65,12 @@ vi.mock("@utils/env.js", () => ({
   getKeystorePassword: vi.fn(() => TEST_PASSWORD),
 }));
 
-const { TRENCH_HANDLERS } = await import("@vex-agent/tools/protocols/trench/handlers.js");
-const { getTrenchExpressClient } = await import("@tools/trench-express/client.js");
+const { POOLS_HANDLERS } = await import("@vex-agent/tools/protocols/pools/handlers.js");
+const { getPoolsFunClient } = await import("@tools/pools-fun/client.js");
 const { createEvmWalletEntry } = await import("@tools/wallet/inventory-create.js");
 const { getPrimaryEvmEntry } = await import("@tools/wallet/inventory.js");
 
-import type { TrenchToken } from "@tools/trench-express/types.js";
+import type { PoolsToken } from "@tools/pools-fun/types.js";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 
 const OTHER_CREATOR = "0x9999000000000000000000000000000000009999";
@@ -80,24 +83,53 @@ const DEFAULT_CTX: ProtocolExecutionContext = {
   walletPolicy: { kind: "none" },
 };
 
-function token(over: { token: string; creator: string | null }): TrenchToken {
+/**
+ * One discover row. Only `tokenAddress` and `deployerAddress` matter to this
+ * file - the flag is computed from the deployer alone - so everything else is
+ * the row's honest "the launchpad said nothing" value rather than invented
+ * market data.
+ */
+function token(over: { token: string; creator: string | null }): PoolsToken {
   return {
-    token: over.token,
-    price: 1,
-    supply: 1000,
-    time: 1_700_000_000_000,
-    creator: over.creator,
+    tokenAddress: over.token,
+    poolId: "0x0000000000000000000000000000000000000001",
+    chain: "robinhood",
+    platform: "poolsfun",
+    pairedAsset: "weth",
+    pairedStock: null,
     name: "Name",
     symbol: "SYM",
-    description: null,
-    imageCid: null,
-    links: [],
-    holders: 0,
-    stats24h: null,
-    ruggedFlagged: null,
-    _id: null,
-    graduated: false,
-  } as TrenchToken;
+    decimals: null,
+    totalSupply: null,
+    imageUri: null,
+    deployerAddress: over.creator,
+    deployerXUsername: null,
+    feeRecipientAddress: null,
+    feeRecipientXUsername: null,
+    tweetUrl: null,
+    websiteUrl: null,
+    deployedAt: new Date(1_700_000_000_000).toISOString(),
+    lastTradeAt: null,
+    lastPriceEth: null,
+    lastPriceUsd: null,
+    marketCapUsd: null,
+    vol1m: null,
+    vol5m: null,
+    vol1h: null,
+    vol6h: null,
+    vol24h: null,
+    txCount24h: null,
+    priceChange1m: null,
+    priceChange5m: null,
+    priceChange1h: null,
+    priceChange6h: null,
+    priceChange24h: null,
+    vexAttested: null,
+    holderRewardsMode: null,
+    holderRewardsDistributor: null,
+    poolsFunBrand: null,
+    pairedStockIlliquid: null,
+  };
 }
 
 interface FlaggedRow {
@@ -105,12 +137,15 @@ interface FlaggedRow {
   isOwnLaunch?: boolean;
 }
 
-function stubProviderRows(rows: TrenchToken[]): void {
-  vi.spyOn(getTrenchExpressClient(), "walkTokens").mockResolvedValue(rows);
+function stubProviderRows(rows: PoolsToken[]): void {
+  vi.spyOn(getPoolsFunClient(), "discover").mockResolvedValue({
+    results: rows,
+    nextCursor: null,
+  });
 }
 
 async function listTokens(): Promise<FlaggedRow[]> {
-  const res = await TRENCH_HANDLERS["trench.tokens"]!({}, DEFAULT_CTX);
+  const res = await POOLS_HANDLERS["pools.tokens"]!({}, DEFAULT_CTX);
   expect(res.success).toBe(true);
   return (JSON.parse(res.output) as { tokens: FlaggedRow[] }).tokens;
 }
