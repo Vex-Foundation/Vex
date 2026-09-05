@@ -20,9 +20,11 @@
  * decision 3).
  */
 
-import { getAddress, parseUnits, type Address } from "viem";
+import { getAddress, isAddress, parseUnits, type Address } from "viem";
 
+import type { PoolsHolderRewardsPayoutValue } from "../manifests/launch-params.js";
 import type {
+  PoolsHolderRewardsMode,
   PoolsLaunchImage,
   PoolsLaunchInputs,
   PoolsLaunchRecipientChoice,
@@ -33,13 +35,16 @@ import type { PoolsLaunchImageSource } from "../handlers/launch/execute/prepare.
 const MAX_NAME_LENGTH = 64;
 const MAX_SYMBOL_LENGTH = 16;
 const NATIVE_DECIMALS = 18;
-const LAUNCHABLE_PAIRS: readonly PoolsPairedAsset[] = ["weth", "usdg"];
+const LAUNCHABLE_PAIRS: readonly PoolsPairedAsset[] = ["weth", "usdg", "stock"];
+const HOLDER_REWARDS_MODES: readonly PoolsHolderRewardsMode[] = ["token", "paired", "both"];
 
 /** The validated launch, in the units the runtime lane speaks. */
 export interface ReadDesktopLaunch {
   readonly name: string;
   readonly symbol: string;
   readonly pairedAsset: PoolsPairedAsset;
+  /** Non-null EXACTLY when `pairedAsset` is `stock`. */
+  readonly pairedStockAddress: Address | null;
   readonly image: PoolsLaunchImageSource;
   readonly prebuyWei: bigint | null;
   readonly prebuyHuman: string | null;
@@ -65,12 +70,17 @@ export function readDesktopLaunchInputs(
   if (!LAUNCHABLE_PAIRS.includes(pairedAsset as PoolsPairedAsset)) {
     return {
       ok: false,
-      reason:
-        `The paired asset must be one of ${LAUNCHABLE_PAIRS.join(", ")}. Tokenised stocks exist in the `
-        + "launchpad's vocabulary but the factory's on-chain allowlist refuses them, so launching against one "
-        + "would deploy nothing.",
+      reason: `The paired asset must be one of ${LAUNCHABLE_PAIRS.join(", ")}.`,
     };
   }
+
+  // WHICH stock, and only on a stock pair. Both directions refuse rather than
+  // default: a stock pair with no address names no asset, and a stock address on
+  // a WETH pair is an input the user believes took effect. The address is proven
+  // launchable by the factory's own `allowedPairedAsset` at the anchored block,
+  // never against a list in this build.
+  const stock = readStockAddress(inputs.pairedStockAddress, pairedAsset as PoolsPairedAsset);
+  if (!stock.ok) return stock;
 
   const image = readImage(inputs.image);
   if (!image.ok) return image;
@@ -100,6 +110,7 @@ export function readDesktopLaunchInputs(
       name: name.value,
       symbol: symbol.value,
       pairedAsset: pairedAsset as PoolsPairedAsset,
+      pairedStockAddress: stock.value,
       image: image.value,
       prebuyWei: prebuy.wei,
       prebuyHuman: prebuy.human,
@@ -108,6 +119,30 @@ export function readDesktopLaunchInputs(
       ...(websiteUrl.value === null ? {} : { websiteUrl: websiteUrl.value }),
     },
   };
+}
+
+/** WHICH tokenised stock, on a stock pair - and nothing at all on any other. */
+function readStockAddress(
+  raw: unknown,
+  pairedAsset: PoolsPairedAsset,
+): { ok: true; value: Address | null } | { ok: false; reason: string } {
+  const supplied = raw !== undefined && raw !== null && !(typeof raw === "string" && raw.trim() === "");
+  if (pairedAsset !== "stock") {
+    if (!supplied) return { ok: true, value: null };
+    return {
+      ok: false,
+      reason:
+        "A stock address was given, but this launch is not paired against a stock. Choose the stock pair, or "
+        + "remove the address.",
+    };
+  }
+  if (!supplied) {
+    return { ok: false, reason: "A stock-paired launch must say which stock it trades against." };
+  }
+  if (typeof raw !== "string" || !isAddress(raw.trim())) {
+    return { ok: false, reason: "The tokenised stock's address is not a valid address." };
+  }
+  return { ok: true, value: getAddress(raw.trim()) };
 }
 
 function readText(
@@ -184,7 +219,18 @@ function readPrebuy(
  */
 export type PoolsFeeRecipientChoice =
   | { readonly kind: "address"; readonly address: Address }
-  | { readonly kind: "x_username"; readonly username: string };
+  | { readonly kind: "x_username"; readonly username: string }
+  /**
+   * THE FEE STREAM GOES TO THE TOKEN'S HOLDERS, and to no address at all.
+   *
+   * The third shape is not a third address: the launchpad substitutes the
+   * gateway's own `FEES_TO_HOLDERS*` sentinel for the chosen mode, and verifier
+   * point 15 reads that sentinel live from the gateway and refuses any other
+   * value. It is therefore the ONE recipient choice that cannot be pointed
+   * anywhere by anything a caller or a provider says - which is why it is safe
+   * on the agent path, where `address` and `x_username` are not.
+   */
+  | { readonly kind: "holders"; readonly mode: PoolsHolderRewardsPayoutValue };
 
 function readRecipient(
   choice: PoolsLaunchRecipientChoice,
@@ -201,6 +247,22 @@ function readRecipient(
     } catch {
       return { ok: false, reason: "The fee recipient address is not a valid address." };
     }
+  }
+  if (kind === "holders") {
+    // IRREVERSIBLE, so the mode is read strictly and never defaulted from a
+    // malformed value: a launch that opts into holder rewards in the wrong asset
+    // pays a different stream for the life of the token, and nothing can change
+    // it afterwards.
+    const mode = (choice as { mode?: unknown }).mode;
+    if (!HOLDER_REWARDS_MODES.includes(mode as PoolsHolderRewardsMode)) {
+      return {
+        ok: false,
+        reason:
+          `Holder rewards must say which asset the holders are paid in: one of `
+          + `${HOLDER_REWARDS_MODES.join(", ")}.`,
+      };
+    }
+    return { ok: true, value: { kind: "holders", mode: mode as PoolsHolderRewardsMode } };
   }
   if (kind === "x_username") {
     const username = (choice as { username?: unknown }).username;

@@ -84,6 +84,16 @@ const prepareResponseSchema: z.ZodType<PoolsPrepareResponse> = z.object({
 const launchConfigSchema: z.ZodType<PoolsLaunchConfig> = z.object({
   deploymentFeeWei: rawAmount,
   gatewayVersion: z.number().int().nonnegative(),
+  // TOLERANT, and deliberately so: this list is a DISPLAY-and-early-refusal
+  // fact, not the authority. The gateway's own sentinel decides whether a
+  // holders mode can be launched (verifier point 15), so an absent or oddly
+  // shaped list degrades the sentence a caller gets and can never let a launch
+  // through that the chain would refuse. Missing -> null, which means NOT
+  // STATED rather than "no modes".
+  holderRewardsPayoutModes: z
+    .array(z.string())
+    .nullish()
+    .transform((value) => value ?? null),
 });
 
 const imageUploadSchema: z.ZodType<PoolsImageUpload> = z.object({

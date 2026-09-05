@@ -197,7 +197,13 @@ export type TokenLaunchIntentProtocol = "trench" | "pools_fun";
  * afterwards.
  */
 export interface PoolsLaunchIntentFields {
-  readonly pairedAsset: "weth" | "usdg";
+  /**
+   * The SYMBOLIC pair. `stock` joined the two originals with migration 109, when
+   * the V3 factory was measured allowing all 194 listed tokenised stocks; WHICH
+   * stock a `stock` row names is `pairedAssetAddress`, which is why the two
+   * columns are not redundant and neither can be dropped.
+   */
+  readonly pairedAsset: "weth" | "usdg" | "stock";
   readonly pairedAssetAddress?: string | null | undefined;
   /** The RESOLVED recipient address, whatever choice produced it. */
   readonly feeRecipientAddress?: string | null | undefined;
@@ -206,6 +212,31 @@ export interface PoolsLaunchIntentFields {
   readonly predictedTokenAddress?: string | null | undefined;
   readonly gatewayAddress?: string | null | undefined;
   readonly deploymentFeeWei?: string | null | undefined;
+  /**
+   * The FEES-TO-HOLDERS binding (migration 109), or `null` on a launch whose fee
+   * stream goes to an address.
+   *
+   * THREE FIELDS, ORDERED IN TIME, because a holders launch has two different
+   * correct answers to "where do the fees go" and they are true at different
+   * moments. `mode` and `sentinel` are the INTENT: what the user agreed to, and
+   * the gateway constant that expresses it in the bytes that were signed. Both
+   * exist at authorization. `distributor` is the SETTLEMENT fact - the address
+   * the gateway resolved the sentinel to when it deployed the distributor inside
+   * the launch transaction - and is `null` until a receipt has proven it from
+   * that transaction's own `DistributorDeployed` event.
+   *
+   * Collapsing them would force a lie: recording only the sentinel leaves a
+   * reader decoding a constant to recover a product decision, and recording only
+   * the distributor asserts an address nobody signed.
+   */
+  readonly holderRewards?:
+    | {
+      readonly mode: "token" | "paired" | "both";
+      readonly sentinel: string;
+      readonly distributor?: string | null | undefined;
+    }
+    | null
+    | undefined;
 }
 
 export interface CreateTokenLaunchIntentInput {
@@ -310,7 +341,10 @@ export const SELECT_COLUMNS =
   // as a pools intent - a field that can be written but not read is half a
   // feature, and Agent Scan needs `protocol` to surface previews distinctly.
   "protocol, paired_asset, paired_asset_address, fee_recipient_address, " +
-  "metadata_uri, image_url, predicted_token_address, gateway_address, deployment_fee_wei";
+  "metadata_uri, image_url, predicted_token_address, gateway_address, deployment_fee_wei, " +
+  // Migration 109: the holders binding, read back so an audit can tell the
+  // sentinel that was signed from the distributor that was resolved.
+  "holder_rewards_mode, holder_rewards_sentinel, holder_rewards_distributor";
 
 export function mapRow(r: Record<string, unknown>): TokenLaunchIntent {
   return {
@@ -348,7 +382,7 @@ export function mapRow(r: Record<string, unknown>): TokenLaunchIntent {
     pools: r.paired_asset === null || r.paired_asset === undefined
       ? null
       : {
-        pairedAsset: r.paired_asset as "weth" | "usdg",
+        pairedAsset: r.paired_asset as "weth" | "usdg" | "stock",
         pairedAssetAddress: (r.paired_asset_address as string | null) ?? null,
         feeRecipientAddress: (r.fee_recipient_address as string | null) ?? null,
         metadataUri: (r.metadata_uri as string | null) ?? null,
@@ -356,6 +390,13 @@ export function mapRow(r: Record<string, unknown>): TokenLaunchIntent {
         predictedTokenAddress: (r.predicted_token_address as string | null) ?? null,
         gatewayAddress: (r.gateway_address as string | null) ?? null,
         deploymentFeeWei: (r.deployment_fee_wei as string | null) ?? null,
+        holderRewards: r.holder_rewards_mode == null
+          ? null
+          : {
+            mode: r.holder_rewards_mode as "token" | "paired" | "both",
+            sentinel: r.holder_rewards_sentinel as string,
+            distributor: (r.holder_rewards_distributor as string | null) ?? null,
+          },
       },
     consumedAt: toIsoOrNull(r.consumed_at as string | Date | null),
     cancelledAt: toIsoOrNull(r.cancelled_at as string | Date | null),

@@ -39,8 +39,35 @@ export const POOLS_FEE_BPS = 25;
  */
 export const POOLS_FEE_LEG_GAS_LIMIT = gasLimitWithHeadroom(21_000n);
 
-/** The `agent_activity.event_role` a pools.fun fee leg is recorded under (migration 082). */
-export const POOLS_FEE_ACTIVITY_EVENT_ROLE = "pools_fee" as const;
+/**
+ * The `agent_activity.event_role` a pools.fun fee leg is recorded under.
+ *
+ * `vex_fee` SINCE MIGRATION 107, and `pools_fee` before it. The role is named by
+ * WHO CHARGED IT rather than by where, because there is exactly one Vex fee and
+ * a second launchpad should not mint a second copy of its name (launchpads arc,
+ * plan rule 4). The AgentScan contract admits `vex_fee` on the launch arm, so
+ * this is also the first spelling under which a pools.fun fee can be REPORTED at
+ * all.
+ *
+ * `pools_fee` IS NOT RETIRED AND MUST NOT BE. Rows already carry it - including
+ * every launch made before this migration - and the CHECK constraint still
+ * admits it, so those rows stay readable, stay in the ledger, and stay eligible
+ * for AgentScan. They mean exactly what a `vex_fee` row on a launch means: the
+ * same 25 bps, on the same basis, to the same treasury, under the name the venue
+ * used before the vocabulary was unified. `db/repos/agentscan-reporting.ts`
+ * therefore admits both spellings on the launch arm rather than stranding the
+ * history, and this constant is the ONE place the spelling a NEW row is written
+ * under is decided.
+ */
+export const POOLS_FEE_ACTIVITY_EVENT_ROLE = "vex_fee" as const;
+
+/**
+ * The venue-named role pools.fun launches used before migration 107.
+ *
+ * Exported so the readers that must admit history name it rather than spelling a
+ * literal, and so deleting it would be a compile error in every one of them.
+ */
+export const POOLS_FEE_LEGACY_ACTIVITY_EVENT_ROLE = "pools_fee" as const;
 
 /** The only basis pools.fun charges on. */
 export type PoolsFeeBasis = "launch_msg_value";
@@ -61,8 +88,8 @@ const UNPROVEN_BASE_NOTE =
   + "established from the transaction, and Vex does not charge a percentage of an amount it cannot prove. "
   + "The launch itself is unaffected.";
 
-// `satisfies`, not an annotation: the runtime half needs the LITERAL
-// `"pools_fee"` to prove against the database's role vocabulary at compile time.
+// `satisfies`, not an annotation: the runtime half needs the LITERAL role to
+// prove against the database's role vocabulary at compile time.
 export const POOLS_FEE_VENUE = {
   bps: POOLS_FEE_BPS,
   receiver: VEX_TREASURY_EVM,

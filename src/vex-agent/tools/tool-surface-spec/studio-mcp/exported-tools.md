@@ -197,9 +197,9 @@ free. Both texts live on the tool
 | pools__holder_rewards_distribute | Distribute pools.fun holder rewards | protocol | no | yes | no | - | 3726 | - | - |
 | pools__holder_rewards_get | Read pools.fun holder rewards | protocol | yes | no | no | - | 2102 | - | none (read) |
 | pools__launch_assets_list | List pools.fun launchable stocks | protocol | yes | no | no | - | 1698 | - | none (read) |
-| pools__launch_execute | Launch a token on pools.fun | protocol | no | yes | no | - | 2805 | - | - |
-| pools__launch_preview | Price a pools.fun launch | protocol | no | no | no | - | 998 | - | - |
-| pools__launch_request_form | Ask the user to confirm a pools.fun launch | protocol | no | no | no | - | 902 | - | - |
+| pools__launch_execute | Launch a token on pools.fun | protocol | no | yes | no | - | 3774 | - | - |
+| pools__launch_preview | Price a pools.fun launch | protocol | no | no | no | - | 1257 | - | - |
+| pools__launch_request_form | Ask the user to confirm a pools.fun launch | protocol | no | no | no | - | 1253 | - | - |
 | pools__my_launches_list | List this wallet's pools.fun launches | protocol | yes | no | no | - | 1371 | - | none (read) |
 | pools__token_candles_list | Read pools.fun token candles | protocol | yes | no | no | - | 1006 | - | none (read) |
 | pools__token_get | Read one pools.fun token | protocol | yes | no | no | - | 1411 | - | none (read) |

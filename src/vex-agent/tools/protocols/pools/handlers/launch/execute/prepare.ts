@@ -45,16 +45,44 @@ const TOOL_ID = "pools.launch_execute";
  * sites, several of them in `vex-app/`, which this lane does not own.
  */
 
-/** Where the picture came from, already narrowed by the caller. */
+/**
+ * Where the picture came from, already narrowed by the caller.
+ *
+ * `bytes` is the VEX STUDIO arm: over MCP there is no image locker, so the
+ * caller names a file inside its own project and the SURFACE OWNER
+ * (`protocols/shared/launch-image-input.ts`) reads it through the no-follow
+ * reader before anything reaches here. The bytes arrive already contained -
+ * this module never resolves a model-supplied path, which is the whole point of
+ * doing it at the boundary that holds the project root.
+ *
+ * `label` travels with them so a refusal and an approval can name the picture
+ * the way the caller does (a project-relative path, never an absolute one).
+ */
 export type PoolsLaunchImageSource =
   | { readonly kind: "locker"; readonly imageId: string }
+  | { readonly kind: "bytes"; readonly bytes: Uint8Array; readonly label: string }
   | { readonly kind: "url"; readonly url: string }
   | { readonly kind: "none" };
 
 export interface PoolsPrepareInput {
   readonly name: string;
   readonly symbol: string;
-  readonly pairedAsset: "weth" | "usdg";
+  readonly pairedAsset: "weth" | "usdg" | "stock";
+  /**
+   * WHICH tokenised stock, on a `stock` pair. Required by the provider there and
+   * meaningless anywhere else, so it travels as an explicit optional rather than
+   * as an address that silently applies to a WETH launch.
+   */
+  readonly pairedStockAddress?: string | undefined;
+  /**
+   * OPT THE TOKEN'S FEE STREAM INTO HOLDER REWARDS, and in which asset.
+   *
+   * Sent to the provider as `feesToHolders` + `holderRewardsPayout`, its own
+   * spelling. When set, `feeRecipient` is deliberately NOT sent: the launchpad
+   * substitutes its gateway's `FEES_TO_HOLDERS*` sentinel, and sending both
+   * would ask the provider to resolve a contradiction on a money field.
+   */
+  readonly holderRewards?: { readonly payout: "token" | "paired" | "both" } | undefined;
   /**
    * Explicit, always. Never left to the provider's default (owner decision 3).
    *
@@ -64,8 +92,14 @@ export interface PoolsPrepareInput {
    * launchpad can resolve - the resolved address comes back on the response, is
    * sanity-checked, is bound into the tuple the user confirms, and is what the
    * fingerprint covers. See `resolveFeeRecipientExpectation` in the plan builder.
+   *
+   * ABSENT on a holder-rewards launch, and only there: that launch sends
+   * `holderRewards` instead, the launchpad substitutes its gateway's sentinel,
+   * and sending both would ask the provider to resolve a contradiction on the
+   * one field that decides who is paid. Optional rather than nullable so
+   * "omitted" cannot be spelled two ways.
    */
-  readonly feeRecipient: PoolsPrepareFeeRecipient;
+  readonly feeRecipient?: PoolsPrepareFeeRecipient | undefined;
   readonly launcher: Address;
   readonly image: PoolsLaunchImageSource;
   /** A NATIVE prebuy in HUMAN ETH, or `null`. USDG prebuys are manual-form only in P3. */
@@ -131,7 +165,18 @@ export async function preparePoolsLaunchCalldata(
         expectedDeploymentFeeWei: config.deploymentFeeWei,
         expectedGatewayVersion: config.gatewayVersion,
         creatorAddress: input.launcher,
-        feeRecipient: input.feeRecipient,
+        // EXACTLY ONE fee-stream statement reaches the provider. A holders
+        // launch sends `feesToHolders` and no `feeRecipient`; every other launch
+        // sends the recipient explicitly. Sending both would ask the launchpad
+        // to resolve a contradiction on the one field that decides who is paid,
+        // and whatever it chose, the verifier's point 15 would then be checking
+        // an intent nobody stated.
+        ...(input.holderRewards === undefined
+          ? { feeRecipient: input.feeRecipient }
+          : { feesToHolders: true as const, holderRewardsPayout: input.holderRewards.payout }),
+        ...(input.pairedStockAddress === undefined
+          ? {}
+          : { pairedStockAddress: input.pairedStockAddress }),
         ...(image.url === null ? {} : { imageUrl: image.url }),
         ...(input.tweetUrl === undefined ? {} : { tweetUrl: input.tweetUrl }),
         ...(input.websiteUrl === undefined ? {} : { websiteUrl: input.websiteUrl }),
@@ -161,23 +206,30 @@ async function resolveImageUrl(
   if (input.image.kind === "url") return { ok: true, url: input.image.url };
 
   let bytes: Uint8Array;
-  try {
-    const resolved = await resolveLaunchImageBytes(input.image.imageId);
-    if (resolved === null) {
-      return {
-        ok: false,
-        code: "image_not_found",
-        reason:
-          `Refusing to launch: no image with id "${input.image.imageId}" is in the image locker. Upload one `
-          + "on the right, or name an image that is already there. Nothing was signed.",
-      };
+  if (input.image.kind === "bytes") {
+    // Already read and contained by the surface owner. This module does not
+    // re-open the path, and could not: the containment boundary is the project
+    // root, which only the boundary that holds the project knows.
+    bytes = input.image.bytes;
+  } else {
+    try {
+      const resolved = await resolveLaunchImageBytes(input.image.imageId);
+      if (resolved === null) {
+        return {
+          ok: false,
+          code: "image_not_found",
+          reason:
+            `Refusing to launch: no image with id "${input.image.imageId}" is in the image locker. Upload one `
+            + "on the right, or name an image that is already there. Nothing was signed.",
+        };
+      }
+      bytes = resolved.bytes;
+    } catch (err) {
+      if (err instanceof LaunchImageResolverUnavailableError) {
+        return { ok: false, code: "image_store_unavailable", reason: err.message };
+      }
+      throw err;
     }
-    bytes = resolved.bytes;
-  } catch (err) {
-    if (err instanceof LaunchImageResolverUnavailableError) {
-      return { ok: false, code: "image_store_unavailable", reason: err.message };
-    }
-    throw err;
   }
 
   // The content type is SNIFFED from the bytes, not assumed. The locker stores

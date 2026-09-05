@@ -56,7 +56,7 @@ export interface PoolsLaunchAuthorizationBinding {
   // ── where ──
   readonly chainId: number;
   readonly gateway: Address;
-  readonly pairedAsset: "weth" | "usdg";
+  readonly pairedAsset: "weth" | "usdg" | "stock";
   readonly pairedAssetAddress: Address;
   /** The address these exact bytes produce, agreed by three independent derivations. */
   readonly predictedTokenAddress: Address;
@@ -76,7 +76,31 @@ export interface PoolsLaunchAuthorizationBinding {
   readonly anchorBlockNumber: string;
 
   // ── who gets paid, and who launched ──
+  /**
+   * The recipient EXACTLY as the signed tuple carries it.
+   *
+   * On a holders launch this is the gateway's `FEES_TO_HOLDERS*` SENTINEL, which
+   * is not an address anybody owns and is NOT what the receipt will name: the
+   * gateway resolves it to the distributor it deploys during the launch, and
+   * emits that. So the sentinel is the SIGNED fact and {@link holderRewards}
+   * carries the intent it expressed; the resolved distributor is a SETTLEMENT
+   * fact and is recorded only once a receipt has proven it.
+   */
   readonly feeRecipient: Address;
+  /**
+   * The holder-rewards INTENT this launch was authorized under, or `null` for an
+   * ordinary launch whose fee stream goes to an address.
+   *
+   * Two fields rather than one, because they answer different questions and only
+   * one of them is on chain yet: `mode` is what the human agreed to ("holders,
+   * paid in the paired asset"), and `sentinel` is the constant that expresses it
+   * in the bytes that were signed. Recording only the mode would leave the audit
+   * unable to say which sentinel was signed; recording only the sentinel would
+   * leave a reader decoding a constant to recover a product decision.
+   */
+  readonly holderRewards:
+    | { readonly mode: "token" | "paired" | "both"; readonly sentinel: Address }
+    | null;
   readonly walletAddress: Address;
 
   // ── the exact transaction ──

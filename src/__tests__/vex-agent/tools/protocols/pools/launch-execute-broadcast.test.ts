@@ -142,6 +142,7 @@ function plan(): PoolsLaunchPlan {
       gasBoundWei: "5000000000000000",
       anchorBlockNumber: "39620464",
       feeRecipient: WALLET,
+      holderRewards: null,
       walletAddress: WALLET,
       calldata: CALLDATA,
       callFingerprint: FINGERPRINT,

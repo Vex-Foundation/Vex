@@ -4,15 +4,15 @@
   "datasetId": "tool-discovery-kyberswap",
   "datasetVersion": "kyberswap-v1",
   "status": "captured",
-  "capturedAt": "2026-09-05T10:19:21.095Z",
+  "capturedAt": "2026-09-05T11:43:01.977Z",
   "metrics": {
     "overall": {
       "count": 20,
       "recall1": 0.2,
       "recall5": 0.35,
       "coverage5": 0.35,
-      "mrr5": 0.267,
-      "groupMrr5": 0.267
+      "mrr5": 0.263,
+      "groupMrr5": 0.263
     },
     "awareness": {
       "blind": {
@@ -28,8 +28,8 @@
         "recall1": 0.25,
         "recall5": 0.625,
         "coverage5": 0.625,
-        "mrr5": 0.417,
-        "groupMrr5": 0.417
+        "mrr5": 0.406,
+        "groupMrr5": 0.406
       }
     },
     "intentShapes": {
@@ -38,8 +38,8 @@
         "recall1": 0.2,
         "recall5": 0.35,
         "coverage5": 0.35,
-        "mrr5": 0.267,
-        "groupMrr5": 0.267
+        "mrr5": 0.263,
+        "groupMrr5": 0.263
       },
       "cross": {
         "count": 0,
@@ -96,8 +96,8 @@
         "recall1": 0.2,
         "recall5": 0.333,
         "coverage5": 0.333,
-        "mrr5": 0.256,
-        "groupMrr5": 0.256
+        "mrr5": 0.25,
+        "groupMrr5": 0.25
       },
       "limit_order": {
         "count": 0,
@@ -175,7 +175,7 @@
   },
   "notes": [
     "dataset tool-discovery-kyberswap@kyberswap-v1, mode lexical, 20 cases evaluated.",
-    "overall recall@1 0.2, recall@5 0.35, coverage@5 0.35, mrr@5 0.267, groupMrr@5 0.267.",
-    "Measured delta: none, metrics are identical to the previous baseline."
+    "overall recall@1 0.2, recall@5 0.35, coverage@5 0.35, mrr@5 0.263, groupMrr@5 0.263.",
+    "Measured delta vs previous baseline (kyberswap-v1, captured 2026-09-05T10:19:21.095Z): 8 metric values moved; overall recall@5 0.35 -> 0.35, overall mrr@5 0.267 -> 0.263, case count 20 -> 20."
   ]
 }

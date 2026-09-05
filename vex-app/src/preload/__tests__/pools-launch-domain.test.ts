@@ -29,6 +29,10 @@ const FORM = {
   name: "Flamingo",
   symbol: "FLAM",
   pairedAsset: "weth" as const,
+  // `null` and not absent: a stock address belongs only on a stock pair, and one
+  // spelling of "there is no stock here" is what keeps the boundary's refusal
+  // unambiguous.
+  pairedStockAddress: null,
   image: { kind: "url" as const, url: "https://example.test/f.png" },
   tweetUrl: null,
   websiteUrl: null,

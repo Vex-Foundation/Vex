@@ -158,11 +158,16 @@ export type OutboxWriteOutcome =
  * proven against the running server before rows are sent, not inferred from the
  * enum it publishes.
  *
- * `pools_fee` is likewise still absent, and that is a NAMED GAP rather than a
- * decision: the server has admitted it on the `launch` arm since its own
- * migration 0015, and no pools.fun launch fee this install charges has ever been
- * reported. Closing it belongs with the lane that owns the pools launch writer,
- * because the same change has to decide what the historical rows mean.
+ * `pools_fee` WAS such a gap and is now closed, by the lane that owns the pools
+ * launch writer (PR5). WHAT THE HISTORICAL ROWS MEAN, decided there and recorded
+ * here because this predicate is what acts on it: a `pools_fee` row is THE SAME
+ * FEE a `vex_fee` row on a launch is - the same 25 bps, on the same
+ * `launch_msg_value` basis, to the same Vex treasury, charged by the same leg -
+ * written under the venue-named spelling the vocabulary used before migration
+ * 107 unified it. It is history, not a different charge, so it is admitted
+ * beside `vex_fee` on the launch arm rather than left unreportable. New rows are
+ * written as `vex_fee` (`@tools/pools-fun/fee/venue.ts`), so this arm stops
+ * gaining members the day migration 107 landed and covers a closed population.
  *
  * `wallet_transfer` and the `transaction` kind's five roles are absent for the
  * same reason as `wrap`: present in the server's vocabulary, never proven live.
@@ -197,7 +202,8 @@ const ELIGIBLE_VOCABULARY_V2_SQL = `(
       (a.kind = 'claim'
        AND a.event_role IN ('pools_claim','creator_fee_claim','holder_reward_claim','reward_distribution'))
    OR (a.kind = 'launch' AND a.event_role = 'launch_cancel')
-   OR (a.kind IN ('swap','bridge','launch') AND a.event_role = 'vex_fee'))`;
+   OR (a.kind IN ('swap','bridge','launch') AND a.event_role = 'vex_fee')
+   OR (a.kind = 'launch' AND a.event_role = 'pools_fee'))`;
 
 /**
  * The vocabulary version this build writes and reports. Migration 102 stamps the

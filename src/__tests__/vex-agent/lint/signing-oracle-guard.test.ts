@@ -74,6 +74,34 @@ const POOLS_ATTRIBUTION_SIGN_SITE = resolve(
 );
 const POOLS_ATTRIBUTION_MESSAGE_BUILDER = resolve(ROOT, "tools/pools-fun/attribution.ts");
 
+/**
+ * The AGENTSCAN REGISTRY message, admitted 2026-09-05 with the pools.fun V3
+ * launch lane.
+ *
+ * A FOURTH shape, and it has to be. The AgentScan attestation registry recovers
+ * over ONE canonical string, `VEX-attest:<chainId>:<token>` - the same bytes the
+ * trench badge happens to sign, because that badge predates the registry and the
+ * registry was built around it. The pools.fun badge is deliberately DIFFERENT
+ * (`VEX-attest:v1:pools.fun:...`, domain-bound so a signature for one venue
+ * cannot be replayed at the other), so a pools.fun launch that wants to appear
+ * in the registry has to sign the canonical string as well: one signature cannot
+ * serve both verifiers, and sending either to the other's is a definitive
+ * refusal.
+ *
+ * It is a BUILDER ONLY, and that is the containment. It formats a string and
+ * signs nothing; the single call site that signs it is the pools attribution
+ * module already named above, which is why no new entry appears in
+ * `ALLOWED_SIGNING_MODULES`. The two exclusivity checks below keep it that way:
+ * nothing else may import the builder, and the canonical literal may not be
+ * duplicated into a third module.
+ *
+ * WHY IT IS LAUNCHPAD-NEUTRAL rather than living under `tools/pools-fun/`: the
+ * registry covers several launchpads on several chains, and Virtuals will sign
+ * the same canonical string from its own lane. A copy per launchpad is exactly
+ * the duplicated signable payload this guard exists to prevent.
+ */
+const AGENTSCAN_ATTEST_MESSAGE_BUILDER = resolve(ROOT, "vex-agent/agentscan/attest-message.ts");
+
 const ALLOWED_SIGNING_MODULES = [
   HANDSHAKE_SIGNING_MODULE,
   TRENCH_ATTRIBUTION_SIGN_SITE,
@@ -310,6 +338,7 @@ describe("signing-oracle guard — only the named modules may produce VEX-attest
     const attestLiteralElsewhere = findRawStringViolations(files, "VEX-attest:", [
       TRENCH_ATTRIBUTION_MESSAGE_BUILDER,
       POOLS_ATTRIBUTION_MESSAGE_BUILDER,
+      AGENTSCAN_ATTEST_MESSAGE_BUILDER,
     ]);
     expect(attestLiteralElsewhere).toEqual([]);
 

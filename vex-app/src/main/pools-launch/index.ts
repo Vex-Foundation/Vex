@@ -145,6 +145,13 @@ function toLaunchInputs(form: PoolsLaunchFormInput): PoolsLaunchInputs {
     name: form.name,
     symbol: form.symbol,
     pairedAsset: form.pairedAsset,
+    // WHICH stock, and only on a stock pair. The schema's refinement already
+    // proved the pair and the address agree; this carries the answer inward,
+    // spelled `undefined` rather than `null` because the runtime contract has
+    // exactly one way to say "this launch has no stock".
+    ...(form.pairedStockAddress === null
+      ? {}
+      : { pairedStockAddress: form.pairedStockAddress as `0x${string}` }),
     image,
     tweetUrl: form.tweetUrl ?? undefined,
     websiteUrl: form.websiteUrl ?? undefined,
@@ -177,8 +184,17 @@ export async function preparePoolsLaunch(input: {
         predictedTokenAddress: prepared.predictedTokenAddress,
         predictedPoolAddress: prepared.predictedPoolAddress,
         resolvedFeeRecipient: prepared.resolvedFeeRecipient,
+        // THE HOLDERS FACT, carried outward because the confirmation screen
+        // cannot render a sentinel as a recipient address. Absent on an ordinary
+        // launch, where `resolvedFeeRecipient` above is the whole answer.
+        ...(prepared.holderRewards === undefined
+          ? {}
+          : { holderRewards: prepared.holderRewards }),
         pairedAsset: prepared.pairedAsset,
         pairedAssetAddress: prepared.pairedAssetAddress,
+        // The identity of the exact bytes a Deploy click will sign. Every other
+        // figure on the confirmation screen is a rendering of them.
+        callFingerprint: prepared.callFingerprint,
         costs: {
           deploymentFee: toAmount(prepared.costs.deploymentFee),
           prebuy:
@@ -190,6 +206,10 @@ export async function preparePoolsLaunch(input: {
         metadataUri: prepared.metadataUri,
         imageLanded: prepared.imageLanded,
         expiresAt: prepared.expiresAt,
+        // WHICH clock ends this confirmation. Without it the screen counts down
+        // to a moment it cannot explain, and a signed stock quote's seconds look
+        // the same as Vex's own ten minutes.
+        expiryReason: prepared.expiryReason,
       },
     };
   });
