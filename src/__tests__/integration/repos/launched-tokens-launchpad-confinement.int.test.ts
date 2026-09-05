@@ -16,7 +16,9 @@
  * TWO OF THE THREE ORIGINAL LANES ARE GONE. `claimAttributionCandidates` and
  * `countUnsignedAttributionGap` served the trench.express badge sweep, which
  * migration 108 retired along with the protocol; the sweep and both repo
- * functions were deleted with it. `claimAgentscanAttestCandidates` SURVIVES and
+ * functions were deleted with it, and so was `stampAttestSignature`, whose only
+ * writer was the retired launch handler - the fixture below writes that
+ * historical column in SQL. `claimAgentscanAttestCandidates` SURVIVES and
  * is still confined to `trench_express`, because it reads HISTORICAL rows -
  * their creation proofs are still owed to the AgentScan registry whether or not
  * the launchpad still exists.
@@ -31,6 +33,30 @@ import * as repo from "@vex-agent/db/repos/launched-tokens.js";
 const CHAIN = 4663;
 const TRENCH_SIGNATURE = `0x${"ab".repeat(65)}`;
 const POOLS_SIGNATURE = `0x${"cd".repeat(65)}`;
+
+/**
+ * Stamp `attest_signature` the way HISTORY holds it, in SQL.
+ *
+ * There is no repo writer for this column any more: migration 108 retired
+ * trench.express, its launch handler was the only thing that ever produced the
+ * signature, and the write-dead `stampAttestSignature` went with it. The column
+ * itself stays - `claimAgentscanAttestCandidates` reads it on rows written
+ * before the retirement - so the fixture writes the historical value directly
+ * rather than through a production API that no longer exists.
+ */
+async function stampHistoricalTrenchSignature(
+  tokenAddress: string,
+  attestSignature: string,
+): Promise<void> {
+  const updated = await execute(
+    `UPDATE launched_tokens
+        SET attest_signature = $3
+      WHERE chain_id = $1 AND LOWER(token_address) = LOWER($2)
+        AND attest_signature IS NULL`,
+    [CHAIN, tokenAddress, attestSignature],
+  );
+  expect(updated).toBe(1);
+}
 
 function randomHex(byteLen: number): string {
   let out = "";
@@ -58,19 +84,16 @@ async function seed(launchpad: string, opts: { signed: boolean } = { signed: tru
     createTxHash: txHash,
   });
   if (opts.signed) {
-    const stamped =
-      launchpad === "pools_fun"
-        ? await repo.stampPoolsAttestSignature({
-            chainId: CHAIN,
-            tokenAddress,
-            attestSignature: POOLS_SIGNATURE,
-          })
-        : await repo.stampAttestSignature({
-            chainId: CHAIN,
-            tokenAddress,
-            attestSignature: TRENCH_SIGNATURE,
-          });
-    expect(stamped).toBe(true);
+    if (launchpad === "pools_fun") {
+      const stamped = await repo.stampPoolsAttestSignature({
+        chainId: CHAIN,
+        tokenAddress,
+        attestSignature: POOLS_SIGNATURE,
+      });
+      expect(stamped).toBe(true);
+    } else {
+      await stampHistoricalTrenchSignature(tokenAddress, TRENCH_SIGNATURE);
+    }
   }
   return { id: row.id, tokenAddress, txHash };
 }
@@ -184,7 +207,7 @@ describe("claim confinement - neither lane sees the other's rows", () => {
   /**
    * The population that actually falsifies the trench predicates.
    *
-   * `stampAttestSignature` (the 071 writer) carries NO launchpad predicate - it
+   * `attest_signature` (migration 071) carries NO launchpad predicate - it
    * predates the second venue - so a pools.fun row CAN hold a trench-formatted
    * signature. Seeding a pools row without one would make these two tests pass
    * on the strength of `attest_signature IS NOT NULL` alone, proving nothing
@@ -193,12 +216,7 @@ describe("claim confinement - neither lane sees the other's rows", () => {
    */
   async function seedPoolsRowCarryingTrenchSignature(): Promise<Seeded> {
     const seeded = await seed("pools_fun", { signed: false });
-    const stamped = await repo.stampAttestSignature({
-      chainId: CHAIN,
-      tokenAddress: seeded.tokenAddress,
-      attestSignature: TRENCH_SIGNATURE,
-    });
-    expect(stamped).toBe(true);
+    await stampHistoricalTrenchSignature(seeded.tokenAddress, TRENCH_SIGNATURE);
     return seeded;
   }
 
@@ -217,11 +235,7 @@ describe("claim confinement - neither lane sees the other's rows", () => {
     // The inverse mis-selection: same table, same chain, wrong proof. Only
     // `pools_attest_signature` admits a row to this lane.
     const { tokenAddress } = await seed("pools_fun", { signed: false });
-    await repo.stampAttestSignature({
-      chainId: CHAIN,
-      tokenAddress,
-      attestSignature: TRENCH_SIGNATURE,
-    });
+    await stampHistoricalTrenchSignature(tokenAddress, TRENCH_SIGNATURE);
     expect(
       await repo.claimPoolsAttributionCandidates({ limit: 25, retryWindowSeconds: 600 }),
     ).toEqual([]);

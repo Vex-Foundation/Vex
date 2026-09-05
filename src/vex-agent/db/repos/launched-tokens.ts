@@ -172,48 +172,24 @@ export async function record(
 }
 
 /**
- * Attach the creator's attest signature to an already-recorded token.
- *
- * A SEPARATE write from `record` on purpose: `record` is `DO NOTHING`, so a row
- * the identity-repair sweep inserted first would silently swallow the signature
- * the handler holds — and the handler is the ONLY thing that can ever produce
- * one (nothing after it holds a signer). `attest_signature IS NULL` in the
- * predicate keeps it write-once: a re-run never replaces a stored signature.
- *
- * Returns whether this call stored it.
- */
-export async function stampAttestSignature(input: {
-  chainId: number;
-  tokenAddress: string;
-  attestSignature: string;
-}): Promise<boolean> {
-  const row = await queryOne<Record<string, unknown>>(
-    `UPDATE launched_tokens
-        SET attest_signature = $3
-      WHERE chain_id = $1 AND LOWER(token_address) = LOWER($2)
-        AND attest_signature IS NULL
-      RETURNING id`,
-    [input.chainId, input.tokenAddress, input.attestSignature],
-  );
-  return row !== null;
-}
-
-/**
  * WHICH LAUNCHPADS CAN BE ATTESTED TO AGENTSCAN, AND WITH WHICH SIGNATURE.
  *
  * The AgentScan attestation registry verifies ONE canonical message, the one
- * `canonicalAttestMessage` builds (`packages/contract/src/attest.ts`). Two
- * modules here may produce it: `src/tools/trench-express/attribution.ts` for the
- * trench badge, which happens to sign the same bytes, and
- * `src/vex-agent/agentscan/attest-message.ts`, the launchpad-neutral builder the
- * pools.fun and Virtuals launch handlers call. A signature over any other
+ * `canonicalAttestMessage` builds (`packages/contract/src/attest.ts`). Exactly one
+ * module here may produce it: `src/vex-agent/agentscan/attest-message.ts`, the
+ * launchpad-neutral builder the pools.fun and Virtuals launch handlers call.
+ * The retired trench badge signed the same bytes, but migration 108 deleted its
+ * signer along with the venue, so its column is read-only history that this
+ * sweep still delivers. A signature over any other
  * message recovers to a different address and is refused, so a launchpad may
  * only appear here once a column holding an AGENTSCAN-FORMATTED signature exists
  * for it.
  *
  * Three do today. `attest_signature` (migration 071) is the trench.express
- * badge proof and happens to sign that same canonical message
- * (`src/tools/trench-express/attribution.ts:77`). `pools_attest_signature`
+ * badge proof and signs that same canonical message. It has NO writer any more
+ * - migration 108 retired the venue and its launch handler was the only thing
+ * that ever stamped it - so it is a read-only column over historical rows,
+ * which stay claimable and attestable exactly as before. `pools_attest_signature`
  * (migration 094) does NOT: pools.fun's own badge signs the venue-prefixed
  * message `src/tools/pools-fun/attribution.ts:142` builds, a deliberately
  * different one, so shipping it to AgentScan would send a proof over the wrong
@@ -509,7 +485,7 @@ export async function recordAgentscanVerifyStatus(input: {
 /**
  * Attach the creator's pools.fun attest signature to an already-recorded token.
  *
- * WRITE-ONCE, exactly like `stampAttestSignature`: `pools_attest_signature IS
+ * WRITE-ONCE: `pools_attest_signature IS
  * NULL` in the predicate means a re-run never replaces a stored signature, so
  * the launch handler's own write and any later re-entry converge. The
  * `launchpad = 'pools_fun'` predicate makes the venue a precondition rather
@@ -548,8 +524,8 @@ export async function stampPoolsAttestSignature(input: {
  * column would send one of the two proofs to the wrong verifier and burn the row
  * on a definitive refusal.
  *
- * WRITE-ONCE, exactly like `stampAttestSignature` and
- * `stampPoolsAttestSignature`: `IS NULL` in the predicate, so a re-run
+ * WRITE-ONCE, exactly like `stampPoolsAttestSignature`: `IS NULL` in the
+ * predicate, so a re-run
  * converges. A later write could only be a different signature for the same
  * token - either a defect or a second launch, and neither should silently
  * replace the proof already stored.

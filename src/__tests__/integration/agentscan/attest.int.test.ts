@@ -24,7 +24,7 @@ vi.mock("../../../config/store.js", () => ({
 }));
 
 import { execute, queryOne } from "@vex-agent/db/client.js";
-import { record, stampAttestSignature } from "@vex-agent/db/repos/launched-tokens.js";
+import { record } from "@vex-agent/db/repos/launched-tokens.js";
 // The retired launchpad's chain, from the kept legacy module: this lane
 // delivers the creation proofs stored for HISTORICAL trench.express launches,
 // so its fixtures are seeded on the chain those launches are actually on.
@@ -69,12 +69,20 @@ async function seedLaunchedToken(
   });
   seededIds.push(row.id);
   if (input.withSignature) {
-    const stamped = await stampAttestSignature({
-      chainId: TRENCH_CHAIN_ID,
-      tokenAddress,
-      attestSignature: SIGNATURE,
-    });
-    expect(stamped).toBe(true);
+    // Written in SQL, not through a repo writer: migration 108 retired
+    // trench.express and its launch handler was the only thing that ever
+    // stamped `attest_signature`, so the write-dead `stampAttestSignature` was
+    // deleted with it. The column is now read-only HISTORY, which is precisely
+    // the population this sweep serves, so the fixture must be able to create
+    // that history without a production writer existing.
+    const updated = await execute(
+      `UPDATE launched_tokens
+          SET attest_signature = $3
+        WHERE chain_id = $1 AND LOWER(token_address) = LOWER($2)
+          AND attest_signature IS NULL`,
+      [TRENCH_CHAIN_ID, tokenAddress, SIGNATURE],
+    );
+    expect(updated).toBe(1);
   }
   return { id: row.id, tokenAddress, txHash };
 }
