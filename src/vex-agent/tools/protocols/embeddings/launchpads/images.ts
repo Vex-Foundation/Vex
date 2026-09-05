@@ -20,7 +20,7 @@ import { LAUNCHPADS_CHAINS } from "../../launchpads/discovery-text.js";
 export const LAUNCHPADS_IMAGES_DISCOVERY = {
   "launchpads.images": {
     embeddingText: embeddingText(
-      `List the pictures the user has staged in the app's image locker, so a token launch can pick one. The locker is shared by every launchpad Vex supports, so the same picture serves a pools.fun launch and a Virtuals launch alike. A launch REQUIRES an image and you cannot create or upload one: only the user can, from the image card on the right of the app. Use this when PLANNING a launch, not at the moment of launching. If the locker is empty, stop and ask the user to add a picture first. Returns metadata only, never the picture itself. Example queries: what images can I use to launch a token, check the image locker, what pictures are staged, do I have a staged picture for the launch.`,
+      `List the pictures the user has staged in the app's image locker so a token launch can pick one. The locker is shared by every launchpad Vex supports: one picture serves a pools.fun launch and a Virtuals launch. A launch REQUIRES an image and you cannot create or upload one; only the user can, from the image card in the app. Use this when planning a launch; if the locker is empty, stop and ask the user to add a picture. Returns metadata only, never the picture itself. Example queries: what images can I use to launch a token, check the image locker, what pictures are staged.`,
     ),
     aliases: [
       "image locker",

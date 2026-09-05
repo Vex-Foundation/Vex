@@ -16,7 +16,7 @@ import { LAUNCHPADS_CHAINS } from "../../launchpads/discovery-text.js";
 export const LAUNCHPADS_IMAGE_PUBLISH_DISCOVERY = {
   "launchpads.image_publish": {
     embeddingText: embeddingText(
-      `Publish one staged picture from the user's image locker to Vex's public image host, a content-addressed host, so a token launch can put its address on chain. The bytes become PUBLIC: anyone holding the link can fetch them, and they stay hosted until the user withdraws them. The address is the sha256 hash of the exact bytes, so it can never point at a different picture later. Publishing the same picture twice returns the same address and uploads nothing. This does not launch anything and spends no gas. Example queries: publish my launch image, get a public link for the token picture, host the image for the launch.`,
+      `Submit one staged picture from the user's image locker to Vex's content-addressed public image host so a token launch can put its address on chain. Use this when a launch needs a public image link. The bytes become PUBLIC: anyone with the link can fetch them until the user withdraws them. The address is the sha256 hash of the exact bytes, so it can never point at a different picture later. Publishing the same picture twice returns the same address and uploads nothing. This launches nothing and spends no gas. Example queries: publish my launch image, get a public link for the token picture, host the image for the launch.`,
     ),
     aliases: [
       "publish launch image",

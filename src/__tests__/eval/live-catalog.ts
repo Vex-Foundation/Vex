@@ -17,48 +17,18 @@
 import { buildDiscoveryCandidates } from "./lexical-retrieval.js";
 import { liveProtocolManifests } from "./retrieval-eval-harness.js";
 
-/**
- * This closure's pinned inventory: 144 active advertised tools.
- *
- * S3.5 (2026-08-24): 145 to 136. The 12 public-API DexScreener tools were
- * retired whole and alias-free (owner decision D-DS2) and three tools landed
- * on identities that retirement freed, so the surface shrank by nine. Every
- * lexical baseline below was recaptured in the same change.
- *
- * 136 before stage S4, which added the four DexScreener deep-dive tools
- * (`pair.details`, `candles`, `trades`, `top.traders`). All four are new
- * identities, so this is a pure +4 and every affected baseline was recaptured
- * in the same change.
- *
- * 140 to 142 (2026-09-04): the pools.fun read-depth lane added
- * `pools.launch_assets` and `pools.holder_rewards`. Both are new identities on
- * a namespace that already existed, so this is a pure +2, and every affected
- * baseline was recaptured in the same change.
- * 140 before the Virtuals read-depth lane, which took it to 142.
- *
- * 142 to 144 with the launchpads namespace: `launchpads.images` and
- * `launchpads.image_publish`. Both are new identities in a new advertised
- * namespace, so this is a pure +2. `launchpads.images` carries the SAME
- * responsibility `trench.images` still carries in this tree, and that overlap
- * is deliberate and temporary: the Trench retirement lane deletes the Trench
- * tool, at which point the count drops by one again. Every affected baseline
- * was recaptured in this change.
- *
- * A deliberate ratchet, not a duplicate of the catalog. It fails when the tool
- * surface changes without anyone noticing, which is the event that invalidates
- * every stored baseline in `baselines/`.
- *
- * To update: change this number in the same change that adds or removes tools,
- * and recapture the affected baselines with the lane's `--update` command. Do
- * not silence the test by deriving the number from the catalog.
- */
-export const PINNED_LIVE_CATALOG_TOOL_COUNT = 147;
-export const PINNED_LIVE_CATALOG_TOOL_COUNT = 147;
-
 /** Active manifests in advertised namespaces. Independent of process env. */
 export function liveCatalogToolCount(): number {
   return liveProtocolManifests().length;
 }
+
+/**
+ * The number of active advertised protocol tools every stored baseline was
+ * captured against. 145 after the launchpads waves 1-2 integration (#161);
+ * 147 with the two in-app launchpads tools of this change
+ * (`launchpads.images`, `launchpads.image_publish`).
+ */
+export const PINNED_LIVE_CATALOG_TOOL_COUNT = 147;
 
 /**
  * The candidate count every dense and lexical measurement must have seen.

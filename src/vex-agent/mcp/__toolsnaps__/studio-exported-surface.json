@@ -8282,7 +8282,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 2801,
+      "descriptionBytes": 2805,
       "destructiveHint": true,
       "inputSchema": {
         "additionalProperties": false,
@@ -8292,7 +8292,7 @@
             "type": "boolean"
           },
           "imageId": {
-            "description": "REQUIRED on this tool: the identifier of a picture the user already staged in the app's image locker, listed by trench__images_list (the locker is shared by both launchpads). The agent can never create one, only name one the locker already holds; without it this tool refuses and nothing is launched. A token launched with no image renders blank on pools.fun forever and that cannot be undone.",
+            "description": "REQUIRED on this tool: the identifier of a picture the user already staged in the app's image locker, listed by launchpads__images_list (one locker, shared by every launchpad). The agent can never create one, only name one the locker already holds; without it this tool refuses and nothing is launched. A token launched with no image renders blank on pools.fun forever and that cannot be undone.",
             "minLength": 1,
             "type": "string"
           },
@@ -8346,7 +8346,7 @@
             "type": "boolean"
           },
           "imageId": {
-            "description": "Identifier of a picture the user already staged in the app's image locker, listed by trench__images_list (the locker is shared by both launchpads). The agent can never create one, only name one the locker already holds. Optional here; pools__launch_execute REQUIRES it.",
+            "description": "Identifier of a picture the user already staged in the app's image locker, listed by launchpads__images_list (one locker, shared by every launchpad). The agent can never create one, only name one the locker already holds. Optional here; pools__launch_execute REQUIRES it.",
             "type": "string"
           },
           "name": {
@@ -8398,7 +8398,7 @@
             "type": "boolean"
           },
           "imageId": {
-            "description": "Identifier of a picture the user already staged in the app's image locker, listed by trench__images_list (the locker is shared by both launchpads). The agent can never create one, only name one the locker already holds. Optional here; pools__launch_execute REQUIRES it.",
+            "description": "Identifier of a picture the user already staged in the app's image locker, listed by launchpads__images_list (one locker, shared by every launchpad). The agent can never create one, only name one the locker already holds. Optional here; pools__launch_execute REQUIRES it.",
             "type": "string"
           },
           "name": {
