@@ -461,18 +461,185 @@ this one, is the money authority.
 
 ## Contracts (for the lanes that trade and launch)
 
+Every address below was MEASURED on 2026-09-04, not transcribed: the closed loop
+that proves the table is `FRouterV3.factory() === BondingV5.factory()`,
+`FRouterV3.assetToken() === VIRTUAL`, `BondingV5.router() === FRouterV3`, and the
+EIP-1967 implementation slot of each proxy. The table lives in
+`src/tools/virtuals/curve/deployments.ts`.
+
 | what | Base 8453 | Robinhood 4663 |
 |---|---|---|
-| BondingV5 | `0x1a540088...` | `0xd4cCBFA37e2f35611b3042e4096Ad7a3459Bd007` |
-| FRouterV3 | `0x02fe8ec3...` | `0xCa6395246B4382Ba70F886526dD9a9De984F6081` |
-| FFactoryV2 | `0x488Db0978b34C6Fd901760b9024B565C1117c7c8` (buyTax 1, sellTax 1) | `0xFC2E4Da3EdB2E18100473339c763705d263D20A9` |
-| VIRTUAL | `0x0b3e3284...` | `0xc6911796...D9c31` |
+| BondingV5 (proxy) | `0x1A540088125d00dD3990f9dA45CA0859af4d3B01` | `0xd4cCBFA37e2f35611b3042e4096Ad7a3459Bd007` |
+| BondingV5 implementation | `0x20C124e13069889633FC4212e0797c95cb30Db40` | `0x66Fc520c7F316B8623eee2A5dA821c3b34D0539D` |
+| FRouterV3 (proxy) | `0x02FE8eC3d9BBf7318eb54590bcC39198a8b47deD` | `0xCa6395246B4382Ba70F886526dD9a9De984F6081` |
+| FRouterV3 implementation | `0x58377381523e86d66F9f29016371335dDcB89d32` | `0x09256b9D607c53fD946681F7C5a7a4381ba285A1` |
+| FFactoryV2 | `0x488Db0978b34C6Fd901760b9024B565C1117c7c8` | `0xFC2E4Da3EdB2E18100473339c763705d263D20A9` |
+| BondingConfig | `0x5C4A1A72c5a11909e318FCc08e52e49299ABEdaF` | `0x3e331Fdd9Fe54D5047b1B7339Fd5c91977D53e2F` |
 | AgentTaxV2 (`FFactoryV2.taxVault()`) | `0x617Fd668c5b0d1906C0B3E7E3E49d1409Df0a528` | `0x6D80B81d9Fc56A7A839b1Af9006Eb49151961ce7` |
 | AgentTaxV2 implementation | `0xF6dEd65faaB429b2d5E13552D618a2E231f3D129` | `0x4D4e8F06FE9a3dB2FA7AD4D17893128600Ec01bB` |
+| VIRTUAL | `0x0b3e328455c4059EEb9e3f84b5543F74E24e7E1b` | `0xc6911796042b15d7Fa4F6CDe69e245DdCd3d9c31` |
+| buyTax / sellTax | 1% / 1% | 1% / 1% |
+| antiSniperBuyTaxStartValue | 99% | 99% |
+
+The community-cited BondingV5 implementation `0x22aAAfa2...` is WRONG on Base and
+is recorded here so nobody re-adopts it; the slot answers `0x20C124e1...`.
 
 Curve params 8500 / 42000 VIRTUAL on both chains; launch fee 0, or 10 VIRTUAL
 with ACF. Full provenance in
-`agents-colab/agents_dm/launchpads-plan-2026-09-04.md` section 14.
+`agents-colab/agents_dm/launchpads-plan-2026-09-04.md` section 14 and
+`agents-colab/agents_dm/virtuals-trade-2026-09-04/pins.json`.
+
+## The curve TRADE tools (`virtuals__agent_trade_quote` / `_execute`)
+
+Two tools, both chains, both sides. The venue code is `src/tools/virtuals/curve/`
+(pure chain mechanics and arithmetic, no vex-agent dependency); the runtime is
+`src/vex-agent/tools/protocols/virtuals/handlers/trade-*.ts`.
+
+### The chain is the authority; the API row is discovery
+
+`virtuals__agent_get` says what the provider believes. BondingV5 says what will
+happen. Every figure a signature is held to is read on chain at ONE PINNED
+BLOCK - lifecycle from `tokenInfo`, taxes from `FFactoryV2`, the anti-sniper
+clock from the PAIR's `taxStartTime`/`startTime`, the price from
+`FRouterV3.getAmountsOut` - so the tax the user was shown belongs to the same
+block as the quote it was applied to.
+
+`tokenInfo` is the Solidity AUTO-GETTER over
+`mapping(address => BondingConfig.Token)`. Auto-getters OMIT array members, so
+`uint8[] cores` is absent and every member after it shifts by one. That shape was
+PROVEN by decoding a live response on both chains, not reasoned about; the raw
+bytes are a tracked fixture at
+`src/__tests__/virtuals/fixtures/bonding-v5-token-info.json`.
+
+### The arithmetic, transcribed from the contracts
+
+BUY (`FRouterV3.buy` :202-230, `BondingV5._buy` :728-730):
+
+```
+committed    = amountIn                       (what leaves the wallet)
+vexFee       = floor(committed * 25 / 10000)
+curveAmount  = committed - vexFee             (the amountIn_ argument)
+effectiveAnti= min(rawAntiBuy, 99 - buyTax)   (the router's own clamp)
+normalFee    = floor(curveAmount * buyTax / 100)
+antiFee      = floor(curveAmount * effectiveAnti / 100)
+taxedIn      = curveAmount - normalFee - antiFee
+quotedOut    = getAmountsOut(token, VIRTUAL, taxedIn)
+contractMinOut = floor(quotedOut * (10000 - slippageBps) / 10000)
+```
+
+The router pulls `taxedIn`, `normalFee` and `antiFee` from the wallet in three
+`transferFrom` calls that TOGETHER take exactly `curveAmount`, which is why the
+allowance and the balance guard are sized on `curveAmount` and never on
+`taxedIn`. The buy floor bounds DELIVERED tokens.
+
+SELL (`FRouterV3.sell` :155-186, `BondingV5.sell` :687-688):
+
+```
+quotedGross      = getAmountsOut(token, address(0), amountIn)
+contractGrossMin = floor(quotedGross * (10000 - slippageBps) / 10000)
+walletNetMin     = contractGrossMin - floor(sellTax*contractGrossMin/100)
+                                    - floor(antiSell*contractGrossMin/100)
+```
+
+**`contractGrossMin` is the ONLY floor the chain enforces**: `BondingV5.sell`
+compares the router's GROSS output, and the two taxes are removed afterwards
+inside FRouterV3. `walletNetMin` is an ESTIMATE and is labelled as one
+everywhere it is shown; a receipt below it is a settlement DISCREPANCY Vex
+reports as such, never a bound the contract prevented. The estimate errs on the
+safe side because the only tax that can move before inclusion is the anti-sniper
+one, which decays monotonically. v1 signs `BondingV5.sell` directly, with no
+balance-delta wrapper contract (owner decision, plan v3 section 10).
+
+### The anti-sniper window is consent to a BOUND
+
+`acceptAntiSniperTaxPct` (whole percent, 1-98) is the maximum the caller accepts
+on the side being traded. OMITTING IT REFUSES any active window, and that is the
+default: a window that reads 1 percent now read 99 percent a minute ago. The
+quote states the current percent and the seconds remaining; the execute refuses
+if the percent rose above the accepted bound - which can only happen if the
+window's clock moved, and is therefore a real and refusable event rather than
+drift.
+
+### What the execute revalidates immediately before signing
+
+| field | authority | refusal |
+|---|---|---|
+| BondingV5 / FRouterV3 implementation | EIP-1967 slot, re-read | `implementation_changed`, by name |
+| lifecycle (trading, graduated) | `BondingV5.tokenInfo` | hand-off naming the AMM tool and the pool |
+| buyTax / sellTax, anti-sniper type | `FFactoryV2`, `BondingConfig` | `tax_changed` |
+| anti-sniper percent on this side | `FRouterV3` maths over chain reads | bound-exceeded, with both numbers |
+| pair, side, amounts, fee | the sealed snapshot | `pair_changed` / `side_changed` / `amount_changed` / `fee_changed` |
+| the floor | the QUOTE's, written verbatim into the calldata | `floor unreachable`, never re-derived |
+| allowance | `allowance(wallet, FRouterV3)` | its own EXACT-amount approval leg |
+
+The floor is derived ONCE, at quote time, and the execute writes that number into
+the calldata. It never re-derives a floor from a fresher curve read: re-deriving
+is exactly how a sibling venue filled a 313,879.7 quote at 1,190.145 without
+reverting on 2026-08-27.
+
+### The Vex fee (owner F1/F2), and why the two sides differ
+
+25 bps, the same rate every Vex venue charges, always in VIRTUAL, always to the
+Vex treasury, and NEVER from a parameter - `fee`, `feeBps`, `feeReceiver`,
+`feeRecipient`, `feeAmount`, `vexFee`, `vexFeeBps` and `vexFeeReceiver` are
+rejected BY NAME rather than dropped, because a silent drop hides an attempted
+overcharge.
+
+- **BUY**: exact, deducted from the committed VIRTUAL before the curve, so
+  `committed = curveAmount + vexFee`.
+- **SELL**: 25 bps of the PROVEN executed VIRTUAL, decoded from the receipt's
+  ERC-20 `Transfer` logs. The quote states the rate and a labelled estimate,
+  because the exact number does not exist until the receipt does. **An
+  undecodable settlement means NO FEE AT ALL** - Vex does not charge a percentage
+  of a number nobody observed.
+
+The transfer is a SEPARATE leg that runs ONLY after the trade confirms, recorded
+as a `vex_fee` child row on the `swap` arm so the feed folds it under the trade.
+A reverted, refused or ambiguous trade is never charged; a failed fee never
+touches the confirmed trade; an ambiguous fee stays pending and is NEVER re-sent,
+because a blind retry could charge twice.
+
+### Rows a trade writes
+
+`allowance_reset` (only when a non-zero allowance is short), `allowance` (only
+when short, EXACT amount, spender FRouterV3), `swap` (venue `virtuals-curve`),
+then `vex_fee`. Every row exists before the first broadcast; the ones that never
+run are terminalized explicitly. The `swap` row's `routeProvenance` carries no
+`settlementDecode` hint, because no `virtuals_curve` decoder exists in the
+sync-side repair sweep yet - naming one the sweep cannot dispatch would be worse
+than an absent hint. Declared gap; the sweep-side decoder is its own change.
+
+### Hand-offs, not errors
+
+| chain / state | answer |
+|---|---|
+| graduated agent | the AMM tool for that chain (`kyberswap__*` on Base, `uniswap__*` on Robinhood) plus the pool address |
+| Solana | `solana__swap_*` - the Virtuals curve there is a Meteora DBC pool Jupiter routes, not BondingV5 |
+| Ethereum | no curve at all; agent tokens there are already-graduated ERC-20s |
+
+### `simulateOnly`
+
+`simulateOnly: true` proves the path to the edge of signing and no further: no
+signing key opened, no prequote CONSUMED, no row written, nothing broadcast. It
+re-reads the chain, re-prices, builds the exact transactions and `eth_call`s each
+from the session wallet address, returning them with `executed: false`. A leg
+that depends on an allowance the wallet does not hold yet reverts there by
+construction, and that is reported rather than hidden.
+
+IT IS STILL GATED, and that is a deliberate choice rather than an oversight.
+`virtuals.trade.execute` is a registered execute on the prequote gate, which runs
+in the runtime BEFORE the handler, so a simulation needs a fresh quote for the
+identical parameters exactly as a real execute does. The alternative - skipping
+the gate when a caller passes `simulateOnly` - would put a param-driven bypass on
+a trust boundary, and a later reordering of the handler's branches would then
+admit an unquoted execute. Selecting the prequote row is not claiming it, so the
+quote survives the simulation and the real execute can still use it.
+
+Two consequences worth knowing before running the harness: `proposalId` is
+CONDITIONALLY required (a real execute needs it, a simulation must not have one),
+which the manifest's `required` flag cannot express - so it is declared optional
+and the HANDLER refuses a real execute without it, ahead of the claim, so a
+forgotten parameter costs no quote.
 
 ## Creator fees - AgentTaxV2, and why the claim is `unsupported`
 

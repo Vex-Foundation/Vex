@@ -106,9 +106,14 @@ describe("the exported inventory covers exactly the export scope", () => {
     // `pools__holder_rewards_get`) and the two Virtuals market-history reads
     // (`virtuals__agent_trades_list`, `virtuals__agent_candles_list`). All four
     // are read-only and none signs.
-    expect(inventory).toHaveLength(172);
+    // 172 -> 174 on the PR-C2 merge: the Virtuals bonding-curve trade pair
+    // (`virtuals__agent_trade_quote`, `virtuals__agent_trade_execute`). The
+    // quote is read-only; the execute is the FIRST signing tool this namespace
+    // has ever exported, which is why the internal count is unmoved and the
+    // protocol count carries both.
+    expect(inventory).toHaveLength(174);
     expect(inventory.filter((t) => t.kind === "internal")).toHaveLength(27);
-    expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(145);
+    expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(147);
   });
 
   it("keeps WebResearch OUT of tools/list while the in-app registry keeps it", () => {

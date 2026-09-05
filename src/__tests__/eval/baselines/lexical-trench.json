@@ -4,24 +4,24 @@
   "datasetId": "tool-discovery-trench",
   "datasetVersion": "trench-v1",
   "status": "captured",
-  "capturedAt": "2026-09-05T08:29:10.838Z",
+  "capturedAt": "2026-09-05T09:06:00.117Z",
   "metrics": {
     "overall": {
       "count": 24,
-      "recall1": 0.375,
-      "recall5": 0.667,
-      "coverage5": 0.667,
-      "mrr5": 0.493,
-      "groupMrr5": 0.493
+      "recall1": 0.333,
+      "recall5": 0.625,
+      "coverage5": 0.625,
+      "mrr5": 0.462,
+      "groupMrr5": 0.462
     },
     "awareness": {
       "blind": {
         "count": 14,
-        "recall1": 0.214,
-        "recall5": 0.5,
-        "coverage5": 0.5,
-        "mrr5": 0.321,
-        "groupMrr5": 0.321
+        "recall1": 0.143,
+        "recall5": 0.429,
+        "coverage5": 0.429,
+        "mrr5": 0.268,
+        "groupMrr5": 0.268
       },
       "protocolAware": {
         "count": 10,
@@ -35,11 +35,11 @@
     "intentShapes": {
       "single": {
         "count": 24,
-        "recall1": 0.375,
-        "recall5": 0.667,
-        "coverage5": 0.667,
-        "mrr5": 0.493,
-        "groupMrr5": 0.493
+        "recall1": 0.333,
+        "recall5": 0.625,
+        "coverage5": 0.625,
+        "mrr5": 0.462,
+        "groupMrr5": 0.462
       },
       "cross": {
         "count": 0,
@@ -93,11 +93,11 @@
       },
       "evm_swap": {
         "count": 6,
-        "recall1": 0.333,
+        "recall1": 0.167,
         "recall5": 0.833,
         "coverage5": 0.833,
-        "mrr5": 0.542,
-        "groupMrr5": 0.542
+        "mrr5": 0.458,
+        "groupMrr5": 0.458
       },
       "limit_order": {
         "count": 0,
@@ -110,10 +110,10 @@
       "market_research": {
         "count": 7,
         "recall1": 0.571,
-        "recall5": 0.714,
-        "coverage5": 0.714,
-        "mrr5": 0.607,
-        "groupMrr5": 0.607
+        "recall5": 0.571,
+        "coverage5": 0.571,
+        "mrr5": 0.571,
+        "groupMrr5": 0.571
       },
       "prediction_discovery": {
         "count": 0,
@@ -175,7 +175,7 @@
   },
   "notes": [
     "dataset tool-discovery-trench@trench-v1, mode lexical, 24 cases evaluated.",
-    "overall recall@1 0.375, recall@5 0.667, coverage@5 0.667, mrr@5 0.493, groupMrr@5 0.493.",
-    "Measured delta: none, metrics are identical to the previous baseline."
+    "overall recall@1 0.333, recall@5 0.625, coverage@5 0.625, mrr@5 0.462, groupMrr@5 0.462.",
+    "Measured delta vs previous baseline (trench-v1, captured 2026-09-05T08:29:10.838Z): 22 metric values moved; overall recall@5 0.667 -> 0.625, overall mrr@5 0.493 -> 0.462, case count 24 -> 24."
   ]
 }

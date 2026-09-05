@@ -322,13 +322,14 @@ Characteristics and limits: Indexing lags, and a missing row does not prove that
 Coverage follows the provider's index; name the chain. Narratives are aggregated for any chain that has narrative activity, and a chain with none answers quietly as none active rather than being refused.
 
 ### virtuals
-Virtuals is read-only intelligence for Virtuals agents and agent tokens across the chains indexed by the provider.
+Virtuals is intelligence for Virtuals agents and agent tokens across the chains indexed by the provider, and the bonding-curve trading venue for the agents that have not graduated on Base and Robinhood.
 Read: Read one agent's bonding-curve trade tape and build a price chart from its pool's ohlcv candles, screen virtuals agents and agent tokens, inspect robinhood agent tokens or one agent in depth, read market cap, holder count and concentration, check the anti-sniper buy-tax window and exact venue, follow recent virtuals graduations or what just graduated, and browse the fresh graduations feed, genesis calendar, launch schedule, and genesis sales.
-Quote: No quote capability is available. Research does not establish an executable price, route, or minimum received amount.
-Act: No action capability is available. Acquiring an agent token is a separate swap task on the venue identified by the research result.
+Quote: Price a bonding-curve buy or sell of an agent token that has not graduated, on Base or Robinhood: the output, the taxes, the anti-sniper window and the floor the contract will enforce. Research alone still establishes no executable price.
+Act: Execute a bonding-curve buy or sell against a quote already taken, spending real funds under approval. Acquiring a GRADUATED agent token is still a separate swap task on the venue identified by the research result.
 When it applies: Use it when the user names an agent token, asks what just graduated, wants robinhood agent tokens, or asks what is launching through Virtuals.
-Characteristics and limits: Bonding-curve pre-graduation can be illiquid and may never reach a locked liquidity pool. Verification is anti-impersonation, not a quality or safety signal. Rankings have no stated freshness guarantee, and no purchase, launch, cost, quota, or rate-limit action is exposed.
-Coverage: base, solana, robinhood, ethereum for screening, detail, graduations and genesis. Narrower per capability: trade tape base and solana only; candles for graduated agents everywhere but ethereum, and for bonding agents on solana only. Trades execute elsewhere - kyberswap on base/ethereum, uniswap on robinhood, solana tools on solana; an EVM bonding curve has no venue tool yet.
+Characteristics and limits: Bonding-curve pre-graduation can be illiquid and may never reach a locked liquidity pool. Verification is anti-impersonation, not a quality or safety signal. Rankings have no stated freshness guarantee, and no launch, cost, quota, or rate-limit action is exposed. A curve PURCHASE is exposed, but only for an agent that has not graduated, and only on Base and Robinhood.
+Coverage: base, solana, robinhood, ethereum for screening, detail, graduations and genesis. Narrower per capability: trade tape base and solana only; candles for graduated agents everywhere but ethereum, and for bonding agents on solana only. Curve trading is base and robinhood only: an agent still on its BondingV5 curve is bought and sold HERE on those two chains. Everything else trades elsewhere - a GRADUATED agent through kyberswap on base/ethereum or uniswap on robinhood, and solana through the solana tools, whose curve is a Meteora pool rather than BondingV5.
+Contains mutating tools (may require approval).
 
 ### trench
 Trench Express is a bonding-curve launchpad whose registry, curve trading, and launch lifecycle are native to the product.

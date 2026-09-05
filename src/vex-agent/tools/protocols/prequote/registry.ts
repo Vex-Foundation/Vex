@@ -86,6 +86,11 @@ export const PREQUOTE_QUOTE_TOOLS: Record<string, PrequoteQuoteRegistration> = {
   // trade IS a swap, so NO new prequote kind and NO migration (Codex aha).
   "trench.trade_quote": { kind: "swap", family: "eip155", provider: "trench" },
   "solana.swap.quote": { kind: "swap", family: "solana", provider: "jupiter" },
+  // Virtuals bonding-curve buy/sell - records a `swap` prequote (provider
+  // "virtuals"). A curve trade IS a swap, so no new prequote kind and no
+  // migration; the provider binding is what stops a Virtuals quote authorizing
+  // any other venue's execute and the reverse.
+  "virtuals.trade.quote": { kind: "swap", family: "eip155", provider: "virtuals" },
   "khalani.quote.get": { kind: "bridge", provider: "khalani" },
   "relay.quote.get": { kind: "bridge", provider: "relay" },
   "pendle.pt.quote": { kind: "pendle", family: "eip155", provider: "pendle" },
@@ -191,6 +196,10 @@ export const EXECUTE_GATE_TOOLS: Record<string, ExecuteGateRegistration> = {
   // resolved in `gate.ts` (buildEvmIdentity trench branch).
   "trench.trade_execute": { kind: "swap", family: "eip155", provider: "trench" },
   "solana.swap.execute": { kind: "swap", family: "solana", provider: "jupiter" },
+  // Virtuals curve execute - matches a fresh `swap` prequote from
+  // virtuals.trade.quote (provider "virtuals"); the base/robinhood chain
+  // identity is resolved in `gate/identity.ts`'s virtuals branch.
+  "virtuals.trade.execute": { kind: "swap", family: "eip155", provider: "virtuals" },
   "khalani.bridge": { kind: "bridge", provider: "khalani" },
   "relay.bridge": { kind: "bridge", provider: "relay" },
   // Pendle PT buy / early-exit sell match a fresh `swap` prequote (provider

@@ -102,15 +102,34 @@ describe("registry parity", () => {
     expect(Object.keys(VIRTUALS_HANDLERS).sort()).toEqual(manifest);
   });
 
-  it("declares seven read-only tools", () => {
-    // 6 -> 7 with `virtuals.creator_fees` (PR-C4). It stays read-only on
-    // purpose: the payout it reports is executed by Virtuals' own backend under
-    // SWAP_ROLE, so there is no transaction this namespace could sign.
-    expect(VIRTUALS_TOOLS).toHaveLength(7);
-    for (const tool of VIRTUALS_TOOLS) {
+  /**
+   * CONTRACT CHANGE (PR-C2): the namespace is no longer read-only. It declares
+   * nine tools, of which exactly ONE mutates - the execute half of the
+   * bonding-curve trade pair. The quote half stays read-only, which is what
+   * makes it safe to call before consent; the execute half is the only tool
+   * here that can move funds, and it is pinned by name so a third mutating
+   * tool cannot appear unnoticed.
+   *
+   * `virtuals.creator_fees` (PR-C4) is read-only on purpose: the payout it
+   * reports is executed by Virtuals' own backend under SWAP_ROLE, so there is
+   * no transaction this namespace could sign for it.
+   */
+  it("declares eight read-only tools and exactly one that mutates", () => {
+    expect(VIRTUALS_TOOLS).toHaveLength(9);
+
+    const mutating = VIRTUALS_TOOLS.filter((t) => t.mutating);
+    expect(mutating.map((t) => t.toolId)).toEqual(["virtuals.trade.execute"]);
+    expect(mutating[0]!.actionKind).toBe("user_wallet_broadcast");
+
+    const readOnly = VIRTUALS_TOOLS.filter((t) => !t.mutating);
+    expect(readOnly).toHaveLength(8);
+    for (const tool of readOnly) {
       expect(tool.mutating).toBe(false);
       expect(tool.actionKind).toBe("read");
     }
+    // The priced half of the trade pair is deliberately among them: a quote
+    // signs nothing, grants no allowance and opens no key.
+    expect(readOnly.map((t) => t.toolId)).toContain("virtuals.trade.quote");
   });
 });
 

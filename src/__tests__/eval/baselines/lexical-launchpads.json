@@ -4,7 +4,7 @@
   "datasetId": "tool-discovery-launchpads",
   "datasetVersion": "launchpads-v1",
   "status": "captured",
-  "capturedAt": "2026-09-05T08:28:55.301Z",
+  "capturedAt": "2026-09-05T09:05:50.419Z",
   "metrics": {
     "overall": {
       "count": 9,
@@ -176,6 +176,6 @@
   "notes": [
     "dataset tool-discovery-launchpads@launchpads-v1, mode lexical, 9 cases evaluated.",
     "overall recall@1 0.444, recall@5 0.778, coverage@5 0.667, mrr@5 0.583, groupMrr@5 0.528.",
-    "Measured delta vs previous baseline (launchpads-v1, captured 2026-09-04T20:43:47.334Z): 12 metric values moved; overall recall@5 0.778 -> 0.778, overall mrr@5 0.694 -> 0.583, case count 9 -> 9."
+    "Measured delta: none, metrics are identical to the previous baseline."
   ]
 }

@@ -35,6 +35,16 @@
       "toolId": "virtuals.creator_fees",
       "publicName": "virtuals__creator_fees_get",
       "rationale": "Existing snake words preserved, canonical by-id verb appended. The read answers for ONE agent on ONE chain from AgentTaxV2 at a pinned block (manifests/creator-fees.ts); it stays a `get` and never a claim verb, because the collection path is gated on SWAP_ROLE that the creator wallet does not hold, which the tool reports as `unsupported` with the measurement."
+    },
+    {
+      "toolId": "virtuals.trade.quote",
+      "publicName": "virtuals__agent_trade_quote",
+      "rationale": "Names the resource and the operation, by FAMILY rather than by chain or side. One curve surface serves base and robinhood and both directions, so `agent_trade` is the resource and `quote` the canonical read verb - the same pairing every other venue uses for the priced half of a two-step trade."
+    },
+    {
+      "toolId": "virtuals.trade.execute",
+      "publicName": "virtuals__agent_trade_execute",
+      "rationale": "The signing half of the same pair, under the canonical `execute` verb. Deliberately NOT split into buy/sell tools: the side is a parameter the prequote identity binds, and two tools would double the surface while making a buy quote look able to authorize a sell execute."
     }
   ]
 }

@@ -15,6 +15,7 @@ import { resolveSelectedAddress } from "@vex-agent/tools/internal/wallet/resolve
 import { resolveUniswapChainId } from "@tools/uniswap/chains.js";
 import { resolvePendleChainId } from "@tools/pendle/chains.js";
 import { resolveLocalChainId } from "@tools/evm-chains/registry.js";
+import { virtualsCurveDeployment } from "@tools/virtuals/curve/index.js";
 import { MORPHO_MARKET_LANE } from "../identity/lane.js";
 import {
   canonicalizeJupiterFeeTail,
@@ -115,6 +116,14 @@ function buildEvmIdentity(
   provider: string,
 ): GateIdentity {
   const chainParam = typeof params.chain === "string" ? params.chain : "";
+  // ── VIRTUALS BONDING CURVE ──
+  //
+  // Its params are `token` + `side`, not `tokenIn`/`tokenOut`: a curve has ONE
+  // pair and the side decides which way round it is traded. The identity is
+  // derived here exactly as the recorder's extractor derives it from the quote's
+  // own answer, so a buy quote can never authorize a sell execute and the two
+  // hash differently by construction.
+  if (provider === "virtuals") return buildVirtualsIdentity(params, selectedWallet, chainParam);
   const tokenInParam = typeof params.tokenIn === "string" ? params.tokenIn : "";
   const tokenOutParam = typeof params.tokenOut === "string" ? params.tokenOut : "";
   const amount = typeof params.amountIn === "string" ? params.amountIn : "";
@@ -160,6 +169,43 @@ function buildEvmIdentity(
     amount,
     recipient: recipientParam !== "" ? recipientParam : selectedWallet,
     approveExact: params.approveExact === true,
+  };
+}
+
+/**
+ * The Virtuals curve identity: the fixed pair, oriented by `side`.
+ *
+ * A chain with no curve, an unparseable token, or a missing side is UN-GATEABLE
+ * and throws, which the caller turns into a fail-closed block. It never falls
+ * back to a default chain or a default side: both would let a caller choose its
+ * own identity path, which is the one thing an identity builder may not allow.
+ */
+function buildVirtualsIdentity(
+  params: Record<string, unknown>,
+  selectedWallet: string,
+  chainParam: string,
+): GateIdentity {
+  const deployment = virtualsCurveDeployment(chainParam.trim().toLowerCase());
+  if (deployment === undefined) {
+    throw new VexError(
+      ErrorCodes.AGENT_VALIDATION_ERROR,
+      `Virtuals curve unsupported chain: ${chainParam}`,
+    );
+  }
+  const token = typeof params.token === "string" ? params.token : "";
+  if (!isAddress(token)) throw new GateIdentityError("unresolved_token");
+  const side = params.side;
+  if (side !== "buy" && side !== "sell") throw new GateIdentityError("unresolved_token");
+  return {
+    family: "eip155",
+    chainId: deployment.chainId,
+    tokenIn: side === "buy" ? deployment.virtual : token,
+    tokenOut: side === "buy" ? token : deployment.virtual,
+    amount: typeof params.amountIn === "string" ? params.amountIn : "",
+    // A curve trade has no recipient parameter at all: BondingV5 credits
+    // `msg.sender`, so the output can only ever reach the signing wallet.
+    recipient: selectedWallet,
+    approveExact: false,
   };
 }
 

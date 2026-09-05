@@ -26,6 +26,12 @@ import {
   isUniswapRouteRef,
   restoreUniswapSnapshot,
 } from "./uniswap.js";
+import {
+  VIRTUALS_QUOTE_BINDING_CARD_VERSION,
+  isVirtualsRouteRef,
+  restoreVirtualsSnapshot,
+  virtualsCardFacts,
+} from "./virtuals.js";
 
 export { snapshotRefusal } from "./refusal.js";
 export type { SnapshotRefusal, SnapshotRefusalKind } from "./refusal.js";
@@ -180,6 +186,23 @@ export interface QuoteBindingPreview {
   readonly tokenOutSymbol: string;
   readonly effectiveSlippageBps: number;
   readonly expiresAt: string;
+  /**
+   * Venue facts a person must read to consent, beyond the two figures every
+   * venue states.
+   *
+   * It exists because one venue's approval genuinely binds more than a price and
+   * a floor. A Virtuals curve trade binds the proxy IMPLEMENTATION behind
+   * BondingV5, the curve's own tax, and the anti-sniper bound the caller
+   * accepted - each of which can change what the wallet receives, and none of
+   * which fits `approvedAmountOut`/`approvedMinOut`. They are sentences rather
+   * than fields because the card is text and because a venue that has nothing to
+   * add contributes nothing (rule 03: no ceremony where there is one owner and
+   * no boundary).
+   *
+   * SOURCED FROM THE SEALED SNAPSHOT ONLY, never from raw args, exactly like
+   * every other field on this preview.
+   */
+  readonly extraFacts?: readonly string[];
 }
 
 /**
@@ -198,6 +221,23 @@ export function readQuoteBindingPreview(
   routeRef: unknown,
   expiresAt: string,
 ): QuoteBindingPreview | undefined {
+  if (isVirtualsRouteRef(routeRef)) {
+    const restored = restoreVirtualsSnapshot(routeRef);
+    if (!restored.ok) return undefined;
+    const facts = virtualsCardFacts(restored.snapshot);
+    return {
+      cardVersion: VIRTUALS_QUOTE_BINDING_CARD_VERSION,
+      snapshotId: prequoteId,
+      digest: restored.snapshot.digest,
+      approvedAmountOutHuman: facts.quotedOutHuman,
+      approvedMinOutHuman: facts.contractFloorHuman,
+      approvedMinOutRaw: restored.snapshot.contractFloorRaw,
+      tokenOutSymbol: facts.outSymbol,
+      effectiveSlippageBps: restored.snapshot.slippageBps,
+      expiresAt,
+      extraFacts: facts.lines,
+    };
+  }
   if (isUniswapRouteRef(routeRef)) {
     const uni = restoreUniswapSnapshot(routeRef);
     if (!uni.ok) return undefined;
@@ -245,5 +285,11 @@ export function renderQuoteBinding(binding: QuoteBindingPreview): string {
     // shortened one would ask a person to consent to a fingerprint they cannot
     // check against the row.
     + ` | quote ${binding.snapshotId} digest ${binding.digest}`
-    + ` | expires ${binding.expiresAt}`;
+    + ` | expires ${binding.expiresAt}`
+    // Venue-specific bound facts, whole and never abbreviated: each is something
+    // the wallet's outcome depends on, and a card that showed only the price and
+    // the floor would ask a person to consent to the rest unseen.
+    + (binding.extraFacts === undefined || binding.extraFacts.length === 0
+      ? ""
+      : ` | ${binding.extraFacts.join(" | ")}`);
 }

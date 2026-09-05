@@ -21,36 +21,81 @@ function context(overrides: Partial<EngineContext>): EngineContext {
 }
 
 /**
- * REVIEWED CEILING MOVE, launchpads namespace (PR2 of the launchpads arc).
+ * REVIEWED CEILING MOVE, launchpads arc integration. TWO additions share this
+ * raise, and both were measured on this merged tree rather than estimated.
  *
- * +1062 bytes on the agent modes, +1128 on mission setup, +1224 on mission run.
- * The cost is one advertised namespace card plus two prompt lines, and it was
- * measured, not estimated: the numbers below are exactly what
- * `buildPromptStack` produces today.
+ * 1. THE LAUNCHPADS NAMESPACE (PR2 of the launchpads arc). +1062 bytes on the
+ *    agent modes, +1128 on mission setup, +1224 on mission run. The cost is one
+ *    advertised namespace card plus two prompt lines.
  *
- * WHAT THE BYTES BUY. `launchpads` is the launchpad-neutral half of a token
- * launch - one image locker shared by every launchpad, and the public
- * content-addressed host a launch's image URL points at. Without a card the
- * model cannot find the locker at all, and a mission that discovers an empty
- * locker at signing time has already wasted itself: the whole point of the
- * planning obligation in the mission-setup line is that the user is still
- * present to fix it.
+ *    WHAT THE BYTES BUY. `launchpads` is the launchpad-neutral half of a token
+ *    launch - one image locker shared by every launchpad, and the public
+ *    content-addressed host a launch's image URL points at. Without a card the
+ *    model cannot find the locker at all, and a mission that discovers an empty
+ *    locker at signing time has already wasted itself: the whole point of the
+ *    planning obligation in the mission-setup line is that the user is still
+ *    present to fix it.
  *
- * WHAT WAS DONE TO KEEP IT SMALL, so this is not read later as an unbounded
- * grant: the namespace does NOT set `advertiseFacetsInPrompt` (its two facets
- * cost nothing here and are reachable through ToolSearch), its declaration
- * prose was tightened by about 250 bytes against the first draft, and the two
- * mission-prompt lines it touches were rewritten to be launchpad-neutral rather
- * than added alongside the Trench ones. The Trench retirement lane removes the
- * Trench card and its lines, which returns more than this costs.
+ *    WHAT WAS DONE TO KEEP IT SMALL, so this is not read later as an unbounded
+ *    grant: the namespace does NOT set `advertiseFacetsInPrompt` (its two facets
+ *    cost nothing here and are reachable through ToolSearch), its declaration
+ *    prose was tightened by about 250 bytes against the first draft, and the two
+ *    mission-prompt lines it touches were rewritten to be launchpad-neutral
+ *    rather than added alongside the Trench ones. The Trench retirement lane
+ *    removes the Trench card and its lines, which returns more than this costs.
+ *
+ * 2. VIRTUALS BONDING-CURVE TRADING (PR-C2, folded in by this merge). NET +620
+ *    in EVERY mode, and the uniformity is the proof that only namespace-level
+ *    text moved: the declaration and the coverage line render once per mode and
+ *    nothing per-tool entered the static prefix.
+ *
+ *    Every item is a statement that became FALSE when the namespace stopped
+ *    being read-only:
+ *      - `quote` and `act` said "No quote capability is available" and "No
+ *        action capability is available". The namespace now prices and executes
+ *        a curve trade, so both lines state the capability and its BOUND (not
+ *        graduated; Base and Robinhood only).
+ *      - `identity` called the namespace read-only intelligence.
+ *      - `characteristicAndLimits` said no purchase action is exposed. It now
+ *        says a purchase IS exposed and names the two conditions, which is the
+ *        rule-90 honesty clause for a tool that spends real funds.
+ *      - the COVERAGE line in `prompts/chain-coverage.ts` ended with "an EVM
+ *        bonding curve has no venue tool yet". That sentence would route every
+ *        curve buy to an AMM that has no pool for a token which has not
+ *        graduated, so it was replaced rather than kept.
+ *      - the declaration gained its fifth facet (bonding-curve trading), which
+ *        is what makes the two tools findable; the declaration still teaches
+ *        capabilities and never tool names.
+ *      - the runtime marker "Contains mutating tools (may require approval)."
+ *        now renders in this section, which is not prose anyone chose: it
+ *        follows from the namespace owning a mutating tool.
+ *
+ *    WHY COMPRESSION WAS INSUFFICIENT. The growth is almost entirely the
+ *    REPLACEMENT of false sentences by true ones, so there was no cheaper
+ *    wording available: the two "No ... capability is available" lines could not
+ *    simply be deleted, because a namespace that trades and says nothing about
+ *    its bounds is worse than one that says too much. No other namespace's prose
+ *    was compressed to fund either addition.
+ *
+ * THE MEASURED TOTAL on the merged tree. The launchpads figures are already in
+ * the left column, which this merge raises by the uniform Virtuals +620:
+ *
+ *   agent / restricted          58,782 -> 59,402
+ *   agent / full                59,483 -> 60,103
+ *   mission setup / restricted  65,259 -> 65,879
+ *   mission setup / full        65,278 -> 65,898
+ *   mission run / restricted    63,983 -> 64,603
+ *   mission run / full          63,798 -> 64,418
+ *
+ * The coordinator reviews this raise.
  */
 const MODES = [
-  { name: "agent / restricted", context: context({}), ceiling: 58_782 },
-  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 59_483 },
-  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 65_259 },
-  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 65_278 },
-  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 63_983 },
-  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 63_798 },
+  { name: "agent / restricted", context: context({}), ceiling: 59_402 },
+  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 60_103 },
+  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 65_879 },
+  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 65_898 },
+  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 64_603 },
+  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 64_418 },
 ] as const;
 
 beforeAll(() => {

@@ -170,7 +170,13 @@ describe("G2 - publicName mapping gate", () => {
     // the 142 above, which the PR-C1 lane raised on its own, so the delta this
     // merge records is the remaining three. Every one is a new identity with
     // its own mapping row; nothing was reclaimed or retired.
-    expect(PROTOCOL_TOOLS.length).toBe(147);
+    // 145 before the two in-app launchpads tools (`launchpads.images`,
+    // `launchpads.image_publish`) landed, which took the surface to 147.
+    // 147 before this merge folded in the Virtuals bonding-curve TRADE pair
+    // (`virtuals.trade.quote`, `virtuals.trade.execute`) - the first mutating
+    // members of the virtuals namespace. Both are new identities with their own
+    // rows in `mappings/virtuals.json`; nothing was reclaimed or retired.
+    expect(PROTOCOL_TOOLS.length).toBe(149);
   });
 });
 

@@ -25,10 +25,13 @@ export function liveCatalogToolCount(): number {
 /**
  * The number of active advertised protocol tools every stored baseline was
  * captured against. 145 after the launchpads waves 1-2 integration (#161);
- * 147 with the two in-app launchpads tools of this change
- * (`launchpads.images`, `launchpads.image_publish`).
+ * 147 with the two in-app launchpads tools (`launchpads.images`,
+ * `launchpads.image_publish`); 149 with the Virtuals bonding-curve trade pair
+ * (`virtuals__agent_trade_quote` / `_execute`), two new identities on a
+ * namespace that previously advertised reads only, so this is a pure +2 and
+ * every affected baseline was recaptured in the same change.
  */
-export const PINNED_LIVE_CATALOG_TOOL_COUNT = 147;
+export const PINNED_LIVE_CATALOG_TOOL_COUNT = 149;
 
 /**
  * The candidate count every dense and lexical measurement must have seen.

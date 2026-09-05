@@ -177,6 +177,28 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   ["beforeTimestampSeconds", "walk a candle history BACKWARDS: return buckets strictly before this unix-seconds mark"],
   ["currency", "which side a candle series is denominated in; declared as an `enum`"],
 
+  // -- Virtuals bonding-curve trade pair (PR-C2) -------------------
+  //
+  // The vocabulary the curve quote and its execute share. `side` and `amountIn`
+  // above already carry the direction and the size; these three are what a
+  // CURVE trade needs beyond a generic swap. `simulateOnly` is deliberately NOT
+  // `dryRun`: `dryRun` is the RUNTIME's own preview key, and `isPreviewExecution`
+  // downgrades such a call to `actionKind: "read"`, which would take a
+  // fund-moving tool out of the approval gate. This simulation is handler-owned
+  // and keeps the execute approval-gated, so it must not borrow that key.
+  [
+    "acceptAntiSniperTaxPct",
+    "the anti-sniper tax, as a PERCENT, the caller accepts on a Virtuals curve buy; the execute refuses when the live tax has risen above it, so the bound is consent and never a hint",
+  ],
+  [
+    "proposalId",
+    "the digest of everything a Virtuals curve quote bound (contracts, side, amounts, fee, taxes and floor); proves the trade executed is the trade priced, and is never synthesised by the caller",
+  ],
+  [
+    "simulateOnly",
+    "eth_call the exact transactions this execute would send and return them with `executed: false`; no signer opened, no quote consumed, nothing broadcast",
+  ],
+
   // -- Lending-market reads (morpho, batch 1) ----------------------
   //
   // Domain range predicates. They are named rather than folded into a generic

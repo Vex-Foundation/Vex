@@ -1,5 +1,9 @@
 /**
- * Virtuals Protocol handlers - direct TS client calls, all READ-ONLY.
+ * Virtuals Protocol handlers.
+ *
+ * The READ handlers below are direct TS client calls with no wallet and no
+ * signing. The two TRADE handlers registered at the top of the map are the
+ * namespace's money path and live in `./handlers/trade-*.ts`.
  *
  * No wallet, no signing, no mutations: these tools surface agent-token
  * intelligence (screen / detail / graduations / genesis calendar / curve tape /
@@ -67,6 +71,8 @@ import {
   projectVirtualsList,
 } from "./projectors.js";
 import { virtualsCreatorFeesHandler } from "./handlers/creator-fees.js";
+import { virtualsTradeQuote } from "./handlers/trade-quote.js";
+import { virtualsTradeExecute } from "./handlers/trade-execute.js";
 
 /** The three provider numbers a `hasMore` claim needs to mean anything. */
 const PAGE_METADATA_KEYS = ["total", "page", "pageSize"] as const;
@@ -201,6 +207,13 @@ const GENESIS_PARTICIPATION_UNSUPPORTED = {
 
 export const VIRTUALS_HANDLERS: Record<string, ProtocolHandler> = {
   "virtuals.creator_fees": virtualsCreatorFeesHandler,
+
+  // The two MUTATING members of the namespace (PR-C2). They own their own
+  // modules under `./handlers/` because a money path with a prequote binding, a
+  // staged broadcast and a fee leg has nothing structurally in common with the
+  // read handlers below.
+  "virtuals.trade.quote": virtualsTradeQuote,
+  "virtuals.trade.execute": virtualsTradeExecute,
 
   "virtuals.list": async (p) => {
     const read = readVirtualsListParams(p);

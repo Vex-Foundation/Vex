@@ -19,6 +19,7 @@
 import { extractEvm } from "./extract/kyberswap.js";
 import { extractSolana } from "./extract/solana.js";
 import { extractUniswap } from "./extract/uniswap.js";
+import { extractVirtuals } from "./extract/virtuals.js";
 
 import type { ExtractedQuote } from "./extract/extracted-quote.js";
 
@@ -50,5 +51,10 @@ export function extractQuote(
   // swap-identity fields - one native leg, one unchecked token leg (verdict
   // `unknown`). No new prequote kind.
   if (toolId === "trench.trade_quote") return extractEvm(params, data);
+  // The Virtuals bonding-curve quote has NO aggregator safety block to borrow:
+  // its pair is fixed and its real risk is the curve's own tax and the
+  // anti-sniper window, both read on chain. Its extractor records those and
+  // reports the verdict as `unknown` rather than claiming an audit it never ran.
+  if (toolId === "virtuals.trade.quote") return extractVirtuals(params, data);
   return null;
 }
