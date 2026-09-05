@@ -58,6 +58,18 @@ const NEUTRAL = "rgba(128, 136, 152, 1)";
  * light theme shipped near-black ink on black. The 8-digit hex takes the fast
  * path with alpha 0. Terminals are created with `allowTransparency: true` so
  * that alpha reaches the renderer instead of being composited away.
+ *
+ * THIS IS THE FALLBACK ONLY, and it is colourless on purpose. The stylesheet's
+ * own background tokens keep the alpha at 0 but carry the RGB of the surface
+ * the pane paints in each theme (`--vex-alias-bg-base`: `#0a0d1800` in
+ * chronos, `#ffffff00` in celeris), because `options.theme.background` is also
+ * the terminal's ANSWER to a program's OSC 11 query: xterm reports it with the
+ * alpha dropped (`color.toColorRGB` keeps r, g, b), and Claude Code in `auto`
+ * mode, bat, delta and nvim pick light or dark from that answer. A colourless
+ * token answered "black" in light mode and got Claude Code's dark chrome
+ * painted over the light pane (measured 2026-09-04). The fallback stays
+ * colourless because an environment without computed styles should look
+ * unthemed, not plausibly light or dark.
  */
 const TRANSPARENT = "#00000000";
 
@@ -78,12 +90,15 @@ function readVar(
 /**
  * Resolve the whole xterm theme against `element`.
  *
- * The BACKGROUND stays transparent by contract: the pane paints its own surface
- * and layers the brand watermark UNDER the terminal, so an opaque background
- * here would hide it. The stylesheet declares `#00000000` in both themes and
- * the fallback repeats it, because a fallback that painted a colour would break
- * the watermark exactly when the token lookup failed - and because the keyword
+ * The BACKGROUND keeps alpha 0 by contract: the pane paints its own surface and
+ * layers the brand watermark UNDER the terminal, so an opaque background here
+ * would hide it. Its RGB is NOT free, though: it is what xterm reports to a
+ * program asking with OSC 11, so the stylesheet carries the pane's surface RGB
+ * per theme and this reader hands it over untouched. The fallback is colourless
+ * (`#00000000`) because a fallback that painted a colour would break the
+ * watermark exactly when the token lookup failed, and because the keyword
  * `transparent` is not transparent to xterm at all (see {@link TRANSPARENT}).
+ * `cursorAccent` (the glyph colour under a block cursor) reuses the same token.
  */
 export function readTerminalTheme(element: HTMLElement | null): ITheme {
   const styles =

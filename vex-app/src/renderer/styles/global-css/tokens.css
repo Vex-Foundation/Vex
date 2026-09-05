@@ -305,13 +305,12 @@
    * written into a component would be invisible to the theme flip and banned
    * by the design guard.
    *
-   * `background` is TRANSPARENT on purpose - the pane paints its own surface
-   * (`--vex-alias-bg-layer-1`, the card `XtermHost` draws) and the watermark
-   * sits under the terminal.
+   * `background` has ALPHA 0 on purpose - the glass pane paints its own
+   * surface and the watermark sits under the terminal.
    *
-   * IT IS SPELLED `#00000000`, NOT `transparent`, AND THAT IS THE WHOLE POINT.
-   * xterm 6.0.0 parses a theme colour with `css.toColor`, which accepts hex
-   * (3-8 digits) and `rgb()/rgba()` and otherwise falls through to a 1x1
+   * IT IS SPELLED AS 8-DIGIT HEX, NOT `transparent`, AND THAT IS THE WHOLE
+   * POINT. xterm 6.0.0 parses a theme colour with `css.toColor`, which accepts
+   * hex (3-8 digits) and `rgb()/rgba()` and otherwise falls through to a 1x1
    * canvas probe that THROWS when the resulting alpha is not 255
    * (`node_modules/@xterm/xterm/lib/xterm.js`: "css.toColor: Unsupported css
    * format"). ThemeService swallows that throw and keeps its own default,
@@ -322,6 +321,23 @@
    * `allowTransparency: true` on the Terminal (see `terminal-registry.ts`) is
    * what lets that alpha survive to the renderer.
    *
+   * AND THE RGB UNDER THAT ALPHA IS A WIRE CONTRACT, NOT A PAINT DETAIL. xterm
+   * answers a program's OSC 11 query ("what is your background colour?") from
+   * this same token with the alpha DROPPED (`color.toColorRGB` keeps r, g, b),
+   * so `#00000000` told every program that asked - Claude Code in its `auto`
+   * theme mode, bat, delta, nvim, starship - that the pane was pure black, in
+   * light mode too (measured on the owner's machine 2026-09-04: Claude Code's
+   * dark-theme grey `rgb(153,153,153)` over the light pane, 2.5:1, and its
+   * truecolor black placeholder box). The RGB is therefore the surface the
+   * pane paints in each theme, taken from that theme's `--vex-alias-bg-base`
+   * (the glass tint in shell.css is that ramp step at partial alpha; measured
+   * pane pixels 2026-09-04: chronos (12,17,31) against #0a0d18, celeris
+   * (245,249,251) against #ffffff). It has to be a literal: CSS cannot append
+   * an alpha byte to an alias, so `__tests__/terminal-palette-tokens.test.ts`
+   * pins the RGB to the alias instead. The same RGB, made opaque by the WebGL
+   * renderer, is the glyph colour of SGR 7 reverse video, which is why that
+   * was black-on-near-black in celeris before this carried a colour.
+   *
    * The ANSI slots are the only place in this file where raw hex is right:
    * they are a WIRE CONTRACT with programs that emit SGR 30-37 and 90-97, not
    * brand decisions, and bending them to the brand ramp would misrender every
@@ -329,7 +345,7 @@
    * to clear the rule-08 contrast floor against the surface the canvas sits
    * on; `__tests__/terminal-palette-tokens.test.ts` measures every one of them
    * and names the single documented exception. */
-  --vex-alias-term-background: #00000000;
+  --vex-alias-term-background: #0a0d1800;
   --vex-alias-term-foreground: var(--color-gray-200);
   --vex-alias-term-cursor: var(--vex-alias-accent-primary);
   --vex-alias-term-selection: rgba(255, 255, 255, 0.18);
@@ -601,11 +617,13 @@
    * written into a component would be invisible to the theme flip and banned
    * by the design guard.
    *
-   * `background` is TRANSPARENT on purpose - the pane paints its own surface
-   * and the watermark sits under the terminal. It is spelled `#00000000`
-   * rather than `transparent` because xterm's own colour parser rejects the
-   * keyword and falls back to opaque black; the chronos block above carries
-   * the measurement and the reference.
+   * `background` has ALPHA 0 on purpose - the pane paints its own surface and
+   * the watermark sits under the terminal. It is spelled as 8-digit hex rather
+   * than `transparent` because xterm's own colour parser rejects the keyword
+   * and falls back to opaque black, and its RGB is this theme's
+   * `--vex-alias-bg-base` (white) because xterm reports that RGB, alpha
+   * dropped, to any program that asks with OSC 11; the chronos block above
+   * carries the measurement and the reference.
    *
    * The ANSI slots are the only place in this file where raw hex is right:
    * they are a WIRE CONTRACT with programs that emit SGR 30-37 and 90-97, not
@@ -615,7 +633,7 @@
    * so `git diff`'s bright red still reads as the lighter red while clearing
    * 4.5:1. The previous ramp put the brights at 3.5-4.1:1, which is the same
    * "bright means invisible" defect the light theme had at the background. */
-  --vex-alias-term-background: #00000000;
+  --vex-alias-term-background: #ffffff00;
   --vex-alias-term-foreground: var(--color-gray-800);
   --vex-alias-term-cursor: var(--vex-alias-accent-primary);
   --vex-alias-term-selection: rgba(10, 13, 24, 0.14);
