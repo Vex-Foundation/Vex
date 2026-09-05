@@ -68,6 +68,14 @@ const MODE_LABELS: Readonly<Record<TradeOrderMode, string>> = {
   oco: "SL + TP",
 };
 
+const PROTECTION_MODES = [
+  "stop-loss",
+  "stop-loss-limit",
+  "take-profit",
+  "take-profit-limit",
+  "oco",
+] as const satisfies readonly TradeOrderMode[];
+
 const LIMIT_TIME_IN_FORCE_LABELS: Readonly<Record<LimitTimeInForce, string>> = {
   "immediate-or-cancel": "Immediate only",
   "good-till-time": "Keep open",
@@ -471,26 +479,37 @@ export function TradeTicket({
       hidden={hidden}
     >
       <form onSubmit={onSubmit} className="lit-ticket-form">
-        <div className="lit-order-kind-tabs" role="group" aria-label="Order type">
-          {(Object.keys(MODE_LABELS) as TradeOrderMode[]).map((item) => {
-            const unavailable = market.marketType !== "perp" && isPositionProtectionMode(item);
-            return (
-              <button
-                type="button"
-                key={item}
-                aria-pressed={mode === item}
-                disabled={unavailable}
-                title={unavailable ? "Perpetual markets only" : undefined}
-                onClick={() => selectMode(item)}
-              >
-                {MODE_LABELS[item]}
-              </button>
-            );
-          })}
+        <div className="lit-order-type-controls" role="group" aria-label="Order type">
+          {(["market", "limit"] as const).map((item) => (
+            <button
+              type="button"
+              key={item}
+              aria-pressed={mode === item}
+              onClick={() => selectMode(item)}
+            >
+              {MODE_LABELS[item]}
+            </button>
+          ))}
+          <select
+            aria-label="Protection order type"
+            aria-describedby={market.marketType !== "perp" ? "lit-protection-unavailable" : undefined}
+            value={protective ? mode : ""}
+            data-active={protective || undefined}
+            disabled={market.marketType !== "perp"}
+            onChange={(event) => {
+              const nextMode = PROTECTION_MODES.find((item) => item === event.currentTarget.value);
+              if (nextMode !== undefined) selectMode(nextMode);
+            }}
+          >
+            <option value="" disabled>Protection</option>
+            {PROTECTION_MODES.map((item) => (
+              <option key={item} value={item}>{MODE_LABELS[item]}</option>
+            ))}
+          </select>
         </div>
 
         {market.marketType === "spot" ? (
-          <p className="lit-ticket-context">Spot supports Market and plain Limit orders here. Position protection requires a perpetual market.</p>
+          <p className="lit-ticket-context" id="lit-protection-unavailable">Spot supports Market and plain Limit orders here. Position protection requires a perpetual market.</p>
         ) : protective ? (
           <p className="lit-ticket-context">Protection is reduce only and must match a live {market.symbol} position.</p>
         ) : null}

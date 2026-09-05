@@ -46,7 +46,7 @@ describe("Light it up trade ticket", () => {
     expect(orderTypes.textContent).toContain("Take-profit limit");
     expect(orderTypes.textContent).toContain("SL + TP");
 
-    fireEvent.click(screen.getByRole("button", { name: "SL + TP" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Protection order type" }), { target: { value: "oco" } });
     fireEvent.click(screen.getByRole("button", { name: "Sell" }));
     fireEvent.change(screen.getByLabelText("Base size"), { target: { value: "0.1" } });
     fireEvent.change(screen.getByLabelText("Stop loss trigger price"), { target: { value: "2900" } });
@@ -70,6 +70,32 @@ describe("Light it up trade ticket", () => {
     expect(screen.getByText(/does not sign or submit an order/i)).toBeTruthy();
   });
 
+  it("preserves the selected protection and draft when the desk hides the ticket", () => {
+    const props = {
+      market: PERP,
+      book: BOOK,
+      activeSession: true,
+      dataFresh: true,
+      submitting: false,
+      onReview: vi.fn(),
+    };
+    const { rerender } = render(<TradeTicket {...props} />);
+    fireEvent.change(screen.getByRole("combobox", { name: "Protection order type" }), {
+      target: { value: "take-profit" },
+    });
+    fireEvent.change(screen.getByLabelText("Base size"), { target: { value: "0.25" } });
+    fireEvent.change(screen.getByLabelText("Take profit trigger price"), { target: { value: "3400" } });
+
+    rerender(<TradeTicket {...props} hidden />);
+    expect(screen.queryByRole("region", { name: "Trade ticket" })).toBeNull();
+    rerender(<TradeTicket {...props} />);
+
+    expect((screen.getByRole("combobox", { name: "Protection order type" }) as HTMLSelectElement).value).toBe("take-profit");
+    expect((screen.getByLabelText("Base size") as HTMLInputElement).value).toBe("0.25");
+    expect((screen.getByLabelText("Take profit trigger price") as HTMLInputElement).value).toBe("3400");
+    expect(props.onReview).not.toHaveBeenCalled();
+  });
+
   it("keeps protection unavailable on spot instead of presenting a broken path", () => {
     render(
       <TradeTicket
@@ -84,11 +110,9 @@ describe("Light it up trade ticket", () => {
 
     expect((screen.getByRole("button", { name: "Market" }) as HTMLButtonElement).disabled).toBe(false);
     expect((screen.getByRole("button", { name: "Limit" }) as HTMLButtonElement).disabled).toBe(false);
-    expect((screen.getByRole("button", { name: "Stop loss" }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole("button", { name: "Stop-loss limit" }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole("button", { name: "Take profit" }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole("button", { name: "Take-profit limit" }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole("button", { name: "SL + TP" }) as HTMLButtonElement).disabled).toBe(true);
+    const protection = screen.getByRole("combobox", { name: "Protection order type" }) as HTMLSelectElement;
+    expect(protection.disabled).toBe(true);
+    expect(protection.getAttribute("aria-describedby")).toBe("lit-protection-unavailable");
     expect(screen.getByText(/plain Limit orders here/i)).toBeTruthy();
     expect(screen.getByText(/Position protection requires a perpetual market/i)).toBeTruthy();
   });
@@ -187,7 +211,7 @@ describe("Light it up trade ticket", () => {
     fireEvent.change(screen.getByLabelText("Order expiry"), { target: { value: "240" } });
     expect(screen.getByRole("button", { name: "Keep open" }).getAttribute("aria-pressed")).toBe("true");
 
-    fireEvent.click(screen.getByRole("button", { name: "Stop-loss limit" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Protection order type" }), { target: { value: "stop-loss-limit" } });
     expect(screen.getByRole("button", { name: "Immediate only" }).getAttribute("aria-pressed")).toBe("false");
     expect(screen.getByRole("button", { name: "Keep open" }).getAttribute("aria-pressed")).toBe("false");
     expect(screen.getByRole("button", { name: "Maker only" }).getAttribute("aria-pressed")).toBe("false");
@@ -223,7 +247,7 @@ describe("Light it up trade ticket", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: buttonName }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Protection order type" }), { target: { value: mode } });
     fireEvent.click(screen.getByRole("button", { name: "Sell" }));
     fireEvent.change(screen.getByLabelText("Base size"), { target: { value: "0.1" } });
     fireEvent.change(screen.getByLabelText(`${buttonName} trigger price`), { target: { value: "2900" } });
@@ -258,7 +282,7 @@ describe("Light it up trade ticket", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Stop-loss limit" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Protection order type" }), { target: { value: "stop-loss-limit" } });
     fireEvent.click(screen.getByRole("button", { name: "Sell" }));
     fireEvent.change(screen.getByLabelText("Base size"), { target: { value: "0.1" } });
     fireEvent.change(screen.getByLabelText("Stop-loss limit trigger price"), { target: { value: "2900" } });
