@@ -131,7 +131,7 @@ describe("a FRESH superseded classification from the chain", () => {
 
     expect(warnSpy).not.toHaveBeenCalled();
     const calls = infoSpy.mock.calls.filter(
-      (call: readonly unknown[]) => call[0] === "trench.launch_identity_repair.superseded",
+      (call: readonly unknown[]) => call[0] === "launch_identity_repair.superseded",
     );
     expect(calls).toHaveLength(1);
     expect(calls[0]?.[1]).toMatchObject({ intentId: "i1" });
@@ -184,7 +184,7 @@ describe("the lane's DURABLE verdict on the sibling activity row", () => {
 
     const calls = infoSpy.mock.calls.filter(
       (call: readonly unknown[]) =>
-        call[0] === "trench.launch_identity_repair.superseded_mirrored",
+        call[0] === "launch_identity_repair.superseded_mirrored",
     );
     expect(calls).toHaveLength(1);
     const logged = JSON.stringify(calls).toLowerCase();

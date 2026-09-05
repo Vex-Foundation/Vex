@@ -147,7 +147,7 @@ describe("repairLaunchIdentities", () => {
     });
 
     expect(warnSpy).toHaveBeenCalledTimes(1);
-    expect(warnSpy.mock.calls.at(0)?.at(0)).toBe("trench.launch_identity_repair.lookup_failed");
+    expect(warnSpy.mock.calls.at(0)?.at(0)).toBe("launch_identity_repair.lookup_failed");
     warnSpy.mockRestore();
   });
 

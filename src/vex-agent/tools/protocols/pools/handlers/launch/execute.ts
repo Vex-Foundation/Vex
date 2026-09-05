@@ -15,7 +15,7 @@
  *      for a dozen honest reasons, and none of them should have unlocked a
  *      wallet.
  *   3. Establish the C0 authorization VARIANT from HOST evidence, never from
- *      params - shared with Trench so two launchpads cannot disagree about who
+ *      params - shared across launchpads so two of them cannot disagree about who
  *      may spend (`shared/launch-authorization-variant.ts`). A restricted
  *      session is refused by name and sent to `pools.launch_request_form`, which
  *      is this tool's consent surface instead of an approval card.
@@ -355,7 +355,7 @@ function describeSimulatedLaunch(plan: PoolsLaunchPlan, walletAddress: Address):
 /**
  * The C0 record persisted for audit.
  *
- * Written on BOTH agent variants, unlike Trench, which writes one only for
+ * Written on BOTH agent variants, rather than only for
  * `session_full`. The reason is the pools.fun order: there is no
  * re-derive-and-compare before signing (a second prepare would describe a
  * different token), so the binding this record carries is the only durable

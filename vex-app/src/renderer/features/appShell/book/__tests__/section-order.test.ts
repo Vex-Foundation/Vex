@@ -46,10 +46,10 @@ describe("resolveBookSectionOrder (the agent SESSION rail's key)", () => {
   it("appends every MISSING known id at the end, in default order", () => {
     // Omitting the MIDDLE ids is what discriminates append-at-end from
     // "restore its default slot" — omitting only the last id could not.
-    expect(resolveBookSectionOrder(["position", "balances", "trench"])).toEqual([
+    expect(resolveBookSectionOrder(["position", "balances", "launchpads"])).toEqual([
       "position",
       "balances",
-      "trench",
+      "launchpads",
       "wallets",
       "activity",
       "session",
@@ -74,8 +74,8 @@ describe("resolveBookSectionOrder (the agent SESSION rail's key)", () => {
   });
 
   it("collapses duplicates to the first occurrence", () => {
-    const resolved = resolveBookSectionOrder(["trench", "trench", "wallets"]);
-    expect(resolved.filter((id) => id === "trench")).toHaveLength(1);
+    const resolved = resolveBookSectionOrder(["launchpads", "launchpads", "wallets"]);
+    expect(resolved.filter((id) => id === "launchpads")).toHaveLength(1);
     expect(resolved).toHaveLength(SESSION_BOOK_SECTIONS.length);
   });
 
@@ -89,8 +89,8 @@ describe("resolveBookSectionOrder (the agent SESSION rail's key)", () => {
 describe("moveSection (the keyboard path)", () => {
   it("moves an id to the target index without mutating its input", () => {
     const order = [...DEFAULT_BOOK_SECTIONS];
-    const moved = moveSection(order, "trench", 0);
-    expect(moved[0]).toBe("trench");
+    const moved = moveSection(order, "launchpads", 0);
+    expect(moved[0]).toBe("launchpads");
     expect(order).toEqual([...DEFAULT_BOOK_SECTIONS]);
     expect(moved).toHaveLength(order.length);
   });
@@ -127,10 +127,10 @@ describe("moveSectionRelative (the pointer path)", () => {
   });
 
   it("an absent dragged or target id is a no-op, never a reshuffle", () => {
-    expect(moveSectionRelative(TRIO, "trench", "position", "after")).toEqual([
+    expect(moveSectionRelative(TRIO, "launchpads", "position", "after")).toEqual([
       ...TRIO,
     ]);
-    expect(moveSectionRelative(TRIO, "position", "trench", "after")).toEqual([
+    expect(moveSectionRelative(TRIO, "position", "launchpads", "after")).toEqual([
       ...TRIO,
     ]);
   });

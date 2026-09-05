@@ -1,10 +1,10 @@
 /**
  * AgentScan TOKEN ATTESTATION client — one keyless POST per launched token,
- * delivering the SAME creator signature already stored for the trench.express
- * VEX badge (`tools/trench-express/attribution.ts`, `buildAttestMessage`) to
+ * delivering the SAME creator signature already stored for the retired
+ * launchpad's VEX badge (its `buildAttestMessage`) to
  * the AgentScan attestation registry.
  *
- * NO AUTHORIZATION HEADER, exactly like the trench attribution client: the
+ * NO AUTHORIZATION HEADER, exactly like the attribution clients: the
  * proof is the signature itself, so the request carries nothing an attacker
  * could reuse for anything beyond the one token it names.
  *
@@ -39,11 +39,11 @@ const MAX_DETAIL_LEN = 120;
  * `LAUNCHPADS` enum (`packages/contract/src/launchpad.ts`).
  *
  * The value is part of the CLAIM, not a hint: the verifier dispatches on it to
- * pick ONE creation proof (Trench's `TokenCreated`, pools.fun's `GatewayLaunch`,
+ * pick ONE creation proof (the retired launchpad's `TokenCreated`, pools.fun's `GatewayLaunch`,
  * Virtuals' creator `preLaunch` transaction) rather than trying every decoder
  * and accepting whichever matched. Sending the wrong one is a definitive
  * refusal, never a silent downgrade, so the caller names it explicitly and this
- * client never defaults it - the server's own `trench` default exists for
+ * client never defaults it - the server's own legacy default exists for
  * clients that predate the field, and this one does not.
  */
 export const AGENTSCAN_LAUNCHPADS = ["trench", "pools_fun", "virtuals"] as const;

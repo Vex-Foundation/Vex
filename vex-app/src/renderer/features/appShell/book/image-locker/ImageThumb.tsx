@@ -13,12 +13,18 @@
  * enormous payload. The bytes behind an `imageId` are immutable, so the query
  * never refetches.
  *
- * THE THUMBNAIL IS THE TRENCH ON-CHAIN COPY, which is why an image that has no
+ * THE THUMBNAIL IS THE SMALL DERIVED COPY, which is why an image that has no
  * such copy shows none: the original may be megabytes, and rendering it would
- * push that over IPC for every tile. Such an image is not broken - it launches
- * fine on pools.fun - so the tile says POOLS ONLY rather than leaving the user
- * with an empty square and no reason, and it does not ask main for a thumbnail
- * it knows does not exist.
+ * push that over IPC for every tile. Such an image is not broken and it is not
+ * unusable - it launches exactly like any other - so the tile says NO PREVIEW
+ * rather than leaving the user with an empty square and no reason, and it does
+ * not ask main for a thumbnail it knows does not exist.
+ *
+ * THE BADGE USED TO SAY "POOLS ONLY", and that stopped being true. The derived
+ * copy was the bytes Trench Express wrote into `create()` calldata, so an image
+ * without one really was refused by that launchpad; migration 108 retired it and
+ * the only remaining launchpad publishes the ORIGINAL. Keeping the old wording
+ * would tell a user their picture is limited when nothing limits it.
  *
  * The thumbnail is `aria-hidden` and the tile is labelled by the image's own
  * label instead: a screen reader gains nothing from "image" and everything
@@ -74,14 +80,14 @@ export function ImageThumb({
         </span>
       )}
 
-      {/* Named on the tile, not only in a tooltip: the user finds out here or
-       * at the moment a Trench launch refuses, and the second is too late. */}
+      {/* Named on the tile, not only in a tooltip: an empty square with no
+       * explanation reads as a broken image rather than a missing preview. */}
       {!hasOnchainCopy ? (
         <span
-          title="Too large for a Trench launch, which stores the image on-chain. Usable on pools.fun."
+          title="Too large for a preview thumbnail. The full image is stored and launches normally."
           className="pointer-events-none absolute left-1 top-1 rounded-full bg-surface-base/90 px-1.5 py-0.5 vex-micro text-ink-secondary"
         >
-          pools only
+          no preview
         </span>
       ) : null}
 

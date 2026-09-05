@@ -1,11 +1,11 @@
 /**
  * The C0 authorization record for a pools.fun launch.
  *
- * SAME IDEA AS TRENCH, ONE DIFFERENT GATE, and the difference is the whole
- * reason this file exists rather than reusing `trench/handlers/launch/
+ * ONE GATE, and its shape is the whole
+ * reason this file exists rather than reusing a re-derive-and-compare
  * authorization.ts`.
  *
- * Trench builds its own calldata, so it can re-derive the entire plan from first
+ * A launchpad that builds its own calldata can re-derive the entire plan from first
  * principles immediately before signing and compare it field by field; that
  * re-derivation IS its last gate. pools.fun cannot do that. Its calldata comes
  * from the provider's `prepare`, and a second prepare pins a second persistent
@@ -30,7 +30,7 @@
  * `consumeIfAuthorizedWith` CAS in the intents repo, the only thing standing
  * between one launch and two.
  *
- * THE PERSISTED RECORD IS AUDIT, NOT THE GATE - identically to the trench agent
+ * THE PERSISTED RECORD IS AUDIT, NOT THE GATE - as on every agent
  * paths. Nothing reads `authorization_json` back to decide anything on this
  * path. It exists so a reviewer can reconstruct months later exactly what was
  * authorized: which token at which address, which pair, which fee at which

@@ -267,8 +267,9 @@ export const listPoolsMyLaunches: ListPoolsMyLaunches = async (session, inputs) 
 export const getAwaitingPoolsLaunchForm: GetAwaitingPoolsLaunchForm = async (session) => {
   try {
     const awaiting = await getAwaitingForSession(session.sessionId);
-    // The pools.fun rows only: the same table carries Trench's forms, and the
-    // desktop's pools lane must not open a Trench launch in a pools form.
+    // The pools.fun rows only: the same table carries every launchpad's forms,
+    // and the desktop's pools lane must not open another venue's launch in a
+    // pools form.
     const row = awaiting.find((intent) => intent.protocol === "pools_fun");
     // `null` is the ORDINARY answer and is deliberately not an error: "nothing
     // is waiting" is what this question usually returns.

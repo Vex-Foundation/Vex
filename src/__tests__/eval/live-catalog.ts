@@ -38,8 +38,11 @@ export function liveCatalogToolCount(): number {
  * takes two transactions and only the first is Vex's, so the state between
  * them needs its own read and its own exit. Four new identities on an existing
  * namespace, a pure +4, and every affected baseline recaptured in this change.
+ * 145 after the Trench Express retirement (migration 108) DELETED the ten
+ * `trench.*` manifests, the first movement in this ledger that is a retirement
+ * rather than a widening, so every baseline was recaptured again at the fold.
  */
-export const PINNED_LIVE_CATALOG_TOOL_COUNT = 155;
+export const PINNED_LIVE_CATALOG_TOOL_COUNT = 145;
 
 /**
  * The candidate count every dense and lexical measurement must have seen.

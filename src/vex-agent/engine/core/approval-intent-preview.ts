@@ -34,7 +34,7 @@ import { renderSpendability } from "../../tools/protocols/quote-authority/spenda
 import type { JupiterFeePreview } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/fee-swap.js";
 import type { LendBorrowRiskPreview } from "@tools/solana-ecosystem/jupiter/jupiter-lend/borrow-api/risk-preview-types.js";
 import { formatLamportsAsSol } from "@vex-agent/tools/protocols/amount-display.js";
-import { describeApprovalVexFee, describeBoundVexFee } from "./approval-vex-fee.js";
+import { describeBoundVexFee } from "./approval-vex-fee.js";
 import type { ToolResult } from "../../tools/types.js";
 
 type ApprovalBridgeTokenPreview = NonNullable<
@@ -355,18 +355,18 @@ export function buildIntentPreview(
   // gate carried the matched quote's OWN fee statement, that block is the line:
   // it is what a person consents to and what the executor is re-checked against
   // before signing, so no second derivation of the figure exists to disagree
-  // with it. Only a tool whose fee cannot be stated at quote time
-  // (`trench.trade_execute`) falls back to the rate-times-amount line.
+  // with it. There is no fallback: the one tool whose fee could not be stated
+  // at quote time belonged to a launchpad retired by migration 108, and its
+  // rate-times-amount line went with it.
   //
   // `vexFee` is deliberately NOT in PREVIEW_KEY_ALLOWLIST, so a
   // `fee`/`feeBps`/`feeReceiver` argument can never reach this line - the rate
   // is ours, never the model's. Undefined for every tool that carries no Vex fee
-  // or discloses it elsewhere (Jupiter's richer `feeDisclosure` below; the
-  // Trench launch form), so the card grows no line rather than an empty or zero
-  // one.
+  // or discloses it elsewhere (Jupiter's richer `feeDisclosure` below), so the
+  // card grows no line rather than an empty or zero one.
   const vexFee = extras?.vexFee !== undefined
     ? describeBoundVexFee(effective.toolName, extras.vexFee)
-    : describeApprovalVexFee(effective.toolName, effective.args);
+    : undefined;
   if (vexFee !== undefined) {
     criticalArgs.vexFee = vexFee;
   }

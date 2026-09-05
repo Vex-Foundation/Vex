@@ -59,6 +59,7 @@ describe("the pools.fun launch domain is exposed on the agent bridge", () => {
       "deploy",
       "getAwaiting",
       "myLaunches",
+      "onFormRequested",
       "prepare",
     ]);
   });
@@ -100,11 +101,9 @@ describe("each method invokes its OWN channel", () => {
     expect(invokedChannel()).toBe(CH.poolsLaunch.claim);
   });
 
-  it("never reaches the OTHER launchpad's channels", async () => {
+  it("stays inside its own channel namespace", async () => {
     await poolsLaunch.prepare({ sessionId: SESSION_ID, form: FORM });
-    const channel = invokedChannel();
-    expect(channel.startsWith("vex:poolsLaunch:")).toBe(true);
-    expect(channel).not.toBe(CH.tokenLaunch.preview);
+    expect(invokedChannel().startsWith("vex:poolsLaunch:")).toBe(true);
   });
 });
 

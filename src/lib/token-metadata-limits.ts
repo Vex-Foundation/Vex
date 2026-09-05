@@ -1,72 +1,68 @@
 /**
- * Length caps for the metadata `create()` writes ON-CHAIN, PERMANENTLY.
+ * Length and size caps for the metadata a token launch writes PERMANENTLY.
  *
  * PROVENANCE: MEASURED ON-CHAIN, bisected via free `eth_estimateGas` on
- * 2026-08-02 at block ~26003783 (harness: `agents_dm/trench-live/limit-probe.mts`).
- * The Diamond hardcodes the limits in facet bytecode — a storage scan found no
- * limit slots, so a runtime reader is impossible and these measured constants
- * ARE the live data. `create()` reverts `invalid name/symbol/image/desc` past:
- * name 18, symbol 18, description 512, links 4.
+ * 2026-08-02 at block ~26003783 (harness: `agents_dm/trench-live/limit-probe.mts`)
+ * against the Trench Express Diamond, which hardcoded its limits in facet
+ * bytecode. That protocol was retired by migration 108, but the numbers stay:
+ * they are the caps Vex applies to token metadata on every launchpad, and a
+ * measured ceiling does not stop being a sensible one because the venue that
+ * revealed it is gone. What changed is that they are now VEX's product caps
+ * rather than one chain's revert boundary, and this header is the record of it.
  *
- * WHY ONE DEFINITION. Three surfaces cap the same text: the agent runtime
- * (`trench.launch_execute` validation and the `trench.launch_preview` dry-run)
- * and the privileged IPC contract the renderer form is built from
- * (`vex-app/src/shared/schemas/token-launch.ts`). They were hand-duplicated, and
- * a looser cap on any one of them turns a chain revert into a vague
- * `gas_unestimable` instead of a refusal that names the field.
+ * WHY ONE DEFINITION. Two surfaces cap the same text: the privileged IPC
+ * contract the renderer form is built from (`vex-app/src/shared/schemas/
+ * pools-launch.ts`) and the renderer form itself. They were hand-duplicated,
+ * and a looser cap on either turns a launchpad refusal into a vague failure
+ * instead of one that names the field.
  *
- * THE SYMBOL CAP IS DELIBERATELY TIGHTER THAN THE CHAIN'S. The chain reverts a
- * symbol past 18 characters; Vex refuses past 16. That is a product decision,
- * not a measurement, and it is stated here rather than silently unified with
- * the name cap so no later reader "corrects" it back to 18.
+ * THE SYMBOL CAP IS DELIBERATELY TIGHTER THAN THE NAME CAP. The measurement put
+ * both at 18; Vex refuses a symbol past 16. That is a product decision, not a
+ * measurement, and it is stated here rather than silently unified so no later
+ * reader "corrects" it back to 18.
+ *
+ * WHAT WAS DELETED WITH TRENCH EXPRESS: the description, link-count and
+ * link-length caps. They existed for the `create()` calldata that carried a
+ * description and a link array on-chain; pools.fun takes neither through this
+ * contract, so after migration 108 they had no consumer left and are gone
+ * rather than kept "just in case" (`.claude/CLAUDE.md`).
  *
  * WHY THIS LIVES IN `src/lib`. Same reason as its sibling
  * `token-metadata-text-policy.ts`: the renderer and `shared` may not import
  * `src/vex-agent`, and the sanctioned cross-boundary path is `@vex-lib` ->
  * `../src/lib` for modules that are PURE. This module is therefore deliberately
- * dependency-free — it imports nothing, reads no environment, and touches no
+ * dependency-free - it imports nothing, reads no environment, and touches no
  * key, DB or network. Keep it that way, or it stops being importable by the
  * renderer (`vex-app/scripts/check-process-boundaries.mjs`).
  */
 
-/** Chain limit: `create()` reverts `invalid name` past 18 characters. */
+/** Measured revert boundary, now Vex's own cap: at most 18 characters. */
 export const TOKEN_METADATA_NAME_MAX = 18;
 
 /**
- * Vex's cap, 16. The CHAIN's own limit is 18 (measured); Vex is deliberately
- * stricter here. See the module header before changing it.
+ * Vex's cap, 16. The measured limit was 18; Vex is deliberately stricter here.
+ * See the module header before changing it.
  */
 export const TOKEN_METADATA_SYMBOL_MAX = 16;
 
-/** Chain limit: `create()` reverts `invalid desc` past 512 characters. */
-export const TOKEN_METADATA_DESCRIPTION_MAX = 512;
-
-/** Chain limit: `create()` accepts at most 4 links. */
-export const TOKEN_METADATA_LINKS_MAX = 4;
-
 /**
- * Per-link length cap. Not a measured chain revert: a URL this long is already
- * outside anything a launch form legitimately carries, and every link is written
- * on-chain immutably, so the cap is Vex's own and applies on all three surfaces.
- */
-export const TOKEN_METADATA_LINK_LENGTH_MAX = 128;
-
-/**
- * The hard ceiling on the image bytes Trench writes ON-CHAIN, in `create()`
- * calldata. 20 KiB.
+ * The hard ceiling on the bytes of the SMALL SQUARE DERIVATIVE the desktop
+ * image ladder produces. 20 KiB.
  *
- * TRENCH-ONLY, and that is the point (owner decision 2026-08-19). pools.fun
- * hosts images off-chain on its own backend - it accepted a 2,104,822-byte PNG,
- * measured - so this number must never be applied to a pools launch or to the
- * locker itself. The locker stores what the user picked; the desktop ladder
- * derives a copy under this ceiling for Trench, and an image with no such copy
- * is refused BY NAME on the Trench path only.
+ * WHAT IT IS NOW, and what it was. It was the ceiling on image bytes Trench
+ * Express wrote inside `create()` calldata, where every byte was gas the user
+ * paid. Migration 108 retired that protocol and nothing signs over image bytes
+ * any more: pools.fun hosts images off-chain on its own backend (it accepted a
+ * 2,104,822-byte PNG, measured), so a launch publishes the stored ORIGINAL and
+ * this number never bounds it.
  *
- * WHY IT LIVES HERE. Same reason as its text siblings above: three surfaces
- * need the same number and none of them may import the others. It is the
- * `launch_images.onchain_byte_length` CHECK (migration 083), the assertion the
- * launch plan runs before composing calldata, and the bound the desktop
- * variant report declares. The desktop ladder aims LOWER (20 000 with headroom,
+ * The derivative itself survives as the locker grid's THUMBNAIL, and so does
+ * this ceiling, because it is durable: `launch_images.onchain_byte_length`
+ * carries a CHECK against it (migration 083) over rows already written.
+ * Renaming the column is out of scope for the retirement; the honest reading of
+ * both is "the bound the stored derivative was written under".
+ *
+ * The desktop ladder aims LOWER (20 000, with headroom -
  * `vex-app/src/shared/schemas/images.ts`); this is the ceiling nothing may
  * cross, not the budget the ladder targets.
  */

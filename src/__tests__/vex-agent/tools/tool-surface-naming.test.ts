@@ -188,8 +188,12 @@ describe("G2 - publicName mapping gate", () => {
     // `launch()` is what makes the agent live, so the state between them needs
     // its own read and its own exit. All four are new identities with their own
     // rows in `mappings/virtuals.json`; nothing was reclaimed or retired, so
-    // this is a pure +4 to 155.
-    expect(PROTOCOL_TOOLS.length).toBe(155);
+    // that was a pure +4 to 155. 155 -> 145 on the Trench Express retirement
+    // (migration 108): the ten `trench.*` identities were DELETED with the
+    // protocol, mappings file and all - the first entry in this ledger that is
+    // a retirement rather than a widening, which is why the arithmetic runs the
+    // other way.
+    expect(PROTOCOL_TOOLS.length).toBe(145);
   });
 });
 

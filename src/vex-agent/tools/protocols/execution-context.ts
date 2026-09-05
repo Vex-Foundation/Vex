@@ -22,7 +22,7 @@ import type { ApprovalSurface, ProtocolExecutionContext } from "./types.js";
 /**
  * Build the protocol execution context for one call.
  *
- * `call` carries the provider's id for THIS tool call: `trench.launch_request_form`
+ * `call` carries the provider's id for THIS tool call: `pools.launch_request_form`
  * parks the turn and its later result must address exactly this id (section C3b),
  * so the id travels with the context rather than being re-derived downstream.
  */

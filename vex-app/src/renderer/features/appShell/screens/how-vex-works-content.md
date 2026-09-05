@@ -42,9 +42,9 @@ Three separate costs, and they are genuinely separate. None of them is refundabl
 
 **"Tokens" on the Runtime & Cost card are not crypto tokens.** They are the model's unit of text - roughly, words in and words out. That card is your AI bill, in dollars, on your own key.
 
-**The Vex fee, stated plainly.** Vex charges 0.25% on the operations it executes for you: token swaps on any chain (whichever venue it routed through), cross-chain bridges, Trench Express launches and trades, and pools.fun launches. **Pendle trades carry no Vex fee.** Three rules govern it:
+**The Vex fee, stated plainly.** Vex charges 0.25% on the operations it executes for you: token swaps on any chain (whichever venue it routed through), cross-chain bridges, and pools.fun launches. **Pendle trades carry no Vex fee.** Three rules govern it:
 
-- It is taken on the **input** - the asset you spend, not the one you receive. (The one exception: selling a Trench token, where the fee comes off the ETH you receive.)
+- It is taken on the **input** - the asset you spend, not the one you receive.
 - It is charged **only after the operation succeeds**. A failed, reverted, or never-broadcast attempt is never charged. At very small sizes it rounds to zero and no fee is taken at all.
 - It is **Vex's own fee**, separate from network gas, from the venue's own protocol fee, and from bridge relayer costs.
 
@@ -166,9 +166,9 @@ Three columns on one screen. Both side columns fold away to a thin strip when yo
 
 **Left rail - your sessions.** "New session" starts a fresh conversation. ALL / AGENT / MISSION tabs filter the list, and a magnifier filters it by title. Rows can be pinned or deleted (deletion is blocked while a mission runs or an approval waits - the app says which). A slim $VEX card shows the live token price. The footer avatar opens a menu: Personalize, Memory, Sessions, Agent Scan, How Vex works (this page), Settings - and the runtime status row at the bottom.
 
-**Center - the conversation.** With no session open you see the Vex mark with its PREVIEW badge, the message box below it, and three quick-action chips: "Hunt trending memecoins", "Scout Pendle yields", "Explore Trench launchpad". A chip only fills the message box and vanishes while you type; nothing sends until you press send. In a session this column is the transcript: replies stream live, every tool call is a collapsible row, and approval cards appear between the transcript and the message box.
+**Center - the conversation.** With no session open you see the Vex mark with its PREVIEW badge, the message box below it, and three quick-action chips: "Hunt trending memecoins", "Scout Pendle yields", "Explore pools.fun launchpad". A chip only fills the message box and vanishes while you type; nothing sends until you press send. In a session this column is the transcript: replies stream live, every tool call is a collapsible row, and approval cards appear between the transcript and the message box.
 
-**Right - the BOOK panel.** The instruments dashboard. With a session open it stacks: Position, Wallets, Balances, Activity, Runtime & Cost, Session, and Trench Express. Drag any card by its handle - or focus the handle and press Up or Down - to reorder them; the app remembers your order. With no session open, BOOK shows your whole Portfolio.
+**Right - the BOOK panel.** The instruments dashboard. With a session open it stacks: Position, Wallets, Balances, Activity, Runtime & Cost, Session, and Launchpad. Drag any card by its handle - or focus the handle and press Up or Down - to reorder them; the app remembers your order. With no session open, BOOK shows your whole Portfolio.
 
 ### What the states on screen mean
 
@@ -202,7 +202,6 @@ Vex reaches real venues under their real names. Read-only calls run freely; anyt
 | Ethereum, Optimism, BSC, Base, Arbitrum, Mantle, Sonic, HyperEVM, Berachain, Monad, Plasma | Pendle yield trading (11 chains) |
 | Ethereum, Optimism, Unichain, Polygon, Monad, HyperEVM, Robinhood Chain, Base, Arbitrum | Morpho variable-rate lending (9 chains) |
 | Solana | Swap, lend, borrow, prediction markets, via Jupiter |
-| Robinhood Chain | Trench Express launches and curve trading |
 | Robinhood Chain | pools.fun launches, fee claims and launchpad research |
 | More than forty chains, list fetched live from the bridge's own registry | See balances; bridge between them |
 
@@ -230,16 +229,8 @@ An intent bridge: you say what should move where, and Khalani works out the rout
 ### ![Virtuals](/logo/virtuals.svg) Virtuals
 A launchpad (a site where new tokens are first offered) for AI-agent tokens. Vex uses it read-only, to discover new launches. Example: "Any interesting new agent tokens on Virtuals this week?"
 
-### ![Trench Express](/protocols/trench.jpg) Trench Express
-A bonding-curve launchpad on Robinhood Chain, where a token's price is set by a formula that moves as people buy and sell. Vex can browse and search new tokens, read their trade tape, buy and sell them on the curve, and launch a token of your own. All three spend real money. On curve trades two separate fees apply: the launchpad's own 1% curve fee (charged by Trench itself, like any venue's protocol fee) and Vex's 0.25% on the ETH side - the quote you approve shows both.
-
-- **Launching** goes: you (or Vex) open the launch form → a preview card shows the exact amount, the Vex fee and the estimated gas → you deploy. **The form is the approval** - there is no second card afterwards, so read it before you submit.
-- The picture is stored inside the launch transaction, so its size is gas you pay. Vex optimizes and square-crops every image you add to the **Trench Photos** locker (the Trench Express card in the BOOK panel, which is also where "Launch a token" lives) and tells you the resulting size.
-- **My Launches**, inside the launch dialog, lists what you have launched. A launch that has been broadcast but not yet confirmed says "in flight - no token address yet" rather than pretending a token exists.
-- Trades on the curve go through the ordinary approval card and the ordinary price check. On a sell, if Vex cannot decode what you actually received, it takes **no fee at all** rather than charging a percentage of a guess.
-
 ### ![pools.fun](/protocols/pools.jpg) pools.fun
-A second launchpad on Robinhood Chain, built a different way from Trench: there is no bonding curve and no graduation moment. At launch the whole token supply goes straight into a SushiSwap V3 pool and the position is locked there permanently, so the token trades in a real pool from its first block. Every pool charges a 1% fee of its own. Two launchers share this chain, so Vex always says which one a token came from, and it identifies tokens by address - symbols are not unique and copycats are common.
+The launchpad on Robinhood Chain. There is no bonding curve and no graduation moment. At launch the whole token supply goes straight into a SushiSwap V3 pool and the position is locked there permanently, so the token trades in a real pool from its first block. Every pool charges a 1% fee of its own. Two launchers share this chain, so Vex always says which one a token came from, and it identifies tokens by address - symbols are not unique and copycats are common.
 
 - **Research** costs nothing: Vex browses and screens the launchpad, searches by name or symbol, pulls price candles, deep-reads a single token, and lists the launches made from your own wallet.
 - **Launching** uses the pools.fun gateway, and Vex never signs what the gateway hands it on trust. It decodes the transaction first and checks it line by line against what you asked for: the name and symbol, the paired asset, the deployment fee against the contract's own current bounds, the prebuy amount, and the destination. Anything that does not match is refused rather than signed.

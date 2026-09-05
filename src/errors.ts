@@ -472,12 +472,6 @@ export const ErrorCodes = {
    */
   MERKL_BUDGET_EXHAUSTED: "MERKL_BUDGET_EXHAUSTED",
 
-  // Trench Express (RBC 4663 launchpad — read-only client, P1)
-  TRENCH_API_ERROR: "TRENCH_API_ERROR",
-  TRENCH_TIMEOUT: "TRENCH_TIMEOUT",
-  TRENCH_INVALID_RESPONSE: "TRENCH_INVALID_RESPONSE",
-  TRENCH_INVALID_REQUEST: "TRENCH_INVALID_REQUEST",
-  TRENCH_NOT_FOUND: "TRENCH_NOT_FOUND",
 
   // pools.fun (Robinhood Chain 4663 launchpad on api.bankr.bot - read client)
   POOLS_API_ERROR: "POOLS_API_ERROR",

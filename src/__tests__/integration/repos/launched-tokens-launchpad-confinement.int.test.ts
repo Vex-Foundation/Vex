@@ -8,11 +8,18 @@
  * not claim a pools.fun token. Chain 4663 carries both launchpads, so before
  * this change `chain_id` was the only predicate and the populations overlapped.
  *
- * The pre-change behaviour was captured first, as a characterization run against
- * the old predicates: `claimAttributionCandidates`,
- * `claimAgentscanAttestCandidates` and `countUnsignedAttributionGap` each
- * returned BOTH venues' rows. Those three assertions are inverted below; each
- * goes red if its `launchpad` predicate is reverted.
+ * The pre-change behaviour was captured first, as a characterization run
+ * against the old predicates, which returned BOTH venues' rows. Those
+ * assertions are inverted below; each goes red if its `launchpad` predicate is
+ * reverted.
+ *
+ * TWO OF THE THREE ORIGINAL LANES ARE GONE. `claimAttributionCandidates` and
+ * `countUnsignedAttributionGap` served the trench.express badge sweep, which
+ * migration 108 retired along with the protocol; the sweep and both repo
+ * functions were deleted with it. `claimAgentscanAttestCandidates` SURVIVES and
+ * is still confined to `trench_express`, because it reads HISTORICAL rows -
+ * their creation proofs are still owed to the AgentScan registry whether or not
+ * the launchpad still exists.
  */
 
 import { describe, it, expect, afterAll, beforeEach } from "vitest";
@@ -195,20 +202,6 @@ describe("claim confinement - neither lane sees the other's rows", () => {
     return seeded;
   }
 
-  it("claimAttributionCandidates NEVER claims a pools.fun row (was: it did)", async () => {
-    const trench = await seed("trench_express");
-    const pools = await seedPoolsRowCarryingTrenchSignature();
-    const claimed = await repo.claimAttributionCandidates({
-      chainId: CHAIN,
-      limit: 25,
-      retryAfterSeconds: 600,
-    });
-    expect(claimed.map((c) => c.id)).toEqual([trench.id]);
-    // Not merely absent from the batch: not stamped either. A stamp would have
-    // advanced the retry window of a row this sweep can never attribute.
-    expect((await readRow(pools.id)).attribution_attempted_at).toBeNull();
-  });
-
   it("claimAgentscanAttestCandidates NEVER claims a pools.fun row (was: it did)", async () => {
     const trench = await seed("trench_express");
     const pools = await seedPoolsRowCarryingTrenchSignature();
@@ -348,12 +341,6 @@ describe("unsigned-gap counts are per-lane", () => {
     await seed("pools_fun");                      // signed - not a gap
     await seed("trench_express", { signed: false }); // other venue - not this gap
     expect(await repo.countPoolsUnsignedAttributionGap()).toBe(2);
-  });
-
-  it("countUnsignedAttributionGap no longer counts pools rows (was: it did)", async () => {
-    await seed("trench_express", { signed: false });
-    await seed("pools_fun", { signed: false });
-    expect(await repo.countUnsignedAttributionGap(CHAIN)).toBe(1);
   });
 
   it("an attributed pools row is not a gap", async () => {

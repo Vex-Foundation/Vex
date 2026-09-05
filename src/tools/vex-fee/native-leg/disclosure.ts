@@ -9,7 +9,7 @@
  * Two things any such disclosure must be honest about, which is why it carries
  * more than a number:
  *
- *   `basis`  - WHICH leg the fee came out of. On a Trench SELL that is the ETH
+ *   `basis`  - WHICH leg the fee came out of. On a curve SELL that is the ETH
  *              the user RECEIVES rather than the token they sent, a deviation
  *              from `currency_in` that would mislead if merely implied.
  *   `note`   - that the fee leg runs AFTER the action confirms, as a separate
@@ -31,7 +31,7 @@
  * the venue's OWN decimals and names the asset.
  *
  * It is RETAINED, not renamed, because this shape is MODEL-VISIBLE tool output:
- * the Trench quote surface reads it and external agents consume it with no
+ * the quote surfaces read it and external agents consume it with no
  * in-repo import to find. So the transition is additive - the field is emitted
  * ONLY where it was ever true (an ETH venue with 18 decimals) and omitted
  * everywhere else, rather than emitted with a wrong or misnamed number.

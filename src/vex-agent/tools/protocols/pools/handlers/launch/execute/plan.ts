@@ -23,7 +23,7 @@
  *
  * WHY THE VERIFIER RUNS BEFORE ANY AUTHORIZATION EXISTS: authorizing first and
  * checking afterwards would mean the user approved something nobody had checked.
- * See `../authorization.ts` for why a trench-style re-derive-and-compare is
+ * See `../authorization.ts` for why a re-derive-and-compare is
  * unavailable here and what stands in its place.
  */
 

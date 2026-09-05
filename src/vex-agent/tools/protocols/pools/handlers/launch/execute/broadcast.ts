@@ -382,7 +382,7 @@ async function finalizeConfirmedPoolsLaunch(
 
     // `event_role='token_launch'` requires BOTH executed legs: the native value
     // spent, and the token the launch produced. `devBuyOut` is PROVEN by
-    // `GatewayLaunch` itself, so unlike the trench path there is no
+    // `GatewayLaunch` itself, so there is no
     // "amount unknown" branch - a launch with no prebuy proves zero.
     const identity = {
       executedAmountInHuman: formatEther(x.plan.call.valueWei),

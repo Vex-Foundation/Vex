@@ -124,11 +124,15 @@ describe("the exported inventory covers exactly the export scope", () => {
     // in `NON_EXPORTED_PROTOCOL_TOOLS`: an external agent has no image locker,
     // but it does have its own project, and the launch family takes `imagePath`
     // there and publishes those bytes to the same content-addressed host. Only
-    // one of the four is read-only (`_status`); the internal count is unmoved
-    // and the protocol count carries all four (149 -> 153).
-    expect(inventory).toHaveLength(180);
+    // one of the four is read-only (`_status`); the internal count was unmoved
+    // and the protocol count carried all four (149 -> 153).
+    // 180 -> 170 on the Trench Express retirement (migration 108): the ten
+    // `trench__*` tools were deleted with the protocol. All ten were protocol
+    // tools, so the internal count is unmoved again and the protocol count
+    // carries the whole drop (153 -> 143).
+    expect(inventory).toHaveLength(170);
     expect(inventory.filter((t) => t.kind === "internal")).toHaveLength(27);
-    expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(153);
+    expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(143);
   });
 
   it("keeps WebResearch OUT of tools/list while the in-app registry keeps it", () => {
@@ -293,7 +297,7 @@ describe("annotations are pinned to O7, literally", () => {
     // nothing and broadcasts nothing). A `mutating`-derived hint would fire a
     // client's irreversible-action prompt on it, and on the two launch-request
     // forms that only ask the user a question.
-    const diverging = ["pools__launch_preview", "pools__launch_request_form", "trench__launch_request_form"];
+    const diverging = ["pools__launch_preview", "pools__launch_request_form"];
     for (const name of diverging) {
       const manifest = getProtocolManifest(
         inventory.find((t) => t.publicName === name)?.toolId ?? "",

@@ -77,8 +77,6 @@ function mount(): void {
       onOpenChange: vi.fn(),
       sessionId: "s1",
       origin: "user" as const,
-      platform: "pools" as const,
-      onPlatformChange: vi.fn(),
     }),
   );
 }

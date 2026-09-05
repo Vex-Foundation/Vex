@@ -28,9 +28,15 @@ import {
 
 // ── create ──────────────────────────────────────────────────────────────────
 
-// The pools columns (migration 082) are all nullable and `protocol` DEFAULTs to
-// 'trench' in the database, so a caller that supplies none of them writes
-// exactly the row it wrote before this existed.
+// The pools columns (migration 082) are all nullable, so a caller that supplies
+// none of them writes exactly the row it wrote before they existed.
+//
+// `protocol` is NOT among them: migration 108 dropped its 'trench' DEFAULT when
+// the Trench protocol was retired, so the discriminator is now stated by every
+// writer or the INSERT fails. It used to be `COALESCE($20, 'trench')` here, and
+// that pair - a defaulted column plus a defaulting parameter - is exactly how a
+// forgotten discriminator would have written a live row on a protocol that no
+// longer has a handler.
 const INSERT_SQL = `INSERT INTO token_launch_intents (
   intent_id, session_id, origin, status, chain_id, wallet_address,
   name, symbol, description, links, image_id, prebuy_raw, prebuy_decimals,
@@ -46,7 +52,7 @@ const INSERT_SQL = `INSERT INTO token_launch_intents (
   $7, $8, $9, $10::jsonb, $11, $12, $13,
   $14, $15, $16::jsonb, CASE WHEN $14::text IS NULL THEN NULL ELSE NOW() END,
   $17, $18, $19,
-  COALESCE($20, 'trench'), $21, $22, $23,
+  $20, $21, $22, $23,
   $24, $25, $26, $27,
   $28,
   $29, $30,
@@ -101,7 +107,7 @@ export async function createWith(
     input.toolCallId ?? null,
     input.missionRunId ?? null,
     input.expiresAt,
-    input.protocol ?? null,
+    input.protocol,
     input.pools?.pairedAsset ?? null,
     input.pools?.pairedAssetAddress ?? null,
     input.pools?.feeRecipientAddress ?? null,

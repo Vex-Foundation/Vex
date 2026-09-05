@@ -1,5 +1,6 @@
 import type { Result } from "../../../ipc/result.js";
 import type {
+  LaunchFormEvent,
   PoolsClaimedFees,
   PoolsClaimInput,
   PoolsClaimPreview,
@@ -66,4 +67,12 @@ export interface PoolsLaunchBridge {
     input: PoolsClaimInput,
   ) => Promise<Result<PoolsClaimPreview>>;
   readonly claim: (input: PoolsClaimInput) => Promise<Result<PoolsClaimedFees>>;
+  /**
+   * Subscribe to `EV.launch.formRequested` - fired after an agent's
+   * `pools.launch_request_form` intent has COMMITTED. The payload is an
+   * INVALIDATION SIGNAL only: it carries ids, an enum and a timestamp, and the
+   * renderer re-reads `getAwaiting` rather than reconstructing a draft from it.
+   * Returns its own unsubscribe.
+   */
+  readonly onFormRequested: (cb: (event: LaunchFormEvent) => void) => () => void;
 }

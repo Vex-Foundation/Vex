@@ -155,7 +155,7 @@ function readText(
  * happily pinned metadata with no image key, and the token renders blank on
  * pools.fun forever. An optional param and a warning in the description did not
  * prevent it, so the AGENT path now refuses instead of warning - the same product
- * rule Trench enforces, in OUR handler rather than assumed from the provider.
+ * rule we enforce, in OUR handler rather than assumed from the provider.
  *
  * The preview stays imageless-friendly because it is advisory and takes no image
  * lock, the form stays imageless-friendly because the USER picks the image there

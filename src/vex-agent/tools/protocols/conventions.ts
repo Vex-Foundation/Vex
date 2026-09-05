@@ -570,7 +570,7 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   ["minSupplyRate", "floor on the supply rate a rates read returns"],
   ["minTotalRate", "floor on the total (rewards-inclusive) rate a rates read returns"],
 
-  // -- Launchpad creation and screening (trench, pools.fun) -----------
+  // -- Launchpad creation and screening (pools.fun, virtuals) ---------
   //
   // The token a launch CREATES does not exist yet, so these are not `token`
   // keys: they are the metadata the launch is minted with. `prebuy` is the
@@ -766,7 +766,7 @@ export const CANONICAL_HUMAN_AMOUNT_SENTENCE =
  * and `confirmed_unrecorded`, and a completed call routinely carries neither:
  * both bridges (`relay/handlers/bridge/results.ts`, `khalani/handlers/
  * bridge-execute.ts` and its poll), both EVM swap executes on their broadcast
- * and failure paths, the Jupiter swap, the lend pair, trench and pools all
+ * and failure paths, the Jupiter swap, the lend pair and pools all
  * return `status: "pending"` from a call the broker settles as `completed`. An
  * agent told `pending` is not a settled word reads a broadcast transaction as an
  * unfinished call and sends it again - the double-spend this sentence exists to

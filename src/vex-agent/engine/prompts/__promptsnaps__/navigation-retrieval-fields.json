@@ -963,94 +963,6 @@
         }
       ]
     },
-    "trench": {
-      "aliases": [
-        "trench",
-        "trench express",
-        "trench launchpad",
-        "trench token launches",
-        "trench curve trading",
-        "buy trench token"
-      ],
-      "discoveryHints": [
-        "buy a trench bonding curve token",
-        "sell a trench launchpad token for eth",
-        "new token launches on trench",
-        "trench bonding curve tokens",
-        "trench launchpad trade tape",
-        "robinhood launchpad tokens"
-      ],
-      "exampleQueries": [
-        "ToolSearch(query=\"buy a trench bonding curve token with ETH\", namespace=\"trench\")",
-        "ToolSearch(query=\"new token launches on trench\", namespace=\"trench\")",
-        "ToolSearch(query=\"preview a token launch cost\", namespace=\"trench\")"
-      ],
-      "facets": [
-        {
-          "label": "Trench curve trading (buy/sell)",
-          "summary": "Quote then buy a Trench bonding-curve token with ETH, or sell it back for ETH, with a Vex-derived minimum-output floor.",
-          "toolPrefixes": [
-            "trench.trade_quote",
-            "trench.trade_execute"
-          ],
-          "hints": [
-            "buy trench token with eth",
-            "sell trench token for eth",
-            "quote a trench curve trade",
-            "trench bonding curve buy",
-            "trench bonding curve sell"
-          ]
-        },
-        {
-          "label": "Trench launchpad token browsing and search",
-          "summary": "List and screen Trench Express bonding-curve and graduated tokens, or look one up by name or symbol.",
-          "toolPrefixes": [
-            "trench.tokens",
-            "trench.search"
-          ],
-          "hints": [
-            "trench launchpad tokens",
-            "new trench launches",
-            "trench bonding curve",
-            "trench token lookup",
-            "trench token by symbol"
-          ]
-        },
-        {
-          "label": "Trench trade tape and launch preview",
-          "summary": "Read a Trench token's recent trade tape and dry-run a Trench token launch to preview address, fee, and gas cost.",
-          "toolPrefixes": [
-            "trench.trades",
-            "trench.launch_preview"
-          ],
-          "hints": [
-            "trench trade tape",
-            "recent trench trades",
-            "trench launch preview",
-            "create trench token cost",
-            "dry run trench launch"
-          ]
-        },
-        {
-          "label": "Launching a token on Trench",
-          "summary": "Create a token on the Trench bonding curve, and review the ones already launched. A launch REQUIRES an image the user pre-staged in the app; the agent cannot supply one.",
-          "toolPrefixes": [
-            "trench.launch_request_form",
-            "trench.launch_execute",
-            "trench.my_launches",
-            "trench.images"
-          ],
-          "hints": [
-            "launch a token on trench",
-            "create a memecoin",
-            "deploy a token",
-            "my launched tokens",
-            "trench launch images",
-            "pick a launch image"
-          ]
-        }
-      ]
-    },
     "pools": {
       "aliases": [
         "pools",
@@ -1352,16 +1264,6 @@
     "morpho.market.supply": "d1ded1635e4627820dbfcec9ffc810585c7edd6e029521b8bc319e108fb5de9f",
     "morpho.market.withdraw": "5f6810c796570c2bed062f00bcab1551a1f3a6760514d4bd1e0ab4a629b3382b",
     "morpho.rewards.claim": "8e94e20971b2803f6321585cb306b764dc7834917cae627d87b51772a806988c",
-    "trench.tokens": "221c38e83cbb0a9aff4c27d3136d230c0969a95c6fd06112e7ef479c859f747f",
-    "trench.search": "084e28f482c2b5dda680a973e273d805532e0594720ca64dd10e921a78471b36",
-    "trench.trades": "f39ac7fd397c923937e16c506ea67fde455756e3471cce3d3a7216303a332794",
-    "trench.launch_preview": "bb50a96f8624c5f6e13efb669cea86ab58dd80996d6089f59d796a4e1179e240",
-    "trench.trade_quote": "25e71b425269ec470e2e00920163ccb07492033c6277a10d21115a7c3ad9d139",
-    "trench.trade_execute": "505da5a6d0f8de91298f5843f5eabc66e20a3642ec60dd44fb4bab5b8f499d04",
-    "trench.images": "0a86bd81920dc3f09e29d1bc604c6720ca02e8c495e424a54516f7c7bcd4a79f",
-    "trench.my_launches": "341aedbe05fe1b5b6dd4ff6e56e003ac72d6b557bcad4576a02df6de9a0419dc",
-    "trench.launch_request_form": "feab5717b43a3aaaef3070170b6645c42149c364c75107c483f4f576c8df7209",
-    "trench.launch_execute": "2ad9733abd159dc7fa886196e6fcd97dbde1e11fbdff9933e4fe50f0a29a190b",
     "pools.tokens": "e9bdeb67dc75a5f03158ece0daf27ea8b8e7aef9a702beacfe23a6e841e26ad1",
     "pools.search": "6b3b50c93ad60dda20f04cbf86b92863abb1f62e97511505f690b998356fd4dd",
     "pools.candles": "886a4df8db7f765977458e8d0bb16d9e9e9f01759b2f9a4c40389a5eeee0823c",

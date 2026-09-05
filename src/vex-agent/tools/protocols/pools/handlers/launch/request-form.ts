@@ -35,7 +35,7 @@ import { readPoolsLaunchInputs } from "./inputs.js";
 const TOOL_ID = "pools.launch_request_form";
 
 /**
- * How long the user has to act. The same 15 minutes Trench's launch form uses -
+ * How long the user has to act. Fifteen minutes -
  * stated here rather than shared, because the window is a per-surface product
  * decision and a single constant would silently couple two of them.
  */

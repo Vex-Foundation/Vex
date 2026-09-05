@@ -13,7 +13,7 @@
  *
  * The producer emits only AFTER the transaction that inserted the
  * `awaiting_user_form` row has committed, so a renderer that reads
- * `tokenLaunch.getAwaiting` on this signal is guaranteed to find the row.
+ * `poolsLaunch.getAwaiting` on this signal is guaranteed to find the row.
  *
  * Import discipline: the bus is imported DIRECTLY from `launch-form-bus.js`,
  * not the engine barrel, which would pull the DB client into the main-process
@@ -21,7 +21,7 @@
  */
 
 import { EV } from "@shared/ipc/channels.js";
-import { launchFormEventSchema } from "@shared/schemas/token-launch.js";
+import { launchFormEventSchema } from "@shared/schemas/pools-launch.js";
 import { launchFormBus } from "@vex-agent/engine/runtime/launch-form-bus.js";
 import { broadcastToAllWindows } from "../lifecycle/broadcast.js";
 import { log } from "../logger/index.js";

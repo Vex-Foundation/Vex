@@ -67,7 +67,7 @@ export function planUniswapFeeLeg(input: {
       walletAddress: input.walletAddress,
       sessionId: input.sessionId,
       // The fee IS this row: it lives in `tokenIn`/`amountIn`, exactly as a
-      // `bridge_fee` or `trench_fee` row does. The `vexFee`
+      // `bridge_fee` or `pools_fee` row does. The `vexFee`
       // (`AgentActivityVexFeeCharge`) columns are deliberately NOT set - those
       // are for venues that take the fee inside the transaction being recorded,
       // and setting both stores the same money twice.

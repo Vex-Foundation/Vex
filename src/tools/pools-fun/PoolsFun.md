@@ -682,8 +682,16 @@ exists so a multi-gigabyte file picked in the dialog cannot exhaust memory. If
 a user needs a larger image on pools.fun, the honest answer is the `imageUrl`
 paste path below, not a wider read ceiling.
 
-An image the Trench ladder could not shrink is stored with `onchain_byte_length
-IS NULL`, is badged "pools only" in the locker card, and launches here normally.
+An image the ladder could not shrink is stored with `onchain_byte_length IS
+NULL`, is badged "no preview" in the locker card, and launches here normally.
+
+**Since migration 108 that derivative is a THUMBNAIL and nothing else.** The
+retirement deleted the launchpad whose calldata carried image bytes, so the
+20,480-byte ceiling no longer bounds anything a user pays for; it survives
+because `launch_images.onchain_byte_length` carries a CHECK against it over rows
+already written. The columns and the seam keep their `onchain` names, which are
+now historical rather than descriptive - renaming a durable column is its own
+change.
 
 #### Three ways an image reaches a pools.fun launch
 

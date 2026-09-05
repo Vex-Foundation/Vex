@@ -22,11 +22,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const getLockerImage = vi.fn();
 const readImageBytes = vi.fn();
-const readLockerImageOnchainBytes = vi.fn();
 
 vi.mock("../locker.js", () => ({
   getLockerImage: (id: string) => getLockerImage(id),
-  readLockerImageOnchainBytes: (id: string) => readLockerImageOnchainBytes(id),
 }));
 
 vi.mock("../byte-store.js", async () => {
@@ -44,7 +42,6 @@ vi.mock("../../logger/index.js", () => ({
 const { createHash } = await import("node:crypto");
 const {
   resolveLockerImageBytesForLaunch,
-  resolveLockerImageOnchainBytesForLaunch,
   mountLaunchImageByteResolver,
 } = await import("../byte-resolver.js");
 const seam = await import(
@@ -72,7 +69,6 @@ function metadata(overrides: Record<string, unknown> = {}) {
 
 afterEach(() => {
   seam.resetLaunchImageByteResolver();
-  seam.resetLaunchImageOnchainByteResolver();
   vi.clearAllMocks();
 });
 
@@ -126,71 +122,24 @@ describe("resolveLockerImageBytesForLaunch", () => {
  * remedies differ, and telling a user their picture is missing while it sits in
  * the grid in front of them is both false and unactionable.
  */
-describe("resolveLockerImageOnchainBytesForLaunch", () => {
-  it("returns the verified copy when the locker has one", async () => {
-    readLockerImageOnchainBytes.mockResolvedValue({ bytes: BYTES, digest: DIGEST });
-    await expect(resolveLockerImageOnchainBytesForLaunch(IMAGE_ID)).resolves.toEqual({
-      kind: "resolved",
-      bytes: BYTES,
-      digest: DIGEST,
-    });
-  });
-
-  it("names 'no on-chain copy' for an image the ladder could not shrink", async () => {
-    readLockerImageOnchainBytes.mockResolvedValue(null);
-    getLockerImage.mockResolvedValue(metadata({ byteLength: 2_104_822, onchainByteLength: null }));
-
-    await expect(resolveLockerImageOnchainBytesForLaunch(IMAGE_ID)).resolves.toEqual({
-      kind: "no_onchain_variant",
-      originalByteLength: 2_104_822,
-    });
-  });
-
-  it("answers null for an image that genuinely is not in the locker", async () => {
-    readLockerImageOnchainBytes.mockResolvedValue(null);
-    getLockerImage.mockResolvedValue(null);
-    await expect(resolveLockerImageOnchainBytesForLaunch(IMAGE_ID)).resolves.toBeNull();
-  });
-
-  it("answers null when the row claims a copy whose bytes did not verify", async () => {
-    // Swapped or truncated bytes must look EXACTLY like a missing image, not
-    // like a size problem the user could fix by picking something smaller.
-    readLockerImageOnchainBytes.mockResolvedValue(null);
-    getLockerImage.mockResolvedValue(metadata());
-    await expect(resolveLockerImageOnchainBytesForLaunch(IMAGE_ID)).resolves.toBeNull();
-  });
-});
-
 describe("mounting into the C2b seam", () => {
   beforeEach(() => {
     seam.resetLaunchImageByteResolver();
-    seam.resetLaunchImageOnchainByteResolver();
   });
 
-  it("fails closed by name on the ONCHAIN seam too, and says which seam is missing", async () => {
-    expect(seam.hasLaunchImageOnchainByteResolver()).toBe(false);
-    await expect(seam.resolveLaunchImageOnchainBytes(IMAGE_ID)).rejects.toThrow(
-      /LaunchImageOnchainByteResolver/,
-    );
-  });
-
-  it("mounts BOTH lanes, and tears both down together", async () => {
+  it("mounts the lane, and tears it down again", async () => {
     getLockerImage.mockResolvedValue(metadata());
     readImageBytes.mockResolvedValue(BYTES);
-    readLockerImageOnchainBytes.mockResolvedValue({ bytes: BYTES, digest: DIGEST });
 
     const unmount = mountLaunchImageByteResolver();
     expect(seam.hasLaunchImageByteResolver()).toBe(true);
-    expect(seam.hasLaunchImageOnchainByteResolver()).toBe(true);
-    await expect(seam.resolveLaunchImageOnchainBytes(IMAGE_ID)).resolves.toEqual({
-      kind: "resolved",
+    await expect(seam.resolveLaunchImageBytes(IMAGE_ID)).resolves.toEqual({
       bytes: BYTES,
       digest: DIGEST,
     });
 
     unmount();
     expect(seam.hasLaunchImageByteResolver()).toBe(false);
-    expect(seam.hasLaunchImageOnchainByteResolver()).toBe(false);
   });
 
   it("fails closed by name when nothing is registered - never an empty image", async () => {

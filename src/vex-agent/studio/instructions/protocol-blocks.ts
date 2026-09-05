@@ -37,7 +37,7 @@ import { isStudioEnvironmentKeyConfigured } from "./installation-environment.js"
  * WHAT VEX CHARGES IN ONE NAMESPACE, in one line per block.
  *
  * The live test (2026-09-03, p1.txt lines 134-136) measured the gap: the fee
- * note names swaps, bridges, Trench, the generic EVM pair and launches, and the
+ * note names swaps, bridges, the generic EVM pair and launches, and the
  * FREE list names sends, wraps, Pendle and Morpho, which leaves the Solana
  * generic pair, Solana lend and predict, and the pools trades in NEITHER list.
  * An agent that cannot tell whether a namespace charges guesses, and a guess
@@ -121,13 +121,6 @@ export const STUDIO_NAMESPACE_FEES: Readonly<Record<string, StudioNamespaceFee>>
       "none - the image locker is a read and publishing a picture moves no value, so neither "
       + "charges anything. The launch a picture is FOR is charged by its own launchpad namespace.",
     freeLanes: ["src/vex-agent/tools/protocols/launchpads"],
-  },
-  trench: {
-    line:
-      "25 bps of the ETH a curve trade moves, or of a launch's native value; "
-      + "reads and previews are free.",
-    charged: { symbol: "TRENCH_FEE_BPS", lane: "src/tools/trench-express" },
-    freeLanes: [],
   },
   uniswap: {
     line:

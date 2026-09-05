@@ -370,31 +370,21 @@ export const boardSparklineKeys = {
 };
 
 /**
- * Token launch (C5) — the Trench Express launch dialog.
+ * The agent-drafted launch form waiting on a session (C3b).
  *
- * `preview` is keyed by the WHOLE form input, and that is the contract rather
- * than an over-keying accident: a preview is a quote for one exact set of
- * parameters, anchored to a block, and the user's Deploy click authorizes the
- * amount it carries. Changing ANY field — a character of the name, the image,
- * one wei of prebuy — must land on a DIFFERENT cache entry, so a quote for the
- * previous parameters can never sit under a form the user has since edited.
- * Callers pass a value whose identity changes only when the parameters do;
- * `null` disables the query (there is nothing to quote yet).
+ * SESSION-SCOPED, deliberately: the dialog it drives belongs to the session the
+ * user is looking at, and a global key would pop another session's launch form
+ * over the conversation they are actually reading.
  *
- * `myLaunches` is a single global entry: the launch history belongs to the user,
- * and its page params are tracked internally by TanStack, not by the key.
+ * ONE LAUNCH DOMAIN. This used to be `tokenLaunchKeys`, alongside a `preview`
+ * and a `myLaunches` entry for the Trench Express dialog. Migration 108 retired
+ * that launchpad and pools.fun is now the only lane; its two-stage machine
+ * drives `prepare`/`deploy` imperatively and caches neither, so the awaiting
+ * read is the only launch key left.
  */
-export const tokenLaunchKeys = {
-  all: ["tokenLaunch"] as const,
-  preview: (input: unknown) => ["tokenLaunch", "preview", input] as const,
-  myLaunches: () => ["tokenLaunch", "myLaunches"] as const,
-  /**
-   * The agent-drafted form waiting on a session (§C3b). SESSION-SCOPED, unlike
-   * `myLaunches`: the dialog it drives belongs to the session the user is
-   * looking at, and a global key would pop another session's launch form over
-   * the conversation they are actually reading.
-   */
+export const poolsLaunchKeys = {
+  all: ["poolsLaunch"] as const,
   awaiting: (sessionId: string | null) =>
-    ["tokenLaunch", "awaiting", sessionId] as const,
+    ["poolsLaunch", "awaiting", sessionId] as const,
 };
 

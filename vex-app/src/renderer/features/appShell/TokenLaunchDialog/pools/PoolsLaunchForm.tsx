@@ -18,9 +18,9 @@ import { hasForbiddenTokenMetadataText } from "@vex-lib/token-metadata-text-poli
 import { Input } from "../../../../components/ui/input.js";
 import { Label } from "../../../../components/ui/label.js";
 import {
-  LAUNCH_NAME_MAX,
-  LAUNCH_SYMBOL_MAX,
-} from "../../../../lib/api/token-launch.js";
+  TOKEN_METADATA_NAME_MAX as LAUNCH_NAME_MAX,
+  TOKEN_METADATA_SYMBOL_MAX as LAUNCH_SYMBOL_MAX,
+} from "@vex-lib/token-metadata-limits.js";
 import { isAcceptableLaunchLink } from "../../token-launch/launch-display.js";
 import { LaunchImagePicker } from "../../token-launch/LaunchImagePicker.js";
 import type {

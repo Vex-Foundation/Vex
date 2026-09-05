@@ -201,7 +201,7 @@ describe("BookPanel session card stack", () => {
   });
 
   it("renders the RESOLVED persisted order, not the default, when the user has one", () => {
-    useUiStore.setState({ bookSectionOrder: ["trench", "session"] });
+    useUiStore.setState({ bookSectionOrder: ["launchpads", "session"] });
     const { container } = render(
       <BookPanel activeSessionId={SESSION} bookOpen onToggle={() => {}} />,
     );

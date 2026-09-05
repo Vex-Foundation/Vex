@@ -1,22 +1,30 @@
 /**
- * `AgentLaunchFormHost` — the §C3b loop, pinned end to end on the renderer side.
+ * `AgentLaunchFormHost` - the C3b loop, pinned end to end on the renderer side.
  *
- * The defect this closes: `trench.launch_request_form` drafted an intent and
- * parked the agent's turn, but the user only ever saw that as prose in the
- * transcript while the launch UI sat at the bottom of the Book sidebar. So the
- * cases below are the ones that decide whether the agent's question is actually
- * ASKED:
+ * The defect this closes: `pools.launch_request_form` drafts an intent and parks
+ * the agent's turn, but the user only ever saw that as prose in the transcript
+ * while the launch UI sat at the bottom of the Book sidebar. So the cases below
+ * are the ones that decide whether the agent's question is actually ASKED:
  *
  *   - an awaiting form OPENS the centered dialog with no click;
- *   - it opens with the agent's DRAFT prefilled, so the user is answering the
- *     proposal rather than retyping it;
+ *   - it opens with the agent's DRAFT prefilled, mapped field by field from the
+ *     pools awaiting DTO, so the user is answering the proposal rather than
+ *     retyping it, and an absent field falls back to the EMPTY form's value
+ *     rather than to something invented;
  *   - the push invalidates the read (a form drafted while the app is open
  *     appears without waiting for the fallback poll);
- *   - dismissing it CANCELS the intent — which is what resumes the parked agent
- *     with an honest "dismissed" — and does not immediately reopen;
  *   - a foreign session's push is ignored: a modal must never take over the
  *     screen about a conversation the user did not open;
- *   - a FAILED read is not treated as "no form waiting" and opens nothing.
+ *   - a FAILED read is not treated as "no form waiting" and opens nothing;
+ *   - the read only ever OPENS a form - it never closes one, because the poll
+ *     can answer "nothing waiting" while a launch is in flight;
+ *   - a dismissed form does not reopen from the still-cached row.
+ *
+ * ONE LANE SINCE MIGRATION 108. This host used to read `tokenLaunch.getAwaiting`
+ * and open a dialog that DEFAULTED to the Trench lane, so an agent-drafted
+ * pools.fun form rendered in the wrong launchpad's machine. Trench Express is
+ * retired and `poolsLaunch` is the only launch domain; the host reads its
+ * awaiting form and its push, and the dialog has one lane.
  *
  * `window.vex` is mocked at the bridge, never `ipcRenderer` (testing-quality
  * gates §3).
@@ -26,41 +34,33 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { createElement } from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { PoolsAwaitingLaunchForm } from "@shared/schemas/pools-launch.js";
 
 const SESSION_ID = "11111111-2222-4333-8444-555555555555";
 const OTHER_SESSION = "99999999-8888-4777-8666-555555555555";
 const INTENT_ID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
 
-const IMAGE = {
-  imageId: "img_0123456789abcdef0123456789abcdef",
-  label: "rocket.png",
-  byteLength: 4096,
-  mime: "image/png" as const,
-  width: 400,
-  height: 400,
-  digest: "a".repeat(64),
-  uploadedAt: "2026-08-02T10:00:00.000Z",
-};
-
-/** The token the AGENT proposed, as `getAwaiting` returns it. */
-const AWAITING = {
+/** The token the AGENT proposed, as `poolsLaunch.getAwaiting` returns it. */
+const AWAITING: PoolsAwaitingLaunchForm = {
   intentId: INTENT_ID,
-  origin: "agent_requested_form" as const,
-  name: "Rocket",
-  symbol: "RKT",
-  description: "straight up",
-  links: ["https://rocket.example"],
-  imageId: IMAGE.imageId,
-  prebuy: "0.05",
   expiresAt: "2026-08-02T11:00:00.000Z",
-  createdAt: "2026-08-02T10:45:00.000Z",
+  proposed: {
+    name: "Rocket",
+    symbol: "RKT",
+    pairedAsset: "usdg",
+    image: { kind: "url", url: "https://rocket.example/r.png" },
+    websiteUrl: "https://rocket.example",
+    prebuyAmountHuman: "0.05",
+  },
 };
 
-const previewMock = vi.fn();
-const submitMock = vi.fn();
+const prepareMock = vi.fn();
+const deployMock = vi.fn();
 const cancelMock = vi.fn();
 const myLaunchesMock = vi.fn();
 const getAwaitingMock = vi.fn();
+const claimPreviewMock = vi.fn();
+const claimMock = vi.fn();
 const imagesListMock = vi.fn();
 const readThumbMock = vi.fn();
 
@@ -78,12 +78,14 @@ function installBridge(): void {
         delete: vi.fn(),
         readThumb: readThumbMock,
       },
-      tokenLaunch: {
-        preview: previewMock,
-        submit: submitMock,
+      poolsLaunch: {
+        prepare: prepareMock,
+        deploy: deployMock,
         cancel: cancelMock,
         myLaunches: myLaunchesMock,
         getAwaiting: getAwaitingMock,
+        claimPreview: claimPreviewMock,
+        claim: claimMock,
         onFormRequested: (cb: (event: unknown) => void) => {
           pushHandlers.push(cb);
           return unsubscribeSpy;
@@ -95,11 +97,13 @@ function installBridge(): void {
 
 beforeEach(() => {
   for (const mock of [
-    previewMock,
-    submitMock,
+    prepareMock,
+    deployMock,
     cancelMock,
     myLaunchesMock,
     getAwaitingMock,
+    claimPreviewMock,
+    claimMock,
     imagesListMock,
     readThumbMock,
     unsubscribeSpy,
@@ -107,24 +111,9 @@ beforeEach(() => {
     mock.mockReset();
   }
   pushHandlers = [];
-  imagesListMock.mockResolvedValue({ ok: true, data: { images: [IMAGE] } });
-  readThumbMock.mockResolvedValue({
-    ok: true,
-    data: { imageId: IMAGE.imageId, dataUrl: "data:image/png;base64,AAAA" },
-  });
-  myLaunchesMock.mockResolvedValue({ ok: true, data: { launches: [] } });
-  previewMock.mockResolvedValue({
-    ok: false,
-    error: {
-      code: "internal.unexpected",
-      domain: "tokenLaunch",
-      message: "not priced in this test",
-      retryable: true,
-      userActionable: false,
-      redacted: true,
-      correlationId: "test",
-    },
-  });
+  imagesListMock.mockResolvedValue({ ok: true, data: { images: [] } });
+  readThumbMock.mockResolvedValue({ ok: true, data: { imageId: "x", dataUrl: "" } });
+  myLaunchesMock.mockResolvedValue({ ok: true, data: { wallet: "0x", launches: [] } });
   getAwaitingMock.mockResolvedValue({ ok: true, data: { awaiting: null } });
   installBridge();
 });
@@ -133,10 +122,7 @@ const { AgentLaunchFormHost } = await import("../token-launch/AgentLaunchFormHos
 
 function renderHost(sessionId: string | null = SESSION_ID): QueryClient {
   const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: { retry: false },
-      mutations: { retry: false },
-    },
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   render(
     createElement(
@@ -148,8 +134,37 @@ function renderHost(sessionId: string | null = SESSION_ID): QueryClient {
   return queryClient;
 }
 
+/**
+ * Render the host with a switchable session prop, so a session change is a
+ * rerender of the SAME host rather than a fresh mount - which is what the
+ * visibility rules below are actually about.
+ */
+function renderSwitchableHost(initial: string | null = SESSION_ID): {
+  readonly switchTo: (next: string | null) => void;
+} {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  const element = (id: string | null) =>
+    createElement(
+      QueryClientProvider,
+      { client: queryClient },
+      createElement(AgentLaunchFormHost, { sessionId: id }),
+    );
+  const view = render(element(initial));
+  return { switchTo: (next) => view.rerender(element(next)) };
+}
+
 function dialogTitle(): HTMLElement | null {
   return screen.queryByText("Launch a token");
+}
+
+function inputValue(label: string): string {
+  const field = screen.getByLabelText(label);
+  if (!(field instanceof HTMLInputElement)) {
+    throw new Error(`expected an <input> for "${label}", got ${field.tagName}`);
+  }
+  return field.value;
 }
 
 describe("when nothing is waiting", () => {
@@ -186,38 +201,53 @@ describe("when the agent has drafted a launch", () => {
       expect(dialogTitle()).not.toBeNull();
     });
 
-    expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("Rocket");
-    expect((screen.getByLabelText("Symbol") as HTMLInputElement).value).toBe("RKT");
+    expect(inputValue("Name")).toBe("Rocket");
+    expect(inputValue("Symbol")).toBe("RKT");
+    // The paired asset decides the units of every figure below it, so a prefill
+    // that dropped it would price the launch in the wrong asset.
+    //
+    // AWAITED, not grabbed: the dialog TITLE is on screen before its body has
+    // finished mounting, which is the same race the launch surface's other host
+    // tests already document. A synchronous read here passed alone and failed
+    // under full-suite load.
+    const paired = await screen.findByRole("radio", { name: "USDG" });
+    expect(paired.getAttribute("aria-checked")).toBe("true");
   });
 
-  it("CANCELS the intent on dismiss - which is what resumes the parked agent", async () => {
-    cancelMock.mockResolvedValue({
+  it("carries the image the agent proposed, and its SOURCE", async () => {
+    renderHost();
+    await waitFor(() => {
+      expect(dialogTitle()).not.toBeNull();
+    });
+    // The form keeps a locker id and a URL side by side; only the source the
+    // agent actually named may be the selected one, or the user would be shown
+    // an empty picker over a proposal that has an image.
+    const source = await screen.findByRole("radio", { name: /from url/i });
+    expect(source.getAttribute("aria-checked")).toBe("true");
+    expect(inputValue("Image URL")).toBe("https://rocket.example/r.png");
+  });
+
+  it("falls back to the EMPTY form for a field the agent did not name", async () => {
+    getAwaitingMock.mockResolvedValue({
       ok: true,
-      data: { cancelled: true, resumedAgentTurn: true },
+      data: {
+        awaiting: { ...AWAITING, proposed: { name: "Bare" } },
+      },
     });
     renderHost();
     await waitFor(() => {
       expect(dialogTitle()).not.toBeNull();
     });
 
-    // The dialog TITLE can be on screen while its footer is still mounting
-    // (the host animates the panel in), so the button is awaited rather
-    // than grabbed synchronously: a slow machine failed exactly here.
-    (await screen.findByRole("button", { name: /^Cancel$/i })).click();
-
-    await waitFor(() => {
-      expect(cancelMock).toHaveBeenCalledWith({
-        sessionId: SESSION_ID,
-        intentId: INTENT_ID,
-      });
-    });
+    expect(inputValue("Name")).toBe("Bare");
+    // NOT invented: an agent that named no symbol has said nothing, and the
+    // user meets the form's own default rather than a guess.
+    expect(inputValue("Symbol")).toBe("");
+    const paired = await screen.findByRole("radio", { name: "WETH" });
+    expect(paired.getAttribute("aria-checked")).toBe("true");
   });
 
   it("stays closed after a dismiss, even while the read still returns the row", async () => {
-    cancelMock.mockResolvedValue({
-      ok: true,
-      data: { cancelled: true, resumedAgentTurn: true },
-    });
     renderHost();
     await waitFor(() => {
       expect(dialogTitle()).not.toBeNull();
@@ -228,11 +258,24 @@ describe("when the agent has drafted a launch", () => {
     // than grabbed synchronously: a slow machine failed exactly here.
     (await screen.findByRole("button", { name: /^Cancel$/i })).click();
 
-    // The cancel is fire-and-forget, so the cache still holds the row for a
-    // moment. Without the dismissed set the modal would reopen over the user.
+    // The cached row is still there for a moment. Without the dismissed set the
+    // modal would reopen over the user who just closed it.
     await waitFor(() => {
       expect(dialogTitle()).toBeNull();
     });
+  });
+
+  it("hides an IDLE form on a session switch and re-opens it on return", async () => {
+    const { switchTo } = renderSwitchableHost();
+    await waitFor(() => expect(dialogTitle()).not.toBeNull());
+
+    // A session switch HIDES; it does not cancel and it does not deploy.
+    switchTo(OTHER_SESSION);
+    await waitFor(() => expect(dialogTitle()).toBeNull());
+    expect(deployMock).not.toHaveBeenCalled();
+
+    switchTo(SESSION_ID);
+    await waitFor(() => expect(dialogTitle()).not.toBeNull());
   });
 });
 
@@ -289,7 +332,7 @@ describe("a degraded read", () => {
       ok: false,
       error: {
         code: "internal.unexpected",
-        domain: "tokenLaunch",
+        domain: "poolsLaunch",
         message: "Vex could not check whether a launch form is waiting.",
         retryable: true,
         userActionable: true,
@@ -307,228 +350,24 @@ describe("a degraded read", () => {
 });
 
 /**
- * THE SNAPSHOT — the host's visibility rules around a REAL SPEND.
+ * THE READ ONLY EVER OPENS A FORM.
  *
- * `submitLaunch` moves the intent to `authorized` BEFORE the executor signs, so
- * every case below is a way the background poll or a session switch could pull
- * the dialog off the screen while the transaction is in flight, or re-open a
- * form for a launch that already deployed. The read only ever OPENS a form; the
- * dialog owns its own close.
+ * The awaiting row stops being returned the moment the launch is authorized, so
+ * deriving VISIBILITY from the live read would unmount the dialog mid-signature.
+ * Closing belongs to the dialog, and these two cases are what pins that.
  */
 describe("the snapshot", () => {
-  const TX_HASH = `0x${"a".repeat(64)}`;
-  const OTHER_INTENT = "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff";
-  const B_FORM = { ...AWAITING, intentId: OTHER_INTENT, name: "Bee", symbol: "BEE" };
-
-  const READY_PREVIEW = {
-    previewId: "prev_1",
-    chainId: 4663,
-    anchorBlockNumber: "1",
-    creationFeeWei: "1000000000000000",
-    prebuyWei: "50000000000000000",
-    msgValueWei: "51000000000000000",
-    vexFeeWei: "127500000000000",
-    vexFeeCharged: true,
-    estimatedGasLimit: "1",
-    estimatedGasPriceWei: "1",
-    estimatedNetworkFeeWei: "1",
-    predictedTokenAddress: null,
-    imageId: IMAGE.imageId,
-    expiresAt: "2026-08-02T11:00:00.000Z",
-    note: "Read-only preview.",
-  };
-
-  function submitOk(status = "confirmed"): unknown {
-    return {
-      ok: true,
-      data: {
-        intentId: INTENT_ID,
-        status,
-        txHash: TX_HASH,
-        tokenAddress: null,
-        msgValueWei: "51000000000000000",
-        message: "Your launch confirmed.",
-      },
-    };
-  }
-
-  function renderSwitchableHost(initial: string | null = SESSION_ID): {
-    readonly queryClient: QueryClient;
-    readonly switchTo: (next: string | null) => void;
-    readonly unmount: () => void;
-  } {
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-    });
-    const element = (id: string | null) =>
-      createElement(
-        QueryClientProvider,
-        { client: queryClient },
-        createElement(AgentLaunchFormHost, { sessionId: id }),
-      );
-    const view = render(element(initial));
-    return {
-      queryClient,
-      switchTo: (next) => view.rerender(element(next)),
-      unmount: () => view.unmount(),
-    };
-  }
-
-  /** Deploy the open, prefilled form — the agent's draft is already priceable. */
-  async function deploy(): Promise<void> {
-    const button = await screen.findByRole("button", { name: /Deploy token/i });
-    await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
-    (button as HTMLButtonElement).click();
-  }
-
   beforeEach(() => {
     getAwaitingMock.mockResolvedValue({ ok: true, data: { awaiting: AWAITING } });
-    submitMock.mockResolvedValue(submitOk());
-    previewMock.mockResolvedValue({ ok: true, data: READY_PREVIEW });
   });
 
-  it("does NOT unmount the dialog when the read flips to null mid-deploy", async () => {
+  it("does NOT unmount the dialog when the read flips to null", async () => {
     renderHost();
     await waitFor(() => expect(dialogTitle()).not.toBeNull());
 
-    // `submitLaunch` authorizes the row before signing, so the poll can answer
-    // "nothing waiting" while the transaction is in flight.
     getAwaitingMock.mockResolvedValue({ ok: true, data: { awaiting: null } });
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(dialogTitle()).not.toBeNull();
-  });
-
-  it("closes after a confirmed deploy and STAYS closed while the read still returns the row", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    try {
-      renderHost();
-      await waitFor(() => expect(dialogTitle()).not.toBeNull());
-      await deploy();
-      await waitFor(() => expect(submitMock).toHaveBeenCalledTimes(1));
-      await screen.findByText("Your launch confirmed.");
-
-      await vi.advanceTimersByTimeAsync(2_600);
-      await waitFor(() => expect(dialogTitle()).toBeNull());
-      // The success closed it; it did not cancel the consumed intent.
-      expect(cancelMock).not.toHaveBeenCalled();
-      // And the stale cached row does not bring it back.
-      await vi.advanceTimersByTimeAsync(1_000);
-      expect(dialogTitle()).toBeNull();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("hides an IDLE form on a session switch, without cancelling anything, and re-opens on return", async () => {
-    const { switchTo } = renderSwitchableHost();
-    await waitFor(() => expect(dialogTitle()).not.toBeNull());
-
-    switchTo(OTHER_SESSION);
-    await waitFor(() => expect(dialogTitle()).toBeNull());
-    expect(cancelMock).not.toHaveBeenCalled();
-    expect(submitMock).not.toHaveBeenCalled();
-
-    switchTo(SESSION_ID);
-    await waitFor(() => expect(dialogTitle()).not.toBeNull());
-    expect(cancelMock).not.toHaveBeenCalled();
-  });
-
-  it("keeps a BUSY dialog mounted when the session switches to one with its OWN form", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    try {
-      const { switchTo } = renderSwitchableHost();
-      await waitFor(() => expect(dialogTitle()).not.toBeNull());
-      await deploy();
-      await waitFor(() => expect(submitMock).toHaveBeenCalledTimes(1));
-      await screen.findByText("Your launch confirmed.");
-
-      // Session B has a DISTINCT awaiting form — an empty query would pass even
-      // without the effect guard and would prove nothing.
-      getAwaitingMock.mockResolvedValue({ ok: true, data: { awaiting: B_FORM } });
-      switchTo(OTHER_SESSION);
-
-      // A's receipt is still on screen, and its submit went to A's session.
-      expect(screen.queryByText("Your launch confirmed.")).not.toBeNull();
-      expect((submitMock.mock.calls[0]?.[0] as { sessionId: string }).sessionId).toBe(
-        SESSION_ID,
-      );
-
-      // Only once A settles does B's form become eligible.
-      await vi.advanceTimersByTimeAsync(2_600);
-      await waitFor(() => {
-        expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("Bee");
-      });
-
-      // Returning to A does not re-arm an editing form for the consumed intent.
-      getAwaitingMock.mockResolvedValue({ ok: true, data: { awaiting: AWAITING } });
-      switchTo(SESSION_ID);
-      await vi.advanceTimersByTimeAsync(31_000);
-      expect(dialogTitle()).toBeNull();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("is never stranded BUSY - a later idle form still hides for another session's form", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    try {
-      const { switchTo } = renderSwitchableHost();
-      await waitFor(() => expect(dialogTitle()).not.toBeNull());
-      await deploy();
-      await waitFor(() => expect(submitMock).toHaveBeenCalledTimes(1));
-      await vi.advanceTimersByTimeAsync(2_600);
-      await waitFor(() => expect(dialogTitle()).toBeNull());
-
-      // A NEW idle form arrives for A. (This alone does not discriminate: a
-      // cleared snapshot admits the next form whether or not `formBusy` is
-      // stale. The observable consequence of a stale `true` is on the NEXT
-      // switch, which is what the rest of this test does.)
-      const A_SECOND = { ...AWAITING, intentId: "cccccccc-dddd-4eee-8fff-000000000000" };
-      getAwaitingMock.mockResolvedValue({ ok: true, data: { awaiting: A_SECOND } });
-      await vi.advanceTimersByTimeAsync(31_000); // the fallback poll
-      await waitFor(() => expect(dialogTitle()).not.toBeNull());
-
-      // With `formBusy` correctly cleared this is ordinary idle behaviour: A's
-      // form hides and B's opens. With a stale `true` A would neither hide (the
-      // render guard) nor be replaced (the effect guard), and B never appears.
-      getAwaitingMock.mockResolvedValue({ ok: true, data: { awaiting: B_FORM } });
-      switchTo(OTHER_SESSION);
-      await waitFor(() => {
-        expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("Bee");
-      });
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("does not re-open a deployed form after a host remount on the same cache", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    try {
-      const first = renderSwitchableHost();
-      await waitFor(() => expect(dialogTitle()).not.toBeNull());
-
-      // From here on no read can resolve. The synchronous cache replacement on
-      // close is therefore the ONLY thing standing between the remount and a
-      // re-opened form for a launch that already deployed — `invalidateQueries`
-      // alone leaves the stale row in the cache for the new host to read.
-      getAwaitingMock.mockImplementation(() => new Promise(() => undefined));
-      await deploy();
-      await waitFor(() => expect(submitMock).toHaveBeenCalledTimes(1));
-      await vi.advanceTimersByTimeAsync(2_600);
-      await waitFor(() => expect(dialogTitle()).toBeNull());
-
-      first.unmount();
-      render(
-        createElement(
-          QueryClientProvider,
-          { client: first.queryClient },
-          createElement(AgentLaunchFormHost, { sessionId: SESSION_ID }),
-        ),
-      );
-      expect(dialogTitle()).toBeNull();
-    } finally {
-      vi.useRealTimers();
-    }
   });
 
   it("keeps the form open when the awaiting read FAILS after it opened", async () => {
@@ -539,7 +378,7 @@ describe("the snapshot", () => {
       ok: false,
       error: {
         code: "internal.unexpected",
-        domain: "tokenLaunch",
+        domain: "poolsLaunch",
         message: "read failed",
         retryable: true,
         userActionable: true,
@@ -549,103 +388,5 @@ describe("the snapshot", () => {
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(dialogTitle()).not.toBeNull();
-  });
-
-  it("still cancels with the SNAPSHOT's ids after the read has gone null", async () => {
-    cancelMock.mockResolvedValue({
-      ok: true,
-      data: { cancelled: true, resumedAgentTurn: true },
-    });
-    renderHost();
-    await waitFor(() => expect(dialogTitle()).not.toBeNull());
-
-    getAwaitingMock.mockResolvedValue({ ok: true, data: { awaiting: null } });
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    // The dialog TITLE can be on screen while its footer is still mounting
-    // (the host animates the panel in), so the button is awaited rather
-    // than grabbed synchronously: a slow machine failed exactly here.
-    (await screen.findByRole("button", { name: /^Cancel$/i })).click();
-
-    await waitFor(() => {
-      expect(cancelMock).toHaveBeenCalledWith({
-        sessionId: SESSION_ID,
-        intentId: INTENT_ID,
-      });
-    });
-  });
-
-  it("re-reads the awaiting query after the close", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    try {
-      renderHost();
-      await waitFor(() => expect(dialogTitle()).not.toBeNull());
-      const before = getAwaitingMock.mock.calls.length;
-      await deploy();
-      await waitFor(() => expect(submitMock).toHaveBeenCalledTimes(1));
-      await vi.advanceTimersByTimeAsync(2_600);
-      await waitFor(() =>
-        expect(getAwaitingMock.mock.calls.length).toBeGreaterThan(before),
-      );
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  /**
-   * D5 — an OPEN form whose 15-minute window lapses no longer vanishes
-   * mid-typing. The read excludes lapsed rows, but the read no longer closes
-   * anything; the submit then refuses honestly through main's own CAS miss. A
-   * modal disappearing while the user types is the worse failure.
-   */
-  it("keeps an EXPIRED open form on screen and lets main refuse the submit", async () => {
-    renderHost();
-    await waitFor(() => expect(dialogTitle()).not.toBeNull());
-
-    getAwaitingMock.mockResolvedValue({ ok: true, data: { awaiting: null } });
-    submitMock.mockResolvedValue({
-      ok: false,
-      error: {
-        code: "tokenLaunch.launch_refused",
-        domain: "tokenLaunch",
-        message: "This launch request is no longer open - it expired.",
-        retryable: false,
-        userActionable: true,
-        redacted: true,
-        correlationId: "test",
-      },
-    });
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(dialogTitle()).not.toBeNull();
-
-    await deploy();
-    await screen.findByText("This launch request is no longer open - it expired.");
-    // No false success, and the expiry cancelled nothing.
-    expect(cancelMock).not.toHaveBeenCalled();
-    expect(dialogTitle()).not.toBeNull();
-  });
-
-  /**
-   * The receipt the auto-dismiss relies on has to be ON SCREEN once the dialog
-   * is gone. Without this the honest claim would be "it appears within 60
-   * seconds", which is not good enough for a spend just authorized.
-   */
-  it("invalidates the portfolio/Activity feed on an ok broadcast", async () => {
-    const { queryClient } = renderSwitchableHost();
-    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
-    await waitFor(() => expect(dialogTitle()).not.toBeNull());
-    await deploy();
-    await waitFor(() => expect(submitMock).toHaveBeenCalledTimes(1));
-
-    await waitFor(() => {
-      const keys = invalidate.mock.calls.map((call) =>
-        JSON.stringify((call[0] as { queryKey?: unknown })?.queryKey),
-      );
-      expect(keys).toContain(JSON.stringify(["portfolio"]));
-      expect(keys).toContain(JSON.stringify(["tokenLaunch", "myLaunches"]));
-      // NEVER the awaiting key from the mutation — that would race the dwell.
-      expect(keys).not.toContain(
-        JSON.stringify(["tokenLaunch", "awaiting", SESSION_ID]),
-      );
-    });
   });
 });

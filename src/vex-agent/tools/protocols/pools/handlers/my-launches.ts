@@ -7,7 +7,7 @@
  * from a parameter: a read tool that let the model name the wallet would let it
  * read another wallet's launch history, so there is no parameter to pass.
  *
- * Unlike `trench.my_launches` this reads the provider rather than a local index,
+ * This reads the provider rather than a local index,
  * because pools.fun exposes a deployer filter and Vex has no launch rows of its
  * own here yet.
  *

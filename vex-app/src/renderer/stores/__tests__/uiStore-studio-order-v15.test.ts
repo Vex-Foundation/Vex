@@ -51,12 +51,12 @@ describe("the Studio order is a persisted slot of its own", () => {
   it("round-trips through the merge without touching the agent order", () => {
     const merged = mergeUiState(
       {
-        bookSectionOrder: ["trench", "wallets"],
+        bookSectionOrder: ["launchpads", "wallets"],
         studioBookSectionOrder: ["balances", "portfolio"],
       },
       currentState(),
     );
-    expect(merged.bookSectionOrder).toEqual(["trench", "wallets"]);
+    expect(merged.bookSectionOrder).toEqual(["launchpads", "wallets"]);
     expect(merged.studioBookSectionOrder).toEqual(["balances", "portfolio"]);
   });
 
@@ -124,12 +124,12 @@ describe("the v15 migration", () => {
   it("seeds the key on a v14 payload and rewrites nothing else", () => {
     const v14 = {
       bookTab: "board",
-      bookSectionOrder: ["trench", "wallets"],
+      bookSectionOrder: ["launchpads", "wallets"],
       themePreference: "celeris",
     };
     const migrated = migrateUiState(v14, 14) as Record<string, unknown>;
     expect(migrated["studioBookSectionOrder"]).toEqual([]);
-    expect(migrated["bookSectionOrder"]).toEqual(["trench", "wallets"]);
+    expect(migrated["bookSectionOrder"]).toEqual(["launchpads", "wallets"]);
     expect(migrated["bookTab"]).toBe("board");
     expect(migrated["themePreference"]).toBe("celeris");
   });

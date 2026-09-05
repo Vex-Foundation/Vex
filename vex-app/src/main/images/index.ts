@@ -33,7 +33,6 @@ export {
 export {
   mountLaunchImageByteResolver,
   resolveLockerImageBytesForLaunch,
-  resolveLockerImageOnchainBytesForLaunch,
 } from "./byte-resolver.js";
 
 export {

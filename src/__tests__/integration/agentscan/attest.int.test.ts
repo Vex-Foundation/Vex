@@ -25,7 +25,10 @@ vi.mock("../../../config/store.js", () => ({
 
 import { execute, queryOne } from "@vex-agent/db/client.js";
 import { record, stampAttestSignature } from "@vex-agent/db/repos/launched-tokens.js";
-import { TRENCH_CHAIN_ID } from "@tools/trench-express/constants.js";
+// The retired launchpad's chain, from the kept legacy module: this lane
+// delivers the creation proofs stored for HISTORICAL trench.express launches,
+// so its fixtures are seeded on the chain those launches are actually on.
+import { LEGACY_TRENCH_CHAIN_ID as TRENCH_CHAIN_ID } from "@vex-agent/sync/legacy-trench-express/constants.js";
 import type {
   AttestOutcome,
   AttestVerdictOutcome,
@@ -61,6 +64,7 @@ async function seedLaunchedToken(
     tokenAddress,
     name: "Attest Coin",
     symbol: "ATTEST",
+    launchpad: "trench_express",
     createTxHash: txHash,
   });
   seededIds.push(row.id);

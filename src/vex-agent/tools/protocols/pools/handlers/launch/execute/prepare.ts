@@ -38,7 +38,7 @@ import { poolsFailureDetail } from "../../failure.js";
 const TOOL_ID = "pools.launch_execute";
 
 /**
- * The locker's byte seam lives under `trench/` because Trench launches needed it
+ * The locker's byte seam lives under `shared/` because launches needed it
  * first; it is launchpad-neutral in everything but its path, and the desktop app
  * registers exactly one implementation of it at startup. Moving it under
  * `shared/` would be the honest home and is a coordinator-level change: 14 call

@@ -73,8 +73,8 @@ export function LaunchImagePicker({
     <div className="flex flex-col gap-2">
       <Label htmlFor="vex-launch-image">Image</Label>
       <p className="text-[11px] leading-relaxed text-ink-tertiary">
-        Required. Pick one from your Trench photos, or add a new one - the
-        picture is written into the token itself, so it can&apos;t be changed
+        Required. Pick one from your launch photos, or add a new one - the
+        picture is published with the token, so it can&apos;t be changed
         afterwards.
       </p>
 
@@ -160,8 +160,8 @@ function LockerStrip({
   if (images.length === 0) {
     return (
       <p className="text-[12px] leading-relaxed text-ink-tertiary">
-        Your Trench photos are empty. Add one here, or from the Trench Photos
-        card in the right-hand panel.
+        Your launch photos are empty. Add one here, or from the Launchpad card
+        in the right-hand panel.
       </p>
     );
   }

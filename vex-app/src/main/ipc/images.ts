@@ -202,7 +202,7 @@ function registerImagesUploadHandler(): () => void {
     handle: async (_input, ctx): Promise<Result<ImagesUploadResult>> => {
       const parentWindow = BrowserWindow.fromWebContents(ctx.event.sender);
       const pickerOptions = {
-        title: "Add a launch image to your Trench locker",
+        title: "Add a launch image to your locker",
         // A convenience filter for the picker — NOT the validation. The file's
         // magic bytes decide what it is, and an extension proves nothing.
         filters: [{ name: "Images", extensions: ["jpg", "jpeg", "png", "webp"] }],

@@ -390,11 +390,13 @@ export interface CreateTokenLaunchIntentInput {
    * hangs or resumes against a form the user can still submit.
    */
   /**
-   * WHICH LAUNCHPAD this intent belongs to (migration 082). Defaults to
-   * `"trench"` in the database, so an omitted value keeps every existing caller
-   * writing exactly the rows it wrote before.
+   * WHICH LAUNCHPAD this intent belongs to (migration 082). REQUIRED: migration
+   * 108 dropped the database's `'trench'` DEFAULT with the protocol it named,
+   * so an omitted discriminator is now an INSERT failure rather than a silent
+   * Trench row. Stated here as well so the refusal happens at the type, before
+   * the database has to.
    */
-  protocol?: TokenLaunchIntentProtocol | undefined;
+  protocol: TokenLaunchIntentProtocol;
   /**
    * The pools.fun launch fields. All optional and all meaningless on a Trench
    * intent, which has no pair (its curve is ETH by construction). The database

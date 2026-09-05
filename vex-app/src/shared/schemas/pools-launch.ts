@@ -489,6 +489,37 @@ export const poolsLaunchCancelResultSchema = z
   .object({ cancelled: z.boolean() })
   .strict();
 
+// ── the push event (main -> renderer) ────────────────────────────────────────
+
+/** Literal kept in sync with the engine `LAUNCH_FORM_EVENT_TYPE`. */
+export const LAUNCH_FORM_EVENT_TYPE = "engine.launch.form" as const;
+
+export const launchFormEventKindSchema = z.enum(["requested"]);
+export type LaunchFormEventKind = z.infer<typeof launchFormEventKindSchema>;
+
+/**
+ * Renderer-facing launch-form event.
+ *
+ * Mirrors the engine's `LaunchFormEvent`
+ * (`src/vex-agent/engine/runtime/launch-form-bus.ts`), emitted only AFTER the
+ * `awaiting_user_form` insert has COMMITTED. The renderer treats it purely as an
+ * invalidation signal - it reconstructs no draft from the payload and instead
+ * re-reads `poolsLaunch.getAwaiting`, with the DB as source of truth.
+ *
+ * Bounded to ids, an enum and a timestamp: no token name, symbol, description or
+ * amount rides this event.
+ */
+export const launchFormEventSchema = z
+  .object({
+    type: z.literal(LAUNCH_FORM_EVENT_TYPE),
+    sessionId: z.string().uuid(),
+    intentId: opaqueIdSchema,
+    kind: launchFormEventKindSchema,
+    occurredAt: z.string().datetime({ offset: true }),
+  })
+  .strict();
+export type LaunchFormEvent = z.infer<typeof launchFormEventSchema>;
+
 // ── Inferred types ──────────────────────────────────────────────────────────
 
 export type PoolsPairedAsset = z.infer<typeof poolsPairedAssetSchema>;

@@ -160,7 +160,7 @@ export async function repairLaunchIdentities(
       // incident, and warning about it every thirty seconds forever is the
       // runaway loop this workstream exists to end. The prose claims only what
       // the observation established.
-      logger.info("trench.launch_identity_repair.superseded", {
+      logger.info("launch_identity_repair.superseded", {
         intentId: intent.intentId,
         chainId: intent.chainId,
         hint: "another transaction from this wallet used this one's nonce and this hash has no receipt; "
@@ -177,7 +177,7 @@ export async function repairLaunchIdentities(
       const terminalized = await withSessionControlLock(intent.sessionId, (client) =>
         failWith(client, intent.intentId, intent.sessionId, "MinedRevert:create"));
       if (terminalized) failed++;
-      else logger.info("trench.launch_identity_repair.revert_cas_miss", { intentId: intent.intentId });
+      else logger.info("launch_identity_repair.revert_cas_miss", { intentId: intent.intentId });
       continue;
     }
 
@@ -196,6 +196,12 @@ export async function repairLaunchIdentities(
       tokenAddress: identity.tokenAddress,
       name: intent.name,
       symbol: intent.symbol,
+      // The intent's OWN discriminator, mapped to this table's vocabulary. The
+      // sweep is protocol-agnostic and still reconciles historical Trench rows
+      // (migration 108 preserves every `broadcast_pending` one), so it must file
+      // each launch under the venue it actually came from rather than under a
+      // default.
+      launchpad: intent.protocol === "trench" ? "trench_express" : "pools_fun",
       imageRef: intent.imageId,
       createTxHash: requireTxHash(intent),
       // The AUTHORIZED NATIVE prebuy — wei, 18 decimals, denominated in what
@@ -222,7 +228,7 @@ export async function repairLaunchIdentities(
       // A CAS miss is not a failure: the handler's own late finalize, or a
       // concurrent sweep run, already confirmed this intent. The index write
       // above was idempotent, so nothing was double-counted.
-      logger.info("trench.launch_identity_repair.duplicate_cas_miss", {
+      logger.info("launch_identity_repair.duplicate_cas_miss", {
         intentId: intent.intentId,
       });
     }
@@ -257,7 +263,7 @@ async function mirrorSupersededSibling(
   try {
     sibling = await findLaunchActivityTerminalByTxHash(txHash);
   } catch (err) {
-    logger.warn("trench.launch_identity_repair.sibling_lookup_failed", {
+    logger.warn("launch_identity_repair.sibling_lookup_failed", {
       intentId: intent.intentId,
       error: summarizeProtocolError(err).message,
     });
@@ -268,7 +274,7 @@ async function mirrorSupersededSibling(
   const applied = await withSessionControlLock(intent.sessionId, (client) =>
     markSupersededUnprovenWith(client, intent.intentId, intent.sessionId, txHash));
   if (!applied) {
-    logger.info("trench.launch_identity_repair.superseded_cas_miss", {
+    logger.info("launch_identity_repair.superseded_cas_miss", {
       intentId: intent.intentId,
     });
     return "cas_miss";
@@ -276,7 +282,7 @@ async function mirrorSupersededSibling(
 
   // Said at `info`, once per row, because the row leaves the candidate set here:
   // this is the END of the runaway re-check loop, not another lap of it.
-  logger.info("trench.launch_identity_repair.superseded_mirrored", {
+  logger.info("launch_identity_repair.superseded_mirrored", {
     intentId: intent.intentId,
     chainId: intent.chainId,
     hint: "the pending lane stopped tracking this hash with its outcome unproven; the intent "
@@ -346,7 +352,7 @@ async function lookupOutcome(
       // dependency contract has always said it should.
       return null;
     }
-    logger.warn("trench.launch_identity_repair.lookup_failed", {
+    logger.warn("launch_identity_repair.lookup_failed", {
       intentId: intent.intentId,
       chainId: intent.chainId,
       // `summarizeProtocolError` is the canonical scrub boundary — a bare
@@ -361,7 +367,7 @@ async function lookupOutcome(
 function requireTxHash(intent: TokenLaunchIntent): string {
   if (!intent.txHash) {
     throw new Error(
-      `trench.launch_identity_repair: intent ${intent.intentId} is broadcast_pending with no tx hash`,
+      `launch_identity_repair: intent ${intent.intentId} is broadcast_pending with no tx hash`,
     );
   }
   return intent.txHash;

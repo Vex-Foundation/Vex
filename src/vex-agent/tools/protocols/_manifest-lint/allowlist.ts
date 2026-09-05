@@ -106,8 +106,6 @@ export const MANIFEST_LINT_ALLOWLIST: readonly ManifestLintAllowlistEntry[] = [
   { subject: "SwapQuote", rule: "chain-doc-parity", detail: "chain", reason: "chain description predates CANONICAL_CHAIN_SENTENCE; deleted by W8" },
   { subject: "SwapQuoteUniswap", rule: "chain-doc-parity", detail: "chain", reason: "chain description predates CANONICAL_CHAIN_SENTENCE; deleted by W8" },
   { subject: "TokenCheck", rule: "chain-doc-parity", detail: "chain", reason: "chain description predates CANONICAL_CHAIN_SENTENCE; deleted by W8" },
-  { subject: "trench.trade_execute", rule: "chain-doc-parity", detail: "chain", reason: "chain description predates CANONICAL_CHAIN_SENTENCE; deleted by W8" },
-  { subject: "trench.trade_quote", rule: "chain-doc-parity", detail: "chain", reason: "chain description predates CANONICAL_CHAIN_SENTENCE; deleted by W8" },
   { subject: "WalletSendPrepare", rule: "chain-doc-parity", detail: "chain", reason: "chain description predates CANONICAL_CHAIN_SENTENCE; deleted by W8" },
   { subject: "WalletTrackToken", rule: "chain-doc-parity", detail: "chain", reason: "chain description predates CANONICAL_CHAIN_SENTENCE; deleted by W8" },
 
@@ -153,7 +151,6 @@ export const MANIFEST_LINT_ALLOWLIST: readonly ManifestLintAllowlistEntry[] = [
   // generic error literals - agent-facing text that says nothing the agent can act on.
   { subject: "src/vex-agent/tools/protocols/pendle/handlers/read-shared.ts", rule: "generic-error-literal", detail: "unexpected error", reason: "generic agent-facing literal; deleted by the error-contract waves (W1/W2)" },
   { subject: "src/vex-agent/tools/protocols/pendle/handlers/shared.ts", rule: "generic-error-literal", detail: "unexpected error", reason: "generic agent-facing literal; deleted by the error-contract waves (W1/W2)" },
-  { subject: "src/vex-agent/tools/protocols/trench/handlers/failure.ts", rule: "generic-error-literal", detail: "unexpected error", reason: "generic agent-facing literal; deleted by the error-contract waves (W1/W2)" },
   { subject: "src/vex-agent/tools/protocols/virtuals/handlers/_shared.ts", rule: "generic-error-literal", detail: "unexpected error", reason: "generic agent-facing literal; deleted by the error-contract waves (W1/W2)" },
 
   // ── param-description (26) ──
@@ -177,8 +174,6 @@ export const MANIFEST_LINT_ALLOWLIST: readonly ManifestLintAllowlistEntry[] = [
   { subject: "solana.predict.orderbook", rule: "param-description", detail: "marketId", reason: "param description predates the description template; deleted by W8" },
   { subject: "SwapExecuteUniswap", rule: "param-description", detail: "chain", reason: "param description predates the description template; deleted by W8" },
   { subject: "SwapQuoteUniswap", rule: "param-description", detail: "chain", reason: "param description predates the description template; deleted by W8" },
-  { subject: "trench.trade_execute", rule: "param-description", detail: "chain", reason: "param description predates the description template; deleted by W8" },
-  { subject: "trench.trade_quote", rule: "param-description", detail: "chain", reason: "param description predates the description template; deleted by W8" },
   { subject: "WalletSendConfirm", rule: "param-description", detail: "intentId", reason: "param description predates the description template; deleted by W8" },
   { subject: "WalletSendPrepare", rule: "param-description", detail: "to", reason: "param description predates the description template; deleted by W8" },
   { subject: "WalletTrackToken", rule: "param-description", detail: "chain", reason: "param description predates the description template; deleted by W8" },
@@ -200,10 +195,10 @@ export const MANIFEST_LINT_ALLOWLIST: readonly ManifestLintAllowlistEntry[] = [
   // have silently retired a fleet-wide rename. They are deleted by the SAME
   // rename wave as their siblings, not separately. Every other pools param key
   // is new vocabulary and lives in CANONICAL_PARAM_KEYS instead.
-  // The launch FIELD vocabulary, shared verbatim with the trench launch tools
-  // (`name`, `symbol`, `prebuy` already carry rows there). Spelling a pools
-  // launch form differently from the trench one would make the desktop lane
-  // translate between two vocabularies for the same fields.
+  // The launch FIELD vocabulary (`name`, `symbol`, `prebuy`) is shared across
+  // the launch tools. Spelling one launchpad's form differently from another's
+  // would make the desktop lane translate between two vocabularies for the
+  // same fields.
 
   // ── slippage-default-home (0) ──
   // EMPTY, and it must stay that way: W4b moved every per-venue copy onto

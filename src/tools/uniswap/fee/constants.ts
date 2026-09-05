@@ -2,8 +2,8 @@
  * Vex's integrator fee on Uniswap — the product-owner constants.
  *
  * Sibling of `src/tools/bridge-fee/constants.ts` and
- * `src/tools/trench-express/fee/constants.ts`. Uniswap gets its own module for
- * the same reason Trench Express does: the fee is NOT a venue parameter here.
+ * every other venue's own `fee/constants.ts`. Uniswap gets its own module for
+ * the same reason each of them does: the fee is NOT a venue parameter here.
  * V2 Router02 and V3 SwapRouter02 — the only routers this venue is pinned to —
  * expose no integrator-fee field at all (unlike KyberSwap's `feeReceiver` or
  * Jupiter's referral account), so the fee can only be Vex's OWN transfer leg,
@@ -35,7 +35,7 @@ export const UNISWAP_FEE_RECEIVER_EVM: Address = VEX_TREASURY_EVM;
 /**
  * The `agent_activity` `event_role` the fee leg is recorded under (migration
  * 066). `bridge_fee` is barred by the kind↔role binding (`kind = 'bridge'`
- * only) and `trench_fee` names a different venue, so this role is its own —
+ * only) and `pools_fee` names a different venue, so this role is its own -
  * venue-neutral, so a later fee-parameterless swap venue reuses it.
  */
 export const UNISWAP_FEE_ACTIVITY_EVENT_ROLE = "swap_fee" as const;
