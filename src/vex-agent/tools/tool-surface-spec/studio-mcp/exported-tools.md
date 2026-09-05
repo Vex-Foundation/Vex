@@ -43,12 +43,12 @@ free. Both texts live on the tool
 
 ## Totals
 
-- exported tools: 174
+- exported tools: 176
 - internal: 27
-- protocol: 147 across 11 namespaces
+- protocol: 149 across 11 namespaces
 - always loaded: 27
 - read-only: 115
-- destructive: 51
+- destructive: 53
 
 ## Internal tools
 
@@ -193,6 +193,8 @@ free. Both texts live on the tool
 | name | title | lane | read only | destructive | always load | requires env | description bytes | returns | vex fee |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | pools__fees_claim | Claim pools.fun creator fees | protocol | no | yes | no | - | 1619 | - | - |
+| pools__holder_rewards_claim | Claim pools.fun holder rewards | protocol | no | yes | no | - | 4428 | - | - |
+| pools__holder_rewards_distribute | Distribute pools.fun holder rewards | protocol | no | yes | no | - | 3726 | - | - |
 | pools__holder_rewards_get | Read pools.fun holder rewards | protocol | yes | no | no | - | 2102 | - | none (read) |
 | pools__launch_assets_list | List pools.fun launchable stocks | protocol | yes | no | no | - | 1698 | - | none (read) |
 | pools__launch_execute | Launch a token on pools.fun | protocol | no | yes | no | - | 2805 | - | - |

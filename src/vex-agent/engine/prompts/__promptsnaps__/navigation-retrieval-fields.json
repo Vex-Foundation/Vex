@@ -1135,16 +1135,21 @@
         },
         {
           "label": "Fees to holders",
-          "summary": "Read what a fees-to-holders token owes ONE wallet: the distributor the suite's own deployer emitted, the reward mode, and the wallet's earned balance per reward leg at a pinned block, with the launchpad's own figures shown beside them. Earned by HOLDING, not by launching and not by staking; the claim is a separate tool and this one signs nothing.",
+          "summary": "Read, claim and push the fees a pools.fun token streams to the wallets that HOLD it. The read answers for ONE wallet: the distributor the suite's own deployer emitted, the reward mode, and the wallet's earned balance per reward leg at a pinned block, with the launchpad's own figures shown beside them, and it signs nothing. Earned by HOLDING, not by launching and not by staking - a different person's money from the creator fees above. The claim pays the wallet that signs it and Vex charges nothing for it; the distribute is permissionless, pays the token's holders rather than its caller, and is how a stalled reward stream is restarted.",
           "toolPrefixes": [
-            "pools.holder_rewards"
+            "pools.holder_rewards",
+            "pools.holder_rewards_claim",
+            "pools.holder_rewards_distribute"
           ],
           "hints": [
             "fees to holders",
             "what have I earned holding this coin",
             "does this coin pay its holders",
             "holder rewards distributor",
-            "what the distributor owes my wallet"
+            "what the distributor owes my wallet",
+            "claim my holder rewards",
+            "push this token's fees to its holders",
+            "trigger the reward distribution"
           ]
         }
       ]
@@ -1274,7 +1279,7 @@
     "virtuals.graduations": "bc197ab90815817bc775c07adfa43fba73fa25894d9432039475b2e539ed0c36",
     "virtuals.geneses": "7a54634df55374059206cae91d2ac6ee5487e3e63e0ee7290a241a3c210460a3",
     "virtuals.trades": "95398d631a02a0d9b3116cf7a28228b96455ff01a57f969eaa6eac997a42a64e",
-    "virtuals.candles": "754389b1f925e55008d1d76131bb107d908eaf1363adbc3eed2af5817d8e9388",
+    "virtuals.candles": "53db082d51bce88be1ef69b8b8e8d98e3c429c883fb55c5c4d065e31d5078d1e",
     "virtuals.creator_fees": "7efc62c33d201b8c7c074c6a9c2e673d374ab62548180fb503b548cac09abad3",
     "virtuals.trade.quote": "cd95c5d76cf509c891455ac5d3366b7949edf314c54a8b93d616a3489d668070",
     "virtuals.trade.execute": "5b7fca7d2dc6442da6297ea657c16e7949bcb46fb070b55a3bd748c4bdb0729b",
@@ -1347,6 +1352,8 @@
     "pools.claim_fees": "274475a9f9ffd37aec741fddab2d47a129dcf8922986237604b98d9ef866dd48",
     "pools.launch_assets": "297db7a1a74de25944891a479f00f4112553f63d44c9fff610ac5e12caef2c4d",
     "pools.holder_rewards": "b7b709f64aedc5e9f8d40c8cd1fb3ff1e7e5818b0b9d91dd3a05e08ea270c2fc",
+    "pools.holder_rewards_claim": "03f5ef9a6e436ef7c79ed98e5a53bd7e2e0cadb1630e3286838001fcd7e05cce",
+    "pools.holder_rewards_distribute": "5ba185df48bacf69007b23f613e193de0e3f7775b6ac9d5ed6b9b251942441bb",
     "launchpads.images": "526bef0dceed2e6b7dad0889fce6a3c5e8405c1d0c3acdb775f4cb11aec8382a",
     "launchpads.image_publish": "60c8df5c29d965e6b80ccd8d2144495b466a72e09f6754aeb73b574099d29b16"
   }

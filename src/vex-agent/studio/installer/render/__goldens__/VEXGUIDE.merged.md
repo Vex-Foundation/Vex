@@ -2,7 +2,7 @@
 
 Kept outside the markers.
 
-<!-- vex:studio:begin vex=0.2.6 hash=ac8d6570ed3e14af -->
+<!-- vex:studio:begin vex=0.2.6 hash=f6337fc4d7649329 -->
 # Vex guide - project "acme-trading"
 
 The companion to this project's `AGENTS.md`, which carries the authority:
@@ -141,7 +141,7 @@ DexScreener is read-only market research for indexed automated-market-maker pair
 
 Virtuals is intelligence for Virtuals agents and agent tokens across the chains indexed by the provider, and the bonding-curve trading venue for the agents that have not graduated on Base and Robinhood.
 
-- Chains: base, solana, robinhood, ethereum for screening, detail, graduations and genesis. Narrower per capability: trade tape base and solana only; candles for graduated agents everywhere but ethereum, and for bonding agents on solana only. Curve trading is base and robinhood only: an agent still on its BondingV5 curve is bought and sold HERE on those two chains. Everything else trades elsewhere - a GRADUATED agent through kyberswap on base/ethereum or uniswap on robinhood, and solana through the solana tools, whose curve is a Meteora pool rather than BondingV5.
+- Chains: base, solana, robinhood, ethereum for screening, detail, graduations and genesis. Narrower per capability: trade tape base and solana only; candles for graduated agents everywhere but ethereum, and for bonding agents on all three of those. Curve trading is base and robinhood only: an agent still on its BondingV5 curve is bought and sold HERE on those two chains. Everything else trades elsewhere - a GRADUATED agent through kyberswap on base/ethereum or uniswap on robinhood, and solana through the solana tools, whose curve is a Meteora pool rather than BondingV5.
 - Read: Read one agent's bonding-curve trade tape and build a price chart from its pool's ohlcv candles, screen virtuals agents and agent tokens, inspect robinhood agent tokens or one agent in depth, read market cap, holder count and concentration, check the anti-sniper buy-tax window and exact venue, follow recent virtuals graduations or what just graduated, and browse the fresh graduations feed, genesis calendar, launch schedule, and genesis sales.
 - Quote: Price a bonding-curve buy or sell of an agent token that has not graduated, on Base or Robinhood: the output, the taxes, the anti-sniper window and the floor the contract will enforce. Research alone still establishes no executable price.
 - Act: Execute a bonding-curve buy or sell against a quote already taken, spending real funds under approval. Acquiring a GRADUATED agent token is still a separate swap task on the venue identified by the research result.

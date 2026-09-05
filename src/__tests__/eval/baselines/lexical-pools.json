@@ -4,42 +4,42 @@
   "datasetId": "tool-discovery-pools",
   "datasetVersion": "pools-v1",
   "status": "captured",
-  "capturedAt": "2026-09-05T09:47:05.963Z",
+  "capturedAt": "2026-09-05T10:19:27.207Z",
   "metrics": {
     "overall": {
-      "count": 23,
-      "recall1": 0.739,
-      "recall5": 0.913,
-      "coverage5": 0.913,
-      "mrr5": 0.826,
-      "groupMrr5": 0.826
+      "count": 27,
+      "recall1": 0.741,
+      "recall5": 0.926,
+      "coverage5": 0.926,
+      "mrr5": 0.833,
+      "groupMrr5": 0.833
     },
     "awareness": {
       "blind": {
-        "count": 12,
-        "recall1": 0.667,
-        "recall5": 0.833,
-        "coverage5": 0.833,
+        "count": 14,
+        "recall1": 0.643,
+        "recall5": 0.857,
+        "coverage5": 0.857,
         "mrr5": 0.75,
         "groupMrr5": 0.75
       },
       "protocolAware": {
-        "count": 11,
-        "recall1": 0.818,
+        "count": 13,
+        "recall1": 0.846,
         "recall5": 1,
         "coverage5": 1,
-        "mrr5": 0.909,
-        "groupMrr5": 0.909
+        "mrr5": 0.923,
+        "groupMrr5": 0.923
       }
     },
     "intentShapes": {
       "single": {
-        "count": 23,
-        "recall1": 0.739,
-        "recall5": 0.913,
-        "coverage5": 0.913,
-        "mrr5": 0.826,
-        "groupMrr5": 0.826
+        "count": 27,
+        "recall1": 0.741,
+        "recall5": 0.926,
+        "coverage5": 0.926,
+        "mrr5": 0.833,
+        "groupMrr5": 0.833
       },
       "cross": {
         "count": 0,
@@ -132,12 +132,12 @@
         "groupMrr5": 0
       },
       "rewards": {
-        "count": 4,
-        "recall1": 1,
+        "count": 8,
+        "recall1": 0.875,
         "recall5": 1,
         "coverage5": 1,
-        "mrr5": 1,
-        "groupMrr5": 1
+        "mrr5": 0.938,
+        "groupMrr5": 0.938
       },
       "solana_lend": {
         "count": 0,
@@ -174,8 +174,8 @@
     }
   },
   "notes": [
-    "dataset tool-discovery-pools@pools-v1, mode lexical, 23 cases evaluated.",
-    "overall recall@1 0.739, recall@5 0.913, coverage@5 0.913, mrr@5 0.826, groupMrr@5 0.826.",
+    "dataset tool-discovery-pools@pools-v1, mode lexical, 27 cases evaluated.",
+    "overall recall@1 0.741, recall@5 0.926, coverage@5 0.926, mrr@5 0.833, groupMrr@5 0.833.",
     "Measured delta: none, metrics are identical to the previous baseline."
   ]
 }

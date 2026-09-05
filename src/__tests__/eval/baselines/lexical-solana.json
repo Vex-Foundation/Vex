@@ -4,24 +4,24 @@
   "datasetId": "tool-discovery-solana",
   "datasetVersion": "solana-v1",
   "status": "captured",
-  "capturedAt": "2026-09-05T09:47:08.858Z",
+  "capturedAt": "2026-09-05T10:19:30.202Z",
   "metrics": {
     "overall": {
       "count": 68,
       "recall1": 0.441,
-      "recall5": 0.603,
-      "coverage5": 0.603,
-      "mrr5": 0.497,
-      "groupMrr5": 0.497
+      "recall5": 0.588,
+      "coverage5": 0.588,
+      "mrr5": 0.494,
+      "groupMrr5": 0.494
     },
     "awareness": {
       "blind": {
         "count": 34,
         "recall1": 0.235,
-        "recall5": 0.382,
-        "coverage5": 0.382,
-        "mrr5": 0.285,
-        "groupMrr5": 0.285
+        "recall5": 0.353,
+        "coverage5": 0.353,
+        "mrr5": 0.279,
+        "groupMrr5": 0.279
       },
       "protocolAware": {
         "count": 34,
@@ -36,10 +36,10 @@
       "single": {
         "count": 68,
         "recall1": 0.441,
-        "recall5": 0.603,
-        "coverage5": 0.603,
-        "mrr5": 0.497,
-        "groupMrr5": 0.497
+        "recall5": 0.588,
+        "coverage5": 0.588,
+        "mrr5": 0.494,
+        "groupMrr5": 0.494
       },
       "cross": {
         "count": 0,
@@ -70,10 +70,10 @@
       "account_history": {
         "count": 16,
         "recall1": 0.563,
-        "recall5": 0.688,
-        "coverage5": 0.688,
-        "mrr5": 0.606,
-        "groupMrr5": 0.606
+        "recall5": 0.625,
+        "coverage5": 0.625,
+        "mrr5": 0.594,
+        "groupMrr5": 0.594
       },
       "bridge": {
         "count": 0,
@@ -175,7 +175,7 @@
   },
   "notes": [
     "dataset tool-discovery-solana@solana-v1, mode lexical, 68 cases evaluated.",
-    "overall recall@1 0.441, recall@5 0.603, coverage@5 0.603, mrr@5 0.497, groupMrr@5 0.497.",
+    "overall recall@1 0.441, recall@5 0.588, coverage@5 0.588, mrr@5 0.494, groupMrr@5 0.494.",
     "Measured delta: none, metrics are identical to the previous baseline."
   ]
 }
