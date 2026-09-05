@@ -53,10 +53,10 @@ whether its provider key is configured on this machine.
 
 ## Totals
 
-- tools: 176
+- tools: 180
 - Vex tools: 27
-- protocol tools: 149 across 11 protocols
-- destructive: 53
+- protocol tools: 153 across 11 protocols
+- destructive: 55
 
 ## Vex tools
 
@@ -288,6 +288,10 @@ whether its provider key is configured on this machine.
 | --- | --- | --- | --- | --- |
 | virtuals__agent_candles_list | Read a Virtuals agent's price candles | read-only | no | - |
 | virtuals__agent_get | Read one Virtuals agent token | read-only | no | - |
+| virtuals__agent_launch_cancel | Cancel a Virtuals agent launch | mutating | yes | - |
+| virtuals__agent_launch_execute | Launch a Virtuals agent | mutating | yes | - |
+| virtuals__agent_launch_preview | Plan a Virtuals agent launch | mutating | no | - |
+| virtuals__agent_launch_status | Check a Virtuals agent launch | read-only | no | - |
 | virtuals__agent_trade_execute | Trade a Virtuals agent on its bonding curve | mutating | yes | - |
 | virtuals__agent_trade_quote | Price a Virtuals bonding-curve trade | read-only | no | - |
 | virtuals__agent_trades_list | Read a Virtuals agent's curve trade tape | read-only | no | - |

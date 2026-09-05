@@ -66,3 +66,38 @@ export async function claimBroadcastPendingForSweep(limit: number): Promise<Toke
   );
   return rows.map(mapRow);
 }
+
+/**
+ * Claim up to `limit` `awaiting_keeper` launches, least-recently-checked first,
+ * stamping each one's `last_checked_at` in the same statement.
+ *
+ * SAME FAIRNESS, DIFFERENT QUESTION. The sweep above asks "did OUR transaction
+ * land?"; this one asks "did SOMEBODY ELSE'S?" - the Virtuals keeper's
+ * `launch(token)`. The rotation matters more here, not less: a keeper that is
+ * slow for an hour leaves rows in this state for an hour, and a fixed window
+ * would let the oldest few pin it shut exactly when the population is largest.
+ *
+ * `token_address IS NOT NULL` mirrors what migration 110's
+ * `token_launch_intents_awaiting_keeper_is_proven` already guarantees for this
+ * status, so a row the sweep could not look anything up for can never enter the
+ * batch.
+ */
+export async function claimAwaitingKeeperForSweep(limit: number): Promise<TokenLaunchIntent[]> {
+  const rows = await query<Record<string, unknown>>(
+    `WITH candidates AS (
+       SELECT intent_id AS candidate_intent_id
+         FROM token_launch_intents
+        WHERE status = 'awaiting_keeper' AND token_address IS NOT NULL
+        ORDER BY COALESCE(last_checked_at, created_at) ASC, intent_id ASC
+        LIMIT $1
+        FOR UPDATE SKIP LOCKED
+     )
+     UPDATE token_launch_intents t
+        SET last_checked_at = NOW()
+       FROM candidates c
+      WHERE t.intent_id = c.candidate_intent_id
+      RETURNING ${SELECT_COLUMNS}`,
+    [limit],
+  );
+  return rows.map(mapRow);
+}

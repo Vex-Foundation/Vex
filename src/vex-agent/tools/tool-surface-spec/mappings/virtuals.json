@@ -45,6 +45,26 @@
       "toolId": "virtuals.trade.execute",
       "publicName": "virtuals__agent_trade_execute",
       "rationale": "The signing half of the same pair, under the canonical `execute` verb. Deliberately NOT split into buy/sell tools: the side is a parameter the prequote identity binds, and two tools would double the surface while making a buy quote look able to authorize a sell execute."
+    },
+    {
+      "toolId": "virtuals.launch.preview",
+      "publicName": "virtuals__agent_launch_preview",
+      "rationale": "Names the resource (an AGENT, which is what Virtuals calls the thing being launched) and the operation, and keeps the `agent_` prefix every mutating tool in this namespace already carries. `preview` rather than `quote` because the pair it belongs to is a launch, not a trade: `quote` is reserved in this tree for a priced swap, and the pools.fun launch family already established `preview` as the verb for the read-only half of a launch."
+    },
+    {
+      "toolId": "virtuals.launch.execute",
+      "publicName": "virtuals__agent_launch_execute",
+      "rationale": "The `_execute` suffix matches every other signing tool in the namespace and in the tree, so a model that has read the trade pair knows which half spends money. `launch` rather than `create` or `deploy` because it is the venue's own word for the operation and for the contract event (`PreLaunched`, `Launched`)."
+    },
+    {
+      "toolId": "virtuals.launch.status",
+      "publicName": "virtuals__agent_launch_status",
+      "rationale": "`status` names the question the venue's two-transaction shape creates: whether the keeper has run `launch()` yet. It is deliberately not `_get`, which in this namespace reads an AGENT's profile; this reads a LAUNCH's progress and answers three states no profile read distinguishes."
+    },
+    {
+      "toolId": "virtuals.launch.cancel",
+      "publicName": "virtuals__agent_launch_cancel",
+      "rationale": "`cancel` is the contract's own verb (`cancelLaunch`, `CancelledLaunch`), so the tool name and the on-chain event a user would look up agree. The `agent_launch_` prefix keeps it beside the three tools it shares a lifecycle with rather than filing it under a generic refund verb."
     }
   ]
 }

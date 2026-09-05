@@ -62,6 +62,22 @@ const SYNC_JOBS = [
   // a badge is cosmetic, so it is not given the 30s per-tx repair urgency.
   { namespace: "_global", syncType: "pools_attribution", readToolId: null, strategy: "periodic", intervalSeconds: 120 },
 
+  // Virtuals KEEPER-LAUNCH reconciliation - the only sweep in this tree that
+  // waits on somebody ELSE'S transaction. A Virtuals launch takes two: Vex signs
+  // `preLaunch`, and the Virtuals keeper's `launch(token)` about a minute later
+  // is what makes the agent tradable and listed. When the launching handler's
+  // bounded wait elapses first the intent is recorded `awaiting_keeper`
+  // (migration 110) - not a failure - and this finishes it.
+  //
+  // IT NEVER CALLS `launch()` ITSELF, on any schedule: doing so pre-empts the
+  // keeper and the platform then never indexes the agent (measured 2026-09-04,
+  // token 0xd1eF7097). It also never takes a fee - owner F3 waives the launch
+  // fee permanently at `awaiting_keeper`, and this sweep holds no signer.
+  //
+  // 30s, the per-tx repair cadence rather than the 120s badge cadence: a user
+  // staring at "is my agent live yet" is exactly the wait this ends.
+  { namespace: "_global", syncType: "virtuals_keeper_launch", readToolId: null, strategy: "periodic", intervalSeconds: 30 },
+
   // Trench launch FORM EXPIRY — stamps overdue `awaiting_user_form` intents
   // `expired` and resumes the agent turn parked on them. Without it an
   // unanswered form parks a turn forever. Deadline-driven and lookup-only;

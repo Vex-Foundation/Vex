@@ -64,6 +64,10 @@ import {
 import { virtualsCreatorFeesHandler } from "./handlers/creator-fees.js";
 import { virtualsTradeQuote } from "./handlers/trade-quote.js";
 import { virtualsTradeExecute } from "./handlers/trade-execute.js";
+import { virtualsLaunchPreview } from "./handlers/launch-preview.js";
+import { virtualsLaunchExecute } from "./handlers/launch-execute.js";
+import { virtualsLaunchStatus } from "./handlers/launch-status.js";
+import { virtualsLaunchCancel } from "./handlers/launch-cancel.js";
 import { failureDetail, loadAgent } from "./handlers/_shared.js";
 import { virtualsCandlesHandler } from "./handlers/candles.js";
 
@@ -171,6 +175,16 @@ export const VIRTUALS_HANDLERS: Record<string, ProtocolHandler> = {
   // read handlers below.
   "virtuals.trade.quote": virtualsTradeQuote,
   "virtuals.trade.execute": virtualsTradeExecute,
+
+  // The AGENT-LAUNCH family (PR-C3). Four tools rather than two because a
+  // Virtuals launch takes TWO transactions and only `preLaunch` is ours: the
+  // keeper's `launch()` is what makes the agent tradable and listed, so the
+  // state between them needs its own read (`status`) and its own exit
+  // (`cancel`). Each owns its own module under `./handlers/`.
+  "virtuals.launch.preview": virtualsLaunchPreview,
+  "virtuals.launch.execute": virtualsLaunchExecute,
+  "virtuals.launch.status": virtualsLaunchStatus,
+  "virtuals.launch.cancel": virtualsLaunchCancel,
 
   "virtuals.list": async (p) => {
     const read = readVirtualsListParams(p);

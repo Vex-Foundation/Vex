@@ -106,12 +106,12 @@ function context(overrides: Partial<EngineContext>): EngineContext {
  * The coordinator reviews this raise.
  */
 const MODES = [
-  { name: "agent / restricted", context: context({}), ceiling: 59_489 },
-  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 60_190 },
-  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 65_966 },
-  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 65_985 },
-  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 64_690 },
-  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 64_505 },
+  { name: "agent / restricted", context: context({}), ceiling: 59_821 },
+  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 60_522 },
+  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 66_298 },
+  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 66_317 },
+  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 65_022 },
+  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 64_837 },
 ] as const;
 
 beforeAll(() => {
@@ -369,6 +369,38 @@ describe("static prompt byte ceilings", () => {
       // because WHERE a capability exists belongs in the always-loaded prompt
       // and HOW it is built belongs in the tool description, which carries it
       // in full. No other namespace's prose was touched to fund this.
+      // REVIEWED BUDGET DIFF, PR-C3 (Virtuals agent launch and cancel,
+      // 2026-09-05). NET +332 in every mode, and it buys a CAPABILITY the
+      // always-loaded prompt could not otherwise teach:
+      //
+      //   agent / restricted          59,489 -> 59,816  (+332)
+      //   agent / full                60,190 -> 60,517  (+332)
+      //   mission setup / restricted  65,966 -> 66,293  (+332)
+      //   mission setup / full        65,985 -> 66,312  (+332)
+      //   mission run / restricted    64,690 -> 65,017  (+332)
+      //   mission run / full          64,505 -> 64,832  (+332)
+      //
+      // WHAT WAS ADDED, and it is three things. First, the Virtuals namespace
+      // DECLARATION gained a fourth facet (launching an agent) and two
+      // retrieval terms, which is what makes four new tools findable at all -
+      // the declaration teaches capabilities, never tool names, and "the user
+      // wants to launch their own agent" is a capability nothing else in the
+      // catalog covers. Second, its `act` and `characteristicAndLimits` lines
+      // gained one clause each: that a launch exists here, and that it is
+      // immediate normal-mode only, because a model that believes it can
+      // schedule a launch or set an airdrop spends a call proving otherwise.
+      // Third, the COVERAGE line gained nine words saying launching is base
+      // and robinhood only - the same reason its trade clause exists.
+      //
+      // WHY COMPRESSION WAS INSUFFICIENT. The first draft cost +652: it named
+      // the four tools' shapes in the facet summary, listed four retrieval
+      // terms, and spelled out in the coverage line WHY solana and ethereum are
+      // closed. All three were cut to their smallest true form - the facet
+      // summary now names the four verbs and nothing else, two retrieval terms
+      // were dropped as near-duplicates of the facet label, and the closed
+      // chains' MEASURED reasons moved into the tool descriptions, which carry
+      // them in full and which an agent reads only once it has reached the
+      // namespace. No other namespace's prose was touched to fund this.
       // The coordinator reviews this diff.
       expect(bytes).toBeLessThanOrEqual(mode.ceiling);
     });

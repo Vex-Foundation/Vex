@@ -834,6 +834,237 @@ filter key. It is therefore carried as a labelled provider claim about a
 DIFFERENT revenue stream, tolerant and nullable, never as the answer, and never
 subtracted from the on-chain numbers.
 
+## The AGENT LAUNCH tools (`virtuals__agent_launch_preview` / `_execute` / `_status` / `_cancel`)
+
+Four tools rather than two, and the reason is the venue's own design.
+
+### A Virtuals launch takes TWO transactions, and only the first is Vex's
+
+```
+  1. BondingV5.preLaunch(...)    THE CREATOR'S. Mints the agent token, creates
+                                 the curve pair, takes the creator's VIRTUAL,
+                                 emits PreLaunched. The agent EXISTS. It does
+                                 not trade and it is not listed.
+  2. BondingV5.launch(token)     THE VIRTUALS KEEPER'S, about a minute later.
+                                 Runs the initial purchase, opens the curve,
+                                 starts the anti-sniper clock, emits Launched.
+                                 Only now does api.virtuals.io index the agent.
+```
+
+`launch(address)` is permissionless (`BondingV5.sol:579-592`), so calling it is
+technically possible. **Vex never does, and the reason is measured.** On
+2026-09-04 our own `launch()` on Robinhood (tx `0x17e401b9`) beat the keeper for
+token `0xd1eF7097` and `api.virtuals.io` never indexed that agent; the Base agent
+whose `launch()` the KEEPER ran (tx `0x9eca4cb5`, from `0x81f7ca6a...`) was
+indexed as id 139289 within minutes. Winning that race destroys the listing the
+user launched for.
+
+So the launch handler WATCHES, bounded (180 s, against a measured keeper latency
+of about a minute), and both endings are correct:
+
+| ending | status | what it means | Vex's fee |
+|---|---|---|---|
+| `Launched` observed | `launched` | the agent is live and listed | collected |
+| not observed in time | `awaiting_keeper` | the agent exists, the money is in BondingV5, the sweep finishes it | **WAIVED PERMANENTLY** |
+
+`awaiting_keeper` is NOT a failure and never becomes one. `virtuals__agent_launch_status`
+is what answers "is it live yet?" afterwards, and `virtuals__agent_launch_cancel`
+is the exit while the keeper has not acted.
+
+### The authority table (money path, rule 90)
+
+| field | authority | revalidated before signing |
+|---|---|---|
+| chain | caller, resolved to the pinned deployment (base, robinhood) | fixed |
+| BondingV5, VIRTUAL | `curve/deployments.ts` | pinned |
+| proxy implementations | EIP-1967 slot, re-read every call | YES |
+| bondingConfig | `BondingV5.bondingConfig()`, never assumed | YES |
+| router | `BondingV5.router()`, held to the pinned FRouterV3 | YES |
+| protocol launch fee | `BondingConfig.calculateLaunchFee(false, false)` | YES |
+| scheduled threshold | `getScheduledLaunchParams().startTimeDelay` | YES |
+| fee recipient | `BondingConfig.feeTo()` | YES |
+| name, ticker, cores, description, socials | caller | fixed |
+| on-chain name | `name` plus the venue suffix, computed and displayed | fixed |
+| image URL | the content-addressed host ONLY; a caller-supplied URL is refused BY NAME | fixed |
+| committed VIRTUAL | caller, raw + decimals, never a float | fixed |
+| anti-sniper type | caller, 0-5, held to `isValidAntiSniperType` | fixed |
+| allowance | exact-amount approve to **BondingV5** | YES |
+| balance | ERC-20 `balanceOf` at the pinned block | YES |
+| Vex fee | `launch/fee.ts` constants, never params | after the keeper is observed |
+| the plan | preview seals `keccak256(chainId ‖ to ‖ value ‖ data)`; the execute rebuilds it and refuses a mismatch | BINDING |
+
+### The allowance spender is BondingV5, NOT FRouterV3
+
+This is the one place the launch lane and the curve TRADE lane disagree, and
+getting it wrong is a launch that reverts after the approval was already signed
+and paid for. `preLaunch` pulls the purchase itself with
+`IERC20(assetToken).safeTransferFrom(msg.sender, address(this), initialPurchase)`
+(`BondingV5.sol:381-385`), where `address(this)` is BondingV5; a curve buy is
+pulled by FRouterV3 instead.
+
+### The name on chain is not always the name the caller typed
+
+`preLaunch` appends `" by Virtuals"` unless bit 1 of the `extParams_` flags word
+is set (`_decodeAppendByVirtualsSuffix`, `BondingV5.sol:234-238`, `:391`). That
+is a product fact, not an encoding detail: the ERC-20 the wallet ends up holding
+is named differently from the string that was approved. The preview shows
+`agent.onChainName` for exactly that reason, and `nameSuffix: "none"` sets the
+flag. An empty `extParams_` (`"0x"`) is what the venue's own app sends and what
+both 2026-09-04 launches carried.
+
+Every other `extParams_` flag is deliberately unreachable: bit 0 fee delegation,
+bit 2 robotics, the delegation-type bits and the trailing recipient word each
+change who receives an agent's fees, which is a money decision with no measured
+handler chain behind it.
+
+### The three-way split of what the caller commits
+
+```
+  amountIn  =  Vex fee (25 bps, floored)  +  purchaseAmount_
+  purchaseAmount_ =  calculateLaunchFee(false, false)  +  initialPurchase
+```
+
+`calculateLaunchFee(false, false)` is **0** for a normal immediate launch, read
+live on Base and Robinhood on 2026-09-04 and again on 2026-09-05, so today the
+initial purchase IS the venue-side amount. The split is written against the
+committed total anyway, because the contract will charge a fee for other launch
+shapes and a fee computed on "the initial purchase" would silently change
+meaning if this lane ever admitted one. `initialPurchase` is also **exactly what
+a cancel refunds** - the launch fee is not refundable.
+
+### `startTime` is the head block's timestamp, not a wall clock
+
+`preLaunch` calls a launch SCHEDULED once `startTime_ >= block.timestamp +
+startTimeDelay` (`BondingV5.sol:326-333`; `startTimeDelay` measured at 86400 s on
+both chains), and a scheduled launch is charged
+`scheduledLaunchParams.normalLaunchFee` and settles at a moment no signing
+handler is alive for. A wall clock running fast against a chain running slow
+could cross that threshold silently, so the plan reads the head block's own
+timestamp and refuses outright if the threshold ever drops below a 60 s margin.
+
+### What is `unsupported`, and the measured reason for each (owner L1)
+
+| shape | why it is closed |
+|---|---|
+| scheduled launch (`startTime`) | the initial purchase executes when no handler is alive to observe or settle it, and the venue charges `normalLaunchFee` |
+| ACF (`needAcf`) | costs `scheduledLaunchParams.acfFee`, measured at 10 VIRTUAL on both chains, and reserves supply to the venue's `teamTokenReservedWallet` |
+| non-zero airdrop (`airdropBips`) | moves reserved supply to `teamTokenReservedWallet`, which is not the creator's wallet, and Vex has no proven distribution path |
+| launch modes 1 and 2 | `_validateLaunchMode` reverts with `UnauthorizedLauncher` unless the sender is on `BondingConfig`'s privileged-launcher list, which a self-custodial wallet is not |
+| Solana | there is no BondingV5 there: a Solana agent's curve is a Meteora dynamic-bonding-curve pool the Virtuals BACKEND creates, so no permissionless call exists for a self-custodial wallet. `useInstead` is deliberately `null` - unlike the TRADE lane, which points at Jupiter |
+| Ethereum | Virtuals runs no launch contract there |
+
+### The bounds Vex adds, which are VEX'S and not the venue's
+
+`preLaunch` bounds almost nothing - `cores_.length > 0` is its only field check
+(`:317-319`) - and the venue's own UI limits were never measured. So these are
+Vex's refusal to sign a transaction it cannot show a person, and they are stated
+as such rather than as the venue's rule: name <= 64, ticker <= 16 and
+alphanumeric (uppercased before encoding), description <= 2000 (contract storage
+is real gas), each social URL <= 200 and `https` only with no credentials (the
+strings are written to permanent public storage and rendered as links), cores
+<= 8 whole numbers in 0-255 with no repeats, and no control characters anywhere
+(an approval surface cannot render them).
+
+**The core TAXONOMY is a declared omission.** Which id means what is the venue's
+own vocabulary, readable from `virtuals__agent_get`'s `cores` block on an
+existing agent; Vex does not carry a copy, because a stale copy would silently
+mislabel an agent's capabilities.
+
+### The image is content-addressed, and a URL is refused by name
+
+The on-chain `img_` string must address bytes that cannot change after the
+approval was signed (owner I1). In the Vex app the picture must ALREADY be
+published with `launchpads__image_publish`, which is the approval-gated owner of
+"bytes become public"; over the Studio MCP surface, where there is no locker,
+`imagePath` bytes are read through the contained no-follow reader and uploaded
+through the same client, whose answer is re-hashed locally before it is
+believed. `imageUrl`, `image`, `logoUrl` and their spellings are rejected BY
+NAME, never dropped.
+
+### Rows a launch writes
+
+`allowance_reset` (only when a non-zero allowance is short) -> `allowance`
+(exact amount, spender BondingV5) -> `token_launch` (kind `launch`, venue
+`virtuals-bonding`) -> `vex_fee` (child on the launch arm, migration 107). The
+fee row is PLANNED before anything is broadcast and may legitimately never be
+signed: `awaiting_keeper` aborts it with the reason `waived`, which the feed must
+not render as a failure.
+
+The `token_launch` row's OUTPUT leg records what the launch has delivered at the
+moment of the write. `preLaunch` itself buys nothing - the keeper's `launch()`
+does (`:619-641`) - so the output is the proven `initialPurchasedAmount` when the
+keeper acted inside the wait, and zero when it did not, with the keeper sweep
+writing the real figure when it observes the launch. Writing an expected amount
+in the second case would put an amount nobody observed into an audit row.
+
+A CANCEL is its own execution with one `launch_cancel` row carrying the refund as
+its output leg - not a fifth row on the launch's, because the two are different
+user actions minutes or hours apart.
+
+### The durable state machine (`token_launch_intents`, migration 110)
+
+```
+  previewed --(claimed by an execute, single use)--> cancelled
+  [fresh row] authorized --CAS--> consuming --signed--> broadcast_pending
+                                                          |
+                    Launched observed --> confirmed       |
+                    not observed ------> awaiting_keeper --+
+                    reverted ----------> terminal_failure
+                    unknown -----------> stays broadcast_pending (reconciled, NEVER re-sent)
+  awaiting_keeper --sweep sees Launched--> confirmed
+                  --creator cancels------> cancelled
+```
+
+`awaiting_keeper` is the one new state, and migration 110 requires
+`protocol = 'virtuals'`, a `tx_hash` and a `token_address` on it: all three were
+established before it could be reached. The `virtuals` JSONB block holds what has
+no query on it (the cores, the anti-sniper type, the fingerprint, the pair, the
+keeper's hash); everything the table already has a column for is not repeated.
+
+### AgentScan attestation
+
+The creator proof is a signature over `VEX-attest:<chainId>:<lowercased token>`,
+stored in `launched_tokens.agentscan_attest_signature` (migration 110, shared
+with pools.fun rather than a third venue column). It is signed **inside the
+launch handler**, because that is the last place in the system holding the
+launching wallet's key - the attest sweep runs later with no signer, so a
+signature not taken there can never be taken. The server's own creator proof for
+this launchpad is the `preLaunch` transaction: `tx.from == recovered signer`,
+`tx.to` in the BondingV5 allowlist, and a `PreLaunched(token, pair, ...)` in the
+receipt.
+
+### Live acceptance, 2026-09-05 (NOTHING WAS SIGNED)
+
+Owner rule 8 forbids executing a launch, so the path is proven to the edge of
+signing. Archived under `agents-colab/agents_dm/virtuals-launch-2026-09-05/`.
+
+- Both chains' EIP-1967 slots re-read and MATCHING the pins: Base
+  `0x20C124e1...` / `0x58377381...`, Robinhood `0x66Fc520c...` / `0x09256b9D...`.
+- `calculateLaunchFee(false, false) = 0`, `startTimeDelay = 86400`,
+  `feeTo = 0x86CbAC9d...`, `initialSupply = 1000000000` on BOTH chains.
+- `eth_simulateV1` of approve THEN `preLaunch` in one block, from the session
+  wallet address, with the exact calldata `buildLaunchPlan` produces:
+  **Base status 0x1, gas 0x4f0522**; **Robinhood status 0x1, gas 0x4efc5d**. The
+  real Robinhood `preLaunch` of 2026-09-04 used 5,199,204 gas, so the simulated
+  5,176,413 is the same transaction shape.
+- A plain `eth_call` of `preLaunch` reverts with `ERC20: insufficient allowance`
+  when the allowance leg has not run, which is what the handler's own
+  `simulateOnly` reports rather than hides.
+- `cancelLaunch` for the Robinhood token `0xd1eF7097` reverts, and
+  `tokenInfo(token)` says why: `creator = 0x33eF6673...` (this wallet),
+  `launchExecuted = true`, `initialPurchase = 0`. That is the same fact the
+  handler's gate reads before opening a key.
+- The receipt decoders are proven against FOUR real receipts (both chains'
+  `preLaunch` and both `launch()`), tracked as sanitized fixtures.
+
+**A measured provider finding, outside this lane's files.** `base.drpc.org`, the
+bundled Base RPC in `curve/deployments.ts`, answers `eth_getStorageAt` with
+`{"code":30,"message":"Request timeout on the free plan"}` on every attempt, so
+the EIP-1967 proxy re-read - which the curve TRADE lane also performs before
+signing - fails closed on Base today. `base-mainnet.public.blastapi.io` answers
+it correctly. Reported rather than patched here: that table belongs to the trade
+lane.
+
 ## Known gaps, stated rather than hidden
 
 1. **Ordered multi-sort** is reachable upstream and not exposed (reason above).

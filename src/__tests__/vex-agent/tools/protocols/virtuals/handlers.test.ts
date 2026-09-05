@@ -111,33 +111,56 @@ describe("registry parity", () => {
   });
 
   /**
-   * CONTRACT CHANGE (PR-C2): the namespace is no longer read-only. It declares
-   * nine tools, of which exactly ONE mutates - the execute half of the
-   * bonding-curve trade pair. The quote half stays read-only, which is what
-   * makes it safe to call before consent; the execute half is the only tool
-   * here that can move funds, and it is pinned by name so a third mutating
-   * tool cannot appear unnoticed.
+   * CONTRACT CHANGE (PR-C3): the namespace declares thirteen tools, of which
+   * FIVE mutate - the execute half of the bonding-curve trade pair, and the
+   * four members of the agent-launch family.
+   *
+   * The mutating set is pinned BY NAME so a sixth cannot appear unnoticed, and
+   * each one's `actionKind` is pinned too, because the three kinds mean three
+   * different things to the approval surface:
+   *
+   *   `virtuals.launch.preview` is `local_write`: it opens no key and sends no
+   *     transaction. It is mutating only because it writes an advisory row that
+   *     a later execute can claim exactly once.
+   *   `virtuals.launch.execute` and `virtuals.launch.cancel` are
+   *     `user_wallet_broadcast`: they sign from the user's wallet.
+   *   `virtuals.launch.status` is deliberately NOT here. It observes the chain
+   *     and may record an observation it just made, but it signs nothing,
+   *     spends nothing and calls no contract function - and above all it must
+   *     never call `launch()`, which is the incident this whole lane is shaped
+   *     around.
    *
    * `virtuals.creator_fees` (PR-C4) is read-only on purpose: the payout it
    * reports is executed by Virtuals' own backend under SWAP_ROLE, so there is
    * no transaction this namespace could sign for it.
    */
-  it("declares eight read-only tools and exactly one that mutates", () => {
-    expect(VIRTUALS_TOOLS).toHaveLength(9);
+  it("declares eight read-only tools and five that mutate", () => {
+    expect(VIRTUALS_TOOLS).toHaveLength(13);
 
     const mutating = VIRTUALS_TOOLS.filter((t) => t.mutating);
-    expect(mutating.map((t) => t.toolId)).toEqual(["virtuals.trade.execute"]);
-    expect(mutating[0]!.actionKind).toBe("user_wallet_broadcast");
+    expect(mutating.map((t) => t.toolId).sort()).toEqual([
+      "virtuals.launch.cancel",
+      "virtuals.launch.execute",
+      "virtuals.launch.preview",
+      "virtuals.trade.execute",
+    ]);
+    const actionKinds = new Map(mutating.map((t) => [t.toolId, t.actionKind]));
+    expect(actionKinds.get("virtuals.trade.execute")).toBe("user_wallet_broadcast");
+    expect(actionKinds.get("virtuals.launch.execute")).toBe("user_wallet_broadcast");
+    expect(actionKinds.get("virtuals.launch.cancel")).toBe("user_wallet_broadcast");
+    expect(actionKinds.get("virtuals.launch.preview")).toBe("local_write");
 
     const readOnly = VIRTUALS_TOOLS.filter((t) => !t.mutating);
-    expect(readOnly).toHaveLength(8);
+    expect(readOnly).toHaveLength(9);
     for (const tool of readOnly) {
       expect(tool.mutating).toBe(false);
       expect(tool.actionKind).toBe("read");
     }
     // The priced half of the trade pair is deliberately among them: a quote
-    // signs nothing, grants no allowance and opens no key.
+    // signs nothing, grants no allowance and opens no key. So is the launch
+    // status read, which must never be able to trigger a launch.
     expect(readOnly.map((t) => t.toolId)).toContain("virtuals.trade.quote");
+    expect(readOnly.map((t) => t.toolId)).toContain("virtuals.launch.status");
   });
 });
 
@@ -420,7 +443,10 @@ describe("virtuals.candles", () => {
     });
     const out = data(await run("virtuals.candles", { id: 1 }));
     expect((readGeckoTerminalCandles as Mock)).not.toHaveBeenCalled();
-    expect((buildChainCandles as Mock).mock.calls[0]![0]).toMatchObject({
+    const chainCandleCall = (buildChainCandles as Mock).mock.calls[0];
+    expect(chainCandleCall).toBeDefined();
+    if (chainCandleCall === undefined) throw new Error("buildChainCandles was not called");
+    expect(chainCandleCall[0]).toMatchObject({
       chain: "ROBINHOOD",
       pairAddress: "0xFB899EFC1Ad4128118cD33Eb3A0d912aceC6c8eE",
       agentTokenAddress: "0xCbb116D1f789a95B1d7F5ba8aCfBC6D26b295BE3",
@@ -460,7 +486,10 @@ describe("virtuals.candles", () => {
     expect(out.source).toBe("virtuals_tape");
     // The feed has no cursor, so the builder must ask for the provider's own
     // full ceiling: asking for less would cap the history for no saving.
-    expect((readVpApiTrades as Mock).mock.calls.at(-1)![0].limit).toBe(1000);
+    const lastTradesCall = (readVpApiTrades as Mock).mock.calls.at(-1);
+    expect(lastTradesCall).toBeDefined();
+    if (lastTradesCall === undefined) throw new Error("readVpApiTrades was not called");
+    expect(lastTradesCall[0].limit).toBe(1000);
 
     const candles = out.candles as { timestampSeconds: number; open: string; high: string; low: string; close: string; volumeVirtual: string; tradeCount: number }[];
     expect(candles.map((c) => c.timestampSeconds)).toEqual([3_600, 7_200]);
@@ -504,7 +533,10 @@ describe("virtuals.candles", () => {
     expect(coverage.note).toMatch(/NOT the start of the curve/);
     // The reply must hand back a usable cursor and never claim completeness.
     expect(out.hasMore).toBe(true);
-    expect(out.nextBeforeTimestampSeconds).toBe((out.candles as { timestampSeconds: number }[])[0]!.timestampSeconds);
+    const firstCandle = (out.candles as { timestampSeconds: number }[])[0];
+    expect(firstCandle).toBeDefined();
+    if (firstCandle === undefined) throw new Error("no candles were returned");
+    expect(out.nextBeforeTimestampSeconds).toBe(firstCandle.timestampSeconds);
   });
 
   it("refuses currency on a curve source rather than answering in another unit", async () => {

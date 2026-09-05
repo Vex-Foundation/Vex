@@ -46,6 +46,43 @@ const MAX_DETAIL_LEN = 120;
  * client never defaults it - the server's own `trench` default exists for
  * clients that predate the field, and this one does not.
  */
+/** A 20-byte hex address, the only shape the canonical message admits. */
+const ATTEST_ADDRESS_SHAPE = /^0x[0-9a-fA-F]{40}$/;
+
+/**
+ * THE ONE MESSAGE the AgentScan attestation registry verifies.
+ *
+ * Byte-for-byte what the server builds (`canonicalAttestMessage`,
+ * `packages/contract/src/attest.ts`): `VEX-attest:<chainId>:<lowercased token>`.
+ * The server recovers a signer from this exact string, so a signature over any
+ * other bytes recovers to a different address and is refused DEFINITIVELY -
+ * the row is burned, not retried. That is why the builder lives beside the
+ * client that posts the result rather than at each launchpad: three launch
+ * lanes owe this signature, and three private copies of a format string is
+ * three chances for one of them to keep a checksummed address or a chain
+ * literal.
+ *
+ * The address is LOWERCASED here rather than required lowercase, because the
+ * casing a decoder produced is not the caller's decision and the server
+ * lowercases too; the chain id is required to be the launch's real chain, which
+ * only the caller knows.
+ *
+ * THROWS on a malformed address rather than returning a message. There is no
+ * useful signature over a string built from a non-address, and signing one
+ * would put a proof over meaningless bytes into permanent storage.
+ */
+export function canonicalAttestMessage(chainId: number, tokenAddress: string): string {
+  if (!Number.isInteger(chainId) || chainId <= 0) {
+    throw new Error(`agentscan attest: refusing to build a message for chain id ${chainId}`);
+  }
+  if (!ATTEST_ADDRESS_SHAPE.test(tokenAddress)) {
+    throw new Error(
+      `agentscan attest: refusing to build a message for "${tokenAddress}" - not a 20-byte hex address`,
+    );
+  }
+  return `VEX-attest:${chainId}:${tokenAddress.toLowerCase()}`;
+}
+
 export const AGENTSCAN_LAUNCHPADS = ["trench", "pools_fun", "virtuals"] as const;
 export type AgentscanLaunchpad = (typeof AGENTSCAN_LAUNCHPADS)[number];
 

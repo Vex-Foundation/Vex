@@ -118,9 +118,17 @@ describe("the exported inventory covers exactly the export scope", () => {
     // the token's holders rather than its caller). Both sign, so unlike the
     // two pools reads above neither is read-only; the internal count is
     // unmoved and the protocol count carries both (147 -> 149).
-    expect(inventory).toHaveLength(176);
+    // 176 -> 180 on the Virtuals AGENT-LAUNCH family
+    // (`virtuals__agent_launch_preview`, `_execute`, `_status`, `_cancel`).
+    // All four ARE exported to the Studio surface, unlike the two locker tools
+    // in `NON_EXPORTED_PROTOCOL_TOOLS`: an external agent has no image locker,
+    // but it does have its own project, and the launch family takes `imagePath`
+    // there and publishes those bytes to the same content-addressed host. Only
+    // one of the four is read-only (`_status`); the internal count is unmoved
+    // and the protocol count carries all four (149 -> 153).
+    expect(inventory).toHaveLength(180);
     expect(inventory.filter((t) => t.kind === "internal")).toHaveLength(27);
-    expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(149);
+    expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(153);
   });
 
   it("keeps WebResearch OUT of tools/list while the in-app registry keeps it", () => {

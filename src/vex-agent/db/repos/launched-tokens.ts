@@ -69,10 +69,11 @@ export interface RecordLaunchedTokenInput {
   name: string;
   symbol: string;
   /**
-   * Which launchpad produced the token: `trench_express` or `pools_fun`
-   * (migration 082). Defaults to `trench_express` for callers that predate the
-   * second venue - named rather than assumed. Both venues share chain 4663, so
-   * this is the ONLY thing that tells the two populations apart.
+   * Which launchpad produced the token: `trench_express`, `pools_fun`
+   * (migration 082) or `virtuals` (migration 110). Defaults to `trench_express`
+   * for callers that predate the second venue - named rather than assumed.
+   * trench.express and pools.fun share chain 4663 and Virtuals spans 4663 and
+   * Base 8453, so this is the ONLY thing that tells the populations apart.
    */
   launchpad?: string;
   imageRef?: string | null;
@@ -284,9 +285,11 @@ export async function markAttributed(id: number): Promise<boolean> {
  * different one, so shipping it to AgentScan would send a proof over the wrong
  * bytes and burn the row on a definitive refusal. The
  * pools.fun and Virtuals launches therefore need their own third signature,
- * produced at launch time by the handler that still holds the signer; that
- * column is this lane's declared dependency on the launch lanes, not something a
- * predicate here can conjure.
+ * produced at launch time by the handler that still holds the signer.
+ * `agentscan_attest_signature` (migration 110) IS that column, named for the
+ * registry it serves rather than for a venue precisely so the second launchpad
+ * that needs it does not mint a third copy. Virtuals writes it today; the
+ * pools.fun launch lane writes the same column for its own rows.
  *
  * THE CHAIN IS NOT A PARAMETER any more, and that is the point. The sweep used
  * to be pinned to `TRENCH_CHAIN_ID`, which was a faithful proxy for the venue
@@ -306,6 +309,18 @@ const AGENTSCAN_ATTEST_SOURCES = [
     wireLaunchpad: "trench",
     /** The column holding a signature over AgentScan's canonical message. */
     signatureColumn: "attest_signature",
+  },
+  {
+    /**
+     * Virtuals agent launches (migration 110). ONE venue value across BOTH
+     * chains: Virtuals runs the same BondingV5 suite on Base 8453 and Robinhood
+     * 4663, and each row reports its own `chain_id`, so narrowing this by chain
+     * would strand every launch on the other one.
+     */
+    launchpad: "virtuals",
+    /** The AgentScan wire value; the server dispatches the `preLaunch` creation proof on it. */
+    wireLaunchpad: "virtuals",
+    signatureColumn: "agentscan_attest_signature",
   },
 ] as const;
 
@@ -585,6 +600,42 @@ export async function stampPoolsAttestSignature(input: {
         AND pools_attest_signature IS NULL
       RETURNING id`,
     [input.chainId, input.tokenAddress, input.attestSignature],
+  );
+  return row !== null;
+}
+
+/**
+ * Attach the creator's AGENTSCAN attest signature to an already-recorded token.
+ *
+ * WRITE-ONCE, exactly like `stampAttestSignature` and `stampPoolsAttestSignature`:
+ * `agentscan_attest_signature IS NULL` in the predicate, so a re-run converges
+ * instead of replacing a stored proof.
+ *
+ * `launchpad` is a PARAMETER here rather than a baked literal, and that is the
+ * one difference from its two siblings. This column is shared: it holds the
+ * signature over AgentScan's canonical message for every launchpad that owes
+ * one, and today that is Virtuals with pools.fun to follow. Baking one venue in
+ * would force the next lane to copy the function rather than call it. The value
+ * is still a precondition, not an assumption - a row of another venue REFUSES
+ * the stamp and returns `false`.
+ *
+ * Returns whether this call stored it. `false` means "already signed" or "not
+ * that launchpad's row"; neither has a remediation beyond not overwriting.
+ */
+export async function stampAgentscanAttestSignature(input: {
+  chainId: number;
+  tokenAddress: string;
+  launchpad: string;
+  attestSignature: string;
+}): Promise<boolean> {
+  const row = await queryOne<Record<string, unknown>>(
+    `UPDATE launched_tokens
+        SET agentscan_attest_signature = $4
+      WHERE chain_id = $1 AND LOWER(token_address) = LOWER($2)
+        AND launchpad = $3
+        AND agentscan_attest_signature IS NULL
+      RETURNING id`,
+    [input.chainId, input.tokenAddress, input.launchpad, input.attestSignature],
   );
   return row !== null;
 }

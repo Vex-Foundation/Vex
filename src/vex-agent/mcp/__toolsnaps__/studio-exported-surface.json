@@ -1,5 +1,5 @@
 {
-  "toolCount": 176,
+  "toolCount": 180,
   "tools": [
     {
       "alwaysLoad": true,
@@ -10999,6 +10999,344 @@
       "requiresEnv": null,
       "title": "Read one Virtuals agent token",
       "toolId": "virtuals.get"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 1677,
+      "destructiveHint": true,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "chain": {
+            "anyOf": [
+              {
+                "enum": [
+                  "base",
+                  "solana",
+                  "robinhood",
+                  "ethereum"
+                ],
+                "type": "string"
+              },
+              {
+                "minimum": 1,
+                "type": "integer"
+              }
+            ],
+            "description": "Required together with token - Vex must know which BondingV5 to call. Chain slug/alias, or the numeric chain id `TokenFind` returns (e.g. `base` or `8453`)."
+          },
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "intentId": {
+            "description": "The launch to cancel, as returned by virtuals__agent_launch_execute. Vex resolves the token from its own record, but the CONTRACT still decides who may cancel and what is refunded. Pass this OR token.",
+            "type": "string"
+          },
+          "simulateOnly": {
+            "description": "When true, run every check and eth_call the exact cancelLaunch transaction from your wallet address, then return it with `cancelled: false`. No signing key is opened, no activity row is written and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "token": {
+            "description": "The agent's ERC-20 contract address, for a launch Vex has no record of. Requires chain. The creator check is the contract's, so a token this wallet did not create is refused by name.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "virtuals",
+      "publicName": "virtuals__agent_launch_cancel",
+      "readOnlyHint": false,
+      "requiresEnv": null,
+      "title": "Cancel a Virtuals agent launch",
+      "toolId": "virtuals.launch.cancel"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 2276,
+      "destructiveHint": true,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "amountIn": {
+            "description": "REQUIRED. The VIRTUAL you commit to the launch, as a plain decimal in WHOLE tokens - never wei, never a float. Vex's 25 bps fee comes out of it, so this is exactly what leaves the wallet. What is left goes to the venue and becomes the agent's INITIAL PURCHASE, which is the only amount a cancel would refund. The venue's own launch fee is 0 for the normal immediate launches Vex signs, read live from BondingConfig every time rather than assumed.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "antiSniperTaxType": {
+            "description": "Which anti-sniper window your agent's curve opens with. One of 0, 1, 2, 3, 4, 5; default 1, which is what the Virtuals app itself sends. 0 = none; 1 = 60 s on buys; 2 = 98 minutes on buys; 3 = 98 minutes on sells; 4 = 98 minutes on both; 5 = 10 minutes on buys. Inside the window the tax starts near 99 percent and decays linearly to zero, and it goes to the venue's anti-sniper vault - not to you. It cannot be changed after launch.",
+            "enum": [
+              "0",
+              "1",
+              "2",
+              "3",
+              "4",
+              "5"
+            ],
+            "type": "string"
+          },
+          "chain": {
+            "anyOf": [
+              {
+                "enum": [
+                  "base",
+                  "solana",
+                  "robinhood",
+                  "ethereum"
+                ],
+                "type": "string"
+              },
+              {
+                "minimum": 1,
+                "type": "integer"
+              }
+            ],
+            "description": "REQUIRED. Where to launch the agent. Vex signs Virtuals launches on base and robinhood only. solana and ethereum answer with the measured reason they are closed: a Solana agent's curve is a Meteora pool the Virtuals BACKEND creates, and Virtuals runs no launch contract on Ethereum. Chain slug/alias, or the numeric chain id `TokenFind` returns (e.g. `base` or `8453`)."
+          },
+          "cores": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              }
+            ],
+            "description": "REQUIRED. The venue's capability ids for this agent, as whole numbers 0-255, at most 8 of them. Send them as an array ([\"0\", \"1\", \"2\"]) or as a comma-separated string (\"0,1,2\"). BondingV5.preLaunch reverts with InvalidInput on an empty list. Vex does not carry a copy of the venue's core taxonomy - a stale copy would mislabel agents - so read the `cores` block of any existing agent with virtuals__agent_get to see which ids the platform uses."
+          },
+          "description": {
+            "description": "REQUIRED. What the agent is, at most 2000 characters. It is written into contract storage permanently, so length is real gas on both chains and it cannot be edited afterwards.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "imageId": {
+            "description": "The staged picture, in the Vex app. REQUIRED on this surface. It must ALREADY be published: call launchpads__image_publish with the imageId first (it asks for your approval, because publishing makes the bytes fetchable by anyone), then launch. The URL written on chain is the content-addressed one that publish returned, so the picture cannot change after you approve it. You cannot pass a URL of your own.",
+            "type": "string"
+          },
+          "imagePath": {
+            "description": "The picture, over the Vex Studio MCP surface: a path to an image file inside THIS project. REQUIRED on that surface, where there is no image locker. Vex reads the bytes without following symlinks, publishes them to its content-addressed host and writes that hash URL on chain. You cannot pass a URL of your own.",
+            "type": "string"
+          },
+          "links": {
+            "description": "Optional social and website links minted into the agent's on-chain record, as an object with any of `twitter`, `telegram`, `youtube` and `website`. The contract stores them as a fixed four-slot list in that order, so an omitted one is written as an empty string. https only - http and URLs carrying credentials are refused by name, because the strings are written to permanent public storage and rendered as links by every explorer.",
+            "type": "object"
+          },
+          "name": {
+            "description": "REQUIRED. The agent's display name, at most 64 characters. THE TOKEN ON CHAIN IS NOT ALWAYS NAMED THIS: BondingV5 appends \" by Virtuals\" unless you pass nameSuffix: \"none\", so the ERC-20 the wallet ends up holding may carry a longer name than the string you pass. The preview shows the exact on-chain name as `agent.onChainName`; read it before approving.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "nameSuffix": {
+            "description": "Whether BondingV5 appends \" by Virtuals\" to the token name. Default \"by_virtuals\", which is the venue's own default and what its app sends; \"none\" sets the contract's skip-suffix flag and launches the bare name. Either way the preview shows the resulting on-chain name.",
+            "enum": [
+              "by_virtuals",
+              "none"
+            ],
+            "type": "string"
+          },
+          "previewId": {
+            "description": "REQUIRED for a real launch, and omitted for simulateOnly: pass the previewId virtuals__agent_launch_preview returned. It is single-use: the launch it authorizes retires it, so a second launch cannot run against one plan a person approved. It lapses a few minutes after the preview, because a plan priced against a chain that has moved is not the plan you read.",
+            "type": "string"
+          },
+          "simulateOnly": {
+            "description": "When true, stop at the edge of signing: re-read the chain, rebuild the exact transactions and eth_call each of them from your wallet address, then return them with `launched: false`. No signing key is opened, NO PREVIEW IS CLAIMED, no activity row is written and nothing is broadcast. Omit previewId when you use it. The preLaunch leg reverts in the simulation whenever the allowance leg above it has not run yet, by construction, and that is reported rather than hidden.",
+            "type": "boolean"
+          },
+          "symbol": {
+            "description": "REQUIRED. The token symbol - the venue's own `ticker_` argument - letters and digits only, at most 16 characters. It is uppercased before it is encoded, and the uppercased form is what the approval shows and what goes on chain.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "chain",
+          "name",
+          "symbol",
+          "description",
+          "cores",
+          "amountIn"
+        ],
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "virtuals",
+      "publicName": "virtuals__agent_launch_execute",
+      "readOnlyHint": false,
+      "requiresEnv": null,
+      "title": "Launch a Virtuals agent",
+      "toolId": "virtuals.launch.execute"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 2023,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "amountIn": {
+            "description": "REQUIRED. The VIRTUAL you commit to the launch, as a plain decimal in WHOLE tokens - never wei, never a float. Vex's 25 bps fee comes out of it, so this is exactly what leaves the wallet. What is left goes to the venue and becomes the agent's INITIAL PURCHASE, which is the only amount a cancel would refund. The venue's own launch fee is 0 for the normal immediate launches Vex signs, read live from BondingConfig every time rather than assumed.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "antiSniperTaxType": {
+            "description": "Which anti-sniper window your agent's curve opens with. One of 0, 1, 2, 3, 4, 5; default 1, which is what the Virtuals app itself sends. 0 = none; 1 = 60 s on buys; 2 = 98 minutes on buys; 3 = 98 minutes on sells; 4 = 98 minutes on both; 5 = 10 minutes on buys. Inside the window the tax starts near 99 percent and decays linearly to zero, and it goes to the venue's anti-sniper vault - not to you. It cannot be changed after launch.",
+            "enum": [
+              "0",
+              "1",
+              "2",
+              "3",
+              "4",
+              "5"
+            ],
+            "type": "string"
+          },
+          "chain": {
+            "anyOf": [
+              {
+                "enum": [
+                  "base",
+                  "solana",
+                  "robinhood",
+                  "ethereum"
+                ],
+                "type": "string"
+              },
+              {
+                "minimum": 1,
+                "type": "integer"
+              }
+            ],
+            "description": "REQUIRED. Where to launch the agent. Vex signs Virtuals launches on base and robinhood only. solana and ethereum answer with the measured reason they are closed: a Solana agent's curve is a Meteora pool the Virtuals BACKEND creates, and Virtuals runs no launch contract on Ethereum. Chain slug/alias, or the numeric chain id `TokenFind` returns (e.g. `base` or `8453`)."
+          },
+          "cores": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              }
+            ],
+            "description": "REQUIRED. The venue's capability ids for this agent, as whole numbers 0-255, at most 8 of them. Send them as an array ([\"0\", \"1\", \"2\"]) or as a comma-separated string (\"0,1,2\"). BondingV5.preLaunch reverts with InvalidInput on an empty list. Vex does not carry a copy of the venue's core taxonomy - a stale copy would mislabel agents - so read the `cores` block of any existing agent with virtuals__agent_get to see which ids the platform uses."
+          },
+          "description": {
+            "description": "REQUIRED. What the agent is, at most 2000 characters. It is written into contract storage permanently, so length is real gas on both chains and it cannot be edited afterwards.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "imageId": {
+            "description": "The staged picture, in the Vex app. REQUIRED on this surface. It must ALREADY be published: call launchpads__image_publish with the imageId first (it asks for your approval, because publishing makes the bytes fetchable by anyone), then launch. The URL written on chain is the content-addressed one that publish returned, so the picture cannot change after you approve it. You cannot pass a URL of your own.",
+            "type": "string"
+          },
+          "imagePath": {
+            "description": "The picture, over the Vex Studio MCP surface: a path to an image file inside THIS project. REQUIRED on that surface, where there is no image locker. Vex reads the bytes without following symlinks, publishes them to its content-addressed host and writes that hash URL on chain. You cannot pass a URL of your own.",
+            "type": "string"
+          },
+          "links": {
+            "description": "Optional social and website links minted into the agent's on-chain record, as an object with any of `twitter`, `telegram`, `youtube` and `website`. The contract stores them as a fixed four-slot list in that order, so an omitted one is written as an empty string. https only - http and URLs carrying credentials are refused by name, because the strings are written to permanent public storage and rendered as links by every explorer.",
+            "type": "object"
+          },
+          "name": {
+            "description": "REQUIRED. The agent's display name, at most 64 characters. THE TOKEN ON CHAIN IS NOT ALWAYS NAMED THIS: BondingV5 appends \" by Virtuals\" unless you pass nameSuffix: \"none\", so the ERC-20 the wallet ends up holding may carry a longer name than the string you pass. The preview shows the exact on-chain name as `agent.onChainName`; read it before approving.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "nameSuffix": {
+            "description": "Whether BondingV5 appends \" by Virtuals\" to the token name. Default \"by_virtuals\", which is the venue's own default and what its app sends; \"none\" sets the contract's skip-suffix flag and launches the bare name. Either way the preview shows the resulting on-chain name.",
+            "enum": [
+              "by_virtuals",
+              "none"
+            ],
+            "type": "string"
+          },
+          "symbol": {
+            "description": "REQUIRED. The token symbol - the venue's own `ticker_` argument - letters and digits only, at most 16 characters. It is uppercased before it is encoded, and the uppercased form is what the approval shows and what goes on chain.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "chain",
+          "name",
+          "symbol",
+          "description",
+          "cores",
+          "amountIn"
+        ],
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "virtuals",
+      "publicName": "virtuals__agent_launch_preview",
+      "readOnlyHint": false,
+      "requiresEnv": null,
+      "title": "Plan a Virtuals agent launch",
+      "toolId": "virtuals.launch.preview"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 1889,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "chain": {
+            "anyOf": [
+              {
+                "enum": [
+                  "base",
+                  "solana",
+                  "robinhood",
+                  "ethereum"
+                ],
+                "type": "string"
+              },
+              {
+                "minimum": 1,
+                "type": "integer"
+              }
+            ],
+            "description": "Required together with token - Vex must know which BondingV5 to read. Chain slug/alias, or the numeric chain id `TokenFind` returns (e.g. `base` or `8453`)."
+          },
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "intentId": {
+            "description": "The launch to check, as returned by virtuals__agent_launch_execute. Gives the fullest answer: Vex's own record plus a fresh chain observation, and the scan is narrowed to the block the pre-launch landed in. Pass this OR token.",
+            "type": "string"
+          },
+          "token": {
+            "description": "The agent's ERC-20 contract address, for a launch Vex has no record of. Requires chain. The scan is then bounded by what the node will serve, so a very old launch may answer UNKNOWN rather than a state.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "virtuals",
+      "publicName": "virtuals__agent_launch_status",
+      "readOnlyHint": true,
+      "requiresEnv": null,
+      "title": "Check a Virtuals agent launch",
+      "toolId": "virtuals.launch.status"
     },
     {
       "alwaysLoad": false,

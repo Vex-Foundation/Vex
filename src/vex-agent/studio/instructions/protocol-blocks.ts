@@ -137,17 +137,20 @@ export const STUDIO_NAMESPACE_FEES: Readonly<Record<string, StudioNamespaceFee>>
     freeLanes: [],
   },
   virtuals: {
-    // The curve trade pair landed, so the first half of this line stopped being
-    // "a later lane" and became a charge the user can incur today. The LAUNCH
-    // half is still stated as future behaviour, because claiming a fee for a
-    // tool that does not exist is as wrong as hiding one that does.
+    // Both halves are shipped now (PR-C2 curve trades, PR-C3 launches), so the
+    // line states charges a user can incur TODAY. The launch half carries its
+    // WAIVER, because a fee the user will not be charged is as much a fact
+    // about their money as one they will.
     line:
       "25 bps of the VIRTUAL you commit on a bonding-curve buy, taken off the input before the curve, "
       + "and 25 bps of the VIRTUAL a receipt proves you received on a sell, taken as a separate leg "
-      + "after the sale settles; a trade that reverts or cannot be proven is never charged. Every "
-      + "Virtuals read is free, a graduated agent trades under its venue's own fee with no second one, "
-      + "and the confirmed policy for the launch tools of a later lane is 25 bps of the initial "
-      + "purchase once a launch is observed on chain, with genesis free.",
+      + "after the sale settles; a trade that reverts or cannot be proven is never charged. On an "
+      + "agent LAUNCH, 25 bps of the VIRTUAL you commit, taken off the input, and charged ONLY when "
+      + "Vex has seen the Virtuals keeper launch your agent while it still held your approval - if "
+      + "the keeper is slower than that the launch is recorded awaiting_keeper and the fee is WAIVED "
+      + "PERMANENTLY, never collected later. Cancelling a launch is free. Every Virtuals read is "
+      + "free, a graduated agent trades under its venue's own fee with no second one, and genesis "
+      + "participation is not a path Vex executes at all.",
     charged: { symbol: "VIRTUALS_CURVE_FEE_BPS", lane: "src/tools/virtuals" },
     freeLanes: [],
   },

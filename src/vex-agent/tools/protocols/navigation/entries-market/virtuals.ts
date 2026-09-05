@@ -8,16 +8,16 @@ export const VIRTUALS_NAVIGATION: ProtocolNamespaceNavigation = {
   summary:
     "Virtuals Protocol agent-token intelligence on the exactly four chains Virtuals indexes: Robinhood (4663), Base, Solana and Ethereum, plus BONDING-CURVE TRADING on Base and Robinhood. It is the only place that answers UNDERGRAD-versus-graduated status, market cap denominated in VIRTUAL, the graduation feed and the anti-sniper buy-tax window - the one fact that decides whether buying right now costs almost everything.",
   whenToUse:
-    "Use when the user names an agent token, asks what just graduated, or asks what is launching on Virtuals: screen agents on one chain, read one agent in full, watch the graduation feed, or browse the genesis calendar. It also QUOTES and EXECUTES a bonding-curve buy or sell for an agent that has not graduated. Always read the anti-sniper window before buying.",
+    "Use when the user names an agent token, asks what just graduated, asks what is launching on Virtuals, or wants to LAUNCH AN AGENT OF THEIR OWN: screen agents on one chain, read one agent in full, watch the graduation feed, or browse the genesis calendar. It also QUOTES and EXECUTES a bonding-curve buy or sell for an agent that has not graduated. Always read the anti-sniper window before buying.",
   preferInstead:
     "Use `dexscreener` for general multi-chain pair/liquidity research. A GRADUATED agent has left its curve, so trade it with `SwapQuote`/`SwapExecute` (or `solana.*` on Solana); the curve tools here refuse it by name and say which AMM tool to use. Solana and Ethereum agents are read-only here - their curves are not BondingV5.",
   declaration: {
     identity: "Virtuals is intelligence for Virtuals agents and agent tokens across the chains indexed by the provider, and the bonding-curve trading venue for the agents that have not graduated on Base and Robinhood.",
     read: "Read one agent's bonding-curve trade tape and build a price chart from its pool's ohlcv candles, screen virtuals agents and agent tokens, inspect robinhood agent tokens or one agent in depth, read market cap, holder count and concentration, check the anti-sniper buy-tax window and exact venue, follow recent virtuals graduations or what just graduated, and browse the fresh graduations feed, genesis calendar, launch schedule, and genesis sales.",
     quote: "Price a bonding-curve buy or sell of an agent token that has not graduated, on Base or Robinhood: the output, the taxes, the anti-sniper window and the floor the contract will enforce. Research alone still establishes no executable price.",
-    act: "Execute a bonding-curve buy or sell against a quote already taken, spending real funds under approval. Acquiring a GRADUATED agent token is still a separate swap task on the venue identified by the research result.",
+    act: "Execute a bonding-curve buy or sell against a quote already taken, spending real funds under approval, or launch your own agent on Base or Robinhood and cancel a launch the venue keeper has not made live yet. Acquiring a GRADUATED agent token is still a separate swap task on the venue identified by the research result.",
     whenItApplies: "Use it when the user names an agent token, asks what just graduated, wants robinhood agent tokens, or asks what is launching through Virtuals.",
-    characteristicAndLimits: "Bonding-curve pre-graduation can be illiquid and may never reach a locked liquidity pool. Verification is anti-impersonation, not a quality or safety signal. Rankings have no stated freshness guarantee, and no launch, cost, quota, or rate-limit action is exposed. A curve PURCHASE is exposed, but only for an agent that has not graduated, and only on Base and Robinhood.",
+    characteristicAndLimits: "Bonding-curve pre-graduation can be illiquid and may never reach a locked liquidity pool. Verification is anti-impersonation, not a quality or safety signal. Rankings have no stated freshness guarantee, cost, quota and rate-limit actions are not exposed. A LAUNCH is exposed on Base and Robinhood, immediate and normal-mode only; scheduled, ACF and airdrop launches answer unsupported with the measured reason. A curve PURCHASE is exposed, but only for an agent that has not graduated, and only on Base and Robinhood.",
     retrievalTerms: [
       "virtuals agents",
       "agent tokens",
@@ -38,6 +38,8 @@ export const VIRTUALS_NAVIGATION: ProtocolNamespaceNavigation = {
       "trade tape",
       "price chart",
       "ohlcv candles",
+      "launch your own agent",
+      "cancel a launch",
     ],
     facets: [
       "Agent-token screening and detail",
@@ -45,6 +47,7 @@ export const VIRTUALS_NAVIGATION: ProtocolNamespaceNavigation = {
       "Trade tape and price history",
       "Creator fees on an agent",
       "Bonding-curve trading (buy/sell)",
+      "Launching an agent",
     ],
   },
   exampleQueries: [
@@ -108,6 +111,25 @@ export const VIRTUALS_NAVIGATION: ProtocolNamespaceNavigation = {
         "quote a virtuals bonding curve trade",
         "ape into this virtuals launch",
         "anti-sniper tax before buying",
+      ],
+    },
+    {
+      label: "Launching an agent",
+      summary:
+        "Launch your own Virtuals agent on Base or Robinhood: plan it, launch it, check whether the venue's "
+        + "keeper has made it live, or cancel one it has not and take the initial purchase back.",
+      toolPrefixes: [
+        "virtuals.launch.preview",
+        "virtuals.launch.execute",
+        "virtuals.launch.status",
+        "virtuals.launch.cancel",
+      ],
+      hints: [
+        "launch my own virtuals agent",
+        "create an ai agent token",
+        "what would it cost to launch an agent",
+        "is my agent live yet",
+        "cancel my agent launch and refund me",
       ],
     },
   ],
