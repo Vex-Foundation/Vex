@@ -39,6 +39,7 @@ import { buildAgentscanAttestMessage } from "@vex-agent/agentscan/attest-message
 import { POOLS_CHAIN_ID } from "@tools/pools-fun/constants.js";
 import { POOLS_ATTEST_LANE_MISCONFIG_CODE } from "@tools/pools-fun/attribution-codes.js";
 import * as launchedTokens from "@vex-agent/db/repos/launched-tokens.js";
+import type { AgentscanAttestLaunchpad } from "@vex-agent/db/repos/launched-tokens.js";
 import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
 import logger from "@utils/logger.js";
 
@@ -127,6 +128,14 @@ export async function signAndStorePoolsAttestation(
  * Never throws: a wallet that refuses to sign, or a row not yet written, costs
  * the token its AgentScan attestation and nothing else.
  */
+/**
+ * The launchpad this lane's launches are recorded under in `launched_tokens`,
+ * and the one the AgentScan attest sweep selects them by. Declared here, beside
+ * the stamp, and imported by the broadcast module that writes the row, so the
+ * value the row carries and the value the stamp requires cannot drift apart.
+ */
+export const POOLS_LAUNCHPAD: AgentscanAttestLaunchpad = "pools_fun";
+
 export async function signAndStoreAgentscanAttestation(
   walletClient: AttestMessageSigner,
   tokenAddress: string,
@@ -147,6 +156,7 @@ export async function signAndStoreAgentscanAttestation(
     await launchedTokens.stampAgentscanAttestSignature({
       chainId: POOLS_CHAIN_ID,
       tokenAddress,
+      launchpad: POOLS_LAUNCHPAD,
       attestSignature: signature,
     });
   } catch (err) {

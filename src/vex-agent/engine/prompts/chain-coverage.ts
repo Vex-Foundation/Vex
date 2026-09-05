@@ -124,7 +124,8 @@ const COVERAGE_BY_NAMESPACE: Readonly<Partial<Record<ProtocolNamespace, Protocol
       + "is base and robinhood only: an agent still on its BondingV5 curve is bought and sold HERE on "
       + "those two chains. Everything else trades elsewhere - a GRADUATED agent through kyberswap on "
       + "base/ethereum or uniswap on robinhood, and solana through the solana tools, whose curve is a "
-      + "Meteora pool rather than BondingV5.",
+      + "Meteora pool rather than BondingV5. LAUNCHING an agent is base and robinhood only, and immediate "
+      + "normal-mode only.",
   },
 } as const;
 

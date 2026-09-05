@@ -582,6 +582,18 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   ["prebuy", "the creator's own first buy, executed in the launch transaction"],
   ["pairedAsset", "which asset the new token is paired against in its pool"],
   ["imageByteLength", "size of the image a launch preview will upload, in BYTES"],
+  ["imagePath", "the picture, as a path INSIDE the caller's own project; the Studio MCP counterpart of `imageId`, which names a locker row the external surface has no access to"],
+
+  // -- Virtuals agent launch (PR-C3) ---------------------------------
+  //
+  // Four keys with no existing counterpart, because the venue's launch has
+  // choices the other two launchpads do not. Each is the CONTRACT's own concept
+  // rather than a Vex invention, so a model reading the agent detail and a model
+  // launching one meet the same word.
+  ["cores", "the venue's CAPABILITY ids a launched agent declares; `BondingV5.preLaunch`'s `cores_`"],
+  ["antiSniperTaxType", "which anti-sniper tax WINDOW a launch opens its curve with; declared as an `enum` over the contract's six types"],
+  ["nameSuffix", "whether the venue appends its own suffix to the token NAME on chain; declared as an `enum`"],
+  ["previewId", "the id of a launch PREVIEW this call executes; single-use, and never synthesised by the caller"],
   ["creator", "the ACCOUNT that launched a token; the launchpad's deployer filter"],
   ["status", "which lifecycle state a listing must be in; declared as an `enum`"],
   ["excludeRuggedFlagged", "drop rows the launchpad has flagged as rugged"],

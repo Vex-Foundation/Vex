@@ -943,6 +943,23 @@
             "ape into this virtuals launch",
             "anti-sniper tax before buying"
           ]
+        },
+        {
+          "label": "Launching an agent",
+          "summary": "Launch your own Virtuals agent on Base or Robinhood: plan it, launch it, check whether the venue's keeper has made it live, or cancel one it has not and take the initial purchase back.",
+          "toolPrefixes": [
+            "virtuals.launch.preview",
+            "virtuals.launch.execute",
+            "virtuals.launch.status",
+            "virtuals.launch.cancel"
+          ],
+          "hints": [
+            "launch my own virtuals agent",
+            "create an ai agent token",
+            "what would it cost to launch an agent",
+            "is my agent live yet",
+            "cancel my agent launch and refund me"
+          ]
         }
       ]
     },
@@ -1283,6 +1300,10 @@
     "virtuals.creator_fees": "7efc62c33d201b8c7c074c6a9c2e673d374ab62548180fb503b548cac09abad3",
     "virtuals.trade.quote": "cd95c5d76cf509c891455ac5d3366b7949edf314c54a8b93d616a3489d668070",
     "virtuals.trade.execute": "5b7fca7d2dc6442da6297ea657c16e7949bcb46fb070b55a3bd748c4bdb0729b",
+    "virtuals.launch.preview": "d11dcee1b9a9a5cb9e3c4a9832e97df5024d49c95c6926330a9d6d2cf917939b",
+    "virtuals.launch.execute": "31e33de79a7fd1d76d5ec89816d33dc03972122b382cc939a7e7e960811e933d",
+    "virtuals.launch.status": "0a15f03c324d1fe1013f25a1c874b12ea8d1c42d7567e42981091b3e073b2af2",
+    "virtuals.launch.cancel": "2b86e9f5d486e27d9bb8296fd54123aee724d4fdeca0ef0ffb07685914b5acc7",
     "pendle.yields": "9681172f6045d1b721f4ab636069ae9767322c1a55291c93ff48250958295d27",
     "pendle.position.value": "014a5b81cc8d6321564e454bd6ca9d9f987da6d59a9d628555d92e13c4d4f1f2",
     "pendle.market.get": "853b5c4a9927984549d7c95eea7502af64a863af575d4c6c8ea412187ca7b00d",

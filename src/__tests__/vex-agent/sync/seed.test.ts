@@ -36,9 +36,13 @@ describe("seedSyncJobs", () => {
     // token-attestation sweep (`agentscan_attest`, periodic 300s) makes 16.
     // The pools.fun attribution retry lane (`pools_attribution`, periodic
     // 120s) makes 17 - a SECOND badge sweep, against a different partner and
-    // a different attest string, not a widening of the trench one.
+    // a different attest string, not a widening of the trench one. The
+    // Virtuals keeper-launch reconciliation (`virtuals_keeper_launch`, periodic
+    // 30s) makes 18 - the only sweep in the tree that waits on SOMEBODY ELSE'S
+    // transaction, the venue keeper's `launch()`, and the reason a Virtuals
+    // launch has a durable `awaiting_keeper` state at all (migration 110).
     await seedSyncJobs();
-    expect(mockExecute).toHaveBeenCalledTimes(17);
+    expect(mockExecute).toHaveBeenCalledTimes(18);
   });
 
   it("uses ON CONFLICT DO NOTHING (idempotent)", async () => {

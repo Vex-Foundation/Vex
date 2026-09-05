@@ -69,10 +69,11 @@ export interface RecordLaunchedTokenInput {
   name: string;
   symbol: string;
   /**
-   * Which launchpad produced the token: `trench_express` or `pools_fun`
-   * (migration 082). Defaults to `trench_express` for callers that predate the
-   * second venue - named rather than assumed. Both venues share chain 4663, so
-   * this is the ONLY thing that tells the two populations apart.
+   * Which launchpad produced the token: `trench_express`, `pools_fun`
+   * (migration 082) or `virtuals` (migration 110). Defaults to `trench_express`
+   * for callers that predate the second venue - named rather than assumed.
+   * trench.express and pools.fun share chain 4663 and Virtuals spans 4663 and
+   * Base 8453, so this is the ONLY thing that tells the populations apart.
    */
   launchpad?: string;
   imageRef?: string | null;
@@ -270,23 +271,30 @@ export async function markAttributed(id: number): Promise<boolean> {
  * WHICH LAUNCHPADS CAN BE ATTESTED TO AGENTSCAN, AND WITH WHICH SIGNATURE.
  *
  * The AgentScan attestation registry verifies ONE canonical message, the one
- * `canonicalAttestMessage` builds (`packages/contract/src/attest.ts`) and that
- * `src/tools/trench-express/attribution.ts` is the only module here allowed to
- * produce. A signature over any other message recovers to a different address
- * and is refused, so a launchpad may only appear here once a column holding an
- * AGENTSCAN-FORMATTED signature exists for it.
+ * `canonicalAttestMessage` builds (`packages/contract/src/attest.ts`). Two
+ * modules here may produce it: `src/tools/trench-express/attribution.ts` for the
+ * trench badge, which happens to sign the same bytes, and
+ * `src/vex-agent/agentscan/attest-message.ts`, the launchpad-neutral builder the
+ * pools.fun and Virtuals launch handlers call. A signature over any other
+ * message recovers to a different address and is refused, so a launchpad may
+ * only appear here once a column holding an AGENTSCAN-FORMATTED signature exists
+ * for it.
  *
- * Two do today. `attest_signature` (migration 071) is the trench.express
+ * Three do today. `attest_signature` (migration 071) is the trench.express
  * badge proof and happens to sign that same canonical message
  * (`src/tools/trench-express/attribution.ts:77`). `pools_attest_signature`
  * (migration 094) does NOT: pools.fun's own badge signs the venue-prefixed
  * message `src/tools/pools-fun/attribution.ts:142` builds, a deliberately
  * different one, so shipping it to AgentScan would send a proof over the wrong
- * bytes and burn the row on a definitive refusal. So pools.fun signs a THIRD
- * signature at launch time, over AgentScan's canonical message, into
- * `agentscan_attest_signature` (migration 109) - which is the column named
- * below. Virtuals still owes its own; its rows are not admitted here until it
- * has one, because a predicate cannot conjure a proof that was never signed.
+ * bytes and burn the row on a definitive refusal. The pools.fun and Virtuals
+ * launches therefore sign a THIRD signature at launch time, over AgentScan's
+ * canonical message (`src/vex-agent/agentscan/attest-message.ts`), by the
+ * handler that still holds the signer. `agentscan_attest_signature` is that
+ * column - added by migration 109 for pools.fun and re-declared IF NOT EXISTS by
+ * migration 110 for Virtuals, named for the registry it serves rather than for a
+ * venue precisely so the second launchpad that needs it does not mint a third
+ * copy. A launch that could not sign leaves it NULL and is simply never a
+ * candidate - the same named gap the trench lane has.
  *
  * THE CHAIN IS NOT A PARAMETER any more, and that is the point. The sweep used
  * to be pinned to `TRENCH_CHAIN_ID`, which was a faithful proxy for the venue
@@ -321,10 +329,31 @@ const AGENTSCAN_ATTEST_SOURCES = [
      */
     signatureColumn: "agentscan_attest_signature",
   },
+  {
+    /**
+     * Virtuals agent launches (migration 110). ONE venue value across BOTH
+     * chains: Virtuals runs the same BondingV5 suite on Base 8453 and Robinhood
+     * 4663, and each row reports its own `chain_id`, so narrowing this by chain
+     * would strand every launch on the other one.
+     */
+    launchpad: "virtuals",
+    /** The AgentScan wire value; the server dispatches the `preLaunch` creation proof on it. */
+    wireLaunchpad: "virtuals",
+    /** The same registry-named column pools.fun writes; one message, one owner. */
+    signatureColumn: "agentscan_attest_signature",
+  },
 ] as const;
 
 export type AgentscanAttestWireLaunchpad =
   (typeof AGENTSCAN_ATTEST_SOURCES)[number]["wireLaunchpad"];
+
+/**
+ * This repository's own venue vocabulary for the launchpads that sign
+ * AgentScan's canonical message. The stamp writer takes it rather than a bare
+ * string so a caller cannot store a venue name the sweep's predicate above would
+ * never select.
+ */
+export type AgentscanAttestLaunchpad = (typeof AGENTSCAN_ATTEST_SOURCES)[number]["launchpad"];
 
 /** `(launchpad = 'x' AND x_signature IS NOT NULL) OR ...` over the table above. */
 const AGENTSCAN_ATTESTABLE_SQL = AGENTSCAN_ATTEST_SOURCES.map(
@@ -607,33 +636,46 @@ export async function stampPoolsAttestSignature(input: {
  * Store the AGENTSCAN attestation signature a launch produced, on the row that
  * launch just wrote.
  *
- * A SECOND COLUMN, NOT A SECOND USE OF THE FIRST. `pools_attest_signature`
+ * A SEPARATE COLUMN, NOT A SECOND USE OF THE VENUE ONE. `pools_attest_signature`
  * signs the venue's own message and `agentscan_attest_signature` signs
  * AgentScan's canonical one (`agentscan/attest-message.ts`); they are different
  * bytes and recover to the same wallet only over their own message, so a single
  * column would send one of the two proofs to the wrong verifier and burn the row
  * on a definitive refusal.
  *
- * `IS NULL` in the predicate, exactly like its sibling: a signature is produced
- * once, by the handler that held the signer, and a later write could only be a
- * different signature for the same token - which is either a defect or a second
- * launch, and neither should silently replace the proof already stored.
+ * WRITE-ONCE, exactly like `stampAttestSignature` and
+ * `stampPoolsAttestSignature`: `IS NULL` in the predicate, so a re-run
+ * converges. A later write could only be a different signature for the same
+ * token - either a defect or a second launch, and neither should silently
+ * replace the proof already stored.
  *
- * Launchpad-neutral by design: the AgentScan registry covers several launchpads
- * and the column belongs to the attestation lane, not to pools.fun.
+ * `launchpad` is a PARAMETER here rather than a baked literal, and that is the
+ * one difference from its two siblings. This column is SHARED: it holds the
+ * signature over AgentScan's canonical message for every launchpad that owes
+ * one, today pools.fun and Virtuals, and its vocabulary is the one
+ * `AGENTSCAN_ATTEST_SOURCES` above declares, so a caller cannot invent a third
+ * venue name that the sweep's predicate would never select. Baking one venue in
+ * would instead force the next lane to copy the function. The value is still a
+ * precondition, not an assumption - a row of another venue REFUSES the stamp and
+ * returns `false`.
+ *
+ * Returns whether this call stored it. `false` means "already signed" or "not
+ * that launchpad's row"; neither has a remediation beyond not overwriting.
  */
 export async function stampAgentscanAttestSignature(input: {
   chainId: number;
   tokenAddress: string;
+  launchpad: AgentscanAttestLaunchpad;
   attestSignature: string;
 }): Promise<boolean> {
   const row = await queryOne<Record<string, unknown>>(
     `UPDATE launched_tokens
-        SET agentscan_attest_signature = $3
+        SET agentscan_attest_signature = $4
       WHERE chain_id = $1 AND LOWER(token_address) = LOWER($2)
+        AND launchpad = $3
         AND agentscan_attest_signature IS NULL
       RETURNING id`,
-    [input.chainId, input.tokenAddress, input.attestSignature],
+    [input.chainId, input.tokenAddress, input.launchpad, input.attestSignature],
   );
   return row !== null;
 }

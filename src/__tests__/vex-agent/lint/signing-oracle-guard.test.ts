@@ -76,36 +76,57 @@ const POOLS_ATTRIBUTION_MESSAGE_BUILDER = resolve(ROOT, "tools/pools-fun/attribu
 
 /**
  * The AGENTSCAN REGISTRY message, admitted 2026-09-05 with the pools.fun V3
- * launch lane.
+ * launch lane (PR5) and signed by the Virtuals agent-launch lane (PR-C3) too.
  *
  * A FOURTH shape, and it has to be. The AgentScan attestation registry recovers
  * over ONE canonical string, `VEX-attest:<chainId>:<token>` - the same bytes the
  * trench badge happens to sign, because that badge predates the registry and the
  * registry was built around it. The pools.fun badge is deliberately DIFFERENT
  * (`VEX-attest:v1:pools.fun:...`, domain-bound so a signature for one venue
- * cannot be replayed at the other), so a pools.fun launch that wants to appear
- * in the registry has to sign the canonical string as well: one signature cannot
- * serve both verifiers, and sending either to the other's is a definitive
- * refusal.
+ * cannot be replayed at the other), so a launch that wants to appear in the
+ * registry has to sign the canonical string as well: one signature cannot serve
+ * both verifiers, and sending either to the other's is a definitive refusal.
  *
- * It is a BUILDER ONLY, and that is the containment. It formats a string and
- * signs nothing; the single call site that signs it is the pools attribution
- * module already named above, which is why no new entry appears in
- * `ALLOWED_SIGNING_MODULES`. The two exclusivity checks below keep it that way:
- * nothing else may import the builder, and the canonical literal may not be
- * duplicated into a third module.
+ * IT IS A BUILDER ONLY, and that is the containment. It formats a string and
+ * signs nothing, so it adds no entry to `ALLOWED_SIGNING_MODULES`; the modules
+ * that SIGN what it builds are named there in their own right. The exclusivity
+ * check below keeps the canonical literal in this one module: a copy per
+ * launchpad is exactly the duplicated signable payload this guard exists to
+ * prevent.
  *
- * WHY IT IS LAUNCHPAD-NEUTRAL rather than living under `tools/pools-fun/`: the
- * registry covers several launchpads on several chains, and Virtuals will sign
- * the same canonical string from its own lane. A copy per launchpad is exactly
- * the duplicated signable payload this guard exists to prevent.
+ * WHY IT IS LAUNCHPAD-NEUTRAL rather than living under `tools/pools-fun/` or
+ * `tools/virtuals/`: the registry covers several launchpads on several chains,
+ * the message binds a chain AND a token address, and the chain is a parameter
+ * precisely because Virtuals launches on Base 8453 as well as 4663. The trench
+ * builder could not have served either lane - it pins the chain to
+ * `TRENCH_CHAIN_ID` and lives inside the subtree the Trench retirement removes.
  */
 const AGENTSCAN_ATTEST_MESSAGE_BUILDER = resolve(ROOT, "vex-agent/agentscan/attest-message.ts");
+
+/**
+ * The Virtuals agent-launch lane's SIGNING site, admitted 2026-09-05 (PR-C3).
+ * A fourth text-signing module, not a fourth literal owner: it imports the
+ * launchpad-neutral builder above and signs what that builds.
+ *
+ * WHY THE SHARED SHAPE IS NOT THE REPLAY HAZARD the pools comment describes.
+ * That hazard was two venues on ONE chain producing byte-identical strings for
+ * a badge claimed at a venue backend. This message binds a chain AND a token
+ * address, which is unique on its chain, and AgentScan dispatches its creation
+ * proof on the `launchpad` the claim is posted with - for Virtuals, the
+ * `preLaunch` transaction (`tx.from == recovered signer`, `tx.to` in the
+ * BondingV5 allowlist, a `PreLaunched` in the receipt). A trench signature
+ * re-presented as a Virtuals claim fails that proof, and the converse.
+ */
+const VIRTUALS_ATTRIBUTION_SIGN_SITE = resolve(
+  ROOT,
+  "vex-agent/tools/protocols/virtuals/handlers/launch/attribute.ts",
+);
 
 const ALLOWED_SIGNING_MODULES = [
   HANDSHAKE_SIGNING_MODULE,
   TRENCH_ATTRIBUTION_SIGN_SITE,
   POOLS_ATTRIBUTION_SIGN_SITE,
+  VIRTUALS_ATTRIBUTION_SIGN_SITE,
 ];
 
 /**

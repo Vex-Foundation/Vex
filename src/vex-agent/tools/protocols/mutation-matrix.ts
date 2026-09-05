@@ -147,6 +147,32 @@ const entries: [string, MutationContract][] = [
   // position - the launch and its prebuy are ONE transaction and ONE row. No
   // dryRun: the read-only estimate is the separate `pools.launch_preview` tool.
   ["pools.launch_execute",       { kind: "trade", capture: "none", expectedType: "launch", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
+  // The Virtuals agent-launch family (PR-C3). THREE rows, not four:
+  // `virtuals.launch.status` is `mutating: false` and this matrix covers only
+  // mutating tools.
+  //
+  // `virtuals.launch.preview` joins the local-write rows above for the same
+  // reason `pools.launch_preview` does: it writes an advisory `previewed`
+  // intent that the database itself forbids from carrying an authorization or
+  // a hash, and it signs nothing.
+  //
+  // `virtuals.launch.execute` is `expectedType: "launch"` and shaped exactly
+  // like the pools and Trench launches: the handler writes its `kind: "launch"`
+  // row directly across the staged lifecycle, so `capture: "none"` keeps the
+  // legacy proj_activity projection out of it. No `dryRun`: the read-only
+  // estimate is `virtuals.launch.preview`, and the execute's own `simulateOnly`
+  // stops before signing rather than standing in for an approval-skipping
+  // preview.
+  //
+  // `virtuals.launch.cancel` is the FIRST row whose product is a REFUND rather
+  // than an acquisition, and it is still `kind: "trade"` / `expectedType:
+  // "launch"`: it rides the launch arm (`launch_cancel`, migration 107), it is
+  // the same contract and the same position, and it moves the user's VIRTUAL
+  // back. A `utility` classification would hide a real balance change from the
+  // portfolio lane.
+  ["virtuals.launch.preview",    { kind: "utility", capture: "none", expectedType: "none", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
+  ["virtuals.launch.execute",    { kind: "trade", capture: "none", expectedType: "launch", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
+  ["virtuals.launch.cancel",     { kind: "trade", capture: "none", expectedType: "launch", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
   // The creator-fee claim. `capture: "none"` for the same reason as every other
   // staged-write handler here: it writes its own row across the lifecycle, so
   // the legacy proj_activity projection must not also run. `expectedType:

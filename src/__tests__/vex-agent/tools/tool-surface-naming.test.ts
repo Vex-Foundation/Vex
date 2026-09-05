@@ -135,7 +135,7 @@ describe("G2 - publicName mapping gate", () => {
     );
   });
 
-  it("the mapped surface is the whole 147-tool catalog (drift alarm, not a cap)", () => {
+  it("the mapped surface is the whole 155-tool catalog (drift alarm, not a cap)", () => {
     // Not a limit: a Batch-2 addition updates this number together with its
     // mapping row, so the count and the map can never diverge silently.
     // 137 before the Batch 2 near-duplicate merges (owner decision D7) retired
@@ -181,7 +181,15 @@ describe("G2 - publicName mapping gate", () => {
     // holder's own claim and the permissionless distribute. Both are new
     // identities with their own rows in `mappings/pools.json`; nothing was
     // reclaimed or retired, so this is a pure +2 to 151.
-    expect(PROTOCOL_TOOLS.length).toBe(151);
+    // 151 before the Virtuals AGENT-LAUNCH family (`virtuals.launch.preview`,
+    // `virtuals.launch.execute`, `virtuals.launch.status`,
+    // `virtuals.launch.cancel`). Four rather than two because a Virtuals launch
+    // takes TWO transactions and only `preLaunch` is Vex's: the keeper's
+    // `launch()` is what makes the agent live, so the state between them needs
+    // its own read and its own exit. All four are new identities with their own
+    // rows in `mappings/virtuals.json`; nothing was reclaimed or retired, so
+    // this is a pure +4 to 155.
+    expect(PROTOCOL_TOOLS.length).toBe(155);
   });
 });
 

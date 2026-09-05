@@ -62,6 +62,7 @@ import { fail } from "../../../../handler-helpers.js";
 import { poolsFailureDetail } from "../../failure.js";
 import { settlePoolsLaunchFailure } from "./authorize.js";
 import {
+  POOLS_LAUNCHPAD,
   postPoolsLaunchAttribution,
   signAndStoreAgentscanAttestation,
   signAndStorePoolsAttestation,
@@ -73,8 +74,6 @@ const PROTOCOL = "pools";
 const CHAIN_SLUG = "robinhood";
 const NATIVE_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
 const NATIVE_DECIMALS = 18;
-/** The launchpad this launch is recorded under in `launched_tokens`. */
-const LAUNCHPAD = "pools_fun";
 
 function safeDetail(err: unknown): string {
   return poolsFailureDetail(TOOL_ID, err);
@@ -351,7 +350,7 @@ async function finalizeConfirmedPoolsLaunch(
     await launchedTokens.record({
       walletAddress: x.walletAddress,
       chainId: POOLS_CHAIN_ID,
-      launchpad: LAUNCHPAD,
+      launchpad: POOLS_LAUNCHPAD,
       tokenAddress: launch.tokenAddress,
       name: binding.name,
       symbol: binding.symbol,
