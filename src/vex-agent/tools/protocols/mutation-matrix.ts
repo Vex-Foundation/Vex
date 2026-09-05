@@ -137,7 +137,7 @@ const entries: [string, MutationContract][] = [
   // a hash, and it signs nothing.
   //
   // `virtuals.launch.execute` is `expectedType: "launch"` and shaped exactly
-  // like the pools and Trench launches: the handler writes its `kind: "launch"`
+  // like the pools launch above: the handler writes its `kind: "launch"`
   // row directly across the staged lifecycle, so `capture: "none"` keeps the
   // legacy proj_activity projection out of it. No `dryRun`: the read-only
   // estimate is `virtuals.launch.preview`, and the execute's own `simulateOnly`
