@@ -12,7 +12,7 @@
  * the code under test.
  */
 
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 
 import { POOLS_HANDLERS } from "@vex-agent/tools/protocols/pools/handlers.js";
 import { getPoolsFunClient } from "@tools/pools-fun/client.js";
@@ -382,6 +382,14 @@ function stubApiRewards(capture: string) {
 }
 
 describe("pools.holder_rewards", () => {
+  // The handler falls back to the session's selected wallet when no
+  // `walletAddress` is passed. That resolution reads the local keystore config,
+  // which exists on a developer machine and not in CI: pin it here so the
+  // tests exercise the handler, never the environment (CI on main went red on
+  // exactly this after the launchpads integration, 2026-09-05).
+  beforeEach(() => {
+    vi.spyOn(walletResolve, "resolveSelectedAddressForRead").mockReturnValue(WALLET);
+  });
   it("reports the on-chain amounts with their raw units, decimals and a scaled figure", async () => {
     stubSuite(3);
     stubOnChainRewards();
