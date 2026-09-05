@@ -234,21 +234,53 @@ describe("the outbox eligibility gate is still CLOSED for wrap", () => {
     "utf-8",
   );
 
-  function eligibilityBlock(): string {
-    const start = REPORTING_SQL.indexOf("const ELIGIBILITY_SQL = `");
-    if (start === -1) throw new Error("ELIGIBILITY_SQL not found in agentscan-reporting.ts");
-    const end = REPORTING_SQL.indexOf("`;", start);
-    if (end === -1) throw new Error("ELIGIBILITY_SQL is unterminated");
-    return REPORTING_SQL.slice(start, end);
+  /**
+   * Migration 102 split the predicate by VOCABULARY VERSION: the always-reported
+   * half (`ELIGIBLE_VOCABULARY_V1_SQL`) and the launchpad family gated behind the
+   * one-time backfill (`ELIGIBLE_VOCABULARY_V2_SQL`). `wrap` may not appear in
+   * EITHER, so both are read and concatenated - checking only the composed
+   * `ELIGIBILITY_SQL` would now look at a block that names no roles at all and
+   * pass for the wrong reason.
+   */
+  function vocabularyBlocks(): string {
+    const names = ["ELIGIBLE_VOCABULARY_V1_SQL", "ELIGIBLE_VOCABULARY_V2_SQL"];
+    return names
+      .map((name) => {
+        const start = REPORTING_SQL.indexOf(`const ${name} = \``);
+        if (start === -1) throw new Error(`${name} not found in agentscan-reporting.ts`);
+        const end = REPORTING_SQL.indexOf("`;", start);
+        if (end === -1) throw new Error(`${name} is unterminated`);
+        return REPORTING_SQL.slice(start, end);
+      })
+      .join("\n");
   }
 
   it("neither the wrap kind nor its two roles are in the predicate yet", () => {
-    const block = eligibilityBlock();
+    const block = vocabularyBlocks();
     expect(block).not.toContain("'wrap'");
     expect(block).not.toContain("'unwrap'");
     // The kinds that ARE eligible, so this is not passing because the block
     // was renamed out from under the search.
     expect(block).toContain("'swap'");
     expect(block).toContain("'bridge'");
+  });
+
+  it("the composed predicate gates the launchpad family on the COVERED vocabulary, not on a timestamp", () => {
+    // The gate is what keeps a widened vocabulary from letting the incremental
+    // scan claim months of history as live activity. If it is ever removed, the
+    // wrap flip above would be the second-least of the problems.
+    //
+    // CONTRACT CHANGE 2026-09-04: it reads `backfill_vocabulary_version`, not
+    // `backfill_enqueued_at IS NOT NULL`. A timestamp says only that SOME
+    // backfill ran; a build at vocabulary 1 running against a database migration
+    // 102 already stamped at 2 performs a V1-only scan and would leave a mark the
+    // next V2 build reads as full coverage. The version stamp can only claim
+    // what the scan that wrote it actually covered.
+    const start = REPORTING_SQL.indexOf("const ELIGIBILITY_SQL = `");
+    const end = REPORTING_SQL.indexOf("`;", start);
+    const composed = REPORTING_SQL.slice(start, end);
+    expect(composed).toContain("s.vocabulary_version >=");
+    expect(composed).toContain("s.backfill_vocabulary_version >=");
+    expect(composed).not.toContain("backfill_enqueued_at");
   });
 });

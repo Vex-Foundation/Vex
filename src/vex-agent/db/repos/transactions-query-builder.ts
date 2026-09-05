@@ -18,31 +18,47 @@ import { failureToolsForProduct } from "./transactions-failure-tools.js";
 const CURSOR_TS_EXPR = `to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
 
 /**
- * THE VEX FEE, FROM ONE WHOLE SOURCE (R1 Step 2) — a READ projection, never a
+ * THE VEX FEE, FROM ONE WHOLE SOURCE (R1 Step 2) - a READ projection, never a
  * second write.
  *
- * The problem it fixes: on the five venues that charge the fee as its own
- * on-chain transfer (relay/khalani bridges, Uniswap, Trench trade and launch)
- * the fee lives on a SIBLING leg row, and that leg is not a feed row — so the
- * logical row the user and the agent actually read reported no fee at all.
+ * The problem it fixes: on the venues that charge the fee as its own on-chain
+ * transfer (relay/khalani bridges, Uniswap, Trench trade and launch, and since
+ * migration 102 the venue-independent `vex_fee` leg) the fee lives on a SIBLING
+ * leg row, and that leg is not a feed row - so the logical row the user and the
+ * agent actually read reported no fee at all.
  *
- * Three rules, each of which a naive per-field COALESCE would break:
+ * Four rules, each of which a naive per-field COALESCE would break:
  *
- * 1. ONE SOURCE WINS WHOLE. All six fee fields switch on `vex_fee_source`, so a
- *    mixed tuple — an own-row symbol beside a sibling amount — is
+ * 1. ONE SOURCE WINS WHOLE. All six money fields switch on `vex_fee_source`, so
+ *    a mixed tuple - an own-row symbol beside a sibling amount - is
  *    unrepresentable.
- * 2. THE OWN-ROW SOURCE IS GATED ON `status = 'confirmed'`, exactly as the
- *    sibling source already is. The own-row `vex_fee_*` columns are written at
- *    INTENT time while the row is still pending, and that handler's own comment
- *    says why: this row's status is what says whether the fee was actually
- *    COLLECTED. Without the gate a pending swap would report a PLANNED fee as
- *    collected.
- * 3. ANOMALIES FAIL CLOSED. Two confirmed fee legs on one execution, or an
+ * 2. THE OWN-ROW SOURCE IS GATED ON `status = 'confirmed'`. The own-row
+ *    `vex_fee_*` columns are written at INTENT time while the row is still
+ *    pending, and that handler's own comment says why: this row's status is what
+ *    says whether the fee was actually COLLECTED.
+ * 3. PENDING AND FAILED ATTEMPTS STAY VISIBLE, AND FEED NO MONEY FIELD (owner
+ *    decision V1, 2026-09-04; mirrors the AgentScan server's `read-repo.ts`).
+ *    The lateral no longer filters the sibling on `status = 'confirmed'`, so a
+ *    fee still in flight or one that reverted appears under its action through
+ *    `vex_fee_leg_status`/`_tx_hash`/`_chain_id`/`_chain_family`. The MONEY
+ *    fields still require a CONFIRMED leg, because an attempted charge is not a
+ *    charge. A confirmed retry after a failed attempt wins the ORDER BY, so the
+ *    money is read from the leg that actually settled. Before this rule the
+ *    confirmed-only filter made a pending or reverted fee attempt report as NO
+ *    fee attempt at all, which is the state the user most needs to see.
+ * 4. ANOMALIES FAIL CLOSED. Two CONFIRMED fee legs on one execution, or an
  *    own-row fee AND a confirmed sibling, report NO exact fee and set
- *    `vex_fee_anomaly` for the mapper to log. Reporting one exact-looking fee
- *    while knowingly omitting another is a money field stating less than the
+ *    `vex_fee_anomaly` for the mapper to log; the multiplicity case blanks the
+ *    leg-visibility fields too, exactly as the server does, because the row
+ *    reports no fee at all rather than half of one. Reporting one exact-looking
+ *    fee while knowingly omitting another is a money field stating less than the
  *    truth with no marker. Summing is not an option until split-fee semantics
  *    are defined (identical token identity and decimals proven first).
+ *
+ * The multiplicity count is `FILTER (WHERE status = 'confirmed')` and not a
+ * plain `count(*)`: now that pending and failed legs are admitted, a legitimate
+ * failed-then-confirmed retry pair would otherwise be read as the double-charge
+ * anomaly and blank a fee that was really taken exactly once.
  *
  * No DB constraint forbids two fee legs today; a partial unique index would make
  * it structurally impossible but could also reject a future legitimate split
@@ -56,22 +72,27 @@ const VEX_FEE_LATERALS = `
              COALESCE(fee.executed_amount_in_raw,   fee.amount_in_raw)   AS vex_fee_amount_raw,
              COALESCE(fee.executed_amount_in_human, fee.amount_in_human) AS vex_fee_amount_human,
              fee.usd_vex_fee_est                                      AS usd_vex_fee_est,
-             count(*) OVER ()                                         AS fee_leg_count
+             fee.status                                               AS leg_status,
+             fee.tx_hash                                              AS leg_tx_hash,
+             fee.chain_id                                             AS leg_chain_id,
+             fee.chain_family                                         AS leg_chain_family,
+             count(*) FILTER (WHERE fee.status = 'confirmed') OVER ()  AS confirmed_leg_count
         FROM agent_activity fee
        WHERE fee.protocol_execution_id = agent_activity.protocol_execution_id
          AND fee.id        <> agent_activity.id
-         AND fee.event_role IN ('bridge_fee','swap_fee','trench_fee','pools_fee','tx_vex_fee')
-         AND fee.status     = 'confirmed'
-       ORDER BY fee.event_index ASC
+         AND fee.event_role IN ('bridge_fee','swap_fee','trench_fee','pools_fee','tx_vex_fee','vex_fee')
+       ORDER BY (fee.status = 'confirmed') DESC, fee.event_index DESC, fee.id DESC
        LIMIT 1
     ) fee_leg ON TRUE
     LEFT JOIN LATERAL (
       SELECT (agent_activity.vex_fee_amount_raw IS NOT NULL
               AND agent_activity.status = 'confirmed')                AS own_ok,
              (fee_leg.vex_fee_amount_raw IS NOT NULL
-              AND fee_leg.fee_leg_count = 1)                          AS sibling_ok,
-             (fee_leg.vex_fee_amount_raw IS NOT NULL
-              AND fee_leg.fee_leg_count > 1)                          AS multiplicity
+              AND fee_leg.leg_status = 'confirmed'
+              AND fee_leg.confirmed_leg_count <= 1)                   AS sibling_ok,
+             (fee_leg.leg_status IS NOT NULL
+              AND fee_leg.confirmed_leg_count <= 1)                   AS leg_visible,
+             (fee_leg.confirmed_leg_count > 1)                        AS multiplicity
     ) fee_flags ON TRUE
     LEFT JOIN LATERAL (
       SELECT CASE
@@ -82,7 +103,11 @@ const VEX_FEE_LATERALS = `
              CASE
                WHEN fee_flags.own_ok AND fee_flags.sibling_ok THEN 'own_and_sibling'
                WHEN fee_flags.multiplicity THEN 'multiple_fee_legs'
-             END::text AS vex_fee_anomaly
+             END::text AS vex_fee_anomaly,
+             CASE WHEN fee_flags.leg_visible THEN fee_leg.leg_status END::text       AS vex_fee_leg_status,
+             CASE WHEN fee_flags.leg_visible THEN fee_leg.leg_tx_hash END::text      AS vex_fee_leg_tx_hash,
+             CASE WHEN fee_flags.leg_visible THEN fee_leg.leg_chain_id END           AS vex_fee_leg_chain_id,
+             CASE WHEN fee_flags.leg_visible THEN fee_leg.leg_chain_family END::text AS vex_fee_leg_chain_family
     ) fee_pick ON TRUE`;
 
 /**
@@ -179,8 +204,13 @@ export function buildActivityHalf(
   // above, so without this exclusion the generic lane's fee transfer would
   // render as a standalone signed transaction beside the one it charges for.
   // The parent still reports the charge, through the fee lateral above.
+  // `vex_fee` (migration 102) is the venue-independent name for that same leg on
+  // the swap, bridge and launch arms, so it is excluded here and folded there
+  // for exactly the same reason. Adding it to only ONE of the two lists is the
+  // failure mode this pairing exists to prevent: excluded but not folded hides a
+  // real charge, folded but not excluded shows it twice.
   activityConds.push(
-    "event_role NOT IN ('allowance', 'allowance_reset', 'trench_fee', 'swap_fee', 'pools_fee', 'tx_vex_fee')",
+    "event_role NOT IN ('allowance', 'allowance_reset', 'trench_fee', 'swap_fee', 'pools_fee', 'tx_vex_fee', 'vex_fee')",
   );
   // productType now maps to `kind`: 'spot' → swap rows (derive to the same
   // "spot" product the success half stores), 'bridge' → bridge logical rows,
@@ -319,6 +349,12 @@ export function buildActivityHalf(
       -- whether the row hit an anomaly that made us report no exact fee at all.
       fee_pick.vex_fee_source,
       fee_pick.vex_fee_anomaly,
+      -- Owner rule V1: a pending or reverted fee ATTEMPT stays visible under the
+      -- action it was charged for, with no money field filled in.
+      fee_pick.vex_fee_leg_status,
+      fee_pick.vex_fee_leg_tx_hash,
+      fee_pick.vex_fee_leg_chain_id,
+      fee_pick.vex_fee_leg_chain_family,
       usd_source,
       from_chain_id,
       from_chain_slug,
@@ -470,6 +506,10 @@ export function buildSuccessHalf(
       NULL::text AS vex_fee_amount_human,
       NULL::text AS vex_fee_source,
       NULL::text AS vex_fee_anomaly,
+      NULL::text AS vex_fee_leg_status,
+      NULL::text AS vex_fee_leg_tx_hash,
+      NULL::bigint AS vex_fee_leg_chain_id,
+      NULL::text AS vex_fee_leg_chain_family,
       NULL::text AS usd_source,
       NULL::bigint AS from_chain_id,
       NULL::text AS from_chain_slug,
@@ -574,6 +614,10 @@ export function buildFailureHalf(
       NULL::text AS vex_fee_amount_human,
       NULL::text AS vex_fee_source,
       NULL::text AS vex_fee_anomaly,
+      NULL::text AS vex_fee_leg_status,
+      NULL::text AS vex_fee_leg_tx_hash,
+      NULL::bigint AS vex_fee_leg_chain_id,
+      NULL::text AS vex_fee_leg_chain_family,
       NULL::text AS usd_source,
       NULL::bigint AS from_chain_id,
       NULL::text AS from_chain_slug,

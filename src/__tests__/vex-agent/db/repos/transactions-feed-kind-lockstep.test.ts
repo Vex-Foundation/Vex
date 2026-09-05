@@ -192,7 +192,7 @@ describe("agent_activity kind <-> agent-facing feed lockstep", () => {
     // needs no entry there because its whole `kind = 'bridge'` arm is admitted
     // only through `event_role = 'bridge_fill_expected'`.
     expect(QUERY_BUILDER_SRC).toContain(
-      "event_role NOT IN ('allowance', 'allowance_reset', 'trench_fee', 'swap_fee', 'pools_fee', 'tx_vex_fee')",
+      "event_role NOT IN ('allowance', 'allowance_reset', 'trench_fee', 'swap_fee', 'pools_fee', 'tx_vex_fee', 'vex_fee')",
     );
     // The app feeds are positive-role only: every known technical role is
     // absent, and a future one therefore cannot become a row by default.

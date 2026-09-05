@@ -319,6 +319,25 @@ export const agentScanVexFeeSchema = z
   .object({
     tokenSymbol: z.string().max(TOKEN_SYMBOL_MAX_LENGTH).nullable(),
     amountHuman: z.string().max(AMOUNT_MAX_LENGTH).nullable(),
+    /**
+     * THE FEE ATTEMPT'S OWN STATE (owner rule V1, 2026-09-04). The two money
+     * fields above are filled only by a CONFIRMED fee leg; these four describe
+     * the attempt itself, so a fee transfer that is still in flight
+     * (`pending`) or that reverted (`failed`) is visible instead of reading as
+     * no fee at all. Tolerant open string for the same reason as the entry's
+     * own `status`. `null` when there is no separate fee leg to describe: the
+     * fee was taken inside the transaction, none was charged, or the
+     * double-charge anomaly made the projection fail closed.
+     *
+     * ADDITIVE with a `null` default so a producer written before this field
+     * existed still parses; main always sends all four today.
+     */
+    status: z.string().max(ACTIVITY_STATUS_MAX_LENGTH).nullable().default(null),
+    /** The fee transfer's OWN transaction hash, present from broadcast onwards. */
+    txHash: z.string().max(TX_REF_MAX_LENGTH).nullable().default(null),
+    /** The fee transfer's OWN chain - a bridge charges its fee on the SOURCE chain. */
+    chainId: z.number().int().nullable().default(null),
+    chainFamily: z.string().max(CHAIN_FAMILY_MAX_LENGTH).nullable().default(null),
   })
   .strict();
 export type AgentScanVexFee = z.infer<typeof agentScanVexFeeSchema>;

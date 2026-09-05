@@ -126,15 +126,27 @@ export function timestampText(iso: string): string | null {
 
 /**
  * The Vex integrator fee actually recorded on the row, token-denominated.
- * `null` when the row records no fee, or when the fee carries no readable
- * amount — a fee line with no number would be worse than no line.
+ *
+ * When there is no readable amount the line does NOT invent one - a fee line
+ * with no number would be worse than no line. But no amount does not mean no
+ * fee: owner rule V1 (2026-09-04) keeps a fee transfer that is still in flight
+ * or that reverted visible under the action it was charged for, so the attempt's
+ * own state is named instead of the row falling silent about a charge the user
+ * may still be paying. `null` only when the row records no fee attempt at all.
  */
 export function vexFeeText(entry: AgentScanEntry): string | null {
   const fee = entry.vexFee;
-  if (fee === null || fee.amountHuman === null) return null;
-  const amount = amountDisplay(fee.amountHuman, true);
-  if (amount === null) return null;
+  if (fee === null) return null;
+  const amount = fee.amountHuman === null ? null : amountDisplay(fee.amountHuman, true);
+  if (amount === null) return attemptText(fee.status);
   return fee.tokenSymbol !== null && fee.tokenSymbol.length > 0
     ? `${amount} ${fee.tokenSymbol}`
     : amount;
+}
+
+/** The fee leg exists but has not settled: state which, never a number. */
+function attemptText(status: string | null): string | null {
+  if (status === "pending") return "attempt pending";
+  if (status === "failed") return "attempt failed";
+  return null;
 }

@@ -45,16 +45,24 @@ interface Seeded {
  * `bridge_fee` leg in the given status. The fee leg is deliberately NOT a feed
  * row — that is the whole problem being fixed.
  */
+type FeeLegStatus = "pending" | "confirmed" | "definitively_failed";
+
 async function seedBridgeWithFeeLeg(
-  feeStatus: "pending" | "confirmed",
+  feeStatus: FeeLegStatus,
   logicalStatus: "pending" | "confirmed" | "definitively_failed" = "pending",
   extraFeeLegs = 0,
+  feeRole: "bridge_fee" | "vex_fee" = "bridge_fee",
+  /**
+   * Status for the EXTRA fee legs, when a retry has to differ from the first
+   * attempt. Defaults to `feeStatus`, which is the double-charge fixture.
+   */
+  extraFeeStatus: FeeLegStatus = feeStatus,
 ): Promise<Seeded> {
   const repo = await import("../../../vex-agent/db/repos/agent-activity.js");
   const sessionId = `vex-fee-projection-${randomUUID()}`;
   const walletAddress = `0x${randomUUID().replace(/-/g, "").padEnd(40, "0").slice(0, 40)}`;
   const feeLeg = {
-    eventRole: "bridge_fee" as const,
+    eventRole: feeRole,
     chainId: CHAIN_ID,
     chainSlug: "base",
     chainFamily: "eip155" as const,
@@ -114,18 +122,24 @@ async function seedBridgeWithFeeLeg(
   // nonce) are exactly what the staged-broadcast primitives exist to satisfy,
   // and a fixture that bypassed them would prove the projection works on rows
   // production can never produce.
-  const feeLegs = result.legs.filter((leg) => leg.eventRole === "bridge_fee");
+  const feeLegs = result.legs.filter((leg) => leg.eventRole === feeRole);
   let nonce = 1;
-  for (const leg of feeLegs) {
+  for (const [index, leg] of feeLegs.entries()) {
+    const status = index === 0 ? feeStatus : extraFeeStatus;
     await repo.markActivityBroadcast(leg.id, {
       txHash: `0x${String(leg.id).padStart(64, "0")}`,
       fromAddress: walletAddress,
       nonce: nonce++,
     });
-    if (feeStatus === "confirmed") {
+    if (status === "confirmed") {
       await repo.confirmActivityEvent(leg.id, {
         executedAmountInRaw: FEE_RAW,
         executedAmountInHuman: FEE_HUMAN,
+      });
+    } else if (status === "definitively_failed") {
+      await repo.failActivityEvent(leg.id, {
+        failureCode: "mined_revert",
+        failureReason: "fixture: the fee transfer reverted on chain",
       });
     }
   }
@@ -310,12 +324,64 @@ describe("Vex fee — the separate leg reaches the logical feed row", () => {
     expect(row?.vexFeeTokenDecimals).toBe(18);
   });
 
-  it("reports NOTHING while the fee leg is still pending — a planned fee is not a collected one", async () => {
+  /**
+   * CONTRACT CHANGE 2026-09-04, owner rule V1 (Codex final review, round 1).
+   * This case used to assert that a PENDING fee leg reports nothing at all, and
+   * the sibling lateral enforced it with `AND fee.status = 'confirmed'`. That is
+   * two different statements collapsed into one: "no money was taken yet" is
+   * true, "no fee was attempted" is false, and the row served only the second.
+   * A swap or launch whose fee transfer is in flight, or has reverted, is
+   * exactly the state a user needs to see - it is money that may still leave the
+   * wallet - and the fold made it invisible.
+   *
+   * The rule now: the ATTEMPT is always visible with its own status, hash and
+   * chain; the MONEY fields stay confirmed-only, because an attempted charge is
+   * not a charge.
+   */
+  it("shows a PENDING fee ATTEMPT with its status and hash, and no money", async () => {
     const seeded = await seedBridgeWithFeeLeg("pending");
     const row = await feedRow(seeded);
 
     expect(row?.vexFeeAmountRaw).toBeNull();
+    expect(row?.vexFeeAmountHuman).toBeNull();
     expect(row?.vexFeeTokenSymbol).toBeNull();
+    expect(row?.usdVexFeeEst).toBeNull();
+
+    expect(row?.vexFeeLegStatus).toBe("pending");
+    expect(row?.vexFeeLegTxHash).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(row?.vexFeeLegChainId).toBe(CHAIN_ID);
+    expect(row?.vexFeeLegChainFamily).toBe("eip155");
+  });
+
+  it("shows a REVERTED fee attempt as failed, and still pays out no money field", async () => {
+    const seeded = await seedBridgeWithFeeLeg("definitively_failed");
+    const row = await feedRow(seeded);
+
+    expect(row?.vexFeeLegStatus).toBe("definitively_failed");
+    expect(row?.vexFeeLegTxHash).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(row?.vexFeeAmountRaw).toBeNull();
+    expect(row?.vexFeeTokenSymbol).toBeNull();
+  });
+
+  it("reads the money from the CONFIRMED retry after a failed attempt, and keeps the failure on the record", async () => {
+    // Two fee children on one execution: index 1 reverted, index 2 settled. The
+    // ORDER BY puts the confirmed leg first, so the money comes from the transfer
+    // that actually happened - and, critically, the failed-then-confirmed pair is
+    // NOT the double-charge anomaly, because the multiplicity count filters on
+    // `status = 'confirmed'`. Counting both would blank a fee really taken once.
+    const seeded = await seedBridgeWithFeeLeg("definitively_failed", "pending", 1, "bridge_fee", "confirmed");
+    const row = await feedRow(seeded);
+
+    expect(row?.vexFeeAmountRaw).toBe(FEE_RAW);
+    expect(row?.vexFeeAmountHuman).toBe(FEE_HUMAN);
+    expect(row?.vexFeeLegStatus).toBe("confirmed");
+
+    // The failed attempt is not erased by the retry: the bridge row's own leg
+    // list carries every sibling, so the reverted transfer stays on the record
+    // beside the one that settled.
+    const legs = row?.legs as { role: string | null; status: string | null }[] | null;
+    const feeLegs = (legs ?? []).filter((leg) => leg.role === "bridge_fee");
+    expect(feeLegs.map((leg) => leg.status).sort()).toEqual(["confirmed", "definitively_failed"]);
   });
 
   it("keeps reporting a CONFIRMED fee after the parent bridge fails — the money did leave the wallet", async () => {
@@ -331,13 +397,19 @@ describe("Vex fee — the separate leg reaches the logical feed row", () => {
   it("FAILS CLOSED on two confirmed fee legs rather than reporting one and hiding the other", async () => {
     // Reporting one exact-looking fee while knowingly omitting another is a
     // money field stating less than the truth with no marker. Summing is not an
-    // option until split-fee semantics are defined.
+    // option until split-fee semantics are defined. The anomaly is REPORTED
+    // rather than silently summed - `transactions-mappers.ts` logs
+    // `agent_scan.fee_leg_multiplicity` from `vex_fee_anomaly` - and the
+    // ATTEMPT fields blank with the money, because the projection cannot say
+    // which of the two charges the row is describing.
     const seeded = await seedBridgeWithFeeLeg("confirmed", "pending", 1);
     const row = await feedRow(seeded);
 
     expect(row?.vexFeeAmountRaw).toBeNull();
     expect(row?.vexFeeAmountHuman).toBeNull();
     expect(row?.vexFeeTokenSymbol).toBeNull();
+    expect(row?.vexFeeLegStatus).toBeNull();
+    expect(row?.vexFeeLegTxHash).toBeNull();
   });
 
   it("never assembles a MIXED tuple — every fee field comes from the one winning source", async () => {
@@ -354,5 +426,145 @@ describe("Vex fee — the separate leg reaches the logical feed row", () => {
       row?.vexFeeTokenDecimals,
     ].filter((value) => value !== null && value !== undefined);
     expect(populated).toHaveLength(4);
+  });
+});
+
+/**
+ * MIGRATION 102: the venue-INDEPENDENT `vex_fee` leg, on every arm the AgentScan
+ * contract admits it on (swap, bridge, launch) and no others.
+ *
+ * The role rename is not cosmetic for this projection. Two lists have to move
+ * together - the logical-row exclusion that keeps the leg from becoming its own
+ * feed entry, and the fee lateral that folds it onto its parent. Excluded but
+ * not folded hides a charge the user really paid; folded but not excluded shows
+ * one charge as two, which is the live screenshot the owner's 2026-08-05
+ * revision was written from.
+ */
+describe("Vex fee: the venue-independent vex_fee leg folds on every admitted arm", () => {
+  const SWAP_IN_RAW = "1000000000000000000";
+  const VEX_FEE_RAW = "2500000000000000";
+  const VEX_FEE_HUMAN = "0.0025";
+
+  /** One same-kind execution: the action row plus a `vex_fee` child leg at index 1. */
+  async function seedWithVexFeeLeg(
+    kind: "swap" | "launch",
+    actionRole: "swap" | "token_launch",
+    protocol: string,
+  ): Promise<SeededLaunch> {
+    const repo = await import("../../../vex-agent/db/repos/agent-activity.js");
+    const intent = await seedIntent(`${protocol}.action`);
+    const common = {
+      protocolExecutionId: intent.protocolExecutionId,
+      kind,
+      protocol,
+      chainId: CHAIN_ID,
+      chainSlug: "base",
+      chainFamily: "eip155" as const,
+      walletAddress: intent.walletAddress,
+      sessionId: intent.sessionId,
+    };
+    const action = await repo.createPendingActivityEvent({
+      ...common,
+      eventIndex: 0,
+      eventRole: actionRole,
+      tokenIn: {
+        tokenAddress: "0x0000000000000000000000000000000000000000",
+        tokenSymbol: "ETH",
+        tokenDecimals: 18,
+        amountRaw: SWAP_IN_RAW,
+        amountHuman: "1.0",
+      },
+    });
+    const feeLeg = await repo.createPendingActivityEvent({
+      ...common,
+      eventIndex: 1,
+      eventRole: "vex_fee",
+      tokenIn: {
+        tokenAddress: "0x0000000000000000000000000000000000000000",
+        tokenSymbol: "ETH",
+        tokenDecimals: 18,
+        amountRaw: VEX_FEE_RAW,
+        amountHuman: VEX_FEE_HUMAN,
+      },
+    });
+
+    await repo.markActivityBroadcast(feeLeg.id, {
+      txHash: `0x${String(feeLeg.id).padStart(64, "3")}`,
+      fromAddress: intent.walletAddress,
+      nonce: 1,
+    });
+    await repo.confirmActivityEvent(feeLeg.id, {
+      executedAmountInRaw: VEX_FEE_RAW,
+      executedAmountInHuman: VEX_FEE_HUMAN,
+    });
+
+    return {
+      logicalId: action.id,
+      feeLegId: feeLeg.id,
+      walletAddress: intent.walletAddress,
+      sessionId: intent.sessionId,
+    };
+  }
+
+  it.each([
+    ["swap", "swap", "kyberswap"],
+    ["launch", "token_launch", "pools"],
+  ] as const)("shows ONE %s row carrying the fee its vex_fee leg paid", async (kind, role, protocol) => {
+    const seeded = await seedWithVexFeeLeg(kind, role, protocol);
+    const rows = await feedRows(seeded);
+
+    expect(rows.map((r) => r.id)).toEqual([seeded.logicalId]);
+    expect(rows.some((r) => r.id === seeded.feeLegId)).toBe(false);
+    expect(rows[0]?.vexFeeAmountRaw).toBe(VEX_FEE_RAW);
+    expect(rows[0]?.vexFeeAmountHuman).toBe(VEX_FEE_HUMAN);
+    expect(rows[0]?.vexFeeTokenSymbol).toBe("ETH");
+  });
+
+  it("folds a vex_fee leg onto a BRIDGE's logical row, exactly as bridge_fee is folded", async () => {
+    const seeded = await seedBridgeWithFeeLeg("confirmed", "pending", 0, "vex_fee");
+    const rows = await feedRows(seeded);
+
+    expect(rows.map((r) => r.id)).toEqual([seeded.logicalId]);
+    expect(rows[0]?.vexFeeAmountRaw).toBe(FEE_RAW);
+    expect(rows[0]?.vexFeeTokenSymbol).toBe("ETH");
+  });
+
+  it("reports NO fee on a claim-family row, because the claim family charges none", async () => {
+    const repo = await import("../../../vex-agent/db/repos/agent-activity.js");
+    const intent = await seedIntent("pools.claim");
+    // A claim spends nothing (migration 102's
+    // `agent_activity_claim_family_no_input_leg`), so the row is seeded with its
+    // payout only and there is no sibling fee leg to find.
+    const claim = await repo.createPendingActivityEvent({
+      protocolExecutionId: intent.protocolExecutionId,
+      eventIndex: 0,
+      eventRole: "holder_reward_claim",
+      kind: "claim",
+      protocol: "pools",
+      chainId: CHAIN_ID,
+      chainSlug: "base",
+      chainFamily: "eip155",
+      walletAddress: intent.walletAddress,
+      sessionId: intent.sessionId,
+      tokenOut: {
+        tokenAddress: "0x1234567890abcdef1234567890abcdef12345678",
+        tokenSymbol: "PUSSY",
+        tokenDecimals: 18,
+        amountRaw: "105721000000000000000000",
+        amountHuman: "105721",
+      },
+    });
+
+    const rows = await feedRows({
+      logicalId: claim.id,
+      walletAddress: intent.walletAddress,
+      sessionId: intent.sessionId,
+    });
+
+    expect(rows.map((r) => r.id)).toEqual([claim.id]);
+    // Not zero and not an empty object: a fee that was never charged has no
+    // reading at all.
+    expect(rows[0]?.vexFeeAmountRaw).toBeNull();
+    expect(rows[0]?.vexFeeTokenSymbol).toBeNull();
   });
 });

@@ -172,6 +172,23 @@ export interface TransactionRow {
   vexFeeAmountRaw?: string | null;
   /** Exact-decimal sibling of `vexFeeAmountRaw`. */
   vexFeeAmountHuman?: string | null;
+  /**
+   * THE FEE ATTEMPT ITSELF, whatever became of it (owner rule V1, 2026-09-04).
+   *
+   * The five money fields above are filled only by a CONFIRMED fee leg, because
+   * an attempted charge is not a charge. These four say that an attempt EXISTS
+   * and what state it is in - `pending` while the transfer is in flight,
+   * `definitively_failed` when it reverted - so an in-flight or reverted fee is
+   * never reported as "no fee". `null` when the execution has no fee leg at all,
+   * when the fee was taken inside the transaction (no leg exists to describe),
+   * or when the double-charge anomaly made the projection fail closed.
+   */
+  vexFeeLegStatus?: string | null;
+  /** The fee transfer's own transaction hash, present from broadcast onwards. */
+  vexFeeLegTxHash?: string | null;
+  /** The fee transfer's own chain - a bridge charges its fee on the SOURCE chain. */
+  vexFeeLegChainId?: number | null;
+  vexFeeLegChainFamily?: string | null;
   /** Provenance marker for every `usd*Est` figure on this row (e.g. `kyberswap_quote`, `khalani_token_price`). */
   usdSource?: string | null;
   /** agent_activity BRIDGE logical row only (migration 045) — route origin chain. */

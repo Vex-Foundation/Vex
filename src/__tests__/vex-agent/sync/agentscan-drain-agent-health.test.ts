@@ -62,8 +62,10 @@ function clientReturning(outcome: SendOutcome): AgentscanClient {
 beforeEach(() => {
   vi.clearAllMocks();
   // One claimed batch, then the drain's next claim comes back empty.
-  mockClaimDueOutbox.mockResolvedValueOnce([claimedRow()]).mockResolvedValue([]);
-  mockMarkOutboxSent.mockResolvedValue(undefined);
+  mockClaimDueOutbox
+    .mockResolvedValueOnce({ kind: "claimed", events: [claimedRow()] })
+    .mockResolvedValue({ kind: "claimed", events: [] });
+  mockMarkOutboxSent.mockResolvedValue({ kind: "applied", rows: 1 });
 });
 
 describe("drainOutbox - agent health surfacing", () => {
@@ -72,7 +74,7 @@ describe("drainOutbox - agent health surfacing", () => {
       kind: "ok", accepted: 1, duplicates: 0, rejectedIndexes: [],
       agentHealth: { strikeCount: 2, status: "active" },
     });
-    await drainOutbox(client, "a".repeat(64), "token");
+    await drainOutbox(client, "a".repeat(64), "token", 0);
     expect(mockWarn).toHaveBeenCalledWith(
       "agentscan.report.agent_strikes",
       { strikeCount: 2, status: "active" },
@@ -86,7 +88,7 @@ describe("drainOutbox - agent health surfacing", () => {
       kind: "ok", accepted: 1, duplicates: 0, rejectedIndexes: [],
       agentHealth: { strikeCount: 0, status: "active" },
     });
-    await drainOutbox(client, "a".repeat(64), "token");
+    await drainOutbox(client, "a".repeat(64), "token", 0);
     const strikeWarns = mockWarn.mock.calls.filter(
       (call) => call[0] === "agentscan.report.agent_strikes",
     );
