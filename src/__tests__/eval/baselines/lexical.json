@@ -4,24 +4,24 @@
   "datasetId": "tool-discovery-seed",
   "datasetVersion": "v3-agent-116",
   "status": "captured",
-  "capturedAt": "2026-09-05T11:42:57.136Z",
+  "capturedAt": "2026-09-05T13:28:22.610Z",
   "metrics": {
     "overall": {
       "count": 109,
       "recall1": 0.404,
-      "recall5": 0.578,
+      "recall5": 0.569,
       "coverage5": 0.495,
-      "mrr5": 0.463,
-      "groupMrr5": 0.422
+      "mrr5": 0.461,
+      "groupMrr5": 0.421
     },
     "awareness": {
       "blind": {
         "count": 52,
         "recall1": 0.404,
-        "recall5": 0.577,
+        "recall5": 0.558,
         "coverage5": 0.481,
-        "mrr5": 0.464,
-        "groupMrr5": 0.418
+        "mrr5": 0.461,
+        "groupMrr5": 0.416
       },
       "protocolAware": {
         "count": 57,
@@ -60,10 +60,10 @@
       "workflow": {
         "count": 15,
         "recall1": 0.533,
-        "recall5": 0.733,
+        "recall5": 0.667,
         "coverage5": 0.267,
-        "mrr5": 0.613,
-        "groupMrr5": 0.354
+        "mrr5": 0.6,
+        "groupMrr5": 0.347
       }
     },
     "scenarios": {
@@ -166,16 +166,16 @@
       "workflow": {
         "count": 17,
         "recall1": 0.471,
-        "recall5": 0.706,
+        "recall5": 0.647,
         "coverage5": 0.235,
-        "mrr5": 0.556,
-        "groupMrr5": 0.32
+        "mrr5": 0.544,
+        "groupMrr5": 0.314
       }
     }
   },
   "notes": [
     "dataset tool-discovery-seed@v3-agent-116, mode lexical, 109 cases evaluated.",
-    "overall recall@1 0.404, recall@5 0.578, coverage@5 0.495, mrr@5 0.463, groupMrr@5 0.422.",
-    "Measured delta: none, metrics are identical to the previous baseline."
+    "overall recall@1 0.404, recall@5 0.569, coverage@5 0.495, mrr@5 0.461, groupMrr@5 0.421.",
+    "Measured delta vs previous baseline (v3-agent-116, captured 2026-09-05T11:42:57.136Z): 12 metric values moved; overall recall@5 0.578 -> 0.569, overall mrr@5 0.463 -> 0.461, case count 109 -> 109."
   ]
 }

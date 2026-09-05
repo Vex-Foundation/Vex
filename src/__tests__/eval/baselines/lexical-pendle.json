@@ -4,7 +4,7 @@
   "datasetId": "tool-discovery-pendle",
   "datasetVersion": "pendle-v1",
   "status": "captured",
-  "capturedAt": "2026-09-05T11:43:07.383Z",
+  "capturedAt": "2026-09-05T13:28:33.169Z",
   "metrics": {
     "overall": {
       "count": 67,
@@ -176,6 +176,6 @@
   "notes": [
     "dataset tool-discovery-pendle@pendle-v1, mode lexical, 67 cases evaluated.",
     "overall recall@1 0.254, recall@5 0.612, coverage@5 0.612, mrr@5 0.392, groupMrr@5 0.392.",
-    "Measured delta vs previous baseline (pendle-v1, captured 2026-09-05T10:19:26.150Z): 16 metric values moved; overall recall@5 0.627 -> 0.612, overall mrr@5 0.395 -> 0.392, case count 67 -> 67."
+    "Measured delta: none, metrics are identical to the previous baseline."
   ]
 }

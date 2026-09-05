@@ -4,7 +4,7 @@
   "datasetId": "tool-discovery-pools",
   "datasetVersion": "pools-v1",
   "status": "captured",
-  "capturedAt": "2026-09-05T11:43:08.570Z",
+  "capturedAt": "2026-09-05T13:28:34.266Z",
   "metrics": {
     "overall": {
       "count": 27,
@@ -176,6 +176,6 @@
   "notes": [
     "dataset tool-discovery-pools@pools-v1, mode lexical, 27 cases evaluated.",
     "overall recall@1 0.667, recall@5 0.926, coverage@5 0.926, mrr@5 0.79, groupMrr@5 0.79.",
-    "Measured delta vs previous baseline (pools-v1, captured 2026-09-05T10:19:27.207Z): 15 metric values moved; overall recall@5 0.926 -> 0.926, overall mrr@5 0.833 -> 0.79, case count 27 -> 27."
+    "Measured delta: none, metrics are identical to the previous baseline."
   ]
 }
