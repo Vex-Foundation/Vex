@@ -46,8 +46,9 @@ import type { ActionKind } from "../tools/taxonomy.js";
 import {
   EXECUTE_GATE_TOOLS,
   quoteToolsAuthorizing,
+  type ExecuteGateRegistration,
 } from "../tools/protocols/prequote/registry.js";
-import { isMutatingProtocolAlias } from "../tools/mutating-aliases.js";
+import { fixedTargetOfMutatingAlias, isMutatingProtocolAlias } from "../tools/mutating-aliases.js";
 import { EXPORTED_TOOL_SEARCH_NAME } from "./export-scope.js";
 import { EXPORTED_TOOL_SEARCH_PUBLIC_NAME } from "./tool-search-export.js";
 import { buildStudioInventory } from "./inventory/index.js";
@@ -289,19 +290,38 @@ function approvalCardFor(tool: StudioTool): { raised: boolean; note: string } {
  * The quote-gate answer for an INTERNAL row.
  *
  * `venue_resolved_per_call` is a claim about a venue and an authorizing quote,
- * so only the four mutating alias routers may carry it: they are the internal
- * tools that resolve a protocol venue per call and whose own description names
- * the quote pair (`tools/mutating-aliases.ts`). Every other internal tool used
- * to carry it too, which told a caller that `WalletBalances` and `TokenFind`
- * resolve a venue and are authorized by a quote - two false contracts on a row
- * that resolves nothing and spends nothing. A read and a local write answer
- * `ungated` because no quote authorizes them: they move no funds. Anything else
- * internal answers `ungated` too, because the prequote gate is keyed by
- * protocol toolId and never sees it; its authority is the user's approval card,
- * reported one field up in `approvalCard`.
+ * so only a router that actually chooses a venue may carry it. TWO of the four
+ * mutating aliases do: `SwapExecute` picks its venue from the token family and
+ * the chain, and `BridgeExecute` from the bridge venue registry
+ * (`tools/mutating-aliases.ts`).
+ *
+ * THE OTHER TWO DO NOT, and used to be described as if they did.
+ * `SwapExecuteUniswap` always resolves to `uniswap.swap.execute` and
+ * `BridgeExecuteRelay` always to `relay.bridge` - naming the venue is the whole
+ * point of them. Telling an agent that their venue, and therefore the quote
+ * that authorizes them, is decided at call time left it with no way to learn
+ * which quote to take before a call that moves money, while the answer was
+ * known and fixed. They are now described through the tool they resolve to:
+ * the SAME gate, the SAME prequote kind and the SAME authorizing quotes as
+ * calling that tool directly, because the alias dispatches straight into it
+ * (`executeProtocolTool` is where the prequote gate runs, keyed by the resolved
+ * protocol toolId).
+ *
+ * Every other internal tool used to carry `venue_resolved_per_call` too, which
+ * told a caller that `WalletBalances` and `TokenFind` resolve a venue and are
+ * authorized by a quote - two false contracts on a row that resolves nothing
+ * and spends nothing. A read and a local write answer `ungated` because no
+ * quote authorizes them: they move no funds. Anything else internal answers
+ * `ungated` too, because the prequote gate is keyed by protocol toolId and
+ * never sees it; its authority is the user's approval card, reported one field
+ * up in `approvalCard`.
  */
 function internalQuoteGateFor(tool: StudioTool): QuoteGate {
   if (isMutatingProtocolAlias(tool.publicName)) {
+    const fixedTarget = fixedTargetOfMutatingAlias(tool.publicName);
+    if (fixedTarget !== undefined) {
+      return fixedAliasQuoteGate(tool.publicName, fixedTarget);
+    }
     return {
       status: "venue_resolved_per_call",
       note:
@@ -328,7 +348,42 @@ function internalQuoteGateFor(tool: StudioTool): QuoteGate {
 }
 
 /**
- * The quote tools whose fresh quote can authorize this execute.
+ * The gate answer for an alias with ONE fixed target, read from that target's
+ * own registration.
+ *
+ * Nothing is restated here: the kind and the authorizing quotes come from the
+ * same `EXECUTE_GATE_TOOLS` row and the same `quoteToolsAuthorizing` derivation
+ * that answer for the protocol tool itself, so the alias and its target can
+ * never publish two different authorizations. A fixed target that is somehow
+ * not a gated execute is reported as ungated on the target's name rather than
+ * as a per-call resolution, because the venue is still not in question.
+ */
+function fixedAliasQuoteGate(aliasName: string, targetToolId: string): QuoteGate {
+  const targetName = getProtocolManifest(targetToolId)?.publicName ?? targetToolId;
+  const gate = EXECUTE_GATE_TOOLS[targetToolId];
+  if (gate === undefined) {
+    return {
+      status: "ungated",
+      note:
+        `No quote gate: ${aliasName} always resolves to ${targetName}, which is not registered as `
+        + "a gated execute.",
+    };
+  }
+  return {
+    status: "gated",
+    prequoteKind: gate.kind,
+    authorizedBy: authorizingQuoteNames(gate),
+    note:
+      `${aliasName} does NOT resolve a venue per call: it always dispatches to ${targetName}, so `
+      + "this is that tool's own gate. The quote must be fresh (15 minutes), from the SAME "
+      + "provider, and match this call's parameters exactly; a quote authorizes exactly one "
+      + "execute and is consumed by it.",
+  };
+}
+
+/**
+ * The quote tools whose fresh quote can authorize this execute, under the names
+ * an agent calls them by.
  *
  * `authorizedBy` is READ from the registry's own recorder-to-gate-row mapping
  * (`prequote/registry.ts`, `quoteToolsAuthorizing`), never from provider
@@ -338,7 +393,17 @@ function internalQuoteGateFor(tool: StudioTool): QuoteGate {
  * alone advertised pairings the gate refuses - a vault quote for a market
  * supply, a PT quote for an LP add - which is a false contract about what
  * authorizes a call that moves money.
+ *
+ * ONE projection for both callers, so a gated protocol tool and an alias fixed
+ * to it cannot publish two different answers.
  */
+function authorizingQuoteNames(gate: ExecuteGateRegistration): readonly string[] {
+  return quoteToolsAuthorizing(gate)
+    .map((quoteToolId) => getProtocolManifest(quoteToolId)?.publicName ?? quoteToolId)
+    .sort();
+}
+
+/** The quote-gate answer for one exported row, internal or protocol. */
 function quoteGateFor(tool: StudioTool): QuoteGate {
   if (tool.kind !== "protocol" || tool.toolId === undefined) {
     return internalQuoteGateFor(tool);
@@ -350,13 +415,10 @@ function quoteGateFor(tool: StudioTool): QuoteGate {
       note: "No quote gate: this tool is not registered as a gated execute.",
     };
   }
-  const authorizedBy = quoteToolsAuthorizing(gate)
-    .map((quoteToolId) => getProtocolManifest(quoteToolId)?.publicName ?? quoteToolId)
-    .sort();
   return {
     status: "gated",
     prequoteKind: gate.kind,
-    authorizedBy,
+    authorizedBy: authorizingQuoteNames(gate),
     note:
       "The quote must be fresh (15 minutes), from the SAME provider, and match this call's "
       + "parameters exactly; a quote authorizes exactly one execute and is consumed by it.",

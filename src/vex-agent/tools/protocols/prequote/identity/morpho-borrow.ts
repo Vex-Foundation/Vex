@@ -29,6 +29,7 @@ import { resolveMorphoChainId } from "@tools/morpho/chains.js";
 import { resolveSelectedAddress } from "@vex-agent/tools/internal/wallet/resolve.js";
 
 import { VexError, ErrorCodes } from "../../../../../errors.js";
+import { MORPHO_MARKET_LANE, type MorphoLendLane } from "./lane.js";
 import { VEX_DEFAULT_SLIPPAGE_BPS } from "../../slippage-policy.js";
 import { canonSlippageBpsWithDefault } from "../slippage.js";
 import type { ProtocolExecutionContext } from "../../types.js";
@@ -65,8 +66,9 @@ const KIND_FOR_DIRECTION = {
   borrow: "lend_borrow",
   repay: "lend_repay",
   // The LENDER'S side reuses the VAULT lane's kinds, because supplying a loan
-  // asset IS lending. The `lane: "market"` field on the identity is what keeps
-  // the two apart in the hash - see `./hash/morpho-borrow.ts`.
+  // asset IS lending. The lane field on the identity is what keeps the two
+  // apart in the hash - see `./hash/morpho-borrow.ts`, and `./lane.ts` for the
+  // one place either lane's value is written.
   supply: "lend_deposit",
   withdraw: "lend_withdraw",
 } as const;
@@ -75,6 +77,22 @@ export type MorphoBorrowKind = (typeof KIND_FOR_DIRECTION)[MorphoBorrowDirection
 
 export function morphoBorrowKindForDirection(direction: MorphoBorrowDirection): MorphoBorrowKind {
   return KIND_FOR_DIRECTION[direction];
+}
+
+/**
+ * The lane the identity for this direction CARRIES, or `undefined` when its kind
+ * belongs to the market lane alone and needs no discriminator.
+ *
+ * The two builders below are the only ones that set a lane, and they set THIS
+ * value; `record/gate-targets.ts` asks this function rather than restating the
+ * rule, so the row a recorder writes and the authorization ToolDescribe
+ * publishes cannot name a different lane than the identity does.
+ */
+export function morphoMarketLaneForDirection(
+  direction: MorphoBorrowDirection,
+): MorphoLendLane | undefined {
+  const kind = KIND_FOR_DIRECTION[direction];
+  return kind === "lend_deposit" || kind === "lend_withdraw" ? MORPHO_MARKET_LANE : undefined;
 }
 
 function pStr(params: Record<string, unknown>, key: string): string {
@@ -196,7 +214,7 @@ export function buildMorphoMarketSupplyIdentity(
   return {
     ...resolveBorrowLeg(params, context),
     kind: "lend_deposit",
-    lane: "market",
+    lane: MORPHO_MARKET_LANE,
     sessionId,
     amount: requireAmount(params, "supply"),
   };
@@ -210,7 +228,7 @@ export function buildMorphoMarketWithdrawIdentity(
   return {
     ...resolveBorrowLeg(params, context),
     kind: "lend_withdraw",
-    lane: "market",
+    lane: MORPHO_MARKET_LANE,
     sessionId,
     amount: requireAmount(params, "withdraw"),
   };

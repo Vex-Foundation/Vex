@@ -44,6 +44,32 @@ function byteLength(value: string): number {
   return Buffer.byteLength(value, "utf8");
 }
 
+/**
+ * BOTH READINGS OF THE HOT-SET BOUND over one description, from one place.
+ *
+ * The character reading is the measured contract (Claude Code cuts at 2048 code
+ * points); the byte reading is the second, for any client that counts the
+ * encoded string. They are computed together so the two table lints below and
+ * the synthetic threshold case cannot drift into measuring different things -
+ * the whole point of the synthetic case is that it fails if `bytes` ever stops
+ * counting bytes.
+ */
+function boundReadings(description: string): {
+  readonly characters: number;
+  readonly bytes: number;
+  readonly fitsInCharacters: boolean;
+  readonly fitsInBytes: boolean;
+} {
+  const characters = [...description].length;
+  const bytes = byteLength(description);
+  return {
+    characters,
+    bytes,
+    fitsInCharacters: characters <= ALWAYS_LOADED_DESCRIPTION_MAX_CHARACTERS,
+    fitsInBytes: bytes <= ALWAYS_LOADED_DESCRIPTION_MAX_CHARACTERS,
+  };
+}
+
 /** The first `limit` BYTES of a string, decoded back. */
 function head(value: string, limit: number): string {
   return Buffer.from(value, "utf8").subarray(0, limit).toString("utf8");
@@ -372,9 +398,73 @@ describe("the description budget (O23)", () => {
   it.each(
     buildStudioInventory()
       .filter((tool) => tool.alwaysLoad)
-      .map((tool) => [tool.publicName, [...tool.description].length] as const),
-  )("%s fits the always-loaded description bound whole (%i characters)", (_name, characters) => {
-    expect(characters).toBeLessThanOrEqual(ALWAYS_LOADED_DESCRIPTION_MAX_CHARACTERS);
+      .map((tool) => [tool.publicName, [...tool.description].length, tool.description] as const),
+  )(
+    "%s fits the always-loaded description bound whole (%i characters)",
+    (_name, _characters, description) => {
+      expect(boundReadings(description).fitsInCharacters).toBe(true);
+    },
+  );
+
+  /**
+   * THE SAME BOUND, COUNTED IN BYTES.
+   *
+   * The measured cut is by CHARACTERS - four independent counts on four tools
+   * landed on 2048 characters of the original string, which is why the bound
+   * above is the contract. This is the second reading of it, and it is not
+   * ceremony: the hot set is NO LONGER pure ASCII. `SwapExecute` and `SwapQuote`
+   * each carry a U+2192 arrow, so they sit at 2045 characters but 2047 UTF-8
+   * bytes - ONE byte under the same number. A description is authored in
+   * characters and travels as bytes, so an edit that swaps two ASCII characters
+   * for one arrow keeps the character count falling and pushes the byte count
+   * over, and any client that counts the encoded string rather than the code
+   * points would cut a tool contract mid-word with nothing here noticing.
+   *
+   * Asserting both readings costs one comparison and closes that gap whichever
+   * way a client counts.
+   */
+  it.each(
+    buildStudioInventory()
+      .filter((tool) => tool.alwaysLoad)
+      .map((tool) => [tool.publicName, byteLength(tool.description), tool.description] as const),
+  )("%s fits the same bound in UTF-8 bytes (%i bytes)", (_name, _bytes, description) => {
+    expect(boundReadings(description).fitsInBytes).toBe(true);
+  });
+
+  it("the BYTE reading is the one that catches a non-ASCII description at the threshold", () => {
+    // The live hot set cannot prove this on its own: its longest description is
+    // 2047 bytes over 2046 characters, so replacing the byte count above with a
+    // second character count would keep the suite green and the gap would be
+    // back. This is the case that only the byte reading can fail - a synthetic
+    // description one code point UNDER the bound whose UTF-8 encoding is two
+    // bytes OVER it, which is what an edit that trades two ASCII characters for
+    // one arrow produces.
+    const synthetic = `${"a".repeat(ALWAYS_LOADED_DESCRIPTION_MAX_CHARACTERS - 1)}\u2192`;
+    const readings = boundReadings(synthetic);
+
+    expect(readings.characters).toBe(ALWAYS_LOADED_DESCRIPTION_MAX_CHARACTERS);
+    expect(readings.bytes).toBe(ALWAYS_LOADED_DESCRIPTION_MAX_CHARACTERS + 2);
+    // The character lint accepts it, so it is not the one holding the line.
+    expect(readings.fitsInCharacters).toBe(true);
+    // The byte lint refuses it. If `boundReadings.bytes` ever counted code
+    // points, this is the assertion that goes red.
+    expect(readings.fitsInBytes).toBe(false);
+  });
+
+  it("keeps the byte reading honest: the hot set is not pure ASCII", () => {
+    // If every description were ASCII the byte lint above would be a copy of
+    // the character one. It is not - measured 2026-09-04, `SwapExecute` and
+    // `SwapQuote` carry a U+2192 arrow. The assertion is on the COUNT rather
+    // than on those two names, so an arrow moving to another tool is not a
+    // failure; only a hot set that went back to pure ASCII is, and the honest
+    // answer to that failure is to delete this case, not to add a character.
+    const differing = buildStudioInventory()
+      .filter((tool) => tool.alwaysLoad)
+      .filter((tool) => {
+        const readings = boundReadings(tool.description);
+        return readings.bytes !== readings.characters;
+      });
+    expect(differing.length).toBeGreaterThan(0);
   });
 
   it("bounds every always-loaded description and no protocol one", () => {

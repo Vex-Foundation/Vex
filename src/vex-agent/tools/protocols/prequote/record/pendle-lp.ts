@@ -16,6 +16,7 @@ import { computePrequoteMatchHash } from "../identity/hash.js";
 import { buildPendleLpAddIdentity, buildPendleLpRemoveIdentity } from "../identity/pendle-lp.js";
 import { extractPendleLpQuote } from "../safety/extract.js";
 import { writePrequoteRow } from "./row.js";
+import { PENDLE_LP_QUOTE_GATE_TARGETS } from "./gate-targets.js";
 
 /**
  * Record a Pendle LP prequote (P5). `pendle.lp.quote` records EITHER an `lp_add`
@@ -52,7 +53,7 @@ export async function recordPendleLpPrequote(
       prequoteId: `prequote-${randomUUID()}`,
       sessionId,
       matchHash: computePrequoteMatchHash(identity),
-      kind: "lp_add",
+      kind: PENDLE_LP_QUOTE_GATE_TARGETS[extracted.direction].kind,
       family: registered.family,
       provider: registered.provider,
       chainId: identity.chainId,
@@ -87,7 +88,7 @@ export async function recordPendleLpPrequote(
     prequoteId: `prequote-${randomUUID()}`,
     sessionId,
     matchHash: computePrequoteMatchHash(identity),
-    kind: "lp_remove",
+    kind: PENDLE_LP_QUOTE_GATE_TARGETS[extracted.direction].kind,
     family: registered.family,
     provider: registered.provider,
     chainId: identity.chainId,
