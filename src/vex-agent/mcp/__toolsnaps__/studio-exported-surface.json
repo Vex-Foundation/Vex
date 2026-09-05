@@ -10833,7 +10833,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 1611,
+      "descriptionBytes": 2973,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
@@ -10843,11 +10843,11 @@
             "type": "number"
           },
           "beforeTimestampSeconds": {
-            "description": "Walk backwards: return buckets strictly before this unix-seconds mark. The reply hands you the value to use for the next page.",
+            "description": "Walk backwards: return buckets strictly before this unix-seconds mark. The reply hands you the value to use for the next page, and pages neither skip nor overlap.",
             "type": "number"
           },
           "currency": {
-            "description": "Denominate the candles in usd (default) or in the pool's quote token.",
+            "description": "Denominate the candles in usd (default) or in the pool's quote token. Applies to the chart provider only; the curve sources price in VIRTUAL and refuse this by name.",
             "enum": [
               "usd",
               "token"
@@ -10863,11 +10863,21 @@
             "type": "number"
           },
           "limit": {
-            "description": "Candles to return (default 100, max 1000 - the provider's own stated ceiling).",
+            "description": "Candles to return (default 100, max 1000). Out of range is rejected by name, never clamped.",
             "type": "number"
           },
+          "source": {
+            "description": "Which history to read: auto (default) picks by lifecycle and chain, geckoterminal reads the indexed pool, tape reads the provider's curve trade feed, onchain reads the curve pair's own Swap logs. A source that cannot serve the agent is refused by name.",
+            "enum": [
+              "auto",
+              "geckoterminal",
+              "tape",
+              "onchain"
+            ],
+            "type": "string"
+          },
           "timeframe": {
-            "description": "Bucket size: minute, hour (default) or day. The provider names these itself and rejects anything else.",
+            "description": "Bucket size: minute, hour (default) or day. The same three values whichever source answers.",
             "enum": [
               "minute",
               "hour",

@@ -119,7 +119,7 @@ const COVERAGE_BY_NAMESPACE: Readonly<Partial<Record<ProtocolNamespace, Protocol
     line:
       `Coverage: ${virtualsManifestChainValues().join(", ")} for screening, detail, graduations and `
       + "genesis. Narrower per capability: trade tape base and solana only; candles for graduated "
-      + "agents everywhere but ethereum, and for bonding agents on solana only. Trades execute "
+      + "agents everywhere but ethereum, and for bonding agents on all three of those. Trades execute "
       + "elsewhere - kyberswap on base/ethereum, uniswap on robinhood, solana tools on solana; an "
       + "EVM bonding curve has no venue tool yet.",
   },

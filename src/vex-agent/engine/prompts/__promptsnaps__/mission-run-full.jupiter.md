@@ -339,7 +339,7 @@ Quote: No quote capability is available. Research does not establish an executab
 Act: No action capability is available. Acquiring an agent token is a separate swap task on the venue identified by the research result.
 When it applies: Use it when the user names an agent token, asks what just graduated, wants robinhood agent tokens, or asks what is launching through Virtuals.
 Characteristics and limits: Bonding-curve pre-graduation can be illiquid and may never reach a locked liquidity pool. Verification is anti-impersonation, not a quality or safety signal. Rankings have no stated freshness guarantee, and no purchase, launch, cost, quota, or rate-limit action is exposed.
-Coverage: base, solana, robinhood, ethereum for screening, detail, graduations and genesis. Narrower per capability: trade tape base and solana only; candles for graduated agents everywhere but ethereum, and for bonding agents on solana only. Trades execute elsewhere - kyberswap on base/ethereum, uniswap on robinhood, solana tools on solana; an EVM bonding curve has no venue tool yet.
+Coverage: base, solana, robinhood, ethereum for screening, detail, graduations and genesis. Narrower per capability: trade tape base and solana only; candles for graduated agents everywhere but ethereum, and for bonding agents on all three of those. Trades execute elsewhere - kyberswap on base/ethereum, uniswap on robinhood, solana tools on solana; an EVM bonding curve has no venue tool yet.
 
 ### trench
 Trench Express is a bonding-curve launchpad whose registry, curve trading, and launch lifecycle are native to the product.

@@ -290,6 +290,7 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   ["feeRecipientAddress", "the ACCOUNT a token's fee stream pays; on some launchpads it differs from the deployer"],
   ["timeframe", "the base unit of one price candle (minute/hour/day)"],
   ["aggregate", "how many timeframe units make one candle; the span is aggregate x timeframe"],
+  ["source", "which of several measured providers a history is read from; `auto` picks by lifecycle and chain"],
 
   // -- Screening DEPTH (morpho, coverage audit 2026-08-18) ---------
   //

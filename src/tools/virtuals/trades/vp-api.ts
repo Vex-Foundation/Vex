@@ -66,8 +66,25 @@ export const VP_API_TRADE_SIDES = ["both", "buys", "sells"] as const;
 export type VpApiTradeSide = (typeof VP_API_TRADE_SIDES)[number];
 const TRADE_SIDE_OPTION: Record<VpApiTradeSide, number> = { both: 0, buys: 1, sells: 2 };
 
-/** OUR ceiling. `limit=200` was served (74 KB); the tools ask for far less. */
+/**
+ * OUR ceiling for the TRADES TOOL. `limit=200` was served (74 KB) and a tape
+ * reader wants a readable page, not the whole history.
+ */
 export const VP_API_MAX_LIMIT = 200;
+
+/**
+ * The PROVIDER's ceiling, quoted from its own rejection (2026-09-05):
+ *
+ *   limit=1001 -> HTTP 400 {"code":-400,"message":"param limit maxLimit 1000"}
+ *
+ * The candle builder asks for exactly this, because the tape has NO CURSOR:
+ * `offset`, `page`, `skip`, `before`, `beforeTimestamp`, `endTime` and
+ * `toTimestamp` were each sent live and each SILENTLY IGNORED, every one
+ * returning the byte-identical newest window. One call at the ceiling is the
+ * only depth this endpoint offers, and an agent past it has history that no
+ * parameter can reach.
+ */
+export const VP_API_PROVIDER_MAX_LIMIT = 1000;
 
 /** One curve trade, amounts kept as the decimal strings the provider sent. */
 export interface VirtualsCurveTrade {
@@ -159,7 +176,13 @@ export async function readVpApiTrades(
 
   const url = new URL("/vp-api/trades", VP_API_BASE);
   url.searchParams.set("tokenAddress", params.tokenAddress);
-  url.searchParams.set("limit", String(Math.min(Math.max(1, params.limit), VP_API_MAX_LIMIT)));
+  // Bounded by what the PROVIDER accepts, not by the trades tool's own product
+  // bound: the candle builder legitimately asks for the full ceiling, and each
+  // caller validates its own limit by name before reaching here.
+  url.searchParams.set(
+    "limit",
+    String(Math.min(Math.max(1, params.limit), VP_API_PROVIDER_MAX_LIMIT)),
+  );
   url.searchParams.set("chainID", String(chainId));
   url.searchParams.set("tradeSideOption", String(TRADE_SIDE_OPTION[params.side ?? "both"]));
   const href = url.toString();

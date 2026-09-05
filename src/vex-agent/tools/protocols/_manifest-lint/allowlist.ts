@@ -154,7 +154,7 @@ export const MANIFEST_LINT_ALLOWLIST: readonly ManifestLintAllowlistEntry[] = [
   { subject: "src/vex-agent/tools/protocols/pendle/handlers/read-shared.ts", rule: "generic-error-literal", detail: "unexpected error", reason: "generic agent-facing literal; deleted by the error-contract waves (W1/W2)" },
   { subject: "src/vex-agent/tools/protocols/pendle/handlers/shared.ts", rule: "generic-error-literal", detail: "unexpected error", reason: "generic agent-facing literal; deleted by the error-contract waves (W1/W2)" },
   { subject: "src/vex-agent/tools/protocols/trench/handlers/failure.ts", rule: "generic-error-literal", detail: "unexpected error", reason: "generic agent-facing literal; deleted by the error-contract waves (W1/W2)" },
-  { subject: "src/vex-agent/tools/protocols/virtuals/handlers.ts", rule: "generic-error-literal", detail: "unexpected error", reason: "generic agent-facing literal; deleted by the error-contract waves (W1/W2)" },
+  { subject: "src/vex-agent/tools/protocols/virtuals/handlers/_shared.ts", rule: "generic-error-literal", detail: "unexpected error", reason: "generic agent-facing literal; deleted by the error-contract waves (W1/W2)" },
 
   // ── param-description (26) ──
   // param descriptions - under the 25-char minimum, or missing a unit anchor / decimals source.
