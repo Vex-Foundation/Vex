@@ -44,6 +44,30 @@ const { reconcileVirtualsKeeperLaunches, VIRTUALS_KEEPER_BATCH_LIMIT } = await i
 type SweepDeps = Parameters<typeof reconcileVirtualsKeeperLaunches>[0];
 
 /** One `awaiting_keeper` row, in the shape `mapRow` produces. */
+/**
+ * The `virtuals` block of a claimed row, on its own so a case that varies ONE
+ * field can build it here instead of spreading it back out of `intentRow`,
+ * whose values are `unknown` by the row's own contract.
+ */
+function intentVirtualsBlock(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    chainKey: "base",
+    bondingV5: "0x1A540088125d00dD3990f9dA45CA0859af4d3B01",
+    imageUrl: "https://assets.example/a/abc123.jpeg",
+    cores: [0, 1, 2],
+    antiSniperTaxType: 1,
+    nameSuffix: "by_virtuals",
+    onChainName: "Otaku Analyst by Virtuals",
+    urls: ["", "", "", ""],
+    calldataFingerprint: "0xfeed",
+    launchAmountRaw: "997500000000000000",
+    protocolFeeRaw: "0",
+    preLaunchBlock: "50870256",
+    vexFeeWaived: true,
+    ...overrides,
+  };
+}
+
 function intentRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     intentId: "i-1",
@@ -52,21 +76,7 @@ function intentRow(overrides: Record<string, unknown> = {}): Record<string, unkn
     protocol: "virtuals",
     tokenAddress: "0x84A0326C64d9f0E1F640062638807722E1dde87f",
     txHash: "0xd0fbcca8",
-    virtuals: {
-      chainKey: "base",
-      bondingV5: "0x1A540088125d00dD3990f9dA45CA0859af4d3B01",
-      imageUrl: "https://assets.example/a/abc123.jpeg",
-      cores: [0, 1, 2],
-      antiSniperTaxType: 1,
-      nameSuffix: "by_virtuals",
-      onChainName: "Otaku Analyst by Virtuals",
-      urls: ["", "", "", ""],
-      calldataFingerprint: "0xfeed",
-      launchAmountRaw: "997500000000000000",
-      protocolFeeRaw: "0",
-      preLaunchBlock: "50870256",
-      vexFeeWaived: true,
-    },
+    virtuals: intentVirtualsBlock(),
     ...overrides,
   };
 }
@@ -161,7 +171,7 @@ describe("reconcileVirtualsKeeperLaunches", () => {
 
   it("skips a row whose preLaunchBlock is not a whole number", async () => {
     claimAwaitingKeeperForSweep.mockResolvedValue([
-      intentRow({ virtuals: { ...intentRow().virtuals, preLaunchBlock: "not-a-block" } }),
+      intentRow({ virtuals: intentVirtualsBlock({ preLaunchBlock: "not-a-block" }) }),
     ]);
     const observe = vi.fn();
     const result = await reconcileVirtualsKeeperLaunches(depsAnswering(observe));

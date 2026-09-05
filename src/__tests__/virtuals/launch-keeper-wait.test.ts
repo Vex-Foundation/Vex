@@ -23,7 +23,6 @@ import { describe, expect, it, vi } from "vitest";
 import {
   encodeAbiParameters,
   encodeEventTopics,
-  getAbiItem,
   getAddress,
   type AbiEvent,
   type Address,
@@ -62,7 +61,13 @@ type StubLog = {
 };
 
 function eventItem(name: "Launched" | "CancelledLaunch"): AbiEvent {
-  const item = getAbiItem({ abi: BONDING_V5_LAUNCH_ABI, name });
+  // Found by scanning the ABI rather than through `getAbiItem`: that helper's
+  // literal-name overload narrows its result to the ONE named member, and a
+  // union of two names collapses the narrowed type to `never`, which makes the
+  // `.type` guard below unwritable.
+  const item = BONDING_V5_LAUNCH_ABI.find(
+    (entry) => entry.type === "event" && entry.name === name,
+  );
   if (item === undefined || item.type !== "event") throw new Error(`no ${name} event in the ABI`);
   return item;
 }
@@ -77,7 +82,17 @@ function encodeLog(name: "Launched" | "CancelledLaunch", args: Record<string, un
   data: Hex;
 } {
   const event = eventItem(name);
-  const topics = encodeEventTopics({ abi: [event], eventName: name, args });
+  // `encodeEventTopics` is typed for filter building, so each slot may be a
+  // list (match any of these) or null (match anything). A concrete encode of
+  // one event's own arguments produces neither, and a real log never carries
+  // them, so anything else here is a defect in this helper rather than a shape
+  // the decoder must survive.
+  const topics = encodeEventTopics({ abi: [event], eventName: name, args }).map((topic) => {
+    if (typeof topic !== "string") {
+      throw new Error(`${name}: encodeEventTopics produced a topic that is not a single value`);
+    }
+    return topic;
+  });
   const dataInputs = event.inputs.filter((input) => input.indexed !== true);
   const values = dataInputs.map((input) => args[input.name ?? ""]);
   return { topics, data: encodeAbiParameters(dataInputs, values) };
