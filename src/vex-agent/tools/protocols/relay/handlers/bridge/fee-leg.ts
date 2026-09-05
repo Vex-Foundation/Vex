@@ -21,9 +21,13 @@ import {
   checkBridgeFeeStatementUnchanged,
   missingBridgeFeeStatementMessage,
   unauthorizedBridgeQuoteMessage,
+  unregisteredBridgeFeeGateMessage,
+  VEX_FEE_GATE_UNREGISTERED_REASON,
+  VEX_FEE_QUOTE_UNAUTHORIZED_REASON,
   VEX_FEE_STATEMENT_CHANGED_REASON,
   VEX_FEE_STATEMENT_MISSING_REASON,
   type BridgeFeeDisclosure,
+  type BridgeFeeRefusal,
 } from "@tools/bridge-fee/index.js";
 import { findFreshMatchedPrequote } from "@vex-agent/tools/protocols/prequote/gate.js";
 import type { RelayQuoteSide } from "@tools/relay/quote.js";
@@ -104,11 +108,16 @@ const RELAY_QUOTE_TOOL_NAME = "relay__bridge_quote_get";
  * did before this check and is equally wrong: it signs a fee nobody was shown.
  * So both are computed and any disagreement REFUSES.
  *
- * Returns the agent-facing refusal, or `null` when this call may proceed.
- * `null` is also the answer when the tool is not prequote-gated at all - there
- * is then no approved statement in existence to contradict, and inventing a
- * refusal for a channel that does not apply would fail bridges for a build
- * fact, not a money fact.
+ * Returns the typed refusal, or `null` when this call may proceed. Every
+ * refusal - including the structural one - carries its bounded reason, so the
+ * public result can state WHY rather than collapsing into a generic bridge
+ * failure.
+ *
+ * `not_gated` IS A REFUSAL HERE (review finding, 2026-09-04). It used to answer `null`,
+ * which turned the loss of this tool's registry mapping into permission to sign
+ * a fee: this handler is gated by construction and its whole fee authority is
+ * the prequote row, so an absent registration means the fee cannot be bound to
+ * anything anyone approved. Rule 07, fail closed.
  *
  * Nothing here signs, records or reserves anything: it runs BEFORE the intent,
  * the in-flight guard and the signing wallet, so a refusal leaves the world
@@ -120,7 +129,7 @@ export async function relayVexFeeStatementRefusal(input: {
   readonly sessionId: string;
   /** The disposition this call would actually execute on, freshly derived. */
   readonly derivedNow: BridgeFeeDisclosure;
-}): Promise<string | null> {
+}): Promise<BridgeFeeRefusal | null> {
   const matched = await findFreshMatchedPrequote(
     BRIDGE_TOOL_ID,
     input.sessionId,
@@ -128,15 +137,35 @@ export async function relayVexFeeStatementRefusal(input: {
     input.context,
   );
   if (!matched.ok) {
-    // Destructured so the literal narrows: `not_gated` is the one refusal that
-    // is not a refusal at all, it says this tool carries no prequote channel.
+    // Destructured so the literal narrows.
     const { reason, eligibilityKind } = matched;
-    if (reason === "not_gated") return null;
-    return unauthorizedBridgeQuoteMessage({ reason, eligibilityKind }, RELAY_QUOTE_TOOL_NAME);
+    if (reason === "not_gated") {
+      logger.error("relay.bridge.vex_fee_gate_unregistered", {
+        reason: VEX_FEE_GATE_UNREGISTERED_REASON,
+        toolId: BRIDGE_TOOL_ID,
+      });
+      return {
+        reason: VEX_FEE_GATE_UNREGISTERED_REASON,
+        movedFields: [],
+        message: unregisteredBridgeFeeGateMessage(BRIDGE_TOOL_ID),
+        remediation: "Report this build defect; a re-quote cannot clear it.",
+      };
+    }
+    return {
+      reason: VEX_FEE_QUOTE_UNAUTHORIZED_REASON,
+      movedFields: [],
+      message: unauthorizedBridgeQuoteMessage({ reason, eligibilityKind }, RELAY_QUOTE_TOOL_NAME),
+      remediation: `Call ${RELAY_QUOTE_TOOL_NAME} again and approve the fresh quote.`,
+    };
   }
   if (matched.vexFee === undefined) {
     logger.warn("relay.bridge.vex_fee_statement_missing", { reason: VEX_FEE_STATEMENT_MISSING_REASON });
-    return missingBridgeFeeStatementMessage(RELAY_QUOTE_TOOL_NAME);
+    return {
+      reason: VEX_FEE_STATEMENT_MISSING_REASON,
+      movedFields: [],
+      message: missingBridgeFeeStatementMessage(RELAY_QUOTE_TOOL_NAME),
+      remediation: `Call ${RELAY_QUOTE_TOOL_NAME} again and approve the fresh quote.`,
+    };
   }
   const check = checkBridgeFeeStatementUnchanged({
     statedOnCard: matched.vexFee,
@@ -150,7 +179,12 @@ export async function relayVexFeeStatementRefusal(input: {
     reason: VEX_FEE_STATEMENT_CHANGED_REASON,
     field: check.field,
   });
-  return bridgeFeeStatementChangedMessage(check, RELAY_QUOTE_TOOL_NAME);
+  return {
+    reason: VEX_FEE_STATEMENT_CHANGED_REASON,
+    movedFields: [check.field],
+    message: bridgeFeeStatementChangedMessage(check, RELAY_QUOTE_TOOL_NAME),
+    remediation: `Call ${RELAY_QUOTE_TOOL_NAME} again and approve the fresh quote.`,
+  };
 }
 
 /** Disclosure for every path where the bridge did not complete - nothing is ever charged there. */

@@ -28,15 +28,15 @@ import {
 } from "@vex-agent/tools/protocols/quote-authority/snapshot.js";
 import { buildBoundDebitPlan } from "@vex-agent/tools/protocols/quote-authority/debit-plan.js";
 
-const mockClaimBound = vi.fn();
-const mockClaimForExecute = vi.fn();
+const mockFindClaimable = vi.fn();
+const mockClaimVerified = vi.fn();
 const mockFindLatestExecutable = vi.fn();
 const mockFindLatestFresh = vi.fn();
 const mockDiagnose = vi.fn();
 
 vi.mock("@vex-agent/db/repos/swap-prequotes.js", () => ({
-  claimBoundForExecute: (...a: unknown[]) => mockClaimBound(...a),
-  claimForExecute: (...a: unknown[]) => mockClaimForExecute(...a),
+  findClaimableForExecute: (...a: unknown[]) => mockFindClaimable(...a),
+  claimVerifiedRowForExecute: (...a: unknown[]) => mockClaimVerified(...a),
   findLatestExecutableByMatch: (...a: unknown[]) => mockFindLatestExecutable(...a),
   findLatestFreshByMatch: (...a: unknown[]) => mockFindLatestFresh(...a),
   diagnoseUnclaimable: (...a: unknown[]) => mockDiagnose(...a),
@@ -51,7 +51,10 @@ vi.mock("@utils/logger.js", () => {
   return { default: stub, logger: stub };
 });
 
-import { claimSwapExecutionSnapshot } from "@vex-agent/tools/protocols/prequote/claim.js";
+import {
+  commitPrequoteClaim,
+  readSwapExecutionSnapshot,
+} from "@vex-agent/tools/protocols/prequote/claim.js";
 
 const TOKEN_IN = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 const TOKEN_OUT = "0x17f31d221a86c091a32d398653f5306fc4d93c0d";
@@ -165,43 +168,43 @@ function claim(
   bound: ReturnType<typeof authority> | null,
   opts: { readonly approvalResume?: boolean } = {},
 ) {
-  return claimSwapExecutionSnapshot(
-    "kyberswap.swap.execute", "session-1", PARAMS, ctx(bound, opts), "execute-1",
+  return readSwapExecutionSnapshot(
+    "kyberswap.swap.execute", "session-1", PARAMS, ctx(bound, opts),
   );
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockClaimBound.mockResolvedValue(row());
-  mockClaimForExecute.mockResolvedValue(row());
+  mockFindClaimable.mockResolvedValue(row({ claimedAt: null, claimedBy: null }));
+  mockClaimVerified.mockResolvedValue(row());
   mockFindLatestExecutable.mockResolvedValue(row({ prequoteId: "prequote-q2", claimedAt: null }));
   mockFindLatestFresh.mockResolvedValue(null);
   mockDiagnose.mockResolvedValue("superseded");
 });
 
-describe("a bound approval claims exactly the row it named", () => {
-  it("claims Q1 by id and never asks which row is newest", async () => {
+describe("a bound approval reads exactly the row it named", () => {
+  it("reads Q1 by id, consumes NOTHING, and never asks which row is newest", async () => {
     const result = await claim(authority());
 
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.prequoteId).toBe(Q1);
     // The identity of the trade is still asserted at the row, so a bound id from
     // another trade matches nothing.
-    expect(mockClaimBound).toHaveBeenCalledTimes(1);
-    const [sessionId, prequoteId, matchHash, kind] = mockClaimBound.mock.calls[0] as string[];
+    expect(mockFindClaimable).toHaveBeenCalledTimes(1);
+    const [sessionId, prequoteId, matchHash, kind] = mockFindClaimable.mock.calls[0] as string[];
     expect(sessionId).toBe("session-1");
     expect(prequoteId).toBe(Q1);
     expect(typeof matchHash).toBe("string");
     expect(kind).toBe("swap");
-    // THE DEFECT, as an absence: the newest-row selector is not consulted at all
-    // on a bound claim, and the unbound claim is never reached.
+    // As an absence: reading the authority spends nothing, so
+    // a divergence the caller finds next leaves the quote reusable.
+    expect(mockClaimVerified).not.toHaveBeenCalled();
     expect(mockFindLatestExecutable).not.toHaveBeenCalled();
-    expect(mockClaimForExecute).not.toHaveBeenCalled();
   });
 
   it("refuses `superseded` when a newer quote arrived after the approval", async () => {
     // The repo's currency predicate is what fails; the diagnosis names why.
-    mockClaimBound.mockResolvedValue(null);
+    mockFindClaimable.mockResolvedValue(null);
     mockDiagnose.mockResolvedValue("superseded");
 
     const result = await claim(authority());
@@ -221,7 +224,7 @@ describe("a bound approval claims exactly the row it named", () => {
     ["missing", "missing_snapshot"],
   ] as const) {
     it(`maps an unclaimable bound row (${reason}) to the typed refusal ${kind}`, async () => {
-      mockClaimBound.mockResolvedValue(null);
+      mockFindClaimable.mockResolvedValue(null);
       mockDiagnose.mockResolvedValue(reason);
 
       const result = await claim(authority());
@@ -261,14 +264,70 @@ describe("the bound row's CONTENT must be the content that was approved", () => 
   });
 });
 
-describe("an UNBOUND claim is unchanged when no approval is in play", () => {
+describe("an UNBOUND read is unchanged when no approval is in play", () => {
   it("selects the newest executable row, as every full-permission execute does", async () => {
     const result = await claim(null, { approvalResume: false });
 
     expect(result.ok).toBe(true);
     expect(mockFindLatestExecutable).toHaveBeenCalledTimes(1);
-    expect(mockClaimForExecute).toHaveBeenCalledTimes(1);
-    expect(mockClaimBound).not.toHaveBeenCalled();
+    expect(mockFindClaimable).not.toHaveBeenCalled();
+    // Still nothing consumed by the read itself.
+    expect(mockClaimVerified).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * THE ORDERING THE MONEY PATH REQUIRES (review finding, 2026-09-04).
+ *
+ * The quote is consumed by a SECOND, explicit call, so every divergence the
+ * executor finds between the read and the commit leaves `claimed_at` null and
+ * the quote reusable. MetaMask's `#approveTransaction` behaves the same way: a
+ * failed attempt releases its reservation and the transaction stays usable.
+ */
+describe("the commit is the only thing that consumes a quote", () => {
+  it("claims the exact row that was read, asserting its disclosure block", async () => {
+    const read = await claim(authority());
+    if (!read.ok) throw new Error("fixture read must succeed");
+
+    const committed = await commitPrequoteClaim(read.claim, "execute-1");
+
+    expect(committed.ok).toBe(true);
+    expect(mockClaimVerified).toHaveBeenCalledTimes(1);
+    const [arg] = mockClaimVerified.mock.calls[0] as [Record<string, unknown>];
+    expect(arg.prequoteId).toBe(Q1);
+    expect(arg.sessionId).toBe("session-1");
+    expect(arg.kind).toBe("swap");
+    expect(typeof arg.matchHash).toBe("string");
+    expect(arg.expectedDisclosure).toEqual({});
+    expect(arg.claimedBy).toBe("execute-1");
+  });
+
+  it("refuses typed when the row's disclosure moved between the read and the claim", async () => {
+    const read = await claim(authority());
+    if (!read.ok) throw new Error("fixture read must succeed");
+    mockClaimVerified.mockResolvedValue(null);
+    mockDiagnose.mockResolvedValue("disclosure_changed");
+
+    const committed = await commitPrequoteClaim(read.claim, "execute-1");
+
+    expect(committed.ok).toBe(false);
+    if (!committed.ok) {
+      expect(committed.refusal.kind).toBe("disclosure_changed");
+      expect(committed.refusal.message).toContain("Nothing was signed");
+      expect(committed.refusal.message).toContain("kyberswap__swap_quote");
+    }
+  });
+
+  it("refuses `already_claimed` when a concurrent execute won the same row", async () => {
+    const read = await claim(authority());
+    if (!read.ok) throw new Error("fixture read must succeed");
+    mockClaimVerified.mockResolvedValue(null);
+    mockDiagnose.mockResolvedValue("already_claimed");
+
+    const committed = await commitPrequoteClaim(read.claim, "execute-1");
+
+    expect(committed.ok).toBe(false);
+    if (!committed.ok) expect(committed.refusal.kind).toBe("already_claimed");
   });
 });
 
@@ -293,9 +352,9 @@ describe("an approval that names no quote is refused", () => {
       expect(result.refusal.message).toContain("Nothing was signed");
       expect(result.refusal.message).toContain("kyberswap__swap_quote");
     }
-    // No row was read for a candidate and no row was consumed, by either claim.
+    // No row was read for a candidate and no row was consumed.
     expect(mockFindLatestExecutable).not.toHaveBeenCalled();
-    expect(mockClaimForExecute).not.toHaveBeenCalled();
-    expect(mockClaimBound).not.toHaveBeenCalled();
+    expect(mockFindClaimable).not.toHaveBeenCalled();
+    expect(mockClaimVerified).not.toHaveBeenCalled();
   });
 });

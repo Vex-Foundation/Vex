@@ -32,7 +32,7 @@ import {
   uniswapSpendabilityFake,
   type UniswapSpendabilityFakeOptions,
 } from "./_uniswap-spendability-fake.js";
-import { claimStandingInForTheParams } from "./_uniswap-approved-snapshot.js";
+import { readStandingInForTheParams } from "./_uniswap-approved-snapshot.js";
 
 const TOKEN_IN = getAddress("0x8Ff92566f2e81BDd68EDfAa8cde73942A723796b");
 const TOKEN_OUT = getAddress("0xc6911796042b15d7Fa4F6CDe69e245DdCd3d9c31");
@@ -60,7 +60,7 @@ const failActivityEvent = vi.fn();
 const abortPlannedEvents = vi.fn();
 const createAgentActivityPreBroadcastFailure = vi.fn();
 const waitForSuccessfulReceipt = vi.fn();
-const claimUniswapExecutionSnapshot = vi.fn();
+const readUniswapExecutionSnapshot = vi.fn();
 const quoteBestRoute = vi.fn();
 
 /** Every block tag the execution's balance reads asked for, in order. */
@@ -179,8 +179,9 @@ vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
 }));
 vi.mock("@vex-agent/db/repos/tracked-tokens.js", () => ({ pinTrackedToken: vi.fn() }));
 vi.mock("@vex-agent/tools/protocols/prequote/claim.js", () => ({
-  claimSwapExecutionSnapshot: vi.fn(),
-  claimUniswapExecutionSnapshot: (...args: unknown[]) => claimUniswapExecutionSnapshot(...args),
+  commitPrequoteClaim: vi.fn(async () => ({ ok: true })),
+  readSwapExecutionSnapshot: vi.fn(),
+  readUniswapExecutionSnapshot: (...args: unknown[]) => readUniswapExecutionSnapshot(...args),
 }));
 vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
   resolveSelectedAddress: vi.fn(() => WALLET),
@@ -228,8 +229,8 @@ beforeEach(() => {
     route: { version: "v2", path: [TOKEN_IN, TOKEN_OUT], amountOut: QUOTED_OUT },
     priceImpact: 0.001,
   });
-  claimUniswapExecutionSnapshot.mockImplementation(
-    claimStandingInForTheParams({ chainId: CHAIN_ID, weth: WETH }),
+  readUniswapExecutionSnapshot.mockImplementation(
+    readStandingInForTheParams({ chainId: CHAIN_ID, weth: WETH }),
   );
   createAgentActivityIntent.mockResolvedValue({
     executionId: 1,

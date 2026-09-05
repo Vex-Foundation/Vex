@@ -170,6 +170,7 @@ import {
   boundSkippedVexFee,
   matchedPrequoteWithVexFee,
 } from "../../../tools/bridge-fee/bound-vex-fee.js";
+import { BRIDGE_FEE_RECEIVER_EVM } from "@tools/bridge-fee/index.js";
 import type { KhalaniStagedLeg } from "@tools/khalani/bridge-executor.js";
 
 function evmSend(to: string, data: string, deposit: boolean) {
@@ -597,6 +598,103 @@ describe("khalani.bridge - the fee must still match the statement the approval w
   it("a dryRun never reads the bound row: it is a preview, it signs nothing", async () => {
     await execute({ dryRun: true });
     expect(mockFindFreshMatchedPrequote).not.toHaveBeenCalled();
+  });
+
+  /**
+   * An absent execute-gate registration is an internal
+   * AUTHORIZATION failure, never permission to sign.
+   *
+   * `not_gated` is exactly what the gate answers when this tool has no registry
+   * entry - the state a registry refactor produces. The handler used to read it
+   * as "there is no approved statement to contradict" and carry on to the
+   * signer, turning the loss of the fee's whole authority into a licence to take
+   * it. Driven through the public handler with the registration absent.
+   */
+  it("REFUSES when this fee-bearing tool has no registered quote gate at all", async () => {
+    mockFindFreshMatchedPrequote.mockResolvedValue({ ok: false, reason: "not_gated" });
+
+    const result = await execute();
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("fee-bearing tool with no registered quote gate");
+    expect(result.output).toContain("no funds moved");
+    expect(result.output).not.toContain("approve the fresh quote");
+    assertNothingHappened();
+  });
+
+  /**
+   * The typed reason must reach the RESULT, not only the log line: an agent
+   * reading "khalani.bridge failed" cannot tell a moved fee statement (re-quote)
+   * from an unregistered gate (report a build defect).
+   */
+  describe("the typed refusal reason reaches the tool result", () => {
+    function refusalOf(result: { readonly data?: Record<string, unknown> }): Record<string, unknown> {
+      const block = result.data?._vexFeeRefusal;
+      if (block === undefined || block === null || typeof block !== "object") {
+        throw new Error("expected the result to carry a typed _vexFeeRefusal block");
+      }
+      return block as Record<string, unknown>;
+    }
+
+    it("carries `vex_fee_statement_changed` and the field that moved", async () => {
+      mockFindFreshMatchedPrequote.mockResolvedValue(matchedPrequoteWithVexFee(boundChargedVexFee({
+        feeAmountRaw: "3000", netAmountRaw: "1497000", totalDebitedRaw: "1500000",
+      })));
+
+      const refusal = refusalOf(await execute());
+
+      expect(refusal.reason).toBe("vex_fee_statement_changed");
+      expect(refusal.movedFields).toEqual(["feeAmountRaw"]);
+      expect(String(refusal.remediation)).toContain("khalani__bridge_quote_get");
+    });
+
+    it("carries `vex_fee_statement_missing` when the bound row states no fee", async () => {
+      mockFindFreshMatchedPrequote.mockResolvedValue(matchedPrequoteWithVexFee(undefined));
+
+      expect(refusalOf(await execute()).reason).toBe("vex_fee_statement_missing");
+    });
+
+    it("carries `vex_fee_gate_unregistered` and a remedy that is not a re-quote", async () => {
+      mockFindFreshMatchedPrequote.mockResolvedValue({ ok: false, reason: "not_gated" });
+
+      const refusal = refusalOf(await execute());
+
+      expect(refusal.reason).toBe("vex_fee_gate_unregistered");
+      expect(String(refusal.remediation)).toContain("build defect");
+    });
+  });
+
+  /**
+   * PIN, DO NOT RE-DERIVE (fixed decision 2026-09-04, recorded beside
+   * `vexFeePreviewSchema`).
+   *
+   * The fee leg is signed last, after the deposit is confirmed AND registered
+   * with the provider. The approved statement is its authority there: it signs
+   * the staged leg planned before anything was signed, so an eligibility read
+   * that flips in that window changes nothing about what is signed and cannot
+   * raise the fee above the statement.
+   */
+  it("signs the staged fee leg the approved statement fixed, planned before any signature", async () => {
+    const result = await execute();
+    expect(parse(result.output).status).toBe("pending");
+
+    const legs = signedLegs();
+    const feeLeg = legs.find((l) => l.purpose === "vex_fee");
+    if (feeLeg === undefined) throw new Error("this arrangement must sign a fee leg");
+    // The fee leg is LAST, and its transaction is the one the plan built.
+    expect(legs.indexOf(feeLeg)).toBe(legs.length - 1);
+    const disclosed = parse(result.output).vexFee as Record<string, unknown>;
+    expect(disclosed.feeAmountRaw).toBe("3750");
+    const tx = (feeLeg as { readonly tx?: { readonly to: string; readonly data?: string } }).tx;
+    if (tx === undefined) throw new Error("an EVM fee leg must carry its transaction");
+    const feeHex = BigInt(String(disclosed.feeAmountRaw)).toString(16).padStart(64, "0");
+    expect(String(tx.data).toLowerCase().endsWith(feeHex)).toBe(true);
+    // The receiver is the build constant, carried in the calldata itself.
+    expect(String(tx.data).toLowerCase()).toContain(BRIDGE_FEE_RECEIVER_EVM.slice(2).toLowerCase());
+    // Eligibility was read exactly once, in the pre-sign window, and never again
+    // between the confirmed deposit and the fee transfer.
+    expect(mockFindFreshMatchedPrequote).toHaveBeenCalledTimes(1);
+    expect(mockHoneypotFot).toHaveBeenCalledTimes(1);
   });
 });
 

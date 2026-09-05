@@ -38,7 +38,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { uniswapSpendabilityFake } from "./_uniswap-spendability-fake.js";
-import { claimStandingInForTheParams } from "./_uniswap-approved-snapshot.js";
+import { readStandingInForTheParams } from "./_uniswap-approved-snapshot.js";
 import { InvalidParamsRpcError } from "viem";
 import { VexError, ErrorCodes } from "../../../errors.js";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
@@ -164,10 +164,11 @@ vi.mock("@tools/kyberswap/token-api/client.js", () => ({
 // before it prices anything. This suite's subject is elsewhere, so the claim
 // stands in with the quote this very call would have produced - see
 // `_uniswap-approved-snapshot.ts`.
-const claimUniswapExecutionSnapshot = vi.fn();
+const readUniswapExecutionSnapshot = vi.fn();
 vi.mock("@vex-agent/tools/protocols/prequote/claim.js", () => ({
-  claimSwapExecutionSnapshot: vi.fn(),
-  claimUniswapExecutionSnapshot: (...args: unknown[]) => claimUniswapExecutionSnapshot(...args),
+  commitPrequoteClaim: vi.fn(async () => ({ ok: true })),
+  readSwapExecutionSnapshot: vi.fn(),
+  readUniswapExecutionSnapshot: (...args: unknown[]) => readUniswapExecutionSnapshot(...args),
 }));
 
 vi.mock("@utils/logger.js", () => ({
@@ -202,8 +203,8 @@ function setAllowance(value: bigint): void {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  claimUniswapExecutionSnapshot.mockImplementation(
-    claimStandingInForTheParams({
+  readUniswapExecutionSnapshot.mockImplementation(
+    readStandingInForTheParams({
       chainId: 4663,
       weth: "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
       currentAllowance: () => currentAllowance,
@@ -253,7 +254,7 @@ describe("contract metadata is re-read before signing", () => {
 
     expect(result.success).toBe(false);
     expect(createAgentActivityPreBroadcastFailure).toHaveBeenCalledTimes(1);
-    expect(claimUniswapExecutionSnapshot).not.toHaveBeenCalled();
+    expect(readUniswapExecutionSnapshot).not.toHaveBeenCalled();
     expect(createAgentActivityIntent).not.toHaveBeenCalled();
     expect(signUniswapTransaction).not.toHaveBeenCalled();
   });

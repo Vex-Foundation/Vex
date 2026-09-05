@@ -61,12 +61,17 @@ export {
 } from "./fee-eligibility.js";
 
 export {
+  bridgeFeeRefusalData,
   bridgeFeeStatementChangedMessage,
   checkBridgeFeeStatementUnchanged,
   missingBridgeFeeStatementMessage,
   unauthorizedBridgeQuoteMessage,
+  unregisteredBridgeFeeGateMessage,
+  VEX_FEE_GATE_UNREGISTERED_REASON,
+  VEX_FEE_QUOTE_UNAUTHORIZED_REASON,
   VEX_FEE_STATEMENT_CHANGED_REASON,
   VEX_FEE_STATEMENT_MISSING_REASON,
+  type BridgeFeeRefusal,
   type BridgeFeeStatementCheck,
   type BridgeFeeStatementDivergence,
   type BridgeFeeStatementField,
