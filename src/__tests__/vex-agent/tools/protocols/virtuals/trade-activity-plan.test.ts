@@ -9,7 +9,7 @@
  *  - a leg that is RECORDED but never SIGNED is terminalized as never-attempted,
  *    which is why the plan may over-provision rows and the caller aborts the
  *    tail;
- *  - the `vex_fee` row is a CHILD of the trade on the `swap` arm (migration 102,
+ *  - the `vex_fee` row is a CHILD of the trade on the `swap` arm (migration 107,
  *    owner V1/V2), so the feed folds it under the action it charges for instead
  *    of showing a second money entry.
  *
@@ -218,7 +218,7 @@ describe("the trade row", () => {
 });
 
 describe("the vex_fee row is a CHILD, planned last and never a second money entry", () => {
-  it("uses the family role migration 102 folds on", () => {
+  it("uses the family role migration 107 folds on", () => {
     expect(VIRTUALS_CURVE_FEE_ACTIVITY_EVENT_ROLE).toBe("vex_fee");
     const { events, tradeLegCount } = plan({ side: "buy", currentAllowanceRaw: 0n, feePlannedRaw: BUY_FEE });
     expect(events[tradeLegCount]!.eventRole).toBe("vex_fee");

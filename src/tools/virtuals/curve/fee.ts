@@ -51,7 +51,7 @@ export const VIRTUALS_CURVE_FEE_RECEIVER_EVM: Address = VEX_TREASURY_EVM;
 /**
  * The `agent_activity` `event_role` the fee leg is recorded under.
  *
- * `vex_fee` (migration 102) rather than `swap_fee`: the launchpad family names
+ * `vex_fee` (migration 107) rather than `swap_fee`: the launchpad family names
  * roles by WHAT happened, and the fold read model asks only whether Vex charged.
  */
 export const VIRTUALS_CURVE_FEE_ACTIVITY_EVENT_ROLE = "vex_fee" as const;

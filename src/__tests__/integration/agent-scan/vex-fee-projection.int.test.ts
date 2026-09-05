@@ -532,7 +532,7 @@ describe("Vex fee: the venue-independent vex_fee leg folds on every admitted arm
   it("reports NO fee on a claim-family row, because the claim family charges none", async () => {
     const repo = await import("../../../vex-agent/db/repos/agent-activity.js");
     const intent = await seedIntent("pools.claim");
-    // A claim spends nothing (migration 102's
+    // A claim spends nothing (migration 107's
     // `agent_activity_claim_family_no_input_leg`), so the row is seeded with its
     // payout only and there is no sibling fee leg to find.
     const claim = await repo.createPendingActivityEvent({

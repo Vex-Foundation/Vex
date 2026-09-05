@@ -407,7 +407,7 @@ export async function claimAgentscanAttestCandidates(input: {
  * simplification. The server's `token-attestations-repo.ts` answers a DUPLICATE
  * POST with the row's EXISTING `verifyStatus`, which can already be `verified`;
  * the previous version of this function copied that word onto the row while
- * leaving `agentscan_verified_at` NULL, and migration 102's
+ * leaving `agentscan_verified_at` NULL, and migration 107's
  * `launched_tokens_agentscan_verified_stamp` CHECK forbids exactly that pair.
  * The canonical way in is ordinary: this install crashes after the server
  * commits the attestation and before this mark lands, the row is claimed again,

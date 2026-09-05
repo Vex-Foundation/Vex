@@ -424,7 +424,7 @@ describe("agentscan attest sweep: the verdict read-back (D4)", () => {
  *
  * While the POST path copied that word onto the row, the UPDATE wrote
  * `agentscan_verify_status = 'verified'` with `agentscan_verified_at` still
- * NULL, which migration 102's `launched_tokens_agentscan_verified_stamp` CHECK
+ * NULL, which migration 107's `launched_tokens_agentscan_verified_stamp` CHECK
  * forbids. The statement aborted, the row was never marked attested, and it
  * came back on every sweep from then on - a permanent loop out of an ordinary
  * crash. The POST is submission only now, so the retry simply succeeds.

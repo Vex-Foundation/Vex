@@ -117,7 +117,7 @@ const SECOND_LEG_ROLES = new Set([
  * either side, and a distribute takes nothing from its caller but gas, which
  * this ledger does not model as a leg.
  *
- * This is the OUTGOING half of the same rule migration 102 enforces on write
+ * This is the OUTGOING half of the same rule migration 107 enforces on write
  * (`agent_activity_claim_family_no_input_leg`). It covers `pools_claim` too,
  * which that CHECK deliberately does not: rows already exist under that role, so
  * the database cannot refuse them retroactively, but nothing obliges this mapper

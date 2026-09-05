@@ -18,7 +18,7 @@
  * signed is finalized as never-attempted. The intent therefore carries every row
  * it might sign, and the ones that never run are terminalized explicitly.
  *
- * WHY THE FEE ROW IS A CHILD AND NOT A SECOND ENTRY. `vex_fee` (migration 102)
+ * WHY THE FEE ROW IS A CHILD AND NOT A SECOND ENTRY. `vex_fee` (migration 107)
  * on the `swap` arm is what the fold read model looks for: the feed shows ONE
  * entry for the trade with the fee folded under it, and the fee's own
  * pending/failed status is visible there rather than as a separate line
