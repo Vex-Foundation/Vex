@@ -6,6 +6,7 @@ import { LIGHTER_KEY_REGISTRATION_HANDLERS } from "./handlers/key-registration.j
 import { LIGHTER_WITHDRAWAL_HANDLERS } from "./handlers/withdrawal.js";
 import { LIGHTER_ORDER_LIFECYCLE_HANDLERS } from "./handlers/order-lifecycle.js";
 import { LIGHTER_OCO_HANDLERS } from "./handlers/oco.js";
+import { LIGHTER_FEE_AUTHORIZATION_HANDLERS } from "./handlers/fee-authorization.js";
 
 export const LIGHTER_HANDLERS: Record<string, ProtocolHandler> = {
   ...LIGHTER_READ_HANDLERS,
@@ -15,4 +16,5 @@ export const LIGHTER_HANDLERS: Record<string, ProtocolHandler> = {
   ...LIGHTER_WITHDRAWAL_HANDLERS,
   ...LIGHTER_ORDER_LIFECYCLE_HANDLERS,
   ...LIGHTER_OCO_HANDLERS,
+  ...LIGHTER_FEE_AUTHORIZATION_HANDLERS,
 };

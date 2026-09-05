@@ -1,3 +1,5 @@
+import { revalidateLighterOrderFees, readLighterOrderAccountFeeTicks, type LighterOrderFeeClient } from "./order-fees.js";
+import { lighterIntegratorFeesEqual } from "@tools/lighter/fee-policy.js";
 import type { LighterClient } from "@tools/lighter/client.js";
 import type { LighterAccountOrder, LighterTrade } from "@tools/lighter/types.js";
 import {
@@ -105,7 +107,7 @@ export interface ExecuteApprovedLighterCreateOrderDeps {
   readonly secretReader: LighterTradingSecretReader;
   readonly reserveNonce: typeof reserveLighterOrderNonceForSigning;
   readonly signer: LighterSignerAdapter;
-  readonly client: Pick<
+  readonly client: LighterOrderFeeClient & Pick<
     LighterClient,
     | "sendTx"
     | "getApiKeys"
@@ -381,9 +383,9 @@ function assertUnsignedOrderMatchesApprovedPlan(
   const mismatch = LIGHTER_UNSIGNED_ORDER_FIELDS.find(
     (field) => supplied[field] !== canonical[field],
   );
-  if (mismatch !== undefined) {
+  if (mismatch !== undefined || !lighterIntegratorFeesEqual(supplied.integratorFees, canonical.integratorFees)) {
     throw blockedBeforeSubmit(
-      `Caller-supplied Lighter unsigned order field ${mismatch} does not match the canonical order derived from the approved plan. No provider state was read, no trading key was loaded, and no nonce was reserved.`,
+      `Caller-supplied Lighter unsigned order field ${mismatch ?? "integratorFees"} does not match the canonical order derived from the approved plan. No provider state was read, no trading key was loaded, and no nonce was reserved.`,
     );
   }
 }
@@ -465,10 +467,13 @@ async function revalidateLiveOrderState(
     );
   }
 
+  await revalidateLighterOrderFees({ client: deps.client, environment: plan.environment, accountIndex: plan.accountIndex, market: marketDetail, account, reduceOnly: plan.reduceOnly, side: plan.side, integratorFees: plan.integratorFees });
+  const accountTakerFeeTicks = marketDetail.market_type === "spot" && plan.side === "buy"
+    ? await readLighterOrderAccountFeeTicks(deps.client, plan.environment, plan.accountIndex) : undefined;
   const evidence = revalidateApprovedLighterOrder({
     plan,
     approvedPreview,
-    context: { market: marketDetail, orderBook, account },
+    context: { market: marketDetail, orderBook, account, ...(accountTakerFeeTicks === undefined ? {} : { accountTakerFeeTicks }) },
     nowMs: deps.now(),
   });
   const persisted = await deps.intents.markPreSubmitRevalidated({

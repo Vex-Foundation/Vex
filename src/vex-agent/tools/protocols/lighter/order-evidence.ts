@@ -1,3 +1,5 @@
+import type { LighterIntegratorFees } from "@tools/lighter/fee-policy.js";
+import { estimateLighterOrderFee } from "@tools/lighter/order-fee-terms.js";
 import type { LighterAccountOrder, LighterTrade } from "@tools/lighter/types.js";
 import type {
   LighterOrderTimeInForce,
@@ -14,6 +16,7 @@ import {
  * repaired after a crash may not disagree with one observed in-line.
  */
 export interface LighterOrderEvidenceScope {
+  readonly integratorFees?: LighterIntegratorFees | null;
   readonly accountIndex: number;
   readonly marketIndex: number;
   readonly side: "buy" | "sell";
@@ -33,6 +36,7 @@ export interface LighterOrderEvidenceScope {
 
 export interface BuildLighterOrderEvidenceScopeInput {
   readonly approved: {
+    readonly integratorFees?: LighterIntegratorFees | null;
     readonly accountIndex: number;
     readonly marketIndex: number;
     readonly side: "buy" | "sell";
@@ -73,6 +77,7 @@ export function buildLighterOrderEvidenceScope(
     throw new Error("Lighter order evidence scope has an invalid signed expiry.");
   }
   return {
+    integratorFees: approved.integratorFees ?? null,
     accountIndex: approved.accountIndex,
     marketIndex: approved.marketIndex,
     side: approved.side,
@@ -351,6 +356,7 @@ export function lighterTradeEvidenceJson(
     size: trade.size,
     price: trade.price,
     accountSide: scope.side,
+    ...lighterTradeFeeEvidence(trade, scope),
   };
 }
 
@@ -371,4 +377,47 @@ function averageExecutionPrice(quote: string | undefined, base: string | undefin
   } catch {
     return null;
   }
+}
+
+/** Report provider attribution separately from exchange fees and settlement proof. */
+export function lighterTradeFeeEvidence(trade: LighterTrade, scope: LighterOrderEvidenceScope): Record<string, unknown> {
+  if (scope.integratorFees == null && trade.integrator_maker_fee === undefined && trade.integrator_taker_fee === undefined) return {};
+  const maker = scope.side === "sell" ? trade.is_maker_ask : !trade.is_maker_ask;
+  const feeTicks = maker ? trade.integrator_maker_fee : trade.integrator_taker_fee;
+  const collector = maker ? trade.integrator_maker_fee_collector_index : trade.integrator_taker_fee_collector_index;
+  const expected = scope.integratorFees;
+  const expectedTicks = expected == null ? null : maker ? expected.integratorMakerFee : expected.integratorTakerFee;
+  const attributed = feeTicks !== undefined && collector !== undefined;
+  let feeAmountBeforeRounding: string | null = null;
+  const receivedBase = scope.marketIndex >= 2048 && scope.side === "buy";
+  if (feeTicks !== undefined && Number.isSafeInteger(feeTicks) && feeTicks >= 0 && feeTicks <= 1_000_000) {
+    const size = exactDecimal(trade.size);
+    const price = exactDecimal(trade.price);
+    if (size !== null && price !== null) {
+      feeAmountBeforeRounding = estimateLighterOrderFee(
+        (receivedBase ? size.value : size.value * price.value).toString(),
+        receivedBase ? size.decimals : size.decimals + price.decimals,
+        feeTicks,
+      );
+    }
+  }
+  return {
+    liquidityRole: maker ? "maker" : "taker",
+    exchangeFeeTicks: (maker ? trade.maker_fee : trade.taker_fee) ?? null,
+    vexFee: {
+      collectorAccountIndex: collector ?? null,
+      feeTicks: feeTicks ?? null,
+      attributionMatchesApproved: expected == null ? null : attributed && collector === expected.integratorAccountIndex && feeTicks === expectedTicks,
+      amountBeforeProviderRounding: feeAmountBeforeRounding,
+      amountUnit: receivedBase ? "received_base_asset" : scope.marketIndex >= 2048 ? "received_quote_asset" : "quote_value",
+      collectorCreditVerified: false,
+    },
+  };
+}
+
+function exactDecimal(value: string): { value: bigint; decimals: number } | null {
+  if (!/^(0|[1-9][0-9]*)(\.[0-9]+)?$/.test(value)) return null;
+  const [whole, fraction = ""] = value.split(".");
+  if (fraction.length > 18) return null;
+  return { value: BigInt(`${whole}${fraction}`), decimals: fraction.length };
 }

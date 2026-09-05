@@ -43,6 +43,7 @@ export function buildLighterOcoExecutionPlan(
     throw invalidRequest("Lighter OCO credential reference does not match the approved account scope.");
   }
   return {
+    integratorFees: intent.integratorFees ?? null,
     intentId: intent.intentId,
     sessionId: intent.sessionId,
     stopLossPreviewId: intent.stopLossPreviewId,
@@ -82,6 +83,7 @@ export function ocoLegRevalidationPlan(
 ): LighterOrderReadyForSignerPlan {
   const leg = kind === "stop-loss" ? plan.stopLoss : plan.takeProfit;
   return {
+    integratorFees: plan.integratorFees ?? null,
     intentId: plan.intentId,
     sessionId: plan.sessionId,
     previewId: kind === "stop-loss" ? plan.stopLossPreviewId : plan.takeProfitPreviewId,

@@ -144,6 +144,13 @@ export const LIGHTER_NAVIGATION: ProtocolNamespaceNavigation = {
       hints: ["protect my position", "stop loss and take profit", "close my lighter position"],
     },
     {
+      label: "Trading-fee authorization",
+      summary:
+        "Prepare and confirm the selected wallet's spot and perpetual Vex fee authorization during managed onboarding, check its status, or prepare an explicitly requested revocation.",
+      toolPrefixes: ["lighter.fees"],
+      hints: ["approve trading fees", "lighter fee setup", "check fee authorization", "revoke vex fees"],
+    },
+    {
       label: "Secure withdrawals and claims",
       summary:
         "Prepare, execute, and reconcile approval-gated Core USDC or RHC USDG withdrawals, including a separately approved gateway claim only when required.",

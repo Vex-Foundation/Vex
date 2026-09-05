@@ -1,3 +1,4 @@
+import { buildLighterUnsignedCreateOrderRequest } from "@tools/lighter/signer-order.js";
 import { describe, expect, it } from "vitest";
 
 import { buildLighterOrderReadyForSignerPlan } from "@vex-agent/tools/protocols/lighter/execution-plan.js";
@@ -65,6 +66,13 @@ function intent(overrides: Partial<LighterOrderExecutionIntentRow> = {}): Lighte
 }
 
 describe("Lighter order execution plan", () => {
+  it("carries the approved fee tuple unchanged into the canonical unsigned order", () => {
+    const integratorFees = { integratorAccountIndex: 99, integratorMakerFee: 2500, integratorTakerFee: 2500 };
+    const plan = buildLighterOrderReadyForSignerPlan(intent({ integratorFees, marketIndex: 2048 }), Date.parse("2026-08-12T00:02:00.000Z"));
+    expect(plan.integratorFees).toEqual(integratorFees);
+    expect(buildLighterUnsignedCreateOrderRequest(plan).integratorFees).toEqual(integratorFees);
+  });
+
   it("builds the signer-bound plan only from an approved durable intent", () => {
     const plan = buildLighterOrderReadyForSignerPlan(intent(), Date.parse("2026-08-12T00:02:00.000Z"));
 

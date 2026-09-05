@@ -1,3 +1,4 @@
+import { lighterIntegratorFeesEqual } from "./fee-policy.js";
 import { ErrorCodes, VexError } from "../../errors.js";
 import {
   LIGHTER_TX_TYPE_CREATE_GROUPED_ORDERS,
@@ -99,7 +100,9 @@ function assertGroup(group: LighterUnsignedOcoRequest): void {
   assertUnsignedCreateOrderFitsOfficialSigner(stopLoss);
   assertUnsignedCreateOrderFitsOfficialSigner(takeProfit);
   if (
-    stopLoss.orderTypeCode !== 2
+    !lighterIntegratorFeesEqual(group.integratorFees, stopLoss.integratorFees)
+    || !lighterIntegratorFeesEqual(group.integratorFees, takeProfit.integratorFees)
+    || stopLoss.orderTypeCode !== 2
     || takeProfit.orderTypeCode !== 4
     || stopLoss.marketIndex !== takeProfit.marketIndex
     || stopLoss.baseAmountInteger !== takeProfit.baseAmountInteger

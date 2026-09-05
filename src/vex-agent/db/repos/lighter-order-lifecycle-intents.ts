@@ -1,3 +1,5 @@
+import { readLighterOrderFeeTerms } from "@tools/lighter/order-fee-terms.js";
+import type { LighterIntegratorFees } from "@tools/lighter/fee-policy.js";
 import type { PoolClient } from "pg";
 
 import type { LighterEnvironment } from "@tools/lighter/constants.js";
@@ -26,6 +28,7 @@ export type LighterOrderLifecycleState =
   | "ambiguous";
 
 export interface LighterOrderLifecycleIntentRow {
+  readonly integratorFees?: LighterIntegratorFees | null;
   readonly intentId: string;
   readonly sessionId: string;
   readonly protocolExecutionId: number | null;
@@ -702,6 +705,7 @@ function requireDecimal(field: string, value: string, allowZero: boolean): void 
 
 function mapRow(row: Record<string, unknown>): LighterOrderLifecycleIntentRow {
   return {
+    integratorFees: readLighterOrderFeeTerms((row.provider_snapshot_json as Record<string, unknown> | undefined)?.integratorFees),
     intentId: String(row.intent_id), sessionId: String(row.session_id),
     protocolExecutionId: nullableNumber(row.protocol_execution_id), approvalId: nullableString(row.approval_id),
     matchHash: String(row.match_hash), environment: row.environment as LighterEnvironment,

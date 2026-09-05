@@ -1,3 +1,5 @@
+import { readLighterOrderFeeTerms } from "@tools/lighter/order-fee-terms.js";
+import type { LighterIntegratorFees } from "@tools/lighter/fee-policy.js";
 import type { PoolClient } from "pg";
 
 import { query, queryOne, queryOneWith } from "../client.js";
@@ -30,6 +32,7 @@ export type LighterOrderExecutionIntentState =
   | "ambiguous";
 
 export interface LighterOrderExecutionIntentRow {
+  readonly integratorFees?: LighterIntegratorFees | null;
   readonly intentId: string;
   readonly sessionId: string;
   readonly previewId: string;
@@ -209,18 +212,18 @@ const SELECT_COLUMNS =
   "volume_quota_remaining, ambiguous_reason, signed_at, submitted_at, api_accepted_at, ambiguous_at, " +
   "provider_order_id, provider_order_status, provider_outcome_source, provider_outcome_json, provider_outcome_checked_at, " +
   "pre_submit_revalidation_json, pre_submit_revalidated_at, " +
-  "created_at, updated_at, expires_at";
+  "created_at, updated_at, expires_at, integrator_fees_json";
 
 const INSERT_SQL = `INSERT INTO lighter_order_execution_intents (
   intent_id, session_id, preview_id, protocol_execution_id, approval_id, match_hash, environment,
   account_index, api_key_index, market_index, side, base_amount_integer, price_integer,
   order_type, time_in_force, reduce_only, trigger_price_integer, order_expiry_ms,
-  client_order_index_policy, provider_version, credential_ref_json, expires_at
+  client_order_index_policy, provider_version, credential_ref_json, expires_at, integrator_fees_json
 ) VALUES (
   $1, $2, $3, $4, $5, $6, $7,
   $8, $9, $10, $11, $12, $13,
   $14, $15, $16, $17, $18,
-  $19, $20, $21::jsonb, $22
+  $19, $20, $21::jsonb, $22, $23::jsonb
 ) ON CONFLICT (intent_id) DO NOTHING
 RETURNING ${SELECT_COLUMNS}`;
 
@@ -760,6 +763,7 @@ function toCreateParams(input: CreateLighterOrderExecutionIntentInput): unknown[
     preview.providerVersion,
     jsonb(credentialReadiness.reference),
     input.expiresAt,
+    preview.integratorFees == null ? null : jsonb(preview.integratorFees),
   ];
 }
 
@@ -994,6 +998,7 @@ function assertCredentialMatchesPreview(
 
 function mapRow(row: Record<string, unknown>): LighterOrderExecutionIntentRow {
   return {
+    integratorFees: readLighterOrderFeeTerms(row.integrator_fees_json),
     intentId: row.intent_id as string,
     sessionId: row.session_id as string,
     previewId: row.preview_id as string,

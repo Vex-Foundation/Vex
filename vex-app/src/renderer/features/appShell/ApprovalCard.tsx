@@ -55,12 +55,19 @@ function isLighterDepositApproval(summary: ApprovalSummaryDto): boolean {
 }
 
 function approveLabelFor(summary: ApprovalSummaryDto): string {
+  if (summary.preview?.criticalArgs.toolId === "lighter.fees.approve") {
+    return summary.preview.criticalArgs.revoke === true ? "Revoke trading fees" : "Approve trading fees";
+  }
   if (isLighterOrderCreateApproval(summary)) return "Approve and execute trade";
   if (isLighterDepositApproval(summary)) return "Approve and deposit";
   return "Approve";
 }
 
 function confirmApproveLabelFor(summary: ApprovalSummaryDto): string {
+  if (summary.preview?.criticalArgs.toolId === "lighter.fees.approve") {
+    return summary.preview.criticalArgs.revoke === true
+      ? "Click again to revoke trading fees" : "Click again to approve trading fees";
+  }
   if (isLighterOrderCreateApproval(summary)) {
     return "Click again to approve and execute trade";
   }
@@ -251,7 +258,7 @@ export function ApprovalCard({
       // The landing's amber alert language (.ws-alert): pin border + pin fill
       // ARE the "awaiting your signature" emphasis — this card is the one
       // place the page asks for the user's pen.
-      className="mt-3 overflow-hidden rounded-lg border border-[var(--vex-pin-border)] bg-[var(--vex-pin-fill)] text-sm text-[var(--vex-text-2)]"
+      className={`mt-3 overflow-hidden rounded-lg border border-[var(--vex-pin-border)] bg-[var(--vex-pin-fill)] text-sm text-[var(--vex-text-2)]${criticalArgs?.toolId === "lighter.fees.approve" ? " @container" : ""}`}
     >
       <ApprovalDetails
         summary={summary}
@@ -274,6 +281,7 @@ export function ApprovalCard({
         onRejectReasonChange={setRejectReason}
         approveLabel={approveLabel}
         confirmApproveLabel={confirmApproveLabel}
+        wrapReasonOnNarrow={criticalArgs?.toolId === "lighter.fees.approve"}
       />
     </section>
   );

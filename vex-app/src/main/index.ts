@@ -68,6 +68,7 @@ import { setupVexMarketService } from "./market/vex-market-service.js";
 import { installLighterOrderCreateExecutionDeps } from "./lighter/order-create-execution.js";
 import { installLighterKeyRegistrationCredentialPreparer } from "./lighter/key-registration-credential.js";
 import { installLighterKeyRegistrationExecutor } from "./lighter/key-registration-execution.js";
+import { installLighterFeeAuthorizationService } from "./lighter/fee-authorization-execution.js";
 import { setupStudioHostStatusBridge } from "./studio/host-status-bridge.js";
 import { setupBoardLiveService } from "./market/board-live-owner.js";
 import { lockSecretSession, reopenStudioHostIfSafe } from "./secrets/session.js";
@@ -268,6 +269,10 @@ async function initializeMainRuntime(): Promise<void> {
   globalCleanup.add(() => {
     uninstallLighterKeyRegistrationExecutor();
   }, "lighter-key-registration-executor");
+  const uninstallLighterFeeAuthorizationService = installLighterFeeAuthorizationService();
+  globalCleanup.add(() => {
+    uninstallLighterFeeAuthorizationService();
+  }, "lighter-fee-authorization-service");
 
   // The agent-bridge disposer is handed back rather than self-registered: it
   // drains the board read caches and the DexScreener transport, so it belongs

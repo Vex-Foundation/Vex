@@ -2,6 +2,21 @@
   "namespace": "lighter",
   "entries": [
     {
+      "toolId": "lighter.fees.approve.prepare",
+      "publicName": "lighter__fees_approve_prepare",
+      "rationale": "Prepare the selected wallet's native trading-fee authorization or revocation."
+    },
+    {
+      "toolId": "lighter.fees.approve",
+      "publicName": "lighter__fees_approve",
+      "rationale": "Execute only the exact host-approved native fee authorization."
+    },
+    {
+      "toolId": "lighter.fees.status",
+      "publicName": "lighter__fees_status",
+      "rationale": "Inspect fee readiness or reconcile a staged authorization without signing."
+    },
+    {
       "toolId": "lighter.account.onboarding.status",
       "publicName": "lighter__account_onboarding_status",
       "rationale": "Preserves the complete onboarding status surface while projecting the durable dotted id into the public callable grammar."

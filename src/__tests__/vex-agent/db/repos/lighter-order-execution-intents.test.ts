@@ -132,6 +132,15 @@ function dbRow(overrides: Partial<Record<string, unknown>> = {}): Record<string,
 }
 
 describe("lighter order execution intents repo", () => {
+  it("persists and decodes the exact approved fee tuple", async () => {
+    const integratorFees = { integratorAccountIndex: 99, integratorMakerFee: 1000, integratorTakerFee: 1000 };
+    mockQueryOne.mockResolvedValueOnce(dbRow({ integrator_fees_json: integratorFees }));
+    const result = await repo.createApprovalPending({ intentId: "lighter-exec-1", preview: { ...PREVIEW, integratorFees }, credentialReadiness: READINESS, expiresAt: "2026-08-12T00:05:00.000Z" });
+    expect(mockQueryOne.mock.calls[0]?.[0]).toContain("integrator_fees_json");
+    expect(mockQueryOne.mock.calls[0]?.[1]?.[22]).toBe(JSON.stringify(integratorFees));
+    expect(result?.integratorFees).toEqual(integratorFees);
+  });
+
   it("creates an approval-pending intent from an exact preview and vault reference", async () => {
     mockQueryOne.mockResolvedValueOnce(dbRow());
 
@@ -173,6 +182,7 @@ describe("lighter order execution intents repo", () => {
       "lighter-preview-v1",
       expect.stringContaining("encrypted_vault_reference"),
       "2026-08-12T00:05:00.000Z",
+      null,
     ]);
     expect(String(params![20])).not.toContain("private");
     expect(created).toMatchObject({

@@ -1,3 +1,4 @@
+import type { LighterIntegratorFees } from "./fee-policy.js";
 import { createHash } from "node:crypto";
 
 import {
@@ -43,6 +44,7 @@ export interface LighterOcoPreviewInput {
   readonly orderExpiry: number;
   readonly clientOrderIndexPolicy?: string;
   readonly nowMs?: number;
+  readonly integratorFees?: LighterIntegratorFees | null;
 }
 
 export interface LighterOcoPreviewIdentity {
@@ -69,6 +71,7 @@ export interface LighterOcoPreview {
   readonly stopLoss: LighterOrderPreview;
   readonly takeProfit: LighterOrderPreview;
   readonly preview: {
+    readonly integratorFees?: LighterIntegratorFees | null;
     readonly environment: LighterEnvironment;
     readonly accountIndex: number;
     readonly apiKeyIndex: number | null;
@@ -100,6 +103,7 @@ export function buildLighterOcoPreview(
     throw invalidRequest("Lighter OCO protection is supported only for perpetual positions.");
   }
   const common = {
+    integratorFees: input.integratorFees ?? null,
     sessionId: input.sessionId,
     environment: input.environment,
     accountIndex: input.accountIndex,
@@ -165,6 +169,7 @@ export function buildLighterOcoPreview(
     stopLoss,
     takeProfit,
     preview: {
+      integratorFees: input.integratorFees ?? null,
       environment: input.environment,
       accountIndex: input.accountIndex,
       apiKeyIndex: input.apiKeyIndex ?? null,
@@ -213,6 +218,7 @@ export function computeLighterOcoHash(identity: LighterOcoPreviewIdentity): stri
 }
 
 export interface LighterOcoSignerPlan {
+  readonly integratorFees?: LighterIntegratorFees | null;
   readonly matchHash: string;
   readonly environment: LighterEnvironment;
   readonly accountIndex: number;
@@ -234,6 +240,7 @@ export interface LighterOcoSignerPlan {
 }
 
 export interface LighterUnsignedOcoRequest {
+  readonly integratorFees?: LighterIntegratorFees | null;
   readonly kind: "lighter_unsigned_oco";
   readonly environment: LighterEnvironment;
   readonly accountIndex: number;
@@ -258,6 +265,7 @@ export function buildLighterUnsignedOcoRequest(
   }
   return {
     kind: "lighter_unsigned_oco",
+    ...(plan.integratorFees == null ? {} : { integratorFees: plan.integratorFees ?? null }),
     environment: plan.environment,
     accountIndex: plan.accountIndex,
     apiKeyIndex: plan.apiKeyIndex,
@@ -277,6 +285,7 @@ function buildOcoLeg(
     .digest("hex");
   return {
     kind: "lighter_unsigned_create_order",
+    ...(plan.integratorFees == null ? {} : { integratorFees: plan.integratorFees ?? null }),
     environment: plan.environment,
     accountIndex: plan.accountIndex,
     apiKeyIndex: plan.apiKeyIndex,

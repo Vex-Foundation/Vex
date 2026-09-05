@@ -1,3 +1,5 @@
+import { lighterOrderFeeCriticalArgs } from "@tools/lighter/order-fee-terms.js";
+import { lighterIntegratorFeesEqual } from "@tools/lighter/fee-policy.js";
 import { formatLighterIntegerAmount } from "@tools/lighter/order-preview.js";
 import * as approvalIntentsRepo from "@vex-agent/db/repos/approval-intents.js";
 import * as approvalsRepo from "@vex-agent/db/repos/approvals.js";
@@ -97,6 +99,7 @@ export function lighterOcoCriticalArgs(
   disclosure: LighterOcoApprovalDisclosure,
 ): Record<string, string | number | boolean | null> {
   return {
+    ...lighterOrderFeeCriticalArgs(intent.integratorFees),
     orderSummary: disclosure.orderSummary,
     marketSymbol: disclosure.marketSymbol,
     marketType: disclosure.marketType,
@@ -157,7 +160,8 @@ function assertLeg(
 ): void {
   const prefix = kind === "stop-loss" ? "stopLoss" : "takeProfit";
   if (
-    row.previewId !== intent[`${prefix}PreviewId`]
+    !lighterIntegratorFeesEqual(row.integratorFees, intent.integratorFees)
+    || row.previewId !== intent[`${prefix}PreviewId`]
     || row.matchHash !== intent[`${prefix}MatchHash`]
     || row.orderType !== kind
     || row.environment !== intent.environment

@@ -356,6 +356,27 @@ describe("ApprovalCard", () => {
     );
   });
 
+  it.each([false,true])("shows both Lighter fee rates and preserves two-click consent (revoke=%s)", (revoke) => {
+    renderCard(makeSummary({ toolName:"execute_tool",expiresAt:"2030-01-01T00:15:00.000Z",
+      preview:{ namespace:"lighter",toolName:"fees.approve",criticalArgs:{ toolId:"lighter.fees.approve",revoke,
+        summary:revoke?"Revoke VEX trading fees":"Authorize VEX trading fees",
+        perpetualFee:"0.1% maker / 0.1% taker of executed trade value",
+        spotFee:"0.25% maker / 0.25% taker of executed trade value",recipient:"VEX · Lighter account 99",
+        authorizationValidUntil:revoke?"Revoked":"2040-01-01T00:00:00.000Z",
+        exchangeFees:"Up to 0.005% maker / 0.005% taker; separate from VEX fees",publicKey:"ab".repeat(40),
+      } } }),true);
+    expect(screen.getByText("Perpetual fee")).toBeTruthy();expect(screen.getByText("Spot fee")).toBeTruthy();
+    expect(screen.getByText("Authorization valid until")).toBeTruthy();
+    expect(screen.getByText("2030-01-01T00:15:00.000Z")).toBeTruthy();
+    expect(screen.queryByText("ab".repeat(40))).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("button",{ name:/^reject$/i }));
+    fireEvent.click(screen.getByRole("button",{ name:revoke?"Revoke trading fees":"Approve trading fees" }));
+    expect(mockApproveMutate).not.toHaveBeenCalled();
+    const confirm=screen.getByRole("button",{ name:"Confirm approve" });
+    expect(confirm.textContent).toContain(revoke?"Click again to revoke trading fees":"Click again to approve trading fees");
+    fireEvent.click(confirm);expect(mockApproveMutate).toHaveBeenCalledTimes(1);
+  });
+
   it("low-risk: single click on Reject fires mutate", () => {
     renderCard(
       makeSummary({ riskLevel: "low", actionKind: "local_write" }),

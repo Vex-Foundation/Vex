@@ -34,6 +34,8 @@ import type {
   LighterAccountOrdersResponse,
   LighterAccountQuery,
   LighterAccountResponse,
+  LighterAccountLimitsResponse,
+  LighterChangeAccountTierResponse,
   LighterAccountTradesParams,
   LighterAccountTradesResponse,
   LighterApiKeysParams,
@@ -68,6 +70,8 @@ import type {
 } from "./types.js";
 import {
   validateLighterAccount,
+  validateLighterAccountLimits,
+  validateLighterChangeAccountTier,
   validateLighterAccountsByL1Address,
   validateLighterAccountOrders,
   validateLighterAccountTrades,
@@ -195,6 +199,7 @@ export class LighterClient {
     path: string,
     body: URLSearchParams,
     validator: (raw: unknown) => T,
+    authToken?: string,
   ): Promise<T> {
     const url = this.buildUrl(environment, path);
     try {
@@ -203,6 +208,7 @@ export class LighterClient {
         headers: {
           ...REQUEST_HEADERS,
           "Content-Type": "application/x-www-form-urlencoded",
+          ...(authToken ? { Authorization: authToken } : {}),
         },
         body,
       });
@@ -278,11 +284,13 @@ export class LighterClient {
     return this.request(environment, LIGHTER_ENDPOINT_PATHS.info, validateLighterInfo);
   }
 
-  getSystemConfig(environment: LighterEnvironment): Promise<LighterSystemConfigResponse> {
+  getSystemConfig(environment: LighterEnvironment, options: LighterPublicReadOptions = {}): Promise<LighterSystemConfigResponse> {
     return this.request(
       environment,
       LIGHTER_ENDPOINT_PATHS.systemConfig,
       validateLighterSystemConfig,
+      undefined,
+      options,
     );
   }
 
@@ -374,6 +382,30 @@ export class LighterClient {
       },
       { auth: "read-only", authToken: auth.token },
     );
+  }
+
+  async getAccountLimits(
+    environment: LighterEnvironment,
+    params: { readonly accountIndex: number },
+    privilegedAuth: LighterPrivilegedAccountAuth,
+  ): Promise<LighterAccountLimitsResponse> {
+    const auth = this.accountAuth(environment, params.accountIndex, privilegedAuth);
+    return this.request(environment, "/api/v1/accountLimits", validateLighterAccountLimits,
+      { account_index: String(auth.accountIndex) }, { auth: "read-only", authToken: auth.token, fresh: true });
+  }
+
+  async changeAccountTier(
+    environment: LighterEnvironment,
+    params: { readonly accountIndex: number; readonly newTier: "plus" | "premium" },
+    privilegedAuth: LighterPrivilegedAccountAuth,
+  ): Promise<LighterChangeAccountTierResponse> {
+    if (params.newTier !== "plus" && params.newTier !== "premium") {
+      throw new VexError(ErrorCodes.LIGHTER_INVALID_REQUEST, "Unsupported Lighter fee account tier.");
+    }
+    const auth = this.accountAuth(environment, params.accountIndex, privilegedAuth);
+    return this.postForm(environment, "/api/v1/changeAccountTier", new URLSearchParams({
+      account_index: String(auth.accountIndex), new_tier: params.newTier,
+    }), validateLighterChangeAccountTier, auth.token);
   }
 
   async getAccount(

@@ -269,3 +269,26 @@ describe("Lighter signer binary adapter", () => {
     expect(source).toContain("spawn(request.binaryPath, []");
   });
 });
+
+
+describe("Lighter signed fee attribute binding", () => {
+  it("rejects missing, changed and undisclosed collector attributes", async () => {
+    const base = signingInput();
+    const integratorFees = { integratorAccountIndex: 123, integratorMakerFee: 1000, integratorTakerFee: 1000 };
+    const input = { ...base, order: { ...base.order, integratorFees } };
+    const run = (attributes: unknown) => createLighterSignerBinaryAdapter({
+      runner: async (request) => {
+        expect(request.payload.operation).toBe("signCreateOrder");
+        if (request.payload.operation === "signCreateOrder") expect(request.payload.integratorFees).toEqual(integratorFees);
+        return { ok: true, txType: 14, txInfo: JSON.stringify({ L2TxAttributes: attributes }), txHash: "ab".repeat(40) };
+      },
+    }).signCreateOrder(input);
+    await expect(run({ "1": 123, "2": 1000, "3": 1000 })).resolves.toMatchObject({ txType: 14 });
+    for (const attrs of [null, {}, { "1": 124, "2": 1000, "3": 1000 }, { "1": 123, "2": 999, "3": 1000 }, { "1": 123, "2": 1000, "3": 1000, "4": 1 }]) {
+      await expect(run(attrs)).rejects.toThrow();
+    }
+    const unexpected = createLighterSignerBinaryAdapter({ runner: async () => ({ ok: true, txType: 14,
+      txInfo: JSON.stringify({ L2TxAttributes: { "1": 123, "2": 1000, "3": 1000 } }), txHash: "ab".repeat(40) }) });
+    await expect(unexpected.signCreateOrder(base)).rejects.toThrow();
+  });
+});

@@ -1,3 +1,4 @@
+import { lighterIntegratorFeesEqual } from "@tools/lighter/fee-policy.js";
 import {
   buildLighterOrderPreview,
   isProtectiveOrderType,
@@ -53,6 +54,7 @@ export function revalidateApprovedLighterOrder(input: {
   let fresh: LighterOrderPreview;
   try {
     fresh = buildLighterOrderPreview({
+      integratorFees: plan.integratorFees ?? null,
       sessionId: plan.sessionId,
       environment: plan.environment,
       accountIndex: plan.accountIndex,
@@ -153,7 +155,8 @@ function assertPersistedPreviewMatchesPlan(
   preview: LighterOrderPreviewRow,
 ): void {
   if (
-    preview.previewId !== plan.previewId
+    !lighterIntegratorFeesEqual(preview.integratorFees, plan.integratorFees)
+    || preview.previewId !== plan.previewId
     || preview.sessionId !== plan.sessionId
     || preview.matchHash !== plan.matchHash
     || preview.environment !== plan.environment

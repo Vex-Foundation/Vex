@@ -69,6 +69,7 @@ export default defineConfig({
       "src/__tests__/integration/repos/wallet-transaction-*.int.test.ts",
       "src/__tests__/integration/repos/wallet-wrap-*.int.test.ts",
       "src/__tests__/integration/repos/swap-prequotes-claim.int.test.ts",
+      "src/__tests__/integration/repos/lighter-fee-*.int.test.ts",
       "src/__tests__/integration/repos/wallet-transfer-unconfirmed-repair.int.test.ts",
       "src/__tests__/integration/repos/wallet-transfer-execution-first-writer.int.test.ts",
       "src/__tests__/integration/wallet/transaction-authority-fence.int.test.ts",

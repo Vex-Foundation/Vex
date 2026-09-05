@@ -1,3 +1,5 @@
+import { readLighterOrderFeeTerms } from "./order-fee-terms.js";
+import type { LighterIntegratorFees } from "./fee-policy.js";
 import { createHash } from "node:crypto";
 
 import { ErrorCodes, VexError } from "../../errors.js";
@@ -50,15 +52,19 @@ export interface LighterOrderPreviewInput {
   readonly orderExpiry: number;
   readonly clientOrderIndexPolicy: string;
   readonly nowMs?: number;
+  readonly integratorFees?: LighterIntegratorFees | null;
 }
 
 export interface LighterOrderPreviewContext {
+  /** Conservative live account-tier taker fee bound, separate from VEX fees. */
+  readonly accountTakerFeeTicks?: number;
   readonly market: LighterMarketDetail;
   readonly orderBook: LighterOrderBookOrdersResponse;
   readonly account: LighterAccountResponse;
 }
 
 export interface LighterOrderPreviewIdentity {
+  readonly integratorFees?: LighterIntegratorFees | null;
   readonly kind: "lighter_order";
   readonly sessionId: string;
   readonly environment: LighterEnvironment;
@@ -83,6 +89,7 @@ export interface LighterOrderPreview {
   readonly identity: LighterOrderPreviewIdentity;
   readonly expiresAt: string;
   readonly preview: {
+    readonly integratorFees?: LighterIntegratorFees | null;
     readonly environment: LighterEnvironment;
     readonly accountIndex: number;
     readonly apiKeyIndex: number | null;
@@ -145,7 +152,7 @@ export interface LighterOrderPreview {
         | "base_amount"
         | "worst_price_quote_notional"
         | "worst_price_quote_notional_with_taker_fee";
-      readonly takerFee: "none" | "zero_from_live_market" | "included_live_market_percentage";
+      readonly takerFee: "none" | "zero_from_live_market" | "included_live_market_percentage" | "included_live_account_or_market_fee";
       readonly takerFeePercent: string | null;
       readonly takerFeeAmount: string;
     } | null;
@@ -175,6 +182,7 @@ export function buildLighterOrderPreview(
 ): LighterOrderPreview {
   const nowMs = input.nowMs ?? Date.now();
   validateInputScalars(input);
+  readLighterOrderFeeTerms(input.integratorFees);
   assertMarketMatches(input, context.market);
   assertSignableMarketIndex(context.market);
   assertAccountContainsIndex(input, context.account);
@@ -261,7 +269,7 @@ export function buildLighterOrderPreview(
       "Lighter order preview refused: reduce-only intent cannot be verified against the live account position.",
     );
   }
-  if (isProtectiveOrderType(input.orderType)) {
+  if (input.reduceOnly) {
     assertProtectiveSizeWithinPosition(input.baseAmount, positionContext);
   }
 
@@ -281,6 +289,7 @@ export function buildLighterOrderPreview(
 
   const identity: LighterOrderPreviewIdentity = {
     kind: "lighter_order",
+    integratorFees: input.integratorFees ?? null,
     sessionId: input.sessionId,
     environment: input.environment,
     accountIndex: String(input.accountIndex),
@@ -306,6 +315,7 @@ export function buildLighterOrderPreview(
     identity,
     expiresAt: new Date(nowMs + LIGHTER_ORDER_PREVIEW_FRESHNESS_MS).toISOString(),
     preview: {
+      integratorFees: input.integratorFees ?? null,
       environment: input.environment,
       accountIndex: input.accountIndex,
       apiKeyIndex: input.apiKeyIndex ?? null,
@@ -413,6 +423,7 @@ export function lighterOrderPreviewHashMaterial(input: LighterOrderPreviewIdenti
     input.expiryMs,
     input.clientOrderIndexPolicy,
     input.providerVersion,
+    ...(input.integratorFees == null ? [] : [String(input.integratorFees.integratorAccountIndex), String(input.integratorFees.integratorMakerFee), String(input.integratorFees.integratorTakerFee)]),
   ];
 }
 
@@ -619,7 +630,7 @@ function assertSpotOrderInventory(
     asset.locked_balance,
     `spot asset ${requiredAssetId} balance`,
   );
-  let takerFee: "none" | "zero_from_live_market" | "included_live_market_percentage" = "none";
+  let takerFee: "none" | "zero_from_live_market" | "included_live_market_percentage" | "included_live_account_or_market_fee" = "none";
   let takerFeeInteger = 0n;
   let takerFeePercent: string | null = null;
   if (input.side === "buy" && context.market.is_taker_fee_enabled) {
@@ -639,6 +650,18 @@ function assertSpotOrderInventory(
       const denominator = 100n * (10n ** BigInt(fee.scale));
       takerFeeInteger = divideCeil(quoteNotionalInteger * fee.integer, denominator);
       takerFee = "included_live_market_percentage";
+    }
+  }
+
+  if (input.side === "buy" && context.accountTakerFeeTicks !== undefined) {
+    if (!Number.isSafeInteger(context.accountTakerFeeTicks) || context.accountTakerFeeTicks < 0 || context.accountTakerFeeTicks > 1_000_000) {
+      throw invalidRequest("The live Lighter account fee is not a valid tick amount.");
+    }
+    const accountFeeInteger = divideCeil(quoteNotionalInteger * BigInt(context.accountTakerFeeTicks), 1_000_000n);
+    if (accountFeeInteger > takerFeeInteger) {
+      takerFeeInteger = accountFeeInteger;
+      takerFee = "included_live_account_or_market_fee";
+      takerFeePercent = formatInteger(BigInt(context.accountTakerFeeTicks), 4);
     }
   }
 

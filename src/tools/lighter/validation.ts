@@ -10,6 +10,8 @@ import type {
   LighterAccountAllPositionsStreamMessage,
   LighterAccountAllTradesStreamMessage,
   LighterAccountResponse,
+  LighterAccountLimitsResponse,
+  LighterChangeAccountTierResponse,
   LighterAccountsByL1AddressResponse,
   LighterAccountTradesResponse,
   LighterApiKeysResponse,
@@ -131,6 +133,10 @@ const tradeSchema = z
     block_height: int,
     timestamp: int,
     transaction_time: int.optional(),
+    integrator_maker_fee: int.nonnegative().optional(),
+    integrator_taker_fee: int.nonnegative().optional(),
+    integrator_maker_fee_collector_index: int.nonnegative().optional(),
+    integrator_taker_fee_collector_index: int.nonnegative().optional(),
     taker_fee: int.optional(),
     maker_fee: int.optional(),
     ask_client_id: providerInteger.optional(),
@@ -323,6 +329,19 @@ const accountAssetSchema = z
   })
   .passthrough();
 
+const approvedIntegratorSchema = z.object({
+  account_index: int.nonnegative(), name: z.string(),
+  max_perps_taker_fee: int.nonnegative(), max_perps_maker_fee: int.nonnegative(),
+  max_spot_taker_fee: int.nonnegative(), max_spot_maker_fee: int.nonnegative(),
+  approval_expiry: int.nonnegative(),
+}).passthrough();
+
+const accountLimitsSchema = z.object({
+  code: z.literal(200), message, user_tier: z.string().min(1), user_tier_name: z.string(),
+  current_maker_fee_tick: int, current_taker_fee_tick: int,
+  user_tier_last_update: int.optional(),
+}).passthrough();
+
 const accountSchema = z
   .object({
     index: int.optional(),
@@ -334,6 +353,7 @@ const accountSchema = z
     pending_order_count: int.optional(),
     cross_initial_margin_requirement: optionalNumericString,
     cross_maintenance_margin_requirement: optionalNumericString,
+    approved_integrators: z.array(approvedIntegratorSchema).nullish().transform((value) => value === null ? [] : value),
     positions: z.array(accountPositionSchema).optional(),
     assets: z.array(accountAssetSchema).optional(),
   })
@@ -606,6 +626,14 @@ export function validateLighterTxFromL1(raw: unknown): LighterTxFromL1Response {
 
 export function validateLighterMarkets(raw: unknown): LighterMarketsResponse {
   return parseOrThrow(marketsResponseSchema, raw, "markets");
+}
+
+export function validateLighterAccountLimits(raw: unknown): LighterAccountLimitsResponse {
+  return parseOrThrow(accountLimitsSchema, raw, "account limits");
+}
+
+export function validateLighterChangeAccountTier(raw: unknown): LighterChangeAccountTierResponse {
+  return parseOrThrow(z.object({ code: z.literal(200), message }).passthrough(), raw, "account tier change");
 }
 
 export function validateLighterAccount(raw: unknown): LighterAccountResponse {

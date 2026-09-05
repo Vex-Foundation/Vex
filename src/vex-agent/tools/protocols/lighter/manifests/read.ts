@@ -259,7 +259,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Report the selected Vex wallet's managed Lighter trade readiness on Core or Robinhood Chain and the minimal setup steps still required. Do not use this tool to resize a direct deposit request: when the user says deposit or fund an explicit amount, call lighter__deposit_prepare with that amount unchanged. Omit walletAddress to use the selected wallet; never ask for account, API-key, nonce, fingerprint, or key material. Read-only: for an explicitly requested trade it checks the live market quote minimum, wallet-owned Lighter collateral, the environment-specific settlement asset (Ethereum USDC or Robinhood Chain USDG), native ETH gas balance, gateway allowance, live deposit minimum, and exact locally managed trading-credential readiness. Returns deterministic trade-funding and trading-access routes. A sub-minimum trade/top-up or insufficient settlement balance stops before preparation. Eligible trade funding may route to lighter__deposit_prepare; once funding and account ownership are proven, missing managed access may route separately to lighter__key_register_prepare. This tool moves no funds and signs nothing.",
+      "Report the selected Vex wallet's managed Lighter trade readiness on Core or Robinhood Chain and the minimal setup steps still required. Do not use this tool to resize a direct deposit request: when the user says deposit or fund an explicit amount, call lighter__deposit_prepare with that amount unchanged. Omit walletAddress to use the selected wallet; never ask for account, API-key, nonce, fingerprint, or key material. Read-only: for an explicitly requested trade it checks the live market quote minimum, wallet-owned Lighter collateral, the environment-specific settlement asset (Ethereum USDC or Robinhood Chain USDG), native ETH gas balance, gateway allowance, live deposit minimum, and exact locally managed trading-credential readiness. Returns deterministic trade-funding and trading-access routes. A sub-minimum trade/top-up or insufficient settlement balance stops before preparation. Eligible trade funding may route to lighter__deposit_prepare; once funding and account ownership are proven, missing managed access may route separately to lighter__key_register_prepare. When VEX fees are enabled, managed accounts then route to lighter__fees_approve_prepare for the separate spot and perpetual fee authorization. Use readyToTrade for complete readiness. This tool moves no funds and signs no transactions.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -512,6 +512,30 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     }],
     exampleParams: {},
     discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.withdraw.status"],
+  },
+  {
+    toolId: "lighter.fees.status",
+    publicName: "lighter__fees_status",
+    namespace: "lighter",
+    lifecycle: "active",
+    description:
+      "Check the selected wallet's Lighter trading-fee readiness or reconcile a previously submitted fee-authorization intent. Without intentId, inspect the configured collector, account tier and current provider allowance. With intentId, reconcile that session-owned action from provider evidence and the reserved nonce. Returns disabled, ready, approval required, blocked or pending as supported by the evidence. Never signs, changes account tier, renews consent or resubmits. Use after fee setup is interrupted or the user asks whether fee authorization is active.",
+    mutating: false,
+    actionKind: "read",
+    params: [ENVIRONMENT_PARAM, {
+      key: "intentId",
+      type: "string",
+      description: "Optional exact fee-authorization intent returned by lighter__fees_approve_prepare. Omit to inspect readiness for the selected wallet.",
+    }],
+    exampleParams: { environment: "rhc" },
+    discovery: {
+      canonicalSummary: "Check or reconcile Lighter fee authorization without signing.",
+      aliases: ["lighter fee status", "check fee approval", "fee setup pending"],
+      operation: ["verify"],
+      resourceTypes: ["account", "approval"],
+      sourceClass: "protocol_native",
+      sideEffectLevel: "none",
+    },
   },
   {
     toolId: "lighter.key.register.status",

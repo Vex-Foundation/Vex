@@ -26,11 +26,14 @@ const LIGHTER_TOOL_IDS = [
   "lighter.position.protect",
   "lighter.deposit.status",
   "lighter.withdraw.status",
+  "lighter.fees.status",
   "lighter.key.register.status",
   "lighter.order.status",
   "lighter.orderbook",
   "lighter.recentTrades",
   "lighter.candles",
+  "lighter.fees.approve.prepare",
+  "lighter.fees.approve",
   "lighter.order.cancel.prepare",
   "lighter.order.cancel",
   "lighter.order.modify.prepare",
@@ -254,7 +257,7 @@ describe("Lighter agent discovery surface", () => {
         expect(tool.mutating).toBe(true);
         expect(tool.actionKind).toBe("user_wallet_broadcast");
         expect(tool.requiredParams).toContain("intentId");
-      } else if (tool.toolId === "lighter.key.register") {
+      } else if (tool.toolId === "lighter.key.register" || tool.toolId === "lighter.fees.approve") {
         expect(tool.mutating).toBe(true);
         expect(tool.actionKind).toBe("user_wallet_broadcast");
         expect(tool.requiredParams).toContain("intentId");
@@ -268,6 +271,7 @@ describe("Lighter agent discovery surface", () => {
         || tool.toolId === "lighter.withdraw.claim.prepare"
         || tool.toolId === "lighter.deposit.prepare"
         || tool.toolId === "lighter.key.register.prepare"
+        || tool.toolId === "lighter.fees.approve.prepare"
       ) {
         expect(tool.mutating).toBe(false);
         expect(tool.actionKind).toBe("approval_prepare");

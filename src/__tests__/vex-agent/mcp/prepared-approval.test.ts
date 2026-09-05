@@ -4,13 +4,14 @@ import type { LighterOrderExecutionIntentRow } from "@vex-agent/db/repos/lighter
 import type { LighterOrderPreviewRow } from "@vex-agent/db/repos/lighter-order-previews.js";
 import { deposit, registration, withdrawal, claim, oco, leg } from "./lighter-prepared-fixtures.js";
 import type { LighterOrderLifecycleIntentRow } from "@vex-agent/db/repos/lighter-order-lifecycle-intents.js";
-const repos = vi.hoisted(() => ({ lifecycle: vi.fn(), deposit: vi.fn(), registration: vi.fn(), withdrawal: vi.fn(), claim: vi.fn(), oco: vi.fn() }));
+const repos = vi.hoisted(() => ({ fees: vi.fn(), lifecycle: vi.fn(), deposit: vi.fn(), registration: vi.fn(), withdrawal: vi.fn(), claim: vi.fn(), oco: vi.fn() }));
 vi.mock("@vex-agent/db/repos/lighter-order-lifecycle-intents.js", () => ({ findByIntentId: repos.lifecycle }));
 vi.mock("@vex-agent/db/repos/lighter-onboarding-intents.js", () => ({ findByIntentId: repos.deposit }));
 vi.mock("@vex-agent/db/repos/lighter-key-registration-intents.js", () => ({ findLighterKeyRegistrationIntent: repos.registration }));
 vi.mock("@vex-agent/db/repos/lighter-withdrawal-intents.js", () => ({ findByIntentId: repos.withdrawal }));
 vi.mock("@vex-agent/db/repos/lighter-withdrawal-claims.js", () => ({ findByClaimId: repos.claim }));
 vi.mock("@vex-agent/db/repos/lighter-oco-execution-intents.js", () => ({ findByIntentId: repos.oco }));
+vi.mock("@vex-agent/db/repos/lighter-fee-authorization-intents.js", () => ({ findLighterFeeAuthorizationIntent: repos.fees }));
 const findIntent = vi.fn();
 const findPreview = vi.fn();
 const handler = vi.fn();
@@ -171,7 +172,21 @@ function lifecycle(actionType: LighterOrderLifecycleIntentRow["actionType"]): Li
     actionType, providerOrderId: "123", requestedSide: "sell", requestedBaseAmountInteger: "10000",
     requestedPriceInteger: "4950", providerSnapshotJson: snapshot } as unknown as LighterOrderLifecycleIntentRow;
 }
+const { buildLighterFeeAuthorizationApprovalFollowUp } = await import("@vex-agent/tools/protocols/lighter/handlers/fee-authorization.js");
+const feeAuthorization: import("@vex-agent/db/repos/lighter-fee-authorization-intents.js").LighterFeeAuthorizationIntentRow = {
+  intentId: "lighter-fees-00000000-0000-4000-8000-000000000001", sessionId: "session-1",
+  environment: "core", walletAddress: "0x" + "1".repeat(40), accountIndex: 42, apiKeyIndex: 7,
+  approvalStatus: "approval_pending", executionState: "approval_pending", approvalId: null,
+  nonceValue: null, txHash: null, txExpiryMs: null, failureReason: null,
+  expiresAt: new Date("2030-01-01T00:00:00.000Z"), verifiedAt: null,
+  terms: { collectorAccountIndex: 999, collectorL1Address: "0x" + "2".repeat(40),
+    maxPerpsMakerFee: 1000, maxPerpsTakerFee: 1000, maxSpotMakerFee: 2500, maxSpotTakerFee: 2500,
+    authorizationExpiryMs: Date.parse("2036-01-01T00:00:00.000Z"), revoke: false,
+    publicKey: "a".repeat(80), currentTier: "standard", targetTier: "plus",
+    exchangeMakerFeeTick: 50, exchangeTakerFeeTick: 50 },
+};
 const families = [
+  { source: "lighter.fees.approve.prepare", row: feeAuthorization, repo: repos.fees, candidate: buildLighterFeeAuthorizationApprovalFollowUp(feeAuthorization) },
   ...([
     ["lighter.order.cancel", "cancel_one", cancelFollowUp],
     ["lighter.order.modify", "modify", modifyFollowUp],
@@ -196,6 +211,7 @@ function prepareFamily(family: typeof families[number]) {
     "lighter.position.close.prepare": { marketId: 0, slippageBps: 100 },
     "lighter.deposit.prepare": { amountIn: "1" },
     "lighter.key.register.prepare": {},
+    "lighter.fees.approve.prepare": {},
     "lighter.withdraw.prepare": { amountIn: "2" },
     "lighter.withdraw.claim.prepare": { intentId: withdrawal.intentId },
     "lighter.position.protect": { marketId: 0, orderExpiryOffsetMinutes: 10, side: "sell", baseAmountIn: "1", stopLossTriggerPrice: "2900", stopLossPrice: "2850", takeProfitTriggerPrice: "3300", takeProfitPrice: "3250" },
@@ -232,7 +248,7 @@ describe.each(families)("Studio handoff: $source", (family) => {
 });
 
 it("refuses a lifecycle intent belonging to a different action", async () => {
-  const input = prepareFamily(families[0]!);
+  const input = prepareFamily(families.find((family) => family.source === "lighter.order.cancel.prepare")!);
   repos.lifecycle.mockResolvedValue(lifecycle("modify"));
   expect((await executeStudioTool(scope, input)).result.pendingApproval).not.toBe(true);
 });

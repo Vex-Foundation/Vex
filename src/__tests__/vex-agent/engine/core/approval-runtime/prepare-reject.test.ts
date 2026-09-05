@@ -23,6 +23,11 @@
 
 import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 
+const feeDecision = vi.hoisted(() => vi.fn().mockResolvedValue(null));
+vi.mock("@vex-agent/db/repos/lighter-fee-authorization-intents.js", () => ({
+  markLighterFeeAuthorizationDecisionWith: feeDecision,
+}));
+
 // ── Pool client mock — drives the snapshot tx + repo queries via SQL ─────
 
 interface QueryRecord {
@@ -327,6 +332,7 @@ function programSnapshotOnly(
 
 beforeEach(() => {
   resetClientQuery();
+  feeDecision.mockClear();
   mockDispatchTool.mockReset();
   mockAppendMessage.mockReset();
   mockMissionRunsUpdateStatus.mockReset();
@@ -617,5 +623,42 @@ describe("prepareReject", () => {
       // carries that transaction's client.
       expect.anything(),
     );
+  });
+});
+
+
+describe("fee authorization host decisions", () => {
+  const intentId = "lighter-fees-00000000-0000-4000-8000-000000000001";
+  const tool = { command: "execute_tool", args: { toolId: "lighter.fees.approve", params: { intentId } } };
+
+  it.each(["rejected", "expired", "policy-drift"] as const)("settles %s consent in the host decision transaction", async (mode) => {
+    const now = new Date("2030-01-01T00:00:00.000Z");
+    programSnapshotOnly(buildSnapshotRow({ queue_tool_call: tool,
+      ...(mode === "expired" ? { expires_at: new Date(now.getTime() - 1000) } : {}),
+      ...(mode === "policy-drift" ? { queue_permission_at_enqueue: "full", session_permission_live: "restricted" } : {}),
+    }), { dbNow: now });
+    const { withTransaction } = await import("@vex-agent/db/client.js");
+    const { buildApproveSnapshot, buildRejectSnapshot } = await import("@vex-agent/engine/core/approval-runtime/snapshot/build.js");
+    await withTransaction(async (client) => {
+      if (mode === "rejected") await buildRejectSnapshot(client, APPROVAL_ID, "Operator declined");
+      else await buildApproveSnapshot(client, APPROVAL_ID);
+      expect(feeDecision).toHaveBeenCalledExactlyOnceWith(client, {
+        intentId, sessionId: SESSION_ID, approvalId: APPROVAL_ID,
+        status: mode === "expired" ? "expired" : "rejected",
+      });
+    });
+  });
+
+  it("does not settle a different tool or a changed intent envelope", async () => {
+    const { withTransaction } = await import("@vex-agent/db/client.js");
+    const { buildRejectSnapshot } = await import("@vex-agent/engine/core/approval-runtime/snapshot/build.js");
+    for (const queue_tool_call of [
+      { ...tool, args: { ...tool.args, toolId: "lighter.order.create" } },
+      { ...tool, args: { ...tool.args, params: { intentId, injected: true } } },
+    ]) {
+      programSnapshotOnly(buildSnapshotRow({ queue_tool_call }));
+      await withTransaction((client) => buildRejectSnapshot(client, APPROVAL_ID, "Declined"));
+    }
+    expect(feeDecision).not.toHaveBeenCalled();
   });
 });

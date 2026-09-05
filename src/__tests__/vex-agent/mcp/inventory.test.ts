@@ -77,9 +77,10 @@ describe("the exported inventory covers exactly the export scope", () => {
     // 207 -> 206: `WebResearch` left the export (owner decision 2026-09-03).
     // Every client that connects has its own web search, so the exported copy
     // was a duplicate that cost a provider key and 2 KB of context.
-    expect(inventory).toHaveLength(206);
+    // Lighter fee authorization adds prepare, approve, and status.
+    expect(inventory).toHaveLength(209);
     expect(inventory.filter((t) => t.kind === "internal")).toHaveLength(29);
-    expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(177);
+    expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(180);
   });
 
   it("keeps WebResearch OUT of tools/list while the in-app registry keeps it", () => {

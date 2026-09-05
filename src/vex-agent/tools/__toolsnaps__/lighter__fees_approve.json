@@ -1,0 +1,32 @@
+{
+  "definition": {
+    "function": {
+      "description": "Approval-gated: authorize future VEX trading fees by submitting one exact Lighter fee-authorization intent only when resumed by its approved Vex card. Main verifies the approved wallet, trader, collector, rate caps, expiry and any tier change; signs locally through the existing wallet and trading-key boundary; submits native ApproveIntegrator once; and verifies provider state before reporting active. Revocation sets all four caps and authorization expiry to zero. An uncertain submission remains pending for lighter__fees_status, never an automatic retry. Direct unapproved calls are refused.",
+      "name": "lighter__fees_approve",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "intentId": {
+            "description": "Exact session-owned intent returned by lighter__fees_approve_prepare and bound to the host approval.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "intentId"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "user_wallet_broadcast",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": true,
+    "namespace": "lighter",
+    "requiresEnv": null,
+    "toolId": "lighter.fees.approve"
+  }
+}

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 import type {
@@ -12,6 +12,7 @@ import type {
 } from "@tools/lighter/types.js";
 
 const mocks = vi.hoisted(() => ({
+  feePolicy: vi.fn(),
   client: {
     getStatus: vi.fn(),
     getSystemConfig: vi.fn(),
@@ -94,6 +95,10 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 
+vi.mock("@tools/lighter/fee-policy.js", async (original) => ({
+  ...await original<typeof import("@tools/lighter/fee-policy.js")>(),
+  getLighterFeePolicy: mocks.feePolicy,
+}));
 vi.mock("@tools/lighter/client.js", () => ({
   getLighterClient: () => mocks.client,
 }));
@@ -540,6 +545,7 @@ async function callFail(toolId: string, params: Record<string, unknown>): Promis
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.feePolicy.mockReset().mockReturnValue(null);
   delete process.env.LIGHTER_RHC_READ_ONLY_AUTH_TOKEN;
   delete process.env.LIGHTER_CORE_READ_ONLY_AUTH_TOKEN;
   configureLighterTradingCredentialScopeResolver({
@@ -1025,6 +1031,73 @@ describe("Lighter agent read handlers", () => {
     });
     expect(data.plan).toMatchObject({ ready: true, legs: [] });
     expect(data.userGuidance).toContain("they are ready to trade");
+  });
+
+  it.each(["needs_approval", "ready", "blocked", "wrong-account"] as const)("includes %s fee consent in complete trade readiness", async (status) => {
+    mocks.feePolicy.mockReturnValue({ environment: "core", collectorAccountIndex: 999,
+      collectorL1Address: "0x" + "2".repeat(40), perpsMakerFee: 1000, perpsTakerFee: 1000,
+      spotMakerFee: 2500, spotTakerFee: 2500 });
+    const { configureLighterFeeAuthorizationService } = await import("@vex-agent/tools/protocols/lighter/fee-authorization-execution.js");
+    const inspect = vi.fn(async () => ({ status: status === "wrong-account" ? "ready" as const : status,
+      reason: "Fee authorization check", accountIndex: status === "wrong-account" ? 43 : 42 }));
+    const service = { inspect, prepare: vi.fn(), execute: vi.fn(), reconcile: vi.fn() };
+    onTestFinished(configureLighterFeeAuthorizationService(service));
+    configureLighterManagedTradingReadinessResolver({
+      read: vi.fn(async () => ({
+        ready: true,
+        reason: "ready" as const,
+        activeManagedCredential: true,
+        durableActivation: true,
+        exactPublicKeyMatch: true,
+        clientCheckPassed: true,
+        nonceSynchronized: true,
+        nonceReservable: true,
+      })),
+    });
+    mocks.onboarding.resolveStatus.mockResolvedValue({
+      environment: "core",
+      walletAddress: "0xacee6141f6171491d34699c9266cb06a41faa43c",
+      walletSettlementUnits: "0",
+      walletCanAcquireSettlement: false,
+      accountExists: true,
+      accountIndex: 42,
+      accountCollateralUnits: "1000000",
+      tradingKeyRegistered: true,
+      requiredCollateralUnits: "1000000",
+      minimumDepositUnits: "1000000",
+      plan: {
+        legs: [],
+        ready: true,
+        blocked: null,
+        depositUnits: null,
+        acquireUnits: null,
+      },
+    });
+
+    const data = await callJson("lighter.account.onboarding.status", {
+      environment: "core",
+      walletAddress: "0xacee6141f6171491d34699c9266cb06a41faa43c",
+    });
+
+    expect(data.managedTradingAccessActive).toBe(true);
+    expect(data.managedTradingReadiness).toMatchObject({
+      ready: true,
+      exactPublicKeyMatch: true,
+      clientCheckPassed: true,
+      nonceReservable: true,
+    });
+    expect(data.plan).toMatchObject({ ready: true, legs: [] });
+    expect(data.readyToTrade).toBe(status === "ready");
+    expect(inspect).toHaveBeenCalledTimes(1);
+    if (status === "needs_approval") {
+      expect(data.tradingAccessRoute).toEqual({ kind: "prepare_fee_authorization_approval",
+        toolId: "lighter.fees.approve.prepare", params: { environment: "core" } });
+      expect(data.userGuidance).toContain("lighter.fees.approve.prepare");
+    } else if (status !== "ready") {
+      expect(data.tradingAccessRoute).toMatchObject({ kind: "fee_authorization_blocked" });
+    }
+    expect(service.prepare).not.toHaveBeenCalled();
+    expect(service.execute).not.toHaveBeenCalled();
   });
 
   it("routes a funded Robinhood Chain account directly to local credential approval preparation", async () => {

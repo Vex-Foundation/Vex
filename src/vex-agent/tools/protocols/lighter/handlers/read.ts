@@ -98,6 +98,12 @@ import {
 } from "../trading-credential-scope.js";
 import { resolveLighterReadOnlyAccountAuth } from "../read-account-auth.js";
 import { getConfiguredLighterKeyRegistrationExecutor } from "../key-registration-execution.js";
+import { getLighterFeePolicy } from "@tools/lighter/fee-policy.js";
+import {
+  getConfiguredLighterFeeAuthorizationService,
+  type LighterFeeAuthorizationReadiness,
+} from "../fee-authorization-execution.js";
+import { resolveLighterOrderFees, readLighterOrderAccountFeeTicks } from "../order-fees.js";
 import {
   readLighterManagedTradingReadiness,
   type LighterManagedTradingReadiness,
@@ -713,6 +719,23 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
                 toolId: null,
                 params: null,
               };
+      let feeAuthorizationReadiness: LighterFeeAuthorizationReadiness | null = null;
+      if (fundingAssessment.decision === "ready" && managedTradingAccessActive
+        && getLighterFeePolicy(environment.value) !== null) {
+        const feeService = getConfiguredLighterFeeAuthorizationService();
+        feeAuthorizationReadiness = feeService && context.sessionId
+          ? await feeService.inspect({
+              sessionId: context.sessionId, environment: environment.value,
+              walletResolution: context.walletResolution, walletPolicy: context.walletPolicy,
+            })
+          : { status: "blocked", accountIndex: status.accountIndex,
+              reason: "Secure Lighter fee setup is unavailable in this app session." };
+        if (feeAuthorizationReadiness.accountIndex !== null
+          && feeAuthorizationReadiness.accountIndex !== status.accountIndex) {
+          feeAuthorizationReadiness = { status: "blocked", accountIndex: status.accountIndex,
+            reason: "The fee authorization account does not match the selected onboarding account." };
+        }
+      }
       const tradingAccessRoute = fundingAssessment.decision === "ready"
         && status.accountIndex !== null
         && readinessRecoveryLeg?.kind === "register_trading_key"
@@ -721,6 +744,11 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
             toolId: "lighter.key.register.prepare",
             params: { environment: environment.value },
           }
+        : feeAuthorizationReadiness?.status === "needs_approval"
+          ? { kind: "prepare_fee_authorization_approval", toolId: "lighter.fees.approve.prepare",
+              params: { environment: environment.value } }
+        : feeAuthorizationReadiness?.status === "blocked"
+          ? { kind: "fee_authorization_blocked", toolId: null, params: null }
         : readinessRecoveryLeg === null
           ? {
               kind: managedTradingAccessActive ? "trading_access_ready" : "account_not_ready",
@@ -738,7 +766,7 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
       const userGuidance = belowTradeMinimum && tradeMinimumAssessment !== null
         ? `Do not prepare a deposit or approval card. The requested ${tradeMinimumAssessment.requestedTradeDisplay} ${tradeMinimumAssessment.marketSymbol} trade is below Lighter's live minimum trade size ${tradeMinimumAssessment.minimumTradeDisplay}. Show the user these live values in a compact table: requested trade ${tradeMinimumAssessment.requestedTradeDisplay}; Lighter market minimum ${tradeMinimumAssessment.minimumTradeDisplay}; current Lighter collateral ${fundingAssessment.lighterCollateralDisplay}; Vex wallet ${settlementAsset} ${fundingAssessment.walletSettlementDisplay}; combined available ${settlementAsset} ${fundingAssessment.combinedSettlementDisplay}. ${tradeMinimumAssessment.combinedBalanceMeetsMinimum ? "The balances can cover the venue minimum, but Vex will not increase the requested trade or move extra funds without a new user amount." : "The Lighter and Vex-wallet balances combined are also below the venue minimum."} Ask the user to choose a trade amount at or above the live minimum; move no funds now.`
         : !depositAmountProvided && needsFunding
-        ? `Lead with the first deposit as the required next step before balances, gas, or secondary setup details. Use this as a concise sample draft and adapt its formatting naturally; do not treat it as a rigid response template: \"Deposit required to activate Lighter trading. Lighter requires a first ${settlementAsset} deposit to create your ${environmentLabel} trading account. Once the deposit confirms, Vex can prepare the separate trading-key registration approval, which is the final requirement before orders can be placed. Minimum deposit: ${fundingAssessment.minimumDepositDisplay}. Available in your wallet: ${fundingAssessment.walletSettlementDisplay}. How much ${settlementAsset} would you like to deposit? Vex will prepare it for your approval, and nothing moves without your confirmation.\" Do not say the deposit alone activates trading, and do not prepare a deposit until the user supplies the amount. Then prepare that exact amount in the current chat. If an earlier no-broadcast setup attempt exists, the prepare path retires it safely and creates a new approval here; never ask the user to reopen an old chat, say retry, or provide an intent, account, API-key index, nonce, fingerprint, or key.`
+        ? `Lead with the first deposit as the required next step before balances, gas, or secondary setup details. Use this as a concise sample draft and adapt its formatting naturally; do not treat it as a rigid response template: \"Deposit required to activate Lighter trading. Lighter requires a first ${settlementAsset} deposit to create your ${environmentLabel} trading account. Once the deposit confirms, Vex can prepare the trading-key registration approval and any required trading-fee authorization before orders can be placed. Minimum deposit: ${fundingAssessment.minimumDepositDisplay}. Available in your wallet: ${fundingAssessment.walletSettlementDisplay}. How much ${settlementAsset} would you like to deposit? Vex will prepare it for your approval, and nothing moves without your confirmation.\" Do not say the deposit alone activates trading, and do not prepare a deposit until the user supplies the amount. Then prepare that exact amount in the current chat. If an earlier no-broadcast setup attempt exists, the prepare path retires it safely and creates a new approval here; never ask the user to reopen an old chat, say retry, or provide an intent, account, API-key index, nonce, fingerprint, or key.`
         : fundingAssessment.decision === "prepare_deposit"
           ? `The requested trade amount is known and live balances prove the selected Vex wallet can directly fund the exact Lighter top-up. Immediately call lighter.deposit.prepare in this same turn with amountIn \"${fundingAssessment.depositAmountIn}\" so the host shows the deposit approval card. Do not ask whether to prepare it and do not ask for another chat confirmation; the approval card is the user's consent. Never call lighter.deposit directly. Explain that Lighter currently has ${fundingAssessment.lighterCollateralDisplay}, the selected Vex wallet has ${fundingAssessment.walletSettlementDisplay}, the requested collateral is ${fundingAssessment.requiredCollateralDisplay}, and the prepared deposit is ${fundingAssessment.depositDisplay}. After approval, only the trusted approval-resume path may execute the deposit.`
           : fundingAssessment.decision === "insufficient_wallet_settlement_asset"
@@ -747,6 +775,10 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
               ? `Do not prepare a deposit and do not round the top-up upward. The current Lighter collateral is not enough for the requested trade, but the exact required top-up ${fundingAssessment.collateralShortfallDisplay} is below Lighter's live minimum deposit ${fundingAssessment.minimumDepositDisplay}. Show the user these live values in a compact table: requested collateral ${fundingAssessment.requiredCollateralDisplay}; current Lighter collateral ${fundingAssessment.lighterCollateralDisplay}; Vex wallet ${settlementAsset} ${fundingAssessment.walletSettlementDisplay}; combined ${settlementAsset} ${fundingAssessment.combinedSettlementDisplay}; required top-up ${fundingAssessment.collateralShortfallDisplay}; Lighter minimum deposit ${fundingAssessment.minimumDepositDisplay}. Explain that Vex will not move extra funds beyond the requested top-up; the user must choose a trade or funding amount whose required deposit meets the live minimum.`
             : tradingAccessRoute.kind === "prepare_key_registration_approval"
               ? `Funding and wallet-owned account creation are proven on ${fundingDeployment.settlementNetworkName}, but secure Vex trading access is not active yet. Immediately call lighter.key.register.prepare in this same turn with environment "${environment.value}" so Vex generates and encrypts the credential locally and the host shows a separate key-registration approval card. Do not ask whether to prepare it and do not ask for another chat confirmation; the approval card is the user's consent. Never call lighter.key.register directly and never ask the user for a key, account index, API-key index, nonce, or fingerprint.`
+            : feeAuthorizationReadiness?.status === "needs_approval"
+              ? `The account is funded and its local trading key is active. Immediately call lighter.fees.approve.prepare with environment "${environment.value}" to show the VEX trading-fee approval in this chat. VEX supplies the recipient, 0.10% perpetual fee, 0.25% spot fee and any disclosed account-tier change. The host card is consent; do not ask for another chat confirmation or technical account details. Continue the requested trade only after provider state confirms the authorization. If the user rejects it, stop fee setup until they request it again.`
+            : feeAuthorizationReadiness?.status === "blocked"
+              ? feeAuthorizationReadiness.reason
             : plan.ready && managedTradingAccessActive
               ? "The selected wallet's Lighter account is funded and its locally encrypted Vex trading access is active. Tell the user they are ready to trade; do not expose account or API-key indexes unless they ask for technical details."
               : managedTradingReadiness?.reason === "nonce_not_reservable"
@@ -764,6 +796,10 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         ...status,
         managedTradingAccessActive,
         managedTradingReadiness,
+        feeAuthorizationReadiness,
+        readyToTrade: plan.ready && managedTradingAccessActive
+          && (feeAuthorizationReadiness === null || feeAuthorizationReadiness.status === "ready"
+            || feeAuthorizationReadiness.status === "disabled"),
         plan,
         fundingAssessment,
         tradeMinimumAssessment,
@@ -1200,6 +1236,13 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         authenticated: false,
         persistedPreview: true,
       });
+      const integratorFees = await resolveLighterOrderFees({
+        client, environment: environment.value, accountIndex, market, account,
+        reduceOnly: previewParams.value.reduceOnly, side: previewParams.value.side,
+      });
+      const accountTakerFeeTicks = market.market_type === "spot" && previewParams.value.side === "buy"
+        ? await readLighterOrderAccountFeeTicks(client, environment.value, accountIndex)
+        : undefined;
       const preview = buildLighterOrderPreview({
         sessionId,
         environment: environment.value,
@@ -1217,11 +1260,13 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         reduceOnly: previewParams.value.reduceOnly,
         orderExpiry: previewParams.value.orderExpiry,
         clientOrderIndexPolicy: previewParams.value.clientOrderIndexPolicy,
+        integratorFees,
         nowMs,
       }, {
         market,
         orderBook,
         account,
+        ...(accountTakerFeeTicks === undefined ? {} : { accountTakerFeeTicks }),
       });
       await lighterOrderPreviewsRepo.create({
         preview,

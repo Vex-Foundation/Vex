@@ -1,3 +1,4 @@
+import { revalidateLighterOrderFees, type LighterOrderFeeClient } from "./order-fees.js";
 import { LIGHTER_ENDPOINTS, type LighterEnvironment } from "@tools/lighter/constants.js";
 import type { LighterClient } from "@tools/lighter/client.js";
 import {
@@ -72,7 +73,7 @@ export interface LighterOcoExecutionDeps {
   readonly secretReader: LighterTradingSecretReader;
   readonly authSigner: LighterSignerAdapter;
   readonly groupedSigner: LighterGroupedOrderSignerAdapter;
-  readonly client: Pick<LighterClient,
+  readonly client: LighterOrderFeeClient & Pick<LighterClient,
     | "sendTx" | "getApiKeys" | "getNextNonce" | "getMarketDetails"
     | "getOrderBookOrders" | "getAccount" | "getAccountActiveOrders"
     | "getAccountInactiveOrders" | "getAccountTrades">;
@@ -275,6 +276,7 @@ async function revalidate(plan: LighterOcoExecutionPlan, deps: LighterOcoExecuti
   if (market === undefined || market.market_type !== "perp") {
     throw blocked("The approved perpetual market is unavailable during OCO revalidation.");
   }
+  await revalidateLighterOrderFees({ client: deps.client, environment: plan.environment, accountIndex: plan.accountIndex, market, account, reduceOnly: true, side: plan.side, integratorFees: plan.integratorFees });
   const previewNowMs = Date.parse(stopLoss.expiresAt) - LIGHTER_ORDER_PREVIEW_FRESHNESS_MS;
   const stopEvidence = revalidateApprovedLighterOrder({
     plan: ocoLegRevalidationPlan(plan, "stop-loss"), approvedPreview: stopLoss,

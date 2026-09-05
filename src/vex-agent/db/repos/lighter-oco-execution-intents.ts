@@ -1,3 +1,5 @@
+import { readLighterOrderFeeTerms } from "@tools/lighter/order-fee-terms.js";
+import type { LighterIntegratorFees } from "@tools/lighter/fee-policy.js";
 import type { PoolClient } from "pg";
 
 import type { LighterOcoPreview } from "@tools/lighter/oco-order.js";
@@ -21,6 +23,7 @@ export type LighterOcoExecutionState =
   | "ambiguous";
 
 export interface LighterOcoExecutionIntentRow {
+  readonly integratorFees?: LighterIntegratorFees | null;
   readonly intentId: string;
   readonly sessionId: string;
   readonly approvalId: string | null;
@@ -326,6 +329,7 @@ function mapRow(row: Record<string, unknown>): LighterOcoExecutionIntentRow {
     ? null
     : value instanceof Date ? value.toISOString() : String(value);
   return {
+    integratorFees: readLighterOrderFeeTerms((row.preview_json as Record<string, unknown> | undefined)?.integratorFees),
     intentId: String(row.intent_id), sessionId: String(row.session_id),
     approvalId: row.approval_id == null ? null : String(row.approval_id),
     matchHash: String(row.match_hash), environment: row.environment as LighterEnvironment,

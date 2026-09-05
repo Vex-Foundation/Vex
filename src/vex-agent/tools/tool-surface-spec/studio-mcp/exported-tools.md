@@ -43,12 +43,12 @@ free. Both texts live on the tool
 
 ## Totals
 
-- exported tools: 206
+- exported tools: 209
 - internal: 29
-- protocol: 177 across 12 namespaces
+- protocol: 180 across 12 namespaces
 - always loaded: 29
-- read-only: 130
-- destructive: 53
+- read-only: 131
+- destructive: 54
 
 ## Internal tools
 
@@ -137,12 +137,15 @@ free. Both texts live on the tool
 | name | title | lane | read only | destructive | always load | requires env | description bytes | returns | vex fee |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | lighter__account_get | Read a Lighter account | protocol | yes | no | no | - | 536 | - | none (read) |
-| lighter__account_onboarding_status | Check Lighter account onboarding readiness | protocol | yes | no | no | - | 1174 | - | none (read) |
+| lighter__account_onboarding_status | Check Lighter account onboarding readiness | protocol | yes | no | no | - | 1366 | - | none (read) |
 | lighter__api_keys_inspect | Inspect Lighter API-key registrations | protocol | yes | no | no | - | 518 | - | none (read) |
 | lighter__candles_list | Read Lighter market candles | protocol | yes | no | no | - | 483 | - | none (read) |
 | lighter__deposit | Execute an approved Lighter deposit | protocol | no | yes | no | - | 817 | - | - |
 | lighter__deposit_prepare | Prepare a Lighter deposit approval | protocol | no | no | no | - | 1005 | - | - |
 | lighter__deposit_status | Check a Lighter deposit's status | protocol | yes | no | no | - | 919 | - | none (read) |
+| lighter__fees_approve | Authorize approved Lighter trading fees | protocol | no | yes | no | - | 596 | - | - |
+| lighter__fees_approve_prepare | Prepare Lighter trading-fee approval | protocol | no | no | no | - | 646 | - | - |
+| lighter__fees_status | Check Lighter trading-fee authorization | protocol | yes | no | no | - | 560 | - | none (read) |
 | lighter__key_register | Register an approved Lighter trading key | protocol | no | yes | no | - | 724 | - | - |
 | lighter__key_register_prepare | Prepare a Lighter trading-key approval | protocol | no | no | no | - | 1016 | - | - |
 | lighter__key_register_status | Check a Lighter key registration's status | protocol | yes | no | no | - | 773 | - | none (read) |

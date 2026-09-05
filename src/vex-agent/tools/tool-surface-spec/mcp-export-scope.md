@@ -20,7 +20,7 @@ The MCP server exports the tool surface EXCEPT the session-bound groups:
 | Web research | NO | web_research |
 | Math | YES | units_convert |
 | Lighter onboarding | YES | lighter_rhc_onboarding_status, lighter_core_onboarding_status |
-| Protocol tools | YES, all namespaces | the full catalog (177 toolIds today), under their publicName |
+| Protocol tools | YES, all namespaces | the full catalog (180 toolIds today), under their publicName |
 | Memory | NO | session_memory_search, session_memory_resolve_item, long_memory_suggest, long_memory_search, long_memory_get, long_memory_history |
 | Engine / runtime | NO | mission_draft_update, mission_stop, loop_defer, compact_apply, plan_write |
 | Presentation | NO | board_compose |

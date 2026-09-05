@@ -1,3 +1,4 @@
+import { resolveLighterOrderFees } from "../order-fees.js";
 import { randomUUID } from "node:crypto";
 
 import { getLighterClient } from "@tools/lighter/client.js";
@@ -209,7 +210,9 @@ export const LIGHTER_OCO_HANDLERS: Record<string, ProtocolHandler> = {
         LIGHTER_ENDPOINT_PATHS.orderBookOrders,
         LIGHTER_ENDPOINT_PATHS.account,
       ], { marketId, accountIndex, apiKeyIndex: apiKey.apiKeyIndex, groupedOrderType: "oco" });
+      const integratorFees = await resolveLighterOrderFees({ client, environment: environment.value, accountIndex, market, account, reduceOnly: true, side: parsed.value.side });
       const preview = buildLighterOcoPreview({
+        integratorFees,
         sessionId,
         environment: environment.value,
         accountIndex,

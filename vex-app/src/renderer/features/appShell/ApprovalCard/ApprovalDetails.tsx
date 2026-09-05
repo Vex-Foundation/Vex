@@ -38,6 +38,22 @@ const CRITICAL_ARG_LABELS: Readonly<Record<string, string>> = {
   vexFee: "Vex fee",
 };
 
+const FEE_AUTHORIZATION_LABELS: Readonly<Record<string,string>> = {
+  summary: "Action", perpetualFee: "Perpetual fee", spotFee: "Spot fee", recipient: "Recipient",
+  collectorWallet: "Collector wallet", tradingAccount: "Trading account", walletAddress: "Your wallet",
+  authorizationValidUntil: "Authorization valid until", accountChange: "Account tier",
+  exchangeFees: "Lighter exchange fees", scopeNote: "Permission scope",
+};
+
+function visibleCriticalArgs(criticalArgs: ApprovalPreview["criticalArgs"]): [string,unknown][] {
+  const entries=Object.entries(criticalArgs);
+  // The fee card's human rows already disclose every permission term. Numeric
+  // duplicates and the internal key/intent identities stay bound in the host's
+  // approval record, without making users review signer implementation fields.
+  return criticalArgs.toolId==="lighter.fees.approve"
+    ? entries.filter(([key])=>key in FEE_AUTHORIZATION_LABELS) : entries;
+}
+
 function isLighterCreateOrderBehavior(
   key: string,
   value: unknown,
@@ -65,6 +81,7 @@ function criticalArgLabel(
   key: string,
   criticalArgs: ApprovalPreview["criticalArgs"],
 ): string {
+  if (criticalArgs.toolId === "lighter.fees.approve") return FEE_AUTHORIZATION_LABELS[key] ?? key;
   if (isLighterCreateOrderBehavior(key, criticalArgs[key], criticalArgs)) {
     return "Order behavior";
   }
@@ -225,7 +242,7 @@ export function ApprovalDetails({
           {summary.expiresAt !== null ? (
             <div data-testid="approval-expiry" className="contents">
               <dt className="uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
-                {APPROVAL_EXPIRY_FIELD_LABEL}
+                {criticalArgs?.toolId === "lighter.fees.approve" ? "Decision deadline" : APPROVAL_EXPIRY_FIELD_LABEL}
               </dt>
               <dd className="break-all text-[var(--vex-text-2)]">
                 {summary.expiresAt}
@@ -244,14 +261,16 @@ export function ApprovalDetails({
             data-testid="critical-args"
             className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 rounded-[6px] border border-[var(--vex-line)] bg-[var(--vex-surface-down)] px-3 py-2 font-mono text-[11px]"
           >
-            {Object.entries(criticalArgs).map(([k, v]) => (
+            {visibleCriticalArgs(criticalArgs).map(([k, v]) => (
               // `display: contents` keeps the grid layout while giving each
               // pair a stable React key.
               <div key={k} className="contents">
                 <dt className="uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
                   {criticalArgLabel(k, criticalArgs)}
                 </dt>
-                <dd className="break-all text-[var(--vex-text-2)]">{criticalArgValue(k, v, criticalArgs)}</dd>
+                <dd className={criticalArgs.toolId === "lighter.fees.approve"
+                  ? "min-w-0 break-words [overflow-wrap:anywhere] text-[var(--vex-text-2)]"
+                  : "break-all text-[var(--vex-text-2)]"}>{criticalArgValue(k, v, criticalArgs)}</dd>
               </div>
             ))}
           </dl>

@@ -116,6 +116,32 @@ export interface LighterTxFromL1Response {
   [key: string]: unknown;
 }
 
+export interface LighterApprovedIntegrator {
+  account_index: number;
+  name: string;
+  max_perps_taker_fee: number;
+  max_perps_maker_fee: number;
+  max_spot_taker_fee: number;
+  max_spot_maker_fee: number;
+  approval_expiry: number;
+}
+
+export interface LighterAccountLimitsResponse {
+  code: number;
+  message?: string;
+  user_tier: string;
+  user_tier_name: string;
+  current_maker_fee_tick: number;
+  current_taker_fee_tick: number;
+  user_tier_last_update?: number;
+  [key: string]: unknown;
+}
+
+export interface LighterChangeAccountTierResponse {
+  code: number;
+  message?: string;
+}
+
 export interface LighterAccount {
   index?: number;
   account_index?: number;
@@ -126,6 +152,7 @@ export interface LighterAccount {
   pending_order_count?: number;
   cross_initial_margin_requirement?: string;
   cross_maintenance_margin_requirement?: string;
+  approved_integrators?: LighterApprovedIntegrator[];
   positions?: LighterAccountPosition[];
   assets?: LighterAccountAsset[];
   [key: string]: unknown;
@@ -449,6 +476,10 @@ export interface LighterTrade {
   block_height: number;
   timestamp: number;
   transaction_time?: number;
+  integrator_maker_fee?: number;
+  integrator_maker_fee_collector_index?: number;
+  integrator_taker_fee?: number;
+  integrator_taker_fee_collector_index?: number;
   taker_fee?: number;
   maker_fee?: number;
   ask_client_id?: number;

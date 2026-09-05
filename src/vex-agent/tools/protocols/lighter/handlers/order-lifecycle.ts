@@ -1,3 +1,4 @@
+import { lighterOrderFeeCriticalArgs } from "@tools/lighter/order-fee-terms.js";
 import { randomUUID } from "node:crypto";
 
 import {
@@ -254,6 +255,7 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
         requestedPriceInteger: prepared.requestedPriceInteger,
         providerSnapshotJson: {
           ...prepared.snapshot,
+          integratorFees: prepared.integratorFees ?? null,
           marketSizeDecimals: prepared.sizeDecimals,
           marketPriceDecimals: prepared.priceDecimals,
           requestedBaseAmount: prepared.requestedBaseAmount,
@@ -483,6 +485,7 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
       requestedSide: prepared.closingSide,
       reduceOnly: true,
       providerSnapshotJson: {
+        integratorFees: prepared.integratorFees ?? null,
         position: prepared.position,
         closingSide: prepared.closingSide,
         baseAmount: prepared.baseAmount,
@@ -664,6 +667,7 @@ export function modifyFollowUp(intent: LighterOrderLifecycleIntentRow): Prepared
   const requestedBaseAmount = scalarString(snapshot.requestedBaseAmount);
   const requestedPrice = scalarString(snapshot.requestedPrice);
   const criticalArgs: Record<string, ApprovalPreviewScalar> = {
+    ...lighterOrderFeeCriticalArgs(intent.integratorFees),
     toolId: "lighter.order.modify",
     intentId: intent.intentId,
     actionType: "modify",
@@ -726,6 +730,7 @@ export function closePositionFollowUp(intent: LighterOrderLifecycleIntentRow): P
   const position = snapshot.position !== null && typeof snapshot.position === "object" && !Array.isArray(snapshot.position)
     ? snapshot.position as Record<string, unknown> : {};
   const criticalArgs: Record<string, ApprovalPreviewScalar> = {
+    ...lighterOrderFeeCriticalArgs(intent.integratorFees),
     toolId: "lighter.position.close",
     intentId: intent.intentId,
     actionType: "close_position",

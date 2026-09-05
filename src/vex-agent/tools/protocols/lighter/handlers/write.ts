@@ -1,3 +1,4 @@
+import { lighterOrderFeeCriticalArgs } from "@tools/lighter/order-fee-terms.js";
 import { randomUUID } from "node:crypto";
 
 import {
@@ -60,6 +61,7 @@ export function buildCreateApprovalFollowUp(
 ): PreparedActionFollowUp {
   const disclosure = buildLighterOrderApprovalDisclosure(intent, preview);
   const criticalArgs = scalarApprovalPreview({
+    ...lighterOrderFeeCriticalArgs(intent.integratorFees),
     orderSummary: disclosure.orderSummary,
     marketSymbol: disclosure.marketSymbol,
     marketType: disclosure.marketType,

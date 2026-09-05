@@ -1,6 +1,7 @@
 import { getAddress } from "viem";
 
 import { getLighterClient } from "@tools/lighter/client.js";
+import { getLighterFeePolicy } from "@tools/lighter/fee-policy.js";
 import { readLighterApiKeySlotObservation } from "@tools/lighter/wallet-funding/api-key-slots.js";
 import { readUniqueLighterMasterAccount } from "@tools/lighter/wallet-funding/account-ownership.js";
 import { getLighterFundingDeployment } from "@tools/lighter/wallet-funding/deployments.js";
@@ -430,13 +431,21 @@ export const LIGHTER_KEY_REGISTRATION_HANDLERS: Record<string, ProtocolHandler> 
       });
     }
     try {
-      return ok(await executor.execute({
+      const result = await executor.execute({
         sessionId,
         intentId: approved.intentId,
         walletResolution: context.walletResolution,
         walletPolicy: context.walletPolicy,
         abortSignal: context.abortSignal,
-      }));
+      });
+      return ok(result.status === "active" && getLighterFeePolicy(approved.environment) !== null
+        ? { ...result,
+            message: "The local trading key is active. Continue Lighter fee authorization before preparing a new fee-bearing trade.",
+            nextToolId: "lighter.fees.approve.prepare",
+            nextParams: { environment: approved.environment },
+            userGuidance: "Prepare the VEX fee approval now in this chat. The host card is consent; do not ask for another chat confirmation or account details.",
+          }
+        : result);
     } catch (error) {
       return fail(error instanceof Error ? error.message : String(error));
     }

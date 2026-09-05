@@ -1,5 +1,5 @@
 {
-  "toolCount": 206,
+  "toolCount": 209,
   "tools": [
     {
       "alwaysLoad": true,
@@ -5103,7 +5103,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 1174,
+      "descriptionBytes": 1366,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
@@ -5364,6 +5364,104 @@
       "requiresEnv": null,
       "title": "Check a Lighter deposit's status",
       "toolId": "lighter.deposit.status"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 596,
+      "destructiveHint": true,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "intentId": {
+            "description": "Exact session-owned intent returned by lighter__fees_approve_prepare and bound to the host approval.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "intentId"
+        ],
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "lighter",
+      "publicName": "lighter__fees_approve",
+      "readOnlyHint": false,
+      "requiresEnv": null,
+      "title": "Authorize approved Lighter trading fees",
+      "toolId": "lighter.fees.approve"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 646,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "environment": {
+            "description": "Optional Lighter environment for the persisted preview: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc. Any other value is rejected.",
+            "enum": [
+              "core",
+              "rhc"
+            ],
+            "type": "string"
+          },
+          "revoke": {
+            "description": "Set true only to prepare the user's explicitly requested revocation of Vex trading fees. Omit for onboarding authorization.",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "lighter",
+      "publicName": "lighter__fees_approve_prepare",
+      "readOnlyHint": false,
+      "requiresEnv": null,
+      "title": "Prepare Lighter trading-fee approval",
+      "toolId": "lighter.fees.approve.prepare"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 560,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "environment": {
+            "description": "Optional public Lighter environment to read: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc for conversational Lighter requests. Any other value is rejected.",
+            "enum": [
+              "core",
+              "rhc"
+            ],
+            "type": "string"
+          },
+          "intentId": {
+            "description": "Optional exact fee-authorization intent returned by lighter__fees_approve_prepare. Omit to inspect readiness for the selected wallet.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "lighter",
+      "publicName": "lighter__fees_status",
+      "readOnlyHint": true,
+      "requiresEnv": null,
+      "title": "Check Lighter trading-fee authorization",
+      "toolId": "lighter.fees.status"
     },
     {
       "alwaysLoad": false,

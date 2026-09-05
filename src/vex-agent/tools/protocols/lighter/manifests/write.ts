@@ -129,6 +129,55 @@ const WITHDRAW_CLAIM_ID_PARAM: ProtocolParamDef = {
 
 export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
   {
+    toolId: "lighter.fees.approve.prepare",
+    publicName: "lighter__fees_approve_prepare",
+    namespace: "lighter",
+    lifecycle: "active",
+    description:
+      "Prepare the selected wallet's Lighter trading-fee authorization inside Vex onboarding after funding and key registration. Vex resolves the trader and configured collector internally and shows one trusted card for 0.10% perpetual and 0.25% spot fees, permission expiry, and any required account-tier change with its exchange costs. Use revoke=true only when the user asks to revoke Vex fee authorization. Disabled collection produces no authorization. This preparation never signs, changes the account tier, or submits a transaction. Never ask the user for account indexes, API keys, nonces, or another chat confirmation; the host card is consent.",
+    mutating: false,
+    actionKind: "approval_prepare",
+    params: [ENVIRONMENT_PARAM, {
+      key: "revoke",
+      type: "boolean",
+      description: "Set true only to prepare the user's explicitly requested revocation of Vex trading fees. Omit for onboarding authorization.",
+    }],
+    exampleParams: { environment: "rhc" },
+    discovery: {
+      canonicalSummary: "Prepare Vex spot and perpetual trading-fee approval on Lighter.",
+      aliases: ["approve lighter fees", "enable vex trading fees", "revoke lighter fee authorization"],
+      operation: ["execute"],
+      resourceTypes: ["account", "approval"],
+      sourceClass: "protocol_native",
+      sideEffectLevel: "none",
+    },
+  },
+  {
+    toolId: "lighter.fees.approve",
+    publicName: "lighter__fees_approve",
+    namespace: "lighter",
+    lifecycle: "active",
+    description:
+      "Approval-gated: authorize future VEX trading fees by submitting one exact Lighter fee-authorization intent only when resumed by its approved Vex card. Main verifies the approved wallet, trader, collector, rate caps, expiry and any tier change; signs locally through the existing wallet and trading-key boundary; submits native ApproveIntegrator once; and verifies provider state before reporting active. Revocation sets all four caps and authorization expiry to zero. An uncertain submission remains pending for lighter__fees_status, never an automatic retry. Direct unapproved calls are refused.",
+    mutating: true,
+    actionKind: "user_wallet_broadcast",
+    params: [{
+      key: "intentId",
+      type: "string",
+      required: true,
+      description: "Exact session-owned intent returned by lighter__fees_approve_prepare and bound to the host approval.",
+    }],
+    exampleParams: { intentId: "lighter-fees-example" },
+    discovery: {
+      canonicalSummary: "Submit the approved Lighter fee authorization or revocation.",
+      aliases: ["confirm lighter fees", "submit approved fee authorization"],
+      operation: ["execute"],
+      resourceTypes: ["account", "approval"],
+      sourceClass: "protocol_native",
+      sideEffectLevel: "high",
+    },
+  },
+  {
     toolId: "lighter.order.cancel.prepare",
     publicName: "lighter__order_cancel_prepare",
     namespace: "lighter",

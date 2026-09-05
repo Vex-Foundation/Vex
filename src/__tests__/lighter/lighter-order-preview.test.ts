@@ -189,6 +189,24 @@ function spotPreview(
 }
 
 describe("Lighter order preview", () => {
+  it("binds collector and both rates into preview identity without changing fee-free identity", () => {
+    const fees = { integratorAccountIndex: 99, integratorMakerFee: 1000, integratorTakerFee: 1000 };
+    const baseline = preview();
+    expect(preview({ integratorFees: null }).matchHash).toBe(baseline.matchHash);
+    const attributed = preview({ integratorFees: fees });
+    expect(attributed.preview.integratorFees).toEqual(fees);
+    expect(attributed.matchHash).not.toBe(baseline.matchHash);
+    for (const changed of [{ ...fees, integratorAccountIndex: 98 }, { ...fees, integratorMakerFee: 999 }, { ...fees, integratorTakerFee: 999 }]) {
+      expect(preview({ integratorFees: changed }).matchHash).not.toBe(attributed.matchHash);
+    }
+  });
+
+  it("budgets the larger live exchange fee without charging native spot fees again from input", () => {
+    const result = buildLighterOrderPreview({ ...INPUT, marketId: 2048, integratorFees: { integratorAccountIndex: 99, integratorMakerFee: 2500, integratorTakerFee: 2500 } },
+      { market: SPOT_MARKET, orderBook: ORDER_BOOK, account: spotAccount(), accountTakerFeeTicks: 50 });
+    expect(result.preview.spotInventoryContext).toMatchObject({ requiredAmount: "3750.175", takerFeeAmount: "0.1875", takerFee: "included_live_account_or_market_fee" });
+  });
+
   it("normalizes display amounts into exact Lighter integer fields", () => {
     const result = preview();
 

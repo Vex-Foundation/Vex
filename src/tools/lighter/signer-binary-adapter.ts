@@ -45,6 +45,10 @@ import {
   type LighterOrderLifecycleSignerResult,
 } from "./signer-order-lifecycle.js";
 
+import { assertLighterIntegratorFees, type LighterIntegratorFees } from "./fee-policy.js";
+import { LIGHTER_TX_TYPE_APPROVE_INTEGRATOR, type LighterApproveIntegratorSignerAdapter,
+  type LighterApproveIntegratorSigningInput, type LighterApproveIntegratorSignerResult } from "./signer-integrator.js";
+
 const DEFAULT_TIMEOUT_MS = 10_000;
 const MAX_STDOUT_BYTES = 256 * 1024;
 
@@ -74,6 +78,7 @@ export interface LighterSignerBinaryPathOptions {
 
 interface LighterSignerBinaryBasePayload {
   readonly privateKey: string;
+  readonly integratorFees?: LighterIntegratorFees | null;
   readonly chainId: number;
   readonly accountIndex: string;
   readonly apiKeyIndex: number;
@@ -175,6 +180,22 @@ interface LighterSignerBinaryChangePubKeyPayload extends LighterSignerBinaryBase
   readonly expectedL1Address: string;
 }
 
+interface LighterSignerBinaryApproveIntegratorPayload extends LighterSignerBinaryBasePayload {
+  readonly operation: "signApproveIntegrator";
+  readonly nonce: string;
+  readonly expiredAt: string;
+  readonly expectedL1Address: string;
+  readonly l1Signature: string;
+  readonly approveIntegrator: {
+    readonly integratorAccountIndex: number;
+    readonly maxPerpsMakerFee: number;
+    readonly maxPerpsTakerFee: number;
+    readonly maxSpotMakerFee: number;
+    readonly maxSpotTakerFee: number;
+    readonly approvalExpiry: number;
+  };
+}
+
 interface LighterSignerBinaryCheckClientPayload extends LighterSignerBinaryBasePayload {
   readonly operation: "checkClient";
 }
@@ -189,6 +210,7 @@ type LighterSignerBinaryPayload =
   | LighterSignerBinaryModifyOrderPayload
   | LighterSignerBinaryCancelAllOrdersPayload
   | LighterSignerBinaryWithdrawPayload
+  | LighterSignerBinaryApproveIntegratorPayload
   | LighterSignerBinaryChangePubKeyPayload
   | LighterSignerBinaryCheckClientPayload;
 
@@ -296,6 +318,7 @@ export function createLighterSignerBinaryAdapter(
         timeoutMs,
       });
       const output = parseSignerOutput(raw);
+      assertSignedIntegratorAttributes(output.txInfo, input.order.integratorFees);
       return {
         kind: "lighter_create_order_signer_result",
         environment: input.environment,
@@ -327,6 +350,7 @@ export function createLighterGroupedOrderSignerBinaryAdapter(
         timeoutMs,
       });
       const output = parseSignerOutput(raw);
+      assertSignedIntegratorAttributes(output.txInfo, input.group.integratorFees);
       if (output.txType !== LIGHTER_TX_TYPE_CREATE_GROUPED_ORDERS) {
         throw signerProcessFailed(raw);
       }
@@ -364,6 +388,7 @@ export function createLighterOrderLifecycleSignerBinary(
   ): Promise<LighterOrderLifecycleSignerResult> => {
     const raw = await runner({ binaryPath, payload, timeoutMs });
     const output = parseOrderLifecycleSignerOutput(raw, expectedTxType);
+    assertSignedIntegratorAttributes(output.txInfo, "integratorFees" in input ? input.integratorFees : null);
     return {
       kind: "lighter_order_lifecycle_signer_result",
       operation,
@@ -399,6 +424,34 @@ export function createLighterOrderLifecycleSignerBinary(
       LIGHTER_TX_TYPE_CANCEL_ALL_ORDERS,
     ),
   };
+}
+
+export function createLighterSignerBinaryApproveIntegratorAdapter(
+  options: LighterSignerBinaryAdapterOptions = {},
+): LighterApproveIntegratorSignerAdapter {
+  const runner = options.runner ?? runLighterSignerBinary;
+  return {
+    source: "official_lighter_signer",
+    signApproveIntegrator: async (input) => {
+      const raw = await runner({ binaryPath: options.binaryPath ?? resolveDefaultLighterSignerBinaryPath(),
+        timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS, payload: buildApproveIntegratorPayload(input) });
+      const output = parseSignerOutput(raw);
+      if (output.txType !== LIGHTER_TX_TYPE_APPROVE_INTEGRATOR || !isRecord(raw) || typeof raw.messageToSign !== "string") throw signerProcessFailed(raw);
+      const { secret: _secret, l1Signature: _signature, chainId: _chainId, kind: _kind, ...terms } = input;
+      const result = { ...terms, kind: "lighter_approve_integrator_signer_result" as const,
+        messageToSign: raw.messageToSign, txType: LIGHTER_TX_TYPE_APPROVE_INTEGRATOR, txHash: output.txHash };
+      return Object.defineProperty(result, "txInfo", { value: output.txInfo, enumerable: false }) as LighterApproveIntegratorSignerResult;
+    },
+  };
+}
+
+function buildApproveIntegratorPayload(input: LighterApproveIntegratorSigningInput): LighterSignerBinaryApproveIntegratorPayload {
+  return { operation: "signApproveIntegrator", privateKey: input.secret.privateKey, chainId: input.chainId,
+    accountIndex: String(input.accountIndex), apiKeyIndex: input.apiKeyIndex, nonce: input.nonce, expiredAt: input.expiredAt,
+    expectedL1Address: input.expectedL1Address, l1Signature: input.l1Signature,
+    approveIntegrator: { integratorAccountIndex: input.integratorAccountIndex, maxPerpsMakerFee: input.maxPerpsMakerFee,
+      maxPerpsTakerFee: input.maxPerpsTakerFee, maxSpotMakerFee: input.maxSpotMakerFee,
+      maxSpotTakerFee: input.maxSpotTakerFee, approvalExpiry: input.approvalExpiry } };
 }
 
 export function createLighterChangePubKeySignerBinary(
@@ -582,6 +635,7 @@ function buildModifyOrderPayload(input: LighterModifyOrderSigningInput): Lighter
   return {
     operation: "signModifyOrder",
     ...lifecyclePayloadBase(input),
+    ...(input.integratorFees ? { integratorFees: input.integratorFees } : {}),
     modifyOrder: {
       marketIndex: input.marketIndex,
       orderIndex: input.providerOrderId,
@@ -701,6 +755,7 @@ export async function runLighterSignerBinary(
 function buildSignerPayload(input: LighterCreateOrderSigningInput): LighterSignerBinaryPayload {
   return {
     operation: "signCreateOrder",
+    ...(input.order.integratorFees ? { integratorFees: input.order.integratorFees } : {}),
     privateKey: input.secret.privateKey,
     chainId: input.chainId,
     accountIndex: String(input.accountIndex),
@@ -740,6 +795,7 @@ function buildGroupedOrdersPayload(
   });
   return {
     operation: "signCreateGroupedOrders",
+    ...(input.group.integratorFees ? { integratorFees: input.group.integratorFees } : {}),
     privateKey: input.secret.privateKey,
     chainId: input.chainId,
     accountIndex: String(input.accountIndex),
@@ -750,6 +806,24 @@ function buildGroupedOrdersPayload(
       orders: [orderPayload(input.group.orders[0]), orderPayload(input.group.orders[1])],
     },
   };
+}
+
+function assertSignedIntegratorAttributes(txInfo: string, expected: LighterIntegratorFees | null | undefined): void {
+  let parsed: unknown;
+  try { parsed = JSON.parse(txInfo); } catch {
+    if (expected != null) throw signerProcessFailed(null);
+    return;
+  }
+  const attrs = isRecord(parsed) ? parsed.L2TxAttributes : undefined;
+  if (expected == null) {
+    if (isRecord(attrs) && ["1", "2", "3"].some((key) => Object.hasOwn(attrs, key))) throw signerProcessFailed(null);
+    return;
+  }
+  assertLighterIntegratorFees(expected);
+  if (!isRecord(attrs) || Object.keys(attrs).sort().join() !== "1,2,3"
+    || attrs["1"] !== expected.integratorAccountIndex || attrs["2"] !== expected.integratorTakerFee || attrs["3"] !== expected.integratorMakerFee) {
+    throw signerProcessFailed(null);
+  }
 }
 
 function parseSignerOutput(raw: unknown): Pick<

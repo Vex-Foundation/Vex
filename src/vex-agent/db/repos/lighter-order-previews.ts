@@ -1,3 +1,5 @@
+import { readLighterOrderFeeTerms } from "@tools/lighter/order-fee-terms.js";
+import type { LighterIntegratorFees } from "@tools/lighter/fee-policy.js";
 import { execute, queryOne } from "../client.js";
 import { jsonb } from "../params.js";
 import type {
@@ -9,6 +11,7 @@ import type {
 import type { LighterEnvironment } from "@tools/lighter/types.js";
 
 export interface LighterOrderPreviewRow {
+  readonly integratorFees?: LighterIntegratorFees | null;
   readonly previewId: string;
   readonly sessionId: string;
   readonly matchHash: string;
@@ -144,6 +147,7 @@ export async function findLatestFresh(
 
 function mapRow(row: Record<string, unknown>): LighterOrderPreviewRow {
   return {
+    integratorFees: readLighterOrderFeeTerms((row.preview_json as Record<string, unknown> | undefined)?.integratorFees),
     previewId: row.preview_id as string,
     sessionId: row.session_id as string,
     matchHash: row.match_hash as string,

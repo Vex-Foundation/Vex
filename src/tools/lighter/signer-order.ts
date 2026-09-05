@@ -1,3 +1,5 @@
+import { readLighterOrderFeeTerms } from "./order-fee-terms.js";
+import type { LighterIntegratorFees } from "./fee-policy.js";
 import { ErrorCodes, VexError } from "../../errors.js";
 import { assertLighterPhaseOneOrderPolicy } from "./order-policy.js";
 import { LIGHTER_CLIENT_ORDER_INDEX_POLICY_DEFAULT } from "./order-preview.js";
@@ -20,6 +22,7 @@ export const LIGHTER_SIGNER_TIME_IN_FORCE_CODES = {
 
 export interface LighterUnsignedCreateOrderRequest {
   readonly kind: "lighter_unsigned_create_order";
+  readonly integratorFees?: LighterIntegratorFees | null;
   readonly environment: LighterOrderReadyForSignerPlan["environment"];
   readonly accountIndex: number;
   readonly apiKeyIndex: number;
@@ -69,6 +72,7 @@ export function buildLighterUnsignedCreateOrderRequest(
 
   return {
     kind: "lighter_unsigned_create_order",
+    ...(plan.integratorFees == null ? {} : { integratorFees: readLighterOrderFeeTerms(plan.integratorFees) }),
     environment: plan.environment,
     accountIndex: plan.accountIndex,
     apiKeyIndex: plan.apiKeyIndex,

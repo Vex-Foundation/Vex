@@ -1,3 +1,4 @@
+import type { LighterIntegratorFees } from "@tools/lighter/fee-policy.js";
 import type { LighterOrderExecutionIntentRow } from "@vex-agent/db/repos/lighter-order-execution-intents.js";
 import type { LighterTradingCredentialVaultReference } from "@tools/lighter/trading-credentials.js";
 import { LIGHTER_CLIENT_ORDER_INDEX_POLICY_DEFAULT } from "@tools/lighter/order-preview.js";
@@ -5,6 +6,7 @@ import { ErrorCodes, VexError } from "../../../../errors.js";
 import { assertLighterPhaseOneOrderPolicy } from "@tools/lighter/order-policy.js";
 
 export interface LighterOrderReadyForSignerPlan {
+  readonly integratorFees?: LighterIntegratorFees | null;
   readonly intentId: string;
   readonly sessionId: string;
   readonly previewId: string;
@@ -62,6 +64,7 @@ export function buildLighterOrderReadyForSignerPlan(
   assertCredentialReferenceMatchesIntent(intent);
 
   return {
+    integratorFees: intent.integratorFees ?? null,
     intentId: intent.intentId,
     sessionId: intent.sessionId,
     previewId: intent.previewId,

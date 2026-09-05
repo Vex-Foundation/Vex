@@ -465,6 +465,15 @@ function restingLimitFixture(): {
 }
 
 describe("Lighter approved create execution pipeline", () => {
+  it("rejects an injected collector or fee before any provider, vault, or nonce access", async () => {
+    const d = deps();
+    await expect(executeApprovedLighterCreateOrder({ plan: PLAN, unsignedOrder: { ...UNSIGNED_ORDER, integratorFees: { integratorAccountIndex: 99, integratorMakerFee: 1000, integratorTakerFee: 1000 } }, deps: d })).rejects.toThrow("field integratorFees");
+    expect(d.previews.findFreshById).not.toHaveBeenCalled();
+    expect(d.client.getAccount).not.toHaveBeenCalled();
+    expect(d.secretReader.readTradingApiPrivateKey).not.toHaveBeenCalled();
+    expect(d.reserveNonce).not.toHaveBeenCalled();
+  });
+
   it("configures and clears the privileged dependency registry", () => {
     const d = deps();
     const teardown = configureLighterCreateOrderExecutionDeps(d);

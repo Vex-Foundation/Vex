@@ -4,6 +4,7 @@ import * as ocoIntents from "../db/repos/lighter-oco-execution-intents.js";
 import * as lifecycleIntents from "../db/repos/lighter-order-lifecycle-intents.js";
 import * as onboardingIntents from "../db/repos/lighter-onboarding-intents.js";
 import * as keyIntents from "../db/repos/lighter-key-registration-intents.js";
+import * as feeIntents from "../db/repos/lighter-fee-authorization-intents.js";
 import * as withdrawalIntents from "../db/repos/lighter-withdrawal-intents.js";
 import * as claims from "../db/repos/lighter-withdrawal-claims.js";
 import { buildCreateApprovalFollowUp } from "../tools/protocols/lighter/handlers/write.js";
@@ -11,6 +12,7 @@ import { buildOcoApprovalFollowUp } from "../tools/protocols/lighter/handlers/oc
 import { cancelFollowUp, modifyFollowUp, cancelAllFollowUp, closePositionFollowUp } from "../tools/protocols/lighter/handlers/order-lifecycle.js";
 import { buildDepositApprovalFollowUp, isConfirmedApprovalRecoveryPending } from "../tools/protocols/lighter/handlers/deposit.js";
 import { buildKeyRegistrationApprovalFollowUp } from "../tools/protocols/lighter/handlers/key-registration.js";
+import { buildLighterFeeAuthorizationApprovalFollowUp } from "../tools/protocols/lighter/handlers/fee-authorization.js";
 import { buildApprovalFollowUp, buildClaimApprovalFollowUp } from "../tools/protocols/lighter/handlers/withdrawal.js";
 import type { PreparedActionFollowUp } from "../tools/types.js";
 import { resolveInjectedProtocolTool } from "../tools/registry/injected-protocol-tools.js";
@@ -83,6 +85,11 @@ export async function readStudioPreparedApproval(
       const intent = requirePending(await onboardingIntents.findByIntentId(id), sessionId,
         (row) => row.capability === "deposit" && (isPending(row) || isConfirmedApprovalRecoveryPending(row)));
       candidate = buildDepositApprovalFollowUp(intent);
+      break;
+    }
+    case "lighter.fees.approve": {
+      const intent = requirePending(await feeIntents.findLighterFeeAuthorizationIntent(id), sessionId, isPending);
+      candidate = buildLighterFeeAuthorizationApprovalFollowUp(intent);
       break;
     }
     case "lighter.key.register": {

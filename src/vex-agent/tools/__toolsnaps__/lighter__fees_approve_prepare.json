@@ -1,0 +1,37 @@
+{
+  "definition": {
+    "function": {
+      "description": "Prepare the selected wallet's Lighter trading-fee authorization inside Vex onboarding after funding and key registration. Vex resolves the trader and configured collector internally and shows one trusted card for 0.10% perpetual and 0.25% spot fees, permission expiry, and any required account-tier change with its exchange costs. Use revoke=true only when the user asks to revoke Vex fee authorization. Disabled collection produces no authorization. This preparation never signs, changes the account tier, or submits a transaction. Never ask the user for account indexes, API keys, nonces, or another chat confirmation; the host card is consent.",
+      "name": "lighter__fees_approve_prepare",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "environment": {
+            "description": "Optional Lighter environment for the persisted preview: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc. Any other value is rejected.",
+            "enum": [
+              "core",
+              "rhc"
+            ],
+            "type": "string"
+          },
+          "revoke": {
+            "description": "Set true only to prepare the user's explicitly requested revocation of Vex trading fees. Omit for onboarding authorization.",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "approval_prepare",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "lighter",
+    "requiresEnv": null,
+    "toolId": "lighter.fees.approve.prepare"
+  }
+}

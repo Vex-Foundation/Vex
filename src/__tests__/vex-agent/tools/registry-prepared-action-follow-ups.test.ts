@@ -1,3 +1,5 @@
+import { lighterOrderFeeCriticalArgs } from "@tools/lighter/order-fee-terms.js";
+import type { PreparedActionFollowUp } from "@vex-agent/tools/types.js";
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { validatePreparedActionFollowUp } from "../../../vex-agent/tools/registry/prepared-action-follow-ups.js";
@@ -75,6 +77,18 @@ function lighterCandidate() {
       },
     },
   };
+}
+
+function lighterOcoCandidate(): PreparedActionFollowUp {
+  const intentId = "lighter-oco-00000000-0000-4000-8000-000000000001";
+  return { toolName: "execute_tool", args: { toolId: "lighter.order.create", params: { intentId } }, expiresAt: EXPIRES_AT,
+    approvalPreview: { toolName: "order.create", namespace: "lighter", criticalArgs: {
+      orderSummary: "Protect 1 ETH with native stop loss and take profit.", marketSymbol: "ETH", marketType: "perp", baseAmountDisplay: "1",
+      stopLossTriggerDisplay: "2900", stopLossBoundDisplay: "2800", takeProfitTriggerDisplay: "3300", takeProfitBoundDisplay: "3200",
+      orderExpiryIso: EXPIRES_AT, toolId: "lighter.order.create", intentId, environment: "core", accountIndex: 42, apiKeyIndex: 7, marketIndex: 0, side: "sell",
+      baseAmountInteger: "10000", stopLossPreviewId: "sl", stopLossPriceInteger: "280000", stopLossTriggerPriceInteger: "290000",
+      takeProfitPreviewId: "tp", takeProfitPriceInteger: "320000", takeProfitTriggerPriceInteger: "330000", matchHash: "a".repeat(64), groupingType: "one-cancels-the-other", reduceOnly: true,
+    } } };
 }
 
 function lighterCancelCandidate() {
@@ -876,7 +890,7 @@ describe("prepared-action follow-up registry", () => {
     const overrides: Record<string, unknown>[] = [
       { orderSummary: "" },
       { orderSummary: null },
-      { orderSummary: "x".repeat(601) },
+      { orderSummary: "x".repeat(1001) },
       { marketSymbol: "" },
       { marketSymbol: "x".repeat(33) },
       { marketType: "all" },
@@ -972,5 +986,34 @@ describe("prepared-action follow-up registry", () => {
         },
       }),
     ).toEqual({ ok: false, reason: "invalid_contract" });
+  });
+});
+
+
+describe("Lighter fee terms through prepared-action validation", () => {
+  const cases = [
+    { source: "lighter.order.create.prepare", make: lighterCandidate },
+    { source: "lighter.order.modify.prepare", make: lighterModifyCandidate },
+    { source: "lighter.position.close.prepare", make: lighterPositionCloseCandidate },
+    { source: "lighter.position.protect", make: lighterOcoCandidate },
+  ];
+  const fees = lighterOrderFeeCriticalArgs({ integratorAccountIndex: 99, integratorMakerFee: 1000, integratorTakerFee: 1000 });
+  it.each(cases)("preserves every signed fee disclosure field for $source", ({ source, make }) => {
+    const base = make();
+    const candidate: PreparedActionFollowUp = { ...base, approvalPreview: { ...base.approvalPreview, criticalArgs: { ...base.approvalPreview.criticalArgs, ...fees } } };
+    const result = validatePreparedActionFollowUp(source, candidate);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.followUp.approvalPreview.criticalArgs).toEqual(candidate.approvalPreview.criticalArgs);
+  });
+  it.each(cases)("rejects partial or contradictory fee disclosure for $source", ({ source, make }) => {
+    const base = make();
+    for (const key of Object.keys(fees)) {
+      const criticalArgs = { ...base.approvalPreview.criticalArgs, ...fees };
+      Reflect.deleteProperty(criticalArgs, key);
+      expect(validatePreparedActionFollowUp(source, { ...base, approvalPreview: { ...base.approvalPreview, criticalArgs } }).ok).toBe(false);
+    }
+    for (const patch of [{ integratorAccountIndex: 98 }, { integratorMakerFee: 999 }, { integratorTakerFee: 999 }, { vexFeeSummary: "No VEX fee" }, { integratorMakerFee: null }]) {
+      expect(validatePreparedActionFollowUp(source, { ...base, approvalPreview: { ...base.approvalPreview, criticalArgs: { ...base.approvalPreview.criticalArgs, ...fees, ...patch } } }).ok).toBe(false);
+    }
   });
 });

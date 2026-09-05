@@ -1,3 +1,5 @@
+import { estimateLighterOrderFee } from "@tools/lighter/order-fee-terms.js";
+import { lighterIntegratorFeesEqual } from "@tools/lighter/fee-policy.js";
 import {
   formatLighterIntegerAmount,
   isProtectiveOrderType,
@@ -35,7 +37,8 @@ export function buildLighterOrderApprovalDisclosure(
   preview: LighterOrderPreviewRow,
 ): LighterOrderApprovalDisclosure {
   if (
-    intent.previewId !== preview.previewId
+    !lighterIntegratorFeesEqual(intent.integratorFees, preview.integratorFees)
+    || intent.previewId !== preview.previewId
     || intent.matchHash !== preview.matchHash
     || intent.environment !== preview.environment
     || intent.accountIndex !== preview.accountIndex
@@ -104,6 +107,7 @@ export function buildLighterOrderApprovalDisclosure(
     + `on the ${productLabel} market on ${environmentLabel} (${intent.environment}); ${timeInForceLabel(intent.timeInForce)}`
     + `${intent.reduceOnly ? "; reduce-only" : ""}; ${expiryDisclosure} `
     + timeInForceDisclosure(intent.timeInForce, triggerLimit)
+    + (intent.integratorFees == null ? "" : `Estimated VEX fee at the approved price: ${estimateLighterOrderFee((BigInt(intent.baseAmountInteger) * BigInt(intent.priceInteger)).toString(), stored.quoteDecimals, Math.max(intent.integratorFees.integratorMakerFee, intent.integratorFees.integratorTakerFee))} in quote-value terms. Actual fees depend on fills. `)
     + "API acceptance is not final execution.";
 
   return {

@@ -39,23 +39,25 @@ var publicKeyPattern = regexp.MustCompile(`^(?:0x)?[a-fA-F0-9]{80}$`)
 var l1SignaturePattern = regexp.MustCompile(`^0x[a-fA-F0-9]{130}$`)
 
 type signerRequest struct {
-	Operation           string                  `json:"operation"`
-	PrivateKey          string                  `json:"privateKey"`
-	ChainID             uint32                  `json:"chainId"`
-	AccountIndex        string                  `json:"accountIndex"`
-	APIKeyIndex         uint8                   `json:"apiKeyIndex"`
-	Nonce               string                  `json:"nonce"`
-	DeadlineUnixSeconds string                  `json:"deadlineUnixSeconds"`
-	ExpiredAt           string                  `json:"expiredAt"`
-	PublicKey           string                  `json:"publicKey"`
-	L1Signature         string                  `json:"l1Signature"`
-	ExpectedL1Address   string                  `json:"expectedL1Address"`
-	Order               *createOrderRequest     `json:"order"`
-	GroupedOrders       *groupedOrdersRequest   `json:"groupedOrders"`
-	CancelOrder         *cancelOrderRequest     `json:"cancelOrder"`
-	ModifyOrder         *modifyOrderRequest     `json:"modifyOrder"`
-	CancelAllOrders     *cancelAllOrdersRequest `json:"cancelAllOrders"`
-	Withdrawal          *withdrawRequest        `json:"withdrawal"`
+	Operation           string                    `json:"operation"`
+	PrivateKey          string                    `json:"privateKey"`
+	ChainID             uint32                    `json:"chainId"`
+	AccountIndex        string                    `json:"accountIndex"`
+	APIKeyIndex         uint8                     `json:"apiKeyIndex"`
+	Nonce               string                    `json:"nonce"`
+	DeadlineUnixSeconds string                    `json:"deadlineUnixSeconds"`
+	ExpiredAt           string                    `json:"expiredAt"`
+	PublicKey           string                    `json:"publicKey"`
+	L1Signature         string                    `json:"l1Signature"`
+	ExpectedL1Address   string                    `json:"expectedL1Address"`
+	IntegratorFees      *integratorFeesRequest    `json:"integratorFees"`
+	ApproveIntegrator   *approveIntegratorRequest `json:"approveIntegrator"`
+	Order               *createOrderRequest       `json:"order"`
+	GroupedOrders       *groupedOrdersRequest     `json:"groupedOrders"`
+	CancelOrder         *cancelOrderRequest       `json:"cancelOrder"`
+	ModifyOrder         *modifyOrderRequest       `json:"modifyOrder"`
+	CancelAllOrders     *cancelAllOrdersRequest   `json:"cancelAllOrders"`
+	Withdrawal          *withdrawRequest          `json:"withdrawal"`
 }
 
 type createOrderRequest struct {
@@ -146,6 +148,8 @@ func main() {
 		response, err = signCancelAllOrders(request)
 	case "signWithdraw":
 		response, err = signWithdraw(request)
+	case "signApproveIntegrator":
+		response, err = signApproveIntegrator(request)
 	case "signChangePubKey":
 		response, err = signChangePubKey(request)
 	case "checkClient":
@@ -168,11 +172,19 @@ func readRequest(reader io.Reader) (signerRequest, error) {
 		return request, fmt.Errorf("invalid signer request")
 	}
 	if request.Operation != "signCreateOrder" && request.Operation != "signCreateGroupedOrders" && request.Operation != "signCancelOrder" && request.Operation != "signModifyOrder" &&
-		request.Operation != "signCancelAllOrders" && request.Operation != "signWithdraw" && request.Operation != "signChangePubKey" &&
+		request.Operation != "signCancelAllOrders" && request.Operation != "signWithdraw" && request.Operation != "signChangePubKey" && request.Operation != "signApproveIntegrator" &&
 		request.Operation != "checkClient" &&
 		request.Operation != "createAccountAuth" &&
 		request.Operation != "generateApiKey" && request.Operation != "derivePublicKey" {
 		return request, fmt.Errorf("unsupported signer operation")
+	}
+	if request.IntegratorFees != nil {
+		if request.Operation != "signCreateOrder" && request.Operation != "signCreateGroupedOrders" && request.Operation != "signModifyOrder" {
+			return request, fmt.Errorf("fee attributes are not supported for this operation")
+		}
+		if _, err := integratorAttributes(request.IntegratorFees); err != nil {
+			return request, err
+		}
 	}
 	if request.Operation == "generateApiKey" {
 		if request.PrivateKey != "" {
@@ -204,6 +216,12 @@ func readRequest(reader io.Reader) (signerRequest, error) {
 	if request.Operation == "checkClient" {
 		if !isSupportedRegistrationChainID(request.ChainID) {
 			return request, fmt.Errorf("invalid registration chain id")
+		}
+		return request, nil
+	}
+	if request.Operation == "signApproveIntegrator" {
+		if err := validateApproveIntegratorRequest(request); err != nil {
+			return request, err
 		}
 		return request, nil
 	}
@@ -605,6 +623,10 @@ func signChangePubKey(request signerRequest) (signerResponse, error) {
 }
 
 func signCreateOrder(request signerRequest) (signerResponse, error) {
+	attributes, attrErr := integratorAttributes(request.IntegratorFees)
+	if attrErr != nil {
+		return signerResponse{}, attrErr
+	}
 	if request.Order == nil {
 		return signerResponse{}, fmt.Errorf("missing create order")
 	}
@@ -666,7 +688,7 @@ func signCreateOrder(request signerRequest) (signerResponse, error) {
 		FromAccountIndex: &accountIndex,
 		ApiKeyIndex:      &apiKeyIndex,
 		Nonce:            &nonce,
-		TxAttributes:     &types.L2TxAttributes{},
+		TxAttributes:     attributes,
 	})
 	if err != nil {
 		return signerResponse{}, err
@@ -687,6 +709,10 @@ func signCreateOrder(request signerRequest) (signerResponse, error) {
 }
 
 func signCreateGroupedOrders(request signerRequest) (signerResponse, error) {
+	attributes, attrErr := integratorAttributes(request.IntegratorFees)
+	if attrErr != nil {
+		return signerResponse{}, attrErr
+	}
 	if request.GroupedOrders == nil || request.GroupedOrders.GroupingType != txtypes.GroupingType_OneCancelsTheOther || len(request.GroupedOrders.Orders) != 2 {
 		return signerResponse{}, fmt.Errorf("invalid grouped orders request")
 	}
@@ -733,7 +759,7 @@ func signCreateGroupedOrders(request signerRequest) (signerResponse, error) {
 		FromAccountIndex: &accountIndex,
 		ApiKeyIndex:      &apiKeyIndex,
 		Nonce:            &nonce,
-		TxAttributes:     &types.L2TxAttributes{},
+		TxAttributes:     attributes,
 	})
 	if err != nil {
 		return signerResponse{}, err
@@ -787,6 +813,10 @@ func signCancelOrder(request signerRequest) (signerResponse, error) {
 }
 
 func signModifyOrder(request signerRequest) (signerResponse, error) {
+	attributes, attrErr := integratorAttributes(request.IntegratorFees)
+	if attrErr != nil {
+		return signerResponse{}, attrErr
+	}
 	client, accountIndex, nonce, err := lifecycleClient(request)
 	if err != nil || request.ModifyOrder == nil {
 		return signerResponse{}, fmt.Errorf("invalid modify order request")
@@ -812,7 +842,7 @@ func signModifyOrder(request signerRequest) (signerResponse, error) {
 		return signerResponse{}, err
 	}
 	apiKeyIndex := request.APIKeyIndex
-	tx, err := client.GetModifyOrderTransaction(&types.ModifyOrderTxReq{MarketIndex: request.ModifyOrder.MarketIndex, Index: index, BaseAmount: baseAmount, Price: price, TriggerPrice: triggerPrice}, &types.TransactOpts{FromAccountIndex: &accountIndex, ApiKeyIndex: &apiKeyIndex, Nonce: &nonce, ExpiredAt: expiredAt, TxAttributes: &types.L2TxAttributes{}})
+	tx, err := client.GetModifyOrderTransaction(&types.ModifyOrderTxReq{MarketIndex: request.ModifyOrder.MarketIndex, Index: index, BaseAmount: baseAmount, Price: price, TriggerPrice: triggerPrice}, &types.TransactOpts{FromAccountIndex: &accountIndex, ApiKeyIndex: &apiKeyIndex, Nonce: &nonce, ExpiredAt: expiredAt, TxAttributes: attributes})
 	if err != nil {
 		return signerResponse{}, err
 	}

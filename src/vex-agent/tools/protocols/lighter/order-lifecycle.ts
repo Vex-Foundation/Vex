@@ -1,3 +1,5 @@
+import type { LighterIntegratorFees } from "@tools/lighter/fee-policy.js";
+import { resolveLighterOrderFees, revalidateLighterOrderFees, type LighterOrderFeeClient } from "./order-fees.js";
 import { confirmedLighterCloseDisposition } from "./close-position-confirmation.js";
 import { createHash } from "node:crypto";
 
@@ -76,6 +78,7 @@ export interface LighterCancelOnePreparation {
 }
 
 export interface LighterModifyOrderPreparation extends LighterCancelOnePreparation {
+  readonly integratorFees?: LighterIntegratorFees | null;
   readonly requestedBaseAmount: string;
   readonly requestedBaseAmountInteger: string;
   readonly requestedPrice: string;
@@ -105,6 +108,7 @@ export interface LighterPositionSnapshot {
 }
 
 export interface LighterClosePositionPreparation {
+  readonly integratorFees?: LighterIntegratorFees | null;
   readonly environment: LighterOrderLifecycleIntentRow["environment"];
   readonly accountIndex: number;
   readonly apiKeyIndex: number;
@@ -204,7 +208,7 @@ export interface LighterOrderLifecycleExecutionDeps {
   readonly secretReader: LighterTradingSecretReader;
   readonly authSigner: LighterSignerAdapter;
   readonly lifecycleSigner: LighterOrderLifecycleSignerAdapter;
-  readonly client: Pick<
+  readonly client: LighterOrderFeeClient & Pick<
     LighterClient,
     | "getAccount"
     | "getAccountActiveOrders"
@@ -313,7 +317,7 @@ export async function prepareLighterModifyOrder(input: {
   readonly sizeDecimals: number;
   readonly priceDecimals: number;
   readonly auth?: LighterPrivilegedAccountAuth;
-  readonly client?: Pick<LighterClient, "getAccountActiveOrders">;
+  readonly client?: LighterOrderFeeClient & Pick<LighterClient, "getAccountActiveOrders">;
 }): Promise<LighterModifyOrderPreparation> {
   assertProviderOrderId(input.providerOrderId);
   const requestedBaseAmountInteger = decimalToLighterInteger(
@@ -369,9 +373,11 @@ export async function prepareLighterModifyOrder(input: {
   if (requestedBaseAmountInteger === currentBaseAmountInteger && requestedPriceInteger === currentPriceInteger) {
     throw blocked("The requested amount and price are unchanged.");
   }
+  const integratorFees = await resolveLighterOrderFees({ client, environment: input.environment, accountIndex: input.accountIndex, market: { market_type: input.marketIndex >= 2048 ? "spot" : "perp" }, reduceOnly: snapshot.reduceOnly, side: snapshot.side === "sell" ? "sell" : "buy", allowUnattributedExit: false, ...(input.auth === undefined ? {} : { auth: input.auth }) });
   const requestedBaseAmount = formatLighterIntegerAmount(requestedBaseAmountInteger, input.sizeDecimals);
   const requestedPrice = formatLighterIntegerAmount(requestedPriceInteger, input.priceDecimals);
   return {
+    integratorFees,
     environment: input.environment,
     accountIndex: input.accountIndex,
     apiKeyIndex: input.apiKeyIndex,
@@ -385,6 +391,7 @@ export async function prepareLighterModifyOrder(input: {
     sizeDecimals: input.sizeDecimals,
     priceDecimals: input.priceDecimals,
     matchHash: lifecycleMatchHash({
+      ...(integratorFees === null ? {} : { integratorFees }),
       actionType: "modify",
       environment: input.environment,
       accountIndex: input.accountIndex,
@@ -450,7 +457,7 @@ export async function prepareLighterClosePosition(input: {
   readonly apiKeyIndex: number;
   readonly marketIndex: number;
   readonly maxSlippageBps: number;
-  readonly client?: Pick<LighterClient, "getAccount" | "getMarkets" | "getOrderBookOrders">;
+  readonly client?: LighterOrderFeeClient & Pick<LighterClient, "getAccount" | "getMarkets" | "getOrderBookOrders">;
 }): Promise<LighterClosePositionPreparation> {
   if (!Number.isInteger(input.maxSlippageBps) || input.maxSlippageBps < 1 || input.maxSlippageBps > 500) {
     throw blocked("maxSlippageBps must be an explicit integer from 1 through 500.");
@@ -489,10 +496,12 @@ export async function prepareLighterClosePosition(input: {
     priceDecimals: market.supported_price_decimals,
     maxSlippageBps: input.maxSlippageBps,
   });
+  const integratorFees = await resolveLighterOrderFees({ client, environment: input.environment, accountIndex: input.accountIndex, market, account: accountResponse, reduceOnly: true, side: closingSide });
   const positionSnapshot = positionSnapshotOf(position);
   const baseAmount = formatLighterIntegerAmount(baseAmountInteger, market.supported_size_decimals);
   const worstAcceptablePrice = formatLighterIntegerAmount(book.worstAcceptablePriceInteger, market.supported_price_decimals);
   return {
+    integratorFees,
     environment: input.environment,
     accountIndex: input.accountIndex,
     apiKeyIndex: input.apiKeyIndex,
@@ -508,6 +517,7 @@ export async function prepareLighterClosePosition(input: {
     priceDecimals: market.supported_price_decimals,
     bookEvidence: book.evidence,
     matchHash: lifecycleMatchHash({
+      ...(integratorFees === null ? {} : { integratorFees }),
       actionType: "close_position",
       environment: input.environment,
       accountIndex: input.accountIndex,
@@ -763,6 +773,7 @@ export async function executeApprovedLighterModifyOrder(
     throw blocked("The approved Lighter order changed before modify submission.");
   }
 
+  await revalidateLighterOrderFees({ client: deps.client, environment: intent.environment, accountIndex: intent.accountIndex, market, reduceOnly: liveSnapshot.reduceOnly, side: liveSnapshot.side === "sell" ? "sell" : "buy", allowUnattributedExit: false, integratorFees: intent.integratorFees, auth });
   const apiKeys = await deps.client.getApiKeys(intent.environment, {
     accountIndex: intent.accountIndex,
     apiKeyIndex: intent.apiKeyIndex,
@@ -829,6 +840,7 @@ export async function executeApprovedLighterModifyOrder(
   try {
     const signerExpiryMs = deps.now() + SIGNER_EXPIRY_MS;
     const signed = await deps.lifecycleSigner.signModifyOrder(buildLighterModifyOrderSigningInput({
+      integratorFees: intent.integratorFees ?? null,
       environment: intent.environment,
       accountIndex: intent.accountIndex,
       apiKeyIndex: intent.apiKeyIndex,
@@ -1180,6 +1192,7 @@ export async function executeApprovedLighterClosePosition(
     priceDecimals: context.priceDecimals,
   });
 
+  await revalidateLighterOrderFees({ client: deps.client, environment: intent.environment, accountIndex: intent.accountIndex, market, account: accountResponse, reduceOnly: true, side: intent.requestedSide!, integratorFees: intent.integratorFees, auth });
   const apiKeys = await deps.client.getApiKeys(intent.environment, {
     accountIndex: intent.accountIndex,
     apiKeyIndex: intent.apiKeyIndex,
@@ -1196,6 +1209,7 @@ export async function executeApprovedLighterClosePosition(
   if (nextNonce.nonce !== providerKey.nonce) throw blocked("Lighter returned inconsistent nonce evidence.");
   const unsignedOrder: LighterUnsignedCreateOrderRequest = {
     kind: "lighter_unsigned_create_order",
+    integratorFees: intent.integratorFees ?? null,
     environment: intent.environment,
     accountIndex: intent.accountIndex,
     apiKeyIndex: intent.apiKeyIndex,

@@ -14,6 +14,7 @@ const EXECUTION_TOOLS = [
   "lighter.withdraw",
   "lighter.withdraw.claim",
   "lighter.key.register",
+  "lighter.fees.approve",
 ] as const;
 
 afterEach(() => vi.unstubAllGlobals());

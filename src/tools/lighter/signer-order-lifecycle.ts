@@ -1,3 +1,5 @@
+import { readLighterOrderFeeTerms } from "./order-fee-terms.js";
+import type { LighterIntegratorFees } from "./fee-policy.js";
 import { ErrorCodes, VexError } from "../../errors.js";
 import { LIGHTER_ENDPOINTS, type LighterEnvironment } from "./constants.js";
 import {
@@ -33,6 +35,7 @@ export interface LighterCancelOrderSigningInput extends LighterOrderLifecycleSig
 
 export interface LighterModifyOrderSigningInput extends LighterOrderLifecycleSigningScope {
   readonly kind: "lighter_modify_order_signing_input";
+  readonly integratorFees?: LighterIntegratorFees | null;
   readonly marketIndex: number;
   /** Exact provider `order_id`, retained as decimal text across JavaScript boundaries. */
   readonly providerOrderId: string;
@@ -95,6 +98,7 @@ export function buildLighterCancelOrderSigningInput(input: {
 }
 
 export function buildLighterModifyOrderSigningInput(input: {
+  readonly integratorFees?: LighterIntegratorFees | null;
   readonly environment: LighterEnvironment;
   readonly accountIndex: number;
   readonly apiKeyIndex: number;
@@ -116,6 +120,7 @@ export function buildLighterModifyOrderSigningInput(input: {
   requireDecimal("triggerPriceInteger", triggerPriceInteger, LIGHTER_SIGNER_UINT32_MAX, true);
   return {
     kind: "lighter_modify_order_signing_input",
+    ...(input.integratorFees == null ? {} : { integratorFees: readLighterOrderFeeTerms(input.integratorFees) }),
     ...scope,
     marketIndex: input.marketIndex,
     providerOrderId: input.providerOrderId,

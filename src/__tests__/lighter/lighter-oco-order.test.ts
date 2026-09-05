@@ -57,6 +57,15 @@ function preview(overrides: Partial<Parameters<typeof buildLighterOcoPreview>[0]
 }
 
 describe("Lighter native OCO protection", () => {
+  it("binds the same fee tuple into both protective legs and the group identity", () => {
+    const integratorFees = { integratorAccountIndex: 99, integratorMakerFee: 1000, integratorTakerFee: 1000 };
+    const result = preview({ integratorFees });
+    expect(result.matchHash).not.toBe(preview().matchHash);
+    expect(result.stopLoss.preview.integratorFees).toEqual(integratorFees);
+    expect(result.takeProfit.preview.integratorFees).toEqual(integratorFees);
+    expect(result.preview.integratorFees).toEqual(integratorFees);
+  });
+
   it("builds one exact group from validated stop-loss and take-profit legs", () => {
     const result = preview();
     expect(result.previewId).toMatch(/^loc_[0-9a-f]{24}$/);

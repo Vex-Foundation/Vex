@@ -1,3 +1,4 @@
+import { lighterOrderFeeCriticalArgs } from "@tools/lighter/order-fee-terms.js";
 import * as approvalIntentsRepo from "@vex-agent/db/repos/approval-intents.js";
 import * as approvalsRepo from "@vex-agent/db/repos/approvals.js";
 import type { LighterOrderExecutionIntentRow } from "@vex-agent/db/repos/lighter-order-execution-intents.js";
@@ -94,15 +95,17 @@ function approvalPreviewMatchesIntent(
   const criticalArgs = readRecord(previewJson.criticalArgs);
   if (criticalArgs === null) return false;
   const actualKeys = Object.keys(criticalArgs).sort().join(",");
-  const currentKeys = [...CRITICAL_ARG_KEYS].sort().join(",");
+  const feeArgs = lighterOrderFeeCriticalArgs(intent.integratorFees);
+  const currentKeys = [...CRITICAL_ARG_KEYS, ...Object.keys(feeArgs)].sort().join(",");
   const legacyKeys = [...LEGACY_CRITICAL_ARG_KEYS].sort().join(",");
-  const legacyNonProtective = intent.triggerPriceInteger === null && actualKeys === legacyKeys;
+  const legacyNonProtective = intent.integratorFees == null && intent.triggerPriceInteger === null && actualKeys === legacyKeys;
   if (actualKeys !== currentKeys && !legacyNonProtective) {
     return false;
   }
 
   return (
-    criticalArgs.toolId === "lighter.order.create"
+    Object.entries(feeArgs).every(([key, value]) => criticalArgs[key] === value)
+    && criticalArgs.toolId === "lighter.order.create"
     && criticalArgs.intentId === intent.intentId
     && criticalArgs.environment === intent.environment
     && criticalArgs.accountIndex === intent.accountIndex

@@ -14,6 +14,8 @@ import { getLighterFundingDeployment } from "@tools/lighter/wallet-funding/deplo
 import { buildLighterDepositCalldata } from "@tools/lighter/wallet-funding/deposit-calldata.js";
 import { LIGHTER_CORE_WITHDRAW_GATEWAY_ABI } from "@tools/lighter/withdrawal/core-preflight.js";
 import { LIGHTER_WITHDRAWAL_CLAIM_CRITICAL_ARG_KEYS } from "../protocols/lighter/withdrawal-claim-approval-binding.js";
+import { lighterOrderFeeCriticalArgs, readLighterOrderFeeTerms } from "@tools/lighter/order-fee-terms.js";
+import { validateLighterFeeAuthorizationCriticalArgs } from "../protocols/lighter/fee-authorization-disclosure.js";
 import {
   LIGHTER_PHASE_ONE_ORDER_TYPES,
   LIGHTER_PHASE_ONE_TIME_IN_FORCE,
@@ -158,6 +160,20 @@ export interface ValidatedLighterKeyRegistrationFollowUp {
   };
 }
 
+export interface ValidatedLighterFeeAuthorizationFollowUp {
+  readonly toolName: "execute_tool";
+  readonly args: {
+    readonly toolId: "lighter.fees.approve";
+    readonly params: { readonly intentId: string };
+  };
+  readonly expiresAt: string;
+  readonly approvalPreview: {
+    readonly toolName: "fees.approve";
+    readonly namespace: "lighter";
+    readonly criticalArgs: Record<string, ApprovalPreviewScalar>;
+  };
+}
+
 export interface ValidatedLighterWithdrawalFollowUp {
   readonly toolName: "execute_tool";
   readonly args: {
@@ -196,7 +212,8 @@ export type ValidatedPreparedActionFollowUp =
   | ValidatedLighterDepositFollowUp
   | ValidatedLighterWithdrawalFollowUp
   | ValidatedLighterWithdrawalClaimFollowUp
-  | ValidatedLighterKeyRegistrationFollowUp;
+  | ValidatedLighterKeyRegistrationFollowUp
+  | ValidatedLighterFeeAuthorizationFollowUp;
 
 export type PreparedActionFollowUpValidation =
   | { readonly ok: true; readonly followUp: ValidatedPreparedActionFollowUp }
@@ -354,6 +371,10 @@ export function validatePreparedActionFollowUp(
   sourceToolName: string,
   candidate: PreparedActionFollowUp,
 ): PreparedActionFollowUpValidation {
+  if (sourceToolName === "lighter.fees.approve.prepare"
+    && candidate.toolName === "execute_tool" && candidate.args.toolId === "lighter.fees.approve") {
+    return validateLighterFeeAuthorizationFollowUp(candidate);
+  }
   if (sourceToolName === "lighter.position.protect"
     && candidate.toolName === "execute_tool" && candidate.args.toolId === "lighter.order.create") {
     return validateLighterOcoFollowUp(candidate);
@@ -487,6 +508,44 @@ export function validatePreparedActionFollowUp(
       },
     },
   };
+}
+
+function validateLighterFeeAuthorizationFollowUp(candidate: PreparedActionFollowUp): PreparedActionFollowUpValidation {
+  const invalid = { ok: false, reason: "invalid_contract" } as const;
+  if (!Number.isFinite(Date.parse(candidate.expiresAt))
+    || Object.keys(candidate.args).sort().join(",") !== "params,toolId") return invalid;
+  const params = candidate.args.params;
+  if (!params || typeof params !== "object" || Array.isArray(params)
+    || Object.keys(params).join(",") !== "intentId") return invalid;
+  const intentId = (params as Record<string, unknown>).intentId;
+  if (typeof intentId !== "string" || !/^lighter-fees-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(intentId)) return invalid;
+  const preview = candidate.approvalPreview;
+  if (preview.namespace !== "lighter" || preview.toolName !== "fees.approve"
+    || !validateLighterFeeAuthorizationCriticalArgs(preview.criticalArgs, intentId)) return invalid;
+  return { ok: true, followUp: {
+    toolName: "execute_tool", args: { toolId: "lighter.fees.approve", params: { intentId } },
+    expiresAt: candidate.expiresAt,
+    approvalPreview: { namespace: "lighter", toolName: "fees.approve", criticalArgs: { ...preview.criticalArgs } },
+  } };
+}
+
+const LIGHTER_FEE_KEYS = ["integratorAccountIndex", "integratorMakerFee", "integratorTakerFee", "vexFeeSummary"] as const;
+
+function hasExactLighterFeeKeys(source: Record<string, ApprovalPreviewScalar>, baseKeys: readonly string[]): boolean {
+  const feeKeys = LIGHTER_FEE_KEYS.some((key) => Object.hasOwn(source, key)) ? LIGHTER_FEE_KEYS : [];
+  return Object.keys(source).sort().join(",") === [...baseKeys, ...feeKeys].sort().join(",");
+}
+
+function copyLighterFeeTerms(source: Record<string, ApprovalPreviewScalar>, target: Record<string, ApprovalPreviewScalar>): boolean {
+  if (!LIGHTER_FEE_KEYS.some((key) => Object.hasOwn(source, key))) return true;
+  try {
+    const terms = readLighterOrderFeeTerms({ integratorAccountIndex: source.integratorAccountIndex,
+      integratorMakerFee: source.integratorMakerFee, integratorTakerFee: source.integratorTakerFee });
+    const canonical = lighterOrderFeeCriticalArgs(terms);
+    if (!LIGHTER_FEE_KEYS.every((key) => source[key] === canonical[key])) return false;
+    Object.assign(target, canonical);
+    return true;
+  } catch { return false; }
 }
 
 function validateLighterKeyRegistrationFollowUp(
@@ -790,16 +849,20 @@ function validateLighterOrderCreateFollowUp(
   if (preview.toolName !== "order.create" || preview.namespace !== "lighter") {
     return { ok: false, reason: "invalid_contract" };
   }
+  if (!hasExactLighterFeeKeys(preview.criticalArgs, LIGHTER_PREVIEW_KEYS)) {
+    return { ok: false, reason: "invalid_contract" };
+  }
   const criticalArgs: Record<string, ApprovalPreviewScalar> = {};
   for (const key of LIGHTER_PREVIEW_KEYS) {
     const value = preview.criticalArgs[key];
     if (!isScalar(value)) return { ok: false, reason: "invalid_contract" };
     criticalArgs[key] = value;
   }
+  if (!copyLighterFeeTerms(preview.criticalArgs, criticalArgs)) return { ok: false, reason: "invalid_contract" };
   if (
     typeof criticalArgs.orderSummary !== "string" ||
     criticalArgs.orderSummary.trim().length === 0 ||
-    criticalArgs.orderSummary.length > 600 ||
+    criticalArgs.orderSummary.length > 1000 ||
     typeof criticalArgs.marketSymbol !== "string" ||
     criticalArgs.marketSymbol.trim().length === 0 ||
     criticalArgs.marketSymbol.length > 32 ||
@@ -982,7 +1045,7 @@ function validateLighterOrderModifyFollowUp(
   }
   const preview = candidate.approvalPreview;
   if (preview.toolName !== "order.modify" || preview.namespace !== "lighter") return { ok: false, reason: "invalid_contract" };
-  if (Object.keys(preview.criticalArgs).sort().join(",") !== [...LIGHTER_MODIFY_PREVIEW_KEYS].sort().join(",")) {
+  if (!hasExactLighterFeeKeys(preview.criticalArgs, LIGHTER_MODIFY_PREVIEW_KEYS)) {
     return { ok: false, reason: "invalid_contract" };
   }
   const criticalArgs: Record<string, ApprovalPreviewScalar> = {};
@@ -991,6 +1054,7 @@ function validateLighterOrderModifyFollowUp(
     if (!isScalar(value)) return { ok: false, reason: "invalid_contract" };
     criticalArgs[key] = value;
   }
+  if (!copyLighterFeeTerms(preview.criticalArgs, criticalArgs)) return { ok: false, reason: "invalid_contract" };
   if (
     criticalArgs.toolId !== "lighter.order.modify" || criticalArgs.intentId !== intentId
     || criticalArgs.actionType !== "modify"
@@ -1108,7 +1172,7 @@ function validateLighterPositionCloseFollowUp(
   }
   const preview = candidate.approvalPreview;
   if (preview.toolName !== "position.close" || preview.namespace !== "lighter") return { ok: false, reason: "invalid_contract" };
-  if (Object.keys(preview.criticalArgs).sort().join(",") !== [...LIGHTER_POSITION_CLOSE_PREVIEW_KEYS].sort().join(",")) {
+  if (!hasExactLighterFeeKeys(preview.criticalArgs, LIGHTER_POSITION_CLOSE_PREVIEW_KEYS)) {
     return { ok: false, reason: "invalid_contract" };
   }
   const criticalArgs: Record<string, ApprovalPreviewScalar> = {};
@@ -1117,6 +1181,7 @@ function validateLighterPositionCloseFollowUp(
     if (!isScalar(value)) return { ok: false, reason: "invalid_contract" };
     criticalArgs[key] = value;
   }
+  if (!copyLighterFeeTerms(preview.criticalArgs, criticalArgs)) return { ok: false, reason: "invalid_contract" };
   if (
     criticalArgs.toolId !== "lighter.position.close" || criticalArgs.intentId !== intentId
     || criticalArgs.actionType !== "close_position"
@@ -1421,13 +1486,14 @@ function validateLighterOcoFollowUp(candidate: PreparedActionFollowUp): Prepared
     || !Number.isFinite(Date.parse(candidate.expiresAt))) return invalid;
   const preview = candidate.approvalPreview;
   if (preview.toolName !== "order.create" || preview.namespace !== "lighter"
-    || Object.keys(preview.criticalArgs).sort().join(",") !== [...LIGHTER_OCO_PREVIEW_KEYS].sort().join(",")) return invalid;
+    || !hasExactLighterFeeKeys(preview.criticalArgs, LIGHTER_OCO_PREVIEW_KEYS)) return invalid;
   const criticalArgs: Record<string, ApprovalPreviewScalar> = {};
   for (const key of LIGHTER_OCO_PREVIEW_KEYS) {
     const value = preview.criticalArgs[key];
     if (!isScalar(value)) return invalid;
     criticalArgs[key] = value;
   }
+  if (!copyLighterFeeTerms(preview.criticalArgs, criticalArgs)) return invalid;
   const c = criticalArgs;
   if (c.toolId !== "lighter.order.create" || c.intentId !== intentId || c.marketType !== "perp"
     || c.groupingType !== "one-cancels-the-other" || c.reduceOnly !== true
