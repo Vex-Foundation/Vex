@@ -27,6 +27,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { getAddress, type Address, type Hex } from "viem";
 
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
+import { definedValue } from "../../../../_test-value-guards.js";
 
 const WALLET = "0x1111111111111111111111111111111111111111";
 const TOKEN = getAddress("0x1984edF491D3399FBc09E6d0856E01fF3721f952");
@@ -80,7 +81,7 @@ const { virtualsTradeExecute } = await import(
 );
 const { virtualsCurveDeployment } = await import("@tools/virtuals/curve/index.js");
 
-const BASE = virtualsCurveDeployment("base")!;
+const BASE = definedValue(virtualsCurveDeployment("base"), "the base curve deployment");
 
 function word(address: string): Hex {
   return `0x${"0".repeat(24)}${address.slice(2).toLowerCase()}` as Hex;
@@ -291,15 +292,15 @@ describe("simulateOnly stops at the edge of signing", () => {
     const sends = data.wouldSend as { role: string; to: string; data: string; value: string; ok: boolean }[];
     // Allowance is zero in the stub, so a buy needs one approval and no reset.
     expect(sends.map((s) => s.role)).toEqual(["allowance", "swap"]);
-    expect(getAddress(sends[0]!.to)).toBe(getAddress(BASE.virtual));
-    expect(getAddress(sends[1]!.to)).toBe(getAddress(BASE.bondingV5));
+    expect(getAddress(definedValue(sends[0], "the allowance leg").to)).toBe(getAddress(BASE.virtual));
+    expect(getAddress(definedValue(sends[1], "the swap leg").to)).toBe(getAddress(BASE.bondingV5));
     for (const send of sends) expect(send.value).toBe("0");
   });
 
   it("eth_calls each of them FROM the session wallet address", async () => {
     await simulate();
     expect(ethCall).toHaveBeenCalledTimes(2);
-    for (const [args] of ethCall.mock.calls as unknown as [{ account: string }][]) {
+    for (const [args] of ethCall.mock.calls) {
       expect(getAddress(args.account)).toBe(getAddress(WALLET));
     }
   });

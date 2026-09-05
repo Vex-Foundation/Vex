@@ -100,9 +100,12 @@ describe("every named revert this lane maps was read from the verified ABI", () 
   });
 
   it("declares every mapped selector in the error ABI too", () => {
-    const abiNames = new Set(POOLS_DISTRIBUTOR_ERROR_ABI.map((e) => e.name));
+    // Compared as strings on purpose: the ABI's literal name union and the
+    // selector table's are two independent declarations, and the question here
+    // is whether the same NAME appears in both.
+    const abiNames = new Set<string>(POOLS_DISTRIBUTOR_ERROR_ABI.map((e) => e.name));
     for (const name of Object.values(POOLS_DISTRIBUTOR_ERROR_SELECTORS)) {
-      expect(abiNames.has(name as never)).toBe(true);
+      expect(abiNames.has(name)).toBe(true);
     }
   });
 

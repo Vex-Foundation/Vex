@@ -29,9 +29,10 @@ import {
   getAddress,
   type Address,
   type Hex,
+  type TransactionReceipt,
 } from "viem";
 
-import { POOLS_SUITES } from "@tools/pools-fun/constants.js";
+import { POOLS_CHAIN_ID, POOLS_SUITES } from "@tools/pools-fun/constants.js";
 import * as tokenRegistration from "@tools/pools-fun/evm/token-registration.js";
 import * as holderRead from "@tools/pools-fun/holder-rewards/read.js";
 import * as mutations from "@tools/pools-fun/holder-rewards/mutations.js";
@@ -47,14 +48,18 @@ import * as walletResolve from "@vex-agent/tools/internal/wallet/resolve.js";
 import { POOLS_HANDLERS } from "@vex-agent/tools/protocols/pools/handlers.js";
 import { executeProtocolTool } from "@vex-agent/tools/protocols/runtime.js";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
+import type { AgentActivityEvent } from "@vex-agent/db/repos/agent-activity.js";
+import type { PoolsHolderRewards } from "@tools/pools-fun/types.js";
 import { makeProtocolContext } from "../../_test-context.js";
+import { publicClientDouble, walletClientDouble } from "../../../../_test-evm-clients.js";
+import { definedValue, mutableRecord } from "../../../../_test-value-guards.js";
 
-const SUITE = POOLS_SUITES.find((s) => s.version === 3)!;
+const SUITE = definedValue(POOLS_SUITES.find((s) => s.version === 3), "the V3 pools.fun suite");
 const WALLET = getAddress("0x33eF6673BD80cB11fcC41b82Bc2181E65cC4d2fA");
 const TOKEN = getAddress("0x07801a668adf02e806ef8ef5a54804747afdfdf7");
 const DISTRIBUTOR = getAddress("0x7b53d176E76F87D0ba5173b6e596aFEe717e6b0b");
 const PAIRED = getAddress("0x4a0E65A3EcceC6dBe60AE065F2e7bb85Fae35eEa");
-const DEPLOYER = getAddress(SUITE.holderRewardsDeployer!);
+const DEPLOYER = getAddress(definedValue(SUITE.holderRewardsDeployer, "the V3 holder-rewards deployer"));
 const TX_HASH = `0x${"cd".repeat(32)}` as Hex;
 const BLOCK = 54_491_219n;
 
@@ -69,23 +74,36 @@ let simulation: mutations.PoolsHolderRewardsClaimSimulation;
 let distributeSimulation: mutations.PoolsRewardDistributeSimulation;
 let check: crossCheck.PoolsPrepareCrossCheck;
 let outcome: stagedBroadcast.StagedBroadcastOutcome;
-let logs: { address: string; topics: string[]; data: string }[];
+let logs: ReceiptLog[];
 let created: Record<string, unknown>[] = [];
 let confirmed: Record<string, unknown>[] = [];
 let failedRows: { failureCode: string }[] = [];
 let pendingReasons: string[] = [];
-let signedTx: { to: string; data: string; value: bigint } | null = null;
+let signedTx: stagedBroadcast.StagedTxParams | null = null;
 let signerOpened = 0;
 
-function concreteTopics(topics: readonly (string | readonly string[] | null)[]): string[] {
-  return topics.filter((topic): topic is string => typeof topic === "string");
+/** A log exactly as viem types the ones a receipt carries. */
+type ReceiptLog = TransactionReceipt["logs"][number];
+
+const BLOCK_HASH = `0x${"ab".repeat(32)}` as Hex;
+const EMPTY_BLOOM = `0x${"0".repeat(512)}` as Hex;
+
+/**
+ * The concrete topic words of an encoded event, in the tuple shape a receipt log
+ * declares. `encodeEventTopics` may return `null` for an unfiltered indexed
+ * argument, and a log carries only the words that exist.
+ */
+function receiptTopics(topics: readonly (string | readonly string[] | null)[]): [Hex, ...Hex[]] | [] {
+  const words = topics.filter((topic): topic is Hex => typeof topic === "string" && topic.startsWith("0x"));
+  const [signature, ...rest] = words;
+  return signature === undefined ? [] : [signature, ...rest];
 }
 
-function claimedLog(over: { account?: Address; amount?: bigint; amountPaired?: bigint } = {}) {
+function claimedLog(over: { account?: Address; amount?: bigint; amountPaired?: bigint } = {}): ReceiptLog {
   const f = { account: WALLET, amount: TOKEN_PAYOUT, amountPaired: PAIRED_PAYOUT, ...over };
   return {
     address: DISTRIBUTOR,
-    topics: concreteTopics(
+    topics: receiptTopics(
       encodeEventTopics({
         abi: [POOLS_REWARD_CLAIMED_DUAL_EVENT_ABI],
         eventName: "RewardClaimed",
@@ -93,6 +111,94 @@ function claimedLog(over: { account?: Address; amount?: bigint; amountPaired?: b
       }),
     ),
     data: encodeAbiParameters([{ type: "uint256" }, { type: "uint256" }], [f.amount, f.amountPaired]),
+    blockHash: BLOCK_HASH,
+    blockNumber: BLOCK,
+    logIndex: 0,
+    transactionHash: TX_HASH,
+    transactionIndex: 0,
+    removed: false,
+  };
+}
+
+/**
+ * A receipt as the broadcast primitive really returns one. Written whole rather
+ * than asserted into place: the settlement reader takes a `TransactionReceipt`,
+ * and a partial object cast into that position would let a field the reader
+ * starts using arrive as `undefined` with no test noticing.
+ */
+function receipt(entries: readonly ReceiptLog[], status: "success" | "reverted"): TransactionReceipt {
+  return {
+    blockHash: BLOCK_HASH,
+    blockNumber: BLOCK,
+    contractAddress: null,
+    cumulativeGasUsed: 360_000n,
+    effectiveGasPrice: 1n,
+    from: WALLET,
+    gasUsed: 180_000n,
+    logs: [...entries],
+    logsBloom: EMPTY_BLOOM,
+    status,
+    to: DISTRIBUTOR,
+    transactionHash: TX_HASH,
+    transactionIndex: 0,
+    type: "eip1559",
+  };
+}
+
+function confirmedOutcome(entries: readonly ReceiptLog[] = logs): stagedBroadcast.StagedBroadcastOutcome {
+  return { kind: "confirmed", txHash: TX_HASH, receipt: receipt(entries, "success") };
+}
+
+function revertedOutcome(): stagedBroadcast.StagedBroadcastOutcome {
+  return { kind: "reverted", txHash: TX_HASH, receipt: receipt([], "reverted") };
+}
+
+/**
+ * The durable row as the live contract declares it. The handlers read only `id`
+ * off it; the remaining columns are stated rather than omitted so a contract
+ * change fails here instead of being silenced by a cast.
+ */
+function activityRow(id: number): AgentActivityEvent {
+  return {
+    id, protocolExecutionId: 9, eventIndex: 0, eventRole: "holder_reward_claim", recordVersion: 1,
+    kind: "claim", protocol: "pools_fun", chainId: 4663, chainSlug: "robinhood",
+    status: "pending", failureCode: null, failureReason: null,
+    tokenInAddress: null, tokenInSymbol: null, tokenInDecimals: null,
+    amountInHuman: null, amountInRaw: null,
+    tokenOutAddress: TOKEN, tokenOutSymbol: "DRBRH", tokenOutDecimals: 18,
+    amountOutHuman: null, amountOutRaw: null,
+    executedAmountInHuman: null, executedAmountInRaw: null,
+    executedAmountOutHuman: null, executedAmountOutRaw: null,
+    tokenIn2Address: null, tokenIn2Symbol: null, tokenIn2Decimals: null,
+    amountIn2Human: null, amountIn2Raw: null,
+    executedAmountIn2Human: null, executedAmountIn2Raw: null,
+    tokenOut2Address: null, tokenOut2Symbol: null, tokenOut2Decimals: null,
+    amountOut2Human: null, amountOut2Raw: null,
+    executedAmountOut2Human: null, executedAmountOut2Raw: null,
+    usdInEst: null, usdOutEst: null, usdFeeEst: null, usdSource: null,
+    usdNetworkGasEst: null, usdVenueFeeEst: null, usdDestinationPrepayEst: null, usdVexFeeEst: null,
+    vexFeeTokenAddress: null, vexFeeTokenSymbol: null, vexFeeTokenDecimals: null,
+    vexFeeAmountRaw: null, vexFeeAmountHuman: null,
+    txHash: null, fromAddress: null, nonce: null,
+    walletAddress: WALLET, sessionId: "00000000-0000-4000-8000-000000000001",
+    routeProvenance: null,
+    fromChainId: null, fromChainSlug: null, toChainId: null, toChainSlug: null,
+    chainFamily: "eip155", providerOrderId: null, normalizedRoute: null,
+    providerStatus: null, evidenceSource: null, observedAt: null, lastAttemptedAt: null,
+    submitAttemptedAt: null,
+    recentBlockhash: null, lastValidBlockHeight: null,
+    broadcastAt: null, confirmedAt: null, settledBlockTime: null, lastCheckedAt: null,
+    createdAt: "2026-09-04T09:00:00.000Z", updatedAt: "2026-09-04T09:00:00.000Z",
+    verificationAttempts: 0, lastVerificationReason: null,
+    confirmationSource: null,
+    settlementSource: null,
+    pendingReason: null,
+    providerStatusObservedAt: null,
+    evmClaimLeaseUntil: null,
+    evmClaimToken: null,
+    lastVerificationIncrementAt: null,
+    firstNonInclusionObservedAt: null,
+    settlementDecodeVersion: null,
   };
 }
 
@@ -165,7 +271,7 @@ beforeEach(() => {
   };
   distributeSimulation = { kind: "would_distribute", words: [1n, 2n, 3n, 4n, 5n], named: false };
   check = { status: "agrees", providerTo: DISTRIBUTOR, providerData: "0x4e71d92d" };
-  outcome = { kind: "confirmed", txHash: TX_HASH, receipt: { logs, blockNumber: BLOCK } } as never;
+  outcome = confirmedOutcome();
 
   vi.spyOn(walletResolve, "resolveSelectedAddress").mockReturnValue(WALLET);
   vi.spyOn(tokenRegistration, "readPoolsOnChainSnapshot").mockImplementation(async () => ({
@@ -179,45 +285,72 @@ beforeEach(() => {
   vi.spyOn(mutations, "simulatePoolsHolderRewardsClaim").mockImplementation(async () => simulation);
   vi.spyOn(mutations, "simulatePoolsRewardDistribute").mockImplementation(async () => distributeSimulation);
   vi.spyOn(crossCheck, "crossCheckPoolsHolderRewardsPrepare").mockImplementation(async () => check);
-  vi.spyOn(poolsClient, "getPoolsFunClient").mockReturnValue({
-    holderRewards: async () => ({
-      hasWorkToDistribute: true,
-      pendingFees: { token: "1", paired: "2" },
-      buybackBacklog: "3",
-      lastBuybackAt: 1,
-      conversion: "none",
-      paysCallerBounty: false,
+  // A REAL client instance with the one endpoint this suite answers overlaid, so
+  // any other call the handler grows reaches the real method and its base URL
+  // rather than an undefined property.
+  vi.spyOn(poolsClient, "getPoolsFunClient").mockReturnValue(
+    Object.assign(new poolsClient.PoolsFunClient("http://127.0.0.1:1"), {
+      holderRewards: async (): Promise<PoolsHolderRewards> => ({
+        token: TOKEN,
+        distributor: DISTRIBUTOR,
+        pairedAsset: PAIRED,
+        pairedSymbol: "SPCX",
+        pairedDecimals: 18,
+        wallet: WALLET,
+        rewardMode: "both",
+        paysCallerBounty: false,
+        conversion: "none",
+        earned: null,
+        earnedPaired: null,
+        walletExcluded: false,
+        eligibleSupply: null,
+        rewardRate: null,
+        rewardRatePaired: null,
+        periodFinish: null,
+        periodFinishPaired: null,
+        remainingStream: null,
+        remainingStreamPaired: null,
+        surplus: null,
+        surplusPaired: null,
+        buybackBacklog: "3",
+        lastBuybackAt: 1,
+        pendingFees: { token: "1", paired: "2" },
+        hasWorkToDistribute: true,
+      }),
     }),
-  } as never);
-  vi.spyOn(evmClient, "getLocalPublicClient").mockReturnValue({
-    estimateGas: async () => 180_000n,
-  } as never);
+  );
+  vi.spyOn(evmClient, "getLocalPublicClient").mockReturnValue(
+    publicClientDouble({ estimateGas: async () => 180_000n }, POOLS_CHAIN_ID),
+  );
   vi.spyOn(signingClients, "openLaunchSigningClients").mockImplementation(() => {
     signerOpened += 1;
     return {
       ok: true,
-      clients: { publicClient: { estimateGas: async () => 180_000n } as never, walletClient: {} as never },
+      clients: {
+        publicClient: publicClientDouble({ estimateGas: async () => 180_000n }, POOLS_CHAIN_ID),
+        walletClient: walletClientDouble(WALLET, {}, POOLS_CHAIN_ID),
+      },
     };
   });
   vi.spyOn(activity, "createAgentActivityIntent").mockImplementation(async (input) => {
-    created.push(input as unknown as Record<string, unknown>);
-    return { executionId: 9, events: [{ id: 90 }] } as never;
+    created.push(mutableRecord(input, "the createAgentActivityIntent input"));
+    return { executionId: 9, events: [activityRow(90)] };
   });
-  vi.spyOn(activity, "markActivityBroadcast").mockResolvedValue({ applied: true } as never);
-  vi.spyOn(activity, "markBroadcastAccepted").mockResolvedValue({ applied: true } as never);
+  vi.spyOn(activity, "markActivityBroadcast").mockResolvedValue({ applied: true, row: activityRow(90) });
+  vi.spyOn(activity, "markBroadcastAccepted").mockResolvedValue({ applied: true, row: activityRow(90) });
   vi.spyOn(activity, "confirmActivityEvent").mockImplementation(async (_id, input) => {
-    confirmed.push(input as unknown as Record<string, unknown>);
-    return { applied: true } as never;
+    confirmed.push(mutableRecord(input, "the confirmActivityEvent input"));
+    return { applied: true, row: activityRow(90) };
   });
   vi.spyOn(activity, "failActivityEvent").mockImplementation(async (_id, input) => {
-    failedRows.push(input as { failureCode: string });
-    return undefined as never;
+    failedRows.push(input);
+    return { applied: true, row: activityRow(90) };
   });
   vi.spyOn(pendingProvenance, "noteHandlerPendingReason").mockImplementation(async (_t, _id, reason) => {
     pendingReasons.push(reason);
   });
   vi.spyOn(stagedBroadcast, "signStageBroadcast").mockImplementation(async (_p, _w, tx, hooks) => {
-    signedTx = tx as never;
+    signedTx = tx;
     // The pre-sign gate is driven with the request that WOULD be serialized, so
     // a gate that only inspects the caller's inputs cannot pass this suite.
     await hooks?.onBeforeSign?.({
@@ -230,7 +363,7 @@ beforeEach(() => {
       maxFeePerGas: undefined,
       maxPriorityFeePerGas: undefined,
     });
-    await hooks?.onHashStaged?.({ txHash: TX_HASH } as never);
+    await hooks?.onHashStaged?.({ txHash: TX_HASH, fromAddress: WALLET, nonce: 1 });
     await hooks?.onAccepted?.();
     return outcome;
   });
@@ -239,9 +372,9 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 const claim = (params: Record<string, unknown>, ctx = context()) =>
-  POOLS_HANDLERS["pools.holder_rewards_claim"]!(params, ctx);
+  definedValue(POOLS_HANDLERS["pools.holder_rewards_claim"], "the claim handler")(params, ctx);
 const distribute = (params: Record<string, unknown>, ctx = context()) =>
-  POOLS_HANDLERS["pools.holder_rewards_distribute"]!(params, ctx);
+  definedValue(POOLS_HANDLERS["pools.holder_rewards_distribute"], "the distribute handler")(params, ctx);
 
 describe("the preview reads the SIMULATION and opens no key", () => {
   it("reports both legs with their asset, scale and the accrual figure beside them", async () => {
@@ -252,11 +385,13 @@ describe("the preview reads the SIMULATION and opens no key", () => {
 
     expect(legs).toHaveLength(2);
     expect(legs[0]).toMatchObject({ side: "token", assetAddress: TOKEN, decimals: 18 });
-    expect(legs[0]!.amountRaw).toBe(TOKEN_PAYOUT.toString());
+    const tokenLeg = definedValue(legs[0], "the token leg");
+    const pairedLeg = definedValue(legs[1], "the paired leg");
+    expect(tokenLeg.amountRaw).toBe(TOKEN_PAYOUT.toString());
     // 18 decimals: 41781226920045611661 raw is 41.78..., not 4.17e19.
-    expect(legs[0]!.amount).toBe("41.781226920045611661");
+    expect(tokenLeg.amount).toBe("41.781226920045611661");
     expect(legs[1]).toMatchObject({ side: "paired", assetAddress: PAIRED });
-    expect(legs[1]!.amount).toBe("0.000001949252557207");
+    expect(pairedLeg.amount).toBe("0.000001949252557207");
     expect(signerOpened).toBe(0);
     expect(created).toHaveLength(0);
   });
@@ -264,10 +399,11 @@ describe("the preview reads the SIMULATION and opens no key", () => {
   it("names the distributor, its mode and where that mode came from", async () => {
     const result = await claim({ tokenAddress: TOKEN, dryRun: true });
     const data = result.data as Record<string, Record<string, unknown>>;
-    expect(data.distributor!.address).toBe(DISTRIBUTOR);
-    expect(data.distributor!.rewardMode).toBe("both");
-    expect(String(data.distributor!.rewardModeAuthority)).toContain("DistributorDeployed event");
-    expect(String(data.distributor!.rewardModeAuthority)).toContain("Not the launchpad's row");
+    const distributor = definedValue(data.distributor, "the reported distributor");
+    expect(distributor.address).toBe(DISTRIBUTOR);
+    expect(distributor.rewardMode).toBe("both");
+    expect(String(distributor.rewardModeAuthority)).toContain("DistributorDeployed event");
+    expect(String(distributor.rewardModeAuthority)).toContain("Not the launchpad's row");
   });
 
   it("states that Vex takes NOTHING", async () => {
@@ -300,18 +436,19 @@ describe("simulateOnly runs the whole path and stops before the key", () => {
     const data = result.data as Record<string, Record<string, unknown>>;
     expect(data.executed).toBe(false);
     expect(data.claimed).toBe(false);
-    expect(data.wouldSign!.to).toBe(DISTRIBUTOR);
-    expect(data.wouldSign!.data).toBe("0x4e71d92d");
-    expect(data.wouldSign!.value).toBe("0");
-    expect(data.wouldSign!.gasLimit).toBe("360000");
+    const wouldSign = definedValue(data.wouldSign, "the would-be transaction");
+    expect(wouldSign.to).toBe(DISTRIBUTOR);
+    expect(wouldSign.data).toBe("0x4e71d92d");
+    expect(wouldSign.value).toBe("0");
+    expect(wouldSign.gasLimit).toBe("360000");
     expect(signerOpened).toBe(0);
     expect(created).toHaveLength(0);
   });
 
   it("refuses to sign when the node will not price the claim", async () => {
-    vi.spyOn(evmClient, "getLocalPublicClient").mockReturnValue({
-      estimateGas: async () => { throw new Error("no"); },
-    } as never);
+    vi.spyOn(evmClient, "getLocalPublicClient").mockReturnValue(
+      publicClientDouble({ estimateGas: async () => { throw new Error("no"); } }, POOLS_CHAIN_ID),
+    );
     const result = await claim({ tokenAddress: TOKEN, simulateOnly: true });
     expect(result.success).toBe(false);
     expect(result.output).toContain("UNKNOWN");
@@ -327,7 +464,7 @@ describe("simulateOnly runs the whole path and stops before the key", () => {
     const result = await distribute({ tokenAddress: TOKEN, simulateOnly: true });
     const data = result.data as Record<string, Record<string, unknown>>;
     expect(data.executed).toBe(false);
-    expect(data.wouldSign!.data).toBe("0xe4fc6b6d");
+    expect(definedValue(data.wouldSign, "the would-be transaction").data).toBe("0xe4fc6b6d");
     expect(signerOpened).toBe(0);
     expect(created).toHaveLength(0);
   });
@@ -353,7 +490,10 @@ describe("the launchpad corroborates and can refuse, but never redirects", () =>
     check = { status: "unavailable", detail: "HTTP request failed" };
     const result = await claim({ tokenAddress: TOKEN, dryRun: true });
     expect(result.success).toBe(true);
-    const check1 = (result.data as Record<string, Record<string, unknown>>).crossCheck!;
+    const check1 = definedValue(
+      (result.data as Record<string, Record<string, unknown>>).crossCheck,
+      "the reported cross-check",
+    );
     expect(check1.status).toBe("unavailable");
     expect(String(check1.detail)).toContain("Nothing was learned either way");
   });
@@ -361,7 +501,10 @@ describe("the launchpad corroborates and can refuse, but never redirects", () =>
   it("PROCEEDS when the provider declines, and does not read that as agreement", async () => {
     check = { status: "declined", detail: "Nothing to claim" };
     const result = await claim({ tokenAddress: TOKEN, dryRun: true });
-    const check1 = (result.data as Record<string, Record<string, unknown>>).crossCheck!;
+    const check1 = definedValue(
+      (result.data as Record<string, Record<string, unknown>>).crossCheck,
+      "the reported cross-check",
+    );
     expect(check1.status).toBe("declined");
     expect(String(check1.detail)).toContain("not a disagreement about bytes");
   });
@@ -427,14 +570,14 @@ describe("the four suite outcomes are four different answers", () => {
   });
 
   it("refuses an AMBIGUOUS registration rather than picking a suite", async () => {
-    registration = { status: "ambiguous", detail: "two suites claim this token." } as never;
+    registration = { status: "ambiguous", detail: "two suites claim this token." };
     const result = await claim({ tokenAddress: TOKEN });
     expect(result.success).toBe(false);
     expect(result.output).toContain("will not pick one suite");
   });
 
   it("refuses an UNREGISTERED token by name", async () => {
-    registration = { status: "unregistered" } as never;
+    registration = { status: "unregistered" };
     const result = await claim({ tokenAddress: TOKEN });
     expect(result.success).toBe(false);
     expect(result.output).toContain("no pools.fun contract suite holds");
@@ -485,7 +628,10 @@ describe("nothing to claim is a fact, and so is exclusion", () => {
 describe("the durable row is the one the vocabulary defines", () => {
   it("writes holder_reward_claim with two output legs and NO input leg", async () => {
     await claim({ tokenAddress: TOKEN });
-    const event = (created[0]!.events as Record<string, unknown>[])[0]!;
+    const event = definedValue(
+      (definedValue(created[0], "the created intent").events as Record<string, unknown>[])[0],
+      "the intent's first event",
+    );
     expect(event.eventRole).toBe("holder_reward_claim");
     expect(event.kind).toBe("claim");
     expect(event.tokenIn).toBeUndefined();
@@ -500,27 +646,23 @@ describe("the durable row is the one the vocabulary defines", () => {
     // names a second token, so a leg the chain will never fill would hold this
     // row incomplete forever.
     simulation = { kind: "would_pay", tokenAmountRaw: TOKEN_PAYOUT, pairedAmountRaw: null, returnWordCount: 1 };
-    logs = [{
-      address: DISTRIBUTOR,
-      topics: concreteTopics(
-        encodeEventTopics({
-          abi: [POOLS_REWARD_CLAIMED_DUAL_EVENT_ABI],
-          eventName: "RewardClaimed",
-          args: { account: WALLET },
-        }),
-      ),
-      data: encodeAbiParameters([{ type: "uint256" }, { type: "uint256" }], [TOKEN_PAYOUT, 0n]),
-    }];
-    outcome = { kind: "confirmed", txHash: TX_HASH, receipt: { logs, blockNumber: BLOCK } } as never;
+    logs = [claimedLog({ amountPaired: 0n })];
+    outcome = confirmedOutcome();
     await claim({ tokenAddress: TOKEN });
-    const event = (created[0]!.events as Record<string, unknown>[])[0]!;
+    const event = definedValue(
+      (definedValue(created[0], "the created intent").events as Record<string, unknown>[])[0],
+      "the intent's first event",
+    );
     expect(event.tokenOut2).toBeUndefined();
-    expect(confirmed[0]!.executedAmountOut2Raw).toBeUndefined();
+    expect(definedValue(confirmed[0], "the confirm input").executedAmountOut2Raw).toBeUndefined();
   });
 
   it("writes reward_distribution with NO legs on either side", async () => {
     await distribute({ tokenAddress: TOKEN });
-    const event = (created[0]!.events as Record<string, unknown>[])[0]!;
+    const event = definedValue(
+      (definedValue(created[0], "the created intent").events as Record<string, unknown>[])[0],
+      "the intent's first event",
+    );
     expect(event.eventRole).toBe("reward_distribution");
     expect(event.kind).toBe("claim");
     expect(event.tokenIn).toBeUndefined();
@@ -557,7 +699,7 @@ describe("the pre-sign gate binds the bytes, not the caller's intentions", () =>
     const result = await claim({ tokenAddress: TOKEN });
     expect(result.success).toBe(false);
     expect(result.output).toContain("refused before signing");
-    expect(failedRows[0]!.failureCode).toBe("broadcast_error");
+    expect(definedValue(failedRows[0], "the failed row").failureCode).toBe("broadcast_error");
   });
 
   it("throws before the key when native value would be attached", async () => {
@@ -593,7 +735,7 @@ describe("settlement declines rather than guessing, and never retries", () => {
 
   it("leaves the row pending when the receipt does not prove OUR payout", async () => {
     logs = [claimedLog({ account: getAddress("0x329a795fd7037132a1ae0fc74b5bc3aa6458b44b") })];
-    outcome = { kind: "confirmed", txHash: TX_HASH, receipt: { logs, blockNumber: BLOCK } } as never;
+    outcome = confirmedOutcome();
     const result = await claim({ tokenAddress: TOKEN });
     expect(result.success).toBe(true);
     expect((result.data as Record<string, unknown>).status).toBe("confirmed_pending_amounts");
@@ -602,7 +744,7 @@ describe("settlement declines rather than guessing, and never retries", () => {
   });
 
   it("keeps an ambiguous broadcast non-terminal and tells the agent not to retry", async () => {
-    outcome = { kind: "ambiguous", txHash: TX_HASH } as never;
+    outcome = { kind: "ambiguous", txHash: TX_HASH, stage: "confirm", reason: "the node did not answer" };
     const result = await claim({ tokenAddress: TOKEN });
     expect(result.success).toBe(false);
     expect(result.output).toContain("DO NOT retry");
@@ -612,7 +754,7 @@ describe("settlement declines rather than guessing, and never retries", () => {
   });
 
   it("names the distributor's own revert on a mined failure", async () => {
-    outcome = { kind: "reverted", txHash: TX_HASH, receipt: { logs: [], blockNumber: BLOCK } } as never;
+    outcome = revertedOutcome();
     simulation = { kind: "nothing_to_claim", revert: "NothingToClaim" };
     // The preview arm would have stopped on this simulation, so drive the revert
     // path directly: the simulation is re-read only AFTER the receipt.
@@ -626,12 +768,12 @@ describe("settlement declines rather than guessing, and never retries", () => {
     const result = await claim({ tokenAddress: TOKEN });
     expect(result.success).toBe(false);
     expect(result.output).toContain("NothingToClaim()");
-    expect(failedRows[0]!.failureCode).toBe("mined_revert");
+    expect(definedValue(failedRows[0], "the failed row").failureCode).toBe("mined_revert");
   });
 
   it("reports a leg the preview promised and the receipt paid zero on", async () => {
     logs = [claimedLog({ amountPaired: 0n })];
-    outcome = { kind: "confirmed", txHash: TX_HASH, receipt: { logs, blockNumber: BLOCK } } as never;
+    outcome = confirmedOutcome();
     const result = await claim({ tokenAddress: TOKEN });
     const data = result.data as Record<string, unknown>;
     expect(data.status).toBe("confirmed");
@@ -641,7 +783,7 @@ describe("settlement declines rather than guessing, and never retries", () => {
 
   it("calls a proven 0/0 claim a success rather than a broken tool", async () => {
     logs = [claimedLog({ amount: 0n, amountPaired: 0n })];
-    outcome = { kind: "confirmed", txHash: TX_HASH, receipt: { logs, blockNumber: BLOCK } } as never;
+    outcome = confirmedOutcome();
     const result = await claim({ tokenAddress: TOKEN });
     expect(result.success).toBe(true);
     expect((result.data as Record<string, unknown>).paidNothing).toBe(true);
@@ -656,8 +798,9 @@ describe("the distribute is honest about whose money moves", () => {
     expect(String(data.bountyRule)).toContain("out of the BUYBACK");
     // The launchpad said false on this very distributor. It is shown, and named
     // as an echo, rather than believed.
-    expect(data.api!.paysCallerBounty).toBe(false);
-    expect(String(data.api!.note)).toContain("the on-chain constant above is the authority");
+    const api = definedValue(data.api, "the launchpad echo");
+    expect(api.paysCallerBounty).toBe(false);
+    expect(String(api.note)).toContain("the on-chain constant above is the authority");
   });
 
   it("says the caller is paid nothing on a runtime with no bounty at all", async () => {
@@ -677,22 +820,28 @@ describe("the distribute is honest about whose money moves", () => {
 
   it("refuses to label the five-word return whose members are unestablished", async () => {
     const result = await distribute({ tokenAddress: TOKEN, dryRun: true });
-    const would = (result.data as Record<string, Record<string, unknown>>).wouldDistribute!;
+    const would = definedValue(
+      (result.data as Record<string, Record<string, unknown>>).wouldDistribute,
+      "the wouldDistribute preview",
+    );
     expect(would.wordsUnnamed).toHaveLength(5);
     expect(would.feesTokenRaw).toBeUndefined();
     expect(String(would.note)).toContain("meanings are NOT established");
   });
 
   it("reports an absent bounty as absent, and a declared one as declared", async () => {
-    outcome = { kind: "confirmed", txHash: TX_HASH, receipt: { logs: [], blockNumber: BLOCK } } as never;
+    outcome = confirmedOutcome([]);
     const noBounty = await distribute({ tokenAddress: TOKEN });
-    const noData = (noBounty.data as Record<string, Record<string, unknown>>).callerBounty!;
+    const noData = definedValue(
+      (noBounty.data as Record<string, Record<string, unknown>>).callerBounty,
+      "the caller bounty report",
+    );
     expect(noData.amountRaw).toBeNull();
     expect(String(noData.detail)).toContain("ordinary outcome");
   });
 
   it("explains that a mined revert is usually another caller winning the race", async () => {
-    outcome = { kind: "reverted", txHash: TX_HASH, receipt: { logs: [], blockNumber: BLOCK } } as never;
+    outcome = revertedOutcome();
     const result = await distribute({ tokenAddress: TOKEN });
     expect(result.output).toContain("permissionless race");
   });

@@ -48,6 +48,8 @@ import {
 } from "@tools/pools-fun/holder-rewards/mutations.js";
 
 import { captureResponse } from "./_captures.js";
+import { publicClientDouble } from "../_test-evm-clients.js";
+import { definedValue } from "../_test-value-guards.js";
 
 const DISTRIBUTOR = getAddress("0x7b53d176E76F87D0ba5173b6e596aFEe717e6b0b");
 const OTHER_CONTRACT = getAddress("0xd64C1f0f26b6f636520bC686f8E25cBA58082cFE");
@@ -67,7 +69,7 @@ const artifact = captureResponse("chain-holder-rewards-distributor-runtimes") as
 
 /** A client whose `call` answers with exactly the bytes a live distributor sent. */
 function clientReturning(data: Hex): PublicClient<Transport, Chain> {
-  return { call: async () => ({ data }) } as unknown as PublicClient<Transport, Chain>;
+  return publicClientDouble({ call: async () => ({ data }) });
 }
 
 /**
@@ -76,12 +78,12 @@ function clientReturning(data: Hex): PublicClient<Transport, Chain> {
  * the revert reader walks it rather than reading one known class.
  */
 function clientReverting(revertData: Hex): PublicClient<Transport, Chain> {
-  return {
+  return publicClientDouble({
     call: async () => {
       const inner = Object.assign(new Error("execution reverted"), { data: revertData });
       throw Object.assign(new Error("Execution reverted for an unknown reason."), { cause: inner });
     },
-  } as unknown as PublicClient<Transport, Chain>;
+  });
 }
 
 function concreteTopics(topics: readonly (string | readonly string[] | null)[]): string[] {
@@ -146,7 +148,7 @@ describe("simulating claim() reads the runtime the bytes came from", () => {
     // distributor is FOR.
     expect(result.tokenAmountRaw).toBeGreaterThan(0n);
     expect(result.pairedAmountRaw).not.toBeNull();
-    expect(result.pairedAmountRaw!).toBeGreaterThan(0n);
+    expect(definedValue(result.pairedAmountRaw, "the paired leg amount")).toBeGreaterThan(0n);
   });
 
   it("keeps a PROVEN ZERO on the token leg of a paired-mode claim", async () => {
@@ -161,7 +163,7 @@ describe("simulating claim() reads the runtime the bytes came from", () => {
     if (result.kind !== "would_pay") return;
     expect(result.tokenAmountRaw).toBe(0n);
     expect(result.pairedAmountRaw).not.toBeNull();
-    expect(result.pairedAmountRaw!).toBeGreaterThan(0n);
+    expect(definedValue(result.pairedAmountRaw, "the paired leg amount")).toBeGreaterThan(0n);
   });
 
   it("reports NO paired leg - null, never zero - when the runtime returned one word", async () => {
@@ -209,11 +211,11 @@ describe("simulating claim() reads the runtime the bytes came from", () => {
   });
 
   it("never reports a transport failure as nothing to claim", async () => {
-    const client = {
+    const client = publicClientDouble({
       call: async () => {
         throw Object.assign(new Error("HTTP request failed"), { shortMessage: "HTTP request failed" });
       },
-    } as unknown as PublicClient<Transport, Chain>;
+    });
     const result = await simulatePoolsHolderRewardsClaim(client, {
       account: HOLDER,
       distributor: DISTRIBUTOR,

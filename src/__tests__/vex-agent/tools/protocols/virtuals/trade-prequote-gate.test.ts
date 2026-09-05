@@ -29,6 +29,7 @@ import { describe, expect, it, vi } from "vitest";
 import { getAddress } from "viem";
 
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
+import { definedValue } from "../../../../_test-value-guards.js";
 
 vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
   resolveSelectedAddress: () => WALLET,
@@ -49,8 +50,8 @@ const { canonSlippageBps, readParamSlippageBps } = await import(
   "@vex-agent/tools/protocols/prequote/slippage.js"
 );
 
-const BASE = virtualsCurveDeployment("base")!;
-const ROBINHOOD = virtualsCurveDeployment("robinhood")!;
+const BASE = definedValue(virtualsCurveDeployment("base"), "the base curve deployment");
+const ROBINHOOD = definedValue(virtualsCurveDeployment("robinhood"), "the robinhood curve deployment");
 
 const CONTEXT: ProtocolExecutionContext = {
   sessionPermission: "full",
@@ -206,6 +207,32 @@ function quoteAnswer(over: Record<string, unknown> = {}) {
   };
 }
 
+/**
+ * The recorder's row for an answer, or a failed test naming the answer that
+ * produced no row. `extractQuote` returns `null` for anything it cannot
+ * validate, and a case asserting past that would be asserting nothing.
+ */
+function extractedRow(answer: Parameters<typeof extractQuote>[2]) {
+  return definedValue(
+    extractQuote("virtuals.trade.quote", { amountIn: "0.5" }, answer),
+    "the extracted prequote row",
+  );
+}
+
+/**
+ * The four identity fields the EXECUTE gate rehashes. Each is optional on the
+ * recorded row, and a row missing any of them could not be matched at all, so
+ * they are proven here rather than assumed.
+ */
+function recordedIdentity(row: ReturnType<typeof extractedRow>) {
+  return {
+    chainId: definedValue(row.chainId, "the recorded chainId"),
+    tokenIn: definedValue(row.tokenIn, "the recorded tokenIn"),
+    tokenOut: definedValue(row.tokenOut, "the recorded tokenOut"),
+    amount: definedValue(row.amount, "the recorded amount"),
+  };
+}
+
 describe("the recorder extracts the same identity the gate will compute", () => {
   it("is wired to the quote tool id", () => {
     expect(extractQuote("virtuals.trade.quote", { amountIn: "0.5" }, quoteAnswer())).not.toBeNull();
@@ -213,31 +240,21 @@ describe("the recorder extracts the same identity the gate will compute", () => 
   });
 
   it("produces a hash the EXECUTE gate reproduces exactly", async () => {
-    const extracted = extractQuote("virtuals.trade.quote", { amountIn: "0.5" }, quoteAnswer())!;
-    const recorded = expectedHash({
-      chainId: extracted.chainId!,
-      tokenIn: extracted.tokenIn!,
-      tokenOut: extracted.tokenOut!,
-      amount: extracted.amount!,
-    });
+    const extracted = extractedRow(quoteAnswer());
+    const recorded = expectedHash(recordedIdentity(extracted));
     expect(recorded).toBe((await match({ side: "buy" })).matchHash);
   });
 
   it("produces a DIFFERENT hash for a sell answer, matching the sell gate", async () => {
     const sellAnswer = quoteAnswer({ side: "sell", spend: { token: TOKEN }, receive: { token: BASE.virtual } });
-    const extracted = extractQuote("virtuals.trade.quote", { amountIn: "0.5" }, sellAnswer)!;
-    const recorded = expectedHash({
-      chainId: extracted.chainId!,
-      tokenIn: extracted.tokenIn!,
-      tokenOut: extracted.tokenOut!,
-      amount: extracted.amount!,
-    });
+    const extracted = extractedRow(sellAnswer);
+    const recorded = expectedHash(recordedIdentity(extracted));
     expect(recorded).toBe((await match({ side: "sell" })).matchHash);
     expect(recorded).not.toBe((await match({ side: "buy" })).matchHash);
   });
 
   it("reports the verdict as UNKNOWN and says why, rather than borrowing a pass", () => {
-    const extracted = extractQuote("virtuals.trade.quote", { amountIn: "0.5" }, quoteAnswer())!;
+    const extracted = extractedRow(quoteAnswer());
     expect(extracted.verdict).toBe("unknown");
     const detail = extracted.safetyDetail as Record<string, unknown>;
     expect(detail.venue).toBe("virtuals-curve");
@@ -251,8 +268,7 @@ describe("the recorder extracts the same identity the gate will compute", () => 
         antiSniper: { type: 1, effectivePct: 59, windowActive: true, appliesToThisSide: true },
       },
     });
-    const detail = extractQuote("virtuals.trade.quote", { amountIn: "0.5" }, answer)!
-      .safetyDetail as Record<string, unknown>;
+    const detail = extractedRow(answer).safetyDetail as Record<string, unknown>;
     expect(detail).toMatchObject({
       curveProtocolTaxPct: 1,
       antiSniperType: 1,
@@ -271,18 +287,14 @@ describe("the recorder extracts the same identity the gate will compute", () => 
   });
 
   it("echoes the slippage the quote actually applied, so the gate binds the same bound", () => {
-    const extracted = extractQuote(
-      "virtuals.trade.quote",
-      { amountIn: "0.5" },
-      quoteAnswer({ floors: { slippageBps: 250 } }),
-    )!;
+    const extracted = extractedRow(quoteAnswer({ floors: { slippageBps: 250 } }));
     expect(extracted.slippageBps).toBe(250);
   });
 });
 
 describe("the addresses the two sides derive are the same addresses", () => {
   it("uses the deployment table's VIRTUAL on both sides, not a params-supplied one", () => {
-    const extracted = extractQuote("virtuals.trade.quote", { amountIn: "0.5" }, quoteAnswer())!;
-    expect(getAddress(extracted.tokenIn!)).toBe(getAddress(BASE.virtual));
+    const extracted = extractedRow(quoteAnswer());
+    expect(getAddress(definedValue(extracted.tokenIn, "the extracted tokenIn"))).toBe(getAddress(BASE.virtual));
   });
 });

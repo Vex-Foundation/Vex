@@ -34,6 +34,7 @@ import {
 } from "@vex-agent/tools/protocols/virtuals/handlers/trade/activity.js";
 import type { TradeParams } from "@vex-agent/tools/protocols/virtuals/handlers/trade/params.js";
 import type { PricedCurveTrade } from "@vex-agent/tools/protocols/virtuals/handlers/trade/pricing.js";
+import { definedValue } from "../../../../_test-value-guards.js";
 
 const WALLET = getAddress("0x1111111111111111111111111111111111111111");
 const SESSION = "00000000-0000-4000-8000-000000000001";
@@ -175,7 +176,7 @@ describe("the allowance legs appear only when the allowance is actually short", 
 describe("the trade row", () => {
   it("is a swap on the venue every Virtuals curve row is filed under", () => {
     const { events } = plan({ side: "buy", currentAllowanceRaw: CURVE_AMOUNT, feePlannedRaw: BUY_FEE });
-    const swap = events.find((e) => e.eventRole === "swap")!;
+    const swap = definedValue(events.find((e) => e.eventRole === "swap"), "the planned swap row");
     expect(swap.kind).toBe("swap");
     expect(swap.protocol).toBe("virtuals");
     expect(swap.chainId).toBe(deployment().chainId);
@@ -198,12 +199,12 @@ describe("the trade row", () => {
 
   it("orients the legs by side: a buy spends VIRTUAL, a sell spends the agent token", () => {
     const buy = plan({ side: "buy", currentAllowanceRaw: CURVE_AMOUNT, feePlannedRaw: BUY_FEE });
-    const buySwap = buy.events.find((e) => e.eventRole === "swap")!;
+    const buySwap = definedValue(buy.events.find((e) => e.eventRole === "swap"), "the buy swap row");
     expect(buySwap.tokenIn?.tokenSymbol).toBe("VIRTUAL");
     expect(buySwap.tokenOut?.tokenSymbol).toBe(AGENT.symbol);
 
     const sell = plan({ side: "sell", currentAllowanceRaw: CURVE_AMOUNT, feePlannedRaw: 1n });
-    const sellSwap = sell.events.find((e) => e.eventRole === "swap")!;
+    const sellSwap = definedValue(sell.events.find((e) => e.eventRole === "swap"), "the sell swap row");
     expect(sellSwap.tokenIn?.tokenSymbol).toBe(AGENT.symbol);
     expect(sellSwap.tokenOut?.tokenSymbol).toBe("VIRTUAL");
   });
@@ -212,7 +213,7 @@ describe("the trade row", () => {
     // Naming a decoder the repair lane cannot dispatch would be worse than an
     // absent hint, which is a supported state the reader already handles.
     const { events } = plan({ side: "buy", currentAllowanceRaw: CURVE_AMOUNT, feePlannedRaw: BUY_FEE });
-    const swap = events.find((e) => e.eventRole === "swap")!;
+    const swap = definedValue(events.find((e) => e.eventRole === "swap"), "the planned swap row");
     expect((swap.routeProvenance as Record<string, unknown>).settlementDecode).toBeUndefined();
   });
 });
@@ -221,19 +222,19 @@ describe("the vex_fee row is a CHILD, planned last and never a second money entr
   it("uses the family role migration 107 folds on", () => {
     expect(VIRTUALS_CURVE_FEE_ACTIVITY_EVENT_ROLE).toBe("vex_fee");
     const { events, tradeLegCount } = plan({ side: "buy", currentAllowanceRaw: 0n, feePlannedRaw: BUY_FEE });
-    expect(events[tradeLegCount]!.eventRole).toBe("vex_fee");
+    expect(definedValue(events[tradeLegCount], "the row after the trade legs").eventRole).toBe("vex_fee");
   });
 
   it("sits on the SWAP arm, so the fold finds it under the trade it charges for", () => {
     const { events } = plan({ side: "buy", currentAllowanceRaw: CURVE_AMOUNT, feePlannedRaw: BUY_FEE });
-    const fee = events.find((e) => e.eventRole === "vex_fee")!;
+    const fee = definedValue(events.find((e) => e.eventRole === "vex_fee"), "the planned vex_fee row");
     expect(fee.kind).toBe("swap");
     expect(fee.protocol).toBe("virtuals");
   });
 
   it("carries the fee in tokenIn and NOT in the vexFee columns - storing both books it twice", () => {
     const { events } = plan({ side: "buy", currentAllowanceRaw: CURVE_AMOUNT, feePlannedRaw: BUY_FEE });
-    const fee = events.find((e) => e.eventRole === "vex_fee")! as Record<string, unknown>;
+    const fee = definedValue(events.find((e) => e.eventRole === "vex_fee"), "the planned vex_fee row") as Record<string, unknown>;
     expect((fee.tokenIn as { amountRaw: string }).amountRaw).toBe(BUY_FEE.toString());
     expect((fee.tokenIn as { tokenSymbol: string }).tokenSymbol).toBe("VIRTUAL");
     expect(fee.vexFee).toBeUndefined();
@@ -242,7 +243,7 @@ describe("the vex_fee row is a CHILD, planned last and never a second money entr
 
   it("is always denominated in VIRTUAL, on a sell as much as on a buy", () => {
     const { events } = plan({ side: "sell", currentAllowanceRaw: CURVE_AMOUNT, feePlannedRaw: 1_000n });
-    const fee = events.find((e) => e.eventRole === "vex_fee")!;
+    const fee = definedValue(events.find((e) => e.eventRole === "vex_fee"), "the planned vex_fee row");
     expect(fee.tokenIn?.tokenAddress).toBe(deployment().virtual);
   });
 

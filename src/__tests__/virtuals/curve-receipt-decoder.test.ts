@@ -26,6 +26,7 @@ import { describe, expect, it } from "vitest";
 import { decodeCurveSettlement } from "@tools/virtuals/curve/receipt-decoder.js";
 
 import fixture from "./fixtures/curve-receipts.json" with { type: "json" };
+import { definedValue } from "../_test-value-guards.js";
 
 interface FixtureTrade {
   readonly chain: string;
@@ -37,7 +38,19 @@ interface FixtureTrade {
   readonly logs: readonly { readonly address: string; readonly topics: readonly string[]; readonly data: string }[];
 }
 
-const trades = fixture.trades as unknown as readonly FixtureTrade[];
+/**
+ * The JSON import types `side` as a bare `string`, so the fixture is NARROWED
+ * rather than asserted: a row whose side is neither value fails the suite by
+ * name instead of reaching the decoder as a lie about the fixture.
+ */
+function fixtureTrade(raw: (typeof fixture.trades)[number]): FixtureTrade {
+  if (raw.side !== "buy" && raw.side !== "sell") {
+    throw new Error(`fixture trade ${raw.txHash} has an unknown side ${raw.side}`);
+  }
+  return { ...raw, side: raw.side };
+}
+
+const trades: readonly FixtureTrade[] = fixture.trades.map(fixtureTrade);
 const wallet = fixture.wallet as `0x${string}`;
 
 function tokensFor(trade: FixtureTrade): { spendToken: `0x${string}`; receiveToken: `0x${string}` } {
@@ -71,7 +84,10 @@ describe("decodeCurveSettlement over real receipts", () => {
     // receipt carries several VIRTUAL transfers (pair, tax vault, router). A
     // decoder summing every VIRTUAL transfer would report more than the wallet
     // ever spent.
-    const buy = trades.find((t) => t.chain === "robinhood" && t.side === "buy")!;
+    const buy = definedValue(
+      trades.find((t) => t.chain === "robinhood" && t.side === "buy"),
+      "the robinhood buy fixture",
+    );
     const virtualTransfers = buy.logs.filter((l) => l.address.toLowerCase() === buy.virtual.toLowerCase());
     expect(virtualTransfers.length).toBeGreaterThan(1);
     const settlement = decodeCurveSettlement({ logs: buy.logs, wallet, ...tokensFor(buy) });
@@ -83,7 +99,10 @@ describe("decodeCurveSettlement over real receipts", () => {
     // the wallet received strictly less than the router's gross output. This is
     // the number Vex's sell fee is taken from, and taking it from the gross
     // would overcharge every sell.
-    const sell = trades.find((t) => t.chain === "base" && t.side === "sell")!;
+    const sell = definedValue(
+      trades.find((t) => t.chain === "base" && t.side === "sell"),
+      "the base sell fixture",
+    );
     const settlement = decodeCurveSettlement({ logs: sell.logs, wallet, ...tokensFor(sell) });
     expect(settlement.executedOutRaw).toBe(BigInt(sell.expected.executedOutRaw));
     expect(settlement.executedOutRaw).toBeGreaterThan(0n);
@@ -91,7 +110,7 @@ describe("decodeCurveSettlement over real receipts", () => {
 });
 
 describe("decodeCurveSettlement fails honestly", () => {
-  const trade = trades[0]!;
+  const trade = definedValue(trades[0], "the first fixture trade");
 
   it("says no transfers were found rather than reporting zeros as a decode", () => {
     const settlement = decodeCurveSettlement({ logs: [], wallet, ...tokensFor(trade) });
@@ -111,8 +130,8 @@ describe("decodeCurveSettlement fails honestly", () => {
   it("ignores a log from an unrelated contract", () => {
     const noise = {
       address: "0x000000000000000000000000000000000000dEaD",
-      topics: trade.logs[0]!.topics,
-      data: trade.logs[0]!.data,
+      topics: definedValue(trade.logs[0], "the first log of the first fixture trade").topics,
+      data: definedValue(trade.logs[0], "the first log of the first fixture trade").data,
     };
     const withNoise = decodeCurveSettlement({ logs: [...trade.logs, noise], wallet, ...tokensFor(trade) });
     const clean = decodeCurveSettlement({ logs: trade.logs, wallet, ...tokensFor(trade) });

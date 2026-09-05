@@ -21,8 +21,9 @@ import {
 } from "@tools/virtuals/curve/fee.js";
 import { virtualsCurveDeployment } from "@tools/virtuals/curve/deployments.js";
 import { VEX_TREASURY_EVM } from "../../lib/vex-treasury.js";
+import { definedValue } from "../_test-value-guards.js";
 
-const base = virtualsCurveDeployment("base")!;
+const base = definedValue(virtualsCurveDeployment("base"), "the base curve deployment");
 
 describe("the fee constants are product constants", () => {
   it("charges the same 25 bps every other Vex venue charges", () => {

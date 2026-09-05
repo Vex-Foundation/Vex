@@ -26,6 +26,7 @@ import { readGeckoTerminalCandles } from "@tools/virtuals/candles/geckoterminal.
 import { buildChainCandles } from "@tools/virtuals/candles/curve-chain.js";
 import { validateVirtualDetail, validateVirtualsList, validateGeneses } from "@tools/virtuals/validation.js";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
+import { definedValue } from "../../../../_test-value-guards.js";
 import LIST_PAGE from "../../../../virtuals/fixtures/agents-list-page.json" with { type: "json" };
 import DETAIL from "../../../../virtuals/fixtures/agent-detail.json" with { type: "json" };
 import GENESES from "../../../../virtuals/fixtures/geneses-page.json" with { type: "json" };
@@ -127,7 +128,7 @@ describe("registry parity", () => {
 
     const mutating = VIRTUALS_TOOLS.filter((t) => t.mutating);
     expect(mutating.map((t) => t.toolId)).toEqual(["virtuals.trade.execute"]);
-    expect(mutating[0]!.actionKind).toBe("user_wallet_broadcast");
+    expect(definedValue(mutating[0], "the one mutating Virtuals tool").actionKind).toBe("user_wallet_broadcast");
 
     const readOnly = VIRTUALS_TOOLS.filter((t) => !t.mutating);
     expect(readOnly).toHaveLength(8);
@@ -420,7 +421,11 @@ describe("virtuals.candles", () => {
     });
     const out = data(await run("virtuals.candles", { id: 1 }));
     expect((readGeckoTerminalCandles as Mock)).not.toHaveBeenCalled();
-    expect((buildChainCandles as Mock).mock.calls[0]![0]).toMatchObject({
+    const chainCandlesCall = definedValue(
+      (buildChainCandles as Mock).mock.calls[0],
+      "the first buildChainCandles call",
+    );
+    expect(chainCandlesCall[0]).toMatchObject({
       chain: "ROBINHOOD",
       pairAddress: "0xFB899EFC1Ad4128118cD33Eb3A0d912aceC6c8eE",
       agentTokenAddress: "0xCbb116D1f789a95B1d7F5ba8aCfBC6D26b295BE3",
@@ -460,7 +465,11 @@ describe("virtuals.candles", () => {
     expect(out.source).toBe("virtuals_tape");
     // The feed has no cursor, so the builder must ask for the provider's own
     // full ceiling: asking for less would cap the history for no saving.
-    expect((readVpApiTrades as Mock).mock.calls.at(-1)![0].limit).toBe(1000);
+    const lastTapeCall = definedValue(
+      (readVpApiTrades as Mock).mock.calls.at(-1),
+      "the last readVpApiTrades call",
+    );
+    expect(lastTapeCall[0].limit).toBe(1000);
 
     const candles = out.candles as { timestampSeconds: number; open: string; high: string; low: string; close: string; volumeVirtual: string; tradeCount: number }[];
     expect(candles.map((c) => c.timestampSeconds)).toEqual([3_600, 7_200]);
@@ -504,7 +513,11 @@ describe("virtuals.candles", () => {
     expect(coverage.note).toMatch(/NOT the start of the curve/);
     // The reply must hand back a usable cursor and never claim completeness.
     expect(out.hasMore).toBe(true);
-    expect(out.nextBeforeTimestampSeconds).toBe((out.candles as { timestampSeconds: number }[])[0]!.timestampSeconds);
+    const firstCandle = definedValue(
+      (out.candles as { timestampSeconds: number }[])[0],
+      "the first returned candle",
+    );
+    expect(out.nextBeforeTimestampSeconds).toBe(firstCandle.timestampSeconds);
   });
 
   it("refuses currency on a curve source rather than answering in another unit", async () => {

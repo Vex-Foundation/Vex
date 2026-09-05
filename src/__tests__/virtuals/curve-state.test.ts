@@ -36,6 +36,8 @@ import {
   type CurveStateResult,
   type VirtualsCurveDeployment,
 } from "@tools/virtuals/curve/index.js";
+import { publicClientDouble } from "../_test-evm-clients.js";
+import { definedValue } from "../_test-value-guards.js";
 
 const FIXTURE = JSON.parse(
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "fixtures/bonding-v5-token-info.json"), "utf8"),
@@ -78,7 +80,7 @@ const MEMBER_INDEX = {
 
 describe("the tokenInfo auto-getter shape, decoded from real chain bytes", () => {
   it.each(Object.keys(FIXTURE.calls))("decodes the live %s response into 17 members", (key) => {
-    const call = FIXTURE.calls[key]!;
+    const call = definedValue(FIXTURE.calls[key], `the captured ${key} tokenInfo response`);
     const decoded = decodeFunctionResult({
       abi: BONDING_V5_TOKEN_INFO_ABI,
       functionName: "tokenInfo",
@@ -89,7 +91,7 @@ describe("the tokenInfo auto-getter shape, decoded from real chain bytes", () =>
   });
 
   it.each(Object.keys(FIXTURE.calls))("puts %s's real values at the indices this lane reads", (key) => {
-    const call = FIXTURE.calls[key]!;
+    const call = definedValue(FIXTURE.calls[key], `the captured ${key} tokenInfo response`);
     const d = decodeFunctionResult({
       abi: BONDING_V5_TOKEN_INFO_ABI,
       functionName: "tokenInfo",
@@ -146,6 +148,15 @@ interface Overrides {
   readonly throwOn?: readonly string[];
   readonly implementations?: Readonly<Record<string, Hex | undefined>>;
   readonly reads?: Readonly<Record<string, unknown>>;
+  /** Observes every contract read the lane makes, in call order. */
+  readonly onRead?: (args: StubReadArgs) => void;
+}
+
+/** The subset of viem's `readContract` argument this stub decides on. */
+interface StubReadArgs {
+  readonly address: string;
+  readonly functionName: string;
+  readonly args?: readonly unknown[];
 }
 
 function liveTokenInfo(): readonly unknown[] {
@@ -162,9 +173,12 @@ function word(address: string): Hex {
 }
 
 /**
- * A viem-shaped stub. It answers ONLY the calls this lane makes, so a new read
- * added to `readCurveState` without a decision about its failure mode shows up
- * here as an undefined answer rather than silently passing.
+ * A REAL viem public client with this lane's reads scripted on top of it
+ * (`publicClientDouble`). It answers ONLY the calls this lane makes: a new read
+ * added to `readCurveState` without a decision about its failure mode throws
+ * `unmodelled read` here rather than silently passing, and any OTHER client
+ * method the lane grows reaches viem's own implementation over a transport that
+ * refuses by name.
  */
 function stubClient(d: VirtualsCurveDeployment, o: Overrides = {}) {
   const defaults: Record<string, unknown> = {
@@ -187,7 +201,7 @@ function stubClient(d: VirtualsCurveDeployment, o: Overrides = {}) {
     [d.bondingV5.toLowerCase()]: word(d.implementations.bondingV5),
     [d.frouterV3.toLowerCase()]: word(d.implementations.frouterV3),
   };
-  return {
+  return publicClientDouble({
     async getStorageAt(args: { address: Address }) {
       return impl[args.address.toLowerCase()];
     },
@@ -200,7 +214,8 @@ function stubClient(d: VirtualsCurveDeployment, o: Overrides = {}) {
     async getBalance() {
       return 5_106_838_744_005_253n;
     },
-    async readContract(args: { functionName: string }) {
+    async readContract(args: StubReadArgs) {
+      o.onRead?.(args);
       if ((o.throwOn ?? []).includes(args.functionName)) {
         throw new Error(`stub: ${args.functionName} reverted`);
       }
@@ -211,7 +226,7 @@ function stubClient(d: VirtualsCurveDeployment, o: Overrides = {}) {
       if (value === undefined) throw new Error(`stub: unmodelled read ${args.functionName}`);
       return value;
     },
-  } as unknown as Parameters<typeof readCurveState>[0]["client"];
+  });
 }
 
 async function read(o: Overrides = {}, side: "buy" | "sell" = "buy"): Promise<CurveStateResult> {
@@ -249,16 +264,8 @@ describe("readCurveState pins one block and reports the chain's own answers", ()
 
   it("reads the allowance of the token the SIDE spends, against FRouterV3", async () => {
     const d = deployment("base");
-    const seen: { address: string; functionName: string; args?: readonly unknown[] }[] = [];
-    const base = stubClient(d) as unknown as { readContract(a: unknown): Promise<unknown> };
-    const original = base.readContract.bind(base);
-    const client = {
-      ...(base as object),
-      readContract: async (a: { address: string; functionName: string; args?: readonly unknown[] }) => {
-        seen.push(a);
-        return await original(a);
-      },
-    } as unknown as Parameters<typeof readCurveState>[0]["client"];
+    const seen: StubReadArgs[] = [];
+    const client = stubClient(d, { onRead: (a) => seen.push(a) });
 
     await readCurveState({ client, deployment: d, token: TOKEN, side: "buy", wallet: WALLET });
     const allowance = seen.find((s) => s.functionName === "allowance");

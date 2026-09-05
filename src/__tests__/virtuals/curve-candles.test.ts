@@ -25,6 +25,7 @@ import {
   PRICE_DECIMALS,
 } from "@tools/virtuals/candles/bucketing.js";
 import CAPTURE from "./fixtures/curve-swap-logs-base-cultos.json" with { type: "json" };
+import { definedValue } from "../_test-value-guards.js";
 
 vi.mock("@tools/virtuals/trades/vp-api.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@tools/virtuals/trades/vp-api.js")>()),
@@ -239,7 +240,11 @@ describe("curve candles from the provider's trade feed", () => {
       aggregate: 1,
       limit: 5,
     });
-    expect((readVpApiTrades as ReturnType<typeof vi.fn>).mock.calls[0]![0]).toMatchObject({ limit: 1000 });
+    const firstTapeCall = definedValue(
+      (readVpApiTrades as ReturnType<typeof vi.fn>).mock.calls[0],
+      "the first readVpApiTrades call",
+    );
+    expect(firstTapeCall[0]).toMatchObject({ limit: 1000 });
   });
 
   it("passes a chain with no feed through by name, never as an empty chart", async () => {

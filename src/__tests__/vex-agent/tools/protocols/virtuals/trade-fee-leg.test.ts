@@ -27,6 +27,9 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { decodeFunctionData, getAddress, parseAbi, type Hex } from "viem";
 
+import { publicClientDouble, walletClientDouble } from "../../../../_test-evm-clients.js";
+import { definedValue } from "../../../../_test-value-guards.js";
+
 /**
  * The fee leg builds its transfer through `buildEvmVexFeeTransfer`, which owns
  * its own minimal ERC-20 ABI. Decoding with a locally declared `transfer` proves
@@ -39,7 +42,17 @@ vi.mock("@tools/evm-chains/staged-broadcast.js", () => ({
   signStageBroadcast: (...args: unknown[]) => staged(...args),
 }));
 
-const confirmActivityEvent = vi.fn(async () => ({ applied: true, row: { status: "confirmed", txHash: null } }));
+/**
+ * Typed at the shape the reconciler can really return - a row that is already
+ * `failed` or already `confirmed`, with or without a hash - so a case can script
+ * any of them without asserting past the return type.
+ */
+const confirmActivityEvent = vi.fn(
+  async (): Promise<{ applied: boolean; row: { status: string; txHash: Hex | null } }> => ({
+    applied: true,
+    row: { status: "confirmed", txHash: null },
+  }),
+);
 const failActivityEvent = vi.fn(async () => undefined);
 const markActivityBroadcast = vi.fn(async () => ({ applied: true }));
 const markBroadcastAccepted = vi.fn(async () => ({ applied: true }));
@@ -74,16 +87,17 @@ const { VEX_TREASURY_EVM } = await import("../../../../../lib/vex-treasury.js");
  */
 const RECEIVER = VIRTUALS_CURVE_FEE_RECEIVER_EVM;
 
-const DEPLOYMENT = virtualsCurveDeployment("base")!;
+const DEPLOYMENT = definedValue(virtualsCurveDeployment("base"), "the base curve deployment");
 const FEE_ROW_ID = 77;
 const EXECUTION_ID = 9;
 const TRADE_LEG_COUNT = 2;
 const HASH = "0xabc0000000000000000000000000000000000000000000000000000000000001" as Hex;
 
-const CLIENTS = {
-  publicClient: {},
-  walletClient: { account: { address: getAddress("0x1111111111111111111111111111111111111111") }, chain: { id: 8453 } },
-} as unknown as Parameters<typeof runCurveFeeLeg>[0]["clients"];
+const FEE_SIGNER = getAddress("0x1111111111111111111111111111111111111111");
+const CLIENTS: Parameters<typeof runCurveFeeLeg>[0]["clients"] = {
+  publicClient: publicClientDouble({}, DEPLOYMENT.chainId),
+  walletClient: walletClientDouble(FEE_SIGNER, {}, DEPLOYMENT.chainId),
+};
 
 function call(over: Partial<Parameters<typeof runCurveFeeLeg>[0]> = {}) {
   return runCurveFeeLeg({
@@ -108,7 +122,7 @@ beforeEach(() => {
 describe("what is transferred", () => {
   it("sends an ERC-20 VIRTUAL transfer to the Vex treasury and no native value", async () => {
     await call();
-    const [, , txParams] = staged.mock.calls[0]!;
+    const [, , txParams] = definedValue(staged.mock.calls[0], "the signed fee transaction");
     const tx = txParams as { to: string; data: Hex; value: bigint };
     expect(getAddress(tx.to)).toBe(getAddress(DEPLOYMENT.virtual));
     expect(tx.value).toBe(0n);
@@ -158,7 +172,7 @@ describe("the SELL arm charges only what the receipt proved", () => {
     const result = await call({ side: "sell", buyFeeRaw: null, provenProceedsRaw: PROCEEDS });
     const expected = (PROCEEDS * BigInt(VIRTUALS_CURVE_FEE_BPS)) / 10_000n;
     expect(result.feeAmountRaw).toBe(expected.toString());
-    const tx = staged.mock.calls[0]![2] as { data: Hex };
+    const tx = definedValue(staged.mock.calls[0], "the signed fee transaction")[2] as { data: Hex };
     expect(decodeFunctionData({ abi: TRANSFER_ABI, data: tx.data }).args[1]).toBe(expected);
   });
 
@@ -230,14 +244,14 @@ describe("a fee that fails leaves the trade alone", () => {
   });
 
   it("does not report a clean confirm when the reconciler already finalized the row", async () => {
-    confirmActivityEvent.mockResolvedValueOnce({ applied: false, row: { status: "failed", txHash: null } } as never);
+    confirmActivityEvent.mockResolvedValueOnce({ applied: false, row: { status: "failed", txHash: null } });
     const result = await call();
     expect(result.collection).toBe("confirmed_unrecorded");
     expect(result.txHash).toBe(HASH);
   });
 
   it("treats an already-confirmed row with the SAME hash as confirmed, not as a miss", async () => {
-    confirmActivityEvent.mockResolvedValueOnce({ applied: false, row: { status: "confirmed", txHash: HASH } } as never);
+    confirmActivityEvent.mockResolvedValueOnce({ applied: false, row: { status: "confirmed", txHash: HASH } });
     await expect(call()).resolves.toMatchObject({ collection: "confirmed" });
   });
 });

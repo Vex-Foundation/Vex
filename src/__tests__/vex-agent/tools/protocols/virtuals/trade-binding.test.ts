@@ -25,6 +25,7 @@ import {
   type VirtualsSnapshotFields,
 } from "@vex-agent/tools/protocols/quote-authority/virtuals.js";
 import { readQuoteBindingPreview, renderQuoteBinding } from "@vex-agent/tools/protocols/quote-authority/restore.js";
+import { definedValue } from "../../../../_test-value-guards.js";
 
 const TOKEN = { address: "0x1984edF491D3399FBc09E6d0856E01fF3721f952", symbol: "CULTOS", decimals: 18 };
 const VIRTUAL = { address: "0x0b3e328455c4059EEb9e3f84b5543F74E24e7E1b", symbol: "VIRTUAL", decimals: 18 };
@@ -276,7 +277,10 @@ describe("the approval card", () => {
 
   it("puts every fact a person must read on the line, whole", () => {
     const sealed = sealVirtualsSnapshot(sellFields());
-    const preview = readQuoteBindingPreview("prequote-1", JSON.parse(JSON.stringify(sealed)), sealed.expiresAt)!;
+    const preview = definedValue(
+      readQuoteBindingPreview("prequote-1", JSON.parse(JSON.stringify(sealed)), sealed.expiresAt),
+      "the restored quote binding preview",
+    );
     const line = renderQuoteBinding(preview);
     // The digest is never abbreviated: a shortened one asks a person to consent
     // to a fingerprint they cannot check.
