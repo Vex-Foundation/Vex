@@ -20,9 +20,11 @@ import { VIRTUALS_TAX_CHAIN_SLUGS } from "@tools/virtuals/creator-fees/deploymen
 export const VIRTUALS_CREATOR_FEES_DISCOVERY = {
   "virtuals.creator_fees": {
     embeddingText: embeddingText(
-      `Check what the creator of a Virtuals agent token has earned from its bonding-curve trading tax: how much has been collected, how much has already been swapped and paid out, and how much is still pending in the tax contract. `
-      + `Also answers whether those creator fees can be claimed or withdrawn here, and where they are actually collected, together with the fee split between the protocol treasury, any partner and the creator. `
-      + `Example queries: how much have my virtuals agent fees earned, what are my creator fees on this agent token, claim my virtuals creator rewards, has my agent tax been paid out yet, what is the creator fee split on virtuals, how much trading tax has this agent accrued.`,
+      `Check what the creator of a Virtuals agent token has earned from its bonding-curve trading tax: `
+      + `how much collected, how much already swapped and paid out, how much still pending. `
+      + `Use when the user asks what their agent token's trading fees have made them, whether those creator fees can be claimed or withdrawn here, `
+      + `or how the fee split between the protocol treasury, any partner and the creator works. `
+      + `Example queries: how much have my virtuals agent fees earned, claim the creator fees on my virtuals agent, how much agent tax is still pending for this token.`,
     ),
     aliases: [
       "virtuals creator fees",

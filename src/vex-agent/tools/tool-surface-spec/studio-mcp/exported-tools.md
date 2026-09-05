@@ -193,7 +193,7 @@ free. Both texts live on the tool
 | name | title | lane | read only | destructive | always load | requires env | description bytes | returns | vex fee |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | pools__fees_claim | Claim pools.fun creator fees | protocol | no | yes | no | - | 1619 | - | - |
-| pools__holder_rewards_get | Read pools.fun holder rewards | protocol | yes | no | no | - | 2100 | - | none (read) |
+| pools__holder_rewards_get | Read pools.fun holder rewards | protocol | yes | no | no | - | 2102 | - | none (read) |
 | pools__launch_assets_list | List pools.fun launchable stocks | protocol | yes | no | no | - | 1698 | - | none (read) |
 | pools__launch_execute | Launch a token on pools.fun | protocol | no | yes | no | - | 2801 | - | - |
 | pools__launch_preview | Price a pools.fun launch | protocol | no | no | no | - | 998 | - | - |

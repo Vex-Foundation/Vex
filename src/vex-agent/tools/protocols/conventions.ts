@@ -566,6 +566,22 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   ["minCurveProgressPct", "floor on bonding-curve completion, as a PERCENT"],
   ["maxCurveProgressPct", "ceiling on bonding-curve completion, as a PERCENT"],
 
+  // -- pools.fun launch badges and the factory's pricing axis (PR4) ---
+  //
+  // Three keys, each the PROVIDER's own spelling rather than a Vex invention.
+  // `vexAttested` and `holderRewards` are the launchpad's two opt-in discover
+  // switches: measured at `src/tools/pools-fun/PoolsFun.md` lines 61-62, the
+  // endpoint accepts the literal `true` only and answers HTTP 400 on `false`,
+  // so the complement genuinely cannot be requested and a generic boolean
+  // spelling would promise a filter the provider does not serve. `pricingMode`
+  // is the launch factory's own enum over the paired asset (CORE_CHAINLINK,
+  // CHAINLINK_STOCK, SIGNED_STOCK - 35 and 159 of 194 assets when measured,
+  // PoolsFun.md lines 233-242), and it decides whether a launch needs a
+  // time-boxed signed price attestation, so it is an axis a caller screens on.
+  ["vexAttested", "pools.fun opt-in switch keeping only launches carrying a Vex attestation; the provider accepts the literal true only"],
+  ["holderRewards", "pools.fun opt-in switch keeping only tokens that stream their fees to holders; same true-only contract as vexAttested"],
+  ["pricingMode", "the pools.fun launch factory's own pricing enum for a paired asset; decides whether a launch needs a signed price attestation"],
+
   // -- Time-series and deep-read shaping (DexScreener deep dive, S4) ---
   //
   // These describe reading ONE pool's history rather than screening a

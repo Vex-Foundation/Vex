@@ -15,12 +15,11 @@ export const POOLS_LAUNCH_ASSETS_DISCOVERY = {
   "pools.launch_assets": {
     embeddingText: embeddingText(
       `List the tokenised stocks a new coin can be paired with when it is created on the pools.fun launchpad on Robinhood Chain. `
-      + `Use when choosing what a new coin will be paired with, when planning a launch against a stock, or when asked which stocks the launchpad supports. `
-      + `Each row gives the stock symbol, the company name, its contract address, and how the launchpad prices that pair. `
-      + `Pricing matters for the launch itself: some pairs take their price from a feed, while most need a freshly signed price that stays valid for barely two minutes, so those launches have to be finished quickly. `
-      + `The list is long and comes back a page at a time with a count of the whole set. `
-      + `This only lists what is available to pair with. It does not create anything and it signs nothing. `
-      + `Example queries: which stocks can a new coin be paired with, which stocks can I launch against, is tesla available to pair with, list the launch pairs that need a signed price.`,
+      + `Use when choosing what a launch will be paired with, or when asked which stocks the launchpad supports. `
+      + `Each row gives the stock symbol, company name, contract address, and how the launchpad prices that pair: `
+      + `some take their price from a feed, most need a freshly signed price that stays valid for barely two minutes. `
+      + `Paged, with the whole set counted. Nothing is created and nothing is signed. `
+      + `Example queries: which stocks can I launch against, list the pools.fun launch pairs that need a signed price at launch.`,
     ),
     aliases: [
       "pools fun launchable stocks",

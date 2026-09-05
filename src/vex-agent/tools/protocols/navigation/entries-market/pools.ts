@@ -44,6 +44,8 @@ export const POOLS_NAVIGATION: ProtocolNamespaceNavigation = {
       "pools.fun candles and token detail",
       "Own pools.fun launches",
       "Launching a token on pools.fun",
+      "Launch pairing options",
+      "Fees to holders",
     ],
   },
   exampleQueries: [
@@ -118,6 +120,38 @@ export const POOLS_NAVIGATION: ProtocolNamespaceNavigation = {
         "confirm a pools fun launch",
         "pools fun launch form",
         "launch my pools fun coin now",
+      ],
+    },
+    {
+      label: "Launch pairing options",
+      summary:
+        "List the tokenised stocks a launch can be paired against, with the launch factory's own pricing mode "
+        + "and launchable flag read at a pinned block. Most pairs need a backend-signed price that the factory "
+        + "accepts for barely two minutes, so this is what says whether a launch has to be prepared, verified "
+        + "and broadcast inside that window.",
+      toolPrefixes: ["pools.launch_assets"],
+      hints: [
+        "which stocks can I launch against",
+        "tokenised stocks to pair a launch with",
+        "pools fun launch pairs",
+        "which launch pairs need a signed price",
+        "what can a new coin be paired with",
+      ],
+    },
+    {
+      label: "Fees to holders",
+      summary:
+        "Read what a fees-to-holders token owes ONE wallet: the distributor the suite's own deployer emitted, "
+        + "the reward mode, and the wallet's earned balance per reward leg at a pinned block, with the "
+        + "launchpad's own figures shown beside them. Earned by HOLDING, not by launching and not by staking; "
+        + "the claim is a separate tool and this one signs nothing.",
+      toolPrefixes: ["pools.holder_rewards"],
+      hints: [
+        "fees to holders",
+        "what have I earned holding this coin",
+        "does this coin pay its holders",
+        "holder rewards distributor",
+        "what the distributor owes my wallet",
       ],
     },
   ],
