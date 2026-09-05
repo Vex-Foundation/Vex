@@ -137,18 +137,19 @@ export const STUDIO_NAMESPACE_FEES: Readonly<Record<string, StudioNamespaceFee>>
     freeLanes: [],
   },
   virtuals: {
-    // Every Virtuals tool that EXISTS today is a read, and reads are free. The
-    // second sentence is the owner-confirmed policy for the curve trade and
-    // launch tools of the later lanes (v3 F1-F5); it is stated as future
-    // behaviour, not as a charge the user can incur now, because claiming a fee
-    // for a tool that does not exist is as wrong as hiding one that does.
+    // The curve trade pair landed, so the first half of this line stopped being
+    // "a later lane" and became a charge the user can incur today. The LAUNCH
+    // half is still stated as future behaviour, because claiming a fee for a
+    // tool that does not exist is as wrong as hiding one that does.
     line:
-      "none today - every Virtuals tool here is a read, and reads are free. The confirmed policy for "
-      + "the curve trade and launch tools of a later lane is 25 bps of the VIRTUAL committed on a buy, "
-      + "of the VIRTUAL a receipt proves was received on a sell, and of the initial purchase once a "
-      + "launch is observed on chain; genesis is free, and a graduated agent trades under its venue's "
-      + "own fee with no second one.",
-    freeLanes: ["src/vex-agent/tools/protocols/virtuals", "src/tools/virtuals"],
+      "25 bps of the VIRTUAL you commit on a bonding-curve buy, taken off the input before the curve, "
+      + "and 25 bps of the VIRTUAL a receipt proves you received on a sell, taken as a separate leg "
+      + "after the sale settles; a trade that reverts or cannot be proven is never charged. Every "
+      + "Virtuals read is free, a graduated agent trades under its venue's own fee with no second one, "
+      + "and the confirmed policy for the launch tools of a later lane is 25 bps of the initial "
+      + "purchase once a launch is observed on chain, with genesis free.",
+    charged: { symbol: "VIRTUALS_CURVE_FEE_BPS", lane: "src/tools/virtuals" },
+    freeLanes: [],
   },
 };
 

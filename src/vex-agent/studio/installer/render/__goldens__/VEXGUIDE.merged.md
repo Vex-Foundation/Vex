@@ -2,7 +2,7 @@
 
 Kept outside the markers.
 
-<!-- vex:studio:begin vex=0.2.6 hash=cd08fce61547d09f -->
+<!-- vex:studio:begin vex=0.2.6 hash=ac8d6570ed3e14af -->
 # Vex guide - project "acme-trading"
 
 The companion to this project's `AGENTS.md`, which carries the authority:
@@ -139,13 +139,13 @@ DexScreener is read-only market research for indexed automated-market-maker pair
 
 ### virtuals
 
-Virtuals is read-only intelligence for Virtuals agents and agent tokens across the chains indexed by the provider.
+Virtuals is intelligence for Virtuals agents and agent tokens across the chains indexed by the provider, and the bonding-curve trading venue for the agents that have not graduated on Base and Robinhood.
 
-- Chains: base, solana, robinhood, ethereum for screening, detail, graduations and genesis. Narrower per capability: trade tape base and solana only; candles for graduated agents everywhere but ethereum, and for bonding agents on solana only. Trades execute elsewhere - kyberswap on base/ethereum, uniswap on robinhood, solana tools on solana; an EVM bonding curve has no venue tool yet.
+- Chains: base, solana, robinhood, ethereum for screening, detail, graduations and genesis. Narrower per capability: trade tape base and solana only; candles for graduated agents everywhere but ethereum, and for bonding agents on solana only. Curve trading is base and robinhood only: an agent still on its BondingV5 curve is bought and sold HERE on those two chains. Everything else trades elsewhere - a GRADUATED agent through kyberswap on base/ethereum or uniswap on robinhood, and solana through the solana tools, whose curve is a Meteora pool rather than BondingV5.
 - Read: Read one agent's bonding-curve trade tape and build a price chart from its pool's ohlcv candles, screen virtuals agents and agent tokens, inspect robinhood agent tokens or one agent in depth, read market cap, holder count and concentration, check the anti-sniper buy-tax window and exact venue, follow recent virtuals graduations or what just graduated, and browse the fresh graduations feed, genesis calendar, launch schedule, and genesis sales.
-- Quote: No quote capability is available. Research does not establish an executable price, route, or minimum received amount.
-- Act: No action capability is available. Acquiring an agent token is a separate swap task on the venue identified by the research result.
-- Vex fee: none today - every Virtuals tool here is a read, and reads are free. The confirmed policy for the curve trade and launch tools of a later lane is 25 bps of the VIRTUAL committed on a buy, of the VIRTUAL a receipt proves was received on a sell, and of the initial purchase once a launch is observed on chain; genesis is free, and a graduated agent trades under its venue's own fee with no second one.
+- Quote: Price a bonding-curve buy or sell of an agent token that has not graduated, on Base or Robinhood: the output, the taxes, the anti-sniper window and the floor the contract will enforce. Research alone still establishes no executable price.
+- Act: Execute a bonding-curve buy or sell against a quote already taken, spending real funds under approval. Acquiring a GRADUATED agent token is still a separate swap task on the venue identified by the research result.
+- Vex fee: 25 bps of the VIRTUAL you commit on a bonding-curve buy, taken off the input before the curve, and 25 bps of the VIRTUAL a receipt proves you received on a sell, taken as a separate leg after the sale settles; a trade that reverts or cannot be proven is never charged. Every Virtuals read is free, a graduated agent trades under its venue's own fee with no second one, and the confirmed policy for the launch tools of a later lane is 25 bps of the initial purchase once a launch is observed on chain, with genesis free.
 
 ### trench
 
