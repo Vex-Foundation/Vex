@@ -105,31 +105,12 @@ const entries: [string, MutationContract][] = [
   // tool, and the execute's own `simulateOnly` stops before signing rather than
   // standing in for an approval-skipping preview.
   ["virtuals.trade.execute", { kind: "trade", capture: "none", expectedType: "swap", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
-  // Trench Express curve buy/sell - the handler writes the durable truth
-  // DIRECTLY to agent_activity (kind "swap") across the staged lifecycle, so
-  // `capture: "none"` (no proj_activity projection). No dryRun preview.
-  ["trench.trade_execute",   { kind: "trade", capture: "none", expectedType: "swap", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
-  // Trench Express token LAUNCH (migration 062). Same direct-write shape: the
-  // handler writes its `kind: "launch"` row itself across the staged lifecycle,
-  // so `capture: "none"` keeps the legacy proj_activity projection out of it.
-  // `kind: "trade"` because a launch with a prebuy acquires a position - and the
-  // create plus its initial buy are ONE transaction and ONE activity row, never
-  // a second `swap` row for the same tx hash. No dryRun: the read-only dry run
-  // is the separate `trench.launch_preview` tool.
-  ["trench.launch_execute",  { kind: "trade", capture: "none", expectedType: "launch", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
-  // `trench.launch_request_form` is `mutating: true` with actionKind
-  // "local_write": it drafts a durable `token_launch_intents` row and parks the
-  // turn for the user, but signs nothing, broadcasts nothing, and writes no
-  // agent_activity row. `kind: "utility"` (no portfolio impact) with
-  // `capture: "none"` and a placeholder `expectedType` - no `_tradeCapture`
-  // ever exists for it.
-  ["trench.launch_request_form", { kind: "utility", capture: "none", expectedType: "none", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
   // pools.fun's two LOCAL-WRITE launch tools. Both are `mutating: true` because
   // each writes a durable row, and neither signs anything: `launch_preview`
   // records an advisory `previewed` intent (non-live by database CHECK - no
   // authorization, no hash), and `launch_request_form` opens the app's form and
-  // parks the turn. `capture: "none"` on both, for the same reason the trench
-  // form row has it: there is no on-chain effect to capture.
+  // parks the turn. `capture: "none"` on both: there is no on-chain effect to
+  // capture.
   ["pools.launch_preview",       { kind: "utility", capture: "none", expectedType: "none", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
   ["pools.launch_request_form",  { kind: "utility", capture: "none", expectedType: "none", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
   // `launchpads.image_publish` is the first PROVIDER-SIDE mutation in the
@@ -140,8 +121,7 @@ const entries: [string, MutationContract][] = [
   // `_tradeCapture` - so it joins the local-write rows here rather than
   // widening the vocabulary for one tool.
   ["launchpads.image_publish",   { kind: "utility", capture: "none", expectedType: "none", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
-  // The pools.fun LAUNCH itself, shaped exactly like `trench.launch_execute`:
-  // the handler writes its `kind: "launch"` row directly across the staged
+  // The pools.fun LAUNCH itself: the handler writes its `kind: "launch"` row directly across the staged
   // lifecycle, so `capture: "none"` keeps the legacy proj_activity projection
   // out of it, and `kind: "trade"` because a launch with a prebuy acquires a
   // position - the launch and its prebuy are ONE transaction and ONE row. No

@@ -12,7 +12,6 @@ import { getKyberChains } from "@tools/kyberswap/chains.js";
 import { MORPHO_CHAINS } from "@tools/morpho/chains.js";
 import { PENDLE_CHAIN_REGISTRY } from "@tools/pendle/chains.js";
 import { POOLS_CHAIN_ID } from "@tools/pools-fun/constants.js";
-import { TRENCH_CHAIN_ID } from "@tools/trench-express/constants.js";
 import { listUniswapDeployments } from "@tools/uniswap/deployments.js";
 import { BRIDGE_FAMILY } from "@vex-agent/tools/protocols/relay/handlers/bridge/constants.js";
 import { VIRTUALS_TOOLS } from "@vex-agent/tools/protocols/virtuals/manifest.js";
@@ -78,7 +77,7 @@ const COVERAGE_BY_NAMESPACE: Readonly<Partial<Record<ProtocolNamespace, Protocol
   },
   relay: {
     namespace: "relay",
-    line: `Coverage: ${BRIDGE_FAMILY} EVM chains only. ${localChainLine(TRENCH_CHAIN_ID)} is reachable only through Relay when its live health gate passes; Solana is not supported.`,
+    line: `Coverage: ${BRIDGE_FAMILY} EVM chains only. ${localChainLine(POOLS_CHAIN_ID)} is reachable only through Relay when its live health gate passes; Solana is not supported.`,
   },
   kyberswap: {
     namespace: "kyberswap",
@@ -95,10 +94,6 @@ const COVERAGE_BY_NAMESPACE: Readonly<Partial<Record<ProtocolNamespace, Protocol
   pendle: {
     namespace: "pendle",
     line: `Coverage: ${renderNamedChains(PENDLE_CHAIN_REGISTRY)}.`,
-  },
-  trench: {
-    namespace: "trench",
-    line: `Coverage: ${localChainLine(TRENCH_CHAIN_ID)} only.`,
   },
   pools: {
     namespace: "pools",

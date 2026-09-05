@@ -208,10 +208,10 @@ describe("ReorderableSection - keyboard path", () => {
 
   it("Home and End jump to the first and last slot", () => {
     render(<Harness onOrderChange={vi.fn()} />);
-    fireEvent.keyDown(handle("trench"), { key: "Home" });
-    expect(renderedOrder()[0]).toBe("trench");
-    fireEvent.keyDown(handle("trench"), { key: "End" });
-    expect(renderedOrder().at(-1)).toBe("trench");
+    fireEvent.keyDown(handle("launchpads"), { key: "Home" });
+    expect(renderedOrder()[0]).toBe("launchpads");
+    fireEvent.keyDown(handle("launchpads"), { key: "End" });
+    expect(renderedOrder().at(-1)).toBe("launchpads");
   });
 
   it("announces the new position, and names the section on its handle", () => {
@@ -226,8 +226,8 @@ describe("ReorderableSection - keyboard path", () => {
 describe("ReorderableSection - the insertion cue", () => {
   it("shows the insertion cue on the hovered row ONLY, naming the edge", () => {
     render(<Harness onOrderChange={vi.fn()} />);
-    const dataTransfer = transfer("trench");
-    fireEvent.dragStart(handle("trench"), { dataTransfer });
+    const dataTransfer = transfer("launchpads");
+    fireEvent.dragStart(handle("launchpads"), { dataTransfer });
     fireEvent.dragOver(row("wallets"), { dataTransfer });
 
     // WHICH edge is chosen depends on the pointer's position against the row's

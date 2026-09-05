@@ -51,11 +51,14 @@ const FIXTURES: readonly GoldenFixture[] = [
   { intent: "pair liquidity analytics", expectedAny: ["dexscreener.pair.get", "dexscreener.tokenPairs"] },
   { intent: "which narrative or meta sector is moving", expectedAny: ["dexscreener.trending"] },
   { intent: "who just bought a boost", expectedAny: ["dexscreener.spotlight"] },
-  { intent: "new token launches on trench", expectedAny: ["trench.tokens"] },
-  { intent: "newest tokens on robinhood", expectedAny: ["trench.tokens"] },
-  { intent: "trench bonding curve tokens", expectedAny: ["trench.tokens"] },
-  { intent: "preview a token launch cost on trench", expectedAny: ["trench.launch_preview"] },
-  { intent: "trench launchpad trade tape", expectedAny: ["trench.trades", "trench.tokens"] },
+  // The five `trench`-worded fixtures were RETIRED with the protocol (migration
+  // 108), not retargeted at pools.fun. A query naming a launchpad that no longer
+  // exists has no right answer, and pinning it at the surviving one would assert
+  // that the retrieval surface should silently redirect a user's named venue -
+  // which is the opposite of what it should do. The venue-neutral queries below
+  // are what still measure the launchpad surface.
+  { intent: "newest tokens on robinhood", expectedAny: ["pools.tokens"] },
+  { intent: "preview a token launch cost", expectedAny: ["pools.launch_preview"] },
   // ── ambiguous / cross-namespace ───────────────────────────────────
   { intent: "wallet token balances", expectedAny: ["khalani.tokens", "solana.tokens"] },
   { intent: "prediction market events", expectedAny: ["solana.predict.events"] },

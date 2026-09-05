@@ -53,10 +53,10 @@ whether its provider key is configured on this machine.
 
 ## Totals
 
-- tools: 176
+- tools: 166
 - Vex tools: 27
-- protocol tools: 149 across 11 protocols
-- destructive: 53
+- protocol tools: 139 across 10 protocols
+- destructive: 51
 
 ## Vex tools
 
@@ -259,21 +259,6 @@ whether its provider key is configured on this machine.
 | solana__token_prices_get | Read Solana token prices | read-only | no | JUPITER_API_KEY |
 | solana__tokens_discover | Discover new and trending Solana tokens | read-only | no | JUPITER_API_KEY |
 | solana__tokens_search | Search Solana tokens by name | read-only | no | JUPITER_API_KEY |
-
-### trench
-
-| tool | title | access | destructive | requires env |
-| --- | --- | --- | --- | --- |
-| trench__images_list | List Trench image-locker images | read-only | no | - |
-| trench__launch_execute | Launch a token on Trench Express | mutating | yes | - |
-| trench__launch_preview | Dry-run a Trench Express launch | read-only | no | - |
-| trench__launch_request_form | Ask the user to confirm a Trench launch | mutating | no | - |
-| trench__my_launches_list | List this wallet's Trench launches | read-only | no | - |
-| trench__token_trades_list | Read a Trench Express token's trade tape | read-only | no | - |
-| trench__tokens_discover | Screen Trench Express tokens | read-only | no | - |
-| trench__tokens_search | Search Trench Express tokens | read-only | no | - |
-| trench__trade_execute | Trade a Trench Express token | mutating | yes | - |
-| trench__trade_quote | Quote a Trench Express trade | read-only | no | - |
 
 ### uniswap
 

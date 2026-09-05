@@ -3,7 +3,7 @@
  * shares, with no opinion about which sections exist.
  *
  * The BOOK has TWO registries now: the agent rail (`section-order.ts`:
- * Position / Wallets / Balances / Activity / Session / Trench) and the Studio
+ * Position / Wallets / Balances / Activity / Session / Launchpad) and the Studio
  * rail (`studio-section-order.ts`: Portfolio Overview / Wallets / Balances).
  * They evolve INDEPENDENTLY - the ratified Studio v1 list deliberately omits
  * the agent-only cards, and either side can gain a card without the other -

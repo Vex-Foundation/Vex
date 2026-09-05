@@ -70,11 +70,14 @@ export interface RecordLaunchedTokenInput {
   symbol: string;
   /**
    * Which launchpad produced the token: `trench_express` or `pools_fun`
-   * (migration 082). Defaults to `trench_express` for callers that predate the
-   * second venue - named rather than assumed. Both venues share chain 4663, so
-   * this is the ONLY thing that tells the two populations apart.
+   * (migration 082). REQUIRED, and stated rather than defaulted: both venues
+   * share chain 4663, so this is the ONLY thing that tells the two populations
+   * apart, and it used to default to `trench_express` for callers that predated
+   * the second venue. After migration 108 retired that venue the default became
+   * a trapdoor - a writer that forgot the discriminator would file a new launch
+   * under a protocol that no longer exists.
    */
-  launchpad?: string;
+  launchpad: string;
   imageRef?: string | null;
   createTxHash: string;
   initialBuyRaw?: string | null;
@@ -138,7 +141,7 @@ export async function record(
     [
       input.walletAddress,
       input.chainId,
-      input.launchpad ?? "trench_express",
+      input.launchpad,
       input.tokenAddress,
       input.name,
       input.symbol,
@@ -189,79 +192,6 @@ export async function stampAttestSignature(input: {
         AND attest_signature IS NULL
       RETURNING id`,
     [input.chainId, input.tokenAddress, input.attestSignature],
-  );
-  return row !== null;
-}
-
-/** What the attribution sweep needs to make one POST, and nothing more. */
-export interface AttributionCandidate {
-  id: number;
-  chainId: number;
-  tokenAddress: string;
-  attestSignature: string;
-}
-
-/**
- * Claim up to `limit` signed-but-unattributed tokens, least-recently-attempted
- * first, stamping `attribution_attempted_at` in the SAME statement.
- *
- * The stamp is what makes the window advance: attribution can be refused
- * permanently (a 403 is not retryable into a success), and without the stamp the
- * same 25 refused rows would be re-served on every pass forever while row 26 is
- * never reached — the starvation `token-launch-intents/sweep-claim.ts` documents.
- * `retryAfterSeconds` keeps a just-attempted row out of the next pass.
- *
- * `FOR UPDATE SKIP LOCKED` gives two concurrent sweeps disjoint batches.
- *
- * CONFINED TO `trench_express`. `chain_id` alone stopped being a venue selector
- * at migration 082: pools.fun launches land on the SAME chain 4663, and their
- * badge is claimed against a different endpoint with a differently-formatted
- * signature (`pools_attest_signature`). Without this predicate the trench sweep
- * would POST a pools.fun token to trench.express and stamp
- * `attribution_attempted_at` on a row it can never attribute. The value is
- * exact, not an allow-list: a third launchpad must opt in deliberately.
- */
-export async function claimAttributionCandidates(input: {
-  chainId: number;
-  limit: number;
-  retryAfterSeconds: number;
-}): Promise<AttributionCandidate[]> {
-  const rows = await query<Record<string, unknown>>(
-    `WITH candidates AS (
-       SELECT id AS candidate_id
-         FROM launched_tokens
-        WHERE chain_id = $1
-          AND launchpad = 'trench_express'
-          AND attributed_at IS NULL
-          AND attest_signature IS NOT NULL
-          AND (attribution_attempted_at IS NULL
-               OR attribution_attempted_at < NOW() - ($3 || ' seconds')::interval)
-        ORDER BY attribution_attempted_at ASC NULLS FIRST, id ASC
-        LIMIT $2
-        FOR UPDATE SKIP LOCKED
-     )
-     UPDATE launched_tokens t
-        SET attribution_attempted_at = NOW()
-       FROM candidates c
-      WHERE t.id = c.candidate_id
-      RETURNING t.id, t.chain_id, t.token_address, t.attest_signature`,
-    [input.chainId, input.limit, String(input.retryAfterSeconds)],
-  );
-  return rows.map((r) => ({
-    id: Number(r.id),
-    chainId: Number(r.chain_id),
-    tokenAddress: r.token_address as string,
-    attestSignature: r.attest_signature as string,
-  }));
-}
-
-/** The badge landed. Terminal — the row leaves the sweep's candidate set for good. */
-export async function markAttributed(id: number): Promise<boolean> {
-  const row = await queryOne<Record<string, unknown>>(
-    `UPDATE launched_tokens SET attributed_at = NOW()
-      WHERE id = $1 AND attributed_at IS NULL
-      RETURNING id`,
-    [id],
   );
   return row !== null;
 }
@@ -328,9 +258,8 @@ export function agentscanWireLaunchpad(launchpad: string): AgentscanAttestWireLa
 }
 
 /**
- * What the AgentScan attestation sweep needs to make one POST. A SEPARATE
- * candidate set from `AttributionCandidate` — same signature, two independent
- * consumers — plus the creation tx hash the AgentScan wire contract requires
+ * What the AgentScan attestation sweep needs to make one POST, plus the
+ * creation tx hash the AgentScan wire contract requires
  * as a validated hint (trench.express's own `/vex/attribute` never asked for
  * one) and the launchpad whose creation proof the server must apply.
  */
@@ -347,8 +276,8 @@ export interface AgentscanAttestCandidate {
 /**
  * Claim up to `limit` signed-but-unsubmitted (AgentScan) tokens, least-recently-
  * attempted first, stamping `agentscan_attest_attempted_at` in the SAME
- * statement. Mirrors `claimAttributionCandidates` verbatim in shape, over the
- * 074 pair of columns instead of 071's — a permanently-refused row moves to
+ * statement. Over the 074 pair of columns rather than 071's - a
+ * permanently-refused row moves to
  * the back of the queue instead of starving row 26, and `FOR UPDATE SKIP
  * LOCKED` gives two concurrent sweeps disjoint batches.
  *
@@ -514,31 +443,6 @@ export async function recordAgentscanVerifyStatus(input: {
     [input.id, input.status],
   );
   return row !== null;
-}
-
-/**
- * Trench tokens on this chain that can NEVER be attributed by the sweep:
- * unattributed, with no stored signature. Counted rather than claimed, because
- * the sweep holds no signer and re-serving them would be a loop that can only
- * fail.
- *
- * CONFINED TO `trench_express`. This number is LOGGED AS A GAP - an operator
- * reads it as "this many trench launches will never get their badge". Before
- * migration 082 `chain_id` was a faithful proxy for the venue; since then every
- * pools.fun launch has been inflating this count with rows the trench sweep was
- * never responsible for. The pools lane counts its own gap
- * (`countPoolsUnsignedAttributionGap`).
- */
-export async function countUnsignedAttributionGap(chainId: number): Promise<number> {
-  const row = await queryOne<Record<string, unknown>>(
-    `SELECT COUNT(*)::int AS gap FROM launched_tokens
-      WHERE chain_id = $1
-        AND launchpad = 'trench_express'
-        AND attributed_at IS NULL
-        AND attest_signature IS NULL`,
-    [chainId],
-  );
-  return row === null ? 0 : Number(row.gap);
 }
 
 // ── pools.fun attribution lane (migration 094) ──────────────────────────────

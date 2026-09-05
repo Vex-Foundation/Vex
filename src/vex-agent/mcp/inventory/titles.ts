@@ -198,17 +198,6 @@ export const STUDIO_TOOL_TITLES: Readonly<Record<string, string>> = {
   morpho__market_withdraw: "Withdraw a supply from a Morpho market",
   morpho__rewards_claim: "Claim earned Morpho rewards",
 
-  // ── trench ────────────────────────────────────────────────────────────────
-  trench__tokens_discover: "Screen Trench Express tokens",
-  trench__tokens_search: "Search Trench Express tokens",
-  trench__token_trades_list: "Read a Trench Express token's trade tape",
-  trench__launch_preview: "Dry-run a Trench Express launch",
-  trench__trade_quote: "Quote a Trench Express trade",
-  trench__trade_execute: "Trade a Trench Express token",
-  trench__images_list: "List Trench image-locker images",
-  trench__my_launches_list: "List this wallet's Trench launches",
-  trench__launch_request_form: "Ask the user to confirm a Trench launch",
-  trench__launch_execute: "Launch a token on Trench Express",
 
   // ── pools ─────────────────────────────────────────────────────────────────
   pools__tokens_discover: "Screen pools.fun tokens",

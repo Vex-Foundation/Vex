@@ -4,15 +4,15 @@
   "datasetId": "tool-discovery-dexscreener",
   "datasetVersion": "dexscreener-v5",
   "status": "captured",
-  "capturedAt": "2026-09-05T10:19:19.319Z",
+  "capturedAt": "2026-09-05T11:49:33.819Z",
   "metrics": {
     "overall": {
       "count": 62,
       "recall1": 0.452,
       "recall5": 0.694,
       "coverage5": 0.677,
-      "mrr5": 0.539,
-      "groupMrr5": 0.537
+      "mrr5": 0.542,
+      "groupMrr5": 0.54
     },
     "awareness": {
       "blind": {
@@ -20,8 +20,8 @@
         "recall1": 0.289,
         "recall5": 0.526,
         "coverage5": 0.5,
-        "mrr5": 0.36,
-        "groupMrr5": 0.357
+        "mrr5": 0.364,
+        "groupMrr5": 0.361
       },
       "protocolAware": {
         "count": 24,
@@ -38,8 +38,8 @@
         "recall1": 0.459,
         "recall5": 0.689,
         "coverage5": 0.689,
-        "mrr5": 0.545,
-        "groupMrr5": 0.545
+        "mrr5": 0.548,
+        "groupMrr5": 0.548
       },
       "cross": {
         "count": 0,
@@ -112,8 +112,8 @@
         "recall1": 0.452,
         "recall5": 0.694,
         "coverage5": 0.677,
-        "mrr5": 0.539,
-        "groupMrr5": 0.537
+        "mrr5": 0.542,
+        "groupMrr5": 0.54
       },
       "prediction_discovery": {
         "count": 0,
@@ -175,7 +175,7 @@
   },
   "notes": [
     "dataset tool-discovery-dexscreener@dexscreener-v5, mode lexical, 62 cases evaluated.",
-    "overall recall@1 0.452, recall@5 0.694, coverage@5 0.677, mrr@5 0.539, groupMrr@5 0.537.",
-    "Measured delta: none, metrics are identical to the previous baseline."
+    "overall recall@1 0.452, recall@5 0.694, coverage@5 0.677, mrr@5 0.542, groupMrr@5 0.54.",
+    "Measured delta vs previous baseline (dexscreener-v5, captured 2026-09-05T10:19:19.319Z): 8 metric values moved; overall recall@5 0.694 -> 0.694, overall mrr@5 0.539 -> 0.542, case count 62 -> 62."
   ]
 }

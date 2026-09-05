@@ -70,7 +70,7 @@ describe("resolveTurnIslandView - the four working states", () => {
   // reads the protocol act rather than `kyberswap__swap__quote`.
   it.each([
     ["kyberswap.swap.quote", "Calling KyberSwap · Swap quote"],
-    ["trench.launch_execute", "Calling Trench Express · Launch"],
+    ["trench.launch_execute", "Calling Trench Express (legacy) · Launch"],
     // Unresolvable at main: no venue is borrowed, and no `__` reaches the user
     // as a branded act.
     ["kyberswapp__swap__quote", "Calling Kyberswapp swap quote"],

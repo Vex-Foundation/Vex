@@ -3,7 +3,7 @@
  * `@tools/evm-chains/staged-broadcast.js`, alongside the guards it composes.
  *
  * It was never kyberswap-specific: relay, pendle, uniswap (twin) and
- * trench-express all sign through it. This path is preserved so no consumer
+ * every EVM venue signs through it. This path is preserved so no consumer
  * import changes.
  */
 

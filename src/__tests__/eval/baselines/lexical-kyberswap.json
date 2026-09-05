@@ -4,24 +4,24 @@
   "datasetId": "tool-discovery-kyberswap",
   "datasetVersion": "kyberswap-v1",
   "status": "captured",
-  "capturedAt": "2026-09-05T10:19:21.095Z",
+  "capturedAt": "2026-09-05T11:49:38.671Z",
   "metrics": {
     "overall": {
       "count": 20,
       "recall1": 0.2,
-      "recall5": 0.35,
-      "coverage5": 0.35,
-      "mrr5": 0.267,
-      "groupMrr5": 0.267
+      "recall5": 0.4,
+      "coverage5": 0.4,
+      "mrr5": 0.277,
+      "groupMrr5": 0.277
     },
     "awareness": {
       "blind": {
         "count": 12,
         "recall1": 0.167,
-        "recall5": 0.167,
-        "coverage5": 0.167,
-        "mrr5": 0.167,
-        "groupMrr5": 0.167
+        "recall5": 0.25,
+        "coverage5": 0.25,
+        "mrr5": 0.183,
+        "groupMrr5": 0.183
       },
       "protocolAware": {
         "count": 8,
@@ -36,10 +36,10 @@
       "single": {
         "count": 20,
         "recall1": 0.2,
-        "recall5": 0.35,
-        "coverage5": 0.35,
-        "mrr5": 0.267,
-        "groupMrr5": 0.267
+        "recall5": 0.4,
+        "coverage5": 0.4,
+        "mrr5": 0.277,
+        "groupMrr5": 0.277
       },
       "cross": {
         "count": 0,
@@ -158,10 +158,10 @@
       "token_safety": {
         "count": 5,
         "recall1": 0.2,
-        "recall5": 0.4,
-        "coverage5": 0.4,
-        "mrr5": 0.3,
-        "groupMrr5": 0.3
+        "recall5": 0.6,
+        "coverage5": 0.6,
+        "mrr5": 0.34,
+        "groupMrr5": 0.34
       },
       "workflow": {
         "count": 0,
@@ -175,7 +175,7 @@
   },
   "notes": [
     "dataset tool-discovery-kyberswap@kyberswap-v1, mode lexical, 20 cases evaluated.",
-    "overall recall@1 0.2, recall@5 0.35, coverage@5 0.35, mrr@5 0.267, groupMrr@5 0.267.",
-    "Measured delta: none, metrics are identical to the previous baseline."
+    "overall recall@1 0.2, recall@5 0.4, coverage@5 0.4, mrr@5 0.277, groupMrr@5 0.277.",
+    "Measured delta vs previous baseline (kyberswap-v1, captured 2026-09-05T10:19:21.095Z): 16 metric values moved; overall recall@5 0.35 -> 0.4, overall mrr@5 0.267 -> 0.277, case count 20 -> 20."
   ]
 }

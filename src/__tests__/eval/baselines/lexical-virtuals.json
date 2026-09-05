@@ -4,24 +4,24 @@
   "datasetId": "tool-discovery-virtuals",
   "datasetVersion": "virtuals-v2",
   "status": "captured",
-  "capturedAt": "2026-09-05T10:19:32.884Z",
+  "capturedAt": "2026-09-05T11:50:06.310Z",
   "metrics": {
     "overall": {
       "count": 34,
       "recall1": 0.382,
-      "recall5": 0.706,
-      "coverage5": 0.706,
-      "mrr5": 0.503,
-      "groupMrr5": 0.496
+      "recall5": 0.735,
+      "coverage5": 0.735,
+      "mrr5": 0.509,
+      "groupMrr5": 0.502
     },
     "awareness": {
       "blind": {
         "count": 17,
         "recall1": 0.294,
-        "recall5": 0.529,
-        "coverage5": 0.529,
-        "mrr5": 0.355,
-        "groupMrr5": 0.355
+        "recall5": 0.588,
+        "coverage5": 0.588,
+        "mrr5": 0.367,
+        "groupMrr5": 0.367
       },
       "protocolAware": {
         "count": 17,
@@ -36,10 +36,10 @@
       "single": {
         "count": 32,
         "recall1": 0.375,
-        "recall5": 0.719,
-        "coverage5": 0.719,
-        "mrr5": 0.504,
-        "groupMrr5": 0.504
+        "recall5": 0.75,
+        "coverage5": 0.75,
+        "mrr5": 0.51,
+        "groupMrr5": 0.51
       },
       "cross": {
         "count": 0,
@@ -110,10 +110,10 @@
       "market_research": {
         "count": 29,
         "recall1": 0.345,
-        "recall5": 0.69,
-        "coverage5": 0.69,
-        "mrr5": 0.478,
-        "groupMrr5": 0.47
+        "recall5": 0.724,
+        "coverage5": 0.724,
+        "mrr5": 0.485,
+        "groupMrr5": 0.476
       },
       "prediction_discovery": {
         "count": 0,
@@ -175,7 +175,7 @@
   },
   "notes": [
     "dataset tool-discovery-virtuals@virtuals-v2, mode lexical, 34 cases evaluated.",
-    "overall recall@1 0.382, recall@5 0.706, coverage@5 0.706, mrr@5 0.503, groupMrr@5 0.496.",
-    "Measured delta: none, metrics are identical to the previous baseline."
+    "overall recall@1 0.382, recall@5 0.735, coverage@5 0.735, mrr@5 0.509, groupMrr@5 0.502.",
+    "Measured delta vs previous baseline (virtuals-v2, captured 2026-09-05T10:19:32.884Z): 16 metric values moved; overall recall@5 0.706 -> 0.735, overall mrr@5 0.503 -> 0.509, case count 34 -> 34."
   ]
 }

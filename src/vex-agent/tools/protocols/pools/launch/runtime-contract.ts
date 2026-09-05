@@ -96,7 +96,7 @@ export interface PoolsLaunchPrebuy {
  *
  * `locker` is the primary path and the one the desktop form uses: the user picks
  * a picture they staged earlier in the SHARED IMAGE LOCKER (the same locker
- * Trench launches use), so what crosses the boundary is an opaque id the agent
+ * the locker uses), so what crosses the boundary is an opaque id the agent
  * can never mint - only name one a read tool listed. `prepare` resolves that id
  * to bytes through the EXISTING image lane and uploads them ONCE.
  *

@@ -6,7 +6,7 @@
  * the form would submit, and two hand-written param lists are how a preview
  * starts describing a different launch than the one that executes.
  *
- * THE HARD RULE, inherited verbatim from the Trench launch params: NO `fee`,
+ * THE HARD RULE for every launch param set: NO `fee`,
  * `value`, `min`, `minOut`, `deadline`, `recipient` or gas parameter appears
  * here, ever. A model-supplied fee or recipient is an overcharge vector and the
  * approval preview is arguments-only, so the human approving would never see it.

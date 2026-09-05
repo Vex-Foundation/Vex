@@ -1,4 +1,4 @@
-<!-- vex:studio:begin vex=0.2.6 hash=dc6fabaa4a08de31 -->
+<!-- vex:studio:begin vex=0.2.6 hash=fbc13f3938e1552d -->
 # Vex Studio - project "acme-trading"
 
 This repository is connected to Vex, a self-custodial crypto agent. The Vex
@@ -187,13 +187,11 @@ attempt.
 - Bridges (`BridgeQuote`/`BridgeExecute` and the Relay pair): a SEPARATE
   transfer that runs only after the deposit lands, so a bridge that does not
   happen is never charged.
-- Trench curve trades: a SEPARATE transfer after the trade confirms, 25 bps
-  of the ETH sent on a buy or of the ETH received on a sale.
 - The generic EVM pair: 25 bps of that transaction's own native `valueWei`,
   as a separate transfer after it confirms. A zero-value transaction - every
   ERC-20 transfer and every approve - pays NOTHING, and nothing is charged
   when the fee would cost more to collect than it is worth.
-- Trench and pools.fun launches: 25 bps of the native value the launch sends.
+- pools.fun launches: 25 bps of the native value the launch sends.
 
 FREE: every read, quote, preview and research call; `WalletSendPrepare` and
 `WalletSendConfirm`; the wrap pair, which is exactly 1:1; every Pendle and

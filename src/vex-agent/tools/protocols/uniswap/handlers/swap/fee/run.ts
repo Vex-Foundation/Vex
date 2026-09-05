@@ -25,7 +25,7 @@
  *     for the receipt sweep, because a blind retry of an unconfirmed transfer
  *     could charge the user TWICE.
  *
- * This is the same contract `protocols/trench/fee/run.ts` implements for Trench
+ * This is the same contract the sibling launchpad fee runners implement
  * Express. The two are deliberately separate today because that module is
  * native-ETH-only (wei formatting, one chain) while this one moves an ERC-20 or
  * native input on any Uniswap deployment; extracting the shared core is a named

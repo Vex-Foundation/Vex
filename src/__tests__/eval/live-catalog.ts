@@ -32,9 +32,12 @@ export function liveCatalogToolCount(): number {
  * every affected baseline was recaptured in the same change; 151 with the
  * pools.fun holder-rewards MUTATIONS (`pools.holder_rewards_claim`,
  * `pools.holder_rewards_distribute`), again two new identities on an existing
- * namespace, so a pure +2 and every affected baseline recaptured here.
+ * namespace, so a pure +2 and every affected baseline recaptured here; 141
+ * after the Trench Express retirement (migration 108) DELETED the ten
+ * `trench.*` manifests, the first movement in this ledger that is a retirement
+ * rather than a widening, so every baseline was recaptured here too.
  */
-export const PINNED_LIVE_CATALOG_TOOL_COUNT = 151;
+export const PINNED_LIVE_CATALOG_TOOL_COUNT = 141;
 
 /**
  * The candidate count every dense and lexical measurement must have seen.

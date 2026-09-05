@@ -20,7 +20,7 @@
  *
  * NO CEILINGS APPLY HERE, deliberately. The mission ceilings bound UNATTENDED
  * spending against a host-authored contract; a human clicking Deploy is not that
- * situation, exactly as on the Trench form path.
+ * situation, exactly as on the agent form path.
  *
  * WHAT STAGE 2 DOES NOT DO IS RE-PREPARE. A second prepare pins a second
  * persistent IPFS object and mines a DIFFERENT salt, so it would describe a

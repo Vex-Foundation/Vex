@@ -121,11 +121,12 @@ describe("capture contract — structural coverage", () => {
 
   it("the utility kind holds exactly the tools that mutate without touching a portfolio", () => {
     // hyperliquid.risk.proposeSetup was the sole "utility" (no portfolio
-    // impact) entry until Agent Scan Phase 3 deleted it with the protocol.
-    // `trench.launch_request_form` (migration 062) is the successor this
-    // comment predicted: mutating (it drafts a launch-intent row and parks the
-    // turn) but zero portfolio impact and no capture — signs nothing.
-    // pools.fun adds two more of the same shape (migration 082): `launch_preview`
+    // impact) entry until Agent Scan Phase 3 deleted it with the protocol, and
+    // `trench.launch_request_form` (migration 062) succeeded it in the same
+    // shape - until migration 108 retired THAT protocol too. Two entries have
+    // now left this kind the same way, which is worth stating: a form-drafting
+    // tool is exactly as deletable as the launchpad behind it.
+    // pools.fun carries two of the same shape (migration 082): `launch_preview`
     // records an advisory `previewed` intent that the database itself keeps
     // non-live, and `launch_request_form` opens the app's form and parks the
     // turn. Both are mutating because each writes a durable row; neither signs.
@@ -138,7 +139,6 @@ describe("capture contract — structural coverage", () => {
       "launchpads.image_publish",
       "pools.launch_preview",
       "pools.launch_request_form",
-      "trench.launch_request_form",
     ]);
   });
 

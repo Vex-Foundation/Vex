@@ -118,9 +118,13 @@ describe("the exported inventory covers exactly the export scope", () => {
     // the token's holders rather than its caller). Both sign, so unlike the
     // two pools reads above neither is read-only; the internal count is
     // unmoved and the protocol count carries both (147 -> 149).
-    expect(inventory).toHaveLength(176);
+    // 176 -> 166 on the Trench Express retirement (migration 108): the ten
+    // `trench__*` tools were deleted with the protocol. All ten were protocol
+    // tools, so the internal count is unmoved and the protocol count carries
+    // the whole drop (149 -> 139).
+    expect(inventory).toHaveLength(166);
     expect(inventory.filter((t) => t.kind === "internal")).toHaveLength(27);
-    expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(149);
+    expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(139);
   });
 
   it("keeps WebResearch OUT of tools/list while the in-app registry keeps it", () => {
@@ -285,7 +289,7 @@ describe("annotations are pinned to O7, literally", () => {
     // nothing and broadcasts nothing). A `mutating`-derived hint would fire a
     // client's irreversible-action prompt on it, and on the two launch-request
     // forms that only ask the user a question.
-    const diverging = ["pools__launch_preview", "pools__launch_request_form", "trench__launch_request_form"];
+    const diverging = ["pools__launch_preview", "pools__launch_request_form"];
     for (const name of diverging) {
       const manifest = getProtocolManifest(
         inventory.find((t) => t.publicName === name)?.toolId ?? "",

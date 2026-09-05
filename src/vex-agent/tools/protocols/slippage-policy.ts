@@ -57,7 +57,7 @@ export const VEX_MAX_SLIPPAGE_BPS = 1000;
  * inherited aggregator convention and was measurably too tight on the venues
  * Vex actually trades - the tolerance is a WORST-CASE bound, not an expected
  * cost, and a quote that reverts costs gas and a whole mission slice while
- * paying nothing for the unused headroom. 100 is what the trench curve path had
+ * paying nothing for the unused headroom. 100 is what the curve path had
  * already converged on independently. The ceiling
  * ({@link VEX_MAX_SLIPPAGE_BPS}) is unchanged.
  *

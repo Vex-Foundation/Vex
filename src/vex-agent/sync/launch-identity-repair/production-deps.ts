@@ -37,10 +37,16 @@ export function buildProductionLaunchRepairDeps(): LaunchIdentityRepairDeps {
       const chain = getLocalChain(chainId);
       if (!chain) return null;
       const { getLocalPublicClient } = await import("@tools/evm-chains/evm-client.js");
+      // The retired Trench Express launchpad. Its decoder is history-only
+      // (`sync/legacy-trench-express/`): no new intent can carry
+      // `protocol='trench'` since migration 108, but a `broadcast_pending` row
+      // mined before it must still be reconciled to a token identity.
       const { decodeLaunchReceipt } = await import(
-        "@vex-agent/tools/protocols/trench/handlers/launch/settlement.js"
+        "../legacy-trench-express/launch-settlement.js"
       );
-      const { TRENCH_DIAMOND_ADDRESS } = await import("@tools/trench-express/constants.js");
+      const { LEGACY_TRENCH_DIAMOND_ADDRESS } = await import(
+        "../legacy-trench-express/constants.js"
+      );
 
       const client = getLocalPublicClient(chain);
 
@@ -78,7 +84,7 @@ export function buildProductionLaunchRepairDeps(): LaunchIdentityRepairDeps {
           topics: log.topics as string[],
           data: log.data,
         })),
-        diamond: TRENCH_DIAMOND_ADDRESS as `0x${string}`,
+        diamond: LEGACY_TRENCH_DIAMOND_ADDRESS as `0x${string}`,
         wallet: walletAddress as `0x${string}`,
         // The sweep never reads an AMOUNT off the chain — the authorized native
         // prebuy comes from the intent. Only the identity is decoded here.

@@ -2,7 +2,7 @@
  * THE AGENT-REQUESTED LAUNCH FORM, opened for the user (§C3b, Path 1).
  *
  * ── WHAT THIS FIXES ───────────────────────────────────────────────────────
- * `trench.launch_request_form` drafts an `awaiting_user_form` intent and PARKS
+ * `pools.launch_request_form` drafts an `awaiting_user_form` intent and PARKS
  * the agent's turn on it. Until now the only trace of that reaching the user was
  * prose in the transcript, while the launch UI sat at the bottom of the Book
  * sidebar — so the agent asked a question the interface never presented, and the
@@ -46,12 +46,15 @@
 import { useCallback, useEffect, useMemo, useState, type JSX } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  useAwaitingLaunchForm,
-  useLaunchFormLiveSync,
-  type AwaitingLaunchFormDto,
-} from "../../../lib/api/token-launch.js";
-import { tokenLaunchKeys } from "../../../lib/api/queryKeys.js";
-import { EMPTY_LAUNCH_FORM, type LaunchFormValues } from "./LaunchForm.js";
+  useAwaitingPoolsLaunchForm,
+  usePoolsLaunchFormLiveSync,
+} from "../../../lib/api/pools-launch.js";
+import type { PoolsAwaitingLaunchForm } from "@shared/schemas/pools-launch.js";
+import { poolsLaunchKeys } from "../../../lib/api/queryKeys.js";
+import {
+  EMPTY_POOLS_LAUNCH_FORM,
+  type PoolsLaunchFormValues,
+} from "../TokenLaunchDialog/pools/form-values.js";
 import { TokenLaunchDialog } from "../TokenLaunchDialog.js";
 
 export interface AgentLaunchFormHostProps {
@@ -62,15 +65,45 @@ export interface AgentLaunchFormHostProps {
 /** The open form, together with the session it BELONGS to. */
 interface OpenFormSnapshot {
   readonly sessionId: string;
-  readonly form: AwaitingLaunchFormDto;
+  readonly form: PoolsAwaitingLaunchForm;
+}
+
+/**
+ * The agent's proposal -> the form's own values.
+ *
+ * EVERY FIELD IS OPTIONAL ON THE WIRE and every absent one falls back to the
+ * EMPTY form's value rather than to something invented: an agent that named no
+ * paired asset has not chosen `weth`, it has said nothing, and the form's own
+ * default is what the user then sees and can change. Nothing is converted here
+ * (rule 90) - `prebuyAmountHuman` is carried across as the string main will
+ * convert against the paired asset's real decimals.
+ *
+ * `imageSource` is derived from WHICH image the agent proposed, because the form
+ * keeps a locker id and a URL side by side and only one of them travels.
+ */
+function toFormValues(form: PoolsAwaitingLaunchForm): PoolsLaunchFormValues {
+  const proposed = form.proposed;
+  const image = proposed.image;
+  return {
+    ...EMPTY_POOLS_LAUNCH_FORM,
+    name: proposed.name ?? EMPTY_POOLS_LAUNCH_FORM.name,
+    symbol: proposed.symbol ?? EMPTY_POOLS_LAUNCH_FORM.symbol,
+    pairedAsset: proposed.pairedAsset ?? EMPTY_POOLS_LAUNCH_FORM.pairedAsset,
+    prebuy: proposed.prebuyAmountHuman ?? EMPTY_POOLS_LAUNCH_FORM.prebuy,
+    imageSource: image === undefined ? EMPTY_POOLS_LAUNCH_FORM.imageSource : image.kind,
+    imageId: image !== undefined && image.kind === "locker" ? image.imageId : null,
+    imageUrl: image !== undefined && image.kind === "url" ? image.url : "",
+    tweetUrl: proposed.tweetUrl ?? EMPTY_POOLS_LAUNCH_FORM.tweetUrl,
+    websiteUrl: proposed.websiteUrl ?? EMPTY_POOLS_LAUNCH_FORM.websiteUrl,
+  };
 }
 
 export function AgentLaunchFormHost({
   sessionId,
 }: AgentLaunchFormHostProps): JSX.Element | null {
   // Push first; the hook's own poll is the dropped-event fallback.
-  useLaunchFormLiveSync(sessionId);
-  const query = useAwaitingLaunchForm(sessionId);
+  usePoolsLaunchFormLiveSync(sessionId);
+  const query = useAwaitingPoolsLaunchForm(sessionId);
   const queryClient = useQueryClient();
   const [dismissed, setDismissed] = useState<readonly string[]>([]);
   const [snapshot, setSnapshot] = useState<OpenFormSnapshot | null>(null);
@@ -101,23 +134,10 @@ export function AgentLaunchFormHost({
     });
   }, [awaiting, dismissed, sessionId, formBusy]);
 
-  const initialValues = useMemo<LaunchFormValues | null>(() => {
-    if (snapshot === null) return null;
-    const form = snapshot.form;
-    return {
-      name: form.name,
-      symbol: form.symbol,
-      description: form.description,
-      // The links editor renders one blank row when there is nothing to show;
-      // an empty array would give the user no field to type into.
-      links: form.links.length > 0 ? form.links : [...EMPTY_LAUNCH_FORM.links],
-      imageId: form.imageId,
-      // Main handed this over already converted from raw wei. A zero prebuy
-      // shows as an EMPTY field, not a literal "0", so the placeholder reads as
-      // the invitation it is — and no conversion happens on this side (rule 90).
-      prebuyEth: form.prebuy === "0" ? "" : form.prebuy,
-    };
-  }, [snapshot]);
+  const initialValues = useMemo<PoolsLaunchFormValues | null>(
+    () => (snapshot === null ? null : toFormValues(snapshot.form)),
+    [snapshot],
+  );
 
   const onOpenChange = useCallback(
     (next: boolean): void => {
@@ -138,12 +158,12 @@ export function AgentLaunchFormHost({
       //    marks stale and kicks a refetch; it does not remove data, so a host
       //    remount before that refetch resolves would consume the stale row and
       //    re-open a form for a launch that already deployed.
-      queryClient.setQueryData(tokenLaunchKeys.awaiting(snapshot.sessionId), {
+      queryClient.setQueryData(poolsLaunchKeys.awaiting(snapshot.sessionId), {
         ok: true,
         data: { awaiting: null },
       });
       void queryClient.invalidateQueries({
-        queryKey: tokenLaunchKeys.awaiting(snapshot.sessionId),
+        queryKey: poolsLaunchKeys.awaiting(snapshot.sessionId),
       });
     },
     [queryClient, snapshot],

@@ -127,7 +127,7 @@ export async function drainPendingRuns(): Promise<DrainResult> {
         result = { ...solanaResult };
         rowsAffected = solanaResult.confirmed + solanaResult.failed;
       } else if (syncType === "launch_identity_repair") {
-        // Trench launch crash recovery — completes the token IDENTITY of a
+        // Launch crash recovery - completes the token IDENTITY of a
         // create that mined after the handler died, and terminalizes one that
         // is later proven to have reverted. The generic activity sweep cannot
         // do this: it is status-only and decodes nothing, so it would leave
@@ -136,13 +136,6 @@ export async function drainPendingRuns(): Promise<DrainResult> {
         const launchResult = await repairLaunchIdentities(buildProductionLaunchRepairDeps());
         result = { ...launchResult };
         rowsAffected = launchResult.repaired + launchResult.failed;
-      } else if (syncType === "launch_attribution") {
-        // Trench attribution retry lane — see sync/launch-attribution.ts. Keyless
-        // POST only; holds no signer.
-        const { attributeLaunchedTokens, buildProductionLaunchAttributionDeps } = await import("./launch-attribution.js");
-        const attributionResult = await attributeLaunchedTokens(buildProductionLaunchAttributionDeps());
-        result = { ...attributionResult };
-        rowsAffected = attributionResult.attributed;
       } else if (syncType === "pools_attribution") {
         // pools.fun attribution retry lane - see sync/pools-attribution.ts.
         // Keyless POST only; holds no signer.
@@ -264,10 +257,6 @@ export async function processNextRun(): Promise<boolean> {
       const { repairLaunchIdentities, buildProductionLaunchRepairDeps } = await import("./launch-identity-repair.js");
       const launchResult = await repairLaunchIdentities(buildProductionLaunchRepairDeps());
       await syncRepo.completeRun(run.id, { ...launchResult }, launchResult.repaired + launchResult.failed);
-    } else if (job.syncType === "launch_attribution") {
-      const { attributeLaunchedTokens, buildProductionLaunchAttributionDeps } = await import("./launch-attribution.js");
-      const attributionResult = await attributeLaunchedTokens(buildProductionLaunchAttributionDeps());
-      await syncRepo.completeRun(run.id, { ...attributionResult }, attributionResult.attributed);
     } else if (job.syncType === "pools_attribution") {
       // pools.fun attribution retry lane - BOTH dispatchers need this branch;
       // the bridge job shipped with one missing and its timer silently fired

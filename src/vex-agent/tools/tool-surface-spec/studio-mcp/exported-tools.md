@@ -43,12 +43,12 @@ free. Both texts live on the tool
 
 ## Totals
 
-- exported tools: 176
+- exported tools: 166
 - internal: 27
-- protocol: 149 across 11 namespaces
+- protocol: 139 across 10 namespaces
 - always loaded: 27
-- read-only: 115
-- destructive: 53
+- read-only: 108
+- destructive: 51
 
 ## Internal tools
 
@@ -251,21 +251,6 @@ free. Both texts live on the tool
 | solana__token_prices_get | Read Solana token prices | protocol | yes | no | no | JUPITER_API_KEY | 637 | - | none (read) |
 | solana__tokens_discover | Discover new and trending Solana tokens | protocol | yes | no | no | JUPITER_API_KEY | 1123 | - | none (read) |
 | solana__tokens_search | Search Solana tokens by name | protocol | yes | no | no | JUPITER_API_KEY | 835 | - | none (read) |
-
-### trench
-
-| name | title | lane | read only | destructive | always load | requires env | description bytes | returns | vex fee |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| trench__images_list | List Trench image-locker images | protocol | yes | no | no | - | 1034 | - | none (read) |
-| trench__launch_execute | Launch a token on Trench Express | protocol | no | yes | no | - | 2400 | - | - |
-| trench__launch_preview | Dry-run a Trench Express launch | protocol | yes | no | no | - | 1704 | - | none (read) |
-| trench__launch_request_form | Ask the user to confirm a Trench launch | protocol | no | no | no | - | 959 | - | - |
-| trench__my_launches_list | List this wallet's Trench launches | protocol | yes | no | no | - | 884 | - | none (read) |
-| trench__token_trades_list | Read a Trench Express token's trade tape | protocol | yes | no | no | - | 950 | - | none (read) |
-| trench__tokens_discover | Screen Trench Express tokens | protocol | yes | no | no | - | 2293 | - | none (read) |
-| trench__tokens_search | Search Trench Express tokens | protocol | yes | no | no | - | 729 | - | none (read) |
-| trench__trade_execute | Trade a Trench Express token | protocol | no | yes | no | - | 1593 | - | - |
-| trench__trade_quote | Quote a Trench Express trade | protocol | yes | no | no | - | 659 | - | none (read) |
 
 ### uniswap
 

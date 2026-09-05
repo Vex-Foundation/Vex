@@ -35,7 +35,7 @@ const SYNC_JOBS = [
   // worker.ts logs "Unknown sync type" and skips until K3 lands.
   { namespace: "_global", syncType: "solana_activity_repair", readToolId: null, strategy: "periodic", intervalSeconds: 30 },
 
-  // Trench launch identity sweep — completes the TOKEN IDENTITY of a create
+  // Launch identity sweep - completes the TOKEN IDENTITY of a create
   // that mined after the handler died, and terminalizes one later proven to
   // have reverted. The generic activity sweep cannot do this: it is status-only
   // and decodes nothing, so it would confirm the activity row and still leave
@@ -45,24 +45,17 @@ const SYNC_JOBS = [
   // ends, so it is not slowed to the bridge sweep's 120s provider cadence.
   { namespace: "_global", syncType: "launch_identity_repair", readToolId: null, strategy: "periodic", intervalSeconds: 30 },
 
-  // Trench launch ATTRIBUTION retry lane — claims the VEX badge on trench.express
-  // for launched tokens whose creator signature is stored but whose POST has not
-  // succeeded yet (app closed, network down, provider 5xx). The handler does this
-  // inline on a healthy launch; this is the catch-up. Never signs; see
-  // sync/launch-attribution.ts. 120s mirrors the bridge sweep's provider cadence —
-  // a badge is cosmetic, so it is not given the 30s per-tx repair urgency.
-  { namespace: "_global", syncType: "launch_attribution", readToolId: null, strategy: "periodic", intervalSeconds: 120 },
-
   // pools.fun launch ATTRIBUTION retry lane - the same catch-up for the
   // pools.fun VEX badge, against a different partner and a different attest
   // string. The handler does this inline on a healthy launch; this covers the
   // app being closed, the network being down, or a partner 429/5xx. Never
   // signs, and claims no rows at all while services.poolsFunAttestApiUrl is
-  // empty. See sync/pools-attribution.ts. 120s mirrors the trench lane above -
-  // a badge is cosmetic, so it is not given the 30s per-tx repair urgency.
+  // empty. See sync/pools-attribution.ts. 120s mirrors the bridge sweep's
+  // provider cadence - a badge is cosmetic, so it is not given the 30s per-tx
+  // repair urgency.
   { namespace: "_global", syncType: "pools_attribution", readToolId: null, strategy: "periodic", intervalSeconds: 120 },
 
-  // Trench launch FORM EXPIRY — stamps overdue `awaiting_user_form` intents
+  // Launch FORM EXPIRY - stamps overdue `awaiting_user_form` intents
   // `expired` and resumes the agent turn parked on them. Without it an
   // unanswered form parks a turn forever. Deadline-driven and lookup-only;
   // never signs. See sync/launch-form-expiry.ts. 60s: the window is minutes
@@ -77,10 +70,10 @@ const SYNC_JOBS = [
   // See sync/agentscan-report.ts.
   { namespace: "_global", syncType: "agentscan_report", readToolId: null, strategy: "periodic", intervalSeconds: 30 },
 
-  // AgentScan token-ATTESTATION sweep — delivers the SAME creator signature
-  // already stored for the trench.express VEX badge (attest_signature,
+  // AgentScan token-ATTESTATION sweep - delivers the SAME creator signature
+  // already stored for the retired launchpad's VEX badge (attest_signature,
   // migration 071) to the AgentScan attestation registry, over its own
-  // keyless POST. Cloned from the trench attribution sweep's architecture;
+  // keyless POST. Cloned from that lane's architecture;
   // dark until services.agentscanApiUrl is configured. Never signs, never
   // blocks the money path. 300s: an attestation badge is not latency-critical
   // (unlike the 30s per-tx repair sweeps), so 5 minutes is politeness rather

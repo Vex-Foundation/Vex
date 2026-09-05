@@ -4,7 +4,6 @@ import { getKyberChains } from "@tools/kyberswap/chains.js";
 import { MORPHO_CHAINS } from "@tools/morpho/chains.js";
 import { PENDLE_CHAIN_REGISTRY } from "@tools/pendle/chains.js";
 import { POOLS_CHAIN_ID } from "@tools/pools-fun/constants.js";
-import { TRENCH_CHAIN_ID } from "@tools/trench-express/constants.js";
 import { listUniswapDeployments } from "@tools/uniswap/deployments.js";
 import { BRIDGE_FAMILY } from "@vex-agent/tools/protocols/relay/handlers/bridge/constants.js";
 import { VIRTUALS_TOOLS } from "@vex-agent/tools/protocols/virtuals/manifest.js";
@@ -46,7 +45,6 @@ describe("protocol declaration chain coverage", () => {
       else hasUnnamedKhalaniChain = true;
     }
     if (hasUnnamedKhalaniChain) expect(coverage("khalani")).toContain("and others");
-    expect(coverage("trench")).toContain(String(TRENCH_CHAIN_ID));
     expect(coverage("pools")).toContain(String(POOLS_CHAIN_ID));
     expect(coverage("solana")).toContain(String(SOLANA_SYNTHETIC_CHAIN_ID));
     expect(coverage("relay")).toContain(BRIDGE_FAMILY);

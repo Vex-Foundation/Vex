@@ -17,7 +17,7 @@
  * - `limit` is capped at 100 on `/discover` and 1000 on the candles route; the
  *   client clamps so the caller's page math matches what actually comes back.
  * - Query keys are appended in a STABLE ORDER so a future cache/dedupe key over
- *   the URL is stable (trench convention).
+ *   the URL is stable (repo convention).
  * - No auth, no documented rate limit, `cache-control: max-age=5` on discover.
  */
 

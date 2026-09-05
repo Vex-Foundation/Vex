@@ -1,4 +1,4 @@
-<!-- vex:studio:begin vex=0.2.6 hash=f6337fc4d7649329 -->
+<!-- vex:studio:begin vex=0.2.6 hash=84c2638eea67e095 -->
 # Vex guide - project "acme-trading"
 
 The companion to this project's `AGENTS.md`, which carries the authority:
@@ -142,16 +142,6 @@ Virtuals is intelligence for Virtuals agents and agent tokens across the chains 
 - Quote: Price a bonding-curve buy or sell of an agent token that has not graduated, on Base or Robinhood: the output, the taxes, the anti-sniper window and the floor the contract will enforce. Research alone still establishes no executable price.
 - Act: Execute a bonding-curve buy or sell against a quote already taken, spending real funds under approval. Acquiring a GRADUATED agent token is still a separate swap task on the venue identified by the research result.
 - Vex fee: 25 bps of the VIRTUAL you commit on a bonding-curve buy, taken off the input before the curve, and 25 bps of the VIRTUAL a receipt proves you received on a sell, taken as a separate leg after the sale settles; a trade that reverts or cannot be proven is never charged. Every Virtuals read is free, a graduated agent trades under its venue's own fee with no second one, and the confirmed policy for the launch tools of a later lane is 25 bps of the initial purchase once a launch is observed on chain, with genesis free.
-
-### trench
-
-Trench Express is a bonding-curve launchpad whose registry, curve trading, and launch lifecycle are native to the product.
-
-- Chains: Robinhood Chain (4663) only.
-- Read: Browse the Trench Express launchpad, screen new launches on Trench, resolve a named token by address, inspect curve state, read a trade tape, list staged images in the Trench image locker, and review my Trench launches.
-- Quote: Preview a bonding curve buy or sell with output, price impact, and curve progress. Preview a launch with its estimated total cost, gas, predicted address, and balance checks before committing.
-- Act: Buy this Trench token with the curve's native asset, sell my Trench launchpad tokens back to the curve, open the launch form for a human decision, or deploy the token from a staged image under the applicable authority.
-- Vex fee: 25 bps of the ETH a curve trade moves, or of a launch's native value; reads and previews are free.
 
 ### pools
 

@@ -492,29 +492,6 @@ export const CH = {
   },
 
   /**
-   * Trench Express token launch — the host-mediated form path.
-   *
-   * `preview` is the AUTHORITATIVE main-side cost read: the creation fee comes
-   * from Diamond storage at an anchored block, and the reply carries the wei
-   * figures SEPARATELY (creation fee, prebuy, msg.value, Vex fee, and the gas
-   * estimate as its own field). There is deliberately no merged "total": the
-   * consented amount is exactly `msg.value`, gas is an estimate, and summing
-   * them would present an estimate as a commitment.
-   *
-   * `submit` is the Deploy click. MAIN — never the renderer — reconstructs and
-   * binds the authorization record, and the renderer sends parameters only.
-   * A preview whose anchored values have moved is refused by name so the UI
-   * can re-review rather than silently spend a stale figure.
-   */
-  tokenLaunch: {
-    preview: "vex:tokenLaunch:preview",
-    submit: "vex:tokenLaunch:submit",
-    cancel: "vex:tokenLaunch:cancel",
-    myLaunches: "vex:tokenLaunch:myLaunches",
-    getAwaiting: "vex:tokenLaunch:getAwaiting",
-  },
-
-  /**
    * pools.fun launches and creator-fee claims (domain `poolsLaunch`).
    *
    * TWO STAGES, and the split is the contract. `prepare` uploads the image,

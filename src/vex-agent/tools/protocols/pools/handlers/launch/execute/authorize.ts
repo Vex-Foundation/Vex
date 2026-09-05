@@ -38,7 +38,7 @@ import type { PoolsLaunchPlan } from "./plan.js";
 /**
  * How long the authorization stands before it must be redone.
  *
- * The same five minutes Trench uses, and for a stronger reason here: a pools.fun
+ * Five minutes, and the reason is a strong one here: a pools.fun
  * quote carries the gateway's dynamic deployment fee and a mined salt, both of
  * which go stale.
  */

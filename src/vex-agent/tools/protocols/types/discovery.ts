@@ -111,8 +111,8 @@ export interface ProtocolDiscoveryItem {
   mutating: boolean;
   /**
    * The manifest's own side-effect classification. `mutating` alone reads as
-   * "will spend funds" - `trench.launch_request_form` is `mutating: true` and
-   * spends nothing, which is a discovery-schema gap, not a trench bug.
+   * "will spend funds" - a launch request-form tool is `mutating: true` and
+   * spends nothing, which is a discovery-schema gap, not a venue bug.
    */
   actionKind: ActionKind;
   params: ProtocolParamDef[];

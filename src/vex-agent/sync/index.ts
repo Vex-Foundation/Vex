@@ -199,7 +199,7 @@ export async function syncTick(): Promise<void> {
           solanaResult.confirmed + solanaResult.failed,
         );
       } else if (job.syncType === "launch_identity_repair") {
-        // Trench launch identity sweep — seeded (seed.ts) and dispatched by
+        // Launch identity sweep - seeded (seed.ts) and dispatched by
         // worker.ts; this is its periodic driver, mirroring the branch above
         // exactly. Omitting it is the C1 defect the bridge sweep already hit:
         // the job's own timer fires nothing and the omission is silent.
@@ -210,17 +210,6 @@ export async function syncTick(): Promise<void> {
           runId,
           { ...launchResult, periodic: true },
           launchResult.repaired + launchResult.failed,
-        );
-      } else if (job.syncType === "launch_attribution") {
-        // Trench attribution retry lane — periodic driver, mirroring the branch
-        // above exactly. Omitting it is the silent C1 defect the bridge sweep hit.
-        const { attributeLaunchedTokens, buildProductionLaunchAttributionDeps } = await import("./launch-attribution.js");
-        const attributionResult = await attributeLaunchedTokens(buildProductionLaunchAttributionDeps());
-        const runId = await syncRepo.enqueueRun(job.id);
-        await syncRepo.completeRun(
-          runId,
-          { ...attributionResult, periodic: true },
-          attributionResult.attributed,
         );
       } else if (job.syncType === "pools_attribution") {
         // pools.fun attribution retry lane - periodic driver, mirroring the

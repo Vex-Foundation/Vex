@@ -181,7 +181,11 @@ describe("G2 - publicName mapping gate", () => {
     // holder's own claim and the permissionless distribute. Both are new
     // identities with their own rows in `mappings/pools.json`; nothing was
     // reclaimed or retired, so this is a pure +2 to 151.
-    expect(PROTOCOL_TOOLS.length).toBe(151);
+    // 151 -> 141 on the Trench Express retirement (migration 108). The ten
+    // `trench.*` identities were DELETED with the protocol, mappings file and
+    // all - the first entry in this ledger that is a retirement rather than a
+    // widening, which is why the arithmetic runs the other way.
+    expect(PROTOCOL_TOOLS.length).toBe(141);
   });
 });
 

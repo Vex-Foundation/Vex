@@ -10,25 +10,25 @@
  *     be unavailable rather than guessed;
  *   - the card can express a fee that is NOT taken (dust, fee-on-transfer,
  *     honeypot), which the args-derived line could not represent at all;
- *   - the seven tool ids the channel now covers get NO args-derived line, so one
- *     card can never carry two derivations of one money figure;
- *   - a caller-supplied `fee` / `feeBps` / `feeReceiver` / `feeAmount` NEVER
- *     reaches the line that remains (the standing decree: a model-chosen fee is
- *     an overcharge vector);
- *   - a fee that cannot be known before signing (a Trench SELL) is stated as
- *     unknown rather than given a number.
+ *   - the card can express a fee that is NOT taken, which an args-derived line
+ *     could not represent at all.
+ *
+ * THE ARGS-DERIVED LINE IS GONE, and so are its tests. `describeApprovalVexFee`
+ * existed for the ONE tool whose fee could not be stated at quote time - a
+ * Trench curve trade, whose sell proceeds do not exist before signing. Migration
+ * 108 retired that protocol, its switch was left with no case, and a
+ * second derivation of a money figure with no consumer is exactly the thing that
+ * must not sit in the tree waiting to be reused. Every remaining fee-bearing
+ * venue states its fee ON ITS QUOTE, which is what `describeBoundVexFee`
+ * renders and what the cases below pin.
  */
 
 import { describe, it, expect } from "vitest";
-import {
-  describeApprovalVexFee,
-  describeBoundVexFee,
-} from "@vex-agent/engine/core/approval-vex-fee.js";
+import { describeBoundVexFee } from "@vex-agent/engine/core/approval-vex-fee.js";
 import type { VexFeePreview } from "@vex-agent/tools/protocols/prequote/fee-disclosure.js";
 import { KYBERSWAP_FEE_BPS } from "@tools/kyberswap/constants.js";
 import { UNISWAP_FEE_BPS } from "@tools/uniswap/fee/index.js";
 import { BRIDGE_FEE_BPS } from "@tools/bridge-fee/index.js";
-import { TRENCH_FEE_BPS } from "@tools/trench-express/fee/index.js";
 
 const USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
 
@@ -71,9 +71,7 @@ function skippedFee(
 
 describe("describeBoundVexFee", () => {
   it("every venue on this channel charges the SAME product-owner rate (25 bps)", () => {
-    expect([KYBERSWAP_FEE_BPS, UNISWAP_FEE_BPS, BRIDGE_FEE_BPS, TRENCH_FEE_BPS]).toEqual([
-      25, 25, 25, 25,
-    ]);
+    expect([KYBERSWAP_FEE_BPS, UNISWAP_FEE_BPS, BRIDGE_FEE_BPS]).toEqual([25, 25, 25]);
   });
 
   it("charged with decimals known: exact human amount, raw units and decimals together", () => {
@@ -141,89 +139,5 @@ describe("describeBoundVexFee", () => {
   it("a symbol the venue could not state degrades to the token address, never to a bare number", () => {
     const line = describeBoundVexFee("relay.bridge", chargedFee({ tokenSymbol: null }));
     expect(line).toContain(`0.0025 ${USDC}`);
-  });
-});
-
-describe("describeApprovalVexFee", () => {
-  it("the seven tool ids the typed channel covers get NO args-derived line", () => {
-    // Two derivations of one money figure is two figures. These ids are served
-    // by `describeBoundVexFee` from the matched quote's own statement.
-    for (const toolId of [
-      "BridgeExecute",
-      "BridgeExecuteRelay",
-      "SwapExecuteUniswap",
-      "uniswap.swap.execute",
-      "kyberswap.swap.execute",
-      "relay.bridge",
-      "khalani.bridge",
-    ]) {
-      expect(
-        describeApprovalVexFee(toolId, {
-          chain: "base",
-          tokenIn: "ETH",
-          tokenOut: "0xdeadbeef",
-          amountIn: "1.5",
-          fromToken: "0xUSDC",
-          amountRaw: "1000000",
-        }),
-      ).toBeUndefined();
-    }
-  });
-
-  it("trench BUY - fee on the ETH spent, charged only after the trade confirms", () => {
-    const line = describeApprovalVexFee("trench.trade_execute", {
-      tokenIn: "ETH",
-      tokenOut: "0xcurve",
-      amountIn: "0.01",
-    });
-    expect(line).toContain("0.000025 ETH");
-    expect(line).toContain("after the trade confirms");
-  });
-
-  it("trench SELL - the ETH proceeds do not exist yet, so NO number is claimed", () => {
-    const line = describeApprovalVexFee("trench.trade_execute", {
-      tokenIn: "0xcurve",
-      tokenOut: "ETH",
-      amountIn: "1000",
-    });
-    expect(line).toContain("ETH you receive");
-    expect(line).toContain("not known until");
-    expect(line).not.toMatch(/\d+\.\d+ ETH/);
-  });
-
-  it("solana.swap.execute is NOT covered here - Jupiter has its own feeDisclosure", () => {
-    expect(
-      describeApprovalVexFee("solana.swap.execute", { amountIn: "1", tokenIn: "SOL" }),
-    ).toBeUndefined();
-  });
-
-  it("a fee-free venue (Pendle) and a read tool get no line at all", () => {
-    expect(describeApprovalVexFee("pendle.pt.buy", { amountIn: "1" })).toBeUndefined();
-    expect(describeApprovalVexFee("kyberswap.swap.quote", { amountIn: "1" })).toBeUndefined();
-  });
-
-  it("a missing or malformed amount yields NO line rather than a fabricated fee", () => {
-    expect(describeApprovalVexFee("trench.trade_execute", { tokenIn: "ETH" })).toBeUndefined();
-    expect(
-      describeApprovalVexFee("trench.trade_execute", { tokenIn: "ETH", amountIn: "1e18" }),
-    ).toBeUndefined();
-  });
-
-  it("a caller-supplied fee param can NEVER move the disclosed rate or amount", () => {
-    const honest = describeApprovalVexFee("trench.trade_execute", {
-      tokenIn: "ETH",
-      amountIn: "1.5",
-    });
-    const spoofed = describeApprovalVexFee("trench.trade_execute", {
-      tokenIn: "ETH",
-      amountIn: "1.5",
-      fee: "500",
-      feeBps: 9999,
-      feeAmount: "1.4",
-      feeReceiver: "0xattacker",
-    });
-    expect(spoofed).toBe(honest);
-    expect(spoofed).not.toContain("9999");
-    expect(spoofed).not.toContain("0xattacker");
   });
 });

@@ -1,7 +1,7 @@
 /**
  * pools.fun as the shared native-fee lane sees it.
  *
- * Same mechanism as Trench (`@tools/trench-express/fee/venue.ts`), same rate,
+ * Same mechanism as every other native-leg venue, same rate,
  * different venue: the fee is a SEPARATE native transfer to the Vex treasury
  * that runs AFTER the launch confirms, because the gateway exposes no fee
  * parameter to embed one in.
@@ -27,7 +27,7 @@ export const POOLS_FEE_BPS = 25;
  *
  * The leg is a plain native transfer with empty calldata. That exact call was
  * estimated live on Robinhood Chain (4663) at 21000 and captured in
- * `src/__tests__/trench-express/fixtures/live-captures/fee-leg-gas-estimate.json`;
+ * the native fee-leg gas estimate captured for the launchpad lane;
  * the staged broadcaster always signs `gasLimitWithHeadroom(estimate)`, so the
  * headroomed figure is what the wallet must actually be able to pay. It is
  * budgeted rather than estimated because the leg is not built at plan time, and

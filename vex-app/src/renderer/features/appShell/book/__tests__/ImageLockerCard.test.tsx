@@ -261,34 +261,25 @@ describe("read failure", () => {
  * the card itself is generic and carries the launchpad chips.
  */
 describe("the merged launchpad card", () => {
-  it("is named for the launchpad role, and wears the SELECTED venue's own mark", async () => {
+  it("is named for the launchpad role, and wears the venue's own mark", async () => {
     listMock.mockResolvedValue({ ok: true, data: { images: [] } });
     const { container } = renderCard();
     expect(await screen.findByLabelText("Launchpad")).toBeTruthy();
-    // Trench is the default selection, and the resolver owns which venue may
-    // wear which artwork — a card must never borrow another venue's mark.
+    // The resolver owns which venue may wear which artwork - a card must never
+    // borrow another venue's mark.
     expect(
-      container.querySelector('[data-vex-protocol-mark="Trench Express"]'),
+      container.querySelector('[data-vex-protocol-mark="pools.fun"]'),
     ).not.toBeNull();
   });
 
-  it("offers both launchpads as an exclusive choice, and follows the pick", async () => {
+  it("offers NO launchpad chooser, because there is one launchpad", async () => {
     listMock.mockResolvedValue({ ok: true, data: { images: [] } });
-    const { container } = renderCard();
+    renderCard();
     await screen.findByLabelText("Launchpad");
-
-    const trench = screen.getByRole("radio", { name: "Trench" });
-    const pools = screen.getByRole("radio", { name: "pools.fun" });
-    expect(trench.getAttribute("aria-checked")).toBe("true");
-    expect(pools.getAttribute("aria-checked")).toBe("false");
-
-    fireEvent.click(pools);
-
-    expect(pools.getAttribute("aria-checked")).toBe("true");
-    expect(trench.getAttribute("aria-checked")).toBe("false");
-    // The card's mark follows the choice, so the venue about to receive real
-    // money is never misreported by a stale logo.
-    expect(container.querySelector('[data-vex-protocol-mark="pools.fun"]')).not.toBeNull();
+    // Migration 108 retired Trench Express. A chooser with a single chip would
+    // state a decision nobody makes, and the mark below it would then be the
+    // only thing telling the user where their money is about to go.
+    expect(screen.queryByRole("radiogroup")).toBeNull();
   });
 
   it("puts the launch opener INSIDE the card and opens the dialog", async () => {
@@ -326,7 +317,7 @@ describe("the on-chain copy, as the user is told about it", () => {
     expect(notice.textContent).toContain("3000.0 KB");
     expect(notice.textContent).toContain("14.0 KB");
     expect(notice.textContent).toContain("square copy");
-    expect(notice.textContent).toContain("pools.fun uses your original");
+    expect(notice.textContent).toContain("Your launch uses the original");
     // The old copy said "Optimized: X -> Y". It would now be a lie: nothing the
     // user picked was replaced.
     expect(notice.textContent).not.toMatch(/optimi[sz]ed/i);
@@ -342,12 +333,18 @@ describe("the on-chain copy, as the user is told about it", () => {
     expect(screen.queryByText(/full quality/i)).toBeNull();
   });
 
-  it("badges a copy-less image as pools-only, and does not ask for its thumbnail", async () => {
-    const poolsOnly = image("img_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "huge.png", null);
-    listMock.mockResolvedValue({ ok: true, data: { images: [poolsOnly] } });
+  it("badges a copy-less image as having no PREVIEW, and does not ask for its thumbnail", async () => {
+    // The badge used to say POOLS ONLY, because the missing copy was the bytes
+    // the other launchpad wrote into its create calldata and an image without
+    // one really was refused there. Migration 108 retired that launchpad; the
+    // only remaining one publishes the ORIGINAL, so nothing about this image is
+    // limited and the tile must not claim otherwise.
+    const noPreview = image("img_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "huge.png", null);
+    listMock.mockResolvedValue({ ok: true, data: { images: [noPreview] } });
     renderCard();
 
-    expect(await screen.findByTitle(/usable on pools\.fun/i)).toBeTruthy();
+    expect(await screen.findByTitle(/launches normally/i)).toBeTruthy();
+    expect(screen.queryByText(/pools only/i)).toBeNull();
     // Asking main for a thumbnail it cannot build would answer not_found and
     // read to the user as a broken image.
     await waitFor(() => expect(listMock).toHaveBeenCalled());
@@ -431,7 +428,6 @@ describe("a PROJECT rail is browse-only (Studio parity decree)", () => {
     await screen.findByText("1");
     expect(screen.getByRole("button", { name: /add image/i })).toBeTruthy();
     expect(screen.getByRole("button", { name: /remove moon\.png/i })).toBeTruthy();
-    expect(screen.getByRole("radiogroup")).toBeTruthy();
     expect(screen.getByRole("button", { name: /launch/i })).toBeTruthy();
     expect(screen.queryByText(LAUNCH_FROM_AGENT_SESSION_NOTE)).toBeNull();
     expect(useUploadLockerImage).toHaveBeenCalled();

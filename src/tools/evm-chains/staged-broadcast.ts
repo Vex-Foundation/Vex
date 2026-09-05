@@ -6,7 +6,7 @@
  *
  * Owned by `evm-chains/` alongside the guards it composes
  * (`gas-limit-headroom`, `dependent-leg-gas-estimate`). Consumers are every EVM
- * venue: kyberswap, relay, pendle, uniswap (twin), and trench-express. The
+ * venue: kyberswap, relay, pendle and uniswap (twin). The
  * historical `@tools/kyberswap/evm/staged-broadcast.js` path re-exports this
  * module for import stability.
  *

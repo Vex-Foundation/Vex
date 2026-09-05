@@ -254,7 +254,7 @@ describe("the durable floor delivers continuations the resume could not", () => 
 /**
  * A2 — the orphaned continuation loop, and the bounded retry that replaces it.
  *
- * Live evidence: `trench.launch_form_expiry.resume_failed status=400` for intent
+ * Live evidence: `launch_form_expiry.resume_failed status=400` for intent
  * aa5401f2 on every ~60s sweep, forever. Its session had been DELETED
  * (`sessions:delete` at 22:22:54), so every attempt rebuilt a prompt from a
  * history that no longer existed. The sweep was obeying its own rules: the row

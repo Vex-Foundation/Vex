@@ -337,7 +337,6 @@ const SWAP_AND_BRIDGE: readonly DirectionCase[] = [
     losesAuthorization: [
       "kyberswap.swap.execute",
       "uniswap.swap.execute",
-      "trench.trade_execute",
       "solana.swap.execute",
     ],
     // Pendle's swap executes read the Pendle table, which did not move.

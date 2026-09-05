@@ -82,16 +82,22 @@ describe("buildProtocolsPrompt", () => {
       expect(prompt).toContain("13 of 13 sampled tokens");
     });
 
-    // The two Robinhood launchpads must be distinguishable AT THE VENUE
-    // QUESTION: the Trench curve exception alone reads as "launchpad tokens on
-    // 4663 do not route", which is wrong for every pools.fun token.
-    it("contrasts the no-curve pools token against the Trench curve exception", () => {
+    // The launchpads must be distinguishable AT THE VENUE QUESTION. This used
+    // to be a CONTRAST between the two Robinhood launchpads, because a bare
+    // "curve tokens do not route" exception read as true of every token on 4663
+    // and was wrong for every pools.fun one. Migration 108 retired the curve
+    // launchpad; what remains to state is that a pools.fun token is a real pool
+    // from its first block and is acquired through an ordinary swap - the half
+    // of the contrast that was never about the retired venue.
+    it("states that a pools.fun token has no curve and routes like any other", () => {
       resetProtocolsPromptCache();
       const prompt = buildProtocolsPrompt();
       // Wave 2 migration rows T541-T544.
       expect(prompt).toContain("pools.fun has no curve");
-      expect(prompt).toContain("Trench token still on its curve trades only against ETH");
-      expect(prompt).toContain("separate standard swap quote from its first block");
+      expect(prompt).toContain("SushiSwap V3 pool immediately");
+      expect(prompt).toContain("separate standard swap");
+      // ...and no longer teaches a venue that cannot be reached.
+      expect(prompt).not.toContain("Trench");
     });
 
     it("names the research gap: no holder count, no liquidity, dexscreener instead", () => {
@@ -114,7 +120,10 @@ describe("buildProtocolsPrompt", () => {
       const prompt = buildProtocolsPrompt();
       // Wave 2 migration rows T548-T551.
       expect(prompt).toContain("agent path requires a staged image");
-      expect(prompt).toContain("Both agent paths start from a user-staged image");
+      // "BOTH agent paths" was the two launchpads' shared requirement. One
+      // launchpad remains, so the sentence names one path and the requirement
+      // is unchanged - what would be wrong is to keep implying a second.
+      expect(prompt).toContain("The agent path starts from a user-staged image");
       // The blank-token outcome survives only as the user's own manual choice,
       // never as something the agent may elect.
       expect(prompt).toContain("Only the user's own launch form may choose to launch without one");
