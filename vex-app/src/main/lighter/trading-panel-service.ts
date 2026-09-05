@@ -132,6 +132,14 @@ export function projectLighterTradingMarket(
       tradesCount: nonNegativeNumberOrNull(detail?.daily_trades_count),
       quoteVolume: nonNegativeNumberOrNull(detail?.daily_quote_token_volume),
     },
+    statistics: {
+      lastTradePrice: nonNegativeNumberOrNull(detail?.last_trade_price),
+      priceChange24h: numberOrNull(detail?.daily_price_change),
+      // REST reports base size; the WebSocket's identically named field is quote notional.
+      openInterestBase: market.market_type === "perp"
+        ? nonNegativeNumberOrNull(detail?.open_interest)
+        : null,
+    },
   };
 }
 

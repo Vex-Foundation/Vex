@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { lighterTradingSnapshotSchema } from "@shared/schemas/lighter-trading.js";
 import {
+  projectLighterTradingMarket,
   readLighterTradingMarketList,
   readLighterTradingMarketSnapshot,
   readLighterTradingSnapshot,
@@ -128,6 +129,17 @@ function fakeClient(): LighterTradingPanelClient {
 }
 
 describe("Lighter trading panel service", () => {
+  it("keeps price changes signed, rejects invalid metrics, and never assigns open interest to spot", () => {
+    const projected = projectLighterTradingMarket(market, {
+      ...market, last_trade_price: -1, daily_price_change: -5,
+      open_interest: Number.POSITIVE_INFINITY,
+    });
+    expect(projected.statistics).toEqual({ lastTradePrice: null, priceChange24h: -5, openInterestBase: null });
+    const spot = { ...market, market_type: "spot" as const };
+    expect(projectLighterTradingMarket(spot, { ...spot, open_interest: 123 }).statistics?.openInterestBase).toBeNull();
+    expect(projectLighterTradingMarket(market, { ...market, daily_price_change: Number.NaN }).statistics?.priceChange24h).toBeNull();
+  });
+
   it("projects a bounded market list without provider passthrough fields", async () => {
     const client = fakeClient();
     const result = await readLighterTradingMarketList(
@@ -142,6 +154,7 @@ describe("Lighter trading panel service", () => {
         symbol: "ETH-USD",
         marketType: "perp",
         activity24h: { tradesCount: 120, quoteVolume: 126_000 },
+        statistics: { lastTradePrice: 4_200, priceChange24h: 1.2, openInterestBase: 12_300 },
       }),
     ]);
     expect(result.markets[0]).not.toHaveProperty("liquidation_fee");
@@ -169,6 +182,9 @@ describe("Lighter trading panel service", () => {
     expect(result.markets[0]?.activity24h).toEqual({
       tradesCount: null,
       quoteVolume: null,
+    });
+    expect(result.markets[0]?.statistics).toEqual({
+      lastTradePrice: null, priceChange24h: null, openInterestBase: null,
     });
   });
 

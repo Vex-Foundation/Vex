@@ -73,6 +73,14 @@ export const lighterTradingMarketSchema = z
         quoteVolume: z.number().finite().nonnegative().nullable(),
       })
       .strict(),
+    statistics: z
+      .object({
+        lastTradePrice: z.number().finite().nonnegative().nullable(),
+        priceChange24h: finiteOrNullSchema,
+        openInterestBase: z.number().finite().nonnegative().nullable(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 
