@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -576,6 +577,17 @@ func TestPeerHalfCloseRaisesEndAndTheWritableSideSurvives(t *testing.T) {
 	end := h.expectUpData()
 	if _, ok := end.Payload.(frames.End); !ok {
 		t.Fatalf("a peer FIN must raise END on plane 6, got %s", end.Type().Name())
+	}
+
+	// AND THE LOG NAMES IT. A killed client and main deciding to close were
+	// indistinguishable in the structural log before this line existed: both
+	// ended as a CLOSE from main with reason commanded_close, and the read EOF
+	// that actually started it left no trace at all. It is a NUMBER, like every
+	// other field: the connection id, never a byte the peer chose.
+	want := fmt.Sprintf("vex-pipe-front peer_half_closed connection=%d", id)
+	if logged := h.logs.String(); !strings.Contains(logged, want) {
+		t.Fatalf("the structural log does not name the peer half-close as %q:\n%s",
+			want, logged)
 	}
 
 	// The writable side is still there.
