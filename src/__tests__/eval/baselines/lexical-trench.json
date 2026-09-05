@@ -4,7 +4,7 @@
   "datasetId": "tool-discovery-trench",
   "datasetVersion": "trench-v1",
   "status": "captured",
-  "capturedAt": "2026-09-05T09:06:00.117Z",
+  "capturedAt": "2026-09-05T09:47:09.733Z",
   "metrics": {
     "overall": {
       "count": 24,
@@ -176,6 +176,6 @@
   "notes": [
     "dataset tool-discovery-trench@trench-v1, mode lexical, 24 cases evaluated.",
     "overall recall@1 0.333, recall@5 0.625, coverage@5 0.625, mrr@5 0.462, groupMrr@5 0.462.",
-    "Measured delta vs previous baseline (trench-v1, captured 2026-09-05T08:29:10.838Z): 22 metric values moved; overall recall@5 0.667 -> 0.625, overall mrr@5 0.493 -> 0.462, case count 24 -> 24."
+    "Measured delta: none, metrics are identical to the previous baseline."
   ]
 }

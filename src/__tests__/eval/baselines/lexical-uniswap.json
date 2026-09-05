@@ -4,7 +4,7 @@
   "datasetId": "tool-discovery-uniswap",
   "datasetVersion": "uniswap-v1",
   "status": "captured",
-  "capturedAt": "2026-09-05T09:06:00.595Z",
+  "capturedAt": "2026-09-05T09:47:10.178Z",
   "metrics": {
     "overall": {
       "count": 12,
@@ -176,6 +176,6 @@
   "notes": [
     "dataset tool-discovery-uniswap@uniswap-v1, mode lexical, 12 cases evaluated.",
     "overall recall@1 0, recall@5 0.333, coverage@5 0.333, mrr@5 0.107, groupMrr@5 0.107.",
-    "Measured delta vs previous baseline (uniswap-v1, captured 2026-09-05T08:29:11.570Z): 12 metric values moved; overall recall@5 0.333 -> 0.333, overall mrr@5 0.163 -> 0.107, case count 12 -> 12."
+    "Measured delta: none, metrics are identical to the previous baseline."
   ]
 }

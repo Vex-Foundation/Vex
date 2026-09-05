@@ -4,7 +4,7 @@
   "datasetId": "tool-discovery-relay",
   "datasetVersion": "relay-v1",
   "status": "captured",
-  "capturedAt": "2026-09-05T09:05:56.463Z",
+  "capturedAt": "2026-09-05T09:47:06.368Z",
   "metrics": {
     "overall": {
       "count": 11,
@@ -176,6 +176,6 @@
   "notes": [
     "dataset tool-discovery-relay@relay-v1, mode lexical, 11 cases evaluated.",
     "overall recall@1 0.273, recall@5 0.636, coverage@5 0.636, mrr@5 0.389, groupMrr@5 0.367.",
-    "Measured delta vs previous baseline (relay-v1, captured 2026-09-05T08:29:05.369Z): 16 metric values moved; overall recall@5 0.727 -> 0.636, overall mrr@5 0.412 -> 0.389, case count 11 -> 11."
+    "Measured delta: none, metrics are identical to the previous baseline."
   ]
 }

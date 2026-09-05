@@ -4,7 +4,7 @@
   "datasetId": "tool-discovery-virtuals",
   "datasetVersion": "virtuals-v2",
   "status": "captured",
-  "capturedAt": "2026-09-05T09:06:02.007Z",
+  "capturedAt": "2026-09-05T09:47:11.415Z",
   "metrics": {
     "overall": {
       "count": 34,
@@ -176,6 +176,6 @@
   "notes": [
     "dataset tool-discovery-virtuals@virtuals-v2, mode lexical, 34 cases evaluated.",
     "overall recall@1 0.382, recall@5 0.706, coverage@5 0.706, mrr@5 0.503, groupMrr@5 0.496.",
-    "Measured delta vs previous baseline (virtuals-v2, captured 2026-09-05T08:29:12.807Z): 41 metric values moved; overall recall@5 0.75 -> 0.706, overall mrr@5 0.527 -> 0.503, case count 24 -> 34."
+    "Measured delta: none, metrics are identical to the previous baseline."
   ]
 }
