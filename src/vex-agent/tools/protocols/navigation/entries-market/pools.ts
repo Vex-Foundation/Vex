@@ -141,17 +141,27 @@ export const POOLS_NAVIGATION: ProtocolNamespaceNavigation = {
     {
       label: "Fees to holders",
       summary:
-        "Read what a fees-to-holders token owes ONE wallet: the distributor the suite's own deployer emitted, "
-        + "the reward mode, and the wallet's earned balance per reward leg at a pinned block, with the "
-        + "launchpad's own figures shown beside them. Earned by HOLDING, not by launching and not by staking; "
-        + "the claim is a separate tool and this one signs nothing.",
-      toolPrefixes: ["pools.holder_rewards"],
+        "Read, claim and push the fees a pools.fun token streams to the wallets that HOLD it. The read answers "
+        + "for ONE wallet: the distributor the suite's own deployer emitted, the reward mode, and the wallet's "
+        + "earned balance per reward leg at a pinned block, with the launchpad's own figures shown beside them, "
+        + "and it signs nothing. Earned by HOLDING, not by launching and not by staking - a different person's "
+        + "money from the creator fees above. The claim pays the wallet that signs it and Vex charges nothing "
+        + "for it; the distribute is permissionless, pays the token's holders rather than its caller, and is "
+        + "how a stalled reward stream is restarted.",
+      toolPrefixes: [
+        "pools.holder_rewards",
+        "pools.holder_rewards_claim",
+        "pools.holder_rewards_distribute",
+      ],
       hints: [
         "fees to holders",
         "what have I earned holding this coin",
         "does this coin pay its holders",
         "holder rewards distributor",
         "what the distributor owes my wallet",
+        "claim my holder rewards",
+        "push this token's fees to its holders",
+        "trigger the reward distribution",
       ],
     },
   ],

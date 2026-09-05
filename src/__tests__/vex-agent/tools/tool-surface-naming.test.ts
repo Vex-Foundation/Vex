@@ -176,7 +176,12 @@ describe("G2 - publicName mapping gate", () => {
     // (`virtuals.trade.quote`, `virtuals.trade.execute`) - the first mutating
     // members of the virtuals namespace. Both are new identities with their own
     // rows in `mappings/virtuals.json`; nothing was reclaimed or retired.
-    expect(PROTOCOL_TOOLS.length).toBe(149);
+    // 149 before this merge folded in the pools.fun holder-rewards MUTATIONS
+    // (`pools.holder_rewards_claim`, `pools.holder_rewards_distribute`) - the
+    // holder's own claim and the permissionless distribute. Both are new
+    // identities with their own rows in `mappings/pools.json`; nothing was
+    // reclaimed or retired, so this is a pure +2 to 151.
+    expect(PROTOCOL_TOOLS.length).toBe(151);
   });
 });
 

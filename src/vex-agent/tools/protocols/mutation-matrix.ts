@@ -154,6 +154,16 @@ const entries: [string, MutationContract][] = [
   // because a payout is not a launch. `previewSupport: true` because `dryRun` is
   // a real read-only mode of THIS tool rather than a separate preview tool.
   ["pools.claim_fees",           { kind: "trade", capture: "none", expectedType: "claim", previewSupport: true, fanOut: "single", requiredFields: NO_FIELDS }],
+  // The HOLDER-REWARD family (PR6). Same staged-write shape as the creator-fee
+  // claim above: each handler writes its own `kind: 'claim'` row across the
+  // lifecycle, so `capture: "none"` keeps the legacy proj_activity projection
+  // out of it. `previewSupport: true` on both because `dryRun` is a real
+  // read-only mode of THESE tools rather than a separate preview tool - which is
+  // also what makes the runtime treat a `dryRun` call as read-only and skip the
+  // approval gate. `simulateOnly` deliberately does NOT do that: it runs the
+  // whole money path and stays classified as the mutation it is a rehearsal of.
+  ["pools.holder_rewards_claim",      { kind: "trade", capture: "none", expectedType: "claim", previewSupport: true, fanOut: "single", requiredFields: NO_FIELDS }],
+  ["pools.holder_rewards_distribute", { kind: "trade", capture: "none", expectedType: "claim", previewSupport: true, fanOut: "single", requiredFields: NO_FIELDS }],
 
   // Pendle PT / YT / PY (Batch B, migration 053) - flipped capture:"full" ->
   // "none" with the same staged `agent_activity` write path the Kyber/Uniswap/

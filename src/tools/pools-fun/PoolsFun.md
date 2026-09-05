@@ -168,6 +168,108 @@ read live: `FEES_TO_HOLDERS` -> 0 `token`, `FEES_TO_HOLDERS_PAIRED` -> 1
 (`chain-holder-rewards-mode-ordinals.json`, and the same ordering the API
 publishes as `launches/config.holderRewardsPayoutModes`).
 
+### `POST /pools-fun/holder-rewards/prepare` - the calldata CROSS-CHECK (wired)
+
+`{tokenAddress, walletAddress, action: "claim" | "distribute"}` -> `{to, data,
+value, action, token, distributor, ...}` plus the whole GET row echoed.
+Addresses are lowercased before they are sent, for the same 502 reason the GET
+is.
+
+**It is called, and it is never believed.** Vex builds the target and the
+calldata itself - the target is the distributor the suite's
+`HolderRewardsDeployer` named in `DistributorDeployed`, and the calldata is
+`claim()` / `distribute()` encoded from the distributor's verified ABI - and this
+response is compared BYTE FOR BYTE against that. A `to`, `data` or non-zero
+`value` that disagrees REFUSES the operation by name. A `to` taken from a
+provider response is exactly the redirection rule 90 forbids.
+
+| case | status | measured |
+|---|---|---|
+| `action: "distribute"` on a fees-to-holders token | 200 | `to` = the distributor the deployer's event named, `data` = `0xe4fc6b6d`, `value` = `"0x0"`. Agrees byte for byte with ours on every token tried (`holder-rewards-prepare-distribute.json`) |
+| `action: "claim"` for a wallet that IS owed | 200 | `data` = `0x4e71d92d`, same target. Agrees byte for byte |
+| `action: "claim"` for a wallet owed nothing | **400** | `{"error":"Nothing to claim"}` - a bare `error`, no `details[]`. Mapped to `POOLS_INVALID_REQUEST` and read as **declined**, not as a disagreement: the provider had no calldata to give. What a claim would pay is decided by the on-chain simulation (`holder-rewards-prepare-nothing-to-claim-400.json`) |
+
+Four cross-check outcomes and only ONE of them stops a claim: `agrees`,
+`disagrees` (refuses by name), `declined` and `unavailable`. An unreachable
+launchpad must not be able to veto a self-custodial claim, so the last two are
+reported as the ABSENCE of corroboration and the operation proceeds on the
+chain's own evidence.
+
+### The mutation surface (`pools__holder_rewards_claim` / `_distribute`)
+
+Both sign against the DISTRIBUTOR, never against the launchpad, and neither
+carries a Vex fee - the server's claim arm binds no fee role, and the owner fee
+policy charges swaps, bridges and launches only. A `feeRecipient`, `fee`,
+`vexFee`, `recipient`, `to`, `distributor`, `claimFor`, `chain` or `chainId`
+parameter is REFUSED BY NAME at the param gate.
+
+**Two distributor runtimes, two money-path ABIs** (measured 2026-09-04,
+`chain-holder-rewards-distributor-runtimes.json`):
+
+| | 13962-byte (`0x25ff1A3D...`, Sourcify) | 22171-byte (`0x7b53d176...`, not verified) |
+|---|---|---|
+| `claim()` returns | ONE word | TWO words (token leg, paired leg) |
+| `distribute()` returns | FOUR words, named `(feesToken, feesPaired, bought, notified)` by the verified ABI | FIVE words, member names **NOT ESTABLISHED** and never labelled |
+| `RewardClaimed` | `(address,uint256)` `0x106f923f…` | `(address,uint256,uint256)` `0xf01da326…` |
+| `CALLER_BOUNTY_BPS()` | absent | 50 |
+| `locker()` | the V2 locker | the V3 locker |
+
+So the claim is simulated with a RAW `eth_call` and decoded by the LENGTH of what
+came back; a missing second word is the ABSENCE of a paired leg, never a zero.
+Both `RewardClaimed` topics are decoded, pinned to the one distributor the
+deployer named, under the exactly-one rule.
+
+**The caller bounty is a rule with a condition, and the launchpad is wrong about
+it.** `CALLER_BOUNTY_BPS()` = 50 on the newer runtime; on the live distribute
+`0x8022a2e0…` the caller received 1468600694080745304774 of the LAUNCHED TOKEN,
+exactly 0.5 percent of the 293720138816149060954828 the distributor moved,
+declared by `CallerBounty(address,uint256)`. The launchpad's `paysCallerBounty`
+reads **false** on distributors carrying that same constant, so the on-chain
+constant is the authority and the API field is shown as an echo. The bounty comes
+out of the buyback, so a distribute that bought nothing back pays nothing, and
+only the receipt's `CallerBounty` event proves what was paid. It is recorded as
+row PROVENANCE, never as a payout leg (`reward_distribution` is defined as
+carrying none).
+
+**KNOWN GAP, V2 fees-to-holders tokens.** The V2 suite's
+`holderRewardsDeployer` `0x2da890c5…` has emitted `DistributorDeployed` **zero
+times ever**, while the V2 FACTORY `0x80709b90…` has emitted
+`HolderRewardsEnabled(token, distributor)` **thirteen** times, and `0x25ff1A3D…`
+- a live distributor that pays real rewards - answers `factory() = 0x80709b90…`.
+`HolderRewardsEnabled` carries NO reward mode, and the reward mode is the field
+that decides which assets a claim pays, so widening the resolution to the factory
+would source a money-path field from outside the approved authority table. Until
+that is decided, the two mutation tools REFUSE on V2 with the reason named rather
+than reporting `no_holder_rewards`, whose sentence would falsely tell thirteen
+tokens' holders that their rewards do not exist. V3 is unaffected.
+
+### Named omissions on this surface
+
+- **`POST /pools-fun/holder-rewards` (no `/prepare`) is NOT used.** It is the
+  provider's OWN custody path behind a Privy session (HTTP 401 without one,
+  measured). Vex is self-custodial and holds no such session; the claim it would
+  perform is the same `claim()` Vex signs itself from the user's own key.
+- **`claimFor(address)` is never called.** It exists on both runtimes; a claim on
+  the agent path pays the wallet that signs it and the calldata builders cannot
+  produce anything else.
+- **The fifth word of the newer runtime's `distribute()` is unnamed.** No machine
+  artifact this repository can read describes it, so it is reported in order and
+  not labelled. Recorded as NOT FOUND rather than guessed. Measured 2026-09-05 and NOT
+  adopted: on two live tokens the launchpad's `pendingFees.token` and
+  `pendingFees.paired` equalled the first and second words exactly
+  (`811558754169314846390686` / `5557720400179064553` on
+  `0x00e802805a16Ad3aa879f98F21a1213545bB98B9`), which is what the verified
+  four-word ABI's `(feesToken, feesPaired, ...)` would predict. That is
+  corroboration from an ECHO, not a machine artifact, and words three to five
+  remain unestablished either way, so the projection still labels none of them.
+- **The buyback-shaped event `0x48c32c5c…` on the newer runtime is unmatched.**
+  Its signature did not fall out of a preimage search; nothing decodes it and
+  nothing needs to.
+- **The bounty's ASSET is not asserted.** `CallerBounty` carries no token
+  address. In the one live distribute measured it was the launched token, proven
+  by that receipt's own ERC-20 `Transfer` to the caller, and that provenance is
+  stated rather than generalized.
+
 ## Contracts (Robinhood Chain, chainId 4663)
 
 ### Contract suites: THREE generations, all live
@@ -755,10 +857,12 @@ or what the agent may do unattended.
   the authority.** `earned(wallet)` on the distributor is (plan v3 A5), and the
   API figure is shown beside it. They can differ legitimately: the reward streams
   continuously, so two reads at two instants are two different true numbers.
-- **`pools__holder_rewards_get` reads only.** `POST /pools-fun/holder-rewards/
-  prepare` and `POST /pools-fun/holder-rewards` (Privy-authed) exist in the
-  frontend bundle and are the CLAIM path; they belong to the holder-rewards claim
-  lane, not to this read.
+- **`pools__holder_rewards_get` reads only.** The claim and the permissionless
+  distribute are their own tools (`pools__holder_rewards_claim`,
+  `pools__holder_rewards_distribute`); `POST /pools-fun/holder-rewards/prepare`
+  is wired there as a byte-for-byte CROSS-CHECK and `POST
+  /pools-fun/holder-rewards` (Privy-authed) is not used at all. See the mutation
+  surface section above.
 - **No decimals are reported for a launch asset.** The endpoint carries none and
   this module does not invent one: a caller that must render an amount reads
   `decimals()` on the pair.

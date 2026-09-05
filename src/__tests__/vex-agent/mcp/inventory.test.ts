@@ -111,9 +111,16 @@ describe("the exported inventory covers exactly the export scope", () => {
     // quote is read-only; the execute is the FIRST signing tool this namespace
     // has ever exported, which is why the internal count is unmoved and the
     // protocol count carries both.
-    expect(inventory).toHaveLength(174);
+    // 174 -> 176 on the holder-rewards merge: the two pools.fun MUTATIONS
+    // `pools__holder_rewards_claim` (the holder's own claim, which pays
+    // whoever signs it and carries no Vex fee) and
+    // `pools__holder_rewards_distribute` (the permissionless push, which pays
+    // the token's holders rather than its caller). Both sign, so unlike the
+    // two pools reads above neither is read-only; the internal count is
+    // unmoved and the protocol count carries both (147 -> 149).
+    expect(inventory).toHaveLength(176);
     expect(inventory.filter((t) => t.kind === "internal")).toHaveLength(27);
-    expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(147);
+    expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(149);
   });
 
   it("keeps WebResearch OUT of tools/list while the in-app registry keeps it", () => {

@@ -222,4 +222,6 @@ export const STUDIO_TOOL_TITLES: Readonly<Record<string, string>> = {
   pools__fees_claim: "Claim pools.fun creator fees",
   pools__launch_assets_list: "List pools.fun launchable stocks",
   pools__holder_rewards_get: "Read pools.fun holder rewards",
+  pools__holder_rewards_claim: "Claim pools.fun holder rewards",
+  pools__holder_rewards_distribute: "Distribute pools.fun holder rewards",
 };

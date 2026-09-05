@@ -10,7 +10,11 @@
 
 export { validateDiscoverPage } from "./validation/token.js";
 export { validateCandles } from "./validation/candles.js";
-export { validateHolderRewards, validateLaunchAssets } from "./validation/holder-rewards.js";
+export {
+  validateHolderRewards,
+  validateHolderRewardsPrepare,
+  validateLaunchAssets,
+} from "./validation/holder-rewards.js";
 export {
   validateDevBuyQuote,
   validateImageUpload,

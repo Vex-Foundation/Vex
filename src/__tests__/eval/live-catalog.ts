@@ -29,9 +29,12 @@ export function liveCatalogToolCount(): number {
  * `launchpads.image_publish`); 149 with the Virtuals bonding-curve trade pair
  * (`virtuals__agent_trade_quote` / `_execute`), two new identities on a
  * namespace that previously advertised reads only, so this is a pure +2 and
- * every affected baseline was recaptured in the same change.
+ * every affected baseline was recaptured in the same change; 151 with the
+ * pools.fun holder-rewards MUTATIONS (`pools.holder_rewards_claim`,
+ * `pools.holder_rewards_distribute`), again two new identities on an existing
+ * namespace, so a pure +2 and every affected baseline recaptured here.
  */
-export const PINNED_LIVE_CATALOG_TOOL_COUNT = 149;
+export const PINNED_LIVE_CATALOG_TOOL_COUNT = 151;
 
 /**
  * The candidate count every dense and lexical measurement must have seen.

@@ -212,6 +212,28 @@ export interface PoolsRewardLeg {
 }
 
 /**
+ * Render a raw base-unit amount at a possibly-unknown scale, WITHOUT floating
+ * point.
+ *
+ * `null` decimals means the scale is unknown, and an unknown scale produces NO
+ * human figure at all: a number at a guessed scale is worse than none, because a
+ * reader cannot tell it was guessed (rule 90). String arithmetic throughout -
+ * these are uint256 values and `Number` loses them.
+ *
+ * Lives beside {@link PoolsRewardLeg} because it is the one rendering that type
+ * needs and every consumer must do it the same way; a second copy in a handler
+ * is how two tools start disagreeing about what a wallet is owed.
+ */
+export function poolsRewardAmountHuman(raw: string, decimals: number | null): string | null {
+  if (decimals === null || !Number.isInteger(decimals) || decimals < 0 || decimals > 77) return null;
+  const negative = raw.startsWith("-");
+  const digits = (negative ? raw.slice(1) : raw).padStart(decimals + 1, "0");
+  const whole = digits.slice(0, digits.length - decimals);
+  const fraction = decimals === 0 ? "" : digits.slice(digits.length - decimals).replace(/0+$/, "");
+  return `${negative ? "-" : ""}${whole}${fraction ? `.${fraction}` : ""}`;
+}
+
+/**
  * The outcome of the on-chain read.
  *
  * FIVE STATES, because collapsing them is how a read tool starts lying:

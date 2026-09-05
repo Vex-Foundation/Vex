@@ -1,0 +1,44 @@
+{
+  "definition": {
+    "function": {
+      "description": "Claim the fees a pools.fun token streams to the wallets that HOLD it, on Robinhood Chain (4663). Nothing is staked: a token launched with fees-to-holders sends its trading fees to a distributor contract, which streams them to holders over 24 hours, and this takes your share. Use dryRun: true first - it SIMULATES the distributor's own claim() from your wallet and reports exactly what it would pay right now. Without dryRun it SIGNS AND SPENDS GAS behind the normal approval gate. WHAT IT PAYS depends on the reward mode the token was launched with, which is read from the DistributorDeployed event the suite's own HolderRewardsDeployer emitted for this token, never from the launchpad's row: token mode pays the launched token, paired mode pays the asset the pool is paired against, and both mode pays both. Every leg is reported separately with its RAW base-unit amount, its decimals and its asset address, plus a scaled figure where the asset answered decimals(); never add two legs together and never assume 18 decimals. Some distributors have no paired leg at all, and that is reported as the ABSENCE of a leg rather than a zero. Each leg also carries the distributor's own earned figure at the same block, which differs from the simulated payout by the seconds between the two reads because the reward streams continuously. VEX CHARGES NOTHING on this claim. There is no Vex fee, no fee parameter, and no recipient parameter: the distributor's claim() pays whoever signs the transaction, so the rewards always land in your own selected wallet, and a recipient, fee, distributor or target parameter is refused by name. The only cost is network gas, which is reported as a ceiling before anything is signed. TWO SAFETY CHECKS run every time and both can refuse. The distributor is bound to the suite by its own token(), factory() and locker() before it is addressed. The launchpad's own prepared calldata (POST /pools-fun/holder-rewards/prepare) is compared byte for byte against the calldata Vex builds from the distributor's verified ABI, and a disagreement refuses the claim by name rather than trusting either. If that endpoint is unreachable or declines, the claim still proceeds on the chain's own evidence, which is stated in the reply. RETURNS the bound distributor group (its address, the reward mode and where that mode was read from, the suite and its HolderRewardsDeployer, the paired asset, the caller-bounty basis points and whether this wallet is excluded), the block everything was read at, a wouldPay array with one entry per leg carrying side, assetAddress, assetSymbol, decimals, amountRaw, a scaled amount where decimals() answered, and earnedRaw, plus gasLimitBound, vexFee (always null) and the crossCheck group. A real claim also returns txHash, status, a paid array shaped like wouldPay carrying the amounts the RECEIPT proved, paidNothing, and settlementDiscrepancy when the receipt paid less than the preview promised. OUTCOMES, each a different fact. nothing_to_claim means the distributor owes this wallet nothing right now - a fact about the wallet, not a failure, and nothing is signed. wallet_excluded means the distributor has excluded this address from rewards, which is routine for contracts and pools. no_holder_rewards means the token never opted in and never can, because the choice is locked at launch. unsupported_on_this_suite means the token is on the first contract suite, which has no holder rewards at all. After a real claim the status carries the transaction hash: confirmed with the amounts the receipt PROVED, reverted when it landed and failed, confirmed_pending_amounts when it settled but the payout could not be decoded (never guessed), or pending when the outcome is UNKNOWN, already recorded, and must NOT be retried. A claim that pays zero is a real answer rather than a failure, and a confirmed claim that paid less than the preview promised is reported as a settlement discrepancy in words. simulateOnly: true runs the entire path - suite detection, the deployer's event, the binding, the simulation, the calldata cross-check and a real gas estimate over the exact bytes - and then STOPS, returning the transaction that would have been signed with executed: false. No key is opened and nothing is recorded. Reading the state without any of this is pools__holder_rewards_get; claiming a token's CREATOR fees, which is a different person's money, is pools__fees_claim.",
+      "name": "pools__holder_rewards_claim",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "description": "true simulates the claim and reports what it would pay without signing anything. Omit it to actually claim, which spends gas.",
+            "type": "boolean"
+          },
+          "simulateOnly": {
+            "description": "true runs every check a real claim runs, including the gas estimate over the exact bytes, and then stops without opening a key or recording anything. Returns the would-be transaction with executed: false. Use it to prove the path; use dryRun to ask what a claim would pay.",
+            "type": "boolean"
+          },
+          "tokenAddress": {
+            "description": "The pools.fun token's contract ADDRESS. Symbols are not unique on this launchpad and copycats are routinely live, so the address is the only identity that means one token. Find fees-to-holders tokens with pools__tokens_discover using holderRewards: true.",
+            "type": "string"
+          },
+          "walletAddress": {
+            "description": "ONLY valid with dryRun: true, where it reads what a DIFFERENT holder is owed - earned(account) and claim() simulated from that address are public views over public chain state. On a real claim it is refused by name, because the distributor pays whoever signs and there is no way to claim into another address.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tokenAddress"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "user_wallet_broadcast",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": true,
+    "namespace": "pools",
+    "requiresEnv": null,
+    "toolId": "pools.holder_rewards_claim"
+  }
+}
