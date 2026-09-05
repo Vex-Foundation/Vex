@@ -30,15 +30,6 @@
 
 import { getVirtualsClient } from "@tools/virtuals/client.js";
 import { readVpApiTrades, VP_API_MAX_LIMIT } from "@tools/virtuals/trades/vp-api.js";
-import {
-  readGeckoTerminalCandles,
-  GECKOTERMINAL_AGGREGATES,
-  GECKOTERMINAL_MAX_LIMIT,
-  GECKOTERMINAL_TIMEFRAMES,
-  geckoTerminalAggregatesFor,
-  type GeckoTerminalAggregate,
-  type GeckoTerminalTimeframe,
-} from "@tools/virtuals/candles/geckoterminal.js";
 import type {
   VirtualsAgent,
   VirtualsGenesisSortField,
@@ -73,6 +64,8 @@ import {
 import { virtualsCreatorFeesHandler } from "./handlers/creator-fees.js";
 import { virtualsTradeQuote } from "./handlers/trade-quote.js";
 import { virtualsTradeExecute } from "./handlers/trade-execute.js";
+import { failureDetail, loadAgent } from "./handlers/_shared.js";
+import { virtualsCandlesHandler } from "./handlers/candles.js";
 
 /** The three provider numbers a `hasMore` claim needs to mean anything. */
 const PAGE_METADATA_KEYS = ["total", "page", "pageSize"] as const;
@@ -123,42 +116,6 @@ function continuation(
         }
       : {}),
   };
-}
-
-/**
- * Model-facing failure detail - the REAL cause, scrubbed and BOUNDED.
- *
- * Owner decree (2026-08-02, rules/04): a tool error surfaced to the agent
- * carries the ACTUAL cause, never a bare "unexpected error". The canonical
- * summarizer removes secrets, HTML and JSON bodies, URLs, auth headers and long
- * hex blobs, and hard-caps the result. It does NOT neutralise instruction-shaped
- * prose - the mitigation for THAT is the Safety Contract, which teaches the
- * model that tool output is data, never instruction.
- */
-function failureDetail(toolId: string, err: unknown): string {
-  logger.warn("virtuals.handler.error", {
-    toolId,
-    code: err instanceof VexError ? err.code : "UNEXPECTED",
-    error: describeFailureForLog(err),
-  });
-  return describeFailureForAgent(err);
-}
-
-/** Resolve one agent by id, or return the refusal sentence for the caller. */
-async function loadAgent(
-  params: Record<string, unknown>,
-): Promise<{ ok: true; agent: VirtualsAgent; id: string } | { ok: false; reason: string }> {
-  const idNumber = num(params, "id");
-  if (idNumber === undefined) {
-    return {
-      ok: false,
-      reason: "Missing required: id (the numeric Virtuals agent id virtuals__agents_discover returns).",
-    };
-  }
-  const id = String(idNumber);
-  const agent = await getVirtualsClient().getVirtual({ id });
-  if (!agent) return { ok: false, reason: `No Virtuals agent found for id ${id}.` };
-  return { ok: true, agent, id };
 }
 
 /**
@@ -431,115 +388,7 @@ export const VIRTUALS_HANDLERS: Record<string, ProtocolHandler> = {
     }
   },
 
-  "virtuals.candles": async (p) => {
-    const timeframeRead = readOptionalEnum<GeckoTerminalTimeframe>(p, "timeframe", GECKOTERMINAL_TIMEFRAMES);
-    if (!timeframeRead.ok) return fail(timeframeRead.reason);
-    const aggregateRead = readNumber(p, "aggregate", {
-      aggregate: { domain: "nonNegative", integer: true, min: 1, max: 12 },
-    });
-    if (!aggregateRead.ok) return fail(aggregateRead.reason);
-    const timeframe = timeframeRead.value ?? "hour";
-    const aggregate = (aggregateRead.value ?? 1) as GeckoTerminalAggregate;
-    // `aggregate` is legal PER TIMEFRAME, so the check needs both: a global
-    // set would accept `day` + 4, which the provider answers with a 400.
-    const legalAggregates = geckoTerminalAggregatesFor(timeframe);
-    if (!legalAggregates.includes(aggregate)) {
-      return fail(
-        `aggregate ${aggregate} is not legal for timeframe "${timeframe}". The provider allows `
-        + `${legalAggregates.join(", ")} there (its own words on a rejection: "Invalid aggregate. `
-        + `Allowed values: ${legalAggregates.join(", ")}"). The legal sets differ per timeframe: `
-        + "minute 1, 5, 15; hour 1, 4, 12; day 1.",
-      );
-    }
-    const limitRead = readNumber(p, "limit", {
-      limit: { domain: "nonNegative", integer: true, min: 1, max: GECKOTERMINAL_MAX_LIMIT },
-    });
-    if (!limitRead.ok) return fail(limitRead.reason);
-    const beforeRead = readNumber(p, "beforeTimestampSeconds", {
-      beforeTimestampSeconds: { domain: "nonNegative", integer: true, min: 1 },
-    });
-    if (!beforeRead.ok) return fail(beforeRead.reason);
-    const currencyRead = readOptionalEnum(p, "currency", ["usd", "token"] as const);
-    if (!currencyRead.ok) return fail(currencyRead.reason);
-    const limit = limitRead.value ?? 100;
-
-    try {
-      const loaded = await loadAgent(p);
-      if (!loaded.ok) return fail(loaded.reason);
-      const { agent, id } = loaded;
-      const chain = resolveVirtualsChain(agent.chain ?? "");
-      if (chain === null) {
-        return fail(`Virtuals agent ${id} reports chain "${agent.chain}", which is not a chain this tool knows.`);
-      }
-      const graduated = agent.status === "AVAILABLE" && agent.lpAddress !== null;
-      // Graduated agents chart from their AMM pool; a bonding agent has only
-      // its curve pair, which GeckoTerminal indexes on Solana (Meteora DBC)
-      // and does not index on an EVM chain.
-      const poolAddress = graduated ? agent.lpAddress : agent.preTokenPair;
-      if (poolAddress === null) {
-        return ok({
-          agentId: agent.id,
-          chain: virtualsChainSlug(chain),
-          supported: false,
-          reason: `Virtuals agent ${id} has no pool address yet (neither lpAddress nor preTokenPair), so `
-            + "there is nothing for a candle provider to index.",
-          candles: [],
-        });
-      }
-
-      const result = await readGeckoTerminalCandles({
-        chain,
-        poolAddress,
-        timeframe,
-        aggregate,
-        limit,
-        ...(beforeRead.value !== null ? { beforeTimestampSeconds: beforeRead.value } : {}),
-        currency: currencyRead.value ?? "usd",
-      });
-      if (!result.found) {
-        return ok({
-          agentId: agent.id,
-          chain: virtualsChainSlug(chain),
-          market: graduated ? "dex" : "curve",
-          poolAddress,
-          supported: false,
-          reason: result.reason,
-          candles: [],
-        });
-      }
-      return ok({
-        agentId: agent.id,
-        symbol: agent.symbol,
-        chain: virtualsChainSlug(chain),
-        market: graduated ? "dex" : "curve",
-        source: "geckoterminal",
-        network: result.network,
-        poolAddress: result.poolAddress,
-        timeframe,
-        aggregate,
-        currency: currencyRead.value ?? "usd",
-        limit,
-        count: result.candles.length,
-        // Walking further back is a provider capability, so the reply names the
-        // exact parameter that does it rather than leaving the history looking
-        // like all there is.
-        ...(result.candles.length > 0
-          ? {
-              oldestTimestampSeconds: result.candles[0]!.timestampSeconds,
-              olderHistoryNote:
-                `Older buckets are reachable: call again with beforeTimestampSeconds = `
-                + `${result.candles[0]!.timestampSeconds} and the same timeframe and aggregate.`,
-            }
-          : {}),
-        note: "Open/high/low/close and volume are decimal strings from GeckoTerminal, oldest bucket "
-          + "first. They are display-grade market data, never a quote: price a trade with the venue "
-          + "tool that would execute it.",
-        candles: result.candles,
-      });
-    } catch (err) {
-      return fail(`Virtuals candles unavailable (${failureDetail("virtuals__agent_candles_list", err)})`);
-    }
-  },
+  "virtuals.candles": virtualsCandlesHandler,
 };
 
 /** Re-exported so the manifest and the tests read the bound from one place. */

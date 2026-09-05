@@ -106,12 +106,12 @@ function context(overrides: Partial<EngineContext>): EngineContext {
  * The coordinator reviews this raise.
  */
 const MODES = [
-  { name: "agent / restricted", context: context({}), ceiling: 59_482 },
-  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 60_183 },
-  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 65_959 },
-  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 65_978 },
-  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 64_683 },
-  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 64_498 },
+  { name: "agent / restricted", context: context({}), ceiling: 59_489 },
+  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 60_190 },
+  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 65_966 },
+  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 65_985 },
+  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 64_690 },
+  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 64_505 },
 ] as const;
 
 beforeAll(() => {
@@ -341,6 +341,34 @@ describe("static prompt byte ceilings", () => {
       // is not. Dropping the per-capability sentence entirely was the
       // alternative and it re-introduces the false claim above. No other
       // namespace's prose was touched to fund this.
+      // REVIEWED BUDGET DIFF, PR-C5 (Virtuals candles at DexScreener depth,
+      // 2026-09-05, folded onto the arc branch). NET +7 in every mode, and the
+      // seven bytes buy the removal of a FALSE CLAIM rather than any new prose.
+      // The left column is the arc branch's own figure, not this lane's base:
+      //
+      //   agent / restricted          59,482 -> 59,489  (+7)
+      //   agent / full                60,183 -> 60,190  (+7)
+      //   mission setup / restricted  65,959 -> 65,966  (+7)
+      //   mission setup / full        65,978 -> 65,985  (+7)
+      //   mission run / restricted    64,683 -> 64,690  (+7)
+      //   mission run / full          64,498 -> 64,505  (+7)
+      //
+      // WHAT CHANGED, and it is one clause. The Virtuals coverage line said
+      // candles existed "for bonding agents on solana only", which was true
+      // while an EVM bonding curve had no candle source; this lane gave it two
+      // (the provider's curve trade feed, and the curve pair's own Swap logs),
+      // so bonding agents now chart on base and robinhood as well. The clause
+      // now reads "on all three of those", pointing at the three chains the
+      // same sentence has already named. Leaving it would have taught every
+      // agent, in every mode, that a base or robinhood bonding chart does not
+      // exist - the exact belief that costs a wasted call, which is what this
+      // ceiling exists to price.
+      //
+      // WHY COMPRESSION WAS INSUFFICIENT. The first draft named the two new
+      // sources inline and cost +133. It was cut to the chain list alone
+      // because WHERE a capability exists belongs in the always-loaded prompt
+      // and HOW it is built belongs in the tool description, which carries it
+      // in full. No other namespace's prose was touched to fund this.
       // The coordinator reviews this diff.
       expect(bytes).toBeLessThanOrEqual(mode.ceiling);
     });

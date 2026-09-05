@@ -25,9 +25,10 @@ export const VIRTUALS_MARKET_DISCOVERY = {
 
   "virtuals.candles": {
     embeddingText: embeddingText(
-      `Get the OHLCV price history - open, high, low, close and volume per bucket - for one Virtuals agent token's pool, at minute, hour or day resolution, walking as far back as the pool has history. `
-      + `Use this when the user wants a price chart, a trend, a high and low over a period, or the history behind a move on a graduated Virtuals agent. `
-      + `Example queries: price chart for this virtuals agent, hourly candles for the agent token, what was the high and low today, price history since graduation, ohlcv candles for this agent pool.`,
+      `Get the price history - open, high, low, close and volume per bucket - for one Virtuals agent token, at minute, hour or day resolution. `
+      + `Use this when the user wants a price chart, a trend, or the high and low over a period, whether the agent has graduated or is still on its curve. `
+      + `A graduated agent charts from its trading pool; one still on its curve charts from the launchpad's own trade feed or from the pair's own on-chain swap records. `
+      + `Example queries: price chart for this virtuals agent, hourly candles for the agent token, what was the high and low today, price history before it graduated.`,
     ),
     aliases: ["agent price chart", "virtuals candles", "ohlcv candles for agent token", "agent price history", "hourly candles"],
     exampleIntents: ["price chart for this virtuals agent", "hourly candles for this agent token", "price history since it graduated"],

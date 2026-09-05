@@ -36,6 +36,9 @@ Sanitized copies of the captures the tests depend on live in
 | `throttle.ts` | Token bucket + TTL cache + in-flight dedupe, per host, with a configurable rate. |
 | `trades/vp-api.ts` | The bonding-curve trade tape, and the typed refusal for the chains it does not serve. |
 | `candles/geckoterminal.ts` | Pool OHLCV over GeckoTerminal's PUBLIC v2 API, and the typed "pool not indexed" outcome. |
+| `candles/bucketing.ts` | The exact OHLCV arithmetic both curve sources share: scaled-bigint prices and volumes, epoch-aligned buckets, no floats anywhere. |
+| `candles/curve-tape.ts` | Bonding-curve candles built from the provider's own trade feed (base, solana), with the feed's cursorless ceiling reported as a ceiling. |
+| `candles/curve-chain.ts` | Bonding-curve candles built from the pair's own `FPairV2` `Swap` logs (base, robinhood), the deepest and most precise source. |
 
 Base URL is `services.virtualsApiUrl` in the Vex config; the other two hosts are
 constants inside their own modules because they are not configurable endpoints.
@@ -297,6 +300,40 @@ The tape is keyed by the BONDING token: `preToken` while on the curve (where
 graduated token probed - both columns, every chainID, with and without the
 parameter - returned an empty tape.
 
+### THE TAPE HAS NO CURSOR, AND THAT SHAPES THE CANDLE BUILDER (probed 2026-09-05)
+
+Every candidate pagination parameter was sent live against CULTOS (agent 135655,
+BASE, 978 trades) and every one was SILENTLY IGNORED - each returned the
+byte-identical newest window (newest 1788533585, oldest 1787628387):
+
+| parameter sent | http | effect |
+|---|---|---|
+| `offset=200` | 200 | ignored |
+| `page=2` | 200 | ignored |
+| `skip=200` | 200 | ignored |
+| `before=<ts>` | 200 | ignored |
+| `beforeTimestamp=<ts>` | 200 | ignored |
+| `endTime=<ts>` | 200 | ignored |
+| `toTimestamp=<ts>` | 200 | ignored |
+
+The only depth knob is `limit`, and the provider states its own ceiling in its
+rejection body:
+
+    limit=1001 -> HTTP 400 {"code":-400,"message":"param limit maxLimit 1000"}
+
+So the tape is a NEWEST-1000 SNAPSHOT, not a walkable feed, and an agent past
+1000 curve trades has history no parameter can reach. `VP_API_PROVIDER_MAX_LIMIT`
+records the provider's ceiling; `VP_API_MAX_LIMIT` (200) stays as the trades
+TOOL's own product bound. The candle builder asks for the full ceiling and
+reports `coverage.stopReason: tape_ceiling` when the tape comes back full, so a
+history bounded by the ceiling is never presented as the start of the curve.
+
+**Tape amounts are float-damaged upstream.** The tape's newest CULTOS trade
+(`0x42b74f0a...`) reports `virtualTokenAmt` "0.8766472852825719" - sixteen
+significant digits - while the same trade's `Swap` log carries 876647285282571920
+wei exactly. The provider computes these in floating point before we see them.
+The on-chain source is strictly more precise, and the tool says which one it used.
+
 ## `vp-api/klines` - DEAD, and not wired
 
 Twelve probes: granularity 60 and 3600, five windows, timestamps in seconds AND
@@ -351,8 +388,75 @@ Coverage, measured:
 | ROBINHOOD / bonding | same shape as Base; not separately probed |
 | ETH / any | GeckoTerminal's `eth` slug exists but no Virtuals ETH agent was probed through it |
 
-The tool reports a 404 as `supported: false` with that reason and points at
-`virtuals__agent_trades_list` and the 24 h `priceSeries24h` instead.
+Those two 404 cells are why the curve sources below exist. GeckoTerminal stays
+the source for a GRADUATED pool on every chain, and for a SOLANA bonding agent
+whose curve it genuinely indexes.
+
+## The curve sources - candles where no indexer has any (added 2026-09-05)
+
+An `FPairV2` bonding curve on an EVM chain is not an indexed AMM pool, so no
+OHLCV provider carries it. That is exactly the pre-graduation population a
+trader asks about, so the bars are BUILT from the two feeds that do exist. Both
+fold through `candles/bucketing.ts`, so a bar means the same thing whichever
+source produced it: epoch-aligned buckets, prices and volumes as exact decimal
+strings from scaled bigints, and buckets with no trades ABSENT rather than
+zero-filled.
+
+### `FPairV2.Swap` - the on-chain source (`candles/curve-chain.ts`)
+
+    event Swap(uint256 amount0In, uint256 amount0Out, uint256 amount1In, uint256 amount1Out)
+    topic0 = 0x298c349c742327269dc8de6ad66687767310c948ea309df826f5bd103e19d207
+
+All four words are non-indexed and there is no sender topic, so topic0 alone
+selects the event. Index 0 is `tokenA` and index 1 is `tokenB`. THE ORDER IS
+READ FROM THE PAIR, never assumed: both pairs measured put the agent token at
+index 0 and VIRTUAL at index 1, but the module still calls `tokenA()` and
+REFUSES a pair it cannot match against the agent's own bonding token, because an
+inverted series looks exactly as authoritative as a correct one.
+
+| pair | chain | tokenA | tokenB |
+|---|---|---|---|
+| `0x3e11e685...84a` (CULTOS) | Base 8453 | agent token | VIRTUAL `0x0b3e3284...` |
+| `0x0f3Ff518...C2D` (FIDUCIA) | Robinhood 4663 | agent token | VIRTUAL `0xc6911796...` |
+
+RPC bounds, each quoted from the endpoint's own rejection (2026-09-05):
+
+| RPC | chain | bound |
+|---|---|---|
+| `base.drpc.org` | 8453 | "ranges over 10000 blocks are not supported on free plan" |
+| `mainnet.base.org` | 8453 | "eth_getLogs is limited to a 10,000 range" |
+| `base-rpc.publicnode.com` | 8453 | unusable: "Archive requests require a personal token" |
+| `rpc.mainnet.chain.robinhood.com` | 4663 | no range cap; a heavy query answers "log query timed out" |
+
+So Base is windowed at the 10,000 both usable endpoints state, and Robinhood is
+windowed to bound query COST rather than range. Per-log block timestamps are read
+in JSON-RPC batches of 10, the smallest cap measured (`mainnet.base.org`:
+"maximum 10 calls in 1 batch"). The scan walks BACKWARDS from the requested end
+so the work budget is always spent on the bars actually asked for, and
+`coverage` reports the block range covered, the windows spent and which bound
+stopped it.
+
+**Cross-checked against the tape.** The captured Base window
+(`src/__tests__/virtuals/fixtures/curve-swap-logs-base-cultos.json`) ends on the
+same trade the tape served as its newest row, and the two agree on every field;
+the log is the more precise of the two (see the tape section above).
+
+### Source selection, per lifecycle stage and chain
+
+| stage | chain | default source | also available |
+|---|---|---|---|
+| graduated | any | `geckoterminal` (the AMM pool) | - |
+| bonding | solana | `geckoterminal` (Meteora DBC pool) | `tape` |
+| bonding | base | `tape` | `onchain` |
+| bonding | robinhood | `onchain` (the only source there) | - |
+| bonding | ethereum | none; Virtuals runs no curve there | - |
+
+The `source` parameter overrides the default and is REFUSED BY NAME when the
+requested source cannot serve the agent. `currency` applies to GeckoTerminal
+only: the curve sources price in VIRTUAL per agent token as the exact ratio of
+the two token amounts each swap moved, and there is no per-bucket VIRTUAL/usd
+rate on that path, so a `currency` request there is refused rather than answered
+in a unit the caller did not ask for.
 
 ## Capability x chain matrix (the one the tool descriptions state)
 
@@ -362,9 +466,9 @@ The tool reports a 404 as `supported: false` with that reason and points at
 | 24 h price samples (`includePriceSeries`) | yes | yes | present but empty on the row sampled | untested |
 | curve trade tape | yes (chainID 0) | **no** (no chain id in the provider's feed) | yes (chainID 1) | **no** |
 | pool candles, graduated | yes | yes | yes | untested |
-| pool candles, bonding | **no** (404) | **no** (404 expected) | yes | **no** |
+| curve candles, bonding | yes (`tape`, or `onchain` for depth and exactness) | yes (`onchain`; the only source there) | yes (indexed Meteora DBC pool) | **no** (Virtuals runs no curve on ETH) |
 | trade a graduated agent | kyberswap | uniswap | solana tools (Jupiter) | kyberswap |
-| trade a bonding agent | no venue tool yet | no venue tool yet | Jupiter routes the DBC pool | no |
+| trade a bonding agent | `virtuals__agent_trade_quote` / `_execute` (BondingV5) | `virtuals__agent_trade_quote` / `_execute` (BondingV5) | Jupiter routes the DBC pool | no |
 | launch an agent | later lane | later lane | **unsupported**: the Meteora DBC pool creation is signed by Virtuals' backend wallet as both creator and payer, so a self-custodial launch would not be a Virtuals agent | no |
 
 ## The projection and drop table
@@ -738,8 +842,21 @@ subtracted from the on-chain numbers.
 4. **ETH coverage of the market-history tools** was never probed against a real
    ETH agent - the chain holds two - so those cells are reported as unsupported
    rather than claimed.
-5. **Robinhood bonding candles** were inferred from the Base 404 rather than
-   probed directly.
+5. **Robinhood bonding candles** no longer depend on that inference: the chain
+   is served by the on-chain source, proven live on FIDUCIA (agent 139254, pair
+   `0x0f3Ff518...C2D`, 128 `Swap` logs) whose tape is empty at every chainID.
+10. **A `token` or `chain` subject** for the candle read is NOT exposed; the
+   numeric agent id is the only subject, because it already determines the
+   chain, the bonding token and the pair, and the provider's own row is the
+   authority for all three. Named here rather than left as an undeclared gap.
+11. **Solana bonding depth** is bounded by whichever source answers: the indexed
+   pool has GeckoTerminal's own history, and the tape stops at its 1000-trade
+   ceiling. There is no third source on that chain, so the oldest bucket the
+   tool can offer there is the oldest one of those two carry.
+12. **The on-chain source's work budget** (40 log windows, 600 block-header
+   reads per call) is a bound on WORK, not on the answer: when it stops, the
+   coverage block names the bound and hands back the cursor that resumes exactly
+   there.
 6. **`filters[status]=5`** filters 236 rows on BASE and we do not know what it
    means, so it is not exposed.
 7. **`api2.virtuals.io`** mirrors `api.virtuals.io` (identical totals) and

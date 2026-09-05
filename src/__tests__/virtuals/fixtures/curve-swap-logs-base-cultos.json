@@ -1,0 +1,98 @@
+{
+  "_provenance": {
+    "capturedAt": "2026-09-05",
+    "what": "The real FPairV2 Swap logs and block headers of the CULTOS bonding pair on Base 8453, read from base.drpc.org. The newest log here is the same trade the provider's own trade feed served as its newest row, which is what proves the two sources agree.",
+    "pair": "0x3e11e685a056048C2dFa1c0dc1E1D0F233DbA84a",
+    "chainId": 8453,
+    "tokenA": "0x1984edF491D3399FBc09E6d0856E01fF3721f952",
+    "tokenB": "0x0b3e328455c4059EEb9e3f84b5543F74E24e7E1b",
+    "agentToken": "0x1984edF491D3399FBc09E6d0856E01fF3721f952",
+    "quoteToken": "0x0b3e328455c4059EEb9e3f84b5543F74E24e7E1b",
+    "fromBlock": "0x30836f0",
+    "toBlock": "0x3085e00",
+    "tapeCrossCheck": {
+      "txHash": "0x42b74f0a706bc1fd48cfda26cf5413bd0f30d07d2ba5bb07d63f181165601321",
+      "tapeVirtualTokenAmt": "0.8766472852825719",
+      "tapePrice": "0.0000876647285283",
+      "chainExactVirtualWei": "876647285282571920",
+      "chainExactPrice": "0.000087664728528257192",
+      "note": "The feed rounded the VIRTUAL amount at the sixteenth significant digit; the log carries the exact integer."
+    }
+  },
+  "logs": [
+    {
+      "address": "0x3e11e685a056048c2dfa1c0dc1e1d0f233dba84a",
+      "topics": [
+        "0x298c349c742327269dc8de6ad66687767310c948ea309df826f5bd103e19d207"
+      ],
+      "data": "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000007268a1a7feeb2b0cbb200000000000000000000000000000000000000000000000029378f43a6e900000000000000000000000000000000000000000000000000000000000000000000",
+      "blockHash": "0x9edae880018f9d34f45c93f60558590eff5f950c8c0bf7ece956b1e57a440f4d",
+      "blockNumber": "0x30838cd",
+      "blockTimestamp": "0x6a9ace7d",
+      "transactionHash": "0xd2fb25c209863a20972e506a2b3537c7b34092d63f318aabc36850876bf692ed",
+      "transactionIndex": "0xed",
+      "logIndex": "0xd4f",
+      "removed": false
+    },
+    {
+      "address": "0x3e11e685a056048c2dfa1c0dc1e1d0f233dba84a",
+      "topics": [
+        "0x298c349c742327269dc8de6ad66687767310c948ea309df826f5bd103e19d207"
+      ],
+      "data": "0x0000000000000000000000000000000000000000000069e10de76676d0897f6800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002615ec44e6b4c99b6",
+      "blockHash": "0x0757ed24f0ccbd60b582f176584ca7b6a5f45623fecf74cee8fa46a1d7ad39e8",
+      "blockNumber": "0x3083c50",
+      "blockTimestamp": "0x6a9ad583",
+      "transactionHash": "0xdee3faf754203ab4fe88f29cd83eeb3e52be58749e7eaf790fbfeae0b6e55fc6",
+      "transactionIndex": "0x1",
+      "logIndex": "0xd",
+      "removed": false
+    },
+    {
+      "address": "0x3e11e685a056048c2dfa1c0dc1e1d0f233dba84a",
+      "topics": [
+        "0x298c349c742327269dc8de6ad66687767310c948ea309df826f5bd103e19d207"
+      ],
+      "data": "0x0000000000000000000000000000000000000000000002b9916ceb0dbe43e240000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000fa7f76faabac64b",
+      "blockHash": "0x92fb872541b1c21a68b9be27977243ef948f5162edcce19eeff074a0d9714b2e",
+      "blockNumber": "0x3083ec9",
+      "blockTimestamp": "0x6a9ada75",
+      "transactionHash": "0x2f3dfaf46334ee7e2c9edd5819aed0c0e9dcea1857304420830e8393dfe8cdf3",
+      "transactionIndex": "0xae",
+      "logIndex": "0xf2f",
+      "removed": false
+    },
+    {
+      "address": "0x3e11e685a056048c2dfa1c0dc1e1d0f233dba84a",
+      "topics": [
+        "0x298c349c742327269dc8de6ad66687767310c948ea309df826f5bd103e19d207"
+      ],
+      "data": "0x00000000000000000000000000000000000000000000021e19e0c9bab2400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c2a7a0fb0940690",
+      "blockHash": "0xb80b977eea99f528045dd65a2fd285cdd50405c2996bd8e581098dafd62ed287",
+      "blockNumber": "0x3083f37",
+      "blockTimestamp": "0x6a9adb51",
+      "transactionHash": "0x42b74f0a706bc1fd48cfda26cf5413bd0f30d07d2ba5bb07d63f181165601321",
+      "transactionIndex": "0x2e",
+      "logIndex": "0x5d",
+      "removed": false
+    }
+  ],
+  "blocks": [
+    {
+      "number": "0x30838cd",
+      "timestamp": "0x6a9ace7d"
+    },
+    {
+      "number": "0x3083c50",
+      "timestamp": "0x6a9ad583"
+    },
+    {
+      "number": "0x3083ec9",
+      "timestamp": "0x6a9ada75"
+    },
+    {
+      "number": "0x3083f37",
+      "timestamp": "0x6a9adb51"
+    }
+  ]
+}
