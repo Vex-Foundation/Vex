@@ -97,6 +97,14 @@ const entries: [string, MutationContract][] = [
   ["kyberswap.swap.execute", { kind: "trade", capture: "none", expectedType: "swap", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
   ["uniswap.swap.execute",   { kind: "trade", capture: "none", expectedType: "swap", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
   ["solana.swap.execute",    { kind: "trade", capture: "none", expectedType: "swap", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
+  // The Virtuals bonding-curve execute is the same shape as the EVM swap
+  // executes above: one token in, one token out, an on-chain swap whose durable
+  // truth the handler writes to `agent_activity` itself from the receipt, so
+  // `capture: "none"` keeps the legacy proj_activity projection out of it. No
+  // `dryRun`: the read-only preview is the separate `virtuals.trade.quote`
+  // tool, and the execute's own `simulateOnly` stops before signing rather than
+  // standing in for an approval-skipping preview.
+  ["virtuals.trade.execute", { kind: "trade", capture: "none", expectedType: "swap", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
   // Trench Express curve buy/sell - the handler writes the durable truth
   // DIRECTLY to agent_activity (kind "swap") across the staged lifecycle, so
   // `capture: "none"` (no proj_activity projection). No dryRun preview.
@@ -124,6 +132,14 @@ const entries: [string, MutationContract][] = [
   // form row has it: there is no on-chain effect to capture.
   ["pools.launch_preview",       { kind: "utility", capture: "none", expectedType: "none", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
   ["pools.launch_request_form",  { kind: "utility", capture: "none", expectedType: "none", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
+  // `launchpads.image_publish` is the first PROVIDER-SIDE mutation in the
+  // matrix: `actionKind: "external_post"`, an HTTP upload of locker bytes to
+  // the launch-assets host, idempotent by content, with no chain, no signature
+  // and no receipt to capture. It needs no new `CaptureKind`: `utility` already
+  // names exactly this - a real mutation with zero portfolio impact and no
+  // `_tradeCapture` - so it joins the local-write rows here rather than
+  // widening the vocabulary for one tool.
+  ["launchpads.image_publish",   { kind: "utility", capture: "none", expectedType: "none", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
   // The pools.fun LAUNCH itself, shaped exactly like `trench.launch_execute`:
   // the handler writes its `kind: "launch"` row directly across the staged
   // lifecycle, so `capture: "none"` keeps the legacy proj_activity projection

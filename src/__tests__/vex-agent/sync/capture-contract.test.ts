@@ -119,7 +119,7 @@ describe("capture contract — structural coverage", () => {
     expect([...MUTATION_MATRIX].filter(([, c]) => c.capture === "full")).toEqual([]);
   });
 
-  it("the utility kind holds exactly the local-write tools that sign nothing", () => {
+  it("the utility kind holds exactly the tools that mutate without touching a portfolio", () => {
     // hyperliquid.risk.proposeSetup was the sole "utility" (no portfolio
     // impact) entry until Agent Scan Phase 3 deleted it with the protocol.
     // `trench.launch_request_form` (migration 062) is the successor this
@@ -129,7 +129,13 @@ describe("capture contract — structural coverage", () => {
     // records an advisory `previewed` intent that the database itself keeps
     // non-live, and `launch_request_form` opens the app's form and parks the
     // turn. Both are mutating because each writes a durable row; neither signs.
+    // `launchpads.image_publish` is the first non-local member: it mutates the
+    // launch-assets host over HTTP (`actionKind: "external_post"`), which is a
+    // real and irreversible consequence, but there is no chain, no signature
+    // and no receipt - so it lands in the same "no portfolio impact, no
+    // capture" class rather than in a new one invented for one tool.
     expect(getToolsByKind("utility").map(([id]) => id).sort()).toEqual([
+      "launchpads.image_publish",
       "pools.launch_preview",
       "pools.launch_request_form",
       "trench.launch_request_form",
