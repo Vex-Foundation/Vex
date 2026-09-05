@@ -237,7 +237,12 @@ describe("two attestation signatures, two verifiers, and never the wrong one", (
   it("claims pools.fun launches under the launchpad the server proves them with", () => {
     expect(agentscanWireLaunchpad("pools_fun")).toBe("pools_fun");
     expect(agentscanWireLaunchpad("trench_express")).toBe("trench");
-    expect(agentscanWireLaunchpad("virtuals")).toBeNull();
+    // Virtuals joined the table with its own launch lane, and it names ITSELF
+    // on the wire: the server dispatches the creator `preLaunch` proof on that
+    // value. A venue that has NOT signed the canonical message still answers
+    // null, which is what keeps this a mapping rather than a default.
+    expect(agentscanWireLaunchpad("virtuals")).toBe("virtuals");
+    expect(agentscanWireLaunchpad("some_other_venue")).toBeNull();
   });
 });
 
