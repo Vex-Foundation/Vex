@@ -227,16 +227,66 @@ export type PositionChainDto = z.infer<typeof positionChainDtoSchema>;
  *  - `usdEstimate` - a display ESTIMATE, never a settlement figure. `null`
  *    means "not priced", which is not the same as 0.
  */
+export const SNAPSHOT_IN_FLIGHT_KINDS = [
+  "agent_activity_pending",
+  "wallet_intent_live",
+  "wallet_confirmation_unknown",
+  "wallet_transaction_intent_live",
+  "wallet_transaction_confirmation_unknown",
+  "wallet_wrap_intent_live",
+  "wallet_wrap_confirmation_unknown",
+  /**
+   * The deliberate FALLBACK, not a producer value: a durable ledger written by
+   * a NEWER build than the one reading it can name a kind this build has never
+   * heard of. Such an entry is still LISTED - the row exists and a human should
+   * see it - and it is never counted into a total, because a build that cannot
+   * name the money cannot vouch for its amount. The reader
+   * (`main/database/portfolio/snapshot-basis.ts`) maps an unrecognized kind
+   * here; nothing else ever emits it.
+   */
+  "unknown",
+] as const;
+
+/**
+ * The closed vocabulary of in-flight kinds.
+ *
+ * DUPLICATED, deliberately, from `IN_FLIGHT_KINDS` in
+ * `src/vex-agent/sync/balance-sync/publication-gate.ts`, which owns the
+ * producer side. This tree bundles into the untrusted renderer and the
+ * process-boundary gate forbids `@vex-agent` here (rule 90), while the engine's
+ * own project cannot reach into `vex-app` - so the two lists cannot share a
+ * module. `engine-error-classification.ts` carries the same duplication for the
+ * same reason. They are pinned against each other by
+ * `main/database/__tests__/portfolio-snapshot-basis.test.ts`, which runs in the
+ * main process and can see both; the extra `unknown` member is this side's
+ * alone and the pin accounts for it.
+ */
+export const snapshotInFlightKindDtoSchema = z.enum(SNAPSHOT_IN_FLIGHT_KINDS);
+export type SnapshotInFlightKindDto = z.infer<typeof snapshotInFlightKindDtoSchema>;
+
 export const snapshotInFlightEntryDtoSchema = z
   .object({
-    kind: z.string(),
+    kind: snapshotInFlightKindDtoSchema,
+    /**
+     * Whose money this is. Present on every entry so a portfolio read for a
+     * SUBSET of a group's wallets can drop what is not its own instead of
+     * showing one wallet another wallet's pending bridge. The raw stored
+     * address, never lowercased, matching every other join in this schema.
+     */
+    walletAddress: z.string(),
     ref: z.string(),
     detail: z.string().nullable(),
     standing: z.enum(["in_transit", "unresolved"]),
-    ageSeconds: z.number(),
+    ageSeconds: z.number().nonnegative(),
     amountHuman: z.string().nullable(),
     symbol: z.string().nullable(),
-    usdEstimate: z.number().nullable(),
+    /**
+     * NON-NEGATIVE or `null`. A negative estimate is a bad price, not a
+     * liability, and it would render as a subtraction from the user's
+     * portfolio; the producer already maps one to "not priced" and this is the
+     * same refusal at the contract boundary.
+     */
+    usdEstimate: z.number().nonnegative().nullable(),
   })
   .strict();
 export type SnapshotInFlightEntryDto = z.infer<typeof snapshotInFlightEntryDtoSchema>;
@@ -258,17 +308,33 @@ export type SnapshotInFlightEntryDto = z.infer<typeof snapshotInFlightEntryDtoSc
  *  - `snapshotSettledUsd`/`snapshotInTransitUsd` - the two halves of that
  *                        total, kept separate so a surface can show them
  *                        separately. Settled is measured; in transit is a sum
- *                        of ESTIMATES. `null` alongside `snapshotTotalUsd`;
- *                        in-transit is 0 for a group published before migration
- *                        101, which carries no group record.
- *  - `snapshotInFlight`  - that group's in-flight ledger, at most 50 entries
- *                        (the publisher's own bound; an overflow keeps the
- *                        oldest and is reported in the sync log). An EMPTY
- *                        array means "a group exists and nothing was in
- *                        flight"; `null` means there is no group to report on.
- *  - `snapshotUnresolvedCount` - entries in that ledger whose standing is
- *                        `unresolved`. They are in NO total; a surface showing
- *                        the total must say separately that they exist.
+ *                        of ESTIMATES, and it is summed PER WALLET over exactly
+ *                        the resolved address set (migration 102), so a
+ *                        one-wallet read never inherits another wallet's
+ *                        pending bridge. Both are `null` alongside
+ *                        `snapshotTotalUsd`; in-transit is 0 for a group
+ *                        published before migration 102, which carries no
+ *                        per-wallet attribution.
+ *  - `snapshotInFlight`  - the entries of that group's in-flight ledger THAT
+ *                        BELONG TO THE RESOLVED ADDRESS SET, at most 50 (the
+ *                        publisher's own display bound). An EMPTY array means
+ *                        "a group exists and none of these wallets had anything
+ *                        in flight"; `null` means there is no group to report
+ *                        on. It is a LIST, never the source of a total.
+ *  - `snapshotUnresolvedCount` - rows of that ledger, for these wallets, whose
+ *                        standing is `unresolved`. Counted by the publisher
+ *                        over EVERY row, so it can exceed the number of
+ *                        `unresolved` entries the bounded list shows. They are
+ *                        in NO total; a surface showing the total must say
+ *                        separately that they exist.
+ *  - `snapshotInFlightTotalCount` / `snapshotInFlightShownCount` /
+ *    `snapshotInFlightTruncated` - the explicit bound contract. `totalCount` is
+ *                        every in-flight row these wallets had, aggregated by
+ *                        the publisher independently of any list; `shownCount`
+ *                        is `snapshotInFlight.length`; `truncated` is
+ *                        `totalCount > shownCount`. A surface that renders the
+ *                        list must say that rows exist beyond it rather than
+ *                        presenting a short list as the whole truth.
  *  - `tokens`          — per-(chain,token) live lines, biggest USD first,
  *                        capped at 500 (defensive bound, never expected to hit).
  *                        `balanceUsd: null` marks an unpriced holding.
@@ -276,13 +342,15 @@ export type SnapshotInFlightEntryDto = z.infer<typeof snapshotInFlightEntryDtoSc
  *                        non-negative totals (0 = unpriced-only chain),
  *                        top-3 tokens each, bounded at 64 chains.
  *
- * The four ledger fields are OPTIONAL on the wire and REQUIRED of the producer:
- * `getPortfolio` always emits all four, so a consumer sees `null` (no complete
- * group covers the resolved address set) or a value. `undefined` exists only so
- * that a DTO literal written before these fields still type-checks, and no
- * surface may treat it as a distinct state. A group published before migration
- * 101 has no group record, so its ledger reads as settled = total, in transit
- * 0, unresolved 0, no entries.
+ * The seven ledger fields are OPTIONAL on the wire and REQUIRED of the
+ * producer: `getPortfolio` always emits all seven, so a consumer sees `null`
+ * (no complete group covers the resolved address set) or a value. `undefined`
+ * exists only so that a DTO literal written before these fields still
+ * type-checks, and no surface may treat it as a distinct state. A group
+ * published before migration 102 carries no per-wallet attribution, so its
+ * ledger reads as settled = total, in transit 0, unresolved 0, total count 0,
+ * no entries - the same conservative reading migration 101 already specified
+ * for groups published before IT.
  */
 export const portfolioDtoSchema = z
   .object({
@@ -294,6 +362,9 @@ export const portfolioDtoSchema = z
     snapshotInTransitUsd: z.number().nullable().optional(),
     snapshotInFlight: z.array(snapshotInFlightEntryDtoSchema).max(50).nullable().optional(),
     snapshotUnresolvedCount: z.number().int().nonnegative().nullable().optional(),
+    snapshotInFlightTotalCount: z.number().int().nonnegative().nullable().optional(),
+    snapshotInFlightShownCount: z.number().int().nonnegative().nullable().optional(),
+    snapshotInFlightTruncated: z.boolean().nullable().optional(),
     pnlVsPrev: z.number().nullable(),
     snapshotAt: z.string().datetime({ offset: true }).nullable(),
     tokens: z.array(positionTokenDtoSchema).max(500),

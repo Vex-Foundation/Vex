@@ -57,8 +57,9 @@
  * `readActivityFence` closes the second race: a transaction that BEGINS and
  * SETTLES entirely inside the multi-wallet scan leaves nothing in flight at
  * publication time, yet the wallets scanned before it and after it were read on
- * opposite sides of a money movement. See `FENCE_SQL` for why the fence is
- * keyed on MONEY and no longer on `updated_at`.
+ * opposite sides of a money movement. It is stamped at cycle start rather than
+ * here, so it lives in `./activity-fence.ts` and is re-exported below; see that
+ * module for why the fence is keyed on MONEY and no longer on `updated_at`.
  *
  * ## Known scope limit
  *
@@ -73,25 +74,47 @@ import { formatUnits } from "viem";
 import type { Executor } from "@vex-agent/db/client.js";
 
 /**
- * Bounded: the ledger is a named list a human reads, and it is persisted into
- * the group record, so it cannot be allowed to grow with the money path. More
- * rows than this is reported (`InFlightLedger.truncated`), never dropped
- * silently.
+ * Bounded: the DISPLAYED ledger is a named list a human reads, and it is
+ * persisted into the group record, so it cannot be allowed to grow with the
+ * money path.
+ *
+ * It bounds the LIST and nothing else. Every total and every count this module
+ * reports is aggregated by the SERVER over EVERY matching row, so a wallet with
+ * 400 in-flight rows still contributes all 400 to its own totals while the list
+ * shows the 50 oldest and says so (`InFlightLedger.totalCount` against
+ * `entries.length`, and `truncated`). A bound that also bounded the totals
+ * would silently remove money from the portfolio, which the repository's
+ * no-silent-cutting decree forbids.
  */
 const MAX_IN_FLIGHT = 50;
 
 const MINUTE_SECONDS = 60;
 const HOUR_SECONDS = 60 * MINUTE_SECONDS;
 
-/** One thing this cycle's money is currently inside. */
-export type InFlightKind =
-  | "agent_activity_pending"
-  | "wallet_intent_live"
-  | "wallet_confirmation_unknown"
-  | "wallet_transaction_intent_live"
-  | "wallet_transaction_confirmation_unknown"
-  | "wallet_wrap_intent_live"
-  | "wallet_wrap_confirmation_unknown";
+/**
+ * One thing this cycle's money is currently inside.
+ *
+ * DUPLICATED, deliberately, by `vex-app/src/shared/schemas/portfolio.ts`'s
+ * `snapshotInFlightKindDtoSchema`. The engine tree (`src/`) and the desktop
+ * app's `shared` tree cannot import each other: `shared` bundles into the
+ * untrusted renderer and the process-boundary gate forbids `@vex-agent` there
+ * (rule 90), while the root project's `rootDir` is `src`, so it cannot reach
+ * into `vex-app`. `vex-app/src/shared/engine-error-classification.ts` carries
+ * the same duplication for the same reason. The two lists are pinned against
+ * each other by `vex-app/src/main/database/__tests__/portfolio-snapshot-basis.test.ts`,
+ * which runs in the main process and CAN see both.
+ */
+export const IN_FLIGHT_KINDS = [
+  "agent_activity_pending",
+  "wallet_intent_live",
+  "wallet_confirmation_unknown",
+  "wallet_transaction_intent_live",
+  "wallet_transaction_confirmation_unknown",
+  "wallet_wrap_intent_live",
+  "wallet_wrap_confirmation_unknown",
+] as const;
+
+export type InFlightKind = (typeof IN_FLIGHT_KINDS)[number];
 
 /**
  * - `in_transit`  - inside the bound for its kind. Counted in the group's
@@ -106,6 +129,18 @@ export type InFlightStanding = "in_transit" | "unresolved";
 /** One row of the group's in-flight ledger. */
 export interface InFlightEntry {
   readonly kind: InFlightKind;
+  /**
+   * The wallet this money belongs to, carried on EVERY entry so a portfolio
+   * read for a SUBSET of the group's wallets can drop what is not its own.
+   *
+   * Adopted from MetaMask's `bridge-status-controller`: its history item is
+   * written with `account: selectedAddress` at creation
+   * (`utils/history.ts` `getInitialHistoryItem`) and every scoped operation
+   * filters on `bridgeHistoryItem.account === address`
+   * (`bridge-status-controller.ts` `#wipeBridgeStatusByChainId`), so one
+   * account's pending item can never be attributed to another's.
+   */
+  readonly walletAddress: string;
   /** Identifier of the row, for audit and operator diagnosis. */
   readonly ref: string;
   /** Structural label only (a status or an event role) - never provider text. */
@@ -124,12 +159,35 @@ export interface InFlightEntry {
   readonly usdEstimate: number | null;
 }
 
-export interface InFlightLedger {
-  readonly entries: readonly InFlightEntry[];
+/**
+ * One wallet's in-flight accounting, aggregated by the SERVER over EVERY row
+ * that belongs to it - never over the bounded display list.
+ */
+export interface WalletInFlightTotals {
+  readonly walletAddress: string;
+  /** Every in-flight row for this wallet, whether or not it is displayed. */
+  readonly entryCount: number;
+  /** Rows whose kind's bound has passed. In NO total, in either direction. */
+  readonly unresolvedCount: number;
   /**
-   * More than `MAX_IN_FLIGHT` rows existed; the OLDEST were kept. Reported so
-   * a consumer knows rows are missing rather than being told a short list is
-   * the whole truth.
+   * Sum of the USD ESTIMATES of this wallet's `in_transit` rows. Estimates
+   * only, never negative (a negative estimate is read as "not priced"), and 0
+   * when nothing is in flight or nothing carries a price.
+   */
+  readonly inTransitUsd: number;
+}
+
+export interface InFlightLedger {
+  /** The bounded DISPLAY list: the `MAX_IN_FLIGHT` oldest rows, all wallets. */
+  readonly entries: readonly InFlightEntry[];
+  /** Per-wallet aggregates over ALL rows. Absent wallet means nothing in flight. */
+  readonly perWallet: readonly WalletInFlightTotals[];
+  /** Every in-flight row across every requested wallet, displayed or not. */
+  readonly totalCount: number;
+  /**
+   * `totalCount` exceeded `MAX_IN_FLIGHT`; the OLDEST were kept in `entries`.
+   * Reported so a consumer knows rows are missing rather than being told a
+   * short list is the whole truth. The TOTALS are unaffected.
    */
   readonly truncated: boolean;
 }
@@ -234,108 +292,81 @@ export function boundFor(kind: InFlightKind, detail: string | null): StandingBou
   return override ?? entry.bound;
 }
 
-function standingFor(
-  kind: InFlightKind,
-  detail: string | null,
-  ageSeconds: number,
-  secondsUntilExpiry: number | null,
-): InFlightStanding {
-  const bound = boundFor(kind, detail);
-  if (bound.rule === "own-expiry") {
-    if (secondsUntilExpiry === null) {
-      return ageSeconds <= bound.fallbackMaxAgeSeconds ? "in_transit" : "unresolved";
-    }
-    return secondsUntilExpiry > 0 ? "in_transit" : "unresolved";
-  }
-  return ageSeconds <= bound.maxAgeSeconds ? "in_transit" : "unresolved";
+/**
+ * THE ONE DOCUMENTED EXCEPTION to "every in-flight row is listed and
+ * classified" (owner decision 2026-09-04, after the review finding that expired
+ * pending intents disappear from the ledger).
+ *
+ * A `pending` wallet / transaction / wrap intent that is past its own
+ * `expires_at` and carries NO transaction hash is NOT listed at all - not as
+ * `in_transit`, not as `unresolved`. It is not money in flight and never was:
+ *
+ *   - a `pending` row is a PROPOSAL the user has not spent. The consuming CAS
+ *     (`consumeIfPending` and its siblings) filters on `expires_at > NOW()`, so
+ *     past that instant the proposal can never be claimed;
+ *   - `tx_hash IS NULL` proves nothing was ever broadcast, so no balance moved
+ *     and there is no outcome for anyone to prove.
+ *
+ * Listing it as `unresolved` would tell a human that money is unaccounted for
+ * when in fact none ever left. The moment a row DOES carry a hash it is caught
+ * by its table's `*_confirmation_unknown` (or `*_intent_live`) branch, which
+ * has NO expiry predicate at all: expiry bounds the APPROVAL, and the approval
+ * stopped being the relevant clock the moment the transaction left. The
+ * integration suite pins both halves as a table over the three intent tables.
+ *
+ * This is a predicate of `IN_FLIGHT_SQL` (the `expires_at > NOW()` conjunct on
+ * each `pending` branch), not of `STANDING_BOUNDS`: a row that is excluded has
+ * no standing to compute.
+ */
+
+/**
+ * The bound table as the SERVER sees it: one row per (kind, detail), with
+ * `detail = null` meaning "the kind's default". Built ONCE from
+ * `STANDING_BOUNDS` above, which stays the single owner of the DATA; the SQL
+ * `CASE` in `LEDGER_CTE` is the single owner of the RULE.
+ *
+ * Standing moved into SQL because the totals must be aggregated over EVERY
+ * row, not over the bounded display list, and an aggregate cannot ask
+ * TypeScript how to classify a row it never returns.
+ */
+interface StandingBoundRow {
+  readonly kind: InFlightKind;
+  readonly detail: string | null;
+  readonly rule: StandingBound["rule"];
+  readonly seconds: number;
 }
+
+function secondsOf(bound: StandingBound): number {
+  return bound.rule === "max-age" ? bound.maxAgeSeconds : bound.fallbackMaxAgeSeconds;
+}
+
+function standingBoundRows(): readonly StandingBoundRow[] {
+  const rows: StandingBoundRow[] = [];
+  for (const kind of IN_FLIGHT_KINDS) {
+    const entry = STANDING_BOUNDS[kind];
+    rows.push({ kind, detail: null, rule: entry.bound.rule, seconds: secondsOf(entry.bound) });
+    for (const [detail, bound] of Object.entries(entry.byDetail ?? {})) {
+      rows.push({ kind, detail, rule: bound.rule, seconds: secondsOf(bound) });
+    }
+  }
+  return rows;
+}
+
+const STANDING_BOUND_ROWS_JSON = JSON.stringify(standingBoundRows());
 
 // ── The transition fence ─────────────────────────────────────────────────
 
 /**
- * The activity table's MONEY generation for one wallet set. Compared by VALUE,
- * so every component is read back as a stable string rather than a
- * driver-typed `Date`/`BigInt` whose equality depends on the pg type parser.
+ * The fence lives in `./activity-fence.ts`: it is stamped at cycle start, long
+ * before this module's transaction exists, and it answers a different question
+ * (did money MOVE) from the ledger below (what money IS in flight). Re-exported
+ * here so every consumer of the publication gate keeps one import.
  */
-export interface ActivityFence {
-  readonly maxId: string;
-  readonly rowCount: string;
-  readonly pendingCount: string;
-  readonly confirmedCount: string;
-}
-
-interface FenceRow {
-  max_id: string;
-  row_count: string;
-  pending_count: string;
-  confirmed_count: string;
-}
-
-/**
- * WHY THESE FOUR COLUMNS, AND WHY `MAX(updated_at)` IS GONE.
- *
- * The fence must move when MONEY moves during the scan and stay still when
- * bookkeeping touches a row. `MAX(updated_at)` failed the second half: every
- * bridge sweep attempt stamps `updated_at = NOW()` on a still-pending row - the
- * candidate claim (`bridge-activity-repair-production-deps.ts`), `touchLastChecked`
- * and `clearVerificationStall` (`db/repos/agent-activity/swap-lifecycle/
- * verification-bookkeeping.ts`) all do, and the sweep runs every five minutes
- * forever on an old row. That is a pure re-check of something we already knew,
- * and it was tripping `activity_transition` on cycles where nothing moved.
- *
- * Those same three writers set ONLY `updated_at`, `last_attempted_at`,
- * `last_checked_at`, `verification_attempts`, `last_verification_*` and
- * `provider_status`; every one of them is fenced with `WHERE ... status =
- * 'pending'` and none inserts, deletes or writes `status`. So all four
- * components below are invariant under a sweep touch, by construction rather
- * than by hope.
- *
- * What each component catches:
- *   max_id           a row INSERTED during the scan (a broadcast).
- *   row_count        an insert or a delete.
- *   pending_count    any transition INTO or OUT OF the in-flight state -
- *                    which is what a settlement is.
- *   confirmed_count  a confirmation specifically, so a settle-and-broadcast
- *                    pair inside one scan (pending_count unchanged) is caught.
- *
- * The one status change invisible here is `definitively_failed` <->
- * `superseded_unproven`: a relabelling of an already-dead row, where no balance
- * moves and nothing enters or leaves flight. `status` has exactly four values
- * (migration 078), so that is the complete gap.
- */
-const FENCE_SQL = `
-  SELECT COALESCE(MAX(id), 0)::text                                  AS max_id,
-         COUNT(*)::text                                              AS row_count,
-         COUNT(*) FILTER (WHERE status = 'pending')::text            AS pending_count,
-         COUNT(*) FILTER (WHERE status = 'confirmed')::text          AS confirmed_count
-    FROM agent_activity
-   WHERE wallet_address = ANY($1::text[])`;
-
-/**
- * Stamp the activity generation for `walletAddresses`. Call this BEFORE the
- * scan starts; the same value is handed to the publisher so the gate can prove
- * no money moved in between.
- */
-export async function readActivityFence(
-  executor: Executor,
-  walletAddresses: readonly string[],
-): Promise<ActivityFence> {
-  const res = await executor.query<FenceRow>(FENCE_SQL, [[...walletAddresses]]);
-  const row = res.rows[0];
-  return {
-    maxId: row?.max_id ?? "0",
-    rowCount: row?.row_count ?? "0",
-    pendingCount: row?.pending_count ?? "0",
-    confirmedCount: row?.confirmed_count ?? "0",
-  };
-}
-
-export function fencesMatch(a: ActivityFence, b: ActivityFence): boolean {
-  return a.maxId === b.maxId
-    && a.rowCount === b.rowCount
-    && a.pendingCount === b.pendingCount
-    && a.confirmedCount === b.confirmedCount;
-}
+export {
+  readActivityFence,
+  fencesMatch,
+  type ActivityFence,
+} from "./activity-fence.js";
 
 // ── The ledger query ─────────────────────────────────────────────────────
 
@@ -344,7 +375,7 @@ export function fencesMatch(a: ActivityFence, b: ActivityFence): boolean {
  * reading of the correspondingly named predicate in
  * `db/repos/approval-intents/money-state.ts`; which rows count as live is that
  * module's decision, deliberately not re-derived here. What is NEW is that each
- * branch also carries WHAT the money is.
+ * branch also carries WHAT the money is and WHOSE it is.
  *
  *  1. `agent_activity` PENDING - a broadcast awaiting confirmation. For a
  *     `bridge_fill_expected` row the money in transit is the EXPECTED OUTPUT
@@ -352,10 +383,12 @@ export function fencesMatch(a: ActivityFence, b: ActivityFence): boolean {
  *     already left the wallet and the balance read no longer contains it. For
  *     every other role the input leg is the amount in transit.
  *  2. `wallet_intents` `consuming`, or `pending` that has NOT expired. `amount`
- *     is the human quantity the user approved and `token` its symbol.
+ *     is the human quantity the user approved and `token` its symbol. The
+ *     expiry conjunct is the documented exception above, not an oversight.
  *  3. `wallet_intents` hash-carrying rows in a state that does not prove an
  *     outcome. A legacy `failed`-with-hash row releases ONLY when its linked
- *     activity proves a mined revert.
+ *     activity proves a mined revert. NO expiry predicate: a broadcast row is
+ *     never dropped because its approval window lapsed.
  *  4/5. `wallet_transaction_intents` (migration 087) - a GENERIC calldata
  *     proposal, so the table carries no amount or asset at all and the ledger
  *     honestly reports nulls rather than inventing a figure from the payload.
@@ -363,12 +396,16 @@ export function fencesMatch(a: ActivityFence, b: ActivityFence): boolean {
  *     (`amount_raw`) with `wrapped_native_decimals`; the conversion happens in
  *     TypeScript through viem's `formatUnits`, never in floating-point SQL.
  *
- * `expires_at` is selected wherever the table has it; `STANDING_BOUNDS` alone
+ * EVERY branch selects `wallet_address`. The predicate already filters on it,
+ * so attribution costs nothing and is exact - and without it a portfolio read
+ * for one wallet inherits another wallet's pending bridge, which is the defect
+ * this column exists to close.
+ *
+ * `expires_at` is selected wherever the table has it; the bound table alone
  * decides whether the standing rule uses it.
  */
-const IN_FLIGHT_SQL = `
-  SELECT * FROM (
-  SELECT 'agent_activity_pending'::text AS kind, a.id::text AS ref,
+const LEDGER_BRANCHES_SQL = `
+  SELECT 'agent_activity_pending'::text AS kind, a.wallet_address, a.id::text AS ref,
          a.event_role::text AS detail, a.created_at AS since,
          NULL::timestamptz AS expires_at,
          CASE WHEN a.event_role = 'bridge_fill_expected'
@@ -383,7 +420,7 @@ const IN_FLIGHT_SQL = `
 
    UNION ALL
 
-  SELECT 'wallet_intent_live', w.intent_id::text, w.status::text, w.created_at,
+  SELECT 'wallet_intent_live', w.wallet_address, w.intent_id::text, w.status::text, w.created_at,
          w.expires_at, w.amount, NULL::smallint, w.token, NULL::numeric
     FROM wallet_intents w
    WHERE w.wallet_address = ANY($1::text[])
@@ -391,7 +428,7 @@ const IN_FLIGHT_SQL = `
 
    UNION ALL
 
-  SELECT 'wallet_confirmation_unknown', w.intent_id::text, w.status::text, w.created_at,
+  SELECT 'wallet_confirmation_unknown', w.wallet_address, w.intent_id::text, w.status::text, w.created_at,
          w.expires_at, w.amount, NULL::smallint, w.token, NULL::numeric
     FROM wallet_intents w
    WHERE w.wallet_address = ANY($1::text[])
@@ -414,7 +451,7 @@ const IN_FLIGHT_SQL = `
 
    UNION ALL
 
-  SELECT 'wallet_transaction_intent_live', t.intent_id::text, t.status::text, t.created_at,
+  SELECT 'wallet_transaction_intent_live', t.wallet_address, t.intent_id::text, t.status::text, t.created_at,
          t.expires_at, NULL::text, NULL::smallint, NULL::text, NULL::numeric
     FROM wallet_transaction_intents t
    WHERE t.wallet_address = ANY($1::text[])
@@ -423,7 +460,7 @@ const IN_FLIGHT_SQL = `
 
    UNION ALL
 
-  SELECT 'wallet_transaction_confirmation_unknown', t.intent_id::text, t.status::text, t.created_at,
+  SELECT 'wallet_transaction_confirmation_unknown', t.wallet_address, t.intent_id::text, t.status::text, t.created_at,
          t.expires_at, NULL::text, NULL::smallint, NULL::text, NULL::numeric
     FROM wallet_transaction_intents t
    WHERE t.wallet_address = ANY($1::text[])
@@ -432,7 +469,7 @@ const IN_FLIGHT_SQL = `
 
    UNION ALL
 
-  SELECT 'wallet_wrap_intent_live', w2.intent_id::text, w2.status::text, w2.created_at,
+  SELECT 'wallet_wrap_intent_live', w2.wallet_address, w2.intent_id::text, w2.status::text, w2.created_at,
          w2.expires_at, w2.amount_raw, w2.wrapped_native_decimals,
          w2.wrapped_native_symbol, NULL::numeric
     FROM wallet_wrap_intents w2
@@ -442,7 +479,7 @@ const IN_FLIGHT_SQL = `
 
    UNION ALL
 
-  SELECT 'wallet_wrap_confirmation_unknown', w2.intent_id::text, w2.status::text, w2.created_at,
+  SELECT 'wallet_wrap_confirmation_unknown', w2.wallet_address, w2.intent_id::text, w2.status::text, w2.created_at,
          w2.expires_at, w2.amount_raw, w2.wrapped_native_decimals,
          w2.wrapped_native_symbol, NULL::numeric
     FROM wallet_wrap_intents w2
@@ -450,22 +487,141 @@ const IN_FLIGHT_SQL = `
      AND w2.tx_hash IS NOT NULL
      AND w2.status NOT IN (
            'executed', 'failed', 'superseded_unproven', 'broadcast_unconfirmed', 'review_required'
-         )
-  ) ledger
-   ORDER BY since ASC, ref ASC
-   LIMIT $2`;
+         )`;
+
+/**
+ * The bound table, the age and the standing, evaluated by the SERVER over
+ * EVERY in-flight row.
+ *
+ *   `bounds`      `STANDING_BOUNDS` projected through `$3::jsonb`. The data
+ *                 still has exactly one owner in TypeScript; the server is
+ *                 handed a copy per call rather than a second table to
+ *                 maintain, so the two cannot drift.
+ *   `aged`        seconds since the row was created, floored at 0, against the
+ *                 caller's clock `$4` - the same instant used for every row in
+ *                 the group, and controllable by a test.
+ *   `classified`  the effective bound for the row (its `detail` override if the
+ *                 table has one, otherwise the kind's default), then the
+ *                 standing. `own-expiry` uses the row's own `expires_at`, and
+ *                 falls back to the kind's seconds only when that column is
+ *                 NULL - which the schema forbids on all three intent tables.
+ *
+ * A NEGATIVE `usd_est` is normalized to NULL here, ONCE, so the entry a human
+ * reads and the total it feeds can never disagree. A price feed that emits a
+ * negative estimate is reporting "unknown", and unknown must not subtract from
+ * a portfolio (review finding, 2026-09-04).
+ */
+const LEDGER_CTE_SQL = `
+  bounds AS (
+    SELECT * FROM jsonb_to_recordset($3::jsonb)
+      AS b(kind text, detail text, rule text, seconds bigint)
+  ),
+  ledger AS (
+${LEDGER_BRANCHES_SQL}
+  ),
+  aged AS (
+    SELECT l.*,
+           GREATEST(
+             0,
+             FLOOR(EXTRACT(EPOCH FROM ($4::timestamptz - COALESCE(l.since, $4::timestamptz))))
+           )::bigint AS age_seconds
+      FROM ledger l
+  ),
+  classified AS (
+    SELECT a.kind, a.wallet_address, a.ref, a.detail, a.since, a.age_seconds,
+           a.amount_text, a.amount_decimals, a.symbol,
+           CASE WHEN a.usd_est >= 0 THEN a.usd_est END AS usd_est,
+           CASE
+             WHEN eff.rule = 'own-expiry' AND a.expires_at IS NOT NULL
+               THEN CASE WHEN a.expires_at > $4::timestamptz
+                         THEN 'in_transit' ELSE 'unresolved' END
+             WHEN a.age_seconds <= eff.seconds THEN 'in_transit'
+             ELSE 'unresolved'
+           END AS standing
+      FROM aged a
+      JOIN LATERAL (
+        SELECT b.rule, b.seconds
+          FROM bounds b
+         WHERE b.kind = a.kind
+           AND (b.detail IS NULL OR b.detail = a.detail)
+         ORDER BY (b.detail IS NULL) ASC
+         LIMIT 1
+      ) eff ON TRUE
+  )`;
+
+/**
+ * ONE statement, two kinds of row, because they must agree.
+ *
+ * `agent_activity` is locked by the caller, but `wallet_intents`,
+ * `wallet_transaction_intents` and `wallet_wrap_intents` are not; under READ
+ * COMMITTED two separate statements would see two snapshots, and an aggregate
+ * that counted four rows beside a list that showed five would be a worse
+ * report than either. A single statement is one snapshot by construction.
+ *
+ *   `row_type = 'wallet'`  one per wallet with anything in flight: its counts
+ *                          and its in-transit total, over ALL of its rows.
+ *   `row_type = 'entry'`   the bounded display list, oldest first.
+ */
+const IN_FLIGHT_SQL = `
+  WITH ${LEDGER_CTE_SQL},
+  per_wallet AS (
+    SELECT c.wallet_address,
+           COUNT(*)                                                  AS entry_count,
+           COUNT(*) FILTER (WHERE c.standing = 'unresolved')         AS unresolved_count,
+           COALESCE(SUM(c.usd_est) FILTER (WHERE c.standing = 'in_transit'), 0) AS in_transit_usd
+      FROM classified c
+     GROUP BY c.wallet_address
+  ),
+  shown AS (
+    SELECT * FROM classified ORDER BY since ASC, ref ASC LIMIT $2
+  )
+  SELECT 0 AS sort_group, 'wallet'::text AS row_type, w.wallet_address,
+         w.entry_count::text      AS entry_count,
+         w.unresolved_count::text AS unresolved_count,
+         w.in_transit_usd::text   AS in_transit_usd,
+         NULL::text        AS kind,
+         NULL::text        AS ref,
+         NULL::text        AS detail,
+         NULL::text        AS standing,
+         NULL::bigint      AS age_seconds,
+         NULL::timestamptz AS since,
+         NULL::text        AS amount_text,
+         NULL::int         AS amount_decimals,
+         NULL::text        AS symbol,
+         NULL::numeric     AS usd_est
+    FROM per_wallet w
+   UNION ALL
+  SELECT 1, 'entry'::text, s.wallet_address,
+         NULL::text, NULL::text, NULL::text,
+         s.kind, s.ref, s.detail, s.standing, s.age_seconds, s.since,
+         s.amount_text, s.amount_decimals::int, s.symbol, s.usd_est
+    FROM shown s
+   ORDER BY sort_group ASC, since ASC NULLS FIRST, ref ASC, wallet_address ASC`;
 
 interface LedgerRow {
-  kind: InFlightKind;
-  ref: string;
+  row_type: string;
+  wallet_address: string;
+  entry_count: string | null;
+  unresolved_count: string | null;
+  in_transit_usd: string | null;
+  kind: string | null;
+  ref: string | null;
   detail: string | null;
+  standing: string | null;
   since: Date | string | null;
-  expires_at: Date | string | null;
+  age_seconds: string | number | null;
   amount_text: string | null;
   amount_decimals: number | string | null;
   symbol: string | null;
   usd_est: string | number | null;
 }
+
+const EMPTY_LEDGER: InFlightLedger = {
+  entries: [],
+  perWallet: [],
+  totalCount: 0,
+  truncated: false,
+};
 
 /**
  * Read everything this cycle's money is currently inside, INSIDE the caller's
@@ -473,42 +629,81 @@ interface LedgerRow {
  * outside that lock the answer is stale the instant it returns - hence the
  * required `Executor`.
  *
- * `MAX_IN_FLIGHT + 1` rows are requested so an overflow is DETECTED rather than
- * inferred; the extra row is dropped and `truncated` says so.
+ * The DISPLAY list is bounded at `MAX_IN_FLIGHT`. The per-wallet totals are
+ * not: they are aggregated by the server over every matching row, so bounding
+ * the list can never remove money from a total. `truncated` compares the two.
  */
 export async function readInFlightMoney(
   executor: Executor,
   walletAddresses: readonly string[],
   now: number = Date.now(),
 ): Promise<InFlightLedger> {
-  if (walletAddresses.length === 0) return { entries: [], truncated: false };
+  if (walletAddresses.length === 0) return EMPTY_LEDGER;
   const res = await executor.query<LedgerRow>(IN_FLIGHT_SQL, [
     [...walletAddresses],
-    MAX_IN_FLIGHT + 1,
+    MAX_IN_FLIGHT,
+    STANDING_BOUND_ROWS_JSON,
+    new Date(now).toISOString(),
   ]);
-  const truncated = res.rows.length > MAX_IN_FLIGHT;
-  const kept = truncated ? res.rows.slice(0, MAX_IN_FLIGHT) : res.rows;
+
+  const entries: InFlightEntry[] = [];
+  const perWallet: WalletInFlightTotals[] = [];
+  let totalCount = 0;
+  for (const row of res.rows) {
+    if (row.row_type === "wallet") {
+      const totals = toWalletTotals(row);
+      perWallet.push(totals);
+      totalCount += totals.entryCount;
+      continue;
+    }
+    entries.push(toEntry(row));
+  }
+  return { entries, perWallet, totalCount, truncated: totalCount > entries.length };
+}
+
+function toWalletTotals(row: LedgerRow): WalletInFlightTotals {
   return {
-    entries: kept.map((row) => toEntry(row, now)),
-    truncated,
+    walletAddress: row.wallet_address,
+    entryCount: toCount(row.entry_count),
+    unresolvedCount: toCount(row.unresolved_count),
+    inTransitUsd: Math.max(0, toUsdEstimate(row.in_transit_usd) ?? 0),
   };
 }
 
-function toEntry(row: LedgerRow, now: number): InFlightEntry {
-  const ageSeconds = toAgeSeconds(row.since, now);
-  const expiresAtMs = toEpochMs(row.expires_at);
-  const secondsUntilExpiry =
-    expiresAtMs === null ? null : Math.floor((expiresAtMs - now) / 1000);
+function toEntry(row: LedgerRow): InFlightEntry {
   return {
-    kind: row.kind,
-    ref: row.ref,
+    kind: toKind(row.kind),
+    walletAddress: row.wallet_address,
+    ref: row.ref ?? "",
     detail: row.detail,
-    standing: standingFor(row.kind, row.detail, ageSeconds, secondsUntilExpiry),
-    ageSeconds,
+    standing: row.standing === "unresolved" ? "unresolved" : "in_transit",
+    ageSeconds: toCount(row.age_seconds),
     amountHuman: toHumanAmount(row.amount_text, row.amount_decimals),
     symbol: row.symbol,
     usdEstimate: toUsdEstimate(row.usd_est),
   };
+}
+
+/**
+ * The `kind` column is emitted by `LEDGER_BRANCHES_SQL` itself, one literal per
+ * branch, so it is always one of the seven. Parsed rather than asserted anyway:
+ * the value has crossed the driver, and a cast here would be the one place a
+ * future eighth branch could enter the ledger unnamed.
+ */
+function toKind(value: string | null): InFlightKind {
+  const match = IN_FLIGHT_KINDS.find((kind) => kind === value);
+  if (match === undefined) {
+    throw new Error(`in-flight ledger returned an unknown kind: ${String(value)}`);
+  }
+  return match;
+}
+
+/** A `COUNT`/`bigint` column: a non-negative integer, never a fraction. */
+function toCount(value: string | number | null): number {
+  if (value === null) return 0;
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.trunc(n));
 }
 
 /**
@@ -531,21 +726,15 @@ function toHumanAmount(text: string | null, decimals: number | string | null): s
  * estimate is a display numeric (never a token amount), so a finite `number` is
  * the right shape and an unparseable value is `null`, not zero - "we do not
  * know" and "it is worth nothing" are different facts.
+ *
+ * A NEGATIVE estimate is also `null`. The SQL already normalizes it (see
+ * `LEDGER_CTE_SQL`); this is the same decision at the driver boundary, so a
+ * negative figure cannot reach a portfolio and subtract from it whichever path
+ * it arrived on.
  */
 function toUsdEstimate(value: string | number | null): number | null {
   if (value === null) return null;
   const n = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(n) ? n : null;
-}
-
-function toEpochMs(value: Date | string | null): number | null {
-  if (value === null) return null;
-  const ms = value instanceof Date ? value.getTime() : Date.parse(value);
-  return Number.isFinite(ms) ? ms : null;
-}
-
-function toAgeSeconds(since: Date | string | null, now: number): number {
-  const ms = toEpochMs(since);
-  if (ms === null) return 0;
-  return Math.max(0, Math.floor((now - ms) / 1000));
+  if (!Number.isFinite(n) || n < 0) return null;
+  return n;
 }
