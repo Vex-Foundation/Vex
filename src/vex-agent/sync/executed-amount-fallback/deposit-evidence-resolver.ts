@@ -114,6 +114,7 @@ export async function resolveBridgeDepositAmount(input: {
 
   const outcome = proveErc20DepositAmount({
     logs: input.logs,
+    chainId: row.chainId,
     tokenAddress: tokenInAddress,
     senderAddress: row.walletAddress,
     recipients: authorizedDepositRecipients({
@@ -124,12 +125,23 @@ export async function resolveBridgeDepositAmount(input: {
     quotedAmountInRaw: amountInRaw,
   });
 
-  return outcome.kind === "proven"
-    ? { kind: "decoded", executedAmountInRaw: outcome.amountRaw }
-    : {
+  if (outcome.kind === "proven") {
+    return { kind: "decoded", executedAmountInRaw: outcome.amountRaw };
+  }
+  // A SHORTFALL is not an amount this lane may write. The receipt proved a
+  // transfer BELOW the principal the row was quoted for, which the venue
+  // records for review at return time; back-filling it here would silently turn
+  // a disputed deposit into a settled one.
+  if (outcome.kind === "short") {
+    return {
       kind: "declined",
-      detail: `the receipt did not prove the deposit transfer (${outcome.reason}, candidates=${outcome.candidateCount})`,
+      detail: `the receipt proved ${outcome.provenAmountRaw} against a quoted ${outcome.quotedAmountRaw}, which is below the deposit floor`,
     };
+  }
+  return {
+    kind: "declined",
+    detail: `the receipt did not prove the deposit transfer (${outcome.reason}, candidates=${outcome.candidateCount})`,
+  };
 }
 
 /**

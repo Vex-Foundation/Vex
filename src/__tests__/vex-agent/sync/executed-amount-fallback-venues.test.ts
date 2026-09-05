@@ -170,7 +170,7 @@ describe("the crash-window bridge deposit", () => {
     mockListCandidates.mockResolvedValue([depositRow()]);
 
     const result = await repairMissingExecutedAmounts(deps({
-      logs: [transferLog(WALLET, DEPOSITORY, 999_000n)],
+      logs: [transferLog(WALLET, DEPOSITORY, 1_000_000n)],
       transactions: { [DEPOSIT_HASH]: depositTx },
     }));
 
@@ -179,20 +179,35 @@ describe("the crash-window bridge deposit", () => {
       id: 11,
       expectedTxHash: DEPOSIT_HASH,
       expectedChainId: 8453,
-      amounts: { executedAmountInRaw: "999000" },
+      amounts: { executedAmountInRaw: "1000000" },
     });
+  });
+
+  it("DECLINES a deposit below the receipt floor instead of back-filling it", async () => {
+    // The venue records a shortfall for review at return time; this lane must
+    // not quietly turn that disputed deposit into a settled amount later.
+    mockListCandidates.mockResolvedValue([depositRow()]);
+
+    const result = await repairMissingExecutedAmounts(deps({
+      logs: [transferLog(WALLET, DEPOSITORY, 999_999n)],
+      transactions: { [DEPOSIT_HASH]: depositTx },
+    }));
+
+    expect(result).toMatchObject({ declined: 1, filled: 0 });
+    expect(mockFill).not.toHaveBeenCalled();
+    expect(mockDeclined).toHaveBeenCalledWith(11, "amounts_undecodable");
   });
 
   it("works for khalani rows too - the rule is the venue-independent one", async () => {
     mockListCandidates.mockResolvedValue([depositRow({ protocol: "khalani" })]);
 
     await repairMissingExecutedAmounts(deps({
-      logs: [transferLog(WALLET, DEPOSITORY, 999_000n)],
+      logs: [transferLog(WALLET, DEPOSITORY, 1_000_000n)],
       transactions: { [DEPOSIT_HASH]: depositTx },
     }));
 
     expect(mockFill).toHaveBeenCalledWith(expect.objectContaining({
-      amounts: { executedAmountInRaw: "999000" },
+      amounts: { executedAmountInRaw: "1000000" },
     }));
   });
 
@@ -201,15 +216,15 @@ describe("the crash-window bridge deposit", () => {
     mockListLegs.mockResolvedValue([allowanceLeg(), depositRow()]);
 
     await repairMissingExecutedAmounts(deps({
-      logs: [transferLog(WALLET, SPENDER, 800_000n)],
+      logs: [transferLog(WALLET, SPENDER, 1_000_000n)],
       transactions: {
         [DEPOSIT_HASH]: depositTx,
-        [APPROVE_HASH]: { from: WALLET, to: TOKEN, input: approveCalldata(SPENDER, 900_000n), valueRaw: "0" },
+        [APPROVE_HASH]: { from: WALLET, to: TOKEN, input: approveCalldata(SPENDER, 1_000_000n), valueRaw: "0" },
       },
     }));
 
     expect(mockFill).toHaveBeenCalledWith(expect.objectContaining({
-      amounts: { executedAmountInRaw: "800000" },
+      amounts: { executedAmountInRaw: "1000000" },
     }));
   });
 
@@ -489,7 +504,7 @@ describe("the candidate window has to ROTATE", () => {
     mockListCandidates.mockResolvedValue([depositRow()]);
 
     await repairMissingExecutedAmounts(deps({
-      logs: [transferLog(WALLET, DEPOSITORY, 999_000n)],
+      logs: [transferLog(WALLET, DEPOSITORY, 1_000_000n)],
       transactions: { [DEPOSIT_HASH]: depositTx },
     }));
 
@@ -544,7 +559,7 @@ describe("the three interleavings of the two writers", () => {
     mockListCandidates.mockResolvedValue([depositRow()]);
 
     await repairMissingExecutedAmounts(deps({
-      logs: [transferLog(WALLET, DEPOSITORY, 999_000n)],
+      logs: [transferLog(WALLET, DEPOSITORY, 1_000_000n)],
       transactions: { [DEPOSIT_HASH]: depositTx },
     }));
 
@@ -559,7 +574,7 @@ describe("the three interleavings of the two writers", () => {
     mockFill.mockResolvedValue({ outcome: "conflict", row: depositRow() });
 
     const result = await repairMissingExecutedAmounts(deps({
-      logs: [transferLog(WALLET, DEPOSITORY, 999_000n)],
+      logs: [transferLog(WALLET, DEPOSITORY, 1_000_000n)],
       transactions: { [DEPOSIT_HASH]: depositTx },
     }));
 

@@ -58,6 +58,17 @@ const SOL_CHAIN: KhalaniChain = {
 const TOKEN = "0x4444444444444444444444444444444444444444";
 const DEPOSIT_ADDR = "0x3333333333333333333333333333333333333333";
 
+/**
+ * The origin binding the planner needs. No plan in this suite carries an
+ * approval leg, so it is never the subject; it names the token and the amount
+ * the TRANSFER plans below move.
+ */
+const ORIGIN = {
+  fromToken: TOKEN,
+  wallet: "0x33eF6673BD80cB11fcC41b82Bc2181E65cC4d2fA",
+  bridgedAmountRaw: "1000000",
+};
+
 /** Assert a synchronous `planKhalaniDepositLegs` call throws a `VexError` with `code`. */
 function expectPlanThrowsCode(fn: () => unknown, code: string): void {
   let caught: unknown;
@@ -113,7 +124,7 @@ describe("planKhalaniDepositLegs — planner-level guards (staged rewrite)", () 
         },
       ],
     };
-    expectPlanThrowsCode(() => planKhalaniDepositLegs(plan, ETH_CHAIN), ErrorCodes.CHAIN_MISMATCH);
+    expectPlanThrowsCode(() => planKhalaniDepositLegs(plan, ETH_CHAIN, null, ORIGIN), ErrorCodes.CHAIN_MISMATCH);
   });
 
   it("rejects an unsupported EVM approval method", () => {
@@ -126,7 +137,7 @@ describe("planKhalaniDepositLegs — planner-level guards (staged rewrite)", () 
         },
       ],
     };
-    expectPlanThrowsCode(() => planKhalaniDepositLegs(plan, ETH_CHAIN), ErrorCodes.KHALANI_DEPOSIT_FAILED);
+    expectPlanThrowsCode(() => planKhalaniDepositLegs(plan, ETH_CHAIN, null, ORIGIN), ErrorCodes.KHALANI_DEPOSIT_FAILED);
   });
 
   it("plans an EVM ERC20 TRANSFER as a single bridge_deposit leg with transfer calldata", () => {
@@ -137,7 +148,7 @@ describe("planKhalaniDepositLegs — planner-level guards (staged rewrite)", () 
       token: TOKEN,
       chainId: 1,
     };
-    const legs = planKhalaniDepositLegs(plan, ETH_CHAIN);
+    const legs = planKhalaniDepositLegs(plan, ETH_CHAIN, null, ORIGIN);
     expect(legs).toHaveLength(1);
     const leg = legs[0]!;
     expect(leg.role).toBe("bridge_deposit");
@@ -158,7 +169,7 @@ describe("planKhalaniDepositLegs — planner-level guards (staged rewrite)", () 
       token: "0x0000000000000000000000000000000000000000",
       chainId: 1,
     };
-    const legs = planKhalaniDepositLegs(plan, ETH_CHAIN);
+    const legs = planKhalaniDepositLegs(plan, ETH_CHAIN, null, ORIGIN);
     expect(legs).toHaveLength(1);
     const leg = legs[0]!;
     expect(leg.role).toBe("bridge_deposit");
@@ -177,7 +188,7 @@ describe("planKhalaniDepositLegs — planner-level guards (staged rewrite)", () 
       token: "native",
       chainId: 20011000000,
     };
-    expectPlanThrowsCode(() => planKhalaniDepositLegs(plan, SOL_CHAIN), ErrorCodes.KHALANI_DEPOSIT_FAILED);
+    expectPlanThrowsCode(() => planKhalaniDepositLegs(plan, SOL_CHAIN, null, ORIGIN), ErrorCodes.KHALANI_DEPOSIT_FAILED);
   });
 });
 

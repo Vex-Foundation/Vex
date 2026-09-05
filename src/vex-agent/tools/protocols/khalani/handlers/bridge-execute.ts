@@ -64,6 +64,7 @@ import {
 } from "./bridge-execute/fee-disclosure.js";
 import { runKhalaniBridgeLegs } from "./bridge-execute/legs.js";
 import { runKhalaniVexFeeLeg } from "./bridge-execute/fee-leg.js";
+import { withholdFeeOnDepositShortfall } from "@vex-agent/tools/protocols/bridge-deposit-evidence.js";
 import { submitKhalaniDeposit } from "./bridge-execute/submit.js";
 import type { KhalaniBridgePendingBase } from "./bridge-execute/types.js";
 import {
@@ -450,10 +451,26 @@ export async function executeKhalaniBridge(
   // risk. An ambiguous broadcast is left unresolved for the receipt sweep
   // exactly like any other staged transaction - a blind retry could charge the
   // user twice.
-  const feeOutcome = await runKhalaniVexFeeLeg({
-    executionId, feeLegIndex, stagedLegs, intentLegs: intent.legs,
-    sourceChain, chains, signer, fromChainId, fromChainName, recordedLegs,
-  });
+  // A DEPOSIT SHORTFALL MAKES THE FEE LEG INELIGIBLE. The fee is charged for
+  // bridging the principal the user consented to; a deposit whose own receipt
+  // proves less than that did not perform it, so no fee signer runs, no nonce
+  // is reserved, and the planned fee row is aborted rather than left pending.
+  const feeOutcome = legLoop.depositShortfall !== null
+    ? await withholdFeeOnDepositShortfall({
+      shortfall: legLoop.depositShortfall,
+      executionId,
+      feeLegIndex,
+      logScope: "khalani.bridge",
+      // Exactly the fee row: the logical `bridge_fill_expected` row sits after
+      // it and must stay pending, because the deposit itself reached the
+      // provider and its reconciliation is still owed.
+      abortPlannedFeeRow: (fromIndex, reason, toIndexExclusive) =>
+        abortRemaining(executionId, fromIndex, reason, toIndexExclusive),
+    })
+    : await runKhalaniVexFeeLeg({
+      executionId, feeLegIndex, stagedLegs, intentLegs: intent.legs,
+      sourceChain, chains, signer, fromChainId, fromChainName, recordedLegs,
+    });
 
   // 16. In-turn order poll - truthful, never fabricated (R6/B4/Q2).
   const poll = await pollKhalaniOrderToTerminal(pollOrderId, context.abortSignal);

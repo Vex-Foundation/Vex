@@ -22,6 +22,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { encodeFunctionData, getAddress } from "viem";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 
 const SESSION_EVM = {
@@ -33,6 +34,16 @@ const SESSION_EVM = {
 const FROM_TOKEN = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 const TO_TOKEN = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831";
 const ROUTER = "0x1111111111111111111111111111111111111111";
+
+const APPROVE_ABI = [{
+  type: "function", name: "approve", stateMutability: "nonpayable",
+  inputs: [{ name: "spender", type: "address" }, { name: "amount", type: "uint256" }],
+  outputs: [{ name: "", type: "bool" }],
+}] as const;
+
+function approveCalldata(spender: string, allowance: bigint): string {
+  return encodeFunctionData({ abi: APPROVE_ABI, functionName: "approve", args: [getAddress(spender), allowance] });
+}
 const FUTURE = Math.floor(Date.now() / 1000) + 3600;
 
 vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
@@ -233,9 +244,21 @@ beforeEach(() => {
       quote: { amountIn: req.amount, amountOut: "1495000", expectedDurationSeconds: 5, quoteExpiresAt: FUTURE },
     }],
   }));
-  mockBuildDeposit.mockResolvedValue({
-    kind: "CONTRACT_CALL",
-    approvals: [evmSend(FROM_TOKEN, "0x095ea7b3", false), evmSend(ROUTER, "0xdeadbeef", true)],
+  // A REAL `approve(router, <the amount this run was quoted for>)`. The planner
+  // refuses an approval it cannot bind to the deposit call it precedes AND one
+  // whose allowance is not exactly the principal Vex asked the venue to bridge
+  // (`@tools/evm-chains/erc20-approve-step-guard.ts`), so the fixture must
+  // follow the quote the way the live provider does: the fee-charged runs quote
+  // 1_496_250 and the fee-skipped runs quote the full amount.
+  mockBuildDeposit.mockImplementation(async () => {
+    const quoted = (mockGetQuotes.mock.calls.at(-1)?.[0] as { amount: string } | undefined)?.amount;
+    return {
+      kind: "CONTRACT_CALL",
+      approvals: [
+        evmSend(FROM_TOKEN, approveCalldata(ROUTER, BigInt(quoted ?? "1496250")), false),
+        evmSend(ROUTER, "0xdeadbeef", true),
+      ],
+    };
   });
   mockSearchTokens.mockImplementation(async (address: string) => ({
     data: [{ address, chainId: address === FROM_TOKEN ? 8453 : 42161, symbol: "USDC", decimals: 6, extensions: { price: { usd: "1" } } }],
@@ -330,6 +353,45 @@ describe("khalani.bridge — leg ordering: deposit first, fee last", () => {
     const stagedRowIds = mockMarkActivityBroadcast.mock.calls.map((c) => c[0]);
     expect(stagedRowIds).not.toContain(102);
     expect(mockSubmitDeposit).not.toHaveBeenCalled();
+  });
+
+  it("a deposit ONE UNIT BELOW the quoted principal means NO treasury transfer at all", async () => {
+    // The receipt floor (`bridge-deposit-evidence.ts`). The deposit landed, so
+    // the bridge is not failed; it moved less than the card the user consented
+    // to said it would, so the fee it charges for is not owed. `floor - 1` is
+    // the exact shape that used to pay a full fixed fee.
+    const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+    const padded = (address: string): string => `0x${"0".repeat(24)}${address.slice(2).toLowerCase()}`;
+    mockSignStageKhalaniLeg.mockImplementation(async (leg: KhalaniStagedLeg, _c, _ch, _s, hooks) => {
+      callLog.push(`sign:${leg.purpose}:${leg.role}`);
+      await hooks.onHashStaged({ txHash: `0x${leg.purpose}`, fromAddress: SESSION_EVM.address, nonce: 1 });
+      await hooks.onAccepted();
+      return {
+        kind: "confirmed",
+        txHash: `0x${leg.purpose}`,
+        settledAtBlock: null,
+        receiptLogs: leg.isDeposit
+          ? [{
+            address: FROM_TOKEN,
+            topics: [TRANSFER_TOPIC, padded(SESSION_EVM.address), padded(ROUTER)],
+            data: `0x${(1_496_249n).toString(16).padStart(64, "0")}`,
+          }]
+          : null,
+      };
+    });
+
+    const result = await execute();
+
+    // Nothing with `vex_fee` purpose ever reached the signer, so no nonce was
+    // reserved and no treasury transfer was staged or broadcast for it.
+    expect(signedLegs().some((l) => l.purpose === "vex_fee")).toBe(false);
+    expect(callLog).not.toContain("sign:vex_fee:bridge_fee");
+    expect(mockMarkActivityBroadcast.mock.calls.map((c) => c[0])).not.toContain(102);
+    // The tool result names BOTH figures, so the human can compare them.
+    const fee = parse(result.output).vexFee as Record<string, unknown>;
+    expect(fee.collection).toBe("not_attempted");
+    expect(String(fee.collectionNote)).toContain("1496249");
+    expect(String(fee.collectionNote)).toContain("1496250");
   });
 
   it("an AMBIGUOUS deposit means no treasury transfer, and the fee row is aborted below the logical row", async () => {
@@ -547,5 +609,87 @@ describe("khalani.bridge — caller-supplied fee params are still rejected by na
     expect(result.output).toMatch(/never takes fee parameters from tool input/);
     expect(mockGetQuotes).not.toHaveBeenCalled();
     expect(mockSignStageKhalaniLeg).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The approve binding at the HANDLER, over the real planner: the provider's
+ * approval reaches `planKhalaniDepositLegs` with Vex's own origin token, wallet
+ * and post-fee principal, so an approval that does not match them refuses
+ * before any leg is signed, any nonce is reserved (the signer owns the
+ * reservation) and any durable row exists.
+ *
+ * The default arrangement quotes 1_496_250 (1_500_000 less the 25 bps fee), so
+ * that is the ONLY allowance a plan for this bridge may grant.
+ */
+describe("khalani.bridge - a provider approval is bound to the deposit principal before anything signs", () => {
+  const NET = 1_496_250n;
+  const UNLIMITED = (1n << 256n) - 1n;
+  const FOREIGN_TOKEN = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
+
+  /** A CONTRACT_CALL plan whose single approval is the one under test. */
+  function planApproving(token: string, spender: string, allowance: bigint): void {
+    mockBuildDeposit.mockResolvedValue({
+      kind: "CONTRACT_CALL",
+      approvals: [evmSend(token, approveCalldata(spender, allowance), false), evmSend(ROUTER, "0xdeadbeef", true)],
+    });
+  }
+
+  function assertNothingSigned(): void {
+    expect(mockSignStageKhalaniLeg).not.toHaveBeenCalled();
+    expect(mockCreateBridgeActivityIntent).not.toHaveBeenCalled();
+    expect(mockSubmitDeposit).not.toHaveBeenCalled();
+  }
+
+  const refused: readonly (readonly [string, string, string, bigint])[] = [
+    ["an UNLIMITED allowance to the genuine deposit target", FROM_TOKEN, ROUTER, UNLIMITED],
+    ["an allowance LARGER than the principal", FROM_TOKEN, ROUTER, NET + 1n],
+    ["an allowance SMALLER than the principal", FROM_TOKEN, ROUTER, NET - 1n],
+    ["an approval on a token that is not the origin currency", FOREIGN_TOKEN, ROUTER, NET],
+  ];
+
+  for (const [label, token, spender, allowance] of refused) {
+    it(`REFUSES ${label}, signing nothing and recording nothing`, async () => {
+      planApproving(token, spender, allowance);
+
+      const result = await execute();
+
+      expect(result.success).toBe(false);
+      expect(result.output).toContain("khalani.bridge failed:");
+      expect(result.output).toMatch(/refused before signing the khalani token approval/i);
+      assertNothingSigned();
+    });
+  }
+
+  it("plans and signs the exact principal to the genuine deposit target (positive control)", async () => {
+    // The shape of the archived live `/v1/deposit/build` CONTRACT_CALL capture:
+    // approve(deposit target, quoted input) followed by the deposit call.
+    planApproving(FROM_TOKEN, ROUTER, NET);
+
+    await execute();
+
+    expect(signedLegs().map((l) => l.purpose)).toEqual(["bridge", "bridge", "vex_fee"]);
+    expect(signedLegs().map((l) => l.role)).toEqual(["allowance", "bridge_deposit", "bridge_fee"]);
+  });
+
+  it("plans the reset-then-grant sequence a non-standard token needs", async () => {
+    mockBuildDeposit.mockResolvedValue({
+      kind: "CONTRACT_CALL",
+      approvals: [
+        evmSend(FROM_TOKEN, approveCalldata(ROUTER, 0n), false),
+        evmSend(FROM_TOKEN, approveCalldata(ROUTER, NET), false),
+        evmSend(ROUTER, "0xdeadbeef", true),
+      ],
+    });
+
+    await execute();
+
+    // The BRIDGE legs are the subject: the reset is exempt from the allowance
+    // bound (it grants nothing) and the grant that follows it is bound. The fee
+    // leg is left out of the assertion because this suite's intent mock returns
+    // exactly three leg rows, so a four-leg plan has no row for it.
+    expect(signedLegs().map((l) => l.role).slice(0, 3)).toEqual([
+      "allowance_reset", "allowance", "bridge_deposit",
+    ]);
   });
 });
