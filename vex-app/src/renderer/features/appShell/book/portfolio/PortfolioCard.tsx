@@ -1,10 +1,13 @@
 /**
- * PortfolioCard — the ONE tokens-v2 card chrome every BOOK card composes
- * (Portfolio Overview / Wallets / Balances / the session cards): a SOLID
- * layer-1 surface with an alpha hairline border and the lv1 elevation shadow
- * (celeris separates by border + shadow on white; chronos by the luminance
- * ladder + white-alpha border — both come free from the aliases). The micro-label
- * eyebrow is the card's dot-matrix signature voice.
+ * PortfolioCard - the ONE card chrome every BOOK card composes (Portfolio
+ * Overview / Wallets / Balances / the session and project cards): the GLASS
+ * CARD tier (`.vex-glass-card`, styles/global-css/glass.css; owner decision
+ * 2026-09-04: the Settings glaze on every plain card). Inside a BOOK rail the
+ * rail blurs the wall and the card is a tinted plate over it; in the welcome
+ * Portfolio stack, with no rail under it, the same class blurs for itself.
+ * Edge light and a hairline ring stand in for the stroke the solid card had;
+ * both themes repoint the same tint tokens. The micro-label eyebrow is the
+ * card's dot-matrix signature voice.
  *
  * Each card is a `motion.section` riding the shared `cardVariants`, so the
  * panel's stack stagger (delayChildren/staggerChildren on `stackVariants`)
@@ -37,7 +40,7 @@ export function PortfolioCard({
       // slice the last row ("Add wallet" / "View all assets"; owner
       // screenshot 2026-07-21). Overflow belongs to the stack's scroll, not
       // to card compression.
-      className="relative shrink-0 overflow-hidden rounded-xl border border-line-2 bg-surface-1 p-4 shadow-lv1"
+      className="vex-glass-card relative shrink-0 overflow-hidden rounded-xl p-4"
     >
       <header className="mb-2.5 flex items-baseline justify-between gap-2">
         <span className="flex min-w-0 items-center gap-2">

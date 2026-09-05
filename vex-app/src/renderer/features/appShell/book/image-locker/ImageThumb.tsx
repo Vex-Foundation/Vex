@@ -1,5 +1,12 @@
 /**
- * One locker tile — the thumbnail, its label, and its delete affordance.
+ * One locker tile - the thumbnail, its label, and, where the rail may delete,
+ * its delete affordance.
+ *
+ * REMOVAL IS A CAPABILITY THE HOST HANDS IN, not a fact about the tile. A
+ * session rail may delete; a project LAUNCHPAD is browse-only (Studio parity
+ * decree, 2026-09-04) and hands in `null`, and the tile then renders NO delete
+ * control at all - not a disabled one, not a hidden one. A control that exists
+ * but cannot act is a promise the rail cannot keep.
  *
  * Its own `data:` URL is fetched here rather than by the card, so the metadata
  * list stays a cheap read and a growing locker never turns one render into one
@@ -29,14 +36,18 @@ import type { LockerImage } from "@shared/schemas/images.js";
 import { IconTrash } from "../../../../components/icons/index.js";
 import { useLockerImageThumb } from "../../../../lib/api/images.js";
 
-export function ImageThumb({
-  image,
-  onDelete,
-  deleting,
-}: {
-  readonly image: LockerImage;
+/** What a rail that may delete hands the tile; `null` on a browse-only rail. */
+export interface ImageThumbRemoval {
   readonly onDelete: (imageId: string) => void;
   readonly deleting: boolean;
+}
+
+export function ImageThumb({
+  image,
+  removal,
+}: {
+  readonly image: LockerImage;
+  readonly removal: ImageThumbRemoval | null;
 }): JSX.Element {
   // `null` when there is no on-chain copy: the hook is disabled rather than
   // asked for something main would answer `images.not_found` to.
@@ -80,18 +91,20 @@ export function ImageThumb({
         {image.label}
       </span>
 
-      <button
-        type="button"
-        onClick={() => onDelete(image.imageId)}
-        disabled={deleting}
-        // Always reachable by keyboard (focus-visible), revealed on hover for
-        // the mouse — a destructive control that only exists on hover is a
-        // control a keyboard user does not have.
-        className="absolute right-1 top-1 rounded-full bg-surface-base/90 p-1 text-ink-tertiary opacity-0 transition-opacity hover:text-warning-label focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-40"
-        aria-label={`Remove ${image.label} from the locker`}
-      >
-        <IconTrash size={12} />
-      </button>
+      {removal !== null ? (
+        <button
+          type="button"
+          onClick={() => removal.onDelete(image.imageId)}
+          disabled={removal.deleting}
+          // Always reachable by keyboard (focus-visible), revealed on hover for
+          // the mouse - a destructive control that only exists on hover is a
+          // control a keyboard user does not have.
+          className="absolute right-1 top-1 rounded-full bg-surface-base/90 p-1 text-ink-tertiary opacity-0 transition-opacity hover:text-warning-label focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-40"
+          aria-label={`Remove ${image.label} from the locker`}
+        >
+          <IconTrash size={12} />
+        </button>
+      ) : null}
     </li>
   );
 }

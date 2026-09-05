@@ -67,10 +67,23 @@
    * solid surface token, and both themes' veils live side by side below.
    *
    * Alpha ORDER is the contract, pinned by __tests__/glass-tokens.test.ts:
-   * chip < rail < pane < overlay. A chip sits INSIDE a rail (its coverage
-   * compounds with the rail's, which is what makes it read as a plate); a
-   * pane hosts a terminal, so its veil is denser than a rail's; an overlay
-   * screen covers everything and is nearly opaque.
+   * chip < rail < card < pane < overlay. A chip sits INSIDE a rail (its
+   * coverage compounds with the rail's, which is what makes it read as a
+   * plate); a pane hosts a terminal, so its veil is denser than a rail's; an
+   * overlay screen covers everything and is nearly opaque.
+   *
+   * THE CARD (owner decision 2026-09-04: "the Settings glaze on every plain
+   * card"). The BOOK cards (POSITION, WALLETS, BALANCES, ACTIVITY, SESSION,
+   * PROJECT, LAUNCHPAD, the inspect and Board surfaces) were opaque
+   * `--vex-surface-1` plates with a stroke; they now wear the card tier.
+   * Its density is chosen for where it lands: inside a rail its filter is
+   * stripped (glass.css law 2) and its tint compounds with the rail's, and
+   * 0.55 + 0.6 covers 1 - 0.45 x 0.4 = 0.82 of the wall, which is the
+   * Settings overlay's own 0.82 - the look the owner pointed at. Standing
+   * alone over the welcome wall (the floating Portfolio stack has no rail
+   * under it) the card keeps its own 18px blur and reads at 0.6, next to
+   * the 0.7 handle button beside it. Celeris: 0.6 + 0.66 covers 0.864,
+   * against the 0.85 overlay.
    *
    * Readings behind the numbers (owner reference screenshots, 2026-09-04):
    * macOS Terminal over El Capitan reads at roughly 0.6 coverage with the
@@ -85,6 +98,7 @@
    * and chip; the overlay keeps the composer's slightly bluer ink
    * (#0b0f1d) it has always worn. */
   --vex-glass-tint-rail: rgba(10, 13, 24, 0.55);
+  --vex-glass-tint-card: rgba(10, 13, 24, 0.6);
   --vex-glass-tint-pane: rgba(10, 13, 24, 0.62);
   --vex-glass-tint-chip: rgba(10, 13, 24, 0.42);
   --vex-glass-tint-overlay: rgba(11, 15, 29, 0.82);
@@ -107,6 +121,7 @@
    * the wallpaper through the pane at or just under its own saturation, never
    * boosted, so a stronger web-glass lift would read false). */
   --vex-glass-blur-rail: 24px;
+  --vex-glass-blur-card: 18px;
   --vex-glass-blur-pane: 18px;
   --vex-glass-blur-overlay: 32px;
   --vex-glass-saturate: 120%;
@@ -132,16 +147,14 @@
   /* COMPATIBILITY ALIASES, each with a named consumer and a removal
    * condition (glass-tokens.test.ts fails the moment an alias has no
    * `var()` consumer left, which is the signal to delete it here):
-   *  - --vex-rail: SessionsList.tsx, StudioSidebar.tsx, BookRailFrame.tsx
-   *    (`bg-[var(--vex-rail)] backdrop-blur-xl`) until they wear
-   *    .vex-glass-rail.
+   *  - --vex-rail: DELETED (2026-09-04) - its last consumer, BookRailFrame,
+   *    wears .vex-glass-rail like the two left rails.
    *  - --vex-glass-strong: screens/ShellScreen.tsx until it wears
    *    .vex-glass-overlay.
    *  - --vex-rail-strong: SidebarProfile.tsx foot (moves to .vex-glass-chip)
    *    and book/portfolio/WelcomePortfolioPanel.tsx round button (a solid
    *    plate on a bordered button, not a glass tier; it needs its own
    *    decision). No new tier equals its 0.7, so it keeps its literal. */
-  --vex-rail: var(--vex-glass-tint-rail);
   --vex-rail-strong: rgba(10, 13, 24, 0.7);
   --vex-glass-strong: var(--vex-glass-tint-overlay);
   /* shadcn projection — stock Button/Input/Dialog inside the shell speak
@@ -157,12 +170,13 @@
 }
 
 /* Celeris glass: every veil flips to white over the day artwork, in the
- * same chip < rail < pane < overlay order. The top highlight stays white
+ * same chip < rail < card < pane < overlay order. The top highlight stays white
  * (a lit edge on white glass) while the inner ring flips to a faint INK
  * hairline, because a white ring on white glass is invisible. Blur and
  * saturation are not restated here: geometry is theme-invariant. */
 [data-vex-shell="true"][data-vex-theme="celeris"] {
   --vex-glass-tint-rail: rgba(255, 255, 255, 0.6);
+  --vex-glass-tint-card: rgba(255, 255, 255, 0.66);
   --vex-glass-tint-pane: rgba(255, 255, 255, 0.72);
   --vex-glass-tint-chip: rgba(255, 255, 255, 0.5);
   --vex-glass-tint-overlay: rgba(255, 255, 255, 0.85);
