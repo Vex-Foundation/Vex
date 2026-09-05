@@ -70,6 +70,7 @@ import {
   projectVirtualsDetail,
   projectVirtualsList,
 } from "./projectors.js";
+import { virtualsCreatorFeesHandler } from "./handlers/creator-fees.js";
 import { virtualsTradeQuote } from "./handlers/trade-quote.js";
 import { virtualsTradeExecute } from "./handlers/trade-execute.js";
 
@@ -160,15 +161,60 @@ async function loadAgent(
   return { ok: true, agent, id };
 }
 
+/**
+ * WHY THE CALENDAR ANSWERS A QUESTION ABOUT PARTICIPATING.
+ *
+ * Reading the genesis calendar and joining a genesis sale are the same user
+ * intent one step apart, so a calendar row that says nothing about joining
+ * invites the model to look for a tool that does it - and there is none, for a
+ * measured reason. `Genesis.participate(pointAmt, virtualsAmt)`
+ * (`contracts/genesis/Genesis.sol:243`) takes the user's VIRTUAL immediately
+ * and does NOTHING with `pointAmt` except emit it: the contract never validates
+ * it, never signs it and never derives an allocation from it. The allocation is
+ * computed off chain by Virtuals' backend and written later by
+ * `onGenesisSuccessSalt`, which is `onlyRole(FACTORY_ROLE)` and carries the
+ * winners as calldata arrays (`:274-296`, `:390-400`). Refunds run through the
+ * same privileged path.
+ *
+ * So a self-custodial `participate` would transfer real VIRTUAL against a
+ * points number Vex cannot obtain, cannot prove and cannot have credited. That
+ * is not a missing feature to be filled in later without evidence; it is a
+ * money path with no authority behind it, and it is refused by name with the
+ * supported half of the intent stated beside it.
+ *
+ * Stated here, in the calendar's own reply, rather than as a tool that exists
+ * only to refuse: this namespace already answers an unreachable cell with
+ * `supported: false` and the measured reason (see `manifests/market.ts`), and a
+ * refuse-only tool would spend context in every agent's tool list to say what
+ * the answer it is already reading can say.
+ */
+const GENESIS_PARTICIPATION_UNSUPPORTED = {
+  supported: false,
+  reason:
+    "Vex cannot enter a Virtuals genesis sale. `Genesis.participate(pointAmt, virtualsAmt)` transfers the "
+    + "VIRTUAL immediately but does not validate `pointAmt` at all - it only emits it - and the agent-token "
+    + "allocation is computed off chain by Virtuals' backend and written by `onGenesisSuccessSalt`, which is "
+    + "restricted to the factory role. A self-custodial call would therefore spend real VIRTUAL against a "
+    + "points figure Vex cannot obtain or prove, with the allocation and any refund both decided by a "
+    + "privileged path Vex is not on.",
+  venue: "the Virtuals app at https://app.virtuals.io, where the points a genesis credits are issued",
+  supportedHere:
+    "This calendar read (virtuals__genesis_launches_list) is the supported half: what is running, when it "
+    + "opens and closes, its reserve target, its participants and the agent it launches.",
+} as const;
+
 // ── Handler map ─────────────────────────────────────────────────────
 
 export const VIRTUALS_HANDLERS: Record<string, ProtocolHandler> = {
+  "virtuals.creator_fees": virtualsCreatorFeesHandler,
+
   // The two MUTATING members of the namespace (PR-C2). They own their own
   // modules under `./handlers/` because a money path with a prequote binding, a
   // staged broadcast and a fee leg has nothing structurally in common with the
   // read handlers below.
   "virtuals.trade.quote": virtualsTradeQuote,
   "virtuals.trade.execute": virtualsTradeExecute,
+
   "virtuals.list": async (p) => {
     const read = readVirtualsListParams(p);
     if (!read.ok) return fail(read.reason);
@@ -315,6 +361,7 @@ export const VIRTUALS_HANDLERS: Record<string, ProtocolHandler> = {
           : "The VIRTUAL reserve targets a genesis sale can be configured for, from the provider's own "
             + "/api/geneses/parameters.",
         filtersApplied: applied,
+        participation: GENESIS_PARTICIPATION_UNSUPPORTED,
         geneses: result.geneses.map(projectGenesis),
       });
     } catch (err) {

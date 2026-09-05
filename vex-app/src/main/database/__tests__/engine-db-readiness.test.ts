@@ -12,6 +12,8 @@
  *      share a single timer and a single in-flight probe.
  *   3. THE MIGRATIONS COUNT. A URL that resolves is not a schema that exists.
  *   4. NO TIMER SURVIVES. Resolve or abort, the interval is cleared.
+ *   5. THE RECYCLE COMMITS AT THE DRAIN. A `closePool()` that rejects leaves
+ *      readiness false and is retried; concurrent callers share one drain.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -82,6 +84,102 @@ describe("ensureEngineDbUrl", () => {
     const second = await ensureEngineDbUrl("corr-2");
     expect(second.ok).toBe(true);
     expect(closePool).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * THE COMMIT POINT. The applied URL used to be read back off
+   * `process.env.VEX_DB_URL`, which this function writes BEFORE the drain, so a
+   * `closePool()` that REJECTED left the next pass comparing its own
+   * half-applied variable, accepting the equality, and reporting a database
+   * that the pool it had failed to close was still serving.
+   */
+  it("stays UNREADY when the pool drain fails, and commits on the next one", async () => {
+    buildPoolConfig.mockResolvedValue(CONFIG);
+    migrationsDone = true;
+    closePool.mockRejectedValueOnce(new Error("pool would not drain"));
+
+    const failed = await ensureEngineDbUrl("corr-close-1");
+    expect(failed.ok).toBe(false);
+    expect(isEngineDbReady()).toBe(false);
+    // The variable IS written - the pool rebuilds itself from it - but it is
+    // not the fact readiness is derived from.
+    expect(process.env.VEX_DB_URL).toBe(
+      "postgresql://vex:test-password@127.0.0.1:5433/vex",
+    );
+
+    // The next call retries the recycle instead of trusting the environment.
+    const repaired = await ensureEngineDbUrl("corr-close-2");
+    expect(repaired.ok).toBe(true);
+    expect(closePool).toHaveBeenCalledTimes(2);
+    expect(isEngineDbReady()).toBe(true);
+  });
+
+  it("serializes concurrent callers into ONE drain", async () => {
+    buildPoolConfig.mockResolvedValue(CONFIG);
+    migrationsDone = true;
+    let releaseDrain = (): void => {};
+    closePool.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseDrain = () => {
+            resolve();
+          };
+        }),
+    );
+
+    const first = ensureEngineDbUrl("corr-concurrent-1");
+    const second = ensureEngineDbUrl("corr-concurrent-2");
+    // The second caller JOINED the pass already running, and nothing has been
+    // committed while the drain is still open.
+    await vi.waitFor(() => {
+      expect(closePool).toHaveBeenCalledTimes(1);
+    });
+    expect(isEngineDbReady()).toBe(false);
+
+    releaseDrain();
+    const [firstOutcome, secondOutcome] = await Promise.all([first, second]);
+    expect(firstOutcome.ok).toBe(true);
+    expect(secondOutcome.ok).toBe(true);
+    expect(closePool).toHaveBeenCalledTimes(1);
+    expect(isEngineDbReady()).toBe(true);
+  });
+
+  /**
+   * THE JOIN IS MECHANICS, NOT IDENTITY.
+   *
+   * The single-flight used to share a whole `Result<void, VexError>`, so every
+   * caller that JOINED a failing pass was handed the FIRST caller's
+   * correlation id: two unrelated IPC requests reported the same id and any
+   * support trace built from it pointed at a request that was not theirs. The
+   * shared pass now answers only whether the recycle committed, and each
+   * caller builds its own error after joining.
+   */
+  it("gives each joined caller its OWN correlation id when the recycle fails", async () => {
+    buildPoolConfig.mockResolvedValue(CONFIG);
+    let failDrain = (): void => {};
+    closePool.mockImplementationOnce(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          failDrain = () => {
+            reject(new Error("pool would not drain"));
+          };
+        }),
+    );
+
+    const first = ensureEngineDbUrl("corr-own-1");
+    const second = ensureEngineDbUrl("corr-own-2");
+    await vi.waitFor(() => {
+      expect(closePool).toHaveBeenCalledTimes(1);
+    });
+
+    failDrain();
+    const [firstOutcome, secondOutcome] = await Promise.all([first, second]);
+    if (firstOutcome.ok || secondOutcome.ok) {
+      throw new Error("a failed drain must not report an applied URL");
+    }
+    expect(firstOutcome.error.correlationId).toBe("corr-own-1");
+    expect(secondOutcome.error.correlationId).toBe("corr-own-2");
+    expect(isEngineDbReady()).toBe(false);
   });
 
   it("reports the database as unavailable while compose has written nothing", async () => {

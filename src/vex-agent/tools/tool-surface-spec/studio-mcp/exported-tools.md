@@ -43,12 +43,12 @@ free. Both texts live on the tool
 
 ## Totals
 
-- exported tools: 171
+- exported tools: 172
 - internal: 27
-- protocol: 144 across 11 namespaces
+- protocol: 145 across 11 namespaces
 - always loaded: 27
-- read-only: 112
-- destructive: 51
+- read-only: 114
+- destructive: 50
 
 ## Internal tools
 
@@ -193,14 +193,16 @@ free. Both texts live on the tool
 | name | title | lane | read only | destructive | always load | requires env | description bytes | returns | vex fee |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | pools__fees_claim | Claim pools.fun creator fees | protocol | no | yes | no | - | 1619 | - | - |
+| pools__holder_rewards_get | Read pools.fun holder rewards | protocol | yes | no | no | - | 2102 | - | none (read) |
+| pools__launch_assets_list | List pools.fun launchable stocks | protocol | yes | no | no | - | 1698 | - | none (read) |
 | pools__launch_execute | Launch a token on pools.fun | protocol | no | yes | no | - | 2801 | - | - |
 | pools__launch_preview | Price a pools.fun launch | protocol | no | no | no | - | 998 | - | - |
 | pools__launch_request_form | Ask the user to confirm a pools.fun launch | protocol | no | no | no | - | 902 | - | - |
 | pools__my_launches_list | List this wallet's pools.fun launches | protocol | yes | no | no | - | 1371 | - | none (read) |
 | pools__token_candles_list | Read pools.fun token candles | protocol | yes | no | no | - | 1006 | - | none (read) |
-| pools__token_get | Read one pools.fun token | protocol | yes | no | no | - | 1075 | - | none (read) |
-| pools__tokens_discover | Screen pools.fun tokens | protocol | yes | no | no | - | 1549 | - | none (read) |
-| pools__tokens_search | Search pools.fun tokens | protocol | yes | no | no | - | 928 | - | none (read) |
+| pools__token_get | Read one pools.fun token | protocol | yes | no | no | - | 1411 | - | none (read) |
+| pools__tokens_discover | Screen pools.fun tokens | protocol | yes | no | no | - | 2552 | - | none (read) |
+| pools__tokens_search | Search pools.fun tokens | protocol | yes | no | no | - | 1313 | - | none (read) |
 
 ### relay
 
@@ -276,9 +278,8 @@ free. Both texts live on the tool
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | virtuals__agent_candles_list | Read a Virtuals agent's price candles | protocol | yes | no | no | - | 1611 | - | none (read) |
 | virtuals__agent_get | Read one Virtuals agent token | protocol | yes | no | no | - | 1365 | - | none (read) |
-| virtuals__agent_trade_execute | Trade a Virtuals agent on its bonding curve | protocol | no | yes | no | - | 1524 | - | - |
-| virtuals__agent_trade_quote | Price a Virtuals bonding-curve trade | protocol | yes | no | no | - | 1576 | - | none (read) |
 | virtuals__agent_trades_list | Read a Virtuals agent's curve trade tape | protocol | yes | no | no | - | 1331 | - | none (read) |
 | virtuals__agents_discover | Screen Virtuals agent tokens | protocol | yes | no | no | - | 2039 | - | none (read) |
-| virtuals__genesis_launches_list | Browse the Virtuals Genesis calendar | protocol | yes | no | no | - | 1291 | - | none (read) |
+| virtuals__creator_fees_get | Read a Virtuals agent creator's fee status | protocol | yes | no | no | - | 2347 | - | none (read) |
+| virtuals__genesis_launches_list | Browse the Virtuals Genesis calendar | protocol | yes | no | no | - | 1767 | - | none (read) |
 | virtuals__graduations_list | List recent Virtuals graduations | protocol | yes | no | no | - | 938 | - | none (read) |

@@ -24,7 +24,7 @@
  *   already taken is never mutated, so a coalesce can never overlap a blocked
  *   send.
  *
- * ## Everything settles on close
+ * ## Everything settles on close, and SAYS SO
  *
  * Each enqueue returns a promise. On close every outstanding one RESOLVES
  * rather than rejecting: the frame did not reach the peer, and the caller
@@ -32,9 +32,20 @@
  * rejection would surface as an unhandled error during a normal disconnect.
  * The connection's own teardown is the event that matters, and it has already
  * fired by then.
+ *
+ * But resolution is NOT acceptance, and this queue resolves on five different
+ * edges: a closed queue, a coalesce, the pending bound, a wire that has gone
+ * away, and a real completed write. The promise therefore carries a
+ * `StudioWriteOutcome` naming which one it took. The transport above turns
+ * `accepted` - and only `accepted` - into the `first_response` milestone and
+ * the outbound counters, so a frame this queue swallowed can never be logged
+ * as main's answer leaving main.
  */
 
-import type { StudioDuplexTransport } from "@vex-agent/mcp/duplex-transport.js";
+import type {
+  StudioDuplexTransport,
+  StudioWriteOutcome,
+} from "@vex-agent/mcp/duplex-transport.js";
 
 /** The contract's pending-frame bound for one connection. */
 export const STUDIO_MAX_PENDING_OUTBOUND = 64;
@@ -55,7 +66,7 @@ interface OutboundEntry {
   /** Present for progress only: the request this frame reports on. */
   readonly key: string | null;
   line: string;
-  readonly settle: () => void;
+  readonly settle: (outcome: StudioWriteOutcome) => void;
 }
 
 export class StudioOutboundQueue {
@@ -87,30 +98,30 @@ export class StudioOutboundQueue {
    * `progressKey` marks the frame as coalescable progress for that request.
    * Anything without a key is a response and is queued unconditionally.
    */
-  enqueue(line: string, progressKey?: string): Promise<void> {
-    if (this.closed) return Promise.resolve();
+  enqueue(line: string, progressKey?: string): Promise<StudioWriteOutcome> {
+    if (this.closed) return Promise.resolve("closed");
 
     if (progressKey !== undefined) {
       const queued = this.queuedProgress.get(progressKey);
       if (queued !== undefined) {
         // COALESCE: replace the line of an entry the writer has not taken.
         queued.line = line;
-        return Promise.resolve();
+        return Promise.resolve("coalesced");
       }
     }
 
     if (this.queue.length >= this.maxPending) {
       // Progress is expendable at the bound; a response is not, and a peer
       // that has stopped reading its own answers has failed.
-      if (progressKey !== undefined) return Promise.resolve();
+      if (progressKey !== undefined) return Promise.resolve("dropped");
       if (!this.overflowed) {
         this.overflowed = true;
         this.onOverflow?.("pending_limit", this.queue.length);
       }
-      return Promise.resolve();
+      return Promise.resolve("dropped");
     }
 
-    return new Promise<void>((resolve) => {
+    return new Promise<StudioWriteOutcome>((resolve) => {
       const entry: OutboundEntry = {
         kind: progressKey === undefined ? "response" : "progress",
         key: progressKey ?? null,
@@ -134,7 +145,7 @@ export class StudioOutboundQueue {
     this.closed = true;
     const outstanding = this.queue.splice(0, this.queue.length);
     this.queuedProgress.clear();
-    for (const entry of outstanding) entry.settle();
+    for (const entry of outstanding) entry.settle("closed");
   }
 
   /** The ONE writer. Serialized by `writing`; re-entered only by itself. */
@@ -149,11 +160,10 @@ export class StudioOutboundQueue {
         // coalesce cannot rewrite a frame that is already on the wire.
         if (entry.key !== null) this.queuedProgress.delete(entry.key);
         if (this.closed || this.wire.destroyed || this.wire.writableEnded) {
-          entry.settle();
+          entry.settle("closed");
           continue;
         }
-        await this.writeLine(entry.line);
-        entry.settle();
+        entry.settle(await this.writeLine(entry.line));
       }
     } finally {
       this.writing = false;
@@ -173,34 +183,69 @@ export class StudioOutboundQueue {
    * queue's `writing` latch stuck and the connection silently mute. It is now
    * a hoisted binding plus a post-write settle, so neither order can strand a
    * frame or throw.
+   *
+   * THE OUTCOME IS THE POINT. `close` and `error` settle this promise so a
+   * teardown can never strand the one writer, and a `drain` after a refused
+   * write means the buffer actually emptied - but only the completed write and
+   * that drain are `accepted`. Everything else is `closed`: the frame is still
+   * in this process, or gone with the wire.
    */
-  private writeLine(line: string): Promise<void> {
-    return new Promise<void>((resolve) => {
+  private writeLine(line: string): Promise<StudioWriteOutcome> {
+    return new Promise<StudioWriteOutcome>((resolve) => {
       let settled = false;
       let accepted = false;
-      const done = (): void => {
+      const done = (outcome: StudioWriteOutcome): void => {
         if (settled) return;
         settled = true;
-        this.wire.off("close", done);
-        this.wire.off("error", done);
-        resolve();
+        this.wire.off("close", gone);
+        this.wire.off("error", gone);
+        this.wire.off("drain", drained);
+        resolve(outcome);
       };
-      this.wire.once("close", done);
-      this.wire.once("error", done);
+      const gone = (): void => {
+        done("closed");
+      };
+      const drained = (): void => {
+        done("accepted");
+      };
+      this.wire.once("close", gone);
+      this.wire.once("error", gone);
       let callbackFired = false;
-      accepted = this.wire.write(line, () => {
+      let writeFailed = false;
+      let returned = false;
+      const completed = (): void => {
+        done(writeFailed ? "closed" : "accepted");
+      };
+      accepted = this.wire.write(line, (error) => {
         callbackFired = true;
-        // Only the accepted path settles here, and only when `accepted` is
-        // already known. A callback invoked synchronously runs before the
-        // assignment below, so the post-write branch settles that case.
-        if (accepted) done();
+        // `net.Socket` reports a failed write through this argument, and the
+        // `error` event that follows it is not guaranteed to arrive first. A
+        // frame the socket threw away is not the peer's, whether the write was
+        // accepted or refused.
+        if (error !== undefined && error !== null) writeFailed = true;
+        // A callback invoked SYNCHRONOUSLY runs before `write` has returned, so
+        // `accepted` is not known yet; the post-write branch settles that case.
+        if (returned) completed();
       });
-      if (accepted) {
-        if (callbackFired) done();
+      returned = true;
+      // The callback is the authoritative edge on both branches: Node runs it
+      // when the chunk is actually flushed, which is the same fact `drain`
+      // reports and arrives no later.
+      if (callbackFired) {
+        completed();
         return;
       }
-      // Refused: `drain` is the edge that says the buffer actually emptied.
-      this.wire.once("drain", done);
+      if (accepted) return;
+      // Refused, with no callback yet. A wire that is already gone will never
+      // raise `drain`, and the Windows relay refuses exactly that way without
+      // ever running the callback, so the frame is named lost here rather than
+      // parked for ever.
+      if (this.wire.destroyed || this.wire.writableEnded) {
+        done("closed");
+        return;
+      }
+      // `drain` is the edge that says the buffer emptied without the callback.
+      this.wire.once("drain", drained);
     });
   }
 }

@@ -120,6 +120,44 @@ const skippedArm = z.object({
  * cannot be believed must not become the authority a person consents to. On the
  * charged arm `feeAmountRaw + netAmountRaw === totalDebitedRaw`; on the skipped
  * arm nothing is taken, so `netAmountRaw === totalDebitedRaw`.
+ *
+ * ## THE FEE LEG PINS THIS STATEMENT (fixed decision, 2026-09-04 round 2)
+ *
+ * A reviewer proposed re-running authoritative fee eligibility a second time,
+ * inside each venue's late fee leg, because that leg signs AFTER the parent
+ * transaction confirms and eligibility is a live oracle read. That was REJECTED
+ * as a behaviour change, and the rejection is the contract every venue is tested
+ * against:
+ *
+ *   THE APPROVED STATEMENT IS THE AUTHORITY FOR THE FEE LEG. Its amount and its
+ *   receiver are fixed at the pre-sign comparison, before anything is signed,
+ *   and the fee leg signs exactly those. Eligibility flipping between the parent
+ *   confirmation and the fee transfer changes NOTHING about what is signed.
+ *
+ * Three reasons, in the order they decide it:
+ *
+ *   1. Re-deriving late can only move the fee AWAY from what a person approved.
+ *      Upward it charges more than was consented to; downward it charges less
+ *      than the card stated on a bridge or swap that already happened. Both are
+ *      a fee nobody agreed to, which is the same defect the pre-sign comparison
+ *      exists to prevent (rule 90: revalidate against the approval, never
+ *      re-derive a new authority).
+ *   2. The parent operation has already confirmed by then. There is no refusal
+ *      available that undoes it, so a late "no" is not a safety outcome - it is
+ *      only missed revenue on an operation the user already received.
+ *   3. The amount and the receiver are already unable to rise: the amount is the
+ *      atomic figure the split fixed and the receiver is a build constant, so
+ *      nothing on that path can raise the fee above the statement.
+ *
+ * What each venue actually signs, pinned by a test per venue:
+ *   Uniswap  - `planUniswapFeeLeg` builds the transfer once from the compared
+ *              `UniswapFeeCharge`; the receiver is `UNISWAP_FEE_RECEIVER_EVM`.
+ *   KyberSwap- no separate leg at all: the fee is inside the router calldata the
+ *              pre-sign guard accepted (`collection: inside_route`).
+ *   Relay    - `runRelayVexFeeLeg` is handed `legs.feeSplit.feeRaw` and the
+ *              origin currency; the receiver is `BRIDGE_FEE_RECEIVER_EVM`.
+ *   Khalani  - the fee leg is a staged leg built with the rest of the plan; the
+ *              runner signs `stagedLegs[feeLegIndex]` and derives nothing.
  */
 export const vexFeePreviewSchema = z
   .discriminatedUnion("charged", [chargedArm, skippedArm])

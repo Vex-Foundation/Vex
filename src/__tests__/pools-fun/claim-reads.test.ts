@@ -17,13 +17,14 @@
 import { describe, expect, it } from "vitest";
 import { BaseError, ContractFunctionRevertedError, getAddress, type Address } from "viem";
 
-import { POOLS_LOCKER_ADDRESS } from "@tools/pools-fun/constants.js";
+import { POOLS_SUITES } from "@tools/pools-fun/constants.js";
 import {
   readPoolsClaimContext,
   simulatePoolsClaim,
 } from "@tools/pools-fun/claim/read-claim.js";
 
-const LOCKER = getAddress(POOLS_LOCKER_ADDRESS);
+/** V1: our seven real launches are registered there, so the claims these tests describe exist. */
+const SUITE = POOLS_SUITES.find((s) => s.version === 1)!;
 const WALLET = getAddress("0x33eF6673BD80cB11fcC41b82Bc2181E65cC4d2fA");
 const TOKEN = getAddress("0x01e685d39e6bf52ad0c421a4be1e092ce684e6bb");
 const POOL = getAddress("0x50136d4174129585ec766eacf2f00cd1856690ca");
@@ -58,7 +59,7 @@ function client(over: {
 
 describe("the already-collected mappings are never presented as claimable", () => {
   it("reports them under their own label, with each leg's asset and decimals", async () => {
-    const result = await readPoolsClaimContext(client(), TOKEN, WALLET, LOCKER);
+    const result = await readPoolsClaimContext(client(), TOKEN, WALLET, SUITE);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
@@ -74,7 +75,7 @@ describe("the already-collected mappings are never presented as claimable", () =
   });
 
   it("reads the paired asset from getPoolInfo, which is what the floor must match", async () => {
-    const result = await readPoolsClaimContext(client(), TOKEN, WALLET, LOCKER);
+    const result = await readPoolsClaimContext(client(), TOKEN, WALLET, SUITE);
     expect(result.ok && result.context.pairedAsset).toBe(USDG);
   });
 });
@@ -85,12 +86,18 @@ describe("three outcomes, never two", () => {
       client({ poolInfo: { status: "success", result: [ZERO, ZERO, ZERO, ZERO, []] } }),
       TOKEN,
       WALLET,
-      LOCKER,
+      SUITE,
     );
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.reason).toContain("not registered");
-    expect(result.reason).toContain("sushi");
+    // The wording changed with the suite table, deliberately. It used to blame
+    // "the older sushi launchpad" for every empty row, which is how a V3 token
+    // got that verdict (measured 2026-09-04). It now says which suite was asked
+    // and stops at what was proven; the launcher is named only where the
+    // launchpad's own row says `platform: "sushi"`.
+    expect(result.reason).toContain("not registered with any pools.fun suite Vex knows");
+    expect(result.reason).toContain("V1");
+    expect(result.reason).not.toContain("sushi");
   });
 
   it("refuses when the locker call did not answer at all - silence is not a denial", async () => {
@@ -98,7 +105,7 @@ describe("three outcomes, never two", () => {
       client({ poolInfo: { status: "failure" } }),
       TOKEN,
       WALLET,
-      LOCKER,
+      SUITE,
     );
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -106,7 +113,7 @@ describe("three outcomes, never two", () => {
   });
 
   it("refuses when the paired asset will not report its decimals", async () => {
-    const result = await readPoolsClaimContext(client({ pairedDecimals: null }), TOKEN, WALLET, LOCKER);
+    const result = await readPoolsClaimContext(client({ pairedDecimals: null }), TOKEN, WALLET, SUITE);
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.reason).toContain("does not guess a scale");
@@ -117,7 +124,7 @@ describe("three outcomes, never two", () => {
       client({ claimablePaired: { status: "failure" } }),
       TOKEN,
       WALLET,
-      LOCKER,
+      SUITE,
     );
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -135,7 +142,7 @@ describe("the simulation is what answers 'what would I receive'", () => {
       account: WALLET,
       token: TOKEN,
       blockNumber: BLOCK,
-      lockerAddress: LOCKER,
+      suite: SUITE,
     });
     expect(result).toEqual({ kind: "would_pay", tokenAmountRaw: 0n, pairedAmountRaw: 599_999_999_999n });
   });
@@ -162,7 +169,7 @@ describe("the simulation is what answers 'what would I receive'", () => {
         account: WALLET,
         token: TOKEN,
         blockNumber: BLOCK,
-        lockerAddress: LOCKER,
+        suite: SUITE,
       });
       expect(result).toEqual({ kind: "nothing_to_claim", revert: errorName });
     },
@@ -178,7 +185,7 @@ describe("the simulation is what answers 'what would I receive'", () => {
       account: WALLET,
       token: TOKEN,
       blockNumber: BLOCK,
-      lockerAddress: LOCKER,
+      suite: SUITE,
     });
     expect(result.kind).toBe("unavailable");
     if (result.kind !== "unavailable") return;
@@ -197,7 +204,7 @@ describe("the simulation is what answers 'what would I receive'", () => {
       account: WALLET,
       token: TOKEN,
       blockNumber: BLOCK,
-      lockerAddress: LOCKER,
+      suite: SUITE,
     });
     expect(seen.account).toBe(WALLET);
   });

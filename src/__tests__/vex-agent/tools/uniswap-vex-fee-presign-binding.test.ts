@@ -63,7 +63,8 @@ const createAgentActivityPreBroadcastFailure = vi.fn();
 const waitForSuccessfulReceipt = vi.fn();
 const getHoneypotFotInfo = vi.fn();
 const signStageBroadcast = vi.fn();
-const claimUniswapExecutionSnapshot = vi.fn();
+const readUniswapExecutionSnapshot = vi.fn();
+const commitPrequoteClaim = vi.fn();
 
 vi.mock("@tools/uniswap/chains.js", () => ({
   resolveUniswapDeployment: vi.fn(() => ({
@@ -140,8 +141,9 @@ vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
   walletScopeErrorToResult: vi.fn((err: unknown) => ({ success: false, output: String(err) })),
 }));
 vi.mock("@vex-agent/tools/protocols/prequote/claim.js", () => ({
-  claimSwapExecutionSnapshot: vi.fn(),
-  claimUniswapExecutionSnapshot: (...a: unknown[]) => claimUniswapExecutionSnapshot(...a),
+  commitPrequoteClaim: (...a: unknown[]) => commitPrequoteClaim(...a),
+  readSwapExecutionSnapshot: vi.fn(),
+  readUniswapExecutionSnapshot: (...a: unknown[]) => readUniswapExecutionSnapshot(...a),
 }));
 vi.mock("@utils/logger.js", () => {
   const stub = { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() };
@@ -183,6 +185,19 @@ function oracleSaysFeeOnTransfer(): void {
 }
 
 /**
+ * The ticket the read hands to the claim. Its contents are the repository's
+ * business; what this file asserts is WHETHER the claim is reached at all.
+ */
+const CLAIM_TICKET = {
+  sessionId: "session-1",
+  prequoteId: "prequote-fee",
+  matchHash: "h".repeat(64),
+  kind: "swap" as const,
+  expectedDisclosure: {},
+  freshQuoteTool: "uniswap__swap_quote",
+};
+
+/**
  * Build a snapshot and a fee block under the eligibility the callback installs,
  * then restore the oracle the execute itself will read.
  *
@@ -200,7 +215,7 @@ async function claimedRow(input: {
   input.blockUnder();
   const vexFee = await approvedUniswapVexFee(SNAPSHOT_INPUT);
   input.executeUnder();
-  return { ok: true as const, prequoteId: "prequote-fee", snapshot, vexFee };
+  return { ok: true as const, prequoteId: "prequote-fee", snapshot, vexFee, claim: CLAIM_TICKET };
 }
 
 function run() {
@@ -220,6 +235,7 @@ function expectNothingSigned(): void {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  commitPrequoteClaim.mockResolvedValue({ ok: true });
   oracleSaysClean();
   // A router allowance already in place, so the plan is swap plus fee leg and no
   // allowance leg is needed. The allowance case is covered by its own suite; the
@@ -256,7 +272,7 @@ describe("the fee statement the card made is re-checked before signing", () => {
     // token fee-on-transfer, so this execute would swap the FULL amount and take
     // nothing. The snapshot agrees with the execute, so the trade-level binding
     // passes; the card-level one does not.
-    claimUniswapExecutionSnapshot.mockResolvedValue(
+    readUniswapExecutionSnapshot.mockResolvedValue(
       await claimedRow({
         snapshotUnder: oracleSaysFeeOnTransfer,
         blockUnder: oracleSaysClean,
@@ -284,8 +300,8 @@ describe("the fee statement the card made is re-checked before signing", () => {
       receiver: "0x9999999999999999999999999999999999999999",
     });
     if (redirected === undefined) throw new Error("the redirected block must still project");
-    claimUniswapExecutionSnapshot.mockResolvedValue({
-      ok: true, prequoteId: "prequote-fee", snapshot, vexFee: redirected,
+    readUniswapExecutionSnapshot.mockResolvedValue({
+      ok: true, prequoteId: "prequote-fee", snapshot, vexFee: redirected, claim: CLAIM_TICKET,
     });
 
     const result = await run();
@@ -301,11 +317,12 @@ describe("the fee statement the card made is re-checked before signing", () => {
   it("fails closed when the claimed row carries no fee statement at all", async () => {
     // The gate refuses a fee-bearing execute in this state, so reaching the
     // executor means the gate was bypassed. It signs nothing either way.
-    claimUniswapExecutionSnapshot.mockResolvedValue({
+    readUniswapExecutionSnapshot.mockResolvedValue({
       ok: true,
       prequoteId: "prequote-fee",
       snapshot: await approvedUniswapSnapshot(SNAPSHOT_INPUT),
       vexFee: undefined,
+      claim: CLAIM_TICKET,
     });
 
     const result = await run();
@@ -316,7 +333,7 @@ describe("the fee statement the card made is re-checked before signing", () => {
   });
 
   it("executes when the statement still holds - the check is not a blanket refusal", async () => {
-    claimUniswapExecutionSnapshot.mockResolvedValue(
+    readUniswapExecutionSnapshot.mockResolvedValue(
       await claimedRow({
         snapshotUnder: oracleSaysClean,
         blockUnder: oracleSaysClean,
@@ -334,7 +351,7 @@ describe("the fee statement the card made is re-checked before signing", () => {
   it("executes a genuinely fee-free trade when the card said the fee was declined", async () => {
     // The mirror of the first case, and the reason `charged` is compared in both
     // directions: a quote that honestly disclosed no fee must still execute.
-    claimUniswapExecutionSnapshot.mockResolvedValue(
+    readUniswapExecutionSnapshot.mockResolvedValue(
       await claimedRow({
         snapshotUnder: oracleSaysFeeOnTransfer,
         blockUnder: oracleSaysFeeOnTransfer,
@@ -346,5 +363,190 @@ describe("the fee statement the card made is re-checked before signing", () => {
 
     expect(result.success, `handler output: ${result.output}`).toBe(true);
     expect(signStageBroadcast).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * a divergence must not burn the approved quote.
+ *
+ * Before the fix the handler claimed the row before it had re-derived anything,
+ * so a refusal here spent the quote on the way out and the retry the refusal
+ * instructed the agent to make got `already_claimed`. The claim is now a
+ * separate, later call, and these cases prove it is never reached on a
+ * divergence - which is what makes "request a fresh quote" a real remedy.
+ */
+describe("a refused execute leaves the approved quote unconsumed", () => {
+  it("does not claim the row when the card's fee statement no longer holds", async () => {
+    readUniswapExecutionSnapshot.mockResolvedValue(
+      await claimedRow({
+        snapshotUnder: oracleSaysFeeOnTransfer,
+        blockUnder: oracleSaysClean,
+        executeUnder: oracleSaysFeeOnTransfer,
+      }),
+    );
+
+    const result = await run();
+
+    expect(result.success).toBe(false);
+    expectNothingSigned();
+    expect(commitPrequoteClaim).not.toHaveBeenCalled();
+  });
+
+  it("does not claim the row when the approved quote carries no fee statement", async () => {
+    readUniswapExecutionSnapshot.mockResolvedValue({
+      ok: true,
+      prequoteId: "prequote-fee",
+      snapshot: await approvedUniswapSnapshot(SNAPSHOT_INPUT),
+      vexFee: undefined,
+      claim: CLAIM_TICKET,
+    });
+
+    await run();
+
+    expect(commitPrequoteClaim).not.toHaveBeenCalled();
+  });
+
+  it("claims the row that was read, once, when every comparison passes", async () => {
+    readUniswapExecutionSnapshot.mockResolvedValue(
+      await claimedRow({
+        snapshotUnder: oracleSaysClean,
+        blockUnder: oracleSaysClean,
+        executeUnder: oracleSaysClean,
+      }),
+    );
+
+    const result = await run();
+
+    expect(result.success, `handler output: ${result.output}`).toBe(true);
+    expect(commitPrequoteClaim).toHaveBeenCalledTimes(1);
+    const [ticket, claimedBy] = commitPrequoteClaim.mock.calls[0] as [typeof CLAIM_TICKET, string];
+    expect(ticket).toBe(CLAIM_TICKET);
+    expect(claimedBy).toContain("uniswap.swap.execute");
+  });
+
+  it("refuses without signing when a concurrent execute won the same row", async () => {
+    // The one state where "already claimed" is the truth: the comparison passed
+    // and another execute took the row first. The signing wallet is resolved
+    // only after this point, so nothing is signed either.
+    readUniswapExecutionSnapshot.mockResolvedValue(
+      await claimedRow({
+        snapshotUnder: oracleSaysClean,
+        blockUnder: oracleSaysClean,
+        executeUnder: oracleSaysClean,
+      }),
+    );
+    commitPrequoteClaim.mockResolvedValue({
+      ok: false,
+      refusal: { kind: "already_claimed", message: "Refused before signing: this quote has already been claimed." },
+    });
+
+    const result = await run();
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("already been claimed");
+    expectNothingSigned();
+  });
+});
+
+/**
+ * The typed reason must reach the RESULT, not only the log line: an agent that
+ * reads "uniswap.swap.execute failed" cannot tell a moved fee statement from any
+ * other swap failure, and the two have different remedies.
+ */
+describe("the typed refusal reason reaches the tool result", () => {
+  function refusalOf(result: { readonly data?: Record<string, unknown> }): Record<string, unknown> {
+    const block = result.data?._vexFeeRefusal;
+    if (block === undefined || block === null || typeof block !== "object") {
+      throw new Error("expected the result to carry a typed _vexFeeRefusal block");
+    }
+    return block as Record<string, unknown>;
+  }
+
+  it("carries `vex_fee_statement_changed` and the fields that moved", async () => {
+    readUniswapExecutionSnapshot.mockResolvedValue(
+      await claimedRow({
+        snapshotUnder: oracleSaysFeeOnTransfer,
+        blockUnder: oracleSaysClean,
+        executeUnder: oracleSaysFeeOnTransfer,
+      }),
+    );
+
+    const refusal = refusalOf(await run());
+
+    expect(refusal.reason).toBe("vex_fee_statement_changed");
+    expect(refusal.movedFields).toContain("charged");
+    expect(String(refusal.remediation)).toContain("uniswap__swap_quote");
+  });
+
+  it("carries `vex_fee_statement_missing` when the approved quote states no fee", async () => {
+    readUniswapExecutionSnapshot.mockResolvedValue({
+      ok: true,
+      prequoteId: "prequote-fee",
+      snapshot: await approvedUniswapSnapshot(SNAPSHOT_INPUT),
+      vexFee: undefined,
+      claim: CLAIM_TICKET,
+    });
+
+    expect(refusalOf(await run()).reason).toBe("vex_fee_statement_missing");
+  });
+
+  it("never leaks an address into the typed block", async () => {
+    const snapshot = await approvedUniswapSnapshot(SNAPSHOT_INPUT);
+    const honest = await approvedUniswapVexFee(SNAPSHOT_INPUT);
+    const redirected = toVexFeePreview("uniswap.swap.quote", {
+      ...honest,
+      swappedAmountRaw: honest.netAmountRaw,
+      receiver: "0x9999999999999999999999999999999999999999",
+    });
+    if (redirected === undefined) throw new Error("the redirected block must still project");
+    readUniswapExecutionSnapshot.mockResolvedValue({
+      ok: true, prequoteId: "prequote-fee", snapshot, vexFee: redirected, claim: CLAIM_TICKET,
+    });
+
+    expect(JSON.stringify(refusalOf(await run()))).not.toMatch(/0x[0-9a-fA-F]{40}/);
+  });
+});
+
+/**
+ * PIN, DO NOT RE-DERIVE (fixed decision 2026-09-04, recorded beside
+ * `vexFeePreviewSchema`).
+ *
+ * The Vex fee transfer is the LAST leg: it is signed after the swap has already
+ * confirmed. The approved statement is its authority there, so a token the
+ * oracle flags in that window changes nothing about what is signed, and nothing
+ * on the path can raise the fee above the statement.
+ */
+describe("the fee leg signs exactly the approved statement", () => {
+  it("signs the approved amount and receiver even when eligibility flips after the swap confirms", async () => {
+    readUniswapExecutionSnapshot.mockResolvedValue(
+      await claimedRow({
+        snapshotUnder: oracleSaysClean,
+        blockUnder: oracleSaysClean,
+        executeUnder: oracleSaysClean,
+      }),
+    );
+    // The statement the card made, captured before the oracle turns.
+    oracleSaysClean();
+    const approved = await approvedUniswapVexFee(SNAPSHOT_INPUT);
+    if (!approved.charged) throw new Error("this arrangement must state a charged fee");
+    // The oracle turns hostile the moment the swap leg confirms - the exact
+    // window a late re-derivation would read.
+    signUniswapTransaction.mockImplementation(async () => {
+      oracleSaysFeeOnTransfer();
+      return { serializedTransaction: "0xsigned", txHash: "0xswap", fromAddress: WALLET, nonce: 1 };
+    });
+
+    const result = await run();
+    expect(result.success, `handler output: ${result.output}`).toBe(true);
+
+    // The fee leg is signed through the staged broadcaster, exactly once.
+    expect(signStageBroadcast).toHaveBeenCalledTimes(1);
+    const feeCall = signStageBroadcast.mock.calls[0];
+    if (feeCall === undefined) throw new Error("the fee leg must have been signed");
+    const request = feeCall[2] as { readonly to: string; readonly data: string };
+    const feeHex = BigInt(approved.feeAmountRaw).toString(16).padStart(64, "0");
+    expect(request.data.toLowerCase().endsWith(feeHex)).toBe(true);
+    expect(request.data.toLowerCase()).toContain(UNISWAP_FEE_RECEIVER_EVM.slice(2).toLowerCase());
+    expect(request.to.toLowerCase()).toBe(TOKEN_IN.toLowerCase());
   });
 });

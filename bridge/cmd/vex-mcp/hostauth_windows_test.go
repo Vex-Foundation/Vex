@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -168,7 +169,7 @@ func TestDialPipeAcceptsThisUsersPipeServer(t *testing.T) {
 	name := testPipeName(t)
 	server := newTestPipeServer(t, name)
 
-	conn, err := dialPipe(name)
+	conn, err := dialPipe(context.Background(), name)
 	if err != nil {
 		t.Fatalf("dialing this process's own pipe server was refused: %v", err)
 	}
@@ -203,7 +204,7 @@ func TestResolveServerUserSIDIdentifiesThisProcess(t *testing.T) {
 		return pid, sid, err
 	}
 
-	conn, err := dialPipeWith(name, recording, resolveCurrentUserSID)
+	conn, err := dialPipeWith(context.Background(), name, recording, resolveCurrentUserSID)
 	if err != nil {
 		t.Fatalf("dialing this process's own pipe server was refused: %v", err)
 	}
@@ -232,7 +233,7 @@ func TestDialPipeRefusesAForeignUsersPipeServer(t *testing.T) {
 	server := newTestPipeServer(t, name)
 
 	const foreign = "S-1-5-21-1111111111-2222222222-3333333333-1001"
-	conn, err := dialPipeWith(name,
+	conn, err := dialPipeWith(context.Background(), name,
 		func(syscall.Handle) (uint32, string, error) { return 4242, foreign, nil },
 		func() (string, error) { return "S-1-5-21-9-9-9-500", nil })
 	refusal := mustRefuse(t, conn, err)
@@ -283,7 +284,7 @@ func TestDialPipeRefusesWhenIdentityCannotBeEstablished(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			name := testPipeName(t)
 			server := newTestPipeServer(t, name)
-			conn, err := dialPipeWith(name, testCase.server, testCase.current)
+			conn, err := dialPipeWith(context.Background(), name, testCase.server, testCase.current)
 			mustRefuse(t, conn, err)
 			assertNothingWasWritten(t, server)
 		})

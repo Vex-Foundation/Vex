@@ -5,10 +5,26 @@
  * a prequote on success and how; the execute-gate registry (`EXECUTE_GATE_TOOLS`)
  * names which execute tools are subject to the quote-before-transaction gate and
  * which prequote `kind` each must match. `PREQUOTE_MAX_AGE_MS` is the shared
- * freshness window. Pure data + types - no IO.
+ * freshness window. `PREQUOTE_QUOTE_WRITES` is composed from the recorders' own
+ * gate-target metadata (`record/gate-targets.ts`), so the published answer to
+ * "which quote authorizes this execute" reads the same table the recorder
+ * writes its row from. Pure data + pure functions - no IO.
  */
 
 import type { PrequoteFamily } from "@vex-agent/db/repos/swap-prequotes.js";
+
+import { MORPHO_MARKET_LANE, MORPHO_VAULT_LANE, type MorphoLendLane } from "./identity/lane.js";
+import {
+  BRIDGE_QUOTE_GATE_TARGET,
+  MORPHO_LEND_QUOTE_GATE_TARGETS,
+  MORPHO_MARKET_QUOTE_GATE_TARGETS,
+  PENDLE_LP_QUOTE_GATE_TARGETS,
+  PENDLE_PT_QUOTE_ACTIONS,
+  PENDLE_PT_QUOTE_GATE_TARGETS,
+  PENDLE_PY_QUOTE_GATE_TARGETS,
+  SWAP_QUOTE_GATE_TARGET,
+  type PendlePtQuoteAction,
+} from "./record/gate-targets.js";
 
 // ── Quote-tool registry ──────────────────────────────────────────────────
 
@@ -30,7 +46,19 @@ type PrequoteQuoteRegistration =
   // sell) OR a `redeem` prequote - decided at record-time from the Convert
   // `action` (Wave 5). The recorder dispatches on this `pendle` label, then
   // writes the appropriate DB kind. `family` is always eip155 (Ethereum v1).
-  | { readonly kind: "pendle"; readonly family: PrequoteFamily; readonly provider: string }
+  | {
+    readonly kind: "pendle";
+    readonly family: PrequoteFamily;
+    readonly provider: string;
+    /**
+     * The Convert actions THIS tool's handler can produce, when it produces
+     * fewer than the recorder can write. `pendle.yt.quote` fixes
+     * `action: "swap"` (`pendle/handlers/yt/quote.ts`), so a YT quote can never
+     * record - and must never be published as authorizing - a PT redeem.
+     * Omitted means every action the recorder declares.
+     */
+    readonly actions?: readonly PendlePtQuoteAction[];
+  }
   // Pendle's PY quote records EITHER a `mint` prequote (direction "mint") OR a
   // `redeem_py` prequote (direction "redeem"), decided from the echoed
   // `direction` (P4). Each writes its dedicated DB kind + identity.
@@ -68,7 +96,7 @@ export const PREQUOTE_QUOTE_TOOLS: Record<string, PrequoteQuoteRegistration> = {
   "pendle.pt.quote": { kind: "pendle", family: "eip155", provider: "pendle" },
   // YT is ALWAYS a swap (never redeem-py); the pendle recorder records it via the
   // swap identity, so a YT quote authorizes only the matching YT buy/sell execute.
-  "pendle.yt.quote": { kind: "pendle", family: "eip155", provider: "pendle" },
+  "pendle.yt.quote": { kind: "pendle", family: "eip155", provider: "pendle", actions: ["swap"] },
   // PY quote records a `mint` or `redeem_py` prequote (P4) - decided from the
   // echoed `direction`.
   "pendle.py.quote": { kind: "pendle-py", family: "eip155", provider: "pendle" },
@@ -131,15 +159,18 @@ export type ExecuteGateRegistration =
   // history. That makes the kind alone insufficient to build an identity, so
   // every registration under these two kinds MUST name its `lane`, and the same
   // discriminator travels on the match input into `computePrequoteMatchHash`.
+  // The two VALUES come from `identity/lane.ts`, the one owner every side reads
+  // (the identity builders, the recorders' gate targets, and this table), so a
+  // lane cannot move on one side and stand still on the others.
   | {
     readonly kind: "lend_deposit";
-    readonly lane: "vault" | "market";
+    readonly lane: MorphoLendLane;
     readonly family: PrequoteFamily;
     readonly provider: string;
   }
   | {
     readonly kind: "lend_withdraw";
-    readonly lane: "vault" | "market";
+    readonly lane: MorphoLendLane;
     readonly family: PrequoteFamily;
     readonly provider: string;
   }
@@ -191,8 +222,8 @@ export const EXECUTE_GATE_TOOLS: Record<string, ExecuteGateRegistration> = {
   "pendle.lp.remove": { kind: "lp_remove", family: "eip155", provider: "pendle" },
   // Morpho vault deposit / withdraw match their dedicated `lend_deposit` /
   // `lend_withdraw` prequotes from `morpho.vault.quote` (E3b-2).
-  "morpho.vault.deposit": { kind: "lend_deposit", lane: "vault", family: "eip155", provider: "morpho" },
-  "morpho.vault.withdraw": { kind: "lend_withdraw", lane: "vault", family: "eip155", provider: "morpho" },
+  "morpho.vault.deposit": { kind: "lend_deposit", lane: MORPHO_VAULT_LANE, family: "eip155", provider: "morpho" },
+  "morpho.vault.withdraw": { kind: "lend_withdraw", lane: MORPHO_VAULT_LANE, family: "eip155", provider: "morpho" },
   // Morpho Blue market operations match their dedicated borrow-lane prequotes
   // from `morpho.market.quote` (E3c). ONE kind each, and the mapping is the
   // whole safety property: the gate reads its row under the kind as a predicate,
@@ -211,8 +242,8 @@ export const EXECUTE_GATE_TOOLS: Record<string, ExecuteGateRegistration> = {
   // cannot authorize a market supply and the reverse is equally impossible: the
   // gate builds a market identity here, whose material is a different length
   // over a different anchor, so the digests cannot meet.
-  "morpho.market.supply": { kind: "lend_deposit", lane: "market", family: "eip155", provider: "morpho" },
-  "morpho.market.withdraw": { kind: "lend_withdraw", lane: "market", family: "eip155", provider: "morpho" },
+  "morpho.market.supply": { kind: "lend_deposit", lane: MORPHO_MARKET_LANE, family: "eip155", provider: "morpho" },
+  "morpho.market.withdraw": { kind: "lend_withdraw", lane: MORPHO_MARKET_LANE, family: "eip155", provider: "morpho" },
 };
 
 // ── Recorder -> gate-row mapping (derived, read-only) ─────────────────────
@@ -227,12 +258,20 @@ export const EXECUTE_GATE_TOOLS: Record<string, ExecuteGateRegistration> = {
  */
 export interface PrequoteGateTarget {
   readonly kind: ExecuteGateRegistration["kind"];
-  readonly lane?: "vault" | "market";
+  readonly lane?: MorphoLendLane;
 }
 
 /**
  * WHICH GATE ROWS EACH QUOTE TOOL ACTUALLY WRITES, keyed by the same quote
  * toolId as {@link PREQUOTE_QUOTE_TOOLS}.
+ *
+ * COMPOSED FROM THE RECORDERS, NOT RESTATED BESIDE THEM. Every row comes from
+ * `record/gate-targets.ts`, the same metadata the recorder itself reads when it
+ * builds the row it persists, so this projection cannot fall out of step with
+ * what actually gets written. It used to be a second literal table here and a
+ * third in the test, which meant a recorder could change the row it writes and
+ * leave both copies green - publishing an authorization the gate refuses, on a
+ * call that moves money.
  *
  * READ-ONLY DERIVATION, NOT A SECOND GATE. The gate itself keeps reading
  * `EXECUTE_GATE_TOOLS` + the match hash; nothing here can admit a prequote the
@@ -244,56 +283,41 @@ export interface PrequoteGateTarget {
  * Provider is necessary and never sufficient - the gate reads its row under
  * `kind` (and `lane`) as a predicate.
  *
- * EVERY ROW IS TAKEN FROM THE RECORDER THAT WRITES IT, never from convention:
- *
- * - `swap` (`record/swap.ts:165,185`) for the four venue swap quotes.
- * - `bridge` (`record/bridge.ts:72`) for both bridge quotes.
- * - `pendle.pt.quote` writes `redeem` (`record/pendle-pt.ts:71`) or `swap`
- *   (`record/pendle-pt.ts:94,111`), decided from the Convert `action`.
- * - `pendle.yt.quote` shares that recorder but its handler FIXES
- *   `action: "swap"` (`pendle/handlers/yt/quote.ts:88`), so the redeem branch
- *   is unreachable for it and a YT quote can never authorize a PT redeem.
- * - `pendle.py.quote` writes `mint` (`record/pendle-py.ts:55`) or `redeem_py`
- *   (`record/pendle-py.ts:90`).
- * - `pendle.lp.quote` writes `lp_add` (`record/pendle-lp.ts:55`) or
- *   `lp_remove` (`record/pendle-lp.ts:90`).
- * - `morpho.vault.quote` writes `lend_deposit` or `lend_withdraw`
- *   (`record/morpho-lend.ts:62`) on the VAULT lane
- *   (`identity/hash/morpho-lend.ts:61,87`).
- * - `morpho.market.quote` writes one of the six borrow-lane kinds
- *   (`record/morpho-borrow.ts:71` through
- *   `identity/morpho-borrow.ts:61-72 KIND_FOR_DIRECTION`), and its `supply` /
- *   `withdraw` directions reuse the two lend kinds on the MARKET lane
- *   (`identity/morpho-borrow.ts:199,213`).
+ * The ONE per-tool narrowing lives on the registration rather than in the
+ * recorder, because it is not the recorder's fact: `pendle.yt.quote` shares the
+ * PT recorder, and it is its HANDLER that fixes `action: "swap"`.
  */
-export const PREQUOTE_QUOTE_WRITES: Readonly<Record<string, readonly PrequoteGateTarget[]>> = {
-  "kyberswap.swap.quote": [{ kind: "swap" }],
-  "uniswap.swap.quote": [{ kind: "swap" }],
-  "trench.trade_quote": [{ kind: "swap" }],
-  "solana.swap.quote": [{ kind: "swap" }],
-  "virtuals.trade.quote": [{ kind: "swap" }],
-  "khalani.quote.get": [{ kind: "bridge" }],
-  "relay.quote.get": [{ kind: "bridge" }],
-  "pendle.pt.quote": [{ kind: "swap" }, { kind: "redeem" }],
-  "pendle.yt.quote": [{ kind: "swap" }],
-  "pendle.py.quote": [{ kind: "mint" }, { kind: "redeem_py" }],
-  "pendle.lp.quote": [{ kind: "lp_add" }, { kind: "lp_remove" }],
-  "morpho.vault.quote": [
-    { kind: "lend_deposit", lane: "vault" },
-    { kind: "lend_withdraw", lane: "vault" },
-  ],
-  "morpho.market.quote": [
-    { kind: "lend_supply_collateral" },
-    { kind: "lend_withdraw_collateral" },
-    { kind: "lend_borrow" },
-    { kind: "lend_repay" },
-    { kind: "lend_deposit", lane: "market" },
-    { kind: "lend_withdraw", lane: "market" },
-  ],
-};
+function gateRowsWrittenBy(registration: PrequoteQuoteRegistration): readonly PrequoteGateTarget[] {
+  switch (registration.kind) {
+    case "swap":
+      return [SWAP_QUOTE_GATE_TARGET];
+    case "bridge":
+      return [BRIDGE_QUOTE_GATE_TARGET];
+    case "pendle":
+      return (registration.actions ?? PENDLE_PT_QUOTE_ACTIONS).map(
+        (action) => PENDLE_PT_QUOTE_GATE_TARGETS[action],
+      );
+    case "pendle-py":
+      return Object.values(PENDLE_PY_QUOTE_GATE_TARGETS);
+    case "pendle-lp":
+      return Object.values(PENDLE_LP_QUOTE_GATE_TARGETS);
+    case "morpho-lend":
+      return Object.values(MORPHO_LEND_QUOTE_GATE_TARGETS);
+    case "morpho-borrow":
+      return Object.values(MORPHO_MARKET_QUOTE_GATE_TARGETS);
+  }
+}
+
+/** {@link gateRowsWrittenBy} for every registered quote tool. */
+export const PREQUOTE_QUOTE_WRITES: Readonly<Record<string, readonly PrequoteGateTarget[]>> =
+  Object.fromEntries(
+    Object.entries(PREQUOTE_QUOTE_TOOLS).map(
+      ([quoteToolId, registration]) => [quoteToolId, gateRowsWrittenBy(registration)],
+    ),
+  );
 
 /** The lane a gate registration carries, or `undefined` when its kind needs none. */
-export function laneOfGateRegistration(gate: ExecuteGateRegistration): "vault" | "market" | undefined {
+export function laneOfGateRegistration(gate: ExecuteGateRegistration): MorphoLendLane | undefined {
   return "lane" in gate ? gate.lane : undefined;
 }
 

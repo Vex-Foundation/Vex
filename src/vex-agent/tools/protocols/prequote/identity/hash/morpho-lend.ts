@@ -28,6 +28,7 @@
  */
 
 import { canonAddress, canonAmount } from "./canonicalize.js";
+import { MORPHO_VAULT_LANE } from "../lane.js";
 
 /**
  * Morpho vault DEPOSIT identity. Material (FIXED order): ["lend_deposit",
@@ -57,8 +58,11 @@ export interface LendDepositMatchInput {
    * digest already recorded here, and the two materials cannot collide anyway
    * (9 fields with a 40-hex vault in position 5 against 8 with a 64-hex market
    * id). Optional so an omitted value still reads as the vault lane.
+   *
+   * The VALUE has one owner (`identity/lane.ts`), because the same lane is read
+   * by the gate registration and published by ToolDescribe.
    */
-  readonly lane?: "vault";
+  readonly lane?: typeof MORPHO_VAULT_LANE;
 }
 
 /**
@@ -84,7 +88,7 @@ export interface LendWithdrawMatchInput {
   /** Approved price protection (integer bps string), default-normalized. */
   readonly slippageBps: string;
   /** VAULT lane. Not hashed - see `LendDepositMatchInput.lane`. */
-  readonly lane?: "vault";
+  readonly lane?: typeof MORPHO_VAULT_LANE;
 }
 
 /** Fixed-order material for both lend kinds. The `kind` tag leads it. */

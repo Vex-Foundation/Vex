@@ -20,14 +20,19 @@ describe("prompt-stack — protocol doctrine & reveal safety", () => {
   // the advertised `virtuals` namespace, and the volatile `# $VEX (own token)`
   // banner that must stay OUT of the static prefix (KV-cache invariant).
   describe("Virtuals Protocol (Wave 3)", () => {
-    it("protocols prompt advertises the read-only virtuals namespace", () => {
+    it("protocols prompt advertises virtuals as a namespace that now TRADES", () => {
       const prompt = buildProtocolsPrompt();
       expect(prompt).toContain("### virtuals");
       const section = prompt.split("### virtuals")[1]?.split("###")[0] ?? "";
-      // Wave 2 migration rows T449-T451.
-      expect(section).toContain("read-only intelligence");
-      // Read-only namespace: no mutating marker in its section.
-      expect(section).not.toContain("Contains mutating tools");
+      // Wave 2 migration rows T449-T451 asserted "read-only intelligence" and
+      // the ABSENCE of the mutating marker. PR-C2 reverses exactly that: the
+      // namespace still reads, but it also quotes and executes a bonding-curve
+      // trade, so the section MUST carry the mutating marker. An agent that
+      // still read "read-only" here would route every curve buy to an AMM that
+      // has no pool for a token that has not graduated.
+      expect(section).toContain("intelligence");
+      expect(section).toContain("bonding-curve trading venue");
+      expect(section).toContain("Contains mutating tools");
     });
 
     it("carries Virtuals acquisition and anti-sniper judgment in the static task shape", () => {

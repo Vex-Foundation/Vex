@@ -24,12 +24,10 @@ import type { CreatePrequoteInput, PrequoteFamily } from "@vex-agent/db/repos/sw
 
 import { PREQUOTE_MAX_AGE_MS } from "../registry.js";
 import { computePrequoteMatchHash } from "../identity/hash.js";
-import {
-  buildMorphoBorrowIdentityFor,
-  morphoBorrowKindForDirection,
-} from "../identity/morpho-borrow.js";
+import { buildMorphoBorrowIdentityFor } from "../identity/morpho-borrow.js";
 import { extractMorphoMarketQuote } from "../safety/extract/morpho-borrow.js";
 import { writePrequoteRow } from "./row.js";
+import { MORPHO_MARKET_QUOTE_GATE_TARGETS } from "./gate-targets.js";
 import { readParamSlippageBps } from "../slippage.js";
 
 export async function recordMorphoBorrowPrequote(
@@ -68,7 +66,7 @@ export async function recordMorphoBorrowPrequote(
     prequoteId: `prequote-${randomUUID()}`,
     sessionId,
     matchHash: computePrequoteMatchHash(identity),
-    kind: morphoBorrowKindForDirection(extracted.direction),
+    kind: MORPHO_MARKET_QUOTE_GATE_TARGETS[extracted.direction].kind,
     family: registered.family,
     provider: registered.provider,
     chainId: identity.chainId,

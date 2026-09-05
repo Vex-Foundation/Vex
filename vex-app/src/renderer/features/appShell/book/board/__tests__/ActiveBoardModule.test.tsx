@@ -9,9 +9,6 @@
  *    with THAT board visible is the reader having seen it, and a dot for a
  *    different board is left alone.
  *  - THE EMPTY STATE IS DESIGNED. No board yet is a sentence, not a blank.
- *  - A PROJECT RAIL HAS NO BOARD. Under the `project` scope the module says
- *    what a board is and where it is composed, offers the way there, and
- *    reads NOTHING from the store - a board retained there is a session's.
  *  - IT NEVER CALLS A SOCKET "LIVE" BEFORE A TICK LANDS. Holding a lease and
  *    receiving figures are two different facts; `live-connecting` and
  *    `live-degraded` get their own word, their own state attribute and their
@@ -22,13 +19,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import {
-  ACTIVE_BOARD_EMPTY,
-  ActiveBoardModule,
-  PROJECT_BOARD_EMPTY,
-} from "../ActiveBoardModule.js";
+import { ACTIVE_BOARD_EMPTY, ActiveBoardModule } from "../ActiveBoardModule.js";
 import { useBoardSurfaceStore } from "../../../Board/board-surface-store.js";
-import { useUiStore } from "../../../../../stores/uiStore.js";
 import { useBoardLiveOverlayStore } from "../../../Board/board-live-overlay.js";
 import type { BoardDataMode } from "../../../../../lib/api/board-live.js";
 import {
@@ -131,13 +123,13 @@ afterEach(() => {
 
 describe("ActiveBoardModule", () => {
   it("says so in words when this session has composed no board", () => {
-    render(<ActiveBoardModule scopeKind="session" />, { wrapper });
+    render(<ActiveBoardModule />, { wrapper });
     expect(screen.getByText(ACTIVE_BOARD_EMPTY)).toBeTruthy();
   });
 
   it("shows the model's own title, the UTC clock and the snapshot state", () => {
     useBoardSurfaceStore.setState({ latestBoard: fourPoolBoard() });
-    render(<ActiveBoardModule scopeKind="session" />, { wrapper });
+    render(<ActiveBoardModule />, { wrapper });
     expect(
       document.querySelector('[data-vex-area="active-board-title"]')?.textContent,
     ).toBe("Token Radar");
@@ -156,7 +148,7 @@ describe("ActiveBoardModule", () => {
 
   it("draws the top three tokens as keyboard-operable rows and counts the rest", () => {
     useBoardSurfaceStore.setState({ latestBoard: fourPoolBoard() });
-    render(<ActiveBoardModule scopeKind="session" />, { wrapper });
+    render(<ActiveBoardModule />, { wrapper });
     const rows = document.querySelectorAll('[data-vex-area="active-board-row"]');
     expect(rows).toHaveLength(3);
     for (const row of rows) {
@@ -173,7 +165,7 @@ describe("ActiveBoardModule", () => {
     const pinned = fourPoolBoard(11, "Pinned radar");
     const latest = fourPoolBoard(12, "Newer radar");
     useBoardSurfaceStore.setState({ pinnedBoard: pinned, latestBoard: latest });
-    render(<ActiveBoardModule scopeKind="session" />, { wrapper });
+    render(<ActiveBoardModule />, { wrapper });
     expect(
       document.querySelector('[data-vex-area="active-board-title"]')?.textContent,
     ).toBe("Pinned radar");
@@ -181,14 +173,14 @@ describe("ActiveBoardModule", () => {
 
   it("never opens the modal by itself", () => {
     useBoardSurfaceStore.setState({ latestBoard: fourPoolBoard() });
-    render(<ActiveBoardModule scopeKind="session" />, { wrapper });
+    render(<ActiveBoardModule />, { wrapper });
     expect(useBoardSurfaceStore.getState().modalBoard).toBeNull();
   });
 
   it("opens the board on Open board, and the Ask panel with it on Ask VEX", () => {
     const ref = fourPoolBoard();
     useBoardSurfaceStore.setState({ latestBoard: ref });
-    render(<ActiveBoardModule scopeKind="session" />, { wrapper });
+    render(<ActiveBoardModule />, { wrapper });
 
     fireEvent.click(screen.getByRole("button", { name: "Open board" }));
     expect(useBoardSurfaceStore.getState().modalBoard?.messageId).toBe(12);
@@ -200,7 +192,7 @@ describe("ActiveBoardModule", () => {
 
   it("opens a row's token straight into the spotlight", () => {
     useBoardSurfaceStore.setState({ latestBoard: fourPoolBoard() });
-    render(<ActiveBoardModule scopeKind="session" />, { wrapper });
+    render(<ActiveBoardModule />, { wrapper });
     const rows = document.querySelectorAll('[data-vex-area="active-board-row"]');
     fireEvent.click(rows[1] as HTMLElement);
     const state = useBoardSurfaceStore.getState();
@@ -218,14 +210,14 @@ describe("ActiveBoardModule", () => {
       view: "grid",
       selectedPoolIndex: 2,
     });
-    const view = render(<ActiveBoardModule scopeKind="session" />, { wrapper });
+    const view = render(<ActiveBoardModule />, { wrapper });
     expect(
       document.querySelector('[data-vex-area="active-board-spotlight"]'),
     ).toBeNull();
 
-    view.rerender(<ActiveBoardModule scopeKind="session" />);
+    view.rerender(<ActiveBoardModule />);
     useBoardSurfaceStore.setState({ view: "spotlight" });
-    view.rerender(<ActiveBoardModule scopeKind="session" />);
+    view.rerender(<ActiveBoardModule />);
     const spotlight = document.querySelector(
       '[data-vex-area="active-board-spotlight"]',
     );
@@ -239,14 +231,14 @@ describe("ActiveBoardModule", () => {
       latestBoard: shown,
       unseenBoardKey: boardKeyOf(other),
     });
-    const view = render(<ActiveBoardModule scopeKind="session" />, { wrapper });
+    const view = render(<ActiveBoardModule />, { wrapper });
     // A dot for a board this module is NOT showing survives.
     expect(useBoardSurfaceStore.getState().unseenBoardKey).toBe(
       boardKeyOf(other),
     );
 
     useBoardSurfaceStore.setState({ unseenBoardKey: boardKeyOf(shown) });
-    view.rerender(<ActiveBoardModule scopeKind="session" />);
+    view.rerender(<ActiveBoardModule />);
     expect(useBoardSurfaceStore.getState().unseenBoardKey).toBeNull();
   });
 });
@@ -265,7 +257,7 @@ describe("the rail's live state is the socket's, one word per fact", () => {
       const board = fourPoolBoard();
       useBoardSurfaceStore.setState({ latestBoard: board });
       if (mode !== null) publishMode(board, mode);
-      render(<ActiveBoardModule scopeKind="session" />, { wrapper });
+      render(<ActiveBoardModule />, { wrapper });
       const chip = document.querySelector('[data-vex-area="active-board-mode"]');
       expect(chip?.getAttribute("data-mode")).toBe(state);
       expect(chip?.textContent).toBe(label);
@@ -289,7 +281,7 @@ describe("the rail's live state is the socket's, one word per fact", () => {
       const board = fourPoolBoard();
       useBoardSurfaceStore.setState({ latestBoard: board });
       publishMode(board, mode);
-      render(<ActiveBoardModule scopeKind="session" />, { wrapper });
+      render(<ActiveBoardModule />, { wrapper });
       const chip = document.querySelector('[data-vex-area="active-board-mode"]');
       expect(chip?.textContent).not.toBe("LIVE");
       expect(chip?.getAttribute("data-mode")).not.toBe("live");
@@ -308,36 +300,9 @@ describe("the rail's live state is the socket's, one word per fact", () => {
     const board = fourPoolBoard();
     useBoardSurfaceStore.setState({ latestBoard: board });
     publishMode(board, "live-connecting");
-    render(<ActiveBoardModule scopeKind="session" />, { wrapper });
+    render(<ActiveBoardModule />, { wrapper });
     const section = document.querySelector('[data-vex-area="active-board"]');
     expect(section?.getAttribute("data-live")).toBe("true");
     expect(section?.getAttribute("data-live-state")).toBe("connecting");
-  });
-});
-
-describe("ActiveBoardModule on a PROJECT rail (Studio parity decree)", () => {
-  it("says what a board is and where it is composed, in words", () => {
-    render(<ActiveBoardModule scopeKind="project" />, { wrapper });
-    const section = document.querySelector('[data-vex-area="active-board"]');
-    expect(section?.getAttribute("data-state")).toBe("empty");
-    expect(section?.getAttribute("data-scope")).toBe("project");
-    expect(screen.getByText(PROJECT_BOARD_EMPTY)).toBeTruthy();
-    expect(screen.queryByText(ACTIVE_BOARD_EMPTY)).toBeNull();
-  });
-
-  it("never shows a session's retained board under a project's name", () => {
-    // The store still holds the last session's board across a mode switch.
-    useBoardSurfaceStore.setState({ latestBoard: fourPoolBoard() });
-    render(<ActiveBoardModule scopeKind="project" />, { wrapper });
-    expect(document.querySelector('[data-vex-area="active-board-title"]')).toBeNull();
-    expect(screen.getByText(PROJECT_BOARD_EMPTY)).toBeTruthy();
-  });
-
-  it("its one action switches the shell to Agent mode and opens nothing else", () => {
-    useUiStore.setState({ runtimeMode: "studio" });
-    render(<ActiveBoardModule scopeKind="project" />, { wrapper });
-    fireEvent.click(screen.getByRole("button", { name: "Switch to Agent" }));
-    expect(useUiStore.getState().runtimeMode).toBe("agent");
-    expect(useBoardSurfaceStore.getState().modalBoard).toBeNull();
   });
 });

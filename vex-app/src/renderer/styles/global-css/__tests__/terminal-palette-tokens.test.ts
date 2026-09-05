@@ -165,19 +165,33 @@ describe("terminal palette tokens", () => {
     expect(declaredIn(celeris)).toEqual(declaredIn(chronos));
   });
 
-  it("keeps the terminal background transparent IN A SYNTAX XTERM PARSES", () => {
+  it.each([
+    ["chronos", chronos],
+    ["celeris", celeris],
+  ])("keeps the background alpha 0 AND carries the pane's surface RGB (%s)", (name, body) => {
     // The pane paints its own surface and the watermark sits UNDER the
     // terminal. An opaque background would hide it, in one theme or both.
     //
     // The keyword `transparent` looks like it says this and does the opposite:
     // xterm's parser rejects it, ThemeService keeps its `#000000` default, and
     // the canvas paints opaque black. Only the 8-digit hex form survives.
-    for (const [name, body] of [["chronos", chronos], ["celeris", celeris]] as const) {
-      expect(body, `${name} background`).toContain("--vex-alias-term-background: #00000000;");
-      expect(body, `${name} must not use the keyword xterm rejects`).not.toContain(
-        "--vex-alias-term-background: transparent;",
-      );
-    }
+    //
+    // AND THE RGB IS NOT FREE. xterm answers a program's OSC 11 query from this
+    // token with the alpha dropped, so `#00000000` told Claude Code, bat, delta
+    // and nvim that a light pane was pure black (measured 2026-09-04: Claude
+    // Code's dark chrome over the light pane at 2.5:1). The RGB is the surface
+    // the glass pane veils with (`--vex-alias-bg-base`: the tint in shell.css
+    // is that ramp step at partial alpha), resolved through the var chain so a
+    // moved surface re-measures the token rather than silently outdating it.
+    const value = declarationValue(body, "--vex-alias-term-background");
+    expect(value, `${name} must not use the keyword xterm rejects`).not.toBe("transparent");
+    const match = /^#([0-9a-f]{6})([0-9a-f]{2})$/.exec(value ?? "");
+    expect(match, `${name} background "${String(value)}" is not an 8-digit hex`).not.toBeNull();
+    if (match === null) return;
+    expect(match[2], `${name} background alpha`).toBe("00");
+    expect(`#${match[1] ?? ""}`, `${name} background RGB`).toBe(
+      resolveHex(body, "--vex-alias-bg-base"),
+    );
   });
 
   it("gives every ANSI slot a concrete colour rather than a brand alias", () => {

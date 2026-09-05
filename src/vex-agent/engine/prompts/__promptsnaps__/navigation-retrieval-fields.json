@@ -914,6 +914,20 @@
             "ohlcv",
             "price history"
           ]
+        },
+        {
+          "label": "Creator fees on an agent",
+          "summary": "Read what an agent's creator has earned from its bonding-curve trading tax at one pinned block: collected, already swapped and paid out, and still pending, plus the split between the protocol treasury, any partner and the creator. Collection is not Vex's to perform - the swap path is gated on a role the creator wallet does not hold - so the claim answers unsupported with that measurement.",
+          "toolPrefixes": [
+            "virtuals.creator_fees"
+          ],
+          "hints": [
+            "virtuals creator fees",
+            "how much have my agent fees earned",
+            "agent tax accrued",
+            "claim my virtuals creator fees",
+            "creator fee split"
+          ]
         }
       ]
     },
@@ -1089,6 +1103,34 @@
             "pools fun launch form",
             "launch my pools fun coin now"
           ]
+        },
+        {
+          "label": "Launch pairing options",
+          "summary": "List the tokenised stocks a launch can be paired against, with the launch factory's own pricing mode and launchable flag read at a pinned block. Most pairs need a backend-signed price that the factory accepts for barely two minutes, so this is what says whether a launch has to be prepared, verified and broadcast inside that window.",
+          "toolPrefixes": [
+            "pools.launch_assets"
+          ],
+          "hints": [
+            "which stocks can I launch against",
+            "tokenised stocks to pair a launch with",
+            "pools fun launch pairs",
+            "which launch pairs need a signed price",
+            "what can a new coin be paired with"
+          ]
+        },
+        {
+          "label": "Fees to holders",
+          "summary": "Read what a fees-to-holders token owes ONE wallet: the distributor the suite's own deployer emitted, the reward mode, and the wallet's earned balance per reward leg at a pinned block, with the launchpad's own figures shown beside them. Earned by HOLDING, not by launching and not by staking; the claim is a separate tool and this one signs nothing.",
+          "toolPrefixes": [
+            "pools.holder_rewards"
+          ],
+          "hints": [
+            "fees to holders",
+            "what have I earned holding this coin",
+            "does this coin pay its holders",
+            "holder rewards distributor",
+            "what the distributor owes my wallet"
+          ]
         }
       ]
     }
@@ -1169,6 +1211,7 @@
     "virtuals.geneses": "7a54634df55374059206cae91d2ac6ee5487e3e63e0ee7290a241a3c210460a3",
     "virtuals.trades": "95398d631a02a0d9b3116cf7a28228b96455ff01a57f969eaa6eac997a42a64e",
     "virtuals.candles": "754389b1f925e55008d1d76131bb107d908eaf1363adbc3eed2af5817d8e9388",
+    "virtuals.creator_fees": "7efc62c33d201b8c7c074c6a9c2e673d374ab62548180fb503b548cac09abad3",
     "pendle.yields": "9681172f6045d1b721f4ab636069ae9767322c1a55291c93ff48250958295d27",
     "pendle.position.value": "014a5b81cc8d6321564e454bd6ca9d9f987da6d59a9d628555d92e13c4d4f1f2",
     "pendle.market.get": "853b5c4a9927984549d7c95eea7502af64a863af575d4c6c8ea412187ca7b00d",
@@ -1235,6 +1278,8 @@
     "pools.launch_preview": "c4c122a5e3f401f4c444cb1ba42c3d7648c6d2605b214a737368ee3a945a3a03",
     "pools.launch_request_form": "97980310773833aba195d4094b44a2567a53877ede8f12a3da7742f76138143b",
     "pools.launch_execute": "059c49b596aa13a1328999b113ef6f7fc4a1ef67443c59806961662347299a1f",
-    "pools.claim_fees": "274475a9f9ffd37aec741fddab2d47a129dcf8922986237604b98d9ef866dd48"
+    "pools.claim_fees": "274475a9f9ffd37aec741fddab2d47a129dcf8922986237604b98d9ef866dd48",
+    "pools.launch_assets": "297db7a1a74de25944891a479f00f4112553f63d44c9fff610ac5e12caef2c4d",
+    "pools.holder_rewards": "b7b709f64aedc5e9f8d40c8cd1fb3ff1e7e5818b0b9d91dd3a05e08ea270c2fc"
   }
 }

@@ -670,11 +670,15 @@ export const RESOLVE_TOOLS: readonly ProtocolToolManifest[] = [
       + `${ROW_BOUNDED_TEXT_CLAUSE} ${SCREEN_EXTERNAL_CONTENT_CLAUSE} ${SCREEN_SOURCE_OBSERVATION_CLAUSE}`,
     mutating: false,
     actionKind: "read",
-    // `chain` and `chainIds` are two spellings of one scoping decision.
-    // Declared rather than left in prose so discovery can show the exclusion
-    // and the runtime enforces it instead of the handler guessing which one
-    // the fan-out should honour.
-    exclusiveParamGroups: [["chain", "chainIds"]],
+    // `chain` and `chainIds` are two spellings of one scoping decision, and
+    // naming NEITHER is a legitimate call: the handler issues one unscoped
+    // cross-chain request and words its own summary "across every chain".
+    // AT MOST ONE, therefore, and not the exactly-one spelling this replaces,
+    // which made the schema contradict both the description and the handler.
+    // An external Codex agent paid for that disagreement on the live MCP walk
+    // of 2026-09-04: its first `pairs_search` named no chain and was refused
+    // with "none of them is set" for a call the tool documents as valid.
+    atMostOne: [["chain", "chainIds"]],
     params: [...PAIRS_SEARCH_PARAMS],
     exampleParams: { query: "PEPE", chain: "solana", limit: 10 },
     discovery: DEXSCREENER_RESOLVE_DISCOVERY["dexscreener.search"],

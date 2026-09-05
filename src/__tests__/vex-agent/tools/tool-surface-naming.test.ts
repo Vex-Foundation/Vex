@@ -135,7 +135,7 @@ describe("G2 - publicName mapping gate", () => {
     );
   });
 
-  it("the mapped surface is the whole 142-tool catalog (drift alarm, not a cap)", () => {
+  it("the mapped surface is the whole 147-tool catalog (drift alarm, not a cap)", () => {
     // Not a limit: a Batch-2 addition updates this number together with its
     // mapping row, so the count and the map can never diverge silently.
     // 137 before the Batch 2 near-duplicate merges (owner decision D7) retired
@@ -162,7 +162,19 @@ describe("G2 - publicName mapping gate", () => {
     // 140 before PR-C1, which added the two Virtuals market-history reads
     // (`virtuals.trades`, `virtuals.candles`). Both are new identities with
     // their own mapping rows in `mappings/virtuals.json`.
-    expect(PROTOCOL_TOOLS.length).toBe(142);
+    // 142 before the launchpads arc's wave 1-2 merge. Five read tools arrived
+    // across that arc: the two pools.fun reads (`pools.launch_assets`,
+    // `pools.holder_rewards`), the two Virtuals market-history reads
+    // (`virtuals.trades`, `virtuals.candles`) and the Virtuals creator-fee read
+    // (`virtuals.creator_fees`). The market-history pair is already counted in
+    // the 142 above, which the PR-C1 lane raised on its own, so the delta this
+    // merge records is the remaining three. Every one is a new identity with
+    // its own mapping row; nothing was reclaimed or retired.
+    // 145 before the PR-C2 merge, which added the two bonding-curve TRADE tools
+    // (`virtuals.trade.quote`, `virtuals.trade.execute`) - the first mutating
+    // members of the virtuals namespace. Both are new identities with their own
+    // rows in `mappings/virtuals.json`; nothing was reclaimed or retired.
+    expect(PROTOCOL_TOOLS.length).toBe(147);
   });
 });
 

@@ -119,7 +119,8 @@ export const VIRTUALS_TRADE_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "virtuals",
     lifecycle: "active",
     description:
-      "Execute a BONDING-CURVE buy or sell of a Virtuals agent token against a quote you already took. REAL FUNDS. It "
+      "Execute a BONDING-CURVE buy or sell of a Virtuals agent token against a quote you already took. REAL FUNDS, and "
+      + "IRREVERSIBLE once broadcast. It "
       + "requires the proposalId from virtuals__agent_trade_quote plus the IDENTICAL chain, token, side, amountIn and "
       + "slippageBps; a changed parameter is refused by name rather than re-priced. Before anything is signed it "
       + "re-reads the chain and refuses if the BondingV5 or FRouterV3 proxy was upgraded, if the agent graduated or "
@@ -133,7 +134,11 @@ export const VIRTUALS_TRADE_TOOLS: readonly ProtocolToolManifest[] = [
       + "fee at all. NOTHING IS EVER RETRIED: a trade whose outcome is unknown stays pending and is reconciled. Pass "
       + "simulateOnly: true (after a quote for the identical params, and with no proposalId, since nothing is "
       + "claimed) to get the exact transactions eth_call'd from your wallet with `executed: false` - no signer "
-      + "opened, no quote consumed, nothing broadcast.",
+      + "opened, no quote consumed, nothing broadcast. It returns `executed`, `txHash`, `chain`, `chainId`, `venue`, "
+      + "`side`, `token`, `symbol`, `status` (confirmed, confirmed_unrecorded, confirmed_pending_amounts or "
+      + "pending_unknown), `settlement` (the decoded `spent`/`received` amounts with their raw values and symbols, or "
+      + "`decoded: false` with the reason the receipt could not be read), `enforcedFloor` (the contract floor the "
+      + "chain actually enforced) and `vexFee`.",
     mutating: true,
     actionKind: "user_wallet_broadcast",
     params: [

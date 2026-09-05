@@ -26,7 +26,7 @@ import { randomUUID } from "node:crypto";
 import { formatEther, getAddress } from "viem";
 
 import { getPoolsFunClient } from "@tools/pools-fun/client.js";
-import { POOLS_CHAIN_ID, POOLS_CHAIN_SLUG, POOLS_GATEWAY_ADDRESS } from "@tools/pools-fun/constants.js";
+import { POOLS_CHAIN_ID, POOLS_CHAIN_SLUG, poolsLaunchSuite } from "@tools/pools-fun/constants.js";
 import { POOLS_FEE_BPS, POOLS_FEE_VENUE } from "@tools/pools-fun/fee/venue.js";
 import { splitAmountForFeeBps } from "@tools/vex-fee/bps-split.js";
 import { createWith } from "@vex-agent/db/repos/token-launch-intents.js";
@@ -117,7 +117,9 @@ export async function poolsLaunchPreviewHandler(
         protocol: "pools_fun",
         pools: {
           pairedAsset: inputs.pairedAsset,
-          gatewayAddress: POOLS_GATEWAY_ADDRESS,
+          // The suite a launch would target, recorded on the preview row so a
+          // later reader knows which contract this estimate described.
+          gatewayAddress: poolsLaunchSuite().gateway,
           deploymentFeeWei: config.deploymentFeeWei,
         },
       });

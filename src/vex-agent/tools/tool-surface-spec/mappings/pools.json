@@ -45,6 +45,16 @@
       "toolId": "pools.launch_execute",
       "publicName": "pools__launch_execute",
       "rationale": "mechanical"
+    },
+    {
+      "toolId": "pools.launch_assets",
+      "publicName": "pools__launch_assets_list",
+      "rationale": "Names the resource and adds the canonical verb. The tool lists the tokenised stocks a launch can pair against, each row carrying the factory's own pricingMode and launchable flag read at a pinned block (manifests/launch-assets.ts), so it is a bounded, offset-paged list rather than a screen."
+    },
+    {
+      "toolId": "pools.holder_rewards",
+      "publicName": "pools__holder_rewards_get",
+      "rationale": "Existing snake words preserved, canonical by-id verb appended. The read answers for ONE token and ONE wallet against the distributor the suite deployer emitted (manifests/holder-rewards.ts), which is a `get`, not a list; the fund-moving claim is a separate tool so the read keeps the neutral verb."
     }
   ]
 }

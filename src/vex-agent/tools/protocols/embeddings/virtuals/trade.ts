@@ -38,7 +38,7 @@ export const VIRTUALS_TRADE_DISCOVERY = {
   "virtuals.trade.execute": {
     embeddingText: embeddingText(
       `Buy or sell a Virtuals agent token on its bonding curve for real, against a quote already taken: approves the exact amount to the curve router when needed, sends the trade with the floor the quote sealed, and takes Vex's fee only after the trade confirms. `
-      + `Use this when the user wants to actually buy into a Virtuals agent that has not graduated yet, or to sell agent tokens back to the curve. Real funds; a graduated agent must be traded on its AMM pool instead. `
+      + `Use this when the user wants to buy into a Virtuals agent that has not graduated, or sell agent tokens back to the curve. Real funds; a graduated agent must be traded on its AMM pool instead. `
       + `Example queries: buy this virtuals agent, sell my agent tokens on the curve, execute the virtuals curve trade I just quoted, ape into this virtuals launch.`,
     ),
     aliases: [

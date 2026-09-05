@@ -4,15 +4,15 @@
   "datasetId": "tool-discovery-seed",
   "datasetVersion": "v3-agent-116",
   "status": "captured",
-  "capturedAt": "2026-09-04T20:58:54.713Z",
+  "capturedAt": "2026-09-05T08:03:32.155Z",
   "metrics": {
     "overall": {
       "count": 109,
       "recall1": 0.404,
       "recall5": 0.578,
       "coverage5": 0.505,
-      "mrr5": 0.465,
-      "groupMrr5": 0.424
+      "mrr5": 0.464,
+      "groupMrr5": 0.423
     },
     "awareness": {
       "blind": {
@@ -28,8 +28,8 @@
         "recall1": 0.404,
         "recall5": 0.579,
         "coverage5": 0.509,
-        "mrr5": 0.463,
-        "groupMrr5": 0.426
+        "mrr5": 0.462,
+        "groupMrr5": 0.425
       }
     },
     "intentShapes": {
@@ -112,8 +112,8 @@
         "recall1": 0.368,
         "recall5": 0.632,
         "coverage5": 0.579,
-        "mrr5": 0.446,
-        "groupMrr5": 0.42
+        "mrr5": 0.444,
+        "groupMrr5": 0.418
       },
       "prediction_discovery": {
         "count": 6,
@@ -175,7 +175,7 @@
   },
   "notes": [
     "dataset tool-discovery-seed@v3-agent-116, mode lexical, 109 cases evaluated.",
-    "overall recall@1 0.404, recall@5 0.578, coverage@5 0.505, mrr@5 0.465, groupMrr@5 0.424.",
+    "overall recall@1 0.404, recall@5 0.578, coverage@5 0.505, mrr@5 0.464, groupMrr@5 0.423.",
     "Measured delta: none, metrics are identical to the previous baseline."
   ]
 }

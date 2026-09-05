@@ -16,10 +16,36 @@
  * recorded for the same identity. The claim therefore binds to the approved
  * `prequote_id` (`ProtocolExecutionContext.approvedQuoteAuthority`, host-side
  * evidence read from the approval envelope) and re-checks the digest, the floor
- * and the expiry the card stated. See `claimPrequoteRow`.
+ * and the expiry the card stated. See `readPrequoteRow`.
+ *
+ * ## READ, COMPARE, THEN CLAIM (review finding, 2026-09-04)
+ *
+ * The claim used to run FIRST, before the executor had re-derived anything, so a
+ * fee statement or a router input that had moved refused correctly and burnt the
+ * approved quote on the way out: the retry the refusal told the agent to make got
+ * `already_claimed`. The fixed product decision is that the executor never
+ * consumes the bound block on divergence, so this module is now TWO steps:
+ *
+ *   `read*ExecutionSnapshot` - non-destructive. Picks the authoritative row
+ *      exactly as the claim used to, restores and digest-checks its snapshot,
+ *      and hands back the row's fee statement plus a `claim` ticket. Writes
+ *      nothing.
+ *   `commitPrequoteClaim`     - atomic. Consumes THAT row, asserting its id,
+ *      session, trade identity, claimability and disclosure block in one
+ *      statement. A divergence refused before this call leaves `claimed_at` and
+ *      `claimed_by` null and the quote reusable.
+ *
+ * What this deliberately gives up: two concurrent executes of one quote now both
+ * price a route before one of them wins the claim. Nothing is signed, reserved or
+ * recorded before the commit on either, so the loser is a typed `already_claimed`
+ * refusal exactly as before - it just wasted a quote request rather than a quote.
+ * MetaMask makes the same trade (`TransactionController.#approveTransaction`
+ * holds its per-transaction reservation and its nonce lock across signing only,
+ * and a failed attempt releases both and leaves the transaction reusable).
  */
 
 import * as prequoteRepo from "@vex-agent/db/repos/swap-prequotes.js";
+import type { PrequoteKind, SwapPrequote } from "@vex-agent/db/repos/swap-prequotes.js";
 
 import type { ProtocolExecutionContext } from "../types.js";
 import {
@@ -41,7 +67,23 @@ import { EXECUTE_GATE_TOOLS } from "./registry.js";
 import { vexFeeFromSafetyDetail, type VexFeePreview } from "./fee-disclosure.js";
 import { computeGateMatch } from "./gate/identity.js";
 
-export type ClaimedSwapSnapshot =
+/**
+ * The ticket a reader hands to `commitPrequoteClaim`: everything the atomic
+ * claim asserts about the row that was read, and nothing the caller could
+ * substitute. It carries the row's own disclosure block, so the commit is
+ * conditional on that block still being what the comparison was made against.
+ */
+export interface PrequoteClaimTicket {
+  readonly sessionId: string;
+  readonly prequoteId: string;
+  readonly matchHash: string;
+  readonly kind: PrequoteKind;
+  readonly expectedDisclosure: Record<string, unknown>;
+  /** The venue's own quote tool, so a refused commit points at the right one. */
+  readonly freshQuoteTool: string | undefined;
+}
+
+export type ReadSwapSnapshot =
   | {
       readonly ok: true;
       readonly prequoteId: string;
@@ -60,28 +102,28 @@ export type ClaimedSwapSnapshot =
        * refuses that row first.
        */
       readonly vexFee: VexFeePreview | undefined;
+      /** Hand this to `commitPrequoteClaim` once every comparison has passed. */
+      readonly claim: PrequoteClaimTicket;
     }
   | { readonly ok: false; readonly refusal: SnapshotRefusal };
 
 /**
- * Claim the approved quote for exactly one execute, then verify its snapshot.
+ * Read the approved quote for this execute and verify its snapshot, WITHOUT
+ * consuming it.
  *
- * Order matters and is deliberate: the CLAIM runs first, so two concurrent
- * executes for one quote resolve to exactly one winner before either touches a
- * key. The digest check runs on the claimed row, so a snapshot that fails it
- * has already consumed its own quote and cannot be retried into a race.
- *
- * `claimedBy` is the caller's correlation for the audit trail; it is stored on
- * the row and never used to decide anything.
+ * The caller re-derives its own fee statement, router input and floor against
+ * what this returns and refuses on any divergence; only then does it call
+ * `commitPrequoteClaim` with the returned ticket. A refusal in between leaves
+ * the row unclaimed and the quote reusable, which is the whole point of the
+ * split.
  */
-export async function claimSwapExecutionSnapshot(
+export async function readSwapExecutionSnapshot(
   toolId: string,
   sessionId: string,
   params: Record<string, unknown>,
   context: ProtocolExecutionContext,
-  claimedBy: string,
-): Promise<ClaimedSwapSnapshot> {
-  const claimed = await claimPrequoteRow(toolId, sessionId, params, context, claimedBy);
+): Promise<ReadSwapSnapshot> {
+  const claimed = await readPrequoteRow(toolId, sessionId, params, context);
   if (!claimed.ok) return { ok: false, refusal: claimed.refusal };
 
   const restored = restoreRouteSnapshot(claimed.routeRef);
@@ -98,10 +140,11 @@ export async function claimSwapExecutionSnapshot(
     snapshot: restored.snapshot,
     routeSummary: restored.routeSummary,
     vexFee: claimed.vexFee,
+    claim: claimed.ticket,
   };
 }
 
-export type ClaimedUniswapSnapshot =
+export type ReadUniswapSnapshot =
   | {
       readonly ok: true;
       readonly prequoteId: string;
@@ -118,26 +161,27 @@ export type ClaimedUniswapSnapshot =
        * refuses that row first.
        */
       readonly vexFee: VexFeePreview | undefined;
+      /** Hand this to `commitPrequoteClaim` once every comparison has passed. */
+      readonly claim: PrequoteClaimTicket;
     }
   | { readonly ok: false; readonly refusal: SnapshotRefusal };
 
 /**
- * The same claim, restored through the Uniswap codec.
+ * The same read, restored through the Uniswap codec.
  *
  * The row lifecycle is identical - one quote, one execute, newest-wins - and is
  * shared below. What differs is only what a restored snapshot MEANS: KyberSwap
  * restores provider bytes to POST, Uniswap restores the router input, the fee
  * disposition and the floor that the locally built calldata must carry.
  */
-export async function claimUniswapExecutionSnapshot(
+export async function readUniswapExecutionSnapshot(
   toolId: string,
   sessionId: string,
   params: Record<string, unknown>,
   context: ProtocolExecutionContext,
-  claimedBy: string,
-): Promise<ClaimedUniswapSnapshot> {
-  const claimed = await claimPrequoteRow(
-    toolId, sessionId, params, context, claimedBy, UNISWAP_FRESH_QUOTE_TOOL,
+): Promise<ReadUniswapSnapshot> {
+  const claimed = await readPrequoteRow(
+    toolId, sessionId, params, context, UNISWAP_FRESH_QUOTE_TOOL,
   );
   if (!claimed.ok) return { ok: false, refusal: claimed.refusal };
 
@@ -158,34 +202,75 @@ export async function claimUniswapExecutionSnapshot(
     prequoteId: claimed.prequoteId,
     snapshot: restored.snapshot,
     vexFee: claimed.vexFee,
+    claim: claimed.ticket,
   };
 }
 
-type ClaimedRow =
+/**
+ * Consume the row a reader already compared against, atomically.
+ *
+ * Called at the LAST point before anything durable or signable exists, so a
+ * refusal above it costs a quote request and nothing else. Every assertion the
+ * repository makes is carried by the ticket, so this function cannot be talked
+ * into consuming a different row than the one that was read and compared.
+ *
+ * `claimedBy` is the caller's correlation for the audit trail; it is stored on
+ * the row and never used to decide anything.
+ */
+export async function commitPrequoteClaim(
+  ticket: PrequoteClaimTicket,
+  claimedBy: string,
+): Promise<{ readonly ok: true } | { readonly ok: false; readonly refusal: SnapshotRefusal }> {
+  const claimed = await prequoteRepo.claimVerifiedRowForExecute({
+    sessionId: ticket.sessionId,
+    prequoteId: ticket.prequoteId,
+    matchHash: ticket.matchHash,
+    kind: ticket.kind,
+    expectedDisclosure: ticket.expectedDisclosure,
+    claimedBy,
+  });
+  if (claimed !== null) return { ok: true };
+  const reason = await prequoteRepo.diagnoseUnclaimable(
+    ticket.sessionId, ticket.prequoteId, ticket.expectedDisclosure,
+  );
+  return {
+    ok: false,
+    refusal: snapshotRefusal(
+      reason === "missing" ? "missing_snapshot" : reason,
+      ticket.freshQuoteTool,
+    ),
+  };
+}
+
+type ReadRow =
   | {
       readonly ok: true;
       readonly prequoteId: string;
       readonly routeRef: unknown;
       /** The ROW's expiry - the deadline the card stated and the claim enforced. */
       readonly expiresAt: string;
-      /** The claimed row's Vex fee statement, read through the recorder's schema. */
+      /** The row's Vex fee statement, read through the recorder's schema. */
       readonly vexFee: VexFeePreview | undefined;
+      /** What the eventual atomic claim of THIS row will assert. */
+      readonly ticket: PrequoteClaimTicket;
     }
   | { readonly ok: false; readonly refusal: SnapshotRefusal };
 
 /**
  * The venue-independent half: identify the trade, decide WHICH row is the
- * authority, and consume that row atomically. Every refusal names the venue's
- * own quote tool, because a prequote is bound to the provider that answered it.
+ * authority, and read that row WITHOUT consuming it. Every refusal names the
+ * venue's own quote tool, because a prequote is bound to the provider that
+ * answered it.
  *
  * TWO WAYS TO PICK THE ROW, and the difference is the money-path property:
  *
  *   BOUND (`context.approvedQuoteAuthority` present) - a human approved a card
- *   naming one quote, so the claim binds to THAT `prequote_id` and no other. The
- *   repo's claim still requires it to be the current executable row, so a quote
- *   recorded while the card was waiting refuses as `superseded` rather than
- *   becoming the fill. Selecting the newest row here instead is exactly the
- *   substitution the 2026-08-28 review found: approve Q1, execute Q2.
+ *   naming one quote, so the read binds to THAT `prequote_id` and no other, and
+ *   the ticket carries the same identity into the claim. The repo's read and
+ *   claim both require it to be the current executable row, so a quote recorded
+ *   while the card was waiting refuses as `superseded` rather than becoming the
+ *   fill. Selecting the newest row here instead is exactly the substitution the
+ *   2026-08-28 review found: approve Q1, execute Q2.
  *
  *   UNBOUND, no approval in play (a full-permission or autonomous session) - the
  *   newest executable row, exactly as before. There is no card here, so there is
@@ -194,20 +279,38 @@ type ClaimedRow =
  *   UNBOUND, but an approval authorized this dispatch - REFUSED. See the
  *   fail-closed note below.
  */
-async function claimPrequoteRow(
+async function readPrequoteRow(
   toolId: string,
   sessionId: string,
   params: Record<string, unknown>,
   context: ProtocolExecutionContext,
-  claimedBy: string,
   freshQuoteTool?: string,
-): Promise<ClaimedRow> {
-  const refuse = (kind: Parameters<typeof snapshotRefusal>[0]): ClaimedRow =>
+): Promise<ReadRow> {
+  const refuse = (kind: Parameters<typeof snapshotRefusal>[0]): ReadRow =>
     ({ ok: false, refusal: snapshotRefusal(kind, freshQuoteTool) });
 
   const gated = EXECUTE_GATE_TOOLS[toolId];
   if (!gated || gated.kind !== "swap") return refuse("missing_snapshot");
   const { matchHash } = await computeGateMatch(gated, sessionId, params, context);
+
+  const found = (row: SwapPrequote): ReadRow => ({
+    ok: true,
+    prequoteId: row.prequoteId,
+    routeRef: row.routeRef,
+    expiresAt: row.expiresAt,
+    vexFee: vexFeeFromSafetyDetail(row.safetyDetail),
+    ticket: {
+      sessionId,
+      prequoteId: row.prequoteId,
+      matchHash,
+      kind: "swap",
+      // The row's OWN block, carried forward untouched: the caller compares
+      // against what it discloses, and the claim below is conditional on the
+      // very same bytes still being on the row.
+      expectedDisclosure: row.safetyDetail,
+      freshQuoteTool,
+    },
+  });
 
   const authority = context.approvedQuoteAuthority ?? null;
   // FAIL CLOSED (owner decision 2026-08-28). A resume under an approval that
@@ -222,20 +325,21 @@ async function claimPrequoteRow(
     return refuse("unbound_approval");
   }
   if (authority !== null) {
-    const claimed = await prequoteRepo.claimBoundForExecute(
-      sessionId, authority.snapshotId, matchHash, "swap", claimedBy,
+    const bound = await prequoteRepo.findClaimableForExecute(
+      sessionId, authority.snapshotId, matchHash, "swap",
     );
-    if (claimed === null) {
-      const reason = await prequoteRepo.diagnoseUnclaimable(sessionId, authority.snapshotId);
-      return refuse(reason === "missing" ? "missing_snapshot" : reason);
+    if (bound === null) {
+      // The bound row is not claimable. Diagnosis reads the row's own state, so
+      // it is asked with the row's disclosure rather than an expectation the
+      // read never formed - the disclosure fence belongs to the claim, and a
+      // read that found nothing must not report `disclosure_changed`.
+      const latest = await prequoteRepo.findLatestFreshByMatch(sessionId, matchHash, "swap");
+      const reason = await prequoteRepo.diagnoseUnclaimable(
+        sessionId, authority.snapshotId, latest?.safetyDetail ?? {},
+      );
+      return refuse(reason === "missing" || reason === "disclosure_changed" ? "missing_snapshot" : reason);
     }
-    return {
-      ok: true,
-      prequoteId: claimed.prequoteId,
-      routeRef: claimed.routeRef,
-      expiresAt: claimed.expiresAt,
-      vexFee: vexFeeFromSafetyDetail(claimed.safetyDetail),
-    };
+    return found(bound);
   }
 
   const candidate = await prequoteRepo.findLatestExecutableByMatch(sessionId, matchHash, "swap");
@@ -249,19 +353,7 @@ async function claimPrequoteRow(
     if (latest.claimedAt !== null) return refuse("already_claimed");
     return refuse("not_executable");
   }
-
-  const claimed = await prequoteRepo.claimForExecute(sessionId, candidate.prequoteId, claimedBy);
-  if (claimed === null) {
-    const reason = await prequoteRepo.diagnoseUnclaimable(sessionId, candidate.prequoteId);
-    return refuse(reason === "missing" ? "missing_snapshot" : reason);
-  }
-  return {
-    ok: true,
-    prequoteId: claimed.prequoteId,
-    routeRef: claimed.routeRef,
-    expiresAt: claimed.expiresAt,
-    vexFee: vexFeeFromSafetyDetail(claimed.safetyDetail),
-  };
+  return found(candidate);
 }
 
 /**
@@ -354,10 +446,20 @@ export async function claimVirtualsExecutionSnapshot(
   context: ProtocolExecutionContext,
   claimedBy: string,
 ): Promise<ClaimedVirtualsSnapshot> {
-  const claimed = await claimPrequoteRow(
-    toolId, sessionId, params, context, claimedBy, VIRTUALS_FRESH_QUOTE_TOOL,
+  const claimed = await readPrequoteRow(
+    toolId, sessionId, params, context, VIRTUALS_FRESH_QUOTE_TOOL,
   );
   if (!claimed.ok) return { ok: false, refusal: claimed.refusal };
+  // MERGE NOTE (PR-C2 onto the read/commit split): the other venues now READ the
+  // row here and only `commitPrequoteClaim` it once their own comparisons have
+  // passed, so a refusal in between leaves the quote reusable. Virtuals claims
+  // at read time, which is this lane's shipped and reviewed behaviour and is the
+  // MORE conservative of the two: a mismatch burns the quote and forces a fresh
+  // one rather than leaving a row an execute already reasoned about executable.
+  // Moving Virtuals onto the split changes when a money-path row is consumed and
+  // is a behaviour change for its own reviewed change, not for this merge.
+  const committed = await commitPrequoteClaim(claimed.ticket, claimedBy);
+  if (!committed.ok) return { ok: false, refusal: committed.refusal };
 
   const restored = restoreVirtualsSnapshot(claimed.routeRef);
   if (!restored.ok) return { ok: false, refusal: restored.refusal };

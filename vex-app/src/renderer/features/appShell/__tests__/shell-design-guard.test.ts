@@ -223,19 +223,6 @@ const WHITELIST: readonly WhitelistEntry[] = [
   // utility no longer appears in either file and their entries would be stale
   // sanctions. They are still the sanctioned side rails; the sanction now
   // lives in the stylesheet the guard deliberately does not scan.
-  {
-    // Stage B4c: the BOOK's chrome moved out of BookPanel.tsx into the frame
-    // both rails (agent + Studio) now share, so the sanction moved WITH the
-    // glass rather than being duplicated. BookPanel.tsx no longer names the
-    // utility at all, so its entry is deleted rather than left as a stale
-    // sanction.
-    file: "features/appShell/book/BookRailFrame.tsx",
-    pattern: "backdrop-blur (glass)",
-    reason:
-      "User-sanctioned glass rail: the BOOK panel floats as translucent ink " +
-      "(--vex-glass) with backdrop-blur over the current shell photo backdrop. " +
-      "Glass is allowed ONLY on the two side rails.",
-  },
   // REMOVED (composer rebuild, owner decree 2026-07-29): the Signal Console
   // composer and its starter-chips band were the third and seventh sanctioned
   // glass surfaces. Both are now SOLID ink (--vex-surface-1) with a flat

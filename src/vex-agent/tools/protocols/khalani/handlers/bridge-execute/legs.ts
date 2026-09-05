@@ -27,9 +27,11 @@ import {
 import {
   authorizedDepositRecipients,
   confirmDepositWithProvenAmounts,
+  depositShortfallOf,
   proveErc20DepositAmount,
   receiptDepositSettlement,
   type DepositSettlement,
+  type DepositShortfall,
 } from "@vex-agent/tools/protocols/bridge-deposit-evidence.js";
 import logger from "@utils/logger.js";
 import { VexError, ErrorCodes } from "../../../../../../errors.js";
@@ -69,7 +71,17 @@ export interface KhalaniLegLoopInput {
 
 export type KhalaniLegLoopOutcome =
   /** Every bridge leg confirmed on-chain; `depositTxHash` is `undefined` only in the unreachable no-deposit case. */
-  | { readonly outcome: "confirmed"; readonly depositTxHash: string | undefined; readonly currentIndex: number }
+  | {
+      readonly outcome: "confirmed";
+      readonly depositTxHash: string | undefined;
+      readonly currentIndex: number;
+      /**
+       * The deposit's receipt proved LESS than the quote bridged, or `null`
+       * when it met the floor. A shortfall makes the Vex fee leg ineligible
+       * (`bridge-deposit-evidence.ts`): the caller must not run it.
+       */
+      readonly depositShortfall: DepositShortfall | null;
+    }
   /** The loop stopped and the handler must return this result verbatim. */
   | { readonly outcome: "halted"; readonly result: ToolResult; readonly currentIndex: number };
 
@@ -111,6 +123,7 @@ function khalaniDepositSettlement(
     });
   return receiptDepositSettlement(proveErc20DepositAmount({
     logs: outcome.receiptLogs,
+    chainId: input.fromChainId,
     tokenAddress: evidence.kind === "vex_built_erc20_transfer" ? evidence.token : input.fromToken,
     senderAddress: input.signer.address,
     recipients,
@@ -128,6 +141,9 @@ export async function runKhalaniBridgeLegs(input: KhalaniLegLoopInput): Promise<
   } = input;
 
   let depositTxHash: string | undefined;
+  // What the deposit's own receipt proved against what the plan bridged. Read
+  // by the caller's fee decision: a shortfall makes the Vex fee leg ineligible.
+  let depositShortfall: DepositShortfall | null = null;
   let currentIndex = 0;
   // Read-after-write anchor for the NEXT leg: the allowance this loop just
   // confirmed is exactly the state the deposit leg's pre-sign estimate depends
@@ -206,13 +222,17 @@ export async function runKhalaniBridgeLegs(input: KhalaniLegLoopInput): Promise<
         // deposit leg declares only what its own receipt proves, or declines by
         // name (`bridge-deposit-evidence.ts`). Confirming a leg proves inclusion
         // and never, on its own, the principal it carried.
-        const confirmResult = stagedLeg.isDeposit
+        const settlement = stagedLeg.isDeposit
+          ? khalaniDepositSettlement(stagedLeg, outcome, input)
+          : null;
+        if (settlement !== null) depositShortfall = depositShortfallOf(settlement);
+        const confirmResult = settlement !== null
           ? await confirmDepositWithProvenAmounts({
             eventId: legRow.id,
             role: legRow.eventRole,
             txHash: outcome.txHash,
             chainId: fromChainId,
-            settlement: khalaniDepositSettlement(stagedLeg, outcome, input),
+            settlement,
             logScope: "khalani.bridge",
           })
           : await confirmActivityEvent(
@@ -241,7 +261,7 @@ export async function runKhalaniBridgeLegs(input: KhalaniLegLoopInput): Promise<
     };
   }
 
-  return { outcome: "confirmed", depositTxHash, currentIndex };
+  return { outcome: "confirmed", depositTxHash, currentIndex, depositShortfall };
 }
 
 /**

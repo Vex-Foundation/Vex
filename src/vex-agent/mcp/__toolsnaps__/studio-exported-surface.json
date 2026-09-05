@@ -1,5 +1,5 @@
 {
-  "toolCount": 169,
+  "toolCount": 172,
   "tools": [
     {
       "alwaysLoad": true,
@@ -8204,6 +8204,84 @@
     },
     {
       "alwaysLoad": false,
+      "descriptionBytes": 2102,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "tokenAddress": {
+            "description": "Contract address of the pools.fun token whose holder rewards to read. Resolve a name with pools__tokens_search first, or find fees-to-holders tokens with pools__tokens_discover using holderRewards: true.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "walletAddress": {
+            "description": "The holder to read, as an EVM address. Defaults to the user's own selected wallet, which is the usual question. Any address may be passed because earned(account) is a public view over public chain state; the amounts are read from the distributor either way.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tokenAddress"
+        ],
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "pools",
+      "publicName": "pools__holder_rewards_get",
+      "readOnlyHint": true,
+      "requiresEnv": null,
+      "title": "Read pools.fun holder rewards",
+      "toolId": "pools.holder_rewards"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 1698,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "limit": {
+            "description": "Rows returned, 1-200. Defaults to 50. This bound is Vex's, not the launchpad's - the endpoint returns everything in one body - and every row past it is reachable with offset.",
+            "type": "number"
+          },
+          "offset": {
+            "description": "Zero-based index into the filtered list, for the next page. Pass back the nextOffset from a previous reply and keep query and pricingMode identical, or the offset walks a different list.",
+            "type": "number"
+          },
+          "pricingMode": {
+            "description": "Keep only pairs on this factory pricing mode. SIGNED_STOCK lists the pairs whose launch needs a signed price quote inside the factory's 30-to-120-second window; CHAINLINK_STOCK lists the feed-priced ones whose launch carries an empty attestation. The filter is refused by name when the factory reads did not answer, because filtering on a mode nothing was read for would return a list that looks authoritative and is not.",
+            "enum": [
+              "NONE",
+              "CORE_CHAINLINK",
+              "CHAINLINK_STOCK",
+              "SIGNED_STOCK"
+            ],
+            "type": "string"
+          },
+          "query": {
+            "description": "Case-insensitive substring matched against both the stock symbol and its company name, applied by Vex after the launchpad's full list is fetched. At most 64 characters. Use it to check whether one stock is launchable rather than paging the whole list.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "pools",
+      "publicName": "pools__launch_assets_list",
+      "readOnlyHint": true,
+      "requiresEnv": null,
+      "title": "List pools.fun launchable stocks",
+      "toolId": "pools.launch_assets"
+    },
+    {
+      "alwaysLoad": false,
       "descriptionBytes": 2801,
       "destructiveHint": true,
       "inputSchema": {
@@ -8452,7 +8530,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 1075,
+      "descriptionBytes": 1411,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
@@ -8482,7 +8560,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 1549,
+      "descriptionBytes": 2552,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
@@ -8502,6 +8580,10 @@
           "feeRecipientAddress": {
             "description": "Keep only tokens whose creator fee stream is directed at this wallet address, matched server-side. On pools.fun the fee recipient can differ from the deployer, so this answers who EARNS from a token rather than who deployed it.",
             "type": "string"
+          },
+          "holderRewards": {
+            "description": "true keeps only tokens that stream their fees to holders (fees to holders, opted in at launch and locked from then on). Same opt-in switch as vexAttested: only true is accepted, false or omitted means unfiltered, and the complement cannot be requested. Rows that match carry holderRewardsMode (token, paired or both) and holderRewardsDistributor. Combining it with vexAttested asks for tokens that are BOTH, which matched nothing when this was measured - that is a fact about the market, not a rejected filter.",
+            "type": "boolean"
           },
           "limit": {
             "description": "Maximum rows returned, 1-100 (the provider's own cap). Omitting it leaves the page size to the provider. Use the returned cursor to walk further rather than asking for more than the cap.",
@@ -8572,6 +8654,10 @@
             ],
             "type": "string"
           },
+          "vexAttested": {
+            "description": "true keeps only tokens the launchpad marks as carrying a Vex attestation. This is an OPT-IN SWITCH, not a two-sided filter: the launchpad accepts only true, so false (or omitting it) means the filter is not applied and there is no way to ask for the tokens WITHOUT an attestation. The flag is the launchpad's own claim about its index; the attestation itself is a signature Vex published for a launch it made.",
+            "type": "boolean"
+          },
           "volTimeframe": {
             "description": "The window the minVolUsd floor is measured over: 1m, 5m, 1h, 6h or 24h. Supply it together with minVolUsd; on its own it filters nothing and is rejected.",
             "enum": [
@@ -8596,7 +8682,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 928,
+      "descriptionBytes": 1313,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
@@ -8607,6 +8693,10 @@
           },
           "dryRun": {
             "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "holderRewards": {
+            "description": "true narrows the search to tokens that stream their fees to holders. Same opt-in switch as vexAttested. Matching rows carry holderRewardsMode and holderRewardsDistributor.",
             "type": "boolean"
           },
           "limit": {
@@ -8626,6 +8716,10 @@
             "description": "The name or symbol fragment to look for, 1 to 64 characters. Matching is done by the launchpad across both token names and symbols.",
             "minLength": 1,
             "type": "string"
+          },
+          "vexAttested": {
+            "description": "true narrows the search to tokens the launchpad marks as carrying a Vex attestation. An opt-in switch: the launchpad accepts only true, so false or omitted means unfiltered and the tokens without the mark cannot be requested. Useful for picking the right token out of several sharing a symbol.",
+            "type": "boolean"
           }
         },
         "required": [
@@ -11207,7 +11301,58 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 1291,
+      "descriptionBytes": 2347,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "chain": {
+            "anyOf": [
+              {
+                "enum": [
+                  "base",
+                  "solana",
+                  "robinhood",
+                  "ethereum"
+                ],
+                "type": "string"
+              },
+              {
+                "minimum": 1,
+                "type": "integer"
+              }
+            ],
+            "description": "The chain the agent lives on. Creator fees are held by a per-chain contract with its own payout asset and its own swap thresholds, so the chain and the agent must agree. Only base and robinhood have an AgentTaxV2; solana and ethereum are accepted and answered with `supported: false` and the measured reason rather than a schema error. Chain slug/alias, or the numeric chain id `TokenFind` returns (e.g. `base` or `8453`)."
+          },
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "The numeric Virtuals agent id, exactly as virtuals__agents_discover returns it. The tool resolves the agent's bonding token from it and additionally cross-checks the contract's creator address against the wallet the provider shows. Give this OR tokenAddress, never both.",
+            "type": "number"
+          },
+          "tokenAddress": {
+            "description": "The agent token's CONTRACT address - the bonding token while the agent is still on its curve, the same address after graduation. This is the key AgentTaxV2 accounts by, so it needs no provider lookup and works even when the Virtuals API is down. Give this OR id, never both.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chain"
+        ],
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "virtuals",
+      "publicName": "virtuals__creator_fees_get",
+      "readOnlyHint": true,
+      "requiresEnv": null,
+      "title": "Read a Virtuals agent creator's fee status",
+      "toolId": "virtuals.creator_fees"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 1767,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,

@@ -35,7 +35,7 @@ import { describeUnavailableSafetyCheck, type SafetyCheckUnavailable } from "./s
 import { venueFallbackNoteOnFailure } from "./fallback-messaging.js";
 import { resolveKyberSlippageBps } from "./slippage.js";
 import type { KyberGetRouteResponse } from "./route-request.js";
-import { claimSwapExecutionSnapshot } from "../../../prequote/claim.js";
+import { readSwapExecutionSnapshot, commitPrequoteClaim } from "../../../prequote/claim.js";
 
 export const executeHandler: ProtocolHandler = async (p, context): Promise<ToolResult> => {
   const toolId = "kyberswap.swap.execute";
@@ -165,7 +165,13 @@ export const executeHandler: ProtocolHandler = async (p, context): Promise<ToolR
   // The claim is single-use and atomic, so a second execute of the same quote
   // is a typed refusal rather than a second fill, and a later quote for the
   // same trade supersedes this one even when it is unexpired and unclaimed.
-  const claimed = await claimSwapExecutionSnapshot(toolId, sessionId, p, context, `${toolId}:${sessionId}`);
+  //
+  // It is READ here and CLAIMED in Phase A, after the build, the calldata guard,
+  // the fee-statement comparison and the debit-plan comparison have all passed
+  // (review finding, 2026-09-04). Claiming here spent the approved quote on the way out
+  // of a correct refusal, and the retry the refusal asked for got
+  // `already_claimed`.
+  const claimed = await readSwapExecutionSnapshot(toolId, sessionId, p, context);
   if (!claimed.ok) {
     return failPreBroadcast(
       toolId, p, sessionId, walletAddress, chainId, slug,
@@ -193,9 +199,14 @@ export const executeHandler: ProtocolHandler = async (p, context): Promise<ToolR
       tokenIn, tokenOut, amountIn, amountInRaw, slippage, routerAddress,
       approvedSummary, approvedSnapshot: claimed.snapshot,
       safetyCheckUnavailable,
-      // The claimed row's own Vex fee statement, carried into Phase A so the
-      // fee this build will sign can be held to the one the card stated.
+      // The row's own Vex fee statement, carried into Phase A so the fee this
+      // build will sign can be held to the one the card stated.
       approvedVexFee: claimed.vexFee,
+      // Consumed by Phase A at its last non-destructive point: after every
+      // comparison, immediately before the durable intent. Phase A throws its
+      // refusal, which the catch below records exactly as any other pre-intent
+      // failure - with nothing signed and, on a divergence, nothing claimed.
+      commitApprovedQuote: () => commitPrequoteClaim(claimed.claim, `${toolId}:${sessionId}`),
     });
   } catch (err) {
     return failPreBroadcast(toolId, p, sessionId, walletAddress, chainId, slug, legInput(tokenIn), legInput(tokenOut), err, true);

@@ -14,7 +14,18 @@ import {
   selectVerificationRpcUrls,
   solanaRpcCall,
 } from "./solana-rpc-safety.js";
-import type { FillVerification, FillVerificationInput } from "./bridge-activity-repair-contracts.js";
+import { createPinnedPublicEgressDispatcher, isEgressRefusal } from "./rpc-egress-policy.js";
+import type { DispatchableRequestInit } from "./rpc-egress-policy.js";
+import {
+  BRIDGE_LEG_VERIFICATION_DEADLINE_MS,
+  BRIDGE_RPC_CANDIDATE_TIMEOUT_MS,
+} from "./bridge-activity-repair-contracts.js";
+import type {
+  FillVerification,
+  FillVerificationInput,
+  VerificationReason,
+} from "./bridge-activity-repair-contracts.js";
+import type { Dispatcher } from "undici";
 
 /**
  * Production B4 leg verifier (fills AND refunds). EVM: SSRF-controlled RPC
@@ -36,51 +47,118 @@ import type { FillVerification, FillVerificationInput } from "./bridge-activity-
  * against the stored token + recipient is a named follow-up, and the recipient is
  * not stored anyway — Blocker 7). Any failure → `verified:false` so the row stays
  * pending (fail-closed). All verification fetches pin redirects OFF.
+ *
+ * TWO BOUNDS THIS VERIFIER OWNS, added after external review of PR #142:
+ *
+ *   EGRESS. A provider-registry URL is fetched through the pinning dispatcher
+ *   from `rpc-egress-policy.js`: its hostname is resolved before any socket
+ *   exists, refused if ANY address is non-public, and pinned to the checked
+ *   address so a rebinding has no second resolution to win. A CURATED URL (the
+ *   user's overrides, the local registry) is fetched as configured, because a
+ *   self-hosted node on a private address is supported. A refusal is recorded as
+ *   `no_safe_rpc`, not as "the chain is unreachable".
+ *
+ *   TIME. One leg gets {@link BRIDGE_LEG_VERIFICATION_DEADLINE_MS} in total,
+ *   propagated as ONE AbortSignal through the registry reads and every RPC call,
+ *   with {@link BRIDGE_RPC_CANDIDATE_TIMEOUT_MS} per candidate and NO transport
+ *   retry (the candidate list is the fallback). Exhaustion reports the most
+ *   specific thing the endpoints established and terminalizes nothing.
  */
 export async function verifyBridgeLegOnChain(input: FillVerificationInput): Promise<FillVerification> {
-  if (input.chainFamily === "solana") {
-    return verifySolanaLegOnChain(input);
+  const budget = startLegVerificationBudget(BRIDGE_LEG_VERIFICATION_DEADLINE_MS);
+  // ONE dispatcher per leg verification, owned here and closed below: it is the
+  // egress decision for every PROVIDER-REGISTRY candidate this leg touches, and
+  // it holds keep-alive sockets, so it has exactly one lifecycle owner.
+  const egress = createPinnedPublicEgressDispatcher();
+  try {
+    return input.chainFamily === "solana"
+      ? await verifySolanaLegOnChain(input, budget, egress)
+      : await verifyEvmLegOnChain(input, budget, egress);
+  } finally {
+    budget.dispose();
+    await egress.close();
   }
+}
+
+async function verifyEvmLegOnChain(
+  input: FillVerificationInput,
+  budget: LegVerificationBudget,
+  egress: Dispatcher,
+): Promise<FillVerification> {
   if (!/^0x[0-9a-fA-F]{64}$/.test(input.txHash)) {
     return { verified: false, reason: "malformed_fill_hash" };
   }
 
-  const { curated, providerRegistry } = await resolveVerificationRpcs(input.expectedChainId, input.protocol, "eip155");
+  // The registry reads are inside the budget too: a hung provider registry used
+  // to be able to consume the whole sweep before a single RPC was tried. The
+  // registry clients own their own timeouts and keep running if abandoned; what
+  // this race owns is that WE stop waiting.
+  const resolved = await raceBudget(
+    resolveVerificationRpcs(input.expectedChainId, input.protocol, "eip155"),
+    budget,
+  );
+  if (!resolved.settled) return { verified: false, reason: reportLegDeadline(input, [], null) };
+  const { curated, providerRegistry } = resolved.value;
   const urls = selectVerificationRpcUrls({ curated, providerRegistry });
   if (urls.length === 0) return { verified: false, reason: "no_safe_rpc" };
+  const trustedAsConfigured = new Set(curated.map((url) => url.trim()));
 
   const { createPublicClient, http } = await import("viem");
-  const observations: EvmProbeObservation[] = [];
+  const observations: EvmProbeOutcome[] = [];
   for (const rpcUrl of urls) {
+    if (budget.expired()) break;
     try {
-      const client = createPublicClient({
-        // Redirect-off (Blocker 10): a 3xx to a re-pointed (possibly private) host
-        // is refused, not followed. The chain-id echo below is the second defense.
-        transport: http(rpcUrl, { timeout: 15_000, retryCount: 1, fetchOptions: { redirect: "error" } }),
+      const probe = await withinCandidateBudget(budget, async (signal) => {
+        const fetchOptions: DispatchableRequestInit = {
+          redirect: "error",
+          signal,
+          dispatcher: trustedAsConfigured.has(rpcUrl) ? undefined : egress,
+        };
+        const client = createPublicClient({
+          // Redirect-off: a 3xx to a re-pointed (possibly private)
+          // host is refused, not followed. `dispatcher` is the connect-time
+          // egress decision for a PROVIDER-supplied URL - resolve, refuse
+          // non-public, pin the checked address - and is deliberately absent for
+          // a curated URL, because the user's own archive node on a private
+          // address is a supported setup. `signal` is the leg budget reaching
+          // the socket; `retryCount: 0` because the candidate list is the
+          // fallback, not the same endpoint twice.
+          transport: http(rpcUrl, { timeout: BRIDGE_RPC_CANDIDATE_TIMEOUT_MS, retryCount: 0, fetchOptions }),
+        });
+        const echo = await client.getChainId();
+        if (echo !== input.expectedChainId) {
+          return { kind: "observed", observation: "chain_echo_mismatch" } as const;
+        }
+        const status: unknown = (await client.getTransactionReceipt({ hash: input.txHash as `0x${string}` })).status;
+        // Receipt exists: only the LITERAL statuses are proof. viem's formatter
+        // maps `0x1`/`0x0` and yields a nullish value for anything else, so
+        // treating "not success" as a revert (F7) would tell the user their fill
+        // REVERTED when we merely could not read the status - a claim beyond the
+        // evidence, and the same trap the EVM sweep already avoids
+        // (`agent-activity-repair.ts`). A revert is definitive NOT-verified; an
+        // unreadable status is an inconclusive check. Neither confirms.
+        if (status === "success") return { kind: "verified" } as const;
+        if (status === "reverted") return { kind: "reverted" } as const;
+        return { kind: "observed", observation: "unreadable_receipt_status" } as const;
       });
-      const echo = await client.getChainId();
-      if (echo !== input.expectedChainId) {
-        observations.push("chain_echo_mismatch"); // wrong chain / swapped endpoint — try the next url.
+      if (!probe.settled) {
+        // The candidate ran out of its own time, or the leg did. Either way this
+        // endpoint told us nothing: no answer is `rpc_unreachable`, exactly as a
+        // socket failure is.
+        observations.push("rpc_unreachable");
         continue;
       }
-      const status: unknown = (await client.getTransactionReceipt({ hash: input.txHash as `0x${string}` })).status;
-      // Receipt exists: only the LITERAL statuses are proof. viem's formatter
-      // maps `0x1`/`0x0` and yields a nullish value for anything else, so
-      // treating "not success" as a revert (F7) would tell the user their fill
-      // REVERTED when we merely could not read the status — a claim beyond the
-      // evidence, and the same trap the EVM sweep already avoids
-      // (`agent-activity-repair.ts`). A revert is definitive NOT-verified; an
-      // unreadable status is an inconclusive check. Neither confirms.
-      if (status === "success") return { verified: true };
-      if (status === "reverted") return { verified: false, reason: "fill_reverted" };
-      observations.push("unreadable_receipt_status");
+      if (probe.value.kind === "verified") return { verified: true };
+      if (probe.value.kind === "reverted") return { verified: false, reason: "fill_reverted" };
+      observations.push(probe.value.observation);
       continue;
     } catch (err) {
-      // Not mined yet, an endpoint that ANSWERED and refused, or a transport
-      // failure. Three different facts for the user - "wait", "this endpoint
-      // will not serve us", "we cannot see this chain" - and this loop is the
-      // only place that can still tell them apart. A refusal continues to the
-      // next URL exactly as a chain mismatch does.
+      // Not mined yet, an endpoint that ANSWERED and refused, a transport
+      // failure, or OUR OWN egress policy refusing a provider URL that resolves
+      // into private space. Four different facts for the user - "wait", "this
+      // endpoint will not serve us", "we cannot see this chain", "that endpoint
+      // is not one we may reach" - and this loop is the only place that can
+      // still tell them apart. Each continues to the next URL.
       const observation = classifyEvmProbeError(err);
       observations.push(observation);
       logger.debug("bridge.repair.rpc_probe_miss", {
@@ -91,7 +169,118 @@ export async function verifyBridgeLegOnChain(input: FillVerificationInput): Prom
       continue;
     }
   }
+  if (budget.expired()) {
+    const reduced = observations.length > 0 ? resolveEvmProbeReason(observations) : null;
+    return { verified: false, reason: reportLegDeadline(input, observations, reduced) };
+  }
   return { verified: false, reason: resolveEvmProbeReason(observations) };
+}
+
+/**
+ * THE LEG BUDGET: one owner-created signal, propagated through the registry
+ * reads and every RPC call of one leg verification, and disposed by its owner.
+ *
+ * The shape follows VS Code's `createCancelablePromise`/`raceCancellation`
+ * (`src/vs/base/common/async.ts`): the owner mints ONE signal, every await gets
+ * it, and abandonment never leaves a timer behind. `setTimeout` rather than
+ * `AbortSignal.timeout` deliberately - the former is what a fake-timer test can
+ * drive, and this deadline has to be provable without waiting 20 real seconds.
+ */
+interface LegVerificationBudget {
+  readonly signal: AbortSignal;
+  /** True once the leg deadline has fired. Checked before starting more work, never assumed from a rejection. */
+  expired(): boolean;
+  dispose(): void;
+}
+
+function startLegVerificationBudget(ms: number): LegVerificationBudget {
+  const controller = new AbortController();
+  const handle = setTimeout(() => controller.abort(new Error("bridge leg verification deadline")), ms);
+  return {
+    signal: controller.signal,
+    expired: () => controller.signal.aborted,
+    dispose: () => clearTimeout(handle),
+  };
+}
+
+/** Settled by the work, or abandoned because a deadline fired first. */
+type BudgetedOutcome<T> = { readonly settled: true; readonly value: T } | { readonly settled: false };
+
+/**
+ * Race owned work against an abort signal. Abandoning does NOT prove the work
+ * stopped (rule 05: abort requests cancellation, it does not prove quiescence);
+ * it proves this owner stopped waiting. The rejection handler stays attached so
+ * a late failure of abandoned work is swallowed rather than surfacing as an
+ * unhandled rejection.
+ */
+function raceAbort<T>(work: Promise<T>, signal: AbortSignal): Promise<BudgetedOutcome<T>> {
+  return new Promise<BudgetedOutcome<T>>((resolve, reject) => {
+    if (signal.aborted) {
+      void work.catch(() => undefined);
+      resolve({ settled: false });
+      return;
+    }
+    const onAbort = (): void => resolve({ settled: false });
+    signal.addEventListener("abort", onAbort, { once: true });
+    work
+      .then(
+        (value) => resolve({ settled: true, value }),
+        (err: unknown) => reject(err instanceof Error ? err : new Error(String(err))),
+      )
+      .finally(() => signal.removeEventListener("abort", onAbort));
+  });
+}
+
+function raceBudget<T>(work: Promise<T>, budget: LegVerificationBudget): Promise<BudgetedOutcome<T>> {
+  return raceAbort(work, budget.signal);
+}
+
+/**
+ * Run ONE candidate under its own timeout, linked to the leg budget: whichever
+ * fires first aborts the transport and returns the loop its turn. The
+ * per-candidate timer is always cleared and the link always removed, so an
+ * abandoned candidate leaves no timer and no listener behind.
+ */
+async function withinCandidateBudget<T>(
+  budget: LegVerificationBudget,
+  run: (signal: AbortSignal) => Promise<T>,
+): Promise<BudgetedOutcome<T>> {
+  if (budget.expired()) return { settled: false };
+  const controller = new AbortController();
+  const onLegDeadline = (): void => controller.abort(budget.signal.reason);
+  budget.signal.addEventListener("abort", onLegDeadline, { once: true });
+  const handle = setTimeout(() => controller.abort(new Error("bridge rpc candidate timeout")), BRIDGE_RPC_CANDIDATE_TIMEOUT_MS);
+  try {
+    return await raceAbort(run(controller.signal), controller.signal);
+  } finally {
+    clearTimeout(handle);
+    budget.signal.removeEventListener("abort", onLegDeadline);
+  }
+}
+
+/**
+ * What a leg that ran out of time reports. It TERMINALIZES NOTHING: the row
+ * stays pending and is retried on the next tick.
+ *
+ * Whatever the endpoints did manage to establish still wins (`reduced`),
+ * because "an endpoint refused us" remains the more specific fact even when the
+ * clock ended the search. A leg that learned nothing at all - a registry read
+ * that outlasted the budget - falls back to the vocabulary's generic
+ * `verification_failed`: the 065 vocabulary has no member for "we ran out of
+ * budget", and that column's owner is another module
+ * (`db/repos/agent-activity/types/verification.ts`).
+ */
+function reportLegDeadline(
+  input: FillVerificationInput,
+  observations: readonly string[],
+  reduced: VerificationReason | null,
+): VerificationReason {
+  logger.debug("bridge.repair.leg_deadline_exceeded", {
+    chainId: input.expectedChainId,
+    chainFamily: input.chainFamily,
+    observations: [...observations],
+  });
+  return reduced ?? "verification_failed";
 }
 
 /** What ONE endpoint established about the fill hash, when it did not settle the question. */
@@ -101,6 +290,20 @@ export type EvmProbeObservation =
   | "unreadable_receipt_status"
   | "rpc_refused_request"
   | "rpc_unreachable";
+
+/**
+ * What one endpoint established, PLUS the one outcome that is about us rather
+ * than about the endpoint: `no_safe_rpc`, recorded when our own egress policy
+ * refused to open the socket because the provider's hostname resolved into
+ * private space.
+ *
+ * It is deliberately the 065 vocabulary's EXISTING member rather than a new
+ * one: the column means "why the last check could not conclude", and "we had no
+ * endpoint we were allowed to reach" is exactly what `no_safe_rpc` already says
+ * for the syntactic refusals. The vocabulary itself is owned by
+ * `db/repos/agent-activity/types/verification.ts`, not by this family.
+ */
+export type EvmProbeOutcome = EvmProbeObservation | "no_safe_rpc";
 
 /**
  * Reduce what several endpoints said into the single most specific fact the loop
@@ -126,13 +329,14 @@ export type EvmProbeObservation =
  * see this chain" is what let one row re-probe the same refusing endpoint 1227
  * times over 31 days.
  */
-export function resolveEvmProbeReason(observations: readonly EvmProbeObservation[]): EvmProbeObservation | "no_safe_rpc" {
+export function resolveEvmProbeReason(observations: readonly EvmProbeOutcome[]): EvmProbeOutcome {
   for (const candidate of [
     "unreadable_receipt_status",
     "fill_not_mined",
     "chain_echo_mismatch",
     "rpc_refused_request",
     "rpc_unreachable",
+    "no_safe_rpc",
   ] as const) {
     if (observations.includes(candidate)) return candidate;
   }
@@ -160,8 +364,15 @@ const ERROR_CAUSE_MAX_DEPTH = 5;
  */
 const VIEM_UNKNOWN_RPC_CODE = -1;
 
-/** What ONE failed probe of a single endpoint established. */
-function classifyEvmProbeError(err: unknown): EvmProbeObservation {
+/**
+ * What ONE failed probe of a single endpoint established.
+ *
+ * OUR OWN REFUSAL IS CHECKED FIRST. An egress refusal never reached a socket, so
+ * reporting it as `rpc_unreachable` ("no endpoint answered") would describe the
+ * chain when the fact is about the endpoint we declined to reach.
+ */
+function classifyEvmProbeError(err: unknown): EvmProbeOutcome {
+  if (isEgressRefusal(err)) return "no_safe_rpc";
   if (isReceiptNotFound(err)) return "fill_not_mined";
   return isJsonRpcErrorResponse(err) ? "rpc_refused_request" : "rpc_unreachable";
 }
@@ -207,32 +418,59 @@ function isJsonRpcErrorResponse(err: unknown): boolean {
  * definitively NOT verified (the fill tx failed). Any transient/unavailable case
  * ⇒ not verified, row stays pending. Redirects are pinned OFF.
  */
-async function verifySolanaLegOnChain(input: FillVerificationInput): Promise<FillVerification> {
-  // Base58 Solana signatures are ~87–88 chars; reject an EVM-shaped hash outright.
+async function verifySolanaLegOnChain(
+  input: FillVerificationInput,
+  budget: LegVerificationBudget,
+  egress: Dispatcher,
+): Promise<FillVerification> {
+  // Base58 Solana signatures are ~87-88 chars; reject an EVM-shaped hash outright.
   if (!/^[1-9A-HJ-NP-Za-km-z]{43,90}$/.test(input.txHash)) {
     return { verified: false, reason: "malformed_fill_signature" };
   }
-  const { providerRegistry } = await resolveVerificationRpcs(input.expectedChainId, input.protocol, "solana");
-  // Solana has no curated/local EVM RPC — only the SSRF-validated provider registry.
-  const urls = selectVerificationRpcUrls({ curated: [], providerRegistry });
+  const resolved = await raceBudget(
+    resolveVerificationRpcs(input.expectedChainId, input.protocol, "solana"),
+    budget,
+  );
+  if (!resolved.settled) return { verified: false, reason: reportLegDeadline(input, [], null) };
+  // Solana has no curated/local EVM RPC - only the SSRF-validated provider
+  // registry, which means EVERY candidate here goes through the pinning
+  // dispatcher, with no as-configured bucket to exempt.
+  const urls = selectVerificationRpcUrls({ curated: [], providerRegistry: resolved.value.providerRegistry });
   if (urls.length === 0) return { verified: false, reason: "no_safe_rpc" };
 
-  const observations: SolanaProbeObservation[] = [];
+  const observations: SolanaProbeOutcome[] = [];
   for (const rpcUrl of urls) {
+    if (budget.expired()) break;
     try {
-      const genesis = await solanaRpcCall(rpcUrl, "getGenesisHash", []);
-      if (typeof genesis !== "string" || genesis !== SOLANA_MAINNET_GENESIS) {
-        observations.push("chain_echo_mismatch"); // wrong cluster — try next.
+      const probe = await withinCandidateBudget(budget, async (signal) => {
+        const call = (method: string, params: unknown[]): Promise<unknown> =>
+          solanaRpcCall(rpcUrl, method, params, {
+            signal,
+            dispatcher: egress,
+            timeoutMs: BRIDGE_RPC_CANDIDATE_TIMEOUT_MS,
+          });
+        const genesis = await call("getGenesisHash", []);
+        if (typeof genesis !== "string" || genesis !== SOLANA_MAINNET_GENESIS) {
+          return { kind: "observed", observation: "chain_echo_mismatch" } as const;
+        }
+        return {
+          kind: "statuses",
+          result: await call("getSignatureStatuses", [[input.txHash], { searchTransactionHistory: true }]),
+        } as const;
+      });
+      if (!probe.settled) {
+        observations.push("rpc_unreachable");
         continue;
       }
-      const result = await solanaRpcCall(rpcUrl, "getSignatureStatuses", [
-        [input.txHash],
-        { searchTransactionHistory: true },
-      ]);
+      if (probe.value.kind === "observed") {
+        observations.push(probe.value.observation); // wrong cluster - try next.
+        continue;
+      }
+      const result = probe.value.result;
       const value = typeof result === "object" && result !== null ? (result as Record<string, unknown>).value : undefined;
       const entry = Array.isArray(value) ? value[0] : null;
       if (entry === null || entry === undefined || typeof entry !== "object") {
-        observations.push("signature_status_unavailable"); // unknown on this node — try next.
+        observations.push("signature_status_unavailable"); // unknown on this node - try next.
         continue;
       }
       const record = entry as Record<string, unknown>;
@@ -245,13 +483,19 @@ async function verifySolanaLegOnChain(input: FillVerificationInput): Promise<Fil
       }
       return { verified: false, reason: "not_yet_confirmed" };
     } catch (err) {
-      observations.push("rpc_unreachable");
+      const observation: SolanaProbeOutcome = isEgressRefusal(err) ? "no_safe_rpc" : "rpc_unreachable";
+      observations.push(observation);
       logger.debug("bridge.repair.solana_probe_miss", {
         chainId: input.expectedChainId,
+        observation,
         error: summarizeProtocolError(err).message,
       });
       continue;
     }
+  }
+  if (budget.expired()) {
+    const reduced = observations.length > 0 ? resolveSolanaProbeReason(observations) : null;
+    return { verified: false, reason: reportLegDeadline(input, observations, reduced) };
   }
   return { verified: false, reason: resolveSolanaProbeReason(observations) };
 }
@@ -259,16 +503,22 @@ async function verifySolanaLegOnChain(input: FillVerificationInput): Promise<Fil
 /** What ONE Solana endpoint established, when it did not settle the question. */
 export type SolanaProbeObservation = "chain_echo_mismatch" | "signature_status_unavailable" | "rpc_unreachable";
 
+/** The Solana analog of {@link EvmProbeOutcome}: what an endpoint said, plus our own egress refusal. */
+export type SolanaProbeOutcome = SolanaProbeObservation | "no_safe_rpc";
+
 /**
  * Same rule as the EVM reducer: "a node answered and did not know this
  * signature" is a different fact from "no node answered at all", and reporting
  * both as `signature_status_unavailable` told the user we had looked when we had
  * not. Most-specific-wins, fixed order.
  */
-export function resolveSolanaProbeReason(
-  observations: readonly SolanaProbeObservation[],
-): SolanaProbeObservation | "no_safe_rpc" {
-  for (const candidate of ["signature_status_unavailable", "chain_echo_mismatch", "rpc_unreachable"] as const) {
+export function resolveSolanaProbeReason(observations: readonly SolanaProbeOutcome[]): SolanaProbeOutcome {
+  for (const candidate of [
+    "signature_status_unavailable",
+    "chain_echo_mismatch",
+    "rpc_unreachable",
+    "no_safe_rpc",
+  ] as const) {
     if (observations.includes(candidate)) return candidate;
   }
   return "no_safe_rpc";

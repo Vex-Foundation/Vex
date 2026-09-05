@@ -177,6 +177,28 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   ["beforeTimestampSeconds", "walk a candle history BACKWARDS: return buckets strictly before this unix-seconds mark"],
   ["currency", "which side a candle series is denominated in; declared as an `enum`"],
 
+  // -- Virtuals bonding-curve trade pair (PR-C2) -------------------
+  //
+  // The vocabulary the curve quote and its execute share. `side` and `amountIn`
+  // above already carry the direction and the size; these three are what a
+  // CURVE trade needs beyond a generic swap. `simulateOnly` is deliberately NOT
+  // `dryRun`: `dryRun` is the RUNTIME's own preview key, and `isPreviewExecution`
+  // downgrades such a call to `actionKind: "read"`, which would take a
+  // fund-moving tool out of the approval gate. This simulation is handler-owned
+  // and keeps the execute approval-gated, so it must not borrow that key.
+  [
+    "acceptAntiSniperTaxPct",
+    "the anti-sniper tax, as a PERCENT, the caller accepts on a Virtuals curve buy; the execute refuses when the live tax has risen above it, so the bound is consent and never a hint",
+  ],
+  [
+    "proposalId",
+    "the digest of everything a Virtuals curve quote bound (contracts, side, amounts, fee, taxes and floor); proves the trade executed is the trade priced, and is never synthesised by the caller",
+  ],
+  [
+    "simulateOnly",
+    "eth_call the exact transactions this execute would send and return them with `executed: false`; no signer opened, no quote consumed, nothing broadcast",
+  ],
+
   // -- Lending-market reads (morpho, batch 1) ----------------------
   //
   // Domain range predicates. They are named rather than folded into a generic
@@ -566,6 +588,22 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   ["minCurveProgressPct", "floor on bonding-curve completion, as a PERCENT"],
   ["maxCurveProgressPct", "ceiling on bonding-curve completion, as a PERCENT"],
 
+  // -- pools.fun launch badges and the factory's pricing axis (PR4) ---
+  //
+  // Three keys, each the PROVIDER's own spelling rather than a Vex invention.
+  // `vexAttested` and `holderRewards` are the launchpad's two opt-in discover
+  // switches: measured at `src/tools/pools-fun/PoolsFun.md` lines 61-62, the
+  // endpoint accepts the literal `true` only and answers HTTP 400 on `false`,
+  // so the complement genuinely cannot be requested and a generic boolean
+  // spelling would promise a filter the provider does not serve. `pricingMode`
+  // is the launch factory's own enum over the paired asset (CORE_CHAINLINK,
+  // CHAINLINK_STOCK, SIGNED_STOCK - 35 and 159 of 194 assets when measured,
+  // PoolsFun.md lines 233-242), and it decides whether a launch needs a
+  // time-boxed signed price attestation, so it is an axis a caller screens on.
+  ["vexAttested", "pools.fun opt-in switch keeping only launches carrying a Vex attestation; the provider accepts the literal true only"],
+  ["holderRewards", "pools.fun opt-in switch keeping only tokens that stream their fees to holders; same true-only contract as vexAttested"],
+  ["pricingMode", "the pools.fun launch factory's own pricing enum for a paired asset; decides whether a launch needs a signed price attestation"],
+
   // -- Time-series and deep-read shaping (DexScreener deep dive, S4) ---
   //
   // These describe reading ONE pool's history rather than screening a
@@ -712,6 +750,14 @@ export const CANONICAL_HUMAN_AMOUNT_SENTENCE =
  * sentence at 2047 of the 2048-character hot-set bound
  * (`mcp/inventory/types.ts`) and the budget is the consumer's, not this
  * sentence's.
+ *
+ * THAT 2047 IS BYTES AS WELL AS CHARACTERS, and the two readings have stopped
+ * agreeing. The measured cut is by characters, so characters remain the
+ * contract; but `SwapExecute` and `SwapQuote` each carry a U+2192 arrow, which
+ * puts them at 2045 characters and 2047 UTF-8 bytes - one byte of headroom
+ * under the same number. Adding a word to this sentence therefore spends both
+ * budgets at once, and `__tests__/vex-agent/mcp/inventory.test.ts` asserts both
+ * so a non-ASCII edit cannot cross either unnoticed.
  *
  * The card clause answers the second measured confusion: two sessions read their
  * own harness rule ("confirm before an irreversible action") against a card they

@@ -37,7 +37,9 @@ import type {
   PoolsDevBuyQuote,
   PoolsDiscoverPage,
   PoolsDiscoverParams,
+  PoolsHolderRewards,
   PoolsImageUpload,
+  PoolsLaunchAssets,
   PoolsLaunchConfig,
   PoolsPrepareRequest,
   PoolsPrepareResponse,
@@ -46,7 +48,9 @@ import {
   validateCandles,
   validateDevBuyQuote,
   validateDiscoverPage,
+  validateHolderRewards,
   validateImageUpload,
+  validateLaunchAssets,
   validateLaunchConfig,
   validatePrepareResponse,
 } from "./validation.js";
@@ -73,9 +77,18 @@ const DISCOVER_QUERY_ORDER = [
   "maxAgeHours",
   "deployer",
   "feeRecipient",
+  // Added 2026-09-04. Both are OPT-IN SWITCHES, not booleans: the provider
+  // accepts the literal string "true" and answers `false` with HTTP 400
+  // `Invalid input: expected "true"`, so the client sends the key only when the
+  // filter is on (see `discover` below).
+  "vexAttested",
+  "holderRewards",
 ] as const;
 
 const CANDLES_QUERY_ORDER = ["chain", "timeframe", "aggregate", "limit"] as const;
+
+/** `/pools-fun/holder-rewards` query keys, in the order they are appended. */
+const HOLDER_REWARDS_QUERY_ORDER = ["token", "wallet"] as const;
 
 /**
  * Per-call options every endpoint accepts.
@@ -184,6 +197,12 @@ export class PoolsFunClient {
         maxAgeHours: params.maxAgeHours,
         deployer: params.deployerAddress,
         feeRecipient: params.feeRecipientAddress,
+        // `true` or NOTHING. `vexAttested=false` is HTTP 400 on this provider
+        // (`Invalid input: expected "true"`, measured 2026-09-04), so a caller
+        // asking for `false` is asking for "do not apply the filter" and the
+        // key is dropped rather than sent as a value the API rejects.
+        vexAttested: params.vexAttested === true ? true : undefined,
+        holderRewards: params.holderRewards === true ? true : undefined,
       },
       DISCOVER_QUERY_ORDER,
     );
@@ -212,6 +231,58 @@ export class PoolsFunClient {
       CANDLES_QUERY_ORDER,
     );
     return validateCandles(await this.send(url, options));
+  }
+
+  /**
+   * `/pools-fun/launch-assets` - every tokenised stock a launch may pair
+   * against.
+   *
+   * NO PAGINATION AND NO FILTERS. The provider returns the whole list in one
+   * body (194 rows on 2026-09-04) and IGNORES a `chain` parameter - asking for
+   * `chain=base` still answers with the Robinhood set - so nothing is appended
+   * to the URL and there is no cursor to echo. Rows carry no decimals: a launch
+   * that needs the pair's decimals reads them on-chain.
+   */
+  async launchAssets(options: PoolsRequestOptions = {}): Promise<PoolsLaunchAssets> {
+    const url = new URL(POOLS_ENDPOINTS.launchAssets, this.base()).toString();
+    return validateLaunchAssets(await this.send(url, options));
+  }
+
+  /**
+   * `/pools-fun/holder-rewards?token=&wallet=` - the launchpad's view of one
+   * fees-to-holders distributor, optionally for one holder.
+   *
+   * BOTH ADDRESSES ARE LOWERCASED BEFORE THEY ARE SENT, and that is a fix for a
+   * measured provider fault rather than tidiness. A mixed-case address whose
+   * EIP-55 checksum is WRONG makes this endpoint answer HTTP 502
+   * `Could not load holder rewards` - not the HTTP 400 naming the field that a
+   * malformed address gets - so a caller who copied a truncated address out of a
+   * UI would see a server outage instead of a bad argument. Measured 2026-09-04:
+   * the same wallet lowercased, and any correctly-checksummed mixed-case
+   * address, answer 200. Lowercase is always checksum-valid, so normalising here
+   * removes the failure mode entirely.
+   *
+   * The wallet leg is still NOT the money authority: `earned(wallet)` on the
+   * distributor is (`holder-rewards/read.ts`, plan v3 A5). This value is the
+   * provider's echo of it.
+   *
+   * Rate limited to 30 requests per 60 seconds (`ratelimit-policy: 30;w=60`).
+   * A token with no distributor answers HTTP 404 `Not a fees-to-holders token`,
+   * which `errors.ts` turns into a named not-found rather than a route error.
+   */
+  async holderRewards(
+    params: { readonly tokenAddress: string; readonly walletAddress?: string | undefined },
+    options: PoolsRequestOptions = {},
+  ): Promise<PoolsHolderRewards> {
+    const url = this.buildUrl(
+      POOLS_ENDPOINTS.holderRewards,
+      {
+        token: params.tokenAddress.toLowerCase(),
+        wallet: params.walletAddress?.toLowerCase(),
+      },
+      HOLDER_REWARDS_QUERY_ORDER,
+    );
+    return validateHolderRewards(await this.send(url, options));
   }
 
   // -- Launch preparation (gateway path) -----------------------------

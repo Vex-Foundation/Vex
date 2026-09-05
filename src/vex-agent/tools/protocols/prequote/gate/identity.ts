@@ -16,6 +16,7 @@ import { resolveUniswapChainId } from "@tools/uniswap/chains.js";
 import { resolvePendleChainId } from "@tools/pendle/chains.js";
 import { resolveLocalChainId } from "@tools/evm-chains/registry.js";
 import { virtualsCurveDeployment } from "@tools/virtuals/curve/index.js";
+import { MORPHO_MARKET_LANE } from "../identity/lane.js";
 import {
   canonicalizeJupiterFeeTail,
   resolveJupiterFeeSwapKnobs,
@@ -345,7 +346,7 @@ export async function computeGateMatch(
     // which, and it must be read here rather than guessed from the params: a
     // gate that inferred the lane from which key happened to be present would
     // let a caller choose its own identity path.
-    const identity = gated.lane === "market"
+    const identity = gated.lane === MORPHO_MARKET_LANE
       ? buildMorphoBorrowIdentityFor(
         gated.kind === "lend_deposit" ? "supply" : "withdraw",
         sessionId,

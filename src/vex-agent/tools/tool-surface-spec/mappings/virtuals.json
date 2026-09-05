@@ -32,6 +32,11 @@
       "rationale": "Same shape as the trades read: one agent's OHLCV history, listed with a bound and a backwards cursor. `candles` is the term every other price-history tool in the tree uses (pools ohlcv, dexscreener bars), so the noun stays consistent across namespaces."
     },
     {
+      "toolId": "virtuals.creator_fees",
+      "publicName": "virtuals__creator_fees_get",
+      "rationale": "Existing snake words preserved, canonical by-id verb appended. The read answers for ONE agent on ONE chain from AgentTaxV2 at a pinned block (manifests/creator-fees.ts); it stays a `get` and never a claim verb, because the collection path is gated on SWAP_ROLE that the creator wallet does not hold, which the tool reports as `unsupported` with the measurement."
+    },
+    {
       "toolId": "virtuals.trade.quote",
       "publicName": "virtuals__agent_trade_quote",
       "rationale": "Names the resource and the operation, by FAMILY rather than by chain or side. One curve surface serves base and robinhood and both directions, so `agent_trade` is the resource and `quote` the canonical read verb - the same pairing every other venue uses for the priced half of a two-step trade."

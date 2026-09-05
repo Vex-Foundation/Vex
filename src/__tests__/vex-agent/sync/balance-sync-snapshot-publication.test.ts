@@ -34,7 +34,13 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 interface Statement { sql: string; params?: unknown[] }
 
-/** Rows the ledger query should return. Empty = nothing in flight. */
+/**
+ * Rows the ledger query should return, in the shape the real statement emits:
+ * `row_type = 'wallet'` aggregate rows (computed by the SERVER over every
+ * in-flight row) followed by `row_type = 'entry'` display rows. The helpers
+ * below build both halves from one description so a scenario cannot
+ * accidentally describe a total the entries contradict.
+ */
 let ledgerRows: Record<string, unknown>[] = [];
 /** The fence the gate reads INSIDE the transaction. */
 let fenceInTx = { max_id: "0", row_count: "0", pending_count: "0", confirmed_count: "0" };
@@ -59,6 +65,7 @@ async function fakeQuery(sql: string, params?: unknown[]): Promise<{ rows: unkno
   }
   if (sql.includes("MAX(id)")) return { rows: [fenceInTx], rowCount: 1 };
   if (sql.includes("agent_activity_pending")) return { rows: ledgerRows, rowCount: ledgerRows.length };
+  if (sql.includes("proj_portfolio_snapshot_group_wallets")) return { rows: [], rowCount: 0 };
   return { rows: [], rowCount: 0 };
 }
 
@@ -165,24 +172,121 @@ beforeEach(() => {
 
 // ── 1. In-flight money is ACCOUNTED FOR, never a veto ────────────────────
 
+/**
+ * One row as the ledger statement returns it.
+ *
+ * `standing` and `ageSeconds` are columns now: the server classifies every row
+ * so it can AGGREGATE over all of them, including the ones the bounded display
+ * list never returns. The classification itself is therefore proved against
+ * real Postgres in `__tests__/integration/repos/snapshot-publication-gate`,
+ * which is where that risk lives; what this suite owns is what the publisher
+ * does with the answer.
+ */
+interface FakeEntry {
+  kind: string;
+  walletAddress?: string;
+  ref: string;
+  detail: string | null;
+  standing: "in_transit" | "unresolved";
+  ageSeconds: number;
+  amountText?: string | null;
+  amountDecimals?: number | null;
+  symbol?: string | null;
+  usdEst?: string | null;
+}
+
+interface FakeWalletTotals {
+  walletAddress: string;
+  entryCount: number;
+  unresolvedCount: number;
+  inTransitUsd: string;
+}
+
+/**
+ * Script the ledger statement's two row types.
+ *
+ * The per-wallet aggregates default to what the server would compute if every
+ * row were also displayed. A test that wants the OVERFLOW case - more rows than
+ * the display bound - passes aggregates that deliberately exceed the entries,
+ * which is exactly the shape production produces.
+ */
+function scriptLedger(entries: readonly FakeEntry[], totals?: readonly FakeWalletTotals[]): void {
+  const perWallet = totals ?? derivedTotals(entries);
+  ledgerRows = [
+    ...perWallet.map((wallet) => ({
+      row_type: "wallet",
+      wallet_address: wallet.walletAddress,
+      entry_count: String(wallet.entryCount),
+      unresolved_count: String(wallet.unresolvedCount),
+      in_transit_usd: wallet.inTransitUsd,
+      kind: null,
+      ref: null,
+      detail: null,
+      standing: null,
+      age_seconds: null,
+      since: null,
+      amount_text: null,
+      amount_decimals: null,
+      symbol: null,
+      usd_est: null,
+    })),
+    ...entries.map((entry) => ({
+      row_type: "entry",
+      wallet_address: entry.walletAddress ?? WALLETS[0],
+      entry_count: null,
+      unresolved_count: null,
+      in_transit_usd: null,
+      kind: entry.kind,
+      ref: entry.ref,
+      detail: entry.detail,
+      standing: entry.standing,
+      age_seconds: String(entry.ageSeconds),
+      since: agedBy(entry.ageSeconds),
+      amount_text: entry.amountText ?? null,
+      amount_decimals: entry.amountDecimals ?? null,
+      symbol: entry.symbol ?? null,
+      usd_est: entry.usdEst ?? null,
+    })),
+  ];
+}
+
+function derivedTotals(entries: readonly FakeEntry[]): FakeWalletTotals[] {
+  const byWallet = new Map<string, FakeWalletTotals>();
+  for (const entry of entries) {
+    const address = entry.walletAddress ?? WALLETS[0];
+    const totals = byWallet.get(address)
+      ?? { walletAddress: address, entryCount: 0, unresolvedCount: 0, inTransitUsd: "0" };
+    totals.entryCount += 1;
+    if (entry.standing === "unresolved") totals.unresolvedCount += 1;
+    else if (entry.usdEst != null) {
+      totals.inTransitUsd = String(Number(totals.inTransitUsd) + Number(entry.usdEst));
+    }
+    byWallet.set(address, totals);
+  }
+  return [...byWallet.values()];
+}
+
 /** The owner's row: a bridge fill the provider has not conclusively reported. */
-function bridgeFill(ageSeconds: number) {
+function bridgeFill(ageSeconds: number, standing: "in_transit" | "unresolved"): FakeEntry {
   return {
     kind: "agent_activity_pending",
     ref: "132",
     detail: "bridge_fill_expected",
-    since: agedBy(ageSeconds),
-    expires_at: null,
-    amount_text: "150.5",
-    amount_decimals: null,
+    standing,
+    ageSeconds,
+    amountText: "150.5",
     symbol: "USDC",
-    usd_est: "150.25",
+    usdEst: "150.25",
   };
 }
 
+/** The statement that writes the group's per-wallet in-flight rows. */
+const groupWalletStatement = () =>
+  statements.find((s) => s.sql.includes("proj_portfolio_snapshot_group_wallets"));
+
 describe("a pending bridge fill at PUBLICATION time", () => {
   it("no longer withholds the group - the snapshot is published with it named", async () => {
-    ledgerRows = [bridgeFill(10 * 60)];
+    scriptLedger([bridgeFill(10 * 60, "in_transit")]);
 
     const outcome = await publish();
 
@@ -194,8 +298,8 @@ describe("a pending bridge fill at PUBLICATION time", () => {
     expect(indexOf("INSERT INTO proj_portfolio_snapshots")).toBeGreaterThan(-1);
   });
 
-  it("carries it in the ledger as in_transit, with its expected OUTPUT leg", async () => {
-    ledgerRows = [bridgeFill(10 * 60)];
+  it("carries it in the ledger as in_transit, named by WALLET, with its expected OUTPUT leg", async () => {
+    scriptLedger([bridgeFill(10 * 60, "in_transit")]);
 
     const outcome = await publish();
 
@@ -203,6 +307,9 @@ describe("a pending bridge fill at PUBLICATION time", () => {
     expect(outcome.ledger.entries).toEqual([
       {
         kind: "agent_activity_pending",
+        // Whose money it is, on the entry itself: without this a portfolio read
+        // for the OTHER wallet inherits this bridge.
+        walletAddress: "0xAAA",
         ref: "132",
         detail: "bridge_fill_expected",
         standing: "in_transit",
@@ -216,28 +323,109 @@ describe("a pending bridge fill at PUBLICATION time", () => {
     ]);
     expect(outcome.ledger.inTransitUsd).toBeCloseTo(150.25, 6);
     expect(outcome.ledger.unresolvedCount).toBe(0);
+    expect(outcome.ledger.perWallet).toEqual([
+      { walletAddress: "0xAAA", entryCount: 1, unresolvedCount: 0, inTransitUsd: 150.25 },
+    ]);
     // settled is what was actually inserted, not what was offered.
     expect(outcome.ledger.settledUsd).toBeCloseTo(200, 6);
   });
 
-  it("writes the group record in the SAME transaction, after the per-wallet rows", async () => {
-    ledgerRows = [bridgeFill(10 * 60)];
+  it("writes the group record and its PER-WALLET rows in the SAME transaction, after the snapshots", async () => {
+    scriptLedger([bridgeFill(10 * 60, "in_transit")]);
 
     await publish();
 
     const groupAt = indexOf("INSERT INTO proj_portfolio_snapshot_groups");
+    const walletsAt = indexOf("proj_portfolio_snapshot_group_wallets");
     expect(groupAt).toBeGreaterThan(indexOf("INSERT INTO proj_portfolio_snapshots"));
-    expect(indexOf("COMMIT")).toBeGreaterThan(groupAt);
+    // The child rows reference the group row, so they cannot precede it.
+    expect(walletsAt).toBeGreaterThan(groupAt);
+    expect(indexOf("COMMIT")).toBeGreaterThan(walletsAt);
 
     const stmt = statements[groupAt];
     expect(stmt?.params?.[0]).toBe("group-1");
     expect(stmt?.params?.[2]).toBeCloseTo(150.25, 6);
     expect(stmt?.params?.[3]).toBe(0);
     expect(JSON.parse(String(stmt?.params?.[4]))).toHaveLength(1);
+    // The rows the ledger FOUND, which is what a reader compares the stored
+    // array against to know whether it holds the whole list.
+    expect(stmt?.params?.[5]).toBe(1);
+
+    // The COLUMN vocabulary, not the domain one: `jsonb_to_recordset` matches
+    // its record definition to the JSON keys by name.
+    expect(JSON.parse(String(groupWalletStatement()?.params?.[1]))).toEqual([
+      {
+        wallet_address: "0xAAA",
+        entry_count: 1,
+        unresolved_count: 0,
+        in_transit_usd: 150.25,
+      },
+    ]);
   });
 
-  it("at three hours the SAME row is unresolved: listed, counted, in NO total", async () => {
-    ledgerRows = [bridgeFill(3 * HOUR_SECONDS)];
+  it("attributes each wallet's money to that wallet and to no other", async () => {
+    // Only 0xBBB is mid-bridge. A group total would hand 0xAAA a stranger's
+    // $150; per-wallet rows are what let a scoped read refuse to.
+    scriptLedger([
+      { ...bridgeFill(10 * 60, "in_transit"), walletAddress: "0xBBB" },
+      {
+        kind: "wallet_intent_live",
+        walletAddress: "0xAAA",
+        ref: "wi_1",
+        detail: "consuming",
+        standing: "in_transit",
+        ageSeconds: 30,
+        amountText: "12.5",
+        symbol: "USDC",
+        usdEst: "12.5",
+      },
+    ]);
+
+    const outcome = await publish();
+
+    if (!outcome.published) throw new Error("unreachable");
+    expect(outcome.ledger.perWallet).toEqual([
+      { walletAddress: "0xBBB", entryCount: 1, unresolvedCount: 0, inTransitUsd: 150.25 },
+      { walletAddress: "0xAAA", entryCount: 1, unresolvedCount: 0, inTransitUsd: 12.5 },
+    ]);
+    // The group figure is still the SUM of the parts - it is just no longer the
+    // only thing recorded.
+    expect(outcome.ledger.inTransitUsd).toBeCloseTo(162.75, 6);
+    expect(outcome.ledger.entries.map((entry) => entry.walletAddress)).toEqual(["0xBBB", "0xAAA"]);
+  });
+
+  it("takes EVERY total from the server's aggregates, never from the bounded list", async () => {
+    // THE NO-SILENT-CUTTING CASE. 51 rows exist for one wallet; the statement
+    // returns the 50 oldest. Summing the list would delete the 51st row's money
+    // from the portfolio and report a complete-looking number.
+    const shown: FakeEntry[] = Array.from({ length: 50 }, (_, i) => ({
+      kind: "agent_activity_pending",
+      ref: `row-${i}`,
+      detail: "swap",
+      standing: "in_transit",
+      ageSeconds: 60 + i,
+      usdEst: "10",
+    }));
+    scriptLedger(shown, [
+      { walletAddress: "0xAAA", entryCount: 51, unresolvedCount: 3, inTransitUsd: "480" },
+    ]);
+
+    const outcome = await publish();
+
+    if (!outcome.published) throw new Error("unreachable");
+    // 48 in-transit rows at $10 plus 3 unresolved: the aggregate, not the 50
+    // displayed rows' $500.
+    expect(outcome.ledger.inTransitUsd).toBe(480);
+    expect(outcome.ledger.unresolvedCount).toBe(3);
+    expect(outcome.ledger.totalCount).toBe(51);
+    expect(outcome.ledger.entries).toHaveLength(50);
+    // Said out loud, in the record itself: rows exist beyond this list.
+    expect(outcome.ledger.truncated).toBe(true);
+    expect(statements[indexOf("INSERT INTO proj_portfolio_snapshot_groups")]?.params?.[5]).toBe(51);
+  });
+
+  it("counts an unresolved row without adding it to any total", async () => {
+    scriptLedger([bridgeFill(3 * HOUR_SECONDS, "unresolved")]);
 
     const outcome = await publish();
 
@@ -253,7 +441,7 @@ describe("a pending bridge fill at PUBLICATION time", () => {
   });
 
   it("reports an unresolved entry by ref and kind, and never its amount", async () => {
-    ledgerRows = [bridgeFill(3 * HOUR_SECONDS)];
+    scriptLedger([bridgeFill(3 * HOUR_SECONDS, "unresolved")]);
 
     logPublicationOutcome(await publish(), "group-1");
 
@@ -270,17 +458,16 @@ describe("a pending bridge fill at PUBLICATION time", () => {
   });
 
   it("a non-bridge pending leg reports its INPUT leg instead", async () => {
-    ledgerRows = [{
+    scriptLedger([{
       kind: "agent_activity_pending",
       ref: "901",
       detail: "swap",
-      since: agedBy(60),
-      expires_at: null,
-      amount_text: "1.25",
-      amount_decimals: null,
+      standing: "in_transit",
+      ageSeconds: 60,
+      amountText: "1.25",
       symbol: "WETH",
-      usd_est: "4200",
-    }];
+      usdEst: "4200",
+    }]);
 
     const outcome = await publish();
 
@@ -294,18 +481,18 @@ describe("a pending bridge fill at PUBLICATION time", () => {
   });
 
   it("converts a base-unit amount through its decimals, never through a float", async () => {
-    ledgerRows = [{
+    scriptLedger([{
       kind: "wallet_wrap_intent_live",
       ref: "wwi_1",
       detail: "consuming",
-      since: agedBy(30),
-      expires_at: new Date(Date.now() + 600_000),
+      standing: "in_transit",
+      ageSeconds: 30,
       // 1 wei short of 1 ETH: a float64 cannot represent this, a string can.
-      amount_text: "999999999999999999",
-      amount_decimals: 18,
+      amountText: "999999999999999999",
+      amountDecimals: 18,
       symbol: "WETH",
-      usd_est: null,
-    }];
+      usdEst: null,
+    }]);
 
     const outcome = await publish();
 
@@ -316,26 +503,42 @@ describe("a pending bridge fill at PUBLICATION time", () => {
     expect(outcome.ledger.inTransitUsd).toBe(0);
   });
 
-  it("an intent past its OWN expiry is unresolved even though it is young", async () => {
-    ledgerRows = [{
-      kind: "wallet_intent_live",
-      ref: "wi_1",
-      detail: "consuming",
-      since: agedBy(120),
-      expires_at: new Date(Date.now() - 1_000),
-      amount_text: "12.5",
-      amount_decimals: null,
-      symbol: "USDC",
-      usd_est: null,
-    }];
+  it("reads a NEGATIVE estimate as not priced, so it cannot reduce the published basis", async () => {
+    // A negative USD estimate is a bad price, not a liability, and
+    // it would render as a subtraction from the user's portfolio.
+    scriptLedger(
+      [{
+        kind: "agent_activity_pending",
+        ref: "neg-1",
+        detail: "swap",
+        standing: "in_transit",
+        ageSeconds: 60,
+        amountText: "1",
+        symbol: "USDC",
+        usdEst: "-500",
+      }],
+      [{ walletAddress: "0xAAA", entryCount: 1, unresolvedCount: 0, inTransitUsd: "0" }],
+    );
 
     const outcome = await publish();
 
     if (!outcome.published) throw new Error("unreachable");
-    // The CAS filters on `expires_at > NOW()`, so this can never be claimed:
-    // it is dead, not slow, and age would have called it in transit.
-    expect(outcome.ledger.entries[0]?.standing).toBe("unresolved");
-    expect(outcome.ledger.unresolvedCount).toBe(1);
+    expect(outcome.ledger.entries[0]?.usdEstimate).toBeNull();
+    expect(outcome.ledger.inTransitUsd).toBe(0);
+    expect(outcome.ledger.settledUsd).toBeCloseTo(200, 6);
+  });
+
+  it("refuses a negative per-wallet aggregate rather than subtracting it", async () => {
+    scriptLedger(
+      [bridgeFill(10 * 60, "in_transit")],
+      [{ walletAddress: "0xAAA", entryCount: 1, unresolvedCount: 0, inTransitUsd: "-42" }],
+    );
+
+    const outcome = await publish();
+
+    if (!outcome.published) throw new Error("unreachable");
+    expect(outcome.ledger.perWallet[0]?.inTransitUsd).toBe(0);
+    expect(outcome.ledger.inTransitUsd).toBe(0);
   });
 
   it("publishes an EMPTY ledger when nothing is in flight", async () => {
@@ -343,9 +546,14 @@ describe("a pending bridge fill at PUBLICATION time", () => {
 
     if (!outcome.published) throw new Error("unreachable");
     expect(outcome.ledger.entries).toEqual([]);
+    expect(outcome.ledger.perWallet).toEqual([]);
     expect(outcome.ledger.inTransitUsd).toBe(0);
     expect(outcome.ledger.unresolvedCount).toBe(0);
+    expect(outcome.ledger.totalCount).toBe(0);
     expect(outcome.ledger.truncated).toBe(false);
+    // An empty JSON array, not a skipped statement: absence of rows is a fact
+    // the group records, not a hole.
+    expect(JSON.parse(String(groupWalletStatement()?.params?.[1]))).toEqual([]);
   });
 });
 
@@ -517,7 +725,7 @@ describe("the transition fence", () => {
     // writers touch no status and insert nothing, so every component of the
     // new fence is identical across the touch.
     fenceInTx = { max_id: "7", row_count: "3", pending_count: "1", confirmed_count: "2" };
-    ledgerRows = [bridgeFill(31 * 24 * 3600)];
+    scriptLedger([bridgeFill(31 * 24 * 3600, "unresolved")]);
 
     const outcome = await publish();
 
@@ -631,7 +839,7 @@ describe("whole group or none", () => {
 
 describe("the published-group report", () => {
   it("names the settled and in-transit halves and the unresolved count", async () => {
-    ledgerRows = [bridgeFill(10 * 60)];
+    scriptLedger([bridgeFill(10 * 60, "in_transit")]);
 
     logPublicationOutcome(await publish(), "group-1");
 
@@ -643,6 +851,8 @@ describe("the published-group report", () => {
         settledUsd: "200.00",
         inTransitUsd: "150.25",
         inFlightCount: 1,
+        inFlightShown: 1,
+        walletsWithMoneyInFlight: 1,
         unresolvedCount: 0,
       }),
     );

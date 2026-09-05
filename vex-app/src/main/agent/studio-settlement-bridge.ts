@@ -38,7 +38,16 @@
  *      bridge WAITS for `whenEngineDbReady` instead of spending three bounded
  *      attempts against a database that has not been started yet and then
  *      declaring Studio unavailable for the session. The wait ends only when
- *      the database is ready or when this bridge's teardown aborts it.
+ *      the database is ready or when this bridge's teardown aborts it. EVERY
+ *      path that registers the preflight goes through it, the bounded retry
+ *      included: a retry that reached the database work directly spent the
+ *      whole budget on a database that had not started yet.
+ *   1c. AFTER EVERY AWAITED PHASE the abort signal and the epoch are checked
+ *      again, INSIDE the reconciliation as well as around it, and the readiness
+ *      write reports whether it COMMITTED. Only a committed transition logs a
+ *      ready Studio and starts the project-cleanup repair, so a teardown
+ *      landing inside the reconciliation can neither announce its rows, nor
+ *      start the second reconciliation query, nor publish readiness.
  *   2. THE ABANDONED-DISPATCH RECONCILER runs, in bounded pages. A Studio row
  *      left `dispatching` belongs to a process that died holding it, and
  *      process start is the one moment at which that is provable - which is
@@ -245,22 +254,7 @@ async function initializeStudioRuntime(
       scheduleDispatchPreflightRetry(epoch, signal);
       return;
     }
-    try {
-      // UNBOUNDED on purpose, and cancellable: on a cold start the local
-      // Postgres appears when the renderer triggers compose, long after this
-      // point. Giving up here is what used to leave Studio unavailable for the
-      // whole session; the boot deadline lives in `awaitStudioRuntimeReady`,
-      // which opens the window without opening the fence.
-      await whenEngineDbReady({ signal });
-    } catch (cause) {
-      if (cause instanceof EngineDbWaitAbortedError) return;
-      log.warn(
-        "[agent:studio-settlement-bridge] database readiness wait failed",
-        cause,
-      );
-      return;
-    }
-    await completeStudioRuntime(epoch, signal, 0);
+    await awaitEngineDbThenComplete(epoch, signal, 0);
   } catch (cause) {
     // The barrier is awaited by boot (`awaitStudioRuntimeReady`), so a
     // rejection here would take the whole start-up down over a Studio step
@@ -272,6 +266,41 @@ async function initializeStudioRuntime(
   } finally {
     initializationInFlight = false;
   }
+}
+
+/**
+ * THE ONE CONTINUATION every successful registration takes: wait for the
+ * database, THEN do the work that needs it.
+ *
+ * It exists as a named seam because the retry path used to skip it. A
+ * registration that failed once and succeeded on the retry went straight to
+ * `completeStudioRuntime`, so on a cold start the retries spent the whole
+ * bounded budget querying a database that compose had not started yet - three
+ * attempts at 5, 10 and 15 s against a database that appeared at 15.6 s - and
+ * then declared Studio unavailable for the session. The bounded retry is for
+ * failures that happen AFTER the database is ready, and this is what keeps it
+ * that way, whichever attempt reaches it.
+ *
+ * UNBOUNDED on purpose, and cancellable: giving up here would decide, for the
+ * user, that a slow database is a dead one. The boot deadline lives in
+ * `awaitStudioRuntimeReady`, which opens the window without opening the fence.
+ */
+async function awaitEngineDbThenComplete(
+  epoch: number,
+  signal: AbortSignal,
+  retriesUsed: number,
+): Promise<void> {
+  try {
+    await whenEngineDbReady({ signal });
+  } catch (cause) {
+    if (cause instanceof EngineDbWaitAbortedError) return;
+    log.warn(
+      "[agent:studio-settlement-bridge] database readiness wait failed",
+      cause,
+    );
+    return;
+  }
+  await completeStudioRuntime(epoch, signal, retriesUsed);
 }
 
 /**
@@ -288,16 +317,25 @@ async function completeStudioRuntime(
   retriesUsed: number,
 ): Promise<void> {
   if (signal.aborted) return;
-  if (!(await repairPendingStudioRefusal())) {
+  const repaired = await repairPendingStudioRefusal();
+  // RE-CHECKED AFTER THE AWAIT, both facts. A teardown that landed during the
+  // repair has already cancelled the retry timer and invalidated the epoch, so
+  // arming another retry here would leave a live timer nobody owns.
+  if (signal.aborted || currentStudioReadinessEpoch() !== epoch) return;
+  if (!repaired) {
     markStudioFenceUninitialized(epoch);
     scheduleDispatchPreflightRetry(epoch, signal, retriesUsed);
     return;
   }
-  await reconcileAbandonedDispatches();
-  // The epoch is checked INSIDE readiness, at the moment of the write, not
-  // here: a teardown can land during the awaits above, and a check performed
-  // before them would prove nothing about the state now.
-  markStudioRuntimeReady(epoch);
+  await reconcileAbandonedDispatches(epoch, signal);
+  if (!initializationIsCurrent(epoch, signal)) return;
+  // THE COMMIT, and everything below it is strictly after it. The epoch is
+  // checked INSIDE readiness, at the moment of the write, not before the awaits
+  // above, which would prove nothing about the state now; what the caller needs
+  // back is whether that write actually happened, because a teardown during the
+  // reconciliation otherwise left this path announcing a ready Studio and
+  // starting fresh cleanup work on a process that is going away.
+  if (!markStudioRuntimeReady(epoch)) return;
   log.info("[agent:studio-settlement-bridge] studio runtime ready");
 
   // B0: finish any project cleanup a previous run did not. Deliberately AFTER
@@ -368,6 +406,19 @@ let preflightRetryTimer: NodeJS.Timeout | null = null;
 let initializationAbort: AbortController | null = null;
 let initializationInFlight = false;
 
+/**
+ * Is THIS initialization still the one that may act?
+ *
+ * Both facts a teardown moves, checked together, because different owners move
+ * them: the abort controller lives in this module and the epoch in
+ * `readiness.ts`. A retry that outlived its teardown holds a stale epoch even
+ * though it also holds an aborted signal, and a re-entry that began a NEW epoch
+ * leaves the previous run's signal untouched.
+ */
+function initializationIsCurrent(epoch: number, signal: AbortSignal): boolean {
+  return !signal.aborted && currentStudioReadinessEpoch() === epoch;
+}
+
 function cancelDispatchPreflightRetry(): void {
   if (preflightRetryTimer === null) return;
   clearTimeout(preflightRetryTimer);
@@ -379,6 +430,15 @@ function scheduleDispatchPreflightRetry(
   signal: AbortSignal,
   retriesUsed = 0,
 ): void {
+  // THE TEARDOWN CHECK BELONGS HERE, at the one owner of the arming, not at
+  // each caller. Every call site reaches this function AFTER an awaited
+  // registration, and a registration that was still in flight when teardown
+  // landed answers once the teardown has already cleared the timers: arming
+  // then leaves a live timer behind a lifecycle that is over, owned by
+  // nobody, on a process that is going away. Both facts teardown moves are
+  // checked, because they are moved by different owners: the controller here
+  // and the epoch in `readiness.ts`.
+  if (signal.aborted || currentStudioReadinessEpoch() !== epoch) return;
   if (retriesUsed >= PREFLIGHT_RETRY_ATTEMPTS) {
     log.error(
       "[agent:studio-settlement-bridge] studio runtime initialization did not "
@@ -395,7 +455,9 @@ function scheduleDispatchPreflightRetry(
       initializationInFlight = true;
       try {
         if (await registerDispatchPreflight()) {
-          await completeStudioRuntime(epoch, signal, retriesUsed + 1);
+          // THE SAME continuation as the first attempt: the database wait comes
+          // before any work that needs the database, on every path.
+          await awaitEngineDbThenComplete(epoch, signal, retriesUsed + 1);
           return;
         }
         scheduleDispatchPreflightRetry(epoch, signal, retriesUsed + 1);
@@ -467,7 +529,10 @@ export async function disposeStudioWriteRepairOwner(): Promise<void> {
  * have moved funds. A failed pass does not keep Studio closed - the scan is
  * over either way, so the race it exists to prevent is over too.
  */
-async function reconcileAbandonedDispatches(): Promise<void> {
+async function reconcileAbandonedDispatches(
+  epoch: number,
+  signal: AbortSignal,
+): Promise<void> {
   try {
     const {
       reconcileAbandonedStudioDispatches,
@@ -475,8 +540,14 @@ async function reconcileAbandonedDispatches(): Promise<void> {
       reconcileUnstartedStudioApprovals,
       announceStudioUnstartedRefusals,
     } = await import("@vex-agent/engine/core/approval-runtime.js");
+    if (!initializationIsCurrent(epoch, signal)) return;
     const reconciled = await reconcileAbandonedStudioDispatches();
-    // AFTER the writes have committed, never inside them.
+    // AFTER the writes have committed, never inside them - and only while this
+    // initialization is still the current one. The rows themselves are durable
+    // and the next process start reconciles them again, so a dropped
+    // announcement costs nothing; announcing from a process that is shutting
+    // down, or starting the SECOND scan behind it, is fresh work nobody owns.
+    if (!initializationIsCurrent(epoch, signal)) return;
     announceStudioReconciliations(reconciled);
     if (reconciled.length > 0) {
       log.warn(
@@ -486,7 +557,9 @@ async function reconcileAbandonedDispatches(): Promise<void> {
     }
     // The second half of the same premise: an APPROVED row that never started
     // has no owner either, and unlike a `dispatching` one it can still RUN.
+    if (!initializationIsCurrent(epoch, signal)) return;
     const unstarted = await reconcileUnstartedStudioApprovals();
+    if (!initializationIsCurrent(epoch, signal)) return;
     announceStudioUnstartedRefusals(unstarted);
     if (unstarted.length > 0) {
       log.warn(

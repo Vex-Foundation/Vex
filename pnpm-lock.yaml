@@ -56,6 +56,9 @@ importers:
       tweetnacl:
         specifier: 1.0.3
         version: 1.0.3
+      undici:
+        specifier: 7.25.0
+        version: 7.25.0
       viem:
         specifier: 2.54.3
         version: 2.54.3(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@4.4.3)

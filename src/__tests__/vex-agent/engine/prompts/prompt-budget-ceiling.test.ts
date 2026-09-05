@@ -21,12 +21,12 @@ function context(overrides: Partial<EngineContext>): EngineContext {
 }
 
 const MODES = [
-  { name: "agent / restricted", context: context({}), ceiling: 57_720 },
-  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 58_421 },
-  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 64_131 },
-  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 64_150 },
-  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 62_759 },
-  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 62_574 },
+  { name: "agent / restricted", context: context({}), ceiling: 58_340 },
+  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 59_041 },
+  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 64_751 },
+  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 64_770 },
+  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 63_379 },
+  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 63_194 },
 ] as const;
 
 beforeAll(() => {
@@ -256,6 +256,46 @@ describe("static prompt byte ceilings", () => {
       // is not. Dropping the per-capability sentence entirely was the
       // alternative and it re-introduces the false claim above. No other
       // namespace's prose was touched to fund this.
+      // REVIEWED BUDGET DIFF, PR-C2 (Virtuals bonding-curve trading, merged
+      // 2026-09-05). NET +620 in EVERY mode, and the uniformity is the proof
+      // that only namespace-level text moved: the declaration and the coverage
+      // line render once per mode and nothing per-tool entered the static
+      // prefix.
+      //
+      //   agent / restricted          57,720 -> 58,340  (+620)
+      //   agent / full                58,421 -> 59,041  (+620)
+      //   mission setup / restricted  64,131 -> 64,751  (+620)
+      //   mission setup / full        64,150 -> 64,770  (+620)
+      //   mission run / restricted    62,759 -> 63,379  (+620)
+      //   mission run / full          62,574 -> 63,194  (+620)
+      //
+      // WHAT WAS ADDED, and every item is a statement that became FALSE when
+      // the namespace stopped being read-only:
+      //   - `quote` and `act` said "No quote capability is available" and "No
+      //     action capability is available". The namespace now prices and
+      //     executes a curve trade, so both lines state the capability and its
+      //     BOUND (not graduated; Base and Robinhood only).
+      //   - `identity` called the namespace read-only intelligence.
+      //   - `characteristicAndLimits` said no purchase action is exposed. It
+      //     now says a purchase IS exposed and names the two conditions, which
+      //     is the rule-90 honesty clause for a tool that spends real funds.
+      //   - the COVERAGE line in `prompts/chain-coverage.ts` ended with "an EVM
+      //     bonding curve has no venue tool yet". That sentence would route
+      //     every curve buy to an AMM that has no pool for a token which has
+      //     not graduated, so it was replaced rather than kept.
+      //   - the declaration gained its fifth facet (bonding-curve trading),
+      //     which is what makes the two tools findable; the declaration still
+      //     teaches capabilities and never tool names.
+      //   - the runtime marker "Contains mutating tools (may require
+      //     approval)." now renders in this section, which is not prose anyone
+      //     chose: it follows from the namespace owning a mutating tool.
+      //
+      // WHY COMPRESSION WAS INSUFFICIENT. The growth is almost entirely the
+      // REPLACEMENT of false sentences by true ones, so there was no cheaper
+      // wording available: the two "No ... capability is available" lines could
+      // not simply be deleted, because a namespace that trades and says nothing
+      // about its bounds is worse than one that says too much. No other
+      // namespace's prose was compressed to fund this.
       // The coordinator reviews this diff.
       expect(bytes).toBeLessThanOrEqual(mode.ceiling);
     });

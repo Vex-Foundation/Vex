@@ -142,6 +142,7 @@ export const STUDIO_TOOL_TITLES: Readonly<Record<string, string>> = {
   virtuals__genesis_launches_list: "Browse the Virtuals Genesis calendar",
   virtuals__agent_trades_list: "Read a Virtuals agent's curve trade tape",
   virtuals__agent_candles_list: "Read a Virtuals agent's price candles",
+  virtuals__creator_fees_get: "Read a Virtuals agent creator's fee status",
   virtuals__agent_trade_quote: "Price a Virtuals bonding-curve trade",
   virtuals__agent_trade_execute: "Trade a Virtuals agent on its bonding curve",
 
@@ -219,4 +220,6 @@ export const STUDIO_TOOL_TITLES: Readonly<Record<string, string>> = {
   pools__launch_request_form: "Ask the user to confirm a pools.fun launch",
   pools__launch_execute: "Launch a token on pools.fun",
   pools__fees_claim: "Claim pools.fun creator fees",
+  pools__launch_assets_list: "List pools.fun launchable stocks",
+  pools__holder_rewards_get: "Read pools.fun holder rewards",
 };

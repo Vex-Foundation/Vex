@@ -5,7 +5,7 @@
  * pre-broadcast failure (plan §11.1) rather than silently dropped.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { claimStandingInForTheParams } from "./_uniswap-approved-snapshot.js";
+import { readStandingInForTheParams } from "./_uniswap-approved-snapshot.js";
 import { VexError, ErrorCodes } from "../../../errors.js";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 
@@ -118,10 +118,11 @@ vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
 // before it prices anything. This suite's subject is elsewhere, so the claim
 // stands in with the quote this very call would have produced - see
 // `_uniswap-approved-snapshot.ts`.
-const claimUniswapExecutionSnapshot = vi.fn();
+const readUniswapExecutionSnapshot = vi.fn();
 vi.mock("@vex-agent/tools/protocols/prequote/claim.js", () => ({
-  claimSwapExecutionSnapshot: vi.fn(),
-  claimUniswapExecutionSnapshot: (...args: unknown[]) => claimUniswapExecutionSnapshot(...args),
+  commitPrequoteClaim: vi.fn(async () => ({ ok: true })),
+  readSwapExecutionSnapshot: vi.fn(),
+  readUniswapExecutionSnapshot: (...args: unknown[]) => readUniswapExecutionSnapshot(...args),
 }));
 
 vi.mock("@utils/logger.js", () => ({ default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn() } }));
@@ -139,8 +140,8 @@ const context = {
 describe("Uniswap execute — balance preflight", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    claimUniswapExecutionSnapshot.mockImplementation(
-      claimStandingInForTheParams({ chainId: 4663, weth: "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73" }),
+    readUniswapExecutionSnapshot.mockImplementation(
+      readStandingInForTheParams({ chainId: 4663, weth: "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73" }),
     );
     ensureErc20Balance.mockRejectedValue(new VexError(ErrorCodes.INSUFFICIENT_BALANCE, "short balance"));
     createAgentActivityPreBroadcastFailure.mockResolvedValue({ executionId: 42, event: {} });

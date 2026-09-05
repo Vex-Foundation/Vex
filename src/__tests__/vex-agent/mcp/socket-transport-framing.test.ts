@@ -20,6 +20,7 @@
 import { describe, expect, it } from "vitest";
 
 import { FakeDuplexTransport } from "@vex-agent/mcp/duplex-transport-fake.js";
+import type { StudioWriteOutcome } from "@vex-agent/mcp/duplex-transport.js";
 import {
   StudioSocketTransport,
   progressCoalesceKey,
@@ -38,7 +39,10 @@ function stalledWire(): FakeDuplexTransport {
 function makeTransport(
   socket: FakeDuplexTransport,
   options: {
-    readonly writeLine?: (line: string, progressKey: string | null) => Promise<void>;
+    readonly writeLine?: (
+      line: string,
+      progressKey: string | null,
+    ) => Promise<StudioWriteOutcome>;
     readonly shutdownDeadlineMs?: number;
   } = {},
 ): {
@@ -86,9 +90,9 @@ describe("a framing failure behind a blocked writable side", () => {
     const lines: { line: string; key: string | null }[] = [];
     // The owner's writer, blocked exactly like the real queue behind a peer
     // that stopped reading: it accepts the frame and never settles.
-    const writeLine = (line: string, key: string | null): Promise<void> => {
+    const writeLine = (line: string, key: string | null): Promise<StudioWriteOutcome> => {
       lines.push({ line, key });
-      return new Promise<void>(() => {
+      return new Promise<StudioWriteOutcome>(() => {
         // Never settles. The deadline is what must save the connection.
       });
     };
@@ -115,7 +119,7 @@ describe("a framing failure behind a blocked writable side", () => {
   it("destroys the connection within the deadline and announces onclose once", async () => {
     const socket = stalledWire();
     const harness = makeTransport(socket, {
-      writeLine: () => new Promise<void>(() => {
+      writeLine: () => new Promise<StudioWriteOutcome>(() => {
         // Never settles.
       }),
       shutdownDeadlineMs: 60,
@@ -139,7 +143,7 @@ describe("a framing failure behind a blocked writable side", () => {
   it("does not buffer the frames that arrive after the failure", async () => {
     const socket = stalledWire();
     const harness = makeTransport(socket, {
-      writeLine: () => new Promise<void>(() => undefined),
+      writeLine: () => new Promise<StudioWriteOutcome>(() => undefined),
       shutdownDeadlineMs: 40,
     });
     const delivered: unknown[] = [];

@@ -18,6 +18,7 @@ import { buildPendleRedeemIdentity } from "../identity/pendle-redeem.js";
 import { extractPendleQuote } from "../safety/extract.js";
 import { canonSlippageBps, readParamSlippageBps } from "../slippage.js";
 import { familyToChainFamily, writePrequoteRow } from "./row.js";
+import { PENDLE_PT_QUOTE_GATE_TARGETS } from "./gate-targets.js";
 
 /**
  * Record a Pendle prequote (Wave 5). The single `pendle.pt.quote` tool records
@@ -68,7 +69,7 @@ export async function recordPendlePrequote(
       prequoteId: `prequote-${randomUUID()}`,
       sessionId,
       matchHash: computePrequoteMatchHash(identity),
-      kind: "redeem",
+      kind: PENDLE_PT_QUOTE_GATE_TARGETS[extracted.action].kind,
       family: registered.family,
       provider: registered.provider,
       chainId: identity.chainId,
@@ -91,7 +92,7 @@ export async function recordPendlePrequote(
   // Swap path (buy / early-exit sell) - same money/safety leg as the other swaps:
   // recipient defaults to self, approveExact false, slippage from the quote params.
   const matchHash = computePrequoteMatchHash({
-    kind: "swap",
+    kind: PENDLE_PT_QUOTE_GATE_TARGETS.swap.kind,
     sessionId,
     family: registered.family,
     provider: registered.provider,
@@ -108,7 +109,7 @@ export async function recordPendlePrequote(
     prequoteId: `prequote-${randomUUID()}`,
     sessionId,
     matchHash,
-    kind: "swap",
+    kind: PENDLE_PT_QUOTE_GATE_TARGETS[extracted.action].kind,
     family: registered.family,
     provider: registered.provider,
     chainId: extracted.chainId,

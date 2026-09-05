@@ -37,6 +37,7 @@ import {
   readPoolsClaimContext,
   simulatePoolsClaim,
 } from "@tools/pools-fun/claim/read-claim.js";
+import { readPoolsOnChainSnapshot } from "@tools/pools-fun/evm/token-registration.js";
 import type { PoolsPlatform } from "@tools/pools-fun/constants.js";
 import { POOLS_CHAIN_SLUG, POOLS_DISCOVER_LIMIT_CAP, POOLS_PLATFORMS } from "@tools/pools-fun/constants.js";
 import { resolveSelectedAddressForRead } from "../../../internal/wallet/resolve.js";
@@ -185,7 +186,23 @@ async function enrichWithClaimable<T extends { token?: string | null }>(
       continue;
     }
 
-    const context = await readPoolsClaimContext(client, token, account);
+    // Which suite holds this token. A row Vex cannot place in exactly one suite
+    // stays `claimable: null` - "not measured", which is what the note above
+    // already promises and what an unregistered, ambiguous or unreadable row
+    // honestly is here.
+    let registration;
+    try {
+      registration = (await readPoolsOnChainSnapshot(token)).locker;
+    } catch {
+      out.push({ ...row, claimable: null });
+      continue;
+    }
+    if (registration.status !== "registered") {
+      out.push({ ...row, claimable: null });
+      continue;
+    }
+
+    const context = await readPoolsClaimContext(client, token, account, registration.suite);
     if (!context.ok) {
       out.push({ ...row, claimable: null });
       continue;
@@ -194,6 +211,7 @@ async function enrichWithClaimable<T extends { token?: string | null }>(
       account,
       token,
       blockNumber: context.context.blockNumber,
+      suite: registration.suite,
     });
     if (simulation.kind === "unavailable") {
       out.push({ ...row, claimable: null });
