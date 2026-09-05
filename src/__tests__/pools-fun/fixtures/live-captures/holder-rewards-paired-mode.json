@@ -1,0 +1,34 @@
+{
+  "endpoint": "https://api.bankr.bot/pools-fun/holder-rewards?token=0x017f53815e02d5ad151ed8484605fc9f1d9bb9a2",
+  "capturedAt": "2026-09-04T18:35:43.417230Z",
+  "response": {
+    "token": "0x017f53815e02d5ad151ed8484605fc9f1d9bb9a2",
+    "distributor": "0xb7633B965A86dF8AdF7c8D2b2B4aD7D975d94036",
+    "pairedAsset": "0x05a3d1Cd21d0C88145E82600E62e7E496e0F222B",
+    "pairedSymbol": "AMC",
+    "pairedDecimals": 18,
+    "wallet": null,
+    "rewardMode": "paired",
+    "paysCallerBounty": true,
+    "conversion": "sellback",
+    "earned": "0",
+    "earnedPaired": "0",
+    "walletExcluded": false,
+    "eligibleSupply": "1571097211322759745406689",
+    "rewardRate": "0",
+    "rewardRatePaired": "39465944856861",
+    "periodFinish": 0,
+    "periodFinishPaired": 1788593441,
+    "remainingStream": "0",
+    "remainingStreamPaired": "1835166435844036500",
+    "surplus": "0",
+    "surplusPaired": "72658",
+    "buybackBacklog": "254381688640548667034720",
+    "lastBuybackAt": 1788507041,
+    "pendingFees": {
+      "token": "2643481249345341548593",
+      "paired": "0"
+    },
+    "hasWorkToDistribute": true
+  }
+}

@@ -134,14 +134,53 @@ describe("relay.bridge deposit amounts", () => {
     mockDecline.mockResolvedValue({ applied: true });
   });
 
-  it("declares the ERC-20 amount its receipt proves", async () => {
+  it("declares the ERC-20 amount its receipt proves, when it is the whole quoted principal", async () => {
+    // This case used to accept 999,000 of a quoted
+    // 1,000,000 and let the full fixed Vex fee follow. There is no measured
+    // fee-on-transfer deduction for this token, so 999,000 is now a shortfall
+    // (asserted below) and only the exact principal proves the deposit.
+    const run = await runDeposit({
+      originCurrency: TOKEN,
+      logs: [transferLog(WALLET, DEPOSITORY, 1_000_000n)],
+    });
+    expect(run.kind).toBe("confirmed");
+    if (run.kind === "confirmed") expect(run.depositShortfall).toBeNull();
+    expect(mockConfirm).toHaveBeenCalledWith(DEPOSIT_ROW_ID, { executedAmountInRaw: "1000000" });
+    expect(mockDecline).not.toHaveBeenCalled();
+  });
+
+  it("records a deposit ONE UNIT below the floor as short, with no amount and no fee", async () => {
+    const run = await runDeposit({
+      originCurrency: TOKEN,
+      logs: [transferLog(WALLET, DEPOSITORY, 999_999n)],
+    });
+    expect(run.kind).toBe("confirmed");
+    if (run.kind === "confirmed") {
+      expect(run.depositShortfall).toEqual({ provenAmountRaw: "999999", quotedAmountRaw: "1000000" });
+    }
+    expect(mockConfirm).toHaveBeenCalledWith(DEPOSIT_ROW_ID, {});
+    expect(mockDecline).toHaveBeenCalledWith(DEPOSIT_ROW_ID, "amounts_incomplete");
+  });
+
+  it("records the old 999,000-of-1,000,000 acceptance as a shortfall instead", async () => {
     const run = await runDeposit({
       originCurrency: TOKEN,
       logs: [transferLog(WALLET, DEPOSITORY, 999_000n)],
     });
-    expect(run.kind).toBe("confirmed");
-    expect(mockConfirm).toHaveBeenCalledWith(DEPOSIT_ROW_ID, { executedAmountInRaw: "999000" });
-    expect(mockDecline).not.toHaveBeenCalled();
+    if (run.kind === "confirmed") {
+      expect(run.depositShortfall).toEqual({ provenAmountRaw: "999000", quotedAmountRaw: "1000000" });
+    }
+    expect(mockConfirm).toHaveBeenCalledWith(DEPOSIT_ROW_ID, {});
+  });
+
+  it("records a one-unit deposit against the whole quote as short", async () => {
+    const run = await runDeposit({
+      originCurrency: TOKEN,
+      logs: [transferLog(WALLET, DEPOSITORY, 1n)],
+    });
+    if (run.kind === "confirmed") {
+      expect(run.depositShortfall).toEqual({ provenAmountRaw: "1", quotedAmountRaw: "1000000" });
+    }
   });
 
   it("declares the native value Vex signed, which IS the principal", async () => {
@@ -182,9 +221,9 @@ describe("relay.bridge deposit amounts", () => {
     await runDeposit({
       originCurrency: TOKEN,
       approval: { token: TOKEN, spender },
-      logs: [transferLog(WALLET, spender, 700_000n)],
+      logs: [transferLog(WALLET, spender, 1_000_000n)],
     });
-    expect(mockConfirm).toHaveBeenCalledWith(DEPOSIT_ROW_ID, { executedAmountInRaw: "700000" });
+    expect(mockConfirm).toHaveBeenCalledWith(DEPOSIT_ROW_ID, { executedAmountInRaw: "1000000" });
   });
 
   it("declines a transfer to a spender that was only approved for a DIFFERENT token", async () => {
@@ -227,18 +266,27 @@ describe("relay.bridge deposit amounts", () => {
     mockConfirm.mockResolvedValue({ applied: false, row: { status: "confirmed", txHash: "0xhash" } });
     await runDeposit({
       originCurrency: TOKEN,
-      logs: [transferLog(WALLET, DEPOSITORY, 999_000n)],
+      logs: [transferLog(WALLET, DEPOSITORY, 1_000_000n)],
     });
     expect(mockFill).toHaveBeenCalledWith({
       id: DEPOSIT_ROW_ID,
       expectedTxHash: "0xhash",
       expectedChainId: 8453,
-      amounts: { executedAmountInRaw: "999000" },
+      amounts: { executedAmountInRaw: "1000000" },
     });
   });
 
   it("does not late-fill a row that is not confirmed", async () => {
     mockConfirm.mockResolvedValue({ applied: false, row: { status: "pending", txHash: "0xhash" } });
+    await runDeposit({
+      originCurrency: TOKEN,
+      logs: [transferLog(WALLET, DEPOSITORY, 1_000_000n)],
+    });
+    expect(mockFill).not.toHaveBeenCalled();
+  });
+
+  it("does not late-fill a SHORT deposit: a disputed amount is never back-filled", async () => {
+    mockConfirm.mockResolvedValue({ applied: false, row: { status: "confirmed", txHash: "0xhash" } });
     await runDeposit({
       originCurrency: TOKEN,
       logs: [transferLog(WALLET, DEPOSITORY, 999_000n)],

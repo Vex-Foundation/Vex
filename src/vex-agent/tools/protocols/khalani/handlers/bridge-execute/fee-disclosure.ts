@@ -15,9 +15,13 @@ import {
   checkBridgeFeeStatementUnchanged,
   missingBridgeFeeStatementMessage,
   unauthorizedBridgeQuoteMessage,
+  unregisteredBridgeFeeGateMessage,
+  VEX_FEE_GATE_UNREGISTERED_REASON,
+  VEX_FEE_QUOTE_UNAUTHORIZED_REASON,
   VEX_FEE_STATEMENT_CHANGED_REASON,
   VEX_FEE_STATEMENT_MISSING_REASON,
   type BridgeFeeDisclosure,
+  type BridgeFeeRefusal,
   type BridgeFeeSplit,
 } from "@tools/bridge-fee/index.js";
 import { findFreshMatchedPrequote } from "@vex-agent/tools/protocols/prequote/gate.js";
@@ -104,9 +108,14 @@ const KHALANI_QUOTE_TOOL_NAME = "khalani__bridge_quote_get";
  * approved, this call states what would actually happen, and a disagreement
  * REFUSES rather than picking one.
  *
- * Returns the agent-facing refusal, or `null` when the call may proceed - which
- * is also the answer when the tool carries no prequote channel at all, since
- * there is then no approved statement in existence to contradict.
+ * Returns the typed refusal, or `null` when the call may proceed. Every refusal
+ * carries its bounded reason so the public result can state WHY instead of
+ * collapsing into a generic bridge failure.
+ *
+ * `not_gated` IS A REFUSAL HERE (review finding, 2026-09-04). Answering `null` turned the
+ * loss of this tool's registry mapping into permission to sign a fee, and this
+ * handler is gated by construction: the prequote row is its entire fee
+ * authority. Rule 07, fail closed.
  *
  * Runs before the deposit plan is committed, before the in-flight guard, before
  * the intent and before the signing wallet is resolved, so a refusal signs
@@ -118,7 +127,7 @@ export async function khalaniVexFeeStatementRefusal(input: {
   readonly sessionId: string;
   /** The disposition this call would actually execute on, freshly derived. */
   readonly derivedNow: BridgeFeeDisclosure;
-}): Promise<string | null> {
+}): Promise<BridgeFeeRefusal | null> {
   const matched = await findFreshMatchedPrequote(
     KHALANI_BRIDGE_TOOL_ID,
     input.sessionId,
@@ -126,15 +135,35 @@ export async function khalaniVexFeeStatementRefusal(input: {
     input.context,
   );
   if (!matched.ok) {
-    // Destructured so the literal narrows: `not_gated` is the one refusal that
-    // is not a refusal at all, it says this tool carries no prequote channel.
+    // Destructured so the literal narrows.
     const { reason, eligibilityKind } = matched;
-    if (reason === "not_gated") return null;
-    return unauthorizedBridgeQuoteMessage({ reason, eligibilityKind }, KHALANI_QUOTE_TOOL_NAME);
+    if (reason === "not_gated") {
+      logger.error("khalani.bridge.vex_fee_gate_unregistered", {
+        reason: VEX_FEE_GATE_UNREGISTERED_REASON,
+        toolId: KHALANI_BRIDGE_TOOL_ID,
+      });
+      return {
+        reason: VEX_FEE_GATE_UNREGISTERED_REASON,
+        movedFields: [],
+        message: unregisteredBridgeFeeGateMessage(KHALANI_BRIDGE_TOOL_ID),
+        remediation: "Report this build defect; a re-quote cannot clear it.",
+      };
+    }
+    return {
+      reason: VEX_FEE_QUOTE_UNAUTHORIZED_REASON,
+      movedFields: [],
+      message: unauthorizedBridgeQuoteMessage({ reason, eligibilityKind }, KHALANI_QUOTE_TOOL_NAME),
+      remediation: `Call ${KHALANI_QUOTE_TOOL_NAME} again and approve the fresh quote.`,
+    };
   }
   if (matched.vexFee === undefined) {
     logger.warn("khalani.bridge.vex_fee_statement_missing", { reason: VEX_FEE_STATEMENT_MISSING_REASON });
-    return missingBridgeFeeStatementMessage(KHALANI_QUOTE_TOOL_NAME);
+    return {
+      reason: VEX_FEE_STATEMENT_MISSING_REASON,
+      movedFields: [],
+      message: missingBridgeFeeStatementMessage(KHALANI_QUOTE_TOOL_NAME),
+      remediation: `Call ${KHALANI_QUOTE_TOOL_NAME} again and approve the fresh quote.`,
+    };
   }
   const check = checkBridgeFeeStatementUnchanged({
     statedOnCard: matched.vexFee,
@@ -147,7 +176,12 @@ export async function khalaniVexFeeStatementRefusal(input: {
     reason: VEX_FEE_STATEMENT_CHANGED_REASON,
     field: check.field,
   });
-  return bridgeFeeStatementChangedMessage(check, KHALANI_QUOTE_TOOL_NAME);
+  return {
+    reason: VEX_FEE_STATEMENT_CHANGED_REASON,
+    movedFields: [check.field],
+    message: bridgeFeeStatementChangedMessage(check, KHALANI_QUOTE_TOOL_NAME),
+    remediation: `Call ${KHALANI_QUOTE_TOOL_NAME} again and approve the fresh quote.`,
+  };
 }
 
 /**

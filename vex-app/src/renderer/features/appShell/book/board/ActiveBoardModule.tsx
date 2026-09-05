@@ -21,20 +21,16 @@
  * modal's lease holder publishes; with no modal open there is no lease, and
  * the module honestly shows the composed snapshot and says so.
  *
- * A PROJECT RAIL HAS NO BOARD, BY CONSTRUCTION (Studio parity decree,
- * 2026-09-04). A board is composed by VEX inside an Agent chat transcript and
- * carries that session's identity (`BoardRef.sessionId`); a project has no
- * transcript. So under the `project` scope the module renders an honest
- * empty state and reads NOTHING from the board store: a board retained there
- * belongs to a session, and showing it under a project's name would be
- * another entity's state. The one action offered is the way to where boards
- * are composed - switching the shell to Agent mode.
+ * SESSION RAIL ONLY. A board is composed by VEX inside an Agent chat
+ * transcript and carries that session's identity (`BoardRef.sessionId`); a
+ * project has no transcript, so the Studio project rail mounts no Board tab
+ * and never reaches this module (owner decision 2026-09-04: "in Vex Studio's
+ * right sidebar we show only Portfolio"). `BookRailStack` is where that
+ * branch lives; this module has one caller and one scope.
  */
 
 import { useEffect, useMemo, type JSX } from "react";
 import { cn } from "../../../../lib/utils.js";
-import { useUiStore } from "../../../../stores/uiStore.js";
-import type { BookRailScopeKind } from "../section-order.js";
 import { ActiveBoardRow } from "./ActiveBoardRow.js";
 import {
   boardLiveReadout,
@@ -73,52 +69,15 @@ const LIVE_STATE_LABEL = {
 /** What the module says when this session has composed no board yet. */
 export const ACTIVE_BOARD_EMPTY = "No board yet - ask VEX to compose one";
 
-/** What the module says on a PROJECT rail, which can never hold a board. */
-export const PROJECT_BOARD_EMPTY =
-  "A board is a token radar VEX composes for you inside an Agent chat. A project has no chat, so there is no board here - open an Agent session to ask for one.";
+/**
+ * The module's plate: the glass CARD tier the rest of the rail's cards wear
+ * (glass.css; inside the rail it is a tinted plate, the rail blurs for it).
+ */
+const CARD_CLASS = "vex-glass-card rounded-xl px-3 py-3";
 
-export function ActiveBoardModule({
-  scopeKind,
-}: {
-  /** The rail's scope kind. `project` renders the honest empty state. */
-  readonly scopeKind: BookRailScopeKind;
-}): JSX.Element {
+export function ActiveBoardModule(): JSX.Element {
   const pinnedBoard = useBoardSurfaceStore((s) => s.pinnedBoard);
   const latestBoard = useBoardSurfaceStore((s) => s.latestBoard);
-  const setRuntimeMode = useUiStore((s) => s.setRuntimeMode);
-
-  if (scopeKind === "project") {
-    return (
-      <section
-        data-vex-area="active-board"
-        data-state="empty"
-        data-scope="project"
-        aria-label="Active board"
-        className="flex flex-col gap-2.5 rounded-xl border border-line-2 bg-surface-1 px-3 py-3"
-      >
-        <p
-          data-vex-area="active-board-empty"
-          className="text-[12.5px] leading-[17px] text-ink-tertiary"
-        >
-          {PROJECT_BOARD_EMPTY}
-        </p>
-        {/* Not an authority change: `runtimeMode` only decides which surfaces
-          * mount (the same write the approval row and the Studio keybinding
-          * make). The session shown there is whichever the agent shell last
-          * had; this module names none. */}
-        <button
-          type="button"
-          data-vex-area="active-board-switch-agent"
-          onClick={() => {
-            setRuntimeMode("agent");
-          }}
-          className="inline-flex items-center justify-center self-start rounded-lg border border-line-2 px-2.5 py-1.5 text-[12.5px] font-medium text-ink-secondary transition-colors duration-150 hover:border-line-3 hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
-        >
-          Switch to Agent
-        </button>
-      </section>
-    );
-  }
 
   // Pinned wins for the module; the dot is how a newer board announces itself.
   const board = pinnedBoard ?? latestBoard;
@@ -129,7 +88,7 @@ export function ActiveBoardModule({
         data-vex-area="active-board"
         data-state="empty"
         aria-label="Active board"
-        className="rounded-xl border border-line-2 bg-surface-1 px-3 py-3"
+        className={CARD_CLASS}
       >
         <p
           data-vex-area="active-board-empty"
@@ -220,7 +179,7 @@ function ActiveBoard({ board }: { readonly board: BoardRef }): JSX.Element {
       data-live={held ? "true" : "false"}
       data-live-state={liveState}
       aria-label={`Active board: ${board.title}`}
-      className="flex flex-col gap-2.5 rounded-xl border border-line-2 bg-surface-1 px-3 py-3"
+      className={cn(CARD_CLASS, "flex flex-col gap-2.5")}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">

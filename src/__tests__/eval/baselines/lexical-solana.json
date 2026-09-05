@@ -4,7 +4,7 @@
   "datasetId": "tool-discovery-solana",
   "datasetVersion": "solana-v1",
   "status": "captured",
-  "capturedAt": "2026-09-04T18:02:30.422Z",
+  "capturedAt": "2026-09-05T08:03:46.516Z",
   "metrics": {
     "overall": {
       "count": 68,
@@ -20,8 +20,8 @@
         "recall1": 0.235,
         "recall5": 0.382,
         "coverage5": 0.382,
-        "mrr5": 0.287,
-        "groupMrr5": 0.287
+        "mrr5": 0.285,
+        "groupMrr5": 0.285
       },
       "protocolAware": {
         "count": 34,
@@ -72,8 +72,8 @@
         "recall1": 0.563,
         "recall5": 0.688,
         "coverage5": 0.688,
-        "mrr5": 0.609,
-        "groupMrr5": 0.609
+        "mrr5": 0.606,
+        "groupMrr5": 0.606
       },
       "bridge": {
         "count": 0,
@@ -176,6 +176,6 @@
   "notes": [
     "dataset tool-discovery-solana@solana-v1, mode lexical, 68 cases evaluated.",
     "overall recall@1 0.441, recall@5 0.603, coverage@5 0.603, mrr@5 0.497, groupMrr@5 0.497.",
-    "Measured delta vs previous baseline (solana-v1, captured 2026-08-28T10:37:09.877Z): 8 metric values moved; overall recall@5 0.603 -> 0.603, overall mrr@5 0.496 -> 0.497, case count 68 -> 68."
+    "Measured delta vs previous baseline (solana-v1, captured 2026-09-04T21:22:16.845Z): 4 metric values moved; overall recall@5 0.603 -> 0.603, overall mrr@5 0.497 -> 0.497, case count 68 -> 68."
   ]
 }

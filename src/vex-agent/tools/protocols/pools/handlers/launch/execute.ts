@@ -21,8 +21,10 @@
  *      is this tool's consent surface instead of an approval card.
  *   4. Build the VERIFIED plan: image uploaded once, prepare, anchored chain
  *      reads, both simulations, the gas ceiling, the Vex fee, the mission
- *      ceilings, and then all 13 verifier points (`./execute/plan.ts`). The
+ *      ceilings, and then all 15 verifier points (`./execute/plan.ts`). The
  *      verifier is the gate, and it runs while NO authorization exists.
+ *   4b. `simulateOnly` STOPS HERE and returns the would-be launch. No signer was
+ *      opened at step 3b, no authorization exists, nothing is broadcast.
  *   5. Only on a verified plan: create the intent already `authorized` and
  *      CAS-consume it - the exactly-once gate (`./execute/authorize.ts`). What
  *      is authorized is the fingerprint of the exact bytes step 4 proved.
@@ -40,6 +42,7 @@
 import { getAddress, type Address } from "viem";
 
 import { getLocalChain } from "@tools/evm-chains/registry.js";
+import { getLocalPublicClient } from "@tools/evm-chains/evm-client.js";
 import { openLaunchSigningClients } from "../../../shared/launch-signing-clients.js";
 import { POOLS_CHAIN_ID } from "@tools/pools-fun/constants.js";
 import { fail } from "../../../handler-helpers.js";
@@ -94,6 +97,35 @@ export async function poolsLaunchExecuteHandler(
     return fail(`${TOOL_ID} does not support dryRun - call pools__launch_preview instead.`);
   }
 
+  // ── SIMULATE-ONLY, read before anything else ──────────────────────
+  //
+  // A launch is irreversible, so there has to be a way to exercise this exact
+  // leg - the real prepare, the real anchored reads, the real verifier, a real
+  // gas estimate over the real calldata - and stop at the edge of signing. That
+  // is what this flag is, and it is read HERE, beside `dryRun`, because the
+  // order below is the security contract: the signer opens at step 3b, and a
+  // flag read after that point could not prevent a key from being decrypted.
+  //
+  // THE SHAPE IS BORROWED FROM MetaMask's `beforePublish` HOOK
+  // (`agents-colab/metamask-core/packages/transaction-controller/src/TransactionController.ts:3148`),
+  // which returns a distinct non-error outcome (`SkippedViaBeforePublishHook`)
+  // rather than throwing, and does NOT mark the transaction submitted. Adopted:
+  // a stop between "fully checked" and "committed" is a first-class outcome, not
+  // a failure. REJECTED: their hook runs AFTER `#signTransaction`, so a skipped
+  // publish has still touched the key. On a self-custodial agent path that is
+  // the wrong side of the line - the point of a simulation is that no wallet was
+  // opened at all - so ours gates the signer, the authorization and the
+  // broadcast together.
+  //
+  // It is deliberately NOT a `dryRun`: `pools__launch_preview` is the advisory,
+  // side-effect-free estimate. This runs the whole money path and DOES have a
+  // provider side effect (a prepare pins an IPFS object and mines a salt), which
+  // the result states.
+  const simulateOnly = params.simulateOnly === true;
+  if (params.simulateOnly !== undefined && typeof params.simulateOnly !== "boolean") {
+    return fail(`"simulateOnly" must be true or false, received ${typeof params.simulateOnly}.`);
+  }
+
   // 1. Boundary.
   // `requireImage` is set HERE and nowhere else: this is the only leg that
   // signs, and an imageless launch is irreversible (the PPV incident).
@@ -131,8 +163,20 @@ export async function poolsLaunchExecuteHandler(
   //     any authorization exists. Opening it later would mean a wallet that
   //     cannot sign still burned an authorization; opening it earlier would
   //     unlock a wallet for a call that a dozen honest refusals never reach.
-  const signing = openLaunchSigningClients(context, chainConfig);
-  if (!signing.ok) return signing.result;
+  //
+  //     UNDER `simulateOnly` NO KEY IS TOUCHED AT ALL. The plan builder needs a
+  //     public client and nothing else; it reads, simulates and verifies. Taking
+  //     the read-only client here is what makes "no signer was opened" a
+  //     structural property of the leg rather than a promise in a comment.
+  let publicClient;
+  let signing: ReturnType<typeof openLaunchSigningClients> | null = null;
+  if (simulateOnly) {
+    publicClient = getLocalPublicClient(chainConfig);
+  } else {
+    signing = openLaunchSigningClients(context, chainConfig);
+    if (!signing.ok) return signing.result;
+    publicClient = signing.clients.publicClient;
+  }
 
   // 4. THE VERIFIED PLAN. Nothing is authorized until this returns ok.
   const planned = await buildPoolsLaunchPlan({
@@ -150,13 +194,29 @@ export async function poolsLaunchExecuteHandler(
     // the desktop form may name anyone else (owner decision 3).
     feeRecipient: { kind: "address", address: walletAddress },
     permission: context.sessionPermission,
-    publicClient: signing.clients.publicClient,
+    publicClient,
+    ...(simulateOnly ? { simulateOnly: true } : {}),
     ...(variant.ceilings === null
       ? {}
       : { ceilings: { contract: variant.ceilings, launchesUsed: 0 } }),
     ...(context.abortSignal === undefined ? {} : { signal: context.abortSignal }),
   });
   if (!planned.ok) return fail(planned.reason);
+
+  // 4b. THE SIMULATION STOPS HERE, with everything a launch would have been.
+  //
+  //     No authorization is created, so nothing is consumed and no intent can be
+  //     mistaken for a launch in flight; no signer was ever opened. The result
+  //     carries the fingerprint of the exact bytes that WOULD be signed, which
+  //     is what makes a later real launch comparable to this one.
+  if (simulateOnly) return describeSimulatedLaunch(planned.plan, walletAddress);
+  //     The plan carries the flag too, and step 5 refuses a flagged plan even
+  //     though the line above already returned: "a simulated plan is never
+  //     authorized" is enforced where the authorization is created, not only
+  //     where the flag was read.
+  if (planned.plan.simulateOnly) {
+    return fail(`${TOOL_ID}: a plan built under simulateOnly reached the authorization step; nothing was signed.`);
+  }
 
   // 5. Authorize + CAS-consume, over the fingerprint of the verified bytes.
   const ids = newPoolsLaunchIds();
@@ -187,9 +247,55 @@ export async function poolsLaunchExecuteHandler(
     walletAddress,
     plan: planned.plan,
     params,
-    publicClient: signing.clients.publicClient,
-    walletClient: signing.clients.walletClient,
+    publicClient: signing!.clients.publicClient,
+    walletClient: signing!.clients.walletClient,
   });
+}
+
+/**
+ * What a `simulateOnly` run returns: the launch that WOULD have been signed.
+ *
+ * Every number here was produced by the same code a real launch runs, at one
+ * anchored block, and the fingerprint is the identity of the exact bytes. It is
+ * reported as a would-be launch rather than as a success, in the tool's own
+ * words, so neither the model nor a human can read it as "a token was launched".
+ */
+function describeSimulatedLaunch(plan: PoolsLaunchPlan, walletAddress: Address): ToolResult {
+  const data = {
+    simulateOnly: true as const,
+    launched: false as const,
+    chainId: plan.call.chainId,
+    wallet: walletAddress,
+    gateway: plan.call.to,
+    gatewayVersion: plan.anchors.gatewayVersion.toString(),
+    anchorBlockNumber: plan.anchors.blockNumber.toString(),
+    verifier: "passed" as const,
+    predictedTokenAddress: plan.binding.predictedTokenAddress,
+    predictedPoolAddress: plan.predictedPoolAddress,
+    metadataUri: plan.metadataUri,
+    imageLanded: plan.imageLanded,
+    calldataFingerprint: plan.call.fingerprint,
+    valueWei: plan.call.valueWei.toString(),
+    deploymentFeeWei: plan.binding.deploymentFeeWei,
+    prebuyWei: plan.binding.prebuyWei,
+    vexFeeWei: plan.binding.vexFeeWei,
+    gas: {
+      limit: plan.gas.limit.toString(),
+      priceWei: plan.gas.priceWei.toString(),
+      boundWei: plan.gas.boundWei.toString(),
+    },
+    feeRecipient: plan.binding.feeRecipient,
+    deadline: plan.tuple.deadline.toString(),
+    note:
+      "SIMULATION. Every check a real launch runs was run - the launchpad prepared real calldata, the chain "
+      + "was read at the block above, the launch was eth_call-simulated from this wallet, all 15 verifier "
+      + "points passed, and the gas above was estimated over these exact bytes. NOTHING WAS SIGNED: no "
+      + "wallet key was opened, no authorization was created and no transaction was broadcast, so no token "
+      + "exists at the predicted address. One side effect DID happen: preparing a launch pins a metadata "
+      + "object with the launchpad and mines a new salt, so a real launch prepared later will have a "
+      + "different salt and a different token address.",
+  };
+  return { success: true, output: JSON.stringify(data), data };
 }
 
 /**

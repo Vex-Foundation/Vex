@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"os"
 	"strings"
@@ -41,7 +42,7 @@ func TestHostAuthRefusesAForeignUsersServer(t *testing.T) {
 			"1.6 item 7 stays unproven by this run.", foreignPipeEnv)
 	}
 
-	conn, err := dialPipe(path)
+	conn, err := dialPipe(context.Background(), path)
 	if conn != nil {
 		_ = conn.Close()
 	}

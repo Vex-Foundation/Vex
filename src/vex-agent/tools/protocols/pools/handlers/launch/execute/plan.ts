@@ -17,7 +17,7 @@
  *   6. PRICE the network cost as a CEILING and plan the Vex fee leg - both are
  *      inputs to the verifier's balance point, so they come before it.
  *   7. ENFORCE the mission ceilings (autonomous path only).
- *   8. VERIFY all 13 points. This is the gate: only `ok: true` may go on to
+ *   8. VERIFY all 15 points. This is the gate: only `ok: true` may go on to
  *      create an authorization.
  *   9. BIND the proved tuple to the exact bytes and their fingerprint.
  *
@@ -43,15 +43,15 @@ import {
 } from "@tools/pools-fun/launch/verify-calldata.js";
 import type {
   PoolsChainAnchors,
+  PoolsFeeRecipientIntent,
   PoolsLaunchTuple,
   PoolsVerifierViolation,
 } from "@tools/pools-fun/launch/verifier-types.js";
 import {
   POOLS_CHAIN_ID,
-  POOLS_FACTORY_ADDRESS,
-  POOLS_GATEWAY_ADDRESS,
-  POOLS_LOCKER_ADDRESS,
+  POOLS_LAUNCH_SUITE_VERSION,
   POOLS_USDG_ADDRESS,
+  poolsLaunchSuite,
 } from "@tools/pools-fun/constants.js";
 import { POOLS_FEE_LEG_GAS_LIMIT, POOLS_FEE_VENUE } from "@tools/pools-fun/fee/venue.js";
 import type {
@@ -110,6 +110,22 @@ export interface BuildPoolsLaunchPlanInput {
   /** Present ONLY on the autonomous path, where both mission ceilings apply. */
   readonly ceilings?: { readonly contract: AutonomousLaunchCeilings; readonly launchesUsed: number } | undefined;
   readonly signal?: AbortSignal | undefined;
+  /**
+   * SIMULATION ONLY: build and verify the plan, then stop.
+   *
+   * This builder never signed anything, so `simulateOnly` changes nothing HERE -
+   * it is carried on the plan so the caller cannot lose it between the gate and
+   * the signer. The flag is set at the tool boundary and read again in
+   * `execute.ts`, which is the leg that would otherwise open a wallet, create an
+   * authorization and broadcast; carrying it on the verified plan is what makes
+   * "this plan may not be signed" a property of the plan rather than a variable
+   * the caller has to remember.
+   *
+   * A prepare STILL HAPPENS: it pins an IPFS object and mines a salt, so a
+   * simulation is not free of provider side effects, and the caller is told so.
+   * Nothing on-chain moves and no key is touched.
+   */
+  readonly simulateOnly?: boolean | undefined;
 }
 
 export type PoolsLaunchPlanRefusalCode =
@@ -132,6 +148,15 @@ export interface PoolsLaunchPlan {
   readonly metadataUri: string;
   /** Whether the image actually landed in the pinned metadata - a provider trap, surfaced. */
   readonly imageLanded: boolean;
+  /**
+   * The gas the launch would cost, as a CEILING, and the price it was bounded
+   * at. Carried on the plan because a simulation's whole product is this number
+   * plus the fingerprint - a caller that stops here must not have to re-estimate
+   * (a second estimate at a later block would describe a different launch).
+   */
+  readonly gas: { readonly limit: bigint; readonly priceWei: bigint; readonly boundWei: bigint };
+  /** True when this plan was built under `simulateOnly` and must never be signed. */
+  readonly simulateOnly: boolean;
 }
 
 export type BuildPoolsLaunchPlanResult =
@@ -163,7 +188,14 @@ function refuse(
 export async function buildPoolsLaunchPlan(
   input: BuildPoolsLaunchPlanInput,
 ): Promise<BuildPoolsLaunchPlanResult> {
-  const gateway = POOLS_GATEWAY_ADDRESS as Address;
+  // THE SUITE COMES FROM VEX, NOT FROM THE RESPONSE. `launches/prepare` returns
+  // a `to` that has already moved twice in three days; taking it as the target
+  // would mean the provider chooses which contract Vex signs against. The suite
+  // table names the gateway, and the verifier's point 1 requires the response to
+  // agree with it - the comparison only means something because the two sides
+  // have independent origins.
+  const suite = poolsLaunchSuite();
+  const gateway = suite.gateway as Address;
 
   // 1. The provider half.
   const prepared = await preparePoolsLaunchCalldata({
@@ -192,9 +224,9 @@ export async function buildPoolsLaunchPlan(
   }
 
   // 2b. WHO THE FEE STREAM PAYS, settled before anything is verified against it.
-  const recipient = resolveFeeRecipientExpectation(input.feeRecipient, response, gateway);
+  const recipient = resolveFeeRecipientExpectation(input.feeRecipient, response, suite);
   if (!recipient.ok) return refuse("verifier_refused", recipient.reason);
-  const feeRecipient = recipient.address;
+  const feeRecipient = recipient.intent;
 
   // 3. One block, every fact.
   const anchored = await readPoolsChainAnchors({
@@ -209,7 +241,12 @@ export async function buildPoolsLaunchPlan(
     name: tuple.name,
     symbol: tuple.symbol,
     metadataUri: tuple.metadataUri,
+    // The attestation the TUPLE carries, so the tick the factory derives is
+    // derived from the exact bytes that would be signed.
+    priceAttestation: tuple.priceAttestation,
+    priceSignature: tuple.priceSignature,
     gatewayAddress: gateway,
+    factoryAddress: suite.factory as Address,
   });
   if (!anchored.ok) {
     return refuse("anchors_unreadable", `Refusing to launch: ${anchored.reason} Nothing was signed.`);
@@ -322,6 +359,8 @@ export async function buildPoolsLaunchPlan(
     gasBoundWei,
     vexFeeWei,
     gatewayAddress: gateway,
+    factoryAddress: suite.factory as Address,
+    lockerAddress: suite.locker as Address,
   });
   if (!verdict.ok) {
     return refuse("verifier_refused", describeVerifierRefusal(verdict.violations), verdict.violations);
@@ -337,6 +376,8 @@ export async function buildPoolsLaunchPlan(
       tuple: verdict.tuple,
       feeLeg,
       anchors,
+      gas: { limit: gas.gasLimit, priceWei: gas.gasPriceWei, boundWei: gasBoundWei },
+      simulateOnly: input.simulateOnly === true,
       predictedPoolAddress: response.predictedPoolAddress as Address,
       metadataUri: tuple.metadataUri,
       imageLanded: typeof metadata?.image === "string",
@@ -358,7 +399,11 @@ export async function buildPoolsLaunchPlan(
         vexFeeWei: vexFeeWei.toString(),
         gasBoundWei: gasBoundWei.toString(),
         anchorBlockNumber: anchors.blockNumber.toString(),
-        feeRecipient,
+        // The durable binding records the address that is actually IN the signed
+        // tuple. Under a holders intent that is the gateway's sentinel, which is
+        // exactly what the settlement decoder will see in `GatewayLaunch`, so
+        // recording the intent's label instead would break the receipt proof.
+        feeRecipient: tuple.feeRecipient,
         walletAddress: input.walletAddress,
         calldata: call.data,
         callFingerprint: call.fingerprint,
@@ -424,9 +469,11 @@ export function toPrepareFeeRecipient(choice: PoolsFeeRecipientChoice): PoolsPre
 function resolveFeeRecipientExpectation(
   choice: PoolsFeeRecipientChoice,
   response: { readonly feeRecipient: PoolsResolvedFeeRecipient },
-  gateway: Address,
-): { readonly ok: true; readonly address: Address } | { readonly ok: false; readonly reason: string } {
-  if (choice.kind === "address") return { ok: true, address: choice.address };
+  suite: { readonly gateway: string; readonly factory: string; readonly locker: string },
+):
+  | { readonly ok: true; readonly intent: PoolsFeeRecipientIntent }
+  | { readonly ok: false; readonly reason: string } {
+  if (choice.kind === "address") return { ok: true, intent: { kind: "address", address: choice.address } };
 
   let resolved: Address;
   try {
@@ -443,9 +490,9 @@ function resolveFeeRecipientExpectation(
 
   const forbidden: readonly { readonly address: string; readonly label: string }[] = [
     { address: ZERO_ADDRESS, label: "the zero address" },
-    { address: gateway, label: "the launch gateway itself" },
-    { address: POOLS_FACTORY_ADDRESS, label: "the launchpad factory" },
-    { address: POOLS_LOCKER_ADDRESS, label: "the fee locker" },
+    { address: suite.gateway, label: "the launch gateway itself" },
+    { address: suite.factory, label: "the launchpad factory" },
+    { address: suite.locker, label: "the fee locker" },
   ];
   const hit = forbidden.find((entry) => sameAddressLoose(entry.address, resolved));
   if (hit !== undefined) {
@@ -456,7 +503,7 @@ function resolveFeeRecipientExpectation(
         + "which would send the creator fee stream somewhere it can never be claimed from. Nothing was signed.",
     };
   }
-  return { ok: true, address: resolved };
+  return { ok: true, intent: { kind: "address", address: resolved } };
 }
 
 /** Case-insensitive address equality that refuses a malformed input. */

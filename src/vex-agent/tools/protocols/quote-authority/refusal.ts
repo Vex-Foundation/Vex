@@ -25,6 +25,7 @@ export type SnapshotRefusalKind =
   | "superseded"
   | "expired"
   | "digest_mismatch"
+  | "disclosure_changed"
   | "unbound_approval";
 
 export interface SnapshotRefusal {
@@ -53,6 +54,14 @@ const REFUSAL_CAUSE: Record<SnapshotRefusalKind, string> = {
   expired: "this quote has expired",
   digest_mismatch:
     "the stored route snapshot no longer matches its own digest, so it cannot be proven to be the route that was approved",
+  // The claim's DISCLOSURE FENCE fired: the executor compared its fee statement
+  // and its route against the block this row carried, and by the time the claim
+  // ran that block was no longer the same. Distinct from `digest_mismatch`
+  // (which is about the route snapshot's own integrity) and from `superseded`
+  // (which is about a newer row), because what moved here is the disclosure a
+  // person read on the row that is still current.
+  disclosure_changed:
+    "the disclosure on the quote authorizing this execute changed between the check and the claim, so what would be signed is no longer what was compared",
   // FAIL-CLOSED, not a fallback. An approval that names no quote cannot say
   // WHICH quote it authorized, and the alternative - executing whichever quote
   // is newest at resume time - is exactly the substitution the binding exists to

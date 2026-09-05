@@ -1,31 +1,73 @@
 /**
- * The on-chain half of `pools.token`: what the locker and the token contract
- * know that the REST API does not.
+ * The on-chain half of `pools.token` and every claim: WHICH pools.fun contract
+ * suite a token belongs to, and what that suite says about it.
  *
- * Four reads, batched through Multicall3 at ONE pinned block so the answer is
- * internally consistent and auditable:
- *   PartyLocker.getPoolInfo(token)   canonical pool, paired asset ADDRESS,
- *                                    creator, fee recipient, locked LP ids
- *   PartyLocker.getPoolSplits(token) fee split in basis points
- *   PartyToken.decimals()            the financial-grade number the API omits
- *   PartyToken.metadataUri()         the launcher's metadata pointer
+ * THE DEFECT THIS MODULE WAS REBUILT AROUND. pools.fun redeployed its whole
+ * contract triple twice in three days and kept every generation live. While the
+ * locker address was a single pinned constant, `getPoolInfo` on the V1 locker
+ * returned all zeroes for every post-migration token, and the zeroes were
+ * faithfully reported as "not registered - expected for a token launched by the
+ * older sushi launcher". Measured on 2026-09-04: a V3 token (DICK) and a
+ * holder-rewards token (FLOAT) both got that verdict, and `pools.claim_fees`
+ * refused their claims with the same wrong reason. The tri-state was sound; the
+ * ADDRESS was wrong, and a wrong address makes a sound tri-state lie precisely.
  *
- * THREE OUTCOMES, NOT TWO (rule 90, decline over guess). Every read here can end
- * three different ways, and collapsing the last two is how a tool starts lying:
+ * SO SUITE DETECTION ASKS EVERY SUITE, AT ONE BLOCK, IN ONE MULTICALL - two
+ * questions each, and the two questions answer DIFFERENT things:
  *
- *   registered   the locker answered, with a real pool - a fact.
- *   unregistered the locker answered, with the all-zero row it returns for a
- *                token it never registered - also a fact, and the expected
- *                answer for a SushiLaunchpad token.
- *   unavailable  the call did not answer at all (node down, wrong ABI, chain
- *                unreachable) - NOT a fact about the token, and the one case
- *                that must never be reported as either of the others.
+ *   `locker.getPoolInfo(token)`  populated only on the suite that HOLDS its LP.
+ *                                This is the REGISTRATION, and it is the money
+ *                                authority: the locker owns `getPoolSplits`,
+ *                                the `claimable*` mappings and `collectAndClaim`.
+ *   `gateway.launcherOf(token)`  the wallet that launched it THROUGH THE GATEWAY,
+ *                                and zero for a token launched directly against
+ *                                the factory. This is ATTRIBUTION, not
+ *                                registration.
  *
- * An earlier version mapped a FAILED call to `registered: false`, which told the
- * agent "this token is not a pools.fun token" on the strength of an RPC error.
- * The same collapse applied to `decimals` and `metadataUri`: a failed read
- * became `null`, indistinguishable from a contract that genuinely has no
- * `metadataUri`. Each of those now carries its own outcome.
+ * THE LOCKER LEADS, AND THAT IS A MEASURED DECISION, not a simplification. An
+ * earlier revision of this module required BOTH to be non-zero before calling a
+ * token registered. Run live on 2026-09-04 it reported `ambiguous` for sushicat
+ * - a perfectly ordinary V1 token that has traded for three weeks - because the
+ * V1 locker holds its LP (`pool 0x50136D41...`) while the V1 gateway names no
+ * launcher for it: it was launched directly through the factory, which most
+ * pools.fun tokens are. Demanding gateway agreement would have turned the
+ * majority of the launchpad into "we cannot tell", which is a worse lie than the
+ * one it replaced. Measured evidence, all three at the same block:
+ *
+ *   sushicat  V1 locker HOLDS, V1 gateway names none  -> registered on V1
+ *   VEXFLAM   V1 locker HOLDS, V1 gateway names us    -> registered on V1, ours
+ *   THONG     V3 locker HOLDS, V3 gateway names its creator -> registered on V3
+ *
+ * The gateway still has teeth in the direction where it means something: a
+ * gateway that NAMES a launcher while its own locker holds nothing is a real
+ * contradiction (a launch that never registered, or two suites disagreeing), and
+ * that is reported as `ambiguous` rather than resolved.
+ *
+ * FOUR OUTCOMES, NOT TWO, AND NEVER FIRST-MATCH-WINS (rule 90, decline over
+ * guess; v3 plan section 9):
+ *
+ *   registered    exactly one suite matched. A fact, and it names the suite.
+ *   unregistered  every suite ANSWERED and none matched. Also a fact: this token
+ *                 is not registered with any pools.fun suite Vex knows.
+ *   ambiguous     more than one suite matched, or one suite's two contracts
+ *                 disagreed. Something is true that this model does not describe,
+ *                 and picking one would be a guess wearing a verdict's clothes.
+ *   unavailable   at least one suite could not be fully asked. NOTHING was
+ *                 proven; in particular this is NOT "unregistered".
+ *
+ * The old code's `unregistered` note said the token was "launched by the older
+ * sushi launcher". That sentence is now reserved for a row the API itself labels
+ * `platform: "sushi"`; inferring a launcher from an absence is exactly the
+ * inference that produced the wrong verdict, and the API row is the only
+ * evidence for it.
+ *
+ * PIN-NOTE, viem multicall `allowFailure` on a return-type mismatch (measured
+ * 2026-09-04, live V3 locker; full note and numbers in `../launch/anchors.ts`):
+ * a wrong ABI does NOT reliably yield `status: "failure"` - `getPoolInfo`
+ * declared as a single `uint256` came back `status: "success", result: 0n`,
+ * indistinguishable from a legitimate zero. That measurement is why registration
+ * is decided by comparing DECODED VALUES across two contracts rather than by
+ * trusting that a call which "succeeded" reached the contract we meant.
  *
  * The Robinhood chain wiring is NOT duplicated here: `evm-chains/registry.ts`
  * owns the RPC, the user's RPC override and the Multicall3 address, exactly as
@@ -35,8 +77,13 @@
 import type { Address, Chain, PublicClient, Transport } from "viem";
 import { getLocalChain } from "@tools/evm-chains/registry.js";
 import { getLocalPublicClient } from "@tools/evm-chains/evm-client.js";
-import { PARTY_LOCKER_ABI, PARTY_TOKEN_ABI } from "../abi.js";
-import { POOLS_CHAIN_ID, POOLS_LOCKER_ADDRESS } from "../constants.js";
+import { PARTY_LOCKER_ABI, PARTY_TOKEN_ABI, POOLS_GATEWAY_ABI } from "../abi.js";
+import {
+  POOLS_CHAIN_ID,
+  POOLS_SUITES,
+  type PoolsContractSuite,
+  type PoolsSuiteVersion,
+} from "../constants.js";
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
@@ -74,11 +121,37 @@ export type PoolsRead<T> =
   | { readonly status: "ok"; readonly value: T }
   | { readonly status: "unavailable" };
 
-/** The locker's answer about a token: a registration, a denial, or silence. */
+/**
+ * The suite verdict for one token.
+ *
+ * `registered` carries the suite so every downstream call - the claim's locker,
+ * the settlement decoder's emitters, the holder-rewards deployer - uses the SAME
+ * addresses this verdict was established from, instead of re-deriving them.
+ */
 export type PoolsLockerRegistration =
-  | { readonly status: "registered"; readonly info: PoolsLockerInfo }
+  | {
+      readonly status: "registered";
+      readonly suite: PoolsContractSuite;
+      /**
+       * The wallet that launched it THROUGH THE GATEWAY, or `null` when the
+       * token was launched directly against the factory (measured: most
+       * pools.fun tokens, sushicat among them). Never `null` for a failed read -
+       * a read that did not answer produces `unavailable` instead.
+       */
+      readonly launcher: string | null;
+      readonly info: PoolsLockerInfo;
+    }
   | { readonly status: "unregistered" }
-  | { readonly status: "unavailable" };
+  | {
+      readonly status: "ambiguous";
+      /** What was contradictory, in words a refusal can print verbatim. */
+      readonly detail: string;
+    }
+  | {
+      readonly status: "unavailable";
+      /** Which suites could not be fully asked. Never a generic "RPC error". */
+      readonly detail: string;
+    };
 
 /**
  * The on-chain snapshot for one token, pinned to `blockNumber`.
@@ -109,9 +182,18 @@ function poolsPublicClient(): PublicClient<Transport, Chain> {
   return getLocalPublicClient(config);
 }
 
+/** The three calls each suite is asked, in the order they appear in the batch. */
+const CALLS_PER_SUITE = 3;
+
 /**
- * Read the locker registration, fee splits, decimals and metadata URI for one
+ * Read the suite registration, fee splits, decimals and metadata URI for one
  * token, all at the same pinned block.
+ *
+ * ONE MULTICALL for every suite rather than a probe-until-hit loop: a loop would
+ * make "which suite" depend on iteration order, would read different suites at
+ * different blocks, and could not tell a second match from the first one. One
+ * batch at one block gives every suite the same question at the same moment, so
+ * a contradiction is visible instead of being resolved by luck.
  *
  * A THROWN error from this function means the batch itself could not be sent
  * (no chain, no node); a per-call failure inside the batch is reported as
@@ -120,30 +202,55 @@ function poolsPublicClient(): PublicClient<Transport, Chain> {
 export async function readPoolsOnChainSnapshot(token: Address): Promise<PoolsOnChainSnapshot> {
   const client = poolsPublicClient();
   const blockNumber = await client.getBlockNumber();
-  const locker = POOLS_LOCKER_ADDRESS as Address;
 
-  const [poolInfo, splits, decimals, metadataUri] = await client.multicall({
+  const suiteCalls = POOLS_SUITES.flatMap((suite) => [
+    {
+      address: suite.locker as Address,
+      abi: PARTY_LOCKER_ABI,
+      functionName: "getPoolInfo" as const,
+      args: [token] as const,
+    },
+    {
+      address: suite.locker as Address,
+      abi: PARTY_LOCKER_ABI,
+      functionName: "getPoolSplits" as const,
+      args: [token] as const,
+    },
+    {
+      address: suite.gateway as Address,
+      abi: POOLS_GATEWAY_ABI,
+      functionName: "launcherOf" as const,
+      args: [token] as const,
+    },
+  ]);
+
+  const results = await client.multicall({
     allowFailure: true,
     blockNumber,
     contracts: [
-      { address: locker, abi: PARTY_LOCKER_ABI, functionName: "getPoolInfo", args: [token] },
-      { address: locker, abi: PARTY_LOCKER_ABI, functionName: "getPoolSplits", args: [token] },
+      ...suiteCalls,
       { address: token, abi: PARTY_TOKEN_ABI, functionName: "decimals" },
       { address: token, abi: PARTY_TOKEN_ABI, functionName: "metadataUri" },
     ],
   });
 
+  const tokenCallsAt = POOLS_SUITES.length * CALLS_PER_SUITE;
+  const decimals = results[tokenCallsAt];
+  const metadataUri = results[tokenCallsAt + 1];
+
   return {
     blockNumber: blockNumber.toString(),
-    locker: readRegistration(poolInfo, splits),
-    decimals: decimals.status === "success"
-      ? { status: "ok", value: Number(decimals.result) }
-      : { status: "unavailable" },
+    locker: resolveSuite(results.slice(0, tokenCallsAt) as readonly MulticallResult<unknown>[]),
+    decimals:
+      decimals !== undefined && decimals.status === "success"
+        ? { status: "ok", value: Number(decimals.result) }
+        : { status: "unavailable" },
     // An empty string is the contract answering "no URI", which is a fact and is
     // reported as `ok` with `null`. Only a failed call is `unavailable`.
-    metadataUri: metadataUri.status === "success"
-      ? { status: "ok", value: metadataUri.result === "" ? null : metadataUri.result }
-      : { status: "unavailable" },
+    metadataUri:
+      metadataUri !== undefined && metadataUri.status === "success"
+        ? { status: "ok", value: metadataUri.result === "" ? null : (metadataUri.result as string) }
+        : { status: "unavailable" },
   };
 }
 
@@ -172,42 +279,148 @@ export async function readPoolsTokenDecimals(
 }
 
 type MulticallResult<T> = { status: "success"; result: T } | { status: "failure" };
+type PoolInfo = readonly [string, string, string, string, readonly bigint[]];
+type Splits = readonly [number, number, number, number, number, number];
+
+/** One suite's three answers, already classified. */
+interface SuiteProbe {
+  readonly suite: PoolsContractSuite;
+  /** `null` when `getPoolInfo` did not answer at all. */
+  readonly lockerHolds: boolean | null;
+  /** `null` when `launcherOf` did not answer at all. */
+  readonly gatewayLauncher: string | null;
+  readonly poolInfo: PoolInfo | null;
+  readonly splits: Splits | null;
+}
 
 /**
- * Turn the two locker calls into one registration verdict.
+ * Turn every suite's answers into ONE verdict.
  *
- * The all-zero `pool` is read as the locker's own DENIAL - it is the documented
- * shape for a token registered with the older SushiLaunchpad - while a failed
- * call is silence and is kept separate.
+ * The order of the checks is the order of certainty: a partial read means
+ * nothing was proven and is reported first; then a genuine contradiction; then
+ * the single match; then the honest "none of them".
  */
-function readRegistration(
-  poolInfo: MulticallResult<readonly [string, string, string, string, readonly bigint[]]>,
-  splits: MulticallResult<readonly [number, number, number, number, number, number]>,
-): PoolsLockerRegistration {
-  if (poolInfo.status !== "success") return { status: "unavailable" };
+function resolveSuite(results: readonly MulticallResult<unknown>[]): PoolsLockerRegistration {
+  const probes: SuiteProbe[] = POOLS_SUITES.map((suite, index) => {
+    const base = index * CALLS_PER_SUITE;
+    const poolInfo = successOf<PoolInfo>(results[base]);
+    const splits = successOf<Splits>(results[base + 1]);
+    const launcher = successOf<string>(results[base + 2]);
+    return {
+      suite,
+      lockerHolds: poolInfo === null ? null : !isZeroAddress(poolInfo[1]),
+      gatewayLauncher: launcher === null ? null : launcher,
+      poolInfo,
+      splits,
+    };
+  });
 
-  const [pairedAssetAddress, pool, creator, feeRecipient, tokenIds] = poolInfo.result;
-  if (isZeroAddress(pool)) return { status: "unregistered" };
+  // 1. SILENCE FIRST. A suite that did not fully answer cannot be excluded, so
+  //    no verdict about "which suite" is available at all - including the
+  //    negative one. Reporting `unregistered` here is the exact collapse that
+  //    made this module lie before.
+  const silent = probes.filter((p) => p.lockerHolds === null || p.gatewayLauncher === null);
+  if (silent.length > 0) {
+    const names = silent
+      .map((p) => `V${p.suite.version} (${p.lockerHolds === null ? "locker" : "gateway"} silent)`)
+      .join(", ");
+    return {
+      status: "unavailable",
+      detail:
+        `these pools.fun suites did not answer at this block: ${names}. Whether this token is registered with `
+        + "any suite was NOT determined - this is a failed read, not a token without a registration.",
+    };
+  }
 
-  return {
-    status: "registered",
-    info: {
-      pairedAssetAddress,
-      pool,
-      creator,
-      feeRecipient,
-      lockedPositionIds: tokenIds.map((id) => id.toString()),
-      feeSplitAvailable: splits.status === "success",
-      feeSplitBps: splits.status === "success"
-        ? {
-          creator: Number(splits.result[0]),
-          platform: Number(splits.result[1]),
-          buyback: Number(splits.result[2]),
-          community: Number(splits.result[3]),
-          stockCreator: Number(splits.result[4]),
-          stockProtocol: Number(splits.result[5]),
-        }
-        : null,
-    },
-  };
+  // 2. THE REGISTRATION: which suites' LOCKERS hold this token's LP.
+  const holding = probes.filter((p) => p.lockerHolds === true);
+  const named = probes.filter(
+    (p) => p.gatewayLauncher !== null && !isZeroAddress(p.gatewayLauncher),
+  );
+
+  // Two lockers cannot both hold one token's LP. Something is true that this
+  // model does not describe, and picking one would be a guess wearing a
+  // verdict's clothes.
+  if (holding.length > 1) {
+    return {
+      status: "ambiguous",
+      detail:
+        `${holding.length} pools.fun suites (${holding.map((p) => `V${p.suite.version}`).join(", ")}) each hold `
+        + "this token's LP. One token cannot belong to two suites, so nothing here is reported as fact.",
+    };
+  }
+
+  // A GATEWAY NAMING A LAUNCHER WHOSE LOCKER HOLDS NOTHING is the contradiction
+  // that still matters: a launch the gateway recorded and the locker never
+  // registered, or two suites disagreeing about one token. The reverse - a
+  // locker row with no gateway launcher - is NOT a contradiction, it is a token
+  // launched directly through the factory, which is the common case.
+  const orphanGateways = named.filter(
+    (p) => holding.length === 0 || p.suite.version !== holding[0]!.suite.version,
+  );
+  if (orphanGateways.length > 0) {
+    const detail = orphanGateways
+      .map((p) => `V${p.suite.version}'s gateway names launcher ${p.gatewayLauncher} but its locker holds no LP`)
+      .join("; ");
+    return {
+      status: "ambiguous",
+      detail:
+        `this token's pools.fun records disagree (${detail}${holding.length === 1 ? `; V${holding[0]!.suite.version}'s locker does hold it` : ""}). `
+        + "A gateway that recorded a launch the locker never registered does not establish which suite owns it.",
+    };
+  }
+
+  // 3. THE SINGLE REGISTRATION.
+  const hit = holding[0];
+  if (hit !== undefined && hit.poolInfo !== null) {
+    const [pairedAssetAddress, pool, creator, feeRecipient, tokenIds] = hit.poolInfo;
+    return {
+      status: "registered",
+      suite: hit.suite,
+      // `null` means "launched directly through the factory, not through the
+      // gateway" - a fact about the launch, never a failed read. The reads that
+      // could fail were already turned into `unavailable` above.
+      launcher:
+        hit.gatewayLauncher !== null && !isZeroAddress(hit.gatewayLauncher) ? hit.gatewayLauncher : null,
+      info: {
+        pairedAssetAddress,
+        pool,
+        creator,
+        feeRecipient,
+        lockedPositionIds: tokenIds.map((id) => id.toString()),
+        feeSplitAvailable: hit.splits !== null,
+        feeSplitBps:
+          hit.splits === null
+            ? null
+            : {
+              creator: Number(hit.splits[0]),
+              platform: Number(hit.splits[1]),
+              buyback: Number(hit.splits[2]),
+              community: Number(hit.splits[3]),
+              stockCreator: Number(hit.splits[4]),
+              stockProtocol: Number(hit.splits[5]),
+            },
+      },
+    };
+  }
+
+  // 4. EVERY SUITE ANSWERED, NO LOCKER HOLDS IT. A fact about the token.
+  return { status: "unregistered" };
+}
+
+/** The suite versions this build knows, for a refusal that names them. */
+export function knownPoolsSuiteVersions(): readonly PoolsSuiteVersion[] {
+  return POOLS_SUITES.map((suite) => suite.version);
+}
+
+/** The sentence every "no suite" refusal uses, so the wording has one owner. */
+export const POOLS_UNREGISTERED_SENTENCE =
+  `not registered with any pools.fun suite Vex knows (${knownPoolsSuiteVersions()
+    .map((v) => `V${v}`)
+    .join(", ")})`;
+
+function successOf<T>(call: unknown): T | null {
+  if (call === null || call === undefined || typeof call !== "object") return null;
+  const result = call as { status?: unknown; result?: unknown };
+  return result.status === "success" ? (result.result as T) : null;
 }

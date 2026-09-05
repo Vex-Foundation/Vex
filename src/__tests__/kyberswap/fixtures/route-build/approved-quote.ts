@@ -86,7 +86,21 @@ export function legsForAllowancePlan(plan: {
   ];
 }
 
-/** The successful arm of `claimSwapExecutionSnapshot`, for a route summary and tolerance. */
+/**
+ * The ticket `readSwapExecutionSnapshot` hands to the later claim. Its contents
+ * are the repository's business; what the handler suites assert with it is
+ * WHETHER the claim is reached at all, and with which row.
+ */
+export const FIXTURE_CLAIM_TICKET = {
+  sessionId: "session-1",
+  prequoteId: "prequote-fixture",
+  matchHash: "h".repeat(64),
+  kind: "swap" as const,
+  expectedDisclosure: {},
+  freshQuoteTool: "kyberswap__swap_quote",
+};
+
+/** The successful arm of `readSwapExecutionSnapshot`, for a route summary and tolerance. */
 export function approvedClaim(
   routeSummary: unknown,
   slippageBps: number,
@@ -100,6 +114,7 @@ export function approvedClaim(
   return {
     ok: true as const,
     prequoteId: "prequote-fixture",
+    claim: FIXTURE_CLAIM_TICKET,
     routeSummary,
     vexFee: fixtureVexFeeBlock(options.amountInRaw ?? BigInt(readAmountIn(routeSummary))),
     snapshot: sealRouteSnapshot({

@@ -337,6 +337,14 @@ func (s *Supervisor) handleConnRead(ev connRead) {
 		// A MESSAGE-mode pipe delivers the peer's CloseWrite as EOF, and that
 		// is a HALF-close: the writable side stays open so the last response of
 		// a one-shot session can still be written (section 7.1).
+		//
+		// NAMED, and named BEFORE the END goes up. A peer that was KILLED - a
+		// client that gave up on its startup budget and reaped the bridge -
+		// arrives here and nowhere else, and until this line the only trace was
+		// main's own teardown a few milliseconds later, which reads exactly
+		// like main deciding to close. It is not a `PeerClosedReason`: nothing
+		// closed, and the connection may still answer.
+		s.log.Event("peer_half_closed", lifecycle.Num("connection", uint64(ev.id)))
 		if err := conn.PeerEnded(); err != nil {
 			s.failFlow(err)
 		}

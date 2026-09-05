@@ -8,9 +8,11 @@
  * BOTH rails have to keep identical, because they are the same object to the
  * user and to the shell-columns solver:
  *
- *  - the rail floats over the Eclipse backdrop as soft translucent ink
- *    (`--vex-rail` + backdrop-blur, guard-whitelisted for exactly this file
- *    and SessionsList), with no separating stroke;
+ *  - the rail floats over the Eclipse backdrop as glass: `.vex-glass-rail`
+ *    (styles/global-css/glass.css), the same tier the two left rails wear,
+ *    with no separating stroke. THE RAIL CARRIES THE ONE BACKDROP FILTER:
+ *    every card inside it is a `.vex-glass-card` whose own filter the glass
+ *    sheet's nesting guard strips, so a stack of cards costs one blur pass;
  *  - width is OWNED by the AppShell grid track (the shell-columns solver
  *    derives auto-close and the 48px spine); the rail only fills its track;
  *  - the header bar (first child) carries the version stamp and the chevron
@@ -56,7 +58,7 @@ export function BookRailFrame({
       data-vex-book-open={bookOpen ? "true" : "false"}
       aria-label={label}
       className={cn(
-        "vex-book-enter relative flex h-full w-full shrink-0 flex-col overflow-hidden bg-[var(--vex-rail)] backdrop-blur-xl",
+        "vex-book-enter vex-glass-rail relative flex h-full w-full shrink-0 flex-col overflow-hidden",
         bookOpen ? "gap-3 p-3" : "p-0",
       )}
     >

@@ -1,0 +1,52 @@
+{
+  "endpoint": "https://api.bankr.bot/discover?chain=robinhood&platform=all&limit=5&q=0x00e814f1b4428f16d899b279fc4bdc6b1e015eb5",
+  "capturedAt": "2026-09-04T18:31:22.642087Z",
+  "response": {
+    "results": [
+      {
+        "tokenAddress": "0x00e814f1b4428f16d899b279fc4bdc6b1e015eb5",
+        "poolId": "0x37c4550e92f25c62c9f6831c005204f683d7f8d0",
+        "chain": "robinhood",
+        "name": "Cerebras",
+        "symbol": "CBRS",
+        "decimals": null,
+        "imageUri": "ipfs://bafkreid2ek3frgs2bhmoqpzcogxlryfebzmm2hdagi5bhhnvutkxvtvkq4",
+        "totalSupply": null,
+        "deployerAddress": "0x83cde34a0df51c99db68b468aa91ae13f3654de2",
+        "deployerXUsername": "eviszen",
+        "deployerXProfileImageUrl": "https://pbs.twimg.com/profile_images/2088265273816027136/dhVPXyCI_normal.jpg",
+        "feeRecipientAddress": "0x318bb0dfef2864a57657e2620c1e54019e92999c",
+        "feeRecipientXUsername": null,
+        "feeRecipientXProfileImageUrl": null,
+        "tweetUrl": null,
+        "websiteUrl": null,
+        "deployedAt": "2026-09-03T09:00:46.000Z",
+        "lastPriceEth": 2.3358093539886523e-09,
+        "lastPriceUsd": 5.7305812367016e-06,
+        "marketCapUsd": 5730.5812367016,
+        "lastTradeAt": "2026-09-04T15:49:58.000Z",
+        "vol1m": 0,
+        "vol5m": 0,
+        "vol1h": 0,
+        "vol6h": 0.7268520695690724,
+        "vol24h": 2.7529729200204143,
+        "txCount24h": 3,
+        "priceChange1m": 0,
+        "priceChange5m": 0,
+        "priceChange1h": 0,
+        "priceChange6h": 0.4184583780767597,
+        "priceChange24h": -0.7531315460925636,
+        "pairedStock": {
+          "address": "0x5c90450bbb4273d7b2f17cf6917aeb237a569679",
+          "symbol": "CBRS"
+        },
+        "pairedAsset": "stock",
+        "platform": "poolsfun",
+        "holderRewardsDistributor": "0x318bb0dfef2864a57657e2620c1e54019e92999c",
+        "holderRewardsMode": "token",
+        "pairedStockIlliquid": true
+      }
+    ],
+    "nextCursor": null
+  }
+}

@@ -39,7 +39,12 @@ export const VIRTUALS_NAVIGATION: ProtocolNamespaceNavigation = {
       "price chart",
       "ohlcv candles",
     ],
-    facets: ["Agent-token screening and detail", "Graduations and launch calendar", "Trade tape and price history"],
+    facets: [
+      "Agent-token screening and detail",
+      "Graduations and launch calendar",
+      "Trade tape and price history",
+      "Creator fees on an agent",
+    ],
   },
   exampleQueries: [
     'ToolSearch(query="list agent tokens on robinhood", namespace="virtuals")',
@@ -72,6 +77,22 @@ export const VIRTUALS_NAVIGATION: ProtocolNamespaceNavigation = {
       summary: "Read one agent's bonding-curve trade tape and its pool's OHLCV candles, per chain and lifecycle stage.",
       toolPrefixes: ["virtuals.trades", "virtuals.candles"],
       hints: ["trade tape", "recent trades", "price chart", "candles", "ohlcv", "price history"],
+    },
+    {
+      label: "Creator fees on an agent",
+      summary:
+        "Read what an agent's creator has earned from its bonding-curve trading tax at one pinned block: "
+        + "collected, already swapped and paid out, and still pending, plus the split between the protocol "
+        + "treasury, any partner and the creator. Collection is not Vex's to perform - the swap path is gated "
+        + "on a role the creator wallet does not hold - so the claim answers unsupported with that measurement.",
+      toolPrefixes: ["virtuals.creator_fees"],
+      hints: [
+        "virtuals creator fees",
+        "how much have my agent fees earned",
+        "agent tax accrued",
+        "claim my virtuals creator fees",
+        "creator fee split",
+      ],
     },
   ],
 };

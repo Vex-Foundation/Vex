@@ -337,39 +337,28 @@ describe("Studio rail - the project scope reaches every card", () => {
   });
 });
 
-describe("the Portfolio/Board toggle is the same toggle on both rails", () => {
-  it("Studio offers both tabs and starts on Portfolio", () => {
+describe("the Studio rail shows Portfolio only (owner decision 2026-09-04)", () => {
+  it("mounts no tab strip and no board surface, only the stack", () => {
     mountStudio(PROJECT);
-    expect(screen.getByRole("tab", { name: /portfolio/i })).not.toBeNull();
-    expect(screen.getByRole("tab", { name: /board/i })).not.toBeNull();
+    expect(screen.queryAllByRole("tab")).toHaveLength(0);
+    expect(screen.queryByTestId("board-module")).toBeNull();
     expect(screen.getByTestId("card-wallets")).not.toBeNull();
   });
 
-  it("choosing Board shows the board module and writes the shared preference", () => {
+  it("ignores a stored Board preference without clearing it", () => {
+    // The preference is the SESSION rail's; the project rail neither honours
+    // nor rewrites it, so the session rail comes back on the tab it left.
+    useUiStore.setState({ bookTab: "board" });
     mountStudio(PROJECT);
-    fireEvent.click(screen.getByRole("tab", { name: /board/i }));
-    expect(screen.getByTestId("board-module")).not.toBeNull();
+    expect(screen.queryByTestId("board-module")).toBeNull();
+    expect(screen.getByTestId("card-wallets")).not.toBeNull();
     expect(useUiStore.getState().bookTab).toBe("board");
   });
 
-  it("a stored Board preference opens the Studio rail on Board", () => {
-    useUiStore.setState({ bookTab: "board" });
-    mountStudio(PROJECT);
-    expect(
-      screen.getByRole("tab", { name: /board/i }).getAttribute("aria-selected"),
-    ).toBe("true");
-  });
-
-  it("the Board tab never wears a session's unseen dot in Studio", () => {
-    // A board arrives from a session transcript and is retained in the store
-    // across a mode switch; the project rail's Board tab holds no board, so
-    // announcing one there would be a lie about a tab that cannot show it.
+  it("a session's unseen board never surfaces in Studio", () => {
     useBoardSurfaceStore.setState({ unseenBoardKey: `${SESSION}:12` });
     mountStudio(PROJECT);
     expect(document.querySelector('[data-vex-area="book-board-unseen"]')).toBeNull();
-    expect(screen.getByRole("tab", { name: /board/i }).textContent).not.toContain(
-      "new board",
-    );
   });
 });
 

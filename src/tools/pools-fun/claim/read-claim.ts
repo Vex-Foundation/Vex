@@ -33,7 +33,8 @@ import {
 } from "viem";
 
 import { PARTY_LOCKER_ABI, PARTY_LOCKER_CLAIM_ABI, PARTY_TOKEN_ABI } from "../abi.js";
-import { POOLS_LOCKER_ADDRESS } from "../constants.js";
+import type { PoolsContractSuite } from "../constants.js";
+import { POOLS_UNREGISTERED_SENTENCE } from "../evm/token-registration.js";
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
@@ -47,6 +48,16 @@ export interface PoolsClaimLeg {
 /** The on-chain facts a claim is judged against, all at ONE pinned block. */
 export interface PoolsClaimContext {
   readonly blockNumber: bigint;
+  /**
+   * The suite whose locker holds this token's LP, and therefore the ONE locker
+   * a claim may be sent to.
+   *
+   * Carried on the context rather than re-derived by the caller: the address the
+   * simulation ran against and the address the transaction targets must be the
+   * same one, and passing the suite forward is how that is guaranteed instead of
+   * hoped for.
+   */
+  readonly suite: PoolsContractSuite;
   /**
    * The pool's paired asset, from `getPoolInfo` - the authority the mission
    * floor's asset must equal. Never taken from an API row.
@@ -80,8 +91,9 @@ export async function readPoolsClaimContext(
   client: PublicClient<Transport, Chain>,
   token: Address,
   account: Address,
-  lockerAddress: Address = POOLS_LOCKER_ADDRESS as Address,
+  suite: PoolsContractSuite,
 ): Promise<ReadPoolsClaimContextResult> {
+  const lockerAddress = suite.locker as Address;
   let blockNumber: bigint;
   try {
     blockNumber = await client.getBlockNumber();
@@ -113,15 +125,23 @@ export async function readPoolsClaimContext(
 
   const info = successOf<readonly [string, string, string, string, readonly bigint[]]>(poolInfo);
   if (info === null) {
-    return { ok: false, reason: `the locker did not answer for ${token}, so who its fees belong to is unknown` };
+    return {
+      ok: false,
+      reason:
+        `the V${suite.version} locker did not answer for ${token}, so who its fees belong to is unknown`,
+    };
   }
   const [pairedAsset, poolAddress, , feeRecipient] = info;
+  // The caller selected this suite from a cross-checked detection, so an
+  // all-zero row here means the chain changed under the detection rather than
+  // "sushi". The refusal says exactly that instead of naming a launcher nothing
+  // proved.
   if (poolAddress.toLowerCase() === ZERO_ADDRESS) {
     return {
       ok: false,
       reason:
-        `${token} is not registered with the pools.fun locker, so it has no creator fee stream here. Tokens `
-        + "from the older sushi launchpad are held elsewhere and cannot be claimed through this path",
+        `${token} is ${POOLS_UNREGISTERED_SENTENCE}: the V${suite.version} locker selected for it now answers `
+        + "with an empty row, so there is no creator fee stream to claim here",
     };
   }
 
@@ -159,6 +179,7 @@ export async function readPoolsClaimContext(
     ok: true,
     context: {
       blockNumber,
+      suite,
       pairedAsset: pairedAsset as Address,
       poolAddress: poolAddress as Address,
       feeRecipient: feeRecipient as Address,
@@ -199,13 +220,19 @@ export async function simulatePoolsClaim(
     readonly account: Address;
     readonly token: Address;
     readonly blockNumber: bigint;
-    readonly lockerAddress?: Address | undefined;
+    /**
+     * The suite whose locker holds this token. REQUIRED, not defaulted: a claim
+     * simulated against one suite's locker and broadcast to another's would
+     * answer a question about a contract that never sees the transaction, and a
+     * default is exactly how the pinned-V1 defect reached production.
+     */
+    readonly suite: PoolsContractSuite;
   },
 ): Promise<PoolsClaimSimulation> {
   try {
     const { result } = await client.simulateContract({
       account: input.account,
-      address: input.lockerAddress ?? (POOLS_LOCKER_ADDRESS as Address),
+      address: input.suite.locker as Address,
       abi: PARTY_LOCKER_CLAIM_ABI,
       functionName: "collectAndClaim",
       args: [input.token],

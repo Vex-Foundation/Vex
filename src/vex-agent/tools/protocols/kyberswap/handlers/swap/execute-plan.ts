@@ -29,7 +29,7 @@ import { KYBER_FRESH_QUOTE_TOOL } from "../../../quote-authority/refusal.js";
 import { computeKyberVexFeeRaw } from "@tools/kyberswap/swap-vex-fee.js";
 import { buildKyberFeeDisclosure } from "@tools/kyberswap/fee-disclosure.js";
 import { KYBERSWAP_FEE_RECEIVER } from "@tools/kyberswap/constants.js";
-import { revalidateVexFeeStatement } from "@tools/vex-fee/fee-revalidation.js";
+import { revalidateVexFeeStatement, VexFeeStatementRefusal } from "@tools/vex-fee/fee-revalidation.js";
 import { toVexFeePreview, type VexFeePreview } from "../../../prequote/fee-disclosure.js";
 import logger from "@utils/logger.js";
 import { ensureErc20Balance } from "@tools/evm-chains/erc20-balance-guard.js";
@@ -120,6 +120,20 @@ export interface PrepareSwapExecutionInput {
    * own re-derivation before anything is signed; `undefined` fails closed.
    */
   readonly approvedVexFee: VexFeePreview | undefined;
+  /**
+   * Consume the approved prequote row, called at the LAST point in this phase
+   * that writes nothing: after the calldata guard, the fee-statement comparison
+   * and the debit-plan comparison, immediately before the durable intent.
+   *
+   * It is an injected callback rather than a repo call because the row identity
+   * belongs to the handler that read it (`prequote/claim.ts` issues the ticket)
+   * and this phase owns only WHEN the consumption is safe. A refusal is thrown
+   * like every other failure here, so the caller's single catch records it
+   * pre-intent with nothing signed.
+   */
+  readonly commitApprovedQuote: () => Promise<
+    { readonly ok: true } | { readonly ok: false; readonly refusal: { readonly message: string } }
+  >;
 }
 
 /**
@@ -317,10 +331,18 @@ export async function prepareSwapExecution(input: PrepareSwapExecutionInput): Pr
       reason: feeVerdict.reason,
       movedFields: feeVerdict.movedFields,
     });
-    throw new VexError(
+    // Thrown as the TYPED refusal so the reason reaches the tool result's data
+    // and not only this log line: an agent that cannot tell a moved fee
+    // statement from any other build failure cannot pick the right remedy.
+    throw new VexFeeStatementRefusal(
       ErrorCodes.KYBER_MALFORMED_PARAMS,
       `Refused before signing: ${feeVerdict.summary} disagrees with the approved quote, which cannot happen on this venue.`,
       "Nothing was signed. This is a Vex defect, not a market move: get a fresh kyberswap__swap_quote and report it if it repeats.",
+      {
+        reason: feeVerdict.reason,
+        movedFields: feeVerdict.movedFields,
+        remediation: `Get a fresh ${KYBER_FRESH_QUOTE_TOOL} and approve that one.`,
+      },
     );
   }
 
@@ -446,6 +468,23 @@ export async function prepareSwapExecution(input: PrepareSwapExecutionInput): Pr
     source: sourceAssetOf(tokenIn),
     sourceRequiredRaw: amountIn.toString(10),
   });
+
+  // ── ONLY NOW is the approved quote consumed ──
+  //
+  // Everything this execution could compare has been compared: the build's
+  // calldata against the approved route, the fee statement against the card's,
+  // and the transaction set against the approved debit plan. A refusal above
+  // this line leaves `claimed_at` and `claimed_by` null and the quote reusable,
+  // which is what makes the "get a fresh quote" remedy in those refusals a
+  // remedy rather than a dead end. Nothing has been signed either way: every
+  // signature happens in Phase B.
+  const consumed = await input.commitApprovedQuote();
+  if (!consumed.ok) {
+    throw new VexError(
+      ErrorCodes.KYBER_PRICE_FLOOR_VIOLATED,
+      consumed.refusal.message,
+    );
+  }
 
   const created = await createAgentActivityIntent({
     toolId,

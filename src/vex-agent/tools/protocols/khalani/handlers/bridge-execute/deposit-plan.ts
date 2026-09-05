@@ -90,6 +90,14 @@ export async function buildKhalaniDepositPlan(
       plan,
       input.sourceChain,
       input.chargeFee ? { tokenAddress: input.fromToken, feeRaw: input.feeRaw } : null,
+      // Vex's own view of the bridge, the same three facts
+      // `authorizeKhalaniPlanNativeValue` gets below. The planner binds the
+      // provider's approval to them (`erc20-approve-step-guard.ts` rule 2)
+      // BEFORE returning any leg, so an approval on a foreign token, from
+      // another sender, or for anything other than this exact principal
+      // (unlimited most of all) throws here and never reaches a signer, a
+      // nonce or a durable row.
+      { fromToken: input.fromToken, wallet: input.fromAddress, bridgedAmountRaw: input.bridgedAmountRaw },
     );
   } catch (err) {
     planError = err;

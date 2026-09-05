@@ -63,6 +63,41 @@ const pairedStock = z
   .nullish()
   .transform((v) => v ?? null);
 
+/**
+ * The launchpad's brand verdict. FULLY tolerant, hand-parsed rather than
+ * schema-parsed: it is a warning badge, and a shape the provider changes must
+ * cost the badge and nothing else. A brand object without a usable `status`
+ * becomes `null` (no badge), and a `revision` that is not a finite number
+ * becomes `null` while the status survives - the pools.fun app itself only
+ * renders the badge for a safe integer revision, so a broken revision is a
+ * reason not to trust the number, never a reason to drop the row.
+ */
+const poolsFunBrand = z
+  .unknown()
+  .optional()
+  .transform((raw) => {
+    if (raw === null || raw === undefined || typeof raw !== "object") return null;
+    const value = raw as { status?: unknown; revision?: unknown };
+    if (typeof value.status !== "string" || value.status === "") return null;
+    return {
+      status: value.status,
+      revision:
+        typeof value.revision === "number" && Number.isFinite(value.revision) ? value.revision : null,
+    };
+  });
+
+/**
+ * A flag the wire carries ONLY WHEN TRUE (`vexAttested`, `pairedStockIlliquid`).
+ *
+ * Absent -> `null`, not `false`. The provider never sends `false`, so encoding
+ * absence as `false` would turn "the launchpad says nothing" into "the launchpad
+ * says no" - the same collapse `isOwnLaunch` is tri-state to avoid.
+ */
+const presentOnlyWhenTrue = z
+  .boolean()
+  .nullish()
+  .transform((v) => (typeof v === "boolean" ? v : null));
+
 const poolsTokenSchema: z.ZodType<PoolsToken> = z.object({
   tokenAddress: address,
   // The Sushi V3 pool address. Verified against `PartyLocker.getPoolInfo` on
@@ -99,6 +134,16 @@ const poolsTokenSchema: z.ZodType<PoolsToken> = z.object({
   priceChange1h: displayNumber,
   priceChange6h: displayNumber,
   priceChange24h: displayNumber,
+  // ── The 2026-09-04 additions (REPORT.md section 3) ────────────────
+  //
+  // All five are ABSENT rather than null when they do not apply, which is why
+  // every one of them is nullish-tolerant here: a strict reader would refuse
+  // 96 of 100 rows on `vexAttested` alone.
+  vexAttested: presentOnlyWhenTrue,
+  holderRewardsMode: displayString,
+  holderRewardsDistributor: displayString,
+  poolsFunBrand,
+  pairedStockIlliquid: presentOnlyWhenTrue,
 });
 
 /**

@@ -18,8 +18,9 @@
  * WHERE THE SQL COMES FROM. The gate's seven-branch UNION is a private const
  * inside its own module, and re-typing 60 lines of money-path SQL into a test
  * would create a second source of truth that can drift silently. This file
- * therefore EXTRACTS the exact `IN_FLIGHT_SQL` and `MAX_IN_FLIGHT` text from the
- * owner's source file and explains that, so the plan measured here is the plan
+ * therefore EXTRACTS the exact `IN_FLIGHT_SQL` text (and the two nested
+ * templates it is assembled from) plus `MAX_IN_FLIGHT` from the owner's source
+ * files and explains that, so the plan measured here is the plan
  * production gets. A rename breaks this test loudly, which is the correct
  * failure.
  *
@@ -41,7 +42,9 @@ import pg from "pg";
 import { runMigrationsWithProgress } from "../../../lib/db/migrate-runner.js";
 import { getPackageRoot, getVexAgentMigrationsDir } from "@utils/package-assets.js";
 import {
+  boundFor,
   readInFlightMoney,
+  IN_FLIGHT_KINDS,
   type InFlightEntry,
 } from "@vex-agent/sync/balance-sync/publication-gate.js";
 
@@ -76,11 +79,20 @@ const GATE_SOURCE = readFileSync(
   "utf-8",
 );
 
-function extractTemplate(name: string): string {
-  const match = new RegExp(`const ${name} = \`([\\s\\S]*?)\`;`).exec(GATE_SOURCE);
+/**
+ * The fence moved to its own module when the gate crossed the repository's
+ * 750-line file gate; it is still the same statement, read from its new owner.
+ */
+const FENCE_SOURCE = readFileSync(
+  path.join(getPackageRoot(), "src/vex-agent/sync/balance-sync/activity-fence.ts"),
+  "utf-8",
+);
+
+function extractTemplate(source: string, name: string): string {
+  const match = new RegExp(`const ${name} = \`([\\s\\S]*?)\`;`).exec(source);
   if (match?.[1] === undefined) {
     throw new Error(
-      `publication-gate.ts no longer declares a template literal named ${name}. ` +
+      `the gate no longer declares a template literal named ${name}. ` +
         `This test explains the gate's REAL SQL; update the extraction rather than inlining a copy.`,
     );
   }
@@ -95,9 +107,49 @@ function extractNumber(name: string): number {
   return Number(match[1].replace(/_/g, ""));
 }
 
-const IN_FLIGHT_SQL = extractTemplate("IN_FLIGHT_SQL");
-const FENCE_SQL = extractTemplate("FENCE_SQL");
+/**
+ * `IN_FLIGHT_SQL` is assembled from two nested template literals, so the
+ * extraction resolves them in the same order the module does. Reading the
+ * source rather than importing the constant is deliberate and unchanged: this
+ * suite exists to EXPLAIN the gate's real statement, and an import would let a
+ * refactor quietly change what is being explained.
+ */
+function extractInFlightSql(): string {
+  const branches = extractTemplate(GATE_SOURCE, "LEDGER_BRANCHES_SQL");
+  const cte = extractTemplate(GATE_SOURCE, "LEDGER_CTE_SQL")
+    .replace("${LEDGER_BRANCHES_SQL}", branches);
+  return extractTemplate(GATE_SOURCE, "IN_FLIGHT_SQL").replace("${LEDGER_CTE_SQL}", cte);
+}
+
+const IN_FLIGHT_SQL = extractInFlightSql();
+const FENCE_SQL = extractTemplate(FENCE_SOURCE, "FENCE_SQL");
 const MAX_IN_FLIGHT = extractNumber("MAX_IN_FLIGHT");
+
+/**
+ * The bound table as the statement receives it, built from the gate's own
+ * exported table so the EXPLAIN joins a `bounds` relation of the real size
+ * rather than an empty one the planner would collapse. Only the PARAMETER is
+ * imported; the SQL is still read from source, for the reason in the header.
+ */
+const STANDING_BOUNDS_JSON = JSON.stringify(
+  IN_FLIGHT_KINDS.map((kind) => {
+    const bound = boundFor(kind, null);
+    return {
+      kind,
+      detail: null,
+      rule: bound.rule,
+      seconds: bound.rule === "max-age" ? bound.maxAgeSeconds : bound.fallbackMaxAgeSeconds,
+    };
+  }),
+);
+
+/** The four bind parameters `readInFlightMoney` sends. */
+const IN_FLIGHT_PARAMS = [
+  PROBE_WALLETS,
+  MAX_IN_FLIGHT,
+  STANDING_BOUNDS_JSON,
+  new Date().toISOString(),
+];
 
 // ── plan inspection ───────────────────────────────────────────────────────
 
@@ -366,7 +418,7 @@ describe("098 wallet-address indexes for the publication gate", () => {
     }
 
     blockersBefore = (await readInFlightMoney(pool, PROBE_WALLETS)).entries;
-    planBefore = await measure(IN_FLIGHT_SQL, [PROBE_WALLETS, MAX_IN_FLIGHT + 1]);
+    planBefore = await measure(IN_FLIGHT_SQL, IN_FLIGHT_PARAMS);
     fencePlan = await measure(FENCE_SQL, [PROBE_WALLETS]);
 
     // THE DEFECT, stated as a plan: with no wallet index, at least one branch
@@ -420,7 +472,7 @@ describe("098 wallet-address indexes for the publication gate", () => {
 
   it("plans every wallet predicate through the named index, with no sequential scan left", async () => {
     await pool.query("ANALYZE");
-    planAfter = await measure(IN_FLIGHT_SQL, [PROBE_WALLETS, MAX_IN_FLIGHT + 1]);
+    planAfter = await measure(IN_FLIGHT_SQL, IN_FLIGHT_PARAMS);
 
     for (const table of INTENT_TABLES) {
       const scans = scansOf(planAfter, table);

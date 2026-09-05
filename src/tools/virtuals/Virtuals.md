@@ -465,12 +465,103 @@ this one, is the money authority.
 |---|---|---|
 | BondingV5 | `0x1a540088...` | `0xd4cCBFA37e2f35611b3042e4096Ad7a3459Bd007` |
 | FRouterV3 | `0x02fe8ec3...` | `0xCa6395246B4382Ba70F886526dD9a9De984F6081` |
-| FFactoryV2 | (buyTax 1, sellTax 1) | `0xFC2E4Da3EdB2E18100473339c763705d263D20A9` |
+| FFactoryV2 | `0x488Db0978b34C6Fd901760b9024B565C1117c7c8` (buyTax 1, sellTax 1) | `0xFC2E4Da3EdB2E18100473339c763705d263D20A9` |
 | VIRTUAL | `0x0b3e3284...` | `0xc6911796...D9c31` |
+| AgentTaxV2 (`FFactoryV2.taxVault()`) | `0x617Fd668c5b0d1906C0B3E7E3E49d1409Df0a528` | `0x6D80B81d9Fc56A7A839b1Af9006Eb49151961ce7` |
+| AgentTaxV2 implementation | `0xF6dEd65faaB429b2d5E13552D618a2E231f3D129` | `0x4D4e8F06FE9a3dB2FA7AD4D17893128600Ec01bB` |
 
 Curve params 8500 / 42000 VIRTUAL on both chains; launch fee 0, or 10 VIRTUAL
 with ACF. Full provenance in
 `agents-colab/agents_dm/launchpads-plan-2026-09-04.md` section 14.
+
+## Creator fees - AgentTaxV2, and why the claim is `unsupported`
+
+`virtuals__creator_fees_get` answers what an agent's creator has earned from the
+bonding-curve trading tax. Everything below was READ FROM THE CHAIN on
+2026-09-04 (Base at block 50881423 / 50882184, Robinhood at 54534905 / 54550068),
+not taken from a document.
+
+### Where the money sits, and what it is denominated in
+
+`FFactoryV2.taxVault()` IS the AgentTaxV2 proxy, so the tool reads the vault
+address from the factory at call time rather than trusting a constant. The
+contract collects in one asset and pays in another, and they are not the same:
+
+| chain | taxToken (collected) | assetToken (paid to the creator) | feeRate | minSwapThreshold | maxSwapThreshold |
+|---|---|---|---|---|---|
+| Base 8453 | VIRTUAL `0x0b3e3284...`, 18 dec | USDC `0x833589fC...`, 6 dec | 3000 / 10000 = 30% | 10 VIRTUAL | 1000 VIRTUAL |
+| Robinhood 4663 | VIRTUAL `0xc6911796...`, 18 dec | USDG `0x5fc5360D...`, 6 dec | 3000 / 10000 = 30% | 1 VIRTUAL | 1000 VIRTUAL |
+
+Treasury on both chains: `0xb51C52d9E5E41937B0100840b6C3CBA6f7A57A0C`. A raw
+number carried without its asset here is out by 10^12, so every amount the tool
+returns ships with its address, symbol, decimals, raw integer and human string.
+
+### The getters, what each one denominates, and where it comes from
+
+| getter | returns | denomination | note |
+|---|---|---|---|
+| `getTokenTaxAmounts(token)` | `amountCollected`, `amountSwapped` | taxToken raw (VIRTUAL, 18) | cumulative; `pending` is DERIVED as the difference, the contract stores no third number |
+| `getTokenRecipient(token)` | `tba`, `creator` | addresses | an unregistered token answers `(0x0, 0x0)` and does NOT revert (measured against `0x...dEaD`) |
+| `getTokenPartnerConfig(token)` | `partnerId`, `partnerFeeRate` | parts in 10000 | zero for every Base agent scanned; 2000 (20%) for five Robinhood agents sharing partner id `0x576cb4e2...` |
+| `partnerRecipients(partnerId)` | address | address | zero here REVERTS the distribution ("Partner recipient not set") |
+| `feeRate()` | protocol fee | parts in 10000, applied to the SWAP OUTPUT | 3000 on both chains |
+| `min/maxSwapThreshold()` | swap bounds | taxToken raw | below min the swap returns early; above max one swap moves at most the cap |
+| `treasury()` | address | address | where the protocol fee goes |
+| `hasRole(SWAP_ROLE, account)` | bool | - | the measurement behind the refusal |
+| `balanceOf(taxVault)` on taxToken | vault balance | taxToken raw | shared across every token; NOT one agent's share |
+
+The split `_swapAndDistribute` performs, in order: protocol fee, then partner
+fee, then the creator takes the remainder, each fee clamped so it cannot exceed
+what is left. With no partner that is 30 / 0 / 70; with the measured Robinhood
+partner it is 30 / 20 / 50.
+
+### The claim is refused, and the refusal is measured
+
+AgentTaxV2 pays a creator ONLY inside `_swapAndDistribute`
+(`contracts/tax/AgentTaxV2.sol:300`), which is reachable only through
+`swapForTokenAddress` (`:211`) and `batchSwapForTokenAddress` (`:227`), both
+`onlyRole(SWAP_ROLE)`. Virtuals' backend holds that role. Measured on both
+chains: `hasRole(SWAP_ROLE, creator)` and `hasRole(SWAP_ROLE, tba)` are BOTH
+false for CULTOS (Base) and BLOOPA (Robinhood). There is therefore no
+transaction Vex could sign that collects this, and none is offered.
+
+There is also nothing left to claim afterwards: when the backend swaps, the
+creator's share is TRANSFERRED to the creator address. The tool says so, names
+the venue that triggers the swap (the Virtuals app), and never returns a zero or
+an error in place of the explanation.
+
+Three states the tool keeps apart by name: a chain with no AgentTaxV2 (solana,
+ethereum) answers `supported: false` with that reason; a token with no
+registered recipient answers `registered: false` with the contract's own
+`"Token not registered"`; a chain that will not answer is a failure that
+explicitly denies saying anything about earnings.
+
+### Genesis participation is `unsupported`, for a different measured reason
+
+`Genesis.participate(pointAmt, virtualsAmt)`
+(`contracts/genesis/Genesis.sol:243`) transfers the caller's VIRTUAL
+immediately and does nothing with `pointAmt` except emit it - no validation, no
+signature, no derived allocation. The allocation is computed off chain by
+Virtuals' backend and written later by `onGenesisSuccessSalt`, which is
+`onlyRole(FACTORY_ROLE)` and carries the winners as calldata arrays (`:274`,
+`:390`). Refunds run through the same privileged path. A self-custodial call
+would spend real funds against points Vex cannot obtain or prove, so the
+refusal ships in the calendar read's own `participation` block rather than as a
+tool that exists only to say no. The calendar itself (`virtuals__genesis_launches_list`)
+is the supported half.
+
+### `api2.virtuals.io` revenue-connect: read, labelled, and not believed
+
+`GET /api/revenue-connect-metrics/virtuals/{id}?metric=summary` answers
+`{totalRevenue, totalTokenAccumulated, totalTokenAccumulatedUsd}`. Measured
+2026-09-04 it returned ALL ZEROS for every agent probed - 135655 CULTOS, 133649
+BLOOPA, 96200 VEX, and 18820 TIBBIR, 130418 HALO, 1199 AIXBT (the three largest
+on Base by market cap) - while those agents held thousands of VIRTUAL of accrued
+tax on chain at the same moment. `metric=bogusMetricXyz` answered HTTP 200 with
+`{"data": []}`, the same silent-ignore behaviour the main API has for an unknown
+filter key. It is therefore carried as a labelled provider claim about a
+DIFFERENT revenue stream, tolerant and nullable, never as the answer, and never
+subtracted from the on-chain numbers.
 
 ## Known gaps, stated rather than hidden
 
@@ -485,7 +576,18 @@ with ACF. Full provenance in
 6. **`filters[status]=5`** filters 236 rows on BASE and we do not know what it
    means, so it is not exposed.
 7. **`api2.virtuals.io`** mirrors `api.virtuals.io` (identical totals) and
-   carries endpoints this module does not use (`/api/tokens/{addr}/holders`,
-   `/api/dex/token-reserves/{pair}`, `/api/revenue-connect-metrics/...`,
-   `/api/project-update/{id}/tweets`). Each is a candidate for a later read;
-   none is wired today.
+   carries endpoints this module mostly does not use
+   (`/api/tokens/{addr}/holders`, `/api/dex/token-reserves/{pair}`,
+   `/api/project-update/{id}/tweets`). Each is a candidate for a later read.
+   `/api/revenue-connect-metrics/{id}?metric=summary` IS wired now, by the
+   creator-fee read, as a labelled provider claim (section above); its other
+   metrics (`tradingFeeRevenue` and whatever else the app requests) are not,
+   because an unknown metric name is indistinguishable from a real empty series.
+8. **The revenue-connect summary was all zeros for every agent probed**, so the
+   tool carries that measurement beside the number rather than pretending the
+   zero is informative. If a non-zero is ever observed, the label should be
+   revisited with that evidence.
+9. **A partner fee split** was found on five Robinhood agents and on no Base
+   agent among the 110 scanned. What the partner id `0x576cb4e2...` names is not
+   known, so the tool reports the id, the rate and the recipient without
+   interpreting them.

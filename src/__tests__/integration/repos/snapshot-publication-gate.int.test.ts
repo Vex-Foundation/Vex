@@ -31,6 +31,7 @@ import {
   readActivityFence,
   readInFlightMoney,
   type InFlightEntry,
+  type InFlightLedger,
 } from "@vex-agent/sync/balance-sync/publication-gate.js";
 import { publishSnapshotGroup } from "@vex-agent/sync/balance-sync/snapshot-publication.js";
 import { makeSession, resetDb } from "../setup/fixtures.js";
@@ -83,7 +84,7 @@ async function insertAgentActivity(
  * reported. `normalized_route` and `provider_order_id` are constrained to this
  * event role (migration 045), and the money lives on the OUTPUT columns.
  */
-async function insertBridgeFill(sessionId: string): Promise<number> {
+async function insertBridgeFill(sessionId: string, walletAddress: string = WALLET): Promise<number> {
   const executionId = await insertProtocolExecution(sessionId);
   const row = await queryOne<{ id: number }>(
     `INSERT INTO agent_activity
@@ -97,14 +98,20 @@ async function insertBridgeFill(sessionId: string): Promise<number> {
              'USDC', '151.0', 151.00,
              'USDC', '150.5', 150.25)
      RETURNING id`,
-    [executionId, WALLET, sessionId],
+    [executionId, walletAddress, sessionId],
   );
   return row?.id ?? 0;
 }
 
 async function insertWalletIntent(
   sessionId: string,
-  fields: { status: string; expiresInMs?: number; txHash?: string | null; activityId?: number },
+  fields: {
+    status: string;
+    expiresInMs?: number;
+    txHash?: string | null;
+    activityId?: number;
+    walletAddress?: string;
+  },
 ): Promise<string> {
   const intentId = randomUUID();
   // `wallet_intents_unconfirmed_evidence` (migration 093) requires BOTH a hash
@@ -117,7 +124,7 @@ async function insertWalletIntent(
      VALUES ($1, $2, $3, 'eip155', '0xdest', '1',
              '{"label":"send","criticalArgs":{}}'::jsonb, $4,
              NOW() + ($5::text || ' milliseconds')::interval, $6, $7)`,
-    [intentId, sessionId, WALLET, fields.status,
+    [intentId, sessionId, fields.walletAddress ?? WALLET, fields.status,
      String(fields.expiresInMs ?? 600_000), fields.txHash ?? null, fields.activityId ?? null],
   );
   return intentId;
@@ -125,7 +132,13 @@ async function insertWalletIntent(
 
 async function insertTransactionIntent(
   sessionId: string,
-  fields: { status: string; expiresInMs?: number; txHash?: string | null; createdAt?: string },
+  fields: {
+    status: string;
+    expiresInMs?: number;
+    txHash?: string | null;
+    createdAt?: string;
+    walletAddress?: string;
+  },
 ): Promise<string> {
   const intentId = randomUUID();
   await execute(
@@ -139,7 +152,7 @@ async function insertTransactionIntent(
              repeat('b', 64), 'v1', $4,
              NOW() + ($5::text || ' milliseconds')::interval, $6,
              COALESCE($7::timestamptz, NOW()))`,
-    [intentId, sessionId, WALLET, fields.status,
+    [intentId, sessionId, fields.walletAddress ?? WALLET, fields.status,
      String(fields.expiresInMs ?? 600_000), fields.txHash ?? null, fields.createdAt ?? null],
   );
   return intentId;
@@ -147,7 +160,12 @@ async function insertTransactionIntent(
 
 async function insertWrapIntent(
   sessionId: string,
-  fields: { status: string; expiresInMs?: number; txHash?: string | null },
+  fields: {
+    status: string;
+    expiresInMs?: number;
+    txHash?: string | null;
+    walletAddress?: string;
+  },
 ): Promise<string> {
   const intentId = randomUUID();
   await execute(
@@ -163,22 +181,29 @@ async function insertWrapIntent(
              '{"label":"wrap","criticalArgs":{}}'::jsonb, '{}'::jsonb,
              repeat('a', 64), 'v1', $4,
              NOW() + ($5::text || ' milliseconds')::interval, $6)`,
-    [intentId, sessionId, WALLET, fields.status,
+    [intentId, sessionId, fields.walletAddress ?? WALLET, fields.status,
      String(fields.expiresInMs ?? 600_000), fields.txHash ?? null],
   );
   return intentId;
 }
 
 /** Read the ledger the way production does: inside a transaction. */
-async function inFlightNow(): Promise<readonly InFlightEntry[]> {
+async function ledgerNow(
+  wallets: readonly string[] = WALLETS,
+  now: number = Date.now(),
+): Promise<InFlightLedger> {
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
-    return (await readInFlightMoney(client, WALLETS)).entries;
+    return await readInFlightMoney(client, wallets, now);
   } finally {
     await client.query("ROLLBACK").catch(() => undefined);
     client.release();
   }
+}
+
+async function inFlightNow(): Promise<readonly InFlightEntry[]> {
+  return (await ledgerNow()).entries;
 }
 
 const kindsNow = async () => (await inFlightNow()).map((e) => e.kind).sort();
@@ -363,6 +388,258 @@ describe("the ledger SQL against the real schema", () => {
     // `wallet_transaction_intents` is calldata-shaped: it has no amount and no
     // asset column at all, and the ledger says so.
     expect(entry).toMatchObject({ amountHuman: null, symbol: null, usdEstimate: null });
+  });
+});
+
+// ── 1b. Per-wallet attribution, against the real schema ──────────────────
+
+describe("in-flight money is attributed PER WALLET", () => {
+  const OTHER = "0xother-wallet";
+
+  it("gives a scoped read ZERO in transit and NO foreign entry when only the OTHER wallet is pending", async () => {
+    // The exact defect: wallet B is mid-bridge, the user opens a scope that
+    // holds only wallet A, and B's $150.25 lands in A's portfolio.
+    await insertBridgeFill(sessionId, OTHER);
+
+    const scopedToA = await ledgerNow([WALLET]);
+
+    expect(scopedToA.entries).toEqual([]);
+    expect(scopedToA.perWallet).toEqual([]);
+    expect(scopedToA.totalCount).toBe(0);
+
+    // And the wallet that IS mid-bridge sees exactly its own money.
+    const scopedToB = await ledgerNow([OTHER]);
+    expect(scopedToB.perWallet).toEqual([
+      { walletAddress: OTHER, entryCount: 1, unresolvedCount: 0, inTransitUsd: 150.25 },
+    ]);
+    expect(scopedToB.entries.map((entry) => entry.walletAddress)).toEqual([OTHER]);
+  });
+
+  it("splits a two-wallet scope into two rows, each carrying only its own money", async () => {
+    await insertBridgeFill(sessionId, OTHER);
+    await insertWalletIntent(sessionId, { status: "consuming" });
+
+    const both = await ledgerNow([WALLET, OTHER]);
+
+    expect(new Map(both.perWallet.map((w) => [w.walletAddress, w.inTransitUsd]))).toEqual(
+      new Map([
+        // The bridge fill's expected output, priced.
+        [OTHER, 150.25],
+        // `wallet_intents` carries no USD estimate at all: not priced is not
+        // worth zero, and it contributes nothing rather than a fabricated
+        // figure.
+        [WALLET, 0],
+      ]),
+    );
+    expect(both.totalCount).toBe(2);
+    expect(both.entries).toHaveLength(2);
+  });
+
+  it("names the owning wallet on EVERY entry, from the row's own column", async () => {
+    await insertBridgeFill(sessionId, OTHER);
+    await insertTransactionIntent(sessionId, { status: "consuming" });
+
+    const both = await ledgerNow([WALLET, OTHER]);
+
+    expect(new Set(both.entries.map((entry) => entry.walletAddress))).toEqual(
+      new Set([WALLET, OTHER]),
+    );
+  });
+});
+
+// ── 1c. Totals over ALL rows; the LIST alone is bounded ──────────────────
+
+describe("the display bound never bounds a total", () => {
+  it("counts and prices all 55 rows while listing 50, and says the list is short", async () => {
+    // 55 live transaction intents, more than the 50-row display bound.
+    for (let i = 0; i < 55; i++) {
+      await insertTransactionIntent(sessionId, { status: "consuming" });
+    }
+
+    const ledger = await ledgerNow();
+
+    // The list is bounded, and says so.
+    expect(ledger.entries).toHaveLength(50);
+    expect(ledger.truncated).toBe(true);
+    // The accounting is NOT bounded: every row was counted by the server.
+    expect(ledger.totalCount).toBe(55);
+    expect(ledger.perWallet).toEqual([
+      { walletAddress: WALLET, entryCount: 55, unresolvedCount: 0, inTransitUsd: 0 },
+    ]);
+  });
+
+  it("keeps the OLDEST rows in the bounded list", async () => {
+    const oldest = await insertTransactionIntent(sessionId, {
+      status: "consuming",
+      createdAt: new Date(Date.now() - 60 * 60_000).toISOString(),
+    });
+    for (let i = 0; i < 55; i++) {
+      await insertTransactionIntent(sessionId, { status: "consuming" });
+    }
+
+    const ledger = await ledgerNow();
+
+    expect(ledger.entries[0]?.ref).toBe(oldest);
+    expect(ledger.truncated).toBe(true);
+  });
+
+  it("reports an untruncated list as untruncated", async () => {
+    await insertTransactionIntent(sessionId, { status: "consuming" });
+    const ledger = await ledgerNow();
+    expect(ledger.totalCount).toBe(1);
+    expect(ledger.truncated).toBe(false);
+  });
+});
+
+// ── 1d. The standing, decided by the server from the bound table ─────────
+
+describe("the standing bounds, evaluated by real Postgres", () => {
+  it("calls a young same-chain leg in transit and an old one unresolved", async () => {
+    const id = await insertAgentActivity(sessionId, "pending", {
+      createdAt: new Date(Date.now() - 10 * 60_000).toISOString(),
+    });
+    expect((await ledgerNow()).entries[0]?.standing).toBe("in_transit");
+
+    await execute("UPDATE agent_activity SET created_at = NOW() - interval '2 hours' WHERE id = $1", [id]);
+    const aged = await ledgerNow();
+    // Past the one-hour bound for a same-chain leg: listed, counted, and in NO
+    // total.
+    expect(aged.entries[0]?.standing).toBe("unresolved");
+    expect(aged.perWallet[0]?.unresolvedCount).toBe(1);
+    expect(aged.perWallet[0]?.inTransitUsd).toBe(0);
+  });
+
+  it("gives a bridge fill the two-hour bound its detail override names", async () => {
+    const id = await insertBridgeFill(sessionId);
+    await execute("UPDATE agent_activity SET created_at = NOW() - interval '90 minutes' WHERE id = $1", [id]);
+
+    const ledger = await ledgerNow();
+
+    // 90 minutes is past the same-chain hour and inside the cross-chain two,
+    // so this row proves the OVERRIDE is applied and not the kind's default.
+    expect(ledger.entries[0]?.standing).toBe("in_transit");
+    expect(ledger.perWallet[0]?.inTransitUsd).toBeCloseTo(150.25, 6);
+  });
+
+  it("uses the row's OWN expiry for a claimable proposal, not its age", async () => {
+    await insertWalletIntent(sessionId, { status: "consuming", expiresInMs: -1_000 });
+    // Seconds old, and already dead: the CAS filters on `expires_at > NOW()`.
+    expect((await ledgerNow()).entries[0]?.standing).toBe("unresolved");
+
+    await execute("DELETE FROM wallet_intents");
+    await insertWalletIntent(sessionId, { status: "consuming", expiresInMs: 600_000 });
+    expect((await ledgerNow()).entries[0]?.standing).toBe("in_transit");
+  });
+
+  it("counts an unresolved row without letting its estimate reach any total", async () => {
+    const id = await insertBridgeFill(sessionId);
+    await execute("UPDATE agent_activity SET created_at = NOW() - interval '3 hours' WHERE id = $1", [id]);
+
+    const ledger = await ledgerNow();
+
+    expect(ledger.entries[0]?.standing).toBe("unresolved");
+    // The entry keeps its estimate for the operator to read; the accounting
+    // refuses it in either direction.
+    expect(ledger.entries[0]?.usdEstimate).toBeCloseTo(150.25, 6);
+    expect(ledger.perWallet[0]).toEqual({
+      walletAddress: WALLET,
+      entryCount: 1,
+      unresolvedCount: 1,
+      inTransitUsd: 0,
+    });
+  });
+
+  it("reads a NEGATIVE estimate as not priced, in the entry AND in the total", async () => {
+    const id = await insertBridgeFill(sessionId);
+    await execute("UPDATE agent_activity SET usd_out_est = -500 WHERE id = $1", [id]);
+
+    const ledger = await ledgerNow();
+
+    // A negative estimate is a bad price, not a liability. It must not
+    // subtract from a portfolio on either path.
+    expect(ledger.entries[0]?.usdEstimate).toBeNull();
+    expect(ledger.perWallet[0]?.inTransitUsd).toBe(0);
+  });
+});
+
+// ── 1e. The documented exception: expired, unbroadcast, never in flight ──
+
+describe("an expired PENDING intent with no transaction hash", () => {
+  /**
+   * The owner's exception (2026-09-04), asserted as a table over all three
+   * intent tables: such a row is not listed at all, in either standing. The
+   * proposal can never be claimed (`expires_at > NOW()` in the consuming CAS)
+   * and nothing was ever broadcast, so no money left and there is no outcome
+   * for anyone to prove. Listing it as `unresolved` would tell a human money is
+   * unaccounted for when none ever moved.
+   */
+  const EXPIRED_PENDING: ReadonlyArray<readonly [string, () => Promise<unknown>]> = [
+    ["wallet_intents", () => insertWalletIntent(sessionId, { status: "pending", expiresInMs: -60_000 })],
+    ["wallet_transaction_intents", () => insertTransactionIntent(sessionId, { status: "pending", expiresInMs: -60_000 })],
+    ["wallet_wrap_intents", () => insertWrapIntent(sessionId, { status: "pending", expiresInMs: -60_000 })],
+  ];
+
+  it.each(EXPIRED_PENDING)("%s: is not listed, not counted, and in no total", async (_table, insert) => {
+    await insert();
+
+    const ledger = await ledgerNow();
+
+    expect(ledger.entries).toEqual([]);
+    expect(ledger.perWallet).toEqual([]);
+    expect(ledger.totalCount).toBe(0);
+  });
+
+  /**
+   * The other half of the exception, and the reason it is safe: the moment a
+   * row carries a hash, expiry stops being the relevant clock. Expiry bounds
+   * the APPROVAL; the transaction has already left.
+   */
+  const BROADCAST_PAST_EXPIRY: ReadonlyArray<readonly [string, () => Promise<unknown>, string]> = [
+    [
+      "wallet_transaction_intents",
+      () => insertTransactionIntent(sessionId, {
+        status: "broadcast_unconfirmed",
+        txHash: "0xbroadcast-tx",
+        expiresInMs: -60_000,
+      }),
+      "wallet_transaction_intent_live",
+    ],
+    [
+      "wallet_wrap_intents",
+      () => insertWrapIntent(sessionId, {
+        status: "broadcast_unconfirmed",
+        txHash: "0xbroadcast-wrap",
+        expiresInMs: -60_000,
+      }),
+      "wallet_wrap_intent_live",
+    ],
+  ];
+
+  it.each(BROADCAST_PAST_EXPIRY)(
+    "%s: a BROADCAST row past its expiry is still listed",
+    async (_table, insert, kind) => {
+      await insert();
+
+      const ledger = await ledgerNow();
+
+      expect(ledger.entries.map((entry) => entry.kind)).toEqual([kind]);
+      expect(ledger.totalCount).toBe(1);
+    },
+  );
+
+  it("wallet_intents: a broadcast row past its expiry is still listed", async () => {
+    const activityId = await insertAgentActivity(sessionId, "confirmed");
+    await insertWalletIntent(sessionId, {
+      status: "broadcast_unconfirmed",
+      txHash: "0xbroadcast-intent",
+      activityId,
+      expiresInMs: -60_000,
+    });
+
+    const ledger = await ledgerNow();
+
+    expect(ledger.entries.map((entry) => entry.kind)).toEqual(["wallet_confirmation_unknown"]);
+    expect(ledger.totalCount).toBe(1);
   });
 });
 
@@ -593,23 +870,97 @@ describe("publishSnapshotGroup against a contended table", () => {
       settled_usd: string;
       in_transit_usd: string;
       unresolved_count: number;
+      in_flight_total_count: number;
       in_flight: Array<Record<string, unknown>>;
     }>(
-      `SELECT settled_usd::text, in_transit_usd::text, unresolved_count, in_flight
+      `SELECT settled_usd::text, in_transit_usd::text, unresolved_count,
+              in_flight_total_count, in_flight
          FROM proj_portfolio_snapshot_groups WHERE snapshot_group_id = $1`,
       [groupId],
     );
     expect(Number(group?.settled_usd)).toBeCloseTo(100, 6);
     expect(Number(group?.in_transit_usd)).toBeCloseTo(150.25, 6);
     expect(group?.unresolved_count).toBe(0);
+    // The rows FOUND, beside the rows stored: a reader compares the two to
+    // know whether it holds the whole list.
+    expect(group?.in_flight_total_count).toBe(1);
     expect(group?.in_flight).toHaveLength(1);
     expect(group?.in_flight[0]).toMatchObject({
       kind: "agent_activity_pending",
+      walletAddress: WALLET,
       detail: "bridge_fill_expected",
       standing: "in_transit",
       amountHuman: "150.5",
       symbol: "USDC",
     });
+
+    // And the per-wallet attribution (migration 102), against the real table
+    // and its real CHECK constraints.
+    const perWallet = await query<{
+      wallet_address: string;
+      entry_count: number;
+      unresolved_count: number;
+      in_transit_usd: string;
+    }>(
+      `SELECT wallet_address, entry_count, unresolved_count, in_transit_usd::text
+         FROM proj_portfolio_snapshot_group_wallets WHERE snapshot_group_id = $1`,
+      [groupId],
+    );
+    expect(perWallet).toHaveLength(1);
+    expect(perWallet[0]?.wallet_address).toBe(WALLET);
+    expect(perWallet[0]?.entry_count).toBe(1);
+    expect(perWallet[0]?.unresolved_count).toBe(0);
+    expect(Number(perWallet[0]?.in_transit_usd)).toBeCloseTo(150.25, 6);
+  });
+
+  it("attributes ONE wallet's pending bridge to that wallet alone in the durable record", async () => {
+    const other = "0xother-wallet";
+    await insertBridgeFill(sessionId, other);
+    const fence = await readActivityFence(getPool(), [WALLET, other]);
+    const groupId = randomUUID();
+
+    const outcome = await publishSnapshotGroup({
+      snapshotGroupId: groupId,
+      walletAddresses: [WALLET, other],
+      fenceAtCycleStart: fence,
+      drafts: [draft(WALLET), draft(other)],
+    });
+
+    expect(outcome.published).toBe(true);
+    const perWallet = await query<{ wallet_address: string; in_transit_usd: string }>(
+      `SELECT wallet_address, in_transit_usd::text
+         FROM proj_portfolio_snapshot_group_wallets WHERE snapshot_group_id = $1`,
+      [groupId],
+    );
+    // Exactly ONE row: the wallet with nothing in flight has nothing recorded,
+    // which is what lets a scoped read for it sum to zero instead of
+    // inheriting the group figure.
+    expect(perWallet).toEqual([
+      expect.objectContaining({ wallet_address: other }),
+    ]);
+    expect(Number(perWallet[0]?.in_transit_usd)).toBeCloseTo(150.25, 6);
+  });
+
+  it("refuses a negative per-wallet in-transit total at the SCHEMA, not only in code", async () => {
+    const fence = await readActivityFence(getPool(), WALLETS);
+    const groupId = randomUUID();
+    await publishSnapshotGroup({
+      snapshotGroupId: groupId,
+      walletAddresses: WALLETS,
+      fenceAtCycleStart: fence,
+      drafts: [draft(WALLET)],
+    });
+
+    // The durable floor: money in transit is never negative, and the
+    // database is the last place that can be told otherwise.
+    await expect(
+      execute(
+        `INSERT INTO proj_portfolio_snapshot_group_wallets
+           (snapshot_group_id, wallet_address, entry_count, unresolved_count, in_transit_usd)
+         VALUES ($1::uuid, $2, 1, 0, -1)`,
+        [groupId, WALLET],
+      ),
+    ).rejects.toThrow(/in_transit_usd_check/);
   });
 
   it("writes NO group record when a per-wallet insert fails", async () => {

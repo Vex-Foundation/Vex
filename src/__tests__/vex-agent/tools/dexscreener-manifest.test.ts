@@ -27,6 +27,7 @@ import type {
   ProtocolToolManifest,
 } from "../../../vex-agent/tools/protocols/types.js";
 import { DEXSCREENER_TOOLS } from "../../../vex-agent/tools/protocols/dexscreener/manifest.js";
+import { validateProtocolParams } from "../../../vex-agent/tools/protocols/runtime/params.js";
 
 function toolById(toolId: string): ProtocolToolManifest {
   const tool = DEXSCREENER_TOOLS.find(t => t.toolId === toolId);
@@ -289,10 +290,38 @@ describe("dexscreener manifest", () => {
     expect(description).toContain("pairAgeSeconds");
   });
 
-  it("dexscreener.search declares the chain/chainIds exclusion rather than only prosing it", () => {
-    // Prose alone cannot be enforced by the runtime or shown by discovery.
-    const groups = toolById("dexscreener.search").exclusiveParamGroups ?? [];
+  it("dexscreener.search declares the chain/chainIds choice as AT MOST ONE, so an unscoped search stays legal", () => {
+    // The defect this pins: the pair was declared `exclusiveParamGroups`, which
+    // means EXACTLY one, while the description ("Omit it and one unscoped
+    // cross-chain request is issued, which is a legitimate query and not a
+    // missing parameter") and the handler (`chains.length === 0` -> "across
+    // every chain") both treat the unscoped call as valid. The runtime believed
+    // the schema, so every unscoped search was refused with "none of them is
+    // set" - measured against the live host on the 2026-09-04 MCP walk, where
+    // an external Codex agent spent a call on it.
+    const tool = toolById("dexscreener.search");
+    const groups = tool.atMostOne ?? [];
     expect(groups.some((group) => group.includes("chain") && group.includes("chainIds"))).toBe(true);
+    expect(tool.exclusiveParamGroups ?? []).toEqual([]);
+  });
+
+  it("the boundary accepts an unscoped dexscreener.search and still refuses both spellings at once", () => {
+    // Driven through the gate the runtime actually calls, because the shape
+    // assertion above cannot show which calls the boundary admits.
+    const tool = toolById("dexscreener.search");
+    expect(validateProtocolParams(tool, { query: "PEPE" })).toEqual({ ok: true });
+    expect(validateProtocolParams(tool, { query: "PEPE", chain: "solana" })).toEqual({ ok: true });
+    expect(validateProtocolParams(tool, { query: "PEPE", chainIds: ["solana"] })).toEqual({
+      ok: true,
+    });
+    const both = validateProtocolParams(tool, {
+      query: "PEPE",
+      chain: "solana",
+      chainIds: ["base"],
+    });
+    expect(both.ok).toBe(false);
+    // The refusal names the GROUP, so the caller can tell which spelling to drop.
+    expect(both.ok ? "" : both.reason).toContain("chainIds");
   });
 
   it("dexscreener.tokenPairs never claims its shares describe the whole market", () => {

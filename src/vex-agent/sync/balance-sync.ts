@@ -577,6 +577,11 @@ async function runFullBalanceSync(): Promise<FullSyncResult> {
     snapshotSkippedReason: outcome.published ? null : outcome.reason,
     inTransitUsd: outcome.published ? outcome.ledger.inTransitUsd.toFixed(2) : null,
     unresolvedCount: outcome.published ? outcome.ledger.unresolvedCount : null,
+    // The rows the ledger FOUND, not the rows it displays: the list is bounded
+    // at 50 and the totals above are not, so a cycle log that reported only the
+    // list would understate the money the group accounted for.
+    inFlightCount: outcome.published ? outcome.ledger.totalCount : null,
+    inFlightTruncated: outcome.published ? outcome.ledger.truncated : null,
     totalUsd: aggregateTotalUsd.toFixed(2),
     snapshotGroupId,
   });

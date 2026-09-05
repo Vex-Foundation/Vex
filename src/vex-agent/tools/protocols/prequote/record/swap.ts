@@ -25,6 +25,7 @@ import { parseSpendabilityPreview } from "../../quote-authority/spendability.js"
 import { withVexFee } from "../fee-disclosure.js";
 import { PREQUOTE_MAX_AGE_MS } from "../registry.js";
 import { computePrequoteMatchHash } from "../identity/hash.js";
+import { SWAP_QUOTE_GATE_TARGET } from "./gate-targets.js";
 import { extractQuote } from "../safety/extract.js";
 import { canonSlippageBps, readParamSlippageBps } from "../slippage.js";
 import { familyToChainFamily, writePrequoteRow } from "./row.js";
@@ -163,7 +164,7 @@ export async function recordSwapPrequote(
   // execute params. Solana has no recipient/approveExact concept - self/false
   // are inert constants there.
   const matchHash = computePrequoteMatchHash({
-    kind: "swap",
+    kind: SWAP_QUOTE_GATE_TARGET.kind,
     sessionId,
     family: registered.family,
     // Venue binding (LOCKED #4) - the quoting provider is part of the identity.
@@ -203,7 +204,7 @@ export async function recordSwapPrequote(
     prequoteId: `prequote-${randomUUID()}`,
     sessionId,
     matchHash,
-    kind: "swap",
+    kind: SWAP_QUOTE_GATE_TARGET.kind,
     family: registered.family,
     provider: registered.provider,
     chainId: extracted.chainId,

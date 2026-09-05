@@ -9,6 +9,32 @@
  * treasury ATA's existence, both network reads, so `./leg-signing.ts`
  * materializes it against the same per-chain RPC it already signs on.
  *
+ * APPROVE BINDING (`@tools/evm-chains/erc20-approve-step-guard.ts`): a
+ * CONTRACT_CALL plan's approval legs are bound to the deposit call BEFORE the
+ * plan is returned, so nothing downstream can sign an approval this plan does
+ * not need. Until this landed the spender and the allowance were decoded only
+ * to STAMP the deposit leg with evidence (`contractCallApprovedSpenders`
+ * below), so `approve(stranger, unlimited)` on the user's origin token planned
+ * and signed cleanly, and the standing allowance outlived the bridge.
+ *
+ * BOTH RULES ARE BOUND HERE. Rule 1 (canonical `approve`, no native value,
+ * spender == this plan's own deposit target, at most one GRANT) needs only the
+ * provider plan. Rule 2 (the approval targets the ORIGIN token, is sent from
+ * the selected wallet, and grants EXACTLY the principal Vex decided to bridge)
+ * needs numbers no provider supplied, so the caller hands them in as
+ * {@link KhalaniDepositOriginBinding} - the same `fromToken`, `fromAddress` and
+ * `bridgedAmountRaw` the handler already gives `authorizeKhalaniPlanNativeValue`.
+ * The binding is a REQUIRED parameter, not an optional one: a caller that could
+ * omit it would silently plan an unbound allowance, which is the exact hole this
+ * module closes. Deriving the principal here from `vexFee.feeRaw` was rejected
+ * because inverting a floored bps split yields a RANGE, and a money bound must
+ * be exact.
+ *
+ * The binding is CHAIN-SCOPED by construction: every EVM leg this planner
+ * builds is normalized onto `sourceChain` (`normalizeEvmApproval` rejects a
+ * switch to any other chain), so comparing an approval's `to` against the
+ * origin token address compares two addresses on the same chain.
+ *
  * VEX FEE LEG (`src/tools/bridge-fee`): when a fee is charged, the plan gains
  * ONE extra leg APPENDED AFTER the deposit — Vex's own transfer of 25 bps of
  * the input token to the treasury. It is last on purpose: the deposit is
@@ -39,6 +65,18 @@ import type {
 } from "../types.js";
 import { decodeErc20Approve, type ApprovedSpender } from "@tools/evm-chains/erc20-approval.js";
 import {
+  verifyApprovalSequence,
+  verifyApproveStepAuthorizesDeposit,
+  verifyApproveStepBindsPlan,
+  type ApprovalSequenceEntry,
+  type ApproveAmountBinding,
+  type Erc20ApproveStepVerdict,
+} from "@tools/evm-chains/erc20-approve-step-guard.js";
+import {
+  logUnverifiedDepositSelector,
+  verifyBridgeDepositCalldata,
+} from "@tools/evm-chains/bridge-deposit-calldata.js";
+import {
   assertEvmApproval,
   classifyEvmApprovalRole,
   isNativeTransferToken,
@@ -50,6 +88,48 @@ import {
   type KhalaniVexFeeLeg,
   type NormalizedEvmTx,
 } from "./staged-leg.js";
+
+/**
+ * What VEX itself decided about this bridge, as opposed to anything the
+ * provider echoed back. Rule 2 of the approve binding is checked against these
+ * three fields and nothing else.
+ */
+export interface KhalaniDepositOriginBinding {
+  /**
+   * The source-chain token being bridged, in the provider-native spelling the
+   * user's `fromToken` parameter carried. A native alias means the origin asset
+   * has no token contract, so no approval in the plan can be legitimate.
+   */
+  readonly fromToken: string;
+  /** The selected wallet every leg will be signed from. */
+  readonly wallet: string;
+  /**
+   * The amount actually being deposited (post Vex fee split), in smallest
+   * units, exactly as the handler derived it for the quote.
+   */
+  readonly bridgedAmountRaw: string;
+}
+
+/**
+ * Turn the caller's binding into the guard's rule-2 input. An unreadable or
+ * non-positive principal becomes `null`, which the guard refuses as
+ * `principal_not_derivable` rather than binding an allowance to a number Vex
+ * could not read.
+ */
+function approveAmountBinding(origin: KhalaniDepositOriginBinding): ApproveAmountBinding {
+  let principalRaw: bigint | null = null;
+  try {
+    const parsed = BigInt(origin.bridgedAmountRaw);
+    principalRaw = parsed > 0n ? parsed : null;
+  } catch {
+    principalRaw = null;
+  }
+  return {
+    originToken: isNativeTransferToken(origin.fromToken) ? null : origin.fromToken,
+    wallet: origin.wallet,
+    principalRaw,
+  };
+}
 
 /**
  * Classify an EVM leg's `tx.value` with only what the planner can prove
@@ -94,7 +174,11 @@ function contractCallApprovedSpenders(
   return approved;
 }
 
-function planContractCallLegs(plan: ContractCallDepositPlan, chain: KhalaniChain): KhalaniStagedLeg[] {
+function planContractCallLegs(
+  plan: ContractCallDepositPlan,
+  chain: KhalaniChain,
+  origin: KhalaniDepositOriginBinding,
+): KhalaniStagedLeg[] {
   const family: ChainFamily = chain.type;
   const legs: KhalaniStagedLeg[] = [];
   for (const approval of plan.approvals) {
@@ -132,7 +216,104 @@ function planContractCallLegs(plan: ContractCallDepositPlan, chain: KhalaniChain
       nativeValue: planLegNativeValue(chain.id, tx),
     });
   }
+  assertPlanAuthorizesDeposit(legs, chain, origin);
   return attachContractCallDepositEvidence(legs);
+}
+
+/**
+ * BOTH rules of the approve binding, THE ORDER, and the deposit call itself,
+ * across the whole CONTRACT_CALL plan.
+ *
+ * Rule 1 (plan-internal): every approval leg is a canonical, value-free
+ * `approve` naming this plan's OWN deposit target.
+ *
+ * Rule 2 (Vex-derived): every approval - GRANT OR RESET - is on the origin
+ * token and from the selected wallet, and every GRANT is for EXACTLY the
+ * principal Vex asked the venue to bridge. An unlimited allowance, a larger one
+ * and a smaller one all refuse, and so does an approval on a token that is not
+ * the origin currency, from a sender that is not the wallet, or on a native
+ * origin that has no token to approve. A ZERO RESET is exempt from the amount
+ * equality and from NOTHING ELSE: `approve(x, 0)` on somebody else's token, or
+ * from somebody else's account, is still an unauthorized state change on the
+ * user's own asset and still burns their gas, so the reset gets every check a
+ * grant gets except the one that is meaningless for it.
+ *
+ * THE ORDER (`verifyApprovalSequence`): the approvals must form
+ * `reset -> exact grant -> deposit` or a prefix of it, by LEG ORDER. A grant
+ * sequenced after the deposit is a standing allowance created after the only
+ * transaction that justified it; a reset with no grant behind it is a bare
+ * revocation the bridge never needed.
+ *
+ * THE DEPOSIT CALL (`verifyBridgeDepositCalldata`): what the deposit is asked
+ * to move, for a selector an authoritative source confirms. Khalani's
+ * `CONTRACT_CALL` selector is NOT confirmed today (see that module's table), so
+ * the plan records it and logs it once rather than refusing honest traffic, and
+ * the receipt floor stays the money guard.
+ *
+ * Throws: this runs inside the planner, whose whole contract is to throw a
+ * typed `VexError` before any leg reaches a signer, a nonce or a durable row.
+ */
+function assertPlanAuthorizesDeposit(
+  legs: readonly KhalaniStagedLeg[],
+  chain: KhalaniChain,
+  origin: KhalaniDepositOriginBinding,
+): void {
+  const depositIndex = legs.findIndex((leg) => leg.kind === "evm" && leg.isDeposit);
+  const deposit = depositIndex === -1 ? undefined : legs[depositIndex];
+  const depositTarget = deposit !== undefined && deposit.kind === "evm" ? deposit.tx.to : null;
+  const amountBinding = approveAmountBinding(origin);
+  function refuse(detail: string): never {
+    throw new VexError(
+      ErrorCodes.KHALANI_DEPOSIT_FAILED,
+      `Refused before signing the Khalani token approval: ${detail}. Nothing was signed or broadcast.`,
+      "The provider's approval did not match the deposit plan. Take a fresh khalani__bridge_quote_get for this route and retry.",
+    );
+  }
+
+  const approvals: ApprovalSequenceEntry[] = [];
+  for (const [index, leg] of legs.entries()) {
+    if (leg.kind !== "evm" || leg.isDeposit || leg.purpose !== "bridge") continue;
+    const call = {
+      to: leg.tx.to,
+      data: leg.tx.data,
+      value: leg.tx.value ?? 0n,
+      from: leg.tx.expectedFrom,
+    };
+    const bound: Erc20ApproveStepVerdict = verifyApproveStepAuthorizesDeposit(call, { depositTarget });
+    if (!bound.ok) refuse(bound.detail);
+    const planned = verifyApproveStepBindsPlan(call, amountBinding);
+    if (!planned.ok) refuse(planned.detail);
+    approvals.push({ position: index, allowance: bound.allowance });
+  }
+
+  const sequence = verifyApprovalSequence(approvals, depositIndex === -1 ? null : depositIndex);
+  if (!sequence.ok) refuse(sequence.detail);
+
+  if (deposit !== undefined && deposit.kind === "evm") {
+    const verdict = verifyBridgeDepositCalldata(
+      { to: deposit.tx.to, data: deposit.tx.data, value: deposit.tx.value ?? 0n },
+      {
+        originToken: amountBinding.originToken,
+        wallet: origin.wallet,
+        principalRaw: amountBinding.principalRaw,
+      },
+    );
+    if (!verdict.ok) {
+      throw new VexError(
+        ErrorCodes.KHALANI_DEPOSIT_FAILED,
+        `Refused before signing the Khalani deposit: ${verdict.detail}. Nothing was signed or broadcast.`,
+        "The provider's deposit call did not match the plan Vex approved. Take a fresh khalani__bridge_quote_get for this route and retry.",
+      );
+    }
+    if (!verdict.bound) {
+      logUnverifiedDepositSelector({
+        venue: "khalani.bridge",
+        chainId: chain.id,
+        selector: verdict.selector,
+        target: deposit.tx.to,
+      });
+    }
+  }
 }
 
 /**
@@ -269,14 +450,18 @@ function planVexFeeLeg(fee: KhalaniVexFeeLeg, sourceChain: KhalaniChain): Khalan
  * `deposit` leg (the hash the caller later submits to Khalani).
  *
  * `vexFee`, when present, is APPENDED as the final leg — see the module doc for
- * why it must run after the deposit and never before it. Pass `null` (or omit)
- * when the fee floors to zero: a zero-value transfer would burn gas and move
- * nothing.
+ * why it must run after the deposit and never before it. Pass `null` when the
+ * fee floors to zero: a zero-value transfer would burn gas and move nothing.
+ *
+ * `origin` carries Vex's own view of the bridge (origin token, wallet, post-fee
+ * principal) and is REQUIRED: it is what rule 2 of the approve binding is
+ * checked against, so it has no default that could silently skip the check.
  */
 export function planKhalaniDepositLegs(
   plan: DepositPlan,
   sourceChain: KhalaniChain,
-  vexFee: KhalaniVexFeeLeg | null = null,
+  vexFee: KhalaniVexFeeLeg | null,
+  origin: KhalaniDepositOriginBinding,
 ): KhalaniStagedLeg[] {
   if (plan.kind === "PERMIT2") {
     throw new VexError(
@@ -287,7 +472,7 @@ export function planKhalaniDepositLegs(
   }
   const legs = plan.kind === "TRANSFER"
     ? planTransferLeg(plan, sourceChain)
-    : planContractCallLegs(plan, sourceChain);
+    : planContractCallLegs(plan, sourceChain, origin);
 
   const depositCount = legs.filter((leg) => leg.isDeposit).length;
   if (depositCount === 0) {
