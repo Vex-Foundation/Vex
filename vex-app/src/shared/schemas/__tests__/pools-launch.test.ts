@@ -23,6 +23,7 @@ function form(over: Record<string, unknown> = {}): Record<string, unknown> {
     name: "Flamingo",
     symbol: "FLAM",
     pairedAsset: "weth",
+    pairedStockAddress: null,
     image: { kind: "url", url: "https://example.test/f.png" },
     tweetUrl: null,
     websiteUrl: null,
@@ -129,10 +130,21 @@ describe("pools launch form - validation", () => {
     expect(poolsLaunchFormSchema.safeParse(form({ name: "Flam\ningo" })).success).toBe(false);
   });
 
-  it("refuses a pairing the launchpad cannot honour", () => {
-    // Tokenised stocks are not launchable on the live factory. The contract
-    // refuses one rather than letting it fail at execute time.
+  it("a stock pair names a KIND, so the contract refuses one that names no stock", () => {
+    // The V3 factory launches against a tokenised stock, but "stock" alone
+    // identifies none of the launchable ones. Both directions are refused
+    // rather than defaulted: a stock pair with no address identifies nothing,
+    // and an address on a non-stock pair is an input the user believes took
+    // effect while the launch trades against a different asset, permanently.
     expect(poolsLaunchFormSchema.safeParse(form({ pairedAsset: "stock" })).success).toBe(false);
+    expect(
+      poolsLaunchFormSchema.safeParse(form({ pairedStockAddress: ADDRESS })).success,
+    ).toBe(false);
+    expect(
+      poolsLaunchFormSchema.safeParse(
+        form({ pairedAsset: "stock", pairedStockAddress: ADDRESS }),
+      ).success,
+    ).toBe(true);
   });
 
   it("accepts either image branch, and `null` for no image at all", () => {
@@ -277,6 +289,7 @@ describe("prepared launch - every amount is readable", () => {
     resolvedFeeRecipient: ADDRESS,
     pairedAsset: "weth",
     pairedAssetAddress: ADDRESS,
+    callFingerprint: `0x${"ab".repeat(32)}`,
     costs: {
       deploymentFee: amount,
       prebuy: null,
@@ -287,6 +300,7 @@ describe("prepared launch - every amount is readable", () => {
     metadataUri: "https://example.test/m.json",
     imageLanded: true,
     expiresAt: "2026-08-18T12:00:00.000Z",
+    expiryReason: "vex_window",
   };
 
   it("accepts a well-formed stage-1 answer", () => {

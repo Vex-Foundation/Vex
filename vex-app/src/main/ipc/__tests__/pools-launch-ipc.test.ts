@@ -77,6 +77,7 @@ const FORM = {
   name: "Moon",
   symbol: "MOON",
   pairedAsset: "weth",
+  pairedStockAddress: null,
   image: { kind: "locker", imageId: "img_0123456789abcdef" },
   tweetUrl: null,
   websiteUrl: null,
@@ -103,6 +104,7 @@ const PREPARED = {
   resolvedFeeRecipient: WALLET,
   pairedAsset: "weth",
   pairedAssetAddress: WETH,
+  callFingerprint: `0x${"ef".repeat(32)}`,
   costs: {
     deploymentFee: DEPLOYMENT_FEE,
     prebuy: PREBUY,
@@ -113,6 +115,7 @@ const PREPARED = {
   metadataUri: "ipfs://bafy0000",
   imageLanded: true,
   expiresAt: "2026-08-19T10:01:00.000Z",
+  expiryReason: "vex_window",
 };
 
 interface ErrorResult {
