@@ -33,8 +33,6 @@ export interface PendleChain {
   nativeSymbol: string;
   /** Lowercase aliases (in addition to the slug + stringified id). */
   aliases: readonly string[];
-  /** Bundled keyless RPC (Multicall3 present). Overridable via config. */
-  defaultRpcUrl: string;
   /** Multicall3 contract (identical on all chains). */
   multicall3: Address;
   /**
@@ -59,7 +57,6 @@ export const PENDLE_CHAIN_REGISTRY: readonly PendleChain[] = [
     name: "Ethereum",
     nativeSymbol: "ETH",
     aliases: ["eth", "mainnet", "ethereum-mainnet"],
-    defaultRpcUrl: "https://ethereum-rpc.publicnode.com",
     multicall3: PENDLE_MULTICALL3,
     wrappedNative: { symbol: "WETH", address: getAddress("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2") },
   },
@@ -69,7 +66,6 @@ export const PENDLE_CHAIN_REGISTRY: readonly PendleChain[] = [
     name: "Optimism",
     nativeSymbol: "ETH",
     aliases: ["op"],
-    defaultRpcUrl: "https://optimism-rpc.publicnode.com",
     multicall3: PENDLE_MULTICALL3,
     // Canonical OP-Stack WETH9 predeploy.
     wrappedNative: { symbol: "WETH", address: getAddress("0x4200000000000000000000000000000000000006") },
@@ -80,7 +76,6 @@ export const PENDLE_CHAIN_REGISTRY: readonly PendleChain[] = [
     name: "BNB Smart Chain",
     nativeSymbol: "BNB",
     aliases: ["bnb", "binance", "bnb-chain"],
-    defaultRpcUrl: "https://bsc-rpc.publicnode.com",
     multicall3: PENDLE_MULTICALL3,
     wrappedNative: { symbol: "WBNB", address: getAddress("0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c") },
   },
@@ -90,7 +85,6 @@ export const PENDLE_CHAIN_REGISTRY: readonly PendleChain[] = [
     name: "Monad",
     nativeSymbol: "MON",
     aliases: [],
-    defaultRpcUrl: "https://rpc.monad.xyz",
     multicall3: PENDLE_MULTICALL3,
   },
   {
@@ -99,7 +93,6 @@ export const PENDLE_CHAIN_REGISTRY: readonly PendleChain[] = [
     name: "Sonic",
     nativeSymbol: "S",
     aliases: [],
-    defaultRpcUrl: "https://sonic-rpc.publicnode.com",
     multicall3: PENDLE_MULTICALL3,
   },
   {
@@ -108,7 +101,6 @@ export const PENDLE_CHAIN_REGISTRY: readonly PendleChain[] = [
     name: "HyperEVM",
     nativeSymbol: "HYPE",
     aliases: ["hyperliquid", "hyper"],
-    defaultRpcUrl: "https://rpc.hyperliquid.xyz/evm",
     multicall3: PENDLE_MULTICALL3,
   },
   {
@@ -117,7 +109,6 @@ export const PENDLE_CHAIN_REGISTRY: readonly PendleChain[] = [
     name: "Mantle",
     nativeSymbol: "MNT",
     aliases: [],
-    defaultRpcUrl: "https://mantle-rpc.publicnode.com",
     multicall3: PENDLE_MULTICALL3,
   },
   {
@@ -126,16 +117,12 @@ export const PENDLE_CHAIN_REGISTRY: readonly PendleChain[] = [
     name: "Base",
     nativeSymbol: "ETH",
     aliases: [],
-    // NOT publicnode: `base-rpc.publicnode.com` refuses `eth_getTransactionReceipt`
-    // at the method level (-32602 "Archive requests require a personal token")
-    // even for a head-block transaction, so a write sent through it can never be
-    // confirmed. Funded live probe, 2026-08-17. drpc rather than the official
-    // `mainnet.base.org`, which serves receipts but rate limits at about five
-    // requests; `base.drpc.org` served a receipt from its own latest block and
-    // took 30 consecutive requests with no throttling. This is the LAST RESORT
-    // behind the `evm-client.ts` env override, and it is what a user without an
-    // override actually gets.
-    defaultRpcUrl: "https://base.drpc.org",
+    // RPC endpoints for 8453 are owned by
+    // `src/tools/evm-chains/rpc-endpoints.ts`. The comment that stood here
+    // named `base.drpc.org` as measured-good and named an "env override" that
+    // never existed; both were false by 2026-09-05 (drpc answers every
+    // `eth_call` with a free-plan timeout, and the override is the
+    // `pendleRpcUrls` config map, now merged into the shared resolver).
     multicall3: PENDLE_MULTICALL3,
     // Canonical OP-Stack WETH9 predeploy.
     wrappedNative: { symbol: "WETH", address: getAddress("0x4200000000000000000000000000000000000006") },
@@ -146,7 +133,6 @@ export const PENDLE_CHAIN_REGISTRY: readonly PendleChain[] = [
     name: "Plasma",
     nativeSymbol: "XPL",
     aliases: [],
-    defaultRpcUrl: "https://rpc.plasma.to",
     multicall3: PENDLE_MULTICALL3,
   },
   {
@@ -158,7 +144,6 @@ export const PENDLE_CHAIN_REGISTRY: readonly PendleChain[] = [
     // NOT publicnode, for the same reason as Base above: on 2026-08-17
     // `arbitrum-one-rpc.publicnode.com` refused `eth_getTransactionReceipt` with
     // the same -32602 method-level refusal. Live-verified to serve a receipt.
-    defaultRpcUrl: "https://arb1.arbitrum.io/rpc",
     multicall3: PENDLE_MULTICALL3,
     wrappedNative: { symbol: "WETH", address: getAddress("0x82aF49447D8a07e3bd95BD0d56f35241523fBab1") },
   },
@@ -168,7 +153,6 @@ export const PENDLE_CHAIN_REGISTRY: readonly PendleChain[] = [
     name: "Berachain",
     nativeSymbol: "BERA",
     aliases: ["bera"],
-    defaultRpcUrl: "https://berachain-rpc.publicnode.com",
     multicall3: PENDLE_MULTICALL3,
   },
 ];

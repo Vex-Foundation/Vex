@@ -42,13 +42,16 @@
  *
  * BOUNDS ARE MEASURED PER RPC, not chosen (2026-09-05):
  *
- *   base.drpc.org             "ranges over 10000 blocks are not supported on free plan"
- *   mainnet.base.org          "eth_getLogs is limited to a 10,000 range"
+ *   mainnet.base.org                  "eth_getLogs is limited to a 10,000 range"
  *   rpc.mainnet.chain.robinhood.com   no range cap; a heavy query answers "log query timed out"
  *
- * so Base is windowed at the range cap the two usable endpoints BOTH state, and
- * Robinhood is windowed to bound query COST rather than range. Per-log block
- * timestamps are read in JSON-RPC batches; the smallest batch cap measured was
+ * so Base is windowed at the range cap its only wide-window endpoint states,
+ * and Robinhood is windowed to bound query COST rather than range. WHICH
+ * endpoint serves `eth_getLogs` is not decided here: the shared RPC owner
+ * (`@tools/evm-chains/rpc-endpoints.ts`) excludes the method on every Base and
+ * Robinhood entry that cannot answer this window, so the log read reaches the
+ * one that can without this module naming a host. Per-log block timestamps are
+ * read in JSON-RPC batches; the smallest batch cap measured was
  * `mainnet.base.org`'s "maximum 10 calls in 1 batch", so 10 is the batch size
  * everywhere.
  */
@@ -56,7 +59,6 @@
 import {
   createPublicClient,
   defineChain,
-  http,
   parseAbiItem,
   type Address,
   type Chain,
@@ -64,7 +66,9 @@ import {
   type Transport,
 } from "viem";
 
-import { getLocalChain, getLocalChainRpcUrl, toLocalViemChain } from "@tools/evm-chains/registry.js";
+import { getLocalChain, toLocalViemChain } from "@tools/evm-chains/registry.js";
+import { resolveRpcEndpoints } from "@tools/evm-chains/rpc-endpoints.js";
+import { buildEvmTransport } from "@tools/evm-chains/rpc-transport.js";
 import type { VirtualsChain } from "../types.js";
 import {
   AMOUNT_DECIMALS,
@@ -91,7 +95,6 @@ interface CurveChainConfig {
   readonly chainId: number;
   readonly name: string;
   /** Used only when the local chain registry does not know the chain. */
-  readonly defaultRpcUrl: string;
   /**
    * Blocks per `eth_getLogs` window.
    *
@@ -106,16 +109,11 @@ const CURVE_CHAINS: Partial<Record<VirtualsChain, CurveChainConfig>> = {
   BASE: {
     chainId: 8453,
     name: "base",
-    // Same endpoint and the same measured reason as `tools/uniswap/deployments.ts`
-    // and the creator-fee reader: publicnode refuses archive-class methods and
-    // mainnet.base.org rate limits early.
-    defaultRpcUrl: "https://base.drpc.org",
     logWindowBlocks: 10_000,
   },
   ROBINHOOD: {
     chainId: 4663,
     name: "robinhood",
-    defaultRpcUrl: "https://rpc.mainnet.chain.robinhood.com",
     // MEASURED 2026-09-05: Robinhood enforces NO range cap (a full 0..latest
     // query for a light pair answered in 0.30 s) and its blocks land about
     // every 0.1 s, so ten days is roughly 8.6 million blocks. A Base-sized
@@ -227,20 +225,27 @@ export function curveChainConfig(chain: VirtualsChain): CurveChainConfig | undef
  */
 function curvePublicClient(config: CurveChainConfig): PublicClient<Transport, Chain> {
   const local = getLocalChain(config.chainId);
-  const rpcUrl = local ? getLocalChainRpcUrl(local) : config.defaultRpcUrl;
+  const first = resolveRpcEndpoints(config.chainId)[0];
+  if (first === undefined) {
+    throw new Error(`Virtuals candles: no RPC endpoint is bundled or configured for chain ${config.chainId}.`);
+  }
   const chain = local
     ? toLocalViemChain(local)
     : defineChain({
         id: config.chainId,
         name: config.name,
         nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-        rpcUrls: { default: { http: [rpcUrl] } },
+        rpcUrls: { default: { http: [first.url] } },
       });
   return createPublicClient({
     chain,
-    transport: http(rpcUrl, {
-      timeout: 30_000,
-      retryCount: 2,
+    // The shared owner routes `eth_getLogs` to the ONLY endpoint on each chain
+    // that answers this module's window: `mainnet.base.org` for 8453 (the other
+    // two Base entries cap at ten blocks or refuse archive reads) and
+    // Robinhood's own endpoint for 4663 (its publicnode alternate refuses the
+    // 500000-block window). That routing is a table property, not a url this
+    // module picks.
+    transport: buildEvmTransport(config.chainId, {
       batch: { batchSize: BLOCK_BATCH_SIZE, wait: 16 },
     }),
   });
@@ -289,10 +294,10 @@ async function readBlockTimestamps(
       );
       for (const block of blocks) remember(block);
     } catch {
-      // MEASURED 2026-09-05: base.drpc.org answered HTTP 500 to a four-call
-      // `eth_getBlockByNumber` batch whose every block it served individually
-      // moments later (a two-call batch of the same blocks also succeeded), so
-      // a batch refusal on the free tier says nothing about the blocks. Reading
+      // MEASURED 2026-09-05: a free-tier Base endpoint answered HTTP 500 to a
+      // four-call `eth_getBlockByNumber` batch whose every block it served
+      // individually moments later (a two-call batch of the same blocks also
+      // succeeded), so a batch refusal says nothing about the blocks. Reading
       // them one at a time costs more round trips and always works, which is
       // the right trade for a timestamp a bar depends on.
       for (const number of slice) {

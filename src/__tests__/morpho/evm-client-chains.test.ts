@@ -2,14 +2,12 @@
  * Chain resolution for the Morpho viem client, with Robinhood Chain (4663) as
  * the case that has no row of its own.
  *
- * WHY THIS FILE EXISTS. Every other Morpho chain gets its endpoint from
- * `MORPHO_DEFAULT_RPC`, which derives from the shared KyberSwap table. 4663 is
- * deliberately absent from that table and resolves instead through the shared
- * local-chain registry, which is the ONLY path that honours the user's own RPC
- * override for the chain. Nothing asserted that before: a later edit that
- * "tidied" the local-chain branch out of `resolveMorphoRpcUrl`, or that pasted a
- * hardcoded Robinhood URL into the Morpho table, would silently take the
- * override away and no test would notice. Live-probed 2026-08-18 through this
+ * WHY THIS FILE EXISTS. Morpho has no endpoint table of its own any more: every
+ * chain, 4663 included, resolves through the shared owner
+ * (`@tools/evm-chains/rpc-endpoints.ts`), which is the ONLY path that honours
+ * the user's own RPC override. The regression this file guards is unchanged and
+ * now applies to EVERY chain rather than 4663 alone: an edit that pasted a
+ * hardcoded URL back into a venue would silently take the override away. Live-probed 2026-08-18 through this
  * exact path: `eth_chainId` answered 4663 and Morpho Blue, Bundler3,
  * GeneralAdapter1, Permit2, AdaptiveCurveIRM, the oracle factory and Multicall3
  * all returned code at their pinned addresses.
@@ -21,7 +19,8 @@ const mockLoadConfig = vi.fn();
 vi.mock("@config/store.js", () => ({ loadConfig: () => mockLoadConfig() }));
 
 const { getMorphoPublicClient, getMorphoEvmClients } = await import("@tools/morpho/evm-client.js");
-const { MORPHO_DEFAULT_RPC, MORPHO_MULTICALL3 } = await import("@tools/morpho/constants.js");
+const { MORPHO_MULTICALL3 } = await import("@tools/morpho/constants.js");
+const { resolveRpcEndpoints } = await import("@tools/evm-chains/rpc-endpoints.js");
 
 const ROBINHOOD_ID = 4663;
 const ROBINHOOD_DEFAULT_RPC = "https://rpc.mainnet.chain.robinhood.com";
@@ -47,8 +46,8 @@ describe("Morpho chain resolution - Robinhood Chain (4663)", () => {
     expect(chain?.rpcUrls.default.http).toEqual([ROBINHOOD_DEFAULT_RPC]);
   });
 
-  it("keeps 4663 out of the Morpho RPC table so the registry stays the single source", () => {
-    expect(MORPHO_DEFAULT_RPC[ROBINHOOD_ID]).toBeUndefined();
+  it("resolves 4663 through the shared owner, which is the single source", () => {
+    expect(resolveRpcEndpoints(ROBINHOOD_ID)[0]?.url).toBe(ROBINHOOD_DEFAULT_RPC);
   });
 
   it("honours the user's RPC override for 4663", () => {
@@ -70,13 +69,13 @@ describe("Morpho chain resolution - Robinhood Chain (4663)", () => {
 });
 
 describe("Morpho chain resolution - the other chains are untouched", () => {
-  it("reads Base from the shared Morpho RPC table, not the local registry", () => {
-    expect(rpcUrlFor(BASE_ID)).toBe(MORPHO_DEFAULT_RPC[BASE_ID]);
+  it("reads Base from the shared owner's Base list", () => {
+    expect(rpcUrlFor(BASE_ID)).toBe(resolveRpcEndpoints(BASE_ID)[0]?.url);
   });
 
-  it("ignores a local-chain override that names another chain id", () => {
+  it("applies a user override to Base too - it is no longer a 4663-only privilege", () => {
     mockLoadConfig.mockReturnValue({ localChainRpcUrls: { "8453": "https://rpc.example.test/base" } });
-    expect(rpcUrlFor(BASE_ID)).toBe(MORPHO_DEFAULT_RPC[BASE_ID]);
+    expect(rpcUrlFor(BASE_ID)).toBe("https://rpc.example.test/base");
     expect(rpcUrlFor(ROBINHOOD_ID)).toBe(ROBINHOOD_DEFAULT_RPC);
   });
 

@@ -54,8 +54,6 @@ export interface VirtualsTaxDeployment {
   readonly expectedTaxToken: Address;
   /** Expected `assetToken()` - the asset the creator is paid in. */
   readonly expectedAssetToken: Address;
-  /** RPC used when the local chain registry does not know this chain. */
-  readonly defaultRpcUrl: string;
 }
 
 /**
@@ -66,9 +64,7 @@ export interface VirtualsTaxDeployment {
  * (30 percent to treasury), `minSwapThreshold` 10 VIRTUAL,
  * `maxSwapThreshold` 1000 VIRTUAL.
  *
- * RPC: `base.drpc.org`, the same endpoint and for the same measured reason as
- * `tools/uniswap/deployments.ts` (publicnode refuses archive-class methods,
- * `mainnet.base.org` rate limits at about five requests).
+ * RPC: owned by `src/tools/evm-chains/rpc-endpoints.ts`, not by this table.
  */
 const BASE: VirtualsTaxDeployment = {
   slug: "base",
@@ -78,7 +74,6 @@ const BASE: VirtualsTaxDeployment = {
   agentTaxV2Implementation: "0xF6dEd65faaB429b2d5E13552D618a2E231f3D129",
   expectedTaxToken: "0x0b3e328455c4059EEb9e3f84b5543F74E24e7E1b",
   expectedAssetToken: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-  defaultRpcUrl: "https://base.drpc.org",
 };
 
 /**
@@ -99,7 +94,6 @@ const ROBINHOOD: VirtualsTaxDeployment = {
   agentTaxV2Implementation: "0x4D4e8F06FE9a3dB2FA7AD4D17893128600Ec01bB",
   expectedTaxToken: "0xc6911796042b15d7Fa4F6CDe69e245DdCd3d9c31",
   expectedAssetToken: "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
-  defaultRpcUrl: "https://rpc.mainnet.chain.robinhood.com",
 };
 
 const BY_SLUG: ReadonlyMap<string, VirtualsTaxDeployment> = new Map(
