@@ -52,6 +52,9 @@ beforeEach(() => {
   vi.spyOn(getPoolsFunClient(), "launchConfig").mockResolvedValue({
     deploymentFeeWei: FEE_WEI,
     gatewayVersion: 1,
+    // NOT STATED, which is what a build predating holder rewards answers. The
+    // gateway's own sentinel is the authority; this echo only refuses earlier.
+    holderRewardsPayoutModes: null,
   });
 });
 
@@ -125,8 +128,11 @@ describe("shared launch input reading", () => {
     expect(res.success).toBe(true);
     const row = written[0];
     if (row === undefined) throw new Error("the preview wrote no intent row");
-    expect(row.pools?.pairedAsset).toBe("stock");
-    expect(row.pools?.pairedAssetAddress).toBe(NVDA_STOCK);
+    const pools = row.pools;
+    if (typeof pools !== "object" || pools === null) {
+      throw new Error("the preview wrote an intent row with no pools block");
+    }
+    expect(pools).toMatchObject({ pairedAsset: "stock", pairedAssetAddress: NVDA_STOCK });
   });
 
   // A payout mode with no opt-in is a caller who believes the fee stream is

@@ -117,6 +117,11 @@ function plan(): planModule.PoolsLaunchPlan {
       gateway: GATEWAY,
       pairedAsset: "weth",
       pairedAssetAddress: WETH,
+      // A WETH launch keeps its own fee stream, so there is no holders intent
+      // to record. Present as null rather than absent: the binding is what the
+      // audit reads, and a missing field there cannot be told from an unwritten
+      // one.
+      holderRewards: null,
       predictedTokenAddress: TOKEN,
       userSalt: SALT,
       deploymentFeeWei: "1051674002092832",

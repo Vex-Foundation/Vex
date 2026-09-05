@@ -218,6 +218,7 @@ beforeEach(() => {
   vi.spyOn(getPoolsFunClient(), "launchConfig").mockImplementation(async () => ({
     deploymentFeeWei: FEE_WEI.toString(),
     gatewayVersion: POOLS_LAUNCH_SUITE_VERSION,
+    holderRewardsPayoutModes: null,
   }));
   vi.spyOn(getPoolsFunClient(), "prepareLaunch").mockImplementation(async () => response);
 
@@ -594,6 +595,9 @@ describe("the X-handle recipient: manual path only, and sanity-checked", () => {
       name: "Vex Flamingo",
       symbol: "VEXFLAM",
       pairedAsset: "weth",
+      // Spelled even on a WETH pair: the input names WHICH stock only on a
+      // stock pair, and null is how it says "not one" exactly once.
+      pairedStockAddress: null,
       image: { kind: "none" },
       prebuyWei: PREBUY_WEI,
       prebuyHuman: "0.01",
