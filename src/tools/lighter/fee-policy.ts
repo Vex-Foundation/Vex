@@ -32,8 +32,16 @@ interface CollectorConfiguration {
 // Only public, release-controlled collector identities belong here. Enable a
 // deployment after its collector ownership and live collection are verified.
 const COLLECTORS: Readonly<Record<LighterEnvironment, CollectorConfiguration>> = Object.freeze({
-  core: Object.freeze({ enabled: false, accountIndex: null, l1Address: null }),
-  rhc: Object.freeze({ enabled: false, accountIndex: null, l1Address: null }),
+  core: Object.freeze({
+    enabled: false,
+    accountIndex: 743799,
+    l1Address: "0x10Ce97Cf3142BE2a1a28aC83A55b21fDCE493C03",
+  }),
+  rhc: Object.freeze({
+    enabled: false,
+    accountIndex: 22869,
+    l1Address: "0x10Ce97Cf3142BE2a1a28aC83A55b21fDCE493C03",
+  }),
 });
 
 export function getLighterFeePolicy(environment: LighterEnvironment): LighterFeePolicy | null {

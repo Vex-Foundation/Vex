@@ -1,8 +1,9 @@
 # Lighter fee launch
 
-Fee collection is disabled by default. Public provider reads and local signing
-checks have passed; collector ownership, customer authorization and actual fee
-credits still require approved live verification before release.
+Fee collection is disabled by default. The configured collector account indexes
+have been matched to their owning public wallet on both live deployments. Local
+signing checks have passed; customer authorization and actual fee credits still
+require approved live verification before release.
 
 ## 1. Configure the public collector
 
@@ -13,6 +14,13 @@ Edit `src/tools/lighter/fee-policy.ts`, in `COLLECTORS.core` and `COLLECTORS.rhc
 | `enabled` | `false` until the deployment is ready for its controlled canary/release |
 | `accountIndex` | The existing VEX-owned Lighter collector account index on that deployment |
 | `l1Address` | The public wallet address that owns that collector |
+
+Configured recipients, supplied and publicly verified on 2026-09-05:
+
+| Deployment | Account index | Owning wallet | Collection enabled |
+| --- | --- | --- | --- |
+| Core | 743799 | `0x10Ce97Cf3142BE2a1a28aC83A55b21fDCE493C03` | No |
+| Robinhood Chain | 22869 | `0x10Ce97Cf3142BE2a1a28aC83A55b21fDCE493C03` | No |
 
 Use a separately verified collector configuration for each deployment. Never add
 a wallet private key, seed phrase or trading credential to this file. Lighter's
@@ -114,3 +122,21 @@ fees before release.
 
 Sources: [Core configuration](https://mainnet.zklighter.elliot.ai/api/v1/systemConfig),
 [Robinhood Chain configuration](https://api.rh.lighter.xyz/api/v1/systemConfig).
+
+### Configured recipient verification, 12:51 UTC
+
+Fresh unauthenticated production `LighterClient` reads returned code 200 and
+exactly one account for each configured index. Core `743799` and Robinhood Chain
+`22869` both returned the exact wallet address in the recipient table. The
+production fee-policy validator accepted each identity and the current fee caps,
+which were unchanged from the table above. This verifies the provider's public
+account-to-wallet mapping, not possession of the wallet's signing key or receipt
+of fees. Both provider account statuses were recorded as `0`, without treating
+that undocumented value as proof of collection eligibility.
+
+The 18 focused protocol/order fee tests passed. Both release switches remain
+`false`; no account tier change, authorization, signing or trade was performed.
+The approved live collection checks in section 3 remain required.
+
+Sources: [Core collector](https://mainnet.zklighter.elliot.ai/api/v1/account?by=index&value=743799),
+[Robinhood Chain collector](https://api.rh.lighter.xyz/api/v1/account?by=index&value=22869).
