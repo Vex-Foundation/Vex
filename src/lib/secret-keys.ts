@@ -9,6 +9,11 @@ export const VAULT_SECRET_KEYS = [
   // rate limits. Deliberately NOT a `requiresEnv` on any relay manifest — that
   // would hide the bridge tools from every keyless user.
   "RELAY_API_KEY",
+  // Indexify (custodial Solana stacks venue). This key ALONE authorizes real
+  // trades on the linked Indexify account, so it is vault-managed like a
+  // wallet secret. Gates the authenticated indexify tools via `requiresEnv`;
+  // the public discovery reads stay keyless.
+  "INDEXIFY_API_KEY",
   // Polymarket integration removed (Agent Scan §4.6): the 4 POLYMARKET_* keys
   // were dropped from this registry deliberately. Any already-vaulted values
   // are NOT migrated or purged here — the vault's `extraSecrets` retention

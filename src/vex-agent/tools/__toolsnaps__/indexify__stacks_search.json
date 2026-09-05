@@ -1,0 +1,32 @@
+{
+  "definition": {
+    "function": {
+      "description": "Find a stack on Indexify by its name. Use this when the user names a stack and you need its numeric id or slug before reading detail, quoting fees, checking holdings, or trading it. Returns matching rows with stack name, numeric stack id, slug, and a truncated description. Stack names are NOT unique on Indexify, so when several rows match, confirm which one the user means by its id or slug before acting on it. Matching is the provider's own name search; it does not search descriptions or creators. Read-only.",
+      "name": "indexify__stacks_search",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "query": {
+            "description": "The stack name or name fragment to look for, 1 to 64 characters. Matched by the provider against stack names only.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "indexify",
+    "requiresEnv": null,
+    "toolId": "indexify.search"
+  }
+}

@@ -242,7 +242,7 @@ Rules:
 - **Reuse your plan's tools.** During mission RUN — or in AGENT chat when the user explicitly asked for the action — when an `# Active Plan` is in effect (provided in the turn state), select the exact tools listed in its tool-selection section instead of re-running a search for the same need every turn. Search again only when a required tool is absent from the plan, looks stale, or a prior call failed.
 - **Mutation safety.** Every mutating call obeys the `# Safety Contract`: quote / preview before mutation, the 2-step transfer rule, and the pressure-barrier mutation gate.
 
-Unavailable in this install because an API key is not configured: WebResearch (TAVILY_API_KEY), TwitterAccount (RETTIWT_API_KEY), solana.* (JUPITER_API_KEY). Do not attempt those calls; if the user asks for one, tell them to add the key under Settings → API Keys, where the setup instructions are.
+Unavailable in this install because an API key is not configured: WebResearch (TAVILY_API_KEY), TwitterAccount (RETTIWT_API_KEY), solana.* (JUPITER_API_KEY), indexify.* (INDEXIFY_API_KEY). Do not attempt those calls; if the user asks for one, tell them to add the key under Settings → API Keys, where the setup instructions are.
 
 ---
 
@@ -321,6 +321,16 @@ When it applies: Use it for Solana token identity, fresh-token discovery, a swap
 Characteristics and limits: Fresh discovery is measured but a missing creation time means unknown age. Missing borrowing risk data means unknown, never healthy. Prediction sells and claims settle later, bulk closes are independent actions, and some provider analytics are unavailable or unverified. Every capability requires its configured API credential.
 Coverage: Solana (20011000000) only.
 Availability: This namespace is not available in this install until JUPITER_API_KEY is configured.
+
+### indexify
+Indexify is a custodial Solana social-index venue where creator-curated token baskets (stacks) trade against the linked account's deposited USDC.
+Read: Browse trending stacks, official stacks, or the whole catalogue with ranking and market-cap filters, find a stack by name, read one stack's full token allocations and web link, search the tradable token catalogue, read the creator leaderboard and one creator's track record, and read the linked account's balances and deposit address, per-stack holdings with PnL, orders with settlement hashes, and transaction history.
+Quote: Preview trading costs before a trade: the venue minimum buy, the creator-fee bounds, and the venue's own fee estimate for a stated USDC amount on a stated stack.
+Act: Buy a stack with the linked account's USDC, sell a percent of a held stack position, resolve a partially filled order by retrying acknowledging or selling all, and create a new stack from named token allocations, public immediately.
+When it applies: Use it for one-click diversified exposure through index baskets on Solana, following or evaluating stack creators, managing the linked Indexify account's stack positions, or publishing a curated basket.
+Characteristics and limits: Custodial: trades execute server-side on Indexify against the linked account's USDC, authorized by an API key — no local signing, no session wallet, no cancellation after acceptance. Orders settle asynchronously and can land partial; sells are sized only as a percent of holdings; buys have a venue minimum; fees are 1 percent platform plus up to half a percent creator; per-token balances are not reported. Stack names repeat, so id or slug is identity.
+Coverage: Solana (20011000000) only — trades the linked Indexify account's custodial USDC, never the session wallet.
+Contains mutating tools (may require approval); they stay unavailable until INDEXIFY_API_KEY is configured.
 
 ### dexscreener
 DexScreener is read-only market research for indexed automated-market-maker pairs and the provider's own narrative and promotion labels.

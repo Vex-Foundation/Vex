@@ -1,0 +1,33 @@
+{
+  "definition": {
+    "function": {
+      "description": "Preview Indexify's trading costs. Use this before a stack trade to state the real cost: the venue charges a 1% platform fee plus the stack's creator fee (bounded, currently up to 0.5%) on every buy and sell; Solana gas is sponsored. Returns the platform's minimum buy in USDC and the creator-fee bounds always, and — when amountIn and stackId are both given — the venue's own fee estimate for that amount on that stack. Provide amountIn and stackId together or neither; one without the other is refused by name. Read-only, no API key needed.",
+      "name": "indexify__fees_get",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "amountIn": {
+            "description": "The USDC amount to estimate fees for, in HUMAN decimal units as a string (\"25\" = $25). Requires stackId beside it.",
+            "type": "string"
+          },
+          "stackId": {
+            "description": "The stack the estimate is for, by its numeric id — the creator fee varies per stack. Requires amountIn beside it.",
+            "type": "number"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "indexify",
+    "requiresEnv": null,
+    "toolId": "indexify.fees"
+  }
+}

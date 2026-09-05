@@ -12,6 +12,8 @@ import { buildTaskShapesPrompt } from "./task-shapes.js";
 interface NamespaceAvailability {
   readonly availableCount: number;
   readonly hasMutating: boolean;
+  /** Env names gating this namespace's UNAVAILABLE mutating tools (partial gating). */
+  readonly gatedMutatingEnvironmentNames: readonly string[];
   readonly requiredEnvironmentNames: readonly string[];
 }
 
@@ -34,6 +36,15 @@ function namespaceAvailability(namespace: ProtocolNamespace): NamespaceAvailabil
   return {
     availableCount: available.length,
     hasMutating: available.some((tool) => tool.mutating),
+    // A PARTIALLY gated namespace (indexify: keyless discovery reads beside
+    // env-gated trading) renders neither the Availability line (reads exist)
+    // nor the mutation marker (the mutating tools are hidden) unless the env
+    // names gating its unavailable MUTATING tools are carried separately.
+    gatedMutatingEnvironmentNames: [...new Set(
+      tools
+        .filter((tool) => tool.mutating && !isProtocolToolAvailable(tool))
+        .flatMap((tool) => tool.requiresEnv ? [tool.requiresEnv] : []),
+    )].sort(),
     requiredEnvironmentNames,
   };
 }
@@ -96,6 +107,14 @@ function renderDeclaration(namespace: ProtocolNamespace): string[] {
     );
   } else if (availability.hasMutating) {
     lines.push("Contains mutating tools (may require approval).");
+  } else if (availability.gatedMutatingEnvironmentNames.length > 0) {
+    // Partially gated namespace: its reads are live, but every mutating tool
+    // is env-hidden. Saying so stops the model both from hunting for a trade
+    // tool that discovery will not return and from believing none exists.
+    lines.push(
+      "Contains mutating tools (may require approval); they stay unavailable until "
+      + `${availability.gatedMutatingEnvironmentNames.join(" and ")} is configured.`,
+    );
   }
   return lines;
 }

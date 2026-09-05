@@ -611,6 +611,21 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   ["minQuoteAmountIn", "lower bound on a trade's QUOTE-token amount, human decimals as a string"],
   ["maxQuoteAmountIn", "upper bound on a trade's QUOTE-token amount, human decimals as a string"],
 
+  // -- Social index stacks (indexify) ---------------------------------
+  //
+  // Indexify bundles Solana tokens into creator-curated "stacks" traded in
+  // USDC on the account's custodial Indexify wallet. Four deliberate keys;
+  // everything else the namespace needs (query, slug, feed, sort, order,
+  // limit, offset, orderId, status, period, metric, action, name,
+  // description, category, amountIn, direction, minMarketCapUsd,
+  // maxMarketCapUsd) reuses the vocabulary above. A creator-fee knob is
+  // deliberately ABSENT: the fee-params doctrine pins every fee to a venue
+  // constant, so stack creation takes the venue's own default.
+  ["stackId", "an Indexify stack's own numeric id; NOT a token address and NOT a slug"],
+  ["username", "a platform account handle on a social venue; never a wallet address"],
+  ["sellPercent", "how much of a HELD position to sell, as a PERCENT of holdings (1-100); this venue sizes sells only that way"],
+  ["allocations", "map of token mint address to INTEGER percent weight; the weights must sum to exactly 100"],
+
   // -- Wallet and response shaping (internal tools) -------------------
   //
   // `response_format` is the shared verbosity contract

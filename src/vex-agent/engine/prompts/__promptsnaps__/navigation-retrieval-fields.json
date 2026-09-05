@@ -671,6 +671,93 @@
         }
       ]
     },
+    "indexify": {
+      "aliases": [
+        "indexify",
+        "stacks",
+        "index baskets",
+        "social index",
+        "indexify.finance"
+      ],
+      "discoveryHints": [
+        "trending stacks on indexify",
+        "crypto index funds on solana",
+        "what is inside this stack",
+        "top stack creators",
+        "buy a stack",
+        "my indexify balance"
+      ],
+      "exampleQueries": [
+        "ToolSearch(query=\"trending stacks on indexify\", namespace=\"indexify\")",
+        "ToolSearch(query=\"buy a stack with usdc\", namespace=\"indexify\")",
+        "ToolSearch(query=\"top stack creators\", namespace=\"indexify\")"
+      ],
+      "facets": [
+        {
+          "label": "Stack discovery and detail",
+          "summary": "Browse trending, official, or all stacks with ranking and market-cap filters, search a stack by name, read one stack's full allocation with weights and web link, and search the venue's tradable-token catalogue.",
+          "toolPrefixes": [
+            "indexify.stacks",
+            "indexify.search",
+            "indexify.stack",
+            "indexify.tokens"
+          ],
+          "hints": [
+            "trending stacks",
+            "official indexify stacks",
+            "find a stack by name",
+            "what tokens are in this stack",
+            "can indexify trade this token"
+          ]
+        },
+        {
+          "label": "Creators and leaderboard",
+          "summary": "Rank stack creators by points, PnL, hit rate, stacks created or trades over a window, or read one creator's public profile joined with their performance metrics.",
+          "toolPrefixes": [
+            "indexify.creators"
+          ],
+          "hints": [
+            "top stack creators",
+            "creator leaderboard by pnl",
+            "this creator's hit rate",
+            "who made this stack"
+          ]
+        },
+        {
+          "label": "Linked account balances orders and history",
+          "summary": "Read the linked Indexify account's spendable and reserved USDC, total value and deposit address, its position and PnL inside one stack, its orders with per-transaction Solana hashes and partial-fill breakdowns, and its full transaction history with fees.",
+          "toolPrefixes": [
+            "indexify.portfolio",
+            "indexify.holdings",
+            "indexify.orders",
+            "indexify.history"
+          ],
+          "hints": [
+            "indexify account balance",
+            "my stack position pnl",
+            "did my stack order settle",
+            "indexify transaction history"
+          ]
+        },
+        {
+          "label": "Trading and creating stacks",
+          "summary": "Preview fees, buy a stack with the linked account's USDC, sell a percent of a held position, resolve a partially filled order, or create a new public stack from named token allocations. Trades execute server-side on the venue and settle asynchronously as orders.",
+          "toolPrefixes": [
+            "indexify.fees",
+            "indexify.trade_execute",
+            "indexify.order_resolve",
+            "indexify.stack_create"
+          ],
+          "hints": [
+            "buy 10 dollars of this stack",
+            "sell half my stack position",
+            "what would this trade cost",
+            "retry my partial order",
+            "create a stack"
+          ]
+        }
+      ]
+    },
     "dexscreener": {
       "aliases": [
         "dex screener",
@@ -1330,7 +1417,20 @@
     "pools.claim_fees": "274475a9f9ffd37aec741fddab2d47a129dcf8922986237604b98d9ef866dd48",
     "pools.launch_assets": "297db7a1a74de25944891a479f00f4112553f63d44c9fff610ac5e12caef2c4d",
     "pools.holder_rewards": "b7b709f64aedc5e9f8d40c8cd1fb3ff1e7e5818b0b9d91dd3a05e08ea270c2fc",
-    "launchpads.images": "f7f02a267d0e6f53148e9e9185993c1829fc7e2fda7ace9dcd394bcc7a4d6e99",
-    "launchpads.image_publish": "e06e4ed9409bbcd3f332860c9361d3118d374f1b9437531ab0026bf6a2bbcf9f"
+    "launchpads.images": "526bef0dceed2e6b7dad0889fce6a3c5e8405c1d0c3acdb775f4cb11aec8382a",
+    "launchpads.image_publish": "f7946fbccb040859e9cfedeec0510575c74e9f6c645bc087df1b50534cf5c8b4",
+    "indexify.stacks": "2d96a4d8a13c0c38c33332e035fb1c4e844eb97cf213b1bf71bdb899dbc972e8",
+    "indexify.search": "6e0411c0fff1c25e187cec66a510e6486d50881c3a13c04b2851c4bb794b54ad",
+    "indexify.stack": "f2fc3dd83325fac7895b687f6840cb4b1b4896d2ffb0ccadc8fe21d0deff0bf3",
+    "indexify.tokens": "456ff301d557a894b71197b4887d9b830b6953c31d6ece66f289eb18d8bb9b97",
+    "indexify.creators": "519011532963ea39ef45a7b847242ba00a6387c4d55727b24a3d91edaa407669",
+    "indexify.portfolio": "d4cba8e5db53ced1acad86def879acd3d7e22fe122d47ac0f0d7470411ebea4f",
+    "indexify.holdings": "2bfa774aeafc6d112822f3d75a2413bfdacfdbe61277a4affe38d2ef1e28bd0f",
+    "indexify.orders": "3607e7b0b93aed6cfe06ee10ac1cb4c95a86066306f396c15475102b0798e6c4",
+    "indexify.history": "18802adc49785774a0584e54018099257653aa7d0471d1aa799b4587708d45f5",
+    "indexify.fees": "7965b28f939e972ea2e5a125dac4d12bda1e7baec75d9898c62c7e5bd39c8f3f",
+    "indexify.trade_execute": "d57540e0a01d1ce4ee86d6f6723bec977aae09636cb6bd36e7d4e21ed69cebc4",
+    "indexify.order_resolve": "30ab812ae666b3bda626d3e0cd266a7d45eed0c24f1563b39e138c8acf48274f",
+    "indexify.stack_create": "31fd1f4beccd9febecf49d578e633b313cd0e2da51f3728dbbaf9886ecd66381"
   }
 }

@@ -20,6 +20,8 @@
 | `solana-ecosystem/` | Jupiter (swap, prices, tokens, lend, predict) + shared Solana utils | Solana | 35 | [Jupiter.md](solana-ecosystem/jupiter/Jupiter.md) |
 | `morpho/` | Morpho lending reads (Blue markets, curated vaults V1/V2, wallet positions with health factors, market transaction history) - keyless GraphQL, request budget + 7-day-ban circuit breaker; plus the on-chain balance and Morpho-allowance read (batch 4) over keyless RPC | 9 EVM chains | 21 | [Morpho.md](morpho/Morpho.md) |
 | `merkl/` | Merkl reward distribution (the distributor Morpho's reward campaigns settle through, since Morpho's own URD is deprecated) - keyless REST, read-only, per-protocol attribution by `protocol.id` | Multi-chain | 7 | [Merkl.md](merkl/Merkl.md) |
+| `indexify/` | Indexify social-index stacks — CUSTODIAL API venue (server-side trades on the linked account's USDC, `INDEXIFY_API_KEY`); public discovery reads keyless; plus the allocation-sync surface (version history, tradability, edit_allocation) for the Z500 workflow | Solana | 5 | [Indexify.md](indexify/Indexify.md) |
+| `ansem/` | Ansem Z500 ranking feed — read-only source for the Z500 allocation sync; fail-closed on unavailable/stale/invalid snapshots (site currently challenges non-browser clients) | Solana | 4 | [Ansem.md](ansem/Ansem.md) |
 | `wallet/` | Multi-chain keystore, signing, native balances | EVM + Solana | 29 | [WALLET.md](wallet/WALLET.md) |
 
 `polymarket/` (Polymarket prediction markets — CLOB, Gamma, Relayer, 39 files) was removed

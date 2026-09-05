@@ -121,6 +121,7 @@ function envFixture(overrides?: Partial<EnvState>): EnvState {
       tavilyConfigured: true,
       rettiwtConfigured: false,
       relayConfigured: false,
+      indexifyConfigured: false,
     },
     secrets: { vaultConfigured: true, unlocked: true },
     embeddings: {
@@ -207,6 +208,7 @@ describe("SettingsScreen", () => {
           tavilyConfigured: false,
           rettiwtConfigured: false,
           relayConfigured: false,
+          indexifyConfigured: false,
         },
         walletStatus: { evm: "present", solana: "missing" },
         provider: {

@@ -32,7 +32,8 @@ export type ProtocolNamespace =
   | "morpho"
   | "trench"
   | "pools"
-  | "launchpads";
+  | "launchpads"
+  | "indexify";
 
 /**
  * Lifecycle state of a protocol manifest.

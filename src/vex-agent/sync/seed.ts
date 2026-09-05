@@ -88,6 +88,16 @@ const SYNC_JOBS = [
   // See sync/agentscan-attest.ts.
   { namespace: "_global", syncType: "agentscan_attest", readToolId: null, strategy: "periodic", intervalSeconds: 300 },
 
+  // Z500 allocation sync (indexiy-ansem.md) — keeps Indexify stack 28440
+  // aligned with the top-10 tradable tokens of the Ansem Z500 Curated
+  // universe, daily at 00:00 UTC. The 300s interval is only how often the
+  // branch CHECKS; once-per-day, catch-up-after-downtime, and
+  // one-owner-per-window all live in the workflow's own window claim
+  // (z500_sync_runs, migration 110) so they survive restarts by
+  // construction. Skips without claiming while INDEXIFY_API_KEY is absent.
+  // edit_allocation is its only mutation — it never trades or rebalances.
+  { namespace: "_global", syncType: "z500_allocation_sync", readToolId: null, strategy: "periodic", intervalSeconds: 300 },
+
   // Wave P — post-terminalization portfolio snapshot. ENQUEUED, never timed
   // (`intervalSeconds: null`, `post_mutation`): the fast lane and the repair
   // sweeps enqueue it the moment a transaction terminalizes, so the portfolio

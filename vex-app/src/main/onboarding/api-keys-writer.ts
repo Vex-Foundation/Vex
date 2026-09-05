@@ -46,6 +46,9 @@ export async function writeApiKeys(
   if (input.relayApiKey !== undefined) {
     writes.push({ key: "RELAY_API_KEY", value: input.relayApiKey });
   }
+  if (input.indexifyApiKey !== undefined) {
+    writes.push({ key: "INDEXIFY_API_KEY", value: input.indexifyApiKey });
+  }
 
   if (writes.length === 0) {
     // Nothing to write — empty submission is a legal Continue.

@@ -53,9 +53,9 @@ whether its provider key is configured on this machine.
 
 ## Totals
 
-- tools: 172
+- tools: 185
 - Vex tools: 27
-- protocol tools: 145 across 11 protocols
+- protocol tools: 158 across 12 protocols
 - destructive: 50
 
 ## Vex tools
@@ -114,6 +114,24 @@ whether its provider key is configured on this machine.
 | dexscreener__tokens_screen | Screen tokens across chains | read-only | no | - |
 | dexscreener__top_traders_list | Rank a pair's top wallets | read-only | no | - |
 | dexscreener__trades_list | List a pair's trades | read-only | no | - |
+
+### indexify
+
+| tool | title | access | destructive | requires env |
+| --- | --- | --- | --- | --- |
+| indexify__creators_list | Read Indexify creators and leaderboard | read-only | no | - |
+| indexify__fees_get | Preview Indexify trading fees | read-only | no | - |
+| indexify__history_list | Read Indexify transaction history | read-only | no | INDEXIFY_API_KEY |
+| indexify__order_resolve | Resolve a partial Indexify order | mutating | no | INDEXIFY_API_KEY |
+| indexify__orders_list | List or read Indexify orders | read-only | no | INDEXIFY_API_KEY |
+| indexify__portfolio_get | Read the Indexify account balances | read-only | no | INDEXIFY_API_KEY |
+| indexify__stack_create | Create an Indexify stack | mutating | no | INDEXIFY_API_KEY |
+| indexify__stack_get | Read one Indexify stack | read-only | no | INDEXIFY_API_KEY |
+| indexify__stack_holdings_get | Read the account's position in one stack | read-only | no | INDEXIFY_API_KEY |
+| indexify__stack_trade_execute | Buy or sell an Indexify stack | mutating | no | INDEXIFY_API_KEY |
+| indexify__stacks_discover | Browse Indexify stacks | read-only | no | - |
+| indexify__stacks_search | Search Indexify stacks by name | read-only | no | - |
+| indexify__tokens_search | Search Indexify's tradable tokens | read-only | no | - |
 
 ### khalani
 

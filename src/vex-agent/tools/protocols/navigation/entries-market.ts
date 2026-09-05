@@ -13,6 +13,7 @@
  */
 
 import type { ProtocolNamespaceNavigation } from "./types.js";
+import { INDEXIFY_NAVIGATION } from "./entries-market/indexify.js";
 import { KHALANI_NAVIGATION } from "./entries-market/khalani.js";
 import { RELAY_NAVIGATION } from "./entries-market/relay.js";
 import { KYBERSWAP_NAVIGATION } from "./entries-market/kyberswap.js";
@@ -34,6 +35,7 @@ export const MARKET_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
   MORPHO_NAVIGATION,
   PENDLE_NAVIGATION,
   SOLANA_NAVIGATION,
+  INDEXIFY_NAVIGATION,
   DEXSCREENER_NAVIGATION,
   VIRTUALS_NAVIGATION,
   TRENCH_NAVIGATION,

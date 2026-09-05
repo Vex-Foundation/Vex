@@ -17,6 +17,7 @@
 import { buildDiscoveryCandidates } from "./lexical-retrieval.js";
 import { liveProtocolManifests } from "./retrieval-eval-harness.js";
 
+
 /** Active manifests in advertised namespaces. Independent of process env. */
 export function liveCatalogToolCount(): number {
   return liveProtocolManifests().length;
@@ -26,9 +27,11 @@ export function liveCatalogToolCount(): number {
  * The number of active advertised protocol tools every stored baseline was
  * captured against. 145 after the launchpads waves 1-2 integration (#161);
  * 147 with the two in-app launchpads tools of this change
- * (`launchpads.images`, `launchpads.image_publish`).
+ * (`launchpads.images`, `launchpads.image_publish`); 160 at the
+ * integrate/indexify merge, which adds the 13-tool `indexify` namespace —
+ * all new identities, a pure +13, baselines recaptured on the merged tree.
  */
-export const PINNED_LIVE_CATALOG_TOOL_COUNT = 147;
+export const PINNED_LIVE_CATALOG_TOOL_COUNT = 160;
 
 /**
  * The candidate count every dense and lexical measurement must have seen.

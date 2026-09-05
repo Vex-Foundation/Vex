@@ -220,4 +220,19 @@ export const STUDIO_TOOL_TITLES: Readonly<Record<string, string>> = {
   pools__fees_claim: "Claim pools.fun creator fees",
   pools__launch_assets_list: "List pools.fun launchable stocks",
   pools__holder_rewards_get: "Read pools.fun holder rewards",
+
+  // ── indexify ──────────────────────────────────────────────────────────────
+  indexify__stacks_discover: "Browse Indexify stacks",
+  indexify__stacks_search: "Search Indexify stacks by name",
+  indexify__stack_get: "Read one Indexify stack",
+  indexify__tokens_search: "Search Indexify's tradable tokens",
+  indexify__creators_list: "Read Indexify creators and leaderboard",
+  indexify__portfolio_get: "Read the Indexify account balances",
+  indexify__stack_holdings_get: "Read the account's position in one stack",
+  indexify__orders_list: "List or read Indexify orders",
+  indexify__history_list: "Read Indexify transaction history",
+  indexify__fees_get: "Preview Indexify trading fees",
+  indexify__stack_trade_execute: "Buy or sell an Indexify stack",
+  indexify__order_resolve: "Resolve a partial Indexify order",
+  indexify__stack_create: "Create an Indexify stack",
 };

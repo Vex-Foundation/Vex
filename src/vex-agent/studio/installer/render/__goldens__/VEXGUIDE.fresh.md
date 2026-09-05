@@ -1,4 +1,4 @@
-<!-- vex:studio:begin vex=0.2.6 hash=cd08fce61547d09f -->
+<!-- vex:studio:begin vex=0.2.6 hash=d3065b68e2667385 -->
 # Vex guide - project "acme-trading"
 
 The companion to this project's `AGENTS.md`, which carries the authority:
@@ -122,6 +122,17 @@ Jupiter provides Vex's Solana token research, swaps, lending, collateralized bor
 - Act: Execute a matched Solana swap, deposit or withdraw from Earn, operate a collateralized borrowing position, and buy or sell a YES/NO prediction market outcome. After resolution, claim payout for a winning market.
 - Vex fee: 25 bps of the input on a SWAP, embedded in the quote; the lend, borrow and prediction actions none.
 - Key: `JUPITER_API_KEY`, and it is NOT configured here: every tool in this namespace answers `configuration_unavailable` until the user sets it in Vex.
+
+### indexify
+
+Indexify is a custodial Solana social-index venue where creator-curated token baskets (stacks) trade against the linked account's deposited USDC.
+
+- Chains: Solana (20011000000) only — trades the linked Indexify account's custodial USDC, never the session wallet.
+- Read: Browse trending stacks, official stacks, or the whole catalogue with ranking and market-cap filters, find a stack by name, read one stack's full token allocations and web link, search the tradable token catalogue, read the creator leaderboard and one creator's track record, and read the linked account's balances and deposit address, per-stack holdings with PnL, orders with settlement hashes, and transaction history.
+- Quote: Preview trading costs before a trade: the venue minimum buy, the creator-fee bounds, and the venue's own fee estimate for a stated USDC amount on a stated stack.
+- Act: Buy a stack with the linked account's USDC, sell a percent of a held stack position, resolve a partially filled order by retrying acknowledging or selling all, and create a new stack from named token allocations, public immediately.
+- Vex fee: none from Vex; Indexify itself charges 1% platform plus the stack creator's 0-0.5% on trades, which the tool replies disclose.
+- Key: `INDEXIFY_API_KEY`, and it is NOT configured here: every tool in this namespace answers `configuration_unavailable` until the user sets it in Vex.
 
 ### dexscreener
 

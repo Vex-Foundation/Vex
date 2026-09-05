@@ -45,12 +45,31 @@ function context(overrides: Partial<EngineContext>): EngineContext {
  * Trench card and its lines, which returns more than this costs.
  */
 const MODES = [
-  { name: "agent / restricted", context: context({}), ceiling: 58_782 },
-  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 59_483 },
-  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 65_259 },
-  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 65_278 },
-  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 63_983 },
-  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 63_798 },
+  // REVIEWED BUDGET DIFF, third upstream merge (2026-09-05): the launchpads
+  // arc's own reviewed declaration block (+1,486/mode agent, +1,540 mission —
+  // upstream's own reviewed budget) composes on the values below, and the six
+  // figures are MEASURED on the merged tree, not summed. Earlier: second
+  // upstream merge (2026-09-02), upstream's reviewed +523 B/mode composed
+  // exactly. Earlier provenance:
+  // merge of the Indexify integration onto post-D-DS9 main (2026-08-28),
+  // where two independent reviewed diffs composed:
+  //  - Indexify (2026-08-26): +1,956 bytes in every mode — one static block
+  //    rendered once per mode (the `### indexify` declaration with its
+  //    custodial characteristics paragraph, Solana coverage line, and the
+  //    partial-gating mutation marker). The custody paragraph is deliberately
+  //    not shortened: it is the only place the model learns this venue trades
+  //    a custodial account rather than the session wallet.
+  //  - Upstream D-DS9 revert (dexscreener back to ToolSearch with a rich
+  //    protocol card): main's own ceilings moved to 56,773/57,474/… before
+  //    this merge.
+  // The six values below are MEASURED on the merged tree, not summed from the
+  // two diffs.
+  { name: "agent / restricted", context: context({}), ceiling: 60_738 },
+  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 61_439 },
+  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 67_215 },
+  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 67_234 },
+  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 65_939 },
+  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 65_754 },
 ] as const;
 
 beforeAll(() => {

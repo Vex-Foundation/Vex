@@ -25,7 +25,7 @@ import { listMissingCapabilities } from "../../../../vex-agent/engine/prompts/ca
 import { PROTOCOL_TOOLS } from "../../../../vex-agent/tools/protocols/catalog.js";
 import { makeContext } from "./_prompt-stack-helpers.js";
 
-const ENV_KEYS = ["TAVILY_API_KEY", "RETTIWT_API_KEY", "JUPITER_API_KEY"] as const;
+const ENV_KEYS = ["TAVILY_API_KEY", "RETTIWT_API_KEY", "JUPITER_API_KEY", "INDEXIFY_API_KEY"] as const;
 
 /** Snapshot + restore the gated keys so tests cannot leak posture into each other. */
 let saved: Record<string, string | undefined> = {};
@@ -160,6 +160,7 @@ describe("env-gated capability notice (# Tool Model)", () => {
     expect(notice).toContain("WebResearch (TAVILY_API_KEY)");
     expect(notice).toContain("TwitterAccount (RETTIWT_API_KEY)");
     expect(notice).toContain("solana.* (JUPITER_API_KEY)");
+    expect(notice).toContain("indexify.* (INDEXIFY_API_KEY)");
     expect(notice).toContain("Settings → API Keys");
   });
 

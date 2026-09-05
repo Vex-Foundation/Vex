@@ -43,11 +43,11 @@ free. Both texts live on the tool
 
 ## Totals
 
-- exported tools: 172
+- exported tools: 185
 - internal: 27
-- protocol: 145 across 11 namespaces
+- protocol: 158 across 12 namespaces
 - always loaded: 27
-- read-only: 114
+- read-only: 124
 - destructive: 50
 
 ## Internal tools
@@ -106,6 +106,24 @@ free. Both texts live on the tool
 | dexscreener__tokens_screen | Screen tokens across chains | protocol | yes | no | no | - | 1994 | - | none (read) |
 | dexscreener__top_traders_list | Rank a pair's top wallets | protocol | yes | no | no | - | 6552 | - | none (read) |
 | dexscreener__trades_list | List a pair's trades | protocol | yes | no | no | - | 4171 | - | none (read) |
+
+### indexify
+
+| name | title | lane | read only | destructive | always load | requires env | description bytes | returns | vex fee |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| indexify__creators_list | Read Indexify creators and leaderboard | protocol | yes | no | no | - | 860 | - | none (read) |
+| indexify__fees_get | Preview Indexify trading fees | protocol | yes | no | no | - | 545 | - | none (read) |
+| indexify__history_list | Read Indexify transaction history | protocol | yes | no | no | INDEXIFY_API_KEY | 576 | - | none (read) |
+| indexify__order_resolve | Resolve a partial Indexify order | protocol | no | no | no | INDEXIFY_API_KEY | 657 | - | - |
+| indexify__orders_list | List or read Indexify orders | protocol | yes | no | no | INDEXIFY_API_KEY | 657 | - | none (read) |
+| indexify__portfolio_get | Read the Indexify account balances | protocol | yes | no | no | INDEXIFY_API_KEY | 543 | - | none (read) |
+| indexify__stack_create | Create an Indexify stack | protocol | no | no | no | INDEXIFY_API_KEY | 1083 | - | - |
+| indexify__stack_get | Read one Indexify stack | protocol | yes | no | no | INDEXIFY_API_KEY | 620 | - | none (read) |
+| indexify__stack_holdings_get | Read the account's position in one stack | protocol | yes | no | no | INDEXIFY_API_KEY | 551 | - | none (read) |
+| indexify__stack_trade_execute | Buy or sell an Indexify stack | protocol | no | no | no | INDEXIFY_API_KEY | 973 | - | - |
+| indexify__stacks_discover | Browse Indexify stacks | protocol | yes | no | no | - | 709 | - | none (read) |
+| indexify__stacks_search | Search Indexify stacks by name | protocol | yes | no | no | - | 513 | - | none (read) |
+| indexify__tokens_search | Search Indexify's tradable tokens | protocol | yes | no | no | - | 500 | - | none (read) |
 
 ### khalani
 

@@ -1,5 +1,5 @@
 {
-  "toolCount": 172,
+  "toolCount": 185,
   "tools": [
     {
       "alwaysLoad": true,
@@ -4330,6 +4330,525 @@
       "requiresEnv": null,
       "title": "List a pair's trades",
       "toolId": "dexscreener.trades"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 860,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "limit": {
+            "description": "Maximum leaderboard rows returned, 1-25. Defaults to 10; the provider caps its own pages at 100.",
+            "type": "number"
+          },
+          "metric": {
+            "description": "Which measure ranks the leaderboard: points (default), pnl, stacks_created, last_activity, stack_trades, hit_rate, or best_stack_ath.",
+            "enum": [
+              "points",
+              "pnl",
+              "stacks_created",
+              "last_activity",
+              "stack_trades",
+              "hit_rate",
+              "best_stack_ath"
+            ],
+            "type": "string"
+          },
+          "offset": {
+            "description": "Leaderboard row offset for paging, 0-based. Pass the previous offset plus returned row count for the next page.",
+            "type": "number"
+          },
+          "period": {
+            "description": "The window the leaderboard is ranked over: 4h, 7d (default), 30d, 3m, all, or ath (all-time-high based).",
+            "enum": [
+              "4h",
+              "7d",
+              "30d",
+              "3m",
+              "all",
+              "ath"
+            ],
+            "type": "string"
+          },
+          "username": {
+            "description": "One creator's Indexify handle, as leaderboard and stack rows carry it. Switches the read from leaderboard to that creator's profile and metrics.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "indexify",
+      "publicName": "indexify__creators_list",
+      "readOnlyHint": true,
+      "requiresEnv": null,
+      "title": "Read Indexify creators and leaderboard",
+      "toolId": "indexify.creators"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 545,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "amountIn": {
+            "description": "The USDC amount to estimate fees for, in HUMAN decimal units as a string (\"25\" = $25). Requires stackId beside it.",
+            "type": "string"
+          },
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "stackId": {
+            "description": "The stack the estimate is for, by its numeric id — the creator fee varies per stack. Requires amountIn beside it.",
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "indexify",
+      "publicName": "indexify__fees_get",
+      "readOnlyHint": true,
+      "requiresEnv": null,
+      "title": "Preview Indexify trading fees",
+      "toolId": "indexify.fees"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 576,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "limit": {
+            "description": "Maximum history rows returned, 1-50. Defaults to 10.",
+            "type": "number"
+          },
+          "offset": {
+            "description": "History row offset for paging, 0-based. Pass the previous offset plus returned row count for the next page.",
+            "type": "number"
+          },
+          "stackId": {
+            "description": "Keep only rows that traded this stack, by its numeric id. Omit to cover the whole account history.",
+            "type": "number"
+          },
+          "status": {
+            "description": "Keep only rows in one lifecycle status: PENDING, PROCESSING, SUCCESS, FAILED, or PARTIAL. Omit for all statuses.",
+            "enum": [
+              "PENDING",
+              "PROCESSING",
+              "SUCCESS",
+              "FAILED",
+              "PARTIAL"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "indexify",
+      "publicName": "indexify__history_list",
+      "readOnlyHint": true,
+      "requiresEnv": "INDEXIFY_API_KEY",
+      "title": "Read Indexify transaction history",
+      "toolId": "indexify.history"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 657,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "description": "Which resolution to apply: acknowledge (accept the partial fill, moves nothing), retry (re-buy the failed tokens), or sell_all (liquidate what did fill back to USDC).",
+            "enum": [
+              "acknowledge",
+              "retry",
+              "sell_all"
+            ],
+            "type": "string"
+          },
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "orderId": {
+            "description": "The PARTIAL order to resolve, by the id indexify__orders_list and the trade reply carry. Must belong to the linked account.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "orderId",
+          "action"
+        ],
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "indexify",
+      "publicName": "indexify__order_resolve",
+      "readOnlyHint": false,
+      "requiresEnv": "INDEXIFY_API_KEY",
+      "title": "Resolve a partial Indexify order",
+      "toolId": "indexify.order_resolve"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 657,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "limit": {
+            "description": "Maximum order rows returned when listing, 1-50. Defaults to 10. Ignored when orderId is given.",
+            "type": "number"
+          },
+          "offset": {
+            "description": "Order-list row offset for paging, 0-based. Ignored when orderId is given; pairs with limit otherwise.",
+            "type": "number"
+          },
+          "orderId": {
+            "description": "One order's own id, as trade replies and order rows carry it. Switches the read from the list to that order's full detail.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "indexify",
+      "publicName": "indexify__orders_list",
+      "readOnlyHint": true,
+      "requiresEnv": "INDEXIFY_API_KEY",
+      "title": "List or read Indexify orders",
+      "toolId": "indexify.orders"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 543,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "indexify",
+      "publicName": "indexify__portfolio_get",
+      "readOnlyHint": true,
+      "requiresEnv": "INDEXIFY_API_KEY",
+      "title": "Read the Indexify account balances",
+      "toolId": "indexify.portfolio"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 1083,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "allocations": {
+            "description": "Map of Solana token MINT ADDRESS to INTEGER percent weight, for example {\"JUPy...\": 60, \"jito...\": 40}. 1-12 tokens; weights must sum to exactly 100; resolve mints with indexify__tokens_search; a mint Indexify does not list yet is auto-registered when it clears the venue's live $10k market-cap floor.",
+            "type": "object"
+          },
+          "category": {
+            "description": "The venue's risk/duration label for the stack: high_risk_short, high_risk_long, medium_risk_short, medium_risk_long, low_risk_short, or low_risk_long.",
+            "enum": [
+              "high_risk_short",
+              "high_risk_long",
+              "medium_risk_short",
+              "medium_risk_long",
+              "low_risk_short",
+              "low_risk_long"
+            ],
+            "type": "string"
+          },
+          "description": {
+            "description": "The stack's thesis in plain words, up to 500 characters, shown on its public page and validated by the venue first.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "name": {
+            "description": "The stack's display name, validated for availability and wording by the venue before anything is created. Avoid symbols.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "category",
+          "allocations"
+        ],
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "indexify",
+      "publicName": "indexify__stack_create",
+      "readOnlyHint": false,
+      "requiresEnv": "INDEXIFY_API_KEY",
+      "title": "Create an Indexify stack",
+      "toolId": "indexify.stack_create"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 620,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "slug": {
+            "description": "The stack's URL slug, as returned by discovery and search rows (for example solana-top-5-defi-index).",
+            "type": "string"
+          },
+          "stackId": {
+            "description": "The stack's own numeric id, as returned by discovery and search rows. Give either slug or stackId, never both.",
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "indexify",
+      "publicName": "indexify__stack_get",
+      "readOnlyHint": true,
+      "requiresEnv": "INDEXIFY_API_KEY",
+      "title": "Read one Indexify stack",
+      "toolId": "indexify.stack"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 551,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "stackId": {
+            "description": "The stack's own numeric id, as discovery, search, and order rows carry it. One stack per call.",
+            "type": "number"
+          }
+        },
+        "required": [
+          "stackId"
+        ],
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "indexify",
+      "publicName": "indexify__stack_holdings_get",
+      "readOnlyHint": true,
+      "requiresEnv": "INDEXIFY_API_KEY",
+      "title": "Read the account's position in one stack",
+      "toolId": "indexify.holdings"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 973,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "amountIn": {
+            "description": "BUY ONLY: the USDC to spend, in HUMAN decimal units as a string (\"10\" = $10), at least the venue minimum. Give either amountIn or sellPercent, never both.",
+            "type": "string"
+          },
+          "direction": {
+            "description": "Which way the trade moves: buy (spend USDC into the stack) or sell (convert part of the held position back to USDC). Must agree with the amount param given — buy takes amountIn, sell takes sellPercent; a mismatch is refused by name.",
+            "enum": [
+              "buy",
+              "sell"
+            ],
+            "type": "string"
+          },
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "sellPercent": {
+            "description": "SELL ONLY: how much of the held position to sell, as a PERCENT of holdings from 1 to 100 (50 sells half). NOT a dollar amount.",
+            "type": "number"
+          },
+          "stackId": {
+            "description": "The stack to trade, by its numeric id from discovery, search, or stack detail. Verify it is the stack the user means before spending.",
+            "type": "number"
+          }
+        },
+        "required": [
+          "stackId",
+          "direction"
+        ],
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "indexify",
+      "publicName": "indexify__stack_trade_execute",
+      "readOnlyHint": false,
+      "requiresEnv": "INDEXIFY_API_KEY",
+      "title": "Buy or sell an Indexify stack",
+      "toolId": "indexify.trade_execute"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 709,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "feed": {
+            "description": "Which provider feed fills the rows: all (default; the whole sortable catalogue), trending (Indexify's own trending ranking), or official (Indexify-curated stacks).",
+            "enum": [
+              "all",
+              "trending",
+              "official"
+            ],
+            "type": "string"
+          },
+          "limit": {
+            "description": "Maximum rows returned, 1-25. Defaults to 10. Raw provider rows are large, so the cap is a hard output-budget bound.",
+            "type": "number"
+          },
+          "maxMarketCapUsd": {
+            "description": "Ceiling on the stack's weighted market capitalisation, in USD. Pairs with minMarketCapUsd to band the screen.",
+            "type": "number"
+          },
+          "minMarketCapUsd": {
+            "description": "Floor on the stack's weighted market capitalisation, in USD. Filters out micro-cap baskets before ranking.",
+            "type": "number"
+          },
+          "offset": {
+            "description": "Row offset for paging, 0-based. Pass the previous call's offset plus its returned row count to read the next page.",
+            "type": "number"
+          },
+          "order": {
+            "description": "Ranking direction for the all feed, asc or desc. Defaults to desc, which puts the best performer or the largest first.",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "type": "string"
+          },
+          "sort": {
+            "description": "Ranking key for the all feed: a change window (change4H/change1D/change1W/change1M/changeAll), newest, oldest, price, or mcap. Ignored by trending and official, which carry their own order.",
+            "enum": [
+              "change4H",
+              "change1D",
+              "change1W",
+              "change1M",
+              "changeAll",
+              "newest",
+              "oldest",
+              "price",
+              "mcap"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "indexify",
+      "publicName": "indexify__stacks_discover",
+      "readOnlyHint": true,
+      "requiresEnv": null,
+      "title": "Browse Indexify stacks",
+      "toolId": "indexify.stacks"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 513,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "query": {
+            "description": "The stack name or name fragment to look for, 1 to 64 characters. Matched by the provider against stack names only.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "indexify",
+      "publicName": "indexify__stacks_search",
+      "readOnlyHint": true,
+      "requiresEnv": null,
+      "title": "Search Indexify stacks by name",
+      "toolId": "indexify.search"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 500,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "query": {
+            "description": "Token name or symbol fragment to look for, 1 to 64 characters, matched by the provider across its catalogue.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "indexify",
+      "publicName": "indexify__tokens_search",
+      "readOnlyHint": true,
+      "requiresEnv": null,
+      "title": "Search Indexify's tradable tokens",
+      "toolId": "indexify.tokens"
     },
     {
       "alwaysLoad": false,

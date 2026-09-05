@@ -16,6 +16,9 @@
  *     `src/tools/relay/client.ts`). Attribution is the only thing a keyless
  *     deployment gives up; it is deliberately not a tool prerequisite, so no
  *     relay manifest declares it as a required env.
+ *   - INDEXIFY_API_KEY (optional) — gates the authenticated Indexify tools
+ *     (account reads + stack trading on the linked custodial account); the
+ *     public Indexify discovery reads work without it.
  */
 
 import { z } from "zod";
@@ -28,6 +31,7 @@ export const apiKeysSetInputSchema = z
     tavilyApiKey: optionalSecret,
     rettiwtApiKey: optionalSecret,
     relayApiKey: optionalSecret,
+    indexifyApiKey: optionalSecret,
   })
   .strict();
 
@@ -42,6 +46,7 @@ export const API_KEYS_CANONICAL_ORDER = [
   "TAVILY_API_KEY",
   "RETTIWT_API_KEY",
   "RELAY_API_KEY",
+  "INDEXIFY_API_KEY",
 ] as const;
 
 export const apiKeysFieldNameSchema = z.enum(API_KEYS_CANONICAL_ORDER);

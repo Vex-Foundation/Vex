@@ -1,0 +1,33 @@
+{
+  "definition": {
+    "function": {
+      "description": "Read ONE Indexify stack in full. Use this after a browse or search resolved the stack, and before quoting fees or trading it. Returns the stack's identity (id, slug, name, category, creator, the shareable web link), its price and change windows, weighted market cap, TVL, investor count, creator fee, allocation version, and the complete token list with each token's symbol, mint address, and integer percent weight. Also states whether the stack is closed or archived — a closed stack cannot be bought. Provide the slug OR the numeric stackId, exactly one of the two. Read-only. Provide exactly one of: slug, stackId.",
+      "name": "indexify__stack_get",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "slug": {
+            "description": "The stack's URL slug, as returned by discovery and search rows (for example solana-top-5-defi-index).",
+            "type": "string"
+          },
+          "stackId": {
+            "description": "The stack's own numeric id, as returned by discovery and search rows. Give either slug or stackId, never both.",
+            "type": "number"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "indexify",
+    "requiresEnv": "INDEXIFY_API_KEY",
+    "toolId": "indexify.stack"
+  }
+}

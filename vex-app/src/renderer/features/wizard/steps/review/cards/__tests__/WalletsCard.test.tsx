@@ -102,6 +102,7 @@ function makeEnvState(
       tavilyConfigured: false,
       rettiwtConfigured: false,
       relayConfigured: false,
+      indexifyConfigured: false,
     },
     secrets: { vaultConfigured: true, unlocked: true },
     embeddings: {

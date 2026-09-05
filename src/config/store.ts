@@ -78,6 +78,8 @@ export interface VexConfig {
     trenchExpressApiUrl: string;
     trenchExpressTestnetApiUrl: string;
     poolsFunApiUrl: string;
+    indexifyApiUrl: string;
+    ansemApiUrl: string;
     virtualsApiUrl: string;
     pendleApiUrl: string;
     morphoApiUrl: string;
@@ -206,6 +208,17 @@ export function getDefaultConfig(): VexConfig {
       trenchExpressApiUrl: "https://api.trench.express",
       trenchExpressTestnetApiUrl: "https://api-testnet.trench.express",
       poolsFunApiUrl: "https://api.bankr.bot",
+      // Indexify (Solana stacks). The URL is keyless config; the account's
+      // `ix_` API key lives ONLY in the INDEXIFY_API_KEY env var, which
+      // `requiresEnv` gates the authenticated tools on.
+      indexifyApiUrl: "https://api.indexify.finance",
+      // Ansem Z500 ranking feed (the Z500 allocation-sync source). The origin
+      // is config so a partner-provided feed URL is one setting away; an
+      // optional ANSEM_API_KEY env adds a bearer token. The site currently
+      // fronts /api/coins with a Cloudflare challenge for non-browser
+      // clients (measured 2026-08-28) — the workflow treats a challenged
+      // answer as SOURCE UNAVAILABLE and fails closed, per its spec.
+      ansemApiUrl: "https://ansem.io",
       virtualsApiUrl: "https://api.virtuals.io",
       pendleApiUrl: "https://api-v2.pendle.finance/core",
       // Morpho's keyless GraphQL endpoint. No API key exists, so no

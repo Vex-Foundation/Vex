@@ -170,6 +170,16 @@ export async function drainPendingRuns(): Promise<DrainResult> {
         const attestResult = await runAgentscanAttest(buildProductionAgentscanAttestDeps());
         result = { ...attestResult };
         rowsAffected = attestResult.attested;
+      } else if (syncType === "z500_allocation_sync") {
+        // Z500 allocation sync (indexiy-ansem.md) — BOTH dispatchers need
+        // this branch (the C1 lesson). Window-claim idempotent, so a drain
+        // dispatch while the window is done is one cheap SELECT. Only
+        // mutation is stack 28440's allocation via edit_allocation; never
+        // trades, never rebalances, never signs.
+        const { runZ500AllocationSyncTick, buildProductionZ500Deps } = await import("./z500-allocation-sync/index.js");
+        const z500Result = await runZ500AllocationSyncTick(buildProductionZ500Deps());
+        result = { ...z500Result };
+        rowsAffected = z500Result.evaluated ? 1 : 0;
       } else if (syncType === "balances_snapshot") {
         // Wave P — a transaction terminalized, so take a fresh portfolio
         // snapshot now rather than at the next 300s periodic cycle.
@@ -293,6 +303,12 @@ export async function processNextRun(): Promise<boolean> {
       const { runAgentscanAttest, buildProductionAgentscanAttestDeps } = await import("./agentscan-attest.js");
       const attestResult = await runAgentscanAttest(buildProductionAgentscanAttestDeps());
       await syncRepo.completeRun(run.id, { ...attestResult }, attestResult.attested);
+    } else if (job.syncType === "z500_allocation_sync") {
+      // Z500 allocation sync — BOTH dispatchers need this branch, for the
+      // same reason. See sync/z500-allocation-sync/.
+      const { runZ500AllocationSyncTick, buildProductionZ500Deps } = await import("./z500-allocation-sync/index.js");
+      const z500Result = await runZ500AllocationSyncTick(buildProductionZ500Deps());
+      await syncRepo.completeRun(run.id, { ...z500Result }, z500Result.evaluated ? 1 : 0);
     } else if (job.syncType === "balances_snapshot") {
       // Wave P — see the same branch in `drainPendingRuns` above. BOTH
       // dispatchers need it: the bridge job shipped with a branch missing from

@@ -1,0 +1,62 @@
+{
+  "definition": {
+    "function": {
+      "description": "Read Indexify's creator leaderboard, or one creator's public profile. Use this when the user asks who the top stack creators are, wants creators ranked by points, PnL, hit rate, stacks created or trades over a window — or names a creator and wants their track record. Without username, returns ranked leaderboard rows: username, rank, points, combined PnL, stacks created, trades, and follower count. With username, returns that creator's profile (bio, socials, join date) joined with their performance metrics (best stack all-time high, hit rate, combined PnL, followers, stack count, points); the ranking params are then refused by name, because a single profile has no ranking. Read-only. Provide at most one of: username, metric. Provide at most one of: username, period. Provide at most one of: username, limit. Provide at most one of: username, offset.",
+      "name": "indexify__creators_list",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "description": "Maximum leaderboard rows returned, 1-25. Defaults to 10; the provider caps its own pages at 100.",
+            "type": "number"
+          },
+          "metric": {
+            "description": "Which measure ranks the leaderboard: points (default), pnl, stacks_created, last_activity, stack_trades, hit_rate, or best_stack_ath.",
+            "enum": [
+              "points",
+              "pnl",
+              "stacks_created",
+              "last_activity",
+              "stack_trades",
+              "hit_rate",
+              "best_stack_ath"
+            ],
+            "type": "string"
+          },
+          "offset": {
+            "description": "Leaderboard row offset for paging, 0-based. Pass the previous offset plus returned row count for the next page.",
+            "type": "number"
+          },
+          "period": {
+            "description": "The window the leaderboard is ranked over: 4h, 7d (default), 30d, 3m, all, or ath (all-time-high based).",
+            "enum": [
+              "4h",
+              "7d",
+              "30d",
+              "3m",
+              "all",
+              "ath"
+            ],
+            "type": "string"
+          },
+          "username": {
+            "description": "One creator's Indexify handle, as leaderboard and stack rows carry it. Switches the read from leaderboard to that creator's profile and metrics.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "indexify",
+    "requiresEnv": null,
+    "toolId": "indexify.creators"
+  }
+}

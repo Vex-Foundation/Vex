@@ -84,6 +84,7 @@ function envState(overrides: Partial<EnvState["apiKeys"]> = {}): EnvState {
       tavilyConfigured: false,
       rettiwtConfigured: false,
       relayConfigured: false,
+      indexifyConfigured: false,
       ...overrides,
     },
     secrets: {
@@ -289,16 +290,16 @@ describe("ApiKeysStep", () => {
 
   // ── PR8 redesign — per-provider cards ────────────────────────────────
 
-  it("renders 4 provider cards in canonical order (PR8 + Relay)", () => {
+  it("renders 5 provider cards in canonical order (PR8 + Relay + Indexify)", () => {
     mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
     const { container } = renderWithQuery(
       <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
     );
     const cards = container.querySelectorAll("[data-vex-apikeys-card]");
-    expect(cards).toHaveLength(4);
+    expect(cards).toHaveLength(5);
     expect(
       Array.from(cards).map((c) => c.getAttribute("data-vex-apikeys-card")),
-    ).toEqual(["jupiter", "tavily", "rettiwt", "relay"]);
+    ).toEqual(["jupiter", "tavily", "rettiwt", "relay", "indexify"]);
   });
 
   it("renders canonical external links for each provider card (PR8)", () => {

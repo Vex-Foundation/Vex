@@ -1,0 +1,48 @@
+{
+  "definition": {
+    "function": {
+      "description": "Read the linked Indexify account's transaction history — the venue's durable record of everything the account did. Use this when the user asks what the account has traded, deposited, or withdrawn, or to audit past activity with fees. Returns rows with order id, type (buy/sell/deposit/withdrawal), status, USDC amount or sell percentage, creator and platform fees, timestamps, the asset traded, and the Solana transaction hash where one exists; the first unfiltered page also returns summary counts by type and outcome. Filter by lifecycle status or by one stack. Read-only.",
+      "name": "indexify__history_list",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "description": "Maximum history rows returned, 1-50. Defaults to 10.",
+            "type": "number"
+          },
+          "offset": {
+            "description": "History row offset for paging, 0-based. Pass the previous offset plus returned row count for the next page.",
+            "type": "number"
+          },
+          "stackId": {
+            "description": "Keep only rows that traded this stack, by its numeric id. Omit to cover the whole account history.",
+            "type": "number"
+          },
+          "status": {
+            "description": "Keep only rows in one lifecycle status: PENDING, PROCESSING, SUCCESS, FAILED, or PARTIAL. Omit for all statuses.",
+            "enum": [
+              "PENDING",
+              "PROCESSING",
+              "SUCCESS",
+              "FAILED",
+              "PARTIAL"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "indexify",
+    "requiresEnv": "INDEXIFY_API_KEY",
+    "toolId": "indexify.history"
+  }
+}

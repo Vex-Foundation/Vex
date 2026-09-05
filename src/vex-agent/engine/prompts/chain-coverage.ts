@@ -108,6 +108,10 @@ const COVERAGE_BY_NAMESPACE: Readonly<Partial<Record<ProtocolNamespace, Protocol
     namespace: "solana",
     line: `Coverage: Solana (${SOLANA_SYNTHETIC_CHAIN_ID}) only.`,
   },
+  indexify: {
+    namespace: "indexify",
+    line: `Coverage: Solana (${SOLANA_SYNTHETIC_CHAIN_ID}) only — trades the linked Indexify account's custodial USDC, never the session wallet.`,
+  },
   virtuals: {
     namespace: "virtuals",
     // Coverage is not uniform across the four chains, and the differences are

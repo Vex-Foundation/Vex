@@ -47,6 +47,8 @@ import { POOLS_TOOLS } from "./pools/manifest.js";
 import { POOLS_HANDLERS } from "./pools/handlers.js";
 import { LAUNCHPADS_TOOLS } from "./launchpads/manifest.js";
 import { LAUNCHPADS_HANDLERS } from "./launchpads/handlers.js";
+import { INDEXIFY_TOOLS } from "./indexify/manifest.js";
+import { INDEXIFY_HANDLERS } from "./indexify/handlers.js";
 
 // ── Namespace allowlist ──────────────────────────────────────────
 
@@ -63,6 +65,7 @@ export const PROTOCOL_NAMESPACE_ALLOWLIST: readonly ProtocolNamespace[] = [
   "trench",
   "pools",
   "launchpads",
+  "indexify",
 ] as const;
 
 export const PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST: readonly ProtocolNamespace[] =
@@ -100,6 +103,7 @@ export const NAMESPACE_MODULES: readonly NamespaceModule[] = [
   { namespace: "trench", manifests: TRENCH_TOOLS, handlers: TRENCH_HANDLERS },
   { namespace: "pools", manifests: POOLS_TOOLS, handlers: POOLS_HANDLERS },
   { namespace: "launchpads", manifests: LAUNCHPADS_TOOLS, handlers: LAUNCHPADS_HANDLERS },
+  { namespace: "indexify", manifests: INDEXIFY_TOOLS, handlers: INDEXIFY_HANDLERS },
 ];
 
 // ── Indices (built eagerly at module load) ───────────────────────
@@ -211,4 +215,8 @@ export const NAMESPACE_DEFAULTS: Record<ProtocolNamespace, NamespaceDefault> = {
   // The shared image locker and its publication step. Nothing here holds,
   // moves or reports a position; a picture is not a balance.
   launchpads: "non_portfolio",
+  // Custodial social-index venue: stack trades move the linked Indexify
+  // account's USDC and holdings report positions, so the namespace is a
+  // trading one even though nothing is signed locally.
+  indexify: "mixed_trading",
 };

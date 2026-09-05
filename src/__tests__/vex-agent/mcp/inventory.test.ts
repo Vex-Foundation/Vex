@@ -106,9 +106,12 @@ describe("the exported inventory covers exactly the export scope", () => {
     // `pools__holder_rewards_get`) and the two Virtuals market-history reads
     // (`virtuals__agent_trades_list`, `virtuals__agent_candles_list`). All four
     // are read-only and none signs.
-    expect(inventory).toHaveLength(172);
+    // 172 -> 185 at the integrate/indexify merge: +13 protocol tools of the
+    // indexify namespace (10 reads, trade_execute, order_resolve,
+    // stack_create) — the first custodial API venue.
+    expect(inventory).toHaveLength(185);
     expect(inventory.filter((t) => t.kind === "internal")).toHaveLength(27);
-    expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(145);
+    expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(158);
   });
 
   it("keeps WebResearch OUT of tools/list while the in-app registry keeps it", () => {

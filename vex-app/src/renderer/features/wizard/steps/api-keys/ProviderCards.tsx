@@ -15,7 +15,7 @@
 
 import type { JSX, RefObject } from "react";
 import { Tavily, X } from "@thesvg/react";
-import { IconWaypoints } from "../../../../components/icons/index.js";
+import { IconData, IconWaypoints } from "../../../../components/icons/index.js";
 import { Label } from "../../../../components/ui/label.js";
 import { PasswordField } from "../../../../components/common/PasswordField.js";
 import { ProviderCard, type ProviderCardStatus } from "./ProviderCard.js";
@@ -221,6 +221,54 @@ export function RelayCard({
       </Label>
       <PasswordField
         id="vex-apikey-relay"
+        autoComplete="new-password"
+        ref={inputRef}
+      />
+    </ProviderCard>
+  );
+}
+
+export interface IndexifyCardProps {
+  readonly status: ProviderCardStatus;
+  readonly inputRef: RefObject<HTMLInputElement | null>;
+}
+
+/**
+ * Indexify is optional AND custodial: the key authorizes real stack trades on
+ * the linked Indexify account's deposited USDC, so the copy says what the key
+ * can DO rather than implying it is a read-only data credential.
+ */
+export function IndexifyCard({
+  status,
+  inputRef,
+}: IndexifyCardProps): JSX.Element {
+  return (
+    <ProviderCard
+      slug="indexify"
+      iconSlot={
+        <IconData size={18} />
+      }
+      name="Indexify"
+      status={status}
+      description="Solana index-basket (stacks) trading."
+      detail={
+        <>
+          Optional. Unlocks browsing your Indexify account and trading stacks
+          with its deposited USDC — the key alone authorizes trades on that
+          account, so treat it like a wallet secret. Public stack discovery
+          works without it.
+        </>
+      }
+      getKey={{
+        url: "https://app.indexify.finance",
+        label: "Open Indexify",
+      }}
+    >
+      <Label htmlFor="vex-apikey-indexify" className="sr-only">
+        Indexify API key
+      </Label>
+      <PasswordField
+        id="vex-apikey-indexify"
         autoComplete="new-password"
         ref={inputRef}
       />

@@ -71,6 +71,19 @@ export const STUDIO_NAMESPACE_FEES: Readonly<Record<string, StudioNamespaceFee>>
     line: "none; every tool here is a read.",
     freeLanes: ["src/vex-agent/tools/protocols/dexscreener", "src/tools/dexscreener"],
   },
+  indexify: {
+    // Vex adds NOTHING on this venue. Trades settle custodially on
+    // Indexify's side, which charges its own 1% platform fee plus the stack
+    // creator's 0-0.5% — venue fees, not Vex's, and the tool replies
+    // disclose them. No indexify lane imports a fee module or references a
+    // fee constant, and the fee-params doctrine refuses a fee-shaped param
+    // on the namespace's mutating tools outright
+    // (fee-params-never-from-model.test.ts).
+    line:
+      "none from Vex; Indexify itself charges 1% platform plus the stack creator's 0-0.5% "
+      + "on trades, which the tool replies disclose.",
+    freeLanes: ["src/vex-agent/tools/protocols/indexify", "src/tools/indexify"],
+  },
   khalani: {
     line: "25 bps of the input on a bridge execute; reads and quotes free.",
     charged: { symbol: "BRIDGE_FEE_BPS", lane: "src/tools/bridge-fee" },

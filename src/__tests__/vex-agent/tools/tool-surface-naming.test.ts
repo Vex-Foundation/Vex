@@ -170,7 +170,11 @@ describe("G2 - publicName mapping gate", () => {
     // the 142 above, which the PR-C1 lane raised on its own, so the delta this
     // merge records is the remaining three. Every one is a new identity with
     // its own mapping row; nothing was reclaimed or retired.
-    expect(PROTOCOL_TOOLS.length).toBe(147);
+    // 147 before the integrate/indexify merge, which adds the 13-tool
+    // `indexify` namespace (10 reads, trade_execute, order_resolve,
+    // stack_create) — the tree's first custodial API venue. All new
+    // identities with mapping rows in `mappings/indexify.json`.
+    expect(PROTOCOL_TOOLS.length).toBe(160);
   });
 });
 
