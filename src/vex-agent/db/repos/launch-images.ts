@@ -43,6 +43,16 @@
  * authorization and execution cannot slip through. For every image that
  * predates 083 the two digests are equal by backfill, so that binding is
  * byte-for-byte what it always was.
+ *
+ * ── The public asset (migration 106) ───────────────────────────────────────
+ *
+ * `publicCid`/`publicUrl`/`publicUploadedAt` describe a copy of the bytes on an
+ * EXTERNAL content-addressed host, which is what a launchpad's on-chain `image`
+ * field points at. This database does not own that resource: deleting a locker
+ * image does NOT withdraw it, and must not - the URL may already be committed on
+ * chain, and the host makes a deleted cid permanently unpublishable by anyone.
+ * Withdrawal is an explicit user act through the asset client, and
+ * {@link clearPublicAsset} only forgets our record of it.
  */
 
 import { query, queryOne, withTransaction } from "../client.js";
@@ -89,10 +99,67 @@ export interface LaunchImageRow {
   /** sha256 hex of the on-chain copy. Bound into the C0 authorization. */
   onchainDigest: string | null;
   uploadedAt: string;
+  /**
+   * The PUBLIC, content-addressed copy (migration 106), NULLABLE TOGETHER with
+   * {@link publicUrl} and {@link publicUploadedAt}. All three NULL means NOT
+   * PUBLISHED - it is not a value we failed to compute.
+   *
+   * A launchpad's on-chain `image` field is a URL, and a URL is mutable by
+   * whoever serves it. Vex therefore publishes the locker bytes to a
+   * content-addressed host and commits `<public base>/a/<cid>.<ext>`, where the
+   * cid is the lowercase-hex sha256 of the exact bytes. Given that URL the bytes
+   * can be re-fetched and the cid re-derived, so a substitution between approval
+   * and the world's later view is DETECTABLE rather than invisible.
+   *
+   * NOT UNIQUE, by design: the host is content-addressed, so two locker rows
+   * holding byte-identical pictures share one cid and one URL. That is the
+   * scheme working, not a duplicate.
+   */
+  publicCid: string | null;
+  /** The public URL the launchpad's `image` field points at. */
+  publicUrl: string | null;
+  /** When the bytes became public. DB-assigned; see {@link recordPublicAsset}. */
+  publicUploadedAt: string | null;
 }
 
-/** `uploadedAt` is DB-assigned (`DEFAULT NOW()`) — callers do not supply it. */
-export type InsertLaunchImageInput = Omit<LaunchImageRow, "uploadedAt">;
+/**
+ * `uploadedAt` is DB-assigned (`DEFAULT NOW()`) - callers do not supply it.
+ *
+ * The public-asset triple is omitted for a different reason: a NEWLY STAGED
+ * locker image is never already published. Publication is a separate, later act
+ * with its own writer ({@link recordPublicAsset}), which is where the cid
+ * validation and the idempotence rule live. Letting an insert carry those fields
+ * would create a second way to claim a publication happened, one that bypasses
+ * every check the real writer performs.
+ */
+export type InsertLaunchImageInput = Omit<
+  LaunchImageRow,
+  "uploadedAt" | "publicCid" | "publicUrl" | "publicUploadedAt"
+>;
+
+/**
+ * A publication already recorded for this image conflicts with the one being
+ * recorded - a HARD REFUSAL, not a CAS miss.
+ *
+ * The bytes of a locker row never change (the row carries a `digest` of exactly
+ * those bytes), so the same image can only ever have one cid. A second, DIFFERENT
+ * cid arriving for the same image means something upstream is wrong - the wrong
+ * bytes were uploaded, or the wrong image id was passed - and overwriting the
+ * stored record would destroy the user's only handle for withdrawing the copy
+ * that is actually on the host, possibly one already committed on chain.
+ */
+export class PublicAssetConflictError extends Error {
+  readonly code = "public_asset_conflict" as const;
+  readonly imageId: string;
+  constructor(imageId: string, message: string) {
+    super(message);
+    this.name = "PublicAssetConflictError";
+    this.imageId = imageId;
+  }
+}
+
+/** The cid is the lowercase-hex sha256 of the published bytes, or it is not a cid. */
+const PUBLIC_CID_PATTERN = /^[0-9a-f]{64}$/;
 
 /** A live intent blocking a deletion, named so the refusal message can say which. */
 export interface LiveIntentReference {
@@ -112,7 +179,8 @@ export type DeleteLaunchImageResult =
 
 const SELECT_COLUMNS =
   "image_id, label, byte_length, mime, width, height, digest, "
-  + "onchain_byte_length, onchain_digest, uploaded_at";
+  + "onchain_byte_length, onchain_digest, uploaded_at, "
+  + "public_cid, public_url, public_uploaded_at";
 
 function mapRow(r: Record<string, unknown>): LaunchImageRow {
   return {
@@ -133,7 +201,17 @@ function mapRow(r: Record<string, unknown>): LaunchImageRow {
         : (r.onchain_digest as string),
     uploadedAt:
       r.uploaded_at instanceof Date ? r.uploaded_at.toISOString() : String(r.uploaded_at),
+    publicCid:
+      r.public_cid === null || r.public_cid === undefined ? null : (r.public_cid as string),
+    publicUrl:
+      r.public_url === null || r.public_url === undefined ? null : (r.public_url as string),
+    publicUploadedAt: mapNullableTimestamp(r.public_uploaded_at),
   };
+}
+
+function mapNullableTimestamp(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  return value instanceof Date ? value.toISOString() : String(value);
 }
 
 function mapLiveIntent(r: Record<string, unknown>): LiveIntentReference {
@@ -194,6 +272,121 @@ export async function getLaunchImage(imageId: string): Promise<LaunchImageRow | 
     [imageId],
   );
   return row ? mapRow(row) : null;
+}
+
+/**
+ * Record that this locker image's bytes were published to the content-addressed
+ * public host, and return the updated row. `null` means NO SUCH IMAGE.
+ *
+ * `public_uploaded_at` is set by the DATABASE (`NOW()`). A caller-supplied
+ * timestamp would be a second source of truth for when bytes became public,
+ * which is the first fact an incident review needs and the last one that should
+ * come from a clock we do not control.
+ *
+ * The cid is validated HERE, before the statement, and refused BY NAME. The
+ * table's CHECK is a backstop: it would surface as a raw Postgres constraint
+ * violation with nothing the caller could act on.
+ *
+ * ── Re-recording, and the two cases it splits into ────────────────────────
+ *
+ * SAME cid (and same URL): IDEMPOTENT, and deliberately runs NO write. The
+ * publication happened ONCE; `public_uploaded_at` records that moment and must
+ * not slide forward every time the upload path re-confirms an asset the host
+ * already has. The upload itself is idempotent by content, so this call is the
+ * ordinary outcome of publishing an image a second time, not an anomaly.
+ *
+ * DIFFERENT cid, or the same cid at a different URL: REFUSED with
+ * {@link PublicAssetConflictError}. The bytes of a locker row never change (the
+ * row carries a `digest` of exactly those bytes), so a second, different cid for
+ * the same image means something upstream is wrong rather than a legitimate
+ * re-publication. Overwriting would destroy the only handle the user has for
+ * withdrawing the copy that is actually on the host - a copy whose URL may
+ * already be committed on chain, where nothing can change it. Failing closed
+ * leaves both records intact and makes the upstream defect visible; a silent
+ * overwrite would leave orphaned public bytes nobody can name.
+ *
+ * SERIALIZED under the image's advisory lock, inside one transaction, for the
+ * same reason {@link deleteLaunchImage} is: a read-then-write across two
+ * statements is a TOCTOU window in which a concurrent delete or a concurrent
+ * record can land between the check and the write.
+ *
+ * @throws {PublicAssetConflictError} when a DIFFERENT publication is already recorded.
+ */
+export async function recordPublicAsset(
+  imageId: string,
+  asset: { cid: string; url: string },
+): Promise<LaunchImageRow | null> {
+  if (!PUBLIC_CID_PATTERN.test(asset.cid)) {
+    throw new Error(
+      `launch_images: recordPublicAsset was given an invalid cid "${asset.cid}" - `
+      + "a public asset cid is the lowercase-hex sha256 of the published bytes "
+      + "(64 hex characters). Nothing was written.",
+    );
+  }
+  return withTransaction(async (client) => {
+    await lockLaunchImageWith(client, imageId);
+    const existing = await client.query<Record<string, unknown>>(
+      `SELECT ${SELECT_COLUMNS} FROM launch_images WHERE image_id = $1`,
+      [imageId],
+    );
+    const current = existing.rows[0];
+    if (current === undefined) return null;
+
+    const row = mapRow(current);
+    if (row.publicCid !== null) {
+      if (row.publicCid === asset.cid && row.publicUrl === asset.url) return row;
+      throw new PublicAssetConflictError(
+        imageId,
+        `launch_images: image "${imageId}" is already published as `
+        + `${row.publicCid} at ${row.publicUrl}; refusing to overwrite that record `
+        + `with ${asset.cid} at ${asset.url}. The stored URL is the only handle for `
+        + "withdrawing the bytes already on the host, and it may already be committed "
+        + "on chain. Nothing was written.",
+      );
+    }
+
+    const updated = await client.query<Record<string, unknown>>(
+      `UPDATE launch_images
+          SET public_cid = $2, public_url = $3, public_uploaded_at = NOW()
+        WHERE image_id = $1
+        RETURNING ${SELECT_COLUMNS}`,
+      [imageId, asset.cid, asset.url],
+    );
+    const written = updated.rows[0];
+    if (written === undefined) {
+      throw new Error("launch_images: recordPublicAsset returned no row");
+    }
+    return mapRow(written);
+  });
+}
+
+/**
+ * Forget VEX'S RECORD of the publication: all three public-asset columns back to
+ * NULL. Returns whether a row actually changed - `false` for an unknown image
+ * AND for an image that had no publication recorded.
+ *
+ * THIS DOES NOT WITHDRAW THE BYTES FROM THE HOST. It only erases what we know
+ * about them. Withdrawing is the asset client's `deleteAsset` call against the
+ * host's delete endpoint, and that endpoint takes the URL.
+ *
+ * REQUIRED CALL ORDER: delete at the HOST first, then clear locally. In that
+ * order a failure leaves the record intact and the operation retryable - the
+ * user still has the handle. The reverse order strands the bytes public and
+ * unreachable: the URL was the only name we had for them, and the host's
+ * contract makes a cid deleted by nobody permanently unpublishable by nobody.
+ * Losing bytes while the record survives is recoverable; losing the record while
+ * the bytes survive is not.
+ */
+export async function clearPublicAsset(imageId: string): Promise<boolean> {
+  const row = await queryOne<Record<string, unknown>>(
+    `UPDATE launch_images
+        SET public_cid = NULL, public_url = NULL, public_uploaded_at = NULL
+      WHERE image_id = $1
+        AND public_cid IS NOT NULL
+      RETURNING image_id`,
+    [imageId],
+  );
+  return row !== null;
 }
 
 /**

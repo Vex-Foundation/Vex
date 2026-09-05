@@ -69,8 +69,24 @@ function imageRow(over: Record<string, unknown> = {}): Record<string, unknown> {
     height: 512,
     digest: "a".repeat(64),
     uploaded_at: new Date("2026-08-02T10:00:00.000Z"),
+    public_cid: null,
+    public_url: null,
+    public_uploaded_at: null,
     ...over,
   };
+}
+
+const PUBLIC_CID = "c".repeat(64);
+const PUBLIC_URL = `https://assets.example/a/${PUBLIC_CID}.png`;
+const PUBLISHED_AT = new Date("2026-09-01T12:00:00.000Z");
+
+function publishedRow(over: Record<string, unknown> = {}): Record<string, unknown> {
+  return imageRow({
+    public_cid: PUBLIC_CID,
+    public_url: PUBLIC_URL,
+    public_uploaded_at: PUBLISHED_AT,
+    ...over,
+  });
 }
 
 function liveIntentRow(over: Record<string, unknown> = {}): Record<string, unknown> {
@@ -261,5 +277,182 @@ describe("deleteLaunchImage — the refusal is ATOMIC with the delete", () => {
       deleted: false,
       reason: "not_found",
     });
+  });
+});
+
+// -- the public asset (migration 106) ----------------------------------------
+//
+// A launchpad's on-chain `image` is a URL, and a URL is mutable by whoever
+// serves it. Vex publishes the locker bytes to a content-addressed host so the
+// committed address can be re-verified against the bytes before signing. The
+// three columns record that ONE publication, and the behaviour worth pinning is
+// that the record can never be half-set, never silently overwritten, and never
+// mistaken for a withdrawal.
+//
+// Same harness caveat as the lock pins above: the pg client is mocked, so these
+// prove the repo's own decisions and the statements it issues, not that Postgres
+// evaluates the CHECKs. The migration's constraints are proved separately
+// against a real database.
+describe("public asset - reading it back", () => {
+  it("is null on a fresh row, which means NOT PUBLISHED", async () => {
+    mockQueryOne.mockResolvedValue(imageRow());
+    const row = await repo.getLaunchImage(IMAGE_ID);
+    expect(row?.publicCid).toBeNull();
+    expect(row?.publicUrl).toBeNull();
+    expect(row?.publicUploadedAt).toBeNull();
+  });
+
+  it("survives a get round trip with the timestamp as an ISO string", async () => {
+    mockQueryOne.mockResolvedValue(publishedRow());
+    const row = await repo.getLaunchImage(IMAGE_ID);
+    expect(row?.publicCid).toBe(PUBLIC_CID);
+    expect(row?.publicUrl).toBe(PUBLIC_URL);
+    expect(row?.publicUploadedAt).toBe("2026-09-01T12:00:00.000Z");
+  });
+
+  it("survives a listing round trip", async () => {
+    mockQuery.mockResolvedValue([publishedRow(), imageRow({ image_id: "img_other" })]);
+    const rows = await repo.listLaunchImages();
+    expect(rows[0]!.publicUrl).toBe(PUBLIC_URL);
+    expect(rows[1]!.publicUrl).toBeNull();
+    expect(mockQuery.mock.calls[0]![0]).toContain("public_uploaded_at");
+  });
+
+  it("an insert cannot claim a publication - a staged image is never published", async () => {
+    mockQueryOne.mockResolvedValue(imageRow());
+    await repo.insertLaunchImage({
+      imageId: IMAGE_ID, label: "rocket.png", byteLength: 8192,
+      mime: "image/png", width: 512, height: 512, digest: "a".repeat(64),
+      onchainByteLength: 8192, onchainDigest: "a".repeat(64),
+    });
+    const [sql, params] = mockQueryOne.mock.calls[0]!;
+    // Still the nine 083 columns. Publication is a separate, later act with its
+    // own writer, which is where the cid validation and idempotence rule live.
+    expect(params).toHaveLength(9);
+    // The RETURNING clause reads the public columns back (they are part of the
+    // row); the INSERT column list must not WRITE them.
+    const inserted = sql.slice(0, sql.indexOf("VALUES"));
+    expect(inserted).not.toContain("public_cid");
+    expect(inserted).not.toContain("public_url");
+    expect(inserted).not.toContain("public_uploaded_at");
+  });
+});
+
+describe("recordPublicAsset", () => {
+  it("sets all three and lets the DATABASE stamp the time", async () => {
+    txRows = [[], [imageRow()], [publishedRow()]];
+    const row = await repo.recordPublicAsset(IMAGE_ID, { cid: PUBLIC_CID, url: PUBLIC_URL });
+    expect(row).toEqual(expect.objectContaining({
+      publicCid: PUBLIC_CID,
+      publicUrl: PUBLIC_URL,
+      publicUploadedAt: "2026-09-01T12:00:00.000Z",
+    }));
+    const [sql, params] = txCalls[2]!;
+    expect(sql).toContain("public_uploaded_at = NOW()");
+    // Three params: the id, the cid and the url. A caller-supplied timestamp
+    // would be a second source of truth for when bytes became public.
+    expect(params).toEqual([IMAGE_ID, PUBLIC_CID, PUBLIC_URL]);
+  });
+
+  it("serializes under the image's advisory lock before it reads", async () => {
+    txRows = [[], [imageRow()], [publishedRow()]];
+    await repo.recordPublicAsset(IMAGE_ID, { cid: PUBLIC_CID, url: PUBLIC_URL });
+    expect(txCalls[0]![0]).toContain("pg_advisory_xact_lock");
+    expect(txCalls[0]![1]).toEqual([launchImageLockKey(IMAGE_ID)]);
+    expect(txCalls[1]![0]).toContain("SELECT");
+  });
+
+  it("re-recording the SAME publication is idempotent and runs NO write", async () => {
+    // The upload is idempotent by content, so this is the ordinary outcome of
+    // publishing an image a second time. `public_uploaded_at` records when the
+    // bytes became public and must not slide forward on a re-confirmation.
+    txRows = [[], [publishedRow()]];
+    const row = await repo.recordPublicAsset(IMAGE_ID, { cid: PUBLIC_CID, url: PUBLIC_URL });
+    expect(row?.publicUploadedAt).toBe("2026-09-01T12:00:00.000Z");
+    expect(txCalls).toHaveLength(2);
+    expect(txCalls.map(([sql]) => sql).join(" ")).not.toMatch(/UPDATE/i);
+  });
+
+  it("REFUSES a different cid over an existing one, and writes nothing", async () => {
+    // The bytes of a locker row never change (the row carries a `digest` of
+    // exactly those bytes), so a second, different cid means something upstream
+    // is wrong. Overwriting would destroy the only handle for withdrawing the
+    // copy actually on the host - a URL that may already be on chain.
+    txRows = [[], [publishedRow()]];
+    await expect(
+      repo.recordPublicAsset(IMAGE_ID, { cid: "d".repeat(64), url: "https://assets.example/a/x.png" }),
+    ).rejects.toThrow(repo.PublicAssetConflictError);
+    expect(txCalls.map(([sql]) => sql).join(" ")).not.toMatch(/UPDATE/i);
+  });
+
+  it("REFUSES the same cid at a different URL - that is a different publication", async () => {
+    txRows = [[], [publishedRow()]];
+    await expect(
+      repo.recordPublicAsset(IMAGE_ID, { cid: PUBLIC_CID, url: "https://other.example/a/x.png" }),
+    ).rejects.toThrow(repo.PublicAssetConflictError);
+  });
+
+  it("refuses a malformed cid BY NAME without touching the database", async () => {
+    for (const bad of ["", "not-a-cid", "C".repeat(64), "a".repeat(63), "a".repeat(65)]) {
+      await expect(
+        repo.recordPublicAsset(IMAGE_ID, { cid: bad, url: PUBLIC_URL }),
+      ).rejects.toThrow(/invalid cid/);
+    }
+    expect(txCalls).toHaveLength(0);
+    expect(mockQuery).not.toHaveBeenCalled();
+    expect(mockQueryOne).not.toHaveBeenCalled();
+  });
+
+  it("returns null for an unknown image rather than pretending it published", async () => {
+    txRows = [[], []];
+    expect(await repo.recordPublicAsset(IMAGE_ID, { cid: PUBLIC_CID, url: PUBLIC_URL })).toBeNull();
+    expect(txCalls.map(([sql]) => sql).join(" ")).not.toMatch(/UPDATE/i);
+  });
+});
+
+describe("clearPublicAsset - forgets the record, does not withdraw the bytes", () => {
+  it("nulls all three and reports the change", async () => {
+    mockQueryOne.mockResolvedValue({ image_id: IMAGE_ID });
+    expect(await repo.clearPublicAsset(IMAGE_ID)).toBe(true);
+    const [sql, params] = mockQueryOne.mock.calls[0]!;
+    const flat = sql.replace(/\s+/g, " ");
+    expect(flat).toContain("public_cid = NULL");
+    expect(flat).toContain("public_url = NULL");
+    expect(flat).toContain("public_uploaded_at = NULL");
+    expect(params).toEqual([IMAGE_ID]);
+  });
+
+  it("reports false when nothing changed - unknown image, or nothing published", async () => {
+    mockQueryOne.mockResolvedValue(null);
+    expect(await repo.clearPublicAsset(IMAGE_ID)).toBe(false);
+    // The predicate is what makes an already-clear row report false rather than
+    // claiming a withdrawal the user never had to perform.
+    expect(mockQueryOne.mock.calls[0]![0].replace(/\s+/g, " "))
+      .toContain("AND public_cid IS NOT NULL");
+  });
+});
+
+describe("the pairing invariant holds through the repo's own API", () => {
+  it("neither writer can produce a half-set row", async () => {
+    // recordPublicAsset writes all three in ONE statement and clearPublicAsset
+    // nulls all three in ONE statement. There is no path through this module
+    // that assigns a subset, which is what makes the DB's pairing CHECK a
+    // backstop rather than the only guard.
+    txRows = [[], [imageRow()], [publishedRow()]];
+    const recorded = await repo.recordPublicAsset(IMAGE_ID, { cid: PUBLIC_CID, url: PUBLIC_URL });
+    const set = [recorded!.publicCid, recorded!.publicUrl, recorded!.publicUploadedAt];
+    expect(set.every((v) => v !== null)).toBe(true);
+
+    const writeSql = txCalls[2]![0].replace(/\s+/g, " ");
+    expect(writeSql).toMatch(
+      /SET public_cid = \$2, public_url = \$3, public_uploaded_at = NOW\(\)/,
+    );
+
+    mockQueryOne.mockResolvedValue({ image_id: IMAGE_ID });
+    await repo.clearPublicAsset(IMAGE_ID);
+    const clearSql = mockQueryOne.mock.calls[0]![0].replace(/\s+/g, " ");
+    expect(clearSql).toMatch(
+      /SET public_cid = NULL, public_url = NULL, public_uploaded_at = NULL/,
+    );
   });
 });

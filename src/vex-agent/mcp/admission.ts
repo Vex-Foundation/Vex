@@ -35,6 +35,7 @@ import {
   EXECUTE_TOOL_ENVELOPE_NAME,
   EXPORTED_TOOL_SEARCH_NAME,
   isExportedInternalTool,
+  isExportedProtocolTool,
 } from "./export-scope.js";
 import {
   EXPORTED_TOOL_SEARCH_PUBLIC_NAME,
@@ -83,6 +84,31 @@ function notExportedRefusal(name: string): ToolResult {
   };
 }
 
+/**
+ * The refusal for a PROTOCOL manifest the catalog registers but this surface
+ * does not export.
+ *
+ * A SIBLING of {@link notExportedRefusal} rather than a reuse of it, because
+ * that helper states the internal-tool reasons - session-bound, duplicate web
+ * search, the approval-resume envelope - and none of them is why a protocol
+ * tool is withheld. Reusing it would answer with a real-sounding cause that is
+ * false, which is exactly what rule 04's error contract forbids. The shape,
+ * the search hint and the "Nothing was executed." tail are identical, so a
+ * caller parses one answer for both lanes.
+ */
+function protocolNotExportedRefusal(publicName: string, toolId: string): ToolResult {
+  return {
+    success: false,
+    output:
+      `${publicName} is not exported by Vex Studio. It operates on state that only exists `
+      + "inside the Vex desktop app (the local image locker), which this surface has no access "
+      + "to, so the call could not succeed here even if it were dispatched. Where a Vex tool "
+      + "needs a picture on this surface, pass a file path inside your own project instead. Use "
+      + `${EXPORTED_TOOL_SEARCH_PUBLIC_NAME} to find an exported tool for this task. Nothing was `
+      + `executed (${toolId}).`,
+  };
+}
+
 /** The answer for a name nothing in the catalog or registry claims. */
 function unknownToolRefusal(name: string): ToolResult {
   return {
@@ -125,8 +151,10 @@ function runExportedToolDescribe(args: Record<string, unknown>): ToolResult {
  *  1. `vex_ToolSearch` -> the read-only export adapter (never the in-app lane);
  *  2. an exported internal tool -> `dispatchTool` unchanged, so every in-app
  *     gate that keys off the context fires exactly as it does for the agent;
- *  3. a protocol publicName (or a retired one the alias table resolves) ->
- *     `executeProtocolTool` with the `studio_mcp` execution context;
+ *  3. an EXPORTED protocol publicName (or a retired one the alias table
+ *     resolves) -> `executeProtocolTool` with the `studio_mcp` execution
+ *     context; a manifest the export scope withholds is refused by name here,
+ *     never dispatched;
  *  4. anything else -> a typed refusal: "not exported" for a name Vex knows,
  *     the unknown-tool answer with the search hint otherwise.
  */
@@ -172,6 +200,19 @@ export async function admitStudioCall(
 
   const manifest = resolveInjectedProtocolTool(name);
   if (!manifest) return { result: unknownToolRefusal(call.name), dispatched: false };
+
+  // The SAME predicate `tools/list` and `vex_ToolSearch` enumerate through. The
+  // internal branch above has always consulted its half of it; this branch did
+  // not, which was harmless only while the protocol predicate answered "is it
+  // registered". It no longer does, so without this check a withheld manifest
+  // would be absent from every listing and still fully dispatchable by name -
+  // a fail-open, and the exact shape the one-enumerator rule exists to prevent.
+  if (!isExportedProtocolTool(manifest.toolId)) {
+    return {
+      result: protocolNotExportedRefusal(manifest.publicName, manifest.toolId),
+      dispatched: false,
+    };
+  }
 
   const unavailable = checkStaticConfiguration(name, manifest.toolId);
   if (unavailable) return { result: unavailable, dispatched: false };

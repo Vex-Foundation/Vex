@@ -18,12 +18,40 @@ The MCP server exports the tool surface EXCEPT the session-bound groups:
 | Research | YES | twitter_account |
 | Web research | NO | web_research |
 | Math | YES | units_convert |
-| Protocol tools | YES, all namespaces | the full catalog (134 toolIds today), under their publicName |
+| Protocol tools | YES for every namespace except the toolIds under "Protocol tools not exported" below | the full catalog under their publicName |
 | Memory | NO | session_memory_search, session_memory_resolve_item, long_memory_suggest, long_memory_search, long_memory_get, long_memory_history |
 | Engine / runtime | NO | mission_draft_update, mission_stop, loop_defer, compact_apply, plan_write |
 | Presentation | NO | board_compose |
 | Knowledge | NO | already retired from the agent surface; stays retired in the export |
 | Meta / discovery | ToolSearch YES (read-only catalog search); execute_tool NO | see below and owner-decisions.md D2 |
+
+## Protocol tools not exported
+
+Protocol tools export by namespace, with exactly ONE named exception set. Every
+`toolId` listed here is excluded by `NON_EXPORTED_PROTOCOL_TOOLS` in
+`src/vex-agent/mcp/export-scope.ts`, and `export-scope.test.ts` checks this
+list against that set in BOTH directions, by name, never by count. An entry in
+one and not the other fails that test naming itself.
+
+- `launchpads.images` (`launchpads__images_list`) - lists the pictures the user
+  staged in the Vex desktop app's local image locker.
+- `launchpads.image_publish` (`launchpads__image_publish`) - publishes locker
+  bytes to a public content-addressed host.
+
+Reason, and it is a product decision rather than a filter of convenience: the
+launchpads namespace owns the user's LOCAL image locker, which lives inside the
+desktop app. An external coding agent on the Studio MCP surface has no locker
+and no way to stage one, so on that surface a launch tool takes an `imagePath`
+inside the agent's own project directory instead. Exporting the locker tools to
+a surface that can never satisfy them would advertise a capability guaranteed to
+refuse, and the agent would spend a call and a turn learning what `tools/list`
+could have told it for free. Both tools are UNCHANGED for the in-app Vex agent,
+which is the locker's owner.
+
+The exclusion is enforced in one place and consumed by all three surfaces:
+`isExportedProtocolTool` gates `listExportedTools` (`tools/list`),
+`searchExportedTools` (`vex_ToolSearch` rows and its counts) and
+`admitStudioCall` (which refuses a withheld manifest by name, before dispatch).
 
 ## Rationale
 

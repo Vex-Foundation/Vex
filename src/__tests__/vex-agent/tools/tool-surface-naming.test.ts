@@ -135,7 +135,7 @@ describe("G2 - publicName mapping gate", () => {
     );
   });
 
-  it("the mapped surface is the whole 145-tool catalog (drift alarm, not a cap)", () => {
+  it("the mapped surface is the whole 147-tool catalog (drift alarm, not a cap)", () => {
     // Not a limit: a Batch-2 addition updates this number together with its
     // mapping row, so the count and the map can never diverge silently.
     // 137 before the Batch 2 near-duplicate merges (owner decision D7) retired
@@ -170,7 +170,7 @@ describe("G2 - publicName mapping gate", () => {
     // the 142 above, which the PR-C1 lane raised on its own, so the delta this
     // merge records is the remaining three. Every one is a new identity with
     // its own mapping row; nothing was reclaimed or retired.
-    expect(PROTOCOL_TOOLS.length).toBe(145);
+    expect(PROTOCOL_TOOLS.length).toBe(147);
   });
 });
 

@@ -55,6 +55,10 @@ export function toProtocolExecutionContext(
     toolCallId: call.toolCallId,
     // Which consent surface exists for this dispatch. See `runtime/gates.ts`.
     approvalSurface,
+    // ...and WHICH Studio project, when there is one. Threaded with the rest of
+    // the trusted provenance rather than beside it, so a lane cannot carry the
+    // surface while dropping the project whose root bounds its file access.
+    studioProjectId: context.studioProjectId ?? null,
     // Operator Stop. EVERY protocol lane must carry it - passing it on only
     // some silently un-cancels part of the protocol surface.
     ...(context.abortSignal ? { abortSignal: context.abortSignal } : {}),

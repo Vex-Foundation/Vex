@@ -33,8 +33,22 @@ export const SCENARIOS = [
  * frozen blind seed rows, and Jupiter is the protocol-aware term for the
  * `solana` namespace. Polymarket is gone with the retired namespace.
  */
+/**
+ * The names a query can say out loud to become `protocol-aware`.
+ *
+ * Every entry but one is a THIRD-PARTY brand. `launchpads` is the exception and
+ * is deliberate: it is Vex's own launchpad-neutral namespace (the shared image
+ * locker and its public image host), it has no external brand to name, and the
+ * awareness axis is "does the query name the thing it wants" rather than "does
+ * the query name a company". Without it that namespace could hold no
+ * protocol-aware row at all, and the dataset validator requires one per tool.
+ *
+ * PLURAL ONLY, on purpose. Several blind rows in other datasets legitimately say
+ * "launchpad" in the ordinary sense ("the Robinhood Chain launchpad"), and those
+ * must stay blind; only the exact namespace name is the identity.
+ */
 const PROTOCOL_NAME_RE =
-  /\b(Khalani|KyberSwap|Jupiter|DexScreener|Morpho|Pendle|Relay|Virtuals|Trench|Uniswap)\b|\bpools\.fun\b/i;
+  /\b(Khalani|KyberSwap|Jupiter|DexScreener|Morpho|Pendle|Relay|Virtuals|Trench|Uniswap|launchpads)\b|\bpools\.fun\b/i;
 
 /**
  * Retired or internal vocabulary that must never reach a dataset query.

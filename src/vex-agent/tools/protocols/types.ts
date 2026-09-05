@@ -31,7 +31,8 @@ export type ProtocolNamespace =
   | "pendle"
   | "morpho"
   | "trench"
-  | "pools";
+  | "pools"
+  | "launchpads";
 
 /**
  * Lifecycle state of a protocol manifest.
@@ -479,6 +480,19 @@ export interface ProtocolExecutionContext {
    * today's behaviour; only the A2 mapper sets `studio_mcp` explicitly.
    */
   approvalSurface?: ApprovalSurface;
+  /**
+   * The Vex Studio project this dispatch runs for, when the surface has one.
+   *
+   * Trusted provenance (C0), carried with `missionId` and `approvalId` and
+   * subject to the same rule: host-side evidence, never model input. Only the
+   * Studio MCP mapper sets it; every in-app lane omits it, because there is no
+   * project there.
+   *
+   * A lane that accepts a model-supplied file path resolves the project ROOT
+   * from this id at the moment of use. It is an identifier, not an authority:
+   * it says WHERE a project lives, never that the caller may read it.
+   */
+  studioProjectId?: string | null;
 }
 
 /** The consent surfaces a protocol dispatch can be answered on. */

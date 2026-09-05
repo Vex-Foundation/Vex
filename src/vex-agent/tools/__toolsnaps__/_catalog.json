@@ -74,6 +74,8 @@
     "kyberswap.swap.execute",
     "kyberswap.swap.quote",
     "kyberswap.tokens.check",
+    "launchpads.image_publish",
+    "launchpads.images",
     "morpho.market.borrow",
     "morpho.market.get",
     "morpho.market.quote",

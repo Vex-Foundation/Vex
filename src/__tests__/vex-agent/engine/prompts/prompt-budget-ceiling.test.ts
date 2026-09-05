@@ -20,13 +20,37 @@ function context(overrides: Partial<EngineContext>): EngineContext {
   };
 }
 
+/**
+ * REVIEWED CEILING MOVE, launchpads namespace (PR2 of the launchpads arc).
+ *
+ * +1062 bytes on the agent modes, +1128 on mission setup, +1224 on mission run.
+ * The cost is one advertised namespace card plus two prompt lines, and it was
+ * measured, not estimated: the numbers below are exactly what
+ * `buildPromptStack` produces today.
+ *
+ * WHAT THE BYTES BUY. `launchpads` is the launchpad-neutral half of a token
+ * launch - one image locker shared by every launchpad, and the public
+ * content-addressed host a launch's image URL points at. Without a card the
+ * model cannot find the locker at all, and a mission that discovers an empty
+ * locker at signing time has already wasted itself: the whole point of the
+ * planning obligation in the mission-setup line is that the user is still
+ * present to fix it.
+ *
+ * WHAT WAS DONE TO KEEP IT SMALL, so this is not read later as an unbounded
+ * grant: the namespace does NOT set `advertiseFacetsInPrompt` (its two facets
+ * cost nothing here and are reachable through ToolSearch), its declaration
+ * prose was tightened by about 250 bytes against the first draft, and the two
+ * mission-prompt lines it touches were rewritten to be launchpad-neutral rather
+ * than added alongside the Trench ones. The Trench retirement lane removes the
+ * Trench card and its lines, which returns more than this costs.
+ */
 const MODES = [
-  { name: "agent / restricted", context: context({}), ceiling: 57_720 },
-  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 58_421 },
-  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 64_131 },
-  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 64_150 },
-  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 62_759 },
-  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 62_574 },
+  { name: "agent / restricted", context: context({}), ceiling: 58_782 },
+  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 59_483 },
+  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 65_259 },
+  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 65_278 },
+  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 63_983 },
+  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 63_798 },
 ] as const;
 
 beforeAll(() => {
