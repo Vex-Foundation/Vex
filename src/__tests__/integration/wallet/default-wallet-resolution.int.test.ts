@@ -71,6 +71,7 @@ const { createEvmWalletEntry } = await import("@tools/wallet/inventory-create.js
 const { getPrimaryEvmEntry } = await import("@tools/wallet/inventory.js");
 
 import type { PoolsToken } from "@tools/pools-fun/types.js";
+import { definedValue } from "../../_test-value-guards.js";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 
 const OTHER_CREATOR = "0x9999000000000000000000000000000000009999";
@@ -145,7 +146,8 @@ function stubProviderRows(rows: PoolsToken[]): void {
 }
 
 async function listTokens(): Promise<FlaggedRow[]> {
-  const res = await POOLS_HANDLERS["pools.tokens"]!({}, DEFAULT_CTX);
+  const handler = definedValue(POOLS_HANDLERS["pools.tokens"], "the pools.tokens handler");
+  const res = await handler({}, DEFAULT_CTX);
   expect(res.success).toBe(true);
   return (JSON.parse(res.output) as { tokens: FlaggedRow[] }).tokens;
 }
