@@ -276,17 +276,17 @@ export async function markAttributed(id: number): Promise<boolean> {
  * and is refused, so a launchpad may only appear here once a column holding an
  * AGENTSCAN-FORMATTED signature exists for it.
  *
- * Exactly one does today. `attest_signature` (migration 071) is the trench.express
+ * Two do today. `attest_signature` (migration 071) is the trench.express
  * badge proof and happens to sign that same canonical message
  * (`src/tools/trench-express/attribution.ts:77`). `pools_attest_signature`
  * (migration 094) does NOT: pools.fun's own badge signs the venue-prefixed
  * message `src/tools/pools-fun/attribution.ts:142` builds, a deliberately
  * different one, so shipping it to AgentScan would send a proof over the wrong
- * bytes and burn the row on a definitive refusal. The
- * pools.fun and Virtuals launches therefore need their own third signature,
- * produced at launch time by the handler that still holds the signer; that
- * column is this lane's declared dependency on the launch lanes, not something a
- * predicate here can conjure.
+ * bytes and burn the row on a definitive refusal. So pools.fun signs a THIRD
+ * signature at launch time, over AgentScan's canonical message, into
+ * `agentscan_attest_signature` (migration 109) - which is the column named
+ * below. Virtuals still owes its own; its rows are not admitted here until it
+ * has one, because a predicate cannot conjure a proof that was never signed.
  *
  * THE CHAIN IS NOT A PARAMETER any more, and that is the point. The sweep used
  * to be pinned to `TRENCH_CHAIN_ID`, which was a faithful proxy for the venue
@@ -306,6 +306,20 @@ const AGENTSCAN_ATTEST_SOURCES = [
     wireLaunchpad: "trench",
     /** The column holding a signature over AgentScan's canonical message. */
     signatureColumn: "attest_signature",
+  },
+  {
+    launchpad: "pools_fun",
+    wireLaunchpad: "pools_fun",
+    /**
+     * NOT `pools_attest_signature`. That column signs pools.fun's own
+     * venue-prefixed badge message and AgentScan's recovery would read it as a
+     * different message entirely; `agentscan_attest_signature` (migration 109)
+     * is the third signature, produced at launch time over
+     * `agentscan/attest-message.ts`'s canonical string by the handler that still
+     * holds the signer. A launch that could not sign leaves it NULL and is
+     * simply never a candidate - the same named gap the trench lane has.
+     */
+    signatureColumn: "agentscan_attest_signature",
   },
 ] as const;
 
@@ -583,6 +597,41 @@ export async function stampPoolsAttestSignature(input: {
       WHERE chain_id = $1 AND LOWER(token_address) = LOWER($2)
         AND launchpad = 'pools_fun'
         AND pools_attest_signature IS NULL
+      RETURNING id`,
+    [input.chainId, input.tokenAddress, input.attestSignature],
+  );
+  return row !== null;
+}
+
+/**
+ * Store the AGENTSCAN attestation signature a launch produced, on the row that
+ * launch just wrote.
+ *
+ * A SECOND COLUMN, NOT A SECOND USE OF THE FIRST. `pools_attest_signature`
+ * signs the venue's own message and `agentscan_attest_signature` signs
+ * AgentScan's canonical one (`agentscan/attest-message.ts`); they are different
+ * bytes and recover to the same wallet only over their own message, so a single
+ * column would send one of the two proofs to the wrong verifier and burn the row
+ * on a definitive refusal.
+ *
+ * `IS NULL` in the predicate, exactly like its sibling: a signature is produced
+ * once, by the handler that held the signer, and a later write could only be a
+ * different signature for the same token - which is either a defect or a second
+ * launch, and neither should silently replace the proof already stored.
+ *
+ * Launchpad-neutral by design: the AgentScan registry covers several launchpads
+ * and the column belongs to the attestation lane, not to pools.fun.
+ */
+export async function stampAgentscanAttestSignature(input: {
+  chainId: number;
+  tokenAddress: string;
+  attestSignature: string;
+}): Promise<boolean> {
+  const row = await queryOne<Record<string, unknown>>(
+    `UPDATE launched_tokens
+        SET agentscan_attest_signature = $3
+      WHERE chain_id = $1 AND LOWER(token_address) = LOWER($2)
+        AND agentscan_attest_signature IS NULL
       RETURNING id`,
     [input.chainId, input.tokenAddress, input.attestSignature],
   );

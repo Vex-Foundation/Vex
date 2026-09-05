@@ -42,14 +42,36 @@ export interface LaunchReceiptLookupInput {
   readonly poolsPlan: AuthorizedPoolsLaunchPlan | null;
 }
 
-/** The five facts the pools.fun settlement decoder proves a receipt against. */
+/** The facts the pools.fun settlement decoder proves a receipt against. */
 export interface AuthorizedPoolsLaunchPlan {
+  /**
+   * The recipient the TUPLE carried. On a fees-to-holders launch that is the
+   * gateway's sentinel, which the receipt will NOT name - see
+   * {@link holderRewards}.
+   */
   readonly feeRecipient: string;
   readonly pairedAsset: string;
   readonly userSalt: string;
   readonly predictedTokenAddress: string;
   /** The gateway that was authorized, when the row recorded one. */
   readonly gateway: string | null;
+  /**
+   * The FEES-TO-HOLDERS intent, when the launch had one (migration 109).
+   *
+   * WITHOUT IT THE SWEEP CANNOT SETTLE SUCH A LAUNCH AT ALL. The gateway
+   * resolves the sentinel to the distributor it deploys inside the transaction
+   * before it emits `GatewayLaunch`, so the receipt names the distributor while
+   * {@link feeRecipient} holds the sentinel. A decoder handed only the sentinel
+   * refuses every correct holders launch - and this sweep is the ONLY thing that
+   * ever settles a launch whose broadcast came back ambiguous, so the row would
+   * stay pending forever with the user's token already minted.
+   *
+   * `null` on an ordinary launch and on every row written before migration 109,
+   * where the receipt must name exactly the recipient that was signed.
+   */
+  readonly holderRewards:
+    | { readonly mode: "token" | "paired" | "both"; readonly sentinel: string }
+    | null;
 }
 
 /**

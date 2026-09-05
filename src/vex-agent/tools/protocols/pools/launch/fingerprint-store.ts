@@ -47,7 +47,7 @@ import { randomUUID } from "node:crypto";
 import type { Address } from "viem";
 
 import type { PoolsLaunchPlan } from "../handlers/launch/execute/plan.js";
-import type { PoolsLaunchFingerprintId } from "./runtime-contract.js";
+import type { PoolsLaunchFingerprintId, PoolsPreparedLaunch } from "./runtime-contract.js";
 
 /** One prepared, verified launch waiting for the user's Deploy click. */
 export interface PreparedLaunchEntry {
@@ -58,7 +58,33 @@ export interface PreparedLaunchEntry {
   readonly plan: PoolsLaunchPlan;
   /** Epoch ms. Past this the entry is gone, whether or not anything swept it. */
   readonly expiresAtMs: number;
+  /**
+   * WHICH clock set {@link expiresAtMs}, so a lapsed confirmation can say why.
+   *
+   * "Expired" alone is unactionable when the three possible windows differ by
+   * two orders of magnitude: a signed stock quote lapses in seconds and needs an
+   * immediate re-prepare, while Vex's own window lapsing after ten minutes means
+   * the user simply took their time.
+   */
+  readonly expiryReason: PoolsPreparedLaunch["expiryReason"];
 }
+
+/**
+ * Why a handle produced no launch. ONE answer for every reason it could be
+ * missing, and a SEPARATE one for expiry.
+ *
+ * `missing` deliberately covers never-prepared, already-deployed, cancelled AND
+ * another session's launch: a distinct answer for the last of those would
+ * confirm that some other session's launch exists.
+ *
+ * `expired` is split out because it is not ambiguous and not a secret - the
+ * caller already held a valid handle - and because the remedy depends on WHICH
+ * clock ran out.
+ */
+export type ConsumePreparedLaunchOutcome =
+  | { readonly kind: "ok"; readonly entry: PreparedLaunchEntry }
+  | { readonly kind: "expired"; readonly reason: PoolsPreparedLaunch["expiryReason"] }
+  | { readonly kind: "missing" };
 
 const entries = new Map<string, PreparedLaunchEntry>();
 
@@ -86,22 +112,36 @@ export function storePreparedLaunch(
 }
 
 /**
- * Take the entry OUT of the store, or `null`.
+ * Take the entry OUT of the store, or say why there is none.
  *
- * `null` covers every case deliberately - never prepared, already deployed,
- * cancelled, expired, or belonging to a different session. The caller turns it
- * into one named refusal, and the fact that one of those cases is "someone
- * else's launch" is exactly why they are not distinguished.
+ * THE LOOKUP HAPPENS BEFORE THE SWEEP, and the order is the whole reason expiry
+ * can be reported at all. Sweeping first would delete a just-lapsed entry and
+ * leave this function unable to tell "your signed price quote ran out forty
+ * seconds ago" from "that handle never existed" - and those have different
+ * remedies. The entry is still removed either way, so a lapsed one cannot be
+ * deployed and cannot linger: an expired hit is deleted here, and everything
+ * else lapsed is swept immediately after.
+ *
+ * SINGLE USE is unchanged: a successful consume removes the entry, so a second
+ * Deploy click finds nothing.
  */
 export function consumePreparedLaunch(
   sessionId: string,
   fingerprintId: PoolsLaunchFingerprintId,
-): PreparedLaunchEntry | null {
-  sweep(Date.now());
+): ConsumePreparedLaunchOutcome {
+  const now = Date.now();
   const entry = entries.get(fingerprintId);
-  if (entry === undefined || entry.sessionId !== sessionId) return null;
+  if (entry === undefined || entry.sessionId !== sessionId) {
+    sweep(now);
+    return { kind: "missing" };
+  }
+  // THE PRE-SIGN EXPIRY RE-CHECK. The confirmation screen counted down to this
+  // moment; nothing signs until the clock is asked again, here, against the
+  // entry's own deadline rather than against the window it was shown under.
   entries.delete(fingerprintId);
-  return entry;
+  sweep(now);
+  if (entry.expiresAtMs <= now) return { kind: "expired", reason: entry.expiryReason };
+  return { kind: "ok", entry };
 }
 
 /** Discard a prepared launch. `false` when there was nothing of this session's to discard. */

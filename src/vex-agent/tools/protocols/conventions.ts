@@ -602,8 +602,22 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   // PoolsFun.md lines 233-242), and it decides whether a launch needs a
   // time-boxed signed price attestation, so it is an axis a caller screens on.
   ["vexAttested", "pools.fun opt-in switch keeping only launches carrying a Vex attestation; the provider accepts the literal true only"],
-  ["holderRewards", "pools.fun opt-in switch keeping only tokens that stream their fees to holders; same true-only contract as vexAttested"],
+  ["holderRewards", "pools.fun's fees-to-holders switch: on a READ it keeps only tokens that stream their fees to holders (the provider's true-only contract, same as vexAttested); on a LAUNCH it OPTS THE NEW TOKEN IN, irreversibly. One spelling because it is one product fact, seen from either side"],
   ["pricingMode", "the pools.fun launch factory's own pricing enum for a paired asset; decides whether a launch needs a signed price attestation"],
+
+  // -- pools.fun launch V3 fields (PR5) -------------------------------
+  //
+  // `holderRewardsMode` is the provider's `holderRewardsPayout` enum in the
+  // spelling the READ surface already uses for the same fact
+  // (`project.holderRewardsMode`), so one token's payout mode has one name
+  // across the launch that set it and every read that reports it.
+  // `pairedStockAddress` is the provider's own prepare field verbatim, and it
+  // is an ASSET identity rather than a destination: no value of it can move
+  // money to anybody, and the factory's `allowedPairedAsset` is what admits it.
+  ["holderRewardsMode", "WHICH asset a fees-to-holders token pays its holders in (token, paired or both); on a launch it selects the gateway's own sentinel constant, never an address"],
+  ["pairedStockAddress", "the ADDRESS of the tokenised stock a stock-paired launch trades against; identifies an asset, never a destination"],
+  ["imagePath", "path of an image file INSIDE the current Vex Studio project, read by Vex itself; the Studio surface's counterpart to imageId, and the only picture input where no locker exists"],
+  ["simulateOnly", "run a mutating path end to end and STOP at the edge of signing, returning what would have been signed; no key is opened and nothing is broadcast"],
 
   // -- Time-series and deep-read shaping (DexScreener deep dive, S4) ---
   //

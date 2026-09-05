@@ -61,7 +61,11 @@ import type { ToolResult } from "../../../../../types.js";
 import { fail } from "../../../../handler-helpers.js";
 import { poolsFailureDetail } from "../../failure.js";
 import { settlePoolsLaunchFailure } from "./authorize.js";
-import { postPoolsLaunchAttribution, signAndStorePoolsAttestation } from "./attribute.js";
+import {
+  postPoolsLaunchAttribution,
+  signAndStoreAgentscanAttestation,
+  signAndStorePoolsAttestation,
+} from "./attribute.js";
 import type { PoolsLaunchPlan } from "./plan.js";
 
 const TOOL_ID = "pools.launch_execute";
@@ -253,6 +257,15 @@ function buildLaunchEvent(x: BroadcastPoolsLaunchInput) {
       pairedAsset: binding.pairedAsset,
       pairedAssetAddress: binding.pairedAssetAddress,
       feeRecipient: binding.feeRecipient,
+      // The sentinel INTENT, recorded before the receipt exists. The row is
+      // written pre-broadcast, so the resolved distributor is not knowable here
+      // and is deliberately absent rather than null-filled.
+      ...(binding.holderRewards == null
+        ? {}
+        : {
+          holderRewardsMode: binding.holderRewards.mode,
+          holderRewardsSentinel: binding.holderRewards.sentinel,
+        }),
       metadataUri: binding.metadataUri,
       predictedTokenAddress: binding.predictedTokenAddress,
       userSalt: binding.userSalt,
@@ -284,6 +297,13 @@ async function finalizeConfirmedPoolsLaunch(
       pairedAsset: binding.pairedAssetAddress,
       userSalt: binding.userSalt,
       predictedTokenAddress: binding.predictedTokenAddress,
+      // THE SENTINEL INTENT, not the address to compare against. Under holder
+      // rewards the gateway resolved the sentinel to the distributor it deployed
+      // before emitting `GatewayLaunch`, so `binding.feeRecipient` (the sentinel
+      // that was SIGNED) is deliberately not what the receipt must equal. The
+      // decoder proves the emitted recipient is the distributor this very
+      // transaction's `DistributorDeployed` named, for this token, in this mode.
+      holderRewards: binding.holderRewards,
     },
     { gateway: binding.gateway },
   );
@@ -353,6 +373,14 @@ async function finalizeConfirmedPoolsLaunch(
     // the signature (see `./attribute.ts`) so the POST below can proceed.
     attestSignature = await signAndStorePoolsAttestation(x.walletClient, launch.tokenAddress);
 
+    // THE THIRD SIGNATURE, over AgentScan's canonical message rather than the
+    // venue's. Same moment and same reason: this is the last point at which a
+    // signer exists for this token, and the AgentScan sweep holds none. It is a
+    // separate call because it is a separate proof with a separate destination
+    // and a separate operator gate; folding the two would send one of them to a
+    // verifier that recovers a different address from it.
+    await signAndStoreAgentscanAttestation(x.walletClient, launch.tokenAddress);
+
     // `event_role='token_launch'` requires BOTH executed legs: the native value
     // spent, and the token the launch produced. `devBuyOut` is PROVEN by
     // `GatewayLaunch` itself, so unlike the trench path there is no
@@ -386,7 +414,16 @@ async function finalizeConfirmedPoolsLaunch(
     if (intentMayConfirm) {
       await withTransaction(async (client) => {
         await acquireSessionControlLock(client, x.sessionId);
-        await confirmWith(client, x.intentId, x.sessionId, launch.tokenAddress);
+        await confirmWith(
+          client,
+          x.intentId,
+          x.sessionId,
+          launch.tokenAddress,
+          // The resolved distributor, proven by the decoder from this very
+          // receipt's `DistributorDeployed`. `null` on an ordinary launch, where
+          // the sentinel columns are null too and there is nothing to resolve.
+          launch.holderRewards?.distributor ?? null,
+        );
       });
     }
   } catch (err) {
@@ -426,6 +463,19 @@ async function finalizeConfirmedPoolsLaunch(
     pairedAsset: binding.pairedAsset,
     pairedAssetAddress: launch.pairedAsset,
     feeRecipient: launch.feeRecipient,
+    // WHERE THE FEE STREAM WENT, when it went to the holders: the distributor
+    // proven from this launch's own DistributorDeployed event, and the mode that
+    // event declared. Absent on an ordinary launch, where `feeRecipient` above
+    // already is the whole answer.
+    ...(launch.holderRewards == null
+      ? {}
+      : {
+        holderRewards: {
+          distributor: launch.holderRewards.distributor,
+          mode: launch.holderRewards.mode,
+          sentinelSigned: binding.holderRewards?.sentinel ?? null,
+        },
+      }),
     metadataUri: launch.metadataUri,
     msgValueWei: x.plan.call.valueWei.toString(),
     deploymentFeePaidWei: launch.feePaidWei.toString(),
@@ -447,8 +497,14 @@ async function finalizeConfirmedPoolsLaunch(
       "pools.fun has no bonding curve and no graduation: this token trades in a real SushiSwap V3 pool "
       + "(1% fee) from its first block. Quote and trade it with kyberswap, which routes these pools.",
     feeStreamNote:
-      `The creator fee stream is directed to ${launch.feeRecipient}. Claim accrued fees with `
-      + "pools.claim_fees.",
+      launch.holderRewards == null
+        ? `The creator fee stream is directed to ${launch.feeRecipient}. Claim accrued fees with `
+          + "pools.claim_fees."
+        : `The creator fee stream goes to this token's HOLDERS, paid in ${launch.holderRewards.mode === "both" ? "both the token and the paired asset" : `the ${launch.holderRewards.mode}`}, `
+          + `through the rewards distributor ${launch.holderRewards.distributor} that this launch deployed. `
+          + "The launching wallet receives nothing from trading fees and pools.claim_fees has nothing to claim "
+          + "on this token; holders read and claim their share with pools__holder_rewards_get and "
+          + "pools__holder_rewards_claim. This was locked at launch and cannot be undone.",
     status: "confirmed",
     _executionId: executionId,
   };

@@ -251,6 +251,23 @@ export interface PoolsPrepareRequest {
   /** The identity to pay, as `{type, value}`. See `PoolsPrepareFeeRecipient`. */
   readonly feeRecipient?: PoolsPrepareFeeRecipient | undefined;
   readonly pairedStockAddress?: string | undefined;
+  /**
+   * Opt the new token's CREATOR FEE STREAM into holder rewards, locked at launch
+   * (measured 2026-09-04: "Locked at launch" in the launchpad's own UI, and no
+   * endpoint turns it off afterwards).
+   *
+   * Sent WITHOUT `feeRecipient`: the backend substitutes the gateway's
+   * `FEES_TO_HOLDERS*` sentinel for the chosen payout mode, and the sentinel is
+   * what the signed tuple carries. Verifier point 15 reads that sentinel live
+   * from the gateway and refuses any other value.
+   */
+  readonly feesToHolders?: boolean | undefined;
+  /**
+   * Which asset the holders are paid in. The enum is the launchpad's own
+   * (`launches/config.holderRewardsPayoutModes`); a mode this suite cannot serve
+   * comes back as HTTP 400 with `holderRewardsPayout` in `invalidPaths`.
+   */
+  readonly holderRewardsPayout?: "token" | "paired" | "both" | undefined;
   readonly devBuyEth?: string | undefined;
   readonly devBuyAmount?: string | undefined;
 }
@@ -299,6 +316,17 @@ export interface PoolsPrepareResponse {
 export interface PoolsLaunchConfig {
   readonly deploymentFeeWei: string;
   readonly gatewayVersion: number;
+  /**
+   * The holder-reward payout modes this launchpad build serves, verbatim.
+   *
+   * OPTIONAL because it is the provider's field and a response without it is a
+   * response from a build that predates the feature - which is a fact to report,
+   * not a reason to refuse a WETH launch. `null` therefore means NOT STATED and
+   * never "no modes": the authority for whether a mode can actually be launched
+   * is the gateway's own sentinel (verifier point 15), and this list is the
+   * provider's echo of it, used to refuse early with a better sentence.
+   */
+  readonly holderRewardsPayoutModes: readonly string[] | null;
 }
 
 /** `/pools-fun/launches/upload-image` - the multipart upload's answer. */

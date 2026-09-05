@@ -23,11 +23,15 @@ import {
 } from "../../../../lib/api/token-launch.js";
 import { isAcceptableLaunchLink } from "../../token-launch/launch-display.js";
 import { LaunchImagePicker } from "../../token-launch/LaunchImagePicker.js";
-import type { PoolsPairedAsset } from "@shared/schemas/pools-launch.js";
+import type {
+  PoolsHolderRewardsMode,
+  PoolsPairedAsset,
+} from "@shared/schemas/pools-launch.js";
 import {
   feeRecipientNeedsResolution,
   isAcceptableFeeRecipient,
   normalizePoolsAmount,
+  HOLDER_REWARDS_MODE_LABEL,
   PAIRED_ASSET_LABEL,
   type PoolsImageSource,
   type PoolsLaunchFormValues,
@@ -38,7 +42,9 @@ import {
  * `allowedPairedAsset` is false for them on the live factory, so offering one
  * would be an option that can only ever fail at execute time.
  */
-const PAIRED_ASSETS: readonly PoolsPairedAsset[] = ["weth", "usdg"];
+const PAIRED_ASSETS: readonly PoolsPairedAsset[] = ["weth", "usdg", "stock"];
+/** The three payout modes the launchpad serves, in its own order. */
+const HOLDER_REWARDS_MODES: readonly PoolsHolderRewardsMode[] = ["token", "paired", "both"];
 
 export function PoolsLaunchForm({
   values,
@@ -122,19 +128,103 @@ export function PoolsLaunchForm({
           ))}
         </div>
         <p className="text-[11px] leading-relaxed text-ink-tertiary">
-          The asset your token trades against. Tokenised stocks are not offered:
-          the launchpad&apos;s factory does not accept them today.
+          The asset your token trades against.
+          {values.pairedAsset === "stock"
+            ? " A stock-paired pool may have no liquidity at all once it lists; that is unknown until it does."
+            : ""}
         </p>
       </fieldset>
 
+      {values.pairedAsset === "stock" ? (
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="vex-pools-stock-address">Which stock</Label>
+          <Input
+            id="vex-pools-stock-address"
+            required
+            disabled={disabled}
+            value={values.pairedStockAddress}
+            onChange={(e) => set("pairedStockAddress", e.target.value)}
+            placeholder="0x… the tokenised stock's address"
+            className="font-mono"
+          />
+          {values.pairedStockAddress.trim().length > 0
+          && !/^0x[0-9a-fA-F]{40}$/.test(values.pairedStockAddress.trim()) ? (
+            <p className="text-sm text-danger" role="alert">
+              Enter the tokenised stock&apos;s wallet address, starting 0x.
+            </p>
+          ) : (
+            <p className="text-[11px] leading-relaxed text-ink-tertiary">
+              Which of the launchpad&apos;s tokenised stocks this pool trades
+              against. Most of them are priced by a signed quote that is only
+              valid for a minute or two, so a stock launch has to be confirmed
+              straight after it is prepared.
+            </p>
+          )}
+        </div>
+      ) : null}
+
+      {/* THE FEE STREAM'S DESTINATION IS A CHOICE BETWEEN TWO KINDS, and the
+          irreversible one is a deliberate switch rather than a value that could
+          be typed into the recipient box by accident. */}
+      <div className="flex flex-col gap-2">
+        <label className="flex items-start gap-2 text-sm text-ink-primary">
+          <input
+            type="checkbox"
+            disabled={disabled}
+            checked={values.holderRewards}
+            onChange={(e) => set("holderRewards", e.target.checked)}
+            className="mt-0.5"
+          />
+          <span>Pay the trading fees to this token&apos;s holders</span>
+        </label>
+        {values.holderRewards ? (
+          <>
+            <p className="text-[11px] leading-relaxed text-warning" role="alert">
+              This is locked at launch and cannot be undone. You will receive
+              nothing from this token&apos;s trading fees, ever. The launchpad
+              deploys a rewards distributor during the launch, so there is no
+              recipient address to check beforehand.
+            </p>
+            <div
+              role="radiogroup"
+              aria-label="Holders are paid in"
+              className="flex gap-1.5"
+            >
+              {HOLDER_REWARDS_MODES.map((mode) => (
+                <button
+                  key={mode}
+                  id={`vex-pools-holder-mode-${mode}`}
+                  type="button"
+                  role="radio"
+                  aria-checked={values.holderRewardsMode === mode}
+                  disabled={disabled}
+                  onClick={() => set("holderRewardsMode", mode)}
+                  className={
+                    "rounded-full border px-3 py-1 vex-micro-label vex-micro-label--wide uppercase transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary disabled:opacity-50 "
+                    + (values.holderRewardsMode === mode
+                      ? "border-line-3 text-ink-primary"
+                      : "border-line-2 text-ink-tertiary hover:text-ink-secondary")
+                  }
+                >
+                  {HOLDER_REWARDS_MODE_LABEL[mode]}
+                </button>
+              ))}
+            </div>
+            <p className="text-[11px] leading-relaxed text-ink-tertiary">
+              Which asset the holders are paid in.
+            </p>
+          </>
+        ) : null}
+      </div>
+
       <ImageField values={values} disabled={disabled} onSet={set} />
 
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-2" hidden={values.holderRewards}>
         <Label htmlFor="vex-pools-fee-recipient">Fee recipient</Label>
         <Input
           id="vex-pools-fee-recipient"
-          required
-          disabled={disabled}
+          required={!values.holderRewards}
+          disabled={disabled || values.holderRewards}
           value={values.feeRecipient}
           onChange={(e) => set("feeRecipient", e.target.value)}
           placeholder="0x… or an X username"

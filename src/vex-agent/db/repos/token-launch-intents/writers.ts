@@ -38,7 +38,8 @@ const INSERT_SQL = `INSERT INTO token_launch_intents (
   tool_call_id, mission_run_id, expires_at,
   protocol, paired_asset, paired_asset_address, fee_recipient_address,
   metadata_uri, image_url, predicted_token_address, gateway_address,
-  deployment_fee_wei
+  deployment_fee_wei,
+  holder_rewards_mode, holder_rewards_sentinel
 ) VALUES (
   $1, $2, $3, $4, $5, $6,
   $7, $8, $9, $10::jsonb, $11, $12, $13,
@@ -46,7 +47,8 @@ const INSERT_SQL = `INSERT INTO token_launch_intents (
   $17, $18, $19,
   COALESCE($20, 'trench'), $21, $22, $23,
   $24, $25, $26, $27,
-  $28
+  $28,
+  $29, $30
 ) RETURNING ${SELECT_COLUMNS}`;
 
 /**
@@ -106,6 +108,13 @@ export async function createWith(
     input.pools?.predictedTokenAddress ?? null,
     input.pools?.gatewayAddress ?? null,
     input.pools?.deploymentFeeWei ?? null,
+    // The holder-rewards INTENT (migration 109): the mode the user agreed to and
+    // the sentinel that expresses it in the signed bytes. The DISTRIBUTOR the
+    // gateway resolves that sentinel to is deliberately not here - it does not
+    // exist until the launch transaction has been mined, and this row is written
+    // before it is broadcast.
+    input.pools?.holderRewards?.mode ?? null,
+    input.pools?.holderRewards?.sentinel ?? null,
   ]);
   const row = res.rows[0];
   if (row === undefined) {
@@ -403,16 +412,31 @@ export async function confirmWith(
   intentId: string,
   sessionId: string,
   tokenAddress: string,
+  /**
+   * The distributor a fees-to-holders launch resolved its sentinel to, PROVEN
+   * from this transaction's own `DistributorDeployed` event, or `null` on every
+   * other launch.
+   *
+   * Written HERE rather than in a second statement because it is settled by the
+   * same receipt that settles the token address: they are one fact about one
+   * mined transaction, and a separate write is a second thing that can fail and
+   * leave a confirmed holders launch whose fee destination this row cannot name.
+   *
+   * `COALESCE` rather than a plain assignment, so an ordinary launch's `null`
+   * cannot erase a value - the column is only ever written once, from a proof.
+   */
+  holderRewardsDistributor: string | null = null,
 ): Promise<TokenLaunchIntent | null> {
   return casRow(
     client,
     `UPDATE token_launch_intents
-        SET status = 'confirmed', token_address = $3, confirmed_at = NOW()
+        SET status = 'confirmed', token_address = $3, confirmed_at = NOW(),
+            holder_rewards_distributor = COALESCE($4, holder_rewards_distributor)
       WHERE intent_id = $1
         AND session_id = $2
         AND status = 'broadcast_pending'
       RETURNING ${SELECT_COLUMNS}`,
-    [intentId, sessionId, tokenAddress],
+    [intentId, sessionId, tokenAddress, holderRewardsDistributor],
   );
 }
 

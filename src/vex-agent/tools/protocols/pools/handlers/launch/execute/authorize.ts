@@ -157,6 +157,10 @@ async function authorizeInTransaction(
         predictedTokenAddress: binding.predictedTokenAddress,
         gatewayAddress: binding.gateway,
         deploymentFeeWei: binding.deploymentFeeWei,
+        // The holders INTENT, exactly as it was verified and is about to be
+        // signed. The distributor it resolves to is stamped by the settlement,
+        // because it does not exist until this launch has been mined.
+        holderRewards: binding.holderRewards,
       },
     });
 

@@ -1,13 +1,30 @@
 {
   "definition": {
     "function": {
-      "description": "Launch a token on pools.fun (Robinhood Chain 4663) FOR REAL - signs and broadcasts the on-chain launch with the user's wallet. SPENDS REAL FUNDS AND IS IRREVERSIBLE: it pays the launchpad's CURRENT deployment fee (read on-chain at signing time, and it moves - it changed fourfold inside one day) and, if you set a prebuy, buys that much of the new token in the same transaction at the exact simulated fill. The token opens immediately into a real SushiSwap V3 pool against ETH or USDG - there is no bonding curve and no graduation. Vex also charges 25 bps of the ETH the launch sends (deployment fee + any ETH prebuy) as a SEPARATE transfer that runs only after the launch confirms; price a launch with pools__launch_preview first, which shows every leg. Before signing, Vex DECODES the launchpad's transaction and proves 13 things about it against the chain - the gateway's identity and version, its live fee and bounds, the pair's on-chain allowlist, the opening tick, the pinned metadata and image, the token address, the prebuy, the exact value, and the wallet's balance - and REFUSES BY NAME if any of them disagrees. The creator fee stream always goes to the user's own session wallet on this path; there is no recipient parameter. AN IMAGE IS REQUIRED on this path: pass the imageId of a picture the user staged in the image locker (list them with launchpads__images_list, which reads the locker both launchpads share), because a token launched without one renders blank on pools.fun forever and that cannot be undone - without an imageId this tool REFUSES and launches nothing. It runs ONLY under explicit authority: in a FULL-permission chat session the user's permission is the authority and this executes directly; in a RESTRICTED session it refuses BY NAME and you must call pools__launch_request_form instead - that form is this tool's consent surface, and the user's Deploy click is what launches; in a MISSION run the authority is the contract's HOST-authored launch ceilings, which you cannot write, and while a contract carries none this tool REFUSES BY NAME. Returns the new token address, its pool address, the transaction hash, the paired asset and its address, the resolved creator-fee recipient, the pinned metadata link, the ETH sent with its deployment-fee and prebuy legs as raw amounts with their decimals, the tokens the prebuy actually bought, the Vex fee's own outcome, and a status of confirmed, reverted, pending or confirmed_pending_identity. `reverted` means no token was created and no Vex fee was charged; `pending` means the outcome is UNKNOWN and already recorded; and `confirmed_pending_identity` means the launch confirmed on-chain but its token could not be PROVEN from the receipt. In both unproven cases it never guesses an address, and you must not launch again.",
+      "description": "Launch a token on pools.fun (Robinhood Chain 4663) FOR REAL - signs and broadcasts the on-chain launch with the user's wallet. SPENDS REAL FUNDS AND IS IRREVERSIBLE: it pays the launchpad's CURRENT deployment fee (read on-chain at signing time, and it moves - it changed fourfold inside one day) and, if you set a prebuy, buys that much of the new token in the same transaction at the exact simulated fill. The token opens immediately into a real SushiSwap V3 pool against ETH or USDG - there is no bonding curve and no graduation. Vex also charges 25 bps of the ETH the launch sends (deployment fee + any ETH prebuy) as a SEPARATE transfer that runs only after the launch confirms; price a launch with pools__launch_preview first, which shows every leg. Before signing, Vex DECODES the launchpad's transaction and proves 15 things about it against the chain - the gateway's identity and version, its live fee and bounds, the pair's on-chain allowlist, the opening tick, the signed stock price quote and its window, the pinned metadata and image, the token address, the prebuy, the exact value, the balance, and the fee destination - and REFUSES BY NAME if any disagrees. THE PAIR is weth (default), usdg or stock; a stock pair also needs pairedStockAddress, which pools__launch_assets_list supplies with each stock's pricing mode. Most tokenised stocks are priced by a backend-signed quote the factory honours for only 30 to 120 seconds, so such a launch must go through at once and is otherwise refused rather than sent to revert; whether such a pool ends up liquid is unknown at launch. THE FEE STREAM goes to the user's own session wallet and there is NO recipient parameter, ever. Setting holderRewards: true instead hands it to the token's HOLDERS - LOCKED AT LAUNCH AND IRREVERSIBLE, the creator keeping none of it for the life of the token - with holderRewardsMode choosing token, paired or both. Vex proves that destination against the gateway's own on-chain sentinel, refuses any other, and afterwards reports the distributor the transaction deployed. AN IMAGE IS REQUIRED here: in the Vex app pass imageId, naming a picture the user staged (list them with launchpads__images_list); over the Vex Studio MCP surface pass imagePath, a file inside the project. A URL is never accepted. Without a picture this tool REFUSES, because a token launched blank stays blank forever. Set simulateOnly: true to run every one of those checks and STOP at the edge of signing, returning what would have been signed without opening a wallet key or broadcasting. It runs ONLY under explicit authority: in a FULL-permission chat session the user's permission is the authority and this executes directly; in a RESTRICTED session it refuses BY NAME and you must call pools__launch_request_form instead - that form is this tool's consent surface, and the user's Deploy click is what launches; in a MISSION run the authority is the contract's HOST-authored launch ceilings, which you cannot write, and while a contract carries none this tool REFUSES BY NAME. Returns the new token address, its pool address, the transaction hash, the paired asset and its address, the resolved creator-fee recipient, the pinned metadata link, the ETH sent with its deployment-fee and prebuy legs as raw amounts with their decimals, the tokens the prebuy actually bought, the Vex fee's own outcome, and a status of confirmed, reverted, pending or confirmed_pending_identity. `reverted` means no token was created and no Vex fee was charged; `pending` means the outcome is UNKNOWN and already recorded; and `confirmed_pending_identity` means the launch confirmed on-chain but its token could not be PROVEN from the receipt. In both unproven cases it never guesses an address, and you must not launch again.",
       "name": "pools__launch_execute",
       "parameters": {
         "additionalProperties": false,
         "properties": {
+          "holderRewards": {
+            "description": "Set true to direct this token's CREATOR FEE STREAM to its own holders instead of to the launching wallet. Locked at launch and IRREVERSIBLE: the launchpad deploys a rewards distributor for the token and the creator receives nothing from trading fees, ever. Vex proves this before signing by reading the gateway's own FEES_TO_HOLDERS sentinel constants live and refusing unless the transaction carries exactly the sentinel for the mode you asked for; no address can be supplied here or anywhere on this surface. Omit or set false for the ordinary launch, where the fee stream goes to the user's session wallet.",
+            "type": "boolean"
+          },
+          "holderRewardsMode": {
+            "description": "Which asset the holders are paid in when holderRewards is true: token (default - the launched token, bought back from the fees), paired (the asset the pool trades against), or both. Refused by name when holderRewards is not true, and refused by name when the launch suite does not expose that mode's sentinel - the V2 suite has the token mode only.",
+            "enum": [
+              "token",
+              "paired",
+              "both"
+            ],
+            "type": "string"
+          },
           "imageId": {
-            "description": "REQUIRED on this tool: the identifier of a picture the user already staged in the app's image locker, listed by launchpads__images_list (one locker, shared by every launchpad). The agent can never create one, only name one the locker already holds; without it this tool refuses and nothing is launched. A token launched with no image renders blank on pools.fun forever and that cannot be undone.",
+            "description": "IN-APP ONLY: the identifier of a picture the user already staged in the app's image locker, listed by launchpads__images_list (one locker, shared by every launchpad). The agent can never create one, only name one the locker already holds. Over the Vex Studio MCP surface this parameter is REFUSED BY NAME and imagePath is used instead. Optional here; pools__launch_execute REQUIRES a picture.",
+            "type": "string"
+          },
+          "imagePath": {
+            "description": "VEX STUDIO MCP ONLY: the path of an image file INSIDE the current project (PNG, JPEG, WebP or GIF), which Vex reads itself and publishes. A URL is never accepted on any surface, because the launchpad writes the picture's location on chain and a URL could serve different bytes tomorrow. In the Vex app this parameter is REFUSED BY NAME and imageId is used instead. Optional here; pools__launch_execute REQUIRES a picture.",
             "type": "string"
           },
           "name": {
@@ -15,16 +32,25 @@
             "type": "string"
           },
           "pairedAsset": {
-            "description": "Which asset the new pool trades against: weth (default) or usdg. These are the only two the factory allows today - tokenised stocks exist in the provider's vocabulary but the on-chain allowlist refuses them, so asking for one would deploy nothing.",
+            "description": "Which asset the new pool trades against: weth (default), usdg, or stock for one of the tokenised stocks the launch factory allows. A stock pair REQUIRES pairedStockAddress naming which stock, and it is the launch factory - not this build - that decides whether that address is launchable and how it is priced: list the allowed stocks and their pricing mode with pools__launch_assets_list. A stock-paired pool's liquidity after listing is UNKNOWN at launch time; the illiquidity badge on pools.fun is a fact about pools that already trade and says nothing about a pair being created now.",
             "enum": [
               "weth",
-              "usdg"
+              "usdg",
+              "stock"
             ],
             "type": "string"
           },
-          "prebuy": {
-            "description": "Optional same-transaction first buy, in HUMAN decimal ETH (for example \"0.01\") - not wei. Autonomous launches support an ETH prebuy only; a USDG prebuy needs an approval leg and is available through the desktop form instead.",
+          "pairedStockAddress": {
+            "description": "The 0x address of the tokenised stock to pair against, REQUIRED when pairedAsset is stock and refused by name on any other pair. Take it from pools__launch_assets_list, which reads the factory's own allowedPairedAsset and pricingModeFor for every listed stock. A SIGNED_STOCK pair is priced by a backend-signed quote the factory accepts only 30 to 120 seconds after it was observed, so such a launch must be prepared, confirmed and broadcast inside that window and is re-prepared automatically if it lapses.",
             "type": "string"
+          },
+          "prebuy": {
+            "description": "Optional same-transaction first buy, in HUMAN decimal ETH (for example \"0.01\") - not wei. Autonomous launches support an ETH prebuy only, and only on a WETH pair (the gateway refuses a native dev buy against any other pair); a USDG or stock-paired prebuy needs an approval leg and is available through the desktop form instead.",
+            "type": "string"
+          },
+          "simulateOnly": {
+            "description": "Set true to run the WHOLE launch path and stop at the edge of signing: the launchpad prepares real calldata, the chain is read at one anchored block, the launch is simulated from the user's wallet, all 15 pre-signing checks run, and the gas is estimated over those exact bytes - then it returns the would-be launch (predicted token address, calldata fingerprint, value, fees, gas bound) with launched: false. NO wallet key is opened, no authorization is created and nothing is broadcast, so no token exists afterwards. One side effect DOES happen: preparing a launch pins a metadata object with the launchpad and mines a new salt, so a real launch prepared later has a different salt and a different token address. Use it to show a user exactly what a launch would do before they commit.",
+            "type": "boolean"
           },
           "symbol": {
             "description": "The ticker, 1 to 16 characters. Symbols are NOT unique on pools.fun and copycats are routinely live, so this is a label rather than an identity.",
@@ -33,8 +59,7 @@
         },
         "required": [
           "name",
-          "symbol",
-          "imageId"
+          "symbol"
         ],
         "type": "object"
       }

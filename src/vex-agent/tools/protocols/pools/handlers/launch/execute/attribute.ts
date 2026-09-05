@@ -35,6 +35,7 @@
 
 import { loadConfig, poolsAttestationEnabled } from "@config/store.js";
 import { buildPoolsAttestMessage } from "@tools/pools-fun/attribution.js";
+import { buildAgentscanAttestMessage } from "@vex-agent/agentscan/attest-message.js";
 import { POOLS_CHAIN_ID } from "@tools/pools-fun/constants.js";
 import { POOLS_ATTEST_LANE_MISCONFIG_CODE } from "@tools/pools-fun/attribution-codes.js";
 import * as launchedTokens from "@vex-agent/db/repos/launched-tokens.js";
@@ -96,6 +97,66 @@ export async function signAndStorePoolsAttestation(
     });
   }
   return signature;
+}
+
+/**
+ * Sign the AGENTSCAN attestation with the same wallet that signed the launch,
+ * and store it beside the launched-token row.
+ *
+ * A SECOND SIGNATURE OVER DIFFERENT BYTES, and it has to be. The venue badge
+ * above signs pools.fun's own venue-prefixed, domain-bound string; the AgentScan
+ * registry recovers over its own canonical one and refuses anything else
+ * definitively. Neither literal is repeated here: each lives in exactly one
+ * builder module, which is what `lint/signing-oracle-guard.test.ts` enforces, so
+ * no second module can assemble a byte-identical signable payload. One signature
+ * cannot serve both verifiers, so a launch produces both, or the row is simply
+ * never a candidate for the sweep it could not sign for.
+ *
+ * NOT GATED ON THE VENUE LANE, deliberately. `poolsAttestationEnabled()` governs
+ * whether Vex claims the pools.fun BADGE; whether an AgentScan attestation is
+ * ever delivered is governed by `services.agentscanApiUrl` at sweep time, which
+ * is a different operator decision on a different lane. Gating the signature on
+ * the badge would mean turning the badge off silently strands every launch's
+ * AgentScan proof - and the signature cannot be produced later, because this is
+ * the last moment a signer exists.
+ *
+ * NO POST HAPPENS HERE. Unlike the badge, every AgentScan delivery goes through
+ * the periodic sweep (`sync/agentscan-attest.ts`), which reads this column. This
+ * function's whole job is to capture the proof while it still can.
+ *
+ * Never throws: a wallet that refuses to sign, or a row not yet written, costs
+ * the token its AgentScan attestation and nothing else.
+ */
+export async function signAndStoreAgentscanAttestation(
+  walletClient: AttestMessageSigner,
+  tokenAddress: string,
+): Promise<void> {
+  let signature: string;
+  try {
+    signature = await walletClient.signMessage({
+      message: buildAgentscanAttestMessage(POOLS_CHAIN_ID, tokenAddress),
+    });
+  } catch (err) {
+    logger.warn("pools.launch_agentscan_attest.sign_failed", {
+      error: summarizeProtocolError(err).message,
+    });
+    return;
+  }
+
+  try {
+    await launchedTokens.stampAgentscanAttestSignature({
+      chainId: POOLS_CHAIN_ID,
+      tokenAddress,
+      attestSignature: signature,
+    });
+  } catch (err) {
+    // Nothing to fall back to: unlike the badge, there is no inline POST that
+    // could still use an unstored signature, and the sweep reads the column.
+    // A launch that reaches here has already happened and is unaffected.
+    logger.warn("pools.launch_agentscan_attest.store_failed", {
+      error: summarizeProtocolError(err).message,
+    });
+  }
 }
 
 /**
