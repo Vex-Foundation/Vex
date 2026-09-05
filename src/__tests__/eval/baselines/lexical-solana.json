@@ -4,7 +4,7 @@
   "datasetId": "tool-discovery-solana",
   "datasetVersion": "solana-v1",
   "status": "captured",
-  "capturedAt": "2026-09-04T19:03:56.919Z",
+  "capturedAt": "2026-09-05T08:35:28.093Z",
   "metrics": {
     "overall": {
       "count": 68,
@@ -20,8 +20,8 @@
         "recall1": 0.235,
         "recall5": 0.382,
         "coverage5": 0.382,
-        "mrr5": 0.287,
-        "groupMrr5": 0.287
+        "mrr5": 0.285,
+        "groupMrr5": 0.285
       },
       "protocolAware": {
         "count": 34,
@@ -72,8 +72,8 @@
         "recall1": 0.563,
         "recall5": 0.688,
         "coverage5": 0.688,
-        "mrr5": 0.609,
-        "groupMrr5": 0.609
+        "mrr5": 0.606,
+        "groupMrr5": 0.606
       },
       "bridge": {
         "count": 0,

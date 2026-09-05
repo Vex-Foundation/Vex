@@ -4,15 +4,15 @@
   "datasetId": "tool-discovery-virtuals",
   "datasetVersion": "virtuals-v1",
   "status": "captured",
-  "capturedAt": "2026-09-04T19:03:58.904Z",
+  "capturedAt": "2026-09-05T08:35:30.063Z",
   "metrics": {
     "overall": {
       "count": 17,
       "recall1": 0.412,
-      "recall5": 0.706,
-      "coverage5": 0.706,
-      "mrr5": 0.502,
-      "groupMrr5": 0.502
+      "recall5": 0.647,
+      "coverage5": 0.647,
+      "mrr5": 0.49,
+      "groupMrr5": 0.49
     },
     "awareness": {
       "blind": {
@@ -26,20 +26,20 @@
       "protocolAware": {
         "count": 8,
         "recall1": 0.75,
-        "recall5": 1,
-        "coverage5": 1,
-        "mrr5": 0.838,
-        "groupMrr5": 0.838
+        "recall5": 0.875,
+        "coverage5": 0.875,
+        "mrr5": 0.813,
+        "groupMrr5": 0.813
       }
     },
     "intentShapes": {
       "single": {
         "count": 16,
         "recall1": 0.438,
-        "recall5": 0.75,
-        "coverage5": 0.75,
-        "mrr5": 0.533,
-        "groupMrr5": 0.533
+        "recall5": 0.688,
+        "coverage5": 0.688,
+        "mrr5": 0.521,
+        "groupMrr5": 0.521
       },
       "cross": {
         "count": 0,
@@ -110,10 +110,10 @@
       "market_research": {
         "count": 16,
         "recall1": 0.375,
-        "recall5": 0.688,
-        "coverage5": 0.688,
-        "mrr5": 0.471,
-        "groupMrr5": 0.471
+        "recall5": 0.625,
+        "coverage5": 0.625,
+        "mrr5": 0.458,
+        "groupMrr5": 0.458
       },
       "prediction_discovery": {
         "count": 0,
@@ -175,7 +175,7 @@
   },
   "notes": [
     "dataset tool-discovery-virtuals@virtuals-v1, mode lexical, 17 cases evaluated.",
-    "overall recall@1 0.412, recall@5 0.706, coverage@5 0.706, mrr@5 0.502, groupMrr@5 0.502.",
+    "overall recall@1 0.412, recall@5 0.647, coverage@5 0.647, mrr@5 0.49, groupMrr@5 0.49.",
     "Measured delta: none, metrics are identical to the previous baseline."
   ]
 }

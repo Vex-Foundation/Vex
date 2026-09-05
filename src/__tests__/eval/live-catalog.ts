@@ -35,6 +35,11 @@ import { liveProtocolManifests } from "./retrieval-eval-harness.js";
  * a namespace that already existed, so this is a pure +2, and every affected
  * baseline was recaptured in the same change.
  *
+ * 142 to 144 (2026-09-04): the pools.fun holder-rewards lane added the two
+ * mutations `pools.holder_rewards_claim` and `pools.holder_rewards_distribute`.
+ * Both are new identities on the same namespace, so this is a pure +2, and
+ * every affected baseline was recaptured in the same change.
+ *
  * A deliberate ratchet, not a duplicate of the catalog. It fails when the tool
  * surface changes without anyone noticing, which is the event that invalidates
  * every stored baseline in `baselines/`.
@@ -43,7 +48,7 @@ import { liveProtocolManifests } from "./retrieval-eval-harness.js";
  * and recapture the affected baselines with the lane's `--update` command. Do
  * not silence the test by deriving the number from the catalog.
  */
-export const PINNED_LIVE_CATALOG_TOOL_COUNT = 142;
+export const PINNED_LIVE_CATALOG_TOOL_COUNT = 144;
 
 /** Active manifests in advertised namespaces. Independent of process env. */
 export function liveCatalogToolCount(): number {

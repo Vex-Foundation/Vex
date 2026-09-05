@@ -125,6 +125,8 @@
     "pools.candles",
     "pools.claim_fees",
     "pools.holder_rewards",
+    "pools.holder_rewards_claim",
+    "pools.holder_rewards_distribute",
     "pools.launch_assets",
     "pools.launch_execute",
     "pools.launch_preview",

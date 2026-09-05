@@ -105,6 +105,22 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   ["pageSize", "rows fetched per provider page; distinct from `limit`, which caps what is RETURNED after filtering"],
   ["dryRun", "preview switch, reserved by runtime/params.ts"],
   [
+    "simulateOnly",
+    "the OTHER stop on a signing path, and deliberately not a `dryRun` synonym: `dryRun` answers what an action would do, `simulateOnly` runs every check the real call runs - including the gas estimate over the exact bytes - and then stops without opening a key or writing a durable row, returning the would-be transaction with `executed: false`",
+  ],
+  [
+    "vexAttested",
+    "filter a launchpad's rows down to the ones Vex itself attested to AgentScan; a provenance filter, not a quality claim",
+  ],
+  [
+    "holderRewards",
+    "filter a launchpad's rows to coins that stream their trading fees to holders; the launch-time opt-in, which cannot be turned on later",
+  ],
+  [
+    "pricingMode",
+    "how a launch pair is priced at launch time (an oracle feed versus a freshly signed quote); the launchpad's own enum, declared as an `enum` on every tool that takes it",
+  ],
+  [
     "includeClaimable",
     "opt-in per-row claim SIMULATION on a launch list; off by default because it costs chain reads per row, and an unsimulated row reports null (NOT MEASURED) rather than zero",
   ],

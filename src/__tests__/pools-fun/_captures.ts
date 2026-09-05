@@ -82,7 +82,10 @@ export const CAPTURES = {
   holderRewardsValidChecksumWallet: "holder-rewards-valid-checksum-wallet",
   /** RPC reads, not HTTP captures - the machine artifacts rule 10 point 2 requires. */
   chainRewardModeOrdinals: "chain-holder-rewards-mode-ordinals",
+  chainHolderRewardsDistributorRuntimes: "chain-holder-rewards-distributor-runtimes",
   chainLaunchAssetPricingModes: "chain-launch-asset-pricing-modes",
+  holderRewardsPrepareDistribute: "holder-rewards-prepare-distribute",
+  holderRewardsPrepareNothingToClaim400: "holder-rewards-prepare-nothing-to-claim-400",
   prepareXUnresolvable: "launches-prepare-x-unresolvable-400",
   prepareInsufficientDevBuy: "launches-prepare-insufficient-dev-buy-400",
 } as const;

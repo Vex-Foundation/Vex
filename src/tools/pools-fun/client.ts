@@ -38,6 +38,7 @@ import type {
   PoolsDiscoverPage,
   PoolsDiscoverParams,
   PoolsHolderRewards,
+  PoolsHolderRewardsPrepare,
   PoolsImageUpload,
   PoolsLaunchAssets,
   PoolsLaunchConfig,
@@ -49,6 +50,7 @@ import {
   validateDevBuyQuote,
   validateDiscoverPage,
   validateHolderRewards,
+  validateHolderRewardsPrepare,
   validateImageUpload,
   validateLaunchAssets,
   validateLaunchConfig,
@@ -283,6 +285,49 @@ export class PoolsFunClient {
       HOLDER_REWARDS_QUERY_ORDER,
     );
     return validateHolderRewards(await this.send(url, options));
+  }
+
+  /**
+   * `POST /pools-fun/holder-rewards/prepare` - the launchpad's own calldata for
+   * a claim or a permissionless distribute.
+   *
+   * CALLED AS A CROSS-CHECK, NEVER AS A SOURCE. Vex builds the calldata itself
+   * from the verified distributor ABI and sends it to the distributor the
+   * suite's `HolderRewardsDeployer` named; this response is compared against
+   * that, and a `to` or `data` that disagrees REFUSES the operation by name. A
+   * provider whose answer were trusted here could redirect a claim to any
+   * contract it liked.
+   *
+   * Both addresses are lowercased before they are sent, for the same measured
+   * reason `holderRewards` above lowercases them: this API answers HTTP 502 to a
+   * mixed-case address whose EIP-55 checksum does not validate.
+   *
+   * Measured 2026-09-04: `action: "distribute"` answers 200 with
+   * `data: "0xe4fc6b6d"`; `action: "claim"` answers HTTP 400
+   * `{"error":"Nothing to claim"}` when the distributor owes the wallet nothing.
+   * That 400 is a DECLINE - the provider had no calldata to give - and the
+   * caller distinguishes it from a disagreement about bytes.
+   */
+  async holderRewardsPrepare(
+    request: {
+      readonly tokenAddress: string;
+      readonly walletAddress: string;
+      readonly action: "claim" | "distribute";
+    },
+    options: PoolsRequestOptions = {},
+  ): Promise<PoolsHolderRewardsPrepare> {
+    const url = new URL(POOLS_ENDPOINTS.holderRewardsPrepare, this.base()).toString();
+    return validateHolderRewardsPrepare(
+      await this.send(url, options, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          tokenAddress: request.tokenAddress.toLowerCase(),
+          walletAddress: request.walletAddress.toLowerCase(),
+          action: request.action,
+        }),
+      }),
+    );
   }
 
   // -- Launch preparation (gateway path) -----------------------------

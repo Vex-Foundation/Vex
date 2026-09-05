@@ -80,9 +80,15 @@ describe("the exported inventory covers exactly the export scope", () => {
     // the launch factory's pricing mode per pair) and `pools__holder_rewards_get`
     // (what a fees-to-holders token owes one wallet, read from the distributor
     // the suite's deployer emitted). Both are read-only and neither signs.
-    expect(inventory).toHaveLength(169);
+    // 169 -> 171: the two pools.fun holder-rewards MUTATIONS -
+    // `pools__holder_rewards_claim` (the holder's own claim, which pays
+    // whoever signs it and carries no Vex fee) and
+    // `pools__holder_rewards_distribute` (the permissionless push, which pays
+    // the token's holders rather than its caller). Both sign, so unlike the two
+    // reads above neither is read-only.
+    expect(inventory).toHaveLength(171);
     expect(inventory.filter((t) => t.kind === "internal")).toHaveLength(27);
-    expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(142);
+    expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(144);
   });
 
   it("keeps WebResearch OUT of tools/list while the in-app registry keeps it", () => {

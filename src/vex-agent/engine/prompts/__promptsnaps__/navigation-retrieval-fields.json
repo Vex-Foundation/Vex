@@ -1058,6 +1058,37 @@
           ]
         },
         {
+          "label": "pools.fun fees to holders",
+          "summary": "Read, claim and push the fees a pools.fun token streams to the wallets that HOLD it. Nothing is staked: a token launched with fees-to-holders sends its trading fees to a distributor contract that streams them to holders over 24 hours, and the choice is locked at launch. This is a DIFFERENT person's money from the creator fees above - those belong to whoever launched the token, these to whoever holds it. The claim pays the wallet that signs it and Vex charges nothing for it; the distribute is permissionless, pays the holders rather than its caller, and is how a stalled reward stream is restarted.",
+          "toolPrefixes": [
+            "pools.holder_rewards",
+            "pools.holder_rewards_claim",
+            "pools.holder_rewards_distribute"
+          ],
+          "hints": [
+            "fees to holders on pools fun",
+            "what have I earned holding this coin",
+            "claim my holder rewards",
+            "does this coin pay its holders",
+            "push this token's fees to its holders",
+            "trigger the reward distribution"
+          ]
+        },
+        {
+          "label": "pools.fun launchable stock pairs",
+          "summary": "List the tokenised stocks a new pools.fun coin can be paired with, and how each pair is priced at launch. It is its OWN facet rather than a line inside the launching facet above because the launching facet's retrieval fields are frozen by owner decision D9, and because the question it answers is a menu read that signs nothing: which pairs exist, what each one's contract address is, and whether that pair takes its launch price from a feed or from a freshly signed quote that stays valid for barely two minutes.",
+          "toolPrefixes": [
+            "pools.launch_assets"
+          ],
+          "hints": [
+            "which stocks can I launch against",
+            "pools fun launch pairs",
+            "tokenised stocks a new coin can be paired with",
+            "is tesla available to pair with on pools fun",
+            "which launch pairs need a signed price"
+          ]
+        },
+        {
           "label": "Launching a token on pools.fun",
           "summary": "Price a launch before committing to it, ask the user to confirm one in the app's form, or launch for real. A pools.fun token opens directly into a real SushiSwap V3 pool against WETH or USDG, with no bonding curve and no graduation step. The preview is advisory and the form's submission is what authorizes a launch; only launch_execute signs, and it verifies the launchpad's own transaction against the chain before it does.",
           "toolPrefixes": [
@@ -1217,6 +1248,10 @@
     "pools.launch_preview": "c4c122a5e3f401f4c444cb1ba42c3d7648c6d2605b214a737368ee3a945a3a03",
     "pools.launch_request_form": "97980310773833aba195d4094b44a2567a53877ede8f12a3da7742f76138143b",
     "pools.launch_execute": "059c49b596aa13a1328999b113ef6f7fc4a1ef67443c59806961662347299a1f",
-    "pools.claim_fees": "274475a9f9ffd37aec741fddab2d47a129dcf8922986237604b98d9ef866dd48"
+    "pools.claim_fees": "274475a9f9ffd37aec741fddab2d47a129dcf8922986237604b98d9ef866dd48",
+    "pools.launch_assets": "b1ad5ce00239d49ad6187d418cd7a3f7c9fe73046c575736afaa4cd3bb90ea2f",
+    "pools.holder_rewards": "3f54e5ec0925e944bc986ead83830ec0598cea6edb58855f9b50848b7f8096b8",
+    "pools.holder_rewards_claim": "03f5ef9a6e436ef7c79ed98e5a53bd7e2e0cadb1630e3286838001fcd7e05cce",
+    "pools.holder_rewards_distribute": "5ba185df48bacf69007b23f613e193de0e3f7775b6ac9d5ed6b9b251942441bb"
   }
 }

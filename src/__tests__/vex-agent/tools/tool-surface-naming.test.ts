@@ -159,7 +159,10 @@ describe("G2 - publicName mapping gate", () => {
     // `pair.details`, `candles`, `trades` and `top.traders`. All four are new
     // identities - no toolId is reclaimed, because none of the retired
     // public-API tools answered any part of what they answer.
-    expect(PROTOCOL_TOOLS.length).toBe(140);
+    // 140 before the pools.fun launchpad arc added its four: the launchable
+    // stock list and the fees-to-holders read, then the holder's own claim and
+    // the permissionless distribute. All four are new identities.
+    expect(PROTOCOL_TOOLS.length).toBe(144);
   });
 });
 

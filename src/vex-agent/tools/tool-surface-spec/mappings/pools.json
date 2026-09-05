@@ -45,6 +45,26 @@
       "toolId": "pools.launch_execute",
       "publicName": "pools__launch_execute",
       "rationale": "mechanical"
+    },
+    {
+      "toolId": "pools.launch_assets",
+      "publicName": "pools__launch_assets_list",
+      "rationale": "Resource-then-verb with the canonical enumeration verb. The tool pages the launchpad's own menu of tokenised stocks a new coin can be paired with, plus each pair's launch-time pricing mode (manifests/launch-assets.ts); it is a bounded list read, not a filtered screen, so `list` rather than `discover`."
+    },
+    {
+      "toolId": "pools.holder_rewards",
+      "publicName": "pools__holder_rewards_get",
+      "rationale": "Resource-then-verb with the canonical by-id read verb, symmetric with pools__token_get. The resource is one token's fees-to-holders state read for one wallet at a pinned block (manifests/holder-rewards.ts:11-20). The toolId keeps the bare resource name because it is the family's read; the two mutations extend it with their verbs."
+    },
+    {
+      "toolId": "pools.holder_rewards_claim",
+      "publicName": "pools__holder_rewards_claim",
+      "rationale": "Mechanical: resource then the fund-moving verb last, as pools__fees_claim already does. The two are deliberately parallel and deliberately distinct - fees_claim pays whoever LAUNCHED the token, holder_rewards_claim pays whoever HOLDS it - so the resource carries the whole difference. actionKind user_wallet_broadcast (manifests/holder-rewards-claim.ts)."
+    },
+    {
+      "toolId": "pools.holder_rewards_distribute",
+      "publicName": "pools__holder_rewards_distribute",
+      "rationale": "Mechanical: resource then verb. `distribute` rather than a claim word on purpose - the call is permissionless and pays the token's HOLDERS, not its caller, and the durable role is reward_distribution rather than a claim role. actionKind user_wallet_broadcast (manifests/holder-rewards-distribute.ts)."
     }
   ]
 }

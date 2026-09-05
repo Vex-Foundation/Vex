@@ -43,6 +43,8 @@ export const POOLS_NAVIGATION: ProtocolNamespaceNavigation = {
       "pools.fun browsing and search",
       "pools.fun candles and token detail",
       "Own pools.fun launches",
+      "pools.fun fees to holders",
+      "pools.fun launchable stock pairs",
       "Launching a token on pools.fun",
     ],
   },
@@ -100,6 +102,48 @@ export const POOLS_NAVIGATION: ProtocolNamespaceNavigation = {
         "the coin I made on pools fun",
         "claim my creator fees",
         "how much has my coin earned",
+      ],
+    },
+    {
+      label: "pools.fun fees to holders",
+      summary:
+        "Read, claim and push the fees a pools.fun token streams to the wallets that HOLD it. Nothing is staked: "
+        + "a token launched with fees-to-holders sends its trading fees to a distributor contract that streams "
+        + "them to holders over 24 hours, and the choice is locked at launch. This is a DIFFERENT person's money "
+        + "from the creator fees above - those belong to whoever launched the token, these to whoever holds it. "
+        + "The claim pays the wallet that signs it and Vex charges nothing for it; the distribute is "
+        + "permissionless, pays the holders rather than its caller, and is how a stalled reward stream is "
+        + "restarted.",
+      toolPrefixes: [
+        "pools.holder_rewards",
+        "pools.holder_rewards_claim",
+        "pools.holder_rewards_distribute",
+      ],
+      hints: [
+        "fees to holders on pools fun",
+        "what have I earned holding this coin",
+        "claim my holder rewards",
+        "does this coin pay its holders",
+        "push this token's fees to its holders",
+        "trigger the reward distribution",
+      ],
+    },
+    {
+      label: "pools.fun launchable stock pairs",
+      summary:
+        "List the tokenised stocks a new pools.fun coin can be paired with, and how each pair is priced at "
+        + "launch. It is its OWN facet rather than a line inside the launching facet above because the "
+        + "launching facet's retrieval fields are frozen by owner decision D9, and because the question it "
+        + "answers is a menu read that signs nothing: which pairs exist, what each one's contract address is, "
+        + "and whether that pair takes its launch price from a feed or from a freshly signed quote that stays "
+        + "valid for barely two minutes.",
+      toolPrefixes: ["pools.launch_assets"],
+      hints: [
+        "which stocks can I launch against",
+        "pools fun launch pairs",
+        "tokenised stocks a new coin can be paired with",
+        "is tesla available to pair with on pools fun",
+        "which launch pairs need a signed price",
       ],
     },
     {

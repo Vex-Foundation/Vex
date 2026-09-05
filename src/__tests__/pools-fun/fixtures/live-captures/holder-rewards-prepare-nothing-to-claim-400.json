@@ -1,0 +1,9 @@
+{
+  "endpoint": "POST https://api.bankr.bot/pools-fun/holder-rewards/prepare  {tokenAddress, walletAddress, action: \"claim\"}",
+  "capturedAt": "2026-09-04T19:05:00.000Z",
+  "httpStatus": 400,
+  "note": "The provider DECLINING rather than disagreeing. Asked to prepare a claim for a wallet the distributor owes nothing, the endpoint answers HTTP 400 with a bare `error` sentence and no `details[]` - the same shape the launch endpoints use. It maps to POOLS_INVALID_REQUEST, which `crossCheckPoolsHolderRewardsPrepare` reads as `declined`: the provider had no calldata to give, which is NOT a disagreement about bytes and never refuses a claim on its own. Whether there is anything to claim is decided by the on-chain simulation. The request body carried the Vex probe wallet and is not recorded here; the response contains no address at all and is verbatim.",
+  "response": {
+    "error": "Nothing to claim"
+  }
+}

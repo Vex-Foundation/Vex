@@ -1,5 +1,5 @@
 {
-  "toolCount": 169,
+  "toolCount": 171,
   "tools": [
     {
       "alwaysLoad": true,
@@ -8204,7 +8204,79 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 2100,
+      "descriptionBytes": 4428,
+      "destructiveHint": true,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "description": "true simulates the claim and reports what it would pay without signing anything. Omit it to actually claim, which spends gas.",
+            "type": "boolean"
+          },
+          "simulateOnly": {
+            "description": "true runs every check a real claim runs, including the gas estimate over the exact bytes, and then stops without opening a key or recording anything. Returns the would-be transaction with executed: false. Use it to prove the path; use dryRun to ask what a claim would pay.",
+            "type": "boolean"
+          },
+          "tokenAddress": {
+            "description": "The pools.fun token's contract ADDRESS. Symbols are not unique on this launchpad and copycats are routinely live, so the address is the only identity that means one token. Find fees-to-holders tokens with pools__tokens_discover using holderRewards: true.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "walletAddress": {
+            "description": "ONLY valid with dryRun: true, where it reads what a DIFFERENT holder is owed - earned(account) and claim() simulated from that address are public views over public chain state. On a real claim it is refused by name, because the distributor pays whoever signs and there is no way to claim into another address.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tokenAddress"
+        ],
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "pools",
+      "publicName": "pools__holder_rewards_claim",
+      "readOnlyHint": false,
+      "requiresEnv": null,
+      "title": "Claim pools.fun holder rewards",
+      "toolId": "pools.holder_rewards_claim"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 3726,
+      "destructiveHint": true,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "description": "true simulates the distribute and reports whether it would succeed, what the distributor would move, the bounty rule and a gas ceiling, without signing anything. Omit it to actually distribute.",
+            "type": "boolean"
+          },
+          "simulateOnly": {
+            "description": "true runs every check a real distribute runs, including the gas estimate over the exact bytes, and then stops without opening a key or recording anything. Returns the would-be transaction with executed: false.",
+            "type": "boolean"
+          },
+          "tokenAddress": {
+            "description": "The pools.fun token's contract ADDRESS whose distributor to push. Find fees-to-holders tokens with pools__tokens_discover using holderRewards: true, and check whether one has work waiting with pools__holder_rewards_get.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "tokenAddress"
+        ],
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "pools",
+      "publicName": "pools__holder_rewards_distribute",
+      "readOnlyHint": false,
+      "requiresEnv": null,
+      "title": "Distribute pools.fun holder rewards",
+      "toolId": "pools.holder_rewards_distribute"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 2102,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
