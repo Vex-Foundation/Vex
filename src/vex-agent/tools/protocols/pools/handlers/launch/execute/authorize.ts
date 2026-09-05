@@ -9,7 +9,7 @@
  * behind it.
  *
  * IT RUNS ONLY AFTER THE VERIFIER PASSED. The plan it is handed carries a tuple
- * that survived all 13 points and the fingerprint of the exact bytes those
+ * that survived all 15 points and the fingerprint of the exact bytes those
  * points were about - so the row this writes names a transaction that has
  * already been proven, rather than an intention to go and build one.
  *
@@ -72,6 +72,21 @@ export type AuthorizePoolsLaunchResult =
 export async function authorizeAndConsumePoolsLaunch(
   input: AuthorizePoolsLaunchInput,
 ): Promise<AuthorizePoolsLaunchResult> {
+  // A SIMULATED PLAN IS NEVER AUTHORIZED, and this owner says so itself. The
+  // handler returns before reaching here under `simulateOnly`, but the plan
+  // carries the flag precisely so that the step which CREATES an authorization
+  // refuses it too: a direct or future caller must not be able to turn a plan
+  // built with no signer, and reported as "nothing was signed", into a row a
+  // broadcast can consume. Checked before the transaction opens, so no lock is
+  // taken and no writer runs.
+  if (input.plan.simulateOnly) {
+    return {
+      ok: false,
+      reason:
+        "Refusing to authorize: this plan was built under simulateOnly and must never be signed. Build a real "
+        + "plan to launch. Nothing was written and nothing was signed.",
+    };
+  }
   try {
     return await authorizeInTransaction(input);
   } catch (err) {

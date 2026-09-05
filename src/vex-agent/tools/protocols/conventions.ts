@@ -130,6 +130,53 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   ["topTokens", "how many CHILD rows to embed inside each parent row on a grouped read (a narrative's leading pairs); distinct from `limit`, which bounds the parent rows, and from `include`, which names side reads rather than a depth"],
   ["listedOnly", "keep only rows the protocol itself lists/curates; excludes permissionless dust"],
 
+  // -- Virtuals agent screening (PR-C1) ----------------------------
+  //
+  // Every key below is one MEASURED server-side filter of the Virtuals agent
+  // endpoint. They are named rather than folded into an opaque `filters` bag
+  // for the reason the morpho block gives, and with one extra reason specific
+  // to this provider: it SILENTLY IGNORES an unknown `filters[...]` key and
+  // answers with the whole population, so an undeclared screen is not an error
+  // there - it is a wrong answer that looks right.
+  ["searchScope", "what `query` matches on a Virtuals read: text (name/symbol), address (token or curve token), or any"],
+  ["creatorWallet", "the wallet that LAUNCHED an agent; distinct from `walletAddress`, which is the account a tool acts for"],
+  ["factory", "which launch-contract family produced a token; declared as an `enum`"],
+  ["role", "an agent's declared role (ENTERTAINMENT, ON_CHAIN, ...); declared as an `enum`"],
+  ["vibesStatus", "the vibes/ICO lane state of an agent; declared as an `enum`"],
+  ["isVerified", "keep only rows carrying the provider's anti-impersonation badge"],
+  ["hasGraduated", "keep only agents that have left the bonding curve for an AMM pool"],
+  ["hasGenesis", "keep only agents that came through a genesis points sale"],
+  ["hasStaking", "keep only agents with a staking contract"],
+  ["hasMarginTrading", "keep only agents the venue lists for margin trading"],
+  ["hasFounderVideo", "keep only agents whose founder published a video pitch"],
+  ["hasRevenueConnect", "keep only agents with a revenue-connect wallet configured"],
+  ["isDevCommitted", "keep only agents whose developer made the on-platform commitment"],
+  ["hasAntiSniperTax", "keep only launches that CONFIGURED a non-zero anti-sniper tax type"],
+  ["hasAirdrop", "keep only launches that reserved a non-zero airdrop percentage"],
+  ["needAcf", "keep only launches that used Automated Capital Formation"],
+  ["isProject60days", "keep only launches in the 60-day project programme"],
+  ["launchRadarEnabled", "keep only launches that opted into Launch Radar"],
+  ["isRobotics", "keep only robotics agents; the working screen, since the ROBOTIC_* factory values match nothing"],
+  ["includeLaunchX", "keep ONLY the X_LAUNCH / ACP_LAUNCH tagged agents"],
+  ["excludeLaunchX", "drop the X_LAUNCH / ACP_LAUNCH tagged agents, as the provider's own UI does"],
+  ["minMcapInVirtual", "floor on market cap, denominated in the VIRTUAL token and NOT in USD"],
+  ["maxMcapInVirtual", "ceiling on market cap, denominated in the VIRTUAL token and NOT in USD"],
+  ["minHolderCount", "floor on the holder count"],
+  ["maxHolderCount", "ceiling on the holder count"],
+  ["minVolume24h", "floor on 24-hour volume, in USD"],
+  ["maxVolume24h", "ceiling on 24-hour volume, in USD"],
+  ["minPriceChangePercent24h", "floor on the 24-hour price change, as a SIGNED PERCENT"],
+  ["maxPriceChangePercent24h", "ceiling on the 24-hour price change, as a SIGNED PERCENT"],
+  ["minTop10HolderPercentage", "floor on top-10 holder concentration, as a PERCENT"],
+  ["maxTop10HolderPercentage", "ceiling on top-10 holder concentration, as a PERCENT"],
+  ["createdAfter", "keep only rows created at or after this date"],
+  ["launchedAfter", "keep only rows whose token started trading at or after this date"],
+  ["genesisStartsAfter", "keep only rows whose linked genesis sale starts at or after this date"],
+  ["genesisStartsBefore", "keep only rows whose linked genesis sale starts at or before this date"],
+  ["includePriceSeries", "attach the provider's own 24-hour price samples to each row; off by default because it widens every row"],
+  ["beforeTimestampSeconds", "walk a candle history BACKWARDS: return buckets strictly before this unix-seconds mark"],
+  ["currency", "which side a candle series is denominated in; declared as an `enum`"],
+
   // -- Lending-market reads (morpho, batch 1) ----------------------
   //
   // Domain range predicates. They are named rather than folded into a generic
@@ -518,6 +565,22 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   ["includeCurveProgress", "add each row's bonding-curve progress, which costs a per-row read"],
   ["minCurveProgressPct", "floor on bonding-curve completion, as a PERCENT"],
   ["maxCurveProgressPct", "ceiling on bonding-curve completion, as a PERCENT"],
+
+  // -- pools.fun launch badges and the factory's pricing axis (PR4) ---
+  //
+  // Three keys, each the PROVIDER's own spelling rather than a Vex invention.
+  // `vexAttested` and `holderRewards` are the launchpad's two opt-in discover
+  // switches: measured at `src/tools/pools-fun/PoolsFun.md` lines 61-62, the
+  // endpoint accepts the literal `true` only and answers HTTP 400 on `false`,
+  // so the complement genuinely cannot be requested and a generic boolean
+  // spelling would promise a filter the provider does not serve. `pricingMode`
+  // is the launch factory's own enum over the paired asset (CORE_CHAINLINK,
+  // CHAINLINK_STOCK, SIGNED_STOCK - 35 and 159 of 194 assets when measured,
+  // PoolsFun.md lines 233-242), and it decides whether a launch needs a
+  // time-boxed signed price attestation, so it is an axis a caller screens on.
+  ["vexAttested", "pools.fun opt-in switch keeping only launches carrying a Vex attestation; the provider accepts the literal true only"],
+  ["holderRewards", "pools.fun opt-in switch keeping only tokens that stream their fees to holders; same true-only contract as vexAttested"],
+  ["pricingMode", "the pools.fun launch factory's own pricing enum for a paired asset; decides whether a launch needs a signed price attestation"],
 
   // -- Time-series and deep-read shaping (DexScreener deep dive, S4) ---
   //

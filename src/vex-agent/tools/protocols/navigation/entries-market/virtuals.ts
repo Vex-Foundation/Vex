@@ -13,7 +13,7 @@ export const VIRTUALS_NAVIGATION: ProtocolNamespaceNavigation = {
     "Use `dexscreener` for general multi-chain pair/liquidity research, and `SwapQuote`/`SwapExecute` (or `solana.*` on Solana) to execute the trade - Virtuals never executes.",
   declaration: {
     identity: "Virtuals is read-only intelligence for Virtuals agents and agent tokens across the chains indexed by the provider.",
-    read: "Screen virtuals agents and agent tokens, inspect robinhood agent tokens or one agent in depth, read market cap, holder count and concentration, check the anti-sniper buy-tax window and exact venue, follow recent virtuals graduations or what just graduated, and browse the fresh graduations feed, genesis calendar, launch schedule, and genesis sales.",
+    read: "Read one agent's bonding-curve trade tape and build a price chart from its pool's ohlcv candles, screen virtuals agents and agent tokens, inspect robinhood agent tokens or one agent in depth, read market cap, holder count and concentration, check the anti-sniper buy-tax window and exact venue, follow recent virtuals graduations or what just graduated, and browse the fresh graduations feed, genesis calendar, launch schedule, and genesis sales.",
     quote: "No quote capability is available. Research does not establish an executable price, route, or minimum received amount.",
     act: "No action capability is available. Acquiring an agent token is a separate swap task on the venue identified by the research result.",
     whenItApplies: "Use it when the user names an agent token, asks what just graduated, wants robinhood agent tokens, or asks what is launching through Virtuals.",
@@ -35,8 +35,16 @@ export const VIRTUALS_NAVIGATION: ProtocolNamespaceNavigation = {
       "bonding-curve pre-graduation",
       "locked liquidity pool",
       "exact venue",
+      "trade tape",
+      "price chart",
+      "ohlcv candles",
     ],
-    facets: ["Agent-token screening and detail", "Graduations and launch calendar"],
+    facets: [
+      "Agent-token screening and detail",
+      "Graduations and launch calendar",
+      "Trade tape and price history",
+      "Creator fees on an agent",
+    ],
   },
   exampleQueries: [
     'ToolSearch(query="list agent tokens on robinhood", namespace="virtuals")',
@@ -63,6 +71,28 @@ export const VIRTUALS_NAVIGATION: ProtocolNamespaceNavigation = {
       summary: "Watch recently graduated agent tokens and browse the genesis launch calendar.",
       toolPrefixes: ["virtuals.graduations", "virtuals.geneses"],
       hints: ["recent graduations", "just graduated", "genesis calendar", "upcoming launches"],
+    },
+    {
+      label: "Trade tape and price history",
+      summary: "Read one agent's bonding-curve trade tape and its pool's OHLCV candles, per chain and lifecycle stage.",
+      toolPrefixes: ["virtuals.trades", "virtuals.candles"],
+      hints: ["trade tape", "recent trades", "price chart", "candles", "ohlcv", "price history"],
+    },
+    {
+      label: "Creator fees on an agent",
+      summary:
+        "Read what an agent's creator has earned from its bonding-curve trading tax at one pinned block: "
+        + "collected, already swapped and paid out, and still pending, plus the split between the protocol "
+        + "treasury, any partner and the creator. Collection is not Vex's to perform - the swap path is gated "
+        + "on a role the creator wallet does not hold - so the claim answers unsupported with that measurement.",
+      toolPrefixes: ["virtuals.creator_fees"],
+      hints: [
+        "virtuals creator fees",
+        "how much have my agent fees earned",
+        "agent tax accrued",
+        "claim my virtuals creator fees",
+        "creator fee split",
+      ],
     },
   ],
 };

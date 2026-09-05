@@ -14,7 +14,7 @@ import { getPoolsFunClient } from "@tools/pools-fun/client.js";
 import type { PoolsPlatform } from "@tools/pools-fun/constants.js";
 import { POOLS_CHAIN_SLUG, POOLS_DISCOVER_LIMIT_CAP, POOLS_PLATFORMS } from "@tools/pools-fun/constants.js";
 import { ok, fail } from "../../handler-helpers.js";
-import { readEnum, readNumber } from "../../runtime/list-params.js";
+import { readBoolean, readEnum, readNumber } from "../../runtime/list-params.js";
 import type { NumericParamSpecs } from "../../runtime/list-params.js";
 import { poolsFailureDetail } from "./failure.js";
 import { applyOwnLaunchFlag, projectToken, resolveOwnDeployer } from "./project.js";
@@ -41,6 +41,14 @@ export async function poolsSearchHandler(
   if (!platformRead.ok) return fail(platformRead.reason);
   const limitRead = readNumber(p, "limit", SEARCH_NUMERIC_PARAMS);
   if (!limitRead.ok) return fail(limitRead.reason);
+  // Same opt-in switches as `pools.tokens`: the provider takes only the literal
+  // "true" and 400s on `false`, so `false` means "filter off" and the key is
+  // never sent. A name lookup narrowed to attested or fees-to-holders tokens is
+  // how an agent confirms which of several same-symbol tokens it means.
+  const vexAttestedRead = readBoolean(p, "vexAttested");
+  if (!vexAttestedRead.ok) return fail(vexAttestedRead.reason);
+  const holderRewardsRead = readBoolean(p, "holderRewards");
+  if (!holderRewardsRead.ok) return fail(holderRewardsRead.reason);
   const cursor = readCursor(p);
 
   try {
@@ -50,6 +58,8 @@ export async function poolsSearchHandler(
         query,
         limit: limitRead.value ?? DEFAULT_LIMIT,
         ...(cursor !== null ? { cursor } : {}),
+        ...(vexAttestedRead.value ? { vexAttested: true } : {}),
+        ...(holderRewardsRead.value ? { holderRewards: true } : {}),
       },
       { signal: context.abortSignal },
     );
@@ -63,6 +73,10 @@ export async function poolsSearchHandler(
       chain: POOLS_CHAIN_SLUG,
       platform: platformRead.value,
       query,
+      // Echoed so a narrowed search's emptiness is attributable to the filter
+      // rather than to the name.
+      ...(vexAttestedRead.value ? { vexAttested: true } : {}),
+      ...(holderRewardsRead.value ? { holderRewards: true } : {}),
       count: rows.length,
       // The provider returns a cursor even for a one-row name search, and this
       // tool declares `cursor`, so the token is spendable rather than decorative.

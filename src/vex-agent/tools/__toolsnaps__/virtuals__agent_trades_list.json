@@ -1,0 +1,45 @@
+{
+  "definition": {
+    "function": {
+      "description": "The live BONDING-CURVE trade tape for one Virtuals agent, straight from the provider's own feed - the same feed app.virtuals.io renders under a bonding agent. Use this when the user asks who is trading a pre-graduation agent, how much is moving through its curve, or whether a fresh launch has any real flow behind it. Give it the numeric agent id; it resolves the chain and the curve token itself. Each trade carries txHash, txSender, isBuy, the agent-token and VIRTUAL amounts as whole-token decimal strings (NOT wei), the price in VIRTUAL per agent token, and a unix-seconds timestamp. Narrow with `side` (both, buys, sells) and `limit`. COVERAGE IS MEASURED AND PARTIAL, and the tool says so rather than returning an empty list: base and solana have the tape (the provider's own SDK numbers exactly those two chains, and both returned live rows); robinhood and ethereum have NO chain id in that feed - a live robinhood bonding agent returned an empty tape while its API row carried a full price series - so those two answer `supported: false` with that reason. A GRADUATED agent also returns an empty tape on every chain: this feed covers the curve only, and the reply says so explicitly so the emptiness is never read as 'no trading'. For a graduated agent use virtuals__agent_candles_list or the dexscreener tools. Read-only.",
+      "name": "virtuals__agent_trades_list",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Numeric Virtuals agent id, exactly as virtuals__agents_discover returns it.",
+            "type": "number"
+          },
+          "limit": {
+            "description": "Trades to return, newest first (default 30, max 200). Out of range is rejected, not clamped.",
+            "type": "number"
+          },
+          "side": {
+            "description": "Which side of the tape: both (default), buys only, or sells only. Applied by the provider.",
+            "enum": [
+              "both",
+              "buys",
+              "sells"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "virtuals",
+    "requiresEnv": null,
+    "toolId": "virtuals.trades"
+  }
+}

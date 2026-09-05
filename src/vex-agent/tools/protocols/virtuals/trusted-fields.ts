@@ -22,15 +22,46 @@
  * `projectors.ts`.
  */
 
-import { VIRTUALS_CHAINS, type VirtualsChain } from "@tools/virtuals/types.js";
+import {
+  VIRTUALS_CHAINS,
+  VIRTUALS_FACTORIES,
+  VIRTUALS_ROLES,
+  VIRTUALS_ROW_ONLY_FACTORIES,
+  VIRTUALS_ROW_STATUSES,
+  type VirtualsChain,
+  type VirtualsFactory,
+  type VirtualsRole,
+  type VirtualsRowStatus,
+} from "@tools/virtuals/types.js";
 
 // ── Closed enums (live-verified value sets) ─────────────────────────
 
-export const TRUSTED_AGENT_STATUSES = ["UNDERGRAD", "AVAILABLE"] as const;
-export type TrustedAgentStatus = (typeof TRUSTED_AGENT_STATUSES)[number];
+/**
+ * The row `status` vocabulary, from the app bundle's own enum object and every
+ * value seen on a live row. `UNDERGRAD` and `AVAILABLE` are the two the tools
+ * reason about; the rest exist and must survive the boundary as themselves
+ * rather than being dropped into `null`, which would read as "unknown row".
+ */
+export const TRUSTED_AGENT_STATUSES = [
+  ...VIRTUALS_ROW_STATUSES,
+] as readonly VirtualsRowStatus[];
+export type TrustedAgentStatus = VirtualsRowStatus;
 
-export const TRUSTED_FACTORIES = ["BONDING_V5", "BONDING", "OLD"] as const;
-export type TrustedFactory = (typeof TRUSTED_FACTORIES)[number];
+/**
+ * Factories: the 13 members the provider accepts as FILTER values, plus the
+ * legacy `OLD` that appears on rows but matches nothing as a filter. Narrowed
+ * here so an unrecognised factory becomes `null` + a degrade note instead of
+ * reaching the model as an unvalidated string.
+ */
+export const TRUSTED_FACTORIES = [
+  ...VIRTUALS_FACTORIES,
+  ...VIRTUALS_ROW_ONLY_FACTORIES,
+] as readonly string[];
+export type TrustedFactory = VirtualsFactory | (typeof VIRTUALS_ROW_ONLY_FACTORIES)[number];
+
+/** Roles measured on live rows; anything else is dropped with a degrade note. */
+export const TRUSTED_ROLES = [...VIRTUALS_ROLES] as readonly VirtualsRole[];
+export type TrustedRole = VirtualsRole;
 
 /** Narrow to a member of a closed allowlist; unknown ⇒ null (never pass-through). */
 export function trustedEnum<T extends string>(
@@ -49,7 +80,11 @@ export function trustedAgentStatus(raw: string | null): TrustedAgentStatus | nul
 }
 
 export function trustedFactory(raw: string | null): TrustedFactory | null {
-  return trustedEnum(raw, TRUSTED_FACTORIES);
+  return trustedEnum(raw, TRUSTED_FACTORIES) as TrustedFactory | null;
+}
+
+export function trustedRole(raw: string | null): TrustedRole | null {
+  return trustedEnum(raw, TRUSTED_ROLES);
 }
 
 // ── Timestamps ──────────────────────────────────────────────────────

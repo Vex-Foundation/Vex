@@ -236,6 +236,20 @@ export function mapPoolsFunError(status: number, body?: string): VexError {
   }
 
   if (status === 404) {
+    // TWO DIFFERENT 404s, and telling an agent the wrong one is worse than
+    // telling it nothing. A JSON body with an `error` field is the provider
+    // answering a question about a RESOURCE - measured 2026-09-04 on
+    // `/pools-fun/holder-rewards?token=` for a token that never opted in:
+    // `{"error":"Not a fees-to-holders token"}`. An HTML body is Express saying
+    // the ROUTE does not exist. Reporting "the endpoint no longer exists" for
+    // the first would send a caller to fix a path that is perfectly correct.
+    if (providerError !== null) {
+      return new VexError(
+        ErrorCodes.POOLS_NOT_FOUND,
+        `pools.fun has no such resource (HTTP ${status})`,
+        `The launchpad said: ${safeProviderText(providerError, MAX_SNIPPET_LEN) ?? providerError}`,
+      );
+    }
     const snippet = extractHtmlErrorLine(body);
     return new VexError(
       ErrorCodes.POOLS_API_ERROR,

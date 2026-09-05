@@ -1,0 +1,20 @@
+{
+  "endpoint": "GET https://api.bankr.bot/pools-fun/launches/config",
+  "capturedAt": "2026-09-04T11:47:29Z",
+  "sanitization": "None needed: the config carries no identity.",
+  "note": "gatewayVersion 3 - the number the verifier's point 1 requires the live gateway's VERSION() to equal. It read 1 when the launch path was written and moved twice in three days without notice, which is why the version is proven against the contract rather than trusted from here.",
+  "response": {
+    "deploymentFeeWei": "1051674002092832",
+    "gatewayVersion": 3,
+    "feesToHoldersSupported": true,
+    "holderRewardsPayoutModes": [
+      "token",
+      "paired",
+      "both"
+    ],
+    "networkGasHint": {
+      "estimatedWei": "4561725000000000",
+      "reserveWei": "6523266750000000"
+    }
+  }
+}

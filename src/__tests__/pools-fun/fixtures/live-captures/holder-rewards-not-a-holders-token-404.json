@@ -1,0 +1,8 @@
+{
+  "endpoint": "https://api.bankr.bot/pools-fun/holder-rewards?token=0x1837b25a8e921d654dd3fea83747cd375c97629d",
+  "capturedAt": "2026-09-04T18:31:30.767745Z",
+  "httpStatus": 404,
+  "response": {
+    "error": "Not a fees-to-holders token"
+  }
+}

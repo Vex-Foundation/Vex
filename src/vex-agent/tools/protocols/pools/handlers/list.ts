@@ -57,6 +57,14 @@ export async function poolsTokensHandler(
   if (!limitRead.ok) return fail(limitRead.reason);
   const liveRead = readBoolean(p, "live");
   if (!liveRead.ok) return fail(liveRead.reason);
+  // OPT-IN SWITCHES, NOT TWO-SIDED FILTERS. The provider accepts the literal
+  // "true" on both keys and answers `false` with HTTP 400 `Invalid input:
+  // expected "true"` (measured 2026-09-04), so `false` here means "do not apply
+  // this filter" and the complement is not askable. The client drops the key.
+  const vexAttestedRead = readBoolean(p, "vexAttested");
+  if (!vexAttestedRead.ok) return fail(vexAttestedRead.reason);
+  const holderRewardsRead = readBoolean(p, "holderRewards");
+  if (!holderRewardsRead.ok) return fail(holderRewardsRead.reason);
   const minMcapRead = readNumber(p, "minMarketCapUsd", POOLS_TOKENS_NUMERIC_PARAMS);
   if (!minMcapRead.ok) return fail(minMcapRead.reason);
   const maxMcapRead = readNumber(p, "maxMarketCapUsd", POOLS_TOKENS_NUMERIC_PARAMS);
@@ -132,6 +140,8 @@ export async function poolsTokensHandler(
   if (deployer !== null) filters.deployerAddress = deployer;
   if (feeRecipient !== null) filters.feeRecipientAddress = feeRecipient;
   if (cursor !== null) filters.cursor = cursor;
+  if (vexAttestedRead.value) filters.vexAttested = true;
+  if (holderRewardsRead.value) filters.holderRewards = true;
 
   try {
     const page = await getPoolsFunClient().discover(
@@ -152,6 +162,8 @@ export async function poolsTokensHandler(
         ...(maxAgeRead.value !== null ? { maxAgeHours: maxAgeRead.value } : {}),
         ...(deployer !== null ? { deployerAddress: deployer } : {}),
         ...(feeRecipient !== null ? { feeRecipientAddress: feeRecipient } : {}),
+        ...(vexAttestedRead.value ? { vexAttested: true } : {}),
+        ...(holderRewardsRead.value ? { holderRewards: true } : {}),
       },
       { signal: context.abortSignal },
     );
@@ -170,6 +182,19 @@ export async function poolsTokensHandler(
       count: rows.length,
       nextCursor: page.nextCursor,
       filters,
+      // A combination that the launchpad serves but that nothing matched is a
+      // MARKET fact, and the two newest filters are the ones an agent is most
+      // likely to misread as a broken tool: `vexAttested` plus `holderRewards`
+      // returned zero rows on 2026-09-04 simply because no token is currently
+      // both. Saying so beats an unexplained empty list.
+      ...(rows.length === 0 && (vexAttestedRead.value || holderRewardsRead.value)
+        ? {
+          note:
+              "The launchpad accepted these filters and matched no token. That is its answer about the "
+              + "market, not a rejected request - vexAttested and holderRewards are independent opt-ins "
+              + "and a token can carry neither, one, or both.",
+        }
+        : {}),
       tokens: rows,
     });
   } catch (err) {

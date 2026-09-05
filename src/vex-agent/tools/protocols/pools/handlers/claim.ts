@@ -39,7 +39,11 @@ import { getLocalPublicClient } from "@tools/evm-chains/evm-client.js";
 import { gasLimitWithHeadroom } from "@tools/evm-chains/gas-limit-headroom.js";
 import { signStageBroadcast, type StagedBroadcastOutcome } from "@tools/evm-chains/staged-broadcast.js";
 import { PARTY_LOCKER_CLAIM_ABI } from "@tools/pools-fun/abi.js";
-import { POOLS_CHAIN_ID, POOLS_CHAIN_SLUG, POOLS_LOCKER_ADDRESS } from "@tools/pools-fun/constants.js";
+import { POOLS_CHAIN_ID, POOLS_CHAIN_SLUG } from "@tools/pools-fun/constants.js";
+import {
+  POOLS_UNREGISTERED_SENTENCE,
+  readPoolsOnChainSnapshot,
+} from "@tools/pools-fun/evm/token-registration.js";
 import {
   readPoolsClaimContext,
   simulatePoolsClaim,
@@ -66,7 +70,6 @@ import type { ToolResult } from "../../../types.js";
 import { poolsFailureDetail } from "./failure.js";
 
 const TOOL_ID = "pools.claim_fees";
-const LOCKER = POOLS_LOCKER_ADDRESS as Address;
 
 /** One payout leg, as the agent reads it: raw amount, its scale, and its asset. */
 function leg(assetAddress: Address, amountRaw: bigint, decimals: number, symbol?: string) {
@@ -118,7 +121,47 @@ export async function poolsClaimFeesHandler(
   if (signing !== null && !signing.ok) return signing.result;
   const reader: PublicClient<Transport, Chain> = publicClient ?? signing!.clients.publicClient;
 
-  const contextRead = await readPoolsClaimContext(reader, token, walletAddress, LOCKER);
+  // ── WHICH SUITE HOLDS THIS TOKEN ──────────────────────────────────
+  //
+  // Before this, the locker was one pinned V1 address, so every V2/V3 token was
+  // refused with "not registered with the pools.fun locker ... older sushi
+  // launchpad" - a sentence that was wrong about the token AND wrong about the
+  // reason (measured 2026-09-04 on DICK). The suite is now DETECTED, and each of
+  // the four outcomes gets its own refusal, because "we could not ask" and
+  // "there is nothing here" must never read alike on a money path.
+  let snapshot;
+  try {
+    snapshot = await readPoolsOnChainSnapshot(token);
+  } catch (err) {
+    return fail(
+      `${TOOL_ID} could not reach the chain to find which pools.fun suite holds ${token} `
+        + `(${poolsFailureDetail(TOOL_ID, err)}). Nothing was signed, and nothing about this token's fees was `
+        + "established either way.",
+    );
+  }
+  const registration = snapshot.locker;
+  if (registration.status === "unavailable") {
+    return fail(
+      `${TOOL_ID} could not determine which pools.fun suite holds ${token}: ${registration.detail} `
+        + "Nothing was signed. Retry before concluding anything about this token's fees.",
+    );
+  }
+  if (registration.status === "ambiguous") {
+    return fail(
+      `${TOOL_ID} refuses to claim from ${token}: ${registration.detail} Vex will not pick one locker to send `
+        + "a claim to when the chain does not agree which one owns the token. Nothing was signed.",
+    );
+  }
+  if (registration.status === "unregistered") {
+    return fail(
+      `${TOOL_ID}: ${token} is ${POOLS_UNREGISTERED_SENTENCE}, so it has no creator fee stream Vex can claim. `
+        + "A token from another launchpad on this chain keeps its fees in its own contracts. Nothing was signed.",
+    );
+  }
+  const suite = registration.suite;
+  const locker = suite.locker as Address;
+
+  const contextRead = await readPoolsClaimContext(reader, token, walletAddress, suite);
   if (!contextRead.ok) {
     return fail(`${TOOL_ID} could not read this token's fee stream: ${contextRead.reason}. Nothing was signed.`);
   }
@@ -128,7 +171,7 @@ export async function poolsClaimFeesHandler(
     account: walletAddress,
     token,
     blockNumber: claimContext.blockNumber,
-    lockerAddress: LOCKER,
+    suite,
   });
 
   if (simulation.kind === "unavailable") {
@@ -162,7 +205,7 @@ export async function poolsClaimFeesHandler(
     // The gas bound is what a claim would SIGN, headroomed exactly as the
     // broadcaster signs it - a ceiling, not an estimate to spend, and `null`
     // when the node will not price it rather than a guessed number.
-    const gasLimit = await estimatePoolsClaimGas(reader, { account: walletAddress, token });
+    const gasLimit = await estimatePoolsClaimGas(reader, { account: walletAddress, token, locker });
     return ok({
       chain: POOLS_CHAIN_SLUG,
       chainId: POOLS_CHAIN_ID,
@@ -284,7 +327,7 @@ async function executeClaim(x: ExecuteClaimInput): Promise<ToolResult> {
     outcome = await signStageBroadcast(
       x.publicClient,
       x.walletClient,
-      { to: LOCKER, data: calldata, value: 0n },
+      { to: x.claimContext.suite.locker as Address, data: calldata, value: 0n },
       {
         onNonceReserved: (request) => reserveActivityEvmNonce(rowId, request),
         onHashStaged: async (handles) => {
@@ -345,7 +388,9 @@ async function executeClaim(x: ExecuteClaimInput): Promise<ToolResult> {
   const decoded = decodePoolsClaimSettlement(
     outcome.receipt.logs.map((l) => ({ address: l.address, topics: l.topics as string[], data: l.data })),
     { account: x.walletAddress, tokenAddress: x.token },
-    { locker: LOCKER },
+    // The SAME locker the claim was simulated against and broadcast to. A
+    // decoder pinned to a different suite would decline a real receipt.
+    { locker: x.claimContext.suite.locker },
   );
 
   if (!decoded.ok) {
@@ -408,12 +453,12 @@ async function executeClaim(x: ExecuteClaimInput): Promise<ToolResult> {
 /** Gas the claim would sign, headroomed exactly as the broadcaster signs it. */
 export async function estimatePoolsClaimGas(
   client: PublicClient<Transport, Chain>,
-  input: { readonly account: Address; readonly token: Address },
+  input: { readonly account: Address; readonly token: Address; readonly locker: Address },
 ): Promise<bigint | null> {
   try {
     const estimate = await client.estimateGas({
       account: input.account,
-      to: LOCKER,
+      to: input.locker,
       data: encodeFunctionData({
         abi: PARTY_LOCKER_CLAIM_ABI,
         functionName: "collectAndClaim",

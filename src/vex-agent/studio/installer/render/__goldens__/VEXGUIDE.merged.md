@@ -2,7 +2,7 @@
 
 Kept outside the markers.
 
-<!-- vex:studio:begin vex=0.2.6 hash=73cc668676df7a9f -->
+<!-- vex:studio:begin vex=0.2.6 hash=2daea0b745fa7eba -->
 # Vex guide - project "acme-trading"
 
 The companion to this project's `AGENTS.md`, which carries the authority:
@@ -141,11 +141,11 @@ DexScreener is read-only market research for indexed automated-market-maker pair
 
 Virtuals is read-only intelligence for Virtuals agents and agent tokens across the chains indexed by the provider.
 
-- Chains: base, solana, robinhood, ethereum.
-- Read: Screen virtuals agents and agent tokens, inspect robinhood agent tokens or one agent in depth, read market cap, holder count and concentration, check the anti-sniper buy-tax window and exact venue, follow recent virtuals graduations or what just graduated, and browse the fresh graduations feed, genesis calendar, launch schedule, and genesis sales.
+- Chains: base, solana, robinhood, ethereum for screening, detail, graduations and genesis. Narrower per capability: trade tape base and solana only; candles for graduated agents everywhere but ethereum, and for bonding agents on solana only. Trades execute elsewhere - kyberswap on base/ethereum, uniswap on robinhood, solana tools on solana; an EVM bonding curve has no venue tool yet.
+- Read: Read one agent's bonding-curve trade tape and build a price chart from its pool's ohlcv candles, screen virtuals agents and agent tokens, inspect robinhood agent tokens or one agent in depth, read market cap, holder count and concentration, check the anti-sniper buy-tax window and exact venue, follow recent virtuals graduations or what just graduated, and browse the fresh graduations feed, genesis calendar, launch schedule, and genesis sales.
 - Quote: No quote capability is available. Research does not establish an executable price, route, or minimum received amount.
 - Act: No action capability is available. Acquiring an agent token is a separate swap task on the venue identified by the research result.
-- Vex fee: none; every tool here is a read.
+- Vex fee: none today - every Virtuals tool here is a read, and reads are free. The confirmed policy for the curve trade and launch tools of a later lane is 25 bps of the VIRTUAL committed on a buy, of the VIRTUAL a receipt proves was received on a sell, and of the initial purchase once a launch is observed on chain; genesis is free, and a graduated agent trades under its venue's own fee with no second one.
 
 ### trench
 
