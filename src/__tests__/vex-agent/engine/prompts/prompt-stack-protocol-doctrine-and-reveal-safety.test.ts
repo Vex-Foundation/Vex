@@ -39,8 +39,12 @@ describe("prompt-stack — protocol doctrine & reveal safety", () => {
       const prompt = buildProtocolsPrompt();
       // Wave 2 migration rows T452-T459.
       expect(prompt).toContain("### Swap");
-      expect(prompt).toContain("Virtuals discovery is read-only");
-      expect(prompt).toContain("venue named by its route");
+      // PR-C2 made "Virtuals discovery is read-only" false: the namespace now
+      // owns curve trade tools, and a task shape that still called it read-only
+      // steered agents away from them. The shape now names the curve tools for a
+      // token still on its curve and keeps the post-graduation routing rule.
+      expect(prompt).toContain("still on its bonding curve trades on that curve through the virtuals curve tools");
+      expect(prompt).toContain("after graduation acquisition continues on the venue named by its route");
       expect(prompt).toContain("NEVER buy while `windowActive` is true");
       expect(prompt).toContain("virtuals__agent_get");
       expect(prompt).toContain("Bonding-curve pre-graduation can be illiquid");

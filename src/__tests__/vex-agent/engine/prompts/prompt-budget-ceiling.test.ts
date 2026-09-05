@@ -87,15 +87,31 @@ function context(overrides: Partial<EngineContext>): EngineContext {
  *   mission run / restricted    63,983 -> 64,603
  *   mission run / full          63,798 -> 64,418
  *
+ *
+ * 3. THE SWAP TASK SHAPE, corrected for curve trading (this branch). NET +80 in
+ *    every mode: one sentence replaced by a longer true one. The shape said
+ *    "Virtuals discovery is read-only and acquisition continues on the venue
+ *    named by its route", which stopped being true the moment the trade pair
+ *    landed and would have steered an agent away from the only tools that can
+ *    buy a token still on its curve. It now names the curve tools for a
+ *    pre-graduation agent and keeps the post-graduation routing rule.
+ *
+ *   agent / restricted          59,402 -> 59,482
+ *   agent / full                60,103 -> 60,183
+ *   mission setup / restricted  65,879 -> 65,959
+ *   mission setup / full        65,898 -> 65,978
+ *   mission run / restricted    64,603 -> 64,683
+ *   mission run / full          64,418 -> 64,498
+ *
  * The coordinator reviews this raise.
  */
 const MODES = [
-  { name: "agent / restricted", context: context({}), ceiling: 59_402 },
-  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 60_103 },
-  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 65_879 },
-  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 65_898 },
-  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 64_603 },
-  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 64_418 },
+  { name: "agent / restricted", context: context({}), ceiling: 59_482 },
+  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 60_183 },
+  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 65_959 },
+  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 65_978 },
+  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 64_683 },
+  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 64_498 },
 ] as const;
 
 beforeAll(() => {
