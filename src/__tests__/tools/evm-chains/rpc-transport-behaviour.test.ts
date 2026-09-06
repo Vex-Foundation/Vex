@@ -17,6 +17,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createServer, type Server } from "node:http";
 import { createPublicClient, type Chain } from "viem";
 
+import { definedValue } from "../../_test-value-guards.js";
+
 const mockLoadConfig = vi.fn();
 vi.mock("@config/store.js", () => ({ loadConfig: () => mockLoadConfig() }));
 
@@ -219,7 +221,9 @@ describe("read transport: which failures advance the endpoint list", () => {
       method: "eth_getBalance",
       class: "rate_limited",
     });
-    for (const value of Object.values(failovers[0]!.fields)) {
+    for (const value of Object.values(
+      definedValue(failovers[0], "the single rpc.failover warning").fields,
+    )) {
       if (typeof value !== "string") continue;
       expect(value).not.toContain("http://");
       expect(value).not.toContain("/");
@@ -349,7 +353,11 @@ describe("pinned signing transport", () => {
     // disqualified there is nothing left, and the failure is explicit.
     const { resolvePinnedRpcEndpoint } = await import("@tools/evm-chains/rpc-transport.js");
     const { getRpcChainEntry } = await import("@tools/evm-chains/rpc-endpoints.js");
-    const allBaseUrls = new Set(getRpcChainEntry(8453)!.endpoints.map((endpoint) => endpoint.url));
+    const allBaseUrls = new Set(
+      definedValue(getRpcChainEntry(8453), "the Base table entry").endpoints.map(
+        (endpoint) => endpoint.url,
+      ),
+    );
     await expect(
       resolvePinnedRpcEndpoint(8453, { disqualifiedUrls: allBaseUrls }),
     ).rejects.toThrow(/No broadcast-safe RPC endpoint on chain 8453/);

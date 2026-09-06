@@ -17,6 +17,8 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+import { definedValue } from "../../_test-value-guards.js";
+
 const mockLoadConfig = vi.fn();
 vi.mock("@config/store.js", () => ({ loadConfig: () => mockLoadConfig() }));
 
@@ -52,7 +54,7 @@ beforeEach(() => {
 describe("every EVM client factory honours the user's endpoint for Base 8453", () => {
   it("uniswap", () => {
     overrideFor(BASE);
-    const deployment = getUniswapDeployment(BASE)!;
+    const deployment = definedValue(getUniswapDeployment(BASE), "the Uniswap Base deployment");
     expect(getUniswapPublicClient(deployment).chain?.rpcUrls.default.http).toEqual([OVERRIDE]);
   });
 
@@ -74,13 +76,19 @@ describe("every EVM client factory honours the user's endpoint for Base 8453", (
 
   it("virtuals curve", () => {
     overrideFor(BASE);
-    const deployment = virtualsCurveDeploymentByChainId(BASE)!;
+    const deployment = definedValue(
+      virtualsCurveDeploymentByChainId(BASE),
+      "the Virtuals curve Base deployment",
+    );
     expect(getVirtualsCurvePublicClient(deployment).chain?.rpcUrls.default.http).toEqual([OVERRIDE]);
   });
 
   it("virtuals creator fees", () => {
     overrideFor(BASE);
-    const deployment = virtualsTaxDeployment("base")!;
+    const deployment = definedValue(
+      virtualsTaxDeployment("base"),
+      "the Virtuals creator-fees Base deployment",
+    );
     expect(getVirtualsTaxPublicClient(deployment).chain?.rpcUrls.default.http).toEqual([OVERRIDE]);
   });
 });
@@ -90,7 +98,7 @@ describe("pendleRpcUrls is no longer Pendle-only", () => {
     mockLoadConfig.mockReturnValue({ pendleRpcUrls: { [String(BASE)]: OVERRIDE } });
     expect(getPendlePublicClient(BASE).chain?.rpcUrls.default.http).toEqual([OVERRIDE]);
     expect(getMorphoPublicClient(BASE).chain?.rpcUrls.default.http).toEqual([OVERRIDE]);
-    const deployment = getUniswapDeployment(BASE)!;
+    const deployment = definedValue(getUniswapDeployment(BASE), "the Uniswap Base deployment");
     expect(getUniswapPublicClient(deployment).chain?.rpcUrls.default.http).toEqual([OVERRIDE]);
   });
 });
@@ -98,7 +106,7 @@ describe("pendleRpcUrls is no longer Pendle-only", () => {
 describe("Robinhood 4663 keeps the resolution it already had", () => {
   it("resolves the override through the local registry and the shared owner alike", () => {
     overrideFor(ROBINHOOD);
-    const config = getLocalChain(ROBINHOOD)!;
+    const config = definedValue(getLocalChain(ROBINHOOD), "the Robinhood local-chain config");
     expect(getLocalChainRpcUrl(config)).toBe(OVERRIDE);
     expect(toLocalViemChain(config).rpcUrls.default.http).toEqual([OVERRIDE]);
     expect(getLocalPublicClient(config).chain?.rpcUrls.default.http).toEqual([OVERRIDE]);
@@ -106,14 +114,18 @@ describe("Robinhood 4663 keeps the resolution it already had", () => {
 
   it("falls back to the bundled endpoint when the override is not an http(s) url", () => {
     mockLoadConfig.mockReturnValue({ localChainRpcUrls: { "4663": "file:///etc/passwd" } });
-    expect(getLocalChainRpcUrl(getLocalChain(ROBINHOOD)!)).toBe(
+    expect(
+      getLocalChainRpcUrl(definedValue(getLocalChain(ROBINHOOD), "the Robinhood local-chain config")),
+    ).toBe(
       "https://rpc.mainnet.chain.robinhood.com",
     );
   });
 
   it("keeps the wired Multicall3 and explorer that only the registry knows", () => {
     overrideFor(ROBINHOOD);
-    const chain = toLocalViemChain(getLocalChain(ROBINHOOD)!);
+    const chain = toLocalViemChain(
+      definedValue(getLocalChain(ROBINHOOD), "the Robinhood local-chain config"),
+    );
     expect(chain.contracts?.multicall3?.address).toBe("0xcA11bde05977b3631167028862bE2a173976CA11");
     expect(chain.blockExplorers?.default.url).toBe("https://robinhoodchain.blockscout.com");
   });

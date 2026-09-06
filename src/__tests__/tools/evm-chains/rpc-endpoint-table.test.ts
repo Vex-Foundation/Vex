@@ -11,6 +11,8 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+import { definedValue } from "../../_test-value-guards.js";
+
 const mockLoadConfig = vi.fn();
 vi.mock("@config/store.js", () => ({ loadConfig: () => mockLoadConfig() }));
 
@@ -162,7 +164,10 @@ describe("resolveRpcEndpoints", () => {
   });
 
   it("promotes rather than duplicates a bundled url the user also configured", () => {
-    const bundledFirst = getRpcChainEntry(10)!.endpoints[0]!.url;
+    const bundledFirst = definedValue(
+      definedValue(getRpcChainEntry(10), "the Optimism table entry").endpoints[0],
+      "the first bundled Optimism endpoint",
+    ).url;
     mockLoadConfig.mockReturnValue({ localChainRpcUrls: { "10": bundledFirst } });
     const resolved = resolveRpcEndpoints(10);
     expect(resolved.filter((endpoint) => endpoint.url === bundledFirst)).toHaveLength(1);
@@ -189,9 +194,10 @@ describe("resolveRpcEndpoints", () => {
   });
 
   it("drops an endpoint the caller has disqualified", () => {
-    const bundled = getRpcChainEntry(8453)!.endpoints;
-    const resolved = resolveRpcEndpoints(8453, { disqualifiedUrls: new Set([bundled[0]!.url]) });
-    expect(resolved.map((endpoint) => endpoint.url)).not.toContain(bundled[0]!.url);
+    const bundled = definedValue(getRpcChainEntry(8453), "the Base table entry").endpoints;
+    const disqualified = definedValue(bundled[0], "the first bundled Base endpoint").url;
+    const resolved = resolveRpcEndpoints(8453, { disqualifiedUrls: new Set([disqualified]) });
+    expect(resolved.map((endpoint) => endpoint.url)).not.toContain(disqualified);
     expect(resolved).toHaveLength(bundled.length - 1);
   });
 
