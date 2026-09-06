@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, type JSX, type RefObject } from "react";
-import type { IChartApi, ISeriesApi, Logical, UTCTimestamp } from "lightweight-charts";
+import type { Logical, UTCTimestamp } from "lightweight-charts";
+import type { DrawingChartApi, DrawingSeriesApi } from "./chart-analysis-api.js";
 import { drawingHistory, logicalToTime, MAX_DRAWINGS, timeToLogical, type Anchor, type Drawing, type DrawingKind } from "./chart-drawings.js";
 import { useLighterAnalysisStore } from "../../../stores/lighterAnalysisStore.js";
 const TOOLS: {
@@ -39,8 +40,8 @@ const TOOLS: {
     },
   ];
 interface Props {
-  chart: IChartApi;
-  series: ISeriesApi<"Candlestick">;
+  chart: DrawingChartApi;
+  series: DrawingSeriesApi;
   host: RefObject<HTMLDivElement | null>;
   times: readonly number[];
   scope: string;

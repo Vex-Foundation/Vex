@@ -1,7 +1,8 @@
+import { requireValue } from "../../../../../../../src/__tests__/helpers/require-value.js";
 import { useLighterAnalysisStore } from "../../../../stores/lighterAnalysisStore.js";
 import { fireEvent, render, screen, cleanup } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { IChartApi } from "lightweight-charts";
+import type { StudyChartApi } from "../chart-analysis-api.js";
 import { ChartTools } from "../ChartTools.js";
 import type { ChartCandleRow } from "../chart-adapter.js";
 vi.mock("../ChartDrawings.js", () => ({ ChartDrawings: () => null }));
@@ -10,10 +11,10 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.use
 function setup() {
   const lines: { setData: ReturnType<typeof vi.fn>; createPriceLine: ReturnType<typeof vi.fn> }[] = [];
   const setStretchFactor = vi.fn();
-  const chart = { takeScreenshot: vi.fn(() => ({ toBlob: (callback: (blob: Blob) => void) => callback(new Blob(["image"])) })), addSeries: vi.fn((_definition: unknown, _options: unknown, _pane: number) => { const line = { setData: vi.fn(), createPriceLine: vi.fn() }; lines.push(line); return line; }), removeSeries: vi.fn(), panes: () => [0, 1, 2].map(() => ({ setStretchFactor })), timeScale: () => ({ getVisibleLogicalRange: () => ({ from: 10, to: 40 }), setVisibleLogicalRange: vi.fn() }) };
+  const chart = { subscribeCrosshairMove: vi.fn(), unsubscribeCrosshairMove: vi.fn(), paneSize: () => ({ width: 500, height: 300 }), takeScreenshot: vi.fn(() => ({ toBlob: (callback: (blob: Blob | null) => void) => callback(new Blob(["image"])) })), addSeries: vi.fn((_definition: unknown, _options: unknown, _pane?: number) => { const line = { setData: vi.fn(), createPriceLine: vi.fn() }; lines.push(line); return line; }), removeSeries: vi.fn(), panes: () => [0, 1, 2].map(() => ({ setStretchFactor })), timeScale: () => ({ timeToCoordinate: () => 0, coordinateToLogical: (x: number) => x, logicalToCoordinate: (x: number) => x, subscribeVisibleLogicalRangeChange: vi.fn(), unsubscribeVisibleLogicalRangeChange: vi.fn(), getVisibleLogicalRange: () => ({ from: 10, to: 40 }), setVisibleLogicalRange: vi.fn() }) };
   const rows: ChartCandleRow[] = Array.from({ length: 50 }, (_, i) => ({ timestamp: 1_700_000_000 + i * 60, open: 10 + i, close: 11 + i, high: 12 + i, low: 9 + i, volumeBase: 100, volumeQuote: 1000 }));
   const host = { current: document.createElement("div") };
-  const props = { chart: chart as unknown as IChartApi, series: null, host, rows, scope: "rhc:7", theme: "chronos", precision: 2, chartType: "candles" as const, onChartType: vi.fn() };
+  const props = { chart: chart satisfies StudyChartApi, series: null, host, rows, scope: "rhc:7", theme: "chronos", precision: 2, chartType: "candles" as const, onChartType: vi.fn() };
   return { chart, rows, lines, props, setStretchFactor };
 }
 describe("Chart analysis controls", () => {
@@ -36,10 +37,10 @@ describe("Chart analysis controls", () => {
     const { chart, props, rows, lines } = setup();
     const view = render(<ChartTools {...props} />);
     fireEvent.click(screen.getByRole("checkbox", { name: /SMA 20/ }));
-    const before = lines[0]!.setData.mock.lastCall![0].at(-1).value;
+    const before = requireValue(requireValue(lines[0]).setData.mock.lastCall)[0].at(-1).value;
     view.rerender(<ChartTools {...props} rows={rows.map((row, i) => i === 49 ? { ...row, close: row.close + 1 } : row)} />);
     expect(chart.addSeries).toHaveBeenCalledTimes(1);
-    expect(lines[0]!.setData.mock.lastCall![0].at(-1).value).toBeCloseTo(before + .05);
+    expect(requireValue(requireValue(lines[0]).setData.mock.lastCall)[0].at(-1).value).toBeCloseTo(before + .05);
   });
   it("restores validated study, volume and type preferences without leaking between markets", () => {
     const { props } = setup();
@@ -52,7 +53,7 @@ describe("Chart analysis controls", () => {
     expect((screen.getByRole("checkbox", { name: /EMA 20/ }) as HTMLInputElement).checked).toBe(false);
     expect(props.onChartType).toHaveBeenLastCalledWith("candles");
     fireEvent.click(screen.getByRole("checkbox", { name: /SMA 20/ }));
-    expect(useLighterAnalysisStore.getState().charts["core:7"]!.preferences.studies).toEqual(["sma"]);
+    expect(requireValue(useLighterAnalysisStore.getState().charts["core:7"]).preferences.studies).toEqual(["sma"]);
     view.rerender(<ChartTools key="rhc:7" {...props} />);
     expect((screen.getByRole("checkbox", { name: /EMA 20/ }) as HTMLInputElement).checked).toBe(true);
     expect((screen.getByRole("checkbox", { name: /SMA 20/ }) as HTMLInputElement).checked).toBe(false);
@@ -63,7 +64,7 @@ describe("Chart analysis controls", () => {
     const view = render(<ChartTools {...props} chart={null} />);
     const volume = vi.fn(); props.host.current.addEventListener("lit-chart-volume", volume);
     view.rerender(<ChartTools {...props} />);
-    expect(volume.mock.lastCall![0].detail).toBe(false);
+    expect(requireValue(volume.mock.lastCall)[0].detail).toBe(false);
   });
   it("exports the native chart image and releases the download URL", () => {
     vi.useFakeTimers();
@@ -86,8 +87,8 @@ describe("Chart analysis controls", () => {
     fireEvent.change(screen.getByLabelText("Chart type"), { target: { value: "line" } });
     expect(props.onChartType).toHaveBeenCalledWith("line");
     fireEvent.click(screen.getByRole("button", { name: "Volume" }));
-    expect(volume.mock.lastCall![0].detail).toBe(false);
-    const details = screen.getByText("Indicators").closest("details")!;
+    expect(requireValue(volume.mock.lastCall)[0].detail).toBe(false);
+    const details = requireValue(screen.getByText("Indicators").closest("details"));
     details.open = true;
     const escape = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
     fireEvent(details, escape);

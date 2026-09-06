@@ -1,13 +1,14 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX, type RefObject } from "react";
-import { LineSeries, HistogramSeries, type IChartApi, type ISeriesApi } from "lightweight-charts";
+import { LineSeries, HistogramSeries } from "lightweight-charts";
+import type { DrawingSeriesApi, StudyChartApi, StudySeriesApi } from "./chart-analysis-api.js";
 import { toChartCandles, toChartVolume, type ChartCandleRow } from "./chart-adapter.js";
 import { computeStudies, STUDIES, type Study } from "./chart-indicators.js";
 import { parseChartPreferences } from "./chart-preferences.js";
 import { useLighterAnalysisStore } from "../../../stores/lighterAnalysisStore.js";
 import { ChartDrawings } from "./ChartDrawings.js";
 export interface ChartToolsProps {
-  chart: IChartApi | null;
-  series: ISeriesApi<"Candlestick"> | null;
+  chart: StudyChartApi | null;
+  series: DrawingSeriesApi | null;
   host: RefObject<HTMLDivElement | null>;
   rows: readonly ChartCandleRow[];
   scope: string;
@@ -59,7 +60,7 @@ export function ChartTools({ chart, series, host, rows, scope, theme, precision,
   };
   const studySeries = useRef<{
     id: Study;
-    lines: (ISeriesApi<"Line"> | ISeriesApi<"Histogram">)[];
+    lines: StudySeriesApi[];
   }[]>([]);
   const candles = useMemo(() => toChartCandles(rows), [rows]);
   const computed = useMemo(() => computeStudies(candles, new Map(toChartVolume(rows, "", "").map(p => [Number(p.time), p.value]))), [candles, rows]);
