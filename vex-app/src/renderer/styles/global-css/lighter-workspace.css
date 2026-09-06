@@ -37,9 +37,24 @@
 
 .lit-chart-heading .lit-chart-identity {
   display: flex;
+  flex-direction: row;
   align-items: center;
   min-width: 0;
   gap: 10px;
+}
+
+.lit-chart-panel:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  border: 0;
+  background: var(--lit-panel);
+}
+
+.lit-resolution-tabs .lit-chart-fullscreen {
+  display: grid;
+  place-items: center;
+  min-width: 30px;
+  margin-inline-start: 4px;
 }
 
 .lit-chart-connection {
@@ -79,4 +94,13 @@
   color: var(--lit-ink-secondary);
   font-size: 12px;
   line-height: 1.5;
+}
+
+@media (max-width: 760px) {
+  .lit-bottom-dock {
+    flex: 0 0 auto;
+    min-height: 240px;
+  }
+
+  .lit-account-resizer { display: none; }
 }

@@ -32,30 +32,19 @@ describe("Light it up responsive market metrics", () => {
     expect(css).not.toMatch(/\.lit-market-metric:nth-of-type/);
   });
 
-  it("contains the market picker within the narrow viewport", () => {
-    expect(css).toMatch(/\.lit-market-picker-layer\s*\{[^}]*position: fixed;[^}]*inset: 0;[^}]*min-height: 100dvh;[^}]*padding: 12px;/s);
-    expect(css).toContain(
-      ".lit-market-picker { width: 100%; max-height: min(72dvh, 620px); border-radius: 14px; }",
-    );
+  it("keeps the chart, order book, desk and account panel available on compact screens", () => {
+    expect(css).toContain('"trades trades chat"');
+    expect(css).toContain('"trades trades"');
+    expect(css).toContain("var(--lit-bottom-height, 190px)");
+    expect(css).not.toMatch(/\.lit-bottom-panel\s*\{[^}]*display: none/s);
+    expect(css).not.toMatch(/\.lit-chat-panel\s*\{[^}]*display: none/s);
   });
 
-  it("bounds the desktop picker so the live chart remains visible", () => {
-    expect(css).toContain("min-height: calc(100dvh - 140px);");
-    expect(css).toContain("width: min(780px, calc(100vw - 24px));");
-    expect(css).toContain("width: clamp(860px, 52vw, 960px);");
-    expect(css).toContain("max-height: min(640px, calc(100dvh - 300px));");
-  });
-
-  it("separates the market catalogue from the live chart with one elevated layer", () => {
-    expect(css).toContain("background: var(--lit-market-picker-scrim);");
-    expect(css).toContain("backdrop-filter: blur(3px) saturate(0.72);");
-    expect(css).toContain("background: var(--lit-market-picker-surface);");
-    expect(css).toContain("animation: lit-market-picker-enter 180ms cubic-bezier(0.16, 1, 0.3, 1);");
-  });
-
-  it("settles the market catalogue on complete rows so ticker identities stay visible", () => {
-    expect(css).toContain("scroll-snap-type: y mandatory;");
-    expect(css).toContain("scroll-snap-align: start;");
-    expect(css).toContain("overscroll-behavior-y: contain;");
+  it("shares a neutral canvas across networks without scaling up the chrome", () => {
+    expect(css).toContain("--lit-bg: #111214;");
+    expect(css).toContain("--lit-positive: #20b7ae;");
+    expect(css).not.toContain("radial-gradient(");
+    expect(css).not.toContain("--lit-robin-neon");
+    expect(css).not.toContain("--lit-chart-font-size: 18");
   });
 });

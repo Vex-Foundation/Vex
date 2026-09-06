@@ -172,6 +172,19 @@ describe("Light it up dialog", () => {
       .toBe("true");
   });
 
+  it("closes market details with Escape while keeping the workspace open", async () => {
+    renderDialog();
+    const summary = await screen.findByText("Market details");
+    const disclosure = summary.closest("details")!;
+    disclosure.open = true;
+    summary.focus();
+
+    expect(fireEvent.keyDown(summary, { key: "Escape" })).toBe(false);
+    expect(disclosure.open).toBe(false);
+    expect(document.activeElement).toBe(summary);
+    expect(mocks.onOpenChange).not.toHaveBeenCalled();
+  });
+
   it("partitions provider markets into enabled Perps, Stocks, and Spot sections", async () => {
     renderDialog();
 
@@ -265,9 +278,9 @@ describe("Light it up dialog", () => {
 
     expect(screen.getByRole("heading", { name: "Trade ticket" })).toBeTruthy();
     expect(screen.getByRole("group", { name: "Order type" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Stop loss" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Take profit" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "SL + TP" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "Stop loss" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "Take profit" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "SL + TP" })).toBeTruthy();
     expect(screen.getByTestId("active-session-chat")).toBeTruthy();
     expect(screen.getByTestId("active-session-chat").closest("[hidden]")).not.toBeNull();
   });
@@ -275,7 +288,7 @@ describe("Light it up dialog", () => {
   it("drafts exact OCO protection into chat and preserves an existing user draft", async () => {
     renderDialog();
     fireEvent.click(await screen.findByRole("button", { name: "Trade" }));
-    fireEvent.click(screen.getByRole("button", { name: "SL + TP" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Protection order type" }), { target: { value: "oco" } });
     fireEvent.click(screen.getByRole("button", { name: "Sell" }));
     fireEvent.change(screen.getByLabelText("Base size"), { target: { value: "0.1" } });
     fireEvent.change(screen.getByLabelText("Stop loss trigger price"), { target: { value: "2900" } });
@@ -351,10 +364,10 @@ describe("Light it up dialog", () => {
 
     expect(await screen.findByRole("heading", { name: "Vex trading desk" })).toBeTruthy();
     expect(screen.getByText("No active session")).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Build the BTC trade from the tape." }))
+    expect(screen.getByRole("heading", { name: "Your BTC trading desk" }))
       .toBeTruthy();
     expect(screen.getByText(
-      "Work from the live 5m chart, order book, and recent flow—all inside one focused session.",
+      "Read the chart, explore a setup, or review a trade with Vex.",
     )).toBeTruthy();
     expect(screen.getByRole("group", { name: "Trading desk prompts" })).toBeTruthy();
 
@@ -396,8 +409,8 @@ describe("Light it up dialog", () => {
     const option = screen.getByRole("option", { name: /ETH\/USDG.*Spot.*active/i });
     expect(within(option).getByText("ETH/USDG")).toBeTruthy();
     expect(within(option).getByText("Spot")).toBeTruthy();
-    expect(screen.getByText("Minimum size")).toBeTruthy();
-    expect(screen.getByText("Minimum value")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Sort by Price" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Sort by Volume" })).toBeTruthy();
     fireEvent.click(option);
 
     await waitFor(() => {
@@ -418,7 +431,7 @@ describe("Light it up dialog", () => {
     expect(trigger.getAttribute("aria-controls")).toBe("lit-market-picker");
     expect(picker.getAttribute("aria-modal")).toBeNull();
     expect(within(picker).getByText("Markets")).toBeTruthy();
-    expect(within(picker).getByText(/Robinhood Chain.*Choose the market for this desk/)).toBeTruthy();
+    expect(within(picker).getByText("Robinhood Chain")).toBeTruthy();
     expect(picker.parentElement?.classList.contains("lit-market-picker-layer")).toBe(true);
     expect(screen.getByTestId("real-chart-host")).toBeTruthy();
   });
@@ -494,8 +507,7 @@ describe("Light it up dialog", () => {
     fireEvent.keyDown(search, { key: "Tab", shiftKey: true });
 
     expect(document.activeElement).toBe(
-      within(screen.getByRole("navigation", { name: "Market type" }))
-        .getByRole("button", { name: "Spot" }),
+      screen.getByRole("button", { name: "Add BTC Perpetual to favorites" }),
     );
     expect(document.activeElement?.getAttribute("role")).not.toBe("option");
   });

@@ -4,7 +4,6 @@ import {
   useRef,
   useState,
   type JSX,
-  type KeyboardEvent,
 } from "react";
 import type {
   LighterTradingCandle,
@@ -25,7 +24,6 @@ import {
   IconArrowUpRight,
   IconChevronDown,
   IconClose,
-  IconSearch,
 } from "../../../components/icons/index.js";
 import {
   useLighterTradingMarkets,
@@ -39,8 +37,11 @@ import {
 } from "../../../lib/composer-drafts.js";
 import { SessionPanel } from "../SessionPanel.js";
 import { MarketChart } from "./MarketChart.js";
+import { ChartFullscreenButton } from "./ChartFullscreenButton.js";
+import { MarketPicker } from "./MarketPicker.js";
 import { OrderBook, type LighterOrderBookData } from "./OrderBook.js";
 import { TradingBottomPanel } from "./AccountPanel.js";
+import { TradingWorkspace } from "./TradingWorkspace.js";
 import {
   buildLighterReviewMessage,
   TradeTicket,
@@ -249,26 +250,37 @@ export function LighterTradingDialog({
             {market === null ? (
               <WorkspaceLoading label="Choosing a market…" />
             ) : (
-              <div className="lit-workspace" data-session-active={activeSessionId !== null || undefined}>
+              <TradingWorkspace
+                hasSession={activeSessionId !== null}
+                account={(
+                  <TradingBottomPanel
+                    trades={publicMarketStream.trades}
+                    symbol={symbols?.base ?? market.symbol}
+                    environment={environment}
+                    open={open}
+                    tradesStatus={publicMarketStream.tradesStatus}
+                    tradesReceivedAt={publicMarketStream.tradesReceivedAt}
+                  />
+                )}
+              >
                 <section className="lit-panel lit-chart-panel" aria-labelledby="lit-chart-title">
                   <header className="lit-panel-header lit-chart-heading">
-                    <span>
+                    <span className="lit-chart-identity">
                       <h3 id="lit-chart-title">
                         {market.symbol} · {selectedMarketProduct}
                       </h3>
-                      <small>
-                        {candleStream.candles.length === 0
-                          && candleStream.status !== "unavailable"
-                          ? "Building live candle history"
-                          : candleStream.receivedAt === null
-                            ? "Trade-price REST history"
-                            : `Trade-price candles · ${streamStatusLabel(candleStream.status)}`}{" "}
-                        {formatRetrievedAt(
+                      <span
+                        className="lit-chart-connection"
+                        data-status={candleStream.status}
+                        title={`Trade-price candles · Updated ${formatRetrievedAt(
                           candleStream.receivedAt
                           ?? snapshot?.retrievedAt
                           ?? marketList.retrievedAt,
-                        )}
-                      </small>
+                        )}`}
+                      >
+                        <i aria-hidden="true" />
+                        {streamStatusLabel(candleStream.status)}
+                      </span>
                     </span>
                     <div className="lit-resolution-tabs" aria-label="Chart interval">
                       {RESOLUTIONS.map((item) => (
@@ -281,6 +293,7 @@ export function LighterTradingDialog({
                           {item}
                         </button>
                       ))}
+                      <ChartFullscreenButton />
                     </div>
                   </header>
                   <div className="lit-chart-body">
@@ -300,7 +313,21 @@ export function LighterTradingDialog({
                     />
                   </div>
                   <footer className="lit-chart-footer">
-                    <span>Trade-price REST history + Lighter trade-candle stream · no simulated points</span>
+                    <details className="lit-data-info" onKeyDown={(event) => {
+                      if (event.key !== "Escape") return;
+                      event.preventDefault();
+                      event.stopPropagation();
+                      event.currentTarget.open = false;
+                      event.currentTarget.querySelector("summary")?.focus();
+                    }}>
+                      <summary>Market details</summary>
+                      <p>
+                        Minimum order: {market.minBaseAmount} {symbols?.base ?? market.symbol}.
+                        Exchange taker fee: <span>{formatProviderPercent(market.fees.taker, market.fees.takerEnabled)}</span>.
+                        Final fees are shown in the order review.
+                        Charts use Lighter trade-price candles; hover over the connection status for the last update.
+                      </p>
+                    </details>
                     <a href="https://www.tradingview.com/" target="_blank" rel="noopener noreferrer">Charts by TradingView</a>
                   </footer>
                 </section>
@@ -330,15 +357,7 @@ export function LighterTradingDialog({
                   tradesReceivedAt={publicMarketStream.tradesReceivedAt}
                   onCreateSession={onCreateSession}
                 />
-                <TradingBottomPanel
-                  trades={publicMarketStream.trades}
-                  symbol={symbols?.base ?? market.symbol}
-                  environment={environment}
-                  open={open}
-                  tradesStatus={publicMarketStream.tradesStatus}
-                  tradesReceivedAt={publicMarketStream.tradesReceivedAt}
-                />
-              </div>
+              </TradingWorkspace>
             )}
           </>
         )}
@@ -502,10 +521,9 @@ function LighterConversation({
                       <img src="./protocols/lighter.svg" alt="" width="44" height="44" />
                     </div>
                     <div className="lit-chat-empty-copy">
-                      <h4>Build the {marketSymbol} trade from the tape.</h4>
+                      <h4>Your {marketSymbol} trading desk</h4>
                       <p>
-                        Work from the live {resolution} chart, order book, and recent
-                        flow—all inside one focused session.
+                        Read the chart, explore a setup, or review a trade with Vex.
                       </p>
                     </div>
                   </div>
@@ -687,246 +705,6 @@ function streamStatusLabel(
     case "unavailable": return "Unavailable";
     case "stopped": return "Waiting";
   }
-}
-
-function MarketPicker({
-  environment,
-  markets,
-  selectedMarketId,
-  onClose,
-  onSelect,
-}: {
-  readonly environment: LighterTradingEnvironment;
-  readonly markets: readonly LighterTradingMarket[];
-  readonly selectedMarketId: number | null;
-  readonly onClose: () => void;
-  readonly onSelect: (market: LighterTradingMarket) => void;
-}): JSX.Element {
-  const [query, setQuery] = useState("");
-  const [tab, setTab] = useState<"all" | LighterMarketSection>("all");
-  const [highlightedMarketId, setHighlightedMarketId] = useState<number | null>(selectedMarketId);
-  const pickerRef = useRef<HTMLElement | null>(null);
-  const highlightedOptionRef = useRef<HTMLButtonElement | null>(null);
-  const returnFocusRef = useRef<HTMLElement | null>(
-    document.activeElement instanceof HTMLElement ? document.activeElement : null,
-  );
-  const shown = useMemo(() => {
-    const normalized = query.trim().toLocaleLowerCase();
-    return markets.filter((market) => {
-      const classification = classifyLighterMarket(environment, market);
-      return (tab === "all" || classification.section === tab)
-        && (
-          normalized.length === 0
-          || market.symbol.toLocaleLowerCase().includes(normalized)
-          || classification.ticker.toLocaleLowerCase().includes(normalized)
-        );
-    });
-  }, [environment, markets, query, tab]);
-
-  useEffect(() => {
-    const selectedIsShown = shown.some((market) => market.marketId === selectedMarketId);
-    const highlightedIsShown = shown.some((market) => market.marketId === highlightedMarketId);
-    if (!highlightedIsShown) {
-      setHighlightedMarketId(selectedIsShown ? selectedMarketId : shown[0]?.marketId ?? null);
-    }
-  }, [highlightedMarketId, selectedMarketId, shown]);
-
-  useEffect(() => {
-    highlightedOptionRef.current?.scrollIntoView?.({ block: "nearest" });
-  }, [highlightedMarketId]);
-
-  useEffect(() => () => {
-    returnFocusRef.current?.focus();
-  }, []);
-
-  useEffect(() => {
-    const handleOutsideMouseDown = (event: MouseEvent): void => {
-      const target = event.target;
-      if (!(target instanceof Node) || pickerRef.current?.contains(target)) return;
-      if (target instanceof Element && target.closest("[data-lit-market-picker-trigger]")) return;
-      onClose();
-    };
-    document.addEventListener("mousedown", handleOutsideMouseDown);
-    return () => document.removeEventListener("mousedown", handleOutsideMouseDown);
-  }, [onClose]);
-
-  const moveHighlight = (direction: 1 | -1): void => {
-    if (shown.length === 0) return;
-    const currentIndex = shown.findIndex((market) => market.marketId === highlightedMarketId);
-    const nextIndex = currentIndex < 0
-      ? direction === 1 ? 0 : shown.length - 1
-      : (currentIndex + direction + shown.length) % shown.length;
-    setHighlightedMarketId(shown[nextIndex]!.marketId);
-  };
-
-  const handlePickerKeyDown = (event: KeyboardEvent): void => {
-    if (event.key === "Tab") {
-      const focusable = Array.from(pickerRef.current?.querySelectorAll<HTMLElement>(
-        "button:not([disabled]):not([tabindex='-1']), input:not([disabled]):not([tabindex='-1']), select:not([disabled]):not([tabindex='-1']), a[href]:not([tabindex='-1'])",
-      ) ?? []);
-      const first = focusable[0];
-      const last = focusable.at(-1);
-      if (first !== undefined && last !== undefined) {
-        if (event.shiftKey && document.activeElement === first) {
-          event.preventDefault();
-          last.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
-          event.preventDefault();
-          first.focus();
-        }
-      }
-      return;
-    }
-    if (event.key === "Escape") {
-      event.preventDefault();
-      event.stopPropagation();
-      onClose();
-      return;
-    }
-    const isSearchInput = event.target instanceof HTMLInputElement
-      && event.target.dataset.litMarketSearch === "true";
-    if (isSearchInput && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
-      event.preventDefault();
-      moveHighlight(event.key === "ArrowDown" ? 1 : -1);
-      return;
-    }
-    if (isSearchInput && event.key === "Enter" && highlightedMarketId !== null) {
-      const highlighted = shown.find((market) => market.marketId === highlightedMarketId);
-      if (highlighted !== undefined) {
-        event.preventDefault();
-        onSelect(highlighted);
-      }
-    }
-  };
-
-  return (
-    <div
-      className="lit-market-picker-layer"
-      onKeyDown={handlePickerKeyDown}
-    >
-      <section
-        id="lit-market-picker"
-        ref={pickerRef}
-        className="lit-market-picker"
-        role="dialog"
-        aria-labelledby="lit-market-picker-title"
-        aria-describedby="lit-market-picker-description"
-      >
-        <header className="lit-market-picker-heading">
-          <h2 id="lit-market-picker-title">
-            <span aria-hidden="true">Markets</span>
-            <span className="sr-only">Search Lighter markets</span>
-          </h2>
-          <p id="lit-market-picker-description">
-            {environment === "rhc" ? "Robinhood Chain" : "Lighter Core"}
-            <span aria-hidden="true"> · </span>
-            Choose the market for this desk
-          </p>
-        </header>
-        <div className="lit-market-search">
-          <IconSearch size={25} />
-          <input
-            autoFocus
-            role="combobox"
-            aria-autocomplete="list"
-            aria-controls="lit-market-options"
-            aria-expanded="true"
-            aria-activedescendant={highlightedMarketId === null ? undefined : `lit-market-${highlightedMarketId}`}
-            data-lit-market-search="true"
-            value={query}
-            onChange={(event) => setQuery(event.currentTarget.value)}
-            placeholder="Search markets"
-            aria-label="Search Lighter markets"
-          />
-          <button type="button" onClick={onClose} aria-label="Close market search"><IconClose size={20} /></button>
-        </div>
-        <nav className="lit-market-picker-tabs" aria-label="Market type">
-          {(["all", "stocks", "perp", "spot"] as const).map((item) => (
-            <button
-              type="button"
-              key={item}
-              aria-pressed={tab === item}
-              onClick={() => setTab(item)}
-            >
-              {item === "all"
-                ? "All markets"
-                : item === "stocks"
-                  ? "Stocks"
-                  : item === "perp"
-                    ? "Perpetuals"
-                    : "Spot"}
-            </button>
-          ))}
-          <span>{shown.length} markets</span>
-        </nav>
-        <div className="lit-market-table-head" aria-hidden="true">
-          <span>Market</span><span>Status</span><span>Minimum size</span><span>Minimum value</span><span>Taker fee</span>
-        </div>
-        <div
-          className="lit-market-table"
-          id="lit-market-options"
-          role="listbox"
-          aria-label="Available Lighter markets"
-        >
-          {shown.length === 0 ? (
-            <p>No matching markets.</p>
-          ) : shown.map((market) => {
-            const symbols = marketSymbols(market.symbol, market.marketType);
-            const classification = classifyLighterMarket(environment, market);
-            const productLabel = marketProductLabel(classification);
-            const takerFee = formatProviderPercent(market.fees.taker, market.fees.takerEnabled);
-            const optionLabel = [
-              market.symbol,
-              productLabel,
-              market.status,
-              `minimum size ${market.minBaseAmount} ${symbols.base}`,
-              `minimum value ${market.minQuoteAmount} ${symbols.quote}`,
-              `taker fee ${takerFee}`,
-            ].join(", ");
-            return <button
-              type="button"
-              key={market.marketId}
-              id={`lit-market-${market.marketId}`}
-              role="option"
-              tabIndex={-1}
-              aria-label={optionLabel}
-              aria-selected={market.marketId === selectedMarketId}
-              data-highlighted={market.marketId === highlightedMarketId || undefined}
-              ref={market.marketId === highlightedMarketId ? highlightedOptionRef : undefined}
-              onMouseEnter={() => setHighlightedMarketId(market.marketId)}
-              onClick={() => onSelect(market)}
-            >
-              <span className="lit-market-name">
-                <MarketSymbol environment={environment} market={market} />
-                <span className="lit-market-identity">
-                  <b title={market.symbol}>{market.symbol}</b>
-                  <small>{productLabel}</small>
-                </span>
-              </span>
-              <span className="lit-market-status" data-status={market.status}>
-                <i aria-hidden="true" />
-                <span>{market.status}</span>
-              </span>
-              <span className="lit-market-value" data-mobile-label="Min size">
-                <span>{market.minBaseAmount}</span><small>{symbols.base}</small>
-              </span>
-              <span className="lit-market-value" data-mobile-label="Min value">
-                <span>{market.minQuoteAmount}</span><small>{symbols.quote}</small>
-              </span>
-              <span className="lit-market-value" data-mobile-label="Taker fee">
-                <span>{takerFee}</span>
-              </span>
-            </button>
-          })}
-        </div>
-        <footer className="lit-market-picker-footer">
-          <span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span>
-          <span><kbd>Enter</kbd> Select</span>
-          <span><kbd>Esc</kbd> Close</span>
-        </footer>
-      </section>
-    </div>
-  );
 }
 
 function MarketMetric({ metric, label, value, tone, title }: {

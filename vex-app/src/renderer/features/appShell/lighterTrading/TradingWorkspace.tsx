@@ -24,7 +24,11 @@ export function TradingWorkspace({
     if (workspace === null) return;
     const resize = (): void => {
       if (workspace.clientHeight === 0) return;
-      const max = Math.max(MIN_HEIGHT, Math.floor(workspace.clientHeight * 0.55));
+      const reserved = Number.parseFloat(getComputedStyle(workspace).getPropertyValue("--lit-main-min-height")) || 341;
+      const max = Math.max(MIN_HEIGHT, Math.min(
+        Math.floor(workspace.clientHeight * 0.55),
+        workspace.clientHeight - reserved,
+      ));
       setMaxHeight(max);
       setHeight((current) => Math.min(current, max));
     };
