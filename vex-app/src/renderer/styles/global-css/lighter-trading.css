@@ -666,6 +666,28 @@ button.lit-market-select > .lit-chevron { width: 18px; height: 18px; color: var(
 .lit-chat-shell [data-vex-session-content] { padding-block: 12px 0; }
 .lit-chat-shell [data-vex-area="session-header"] { height: 30px; }
 .lit-chat-shell [data-vex-composer-seat] { background-color: transparent; }
+.lit-chat-shell .vex-composer-card {
+  --vex-alias-composer: var(--lit-panel-raised);
+  --vex-alias-bg-layer-2: var(--lit-panel-raised);
+  --vex-alias-bg-skeleton: var(--lit-line-strong);
+  --vex-alias-border-input: var(--lit-line-strong);
+  --vex-alias-border-l3: var(--lit-line-strong);
+  --vex-alias-label-primary: var(--lit-ink);
+  --vex-alias-label-secondary: var(--lit-ink-secondary);
+  --vex-alias-label-tertiary: var(--lit-ink-muted);
+  --vex-alias-accent-primary: var(--lit-positive);
+  --vex-alias-accent-hover: var(--lit-positive);
+  --vex-alias-accent-wash: var(--lit-positive-wash);
+  --vex-alias-button-accent-fill: var(--lit-action);
+  --vex-alias-button-accent-hover:
+    color-mix(in srgb, var(--lit-action) 84%, var(--lit-ink));
+  --vex-alias-button-accent-ink: var(--lit-action-ink);
+  --vex-alias-interactive-hover: var(--lit-hover);
+  --vex-alias-interactive-active: var(--lit-positive-wash);
+  --vex-alias-state-warn: var(--lit-warning);
+  border-radius: 8px;
+  box-shadow: none;
+}
 .lit-chat-shell .vex-chat-prose { font-size: 14px; line-height: 1.6; }
 .lit-chat-shell .vex-chat-prose table { font-size: 14px; }
 .lit-chat-shell .vex-reasoning-prose { font-size: 13px; line-height: 1.55; }
