@@ -363,3 +363,142 @@ describe("pinned signing transport", () => {
     ).rejects.toThrow(/No broadcast-safe RPC endpoint on chain 8453/);
   });
 });
+
+describe("echo memoization is per endpoint, never a candidate list per chain", () => {
+  it("resolves each transport's OWN candidates instead of reusing the first caller's list", async () => {
+    // The defect this reproduces: the first client to warm a chain fixed the
+    // whole endpoint list for the process, so a later client that supplies a
+    // different endpoint AND explicitly disqualifies the first one was still
+    // served by the first one. A caller's disqualification must be honoured.
+    const first = await node((method, id) =>
+      method === "eth_getBalance"
+        ? { body: { jsonrpc: "2.0", id, result: "0x1" } }
+        : scripted({})(method, id),
+    );
+    const second = await node((method, id) =>
+      method === "eth_getBalance"
+        ? { body: { jsonrpc: "2.0", id, result: "0x2" } }
+        : scripted({})(method, id),
+    );
+
+    const warm = createPublicClient({
+      chain: TEST_CHAIN,
+      transport: buildEvmTransport(TEST_CHAIN_ID, { providerUrls: [first.url] }),
+    });
+    await expect(
+      warm.getBalance({ address: "0x0000000000000000000000000000000000000001" }),
+    ).resolves.toBe(1n);
+
+    const later = createPublicClient({
+      chain: TEST_CHAIN,
+      transport: buildEvmTransport(TEST_CHAIN_ID, {
+        providerUrls: [second.url],
+        disqualifiedUrls: new Set([first.url]),
+      }),
+    });
+    await expect(
+      later.getBalance({ address: "0x0000000000000000000000000000000000000001" }),
+    ).resolves.toBe(2n);
+
+    expect(second.seen).toContain("eth_getBalance");
+    // The first node answered its own client and nothing after it was excluded.
+    expect(first.seen.filter((m) => m === "eth_getBalance")).toHaveLength(1);
+  });
+
+  it("asks one endpoint for its chain id once, however many transports name it", async () => {
+    const shared = await node(scripted({}));
+    const extra = await node(scripted({}));
+
+    const a = createPublicClient({
+      chain: TEST_CHAIN,
+      transport: buildEvmTransport(TEST_CHAIN_ID, { providerUrls: [shared.url] }),
+    });
+    await a.getBlockNumber();
+    const b = createPublicClient({
+      chain: TEST_CHAIN,
+      transport: buildEvmTransport(TEST_CHAIN_ID, { providerUrls: [shared.url, extra.url] }),
+    });
+    await b.getBlockNumber();
+
+    expect(shared.seen.filter((m) => m === "eth_chainId")).toHaveLength(1);
+    // The endpoint the second caller ADDED is echoed, which is the whole point:
+    // the second caller's list is resolved, not inherited.
+    expect(extra.seen.filter((m) => m === "eth_chainId")).toHaveLength(1);
+  });
+});
+
+describe("every endpoint serving the wrong chain", () => {
+  it("refuses by name: no read transport, no pin, and no answer from the wrong chain", async () => {
+    // The defect this reproduces: the verifier logged the endpoint as removed
+    // and then RESTORED the original candidates, so the same node served a
+    // balance and was selected for pinned execution.
+    const wrongChain = await node((method, id) =>
+      method === "eth_chainId"
+        ? { body: { jsonrpc: "2.0", id, result: "0xdead" } }
+        : { body: { jsonrpc: "2.0", id, result: "0xdead" } },
+    );
+
+    const client = createPublicClient({
+      chain: TEST_CHAIN,
+      transport: buildEvmTransport(TEST_CHAIN_ID, { providerUrls: [wrongChain.url] }),
+    });
+    await expect(
+      client.getBalance({ address: "0x0000000000000000000000000000000000000001" }),
+    ).rejects.toThrow(/chain_id_mismatch/);
+
+    const { resolvePinnedRpcEndpoint } = await import("@tools/evm-chains/rpc-transport.js");
+    await expect(
+      resolvePinnedRpcEndpoint(TEST_CHAIN_ID, { providerUrls: [wrongChain.url] }),
+    ).rejects.toThrow(/chain_id_mismatch/);
+
+    // It answered the echo and was never asked anything else.
+    expect(wrongChain.seen).toEqual(["eth_chainId"]);
+    const removals = loggedWarnings.filter((entry) => entry.event === "rpc.endpoint_removed");
+    expect(removals).toHaveLength(1);
+  });
+
+  it("removes it once when two transports race on the same endpoint", async () => {
+    // Both passes share the one in-flight probe and reach the mismatch branch
+    // together, so the disqualification set - not the arrival order - decides
+    // who reports it. Anything else emits the same removal twice.
+    const wrongChain = await node((method, id) =>
+      method === "eth_chainId"
+        ? { body: { jsonrpc: "2.0", id, result: "0xdead" } }
+        : { body: { jsonrpc: "2.0", id, result: "0xdead" } },
+    );
+
+    const request = (): Promise<bigint> =>
+      createPublicClient({
+        chain: TEST_CHAIN,
+        transport: buildEvmTransport(TEST_CHAIN_ID, { providerUrls: [wrongChain.url] }),
+      }).getBalance({ address: "0x0000000000000000000000000000000000000001" });
+
+    const [first, second] = await Promise.allSettled([request(), request()]);
+    expect(first.status).toBe("rejected");
+    expect(second.status).toBe("rejected");
+
+    expect(wrongChain.seen).toEqual(["eth_chainId"]);
+    expect(loggedWarnings.filter((entry) => entry.event === "rpc.endpoint_removed")).toHaveLength(1);
+  });
+
+  it("still serves the endpoints that DID echo the right chain", async () => {
+    const wrongChain = await node((method, id) =>
+      method === "eth_chainId"
+        ? { body: { jsonrpc: "2.0", id, result: "0xdead" } }
+        : { body: { jsonrpc: "2.0", id, result: "0xdead" } },
+    );
+    const right = await node((method, id) =>
+      method === "eth_getBalance"
+        ? { body: { jsonrpc: "2.0", id, result: "0x2a" } }
+        : scripted({})(method, id),
+    );
+
+    const client = createPublicClient({
+      chain: TEST_CHAIN,
+      transport: buildEvmTransport(TEST_CHAIN_ID, { providerUrls: [wrongChain.url, right.url] }),
+    });
+    await expect(
+      client.getBalance({ address: "0x0000000000000000000000000000000000000001" }),
+    ).resolves.toBe(42n);
+  });
+});
