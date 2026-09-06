@@ -371,7 +371,9 @@ describe("the incremental scan is fenced by the generation the lane read its cre
       staleGeneration,
     );
 
-    expect(result).toEqual({ enqueued: 0, sent: 0, rejected: 0, deferred: 0 });
+    // `owed` is the capability gate's counter (rows the deployed server cannot
+    // take yet); a stale tick that never reached the wire owes nothing either.
+    expect(result).toEqual({ enqueued: 0, sent: 0, rejected: 0, deferred: 0, owed: 0 });
     // No row at all, so no `backfill = false` row - and nothing was sent under
     // the credentials the reset replaced.
     expect(await outboxRowsFor(activityId)).toEqual([]);

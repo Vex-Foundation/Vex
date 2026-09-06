@@ -158,6 +158,18 @@ export type OutboxWriteOutcome =
  * proven against the running server before rows are sent, not inferred from the
  * enum it publishes.
  *
+ * NOTHING IN THIS PREDICATE IS A STATEMENT ABOUT THE SERVER, and reading it as
+ * one was a real defect (Codex final review 2026-09-06, lane 7). Both versions it
+ * compares are LOCAL: `vocabulary_version` is what this database can STORE and
+ * `backfill_vocabulary_version` is what a scan on this install has COVERED.
+ * Neither can say whether the deployment accepts a role, and a role the
+ * deployment does not carry used to come back as a per-item `validation_failed`
+ * and be marked rejected FOREVER. The capability half lives where it can be
+ * measured - `../../agentscan/server-capability.ts`, on the ingest response, with
+ * the row left OWED - and the two gates are independent: this one decides whether
+ * a row may be enqueued at all and how it is labelled, that one decides whether
+ * the deployment can take it yet.
+ *
  * `pools_fee` WAS such a gap and is now closed, by the lane that owns the pools
  * launch writer (PR5). WHAT THE HISTORICAL ROWS MEAN, decided there and recorded
  * here because this predicate is what acts on it: a `pools_fee` row is THE SAME
@@ -202,16 +214,54 @@ const ELIGIBLE_VOCABULARY_V2_SQL = `(
       (a.kind = 'claim'
        AND a.event_role IN ('pools_claim','creator_fee_claim','holder_reward_claim','reward_distribution'))
    OR (a.kind = 'launch' AND a.event_role = 'launch_cancel')
-   OR (a.kind IN ('swap','bridge','launch') AND a.event_role = 'vex_fee')
-   OR (a.kind = 'launch' AND a.event_role = 'pools_fee'))`;
+   OR (a.kind IN ('swap','bridge','launch') AND a.event_role = 'vex_fee'))`;
 
 /**
- * The vocabulary version this build writes and reports. Migration 102 stamps the
- * same number onto `agentscan_reporting_state.vocabulary_version`, so a build
- * running against a database that has not applied it stays on V1 - it cannot
- * report a role its own CHECK constraint would refuse to store.
+ * V3: the historical launch-fee rows, and WHY THEY COULD NOT JOIN V2.
+ *
+ * `pools_fee` is admitted for the reason recorded above - it is the same fee a
+ * `vex_fee` launch row is, under the spelling the vocabulary used before
+ * migration 107 unified it - but admitting it is still a WIDENING, and a
+ * widening makes rows that already exist newly eligible. It was first written
+ * into the V2 arm with the version left at 2, and that is precisely the shape
+ * the gate cannot absorb (Codex final review 2026-09-06, lane 7): the gate asks
+ * `backfill_vocabulary_version >= version`, and an installation that had already
+ * completed the V2 backfill satisfies it on the day it upgrades. Migration 107's
+ * walk is guarded by `vocabulary_version < 2` and skips that installation
+ * entirely, so the first incremental tick would sweep every historical launch
+ * fee into the outbox labelled LIVE ACTIVITY - and a completed outbox row is
+ * never re-sent, so nothing afterwards could correct it.
+ *
+ * A version is cheap and the alternative is unrepairable, so the population gets
+ * its own: migration 111 walks `vocabulary_version` to 3, the V2-covered install
+ * no longer satisfies the V3 gate, and the controlled backfill claims these rows
+ * as the history they are. Nothing else moves: the V2 arm keeps its own literal
+ * 2 below, so an install that covered V2 goes on reporting the launchpad family
+ * as live activity while only the launch-fee arm waits.
+ *
+ * The arm covers a CLOSED population. New rows are written as `vex_fee`
+ * (`@tools/pools-fun/fee/venue.ts`), so it stopped gaining members the day
+ * migration 107 landed.
  */
-export const AGENTSCAN_VOCABULARY_VERSION = 2;
+const ELIGIBLE_VOCABULARY_V3_SQL = `(a.kind = 'launch' AND a.event_role = 'pools_fee')`;
+
+/**
+ * The vocabulary version this build writes and reports. Migration 111 stamps the
+ * same number onto `agentscan_reporting_state.vocabulary_version`, so a build
+ * running against a database that has not applied it stays at whatever that
+ * database carries - it cannot report a role its own CHECK constraint would
+ * refuse to store, and it cannot claim coverage of a vocabulary it never
+ * scanned.
+ *
+ * Bumping this constant is what makes an already-completed backfill INSUFFICIENT
+ * again (`sync/agentscan-report.ts` `backfillOwed`, and the `already_marked`
+ * decline in `enqueueBackfillAndMark`), so every widening that adds historical
+ * rows must bump it and add the matching migration in the same change.
+ */
+export const AGENTSCAN_VOCABULARY_VERSION = 3;
+
+/** The version the launchpad-family arm (migration 107) was gated at, and stays gated at. */
+const LAUNCHPAD_FAMILY_VOCABULARY_VERSION = 2;
 
 /**
  * THE BACKFILL GATE ON THE WIDENED VOCABULARY, and the defect it exists to
@@ -227,10 +277,14 @@ export const AGENTSCAN_VOCABULARY_VERSION = 2;
  * detect and this install no way to correct.
  *
  * So the new vocabulary is admitted only when BOTH hold:
- *   - the database carries the widening (`vocabulary_version >= 2`), and
+ *   - the database carries the widening (`vocabulary_version >= N`), and
  *   - this scan is either the controlled backfill itself, or it runs after a
  *     backfill THAT COVERED THIS VOCABULARY completed
- *     (`backfill_vocabulary_version >= 2`).
+ *     (`backfill_vocabulary_version >= N`).
+ *
+ * N is per ARM, not per build: the launchpad family is gated at 2 and the
+ * historical launch-fee population at 3, so an installation that covered 2 keeps
+ * reporting the family live while only the arm it never scanned waits.
  *
  * THE SECOND CONDITION IS A VERSION AND NOT A TIMESTAMP, and that is the whole
  * point of it. `backfill_enqueued_at IS NOT NULL` says only that SOME backfill
@@ -258,6 +312,10 @@ const ELIGIBILITY_SQL = `
   AND (
         ${ELIGIBLE_VOCABULARY_V1_SQL}
      OR (${ELIGIBLE_VOCABULARY_V2_SQL}
+         AND s.vocabulary_version >= ${LAUNCHPAD_FAMILY_VOCABULARY_VERSION}
+         AND ($1::boolean
+              OR s.backfill_vocabulary_version >= ${LAUNCHPAD_FAMILY_VOCABULARY_VERSION}))
+     OR (${ELIGIBLE_VOCABULARY_V3_SQL}
          AND s.vocabulary_version >= ${AGENTSCAN_VOCABULARY_VERSION}
          AND ($1::boolean
               OR s.backfill_vocabulary_version >= ${AGENTSCAN_VOCABULARY_VERSION}))
@@ -983,21 +1041,35 @@ export async function markOutboxRejected(
  * rows. Fenced too: the reset sets `next_attempt_at = NOW()` because the whole
  * history is owed immediately, and a stale hold decided under the previous
  * identity must not push the new one's resend an hour into the future.
+ *
+ * `reason` is written to `last_error` when given, which is how a hold becomes
+ * VISIBLE: an outbox row with neither `sent_at` nor `rejected_at` is owed, and
+ * `last_error` is the only place that can say WHY it is waiting. The lane's
+ * capability gate depends on that - a row withheld because the deployed
+ * AgentScan server does not carry its role yet must be distinguishable, in the
+ * database, from one simply waiting on a backoff. Omitting the argument leaves
+ * whatever the row already carried, so the ordinary Retry-After hold is
+ * unchanged.
+ *
+ * `last_error` keeps its long-standing contract: status and code WORDS only,
+ * never a response body and never the ingest token.
  */
 export async function rescheduleOutbox(
   outboxIds: number[],
   delaySeconds: number,
   atGeneration: number,
+  reason?: string,
 ): Promise<OutboxWriteOutcome> {
   if (outboxIds.length === 0) return { kind: "applied", rows: 0 };
   return writeOutboxAtGeneration(atGeneration, (client) =>
     executeWith(
       client,
       `UPDATE agentscan_outbox
-          SET next_attempt_at = NOW() + make_interval(secs => $2::float8)
+          SET next_attempt_at = NOW() + make_interval(secs => $2::float8),
+              last_error = COALESCE($4::text, last_error)
         WHERE id = ANY($1::bigint[]) AND sent_at IS NULL AND rejected_at IS NULL
           AND ${GENERATION_UNCHANGED_SQL("$3")}`,
-      [outboxIds, delaySeconds, atGeneration],
+      [outboxIds, delaySeconds, atGeneration, reason ?? null],
     ),
   );
 }
