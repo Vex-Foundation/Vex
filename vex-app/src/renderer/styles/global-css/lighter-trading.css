@@ -142,6 +142,42 @@
   --lit-market-bar-surface: #f0f5e5;
 }
 
+/* Chart direction and studies stay distinct from Robinhood's lime actions. */
+.lit-dialog[data-lighter-environment="rhc"] .lit-chart-body {
+  --lit-panel: #111515;
+  --lit-grid: rgba(184, 199, 193, 0.065);
+  --lit-positive: #36b58b;
+  --lit-positive-volume: rgba(54, 181, 139, 0.27);
+  --lit-negative: #e16b73;
+  --lit-negative-volume: rgba(225, 107, 115, 0.27);
+  --lit-study-sma: #d3b779;
+  --lit-study-ema: #83a6db;
+  --lit-study-bb: #a893cf;
+  --lit-study-vwap: #7fc1cd;
+  --lit-study-rsi: #ac96d3;
+  --lit-study-macd: #83a6db;
+  --lit-study-signal: #d3b779;
+  --lit-drawing-stroke: #98a9b1;
+  background: var(--lit-panel);
+}
+
+.lit-dialog[data-lighter-theme="celeris"][data-lighter-environment="rhc"] .lit-chart-body {
+  --lit-panel: #fcfdfb;
+  --lit-grid: rgba(40, 57, 49, 0.08);
+  --lit-positive: #14815e;
+  --lit-positive-volume: rgba(20, 129, 94, 0.24);
+  --lit-negative: #bd4357;
+  --lit-negative-volume: rgba(189, 67, 87, 0.24);
+  --lit-study-sma: #86611f;
+  --lit-study-ema: #3d65a0;
+  --lit-study-bb: #76589b;
+  --lit-study-vwap: #24727e;
+  --lit-study-rsi: #76589b;
+  --lit-study-macd: #3d65a0;
+  --lit-study-signal: #86611f;
+  --lit-drawing-stroke: #607984;
+}
+
 .lit-dialog ::selection {
   background: var(--lit-selection);
   color: var(--lit-ink);

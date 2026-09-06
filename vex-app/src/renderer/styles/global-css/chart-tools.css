@@ -22,7 +22,7 @@
 .lit-drawing-rail button:disabled { opacity: .35; cursor: default; }
 .lit-drawing-divider { flex-shrink: 0; width: 18px; height: 1px; margin: 4px 0; background: var(--lit-line); }
 .lit-drawing-layer { position: absolute; top: 39px; left: 38px; width: calc(100% - 38px); height: calc(100% - 39px); z-index: 3; overflow: hidden; cursor: crosshair; }
-.lit-drawing-shape { stroke: var(--lit-positive); stroke-width: 1.5; fill: color-mix(in srgb, var(--lit-positive) 7%, transparent); cursor: pointer; }
+.lit-drawing-shape { stroke: var(--lit-drawing-stroke, var(--lit-positive)); stroke-width: 1.5; fill: color-mix(in srgb, var(--lit-drawing-stroke, var(--lit-positive)) 7%, transparent); cursor: pointer; }
 .lit-drawing-shape[data-selected="true"] { stroke: var(--lit-ink); stroke-width: 2; }
 .lit-drawing-shape text { fill: var(--lit-ink); stroke: var(--lit-panel); stroke-width: 3; paint-order: stroke; font-size: 11px; font-family: var(--font-mono); pointer-events: none; }
 .lit-drawing-shape .lit-drawing-hit { stroke: transparent; stroke-width: 12; fill: none; }

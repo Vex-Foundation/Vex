@@ -77,6 +77,8 @@ export function ChartTools({ chart, series, host, rows, scope, theme, precision,
     studySeries.current = studies.map(id => {
       const paneIndex = id === "rsi" || id === "macd" ? pane++ : 0;
       const lines = computedRef.current[id].map((data, i) => {
+        const colorRole = id === "macd" && i === 1 ? "signal" : id;
+        const studyColor = colors?.getPropertyValue(`--lit-study-${colorRole}`).trim();
         const line = id === "macd" && i === 2
           ? chart.addSeries(HistogramSeries, {
             title: "MACD Δ",
@@ -85,7 +87,7 @@ export function ChartTools({ chart, series, host, rows, scope, theme, precision,
           }, paneIndex)
           : chart.addSeries(LineSeries, {
             title: id === "macd" ? i === 0 ? "MACD" : "Signal" : `${STUDIES.find(s => s.id === id)!.label}${i ? i === 1 ? " upper" : " lower" : ""}`,
-            color: i === 1 ? secondary : i === 2 ? negative : positive,
+            color: studyColor || (i === 1 ? secondary : i === 2 ? negative : positive),
             lineWidth: 1,
             priceLineVisible: false,
             lastValueVisible: false,
