@@ -37,7 +37,13 @@ export function buildProductionSolanaRepairDeps(): SolanaActivitySweepDeps {
   const resolveHealthyRpcUrl = (): Promise<string | null> => {
     if (!healthyRpcUrl) {
       healthyRpcUrl = (async () => {
-        const rpcUrl = loadConfig().solana.rpcUrl;
+        // Through the shared Solana resolver, so a read-only sweep uses the
+        // measured read endpoint (or the user's own) rather than re-reading
+        // the raw config field this module used to own a copy of.
+        const { resolveSolanaRpcUrl } = await import(
+          "@tools/solana-ecosystem/shared/solana-transaction/connection.js"
+        );
+        const rpcUrl = resolveSolanaRpcUrl("read");
         return (await confirmSolanaMainnetGenesis(rpcUrl)) ? rpcUrl : null;
       })();
     }

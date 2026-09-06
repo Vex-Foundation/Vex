@@ -54,14 +54,6 @@ export interface VirtualsCurveDeployment {
     readonly bondingV5: Address;
     readonly frouterV3: Address;
   };
-  /**
-   * Bundled default RPC. Base is `base.drpc.org` for the reason
-   * `uniswap/deployments.ts` records: publicnode refuses
-   * `eth_getTransactionReceipt` and `mainnet.base.org` rate-limits at about five
-   * requests. Robinhood is resolved through the LOCAL chain registry instead, so
-   * a user's own RPC override wins there; this value is the fallback.
-   */
-  readonly defaultRpcUrl: string;
 }
 
 const BASE: VirtualsCurveDeployment = {
@@ -78,7 +70,6 @@ const BASE: VirtualsCurveDeployment = {
     bondingV5: "0x20C124e13069889633FC4212e0797c95cb30Db40",
     frouterV3: "0x58377381523e86d66F9f29016371335dDcB89d32",
   },
-  defaultRpcUrl: "https://base.drpc.org",
 };
 
 const ROBINHOOD: VirtualsCurveDeployment = {
@@ -95,7 +86,6 @@ const ROBINHOOD: VirtualsCurveDeployment = {
     bondingV5: "0x66Fc520c7F316B8623eee2A5dA821c3b34D0539D",
     frouterV3: "0x09256b9D607c53fD946681F7C5a7a4381ba285A1",
   },
-  defaultRpcUrl: "https://rpc.mainnet.chain.robinhood.com",
 };
 
 const BY_KEY: Readonly<Record<VirtualsCurveChainKey, VirtualsCurveDeployment>> = {

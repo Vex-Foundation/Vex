@@ -5,7 +5,6 @@
 import {
   createPublicClient,
   createWalletClient,
-  http,
   type Account,
   type Address,
   type Chain,
@@ -18,6 +17,8 @@ import { privateKeyToAccount } from "viem/accounts";
 import { VexError, ErrorCodes } from "../../../errors.js";
 import { slugToChainId } from "../chains.js";
 import { getLocalChain, getLocalChainRpcUrl, toLocalViemChain } from "../../evm-chains/registry.js";
+import { resolveRpcEndpoints } from "../../evm-chains/rpc-endpoints.js";
+import { buildEvmTransport, buildPinnedEvmTransport } from "../../evm-chains/rpc-transport.js";
 import type { KyberChainSlug } from "../types.js";
 
 /**
@@ -80,68 +81,34 @@ export const ERC20_ABI = [
   },
 ] as const;
 
-// ── Default RPC URLs per chain ──────────────────────────────────────
-
-// Base and Arbitrum are deliberately NOT publicnode: the funded live probe of
-// 2026-08-17 proved `base-rpc.publicnode.com` and `arbitrum-one-rpc.publicnode.com`
-// refuse `eth_getTransactionReceipt` at the METHOD level (-32602 "Archive
-// requests require a personal token") even for a head-block transaction, so a
-// swap sent through them can never be confirmed. Both replacements were
-// live-verified to serve a receipt for a transaction from their own latest
-// block. Base is drpc rather than the official `mainnet.base.org` because that
-// one rate limits at about five requests (5x 200 then 7x 429 in a 12-request
-// burst) while `base.drpc.org` took 30 with no throttling. The other publicnode
-// endpoints answered normally on the same day.
+// ── RPC ─────────────────────────────────────────────────────────────
 //
-// SECOND CORRECTION, SAME DAY: the funded probe's rerun proved drpc meters a
-// COMPUTE budget, not a request count - five consecutive heavy eth_call
-// simulations (~460k gas each) exhausted the free plan, after which even a
-// trivial read was refused. A battery with the real 804-byte Morpho deposit
-// bundle measured `base-mainnet.public.blastapi.io` and `1rpc.io/base` at 8/8
-// heavy calls plus a served receipt, drpc at 0/8 once spent, the official
-// endpoint at 5/8 then 429. Base therefore moves to blastapi. This table is
-// the SHARED per-slug default for EVM venues (morpho derives its own table
-// from it; pendle aligns its chains to these slugs) - fix an endpoint here,
-// not in a per-venue copy.
-export const DEFAULT_RPC: Record<string, string> = {
-  ethereum: "https://ethereum-rpc.publicnode.com",
-  bsc: "https://bsc-rpc.publicnode.com",
-  arbitrum: "https://arb1.arbitrum.io/rpc",
-  polygon: "https://polygon-bor-rpc.publicnode.com",
-  optimism: "https://optimism-rpc.publicnode.com",
-  avalanche: "https://avalanche-c-chain-rpc.publicnode.com",
-  base: "https://base-mainnet.public.blastapi.io",
-  linea: "https://rpc.linea.build",
-  mantle: "https://rpc.mantle.xyz",
-  sonic: "https://rpc.soniclabs.com",
-  berachain: "https://rpc.berachain.com",
-  ronin: "https://api.roninchain.com/rpc",
-  unichain: "https://mainnet.unichain.org",
-  hyperevm: "https://rpc.hyperliquid.xyz/evm",
-  plasma: "https://rpc.plasma.to",
-  monad: "https://rpc.monad.xyz",
-  megaeth: "https://mainnet.megaeth.com/rpc",
-};
-
-export const RPC_TIMEOUT_MS = 30_000;
-export const RPC_RETRY_COUNT = 2;
-
-// ── RPC + viem Chain resolution ─────────────────────────────────────
+// THE ENDPOINT TABLE THAT USED TO LIVE HERE HAS MOVED to
+// `@tools/evm-chains/rpc-endpoints.ts`, which is now the one owner for every
+// venue. This file's old header claimed to be "the SHARED per-slug default -
+// fix an endpoint here, not in a per-venue copy", and five files never followed
+// it: Uniswap, Pendle and the three Virtuals tables kept `base.drpc.org` long
+// after this table had moved Base off it. A rule that only one file's author
+// remembers is not an owner; a function every client factory must call is.
+//
+// The keys changed with the move: the owner is keyed by CHAIN ID, not by
+// KyberSwap slug, because a chain id is what the user's override, the receipt
+// probe and every other venue already speak.
 
 /**
- * Resolve the RPC URL for a Kyber-supported chain. Robinhood (4663) defers to the
- * shared evm-chains registry (honouring a user override); every other chain uses
- * the bundled default. Throws (never a silent undefined) when a chain has no RPC.
+ * The first endpoint the shared owner resolves for a Kyber slug. Chain
+ * METADATA, not the transport. Throws (never a silent undefined) when neither
+ * the user nor the table has an endpoint for the chain.
  */
 function resolveKyberRpcUrl(slug: KyberChainSlug): string {
   if (slug === "robinhood") {
     return getLocalChainRpcUrl(robinhoodLocalChain());
   }
-  const rpcUrl = DEFAULT_RPC[slug];
-  if (!rpcUrl) {
+  const first = resolveRpcEndpoints(slugToChainId(slug))[0];
+  if (first === undefined) {
     throw new VexError(ErrorCodes.KYBER_UNSUPPORTED_CHAIN, `No RPC URL for chain: ${slug}`);
   }
-  return rpcUrl;
+  return first.url;
 }
 
 export function toViemChain(slug: KyberChainSlug): Chain {
@@ -169,17 +136,17 @@ export interface KyberEvmClients {
 
 export function getKyberEvmClients(slug: KyberChainSlug, privateKey: Hex): KyberEvmClients {
   const chain = toViemChain(slug);
-  const rpcUrl = resolveKyberRpcUrl(slug);
+  // ONE pinned transport for both clients (see `evm-chains/rpc-transport.ts`):
+  // the quote simulation, the estimate, the nonce and the broadcast all land on
+  // the same node.
+  const transport = buildPinnedEvmTransport(chain.id);
 
-  const publicClient = createPublicClient({
-    chain,
-    transport: http(rpcUrl, { timeout: RPC_TIMEOUT_MS, retryCount: RPC_RETRY_COUNT }),
-  }) as PublicClient<Transport, Chain>;
+  const publicClient = createPublicClient({ chain, transport }) as PublicClient<Transport, Chain>;
 
   const walletClient = createWalletClient({
     account: privateKeyToAccount(privateKey),
     chain,
-    transport: http(rpcUrl, { timeout: RPC_TIMEOUT_MS, retryCount: RPC_RETRY_COUNT }),
+    transport,
   }) as WalletClient<Transport, Chain, Account>;
 
   return { publicClient, walletClient };
@@ -193,9 +160,8 @@ export function getKyberEvmClients(slug: KyberChainSlug, privateKey: Hex): Kyber
  */
 export function getKyberPublicClient(slug: KyberChainSlug): PublicClient<Transport, Chain> {
   const chain = toViemChain(slug);
-  const rpcUrl = resolveKyberRpcUrl(slug);
   return createPublicClient({
     chain,
-    transport: http(rpcUrl, { timeout: RPC_TIMEOUT_MS, retryCount: RPC_RETRY_COUNT }),
+    transport: buildEvmTransport(chain.id),
   }) as PublicClient<Transport, Chain>;
 }
