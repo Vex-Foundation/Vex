@@ -14,34 +14,34 @@
  * module runs. This module only ever produces a URL the launch-assets client
  * verified against the sha256 of the bytes it uploaded.
  *
- * ## Two surfaces, two sources, ONE verification
+ * ## THIS MODULE NEVER PUBLISHES
  *
- *   in_app_form  the picture lives in the user's local image locker. It must
- *                already be published: `launchpads__image_publish` is the
- *                owner of that step, and this refuses BY NAME pointing at it
- *                rather than publishing a second way. One owner for "bytes
- *                become public" means one place a user's consent to publishing
- *                is asked for, and the publish tool is approval-gated for
- *                exactly that reason.
- *   studio_mcp   an external coding agent has no locker; it names a file inside
- *                its own project. There is no locker row to record a publish
- *                against and no second consent surface to route through, so the
- *                bytes are read through the contained no-follow reader and
- *                uploaded here - through the SAME client, with the same local
- *                re-derivation of the content id.
+ * Publishing makes bytes fetchable by anyone, forever. That is a consent
+ * decision, and `launchpads__image_publish` is the approval-gated tool that
+ * owns it. So both surfaces resolve to a picture that is ALREADY public - a
+ * `launch_images` row carrying the public URL and content id that tool
+ * recorded - and anything else is refused BY NAME, pointing at the tool that
+ * asks the question.
  *
- * The upload is idempotent by content at the host, so a Studio caller that
- * retries a launch does not accumulate assets.
+ * IT USED TO PUBLISH, on the Studio surface, and the 2026-09-06 final review
+ * measured the cost. The upload sat behind `virtuals__agent_launch_preview`,
+ * which the manifest classifies `local_write` and describes as spending
+ * nothing and sending nothing, and behind `simulateOnly`, which promises that
+ * no preview is claimed and nothing is broadcast. A person reading either
+ * sentence would not learn that a private file in their repository had just
+ * been published to a public host. A second publishing path is also a second
+ * place the consent question could be skipped, which is exactly what happened.
+ *
+ * THE CONSEQUENCE IS NAMED RATHER THAN HIDDEN: `launchpads__image_publish` is
+ * not available over the Vex Studio MCP surface (there is no image locker
+ * there), so a Virtuals launch cannot currently be driven end to end from
+ * Studio. The refusal says so and says where the launch CAN be done, instead
+ * of publishing on the user's behalf to keep a path open.
  */
 
-import {
-  resolveLaunchAssetsPublisher,
-  type UploadOutcome,
-} from "../../../../../agentscan/assets-client.js";
 import { getLaunchImage } from "../../../../../db/repos/launch-images.js";
 import {
   readLaunchImageSelection,
-  resolveProjectFileLaunchImage,
   LAUNCH_IMAGE_PARAM_BY_SURFACE,
 } from "../../../shared/launch-image-input.js";
 import type { ProtocolExecutionContext } from "../../../types.js";
@@ -100,7 +100,28 @@ export async function resolveLaunchImage(input: {
   if (selection.selection.kind === "locker") {
     return await resolveFromLocker(selection.selection.imageId);
   }
-  return await resolveFromProjectFile(selection.selection.imagePath, input.context);
+  return refuseUnpublishedProjectFile(selection.selection.imagePath);
+}
+
+/**
+ * The Studio surface named a file in its project. Vex will not publish it.
+ *
+ * The refusal is specific about WHAT is missing (a picture that is already
+ * public), WHO may make it public (the approval-gated publish tool) and WHERE
+ * that tool runs (the Vex app), because an agent that is only told "no" will
+ * try the same call again with a different path.
+ */
+function refuseUnpublishedProjectFile(imagePath: string): ResolveLaunchImageResult {
+  return {
+    ok: false,
+    reason:
+      `Vex will not publish "${imagePath}" as part of a launch, and nothing was uploaded. A Virtuals launch writes `
+      + "the picture's URL into contract storage permanently, so it must address bytes that are already public and "
+      + "cannot change - and making bytes public is a decision only the person whose files they are can take. "
+      + "launchpads__image_publish is the tool that asks for that approval, and it runs in the Vex app, where the "
+      + "picture is staged in the image locker. Publish the picture there and launch the agent from the Vex app. "
+      + "Nothing was signed.",
+  };
 }
 
 /**
@@ -146,83 +167,4 @@ async function resolveFromLocker(imageId: string): Promise<ResolveLaunchImageRes
       label: row.label,
     },
   };
-}
-
-/** The Studio path: contained project bytes, uploaded through the verified client. */
-async function resolveFromProjectFile(
-  imagePath: string,
-  context: ProtocolExecutionContext,
-): Promise<ResolveLaunchImageResult> {
-  const bytes = await resolveProjectFileLaunchImage({ kind: "project_file", imagePath }, context);
-  if (!bytes.ok) return { ok: false, reason: bytes.reason };
-
-  const publisher = await resolveLaunchAssetsPublisher();
-  if (publisher.kind !== "ready") {
-    return { ok: false, reason: describePublisherUnavailable(publisher.kind) };
-  }
-
-  const outcome = await publisher.client.uploadAsset({
-    ingestToken: publisher.ingestToken,
-    bytes: bytes.image.bytes,
-  });
-  if (outcome.kind !== "ok") return { ok: false, reason: describeUploadFailure(outcome) };
-
-  return {
-    ok: true,
-    image: {
-      url: outcome.url,
-      cid: outcome.cid,
-      imageId: null,
-      label: bytes.image.displayLabel,
-    },
-  };
-}
-
-function describePublisherUnavailable(kind: "agentscan_unconfigured" | "install_unregistered"): string {
-  if (kind === "agentscan_unconfigured") {
-    return (
-      "The Vex launch-assets host is not configured for this install, so there is nowhere to publish the picture to. "
-      + "A Virtuals launch cannot write a mutable URL on chain, so nothing was signed."
-    );
-  }
-  return (
-    "This install is not registered with the Vex launch-assets host yet, so the picture cannot be published. Nothing "
-    + "was signed."
-  );
-}
-
-/**
- * Every failure the host can answer with, said as a sentence a person can act
- * on. Exhaustive by construction: a new outcome kind fails to compile here.
- */
-function describeUploadFailure(outcome: Exclude<UploadOutcome, { kind: "ok" }>): string {
-  switch (outcome.kind) {
-    case "cid_mismatch":
-      return (
-        "The launch-assets host answered with a URL that does not address the bytes Vex uploaded "
-        + `(${outcome.reason}). Vex re-derives the content hash locally and refuses a mismatch rather than writing an `
-        + "unverified URL on chain. Nothing was signed."
-      );
-    case "unsupported_image":
-      return "That file is not an image type the host accepts (png, jpeg, webp or gif, checked by magic bytes).";
-    case "too_large":
-      return "That image is larger than the 2 MB the launch-assets host accepts. Use a smaller picture.";
-    case "deleted":
-      return (
-        "Those exact bytes were published before and then permanently withdrawn, so the host will not serve them "
-        + "again. Use a different picture."
-      );
-    case "quota_exceeded":
-      return "This install has reached its launch-assets quota. Delete a published asset or wait for the quota window.";
-    case "unauthorized":
-      return "The launch-assets host rejected this install's credential. Nothing was signed.";
-    case "invalid":
-      return "The launch-assets host rejected the upload as malformed. Nothing was signed.";
-    case "unavailable":
-      return "The launch-assets host could not be reached, so the picture could not be published. Nothing was signed.";
-    default: {
-      const exhaustive: never = outcome;
-      return `The picture could not be published (${JSON.stringify(exhaustive)}). Nothing was signed.`;
-    }
-  }
 }

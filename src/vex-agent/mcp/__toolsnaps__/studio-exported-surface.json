@@ -10623,7 +10623,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 2276,
+      "descriptionBytes": 2428,
       "destructiveHint": true,
       "inputSchema": {
         "additionalProperties": false,
@@ -10692,7 +10692,7 @@
             "type": "string"
           },
           "imagePath": {
-            "description": "The picture, over the Vex Studio MCP surface: a path to an image file inside THIS project. REQUIRED on that surface, where there is no image locker. Vex reads the bytes without following symlinks, publishes them to its content-addressed host and writes that hash URL on chain. You cannot pass a URL of your own.",
+            "description": "The picture, over the Vex Studio MCP surface: a path to an image file inside THIS project. IT IS REFUSED BY A VIRTUALS LAUNCH, and the refusal is the honest answer rather than a gap. The URL written on chain is permanent, so it must address bytes that were made public deliberately, and making a file public is a decision Vex will not take for you as a side effect of a launch or a preview. launchpads__image_publish is the approval-gated tool that asks for it, and it runs in the Vex app, where pictures are staged in the image locker - so a Virtuals agent launch is done from the Vex app today. You cannot pass a URL of your own on either surface.",
             "type": "string"
           },
           "links": {
@@ -10815,7 +10815,7 @@
             "type": "string"
           },
           "imagePath": {
-            "description": "The picture, over the Vex Studio MCP surface: a path to an image file inside THIS project. REQUIRED on that surface, where there is no image locker. Vex reads the bytes without following symlinks, publishes them to its content-addressed host and writes that hash URL on chain. You cannot pass a URL of your own.",
+            "description": "The picture, over the Vex Studio MCP surface: a path to an image file inside THIS project. IT IS REFUSED BY A VIRTUALS LAUNCH, and the refusal is the honest answer rather than a gap. The URL written on chain is permanent, so it must address bytes that were made public deliberately, and making a file public is a decision Vex will not take for you as a side effect of a launch or a preview. launchpads__image_publish is the approval-gated tool that asks for it, and it runs in the Vex app, where pictures are staged in the image locker - so a Virtuals agent launch is done from the Vex app today. You cannot pass a URL of your own on either surface.",
             "type": "string"
           },
           "links": {

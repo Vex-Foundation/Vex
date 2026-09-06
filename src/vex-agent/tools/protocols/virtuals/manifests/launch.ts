@@ -108,9 +108,13 @@ function launchFieldParams(): ProtocolParamDef[] {
       key: "imagePath",
       type: "string",
       description:
-        "The picture, over the Vex Studio MCP surface: a path to an image file inside THIS project. REQUIRED on that "
-        + "surface, where there is no image locker. Vex reads the bytes without following symlinks, publishes them "
-        + "to its content-addressed host and writes that hash URL on chain. You cannot pass a URL of your own.",
+        "The picture, over the Vex Studio MCP surface: a path to an image file inside THIS project. IT IS REFUSED BY "
+        + "A VIRTUALS LAUNCH, and the refusal is the honest answer rather than a gap. The URL written on chain is "
+        + "permanent, so it must address bytes that were made public deliberately, and making a file public is a "
+        + "decision Vex will not take for you as a side effect of a launch or a preview. "
+        + "launchpads__image_publish is the approval-gated tool that asks for it, and it runs in the Vex app, where "
+        + "pictures are staged in the image locker - so a Virtuals agent launch is done from the Vex app today. You "
+        + "cannot pass a URL of your own on either surface.",
     },
     {
       key: "amountIn",
@@ -210,7 +214,9 @@ export const VIRTUALS_LAUNCH_TOOLS: readonly ProtocolToolManifest[] = [
       + "rebuilds the exact preLaunch calldata and REFUSES if its fingerprint differs from the one the preview "
       + "sealed - a changed field, picture or amount is refused by name rather than re-priced, and the preview is "
       + "not consumed. It also refuses if a proxy was upgraded, if the venue's suite no longer matches Vex's pins, "
-      + "if the wallet cannot pay, or if BondingConfig now treats this launch as scheduled. It sends up to two "
+      + "or if the wallet cannot pay. The launch is structurally IMMEDIATE and cannot become scheduled between the "
+      + "preview and the signature: preLaunch is encoded with startTime 0, which is below the venue's scheduled "
+      + "threshold at every block. It sends up to two "
       + "transactions: an EXACT-amount approval to BondingV5 when the allowance is short (BondingV5, not the curve "
       + "router - preLaunch pulls the purchase itself; never unlimited), and the preLaunch. THEN IT WATCHES, and "
       + "this is the part that matters: a Virtuals launch needs a SECOND transaction, the keeper's launch(token), "

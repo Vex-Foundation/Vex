@@ -266,7 +266,7 @@ free. Both texts live on the tool
 | virtuals__agent_candles_list | Read a Virtuals agent's price candles | protocol | yes | no | no | - | 2973 | - | none (read) |
 | virtuals__agent_get | Read one Virtuals agent token | protocol | yes | no | no | - | 1365 | - | none (read) |
 | virtuals__agent_launch_cancel | Cancel a Virtuals agent launch | protocol | no | yes | no | - | 1677 | - | - |
-| virtuals__agent_launch_execute | Launch a Virtuals agent | protocol | no | yes | no | - | 2276 | - | - |
+| virtuals__agent_launch_execute | Launch a Virtuals agent | protocol | no | yes | no | - | 2428 | - | - |
 | virtuals__agent_launch_preview | Plan a Virtuals agent launch | protocol | no | no | no | - | 2023 | - | - |
 | virtuals__agent_launch_status | Check a Virtuals agent launch | protocol | yes | no | no | - | 1889 | - | none (read) |
 | virtuals__agent_trade_execute | Trade a Virtuals agent on its bonding curve | protocol | no | yes | no | - | 1971 | - | - |

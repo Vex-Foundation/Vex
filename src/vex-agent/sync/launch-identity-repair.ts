@@ -1,6 +1,6 @@
 /**
- * Trench launch IDENTITY repair — the crash-recovery reconciler for launches
- * whose `create` settled but whose token identity was never written.
+ * Launch IDENTITY repair - the crash-recovery reconciler for launches whose
+ * creating transaction settled but whose token identity was never written.
  *
  * ── Why the generic sweep cannot do this ───────────────────────────────────
  *
@@ -43,10 +43,18 @@
  *
  * WHERE THE PIECES LIVE. This file owns the SWEEP: which intents are claimed,
  * what each answer is allowed to transition, and the order of the writes. How
- * the chain is asked - and WHICH launchpad decoder answers, since the two
- * launchpads attribute a launch through different events - lives in the
- * same-named sibling folder (`./launch-identity-repair/`). The public entry
- * point and every exported name are unchanged.
+ * the chain is asked - and WHICH launchpad decoder answers, since the three
+ * launchpads attribute a launch through different events from different
+ * contracts - lives in the same-named sibling folder
+ * (`./launch-identity-repair/`). The public entry point and every exported name
+ * are unchanged.
+ *
+ * NOT EVERY LAUNCHPAD ENDS AT `confirmed`. A Virtuals launch takes TWO
+ * transactions and only the first is Vex's, so a recovered `preLaunch` lands in
+ * `awaiting_keeper` with the Vex fee waived (owner F3) and is handed to
+ * `sync/virtuals-keeper-launch.ts`, which is the only job that claims that
+ * status. Confirming it here would claim an agent is live because its
+ * pre-launch mined, which is exactly the thing the venue's shape makes untrue.
  *
  * LOOKUP-ONLY AND SESSION-SAFE. The candidate query is global (its rows span
  * arbitrary sessions), but every WRITE goes back through the session-scoped CAS
@@ -70,12 +78,15 @@ import {
   type TokenLaunchIntent,
 } from "@vex-agent/db/repos/token-launch-intents.js";
 import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
+import { readVirtualsIntentBlock } from "@vex-agent/tools/protocols/virtuals/handlers/launch/intent-block.js";
+import { settleLaunchOutcome } from "@vex-agent/tools/protocols/virtuals/handlers/launch/intent.js";
 import logger from "@utils/logger.js";
 import { isReceiptNotFound } from "./launch-identity-repair/receipt-errors.js";
 import { readAuthorizedPoolsPlan } from "./launch-identity-repair/production-deps.js";
 import type {
   LaunchIdentityRepairDeps,
   LaunchReceiptOutcome,
+  VirtualsPreLaunchRecovery,
 } from "./launch-identity-repair/types.js";
 
 // The public surface is UNCHANGED by the split: every existing importer of this
@@ -88,6 +99,7 @@ export type {
   LaunchReceiptIdentity,
   LaunchReceiptLookupInput,
   LaunchReceiptOutcome,
+  VirtualsPreLaunchRecovery,
 } from "./launch-identity-repair/types.js";
 
 /**
@@ -104,6 +116,12 @@ export const LAUNCH_REPAIR_BATCH_LIMIT = 25;
 /** Native ETH, the unit the prebuy was SPENT in. */
 const NATIVE_ADDRESS = "0x0000000000000000000000000000000000000000";
 
+/**
+ * `launched_tokens.launchpad` for a Virtuals agent - this repository's own
+ * venue vocabulary, the same literal the launch handler's identity writer uses.
+ */
+const VIRTUALS_LAUNCHPAD = "virtuals";
+
 export interface LaunchIdentityRepairResult {
   readonly checked: number;
   /** Intents moved `broadcast_pending → confirmed` by THIS run. */
@@ -119,6 +137,12 @@ export interface LaunchIdentityRepairResult {
    * starts saying what is actually known about it.
    */
   readonly supersededMirrored: number;
+  /**
+   * VIRTUALS intents moved `broadcast_pending -> awaiting_keeper` by a decoded
+   * `PreLaunched`. Counted apart from `repaired` because it is a different
+   * claim: the agent exists, and it is NOT live until the keeper acts.
+   */
+  readonly awaitingKeeper: number;
   readonly stillPending: number;
 }
 
@@ -130,6 +154,7 @@ export async function repairLaunchIdentities(
   let indexed = 0;
   let failed = 0;
   let supersededMirrored = 0;
+  let awaitingKeeper = 0;
   let stillPending = 0;
 
   for (const intent of candidates) {
@@ -178,6 +203,14 @@ export async function repairLaunchIdentities(
         failWith(client, intent.intentId, intent.sessionId, "MinedRevert:create"));
       if (terminalized) failed++;
       else logger.info("launch_identity_repair.revert_cas_miss", { intentId: intent.intentId });
+      continue;
+    }
+
+    if (outcome.kind === "pre_launched") {
+      const recovered = await recoverVirtualsPreLaunch(intent, outcome.virtuals);
+      if (recovered.indexed) indexed++;
+      if (recovered.settled) awaitingKeeper++;
+      else stillPending++;
       continue;
     }
 
@@ -234,7 +267,105 @@ export async function repairLaunchIdentities(
     }
   }
 
-  return { checked: candidates.length, repaired, indexed, failed, supersededMirrored, stillPending };
+  return {
+    checked: candidates.length,
+    repaired,
+    indexed,
+    failed,
+    supersededMirrored,
+    awaitingKeeper,
+    stillPending,
+  };
+}
+
+/**
+ * A VIRTUALS `preLaunch` recovered from its receipt: index the agent, stamp the
+ * activity row's identity, and move the intent to `awaiting_keeper`.
+ *
+ * WHY NOT `confirmed`. A Virtuals launch takes two transactions and only the
+ * first is Vex's. `preLaunch` proves the agent exists and that the creator's
+ * VIRTUAL is parked in BondingV5; the KEEPER's `launch(token)` is what makes it
+ * tradable and listed. `awaiting_keeper` is the state the venue's own shape
+ * creates, and it is also the ONLY state the keeper sweep claims - so this
+ * transition is what hands the launch to the job that can finish it.
+ *
+ * THE FEE IS WAIVED, permanently and by the same rule the handler applies
+ * (owner F3): the Vex launch fee is collectible only while the launching
+ * handler still owns the approved signer, and this sweep holds none. The waiver
+ * is recorded on the block rather than left implied, so a later reader can see
+ * that no fee is owed rather than infer it.
+ *
+ * ORDER, and it is the same one the pools arm uses: the durable index first
+ * (idempotent, and the record the user's launch history is built from), then
+ * the activity identity, then the intent. A crash between any two leaves the
+ * row `broadcast_pending` for the next tick, where every write is a no-op or an
+ * upsert.
+ */
+async function recoverVirtualsPreLaunch(
+  intent: TokenLaunchIntent,
+  recovery: VirtualsPreLaunchRecovery,
+): Promise<{ readonly indexed: boolean; readonly settled: boolean }> {
+  const sealed = readVirtualsIntentBlock(intent.virtuals);
+  if (!sealed.ok) {
+    // The row cannot say what it authorized, so the sweep cannot write the
+    // block the keeper sweep would scan from. Left pending and said once - this
+    // is a repairable record, not a launch that failed.
+    logger.info("virtuals.launch_identity_repair.sealed_block_unreadable", {
+      intentId: intent.intentId,
+      reason: sealed.reason,
+    });
+    return { indexed: false, settled: false };
+  }
+
+  const txHash = requireTxHash(intent);
+  const indexWrite = await launchedTokens.record({
+    walletAddress: intent.walletAddress,
+    chainId: intent.chainId,
+    tokenAddress: recovery.tokenAddress,
+    // The name the CONTRACT gave the token, which is not always the name the
+    // caller typed - BondingV5 appends " by Virtuals" unless the skip flag was
+    // set, and the sealed block is what recorded which happened.
+    name: sealed.block.onChainName,
+    symbol: intent.symbol,
+    launchpad: VIRTUALS_LAUNCHPAD,
+    imageRef: sealed.block.imageUrl,
+    createTxHash: txHash,
+    // VIRTUAL, not native ETH and not the agent token: at `preLaunch` no agent
+    // tokens have been bought yet - the keeper's `launch()` is what spends the
+    // purchase - so naming the agent token here would record an amount that
+    // does not exist.
+    initialBuyRaw: recovery.initialPurchaseRaw,
+    initialBuyDecimals: recovery.initialPurchaseDecimals,
+    initialBuyTokenAddress: recovery.virtualAddress,
+    sessionId: intent.sessionId,
+  });
+
+  await stampLaunchOutputIdentityByTxHash(txHash, recovery.tokenAddress);
+
+  const settled = await settleLaunchOutcome({
+    intentId: intent.intentId,
+    sessionId: intent.sessionId,
+    txHash,
+    tokenAddress: recovery.tokenAddress,
+    outcome: "awaiting_keeper",
+    block: {
+      ...sealed.block,
+      pairAddress: recovery.pairAddress,
+      virtualId: recovery.virtualId,
+      initialPurchaseRaw: recovery.initialPurchaseRaw,
+      preLaunchBlock: recovery.preLaunchBlock,
+      vexFeeWaived: true,
+    },
+  });
+  if (!settled) {
+    // A CAS miss: the handler's own late finalize, or a concurrent run, already
+    // moved this intent. The two writes above are idempotent, so nothing was
+    // double-counted and nothing was lost.
+    logger.info("virtuals.launch_identity_repair.awaiting_keeper_cas_miss", {
+      intentId: intent.intentId,
+    });
+  }
+  return { indexed: indexWrite.inserted, settled };
 }
 
 /** What consulting the durable sibling settled for one claimed intent. */
@@ -344,6 +475,9 @@ async function lookupOutcome(
     });
     if (outcome === null) return null;
     if (outcome.kind === "reverted" || outcome.kind === "superseded") return outcome;
+    if (outcome.kind === "pre_launched") {
+      return outcome.virtuals.tokenAddress.length > 0 ? outcome : null;
+    }
     return outcome.identity.tokenAddress.length > 0 ? outcome : null;
   } catch (err) {
     if (isReceiptNotFound(err)) {

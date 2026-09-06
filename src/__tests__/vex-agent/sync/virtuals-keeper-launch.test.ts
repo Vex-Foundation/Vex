@@ -28,6 +28,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const claimAwaitingKeeperForSweep = vi.fn();
 const confirmObservedKeeperLaunch = vi.fn();
 const recordLaunchCancelled = vi.fn();
+const settleLaunchKeeperPurchaseByTxHash = vi.fn();
 
 vi.mock("@vex-agent/db/repos/token-launch-intents.js", () => ({
   claimAwaitingKeeperForSweep: (limit: number) => claimAwaitingKeeperForSweep(limit),
@@ -36,6 +37,10 @@ vi.mock("@vex-agent/db/repos/token-launch-intents.js", () => ({
 vi.mock("@vex-agent/tools/protocols/virtuals/handlers/launch/intent.js", () => ({
   confirmObservedKeeperLaunch: (input: unknown) => confirmObservedKeeperLaunch(input),
   recordLaunchCancelled: (input: unknown) => recordLaunchCancelled(input),
+}));
+
+vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
+  settleLaunchKeeperPurchaseByTxHash: (...a: unknown[]) => settleLaunchKeeperPurchaseByTxHash(...a),
 }));
 
 const { reconcileVirtualsKeeperLaunches, VIRTUALS_KEEPER_BATCH_LIMIT } = await import(
@@ -89,6 +94,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   confirmObservedKeeperLaunch.mockResolvedValue(true);
   recordLaunchCancelled.mockResolvedValue(true);
+  settleLaunchKeeperPurchaseByTxHash.mockResolvedValue(true);
 });
 
 describe("reconcileVirtualsKeeperLaunches", () => {
@@ -220,5 +226,127 @@ describe("reconcileVirtualsKeeperLaunches", () => {
     const deps = depsAnswering(observe);
     expect(Object.keys(deps)).toEqual(["observe"]);
     await reconcileVirtualsKeeperLaunches(deps);
+  });
+});
+
+/**
+ * THE LATE RESULT IS THE POINT OF THIS SWEEP, and it used to be thrown away.
+ *
+ * When the handler's bounded wait elapses it records `awaiting_keeper` and
+ * writes the only honest output amount it has: zero. The keeper then acts, and
+ * this sweep observes the `Launched` event - which carries
+ * `initialPurchasedAmount`, the agent tokens the launch actually bought. The
+ * 2026-09-06 final review found that number discarded at the production
+ * observation boundary and never written anywhere, so the launch's activity row
+ * kept the PROVISIONAL ZERO as its final payout, forever, while the wallet held
+ * the tokens.
+ *
+ * MetaMask's `PendingTransactionTracker` is the reference posture and it is the
+ * opposite one: a receipt arriving late CARRIES its facts onto the transaction
+ * (`#onTransactionConfirmed` writes `gasUsed`, the receipt and the block before
+ * it emits), rather than recording only that the wait ended.
+ *
+ * So the amount travels, and it is written BEFORE the intent leaves
+ * `awaiting_keeper`: that status is the sweep's only claim ticket, and a row
+ * that has left it is never looked at again.
+ */
+describe("the keeper's proven purchase amount is carried, not dropped", () => {
+  it("settles the activity row's output amount before retiring sweep eligibility", async () => {
+    claimAwaitingKeeperForSweep.mockResolvedValue([intentRow()]);
+    const order: string[] = [];
+    settleLaunchKeeperPurchaseByTxHash.mockImplementation(async () => { order.push("activity"); return true; });
+    confirmObservedKeeperLaunch.mockImplementation(async () => { order.push("intent"); return true; });
+
+    const observe = vi.fn().mockResolvedValue({
+      kind: "launched",
+      keeperTxHash: "0x9eca4cb5",
+      initialPurchasedAmountRaw: "112657539798287513447808",
+    });
+
+    const result = await reconcileVirtualsKeeperLaunches(depsAnswering(observe));
+
+    expect(result).toMatchObject({ claimed: 1, launched: 1 });
+    expect(settleLaunchKeeperPurchaseByTxHash).toHaveBeenCalledWith(
+      "0xd0fbcca8",
+      "112657539798287513447808",
+    );
+    expect(order).toEqual(["activity", "intent"]);
+  });
+
+  it("does not retire the row when the activity settle fails, so the amount is not lost", async () => {
+    claimAwaitingKeeperForSweep.mockResolvedValue([intentRow()]);
+    settleLaunchKeeperPurchaseByTxHash.mockRejectedValue(new Error("db down"));
+    const observe = vi.fn().mockResolvedValue({
+      kind: "launched",
+      keeperTxHash: "0x9eca4cb5",
+      initialPurchasedAmountRaw: "112657539798287513447808",
+    });
+
+    const result = await reconcileVirtualsKeeperLaunches(depsAnswering(observe));
+
+    expect(result).toMatchObject({ claimed: 1, launched: 0, unreadable: 1 });
+    expect(confirmObservedKeeperLaunch).not.toHaveBeenCalled();
+  });
+
+  it("writes no amount at all when the observation proves none", async () => {
+    // A `Launched` whose purchase could not be read is NOT a zero payout. The
+    // row keeps whatever it had rather than being stamped with an invented one.
+    claimAwaitingKeeperForSweep.mockResolvedValue([intentRow()]);
+    const observe = vi.fn().mockResolvedValue({ kind: "launched", keeperTxHash: "0x9eca4cb5" });
+    const result = await reconcileVirtualsKeeperLaunches(depsAnswering(observe));
+    expect(result).toMatchObject({ launched: 1 });
+    expect(settleLaunchKeeperPurchaseByTxHash).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The PRODUCTION observation boundary, which is where the amount was lost.
+ *
+ * The sweep's own logic above is proven with a scripted dependency; this pins
+ * the wiring that builds it, because the discard was here: the real `observe`
+ * read `Launched`, decoded `initialPurchasedAmount`, and returned only the
+ * transaction hash.
+ */
+describe("buildProductionVirtualsKeeperSweepDeps", () => {
+  it("reports the purchase amount the Launched event proved", async () => {
+    const { buildProductionVirtualsKeeperSweepDeps } = await import(
+      "@vex-agent/sync/virtuals-keeper-launch-production-deps.js"
+    );
+    const readKeeperOutcome = vi.spyOn(
+      await import("@tools/virtuals/launch/index.js"),
+      "readKeeperOutcome",
+    );
+    readKeeperOutcome.mockResolvedValue({
+      kind: "observed",
+      txHash: "0x9eca4cb5",
+      blockNumber: 50_870_300n,
+      launched: {
+        token: "0x84A0326C64d9f0E1F640062638807722E1dde87f",
+        pair: "0x50136d4174129585ec766eacF2F00cd1856690ca",
+        virtualId: 139_289n,
+        initialPurchaseRaw: 997_500_000_000_000_000n,
+        initialPurchasedAmountRaw: 112_657_539_798_287_513_447_808n,
+        launchParams: {
+          launchMode: 0,
+          airdropBips: 0,
+          needAcf: false,
+          antiSniperTaxType: 1,
+          isProject60days: false,
+        },
+      },
+    });
+
+    const observation = await buildProductionVirtualsKeeperSweepDeps().observe({
+      chainKey: "base",
+      token: "0x84A0326C64d9f0E1F640062638807722E1dde87f",
+      fromBlock: 50_870_256n,
+    });
+
+    expect(observation).toEqual({
+      kind: "launched",
+      keeperTxHash: "0x9eca4cb5",
+      initialPurchasedAmountRaw: "112657539798287513447808",
+    });
+    readKeeperOutcome.mockRestore();
   });
 });

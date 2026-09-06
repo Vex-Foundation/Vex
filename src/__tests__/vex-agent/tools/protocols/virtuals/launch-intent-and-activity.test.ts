@@ -143,7 +143,7 @@ function planWith(options: {
     imageUrl: "https://assets.example/a/abc123.jpeg",
     urls: ["", "", "", ""] as readonly [string, string, string, string],
     purchaseAmountRaw: fee.launchAmountRaw,
-    startTime: 1_788_600_000n,
+    startTime: 0n,
     antiSniperTaxType: 1,
     nameSuffix: "by_virtuals" as const,
   };
@@ -184,7 +184,6 @@ function planWith(options: {
       imageId: "img-1",
       label: "otaku.jpeg",
     },
-    blockTimestamp: 1_788_600_000n,
   };
 }
 

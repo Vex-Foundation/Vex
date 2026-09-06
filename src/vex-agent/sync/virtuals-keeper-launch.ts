@@ -37,6 +37,7 @@
  * because one unreadable chain must not stop every other launch from settling.
  */
 
+import { settleLaunchKeeperPurchaseByTxHash } from "@vex-agent/db/repos/agent-activity.js";
 import {
   claimAwaitingKeeperForSweep,
   type TokenLaunchIntent,
@@ -57,7 +58,17 @@ export const VIRTUALS_KEEPER_BATCH_LIMIT = 25;
  * the question is identical and two vocabularies for it would drift.
  */
 export type KeeperSweepObservation =
-  | { readonly kind: "launched"; readonly keeperTxHash: string }
+  | {
+      readonly kind: "launched";
+      readonly keeperTxHash: string;
+      /**
+       * `Launched.initialPurchasedAmount` - the agent tokens the launch
+       * actually delivered, raw. Optional because an observation that proved
+       * the launch without a readable amount is still a launch, and a missing
+       * amount must stay missing rather than becoming a zero payout.
+       */
+      readonly initialPurchasedAmountRaw?: string;
+    }
   | { readonly kind: "cancelled"; readonly txHash: string }
   | { readonly kind: "none" }
   /** The chain could not be read. NOT a verdict - the row is left alone. */
@@ -153,6 +164,31 @@ async function settleOne(
       tokenAddress: token,
     });
     return applied ? "cancelled" : "none";
+  }
+
+  // THE ACTIVITY ROW FIRST, and the order is the whole point of this write.
+  //
+  // The handler recorded the provisional zero when its bounded wait elapsed:
+  // `preLaunch` buys nothing, and until the keeper runs `launch()` there are no
+  // agent tokens to record. The keeper has now run it, and `Launched` carries
+  // what the launch delivered. `awaiting_keeper` is this sweep's ONLY claim
+  // ticket - a row that has left it is never looked at again - so the amount is
+  // written before the row leaves, and a write that throws leaves the row for
+  // the next tick instead of retiring it on a payout nobody recorded.
+  //
+  // A `Launched` with no readable amount writes NOTHING. It is a launch without
+  // a proven purchase, not a purchase of zero.
+  const amountRaw = observation.initialPurchasedAmountRaw;
+  if (amountRaw !== undefined && amountRaw !== "") {
+    const txHash = intent.txHash;
+    if (txHash === null) {
+      // Unreachable for this status - migration 110's CHECK requires a proven
+      // launch here - and still not guessed: the activity row is found BY the
+      // hash, so without one the amount has nowhere to go and the row stays
+      // claimable rather than being retired with the payout unwritten.
+      return "unusable";
+    }
+    await settleLaunchKeeperPurchaseByTxHash(txHash, amountRaw);
   }
 
   const applied = await confirmObservedKeeperLaunch({
