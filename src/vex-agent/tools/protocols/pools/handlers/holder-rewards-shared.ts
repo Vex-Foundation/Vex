@@ -11,6 +11,7 @@
 import type { Address } from "viem";
 
 import { POOLS_CHAIN_SLUG } from "@tools/pools-fun/constants.js";
+import type { PoolsReadableScale } from "@tools/pools-fun/holder-rewards/read.js";
 import type { PoolsPrepareCrossCheck } from "@tools/pools-fun/holder-rewards/prepare-cross-check.js";
 
 import { ok } from "../../handler-helpers.js";
@@ -26,8 +27,25 @@ export interface PoolsRewardPayoutLeg {
   readonly decimals: number | null;
   /** What the SIMULATION said this leg would pay, in base units. */
   readonly amountRaw: bigint;
-  /** `earned`/`earnedPaired` at the same block - the accrual view, not the payout. */
-  readonly earnedRaw: string;
+  /**
+   * `earned`/`earnedPaired` at the same block - the accrual view, not the
+   * payout. `null` when that optional call did not answer, which is not zero.
+   */
+  readonly earnedRaw: string | null;
+}
+
+/**
+ * A payout leg whose SCALE IS PROVEN, and therefore the only shape a durable row
+ * may be written from.
+ *
+ * The brand is the whole point. `tokenDecimals: leg.decimals ?? 0` and
+ * `amountHuman: render(...) ?? "0"` are how a positive payout got recorded at an
+ * invented scale with a zero human figure (Codex final review, lane 2); with
+ * this type the writer cannot reach the row without the check that produced it,
+ * so the fallback has nowhere to live.
+ */
+export interface PoolsSignableRewardLeg extends PoolsRewardPayoutLeg {
+  readonly decimals: PoolsReadableScale;
 }
 
 /**

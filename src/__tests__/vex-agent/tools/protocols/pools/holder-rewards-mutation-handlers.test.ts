@@ -657,6 +657,154 @@ describe("the durable row is the one the vocabulary defines", () => {
     expect(definedValue(confirmed[0], "the confirm input").executedAmountOut2Raw).toBeUndefined();
   });
 
+  it("keeps the PROVEN paired payout when the accrual read earnedPaired() did not answer", async () => {
+    // THE DEFECT THIS REPRODUCES (Codex final review, lane 2): `earnedPaired()`
+    // is an ACCRUAL view and it is optional - the two live runtimes differ, and
+    // its multicall entry can simply fail. `claim()` simulated at the same block
+    // still returned a SECOND WORD with a positive amount, which is what the
+    // transaction will pay. Letting the accrual read decide the leg's existence
+    // means a both-mode claim pays two assets and confirms an activity row
+    // naming one, and settlement then drops the receipt's second amount for
+    // good. The leg's identity and scale come from `pairedAsset()` and that
+    // asset's `decimals()`; only `earnedRaw` is the accrual, and it is nullable.
+    onchain = {
+      ...boundOnchain(),
+      pairedLeg: { asset: PAIRED, symbol: "SPCX", decimals: 18, earnedRaw: null },
+    };
+    const result = await claim({ tokenAddress: TOKEN });
+    expect(result.success).toBe(true);
+    const event = definedValue(
+      (definedValue(created[0], "the created intent").events as Record<string, unknown>[])[0],
+      "the intent's first event",
+    );
+    expect(event.tokenOut2).toMatchObject({ tokenAddress: PAIRED, tokenDecimals: 18 });
+    // SETTLEMENT RECORDS EVERY PROVEN LEG. Without the second amount the row
+    // stays `roleLegsIncomplete` forever and the money that moved is unrecorded.
+    expect(definedValue(confirmed[0], "the confirm input").executedAmountOut2Raw).toBe(
+      PAIRED_PAYOUT.toString(),
+    );
+    expect(definedValue(confirmed[0], "the confirm input").executedAmountOut2Human).toBe(
+      "0.000001949252557207",
+    );
+  });
+
+  it("reports the paired leg in the preview too, with the accrual figure absent rather than zero", async () => {
+    onchain = {
+      ...boundOnchain(),
+      pairedLeg: { asset: PAIRED, symbol: "SPCX", decimals: 18, earnedRaw: null },
+    };
+    const result = await claim({ tokenAddress: TOKEN, dryRun: true });
+    const legs = (result.data as Record<string, unknown>).wouldPay as Record<string, unknown>[];
+    expect(legs).toHaveLength(2);
+    const paired = definedValue(legs[1], "the paired leg");
+    expect(paired.assetAddress).toBe(PAIRED);
+    expect(paired.amountRaw).toBe(PAIRED_PAYOUT.toString());
+    expect(paired.amount).toBe("0.000001949252557207");
+    expect(paired.earnedRaw).toBeNull();
+    expect(String(paired.earnedNote)).toContain("not a balance of zero");
+  });
+
+  it("REFUSES by name when the runtime pays a second word and names no paired asset", async () => {
+    // A positive payout whose ASSET is unknown cannot be recorded, and a claim
+    // whose second leg cannot be recorded is not one Vex signs.
+    onchain = { ...boundOnchain(), pairedLeg: null };
+    binding = { ...binding, pairedAsset: null };
+    const result = await claim({ tokenAddress: TOKEN });
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("pairedAsset()");
+    expect(result.output).toContain("Nothing was signed");
+    expect(created).toHaveLength(0);
+    expect(signedTx).toBeNull();
+  });
+
+  it("REFUSES when the two reads of pairedAsset() name different assets", async () => {
+    // The suite binding and the reward state read the SAME view at the SAME
+    // block. Two answers mean one of them describes a distributor this is not,
+    // and picking either would record a payout in an asset the chain did not
+    // name.
+    const other = getAddress("0x329a795fd7037132a1ae0fc74b5bc3aa6458b44b");
+    binding = { ...binding, pairedAsset: other };
+    const result = await claim({ tokenAddress: TOKEN });
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("pairedAsset()");
+    expect(result.output).toContain("cannot name two assets");
+    expect(created).toHaveLength(0);
+    expect(signedTx).toBeNull();
+  });
+
+  it("REFUSES rather than guessing when the paired asset is named but its scale was never read", async () => {
+    // The distributor's suite binding answered `pairedAsset()` while the read
+    // that carries the asset's metadata did not, so the payout has an identity
+    // and NO scale. The old code reached `tokenDecimals: 0` here; the honest
+    // answer is a refusal that says which fact is missing.
+    onchain = { ...boundOnchain(), pairedLeg: null };
+    const result = await claim({ tokenAddress: TOKEN });
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("decimals()");
+    expect(result.output).toContain(PAIRED);
+    expect(created).toHaveLength(0);
+    expect(signedTx).toBeNull();
+  });
+
+  it("REFUSES by name when a payout leg's decimals are unknown, and invents no scale", async () => {
+    // THE SECOND HALF OF THE DEFECT: the handler used to write `tokenDecimals: 0`
+    // and `amountHuman: "0"` for a leg whose `decimals()` did not answer. A
+    // positive payout recorded at an invented scale with a zero human figure is
+    // a durable lie about how much money moved.
+    onchain = {
+      ...boundOnchain(),
+      tokenLeg: { ...boundOnchain().tokenLeg, decimals: null },
+    };
+    const result = await claim({ tokenAddress: TOKEN });
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("decimals()");
+    expect(result.output).toContain("Nothing was signed");
+    expect(created).toHaveLength(0);
+    expect(signedTx).toBeNull();
+    expect(confirmed).toHaveLength(0);
+  });
+
+  it("REFUSES the same way when it is the PAIRED asset whose decimals are unknown", async () => {
+    onchain = {
+      ...boundOnchain(),
+      pairedLeg: { asset: PAIRED, symbol: "SPCX", decimals: null, earnedRaw: PAIRED_PAYOUT.toString() },
+    };
+    const result = await claim({ tokenAddress: TOKEN });
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("decimals()");
+    expect(created).toHaveLength(0);
+    expect(signedTx).toBeNull();
+  });
+
+  it("stops simulateOnly at the same refusal rather than reporting a signable claim", async () => {
+    // `simulateOnly` promises that every check a real claim runs was run. A stop
+    // the real claim would make must therefore stop it too, or the two answers
+    // disagree about the same world.
+    onchain = {
+      ...boundOnchain(),
+      tokenLeg: { ...boundOnchain().tokenLeg, decimals: null },
+    };
+    const result = await claim({ tokenAddress: TOKEN, simulateOnly: true });
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("decimals()");
+    expect(signerOpened).toBe(0);
+  });
+
+  it("still lets the read-only preview answer with an unreadable scale, saying so", async () => {
+    // A refusal on a READ would deny the holder the one honest fact available:
+    // the raw amount. The preview reports it and names the missing scale.
+    onchain = {
+      ...boundOnchain(),
+      tokenLeg: { ...boundOnchain().tokenLeg, decimals: null },
+    };
+    const result = await claim({ tokenAddress: TOKEN, dryRun: true });
+    expect(result.success).toBe(true);
+    const legs = (result.data as Record<string, unknown>).wouldPay as Record<string, unknown>[];
+    const tokenLeg = definedValue(legs[0], "the token leg");
+    expect(tokenLeg.amount).toBeUndefined();
+    expect(String(tokenLeg.amountUnavailable)).toContain("Do not assume 18");
+  });
+
   it("writes reward_distribution with NO legs on either side", async () => {
     await distribute({ tokenAddress: TOKEN });
     const event = definedValue(
