@@ -123,6 +123,7 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   ["orderType", "orderbook order type declared with an enum, such as limit or market"],
   ["timeInForce", "orderbook time-in-force declared with an enum"],
   ["reduceOnly", "perp order flag: execute only if it reduces the current position"],
+  ["revoke", "fee-authorization prepare flag: prepare the user's explicitly requested revocation instead of onboarding authorization"],
   ["orderExpiry", "absolute order expiry in epoch milliseconds; the relative twin is orderExpiryOffsetMinutes"],
   ["previewId", "persisted preview identifier returned by a preview tool; binds a prepare call to that exact preview"],
   ["intentId", "prepared execution-intent identifier returned by its prepare tool; binds the approved execute call"],

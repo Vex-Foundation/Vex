@@ -81,6 +81,11 @@ export const STUDIO_NAMESPACE_FEES: Readonly<Record<string, StudioNamespaceFee>>
     charged: { symbol: "KYBERSWAP_FEE_BPS", lane: "src/tools/kyberswap" },
     freeLanes: [],
   },
+  lighter: {
+    line: "0.10% maker/taker on perpetual trades and 0.25% on spot trades, through the approved native integrator allowance; reads are free. Exchange fees are separate.",
+    charged: { symbol: "LIGHTER_PERPS_FEE", lane: "src/tools/lighter" },
+    freeLanes: [],
+  },
   morpho: {
     line: "none on any action, rewards claims included; gas is still yours.",
     freeLanes: ["src/vex-agent/tools/protocols/morpho", "src/tools/morpho"],

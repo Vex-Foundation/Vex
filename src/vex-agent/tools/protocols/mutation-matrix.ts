@@ -124,6 +124,8 @@ const entries: [string, MutationContract][] = [
   // form row has it: there is no on-chain effect to capture.
   ["pools.launch_preview",       { kind: "utility", capture: "none", expectedType: "none", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
   ["pools.launch_request_form",  { kind: "utility", capture: "none", expectedType: "none", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
+  // Publishes an approved image asset; it creates no portfolio or chain event.
+  ["launchpads.image_publish", { kind: "utility", capture: "none", expectedType: "none", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
   // The pools.fun LAUNCH itself, shaped exactly like `trench.launch_execute`:
   // the handler writes its `kind: "launch"` row directly across the staged
   // lifecycle, so `capture: "none"` keeps the legacy proj_activity projection
@@ -280,6 +282,7 @@ const entries: [string, MutationContract][] = [
   // It must never also enter the legacy trade/activity projection pipeline.
   ["lighter.deposit",          { kind: "projection", capture: "none", expectedType: "none", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
   ["lighter.key.register",     { kind: "projection", capture: "none", expectedType: "none", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
+  ["lighter.fees.approve",     { kind: "projection", capture: "none", expectedType: "none", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
   // Lighter withdrawals and separately approved settlement claims own their
   // durable truth in the withdrawal intent/claim tables. Neither path may
   // duplicate fund movement into the legacy activity projection pipeline.

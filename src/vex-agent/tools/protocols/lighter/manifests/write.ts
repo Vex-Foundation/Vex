@@ -134,7 +134,7 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Prepare the selected wallet's Lighter trading-fee authorization inside Vex onboarding after funding and key registration. Vex resolves the trader and configured collector internally and shows one trusted card for 0.10% perpetual and 0.25% spot fees, permission expiry, and any required account-tier change with its exchange costs. Use revoke=true only when the user asks to revoke Vex fee authorization. Disabled collection produces no authorization. This preparation never signs, changes the account tier, or submits a transaction. Never ask the user for account indexes, API keys, nonces, or another chat confirmation; the host card is consent.",
+      "Prepare the selected wallet's Lighter trading-fee authorization inside Vex onboarding after funding and key registration. Vex resolves the trader and configured collector internally and shows one trusted card for 0.10% perpetual and 0.25% spot fees, permission expiry, and any required account-tier change with its exchange costs. Use revoke=true only when the user asks to revoke Vex fee authorization. Disabled collection produces no authorization. Returns a trusted approval card with the exact fee rates, permission expiry, and any account-tier change; this preparation never signs, changes the account tier, or submits a transaction. Never ask the user for account indexes, API keys, nonces, or another chat confirmation; the host card is consent.",
     mutating: false,
     actionKind: "approval_prepare",
     params: [ENVIRONMENT_PARAM, {
@@ -158,7 +158,7 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Approval-gated: authorize future VEX trading fees by submitting one exact Lighter fee-authorization intent only when resumed by its approved Vex card. Main verifies the approved wallet, trader, collector, rate caps, expiry and any tier change; signs locally through the existing wallet and trading-key boundary; submits native ApproveIntegrator once; and verifies provider state before reporting active. Revocation sets all four caps and authorization expiry to zero. An uncertain submission remains pending for lighter__fees_status, never an automatic retry. Direct unapproved calls are refused.",
+      "Approval-gated: authorize future VEX trading fees by submitting one exact Lighter fee-authorization intent only when resumed by its approved Vex card. Main verifies the approved wallet, trader, collector, rate caps, expiry and any tier change; signs locally through the existing wallet and trading-key boundary; submits native ApproveIntegrator once; and verifies provider state before reporting active. Revocation sets all four caps and authorization expiry to zero. Returns the resulting authorization state (active, pending, or revoked) with its submission evidence; an uncertain submission remains pending for lighter__fees_status, never an automatic retry. Direct unapproved calls are refused.",
     mutating: true,
     actionKind: "user_wallet_broadcast",
     params: [{

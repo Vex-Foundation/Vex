@@ -17,11 +17,11 @@ export const LIGHTER_NAVIGATION: ProtocolNamespaceNavigation = {
     read:
       "Read public environment status, markets, market detail, order books, recent trades, candles, public account state, authenticated account orders and fills, managed onboarding readiness, and durable deposit, withdrawal, key-registration, and order status.",
     quote:
-      "Use a Lighter order preview to review exact terms from live market and account data before any approval. Managed onboarding also computes the exact settlement-asset top-up needed before a deposit is prepared.",
+      "Preview exact Lighter orders from live market and account data before any approval; a Lighter order preview reviews exact terms. Managed onboarding also computes the exact settlement-asset top-up needed before a deposit is prepared.",
     act:
       "Prepare trade approval for order create/cancel/modify/cancel-all, plus approvals for deposits, key registration, full-position close, secure withdrawals, and manual settlement claims; execute only through the matching user-approved card.",
     whenItApplies:
-      "Use it when the user says \"set up my Lighter account\", wants to trade perps on Lighter, inspect Core or Robinhood Chain Lighter markets or account state, manage active Lighter orders, or withdraw from Lighter to the selected wallet.",
+      "Use it when the user says \"set up my Lighter account\" or asks to set up Lighter, wants to trade perps on Lighter, inspect Core or Robinhood Chain Lighter markets or account state, manage active Lighter orders, or withdraw from Lighter to the selected wallet.",
     characteristicAndLimits:
       "Core USDC and RHC USDG settlement stay environment-specific. The environment stays explicit once selected, normal users never paste trading keys, account/API-key indexes are resolved internally for managed setup, previews are read-only, and every fund-moving or exchange-state-changing action remains approval-gated.",
     coverageNote:
@@ -44,6 +44,8 @@ export const LIGHTER_NAVIGATION: ProtocolNamespaceNavigation = {
       "Accounts and positions",
       "My orders and fills",
       "Order preview and approval-gated create",
+      "Position protection and close",
+      "Trading-fee authorization",
       "Secure withdrawals and claims",
     ],
   },
