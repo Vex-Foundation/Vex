@@ -4,6 +4,7 @@ import {
   ColorType,
   createChart,
   HistogramSeries,
+  LineSeries,
   LineStyle,
   TickMarkType,
   type CandlestickData,
@@ -27,6 +28,8 @@ import {
   upsertChartCandles,
   type ChartCandleRow,
 } from "./chart-adapter.js";
+
+import { ChartTools } from "./ChartTools.js";
 
 const INITIAL_VISIBLE_BARS = 100;
 const LIVE_RIGHT_OFFSET = 7;
@@ -238,6 +241,9 @@ export function MarketChart({
   onRetry,
   onChooseMarket,
 }: MarketChartProps): JSX.Element {
+  const [chartApi, setChartApi] = useState<IChartApi | null>(null);
+  const [chartType, setChartType] = useState<"candles" | "line">("candles");
+  const lineSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -366,8 +372,12 @@ export function MarketChart({
     chartRef.current = chart;
     candleSeriesRef.current = candleSeries;
     volumeSeriesRef.current = volumeSeries;
+    setChartApi(chart);
+    const volumeVisibility = (event: Event): void => volumeSeries.applyOptions({ visible: (event as CustomEvent<boolean>).detail });
+    host.addEventListener("lit-chart-volume", volumeVisibility);
 
     return () => {
+      host.removeEventListener("lit-chart-volume", volumeVisibility);
       chart.unsubscribeCrosshairMove(handleCrosshairMove);
       chart.remove();
       chartRef.current = null;
@@ -483,8 +493,18 @@ export function MarketChart({
     const priorVolumesByTime = new Map(previous.volumes.map((point) => [point.time, point]));
     let appendedBars = 0;
     let changed = false;
+    const firstTime = chartCandles[0]?.time;
+    const droppedBars = firstTime === undefined ? 0 : previous.candles.filter(point => point.time < firstTime).length;
+    if (droppedBars > 0) {
+      // Keep every native series on the same bounded timeline as the adapter.
+      // Retaining invisible old points changes logical indexes and drawing anchors.
+      candleSeries.setData(chartCandles);
+      volumeSeries.setData(chartVolumes);
+      appendedBars = chartCandles.filter(point => previousLastTime === undefined || point.time > previousLastTime).length;
+      changed = true;
+    }
 
-    for (const point of chartCandles) {
+    for (const point of droppedBars > 0 ? [] : chartCandles) {
       const prior = priorCandlesByTime.get(point.time);
       if (prior === undefined || !sameCandle(prior, point)) {
         const historicalUpdate = previousLastTime !== undefined && point.time < previousLastTime;
@@ -493,7 +513,7 @@ export function MarketChart({
         if (previousLastTime === undefined || point.time > previousLastTime) appendedBars += 1;
       }
     }
-    for (const point of chartVolumes) {
+    for (const point of droppedBars > 0 ? [] : chartVolumes) {
       const prior = priorVolumesByTime.get(point.time);
       if (prior === undefined || !sameVolume(prior, point)) {
         const historicalUpdate = previousLastTime !== undefined && point.time < previousLastTime;
@@ -507,11 +527,11 @@ export function MarketChart({
       timeScale.setVisibleLogicalRange(initialVisibleRange(chartCandles.length));
       viewportDecided = true;
     } else if (visibleRange !== null && changed) {
-      timeScale.setVisibleLogicalRange(
-        wasLive && appendedBars > 0
-          ? { from: visibleRange.from + appendedBars, to: visibleRange.to + appendedBars }
-          : visibleRange,
-      );
+      const shift = (wasLive ? appendedBars : 0) - droppedBars;
+      timeScale.setVisibleLogicalRange(shift === 0 ? visibleRange : {
+        from: visibleRange.from + shift,
+        to: visibleRange.to + shift,
+      });
     }
 
     appliedDataRef.current = {
@@ -525,13 +545,40 @@ export function MarketChart({
     if (!crosshairActiveRef.current) setLegend(latestLegendRef.current);
   }, [candles, identity]);
 
+  useEffect(() => {
+    const chart = chartRef.current;
+    const series = candleSeriesRef.current;
+    if (!chart || !series) return;
+    const range = chart.timeScale().getVisibleLogicalRange();
+    series.applyOptions({ visible: chartType === "candles" });
+    if (chartType === "line") {
+      if (!lineSeriesRef.current) lineSeriesRef.current = chart.addSeries(LineSeries, { lineWidth: 2, priceLineVisible: true });
+      lineSeriesRef.current.applyOptions({ visible: true, color: hostRef.current ? getChartColors(hostRef.current).positive : "#20b7ae", priceFormat: resolvePriceFormat(pricePrecision, priceMinMove) });
+    } else lineSeriesRef.current?.applyOptions({ visible: false });
+    // Hidden series still contribute timestamps to the shared chart timeline.
+    lineSeriesRef.current?.setData((appliedDataRef.current?.candles ?? []).map(c => ({ time: c.time, value: c.close })));
+    if (range && lineSeriesRef.current) chart.timeScale().setVisibleLogicalRange(range);
+  }, [chartType, candles, identity, theme, pricePrecision, priceMinMove]);
+
   return (
     <>
+      <ChartTools
+        key={`${environment ?? "unknown"}:${marketId ?? symbol}`}
+        chart={chartApi}
+        series={candleSeriesRef.current}
+        host={hostRef}
+        rows={appliedDataRef.current?.sourceRows ?? candles}
+        scope={`${environment ?? "unknown"}:${marketId ?? symbol}`}
+        theme={theme}
+        precision={precision}
+        minMove={resolvePriceFormat(pricePrecision, priceMinMove).minMove}
+        onChartType={setChartType}
+      />
       <div
         ref={hostRef}
         className="lit-chart-canvas"
         role="img"
-        aria-label={`${symbol} candlestick chart with volume`}
+        aria-label={`${symbol} ${chartType === "candles" ? "candlestick" : "line"} chart with volume`}
         data-testid="lighter-market-chart"
       />
       {candles.length > 0 ? (
