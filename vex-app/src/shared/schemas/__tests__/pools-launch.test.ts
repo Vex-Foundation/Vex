@@ -9,7 +9,10 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  poolsAwaitingLaunchFormSchema,
   poolsClaimInputSchema,
+  poolsLaunchCancelAwaitingFormInputSchema,
+  poolsLaunchCancelAwaitingFormResultSchema,
   poolsLaunchDeployInputSchema,
   poolsLaunchFormSchema,
   poolsLaunchPrepareInputSchema,
@@ -353,4 +356,88 @@ describe("prepared launch - every amount is readable", () => {
       expect(poolsPreparedLaunchSchema.safeParse(missing).success).toBe(false);
     }
   });
+});
+
+/**
+ * THE DISMISSAL's contract - a session, an opaque intent id, and no way to say
+ * anything else. It is the one launch channel that can answer a parked agent, so
+ * what it must NOT accept matters as much as what it must.
+ */
+describe("cancelAwaitingForm - the draft's id and nothing more", () => {
+  const input = { sessionId: "s1", intentId: "int_1" };
+
+  it("accepts a session and an intent id", () => {
+    expect(poolsLaunchCancelAwaitingFormInputSchema.safeParse(input).success).toBe(true);
+  });
+
+  it.each([
+    ["a fee", { ...input, feeWei: "1" }],
+    ["a value", { ...input, valueWei: "1" }],
+    ["a gas limit", { ...input, gasLimit: "1" }],
+    ["a wallet", { ...input, walletAddress: ADDRESS }],
+    ["a recipient", { ...input, feeRecipient: ADDRESS }],
+    // The SIBLING cancel's id. Accepting it here would let one dialog address
+    // the wrong stage with the wrong object and be told nothing about it.
+    ["a fingerprint", { ...input, fingerprintId: "fp_1" }],
+  ])("refuses %s", (_name, payload) => {
+    expect(poolsLaunchCancelAwaitingFormInputSchema.safeParse(payload).success).toBe(false);
+  });
+
+  it.each([
+    ["no intent id", { sessionId: "s1" }],
+    ["an empty intent id", { sessionId: "s1", intentId: "" }],
+    ["no session", { intentId: "int_1" }],
+  ])("refuses %s", (_name, payload) => {
+    expect(poolsLaunchCancelAwaitingFormInputSchema.safeParse(payload).success).toBe(false);
+  });
+
+  it("answers with BOTH booleans, and refuses a reply missing either", () => {
+    expect(
+      poolsLaunchCancelAwaitingFormResultSchema.safeParse({
+        cancelled: true,
+        resumedAgentTurn: false,
+      }).success,
+    ).toBe(true);
+    // `cancelled` alone cannot say whether the agent was actually woken, and a
+    // reply that omitted it would be read as "the turn is fine".
+    expect(poolsLaunchCancelAwaitingFormResultSchema.safeParse({ cancelled: true }).success)
+      .toBe(false);
+    expect(
+      poolsLaunchCancelAwaitingFormResultSchema.safeParse({ resumedAgentTurn: true }).success,
+    ).toBe(false);
+  });
+});
+
+/**
+ * The agent's PROPOSAL, including which tokenised stock it named. The address is
+ * held to the same shape the deploy path enforces: 194 stocks are launchable, so
+ * a prefill the form would then refuse is worse than no prefill at all.
+ */
+describe("the awaiting form's proposed stock address", () => {
+  const awaiting = {
+    intentId: "int_1",
+    expiresAt: "2026-09-06T10:01:00.000Z",
+    proposed: { name: "Moon", pairedAsset: "stock", pairedStockAddress: ADDRESS },
+  };
+
+  it("accepts a real address on a stock-paired proposal", () => {
+    expect(poolsAwaitingLaunchFormSchema.safeParse(awaiting).success).toBe(true);
+  });
+
+  it("stays OPTIONAL - a proposal that named no stock is still a valid proposal", () => {
+    const { pairedStockAddress: _dropped, ...proposed } = awaiting.proposed;
+    expect(poolsAwaitingLaunchFormSchema.safeParse({ ...awaiting, proposed }).success).toBe(true);
+  });
+
+  it.each(["0xnope", "", "not-an-address", `0x${"a".repeat(39)}`])(
+    "refuses %s rather than prefilling something the form cannot use",
+    (pairedStockAddress) => {
+      expect(
+        poolsAwaitingLaunchFormSchema.safeParse({
+          ...awaiting,
+          proposed: { ...awaiting.proposed, pairedStockAddress },
+        }).success,
+      ).toBe(false);
+    },
+  );
 });

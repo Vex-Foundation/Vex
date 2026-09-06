@@ -34,8 +34,10 @@
  * Everything downstream reads `snapshot.sessionId`, never the live prop.
  *
  * ── WHY THE DISMISSED SET EXISTS ──────────────────────────────────────────
- * Closing the dialog cancels a DRAFT, and the cancel is fire-and-forget by
- * design (the dialog must not trap the user behind a round-trip). So for the
+ * Closing the dialog cancels the DRAFT through `poolsLaunch.cancelAwaitingForm`
+ * (which also wakes the agent's parked turn), and that cancel is
+ * fire-and-forget by design (the dialog must not trap the user behind a
+ * round-trip). So for the
  * moment between the close and the next read, the query cache still holds the
  * row — and without this set the modal would reopen over the user who just
  * dismissed it. The same is true of a COMPLETED deploy, which closes without
@@ -89,6 +91,12 @@ function toFormValues(form: PoolsAwaitingLaunchForm): PoolsLaunchFormValues {
     name: proposed.name ?? EMPTY_POOLS_LAUNCH_FORM.name,
     symbol: proposed.symbol ?? EMPTY_POOLS_LAUNCH_FORM.symbol,
     pairedAsset: proposed.pairedAsset ?? EMPTY_POOLS_LAUNCH_FORM.pairedAsset,
+    // WHICH stock, on a stock-paired proposal. The DTO carries it only on that
+    // pair and only when the stored value is a real address, so an absent one
+    // falls back to the empty box the user types into - never to an address
+    // nobody chose.
+    pairedStockAddress:
+      proposed.pairedStockAddress ?? EMPTY_POOLS_LAUNCH_FORM.pairedStockAddress,
     prebuy: proposed.prebuyAmountHuman ?? EMPTY_POOLS_LAUNCH_FORM.prebuy,
     imageSource: image === undefined ? EMPTY_POOLS_LAUNCH_FORM.imageSource : image.kind,
     imageId: image !== undefined && image.kind === "locker" ? image.imageId : null,

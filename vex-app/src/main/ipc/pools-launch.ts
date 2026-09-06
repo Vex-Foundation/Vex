@@ -1,6 +1,6 @@
 /**
  * pools.fun launch IPC (domain `poolsLaunch`) — `prepare`, `deploy`, `cancel`,
- * `myLaunches`, `getAwaiting`, `claimPreview`, `claim`.
+ * `cancelAwaitingForm`, `myLaunches`, `getAwaiting`, `claimPreview`, `claim`.
  *
  * THE BOUNDARY THIS FILE DEFENDS: the renderer describes the TOKEN; main decides
  * the MONEY. Every input schema is `.strict()` and carries no fee, value,
@@ -30,6 +30,8 @@ import {
   poolsClaimInputSchema,
   poolsClaimPreviewSchema,
   poolsDeployedLaunchSchema,
+  poolsLaunchCancelAwaitingFormInputSchema,
+  poolsLaunchCancelAwaitingFormResultSchema,
   poolsLaunchCancelInputSchema,
   poolsLaunchCancelResultSchema,
   poolsLaunchDeployInputSchema,
@@ -42,6 +44,7 @@ import {
 } from "@shared/schemas/pools-launch.js";
 import {
   claimPoolsFees,
+  cancelAwaitingPoolsLaunchForm,
   cancelPoolsLaunch,
   deployPoolsLaunch,
   getAwaitingPoolsLaunchForm,
@@ -85,6 +88,10 @@ function refuse(
       case "fingerprint_expired":
       case "provider_unavailable":
       case "claim_ceiling_exceeded":
+      // The ROW moved, not the input: the id the renderer sent is the one it
+      // was given, so this is never the user's typing to fix. The MESSAGE names
+      // the state the form is actually in, which is the only actionable part.
+      case "form_not_cancellable":
         return "internal.unexpected";
     }
   })();
@@ -220,6 +227,37 @@ function registerCancelHandler(): () => void {
   });
 }
 
+function registerCancelAwaitingFormHandler(): () => void {
+  return registerHandler({
+    channel: CH.poolsLaunch.cancelAwaitingForm,
+    domain: DOMAIN,
+    inputSchema: poolsLaunchCancelAwaitingFormInputSchema,
+    outputSchema: poolsLaunchCancelAwaitingFormResultSchema,
+    handle: async (input, ctx) => {
+      // THE DISMISSAL. It ends a DRAFT and wakes the agent turn parked on it;
+      // it holds no fingerprint, builds no plan and touches no signer, and the
+      // runtime refuses every status but `awaiting_user_form` by name, so it
+      // cannot race a signature.
+      try {
+        const outcome = await cancelAwaitingPoolsLaunchForm(input);
+        if (!outcome.ok) return refuse(outcome.refusal, ctx.requestId);
+        log.info(
+          `[ipc:vex:poolsLaunch:cancelAwaitingForm] cancelled=${String(outcome.value.cancelled)} `
+            + `resumed=${String(outcome.value.resumedAgentTurn)} correlationId=${ctx.requestId}`,
+        );
+        return ok(outcome.value);
+      } catch (cause) {
+        return unexpected(
+          cause,
+          ctx.requestId,
+          "Vex could not cancel that launch request. Nothing was signed, and the form expires on "
+            + "its own if it stays open.",
+        );
+      }
+    },
+  });
+}
+
 function registerMyLaunchesHandler(): () => void {
   return registerHandler({
     channel: CH.poolsLaunch.myLaunches,
@@ -331,6 +369,7 @@ export function registerPoolsLaunchHandlers(): ReadonlyArray<() => void> {
     registerPrepareHandler(),
     registerDeployHandler(),
     registerCancelHandler(),
+    registerCancelAwaitingFormHandler(),
     registerMyLaunchesHandler(),
     registerGetAwaitingHandler(),
     registerClaimPreviewHandler(),

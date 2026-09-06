@@ -15,11 +15,13 @@ import type { PoolsPreparedLaunch } from "@shared/schemas/pools-launch.js";
 
 const prepare = vi.fn();
 const deploy = vi.fn();
+const cancelAwaitingForm = vi.fn();
 
 vi.mock("../../../../lib/api/pools-launch.js", () => ({
   isPoolsLaunchAvailable: () => true,
   preparePoolsLaunch: (...args: unknown[]) => prepare(...args),
   deployPoolsLaunch: (...args: unknown[]) => deploy(...args),
+  cancelAwaitingPoolsLaunchForm: (...args: unknown[]) => cancelAwaitingForm(...args),
 }));
 
 // The locker picker reaches for the images IPC domain, which this lane does not
@@ -70,15 +72,18 @@ function prepared(over: Partial<PoolsPreparedLaunch> = {}): PoolsPreparedLaunch 
   };
 }
 
-function mount(): void {
+function mount(over: Record<string, unknown> = {}): { readonly onOpenChange: ReturnType<typeof vi.fn> } {
+  const onOpenChange = vi.fn();
   render(
     createElement(PoolsLaunchLane, {
       open: true,
-      onOpenChange: vi.fn(),
+      onOpenChange,
       sessionId: "s1",
       origin: "user" as const,
+      ...over,
     }),
   );
+  return { onOpenChange };
 }
 
 /** Fill the form to the point where a preparation may be asked for. */
@@ -353,5 +358,70 @@ describe("pools lane - the final confirmation states what will be signed, and fo
     const card = screen.getByRole("region", { name: /what you are authorizing/i });
     expect(within(card).queryByText("Fee recipient")).toBeNull();
     expect(within(card).queryByText(sentinel)).toBeNull();
+  });
+});
+
+/**
+ * DISMISSING owes an answer only when an AGENT asked the question.
+ *
+ * The origin is a renderer-side concept and the only thing that decides it: a
+ * `user`-origin launch has no intent row and no parked tool call, so cancelling
+ * one would address an id that does not exist. An `agent_requested_form` has
+ * both, and leaving it uncancelled is what made the agent wait out the
+ * fifteen-minute window for a decision the user had already made.
+ */
+describe("pools lane - dismissing an agent-requested form answers its agent", () => {
+  const INTENT_ID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+
+  function dismiss(): void {
+    fireEvent.click(screen.getByRole("button", { name: /^cancel$/i }));
+  }
+
+  it("cancels the draft, by intent id, and closes", () => {
+    const { onOpenChange } = mount({ origin: "agent_requested_form", intentId: INTENT_ID });
+
+    dismiss();
+
+    expect(cancelAwaitingForm).toHaveBeenCalledWith({ sessionId: "s1", intentId: INTENT_ID });
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    // Nothing on the money path is touched by a dismissal.
+    expect(prepare).not.toHaveBeenCalled();
+    expect(deploy).not.toHaveBeenCalled();
+  });
+
+  it("a USER-started launch closes silently - there is no intent and no agent to answer", () => {
+    const { onOpenChange } = mount();
+
+    dismiss();
+
+    expect(cancelAwaitingForm).not.toHaveBeenCalled();
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("an agent origin WITHOUT an intent id cancels nothing rather than guessing one", () => {
+    const { onOpenChange } = mount({ origin: "agent_requested_form", intentId: null });
+
+    dismiss();
+
+    expect(cancelAwaitingForm).not.toHaveBeenCalled();
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("does not cancel while a signature is in flight - the dialog is not dismissible then", async () => {
+    // `deploy` never settles, so the lane stays in its `deploying` phase.
+    prepare.mockResolvedValue({ ok: true, data: prepared() });
+    deploy.mockReturnValue(new Promise(() => undefined));
+    mount({ origin: "agent_requested_form", intentId: INTENT_ID });
+    fillValidForm();
+    fireEvent.click(submitButton());
+    await waitFor(() => expect(submitButton().textContent).toMatch(/deploy token/i));
+    fireEvent.click(submitButton());
+    await waitFor(() => expect(submitButton().textContent).toMatch(/deploying/i));
+
+    dismiss();
+
+    // A form whose launch is being signed is not a form the user dismissed, and
+    // cancelling its intent would race a signature.
+    expect(cancelAwaitingForm).not.toHaveBeenCalled();
   });
 });

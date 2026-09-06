@@ -504,11 +504,19 @@ export const CH = {
    *
    * `claimPreview` simulates `collectAndClaim` and reports BOTH payout legs;
    * `claim` executes it as one activity carrying two output legs.
+   *
+   * TWO CANCELS, TWO OBJECTS. `cancel` ends a PREPARED launch by its verified
+   * `fingerprintId`. `cancelAwaitingForm` ends the DRAFT an agent asked the
+   * human to fill, by the `intentId` the awaiting read handed the renderer, and
+   * wakes the agent turn parked on it - which is why dismissing that dialog
+   * answers the agent at once instead of leaving it to the expiry sweep.
+   * Neither reaches a signer.
    */
   poolsLaunch: {
     prepare: "vex:poolsLaunch:prepare",
     deploy: "vex:poolsLaunch:deploy",
     cancel: "vex:poolsLaunch:cancel",
+    cancelAwaitingForm: "vex:poolsLaunch:cancelAwaitingForm",
     myLaunches: "vex:poolsLaunch:myLaunches",
     getAwaiting: "vex:poolsLaunch:getAwaiting",
     claimPreview: "vex:poolsLaunch:claimPreview",

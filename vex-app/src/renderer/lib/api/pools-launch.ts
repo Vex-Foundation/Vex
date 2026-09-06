@@ -39,10 +39,12 @@ import {
 
 import type { Result } from "@shared/ipc/result.js";
 import type {
+  PoolsAwaitingFormCancelResult,
   PoolsClaimInput,
   PoolsClaimedFees,
   PoolsClaimPreview,
   PoolsDeployedLaunch,
+  PoolsLaunchCancelAwaitingFormInput,
   PoolsLaunchCancelInput,
   PoolsLaunchCancelResult,
   PoolsLaunchDeployInput,
@@ -118,6 +120,24 @@ export function cancelPoolsLaunch(
   input: PoolsLaunchCancelInput,
 ): Promise<Result<PoolsLaunchCancelResult>> {
   return call((bridge) => bridge.cancel(input));
+}
+
+/**
+ * THE DISMISSAL of an agent-requested form: end the draft and wake the turn.
+ *
+ * Deliberately NOT `cancelPoolsLaunch` above, which takes a `fingerprintId` and
+ * ends a PREPARED launch. This one takes the `intentId` the awaiting read
+ * handed over, and is the only launch call that answers a parked agent.
+ *
+ * Fire-and-forget at the call site by design: the dialog must close on the
+ * user's click rather than behind a round-trip, and main owns the row either
+ * way. What comes back is what happened, for the log - `cancelled: false` is a
+ * success meaning the form was answered in the same instant.
+ */
+export function cancelAwaitingPoolsLaunchForm(
+  input: PoolsLaunchCancelAwaitingFormInput,
+): Promise<Result<PoolsAwaitingFormCancelResult>> {
+  return call((bridge) => bridge.cancelAwaitingForm(input));
 }
 
 export function listPoolsMyLaunches(

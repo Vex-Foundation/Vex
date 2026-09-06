@@ -370,6 +370,7 @@ export interface PoolsAwaitingLaunchForm {
  *
  * Suggested mapping, matching the existing handler's reasoning:
  *   `invalid_inputs`         -> the input-validation code the domain already uses
+ *   `form_not_cancellable`   -> `internal.unexpected` (the ROW moved, not the input)
  *   `wallet_unavailable`     -> `wallet.*` (no wallet / locked)
  *   `insufficient_funds`     -> `wallet.insufficient_funds`
  *   `pair_not_allowlisted`   -> `internal.unexpected` (our on-chain read refused it)
@@ -380,6 +381,19 @@ export interface PoolsAwaitingLaunchForm {
  */
 export type PoolsLaunchRefusalKind =
   | "invalid_inputs"
+  /**
+   * THE AWAITING FORM CANNOT BE CANCELLED, and the message says which state it
+   * is in instead.
+   *
+   * Not `invalid_inputs`: the id the renderer sent is the one it was given, so
+   * this is never the user's typing to fix. What changed is the ROW - the form
+   * was submitted, authorized, signed, or already settled between the dialog
+   * opening and the dismissal - and the only honest answer names that state.
+   * Cancelling from any of them is refused rather than attempted, because
+   * `cancelIfAwaitingWith` is one-way out of `awaiting_user_form` and a launch
+   * past that point has no exit that is not terminal.
+   */
+  | "form_not_cancellable"
   | "wallet_unavailable"
   | "insufficient_funds"
   | "pair_not_allowlisted"
@@ -447,3 +461,41 @@ export type ListPoolsMyLaunches = (
 export type GetAwaitingPoolsLaunchForm = (
   session: PoolsLaunchSession,
 ) => Promise<PoolsLaunchOutcome<PoolsAwaitingLaunchForm | null>>;
+
+/**
+ * What a dismissal did to the agent's parked turn.
+ *
+ * TWO BOOLEANS, NOT ONE, because they answer different questions and only one
+ * of them is about the row. `cancelled` says THIS call moved the intent to
+ * `cancelled`; `false` means the CAS missed - the form was answered in the same
+ * instant by whoever submitted or expired it - and is deliberately a SUCCESS,
+ * not a refusal, because there was nothing live left to cancel.
+ * `resumedAgentTurn` reports whether the parked turn was actually woken, never
+ * merely that a wake was attempted: a busy lease leaves the turn owed, and the
+ * durable floor in `sync/launch-form-expiry.ts` is what finds it again.
+ */
+export interface PoolsAwaitingFormCancellation {
+  readonly cancelled: boolean;
+  readonly resumedAgentTurn: boolean;
+}
+
+/**
+ * THE USER DISMISSED THE FORM THE AGENT ASKED FOR - cancel its intent now.
+ *
+ * The counterpart of `CancelPoolsLaunch`, and a DIFFERENT object: that one
+ * cancels a PREPARED launch by its verified `fingerprintId`, this one cancels a
+ * DRAFT by the `intentId` the awaiting DTO already carries. Neither reaches a
+ * signer, but only this one can answer a parked turn, which is the whole reason
+ * it exists: without it a dismissed form sat `awaiting_user_form` until the
+ * fifteen-minute window lapsed and the agent waited with it.
+ *
+ * NO MONEY FIELD, AND NO MONEY EFFECT. No fingerprint, no plan, no signer, no
+ * fee: its entire authority is "the human closed the dialog". It fires only
+ * from `awaiting_user_form` - every other status is refused BY NAME - so it can
+ * never race a signature, exactly as `cancelIfAwaitingWith` guarantees one
+ * layer down.
+ */
+export type CancelAwaitingPoolsLaunchForm = (
+  session: PoolsLaunchSession,
+  inputs: { readonly intentId: string },
+) => Promise<PoolsLaunchOutcome<PoolsAwaitingFormCancellation>>;

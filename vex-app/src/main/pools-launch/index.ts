@@ -28,6 +28,7 @@ import type {
 } from "@vex-agent/tools/protocols/pools/launch/runtime-contract.js";
 import type {
   PoolsAmount,
+  PoolsAwaitingFormCancelResult,
   PoolsClaimedFees,
   PoolsClaimPreview,
   PoolsDeployedLaunch,
@@ -251,6 +252,28 @@ export async function cancelPoolsLaunch(input: {
   );
 }
 
+/**
+ * The user dismissed the form the agent asked for - cancel its intent NOW.
+ *
+ * A DIFFERENT OBJECT from `cancelPoolsLaunch` above, which takes the verified
+ * `fingerprintId` of a PREPARED launch. This one takes the `intentId` the
+ * awaiting DTO already carries, ends the draft, and wakes the parked agent turn
+ * with an honest "the user declined" - so a dismissal is answered at once
+ * instead of waiting out the fifteen-minute window and then being reported as
+ * an expiry.
+ *
+ * NO MONEY FIELD CROSSES, in either direction. The payload is a session id and
+ * an opaque intent id; the reply is two booleans about what happened to the row
+ * and to the turn.
+ */
+export async function cancelAwaitingPoolsLaunchForm(input: {
+  readonly sessionId: string;
+  readonly intentId: string;
+}): Promise<PoolsLaunchOperationOutcome<PoolsAwaitingFormCancelResult>> {
+  return withRuntime(input.sessionId, (runtime, session) =>
+    runtime.cancelAwaitingForm(session, { intentId: input.intentId }));
+}
+
 export async function previewPoolsClaim(input: {
   readonly sessionId: string;
   readonly tokenAddress: string;
@@ -374,6 +397,12 @@ export async function getAwaitingPoolsLaunchForm(input: {
             tweetUrl: awaiting.proposed.tweetUrl,
             websiteUrl: awaiting.proposed.websiteUrl,
             prebuyAmountHuman: awaiting.proposed.prebuy?.amountHuman,
+            // WHICH stock the agent proposed, so a stock-paired draft opens with
+            // its asset already named. The runtime carries it only on a stock
+            // pair and only when the stored value is a real address, so this
+            // mapping neither guesses nor filters: absent stays absent, and the
+            // form's own default (an empty box) is what the user then meets.
+            pairedStockAddress: awaiting.proposed.pairedStockAddress,
           },
         },
       },

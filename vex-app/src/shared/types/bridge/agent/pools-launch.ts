@@ -1,10 +1,12 @@
 import type { Result } from "../../../ipc/result.js";
 import type {
   LaunchFormEvent,
+  PoolsAwaitingFormCancelResult,
   PoolsClaimedFees,
   PoolsClaimInput,
   PoolsClaimPreview,
   PoolsDeployedLaunch,
+  PoolsLaunchCancelAwaitingFormInput,
   PoolsLaunchCancelInput,
   PoolsLaunchCancelResult,
   PoolsLaunchDeployInput,
@@ -52,6 +54,18 @@ export interface PoolsLaunchBridge {
   readonly cancel: (
     input: PoolsLaunchCancelInput,
   ) => Promise<Result<PoolsLaunchCancelResult>>;
+  /**
+   * The user DISMISSED the form an agent asked them to fill: end the draft and
+   * wake the turn parked on it.
+   *
+   * A DIFFERENT OBJECT from `cancel` above. That one ends a PREPARED launch by
+   * its verified fingerprint; this one ends an `awaiting_user_form` intent by
+   * the `intentId` `getAwaiting` handed over, and is the only launch call that
+   * can answer a parked agent. Neither signs, spends, or names an amount.
+   */
+  readonly cancelAwaitingForm: (
+    input: PoolsLaunchCancelAwaitingFormInput,
+  ) => Promise<Result<PoolsAwaitingFormCancelResult>>;
   readonly myLaunches: (
     input: PoolsLaunchMyLaunchesInput,
   ) => Promise<Result<PoolsLaunchMyLaunchesResult>>;
