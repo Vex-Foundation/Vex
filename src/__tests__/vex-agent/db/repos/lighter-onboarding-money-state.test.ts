@@ -1,3 +1,4 @@
+import { requireValue } from "../../../helpers/require-value.js";
 import { describe, expect, it, vi } from "vitest";
 
 import { getUnresolvedMoneyStateForSession } from "@vex-agent/db/repos/approval-intents/money-state.js";
@@ -15,7 +16,7 @@ describe("Lighter onboarding money-state participation", () => {
     };
 
     await expect(
-      getUnresolvedMoneyStateForSession(client as never, "session-1"),
+      getUnresolvedMoneyStateForSession(client, "session-1"),
     ).resolves.toEqual({
       clear: false,
       reasons: [{
@@ -25,7 +26,7 @@ describe("Lighter onboarding money-state participation", () => {
       }],
     });
 
-    const [sql, params] = client.query.mock.calls[0]!;
+    const [sql, params] = requireValue(client.query.mock.calls[0]);
     expect(sql).toContain("FROM lighter_onboarding_intents l");
     expect(sql).toContain("l.execution_state NOT IN ('credited', 'failed')");
     expect(sql).toContain("l.approval_status = 'approval_pending' AND l.expires_at > NOW()");

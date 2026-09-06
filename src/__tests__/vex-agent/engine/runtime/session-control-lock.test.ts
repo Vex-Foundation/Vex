@@ -28,7 +28,7 @@ beforeEach(() => {
 
 describe("multi-session control locks", () => {
   it("sorts and de-duplicates session ids before taking advisory locks", async () => {
-    await acquireSessionControlLocks(CLIENT as never, [
+    await acquireSessionControlLocks(CLIENT, [
       "session-z",
       "session-a",
       "session-z",
@@ -51,7 +51,7 @@ describe("multi-session control locks", () => {
   });
 
   it("rejects an empty lock set", async () => {
-    await expect(acquireSessionControlLocks(CLIENT as never, [])).rejects.toThrow(
+    await expect(acquireSessionControlLocks(CLIENT, [])).rejects.toThrow(
       "At least one session control lock is required",
     );
     expect(mocks.executeWith).not.toHaveBeenCalled();

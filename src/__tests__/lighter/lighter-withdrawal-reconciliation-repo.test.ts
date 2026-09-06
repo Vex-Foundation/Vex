@@ -1,3 +1,4 @@
+import { requireValue } from "../helpers/require-value.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -37,7 +38,7 @@ describe("Lighter withdrawal reconciliation persistence", () => {
       settlementScanFromBlock: "123",
     })).resolves.toBeNull();
 
-    const [sql, params] = mocks.queryOne.mock.calls[0]!;
+    const [sql, params] = requireValue(mocks.queryOne.mock.calls[0]);
     expect(sql).toContain("COALESCE(withdrawal_history_id, $6::text)");
     expect(sql).toContain("OR $6::text IS NULL");
     expect(sql).toContain("withdrawal_history_id = $6::text");

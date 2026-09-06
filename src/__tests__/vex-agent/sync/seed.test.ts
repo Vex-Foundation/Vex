@@ -1,3 +1,4 @@
+import { requireValue } from "../../helpers/require-value.js";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mockExecute = vi.fn().mockResolvedValue(1);
@@ -150,10 +151,10 @@ describe("seedSyncJobs", () => {
       (call: unknown[]) => (call[1] as unknown[])[1] === "lighter_deposit_repair",
     );
     expect(repairCall).toBeDefined();
-    expect((repairCall![1] as unknown[])[0]).toBe("_global");
-    expect((repairCall![1] as unknown[])[2]).toBeNull();
-    expect((repairCall![1] as unknown[])[3]).toBe("periodic");
-    expect((repairCall![1] as unknown[])[4]).toBe(30);
+    expect((requireValue(repairCall)[1] as unknown[])[0]).toBe("_global");
+    expect((requireValue(repairCall)[1] as unknown[])[2]).toBeNull();
+    expect((requireValue(repairCall)[1] as unknown[])[3]).toBe("periodic");
+    expect((requireValue(repairCall)[1] as unknown[])[4]).toBe(30);
   });
 
   it("seeds evidence-only Lighter withdrawal repair every minute", async () => {
@@ -162,10 +163,10 @@ describe("seedSyncJobs", () => {
       (call: unknown[]) => (call[1] as unknown[])[1] === "lighter_withdrawal_repair",
     );
     expect(repairCall).toBeDefined();
-    expect((repairCall![1] as unknown[])[0]).toBe("_global");
-    expect((repairCall![1] as unknown[])[2]).toBeNull();
-    expect((repairCall![1] as unknown[])[3]).toBe("periodic");
-    expect((repairCall![1] as unknown[])[4]).toBe(60);
+    expect((requireValue(repairCall)[1] as unknown[])[0]).toBe("_global");
+    expect((requireValue(repairCall)[1] as unknown[])[2]).toBeNull();
+    expect((requireValue(repairCall)[1] as unknown[])[3]).toBe("periodic");
+    expect((requireValue(repairCall)[1] as unknown[])[4]).toBe(60);
   });
 
   it("seeds bounded public Lighter order repair every five minutes", async () => {
@@ -174,10 +175,10 @@ describe("seedSyncJobs", () => {
       (call: unknown[]) => (call[1] as unknown[])[1] === "lighter_order_repair",
     );
     expect(repairCall).toBeDefined();
-    expect((repairCall![1] as unknown[])[0]).toBe("_global");
-    expect((repairCall![1] as unknown[])[2]).toBeNull();
-    expect((repairCall![1] as unknown[])[3]).toBe("periodic");
-    expect((repairCall![1] as unknown[])[4]).toBe(300);
+    expect((requireValue(repairCall)[1] as unknown[])[0]).toBe("_global");
+    expect((requireValue(repairCall)[1] as unknown[])[2]).toBeNull();
+    expect((requireValue(repairCall)[1] as unknown[])[3]).toBe("periodic");
+    expect((requireValue(repairCall)[1] as unknown[])[4]).toBe(300);
   });
 
   it("seeds solana_activity_repair periodic job with 30s interval (status-only sweep, migration 061)", async () => {

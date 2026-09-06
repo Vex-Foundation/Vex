@@ -1,3 +1,4 @@
+import { requireValue } from "../helpers/require-value.js";
 import type { LighterClient } from "@tools/lighter/client.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as policyModule from "@tools/lighter/fee-policy.js";
@@ -9,7 +10,7 @@ import { lighterTradeFeeEvidence } from "@vex-agent/tools/protocols/lighter/orde
 import type { LighterAccount, LighterAccountLimitsResponse, LighterSystemConfigResponse, LighterTrade } from "@tools/lighter/types.js";
 
 const WALLET = `0x${"1".repeat(40)}`;
-const policy = resolveLighterFeePolicy("core", { enabled: true, accountIndex: 99, l1Address: WALLET })!;
+const policy = requireValue(resolveLighterFeePolicy("core", { enabled: true, accountIndex: 99, l1Address: WALLET }));
 const fees = getLighterIntegratorFees(policy, "perp");
 const NOW = 1_900_000_000_000;
 const trader: LighterAccount = { index: 42, status: 1, approved_integrators: [{
@@ -32,6 +33,7 @@ afterEach(() => { vi.restoreAllMocks(); configureLighterReadOnlyAccountAuthResol
 
 describe("native Lighter order fees", () => {
   it("does no fee provider or auth work while collection is disabled", async () => {
+    vi.spyOn(policyModule, "getLighterFeePolicy").mockReturnValue(null);
     const provider = client();
     expect(await resolveLighterOrderFees({ ...scope, client: provider })).toBeNull();
     expect(provider.getAccount).not.toHaveBeenCalled();
@@ -50,9 +52,9 @@ describe("native Lighter order fees", () => {
 
   it.each([
     { ...trader, approved_integrators: [] },
-    { ...trader, approved_integrators: [...trader.approved_integrators!, ...trader.approved_integrators!] },
-    { ...trader, approved_integrators: trader.approved_integrators!.map((row) => ({ ...row, approval_expiry: NOW })) },
-    { ...trader, approved_integrators: trader.approved_integrators!.map((row) => ({ ...row, max_spot_taker_fee: 2499 })) },
+    { ...trader, approved_integrators: [...requireValue(trader.approved_integrators), ...requireValue(trader.approved_integrators)] },
+    { ...trader, approved_integrators: requireValue(trader.approved_integrators).map((row) => ({ ...row, approval_expiry: NOW })) },
+    { ...trader, approved_integrators: requireValue(trader.approved_integrators).map((row) => ({ ...row, max_spot_taker_fee: 2499 })) },
   ])("refuses new risk without the exact active allowance", async (account) => {
     vi.spyOn(policyModule, "getLighterFeePolicy").mockReturnValue(policy);
     configureLighterReadOnlyAccountAuthResolver(async () => ({ accountIndex: 42, token: "test-read-auth" }));
@@ -78,6 +80,7 @@ describe("native Lighter order fees", () => {
   });
 
   it("invalidates a fee-bearing approval when collection is disabled", async () => {
+    vi.spyOn(policyModule, "getLighterFeePolicy").mockReturnValue(null);
     await expect(revalidateLighterOrderFees({ ...scope, client: client(), integratorFees: fees })).rejects.toThrow("changed after this preview");
   });
 

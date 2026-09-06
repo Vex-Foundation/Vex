@@ -1,6 +1,7 @@
+import { requireValue } from "../../../../../src/__tests__/helpers/require-value.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { LighterInternalCandle } from "../trading-panel-service.js";
+import type { LighterCandleTarget, LighterInternalCandle } from "../trading-panel-service.js";
 import {
   LIGHTER_CANDLE_STREAM_KEEPALIVE_INTERVAL_MS,
   LIGHTER_CANDLE_STREAM_RECONCILE_INTERVAL_MS,
@@ -146,7 +147,7 @@ function subscribe(harness: ReturnType<typeof makeHarness>, ownerId: number | st
 async function connect(harness: ReturnType<typeof makeHarness>): Promise<FakeSocket> {
   subscribe(harness);
   await vi.advanceTimersByTimeAsync(0);
-  const socket = harness.sockets[0]!;
+  const socket = requireValue(harness.sockets[0]);
   expect(socket.sent.map((value) => JSON.parse(value))).toContainEqual({
     type: "subscribe",
     channel: "candle/7/1m",
@@ -309,13 +310,16 @@ describe("Lighter candle stream supervisor", () => {
     const handle = subscribe(h, "renderer-a");
 
     expect(h.supervisor.unsubscribe("renderer-b", handle.subscriptionId)).toBe(false);
+    // "1w" is deliberately outside the supported set: the supervisor must reject
+    // it at runtime, so it enters through a string-typed boundary on purpose.
+    const unsupportedResolution: string = "1w";
     expect(() => h.supervisor.subscribe(
       "renderer-a",
       {
         subscriptionId: SECOND_SUBSCRIPTION_ID,
         environment: "core",
         marketId: 7,
-        resolution: "1w" as never,
+        resolution: unsupportedResolution as LighterCandleTarget["resolution"],
       },
       vi.fn(),
     )).toThrow("does not support 1w");

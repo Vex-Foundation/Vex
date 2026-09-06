@@ -115,18 +115,18 @@ describe("approved Lighter native OCO execution", () => {
         getAccountTrades: vi.fn(async () => ({ code: 200, trades: [] })),
       },
       intents: {
-        markPreSubmitRevalidated: vi.fn(async () => ({}) as never),
-        attachNonceReservationWith: vi.fn(async () => ({}) as never),
-        markSigned: vi.fn(async () => ({}) as never), markSubmitted: vi.fn(async () => ({}) as never),
-        markApiAccepted: vi.fn(async () => ({}) as never), markSequencerPending: vi.fn(async () => ({}) as never),
-        markProviderOutcome: vi.fn(async () => ({}) as never), markAmbiguous: vi.fn(async () => ({}) as never),
+        markPreSubmitRevalidated: vi.fn(async () => ({})),
+        attachNonceReservationWith: vi.fn(async () => ({})),
+        markSigned: vi.fn(async () => ({})), markSubmitted: vi.fn(async () => ({})),
+        markApiAccepted: vi.fn(async () => ({})), markSequencerPending: vi.fn(async () => ({})),
+        markProviderOutcome: vi.fn(async () => ({})), markAmbiguous: vi.fn(async () => ({})),
       },
       previews: { findFreshById: vi.fn(async (_session, _environment, id) => id === PREVIEW.stopLoss.previewId ? row(PREVIEW.stopLoss) : row(PREVIEW.takeProfit)) },
       nonceState: {
-        recordExecutionObserved: vi.fn(async () => ({}) as never),
-        reserveObservedWith: vi.fn(async () => ({ reservationId: `lighter-oco:${PLAN.intentId}`, reservedNonce: "0" }) as never),
+        recordExecutionObserved: vi.fn(async () => ({})),
+        reserveObservedWith: vi.fn(async () => ({ reservationId: `lighter-oco:${PLAN.intentId}`, reservedNonce: "0" })),
       },
-      transaction: vi.fn(async (fn) => fn({} as never)), now: () => NOW, wait: vi.fn(async () => undefined),
+      transaction: vi.fn(async (fn) => fn({})), now: () => NOW, wait: vi.fn(async () => undefined),
     };
     const result = await executeApprovedLighterOco({ plan: PLAN, group: GROUP, deps: dependencies });
     expect(result.status).toBe("active");

@@ -1,3 +1,4 @@
+import { requireValue } from "../helpers/require-value.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { LighterClient } from "@tools/lighter/client.js";
 import { assertLighterFeeAllowance, assertLighterFeePolicyLive, getLighterFeePolicy, getLighterIntegratorFees, resolveLighterFeePolicy } from "@tools/lighter/fee-policy.js";
@@ -7,7 +8,7 @@ import { materialFromSecret } from "@tools/lighter/trading-secret.js";
 import { validateLighterAccount, validateLighterAccountLimits, validateLighterSystemConfig } from "@tools/lighter/validation.js";
 
 const wallet = "0x1111111111111111111111111111111111111111";
-const policy = resolveLighterFeePolicy("core", { enabled: true, accountIndex: 123, l1Address: wallet })!;
+const policy = requireValue(resolveLighterFeePolicy("core", { enabled: true, accountIndex: 123, l1Address: wallet }));
 const limits = { code: 200, user_tier: "plus", user_tier_name: "Plus", current_maker_fee_tick: 50, current_taker_fee_tick: 50 };
 const allowance = { account_index: 123, name: "VEX", max_perps_maker_fee: 1000, max_perps_taker_fee: 1000,
   max_spot_maker_fee: 2500, max_spot_taker_fee: 2500, approval_expiry: 1_900_000_000_000 };
@@ -30,9 +31,10 @@ function helperOutput(overrides: Record<string, unknown> = {}) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("native Lighter fees", () => {
-  it("stays disabled without reviewed collectors and rejects malformed enabled configuration", () => {
-    expect(getLighterFeePolicy("core")).toBeNull();
-    expect(getLighterFeePolicy("rhc")).toBeNull();
+  it("binds configured collectors and rejects malformed enabled configuration", () => {
+    expect(getLighterFeePolicy("core")).toMatchObject({ collectorAccountIndex: 743799, environment: "core" });
+    expect(getLighterFeePolicy("rhc")).toMatchObject({ collectorAccountIndex: 22869, environment: "rhc" });
+    expect(resolveLighterFeePolicy("core", { enabled: false, accountIndex: null, l1Address: null })).toBeNull();
     expect(() => resolveLighterFeePolicy("core", { enabled: true, accountIndex: null, l1Address: null })).toThrow(/configured/);
     expect(getLighterIntegratorFees(policy, "perp")).toEqual({ integratorAccountIndex: 123, integratorMakerFee: 1000, integratorTakerFee: 1000 });
     expect(getLighterIntegratorFees(policy, "spot").integratorMakerFee).toBe(2500);
@@ -49,9 +51,9 @@ describe("native Lighter fees", () => {
   });
 
   it("requires current allowance for both markets and rejects expiry, revocation and Standard", () => {
-    const account = validateLighterAccount({ code: 200, accounts: [{ index: 42, approved_integrators: [allowance] }] }).accounts[0]!;
+    const account = requireValue(validateLighterAccount({ code: 200, accounts: [{ index: 42, approved_integrators: [allowance] }] }).accounts[0]);
     const accountLimits = validateLighterAccountLimits(limits);
-    expect(validateLighterAccount({ code: 200, accounts: [{ index: 42 }] }).accounts[0]!.approved_integrators).toBeUndefined();
+    expect(requireValue(validateLighterAccount({ code: 200, accounts: [{ index: 42 }] }).accounts[0]).approved_integrators).toBeUndefined();
     expect(() => assertLighterFeeAllowance(policy, { account, accountLimits, nowMs: 1_800_000_000_000 })).not.toThrow();
     expect(() => assertLighterFeeAllowance(policy, { account, accountLimits, nowMs: allowance.approval_expiry })).toThrow(/Approve/);
     expect(() => assertLighterFeeAllowance(policy, { account: { ...account, approved_integrators: [] }, accountLimits })).toThrow(/Approve/);
@@ -101,7 +103,7 @@ describe("native Lighter fees", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     fetchMock.mockResolvedValue(new Response(JSON.stringify({ code: 200 }), { status: 200 }));
     await client.changeAccountTier("rhc", { accountIndex: 42, newTier: "premium" }, auth);
-    const [url, options] = fetchMock.mock.calls[2]!;
+    const [url, options] = requireValue(fetchMock.mock.calls[2]);
     expect(url).toBe("https://api.rh.lighter.xyz/api/v1/changeAccountTier");
     expect(options.headers.Authorization).toBe(auth.token);
     expect(options.body.toString()).toBe("account_index=42&new_tier=premium");

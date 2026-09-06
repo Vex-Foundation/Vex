@@ -1,3 +1,4 @@
+import { requireValue } from "../helpers/require-value.js";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mockLoadConfig = vi.fn();
@@ -83,13 +84,13 @@ describe("getLocalChainRpcUrl / toLocalViemChain", () => {
   it("honors a valid user https override keyed by chainId", () => {
     mockLoadConfig.mockReturnValue({ localChainRpcUrls: { "4663": "https://my-private-rhc.example/rpc" } });
     expect(getLocalChainRpcUrl(getLocalChain(RH_ID)!)).toBe("https://my-private-rhc.example/rpc");
-    expect(getConfiguredLocalChainRpcUrl(getLocalChain(RH_ID)!)).toBe("https://my-private-rhc.example/rpc");
+    expect(getConfiguredLocalChainRpcUrl(requireValue(getLocalChain(RH_ID)))).toBe("https://my-private-rhc.example/rpc");
   });
 
   it("ignores a malformed override and uses the default", () => {
     mockLoadConfig.mockReturnValue({ localChainRpcUrls: { "4663": "not-a-url" } });
     expect(getLocalChainRpcUrl(getLocalChain(RH_ID)!)).toBe(DEFAULT_RPC);
-    expect(getConfiguredLocalChainRpcUrl(getLocalChain(RH_ID)!)).toBeNull();
+    expect(getConfiguredLocalChainRpcUrl(requireValue(getLocalChain(RH_ID)))).toBeNull();
   });
 
   it("builds a viem chain wired for multicall3", () => {

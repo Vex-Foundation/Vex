@@ -1,3 +1,4 @@
+import { requireValue } from "../../../helpers/require-value.js";
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 
 type QueryOneMock = Mock<
@@ -67,7 +68,7 @@ describe("lighter nonce state repo", () => {
     });
 
     expect(mockExecute).toHaveBeenCalledTimes(1);
-    const [sql, params] = mockExecute.mock.calls[0]!;
+    const [sql, params] = requireValue(mockExecute.mock.calls[0]);
     expect(sql).toContain("INSERT INTO lighter_nonce_state");
     expect(sql).toContain("ON CONFLICT (environment, account_index, api_key_index) DO UPDATE");
     expect(sql).toContain("WHERE lighter_nonce_state.status = 'observed'");
@@ -113,7 +114,7 @@ describe("lighter nonce state repo", () => {
       observedAt: new Date("2026-08-13T00:00:00.000Z"),
     });
 
-    const [sql, params] = mockQueryOne.mock.calls[0]!;
+    const [sql, params] = requireValue(mockQueryOne.mock.calls[0]);
     expect(sql).toContain("status = 'observed'");
     expect(sql).toContain("reserved_nonce = NULL");
     expect(sql).toContain("reservation_id = NULL");
@@ -146,7 +147,7 @@ describe("lighter nonce state repo", () => {
     });
 
     expect(observed).toBeNull();
-    const [sql] = mockQueryOne.mock.calls[0]!;
+    const [sql] = requireValue(mockQueryOne.mock.calls[0]);
     expect(sql).toContain("lighter_nonce_state.status IN ('reserved','submitted','ambiguous')");
   });
 
@@ -160,7 +161,7 @@ describe("lighter nonce state repo", () => {
       reservationId: "reservation-1",
     });
 
-    const [sql, params] = mockQueryOne.mock.calls[0]!;
+    const [sql, params] = requireValue(mockQueryOne.mock.calls[0]);
     expect(sql).toContain("UPDATE lighter_nonce_state");
     expect(sql).toContain("reserved_nonce = provider_nonce");
     expect(sql).toContain("AND status = 'observed'");
@@ -194,14 +195,14 @@ describe("lighter nonce state repo", () => {
     const txClient = { tx: true };
     mockQueryOneWith.mockResolvedValueOnce(row({ reservation_id: "reservation-tx" }));
 
-    const reserved = await repo.reserveObservedWith(txClient as never, {
+    const reserved = await repo.reserveObservedWith(txClient, {
       environment: "rhc",
       accountIndex: 42,
       apiKeyIndex: 1,
       reservationId: "reservation-tx",
     });
 
-    const [client, sql, params] = mockQueryOneWith.mock.calls[0]!;
+    const [client, sql, params] = requireValue(mockQueryOneWith.mock.calls[0]);
     expect(client).toBe(txClient);
     expect(sql).toContain("UPDATE lighter_nonce_state");
     expect(sql).toContain("AND status = 'observed'");
@@ -218,7 +219,7 @@ describe("lighter nonce state repo", () => {
 
     const found = await repo.find("rhc", 42, 1);
 
-    const [sql, params] = mockQueryOne.mock.calls[0]!;
+    const [sql, params] = requireValue(mockQueryOne.mock.calls[0]);
     expect(sql).toContain("FROM lighter_nonce_state");
     expect(sql).toContain("WHERE environment = $1 AND account_index = $2 AND api_key_index = $3");
     expect(params).toEqual(["rhc", 42, 1]);

@@ -111,17 +111,23 @@ const account = {
   openOrders: [],
 };
 
-async function call(
+type CallResult<T = unknown> = {
+  readonly ok: boolean;
+  readonly data: T;
+  readonly error: { readonly code: string; readonly message?: string };
+};
+
+async function call<T = unknown>(
   channel: string,
   payload: unknown,
   event: TestIpcEvent = sender,
-): Promise<any> {
+): Promise<CallResult<T>> {
   const handler = handlers.get(channel);
   if (handler === undefined) throw new Error(`Handler not registered: ${channel}`);
-  return handler(event, {
+  return (await handler(event, {
     requestId: "00000000-0000-4000-8000-000000000224",
     payload,
-  });
+  })) as CallResult<T>;
 }
 
 beforeEach(() => {
@@ -163,7 +169,7 @@ afterEach(() => {
 
 describe("lighterTrading IPC", () => {
   it("returns only the validated market DTO", async () => {
-    const result = await call(CH.lighterTrading.listMarkets, { environment: "rhc" });
+    const result = await call<{ markets: (typeof market)[] }>(CH.lighterTrading.listMarkets, { environment: "rhc" });
 
     expect(result.ok).toBe(true);
     expect(result.data.markets[0]).toEqual(market);

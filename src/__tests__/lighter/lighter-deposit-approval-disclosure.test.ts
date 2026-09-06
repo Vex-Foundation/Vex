@@ -1,3 +1,4 @@
+import { requireValue } from "../helpers/require-value.js";
 import { describe, expect, it } from "vitest";
 
 import { buildLighterDepositApprovalDisclosure } from "@tools/lighter/wallet-funding/deposit-approval-disclosure.js";
@@ -163,7 +164,7 @@ describe("buildLighterDepositApprovalDisclosure", () => {
       settlementTokenAddress: "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
       settlementTokenSymbol: "USDG",
       preflightPublicSnapshot: {
-        ...core.preflightPublicSnapshot!,
+        ...requireValue(core.preflightPublicSnapshot),
         environment: "rhc",
         lighterRestBaseUrl: "https://api.rh.lighter.xyz",
         settlementNetworkName: "Robinhood Chain mainnet",

@@ -1,3 +1,4 @@
+import { requireValue } from "../../helpers/require-value.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -22,12 +23,12 @@ describe("cross-session withdrawal claim repository boundaries", () => {
       .mockResolvedValueOnce({ intent_id: "withdrawal-old" })
       .mockResolvedValueOnce(claimRow());
 
-    const created = await claims.createManualClaimAttemptWith({} as never, {
+    const created = await claims.createManualClaimAttemptWith({}, {
       claimId: "claim-new",
-      preview: claimPreview() as never,
+      preview: claimPreview(),
     });
 
-    const [parentSql, parentParams] = mocks.queryOneWith.mock.calls[0]!.slice(1);
+    const [parentSql, parentParams] = requireValue(mocks.queryOneWith.mock.calls[0]).slice(1);
     expect(parentSql).toContain("WHERE intent_id = $1 AND environment = $2");
     expect(parentSql).not.toContain("session_id");
     expect(parentSql).toContain("LOWER(wallet_address) = LOWER($6)");
@@ -36,7 +37,7 @@ describe("cross-session withdrawal claim repository boundaries", () => {
       "withdrawal-old", "rhc", 4663, "Robinhood Chain mainnet", "USDG",
       OWNER, OWNER, GATEWAY, GATEWAY_HASH, TOKEN, TOKEN_HASH, "1000000",
     ]);
-    const insertParams = mocks.queryOneWith.mock.calls[1]![2] as unknown[];
+    const insertParams = requireValue(mocks.queryOneWith.mock.calls[1])[2] as unknown[];
     expect(insertParams[2]).toBe("session-new");
     expect(created).toMatchObject({
       claimId: "claim-new",
@@ -50,10 +51,10 @@ describe("cross-session withdrawal claim repository boundaries", () => {
       .mockResolvedValueOnce({ withdrawal_intent_id: "withdrawal-old" })
       .mockResolvedValueOnce({ intent_id: "withdrawal-old" });
 
-    await expect(claims.expirePreparedWith({} as never, "claim-new", "session-new"))
+    await expect(claims.expirePreparedWith({}, "claim-new", "session-new"))
       .resolves.toBe(true);
 
-    const [parentSql, parentParams] = mocks.queryOneWith.mock.calls[1]!.slice(1);
+    const [parentSql, parentParams] = requireValue(mocks.queryOneWith.mock.calls[1]).slice(1);
     expect(parentSql).toContain("WHERE intent_id = $1 AND execution_state = 'manual_claim_prepared'");
     expect(parentSql).not.toContain("session_id");
     expect(parentParams).toEqual(["withdrawal-old"]);
@@ -70,7 +71,7 @@ describe("cross-session withdrawal claim repository boundaries", () => {
       receipt: { status: "success" },
     })).resolves.toBe(true);
 
-    const [sql, params] = mocks.queryOne.mock.calls[0]!;
+    const [sql, params] = requireValue(mocks.queryOne.mock.calls[0]);
     expect(sql).toContain("parent.intent_id = $2 AND parent.session_id = $1");
     expect(sql).not.toContain("WHERE session_id = $1 AND withdrawal_intent_id = $2");
     expect(params[0]).toBe("session-old");

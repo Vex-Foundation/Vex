@@ -1,3 +1,4 @@
+import { requireValue } from "../../../../../../../src/__tests__/helpers/require-value.js";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { MarketSymbol } from "../MarketSymbol.js";
@@ -71,7 +72,7 @@ describe("MarketSymbol", () => {
       <MarketSymbol environment="rhc" market={{ baseAssetId: 0, marketId: 39, symbol: "ANSEM", marketType: "perp" }} />,
     );
 
-    fireEvent.error(container.querySelector("img")!);
+    fireEvent.error(requireValue(container.querySelector("img")));
 
     expect(screen.getByText("ANSEM").getAttribute("data-market-mark")).toBe("ticker");
     expect(container.querySelector("img")).toBeNull();

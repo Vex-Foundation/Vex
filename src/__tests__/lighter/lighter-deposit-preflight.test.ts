@@ -1,3 +1,4 @@
+import { requireValue } from "../helpers/require-value.js";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -215,7 +216,7 @@ describe("Lighter environment-scoped deposit preflight proof", () => {
       ...base,
       lighterAssets: {
         ...base.lighterAssets,
-        asset_details: [{ ...base.lighterAssets.asset_details[0]!, min_transfer_amount: "5.000000" }],
+        asset_details: [{ ...requireValue(base.lighterAssets.asset_details[0]), min_transfer_amount: "5.000000" }],
       },
     })).toThrow(/conflicts with Lighter's verified minimum/);
   });

@@ -1,3 +1,5 @@
+import { testPoolClient } from "../helpers/db-client.js";
+import { requireValue } from "../helpers/require-value.js";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -25,16 +27,16 @@ function row() {
 
 describe("Lighter EVM execution leases", () => {
   it("atomically acquires only a free or expired chain-wallet slot", async () => {
-    const client = {
+    const client = Object.assign(testPoolClient(), {
       query: vi.fn().mockResolvedValue({ rows: [row()], rowCount: 1 }),
-    };
+    });
     const lease = await acquireLighterEvmExecutionLease({
       chainId: 1,
       walletAddress: WALLET,
       ownerId: OWNER,
       intentId: INTENT,
       ttlMs: 120_000,
-    }, client as never);
+    }, client);
 
     expect(lease).toMatchObject({
       chainId: 1,
@@ -42,7 +44,7 @@ describe("Lighter EVM execution leases", () => {
       ownerId: OWNER,
       intentId: INTENT,
     });
-    const [sql, params] = client.query.mock.calls[0]!;
+    const [sql, params] = requireValue(client.query.mock.calls[0]);
     expect(sql).toContain("ON CONFLICT (chain_id, wallet_address) DO UPDATE");
     expect(sql).toContain("expires_at <= NOW()");
     expect(sql).not.toContain("OR lighter_evm_execution_leases.owner_id");
@@ -50,33 +52,33 @@ describe("Lighter EVM execution leases", () => {
   });
 
   it("returns null when another live owner holds the slot", async () => {
-    const client = {
+    const client = Object.assign(testPoolClient(), {
       query: vi.fn().mockResolvedValue({ rows: [], rowCount: 0 }),
-    };
+    });
     await expect(acquireLighterEvmExecutionLease({
       chainId: 1,
       walletAddress: WALLET,
       ownerId: OWNER,
       intentId: INTENT,
       ttlMs: 120_000,
-    }, client as never)).resolves.toBeNull();
+    }, client)).resolves.toBeNull();
   });
 
   it("renews and releases only while the exact owner still holds the slot", async () => {
-    const client = {
+    const client = Object.assign(testPoolClient(), {
       query: vi.fn()
         .mockResolvedValueOnce({ rows: [row()], rowCount: 1 })
         .mockResolvedValueOnce({ rows: [], rowCount: 1 }),
-    };
+    });
 
     const renewed = await renewLighterEvmExecutionLease({
       chainId: 1,
       walletAddress: WALLET,
       ownerId: OWNER,
       ttlMs: 120_000,
-    }, client as never);
+    }, client);
     expect(renewed?.ownerId).toBe(OWNER);
-    const [renewSql] = client.query.mock.calls[0]!;
+    const [renewSql] = requireValue(client.query.mock.calls[0]);
     expect(renewSql).toContain("AND owner_id = $3");
     expect(renewSql).toContain("AND expires_at > NOW()");
 
@@ -84,21 +86,21 @@ describe("Lighter EVM execution leases", () => {
       chainId: 1,
       walletAddress: WALLET,
       ownerId: OWNER,
-    }, client as never)).resolves.toBe(true);
-    const [releaseSql, releaseParams] = client.query.mock.calls[1]!;
+    }, client)).resolves.toBe(true);
+    const [releaseSql, releaseParams] = requireValue(client.query.mock.calls[1]);
     expect(releaseSql).toContain("AND owner_id = $3");
     expect(releaseParams).toEqual([1, WALLET.toLowerCase(), OWNER]);
   });
 
   it("rejects malformed lease keys before touching the database", async () => {
-    const client = { query: vi.fn() };
+    const client = testPoolClient();
     await expect(acquireLighterEvmExecutionLease({
       chainId: 0,
       walletAddress: "not-an-address",
       ownerId: "",
       intentId: INTENT,
       ttlMs: 0,
-    }, client as never)).rejects.toThrow("positive integer chain id");
+    }, client)).rejects.toThrow("positive integer chain id");
     expect(client.query).not.toHaveBeenCalled();
   });
 });

@@ -1,3 +1,4 @@
+import { requireValue } from "../helpers/require-value.js";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -97,12 +98,12 @@ describe("Lighter native OCO protection", () => {
       stopLoss: {
         matchHash: result.stopLoss.matchHash,
         priceInteger: result.stopLoss.preview.price.integer,
-        triggerPriceInteger: result.stopLoss.preview.triggerPrice.integer!,
+        triggerPriceInteger: requireValue(result.stopLoss.preview.triggerPrice.integer),
       },
       takeProfit: {
         matchHash: result.takeProfit.matchHash,
         priceInteger: result.takeProfit.preview.price.integer,
-        triggerPriceInteger: result.takeProfit.preview.triggerPrice.integer!,
+        triggerPriceInteger: requireValue(result.takeProfit.preview.triggerPrice.integer),
       },
     });
     expect(unsigned.groupingTypeCode).toBe(LIGHTER_OCO_GROUPING_TYPE);

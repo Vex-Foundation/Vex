@@ -1,3 +1,4 @@
+import { requireValue } from "../../../../../src/__tests__/helpers/require-value.js";
 import { describe, expect, it, vi } from "vitest";
 import type { EvmWallet } from "@tools/wallet/multi-auth.js";
 import type { LighterFeeAuthorizationIntentRow } from "@vex-agent/db/repos/lighter-fee-authorization-intents.js";
@@ -337,7 +338,7 @@ describe("Lighter fee authorization lifecycle", () => {
         ...result,
         account: {
           ...result.account,
-          approved_integrators: result.account.approved_integrators!.map(
+          approved_integrators: requireValue(result.account.approved_integrators).map(
             (row) => ({ ...row, max_spot_taker_fee: 0 }),
           ),
         },

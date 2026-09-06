@@ -1,3 +1,5 @@
+import { onboardingIntent } from "../helpers/lighter-intents.js";
+import { requireValue } from "../helpers/require-value.js";
 import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -49,7 +51,7 @@ async function newDepositIntent(sessionId: string) {
   const wallet = walletForSession(sessionId);
   const created = await createDepositOutcome(sessionId, wallet);
   expect(created.outcome).toBe("created");
-  return created.intent!;
+  return requireValue(created.intent);
 }
 
 async function createDepositOutcome(
@@ -144,8 +146,8 @@ function preflight(walletAddress: string, amountUnits: string) {
   };
 }
 
-function expiredEvidenceFreeIntent(overrides: Record<string, unknown> = {}) {
-  return {
+function expiredEvidenceFreeIntent(overrides: Partial<repo.LighterOnboardingIntentRow> = {}) {
+  return onboardingIntent({
     capability: "deposit",
     approvalStatus: "approval_pending",
     executionState: "approval_pending",
@@ -176,7 +178,7 @@ function expiredEvidenceFreeIntent(overrides: Record<string, unknown> = {}) {
     resolvedAccountIndex: null,
     expiresAt: new Date("2020-01-01T00:00:00.000Z"),
     ...overrides,
-  } as unknown as repo.LighterOnboardingIntentRow;
+  });
 }
 
 describe("isSafelyExpirableDepositApprovalPending", () => {
@@ -243,7 +245,7 @@ d("lighter_onboarding_intents repo", () => {
     const wallet = walletForSession(sessionId);
     const created = await createDepositOutcome(sessionId, wallet, "rhc");
     expect(created.outcome).toBe("created");
-    const intent = created.intent!;
+    const intent = requireValue(created.intent);
     expect(intent).toMatchObject({ environment: "rhc", chainId: 4663 });
 
     await withSessionControlLock(sessionId, (client) =>
@@ -628,7 +630,7 @@ d("lighter_onboarding_intents repo", () => {
     const sharedWallet = walletForSession(`restart-${randomUUID()}`);
     const previousOutcome = await createDepositOutcome(previousSessionId, sharedWallet);
     expect(previousOutcome.outcome).toBe("created");
-    const previous = previousOutcome.intent!;
+    const previous = requireValue(previousOutcome.intent);
     await withSessionControlLock(previousSessionId, (client) =>
       repo.markApprovalDecisionWith(client, {
         intentId: previous.intentId,
@@ -693,7 +695,7 @@ d("lighter_onboarding_intents repo", () => {
     );
     const observed = await repo.findByIntentId(stale.intentId);
     expect(observed).not.toBeNull();
-    expect(repo.isSafelyExpirableDepositApprovalPending(observed!)).toBe(true);
+    expect(repo.isSafelyExpirableDepositApprovalPending(requireValue(observed))).toBe(true);
 
     const replacement = await withSessionControlLocks([sessionId, sessionId], async (client) => {
       const expired = await repo.expireStaleDepositApprovalPendingWith(client, {
@@ -702,11 +704,11 @@ d("lighter_onboarding_intents repo", () => {
         environment: stale.environment,
         walletAddress: stale.walletAddress,
         chainId: stale.chainId,
-        depositContract: stale.depositContract!,
-        depositTo: stale.depositTo!,
-        assetIndex: stale.assetIndex!,
-        routeType: stale.routeType!,
-        amountUnits: stale.amountUnits!,
+        depositContract: requireValue(stale.depositContract),
+        depositTo: requireValue(stale.depositTo),
+        assetIndex: requireValue(stale.assetIndex),
+        routeType: requireValue(stale.routeType),
+        amountUnits: requireValue(stale.amountUnits),
       });
       expect(expired).toMatchObject({
         approvalStatus: "expired",
@@ -755,7 +757,7 @@ d("lighter_onboarding_intents repo", () => {
     );
     const observed = await repo.findByIntentId(stale.intentId);
     expect(observed).not.toBeNull();
-    expect(repo.isSafelyExpirableDepositApprovalPending(observed!)).toBe(false);
+    expect(repo.isSafelyExpirableDepositApprovalPending(requireValue(observed))).toBe(false);
 
     const expired = await withSessionControlLock(sessionId, (client) =>
       repo.expireStaleDepositApprovalPendingWith(client, {
@@ -764,11 +766,11 @@ d("lighter_onboarding_intents repo", () => {
         environment: stale.environment,
         walletAddress: stale.walletAddress,
         chainId: stale.chainId,
-        depositContract: stale.depositContract!,
-        depositTo: stale.depositTo!,
-        assetIndex: stale.assetIndex!,
-        routeType: stale.routeType!,
-        amountUnits: stale.amountUnits!,
+        depositContract: requireValue(stale.depositContract),
+        depositTo: requireValue(stale.depositTo),
+        assetIndex: requireValue(stale.assetIndex),
+        routeType: requireValue(stale.routeType),
+        amountUnits: requireValue(stale.amountUnits),
       }));
 
     expect(expired).toBeNull();

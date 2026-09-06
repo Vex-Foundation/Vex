@@ -1,3 +1,4 @@
+import { requireValue } from "../helpers/require-value.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -58,7 +59,7 @@ describe("Lighter deposit execution lease handle", () => {
     await result.handle.releaseExecutionLease();
     await result.handle.releaseExecutionLease();
 
-    const acquireInput = mocks.acquire.mock.calls[0]![0];
+    const acquireInput = requireValue(mocks.acquire.mock.calls[0])[0];
     expect(acquireInput.ownerId).toMatch(/^lighter-deposit:/);
     expect(acquireInput.ttlMs).toBe(120_000);
     expect(mocks.renew).toHaveBeenCalledWith(expect.objectContaining({

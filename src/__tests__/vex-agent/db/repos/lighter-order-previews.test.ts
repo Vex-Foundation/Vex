@@ -1,3 +1,4 @@
+import { requireValue } from "../../../helpers/require-value.js";
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 
 import {
@@ -136,7 +137,7 @@ describe("lighter order previews repo", () => {
     });
 
     expect(mockExecute).toHaveBeenCalledTimes(1);
-    const [sql, params] = mockExecute.mock.calls[0]!;
+    const [sql, params] = requireValue(mockExecute.mock.calls[0]);
     expect(sql).toContain("INSERT INTO lighter_order_previews");
     expect(sql).toContain(
       "preview_id, session_id, match_hash, environment, account_index, api_key_index,\n  market_index, side, base_amount_integer, price_integer, order_type, time_in_force",
@@ -174,15 +175,15 @@ describe("lighter order previews repo", () => {
 
     await repo.create({ preview: built, liveSourceJson: { source: "live_lighter_public_api" } });
 
-    const [, params] = mockExecute.mock.calls[0]!;
-    expect(params![5]).toBeNull();
+    const [, params] = requireValue(mockExecute.mock.calls[0]);
+    expect(requireValue(params)[5]).toBeNull();
   });
 
   it("finds only fresh previews matching session, environment, and match_hash", async () => {
     const built = preview();
     await repo.findLatestFreshByMatch(SESSION_ID, "rhc", built.matchHash);
 
-    const [sql, params] = mockQueryOne.mock.calls[0]!;
+    const [sql, params] = requireValue(mockQueryOne.mock.calls[0]);
     expect(sql).toContain("FROM lighter_order_previews");
     expect(sql).toContain("WHERE session_id = $1");
     expect(sql).toContain("AND environment = $2");
@@ -227,7 +228,7 @@ describe("lighter order previews repo", () => {
 
     const found = await repo.findFreshById(SESSION_ID, "rhc", built.previewId);
 
-    const [sql, params] = mockQueryOne.mock.calls[0]!;
+    const [sql, params] = requireValue(mockQueryOne.mock.calls[0]);
     expect(sql).toContain("FROM lighter_order_previews");
     expect(sql).toContain("WHERE session_id = $1");
     expect(sql).toContain("AND environment = $2");
@@ -243,7 +244,7 @@ describe("lighter order previews repo", () => {
 
     const found = await repo.findLatestFresh(SESSION_ID, "rhc");
 
-    const [sql, params] = mockQueryOne.mock.calls[0]!;
+    const [sql, params] = requireValue(mockQueryOne.mock.calls[0]);
     expect(sql).toContain("FROM lighter_order_previews");
     expect(sql).toContain("WHERE session_id = $1");
     expect(sql).toContain("AND environment = $2");

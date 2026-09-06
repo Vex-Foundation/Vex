@@ -1,3 +1,4 @@
+import { requireValue } from "../../../../../../../src/__tests__/helpers/require-value.js";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -66,7 +67,7 @@ describe("useLighterCandleStream", () => {
     }));
 
     await waitFor(() => expect(start).toHaveBeenCalledTimes(1));
-    const subscriptionId = start.mock.calls[0]![0].subscriptionId;
+    const subscriptionId = requireValue(start.mock.calls[0])[0].subscriptionId;
     act(() => callbacks.update[0]?.(updateEvent(subscriptionId, [
       streamCandle({ lastTradeId: "90071992547409931", close: 102 }),
     ])));
@@ -101,7 +102,7 @@ describe("useLighterCandleStream", () => {
       restCandles: [],
     }));
     await waitFor(() => expect(start).toHaveBeenCalledTimes(1));
-    const subscriptionId = start.mock.calls[0]![0].subscriptionId;
+    const subscriptionId = requireValue(start.mock.calls[0])[0].subscriptionId;
 
     act(() => callbacks.status[0]?.({
       subscriptionId,

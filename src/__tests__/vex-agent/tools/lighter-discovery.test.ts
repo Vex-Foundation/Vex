@@ -1,3 +1,4 @@
+import { requireValue } from "../../helpers/require-value.js";
 import { beforeEach, afterEach, describe, expect, it } from "vitest";
 
 import { LIGHTER_ENVIRONMENTS } from "@tools/lighter/constants.js";
@@ -213,10 +214,10 @@ describe("Lighter agent discovery surface", () => {
       timeInForce: "good-till-time",
     });
 
-    const accepted = validateProtocolParams(preview!, preview!.exampleParams);
+    const accepted = validateProtocolParams(requireValue(preview), requireValue(preview).exampleParams);
     expect(accepted.ok).toBe(true);
-    const rejected = validateProtocolParams(preview!, {
-      ...preview!.exampleParams,
+    const rejected = validateProtocolParams(requireValue(preview), {
+      ...requireValue(preview).exampleParams,
       marketType: "all",
     });
     expect(rejected.ok).toBe(false);

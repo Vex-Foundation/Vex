@@ -413,7 +413,10 @@ describe("runStreamingInference — fallback to chatCompletion", () => {
       ...FALLBACK,
       content: "",
     });
-    const provider = { id: "fake", chatCompletion } as unknown as InferenceProvider;
+    const provider = {
+      ...providerFrom(async function* () { throw new Error("No streaming transport"); }, chatCompletion),
+      chatCompletion,
+    };
 
     await expect(
       runStreamingInference(provider, MSGS, TOOLS, CFG),

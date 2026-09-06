@@ -80,7 +80,7 @@ describe("LighterThrottle", () => {
 
   it("fails closed on an invalid bucket key", async () => {
     const throttle = new LighterThrottle();
-    await expect(throttle.run("bad", "prod" as never, 0, async () => "nope")).rejects.toMatchObject({
+    await expect(Reflect.apply(throttle.run, throttle, ["bad", "prod", 0, async () => "nope"])).rejects.toMatchObject({
       code: ErrorCodes.LIGHTER_INVALID_REQUEST,
       message: "Invalid Lighter environment: prod",
     });

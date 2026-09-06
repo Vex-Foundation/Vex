@@ -1,3 +1,5 @@
+import { lifecycleIntent } from "../../helpers/lighter-intents.js";
+import { requireValue } from "../../helpers/require-value.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ApprovalPreviewScalar } from "@vex-agent/tools/types.js";
 import type { LighterOrderExecutionIntentRow } from "@vex-agent/db/repos/lighter-order-execution-intents.js";
@@ -111,9 +113,9 @@ describe("Studio prepared Lighter order approval", () => {
     expect(result.approvalCall).toEqual({ name: "lighter__order_create", args: { intentId: pendingIntent().intentId }, toolCallId: call.toolCallId });
     expect(result.preparedApproval?.approvalPreview.criticalArgs).toMatchObject({ baseAmountDisplay: "1.25", priceDisplay: "2999.99", marketSymbol: "ETH", environment: "rhc" });
     expect(result.preparedApproval?.expiresAt).toBe(pendingIntent().expiresAt);
-    const envelope = buildApprovalToolCall(result.approvalCall!.name, result.approvalCall!.args);
+    const envelope = buildApprovalToolCall(requireValue(result.approvalCall).name, requireValue(result.approvalCall).args);
     expect(envelope).toMatchObject({ command: "execute_tool", args: { toolId: "lighter.order.create", params: { intentId: pendingIntent().intentId } } });
-    const resumed = readStudioApprovalToolCall(envelope, call.toolCallId)!;
+    const resumed = requireValue(readStudioApprovalToolCall(envelope, call.toolCallId));
     const rebuilt = await admitStudioCall({ name: resumed.toolName, args: resumed.toolArgs, toolCallId: resumed.toolCallId }, buildProjectToolContext(scope));
     expect(rebuilt.preparedApproval).toEqual(result.preparedApproval);
     expect(handler).toHaveBeenCalledTimes(1);
@@ -168,9 +170,9 @@ const snapshot = { clientOrderId: "123", side: "buy", type: "limit", timeInForce
   position: { symbol: "ETH", side: "long", position: "1", averageEntryPrice: "50" },
   baseAmount: "1", worstAcceptablePrice: "49.5", maxSlippageBps: 100 };
 function lifecycle(actionType: LighterOrderLifecycleIntentRow["actionType"]): LighterOrderLifecycleIntentRow {
-  return { ...pendingIntent(), intentId: "lighter-lifecycle-00000000-0000-4000-8000-000000000001",
+  return lifecycleIntent({ ...pendingIntent(), intentId: "lighter-lifecycle-00000000-0000-4000-8000-000000000001",
     actionType, providerOrderId: "123", requestedSide: "sell", requestedBaseAmountInteger: "10000",
-    requestedPriceInteger: "4950", providerSnapshotJson: snapshot } as unknown as LighterOrderLifecycleIntentRow;
+    requestedPriceInteger: "4950", providerSnapshotJson: snapshot });
 }
 const { buildLighterFeeAuthorizationApprovalFollowUp } = await import("@vex-agent/tools/protocols/lighter/handlers/fee-authorization.js");
 const feeAuthorization: import("@vex-agent/db/repos/lighter-fee-authorization-intents.js").LighterFeeAuthorizationIntentRow = {
@@ -216,7 +218,7 @@ function prepareFamily(family: typeof families[number]) {
     "lighter.withdraw.claim.prepare": { intentId: withdrawal.intentId },
     "lighter.position.protect": { marketId: 0, orderExpiryOffsetMinutes: 10, side: "sell", baseAmountIn: "1", stopLossTriggerPrice: "2900", stopLossPrice: "2850", takeProfitTriggerPrice: "3300", takeProfitPrice: "3250" },
   };
-  return { name: toInjectedToolName(family.source), args: args[family.source]!, toolCallId: "family-call" };
+  return { name: toInjectedToolName(family.source), args: requireValue(args[family.source]), toolCallId: "family-call" };
 }
 describe.each(families)("Studio handoff: $source", (family) => {
   it.each(["restricted", "full"] as const)("queues and rebuilds exact terms with %s permissions without executing", async (permission) => {
@@ -226,7 +228,7 @@ describe.each(families)("Studio handoff: $source", (family) => {
     expect(result.preparedApproval).toEqual(family.candidate);
     expect(result.approvalCall).toEqual({ name: toInjectedToolName(String(family.candidate.args.toolId)), args: family.candidate.args.params, toolCallId: input.toolCallId });
     expect(handler).toHaveBeenCalledTimes(1);
-    const resumed = await admitStudioCall(result.approvalCall!, buildProjectToolContext(scope));
+    const resumed = await admitStudioCall(requireValue(result.approvalCall), buildProjectToolContext(scope));
     expect(resumed.preparedApproval).toEqual(result.preparedApproval);
     expect(handler).toHaveBeenCalledTimes(1);
   });
@@ -248,12 +250,12 @@ describe.each(families)("Studio handoff: $source", (family) => {
 });
 
 it("refuses a lifecycle intent belonging to a different action", async () => {
-  const input = prepareFamily(families.find((family) => family.source === "lighter.order.cancel.prepare")!);
+  const input = prepareFamily(requireValue(families.find((family) => family.source === "lighter.order.cancel.prepare")));
   repos.lifecycle.mockResolvedValue(lifecycle("modify"));
   expect((await executeStudioTool(scope, input)).result.pendingApproval).not.toBe(true);
 });
 it("preserves the confirmed allowance recovery path without accepting a submitted deposit", async () => {
-  const family = families.find((f) => f.source === "lighter.deposit.prepare")!;
+  const family = requireValue(families.find((f) => f.source === "lighter.deposit.prepare"));
   const input = prepareFamily(family);
   const recovery = { ...deposit, executionState: "approve_confirmed", approveTxHash: "0xabc", approveTxFrom: deposit.walletAddress,
     approveTxNonce: "1", depositTxHash: null, depositTxFrom: null, depositTxNonce: null,
@@ -277,7 +279,7 @@ it("covers every exported Lighter execution target and every protocol handler", 
   for (const tool of [...LIGHTER_READ_TOOLS, ...LIGHTER_WRITE_TOOLS]) expect(LIGHTER_HANDLERS[tool.toolId]).toBeTypeOf("function");
 });
 it("refuses a changed OCO child preview before enqueue", async () => {
-  const input = prepareFamily(families.find((f) => f.source === "lighter.position.protect")!);
+  const input = prepareFamily(requireValue(families.find((f) => f.source === "lighter.position.protect")));
   findPreview.mockResolvedValue({ ...leg("stop-loss"), priceInteger: "1" });
   expect((await executeStudioTool(scope, input)).result.pendingApproval).not.toBe(true);
 });

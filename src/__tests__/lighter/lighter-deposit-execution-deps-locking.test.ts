@@ -1,3 +1,4 @@
+import { onboardingIntent } from "../helpers/lighter-intents.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -205,12 +206,12 @@ describe("Lighter deposit execution lifecycle locking", () => {
       sessionId: "session-rhc",
       assertExecutionLease: vi.fn().mockResolvedValue(undefined),
     });
-    const intent = {
+    const intent = onboardingIntent({
       amountUnits: "11000000",
       walletAddress: "0x1111111111111111111111111111111111111111",
       routeType: 0,
       executionState: "approved",
-    } as never;
+    });
 
     await deps.assertFreshPreSignPreflight(intent, "deposit");
     expect(mocks.readDepositPreflight).toHaveBeenCalledWith(expect.objectContaining({

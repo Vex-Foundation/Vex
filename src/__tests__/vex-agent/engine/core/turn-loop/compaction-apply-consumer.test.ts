@@ -413,12 +413,12 @@ describe("turn-loop — compaction apply consumer", () => {
       // Every turn comes back still critical, so the band — and the counter —
       // survive across iterations instead of resetting after the first turn.
       const provider = makeProvider([
-        { content: null, toolCalls: [], promptTokens: 125_000 },
+        { content: "Checking the pending approval.", toolCalls: [], promptTokens: 125_000 },
       ]);
 
       const result = await runTurnLoop(
         // The loop's band comes from the token count it is STARTED with.
-        makeContext({ missionRunId: "run-1" }), [], null, 125_000,
+        makeContext({ sessionKind: "mission", missionRunId: "run-1" }), [], null, 125_000,
         provider as any, makeConfig() as any, [],
         { ...defaultLoopConfig, maxIterations: 20 },
       );

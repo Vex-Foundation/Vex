@@ -1,3 +1,5 @@
+import { testPoolClient } from "../../../helpers/db-client.js";
+import type { LighterOrderLifecycleIntentRow } from "@vex-agent/db/repos/lighter-order-lifecycle-intents.js";
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 
 type QueryOneMock = Mock<(sql: string, params?: unknown[]) => Promise<Record<string, unknown> | null>>;
@@ -40,9 +42,10 @@ const base = {
   expiresAt: "2026-08-19T22:00:00.000Z",
 };
 
-function row(overrides: Record<string, unknown> = {}) {
+function row(overrides: Partial<LighterOrderLifecycleIntentRow> = {}): LighterOrderLifecycleIntentRow {
   return {
     ...base,
+    actionType: "cancel_one",
     protocolExecutionId: null,
     approvalId: "approval-1",
     requestedBaseAmountInteger: null,
@@ -70,14 +73,14 @@ function row(overrides: Record<string, unknown> = {}) {
     createdAt: "2026-08-19T21:57:00.000Z",
     updatedAt: "2026-08-19T21:58:00.000Z",
     ...overrides,
-  } as unknown as import("@vex-agent/db/repos/lighter-order-lifecycle-intents.js").LighterOrderLifecycleIntentRow;
+  };
 }
 
 beforeEach(resetMocks);
 
 describe("Lighter order lifecycle intent repository", () => {
   it("inserts cancel-one identity without numeric conversion or secret material", async () => {
-    await repo.createApprovalPendingWith({} as never, { ...base, actionType: "cancel_one" });
+    await repo.createApprovalPendingWith(testPoolClient(), { ...base, actionType: "cancel_one" });
     const call = mockQueryOneWith.mock.calls[0];
     expect(call?.[1]).toContain("INSERT INTO lighter_order_lifecycle_intents");
     expect(call?.[1]).not.toMatch(/tx_info|private_key|auth_token/i);
@@ -86,15 +89,15 @@ describe("Lighter order lifecycle intent repository", () => {
   });
 
   it("requires modify values and account-wide cancel-all identity", async () => {
-    await expect(repo.createApprovalPendingWith({} as never, {
+    await expect(repo.createApprovalPendingWith(testPoolClient(), {
       ...base,
       actionType: "modify",
     })).rejects.toThrow("modify values are required");
-    await expect(repo.createApprovalPendingWith({} as never, {
+    await expect(repo.createApprovalPendingWith(testPoolClient(), {
       ...base,
       actionType: "cancel_all",
     })).rejects.toThrow("action target shape mismatch");
-    await expect(repo.createApprovalPendingWith({} as never, {
+    await expect(repo.createApprovalPendingWith(testPoolClient(), {
       ...base,
       actionType: "cancel_all",
       marketIndex: null,
@@ -103,22 +106,22 @@ describe("Lighter order lifecycle intent repository", () => {
   });
 
   it("rejects rounded, out-of-range, mismatched, or secret-bearing facts before SQL", async () => {
-    await expect(repo.createApprovalPendingWith({} as never, {
+    await expect(repo.createApprovalPendingWith(testPoolClient(), {
       ...base,
       actionType: "cancel_one",
       providerOrderId: "1152921504606846976",
     })).rejects.toThrow("outside the official range");
-    await expect(repo.createApprovalPendingWith({} as never, {
+    await expect(repo.createApprovalPendingWith(testPoolClient(), {
       ...base,
       actionType: "cancel_one",
       providerOrderId: "01",
     })).rejects.toThrow("invalid providerOrderId");
-    await expect(repo.createApprovalPendingWith({} as never, {
+    await expect(repo.createApprovalPendingWith(testPoolClient(), {
       ...base,
       actionType: "cancel_one",
       credentialRefJson: { ...credential, accountIndex: 43 },
     })).rejects.toThrow("credential scope mismatch");
-    await expect(repo.createApprovalPendingWith({} as never, {
+    await expect(repo.createApprovalPendingWith(testPoolClient(), {
       ...base,
       actionType: "cancel_one",
       providerSnapshotJson: { authToken: "forbidden" },
@@ -167,7 +170,7 @@ describe("Lighter order lifecycle intent repository", () => {
   });
 
   it("uses a full evidence-free compare-and-set to expire stale pre-submit work", async () => {
-    await repo.expireStalePreSubmitWith({} as never, {
+    await repo.expireStalePreSubmitWith(testPoolClient(), {
       intentId: base.intentId,
       sessionId: base.sessionId,
       matchHash: base.matchHash,
@@ -188,7 +191,7 @@ describe("Lighter order lifecycle intent repository", () => {
   });
 
   it("terminalizes a changed close only from the pristine approved state", async () => {
-    await repo.markClosePositionChangedBeforeSubmissionWith({} as never, {
+    await repo.markClosePositionChangedBeforeSubmissionWith(testPoolClient(), {
       intentId: base.intentId,
       sessionId: base.sessionId,
     });

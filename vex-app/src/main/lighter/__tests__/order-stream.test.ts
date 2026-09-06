@@ -1,3 +1,4 @@
+import { requireValue } from "../../../../../src/__tests__/helpers/require-value.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { LighterTradingCredentialVaultReference } from "@tools/lighter/trading-credentials.js";
@@ -210,10 +211,10 @@ describe("Lighter order stream supervisor", () => {
 
     expect(h.deps.createSocket).toHaveBeenCalledWith("wss://api.rh.lighter.xyz/stream?readonly=true");
     expect(h.sockets[0]?.sent).toEqual([]);
-    h.sockets[0]!.message({ type: "connected" });
+    requireValue(h.sockets[0]).message({ type: "connected" });
     await vi.runAllTicks();
 
-    expect(h.sockets[0]!.sent.map((value) => JSON.parse(value))).toEqual([
+    expect(requireValue(h.sockets[0]).sent.map((value) => JSON.parse(value))).toEqual([
       { type: "subscribe", channel: "account_all_orders/42", auth: AUTH_TOKEN },
       { type: "subscribe", channel: "account_all_trades/42", auth: AUTH_TOKEN },
       { type: "subscribe", channel: "account_all_positions/42", auth: AUTH_TOKEN },
@@ -230,7 +231,7 @@ describe("Lighter order stream supervisor", () => {
   it("validates and serializes exact order frames before reconciliation", async () => {
     const h = makeHarness();
     const stop = await startHarness(h);
-    const socket = h.sockets[0]!;
+    const socket = requireValue(h.sockets[0]);
     socket.message({ type: "connected" });
     socket.message(orderFrame());
     await vi.runAllTicks();
@@ -248,7 +249,7 @@ describe("Lighter order stream supervisor", () => {
   it("validates trade and position frames before serialized reconciliation", async () => {
     const h = makeHarness();
     const stop = await startHarness(h);
-    const socket = h.sockets[0]!;
+    const socket = requireValue(h.sockets[0]);
     socket.message({ type: "connected" });
     socket.message(tradeFrame());
     socket.message(positionFrame());
@@ -275,7 +276,7 @@ describe("Lighter order stream supervisor", () => {
   it("rejects non-text frames without exposing their contents", async () => {
     const h = makeHarness();
     const stop = await startHarness(h);
-    const socket = h.sockets[0]!;
+    const socket = requireValue(h.sockets[0]);
 
     socket.emit("message", { data: new Uint8Array([1, 2, 3]) });
 
@@ -290,7 +291,7 @@ describe("Lighter order stream supervisor", () => {
   it("sends application keepalives and answers server pings", async () => {
     const h = makeHarness();
     const stop = await startHarness(h);
-    const socket = h.sockets[0]!;
+    const socket = requireValue(h.sockets[0]);
     socket.message({ type: "connected" });
     socket.message({ type: "ping" });
 
@@ -303,7 +304,7 @@ describe("Lighter order stream supervisor", () => {
   it("reconnects when the server never completes its connection handshake", async () => {
     const h = makeHarness();
     const stop = await startHarness(h);
-    const socket = h.sockets[0]!;
+    const socket = requireValue(h.sockets[0]);
     const remainingMs = socket.createdAt
       + LIGHTER_ORDER_STREAM_HANDSHAKE_TIMEOUT_MS
       - Date.now();
@@ -318,7 +319,7 @@ describe("Lighter order stream supervisor", () => {
   it("closes the authenticated socket synchronously when the vault locks", async () => {
     const h = makeHarness();
     const stop = await startHarness(h);
-    const socket = h.sockets[0]!;
+    const socket = requireValue(h.sockets[0]);
     socket.message({ type: "connected" });
 
     h.lock();
@@ -367,7 +368,7 @@ describe("Lighter order stream supervisor", () => {
   it("reconnects with bounded backoff and mints a fresh auth token", async () => {
     const h = makeHarness();
     const stop = await startHarness(h);
-    const first = h.sockets[0]!;
+    const first = requireValue(h.sockets[0]);
     first.message({ type: "connected" });
     first.message(orderFrame("open"));
     await vi.runAllTicks();
@@ -384,7 +385,7 @@ describe("Lighter order stream supervisor", () => {
   it("rotates the account auth token before its ten-minute expiry", async () => {
     const h = makeHarness();
     const stop = await startHarness(h);
-    const first = h.sockets[0]!;
+    const first = requireValue(h.sockets[0]);
     first.message({ type: "connected" });
 
     for (let minute = 0; minute < 7; minute += 1) {
@@ -405,7 +406,7 @@ describe("Lighter order stream supervisor", () => {
   it("stops watching after durable state has no nonterminal orders", async () => {
     const h = makeHarness();
     const stop = await startHarness(h);
-    const socket = h.sockets[0]!;
+    const socket = requireValue(h.sockets[0]);
     h.listTargets.mockResolvedValueOnce([]);
 
     await vi.advanceTimersByTimeAsync(LIGHTER_ORDER_STREAM_DISCOVERY_INTERVAL_MS);

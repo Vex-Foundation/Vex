@@ -1,3 +1,4 @@
+import { requireValue } from "../../../../helpers/require-value.js";
 /**
  * Caller-level: `applyApproveSideEffects` derives explorer refs from the
  * approved dispatch's `result.data` (capture-shaped) and PASSES them to
@@ -188,7 +189,7 @@ describe("applyApproveSideEffects — explorer ref derivation", () => {
 
     if (outcome.kind !== "dispatched") throw new Error("kind mismatch");
     expect(outcome.executionStatus).toBe("indeterminate");
-    expect(mockCommitApprovedToolResult.mock.calls[0]![0]).toMatchObject({
+    expect(requireValue(mockCommitApprovedToolResult.mock.calls[0])[0]).toMatchObject({
       executionStatus: "indeterminate",
       displayStatus: "pending",
     });
@@ -210,7 +211,7 @@ describe("applyApproveSideEffects — explorer ref derivation", () => {
 
     if (outcome.kind !== "dispatched") throw new Error("kind mismatch");
     expect(outcome.executionStatus).toBe("indeterminate");
-    expect(mockCommitApprovedToolResult.mock.calls[0]![0]).toMatchObject({
+    expect(requireValue(mockCommitApprovedToolResult.mock.calls[0])[0]).toMatchObject({
       executionStatus: "indeterminate",
       displayStatus: "pending",
     });

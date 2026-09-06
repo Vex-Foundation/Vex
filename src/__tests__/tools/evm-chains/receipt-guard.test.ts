@@ -79,7 +79,7 @@ describe("waitForReceiptWithReplacementEvidence", () => {
     };
 
     await expect(
-      waitForReceiptWithReplacementEvidence(client as unknown as ReceiptWaitClient, HASH),
+      waitForReceiptWithReplacementEvidence(client as ReceiptWaitClient, HASH),
     ).resolves.toEqual({
       receipt,
       replacement: {

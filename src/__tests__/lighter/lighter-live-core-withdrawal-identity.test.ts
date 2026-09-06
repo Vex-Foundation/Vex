@@ -1,3 +1,4 @@
+import { requireValue } from "../helpers/require-value.js";
 import { getAddress } from "viem";
 import { describe, expect, it } from "vitest";
 
@@ -47,7 +48,7 @@ describe.skipIf(!LIVE)("live Lighter Core withdrawal deployment identity", () =>
       min_withdrawal_amount: "1.000000",
       margin_mode: "enabled",
     });
-    expect(getAddress(coreUsdc[0]!.l1_address)).toBe(funding.settlementTokenProxy);
+    expect(getAddress(requireValue(coreUsdc[0]).l1_address)).toBe(funding.settlementTokenProxy);
     expect(delay.seconds).toBeGreaterThanOrEqual(0);
     expect(chainId).toBe(1);
     expect(gatewayCode).toMatch(/^0x[0-9a-f]+$/i);
@@ -55,7 +56,7 @@ describe.skipIf(!LIVE)("live Lighter Core withdrawal deployment identity", () =>
     expect(tokenCode).toMatch(/^0x[0-9a-f]+$/i);
     expect(tokenCode).not.toBe("0x");
     expect(storedImplementation).toBeDefined();
-    expect(getAddress(`0x${storedImplementation!.slice(-40)}`)).toBe(
+    expect(getAddress(`0x${requireValue(storedImplementation).slice(-40)}`)).toBe(
       funding.expectedGatewayImplementation,
     );
     expect(getAddress(assetConfig[0])).toBe(funding.settlementTokenProxy);

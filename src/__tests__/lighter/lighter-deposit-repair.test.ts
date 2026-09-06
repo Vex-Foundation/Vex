@@ -200,9 +200,7 @@ function intent(
   };
 }
 
-function deps(): LighterDepositRepairDeps & {
-  [K in keyof LighterDepositRepairDeps]: ReturnType<typeof vi.fn>;
-} {
+function deps() {
   return {
     listUnresolved: vi.fn().mockResolvedValue([]),
     readReceipt: vi.fn().mockResolvedValue({
@@ -211,14 +209,14 @@ function deps(): LighterDepositRepairDeps & {
     }),
     readLighterTx: vi.fn().mockResolvedValue(null),
     readOwnedAccounts: vi.fn().mockResolvedValue(ownedAccounts()),
-    reconcileApproveReceipt: vi.fn(),
-    reconcileDepositReceipt: vi.fn(),
-    recordApproveReplacement: vi.fn(),
-    recordDepositReplacement: vi.fn(),
-    reconcileConfirmedDepositL1Evidence: vi.fn(),
-    markAmbiguous: vi.fn(),
-    markCredited: vi.fn(),
-  } as never;
+    reconcileApproveReceipt: vi.fn<LighterDepositRepairDeps["reconcileApproveReceipt"]>().mockResolvedValue(null),
+    reconcileDepositReceipt: vi.fn<LighterDepositRepairDeps["reconcileDepositReceipt"]>().mockResolvedValue(null),
+    recordApproveReplacement: vi.fn<LighterDepositRepairDeps["recordApproveReplacement"]>().mockResolvedValue(null),
+    recordDepositReplacement: vi.fn<LighterDepositRepairDeps["recordDepositReplacement"]>().mockResolvedValue(null),
+    reconcileConfirmedDepositL1Evidence: vi.fn<LighterDepositRepairDeps["reconcileConfirmedDepositL1Evidence"]>().mockResolvedValue(null),
+    markAmbiguous: vi.fn<LighterDepositRepairDeps["markAmbiguous"]>().mockResolvedValue(null),
+    markCredited: vi.fn<LighterDepositRepairDeps["markCredited"]>().mockResolvedValue(null),
+  } satisfies LighterDepositRepairDeps;
 }
 
 function confirmedIntent(): LighterOnboardingIntentRow {

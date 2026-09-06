@@ -98,7 +98,7 @@ function fakeClient(): LighterTradingPanelClient {
           trade_id: 1,
           trade_id_str: "90071992547409939999",
           tx_hash: "0x1",
-          type: "trade",
+          type: "trade" as const,
           market_id: 7,
           size: "0.1",
           price: "4200",
@@ -125,7 +125,7 @@ function fakeClient(): LighterTradingPanelClient {
         { t: 1_787_533_600_000, o: 4_200, h: 4_100, l: 4_000, c: 4_050, v: 1, V: 4_000, i: "4" },
       ],
     })),
-  } as unknown as LighterTradingPanelClient;
+  } satisfies LighterTradingPanelClient;
 }
 
 describe("Lighter trading panel service", () => {

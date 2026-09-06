@@ -1,3 +1,4 @@
+import { requireValue } from "../../../helpers/require-value.js";
 import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { toInjectedToolName } from "@vex-agent/tools/registry/injected-protocol-tools.js";
@@ -419,17 +420,17 @@ describe("prepared-action follow-up handoff", () => {
       toolCallsExecuted: 2,
     });
     expect(dispatchTool).toHaveBeenCalledTimes(2);
-    expect(dispatchTool.mock.calls[0]![0]).toMatchObject({
+    expect(requireValue(dispatchTool.mock.calls[0])[0]).toMatchObject({
       name: LIGHTER_ORDER_PREPARE_PUBLIC_NAME,
     });
-    expect(dispatchTool.mock.calls[1]![0]).toMatchObject({
+    expect(requireValue(dispatchTool.mock.calls[1])[0]).toMatchObject({
       name: "execute_tool",
       args: {
         toolId: "lighter.order.create",
         params: { intentId: LIGHTER_INTENT_ID },
       },
     });
-    expect(dispatchTool.mock.calls[1]![1]).not.toHaveProperty(
+    expect(requireValue(dispatchTool.mock.calls[1])[1]).not.toHaveProperty(
       "modelOriginated",
       true,
     );
@@ -448,7 +449,7 @@ describe("prepared-action follow-up handoff", () => {
         toolCall: expect.objectContaining({ name: "execute_tool" }),
       }),
     );
-    expect(persistBatchTranscript.mock.calls[0]![0]).toMatchObject({
+    expect(requireValue(persistBatchTranscript.mock.calls[0])[0]).toMatchObject({
       content: "Preparing Lighter order.",
       executedCalls: [expect.objectContaining({ name: LIGHTER_ORDER_PREPARE_PUBLIC_NAME })],
       executedResults: [expect.objectContaining({ output: "lighter create prepared" })],
@@ -476,7 +477,7 @@ describe("prepared-action follow-up handoff", () => {
       toolCallsExecuted: 2,
     });
     expect(dispatchTool).toHaveBeenCalledTimes(2);
-    expect(dispatchTool.mock.calls[1]![0]).toMatchObject({
+    expect(requireValue(dispatchTool.mock.calls[1])[0]).toMatchObject({
       name: "execute_tool",
       args: {
         toolId: "lighter.order.create",
@@ -508,14 +509,14 @@ describe("prepared-action follow-up handoff", () => {
       pendingApprovalId: "approval-1",
       toolCallsExecuted: 2,
     });
-    expect(dispatchTool.mock.calls[1]![0]).toMatchObject({
+    expect(requireValue(dispatchTool.mock.calls[1])[0]).toMatchObject({
       name: "execute_tool",
       args: {
         toolId: "lighter.key.register",
         params: { intentId: LIGHTER_ONBOARDING_INTENT_ID },
       },
     });
-    expect(dispatchTool.mock.calls[1]![1]).not.toHaveProperty("modelOriginated", true);
+    expect(requireValue(dispatchTool.mock.calls[1])[1]).not.toHaveProperty("modelOriginated", true);
     expect(enqueueApprovalIntent).toHaveBeenCalledWith(expect.objectContaining({
       trustedExpiresAt: EXPIRES_AT,
       trustedPreview: expect.objectContaining({
@@ -531,7 +532,7 @@ describe("prepared-action follow-up handoff", () => {
       }),
       toolCall: expect.objectContaining({ name: "execute_tool" }),
     }));
-    expect(persistBatchTranscript.mock.calls[0]![0]).toMatchObject({
+    expect(requireValue(persistBatchTranscript.mock.calls[0])[0]).toMatchObject({
       executedResults: [expect.objectContaining({
         success: true,
         output: "RHC key registration prepared",
@@ -622,7 +623,7 @@ describe("prepared-action follow-up handoff", () => {
     const outcome = await run("restricted");
     expect(outcome).toMatchObject({ kind: "normal_complete", toolCallsExecuted: 1 });
     expect(dispatchTool).toHaveBeenCalledOnce();
-    const rejectionOutput = persistBatchTranscript.mock.calls[0]![0]
+    const rejectionOutput = requireValue(persistBatchTranscript.mock.calls[0])[0]
       .executedResults[0].output as string;
     expect(rejectionOutput).toContain("internal approval mapping is unavailable");
     expect(rejectionOutput).not.toContain(trustedPreview.criticalArgs.to);
@@ -668,7 +669,7 @@ describe("prepared-action follow-up handoff", () => {
     const outcome = await run("restricted");
     expect(outcome).toMatchObject({ kind: "normal_complete", toolCallsExecuted: 1 });
     expect(dispatchTool).toHaveBeenCalledOnce();
-    const rejectionOutput = persistBatchTranscript.mock.calls[0]![0]
+    const rejectionOutput = requireValue(persistBatchTranscript.mock.calls[0])[0]
       .executedResults[0].output as string;
     expect(rejectionOutput).toContain("failed a safety consistency check");
     expect(rejectionOutput).not.toContain(invalidAmount);

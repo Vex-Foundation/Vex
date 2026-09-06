@@ -1,3 +1,4 @@
+import { requireValue } from "../../helpers/require-value.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
@@ -407,7 +408,7 @@ describe("lighter.deposit.status", () => {
       failureReason: "receipt unavailable",
     }));
 
-    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.status"]!(
+    const result = await requireValue(LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.status"])(
       { environment: "core" },
       CONTEXT,
     );
@@ -449,7 +450,7 @@ describe("lighter.deposit.status", () => {
       walletAddress: "0x2222222222222222222222222222222222222222",
     }));
 
-    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.status"]!(
+    const result = await requireValue(LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.status"])(
       { environment: "core", intentId: intentRow().intentId },
       CONTEXT,
     );
@@ -470,7 +471,7 @@ describe("lighter.deposit.status", () => {
       throw new Error("RPC config unavailable");
     });
 
-    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.status"]!(
+    const result = await requireValue(LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.status"])(
       { environment: "core" },
       CONTEXT,
     );
@@ -510,7 +511,7 @@ describe("lighter.deposit.status", () => {
     });
     mocks.findByIntentId.mockResolvedValueOnce(credited);
 
-    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.status"]!(
+    const result = await requireValue(LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.status"])(
       { environment: "rhc" },
       CONTEXT,
     );
@@ -556,7 +557,7 @@ describe("lighter.deposit execution lease", () => {
   it("honors a disable that lands before approved execution", async () => {
     mocks.isIntegrationEnabled.mockResolvedValue(false);
 
-    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit"]!(
+    const result = await requireValue(LIGHTER_DEPOSIT_HANDLERS["lighter.deposit"])(
       { intentId: intentRow().intentId },
       approvedContext,
     );
@@ -598,7 +599,7 @@ describe("lighter.deposit execution lease", () => {
       reason: "exact RHC Lighter evidence pending",
     });
 
-    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit"]!(
+    const result = await requireValue(LIGHTER_DEPOSIT_HANDLERS["lighter.deposit"])(
       { intentId: pending.intentId },
       approvedContext,
     );
@@ -633,7 +634,7 @@ describe("lighter.deposit execution lease", () => {
       retryAfter: new Date("2030-01-01T00:02:00.000Z"),
     });
 
-    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit"]!(
+    const result = await requireValue(LIGHTER_DEPOSIT_HANDLERS["lighter.deposit"])(
       { intentId: intentRow().intentId },
       approvedContext,
     );
@@ -648,7 +649,7 @@ describe("lighter.deposit execution lease", () => {
   it("stops before lease acquisition and key resolution while fee preflight is incomplete", async () => {
     mocks.feePreflightComplete.mockReturnValue(false);
 
-    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit"]!(
+    const result = await requireValue(LIGHTER_DEPOSIT_HANDLERS["lighter.deposit"])(
       { intentId: intentRow().intentId },
       approvedContext,
     );
@@ -671,7 +672,7 @@ describe("lighter.deposit execution lease", () => {
       maxFeePerGasWei: "20000000001",
     });
 
-    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit"]!(
+    const result = await requireValue(LIGHTER_DEPOSIT_HANDLERS["lighter.deposit"])(
       { intentId: intentRow().intentId },
       approvedContext,
     );
@@ -702,7 +703,7 @@ describe("lighter.deposit execution lease", () => {
       reason: "exact Lighter evidence pending",
     });
 
-    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit"]!(
+    const result = await requireValue(LIGHTER_DEPOSIT_HANDLERS["lighter.deposit"])(
       { intentId: intentRow().intentId },
       approvedContext,
     );
@@ -710,7 +711,7 @@ describe("lighter.deposit execution lease", () => {
     expect(result.success, result.output).toBe(true);
     const [acquiredAt] = mocks.acquireExecutionLease.mock.invocationCallOrder;
     const [keyResolvedAt] = mocks.resolveSigningWallet.mock.invocationCallOrder;
-    expect(acquiredAt).toBeLessThan(keyResolvedAt!);
+    expect(acquiredAt).toBeLessThan(requireValue(keyResolvedAt));
     expect(mocks.leaseAssertOwned).toHaveBeenCalled();
     expect(mocks.buildExecutionDeps).toHaveBeenCalledWith(expect.objectContaining({
       privateKey: `0x${"1".repeat(64)}`,
@@ -755,7 +756,7 @@ describe("lighter.deposit execution lease", () => {
       reason: "provider evidence unavailable",
     });
 
-    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit"]!(
+    const result = await requireValue(LIGHTER_DEPOSIT_HANDLERS["lighter.deposit"])(
       { intentId: intentRow().intentId },
       approvedContext,
     );
@@ -792,7 +793,7 @@ describe("lighter.deposit execution lease", () => {
       reason: "transaction reverted",
     });
 
-    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit"]!(
+    const result = await requireValue(LIGHTER_DEPOSIT_HANDLERS["lighter.deposit"])(
       { intentId: intentRow().intentId },
       approvedContext,
     );
@@ -836,7 +837,7 @@ describe("lighter.deposit execution lease", () => {
       reason: "exact Lighter evidence pending",
     });
 
-    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit"]!(
+    const result = await requireValue(LIGHTER_DEPOSIT_HANDLERS["lighter.deposit"])(
       { intentId: pristineApproved.intentId },
       approvedContext,
     );
@@ -896,7 +897,7 @@ describe("lighter.deposit execution lease", () => {
       reason: "exact Lighter evidence pending",
     });
 
-    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit"]!(
+    const result = await requireValue(LIGHTER_DEPOSIT_HANDLERS["lighter.deposit"])(
       { intentId: recoveryPending.intentId },
       approvedContext,
     );
@@ -925,7 +926,7 @@ describe("lighter.deposit execution lease", () => {
       approveTxNonce: "7",
     }));
 
-    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit"]!(
+    const result = await requireValue(LIGHTER_DEPOSIT_HANDLERS["lighter.deposit"])(
       { intentId: intentRow().intentId },
       approvedContext,
     );
@@ -956,7 +957,7 @@ describe("lighter.deposit execution lease", () => {
       depositTxHash: depositHash,
     }));
 
-    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit"]!(
+    const result = await requireValue(LIGHTER_DEPOSIT_HANDLERS["lighter.deposit"])(
       { intentId: intentRow().intentId },
       approvedContext,
     );
@@ -985,7 +986,7 @@ describe("lighter.deposit.prepare", () => {
       intent: rhcIntentRow(),
     });
 
-    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.prepare"]!(
+    const result = await requireValue(LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.prepare"])(
       { environment: "rhc", amountIn: "11" },
       CONTEXT,
     );
@@ -1038,7 +1039,7 @@ describe("lighter.deposit.prepare", () => {
       }),
     });
 
-    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.prepare"]!(
+    const result = await requireValue(LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.prepare"])(
       { environment: "rhc", amountIn: "5" },
       CONTEXT,
     );
@@ -1064,7 +1065,7 @@ describe("lighter.deposit.prepare", () => {
       intent: intentRow(),
     });
 
-    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.prepare"]!(
+    const result = await requireValue(LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.prepare"])(
       { environment: "core", amountIn: "11" },
       CONTEXT,
     );
@@ -1085,7 +1086,7 @@ describe("lighter.deposit.prepare", () => {
       intent: intentRow(),
     });
 
-    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.prepare"]!(
+    const result = await requireValue(LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.prepare"])(
       { environment: "core", amountIn: "11" },
       CONTEXT,
     );
@@ -1124,7 +1125,7 @@ describe("lighter.deposit.prepare", () => {
     expect(
       validatePreparedActionFollowUp(
         "lighter.deposit.prepare",
-        result.preparedActionFollowUp!,
+        requireValue(result.preparedActionFollowUp),
       ),
     ).toEqual({ ok: true, followUp: result.preparedActionFollowUp });
   });
@@ -1134,7 +1135,7 @@ describe("lighter.deposit.prepare", () => {
       new Error("The selected wallet does not have enough USDC for this deposit."),
     );
 
-    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.prepare"]!(
+    const result = await requireValue(LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.prepare"])(
       { environment: "core", amountIn: "11" },
       CONTEXT,
     );
@@ -1151,7 +1152,7 @@ describe("lighter.deposit.prepare", () => {
       intent: intentRow(),
     });
 
-    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.prepare"]!(
+    const result = await requireValue(LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.prepare"])(
       { environment: "core", amountIn: "11" },
       CONTEXT,
     );
@@ -1182,7 +1183,7 @@ describe("lighter.deposit.prepare", () => {
       intent: gateClosedIntent,
     });
 
-    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.prepare"]!(
+    const result = await requireValue(LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.prepare"])(
       { environment: "core", amountIn: "11" },
       CONTEXT,
     );
@@ -1235,7 +1236,7 @@ describe("lighter.deposit.prepare", () => {
       requiredNativeBalanceWei: "8000000000000000",
     }));
 
-    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.prepare"]!(
+    const result = await requireValue(LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.prepare"])(
       { environment: "core", amountIn: "11" },
       CONTEXT,
     );
@@ -1286,7 +1287,7 @@ describe("lighter.deposit.prepare", () => {
       .mockResolvedValueOnce({ outcome: "live_conflict", intent: previous })
       .mockResolvedValueOnce({ outcome: "created", intent: fresh });
 
-    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.prepare"]!(
+    const result = await requireValue(LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.prepare"])(
       { environment: "core", amountIn: "11" },
       CONTEXT,
     );
@@ -1349,7 +1350,7 @@ describe("lighter.deposit.prepare", () => {
       .mockResolvedValueOnce({ outcome: "live_conflict", intent: expired })
       .mockResolvedValueOnce({ outcome: "created", intent: fresh });
 
-    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.prepare"]!(
+    const result = await requireValue(LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.prepare"])(
       { environment, amountIn: "11" },
       CONTEXT,
     );
@@ -1401,7 +1402,7 @@ describe("lighter.deposit.prepare", () => {
     mocks.expireStaleApprovalPending.mockResolvedValueOnce(null);
     mocks.createOrFind.mockResolvedValueOnce({ outcome: "live_conflict", intent: expired });
 
-    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.prepare"]!(
+    const result = await requireValue(LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.prepare"])(
       { environment: "core", amountIn: "11" },
       CONTEXT,
     );
@@ -1421,7 +1422,7 @@ describe("lighter.deposit.prepare", () => {
       intent: intentRow(override),
     });
 
-    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.prepare"]!(
+    const result = await requireValue(LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.prepare"])(
       { environment: "core", amountIn: "11" },
       CONTEXT,
     );
@@ -1443,7 +1444,7 @@ describe("lighter.deposit.prepare", () => {
       }),
     });
 
-    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.prepare"]!(
+    const result = await requireValue(LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.prepare"])(
       { environment: "core", amountIn: "11" },
       CONTEXT,
     );
@@ -1460,7 +1461,7 @@ describe("lighter.deposit.prepare", () => {
       intent: intentRow({ executionState: "ambiguous", approvalStatus: "approved" }),
     });
 
-    const result = await LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.prepare"]!(
+    const result = await requireValue(LIGHTER_DEPOSIT_HANDLERS["lighter.deposit.prepare"])(
       { environment: "core", amountIn: "12" },
       CONTEXT,
     );

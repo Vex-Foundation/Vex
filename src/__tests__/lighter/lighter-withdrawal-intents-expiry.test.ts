@@ -1,3 +1,4 @@
+import { requireValue } from "../helpers/require-value.js";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -126,7 +127,7 @@ function freshPreview() {
       gatewayCodeHash: `0x${"1".repeat(64)}`,
       settlementTokenCodeHash: `0x${"2".repeat(64)}`,
     },
-  } as never;
+  };
 }
 
 describe("Lighter withdrawal approval-pending expiry", () => {
@@ -184,14 +185,14 @@ describe("Lighter withdrawal approval-pending expiry", () => {
     const client = {
       query: vi.fn(async (_sql: string, _params: readonly unknown[]) => ({ rows: [], rowCount: 0 })),
     };
-    await expect(expireStaleApprovalPendingWith(client as never, {
+    await expect(expireStaleApprovalPendingWith(client, {
       intentId: "lighter-withdrawal-00000000-0000-4000-8000-000000000001",
       sessionId: "session-old",
       environment: "rhc",
       accountIndex: 10_231,
     })).resolves.toBeNull();
 
-    const [sql, params] = client.query.mock.calls[0]!;
+    const [sql, params] = requireValue(client.query.mock.calls[0]);
     expect(sql).toContain("approval_status = 'approval_pending'");
     expect(sql).toContain("execution_state = 'approval_pending'");
     expect(sql).toContain("expires_at <= NOW()");
@@ -256,11 +257,11 @@ describe("Lighter withdrawal approval-pending expiry", () => {
       })),
     };
     await expect(hasPendingApprovalForIntentWith(
-      client as never,
+      client,
       "session-1",
       "lighter-withdrawal-00000000-0000-4000-8000-000000000001",
     )).resolves.toBe(true);
-    const [sql, params] = client.query.mock.calls[0]!;
+    const [sql, params] = requireValue(client.query.mock.calls[0]);
     expect(sql).toContain("q.status = 'pending'");
     expect(sql).toContain("'lighter.withdraw'");
     expect(sql).toContain("->>'intentId' = $2");
@@ -275,11 +276,11 @@ describe("Lighter withdrawal approval-pending expiry", () => {
       query: vi.fn(async (_sql: string, _params: readonly unknown[]) => ({ rows: [], rowCount: 0 })),
     };
     await expect(findByIntentIdForWalletWith(
-      client as never,
+      client,
       "lighter-withdrawal-00000000-0000-4000-8000-000000000001",
       "0x1111111111111111111111111111111111111111",
     )).resolves.toBeNull();
-    const [sql, params] = client.query.mock.calls[0]!;
+    const [sql, params] = requireValue(client.query.mock.calls[0]);
     expect(sql).not.toContain("WHERE session_id");
     expect(sql).toContain("LOWER(wallet_address) = LOWER($2)");
     expect(sql).toContain("LOWER(destination_address) = LOWER($2)");
@@ -294,10 +295,10 @@ describe("Lighter withdrawal approval-pending expiry", () => {
       query: vi.fn(async (_sql: string, _params: readonly unknown[]) => ({ rows: [], rowCount: 0 })),
     };
     await expect(findLatestForWalletWith(
-      client as never,
+      client,
       "0x1111111111111111111111111111111111111111",
     )).resolves.toBeNull();
-    const [sql, params] = client.query.mock.calls[0]!;
+    const [sql, params] = requireValue(client.query.mock.calls[0]);
     expect(sql).not.toContain("session_id =");
     expect(sql).toContain("LOWER(wallet_address) = LOWER($1)");
     expect(sql).toContain("LOWER(destination_address) = LOWER($1)");

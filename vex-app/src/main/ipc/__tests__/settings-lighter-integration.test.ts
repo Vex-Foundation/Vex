@@ -1,3 +1,4 @@
+import { requireValue } from "../../../../../src/__tests__/helpers/require-value.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { defaultPreferences, type Preferences } from "@shared/schemas/preferences.js";
@@ -29,7 +30,7 @@ vi.mock("../../preferences/store.js", () => ({
   preferencesStore: {
     load: async () => state.preferences,
     update: async (patch: Partial<Preferences>) => {
-      state.preferences = { ...state.preferences!, ...patch };
+      state.preferences = { ...requireValue(state.preferences), ...patch };
       return state.preferences;
     },
   },
@@ -41,7 +42,8 @@ vi.mock("../../telemetry/sentry-lifecycle.js", () => ({
 vi.mock("../../logger/index.js", () => ({
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
-vi.mock("../runtime/_ensure-engine-db-url.js", () => ({
+vi.mock("../../database/engine-db-readiness.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../database/engine-db-readiness.js")>()),
   ensureEngineDbUrl: (...args: unknown[]) => mocks.ensureEngineDbUrl(...args),
 }));
 vi.mock("@vex-lib/wallet.js", () => ({

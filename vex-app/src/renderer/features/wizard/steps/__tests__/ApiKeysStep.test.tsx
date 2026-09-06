@@ -1,3 +1,4 @@
+import { requireValue } from "../../../../../../../src/__tests__/helpers/require-value.js";
 /**
  * ApiKeysStep tests (M9 Step 3 + PR8 redesign — per-provider glass cards).
  *
@@ -212,7 +213,7 @@ describe("ApiKeysStep", () => {
     fireEvent.input(accountInput, { target: { value: "1171" } });
     fireEvent.input(apiKeyInput, { target: { value: "7" } });
     fireEvent.input(privateKeyInput, { target: { value: `0x${"1".repeat(80)}` } });
-    const form = container.querySelector('[data-vex-wizard-apikeys="form"] form')!;
+    const form = requireValue(container.querySelector('[data-vex-wizard-apikeys="form"] form'));
     fireEvent.submit(form);
 
     await waitFor(() => {

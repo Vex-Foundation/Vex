@@ -1,3 +1,4 @@
+import { requireValue } from "../helpers/require-value.js";
 import { getAddress } from "viem";
 import { describe, expect, it } from "vitest";
 
@@ -35,7 +36,7 @@ describe.skipIf(!LIVE)("live Lighter RHC withdrawal deployment identity", () => 
       symbol: "USDG", decimals: 6, l1_decimals: 6,
       min_withdrawal_amount: "1.000000", margin_mode: "enabled",
     });
-    expect(getAddress(rhcUsdg[0]!.l1_address)).toBe(funding.settlementTokenProxy);
+    expect(getAddress(requireValue(rhcUsdg[0]).l1_address)).toBe(funding.settlementTokenProxy);
     expect(delay.seconds).toBeGreaterThanOrEqual(0);
     expect(chainId).toBe(4663);
     expect(BigInt(Math.floor(Date.now() / 1_000)) - block.timestamp).toBeLessThan(300n);
@@ -44,7 +45,7 @@ describe.skipIf(!LIVE)("live Lighter RHC withdrawal deployment identity", () => 
     expect(tokenCode).toMatch(/^0x[0-9a-f]+$/i);
     expect(tokenCode).not.toBe("0x");
     expect(storedImplementation).toBeDefined();
-    expect(getAddress(`0x${storedImplementation!.slice(-40)}`)).toBe(funding.expectedGatewayImplementation);
+    expect(getAddress(`0x${requireValue(storedImplementation).slice(-40)}`)).toBe(funding.expectedGatewayImplementation);
     expect(getAddress(assetConfig[0])).toBe(funding.settlementTokenProxy);
     expect(assetConfig[1]).toBe(1);
   }, 30_000);

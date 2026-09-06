@@ -1,3 +1,4 @@
+import { requireValue } from "../../../../../../../src/__tests__/helpers/require-value.js";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -36,7 +37,7 @@ const MARKET_LIST: LighterTradingMarketList = {
 const SNAPSHOT: LighterTradingSnapshot = {
   environment: "rhc",
   retrievedAt: Date.now(),
-  market: MARKET_LIST.markets[0]!,
+  market: requireValue(MARKET_LIST.markets[0]),
   detail: {
     lastTradePrice: 3_200,
     openInterest: 42_000,
@@ -190,7 +191,7 @@ describe("Light it up dialog", () => {
   it("closes market details with Escape while keeping the workspace open", async () => {
     renderDialog();
     const summary = await screen.findByText("Market details");
-    const disclosure = summary.closest("details")!;
+    const disclosure = requireValue(summary.closest("details"));
     disclosure.open = true;
     summary.focus();
 

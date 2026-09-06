@@ -1,3 +1,4 @@
+import { requireValue } from "../helpers/require-value.js";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -63,8 +64,8 @@ function price(row: Record<string, unknown>): number {
 
 function expectSorted(values: readonly number[], direction: "ascending" | "descending"): void {
   for (let index = 1; index < values.length; index += 1) {
-    const previous = values[index - 1]!;
-    const current = values[index]!;
+    const previous = requireValue(values[index - 1]);
+    const current = requireValue(values[index]);
     if (direction === "ascending") {
       expect(previous).toBeLessThanOrEqual(current);
     } else {
@@ -110,7 +111,7 @@ function chooseMarket(markets: readonly Record<string, unknown>[]): MarketChoice
   const preferred = active.find((market) =>
     LIQUID_SYMBOLS.includes(String(market.symbol).toUpperCase() as (typeof LIQUID_SYMBOLS)[number])
   );
-  const selected = preferred ?? active[0]!;
+  const selected = preferred ?? requireValue(active[0]);
   return {
     marketId: finiteNumber(selected.marketId),
     symbol: stringValue(selected.symbol),

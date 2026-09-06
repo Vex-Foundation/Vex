@@ -1,3 +1,4 @@
+import { requireValue } from "../../helpers/require-value.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const getApproval = vi.fn();
@@ -121,7 +122,7 @@ describe("Lighter modify-order approval binding", () => {
     await expect(assertLighterModifyOrderApprovalBinding({
       approvalId: "approval-1",
       sessionId: "session-1",
-      intent: modifyIntent as never,
+      intent: modifyIntent,
     })).resolves.toBeUndefined();
   });
 
@@ -144,14 +145,14 @@ describe("Lighter modify-order approval binding", () => {
     await expect(assertLighterModifyOrderApprovalBinding({
       approvalId: "approval-1",
       sessionId: "session-1",
-      intent: modifyIntent as never,
+      intent: modifyIntent,
     })).rejects.toThrow("approval does not match the exact provider order and replacement values");
   });
 
   it("keeps direct modify calls behind the host approval gate", async () => {
-    const result = await LIGHTER_ORDER_LIFECYCLE_HANDLERS["lighter.order.modify"]!(
+    const result = await requireValue(LIGHTER_ORDER_LIFECYCLE_HANDLERS["lighter.order.modify"])(
       { intentId },
-      { sessionId: "session-1" } as never,
+      { sessionId: "session-1" },
     );
     expect(result).toMatchObject({ success: false, pendingApproval: true });
   });
@@ -207,7 +208,7 @@ describe("Lighter cancel-all approval binding", () => {
     await expect(assertLighterCancelAllApprovalBinding({
       approvalId: "approval-1",
       sessionId: "session-1",
-      intent: cancelAllIntent as never,
+      intent: cancelAllIntent,
     })).resolves.toBeUndefined();
   });
 
@@ -216,14 +217,14 @@ describe("Lighter cancel-all approval binding", () => {
     await expect(assertLighterCancelAllApprovalBinding({
       approvalId: "approval-1",
       sessionId: "session-1",
-      intent: cancelAllIntent as never,
+      intent: cancelAllIntent,
     })).rejects.toThrow("approval does not match the exact account-wide active-order set");
   });
 
   it("keeps direct cancel-all calls behind the host approval gate", async () => {
-    const result = await LIGHTER_ORDER_LIFECYCLE_HANDLERS["lighter.order.cancelAll"]!(
+    const result = await requireValue(LIGHTER_ORDER_LIFECYCLE_HANDLERS["lighter.order.cancelAll"])(
       { intentId },
-      { sessionId: "session-1" } as never,
+      { sessionId: "session-1" },
     );
     expect(result).toMatchObject({ success: false, pendingApproval: true });
   });
@@ -300,7 +301,7 @@ describe("Lighter close-position approval binding", () => {
     await expect(assertLighterClosePositionApprovalBinding({
       approvalId: "approval-1",
       sessionId: "session-1",
-      intent: closeIntent as never,
+      intent: closeIntent,
     })).resolves.toBeUndefined();
   });
 
@@ -309,14 +310,14 @@ describe("Lighter close-position approval binding", () => {
     await expect(assertLighterClosePositionApprovalBinding({
       approvalId: "approval-1",
       sessionId: "session-1",
-      intent: closeIntent as never,
+      intent: closeIntent,
     })).rejects.toThrow("approval does not match the exact live position");
   });
 
   it("keeps direct close calls behind the host approval gate", async () => {
-    const result = await LIGHTER_ORDER_LIFECYCLE_HANDLERS["lighter.position.close"]!(
+    const result = await requireValue(LIGHTER_ORDER_LIFECYCLE_HANDLERS["lighter.position.close"])(
       { intentId },
-      { sessionId: "session-1" } as never,
+      { sessionId: "session-1" },
     );
     expect(result).toMatchObject({ success: false, pendingApproval: true });
   });
@@ -327,7 +328,7 @@ describe("Lighter cancel-one approval binding", () => {
     await expect(assertLighterCancelOneApprovalBinding({
       approvalId: "approval-1",
       sessionId: "session-1",
-      intent: intent as never,
+      intent: intent,
     })).resolves.toBeUndefined();
   });
 
@@ -346,14 +347,14 @@ describe("Lighter cancel-one approval binding", () => {
     await expect(assertLighterCancelOneApprovalBinding({
       approvalId: "approval-1",
       sessionId: "session-1",
-      intent: intent as never,
+      intent: intent,
     })).rejects.toThrow("approval does not match the exact provider order intent");
   });
 
   it("keeps direct calls behind the host approval gate", async () => {
-    const result = await LIGHTER_ORDER_LIFECYCLE_HANDLERS["lighter.order.cancel"]!(
+    const result = await requireValue(LIGHTER_ORDER_LIFECYCLE_HANDLERS["lighter.order.cancel"])(
       { intentId },
-      { sessionId: "session-1" } as never,
+      { sessionId: "session-1" },
     );
     expect(result).toMatchObject({ success: false, pendingApproval: true });
     expect(getApproval).not.toHaveBeenCalled();

@@ -1,3 +1,4 @@
+import { requireValue } from "../../../../../src/__tests__/helpers/require-value.js";
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
@@ -162,7 +163,7 @@ async function readStreamParityProof(
       .filter((candle) => restByTime.has(candle.timestamp));
     const mismatches: string[] = [];
     for (const candle of common) {
-      const reference = restByTime.get(candle.timestamp)!;
+      const reference = requireValue(restByTime.get(candle.timestamp));
       if (
         candle.open !== reference.open
         || candle.high !== reference.high

@@ -1,3 +1,4 @@
+import { requireValue } from "../../../../../../../src/__tests__/helpers/require-value.js";
 import { fireEvent, render, screen, cleanup } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MarketChart } from "../MarketChart.js";
@@ -18,8 +19,8 @@ describe("Chart timeline continuity", () => {
     const view = render(<MarketChart candles={candles(500)} symbol="ETH" theme="chronos" marketId={1} resolution="1m" />);
     view.rerender(<MarketChart candles={candles(501)} symbol="ETH" theme="chronos" marketId={1} resolution="1m" />);
     expect(harness.candles.setData).toHaveBeenLastCalledWith(expect.arrayContaining([expect.objectContaining({ time: 1_700_000_060 })]));
-    expect(harness.candles.setData.mock.lastCall![0]).toHaveLength(500);
-    expect(harness.volume.setData.mock.lastCall![0]).toHaveLength(500);
+    expect(requireValue(harness.candles.setData.mock.lastCall)[0]).toHaveLength(500);
+    expect(requireValue(harness.volume.setData.mock.lastCall)[0]).toHaveLength(500);
     expect(harness.setRange).toHaveBeenLastCalledWith({ from: 400, to: 506 });
   });
   it("keeps historical candle timestamps under the same viewport after pruning", () => {
@@ -31,10 +32,10 @@ describe("Chart timeline continuity", () => {
   it("synchronizes hidden line data after switching market and resolution", () => {
     const view = render(<MarketChart candles={candles(40)} symbol="ETH" theme="chronos" marketId={1} resolution="1m" />);
     fireEvent.click(screen.getByRole("button", { name: "Use line" }));
-    expect(harness.line.setData.mock.lastCall![0]).toHaveLength(40);
+    expect(requireValue(harness.line.setData.mock.lastCall)[0]).toHaveLength(40);
     fireEvent.click(screen.getByRole("button", { name: "Use candles" }));
     view.rerender(<MarketChart candles={candles(5, 1_600_000_000)} symbol="BTC" theme="chronos" marketId={2} resolution="1d" />);
-    expect(harness.line.setData.mock.lastCall![0]).toEqual(candles(5, 1_600_000_000).map(c => ({ time: c.timestamp, value: c.close })));
+    expect(requireValue(harness.line.setData.mock.lastCall)[0]).toEqual(candles(5, 1_600_000_000).map(c => ({ time: c.timestamp, value: c.close })));
     expect(harness.line.applyOptions).toHaveBeenLastCalledWith({ visible: false });
   });
 });

@@ -1,3 +1,4 @@
+import { requireValue } from "../../helpers/require-value.js";
 import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -198,7 +199,7 @@ describe("lighter.key.register.prepare", () => {
   it("activates managed setup without asking the user to visit Settings", async () => {
     mocks.isIntegrationEnabled.mockResolvedValue(false);
 
-    const result = await LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"]!(
+    const result = await requireValue(LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"])(
       { environment: "core" },
       CONTEXT,
     );
@@ -218,7 +219,7 @@ describe("lighter.key.register.prepare", () => {
       resolvedAccountIndex: null,
     });
 
-    const result = await LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"]!(
+    const result = await requireValue(LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"])(
       { environment: "core" },
       CONTEXT,
     );
@@ -241,7 +242,7 @@ describe("lighter.key.register.prepare", () => {
   });
 
   it("reserves from a full-slot read, encrypts through the privileged preparer, and binds nextNonce", async () => {
-    const result = await LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"]!(
+    const result = await requireValue(LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"])(
       { environment: "core" },
       CONTEXT,
     );
@@ -272,7 +273,7 @@ describe("lighter.key.register.prepare", () => {
     }));
     expect(validatePreparedActionFollowUp(
       "lighter.key.register.prepare",
-      result.preparedActionFollowUp!,
+      requireValue(result.preparedActionFollowUp),
     )).toEqual({ ok: true, followUp: result.preparedActionFollowUp });
     expect(result.data).toMatchObject({
       accountIndex: 42,
@@ -305,7 +306,7 @@ describe("lighter.key.register.prepare", () => {
     mocks.findIntent.mockResolvedValue(row("key_generated_encrypted", "rhc"));
     mocks.markApprovalPending.mockResolvedValue(row("approval_pending", "rhc"));
 
-    const result = await LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"]!(
+    const result = await requireValue(LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"])(
       { environment: "rhc" },
       CONTEXT,
     );
@@ -331,14 +332,14 @@ describe("lighter.key.register.prepare", () => {
     });
     expect(validatePreparedActionFollowUp(
       "lighter.key.register.prepare",
-      result.preparedActionFollowUp!,
+      requireValue(result.preparedActionFollowUp),
     )).toEqual({ ok: true, followUp: result.preparedActionFollowUp });
   });
 
   it("fails before reserving a slot when the privileged preparer is unavailable", async () => {
     mocks.getPreparer.mockReturnValue(null);
 
-    const result = await LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"]!(
+    const result = await requireValue(LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"])(
       { environment: "core" },
       CONTEXT,
     );
@@ -352,7 +353,7 @@ describe("lighter.key.register.prepare", () => {
   it("refuses a durable reservation owned by another session", async () => {
     mocks.findLive.mockResolvedValue({ ...row("slot_reserved"), sessionId: "session-2" });
 
-    const result = await LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"]!(
+    const result = await requireValue(LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"])(
       { environment: "core" },
       CONTEXT,
     );
@@ -372,7 +373,7 @@ describe("lighter.key.register.prepare", () => {
     mocks.findLive.mockResolvedValue(previous);
     mocks.adoptPristineApproval.mockResolvedValue(adopted);
 
-    const result = await LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"]!(
+    const result = await requireValue(LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"])(
       { environment: "rhc" },
       CONTEXT,
     );
@@ -394,7 +395,7 @@ describe("lighter.key.register.prepare", () => {
     expect(result.preparedActionFollowUp).toBeDefined();
     expect(validatePreparedActionFollowUp(
       "lighter.key.register.prepare",
-      result.preparedActionFollowUp!,
+      requireValue(result.preparedActionFollowUp),
     )).toEqual({ ok: true, followUp: result.preparedActionFollowUp });
     expect(mocks.prepareCredential).not.toHaveBeenCalled();
     expect(mocks.getNextNonce).not.toHaveBeenCalled();
@@ -403,7 +404,7 @@ describe("lighter.key.register.prepare", () => {
   it("fails closed when the reserved slot has no valid public nextNonce", async () => {
     mocks.getNextNonce.mockResolvedValue({ code: 500, nonce: 0 });
 
-    const result = await LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"]!(
+    const result = await requireValue(LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"])(
       { environment: "core" },
       CONTEXT,
     );
@@ -421,7 +422,7 @@ describe("lighter.key.register.prepare", () => {
       resolvedAccountIndex: 42,
     });
 
-    const result = await LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"]!(
+    const result = await requireValue(LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"])(
       { environment: "core" },
       CONTEXT,
     );
@@ -459,7 +460,7 @@ describe("lighter.key.register.prepare", () => {
       resolvedAccountIndex: 42,
     });
 
-    const result = await LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"]!(
+    const result = await requireValue(LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"])(
       { environment: "core" },
       CONTEXT,
     );
@@ -475,7 +476,7 @@ describe("lighter.key.register", () => {
     mocks.findIntent.mockResolvedValue(row("approval_pending"));
     mocks.assertApprovalBinding.mockRejectedValue(new Error("approval mismatch"));
 
-    const result = await LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register"]!(
+    const result = await requireValue(LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register"])(
       { intentId: INTENT_ID },
       { ...CONTEXT, approved: true, approvalId: "approval-1" },
     );
@@ -488,7 +489,7 @@ describe("lighter.key.register", () => {
   it("stops at the privileged code boundary when the executor is unavailable", async () => {
     mocks.findIntent.mockResolvedValue(row("approval_pending"));
 
-    const result = await LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register"]!(
+    const result = await requireValue(LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register"])(
       { intentId: INTENT_ID },
       { ...CONTEXT, approved: true, approvalId: "approval-1" },
     );
@@ -514,7 +515,7 @@ describe("lighter.key.register", () => {
     });
 
     const context = { ...CONTEXT, approved: true, approvalId: "approval-1" };
-    const result = await LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register"]!(
+    const result = await requireValue(LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register"])(
       { intentId: INTENT_ID },
       context,
     );

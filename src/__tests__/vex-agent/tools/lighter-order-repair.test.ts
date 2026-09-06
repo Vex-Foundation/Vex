@@ -1,3 +1,4 @@
+import { requireValue } from "../../helpers/require-value.js";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -390,7 +391,7 @@ describe("Lighter order repair", () => {
 
     expect(deps.intents.listUnresolved).toHaveBeenCalledWith("rhc", 10);
     expect(reports).toHaveLength(2);
-    expect(reports[0]!.resolution).toBe("nonce_reset_consumed");
+    expect(requireValue(reports[0]).resolution).toBe("nonce_reset_consumed");
   });
 
   it("keeps unattended recovery public, bounded, and free of account-auth reads", async () => {

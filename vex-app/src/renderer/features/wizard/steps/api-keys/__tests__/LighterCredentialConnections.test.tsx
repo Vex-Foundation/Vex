@@ -1,3 +1,4 @@
+import { requireValue } from "../../../../../../../../src/__tests__/helpers/require-value.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import type { LighterCredentialConnection } from "@shared/schemas/lighter-integration.js";
@@ -71,7 +72,7 @@ describe("LighterCredentialConnections", () => {
       ok: true,
       data: {
         walletAddress: STRAY,
-        removedScopes: connections[1]!.scopes,
+        removedScopes: requireValue(connections[1]).scopes,
       },
     });
     const view = render(<LighterCredentialConnections />);
@@ -88,7 +89,7 @@ describe("LighterCredentialConnections", () => {
     await waitFor(() => {
       expect(mockForget).toHaveBeenCalledWith({
         walletAddress: STRAY,
-        scopes: connections[1]!.scopes,
+        scopes: requireValue(connections[1]).scopes,
       });
     });
     expect(mockForget).not.toHaveBeenCalledWith(

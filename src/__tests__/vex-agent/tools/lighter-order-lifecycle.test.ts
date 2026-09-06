@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as feePolicy from "@tools/lighter/fee-policy.js";
 
 import {
   executeApprovedLighterCancelAll,
@@ -15,6 +16,11 @@ import {
 import type { LighterOrderLifecycleIntentRow } from "@vex-agent/db/repos/lighter-order-lifecycle-intents.js";
 import type { LighterAccountOrder, LighterAccountPosition } from "@tools/lighter/types.js";
 import { deriveVexAssignedClientOrderIndex } from "@tools/lighter/signer-order.js";
+
+// These lifecycle fixtures represent orders approved while collection is disabled.
+// Enabled-policy refusal is exercised separately below and fee terms have their own suite.
+beforeEach(() => vi.spyOn(feePolicy, "getLighterFeePolicy").mockReturnValue(null));
+afterEach(() => vi.restoreAllMocks());
 
 const NOW = Date.parse("2026-08-19T20:00:00.000Z");
 const PRIVATE_KEY = "1".repeat(80);
@@ -195,7 +201,7 @@ function deps(overrides: Partial<LighterOrderLifecycleExecutionDeps> = {}): Ligh
       recordExecutionObserved: vi.fn().mockResolvedValue({ status: "observed" }),
       reserveObservedWith: vi.fn().mockResolvedValue({ reservedNonce: "9", reservationId: `lighter-lifecycle:${intent().intentId}` }),
     },
-    transaction: vi.fn(async (fn) => fn({} as never)) as typeof import("@vex-agent/db/client.js").withTransaction,
+    transaction: vi.fn(async (fn) => fn({})) as typeof import("@vex-agent/db/client.js").withTransaction,
     acquireSessionControlLock: vi.fn().mockResolvedValue(undefined),
     now: () => NOW,
     wait: vi.fn().mockResolvedValue(undefined),

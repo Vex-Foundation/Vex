@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 type IpcListener = (event: unknown, ...args: unknown[]) => void;
 const listeners = new Map<string, Set<IpcListener>>();
 
-const invoke = vi.fn(async () => ({ ok: true }));
+const invoke = vi.fn(async (_channel: string, _request: unknown) => ({ ok: true }));
 
 vi.mock("electron", () => ({
   ipcRenderer: {
@@ -88,7 +88,7 @@ describe("lighter trading preload candle boundary", () => {
     });
     await lighterTrading.stopCandleSubscription({ subscriptionId });
 
-    const calls = invoke.mock.calls as unknown as Array<[string, unknown]>;
+    const calls = invoke.mock.calls;
     expect(calls[0]?.[0]).toBe(
       CH.lighterTrading.startCandleSubscription,
     );

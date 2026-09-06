@@ -1,3 +1,4 @@
+import { requireValue } from "../../helpers/require-value.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { LIGHTER_TOOLS } from "@vex-agent/tools/protocols/lighter/manifest.js";
@@ -39,7 +40,7 @@ describe("Lighter tool surface safety", () => {
     it.each(EXECUTION_TOOLS)(`%s cannot bypass approval using dryRun in ${sessionPermission} mode`, async (toolId) => {
       const network = vi.fn(() => { throw new Error("Unexpected network access"); });
       vi.stubGlobal("fetch", network);
-      const manifest = LIGHTER_TOOLS.find((tool) => tool.toolId === toolId)!;
+      const manifest = requireValue(LIGHTER_TOOLS.find((tool) => tool.toolId === toolId));
 
       const result = await executeProtocolTool({ toolId, params: { ...executionParams(toolId), dryRun: true } },
         makeProtocolContext({ sessionId: "lighter-safety-test", sessionPermission }));
@@ -66,7 +67,7 @@ describe("Lighter tool surface safety", () => {
 });
 
 function executionParams(toolId: string): Record<string, unknown> {
-  const manifest = LIGHTER_TOOLS.find((tool) => tool.toolId === toolId)!;
+  const manifest = requireValue(LIGHTER_TOOLS.find((tool) => tool.toolId === toolId));
   return {
     ...manifest.exampleParams,
     ...(toolId === "lighter.order.cancel" || toolId === "lighter.order.modify"

@@ -1,3 +1,4 @@
+import { requireValue } from "../../../../../../../src/__tests__/helpers/require-value.js";
 import { useLighterAnalysisStore } from "../../../../stores/lighterAnalysisStore.js";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -33,7 +34,7 @@ describe("market picker", () => {
 
   it("preserves the provider ordering as prices change until an explicit sort", () => {
     const view = render(<MarketPicker {...baseProps} />);
-    view.rerender(<MarketPicker {...baseProps} markets={[makeMarket(1, "BTC", 1), makeMarket(0, "ETH", 99999), markets[2]!]} />);
+    view.rerender(<MarketPicker {...baseProps} markets={[makeMarket(1, "BTC", 1), makeMarket(0, "ETH", 99999), requireValue(markets[2])]} />);
     expect(symbols()).toEqual(["BTC", "ETH", "UNKNOWN"]);
     fireEvent.click(screen.getByRole("button", { name: "Sort by Price" }));
     expect(symbols()).toEqual(["ETH", "BTC", "UNKNOWN"]);
@@ -44,7 +45,7 @@ describe("market picker", () => {
 
   it("stores favorites using environment and full product identity without selecting the row", () => {
     const spot = makeMarket(1, "BTC", 60000, { marketType: "spot", baseAssetId: 2, quoteAssetId: 3 });
-    const view = render(<MarketPicker {...baseProps} markets={[markets[0]!, spot]} />);
+    const view = render(<MarketPicker {...baseProps} markets={[requireValue(markets[0]), spot]} />);
     fireEvent.click(screen.getByRole("button", { name: "Add BTC Perpetual to favorites" }));
     expect(baseProps.onSelect).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Favorites" }));

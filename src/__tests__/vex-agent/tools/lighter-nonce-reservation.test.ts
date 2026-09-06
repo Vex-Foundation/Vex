@@ -117,7 +117,7 @@ function intent(overrides: Partial<LighterOrderExecutionIntentRow> = {}): Lighte
 function deps(overrides: Partial<ReserveLighterOrderNonceDeps> = {}): ReserveLighterOrderNonceDeps {
   const txClient = { tx: true };
   return {
-    transaction: vi.fn(async (fn) => fn(txClient as never)),
+    transaction: vi.fn(async (fn) => fn(txClient)),
     nonceState: {
       reserveObservedWith: vi.fn(async () => reservedNonce()),
     },

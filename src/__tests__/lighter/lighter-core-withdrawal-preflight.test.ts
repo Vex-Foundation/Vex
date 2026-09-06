@@ -1,3 +1,4 @@
+import { requireValue } from "../helpers/require-value.js";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -154,7 +155,7 @@ describe("Lighter Core secure USDC withdrawal preflight", () => {
     ["gateway withdrawal disabled", (base: LighterCoreWithdrawalPreflightEvidence) => ({ ...base, settlement: { ...base.settlement, gatewayAssetConfig: [base.settlement.gatewayAssetConfig[0], 0, 1n, 1n, 1n, 1n] } }), /not enabled/],
     ["existing pending balance", (base: LighterCoreWithdrawalPreflightEvidence) => ({ ...base, settlement: { ...base.settlement, pendingBalanceUnits: 1n } }), /unresolved modern Core pending/],
     ["stale Ethereum block", (base: LighterCoreWithdrawalPreflightEvidence) => ({ ...base, settlement: { ...base.settlement, blockTimestampSeconds: BLOCK_TIMESTAMP_SECONDS - 301n } }), /latest block is stale/],
-    ["pending secure withdrawal", (base: LighterCoreWithdrawalPreflightEvidence) => ({ ...base, history: [{ ...base.history[0]!, status: "pending" as const }] }), /already pending/],
+    ["pending secure withdrawal", (base: LighterCoreWithdrawalPreflightEvidence) => ({ ...base, history: [{ ...requireValue(base.history[0]), status: "pending" as const }] }), /already pending/],
   ];
 
   it.each(refusalCases)("refuses %s", (_name, mutate, message) => {
@@ -165,7 +166,7 @@ describe("Lighter Core secure USDC withdrawal preflight", () => {
     const base = evidence();
     const snapshot = proveLighterCoreWithdrawalPreflight({
       ...base,
-      history: [{ ...base.history[0]!, status: "claimable" }],
+      history: [{ ...requireValue(base.history[0]), status: "claimable" }],
       settlement: { ...base.settlement, pendingBalanceUnits: 0n },
     });
 
@@ -180,7 +181,7 @@ describe("Lighter Core secure USDC withdrawal preflight", () => {
     const base = evidence();
     expect(() => proveLighterCoreWithdrawalPreflight({
       ...base,
-      history: [{ ...base.history[0]!, status: "claimable" }],
+      history: [{ ...requireValue(base.history[0]), status: "claimable" }],
       settlement: { ...base.settlement, pendingBalanceUnits: 1_000_000n },
     })).toThrow(/unresolved modern Core pending/);
   });

@@ -1,3 +1,4 @@
+import { requireValue } from "../../../../../src/__tests__/helpers/require-value.js";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -145,7 +146,7 @@ describe("Lighter credential connection cleanup", () => {
 
     await expect(forgetLighterCredentialConnection({
       walletAddress: STRAY,
-      scopes: [{ ...STRAY_SCOPES[0]!, managed: true }],
+      scopes: [{ ...requireValue(STRAY_SCOPES[0]), managed: true }],
     }, deps)).rejects.toMatchObject({
       reason: "state_changed",
     });

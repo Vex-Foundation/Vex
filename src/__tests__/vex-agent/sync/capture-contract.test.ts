@@ -119,7 +119,7 @@ describe("capture contract — structural coverage", () => {
     expect([...MUTATION_MATRIX].filter(([, c]) => c.capture === "full")).toEqual([]);
   });
 
-  it("the utility kind holds exactly the local-write tools that sign nothing", () => {
+  it("the utility kind holds exactly the tools that create no portfolio or chain event", () => {
     // hyperliquid.risk.proposeSetup was the sole "utility" (no portfolio
     // impact) entry until Agent Scan Phase 3 deleted it with the protocol.
     // `trench.launch_request_form` (migration 062) is the successor this
@@ -130,6 +130,7 @@ describe("capture contract — structural coverage", () => {
     // non-live, and `launch_request_form` opens the app's form and parks the
     // turn. Both are mutating because each writes a durable row; neither signs.
     expect(getToolsByKind("utility").map(([id]) => id).sort()).toEqual([
+      "launchpads.image_publish",
       "pools.launch_preview",
       "pools.launch_request_form",
       "trench.launch_request_form",
@@ -177,6 +178,7 @@ describe("capture contract — structural coverage", () => {
     const projection = getToolsByKind("projection");
     expect(projection.map(([id]) => id).sort()).toEqual([
       "lighter.deposit",
+      "lighter.fees.approve",
       "lighter.key.register",
       "lighter.order.cancel",
       "lighter.order.cancelAll",

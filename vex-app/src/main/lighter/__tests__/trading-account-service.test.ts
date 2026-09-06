@@ -365,7 +365,7 @@ describe("projectLighterTradingAccount", () => {
       environment: "core",
       accountIndex: 42,
       account: { account_index: 42, positions: [] },
-      orders: [order({ client_order_id: 9_007_199_254_740_993 as unknown as string })],
+      orders: [Object.defineProperty(order({}), "client_order_id", { value: 9_007_199_254_740_993 })],
       openOrdersAvailable: true,
       symbolFor,
       now: () => 1,

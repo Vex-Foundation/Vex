@@ -1,3 +1,4 @@
+import { requireValue } from "../../../../../../../src/__tests__/helpers/require-value.js";
 import { describe, expect, it } from "vitest";
 import type { CandlestickData, UTCTimestamp } from "lightweight-charts";
 import { parseChartPreferences } from "../chart-preferences.js";
@@ -20,19 +21,19 @@ describe("Chart indicator math", () => {
   it("calculates population Bollinger deviation and warm-up boundaries", () => {
     const candles = Array.from({ length: 40 }, (_, i) => candle(i + 1, i));
     const data = computeStudies(candles, new Map());
-    expect(data.sma[0]![0]!.value).toBe(10.5);
-    expect(data.bb[1]![0]!.value).toBeCloseTo(10.5 + 2 * Math.sqrt(33.25));
-    expect(data.bb[2]![0]!.value).toBeCloseTo(10.5 - 2 * Math.sqrt(33.25));
+    expect(requireValue(requireValue(data.sma[0])[0]).value).toBe(10.5);
+    expect(requireValue(requireValue(data.bb[1])[0]).value).toBeCloseTo(10.5 + 2 * Math.sqrt(33.25));
+    expect(requireValue(requireValue(data.bb[2])[0]).value).toBeCloseTo(10.5 - 2 * Math.sqrt(33.25));
     expect(data.macd[0]).toHaveLength(15);
     expect(data.macd[1]).toHaveLength(7);
     expect(data.macd[2]).toHaveLength(7);
-    expect(data.macd[0]!.at(-1)!.value).toBeCloseTo(7);
-    expect(data.macd[2]!.at(-1)!.value).toBeCloseTo(0);
+    expect(requireValue(requireValue(data.macd[0]).at(-1)).value).toBeCloseTo(7);
+    expect(requireValue(requireValue(data.macd[2]).at(-1)).value).toBeCloseTo(0);
   });
   it("weights VWAP with base volume, skips zero volume and resets by UTC day", () => {
     const candles = [candle(10, 0), candle(20, 1), candle(30, 2), candle(40, 1440)];
-    const volumes = new Map(candles.map((c, i) => [Number(c.time), [1, 3, 0, 2][i]!]));
-    expect(computeStudies(candles, volumes).vwap[0]!.map(p => p.value)).toEqual([10, 17.5, 17.5, 40]);
+    const volumes = new Map(candles.map((c, i) => [Number(c.time), requireValue([1, 3, 0, 2][i])]));
+    expect(requireValue(computeStudies(candles, volumes).vwap[0]).map(p => p.value)).toEqual([10, 17.5, 17.5, 40]);
     expect(computeStudies(candles, new Map()).vwap[0]).toEqual([]);
   });
 });
@@ -51,11 +52,11 @@ describe("Bounded drawing state", () => {
     state = drawingHistory(state, { type: "set", drawings: [{ ...drawing, b: { ...drawing.b, price: 40 } }] });
     state = drawingHistory(state, { type: "set", drawings: [] });
     state = drawingHistory(state, { type: "undo" });
-    expect(state.present[0]!.b.price).toBe(40);
+    expect(requireValue(state.present[0]).b.price).toBe(40);
     state = drawingHistory(state, { type: "undo" });
     expect(state.present).toEqual([drawing]);
     state = drawingHistory(state, { type: "redo" });
-    expect(state.present[0]!.b.price).toBe(40);
+    expect(requireValue(state.present[0]).b.price).toBe(40);
     state = drawingHistory(state, { type: "set", drawings: [] });
     expect(state.future).toEqual([]);
     for (let i = 0; i < 40; i++) state = drawingHistory(state, { type: "set", drawings: [drawing] });

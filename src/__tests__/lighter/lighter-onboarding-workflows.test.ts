@@ -1,3 +1,4 @@
+import { requireValue } from "../helpers/require-value.js";
 import { readFile } from "node:fs/promises";
 import { describe, expect, it, vi } from "vitest";
 
@@ -108,13 +109,13 @@ describe("Lighter onboarding workflow foundation", () => {
     };
 
     const result = await ensureLighterOnboardingWorkflowEnabledWith(
-      client as never,
+      client,
       "core",
       WALLET,
     );
 
     expect(result.workflowState).toBe("integration_enabled");
-    const [sql, params] = client.query.mock.calls[0]!;
+    const [sql, params] = requireValue(client.query.mock.calls[0]);
     expect(sql).toContain("ON CONFLICT (environment, wallet_address)");
     expect(params).toEqual(["core", WALLET]);
   });
@@ -127,7 +128,7 @@ describe("Lighter onboarding workflow foundation", () => {
       }),
     };
 
-    const result = await transitionLighterOnboardingWorkflowWith(client as never, {
+    const result = await transitionLighterOnboardingWorkflowWith(client, {
       environment: "core",
       walletAddress: WALLET,
       expectedStates: ["integration_enabled"],
@@ -136,7 +137,7 @@ describe("Lighter onboarding workflow foundation", () => {
     });
 
     expect(result?.workflowState).toBe("deposit_approval_pending");
-    const [sql, params] = client.query.mock.calls[0]!;
+    const [sql, params] = requireValue(client.query.mock.calls[0]);
     expect(sql).toContain("workflow_state = ANY($3)");
     expect(sql).toContain("revision = revision + 1");
     expect(params).toEqual([
@@ -165,7 +166,7 @@ describe("Lighter onboarding workflow foundation", () => {
       }),
     };
 
-    const result = await transitionLighterOnboardingWorkflowWith(client as never, {
+    const result = await transitionLighterOnboardingWorkflowWith(client, {
       environment: "core",
       walletAddress: WALLET,
       expectedStates: ["nonce_synchronized"],
@@ -191,7 +192,7 @@ describe("Lighter onboarding workflow foundation", () => {
     };
 
     await expect(
-      transitionLighterOnboardingWorkflowWith(client as never, {
+      transitionLighterOnboardingWorkflowWith(client, {
         environment: "core",
         walletAddress: WALLET,
         expectedStates: ["deposit_l2_pending"],
@@ -206,7 +207,7 @@ describe("Lighter onboarding workflow foundation", () => {
     };
 
     await expect(
-      transitionLighterOnboardingWorkflowWith(client as never, {
+      transitionLighterOnboardingWorkflowWith(client, {
         environment: "core",
         walletAddress: WALLET,
         expectedStates: ["integration_enabled"],
@@ -219,7 +220,7 @@ describe("Lighter onboarding workflow foundation", () => {
     const client = { query: vi.fn() };
 
     await expect(
-      transitionLighterOnboardingWorkflowWith(client as never, {
+      transitionLighterOnboardingWorkflowWith(client, {
         environment: "core",
         walletAddress: WALLET,
         expectedStates: ["integration_enabled"],
@@ -240,7 +241,7 @@ describe("Lighter onboarding workflow foundation", () => {
         };
 
         const result = await transitionLighterOnboardingWorkflowWith(
-          client as never,
+          client,
           {
             environment: "core",
             walletAddress: WALLET,
@@ -262,7 +263,7 @@ describe("Lighter onboarding workflow foundation", () => {
         const client = { query: vi.fn() };
 
         await expect(
-          transitionLighterOnboardingWorkflowWith(client as never, {
+          transitionLighterOnboardingWorkflowWith(client, {
             environment: "core",
             walletAddress: WALLET,
             expectedStates: [current],

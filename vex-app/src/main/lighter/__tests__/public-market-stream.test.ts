@@ -1,3 +1,4 @@
+import { requireValue } from "../../../../../src/__tests__/helpers/require-value.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -79,7 +80,7 @@ async function connect(
     (event) => harness.events.push(event),
   );
   await vi.advanceTimersByTimeAsync(0);
-  const socket = harness.sockets[0]!;
+  const socket = requireValue(harness.sockets[0]);
   const channels = socket.sent.map((value) => JSON.parse(value) as { channel: string });
   expect(channels).toEqual(expect.arrayContaining([
     { type: "subscribe", channel: `order_book/${marketId}` },

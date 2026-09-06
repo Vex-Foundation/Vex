@@ -31,7 +31,7 @@ describe("Lighter Core account ownership resolution", () => {
       ]));
 
     await expect(readUniqueLighterCoreMasterAccount(
-      { getAccountsByL1Address } as never,
+      { getAccountsByL1Address },
       WALLET,
     )).resolves.toBe(42);
     expect(getAccountsByL1Address).toHaveBeenNthCalledWith(1, "core", {
@@ -50,7 +50,7 @@ describe("Lighter Core account ownership resolution", () => {
     ]));
 
     await expect(readUniqueLighterMasterAccount(
-      { getAccountsByL1Address } as never,
+      { getAccountsByL1Address },
       "rhc",
       WALLET,
     )).resolves.toBe(142);
@@ -66,7 +66,7 @@ describe("Lighter Core account ownership resolution", () => {
     ]));
 
     await expect(readUniqueLighterCoreMasterAccount(
-      { getAccountsByL1Address } as never,
+      { getAccountsByL1Address },
       WALLET,
     )).rejects.toThrow("another wallet");
   });
@@ -78,7 +78,7 @@ describe("Lighter Core account ownership resolution", () => {
     ]));
 
     await expect(readUniqueLighterCoreMasterAccount(
-      { getAccountsByL1Address } as never,
+      { getAccountsByL1Address },
       WALLET,
     )).rejects.toThrow("one uniquely owned");
   });
@@ -89,7 +89,7 @@ describe("Lighter Core account ownership resolution", () => {
       .mockResolvedValueOnce(response([], "same"));
 
     await expect(readUniqueLighterCoreMasterAccount(
-      { getAccountsByL1Address } as never,
+      { getAccountsByL1Address },
       WALLET,
     )).rejects.toThrow("cursor repeated");
   });

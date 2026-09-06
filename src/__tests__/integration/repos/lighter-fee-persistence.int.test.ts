@@ -1,3 +1,4 @@
+import { requireValue } from "../../helpers/require-value.js";
 import { beforeEach, describe, expect, it } from "vitest";
 import { query, queryOne, withTransaction } from "@vex-agent/db/client.js";
 import { runMigrations } from "@vex-agent/db/migrate.js";
@@ -117,7 +118,7 @@ describe("Lighter fee persistence against isolated PostgreSQL", () => {
       intentId: created.intentId, sessionId, expectedStates: ["approved"], nextState: "ambiguous", nonceValue: "11", txHash: "0xuncertain",
     }));
     expect(ambiguous).not.toBeNull();
-    expect(await withTransaction((client) => fees.retireUnsignedLighterFeeAuthorizationWith(client, ambiguous!))).toBe(false);
+    expect(await withTransaction((client) => fees.retireUnsignedLighterFeeAuthorizationWith(client, requireValue(ambiguous)))).toBe(false);
     await expect(createIntent("fee-duplicate")).rejects.toMatchObject({ code: "23505" });
   });
 

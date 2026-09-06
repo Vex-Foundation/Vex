@@ -1,3 +1,4 @@
+import { requireValue } from "../../../helpers/require-value.js";
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 
 import type { LighterOrderPreviewRow } from "@vex-agent/db/repos/lighter-order-previews.js";
@@ -184,7 +185,7 @@ describe("lighter order execution intents repo", () => {
       "2026-08-12T00:05:00.000Z",
       null,
     ]);
-    expect(String(params![20])).not.toContain("private");
+    expect(String(requireValue(params)[20])).not.toContain("private");
     expect(created).toMatchObject({
       intentId: "lighter-exec-1",
       previewId: "lighter-preview-1",
@@ -342,7 +343,7 @@ describe("lighter order execution intents repo", () => {
       nonceValue: "1784732515923",
     });
 
-    const [sql, params] = mockQueryOne.mock.calls[0]!;
+    const [sql, params] = requireValue(mockQueryOne.mock.calls[0]);
     expect(sql).toContain("UPDATE lighter_order_execution_intents");
     expect(sql).toContain("AND session_id = $2");
     expect(sql).toContain("AND environment = $3");
@@ -372,7 +373,7 @@ describe("lighter order execution intents repo", () => {
       nonce_value: "1784732515923",
     }));
 
-    const attached = await repo.attachNonceReservationWith(txClient as never, {
+    const attached = await repo.attachNonceReservationWith(txClient, {
       intentId: "lighter-exec-1",
       sessionId: "session-1",
       environment: "rhc",
@@ -382,7 +383,7 @@ describe("lighter order execution intents repo", () => {
       nonceValue: "1784732515923",
     });
 
-    const [client, sql] = mockQueryOneWith.mock.calls[0]!;
+    const [client, sql] = requireValue(mockQueryOneWith.mock.calls[0]);
     expect(client).toBe(txClient);
     expect(sql).toContain("UPDATE lighter_order_execution_intents");
     expect(attached).toMatchObject({
@@ -408,7 +409,7 @@ describe("lighter order execution intents repo", () => {
       nonceValue: "0",
     });
 
-    expect(mockQueryOne.mock.calls[0]![1]).toEqual([
+    expect(requireValue(mockQueryOne.mock.calls[0])[1]).toEqual([
       "lighter-exec-1",
       "session-1",
       "rhc",
@@ -467,7 +468,7 @@ describe("lighter order execution intents repo", () => {
       signerTxHash: "0xabc123",
     });
 
-    const [sql, params] = mockQueryOne.mock.calls[0]!;
+    const [sql, params] = requireValue(mockQueryOne.mock.calls[0]);
     expect(sql).toContain("SET execution_state = 'signed'");
     expect(sql).toContain("AND approval_status = 'approved'");
     expect(sql).toContain("AND execution_state = 'approval_pending'");
@@ -512,7 +513,7 @@ describe("lighter order execution intents repo", () => {
       signerTxHash: "0xabc123",
     });
 
-    expect(mockQueryOne.mock.calls[0]![1]).toEqual([
+    expect(requireValue(mockQueryOne.mock.calls[0])[1]).toEqual([
       "lighter-exec-1",
       "session-1",
       "rhc",
@@ -544,7 +545,7 @@ describe("lighter order execution intents repo", () => {
       signerTxHash: "0xabc123",
     });
 
-    const [sql, params] = mockQueryOne.mock.calls[0]!;
+    const [sql, params] = requireValue(mockQueryOne.mock.calls[0]);
     expect(sql).toContain("SET execution_state = 'submitted'");
     expect(sql).toContain("AND execution_state = 'signed'");
     expect(sql).toContain("AND signer_tx_hash = $4");
@@ -586,7 +587,7 @@ describe("lighter order execution intents repo", () => {
       volumeQuotaRemaining: 10780,
     });
 
-    const [sql, params] = mockQueryOne.mock.calls[0]!;
+    const [sql, params] = requireValue(mockQueryOne.mock.calls[0]);
     expect(sql).toContain("SET execution_state = 'api_accepted'");
     expect(sql).toContain("AND execution_state = 'submitted'");
     expect(sql).toContain("AND signer_tx_hash = $4");
@@ -630,7 +631,7 @@ describe("lighter order execution intents repo", () => {
       submittedTxHash: "0xabc123",
     });
 
-    const [sql, params] = mockQueryOne.mock.calls[0]!;
+    const [sql, params] = requireValue(mockQueryOne.mock.calls[0]);
     expect(sql).toContain("SET execution_state = 'sequencer_pending'");
     expect(sql).toContain("AND execution_state = 'api_accepted'");
     expect(sql).toContain("AND client_order_index IS NOT NULL");
@@ -672,7 +673,7 @@ describe("lighter order execution intents repo", () => {
       },
     });
 
-    const [sql, params] = mockQueryOne.mock.calls[0]!;
+    const [sql, params] = requireValue(mockQueryOne.mock.calls[0]);
     expect(sql).toContain("SET execution_state = $4");
     expect(sql).toContain("provider_outcome_json = $8::jsonb");
     expect(sql).toContain("execution_state IN ('api_accepted','sequencer_pending','ambiguous')");
@@ -707,7 +708,7 @@ describe("lighter order execution intents repo", () => {
 
     const rows = await repo.listStreamWatchable("rhc", 42, 250);
 
-    const [sql, params] = mockQuery.mock.calls[0]!;
+    const [sql, params] = requireValue(mockQuery.mock.calls[0]);
     expect(sql).toContain("'open','partially_filled'");
     expect(sql).toContain("approval_status = 'approved'");
     expect(sql).toContain("client_order_index IS NOT NULL");
@@ -747,7 +748,7 @@ describe("lighter order execution intents repo", () => {
       },
     });
 
-    const [sql, params] = mockQueryOne.mock.calls[0]!;
+    const [sql, params] = requireValue(mockQueryOne.mock.calls[0]);
     expect(sql).toContain("execution_state = 'open'");
     expect(sql).toContain("execution_state = 'partially_filled'");
     expect(sql).not.toContain("execution_state IN ('filled'");
@@ -778,7 +779,7 @@ describe("lighter order execution intents repo", () => {
       reason: "provider_order_semantic_conflict",
     });
 
-    const [sql, params] = mockQueryOne.mock.calls[0]!;
+    const [sql, params] = requireValue(mockQueryOne.mock.calls[0]);
     expect(sql).toContain("SET execution_state = 'ambiguous'");
     expect(sql).toContain("'ambiguous','open','partially_filled'");
     expect(sql).not.toContain("'filled','canceled','rejected'");
@@ -808,7 +809,7 @@ describe("lighter order execution intents repo", () => {
       reason: "provider_transport_after_submit",
     });
 
-    const [sql, params] = mockQueryOne.mock.calls[0]!;
+    const [sql, params] = requireValue(mockQueryOne.mock.calls[0]);
     expect(sql).toContain("SET execution_state = 'ambiguous'");
     expect(sql).toContain("execution_state IN ('signed','submitted','api_accepted','sequencer_pending')");
     expect(params).toEqual([
@@ -841,7 +842,7 @@ describe("lighter order execution intents repo", () => {
       reason: "signing_failed_after_nonce_reservation",
     });
 
-    const [sql, params] = mockQueryOne.mock.calls[0]!;
+    const [sql, params] = requireValue(mockQueryOne.mock.calls[0]);
     expect(sql).toContain("execution_state = 'approval_pending'");
     expect(sql).toContain("nonce_reservation_id IS NOT NULL");
     expect(sql).toContain("nonce_value IS NOT NULL");
@@ -912,13 +913,13 @@ describe("lighter order execution intents repo", () => {
     mockQueryOne.mockResolvedValueOnce(dbRow());
     await repo.findByIntentId("session-1", "lighter-exec-1");
 
-    expect(mockQueryOne.mock.calls[0]![0]).toContain("WHERE session_id = $1 AND intent_id = $2");
-    expect(mockQueryOne.mock.calls[0]![1]).toEqual(["session-1", "lighter-exec-1"]);
+    expect(requireValue(mockQueryOne.mock.calls[0])[0]).toContain("WHERE session_id = $1 AND intent_id = $2");
+    expect(requireValue(mockQueryOne.mock.calls[0])[1]).toEqual(["session-1", "lighter-exec-1"]);
 
     mockQueryOne.mockResolvedValueOnce(dbRow());
     await repo.findLiveByPreview("session-1", "lighter-preview-1");
 
-    expect(mockQueryOne.mock.calls[1]![0]).toContain("approval_status IN ('approval_pending','approved')");
-    expect(mockQueryOne.mock.calls[1]![1]).toEqual(["session-1", "lighter-preview-1"]);
+    expect(requireValue(mockQueryOne.mock.calls[1])[0]).toContain("approval_status IN ('approval_pending','approved')");
+    expect(requireValue(mockQueryOne.mock.calls[1])[1]).toEqual(["session-1", "lighter-preview-1"]);
   });
 });

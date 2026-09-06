@@ -1,3 +1,4 @@
+import { requireValue } from "../../helpers/require-value.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -97,7 +98,7 @@ describe("Lighter withdrawal repair scheduling", () => {
     await initSync();
     expect(mocks.repairWithdrawals).toHaveBeenCalledTimes(1);
     expect(mocks.repairWithdrawals.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.fullBalanceSync.mock.invocationCallOrder[0]!,
+      requireValue(mocks.fullBalanceSync.mock.invocationCallOrder[0]),
     );
   });
 
@@ -122,7 +123,7 @@ describe("Lighter deposit repair scheduling", () => {
 
     expect(mocks.repairDeposits).toHaveBeenCalledTimes(1);
     expect(mocks.repairDeposits.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.fullBalanceSync.mock.invocationCallOrder[0]!,
+      requireValue(mocks.fullBalanceSync.mock.invocationCallOrder[0]),
     );
   });
 
@@ -156,7 +157,7 @@ describe("Lighter order nonce-repair scheduling", () => {
 
     expect(mocks.repairOrders).toHaveBeenCalledTimes(1);
     expect(mocks.repairOrders.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.fullBalanceSync.mock.invocationCallOrder[0]!,
+      requireValue(mocks.fullBalanceSync.mock.invocationCallOrder[0]),
     );
   });
 

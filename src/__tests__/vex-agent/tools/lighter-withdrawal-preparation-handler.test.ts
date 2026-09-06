@@ -1,3 +1,4 @@
+import { requireValue } from "../../helpers/require-value.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { LighterCoreWithdrawalPreflightSnapshot } from "@tools/lighter/withdrawal/core-preflight.js";
@@ -58,7 +59,7 @@ function snapshot(): LighterCoreWithdrawalPreflightSnapshot {
     nextNonce: "9", registeredPublicKey: "b".repeat(80), keyTransactionTime: "1",
     withdrawalDelaySeconds: 360, delayObservedAt: observedAt,
     gatewayAddress: deployment.gatewayProxy,
-    gatewayImplementationAddress: deployment.expectedGatewayImplementation!,
+    gatewayImplementationAddress: requireValue(deployment.expectedGatewayImplementation),
     gatewayCodeHash: `0x${"1".repeat(64)}`, settlementTokenCodeHash: `0x${"2".repeat(64)}`,
     settlementBlockNumber: "1234", pendingBalanceUnits: "0", legacyPendingBalanceUnits: "0",
     withdrawalHistoryCount: 0, nonterminalWithdrawalCount: 0,
@@ -89,7 +90,7 @@ describe("lighter.withdraw.prepare handler", () => {
   const context = makeProtocolContext({ sessionId: "withdrawal-preparation-test" });
 
   it("binds the exact amount and owning wallet to one durable approval without signing", async () => {
-    const result = await LIGHTER_WITHDRAWAL_HANDLERS["lighter.withdraw.prepare"]!(
+    const result = await requireValue(LIGHTER_WITHDRAWAL_HANDLERS["lighter.withdraw.prepare"])(
       { environment: "core", amountIn: "2" }, context);
 
     expect(result.success, result.output).toBe(true);
@@ -111,7 +112,7 @@ describe("lighter.withdraw.prepare handler", () => {
     mocks.account.mockResolvedValue({ code: 200, accounts: [{
       index: 42, l1_address: "0x2222222222222222222222222222222222222222",
     }] });
-    const result = await LIGHTER_WITHDRAWAL_HANDLERS["lighter.withdraw.prepare"]!(
+    const result = await requireValue(LIGHTER_WITHDRAWAL_HANDLERS["lighter.withdraw.prepare"])(
       { environment: "core", amountIn: "2" }, context);
 
     expect(result.success).toBe(false);
@@ -122,7 +123,7 @@ describe("lighter.withdraw.prepare handler", () => {
 
   it("does not prepare while account authorization is unavailable", async () => {
     mocks.auth.mockResolvedValue(null);
-    const result = await LIGHTER_WITHDRAWAL_HANDLERS["lighter.withdraw.prepare"]!(
+    const result = await requireValue(LIGHTER_WITHDRAWAL_HANDLERS["lighter.withdraw.prepare"])(
       { environment: "core", amountIn: "2" }, context);
 
     expect(result.success).toBe(false);

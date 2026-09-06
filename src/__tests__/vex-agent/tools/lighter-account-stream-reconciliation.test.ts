@@ -1,3 +1,4 @@
+import { requireValue } from "../../helpers/require-value.js";
 import { describe, expect, it, vi } from "vitest";
 
 import { deriveVexAssignedClientOrderIndex } from "@tools/lighter/signer-order.js";
@@ -62,6 +63,69 @@ function lifecycleIntent(
     providerOutcomeJson: null,
     providerOutcomeCheckedAt: null,
     ambiguousReason: null,
+    createdAt: "2026-08-19T19:59:00.000Z",
+    updatedAt: "2026-08-19T20:00:00.000Z",
+    expiresAt: "2026-08-19T20:05:00.000Z",
+    ...overrides,
+  };
+}
+
+function executionIntent(
+  overrides: Partial<LighterOrderExecutionIntentRow> = {},
+): LighterOrderExecutionIntentRow {
+  return {
+    intentId: `lighter-exec-${"a".repeat(32)}`,
+    sessionId: "session-1",
+    previewId: "lop_fixture",
+    protocolExecutionId: null,
+    approvalId: "approval-1",
+    matchHash: "c".repeat(64),
+    environment: "rhc",
+    accountIndex: 42,
+    apiKeyIndex: 7,
+    marketIndex: 0,
+    side: "buy",
+    baseAmountInteger: "1000",
+    priceInteger: "5000000",
+    orderType: "limit",
+    timeInForce: "good-till-time",
+    reduceOnly: false,
+    triggerPriceInteger: null,
+    orderExpiryMs: 86_400_000,
+    clientOrderIndexPolicy: "vex_assigned_uint48",
+    providerVersion: "1",
+    credentialRefJson: {
+      kind: "encrypted_vault_reference",
+      environment: "rhc",
+      accountIndex: 42,
+      apiKeyIndex: 7,
+      vaultCredentialId: "lighter/rhc/account-42/api-key-7",
+    },
+    approvalStatus: "approved",
+    executionState: "submitted",
+    decisionReason: "approved",
+    decidedAt: "2026-08-19T20:00:00.000Z",
+    nonceReservationId: null,
+    nonceValue: null,
+    clientOrderIndex: null,
+    signerTxHash: null,
+    submittedTxHash: null,
+    submitCode: null,
+    submitMessage: null,
+    predictedExecutionTimeMs: null,
+    volumeQuotaRemaining: null,
+    ambiguousReason: null,
+    signedAt: null,
+    submittedAt: null,
+    apiAcceptedAt: null,
+    ambiguousAt: null,
+    providerOrderId: null,
+    providerOrderStatus: null,
+    providerOutcomeSource: null,
+    providerOutcomeJson: null,
+    providerOutcomeCheckedAt: null,
+    preSubmitRevalidationJson: null,
+    preSubmitRevalidatedAt: null,
     createdAt: "2026-08-19T19:59:00.000Z",
     updatedAt: "2026-08-19T20:00:00.000Z",
     expiresAt: "2026-08-19T20:05:00.000Z",
@@ -186,18 +250,12 @@ function deps(rows: readonly LighterOrderLifecycleIntentRow[]) {
 describe("Lighter account stream lifecycle reconciliation", () => {
   it("advances an exact create-order trade without matching numeric IDs", async () => {
     const d = deps([]);
-    const create = {
+    const create = executionIntent({
       intentId: "lighter-exec-one",
-      environment: "rhc",
-      accountIndex: 42,
-      apiKeyIndex: 7,
-      marketIndex: 0,
       side: "sell",
       clientOrderIndex: "123",
       submittedTxHash: "different-hash",
-      providerOutcomeSource: null,
-      providerOutcomeJson: null,
-    } as unknown as LighterOrderExecutionIntentRow;
+    });
     d.orderIntents.listStreamWatchable.mockResolvedValueOnce([create]);
 
     const report = await reconcileLighterAccountStreamMessage("rhc", 42, tradeFrame(), d);
@@ -306,7 +364,7 @@ describe("Lighter account stream lifecycle reconciliation", () => {
       client_order_id: clientOrderId,
       status: "filled",
     })]), first);
-    const pendingCall = first.lifecycleIntents.markStreamEvidence.mock.calls[0]![0];
+    const pendingCall = requireValue(first.lifecycleIntents.markStreamEvidence.mock.calls[0])[0];
     expect(pendingCall.state).toBe("sequencer_pending");
 
     const stale = deps([lifecycleIntent({ ...close, providerOutcomeJson: pendingCall.evidence })]);

@@ -45,7 +45,7 @@ function publicClient(overrides?: { pending?: bigint; balance?: bigint; maxFee?:
 
 async function snapshot(overrides?: { pending?: bigint; balance?: bigint; maxFee?: bigint }) {
   return readLighterCoreClaimPreflight({
-    publicClient: publicClient(overrides) as never,
+    publicClient: publicClient(overrides),
     walletAddress: OWNER,
     gatewayAddress: GATEWAY,
     expectedGatewayImplementation: IMPLEMENTATION,
@@ -104,7 +104,7 @@ describe("RHC manual withdrawal claim", () => {
       getStorageAt: vi.fn(async () => `0x${"0".repeat(24)}${RHC_IMPLEMENTATION.slice(2)}`),
     };
     return readLighterWithdrawalClaimPreflight({
-      profile: getLighterSecureWithdrawalProfile("rhc"), publicClient: client as never,
+      profile: getLighterSecureWithdrawalProfile("rhc"), publicClient: client,
       walletAddress: OWNER, gatewayAddress: RHC_GATEWAY,
       expectedGatewayImplementation: RHC_IMPLEMENTATION,
       expectedGatewayCodeHash: keccak256(GATEWAY_CODE), settlementTokenAddress: USDG,

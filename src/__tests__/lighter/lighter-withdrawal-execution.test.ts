@@ -161,7 +161,7 @@ function deps(events: string[], sendTx?: ExecuteApprovedLighterCoreWithdrawalDep
     nonceState: {
       recordExecutionObserved: vi.fn(async () => {
         events.push("nonce_observed");
-        return {} as never;
+        return {};
       }),
     },
     reserveNonce: vi.fn(async () => {
@@ -171,23 +171,23 @@ function deps(events: string[], sendTx?: ExecuteApprovedLighterCoreWithdrawalDep
     intents: {
       markPreSubmitRevalidated: vi.fn(async () => {
         events.push("preflight_persisted");
-        return {} as never;
+        return {};
       }),
       markSigned: vi.fn(async () => {
         events.push("signed_persisted");
-        return {} as never;
+        return {};
       }),
       markSubmissionStaged: vi.fn(async () => {
         events.push("submission_staged");
-        return {} as never;
+        return {};
       }),
       markApiAccepted: vi.fn(async () => {
         events.push("acceptance_persisted");
-        return {} as never;
+        return {};
       }),
       markAmbiguous: vi.fn(async () => {
         events.push("ambiguous_persisted");
-        return {} as never;
+        return {};
       }),
     },
     now: () => NOW,
@@ -214,7 +214,7 @@ describe("approved Core withdrawal execution", () => {
     });
     const result = await executeApprovedLighterCoreWithdrawal({
       plan: plan(),
-      deps: deps(events, send as never),
+      deps: deps(events, send),
     });
     expect(result).toMatchObject({ status: "ambiguous", reason: "sendtx_outcome_unknown" });
     expect(send).toHaveBeenCalledTimes(1);

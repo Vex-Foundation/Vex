@@ -1,3 +1,4 @@
+import { requireValue } from "../helpers/require-value.js";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -74,11 +75,11 @@ describe("Lighter RHC secure USDG withdrawal preflight", () => {
     RegExp,
   ]> = [
     ["Core signer domain cannot replace settlement chain", (base: LighterRhcWithdrawalPreflightEvidence) => ({ ...base, settlement: { ...base.settlement, chainId: 304 } }), /not Robinhood Chain mainnet/],
-    ["Core USDC metadata", (base: LighterRhcWithdrawalPreflightEvidence) => ({ ...base, assets: { ...base.assets, asset_details: [{ ...base.assets.asset_details[0]!, symbol: "USDC" }] } }), /differs from the reviewed/],
+    ["Core USDC metadata", (base: LighterRhcWithdrawalPreflightEvidence) => ({ ...base, assets: { ...base.assets, asset_details: [{ ...requireValue(base.assets.asset_details[0]), symbol: "USDC" }] } }), /differs from the reviewed/],
     ["gateway implementation drift", (base: LighterRhcWithdrawalPreflightEvidence) => ({ ...base, settlement: { ...base.settlement, gatewayImplementationAddress: WALLET } }), /implementation differs/],
     ["disabled USDG withdrawals", (base: LighterRhcWithdrawalPreflightEvidence) => ({ ...base, settlement: { ...base.settlement, gatewayAssetConfig: [base.settlement.gatewayAssetConfig[0], 0, 1n, 1n, 1n, 1n] } }), /not enabled/],
     ["existing pending USDG", (base: LighterRhcWithdrawalPreflightEvidence) => ({ ...base, settlement: { ...base.settlement, pendingBalanceUnits: 1n } }), /unresolved RHC pending USDG/],
-    ["pending RHC withdrawal", (base: LighterRhcWithdrawalPreflightEvidence) => ({ ...base, history: [{ ...base.history[0]!, status: "pending" as const }] }), /already pending/],
+    ["pending RHC withdrawal", (base: LighterRhcWithdrawalPreflightEvidence) => ({ ...base, history: [{ ...requireValue(base.history[0]), status: "pending" as const }] }), /already pending/],
   ];
 
   it.each(refusalCases)("refuses %s", (_name, mutate, message) => {
@@ -89,7 +90,7 @@ describe("Lighter RHC secure USDG withdrawal preflight", () => {
     const base = evidence();
     const snapshot = proveLighterRhcWithdrawalPreflight({
       ...base,
-      history: [{ ...base.history[0]!, status: "claimable" }],
+      history: [{ ...requireValue(base.history[0]), status: "claimable" }],
       settlement: { ...base.settlement, pendingBalanceUnits: 0n },
     });
 
@@ -104,7 +105,7 @@ describe("Lighter RHC secure USDG withdrawal preflight", () => {
     const base = evidence();
     expect(() => proveLighterRhcWithdrawalPreflight({
       ...base,
-      history: [{ ...base.history[0]!, status: "claimable" }],
+      history: [{ ...requireValue(base.history[0]), status: "claimable" }],
       settlement: { ...base.settlement, pendingBalanceUnits: 1_000_000n },
     })).toThrow(/unresolved RHC pending USDG/);
   });

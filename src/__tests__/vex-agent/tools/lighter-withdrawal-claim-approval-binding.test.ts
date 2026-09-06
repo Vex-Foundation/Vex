@@ -1,3 +1,4 @@
+import { claimAttempt } from "../../helpers/lighter-intents.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { LighterWithdrawalClaimAttemptRow } from "@vex-agent/db/repos/lighter-withdrawal-claims.js";
@@ -15,7 +16,7 @@ const {
   "@vex-agent/tools/protocols/lighter/withdrawal-claim-approval-binding.js"
 );
 
-const ATTEMPT = {
+const ATTEMPT = claimAttempt({
   claimId: "claim-1",
   withdrawalIntentId: "withdrawal-1",
   sessionId: "session-1",
@@ -43,7 +44,7 @@ const ATTEMPT = {
   networkFeeCeilingWei: "80000000000000",
   preflightBlockNumber: "20000000",
   preflightObservedAt: "2030-01-01T00:00:00.000Z",
-} as unknown as LighterWithdrawalClaimAttemptRow;
+});
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -59,7 +60,7 @@ beforeEach(() => {
 });
 
 describe("Lighter RHC manual claim approval binding", () => {
-  const rhcAttempt = {
+  const rhcAttempt: LighterWithdrawalClaimAttemptRow = {
     ...ATTEMPT,
     operationClass: "manual_rhc_usdg_claim",
     settlementChainId: 4663,
@@ -68,7 +69,7 @@ describe("Lighter RHC manual claim approval binding", () => {
     gatewayImplementation: "0x82DE5B1161C93afDFE21bA0D5343f01Cd7401d90",
     settlementTokenAddress: "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
     assetSymbol: "USDG",
-  } as unknown as LighterWithdrawalClaimAttemptRow;
+  };
 
   it("binds RHC chain, USDG, gateway, amount, and fee ceiling independently", async () => {
     mocks.getAudit.mockResolvedValue({

@@ -1,3 +1,5 @@
+import { withdrawalIntent } from "../helpers/lighter-intents.js";
+import { requireValue } from "../helpers/require-value.js";
 import {
   encodeAbiParameters,
   encodeEventTopics,
@@ -40,7 +42,7 @@ function requireScalarTopics(
     }
     scalar.push(topic);
   }
-  return scalar.length === 0 ? [] : [scalar[0]!, ...scalar.slice(1)];
+  return scalar.length === 0 ? [] : [requireValue(scalar[0]), ...scalar.slice(1)];
 }
 
 function l2Tx(status = 3) {
@@ -134,7 +136,7 @@ function receipt(): TransactionReceipt {
 function intent(
   executionState: LighterWithdrawalIntentRow["executionState"] = "api_accepted",
 ): LighterWithdrawalIntentRow {
-  return {
+  return withdrawalIntent({
     intentId: "intent-1",
     sessionId: "session-1",
     environment: "core",
@@ -159,7 +161,7 @@ function intent(
     claimTxHash: null,
     claimReplacementTxHash: null,
     destinationTxHash: null,
-  } as unknown as LighterWithdrawalIntentRow;
+  });
 }
 
 function history(status: "pending" | "claimable" | "completed" = "claimable") {
@@ -316,7 +318,7 @@ describe("Core withdrawal exact L2 and Ethereum proof", () => {
 
   it("keeps a claimable withdrawal attributable only while the exact gateway balance remains", async () => {
     const d = reconciliationDeps();
-    const reconciled = await reconcileLighterCoreWithdrawal(d as never);
+    const reconciled = await reconcileLighterCoreWithdrawal(d);
     expect(reconciled.executionState).toBe("claimable");
     expect(d.recordReconciliation).toHaveBeenCalledWith(expect.objectContaining({
       state: "claimable",
@@ -327,7 +329,7 @@ describe("Core withdrawal exact L2 and Ethereum proof", () => {
 
   it("detects an auto-claim from exact settlement logs without waiting for completed history", async () => {
     const d = reconciliationDeps({ pendingBalance: 0n, settlementLog: true });
-    const reconciled = await reconcileLighterCoreWithdrawal(d as never);
+    const reconciled = await reconcileLighterCoreWithdrawal(d);
     expect(reconciled.executionState).toBe("destination_confirmed");
     expect(d.recordReconciliation).toHaveBeenCalledWith(expect.objectContaining({
       state: "destination_confirmed",
@@ -353,7 +355,7 @@ describe("Core withdrawal exact L2 and Ethereum proof", () => {
     const reconciled = await reconcileLighterCoreWithdrawal({
       ...d,
       historicalPublicClient,
-    } as never);
+    });
 
     expect(reconciled.executionState).toBe("destination_confirmed");
     expect(d.publicClient.readContract).toHaveBeenCalledTimes(1);
@@ -364,7 +366,7 @@ describe("Core withdrawal exact L2 and Ethereum proof", () => {
 
   it("turns a provider tx regression after proven execution into ambiguity", async () => {
     const d = reconciliationDeps({ state: "secure_waiting", l2Status: 1 });
-    await reconcileLighterCoreWithdrawal(d as never);
+    await reconcileLighterCoreWithdrawal(d);
     expect(d.recordReconciliation).toHaveBeenCalledWith(expect.objectContaining({
       state: "ambiguous",
       ambiguousReason: "provider_tx_regressed_after_execution",
@@ -376,7 +378,7 @@ describe("Core withdrawal exact L2 and Ethereum proof", () => {
     d.client.getWithdrawHistory
       .mockResolvedValueOnce({ code: 200, withdraws: [history("pending")], cursor: "stable-cursor" })
       .mockResolvedValueOnce({ code: 200, withdraws: [], cursor: "stable-cursor" });
-    const reconciled = await reconcileLighterCoreWithdrawal(d as never);
+    const reconciled = await reconcileLighterCoreWithdrawal(d);
     expect(reconciled.executionState).toBe("secure_waiting");
     expect(d.client.getWithdrawHistory).toHaveBeenCalledTimes(2);
   });
@@ -388,7 +390,7 @@ describe("Core withdrawal exact L2 and Ethereum proof", () => {
       withdraws: [history("pending")],
       cursor: "looping-cursor",
     });
-    await expect(reconcileLighterCoreWithdrawal(d as never)).rejects.toThrow(/repeated a pagination cursor/);
+    await expect(reconcileLighterCoreWithdrawal(d)).rejects.toThrow(/repeated a pagination cursor/);
   });
 
   it("releases a reverted manual claim only after exact 12-confirmation reconciliation", async () => {
@@ -409,7 +411,7 @@ describe("Core withdrawal exact L2 and Ethereum proof", () => {
       },
       claims: { markReconciledOutcome },
     };
-    const reconciled = await reconcileLighterCoreWithdrawal(input as never);
+    const reconciled = await reconcileLighterCoreWithdrawal(input);
     expect(reconciled.executionState).toBe("claimable");
     expect(markReconciledOutcome).toHaveBeenCalledWith(expect.objectContaining({
       transactionHash: TX_HASH,
@@ -434,8 +436,8 @@ describe("RHC withdrawal exact settlement isolation", () => {
       ...receipt(),
       to: rhcGateway,
       logs: [
-        { ...receipt().logs[0]!, address: rhcGateway, topics: gatewayTopics },
-        { ...receipt().logs[1]!, address: usdg, topics: transferTopics },
+        { ...requireValue(receipt().logs[0]), address: rhcGateway, topics: gatewayTopics },
+        { ...requireValue(receipt().logs[1]), address: usdg, topics: transferTopics },
       ],
     } as TransactionReceipt;
     const current = {
@@ -456,15 +458,15 @@ describe("RHC withdrawal exact settlement isolation", () => {
     }));
     const reconciled = await reconcileLighterWithdrawal({
       intent: current,
-      client: { getTx, getWithdrawHistory } as never,
+      client: { getTx, getWithdrawHistory },
       privilegedAuth: { token: "bounded-read-auth", accountIndex: 737810 },
       publicClient: {
         readContract: vi.fn(async () => 0n), getBlockNumber: vi.fn(async () => 111n),
         getLogs: vi.fn(async () => [{ args: { owner: OWNER, assetIndex: 3, baseAmount: 2_000_000n }, transactionHash: TX_HASH }]),
         getTransactionReceipt: vi.fn(async () => rhcReceipt),
         getBlock: vi.fn(async () => ({ hash: BLOCK_HASH })),
-      } as never,
-      intents: { recordReconciliation } as never,
+      },
+      intents: { recordReconciliation },
     });
     expect(reconciled.executionState).toBe("destination_confirmed");
     expect(recordReconciliation).toHaveBeenCalledWith(expect.objectContaining({

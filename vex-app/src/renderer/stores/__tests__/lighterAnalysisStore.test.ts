@@ -1,3 +1,4 @@
+import { requireValue } from "../../../../../src/__tests__/helpers/require-value.js";
 import { describe, expect, it, vi } from "vitest";
 import { coerceLighterAnalysis, createLighterAnalysisStore, LIGHTER_ANALYSIS_STORAGE_KEY, MAX_SAVED_CHARTS } from "../lighterAnalysisStore.js";
 import type { Drawing } from "../../features/appShell/lighterTrading/chart-drawings.js";
@@ -15,12 +16,12 @@ describe("Lighter renderer preference persistence", () => {
     store.getState().saveDrawings("rhc:7", [drawing]);
     store.getState().savePreferences("core:7", { studies: [], volume: true, chartType: "candles" });
     store.getState().saveFavorites(["rhc:perp:7:1:2:ETH", "core:spot:7:1:2:ETH"]);
-    const raw = JSON.parse(storage.values.get(LIGHTER_ANALYSIS_STORAGE_KEY)!);
+    const raw = JSON.parse(requireValue(storage.values.get(LIGHTER_ANALYSIS_STORAGE_KEY)));
     expect(Object.keys(raw.state).sort()).toEqual(["charts", "favorites"]);
     expect(Object.keys(raw.state.charts["rhc:7"]).sort()).toEqual(["drawings", "preferences"]);
     const restored = createLighterAnalysisStore(() => storage);
     expect(restored.getState().charts["rhc:7"]).toEqual({ preferences, drawings: [drawing] });
-    expect(restored.getState().charts["core:7"]!.preferences.chartType).toBe("candles");
+    expect(requireValue(restored.getState().charts["core:7"]).preferences.chartType).toBe("candles");
     expect(typeof restored.getState().saveDrawings).toBe("function");
   });
   it("rejects injected methods, invalid scopes and malformed nested payloads on every rehydration", async () => {
@@ -61,7 +62,7 @@ describe("Lighter renderer preference persistence", () => {
   });
   it("validates version migrations with the same read whitelist", () => {
     const store = createLighterAnalysisStore(() => memoryStorage(JSON.stringify({ version: 0, state: { charts: { "rhc:7": { preferences, drawings: [drawing] } }, favorites: [], saveDrawings: "invalid" } })));
-    expect(store.getState().charts["rhc:7"]!.preferences).toEqual(preferences);
+    expect(requireValue(store.getState().charts["rhc:7"]).preferences).toEqual(preferences);
     expect(typeof store.getState().saveDrawings).toBe("function");
   });
 });

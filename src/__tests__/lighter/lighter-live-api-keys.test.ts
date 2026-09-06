@@ -1,3 +1,4 @@
+import { requireValue } from "../helpers/require-value.js";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -64,7 +65,7 @@ describeLive("Lighter live public API-key metadata through protocol runtime", ()
       expect(typeof data.count).toBe("number");
       expect(Number(data.count)).toBeGreaterThan(0);
       expect(Array.isArray(data.apiKeys)).toBe(true);
-      const first = (data.apiKeys as Record<string, unknown>[])[0]!;
+      const first = requireValue((data.apiKeys as Record<string, unknown>[])[0]);
       expect(first.accountIndex).toBe(1);
       expect(typeof first.apiKeyIndex).toBe("number");
       expect(typeof first.publicKey).toBe("string");

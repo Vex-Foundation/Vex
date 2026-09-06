@@ -1,3 +1,4 @@
+import { requireValue } from "../helpers/require-value.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const dbMocks = vi.hoisted(() => ({
@@ -213,7 +214,7 @@ describe("lighter onboarding intent creation SQL", () => {
       ROW.expires_at,
     ]);
     expect(client.query).toHaveBeenCalledTimes(2);
-    const [workflowSql] = client.query.mock.calls[1]!;
+    const [workflowSql] = requireValue(client.query.mock.calls[1]);
     expect(workflowSql).toContain("workflow_state = ANY($3)");
   });
 
@@ -242,7 +243,7 @@ describe("lighter onboarding intent creation SQL", () => {
       outcome: "live_conflict",
       intent: { intentId: ROW.intent_id, executionState: "approval_pending" },
     });
-    const [lookupSql, params] = client.query.mock.calls[1]!;
+    const [lookupSql, params] = requireValue(client.query.mock.calls[1]);
     expect(lookupSql).toContain("LOWER(wallet_address) = LOWER($2)");
     expect(lookupSql).toContain("approval_status IN ('approval_pending', 'approved')");
     expect(lookupSql).toContain("execution_state NOT IN ('credited', 'failed')");
@@ -277,7 +278,7 @@ describe("lighter onboarding intent creation SQL", () => {
       executionState: "approved",
       expiresAt,
     });
-    const [sql, params] = client.query.mock.calls[0]!;
+    const [sql, params] = requireValue(client.query.mock.calls[0]);
     expect(sql).toContain("approval_status = 'approved'");
     expect(sql).toContain("execution_state = 'approved'");
     expect(sql).toContain("approve_tx_hash IS NULL");
@@ -364,7 +365,7 @@ describe("lighter onboarding intent creation SQL", () => {
       preflightWalletAllowanceUnits: ROW.amount_units,
       preflightApproveGasLimit: "0",
     });
-    const [sql, params] = client.query.mock.calls[0]!;
+    const [sql, params] = requireValue(client.query.mock.calls[0]);
     expect(sql).toContain("approval_status = 'approval_pending'");
     expect(sql).toContain("approval_id = NULL");
     expect(sql).toContain("execution_state = 'approve_confirmed'");
@@ -423,11 +424,11 @@ describe("lighter onboarding intent creation SQL", () => {
     const result = await repo.markApproveConfirmedWith(client, ROW.intent_id, txHash);
 
     expect(result).toMatchObject({ executionState: "approve_confirmed", approveTxHash: txHash });
-    const [advanceSql, advanceParams] = client.query.mock.calls[0]!;
+    const [advanceSql, advanceParams] = requireValue(client.query.mock.calls[0]);
     expect(advanceSql).toContain("execution_state = 'approve_submitted'");
     expect(advanceSql).toContain("COALESCE(approve_replacement_tx_hash, approve_tx_hash)");
     expect(advanceParams).toEqual([ROW.intent_id, txHash]);
-    const [existingSql, existingParams] = client.query.mock.calls[1]!;
+    const [existingSql, existingParams] = requireValue(client.query.mock.calls[1]);
     expect(existingSql).toContain("i.execution_state = 'approve_confirmed'");
     expect(existingSql).toContain("w.workflow_state = 'approve_confirmed'");
     expect(existingSql).toContain("w.active_deposit_intent_id = i.intent_id");
@@ -461,7 +462,7 @@ describe("lighter onboarding intent creation SQL", () => {
       approvalId: "approval-recovery",
     });
     expect(client.query).toHaveBeenCalledTimes(1);
-    const [sql] = client.query.mock.calls[0]!;
+    const [sql] = requireValue(client.query.mock.calls[0]);
     expect(sql).toContain("approval_status = 'approval_pending'");
     expect(sql).toContain("execution_state = 'approve_confirmed'");
     expect(sql).toContain("deposit_tx_hash IS NULL");
@@ -505,7 +506,7 @@ describe("lighter onboarding intent creation SQL", () => {
       decisionReason: "user approved exact Lighter deposit intent",
       failureReason: reason,
     });
-    const [sql, params] = client.query.mock.calls[0]!;
+    const [sql, params] = requireValue(client.query.mock.calls[0]);
     expect(sql).toContain("session_id = $2");
     expect(sql).toContain("approval_status = 'approval_pending'");
     expect(sql).toContain("execution_state = 'approved'");
@@ -522,7 +523,7 @@ describe("lighter onboarding intent creation SQL", () => {
       ROW.wallet_address,
       reason,
     ]);
-    const [workflowSql, workflowParams] = client.query.mock.calls[1]!;
+    const [workflowSql, workflowParams] = requireValue(client.query.mock.calls[1]);
     expect(workflowSql).toContain("workflow_state = ANY($3)");
     expect(workflowParams).toEqual([
       "core",
@@ -549,7 +550,7 @@ describe("lighter onboarding intent creation SQL", () => {
     });
 
     expect(result).toBeNull();
-    const [sql] = client.query.mock.calls[0]!;
+    const [sql] = requireValue(client.query.mock.calls[0]);
     expect(sql).toContain("capability = 'deposit'");
     expect(sql).toContain("approval_status = 'approval_pending'");
     expect(sql).toContain("execution_state = 'approval_pending'");
@@ -564,7 +565,7 @@ describe("lighter onboarding intent creation SQL", () => {
     );
 
     expect(rows).toHaveLength(1);
-    const [sql, params] = dbMocks.query.mock.calls[0]!;
+    const [sql, params] = requireValue(dbMocks.query.mock.calls[0]);
     expect(sql).toContain("capability = 'deposit'");
     expect(sql).toContain("LOWER(wallet_address) = LOWER($2)");
     expect(sql).toContain("execution_state NOT IN ('credited','failed')");
@@ -692,7 +693,7 @@ describe("lighter onboarding intent creation SQL", () => {
       depositReplacementTxHash: replacementTxHash,
       depositReplacementReason: "repriced",
     });
-    const [sql, params] = client.query.mock.calls[0]!;
+    const [sql, params] = requireValue(client.query.mock.calls[0]);
     expect(sql).toContain("LOWER(deposit_tx_hash) = LOWER($2)");
     expect(sql).toContain("deposit_tx_from IS NOT NULL");
     expect(sql).toContain("deposit_tx_nonce IS NOT NULL");

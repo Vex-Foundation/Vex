@@ -1,6 +1,6 @@
+import { withdrawalIntent } from "../../helpers/lighter-intents.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { LighterWithdrawalIntentRow } from "@vex-agent/db/repos/lighter-withdrawal-intents.js";
 
 const mocks = vi.hoisted(() => ({ getApproval: vi.fn(), getAudit: vi.fn() }));
 vi.mock("@vex-agent/db/repos/approvals.js", () => ({ getByIdForSession: mocks.getApproval }));
@@ -10,7 +10,7 @@ const { assertLighterWithdrawalApprovalBinding, buildLighterWithdrawalCriticalAr
   "@vex-agent/tools/protocols/lighter/withdrawal-approval-binding.js"
 );
 
-const INTENT = {
+const INTENT = withdrawalIntent({
   intentId: "withdrawal-rhc-1", previewId: "lwp_rhc", sessionId: "session-1",
   matchHash: "a".repeat(64), environment: "rhc", operationClass: "secure_l2_withdrawal",
   signingChainId: 466324, settlementChainId: 4663,
@@ -28,7 +28,7 @@ const INTENT = {
   gatewayCodeHash: `0x${"1".repeat(64)}`,
   settlementTokenCodeHash: `0x${"2".repeat(64)}`,
   preflightObservedAt: "2030-01-01T00:00:00.000Z",
-} as unknown as LighterWithdrawalIntentRow;
+});
 
 beforeEach(() => {
   vi.clearAllMocks();

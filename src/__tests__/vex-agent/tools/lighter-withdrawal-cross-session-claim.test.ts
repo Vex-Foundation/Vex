@@ -1,3 +1,4 @@
+import { requireValue } from "../../helpers/require-value.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const OWNER = "0xaCEE6141F6171491D34699C9266cb06A41FAA43C";
@@ -122,9 +123,9 @@ beforeEach(() => {
 
 describe("cross-session Lighter withdrawal claim continuation", () => {
   it("keeps the original withdrawal audit but prepares a new session-scoped claim approval", async () => {
-    const result = await LIGHTER_WITHDRAWAL_HANDLERS["lighter.withdraw.claim.prepare"]!(
+    const result = await requireValue(LIGHTER_WITHDRAWAL_HANDLERS["lighter.withdraw.claim.prepare"])(
       { intentId: recoveredIntent.intentId },
-      { sessionId: "session-new", walletResolution: {}, walletPolicy: {} } as never,
+      { sessionId: "session-new", walletResolution: {}, walletPolicy: {} },
     );
 
     expect(mocks.findCurrent).toHaveBeenCalledWith("session-new", recoveredIntent.intentId);
@@ -174,9 +175,9 @@ describe("cross-session Lighter withdrawal claim continuation", () => {
       approvalStatus: "approved",
     });
 
-    const result = await LIGHTER_WITHDRAWAL_HANDLERS["lighter.withdraw.status"]!(
+    const result = await requireValue(LIGHTER_WITHDRAWAL_HANDLERS["lighter.withdraw.status"])(
       {},
-      { sessionId: "session-new", walletResolution: {}, walletPolicy: {} } as never,
+      { sessionId: "session-new", walletResolution: {}, walletPolicy: {} },
     );
 
     expect(result.success, result.output).toBe(true);

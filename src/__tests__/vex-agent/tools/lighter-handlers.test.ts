@@ -1,3 +1,4 @@
+import { requireValue } from "../../helpers/require-value.js";
 import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
@@ -1243,7 +1244,7 @@ describe("Lighter agent read handlers", () => {
     mocks.executionIntentsRepo.findLiveByPreview.mockResolvedValueOnce(null);
     mocks.executionIntentsRepo.createApprovalPendingWith.mockResolvedValueOnce(executionIntentRow());
 
-    const result = await LIGHTER_HANDLERS["lighter.order.create.prepare"]!({
+    const result = await requireValue(LIGHTER_HANDLERS["lighter.order.create.prepare"])({
       environment: "rhc",
     }, READ_CTX);
 
@@ -1427,7 +1428,7 @@ describe("Lighter agent read handlers", () => {
     mocks.executionIntentsRepo.findLiveByPreview.mockResolvedValueOnce(null);
     mocks.executionIntentsRepo.createApprovalPendingWith.mockResolvedValueOnce(createdIntent);
 
-    const result = await LIGHTER_HANDLERS["lighter.order.create.prepare"]!({
+    const result = await requireValue(LIGHTER_HANDLERS["lighter.order.create.prepare"])({
       environment: "rhc",
     }, READ_CTX);
 
@@ -1441,7 +1442,7 @@ describe("Lighter agent read handlers", () => {
     expect(result.preparedActionFollowUp).toBeDefined();
     expect(validatePreparedActionFollowUp(
       "lighter.order.create.prepare",
-      result.preparedActionFollowUp!,
+      requireValue(result.preparedActionFollowUp),
     ).ok).toBe(true);
     const criticalArgs = (result.preparedActionFollowUp as {
       approvalPreview: { criticalArgs: Record<string, unknown> };
@@ -1477,7 +1478,7 @@ describe("Lighter agent read handlers", () => {
     mocks.previewsRepo.findLatestFresh.mockResolvedValueOnce(previewRow());
     mocks.executionIntentsRepo.findLiveByPreview.mockResolvedValueOnce(executionIntentRow());
 
-    const result = await LIGHTER_HANDLERS["lighter.order.create.prepare"]!({
+    const result = await requireValue(LIGHTER_HANDLERS["lighter.order.create.prepare"])({
       environment: "rhc",
     }, READ_CTX);
 
@@ -1520,7 +1521,7 @@ describe("Lighter agent read handlers", () => {
   it("refuses raw secret-shaped credential references during create preparation", async () => {
     mocks.previewsRepo.findFreshById.mockResolvedValueOnce(previewRow());
 
-    const result = await LIGHTER_HANDLERS["lighter.order.create.prepare"]!({
+    const result = await requireValue(LIGHTER_HANDLERS["lighter.order.create.prepare"])({
       environment: "rhc",
       previewId: "lighter-preview-1",
       vaultCredentialId: "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
@@ -1571,7 +1572,7 @@ describe("Lighter agent read handlers", () => {
       decidedAt: "2026-08-12T00:01:00.000Z",
     }));
 
-    const result = await LIGHTER_HANDLERS["lighter.order.create"]!({
+    const result = await requireValue(LIGHTER_HANDLERS["lighter.order.create"])({
       intentId: "lighter-exec-00000000-0000-4000-8000-000000000001",
     }, APPROVED_CTX);
 
@@ -1601,12 +1602,12 @@ describe("Lighter agent read handlers", () => {
     mocks.executionIntentsRepo.findLiveByPreview.mockResolvedValueOnce(null);
     mocks.executionIntentsRepo.createApprovalPendingWith.mockResolvedValueOnce(executionIntentRow());
 
-    const prepared = await LIGHTER_HANDLERS["lighter.order.create.prepare"]!({
+    const prepared = await requireValue(LIGHTER_HANDLERS["lighter.order.create.prepare"])({
       environment: "rhc",
     }, READ_CTX);
     const validated = validatePreparedActionFollowUp(
       "lighter.order.create.prepare",
-      prepared.preparedActionFollowUp!,
+      requireValue(prepared.preparedActionFollowUp),
     );
     expect(validated.ok, JSON.stringify(validated)).toBe(true);
     if (!validated.ok) return;
@@ -1616,7 +1617,7 @@ describe("Lighter agent read handlers", () => {
       previewJson: validated.followUp.approvalPreview,
     }));
 
-    const result = await LIGHTER_HANDLERS["lighter.order.create"]!({
+    const result = await requireValue(LIGHTER_HANDLERS["lighter.order.create"])({
       intentId: "lighter-exec-00000000-0000-4000-8000-000000000001",
     }, APPROVED_CTX);
 
@@ -1703,7 +1704,7 @@ describe("Lighter agent read handlers", () => {
       updatedAt: "2026-08-26T00:00:00.000Z",
     }));
 
-    const result = await LIGHTER_HANDLERS["lighter.position.close.prepare"]!({
+    const result = await requireValue(LIGHTER_HANDLERS["lighter.position.close.prepare"])({
       environment: "rhc",
       accountIndex: 42,
       marketId: 0,
@@ -1787,7 +1788,7 @@ describe("Lighter agent read handlers", () => {
     const data = await callJson("lighter.order.status", { environment: "rhc" });
 
     expect(data.checkedIntents).toBe(1);
-    const report = (data.reports as Record<string, unknown>[])[0]!;
+    const report = requireValue((data.reports as Record<string, unknown>[])[0]);
     expect(report.resolution).toBe("nonce_reset_consumed");
     expect(report.nonceBlockedAfter).toBe(false);
     expect(report.stateAfter).toBe("submitted");
@@ -1855,7 +1856,7 @@ describe("Lighter agent read handlers", () => {
       },
     }));
 
-    const result = await LIGHTER_HANDLERS["lighter.order.create"]!({
+    const result = await requireValue(LIGHTER_HANDLERS["lighter.order.create"])({
       intentId: "lighter-exec-00000000-0000-4000-8000-000000000001",
     }, APPROVED_CTX);
 
@@ -1881,7 +1882,7 @@ describe("Lighter agent read handlers", () => {
       },
     }));
 
-    const result = await LIGHTER_HANDLERS["lighter.order.create"]!({
+    const result = await requireValue(LIGHTER_HANDLERS["lighter.order.create"])({
       intentId: "lighter-exec-00000000-0000-4000-8000-000000000001",
     }, APPROVED_CTX);
 
@@ -1920,7 +1921,7 @@ describe("Lighter agent read handlers", () => {
       },
     }));
 
-    const result = await LIGHTER_HANDLERS["lighter.order.create"]!({
+    const result = await requireValue(LIGHTER_HANDLERS["lighter.order.create"])({
       intentId: "lighter-exec-00000000-0000-4000-8000-000000000001",
     }, APPROVED_CTX);
 
@@ -1940,7 +1941,7 @@ describe("Lighter agent read handlers", () => {
       clientOrderIndexPolicy: "caller_supplied",
     }));
 
-    const result = await LIGHTER_HANDLERS["lighter.order.create"]!({
+    const result = await requireValue(LIGHTER_HANDLERS["lighter.order.create"])({
       intentId: "lighter-exec-00000000-0000-4000-8000-000000000001",
     }, APPROVED_CTX);
 
@@ -2081,7 +2082,7 @@ describe("Lighter agent read handlers", () => {
     });
     expect((data.provenance as Record<string, unknown>).authenticated).toBe(false);
     expect(data.count).toBe(1);
-    const account = (data.accounts as Record<string, unknown>[])[0]!;
+    const account = requireValue((data.accounts as Record<string, unknown>[])[0]);
     expect(account.accountIndex).toBe(42);
     expect(account.positionCount).toBe(1);
   });
@@ -2103,7 +2104,7 @@ describe("Lighter agent read handlers", () => {
       value: "0x1111111111111111111111111111111111111111",
       activeOnly: undefined,
     });
-    const account = (data.accounts as Record<string, unknown>[])[0]!;
+    const account = requireValue((data.accounts as Record<string, unknown>[])[0]);
     expect(account.count).toBe(1);
     expect(account.positions).toEqual(ACCOUNT.positions);
   });
@@ -2140,7 +2141,7 @@ describe("Lighter agent read handlers", () => {
     expect((data.provenance as Record<string, unknown>).authenticated).toBe(true);
     expect((data.provenance as Record<string, unknown>).credentialCapability).toBe("read_only_account_data");
     expect(data.accountIndexSource).toBe("credential");
-    const order = (data.orders as Record<string, unknown>[])[0]!;
+    const order = requireValue((data.orders as Record<string, unknown>[])[0]);
     expect(order.orderIndex).toBe(String(UNSAFE_INTEGER));
     expect(order.clientOrderIndex).toBe(String(UNSAFE_INTEGER_2));
   });
@@ -2241,7 +2242,7 @@ describe("Lighter agent read handlers", () => {
       sortBy: "timestamp",
     }, undefined);
     expect(data.source).toBe("live_lighter_read_only_account_api");
-    const fill = (data.trades as Record<string, unknown>[])[0]!;
+    const fill = requireValue((data.trades as Record<string, unknown>[])[0]);
     expect(fill.tradeId).toBe(String(UNSAFE_INTEGER));
     expect(fill.tradeIdNumeric).toBeNull();
     expect(fill.askOrderId).toBe(String(UNSAFE_INTEGER));
@@ -2286,7 +2287,7 @@ describe("Lighter agent read handlers", () => {
     expect(data.count).toBe(1);
     expect(data.totalProviderRows).toBe(2);
     expect(data.truncated).toBe(true);
-    const key = (data.apiKeys as Record<string, unknown>[])[0]!;
+    const key = requireValue((data.apiKeys as Record<string, unknown>[])[0]);
     expect(key.apiKeyIndex).toBe(1);
     expect(key.nonce).toBe(1784732515923);
     expect(key.noncePrecision).toBe("safe");
@@ -2321,7 +2322,7 @@ describe("Lighter agent read handlers", () => {
     });
     mocks.previewsRepo.create.mockResolvedValue(undefined);
 
-    const result = await LIGHTER_HANDLERS["lighter.order.preview"]!({
+    const result = await requireValue(LIGHTER_HANDLERS["lighter.order.preview"])({
       environment: "rhc",
       accountIndex: 42,
       apiKeyIndex: 7,
@@ -2352,7 +2353,7 @@ describe("Lighter agent read handlers", () => {
       activeOnly: true,
     });
     expect(mocks.previewsRepo.create).toHaveBeenCalledTimes(1);
-    const persisted = mocks.previewsRepo.create.mock.calls[0]![0] as {
+    const persisted = requireValue(mocks.previewsRepo.create.mock.calls[0])[0] as {
       readonly preview: { readonly matchHash: string };
     };
     expect(persisted.preview.matchHash).toBe(data.matchHash);
@@ -2379,7 +2380,7 @@ describe("Lighter agent read handlers", () => {
     expect(result.preparedActionFollowUp).toBeDefined();
     expect(validatePreparedActionFollowUp(
       "lighter.order.preview",
-      result.preparedActionFollowUp!,
+      requireValue(result.preparedActionFollowUp),
     ).ok).toBe(true);
     expect(data.previewId).toMatch(/^lop_[0-9a-f]{24}$/);
     expect(data.source).toBe("live_lighter_public_api");
@@ -2504,7 +2505,7 @@ describe("Lighter agent read handlers", () => {
       orderExpiryOffsetMinutes: 30,
     });
 
-    const persisted = mocks.previewsRepo.create.mock.calls[0]![0] as {
+    const persisted = requireValue(mocks.previewsRepo.create.mock.calls[0])[0] as {
       readonly preview: {
         readonly identity: Record<string, unknown>;
         readonly preview: {
@@ -2573,7 +2574,7 @@ describe("Lighter agent read handlers", () => {
       orderExpiryOffsetMinutes: 30,
     });
 
-    const persisted = mocks.previewsRepo.create.mock.calls[0]![0] as {
+    const persisted = requireValue(mocks.previewsRepo.create.mock.calls[0])[0] as {
       readonly preview: {
         readonly identity: { readonly orderType: string; readonly triggerPriceInteger: string };
         readonly preview: {
@@ -2627,7 +2628,7 @@ describe("Lighter agent read handlers", () => {
       orderExpiryOffsetMinutes: 30,
     });
 
-    const persisted = mocks.previewsRepo.create.mock.calls[0]![0] as {
+    const persisted = requireValue(mocks.previewsRepo.create.mock.calls[0])[0] as {
       readonly preview: {
         readonly identity: { readonly orderType: string; readonly triggerPriceInteger: string };
       };
@@ -2755,7 +2756,7 @@ describe("Lighter agent read handlers", () => {
       });
 
       expect(mocks.previewsRepo.create).toHaveBeenCalledTimes(1);
-      const persisted = mocks.previewsRepo.create.mock.calls[0]![0] as {
+      const persisted = requireValue(mocks.previewsRepo.create.mock.calls[0])[0] as {
         readonly preview: {
           readonly identity: {
             readonly expiryMs: string;
@@ -2826,7 +2827,7 @@ describe("Lighter agent read handlers", () => {
       value: 42,
       activeOnly: true,
     });
-    const persisted = mocks.previewsRepo.create.mock.calls[0]![0] as {
+    const persisted = requireValue(mocks.previewsRepo.create.mock.calls[0])[0] as {
       readonly preview: {
         readonly identity: {
           readonly environment: string;
@@ -3150,7 +3151,7 @@ describe("Lighter agent read handlers", () => {
     });
 
     expect(mocks.client.getApiKeys).not.toHaveBeenCalled();
-    const persisted = mocks.previewsRepo.create.mock.calls[0]![0] as {
+    const persisted = requireValue(mocks.previewsRepo.create.mock.calls[0])[0] as {
       readonly preview: {
         readonly identity: {
           readonly apiKeyIndex: string;
@@ -3206,7 +3207,7 @@ describe("Lighter agent read handlers", () => {
       orderExpiryOffsetMinutes: 30,
     });
 
-    const persisted = mocks.previewsRepo.create.mock.calls[0]![0] as {
+    const persisted = requireValue(mocks.previewsRepo.create.mock.calls[0])[0] as {
       readonly preview: {
         readonly identity: {
           readonly apiKeyIndex: string;
@@ -3311,7 +3312,7 @@ describe("Lighter agent read handlers", () => {
   it("refuses order preview without a host session id", async () => {
     const handler = LIGHTER_HANDLERS["lighter.order.preview"];
     expect(handler).toBeDefined();
-    const result = await handler!({
+    const result = await requireValue(handler)({
       environment: "rhc",
       accountIndex: 42,
       marketId: 0,
@@ -3407,7 +3408,7 @@ describe("Lighter agent read handlers", () => {
     expect(data.totalProviderRows).toBe(3);
     expect(data.truncated).toBe(true);
     expect(data.nextCursor).toBe("cursor-1");
-    const first = (data.trades as Record<string, unknown>[])[0]!;
+    const first = requireValue((data.trades as Record<string, unknown>[])[0]);
     expect(first.tradeId).toBe(String(UNSAFE_INTEGER));
     expect(first.tradeIdPrecision).toBe("provider_string_canonical");
     expect(first.tradeIdNumeric).toBeNull();

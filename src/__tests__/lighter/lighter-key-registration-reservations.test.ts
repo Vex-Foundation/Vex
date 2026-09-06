@@ -1,3 +1,4 @@
+import { requireValue } from "../helpers/require-value.js";
 import { readFile } from "node:fs/promises";
 import { describe, expect, it, vi } from "vitest";
 
@@ -133,7 +134,7 @@ describe("Lighter Phase 3 key slot reservation repository", () => {
         .mockResolvedValueOnce({ rows: [], rowCount: 1 }),
     };
 
-    const result = await reserveLighterApiKeySlotWith(client as never, INPUT);
+    const result = await reserveLighterApiKeySlotWith(client, INPUT);
 
     expect(result).toMatchObject({
       outcome: "created",
@@ -172,7 +173,7 @@ describe("Lighter Phase 3 key slot reservation repository", () => {
         .mockResolvedValueOnce({ rows: [], rowCount: 1 }),
     };
 
-    await expect(reserveLighterApiKeySlotWith(client as never, rhcInput)).resolves.toMatchObject({
+    await expect(reserveLighterApiKeySlotWith(client, rhcInput)).resolves.toMatchObject({
       outcome: "created",
       reservation: { environment: "rhc", chainId: 4663, apiKeyIndex: 5 },
     });
@@ -193,7 +194,7 @@ describe("Lighter Phase 3 key slot reservation repository", () => {
         .mockResolvedValueOnce({ rows: [reservationRow(7)], rowCount: 1 }),
     };
 
-    const result = await reserveLighterApiKeySlotWith(client as never, INPUT);
+    const result = await reserveLighterApiKeySlotWith(client, INPUT);
 
     expect(result).toMatchObject({ outcome: "live_conflict", reservation: { apiKeyIndex: 7 } });
     expect(client.query).toHaveBeenCalledTimes(2);
@@ -202,7 +203,7 @@ describe("Lighter Phase 3 key slot reservation repository", () => {
   it("refuses stale provider evidence before locking the workflow", async () => {
     const client = { query: vi.fn() };
 
-    await expect(reserveLighterApiKeySlotWith(client as never, {
+    await expect(reserveLighterApiKeySlotWith(client, {
       ...INPUT,
       observation: { ...INPUT.observation, observedAt: new Date("2029-12-31T23:58:00.000Z") },
     })).rejects.toThrow("stale or from the future");
@@ -224,7 +225,7 @@ describe("Lighter Phase 3 key slot reservation repository", () => {
         .mockResolvedValueOnce({ rows: [workflowRow("key_generated_encrypted")], rowCount: 1 }),
     };
 
-    const result = await markLighterKeyGeneratedEncryptedWith(client as never, {
+    const result = await markLighterKeyGeneratedEncryptedWith(client, {
       intentId: generatedRow.intent_id,
       reference: {
         kind: "encrypted_vault_reference",
@@ -242,7 +243,7 @@ describe("Lighter Phase 3 key slot reservation repository", () => {
       publicKey: "ab".repeat(40),
       vaultCredentialId: "lighter/core/account-42/api-key-6",
     });
-    const [sql, params] = client.query.mock.calls[0]!;
+    const [sql, params] = requireValue(client.query.mock.calls[0]);
     expect(sql).toContain("execution_state = 'slot_reserved'");
     expect(sql).not.toMatch(/private_key/i);
     expect(JSON.stringify(params)).not.toContain("privateKey");
@@ -269,7 +270,7 @@ describe("Lighter Phase 3 key slot reservation repository", () => {
         }),
     };
     const pending = await markLighterKeyRegistrationApprovalPendingWith(
-      prepareClient as never,
+      prepareClient,
       {
         intentId: approvalPendingRow.intent_id,
         sessionId: INPUT.sessionId,
@@ -300,7 +301,7 @@ describe("Lighter Phase 3 key slot reservation repository", () => {
       }),
     };
     const approved = await markLighterKeyRegistrationApprovedWith(
-      approvedClient as never,
+      approvedClient,
       {
         intentId: approvalPendingRow.intent_id,
         sessionId: INPUT.sessionId,
@@ -330,7 +331,7 @@ describe("Lighter Phase 3 key slot reservation repository", () => {
       query: vi.fn().mockResolvedValueOnce({ rows: [pristine], rowCount: 1 }),
     };
 
-    await expect(renewPristineApprovedLighterKeyRegistrationIntentWith(client as never, {
+    await expect(renewPristineApprovedLighterKeyRegistrationIntentWith(client, {
       intentId: String(pristine.intent_id),
       sessionId: INPUT.sessionId,
       expiresAt,
@@ -339,7 +340,7 @@ describe("Lighter Phase 3 key slot reservation repository", () => {
       expiresAt,
     });
 
-    const [sql, params] = client.query.mock.calls[0]!;
+    const [sql, params] = requireValue(client.query.mock.calls[0]);
     expect(sql).toContain("approval_status = 'approved'");
     expect(sql).toContain("execution_state = 'approved'");
     expect(sql).toContain("registration_tx_hash IS NULL");
@@ -365,7 +366,7 @@ describe("Lighter Phase 3 key slot reservation repository", () => {
       }),
     };
 
-    await expect(adoptPristineLighterKeyRegistrationApprovalWith(client as never, {
+    await expect(adoptPristineLighterKeyRegistrationApprovalWith(client, {
       intentId: String(pending.intent_id),
       previousSessionId: "session-2",
       sessionId: INPUT.sessionId,
@@ -380,7 +381,7 @@ describe("Lighter Phase 3 key slot reservation repository", () => {
       expiresAt,
     });
 
-    const [sql, params] = client.query.mock.calls[0]!;
+    const [sql, params] = requireValue(client.query.mock.calls[0]);
     expect(sql).toContain("SET session_id = $3");
     expect(sql).toContain("approval_id IS NULL");
     expect(sql).toContain("registration_tx_staged_at IS NULL");
@@ -408,7 +409,7 @@ describe("Lighter Phase 3 key slot reservation repository", () => {
       }),
     };
 
-    await expect(reserveLighterApiKeySlotWith(client as never, INPUT)).rejects.toThrow(
+    await expect(reserveLighterApiKeySlotWith(client, INPUT)).rejects.toThrow(
       "does not match the resolved workflow account",
     );
   });
@@ -420,7 +421,7 @@ describe("Lighter Phase 3 key slot reservation repository", () => {
         rowCount: 1,
       }),
     };
-    const staged = await markLighterKeyRegistrationTxStagedWith(stagedClient as never, {
+    const staged = await markLighterKeyRegistrationTxStagedWith(stagedClient, {
       intentId: String(lifecycleRow("approved").intent_id),
       sessionId: INPUT.sessionId,
       txType: 8,
@@ -433,7 +434,7 @@ describe("Lighter Phase 3 key slot reservation repository", () => {
       registrationTxType: 8,
       registrationTxHash: "cd".repeat(40),
     });
-    const [stageSql, stageParams] = stagedClient.query.mock.calls[0]!;
+    const [stageSql, stageParams] = requireValue(stagedClient.query.mock.calls[0]);
     expect(stageSql).not.toMatch(/tx_info|l1_sig|signed_payload/i);
     expect(JSON.stringify(stageParams)).not.toMatch(/L1Sig|Sig|privateKey/);
 
@@ -454,7 +455,7 @@ describe("Lighter Phase 3 key slot reservation repository", () => {
         }),
     };
     const submitted = await markLighterKeyRegistrationSubmittedWith(
-      submittedClient as never,
+      submittedClient,
       {
         intentId: String(lifecycleRow("approved").intent_id),
         sessionId: INPUT.sessionId,
@@ -487,7 +488,7 @@ describe("Lighter Phase 3 key slot reservation repository", () => {
         })
         .mockResolvedValueOnce({ rows: [workflowRow("ambiguous")], rowCount: 1 }),
     };
-    await expect(markLighterKeyRegistrationAmbiguousWith(ambiguousClient as never, {
+    await expect(markLighterKeyRegistrationAmbiguousWith(ambiguousClient, {
       intentId,
       sessionId: INPUT.sessionId,
       txHash: "cd".repeat(40),
@@ -508,7 +509,7 @@ describe("Lighter Phase 3 key slot reservation repository", () => {
         })
         .mockResolvedValueOnce({ rows: [workflowRow("key_verified")], rowCount: 1 }),
     };
-    await expect(markLighterKeyRegistrationKeyVerifiedWith(verifiedClient as never, {
+    await expect(markLighterKeyRegistrationKeyVerifiedWith(verifiedClient, {
       intentId,
       sessionId: INPUT.sessionId,
       publicKey: "ab".repeat(40),
@@ -529,7 +530,7 @@ describe("Lighter Phase 3 key slot reservation repository", () => {
         })
         .mockResolvedValueOnce({ rows: [workflowRow("nonce_synchronized")], rowCount: 1 }),
     };
-    await expect(markLighterKeyRegistrationNonceSynchronizedWith(nonceClient as never, {
+    await expect(markLighterKeyRegistrationNonceSynchronizedWith(nonceClient, {
       intentId,
       sessionId: INPUT.sessionId,
       nextNonce: "1",
@@ -553,7 +554,7 @@ describe("Lighter Phase 3 key slot reservation repository", () => {
         })
         .mockResolvedValueOnce({ rows: [workflowRow("ready_to_trade")], rowCount: 1 }),
     };
-    await expect(markLighterKeyRegistrationActiveWith(activeClient as never, {
+    await expect(markLighterKeyRegistrationActiveWith(activeClient, {
       intentId,
       sessionId: INPUT.sessionId,
       activatedAt: NOW,

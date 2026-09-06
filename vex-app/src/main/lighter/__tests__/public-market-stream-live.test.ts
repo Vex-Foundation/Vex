@@ -1,3 +1,4 @@
+import { requireValue } from "../../../../../src/__tests__/helpers/require-value.js";
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
@@ -36,8 +37,8 @@ describeLive("Light it up live public market stream", () => {
       expect(spot).toBeDefined();
 
       const proofs = await Promise.all([
-        readLiveProof(environment, perp!.marketId, "perp", true),
-        readLiveProof(environment, spot!.marketId, "spot", false),
+        readLiveProof(environment, requireValue(perp).marketId, "perp", true),
+        readLiveProof(environment, requireValue(spot).marketId, "spot", false),
       ]);
       for (const proof of proofs) {
         expect(lighterTradingPublicBookEventSchema.safeParse(proof.book).success).toBe(true);

@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as feePolicy from "@tools/lighter/fee-policy.js";
 
 import {
   configureLighterCreateOrderExecutionDeps,
@@ -13,6 +14,11 @@ import { buildLighterUnsignedCreateOrderRequest } from "@tools/lighter/signer-or
 import { buildLighterOrderPreview } from "@tools/lighter/order-preview.js";
 import type { LighterAccountResponse, LighterMarketDetail } from "@tools/lighter/types.js";
 import { ErrorCodes, VexError } from "../../../errors.js";
+
+// These lifecycle fixtures represent orders approved while collection is disabled.
+// Enabled-policy refusal is exercised separately below and fee terms have their own suite.
+beforeEach(() => vi.spyOn(feePolicy, "getLighterFeePolicy").mockReturnValue(null));
+afterEach(() => vi.restoreAllMocks());
 
 const PRIVATE_KEY = `0x${"1".repeat(80)}`;
 const TX_INFO = "{\"signed\":\"payload\"}";
@@ -393,7 +399,7 @@ function deps(overrides: Partial<ExecuteApprovedLighterCreateOrderDeps> = {}): E
       })),
     },
     nonceState: {
-      recordExecutionObserved: vi.fn(async () => ({ status: "observed" }) as never),
+      recordExecutionObserved: vi.fn(async () => ({ status: "observed" })),
     },
     previews: {
       findFreshById: vi.fn(async () => APPROVED_PREVIEW_ROW),
@@ -403,20 +409,20 @@ function deps(overrides: Partial<ExecuteApprovedLighterCreateOrderDeps> = {}): E
     intents: {
       findByIntentIdAnySession: vi.fn(async () => null),
       markPreSubmitRevalidated: vi.fn(async () => APPROVED_INTENT_ROW),
-      markSigned: vi.fn(async () => ({ ok: true }) as never),
-      markSubmitted: vi.fn(async () => ({ ok: true }) as never),
+      markSigned: vi.fn(async () => ({ ok: true })),
+      markSubmitted: vi.fn(async () => ({ ok: true })),
       markApiAccepted: vi.fn(async () => ({
         executionState: "api_accepted",
         volumeQuotaRemaining: "99",
-      }) as never),
+      })),
       markSequencerPending: vi.fn(async () => ({
         executionState: "sequencer_pending",
-      }) as never),
+      })),
       markProviderOutcome: vi.fn(async (input) => ({
         executionState: input.state,
         providerOutcomeSource: input.source,
-      }) as never),
-      markAmbiguous: vi.fn(async () => ({ executionState: "ambiguous" }) as never),
+      })),
+      markAmbiguous: vi.fn(async () => ({ executionState: "ambiguous" })),
     },
     ...overrides,
   };
@@ -465,6 +471,14 @@ function restingLimitFixture(): {
 }
 
 describe("Lighter approved create execution pipeline", () => {
+  it("refuses a legacy no-fee approval when collection has become enabled", async () => {
+    vi.mocked(feePolicy.getLighterFeePolicy).mockRestore();
+    const d = deps();
+    await expect(executeApprovedLighterCreateOrder({ plan: PLAN, deps: d })).rejects.toThrow("fee setup is required");
+    expect(d.secretReader.readTradingApiPrivateKey).not.toHaveBeenCalled();
+    expect(d.client.sendTx).not.toHaveBeenCalled();
+  });
+
   it("rejects an injected collector or fee before any provider, vault, or nonce access", async () => {
     const d = deps();
     await expect(executeApprovedLighterCreateOrder({ plan: PLAN, unsignedOrder: { ...UNSIGNED_ORDER, integratorFees: { integratorAccountIndex: 99, integratorMakerFee: 1000, integratorTakerFee: 1000 } }, deps: d })).rejects.toThrow("field integratorFees");
@@ -932,7 +946,7 @@ describe("Lighter approved create execution pipeline", () => {
       ExecuteApprovedLighterCreateOrderDeps["nonceState"]["recordExecutionObserved"]
     >(async () => {
       await observedNonceGate.promise;
-      return { status: "observed" } as never;
+      return { status: "observed" };
     });
     const d = deps({
       client: {

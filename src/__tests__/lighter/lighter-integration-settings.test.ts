@@ -1,3 +1,4 @@
+import { requireValue } from "../helpers/require-value.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const queryOne = vi.hoisted(() => vi.fn());
@@ -49,7 +50,7 @@ describe("Lighter integration settings repository", () => {
       enabled: true,
       enabledAt: NOW,
     });
-    const [sql, params] = queryOne.mock.calls[0]!;
+    const [sql, params] = requireValue(queryOne.mock.calls[0]);
     expect(sql).toContain("ON CONFLICT (environment, wallet_address) DO UPDATE");
     expect(sql).toContain("enabled_at");
     expect(sql).toContain("disabled_at");

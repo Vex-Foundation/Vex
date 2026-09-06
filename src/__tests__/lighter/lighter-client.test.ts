@@ -1,3 +1,4 @@
+import { requireValue } from "../helpers/require-value.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ErrorCodes } from "../../errors.js";
 import { LighterClient } from "@tools/lighter/client.js";
@@ -420,7 +421,7 @@ describe("LighterClient URL selection", () => {
   it("does not attach Authorization to public reads", async () => {
     mockOk({ status: 1, network_id: 304, timestamp: 1717777777 });
     await client.getStatus("core");
-    const init = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0]![1] as RequestInit;
+    const init = requireValue((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0])[1] as RequestInit;
     expect(new Headers(init.headers).has("Authorization")).toBe(false);
   });
 
@@ -442,7 +443,7 @@ describe("LighterClient URL selection", () => {
     expect(url.pathname).toBe("/api/v1/apikeys");
     expect(url.searchParams.get("account_index")).toBe("42");
     expect(url.searchParams.get("api_key_index")).toBe("255");
-    const init = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0]![1] as RequestInit;
+    const init = requireValue((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0])[1] as RequestInit;
     expect(new Headers(init.headers).has("Authorization")).toBe(false);
     expect(response.api_keys[0]?.nonce).toBe(1784732515923);
   });
@@ -459,7 +460,7 @@ describe("LighterClient URL selection", () => {
     expect(url.pathname).toBe("/api/v1/nextNonce");
     expect(url.searchParams.get("account_index")).toBe("42");
     expect(url.searchParams.get("api_key_index")).toBe("7");
-    const init = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0]![1] as RequestInit;
+    const init = requireValue((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0])[1] as RequestInit;
     expect(new Headers(init.headers).has("Authorization")).toBe(false);
     expect(response.nonce).toBe(1784732515923);
   });
@@ -515,7 +516,7 @@ describe("LighterClient URL selection", () => {
       { token, accountIndex: 42 },
     );
 
-    const init = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0]![1] as RequestInit;
+    const init = requireValue((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0])[1] as RequestInit;
     expect(new Headers(init.headers).get("Authorization")).toBe(token);
   });
 
@@ -585,7 +586,7 @@ describe("LighterClient URL selection", () => {
     const url = lastUrl();
     expect(url.origin).toBe("https://rhc.example");
     expect(url.pathname).toBe("/api/v1/sendTx");
-    const init = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0]![1] as RequestInit;
+    const init = requireValue((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0])[1] as RequestInit;
     expect(init.method).toBe("POST");
     expect(new Headers(init.headers).get("Content-Type")).toBe("application/x-www-form-urlencoded");
     expect(new Headers(init.headers).has("Authorization")).toBe(false);
@@ -615,7 +616,8 @@ describe("LighterClient URL selection", () => {
   });
 
   it("fails closed on an unknown environment before sending", async () => {
-    await expect(client.getStatus("prod" as never)).rejects.toMatchObject({
+    // Exercise malformed runtime input without pretending it is a valid typed environment.
+    await expect(Reflect.apply(client.getStatus, client, ["prod"])).rejects.toMatchObject({
       code: ErrorCodes.LIGHTER_INVALID_REQUEST,
       message: "Invalid Lighter environment: prod",
     });
