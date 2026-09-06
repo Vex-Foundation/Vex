@@ -1,5 +1,5 @@
-/* Trading workspace tokens stay scoped to the terminal. Network identity
- * belongs to the environment control; market direction owns semantic color. */
+/* Trading colors stay scoped to the terminal. Core uses charcoal and teal;
+ * Robinhood Chain overrides the same roles without changing trading behavior. */
 .lit-dialog {
   --lit-bg: #111214;
   --lit-panel: #151618;
@@ -83,13 +83,63 @@
   color-scheme: light;
 }
 
-/* Both deployments share the same neutral trading canvas. */
+/* Robinhood Chain: near-black surfaces with a restrained lime accent. */
 .lit-dialog[data-lighter-environment="rhc"] {
-  --lit-environment-mark: #a8c58f;
+  --lit-bg: #0b0e0a;
+  --lit-panel: #11160e;
+  --lit-panel-raised: #1d2517;
+  --lit-line: rgba(210, 229, 180, 0.1);
+  --lit-line-strong: rgba(210, 229, 180, 0.22);
+  --lit-ink: #f4f7ef;
+  --lit-ink-secondary: #c8cfc0;
+  --lit-ink-muted: #98a28f;
+  --lit-grid: rgba(193, 215, 159, 0.065);
+  --lit-positive: #c3f53c;
+  --lit-positive-volume: rgba(195, 245, 60, 0.27);
+  --lit-positive-wash: rgba(195, 245, 60, 0.1);
+  --lit-negative: #ff7b64;
+  --lit-negative-volume: rgba(255, 123, 100, 0.3);
+  --lit-negative-wash: rgba(255, 123, 100, 0.12);
+  --lit-warning: #ebbc60;
+  --lit-action: #ccff00;
+  --lit-action-ink: #182200;
+  --lit-focus: #ccff00;
+  --lit-hover: rgba(195, 245, 60, 0.065);
+  --lit-selection: rgba(195, 245, 60, 0.24);
+  --lit-scrollbar: rgba(172, 190, 145, 0.3);
+  --lit-environment-mark: #ccff00;
+  --lit-environment-surface: #1a2211;
+  --lit-environment-surface-hover: #26331a;
+  --lit-market-bar-surface: #10150c;
 }
 
 .lit-dialog[data-lighter-theme="celeris"][data-lighter-environment="rhc"] {
-  --lit-environment-mark: #56753e;
+  --lit-bg: #f6f8f0;
+  --lit-panel: #fcfdf8;
+  --lit-panel-raised: #eaf0df;
+  --lit-line: rgba(47, 68, 21, 0.12);
+  --lit-line-strong: rgba(47, 68, 21, 0.25);
+  --lit-ink: #182012;
+  --lit-ink-secondary: #445237;
+  --lit-ink-muted: #5b684e;
+  --lit-grid: rgba(63, 91, 28, 0.09);
+  --lit-positive: #427400;
+  --lit-positive-volume: rgba(66, 116, 0, 0.25);
+  --lit-positive-wash: rgba(66, 116, 0, 0.08);
+  --lit-negative: #b83d28;
+  --lit-negative-volume: rgba(184, 61, 40, 0.24);
+  --lit-negative-wash: rgba(184, 61, 40, 0.08);
+  --lit-warning: #80570b;
+  --lit-action: #4a7000;
+  --lit-action-ink: #ffffff;
+  --lit-focus: #577700;
+  --lit-hover: rgba(66, 116, 0, 0.06);
+  --lit-selection: rgba(66, 116, 0, 0.18);
+  --lit-scrollbar: rgba(66, 92, 35, 0.3);
+  --lit-environment-mark: #427400;
+  --lit-environment-surface: #e8f0d6;
+  --lit-environment-surface-hover: #dce9c2;
+  --lit-market-bar-surface: #f0f5e5;
 }
 
 .lit-dialog ::selection {
