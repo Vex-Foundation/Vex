@@ -46,6 +46,7 @@ export {
   readCurveState,
   type CurveAntiSniperState,
   type CurveState,
+  type CurveStateClient,
   type CurveStateRefusal,
   type CurveStateResult,
   type CurveTradeSide,

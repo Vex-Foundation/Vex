@@ -28,7 +28,11 @@
 
 import type { Hex, TransactionReceipt } from "viem";
 
-import { signStageBroadcast, type StagedBroadcastOutcome } from "@tools/evm-chains/staged-broadcast.js";
+import {
+  signStageBroadcast,
+  type FinalSignedRequest,
+  type StagedBroadcastOutcome,
+} from "@tools/evm-chains/staged-broadcast.js";
 import type { ConfirmedPriorLeg } from "@tools/evm-chains/dependent-leg-gas-estimate.js";
 import { classifyCurveRevert } from "@tools/virtuals/curve/revert-mapping.js";
 import type { BuiltCurveTx, getVirtualsCurveClients } from "@tools/virtuals/curve/index.js";
@@ -42,6 +46,7 @@ import {
 import { noteHandlerPendingReason } from "@vex-agent/tools/protocols/runtime/pending-provenance.js";
 import logger from "@utils/logger.js";
 
+import { CurveFinalAuthorityError } from "./final-authority.js";
 import { TRADE_TOOL_ID } from "./tool-ids.js";
 
 export type CurveLegOutcome =
@@ -67,6 +72,20 @@ export async function runCurveLeg(input: {
   readonly priorLeg: ConfirmedPriorLeg | undefined;
   /** Human name of this leg, for the agent-facing sentence. */
   readonly label: string;
+  /**
+   * THE LAST GATE BEFORE THE KEY, for the leg that has one.
+   *
+   * Handed to `signStageBroadcast` verbatim, so it runs after every awaited
+   * preparation step and immediately before the signature, and is given the
+   * request that is about to be serialized rather than the transaction this
+   * caller handed in. A throw means nothing was signed and nothing was sent -
+   * a `CurveFinalAuthorityError` is terminalized below under its own named
+   * reason instead of being classified as an unnamed revert.
+   *
+   * The allowance legs pass none: what this gate re-establishes is the trade's
+   * own authority, and an approval carries no floor, no fee and no tax.
+   */
+  readonly onBeforeSign?: (request: FinalSignedRequest) => Promise<void>;
 }): Promise<CurveLegOutcome> {
   const { event } = input;
   let outcome: StagedBroadcastOutcome;
@@ -89,10 +108,20 @@ export async function runCurveLeg(input: {
           const res = await markBroadcastAccepted(event.id);
           if (!res.applied) logger.warn("virtuals.trade.broadcast_accept_miss", { id: event.id });
         },
+        ...(input.onBeforeSign === undefined ? {} : { onBeforeSign: input.onBeforeSign }),
       },
       input.priorLeg,
     );
   } catch (err) {
+    // THE FINAL AUTHORITY GATE REFUSED. It already says which figure moved and
+    // that nothing was signed, and it names its own durable failure code, so it
+    // is terminalized as itself rather than pushed through the revert
+    // classifier, which would report an upgraded proxy or an expired proposal as
+    // "the contract gave no reason Vex can name".
+    if (err instanceof CurveFinalAuthorityError) {
+      await recordLegFailure(event.id, err.failureCode, `${input.label}: ${err.refusal}`);
+      return { kind: "failed", stage: "pre_broadcast", reason: err.refusal, txHash: null };
+    }
     // Nothing reached the network: the pre-sign estimate refused, the nonce
     // could not be reserved, or the staging CAS missed. The row is terminalized
     // hashless, which is exactly what "nothing was signed" means durably.
