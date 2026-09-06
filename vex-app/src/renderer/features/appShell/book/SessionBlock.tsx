@@ -1,43 +1,30 @@
 /**
- * SESSION — the session's metadata at a glance: mode, access, mission status,
+ * SESSION - the session's metadata at a glance: mode, access, mission status,
  * started. Card grammar (`PortfolioCard`, C3) since the book became one card
  * stack. Built on existing IPC (`sessions.get`) + the pure sessionListModel
- * helpers. Wallet holdings live in the Position card, not here.
+ * helpers. Wallet holdings live in the Position card, not here. Its
+ * project-scoped counterpart is `ProjectBlock`, on the same row primitive.
  */
 
-import type { JSX, ReactNode } from "react";
+import type { JSX } from "react";
 import { useSession } from "../../../lib/api/sessions.js";
 import { formatSessionTime, getMissionActivity } from "../sessionListModel.js";
 import {
   StateDot,
   type StateDotState,
 } from "../../../components/ui/state-dot.js";
-import { CardStateNote, PortfolioCard } from "./portfolio/PortfolioCard.js";
+import {
+  CardKeyValueRow as Row,
+  CardStateNote,
+  PortfolioCard,
+} from "./portfolio/PortfolioCard.js";
 
-/** Mission-activity tone → StateDot state (word + dot, never color alone). */
+/** Mission-activity tone to StateDot state (word + dot, never color alone). */
 const ACTIVITY_DOT: Record<"active" | "paused" | "stopped", StateDotState> = {
   active: "ongoing",
   paused: "warning",
   stopped: "done",
 };
-
-/** Key/value row: muted label, stronger tabular value, hairline-separated. */
-function Row({
-  label,
-  children,
-}: {
-  readonly label: string;
-  readonly children: ReactNode;
-}): JSX.Element {
-  return (
-    <div className="flex items-baseline justify-between gap-3 border-b border-line-1 py-1.5 last:border-b-0 last:pb-0.5">
-      <span className="text-[10.5px] text-ink-tertiary">{label}</span>
-      <span className="min-w-0 truncate text-right text-[11.5px] tabular-nums text-ink-primary">
-        {children}
-      </span>
-    </div>
-  );
-}
 
 export function SessionBlock({
   sessionId,

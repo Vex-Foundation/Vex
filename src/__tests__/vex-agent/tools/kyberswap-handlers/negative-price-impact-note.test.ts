@@ -34,8 +34,8 @@ const mockReadErc20Metadata = vi.fn(async (_slug: string, address: string) => ({
   address, symbol: "TKN", name: "Token", decimals: 18, isNative: false as const,
 }));
 
-vi.mock("@tools/kyberswap/evm-utils.js", () => ({
-  getKyberEvmClients: () => ({ publicClient: {}, walletClient: {} }),
+vi.mock("@tools/kyberswap/evm-utils.js", async () => ({
+  ...(await import("./evm-client.test-fixtures.js")).kyberEvmClientMocks(),
   readErc20Metadata: (...args: [string, string]) => mockReadErc20Metadata(...args),
   verifyRouterAddress: vi.fn(),
   planKyberAllowance: vi.fn(),
@@ -66,7 +66,8 @@ vi.mock("@tools/kyberswap/aggregator/client.js", () => ({
 // behaviour under test.
 const mockClaim = vi.fn();
 vi.mock("@vex-agent/tools/protocols/prequote/claim.js", () => ({
-  claimSwapExecutionSnapshot: (...args: unknown[]) => mockClaim(...args),
+  commitPrequoteClaim: vi.fn(async () => ({ ok: true })),
+  readSwapExecutionSnapshot: (...args: unknown[]) => mockClaim(...args),
 }));
 
 vi.mock("@utils/logger.js", () => {

@@ -6,10 +6,13 @@
 
 import { getKyberAggregatorClient } from "@tools/kyberswap/aggregator/client.js";
 import { resolveChainSlug, slugToChainId } from "@tools/kyberswap/chains.js";
+import { KYBERSWAP_FEE_RECEIVER, META_AGGREGATION_ROUTER_V2 } from "@tools/kyberswap/constants.js";
+import { buildKyberFeeDisclosure } from "@tools/kyberswap/fee-disclosure.js";
+import { computeKyberVexFeeRaw } from "@tools/kyberswap/swap-vex-fee.js";
+import { getKyberPublicClient, planKyberAllowance } from "@tools/kyberswap/evm-utils.js";
 import { resolveTokenMetadataStrict, requireFeature, type ResolvedKyberTokenMetadata } from "@tools/kyberswap/helpers.js";
 import { annotateNativeSymbol } from "@tools/evm-chains/native-currency.js";
 import type { KyberChainSlug } from "@tools/kyberswap/types.js";
-import { parseUnits } from "viem";
 import { formatRawAmount } from "../../../amount-display.js";
 import { formatRouteSummary } from "../../helpers.js";
 import type { ProtocolHandler } from "../../../types.js";
@@ -22,8 +25,17 @@ import { resolveKyberSlippageBps } from "./slippage.js";
 import { resolveQuoteSafetyLeg, type QuoteSafety, type QuoteSafetyLeg } from "./quote-safety.js";
 import { VEX_INTEGRATOR_FEE_ROUTE_PARAMS, type KyberGetRouteResponse } from "./route-request.js";
 import { computeApprovedMinOut } from "@tools/kyberswap/swap-price-floor.js";
+import { resolveSelectedAddressForRead } from "@vex-agent/tools/internal/wallet/resolve.js";
+import { getAddress, parseUnits, type Address } from "viem";
+import {
+  evaluateKyberQuoteSpendability,
+  walletUnresolvedSpendability,
+  type KyberQuoteSpendabilityOutcome,
+} from "./quote-spendability.js";
+import type { SpendabilityPreview } from "../../../quote-authority/spendability-contract.js";
 import { PREQUOTE_MAX_AGE_MS } from "../../../prequote/registry.js";
 import { evmQuoteSafetyVerdict } from "../../../prequote/safety/extract/kyberswap.js";
+import { formatShortfall } from "../../../quote-authority/spendability.js";
 import {
   classifyQuoteEligibility,
   type QuoteEligibility,
@@ -31,6 +43,7 @@ import {
 import {
   ROUTE_SNAPSHOT_VERSION,
   encodeRouteSnapshotRaw,
+  sealRouteSnapshot,
   type RouteSnapshot,
 } from "../../../quote-authority/snapshot.js";
 
@@ -70,6 +83,20 @@ function eligibilityNote(eligibility: QuoteEligibility, slug: string, wrapPairRe
         + (wrapPairRefusal !== null
           ? ` ${wrapPairRefusal}`
           : " This quote does NOT authorize an execute. Request a fresh quote, or price this pair with a market read first.");
+    // WP2 spendability. The route above is real and was returned deliberately;
+    // what it is not is an offer the wallet can accept.
+    case "insufficient_balance":
+      return ` The wallet does not hold enough of the input token for this trade: required ${formatShortfall(eligibility.required)},`
+        + ` current ${formatShortfall(eligibility.current)}, missing ${formatShortfall(eligibility.missing)}.`
+        + " The route is shown, but this quote does NOT authorize an execute. Fund the wallet or trade a smaller size, then quote again.";
+    case "balance_unavailable":
+      return ` A balance this trade depends on could not be read (${eligibility.cause}), so it is unknown whether the wallet can pay for it.`
+        + " The route is shown, but this quote does NOT authorize an execute - an unreadable balance fails closed. Retry the quote; if it keeps failing, check the chain connection before trading.";
+    case "gas_reserve_insufficient":
+      return ` The wallet cannot cover this swap's native gas debit: required ${formatShortfall(eligibility.required)},`
+        + ` current ${formatShortfall(eligibility.current)}, missing ${formatShortfall(eligibility.missing)}.`
+        + " The required figure covers every transaction this swap would broadcast plus a reserve for the next one."
+        + " The route is shown, but this quote does NOT authorize an execute. Top up the native balance, then quote again.";
   }
 }
 
@@ -115,7 +142,8 @@ export const quoteHandler: ProtocolHandler = async (p, context) => {
   // itself stays canonical - it is what gets persisted and matched on.
   const tokenInLabel = annotateNativeSymbol(tokenIn.symbol, chainId);
   const tokenOutLabel = annotateNativeSymbol(tokenOut.symbol, chainId);
-  const amountIn = parseUnits(amountInRaw, tokenIn.decimals).toString();
+  const amountInAtomic = parseUnits(amountInRaw, tokenIn.decimals);
+  const amountIn = amountInAtomic.toString();
 
   let response: KyberGetRouteResponse;
   let safetyIn: QuoteSafetyLeg;
@@ -144,7 +172,7 @@ export const quoteHandler: ProtocolHandler = async (p, context) => {
   // says - `encodeRouteSnapshotRaw` never throws, so an unstorable route still
   // answers the agent with the full route it fetched.
   const encoded = encodeRouteSnapshotRaw(summaryRaw);
-  const eligibility = classifyQuoteEligibility({
+  const routeEligibility = classifyQuoteEligibility({
     amountInUsd: summaryRaw.amountInUsd,
     amountOutUsd: summaryRaw.amountOutUsd,
     ...(encoded.ok
@@ -152,16 +180,43 @@ export const quoteHandler: ProtocolHandler = async (p, context) => {
       : { snapshotOversize: { measuredBytes: encoded.measuredBytes, limitBytes: encoded.limitBytes } }),
   });
 
+  // ── SPENDABILITY (WP2, contract C2) ──
+  //
+  // Runs only on a route that is already executable, and in that order on
+  // purpose: an agent told "excessive impact" before it is told "wallet short"
+  // learns the thing that funding the wallet would NOT fix. The route above is
+  // returned WHATEVER this answers - a shortfall changes the AUTHORITY of this
+  // quote, never whether the agent gets to see the route (contract C2.1).
+  //
+  // The wallet is resolved ADDRESS-ONLY through the read-side resolver: a quote
+  // signs nothing and decrypts nothing, and this does not widen what the tool is
+  // authorized to do. A session with no EVM wallet still gets its route, with a
+  // verdict that authorizes no execute - which is the fail-closed half.
+  const spendability = await evaluateQuoteSpendability({
+    routeEligibility, context, chainId, slug, tokenIn,
+    amountIn: amountInAtomic,
+    approvedSummary: summaryRaw,
+    slippageBps: quoteSlippage.bps,
+  });
+  const eligibility = spendability.eligibility;
+  const spendabilityPreview: SpendabilityPreview | undefined = spendability.preview;
+
   // The floor the execute will hold the built calldata to, derived ONCE, here,
   // from the output this answer shows. The execute never recomputes it from a
   // fresher route - that rederivation is the 2026-08-27 incident.
   const approvedMinOutRaw = computeApprovedMinOut(summaryRaw.amountOut, quoteSlippage.bps).toString();
-  const snapshot: RouteSnapshot | null = encoded.ok && eligibility.kind === "executable"
-    ? {
+  // NO PLAN, NO SNAPSHOT. The transactions this swap would send are part of what
+  // an execute is authorized for, so a quote that could not measure them may
+  // show its route and price but must authorize nothing. On this venue every
+  // path that fails to measure the plan already answers `balance_unavailable`,
+  // so the guard is belt to that braces rather than a new refusal.
+  const snapshot: RouteSnapshot | null = encoded.ok
+    && eligibility.kind === "executable"
+    && spendability.debitPlan !== undefined
+    ? sealRouteSnapshot({
         v: ROUTE_SNAPSHOT_VERSION,
         provider: "kyberswap",
         raw: encoded.raw,
-        digest: encoded.digest,
         approvedAmountOutRaw: summaryRaw.amountOut,
         approvedMinOutRaw,
         approvedAmountOutHuman: humanizeAmountOut(summaryRaw.amountOut, tokenOut.decimals),
@@ -173,7 +228,8 @@ export const quoteHandler: ProtocolHandler = async (p, context) => {
         // differ by the recorder's own latency and nothing decides on this one.
         expiresAt: new Date(Date.now() + PREQUOTE_MAX_AGE_MS).toISOString(),
         eligibility,
-      }
+        debitPlan: spendability.debitPlan,
+      })
     : null;
 
   // The CANONICAL wrap pair, not merely "one leg is native" - that earlier
@@ -248,6 +304,23 @@ export const quoteHandler: ProtocolHandler = async (p, context) => {
     };
   }
 
+  // THE FEE THIS QUOTE COMMITS TO. Stated here, at the quote, because this is
+  // the block the recorder persists on the prequote row, the gate carries to
+  // the approval card and the executor is re-checked against before signing.
+  // Derived from the SAME arithmetic the router performs (`computeKyberVexFeeRaw`
+  // states `floor(amountIn * 25 / 10000)`, measured against real captured
+  // calldata) and from the venue's own receiver constant - never from a param.
+  const vexFeeRaw = computeKyberVexFeeRaw(amountInAtomic);
+  const vexFee = buildKyberFeeDisclosure({
+    tokenAddress: tokenIn.address,
+    tokenSymbol: tokenIn.symbol,
+    tokenDecimals: tokenIn.decimals,
+    feeRaw: vexFeeRaw,
+    swappedRaw: amountInAtomic - vexFeeRaw,
+    totalRaw: amountInAtomic,
+    receiver: KYBERSWAP_FEE_RECEIVER,
+  });
+
   return {
     ...ok({
       summary,
@@ -257,6 +330,7 @@ export const quoteHandler: ProtocolHandler = async (p, context) => {
       routeSummary: route,
       routerAddress: response.data.routerAddress,
       safety,
+      vexFee,
       // The agent sees WHY, in the same object as the route. The snapshot
       // itself never appears here: it rides the private `quoteAuthority`
       // channel to the recorder and nowhere else.
@@ -273,6 +347,59 @@ export const quoteHandler: ProtocolHandler = async (p, context) => {
       eligibilityKind: eligibility.kind,
       routeSnapshot: snapshot === null ? null : { ...snapshot },
       ...(snapshot === null ? { ineligibleIdentity: identity } : {}),
+      // Quote-time facts only, and the recorder validates them before they are
+      // persisted. Present only on the executable path: an ineligible quote
+      // carries its facts inside its own eligibility member and has no card.
+      ...(spendabilityPreview === undefined ? {} : { spendability: spendabilityPreview }),
     },
   };
 };
+
+/**
+ * Resolve the wallet, build the chain client, and hand both to the spendability
+ * evaluator - or fail closed with the reason the wallet could not be resolved.
+ *
+ * Kept beside the handler rather than inside the evaluator because WHO the
+ * quote is for is a session-scope question owned by
+ * `internal/wallet/resolve.ts`, and the evaluator is about chain arithmetic.
+ */
+async function evaluateQuoteSpendability(input: {
+  readonly routeEligibility: QuoteEligibility;
+  readonly context: Parameters<ProtocolHandler>[1];
+  readonly chainId: number;
+  readonly slug: KyberChainSlug;
+  readonly tokenIn: ResolvedKyberTokenMetadata;
+  readonly amountIn: bigint;
+  readonly approvedSummary: KyberGetRouteResponse["data"]["routeSummary"];
+  readonly slippageBps: number;
+}): Promise<KyberQuoteSpendabilityOutcome> {
+  if (input.routeEligibility.kind !== "executable") {
+    return { eligibility: input.routeEligibility, preview: undefined, debitPlan: undefined };
+  }
+
+  let wallet: Address;
+  try {
+    wallet = getAddress(resolveSelectedAddressForRead(
+      input.context.walletResolution, input.context.walletPolicy, "eip155",
+    ));
+  } catch {
+    return walletUnresolvedSpendability(input.chainId);
+  }
+
+  const publicClient = getKyberPublicClient(input.slug);
+  return await evaluateKyberQuoteSpendability({
+    routeEligibility: input.routeEligibility,
+    client: publicClient,
+    chainId: input.chainId,
+    slug: input.slug,
+    wallet,
+    tokenIn: input.tokenIn,
+    amountIn: input.amountIn,
+    routerAddress: META_AGGREGATION_ROUTER_V2,
+    approvedSummary: input.approvedSummary,
+    slippageBps: input.slippageBps,
+    readAllowancePlan: async () => await planKyberAllowance(
+      publicClient, input.tokenIn.address, wallet, META_AGGREGATION_ROUTER_V2, input.amountIn,
+    ),
+  });
+}

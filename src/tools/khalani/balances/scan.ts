@@ -13,7 +13,12 @@ import { getKhalaniClient } from "../client.js";
 import { getCachedKhalaniChains } from "../chains.js";
 import { createDynamicPublicClient } from "../evm-client.js";
 import { NATIVE_TOKEN_ADDRESS } from "../../kyberswap/constants.js";
-import type { ChainFamily, KhalaniChain, KhalaniToken } from "../types.js";
+import type {
+  ChainFamily,
+  KhalaniChain,
+  KhalaniRejectedTokenBalanceEntry,
+  KhalaniToken,
+} from "../types.js";
 import { chainNotInRegistryError, tokenUsd } from "./_shared.js";
 import { calculateTokensTotalUsd } from "./aggregate.js";
 import type { BalanceChainError, TokenBalanceScanResult } from "./types.js";
@@ -54,6 +59,7 @@ export async function getTokenBalancesAcrossChains(input: {
       scannedChainIds: [],
       chainErrors: [],
       totalUsd: 0,
+      rejectedEntries: [],
     };
   }
 
@@ -62,11 +68,13 @@ export async function getTokenBalancesAcrossChains(input: {
   const tokens: KhalaniToken[] = [];
   const scannedChainIds: number[] = [];
   const chainErrors: BalanceChainError[] = [];
+  const rejectedEntries: KhalaniRejectedTokenBalanceEntry[] = [];
 
   await mapWithConcurrency(targetChains, concurrency, async (chain) => {
     try {
-      const chainTokens = await client.getTokenBalances(input.address, [chain.id]);
-      tokens.push(...chainTokens);
+      const chainBalances = await client.getTokenBalances(input.address, [chain.id]);
+      tokens.push(...chainBalances.tokens);
+      rejectedEntries.push(...chainBalances.rejectedEntries);
       scannedChainIds.push(chain.id);
     } catch (err) {
       chainErrors.push({
@@ -108,7 +116,7 @@ export async function getTokenBalancesAcrossChains(input: {
     );
   }
 
-  const sortedTokens = [...tokens].sort((left, right) => tokenUsd(right) - tokenUsd(left));
+  const sortedTokens = [...tokens].sort(compareScannedTokens);
   return {
     address: input.address,
     family: input.family,
@@ -116,7 +124,66 @@ export async function getTokenBalancesAcrossChains(input: {
     scannedChainIds: scannedChainIds.sort((left, right) => left - right),
     chainErrors: chainErrors.sort((left, right) => left.chainId - right.chainId),
     totalUsd: calculateTokensTotalUsd(sortedTokens),
+    rejectedEntries: rejectedEntries.sort(compareRejectedEntries),
   };
+}
+
+/**
+ * Total order over scanned tokens, so the SAME wallet produces the SAME bytes.
+ *
+ * Rows arrive in RPC COMPLETION order (the scan runs chains concurrently), and
+ * held-USD alone does not order them: an all-unpriced wallet is one giant tie
+ * at 0, and a stable sort then preserves whichever chain's RPC answered first.
+ * That made the model's view of a wallet vary between two identical reads, and
+ * made `totalUsd` (a float sum, so order-sensitive) vary with it. The
+ * comparator therefore continues past held USD through the row's own identity
+ * until the rows are byte-identical.
+ *
+ * Strings compare by CODE POINT (`<`), never `localeCompare`: locale collation
+ * is environment-dependent, which is the opposite of what this exists for.
+ */
+function compareScannedTokens(left: KhalaniToken, right: KhalaniToken): number {
+  const usd = tokenUsd(right) - tokenUsd(left);
+  if (usd !== 0) return usd;
+  if (left.chainId !== right.chainId) return left.chainId - right.chainId;
+
+  const byLowerAddress = compareCodePoints(
+    left.address.toLowerCase(),
+    right.address.toLowerCase(),
+  );
+  if (byLowerAddress !== 0) return byLowerAddress;
+
+  const byAddress = compareCodePoints(left.address, right.address);
+  if (byAddress !== 0) return byAddress;
+
+  const bySymbol = compareCodePoints(left.symbol, right.symbol);
+  if (bySymbol !== 0) return bySymbol;
+
+  const byName = compareCodePoints(left.name, right.name);
+  if (byName !== 0) return byName;
+
+  if (left.decimals !== right.decimals) return left.decimals - right.decimals;
+
+  return compareCodePoints(
+    left.extensions?.balance ?? "",
+    right.extensions?.balance ?? "",
+  );
+}
+
+/** Rejected entries are ordered by chain, then by their position in the provider array. */
+function compareRejectedEntries(
+  left: KhalaniRejectedTokenBalanceEntry,
+  right: KhalaniRejectedTokenBalanceEntry,
+): number {
+  if (left.chainId !== right.chainId) return left.chainId - right.chainId;
+  if (left.entryIndex !== right.entryIndex) return left.entryIndex - right.entryIndex;
+  return compareCodePoints(left.address.toLowerCase(), right.address.toLowerCase());
+}
+
+function compareCodePoints(left: string, right: string): number {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
 }
 
 type NativeTokenOutcome =

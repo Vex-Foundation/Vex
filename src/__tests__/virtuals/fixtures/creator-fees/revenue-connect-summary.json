@@ -1,0 +1,8 @@
+{
+  "_provenance": "GET https://api2.virtuals.io/api/revenue-connect-metrics/virtuals/105667?metric=summary, HTTP 200, 2026-09-04. IDENTICAL all-zero body returned for every agent probed that day: 135655 (CULTOS), 133649 (BLOOPA), 96200 (VEX), 18820 (TIBBIR), 130418 (HALO) and 1199 (AIXBT) - the last three being the largest agents on Base by market cap, each with real accrued tax on chain at the same moment. `metric=bogusMetricXyz` answered HTTP 200 with {\"data\":[]}, so an unknown metric is silently ignored exactly as the main API ignores an unknown filter key.",
+  "data": {
+    "totalRevenue": 0,
+    "totalTokenAccumulated": 0,
+    "totalTokenAccumulatedUsd": 0
+  }
+}

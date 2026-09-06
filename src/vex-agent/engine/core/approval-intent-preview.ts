@@ -30,10 +30,24 @@ import {
   renderQuoteBinding,
   type QuoteBindingPreview,
 } from "../../tools/protocols/quote-authority/restore.js";
+import { renderSpendability } from "../../tools/protocols/quote-authority/spendability.js";
 import type { JupiterFeePreview } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/fee-swap.js";
 import type { LendBorrowRiskPreview } from "@tools/solana-ecosystem/jupiter/jupiter-lend/borrow-api/risk-preview-types.js";
 import { formatLamportsAsSol } from "@vex-agent/tools/protocols/amount-display.js";
-import { describeApprovalVexFee } from "./approval-vex-fee.js";
+import { describeApprovalVexFee, describeBoundVexFee } from "./approval-vex-fee.js";
+import type { ToolResult } from "../../tools/types.js";
+
+type ApprovalBridgeTokenPreview = NonNullable<
+  NonNullable<ToolResult["prequote"]>["bridgeTokenPreview"]
+>;
+
+type ApprovalSpendabilityPreview = NonNullable<
+  NonNullable<ToolResult["prequote"]>["spendability"]
+>;
+
+type ApprovalVexFeePreview = NonNullable<
+  NonNullable<ToolResult["prequote"]>["vexFee"]
+>;
 
 /**
  * Allow-list of `tool_call.arguments` keys eligible for the preview
@@ -200,6 +214,31 @@ export interface IntentPreviewExtras {
    * refuses it rather than confirming a line whose meaning has changed.
    */
   quoteBinding?: QuoteBindingPreview;
+  /**
+   * What the wallet could pay when the matched quote was taken (WP2). Sourced
+   * ONLY from the matched prequote's persisted `safetyDetail` (NOT raw args -
+   * `spendability` is deliberately NOT in PREVIEW_KEY_ALLOWLIST), so the
+   * Required / Current figures on the card are the store's figures.
+   *
+   * Rendered into `criticalArgs.spendability`. The line states that the numbers
+   * are quote-time and are re-read before signing, because a person reading a
+   * balance on a card has no other way to know how old it is.
+   */
+  spendability?: ApprovalSpendabilityPreview;
+  /**
+   * The Vex fee statement the matched quote made. Sourced ONLY from the matched
+   * prequote's persisted `safetyDetail` through the prequote gate (NOT raw args
+   * - `vexFee` is deliberately NOT in PREVIEW_KEY_ALLOWLIST), so the rate, the
+   * amount and the receiver on the card are the store's and the model cannot
+   * state different ones.
+   *
+   * When it is present it WINS: the args-derived line is never emitted for a
+   * tool this channel covers, so one card can never carry two derivations of one
+   * money figure.
+   */
+  vexFee?: ApprovalVexFeePreview;
+  /** Direct EVM bridge token identity, sourced by the gate rather than args. */
+  bridgeTokenPreview?: ApprovalBridgeTokenPreview;
 }
 
 /** Render a swap safety verdict for the approval preview's `criticalArgs.safety`. */
@@ -312,15 +351,22 @@ export function buildIntentPreview(
     criticalArgs[key] = coerceSummaryValue(effective.args[key]);
   }
 
-  // Itemise the Vex platform fee AFTER allow-list extraction, from the venue's
-  // own product-owner rate constant applied to the amount being approved
-  // (`approval-vex-fee.ts`). `vexFee` is deliberately NOT in
-  // PREVIEW_KEY_ALLOWLIST, so a `fee`/`feeBps`/`feeReceiver` argument can never
-  // reach this line — the rate is ours, never the model's. Undefined for every
-  // tool that carries no Vex fee or discloses it elsewhere (Jupiter's richer
-  // `feeDisclosure` below; the Trench launch form), so the card grows no line
-  // rather than an empty or zero one.
-  const vexFee = describeApprovalVexFee(effective.toolName, effective.args);
+  // Itemise the Vex platform fee AFTER allow-list extraction. When the prequote
+  // gate carried the matched quote's OWN fee statement, that block is the line:
+  // it is what a person consents to and what the executor is re-checked against
+  // before signing, so no second derivation of the figure exists to disagree
+  // with it. Only a tool whose fee cannot be stated at quote time
+  // (`trench.trade_execute`) falls back to the rate-times-amount line.
+  //
+  // `vexFee` is deliberately NOT in PREVIEW_KEY_ALLOWLIST, so a
+  // `fee`/`feeBps`/`feeReceiver` argument can never reach this line - the rate
+  // is ours, never the model's. Undefined for every tool that carries no Vex fee
+  // or discloses it elsewhere (Jupiter's richer `feeDisclosure` below; the
+  // Trench launch form), so the card grows no line rather than an empty or zero
+  // one.
+  const vexFee = extras?.vexFee !== undefined
+    ? describeBoundVexFee(effective.toolName, extras.vexFee)
+    : describeApprovalVexFee(effective.toolName, effective.args);
   if (vexFee !== undefined) {
     criticalArgs.vexFee = vexFee;
   }
@@ -349,6 +395,34 @@ export function buildIntentPreview(
   // money line sits next to the safety line on the card.
   if (extras?.quoteBinding !== undefined) {
     criticalArgs.quoteBinding = renderQuoteBinding(extras.quoteBinding);
+  }
+
+  // WP2: what the wallet could pay when the quote was taken. Rendered next to
+  // the quote binding, because the two answer the two halves of "is this trade
+  // real": what it promises, and whether it can be funded.
+  if (extras?.spendability !== undefined) {
+    criticalArgs.spendability = renderSpendability(extras.spendability);
+  }
+
+  if (extras?.bridgeTokenPreview !== undefined) {
+    const preview = extras.bridgeTokenPreview;
+    criticalArgs.bridgeSourceAsset = renderBridgeAsset(preview.source);
+    criticalArgs.bridgeDestinationAsset = renderBridgeAsset(preview.destination);
+    // WHERE THE FUNDS LAND. Derived by Vex from the session's selected wallet
+    // for the destination family and bound into the prequote identity hash; it
+    // is not a parameter, and saying so on the card is what keeps a reader from
+    // assuming the model chose it.
+    if (preview.recipient !== undefined) {
+      const walletFamily = preview.recipient.family === "solana" ? "Solana" : "EVM";
+      criticalArgs.bridgeDestinationWallet =
+        `Destination wallet ${preview.recipient.address} | your selected ${walletFamily} wallet`
+        + " | derived by Vex, never a parameter";
+    }
+    criticalArgs.bridgeAmount = preview.amountHuman !== null
+      ? `${preview.amountHuman} ${preview.source.symbol} | ${preview.amountRaw} raw units | ${preview.source.decimals} decimals`
+      : preview.source.kind === "metadata_unavailable"
+        ? `${preview.amountRaw} raw units | human amount unavailable because source contract decimals could not be read | signing blocked`
+        : `${preview.amountRaw} raw units; human amount unavailable on this non-EVM source lane`;
   }
 
   if (extras?.termLock !== undefined) {
@@ -441,6 +515,19 @@ export function buildIntentPreview(
   return preview;
 }
 
+function renderBridgeAsset(
+  asset: ApprovalBridgeTokenPreview["source"],
+): string {
+  if (asset.family === "solana") {
+    return `Solana chain ${asset.chainId} | mint ${asset.tokenAddress} | EVM contract metadata not applicable`;
+  }
+  if (asset.kind === "metadata_unavailable") {
+    return `EVM chain ${asset.chainId} | token ${asset.tokenAddress} | metadata unavailable (${asset.metadataErrorCode ?? "contract_metadata_unavailable"}) | ${asset.metadataSource} | signing blocked until authoritative symbol and decimals are available`;
+  }
+  const sanitized = asset.symbolSanitized ? " | invisible control characters removed" : "";
+  return `EVM chain ${asset.chainId} | ${asset.kind} ${asset.tokenAddress} | ${asset.symbol} | ${asset.decimals} decimals | ${asset.metadataSource}${sanitized}`;
+}
+
 export interface PolicySnapshot {
   permission: InternalToolContext["sessionPermission"];
   sessionKind: InternalToolContext["sessionKind"];
@@ -468,27 +555,58 @@ export interface PolicySnapshot {
 /**
  * The longest `clientInfo.name` this build will show a human.
  *
- * An over-long name is DROPPED, never shortened: the actor line is one of the
- * facts rule 90 binds an approval to, and a name cut mid-word is a name the
- * reader cannot verify - "Claude Cod..." and "Claude Code" read the same and are
- * not. Falling back to the unknown label claims less rather than more.
+ * An over-long name is DROPPED, never shortened: the actor row is client-reported
+ * provenance a human reads on a money-path card, and a name cut mid-word is a
+ * name the reader cannot verify - "Claude Cod..." and "Claude Code" read the same
+ * and are not. Falling back to the unknown label claims less rather than more.
  */
 export const REQUESTING_CLIENT_NAME_MAX = 60;
+
+/**
+ * The Unicode general categories a displayable client name may not contain, as
+ * one character class:
+ *
+ *   - `Cc` control characters, which forge a second line in a card a human reads;
+ *   - `Cf` format characters, the class that matters most here. The bidi
+ *     overrides and isolates (U+202A-202E, U+2066-2069) REORDER the rendered
+ *     line, so a name can paint itself over the "(an MCP client)" suffix that
+ *     tells the reader the name is self-declared; the zero-width members
+ *     (U+200B-200D, U+FEFF) HIDE code points, so two different clients can render
+ *     as one indistinguishable name;
+ *   - `Cs` lone surrogates, which are not text and do not survive the JSON
+ *     round-trip into `policy_json` intact;
+ *   - `Zl` and `Zp`, the line and paragraph separators (U+2028, U+2029): line
+ *     breaks that `Cc` does not cover.
+ *
+ * Refused WHOLE, never stripped: a name with the offending code points removed is
+ * a different name than the client declared, and rendering it would assert a
+ * provenance nobody sent. Letters and marks of every script pass, so a Polish or
+ * a CJK name is a name.
+ *
+ * The renderer-facing DTO boundary restates this class in
+ * `vex-app/src/shared/schemas/approvals.ts` (`requestedByClientSchema`), which
+ * cannot import the agent runtime; the two spellings must stay identical.
+ */
+const UNRENDERABLE_CLIENT_NAME_CLASS = /[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}]/u;
 
 /**
  * Make an MCP client's self-declared name safe to store and to render, or
  * refuse it.
  *
  * The value arrives from an external process's `initialize` params, so it is
- * untrusted input at a trust boundary (rule 04): control characters could forge
- * lines in a card a human reads, and an unbounded string is a display-surface
- * denial of service. Returns `null` for anything it will not vouch for, and the
- * caller renders the honest unknown label instead of a blank.
+ * untrusted input at a trust boundary (rule 04): unrenderable code points could
+ * forge, reorder or hide the line a human reads on the card (see
+ * {@link UNRENDERABLE_CLIENT_NAME_CLASS}), and an unbounded string is a
+ * display-surface denial of service. Returns `null` for anything it will not
+ * vouch for, and the caller renders the honest unknown label instead of a blank.
+ *
+ * The class is tested against the RAW value, BEFORE `trim`, because `trim` itself
+ * eats U+2028, U+2029 and U+FEFF: checking after it would turn a leading bidi
+ * isolate into a silent strip instead of the refusal this function owes.
  */
 export function sanitizeRequestingClientName(name: unknown): string | null {
   if (typeof name !== "string") return null;
-  // eslint-disable-next-line no-control-regex
-  if (/[\u0000-\u001f\u007f]/.test(name)) return null;
+  if (UNRENDERABLE_CLIENT_NAME_CLASS.test(name)) return null;
   const trimmed = name.trim();
   if (trimmed.length === 0) return null;
   if (trimmed.length > REQUESTING_CLIENT_NAME_MAX) return null;

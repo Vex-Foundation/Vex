@@ -5,7 +5,7 @@
  * say "and N more file(s)", which is a truncation with no retrieval path: the
  * note IS the durable record, so a path it drops is a path nobody can recover.
  * Listing all of them is only safe because the roster is CLOSED - one config
- * path per writable agent, plus the three instruction files - and the longest
+ * path per writable agent, plus the four instruction files - and the longest
  * possible line still fits `project_change_notes.summary`.
  *
  * "Still fits" is the part that rots. A single agent with a long config path,
@@ -24,6 +24,7 @@ import {
 import {
   STUDIO_CLAUDE_MD_PATH,
   STUDIO_PROTOCOLS_DOC_PATH,
+  STUDIO_VEX_GUIDE_PATH,
 } from "@vex-agent/studio/installer/render/index.js";
 import { STUDIO_AGENTS_MD_RELATIVE_PATH } from "../installer/plan.js";
 
@@ -41,6 +42,7 @@ describe("the change-note summary bound", () => {
   const everyPath = [
     ...STUDIO_AGENT_LIST.filter(isWritableStudioAgent).map((agent) => agent.configPath),
     STUDIO_AGENTS_MD_RELATIVE_PATH,
+    STUDIO_VEX_GUIDE_PATH,
     STUDIO_CLAUDE_MD_PATH,
     STUDIO_PROTOCOLS_DOC_PATH,
   ];

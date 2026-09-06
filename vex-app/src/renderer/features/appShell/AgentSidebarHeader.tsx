@@ -24,11 +24,16 @@
  * the Studio rail's contract in the other direction, so neither mode is a
  * one-way door and neither rail lies about what fits.
  *
- * The capsule keeps ONE home per page: this header in agent mode, the Studio
- * rail header in Studio mode. The `Runtime mode` radiogroup is therefore
- * unique on the page in both modes - the agent welcome hero and the Studio
- * welcome screen both gave up their copy of it (e2e/studio.spec.ts pins the
- * count).
+ * THE CAPSULE'S SEAT IS DECIDED BY ONE STORE FACT, `activeSessionId` (owner
+ * decree 2026-09-04: the switch sits under the vex wordmark on the welcome
+ * screen, "as it was before"). While no session is active the welcome hero
+ * (`SessionWelcomeHero`) carries the capsule under the mark and this header
+ * mounts none; once a session is active the hero's copy is gone and this
+ * header is the seat. Both read the same field, so the `Runtime mode`
+ * radiogroup stays unique on the page in every agent state
+ * (e2e/studio.spec.ts pins the count; `AppShell/shell-sidebar.test.tsx` walks
+ * the welcome<->session edge). The Studio rail header makes the same call on
+ * `activeProjectId`.
  */
 
 import type { JSX } from "react";
@@ -59,6 +64,7 @@ export function AgentSidebarHeader({
   // `RuntimeModeToggle` deliberately takes the value and the setter as props.
   const runtimeMode = useUiStore((s) => s.runtimeMode);
   const setRuntimeMode = useUiStore((s) => s.setRuntimeMode);
+  const activeSessionId = useUiStore((s) => s.activeSessionId);
 
   return (
     <header
@@ -77,7 +83,7 @@ export function AgentSidebarHeader({
         className={cn("flex items-center", wide ? "gap-1" : "flex-col gap-0.5")}
         data-rail-control
       >
-        {wide ? (
+        {wide && activeSessionId !== null ? (
           <RuntimeModeToggle runtimeMode={runtimeMode} onChange={setRuntimeMode} />
         ) : null}
         <SidebarIconButton

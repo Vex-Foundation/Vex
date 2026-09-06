@@ -1,0 +1,137 @@
+{
+  "version": "launchpads-v1",
+  "description": "Retrieval-verification dataset for the launchpad-neutral namespace: the shared image locker and the publication of one staged picture to a public content-addressed host. Written from the manifests and the navigation entry only, so the query wording is independent of the retrieval index's own discovery text. The protocol-aware rows name `launchpads` itself rather than a third-party brand, because this namespace is Vex's own and has none: the awareness axis here is whether the query names the thing it wants. The axis that varies alongside it is VOCABULARY: plain user words (\"pictures\", \"artwork\", \"public link\") against the words the surface itself uses (\"image locker\", \"staged\", \"content addressed\"). The hard case this dataset exists to measure is SEPARATION FROM THE LAUNCH TOOLS THEMSELVES: every neighbour in this space also talks about launching a token, so a passage that leads with the launch rather than the picture is one the retriever should not answer with these tools. Every expectation is the exact full dotted toolId.",
+  "namespace": "launchpads",
+  "queries": [
+    {
+      "query": "what pictures do I have ready for a token launch",
+      "awareness": "blind",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "launchpads.images"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "launchpads.images"
+        ]
+      ]
+    },
+    {
+      "query": "check the launchpads image locker before we plan this launch, and tell me if it is empty",
+      "awareness": "protocol-aware",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "launchpads.images"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "launchpads.images"
+        ]
+      ]
+    },
+    {
+      "query": "list the staged images with their sizes and formats so I can pick one",
+      "awareness": "blind",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "launchpads.images"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "launchpads.images"
+        ]
+      ]
+    },
+    {
+      "query": "did the user already upload artwork anywhere in the app that a launch could use",
+      "awareness": "blind",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "launchpads.images"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "launchpads.images"
+        ]
+      ]
+    },
+    {
+      "query": "get me a public link for the token picture so the launch can point at it",
+      "awareness": "blind",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "launchpads.image_publish"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "launchpads.image_publish"
+        ]
+      ]
+    },
+    {
+      "query": "publish the staged picture to the launchpads public image host and give me its permanent url",
+      "awareness": "protocol-aware",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "launchpads.image_publish"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "launchpads.image_publish"
+        ]
+      ]
+    },
+    {
+      "query": "the launch needs an image address that can never change afterwards, set that up",
+      "awareness": "blind",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "launchpads.image_publish"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "launchpads.image_publish"
+        ]
+      ]
+    },
+    {
+      "query": "use the launchpads host to make image img_01 publicly hosted and content addressed",
+      "awareness": "protocol-aware",
+      "scenario": "workflow",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "launchpads.image_publish"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "launchpads.image_publish"
+        ]
+      ]
+    },
+    {
+      "query": "I want to launch a token with a picture: show me what is staged, then make that picture public",
+      "awareness": "blind",
+      "scenario": "workflow",
+      "intentShape": "workflow",
+      "expectedToolIds": [
+        "launchpads.images",
+        "launchpads.image_publish"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "launchpads.images"
+        ],
+        [
+          "launchpads.image_publish"
+        ]
+      ]
+    }
+  ]
+}

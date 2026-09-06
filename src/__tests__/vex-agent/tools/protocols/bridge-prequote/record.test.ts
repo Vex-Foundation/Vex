@@ -37,6 +37,7 @@ import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 import { VexError, ErrorCodes } from "../../../../../errors.js";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 import type { SwapPrequote, SafetyVerdict } from "@vex-agent/db/repos/swap-prequotes.js";
+import { rowVexFee, venueBridgeVexFee } from "../prequote/vex-fee-fixtures.js";
 
 // ── Mocks ─────────────────────────────────────────────────────────────────
 
@@ -166,7 +167,7 @@ function bridgeRow(verdict: SafetyVerdict, overrides: Partial<SwapPrequote> = {}
     amount: "1000000",
     slippageBps: null,
     safetyVerdict: verdict,
-    safetyDetail: { bridge: true, note: "route-only; no token-safety check" },
+    safetyDetail: { bridge: true, note: "route-only; no token-safety check", vexFee: rowVexFee() },
     routeRef: null,
     // Migration 095: a row that predates the claim lane reads as an
     // executable, unclaimed quote. It authorizes nothing on its own - the
@@ -187,7 +188,7 @@ describe("recordPrequoteFromQuote — bridge", () => {
     await mod.recordPrequoteFromQuote(
       "khalani.quote.get",
       bridgeParams(),
-      { quoteId: "q1", routes: [{ routeId: "r1" }] },
+      { quoteId: "q1", routes: [{ routeId: "r1" }], vexFee: venueBridgeVexFee() },
       ctx(),
     );
     expect(mockCreate).toHaveBeenCalledTimes(1);
@@ -202,10 +203,47 @@ describe("recordPrequoteFromQuote — bridge", () => {
     expect(input.amount).toBe("1000000");
     expect(input.slippageBps).toBeNull();
     expect(input.safetyVerdict).toBe("unknown");
-    expect(input.safetyDetail).toEqual({ bridge: true, note: "route-only; no token-safety check" });
+    // The row keeps its structural bridge marker AND gains the quote's own fee
+    // statement, projected onto the persisted shape: the venue's
+    // `bridgedAmountRaw` becomes `netAmountRaw`, the USD estimate and the prose
+    // note are dropped, and `collection` comes from the quote-tool table rather
+    // than from the payload.
+    expect(input.safetyDetail).toEqual({
+      bridge: true,
+      note: "route-only; no token-safety check",
+      vexFee: rowVexFee(),
+    });
     // match_hash equals the pure function on the shared identity.
     const id = await mod.buildBridgeIdentity(SESSION_ID, bridgeParams(), ctx());
     expect(input.matchHash).toBe(mod.computePrequoteMatchHash(id));
+  });
+
+  it("records NO row when the bridge quote states no Vex fee at all", async () => {
+    // A bridge quote is fee-bearing: a row without the statement would
+    // authorize an execute whose fee could be neither shown nor re-checked.
+    await mod.recordPrequoteFromQuote(
+      "khalani.quote.get",
+      bridgeParams(),
+      { quoteId: "q1", routes: [{ routeId: "r1" }] },
+      ctx(),
+    );
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it("records NO row when the fee statement does not add up", async () => {
+    // fee + net must equal the total debited. A statement whose parts describe
+    // no real split is not a statement a person can consent to.
+    await mod.recordPrequoteFromQuote(
+      "khalani.quote.get",
+      bridgeParams(),
+      {
+        quoteId: "q1",
+        routes: [{ routeId: "r1" }],
+        vexFee: venueBridgeVexFee({ bridgedAmountRaw: "999999" }),
+      },
+      ctx(),
+    );
+    expect(mockCreate).not.toHaveBeenCalled();
   });
 
   it("records nothing for a malformed (chain-unresolvable) quote (no throw)", async () => {
@@ -213,7 +251,7 @@ describe("recordPrequoteFromQuote — bridge", () => {
       mod.recordPrequoteFromQuote(
         "khalani.quote.get",
         bridgeParams({ toChain: "not-a-chain" }),
-        { quoteId: "q1" },
+        { quoteId: "q1", vexFee: venueBridgeVexFee() },
         ctx(),
       ),
     ).resolves.toBeUndefined();
@@ -225,7 +263,7 @@ describe("recordPrequoteFromQuote — bridge", () => {
       throw new VexError(ErrorCodes.WALLET_NOT_SELECTED, "no wallet");
     });
     await expect(
-      mod.recordPrequoteFromQuote("khalani.quote.get", bridgeParams(), { quoteId: "q1" }, ctx()),
+      mod.recordPrequoteFromQuote("khalani.quote.get", bridgeParams(), { quoteId: "q1", vexFee: venueBridgeVexFee() }, ctx()),
     ).resolves.toBeUndefined();
     expect(mockCreate).not.toHaveBeenCalled();
   });
@@ -234,7 +272,7 @@ describe("recordPrequoteFromQuote — bridge", () => {
     await mod.recordPrequoteFromQuote(
       "khalani.quote.get",
       bridgeParams(),
-      { quoteId: "q1" },
+      { quoteId: "q1", vexFee: venueBridgeVexFee() },
       ctx({ sessionId: undefined }),
     );
     expect(mockCreate).not.toHaveBeenCalled();
@@ -243,7 +281,7 @@ describe("recordPrequoteFromQuote — bridge", () => {
   it("swallows a DB write failure (never throws to the caller)", async () => {
     mockCreate.mockRejectedValueOnce(new Error("boom"));
     await expect(
-      mod.recordPrequoteFromQuote("khalani.quote.get", bridgeParams(), { quoteId: "q1" }, ctx()),
+      mod.recordPrequoteFromQuote("khalani.quote.get", bridgeParams(), { quoteId: "q1", vexFee: venueBridgeVexFee() }, ctx()),
     ).resolves.toBeUndefined();
     expect(mockCreate).toHaveBeenCalledTimes(1);
   });

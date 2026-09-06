@@ -111,3 +111,62 @@
   background-color: var(--vex-scrollbar-thumb-hover);
   background-clip: content-box;
 }
+
+/* ============================================================ *
+ *  THE TERMINAL'S SLIDER (xterm 6, a real element)             *
+ * ============================================================ */
+
+/* xterm 6.0.0 no longer scrolls its `.xterm-viewport`: it mounts VS Code's
+ * ScrollableElement and the bar is `.xterm-scrollable-element > .scrollbar
+ * .vertical > .slider`, a DIV, not a pseudo-element. Its behaviour is the VS
+ * Code state machine verbatim (scrollableElement.ts: reveal on scroll, on
+ * hover and while dragging; hide 500ms after the last of those; the `visible`
+ * / `invisible.fade` classes in xterm.css carry the 100ms show and the 800ms
+ * fade), which is the overlay grammar above, already implemented by the
+ * library. So `.vex-scroll-overlay` and its `data-vex-scrolling` handshake
+ * are NOT wired to the terminal: a second visibility driver on the
+ * viewport's webkit bar would style a scrollbar nothing scrolls.
+ *
+ * What xterm does not decide is the SHAPE, and it sizes the bar INLINE from
+ * `verticalScrollbarSize` (10px, not a public option), so the `!important`s
+ * below are the only way an author rule out-ranks those inline widths. The
+ * shape is `.vex-scroll`'s: 6px, a 2px transparent inset (padding plus
+ * content-box clip), a fully rounded thumb, a transparent track.
+ *
+ * COLOUR IS SET HERE, unlike the text's, and the reason is measured: xterm
+ * colours the slider through a `<style>` element it injects into the
+ * terminal (`scrollbarSliderBackground` and its pair on the theme), and the
+ * renderer's CSP (`style-src 'self'`, index.html) refuses inline sheets, so
+ * with the keys set the slider's computed background stayed
+ * rgba(0, 0, 0, 0) on the built app (2026-09-04). The slider reads the same
+ * runtime pair every `.vex-scroll` thumb reads, so a container that rebinds
+ * the pair (a quiet column) reaches the terminal too. `.active` is VS Code's
+ * class while the thumb is dragged; it takes the hover step.
+ *
+ * The fit addon reserves 14px at the grid's right edge for the bar
+ * regardless of its drawn width (addon-fit: `overviewRuler?.width || 14`),
+ * so the 6px bar sits inside that gutter and no column is lost. The second,
+ * native gutter the vestigial `.xterm-viewport` used to paint is removed in
+ * terminal.css, below xterm.css's own import.
+ *
+ * Reduced motion: the show/fade are transitions on xterm's own classes and
+ * the global catch-all in base.css collapses them, which turns the fade into
+ * an instant hide; the bar is wayfinding, and appearing at once is never the
+ * problem. Measured in e2e/studio-terminal-glass.spec.ts. */
+.vex-terminal-surface .xterm-scrollable-element > .scrollbar.vertical {
+  width: 6px !important;
+  background: transparent;
+}
+.vex-terminal-surface .xterm-scrollable-element > .scrollbar.vertical > .slider {
+  width: 6px !important;
+  box-sizing: border-box;
+  padding: 2px;
+  background-color: var(--vex-scrollbar-thumb);
+  background-clip: content-box;
+  border-radius: 9999px;
+  transition: background-color 160ms ease-out;
+}
+.vex-terminal-surface .xterm-scrollable-element > .scrollbar.vertical > .slider:hover,
+.vex-terminal-surface .xterm-scrollable-element > .scrollbar.vertical > .slider.active {
+  background-color: var(--vex-scrollbar-thumb-hover);
+}

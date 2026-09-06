@@ -174,6 +174,24 @@ export const PARTY_TOKEN_ABI = [
  * `agents_dm/pools-fun-live/gateway-abi.json` (Blockscout, 2026-08-18).
  */
 export const POOLS_GATEWAY_ABI = [
+  // ── `launch`, the V3 tuple ────────────────────────────────────────
+  //
+  // FOURTEEN MEMBERS: the twelve V1 members in the same order, plus
+  // `priceAttestation` and `priceSignature`. Selector `0x3cc0226c` on V2 AND V3
+  // (V1 was `0xb3ee5495`), so the tuple change is not backward compatible and
+  // the V1 fragment is DELETED rather than kept beside this one: launches are
+  // V3-only (owner decision D-suites), a V1 `launch` fragment has no consumer,
+  // and two `launch` entries in one ABI would make `decodeFunctionData`
+  // ambiguous on the exact call that spends the user's money.
+  //
+  // Source: the Sourcify-verified V3 gateway ABI, `captures/sourcify_0x2Bc81783.json`
+  // (chain 4663, address 0x2Bc81783Ed0fDd8B04604FF93FA3872212cac429), read from
+  // the machine artifact rather than transcribed from the docs (rule 10).
+  //
+  // THE ATTESTATION IS NOT DECORATION. On a `SIGNED_STOCK` pair the factory
+  // derives the opening tick FROM it (`_signedStockTick`), so these six numbers
+  // and one signature decide the launch price. They are verified as money
+  // fields, never mirrored as display.
   {
     inputs: [
       {
@@ -190,6 +208,20 @@ export const POOLS_GATEWAY_ABI = [
           { internalType: "uint256", name: "erc20DevBuyAmountIn", type: "uint256" },
           { internalType: "uint256", name: "devBuyMinOut", type: "uint256" },
           { internalType: "uint256", name: "expectedFeeWei", type: "uint256" },
+          {
+            components: [
+              { internalType: "address", name: "asset", type: "address" },
+              { internalType: "uint128", name: "underlyingPriceUsdE18", type: "uint128" },
+              { internalType: "uint128", name: "expectedUiMultiplier", type: "uint128" },
+              { internalType: "uint64", name: "observedAt", type: "uint64" },
+              { internalType: "uint64", name: "expiresAt", type: "uint64" },
+              { internalType: "uint64", name: "pricingEpoch", type: "uint64" },
+            ],
+            internalType: "struct IPartyLaunchFactory.StockPriceAttestation",
+            name: "priceAttestation",
+            type: "tuple",
+          },
+          { internalType: "bytes", name: "priceSignature", type: "bytes" },
         ],
         internalType: "struct PoolsFunLaunchGateway.LaunchParams",
         name: "params",
@@ -238,6 +270,22 @@ export const POOLS_GATEWAY_ABI = [
   { inputs: [], name: "deploymentFeeWei", outputs: [{ internalType: "uint256", name: "", type: "uint256" }], stateMutability: "view", type: "function" },
   { inputs: [], name: "MIN_DEPLOYMENT_FEE_WEI", outputs: [{ internalType: "uint256", name: "", type: "uint256" }], stateMutability: "view", type: "function" },
   { inputs: [], name: "MAX_DEPLOYMENT_FEE_WEI", outputs: [{ internalType: "uint256", name: "", type: "uint256" }], stateMutability: "view", type: "function" },
+  // ── The fees-to-holders SENTINELS ─────────────────────────────────
+  //
+  // When a launch opts into holder rewards, the tuple's `feeRecipient` is not a
+  // wallet at all: it is one of these three constants, and the factory reads it
+  // as "deploy a distributor in this mode". They are READ LIVE rather than
+  // pinned because a constant that decides where a fee stream goes must come
+  // from the contract that interprets it, and the verifier compares the signed
+  // tuple against the value the gateway itself reports at the anchored block.
+  //
+  // Measured 2026-09-04 (`live-chain/suite_probe_2026-09-04.json`): V3 answers
+  // all three (`...ffc2` token, `...ffc3` paired, `...ffc4` both); V2 answers
+  // only `FEES_TO_HOLDERS`; V1 reverts on all three. A revert here is therefore
+  // a real capability fact about the suite, never an RPC problem to paper over.
+  { inputs: [], name: "FEES_TO_HOLDERS", outputs: [{ internalType: "address", name: "", type: "address" }], stateMutability: "view", type: "function" },
+  { inputs: [], name: "FEES_TO_HOLDERS_PAIRED", outputs: [{ internalType: "address", name: "", type: "address" }], stateMutability: "view", type: "function" },
+  { inputs: [], name: "FEES_TO_HOLDERS_BOTH", outputs: [{ internalType: "address", name: "", type: "address" }], stateMutability: "view", type: "function" },
 ] as const;
 
 /**
@@ -275,6 +323,46 @@ export const POOLS_GATEWAY_LAUNCH_EVENT_ABI = [
  * the price feed or the fallback. Both are checked: a tuple pinned to a live
  * tick that the factory would now serve from fallback is a different launch.
  */
+/**
+ * The four pricing modes a paired asset can be on, as `PartyFactory` declares
+ * the enum.
+ *
+ * INDEX IS THE WIRE VALUE. `pricingModeFor` returns a `uint8`, and the meaning
+ * of that byte is this ordering - read from the verified V3 factory source
+ * (`captures/blockscout_v3_factory.json`, `enum PricingMode`), never from
+ * convention. Rule 10: a wire name or ordinal that a human spelled from memory
+ * is a defect even when it happens to be right.
+ *
+ * What each mode means for a LAUNCH:
+ *   NONE             the asset is not a launchable pair.
+ *   CORE_CHAINLINK   WETH/USDG; `startTickFor` answers, attestation must be empty.
+ *   CHAINLINK_STOCK  feed-priced stock; `startTickFor` answers, attestation must
+ *                    be empty (35 of the 194 launch assets, e.g. NVDA).
+ *   SIGNED_STOCK     `startTickFor` REVERTS (`PriceAttestationRequired`); the
+ *                    tick comes from `quoteStartTick(asset, attestation, sig)`
+ *                    and the backend's signature is mandatory (159 of 194).
+ */
+export const POOLS_PRICING_MODES = ["NONE", "CORE_CHAINLINK", "CHAINLINK_STOCK", "SIGNED_STOCK"] as const;
+export type PoolsPricingMode = (typeof POOLS_PRICING_MODES)[number];
+
+/** The pricing mode a `uint8` names, or `null` for a value this build does not know. */
+export function poolsPricingModeFromWire(value: number): PoolsPricingMode | null {
+  return POOLS_PRICING_MODES[value] ?? null;
+}
+
+/**
+ * The attestation tuple, as both the gateway's `launch` and the factory's
+ * `hashStockPriceAttestation` declare it. One shape, one place.
+ */
+export const POOLS_PRICE_ATTESTATION_COMPONENTS = [
+  { internalType: "address", name: "asset", type: "address" },
+  { internalType: "uint128", name: "underlyingPriceUsdE18", type: "uint128" },
+  { internalType: "uint128", name: "expectedUiMultiplier", type: "uint128" },
+  { internalType: "uint64", name: "observedAt", type: "uint64" },
+  { internalType: "uint64", name: "expiresAt", type: "uint64" },
+  { internalType: "uint64", name: "pricingEpoch", type: "uint64" },
+] as const;
+
 export const POOLS_FACTORY_READ_ABI = [
   {
     inputs: [{ internalType: "address", name: "asset", type: "address" }],
@@ -290,6 +378,122 @@ export const POOLS_FACTORY_READ_ABI = [
       { internalType: "int24", name: "tick", type: "int24" },
       { internalType: "bool", name: "live", type: "bool" },
     ],
+    stateMutability: "view",
+    type: "function",
+  },
+  // ── The locker this factory registers into ────────────────────────
+  //
+  // Closes the suite triangle: gateway -> factory -> locker. Suite detection
+  // and the verifier both require the triangle to close, which is what makes
+  // "the gateway said so" insufficient on its own.
+  {
+    inputs: [],
+    name: "locker",
+    outputs: [{ internalType: "address", name: "", type: "address" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  // ── Stock pricing ─────────────────────────────────────────────────
+  //
+  // `pricingModeFor` is the AUTHORITY on whether an attestation must be present
+  // or must be absent. The verifier reads it rather than inferring from
+  // `pairedAsset.kind`, which is the provider's own label about its own answer.
+  {
+    inputs: [{ internalType: "address", name: "asset", type: "address" }],
+    name: "pricingModeFor",
+    outputs: [{ internalType: "uint8", name: "", type: "uint8" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  // `getPairedAssetCurve` carries the PER-ASSET `maxQuoteAge`, which is the
+  // bound the factory actually enforces on `expiresAt - observedAt`
+  // (`_signedStockTick`). MIN/MAX_SIGNED_QUOTE_AGE are only the bounds the owner
+  // may configure that value WITHIN (`validateSignedStockPairedAsset`), so
+  // checking an attestation against the global constants alone would accept a
+  // quote this particular asset's curve would reject. Both are read.
+  {
+    inputs: [{ internalType: "address", name: "asset", type: "address" }],
+    name: "getPairedAssetCurve",
+    outputs: [
+      {
+        components: [
+          { internalType: "address", name: "feed", type: "address" },
+          { internalType: "uint32", name: "maxPriceAge", type: "uint32" },
+          { internalType: "int24", name: "fallbackTick", type: "int24" },
+          { internalType: "bool", name: "set", type: "bool" },
+          { internalType: "uint8", name: "mode", type: "uint8" },
+          { internalType: "uint32", name: "maxQuoteAge", type: "uint32" },
+        ],
+        internalType: "struct PartyFactory.PairedAssetCurve",
+        name: "",
+        type: "tuple",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "priceSigner",
+    outputs: [{ internalType: "address", name: "", type: "address" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "pricingEpoch",
+    outputs: [{ internalType: "uint64", name: "", type: "uint64" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "MIN_SIGNED_QUOTE_AGE",
+    outputs: [{ internalType: "uint32", name: "", type: "uint32" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "MAX_SIGNED_QUOTE_AGE",
+    outputs: [{ internalType: "uint32", name: "", type: "uint32" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  // The EIP-712 digest the backend signs. Read from the FACTORY rather than
+  // rebuilt locally: the domain separator is the factory's own
+  // (`_hashTypedDataV4`), so asking the contract is the only derivation that
+  // cannot drift from the contract.
+  {
+    inputs: [
+      {
+        components: POOLS_PRICE_ATTESTATION_COMPONENTS,
+        internalType: "struct PartyFactory.StockPriceAttestation",
+        name: "attestation",
+        type: "tuple",
+      },
+    ],
+    name: "hashStockPriceAttestation",
+    outputs: [{ internalType: "bytes32", name: "", type: "bytes32" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  // The tick a SIGNED_STOCK launch would open at, derived by the factory from
+  // the attestation itself. This REPLACES `startTickFor` on that mode, which
+  // reverts `PriceAttestationRequired` there (measured in the verified source).
+  {
+    inputs: [
+      { internalType: "address", name: "pairedAsset", type: "address" },
+      {
+        components: POOLS_PRICE_ATTESTATION_COMPONENTS,
+        internalType: "struct PartyFactory.StockPriceAttestation",
+        name: "attestation",
+        type: "tuple",
+      },
+      { internalType: "bytes", name: "signature", type: "bytes" },
+    ],
+    name: "quoteStartTick",
+    outputs: [{ internalType: "int24", name: "tick", type: "int24" }],
     stateMutability: "view",
     type: "function",
   },

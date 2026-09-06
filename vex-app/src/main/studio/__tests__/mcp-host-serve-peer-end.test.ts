@@ -20,6 +20,9 @@ import { createServer, connect, type AddressInfo, type Socket } from "node:net";
 
 import { describe, expect, it, vi } from "vitest";
 
+import type { StudioWriteOutcome } from "@vex-agent/mcp/duplex-transport.js";
+import type { SocketTransportLifecycleEvent } from "@vex-agent/mcp/socket-transport.js";
+
 import { serveOverSocket } from "../mcp-host/serve.js";
 import { NodeSocketTransport } from "../mcp-host/node-socket-transport.js";
 
@@ -52,6 +55,10 @@ describe("serveOverSocket peer EOF replay", () => {
     expect(socket.destroyed).toBe(false);
 
     const closed = once(socket, "close");
+    // The transport's own reports, over a REAL kernel stream. The fake wire
+    // proves the reporting logic; this proves the edges it reports are the
+    // ones a socket actually raises.
+    const events: SocketTransportLifecycleEvent[] = [];
     const handle = serveOverSocket(
       {
         wire: new NodeSocketTransport(socket),
@@ -62,8 +69,11 @@ describe("serveOverSocket peer EOF replay", () => {
           result: { success: true, output: "ok" },
         }),
         cancelCause: () => "disconnect",
-        writeLine: async () => undefined,
+        writeLine: async (): Promise<StudioWriteOutcome> => "accepted",
         onWireFailure: vi.fn(),
+        onWireLifecycle: (event: SocketTransportLifecycleEvent): void => {
+          events.push(event);
+        },
         onServeFailure: vi.fn(),
       },
       { epoch: 1, currentEpoch: () => 1, version: "test" },
@@ -71,6 +81,19 @@ describe("serveOverSocket peer EOF replay", () => {
 
     await closed;
     expect(socket.destroyed).toBe(true);
+    // A HALF-CLOSE THAT IS NAMED. Before this, the only trace of a peer that
+    // left was main's own teardown, which reads exactly like main deciding to
+    // close - the ambiguity the 2026-09-04 incident could not be attributed
+    // through. The counters are zero because this peer sent no frame at all.
+    expect(events.map((event) => event.kind)).toEqual(["peer_end", "closed"]);
+    expect(events[1]).toEqual({
+      kind: "closed",
+      requests: 0,
+      responses: 0,
+      notifications: 0,
+      serverRequests: 0,
+      otherOutbound: 0,
+    });
     await handle.close();
     client.destroy();
     await new Promise<void>((resolve) => server.close(() => resolve()));

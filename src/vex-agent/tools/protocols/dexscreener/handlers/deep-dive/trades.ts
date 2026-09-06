@@ -423,7 +423,19 @@ function shapeTrade(
             firstSwapAtMs: trader.firstSwapAtMs,
             ...(depth === "full"
               ? {
-                  balanceAmount: trader.balanceAmount,
+                  /*
+                   * Same rename and same structural refusal as
+                   * `dexscreener__top_traders_list`: a field named like an
+                   * on-chain balance was MEASURED being divided by token
+                   * supply. This is the venue-observed retained amount on THIS
+                   * pool, and the refusal travels beside it.
+                   */
+                  pairObservedRetainedAmount: trader.balanceAmount,
+                  pairObservedRetainedSupplyShare: {
+                    status: "not_determinable",
+                    reason: "This endpoint sees ONE pool's swap flow. Token supply, transfers and off-pool holdings are invisible to it, so no share of supply can be computed from the amount above.",
+                  },
+                  pairObservedRetainedEntityRelationship: "unknown",
                   volumeBaseBuy: trader.volumeBaseBuy,
                   volumeBaseSell: trader.volumeBaseSell,
                 }

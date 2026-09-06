@@ -83,6 +83,8 @@ function harness(options: HarnessOptions = {}): Harness {
       return options.serveHandle ?? { close: async (): Promise<void> => undefined };
     },
     onClosed: (): void => undefined,
+    transportKind: "socket",
+    droppedFrames: null,
   };
   const connection = new StudioConnection("c-test", socket, deps);
   return {

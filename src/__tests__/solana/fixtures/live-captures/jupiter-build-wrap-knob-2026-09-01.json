@@ -1,0 +1,40 @@
+{
+  "provenance": {
+    "capturedAt": "2026-09-01",
+    "endpoint": "GET https://api.jup.ag/swap/v2/build",
+    "question": "Does wrapAndUnwrapSol:false still land on native lamports, or does it require an existing wrapped-SOL token account?",
+    "request": {
+      "inputMint": "So11111111111111111111111111111111111111112",
+      "outputMint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      "amount": "10000000",
+      "slippageBps": "50",
+      "taker": "5Q544fKrFoe6tsEbD7S8EmxGTJYAKtTVhAW5Q5pge4j"
+    },
+    "note": "Read-only. Two sequential calls differing ONLY in wrapAndUnwrapSol. Nothing was signed or broadcast. Instructions are summarized by program id and decoded discriminant; no signable bytes are retained.",
+    "conclusion": "Wrapping on funds the swap from native lamports (System Transfer of exactly inAmount, then SyncNative, with a CloseAccount cleanup). Wrapping off carries none of those instructions and spends an existing wrapped-SOL token account. There is therefore no provider-supported native landing for tokenIn SOL with wrapAndUnwrapSol disabled."
+  },
+  "wrapAndUnwrapSolTrue": {
+    "status": 200,
+    "inAmount": "10000000",
+    "outAmount": "1033064",
+    "setupInstructions": [
+      { "programId": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL", "dataLen": 1, "note": "associated-token-account create" },
+      { "programId": "11111111111111111111111111111111", "dataLen": 12, "note": "System Transfer lamports=10000000" },
+      { "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", "dataLen": 1, "note": "Token instruction=17 (SyncNative)" },
+      { "programId": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL", "dataLen": 1, "note": "associated-token-account create" }
+    ],
+    "otherInstructions": [],
+    "cleanupInstruction": { "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", "dataLen": 1, "note": "Token instruction=9 (CloseAccount)" }
+  },
+  "wrapAndUnwrapSolFalse": {
+    "status": 200,
+    "inAmount": "10000000",
+    "outAmount": "1033063",
+    "setupInstructions": [
+      { "programId": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL", "dataLen": 1, "note": "associated-token-account create" },
+      { "programId": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL", "dataLen": 1, "note": "associated-token-account create" }
+    ],
+    "otherInstructions": [],
+    "cleanupInstruction": null
+  }
+}

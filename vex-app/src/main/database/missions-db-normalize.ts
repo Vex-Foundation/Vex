@@ -27,6 +27,7 @@ import {
   type MissionDeployedCapital,
 } from "@shared/schemas/mission.js";
 import { SOLANA_CHAIN_ID } from "@shared/chains/display.js";
+import { SOL_MINT } from "@tools/solana-ecosystem/shared/solana-constants.js";
 import { formatExecutedAmountHuman } from "./agent-activity-amount.js";
 import { log } from "../logger/index.js";
 
@@ -213,7 +214,8 @@ export function normaliseConstraints(raw: unknown): MissionConstraints {
  * failure this field was added to close.
  *
  * Rules, restated so a future session need not open the engine file:
- *   - ALL FIVE PARTS OR NULL. A partial declaration is not a usable denominator.
+ *   - New declarations carry SIX parts. Legacy five-field declarations retain
+ *     `assetKind: null` so native SOL versus wSOL is shown as ambiguous.
  *   - `amountRaw` stays a STRING, digits only, and must contain a non-zero
  *     digit. Zero is not a denominator; an all-zeros amount reads as absent.
  *   - Asset identity is FAMILY-AWARE: EVM addresses (every chain id except
@@ -239,7 +241,7 @@ export function normaliseDeployedCapital(
   ) {
     return null;
   }
-  const { amountRaw, decimals, chainId, assetAddress, assetSymbol } =
+  const { amountRaw, decimals, chainId, assetAddress, assetKind, assetSymbol } =
     candidate as Record<string, unknown>;
 
   if (typeof amountRaw !== "string") return null;
@@ -266,6 +268,22 @@ export function normaliseDeployedCapital(
   const canonicalAddress = canonicalAssetAddress(chainId, trimmedAddress);
   if (canonicalAddress === null) return null;
 
+  const normalizedAssetKind = assetKind === undefined || assetKind === null
+    ? null
+    : assetKind === "native" || assetKind === "token"
+      ? assetKind
+      : null;
+  if (assetKind !== undefined && assetKind !== null && normalizedAssetKind === null) return null;
+  if (normalizedAssetKind === "native") {
+    const isCanonicalNative = chainId === SOLANA_CHAIN_ID
+      ? canonicalAddress === SOL_MINT
+      : canonicalAddress === EVM_NATIVE_SENTINEL;
+    if (!isCanonicalNative) return null;
+  }
+  if (normalizedAssetKind === "token" && chainId !== SOLANA_CHAIN_ID) {
+    if (canonicalAddress === EVM_NATIVE_SENTINEL) return null;
+  }
+
   if (typeof assetSymbol !== "string") return null;
   const trimmedSymbol = assetSymbol.trim();
   if (!ASSET_SYMBOL_PATTERN.test(trimmedSymbol)) return null;
@@ -275,6 +293,7 @@ export function normaliseDeployedCapital(
     decimals,
     chainId,
     assetAddress: canonicalAddress,
+    assetKind: normalizedAssetKind,
     assetSymbol: trimmedSymbol,
     amountHuman: formatExecutedAmountHuman(trimmedAmount, decimals),
   };

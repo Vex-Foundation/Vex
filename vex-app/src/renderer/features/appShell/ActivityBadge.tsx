@@ -234,6 +234,22 @@ const ROLE_LABEL: Record<AgentActivityEventRole, string | null> = {
   // leg. The feeds do not render it as its own row; this label exists for the
   // surfaces that show a row by id.
   tx_vex_fee: "FEE",
+  // Migration 102 - the launchpad family, named by what happened. The kind
+  // segment reads CLAIM for the first three, so the role segment says WHOSE
+  // claim it is, which is the one thing the kind cannot carry: the creator
+  // taking the fees their token earned, a holder taking the rewards it streams,
+  // and the permissionless push that pays every holder at once. `DISTRIBUTE`
+  // deliberately does not read CLAIM: the caller is paid nothing.
+  creator_fee_claim: "CREATOR FEES",
+  holder_reward_claim: "HOLDER REWARDS",
+  reward_distribution: "DISTRIBUTE",
+  // The kind segment reads LAUNCH, so this segment carries the one word that
+  // changes what happened.
+  launch_cancel: "CANCEL",
+  // The same `FEE` every other venue's fee leg wears, because it IS the same
+  // leg under a venue-independent name. The feeds do not render it as its own
+  // row; this label exists for the surfaces that show a row by id.
+  vex_fee: "FEE",
 };
 
 /**

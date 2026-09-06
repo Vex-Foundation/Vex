@@ -2,14 +2,18 @@
  * `token-history-db.ts` connection helpers, chain-identity resolution, and
  * SQL-half builders — split out (Card C5, move-only) once the parent file
  * crossed the repo's 500-line cap. See `token-history-db.ts`'s own module
- * doc for the full source/dedupe/security contract these builders
- * implement; every SQL string here is byte-identical to the original
- * single-file version.
+ * doc for the full source/dedupe/security contract these builders implement.
+ * SQL-shape changes stay with this owner and its focused database tests.
  */
 
 import { Client, type ClientConfig } from "pg";
 import { err, ok, type Result, type VexError } from "@shared/ipc/result.js";
 import { SOLANA_CHAIN_ID } from "@shared/chains/display.js";
+import { SOLANA_NATIVE_ASSET_IDENTITY } from "@tools/solana-ecosystem/shared/solana-asset-identity.js";
+import {
+  JUPITER_FEE_SWAP_SETTLEMENT_KIND,
+  SOLANA_SETTLEMENT_PROFILE_VERSION,
+} from "@tools/solana-ecosystem/jupiter/jupiter-swaps/settlement-profile.js";
 import {
   ACTIVITY_KIND_MAX_LENGTH,
   EVENT_ROLE_MAX_LENGTH,
@@ -208,6 +212,60 @@ export interface ActivityHalfParams {
   readonly activityKeyset: string;
 }
 
+/**
+ * A legacy row carries no pinned native-versus-wrapped provenance. A SOL_MINT
+ * leg therefore gets no local-symbol enrichment rather than guessing either
+ * the native or wSOL balance row. Every unambiguous token passes through.
+ */
+function legacyProjectedBalanceAddressSql(tokenExpression: string): string {
+  return `CASE WHEN ${tokenExpression} = '${SOLANA_NATIVE_ASSET_IDENTITY.routeMint}'`
+    + " THEN NULL"
+    + ` ELSE ${tokenExpression} END`;
+}
+
+const JUPITER_SETTLEMENT_SQL = "aa.route_provenance->'settlement'";
+
+/**
+ * SQL predicate for the versioned fields that decide one Jupiter leg's
+ * native-versus-wrapped identity. Every value used by the CASE is type-checked
+ * before comparison. Unrelated profile fields do not affect this decision.
+ */
+function validatedJupiterLegProfileSql(
+  tokenExpression: string,
+  mintField: "inputMint" | "outputMint",
+): string {
+  return [
+    `jsonb_typeof(${JUPITER_SETTLEMENT_SQL}) = 'object'`,
+    `jsonb_typeof(${JUPITER_SETTLEMENT_SQL}->'v') = 'number'`,
+    `${JUPITER_SETTLEMENT_SQL}->'v' = '${SOLANA_SETTLEMENT_PROFILE_VERSION}'::jsonb`,
+    `jsonb_typeof(${JUPITER_SETTLEMENT_SQL}->'kind') = 'string'`,
+    `${JUPITER_SETTLEMENT_SQL}->>'kind' = '${JUPITER_FEE_SWAP_SETTLEMENT_KIND}'`,
+    `jsonb_typeof(${JUPITER_SETTLEMENT_SQL}->'${mintField}') = 'string'`,
+    `${JUPITER_SETTLEMENT_SQL}->>'${mintField}' = ${tokenExpression}`,
+    `jsonb_typeof(${JUPITER_SETTLEMENT_SQL}->'wrapAndUnwrapSol') = 'boolean'`,
+  ].join(" AND ");
+}
+
+/**
+ * Map a SOL_MINT leg only when its own validated settlement profile identifies
+ * the spendability domain. `true` means transient native SOL and selects the
+ * database-only native key. `false` means durable wSOL and keeps the mint.
+ * Missing, malformed or mismatched provenance yields no local enrichment.
+ */
+function agentProjectedBalanceAddressSql(
+  tokenExpression: string,
+  mintField: "inputMint" | "outputMint",
+): string {
+  const profileIsValid = validatedJupiterLegProfileSql(tokenExpression, mintField);
+  return `CASE WHEN ${tokenExpression} <> '${SOLANA_NATIVE_ASSET_IDENTITY.routeMint}'`
+    + ` THEN ${tokenExpression}`
+    + ` WHEN (${profileIsValid}) THEN CASE`
+    + ` WHEN ${JUPITER_SETTLEMENT_SQL}->'wrapAndUnwrapSol' = 'true'::jsonb`
+    + ` THEN '${SOLANA_NATIVE_ASSET_IDENTITY.persistedAddress}'`
+    + ` ELSE '${SOLANA_NATIVE_ASSET_IDENTITY.routeMint}' END`
+    + " ELSE NULL END";
+}
+
 export function buildActivityHalf(p: ActivityHalfParams): string {
   const { walletsParam, chainAliasesParam, addressParam, addr, activityKeyset } = p;
   return `
@@ -240,7 +298,7 @@ export function buildActivityHalf(p: ActivityHalfParams): string {
         (SELECT LEFT(MIN(b.token_symbol), 64)
            FROM proj_balances b
           WHERE b.wallet_address = a.wallet_address
-            AND b.token_address = a.input_token
+            AND b.token_address = ${legacyProjectedBalanceAddressSql("a.input_token")}
             AND b.token_symbol IS NOT NULL
          HAVING COUNT(DISTINCT b.token_symbol) = 1) AS input_token_local_symbol,
         CASE
@@ -252,7 +310,7 @@ export function buildActivityHalf(p: ActivityHalfParams): string {
         (SELECT LEFT(MIN(b.token_symbol), 64)
            FROM proj_balances b
           WHERE b.wallet_address = a.wallet_address
-            AND b.token_address = a.output_token
+            AND b.token_address = ${legacyProjectedBalanceAddressSql("a.output_token")}
             AND b.token_symbol IS NOT NULL
          HAVING COUNT(DISTINCT b.token_symbol) = 1) AS output_token_local_symbol,
         NULL::text AS to_address,
@@ -430,9 +488,19 @@ export function buildAgentActivityHalf(p: AgentActivityHalfParams): string {
         NULL::text AS capture_status,
         aa.tx_hash AS tx_ref,
         aa.token_in_symbol AS input_token_symbol,
-        NULL::text AS input_token_local_symbol,
+        (SELECT LEFT(MIN(b.token_symbol), 64)
+           FROM proj_balances b
+          WHERE b.wallet_address = aa.wallet_address
+            AND b.token_address = ${agentProjectedBalanceAddressSql("aa.token_in_address", "inputMint")}
+            AND b.token_symbol IS NOT NULL
+         HAVING COUNT(DISTINCT b.token_symbol) = 1) AS input_token_local_symbol,
         aa.token_out_symbol AS output_token_symbol,
-        NULL::text AS output_token_local_symbol,
+        (SELECT LEFT(MIN(b.token_symbol), 64)
+           FROM proj_balances b
+          WHERE b.wallet_address = aa.wallet_address
+            AND b.token_address = ${agentProjectedBalanceAddressSql("aa.token_out_address", "outputMint")}
+            AND b.token_symbol IS NOT NULL
+         HAVING COUNT(DISTINCT b.token_symbol) = 1) AS output_token_local_symbol,
         NULL::text AS to_address,
         CASE aa.status
           WHEN 'definitively_failed' THEN 'failed'

@@ -22,7 +22,7 @@ import { randomUUID } from "node:crypto";
 
 import { log } from "../../logger/index.js";
 import { dispatchPreparedMission } from "../mission/_engine-dispatch.js";
-import { ensureEngineDbUrl } from "../runtime/_ensure-engine-db-url.js";
+import { ensureEngineDbUrl } from "../../database/engine-db-readiness.js";
 
 export async function runScheduledSweep(): Promise<void> {
   const correlationId = `sweep-${randomUUID()}`;

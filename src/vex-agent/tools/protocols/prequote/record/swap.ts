@@ -21,8 +21,11 @@ import type {
   PrequoteFamily,
 } from "@vex-agent/db/repos/swap-prequotes.js";
 
+import { parseSpendabilityPreview } from "../../quote-authority/spendability.js";
+import { withVexFee } from "../fee-disclosure.js";
 import { PREQUOTE_MAX_AGE_MS } from "../registry.js";
 import { computePrequoteMatchHash } from "../identity/hash.js";
+import { SWAP_QUOTE_GATE_TARGET } from "./gate-targets.js";
 import { extractQuote } from "../safety/extract.js";
 import { canonSlippageBps, readParamSlippageBps } from "../slippage.js";
 import { familyToChainFamily, writePrequoteRow } from "./row.js";
@@ -33,6 +36,12 @@ const ELIGIBILITY_KINDS: ReadonlySet<string> = new Set<PrequoteEligibilityKind>(
   "excessive_impact",
   "oversize_snapshot",
   "provider_usd_invalid",
+  // Spendability (WP2, contract C2). A quote the wallet cannot pay for is
+  // recorded exactly like a quote whose route was unusable: as a superseding
+  // row that authorizes nothing.
+  "insufficient_balance",
+  "balance_unavailable",
+  "gas_reserve_insufficient",
 ]);
 
 /**
@@ -44,6 +53,34 @@ const ELIGIBILITY_KINDS: ReadonlySet<string> = new Set<PrequoteEligibilityKind>(
 function normalizeEligibilityKind(kind: string | undefined): PrequoteEligibilityKind {
   if (kind === undefined) return "executable";
   return ELIGIBILITY_KINDS.has(kind) ? (kind as PrequoteEligibilityKind) : "provider_usd_invalid";
+}
+
+/**
+ * Fold the quote-time spendability facts into the row's bounded safety block.
+ *
+ * VALIDATED BEFORE IT IS STORED, not on the way out only: the payload becomes
+ * part of what a human later reads on an approval card, so a malformed handoff
+ * must fail here - where the row is still being built - rather than survive to
+ * the card and be dropped there without anyone knowing a venue produced
+ * garbage. An unparseable payload leaves the block exactly as the quote's own
+ * safety extraction built it, and the card simply carries no spendability line.
+ *
+ * `spendability` is a RESERVED key of the safety block. A venue whose own
+ * safety detail used that name would have its value replaced here; none does,
+ * and the recorder is the one writer of this column.
+ */
+function withSpendability(
+  toolId: string,
+  safetyDetail: Record<string, unknown>,
+  spendability: unknown,
+): Record<string, unknown> {
+  if (spendability === undefined) return safetyDetail;
+  const parsed = parseSpendabilityPreview(spendability);
+  if (parsed === undefined) {
+    logger.warn("protocol.prequote.spendability_unreadable", { toolId });
+    return safetyDetail;
+  }
+  return { ...safetyDetail, spendability: parsed };
 }
 
 export async function recordSwapPrequote(
@@ -127,7 +164,7 @@ export async function recordSwapPrequote(
   // execute params. Solana has no recipient/approveExact concept - self/false
   // are inert constants there.
   const matchHash = computePrequoteMatchHash({
-    kind: "swap",
+    kind: SWAP_QUOTE_GATE_TARGET.kind,
     sessionId,
     family: registered.family,
     // Venue binding (LOCKED #4) - the quoting provider is part of the identity.
@@ -143,11 +180,31 @@ export async function recordSwapPrequote(
     ...jupiterTail,
   });
 
+  // THE FEE STATEMENT THE QUOTE MADE. Validated before it is stored and fatal
+  // to the row when a fee-bearing venue cannot state it: an authority that says
+  // nothing about the money Vex takes from the trade authorizes nothing. A
+  // venue that carries no Vex fee on this channel ignores the key.
+  //
+  // REQUIRED ONLY OF A ROW THAT CAN AUTHORIZE. A refused or ineligible quote
+  // writes a SUPERSEDING marker whose whole purpose is to retire an older
+  // priced row; it carries no `data` and authorizes nothing by construction
+  // (`eligibility_kind <> 'executable'` is refused by the gate and the claim).
+  // Demanding a fee statement of it would suppress the marker and leave exactly
+  // the stale authority the marker exists to kill.
+  const eligibilityKind = normalizeEligibilityKind(quoteAuthority?.eligibilityKind);
+  const feeFold = eligibilityKind === "executable"
+    ? withVexFee(toolId, extracted.safetyDetail, resultData.vexFee)
+    : ({ kind: "ok", safetyDetail: extracted.safetyDetail } as const);
+  if (feeFold.kind === "skip") {
+    logger.warn("protocol.prequote.skipped", { toolId, reason: feeFold.reason });
+    return;
+  }
+
   const input: CreatePrequoteInput = {
     prequoteId: `prequote-${randomUUID()}`,
     sessionId,
     matchHash,
-    kind: "swap",
+    kind: SWAP_QUOTE_GATE_TARGET.kind,
     family: registered.family,
     provider: registered.provider,
     chainId: extracted.chainId,
@@ -157,7 +214,7 @@ export async function recordSwapPrequote(
     amount: extracted.amount,
     slippageBps: extracted.slippageBps,
     safetyVerdict: extracted.verdict,
-    safetyDetail: extracted.safetyDetail,
+    safetyDetail: withSpendability(toolId, feeFold.safetyDetail, quoteAuthority?.spendability),
     // The execution snapshot (`quote-authority/snapshot.ts`) when the venue
     // produced one: the route summary as a raw JSON string plus its digest, the
     // approved output and floor, and the tolerance the build must be POSTed
@@ -166,7 +223,7 @@ export async function recordSwapPrequote(
     routeRef: quoteAuthority?.routeSnapshot ?? null,
     // Only `executable` may be claimed by an execute. Defaults to executable so
     // every venue that does not participate in the claim lane is unchanged.
-    eligibilityKind: normalizeEligibilityKind(quoteAuthority?.eligibilityKind),
+    eligibilityKind,
     expiresAt: new Date(Date.now() + PREQUOTE_MAX_AGE_MS).toISOString(),
   };
 
@@ -175,7 +232,7 @@ export async function recordSwapPrequote(
       toolId,
       family: registered.family,
       verdict: extracted.verdict,
-      eligibility: normalizeEligibilityKind(quoteAuthority?.eligibilityKind),
+      eligibility: eligibilityKind,
     });
   }
 }

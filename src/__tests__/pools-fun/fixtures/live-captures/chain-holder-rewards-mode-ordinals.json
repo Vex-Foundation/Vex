@@ -1,0 +1,64 @@
+{
+  "endpoint": "https://rpc.mainnet.chain.robinhood.com (chain 4663) HolderRewardsDeployer 0x5aeE24bD5c0aD32C136B96d82157C0D3A6d7BBAA",
+  "capturedAt": "2026-09-04T18:35:28.797Z",
+  "blockNumber": "54482732",
+  "note": "The MACHINE ARTIFACT behind POOLS_HOLDER_REWARD_MODES. `modeFor(sentinel)` is a pure function on the V3 HolderRewardsDeployer mapping each fee-recipient sentinel to its uint8; the DistributorDeployed logs are the same ordinals as the deployer actually emitted them, beside the string the launchpad API uses for the same token. Rule 10 point 2: no reward-mode name in the code is spelled from convention.",
+  "response": {
+    "deployer": "0x5aeE24bD5c0aD32C136B96d82157C0D3A6d7BBAA",
+    "factory": "0x5f13c63a8060Fd47f7B7278FBCb3A6f47FCb2DC6",
+    "sentinels": {
+      "FEES_TO_HOLDERS": {
+        "sentinel": "0x968b0c1e896FB1DdB2042957Fc0614c67AB7FFc2",
+        "modeForWire": 0
+      },
+      "FEES_TO_HOLDERS_PAIRED": {
+        "sentinel": "0x968b0c1e896Fb1DdB2042957FC0614c67AB7ffC3",
+        "modeForWire": 1
+      },
+      "FEES_TO_HOLDERS_BOTH": {
+        "sentinel": "0x968b0c1e896fB1ddB2042957fC0614C67Ab7Ffc4",
+        "modeForWire": 2
+      }
+    },
+    "events": {
+      "token": {
+        "token": "0x11924d1dedab2d8d49480287898c902431809579",
+        "apiRewardMode": "token",
+        "logs": [
+          {
+            "distributor": "0xF7747B39B810BF12eF89C86dbC0Da72C1CCb60c1",
+            "rewardModeWire": 0,
+            "blockNumber": "54141876"
+          }
+        ]
+      },
+      "paired": {
+        "token": "0x017f53815e02d5ad151ed8484605fc9f1d9bb9a2",
+        "apiRewardMode": "paired",
+        "logs": [
+          {
+            "distributor": "0xb7633B965A86dF8AdF7c8D2b2B4aD7D975d94036",
+            "rewardModeWire": 1,
+            "blockNumber": "54038671"
+          }
+        ]
+      },
+      "both": {
+        "token": "0x07801a668adf02e806ef8ef5a54804747afdfdf7",
+        "apiRewardMode": "both",
+        "logs": [
+          {
+            "distributor": "0x7b53d176E76F87D0ba5173b6e596aFEe717e6b0b",
+            "rewardModeWire": 2,
+            "blockNumber": "54213962"
+          }
+        ]
+      },
+      "none": {
+        "token": "0x1837b25a8e921d654dd3fea83747cd375c97629d",
+        "apiRewardMode": null,
+        "logs": []
+      }
+    }
+  }
+}

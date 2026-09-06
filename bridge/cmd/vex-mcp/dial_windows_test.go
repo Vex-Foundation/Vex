@@ -4,9 +4,11 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"os"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -123,7 +125,7 @@ func TestPipeDialSupportsConcurrentDuplex(t *testing.T) {
 	name := testPipeName(t)
 	server := newTestPipeServer(t, name)
 
-	client, err := dialPipe(name)
+	client, err := dialPipe(context.Background(), name)
 	if err != nil {
 		t.Fatalf("dialing this process's own pipe server was refused: %v", err)
 	}
@@ -229,7 +231,7 @@ func TestPipeHandleTakesARealDeadline(t *testing.T) {
 	name := testPipeName(t)
 	newTestPipeServer(t, name)
 
-	client, err := dialPipe(name)
+	client, err := dialPipe(context.Background(), name)
 	if err != nil {
 		t.Fatalf("dialing this process's own pipe server was refused: %v", err)
 	}
@@ -280,7 +282,7 @@ func TestPipeAckDeadlineFiresOnASilentHost(t *testing.T) {
 	name := testPipeName(t)
 	server := newTestPipeServer(t, name)
 
-	conn, err := dialPipe(name)
+	conn, err := dialPipe(context.Background(), name)
 	if err != nil {
 		t.Fatalf("dialing this process's own pipe server was refused: %v", err)
 	}
@@ -330,7 +332,7 @@ func TestPipeDrainDeadlineFiresOnASilentHost(t *testing.T) {
 	name := testPipeName(t)
 	newTestPipeServer(t, name)
 
-	conn, err := dialPipe(name)
+	conn, err := dialPipe(context.Background(), name)
 	if err != nil {
 		t.Fatalf("dialing this process's own pipe server was refused: %v", err)
 	}
@@ -375,7 +377,7 @@ func TestClosingThePipeCancelsABlockedRead(t *testing.T) {
 	name := testPipeName(t)
 	server := newTestPipeServer(t, name)
 
-	client, err := dialPipe(name)
+	client, err := dialPipe(context.Background(), name)
 	if err != nil {
 		t.Fatalf("dialing this process's own pipe server was refused: %v", err)
 	}
@@ -429,5 +431,161 @@ func TestClosingThePipeCancelsABlockedRead(t *testing.T) {
 	if !errors.Is(cancelled.err, os.ErrClosed) && !errors.Is(cancelled.err, errorOperationAborted) {
 		t.Fatalf("the blocked read ended with %v, which is neither os.ErrClosed nor "+
 			"ERROR_OPERATION_ABORTED; the close is not what returned it", cancelled.err)
+	}
+}
+
+// THE DIAL HAS A BOUND, AND EXHAUSTION HAS A NAME.
+//
+// The defect this pins: CreateFile against a named pipe whose every instance
+// is busy returns ERROR_PIPE_BUSY at once, and the client that wants to wait
+// must loop. Before this change there was no loop and no deadline of any kind
+// on this path, so a saturated front spent an MCP client's whole startup
+// budget (Claude Code's MCP_TIMEOUT, 30 s by default) inside the open and the
+// user was shown "connection timeout" with no cause at all.
+//
+// The endpoint is REAL: a single-instance pipe served by this process, with
+// its one instance already taken by a client handle this test holds open, so
+// the dial under test meets the genuine ERROR_PIPE_BUSY the loop exists for.
+// The budget is milliseconds because the subject is the deadline being
+// honoured, not its production value.
+func TestDialPipeGivesUpOnABusyPipeWithANamedSentence(t *testing.T) {
+	name := testPipeName(t)
+	newTestPipeServer(t, name)
+
+	// TAKE THE ONE INSTANCE. From here every further CreateFile on this name
+	// answers ERROR_PIPE_BUSY.
+	occupier, err := dialPipeWith(context.Background(), name, resolveServerUserSID, resolveCurrentUserSID)
+	if err != nil {
+		t.Fatalf("occupying the pipe's single instance: %v", err)
+	}
+	defer occupier.Close()
+
+	const budget = 60 * time.Millisecond
+	started := time.Now()
+	conn, err := dialPipeWithin(context.Background(), name, budget, resolveServerUserSID, resolveCurrentUserSID)
+	elapsed := time.Since(started)
+	if conn != nil {
+		_ = conn.Close()
+		t.Fatal("a busy pipe must not yield a connection")
+	}
+	timeout, ok := asDialTimeout(err)
+	if !ok {
+		t.Fatalf("a busy pipe must give up as a bounded dial, got %T: %v", err, err)
+	}
+	if !strings.Contains(timeout.Error(), dialTimeoutRefusalCode) {
+		t.Fatalf("the sentence does not carry its code: %q", timeout.Error())
+	}
+	// The whole diagnostic is what the user sees, so the exit sentence must be
+	// this sentence rather than a generic dial line.
+	if dialSentence(name, err) != timeout.Error() {
+		t.Fatalf("dialSentence rewrote the bounded dial's own sentence: %q",
+			dialSentence(name, err))
+	}
+	// THE BOUND IS HONOURED IN BOTH DIRECTIONS. It waited (so it is a wait,
+	// not a single failed attempt) and it stopped (so it is bounded). The
+	// upper edge is generous because a scheduling hiccup is not the subject.
+	if elapsed < budget/2 {
+		t.Fatalf("the dial gave up after %s, well inside its %s budget", elapsed, budget)
+	}
+	if elapsed > 10*budget {
+		t.Fatalf("the dial overran its %s budget by far, taking %s", budget, elapsed)
+	}
+}
+
+// A pipe that is not there at all still fails IMMEDIATELY and keeps its errno,
+// so `dialSentence` can still say "no Vex Studio host is listening". The busy
+// loop must not swallow every open failure into its own sentence.
+func TestDialPipeDoesNotWaitOutAnAbsentPipe(t *testing.T) {
+	name := testPipeName(t)
+
+	started := time.Now()
+	conn, err := dialPipeWithin(context.Background(), name, WindowsDialTimeout, resolveServerUserSID, resolveCurrentUserSID)
+	elapsed := time.Since(started)
+	if conn != nil {
+		_ = conn.Close()
+		t.Fatal("a pipe that does not exist must not yield a connection")
+	}
+	if _, busy := asDialTimeout(err); busy {
+		t.Fatalf("an absent pipe is not a busy one: %v", err)
+	}
+	if !errors.Is(err, syscall.ERROR_FILE_NOT_FOUND) {
+		t.Fatalf("the operating system's errno must survive, got %v", err)
+	}
+	if elapsed > WindowsDialTimeout/2 {
+		t.Fatalf("an absent pipe took %s; it must fail without waiting", elapsed)
+	}
+}
+
+// THE WAIT OBSERVES CANCELLATION, WHICH IS THE DIFFERENCE FROM go-winio.
+//
+// The defect this pins: a bound is not the only way a wait must be able to
+// end. `WindowsDialTimeout` is four seconds, and a user who interrupts the
+// bridge while the front is saturated used to be held for all four of them,
+// because the loop only ever looked at its own deadline. go-winio's
+// `tryDialPipe` (agents-colab/go-winio/pipe.go line 207) checks its context
+// before each attempt but waits with `time.Sleep`, so it inherits the same
+// blind spot for the length of one interval; the loop here selects on the
+// context and the timer together, so a cancel that lands MID-WAIT is what
+// returns.
+//
+// The endpoint is real and genuinely busy - the same single-instance pipe with
+// its one instance taken as the deadline test above - so the loop under test
+// is the ERROR_PIPE_BUSY loop and not a lucky first attempt. The budget is a
+// long one on purpose: the assertion is that the dial ends far inside it, and
+// it can only do that by observing the cancel.
+func TestDialPipeStopsWaitingWhenItsContextIsCancelled(t *testing.T) {
+	name := testPipeName(t)
+	newTestPipeServer(t, name)
+
+	occupier, err := dialPipeWith(context.Background(), name, resolveServerUserSID, resolveCurrentUserSID)
+	if err != nil {
+		t.Fatalf("occupying the pipe's single instance: %v", err)
+	}
+	defer occupier.Close()
+
+	const budget = 30 * time.Second
+	const cancelAfter = 50 * time.Millisecond
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// CANCELLED MID-WAIT, not before the first attempt: the loop has to be
+	// inside its 10 ms wait by the time this fires.
+	timer := time.AfterFunc(cancelAfter, cancel)
+	defer timer.Stop()
+
+	started := time.Now()
+	conn, err := dialPipeWithin(ctx, name, budget, resolveServerUserSID, resolveCurrentUserSID)
+	elapsed := time.Since(started)
+	if conn != nil {
+		_ = conn.Close()
+		t.Fatal("a cancelled dial must not yield a connection")
+	}
+	interrupted, ok := asDialInterrupted(err)
+	if !ok {
+		t.Fatalf("a cancelled dial must give up as an interrupted dial, got %T: %v", err, err)
+	}
+	// AN INTERRUPTION IS NOT A BUSY ENDPOINT. The two exits differ in what
+	// they tell the user to do, so the vocabulary may not blur them.
+	if _, busy := asDialTimeout(err); busy {
+		t.Fatalf("an interrupted dial was reported as a bounded one: %v", err)
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("an interrupted dial must unwrap to context.Canceled, got %v", err)
+	}
+	if !strings.Contains(interrupted.Error(), dialInterruptedRefusalCode) {
+		t.Fatalf("the sentence does not carry its code: %q", interrupted.Error())
+	}
+	if dialSentence(name, err) != interrupted.Error() {
+		t.Fatalf("dialSentence rewrote the interrupted dial's own sentence: %q",
+			dialSentence(name, err))
+	}
+	// IT WAITED, AND IT LEFT LONG BEFORE THE BOUND. The lower edge proves the
+	// cancel arrived mid-wait rather than before the loop began; the upper one
+	// proves the deadline is not what ended it.
+	if elapsed < cancelAfter {
+		t.Fatalf("the dial returned after %s, before its cancel at %s", elapsed, cancelAfter)
+	}
+	if elapsed > budget/10 {
+		t.Fatalf("the dial took %s of its %s budget; the cancel is not what ended it",
+			elapsed, budget)
 	}
 }

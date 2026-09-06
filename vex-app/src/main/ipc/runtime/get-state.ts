@@ -28,7 +28,7 @@ import {
   readSessionControlFacts,
   type RuntimeControlFacts,
 } from "../../database/session-control-state.js";
-import { ensureEngineDbUrl } from "./_ensure-engine-db-url.js";
+import { ensureEngineDbUrl } from "../../database/engine-db-readiness.js";
 import { getPendingWakeForSession } from "../../database/wake-db.js";
 import { log } from "../../logger/index.js";
 import { registerHandler } from "../register-handler.js";

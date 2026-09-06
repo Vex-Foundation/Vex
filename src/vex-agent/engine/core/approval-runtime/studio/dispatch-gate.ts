@@ -98,8 +98,22 @@ export async function advanceStudioDispatchGeneration(
     logger.info("engine.studio.dispatch_generation_advanced", { generation });
     return { ok: true, generation };
   } catch (cause) {
+    // `name` alone is useless here: every pg error is named `error`, so the log
+    // line said `errorName: 'error'` for a refused connection, a bad password
+    // and a missing column alike. The driver's `code` is the field that
+    // separates them (a SQLSTATE like `42703`, or a libuv errno like
+    // `ECONNREFUSED`), and it is read defensively and BOUNDED: it comes from a
+    // provider-controlled object, so anything that is not a short identifier is
+    // reported as `unknown` rather than pasted into the log.
+    const rawCode: unknown =
+      cause instanceof Error ? Reflect.get(cause, "code") : undefined;
+    const errorCode =
+      typeof rawCode === "string" && /^[A-Za-z0-9_.]{1,32}$/.test(rawCode)
+        ? rawCode
+        : "unknown";
     logger.warn("engine.studio.dispatch_generation_advance_failed", {
       errorName: cause instanceof Error ? cause.name : "unknown",
+      errorCode,
     });
     return { ok: false, cause };
   }

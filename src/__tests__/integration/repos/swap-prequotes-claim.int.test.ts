@@ -45,6 +45,43 @@ async function seedSession(): Promise<string> {
 const MATCH = "match-095";
 let counter = 0;
 
+/**
+ * The disclosure block every row in this file carries, and the value the claim's
+ * disclosure fence is asserted against. It is shaped like a real one (the fee
+ * statement is the part a person reads) because the fence compares the WHOLE
+ * `safety_detail` jsonb, and an empty object would make every equality trivially
+ * true.
+ */
+const DISCLOSURE: Record<string, unknown> = {
+  vexFee: {
+    v: 1, charged: true, bps: 25,
+    feeAmountRaw: "25000", netAmountRaw: "9975000", totalDebitedRaw: "10000000",
+    tokenAddress: "0xaaa", receiver: "0xfee", collection: "separate_transfer",
+  },
+};
+
+/** The claim as production makes it: identity plus the disclosure that was read. */
+function claim(
+  sessionId: string,
+  prequoteId: string,
+  claimedBy: string,
+  overrides: { matchHash?: string; expectedDisclosure?: Record<string, unknown> } = {},
+) {
+  return repo.claimVerifiedRowForExecute({
+    sessionId,
+    prequoteId,
+    matchHash: overrides.matchHash ?? MATCH,
+    kind: "swap",
+    expectedDisclosure: overrides.expectedDisclosure ?? DISCLOSURE,
+    claimedBy,
+  });
+}
+
+/** The diagnosis as production asks it. */
+function diagnose(sessionId: string, prequoteId: string, expected: Record<string, unknown> = DISCLOSURE) {
+  return repo.diagnoseUnclaimable(sessionId, prequoteId, expected);
+}
+
 async function insertQuote(
   sessionId: string,
   opts: {
@@ -52,6 +89,7 @@ async function insertQuote(
     expiresInMs?: number;
     matchHash?: string;
     routeRef?: Record<string, unknown> | null;
+    safetyDetail?: Record<string, unknown>;
   } = {},
 ): Promise<string> {
   const prequoteId = `prequote-095-${++counter}`;
@@ -69,7 +107,7 @@ async function insertQuote(
     amount: "10",
     slippageBps: 100,
     safetyVerdict: "pass",
-    safetyDetail: {},
+    safetyDetail: opts.safetyDetail ?? DISCLOSURE,
     routeRef: opts.routeRef ?? { v: 1, provider: "kyberswap", raw: "{}" },
     ...(opts.eligibilityKind === undefined ? {} : { eligibilityKind: opts.eligibilityKind }),
     expiresAt: new Date(Date.now() + (opts.expiresInMs ?? 15 * 60_000)).toISOString(),
@@ -127,8 +165,8 @@ describe("the claim is single-use and atomic", () => {
     const prequoteId = await insertQuote(sessionId);
 
     const [a, b] = await Promise.all([
-      repo.claimForExecute(sessionId, prequoteId, "execute-a"),
-      repo.claimForExecute(sessionId, prequoteId, "execute-b"),
+      claim(sessionId, prequoteId, "execute-a"),
+      claim(sessionId, prequoteId, "execute-b"),
     ]);
 
     const winners = [a, b].filter((r) => r !== null);
@@ -139,16 +177,16 @@ describe("the claim is single-use and atomic", () => {
     expect(["execute-a", "execute-b"]).toContain(winner.claimedBy);
 
     // The loser gets a TYPED reason, not silence.
-    expect(await repo.diagnoseUnclaimable(sessionId, prequoteId)).toBe("already_claimed");
+    expect(await diagnose(sessionId, prequoteId)).toBe("already_claimed");
   });
 
   it("a sequential second claim is refused already_claimed", async () => {
     const sessionId = await seedSession();
     const prequoteId = await insertQuote(sessionId);
 
-    expect(await repo.claimForExecute(sessionId, prequoteId, "first")).not.toBeNull();
-    expect(await repo.claimForExecute(sessionId, prequoteId, "second")).toBeNull();
-    expect(await repo.diagnoseUnclaimable(sessionId, prequoteId)).toBe("already_claimed");
+    expect(await claim(sessionId, prequoteId, "first")).not.toBeNull();
+    expect(await claim(sessionId, prequoteId, "second")).toBeNull();
+    expect(await diagnose(sessionId, prequoteId)).toBe("already_claimed");
     // The first claim's owner is not overwritten by the loser.
     const row = await queryOne<{ claimed_by: string }>(
       `SELECT claimed_by FROM swap_prequotes WHERE prequote_id = $1`, [prequoteId],
@@ -160,16 +198,16 @@ describe("the claim is single-use and atomic", () => {
     const sessionId = await seedSession();
     const prequoteId = await insertQuote(sessionId, { expiresInMs: -1000 });
 
-    expect(await repo.claimForExecute(sessionId, prequoteId, "e")).toBeNull();
-    expect(await repo.diagnoseUnclaimable(sessionId, prequoteId)).toBe("expired");
+    expect(await claim(sessionId, prequoteId, "e")).toBeNull();
+    expect(await diagnose(sessionId, prequoteId)).toBe("expired");
   });
 
   it("refuses an ineligible quote - it never authorized anything", async () => {
     const sessionId = await seedSession();
     const prequoteId = await insertQuote(sessionId, { eligibilityKind: "unpriceable_output" });
 
-    expect(await repo.claimForExecute(sessionId, prequoteId, "e")).toBeNull();
-    expect(await repo.diagnoseUnclaimable(sessionId, prequoteId)).toBe("not_executable");
+    expect(await claim(sessionId, prequoteId, "e")).toBeNull();
+    expect(await diagnose(sessionId, prequoteId)).toBe("not_executable");
   });
 
   it("is session-scoped: another session cannot claim this row even knowing its id", async () => {
@@ -177,10 +215,126 @@ describe("the claim is single-use and atomic", () => {
     const stranger = await seedSession();
     const prequoteId = await insertQuote(owner);
 
-    expect(await repo.claimForExecute(stranger, prequoteId, "e")).toBeNull();
-    expect(await repo.diagnoseUnclaimable(stranger, prequoteId)).toBe("missing");
+    expect(await claim(stranger, prequoteId, "e")).toBeNull();
+    expect(await diagnose(stranger, prequoteId)).toBe("missing");
     // ...and the owner can still claim it.
-    expect(await repo.claimForExecute(owner, prequoteId, "e")).not.toBeNull();
+    expect(await claim(owner, prequoteId, "e")).not.toBeNull();
+  });
+});
+
+/**
+ * THE ORDERING: read, compare, THEN claim.
+ *
+ * The executor now reads the authoritative row non-destructively, re-derives its
+ * fee statement and router input against it, and consumes the row only once
+ * every comparison has passed. What these cases prove against real Postgres is
+ * the property the mocked handler tests cannot: a refusal between the two steps
+ * leaves `claimed_at` and `claimed_by` NULL, and the very same row is still
+ * claimable afterwards - which is what makes "get a fresh quote and retry" a
+ * remedy rather than a dead end.
+ */
+describe("reading the authoritative row consumes nothing", () => {
+  it("a divergence between the read and the claim leaves the row unclaimed and reusable", async () => {
+    const sessionId = await seedSession();
+    const prequoteId = await insertQuote(sessionId);
+
+    // Step 1: the executor reads the row it would execute against.
+    const read = await repo.findClaimableForExecute(sessionId, prequoteId, MATCH, "swap");
+    expect(read?.prequoteId).toBe(prequoteId);
+
+    // Step 2: it re-derives its fee statement, finds it moved, and REFUSES -
+    // which in production means it simply never calls the claim.
+    const afterRefusal = await queryOne<{ claimed_at: string | null; claimed_by: string | null }>(
+      `SELECT claimed_at, claimed_by FROM swap_prequotes WHERE prequote_id = $1`, [prequoteId],
+    );
+    expect(afterRefusal?.claimed_at).toBeNull();
+    expect(afterRefusal?.claimed_by).toBeNull();
+
+    // Step 3: the retry the refusal asked for. The SAME row is still the
+    // authority and still claimable - the defect was that this returned
+    // `already_claimed`.
+    const retryRead = await repo.findClaimableForExecute(sessionId, prequoteId, MATCH, "swap");
+    expect(retryRead?.prequoteId).toBe(prequoteId);
+    const claimed = await claim(sessionId, prequoteId, "retry");
+    expect(claimed?.prequoteId).toBe(prequoteId);
+    expect(claimed?.claimedBy).toBe("retry");
+  });
+
+  it("the read applies the same predicate the claim does", async () => {
+    const sessionId = await seedSession();
+    const expired = await insertQuote(sessionId, { expiresInMs: -1000, matchHash: "identity-expired" });
+    const ineligible = await insertQuote(sessionId, {
+      eligibilityKind: "unpriceable_output", matchHash: "identity-ineligible",
+    });
+    const q1 = await insertQuote(sessionId);
+    await insertQuote(sessionId);
+
+    expect(await repo.findClaimableForExecute(sessionId, expired, "identity-expired", "swap")).toBeNull();
+    expect(await repo.findClaimableForExecute(sessionId, ineligible, "identity-ineligible", "swap")).toBeNull();
+    // Superseded by the newer row for the same identity.
+    expect(await repo.findClaimableForExecute(sessionId, q1, MATCH, "swap")).toBeNull();
+  });
+
+  it("the read is session- and identity-scoped, exactly like the claim", async () => {
+    const owner = await seedSession();
+    const stranger = await seedSession();
+    const prequoteId = await insertQuote(owner);
+
+    expect(await repo.findClaimableForExecute(stranger, prequoteId, MATCH, "swap")).toBeNull();
+    expect(await repo.findClaimableForExecute(owner, prequoteId, "another-trade", "swap")).toBeNull();
+    expect(await repo.findClaimableForExecute(owner, prequoteId, MATCH, "swap")).not.toBeNull();
+  });
+});
+
+/**
+ * THE DISCLOSURE FENCE. The claim asserts that the block the executor compared
+ * against is still the block on the row, so a row rewritten between the read and
+ * the claim cannot be consumed silently.
+ */
+describe("a claim whose disclosure no longer matches the row is refused typed", () => {
+  it("refuses, consumes nothing, and diagnoses `disclosure_changed`", async () => {
+    const sessionId = await seedSession();
+    const prequoteId = await insertQuote(sessionId);
+
+    const stale = { ...DISCLOSURE, vexFee: { ...(DISCLOSURE.vexFee as Record<string, unknown>), feeAmountRaw: "1" } };
+    expect(await claim(sessionId, prequoteId, "execute", { expectedDisclosure: stale })).toBeNull();
+
+    const untouched = await queryOne<{ claimed_at: string | null }>(
+      `SELECT claimed_at FROM swap_prequotes WHERE prequote_id = $1`, [prequoteId],
+    );
+    expect(untouched?.claimed_at).toBeNull();
+    expect(await diagnose(sessionId, prequoteId, stale)).toBe("disclosure_changed");
+
+    // The honest block still claims it: the fence refuses a CHANGED disclosure,
+    // never a correct one.
+    expect(await claim(sessionId, prequoteId, "execute")).not.toBeNull();
+  });
+
+  it("compares the block semantically, not by key order", async () => {
+    const sessionId = await seedSession();
+    const prequoteId = await insertQuote(sessionId);
+    const vexFee = DISCLOSURE.vexFee as Record<string, unknown>;
+    const reordered = {
+      vexFee: {
+        collection: vexFee.collection, receiver: vexFee.receiver, tokenAddress: vexFee.tokenAddress,
+        totalDebitedRaw: vexFee.totalDebitedRaw, netAmountRaw: vexFee.netAmountRaw,
+        feeAmountRaw: vexFee.feeAmountRaw, bps: vexFee.bps, charged: vexFee.charged, v: vexFee.v,
+      },
+    };
+
+    expect(await claim(sessionId, prequoteId, "execute", { expectedDisclosure: reordered })).not.toBeNull();
+  });
+
+  it("a superseded row still reports supersession, not the disclosure", async () => {
+    // Ordering of the diagnosis matters: the actionable truth for an agent whose
+    // quote was replaced is that a newer quote exists.
+    const sessionId = await seedSession();
+    const q1 = await insertQuote(sessionId);
+    await insertQuote(sessionId);
+
+    const stale = { ...DISCLOSURE, vexFee: { changed: true } };
+    expect(await claim(sessionId, q1, "execute", { expectedDisclosure: stale })).toBeNull();
+    expect(await diagnose(sessionId, q1, stale)).toBe("superseded");
   });
 });
 
@@ -191,8 +345,8 @@ describe("a later quote supersedes an earlier one for the same identity", () => 
       const q1 = await insertQuote(sessionId);
       await insertQuote(sessionId, { eligibilityKind: laterKind });
 
-      expect(await repo.claimForExecute(sessionId, q1, "execute-q1")).toBeNull();
-      expect(await repo.diagnoseUnclaimable(sessionId, q1)).toBe("superseded");
+      expect(await claim(sessionId, q1, "execute-q1")).toBeNull();
+      expect(await diagnose(sessionId, q1)).toBe("superseded");
     });
   }
 
@@ -206,9 +360,9 @@ describe("a later quote supersedes an earlier one for the same identity", () => 
     await insertQuote(sessionId, { eligibilityKind: "provider_usd_invalid" });
 
     expect(
-      await repo.claimBoundForExecute(sessionId, q1, MATCH, "swap", "approval-resume"),
+      await claim(sessionId, q1, "approval-resume"),
     ).toBeNull();
-    expect(await repo.diagnoseUnclaimable(sessionId, q1)).toBe("superseded");
+    expect(await diagnose(sessionId, q1)).toBe("superseded");
   });
 
   it("the approved row is the one that is claimed, even when a NEWER row exists", async () => {
@@ -221,7 +375,7 @@ describe("a later quote supersedes an earlier one for the same identity", () => 
     const q2 = await insertQuote(sessionId);
 
     expect((await repo.findLatestExecutableByMatch(sessionId, MATCH, "swap"))?.prequoteId).toBe(q2);
-    expect(await repo.claimBoundForExecute(sessionId, q1, MATCH, "swap", "resume")).toBeNull();
+    expect(await claim(sessionId, q1, "resume")).toBeNull();
     // ...and Q2 was NOT consumed by that refusal.
     const untouched = await queryOne<{ claimed_at: string | null }>(
       `SELECT claimed_at FROM swap_prequotes WHERE prequote_id = $1`, [q2],
@@ -233,7 +387,7 @@ describe("a later quote supersedes an earlier one for the same identity", () => 
     const sessionId = await seedSession();
     const q1 = await insertQuote(sessionId);
 
-    const claimed = await repo.claimBoundForExecute(sessionId, q1, MATCH, "swap", "resume");
+    const claimed = await claim(sessionId, q1, "resume");
     expect(claimed?.prequoteId).toBe(q1);
     expect(claimed?.claimedBy).toBe("resume");
   });
@@ -242,7 +396,7 @@ describe("a later quote supersedes an earlier one for the same identity", () => 
     const sessionId = await seedSession();
     const other = await insertQuote(sessionId, { matchHash: "identity-other" });
 
-    expect(await repo.claimBoundForExecute(sessionId, other, MATCH, "swap", "resume")).toBeNull();
+    expect(await claim(sessionId, other, "resume")).toBeNull();
     // The row is intact - a mismatched binding must not burn someone else's quote.
     const untouched = await queryOne<{ claimed_at: string | null }>(
       `SELECT claimed_at FROM swap_prequotes WHERE prequote_id = $1`, [other],
@@ -255,12 +409,12 @@ describe("a later quote supersedes an earlier one for the same identity", () => 
     const q1 = await insertQuote(sessionId);
 
     const [a, b] = await Promise.all([
-      repo.claimBoundForExecute(sessionId, q1, MATCH, "swap", "resume-a"),
-      repo.claimBoundForExecute(sessionId, q1, MATCH, "swap", "resume-b"),
+      claim(sessionId, q1, "resume-a"),
+      claim(sessionId, q1, "resume-b"),
     ]);
 
     expect([a, b].filter((r) => r !== null)).toHaveLength(1);
-    expect(await repo.diagnoseUnclaimable(sessionId, q1)).toBe("already_claimed");
+    expect(await diagnose(sessionId, q1)).toBe("already_claimed");
   });
 
   it("the candidate an execute picks is the NEWEST executable row", async () => {
@@ -270,7 +424,7 @@ describe("a later quote supersedes an earlier one for the same identity", () => 
 
     const candidate = await repo.findLatestExecutableByMatch(sessionId, MATCH, "swap");
     expect(candidate?.prequoteId).toBe(q2);
-    expect(await repo.claimForExecute(sessionId, q2, "execute")).not.toBeNull();
+    expect(await claim(sessionId, q2, "execute")).not.toBeNull();
   });
 
   it("a different identity is untouched - supersession is per (session, match, kind)", async () => {
@@ -278,7 +432,7 @@ describe("a later quote supersedes an earlier one for the same identity", () => 
     const q1 = await insertQuote(sessionId, { matchHash: "identity-a" });
     await insertQuote(sessionId, { matchHash: "identity-b", eligibilityKind: "unpriceable_output" });
 
-    expect(await repo.claimForExecute(sessionId, q1, "execute")).not.toBeNull();
+    expect(await claim(sessionId, q1, "execute", { matchHash: "identity-a" })).not.toBeNull();
   });
 
   it("an ineligible row never becomes the execute's candidate", async () => {
@@ -286,5 +440,58 @@ describe("a later quote supersedes an earlier one for the same identity", () => 
     await insertQuote(sessionId, { eligibilityKind: "unpriceable_output" });
 
     expect(await repo.findLatestExecutableByMatch(sessionId, MATCH, "swap")).toBeNull();
+  });
+
+  // ── Migration 097: the spendability vocabulary, live ───────────────────
+
+  describe("migration 099 widened the eligibility CHECK", () => {
+    // The lockstep test proves SQL text and TS union agree; only Postgres can
+    // prove the CONSTRAINT ITSELF admits the new values. Without this, a 097
+    // that failed to apply would leave the recorder's insert throwing inside a
+    // best-effort writer - and no superseding row would exist, which is the
+    // exact stale-authority hole 095 was written to close.
+    for (const eligibilityKind of [
+      "insufficient_balance",
+      "balance_unavailable",
+      "gas_reserve_insufficient",
+    ] as const) {
+      it(`accepts a row recorded as ${eligibilityKind}`, async () => {
+        const sessionId = await seedSession();
+        const id = await insertQuote(sessionId, { eligibilityKind });
+        const stored = await queryOne<{ eligibility_kind: string }>(
+          `SELECT eligibility_kind FROM swap_prequotes WHERE prequote_id = $1`,
+          [id],
+        );
+        expect(stored?.eligibility_kind).toBe(eligibilityKind);
+        // And it authorizes nothing: the claim predicate still refuses it.
+        expect(await repo.findLatestExecutableByMatch(sessionId, MATCH, "swap")).toBeNull();
+      });
+    }
+
+    it("still refuses a value outside the union - 097 widened, it did not open", async () => {
+      const sessionId = await seedSession();
+      await expect(
+        execute(
+          `INSERT INTO swap_prequotes (
+             prequote_id, session_id, match_hash, kind, family, provider,
+             chain_id, wallet_address, token_in, token_out, amount, slippage_bps,
+             safety_verdict, safety_detail, eligibility_kind, expires_at
+           ) VALUES ($1, $2, $3, 'swap', 'eip155', 'kyberswap', 8453,
+             '0x1234567890abcdef1234567890abcdef12345678', '0xaaa', '0xbbb', '10', 100,
+             'pass', '{}'::jsonb, 'not_a_real_eligibility', NOW() + INTERVAL '15 minutes')`,
+          [`prequote-097-${++counter}`, sessionId, MATCH],
+        ),
+      ).rejects.toThrow();
+    });
+
+    it("preserves the pre-097 values - the migration is expand-only", async () => {
+      const sessionId = await seedSession();
+      const id = await insertQuote(sessionId, { eligibilityKind: "oversize_snapshot" });
+      const stored = await queryOne<{ eligibility_kind: string }>(
+        `SELECT eligibility_kind FROM swap_prequotes WHERE prequote_id = $1`,
+        [id],
+      );
+      expect(stored?.eligibility_kind).toBe("oversize_snapshot");
+    });
   });
 });

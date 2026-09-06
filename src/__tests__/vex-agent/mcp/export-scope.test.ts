@@ -20,6 +20,7 @@ import {
   EXECUTE_TOOL_ENVELOPE_NAME,
   EXPORTED_TOOL_SEARCH_NAME,
   NON_EXPORTED_INTERNAL_TOOLS,
+  NON_EXPORTED_PROTOCOL_TOOLS,
   isExportedInternalTool,
   isExportedProtocolTool,
   listExportedTools,
@@ -137,12 +138,31 @@ describe("Studio MCP export scope - predicate versus the live registry", () => {
     expect(isExportedInternalTool("NotARealVexTool")).toBe(false);
   });
 
-  it("exports EVERY protocol manifest in the catalog, all namespaces", () => {
-    const missing = PROTOCOL_TOOLS
+  // CONTRACT CHANGE (2026-09-04): this used to assert "exports EVERY protocol
+  // manifest in the catalog, all namespaces". That is no longer the contract -
+  // `NON_EXPORTED_PROTOCOL_TOOLS` names the exceptions - so the assertion is
+  // RESTATED rather than weakened: every catalog manifest is still checked by
+  // name, and the only ids allowed to be unexported are the ones the set names.
+  it("exports every catalog manifest except the ids the exclusion set names", () => {
+    const unexpected = PROTOCOL_TOOLS
       .filter((manifest) => !isExportedProtocolTool(manifest.toolId))
-      .map((manifest) => manifest.toolId);
-    expect(missing).toEqual([]);
+      .map((manifest) => manifest.toolId)
+      .filter((toolId) => !NON_EXPORTED_PROTOCOL_TOOLS.has(toolId));
+    expect(unexpected).toEqual([]);
     expect(isExportedProtocolTool("khalani.not.a.real.tool")).toBe(false);
+  });
+
+  it("answers false for every id on the protocol exclusion set", () => {
+    const stillExported = [...NON_EXPORTED_PROTOCOL_TOOLS].filter(isExportedProtocolTool);
+    expect(stillExported).toEqual([]);
+  });
+
+  it("keeps every excluded protocol id out of listExportedTools", () => {
+    const listedIds = new Set(
+      listExportedTools().flatMap((entry) => (entry.kind === "protocol" ? [entry.toolId] : [])),
+    );
+    const leaked = [...NON_EXPORTED_PROTOCOL_TOOLS].filter((toolId) => listedIds.has(toolId));
+    expect(leaked).toEqual([]);
   });
 
   it("listExportedTools is the union of both surfaces, deterministic", () => {
@@ -158,7 +178,11 @@ describe("Studio MCP export scope - predicate versus the live registry", () => {
     const protocolIds = listed
       .filter((entry) => entry.kind === "protocol")
       .map((entry) => (entry.kind === "protocol" ? entry.toolId : ""));
-    expect(protocolIds).toEqual(PROTOCOL_TOOLS.map((manifest) => manifest.toolId));
+    expect(protocolIds).toEqual(
+      PROTOCOL_TOOLS
+        .map((manifest) => manifest.toolId)
+        .filter((toolId) => isExportedProtocolTool(toolId)),
+    );
 
     // Deterministic: two reads produce the same order.
     expect(listExportedTools()).toEqual(listed);
@@ -221,5 +245,46 @@ describe("Studio MCP export scope - the document agrees with the predicate", () 
     // A name here is a tool that exists but whose export decision is nowhere in
     // `mcp-export-scope.md`. Record the decision in the doc.
     expect(undocumented).toEqual([]);
+  });
+});
+
+/**
+ * The protocol exclusion set and its section of `mcp-export-scope.md`, checked
+ * in BOTH directions by name.
+ *
+ * Deliberately parsed from a bullet list rather than a table: the decision-table
+ * parser above reads every line that starts with `| `, so a second table in the
+ * same document would be swallowed by it and silently reinterpreted as internal
+ * tool names.
+ */
+describe("Studio MCP export scope - the protocol exclusion set matches the document", () => {
+  /** Every ``- `some.tool.id` `` bullet under the exclusion section. */
+  function parseDocumentedExclusions(markdown: string): readonly string[] {
+    const section = markdown.split("## Protocol tools not exported")[1] ?? "";
+    const untilNextHeading = section.split("\n## ")[0] ?? "";
+    const ids: string[] = [];
+    for (const line of untilNextHeading.split("\n")) {
+      const match = /^- `([a-z][a-z0-9_]*(?:\.[a-z0-9_]+)+)`/.exec(line);
+      if (match?.[1] !== undefined) ids.push(match[1]);
+    }
+    return ids;
+  }
+
+  const DOCUMENTED = parseDocumentedExclusions(readFileSync(SCOPE_DOC, "utf8"));
+
+  it("finds the documented exclusion section", () => {
+    expect(DOCUMENTED.length).toBeGreaterThan(0);
+  });
+
+  it("every documented exclusion is on the predicate's set", () => {
+    const missingFromCode = DOCUMENTED.filter((id) => !NON_EXPORTED_PROTOCOL_TOOLS.has(id));
+    expect(missingFromCode).toEqual([]);
+  });
+
+  it("every excluded id is documented", () => {
+    const documented = new Set(DOCUMENTED);
+    const missingFromDoc = [...NON_EXPORTED_PROTOCOL_TOOLS].filter((id) => !documented.has(id));
+    // A name here is an export decision made in code and recorded nowhere.
+    expect(missingFromDoc).toEqual([]);
   });
 });

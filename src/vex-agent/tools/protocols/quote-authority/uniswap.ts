@@ -36,13 +36,24 @@ import { formatUnits } from "viem";
 import { z } from "zod";
 
 import {
+  boundDebitPlanSchema,
+  canonicalizeDebitPlan,
+  type BoundDebitPlan,
+} from "./debit-plan.js";
+import {
   UNISWAP_FRESH_QUOTE_TOOL,
   snapshotRefusal,
   type SnapshotRefusal,
 } from "./refusal.js";
 
-/** Snapshot wire version. Bumped when the stored shape changes meaning. */
-export const UNISWAP_SNAPSHOT_VERSION = 1;
+/**
+ * Snapshot wire version. Bumped when the stored shape changes meaning.
+ *
+ * v2 (WP2-B) added the bound `debitPlan`, so a v1 row is refused by name rather
+ * than executed against a leg set nobody approved. The 15-minute prequote TTL
+ * clears the window on its own; nothing migrates.
+ */
+export const UNISWAP_SNAPSHOT_VERSION = 2;
 
 /**
  * The version tag of the Uniswap quote-binding line on an approval card.
@@ -108,6 +119,12 @@ export interface UniswapExecutionSnapshot {
   readonly approvedMinOutHuman: string;
   readonly slippageBps: number;
   readonly expiresAt: string;
+  /**
+   * The transactions this quote authorizes and the per-gas ceiling each is
+   * signed under (`./debit-plan.ts`). The execute takes its ceiling FROM here
+   * rather than reading a fresh one, and refuses a leg set that is not this one.
+   */
+  readonly debitPlan: BoundDebitPlan;
   readonly digest: string;
 }
 
@@ -155,6 +172,9 @@ function canonicalizeSnapshotFields(f: UniswapSnapshotFields): string {
     f.approvedMinOutHuman,
     f.slippageBps,
     f.expiresAt,
+    // Contains no U+0000 by construction (`canonicalizeDebitPlan` states why),
+    // so it occupies exactly one field of this serialization.
+    canonicalizeDebitPlan(f.debitPlan),
   ].join(FIELD_SEPARATOR);
 }
 
@@ -194,8 +214,16 @@ const UniswapSnapshotSchema = z.object({
   approvedMinOutHuman: z.string().min(1),
   slippageBps: z.number().int().min(0).max(10_000),
   expiresAt: z.string().min(1),
+  debitPlan: boundDebitPlanSchema,
   digest: z.string().regex(/^[0-9a-f]{64}$/),
 });
+
+/**
+ * The version tag alone, read before the full shape - see the sibling codec's
+ * note. A row from an older format is refused by NAME, because it bound a price
+ * and nothing about the transactions the swap would send.
+ */
+const UniswapSnapshotVersionSchema = z.object({ v: z.number().int() });
 
 export type RestoredUniswapSnapshot =
   | { readonly ok: true; readonly snapshot: UniswapExecutionSnapshot }
@@ -218,6 +246,13 @@ export function isUniswapRouteRef(routeRef: unknown): boolean {
 export function restoreUniswapSnapshot(routeRef: unknown): RestoredUniswapSnapshot {
   if (routeRef === null || routeRef === undefined) {
     return { ok: false, refusal: snapshotRefusal("missing_snapshot", UNISWAP_FRESH_QUOTE_TOOL) };
+  }
+  const version = UniswapSnapshotVersionSchema.safeParse(routeRef);
+  if (version.success && version.data.v !== UNISWAP_SNAPSHOT_VERSION) {
+    return {
+      ok: false,
+      refusal: snapshotRefusal("snapshot_version_unsupported", UNISWAP_FRESH_QUOTE_TOOL),
+    };
   }
   const parsed = UniswapSnapshotSchema.safeParse(routeRef);
   if (!parsed.success) {

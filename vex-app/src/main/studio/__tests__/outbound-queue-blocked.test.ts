@@ -152,6 +152,42 @@ describe("the outbound queue behind a writer that returned false", () => {
   });
 
   /**
+   * THE FOUR ANSWERS, at the seam that gives them.
+   *
+   * Every `enqueue` resolves, deliberately, so an ordinary disconnect is not an
+   * unhandled rejection in the SDK's write path. The consumer above turns
+   * acceptance into a `first response` line and a counter, so resolution alone
+   * is not an answer it can use: the outcome is the answer, and each of the
+   * four is produced here by the state that actually causes it.
+   */
+  it("names WHICH of its five settle edges each frame took", async () => {
+    const socket = blockedWire();
+    const queue = makeQueue(socket, { maxPending: 2 });
+
+    // Taken by the writer and parked on a `drain` that has not come.
+    const inFlight = queue.enqueue('{"id":0}\n');
+    await tick();
+    const queued = queue.enqueue('{"progress":1}\n', "progress:PT1");
+    // A newer frame for the same request REPLACES the queued one.
+    await expect(queue.enqueue('{"progress":2}\n', "progress:PT1")).resolves.toBe(
+      "coalesced",
+    );
+    void queue.enqueue('{"id":1}\n');
+    // At the bound, and expendable.
+    await expect(queue.enqueue('{"progress":9}\n', "progress:PT9")).resolves.toBe(
+      "dropped",
+    );
+
+    socket.unblock();
+    await expect(inFlight).resolves.toBe("accepted");
+    await expect(queued).resolves.toBe("accepted");
+
+    queue.close();
+    // Admission is closed: the frame never reaches the wire and says so.
+    await expect(queue.enqueue('{"id":2}\n')).resolves.toBe("closed");
+  });
+
+  /**
    * THE CASE WITH NO DRAIN IN IT AT ALL.
    *
    * `write` refused, `drain` never fires, and then the connection closes. Every
@@ -180,9 +216,10 @@ describe("the outbound queue behind a writer that returned false", () => {
     queue.close();
     // The queued one settles at once; the in-flight one settles when the socket
     // announces its close, which is the connection teardown it is waiting on.
-    await queued;
+    // NEITHER is acceptance: the bytes are still in this process.
+    await expect(queued).resolves.toBe("closed");
     socket.destroy();
-    await inFlight;
+    await expect(inFlight).resolves.toBe("closed");
     expect(queue.pendingCount()).toBe(0);
 
     // Admission is closed: a frame produced by a teardown handler resolves and

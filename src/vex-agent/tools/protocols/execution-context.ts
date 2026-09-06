@@ -47,10 +47,18 @@ export function toProtocolExecutionContext(
     // the provenance, so no lane can carry the approval id while dropping the
     // snapshot it authorized.
     approvedQuoteAuthority: context.approvedQuoteAuthority ?? null,
+    // ...and WHICH PREQUOTE ROW, with the digest of what it disclosed. Same
+    // lane, same reason: a context that carried the approval id while dropping
+    // the row it approved would let the gate re-decide which quote is current.
+    approvedPrequoteAuthority: context.approvedPrequoteAuthority ?? null,
     // The call this dispatch answers.
     toolCallId: call.toolCallId,
     // Which consent surface exists for this dispatch. See `runtime/gates.ts`.
     approvalSurface,
+    // ...and WHICH Studio project, when there is one. Threaded with the rest of
+    // the trusted provenance rather than beside it, so a lane cannot carry the
+    // surface while dropping the project whose root bounds its file access.
+    studioProjectId: context.studioProjectId ?? null,
     // Operator Stop. EVERY protocol lane must carry it - passing it on only
     // some silently un-cancels part of the protocol surface.
     ...(context.abortSignal ? { abortSignal: context.abortSignal } : {}),

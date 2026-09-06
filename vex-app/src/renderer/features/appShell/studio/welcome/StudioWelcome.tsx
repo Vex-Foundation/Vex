@@ -17,10 +17,15 @@
  * I1 was that the old screen said a lot and told a first-time user nothing they
  * could act on.
  *
- * The way back to the agent shell is one plain button under the pointer line.
- * The Agent | Studio capsule itself lives in the rail header (the one home the
- * audit gave it, visible on every Studio screen), so this screen must not mount
- * a second radiogroup with the same accessible name beside it.
+ * The way back to the agent shell is the Agent | Studio capsule itself, seated
+ * under the vex mark (owner decree 2026-09-04: the switch sits under the
+ * wordmark on the welcome screen, "as it was before"). The `Runtime mode`
+ * radiogroup keeps exactly ONE home per page, decided by one store fact,
+ * `activeProjectId`: null, it is here; non-null, the welcome is gone and the
+ * Studio rail header (`StudioSidebar`) carries it. The plain "Back to Agent
+ * mode" button that stood in for the capsule while it was absent is gone with
+ * it; the pointer sentence stays as the third hero line, under the capsule
+ * it describes.
  *
  * ## Two things this screen deliberately does NOT have
  *
@@ -51,10 +56,10 @@ import { RailGroup } from "../../../../components/ui/rail-list.js";
 import { IconFolderOpen, IconPlus } from "../../../../components/icons/index.js";
 import { useProjects } from "../../../../lib/api/projects.js";
 import { useUiStore } from "../../../../stores/uiStore.js";
+import { RuntimeModeToggle } from "../../RuntimeModeToggle.js";
 import { StudioBridgeReadinessPanel } from "./StudioBridgeReadinessPanel.js";
 import { WelcomeProjectRow } from "./WelcomeProjectRow.js";
 import {
-  STUDIO_WELCOME_AGENT_ACTION,
   STUDIO_WELCOME_AGENT_POINTER,
   STUDIO_WELCOME_CREATE_LABEL,
   STUDIO_WELCOME_LEAD,
@@ -80,6 +85,10 @@ export function StudioWelcome({
   onCreateProject,
   onSelectProject,
 }: StudioWelcomeProps): JSX.Element {
+  // The capsule takes the mode and the setter as props by contract; this
+  // screen holds the store subscription. It renders only while this screen
+  // does (no active project), which is the module note's one-seat rule.
+  const runtimeMode = useUiStore((state) => state.runtimeMode);
   const setRuntimeMode = useUiStore((state) => state.setRuntimeMode);
   const query = useProjects();
   const projects: readonly ProjectDto[] =
@@ -116,6 +125,9 @@ export function StudioWelcome({
       <div className="relative z-10 flex w-full max-w-xl flex-col gap-8">
         <div className="flex flex-col items-center gap-3 text-center">
           <VexMark size={40} className="text-brand-mark" aria-hidden="true" />
+          {/* THE WAY BACK: the capsule under the wordmark, the same seat the
+            * agent hero gives it. One radiogroup per page (module note). */}
+          <RuntimeModeToggle runtimeMode={runtimeMode} onChange={setRuntimeMode} />
           <h1 className="font-display text-[26px] leading-[34px] font-medium tracking-[-0.01em] text-ink-primary">
             {STUDIO_WELCOME_TITLE}
           </h1>
@@ -124,6 +136,9 @@ export function StudioWelcome({
           </p>
           <p className="text-[13px] leading-[20px] text-ink-tertiary">
             {STUDIO_WELCOME_NEXT}
+          </p>
+          <p className="text-[13px] leading-[20px] text-ink-tertiary">
+            {STUDIO_WELCOME_AGENT_POINTER}
           </p>
         </div>
 
@@ -146,8 +161,8 @@ export function StudioWelcome({
             {onCreateProject !== undefined ? (
               // THE PRIMARY ACTION, marked so the centre's focus seam can find
               // it by name rather than by "the first button on the screen" -
-              // the bridge diagnostic and the way back to Agent are buttons
-              // too, and the Start row is the last of the three to render.
+              // the bridge diagnostic's controls and the capsule's radios come
+              // first in the tree, and the Start row renders after them.
               <Button
                 variant="accent"
                 data-vex-studio-welcome-action="primary"
@@ -206,20 +221,6 @@ export function StudioWelcome({
             ))
           )}
         </RailGroup>
-
-        {/* The way back to the agent shell: one plain action, NOT a second
-          * mode capsule. The Agent | Studio capsule has exactly one home, the
-          * rail header, and it is on screen at the same time as this welcome;
-          * a second radiogroup with the same accessible name doubled the
-          * control (e2e/studio.spec.ts pins the count at one). */}
-        <div className="flex flex-col items-center gap-2 border-t border-line-1 pt-6">
-          <p className="text-center text-[12px] leading-[18px] text-ink-tertiary">
-            {STUDIO_WELCOME_AGENT_POINTER}
-          </p>
-          <Button variant="outline" onClick={() => setRuntimeMode("agent")}>
-            {STUDIO_WELCOME_AGENT_ACTION}
-          </Button>
-        </div>
       </div>
     </section>
   );

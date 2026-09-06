@@ -13,6 +13,7 @@ import type { InternalToolContext } from "../../../../../tools/internal/types.js
 import type { WalletResolution } from "@tools/wallet/multi-auth.js";
 import type { Permission, WalletPolicy } from "@vex-agent/engine/types.js";
 import type { ApprovedQuoteAuthority } from "@vex-agent/tools/protocols/quote-authority/approved-authority.js";
+import type { ApprovedPrequoteAuthority } from "@vex-agent/tools/protocols/prequote/approved-row-authority.js";
 
 import logger from "@utils/logger.js";
 import {
@@ -37,6 +38,14 @@ export async function buildResumedApprovalToolContext(args: {
    * swap execute, and every row written before the binding existed.
    */
   readonly approvedQuoteAuthority?: ApprovedQuoteAuthority | null;
+  /**
+   * WHICH PREQUOTE ROW it was gated on, and the digest of what that row
+   * disclosed. Read from the same envelope by the caller. Absent for every
+   * approval that binds none: any lane but a gated execute, and every row
+   * written before the binding existed - and the prequote gate fails closed on
+   * a resume that can name no row.
+   */
+  readonly approvedPrequoteAuthority?: ApprovedPrequoteAuthority | null;
 }): Promise<InternalToolContext> {
   const walletHydrated = await hydrateEngineSession(args.sessionId);
   const walletResolution: WalletResolution = walletHydrated
@@ -58,6 +67,7 @@ export async function buildResumedApprovalToolContext(args: {
     missionId: await resolveMissionId(args.missionRunId),
     approvalId: args.approvalId ?? null,
     approvedQuoteAuthority: args.approvedQuoteAuthority ?? null,
+    approvedPrequoteAuthority: args.approvedPrequoteAuthority ?? null,
     sessionKind: "agent",
     // Resuming an action the user already approved is explicit per-action
     // authorization — the plan-acceptance gate (agent-autonomy) does not

@@ -87,6 +87,57 @@ export function dbError(
   });
 }
 
+/**
+ * A project-scoped read whose project is gone or tombstoned.
+ *
+ * The sentence and the code MIRROR `portfolio-db.ts`'s project arm on purpose:
+ * the user meets the same failure through two surfaces of the same rail, and
+ * two different sentences for one state is what makes a refusal read as a bug.
+ * They are not shared because both are private to their own feed module and
+ * neither exports its error vocabulary; the extraction owner would be a
+ * `projects` error module, which is not this change's to create.
+ *
+ * NEVER an empty page: on an audit feed "nothing found" and "that project is
+ * gone" are different answers and rule 04 forbids collapsing them.
+ */
+export function projectNotFound(correlationId: string): Result<never, VexError> {
+  return err({
+    code: "projects.not_found",
+    domain: "portfolio",
+    message: "That project no longer exists. Refresh your project list.",
+    retryable: false,
+    userActionable: true,
+    redacted: true,
+    correlationId,
+  });
+}
+
+/**
+ * A project whose STORED wallet selection no longer matches the inventory.
+ * Also never an empty page - a drifted selection means Vex cannot say whose
+ * activity the feed would be showing, which is the one thing this surface
+ * exists to state.
+ */
+export function projectWalletDrift(
+  family: "evm" | "solana",
+  correlationId: string,
+): Result<never, VexError> {
+  const label = family === "evm" ? "EVM" : "Solana";
+  return err({
+    code: "projects.wallet_drift",
+    domain: "portfolio",
+    message:
+      `The ${label} wallet saved for this project no longer matches the wallet in `
+      + "your inventory: it was removed, or re-imported over a different key. "
+      + "No activity was read. Select the wallet again in project settings to "
+      + "confirm which key it should use.",
+    retryable: false,
+    userActionable: true,
+    redacted: true,
+    correlationId,
+  });
+}
+
 export function isStatementTimeout(cause: unknown): boolean {
   return (
     typeof cause === "object" &&
@@ -146,6 +197,42 @@ export async function rollbackQuietly(client: Client): Promise<void> {
   }
 }
 
+// ── Address lookup variants ───────────────────────────────────────────────
+
+/** Shape-valid EVM address; anything else is bound exactly, never broadened. */
+const EVM_ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
+
+/**
+ * The indexed lookup variants an address can be STORED as, for the addresses
+ * this module binds beside the inventory allow-list (the project narrowing).
+ *
+ * It implements the SAME rule
+ * `inventory-wallets.ts:resolveInventoryWalletAddressLookupVariants` applies to
+ * the inventory, and for the same measured reason: wallet records are
+ * checksummed while receipt and intent writers commonly canonicalize to
+ * lowercase, so binding only the stored form would hide the user's own history
+ * behind a producer's casing choice. On a project-scoped audit feed that is not
+ * a cosmetic miss - it renders as "this project has never done anything".
+ *
+ * Solana base58 stays EXACT and case-sensitive (its casing is identity), and an
+ * invalid EVM-shaped value is bound exactly too - fail closed, never broadened.
+ *
+ * The two implementations are kept in agreement by
+ * `agent-scan-db-project-scope.test.ts`, which runs both over the same
+ * inventory. A shared owner is the right end state; `inventory-wallets.ts` is
+ * outside this lane's file set, so the guard is the test rather than the move.
+ */
+export function toAddressLookupVariants(
+  addresses: readonly string[],
+): readonly string[] {
+  const variants: string[] = [];
+  for (const address of addresses) {
+    variants.push(address);
+    if (EVM_ADDRESS_PATTERN.test(address)) variants.push(address.toLowerCase());
+  }
+  return [...new Set(variants)];
+}
+
 // ── Status vocabulary translation ─────────────────────────────────────────
 
 /**
@@ -184,6 +271,21 @@ export interface AgentScanQueryPlan {
 export interface AgentScanQueryArgs {
   /** Server-resolved inventory allow-list. NEVER caller-supplied, never omitted. */
   readonly wallets: readonly string[];
+  /**
+   * The PROJECT's own server-resolved address lookup variants when
+   * `filters.projectId` was supplied, else `null`.
+   *
+   * It is an INTERSECTION, not a scope: the inventory allow-list above stays
+   * `$1` and unconditional, and this compiles to a SECOND
+   * `wallet_address = ANY(...)` predicate beside it. There is no code path in
+   * which supplying a project replaces the allow-list, so quoting a project id
+   * can only ever remove rows.
+   *
+   * Never an EMPTY array: a project with nothing selected returns the empty
+   * page before this builder is reached, because `= ANY('{}')` is false for
+   * every row and would express the same thing far less legibly.
+   */
+  readonly projectWallets: readonly string[] | null;
   readonly filters: AgentScanFilters;
   readonly cursor: AgentScanCursor | null;
 }
@@ -193,26 +295,38 @@ const CURSOR_TS_EXPR = `to_char(aa.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"
 
 /**
  * THE VEX FEE FROM ITS SEPARATE LEG, projected onto the logical row (R1 Step 2b)
- * — a READ projection that writes nothing, so the documented
+ * - a READ projection that writes nothing, so the documented
  * `SUM(usd_vex_fee_est) WHERE status='confirmed'` revenue invariant is
  * byte-unaffected.
  *
  * Since the OWNER REVISION of 2026-08-05 no fee leg is its own ledger entry here
  * (see `AGENT_ACTIVITY_LOGICAL_ROW_PREDICATE`), so this is the ONLY place the
- * charge is visible on this surface and it projects unconditionally. The former
- * "and only if that leg is not already its own row" guard was the exact predicate
- * that is now false for every fee role, and is deleted rather than kept as a tautology.
+ * charge is visible on this surface and it projects unconditionally.
  *
- * A9 — a confirmed fee whose PARENT FAILED stays visible: the sibling arm gates
- * on `fee.status = 'confirmed'` only, never on `aa.status`, so the failed launch
- * row still reports the fee that was really charged. Only the OWN-ROW arm is
- * gated on `aa.status = 'confirmed'`, because those columns are written at intent
- * time and the row's own status is what says whether that fee was collected.
+ * A9 - a confirmed fee whose PARENT FAILED stays visible: the sibling arm never
+ * consults `aa.status`, so the failed launch row still reports the fee that was
+ * really charged. Only the OWN-ROW arm is gated on `aa.status = 'confirmed'`,
+ * because those columns are written at intent time and the row's own status is
+ * what says whether that fee was collected.
  *
- * ONE SOURCE WINS WHOLE, and the anomalies FAIL CLOSED — two confirmed fee legs
+ * V1 (owner decision 2026-09-04, mirroring the AgentScan server's
+ * `read-repo.ts`) - a PENDING or REVERTED fee attempt stays visible too. The
+ * sibling lateral no longer filters on `fee.status = 'confirmed'`; the picked
+ * leg's status, hash and chain are projected for every state, while the MONEY
+ * fields (symbol, amount, USD) are still filled only by a CONFIRMED leg, because
+ * an attempted charge is not a charge. A confirmed retry wins the ORDER BY, so
+ * the money is read from the leg that actually settled. Before this rule a swap
+ * or launch whose fee transfer was still in flight, or had reverted, reported NO
+ * fee attempt at all.
+ *
+ * ONE SOURCE WINS WHOLE, and the anomalies FAIL CLOSED - two CONFIRMED fee legs
  * on one execution, or an own-row fee beside a confirmed sibling, report NO
- * exact fee at all. Reporting one exact-looking fee while knowingly omitting
- * another is a money field stating less than the truth.
+ * exact fee at all, and the multiplicity case blanks the leg-visibility fields
+ * with it. Reporting one exact-looking fee while knowingly omitting another is a
+ * money field stating less than the truth. The count is
+ * `FILTER (WHERE status = 'confirmed')` and not a plain `count(*)`: with pending
+ * and failed legs now admitted, a legitimate failed-then-confirmed retry pair
+ * would otherwise be read as a double charge and blank a real fee.
  */
 const VEX_FEE_LATERALS = `
       LEFT JOIN LATERAL (
@@ -220,26 +334,36 @@ const VEX_FEE_LATERALS = `
                COALESCE(fee.executed_amount_in_human, fee.amount_in_human) AS vex_fee_amount_human,
                COALESCE(fee.executed_amount_in_raw,   fee.amount_in_raw)   AS vex_fee_amount_raw,
                fee.usd_vex_fee_est                                        AS usd_vex_fee_est,
-               count(*) OVER ()                                           AS fee_leg_count
+               fee.status                                                 AS leg_status,
+               fee.tx_hash                                                AS leg_tx_hash,
+               fee.chain_id                                               AS leg_chain_id,
+               fee.chain_family                                           AS leg_chain_family,
+               count(*) FILTER (WHERE fee.status = 'confirmed') OVER ()    AS confirmed_leg_count
           FROM agent_activity fee
          WHERE fee.protocol_execution_id = aa.protocol_execution_id
            AND fee.id        <> aa.id
-           AND fee.event_role IN ('bridge_fee','swap_fee','trench_fee','pools_fee','tx_vex_fee')
-           AND fee.status     = 'confirmed'
-         ORDER BY fee.event_index ASC
+           AND fee.event_role IN ('bridge_fee','swap_fee','trench_fee','pools_fee','tx_vex_fee','vex_fee')
+         ORDER BY (fee.status = 'confirmed') DESC, fee.event_index DESC, fee.id DESC
          LIMIT 1
       ) fee_leg ON TRUE
       LEFT JOIN LATERAL (
         SELECT (aa.vex_fee_amount_raw IS NOT NULL AND aa.status = 'confirmed')  AS own_ok,
                (fee_leg.vex_fee_amount_raw IS NOT NULL
-                AND fee_leg.fee_leg_count = 1)                                  AS sibling_ok
+                AND fee_leg.leg_status = 'confirmed'
+                AND fee_leg.confirmed_leg_count <= 1)                           AS sibling_ok,
+               (fee_leg.leg_status IS NOT NULL
+                AND fee_leg.confirmed_leg_count <= 1)                           AS leg_visible
       ) fee_flags ON TRUE
       LEFT JOIN LATERAL (
         SELECT CASE
                  WHEN fee_flags.own_ok AND fee_flags.sibling_ok THEN NULL
                  WHEN fee_flags.own_ok THEN 'in_transaction'
                  WHEN fee_flags.sibling_ok THEN 'separate_leg'
-               END::text AS vex_fee_source
+               END::text AS vex_fee_source,
+               CASE WHEN fee_flags.leg_visible THEN fee_leg.leg_status END::text       AS vex_fee_leg_status,
+               CASE WHEN fee_flags.leg_visible THEN fee_leg.leg_tx_hash END::text      AS vex_fee_leg_tx_hash,
+               CASE WHEN fee_flags.leg_visible THEN fee_leg.leg_chain_id END           AS vex_fee_leg_chain_id,
+               CASE WHEN fee_flags.leg_visible THEN fee_leg.leg_chain_family END::text AS vex_fee_leg_chain_family
       ) fee_pick ON TRUE`;
 
 /**
@@ -263,7 +387,7 @@ const LEGS_EXPR = `CASE WHEN aa.kind = 'bridge' THEN (
         ) END`;
 
 export function buildAgentScanPageQuery(args: AgentScanQueryArgs): AgentScanQueryPlan {
-  const { wallets, filters, cursor } = args;
+  const { wallets, projectWallets, filters, cursor } = args;
   const params: unknown[] = [];
   const push = (value: unknown): number => {
     params.push(value);
@@ -292,6 +416,15 @@ export function buildAgentScanPageQuery(args: AgentScanQueryArgs): AgentScanQuer
   // only ever remove rows from an already-scoped set — never add any.
   if (filters.sessionId !== undefined) {
     predicates.push(`AND aa.session_id = $${push(filters.sessionId)}`);
+  }
+  // NARROWS the read to the project's own selection, INTERSECTED with the
+  // unconditional allow-list above rather than replacing it. Addresses arrive
+  // already resolved and expanded to their indexed lookup variants
+  // (`agent-scan-db.ts`); a caller-supplied address never reaches this line.
+  if (projectWallets !== null) {
+    predicates.push(
+      `AND aa.wallet_address = ANY($${push([...projectWallets])}::text[])`,
+    );
   }
 
   if (cursor !== null) {
@@ -360,6 +493,15 @@ export function buildAgentScanPageQuery(args: AgentScanQueryArgs): AgentScanQuer
           WHEN 'separate_leg' THEN fee_leg.vex_fee_amount_human
         END AS vex_fee_amount_human,
         fee_pick.vex_fee_source,
+        -- Owner rule V1: the fee ATTEMPT itself, whatever became of it. Not a
+        -- money field, so it survives the confirmed-only gate above.
+        CASE fee_pick.vex_fee_leg_status
+          WHEN 'definitively_failed' THEN 'failed'
+          ELSE fee_pick.vex_fee_leg_status
+        END AS vex_fee_leg_status,
+        LEFT(fee_pick.vex_fee_leg_tx_hash, ${AGENT_SCAN_TEXT_BOUNDS.txRef}) AS vex_fee_leg_tx_hash,
+        fee_pick.vex_fee_leg_chain_id,
+        LEFT(fee_pick.vex_fee_leg_chain_family, ${AGENT_SCAN_TEXT_BOUNDS.chainFamily}) AS vex_fee_leg_chain_family,
         LEFT(aa.failure_code, ${AGENT_SCAN_TEXT_BOUNDS.failureCode}) AS failure_code,
         LEFT(aa.failure_reason, ${AGENT_SCAN_TEXT_BOUNDS.failureReason}) AS failure_reason,
         LEFT(aa.tx_hash, ${AGENT_SCAN_TEXT_BOUNDS.txRef}) AS tx_hash,

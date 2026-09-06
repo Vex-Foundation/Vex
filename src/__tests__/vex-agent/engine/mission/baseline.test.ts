@@ -15,6 +15,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 import { SOLANA_SYNTHETIC_CHAIN_ID } from "../../../../constants/solana-chain.js";
+import { SOLANA_NATIVE_PERSISTED_ADDRESS } from "@tools/solana-ecosystem/shared/solana-asset-identity.js";
+import { SOL_MINT } from "@tools/solana-ecosystem/shared/solana-constants.js";
 import type { DeployedCapital } from "../../../../vex-agent/engine/types.js";
 
 const mockGetPortfolioValuation = vi.fn();
@@ -53,6 +55,7 @@ const DECLARED: DeployedCapital = {
   decimals: 18,
   chainId: 4663,
   assetAddress: TOKEN,
+  assetKind: "token",
   assetSymbol: "VEX",
 };
 
@@ -107,6 +110,7 @@ describe("buildMissionBaseline - recorded", () => {
     expect(baseline.deployedCapitalAtStart).toEqual({
       chainId: 4663,
       assetAddress: TOKEN,
+      assetKind: "token",
       assetSymbol: "VEX",
       declaredAmountRaw: DECLARED.amountRaw,
       declaredDecimals: 18,
@@ -132,6 +136,148 @@ describe("buildMissionBaseline - recorded", () => {
     expect(baseline.status).toBe("recorded");
     expect(baseline.scope.addresses).toEqual([SOL_WALLET]);
     expect(baseline.deployedCapitalAtStart).toBeNull();
+  });
+
+  it("reads canonical native SOL from its distinct projection key", async () => {
+    mockGetAssetHolding.mockResolvedValue({
+      heldAmountRaw: "1500000000",
+      heldDecimals: 9,
+      heldUsdEstimate: 150,
+      rowCount: 1,
+      hasUnpricedRow: false,
+    });
+    const deployedCapital: DeployedCapital = {
+      amountRaw: "1000000000",
+      decimals: 9,
+      chainId: SOLANA_SYNTHETIC_CHAIN_ID,
+      assetAddress: SOL_MINT,
+      assetKind: "native",
+      assetSymbol: "SOL",
+    };
+
+    const baseline = await buildMissionBaseline({
+      missionId: "mission-sol",
+      allowedWallets: [SOL_WALLET],
+      deployedCapital,
+    });
+
+    expect(mockGetAssetHolding).toHaveBeenCalledWith(
+      [SOL_WALLET],
+      SOLANA_SYNTHETIC_CHAIN_ID,
+      SOLANA_NATIVE_PERSISTED_ADDRESS,
+      3_500,
+    );
+    expect(baseline.deployedCapitalAtStart).toMatchObject({
+      assetAddress: SOL_MINT,
+      assetKind: "native",
+      assetSymbol: "SOL",
+      heldAmountRaw: "1500000000",
+      heldDecimals: 9,
+    });
+  });
+
+  it("names the pre-first-sync legacy merged SOL row as ambiguous without using its amount", async () => {
+    mockGetAssetHolding
+      .mockResolvedValueOnce({
+        heldAmountRaw: null,
+        heldDecimals: null,
+        heldUsdEstimate: null,
+        rowCount: 0,
+        hasUnpricedRow: false,
+      })
+      .mockResolvedValueOnce({
+        heldAmountRaw: "9000000000",
+        heldDecimals: 9,
+        heldUsdEstimate: 900,
+        rowCount: 1,
+        hasUnpricedRow: false,
+      });
+    const deployedCapital: DeployedCapital = {
+      amountRaw: "1000000000",
+      decimals: 9,
+      chainId: SOLANA_SYNTHETIC_CHAIN_ID,
+      assetAddress: SOL_MINT,
+      assetKind: "native",
+      assetSymbol: "SOL",
+    };
+
+    const baseline = await buildMissionBaseline({
+      missionId: "mission-sol-before-sync",
+      allowedWallets: [SOL_WALLET],
+      deployedCapital,
+    });
+
+    expect(mockGetAssetHolding).toHaveBeenNthCalledWith(
+      1,
+      [SOL_WALLET],
+      SOLANA_SYNTHETIC_CHAIN_ID,
+      SOLANA_NATIVE_PERSISTED_ADDRESS,
+      3_500,
+    );
+    expect(mockGetAssetHolding).toHaveBeenNthCalledWith(
+      2,
+      [SOL_WALLET],
+      SOLANA_SYNTHETIC_CHAIN_ID,
+      SOL_MINT,
+      3_500,
+    );
+    expect(baseline.status).toBe("partial");
+    expect(baseline.reasons).toContain("deployed_capital_asset_ambiguous");
+    expect(baseline.deployedCapitalAtStart).toMatchObject({
+      assetKind: "native",
+      heldAmountRaw: null,
+      heldDecimals: null,
+      heldUsdEstimate: null,
+    });
+  });
+
+  it("reads wSOL from the token row when the structural kind is token", async () => {
+    const deployedCapital: DeployedCapital = {
+      amountRaw: "500000000",
+      decimals: 9,
+      chainId: SOLANA_SYNTHETIC_CHAIN_ID,
+      assetAddress: SOL_MINT,
+      assetKind: "token",
+      assetSymbol: "wSOL",
+    };
+
+    await buildMissionBaseline({
+      missionId: "mission-wsol",
+      allowedWallets: [SOL_WALLET],
+      deployedCapital,
+    });
+
+    expect(mockGetAssetHolding).toHaveBeenCalledWith(
+      [SOL_WALLET],
+      SOLANA_SYNTHETIC_CHAIN_ID,
+      SOL_MINT,
+      3_500,
+    );
+  });
+
+  it("leaves a legacy SOL_MINT declaration ambiguous instead of guessing native or wSOL", async () => {
+    const legacy = { ...DECLARED,
+      decimals: 9,
+      chainId: SOLANA_SYNTHETIC_CHAIN_ID,
+      assetAddress: SOL_MINT,
+      assetKind: null,
+      assetSymbol: "SOL",
+    } satisfies DeployedCapital;
+
+    const baseline = await buildMissionBaseline({
+      missionId: "mission-legacy-sol",
+      allowedWallets: [SOL_WALLET],
+      deployedCapital: legacy,
+    });
+
+    expect(mockGetAssetHolding).not.toHaveBeenCalled();
+    expect(baseline.status).toBe("partial");
+    expect(baseline.reasons).toContain("deployed_capital_asset_ambiguous");
+    expect(baseline.deployedCapitalAtStart).toMatchObject({
+      assetAddress: SOL_MINT,
+      assetKind: null,
+      heldAmountRaw: null,
+    });
   });
 
   it("does not match a Solana wallet whose case was folded", async () => {
@@ -240,6 +386,7 @@ describe("buildMissionBaseline - every named reason", () => {
     expect(baseline.deployedCapitalAtStart).toEqual({
       chainId: 4663,
       assetAddress: TOKEN,
+      assetKind: "token",
       assetSymbol: "VEX",
       declaredAmountRaw: DECLARED.amountRaw,
       declaredDecimals: 18,
@@ -456,6 +603,7 @@ describe("readMissionBaseline", () => {
       deployedCapitalAtStart: {
         chainId: SOLANA_SYNTHETIC_CHAIN_ID,
         assetAddress: SOL_WALLET,
+        assetKind: null,
         assetSymbol: "SOL",
         declaredAmountRaw: "1000000000",
         declaredDecimals: 9,

@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
   clearPending: vi.fn(),
 }));
 
-vi.mock("../../ipc/runtime/_ensure-engine-db-url.js", () => ({
+vi.mock("../../database/engine-db-readiness.js", () => ({
   ensureEngineDbUrl: mocks.ensureEngineDbUrl,
 }));
 vi.mock("../approval-broker.js", () => ({

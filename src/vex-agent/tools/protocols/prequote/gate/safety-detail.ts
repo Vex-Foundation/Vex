@@ -9,6 +9,29 @@ import {
   type JupiterFeePreview,
 } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/fee-swap.js";
 
+import type { BoundDebitPlan } from "../../quote-authority/debit-plan.js";
+import { restoreRouteSnapshot } from "../../quote-authority/restore.js";
+import { spendabilityPreviewSchema } from "../../quote-authority/spendability.js";
+import type { SpendabilityPreview } from "../../quote-authority/spendability-contract.js";
+import { isUniswapRouteRef, restoreUniswapSnapshot } from "../../quote-authority/uniswap.js";
+
+/**
+ * Extract the quote-time spendability facts (WP2) from a matched prequote's
+ * bounded `safetyDetail`, for the approval card.
+ *
+ * Re-parsed with the SAME schema the recorder validated against, because the
+ * value has crossed persistence as JSONB since (rule 04). A row written before
+ * this lane existed, by a venue that measures no balances, or by an older card
+ * version yields `undefined` - and the card then simply carries no spendability
+ * line, which is honest, rather than a partial one.
+ */
+export function spendabilityFromSafetyDetail(
+  safetyDetail: Record<string, unknown>,
+): SpendabilityPreview | undefined {
+  const parsed = spendabilityPreviewSchema.safeParse(safetyDetail.spendability);
+  return parsed.success ? parsed.data : undefined;
+}
+
 /**
  * Extract the Pendle term-lock maturity from a matched swap prequote's bounded
  * `safetyDetail`, for the approval preview. The detail is `Record<string,
@@ -64,4 +87,35 @@ export function maxFotTaxFromSafetyDetail(safetyDetail: Record<string, unknown>)
     if (tax > 0 && (max === undefined || tax > max)) max = tax;
   }
   return max;
+}
+
+/**
+ * The debit plan the matched row's ROUTE SNAPSHOT sealed, or `undefined` when
+ * the row seals no readable snapshot.
+ *
+ * The snapshot is the execute's authority: what comes back here is the leg set
+ * and the per-gas ceiling the execute will actually be held to
+ * (`compareDebitPlanRoles`). The card, by contrast, states the plan the
+ * SPENDABILITY preview carried. Two artifacts, two writers, one row - which is
+ * why {@link checkSealedDebitPlanAgreement} exists.
+ *
+ * Dispatches on the snapshot's own provider tag, exactly as
+ * `readQuoteBindingPreview` does, and for the same reason: a row written by one
+ * venue must never be read through the other's codec. The two dispatchers are
+ * deliberately parallel; if a third venue ever seals a snapshot, both must gain
+ * its arm (the follow-up is to give `quote-authority/restore.ts` one dispatcher
+ * that yields both projections).
+ *
+ * A refusal from either restorer - unreadable, wrong version, digest mismatch,
+ * not executable - yields `undefined` rather than a throw: the row's own
+ * executability is the gate's separate guardrail, and this reader's only job is
+ * to say whether a plan is legible here.
+ */
+export function sealedDebitPlanFromRouteRef(routeRef: unknown): BoundDebitPlan | undefined {
+  if (isUniswapRouteRef(routeRef)) {
+    const uni = restoreUniswapSnapshot(routeRef);
+    return uni.ok ? uni.snapshot.debitPlan : undefined;
+  }
+  const restored = restoreRouteSnapshot(routeRef);
+  return restored.ok ? restored.snapshot.debitPlan : undefined;
 }

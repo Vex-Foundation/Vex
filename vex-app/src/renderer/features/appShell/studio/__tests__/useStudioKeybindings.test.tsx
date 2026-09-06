@@ -40,6 +40,7 @@ import {
   useStudioKeybindings,
 } from "../useStudioKeybindings.js";
 import { studioWatermarkRows } from "../keybindings-labels.js";
+import { STUDIO_KEYBINDINGS } from "../keybindings.js";
 import { publishProjectWorkspaceCommands } from "../workspace/workspace-handles.js";
 import { installStudioDomStubs, makeProject } from "./studio-fixtures.js";
 
@@ -648,5 +649,40 @@ describe("the watermark rows come from the table", () => {
   it("renders nothing when no intent is bound", () => {
     render(<EmptyWorkspaceWatermark rows={studioWatermarkRows("linux", new Set())} />);
     expect(document.querySelector("[data-vex-empty-watermark]")).toBeNull();
+  });
+});
+
+/**
+ * THE TWO TABLES MUST AGREE, and nothing but this asserts it.
+ *
+ * `StudioKeybinding.reserved` says a row has no owner; `studioBoundIntents()`
+ * reads the handler map that decides whether it does. They are in different
+ * modules on purpose - the table is pure data, the handlers are the hook's -
+ * and `studioTerminalSkipChords` trusts the FLAG, because importing the map
+ * into the table would point it at its own consumer.
+ *
+ * So the flag is only true because this test says so. Wire `toggleTerminal`
+ * without clearing its flag and xterm goes back to refusing `Ctrl+\`` on
+ * behalf of a handler that would now have acted; clear the flag without wiring
+ * it and the key is dead again. Either way, red here first.
+ */
+describe("the reserved rows and the handler map agree", () => {
+  it("marks exactly the unbound intents as reserved", () => {
+    const bound = studioBoundIntents();
+    const reserved = STUDIO_KEYBINDINGS.filter((b) => b.reserved === true).map(
+      (b) => b.intent,
+    );
+    const unbound = STUDIO_KEYBINDINGS.filter((b) => !bound.has(b.intent)).map(
+      (b) => b.intent,
+    );
+    expect([...reserved].sort()).toEqual([...unbound].sort());
+  });
+
+  it("names toggleTerminal as the one reserved row today", () => {
+    // Stated rather than merely derived, so a second reserved row appearing is
+    // a deliberate edit here and not a silent one.
+    expect(STUDIO_KEYBINDINGS.filter((b) => b.reserved === true).map((b) => b.intent)).toEqual(
+      ["toggleTerminal"],
+    );
   });
 });

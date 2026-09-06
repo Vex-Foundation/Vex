@@ -1,79 +1,63 @@
-/**
- * `TokenFind` chain universe — pinned on BOTH description surfaces.
- *
- * The agent reads `TokenFind` from two places that drifted apart: the protocol
- * manifest (`khalani.tokens.search`, reached through discover_tools) and the
- * hard-coded alias description in `registry/khalani.ts`. A live session burned
- * turns asking `TokenFind` for a Robinhood Chain token, which it cannot know
- * about, because neither surface said where its knowledge ends.
- *
- * The universe is DYNAMIC, so this suite pins the POINTER (list the chains with
- * `khalani.chains.list`) and the named escape hatches — never a static chain
- * list, which would rot the moment Khalani registers another chain.
- */
-
 import { describe, expect, it } from "vitest";
 
 import { getToolDef } from "@vex-agent/tools/registry.js";
 import { getProtocolManifest } from "@vex-agent/tools/protocols/catalog.js";
 
-const SURFACES: readonly (readonly [string, string])[] = [
-  ["TokenFind alias", getToolDef("TokenFind")?.description ?? ""],
-  [
-    "khalani.tokens.search manifest",
-    getProtocolManifest("khalani.tokens.search")?.description ?? "",
-  ],
-];
-
 describe("TokenFind chain universe", () => {
-  it.each(SURFACES)("%s scopes itself to Khalani-registered chains", (_name, description) => {
-    expect(description).not.toBe("");
-    expect(description).toMatch(/Khalani-registered chains/i);
+  const alias = getToolDef("TokenFind");
+
+  it("keeps one stable EVM name and declares capability routing", () => {
+    expect(alias).toBeDefined();
+    expect(alias?.description).toContain("Khalani-registered EVM chains");
+    expect(alias?.description).toContain("Robinhood Chain (4663)");
+    expect(alias?.description).toContain("routes by chain capability");
+    expect(alias?.description).toContain("Solana stays separate");
   });
 
-  it.each(SURFACES)("%s points at the live list instead of naming a static set", (_name, description) => {
-    expect(description).toMatch(/dynamic/i);
-    expect(description).toMatch(/chains/i);
+  it("requires explicit mutation scope and contract metadata", () => {
+    expect(alias?.description).toContain("exactly one target chain");
+    expect(alias?.description).toContain("mutationReady");
+    expect(alias?.description).toContain("reads symbol and decimals from the contract");
+    expect(alias?.description).toContain("Name or symbol candidates with explicit chainIds are contract-validated");
+    expect(alias?.description).toContain("unscoped results remain provider-only research, never mutationReady");
+    expect(alias?.description).toContain("never supplies contract-verified symbol or decimals");
+    expect(alias?.description).toContain("Bridge approvals independently re-read and show contract metadata");
+    expect(alias?.description).toContain("Swap cards carry a quote-time contract-read output symbol");
+    expect(alias?.description).toContain("card is not proof");
   });
 
-  it.each(SURFACES)("%s names the app-local escape hatches", (_name, description) => {
-    expect(description).toContain("Robinhood");
-    expect(description).toContain("4663");
-    expect(description).toContain("WalletTrackToken");
-    expect(description).toContain("WalletBalances");
+  it("reports ambiguity, provider bounds, and actionable failures", () => {
+    expect(alias?.description).toContain("Ambiguous matches are never auto-selected");
+    expect(alias?.description).toContain("provider_capped");
+    expect(alias?.description).toContain("metadata_unreadable");
+    expect(alias?.description).toContain("unsupported_chain");
+    expect(alias?.description).toContain("provider_unavailable");
+    expect(alias?.description).toContain("target_chain_required");
+    expect(alias?.description).toContain("empty");
   });
 
-  /**
-   * HOW EACH SURFACE MAY SPELL ITS POINTERS (owner decision D-DS9-R, 2026-08-26).
-   *
-   * The two surfaces are read at different moments and the rule follows that,
-   * which is why this stopped being one shared assertion:
-   *
-   *  - The ALIAS is ALWAYS VISIBLE. Its reader is a fresh session whose
-   *    discovered set is empty, so a `publicName` in it is an instruction to
-   *    make a call `dispatcher/protocol-route.ts` will refuse. It caused
-   *    exactly that in production. It now points by CAPABILITY plus ToolSearch,
-   *    and `registry/fresh-model-surface-names.test.ts` enforces the ban over
-   *    every always-visible description at once.
-   *  - The MANIFEST is read only from a ToolSearch result, by a model that is
-   *    already in a discovery round and can select the neighbour it is pointed
-   *    at, so its publicNames are kept and pinned here.
-   */
-  it("the ALWAYS-VISIBLE alias points by capability and ToolSearch, never by callable name", () => {
-    const alias = getToolDef("TokenFind")?.description ?? "";
-    expect(alias).not.toBe("");
-    expect(alias).not.toContain("khalani__chains_list");
-    expect(alias).not.toContain("dexscreener__pairs_search");
-    expect(alias).toContain("khalani namespace's supported-chains tool");
-    expect(alias).toContain("dexscreener namespace's pair search");
-    // Both pointers have to say HOW to reach the tool, or the capability
-    // phrasing is just a name the model cannot act on either.
-    expect(alias.match(/ToolSearch/g) ?? []).toHaveLength(2);
+  it("states the routed result shape instead of making the model infer keys", () => {
+    expect(alias?.description).toContain("RETURNS query, requestedChains, resolution");
+    expect(alias?.description).toContain("coverage");
+    expect(alias?.description).toContain("metadataCounts");
+    expect(alias?.description).toContain("mutationReady");
+    expect(alias?.description).toContain("candidates");
+    expect(alias?.description).toContain("metadata, provenance, providerMetadata, and pairEvidence");
   });
 
-  it("the discovery-only manifest keeps its callable pointers", () => {
-    const manifest = getProtocolManifest("khalani.tokens.search")?.description ?? "";
-    expect(manifest).toContain("khalani__chains_list");
-    expect(manifest).toContain("dexscreener__pairs_search");
+  it("does not teach a not-yet-discovered protocol callable name", () => {
+    expect(alias?.description).not.toContain("khalani__tokens_search");
+    expect(alias?.description).not.toContain("dexscreener__pairs_search");
+    expect(alias?.description).not.toContain("solana__tokens_search");
+    expect(alias?.description).toContain("ToolSearch");
+  });
+
+  it("leaves the discovered Khalani tool honestly Khalani-scoped", () => {
+    const manifest = getProtocolManifest("khalani.tokens.search");
+    expect(manifest?.description).toContain("Use this when researching provider-listed candidates");
+    expect(manifest?.description).toMatch(/Khalani-registered chains/i);
+    expect(manifest?.description).toContain("Robinhood Chain (4663)");
+    expect(manifest?.description).toContain("do not route it manually from here");
+    expect(manifest?.description).not.toContain("dexscreener__pairs_search");
   });
 });

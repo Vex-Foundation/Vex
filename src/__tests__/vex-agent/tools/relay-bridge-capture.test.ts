@@ -77,7 +77,21 @@ vi.mock("@vex-agent/db/repos/agent-activity.js", async (importOriginal) => ({
   noteBridgeProviderObservation: vi.fn().mockResolvedValue({ applied: true }),
 }));
 
+// The bound quote the execute revalidates its Vex fee against, in the pre-sign
+// window. The gate has its own suites; this one drives the HANDLER, so the
+// re-read is a controlled answer and the default answer is the statement this
+// arrangement's own quote would have recorded.
+const mockFindFreshMatchedPrequote = vi.fn();
+vi.mock("@vex-agent/tools/protocols/prequote/gate.js", () => ({
+  findFreshMatchedPrequote: (...a: unknown[]) => mockFindFreshMatchedPrequote(...a),
+}));
+
 const { RELAY_BRIDGE_HANDLERS } = await import("@vex-agent/tools/protocols/relay/handlers/bridge.js");
+const {
+  boundChargedVexFee,
+  boundSkippedVexFee,
+  matchedPrequoteWithVexFee,
+} = await import("../../tools/bridge-fee/bound-vex-fee.js");
 
 const CTX: ProtocolExecutionContext = {
   sessionPermission: "full",
@@ -85,6 +99,18 @@ const CTX: ProtocolExecutionContext = {
   walletResolution: { source: "session", evm: { id: "w-evm", address: SEL_EVM }, solana: null },
   walletPolicy: { kind: "none" },
   sessionId: "sess-1",
+  bridgeTokenPreview: {
+    source: {
+      family: "eip155", kind: "native", chainId: 8453, tokenAddress: ZERO,
+      symbol: "ETH", decimals: 18, metadataSource: "chain_registry", symbolSanitized: false,
+    },
+    destination: {
+      family: "eip155", kind: "erc20", chainId: 4663, tokenAddress: ERC20,
+      symbol: "VIRTUAL", decimals: 18, metadataSource: "rpc_contract", symbolSanitized: false,
+    },
+    amountRaw: "1714000000000000",
+    amountHuman: "0.001714",
+  },
 };
 
 const CHAINS = [
@@ -94,12 +120,21 @@ const CHAINS = [
 
 const PARAMS = { fromChain: "base", fromToken: "native", toChain: "robinhood", toToken: ERC20, amountRaw: "1714000000000000" };
 
+function executeRelay(params = PARAMS, context: ProtocolExecutionContext = CTX) {
+  const handler = RELAY_BRIDGE_HANDLERS["relay.bridge"];
+  if (!handler) throw new Error("relay.bridge handler missing");
+  return handler(params, context);
+}
+
 const depositStep = {
   stepId: "deposit", role: "bridge_deposit", chainId: 8453,
   step: { id: "deposit", kind: "transaction", requestId: "0xreq", items: [{ data: { to: "0x2222222222222222222222222222222222222222", value: "1714000000000000", data: "0x", chainId: 8453 } }] },
 };
 
 beforeEach(() => {
+  mockFindFreshMatchedPrequote.mockResolvedValue(matchedPrequoteWithVexFee(boundChargedVexFee({
+    feeAmountRaw: "4285000000000", netAmountRaw: "1709715000000000", totalDebitedRaw: "1714000000000000",
+  })));
   vi.clearAllMocks();
   mockGetCachedRelayChains.mockResolvedValue(CHAINS);
   mockGetQuote.mockResolvedValue({ steps: [depositStep.step], requestId: "0xreq" } as unknown as RelayQuoteResponse);
@@ -123,8 +158,26 @@ beforeEach(() => {
 });
 
 describe("relay.bridge — two-hop evidence via structured legs[] (no _tradeCapture)", () => {
+  it("keeps dryRun descriptive when destination contract metadata is unavailable", async () => {
+    const { bridgeTokenPreview: _trustedPreview, ...descriptiveContext } = CTX;
+    const result = await executeRelay(
+      { ...PARAMS, dryRun: true },
+      descriptiveContext,
+    );
+    const out = JSON.parse(result.output) as {
+      tokenMetadata: { destination: { kind: string; metadataErrorCode: string } };
+    };
+
+    expect(result.success).toBe(true);
+    expect(out.tokenMetadata.destination).toMatchObject({
+      kind: "metadata_unavailable",
+      metadataErrorCode: "contract_metadata_unavailable",
+    });
+    expect(mockSign).not.toHaveBeenCalled();
+  });
+
   it("records SYMBOL + human amounts + per-side USD estimates in `amounts` (never raw wei / zero-address)", async () => {
-    const result = await RELAY_BRIDGE_HANDLERS["relay.bridge"]!(PARAMS, CTX);
+    const result = await executeRelay();
     const out = JSON.parse(result.output) as Record<string, unknown>;
     const amounts = out.amounts as { in: Record<string, unknown>; out: Record<string, unknown> };
     expect(amounts.in).toMatchObject({ token: "ETH", tokenAddress: ZERO, amount: "0.001714", usd: "2.94" });
@@ -132,7 +185,7 @@ describe("relay.bridge — two-hop evidence via structured legs[] (no _tradeCapt
   });
 
   it("legs[] carries BOTH hops — the origin deposit (Base) and the destination fill (Robinhood)", async () => {
-    const result = await RELAY_BRIDGE_HANDLERS["relay.bridge"]!(PARAMS, CTX);
+    const result = await executeRelay();
     const out = JSON.parse(result.output) as { legs: Array<{ role: string; chainId: number; txHash: string | null }> };
     const deposit = out.legs.find((l) => l.role === "bridge_deposit");
     const fill = out.legs.find((l) => l.role === "bridge_fill_expected");
@@ -141,7 +194,7 @@ describe("relay.bridge — two-hop evidence via structured legs[] (no _tradeCapt
   });
 
   it("both-side hashes: inTxHashes (Vex origin) + txHashes (provider destination, unverified)", async () => {
-    const result = await RELAY_BRIDGE_HANDLERS["relay.bridge"]!(PARAMS, CTX);
+    const result = await executeRelay();
     const out = JSON.parse(result.output) as Record<string, unknown>;
     // TWO Vex-signed origin transactions: the deposit and the 25 bps treasury
     // transfer (`@tools/bridge-fee`), which is a real fund movement and is
@@ -153,7 +206,7 @@ describe("relay.bridge — two-hop evidence via structured legs[] (no _tradeCapt
   });
 
   it("_explorerRefs coherently pairs the origin hash with the origin chain (Vex-signed only)", async () => {
-    const result = await RELAY_BRIDGE_HANDLERS["relay.bridge"]!(PARAMS, CTX);
+    const result = await executeRelay();
     const refs = (result.data as { _explorerRefs: Array<{ chain: string; txRef: string }> })._explorerRefs;
     // Both origin broadcasts (deposit + Vex fee transfer) are chain-paired; the
     // provider's destination hash stays out of this clickable set.
@@ -164,13 +217,13 @@ describe("relay.bridge — two-hop evidence via structured legs[] (no _tradeCapt
   });
 
   it("a broadcast bridge is truthfully PENDING — success-while-pending is forbidden (B5)", async () => {
-    const result = await RELAY_BRIDGE_HANDLERS["relay.bridge"]!(PARAMS, CTX);
+    const result = await executeRelay();
     expect(result.success).toBe(false);
     expect((JSON.parse(result.output) as { status: string }).status).toBe("pending");
   });
 
   it("an ERC-20 landing on a LOCAL chain is auto-pinned (source 'bridge')", async () => {
-    await RELAY_BRIDGE_HANDLERS["relay.bridge"]!(PARAMS, CTX);
+    await executeRelay();
     expect(mockPin).toHaveBeenCalledWith({ walletAddress: SEL_EVM, chainId: 4663, tokenAddress: ERC20, source: "bridge" });
   });
 });

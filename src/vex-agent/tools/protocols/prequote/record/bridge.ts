@@ -17,6 +17,8 @@ import type { BridgeMatchInput } from "../identity/hash.js";
 import { buildBridgeIdentity } from "../identity/bridge.js";
 import { buildRelayBridgeIdentity, isValidRelayQuoteShape } from "../identity/relay-bridge.js";
 import { writePrequoteRow } from "./row.js";
+import { BRIDGE_QUOTE_GATE_TARGET } from "./gate-targets.js";
+import { withVexFee } from "../fee-disclosure.js";
 
 /**
  * Bounded structural-only safetyDetail for a bridge prequote. A successful
@@ -64,12 +66,23 @@ export async function recordBridgePrequote(
     return;
   }
 
+  // THE FEE STATEMENT THE QUOTE MADE, folded into the same bounded block. Both
+  // bridge quote tools are fee-bearing, so a missing or unparseable statement
+  // skips the row rather than seeding a gate with an authority that says
+  // nothing about the fee (the gate then answers `no_quote`, which already
+  // tells the agent to quote first).
+  const feeFold = withVexFee(toolId, BRIDGE_SAFETY_DETAIL, resultData.vexFee);
+  if (feeFold.kind === "skip") {
+    logger.warn("protocol.prequote.skipped", { toolId, reason: feeFold.reason });
+    return;
+  }
+
   const matchHash = computePrequoteMatchHash(identity);
   const input: CreatePrequoteInput = {
     prequoteId: `prequote-${randomUUID()}`,
     sessionId,
     matchHash,
-    kind: "bridge",
+    kind: BRIDGE_QUOTE_GATE_TARGET.kind,
     // Bridge prequote `family` is the SOURCE family (where the signer lives) -
     // mirrors the verdict provider/family pairing the gate reads back by kind.
     family: identity.sourceFamily,
@@ -83,7 +96,7 @@ export async function recordBridgePrequote(
     amount: identity.amount,
     slippageBps: null,
     safetyVerdict: "unknown",
-    safetyDetail: BRIDGE_SAFETY_DETAIL,
+    safetyDetail: feeFold.safetyDetail,
     routeRef: null,
     expiresAt: new Date(Date.now() + PREQUOTE_MAX_AGE_MS).toISOString(),
   };

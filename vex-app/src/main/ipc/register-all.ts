@@ -34,6 +34,7 @@ import { registerStudioBridgeReadinessHandlers } from "./studio-bridge-readiness
 import { registerStudioFilesHandlers } from "./studio-files.js";
 import { registerStudioSearchHandlers } from "./studio-search.js";
 import { registerStudioTerminalHandlers } from "./studio-terminal.js";
+import { registerTerminalLinkHandlers } from "./terminal-links.js";
 import { registerMemoryHandlers } from "./memory.js";
 import { registerMemoryInspectorHandlers } from "./memory-inspector.js";
 import { registerDockerHandlers } from "./docker.js";
@@ -73,6 +74,7 @@ import { registerSessionsSetPinnedHandler } from "./sessions/set-pinned.js";
 import { registerSessionPlanHandlers } from "./sessions/plan.js";
 import { registerSecretsHandlers } from "./secrets.js";
 import { registerSettingsHandlers } from "./settings.js";
+import { registerShellBackdropHandlers } from "./shell-backdrop.js";
 import { registerSupportHandler } from "./support.js";
 import { registerSystemHandlers } from "./system.js";
 import { registerTelemetryHandler } from "./telemetry.js";
@@ -187,6 +189,11 @@ export function registerAllIpcHandlers(): () => Promise<void> {
   // per-project and global bounds, and mints the data-plane MessagePort. The
   // pty host itself is a utilityProcess started lazily on the first create.
   teardowns.push(...registerStudioTerminalHandlers());
+  // The terminal's LINK path. Separate from the terminal control plane because
+  // its authority is separate: the control plane owns terminal lifetimes, this
+  // owns a per-host, per-window, per-run consent to hand a URL to the OS
+  // browser. Neither the renderer nor a model can open a link without it.
+  teardowns.push(...registerTerminalLinkHandlers());
   // B3a: the Vex Studio project-file surface. Main mints opaque node tokens,
   // holds the lifecycle gate's `watcher` lease per WATCHED PROJECT (one native
   // watcher however many subscriptions ride it), and enforces the read bound on
@@ -270,6 +277,12 @@ export function registerAllIpcHandlers(): () => Promise<void> {
   // destroy sockets - releasing waiters through their abort chain - while the
   // durable refusal pass was still running.
   teardowns.push(...registerSettingsHandlers());
+  // The user's own backdrop under the glass shell. Main owns the picker, the
+  // 8 MiB stat gate, the magic-byte sniff, the nativeImage decode proof and
+  // the CONFIG_DIR byte store; the renderer receives an opaque id and the
+  // app-protocol URL the bytes are served from. Pointer of record:
+  // `preferences.json` (`shell.backdrop`).
+  teardowns.push(...registerShellBackdropHandlers());
   teardowns.push(registerTelemetryHandler());
   teardowns.push(registerSupportHandler());
   // Updater (M13): user-triggered in-app update check/download/restart.

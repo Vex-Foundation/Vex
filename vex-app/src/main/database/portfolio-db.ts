@@ -12,6 +12,11 @@
  *                 snapshot_group_id UUID, total_usd NUMERIC,
  *                 pnl_vs_prev NUMERIC, created_at)
  *
+ * The snapshot half of the read - the group records, their per-wallet in-flight
+ * accounting and the PnL basis - is owned by `./portfolio/snapshot-basis.ts`.
+ * It is called with the SAME server-resolved address allow-list every query
+ * here binds, and it cannot widen it.
+ *
  * SECURITY (non-negotiable):
  *  - GLOBAL is an EXPLICIT address allow-list. EVERY SELECT carries
  *    `WHERE wallet_address = ANY($1::text[])` with a bound, finite array.
@@ -34,6 +39,11 @@
  *    legitimate token's symbol has a DIFFERENT `token_address`, so it can
  *    never coalesce into that token's line before the renderer's trust gate
  *    (address-verified brand icon) can act on it.
+ *  - native SOL uses its database-only System Program key while wSOL uses its
+ *    mint. SQL groups on those distinct persisted keys first. Only after that
+ *    grouping does the DTO map native SOL back to Jupiter's route mint, so the
+ *    two balances remain separate rows while every renderer action receives a
+ *    route-compatible address.
  *  - `token_name` (like `token_symbol`) is attacker-influenceable display
  *    metadata; it is sanitized through `sanitizeTokenName` HERE, before the
  *    DTO is built, because the output schema's `safeTokenNameSchema` is a
@@ -54,9 +64,11 @@ import type {
 } from "@shared/schemas/portfolio.js";
 import { familyForChainId } from "@shared/chains/display.js";
 import { sanitizeTokenName } from "@shared/token-name-sanitizer.js";
+import { solanaRouteMintFromPersistedAddress } from "@tools/solana-ecosystem/shared/solana-asset-identity.js";
 import { listInventoryWalletEntries } from "./inventory-wallets.js";
 import { getSessionWalletScope } from "./sessions-db.js";
 import { readProjectPortfolioScope } from "./projects/portfolio-scope.js";
+import { readSnapshotBases } from "./portfolio/snapshot-basis.js";
 import { buildPoolConfig } from "./db-config.js";
 import { log } from "../logger/index.js";
 
@@ -138,11 +150,6 @@ interface TokenRow {
   readonly token_name: string | null;
   readonly usd: number | string | null;
   readonly amount: number | string | null;
-}
-
-interface SnapshotRow {
-  readonly total: number | string | null;
-  readonly at: string | Date | null;
 }
 
 interface ChainBreakdownRow {
@@ -267,7 +274,7 @@ function buildChainBreakdown(
     ) {
       current.tokens.push({
         symbol: row.token_symbol,
-        tokenAddress: row.token_address,
+        tokenAddress: routeCompatibleTokenAddress(chainId, row.token_address),
         tokenName: sanitizeTokenName(row.token_name),
         balanceUsd: tokenUsd,
         amount: tokenAmount,
@@ -306,6 +313,21 @@ function toNumberOrNull(value: number | string | null | undefined): number | nul
 }
 
 /**
+ * Convert the native SOL database-only storage key back to Jupiter's route
+ * mint after SQL has grouped native SOL and wSOL under their distinct keys.
+ * Every non-Solana address and every SPL mint passes through unchanged.
+ */
+function routeCompatibleTokenAddress(
+  chainId: number | null,
+  persistedAddress: string | null,
+): string | null {
+  if (chainId === null || persistedAddress === null) return persistedAddress;
+  return familyForChainId(chainId) === "solana"
+    ? solanaRouteMintFromPersistedAddress(persistedAddress)
+    : persistedAddress;
+}
+
+/**
  * `chain_id` is a `BIGINT` that may exceed the JS safe-integer range; `pg`
  * returns it as a string. We coerce via `Number()` and tolerate loss of
  * precision (the renderer uses it as an opaque grouping key, not for
@@ -318,16 +340,19 @@ function toChainId(value: number | string | null | undefined): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function toIso(value: string | Date): string {
-  return value instanceof Date ? value.toISOString() : value;
-}
-
 function emptyPortfolio(scope: PortfolioReadInput["scope"]): PortfolioDto {
   return {
     scope,
     walletCount: 0,
     liveTotalUsd: 0,
     snapshotTotalUsd: null,
+    snapshotSettledUsd: null,
+    snapshotInTransitUsd: null,
+    snapshotInFlight: null,
+    snapshotUnresolvedCount: null,
+    snapshotInFlightTotalCount: null,
+    snapshotInFlightShownCount: null,
+    snapshotInFlightTruncated: null,
     pnlVsPrev: null,
     snapshotAt: null,
     tokens: [],
@@ -541,14 +566,17 @@ export async function getPortfolio(
       );
       const tokens: PositionTokenDto[] = tokensResult.rows
         .slice(0, MAX_TOKEN_LINES)
-        .map((row) => ({
-          chainId: toChainId(row.chain_id),
-          symbol: row.token_symbol,
-          tokenAddress: row.token_address,
-          tokenName: sanitizeTokenName(row.token_name),
-          balanceUsd: toNumberOrNull(row.usd),
-          amount: toNumberOrNull(row.amount),
-        }));
+        .map((row) => {
+          const chainId = toChainId(row.chain_id);
+          return {
+            chainId,
+            symbol: row.token_symbol,
+            tokenAddress: routeCompatibleTokenAddress(chainId, row.token_address),
+            tokenName: sanitizeTokenName(row.token_name),
+            balanceUsd: toNumberOrNull(row.usd),
+            amount: toNumberOrNull(row.amount),
+          };
+        });
 
       // (b2) Per-chain breakdown for the POSITION chain switcher — a
       // PURPOSE-BUILT window query over the FULL balance set (Codex plan
@@ -603,33 +631,21 @@ export async function getPortfolio(
       );
       const chains = buildChainBreakdown(breakdownResult.rows);
 
-      // (c) PnL across COMPLETE snapshot cycles: the latest TWO groups that
-      // cover EXACTLY the resolved address set (HAVING COUNT(DISTINCT)=N — a
-      // partial group for a subset of the wallets is ignored). Aggregate PnL is
-      // `latest.total − previous.total`, NOT SUM(pnl_vs_prev): per-wallet PnL
+      // (c) The PnL BASIS across COMPLETE snapshot cycles, owned by
+      // `./portfolio/snapshot-basis.ts`: the latest two groups covering
+      // EXACTLY this address set, each with its in-flight accounting summed
+      // over exactly these wallets (migration 102). Aggregate PnL is
+      // `latest.basis - previous.basis`, NOT SUM(pnl_vs_prev): per-wallet PnL
       // baselines don't compose into a correct set total (and miss wallets with
       // no prior row). snapshot/PnL are null when the cycle(s) are absent.
-      const snapshotResult = await client.query<SnapshotRow>(
-        `SELECT snapshot_group_id,
-                SUM(total_usd)::float8 AS total,
-                MAX(created_at)        AS at
-           FROM proj_portfolio_snapshots
-          WHERE wallet_address = ANY($1::text[])
-          GROUP BY snapshot_group_id
-         HAVING COUNT(DISTINCT wallet_address) = $2
-          ORDER BY at DESC
-          LIMIT 2`,
-        [addrParam, addresses.length],
-      );
-      const latest = snapshotResult.rows[0];
-      const previous = snapshotResult.rows[1];
-      const snapshotTotalUsd = latest ? toNumberOrNull(latest.total) : null;
-      const previousTotalUsd = previous ? toNumberOrNull(previous.total) : null;
+      const { latest, previous } = await readSnapshotBases(client, addresses);
+      const snapshotTotalUsd = latest?.totalUsd ?? null;
       const pnlVsPrev =
-        snapshotTotalUsd !== null && previousTotalUsd !== null
-          ? snapshotTotalUsd - previousTotalUsd
+        latest?.totalUsd !== undefined && latest.totalUsd !== null
+        && previous?.totalUsd !== undefined && previous.totalUsd !== null
+          ? latest.totalUsd - previous.totalUsd
           : null;
-      const snapshotAt = latest && latest.at !== null ? toIso(latest.at) : null;
+      const snapshotAt = latest?.at ?? null;
 
       log.info(
         `[portfolio-db] getPortfolio ok scope=${input.scope} ` +
@@ -642,6 +658,13 @@ export async function getPortfolio(
         walletCount: addresses.length,
         liveTotalUsd,
         snapshotTotalUsd,
+        snapshotSettledUsd: latest?.settledUsd ?? null,
+        snapshotInTransitUsd: latest?.inTransitUsd ?? null,
+        snapshotInFlight: latest?.inFlight ?? null,
+        snapshotUnresolvedCount: latest?.unresolvedCount ?? null,
+        snapshotInFlightTotalCount: latest?.inFlightTotalCount ?? null,
+        snapshotInFlightShownCount: latest?.inFlight.length ?? null,
+        snapshotInFlightTruncated: latest?.inFlightTruncated ?? null,
         pnlVsPrev,
         snapshotAt,
         tokens,

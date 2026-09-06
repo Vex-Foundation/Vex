@@ -5,9 +5,13 @@
 import { VexError, ErrorCodes } from "../../../../../errors.js";
 import type { WalletPolicy } from "@vex-agent/engine/types.js";
 import type { QuoteBindingPreview } from "../../quote-authority/restore.js";
+import type { SpendabilityPreview } from "../../quote-authority/spendability-contract.js";
 import type { SafetyVerdict } from "@vex-agent/db/repos/swap-prequotes.js";
 import type { JupiterFeePreview } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/fee-swap.js";
+import type { VexFeePreview } from "../fee-disclosure.js";
 
+import { canonicalizeDebitPlan, type BoundDebitPlan } from "../../quote-authority/debit-plan.js";
+import type { ApprovedPrequoteAuthority } from "../approved-row-authority.js";
 import { GateIdentityError } from "../gate-errors.js";
 import type { GateBlockReason } from "../gate-errors.js";
 
@@ -42,6 +46,31 @@ export type GateDecision =
        */
       readonly feePreview?: JupiterFeePreview;
       /**
+       * The Vex fee statement the matched quote made: charged or skipped, the
+       * exact atomic amount, the token that pays it, the treasury that
+       * receives it and when it is collected. Read from the matched row's
+       * persisted `safetyDetail` through the schema the recorder validated
+       * against, NEVER recomputed from args - the whole point of the channel is
+       * that the card and the executor state ONE derivation of this number.
+       *
+       * Absent for a venue that carries no Vex fee on this channel. For a
+       * FEE-BEARING gated execute an absent statement is not an allow at all:
+       * the gate blocks with `fee_disclosure_missing`.
+       */
+      readonly vexFee?: VexFeePreview;
+      /**
+       * The DERIVED destination wallet a bridge identity binds - the selected
+       * wallet of the destination family, never a `recipient` parameter (the
+       * aliases reject that name). It is already inside the match hash, so a
+       * wallet switch between quote and execute changes the hash and the gate
+       * refuses; what was missing is that a person never SAW where the funds
+       * land. Absent on every non-bridge lane.
+       */
+      readonly bridgeRecipient?: {
+        readonly family: "eip155" | "solana";
+        readonly address: string;
+      };
+      /**
        * What the approval card states this proposal is bound to: the quoted
        * output, the floor the fill may not go below, the tolerance, the
        * snapshot digest and the row's own expiry. Read from the matched
@@ -49,6 +78,32 @@ export type GateDecision =
        * state a floor the store does not hold.
        */
       readonly quoteBinding?: QuoteBindingPreview;
+      /**
+       * What the wallet could pay when the matched quote was taken (WP2): the
+       * source principal and the total native debit against the balances read
+       * at that instant. Sourced from the matched row's persisted
+       * `safetyDetail`, NEVER from raw args.
+       *
+       * DISCLOSURE, not authority. The card line says the numbers are
+       * quote-time and re-read before signing; sign-time code must perform its
+       * own authoritative read rather than consulting this.
+       */
+      readonly spendability?: SpendabilityPreview;
+      /**
+       * WHICH ROW authorized this allow, and WHAT that row disclosed, as one
+       * digested block the enqueue stores in the approval envelope.
+       *
+       * Built from the same matched row every field above came from, so the
+       * approval binds the disclosure a person is about to read rather than an
+       * identifier beside it. On the resumed dispatch the gate recomputes this
+       * block from the row it finds and refuses when either half moved - see
+       * `../approved-row-authority.ts`.
+       *
+       * Always present on an allow: every gated execute matches exactly one
+       * row, and an allow that named none would leave the approval it feeds
+       * unbindable.
+       */
+      readonly prequoteAuthority: ApprovedPrequoteAuthority;
     }
   | { readonly kind: "block"; readonly reason: GateBlockReason; readonly message: string };
 
@@ -92,4 +147,62 @@ export function classifyGateBlockReason(err: unknown, policy: WalletPolicy): Gat
     }
   }
   return "gate_error";
+}
+
+/**
+ * Hold the plan the CARD would state against the plan the SNAPSHOT sealed.
+ *
+ * ## Why this check exists
+ *
+ * One row carries two independently written descriptions of the same set of
+ * transactions. The spendability preview in `safety_detail` is what a person
+ * READS on the approval card ("held 0.42 ETH covers this, and it will send
+ * allowance -> swap"). The debit plan inside the route snapshot is what the
+ * execute is HELD TO before signing (`compareDebitPlanRoles`). Nothing but this
+ * comparison made the two agree, so a row whose card said one thing and whose
+ * enforcement said another would have shown a human one plan and executed
+ * against a different one. Rule 09 and rule 90 both put approval on the exact
+ * proposal; two proposals in one row is not one proposal.
+ *
+ * ## The comparison
+ *
+ * Through {@link canonicalizeDebitPlan}, the same canonical form both venues
+ * already digest their snapshots over, so the comparison is exactly the
+ * equality the seal itself is built on - never a field-by-field re-derivation
+ * that could drift from it.
+ *
+ * ## What is deliberately NOT refused
+ *
+ * A row that carries only ONE of the two artifacts passes through untouched.
+ * Jupiter records no route snapshot at all (it has no claim lane), a venue that
+ * measures no balances records no spendability preview, and a row written
+ * before either lane existed carries neither. In every one of those cases there
+ * is no second description to disagree with, and blocking would refuse quotes
+ * that are perfectly consistent with themselves. This is a check for
+ * CONTRADICTION, not a requirement that both artifacts exist.
+ *
+ * Returns the fail-closed block decision, or `null` when there is nothing to
+ * refuse. The bounded `reason` is `card_plan_disagreement`, this class's own
+ * member of the gate vocabulary, so the log line is as specific as the
+ * message.
+ */
+export function checkSealedDebitPlanAgreement(
+  cardPlan: BoundDebitPlan | undefined,
+  sealedPlan: BoundDebitPlan | undefined,
+): GateDecision | null {
+  if (cardPlan === undefined || sealedPlan === undefined) return null;
+  const card = canonicalizeDebitPlan(cardPlan);
+  const sealed = canonicalizeDebitPlan(sealedPlan);
+  if (card === sealed) return null;
+  return {
+    kind: "block",
+    reason: "card_plan_disagreement",
+    message:
+      "Execute blocked: the card's plan and the sealed plan disagree - request a fresh quote."
+      + ` The approval card would state the transaction plan recorded with this quote's spendability`
+      + ` observation (${card}), while the execute would enforce the plan sealed into the quote's own`
+      + ` route snapshot (${sealed}).`
+      + " One of those two is not the thing you would be consenting to, so nothing was signed and"
+      + " nothing was broadcast.",
+  };
 }

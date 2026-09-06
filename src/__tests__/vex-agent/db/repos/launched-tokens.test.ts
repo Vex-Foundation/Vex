@@ -172,11 +172,17 @@ describe("launchpad confinement - chain_id stopped being a venue selector at 082
     expect(firstCall(mockQuery).sql).toContain("launchpad = 'trench_express'");
   });
 
-  it("claimAgentscanAttestCandidates is confined to trench_express", async () => {
-    // Sharper than its twin: `attest_signature` is the TRENCH-formatted proof,
-    // so a pools row here would ship a signature over the wrong message.
-    await repo.claimAgentscanAttestCandidates({ chainId: 4663, limit: 25, retryAfterSeconds: 600 });
-    expect(firstCall(mockQuery).sql).toContain("launchpad = 'trench_express'");
+  it("claimAgentscanAttestCandidates selects by LAUNCHPAD and binds no chain at all", async () => {
+    // Sharper than its twin: `attest_signature` is the TRENCH-formatted proof
+    // over AgentScan's canonical message, so a pools row here would ship a
+    // signature over the wrong bytes. Migration 102 dropped the chain parameter
+    // instead - the AgentScan registry covers 4663 AND Base 8453, so a chain
+    // predicate here would strand every launch on the other one.
+    await repo.claimAgentscanAttestCandidates({ limit: 25, retryAfterSeconds: 600 });
+    const { sql, params } = firstCall(mockQuery);
+    expect(sql).toContain("launchpad = 'trench_express'");
+    expect(sql).not.toContain("chain_id = $");
+    expect(params).toEqual([25, "600"]);
   });
 
   it("countUnsignedAttributionGap is confined to trench_express", async () => {

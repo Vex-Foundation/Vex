@@ -463,13 +463,17 @@ describe("dexscreener__top_traders_list currentHoldingValueUsd", () => {
     for (const trader of traders) {
       expect(trader).toHaveProperty("currentHoldingValueUsd");
       const basis = trader["currentHoldingValueBasis"] as Record<string, unknown>;
-      expect(basis["balanceAmount"]).toBe(trader["balanceAmount"]);
+      expect(basis["pairObservedRetainedAmount"]).toBe(
+        trader["pairObservedRetainedAmount"]
+      );
       expect(typeof basis["pairPriceUsd"]).toBe("string");
       const value = trader["currentHoldingValueUsd"];
-      if (trader["balanceAmount"] === null) {
+      if (trader["pairObservedRetainedAmount"] === null) {
         // Never approximated and never zero: a missing input is named.
         expect(value).toBeNull();
-        expect(basis["missingInputs"]).toStrictEqual(["balanceAmount"]);
+        expect(basis["missingInputs"]).toStrictEqual([
+          "pairObservedRetainedAmount",
+        ]);
       } else {
         expect(typeof value).toBe("string");
         /*
@@ -477,7 +481,7 @@ describe("dexscreener__top_traders_list currentHoldingValueUsd", () => {
          *
          * The multiplication is exact over the lexemes the provider gave, and
          * `exactProductUsd` carries every digit of it. But the INPUT is
-         * already a provider rounding: `balanceAmount` arrives carrying about
+         * already a provider rounding: the retained amount arrives carrying about
          * 15 to 16 SIGNIFICANT digits whatever the token's decimals and
          * wherever the decimal point falls (measured `1464600134847.065`, and
          * `0.0001992` running to seven decimal places to reach the same
@@ -485,7 +489,7 @@ describe("dexscreener__top_traders_list currentHoldingValueUsd", () => {
          * headline value claimed precision the inputs cannot support.
          */
         const exact = multiplyDecimalStrings(
-          String(trader["balanceAmount"]),
+          String(trader["pairObservedRetainedAmount"]),
           String(basis["pairPriceUsd"])
         );
         expect(basis["exactProductUsd"]).toBe(exact);
@@ -653,7 +657,7 @@ describe("dexscreener__candles_list summary extremes", () => {
 describe("dexscreener__top_traders_list reports whether its holding value is derivable", () => {
   it("counts the rows that carried a balance, on the page and on the leaderboard", async () => {
     /*
-     * `balanceAmount` nullity is SORT-CORRELATED, which nothing said. Measured
+     * Retained-amount nullity is SORT-CORRELATED, which nothing said. Measured
      * null counts out of 100: currentHoldingValueUsd 0, netCashFlowUsd asc 0,
      * boughtUsd desc 58, and boughtUsd asc and netCashFlowUsd desc BOTH 100 of
      * 100. So on two of the eight sort and direction combinations every row's
@@ -671,7 +675,7 @@ describe("dexscreener__top_traders_list reports whether its holding value is der
     expect(coverage["rowsReturned"]).toBe(traders.length);
     // The count is over the RETURNED rows and is checkable against them.
     expect(coverage["balancePresent"]).toBe(
-      traders.filter((row) => row["balanceAmount"] !== null).length
+      traders.filter((row) => row["pairObservedRetainedAmount"] !== null).length
     );
     // ...and the leaderboard figure covers everything fetched, not just shown.
     expect(coverage["leaderboardSize"]).toBe(data["leaderboardSize"]);

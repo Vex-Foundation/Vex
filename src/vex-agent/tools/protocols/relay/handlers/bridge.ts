@@ -48,7 +48,7 @@ import { evaluateRelayRouteHealth } from "@tools/relay/health.js";
 import { assertRelayQuoteCorrelation } from "@tools/relay/correlation.js";
 import { classifyRelayBridgeSteps } from "@tools/relay/step-policy.js";
 import { pollRelayIntentStatus, resolveRelayStepClients, type RelayStepClients } from "@tools/relay/execute.js";
-import { BRIDGE_FEE_ACTIVITY_EVENT_ROLE } from "@tools/bridge-fee/index.js";
+import { BRIDGE_FEE_ACTIVITY_EVENT_ROLE, bridgeFeeRefusalData } from "@tools/bridge-fee/index.js";
 import type { RelayQuoteResponse } from "@tools/relay/types.js";
 import { loadConfig } from "@config/store.js";
 import {
@@ -77,9 +77,16 @@ import {
   stepSummaries,
   type RelayLegs,
 } from "./bridge/legs.js";
-import { feeNotTaken, NO_FEE_COLLECTION, relayFeeDisclosure, runRelayVexFeeLeg } from "./bridge/fee-leg.js";
+import {
+  feeNotTaken,
+  NO_FEE_COLLECTION,
+  relayFeeDisclosure,
+  relayVexFeeStatementRefusal,
+  runRelayVexFeeLeg,
+} from "./bridge/fee-leg.js";
 import { runOriginBroadcasts, type OriginBroadcast } from "./bridge/broadcast.js";
-import { maybeAutoPin, relayLegInput } from "./bridge/recording.js";
+import { withholdFeeOnDepositShortfall } from "@vex-agent/tools/protocols/bridge-deposit-evidence.js";
+import { abortRemaining, maybeAutoPin, relayLegInput } from "./bridge/recording.js";
 import { failPreSign, inFlightResult, pendingResult } from "./bridge/results.js";
 import {
   noteHandlerPendingReason,
@@ -87,6 +94,12 @@ import {
   NO_PROVIDER_STATUS_OBSERVED,
   type ProviderStatusRecording,
 } from "@vex-agent/tools/protocols/runtime/pending-provenance.js";
+import {
+  isBridgeTokenPreviewSigningReady,
+  isVerifiedEvmBridgeAssetIdentity,
+  resolveRelayBridgeTokenPreview,
+  type BridgeTokenIdentityPreview,
+} from "@vex-agent/tools/protocols/bridge-token-identity.js";
 
 /**
  * The two risk numbers an agent needs in order to DECLINE (W2c): the worst-case
@@ -127,6 +140,7 @@ async function relayQuoteGet(
   } catch (err) {
     return fail(summarizeProtocolError(err).message);
   }
+  const tokenIdentity = await resolveRelayBridgeTokenPreview(params, context.abortSignal, { relayChains: chains });
   let user: string;
   try {
     user = resolveSelectedAddress(context.walletResolution, context.walletPolicy, "eip155");
@@ -146,8 +160,8 @@ async function relayQuoteGet(
   const health = evaluateRelayRouteHealth(chains, legs.originChainId, legs.destinationChainId);
   const from = relayChainDisplay(legs.originChainId, chains);
   const to = relayChainDisplay(legs.destinationChainId, chains);
-  const inSide = bridgeSideDisplay(adapted.currencyIn, legs.originCurrency, legs.originChainId, chains, legs.amount);
-  const outSide = bridgeSideDisplay(adapted.currencyOut, legs.destinationCurrency, legs.destinationChainId, chains);
+  const inSide = bridgeSideDisplay(adapted.currencyIn, legs.originCurrency, legs.originChainId, chains, legs.amount, tokenIdentity.source);
+  const outSide = bridgeSideDisplay(adapted.currencyOut, legs.destinationCurrency, legs.destinationChainId, chains, undefined, tokenIdentity.destination);
 
   // result.data keeps the structural fields the prequote recorder re-validates
   // (`isValidRelayQuoteShape`: provider + origin/destination + step kinds/chainIds).
@@ -170,7 +184,8 @@ async function relayQuoteGet(
     bridgedAmount: legs.amount,
     tradeType: legs.tradeType,
     amounts: { in: inSide, out: outSide },
-    vexFee: relayFeeDisclosure(legs, adapted.currencyIn),
+    tokenMetadata: tokenIdentity,
+    vexFee: relayFeeDisclosure(legs, adapted.currencyIn, tokenIdentity.source),
     feeUsdByBucket: adapted.feeUsdByBucket,
     estimatedTimeSeconds: adapted.timeEstimateSeconds,
     minimumAmountOutRaw: adapted.currencyOut.minimumAmountRaw,
@@ -193,6 +208,8 @@ async function relayBridge(
   } catch (err) {
     return fail(summarizeProtocolError(err).message);
   }
+  const tokenIdentity: BridgeTokenIdentityPreview = context.bridgeTokenPreview
+    ?? await resolveRelayBridgeTokenPreview(params, context.abortSignal, { relayChains: chains });
 
   const from = relayChainDisplay(legs.originChainId, chains);
   const to = relayChainDisplay(legs.destinationChainId, chains);
@@ -219,6 +236,21 @@ async function relayBridge(
   let originLeg: AgentActivityLegInput = { tokenAddress: legs.originCurrency, amountRaw: legs.amount };
   let destLeg: AgentActivityLegInput = { tokenAddress: legs.destinationCurrency };
 
+  if (!dryRun && !isBridgeTokenPreviewSigningReady(tokenIdentity)) {
+    return failPreSign(
+      route,
+      walletAddress,
+      sessionId,
+      params,
+      "allowance_or_balance",
+      "Direct EVM token symbol and decimals are unavailable, so Vex refused before signing.",
+      from,
+      to,
+      originLeg,
+      destLeg,
+    );
+  }
+
   // ── Health gate (no quote needed) - fail fast on an unserviceable route ──
   const health = evaluateRelayRouteHealth(chains, legs.originChainId, legs.destinationChainId);
   if (!dryRun && !health.serviceable) {
@@ -240,10 +272,10 @@ async function relayBridge(
   }
 
   const adapted = adaptRelayQuote(quote);
-  const inSide = bridgeSideDisplay(adapted.currencyIn, legs.originCurrency, legs.originChainId, chains, legs.amount);
-  const outSide = bridgeSideDisplay(adapted.currencyOut, legs.destinationCurrency, legs.destinationChainId, chains);
-  originLeg = relayLegInput(adapted.currencyIn, legs.originCurrency, legs.amount);
-  destLeg = relayLegInput(adapted.currencyOut, legs.destinationCurrency);
+  const inSide = bridgeSideDisplay(adapted.currencyIn, legs.originCurrency, legs.originChainId, chains, legs.amount, tokenIdentity.source);
+  const outSide = bridgeSideDisplay(adapted.currencyOut, legs.destinationCurrency, legs.destinationChainId, chains, undefined, tokenIdentity.destination);
+  originLeg = relayLegInput(adapted.currencyIn, legs.originCurrency, legs.amount, tokenIdentity.source);
+  destLeg = relayLegInput(adapted.currencyOut, legs.destinationCurrency, undefined, tokenIdentity.destination);
 
   const correlation = assertRelayQuoteCorrelation(quote, loadConfig().services.relayApiUrl);
   const policy = classifyRelayBridgeSteps(quote, legs.originChainId);
@@ -260,7 +292,8 @@ async function relayBridge(
       fromChain: from,
       toChain: to,
       amounts: { in: inSide, out: outSide },
-      vexFee: relayFeeDisclosure(legs, adapted.currencyIn),
+      tokenMetadata: tokenIdentity,
+      vexFee: relayFeeDisclosure(legs, adapted.currencyIn, tokenIdentity.source),
       feeUsdByBucket: adapted.feeUsdByBucket,
       estimatedTimeSeconds: adapted.timeEstimateSeconds,
       minimumAmountOutRaw: adapted.currencyOut.minimumAmountRaw,
@@ -269,6 +302,37 @@ async function relayBridge(
       steps: stepSummaries(quote),
       requestId: adapted.requestId,
     });
+  }
+
+  // ── The bound Vex fee statement (rule 90: revalidate immediately before
+  // signing) ──
+  //
+  // FIRST of the pre-sign gates, and deliberately not a recorded failure row:
+  // this is an AUTHORIZATION refusal, not a bridge that failed. The durable
+  // failure vocabulary (`AgentActivityFailureCode`) has no code for "the
+  // approval no longer holds", and borrowing `bridge_failed` would tell the
+  // feed a provider rejected a bridge that was never attempted. The prequote
+  // gate refuses the same class of state without recording either.
+  //
+  // It runs AFTER the quote (so the disclosure compared is the one the deposit
+  // would use) and BEFORE the in-flight guard, the intent, the signing wallet
+  // and every broadcast, so a refusal signs nothing and reserves nothing.
+  const feeStatementRefusal = await relayVexFeeStatementRefusal({
+    params,
+    context,
+    sessionId,
+    derivedNow: relayFeeDisclosure(legs, adapted.currencyIn, tokenIdentity.source),
+  });
+  if (feeStatementRefusal !== null) {
+    // The TYPED reason travels on the result, not only in the log line above: a
+    // moved fee statement, a missing one and an unregistered gate have three
+    // different remedies, and collapsing them into "bridge failed" leaves an
+    // agent guessing which one it is looking at.
+    return {
+      success: false,
+      output: `${BRIDGE_TOOL_ID} failed: ${feeStatementRefusal.message}`,
+      data: bridgeFeeRefusalData(feeStatementRefusal),
+    };
   }
 
   // ── Pre-sign gates (fail-closed, hashless failure row, C1) ──
@@ -332,8 +396,10 @@ async function relayBridge(
   const feeLegInput: AgentActivityLegInput = {
     ...originLeg,
     amountRaw: legs.feeSplit.feeRaw.toString(),
-    ...(adapted.currencyIn.decimals !== null
-      ? { amountHuman: formatUnits(legs.feeSplit.feeRaw, adapted.currencyIn.decimals) }
+    ...(isVerifiedEvmBridgeAssetIdentity(tokenIdentity.source)
+      ? { amountHuman: formatUnits(legs.feeSplit.feeRaw, tokenIdentity.source.decimals) }
+      : adapted.currencyIn.decimals !== null
+        ? { amountHuman: formatUnits(legs.feeSplit.feeRaw, adapted.currencyIn.decimals) }
       : { amountHuman: undefined }),
   };
   const activityLegs: BridgeActivityLeg[] = signable.map((s, i) => ({
@@ -363,7 +429,7 @@ async function relayBridge(
       // Pass `adapted.currencyIn` (the RelayQuoteSide every `relayFeeDisclosure`
       // call site passes), NOT the local `inSide` - that is the display
       // projection and a different type.
-      usdVexFeeEst: relayFeeUsdEstimate(adapted.currencyIn, legs.feeSplit.feeRaw) ?? undefined,
+      usdVexFeeEst: relayFeeUsdEstimate(adapted.currencyIn, legs.feeSplit.feeRaw, tokenIdentity.source) ?? undefined,
       usdSource: adapted.usdSource,
     });
   }
@@ -420,7 +486,7 @@ async function relayBridge(
     pendingResult({
       executionId, requestId, from, to, inSide, outSide, feeUsdByBucket: adapted.feeUsdByBucket,
       broadcasts: args.broadcasts, poll: args.poll, depositUnconfirmed: args.depositUnconfirmed,
-      vexFee: relayFeeDisclosure(legs, adapted.currencyIn), feeCollection: args.feeCollection,
+      vexFee: relayFeeDisclosure(legs, adapted.currencyIn, tokenIdentity.source), feeCollection: args.feeCollection,
       providerStatusRecording: args.providerStatusRecording ?? NO_PROVIDER_STATUS_OBSERVED,
     });
 
@@ -451,7 +517,25 @@ async function relayBridge(
   // own fill tracking (separate lifecycles sharing one plan). Its outcome
   // NEVER changes the bridge's: a fee that does not land is missed Vex
   // revenue on a bridge that DID happen.
-  const feeCollection = feeLegIndex === -1
+  // A DEPOSIT SHORTFALL MAKES THE FEE LEG INELIGIBLE. The fee is charged for
+  // bridging the principal the user consented to; a deposit whose own receipt
+  // proves less than that did not perform it, so no fee signer runs, no nonce
+  // is reserved, and the planned fee row is aborted rather than left pending.
+  // The bridge itself is untouched: the deposit landed and the fill is still
+  // the provider's to make.
+  const feeCollection = run.depositShortfall !== null
+    ? await withholdFeeOnDepositShortfall({
+      shortfall: run.depositShortfall,
+      executionId,
+      feeLegIndex,
+      logScope: "relay.bridge",
+      // Exactly the fee row: the logical `bridge_fill_expected` row sits after
+      // it and must stay pending, because the deposit itself reached the
+      // provider and its reconciliation is still owed.
+      abortPlannedFeeRow: (fromIndex, reason, toIndexExclusive) =>
+        abortRemaining(executionId, fromIndex, reason, toIndexExclusive),
+    })
+    : feeLegIndex === -1
     ? NO_FEE_COLLECTION
     : await runRelayVexFeeLeg({
         executionId,

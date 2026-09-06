@@ -14,7 +14,7 @@
  * machine-readable declaration the runtime measures against, so nothing has to
  * re-derive it from prose.
  *
- * ALL FIVE PARTS OR NONE. A raw amount without decimals is unreadable, an
+ * ALL SIX PARTS OR NONE for new declarations. A raw amount without decimals is unreadable, an
  * amount without an asset is uncountable, and an asset without a chain is
  * ambiguous. `mapper`, `contract-hash` and `patch-parser` all route through the
  * ONE shared normalizer in `engine/mission/deployed-capital.ts`, which turns a
@@ -38,6 +38,13 @@ export interface DeployedCapital {
    * PRESERVED. See `engine/mission/deployed-capital.ts` for the family rules.
    */
   readonly assetAddress: string;
+  /**
+   * Structural spendability domain. `native` means the chain account coin;
+   * `token` means a contract/SPL mint, including wSOL. Null is accepted only
+   * for legacy five-field declarations and is treated as ambiguous where the
+   * address alone cannot distinguish the two.
+   */
+  readonly assetKind: "native" | "token" | null;
   /** Display symbol as the user agreed it. Never used for matching; matching is by (chainId, assetAddress). */
   readonly assetSymbol: string;
 }

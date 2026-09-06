@@ -14,6 +14,7 @@ import type { ToolResult } from "../types.js";
 import type { Permission, SessionKind, WalletPolicy } from "@vex-agent/engine/types.js";
 import type { WalletResolution } from "@tools/wallet/multi-auth.js";
 import type { ApprovedQuoteAuthority } from "../protocols/quote-authority/approved-authority.js";
+import type { ApprovedPrequoteAuthority } from "../protocols/prequote/approved-row-authority.js";
 
 /** Result from an internal tool handler */
 export type InternalToolResult = ToolResult;
@@ -69,6 +70,17 @@ export interface InternalToolContext {
    */
   approvedQuoteAuthority?: ApprovedQuoteAuthority | null;
   /**
+   * WHICH PREQUOTE ROW that approval authorized, and the digest of what the row
+   * disclosed on the card. Host-side evidence on the same terms as
+   * `approvedQuoteAuthority`: read from `approval_queue.tool_call`, which the
+   * request digest covers, and never from tool arguments or model output.
+   *
+   * ABSENT on every live turn and on every approval written before the binding
+   * existed. The prequote gate decides what absent means on a resume
+   * (`protocols/prequote/gate.ts`).
+   */
+  approvedPrequoteAuthority?: ApprovedPrequoteAuthority | null;
+  /**
    * True ONLY for a call the model emitted in a live turn. Set in exactly one
    * place - `engine/core/turn-loop-tool-batch/execute.ts`'s `buildToolContext`
    * - and never derived from tool arguments, so the model cannot set, clear or
@@ -104,6 +116,20 @@ export interface InternalToolContext {
    * no authority reads it.
    */
   toolLane?: "in_app" | "mcp";
+  /**
+   * WHICH Vex Studio project this call runs for, when it runs for one.
+   *
+   * HOST-SIDE EVIDENCE, never model input, exactly like `missionId` and
+   * `approvalId` above: it is copied from the authoritative per-call project
+   * scope snapshot the privileged app loads, and nothing on the wire can
+   * influence it. Absent on every in-app lane, where there is no project.
+   *
+   * It is not a permission and grants nothing. Its one job is to let a lane
+   * that accepts a model-supplied FILE PATH look up the project root that path
+   * must stay inside (`mcp/project-root.ts` reads `projects.root_path` fresh at
+   * the moment of use, rather than trusting a root cached on a connection).
+   */
+  studioProjectId?: string | null;
   /**
    * Session kind - propagated from EngineContext. Lets handlers defense-in-depth
    * their own preconditions without relying solely on the registry visibility

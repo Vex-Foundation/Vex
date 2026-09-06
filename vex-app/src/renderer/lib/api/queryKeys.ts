@@ -313,6 +313,17 @@ export const imageKeys = {
 };
 
 /**
+ * The user's own backdrop under the glass shell. ONE key: there is exactly
+ * one backdrop per installation, so `current` is the whole surface. The shell
+ * wall and the Settings row read the same entry, and a pick or clear writes
+ * the new record straight into it - one source of truth in the cache.
+ */
+export const shellBackdropKeys = {
+  all: ["shell-backdrop"] as const,
+  current: () => ["shell-backdrop", "current"] as const,
+};
+
+/**
  * Board token icons. Keyed by the icon handle ALONE, deliberately: the same
  * token can appear on several boards in one transcript, and the bytes behind a
  * handle are the same bytes either way. Keying by board or by card would fetch

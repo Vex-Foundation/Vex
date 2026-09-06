@@ -50,20 +50,27 @@ const MOCK_SOLANA_CHAIN = {
 
 vi.mock("@tools/khalani/client.js", () => ({
   getKhalaniClient: () => ({
+    // Strict balances boundary: `{ tokens, rejectedEntries }`, nothing refused.
     getTokenBalances: async (_address: string, chainIds?: number[]) => {
       const chainId = chainIds?.[0] ?? 1;
       if (chainId === 20011000000) {
-        return [
-          { address: "So11111111111111111111111111111111111111112", chainId, symbol: "SOL", name: "Solana", decimals: 9, extensions: { balance: "2000000000", price: { usd: "100.00" } } },
-        ];
+        return {
+          tokens: [
+            { address: "So11111111111111111111111111111111111111112", chainId, symbol: "SOL", name: "Solana", decimals: 9, extensions: { balance: "2000000000", price: { usd: "100.00" } } },
+          ],
+          rejectedEntries: [],
+        };
       }
-      return [
-        { address: "native", chainId, symbol: "ETH", name: "Ether", decimals: 18, extensions: { balance: "5000000000000000000", price: { usd: "3000.00" } } },
-        { address: "0xUSDC", chainId, symbol: "USDC", name: "USD Coin", decimals: 6, extensions: { balance: "100000000", price: { usd: "1.00" } } },
-        // No `price` extension → projector omits priceUsd. Held-USD value of this
-        // row is 0, so it must sort LAST in the concise top-N trim (null-safe).
-        { address: "0xNOPRICE", chainId, symbol: "NOPX", name: "No Price Token", decimals: 18, extensions: { balance: "1000000000000000000" } },
-      ];
+      return {
+        tokens: [
+          { address: "native", chainId, symbol: "ETH", name: "Ether", decimals: 18, extensions: { balance: "5000000000000000000", price: { usd: "3000.00" } } },
+          { address: "0xUSDC", chainId, symbol: "USDC", name: "USD Coin", decimals: 6, extensions: { balance: "100000000", price: { usd: "1.00" } } },
+          // No `price` extension → projector omits priceUsd. Held-USD value of this
+          // row is 0, so it must sort LAST in the concise top-N trim (null-safe).
+          { address: "0xNOPRICE", chainId, symbol: "NOPX", name: "No Price Token", decimals: 18, extensions: { balance: "1000000000000000000" } },
+        ],
+        rejectedEntries: [],
+      };
     },
     getChains: async () => [MOCK_CHAIN, MOCK_SOLANA_CHAIN],
   }),
@@ -205,7 +212,10 @@ describe("WalletBalances", () => {
       symbol: "SOL",
       address: "So11111111111111111111111111111111111111112",
       decimals: 9,
-      balance: "3000000000",
+      balanceRaw: "3000000000",
+      // The human amount travels BESIDE the raw one so the model never divides.
+      balance: "3",
+      valueUsd: "450",
     });
     expect(data.wallets[0].scannedChainIds).toEqual([20011000000]);
   });
@@ -269,7 +279,9 @@ describe("WalletBalances", () => {
     // threw on a missing price and that a holding is never silently hidden.
     expect(tokens.map((t: { symbol: string }) => t.symbol)).toEqual(["ETH", "USDC", "NOPX"]);
     expect(tokens[2].priceUnavailable).toBe(true);
-    expect(tokens[2].priceUsd).toBeUndefined();
+    expect(tokens[2].priceUsd).toBeNull();
+    // Never a zero: zero as "I do not know" is a one-way door.
+    expect(tokens[2].valueUsd).toBeNull();
   });
 
   it("default (no limit / detailed) returns all tokens unchanged", async () => {

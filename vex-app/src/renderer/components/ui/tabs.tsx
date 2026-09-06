@@ -139,7 +139,14 @@ export const TabsTrigger = forwardRef<HTMLButtonElement, TabsTriggerProps>(
         event.key === "End"
       ) {
         event.preventDefault();
-        const list = localRef.current?.parentElement;
+        // THE TABLIST, not the parent. A consumer may wrap a trigger with the
+        // controls that belong to its tab (a close button cannot be a child of
+        // the trigger, since a button cannot contain a button), and the roving
+        // tabindex must still walk every trigger in the list rather than the
+        // one inside the wrapper. `closest` finds the list at any depth;
+        // `querySelectorAll` below returns the triggers in document order
+        // regardless of how deep each one sits.
+        const list = localRef.current?.closest('[role="tablist"]');
         if (!list) return;
         const triggers = Array.from(
           list.querySelectorAll<HTMLButtonElement>('[role="tab"]')

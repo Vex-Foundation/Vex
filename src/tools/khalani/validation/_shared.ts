@@ -52,6 +52,44 @@ export function asNumber(field: string): z.ZodType<number> {
 }
 
 /**
+ * Token decimals, STRICT, and deliberately NOT `asNumber`.
+ *
+ * `asNumber` guards only `typeof v === "number" && !Number.isNaN(v)`, so
+ * `Infinity` passes it, and `Infinity` decimals poison every scale derived
+ * from them. `Number.isInteger` is the primitive that rejects it. The `36`
+ * ceiling is MetaMask's own token guard (`TokensController.ts:1069-1073`); no
+ * real token exceeds it, and a provider reporting more is reporting a value
+ * nothing downstream can convert from.
+ *
+ * `0` is a LEGITIMATE value, so no consumer of this field may default it with
+ * `||` (which silently turns 0 into 18). Use `??`.
+ *
+ * The same invariant is enforced again at the projection seam by
+ * `isTokenDecimals` (`@vex-agent/tools/protocols/amount-display.ts`), which is
+ * where a row that fails it keeps its identity and reports a named reason.
+ * Kept as a SEPARATE implementation rather than a shared import for the same
+ * reason `jupiter-swaps/validation.ts` keeps its own bps guard: `src/tools`
+ * must not import from `src/vex-agent` (one-way dependency direction).
+ */
+export function asTokenDecimals(field: string): z.ZodType<number> {
+  return z.custom<number>(
+    (v) =>
+      typeof v === "number"
+      && Number.isInteger(v)
+      && v >= 0
+      && v <= MAX_TOKEN_DECIMALS,
+    {
+      error:
+        `Invalid Khalani response: ${field} must be a whole number of decimals `
+        + `between 0 and ${MAX_TOKEN_DECIMALS}`,
+    },
+  );
+}
+
+/** MetaMask's token-decimals ceiling (`TokensController.ts:1069-1073`). */
+const MAX_TOKEN_DECIMALS = 36;
+
+/**
  * Mirrors `asOptionalString`: returns the string only when it is a non-empty
  * string, otherwise `undefined`. Never throws on bad input.
  */

@@ -19,10 +19,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { StudioDuplexTransport } from "@vex-agent/mcp/duplex-transport.js";
 
 vi.mock("../../logger/index.js", () => ({
-  log: { info: () => {}, warn: () => {}, error: () => {} },
+  log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
+const { log } = await import("../../logger/index.js");
+
 const { FrontSupervisor } = await import("../mcp-host/front-supervisor.js");
+const { FRONT_CREDIT_STALL_WARN_MS, FrontRelayTransport } = await import(
+  "../mcp-host/front-relay-transport.js"
+);
 const { FRONT_CHUNK_BYTES, FRONT_CREDIT_BYTES } = await import(
   "../mcp-host/front-handshake.js"
 );
@@ -106,7 +111,18 @@ async function microtasks(): Promise<void> {
   await Promise.resolve();
 }
 
+/** Every `log.warn` line this case produced. */
+function warnings(): readonly string[] {
+  return vi.mocked(log.warn).mock.calls.map((call) => String(call[0]));
+}
+
+/** Every `log.info` line this case produced. */
+function infoLines(): readonly string[] {
+  return vi.mocked(log.info).mock.calls.map((call) => String(call[0]));
+}
+
 beforeEach(() => {
+  vi.clearAllMocks();
   fronts = [];
   admitted = [];
   built = [];
@@ -121,7 +137,16 @@ beforeEach(() => {
 afterEach(() => {
   for (const supervisor of built) supervisor.dispose();
   built = [];
+  vi.useRealTimers();
 });
+
+/** One admitted wire as the relay transport it is, so its counters are readable. */
+function relayWire(wire: StudioDuplexTransport): InstanceType<typeof FrontRelayTransport> {
+  if (!(wire instanceof FrontRelayTransport)) {
+    throw new Error("the relay admitted something that is not a relay transport");
+  }
+  return wire;
+}
 
 describe("admission, before a byte is read", () => {
   it("ADMITs with the captured epoch and grants the first credit window", () => {
@@ -416,5 +441,154 @@ describe("close, and the edge that must not overtake the last response", () => {
     front().sendPeerClosed(1, "commanded_close", 0n);
     await microtasks();
     expect(closed).toBe(1);
+  });
+});
+
+/**
+ * THE DOWN-PATH UNDER A MESSAGE THAT DOES NOT FIT ITS WINDOW, and the log that
+ * says so when the front stops acknowledging.
+ *
+ * A `tools/list` for the Studio surface is on the order of 700 KB - about
+ * eleven 64 KiB credit windows and twenty-odd 32 KiB chunks - and it is the
+ * FIRST heavy exercise of this path on every connection. Before these cases
+ * the relay had no test that pushed a message past one window, and a
+ * connection whose acknowledgements stopped arriving produced no evidence of
+ * any kind: main sat with bytes it could not send and said nothing for as long
+ * as it lived, which is exactly the 2026-09-04 incident's silent 25 seconds.
+ */
+describe("a response that spans several credit windows", () => {
+  it("arrives complete and in order when the front acknowledges normally", () => {
+    build();
+    front().completeHandshake();
+    const wire = openConnection(1);
+
+    // 200 KiB of distinguishable bytes: a repeating 16-byte counter, so a
+    // reordered or dropped chunk changes the reassembled string rather than
+    // being hidden by a run of identical characters.
+    const blocks: string[] = [];
+    for (let index = 0; index < 200 * 1024 / 16; index += 1) {
+      blocks.push(String(index % 10).repeat(16));
+    }
+    const line = `${blocks.join("")}\n`;
+    let settled = 0;
+    const accepted = wire.write(line, () => (settled += 1));
+
+    // It cannot fit: the window is 64 KiB and the message is over three of
+    // them, so the writer is told to park.
+    expect(accepted).toBe(false);
+
+    // SCRIPTED ACKNOWLEDGEMENTS, one window at a time, exactly as a front that
+    // is draining its pipe would send them. The loop is bounded so a relay
+    // that stops making progress fails here instead of spinning.
+    for (let round = 0; round < 64 && settled === 0; round += 1) {
+      const written = front().dataOfType("DATA");
+      const last = written[written.length - 1];
+      if (last === undefined) break;
+      front().sendWriteDone(1, last.sequence);
+    }
+
+    expect(settled).toBe(1);
+    const reassembled = front()
+      .dataOfType("DATA")
+      .map((frame) => Buffer.from(frame.payload).toString("utf8"))
+      .join("");
+    expect(reassembled).toBe(line);
+    // Every chunk respected the plane's own bound.
+    for (const frame of front().dataOfType("DATA")) {
+      expect(frame.payload.length).toBeLessThanOrEqual(FRONT_CHUNK_BYTES);
+    }
+  });
+
+  it("warns ONCE when the credit never comes back, and never for a connection that recovers", () => {
+    vi.useFakeTimers();
+    build();
+    front().completeHandshake();
+    const wire = openConnection(1);
+
+    wire.write("a".repeat(FRONT_CHUNK_BYTES * 8));
+    // Two chunks fill the window; the rest is main's to hold.
+    expect(front().dataOfType("DATA")).toHaveLength(2);
+    expect(warnings()).toHaveLength(0);
+
+    // A moment before the bound, nothing has been said: this is pacing, and
+    // pacing is not a fault.
+    vi.advanceTimersByTime(FRONT_CREDIT_STALL_WARN_MS - 1);
+    expect(warnings()).toHaveLength(0);
+
+    vi.advanceTimersByTime(1);
+    expect(warnings()).toEqual([
+      "[studio:front] write blocked on credit connection=1 "
+        + `waitedMs=${String(FRONT_CREDIT_STALL_WARN_MS)} `
+        + `queuedBytes=${String(FRONT_CHUNK_BYTES * 6)}`,
+    ]);
+
+    // ONE PER CONNECTION, EVER. A genuinely wedged connection repeating this
+    // line every five seconds is a log that has stopped being evidence.
+    vi.advanceTimersByTime(FRONT_CREDIT_STALL_WARN_MS * 10);
+    expect(warnings()).toHaveLength(1);
+  });
+
+  it("says nothing when an acknowledgement releases the window before the bound", () => {
+    vi.useFakeTimers();
+    build();
+    front().completeHandshake();
+    const wire = openConnection(1);
+
+    wire.write("a".repeat(FRONT_CHUNK_BYTES * 8));
+    vi.advanceTimersByTime(FRONT_CREDIT_STALL_WARN_MS - 1);
+    front().sendWriteDone(1, dataSequence(0));
+    // The watch is cleared and re-armed from zero by the pump's next block, so
+    // the remaining millisecond of the old window proves nothing.
+    vi.advanceTimersByTime(1);
+    expect(warnings()).toHaveLength(0);
+
+    // And it is still ARMED: this is a clear, not a disarm.
+    vi.advanceTimersByTime(FRONT_CREDIT_STALL_WARN_MS);
+    expect(warnings()).toHaveLength(1);
+  });
+
+  it("leaves no timer behind when the connection closes while it is blocked", () => {
+    vi.useFakeTimers();
+    build();
+    front().completeHandshake();
+    const wire = openConnection(1);
+
+    wire.write("a".repeat(FRONT_CHUNK_BYTES * 8));
+    wire.destroy();
+    vi.advanceTimersByTime(FRONT_CREDIT_STALL_WARN_MS * 3);
+
+    // A warn about a connection that is gone is noise, and the timer that
+    // would have produced it is a handle with no owner.
+    expect(warnings()).toHaveLength(0);
+  });
+});
+
+describe("what the connection lost, and what the peer did", () => {
+  it("attributes a dropped frame to the connection it named", async () => {
+    build();
+    front().completeHandshake();
+    const wire = relayWire(openConnection(1));
+    expect(wire.droppedFrames).toBe(0);
+
+    wire.destroy();
+    await microtasks();
+    // A frame the front wrote a microsecond before main decided to close. It
+    // is not a fault, but the connection that lost it must be able to report
+    // it on its own closed line.
+    front().sendData(1, Buffer.from("late"));
+    front().sendWriteDone(1, 1n);
+
+    expect(wire.droppedFrames).toBe(2);
+  });
+
+  it("names a peer half-close in the log, which nothing did before", () => {
+    build();
+    front().completeHandshake();
+    const wire = openConnection(1);
+
+    front().sendPeerEnd(1);
+
+    expect(wire.readableEnded).toBe(true);
+    expect(infoLines()).toContain("[studio:front] peer half-closed connection=1");
   });
 });

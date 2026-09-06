@@ -10,9 +10,10 @@
  * transactional whole-chain replace), exactly as `local-chain-balance-sync.ts`
  * does for local EVM chains. The RPC + pricing half lives in
  * `tools/solana-ecosystem/balances/read-wallet-balances.ts`, and the SHAPING
- * rules (native under the wSOL mint, zero skipped, wSOL folded into native) in
- * `tools/solana-ecosystem/balances/wallet-snapshot.ts` - shared with the agent
- * tools, so a live read and this projection can never disagree.
+ * rules (native account lamports, a zero-capable native row, and a separate
+ * wSOL token row) in `tools/solana-ecosystem/balances/wallet-snapshot.ts` -
+ * shared with the agent tools, so a live read and this projection can never
+ * disagree.
  *
  * ## Failure semantics, and why a PARTIAL read writes nothing
  *
@@ -44,6 +45,7 @@ import {
   projectSolanaBalanceRows,
   type SolanaBalanceRow,
 } from "@tools/solana-ecosystem/balances/wallet-snapshot.js";
+import { solanaAssetIdentity } from "@tools/solana-ecosystem/shared/solana-asset-identity.js";
 import * as balancesRepo from "@vex-agent/db/repos/balances.js";
 import type { BalanceRow } from "@vex-agent/db/repos/balances.js";
 import logger from "@utils/logger.js";
@@ -165,8 +167,8 @@ export async function syncSolanaWalletBalances(
 // ── Row assembly ────────────────────────────────────────────────────
 
 /**
- * Map the canonical Solana rows onto `proj_balances` rows. The three shaping
- * rules (native under `SOL_MINT`, zero skipped, wSOL folded into native) are
+ * Map the canonical Solana rows onto `proj_balances` rows. The shaping rules
+ * (native account lamports, native zero row, and separate wSOL balance) are
  * NOT re-implemented here: they live once in
  * `@tools/solana-ecosystem/balances/wallet-snapshot.js`, so this lane and the
  * agent tools can never disagree about what a wallet holds.
@@ -176,13 +178,17 @@ function buildBalanceRows(walletAddress: string, read: SolanaWalletBalancesRead)
 }
 
 function toRow(walletAddress: string, row: SolanaBalanceRow): BalanceRow {
+  const identity = solanaAssetIdentity(
+    row.isNative ? { kind: "native" } : { kind: "spl", mint: row.mint },
+  );
   return {
     walletFamily: SOLANA_WALLET_FAMILY,
     walletAddress,
     chainId: SOLANA_SYNTHETIC_CHAIN_ID,
-    // Base58 case is IDENTITY: the DB predicate compares `token_address`
-    // without `LOWER()`, so the mint is stored exactly as the chain spells it.
-    tokenAddress: row.mint,
+    // Native SOL needs an address-shaped storage key distinct from wSOL.
+    // Asset kind, not this value, decides native identity. SPL mints retain
+    // exact base58 case because the DB predicate has no LOWER().
+    tokenAddress: identity.persistedAddress,
     tokenSymbol: row.symbol,
     tokenName: row.name,
     balanceRaw: row.amountRaw,

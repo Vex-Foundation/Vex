@@ -254,10 +254,115 @@ describe("studio endpoint golden vectors", () => {
   });
 
   /**
+   * THE ORDER, AS A PROPERTY (contract 1.2, rows 1 and 2). Two private runtime
+   * directories, and the one both processes can READ wins.
+   *
+   * The rung above only agreed while `XDG_RUNTIME_DIR` named
+   * `/run/user/<uid>`. When it names a private CUSTOM directory - WSLg sets
+   * `/mnt/wslg/runtime-dir` on some distributions - the host bound THERE while
+   * a bridge spawned without the variable found `/run/user/<uid>` equally
+   * private and dialled THAT. Both passed the privacy gate, which is why the
+   * gate alone was never the fix; the filesystem fact is evaluated FIRST.
+   */
+  it("prefers /run/user/<uid> over a custom private XDG_RUNTIME_DIR a launcher may drop", () => {
+    const configDirRealPath = "/home/alice/.config/vex";
+    const customRuntimeDir = "/mnt/wslg/runtime-dir";
+    const systemdRuntimeDir = `${LINUX_RUNTIME_DIR_ROOT}/1000`;
+    const plan = (env: Record<string, string>) =>
+      planStudioEndpoint({
+        platform: "linux",
+        configDirRealPath,
+        env,
+        tmpdir: "/tmp",
+        uid: 1000,
+        probeDirectory: (dir) =>
+          dir === customRuntimeDir || dir === systemdRuntimeDir
+            ? { isDirectory: true, uid: 1000, mode: 0o700 }
+            : null,
+      });
+
+    const host = plan({ XDG_RUNTIME_DIR: customRuntimeDir });
+    const scrubbed = plan({});
+    expect(host).toEqual(scrubbed);
+    expect(host).toMatchObject({
+      kind: "unix",
+      path: `${systemdRuntimeDir}/${studioEndpointFileName(configDirRealPath)}`,
+      parentDir: systemdRuntimeDir,
+      createParent: false,
+    });
+  });
+
+  /**
+   * Row 2 still serves the systems it exists for: with no private
+   * `/run/user/<uid>`, a custom private `XDG_RUNTIME_DIR` is the only private
+   * runtime directory the machine offers, and the plan uses it rather than
+   * dropping to the tmpdir form.
+   */
+  it.each([
+    { name: "absent", facts: null },
+    { name: "owned by another user", facts: { isDirectory: true, uid: 0, mode: 0o700 } },
+    { name: "readable by the group", facts: { isDirectory: true, uid: 1000, mode: 0o750 } },
+    { name: "not a directory", facts: { isDirectory: false, uid: 1000, mode: 0o700 } },
+  ])("uses a custom private XDG_RUNTIME_DIR when /run/user/<uid> is $name", ({ facts }) => {
+    const customRuntimeDir = "/mnt/wslg/runtime-dir";
+    const systemdRuntimeDir = `${LINUX_RUNTIME_DIR_ROOT}/1000`;
+    const plan = planStudioEndpoint({
+      platform: "linux",
+      configDirRealPath: "/home/alice/.config/vex",
+      env: { XDG_RUNTIME_DIR: customRuntimeDir },
+      tmpdir: "/tmp",
+      uid: 1000,
+      probeDirectory: (dir) => {
+        if (dir === customRuntimeDir) return { isDirectory: true, uid: 1000, mode: 0o700 };
+        return dir === systemdRuntimeDir ? facts : null;
+      },
+    });
+    expect(plan).toMatchObject({
+      kind: "unix",
+      parentDir: customRuntimeDir,
+      createParent: false,
+    });
+  });
+
+  /**
+   * THE RESIDUAL DIVERGENCE, MEASURED RATHER THAN ASSERTED AWAY (contract 1.2).
+   *
+   * No private `/run/user/<uid>` and a custom private `XDG_RUNTIME_DIR` the
+   * client drops: this host lands on row 2 and the bridge on row 3, and no
+   * fact both processes read closes it. The gap is a KNOWN quantity with an
+   * owner - the rendezvous file named in 1.2 - and a change that closes it
+   * fails here, which forces the contract to move in the same diff.
+   */
+  it("still diverges from a scrubbed client with no /run/user/<uid>, exactly as the contract says", () => {
+    const customRuntimeDir = "/mnt/wslg/runtime-dir";
+    const plan = (env: Record<string, string>) =>
+      planStudioEndpoint({
+        platform: "linux",
+        configDirRealPath: "/home/alice/.config/vex",
+        env,
+        tmpdir: "/tmp",
+        uid: 1000,
+        probeDirectory: (dir) =>
+          dir === customRuntimeDir ? { isDirectory: true, uid: 1000, mode: 0o700 } : null,
+      });
+
+    const host = plan({ XDG_RUNTIME_DIR: customRuntimeDir });
+    const scrubbed = plan({});
+    expect(host).toMatchObject({ kind: "unix", parentDir: customRuntimeDir });
+    expect(scrubbed).toMatchObject({
+      kind: "unix",
+      parentDir: "/tmp/vex-studio-1000",
+      createParent: true,
+    });
+    expect(host).not.toEqual(scrubbed);
+  });
+
+  /**
    * The rung is a systemd fact, and it is HELD TO THE SAME PRIVACY GATE as the
    * variable. A `/run/user/<uid>` that is not a directory, not ours, or
    * readable by anyone else is not a runtime directory, and the tmpdir form -
-   * whose parent Vex creates and re-verifies at 0700 - is where the plan lands.
+   * whose parent Vex creates and re-verifies at 0700 - is where the plan lands
+   * when the variable offers nothing better.
    */
   it.each([
     { name: "absent", facts: null },

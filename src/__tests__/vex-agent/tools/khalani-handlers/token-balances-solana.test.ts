@@ -21,6 +21,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { PublicKey } from "@solana/web3.js";
 
 import type { SolanaBalanceRpc } from "@tools/solana-ecosystem/balances/read-wallet-balances.js";
+import { KHALANI_TOOLS } from "@vex-agent/tools/protocols/khalani/manifest.js";
 import { makeProtocolContext } from "../_test-context.js";
 
 const SOLANA_CHAIN_ID = 20_011_000_000;
@@ -169,6 +170,15 @@ function accountAt(index: number): string {
 }
 
 describe("khalani__token_balances_get - the solana family", () => {
+  it("describes the structural native/wSOL identity and fee boundary to the model", () => {
+    const description = KHALANI_TOOLS.find(
+      (tool) => tool.toolId === "khalani.tokens.balances",
+    )?.description;
+    expect(description).toContain("Only `assetKind: native` identifies account SOL");
+    expect(description).toContain("only that account balance pays network fees");
+    expect(description).toContain("native SOL and wSOL share a Jupiter route/pricing mint");
+  });
+
   it("answers a funded Solana wallet from RPC instead of Khalani's zero-token scan", async () => {
     const result = await handleTokenBalances(
       { walletFamily: "solana" },
@@ -189,10 +199,17 @@ describe("khalani__token_balances_get - the solana family", () => {
     expect(data.tokens[0]).toMatchObject({
       symbol: "SOL",
       name: "Solana",
+      assetKind: "native",
+      nativeAssetId: "slip44:501",
+      routeMint: SOL_MINT,
+      pricingMint: SOL_MINT,
       address: SOL_MINT,
       chainId: SOLANA_CHAIN_ID,
       decimals: 9,
-      balance: "4000000000",
+      balanceRaw: "4000000000",
+      // The human amount travels BESIDE the raw one so the model never divides.
+      balance: "4",
+      valueUsd: "600",
       priceUsd: "150",
     });
   });
@@ -220,11 +237,23 @@ describe("khalani__token_balances_get - the solana family", () => {
     );
 
     const data = JSON.parse(result.output);
-    expect(data.tokens).toHaveLength(1);
-    expect(data.tokens[0].symbol).toBeNull();
-    expect(data.tokens[0].name).toBeNull();
-    expect(data.tokens[0].address).toBe(UNLABELLED_MINT);
-    expect(data.tokens[0].balance).toBe("42");
+    expect(data.tokens).toHaveLength(2);
+    expect(data.tokens[0]).toMatchObject({
+      symbol: "SOL",
+      assetKind: "native",
+      balanceRaw: "0",
+      balance: "0",
+    });
+    const unlabelled = data.tokens.find(
+      (row: { address: string }) => row.address === UNLABELLED_MINT,
+    );
+    expect(unlabelled).toBeDefined();
+    expect(unlabelled.symbol).toBeNull();
+    expect(unlabelled.name).toBeNull();
+    expect(unlabelled.address).toBe(UNLABELLED_MINT);
+    // `decimals: 0` is legitimate: a `||` default would read this as 42e-18.
+    expect(unlabelled.balanceRaw).toBe("42");
+    expect(unlabelled.balance).toBe("42");
   });
 
   it("surfaces an untrusted token account as an accountError and still returns the readable rows", async () => {
@@ -332,7 +361,10 @@ describe("khalani__token_balances_get - the solana family", () => {
     const data = JSON.parse(result.output);
     expect(mockKhalaniScan).toHaveBeenCalledTimes(1);
     expect(data.tokens).toEqual([
-      { symbol: "USDC", name: "USD Coin", address: "0xUSDC", chainId: 1, decimals: 6, priceUsd: "1.00", balance: "100000000" },
+      {
+        symbol: "USDC", name: "USD Coin", address: "0xUSDC", chainId: 1, decimals: 6,
+        priceUsd: "1.00", balanceRaw: "100000000", balance: "100", valueUsd: "100",
+      },
     ]);
     // Present and empty, never absent: an absent field reads as "no answer".
     expect(data.accountErrors).toEqual([]);
@@ -361,9 +393,8 @@ describe("khalani__token_balances_get - the solana family", () => {
 
   it("a PARTIAL read keeps the valid SPL row: a zero-lamport wallet does not lose it to a broken sibling account", async () => {
     // THE DECISIVE CASE, mirrored for this tool. See the same test in the
-    // WalletBalances suite: with zero lamports there is no native row to mask
-    // a discarded holding, so a dropped SPL row shows up as "you hold nothing"
-    // on the very lane the model uses to find a funded source asset.
+    // WalletBalances suite: the required native zero row must not mask a
+    // discarded SPL holding on the lane used to find a funded source asset.
     //
     // The surviving row must also come back PRICED, which proves enrichment
     // still runs on a partial read instead of being skipped along with the
@@ -385,7 +416,8 @@ describe("khalani__token_balances_get - the solana family", () => {
     const data = JSON.parse(result.output);
     const bonk = data.tokens.find((row: { address: string }) => row.address === BONK_MINT);
     expect(bonk).toBeDefined();
-    expect(bonk.balance).toBe("4000000");
+    expect(bonk.balanceRaw).toBe("4000000");
+    expect(typeof bonk.balance).toBe("string");
     expect(data.accountErrors).toEqual([
       { chainId: SOLANA_CHAIN_ID, accountAddress: ACCOUNT_A, reason: "schema-parse-failed" },
     ]);
@@ -411,5 +443,38 @@ describe("khalani__token_balances_get - the solana family", () => {
     const data = JSON.parse(result.output);
     expect(data.accountErrors).toHaveLength(20);
     expect(data.accountErrorsOmitted).toBe(6);
+  });
+
+  // WP1: this tool's own description tells the model to use it to find a funded
+  // source asset before quoting a swap, so a row it cannot read correctly is a
+  // MONEY decision made on a wrong number, not a display slip.
+  it("carries the human amount and a null-not-zero USD estimate on every row", async () => {
+    mockReadTokensPairs.mockResolvedValue([]);
+
+    const result = await handleTokenBalances(
+      { walletFamily: "solana" },
+      makeProtocolContext(),
+      withRpc(scriptedRpc({
+        lamports: 9_873_301,
+        spl: [{ pubkey: ACCOUNT_A, mint: UNLABELLED_MINT, amount: "9873301706589007", decimals: 18 }],
+      })),
+    );
+
+    const data = JSON.parse(result.output);
+    for (const row of data.tokens) {
+      expect(row).toHaveProperty("balanceRaw");
+      expect(row).toHaveProperty("balance");
+      expect(row).toHaveProperty("valueUsd");
+      expect(typeof row.decimals).toBe("number");
+      // No price feed in this run: null plus the flag, never a zero that reads
+      // as "this holding is worthless".
+      expect(row.valueUsd).toBeNull();
+      expect(row.priceUnavailable).toBe(true);
+    }
+
+    const unlabelled = data.tokens.find((row: { address: string }) => row.address === UNLABELLED_MINT);
+    expect(unlabelled.balanceRaw).toBe("9873301706589007");
+    expect(unlabelled.balance).toBe("0.009873301706589007");
+    expect(data.tokens[0].balance).toBe("0.009873301");
   });
 });

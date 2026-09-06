@@ -10,14 +10,22 @@
  *    (`returnTo.kind === "assets"`), which returns there — remounted with a
  *    null origin (centered expand): the original morph origin belonged to a
  *    row instance that no longer exists, so reusing it would anchor a stale
- *    rect. The return CARRIES `returnTo.sessionId`, so a session-scoped
- *    All-assets register comes back session-scoped; re-minting a bare global
- *    route here silently widened the register behind the user's back.
+ *    rect. The return CARRIES the register's scope (session or project), so
+ *    a narrowed All-assets register comes back narrowed; re-minting a bare
+ *    global route here silently widened the register behind the user's back.
  */
 
 import { useCallback, type JSX } from "react";
 import { AnimatePresence } from "motion/react";
 import { useUiStore } from "../../../stores/uiStore.js";
+import {
+  agentScanRouteScope,
+  agentScanScopeKey,
+  assetsReturnToScope,
+  assetsRouteFor,
+  assetsRouteScope,
+  assetsScopeKey,
+} from "../../../stores/uiStore/shell-route.js";
 import { MemoryScreen } from "./MemoryScreen.js";
 import { SessionsScreen } from "./SessionsScreen.js";
 import { HowVexWorksScreen } from "./HowVexWorksScreen.js";
@@ -35,11 +43,7 @@ export function ShellScreens(): JSX.Element {
     // Escape rides a window listener, so the callback may outlive a route swap.
     const current = useUiStore.getState().shellRoute;
     if (current.kind === "tokenHistory" && current.returnTo.kind === "assets") {
-      setShellRoute({
-        kind: "assets",
-        origin: null,
-        sessionId: current.returnTo.sessionId,
-      });
+      setShellRoute(assetsRouteFor(assetsReturnToScope(current.returnTo), null));
       return;
     }
     setShellRoute({ kind: "none" });
@@ -53,20 +57,23 @@ export function ShellScreens(): JSX.Element {
         <SessionsScreen key="sessions" origin={route.origin} onClose={close} />
       ) : route.kind === "agentScan" ? (
         <AgentScanScreen
-          // Identity-keyed on the scope: swapping between the global feed and
-          // a session preset must remount, not reuse the old filter state.
-          key={`agentScan:${route.sessionId ?? "global"}`}
+          // Identity-keyed on the scope: swapping between the global feed, a
+          // session preset and a project preset must remount, not reuse
+          // filter state that belonged to another scope.
+          key={`agentScan:${agentScanScopeKey(agentScanRouteScope(route))}`}
           origin={route.origin}
-          sessionId={route.sessionId}
+          scope={agentScanRouteScope(route)}
           onClose={close}
         />
       ) : route.kind === "howItWorks" ? (
         <HowVexWorksScreen key="howItWorks" origin={route.origin} onClose={close} />
       ) : route.kind === "assets" ? (
         <AssetsScreen
-          key={`assets:${route.sessionId ?? "global"}`}
+          // Identity-keyed on the scope, like Agent Scan: the global register,
+          // a session and a project must remount, not share filter state.
+          key={`assets:${assetsScopeKey(assetsRouteScope(route))}`}
           origin={route.origin}
-          sessionId={route.sessionId}
+          scope={assetsRouteScope(route)}
           onClose={close}
         />
       ) : route.kind === "settings" ? (

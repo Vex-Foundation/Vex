@@ -1,0 +1,39 @@
+{
+ "sort_totalSupply": {
+  "data": null,
+  "error": {
+   "status": 400,
+   "name": "BadRequestError",
+   "message": "Attribute totalSupply not found on model api::virtual.virtual",
+   "details": {}
+  }
+ },
+ "sort_unknown_attribute": {
+  "data": null,
+  "error": {
+   "status": 400,
+   "name": "BadRequestError",
+   "message": "Attribute zzzNotAField not found on model api::virtual.virtual",
+   "details": {}
+  }
+ },
+ "sort_missing_direction": {
+  "data": null,
+  "error": {
+   "status": 400,
+   "name": "BadRequestError",
+   "message": "Cannot read properties of undefined (reading 'toLowerCase')",
+   "details": {}
+  }
+ },
+ "filter_unknown_operator": {
+  "data": null,
+  "error": {
+   "status": 400,
+   "name": "BadRequestError",
+   "message": "Undefined attribute level operator $zzz",
+   "details": {}
+  }
+ },
+ "_provenance": "api.virtuals.io 400 bodies captured 2026-09-04. These are the machine artifacts the sort and operator vocabularies are read out of, per rule 10."
+}

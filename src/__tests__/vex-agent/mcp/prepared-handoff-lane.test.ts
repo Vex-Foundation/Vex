@@ -24,9 +24,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const WALLET = { id: "wallet-1", address: "0x1111111111111111111111111111111111111111" };
 
 const createWith = vi.fn();
+const getById = vi.fn();
 
 vi.mock("@vex-agent/db/repos/wallet-intents.js", () => ({
   createWith: (...args: readonly unknown[]) => createWith(...args),
+  getById: (...args: readonly unknown[]) => getById(...args),
 }));
 
 vi.mock("@vex-agent/engine/runtime/lease-and-status/session-control-lock.js", () => ({
@@ -65,19 +67,19 @@ const SEND_PARAMS = {
   amountIn: "0.01",
 } as const;
 
-function mcpScope() {
+function mcpScope(permission: "restricted" | "full" = "restricted") {
   return projectScopeSchema.parse({
     projectId: "66666666-6666-4666-8666-666666666666",
     scopeVersion: 3,
-    permission: "restricted",
+    permission,
     backingSessionId: SESSION_ID,
     wallets: { evm: WALLET, solana: null },
   });
 }
 
 /** The MCP lane's own context, built by the ONE builder that surface uses. */
-function mcpContext(): InternalToolContext {
-  return buildProjectToolContext(mcpScope());
+function mcpContext(permission: "restricted" | "full" = "restricted"): InternalToolContext {
+  return buildProjectToolContext(mcpScope(permission));
 }
 
 /**
@@ -93,6 +95,7 @@ function inAppContext(): InternalToolContext {
 beforeEach(() => {
   vi.clearAllMocks();
   createWith.mockResolvedValue(undefined);
+  getById.mockResolvedValue(null);
 });
 
 describe("a prepared transfer names its own broadcaster", () => {
@@ -115,6 +118,79 @@ describe("a prepared transfer names its own broadcaster", () => {
     expect(result.preparedActionFollowUp).toBeUndefined();
     // And the sentence must not be the in-app promise.
     expect(data.message).not.toContain("Vex will confirm it automatically");
+  });
+
+  /**
+   * The Codex-final-review defect: the MCP sentence promised "the approval card
+   * is raised there" to EVERY caller, but the confirm gate is restricted-only
+   * (`internal/wallet/send/confirm.ts`: the pendingApproval branch is entered
+   * only when `!context.approved && context.sessionPermission === "restricted"`).
+   * In a full-permission project the very next call signs and broadcasts real
+   * funds with no human in the loop, and the sentence said a human would see a
+   * card first. Rule 90: never overstate the safety of a money path.
+   *
+   * Both permissions are asserted in one place because the defect was the GAP
+   * between them, and the confirm-side gate is asserted here too so a change
+   * that moves the gate without moving the sentence fails.
+   */
+  it("under full permission says confirm broadcasts immediately, with no card", async () => {
+    const context = mcpContext("full");
+    expect(context.sessionPermission).toBe("full");
+    expect(context.approved).not.toBe(true);
+
+    const result = await handleWalletSendPrepare({ ...SEND_PARAMS }, context);
+
+    expect(result.success).toBe(true);
+    const data = result.data as { intentId: string; message: string };
+    expect(data.message).toBe(
+      `Transfer prepared: call WalletSendConfirm with intentId ${data.intentId} within 10 minutes `
+      + "to broadcast; this project has full permission, so confirm broadcasts immediately and "
+      + "no approval card is raised.",
+    );
+    // The claim the old sentence made and this project cannot keep.
+    expect(data.message).not.toContain("approval card is raised there");
+    expect(result.preparedActionFollowUp).toBeUndefined();
+  });
+
+  it("the confirm gate the sentence describes really is restricted-only", async () => {
+    // The evidence behind the two sentences above, driven through the REAL
+    // confirm handler over the row prepare actually wrote: an unapproved
+    // restricted context is held for approval; an unapproved FULL context is
+    // not - it walks straight past the gate. If that ever flips, one of the two
+    // messages above becomes a lie, and this test names which.
+    //
+    // The full-permission context is given NO evm wallet so the run stops at
+    // `resolveSigningWallet`, immediately after the gate: enough to prove the
+    // gate was passed, without a key decrypt or a broadcast in a unit test.
+    const { handleWalletSendConfirm } = await import(
+      "@vex-agent/tools/internal/wallet/send/confirm.js"
+    );
+
+    const prepared = await handleWalletSendPrepare({ ...SEND_PARAMS }, mcpContext());
+    const { intentId } = prepared.data as { intentId: string };
+    const [, row] = createWith.mock.calls[0] as [unknown, Record<string, unknown>];
+    getById.mockResolvedValue({ ...row, status: "pending" });
+
+    const restricted = await handleWalletSendConfirm(
+      { walletFamily: "eip155", intentId },
+      mcpContext(),
+    );
+    expect(restricted.pendingApproval).toBe(true);
+    expect(restricted.success).toBe(false);
+
+    const full = await handleWalletSendConfirm(
+      { walletFamily: "eip155", intentId },
+      buildProjectToolContext(
+        projectScopeSchema.parse({
+          projectId: "66666666-6666-4666-8666-666666666666",
+          scopeVersion: 3,
+          permission: "full",
+          backingSessionId: SESSION_ID,
+          wallets: { evm: null, solana: null },
+        }),
+      ),
+    );
+    expect(full.pendingApproval).not.toBe(true);
   });
 
   it("in the app keeps the automatic follow-up and the sentence that describes it", async () => {

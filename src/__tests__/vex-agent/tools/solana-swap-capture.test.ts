@@ -29,7 +29,7 @@ const mockCreateAgentActivityPreBroadcastFailure = vi.fn();
 const mockMarkActivitySolanaBroadcast = vi.fn();
 const mockFailActivityEvent = vi.fn();
 const mockMarkBroadcastAccepted = vi.fn();
-const mockFindFreshMatchedSwapPrequote = vi.fn();
+const mockFindFreshMatchedPrequote = vi.fn();
 
 vi.mock("@tools/solana-ecosystem/jupiter/jupiter-tokens/service.js", () => ({
   searchJupiterTokens: vi.fn(),
@@ -69,7 +69,7 @@ vi.mock("@tools/solana-ecosystem/jupiter/jupiter-swaps/submit-prepared-tx.js", (
 }));
 
 vi.mock("@vex-agent/tools/protocols/swap-prequote.js", () => ({
-  findFreshMatchedSwapPrequote: (...args: unknown[]) => mockFindFreshMatchedSwapPrequote(...args),
+  findFreshMatchedPrequote: (...args: unknown[]) => mockFindFreshMatchedPrequote(...args),
 }));
 
 vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
@@ -173,13 +173,37 @@ const VALID_FEE_PREVIEW = {
   landingMode: "self_managed_submit",
 };
 
+/**
+ * The gate-guarded re-read of the authorizing row, as the handler now receives
+ * it: the row itself plus the quote-time spendability statement whose native
+ * `required` figure execution is bound to. An `executable` row always carries
+ * one, so a fixture without it would not be a real row.
+ */
 function matchedPrequote(feePreview: Record<string, unknown> = VALID_FEE_PREVIEW) {
   return {
-    prequoteId: "prequote-1", sessionId: "sess-1", matchHash: "h".repeat(64),
-    kind: "swap", family: "solana", provider: "jupiter", chainId: null,
-    walletAddress: "SignerWallet", tokenIn: "BonkMint", tokenOut: "SolMint", amount: "1000",
-    slippageBps: null, safetyVerdict: "pass", safetyDetail: { feePreview }, routeRef: null, eligibilityKind: "executable", claimedAt: null, claimedBy: null,
-    createdAt: "2026-01-01T00:00:00.000Z", expiresAt: "2099-01-01T00:00:00.000Z",
+    ok: true,
+    prequote: {
+      prequoteId: "prequote-1", sessionId: "sess-1", matchHash: "h".repeat(64),
+      kind: "swap", family: "solana", provider: "jupiter", chainId: null,
+      walletAddress: "SignerWallet", tokenIn: "BonkMint", tokenOut: "SolMint", amount: "1000",
+      slippageBps: null, safetyVerdict: "pass", safetyDetail: { feePreview }, routeRef: null, eligibilityKind: "executable", claimedAt: null, claimedBy: null,
+      createdAt: "2026-01-01T00:00:00.000Z", expiresAt: "2099-01-01T00:00:00.000Z",
+    },
+    spendability: {
+      cardVersion: "spendability-v2",
+      source: {
+        asset: { chainId: 101, address: "BonkMint", symbol: "BONK" },
+        wallet: "SignerWallet", blockTag: "pending", observedAt: "2026-01-01T00:00:00.000Z",
+        required: { raw: "1000", human: null, decimals: 6, symbol: "BONK" },
+        current: { raw: "1000", human: null, decimals: 6, symbol: "BONK" },
+      },
+      native: {
+        asset: { chainId: 101, address: "11111111111111111111111111111111", symbol: "SOL" },
+        wallet: "SignerWallet", blockTag: "pending", observedAt: "2026-01-01T00:00:00.000Z",
+        required: { raw: "10000000", human: null, decimals: 9, symbol: "SOL" },
+        current: { raw: "10000000", human: null, decimals: 9, symbol: "SOL" },
+      },
+    },
   };
 }
 
@@ -229,7 +253,7 @@ describe("solana.swap.execute capture", () => {
       token: { address: q, symbol: q, decimals: 6 },
     }));
     mockGetSolanaConnection.mockReturnValue({ __fake: "connection" });
-    mockFindFreshMatchedSwapPrequote.mockResolvedValue(matchedPrequote());
+    mockFindFreshMatchedPrequote.mockResolvedValue(matchedPrequote());
     mockPrepareFeeBearingJupiterSwap.mockResolvedValue(preparedFeeBearingSwap());
     mockCreateAgentActivityIntent.mockResolvedValue({ executionId: 42, events: [{ id: 7 }] });
     mockPrepareVersionedTx.mockResolvedValue({
@@ -531,7 +555,7 @@ describe("solana.swap.execute capture", () => {
   });
 
   it("blocks with a clear message when no matching fee-bearing quote is found (no broadcast, no intent)", async () => {
-    mockFindFreshMatchedSwapPrequote.mockResolvedValue(null);
+    mockFindFreshMatchedPrequote.mockResolvedValue({ ok: false, reason: "no_quote" });
 
     const result = await CORE_HANDLERS["solana.swap.execute"](
       { tokenIn: "BonkMint", tokenOut: "SolMint", amountIn: "1000" },
@@ -712,7 +736,7 @@ describe("solana.swap.quote", () => {
     const quoted = swapPreparation(0);
     expect(quoted.knobs.slippageBps).toBe(VEX_DEFAULT_SLIPPAGE_BPS);
 
-    mockFindFreshMatchedSwapPrequote.mockResolvedValue(matchedPrequote());
+    mockFindFreshMatchedPrequote.mockResolvedValue(matchedPrequote());
     mockCreateAgentActivityIntent.mockResolvedValue({ executionId: 42, events: [{ id: 7 }] });
     mockPrepareVersionedTx.mockResolvedValue({
       serialized: new Uint8Array([1, 2, 3]),
@@ -758,7 +782,21 @@ describe("solana.swap.quote", () => {
     );
 
     // 6 decimals on both legs (the resolver mock above).
-    expect(result.data?.summary).toBe("Quote: 1000 BonkMint → ~100 SolMint on Solana.");
+    //
+    // The eligibility sentence is part of the summary from WP2-J on. This
+    // fixture's wallet and mints are readable NAMES, not base58 keys, so the
+    // spendability read cannot even be attempted and the quote takes the
+    // fail-closed `balance_unavailable` branch - which is the correct outcome
+    // for an unreadable wallet and is what this line pins. The eligibility
+    // verdicts themselves are owned by
+    // `protocols/solana-jupiter/solana-jupiter-swap-quote-eligibility.test.ts`,
+    // which drives the same handler over a scripted chain.
+    expect(result.data?.summary).toBe(
+      "Quote: 1000 BonkMint → ~100 SolMint on Solana."
+      + " NOT EXECUTABLE: the wallet's balance for this swap could not be read (quote_spendability_read_failed),"
+      + " so Vex refuses to treat it as funded. This quote authorizes nothing.",
+    );
+    expect(result.data?.eligibility).toEqual({ kind: "balance_unavailable", executable: false });
     expect(result.data?.inputAmountRaw).toBe("1000000000");
     expect(result.data?.outputAmountRaw).toBe("100000000");
     expect(result.data?.otherAmountThreshold).toBe("99000000");

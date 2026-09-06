@@ -46,7 +46,7 @@ import { getWalletById, listWallets } from "@vex-lib/wallet.js";
 import { getSessionWalletScope, initializeSessionWalletScope } from "../database/sessions-db.js";
 import { log } from "../logger/index.js";
 import { registerHandler } from "./register-handler.js";
-import { ensureEngineDbUrl } from "./runtime/_ensure-engine-db-url.js";
+import { ensureEngineDbUrl } from "../database/engine-db-readiness.js";
 import { invalidWalletSelectionError, resolveWalletRef } from "./_wallet-refs.js";
 
 const preparedIntentNullableSchema = preparedIntentDtoSchema.nullable();

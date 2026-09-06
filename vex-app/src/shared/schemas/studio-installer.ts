@@ -44,7 +44,9 @@ export const studioArtifactKindSchema = z.enum([
   "agent-config",
   /** The `AGENTS.md` managed block. */
   "agents-md",
-  /** The `@AGENTS.md` import inside `CLAUDE.md`. */
+  /** The `.vex/vex-guide.md` managed companion to the block. */
+  "vex-guide",
+  /** Vex's `@AGENTS.md` and `@.vex/vex-guide.md` imports inside `CLAUDE.md`. */
   "claude-md",
   /** The generated `.vex/protocols.md` tool reference. */
   "protocols-doc",

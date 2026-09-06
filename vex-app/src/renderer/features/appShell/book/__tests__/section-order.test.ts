@@ -14,19 +14,33 @@ import {
   BOOK_SECTION_LABEL,
   DEFAULT_BOOK_SECTIONS,
   resolveBookSectionOrder,
+  SESSION_BOOK_SECTIONS,
 } from "../section-order.js";
 // The move algebra is the SHARED mechanism both rails use
 // (`section-registry.ts`); exercised here over this rail's own ids.
 import { moveSection, moveSectionRelative } from "../section-registry.js";
 
-describe("resolveBookSectionOrder", () => {
-  it("an empty stored order is the default order", () => {
-    expect(resolveBookSectionOrder([])).toEqual([...DEFAULT_BOOK_SECTIONS]);
+describe("resolveBookSectionOrder (the agent SESSION rail's key)", () => {
+  it("an empty stored order is the session rail's default order", () => {
+    expect(resolveBookSectionOrder([])).toEqual([...SESSION_BOOK_SECTIONS]);
+  });
+
+  it("the session rail is the vocabulary minus the project-only card", () => {
+    expect([...SESSION_BOOK_SECTIONS]).toEqual(
+      DEFAULT_BOOK_SECTIONS.filter((id) => id !== "project"),
+    );
   });
 
   it("returns a full permutation verbatim", () => {
-    const permutation = [...DEFAULT_BOOK_SECTIONS].reverse();
+    const permutation = [...SESSION_BOOK_SECTIONS].reverse();
     expect(resolveBookSectionOrder(permutation)).toEqual(permutation);
+  });
+
+  it("drops the PROJECT-only id that reached the agent key, instead of an empty section", () => {
+    const resolved = resolveBookSectionOrder(["project", "wallets"]);
+    expect(resolved).not.toContain("project");
+    expect(resolved[0]).toBe("wallets");
+    expect([...resolved].sort()).toEqual([...SESSION_BOOK_SECTIONS].sort());
   });
 
   it("appends every MISSING known id at the end, in default order", () => {
@@ -49,20 +63,20 @@ describe("resolveBookSectionOrder", () => {
     const resolved = resolveBookSectionOrder(["runtime", "wallets"]);
     expect(resolved).not.toContain("runtime");
     expect(resolved[0]).toBe("wallets");
-    expect([...resolved].sort()).toEqual([...DEFAULT_BOOK_SECTIONS].sort());
+    expect([...resolved].sort()).toEqual([...SESSION_BOOK_SECTIONS].sort());
   });
 
   it("drops unknown / retired ids instead of rendering them", () => {
     const resolved = resolveBookSectionOrder(["hyperliquid", "wallets", ""]);
     expect(resolved).not.toContain("hyperliquid");
     expect(resolved[0]).toBe("wallets");
-    expect([...resolved].sort()).toEqual([...DEFAULT_BOOK_SECTIONS].sort());
+    expect([...resolved].sort()).toEqual([...SESSION_BOOK_SECTIONS].sort());
   });
 
   it("collapses duplicates to the first occurrence", () => {
     const resolved = resolveBookSectionOrder(["trench", "trench", "wallets"]);
     expect(resolved.filter((id) => id === "trench")).toHaveLength(1);
-    expect(resolved).toHaveLength(DEFAULT_BOOK_SECTIONS.length);
+    expect(resolved).toHaveLength(SESSION_BOOK_SECTIONS.length);
   });
 
   it("every known section has a human label for the drag handle", () => {

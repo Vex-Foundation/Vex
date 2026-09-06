@@ -45,6 +45,9 @@ import {
   walletAddressesEqual,
   type InventoryFamily,
 } from "@tools/wallet/inventory.js";
+import { SOLANA_NATIVE_ASSET_IDENTITY } from "@tools/solana-ecosystem/shared/solana-asset-identity.js";
+import { SOL_MINT } from "@tools/solana-ecosystem/shared/solana-constants.js";
+import { SOLANA_SYNTHETIC_CHAIN_ID } from "../../../constants/solana-chain.js";
 import logger from "@utils/logger.js";
 
 import type { DeployedCapital } from "../types.js";
@@ -64,6 +67,7 @@ export const MISSION_BASELINE_REASONS = [
   "stale_projection",
   "valuation_failed",
   "valuation_timed_out",
+  "deployed_capital_asset_ambiguous",
   "deployed_capital_decimals_mismatch",
 ] as const;
 
@@ -106,6 +110,7 @@ const portfolioSchema = z.object({
 const deployedCapitalAtStartSchema = z.object({
   chainId: z.number().int(),
   assetAddress: z.string(),
+  assetKind: z.enum(["native", "token"]).nullable().default(null),
   assetSymbol: z.string(),
   declaredAmountRaw: z.string(),
   declaredDecimals: z.number().int(),
@@ -218,6 +223,7 @@ async function measure(input: BuildMissionBaselineInput): Promise<MissionBaselin
   if (input.deployedCapital !== null) {
     const held = await readDeployedCapitalAtStart(addresses, input.deployedCapital);
     deployedCapitalAtStart = held.entry;
+    if (held.assetIdentityAmbiguous) reasons.push("deployed_capital_asset_ambiguous");
     if (held.decimalsMismatch) reasons.push("deployed_capital_decimals_mismatch");
   }
 
@@ -266,26 +272,53 @@ function matchInstalledWallets(allowedWallets: readonly string[]): string[] {
 async function readDeployedCapitalAtStart(
   addresses: readonly string[],
   declared: DeployedCapital,
-): Promise<{ entry: MissionBaselineDeployedCapital; decimalsMismatch: boolean }> {
-  const holding = await getAssetHolding(
-    addresses,
-    declared.chainId,
-    declared.assetAddress,
-    BASELINE_STATEMENT_TIMEOUT_MS,
-  );
+): Promise<{
+  entry: MissionBaselineDeployedCapital;
+  assetIdentityAmbiguous: boolean;
+  decimalsMismatch: boolean;
+}> {
+  const projectionAddress = deployedCapitalProjectionAddress(declared);
   const declaredParts = {
     chainId: declared.chainId,
     assetAddress: declared.assetAddress,
+    assetKind: declared.assetKind,
     assetSymbol: declared.assetSymbol,
     declaredAmountRaw: declared.amountRaw,
     declaredDecimals: declared.decimals,
   };
-
-  // No row for the asset at all is an honest zero holding, not a caveat: the
-  // mission may be about to acquire it.
-  if (holding.rowCount === 0) {
+  if (projectionAddress === null) {
     return {
       entry: { ...declaredParts, heldAmountRaw: null, heldDecimals: null, heldUsdEstimate: null },
+      assetIdentityAmbiguous: true,
+      decimalsMismatch: false,
+    };
+  }
+  const holding = await getAssetHolding(
+    addresses,
+    declared.chainId,
+    projectionAddress,
+    BASELINE_STATEMENT_TIMEOUT_MS,
+  );
+
+  // No row for the asset at all is an honest zero holding, not a caveat: the
+  // mission may be about to acquire it. Native SOL has one compatibility
+  // exception during rollout: before the first successful sync, an old row at
+  // SOL_MINT may still contain the former merged native-plus-wSOL amount. It
+  // is evidence that identity migration is pending, never an amount we may
+  // consume. Report ambiguity until the new zero-or-held native row exists.
+  if (holding.rowCount === 0) {
+    const legacyMergedSolExists = declared.chainId === SOLANA_SYNTHETIC_CHAIN_ID
+      && declared.assetKind === "native"
+      && projectionAddress === SOLANA_NATIVE_ASSET_IDENTITY.persistedAddress
+      && (await getAssetHolding(
+        addresses,
+        declared.chainId,
+        SOL_MINT,
+        BASELINE_STATEMENT_TIMEOUT_MS,
+      )).rowCount > 0;
+    return {
+      entry: { ...declaredParts, heldAmountRaw: null, heldDecimals: null, heldUsdEstimate: null },
+      assetIdentityAmbiguous: legacyMergedSolExists,
       decimalsMismatch: false,
     };
   }
@@ -294,6 +327,7 @@ async function readDeployedCapitalAtStart(
   if (decimalsMismatch) {
     return {
       entry: { ...declaredParts, heldAmountRaw: null, heldDecimals: null, heldUsdEstimate: null },
+      assetIdentityAmbiguous: false,
       decimalsMismatch: true,
     };
   }
@@ -305,8 +339,31 @@ async function readDeployedCapitalAtStart(
       heldDecimals: holding.heldDecimals,
       heldUsdEstimate: holding.heldUsdEstimate,
     },
+    assetIdentityAmbiguous: false,
     decimalsMismatch: false,
   };
+}
+
+/**
+ * Translate a structurally native SOL declaration to the distinct key used
+ * only inside `proj_balances`.
+ *
+ * Native SOL and wSOL share SOL_MINT for routing. `assetKind`, never the
+ * address or display symbol, selects the persisted row. A legacy declaration
+ * with no kind returns null and is reported ambiguous rather than guessed.
+ */
+function deployedCapitalProjectionAddress(declared: DeployedCapital): string | null {
+  if (
+    declared.chainId !== SOLANA_SYNTHETIC_CHAIN_ID
+    || declared.assetAddress !== SOL_MINT
+  ) {
+    return declared.assetAddress;
+  }
+  if (declared.assetKind === "native") {
+    return SOLANA_NATIVE_ASSET_IDENTITY.persistedAddress;
+  }
+  if (declared.assetKind === "token") return declared.assetAddress;
+  return null;
 }
 
 function isStale(newestSyncedAt: PortfolioValuation["newestSyncedAt"]): boolean {

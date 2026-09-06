@@ -152,14 +152,20 @@ describe("a first install", () => {
 
     expect(outcomes.every((o) => o.status === "written")).toBe(true);
     expect([...store.keys()].sort()).toEqual(
-      ["agent:claude-code", "agents-md", "claude-md", "protocols-doc"].sort(),
+      ["agent:claude-code", "agents-md", "vex-guide", "claude-md", "protocols-doc"].sort(),
     );
 
     const mcp = await readFile(path.join(project, ".mcp.json"), "utf8");
     expect(mcp).toContain("/opt/vex/bin/vex-mcp");
     expect(mcp).toContain(FACTS.projectId);
-    expect(await readFile(path.join(project, "CLAUDE.md"), "utf8")).toContain("@AGENTS.md");
+    const claudeMd = await readFile(path.join(project, "CLAUDE.md"), "utf8");
+    expect(claudeMd).toContain("@AGENTS.md");
+    // Claude Code reads the guide through its own import; every other client is
+    // told to open it by the block's first section.
+    expect(claudeMd).toContain("@.vex/vex-guide.md");
     expect(await readFile(path.join(project, "AGENTS.md"), "utf8"))
+      .toContain("vex:studio:begin");
+    expect(await readFile(path.join(project, ".vex/vex-guide.md"), "utf8"))
       .toContain("vex:studio:begin");
   });
 
@@ -432,11 +438,7 @@ describe("FAULT INJECTION: a run that dies mid-way, and the Repair that finishes
     expect(store.size).toBe(2);
     for (const outcome of written) {
       const key = outcome.agentId === null
-        ? outcome.kind === "agents-md"
-          ? "agents-md"
-          : outcome.kind === "claude-md"
-            ? "claude-md"
-            : "protocols-doc"
+        ? outcome.kind
         : agentArtifactKey(outcome.agentId);
       expect(store.has(key)).toBe(true);
     }
@@ -455,10 +457,16 @@ describe("FAULT INJECTION: a run that dies mid-way, and the Repair that finishes
     expect(
       second.every((o) => o.status === "written" || o.status === "unchanged"),
     ).toBe(true);
-    expect(store.size).toBe(5);
+    expect(store.size).toBe(6);
 
     // Every artifact is now really on disk.
-    for (const relative of [".mcp.json", ".codex/config.toml", "AGENTS.md", "CLAUDE.md"]) {
+    for (const relative of [
+      ".mcp.json",
+      ".codex/config.toml",
+      "AGENTS.md",
+      ".vex/vex-guide.md",
+      "CLAUDE.md",
+    ]) {
       await expect(readFile(path.join(project, relative), "utf8")).resolves.toBeTruthy();
     }
   });
@@ -658,6 +666,7 @@ describe("provenance origin: what Vex WROTE vs what it ADOPTED", () => {
     // The whole-file artifacts of the same run, likewise.
     expect(store.get("protocols-doc")?.origin).toBe("written");
     expect(store.get("agents-md")?.origin).toBe("written");
+    expect(store.get("vex-guide")?.origin).toBe("written");
   });
 
   it("records `adopted` for bytes that were ALREADY on disk and identical", async () => {

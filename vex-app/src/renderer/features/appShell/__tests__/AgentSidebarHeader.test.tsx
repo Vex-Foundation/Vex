@@ -1,19 +1,22 @@
 /**
- * THE AGENT RAIL HEADER, and the one thing it exists to guarantee: the door
- * into Studio is in the header, so it is on screen in EVERY agent state.
+ * THE AGENT RAIL HEADER, and the one thing it exists to guarantee: once a
+ * session is active the door into Studio is in the header, so it is on screen
+ * in every agent state that has no welcome hero.
  *
  * The defect this pins (UX after-audit, N1): the `Agent | Studio` capsule
  * rendered only on the agent welcome hero, so opening a session took the mode
  * control off the screen entirely and Studio became reachable only by going
  * back to welcome. The header is the surface whose controls do not depend on
- * whether a session is open, which is why the capsule lives here - the same
- * reason VS Code keeps its activity switches in the activity bar Part rather
- * than in a view, and deepseek-harness's `SidebarRoot` renders its upper
- * controls itself in both column widths.
+ * whether a session is open, which is why the capsule lives here in that state
+ * - the same reason VS Code keeps its activity switches in the activity bar
+ * Part rather than in a view, and deepseek-harness's `SidebarRoot` renders its
+ * upper controls itself in both column widths.
  *
- * "Every agent state" is asserted as the header rendering the same control with
- * a session selected and with none: the header takes no session prop at all, so
- * the two cases are the two store states its children read.
+ * THE OTHER HALF (owner decree 2026-09-04): while NO session is active the
+ * welcome hero carries the capsule under the wordmark and this header mounts
+ * none, so the page keeps exactly ONE `Runtime mode` radiogroup. One store
+ * fact, `activeSessionId`, decides the seat; the two cases below are the two
+ * values of it.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -47,7 +50,20 @@ beforeEach(() => {
 });
 
 describe("AgentSidebarHeader", () => {
-  it("carries the runtime-mode capsule on the welcome stage", () => {
+  it("mounts NO capsule on the welcome stage - the hero under the wordmark is the seat then", () => {
+    // Owner decree 2026-09-04. Put the capsule back here unconditionally and
+    // the page would carry two radiogroups on welcome; this case goes red.
+    mount();
+    expect(screen.queryByRole("radiogroup", { name: "Runtime mode" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Search sessions" })).not.toBeNull();
+  });
+
+  it("carries the capsule with a session open - the door does not close", () => {
+    // The regression itself: with a session selected, the hero's copy is gone
+    // and this header is the only control left that can leave agent mode.
+    // Revert the capsule out of the header and this case is the one that goes
+    // red.
+    useUiStore.setState({ activeSessionId: "session-1" });
     mount();
     expect(
       screen.getByRole("radiogroup", { name: "Runtime mode" }),
@@ -55,18 +71,6 @@ describe("AgentSidebarHeader", () => {
     expect(
       screen.getByRole("radio", { name: "Agent" }).getAttribute("aria-checked"),
     ).toBe("true");
-  });
-
-  it("carries the SAME capsule with a session open - the door does not close", () => {
-    // The regression itself: with a session selected, the hero is gone from the
-    // centre column and this header is the only control left that can leave
-    // agent mode. Revert the capsule out of the header and this case is the one
-    // that goes red.
-    useUiStore.setState({ activeSessionId: "session-1" });
-    mount();
-    expect(
-      screen.getByRole("radiogroup", { name: "Runtime mode" }),
-    ).not.toBeNull();
   });
 
   it("switches the shell to Studio, and back", () => {
@@ -78,7 +82,8 @@ describe("AgentSidebarHeader", () => {
     expect(useUiStore.getState().runtimeMode).toBe("agent");
   });
 
-  it("renders exactly ONE radiogroup - the page-wide count is one control", () => {
+  it("renders exactly ONE radiogroup with a session open - the page-wide count is one control", () => {
+    useUiStore.setState({ activeSessionId: "session-1" });
     mount();
     expect(screen.getAllByRole("radiogroup")).toHaveLength(1);
   });
@@ -87,6 +92,7 @@ describe("AgentSidebarHeader", () => {
     // Words do not fit a 56px rail (the Studio rail header makes the same
     // call). The way into Studio from a collapsed rail is to expand it; the
     // expand control is right here, and it keeps its name.
+    useUiStore.setState({ activeSessionId: "session-1" });
     mount({ wide: false, collapsed: true });
     expect(screen.queryByRole("radiogroup", { name: "Runtime mode" })).toBeNull();
     expect(

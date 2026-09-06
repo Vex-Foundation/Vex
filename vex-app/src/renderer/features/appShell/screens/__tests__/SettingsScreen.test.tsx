@@ -113,6 +113,14 @@ const mockUseWizardState = vi.hoisted(() => vi.fn());
 vi.mock("../../../../lib/api/wizard.js", () => ({
   useWizardState: mockUseWizardState,
 }));
+// The Background row has its own suite (SettingsBackdropRow.test.tsx); this
+// one owns routing and the register, so its hooks stub to "shipped artwork".
+vi.mock("../../../../lib/api/shell-backdrop.js", () => ({
+  useShellBackdrop: () => ({ data: { ok: true, data: { backdrop: null } } }),
+  currentShellBackdrop: () => null,
+  usePickShellBackdrop: () => ({ mutate: () => undefined, isPending: false }),
+  useClearShellBackdrop: () => ({ mutate: () => undefined, isPending: false }),
+}));
 
 const { ShellScreens } = await import("../ShellScreens.js");
 

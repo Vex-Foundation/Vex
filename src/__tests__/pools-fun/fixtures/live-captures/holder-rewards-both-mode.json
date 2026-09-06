@@ -1,0 +1,34 @@
+{
+  "endpoint": "https://api.bankr.bot/pools-fun/holder-rewards?token=0x07801a668adf02e806ef8ef5a54804747afdfdf7",
+  "capturedAt": "2026-09-04T18:31:28.594944Z",
+  "response": {
+    "token": "0x07801a668adf02e806ef8ef5a54804747afdfdf7",
+    "distributor": "0x7b53d176E76F87D0ba5173b6e596aFEe717e6b0b",
+    "pairedAsset": "0x4a0E65A3EcceC6dBe60AE065F2e7bb85Fae35eEa",
+    "pairedSymbol": "SPCX",
+    "pairedDecimals": 18,
+    "wallet": null,
+    "rewardMode": "both",
+    "paysCallerBounty": false,
+    "conversion": "none",
+    "earned": "0",
+    "earnedPaired": "0",
+    "walletExcluded": false,
+    "eligibleSupply": "1322257129358659407244569",
+    "rewardRate": "1250396616857187500",
+    "rewardRatePaired": "58334874843",
+    "periodFinish": 1788607809,
+    "periodFinishPaired": 1788607809,
+    "remainingStream": "76425491618928157187500",
+    "remainingStreamPaired": "3565485885279003",
+    "surplus": "1",
+    "surplusPaired": "13916",
+    "buybackBacklog": "0",
+    "lastBuybackAt": 0,
+    "pendingFees": {
+      "token": "0",
+      "paired": "42281461114252"
+    },
+    "hasWorkToDistribute": true
+  }
+}

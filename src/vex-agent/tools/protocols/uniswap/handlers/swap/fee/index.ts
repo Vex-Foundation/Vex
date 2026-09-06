@@ -37,4 +37,5 @@ export {
   uniswapFeeNotCharged,
   type RunUniswapFeeLegInput,
   type UniswapFeeCollection,
+  type UniswapFeeLegDebitGate,
 } from "./run.js";

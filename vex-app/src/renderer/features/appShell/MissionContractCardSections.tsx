@@ -129,7 +129,7 @@ function Field({ label, hint, children }: FieldProps): JSX.Element {
 /**
  * C3 - the deployed-capital declaration, ALWAYS rendered.
  *
- * This field is bound into the acceptance hash (contract v6), so the host must
+ * This field is bound into the acceptance hash (contract v7), so the host must
  * be able to see it before accepting; a hash-covered field the card hides is a
  * blind signature. It is a measurement base, not a spend ceiling, which is why
  * it sits on its own rather than in the constraints list.
@@ -168,6 +168,11 @@ function DeployedCapitalField({
   const symbol = displayableAssetSymbol(capital.assetSymbol);
   const amount = capital.amountHuman ?? `${capital.amountRaw} raw`;
   const chain = chainDisplay(capital.chainId).name;
+  const assetKind = capital.assetKind === "native"
+    ? "native account coin"
+    : capital.assetKind === "token"
+      ? "token / mint"
+      : "legacy identity: native or token unknown";
   return (
     <Field label="Deployed capital">
       <div data-vex-field="deployed-capital" className="space-y-0.5">
@@ -175,7 +180,7 @@ function DeployedCapitalField({
           {symbol === null ? `${amount} on ${chain}` : `${amount} ${symbol} on ${chain}`}
         </p>
         <p className="break-all font-mono text-[11px] text-ink-tertiary">
-          {capital.amountRaw} raw @ {capital.decimals} decimals ·{" "}
+          {capital.amountRaw} raw @ {capital.decimals} decimals · {assetKind} ·{" "}
           {capital.assetAddress}
         </p>
       </div>

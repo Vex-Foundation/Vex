@@ -22,7 +22,7 @@ vi.mock("@vex-agent/db/repos/missions.js", () => ({
 const { getContractStatus } = await import(
   "../../../../vex-agent/engine/mission/diff.js"
 );
-const { computeContractHash, LEGACY_V2_CONTRACT_HASH_VERSION } = await import(
+const { computeContractHash, LEGACY_V2_CONTRACT_HASH_VERSION, LEGACY_V6_CONTRACT_HASH_VERSION } = await import(
   "../../../../vex-agent/engine/mission/contract-hash.js"
 );
 const { extractLegacyHyperliquidRiskV2, missionToDraft } = await import(
@@ -128,5 +128,35 @@ describe("getContractStatus", () => {
     if (outcome.outcome !== "ready") return;
     expect(outcome.isAccepted).toBe(false);
     expect(outcome.isDirty).toBe(true);
+  });
+
+  it("keeps a v6 declaration without assetKind accepted after DB normalization", async () => {
+    mockGetMission.mockResolvedValueOnce(makeMission({
+      capitalSourceJson: {
+        type: "wallet",
+        amount: "500 USDC",
+        deployedCapital: {
+          amountRaw: "3044000000000000000000",
+          decimals: 18,
+          chainId: 4663,
+          assetAddress: "0x0f9f0000000000000000000000000000000000ee",
+          assetSymbol: "VEX",
+        },
+      },
+      acceptedContractHash: "0b2633813c1300cc87e56b177797eb04011bee4dd9253ea8d06caba6e9428914",
+      acceptedContractAt: "2026-05-22T10:00:00.000Z",
+      acceptedContractBy: "host",
+      contractHashVersion: LEGACY_V6_CONTRACT_HASH_VERSION,
+    }));
+
+    const outcome = await getContractStatus({
+      sessionId: "session-1",
+      missionId: "mission-1",
+    });
+
+    expect(outcome.outcome).toBe("ready");
+    if (outcome.outcome !== "ready") return;
+    expect(outcome.isAccepted).toBe(true);
+    expect(outcome.isDirty).toBe(false);
   });
 });

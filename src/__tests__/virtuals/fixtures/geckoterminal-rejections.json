@@ -1,0 +1,69 @@
+{
+ "timeframe_week": {
+  "errors": [
+   {
+    "status": "400",
+    "title": "Invalid timeframe. Allowed values: day, hour, minute, second"
+   }
+  ],
+  "meta": {
+   "ref_id": "217fdaf2-7637-48d1-b0b4-e88a294a10d5"
+  }
+ },
+ "limit_2000": {
+  "errors": [
+   {
+    "status": "400",
+    "title": "Invalid limit. must be positive integer less than or equal to 1000"
+   }
+  ],
+  "meta": {
+   "ref_id": "2abfaae8-ea47-4bcc-8b75-c0fcb18fc350"
+  }
+ },
+ "aggregate_7": {
+  "errors": [
+   {
+    "status": "400",
+    "title": "Invalid aggregate. Allowed values: 1, 4, 12"
+   }
+  ],
+  "meta": {
+   "ref_id": "cd1bfcbd-5f3e-4afc-a91f-3e3e8e2c44d5"
+  }
+ },
+ "pool_not_indexed_404": {
+  "errors": [
+   {
+    "status": "404",
+    "title": "Not Found"
+   }
+  ],
+  "meta": {
+   "ref_id": "991fecfb-1bf2-4874-bf77-1b83cd2dc9a8"
+  }
+ },
+ "_provenance": "api.geckoterminal.com rejections captured 2026-09-04: an illegal timeframe, an over-limit, an illegal aggregate, and a 404 for a Base BONDING-curve pair that is not an indexed pool. The allowed-value lists in the tool schema are read out of these bodies. The two aggregate_*_on_* rows were captured on the same day after a live handler run failed on `day` + aggregate 4: they are the evidence that the legal aggregate set is PER TIMEFRAME.",
+ "aggregate_4_on_day": {
+  "errors": [
+   {
+    "status": "400",
+    "title": "Invalid aggregate. Allowed values: 1"
+   }
+  ],
+  "meta": {
+   "ref_id": "a30e09d8-04f5-4ca8-868a-3f56e0dc3622"
+  }
+ },
+ "aggregate_4_on_minute": {
+  "errors": [
+   {
+    "status": "400",
+    "title": "Invalid aggregate. Allowed values: 1, 5, 15"
+   }
+  ],
+  "meta": {
+   "ref_id": "353ac801-5940-43a2-871e-83c3c58d3844"
+  }
+ }
+}

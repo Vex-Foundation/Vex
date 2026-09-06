@@ -12,7 +12,12 @@
  * A helper module, not a test spec: it is imported, never run on its own.
  */
 
-import type { StudioWritableAgent } from "@vex-agent/studio/agents.js";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { STUDIO_AGENT_LIST, type StudioWritableAgent } from "@vex-agent/studio/agents.js";
+import { STUDIO_CHANGE_NOTE_LIMIT } from "@vex-agent/studio/instructions/project-brief.js";
 import type {
   StudioInstallationEnvironment,
   StudioProjectBrief,
@@ -155,3 +160,72 @@ function tomlFixture(agent: StudioWritableAgent): string {
     "",
   ].join("\n");
 }
+
+/**
+ * The LONGEST project half the durable store can hand a renderer.
+ *
+ * Every field that varies with the project sits on its own bound here, because
+ * the byte bound on the `AGENTS.md` block exists for the user with the most in
+ * their project, not for this file's tidy two-wallet fixture:
+ *
+ *   - the name at `PROJECT_NAME_MAX_LENGTH`, read from the schema that enforces
+ *     it rather than copied, so a raised limit fails the bound test instead of
+ *     silently shipping a block that a Codex client would truncate;
+ *   - every agent in the registry selected, which is what the "Configured
+ *     agents" line can hold;
+ *   - eight wallets, four per family;
+ *   - `STUDIO_CHANGE_NOTE_LIMIT` change notes, each at the 400-character
+ *     `project_change_notes.summary` CHECK (migration 089).
+ */
+export function longestStudioBrief(): StudioProjectBrief {
+  return {
+    ...STUDIO_TEST_BRIEF,
+    projectName: "p".repeat(PROJECT_NAME_MAX_LENGTH),
+    agentNames: STUDIO_AGENT_LIST.map((agent) => agent.displayName),
+    wallets: [
+      ...Array.from({ length: 4 }, (_, index) => ({
+        family: "evm" as const,
+        address: `0x${String(index + 1).repeat(40)}`,
+      })),
+      ...Array.from({ length: 4 }, (_, index) => ({
+        family: "solana" as const,
+        address: `So${String(index + 1).repeat(40)}`,
+      })),
+    ],
+    changeNotes: Array.from({ length: STUDIO_CHANGE_NOTE_LIMIT }, (_, index) => ({
+      version: `0.9.${String(9 - index)}`,
+      date: `2026-08-${String(28 - index).padStart(2, "0")}`,
+      summary: "s".repeat(400),
+    })),
+  };
+}
+
+/**
+ * `PROJECT_NAME_MAX_LENGTH`, read from the schema module that owns it.
+ *
+ * READ, not copied: the constant lives in the Electron app's shared schemas,
+ * which this package's tests cannot import (different tsconfig, different
+ * alias root), and a copied number would go stale the moment the product
+ * raised the limit - which is exactly the change that would push a real
+ * project's block over the byte bound. The same technique the card-wait
+ * assertion in `managed-block.test.ts` uses for `APPROVAL_TTL_MS`.
+ */
+function readProjectNameMaxLength(): number {
+  const source = readFileSync(
+    resolve(
+      dirname(fileURLToPath(import.meta.url)),
+      "../../../../vex-app/src/shared/schemas/projects.ts",
+    ),
+    "utf8",
+  );
+  const match = /export const PROJECT_NAME_MAX_LENGTH = (\d+);/.exec(source);
+  if (match?.[1] === undefined) {
+    throw new Error(
+      "PROJECT_NAME_MAX_LENGTH moved; the longest-project fixture reads it from "
+        + "vex-app/src/shared/schemas/projects.ts",
+    );
+  }
+  return Number(match[1]);
+}
+
+export const PROJECT_NAME_MAX_LENGTH = readProjectNameMaxLength();

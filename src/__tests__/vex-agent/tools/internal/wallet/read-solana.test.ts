@@ -18,6 +18,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { PublicKey } from "@solana/web3.js";
 
 import type { SolanaBalanceRpc } from "@tools/solana-ecosystem/balances/read-wallet-balances.js";
+import { WALLET_TOOLS } from "@vex-agent/tools/registry/wallet.js";
 import type { ChainFamily } from "@tools/khalani/types.js";
 import { makeTestContext } from "../../_test-context.js";
 
@@ -70,6 +71,10 @@ vi.mock("@tools/khalani/balances.js", async (importOriginal) => {
 const mockReadTokensPairs = vi.fn();
 vi.mock("@tools/dexscreener/price-read.js", () => ({
   readTokensPairs: (...args: unknown[]) => mockReadTokensPairs(...args),
+  // The shared Khalani price enrichment runs on this path too and may spend its
+  // bounded pool-list rescue; it answers nothing here, so the EVM rows this
+  // Solana suite carries stay exactly as the scan produced them.
+  readTokenPools: () => Promise.resolve([]),
 }));
 vi.mock("@tools/solana-ecosystem/jupiter/jupiter-tokens/service.js", () => ({
   getJupiterTokensByMint: async () => [],
@@ -191,6 +196,13 @@ function accountAt(index: number): string {
 }
 
 describe("WalletBalances - the Solana family", () => {
+  it("describes the structural native/wSOL identity and fee boundary to the model", () => {
+    const description = WALLET_TOOLS.find((tool) => tool.name === "WalletBalances")?.description;
+    expect(description).toContain("Only `assetKind: native` identifies account SOL");
+    expect(description).toContain("only that account balance can pay network fees");
+    expect(description).toContain("native SOL and wSOL share the same Jupiter route/pricing mint");
+  });
+
   it("reports a funded wallet's real holdings instead of Khalani's zero-token answer", async () => {
     const result = await handleWalletBalances(
       { walletFamily: "solana" },
@@ -207,17 +219,83 @@ describe("WalletBalances - the Solana family", () => {
     expect(snapshot.totalUsd).toBeGreaterThan(0);
     expect(snapshot.scannedChainIds).toContain(SOLANA_CHAIN_ID);
 
-    // The native row: 2.5 SOL at $200, under the wSOL mint, 9 decimals.
+    // The native row: 2.5 account SOL at $200. The structural marker, not the
+    // shared route mint, is what makes it native and spendable for fees.
     const sol = snapshot.tokens.find((token: { address: string }) => token.address === SOL_MINT);
     expect(sol).toMatchObject({
       symbol: "SOL",
       name: "Solana",
+      assetKind: "native",
+      nativeAssetId: "slip44:501",
+      routeMint: SOL_MINT,
+      pricingMint: SOL_MINT,
       chainId: SOLANA_CHAIN_ID,
       decimals: 9,
-      balance: "2500000000",
+      balanceRaw: "2500000000",
+      // The human amount travels BESIDE the raw one so the model never divides.
+      balance: "2.5",
+      valueUsd: "500",
       priceUsd: "200",
     });
     expect(snapshot.totalUsd).toBeCloseTo(500.2, 4);
+  });
+
+  it("reports native SOL and wSOL as separate model rows with separate spendability", async () => {
+    const result = await handleWalletBalances(
+      { walletFamily: "solana" },
+      baseContext,
+      withRpc(scriptedRpc({
+        lamports: 1_000_000_000,
+        spl: [
+          { pubkey: ACCOUNT_A, mint: SOL_MINT, amount: "500000000", decimals: 9 },
+        ],
+      })),
+    );
+
+    const snapshot = solanaSnapshotOf(result.output);
+    const solRows = snapshot.tokens.filter(
+      (token: { address: string }) => token.address === SOL_MINT,
+    );
+    expect(solRows).toHaveLength(2);
+    expect(solRows[0]).toMatchObject({
+      symbol: "SOL",
+      assetKind: "native",
+      balanceRaw: "1000000000",
+      balance: "1",
+    });
+    expect(solRows[1]).toMatchObject({
+      symbol: "wSOL",
+      name: "Wrapped SOL",
+      assetKind: "spl",
+      nativeAssetId: null,
+      balanceRaw: "500000000",
+      balance: "0.5",
+    });
+  });
+
+  it("keeps the native zero row outside a concise priced-row limit", async () => {
+    const result = await handleWalletBalances(
+      { walletFamily: "solana", response_format: "concise", limit: 1 },
+      baseContext,
+      withRpc(scriptedRpc({
+        lamports: 0,
+        spl: [
+          { pubkey: ACCOUNT_A, mint: UNLABELLED_MINT, amount: "1000000000", decimals: 5 },
+        ],
+      })),
+    );
+
+    const snapshot = solanaSnapshotOf(result.output);
+    expect(snapshot.tokens).toHaveLength(2);
+    expect(snapshot.tokens[0]).toMatchObject({
+      assetKind: "native",
+      balanceRaw: "0",
+      balance: "0",
+    });
+    expect(snapshot.tokens[1]).toMatchObject({
+      assetKind: "spl",
+      address: UNLABELLED_MINT,
+    });
   });
 
   it("never asks Khalani for Solana BALANCES", async () => {
@@ -245,8 +323,12 @@ describe("WalletBalances - the Solana family", () => {
     expect(row.symbol).toBeNull();
     expect(row.name).toBeNull();
     // The mint is never substituted as a label, and the holding is never dropped.
-    expect(row.balance).toBe("777000000");
-    expect(row.priceUsd).toBeUndefined();
+    expect(row.balanceRaw).toBe("777000000");
+    expect(row.balance).toBe("7770");
+    // No price feed: null plus the flag, never a zero that reads as worthless.
+    expect(row.priceUsd).toBeNull();
+    expect(row.valueUsd).toBeNull();
+    expect(row.priceUnavailable).toBe(true);
   });
 
   it("surfaces an untrusted token account as an accountError and still returns the readable rows", async () => {
@@ -377,11 +459,9 @@ describe("WalletBalances - the Solana family", () => {
   it("a PARTIAL read keeps the valid SPL row: a zero-lamport wallet does not lose it to a broken sibling account", async () => {
     // THE DECISIVE CASE. The reader used to answer `tokens: []` whenever ANY
     // account failed, throwing away every holding it had successfully read.
-    // With native SOL present that loss is INVISIBLE - the native row keeps
-    // the snapshot non-empty - so this wallet holds ZERO lamports and exactly
-    // one valid SPL holding beside one broken account. If the valid row is
-    // dropped, the tool reports "you hold nothing" for a wallet that holds
-    // something, which is the exact defect this whole arc removes.
+    // This wallet has a native zero row plus one valid SPL holding beside one
+    // broken account. The required zero row must never mask deletion of the
+    // valid SPL row.
     // The surviving row must come back PRICED, so enrichment is proven to run
     // on a partial read rather than being skipped along with the lost rows.
     mockReadTokensPairs.mockResolvedValue([pair(SOL_MINT, "200"), pair(BONK_MINT, "0.5")]);
@@ -401,7 +481,8 @@ describe("WalletBalances - the Solana family", () => {
     const snapshot = solanaSnapshotOf(result.output);
     const bonk = snapshot.tokens.find((row: { address: string }) => row.address === BONK_MINT);
     expect(bonk).toBeDefined();
-    expect(bonk.balance).toBe("4000000");
+    expect(bonk.balanceRaw).toBe("4000000");
+    expect(bonk.balance).toBe("40");
     // The failure is still reported: partial is partial, not silently whole.
     expect(snapshot.accountErrors).toEqual([
       { chainId: SOLANA_CHAIN_ID, accountAddress: ACCOUNT_A, reason: "schema-parse-failed" },
@@ -430,5 +511,31 @@ describe("WalletBalances - the Solana family", () => {
     expect(snapshot.accountErrors).toHaveLength(20);
     // The agent is told exactly what the cap left out, never silently trimmed.
     expect(snapshot.accountErrorsOmitted).toBe(6);
+    // An account the read could not trust is a HOLDING that is absent from
+    // `tokens`, so it is an inventory gap - and the bounded list does not bound
+    // the axis.
+    expect(snapshot.inventoryComplete).toBe(false);
+    expect(snapshot.inventoryIncompleteReason).toBe("account_read_failed");
+  });
+
+  it("attributes the Solana lane to its own exhaustive RPC source", async () => {
+    mockReadTokensPairs.mockResolvedValue([pair(SOL_MINT, "200")]);
+    const result = await handleWalletBalances(
+      { walletFamily: "solana" },
+      baseContext,
+      withRpc(scriptedRpc({ lamports: 1_000_000_000, spl: [] })),
+    );
+
+    expect(result.success).toBe(true);
+    const snapshot = solanaSnapshotOf(result.output);
+    expect(snapshot.inventorySources).toEqual([
+      {
+        chainId: SOLANA_CHAIN_ID,
+        source: "solana_rpc_accounts",
+        result: "read",
+        exhaustive: true,
+        observedAt: expect.any(String),
+      },
+    ]);
   });
 });

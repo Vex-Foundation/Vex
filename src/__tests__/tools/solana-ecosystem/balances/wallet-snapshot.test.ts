@@ -1,5 +1,5 @@
 /**
- * The three Solana shaping rules, pinned ONCE.
+ * The Solana native and wrapped balance rules, pinned ONCE.
  *
  * They used to live only inside `vex-agent/sync/solana-balance-sync.ts`, which
  * is why the agent tools (`WalletBalances`, `khalani__token_balances_get`) read
@@ -11,6 +11,11 @@
 import { describe, it, expect, vi } from "vitest";
 
 import type { SolanaWalletBalancesRead } from "@tools/solana-ecosystem/balances/read-wallet-balances.js";
+import {
+  SOLANA_NATIVE_ASSET_IDENTITY,
+  SOLANA_NATIVE_PERSISTED_ADDRESS,
+  solanaAssetIdentity,
+} from "@tools/solana-ecosystem/shared/solana-asset-identity.js";
 import { SOL_MINT } from "@tools/solana-ecosystem/shared/solana-constants.js";
 
 vi.mock("@utils/logger.js", () => ({
@@ -68,8 +73,31 @@ function makeHolding(overrides: Partial<SolanaWalletBalancesRead["tokens"][numbe
   };
 }
 
-describe("projectSolanaBalanceRows - the three shaping rules", () => {
-  it("rule 1: native SOL is emitted under the wSOL mint, first, with 9 decimals", () => {
+describe("Solana asset identity", () => {
+  it("maps native identity, route mint, pricing mint and persisted identity separately", () => {
+    expect(SOLANA_NATIVE_ASSET_IDENTITY).toEqual({
+      kind: "native",
+      nativeAssetId: "slip44:501",
+      routeMint: SOL_MINT,
+      pricingMint: SOL_MINT,
+      persistedAddress: SOLANA_NATIVE_PERSISTED_ADDRESS,
+    });
+    expect(SOLANA_NATIVE_PERSISTED_ADDRESS).not.toBe(SOL_MINT);
+
+    const wrapped = solanaAssetIdentity({ kind: "spl", mint: SOL_MINT });
+    expect(wrapped).toEqual({
+      kind: "spl",
+      nativeAssetId: null,
+      routeMint: SOL_MINT,
+      pricingMint: SOL_MINT,
+      persistedAddress: SOL_MINT,
+    });
+    expect(wrapped.persistedAddress).not.toBe(SOLANA_NATIVE_PERSISTED_ADDRESS);
+  });
+});
+
+describe("projectSolanaBalanceRows - native and wrapped spendability", () => {
+  it("emits native SOL first from account lamports with 9 decimals", () => {
     const rows = projectSolanaBalanceRows(
       makeRead({ lamports: "2500000000", solPriceUsd: 200, tokens: [makeHolding()] }),
     );
@@ -89,16 +117,23 @@ describe("projectSolanaBalanceRows - the three shaping rules", () => {
     expect(rows[1]?.usdValue).toBe(20);
   });
 
-  it("rule 2: zero lamports produce NO native row", () => {
+  it("emits a native zero row when account lamports are zero", () => {
     const rows = projectSolanaBalanceRows(
       makeRead({ lamports: "0", solPriceUsd: 200, tokens: [makeHolding()] }),
     );
 
-    expect(rows.map((row) => row.mint)).toEqual([BONK_MINT]);
+    expect(rows[0]).toMatchObject({
+      mint: SOL_MINT,
+      symbol: "SOL",
+      amountRaw: "0",
+      usdValue: 0,
+      isNative: true,
+    });
+    expect(rows[1]?.mint).toBe(BONK_MINT);
   });
 
-  it("rule 2 covers SPL rows too: a zero-amount holding produces NO row", () => {
-    // Rule 2 says ZERO is skipped, without qualification. The reader drops zero
+  it("keeps the zero exception native-only: a zero SPL holding produces no row", () => {
+    // The reader drops zero
     // accounts upstream, but this projector OWNS the rule, so a zero holding
     // handed to it directly must not become a row that would read to an agent
     // as a position the wallet does not hold.
@@ -114,7 +149,7 @@ describe("projectSolanaBalanceRows - the three shaping rules", () => {
     expect(rows.every((row) => BigInt(row.amountRaw) > 0n)).toBe(true);
   });
 
-  it("rule 3: a wSOL token account is FOLDED into the native row, not emitted beside it", () => {
+  it("keeps native account lamports and a wSOL token account in separate rows", () => {
     const rows = projectSolanaBalanceRows(
       makeRead({
         lamports: "1000000000",
@@ -126,19 +161,28 @@ describe("projectSolanaBalanceRows - the three shaping rules", () => {
       }),
     );
 
-    // ONE SOL_MINT row: 1.0 native + 0.5 wrapped, valued as 1.5 SOL.
-    expect(rows.filter((row) => row.mint === SOL_MINT)).toHaveLength(1);
+    // Both use the wSOL mint for routing and pricing, but `isNative` preserves
+    // the spendability domain and their balances never merge.
+    expect(rows.filter((row) => row.mint === SOL_MINT)).toHaveLength(2);
     expect(rows[0]).toMatchObject({
       mint: SOL_MINT,
       symbol: "SOL",
-      amountRaw: "1500000000",
-      usdValue: 150,
+      amountRaw: "1000000000",
+      usdValue: 100,
       isNative: true,
     });
-    expect(rows.map((row) => row.mint)).toEqual([SOL_MINT, BONK_MINT]);
+    expect(rows[1]).toMatchObject({
+      mint: SOL_MINT,
+      symbol: "wSOL",
+      name: "Wrapped SOL",
+      amountRaw: "500000000",
+      usdValue: 50,
+      isNative: false,
+    });
+    expect(rows.map((row) => row.mint)).toEqual([SOL_MINT, SOL_MINT, BONK_MINT]);
   });
 
-  it("rule 3, the wSOL-ONLY case: with zero lamports the wSOL account keeps its own ordinary row", () => {
+  it("keeps the native zero row beside a wSOL-only holding", () => {
     const rows = projectSolanaBalanceRows(
       makeRead({
         lamports: "0",
@@ -150,6 +194,16 @@ describe("projectSolanaBalanceRows - the three shaping rules", () => {
     );
 
     expect(rows).toEqual([
+      {
+        mint: SOL_MINT,
+        symbol: "SOL",
+        name: "Solana",
+        decimals: 9,
+        amountRaw: "0",
+        priceUsd: 100,
+        usdValue: 0,
+        isNative: true,
+      },
       {
         mint: SOL_MINT,
         symbol: "wSOL",
@@ -171,12 +225,12 @@ describe("projectSolanaBalanceRows - the three shaping rules", () => {
       }),
     );
 
-    expect(rows).toHaveLength(1);
-    expect(rows[0]?.symbol).toBeNull();
-    expect(rows[0]?.name).toBeNull();
+    expect(rows).toHaveLength(2);
+    expect(rows[1]?.symbol).toBeNull();
+    expect(rows[1]?.name).toBeNull();
     // The mint is NEVER substituted as a label.
-    expect(rows[0]?.mint).toBe(BONK_MINT);
-    expect(rows[0]?.usdValue).toBeNull();
+    expect(rows[1]?.mint).toBe(BONK_MINT);
+    expect(rows[1]?.usdValue).toBeNull();
   });
 
   it("an INCOMPLETE read still yields the native row: an empty snapshot would read as 'you hold nothing'", () => {

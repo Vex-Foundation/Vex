@@ -10,6 +10,7 @@ import type {
   KhalaniErrorBody,
   KhalaniOrder,
   KhalaniToken,
+  KhalaniTokenBalancesResponse,
   OrdersResponse,
   QuoteRequest,
   QuoteStreamRoute,
@@ -31,6 +32,7 @@ import {
   validateSubmitResponse,
   validateTokenSearchResponse,
   validateTokensResponse,
+  validateTokenBalancesResponse,
 } from "./validation.js";
 
 interface RequestOptions {
@@ -172,10 +174,16 @@ export class KhalaniClient {
     );
   }
 
-  getTokenBalances(address: string, chainIds?: number[]): Promise<KhalaniToken[]> {
+  /**
+   * Wallet balances. Unlike the curated token lists, this array is
+   * attacker-reachable (anyone can airdrop a token), so it uses the per-entry
+   * boundary: entries refused for their `decimals` alone come back in
+   * `rejectedEntries` instead of failing the whole call.
+   */
+  getTokenBalances(address: string, chainIds?: number[]): Promise<KhalaniTokenBalancesResponse> {
     return this.request(
       `/v1/tokens/balances/${encodeURIComponent(address)}`,
-      validateTokensResponse,
+      validateTokenBalancesResponse,
       { query: { chainIds: chainIds?.join(",") } },
     );
   }

@@ -35,6 +35,10 @@ import type {
   AgentScanStatusFilter,
 } from "@shared/schemas/agent-scan-feed.js";
 import { cn } from "../../../../lib/utils.js";
+import {
+  GLOBAL_AGENT_SCAN_SCOPE,
+  type AgentScanRouteScope,
+} from "../../../../stores/uiStore/shell-route.js";
 import { FEED_PROTOCOL_OPTIONS } from "./agent-scan-protocols.js";
 
 /** The renderer-side filter selection. `null` means "no constraint". */
@@ -44,13 +48,18 @@ export interface AgentScanFilterState {
   readonly protocols: readonly string[];
   readonly chainFamily: AgentScanChainFamilyFilter | null;
   /**
-   * SESSION PRESET — set by the caller (the session rail's Activity card
-   * "View all"), never by a control in this bar. It is a NON-CLEARABLE scope,
-   * not a user-toggled filter: Clear resets everything else and leaves it in
-   * place, and it renders as its own visible chip so a session-narrowed feed
-   * can never be mistaken for the whole history. `null` = the global feed.
+   * SCOPE PRESET - set by the caller (a BOOK rail's Activity card "View all"),
+   * never by a control in this bar. It is a NON-CLEARABLE scope, not a
+   * user-toggled filter: Clear resets everything else and leaves it in place,
+   * and it renders as its own visible chip so a narrowed feed can never be
+   * mistaken for the whole history. `{ kind: "global" }` = the full feed.
+   *
+   * It is the ROUTE's closed union rather than two nullable ids, so "narrowed
+   * to a session" and "narrowed to a project" cannot both be true and a new
+   * member fails to compile in `toAgentScanFilters` instead of silently
+   * widening the read.
    */
-  readonly sessionId: string | null;
+  readonly scope: AgentScanRouteScope;
 }
 
 export const EMPTY_FILTER_STATE: AgentScanFilterState = {
@@ -58,12 +67,12 @@ export const EMPTY_FILTER_STATE: AgentScanFilterState = {
   status: null,
   protocols: [],
   chainFamily: null,
-  sessionId: null,
+  scope: GLOBAL_AGENT_SCAN_SCOPE,
 };
 
 /**
  * How many USER-CLEARABLE constraints are active — drives the pinned count
- * and the Clear key. The session preset is deliberately excluded: it is a
+ * and the Clear key. The scope preset is deliberately excluded: it is a
  * scope the user cannot clear from here, and counting it would promise a
  * Clear that does nothing to it. Its own chip carries that narrowing
  * visibly instead.
@@ -77,9 +86,9 @@ export function activeFilterCount(state: AgentScanFilterState): number {
   );
 }
 
-/** True when the feed is narrowed at all — by a filter OR by the session preset. */
+/** True when the feed is narrowed at all - by a filter OR by the scope preset. */
 export function isFeedNarrowed(state: AgentScanFilterState): boolean {
-  return activeFilterCount(state) > 0 || state.sessionId !== null;
+  return activeFilterCount(state) > 0 || state.scope.kind !== "global";
 }
 
 /**
@@ -94,15 +103,27 @@ export function toAgentScanFilters(state: AgentScanFilterState): AgentScanFilter
     protocols?: string[];
     chainFamily?: AgentScanChainFamilyFilter;
     sessionId?: string;
+    projectId?: string;
   } = {};
   if (state.kinds.length > 0) filters.kinds = [...state.kinds];
   if (state.status !== null) filters.statuses = [state.status];
   if (state.protocols.length > 0) filters.protocols = [...state.protocols];
   if (state.chainFamily !== null) filters.chainFamily = state.chainFamily;
-  // The session scope NARROWS the read server-side (`agentScanFiltersSchema`
-  // already carries it) — it was silently dropped here before, so a
-  // "session" feed rendered the global history.
-  if (state.sessionId !== null) filters.sessionId = state.sessionId;
+  // The scope NARROWS the read server-side (`agentScanFiltersSchema` carries
+  // both ids and refuses the pair by name) - it was silently dropped here
+  // once, and a "session" feed then rendered the global history. Exhaustive
+  // switch, no default: a new scope member is a compile error rather than a
+  // request that quietly asks for everything.
+  switch (state.scope.kind) {
+    case "global":
+      break;
+    case "session":
+      filters.sessionId = state.scope.sessionId;
+      break;
+    case "project":
+      filters.projectId = state.scope.projectId;
+      break;
+  }
   return filters;
 }
 
@@ -177,14 +198,44 @@ const CHAIN_FAMILIES: readonly {
   { value: "solana", label: "Solana" },
 ];
 
+/**
+ * What the non-clearable scope chip SAYS, and what it says while the project's
+ * name is still being read.
+ *
+ * A project scope falls back to "this project" rather than to a placeholder
+ * name or to nothing at all: the narrowing must be visible from the first
+ * frame, and naming a project Vex has not confirmed would be a claim about
+ * whose money is on screen. `null` = no chip (the global feed).
+ */
+export function scopeChipLabel(
+  scope: AgentScanRouteScope,
+  projectName: string | null,
+): string | null {
+  switch (scope.kind) {
+    case "global":
+      return null;
+    case "session":
+      return "this session";
+    case "project":
+      return projectName ?? "this project";
+  }
+}
+
 export function AgentScanFilterBar({
   state,
   onChange,
+  projectName = null,
 }: {
   readonly state: AgentScanFilterState;
   readonly onChange: (next: AgentScanFilterState) => void;
+  /**
+   * The open project's name, when the scope is a project and the projects read
+   * has resolved. A LABEL only - it grants nothing and is never a query input.
+   */
+  readonly projectName?: string | null;
 }): JSX.Element {
   const active = activeFilterCount(state);
+  const scopeLabel = scopeChipLabel(state.scope, projectName);
 
   return (
     <section
@@ -253,18 +304,23 @@ export function AgentScanFilterBar({
         ))}
       </FilterGroup>
 
-      {state.sessionId !== null || active > 0 ? (
+      {scopeLabel !== null || active > 0 ? (
         // The narrowing must never be invisible on an audit surface.
         <div className="flex flex-wrap items-center gap-2 pl-[66px]">
-          {state.sessionId !== null ? (
+          {scopeLabel !== null ? (
             // NOT a FilterChip: it carries no `aria-pressed` and no toggle,
             // because it is a scope the user cannot clear from this bar.
             <span
-              data-vex-area="agent-scan-session-scope"
+              data-vex-area="agent-scan-scope-chip"
+              data-vex-scope={state.scope.kind}
               className={cn(CHIP_BASE, CHIP_ACTIVE, "cursor-default")}
-              title="This feed is narrowed to one session"
+              title={
+                state.scope.kind === "project"
+                  ? "This feed is narrowed to one project's wallets"
+                  : "This feed is narrowed to one session"
+              }
             >
-              this session
+              {scopeLabel}
             </span>
           ) : null}
           {active > 0 ? (
@@ -277,7 +333,7 @@ export function AgentScanFilterBar({
             type="button"
             // Clear resets the user-chosen filters and PRESERVES the session
             // scope — clearing must not silently widen an audit feed.
-            onClick={() => onChange({ ...EMPTY_FILTER_STATE, sessionId: state.sessionId })}
+            onClick={() => onChange({ ...EMPTY_FILTER_STATE, scope: state.scope })}
             className="font-sans text-[9px] uppercase tracking-[0.14em] text-ink-tertiary underline-offset-2 transition-colors hover:text-ink-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
           >
             Clear

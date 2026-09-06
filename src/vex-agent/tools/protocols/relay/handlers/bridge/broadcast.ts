@@ -38,9 +38,11 @@ import {
 import {
   authorizedDepositRecipients,
   confirmDepositWithProvenAmounts,
+  depositShortfallOf,
   proveErc20DepositAmount,
   receiptDepositSettlement,
   type DepositSettlement,
+  type DepositShortfall,
   type DepositTransferLog,
 } from "@vex-agent/tools/protocols/bridge-deposit-evidence.js";
 import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
@@ -81,7 +83,16 @@ export interface OriginBroadcast {
  * already built.
  */
 export type OriginBroadcastRun =
-  | { readonly kind: "confirmed"; readonly broadcasts: OriginBroadcast[] }
+  | {
+      readonly kind: "confirmed";
+      readonly broadcasts: OriginBroadcast[];
+      /**
+       * The deposit's receipt proved LESS than the quote bridged, or `null`
+       * when it met the floor. A shortfall makes the Vex fee leg ineligible
+       * (`bridge-deposit-evidence.ts`): the caller must not run it.
+       */
+      readonly depositShortfall: DepositShortfall | null;
+    }
   | { readonly kind: "ended"; readonly result: ToolResult };
 
 export interface OriginBroadcastInput {
@@ -138,6 +149,7 @@ function relayDepositSettlement(args: {
   }
   return receiptDepositSettlement(proveErc20DepositAmount({
     logs: args.logs,
+    chainId: legs.originChainId,
     tokenAddress: legs.originCurrency,
     senderAddress: args.senderAddress,
     recipients: authorizedDepositRecipients({
@@ -163,6 +175,9 @@ export async function runOriginBroadcasts(input: OriginBroadcastInput): Promise<
   // target, the ones naming the ORIGIN currency are the only recipients a
   // deposit transfer may pay for its amount to count as proven.
   const approvedSpenders: ApprovedSpender[] = [];
+  // What the deposit's own receipt proved against what the plan bridged. Set
+  // once, on the deposit leg, and read by the caller's fee decision.
+  let depositShortfall: DepositShortfall | null = null;
   try {
     for (let i = 0; i < signable.length; i++) {
       currentIndex = i;
@@ -277,17 +292,21 @@ export async function runOriginBroadcasts(input: OriginBroadcastInput): Promise<
         // signed, or the single ERC-20 `Transfer` bound to the wallet, the
         // authorized recipient and the quoted amount
         // (`bridge-deposit-evidence.ts`). Anything else declines by name.
-        const confirmResult = stepEntry.role === "bridge_deposit"
+        const settlement = stepEntry.role === "bridge_deposit"
+          ? relayDepositSettlement({
+            legs, txParams, approvedSpenders,
+            logs: outcome.receipt.logs,
+            senderAddress: input.expectedFrom,
+          })
+          : null;
+        if (settlement !== null) depositShortfall = depositShortfallOf(settlement);
+        const confirmResult = settlement !== null
           ? await confirmDepositWithProvenAmounts({
             eventId: legRow.id,
             role: stepEntry.role,
             txHash: outcome.txHash,
             chainId: legs.originChainId,
-            settlement: relayDepositSettlement({
-              legs, txParams, approvedSpenders,
-              logs: outcome.receipt.logs,
-              senderAddress: input.expectedFrom,
-            }),
+            settlement,
             logScope: "relay.bridge",
           })
           : await confirmActivityEvent(
@@ -342,5 +361,5 @@ export async function runOriginBroadcasts(input: OriginBroadcastInput): Promise<
     };
   }
 
-  return { kind: "confirmed", broadcasts };
+  return { kind: "confirmed", broadcasts, depositShortfall };
 }

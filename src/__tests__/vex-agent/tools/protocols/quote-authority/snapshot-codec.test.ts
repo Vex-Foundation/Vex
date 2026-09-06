@@ -18,10 +18,16 @@ import {
   ROUTE_SNAPSHOT_VERSION,
   SNAPSHOT_MAX_BYTES,
   SNAPSHOT_MAX_DEPTH,
+  digestRouteSnapshot,
   digestSnapshotRaw,
   encodeRouteSnapshotRaw,
+  sealRouteSnapshot,
   type RouteSnapshot,
 } from "@vex-agent/tools/protocols/quote-authority/snapshot.js";
+import {
+  buildBoundDebitPlan,
+  type BoundDebitPlan,
+} from "@vex-agent/tools/protocols/quote-authority/debit-plan.js";
 import {
   QUOTE_BINDING_CARD_VERSION,
   readQuoteBindingPreview,
@@ -45,15 +51,36 @@ const ROUTE_SUMMARY = {
   route: [[{ pool: "0xpool", exchange: "orvex-cl", swapAmount: "12000000000000000" }]],
 } as const;
 
+/**
+ * The transaction set this venue binds for an ERC-20 input whose allowance is
+ * still short: reset, approve, swap. Every leg is priced at quote time here -
+ * the approve legs estimate live and the swap carries the provider's own build
+ * figure - so every leg's pricing basis is `measured`.
+ */
+const PLAN: BoundDebitPlan = buildBoundDebitPlan({
+  legs: [
+    { role: "allowance_reset", pricing: "measured" as const },
+    { role: "allowance", pricing: "measured" as const },
+    { role: "swap", pricing: "measured" as const },
+  ],
+  feeCap: { mode: "eip1559", maxFeePerGasWei: 11_210_000n, maxPriorityFeePerGasWei: 1_210_000n },
+});
+
+/**
+ * A snapshot as the quote handler seals it - through the REAL codec, so a test
+ * double cannot carry a digest production would reject.
+ *
+ * Overrides are applied BEFORE sealing, so an override produces an internally
+ * consistent row; a suite that wants a TAMPERED row patches the sealed value.
+ */
 function snapshotFor(overrides: Partial<RouteSnapshot> = {}): RouteSnapshot {
   const encoded = encodeRouteSnapshotRaw(ROUTE_SUMMARY);
   if (!encoded.ok) throw new Error("fixture route must encode");
   const approvedMinOutRaw = computeApprovedMinOut(ROUTE_SUMMARY.amountOut, 50).toString();
-  return {
+  return sealRouteSnapshot({
     v: ROUTE_SNAPSHOT_VERSION,
     provider: "kyberswap",
     raw: encoded.raw,
-    digest: encoded.digest,
     approvedAmountOutRaw: ROUTE_SUMMARY.amountOut,
     approvedMinOutRaw,
     approvedAmountOutHuman: "21335.79",
@@ -62,8 +89,9 @@ function snapshotFor(overrides: Partial<RouteSnapshot> = {}): RouteSnapshot {
     effectiveSlippageBps: 50,
     expiresAt: "2026-08-28T10:00:00.000Z",
     eligibility: { kind: "executable", priceImpactFraction: 0.001, adverse: false },
+    debitPlan: PLAN,
     ...overrides,
-  };
+  });
 }
 
 describe("encodeRouteSnapshotRaw", () => {
@@ -71,7 +99,7 @@ describe("encodeRouteSnapshotRaw", () => {
     const encoded = encodeRouteSnapshotRaw(ROUTE_SUMMARY);
     expect(encoded.ok).toBe(true);
     if (!encoded.ok) return;
-    expect(encoded.digest).toBe(digestSnapshotRaw(encoded.raw));
+    expect(encoded.rawDigest).toBe(digestSnapshotRaw(encoded.raw));
     expect(JSON.parse(encoded.raw)).toEqual(ROUTE_SUMMARY);
   });
 
@@ -126,7 +154,9 @@ describe("restoreRouteSnapshot", () => {
     ["null", null],
     ["undefined", undefined],
     ["a non-object", "not a snapshot"],
-    ["a wrong version", { ...snapshotFor(), v: 2 }],
+    // A version tag that is not a number at all: not "an older format", just a
+    // shape this build cannot read.
+    ["a non-numeric version", { ...snapshotFor(), v: "two" }],
     ["a wrong provider", { ...snapshotFor(), provider: "uniswap" }],
     ["a non-hex digest", { ...snapshotFor(), digest: "zz" }],
     ["a non-integer approved output", { ...snapshotFor(), approvedAmountOutRaw: "12.5" }],
@@ -141,6 +171,85 @@ describe("restoreRouteSnapshot", () => {
     });
   }
 
+  it("refuses a durable row whose bound TRANSACTION SET was edited underneath it", () => {
+    const good = snapshotFor();
+    // The exact widening the binding exists to catch: two extra transactions
+    // the card never mentioned, on a row that keeps its own digest.
+    const widened = buildBoundDebitPlan({
+      legs: [
+        { role: "allowance_reset", pricing: "measured" as const },
+        { role: "allowance", pricing: "measured" as const },
+        { role: "swap", pricing: "measured" as const },
+        { role: "swap_fee", pricing: "measured" as const },
+      ],
+      feeCap: { mode: "eip1559", maxFeePerGasWei: 11_210_000n, maxPriorityFeePerGasWei: 1_210_000n },
+    });
+
+    const restored = restoreRouteSnapshot({ ...good, debitPlan: widened });
+
+    expect(restored.ok).toBe(false);
+    if (restored.ok) return;
+    expect(restored.refusal.kind).toBe("digest_mismatch");
+  });
+
+  it("refuses a durable row whose bound GAS-PRICE CEILING was lifted", () => {
+    const good = snapshotFor();
+    const lifted = buildBoundDebitPlan({
+      legs: PLAN.legs.map((leg) => ({ role: leg.role, pricing: leg.pricing })),
+      feeCap: { mode: "eip1559", maxFeePerGasWei: 10n ** 18n, maxPriorityFeePerGasWei: 1_210_000n },
+    });
+
+    expect(restoreRouteSnapshot({ ...good, debitPlan: lifted })).toMatchObject({
+      ok: false, refusal: { kind: "digest_mismatch" },
+    });
+  });
+
+  it("still refuses a tampered route summary now that the digest covers more", () => {
+    const good = snapshotFor();
+    const tampered = good.raw.replace('"21335790672285165158400"', '"1"');
+
+    expect(restoreRouteSnapshot({ ...good, raw: tampered })).toMatchObject({
+      ok: false, refusal: { kind: "digest_mismatch" },
+    });
+  });
+
+  it("refuses a row from the format that bound no transaction set, BY NAME", () => {
+    // A v1 row: the pre-WP2-B shape, whose digest was the raw string's own hash
+    // and which said nothing about the transactions the swap would send.
+    const good = snapshotFor();
+    const { debitPlan: _dropped, ...v1 } = good;
+    const legacyRow = { ...v1, v: 1, digest: digestSnapshotRaw(good.raw) };
+
+    const restored = restoreRouteSnapshot(legacyRow);
+
+    expect(restored.ok).toBe(false);
+    if (restored.ok) return;
+    expect(restored.refusal.kind).toBe("snapshot_version_unsupported");
+    expect(restored.refusal.message).toContain("did not bind the transactions");
+    // Recoverable, always: the 15-minute prequote TTL clears this window.
+    expect(restored.refusal.message).toContain("Request a fresh kyberswap__swap_quote");
+  });
+
+  it("refuses a plan whose shape this build cannot read, rather than ignoring it", () => {
+    const good = snapshotFor();
+
+    expect(restoreRouteSnapshot({ ...good, debitPlan: undefined })).toMatchObject({
+      ok: false, refusal: { kind: "snapshot_unreadable" },
+    });
+    expect(restoreRouteSnapshot({
+      ...good,
+      debitPlan: { legs: [{ role: "swap", feeCap: { mode: "legacy", gasPriceWei: "-1" }, pricing: "measured" as const }], reserve: PLAN.reserve },
+    })).toMatchObject({ ok: false, refusal: { kind: "snapshot_unreadable" } });
+  });
+
+  it("returns the bound plan to the execute, which is what it is held to", () => {
+    const restored = restoreRouteSnapshot(snapshotFor());
+
+    expect(restored.ok).toBe(true);
+    if (!restored.ok) return;
+    expect(restored.snapshot.debitPlan).toEqual(PLAN);
+  });
+
   it("refuses an INELIGIBLE snapshot by name - it never authorized a swap", () => {
     const restored = restoreRouteSnapshot(
       snapshotFor({ eligibility: { kind: "unpriceable_output", amountInUsd: 30 } }),
@@ -151,11 +260,62 @@ describe("restoreRouteSnapshot", () => {
   });
 
   it("every refusal names a way forward - safe is never a dead end", () => {
-    for (const [, value] of [...unreadable, ["tampered", { ...snapshotFor(), raw: "{}" }] as const]) {
+    for (const [, value] of [
+      ...unreadable,
+      ["tampered", { ...snapshotFor(), raw: "{}" }] as const,
+      // The floor feeds the pre-sign price guard, so a row whose stored
+      // minimum was lowered after sealing must fail restore, not gate the
+      // signature with the tampered figure.
+      ["a lowered floor", { ...snapshotFor(), approvedMinOutRaw: "1" }] as const,
+      ["a widened slippage", { ...snapshotFor(), effectiveSlippageBps: 9_999 }] as const,
+      ["an older format", { ...snapshotFor(), v: 1 }] as const,
+    ]) {
       const restored = restoreRouteSnapshot(value);
       if (restored.ok) continue;
       expect(restored.refusal.message).toContain("Request a fresh kyberswap__swap_quote");
     }
+  });
+});
+
+describe("the digest covers the plan as well as the bytes", () => {
+  it("differs whenever the bound plan differs, at identical route bytes", () => {
+    const encoded = encodeRouteSnapshotRaw(ROUTE_SUMMARY);
+    if (!encoded.ok) throw new Error("fixture route must encode");
+    const digests = [
+      digestRouteSnapshot({ ...snapshotFor(), raw: encoded.raw, debitPlan: PLAN }),
+      digestRouteSnapshot({
+        ...snapshotFor(),
+        raw: encoded.raw,
+        debitPlan: buildBoundDebitPlan({
+          legs: [{ role: "swap", pricing: "measured" as const }],
+          feeCap: { mode: "eip1559", maxFeePerGasWei: 11_210_000n, maxPriorityFeePerGasWei: 1_210_000n },
+        }),
+      }),
+      digestRouteSnapshot({
+        ...snapshotFor(),
+        raw: encoded.raw,
+        debitPlan: buildBoundDebitPlan({
+          legs: [{ role: "swap", pricing: "conservative" as const }],
+          feeCap: { mode: "eip1559", maxFeePerGasWei: 11_210_000n, maxPriorityFeePerGasWei: 1_210_000n },
+        }),
+      }),
+      digestRouteSnapshot({
+        ...snapshotFor(),
+        raw: encoded.raw,
+        debitPlan: buildBoundDebitPlan({
+          legs: [{ role: "swap", pricing: "measured" as const }],
+          feeCap: { mode: "legacy", gasPriceWei: 11_210_000n },
+        }),
+      }),
+    ];
+
+    expect(new Set(digests).size).toBe(digests.length);
+  });
+
+  it("is NOT the route string's own hash any more, so a v1 digest cannot pass", () => {
+    const snapshot = snapshotFor();
+
+    expect(snapshot.digest).not.toBe(digestSnapshotRaw(snapshot.raw));
   });
 });
 

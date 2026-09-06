@@ -1,6 +1,9 @@
 /**
  * AGENT SCAN — the full-history ledger of everything Vex has executed
- * on-chain, opened from the profile menu.
+ * on-chain, opened from the profile menu (the whole feed) or from a BOOK
+ * rail's Activity card, PRESET to that rail's scope: one session, or one Vex
+ * Studio project's own wallets. The preset is a scope, not a user filter - it
+ * survives Clear and shows as its own non-clearable chip.
  *
  * Where `TokenHistoryScreen` answers "what happened to THIS token?", this
  * screen answers "what has the agent DONE?" — every `agent_activity` row,
@@ -28,7 +31,9 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import type { AgentScanDto, AgentScanEntry } from "@shared/schemas/agent-scan-feed.js";
 import type { Result } from "@shared/ipc/result.js";
 import { useAgentScanInfinite } from "../../../lib/api/portfolio.js";
+import { useProject } from "../../../lib/api/projects.js";
 import type { ShellScreenOrigin } from "../../../stores/uiStore.js";
+import type { AgentScanRouteScope } from "../../../stores/uiStore/shell-route.js";
 import { ShellScreen } from "./ShellScreen.js";
 import {
   activeFilterCount,
@@ -43,11 +48,20 @@ import { dayKey, dayLabel } from "./agent-scan/agent-scan-display.js";
 
 const SCREEN_TITLE = "Agent Scan";
 
-/** Header subtitle — it must say when the feed is narrowed to one session. */
-function screenSubtitle(sessionId: string | null): string {
-  return sessionId === null
-    ? "Every action Vex executed on-chain, newest first - each row links to its transaction."
-    : "Everything Vex executed on-chain in THIS session, newest first - each row links to its transaction.";
+/**
+ * Header subtitle - it must say when, and to WHAT, the feed is narrowed.
+ * Exhaustive over the scope union: a new member is a compile error rather than
+ * a narrowed feed described as the whole history.
+ */
+function screenSubtitle(scope: AgentScanRouteScope): string {
+  switch (scope.kind) {
+    case "global":
+      return "Every action Vex executed on-chain, newest first - each row links to its transaction.";
+    case "session":
+      return "Everything Vex executed on-chain in THIS session, newest first - each row links to its transaction.";
+    case "project":
+      return "Everything Vex executed on-chain with THIS project's wallets, newest first - each row links to its transaction.";
+  }
 }
 
 /** Starting height guess per row; real heights are measured after mount. */
@@ -90,23 +104,35 @@ function buildFeedRows(entries: readonly AgentScanEntry[]): readonly FeedRow[] {
 
 export function AgentScanScreen({
   origin,
-  sessionId,
+  scope,
   onClose,
 }: {
   readonly origin: ShellScreenOrigin | null;
   /**
-   * Session PRESET — `null` opens the full global feed, a uuid narrows the
-   * read to that session. It seeds the filter state once and is preserved
-   * across every filter change and across Clear (`AgentScanFilterBar`), so
-   * the scope the caller asked for cannot be lost mid-session.
+   * SCOPE PRESET - `global` opens the full feed, `session` narrows the read to
+   * one session and `project` to one Vex Studio project's own wallets. It
+   * seeds the filter state once and is preserved across every filter change
+   * and across Clear (`AgentScanFilterBar`), so the scope the caller asked for
+   * cannot be lost mid-session. `ShellScreens` remounts this screen when the
+   * scope changes, which is why seeding once is safe.
    */
-  readonly sessionId: string | null;
+  readonly scope: AgentScanRouteScope;
   readonly onClose: () => void;
 }): JSX.Element {
   const [filterState, setFilterState] = useState<AgentScanFilterState>(() => ({
     ...EMPTY_FILTER_STATE,
-    sessionId,
+    scope,
   }));
+
+  // A LABEL for the scope chip, nothing more: it never reaches the read, which
+  // is narrowed by the project ID in main. Disabled for every other scope.
+  const projectQuery = useProject(scope.kind === "project" ? scope.projectId : null);
+  const projectName =
+    projectQuery.data !== undefined &&
+    projectQuery.data.ok &&
+    projectQuery.data.data !== null
+      ? projectQuery.data.data.name
+      : null;
 
   // Memoized on the selection: the filters object is part of the query key, so
   // a fresh object per render would refetch the whole feed every render.
@@ -157,6 +183,7 @@ export function AgentScanScreen({
   // Includes the session preset: an empty SESSION feed must read as "nothing
   // in this session", never as "the agent has never done anything".
   const filtersActive = isFeedNarrowed(filterState);
+  const scopeNarrowed = scope.kind !== "global";
 
   let body: JSX.Element;
   if (query.isLoading) {
@@ -180,8 +207,10 @@ export function AgentScanScreen({
     body = filtersActive ? (
       // A narrowed feed must never read as an empty history.
       <FeedNote tone="quiet">
-        {sessionId !== null && activeFilterCount(filterState) === 0
-          ? "Vex hasn't executed anything on-chain in this session yet."
+        {scopeNarrowed && activeFilterCount(filterState) === 0
+          ? scope.kind === "project"
+            ? "Vex hasn't executed anything on-chain for this project yet."
+            : "Vex hasn't executed anything on-chain in this session yet."
           : "No activity matches these filters."}
       </FeedNote>
     ) : (
@@ -235,13 +264,17 @@ export function AgentScanScreen({
             {SCREEN_TITLE}
           </h1>
           <p className="text-[11.5px] leading-snug text-ink-tertiary">
-            {screenSubtitle(sessionId)}
+            {screenSubtitle(scope)}
           </p>
         </div>
       }
     >
       <div className="mx-auto flex h-full min-h-0 w-full max-w-[760px] flex-col gap-3">
-        <AgentScanFilterBar state={filterState} onChange={onFiltersChange} />
+        <AgentScanFilterBar
+          state={filterState}
+          onChange={onFiltersChange}
+          projectName={projectName}
+        />
         <div ref={scrollRef} className="vex-scroll min-h-0 flex-1 overflow-y-auto">
           {body}
           {laterPageDegraded ? (

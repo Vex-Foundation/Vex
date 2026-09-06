@@ -1,0 +1,579 @@
+{
+ "data": [
+  {
+   "mcapInVirtual": 353430740.03516996,
+   "id": 18820,
+   "uid": "66a7ece0-6c0d-4e7c-8bad-ce1a5f873665",
+   "createdAt": "2025-01-11T20:25:23.932Z",
+   "walletAddress": "0x80a8F11201Bc1962D0Dfff0a5B9C49B14bb2b7c2",
+   "name": "Ribbita",
+   "description": "Crypto and fintech are merging into a single ecosystem. We’re committed to championing the winning protocol in a battle driven by attention, social status, memes, and cutting-edge technology. Our core principle is straightforward: Better money makes life better.\n\n",
+   "sentientWalletAddress": "0x6a30a843efC24fEC1C7bf81cfcD72410d5163246",
+   "category": "IP MIRROR",
+   "role": "ON_CHAIN",
+   "daoAddress": "0x72623E98901f15Ae9a185DC89F05b3F46E6fCD69",
+   "tokenAddress": "0xA4A2E2ca3fBfE21aed83471D28b6f65A233C6e00",
+   "virtualId": "826",
+   "status": "AVAILABLE",
+   "symbol": "TIBBIR",
+   "lpAddress": "0x0c3b466104545efa096b8f944c1e524E1d0D4888",
+   "veTokenAddress": "0x52F523158878AFE3b1E19BdF52E7c783e025A4Ad",
+   "totalValueLocked": "1648248",
+   "preToken": "0x2Add0704eF5436a1eC0d02FCb19Eb880ce553CBa",
+   "preTokenPair": "0x4213c040d6c82a64951f8D0B3721073EB1F9313e",
+   "aidesc": null,
+   "firstMessage": null,
+   "socials": {
+    "TWITTER": "https://x.com/ribbita2012",
+    "TELEGRAM": "",
+    "USER_LINKS": {
+     "WEBSITE": ""
+    },
+    "VERIFIED_LINKS": {
+     "TWITTER": "https://x.com/ribbita2012"
+    }
+   },
+   "tbaAddress": "0x870A0dba207C3521eE5E9E6ff382074914413Ef4",
+   "chain": "BASE",
+   "level": 3,
+   "valueFx": null,
+   "mindshare": 0.34,
+   "migrateTokenAddress": null,
+   "lpCreatedAt": "2025-01-12T00:30:03.000Z",
+   "stakingAddress": null,
+   "agentStakingContract": "0x9d354a652A64C30cA0C72c320eC55436F486f0a1",
+   "merkleDistributor": null,
+   "isVerified": null,
+   "airdropMerkleDistributor": null,
+   "isDevCommitted": false,
+   "tokenUtility": null,
+   "showFounderVideo": null,
+   "roadmap": null,
+   "additionalDetails": null,
+   "revenueConnectWallet": null,
+   "acpAgentId": null,
+   "v3AcpAgentId": null,
+   "netVolume24h": -1517.2,
+   "factory": "BONDING",
+   "launchedAt": "2025-01-12T00:30:03.000Z",
+   "hasMarginTrading": false,
+   "shouldDisplayLaunchTime": null,
+   "taxRecipient": null,
+   "usdcV3PoolAddress": null,
+   "image": {
+    "url": "https://s3.ap-southeast-1.amazonaws.com/virtualprotocolcdn/18820_Ribbita_03def55eba.png"
+   },
+   "cores": [
+    {
+     "name": "Cognitive Core",
+     "coreId": 0
+    },
+    {
+     "name": "Voice Core",
+     "coreId": 1
+    },
+    {
+     "name": "Visual Core",
+     "coreId": 2
+    },
+    {
+     "name": "Facial Animation",
+     "coreId": 4
+    }
+   ],
+   "creator": {
+    "username": "did:privy:testfixture000000000000",
+    "email": "te***st@e***.invalid",
+    "displayName": null,
+    "socials": null,
+    "socialCount": null,
+    "id": 208532,
+    "userSocials": [
+     {
+      "walletAddress": "0x80a8F11201Bc1962D0Dfff0a5B9C49B14bb2b7c2"
+     }
+    ],
+    "avatar": null
+   },
+   "genesis": null,
+   "tokenomics": [],
+   "vibesInfo": null,
+   "launchInfo": null,
+   "totalSupply": 999904783.434368,
+   "tokenomicsStatus": {
+    "hasUnlocked": true,
+    "daysFromFirstUnlock": 0
+   },
+   "displayRevenue": false,
+   "initialPurchasedAmount": null,
+   "initialPurchase": null,
+   "initialPairAmount": null,
+   "allowUpdateLaunchDate": true,
+   "virtualTokenValue": "351760549010282240",
+   "priceChangePercent24h": 10.17,
+   "liquidityUsd": 3291852.38,
+   "volume24h": 762417.99,
+   "holderCount": 75847,
+   "devHoldingPercentage": 0.78,
+   "holderCountPercent24h": 0.07,
+   "fdvInVirtual": 353430740.03516996,
+   "top10HolderPercentage": 17,
+   "priceChangePercent5m": -0.18,
+   "priceChangePercent1h": -0.32,
+   "priceChangePercent6h": 0.34,
+   "volume5m": 922.16,
+   "volume1h": 1860.15,
+   "volume6h": 30871.61,
+   "virtualsPoolVol24h": 762417.99,
+   "virtualsPoolVol5m": 922.16,
+   "virtualsPoolVol1h": 1860.15,
+   "virtualsPoolVol6h": 30871.61,
+   "circulatingSupply": 0
+  },
+  {
+   "volume24h": 3917.96,
+   "id": 135655,
+   "uid": "8cc1a8e6-aebe-4d49-8201-56b4beceae52",
+   "createdAt": "2026-08-21T04:08:44.587Z",
+   "walletAddress": "0xD494A454888a390B2b05df74AE2B5fD9c9902B71",
+   "name": "Cult OS by Virtuals",
+   "description": "Open-source agent economy tool\n\n📦 NPM: https://npmjs.com/package/@cultos/cli\n\n💻 Gitlawb Repo: https://explorer.gitlawb.com/repos/did%3Akey%3Az6MkkNuVzbXAK42V6oX8wQgdiLvbwbMZfqxqnVnUM9ixeT5B/cultos\n\n🔮 TG: https://t.me/thecultos\n\n",
+   "sentientWalletAddress": null,
+   "category": "IP MIRROR",
+   "role": "",
+   "daoAddress": null,
+   "tokenAddress": null,
+   "virtualId": null,
+   "status": "UNDERGRAD",
+   "symbol": "CULTOS",
+   "lpAddress": null,
+   "veTokenAddress": null,
+   "totalValueLocked": null,
+   "preToken": "0x1984edF491D3399FBc09E6d0856E01fF3721f952",
+   "preTokenPair": "0x3e11e685a056048C2dFa1c0dc1E1D0F233DbA84a",
+   "aidesc": null,
+   "firstMessage": null,
+   "socials": {
+    "VERIFIED_LINKS": {
+     "TWITTER": "https://x.com/thecultos",
+     "WEBSITE": "https://cultos.dev"
+    },
+    "VERIFIED_USERNAMES": {
+     "TWITTER": "thecultos"
+    }
+   },
+   "tbaAddress": null,
+   "chain": "BASE",
+   "level": 1,
+   "valueFx": 0,
+   "mindshare": null,
+   "migrateTokenAddress": null,
+   "lpCreatedAt": null,
+   "stakingAddress": null,
+   "agentStakingContract": null,
+   "merkleDistributor": null,
+   "isVerified": false,
+   "airdropMerkleDistributor": "0x2dB096A48E561711d24f2064C2596647053e01ed",
+   "isDevCommitted": false,
+   "tokenUtility": "The ultimate goal is a full community takeover. Because Cult OS is open-source, anyone can run their own instance.\n\nIf it succeeds, developers can keep building a stronger product aligned with the Virtuals vision and veVIRTUAL holders get a guaranteed airdrop. If it fails, eligible token holders will receive a refund.\n\nRegardless of the outcome, Cult OS is shipped, live and running! \n\nThe market now decides the fate of $CULTOS.",
+   "showFounderVideo": false,
+   "roadmap": "NOW\n✓ GitHub issue → ACP job\n✓ Fund, message and track jobs\n✓ PR delivery + CI verification\n✓ Secure settlement\n✓ Interactive terminal UI\n\nNEXT\n→ Native provider discovery\n→ x402 payments and paid APIs\n→ Better job recovery across machines\n→ Provider timeout handling\n→ GitHub issue status automation\n\nLATER\n→ Agent reputation signals\n→ Multi-agent jobs\n→ Policy-based automatic settlement",
+   "additionalDetails": "You can install and try it with a single command:\n\nnpm install -g @cultos/cli\n",
+   "revenueConnectWallet": null,
+   "acpAgentId": null,
+   "v3AcpAgentId": "01a02020-aefc-7764-abae-69b4fbfe7f58",
+   "netVolume24h": 0,
+   "factory": "BONDING_V5",
+   "launchedAt": "2026-08-21T04:08:41.000Z",
+   "hasMarginTrading": false,
+   "shouldDisplayLaunchTime": true,
+   "taxRecipient": null,
+   "usdcV3PoolAddress": "0xCC0E95d977D692E9c1C3908e74e3D0806eA0Ca01",
+   "image": {
+    "url": "https://s3.ap-southeast-1.amazonaws.com/virtualprotocolcdn/135655_Cult_OS_01951aaab1.png"
+   },
+   "cores": [
+    {
+     "name": "Cognitive Core",
+     "coreId": 0
+    },
+    {
+     "name": "Voice Core",
+     "coreId": 1
+    },
+    {
+     "name": "Visual Core",
+     "coreId": 2
+    },
+    {
+     "name": "Facial Animation",
+     "coreId": 4
+    }
+   ],
+   "creator": {
+    "username": "did:privy:testfixture000000000000",
+    "email": "te***st@e***.invalid",
+    "displayName": null,
+    "socials": {
+     "VERIFIED_LINKS": {
+      "GITHUB": "https://github.com/thesmithdao",
+      "TWITTER": "https://x.com/thecultos"
+     },
+     "VERIFIED_USERNAMES": {
+      "GITHUB": "thesmithdao",
+      "TWITTER": "thecultos"
+     }
+    },
+    "socialCount": 2,
+    "id": 627906,
+    "userSocials": [
+     {
+      "walletAddress": "0xD494A454888a390B2b05df74AE2B5fD9c9902B71"
+     },
+     {
+      "walletAddress": "EAgF8eQeBwFadA9iRqjKqDpVZYMcsqBwAazS4aD9CwV7"
+     },
+     {
+      "walletAddress": "5unqYkeegEYNRz9zwUDkNtzUW8LtgS5qYZXZzQvfuBBV"
+     },
+     {
+      "walletAddress": "3au3AcaDpXRJktuu8zWNWEBBufPN6tLSPiVJCsTgXcqn"
+     },
+     {
+      "walletAddress": "0x7DA5b211d42Ce77feB60E91a759968C479B740bd"
+     },
+     {
+      "walletAddress": "FewUeagfF7aRr5YXuDsHzVrNwFci9Lse4vYamCgWuwL4"
+     },
+     {
+      "walletAddress": "0xe99B9C5BD7360ebf4267072378D54DFdB120Ef0F"
+     }
+    ],
+    "avatar": {
+     "url": "https://s3.ap-southeast-1.amazonaws.com/virtualprotocolcdn/agentic_10_8eef7f5a11.png"
+    }
+   },
+   "genesis": null,
+   "tokenomics": [
+    {
+     "id": 54124,
+     "amount": 250000000,
+     "createdAt": "2026-08-21T03:41:16.110Z",
+     "updatedAt": "2026-08-26T20:14:07.813Z",
+     "name": "Team",
+     "description": "Default Team Vesting",
+     "isLocked": true,
+     "linearStartTimestampRelative": [
+      0,
+      1
+     ],
+     "linearBips": [
+      1666,
+      8334
+     ],
+     "numOfUnlocksForEachLinear": [
+      1,
+      5
+     ],
+     "startsAt": "2027-08-21T03:41:15.915Z",
+     "bips": null,
+     "linearEndTimestampRelative": 12960001,
+     "presetId": "0x000000000000000000000000000000000000000000000000000001a022689bce",
+     "depositTx": "0x8d257ea82244bda5f9b98db8917039ddb38bd73157fa96a95802db806ea5cba5",
+     "isDefault": true,
+     "isFixed": true,
+     "isAntiSniperTaxBuyback": false,
+     "metadata": {
+      "sections": [
+       {
+        "id": "remainder",
+        "title": "Team",
+        "amount": 250000000,
+        "description": "Default Team Vesting"
+       }
+      ]
+     },
+     "releases": [
+      {
+       "id": 63521,
+       "type": "LINEAR",
+       "duration": 6,
+       "startsAt": "2027-08-21T03:41:15.915Z",
+       "bips": 10000,
+       "durationUnit": "months",
+       "createdAt": "2026-08-21T03:41:16.129Z",
+       "updatedAt": "2026-08-21T03:41:16.129Z"
+      }
+     ]
+    }
+   ],
+   "vibesInfo": {
+    "status": "COMMIT",
+    "vaultAddress": "0x6B5dAEE751c032827eE3A2b72C5236993E0749F7",
+    "icoWalletAddress": null,
+    "expectedRuggedAt": "2026-10-20T04:08:41.000Z",
+    "committedAt": "2026-08-26T20:12:49.209Z",
+    "merkleDistributor": null,
+    "icoAllocationMerkleDistributor": null,
+    "icoRefundMerkleRoot": null,
+    "icoPoolPercentage": 0,
+    "icoTargetFdv": null,
+    "icoTargetPrice": null,
+    "icoTotalTokenAmount": null
+   },
+   "launchInfo": {
+    "launchMode": 0,
+    "antiSniperTaxType": 0,
+    "airdropPercent": 5,
+    "needAcf": true,
+    "isProject60days": true,
+    "launchRadarEnabled": false,
+    "isRobotics": false,
+    "feeDelegationType": null,
+    "feeDelegatedRecipient": null,
+    "feeDelegationVaultAddress": null,
+    "feeDelegationClaimed": false
+   },
+   "totalSupply": 1000000000,
+   "tokenomicsStatus": {
+    "hasUnlocked": false,
+    "daysFromFirstUnlock": 350
+   },
+   "displayRevenue": false,
+   "initialPurchasedAmount": "0",
+   "initialPurchase": "0",
+   "initialPairAmount": null,
+   "allowUpdateLaunchDate": true,
+   "virtualTokenValue": "87661844578532",
+   "priceChangePercent24h": -2.97,
+   "liquidityUsd": 35520.41,
+   "holderCount": 356,
+   "devHoldingPercentage": 0.17,
+   "holderCountPercent24h": 0,
+   "mcapInVirtual": 65746.383433899,
+   "fdvInVirtual": 87661.84457853201,
+   "top10HolderPercentage": 94.14,
+   "priceChangePercent5m": 0,
+   "priceChangePercent1h": 0,
+   "priceChangePercent6h": -0.32,
+   "volume5m": 0,
+   "volume1h": 0,
+   "volume6h": 32.58,
+   "virtualsPoolVol24h": 3917.96,
+   "virtualsPoolVol5m": 0,
+   "virtualsPoolVol1h": 0,
+   "virtualsPoolVol6h": 32.58,
+   "circulatingSupply": 750000000,
+   "sparkline": [
+    {
+     "timestamp": 1788457740,
+     "price": 9.0180885716e-05
+    },
+    {
+     "timestamp": 1788460440,
+     "price": 9.01332920132e-05
+    },
+    {
+     "timestamp": 1788460500,
+     "price": 9.02532449993e-05
+    },
+    {
+     "timestamp": 1788463380,
+     "price": 9.03822899173e-05
+    },
+    {
+     "timestamp": 1788465900,
+     "price": 0.0001030442551478
+    },
+    {
+     "timestamp": 1788466020,
+     "price": 9.86009152333e-05
+    },
+    {
+     "timestamp": 1788474840,
+     "price": 9.12624898713e-05
+    },
+    {
+     "timestamp": 1788474900,
+     "price": 9.16698472773e-05
+    },
+    {
+     "timestamp": 1788499200,
+     "price": 8.95879130341e-05
+    },
+    {
+     "timestamp": 1788499380,
+     "price": 8.79452205048e-05
+    },
+    {
+     "timestamp": 1788530280,
+     "price": 8.79544120897e-05
+    },
+    {
+     "timestamp": 1788532080,
+     "price": 8.7819498516e-05
+    },
+    {
+     "timestamp": 1788533340,
+     "price": 8.76713240002e-05
+    },
+    {
+     "timestamp": 1788533580,
+     "price": 8.76647285283e-05
+    }
+   ],
+   "range24h": [
+    8.76647285283e-05,
+    0.0001030442551478
+   ]
+  },
+  {
+   "id": 272,
+   "uid": "05ea0739-e833-450a-becd-f7b78cbb81a4",
+   "createdAt": "2024-09-23T07:11:16.987Z",
+   "walletAddress": "0xD38493119859b8806ff28C32c41fdd67Ef41b8Ef",
+   "name": "Prefrontal Cortex Convo Agent",
+   "description": "The Prefrontal Cortex Convo agent is an advanced AI system built for meaningful, dynamic conversations. It integrates perception, long-term memory, and decision-making to deliver personalized, context-aware responses. Unlike traditional agents, it consciously decides how to respond, engaging in deep conversations, retaining information across sessions, and making autonomous decisions.\n\nCurrently, it's powering over 200 agents with more than 1,000,000 requests processed in the first 2 months.",
+   "sentientWalletAddress": null,
+   "category": "FUNCTIONAL",
+   "role": "PRODUCTIVITY",
+   "daoAddress": "0x7276D1B2FFb4f2383325827fee1573d4501fF5ee",
+   "tokenAddress": "0xab964f7b7b6391bd6c4e8512eF00d01f255d9c0D",
+   "virtualId": "289",
+   "status": "AVAILABLE",
+   "symbol": "CONVO",
+   "lpAddress": "0x3268d7eFA254E648Ffe968664E47Ca226E27CD04",
+   "veTokenAddress": "0x5819a0f09D09F1e2e0084589559929E69791Aa2f",
+   "totalValueLocked": "581579",
+   "preToken": null,
+   "preTokenPair": null,
+   "aidesc": null,
+   "firstMessage": null,
+   "socials": {
+    "VERIFIED_LINKS": {
+     "TWITTER": "https://x.com/Convobyvirtuals"
+    }
+   },
+   "tbaAddress": "0x9da71a402a440F85eF995a5D8858B6E4E9bDb152",
+   "chain": "BASE",
+   "level": 1,
+   "valueFx": null,
+   "mindshare": 0,
+   "migrateTokenAddress": null,
+   "lpCreatedAt": "2024-10-01T07:12:15.000Z",
+   "stakingAddress": null,
+   "agentStakingContract": "0xA92F771Fcb5a8c546Cf65b1A0F88722cee745055",
+   "merkleDistributor": null,
+   "isVerified": null,
+   "airdropMerkleDistributor": null,
+   "isDevCommitted": null,
+   "tokenUtility": null,
+   "showFounderVideo": null,
+   "roadmap": null,
+   "additionalDetails": null,
+   "revenueConnectWallet": null,
+   "acpAgentId": null,
+   "v3AcpAgentId": null,
+   "netVolume24h": -37.99,
+   "factory": null,
+   "launchedAt": "2024-10-01T07:12:15.000Z",
+   "hasMarginTrading": null,
+   "shouldDisplayLaunchTime": null,
+   "taxRecipient": null,
+   "usdcV3PoolAddress": null,
+   "image": {
+    "url": "https://s3.ap-southeast-1.amazonaws.com/virtualprotocolcdn/Convo_Agent_89ef084f87.png"
+   },
+   "cores": [
+    {
+     "name": "Domain Expertise",
+     "coreId": 3
+    }
+   ],
+   "creator": {
+    "username": "did:privy:testfixture000000000000",
+    "email": "te***st@e***.invalid",
+    "displayName": null,
+    "socials": null,
+    "socialCount": null,
+    "id": 4537,
+    "userSocials": [
+     {
+      "walletAddress": "0xD38493119859b8806ff28C32c41fdd67Ef41b8Ef"
+     }
+    ],
+    "avatar": null
+   },
+   "genesis": null,
+   "tokenomics": [],
+   "vibesInfo": null,
+   "launchInfo": null,
+   "totalSupply": 999888098.4212261,
+   "tokenomicsStatus": {
+    "hasUnlocked": true,
+    "daysFromFirstUnlock": 0
+   },
+   "displayRevenue": false,
+   "initialPurchasedAmount": null,
+   "initialPurchase": null,
+   "initialPairAmount": null,
+   "allowUpdateLaunchDate": true,
+   "virtualTokenValue": "1095065067922707",
+   "priceChangePercent24h": -5.5,
+   "liquidityUsd": 764548.89,
+   "volume24h": 65.84,
+   "holderCount": 127243,
+   "devHoldingPercentage": 0,
+   "holderCountPercent24h": 0,
+   "mcapInVirtual": 1102167.4140508221,
+   "fdvInVirtual": 1102167.4140508221,
+   "top10HolderPercentage": 84.85,
+   "priceChangePercent5m": 0,
+   "priceChangePercent1h": 0,
+   "priceChangePercent6h": -1.14,
+   "volume5m": 0,
+   "volume1h": 0,
+   "volume6h": 7.2,
+   "virtualsPoolVol24h": 65.84,
+   "virtualsPoolVol5m": 0,
+   "virtualsPoolVol1h": 0,
+   "virtualsPoolVol6h": 7.2,
+   "circulatingSupply": 0,
+   "sparkline": [
+    {
+     "timestamp": 1788461100,
+     "price": 0.000770804676260988
+    },
+    {
+     "timestamp": 1788466500,
+     "price": 0.000765772426030045
+    },
+    {
+     "timestamp": 1788469800,
+     "price": 0.000776917126416643
+    },
+    {
+     "timestamp": 1788474600,
+     "price": 0.000776980683266985
+    },
+    {
+     "timestamp": 1788500700,
+     "price": 0.000743884931154971
+    },
+    {
+     "timestamp": 1788529800,
+     "price": 0.000736119347961867
+    }
+   ]
+  }
+ ],
+ "meta": {
+  "pagination": {
+   "page": 1,
+   "pageSize": 1,
+   "pageCount": 56915,
+   "total": 56915
+  }
+ },
+ "_provenance": "api.virtuals.io GET /api/virtuals filters[chain]=BASE, captured 2026-09-04 (virtuals-probe-2026-09-04/captures/base_base.json, virtuals-reads-2026-09-04/captures/{ug_base_sparkline,p_sparkline}.json). creator.email and creator.username replaced with fake values."
+}

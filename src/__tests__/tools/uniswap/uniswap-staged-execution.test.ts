@@ -116,9 +116,19 @@ function stagedClients(nonce: number | null = 7, opts: StagedClientOptions = {})
       ...(opts.preparedGasOverride === undefined ? {} : { gas: opts.preparedGasOverride }),
     };
   });
+  // THE ACCOUNT'S OWN SIGNER. Since WP2-U the venue signs OFFLINE - viem's
+  // `signTransaction` wallet action awaits an `eth_chainId` of its own before
+  // it reaches the local signer, and that round trip would sit between the
+  // pre-sign money gate and the bytes it authorized. So the bytes come from the
+  // local account, and `walletAction` below exists to prove the action is never
+  // the path taken.
   const signTransaction = vi.fn(async (request: Record<string, unknown>) => {
     calls.push("signTransaction");
     signedRequests.push(request);
+    return SIGNED_TX;
+  });
+  const walletAction = vi.fn(async () => {
+    calls.push("walletActionSignTransaction");
     return SIGNED_TX;
   });
   const script = opts.estimateScript ? [...opts.estimateScript] : undefined;
@@ -143,10 +153,10 @@ function stagedClients(nonce: number | null = 7, opts: StagedClientOptions = {})
     return keccak256(SIGNED_TX);
   });
   const walletClient = {
-    account: { address: OWNER },
+    account: { address: OWNER, type: "local", signTransaction },
     chain: { id: 4663 },
     prepareTransactionRequest,
-    signTransaction,
+    signTransaction: walletAction,
   };
   const publicClient = { estimateGas, getBlockNumber, sendRawTransaction };
   return {
@@ -158,14 +168,16 @@ function stagedClients(nonce: number | null = 7, opts: StagedClientOptions = {})
     signedRequests,
     prepareTransactionRequest,
     signTransaction,
+    walletAction,
     estimateGas,
     sendRawTransaction,
   };
 }
 
 describe("signUniswapTransaction", () => {
-  it("prepares, signs, and derives the tx hash locally from the signed bytes", async () => {
-    const { publicClient, walletClient } = stagedClients();
+  it("prepares, signs, and derives the tx hash locally from the signed bytes - through the ACCOUNT, never viem's wallet action", async () => {
+    const clients = stagedClients();
+    const { publicClient, walletClient } = clients;
     const signed = await signUniswapTransaction(publicClient as never, walletClient as never, {
       to: ROUTER,
       data: "0x",
@@ -175,7 +187,16 @@ describe("signUniswapTransaction", () => {
     expect(signed.txHash).toBe(keccak256(SIGNED_TX));
     expect(signed.fromAddress).toBe(OWNER);
     expect(signed.nonce).toBe(7);
+    // The signature comes from the local account. viem's `signTransaction`
+    // WALLET ACTION is the one that would have issued an `eth_chainId` of its
+    // own between the pre-sign money gate and these bytes, so the venue must
+    // never take it (measured in viem 2.54.3; see `signUniswapTransaction`).
+    expect(clients.signTransaction).toHaveBeenCalledTimes(1);
+    expect(clients.walletAction).not.toHaveBeenCalled();
+    expect(clients.calls).not.toContain("walletActionSignTransaction");
   });
+
+
 
   it("throws when the prepared request has no resolved nonce", async () => {
     const { publicClient, walletClient } = stagedClients(null);

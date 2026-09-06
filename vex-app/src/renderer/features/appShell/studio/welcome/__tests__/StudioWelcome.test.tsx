@@ -37,11 +37,11 @@ const { useUiStore } = await import("../../../../../stores/uiStore.js");
 function renderWelcome(props: {
   readonly onCreateProject?: () => void;
   readonly onSelectProject?: (id: string) => void;
-}): void {
+}): { container: HTMLElement } {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
-  render(
+  return render(
     <StrictMode>
       <QueryClientProvider client={client}>
         <StudioWelcome
@@ -207,18 +207,27 @@ describe("the project list", () => {
 });
 
 describe("the way back to the agent shell", () => {
-  it("offers one plain action and NOT a second mode capsule", () => {
-    renderWelcome({});
-    // The Agent | Studio capsule has one home, the rail header, and it is on
-    // screen together with this welcome; a second radiogroup named "Runtime
-    // mode" doubled the control (e2e/studio.spec.ts pins the count at one).
-    expect(screen.queryByRole("radiogroup", { name: "Runtime mode" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Back to Agent mode" })).toBeTruthy();
+  it("is the mode capsule itself, seated directly under the wordmark, and NOT a plain button", () => {
+    // Owner decree 2026-09-04: the Agent | Studio switch sits under the vex
+    // wordmark on the welcome screen. This screen renders only while no
+    // project is active, and the Studio rail header mounts its capsule only
+    // while one is, so the page keeps exactly one radiogroup named "Runtime
+    // mode" (e2e/studio.spec.ts pins the count). The stand-in button is gone.
+    const { container } = renderWelcome({});
+    const group = screen.getByRole("radiogroup", { name: "Runtime mode" });
+    expect(
+      screen.getByRole("radio", { name: "Studio" }).getAttribute("aria-checked"),
+    ).toBe("true");
+    // The seat, not merely the presence: mark -> capsule -> heading.
+    const heading = container.querySelector('[data-vex-area="studio-welcome"] h1');
+    expect(heading?.previousElementSibling).toBe(group);
+    expect(group.previousElementSibling?.tagName.toLowerCase()).toBe("svg");
+    expect(screen.queryByRole("button", { name: "Back to Agent mode" })).toBeNull();
   });
 
-  it("the action leaves Studio - without it the screen is a one-way door", () => {
+  it("the capsule leaves Studio - without it the screen is a one-way door", () => {
     renderWelcome({});
-    fireEvent.click(screen.getByRole("button", { name: "Back to Agent mode" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Agent" }));
     expect(useUiStore.getState().runtimeMode).toBe("agent");
   });
 });

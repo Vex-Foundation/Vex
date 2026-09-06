@@ -19,6 +19,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { SOLANA_NATIVE_PERSISTED_ADDRESS } from "@tools/solana-ecosystem/shared/solana-asset-identity.js";
 
 type QueryFn = (
   text: string,
@@ -79,6 +80,7 @@ const SESSION = "00000000-0000-4000-8000-00000000aaaa";
 const WALLET_A = "0xAAAAaaaaAAAAaaaaAAAAaaaaAAAAaaaaAAAAaaaa";
 const WALLET_B = "0xBBBBbbbbBBBBbbbbBBBBbbbbBBBBbbbbBBBBbbbb";
 const SOL_ADDR = "So11111111111111111111111111111111111111112";
+const SOLANA_CHAIN_ID = 20_011_000_000;
 
 function scopeOk(evmAddr: string | null, solAddr: string | null) {
   return {
@@ -124,7 +126,7 @@ function scriptPortfolioQueries(opts: {
   live: unknown;
   tokens: ReadonlyArray<Record<string, unknown>>;
   snapshot: Record<string, unknown> | null;
-  /** Optional older complete-cycle group — drives PnL = latest.total − prev.total. */
+  /** Optional older complete-cycle group - drives PnL = latest.basis - prev.basis. */
   previousSnapshot?: Record<string, unknown> | null;
   /** Flat breakdown rows (chain totals repeated per top-token line). */
   breakdown?: ReadonlyArray<Record<string, unknown>>;
@@ -150,6 +152,13 @@ describe("portfolio-db getPortfolio - global scope", () => {
       walletCount: 0,
       liveTotalUsd: 0,
       snapshotTotalUsd: null,
+      snapshotSettledUsd: null,
+      snapshotInTransitUsd: null,
+      snapshotInFlight: null,
+      snapshotUnresolvedCount: null,
+      snapshotInFlightTotalCount: null,
+      snapshotInFlightShownCount: null,
+      snapshotInFlightTruncated: null,
       pnlVsPrev: null,
       snapshotAt: null,
       tokens: [],
@@ -354,14 +363,15 @@ describe("portfolio-db getPortfolio - coercion + fallback", () => {
     );
   });
 
-  it("collapses an absent snapshot to null total/pnl/at", async () => {
+  it("keeps the live total readable when no snapshot cycle exists", async () => {
+    // The snapshot half of that answer - every null the absent basis produces -
+    // belongs to `portfolio-snapshot-basis.test.ts`; what this file still owns
+    // is that the live aggregation is unaffected by it.
     scriptPortfolioQueries({ live: "10", tokens: [], snapshot: null });
     const result = await getPortfolio({ scope: "global" });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.data.snapshotTotalUsd).toBeNull();
-    expect(result.data.pnlVsPrev).toBeNull();
-    expect(result.data.snapshotAt).toBeNull();
     expect(result.data.liveTotalUsd).toBe(10);
   });
 
@@ -450,43 +460,11 @@ describe("portfolio-db getPortfolio - coercion + fallback", () => {
   });
 });
 
-describe("portfolio-db getPortfolio - PnL + token cap (codex review)", () => {
+describe("portfolio-db getPortfolio - token cap (codex review)", () => {
   beforeEach(() => {
     mocks.listWallets.mockImplementation((family: string) =>
       family === "evm" ? [{ id: "1", address: WALLET_A, label: "", createdAt: "" }] : [],
     );
-  });
-
-  it("computes PnL as latest.total − previous.total over two complete cycles", async () => {
-    scriptPortfolioQueries({
-      live: "100",
-      tokens: [],
-      snapshot: { snapshot_group_id: "g1", total: "100", at: "2026-05-21T10:00:00.000Z" },
-      previousSnapshot: { snapshot_group_id: "g0", total: "80", at: "2026-05-20T10:00:00.000Z" },
-    });
-    const result = await getPortfolio({ scope: "global" });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.data.snapshotTotalUsd).toBeCloseTo(100, 4);
-    expect(result.data.pnlVsPrev).toBeCloseTo(20, 4);
-    // The snapshot query asks for the latest TWO groups and no longer sums
-    // per-wallet pnl_vs_prev.
-    const snapshotSql = String(mocks.query.mock.calls[3]?.[0] ?? "");
-    expect(snapshotSql).toContain("LIMIT 2");
-    expect(snapshotSql).not.toContain("pnl_vs_prev");
-  });
-
-  it("leaves PnL null when only one complete cycle exists", async () => {
-    scriptPortfolioQueries({
-      live: "100",
-      tokens: [],
-      snapshot: { snapshot_group_id: "g1", total: "100", at: "2026-05-21T10:00:00.000Z" },
-    });
-    const result = await getPortfolio({ scope: "global" });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.data.snapshotTotalUsd).toBeCloseTo(100, 4);
-    expect(result.data.pnlVsPrev).toBeNull();
   });
 
   it("caps token lines at 500 even if the DB returns more (no output-schema overflow)", async () => {
@@ -867,6 +845,69 @@ describe("portfolio-db getPortfolio - address-correct aggregation (position bran
         balanceUsd: 1000,
         amount: null,
       },
+    ]);
+  });
+
+  it("keeps native SOL and wSOL separate while returning the route-compatible mint", async () => {
+    scriptPortfolioQueries({
+      live: "150",
+      tokens: [
+        {
+          chain_id: String(SOLANA_CHAIN_ID),
+          token_address: SOLANA_NATIVE_PERSISTED_ADDRESS,
+          token_symbol: "SOL",
+          usd: "100",
+          amount: "1",
+        },
+        {
+          chain_id: String(SOLANA_CHAIN_ID),
+          token_address: SOL_ADDR,
+          token_symbol: "wSOL",
+          usd: "50",
+          amount: "0.5",
+        },
+      ],
+      breakdown: [
+        {
+          chain_id: String(SOLANA_CHAIN_ID),
+          chain_total: "150",
+          token_address: SOLANA_NATIVE_PERSISTED_ADDRESS,
+          token_symbol: "SOL",
+          token_usd: "100",
+          token_amount: "1",
+        },
+        {
+          chain_id: String(SOLANA_CHAIN_ID),
+          chain_total: "150",
+          token_address: SOL_ADDR,
+          token_symbol: "wSOL",
+          token_usd: "50",
+          token_amount: "0.5",
+        },
+      ],
+      snapshot: null,
+    });
+
+    const result = await getPortfolio({ scope: "global" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.data.tokens).toHaveLength(2);
+    expect(result.data.tokens.map((token) => ({
+      symbol: token.symbol,
+      tokenAddress: token.tokenAddress,
+      amount: token.amount,
+    }))).toEqual([
+      { symbol: "SOL", tokenAddress: SOL_ADDR, amount: 1 },
+      { symbol: "wSOL", tokenAddress: SOL_ADDR, amount: 0.5 },
+    ]);
+    expect(result.data.chains[0]?.tokens.map((token) => ({
+      symbol: token.symbol,
+      tokenAddress: token.tokenAddress,
+      amount: token.amount,
+    }))).toEqual([
+      { symbol: "SOL", tokenAddress: SOL_ADDR, amount: 1 },
+      { symbol: "wSOL", tokenAddress: SOL_ADDR, amount: 0.5 },
     ]);
   });
 

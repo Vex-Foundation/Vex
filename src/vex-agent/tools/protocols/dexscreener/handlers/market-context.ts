@@ -82,6 +82,7 @@ import {
   type NarrativeFieldGroup,
   type NarrativeSortKey,
 } from "../manifests/market-context-params.js";
+import { liquidityInterpretation } from "./liquidity-interpretation.js";
 
 /** Deadline for one plain HTTP read. */
 const HTTP_TIMEOUT_MS = 15_000;
@@ -576,6 +577,18 @@ async function runNarratives(
   });
 
   return ok({
+    /*
+     * THE CAUSAL QUALIFIER, ONCE, AT THE ENVELOPE.
+     *
+     * Every row here carries a `liquidityUsd`, and every one of them is a
+     * price mark of that pool's reserves rather than a deposit ledger. The
+     * statement is about what the FIELD means and does not vary per row, so it
+     * is stated once instead of being copied onto each row.
+     */
+    liquidityInterpretation: liquidityInterpretation({
+      appliesTo: "every_row_in_this_answer",
+      reserves: null,
+    }),
     summary:
       (chain === null
         ? `${activeNarratives} of ${totalNarratives} DexScreener narratives active across every chain, ${rows.length} shown, `

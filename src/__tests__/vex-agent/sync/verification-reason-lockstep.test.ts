@@ -23,6 +23,10 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { getPackageRoot } from "@utils/package-assets.js";
 import { VERIFICATION_REASONS } from "@vex-agent/db/repos/agent-activity.js";
+import type {
+  EvmProbeObservation,
+  SolanaProbeObservation,
+} from "@vex-agent/sync/bridge-activity-repair-verification.js";
 
 const SYNC_DIR = join(getPackageRoot(), "src", "vex-agent", "sync");
 
@@ -87,6 +91,40 @@ describe("the 065 reason vocabulary has ONE owner and no drifting writers", () =
     for (const foreign of ["in_mempool", "nonce_superseded", "amounts_incomplete", "amounts_undecodable"]) {
       expect(VERIFICATION_REASONS).not.toContain(foreign);
     }
+  });
+
+  it("admits EVERY bridge probe observation the verifier can report", () => {
+    // The `Record<Union, true>` is the enforcement: adding a member to either
+    // observation union without listing it here fails to COMPILE, and listing
+    // one the 065 vocabulary has never heard of fails this assertion. The
+    // observation strings are stored verbatim in `last_verification_reason` and
+    // rendered verbatim to the user and the agent, so the two sets must not
+    // drift.
+    const evm: Record<EvmProbeObservation, true> = {
+      chain_echo_mismatch: true,
+      fill_not_mined: true,
+      unreadable_receipt_status: true,
+      rpc_refused_request: true,
+      rpc_unreachable: true,
+    };
+    const solana: Record<SolanaProbeObservation, true> = {
+      chain_echo_mismatch: true,
+      signature_status_unavailable: true,
+      rpc_unreachable: true,
+    };
+    for (const observation of [...Object.keys(evm), ...Object.keys(solana)]) {
+      expect(VERIFICATION_REASONS).toContain(observation);
+    }
+  });
+
+  it("names an endpoint that ANSWERED and refused apart from one that never answered", () => {
+    // Live-measured distinction (2026-09-04): `arbitrum-one.publicnode.com`
+    // served `eth_chainId` for 42161 and returned JSON-RPC -32602 for a
+    // month-old receipt. Reporting that as `rpc_unreachable` claims we cannot
+    // see the chain, which is false and is what kept one row re-probing the
+    // same URL for 31 days.
+    expect(VERIFICATION_REASONS).toContain("rpc_refused_request");
+    expect(VERIFICATION_REASONS).toContain("rpc_unreachable");
   });
 
   it("keeps `receipt_unavailable` readable for pre-existing rows but produces it nowhere", () => {

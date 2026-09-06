@@ -30,7 +30,8 @@
  *     today: the handler still returns a successful preview for `dryRun:true`.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { claimStandingInForTheParams } from "../tools/_uniswap-approved-snapshot.js";
+import { uniswapSpendabilityFake } from "../tools/_uniswap-spendability-fake.js";
+import { readStandingInForTheParams } from "../tools/_uniswap-approved-snapshot.js";
 import { VexError, ErrorCodes } from "../../../errors.js";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 
@@ -81,8 +82,11 @@ vi.mock("@tools/uniswap/chains.js", () => ({
   })),
 }));
 vi.mock("@tools/uniswap/evm-client.js", () => ({
-  getUniswapPublicClient: vi.fn(() => ({})),
-  getUniswapEvmClients: vi.fn(() => ({ publicClient: {}, walletClient: {} })),
+  // WP2-U: the quote and every leg's pre-sign gate read balances and price the
+  // leg plan through this client. A SOLVENT default keeps each suite's own
+  // subject the thing that decides its outcome.
+  getUniswapPublicClient: vi.fn(() => uniswapSpendabilityFake()),
+  getUniswapEvmClients: vi.fn(() => ({ publicClient: uniswapSpendabilityFake(), walletClient: {} })),
 }));
 vi.mock("@tools/uniswap/erc20.js", () => ({
   readUniswapErc20Metadata: vi.fn(async (_client: unknown, address: string) => ({
@@ -95,7 +99,12 @@ vi.mock("@tools/uniswap/quote.js", () => ({
   quoteBestRoute: vi.fn(async () => ({ route: { version: "v2", path: [TOKEN_IN, TOKEN_OUT], amountOut: 10n } })),
   applySlippage: vi.fn((amount: bigint) => amount),
 }));
-vi.mock("@tools/uniswap/execute.js", () => ({
+// Spread over the REAL module so the refusal classes this venue throws
+// (`UniswapFeeCapExceededError`, and the final-request refusal the loop
+// re-throws by identity) are the real ones; the overrides below stay this
+// suite's own seams.
+vi.mock("@tools/uniswap/execute.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tools/uniswap/execute.js")>()),
   NATIVE_TOKEN_ADDRESS: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
   buildSwapTx: vi.fn(() => ({ to: TOKEN_OUT, data: "0x", value: 0n })),
   buildApproveTx: vi.fn(),
@@ -144,10 +153,11 @@ vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
 // The execute is bound to an APPROVED quote (2026-08-27 incident): it claims one
 // before it prices anything. This suite's subject is elsewhere, so the claim
 // stands in with the quote this very call would have produced.
-const claimUniswapExecutionSnapshot = vi.fn();
+const readUniswapExecutionSnapshot = vi.fn();
 vi.mock("@vex-agent/tools/protocols/prequote/claim.js", () => ({
-  claimSwapExecutionSnapshot: vi.fn(),
-  claimUniswapExecutionSnapshot: (...args: unknown[]) => claimUniswapExecutionSnapshot(...args),
+  commitPrequoteClaim: vi.fn(async () => ({ ok: true })),
+  readSwapExecutionSnapshot: vi.fn(),
+  readUniswapExecutionSnapshot: (...args: unknown[]) => readUniswapExecutionSnapshot(...args),
 }));
 
 vi.mock("@utils/logger.js", () => ({ default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn() } }));
@@ -172,8 +182,8 @@ function executeCall(extra: Record<string, unknown> = {}) {
 describe("uniswap.swap.execute — adversarial (FIX2-W0)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    claimUniswapExecutionSnapshot.mockImplementation(
-      claimStandingInForTheParams({ chainId: 4663, weth: "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73" }),
+    readUniswapExecutionSnapshot.mockImplementation(
+      readStandingInForTheParams({ chainId: 4663, weth: "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73" }),
     );
     ensureErc20Balance.mockResolvedValue(undefined);
     validateUniswapSpender.mockReturnValue(undefined);

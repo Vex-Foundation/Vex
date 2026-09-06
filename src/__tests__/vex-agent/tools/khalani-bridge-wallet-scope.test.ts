@@ -172,12 +172,32 @@ vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
 }));
 
 
+// The bound quote the execute revalidates its Vex fee against before signing.
+// Its divergence cases live in `khalani-handlers/bridge-fee-execute.test.ts`;
+// here it answers with the statement this arrangement's quote would have made.
+const mockFindFreshMatchedPrequote = vi.fn();
+vi.mock("@vex-agent/tools/protocols/prequote/gate.js", () => ({
+  findFreshMatchedPrequote: (...a: unknown[]) => mockFindFreshMatchedPrequote(...a),
+}));
+
 vi.mock("@utils/logger.js", () => {
   const stub = { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() };
   return { default: stub, logger: stub };
 });
 
 const { BRIDGE_HANDLERS } = await import("@vex-agent/tools/protocols/khalani/handlers/bridge.js");
+const { BRIDGE_FEE_RECEIVER_SOLANA } = await import("@tools/bridge-fee/index.js");
+const { boundChargedVexFee, matchedPrequoteWithVexFee } =
+  await import("../../tools/bridge-fee/bound-vex-fee.js");
+
+/** 25 bps of 1_000_000, as the authorizing quote recorded it. */
+function boundFee(receiver?: string) {
+  return matchedPrequoteWithVexFee(boundChargedVexFee({
+    feeAmountRaw: "2500", netAmountRaw: "997500", totalDebitedRaw: "1000000",
+    tokenAddress: "USDC", tokenSymbol: "USDC", tokenDecimals: 6,
+    ...(receiver === undefined ? {} : { receiver }),
+  }));
+}
 
 const SESSION_CTX: ProtocolExecutionContext = {
   sessionPermission: "full",
@@ -185,16 +205,31 @@ const SESSION_CTX: ProtocolExecutionContext = {
   walletResolution: { source: "session", evm: { id: "w-evm", address: SEL_EVM }, solana: { id: "w-sol", address: SEL_SOL } },
   walletPolicy: { kind: "none" },
   sessionId: "session-1",
+  bridgeTokenPreview: {
+    source: {
+      family: "eip155", kind: "erc20", chainId: 1, tokenAddress: "USDC",
+      symbol: "USDC", decimals: 6, metadataSource: "rpc_contract", symbolSanitized: false,
+    },
+    destination: {
+      family: "eip155", kind: "erc20", chainId: 1, tokenAddress: "USDC",
+      symbol: "USDC", decimals: 6, metadataSource: "rpc_contract", symbolSanitized: false,
+    },
+    amountRaw: "1000000",
+    amountHuman: "1",
+  },
 };
 
 const baseParams = { fromChain: "ethereum", toChain: "ethereum", fromToken: "USDC", toToken: "USDC", amountRaw: "1000000" };
 
-function run(over: Record<string, unknown> = {}) {
-  return BRIDGE_HANDLERS["khalani.bridge"]!({ ...baseParams, ...over }, SESSION_CTX);
+function run(over: Record<string, unknown> = {}, context = SESSION_CTX) {
+  const handler = BRIDGE_HANDLERS["khalani.bridge"];
+  if (!handler) throw new Error("khalani.bridge handler missing");
+  return handler({ ...baseParams, ...over }, context);
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockFindFreshMatchedPrequote.mockResolvedValue(boundFee());
   // Default: both endpoints EVM + Khalani-serviceable, happy staged pipeline.
   mockResolveSelectedAddress.mockImplementation((_r, _p, family) => (family === "solana" ? SEL_SOL : SEL_EVM));
   mockResolveSigningWallet.mockImplementation((_r, _p, family) =>
@@ -233,6 +268,7 @@ beforeEach(() => {
   mockSubmitDeposit.mockResolvedValue({ orderId: "o1", txHash: "0xhash" });
   mockAttachProviderOrderId.mockResolvedValue({ outcome: "attached", row: { id: 200 } });
   mockPollOrderToTerminal.mockResolvedValue({ kind: "pending", status: "published" });
+  mockCreateBridgePreBroadcastFailure.mockResolvedValue({ executionId: 900 });
 });
 
 describe("khalani.bridge session wallet scope", () => {
@@ -241,6 +277,22 @@ describe("khalani.bridge session wallet scope", () => {
     expect(r.success).toBe(true); // dryRun stays a read-only preview
     expect(mockResolveSigningWallet).not.toHaveBeenCalled();
     expect(mockCreateBridgeActivityIntent).not.toHaveBeenCalled();
+    expect(mockSignStageKhalaniLeg).not.toHaveBeenCalled();
+  });
+
+  it("dryRun reports typed metadata degradation instead of throwing", async () => {
+    const { bridgeTokenPreview: _trustedPreview, ...descriptiveContext } = SESSION_CTX;
+    const result = await run({ dryRun: true }, descriptiveContext);
+    const output = JSON.parse(result.output) as {
+      tokenMetadata: { source: { kind: string; metadataErrorCode: string } };
+    };
+
+    expect(result.success).toBe(true);
+    expect(output.tokenMetadata.source).toMatchObject({
+      kind: "metadata_unavailable",
+      metadataErrorCode: "contract_metadata_unavailable",
+    });
+    expect(mockResolveSigningWallet).not.toHaveBeenCalled();
     expect(mockSignStageKhalaniLeg).not.toHaveBeenCalled();
   });
 
@@ -266,6 +318,8 @@ describe("khalani.bridge session wallet scope", () => {
   it("Solana source resolves a Solana signer and passes it to the staged executor", async () => {
     // Solana on both endpoints; the deposit stages nonce-less via the Solana CAS.
     mockGetChainFamily.mockImplementation(() => "solana");
+    // A Solana source pays the Solana treasury, and the approved statement says so.
+    mockFindFreshMatchedPrequote.mockResolvedValue(boundFee(BRIDGE_FEE_RECEIVER_SOLANA));
     mockResolvePrequoteRoute.mockResolvedValue({ outcome: "khalani", fromChainId: 20011000000, toChainId: 20011000000 });
     mockPlanKhalaniDepositLegs.mockReturnValue([
       { role: "bridge_deposit", family: "solana", isDeposit: true, kind: "solana", base64Tx: "b64tx" },
@@ -275,7 +329,21 @@ describe("khalani.bridge session wallet scope", () => {
       await hooks.onAccepted();
       return { kind: "confirmed", txHash: "5SoLSigBase58" };
     });
-    await run();
+    await run({}, {
+      ...SESSION_CTX,
+      bridgeTokenPreview: {
+        source: {
+          family: "solana", kind: "solana", chainId: 20_011_000_000, tokenAddress: "USDC",
+          symbol: null, decimals: null, metadataSource: "solana_not_read_by_evm_contract_resolver", symbolSanitized: false,
+        },
+        destination: {
+          family: "solana", kind: "solana", chainId: 20_011_000_000, tokenAddress: "USDC",
+          symbol: null, decimals: null, metadataSource: "solana_not_read_by_evm_contract_resolver", symbolSanitized: false,
+        },
+        amountRaw: "1000000",
+        amountHuman: null,
+      },
+    });
     // The source-family signer is resolved for the SOLANA origin family...
     expect(mockResolveSigningWallet).toHaveBeenCalledTimes(1);
     expect(mockResolveSigningWallet.mock.calls[0]![2]).toBe("solana");

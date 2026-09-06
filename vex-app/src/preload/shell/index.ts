@@ -26,9 +26,11 @@ import { onboarding } from "./onboarding.js";
 import { search } from "./search.js";
 import { secrets } from "./secrets.js";
 import { settings } from "./settings.js";
+import { shellBackdrop } from "./shell-backdrop.js";
 import { support } from "./support.js";
 import { system } from "./system.js";
 import { terminal } from "./terminal.js";
+import { terminalLinks } from "./terminal-links.js";
 import { telemetry } from "./telemetry.js";
 import { updater } from "./updater.js";
 import { wallet } from "./wallet.js";
@@ -42,6 +44,7 @@ export const shellBridge = {
   wallet,
   onboarding,
   settings,
+  shellBackdrop,
   telemetry,
   support,
   updater,
@@ -49,6 +52,7 @@ export const shellBridge = {
   lighterTrading,
   studio,
   terminal,
+  terminalLinks,
   files,
   search,
 } satisfies VexShellBridge;

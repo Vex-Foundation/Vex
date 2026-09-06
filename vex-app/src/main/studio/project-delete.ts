@@ -362,9 +362,10 @@ async function runCleanupJob(
     const provenance = provenanceOutcome.data;
 
     // THE TEARDOWN PLAN, which is a different planner rather than a filtered
-    // install plan. `buildStudioPlan` appends AGENTS.md, CLAUDE.md and
-    // .vex/protocols.md as unconditional INSTALLS, so filtering it to `remove`
-    // would silently leave all three behind - including an AGENTS.md managed
+    // install plan. `buildStudioPlan` appends AGENTS.md, .vex/vex-guide.md,
+    // CLAUDE.md and .vex/protocols.md as unconditional INSTALLS, so filtering
+    // it to `remove` would silently leave all four behind - including an
+    // AGENTS.md managed
     // block still telling the next coding agent that this repository is
     // connected to Vex and which wallets it may spend. That block is a claim of
     // live authority, and a deleted project must not keep making it.
@@ -405,10 +406,10 @@ async function runCleanupJob(
         //
         // `repair: false` is the right seam rather than a new mode because for
         // a teardown plan - every artifact `operation: "remove"` - it is the
-        // ONLY reachable consumer of the flag. The other three
-        // (`decideAgentsMd`, `decideClaudeMd`, `decideProtocolsDoc`) are on the
-        // install branch of `decideDesiredText`, which a remove operation never
-        // takes. So this changes that one behaviour and nothing else, and the
+        // ONLY reachable consumer of the flag. The others
+        // (`decideFencedDocument`, `decideClaudeMd`, `decideProtocolsDoc`) are
+        // on the install branch of `decideDesiredText`, which a remove
+        // operation never takes. So this changes that one behaviour and nothing else, and the
         // refusals it now produces are ownership refusals, which discharge.
         repair: false,
         io: {

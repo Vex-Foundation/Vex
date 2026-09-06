@@ -1,0 +1,32 @@
+{
+  "definition": {
+    "function": {
+      "description": "Publish one picture from the user's image locker to Vex's public image host, and return the permanent URL a token launch puts on chain. THE BYTES BECOME PUBLIC: anyone who has the link can fetch them without signing in, and they stay hosted until the user withdraws them. The URL is addressed by the sha256 of the exact bytes, so it can never later serve a different picture than the one approved. Call this AFTER the user has chosen which staged picture to use and BEFORE a launch that needs its URL. This does NOT launch anything, signs nothing and spends no gas. Pass the `imageId` of a picture already in the locker (list them with launchpads__images_list); you can never supply bytes or a URL yourself. Publishing a picture that was already published uploads nothing and returns the same URL, with `alreadyPublished` true. Returns `imageUrl`, `contentId`, `alreadyPublished` and a `disclosure` sentence stating what became public.",
+      "name": "launchpads__image_publish",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "imageId": {
+            "description": "Identifier of a picture already staged in the app's image locker, as listed by launchpads__images_list. The agent can never create one, only name one the locker already holds.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "imageId"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "external_post",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": true,
+    "namespace": "launchpads",
+    "requiresEnv": null,
+    "toolId": "launchpads.image_publish"
+  }
+}

@@ -1,0 +1,1 @@
+{"errors":[{"title":"Invalid value","source":{"pointer":"/transaction_hash_param"},"detail":"Invalid format. Expected ~r/^0x([A-Fa-f0-9]{64})$/"}]}

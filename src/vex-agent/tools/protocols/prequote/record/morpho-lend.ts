@@ -25,6 +25,7 @@ import {
 } from "../identity/morpho-lend.js";
 import { extractMorphoLendQuote } from "../safety/extract/morpho-lend.js";
 import { writePrequoteRow } from "./row.js";
+import { MORPHO_LEND_QUOTE_GATE_TARGETS } from "./gate-targets.js";
 
 export async function recordMorphoLendPrequote(
   toolId: string,
@@ -59,7 +60,7 @@ export async function recordMorphoLendPrequote(
     prequoteId: `prequote-${randomUUID()}`,
     sessionId,
     matchHash: computePrequoteMatchHash(identity),
-    kind: extracted.direction === "deposit" ? "lend_deposit" : "lend_withdraw",
+    kind: MORPHO_LEND_QUOTE_GATE_TARGETS[extracted.direction].kind,
     family: registered.family,
     provider: registered.provider,
     chainId: identity.chainId,

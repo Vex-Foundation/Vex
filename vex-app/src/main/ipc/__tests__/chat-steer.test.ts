@@ -36,7 +36,7 @@ vi.mock("../../logger/index.js", () => ({ log: mocks.log }));
 vi.mock("../../database/sessions-db.js", () => ({
   getSessionById: mocks.getSessionById,
 }));
-vi.mock("../chat/engine-db-url.js", () => ({
+vi.mock("../../database/engine-db-readiness.js", () => ({
   ensureEngineDbUrl: mocks.ensureEngineDbUrl,
 }));
 vi.mock("@vex-agent/engine/index.js", () => ({

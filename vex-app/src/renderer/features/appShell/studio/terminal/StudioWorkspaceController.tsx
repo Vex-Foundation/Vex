@@ -1966,18 +1966,21 @@ export function StudioWorkspaceController({
   });
 
   return (
-    // THE MOCKUP'S CARD. The workspace used to run edge to edge, so the
-    // terminal met the window with no boundary and the watermark had nothing
-    // to sit on. The column paints the shell's own ground, and the strip and
-    // the panel live on a rounded `surface-1` card inset from it - which is
-    // also the surface the transparent xterm canvas is read against, and the
-    // one the palette's contrast is measured on.
+    // THE GLASS PANE. The workspace used to run edge to edge, then sat on a
+    // solid `surface-1` card over a solid column. Now the backdrop is the wall:
+    // the column paints nothing, and the strip and the panel live on a rounded
+    // `.vex-glass-pane` (glass.css: the pane tint, an 18px blur, the inset edge
+    // light and ring, no border) inset 8px from the column - the same 8px the
+    // header text and the terminal grid keep from the pane's own edge, so the
+    // gutter from the sidebar to the first column is one rhythm, not three.
+    // The transparent xterm canvas is read against this pane, and the palette's
+    // contrast is measured on it in `e2e/studio-terminal-glass.spec.ts`.
     <div
       ref={cardRef}
-      className={cn("flex h-full min-h-0 flex-col bg-surface-base p-3", className)}
+      className={cn("flex h-full min-h-0 flex-col p-2", className)}
       data-vex-workspace-card=""
     >
-      <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-line-3 bg-surface-1">
+      <div className="vex-glass-pane flex h-full min-h-0 flex-col overflow-hidden rounded-xl">
       <TerminalTabs
         state={state}
         runFacts={runFacts}

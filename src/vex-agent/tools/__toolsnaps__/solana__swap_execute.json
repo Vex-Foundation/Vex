@@ -1,7 +1,7 @@
 {
   "definition": {
     "function": {
-      "description": "Execute a token swap via Jupiter's Router (/build) - routes through Jupiter's own router selection, self-managed landing via /tx/v1/submit. Must use EXACTLY the params from a prior solana__swap_quote call (including every knob below); a mismatch aborts before signing, never silently re-quotes. This BROADCASTS and returns truthful-pending - it never confirms success in this call. The output's signature/explorerUrl are tracked automatically; do not resubmit or call this again for the same swap while a signature is pending.",
+      "description": "Execute a token swap via Jupiter's Router (/build) - routes through Jupiter's own router selection, self-managed landing via /tx/v1/submit. Must use EXACTLY the params from a prior solana__swap_quote call (including every knob below); a mismatch aborts before signing, never silently re-quotes. This BROADCASTS and returns truthful-pending - it never confirms success in this call. The output's signature/explorerUrl are tracked automatically; do not resubmit or call this again for the same swap while a signature is pending.\n\nAUTHORITATIVE PRE-SIGN READ. Immediately before signing, and after the transaction is final, Vex re-reads the wallet against that exact transaction: the spendable input balance (frozen token accounts do not count), the wallet's lamports, the node's own fee for this exact message, the tip, every account rent this wallet pays, and a freshly measured follow-up reserve. If any of them no longer covers the swap, or if any lamport the transaction takes from this wallet cannot be accounted for, this call REFUSES before a signature exists: nothing is signed and nothing is broadcast, and the attempt is recorded with the shortfall. A quote that was executable minutes ago is not a guarantee here.",
       "name": "solana__swap_execute",
       "parameters": {
         "additionalProperties": false,
@@ -47,7 +47,7 @@
             "type": "string"
           },
           "wrapAndUnwrapSol": {
-            "description": "Auto wrap/unwrap native SOL (default true).",
+            "description": "Auto wrap/unwrap native SOL (default true). It also decides WHICH SOL balance the input side spends, and the two are different balances: tokenIn \"SOL\" always means the wallet's own native lamports, while tokenIn set to the explicit wrapped-SOL mint So11111111111111111111111111111111111111112 with wrapAndUnwrapSol false means an existing wrapped-SOL token account. The explicit mint WITH wrapping enabled is REJECTED by name as ambiguous, and is never silently resolved to either balance.",
             "type": "boolean"
           }
         },

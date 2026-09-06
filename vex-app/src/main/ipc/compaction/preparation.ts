@@ -42,7 +42,7 @@ import {
 // behind it) still enters the graph solely through the dynamic import below.
 import type { RequestApplyOutcome } from "@vex-agent/engine/compaction/apply/index.js";
 import { getCompactionPreparation } from "../../database/compaction-preparation-db.js";
-import { ensureEngineDbUrl } from "../runtime/_ensure-engine-db-url.js";
+import { ensureEngineDbUrl } from "../../database/engine-db-readiness.js";
 import { log } from "../../logger/index.js";
 import { registerHandler } from "../register-handler.js";
 

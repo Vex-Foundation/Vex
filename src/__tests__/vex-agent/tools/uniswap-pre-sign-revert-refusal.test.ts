@@ -22,7 +22,8 @@
  * mapper serves both venues, so the real table has to be in the loop.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { claimStandingInForTheParams } from "./_uniswap-approved-snapshot.js";
+import { uniswapSpendabilityFake } from "./_uniswap-spendability-fake.js";
+import { readStandingInForTheParams } from "./_uniswap-approved-snapshot.js";
 import { ExecutionRevertedError } from "viem";
 import { VexError, ErrorCodes } from "../../../errors.js";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
@@ -77,8 +78,11 @@ vi.mock("@tools/uniswap/chains.js", () => ({
   })),
 }));
 vi.mock("@tools/uniswap/evm-client.js", () => ({
-  getUniswapPublicClient: vi.fn(() => ({})),
-  getUniswapEvmClients: vi.fn(() => ({ publicClient: {}, walletClient: {} })),
+  // WP2-U: the quote and every leg's pre-sign gate read balances and price the
+  // leg plan through this client. A SOLVENT default keeps each suite's own
+  // subject the thing that decides its outcome.
+  getUniswapPublicClient: vi.fn(() => uniswapSpendabilityFake()),
+  getUniswapEvmClients: vi.fn(() => ({ publicClient: uniswapSpendabilityFake(), walletClient: {} })),
 }));
 vi.mock("@tools/uniswap/erc20.js", () => ({
   readUniswapErc20Metadata: vi.fn(async (_client: unknown, address: string) => ({
@@ -91,7 +95,12 @@ vi.mock("@tools/uniswap/quote.js", () => ({
   quoteBestRoute: vi.fn(async () => ({ route: { version: "v2", path: [TOKEN_IN, TOKEN_OUT], amountOut: 10n } })),
   applySlippage: vi.fn((amount: bigint) => amount),
 }));
-vi.mock("@tools/uniswap/execute.js", () => ({
+// Spread over the REAL module so the refusal classes this venue throws
+// (`UniswapFeeCapExceededError`, and the final-request refusal the loop
+// re-throws by identity) are the real ones; the overrides below stay this
+// suite's own seams.
+vi.mock("@tools/uniswap/execute.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tools/uniswap/execute.js")>()),
   NATIVE_TOKEN_ADDRESS: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
   buildSwapTx: vi.fn(() => ({ to: "0xrouter", data: "0x", value: 0n })),
   buildApproveTx: vi.fn(() => ({ to: "0xtoken", data: "0x", value: 0n })),
@@ -134,10 +143,11 @@ vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
 // before it prices anything. This suite's subject is elsewhere, so the claim
 // stands in with the quote this very call would have produced - see
 // `_uniswap-approved-snapshot.ts`.
-const claimUniswapExecutionSnapshot = vi.fn();
+const readUniswapExecutionSnapshot = vi.fn();
 vi.mock("@vex-agent/tools/protocols/prequote/claim.js", () => ({
-  claimSwapExecutionSnapshot: vi.fn(),
-  claimUniswapExecutionSnapshot: (...args: unknown[]) => claimUniswapExecutionSnapshot(...args),
+  commitPrequoteClaim: vi.fn(async () => ({ ok: true })),
+  readSwapExecutionSnapshot: vi.fn(),
+  readUniswapExecutionSnapshot: (...args: unknown[]) => readUniswapExecutionSnapshot(...args),
 }));
 
 vi.mock("@utils/logger.js", () => ({
@@ -165,13 +175,30 @@ function revertedWith(reason: string): ExecutionRevertedError {
   return new ExecutionRevertedError({ message: `execution reverted: ${reason}` });
 }
 
+
+/**
+ * The router allowance this suite's quote saw, kept in step with what the
+ * execute's own allowance read answers: since WP2-B the execute REFUSES a leg
+ * set that is not the approved one, so `setAllowance` moves both together (a
+ * real allowance change would have come with a fresh quote).
+ */
+let currentAllowance = 10n ** 30n;
+function setAllowance(value: bigint): void {
+  currentAllowance = value;
+  readUniswapAllowance.mockResolvedValue(value);
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
-  claimUniswapExecutionSnapshot.mockImplementation(
-    claimStandingInForTheParams({ chainId: 4663, weth: "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73" }),
+  readUniswapExecutionSnapshot.mockImplementation(
+    readStandingInForTheParams({
+      chainId: 4663,
+      weth: "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+      currentAllowance: () => currentAllowance,
+    }),
   );
   ensureErc20Balance.mockResolvedValue(undefined);
-  readUniswapAllowance.mockResolvedValue(10n ** 30n); // sufficient — a single (swap) event
+  setAllowance(10n ** 30n); // sufficient - a single (swap) event
   signUniswapTransaction.mockResolvedValue({ serializedTransaction: "0xsigned", txHash: "0xhash", fromAddress: WALLET, nonce: 1 });
   broadcastUniswapTransaction.mockResolvedValue("0xhash");
   waitForSuccessfulReceipt.mockResolvedValue({ logs: [], blockNumber: 900n });
@@ -257,7 +284,7 @@ describe("uniswap.swap.execute — ERC-20 input: the swap leg follows a confirme
    * `DependentLegGasEstimateError` — never as a first-touch revert.
    */
   beforeEach(() => {
-    readUniswapAllowance.mockResolvedValue(0n); // short → an allowance leg is planned
+    setAllowance(0n); // short → an allowance leg is planned
     createAgentActivityIntent.mockResolvedValue({
       executionId: 7,
       events: [
@@ -374,7 +401,9 @@ describe("uniswap.swap.execute — the mined-revert reason is written per leg ro
 
   it("allowance leg: names the role, denies the price guard, and bounds the retry", async () => {
     // Zero allowance → a plan of [allowance, swap]; the approve reverts first.
-    readUniswapAllowance.mockResolvedValueOnce(0n);
+    // The BOUND plan moves with it: an execute whose leg set is not the
+    // approved one is refused before anything is signed (WP2-B).
+    setAllowance(0n);
     createAgentActivityIntent.mockResolvedValueOnce({
       executionId: 1,
       events: [

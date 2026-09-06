@@ -30,11 +30,16 @@ import {
 } from "@vex-agent/studio/instructions/project-brief.js";
 import {
   STUDIO_CLAUDE_MD_IMPORT,
-  claudeMdImportsAgents,
-  mergeClaudeMdImport,
-  removeClaudeMdImport,
+  STUDIO_CLAUDE_MD_IMPORTS,
+  STUDIO_VEX_GUIDE_IMPORT,
+  claudeMdMissingStudioImports,
+  mergeClaudeMdImports,
+  removeClaudeMdImports,
   renderFreshClaudeMd,
+  studioClaudeMdDeletedImports,
+  studioClaudeMdImportSetHash,
 } from "@vex-agent/studio/installer/render/claude-md.js";
+import { renderStudioVexGuideBody } from "@vex-agent/studio/installer/render/vex-guide.js";
 import {
   STUDIO_FEE_NOTE,
   STUDIO_ONE_SOURCE_IN_BLOCK,
@@ -42,9 +47,17 @@ import {
   STUDIO_USAGE_FINDING_TOOLS,
   STUDIO_USAGE_TRUNCATION,
   STUDIO_USAGE_UNAVAILABLE_TOOLS,
+  renderStudioOutcomeVocabulary,
 } from "@vex-agent/studio/instructions/shared-usage.js";
 import { STUDIO_MANAGED_BLOCK_MAX_BYTES } from "@vex-agent/studio/installer/render/managed-block.js";
-import { STUDIO_TEST_BRIEF, STUDIO_TEST_ENVIRONMENT } from "./render-fixtures.js";
+import { STUDIO_VEX_GUIDE_PATH } from "@vex-agent/studio/installer/render/vex-guide.js";
+import { STUDIO_AGENT_LIST } from "@vex-agent/studio/agents.js";
+import {
+  PROJECT_NAME_MAX_LENGTH,
+  STUDIO_TEST_BRIEF,
+  STUDIO_TEST_ENVIRONMENT,
+  longestStudioBrief,
+} from "./render-fixtures.js";
 
 const REPO_ROOT = resolve(__dirname, "..", "..", "..", "..");
 
@@ -60,7 +73,7 @@ function textOf(result: ReturnType<typeof mergeStudioManagedBlock>): string {
 
 describe("the managed block's content", () => {
   it("reuses the safety prefix and the shared usage notes rather than restating them", () => {
-    const body = renderStudioManagedBody(STUDIO_TEST_BRIEF, STUDIO_TEST_ENVIRONMENT);
+    const body = renderStudioManagedBody(STUDIO_TEST_BRIEF);
     expect(body).toContain(STUDIO_SAFETY_PREFIX);
     // The notes reach the block as their NAMED PARTS (the block presents them
     // under the owner's section layout), so each part is asserted verbatim.
@@ -75,69 +88,147 @@ describe("the managed block's content", () => {
   });
 
   it("stays inside its byte bound, and says which lever shortens it", () => {
-    // The bound is new (2026-09-03): the block sits in a file every agent loads
-    // on every turn, so its size is a cost the user pays per request. Codex
-    // bounds its own AGENTS.md the same way (`project_doc_max_bytes`). Nothing
-    // is ever CUT to fit - exceeding this fails here, and the shortening
-    // decision is the protocol blocks first.
+    // The bound is a MEASUREMENT of Codex's loader, not a taste: it reads
+    // AGENTS.md under `project_doc_max_bytes` (32,768 by default,
+    // `agents-colab/codex/codex-rs/config/defaults.toml:8`), spends that budget
+    // across the whole root-to-cwd chain, and TRUNCATES the file that crosses
+    // it (`codex-rs/core/src/agents_md.rs`, `data.truncate(remaining)`). 24 KiB
+    // is that number minus an 8 KiB reserve for the user's own text around our
+    // fence and for any ancestor AGENTS.md. Nothing is ever CUT to fit -
+    // exceeding this fails here, and the lever is moving a WHOLE section into
+    // `.vex/vex-guide.md`.
     const bytes = Buffer.byteLength(
-      renderStudioManagedBody(STUDIO_TEST_BRIEF, STUDIO_TEST_ENVIRONMENT),
+      renderStudioManagedBody(STUDIO_TEST_BRIEF),
       "utf8",
     );
     expect(bytes).toBeLessThanOrEqual(STUDIO_MANAGED_BLOCK_MAX_BYTES);
   });
 
   it("stays inside its byte bound for the LONGEST project half the store can hand it", () => {
-    // The fixture is a two-wallet project with two short notes, so a green run
-    // on it says nothing about the project a real user can build. The project
-    // half is bounded by its own contracts, and this brief sits on every one of
-    // them: eight selected wallets (four per family), and STUDIO_CHANGE_NOTE_LIMIT
-    // notes each at the 400-character summary bound the durable row enforces
-    // (`project_change_notes.summary` CHECK, migration 089). Nothing enforces
-    // the bound at runtime, so a render that only fits the fixture would ship
-    // an oversized block to exactly the user with the most in the project.
-    const summary = "s".repeat(400);
-    const longest = {
-      ...STUDIO_TEST_BRIEF,
-      wallets: [
-        ...Array.from({ length: 4 }, (_, index) => ({
-          family: "evm" as const,
-          address: `0x${String(index + 1).repeat(40)}`,
-        })),
-        ...Array.from({ length: 4 }, (_, index) => ({
-          family: "solana" as const,
-          address: `So${String(index + 1).repeat(40)}`,
-        })),
-      ],
-      changeNotes: Array.from({ length: STUDIO_CHANGE_NOTE_LIMIT }, (_, index) => ({
-        version: `0.9.${String(9 - index)}`,
-        date: `2026-08-${String(28 - index).padStart(2, "0")}`,
-        summary,
-      })),
-    };
+    // The fixture is a two-wallet project with two short notes and a 12-character
+    // name, so a green run on it says nothing about the project a real user can
+    // build. The project half is bounded by its own contracts, and this brief
+    // sits on EVERY one of them: an 80-character name (PROJECT_NAME_MAX_LENGTH),
+    // every agent in the registry selected, eight selected wallets (four per
+    // family), and STUDIO_CHANGE_NOTE_LIMIT notes each at the 400-character
+    // summary bound the durable row enforces (`project_change_notes.summary`
+    // CHECK, migration 089). Nothing enforces the bound at runtime, so a render
+    // that only fits the fixture would ship an oversized block to exactly the
+    // user with the most in the project - and their client would silently cut
+    // it.
     const bytes = Buffer.byteLength(
-      renderStudioManagedBody(longest, STUDIO_TEST_ENVIRONMENT),
+      renderStudioManagedBody(longestStudioBrief()),
       "utf8",
     );
     expect(bytes).toBeLessThanOrEqual(STUDIO_MANAGED_BLOCK_MAX_BYTES);
   });
 
+  it("keeps the whole authority core inside the bound, not merely the fixture", () => {
+    // The guard on the guard: if `longestStudioBrief` stopped being the longest
+    // the store can hand the renderer, the assertion above would keep passing
+    // while measuring a project nobody has.
+    const longest = longestStudioBrief();
+    expect(longest.projectName).toHaveLength(PROJECT_NAME_MAX_LENGTH);
+    expect(longest.changeNotes).toHaveLength(STUDIO_CHANGE_NOTE_LIMIT);
+    expect(longest.changeNotes[0]?.summary).toHaveLength(400);
+    expect(longest.wallets).toHaveLength(8);
+    expect(longest.agentNames).toHaveLength(STUDIO_AGENT_LIST.length);
+    // And it really is longer than the fixture the goldens use.
+    expect(Buffer.byteLength(renderStudioManagedBody(longest), "utf8"))
+      .toBeGreaterThan(
+        Buffer.byteLength(renderStudioManagedBody(STUDIO_TEST_BRIEF), "utf8"),
+      );
+  });
+
+  /**
+   * THE POINTER IS THE WHOLE MECHANISM for every client that is not Claude
+   * Code. Codex, Gemini CLI, Cursor and the rest have no import syntax, so the
+   * only thing that makes `.vex/vex-guide.md` reach a model is this section
+   * telling the agent to open it. If it stops naming the file, or stops saying
+   * WHEN, the split silently becomes a deletion.
+   */
+  it("names both companion files, when to read each, and does it FIRST", () => {
+    const body = renderStudioManagedBody(STUDIO_TEST_BRIEF);
+    const pointer = body.indexOf("## Read these on start");
+    expect(pointer).toBeGreaterThan(-1);
+
+    // Before every other section, because a reader who never learns the guide
+    // exists cannot read it - and because a truncating loader keeps the head.
+    for (const heading of [
+      "## This project",
+      "## How to work with Vex MCP",
+      "## How to do the common jobs",
+      "## Your position",
+    ]) {
+      expect(body.indexOf(heading), `${heading} must follow the pointer`)
+        .toBeGreaterThan(pointer);
+    }
+
+    expect(body).toContain(STUDIO_VEX_GUIDE_PATH);
+    expect(body).toContain(STUDIO_PROTOCOLS_DOC_PATH);
+    expect(body).toContain("READ IT AT THE START OF A SESSION");
+    expect(body).toContain("READ IT ON DEMAND");
+    // And it says WHO already has it, so a Claude Code session does not go
+    // looking for a file its import already loaded.
+    expect(body).toContain("Claude Code imports the guide through `CLAUDE.md`");
+  });
+
+  it("renders the authority core's section order exactly", () => {
+    const body = renderStudioManagedBody(STUDIO_TEST_BRIEF);
+    const order = [
+      "# Vex Studio - project \"acme-trading\"",
+      "## Read these on start",
+      "## This project",
+      "## How to work with Vex MCP",
+      "## How to do the common jobs",
+      "## Your position",
+    ];
+    const positions = order.map((heading) => body.indexOf(heading));
+    expect(positions.every((position) => position > -1)).toBe(true);
+    expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+
+    // And NOT the sections the guide carries: a section in both files would be
+    // two sources of truth for text an agent acts on.
+    for (const heading of [
+      "## What's new in Vex",
+      "## Protocols available to this project",
+      "## Building on Vex MCP",
+      "## Reporting Vex bugs",
+    ]) {
+      expect(body, `${heading} belongs to the guide`).not.toContain(heading);
+    }
+  });
+
+  /**
+   * WHAT MAY NEVER LEAVE THIS FILE, whatever a future split moves. These three
+   * are what an agent acts on in the turn it calls a tool: the authority it
+   * holds, how to read what came back, and the rules that decide whether real
+   * funds move. A shortening decision that reaches for one of them is the one
+   * the byte bound's own doc forbids.
+   */
+  it("keeps the permission paragraph, the outcome table and the safety rules", () => {
+    const body = renderStudioManagedBody(STUDIO_TEST_BRIEF);
+    expect(body).toContain("**Permission: RESTRICTED.**");
+    expect(body).toContain(renderStudioOutcomeVocabulary());
+    expect(body).toContain(STUDIO_SAFETY_PREFIX);
+  });
+
   it("points at the rich protocol declarations instead of inlining them", () => {
-    expect(renderStudioManagedBody(STUDIO_TEST_BRIEF, STUDIO_TEST_ENVIRONMENT)).toContain(STUDIO_PROTOCOLS_DOC_PATH);
+    expect(renderStudioManagedBody(STUDIO_TEST_BRIEF)).toContain(STUDIO_PROTOCOLS_DOC_PATH);
   });
 
   it("says it is generated and what editing it does", () => {
-    expect(renderStudioManagedBody(STUDIO_TEST_BRIEF, STUDIO_TEST_ENVIRONMENT)).toContain("generated by Vex");
-    expect(renderStudioManagedBody(STUDIO_TEST_BRIEF, STUDIO_TEST_ENVIRONMENT)).toContain("drift");
+    expect(renderStudioManagedBody(STUDIO_TEST_BRIEF)).toContain("generated by Vex");
+    expect(renderStudioManagedBody(STUDIO_TEST_BRIEF)).toContain("drift");
   });
 
   it("is deterministic: the same inputs give the same bytes", () => {
-    expect(renderStudioManagedBlock(STUDIO_TEST_BRIEF, STUDIO_TEST_ENVIRONMENT)).toBe(renderStudioManagedBlock(STUDIO_TEST_BRIEF, STUDIO_TEST_ENVIRONMENT));
+    expect(renderStudioManagedBlock(STUDIO_TEST_BRIEF)).toBe(renderStudioManagedBlock(STUDIO_TEST_BRIEF));
   });
 
   it("records the digest of its own body in the opening marker", () => {
-    const block = renderStudioManagedBlock(STUDIO_TEST_BRIEF, STUDIO_TEST_ENVIRONMENT);
-    const expected = studioManagedBodyHash(renderStudioManagedBody(STUDIO_TEST_BRIEF, STUDIO_TEST_ENVIRONMENT));
+    const block = renderStudioManagedBlock(STUDIO_TEST_BRIEF);
+    const expected = studioManagedBodyHash(renderStudioManagedBody(STUDIO_TEST_BRIEF));
     // The marker carries the Vex version alongside the drift hash.
     expect(
       block.startsWith(
@@ -150,34 +241,34 @@ describe("the managed block's content", () => {
 
 describe("merging the managed block into AGENTS.md", () => {
   it("appends to a file that has none, leaving the user's text first", () => {
-    const merged = textOf(mergeStudioManagedBlock(USER_TEXT_BEFORE, STUDIO_TEST_BRIEF, { overwriteDrift: false, environment: STUDIO_TEST_ENVIRONMENT }));
+    const merged = textOf(mergeStudioManagedBlock(USER_TEXT_BEFORE, STUDIO_TEST_BRIEF, { overwriteDrift: false }));
     expect(merged.startsWith(USER_TEXT_BEFORE)).toBe(true);
-    expect(merged).toContain(renderStudioManagedBlock(STUDIO_TEST_BRIEF, STUDIO_TEST_ENVIRONMENT));
+    expect(merged).toContain(renderStudioManagedBlock(STUDIO_TEST_BRIEF));
   });
 
   it("creates the file content when there is none at all", () => {
-    const merged = textOf(mergeStudioManagedBlock("", STUDIO_TEST_BRIEF, { overwriteDrift: false, environment: STUDIO_TEST_ENVIRONMENT }));
-    expect(merged).toBe(renderStudioManagedBlock(STUDIO_TEST_BRIEF, STUDIO_TEST_ENVIRONMENT));
+    const merged = textOf(mergeStudioManagedBlock("", STUDIO_TEST_BRIEF, { overwriteDrift: false }));
+    expect(merged).toBe(renderStudioManagedBlock(STUDIO_TEST_BRIEF));
   });
 
   it("is idempotent: merging an up-to-date file changes nothing", () => {
-    const once = textOf(mergeStudioManagedBlock(USER_TEXT_BEFORE, STUDIO_TEST_BRIEF, { overwriteDrift: false, environment: STUDIO_TEST_ENVIRONMENT }));
-    expect(mergeStudioManagedBlock(once, STUDIO_TEST_BRIEF, { overwriteDrift: false, environment: STUDIO_TEST_ENVIRONMENT }).status).toBe("unchanged");
+    const once = textOf(mergeStudioManagedBlock(USER_TEXT_BEFORE, STUDIO_TEST_BRIEF, { overwriteDrift: false }));
+    expect(mergeStudioManagedBlock(once, STUDIO_TEST_BRIEF, { overwriteDrift: false }).status).toBe("unchanged");
   });
 
   it("replaces the block in place, preserving text on BOTH sides", () => {
     const stale = `${USER_TEXT_BEFORE}<!-- vex:studio:begin hash=${studioManagedBodyHash("old body")} -->\nold body\n<!-- vex:studio:end -->\n${USER_TEXT_AFTER}`;
-    const merged = textOf(mergeStudioManagedBlock(stale, STUDIO_TEST_BRIEF, { overwriteDrift: false, environment: STUDIO_TEST_ENVIRONMENT }));
+    const merged = textOf(mergeStudioManagedBlock(stale, STUDIO_TEST_BRIEF, { overwriteDrift: false }));
 
     expect(merged.startsWith(USER_TEXT_BEFORE)).toBe(true);
     expect(merged.endsWith(USER_TEXT_AFTER)).toBe(true);
     expect(merged).not.toContain("old body");
-    expect(merged).toContain(renderStudioManagedBody(STUDIO_TEST_BRIEF, STUDIO_TEST_ENVIRONMENT));
+    expect(merged).toContain(renderStudioManagedBody(STUDIO_TEST_BRIEF));
   });
 });
 
 describe("drift", () => {
-  const installed = textOf(mergeStudioManagedBlock(USER_TEXT_BEFORE, STUDIO_TEST_BRIEF, { overwriteDrift: false, environment: STUDIO_TEST_ENVIRONMENT }));
+  const installed = textOf(mergeStudioManagedBlock(USER_TEXT_BEFORE, STUDIO_TEST_BRIEF, { overwriteDrift: false }));
   const edited = installed.replace(
     "This repository is connected to Vex",
     "This repository is TOTALLY connected to Vex",
@@ -190,7 +281,7 @@ describe("drift", () => {
     // comparison resolve the live `process.env` would make "is this block
     // current?" depend on which provider keys the machine running the suite
     // happens to have set.
-    const state = inspectStudioManagedBlock(installed, STUDIO_TEST_BRIEF, STUDIO_TEST_ENVIRONMENT);
+    const state = inspectStudioManagedBlock(installed, STUDIO_TEST_BRIEF);
     expect(state).toEqual({ kind: "intact", upToDate: true });
   });
 
@@ -208,34 +299,34 @@ describe("drift", () => {
 
   it("does NOT detect an edit OUTSIDE the fence: that text is the user's", () => {
     const outsideEdited = `${installed}\n${USER_TEXT_AFTER}`;
-    expect(inspectStudioManagedBlock(outsideEdited, STUDIO_TEST_BRIEF, STUDIO_TEST_ENVIRONMENT)).toEqual({ kind: "intact", upToDate: true });
+    expect(inspectStudioManagedBlock(outsideEdited, STUDIO_TEST_BRIEF)).toEqual({ kind: "intact", upToDate: true });
   });
 
   it("never silently overwrites a drifted block", () => {
-    expect(mergeStudioManagedBlock(edited, STUDIO_TEST_BRIEF, { overwriteDrift: false, environment: STUDIO_TEST_ENVIRONMENT }).status).toBe("unchanged");
+    expect(mergeStudioManagedBlock(edited, STUDIO_TEST_BRIEF, { overwriteDrift: false }).status).toBe("unchanged");
   });
 
   it("overwrites a drifted block ONLY on an explicit repair", () => {
-    const repaired = textOf(mergeStudioManagedBlock(edited, STUDIO_TEST_BRIEF, { overwriteDrift: true, environment: STUDIO_TEST_ENVIRONMENT }));
+    const repaired = textOf(mergeStudioManagedBlock(edited, STUDIO_TEST_BRIEF, { overwriteDrift: true }));
     expect(repaired).not.toContain("TOTALLY");
-    expect(inspectStudioManagedBlock(repaired, STUDIO_TEST_BRIEF, STUDIO_TEST_ENVIRONMENT)).toEqual({ kind: "intact", upToDate: true });
+    expect(inspectStudioManagedBlock(repaired, STUDIO_TEST_BRIEF)).toEqual({ kind: "intact", upToDate: true });
     expect(repaired.startsWith(USER_TEXT_BEFORE)).toBe(true);
   });
 
   it("refuses a half-open fence instead of guessing where its region ends", () => {
     const halfOpen = `${USER_TEXT_BEFORE}<!-- vex:studio:begin hash=abc -->\nbody with no end\n`;
-    const merge = mergeStudioManagedBlock(halfOpen, STUDIO_TEST_BRIEF, { overwriteDrift: true, environment: STUDIO_TEST_ENVIRONMENT });
+    const merge = mergeStudioManagedBlock(halfOpen, STUDIO_TEST_BRIEF, { overwriteDrift: true });
     expect(merge.status).toBe("refused");
     if (merge.status === "refused") expect(merge.reason).toBe("malformed_managed_block");
 
     const orphanEnd = `${USER_TEXT_BEFORE}<!-- vex:studio:end -->\n`;
-    expect(mergeStudioManagedBlock(orphanEnd, STUDIO_TEST_BRIEF, { overwriteDrift: true, environment: STUDIO_TEST_ENVIRONMENT }).status).toBe("refused");
+    expect(mergeStudioManagedBlock(orphanEnd, STUDIO_TEST_BRIEF, { overwriteDrift: true }).status).toBe("refused");
   });
 });
 
 describe("removing the managed block", () => {
   it("leaves the rest of the file byte-identical", () => {
-    const withBlock = textOf(mergeStudioManagedBlock(USER_TEXT_BEFORE, STUDIO_TEST_BRIEF, { overwriteDrift: false, environment: STUDIO_TEST_ENVIRONMENT }));
+    const withBlock = textOf(mergeStudioManagedBlock(USER_TEXT_BEFORE, STUDIO_TEST_BRIEF, { overwriteDrift: false }));
     const removed = removeStudioManagedBlock(withBlock);
     expect(removed.status).toBe("rendered");
     if (removed.status === "rendered") expect(removed.text).toBe(USER_TEXT_BEFORE);
@@ -253,7 +344,7 @@ describe("removing the managed block", () => {
  * whether a bug report leaves the machine.
  */
 describe("the project-dependent half of the block", () => {
-  const body = renderStudioManagedBody(STUDIO_TEST_BRIEF, STUDIO_TEST_ENVIRONMENT);
+  const body = renderStudioManagedBody(STUDIO_TEST_BRIEF);
 
   it("says what the server is, that it dies with the app, and where keys live", () => {
     expect(body).toContain("LOCAL MCP server inside the Vex desktop app");
@@ -266,26 +357,6 @@ describe("the project-dependent half of the block", () => {
     expect(body).toContain("`vex-mcp` path in `.mcp.json` no longer exists");
     // A15: what a locked vault looks like from the agent's side.
     expect(body).toContain("locked vault refuses BY NAME");
-  });
-
-  it("tells the agent an app it builds speaks MCP to the SAME server", () => {
-    expect(body).toContain("## Building on Vex MCP");
-    expect(body).toContain("MCP IS the API");
-    expect(body).toContain("`vex-mcp` bridge command");
-    expect(body).toContain("`vex-mcp`");
-    expect(body).toContain("publicName");
-  });
-
-  it("says the app inherits every restriction, and that there is NO REST API", () => {
-    // The load-bearing half: an agent that believes it can build a thin HTTP
-    // wrapper around a wallet has just invented a door around the approval
-    // card, the permission snapshot and the vault.
-    expect(body).toContain("INHERITS EVERY RESTRICTION");
-    expect(body).toContain("because there is no other");
-    expect(body).toContain("per-call scope snapshot");
-    expect(body).toContain("approval card");
-    expect(body).toContain("vault-locked signing");
-    expect(body).toContain("NO separate REST endpoint");
   });
 
   it("carries the LIVE tool counts it was given, not a pinned number", () => {
@@ -303,7 +374,7 @@ describe("the project-dependent half of the block", () => {
         searchableCount: 200,
         protocols: [{ name: "pendle", toolCount: 200 }],
       },
-    }, STUDIO_TEST_ENVIRONMENT);
+    });
     expect(other).toContain("1 tools are ALWAYS LOADED");
     expect(other).toContain("200 protocol tools across");
   });
@@ -327,55 +398,15 @@ describe("the project-dependent half of the block", () => {
         alwaysLoadedCount: 1,
         alwaysLoadedNames: ["OnlyThisOne"],
       },
-    }, STUDIO_TEST_ENVIRONMENT);
+    });
     expect(other).toContain("- OnlyThisOne");
     expect(other).not.toContain("- WalletBalances");
-  });
-
-  it("puts WHAT'S NEW first, above every other section", () => {
-    const whatsNew = body.indexOf("## What's new in Vex");
-    expect(whatsNew).toBeGreaterThan(-1);
-    for (const heading of [
-      "## This project",
-      "## How to work with Vex MCP",
-      "## How to do the common jobs",
-      "## Protocols available to this project",
-      "## Your position",
-      "## Building on Vex MCP",
-      "## Reporting Vex bugs",
-    ]) {
-      expect(body.indexOf(heading), `${heading} must follow the notes`)
-        .toBeGreaterThan(whatsNew);
-    }
-  });
-
-  it("renders the owner's eight-section order exactly", () => {
-    const order = [
-      "# Vex Studio - project \"acme-trading\"",
-      "## What's new in Vex 0.2.6",
-      "## This project",
-      "## How to work with Vex MCP",
-      "## How to do the common jobs",
-      "## Protocols available to this project",
-      "## Your position",
-      "## Building on Vex MCP",
-      "## Reporting Vex bugs (bounty)",
-    ];
-    const positions = order.map((heading) => body.indexOf(heading));
-    expect(positions.every((position) => position > -1)).toBe(true);
-    expect([...positions].sort((a, b) => a - b)).toEqual(positions);
   });
 
   it("names the project, its id and its configured agents", () => {
     expect(body).toContain("project \"acme-trading\"");
     expect(body).toContain("- Project id: `0f6b1c2e-8a4d-4f1b-9c3e-7d5a2b8e4c10`");
     expect(body).toContain("- Configured agents: Claude Code, Codex CLI");
-  });
-
-  it("says the first render is the first render, not an empty log", () => {
-    const first = renderStudioManagedBody({ ...STUDIO_TEST_BRIEF, changeNotes: [] }, STUDIO_TEST_ENVIRONMENT);
-    expect(first).toContain("initial render for this project");
-    expect(first).toContain("Vex 0.2.6");
   });
 
   it("reuses the shared usage notes VERBATIM rather than restating them", () => {
@@ -410,18 +441,11 @@ describe("the project-dependent half of the block", () => {
     // substring match across it proves nothing about the text an agent reads.
     expect(body).toContain("set is CLOSED, and router or aggregator calldata");
     expect(body).not.toContain("THE DECODE SET IS CLOSED, AND IT IS NOT");
-    expect(body).toContain("digest");
+    // "the same digest binding between what was shown and what is signed" is a
+    // sentence of "Building on Vex MCP", which the 2026-09-04 split moved WHOLE
+    // into `.vex/vex-guide.md`; `vex-guide.test.ts` asserts it there.
+    expect(body).toContain("re-checked");
     expect(body).toContain("fee caps");
-  });
-
-  it("tells the reader the file does NOT grow across Vex updates", () => {
-    // t1 #1 and #2: "nothing else is hidden" had no referent, and the entries
-    // sat BELOW a sentence that called them "above".
-    expect(body).toContain("THIS SECTION STAYS BOUNDED");
-    expect(body).toContain("only change-log entries are ever dropped");
-    expect(body).toContain("the change log below");
-    expect(body).toContain("OUTSIDE the markers, which Vex never touches");
-    expect(body).not.toContain("nothing else is hidden");
   });
 
   it("tells the agent there is NO generic execute tool to invent", () => {
@@ -469,11 +493,6 @@ describe("the project-dependent half of the block", () => {
     // was never defined.
     expect(body).toContain("REFUSES BY NAME, here and");
     expect(body).toContain("names the precondition that");
-
-    // I-6j, p1.txt lines 71-73. The privacy sentence forbade what every quote
-    // necessarily does.
-    expect(body).toContain("Calling a Vex tool is not publishing");
-    expect(body).not.toContain("leaves this machine without");
 
     // A-8, live test pass 2 section 2. The interactive session hesitated
     // because its own harness demands a confirmation the card already is.
@@ -540,7 +559,6 @@ describe("the project-dependent half of the block", () => {
         ...STUDIO_TEST_BRIEF,
         wallets: [{ family: "evm", address: "0x1111111111111111111111111111111111111111" }],
       },
-      STUDIO_TEST_ENVIRONMENT,
     );
     expect(evmOnly).toContain("No Solana wallet is selected");
     expect(evmOnly).toContain("refuses by name");
@@ -551,12 +569,16 @@ describe("the project-dependent half of the block", () => {
   it("renders the stored `full` permission as FULL ACCESS, with its meaning", () => {
     const full = renderStudioManagedBody(
       { ...STUDIO_TEST_BRIEF, permission: "full" },
-      STUDIO_TEST_ENVIRONMENT,
     );
     expect(full).toContain("Permission: FULL ACCESS");
     expect(full).toContain("chose full access knowingly");
     expect(full).toContain("do not add a confirmation step of your own");
-    expect(full).toContain("with no approval card");
+    // The block is hard-wrapped, so this sentence spans two lines. It used to
+    // be asserted as "with no approval card", which the file happened to
+    // satisfy through a CHANGELOG entry quoting it - and the changelog moved
+    // to the guide on 2026-09-04, which is how the accident showed up.
+    expect(full).toContain("a destructive call executes directly with");
+    expect(full).toContain("no approval card.");
     // What is true under BOTH levels, and the reason the owner insisted on it.
     expect(full).toContain("Not asking is not the same as not telling");
     expect(full).toContain("no tool widens it");
@@ -565,44 +587,17 @@ describe("the project-dependent half of the block", () => {
   it("says so when no wallet is selected instead of listing nothing", () => {
     const none = renderStudioManagedBody(
       { ...STUDIO_TEST_BRIEF, wallets: [] },
-      STUDIO_TEST_ENVIRONMENT,
     );
     expect(none).toContain("No wallet is selected for this project");
   });
 
-  it("lists change-log entries newest first and declares its own bound", () => {
-    expect(body).toContain(`Vex keeps the last ${String(STUDIO_CHANGE_NOTE_LIMIT)} entries`);
-    const newest = body.indexOf("updated the wallet selection");
-    const older = body.indexOf("added the codex config");
-    expect(newest).toBeGreaterThan(-1);
-    expect(older).toBeGreaterThan(newest);
-  });
-
-  it("bounds the change-note list by dropping the OLDEST entries", () => {
-    const many = Array.from({ length: STUDIO_CHANGE_NOTE_LIMIT + 4 }, (_, i) => ({
-      version: "0.9.9",
-      date: "2026-08-25",
-      summary: `change ${String(i)}`,
-    }));
-    const bounded = boundStudioChangeNotes(many);
-    expect(bounded).toHaveLength(STUDIO_CHANGE_NOTE_LIMIT);
-    expect(bounded[0]?.summary).toBe("change 0");
-    expect(bounded.at(-1)?.summary).toBe(`change ${String(STUDIO_CHANGE_NOTE_LIMIT - 1)}`);
-  });
-
-  it("ends with a bug-report note that ASKS and never reports on its own", () => {
-    expect(body).toContain("https://github.com/Vex-Foundation/Vex");
-    expect(body).toContain("USDC or");
-    expect(body).toContain("Discord");
-    expect(body).toContain("ASK FIRST, ALWAYS");
-    expect(body).toContain("Never open a report");
-  });
-
-  it("covers the change notes and the authority WITH the drift hash", () => {
-    // The whole point of putting them inside the markers: editing a change note
-    // or a wallet line is drift, exactly like editing the safety prefix.
+  it("covers the AUTHORITY lines WITH the drift hash", () => {
+    // The whole point of putting them inside the markers: editing a wallet line
+    // is drift, exactly like editing the safety prefix. (The change notes are
+    // covered the same way in the file that now carries them; see
+    // `vex-guide.test.ts`.)
     const installed = textOf(
-      mergeStudioManagedBlock("", STUDIO_TEST_BRIEF, { overwriteDrift: false, environment: STUDIO_TEST_ENVIRONMENT }),
+      mergeStudioManagedBlock("", STUDIO_TEST_BRIEF, { overwriteDrift: false }),
     );
     const tampered = installed.replace(
       "0x1111111111111111111111111111111111111111",
@@ -610,13 +605,17 @@ describe("the project-dependent half of the block", () => {
     );
     expect(inspectStudioManagedBlock(tampered, STUDIO_TEST_BRIEF).kind).toBe("drifted");
 
-    const noteTampered = installed.replace("added the codex config", "did nothing");
-    expect(inspectStudioManagedBlock(noteTampered, STUDIO_TEST_BRIEF).kind).toBe("drifted");
+    const permissionTampered = installed.replace(
+      "Permission: RESTRICTED",
+      "Permission: FULL ACCESS",
+    );
+    expect(inspectStudioManagedBlock(permissionTampered, STUDIO_TEST_BRIEF).kind)
+      .toBe("drifted");
   });
 
   it("reports a stale block as intact but NOT up to date when the brief moves", () => {
     const installed = textOf(
-      mergeStudioManagedBlock("", STUDIO_TEST_BRIEF, { overwriteDrift: false, environment: STUDIO_TEST_ENVIRONMENT }),
+      mergeStudioManagedBlock("", STUDIO_TEST_BRIEF, { overwriteDrift: false }),
     );
     const state = inspectStudioManagedBlock(installed, {
       ...STUDIO_TEST_BRIEF,
@@ -629,43 +628,100 @@ describe("the project-dependent half of the block", () => {
 describe("the CLAUDE.md import", () => {
   const USER_CLAUDE = "# My rules\n\nBe brief.\n";
 
-  it("creates a file that imports AGENTS.md", () => {
+  it("creates a file that imports BOTH managed documents", () => {
     const fresh = renderFreshClaudeMd();
     expect(fresh.status).toBe("rendered");
     if (fresh.status === "rendered") {
-      expect(claudeMdImportsAgents(fresh.text)).toBe(true);
+      expect(claudeMdMissingStudioImports(fresh.text)).toEqual([]);
       expect(fresh.text).toContain(STUDIO_CLAUDE_MD_IMPORT);
+      // The guide is imported too: without it Claude Code would read the
+      // authority core and none of the protocol blocks, while every other
+      // client reads both because AGENTS.md tells it to.
+      expect(fresh.text).toContain(STUDIO_VEX_GUIDE_IMPORT);
     }
   });
 
-  it("appends the import to an existing file, keeping the user's text first", () => {
-    const merged = mergeClaudeMdImport(USER_CLAUDE);
+  it("appends both imports to an existing file, keeping the user's text first", () => {
+    const merged = mergeClaudeMdImports(USER_CLAUDE);
     expect(merged.status).toBe("rendered");
     if (merged.status === "rendered") {
       expect(merged.text.startsWith(USER_CLAUDE)).toBe(true);
-      expect(claudeMdImportsAgents(merged.text)).toBe(true);
+      expect(claudeMdMissingStudioImports(merged.text)).toEqual([]);
+    }
+  });
+
+  it("adds ONLY the missing import to a file installed before the guide existed", () => {
+    // The upgrade path, and the reason it is not a rewrite: a project installed
+    // by an earlier Vex has the AGENTS.md import and nothing else. The merge
+    // leaves that line exactly where the user's file has it and appends the one
+    // that is new.
+    const legacy = `${USER_CLAUDE}\n${STUDIO_CLAUDE_MD_IMPORT}\n`;
+    const merged = mergeClaudeMdImports(legacy);
+    if (merged.status !== "rendered") throw new Error("expected rendered");
+    expect(merged.text.startsWith(legacy)).toBe(true);
+    expect(merged.text).toContain(STUDIO_VEX_GUIDE_IMPORT);
+    // One occurrence of each: an append is not a duplication.
+    for (const line of STUDIO_CLAUDE_MD_IMPORTS) {
+      expect(merged.text.split("\n").filter((row) => row.trim() === line))
+        .toHaveLength(1);
     }
   });
 
   it("is idempotent", () => {
-    const merged = mergeClaudeMdImport(USER_CLAUDE);
+    const merged = mergeClaudeMdImports(USER_CLAUDE);
     if (merged.status !== "rendered") throw new Error("expected rendered");
-    expect(mergeClaudeMdImport(merged.text).status).toBe("unchanged");
+    expect(mergeClaudeMdImports(merged.text).status).toBe("unchanged");
   });
 
   it("does not mistake prose about @AGENTS.md for an import", () => {
-    expect(claudeMdImportsAgents("See @AGENTS.md for the Vex section.\n")).toBe(false);
+    expect(claudeMdMissingStudioImports("See @AGENTS.md for the Vex section.\n"))
+      .toEqual(STUDIO_CLAUDE_MD_IMPORTS);
   });
 
-  it("removes only the import line and returns the original bytes", () => {
-    const merged = mergeClaudeMdImport(USER_CLAUDE);
+  it("removes only the import lines and returns the original bytes", () => {
+    const merged = mergeClaudeMdImports(USER_CLAUDE);
     if (merged.status !== "rendered") throw new Error("expected rendered");
-    const removed = removeClaudeMdImport(merged.text);
+    const removed = removeClaudeMdImports(merged.text);
     expect(removed.status).toBe("rendered");
     if (removed.status === "rendered") expect(removed.text).toBe(USER_CLAUDE);
   });
 
-  it("is a no-op to remove when there is no import", () => {
-    expect(removeClaudeMdImport(USER_CLAUDE).status).toBe("unchanged");
+  it("is a no-op to remove when neither import is there", () => {
+    expect(removeClaudeMdImports(USER_CLAUDE).status).toBe("unchanged");
+  });
+
+  /**
+   * WHICH MISSING LINE IS A DELETION. The distinction the reconciler and the
+   * project-file badge both read: a line Vex is recorded as having written and
+   * that is now gone is the user's deletion (leave it; only Repair puts it
+   * back), while a line Vex has only started writing since is simply added.
+   * Without it, every project installed before the guide would have been told
+   * to run Repair for a line that had never been in its file.
+   */
+  describe("a missing import, against what Vex recorded writing", () => {
+    const legacyFile = `${USER_CLAUDE}\n${STUDIO_CLAUDE_MD_IMPORT}\n`;
+
+    it("is not a deletion when the store has no row for this file at all", () => {
+      expect(studioClaudeMdDeletedImports(USER_CLAUDE, undefined)).toEqual([]);
+    });
+
+    it("is not a deletion when the row predates the guide import", () => {
+      // `entryHash: null` is every row written before this change.
+      expect(studioClaudeMdDeletedImports(legacyFile, null)).toEqual([]);
+    });
+
+    it("IS a deletion when Vex recorded writing the line that is gone", () => {
+      expect(
+        studioClaudeMdDeletedImports(legacyFile, studioClaudeMdImportSetHash()),
+      ).toEqual([STUDIO_VEX_GUIDE_IMPORT]);
+      expect(
+        studioClaudeMdDeletedImports(USER_CLAUDE, studioClaudeMdImportSetHash()),
+      ).toEqual([...STUDIO_CLAUDE_MD_IMPORTS]);
+    });
+
+    it("digests the SET, so the recorded hash cannot be read as a file digest", () => {
+      expect(studioClaudeMdImportSetHash([STUDIO_CLAUDE_MD_IMPORT]))
+        .not.toBe(studioClaudeMdImportSetHash());
+    });
   });
 });

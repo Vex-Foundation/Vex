@@ -12,13 +12,11 @@
  * same module path — this is a MOVE, not a behavior change.
  *
  * SSRF (Blocker 10, Phase-2 W4): a provider-supplied RPC URL is untrusted
- * input. `isSsrfSafeRpcUrl` rejects (fail-closed): non-HTTPS schemes,
- * credentials embedded in the URL, and loopback/private/link-local/
- * unique-local/unspecified hosts. It is SYNTACTIC ONLY — no DNS resolution,
- * no redirect re-validation — so every caller must ALSO pin
- * `redirect: "error"` on the actual fetch (closes DNS-rebinding /
- * redirect-to-private-host) and verify the endpoint's cluster identity via
- * the genesis-hash echo below (closes "wrong/malicious cluster").
+ * input. The classifiers that decide it now live in `rpc-egress-policy.js`
+ * (re-exported below, unchanged) beside the connect-time DNS pin that closes
+ * the rebinding window a syntactic check never could. This module keeps the
+ * SELECTION order (`selectVerificationRpcUrls`) and the raw POST, which pins
+ * `redirect: "error"` and takes the caller's dispatcher and deadline.
  *
  * GENESIS VERIFICATION: the Solana analog of an EVM `eth_chainId` echo —
  * before trusting an RPC's answer (a signature status, a transaction, a
@@ -27,8 +25,13 @@
  * re-pointed endpoint cannot fake this echo.
  */
 
+import type { Dispatcher } from "undici";
+
 import logger from "@utils/logger.js";
 import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
+
+import { isSsrfSafeRpcUrl } from "./rpc-egress-policy.js";
+import type { DispatchableRequestInit } from "./rpc-egress-policy.js";
 
 /**
  * Solana mainnet-beta genesis hash — an immutable cluster identity constant.
@@ -36,112 +39,14 @@ import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/error
 export const SOLANA_MAINNET_GENESIS = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d";
 
 /**
- * True iff `rawUrl` is a public HTTPS endpoint safe to use for provider-registry
- * RPC verification. Rejects (fail-closed): non-HTTPS schemes, credentials in the
- * URL, and loopback / private / link-local / unique-local / unspecified hosts
- * (the SSRF surface — a provider registry is untrusted input). Curated/local RPCs
- * bypass this (they are trusted), so this guards ONLY the provider-registry
- * fallback.
- *
- * NAMED LIMITATION (Blocker 10): this check is SYNTACTIC. It does NOT resolve DNS
- * and does NOT re-validate on HTTP redirects — a public-looking DNS name that
- * resolves to a private address (DNS rebinding), or a 3xx that re-points at a
- * private host, is NOT caught here. Two compensating controls close the gap: (a)
- * every verification fetch pins `redirect: "error"`/`fetchOptions.redirect:"error"`
- * so a redirect to a private host is refused, not followed; and (b) the
- * `eth_chainId` (EVM) / genesis-hash (Solana) echo means a re-pointed endpoint
- * cannot fake a confirmation for the expected chain.
+ * THE SSRF CLASSIFIERS LIVE IN `rpc-egress-policy.ts` NOW, beside the connect-time
+ * pin that closes the DNS-rebinding hole they could never close on their own
+ * (review finding, 2026-09-04). They are re-exported here unchanged
+ * so every existing import path - this module, `bridge-activity-repair.ts`'s own
+ * re-export, and their tests - keeps working: this is a MOVE, not a behavior
+ * change.
  */
-export function isSsrfSafeRpcUrl(rawUrl: string): boolean {
-  let url: URL;
-  try {
-    url = new URL(rawUrl);
-  } catch {
-    return false;
-  }
-  if (url.protocol !== "https:") return false;
-  if (url.username.length > 0 || url.password.length > 0) return false;
-  const host = url.hostname.toLowerCase();
-  if (host.length === 0) return false;
-  return !isPrivateOrLoopbackHost(host);
-}
-
-/**
- * Classify a hostname/IP literal as private/loopback/link-local (blocked) vs
- * public (allowed). Pure, NO DNS resolution (see `isSsrfSafeRpcUrl`'s named
- * limitation): an IP literal is classified exactly; a DNS name is accepted on its
- * face and defended downstream by redirect-off fetches + the chain-id echo.
- */
-export function isPrivateOrLoopbackHost(host: string): boolean {
-  // Strip an IPv6 literal's brackets if a caller passed them through.
-  const h = host.startsWith("[") && host.endsWith("]") ? host.slice(1, -1) : host;
-
-  if (h === "localhost" || h.endsWith(".localhost")) return true;
-
-  const ipv4 = parseIpv4(h);
-  if (ipv4) return isPrivateIpv4(ipv4);
-
-  if (h.includes(":")) return isPrivateIpv6(h);
-
-  // A public DNS name (not an IP literal) — allowed on its face. No resolution is
-  // performed here; DNS-rebinding to a private address is out of scope for this
-  // syntactic check and is compensated by redirect-off fetches + the chain echo.
-  return false;
-}
-
-function parseIpv4(host: string): readonly number[] | null {
-  const parts = host.split(".");
-  if (parts.length !== 4) return null;
-  const octets: number[] = [];
-  for (const part of parts) {
-    if (!/^\d{1,3}$/.test(part)) return null;
-    const n = Number(part);
-    if (n > 255) return null;
-    octets.push(n);
-  }
-  return octets;
-}
-
-function isPrivateIpv4(octets: readonly number[]): boolean {
-  const a = octets[0] ?? 0;
-  const b = octets[1] ?? 0;
-  if (a === 10) return true; // 10.0.0.0/8
-  if (a === 127) return true; // loopback
-  if (a === 0) return true; // unspecified / this-network
-  if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12
-  if (a === 192 && b === 168) return true; // 192.168.0.0/16
-  if (a === 169 && b === 254) return true; // link-local (incl. 169.254.169.254 metadata)
-  if (a === 100 && b >= 64 && b <= 127) return true; // 100.64.0.0/10 CGNAT
-  if (a >= 224) return true; // multicast / reserved
-  return false;
-}
-
-function isPrivateIpv6(host: string): boolean {
-  const h = host.toLowerCase();
-  if (h === "::1" || h === "::") return true; // loopback / unspecified
-  if (h.startsWith("fe80")) return true; // link-local
-  if (h.startsWith("fc") || h.startsWith("fd")) return true; // unique-local fc00::/7
-  // IPv4-mapped (::ffff:a.b.c.d) — classify the embedded v4.
-  const mapped = h.match(/::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
-  if (mapped?.[1]) {
-    const v4 = parseIpv4(mapped[1]);
-    return v4 ? isPrivateIpv4(v4) : true;
-  }
-  // WHATWG URL NORMALIZES mapped addresses to the HEX form before we ever see
-  // them (`[::ffff:127.0.0.1]` → hostname `[::ffff:7f00:1]`), so the dotted
-  // regex above never fires for URL-sourced hosts — decode the embedded v4
-  // from the last two 16-bit groups.
-  const hexMapped = h.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
-  if (hexMapped) {
-    const hi = Number.parseInt(hexMapped[1]!, 16);
-    const lo = Number.parseInt(hexMapped[2]!, 16);
-    return isPrivateIpv4([hi >> 8, hi & 0xff, lo >> 8, lo & 0xff]);
-  }
-  // Any other ::ffff:-prefixed shape (or the deprecated ::ffff:0:a.b.c.d SIIT
-  // form) — fail closed rather than risk a mis-parse reaching a local target.
-  if (h.startsWith("::ffff:")) return true;
-  return false;
-}
+export { isSsrfSafeRpcUrl, isPrivateOrLoopbackHost } from "./rpc-egress-policy.js";
 
 /**
  * Choose the ordered RPC endpoints to verify against: curated/local
@@ -149,6 +54,14 @@ function isPrivateIpv6(host: string): boolean {
  * that pass {@link isSsrfSafeRpcUrl}. De-duplicated, order preserved. An empty
  * result means "no safe RPC" — the caller reports unverifiable and the row
  * stays pending (fail-closed).
+ *
+ * THE ONE ORDERING OWNER. Callers grow the CANDIDATE SET, never add a second
+ * selector: the bridge verifier's `resolveVerificationRpcs` puts the user's own
+ * RPC overrides and the local chain registry in `curated` (the app's own
+ * configuration, used as configured) and the Khalani, Relay and viem-bundled
+ * chain registries in `providerRegistry` (untrusted, SSRF-filtered here), and
+ * each bucket keeps its internal order. Two registries naming the same endpoint
+ * cost one probe, not two.
  */
 export function selectVerificationRpcUrls(input: {
   readonly curated: readonly string[];
@@ -167,20 +80,44 @@ export function selectVerificationRpcUrls(input: {
   return ordered;
 }
 
-/** Minimal JSON-RPC POST for Solana verification: redirect OFF (SSRF), 15s timeout, no auth headers. Returns `result`. */
-export async function solanaRpcCall(rpcUrl: string, method: string, params: unknown[]): Promise<unknown> {
-  const res = await fetch(rpcUrl, {
+/**
+ * Minimal JSON-RPC POST for Solana verification: redirect OFF (SSRF), no auth
+ * headers, a bounded per-call timeout. Returns `result`.
+ *
+ * `egress` is the CALLER's decision, because the two callers stand on different
+ * ground: the Solana activity sweep uses the app's own configured endpoint
+ * (`cfg.solana.rpcUrl`, the same one that signs and broadcasts) and must keep
+ * working when that endpoint is a self-hosted node, while the bridge verifier
+ * reads a PROVIDER REGISTRY and passes the pinning dispatcher from
+ * `rpc-egress-policy.js`. Default: no dispatcher, i.e. as configured.
+ *
+ * `signal` lets the caller's own deadline cut the request; it is combined with
+ * the per-call timeout rather than replacing it.
+ */
+export async function solanaRpcCall(
+  rpcUrl: string,
+  method: string,
+  params: unknown[],
+  options?: { readonly signal?: AbortSignal; readonly dispatcher?: Dispatcher; readonly timeoutMs?: number },
+): Promise<unknown> {
+  const timeout = AbortSignal.timeout(options?.timeoutMs ?? SOLANA_RPC_CALL_TIMEOUT_MS);
+  const init: DispatchableRequestInit = {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
     redirect: "error",
-    signal: AbortSignal.timeout(15_000),
-  });
+    signal: options?.signal ? AbortSignal.any([options.signal, timeout]) : timeout,
+    dispatcher: options?.dispatcher,
+  };
+  const res = await fetch(rpcUrl, init);
   if (!res.ok) throw new Error(`solana rpc ${method}: http ${res.status}`);
   const body = (await res.json()) as { result?: unknown; error?: unknown };
   if (body.error !== null && body.error !== undefined) throw new Error(`solana rpc ${method}: rpc error`);
   return body.result;
 }
+
+/** Per-call bound for a Solana JSON-RPC read. Unchanged from the value this helper shipped with. */
+const SOLANA_RPC_CALL_TIMEOUT_MS = 15_000;
 
 /**
  * The genesis-hash cluster echo (the Solana analog of an EVM `eth_chainId`

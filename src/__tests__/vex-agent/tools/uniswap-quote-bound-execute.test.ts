@@ -34,6 +34,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { uniswapSpendabilityFake } from "./_uniswap-spendability-fake.js";
 import { decodeFunctionData, getAddress, parseUnits, type Hex } from "viem";
 
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
@@ -47,7 +48,7 @@ const CHAIN_ID = 4663;
 
 const quoteBestRoute = vi.fn();
 const runStagedBroadcast = vi.fn();
-const claimUniswapExecutionSnapshot = vi.fn();
+const readUniswapExecutionSnapshot = vi.fn();
 const createAgentActivityPreBroadcastFailure = vi.fn();
 const createAgentActivityIntent = vi.fn();
 
@@ -59,8 +60,11 @@ vi.mock("@tools/uniswap/chains.js", () => ({
   resolveUniswapChainId: vi.fn(() => CHAIN_ID),
 }));
 vi.mock("@tools/uniswap/evm-client.js", () => ({
-  getUniswapPublicClient: vi.fn(() => ({})),
-  getUniswapEvmClients: vi.fn(() => ({ publicClient: {}, walletClient: {} })),
+  // WP2-U: the quote and every leg's pre-sign gate read balances and price the
+  // leg plan through this client. A SOLVENT default keeps each suite's own
+  // subject the thing that decides its outcome.
+  getUniswapPublicClient: vi.fn(() => uniswapSpendabilityFake()),
+  getUniswapEvmClients: vi.fn(() => ({ publicClient: uniswapSpendabilityFake(), walletClient: {} })),
 }));
 vi.mock("@tools/uniswap/erc20.js", () => ({
   readUniswapErc20Metadata: vi.fn(async (_client: unknown, address: string) => ({
@@ -127,8 +131,9 @@ vi.mock("@vex-agent/tools/protocols/uniswap/handlers/swap/execute-broadcast.js",
 // `integration/repos/swap-prequotes-claim.int.test.ts`. Here it stands for "the
 // store handed the execute THIS approved quote".
 vi.mock("@vex-agent/tools/protocols/prequote/claim.js", () => ({
-  claimSwapExecutionSnapshot: vi.fn(),
-  claimUniswapExecutionSnapshot: (...args: unknown[]) => claimUniswapExecutionSnapshot(...args),
+  commitPrequoteClaim: vi.fn(async () => ({ ok: true })),
+  readSwapExecutionSnapshot: vi.fn(),
+  readUniswapExecutionSnapshot: (...args: unknown[]) => readUniswapExecutionSnapshot(...args),
 }));
 vi.mock("@utils/logger.js", () => {
   const stub = { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() };
@@ -138,7 +143,7 @@ vi.mock("@utils/logger.js", () => {
 const { UNISWAP_SWAP_HANDLERS } = await import("@vex-agent/tools/protocols/uniswap/handlers/swap.js");
 const { applySlippage } = await import("@tools/uniswap/quote.js");
 const { UNISWAP_V2_ROUTER_ABI } = await import("@tools/uniswap/abis.js");
-const { approvedUniswapSnapshot } = await import("./_uniswap-approved-snapshot.js");
+const { approvedUniswapSnapshot, approvedUniswapVexFee } = await import("./_uniswap-approved-snapshot.js");
 const { snapshotRefusal } = await import("@vex-agent/tools/protocols/quote-authority/refusal.js");
 
 const execute = UNISWAP_SWAP_HANDLERS["uniswap.swap.execute"];
@@ -218,8 +223,19 @@ beforeEach(async () => {
   runStagedBroadcast.mockResolvedValue({
     kind: "confirmed", txHash: "0xswap", receipt: { logs: [] }, settledAtBlock: 1n,
   });
-  claimUniswapExecutionSnapshot.mockResolvedValue({
+  readUniswapExecutionSnapshot.mockResolvedValue({
     ok: true, prequoteId: "prequote-incident", snapshot: await approved(),
+    // The row's own Vex fee statement. The execute re-derives it and refuses
+    // before signing when the two disagree, so a claim without one signs
+    // nothing.
+    vexFee: await approvedUniswapVexFee({
+      chainId: CHAIN_ID,
+      tokenIn: TOKEN_IN_LEG,
+      tokenOut: TOKEN_OUT_LEG,
+      amountInRaw: AMOUNT_IN_RAW,
+      approvedAmountOutRaw: QUOTED_OUT,
+      approvedMinOutRaw: QUOTED_OUT,
+    }),
   });
   quoteBestRoute.mockResolvedValue(freshRoute(QUOTED_OUT));
 });
@@ -280,7 +296,7 @@ describe("the 2026-08-27 incident shape", () => {
 
 describe("the claim", () => {
   it("is taken BEFORE any route is priced, so a spent quote never re-quotes", async () => {
-    claimUniswapExecutionSnapshot.mockResolvedValue({
+    readUniswapExecutionSnapshot.mockResolvedValue({
       ok: false, refusal: snapshotRefusal("already_claimed", "uniswap__swap_quote"),
     });
 
@@ -295,7 +311,7 @@ describe("the claim", () => {
   it.each(["superseded", "expired", "digest_mismatch", "not_executable"] as const)(
     "surfaces the typed %s refusal with a fresh quote as the way out",
     async (kind) => {
-      claimUniswapExecutionSnapshot.mockResolvedValue({
+      readUniswapExecutionSnapshot.mockResolvedValue({
         ok: false, refusal: snapshotRefusal(kind, "uniswap__swap_quote"),
       });
 
@@ -312,7 +328,7 @@ describe("router input and fee drift", () => {
   it("refuses when the amount reaching the router is not the approved one", async () => {
     // The approved quote was answered for a DIFFERENT total, so the router
     // input derived from it cannot match this execute's.
-    claimUniswapExecutionSnapshot.mockResolvedValue({
+    readUniswapExecutionSnapshot.mockResolvedValue({
       ok: true, prequoteId: "p", snapshot: await approved({ amountInRaw: AMOUNT_IN_RAW * 2n }),
     });
 
@@ -326,7 +342,7 @@ describe("router input and fee drift", () => {
 
   it("refuses when the approved quote carried no fee and one now applies", async () => {
     const snapshot = await approved();
-    claimUniswapExecutionSnapshot.mockResolvedValue({
+    readUniswapExecutionSnapshot.mockResolvedValue({
       ok: true,
       prequoteId: "p",
       // Sealed by the codec, so the row is internally consistent: this is a
@@ -351,7 +367,7 @@ describe("router input and fee drift", () => {
   it("refuses when the fee alone resolved differently than it was disclosed", async () => {
     const snapshot = await approved();
     const { sealUniswapSnapshot } = await import("@vex-agent/tools/protocols/quote-authority/uniswap.js");
-    claimUniswapExecutionSnapshot.mockResolvedValue({
+    readUniswapExecutionSnapshot.mockResolvedValue({
       ok: true,
       prequoteId: "p",
       snapshot: sealUniswapSnapshot({
@@ -387,7 +403,7 @@ describe("venue honesty", () => {
 
     expect(result.success).toBe(false);
     expect(result.output).toContain("WalletWrapPrepare");
-    expect(claimUniswapExecutionSnapshot).not.toHaveBeenCalled();
+    expect(readUniswapExecutionSnapshot).not.toHaveBeenCalled();
   });
 
   it("states what was actually probed when no route exists, never 'may have no liquidity'", async () => {

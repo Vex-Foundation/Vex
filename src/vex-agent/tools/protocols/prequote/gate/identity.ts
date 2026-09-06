@@ -15,6 +15,7 @@ import { resolveSelectedAddress } from "@vex-agent/tools/internal/wallet/resolve
 import { resolveUniswapChainId } from "@tools/uniswap/chains.js";
 import { resolvePendleChainId } from "@tools/pendle/chains.js";
 import { resolveLocalChainId } from "@tools/evm-chains/registry.js";
+import { MORPHO_MARKET_LANE } from "../identity/lane.js";
 import {
   canonicalizeJupiterFeeTail,
   resolveJupiterFeeSwapKnobs,
@@ -25,6 +26,7 @@ import { VexError, ErrorCodes } from "../../../../../errors.js";
 import type { ProtocolExecutionContext } from "../../types.js";
 import type { ExecuteGateRegistration } from "../registry.js";
 import { computePrequoteMatchHash } from "../identity/hash.js";
+import type { BridgeMatchInput } from "../identity/hash.js";
 import { assertBridgeParamsBindable, buildBridgeIdentity } from "../identity/bridge.js";
 import { buildRelayBridgeIdentity } from "../identity/relay-bridge.js";
 import { buildPendleRedeemIdentity } from "../identity/pendle-redeem.js";
@@ -198,6 +200,35 @@ async function buildSolanaIdentity(
 }
 
 /**
+ * What a gated execute's identity computation yields: the hash the row is looked
+ * up by, the family label for the logs, and - on the bridge lanes - the DERIVED
+ * destination wallet that identity binds.
+ *
+ * The recipient is here because it is already computed and already bound into
+ * the match hash, yet the approval card never showed it. It is
+ * `resolveSelectedAddress(destinationFamily)`, never a parameter (`recipient` is
+ * rejected by name at the alias), so surfacing it tells a person WHERE the funds
+ * land without giving anything the model can state a way in.
+ */
+export interface GateMatch {
+  readonly matchHash: string;
+  readonly family: PrequoteFamily;
+  readonly bridgeRecipient?: {
+    readonly family: PrequoteFamily;
+    readonly address: string;
+  };
+}
+
+/** One shape for both bridge identity builders, so their exposure cannot drift. */
+function bridgeMatch(identity: BridgeMatchInput): GateMatch {
+  return {
+    matchHash: computePrequoteMatchHash(identity),
+    family: identity.sourceFamily,
+    bridgeRecipient: { family: identity.destFamily, address: identity.recipient },
+  };
+}
+
+/**
  * Compute the match-hash + the family label for a gated EXECUTE call. Swap
  * branches on EVM/Solana identity builders (sync EVM, async Solana resolve);
  * bridge uses the SHARED `buildBridgeIdentity` so its hash collides with the
@@ -209,18 +240,18 @@ export async function computeGateMatch(
   sessionId: string,
   params: Record<string, unknown>,
   context: ProtocolExecutionContext,
-): Promise<{ matchHash: string; family: PrequoteFamily }> {
+): Promise<GateMatch> {
   if (gated.kind === "bridge") {
     // Relay has its OWN identity path (LOCKED #4) - no Khalani identity reuse and
     // no khalani-only unbindable params. Khalani fail-closes FIRST on execute-
     // only params the quote can never bind, before building the identity.
     if (gated.provider === "relay") {
       const identity = await buildRelayBridgeIdentity(sessionId, params, context);
-      return { matchHash: computePrequoteMatchHash(identity), family: identity.sourceFamily };
+      return bridgeMatch(identity);
     }
     assertBridgeParamsBindable(params);
     const identity = await buildBridgeIdentity(sessionId, params, context);
-    return { matchHash: computePrequoteMatchHash(identity), family: identity.sourceFamily };
+    return bridgeMatch(identity);
   }
 
   if (gated.kind === "redeem") {
@@ -269,7 +300,7 @@ export async function computeGateMatch(
     // which, and it must be read here rather than guessed from the params: a
     // gate that inferred the lane from which key happened to be present would
     // let a caller choose its own identity path.
-    const identity = gated.lane === "market"
+    const identity = gated.lane === MORPHO_MARKET_LANE
       ? buildMorphoBorrowIdentityFor(
         gated.kind === "lend_deposit" ? "supply" : "withdraw",
         sessionId,

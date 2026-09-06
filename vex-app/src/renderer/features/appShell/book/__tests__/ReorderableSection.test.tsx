@@ -25,14 +25,14 @@ import {
 import {
   BOOK_SECTION_LABEL,
   BOOK_SECTION_REGISTRY,
-  DEFAULT_BOOK_SECTIONS,
+  SESSION_BOOK_SECTIONS,
   type BookSectionId,
 } from "../section-order.js";
 
 /** A minimal host composing the hook and the row, as `BookPanel` does. */
 function Harness({
   onOrderChange,
-  initial = [...DEFAULT_BOOK_SECTIONS],
+  initial = [...SESSION_BOOK_SECTIONS],
 }: {
   readonly onOrderChange: (order: readonly BookSectionId[]) => void;
   readonly initial?: readonly BookSectionId[];
@@ -144,7 +144,7 @@ describe("ReorderableSection - pointer drag", () => {
     fireEvent.drop(row("wallets"), { dataTransfer });
 
     expect(onOrderChange).not.toHaveBeenCalled();
-    expect(renderedOrder()).toEqual([...DEFAULT_BOOK_SECTIONS]);
+    expect(renderedOrder()).toEqual([...SESSION_BOOK_SECTIONS]);
   });
 
   it("a self-drop moves nothing", () => {
@@ -155,7 +155,7 @@ describe("ReorderableSection - pointer drag", () => {
     fireEvent.dragStart(handle("wallets"), { dataTransfer });
     fireEvent.drop(row("wallets"), { dataTransfer });
 
-    expect(renderedOrder()).toEqual([...DEFAULT_BOOK_SECTIONS]);
+    expect(renderedOrder()).toEqual([...SESSION_BOOK_SECTIONS]);
   });
 
   it("dragend clears the drop indicator without moving anything", () => {
@@ -195,12 +195,15 @@ describe("ReorderableSection - keyboard path", () => {
   it("ArrowUp at the top and ArrowDown at the bottom are no-ops", () => {
     const onOrderChange = vi.fn();
     render(<Harness onOrderChange={onOrderChange} />);
-    fireEvent.keyDown(handle(DEFAULT_BOOK_SECTIONS[0]!), { key: "ArrowUp" });
-    fireEvent.keyDown(handle(DEFAULT_BOOK_SECTIONS.at(-1)!), {
-      key: "ArrowDown",
-    });
+    const first = SESSION_BOOK_SECTIONS[0];
+    const last = SESSION_BOOK_SECTIONS.at(-1);
+    if (first === undefined || last === undefined) {
+      throw new Error("the session rail has no sections");
+    }
+    fireEvent.keyDown(handle(first), { key: "ArrowUp" });
+    fireEvent.keyDown(handle(last), { key: "ArrowDown" });
     expect(onOrderChange).not.toHaveBeenCalled();
-    expect(renderedOrder()).toEqual([...DEFAULT_BOOK_SECTIONS]);
+    expect(renderedOrder()).toEqual([...SESSION_BOOK_SECTIONS]);
   });
 
   it("Home and End jump to the first and last slot", () => {
@@ -234,7 +237,7 @@ describe("ReorderableSection - the insertion cue", () => {
     expect(row("wallets").getAttribute("data-vex-drop-edge")).toMatch(
       /^(before|after)$/,
     );
-    for (const other of DEFAULT_BOOK_SECTIONS.filter((id) => id !== "wallets")) {
+    for (const other of SESSION_BOOK_SECTIONS.filter((id) => id !== "wallets")) {
       expect(row(other).getAttribute("data-vex-drop-edge")).toBeNull();
     }
 
@@ -261,7 +264,7 @@ describe("ReorderableSection - the drop settle", () => {
 
     expect(row("position").className).toContain("vex-section-settle");
     expect(row("position").getAttribute("data-vex-section-settling")).toBe("");
-    for (const other of DEFAULT_BOOK_SECTIONS.filter((id) => id !== "position")) {
+    for (const other of SESSION_BOOK_SECTIONS.filter((id) => id !== "position")) {
       expect(row(other).className).not.toContain("vex-section-settle");
     }
   });

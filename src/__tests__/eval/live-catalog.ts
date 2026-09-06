@@ -18,7 +18,7 @@ import { buildDiscoveryCandidates } from "./lexical-retrieval.js";
 import { liveProtocolManifests } from "./retrieval-eval-harness.js";
 
 /**
- * This closure's pinned inventory: 177 active advertised tools.
+ * This closure's pinned inventory: 187 active advertised tools.
  *
  * S3.5 (2026-08-24): 145 to 136. The 12 public-API DexScreener tools were
  * retired whole and alias-free (owner decision D-DS2) and three tools landed
@@ -37,8 +37,11 @@ import { liveProtocolManifests } from "./retrieval-eval-harness.js";
  * To update: change this number in the same change that adds or removes tools,
  * and recapture the affected baselines with the lane's `--update` command. Do
  * not silence the test by deriving the number from the catalog.
+ *
+ * 177 before the launchpads integration from main. The merged surface adds
+ * ten active advertised tools while preserving Lighter's complete catalog.
  */
-export const PINNED_LIVE_CATALOG_TOOL_COUNT = 177;
+export const PINNED_LIVE_CATALOG_TOOL_COUNT = 187;
 
 /** Active manifests in advertised namespaces. Independent of process env. */
 export function liveCatalogToolCount(): number {

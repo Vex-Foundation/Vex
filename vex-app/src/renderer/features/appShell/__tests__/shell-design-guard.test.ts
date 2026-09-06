@@ -217,40 +217,12 @@ interface WhitelistEntry {
 }
 
 const WHITELIST: readonly WhitelistEntry[] = [
-  {
-    file: "features/appShell/SessionsList.tsx",
-    pattern: "backdrop-blur (glass)",
-    reason:
-      "User-sanctioned glass rail: the sessions sidebar floats as translucent " +
-      "ink (--vex-glass) with backdrop-blur over the current shell photo " +
-      "backdrop. " +
-      "Glass is allowed ONLY on the two side rails.",
-  },
-  {
-    // Stage B4a: the Studio rail is the SAME rail as the sessions rail, in the
-    // same seat, wearing the same --vex-rail glass. It is one of the two side
-    // rails the law sanctions, not a third glass surface.
-    file: "features/appShell/studio/sidebar/StudioSidebar.tsx",
-    pattern: "backdrop-blur (glass)",
-    reason:
-      "User-sanctioned glass rail: the Studio sidebar replaces the sessions " +
-      "sidebar in column 1 and floats as the same translucent ink " +
-      "(--vex-rail) with backdrop-blur over the current shell photo backdrop. " +
-      "Glass is allowed ONLY on the two side rails.",
-  },
-  {
-    // Stage B4c: the BOOK's chrome moved out of BookPanel.tsx into the frame
-    // both rails (agent + Studio) now share, so the sanction moved WITH the
-    // glass rather than being duplicated. BookPanel.tsx no longer names the
-    // utility at all, so its entry is deleted rather than left as a stale
-    // sanction.
-    file: "features/appShell/book/BookRailFrame.tsx",
-    pattern: "backdrop-blur (glass)",
-    reason:
-      "User-sanctioned glass rail: the BOOK panel floats as translucent ink " +
-      "(--vex-glass) with backdrop-blur over the current shell photo backdrop. " +
-      "Glass is allowed ONLY on the two side rails.",
-  },
+  // REMOVED (glass redesign, 2026-09-04): both left rails - the sessions
+  // sidebar (SessionsList.tsx) and the Studio rail (StudioSidebar.tsx) - wear
+  // the `.vex-glass-rail` class from styles/global-css/glass.css, so the
+  // utility no longer appears in either file and their entries would be stale
+  // sanctions. They are still the sanctioned side rails; the sanction now
+  // lives in the stylesheet the guard deliberately does not scan.
   // REMOVED (composer rebuild, owner decree 2026-07-29): the Signal Console
   // composer and its starter-chips band were the third and seventh sanctioned
   // glass surfaces. Both are now SOLID ink (--vex-surface-1) with a flat

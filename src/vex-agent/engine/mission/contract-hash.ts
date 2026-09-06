@@ -74,7 +74,7 @@
  *     ceilings but not the typed deployed capital. Still produced for
  *     verifying/renewing a mission accepted while it was current; never
  *     produced for a new draft.
- *   - v6 - CURRENT (contract C3). Adds the typed `deployedCapital` declaration:
+ *   - v6 - FROZEN (contract C3). Adds the typed `deployedCapital` declaration:
  *     the machine-readable amount + decimals + chain + asset the mission puts to
  *     work, which the runtime measures progress against. The bump follows this
  *     file's own mandate rather than widening v5 in place: v5 material already
@@ -84,6 +84,9 @@
  *     The declaration is hashed as ONE OBJECT, not five keys: a partial object
  *     has no readable meaning, and `canonicalStringify` sorts nested keys at
  *     every depth, so a nested shape hashes deterministically.
+ *   - v7 - CURRENT. Adds `deployedCapital.assetKind`, the structural
+ *     native-versus-token discriminator. Native SOL and wSOL share a route
+ *     mint, so address plus display symbol cannot safely select a balance row.
  *
  * Normalization rules:
  *
@@ -115,7 +118,7 @@ import {
 } from "./contract-hash-legacy-v2.js";
 
 /** Bumped when the canonical shape or hashing rules change. Produced for every new draft. */
-export const CONTRACT_HASH_VERSION = 6;
+export const CONTRACT_HASH_VERSION = 7;
 export const LEGACY_CONTRACT_HASH_VERSION = 1;
 /**
  * Frozen historical version — see the "Version history" note above. Accepted
@@ -141,12 +144,15 @@ export const LEGACY_V4_CONTRACT_HASH_VERSION = 4;
  * mission accepted while it was current; never produced for a new draft.
  */
 export const LEGACY_V5_CONTRACT_HASH_VERSION = 5;
+/** Frozen five-field deployed-capital contract, before structural assetKind. */
+export const LEGACY_V6_CONTRACT_HASH_VERSION = 6;
 export type ContractHashVersion =
   | typeof LEGACY_CONTRACT_HASH_VERSION
   | typeof LEGACY_V2_CONTRACT_HASH_VERSION
   | typeof LEGACY_V3_CONTRACT_HASH_VERSION
   | typeof LEGACY_V4_CONTRACT_HASH_VERSION
   | typeof LEGACY_V5_CONTRACT_HASH_VERSION
+  | typeof LEGACY_V6_CONTRACT_HASH_VERSION
   | typeof CONTRACT_HASH_VERSION;
 
 /**
@@ -166,6 +172,7 @@ export function isKnownContractHashVersion(
     || version === LEGACY_V3_CONTRACT_HASH_VERSION
     || version === LEGACY_V4_CONTRACT_HASH_VERSION
     || version === LEGACY_V5_CONTRACT_HASH_VERSION
+    || version === LEGACY_V6_CONTRACT_HASH_VERSION
     || version === CONTRACT_HASH_VERSION;
 }
 
@@ -224,12 +231,24 @@ const CanonicalContractMaterialV5Schema = CanonicalContractMaterialV4Schema.omit
  * `null` is the material a mission with no declaration produces.
  */
 const CanonicalContractMaterialV6Schema = CanonicalContractMaterialV5Schema.omit({ v: true }).extend({
+  v: z.literal(LEGACY_V6_CONTRACT_HASH_VERSION),
+  deployedCapital: z.object({
+    amountRaw: z.string(),
+    decimals: z.number().int(),
+    chainId: z.number().int(),
+    assetAddress: z.string(),
+    assetSymbol: z.string(),
+  }).strict().nullable(),
+}).strict();
+
+const CanonicalContractMaterialV7Schema = CanonicalContractMaterialV6Schema.omit({ v: true }).extend({
   v: z.literal(CONTRACT_HASH_VERSION),
   deployedCapital: z.object({
     amountRaw: z.string(),
     decimals: z.number().int(),
     chainId: z.number().int(),
     assetAddress: z.string(),
+    assetKind: z.enum(["native", "token"]).nullable(),
     assetSymbol: z.string(),
   }).strict().nullable(),
 }).strict();
@@ -240,7 +259,8 @@ export type CanonicalContractMaterial =
   | z.infer<typeof CanonicalContractMaterialV3Schema>
   | z.infer<typeof CanonicalContractMaterialV4Schema>
   | z.infer<typeof CanonicalContractMaterialV5Schema>
-  | z.infer<typeof CanonicalContractMaterialV6Schema>;
+  | z.infer<typeof CanonicalContractMaterialV6Schema>
+  | z.infer<typeof CanonicalContractMaterialV7Schema>;
 
 function normalizeNullableString(value: string | null | undefined): string | null {
   if (value === null || value === undefined) return null;
@@ -284,6 +304,16 @@ function normalizeLaunchCeiling(
 function normalizeLaunchCount(value: number | null | undefined): number | null {
   if (typeof value !== "number" || !Number.isInteger(value) || value < 0) return null;
   return value;
+}
+
+/** Reproduce frozen v6 material without the v7 structural discriminator. */
+function normalizeLegacyDeployedCapitalV6(
+  value: MissionDraft["deployedCapital"],
+): z.infer<typeof CanonicalContractMaterialV6Schema>["deployedCapital"] {
+  const normalized = normalizeDeployedCapital(value);
+  if (normalized === null) return null;
+  const { amountRaw, decimals, chainId, assetAddress, assetSymbol } = normalized;
+  return { amountRaw, decimals, chainId, assetAddress, assetSymbol };
 }
 
 function normalizeStringArray(values: readonly string[] | null | undefined): string[] {
@@ -356,7 +386,16 @@ export function buildContractMaterial(
       maxLaunchCount: normalizeLaunchCount(draft.maxLaunchCount),
     });
   }
-  return CanonicalContractMaterialV6Schema.parse({
+  if (version === LEGACY_V6_CONTRACT_HASH_VERSION) {
+    return CanonicalContractMaterialV6Schema.parse({
+      v: LEGACY_V6_CONTRACT_HASH_VERSION,
+      ...base,
+      ...normalizeLaunchCeiling(draft.maxLaunchValueRaw, draft.maxLaunchValueDecimals),
+      maxLaunchCount: normalizeLaunchCount(draft.maxLaunchCount),
+      deployedCapital: normalizeLegacyDeployedCapitalV6(draft.deployedCapital),
+    });
+  }
+  return CanonicalContractMaterialV7Schema.parse({
     v: CONTRACT_HASH_VERSION,
     ...base,
     ...normalizeLaunchCeiling(draft.maxLaunchValueRaw, draft.maxLaunchValueDecimals),

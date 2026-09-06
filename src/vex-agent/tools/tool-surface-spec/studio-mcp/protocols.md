@@ -47,13 +47,15 @@ whole, including a description your client truncated. Units are PER FIELD -
 human decimals or raw smallest units - so read the field description and
 never guess. AGENTS.md in this project carries the rest of the protocol: the
 permission level in force, the outcome vocabulary, the Vex fee and the task
-shapes.
+shapes. `.vex/vex-guide.md`, which AGENTS.md tells you to read at the start
+of a session, carries one block per protocol: its chains, its fee and
+whether its provider key is configured on this machine.
 
 ## Totals
 
-- tools: 209
+- tools: 214
 - Vex tools: 29
-- protocol tools: 180 across 12 protocols
+- protocol tools: 185 across 12 protocols
 - destructive: 54
 
 ## Vex tools
@@ -246,6 +248,8 @@ shapes.
 | tool | title | access | destructive | requires env |
 | --- | --- | --- | --- | --- |
 | pools__fees_claim | Claim pools.fun creator fees | mutating | yes | - |
+| pools__holder_rewards_get | Read pools.fun holder rewards | read-only | no | - |
+| pools__launch_assets_list | List pools.fun launchable stocks | read-only | no | - |
 | pools__launch_execute | Launch a token on pools.fun | mutating | yes | - |
 | pools__launch_preview | Price a pools.fun launch | mutating | no | - |
 | pools__launch_request_form | Ask the user to confirm a pools.fun launch | mutating | no | - |
@@ -327,7 +331,10 @@ shapes.
 
 | tool | title | access | destructive | requires env |
 | --- | --- | --- | --- | --- |
+| virtuals__agent_candles_list | Read a Virtuals agent's price candles | read-only | no | - |
 | virtuals__agent_get | Read one Virtuals agent token | read-only | no | - |
+| virtuals__agent_trades_list | Read a Virtuals agent's curve trade tape | read-only | no | - |
 | virtuals__agents_discover | Screen Virtuals agent tokens | read-only | no | - |
+| virtuals__creator_fees_get | Read a Virtuals agent creator's fee status | read-only | no | - |
 | virtuals__genesis_launches_list | Browse the Virtuals Genesis calendar | read-only | no | - |
 | virtuals__graduations_list | List recent Virtuals graduations | read-only | no | - |

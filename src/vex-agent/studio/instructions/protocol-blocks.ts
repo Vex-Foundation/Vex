@@ -112,6 +112,16 @@ export const STUDIO_NAMESPACE_FEES: Readonly<Record<string, StudioNamespaceFee>>
       "src/tools/solana-ecosystem/jupiter/jupiter-prediction",
     ],
   },
+  launchpads: {
+    // Nothing in this namespace moves value. Listing the locker is a database
+    // read, and publishing a picture is an upload to a host Vex runs: there is
+    // no swap, no transfer and no launch here to take a cut of, so the honest
+    // line is "none" with the lanes that must import no fee module as evidence.
+    line:
+      "none - the image locker is a read and publishing a picture moves no value, so neither "
+      + "charges anything. The launch a picture is FOR is charged by its own launchpad namespace.",
+    freeLanes: ["src/vex-agent/tools/protocols/launchpads"],
+  },
   trench: {
     line:
       "25 bps of the ETH a curve trade moves, or of a launch's native value; "
@@ -127,7 +137,17 @@ export const STUDIO_NAMESPACE_FEES: Readonly<Record<string, StudioNamespaceFee>>
     freeLanes: [],
   },
   virtuals: {
-    line: "none; every tool here is a read.",
+    // Every Virtuals tool that EXISTS today is a read, and reads are free. The
+    // second sentence is the owner-confirmed policy for the curve trade and
+    // launch tools of the later lanes (v3 F1-F5); it is stated as future
+    // behaviour, not as a charge the user can incur now, because claiming a fee
+    // for a tool that does not exist is as wrong as hiding one that does.
+    line:
+      "none today - every Virtuals tool here is a read, and reads are free. The confirmed policy for "
+      + "the curve trade and launch tools of a later lane is 25 bps of the VIRTUAL committed on a buy, "
+      + "of the VIRTUAL a receipt proves was received on a sell, and of the initial purchase once a "
+      + "launch is observed on chain; genesis is free, and a graduated agent trades under its venue's "
+      + "own fee with no second one.",
     freeLanes: ["src/vex-agent/tools/protocols/virtuals", "src/tools/virtuals"],
   },
 };

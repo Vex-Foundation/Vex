@@ -1,5 +1,5 @@
 /**
- * The pools.fun calldata verifier - all 13 points, PURE.
+ * The pools.fun calldata verifier - all 15 points, PURE.
  *
  * Pure on purpose: every input (the provider response, the decoded tuple, the
  * anchored chain reads, the metadata document, the simulation results) is passed
@@ -21,7 +21,7 @@
 import { decodeFunctionData, encodeFunctionData, getAddress, type Address, type Hex } from "viem";
 
 import { POOLS_GATEWAY_ABI } from "../abi.js";
-import { POOLS_FACTORY_ADDRESS, POOLS_GATEWAY_ADDRESS } from "../constants.js";
+import { POOLS_LAUNCH_SUITE_VERSION, poolsLaunchSuite } from "../constants.js";
 import type {
   PoolsChainAnchors,
   PoolsLaunchTuple,
@@ -62,9 +62,37 @@ export interface VerifyPoolsCalldataInput {
   /** Upper bound on gas cost, and the Vex fee, both inside the authorized max spend. */
   readonly gasBoundWei: bigint;
   readonly vexFeeWei: bigint;
-  /** The gateway Vex pins. Defaults to the constant; injectable for tests. */
+  /**
+   * The suite addresses the launch is held to. Defaults to
+   * {@link poolsLaunchSuite}; injectable for tests only.
+   *
+   * NEVER the provider's `response.to`. The whole point of the suite table is
+   * that the address a launch targets comes from Vex, and the provider's value
+   * is the CLAIM being checked - a verifier that defaulted the expected gateway
+   * to whatever the response named would prove `x === x`.
+   */
   readonly gatewayAddress?: Address | undefined;
+  readonly factoryAddress?: Address | undefined;
+  readonly lockerAddress?: Address | undefined;
+  /**
+   * The safety margin, in seconds, a signed quote must still have left at the
+   * anchored block. Signing a quote that expires while the transaction is in
+   * flight burns the fee for a guaranteed revert, so the verifier requires
+   * headroom rather than mere non-expiry.
+   */
+  readonly signedQuoteSafetyMarginSeconds?: bigint | undefined;
 }
+
+/**
+ * How much of a signed quote's life must remain at the anchored block.
+ *
+ * The factory's own window is 30-120 s (`MIN/MAX_SIGNED_QUOTE_AGE`, measured),
+ * and a launch still has to be authorized, signed and included inside it. Ten
+ * seconds is the floor below which the remaining work cannot plausibly finish;
+ * it is an ABSOLUTE number, not a percentage of the window, because a percentage
+ * would shrink exactly when the window is shortest.
+ */
+export const POOLS_SIGNED_QUOTE_SAFETY_MARGIN_SECONDS = 10n;
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
@@ -111,7 +139,12 @@ function metadataAddress(value: unknown): string | null {
 
 export function verifyPoolsLaunchCalldata(input: VerifyPoolsCalldataInput): PoolsVerifierResult {
   const { response, expectation, anchors, metadata, simulation } = input;
-  const gateway = (input.gatewayAddress ?? POOLS_GATEWAY_ADDRESS) as Address;
+  const suite = poolsLaunchSuite();
+  const gateway = (input.gatewayAddress ?? suite.gateway) as Address;
+  const factory = (input.factoryAddress ?? suite.factory) as Address;
+  const locker = (input.lockerAddress ?? suite.locker) as Address;
+  const safetyMargin =
+    input.signedQuoteSafetyMarginSeconds ?? POOLS_SIGNED_QUOTE_SAFETY_MARGIN_SECONDS;
   const violations: PoolsVerifierViolation[] = [];
   const checked: PoolsVerifierPoint[] = [];
 
@@ -135,12 +168,32 @@ export function verifyPoolsLaunchCalldata(input: VerifyPoolsCalldataInput): Pool
       fail("gateway_identity", `calldata targets ${response.to}, not the pinned gateway ${gateway}`);
       ok = false;
     }
-    // IDENTITY, not just address. `VERSION` and `factory` were being READ into
-    // the anchors and never compared, which made point 1's "match pinned
-    // expectations" half true: an upgraded gateway (same address, new code and
-    // possibly a new tuple meaning) or one pointing at a different factory would
-    // have passed. Both are compared here, against the version the quote was
-    // built for and against the pinned PartyFactory.
+    // IDENTITY, not just address, and the WHOLE SUITE rather than one contract.
+    //
+    // THREE EQUALITIES, all required (the "suite triangle"):
+    //   `gateway.VERSION()` == the version the quote was built for == the ONE
+    //       version launches may target;
+    //   `gateway.factory()` == the suite table's factory;
+    //   `factory.locker()`  == the suite table's locker.
+    //
+    // Why the triangle rather than one address check: pools.fun redeployed its
+    // whole triple twice in three days, and each generation stays live. An
+    // address alone proves nothing about which generation answered - and the
+    // multicall pin-note in `anchors.ts` shows a wrong ABI can return `success`
+    // with a meaningless value, so the only sound identity proof is that the
+    // decoded VALUES agree with each other.
+    //
+    // AN UNKNOWN VERSION IS REFUSED BY NAME. A gateway at V4 would have a tuple
+    // this build cannot decode correctly, and "newer" is not "compatible".
+    if (anchors.gatewayVersion !== BigInt(POOLS_LAUNCH_SUITE_VERSION)) {
+      fail(
+        "gateway_identity",
+        `the gateway at ${gateway} reports VERSION ${anchors.gatewayVersion}, but Vex launches only against `
+          + `suite V${POOLS_LAUNCH_SUITE_VERSION}. A suite Vex does not know carries a launch tuple this build `
+          + "cannot decode, so no launch is attempted against it",
+      );
+      ok = false;
+    }
     if (anchors.gatewayVersion !== expectation.gatewayVersion) {
       fail(
         "gateway_identity",
@@ -149,11 +202,20 @@ export function verifyPoolsLaunchCalldata(input: VerifyPoolsCalldataInput): Pool
       );
       ok = false;
     }
-    if (!sameAddress(anchors.gatewayFactory, POOLS_FACTORY_ADDRESS)) {
+    if (!sameAddress(anchors.gatewayFactory, factory)) {
       fail(
         "gateway_identity",
-        `the gateway's factory is ${anchors.gatewayFactory}, not the pinned PartyFactory `
-          + `${POOLS_FACTORY_ADDRESS}`,
+        `the gateway's factory is ${anchors.gatewayFactory}, not suite V${POOLS_LAUNCH_SUITE_VERSION}'s factory `
+          + `${factory}`,
+      );
+      ok = false;
+    }
+    if (!sameAddress(anchors.factoryLocker, locker)) {
+      fail(
+        "gateway_identity",
+        `the factory's locker is ${anchors.factoryLocker}, not suite V${POOLS_LAUNCH_SUITE_VERSION}'s locker `
+          + `${locker}; the suite does not close, so the fee stream would be held somewhere this launch did `
+          + "not name",
       );
       ok = false;
     }
@@ -249,20 +311,16 @@ export function verifyPoolsLaunchCalldata(input: VerifyPoolsCalldataInput): Pool
       fail("response_mirrors_calldata", `name: requested "${expectation.name}", calldata says "${tuple.name}"`);
       ok = false;
     }
-    // THE RECIPIENT IS EXACT, AND ZERO IS REJECTED. The gateway does treat zero
-    // as msg.sender, but signing a tuple that does not say who is paid means a
-    // later gateway change silently redirects the fee stream.
+    // ZERO IS REJECTED HERE, on every path. The gateway does treat zero as
+    // msg.sender, but signing a tuple that does not say who is paid means a
+    // later gateway change silently redirects the fee stream. WHICH non-zero
+    // recipient is correct is point 15's question, because a legitimate answer
+    // may now be a sentinel rather than a wallet.
     if (sameAddress(tuple.feeRecipient, ZERO_ADDRESS)) {
       fail(
         "response_mirrors_calldata",
         "feeRecipient is the zero address; Vex always sends the recipient EXPLICITLY so the signed tuple "
           + "states where the fee stream goes",
-      );
-      ok = false;
-    } else if (!sameAddress(tuple.feeRecipient, expectation.feeRecipient)) {
-      fail(
-        "response_mirrors_calldata",
-        `feeRecipient is ${tuple.feeRecipient} but this launch intends ${expectation.feeRecipient}`,
       );
       ok = false;
     }
@@ -307,8 +365,48 @@ export function verifyPoolsLaunchCalldata(input: VerifyPoolsCalldataInput): Pool
   // The flag matters as much as the number: a tuple pinned while the price feed
   // was live, executed when the factory has fallen back (or the reverse), is a
   // launch at a different opening price than the one approved.
+  //
+  // WHICH AUTHORITY ANSWERS DEPENDS ON THE PRICING MODE, and this is not a
+  // convenience branch: on a `SIGNED_STOCK` pair `startTickFor` REVERTS
+  // (`PriceAttestationRequired`, verified factory source), and the tick is
+  // derived by `quoteStartTick` from the attestation the tuple carries. Checking
+  // such a launch against a feed tick that does not exist would refuse every
+  // signed-stock launch; checking it against nothing would sign a price nobody
+  // proved. So the mode picks the authority, and an unknown mode refuses.
   {
-    if (tuple.expectedStartTick !== anchors.startTick) {
+    if (anchors.pricingMode === null) {
+      fail(
+        "start_tick_agrees",
+        `the factory reports a pricing mode for ${tuple.pairedAsset} that this build has no name for, so the `
+          + "authority for this launch's opening price is unknown",
+      );
+    } else if (anchors.pricingMode === "NONE") {
+      fail(
+        "start_tick_agrees",
+        `the factory prices ${tuple.pairedAsset} in mode NONE, which is not a launchable pair`,
+      );
+    } else if (anchors.pricingMode === "SIGNED_STOCK") {
+      if (anchors.signedStartTick === null) {
+        fail(
+          "start_tick_agrees",
+          `this pair is priced by signed attestation, and ${anchors.signedStartTickError ?? "no signed quote was supplied"}`
+            + `; the opening price of this launch is not established`,
+        );
+      } else if (tuple.expectedStartTick !== anchors.signedStartTick) {
+        fail(
+          "start_tick_agrees",
+          `the tuple pins startTick ${tuple.expectedStartTick} but the factory derives ${anchors.signedStartTick} `
+            + `from the signed quote in this very calldata at block ${anchors.blockNumber}`,
+        );
+      } else {
+        pass("start_tick_agrees");
+      }
+    } else if (anchors.startTick === null) {
+      fail(
+        "start_tick_agrees",
+        `the factory's start tick for ${tuple.pairedAsset} did not answer at block ${anchors.blockNumber}`,
+      );
+    } else if (tuple.expectedStartTick !== anchors.startTick) {
       fail(
         "start_tick_agrees",
         `the tuple pins startTick ${tuple.expectedStartTick} but the factory would use ${anchors.startTick} `
@@ -344,9 +442,22 @@ export function verifyPoolsLaunchCalldata(input: VerifyPoolsCalldataInput): Pool
         fail("metadata_matches_request", `metadata symbol is ${JSON.stringify(metadata.symbol)}, tuple says "${tuple.symbol}"`);
         ok = false;
       }
+      // The metadata's recipient is only comparable when the CALLER named an
+      // address. Under a holders intent the on-chain recipient is a sentinel the
+      // provider renders however it likes, and holding an off-chain document to
+      // it would refuse a correct launch over a display string. Point 15 owns
+      // the recipient on that path; the chain, not the metadata, is its
+      // authority.
       const recipient = metadataAddress(metadata.initial_fee_recipient);
-      if (recipient !== null && !sameAddress(recipient, expectation.feeRecipient)) {
-        fail("metadata_matches_request", `metadata fee recipient ${recipient} is not the intended ${expectation.feeRecipient}`);
+      if (
+        recipient !== null
+        && expectation.feeRecipient.kind === "address"
+        && !sameAddress(recipient, expectation.feeRecipient.address)
+      ) {
+        fail(
+          "metadata_matches_request",
+          `metadata fee recipient ${recipient} is not the intended ${expectation.feeRecipient.address}`,
+        );
         ok = false;
       }
       const deployer = metadataAddress(metadata.initial_deployer);
@@ -497,6 +608,246 @@ export function verifyPoolsLaunchCalldata(input: VerifyPoolsCalldataInput): Pool
       );
     } else {
       pass("balance_covers_total");
+    }
+  }
+
+  // ── 14. The price attestation ─────────────────────────────────────
+  //
+  // WHY THIS IS A MONEY POINT. On a `SIGNED_STOCK` pair the factory derives the
+  // opening tick from `underlyingPriceUsdE18 * expectedUiMultiplier`
+  // (`_signedStockTick`), so these six numbers ARE the launch price. On every
+  // other mode the factory refuses a non-empty attestation. Either way, the
+  // presence or absence of an attestation is bound to `pricingModeFor(asset)` -
+  // the factory's own answer - and never to `pairedAsset.kind`, which is the
+  // provider's label about its own response.
+  //
+  // The bounds below are the CONTRACT's, transcribed from the verified source
+  // (`_signedStockTick`) rather than from the docs:
+  //   asset == pairedAsset            (`InvalidPriceAttestation`)
+  //   underlyingPriceUsdE18 != 0      (`InvalidPriceAttestation`)
+  //   pricingEpoch == factory epoch   (`InvalidPriceAttestation`)
+  //   observedAt <= now               (no future-dated quotes)
+  //   expiresAt >= now                (plus Vex's own safety margin, below)
+  //   expiresAt >= observedAt
+  //   expiresAt - observedAt <= curve.maxQuoteAge
+  //   now - observedAt <= curve.maxQuoteAge
+  //   ECDSA signer == factory.priceSigner()
+  //
+  // THE SIGNER IS PROVEN BY THE FACTORY, NOT BY US. Rather than recovering the
+  // EIP-712 signature locally - which would mean reimplementing the factory's
+  // domain separator and being wrong the day it changes - the anchors ask the
+  // factory to price the quote (`quoteStartTick`). A tick coming back IS the
+  // factory's statement that the epoch, the window and the signature all passed,
+  // and point 6 then requires that tick to equal the tuple's. The explicit
+  // bounds here are the SECOND, independent check: they turn a provider mistake
+  // into a named refusal instead of a revert, and they catch a quote that is
+  // valid now but will not be by the time it is signed.
+  {
+    const attestation = tuple.priceAttestation;
+    const signed = tuple.priceSignature !== "0x" && tuple.priceSignature.length > 2;
+    const empty =
+      sameAddress(attestation.asset, ZERO_ADDRESS)
+      && attestation.underlyingPriceUsdE18 === 0n
+      && attestation.expectedUiMultiplier === 0n
+      && attestation.observedAt === 0n
+      && attestation.expiresAt === 0n
+      && attestation.pricingEpoch === 0n;
+    const mode = anchors.pricingMode;
+    let ok = true;
+
+    if (!signed) {
+      // No signature: the attestation must be ALL ZERO, and the pair must not be
+      // one that requires a signed quote. A partially-filled attestation with no
+      // signature is a tuple carrying numbers nobody vouched for.
+      if (!empty) {
+        fail(
+          "price_attestation",
+          "the calldata carries no price signature but its attestation is not all-zero; unsigned numbers "
+            + "cannot price a launch",
+        );
+        ok = false;
+      }
+      if (mode === "SIGNED_STOCK") {
+        fail(
+          "price_attestation",
+          `the factory prices ${tuple.pairedAsset} in SIGNED_STOCK mode, which requires a signed quote, but `
+            + "this calldata carries none; the launch would revert PriceAttestationRequired",
+        );
+        ok = false;
+      }
+    } else {
+      if (mode !== "SIGNED_STOCK") {
+        fail(
+          "price_attestation",
+          `the calldata carries a signed price quote but the factory prices ${tuple.pairedAsset} in mode `
+            + `${mode ?? "unknown"}, which takes its price from a feed and rejects an attestation`,
+        );
+        ok = false;
+      }
+      if (!sameAddress(attestation.asset, tuple.pairedAsset)) {
+        fail(
+          "price_attestation",
+          `the signed quote prices ${attestation.asset} but this launch pairs against ${tuple.pairedAsset}`,
+        );
+        ok = false;
+      }
+      if (attestation.underlyingPriceUsdE18 === 0n) {
+        fail("price_attestation", "the signed quote carries a zero underlying price, which the factory rejects");
+        ok = false;
+      }
+      if (anchors.pricingEpoch === null) {
+        fail(
+          "price_attestation",
+          "the factory's pricing epoch did not answer, so this signed quote cannot be shown to be current",
+        );
+        ok = false;
+      } else if (attestation.pricingEpoch !== anchors.pricingEpoch) {
+        fail(
+          "price_attestation",
+          `the signed quote is for pricing epoch ${attestation.pricingEpoch} but the factory is on epoch `
+            + `${anchors.pricingEpoch}; a curve changed since this quote was signed`,
+        );
+        ok = false;
+      }
+      if (attestation.observedAt > anchors.blockTimestamp) {
+        fail(
+          "price_attestation",
+          `the signed quote claims to have been observed at ${attestation.observedAt}, which is after the `
+            + `anchored block's timestamp ${anchors.blockTimestamp}`,
+        );
+        ok = false;
+      }
+      if (attestation.expiresAt < attestation.observedAt) {
+        fail(
+          "price_attestation",
+          `the signed quote expires (${attestation.expiresAt}) before it was observed (${attestation.observedAt})`,
+        );
+        ok = false;
+      }
+      // EXPIRY WITH HEADROOM, not mere non-expiry: a quote with two seconds left
+      // is a fee spent on a guaranteed revert.
+      if (attestation.expiresAt < anchors.blockTimestamp + safetyMargin) {
+        fail(
+          "price_attestation",
+          `the signed quote expires at ${attestation.expiresAt}, which leaves less than ${safetyMargin}s after `
+            + `the anchored block ${anchors.blockTimestamp}; it would expire while the launch is in flight`,
+        );
+        ok = false;
+      }
+      // The per-asset window is the bound the factory ACTUALLY enforces; the
+      // MIN/MAX constants only bound what the owner may configure it to.
+      const window = attestation.expiresAt - attestation.observedAt;
+      if (anchors.assetMaxQuoteAgeSeconds === null) {
+        fail(
+          "price_attestation",
+          "the factory's quote window for this pair did not answer, so the quote's own window cannot be "
+            + "checked against it",
+        );
+        ok = false;
+      } else {
+        if (attestation.expiresAt >= attestation.observedAt && window > anchors.assetMaxQuoteAgeSeconds) {
+          fail(
+            "price_attestation",
+            `the signed quote is valid for ${window}s but this pair's curve accepts at most `
+              + `${anchors.assetMaxQuoteAgeSeconds}s`,
+          );
+          ok = false;
+        }
+        if (anchors.blockTimestamp - attestation.observedAt > anchors.assetMaxQuoteAgeSeconds) {
+          fail(
+            "price_attestation",
+            `the signed quote was observed ${anchors.blockTimestamp - attestation.observedAt}s ago, past this `
+              + `pair's ${anchors.assetMaxQuoteAgeSeconds}s limit`,
+          );
+          ok = false;
+        }
+      }
+      if (
+        anchors.minSignedQuoteAgeSeconds !== null
+        && anchors.maxSignedQuoteAgeSeconds !== null
+        && anchors.assetMaxQuoteAgeSeconds !== null
+        && (anchors.assetMaxQuoteAgeSeconds < anchors.minSignedQuoteAgeSeconds
+          || anchors.assetMaxQuoteAgeSeconds > anchors.maxSignedQuoteAgeSeconds)
+      ) {
+        fail(
+          "price_attestation",
+          `this pair's quote window (${anchors.assetMaxQuoteAgeSeconds}s) is outside the factory's own bounds `
+            + `[${anchors.minSignedQuoteAgeSeconds}, ${anchors.maxSignedQuoteAgeSeconds}]`,
+        );
+        ok = false;
+      }
+      if (anchors.priceSigner === null) {
+        fail(
+          "price_attestation",
+          "the factory's price signer did not answer, so the signature on this quote cannot be attributed",
+        );
+        ok = false;
+      }
+      // The factory's own verdict. `signedStartTick` is non-null only when
+      // `quoteStartTick` returned, which means the factory accepted the epoch,
+      // the window AND the ECDSA signer.
+      if (anchors.signedStartTick === null) {
+        fail(
+          "price_attestation",
+          `the factory did not accept this signed quote (${anchors.signedStartTickError ?? "no reason reported"}); `
+            + `the signature must recover to ${anchors.priceSigner ?? "the factory's price signer"}`,
+        );
+        ok = false;
+      }
+    }
+    if (ok) pass("price_attestation");
+  }
+
+  // ── 15. Where the fee stream goes, including the holders sentinels ─
+  //
+  // Point 4 proved the tuple's recipient is the one the response displays and is
+  // not zero. This point proves it is the one the CALLER intended, and it is
+  // separate because V3 gave `feeRecipient` a second legitimate meaning: one of
+  // the gateway's `FEES_TO_HOLDERS*` sentinels, which is not a wallet and which
+  // an address-equality check would read as a stranger.
+  //
+  // THE SENTINEL IS READ FROM THE GATEWAY, never from a constant here. A value
+  // that decides where a fee stream goes must come from the contract that
+  // interprets it - a sentinel pinned in this repository could be edited to
+  // point a fee stream at a mode the user did not choose, and nothing on-chain
+  // would contradict it.
+  //
+  // `feeRecipient.display` is NEVER consulted. The provider renders the literal
+  // string "Token holders" there when holders mode is on (measured), which is
+  // exactly the kind of claim this verifier exists to not believe.
+  {
+    const intent = expectation.feeRecipient;
+    if (intent.kind === "address") {
+      if (!sameAddress(tuple.feeRecipient, intent.address)) {
+        fail(
+          "fee_recipient_mode",
+          `the fee stream is set to ${tuple.feeRecipient} but this launch intends ${intent.address}`,
+        );
+      } else {
+        pass("fee_recipient_mode");
+      }
+    } else {
+      const sentinel =
+        intent.mode === "token"
+          ? anchors.feesToHoldersSentinels.token
+          : intent.mode === "paired"
+            ? anchors.feesToHoldersSentinels.paired
+            : anchors.feesToHoldersSentinels.both;
+      if (sentinel === null) {
+        fail(
+          "fee_recipient_mode",
+          `this launch intends to pay fees to token holders in "${intent.mode}" mode, but the gateway `
+            + `${gateway} does not expose a sentinel for that mode; the suite cannot do it`,
+        );
+      } else if (!sameAddress(tuple.feeRecipient, sentinel)) {
+        fail(
+          "fee_recipient_mode",
+          `this launch intends holder rewards in "${intent.mode}" mode, whose sentinel the gateway reports as `
+            + `${sentinel}, but the calldata sets ${tuple.feeRecipient}`,
+        );
+      } else {
+        pass("fee_recipient_mode");
+      }
     }
   }
 

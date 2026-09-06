@@ -1,0 +1,36 @@
+{
+  "definition": {
+    "function": {
+      "description": "Read what a pools.fun token that streams its fees to holders owes one wallet, on Robinhood Chain (4663). Use this when a token shows holderRewardsMode in a pools listing, or when the user asks what they have earned by holding one. Signs nothing and claims nothing. Returns an onchain group that is the authority and an api group that is the launchpad's echo. The onchain group names the contract suite, the HolderRewardsDeployer, the distributor contract, the reward mode (token, paired or both), and the wallet's earned amount per reward leg as RAW base units plus a scaled figure with the asset's symbol and decimals - all read at one pinned block, which is reported. It also carries whether the wallet is excluded from rewards, the eligible supply, the reward rate, the stream remaining and when the current stream ends. AUTHORITY, stated because these two sources can differ: the distributor address and the reward mode come from the DistributorDeployed event the suite's own deployer emitted for this token, never from the launchpad's row; the wallet's balance comes from earned(wallet) on the distributor. The launchpad's holderRewardsMode, holderRewardsDistributor and its own earned figures are an echo, and when they disagree the reply says so in a disagreements list instead of picking one - rewards stream continuously, so the two reads can differ simply by the time between them. FIVE OUTCOMES, and each is a different fact. status ok means a distributor was found and read. no_holder_rewards means the suite's deployer emitted no event for this token, so it does not stream fees to holders and never will - the choice is locked at launch - and that is reported in words, not as zero balances. unsupported_on_this_suite means the token is on the first contract suite, which has no holder rewards at all. suite_unresolved means no pools.fun suite holds this token, so nothing was established. A read that did not answer is an error naming what could not be read, never an empty result. Rewards stream over 24 hours, so earned grows between reads. Claiming them is a separate tool. Read-only.",
+      "name": "pools__holder_rewards_get",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "tokenAddress": {
+            "description": "Contract address of the pools.fun token whose holder rewards to read. Resolve a name with pools__tokens_search first, or find fees-to-holders tokens with pools__tokens_discover using holderRewards: true.",
+            "type": "string"
+          },
+          "walletAddress": {
+            "description": "The holder to read, as an EVM address. Defaults to the user's own selected wallet, which is the usual question. Any address may be passed because earned(account) is a public view over public chain state; the amounts are read from the distributor either way.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tokenAddress"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "pools",
+    "requiresEnv": null,
+    "toolId": "pools.holder_rewards"
+  }
+}

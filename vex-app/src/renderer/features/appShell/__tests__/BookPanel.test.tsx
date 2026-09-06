@@ -54,8 +54,12 @@ vi.mock("../book/SessionBlock.js", () => ({
 // owns the router and the chrome. That the REAL card actually contains the
 // opener is pinned where it can be proven, in ImageLockerCard.test.tsx.
 vi.mock("../book/ImageLockerCard.js", () => ({
-  ImageLockerCard: ({ sessionId }: { readonly sessionId?: string | null }) => (
-    <div data-testid="card-images" data-session-id={sessionId ?? ""} />
+  ImageLockerCard: ({
+    scope,
+  }: {
+    readonly scope: { readonly kind: string; readonly sessionId?: string };
+  }) => (
+    <div data-testid="card-images" data-session-id={scope.sessionId ?? ""} />
   ),
 }));
 // The rail reads the session detail so it can hand `permission` down to the

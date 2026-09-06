@@ -10,18 +10,6 @@
 
 import type { VexError } from "@shared/ipc/result.js";
 
-export function dbUnavailableError(correlationId: string): VexError {
-  return {
-    code: "internal.unexpected",
-    domain: "runtime",
-    message: "Database unavailable. Verify services are running and retry.",
-    retryable: true,
-    userActionable: true,
-    redacted: true,
-    correlationId,
-  };
-}
-
 export function controlFailedError(correlationId: string): VexError {
   return {
     code: "internal.unexpected",

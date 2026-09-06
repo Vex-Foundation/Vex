@@ -80,7 +80,21 @@ vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
   notePendingReason: vi.fn(async () => ({ applied: true })),
 }));
 
+// The bound quote the execute revalidates its Vex fee against, in the pre-sign
+// window. The gate has its own suites; this one drives the HANDLER, so the
+// re-read is a controlled answer and the default answer is the statement this
+// arrangement's own quote would have recorded.
+const mockFindFreshMatchedPrequote = vi.fn();
+vi.mock("@vex-agent/tools/protocols/prequote/gate.js", () => ({
+  findFreshMatchedPrequote: (...a: unknown[]) => mockFindFreshMatchedPrequote(...a),
+}));
+
 const { RELAY_BRIDGE_HANDLERS } = await import("@vex-agent/tools/protocols/relay/handlers/bridge.js");
+const {
+  boundChargedVexFee,
+  boundSkippedVexFee,
+  matchedPrequoteWithVexFee,
+} = await import("../../tools/bridge-fee/bound-vex-fee.js");
 
 const CTX: ProtocolExecutionContext = {
   sessionPermission: "full",
@@ -88,6 +102,18 @@ const CTX: ProtocolExecutionContext = {
   walletResolution: { source: "session", evm: { id: "w-evm", address: SEL_EVM }, solana: null },
   walletPolicy: { kind: "none" },
   sessionId: "sess-1",
+  bridgeTokenPreview: {
+    source: {
+      family: "eip155", kind: "native", chainId: 8453, tokenAddress: "0x0000000000000000000000000000000000000000",
+      symbol: "ETH", decimals: 18, metadataSource: "chain_registry", symbolSanitized: false,
+    },
+    destination: {
+      family: "eip155", kind: "erc20", chainId: 4663, tokenAddress: ERC20,
+      symbol: "VIRTUAL", decimals: 18, metadataSource: "rpc_contract", symbolSanitized: false,
+    },
+    amountRaw: "1000000000000000",
+    amountHuman: "0.001",
+  },
 };
 const CHAINS = [
   { id: 8453, name: "base", displayName: "Base", currency: { symbol: "ETH", decimals: 18 }, vmType: "evm", depositEnabled: true, disabled: false },
@@ -110,6 +136,9 @@ function out(result: { output: string }) {
 }
 
 beforeEach(() => {
+  mockFindFreshMatchedPrequote.mockResolvedValue(matchedPrequoteWithVexFee(boundChargedVexFee({
+    feeAmountRaw: "2500000000000", netAmountRaw: "997500000000000", totalDebitedRaw: "1000000000000000",
+  })));
   vi.clearAllMocks();
   mockGetCachedRelayChains.mockResolvedValue(CHAINS);
   mockGetQuote.mockResolvedValue({ steps: [depositStepDef.step], requestId: "0xreq" } as unknown as RelayQuoteResponse);

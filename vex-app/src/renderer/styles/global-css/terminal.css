@@ -43,4 +43,27 @@
  * the brand watermark the pane layers underneath shows through. */
 .vex-terminal-surface .xterm-viewport {
   background-color: transparent !important;
+  /* A VESTIGE in xterm 6: the viewport is an empty absolute box under the
+   * screen (scrolling moved to VS Code's ScrollableElement, whose slider is
+   * the terminal's bar, see scrollbars.css), and its `overflow-y: scroll`
+   * from xterm.css painted a second, native scrollbar gutter that nothing
+   * ever scrolls - the square grey bar at the pane's edge. Its remaining uses
+   * in the 6.0.0 bundle (a class list, a parent lookup for the overview
+   * ruler, an inline-height read) need no overflow. Declared HERE and not in
+   * scrollbars.css because xterm.css is imported at the top of this sheet,
+   * so only a rule below that import out-ranks it at equal specificity. */
+  overflow: hidden;
+}
+
+/* THE TAB STRIP'S HOVER. glass.css paints the tab shell at rest (chip tint)
+ * and active (pane tint plus the edge light); the hover is the strip's own
+ * decision and lives with the strip: a hovered tab previews activation by
+ * taking the pane tint WITHOUT the edge light, so rest -> hover -> active is
+ * one climb and not two directions (16.png: the hovered tab fills, the active
+ * one fills and lights). A named rule rather than a utility because glass.css
+ * is unlayered and a `hover:bg-*` utility can never out-rank it. Class, not
+ * `[role="tablist"]`: the primitive's list is shared by every tab set and only
+ * the terminal strip has tab shells. */
+.vex-terminal-tab-strip .vex-tab-shell:not([data-active]):hover {
+  background: var(--vex-glass-tint-pane);
 }

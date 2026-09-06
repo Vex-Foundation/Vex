@@ -586,6 +586,7 @@ export const RENDER_INCOMPLETE_NOTICES: Readonly<
 export const ARTIFACT_KIND_LABELS: Readonly<Record<StudioArtifactKind, string>> = {
   "agent-config": "Agent config",
   "agents-md": "AGENTS.md",
+  "vex-guide": "Vex guide",
   "claude-md": "CLAUDE.md",
   "protocols-doc": "Vex tool reference",
 };

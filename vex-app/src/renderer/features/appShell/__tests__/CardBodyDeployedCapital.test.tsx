@@ -2,7 +2,7 @@
  * `CardBody` - the C3 deployed-capital section of the mission contract card.
  *
  * Why this section exists: `deployedCapital` is HASH-BOUND material (contract
- * v6). Before this change the card rendered NOTHING for it, so the host was
+ * v7). Before this change the card rendered NOTHING for it, so the host was
  * asked to accept a contract covering a field the UI never showed - a blind
  * signature. These tests pin that it is visible, and pin the two rules that keep
  * it honest:
@@ -49,6 +49,7 @@ const DECLARED = {
   decimals: 18,
   chainId: 4663,
   assetAddress: "0x0f9f0000000000000000000000000000000000ee",
+  assetKind: "token" as const,
   assetSymbol: "VEX",
   amountHuman: "3044",
 };
@@ -78,6 +79,19 @@ describe("CardBody deployed capital", () => {
     );
     expect(field.textContent).toContain(
       "0x0f9f0000000000000000000000000000000000ee",
+    );
+    expect(field.textContent).toContain("token / mint");
+  });
+
+  it("shows structural native identity explicitly", () => {
+    expect(renderBody({ ...DECLARED, assetKind: "native" }).textContent).toContain(
+      "native account coin",
+    );
+  });
+
+  it("shows legacy identity ambiguity explicitly", () => {
+    expect(renderBody({ ...DECLARED, assetKind: null }).textContent).toContain(
+      "legacy identity: native or token unknown",
     );
   });
 

@@ -204,6 +204,18 @@ export const ExplorerRow = memo(function ExplorerRow(props: ExplorerRowProps): J
         // ROW ID (`getItemKey` in ExplorerTree), so scrolling remounts rows
         // rather than repainting one element as a different file.
         "vex-tint",
+        // A row that has just appeared ENTERS (`vex-surface-enter`, the house
+        // entrance: a 150ms opacity ramp and a 3px rise that ends at `none`),
+        // which is what the reference tree does when a folder unfolds
+        // (`Rows.module.css` `row-in`): the children arrive, they are not cut
+        // in. The rise does not break the colour-only rule above: it is a
+        // transform on the row INSIDE the virtualizer's translated wrapper, so
+        // it composes with that translation rather than fighting it, and the
+        // rows are fixed-height (`estimateSize`, never measured), so nothing
+        // reads a box mid-flight. Keyed by row id, a re-render never replays
+        // it; the overscan mounts a row eight slots before it scrolls into
+        // view, so an ordinary scroll never shows it either.
+        "vex-surface-enter",
         // ONE ROW carries both marks, because one row is both: the selection
         // fill and the focus ring belong to the keyboard cursor in a
         // single-select tree.

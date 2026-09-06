@@ -89,6 +89,116 @@ export function isAllowedExternalUrl(
   return false;
 }
 
+/* ------------------------------------------------------------------ *
+ * The TERMINAL-LINK policy - a second, separate policy
+ * ------------------------------------------------------------------ */
+
+/**
+ * The decision {@link isUserOpenableTerminalLink} returns.
+ *
+ * WHY, not a bare boolean: a refusal that reaches the user has to name the rule
+ * that produced it (rule 90's error contract), and a caller cannot invent that
+ * name from `false`.
+ */
+export type TerminalLinkDecision =
+  | {
+      readonly kind: "allowed";
+      /** The raw string, unchanged. Open THIS, never a re-serialised URL. */
+      readonly url: string;
+      /** Punycode host, exactly as the URL resolves it. */
+      readonly asciiHost: string;
+    }
+  | { readonly kind: "refused"; readonly reason: TerminalLinkPolicyRefusal };
+
+/** The refusal names this policy can produce. Mirrors the wire enum. */
+export type TerminalLinkPolicyRefusal =
+  | "terminal_link_unparsable"
+  | "terminal_link_scheme_refused"
+  | "terminal_link_credentials_refused"
+  | "terminal_link_host_refused"
+  | "terminal_link_too_long";
+
+/**
+ * C0 controls, space and DEL.
+ *
+ * Not cosmetic. The caller opens the RAW text rather than `url.href`, because
+ * re-serialising a URL is LOSSY and the loss is measurable on this Node:
+ * `https://example.com/a\\b` becomes `.../a/b`, `https://EXAMPLE.com/P` becomes
+ * `https://example.com/P`, `https://example.com:443/x` loses its port. VS
+ * Code's `TerminalUrlLinkOpener` passes `link.text` for the same reason
+ * (`terminalLinkOpeners.ts:306-308`).
+ *
+ * Opening a different string from the one that was validated is only safe while
+ * the two cannot diverge, and the URL parser silently strips leading and
+ * trailing C0, plus tab and newline ANYWHERE, before parsing. So a raw string
+ * carrying any of those is refused rather than trusted: that is the classic
+ * parser-differential bug, and this is the check that closes it.
+ */
+const UNSAFE_LINK_CHARACTERS = /[\u0000-\u0020\u007f]/;
+
+/**
+ * Whether a link a SHELL printed may be OFFERED to the user for opening.
+ *
+ * DELIBERATELY NOT `isAllowedExternalUrl`, and the difference is the whole
+ * reason this exists. That function serves Vex's OWN destinations: a closed host
+ * allowlist, so a link Vex itself authored opens with nobody asked. A terminal
+ * link is arbitrary text from the user's own shell - it can be any host on the
+ * internet, and no allowlist can be written for it.
+ *
+ * So this policy narrows the SHAPE and leaves the destination to a human:
+ *
+ *  - `http:` or `https:` ONLY. `file:`, `javascript:`, `vscode:`, `mailto:` and
+ *    every custom protocol handler an installed application registered are
+ *    refused, because `shell.openExternal` on those hands a chosen argument to
+ *    a chosen local program.
+ *  - NO CREDENTIALS in the URL. `https://www.paypal.com@evil.example/` reads as
+ *    PayPal to a human and resolves to `evil.example`; there is no legitimate
+ *    terminal link of that shape.
+ *  - A HOST MUST EXIST, so `http:///etc/passwd` cannot smuggle a path through.
+ *  - NO WHITESPACE OR CONTROL CHARACTERS. See {@link UNSAFE_LINK_CHARACTERS}.
+ *
+ * It says a link is OFFERABLE, never that it may be opened. The consent dialog
+ * above it is the authority that decides that.
+ *
+ * @param raw - the link exactly as the terminal produced it.
+ * @param maxLength - the wire bound, passed in rather than imported so this
+ * module stays free of schema dependencies (it is loaded by the protocol
+ * handler too).
+ */
+export function isUserOpenableTerminalLink(
+  raw: string,
+  maxLength: number,
+): TerminalLinkDecision {
+  if (raw.length > maxLength) {
+    return { kind: "refused", reason: "terminal_link_too_long" };
+  }
+  if (UNSAFE_LINK_CHARACTERS.test(raw)) {
+    return { kind: "refused", reason: "terminal_link_unparsable" };
+  }
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return { kind: "refused", reason: "terminal_link_unparsable" };
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    return { kind: "refused", reason: "terminal_link_scheme_refused" };
+  }
+  if (url.username !== "" || url.password !== "") {
+    return { kind: "refused", reason: "terminal_link_credentials_refused" };
+  }
+  // DEFENSIVE. The WHATWG parser requires a non-empty host for `http:`/`https:`
+  // and throws without one, and it reinterprets a triple slash rather than
+  // producing an empty host (`http:///etc/passwd` parses with host `etc`), so
+  // no input reaches this on the current runtime. It is a cheap floor against a
+  // parser that ever stops guaranteeing that, and the refusal it would produce
+  // is named rather than generic.
+  if (url.hostname === "") {
+    return { kind: "refused", reason: "terminal_link_host_refused" };
+  }
+  return { kind: "allowed", url: raw, asciiHost: url.hostname };
+}
+
 /**
  * Resolve an `app://<expectedHost>/...` URL against a renderer-root directory,
  * returning the absolute file path or a refusal reason.

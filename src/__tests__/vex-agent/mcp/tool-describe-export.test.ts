@@ -72,6 +72,84 @@ describe("vex_ToolDescribe returns one tool's whole contract", () => {
     }
   });
 
+  /**
+   * The same-provider half of the answer, which `provider` equality could not
+   * give. The gate reads its row under `kind` (and `lane` on the two shared
+   * lend kinds), so a Morpho vault quote cannot authorize a market supply and a
+   * Pendle PT quote cannot authorize an LP add. Publishing those pairings said
+   * the opposite about calls that move money. The whole enumeration lives in
+   * `tools/protocols/prequote/registry-quote-gate-mapping.test.ts`; these are
+   * the rows as the AGENT reads them, under their public names.
+   */
+  it.each([
+    ["morpho__market_borrow", "lend_borrow", "morpho__market_quote", "morpho__vault_quote"],
+    ["morpho__vault_deposit", "lend_deposit", "morpho__vault_quote", "morpho__market_quote"],
+    ["morpho__market_supply", "lend_deposit", "morpho__market_quote", "morpho__vault_quote"],
+    ["pendle__pt_redeem", "redeem", "pendle__pt_quote", "pendle__lp_quote"],
+    ["pendle__py_mint", "mint", "pendle__py_quote", "pendle__pt_quote"],
+    ["pendle__lp_add", "lp_add", "pendle__lp_quote", "pendle__py_quote"],
+  ])(
+    "%s names only the quote that can authorize it, not every quote of its provider",
+    (execute, prequoteKind, authorizing, refused) => {
+      const gate = contractOf(execute).quoteGate;
+      expect(gate).toMatchObject({ status: "gated", prequoteKind });
+      if (gate.status !== "gated") return;
+      expect(gate.authorizedBy).toEqual([authorizing]);
+      expect(gate.authorizedBy).not.toContain(refused);
+    },
+  );
+
+  it("answers a read and a local write `ungated`, never venue_resolved_per_call", () => {
+    // The false contract this replaces: EVERY internal row answered
+    // `venue_resolved_per_call`, which told a caller that `WalletBalances` and
+    // `TokenFind` resolve a venue and are authorized by a quote. Neither has a
+    // venue and neither spends anything.
+    for (const name of ["WalletBalances", "TokenFind", "WalletTrackToken"]) {
+      const gate = contractOf(name).quoteGate;
+      expect(gate.status).toBe("ungated");
+      expect(gate.note).toContain("moves no funds");
+    }
+  });
+
+  it("keeps venue_resolved_per_call for exactly the two aliases that resolve a venue", () => {
+    // The other two name their venue in their own name and always dispatch to
+    // ONE tool, so a per-call answer was a false contract: it told an agent the
+    // authorizing quote could not be known until the call, when it was fixed.
+    const perCall = buildStudioInventory()
+      .filter((row) => {
+        const outcome = describeExportedTool({ name: row.publicName });
+        return outcome.ok && outcome.contract.quoteGate.status === "venue_resolved_per_call";
+      })
+      .map((row) => row.publicName)
+      .sort();
+    expect(perCall).toEqual(["BridgeExecute", "SwapExecute"]);
+  });
+
+  /**
+   * A FIXED alias is described through the tool it always resolves to.
+   *
+   * The pairing is not restated here: the expected quote is the one the TARGET
+   * tool publishes, so a change to the recorder-owned mapping moves both rows
+   * together, and a router that started choosing another venue would fail
+   * `mutating-alias-fixed-targets.test.ts` instead of quietly publishing the
+   * wrong quote here.
+   */
+  it.each([
+    ["SwapExecuteUniswap", "uniswap__swap_execute"],
+    ["BridgeExecuteRelay", "relay__bridge_execute"],
+  ])("%s publishes the gate of %s, not a per-call resolution", (alias, target) => {
+    const aliasGate = contractOf(alias).quoteGate;
+    const targetGate = contractOf(target).quoteGate;
+    expect(aliasGate.status).toBe("gated");
+    expect(targetGate.status).toBe("gated");
+    if (aliasGate.status !== "gated" || targetGate.status !== "gated") return;
+    expect(aliasGate.prequoteKind).toBe(targetGate.prequoteKind);
+    expect(aliasGate.authorizedBy).toEqual(targetGate.authorizedBy);
+    expect(aliasGate.authorizedBy.length).toBeGreaterThan(0);
+    expect(aliasGate.note).toContain("does NOT resolve a venue per call");
+    expect(aliasGate.note).toContain(target);
+  });
+
   it("reports an ungated protocol tool as ungated rather than unknown", () => {
     expect(contractOf("kyberswap__swap_quote").quoteGate).toMatchObject({ status: "ungated" });
   });
@@ -111,8 +189,9 @@ describe("vex_ToolDescribe returns one tool's whole contract", () => {
       expect(contract.vexFee.bps).toBe(25);
       expect(contract.vexFee.when).toContain("AFTER the deposit lands");
     }
-    // The internal alias resolves its venue per call, so the registries cannot
-    // answer for it - and it says so instead of naming a venue.
+    // `BridgeExecute` is a genuine router (Khalani, with a local-chain Relay
+    // exception), so the registries cannot answer for it - and it says so
+    // instead of naming a venue.
     expect(contract.quoteGate).toMatchObject({ status: "venue_resolved_per_call" });
   });
 

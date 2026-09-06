@@ -1,0 +1,333 @@
+{
+ "data": [
+  {
+   "id": 8860,
+   "status": "FINALIZED",
+   "genesisId": "413",
+   "genesisTx": "0x9caef97e05dbcb4bd63c4cbebf1b9735b9bdf14e76c51d3b511d818fa0035467",
+   "genesisAddress": "0xCd485A211811121Eb22E6ae8e3D0B2F0814a6f43",
+   "startsAt": "2025-10-03T12:00:00.000Z",
+   "endsAt": "2025-10-04T12:00:00.000Z",
+   "virtual": {
+    "id": 38486,
+    "chain": "BASE",
+    "name": "SWOLO AI",
+    "symbol": "SWOLO",
+    "tokenAddress": "0x01DD64A2938A10Ac458e36112DA5b55329B332C3",
+    "preToken": null,
+    "description": "Swolo AI is a smart assistant built to redefine how users experience DeFi across multiple blockchains. Instead of struggling with fragmented tools and complex workflows, Swolo offers a seamless, AI-powered gateway into the multi-chain world.",
+    "socials": {
+     "VIDEO_PITCH": {
+      "TWEET_URL": "https://x.com/SwoloAI/status/1972199239607603298",
+      "VIDEO_URL": "https://video.twimg.com/amplify_video/1972199104676876289/vid/avc1/1270x720/ctFrCMpG6NsXtoHq.mp4?tag=14",
+      "THUMBNAIL_URL": "https://pbs.twimg.com/amplify_video_thumb/1972199104676876289/img/toRdYo70PSHPKj1P.jpg"
+     },
+     "VERIFIED_LINKS": {
+      "TWITTER": "https://x.com/SwoloAI",
+      "WEBSITE": "https://www.swoloai.xyz/"
+     }
+    },
+    "lpCreatedAt": "2025-10-04T12:01:49.283Z",
+    "walletAddress": "0xd5e1FF2910Ed0f3DeAB3CEEa8BeCd5b4486b799b",
+    "role": "PRODUCTIVITY",
+    "isVerified": false,
+    "isDevCommitted": false,
+    "showFounderVideo": false,
+    "image": {
+     "url": "https://s3.ap-southeast-1.amazonaws.com/virtualprotocolcdn/38486_e25fa712_a9ae_4b14_8d4a_92ffe28f9101_175f5b1645.png"
+    },
+    "tokenomics": [
+     {
+      "id": 10510,
+      "bips": 1500,
+      "isLocked": true,
+      "releases": [
+       {
+        "id": 17401,
+        "type": "LINEAR",
+        "duration": 12,
+        "startsAt": "2025-11-03T12:00:00.000Z",
+        "bips": 10000,
+        "durationUnit": "months",
+        "createdAt": "2025-10-01T11:35:59.846Z",
+        "updatedAt": "2025-10-01T11:35:59.846Z"
+       }
+      ]
+     },
+     {
+      "id": 10511,
+      "bips": 1000,
+      "isLocked": true,
+      "releases": [
+       {
+        "id": 17412,
+        "type": "LINEAR",
+        "duration": 18,
+        "startsAt": "2025-10-31T12:00:00.000Z",
+        "bips": 10000,
+        "durationUnit": "months",
+        "createdAt": "2025-10-01T14:36:23.005Z",
+        "updatedAt": "2025-10-01T14:36:23.005Z"
+       }
+      ]
+     },
+     {
+      "id": 10512,
+      "bips": 5000,
+      "isLocked": true,
+      "releases": [
+       {
+        "id": 17413,
+        "type": "LINEAR",
+        "duration": 18,
+        "startsAt": "2025-10-31T12:00:00.000Z",
+        "bips": 10000,
+        "durationUnit": "months",
+        "createdAt": "2025-10-01T14:36:36.006Z",
+        "updatedAt": "2025-10-01T14:36:36.006Z"
+       }
+      ]
+     },
+     {
+      "id": 10513,
+      "bips": 1000,
+      "isLocked": true,
+      "releases": [
+       {
+        "id": 17414,
+        "type": "LINEAR",
+        "duration": 18,
+        "startsAt": "2025-10-31T12:00:00.000Z",
+        "bips": 10000,
+        "durationUnit": "months",
+        "createdAt": "2025-10-01T14:36:44.665Z",
+        "updatedAt": "2025-10-01T14:36:44.665Z"
+       }
+      ]
+     }
+    ],
+    "tokenomicsStatus": {
+     "hasUnlocked": false,
+     "daysFromFirstUnlock": 0
+    }
+   },
+   "totalPoints": 33710229,
+   "totalVirtuals": 27070.309999999976,
+   "totalParticipants": 662
+  },
+  {
+   "id": 8732,
+   "status": "FINALIZED",
+   "genesisId": "411",
+   "genesisTx": "0x1e4f89389227af6de602fd823f5e97240b682b2ee3e7ff67426f64285c334163",
+   "genesisAddress": "0x8115F4fDBB205983E2203734a68df0549995dad1",
+   "startsAt": "2025-09-30T17:00:00.000Z",
+   "endsAt": "2025-10-01T17:00:00.000Z",
+   "virtual": {
+    "id": 38314,
+    "chain": "BASE",
+    "name": "WAV.3 AGENTIC MUSIC DISCOVERY",
+    "symbol": "WAV3",
+    "tokenAddress": "0x8B12bf09B7c6d73735C6a824F1D74a8B5c1AA5ca",
+    "preToken": null,
+    "description": "WAV.3 is the first Agentic Music Discovery network where staking your Spotify lets you earn rewards as you listen to music. Every authentic play fuels the WAV.3 TasteGraph, powering personalized recommendations for listeners & agentic growth infrastructure for artists.",
+    "socials": {
+     "VIDEO_PITCH": {
+      "TWEET_URL": "https://x.com/joinwav3/status/1971246210095907053",
+      "VIDEO_URL": "https://video.twimg.com/amplify_video/1971246053794975744/vid/avc1/1280x720/Uue_0MlopHzoPY0H.mp4",
+      "THUMBNAIL_URL": "https://pbs.twimg.com/amplify_video_thumb/1971246053794975744/img/3zEI1TCT2ot9BOXR.jpg"
+     },
+     "FOUNDER_VIDEO": {
+      "TWEET_URL": "https://x.com/joinwav3/status/1971246210095907053",
+      "VIDEO_URL": "https://video.twimg.com/amplify_video/1971246053794975744/vid/avc1/1280x720/Uue_0MlopHzoPY0H.mp4",
+      "THUMBNAIL_URL": "https://pbs.twimg.com/amplify_video_thumb/1971246053794975744/img/3zEI1TCT2ot9BOXR.jpg"
+     },
+     "VERIFIED_LINKS": {
+      "TWITTER": "https://x.com/joinwav3",
+      "WEBSITE": "https://docs.wav-3.com"
+     }
+    },
+    "lpCreatedAt": "2025-10-01T17:02:06.636Z",
+    "walletAddress": "0x21B2Aa8e46f5FD4dC885b8AFa8555DBc98Cbda52",
+    "role": "ENTERTAINMENT",
+    "isVerified": false,
+    "isDevCommitted": false,
+    "showFounderVideo": true,
+    "image": {
+     "url": "https://s3.ap-southeast-1.amazonaws.com/virtualprotocolcdn/38314_5ba83ca7_8127_4dc0_ac4c_f4e7ccc5fc46_bce789a3cd.png"
+    },
+    "tokenomics": [
+     {
+      "id": 10318,
+      "bips": 3000,
+      "isLocked": true,
+      "releases": [
+       {
+        "id": 17175,
+        "type": "LINEAR",
+        "duration": 36,
+        "startsAt": "2026-04-01T19:00:00.000Z",
+        "bips": 10000,
+        "durationUnit": "months",
+        "createdAt": "2025-09-22T19:06:11.812Z",
+        "updatedAt": "2025-09-22T19:06:11.812Z"
+       }
+      ]
+     },
+     {
+      "id": 10321,
+      "bips": 1500,
+      "isLocked": true,
+      "releases": [
+       {
+        "id": 17157,
+        "type": "LINEAR",
+        "duration": 36,
+        "startsAt": "2026-06-01T19:00:00.000Z",
+        "bips": 10000,
+        "durationUnit": "months",
+        "createdAt": "2025-09-22T17:35:34.814Z",
+        "updatedAt": "2025-09-22T17:35:34.814Z"
+       }
+      ]
+     },
+     {
+      "id": 10322,
+      "bips": 1000,
+      "isLocked": true,
+      "releases": [
+       {
+        "id": 17136,
+        "type": "LINEAR",
+        "duration": 24,
+        "startsAt": "2025-10-30T19:00:00.000Z",
+        "bips": 10000,
+        "durationUnit": "months",
+        "createdAt": "2025-09-22T15:52:33.256Z",
+        "updatedAt": "2025-09-22T15:52:33.256Z"
+       }
+      ]
+     },
+     {
+      "id": 10323,
+      "bips": 500,
+      "isLocked": true,
+      "releases": [
+       {
+        "id": 17158,
+        "type": "LINEAR",
+        "duration": 24,
+        "startsAt": "2026-02-01T20:00:00.000Z",
+        "bips": 10000,
+        "durationUnit": "months",
+        "createdAt": "2025-09-22T17:35:51.984Z",
+        "updatedAt": "2025-09-22T17:35:51.984Z"
+       }
+      ]
+     },
+     {
+      "id": 10324,
+      "bips": 1000,
+      "isLocked": true,
+      "releases": [
+       {
+        "id": 17166,
+        "type": "LINEAR",
+        "duration": 60,
+        "startsAt": "2025-11-01T19:00:00.000Z",
+        "bips": 10000,
+        "durationUnit": "months",
+        "createdAt": "2025-09-22T18:43:37.559Z",
+        "updatedAt": "2025-09-22T18:43:37.559Z"
+       }
+      ]
+     },
+     {
+      "id": 10325,
+      "bips": 200,
+      "isLocked": true,
+      "releases": [
+       {
+        "id": 17161,
+        "type": "LINEAR",
+        "duration": 24,
+        "startsAt": "2026-07-01T19:00:00.000Z",
+        "bips": 10000,
+        "durationUnit": "months",
+        "createdAt": "2025-09-22T17:37:12.693Z",
+        "updatedAt": "2025-09-22T17:37:12.693Z"
+       }
+      ]
+     },
+     {
+      "id": 10328,
+      "bips": 600,
+      "isLocked": true,
+      "releases": [
+       {
+        "id": 17167,
+        "type": "LINEAR",
+        "duration": 36,
+        "startsAt": "2026-10-30T19:00:00.000Z",
+        "bips": 10000,
+        "durationUnit": "months",
+        "createdAt": "2025-09-22T18:44:43.737Z",
+        "updatedAt": "2025-09-22T18:44:43.737Z"
+       }
+      ]
+     },
+     {
+      "id": 10330,
+      "bips": 200,
+      "isLocked": true,
+      "releases": [
+       {
+        "id": 17168,
+        "type": "LINEAR",
+        "duration": 36,
+        "startsAt": "2027-01-01T18:00:00.000Z",
+        "bips": 10000,
+        "durationUnit": "months",
+        "createdAt": "2025-09-22T18:47:07.437Z",
+        "updatedAt": "2025-09-22T18:47:07.437Z"
+       }
+      ]
+     },
+     {
+      "id": 10337,
+      "bips": 500,
+      "isLocked": true,
+      "releases": [
+       {
+        "id": 17176,
+        "type": "LINEAR",
+        "duration": 36,
+        "startsAt": "2026-09-30T17:00:00.000Z",
+        "bips": 10000,
+        "durationUnit": "months",
+        "createdAt": "2025-09-22T19:21:21.286Z",
+        "updatedAt": "2025-09-22T19:21:21.286Z"
+       }
+      ]
+     }
+    ],
+    "tokenomicsStatus": {
+     "hasUnlocked": false,
+     "daysFromFirstUnlock": 0
+    }
+   },
+   "totalPoints": 92963210,
+   "totalVirtuals": 46838.67999999998,
+   "totalParticipants": 1155
+  }
+ ],
+ "meta": {
+  "pagination": {
+   "page": 1,
+   "pageSize": 2,
+   "pageCount": 182,
+   "total": 363
+  }
+ },
+ "_provenance": "api.virtuals.io GET /api/geneses?pagination[pageSize]=2&sort[0]=id:desc captured 2026-09-04."
+}

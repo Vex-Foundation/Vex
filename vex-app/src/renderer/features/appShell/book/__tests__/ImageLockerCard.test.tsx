@@ -20,7 +20,27 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement, type ReactNode } from "react";
-import { ImageLockerCard } from "../ImageLockerCard.js";
+import {
+  ImageLockerCard,
+  LAUNCH_FROM_AGENT_SESSION_NOTE,
+  PROJECT_LOCKER_EMPTY_NOTE,
+  type ImageLockerScope,
+} from "../ImageLockerCard.js";
+
+// The REAL hooks, wrapped, so a scope's mode can be proven at the level the
+// browse-only contract is stated at: a project rail must not instantiate the
+// upload and delete mutations at all (each subscribes to the mutation cache),
+// not merely hide their buttons. `vi.fn` around the originals keeps every
+// other case in this file running against the real query layer.
+vi.mock("../../../../lib/api/images.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../../lib/api/images.js")>();
+  return {
+    ...actual,
+    useUploadLockerImage: vi.fn(actual.useUploadLockerImage),
+    useDeleteLockerImage: vi.fn(actual.useDeleteLockerImage),
+  };
+});
+import { useDeleteLockerImage, useUploadLockerImage } from "../../../../lib/api/images.js";
 
 // The launch dialog owns the tokenLaunch IPC domain and a preview lifecycle of
 // its own (TokenLaunchDialog.test.tsx). Stubbed so this suite can prove the
@@ -68,8 +88,11 @@ function setVex(): void {
 }
 
 const SESSION = "00000000-0000-4000-8000-00000000dddd";
+const PROJECT = "9c1b0e8e-0000-4000-8000-0000000000ab";
+const SESSION_SCOPE: ImageLockerScope = { kind: "session", sessionId: SESSION };
+const PROJECT_SCOPE: ImageLockerScope = { kind: "project", projectId: PROJECT };
 
-function renderCard() {
+function renderCard(scope: ImageLockerScope = SESSION_SCOPE) {
   setVex();
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -77,7 +100,7 @@ function renderCard() {
   function Wrapper({ children }: { readonly children: ReactNode }) {
     return createElement(QueryClientProvider, { client }, children);
   }
-  return render(createElement(ImageLockerCard, { sessionId: SESSION }), {
+  return render(createElement(ImageLockerCard, { scope }), {
     wrapper: Wrapper,
   });
 }
@@ -329,5 +352,89 @@ describe("the on-chain copy, as the user is told about it", () => {
     // read to the user as a broken image.
     await waitFor(() => expect(listMock).toHaveBeenCalled());
     expect(readThumbMock).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * A PROJECT rail is BROWSE-ONLY (Studio parity decree, 2026-09-04).
+ * a fixed decision). It sees the same global locker a session
+ * rail does and may do nothing else with it: no upload, no delete, no launch.
+ * The table below is the contract, one row per affordance.
+ *
+ *   affordance            session   project
+ *   read the locker       yes       yes
+ *   Add image             yes       no
+ *   Remove <image>        yes       no
+ *   launchpad chips       yes       no
+ *   Launch a token        yes       no
+ *   "signed from" note    no        yes
+ */
+describe("a PROJECT rail is browse-only (Studio parity decree)", () => {
+  it("browses the same global locker: the images and their count render", async () => {
+    listMock.mockResolvedValue({ ok: true, data: { images: [A, B] } });
+    readThumbMock.mockResolvedValue({ ok: true, data: { imageId: A.imageId, dataUrl: "data:image/png;base64,AAAA" } });
+    renderCard(PROJECT_SCOPE);
+    expect(await screen.findByText("2")).toBeTruthy();
+    expect(screen.getByText("moon.png")).toBeTruthy();
+    expect(screen.getByText("rocket.png")).toBeTruthy();
+    expect(listMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders NO upload control and NO delete control on any tile", async () => {
+    listMock.mockResolvedValue({ ok: true, data: { images: [A, B] } });
+    readThumbMock.mockResolvedValue({ ok: true, data: { imageId: A.imageId, dataUrl: "data:image/png;base64,AAAA" } });
+    renderCard(PROJECT_SCOPE);
+    await screen.findByText("2");
+    expect(screen.queryByRole("button", { name: /add image/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /remove/i })).toBeNull();
+    // Not hidden, not disabled: absent. The tiles carry no button at all.
+    expect(screen.queryAllByRole("button")).toHaveLength(0);
+  });
+
+  it("does not instantiate the upload or delete mutation at all", async () => {
+    listMock.mockResolvedValue({ ok: true, data: { images: [A] } });
+    readThumbMock.mockResolvedValue({ ok: true, data: { imageId: A.imageId, dataUrl: "data:image/png;base64,AAAA" } });
+    renderCard(PROJECT_SCOPE);
+    await screen.findByText("1");
+    expect(useUploadLockerImage).not.toHaveBeenCalled();
+    expect(useDeleteLockerImage).not.toHaveBeenCalled();
+    expect(uploadMock).not.toHaveBeenCalled();
+    expect(deleteMock).not.toHaveBeenCalled();
+  });
+
+  it("renders NO launch action, and says where a launch is signed from instead", async () => {
+    // The launch is attributed to a session id on the signing path; a project
+    // has none this card may borrow (its `backingSessionId` is an owner
+    // decision). So the seat the launch holds for a session carries the
+    // sentence, not a button.
+    listMock.mockResolvedValue({ ok: true, data: { images: [A] } });
+    readThumbMock.mockResolvedValue({ ok: true, data: { imageId: A.imageId, dataUrl: "data:image/png;base64,AAAA" } });
+    renderCard(PROJECT_SCOPE);
+    await screen.findByText("1");
+    expect(screen.queryByRole("button", { name: /launch/i })).toBeNull();
+    expect(screen.queryByRole("radiogroup")).toBeNull();
+    expect(screen.getByText(LAUNCH_FROM_AGENT_SESSION_NOTE)).toBeTruthy();
+  });
+
+  it("an EMPTY locker does not ask the user to add an image here", async () => {
+    listMock.mockResolvedValue({ ok: true, data: { images: [] } });
+    renderCard(PROJECT_SCOPE);
+    expect(await screen.findByText(PROJECT_LOCKER_EMPTY_NOTE)).toBeTruthy();
+    expect(screen.queryByText(/add one here/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: /add image/i })).toBeNull();
+  });
+
+  it("a SESSION rail still carries every affordance the project rail lacks", async () => {
+    listMock.mockResolvedValue({ ok: true, data: { images: [A] } });
+    readThumbMock.mockResolvedValue({ ok: true, data: { imageId: A.imageId, dataUrl: "data:image/png;base64,AAAA" } });
+    renderCard(SESSION_SCOPE);
+    await screen.findByText("1");
+    expect(screen.getByRole("button", { name: /add image/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /remove moon\.png/i })).toBeTruthy();
+    expect(screen.getByRole("radiogroup")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /launch/i })).toBeTruthy();
+    expect(screen.queryByText(LAUNCH_FROM_AGENT_SESSION_NOTE)).toBeNull();
+    expect(useUploadLockerImage).toHaveBeenCalled();
+    expect(useDeleteLockerImage).toHaveBeenCalled();
   });
 });

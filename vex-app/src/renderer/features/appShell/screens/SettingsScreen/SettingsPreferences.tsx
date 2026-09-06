@@ -1,7 +1,8 @@
 /**
  * The Preferences group on the Settings register: the Appearance theme
- * switcher (chronos | celeris | system cubes), the composer Enter-key row,
- * and the notifications toggle. Appearance selection follows the PERSISTED
+ * switcher (chronos | celeris | system cubes), the Background image row
+ * (`SettingsBackdropRow`), the composer Enter-key row, and the notifications
+ * toggle. Appearance selection follows the PERSISTED
  * preference, never the resolved active theme, so "System" stays selected
  * while the OS decides the paint.
  */
@@ -21,6 +22,7 @@ import {
   type SubmitKeyBehavior,
 } from "../../../../lib/composer-submission-policy.js";
 import { cn } from "../../../../lib/utils.js";
+import { SettingsBackdropRow } from "./SettingsBackdropRow.js";
 
 interface ThemeCube {
   readonly id: VexThemePreference;
@@ -192,6 +194,7 @@ export function SettingsPreferences(): JSX.Element {
     >
       <GroupTitle>Preferences</GroupTitle>
       <AppearanceRow />
+      <SettingsBackdropRow />
       <SubmitKeyRow />
       <NotificationsRow />
     </section>

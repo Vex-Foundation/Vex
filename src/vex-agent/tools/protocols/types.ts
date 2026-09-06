@@ -15,6 +15,8 @@ import type { ActionKind } from "../taxonomy.js";
 import type { Permission, WalletPolicy } from "@vex-agent/engine/types.js";
 import type { WalletResolution } from "@tools/wallet/multi-auth.js";
 import type { ApprovedQuoteAuthority } from "./quote-authority/approved-authority.js";
+import type { ApprovedPrequoteAuthority } from "./prequote/approved-row-authority.js";
+import type { BridgeTokenIdentityPreview } from "./bridge-token-identity.js";
 
 // ── Protocol namespaces ──────────────────────────────────────────
 
@@ -30,7 +32,8 @@ export type ProtocolNamespace =
   | "pendle"
   | "morpho"
   | "trench"
-  | "pools";
+  | "pools"
+  | "launchpads";
 
 /**
  * Lifecycle state of a protocol manifest.
@@ -405,6 +408,21 @@ export interface ProtocolExecutionContext {
    */
   approvedQuoteAuthority?: ApprovedQuoteAuthority | null;
   /**
+   * WHICH PREQUOTE ROW that approval authorized, and what that row disclosed,
+   * threaded from the same host-side envelope as `approvalId`. The prequote
+   * gate requires the row it matches to be exactly this one, still current and
+   * still stating the same disclosure, so a quote recorded while the card
+   * waited cannot become the row a resumed execute is gated on. Absent on every
+   * live turn.
+   */
+  approvedPrequoteAuthority?: ApprovedPrequoteAuthority | null;
+  /**
+   * Bridge token facts produced by the runtime's direct metadata gate for this
+   * exact dispatch. Model params cannot populate this channel. A mutating
+   * bridge handler refuses to sign when it is absent or unavailable.
+   */
+  bridgeTokenPreview?: BridgeTokenIdentityPreview;
+  /**
    * The provider's id for THIS tool call, threaded by the dispatcher from
    * `ToolCallRequest.toolCallId`. Host-side evidence like the provenance above:
    * a model-supplied id could park a form whose result answers a DIFFERENT call.
@@ -463,6 +481,19 @@ export interface ProtocolExecutionContext {
    * today's behaviour; only the A2 mapper sets `studio_mcp` explicitly.
    */
   approvalSurface?: ApprovalSurface;
+  /**
+   * The Vex Studio project this dispatch runs for, when the surface has one.
+   *
+   * Trusted provenance (C0), carried with `missionId` and `approvalId` and
+   * subject to the same rule: host-side evidence, never model input. Only the
+   * Studio MCP mapper sets it; every in-app lane omits it, because there is no
+   * project there.
+   *
+   * A lane that accepts a model-supplied file path resolves the project ROOT
+   * from this id at the moment of use. It is an identifier, not an authority:
+   * it says WHERE a project lives, never that the caller may read it.
+   */
+  studioProjectId?: string | null;
 }
 
 /** The consent surfaces a protocol dispatch can be answered on. */

@@ -23,6 +23,39 @@ const SEL_EVM = "0x1111111111111111111111111111111111111111";
 const ZERO = "0x0000000000000000000000000000000000000000";
 const ERC20 = "0xc6911796042b15d7Fa4F6CDe69e245DdCd3d9c31";
 
+// The origin-token fee eligibility probe reaches a live token API. Only that
+// one export is replaced; everything else in the barrel (the fee split, the
+// activity role, the treasury transfer builder) stays real, because the fee
+// ARITHMETIC is part of what these tests assert.
+vi.mock("@tools/bridge-fee/index.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@tools/bridge-fee/index.js")>();
+  return { ...actual, evaluateEvmBridgeFeeEligibility: async () => ({ charge: true } as const) };
+});
+
+vi.mock("@vex-agent/tools/protocols/bridge-token-identity.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@vex-agent/tools/protocols/bridge-token-identity.js")>();
+  return {
+    ...actual,
+    resolveRelayBridgeTokenPreview: async (params: Record<string, unknown>) => {
+      const one = (chainId: number, tokenAddress: string) => tokenAddress === ZERO
+        ? {
+            family: "eip155" as const, kind: "native" as const, chainId, tokenAddress,
+            symbol: "ETH", decimals: 18, metadataSource: "chain_registry" as const, symbolSanitized: false,
+          }
+        : {
+            family: "eip155" as const, kind: "erc20" as const, chainId, tokenAddress,
+            symbol: "TOKEN", decimals: 18, metadataSource: "rpc_contract" as const, symbolSanitized: false,
+          };
+      return {
+        source: one(8453, String(params.fromToken)),
+        destination: one(4663, String(params.toToken)),
+        amountRaw: String(params.amountRaw),
+        amountHuman: "0.001",
+      };
+    },
+  };
+});
+
 // ── Relay client (getQuote + getIntentStatus) + cached chains ──
 const mockGetQuote = vi.fn();
 
@@ -132,7 +165,22 @@ vi.mock("@vex-agent/db/repos/agent-activity.js", async (importOriginal) => ({
   noteBridgeProviderObservation: (...a: unknown[]) => mockNoteBridgeProviderObservation(...a),
 }));
 
+// The bound quote the execute revalidates its Vex fee against, in the pre-sign
+// window. The gate has its own suites; this one drives the HANDLER, so the
+// re-read is a controlled answer and the default answer is the statement this
+// arrangement's own quote would have recorded.
+const mockFindFreshMatchedPrequote = vi.fn();
+vi.mock("@vex-agent/tools/protocols/prequote/gate.js", () => ({
+  findFreshMatchedPrequote: (...a: unknown[]) => mockFindFreshMatchedPrequote(...a),
+}));
+
 const { RELAY_BRIDGE_HANDLERS } = await import("@vex-agent/tools/protocols/relay/handlers/bridge.js");
+const {
+  boundChargedVexFee,
+  boundSkippedVexFee,
+  matchedPrequoteWithVexFee,
+} = await import("../../../tools/bridge-fee/bound-vex-fee.js");
+const { BRIDGE_FEE_RECEIVER_EVM } = await import("@tools/bridge-fee/index.js");
 const { DependentLegGasEstimateError, DEPENDENT_LEG_ESTIMATE_MARKER } =
   await import("@tools/evm-chains/dependent-leg-gas-estimate.js");
 
@@ -194,6 +242,10 @@ function outputOf(result: { output: string }): Record<string, unknown> {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // The approved quote for these exact params stated this exact fee.
+  mockFindFreshMatchedPrequote.mockResolvedValue(matchedPrequoteWithVexFee(boundChargedVexFee({
+    feeAmountRaw: "2500000000000", netAmountRaw: "997500000000000", totalDebitedRaw: "1000000000000000",
+  })));
   mockGetCachedRelayChains.mockResolvedValue(CHAINS);
   mockGetQuote.mockResolvedValue(quote());
   mockAdapt.mockReturnValue(adaptedOk());
@@ -219,6 +271,221 @@ beforeEach(() => {
   mockAbort.mockResolvedValue([]);
   mockSign.mockImplementation(signAs("confirmed", "0xdep"));
   mockPin.mockResolvedValue({ inserted: true });
+});
+
+/** When a mock was first called, so ordering is asserted on facts, not on timing. */
+function firstCallOrder(mock: { mock: { invocationCallOrder: readonly number[] } }): number {
+  const [first] = mock.mock.invocationCallOrder;
+  if (first === undefined) throw new Error("expected this mock to have been called");
+  return first;
+}
+
+// ── The bound Vex fee statement (rule 90: revalidate immediately before sign) ──
+describe("relay.bridge - the fee must still match the statement the approval was granted on", () => {
+  /** Nothing signed, nothing planned, nothing broadcast, no in-flight guard taken. */
+  function assertNothingHappened(): void {
+    expect(mockSign).not.toHaveBeenCalled();
+    expect(mockCreateIntent).not.toHaveBeenCalled();
+    expect(mockCheckInFlight).not.toHaveBeenCalled();
+    expect(mockResolveStepClients).not.toHaveBeenCalled();
+  }
+
+  it("REFUSES before any signing when the card said a fee is taken and this bridge would skip it", async () => {
+    // The dust arm of the same divergence class as a token flagged
+    // fee-on-transfer after the card was shown: the row still says charged, the
+    // fresh derivation says nothing is taken, so the amount that would actually
+    // be bridged is not the amount the card stated.
+    mockAdapt.mockReturnValue(adaptedOk({
+      currencyIn: { symbol: "ETH", decimals: 18, currencyAddress: ZERO, amountRaw: "300", amountFormatted: "0.0000000000000003", amountUsd: null, minimumAmountRaw: null },
+    }));
+
+    const result = await runBridge({ ...PARAMS, amountRaw: "300" });
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("relay.bridge failed:");
+    expect(result.output).toContain("The Vex fee statement this approval was granted on no longer holds");
+    expect(result.output).toContain("Nothing was signed and nothing was broadcast");
+    expect(result.output).toContain("relay__bridge_quote_get");
+    // An authorization refusal is not a bridge that failed: no durable
+    // failure row is written for it, exactly as the prequote gate writes none.
+    expect(mockPreFail).not.toHaveBeenCalled();
+    assertNothingHappened();
+  });
+
+  it("REFUSES and names the moved amount when the bound fee is not the fee this bridge would take", async () => {
+    mockFindFreshMatchedPrequote.mockResolvedValue(matchedPrequoteWithVexFee(boundChargedVexFee({
+      feeAmountRaw: "2000000000000", netAmountRaw: "998000000000000", totalDebitedRaw: "1000000000000000",
+    })));
+
+    const result = await runBridge();
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("2000000000000 raw units");
+    expect(result.output).toContain("2500000000000 raw units");
+    assertNothingHappened();
+  });
+
+  it("REFUSES when the card stated no fee and this bridge would take one", async () => {
+    mockFindFreshMatchedPrequote.mockResolvedValue(
+      matchedPrequoteWithVexFee(boundSkippedVexFee({ totalDebitedRaw: "1000000000000000" })),
+    );
+
+    const result = await runBridge();
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("NO Vex fee would be taken");
+    assertNothingHappened();
+  });
+
+  it("FAILS CLOSED when the bound row carries no readable fee statement at all", async () => {
+    mockFindFreshMatchedPrequote.mockResolvedValue(matchedPrequoteWithVexFee(undefined));
+
+    const result = await runBridge();
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("no readable Vex fee statement");
+    assertNothingHappened();
+  });
+
+  it("REFUSES when the approved row was superseded while the approval waited", async () => {
+    mockFindFreshMatchedPrequote.mockResolvedValue({ ok: false, reason: "approval_row_superseded" });
+
+    const result = await runBridge();
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("no longer the current one");
+    assertNothingHappened();
+  });
+
+  it("proceeds to sign when the statement holds, and reads the row AFTER the quote", async () => {
+    const result = await runBridge();
+
+    expect(mockSign).toHaveBeenCalled();
+    expect(outputOf(result).status).toBe("pending");
+    // The comparison must see the disposition the deposit would use, so the
+    // quote is what it is compared against, not a pre-quote guess.
+    const readOrder = firstCallOrder(mockFindFreshMatchedPrequote);
+    expect(firstCallOrder(mockGetQuote)).toBeLessThan(readOrder);
+    expect(firstCallOrder(mockSign)).toBeGreaterThan(readOrder);
+  });
+
+  it("a dryRun never reads the bound row: it is a preview, it signs nothing", async () => {
+    await runBridge({ ...PARAMS, dryRun: true });
+    expect(mockFindFreshMatchedPrequote).not.toHaveBeenCalled();
+    expect(mockSign).not.toHaveBeenCalled();
+  });
+
+  /**
+   * losing the execute-gate registration is an internal
+   * AUTHORIZATION failure, not permission to sign.
+   *
+   * `not_gated` is what the gate answers when this tool has no entry in the
+   * execute-gate registry - the exact state a registry refactor produces. The
+   * handler used to read that as "no approved statement exists to contradict"
+   * and carry on to the signer, so the loss of the fee's entire authority became
+   * a licence to take it. This drives the public handler with the registration
+   * absent and proves the refusal happens before any signer, nonce reservation,
+   * staging or broadcast.
+   */
+  it("REFUSES when this fee-bearing tool has no registered quote gate at all", async () => {
+    mockFindFreshMatchedPrequote.mockResolvedValue({ ok: false, reason: "not_gated" });
+
+    const result = await runBridge();
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("fee-bearing tool with no registered quote gate");
+    expect(result.output).toContain("no funds moved");
+    // Not phrased as a re-quote: re-quoting cannot restore a missing mapping.
+    expect(result.output).not.toContain("approve the fresh quote");
+    assertNothingHappened();
+    expect(mockPreFail).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The typed reason must survive to the RESULT, not only to a log line. An
+   * agent that reads "relay.bridge failed" cannot tell a moved fee statement
+   * (re-quote) from a missing registration (report a build defect).
+   */
+  describe("the typed refusal reason reaches the tool result", () => {
+    function refusalOf(result: { readonly data?: Record<string, unknown> }): Record<string, unknown> {
+      const block = result.data?._vexFeeRefusal;
+      if (block === undefined || block === null || typeof block !== "object") {
+        throw new Error("expected the result to carry a typed _vexFeeRefusal block");
+      }
+      return block as Record<string, unknown>;
+    }
+
+    it("carries `vex_fee_statement_changed` and the field that moved", async () => {
+      mockFindFreshMatchedPrequote.mockResolvedValue(matchedPrequoteWithVexFee(boundChargedVexFee({
+        feeAmountRaw: "2000000000000", netAmountRaw: "998000000000000", totalDebitedRaw: "1000000000000000",
+      })));
+
+      const refusal = refusalOf(await runBridge());
+
+      expect(refusal.reason).toBe("vex_fee_statement_changed");
+      expect(refusal.movedFields).toEqual(["feeAmountRaw"]);
+      expect(String(refusal.remediation)).toContain("relay__bridge_quote_get");
+    });
+
+    it("carries `vex_fee_statement_missing` when the bound row states no fee", async () => {
+      mockFindFreshMatchedPrequote.mockResolvedValue(matchedPrequoteWithVexFee(undefined));
+
+      expect(refusalOf(await runBridge()).reason).toBe("vex_fee_statement_missing");
+    });
+
+    it("carries `vex_fee_gate_unregistered` and a remedy that is not a re-quote", async () => {
+      mockFindFreshMatchedPrequote.mockResolvedValue({ ok: false, reason: "not_gated" });
+
+      const refusal = refusalOf(await runBridge());
+
+      expect(refusal.reason).toBe("vex_fee_gate_unregistered");
+      expect(String(refusal.remediation)).toContain("build defect");
+    });
+
+    it("never leaks the treasury address into the typed block", async () => {
+      mockFindFreshMatchedPrequote.mockResolvedValue(matchedPrequoteWithVexFee(boundChargedVexFee({
+        feeAmountRaw: "2000000000000", netAmountRaw: "998000000000000", totalDebitedRaw: "1000000000000000",
+      })));
+
+      expect(JSON.stringify(refusalOf(await runBridge()))).not.toMatch(/0x[0-9a-fA-F]{40}/);
+    });
+  });
+
+  /**
+   * PIN, DO NOT RE-DERIVE (fixed decision 2026-09-04, recorded beside
+   * `vexFeePreviewSchema`).
+   *
+   * The fee leg signs after the origin deposit has already confirmed. A reviewer
+   * proposed re-running authoritative eligibility inside that window; the owner
+   * decision is that the APPROVED STATEMENT is the authority there, so the leg
+   * signs exactly the amount and the receiver that were compared before anything
+   * was signed - whatever a later eligibility read would say.
+   *
+   * Proved on the SIGNER, not on the wording: the fee transfer's calldata is the
+   * ERC-20 `transfer(receiver, amount)` this bridge planned.
+   */
+  it("signs exactly the approved fee amount and receiver, even after the deposit confirms", async () => {
+    const result = await runBridge();
+    expect(outputOf(result).status).toBe("pending");
+
+    // Two signed legs: the deposit, then the fee transfer.
+    expect(mockSign).toHaveBeenCalledTimes(2);
+    const feeCall = mockSign.mock.calls[1] as unknown[];
+    const request = feeCall[2] as { readonly to: string; readonly data: string; readonly value: bigint };
+
+    // 25 bps of 1e15 wei, the figure the disclosure on this same result states.
+    const disclosed = outputOf(result).vexFee as Record<string, unknown>;
+    expect(disclosed.feeAmountRaw).toBe("2500000000000");
+    // This route's origin currency is native, so the transfer IS the value: the
+    // amount signed and the receiver are both read straight off the request.
+    expect(String(request.value)).toBe(String(disclosed.feeAmountRaw));
+    expect(request.to.toLowerCase()).toBe(BRIDGE_FEE_RECEIVER_EVM.toLowerCase());
+    expect(request.data).toBe("0x");
+    // Nothing re-read eligibility between the deposit and the fee: the gate was
+    // consulted exactly once, in the pre-sign window.
+    expect(mockFindFreshMatchedPrequote).toHaveBeenCalledTimes(1);
+    expect(firstCallOrder(mockFindFreshMatchedPrequote)).toBeLessThan(firstCallOrder(mockSign));
+  });
 });
 
 // ── Pre-sign gates: each failure records a HASHLESS row + broadcasts NOTHING ──
@@ -764,5 +1031,85 @@ describe("relay leg resolution — model-supplied params reach output only throu
     );
     expect(result.success).toBe(false);
     expect(result.output).not.toContain("sk-or-v1-abcdef0123456789");
+  });
+});
+
+// ── The receipt floor makes the Vex fee leg ineligible ─────────────────────
+//
+// A deposit that moved LESS than the principal the user consented to did not
+// perform the operation the fee is charged for (rule 90: take a fee only after
+// the operation it charges for succeeds). `floor - 1` on an ERC-20 origin:
+// nothing with a `vex_fee` role reaches `signStageBroadcast`, so no nonce is
+// reserved and nothing is staged for it, and the planned fee row is aborted.
+
+describe("relay.bridge - a deposit below the receipt floor is never charged a fee", () => {
+  const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+  const DEPOSIT_TARGET = "0x2222222222222222222222222222222222222222";
+  const padded = (address: string): string => `0x${"0".repeat(24)}${address.slice(2).toLowerCase()}`;
+  /** The post-fee principal for a 1,000,000-unit ERC-20 bridge at 25 bps. */
+  const PRINCIPAL = 997_500n;
+  const ERC20_PARAMS = { ...PARAMS, fromToken: ERC20, amountRaw: "1000000" };
+
+  /** Every leg confirms; the deposit's receipt carries one Transfer of `moved`. */
+  function signWithDepositTransfer(moved: bigint) {
+    return async (
+      _p: unknown, _w: unknown, tx: { to: string },
+      hooks: { onHashStaged: (h: unknown) => Promise<void>; onAccepted: () => Promise<void> },
+    ) => {
+      await hooks.onHashStaged({ txHash: "0xdep", fromAddress: SEL_EVM, nonce: 1 });
+      await hooks.onAccepted();
+      return {
+        kind: "confirmed",
+        txHash: "0xdep",
+        receipt: {
+          blockNumber: 1n,
+          logs: [{
+            address: ERC20,
+            topics: [TRANSFER_TOPIC, padded(SEL_EVM), padded(DEPOSIT_TARGET)],
+            data: `0x${moved.toString(16).padStart(64, "0")}`,
+          }],
+        },
+      };
+    };
+  }
+
+  beforeEach(() => {
+    mockFindFreshMatchedPrequote.mockResolvedValue(matchedPrequoteWithVexFee(boundChargedVexFee({
+      feeAmountRaw: "2500", netAmountRaw: "997500", totalDebitedRaw: "1000000",
+    })));
+    mockAdapt.mockReturnValue(adaptedOk({
+      currencyIn: {
+        symbol: "USDC", decimals: 6, currencyAddress: ERC20, amountRaw: "997500",
+        amountFormatted: "0.9975", amountUsd: "1.00", minimumAmountRaw: null,
+      },
+    }));
+    mockPlanStepTx.mockReturnValue({ to: DEPOSIT_TARGET, data: "0xe8017952", value: 0n });
+  });
+
+  it("signs the fee leg when the deposit moved the whole principal (positive control)", async () => {
+    mockSign.mockImplementation(signWithDepositTransfer(PRINCIPAL));
+
+    const result = await runBridge(ERC20_PARAMS);
+
+    // Two signatures: the deposit, then the Vex fee transfer.
+    expect(mockSign).toHaveBeenCalledTimes(2);
+    expect(outputOf(result).vexFee).toBeDefined();
+  });
+
+  it("signs NOTHING for the fee when the deposit moved one unit less than the principal", async () => {
+    mockSign.mockImplementation(signWithDepositTransfer(PRINCIPAL - 1n));
+
+    const result = await runBridge(ERC20_PARAMS);
+
+    // The deposit signed; the fee leg never reached the signer, so no nonce was
+    // reserved for it and nothing was staged or broadcast under its row.
+    expect(mockSign).toHaveBeenCalledTimes(1);
+    // The planned fee row is aborted rather than left pending forever.
+    expect(mockAbort).toHaveBeenCalled();
+    // The tool result names BOTH figures, so the human can compare them.
+    const body = JSON.stringify(outputOf(result));
+    expect(body).toContain("997499");
+    expect(body).toContain("997500");
+    expect(body).toMatch(/No Vex fee was taken/i);
   });
 });

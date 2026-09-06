@@ -49,10 +49,26 @@ const SunPathMaxBytes = 103
 const OverrideEnv = "VEX_STUDIO_SOCKET"
 
 // LinuxRuntimeDirRoot is the systemd per-user runtime root, PROBED rather than
-// assumed.
+// assumed, and PREFERRED over $XDG_RUNTIME_DIR.
 //
-// It is the rung that keeps this binary and the app from disagreeing.
-// XDG_RUNTIME_DIR is an environment variable, and an MCP client is free to
+// It is the rung that keeps this binary and the app from disagreeing, and the
+// order is the half of that which was measured wrong first: probing the
+// directory only AFTER the variable failed still lets the two sides diverge,
+// because a private CUSTOM XDG_RUNTIME_DIR (WSLg's /mnt/wslg/runtime-dir on
+// some distributions) is a directory the app can see and this process cannot.
+// The app bound there while this bridge, spawned without the variable, found
+// /run/user/<uid> private and dialled that. Same privacy gate, two endpoints,
+// no rendezvous. The environment-INDEPENDENT fact is therefore consulted
+// first, and the variable only decides where a system that has no
+// /run/user/<uid> puts its runtime directory.
+//
+// THE RESIDUAL, NAMED RATHER THAN CLOSED (contract 1.2): a machine with no
+// private /run/user/<uid> AND a custom private XDG_RUNTIME_DIR the launcher
+// drops still diverges. No fact both processes read describes that directory,
+// and the follow-up is a rendezvous file, not another environment rung.
+//
+// WHY THE VARIABLE CANNOT BE THE SHARED FACT. XDG_RUNTIME_DIR is an
+// environment variable, and an MCP client is free to
 // spawn this bridge with an environment that does not carry it. Codex CLI does
 // exactly that, by design rather than by accident: create_env_for_mcp_server
 // (codex-rs/rmcp-client/src/utils.rs:16) builds a stdio MCP server's
@@ -288,27 +304,35 @@ func Derive(in Input) Plan {
 
 	name := FileName(in.ConfigDirHashInput)
 
-	// Linux: the XDG runtime directory, but only when the system actually gave
-	// us a private one. Those are the four ways it stops being private.
+	// Linux: THE FILESYSTEM FACT FIRST, THE ENVIRONMENT SECOND (contract 1.2).
+	//
+	// Both rungs are held to the same privacy gate; what the order decides is
+	// which one wins when they name DIFFERENT directories, and only one of the
+	// two is a fact both processes read identically. See LinuxRuntimeDirRoot
+	// for why the variable cannot be that fact.
 	if in.GOOS == "linux" {
+		systemdRuntimeDir := configdir.JoinPosix(LinuxRuntimeDirRoot, fmt.Sprintf("%d", in.UID))
+		if isPrivateDirectory(in.ProbeDirectory(systemdRuntimeDir), in.UID) {
+			return planPrivateRuntimeDir(systemdRuntimeDir, name)
+		}
+
+		// NO /run/user/<uid>, SO THE VARIABLE IS THE ONLY PRIVATE RUNTIME
+		// DIRECTORY THIS SYSTEM OFFERS. A distribution that puts one somewhere
+		// else (WSLg's /mnt/wslg/runtime-dir) is served here rather than
+		// pushed down to the tmpdir form. It is also the rung carrying the
+		// residual divergence contract 1.2 names by hand: when a launcher
+		// drops the variable AND there is no /run/user/<uid>, this side and
+		// the other derive different endpoints, and no fact available to both
+		// closes it.
 		runtimeDir := in.Env["XDG_RUNTIME_DIR"]
 		if runtimeDir != "" && strings.HasPrefix(runtimeDir, "/") &&
 			isPrivateDirectory(in.ProbeDirectory(runtimeDir), in.UID) {
 			return planPrivateRuntimeDir(runtimeDir, name)
 		}
-
-		// THE VARIABLE IS ABSENT OR UNUSABLE, BUT THE DIRECTORY MAY STILL BE
-		// THERE. This is the rung that makes an environment-scrubbing client
-		// agree with the app about one endpoint (see LinuxRuntimeDirRoot). It
-		// is a filesystem fact, read under the same privacy gate as the
-		// variable's own directory.
-		systemdRuntimeDir := configdir.JoinPosix(LinuxRuntimeDirRoot, fmt.Sprintf("%d", in.UID))
-		if isPrivateDirectory(in.ProbeDirectory(systemdRuntimeDir), in.UID) {
-			return planPrivateRuntimeDir(systemdRuntimeDir, name)
-		}
 	}
 
-	// macOS always, and Linux when XDG_RUNTIME_DIR is unset, relative, not a
+	// macOS always, and Linux when neither runtime directory is private: no
+	// /run/user/<uid>, and an XDG_RUNTIME_DIR that is unset, relative, not a
 	// directory, not ours, or readable by anyone else.
 	parent := configdir.JoinPosix(in.Tmpdir, fmt.Sprintf("vex-studio-%d", in.UID))
 	candidate := configdir.JoinPosix(parent, name)

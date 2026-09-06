@@ -30,7 +30,7 @@ import { randomUUID } from "node:crypto";
 import type { RegimeWorkerHandle } from "@vex-agent/engine/regime/regime-worker.js";
 import { log } from "../logger/index.js";
 import { probeRegimeSnapshotsReady } from "../database/regime-db.js";
-import { ensureEngineDbUrl } from "../ipc/runtime/_ensure-engine-db-url.js";
+import { ensureEngineDbUrl } from "../database/engine-db-readiness.js";
 import { migrationsApplied } from "../database/migrations-applied.js";
 
 const SUPERVISOR_INTERVAL_MS = 30_000;
