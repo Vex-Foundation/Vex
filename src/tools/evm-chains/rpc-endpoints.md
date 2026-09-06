@@ -127,6 +127,29 @@ reconciles instead of re-sending.
 
 The pinned host is recorded as a structured event (`rpc.pinned`), host only.
 
+## The chain-id echo, and what it removes
+
+Before any endpoint answers a product question it is asked `eth_chainId` once,
+and an endpoint that echoes a DIFFERENT id is removed for the life of the
+process. The removal is a fact about identity, not liveness: an endpoint that
+cannot answer the echo at all is KEPT, because that is the failover's job.
+
+Two properties this owner enforces, both of which it once got wrong:
+
+- The verdict is memoized PER CHAIN AND PER URL, never as a resolved candidate
+  list per chain. Caching the list made the first caller to warm a chain the
+  author of every later caller's list: a client that supplied its own endpoint
+  and explicitly disqualified the first one was still served by the first one.
+  Each transport now resolves its own candidates and pays at most one echo per
+  url per process.
+- When the echo removes EVERY endpoint a caller had, the owner refuses by name
+  (`chain_id_mismatch`) and there is no transport and no pin. It does not
+  restore the original candidates: doing so handed the caller exactly the nodes
+  just proven to serve another chain, and an endpoint logged as removed then
+  answered a balance and was selected for pinned execution. Rule 90 makes an
+  unidentifiable node fail closed - no signature is prepared against foreign
+  state.
+
 ## Pacing numbers
 
 Only where an endpoint measurably sheds load and pace is the remaining control:
@@ -178,12 +201,18 @@ table DOES know the chain, its own broadcast endpoint comes first and wins.
 
 ## Known limitations
 
-- `eth_sendRawTransaction` and `eth_estimateGas` were never probed on any
-  endpoint: they mutate or cost gas. Every "serves the money path" claim rests
-  on `eth_call`, `eth_getStorageAt`, `eth_getTransactionReceipt`,
-  `eth_getTransactionCount` and `eth_feeHistory`, which is the same class of
-  node work, not on a broadcast. `broadcastSafe` exists precisely because that
-  gap cannot be closed by measurement.
+- `eth_sendRawTransaction` was never probed on any endpoint: it broadcasts.
+  Every "accepts signed material" claim rests on `eth_call`, `eth_getStorageAt`,
+  `eth_getTransactionReceipt`, `eth_getTransactionCount`, `eth_estimateGas` and
+  `eth_feeHistory`, which is the same class of node work, not on a broadcast.
+  `broadcastSafe` exists precisely because that gap cannot be closed by
+  measurement. `eth_estimateGas` IS now probed by the live battery
+  (`agents-colab/agents_dm/verify/live-rpc-battery.ts`) as a zero-value self
+  transfer, which spends no gas and settles nothing, so the one
+  `SIGNING_METHODS` entry that used to be pure inference is measured. Measured
+  2026-09-06, this machine: all 47 shipped endpoints answered it, 44 with the
+  bare-transfer 21000 (`0x5208`), two with 21408 (`0x53a0`) and one with 60000
+  (`0xea60`); no endpoint refused it, so no method scope changed.
 - Receipts were probed on HEAD-BLOCK transactions only. Archive-depth behaviour
   (the case the bridge verifier hits after a month) is unmeasured here.
 - Rate limits are per IP and per window. The pacing numbers are shapes observed
@@ -191,5 +220,7 @@ table DOES know the chain, its own broadcast endpoint comes first and wins.
 - HyperEVM's broadcast endpoint refuses the standard `eth_feeHistory` form. No
   HyperEVM consumer issues it today; a future one must read fees through the
   read list.
-- The chain-id echo runs once per process per chain, on the transport's first
-  request. It costs one extra request per endpoint per chain per process.
+- The chain-id echo runs once per endpoint per chain per process, on the first
+  transport request that names that endpoint. It costs one extra request per
+  endpoint per chain per process. An endpoint a LATER caller adds is echoed when
+  that caller first resolves it, not at the chain's first request.

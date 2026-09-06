@@ -85,23 +85,42 @@ export function rpcHostOf(url: string): string {
  * configuration fact, not a transient one, and re-probing it on every client
  * construction would spend requests to re-learn the same answer. Cleared only by
  * {@link resetRpcVerification}, which exists for tests.
+ *
+ * A caller cannot resurrect an entry here by omitting it from its own
+ * `disqualifiedUrls`: {@link verifiedEndpointsFor} consults this map for every
+ * candidate on every pass, and a hit is reported as a removal rather than
+ * dropped silently, so {@link refuseWhenNoEndpointRemains} keeps its name long
+ * after the pass that first learned the mismatch.
  */
 const disqualified = new Map<number, Set<string>>();
 
-/** In-flight or completed verification per chain id, so the echo costs one pass. */
-const verification = new Map<number, Promise<readonly RpcEndpoint[]>>();
-
 /**
- * Every url disqualified for a chain: what the echo check has learned this
- * process, UNION whatever the caller already knows. Both, never one replacing
- * the other - a caller that names an endpoint it cannot use must not be able to
- * resurrect one the echo removed, and the echo must not discard the caller's.
+ * The chain-id ECHO VERDICT per chain id, then per endpoint url: the id that url
+ * echoed, or `null` when it could not answer at all.
+ *
+ * PER URL, NEVER A LIST PER CHAIN. The verdict is a property of ONE endpoint, so
+ * it is memoized against one endpoint and every caller's candidate list is
+ * resolved fresh from that caller's own options. Memoizing the resolved LIST per
+ * chain id made the first caller to warm a chain the author of every later
+ * caller's list: a client that supplied its own endpoint and explicitly
+ * disqualified the first one was still served by the first one, because the list
+ * was already fixed. This is MetaMask's shape - `network-controller/src/
+ * rpc-service/rpc-service-chain.ts` builds its services from the configurations
+ * THAT caller passed and keeps state per service, never a chain-wide list shared
+ * across constructions.
+ *
+ * The PROMISE is stored, not the value, so concurrent transports naming the same
+ * url share one in-flight probe and the echo still costs one request per url per
+ * process. Cleared only by {@link resetRpcVerification}, which exists for tests.
  */
-function disqualifiedFor(chainId: number, caller?: ReadonlySet<string>): ReadonlySet<string> {
-  const learned = disqualified.get(chainId);
-  if (caller === undefined || caller.size === 0) return learned ?? new Set<string>();
-  if (learned === undefined || learned.size === 0) return caller;
-  return new Set([...learned, ...caller]);
+const echoVerdicts = new Map<number, Map<string, Promise<number | null>>>();
+
+/** What one verification pass learned, so the caller can refuse by name. */
+interface VerifiedEndpoints {
+  /** Every candidate that did NOT prove it serves a different chain, in order. */
+  readonly kept: readonly RpcEndpoint[];
+  /** The hosts removed for `chain_id_mismatch`, in candidate order. */
+  readonly mismatchedHosts: readonly string[];
 }
 
 /**
@@ -136,8 +155,30 @@ async function readChainIdEcho(url: string, timeoutMs: number): Promise<number |
 }
 
 /**
- * Every endpoint for `chainId` that has NOT been proven to serve a different
- * chain, resolved once per process.
+ * The memoized echo verdict for one url on one chain, and whether THIS call is
+ * the one that issued the request. The caller uses the second value to pay the
+ * endpoint's request spacing only for a probe it actually sent.
+ */
+function echoVerdictFor(
+  chainId: number,
+  url: string,
+  timeoutMs: number,
+): { readonly verdict: Promise<number | null>; readonly issued: boolean } {
+  let perChain = echoVerdicts.get(chainId);
+  if (perChain === undefined) {
+    perChain = new Map<string, Promise<number | null>>();
+    echoVerdicts.set(chainId, perChain);
+  }
+  const known = perChain.get(url);
+  if (known !== undefined) return { verdict: known, issued: false };
+  const pending = readChainIdEcho(url, timeoutMs);
+  perChain.set(url, pending);
+  return { verdict: pending, issued: true };
+}
+
+/**
+ * This caller's endpoints for `chainId` that have NOT been proven to serve a
+ * different chain, with the echo spent at most once per url per process.
  *
  * WHY THIS GATE EXISTS. `registry.ts:18-21` already documents the `eth_chainId`
  * echo as the provenance method for a bundled endpoint, and the Solana side
@@ -148,24 +189,46 @@ async function readChainIdEcho(url: string, timeoutMs: number): Promise<number |
  * state for a chain it knows nothing about.
  *
  * The probes are SEQUENTIAL with a short spacing, so verifying a three-endpoint
- * chain costs three paced requests once, not a burst.
+ * chain costs three paced requests once, not a burst. A url whose verdict is
+ * already known costs neither a request nor a wait.
+ *
+ * AN ENDPOINT THAT COULD NOT ANSWER THE ECHO IS KEPT: that is liveness, which
+ * the failover already handles. Only a PROVEN mismatch removes an endpoint, and
+ * a removal is never undone - see {@link refuseWhenNoEndpointRemains}.
  */
 async function verifiedEndpointsFor(
   chainId: number,
   options: ResolveRpcEndpointsOptions,
-): Promise<readonly RpcEndpoint[]> {
-  const cached = verification.get(chainId);
-  if (cached !== undefined) return cached;
-
-  const pending = (async (): Promise<readonly RpcEndpoint[]> => {
-    const candidates = resolveRpcEndpoints(chainId, options);
-    const kept: RpcEndpoint[] = [];
-    for (const endpoint of candidates) {
-      const echo = await readChainIdEcho(endpoint.url, Math.min(endpoint.timeoutMs, 8_000));
-      if (echo !== null && echo !== chainId) {
-        const set = disqualified.get(chainId) ?? new Set<string>();
-        set.add(endpoint.url);
-        disqualified.set(chainId, set);
+): Promise<VerifiedEndpoints> {
+  // The CALLER's own exclusions pre-filter the list: an endpoint a caller says
+  // it cannot use is not this module's business and costs nothing, not even a
+  // probe. What the ECHO learned is applied inside the loop instead, so an
+  // endpoint already proven to serve another chain is still REPORTED as removed
+  // rather than silently vanishing - that is what lets the refusal below keep
+  // its name on every later pass, not only on the pass that first learned it.
+  const candidates = resolveRpcEndpoints(chainId, options);
+  const kept: RpcEndpoint[] = [];
+  const mismatchedHosts: string[] = [];
+  for (const endpoint of candidates) {
+    // Read fresh, never captured before the loop: a concurrent pass on the same
+    // chain can learn a mismatch while this one is awaiting its own probe.
+    if (disqualified.get(chainId)?.has(endpoint.url) === true) {
+      mismatchedHosts.push(rpcHostOf(endpoint.url));
+      continue;
+    }
+    const { verdict, issued } = echoVerdictFor(
+      chainId,
+      endpoint.url,
+      Math.min(endpoint.timeoutMs, 8_000),
+    );
+    const echo = await verdict;
+    if (echo !== null && echo !== chainId) {
+      const set = disqualified.get(chainId) ?? new Set<string>();
+      // The removal is recorded and reported exactly ONCE per url per process,
+      // by whichever pass first learns it. Concurrent passes share the same
+      // in-flight probe and therefore reach this branch together; the set is the
+      // arbiter, so the event is not duplicated (rule 05).
+      if (!set.has(endpoint.url)) {
         logger.warn("rpc.endpoint_removed", {
           chainId,
           host: rpcHostOf(endpoint.url),
@@ -173,26 +236,46 @@ async function verifiedEndpointsFor(
           reason: "chain_id_mismatch",
           echoedChainId: echo,
         });
-        continue;
+        set.add(endpoint.url);
+        disqualified.set(chainId, set);
       }
-      kept.push(endpoint);
-      const spacingMs = endpoint.minRequestSpacingMs ?? 0;
-      if (spacingMs > 0) await new Promise((resolve) => setTimeout(resolve, spacingMs));
+      mismatchedHosts.push(rpcHostOf(endpoint.url));
+      continue;
     }
-    // Every endpoint failed the echo for a reason other than a mismatch (all of
-    // them offline, say). Keeping the list is the honest outcome: the caller's
-    // own request will fail with the real transport error rather than with a
-    // synthetic "no endpoints" that hides why.
-    return kept.length > 0 ? kept : candidates;
-  })();
+    kept.push(endpoint);
+    const spacingMs = endpoint.minRequestSpacingMs ?? 0;
+    if (issued && spacingMs > 0) await new Promise((resolve) => setTimeout(resolve, spacingMs));
+  }
+  return { kept, mismatchedHosts };
+}
 
-  verification.set(chainId, pending);
-  return pending;
+/**
+ * Refuse, by name, when the echo removed every endpoint a caller had.
+ *
+ * THE REMOVAL IS NOT UNDONE. Restoring the original candidates because the kept
+ * list came back empty handed the caller exactly the nodes just proven to serve
+ * another chain: the endpoint was logged as removed and then answered a balance
+ * and was selected for pinned execution. A chain-id mismatch is a configuration
+ * fact about identity, not a transient liveness failure, and rule 90 makes an
+ * unidentifiable node fail closed - no transport, no pin, no signature prepared
+ * against foreign state. Hosts only, never full urls (rule 07).
+ *
+ * Callers with no candidates AT ALL are a different, unnamed condition and are
+ * left to their own message.
+ */
+function refuseWhenNoEndpointRemains(chainId: number, verified: VerifiedEndpoints): void {
+  if (verified.kept.length > 0 || verified.mismatchedHosts.length === 0) return;
+  throw new Error(
+    `Refused (chain_id_mismatch): every RPC endpoint for chain ${chainId} echoed a different `
+    + `chain id, so there is no transport and no pinned endpoint. Removed: `
+    + `${verified.mismatchedHosts.join(", ")}. Configure an endpoint that serves chain ${chainId} `
+    + "under `localChainRpcUrls`.",
+  );
 }
 
 /** Drop every memoized echo verdict. Test-only seam; production never calls it. */
 export function resetRpcVerification(): void {
-  verification.clear();
+  echoVerdicts.clear();
   disqualified.clear();
   paceTail.clear();
 }
@@ -300,10 +383,9 @@ export function buildEvmTransport(chainId: number, options: EvmTransportOptions 
 
     const build = async (): Promise<ReturnType<Transport>> => {
       if (inner !== undefined) return inner;
-      endpoints = await verifiedEndpointsFor(chainId, {
-        ...options,
-        disqualifiedUrls: disqualifiedFor(chainId, options.disqualifiedUrls),
-      });
+      const verified = await verifiedEndpointsFor(chainId, options);
+      refuseWhenNoEndpointRemains(chainId, verified);
+      endpoints = verified.kept;
       if (endpoints.length === 0) {
         throw new Error(`No RPC endpoint is configured or bundled for chain ${chainId}.`);
       }
@@ -412,11 +494,9 @@ export async function resolvePinnedRpcEndpoint(
   chainId: number,
   options: ResolveRpcEndpointsOptions = {},
 ): Promise<RpcEndpoint> {
-  const endpoints = await verifiedEndpointsFor(chainId, {
-    ...options,
-    disqualifiedUrls: disqualifiedFor(chainId, options.disqualifiedUrls),
-  });
-  const chosen = endpoints.find(
+  const verified = await verifiedEndpointsFor(chainId, options);
+  refuseWhenNoEndpointRemains(chainId, verified);
+  const chosen = verified.kept.find(
     (endpoint) => endpoint.broadcastSafe && servesEveryMethod(endpoint, SIGNING_METHODS),
   );
   if (chosen === undefined) {
