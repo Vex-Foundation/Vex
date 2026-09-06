@@ -52,6 +52,12 @@ beforeEach(() => {
     ) {
       return { rows: [] };
     }
+    if (typeof sql === "string" && /SELECT file FROM schema_migration_recovery_files/i.test(sql)) {
+      return { rows: [] };
+    }
+    if (typeof sql === "string" && /SELECT legacy_version FROM schema_migration_baseline/i.test(sql)) {
+      return { rows: [] };
+    }
     return undefined;
   });
 });

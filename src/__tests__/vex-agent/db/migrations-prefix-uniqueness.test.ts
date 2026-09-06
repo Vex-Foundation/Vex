@@ -1,7 +1,7 @@
 /**
  * Migration filename identity guard.
  *
- * Prefixes 079-084 already shipped with two files each and cannot be
+ * Main and Lighter already shipped overlapping prefixes and cannot be
  * renumbered safely. The shared runner therefore keeps legacy numeric history
  * in `schema_version` and exact applied filenames in a companion ledger. This
  * test freezes the known collision set so no new duplicate prefix can sneak
@@ -10,7 +10,7 @@
 
 import { describe, it, expect } from "vitest";
 import { execFileSync } from "node:child_process";
-import { readdirSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 
 const SRC_DIR = resolve(process.cwd(), "src/vex-agent/db/migrations");
@@ -43,13 +43,22 @@ function findDuplicates(values: readonly string[]): string[] {
   return [...dupes].sort();
 }
 
-const SHIPPED_DUPLICATE_PREFIXES = ["079", "080", "081", "082", "083", "084"];
+const SHIPPED_DUPLICATE_FILES: unknown = JSON.parse(readFileSync(
+  new URL("./fixtures/merged-migration-collisions.json", import.meta.url), "utf8",
+));
+
+function duplicateFiles(dir: string): Record<string, string[]> {
+  const files = migrationFiles(dir);
+  return Object.fromEntries(findDuplicates(migrationPrefixes(dir)).map((prefix) => [
+    prefix, files.filter((file) => file.startsWith(`${prefix}_`)),
+  ]));
+}
 
 describe("migration filename identity", () => {
   it("allows only the already-shipped duplicate numeric prefixes", () => {
     const prefixes = migrationPrefixes(SRC_DIR);
     expect(prefixes.length).toBeGreaterThan(0);
-    expect(findDuplicates(prefixes)).toEqual(SHIPPED_DUPLICATE_PREFIXES);
+    expect(duplicateFiles(SRC_DIR)).toEqual(SHIPPED_DUPLICATE_FILES);
   });
 
   it("keeps the same shipped duplicate prefixes in the vex-app mirror", () => {
@@ -59,7 +68,7 @@ describe("migration filename identity", () => {
     });
     const prefixes = migrationPrefixes(MIRROR_DIR);
     expect(prefixes.length).toBeGreaterThan(0);
-    expect(findDuplicates(prefixes)).toEqual(SHIPPED_DUPLICATE_PREFIXES);
+    expect(duplicateFiles(MIRROR_DIR)).toEqual(SHIPPED_DUPLICATE_FILES);
   });
 
   it("mirror filenames exactly match source filenames (copy-script filter parity)", () => {

@@ -56,12 +56,16 @@ describe("migration 109 — 079-084 collision repair", () => {
       "lend_repay",
       "pools_claim",
       "wallet_transfer",
+      "tx_contract_call",
+      "creator_fee_claim",
+      "holder_reward_claim",
+      "vex_fee",
     ]) {
       expect(migration).toContain(`'${value}'`);
     }
     expect(migration).toMatch(/kind = 'lend'.*'allowance'/s);
     expect(migration).toMatch(/kind = 'transfer'.*'wallet_transfer'/s);
-    expect(migration).toMatch(/event_role = 'pools_claim'/s);
+    expect(migration).toMatch(/event_role IN \('pools_claim', 'creator_fee_claim', 'holder_reward_claim'\)/s);
   });
 
   it("uses re-runnable table, column, index, and named-constraint operations", () => {

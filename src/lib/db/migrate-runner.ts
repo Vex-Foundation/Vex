@@ -17,6 +17,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import type pg from "pg";
+import { HISTORICAL_MIGRATION_GROUPS } from "./migration-lineages.js";
 
 /**
  * Stable advisory-lock identifier shared across every Vex consumer.
@@ -82,16 +83,20 @@ interface PendingMigration {
   readonly file: string;
 }
 
-function listPendingMigrations(
-  migrationsDir: string,
-  currentVersion: number,
-  appliedFiles: ReadonlySet<string>
-): ReadonlyArray<PendingMigration> {
-  const migrations = readdirSync(migrationsDir)
-    .filter((f) => f.endsWith(".sql") && /^\d{3}_/.test(f))
+function listMigrations(migrationsDir: string): ReadonlyArray<PendingMigration> {
+  return readdirSync(migrationsDir)
+    .filter((file) => /^\d{3}_.*\.sql$/.test(file))
     .sort()
-    .map((file) => ({ version: parseInt(file.slice(0, 3), 10), file }));
+    .map((file) => ({ version: Number.parseInt(file.slice(0, 3), 10), file }));
+}
 
+function listPendingMigrations(
+  migrations: ReadonlyArray<PendingMigration>,
+  currentVersion: number,
+  appliedFiles: ReadonlySet<string>,
+  recoveryFiles: ReadonlySet<string>,
+  legacyVersion: number,
+): ReadonlyArray<PendingMigration> {
   const filesByVersion = new Map<number, string[]>();
   for (const migration of migrations) {
     const siblings = filesByVersion.get(migration.version) ?? [];
@@ -101,7 +106,9 @@ function listPendingMigrations(
 
   return migrations.filter((migration) => {
     if (appliedFiles.has(migration.file)) return false;
+    if (recoveryFiles.has(migration.file)) return true;
     if (migration.version > currentVersion) return true;
+    if (migration.version <= legacyVersion) return false;
 
     // A run may stop after committing the first file in a duplicate-prefix
     // group. Its numeric version is then already current, but the filename
@@ -111,6 +118,58 @@ function listPendingMigrations(
     const siblings = filesByVersion.get(migration.version) ?? [];
     return siblings.some((file) => appliedFiles.has(file));
   });
+}
+
+async function readLegacyVersion(
+  client: pg.PoolClient, currentVersion: number, appliedFiles: ReadonlySet<string>,
+): Promise<number> {
+  const result = await client.query<{ legacy_version: number }>(
+    "SELECT legacy_version FROM schema_migration_baseline WHERE singleton = TRUE",
+  );
+  const saved = result.rows[0];
+  if (saved) return saved.legacy_version;
+  // The exact ledger may have been introduced after many numeric migrations.
+  // Freeze that boundary before recording any recovered low-numbered files;
+  // otherwise a later run could mistake their already-shipped siblings for new
+  // work and replay old, narrower constraints over current user data.
+  const versions = [...appliedFiles].map((file) => Number.parseInt(file.slice(0, 3), 10));
+  const legacyVersion = versions.length === 0 ? currentVersion : Math.max(0, Math.min(...versions) - 1);
+  await client.query(
+    "INSERT INTO schema_migration_baseline (singleton, legacy_version) VALUES (TRUE, $1)", [legacyVersion],
+  );
+  return legacyVersion;
+}
+
+/** Plan missing lineages before any dependent migration can advance the version. */
+async function planHistoricalRecovery(
+  client: pg.PoolClient,
+  migrations: ReadonlyArray<PendingMigration>,
+  currentVersion: number,
+  appliedFiles: ReadonlySet<string>,
+): Promise<ReadonlySet<string>> {
+  const eligibleFiles = new Set(migrations
+    .filter(({ file, version }) => version <= currentVersion && !appliedFiles.has(file))
+    .map(({ file }) => file));
+  for (const group of HISTORICAL_MIGRATION_GROUPS) {
+    const files = group.files.filter((file) => eligibleFiles.has(file));
+    if (files.length === 0) continue;
+    const result = await client.query<{ present: boolean }>(
+      "SELECT to_regclass($1) IS NOT NULL AS present", [group.table],
+    );
+    // Existing tables may contain newer data and constraints. Never replay an
+    // old foundation merely because a legacy database has no filename ledger.
+    if (result.rows[0]?.present !== false) continue;
+    await client.query(
+      "INSERT INTO schema_migration_recovery_files (file) SELECT unnest($1::text[]) ON CONFLICT DO NOTHING",
+      [files],
+    );
+  }
+  const result = await client.query<{ file: string }>("SELECT file FROM schema_migration_recovery_files");
+  const availableFiles = new Set(migrations.map(({ file }) => file));
+  for (const { file } of result.rows) {
+    if (!availableFiles.has(file)) throw new Error(`Required migration recovery file is missing: ${file}`);
+  }
+  return new Set(result.rows.map(({ file }) => file));
 }
 
 async function readCurrentVersion(client: pg.PoolClient): Promise<number> {
@@ -147,6 +206,19 @@ async function ensureSchemaVersionTable(client: pg.PoolClient): Promise<void> {
       applied_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+  // Persist the exact recovery plan before creating the first missing table.
+  // A restart must finish the remaining columns even after that table exists.
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS schema_migration_recovery_files (
+      file TEXT PRIMARY KEY
+    )
+  `);
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS schema_migration_baseline (
+      singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton),
+      legacy_version INTEGER NOT NULL CHECK (legacy_version >= 0)
+    )
+  `);
 }
 
 async function applyMigration(
@@ -166,6 +238,7 @@ async function applyMigration(
       "INSERT INTO schema_migration_files (file, version) VALUES ($1, $2)",
       [migration.file, migration.version]
     );
+    await client.query("DELETE FROM schema_migration_recovery_files WHERE file = $1", [migration.file]);
     await client.query("COMMIT");
   } catch (cause: unknown) {
     // ROLLBACK is best-effort — if the connection itself died we cannot
@@ -206,10 +279,15 @@ export async function runMigrationsWithProgress(
     await ensureSchemaVersionTable(client);
     const currentVersion = await readCurrentVersion(client);
     const recordedFiles = await readAppliedFiles(client);
+    const legacyVersion = await readLegacyVersion(client, currentVersion, recordedFiles);
+    const migrations = listMigrations(options.migrationsDir);
+    const recoveryFiles = await planHistoricalRecovery(client, migrations, currentVersion, recordedFiles);
     const pending = listPendingMigrations(
-      options.migrationsDir,
+      migrations,
       currentVersion,
-      recordedFiles
+      recordedFiles,
+      recoveryFiles,
+      legacyVersion,
     );
 
     options.onProgress?.({

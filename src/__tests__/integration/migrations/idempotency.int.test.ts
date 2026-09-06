@@ -1,6 +1,6 @@
 /**
- * Integration: `runMigrations` is idempotent and `schema_version` stays at
- * exactly one row per migration file after repeated invocations.
+ * Integration: repeated migration runs preserve both the numeric version
+ * history and the exact filename ledger, including colliding prefixes.
  *
  * globalSetup already ran the migrations once before this suite loads, so the
  * test effectively asserts a second run is a no-op.
@@ -13,26 +13,35 @@ import { query } from "@vex-agent/db/client.js";
 import { readdirSync } from "node:fs";
 import { getVexAgentMigrationsDir } from "@utils/package-assets.js";
 
-function countMigrationFiles(): number {
+function migrationFiles(): string[] {
   return readdirSync(getVexAgentMigrationsDir()).filter(
     (f) => f.endsWith(".sql") && /^\d{3}_/.test(f),
-  ).length;
+  ).sort();
 }
 
 describe("runMigrations idempotency (integration)", () => {
-  it("second run does not throw and does not add rows to schema_version", async () => {
-    const expected = countMigrationFiles();
-
-    const before = await query<{ count: string }>(
-      "SELECT COUNT(*)::text AS count FROM schema_version",
+  it("second run preserves every exact filename and distinct numeric version", async () => {
+    const files = migrationFiles();
+    const versions = [...new Set(files.map((file) => Number.parseInt(file.slice(0, 3), 10)))].sort((a, b) => a - b);
+    const readVersions = () => query<{ version: number; applied_at: Date }>(
+      "SELECT version, applied_at FROM schema_version ORDER BY version",
     );
-    expect(Number(before[0].count)).toBe(expected);
+    const readFiles = () => query<{ file: string; version: number; applied_at: Date }>(
+      "SELECT file, version, applied_at FROM schema_migration_files ORDER BY file",
+    );
+
+    const beforeVersions = await readVersions();
+    const beforeFiles = await readFiles();
+    expect(beforeVersions.map(({ version }) => version)).toEqual(versions);
+    expect(beforeFiles.map(({ file }) => file)).toEqual(files);
+    expect(beforeFiles.map(({ file, version }) => ({ file, version }))).toEqual(
+      files.map((file) => ({ file, version: Number.parseInt(file.slice(0, 3), 10) })),
+    );
 
     await expect(runMigrations()).resolves.toBeUndefined();
 
-    const after = await query<{ count: string }>(
-      "SELECT COUNT(*)::text AS count FROM schema_version",
-    );
-    expect(Number(after[0].count)).toBe(expected);
+    expect(await readVersions()).toEqual(beforeVersions);
+    expect(await readFiles()).toEqual(beforeFiles);
+    expect(await query("SELECT file FROM schema_migration_recovery_files")).toEqual([]);
   });
 });

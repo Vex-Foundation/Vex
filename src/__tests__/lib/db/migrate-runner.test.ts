@@ -57,6 +57,9 @@ function makeMockPool(
     if (/SELECT file FROM schema_migration_files/i.test(sql)) {
       return { rows: appliedFiles.map((file) => ({ file })) };
     }
+    if (/SELECT file FROM schema_migration_recovery_files/i.test(sql)) return { rows: [] };
+    if (/SELECT legacy_version FROM schema_migration_baseline/i.test(sql)) return { rows: [] };
+    if (/SELECT to_regclass/i.test(sql)) return { rows: [{ present: true }] };
     return undefined;
   };
   let queryImpl = defaultQueryImpl;

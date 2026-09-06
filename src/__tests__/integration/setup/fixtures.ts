@@ -16,12 +16,13 @@ import { embedQuery } from "@vex-agent/embeddings/client.js";
 
 /**
  * Wipe every non-schema table + reset identity sequences. Keeps
- * `schema_version` so migrations don't re-run per test.
+ * migration ledgers so migrations don't re-run per test.
  */
 export async function resetDb(): Promise<void> {
   const rows = await query<{ tablename: string }>(
     `SELECT tablename FROM pg_tables
-       WHERE schemaname = 'public' AND tablename <> 'schema_version'`,
+       WHERE schemaname = 'public'
+         AND tablename NOT IN ('schema_version', 'schema_migration_files', 'schema_migration_recovery_files', 'schema_migration_baseline')`,
   );
   if (rows.length === 0) return;
   const list = rows.map((r) => `"${r.tablename}"`).join(", ");

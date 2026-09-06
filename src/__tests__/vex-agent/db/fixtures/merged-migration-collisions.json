@@ -1,0 +1,103 @@
+{
+  "079": [
+    "079_agent_activity_evm_lend.sql",
+    "079_lighter_nonce_state.sql"
+  ],
+  "080": [
+    "080_lighter_order_previews.sql",
+    "080_swap_prequotes_lend_kinds.sql"
+  ],
+  "081": [
+    "081_lighter_order_execution_intents.sql",
+    "081_swap_prequotes_borrow_kinds.sql"
+  ],
+  "082": [
+    "082_lighter_order_submit_lifecycle.sql",
+    "082_pools_fun_launch.sql"
+  ],
+  "083": [
+    "083_launch_image_onchain_variant.sql",
+    "083_lighter_order_provider_outcomes.sql"
+  ],
+  "084": [
+    "084_agent_activity_wallet_transfer.sql",
+    "084_lighter_order_pre_submit_revalidation.sql"
+  ],
+  "085": [
+    "085_migration_078_collision_repair.sql",
+    "085_projects.sql"
+  ],
+  "086": [
+    "086_lighter_onboarding_intents.sql",
+    "086_studio_approvals.sql"
+  ],
+  "087": [
+    "087_lighter_allowance_verified.sql",
+    "087_wallet_transaction_intents.sql"
+  ],
+  "088": [
+    "088_lighter_live_deposit_uniqueness.sql",
+    "088_wallet_tx_vex_fee.sql"
+  ],
+  "089": [
+    "089_lighter_evm_execution_leases.sql",
+    "089_studio_installer_provenance.sql"
+  ],
+  "090": [
+    "090_lighter_integration_settings.sql",
+    "090_wallet_transaction_intents_activity_unique.sql"
+  ],
+  "091": [
+    "091_evm_nonce_reservations.sql",
+    "091_lighter_onboarding_workflows.sql"
+  ],
+  "092": [
+    "092_lighter_workflow_deposit_backfill.sql",
+    "092_studio_pending_refusal_repair.sql"
+  ],
+  "093": [
+    "093_lighter_deposit_evidence.sql",
+    "093_wallet_transfer_unconfirmed_repair.sql"
+  ],
+  "094": [
+    "094_lighter_deposit_preflight.sql",
+    "094_pools_launch_attribution.sql"
+  ],
+  "095": [
+    "095_lighter_deposit_fee_preflight.sql",
+    "095_swap_prequotes_claim.sql"
+  ],
+  "096": [
+    "096_lighter_deposit_transaction_identity.sql",
+    "096_wallet_wrap_intents.sql"
+  ],
+  "097": [
+    "097_lighter_key_registration_slots.sql",
+    "097_project_soft_delete.sql"
+  ],
+  "098": [
+    "098_lighter_key_registration_metadata.sql",
+    "098_project_file_provenance_origin.sql"
+  ],
+  "099": [
+    "099_lighter_key_registration_approval.sql",
+    "099_swap_prequotes_balance_eligibility.sql"
+  ],
+  "100": [
+    "100_lighter_key_registration_transaction_identity.sql",
+    "100_wallet_intent_wallet_indexes.sql"
+  ],
+  "101": [
+    "101_lighter_rhc_funding_preflight.sql",
+    "101_portfolio_snapshot_groups.sql"
+  ],
+  "102": [
+    "102_launchpad_family_roles.sql",
+    "102_lighter_core_withdrawals.sql",
+    "102_portfolio_snapshot_group_wallets.sql"
+  ],
+  "106": [
+    "106_launch_image_public_asset.sql",
+    "106_lighter_rhc_withdrawal_claims.sql"
+  ]
+}
