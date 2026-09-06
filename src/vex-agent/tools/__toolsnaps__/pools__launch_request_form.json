@@ -41,7 +41,7 @@
             "type": "string"
           },
           "pairedStockAddress": {
-            "description": "The 0x address of the tokenised stock to pair against, REQUIRED when pairedAsset is stock and refused by name on any other pair. Take it from pools__launch_assets_list, which reads the factory's own allowedPairedAsset and pricingModeFor for every listed stock. A SIGNED_STOCK pair is priced by a backend-signed quote the factory accepts only 30 to 120 seconds after it was observed, so such a launch must be prepared, confirmed and broadcast inside that window and is re-prepared automatically if it lapses.",
+            "description": "The 0x address of the tokenised stock to pair against, REQUIRED when pairedAsset is stock and refused by name on any other pair. Take it from pools__launch_assets_list, which reads the factory's own allowedPairedAsset and pricingModeFor for every listed stock. A SIGNED_STOCK pair is priced by a backend-signed quote that is valid only for its pair's own quote window, which the factory allows to be configured between 30 and 120 seconds, so such a launch must be prepared, confirmed and broadcast inside that window and is re-prepared automatically if it lapses.",
             "type": "string"
           },
           "prebuy": {

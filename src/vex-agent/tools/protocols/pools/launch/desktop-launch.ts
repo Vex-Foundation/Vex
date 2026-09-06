@@ -47,6 +47,7 @@ import {
   settlePoolsLaunchFailure,
 } from "../handlers/launch/execute/authorize.js";
 import { broadcastPoolsLaunch } from "../handlers/launch/execute/broadcast.js";
+import { poolsLaunchOnChainExpiry } from "../handlers/launch/execute/expiry.js";
 import { readDesktopLaunchInputs } from "./desktop-inputs.js";
 import {
   consumePreparedLaunch,
@@ -78,21 +79,6 @@ const NATIVE_DECIMALS = 18;
 const FINGERPRINT_WINDOW_MS = 10 * 60 * 1000;
 
 /**
- * How much of a SIGNED price quote's life must still remain when the user clicks
- * Deploy.
- *
- * The factory accepts a signed stock quote only 30 to 120 seconds after it was
- * observed (`MIN/MAX_SIGNED_QUOTE_AGE`, measured), and a launch still has to be
- * authorized, signed and INCLUDED inside that window. Ten seconds is the floor
- * below which the remaining work cannot plausibly finish; it is an ABSOLUTE
- * number rather than a fraction of the window, because a fraction would shrink
- * exactly when the window is shortest. It matches the verifier's own margin, so
- * the confirmation screen and the pre-signing check cannot disagree about
- * whether a quote is still alive.
- */
-const SIGNED_QUOTE_DEPLOY_MARGIN_MS = 10 * 1000;
-
-/**
  * WHEN THIS PREPARED LAUNCH DIES, and which clock killed it.
  *
  * THREE DEADLINES, AND THE TIGHTEST ONE WINS. Before this lane carried stock
@@ -100,9 +86,9 @@ const SIGNED_QUOTE_DEPLOY_MARGIN_MS = 10 * 1000;
  * was harmless because nothing inside the calldata expired sooner. That is no
  * longer true:
  *
- *   - a SIGNED_STOCK pair carries a backend-signed quote the factory refuses
- *     outside a 30-to-120-second window, so its real deadline can be TWO ORDERS
- *     OF MAGNITUDE shorter than the Vex window;
+ *   - a SIGNED_STOCK pair carries a backend-signed quote whose life is a matter
+ *     of seconds, so its real deadline can be TWO ORDERS OF MAGNITUDE shorter
+ *     than the Vex window;
  *   - the calldata's own `deadline` bounds every launch.
  *
  * Showing the ten-minute window on a stock launch would count down to a moment
@@ -110,37 +96,25 @@ const SIGNED_QUOTE_DEPLOY_MARGIN_MS = 10 * 1000;
  * gas on a launch Vex had told them they had minutes left for. So the window is
  * the MINIMUM of the three, and the reason travels with it, because "42 seconds"
  * and "42 seconds because the price quote expires" are different instructions.
+ *
+ * ONLY THE VEX WINDOW IS THIS LANE'S OWN. The two clocks that live inside the
+ * calldata come from `execute/expiry.ts`, which is also what the broadcaster
+ * asks at the last gate before the key - so the countdown on this screen and the
+ * refusal at signing time cannot disagree about when these bytes died.
  */
 function resolveFingerprintExpiry(
   plan: PoolsLaunchPlan,
   nowMs: number,
 ): { readonly expiresAtMs: number; readonly reason: PoolsPreparedLaunch["expiryReason"] } {
-  const candidates: { readonly atMs: number; readonly reason: PoolsPreparedLaunch["expiryReason"] }[] = [
-    { atMs: nowMs + FINGERPRINT_WINDOW_MS, reason: "vex_window" },
-  ];
-
-  // The gateway's own deadline, in seconds since the epoch.
-  if (plan.tuple.deadline > 0n) {
-    candidates.push({ atMs: Number(plan.tuple.deadline) * 1000, reason: "gateway_deadline" });
+  const vexWindow = {
+    atMs: nowMs + FINGERPRINT_WINDOW_MS,
+    reason: "vex_window" as const,
+  };
+  const onChain = poolsLaunchOnChainExpiry(plan.tuple);
+  if (onChain === null || vexWindow.atMs <= onChain.atMs) {
+    return { expiresAtMs: vexWindow.atMs, reason: vexWindow.reason };
   }
-
-  // The signed quote, when there is one. An all-zero attestation is a real value
-  // meaning "this pair needs no signed quote" (the gateway takes the struct by
-  // value), so a zero `expiresAt` is NOT a deadline of 1970 and must not be
-  // treated as one.
-  const quoteExpiresAt = plan.tuple.priceAttestation.expiresAt;
-  if (quoteExpiresAt > 0n) {
-    candidates.push({
-      atMs: Number(quoteExpiresAt) * 1000 - SIGNED_QUOTE_DEPLOY_MARGIN_MS,
-      reason: "quote_window",
-    });
-  }
-
-  let tightest = candidates[0]!;
-  for (const candidate of candidates) {
-    if (candidate.atMs < tightest.atMs) tightest = candidate;
-  }
-  return { expiresAtMs: tightest.atMs, reason: tightest.reason };
+  return { expiresAtMs: onChain.atMs, reason: onChain.clock };
 }
 
 /** The sentence a lapsed confirmation gets, in the words of the clock that lapsed. */
@@ -149,8 +123,8 @@ function expiredConfirmationReason(reason: PoolsPreparedLaunch["expiryReason"]):
   switch (reason) {
     case "quote_window":
       return (
-        "This launch's signed stock price quote has expired. The launch factory accepts one for a matter of "
-        + `seconds after it was observed, so a stock-paired launch has to be confirmed immediately. ${nothing}`
+        "This launch's signed stock price quote has expired. The factory honours one only for this pair's own "
+        + `quote window, a matter of seconds, so a stock-paired launch has to be confirmed immediately. ${nothing}`
       );
     case "gateway_deadline":
       return `This launch's own on-chain deadline has passed, so the transaction would revert. ${nothing}`;
