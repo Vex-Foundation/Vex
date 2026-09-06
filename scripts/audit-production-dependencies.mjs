@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { verifyStreamJsonException } from "./verify-stream-json-exception.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const configPath = path.resolve(root, process.argv[2] ?? "scripts/production-audit-allowlist.json");
@@ -48,6 +49,10 @@ if (stale.length > 0) {
     console.error(`Stale production advisory exception: ${finding.package}@${finding.version} ${finding.url}`);
   }
   fail("remove or update stale dependency-audit exceptions after lockfile changes");
+}
+
+if (allowlist.exceptions.some((entry) => entry.package === "stream-json")) {
+  await verifyStreamJsonException(auditRoot);
 }
 
 for (const entry of allowlist.exceptions) {

@@ -16,6 +16,14 @@
       "version": "8.3.2",
       "path": ".>@solana/web3.js>jayson>uuid",
       "rationale": "The advisory affects uuid v3, v5, and v6 with caller-provided output buffers. Jayson imports and invokes uuid v4 only, without a caller-provided buffer. Re-review when Jayson or Solana accepts uuid 11.1.1 or newer."
+    },
+    {
+      "url": "https://github.com/advisories/GHSA-528h-pc64-c93x",
+      "package": "stream-json",
+      "severity": "moderate",
+      "version": "1.9.1",
+      "path": ".>@solana/web3.js>jayson>stream-json",
+      "rationale": "User-approved temporary exception, reviewed 2026-09-06. The advisory affects pick/ignore/filter/replace path filters and explicitly excludes StreamValues. Jayson 4.3.0 imports only StreamValues and Verifier. The audit verifies those installed imports, rejects loaded filter modules, and exercises chunked and malformed JSON parsing. The patched 3.5.0 changes module exports and cannot replace 1.9.1 compatibly. Re-review by 2026-09-18 or when Jayson accepts a patched release or reachable imports change."
     }
   ]
 }
