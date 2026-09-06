@@ -143,8 +143,8 @@ free. Both texts live on the tool
 | lighter__deposit | Execute an approved Lighter deposit | protocol | no | yes | no | - | 817 | - | - |
 | lighter__deposit_prepare | Prepare a Lighter deposit approval | protocol | no | no | no | - | 1005 | - | - |
 | lighter__deposit_status | Check a Lighter deposit's status | protocol | yes | no | no | - | 919 | - | none (read) |
-| lighter__fees_approve | Authorize approved Lighter trading fees | protocol | no | yes | no | - | 596 | - | - |
-| lighter__fees_approve_prepare | Prepare Lighter trading-fee approval | protocol | no | no | no | - | 646 | - | - |
+| lighter__fees_approve | Authorize approved Lighter trading fees | protocol | no | yes | no | - | 698 | - | - |
+| lighter__fees_approve_prepare | Prepare Lighter trading-fee approval | protocol | no | no | no | - | 752 | - | - |
 | lighter__fees_status | Check Lighter trading-fee authorization | protocol | yes | no | no | - | 560 | - | none (read) |
 | lighter__key_register | Register an approved Lighter trading key | protocol | no | yes | no | - | 724 | - | - |
 | lighter__key_register_prepare | Prepare a Lighter trading-key approval | protocol | no | no | no | - | 1016 | - | - |

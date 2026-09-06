@@ -45,12 +45,12 @@ function context(overrides: Partial<EngineContext>): EngineContext {
  * Trench card and its lines, which returns more than this costs.
  */
 const MODES = [
-  { name: "agent / restricted", context: context({}), ceiling: 61_634 },
-  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 62_335 },
-  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 68_111 },
-  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 68_130 },
-  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 66_835 },
-  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 66_650 },
+  { name: "agent / restricted", context: context({}), ceiling: 61_640 },
+  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 62_341 },
+  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 68_117 },
+  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 68_136 },
+  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 66_841 },
+  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 66_656 },
 ] as const;
 
 beforeAll(() => {
