@@ -37,7 +37,7 @@ import {
 } from "../../../lib/composer-drafts.js";
 import { SessionPanel } from "../SessionPanel.js";
 import { MarketChart } from "./MarketChart.js";
-import { ChartFullscreenButton } from "./ChartFullscreenButton.js";
+import { ChartExpandButton } from "./ChartExpandButton.js";
 import { MarketPicker } from "./MarketPicker.js";
 import { OrderBook, type LighterOrderBookData } from "./OrderBook.js";
 import { TradingBottomPanel } from "./AccountPanel.js";
@@ -91,6 +91,10 @@ export function LighterTradingDialog({
   const [marketId, setMarketId] = useState<number | null>(null);
   const [resolution, setResolution] = useState<LighterTradingLiveResolution>("5m");
   const [marketPickerOpen, setMarketPickerOpen] = useState(false);
+  const [chartExpanded, setChartExpanded] = useState(false);
+  useEffect(() => {
+    if (!open) setChartExpanded(false);
+  }, [open]);
   const marketsQuery = useLighterTradingMarkets(environment, open);
   const marketList = marketsQuery.data?.ok === true ? marketsQuery.data.data : null;
   const filteredMarkets = useMemo(() => {
@@ -150,12 +154,19 @@ export function LighterTradingDialog({
     ? null
     : marketProductLabel(marketClassification);
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(nextOpen) => {
+      if (!nextOpen && chartExpanded) {
+        setChartExpanded(false);
+        return;
+      }
+      onOpenChange(nextOpen);
+    }}>
       <DialogContent
         className="lit-dialog"
         data-vex-area="lighter-trading-dialog"
         data-lighter-theme={theme}
         data-lighter-environment={environment}
+        data-chart-expanded={chartExpanded || undefined}
       >
         <DialogTitle className="sr-only">Light it up — Lighter trading analysis</DialogTitle>
         <DialogDescription className="sr-only">
@@ -293,7 +304,7 @@ export function LighterTradingDialog({
                           {item}
                         </button>
                       ))}
-                      <ChartFullscreenButton />
+                      <ChartExpandButton expanded={chartExpanded} onToggle={() => setChartExpanded(!chartExpanded)} />
                     </div>
                   </header>
                   <div className="lit-chart-body">

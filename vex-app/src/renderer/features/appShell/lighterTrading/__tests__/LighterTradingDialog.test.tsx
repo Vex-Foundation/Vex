@@ -172,6 +172,21 @@ describe("Light it up dialog", () => {
       .toBe("true");
   });
 
+  it("expands the chart without browser permission and restores on Escape without losing the desk", async () => {
+    renderDialog();
+    const desk = await screen.findByTestId("active-session-chat");
+    fireEvent.click(screen.getByRole("button", { name: "Expand chart" }));
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.getAttribute("data-chart-expanded")).toBe("true");
+    expect(screen.getByTestId("active-session-chat")).toBe(desk);
+
+    fireEvent(dialog, new Event("cancel", { cancelable: true }));
+    expect(dialog.hasAttribute("data-chart-expanded")).toBe(false);
+    expect(mocks.onOpenChange).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Expand chart" }));
+    expect(screen.getByTestId("active-session-chat")).toBe(desk);
+  });
+
   it("closes market details with Escape while keeping the workspace open", async () => {
     renderDialog();
     const summary = await screen.findByText("Market details");

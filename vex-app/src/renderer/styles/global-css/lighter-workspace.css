@@ -43,14 +43,27 @@
   gap: 10px;
 }
 
-.lit-chart-panel:fullscreen {
-  width: 100vw;
-  height: 100vh;
+.lit-dialog[data-chart-expanded] { overflow: hidden; }
+
+.lit-dialog[data-chart-expanded] .lit-header,
+.lit-dialog[data-chart-expanded] .lit-market-bar,
+.lit-dialog[data-chart-expanded] .lit-workspace > :not(.lit-chart-panel) {
+  visibility: hidden;
+}
+
+.lit-dialog[data-chart-expanded] .lit-workspace { overflow: hidden; }
+
+.lit-dialog[data-chart-expanded] .lit-chart-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+  width: 100%;
+  height: 100%;
   border: 0;
   background: var(--lit-panel);
 }
 
-.lit-resolution-tabs .lit-chart-fullscreen {
+.lit-resolution-tabs .lit-chart-expand {
   display: grid;
   place-items: center;
   min-width: 30px;
