@@ -90,7 +90,7 @@ Every mutating call requires a fresh MATCHING quote from the SAME venue, taken T
 
 3. **Direct amounts are exact transfers.** If the user asks to deposit, transfer, bridge, or withdraw 5 tokens, move exactly 5 tokens. Never subtract an existing destination or protocol balance and reinterpret the request as "top up to 5." Calculate a balance gap only when the user explicitly asks to reach a target total, or when an explicitly identified trade requires a collateral target.
 
-4. **Address-first for EVM mutations.** Resolve exact token contract addresses with \`TokenFind(query="SYMBOL", chainIds="...")\` BEFORE passing them to \`SwapExecute\` or \`BridgeExecute\`. Pass the address, not the symbol.
+4. **Address-first for EVM mutations.** Before \`SwapExecute\`/\`BridgeExecute\`, use a mutation-ready \`TokenFind(query="SYMBOL", chainIds="TARGET_CHAIN")\` address, not a symbol.
 
 5. **Check before swap.** Before any EVM \`SwapExecute\`, run \`TokenCheck(chain="...", tokenAddress="...")\` on BOTH tokenIn and tokenOut to verify they are not honeypots and check fee-on-transfer tax. Skip for native tokens (ETH / POL / BNB / etc).
 
