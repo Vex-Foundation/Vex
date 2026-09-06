@@ -144,8 +144,6 @@
 
 /* Chart direction and studies stay distinct from Robinhood's lime actions. */
 .lit-dialog[data-lighter-environment="rhc"] .lit-chart-body {
-  --lit-panel: #111515;
-  --lit-grid: rgba(184, 199, 193, 0.065);
   --lit-positive: #36b58b;
   --lit-positive-volume: rgba(54, 181, 139, 0.27);
   --lit-negative: #e16b73;
@@ -162,8 +160,6 @@
 }
 
 .lit-dialog[data-lighter-theme="celeris"][data-lighter-environment="rhc"] .lit-chart-body {
-  --lit-panel: #fcfdfb;
-  --lit-grid: rgba(40, 57, 49, 0.08);
   --lit-positive: #14815e;
   --lit-positive-volume: rgba(20, 129, 94, 0.24);
   --lit-negative: #bd4357;
