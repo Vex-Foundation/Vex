@@ -54,6 +54,7 @@ describe("the pools.fun launch domain is exposed on the agent bridge", () => {
     expect(agentBridge.poolsLaunch).toBe(poolsLaunch);
     expect(Object.keys(poolsLaunch).sort()).toEqual([
       "cancel",
+      "cancelAwaitingForm",
       "claim",
       "claimPreview",
       "deploy",
@@ -79,6 +80,14 @@ describe("each method invokes its OWN channel", () => {
   it("cancel → vex:poolsLaunch:cancel", async () => {
     await poolsLaunch.cancel({ sessionId: SESSION_ID, fingerprintId: "fp1" });
     expect(invokedChannel()).toBe(CH.poolsLaunch.cancel);
+  });
+
+  // TWO CANCELS, TWO CHANNELS. Both payloads carry one opaque id, so a wrapper
+  // pointed at the sibling channel would look identical from here - and would
+  // silently leave the agent's turn parked while claiming the form was closed.
+  it("cancelAwaitingForm → vex:poolsLaunch:cancelAwaitingForm", async () => {
+    await poolsLaunch.cancelAwaitingForm({ sessionId: SESSION_ID, intentId: "int1" });
+    expect(invokedChannel()).toBe(CH.poolsLaunch.cancelAwaitingForm);
   });
 
   it("myLaunches → vex:poolsLaunch:myLaunches", async () => {

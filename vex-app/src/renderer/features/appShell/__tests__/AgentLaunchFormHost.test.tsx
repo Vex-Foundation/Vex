@@ -57,6 +57,7 @@ const AWAITING: PoolsAwaitingLaunchForm = {
 const prepareMock = vi.fn();
 const deployMock = vi.fn();
 const cancelMock = vi.fn();
+const cancelAwaitingFormMock = vi.fn();
 const myLaunchesMock = vi.fn();
 const getAwaitingMock = vi.fn();
 const claimPreviewMock = vi.fn();
@@ -82,6 +83,7 @@ function installBridge(): void {
         prepare: prepareMock,
         deploy: deployMock,
         cancel: cancelMock,
+        cancelAwaitingForm: cancelAwaitingFormMock,
         myLaunches: myLaunchesMock,
         getAwaiting: getAwaitingMock,
         claimPreview: claimPreviewMock,
@@ -100,6 +102,7 @@ beforeEach(() => {
     prepareMock,
     deployMock,
     cancelMock,
+    cancelAwaitingFormMock,
     myLaunchesMock,
     getAwaitingMock,
     claimPreviewMock,
@@ -114,6 +117,10 @@ beforeEach(() => {
   imagesListMock.mockResolvedValue({ ok: true, data: { images: [] } });
   readThumbMock.mockResolvedValue({ ok: true, data: { imageId: "x", dataUrl: "" } });
   myLaunchesMock.mockResolvedValue({ ok: true, data: { wallet: "0x", launches: [] } });
+  cancelAwaitingFormMock.mockResolvedValue({
+    ok: true,
+    data: { cancelled: true, resumedAgentTurn: true },
+  });
   getAwaitingMock.mockResolvedValue({ ok: true, data: { awaiting: null } });
   installBridge();
 });
@@ -263,6 +270,90 @@ describe("when the agent has drafted a launch", () => {
     await waitFor(() => {
       expect(dialogTitle()).toBeNull();
     });
+  });
+
+  it("CANCELS the agent's draft on dismissal, addressed to its own intent", async () => {
+    renderHost();
+    await waitFor(() => {
+      expect(dialogTitle()).not.toBeNull();
+    });
+
+    (await screen.findByRole("button", { name: /^Cancel$/i })).click();
+
+    // The intent the form belongs to, and the session it belongs to - never the
+    // live prop, so a dismissal cannot be addressed to a session the user
+    // switched to. Without this the row sat `awaiting_user_form` and the agent's
+    // turn waited out the fifteen-minute window for a decision already made.
+    await waitFor(() => {
+      expect(cancelAwaitingFormMock).toHaveBeenCalledWith({
+        sessionId: SESSION_ID,
+        intentId: INTENT_ID,
+      });
+    });
+    // A dismissal is not a launch and not a prepared-launch cancel.
+    expect(deployMock).not.toHaveBeenCalled();
+    expect(prepareMock).not.toHaveBeenCalled();
+    expect(cancelMock).not.toHaveBeenCalled();
+  });
+
+  it("closes even when the cancel refuses - main owns the row either way", async () => {
+    cancelAwaitingFormMock.mockResolvedValue({
+      ok: false,
+      error: {
+        code: "internal.unexpected",
+        domain: "poolsLaunch",
+        message: "That launch has already been authorized and is being signed.",
+        retryable: false,
+        userActionable: false,
+        redacted: true,
+        correlationId: "test",
+      },
+    });
+    renderHost();
+    await waitFor(() => expect(dialogTitle()).not.toBeNull());
+
+    (await screen.findByRole("button", { name: /^Cancel$/i })).click();
+
+    // Fire and forget: a round-trip must not trap the user in a dialog they
+    // closed, and there is nothing here for them to act on.
+    await waitFor(() => expect(dialogTitle()).toBeNull());
+  });
+
+  it("prefills WHICH stock a stock-paired proposal named", async () => {
+    const stock = "0x7777777777777777777777777777777777777777";
+    getAwaitingMock.mockResolvedValue({
+      ok: true,
+      data: {
+        awaiting: {
+          ...AWAITING,
+          proposed: { name: "Ticker", pairedAsset: "stock", pairedStockAddress: stock },
+        },
+      },
+    });
+    renderHost();
+    await waitFor(() => expect(dialogTitle()).not.toBeNull());
+
+    const paired = await screen.findByRole("radio", { name: "Stock" });
+    expect(paired.getAttribute("aria-checked")).toBe("true");
+    // Retyping an address out of the transcript is exactly what a prefill is
+    // for, and 194 stocks are launchable - there is no default to fall back on.
+    expect(inputValue("Which stock")).toBe(stock);
+  });
+
+  it("leaves the stock box EMPTY when the agent named no stock", async () => {
+    getAwaitingMock.mockResolvedValue({
+      ok: true,
+      data: {
+        awaiting: { ...AWAITING, proposed: { name: "Ticker", pairedAsset: "stock" } },
+      },
+    });
+    renderHost();
+    await waitFor(() => expect(dialogTitle()).not.toBeNull());
+
+    await screen.findByRole("radio", { name: "Stock" });
+    // NOT invented. An agent that named no stock has said nothing, and the user
+    // meets an empty box rather than an address nobody chose.
+    expect(inputValue("Which stock")).toBe("");
   });
 
   it("hides an IDLE form on a session switch and re-opens it on return", async () => {

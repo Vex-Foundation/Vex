@@ -34,6 +34,7 @@ import {
   DialogTitle,
 } from "../../../components/ui/dialog.js";
 import {
+  cancelAwaitingPoolsLaunchForm,
   deployPoolsLaunch,
   isPoolsLaunchAvailable,
   preparePoolsLaunch,
@@ -61,6 +62,8 @@ export function PoolsLaunchLane({
   open,
   onOpenChange,
   sessionId,
+  origin,
+  intentId,
   onBusyChange,
   initialValues,
 }: PoolsLaunchLaneProps): JSX.Element {
@@ -206,22 +209,25 @@ export function PoolsLaunchLane({
   const requestClose = useCallback((): void => {
     // A SIGNATURE IN FLIGHT IS NOT DISMISSIBLE.
     if (!canDismissPoolsLaunch(state)) return;
-    // NAMED GAP, not an oversight (migration 108 / PR3). Dismissing an
-    // AGENT-REQUESTED form does not cancel its `token_launch_intents` row here.
-    // The retired lane did, through `tokenLaunch.cancel`, which took an
-    // `intentId`; `poolsLaunch.cancel` takes a `fingerprintId` and cancels a
-    // PREPARED launch, which is a different object, so there is no pools IPC
-    // that can answer this and inventing one is a money-path addition this lane's
-    // owner has to make, not a re-plumb.
+    // AN AGENT-REQUESTED FORM OWES ITS AGENT AN ANSWER. Dismissing it cancels
+    // the `awaiting_user_form` intent and wakes the parked turn with "the user
+    // declined"; without that the row sat live until its fifteen-minute window
+    // lapsed and the sweep reported an EXPIRY for a decision the user had
+    // already made. A `user`-origin launch has no intent and no parked call, so
+    // it closes silently, exactly as before.
     //
-    // The consequence is BOUNDED, which is why it is a gap and not a defect:
-    // the intent stays `awaiting_user_form` until its window lapses, and the
-    // launch-form expiry sweep then terminalizes it and wakes the parked agent
-    // turn with an honest answer. The user waits out the window instead of
-    // being answered at once. `origin` and `intentId` reach this component and
-    // are deliberately unread until that operation exists.
+    // FIRE AND FORGET, on purpose: the dialog must close on the click rather
+    // than behind a round-trip, and main owns the row either way - a refusal
+    // (the form was submitted or signed in the same instant) changes nothing
+    // the user can act on here, and the launch-form expiry sweep is still the
+    // floor under every outcome. Nothing here signs, spends or names an amount:
+    // the payload is the session and the opaque intent id.
+    if (origin === "agent_requested_form" && sessionId !== null
+        && typeof intentId === "string" && intentId !== "") {
+      void cancelAwaitingPoolsLaunchForm({ sessionId, intentId });
+    }
     onOpenChange(false);
-  }, [onOpenChange, state]);
+  }, [intentId, onOpenChange, origin, sessionId, state]);
 
   const bridgeMounted = isPoolsLaunchAvailable();
   const canPrepare =

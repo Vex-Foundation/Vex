@@ -2,12 +2,14 @@ import { CH, EV } from "../../shared/ipc/channels.js";
 import {
   launchFormEventSchema,
   poolsClaimInputSchema,
+  poolsLaunchCancelAwaitingFormInputSchema,
   poolsLaunchCancelInputSchema,
   poolsLaunchDeployInputSchema,
   poolsLaunchGetAwaitingInputSchema,
   poolsLaunchMyLaunchesInputSchema,
   poolsLaunchPrepareInputSchema,
   type PoolsClaimInput,
+  type PoolsLaunchCancelAwaitingFormInput,
   type PoolsLaunchCancelInput,
   type PoolsLaunchDeployInput,
   type PoolsLaunchGetAwaitingInput,
@@ -18,7 +20,7 @@ import type { PoolsLaunchBridge } from "../../shared/types/bridge/agent/pools-la
 import { invokeWithSchema, subscribe } from "../_dispatch.js";
 
 /**
- * pools.fun launch domain wrapper. Seven named domain methods plus one
+ * pools.fun launch domain wrapper. Eight named domain methods plus one
  * subscription, and nothing else
  * — no channel string, no `ipcRenderer`, and no way for the renderer to name an
  * amount that becomes a spend: the shared schemas validated here are `.strict()`
@@ -43,6 +45,13 @@ export const poolsLaunch = {
   },
   cancel(input: PoolsLaunchCancelInput) {
     return invokeWithSchema(CH.poolsLaunch.cancel, input, poolsLaunchCancelInputSchema);
+  },
+  cancelAwaitingForm(input: PoolsLaunchCancelAwaitingFormInput) {
+    return invokeWithSchema(
+      CH.poolsLaunch.cancelAwaitingForm,
+      input,
+      poolsLaunchCancelAwaitingFormInputSchema,
+    );
   },
   myLaunches(input: PoolsLaunchMyLaunchesInput) {
     return invokeWithSchema(

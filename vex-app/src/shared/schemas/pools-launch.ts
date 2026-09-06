@@ -294,6 +294,26 @@ export const poolsLaunchGetAwaitingInputSchema = z
   .object({ sessionId: opaqueIdSchema })
   .strict();
 
+/**
+ * THE DISMISSAL of an agent-requested form, addressed by the `intentId` the
+ * awaiting DTO handed the renderer.
+ *
+ * A DIFFERENT OBJECT from `poolsLaunchCancelInputSchema` above, and the reason
+ * this is a second channel rather than a widened one: that cancel takes the
+ * verified `fingerprintId` of a PREPARED launch, this one ends a DRAFT and wakes
+ * the agent turn parked on it. A union would let a renderer address the wrong
+ * stage with the wrong id and be told nothing about it.
+ *
+ * The id is OPAQUE and was minted main-side; the renderer echoes what it was
+ * given. Session-scoped like every other launch channel, so an intent belonging
+ * to another session misses rather than being cancelled from here. There is no
+ * fee, value, gas, wallet or recipient field, because nothing this operation
+ * does can move money.
+ */
+export const poolsLaunchCancelAwaitingFormInputSchema = z
+  .object({ sessionId: opaqueIdSchema, intentId: opaqueIdSchema })
+  .strict();
+
 export const poolsClaimInputSchema = z
   .object({ sessionId: opaqueIdSchema, tokenAddress: evmAddressSchema })
   .strict();
@@ -467,6 +487,13 @@ export const poolsAwaitingLaunchFormSchema = z
         name: z.string().max(TOKEN_METADATA_NAME_MAX).optional(),
         symbol: z.string().max(TOKEN_METADATA_SYMBOL_MAX).optional(),
         pairedAsset: poolsPairedAssetSchema.optional(),
+        /**
+         * WHICH tokenised stock the agent proposed. Present only on a `stock`
+         * pair, validated by the SAME address schema the deploy path uses, and
+         * never invented: absent means the form opens with an empty box rather
+         * than with an address nobody chose.
+         */
+        pairedStockAddress: evmAddressSchema.optional(),
         image: poolsLaunchImageSchema.optional(),
         tweetUrl: httpsUrlSchema.optional(),
         websiteUrl: httpsUrlSchema.optional(),
@@ -487,6 +514,20 @@ export const poolsLaunchGetAwaitingResultSchema = z
 
 export const poolsLaunchCancelResultSchema = z
   .object({ cancelled: z.boolean() })
+  .strict();
+
+/**
+ * What the dismissal did, in two booleans that answer different questions.
+ *
+ * `cancelled: false` is a SUCCESS, not a failure: the form was submitted or
+ * swept in the same instant, so there was nothing live left to cancel and
+ * whoever won that race owns the parked call's one result.
+ * `resumedAgentTurn` reports whether the agent's turn was ACTUALLY woken, never
+ * that a wake was attempted - a busy lease leaves the turn owed and the
+ * launch-form expiry sweep's durable floor finds it again.
+ */
+export const poolsLaunchCancelAwaitingFormResultSchema = z
+  .object({ cancelled: z.boolean(), resumedAgentTurn: z.boolean() })
   .strict();
 
 // ── the push event (main -> renderer) ────────────────────────────────────────
@@ -530,6 +571,9 @@ export type PoolsLaunchFormInput = z.infer<typeof poolsLaunchFormSchema>;
 export type PoolsLaunchPrepareInput = z.infer<typeof poolsLaunchPrepareInputSchema>;
 export type PoolsLaunchDeployInput = z.infer<typeof poolsLaunchDeployInputSchema>;
 export type PoolsLaunchCancelInput = z.infer<typeof poolsLaunchCancelInputSchema>;
+export type PoolsLaunchCancelAwaitingFormInput = z.infer<
+  typeof poolsLaunchCancelAwaitingFormInputSchema
+>;
 export type PoolsLaunchMyLaunchesInput = z.infer<typeof poolsLaunchMyLaunchesInputSchema>;
 export type PoolsLaunchGetAwaitingInput = z.infer<typeof poolsLaunchGetAwaitingInputSchema>;
 export type PoolsClaimInput = z.infer<typeof poolsClaimInputSchema>;
@@ -545,3 +589,6 @@ export type PoolsLaunchMyLaunchesResult = z.infer<typeof poolsLaunchMyLaunchesRe
 export type PoolsAwaitingLaunchForm = z.infer<typeof poolsAwaitingLaunchFormSchema>;
 export type PoolsLaunchGetAwaitingResult = z.infer<typeof poolsLaunchGetAwaitingResultSchema>;
 export type PoolsLaunchCancelResult = z.infer<typeof poolsLaunchCancelResultSchema>;
+export type PoolsAwaitingFormCancelResult = z.infer<
+  typeof poolsLaunchCancelAwaitingFormResultSchema
+>;
