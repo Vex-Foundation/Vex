@@ -28,10 +28,3 @@ export function parseChartPreferences(raw: string | null): ChartPreferences {
     return defaults();
   }
 }
-export function loadChartPreferences(scope: string): ChartPreferences {
-  try {
-    return parseChartPreferences(localStorage.getItem(`vex:chart-preferences:v1:${scope}`));
-  } catch {
-    return { ...DEFAULT_CHART_PREFERENCES, studies: [] };
-  }
-}

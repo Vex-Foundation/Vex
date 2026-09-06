@@ -2,7 +2,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX, type R
 import { LineSeries, HistogramSeries, type IChartApi, type ISeriesApi } from "lightweight-charts";
 import { toChartCandles, toChartVolume, type ChartCandleRow } from "./chart-adapter.js";
 import { computeStudies, STUDIES, type Study } from "./chart-indicators.js";
-import { loadChartPreferences } from "./chart-preferences.js";
+import { parseChartPreferences } from "./chart-preferences.js";
+import { useLighterAnalysisStore } from "../../../stores/lighterAnalysisStore.js";
 import { ChartDrawings } from "./ChartDrawings.js";
 export interface ChartToolsProps {
   chart: IChartApi | null;
@@ -16,7 +17,7 @@ export interface ChartToolsProps {
   onChartType: (type: "candles" | "line") => void;
 }
 export function ChartTools({ chart, series, host, rows, scope, theme, precision, minMove, onChartType }: ChartToolsProps): JSX.Element {
-  const [preferences, setPreferences] = useState(() => loadChartPreferences(scope));
+  const [preferences, setPreferences] = useState(() => useLighterAnalysisStore.getState().charts[scope]?.preferences ?? parseChartPreferences(null));
   const { studies, volume: showVolume, chartType } = preferences;
   const [notice, setNotice] = useState<string | null>(null);
   const toggleStudy = (id: Study): void => {
@@ -31,9 +32,7 @@ export function ChartTools({ chart, series, host, rows, scope, theme, precision,
     onChartType(chartType);
   }, [chartType, onChartType]);
   useEffect(() => {
-    try {
-      localStorage.setItem(`vex:chart-preferences:v1:${scope}`, JSON.stringify(preferences));
-    } catch {
+    if (!useLighterAnalysisStore.getState().savePreferences(scope, preferences)) {
       setNotice("Chart settings cannot be saved on this device.");
     }
   }, [preferences, scope]);

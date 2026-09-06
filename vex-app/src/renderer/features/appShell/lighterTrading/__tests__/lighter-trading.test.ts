@@ -1,3 +1,4 @@
+import { useLighterAnalysisStore } from "../../../../stores/lighterAnalysisStore.js";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -257,6 +258,7 @@ describe("Light it up deterministic review handoff", () => {
 
 describe("Light it up chart adapter", () => {
   beforeEach(() => {
+  useLighterAnalysisStore.setState({ charts: {}, favorites: [] });
     vi.clearAllMocks();
     chartHarness.getVisibleLogicalRange.mockReturnValue(null);
   });

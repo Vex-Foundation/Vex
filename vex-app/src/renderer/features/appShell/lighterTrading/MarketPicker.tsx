@@ -5,7 +5,7 @@ import { MarketSymbol } from "./MarketSymbol.js";
 import { classifyLighterMarket, marketProductLabel, type LighterMarketSection } from "./market-classification.js";
 import { formatBaseAmount, formatNumber, formatPrice, formatQuoteVolume, marketSymbols } from "./format.js";
 
-const FAVORITES_KEY = "vex.lighter.market-favorites.v1";
+import { LIGHTER_ANALYSIS_STORAGE_KEY, useLighterAnalysisStore } from "../../../stores/lighterAnalysisStore.js";
 type SortColumn = "market" | "price" | "change" | "volume" | "interest";
 type Sort = { readonly column: SortColumn; readonly direction: "asc" | "desc" };
 const COLUMNS: readonly { readonly key: SortColumn; readonly label: string }[] = [
@@ -18,17 +18,6 @@ const COLUMNS: readonly { readonly key: SortColumn; readonly label: string }[] =
 
 function identity(environment: LighterTradingEnvironment, market: LighterTradingMarket): string {
   return [environment, market.marketType, market.marketId, market.baseAssetId, market.quoteAssetId, market.symbol].join(":");
-}
-
-function readFavorites(): Set<string> {
-  try {
-    const raw: unknown = JSON.parse(localStorage.getItem(FAVORITES_KEY) ?? "[]");
-    if (!Array.isArray(raw) || raw.length > 1_000) return new Set();
-    return new Set(raw.filter((value): value is string => typeof value === "string"
-      && /^(?:core|rhc):(?:perp|spot):\d+:\d+:\d+:[A-Za-z0-9._:/-]{1,48}$/.test(value)));
-  } catch {
-    return new Set();
-  }
 }
 
 function sortValue(market: LighterTradingMarket, column: SortColumn): number | null {
@@ -51,7 +40,8 @@ export function MarketPicker({ environment, markets, selectedMarketId, onClose, 
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<"all" | LighterMarketSection>("all");
   const [favoritesOnly, setFavoritesOnly] = useState(false);
-  const [favorites, setFavorites] = useState(readFavorites);
+  const savedFavorites = useLighterAnalysisStore(state => state.favorites);
+  const favorites = useMemo(() => new Set(savedFavorites), [savedFavorites]);
   const [storageUnavailable, setStorageUnavailable] = useState(false);
   const [sort, setSort] = useState<Sort | null>(null);
   const [highlightedKey, setHighlightedKey] = useState<string | null>(() => {
@@ -105,7 +95,7 @@ export function MarketPicker({ environment, markets, selectedMarketId, onClose, 
       onClose();
     };
     const onStorage = (event: StorageEvent): void => {
-      if (event.key === FAVORITES_KEY || event.key === null) setFavorites(readFavorites());
+      if (event.key === LIGHTER_ANALYSIS_STORAGE_KEY || event.key === null) void useLighterAnalysisStore.persist.rehydrate();
     };
     document.addEventListener("mousedown", onOutside);
     window.addEventListener("storage", onStorage);
@@ -120,13 +110,7 @@ export function MarketPicker({ environment, markets, selectedMarketId, onClose, 
     const next = new Set(favorites);
     if (next.has(key)) next.delete(key);
     else if (next.size < 1_000) next.add(key);
-    setFavorites(next);
-    try {
-      localStorage.setItem(FAVORITES_KEY, JSON.stringify([...next]));
-      setStorageUnavailable(false);
-    } catch {
-      setStorageUnavailable(true);
-    }
+    setStorageUnavailable(!useLighterAnalysisStore.getState().saveFavorites([...next]));
   };
 
   const onKeyDown = (event: KeyboardEvent): void => {

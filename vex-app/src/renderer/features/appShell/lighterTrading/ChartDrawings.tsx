@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, type JSX, type RefObject } from "react";
 import type { IChartApi, ISeriesApi, Logical, UTCTimestamp } from "lightweight-charts";
-import { drawingHistory, logicalToTime, MAX_DRAWINGS, parseDrawings, timeToLogical, type Anchor, type Drawing, type DrawingKind } from "./chart-drawings.js";
+import { drawingHistory, logicalToTime, MAX_DRAWINGS, timeToLogical, type Anchor, type Drawing, type DrawingKind } from "./chart-drawings.js";
+import { useLighterAnalysisStore } from "../../../stores/lighterAnalysisStore.js";
 const TOOLS: {
   kind: DrawingKind | "cursor";
   label: string;
@@ -47,12 +48,8 @@ interface Props {
   minMove?: number;
 }
 export function ChartDrawings({ chart, series, host, times, scope, precision, minMove = 10 ** -precision }: Props): JSX.Element {
-  const storageKey = `vex:chart-drawings:v1:${scope}`;
   const [history, dispatch] = useReducer(drawingHistory, undefined, () => {
-    let present: Drawing[] = [];
-    try {
-      present = parseDrawings(localStorage.getItem(storageKey));
-    } catch { /* Storage may be disabled. Drawing remains available in memory. */ }
+    const present = useLighterAnalysisStore.getState().charts[scope]?.drawings ?? [];
     return {
       past: [],
       present,
@@ -75,13 +72,8 @@ export function ChartDrawings({ chart, series, host, times, scope, precision, mi
       });
   }, []);
   useEffect(() => {
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(history.present));
-      setStorageFailed(false);
-    } catch {
-      setStorageFailed(true);
-    }
-  }, [history.present, storageKey]);
+    setStorageFailed(!useLighterAnalysisStore.getState().saveDrawings(scope, history.present));
+  }, [history.present, scope]);
   useLayoutEffect(() => {
     const scale = chart.timeScale();
     scale.subscribeVisibleLogicalRangeChange?.(requestDraw);

@@ -1,3 +1,4 @@
+import { useLighterAnalysisStore } from "../../../../stores/lighterAnalysisStore.js";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { LighterTradingMarket } from "@shared/schemas/lighter-trading.js";
@@ -16,7 +17,7 @@ const markets = [makeMarket(1, "BTC", 60000), makeMarket(0, "ETH", 3000), makeMa
 const baseProps = { environment: "rhc" as const, markets, selectedMarketId: 1, onSelect: vi.fn(), onClose: vi.fn() };
 const symbols = (): (string | null)[] => screen.getAllByRole("option").map((row) => row.querySelector("b")?.textContent ?? null);
 
-beforeEach(() => { localStorage.clear(); vi.restoreAllMocks(); baseProps.onSelect.mockReset(); baseProps.onClose.mockReset(); });
+beforeEach(() => { vi.restoreAllMocks(); localStorage.clear(); useLighterAnalysisStore.setState({ charts: {}, favorites: [] }); baseProps.onSelect.mockReset(); baseProps.onClose.mockReset(); });
 
 describe("market picker", () => {
   it("displays actual metrics and explicit base units while unavailable data stays empty", () => {
@@ -108,7 +109,8 @@ describe("market picker", () => {
   });
 
   it("recovers from malformed storage and keeps favorites usable if storage is denied", () => {
-    localStorage.setItem("vex.lighter.market-favorites.v1", "not-json");
+    localStorage.setItem("vex-lighter-analysis", "not-json");
+    void useLighterAnalysisStore.persist.rehydrate();
     render(<MarketPicker {...baseProps} />);
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("unavailable"); });
     fireEvent.click(screen.getByRole("button", { name: "Add BTC Perpetual to favorites" }));

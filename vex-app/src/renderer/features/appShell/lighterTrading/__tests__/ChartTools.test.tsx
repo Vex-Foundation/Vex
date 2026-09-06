@@ -1,10 +1,11 @@
+import { useLighterAnalysisStore } from "../../../../stores/lighterAnalysisStore.js";
 import { fireEvent, render, screen, cleanup } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { IChartApi } from "lightweight-charts";
 import { ChartTools } from "../ChartTools.js";
 import type { ChartCandleRow } from "../chart-adapter.js";
 vi.mock("../ChartDrawings.js", () => ({ ChartDrawings: () => null }));
-beforeEach(() => localStorage.clear());
+beforeEach(() => { localStorage.clear(); useLighterAnalysisStore.setState({ charts: {}, favorites: [] }); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 function setup() {
   const lines: { setData: ReturnType<typeof vi.fn>; createPriceLine: ReturnType<typeof vi.fn> }[] = [];
@@ -42,7 +43,7 @@ describe("Chart analysis controls", () => {
   });
   it("restores validated study, volume and type preferences without leaking between markets", () => {
     const { props } = setup();
-    localStorage.setItem("vex:chart-preferences:v1:rhc:7", JSON.stringify({ studies: ["ema"], volume: false, chartType: "line" }));
+    useLighterAnalysisStore.getState().savePreferences("rhc:7", { studies: ["ema"], volume: false, chartType: "line" });
     const view = render(<ChartTools key="rhc:7" {...props} />);
     expect((screen.getByRole("checkbox", { name: /EMA 20/ }) as HTMLInputElement).checked).toBe(true);
     expect(screen.getByRole("button", { name: "Volume" }).getAttribute("aria-pressed")).toBe("false");
@@ -51,14 +52,14 @@ describe("Chart analysis controls", () => {
     expect((screen.getByRole("checkbox", { name: /EMA 20/ }) as HTMLInputElement).checked).toBe(false);
     expect(props.onChartType).toHaveBeenLastCalledWith("candles");
     fireEvent.click(screen.getByRole("checkbox", { name: /SMA 20/ }));
-    expect(JSON.parse(localStorage.getItem("vex:chart-preferences:v1:core:7")!).studies).toEqual(["sma"]);
+    expect(useLighterAnalysisStore.getState().charts["core:7"]!.preferences.studies).toEqual(["sma"]);
     view.rerender(<ChartTools key="rhc:7" {...props} />);
     expect((screen.getByRole("checkbox", { name: /EMA 20/ }) as HTMLInputElement).checked).toBe(true);
     expect((screen.getByRole("checkbox", { name: /SMA 20/ }) as HTMLInputElement).checked).toBe(false);
   });
   it("applies restored volume visibility when the chart becomes ready", () => {
     const { props } = setup();
-    localStorage.setItem("vex:chart-preferences:v1:rhc:7", JSON.stringify({ studies: [], volume: false, chartType: "candles" }));
+    useLighterAnalysisStore.getState().savePreferences("rhc:7", { studies: [], volume: false, chartType: "candles" });
     const view = render(<ChartTools {...props} chart={null} />);
     const volume = vi.fn(); props.host.current.addEventListener("lit-chart-volume", volume);
     view.rerender(<ChartTools {...props} />);
