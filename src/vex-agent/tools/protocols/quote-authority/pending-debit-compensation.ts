@@ -60,7 +60,7 @@
  * needs both that fact and the durable state, and this package is where the
  * spendability vocabulary already lives. Handlers reaching the client directly
  * is established here (`protocols/pools/handlers/launch/execute/broadcast.ts`,
- * `protocols/trench/handlers/launch/execute/authorize.ts`). Promoting this read
+ * the launch authorize step). Promoting this read
  * into `db/repos/agent-activity/` is a named follow-up, not a silent choice.
  */
 

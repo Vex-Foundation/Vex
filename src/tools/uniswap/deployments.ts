@@ -69,14 +69,6 @@ export interface UniswapDeployment {
   readonly connectors: readonly Address[];
   readonly v2?: UniswapV2Deployment;
   readonly v3?: UniswapV3Deployment;
-  /**
-   * Bundled public RPC. For 4663 the local chain registry
-   * (`tools/evm-chains/registry.ts`) is the source of truth (it honours a user
-   * override + wires Multicall3), so the client factory defers to it and this
-   * URL is only a documented fallback. For the KyberSwap-overlap chains this
-   * matches `tools/kyberswap/evm/config.ts` DEFAULT_RPC (publicnode).
-   */
-  readonly defaultRpcUrl: string;
 }
 
 const STANDARD_V3_FEE_TIERS = [100, 500, 3000, 10000] as const;
@@ -106,7 +98,6 @@ const ROBINHOOD: UniswapDeployment = {
     quoterV2: "0x33e885ed0ec9bf04ecfb19341582aadcb4c8a9e7",
     feeTiers: STANDARD_V3_FEE_TIERS,
   },
-  defaultRpcUrl: "https://rpc.mainnet.chain.robinhood.com",
 };
 
 // ── Ethereum (1) ── verified 2026-07-05 (V2 factory allPairsLength=514949) ──
@@ -129,7 +120,6 @@ const ETHEREUM: UniswapDeployment = {
     quoterV2: "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
     feeTiers: STANDARD_V3_FEE_TIERS,
   },
-  defaultRpcUrl: "https://ethereum-rpc.publicnode.com",
 };
 
 // ── Base (8453) ── verified 2026-07-05 (V2 factory allPairsLength=3030579) ──
@@ -151,15 +141,10 @@ const BASE: UniswapDeployment = {
     quoterV2: "0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a",
     feeTiers: STANDARD_V3_FEE_TIERS,
   },
-  // NOT publicnode: `base-rpc.publicnode.com` refuses `eth_getTransactionReceipt`
-  // at the method level (-32602 "Archive requests require a personal token") even
-  // for a head-block transaction, so a swap sent through it can never be
-  // confirmed. Funded live probe, 2026-08-17. drpc rather than the official
-  // `mainnet.base.org` because that one rate limits at about five requests (5x
-  // 200 then 7x 429 in a 12-request burst, and it failed this repo's own
-  // live-RPC suite); `base.drpc.org` served a receipt from its own latest block
-  // and took 30 consecutive requests with no throttling.
-  defaultRpcUrl: "https://base.drpc.org",
+  // RPC endpoints for 8453 are owned by
+  // `src/tools/evm-chains/rpc-endpoints.ts`, which ships the measured Base list
+  // (blastapi for calls and receipts, `mainnet.base.org` for wide `eth_getLogs`,
+  // publicnode for burst reads) and removed `base.drpc.org` entirely.
 };
 
 // ── Arbitrum One (42161) ── verified 2026-07-05 (V2 allPairsLength=8683) ──
@@ -185,7 +170,6 @@ const ARBITRUM: UniswapDeployment = {
   // `arbitrum-one-rpc.publicnode.com` refused `eth_getTransactionReceipt` with
   // the same -32602 method-level refusal. This endpoint was live-verified to
   // serve a receipt for a transaction from its own latest block.
-  defaultRpcUrl: "https://arb1.arbitrum.io/rpc",
 };
 
 // ── Optimism (10) ── verified 2026-07-05 (V2 allPairsLength=5188) ──
@@ -207,7 +191,6 @@ const OPTIMISM: UniswapDeployment = {
     quoterV2: "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
     feeTiers: STANDARD_V3_FEE_TIERS,
   },
-  defaultRpcUrl: "https://optimism-rpc.publicnode.com",
 };
 
 // ── Polygon (137) ── verified 2026-07-05 (V2 allPairsLength=42594) ──
@@ -231,7 +214,6 @@ const POLYGON: UniswapDeployment = {
     quoterV2: "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
     feeTiers: STANDARD_V3_FEE_TIERS,
   },
-  defaultRpcUrl: "https://polygon-bor-rpc.publicnode.com",
 };
 
 // ── BNB Chain (56) ── verified 2026-07-05 (V2 allPairsLength=7969) ──
@@ -255,7 +237,6 @@ const BSC: UniswapDeployment = {
     quoterV2: "0x78D78E420Da98ad378D7799bE8f4AF69033EB077",
     feeTiers: STANDARD_V3_FEE_TIERS,
   },
-  defaultRpcUrl: "https://bsc-rpc.publicnode.com",
 };
 
 const DEPLOYMENTS: readonly UniswapDeployment[] = [

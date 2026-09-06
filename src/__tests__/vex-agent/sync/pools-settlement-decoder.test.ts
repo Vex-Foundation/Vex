@@ -28,6 +28,7 @@ import {
   POOLS_GATEWAY_LAUNCH_EVENT_ABI,
 } from "@tools/pools-fun/abi.js";
 import { POOLS_SUITES } from "@tools/pools-fun/constants.js";
+import { POOLS_DISTRIBUTOR_DEPLOYED_EVENT_ABI } from "@tools/pools-fun/holder-rewards/read.js";
 import {
   decodePoolsClaimSettlement,
   decodePoolsLaunchSettlement,
@@ -530,6 +531,204 @@ describe("claim settlement - a named locker must be one of the table's", () => {
         { locker: V3.locker },
       ),
       "no Claimed event",
+    );
+  });
+});
+
+/**
+ * FEES TO HOLDERS: the one launch shape where the receipt's fee recipient is
+ * NOT the address that was signed.
+ *
+ * The verified V3 gateway resolves a `FEES_TO_HOLDERS*` sentinel to the
+ * distributor it deploys inside the same transaction BEFORE it emits
+ * `GatewayLaunch`. So on such a launch:
+ *
+ *   - the signed tuple carries the SENTINEL (proven by verifier point 15);
+ *   - the receipt carries the DISTRIBUTOR;
+ *   - they are different addresses, and neither is wrong.
+ *
+ * Comparing the receipt to the sentinel would therefore refuse every correct
+ * holders launch, and accepting whatever the gateway emitted would prove
+ * nothing. What stands in their place is this transaction's own
+ * `DistributorDeployed(token, distributor, rewardMode)`, from the suite's pinned
+ * HolderRewardsDeployer - and each of its four facts is asserted here as a
+ * separate refusal, because each one is a different way for a fee stream to end
+ * up somewhere nobody agreed to.
+ */
+describe("fees-to-holders settlement: the receipt names the distributor, not the sentinel", () => {
+  const v3Suite = POOLS_SUITES.find((s) => s.version === 3);
+  if (v3Suite === undefined) throw new Error("the suite table has no V3 entry");
+  const v3Deployer = v3Suite.holderRewardsDeployer;
+  if (v3Deployer === undefined) throw new Error("the V3 suite entry has no HolderRewardsDeployer");
+
+  const V3_GATEWAY = getAddress(v3Suite.gateway);
+  const V3_FACTORY = getAddress(v3Suite.factory);
+  const DEPLOYER = getAddress(v3Deployer);
+  /** `gateway.FEES_TO_HOLDERS_BOTH()`, measured on the V3 gateway 2026-09-04. */
+  const SENTINEL_BOTH = getAddress("0x968b0c1e896fb1ddb2042957fc0614c67ab7ffc4");
+  const DISTRIBUTOR = getAddress("0x25ff1A3D3C9dE60Cd0Cf7E2E5c0C5f6c9e0b1234");
+
+  /** `DistributorDeployed(token, distributor, rewardMode)` from a chosen emitter. */
+  function distributorLog(
+    over: Partial<{ token: Address; distributor: Address; rewardMode: number }> = {},
+    emitter: string = DEPLOYER,
+  ): PoolsSettlementLog {
+    const f = { token: TOKEN, distributor: DISTRIBUTOR, rewardMode: 2, ...over };
+    const topics = encodeEventTopics({
+      abi: [POOLS_DISTRIBUTOR_DEPLOYED_EVENT_ABI] as const,
+      eventName: "DistributorDeployed",
+      args: { token: f.token, distributor: f.distributor },
+    });
+    const data = encodeAbiParameters([{ type: "uint8" }], [f.rewardMode]);
+    return { address: emitter, topics: concreteTopics(topics), data };
+  }
+
+  /** A V3 holders launch: the gateway emitted the DISTRIBUTOR as the fee recipient. */
+  function holdersLogs(over: { rewardMode?: number; distributor?: Address; emittedRecipient?: Address } = {}) {
+    const distributor = over.distributor ?? DISTRIBUTOR;
+    return [
+      gatewayLog({ feeRecipient: over.emittedRecipient ?? distributor }, V3_GATEWAY),
+      factoryLog(
+        {
+          creator: V3_GATEWAY,
+          deployer: V3_GATEWAY,
+          feeRecipient: over.emittedRecipient ?? distributor,
+        },
+        V3_FACTORY,
+      ),
+      distributorLog({
+        distributor,
+        ...(over.rewardMode === undefined ? {} : { rewardMode: over.rewardMode }),
+      }),
+    ];
+  }
+
+  /** What the authorized plan holds for a holders launch: the SENTINEL, plus the mode. */
+  const HOLDERS_EXPECTED: PoolsLaunchExpectation = {
+    ...EXPECTED,
+    // The signed tuple's recipient. Deliberately NOT the address the receipt
+    // carries - that is the whole point of this shape.
+    feeRecipient: SENTINEL_BOTH,
+    holderRewards: { mode: "both", sentinel: SENTINEL_BOTH },
+  };
+
+  it("accepts the launch and reports the PROVEN distributor and mode", () => {
+    const result = decodePoolsLaunchSettlement(holdersLogs(), HOLDERS_EXPECTED, {
+      gateway: V3_GATEWAY,
+    });
+    if (!result.ok) throw new Error(`expected a proven holders launch, got: ${result.reason}`);
+    expect(result.value.feeRecipient).toBe(DISTRIBUTOR);
+    expect(result.value.holderRewards).toEqual({ distributor: DISTRIBUTOR, mode: "both" });
+  });
+
+  // The regression this arm exists to prevent: the old decoder compared the
+  // receipt's recipient to the plan's, and the plan's is the sentinel. Every
+  // correct holders launch would have been declined as "somebody else's".
+  it("does NOT require the receipt to carry the sentinel that was signed", () => {
+    const result = decodePoolsLaunchSettlement(holdersLogs(), HOLDERS_EXPECTED, {
+      gateway: V3_GATEWAY,
+    });
+    expect(result.ok).toBe(true);
+    // The sentinel really is a different address from what the receipt named.
+    expect(SENTINEL_BOTH).not.toBe(DISTRIBUTOR);
+  });
+
+  it("refuses when the receipt carries no DistributorDeployed at all", () => {
+    const logs = holdersLogs().slice(0, 2);
+    expectRefusal(
+      decodePoolsLaunchSettlement(logs, HOLDERS_EXPECTED, { gateway: V3_GATEWAY }),
+      "no DistributorDeployed event",
+    );
+  });
+
+  // Any contract can emit a same-signature event. A distributor "proven" by an
+  // unpinned emitter is not proven at all.
+  it("refuses a DistributorDeployed from an emitter that is not the suite's deployer", () => {
+    const logs = [...holdersLogs().slice(0, 2), distributorLog({}, STRANGER)];
+    expectRefusal(
+      decodePoolsLaunchSettlement(logs, HOLDERS_EXPECTED, { gateway: V3_GATEWAY }),
+      "no DistributorDeployed event",
+    );
+  });
+
+  it("refuses when the deployed distributor belongs to a DIFFERENT token", () => {
+    const logs = [
+      ...holdersLogs().slice(0, 2),
+      distributorLog({ token: getAddress("0x1111111111111111111111111111111111111111") }),
+    ];
+    expectRefusal(
+      decodePoolsLaunchSettlement(logs, HOLDERS_EXPECTED, { gateway: V3_GATEWAY }),
+      "belongs to a different token",
+    );
+  });
+
+  // THE JOIN. Without it the receipt would only prove "a distributor was
+  // deployed", never "the fee stream goes to it".
+  it("refuses when the fee stream went somewhere other than the deployed distributor", () => {
+    const logs = holdersLogs({ emittedRecipient: STRANGER });
+    expectRefusal(
+      decodePoolsLaunchSettlement(logs, HOLDERS_EXPECTED, { gateway: V3_GATEWAY }),
+      "does not go to the distributor",
+    );
+  });
+
+  // The user agreed to be paid in one asset. A distributor running in another
+  // mode pays a different stream for the life of the token.
+  it("refuses when the distributor's mode is not the mode that was authorized", () => {
+    const logs = holdersLogs({ rewardMode: 0 });
+    expectRefusal(
+      decodePoolsLaunchSettlement(logs, HOLDERS_EXPECTED, { gateway: V3_GATEWAY }),
+      'runs in "token" mode',
+    );
+  });
+
+  it("refuses a reward-mode ordinal this build has no name for, rather than reporting a number", () => {
+    const logs = holdersLogs({ rewardMode: 7 });
+    expectRefusal(
+      decodePoolsLaunchSettlement(logs, HOLDERS_EXPECTED, { gateway: V3_GATEWAY }),
+      "has no name for",
+    );
+  });
+
+  it("refuses two DistributorDeployed events rather than picking one", () => {
+    const logs = [
+      ...holdersLogs(),
+      distributorLog({ distributor: getAddress("0x2222222222222222222222222222222222222222") }),
+    ];
+    expectRefusal(
+      decodePoolsLaunchSettlement(logs, HOLDERS_EXPECTED, { gateway: V3_GATEWAY }),
+      "cannot be established",
+    );
+  });
+
+  // An ORDINARY launch is unchanged and must stay exact: no holders intent means
+  // the receipt has to name the address that was signed, and nothing about the
+  // new arm may loosen that.
+  it("still holds an ORDINARY launch to exact recipient equality", () => {
+    const logs = [
+      gatewayLog({ feeRecipient: STRANGER }, V3_GATEWAY),
+      factoryLog({ creator: V3_GATEWAY, deployer: V3_GATEWAY, feeRecipient: STRANGER }, V3_FACTORY),
+    ];
+    expectRefusal(
+      decodePoolsLaunchSettlement(logs, { ...EXPECTED, holderRewards: null }, { gateway: V3_GATEWAY }),
+      "the fee stream was set to",
+    );
+  });
+
+  // A V1 or V2 launch cannot deploy a paired or both distributor at all. Skipping
+  // the proof for a suite with no known deployer would accept an unaccountable
+  // fee destination.
+  it("refuses a holders launch on a suite whose HolderRewardsDeployer is unknown", () => {
+    const v1Suite = POOLS_SUITES.find((s) => s.version === 1);
+    if (v1Suite === undefined) throw new Error("the suite table has no V1 entry");
+    expect(v1Suite.holderRewardsDeployer).toBeUndefined();
+    const logs = [
+      gatewayLog({ feeRecipient: DISTRIBUTOR }),
+      factoryLog({ feeRecipient: DISTRIBUTOR }),
+    ];
+    expectRefusal(
+      decodePoolsLaunchSettlement(logs, HOLDERS_EXPECTED, { gateway: v1Suite.gateway }),
+      "has no HolderRewardsDeployer",
     );
   });
 });

@@ -71,7 +71,7 @@ type SeedKind = "swap" | "lend" | "prediction" | "yield" | "launch" | "wrap" | "
 
 /**
  * The claim family spends nothing (`agent_activity_claim_family_no_input_leg`,
- * migration 102), so a claim row is seeded with its OUTPUT leg only. The
+ * migration 107), so a claim row is seeded with its OUTPUT leg only. The
  * database refuses the swap-shaped fixture for these roles, which is the
  * constraint doing its job rather than a fixture inconvenience.
  */
@@ -501,7 +501,7 @@ describe("readiness — a confirmed row waits for the money it owes", () => {
 });
 
 /**
- * READINESS for migration 102's family, arm for arm with `roleLegsIncomplete`
+ * READINESS for migration 107's family, arm for arm with `roleLegsIncomplete`
  * and with what the AgentScan server will accept.
  *
  * The stakes are the same as everywhere else in this file: the server merges

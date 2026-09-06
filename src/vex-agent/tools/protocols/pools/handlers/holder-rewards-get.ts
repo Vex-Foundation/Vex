@@ -33,7 +33,10 @@ import type { Address } from "viem";
 import { getPoolsFunClient } from "@tools/pools-fun/client.js";
 import { POOLS_CHAIN_SLUG } from "@tools/pools-fun/constants.js";
 import { readPoolsOnChainSnapshot } from "@tools/pools-fun/evm/token-registration.js";
-import { readPoolsHolderRewardsOnChain } from "@tools/pools-fun/holder-rewards/read.js";
+import {
+  poolsRewardAmountHuman,
+  readPoolsHolderRewardsOnChain,
+} from "@tools/pools-fun/holder-rewards/read.js";
 import type {
   PoolsHolderRewardsOnChain,
   PoolsRewardLeg,
@@ -45,24 +48,8 @@ import { poolsFailureDetail } from "./failure.js";
 import { isEvmAddress, readAddressParam } from "./project.js";
 import type { ProtocolExecutionContext } from "../../types.js";
 
-/**
- * Render a raw base-unit amount as a decimal string WITHOUT floating point.
- *
- * `null` decimals means the scale is unknown, and an unknown scale produces no
- * human figure at all - a number at a guessed scale is worse than none
- * (rule 90). String arithmetic, never `Number`: these are uint256 values.
- */
-function humanAmount(raw: string, decimals: number | null): string | null {
-  if (decimals === null || !Number.isInteger(decimals) || decimals < 0 || decimals > 77) return null;
-  const negative = raw.startsWith("-");
-  const digits = (negative ? raw.slice(1) : raw).padStart(decimals + 1, "0");
-  const whole = digits.slice(0, digits.length - decimals);
-  const fraction = decimals === 0 ? "" : digits.slice(digits.length - decimals).replace(/0+$/, "");
-  return `${negative ? "-" : ""}${whole}${fraction ? `.${fraction}` : ""}`;
-}
-
 function projectLeg(leg: PoolsRewardLeg): Record<string, unknown> {
-  const human = humanAmount(leg.earnedRaw, leg.decimals);
+  const human = poolsRewardAmountHuman(leg.earnedRaw, leg.decimals);
   return {
     asset: leg.asset,
     symbol: leg.symbol,

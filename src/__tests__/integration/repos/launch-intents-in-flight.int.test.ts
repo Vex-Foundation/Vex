@@ -80,6 +80,12 @@ async function seedIntent(input: {
       // kind of guard a mocked client would have let this fixture skip.
       authorizationId: randomUUID(),
       authorizationKind: "user_submit",
+      // The venue, stated rather than defaulted. Migration 108 dropped the
+      // `trench` DEFAULT with the protocol it named, so a fixture that omits
+      // this now violates NOT NULL - and the reads under test are
+      // launchpad-agnostic, so it is seeded on the venue that still launches.
+      protocol: "pools_fun",
+      pools: { pairedAsset: "weth" },
     });
   } finally {
     client.release();

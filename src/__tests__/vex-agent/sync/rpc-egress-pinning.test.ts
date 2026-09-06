@@ -51,10 +51,23 @@ vi.mock("node:dns", async () => {
 let curated: string[] = [];
 let providerRegistryUrl: string | null = null;
 
-vi.mock("@config/chain-rpc-overrides.js", () => ({ getUserRpcOverridesForChain: () => curated }));
-vi.mock("@tools/evm-chains/registry.js", () => ({
-  getLocalChain: () => null,
-  getLocalChainRpcUrl: () => "",
+/**
+ * The CURATED tier, which is now one source rather than two.
+ *
+ * The verifier used to read the user override map and the local chain registry
+ * separately; both were replaced by the shared RPC owner, whose resolved list is
+ * the user's endpoints followed by the measured bundled ones. Scripting it here
+ * is what keeps this a transport test: without the mock the real table's
+ * Robinhood entries would be curated candidates and the test would reach the
+ * public internet instead of the scripted listener.
+ *
+ * The curated tier is deliberately NOT SSRF-filtered, and that is still correct
+ * after the widening: it holds the app's own configuration and this repository's
+ * own keyless endpoints, never provider-supplied input. The provider tier below
+ * is the one this file exists to pin.
+ */
+vi.mock("@tools/evm-chains/rpc-endpoints.js", () => ({
+  resolveRpcEndpoints: () => curated.map((url) => ({ url, tier: "user" })),
 }));
 vi.mock("@tools/khalani/chains.js", () => ({
   getCachedKhalaniChains: async () =>

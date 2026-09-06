@@ -2,7 +2,7 @@
  * The untrusted-param boundary shared by every protocol list tool.
  *
  * Namespace-neutral owner (relocated from the since-deleted `dexscreener/list-core/param-readers.ts`
- * when a fourth consumer - `trench` - joined DexScreener's pair/feed/narrative
+ * when a fourth consumer joined DexScreener's pair/feed/narrative
  * list families; rule 04 default-owner move). DexScreener still imports the same
  * symbols through a re-export facade at the old path, so no dexscreener call site
  * changed.

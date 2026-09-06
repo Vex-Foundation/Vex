@@ -1,0 +1,129 @@
+{
+  "endpoint": "https://rpc.mainnet.chain.robinhood.com (chain 4663) - HolderRewardsDistributor runtimes",
+  "capturedAt": "2026-09-04T21:05:04.145Z",
+  "headBlock": "54571595",
+  "note": "The MACHINE ARTIFACT behind every wire name in `holder-rewards/{mutations,decode}.ts`. TWO distributor runtimes are live and their money-path ABIs DIFFER: `claim()` returns one word on the 13962-byte runtime and two on the 22171-byte one, `distribute()` returns four and five, and they emit DIFFERENT `RewardClaimed` events. Every topic below was read out of live logs and then confirmed by keccak PREIMAGE against the signature named beside it; every selector was confirmed the same way against the Sourcify-verified ABI of 0x25ff1A3D. Rule 10 point 2: nothing here is spelled from convention.",
+  "response": {
+    "selectors": {
+      "claim()": "0x4e71d92d",
+      "distribute()": "0xe4fc6b6d",
+      "earned(address)": "0x008cc262",
+      "earnedPaired(address)": "0xa0f35c73",
+      "rewardMode()": "0x978c51a5",
+      "locker()": "0xd7b96d4e",
+      "CALLER_BOUNTY_BPS()": "0x143e79b7"
+    },
+    "errorSelectors": {
+      "NothingToClaim()": "0x969bf728",
+      "NothingToDistribute()": "0x01663f24",
+      "ExcludedAccount()": "0xb7594bec",
+      "ClaimForContractNotAllowed()": "0x0693245d",
+      "NotRegistered()": "0xaba47339",
+      "BuybackTooSoon()": "0x24b8e825",
+      "NothingToBuyBack()": "0xc9d2c505",
+      "NothingBought()": "0x87f36a18",
+      "NothingToNotify()": "0x6a414977",
+      "PoolNotBound()": "0xdad1ced0",
+      "PriceAboveReference()": "0x5d76223d",
+      "ReferenceUnavailable()": "0xa99c2ec9",
+      "StockNotTradable()": "0xe4b0d3e7"
+    },
+    "eventTopics": {
+      "RewardClaimed(address,uint256)": "0x106f923f993c2149d49b4255ff723acafa1f2d94393f561d3eda32ae348f7241",
+      "RewardClaimed(address,uint256,uint256)": "0xf01da32686223933d8a18a391060918c7f11a3648639edd87ae013e2e2731743",
+      "CallerBounty(address,uint256)": "0xb086364920ef62fba3dfe887892063a6385f14a0c3b2895c622a5aba78517ca4",
+      "RewardExcluded(address,uint256,uint256)": "0x1e9a0e16f617a4f8968a9bddeb24c5854d757e047ed96f589670af620f4911b3",
+      "RewardsNotified(uint8,uint256,uint256,uint256)": "0x2c3887d3cad98b2b723e005487ae8a11a5be66a9c751d6fec14fe612bcea0af4",
+      "UNMATCHED_0x48c32c5c": {
+        "topic": "0x48c32c5cec30353c8ed368373b6e34cc55b6ce4b53f8fd13a5116b0921c1150d",
+        "shape": "no indexed argument, three data words, the third a negative int24 - a buyback-shaped event on the 22171-byte runtime",
+        "signature": "NOT FOUND. Recorded as unmatched rather than guessed; nothing decodes it and nothing needs to."
+      }
+    },
+    "runtimes": {
+      "verified_13962": {
+        "example": "0x25ff1A3D76Ff6469485C86146650825cBDa2Bc0a",
+        "runtimeBytes": 13962,
+        "sourcifyVerified": true,
+        "claimReturnWords": 1,
+        "distributeReturnWords": 4,
+        "distributeOutputNames": [
+          "feesToken",
+          "feesPaired",
+          "bought",
+          "notified"
+        ],
+        "hasEarnedPaired": false,
+        "hasRewardMode": false,
+        "callerBountyBps": null,
+        "rewardClaimedTopic": "0x106f923f993c2149d49b4255ff723acafa1f2d94393f561d3eda32ae348f7241",
+        "locker": "0x7BDF342857BBb1dED76b3aa5E0C580D5c87aD49E",
+        "lockerSuite": 2
+      },
+      "extended_22171": {
+        "examples": [
+          "0xB02caa9F29D0088C5Eafa25BFb802040D5d3153B",
+          "0xb7633B965A86dF8AdF7c8D2b2B4aD7D975d94036",
+          "0x7b53d176E76F87D0ba5173b6e596aFEe717e6b0b"
+        ],
+        "runtimeBytes": 22171,
+        "sourcifyVerified": false,
+        "claimReturnWords": 2,
+        "distributeReturnWords": 5,
+        "distributeOutputNames": null,
+        "hasEarnedPaired": true,
+        "hasRewardMode": true,
+        "callerBountyBps": 50,
+        "rewardClaimedTopic": "0xf01da32686223933d8a18a391060918c7f11a3648639edd87ae013e2e2731743",
+        "locker": "0xd64C1f0f26b6f636520bC686f8E25cBA58082cFE",
+        "lockerSuite": 3
+      }
+    },
+    "claimSimulations": {
+      "both_mode_holder": {
+        "distributor": "0x7b53d176E76F87D0ba5173b6e596aFEe717e6b0b",
+        "returnData": "0x0000000000000000000000000000000000000000000008d5080f5fe219f0f8900000000000000000000000000000000000000000000000000006e9bada25c60a",
+        "returnWords": [
+          "0x0000000000000000000000000000000000000000000008d5080f5fe219f0f890",
+          "0x0000000000000000000000000000000000000000000000000006e9bada25c60a"
+        ],
+        "note": "Two words, BOTH non-zero: both mode pays the launched token and the paired asset."
+      },
+      "paired_mode_holder": {
+        "distributor": "0xb7633B965A86dF8AdF7c8D2b2B4aD7D975d94036",
+        "returnData": "0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000066b903b15700c",
+        "returnWords": [
+          "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "0x00000000000000000000000000000000000000000000000000066b903b15700c"
+        ],
+        "note": "Two words, the FIRST zero: paired mode pays only the paired asset. A zero here is a proven amount, and the leg still exists."
+      },
+      "single_word_runtime_holder": {
+        "distributor": "0x25ff1A3D76Ff6469485C86146650825cBDa2Bc0a",
+        "returnData": "0x0000000000000000000000000000000000000000000011e0693261fcf12025a4",
+        "returnWords": [
+          "0x0000000000000000000000000000000000000000000011e0693261fcf12025a4"
+        ],
+        "note": "ONE word. This runtime has no paired leg to pay at all - the ABSENCE of a leg, never a zero."
+      },
+      "wallet_owed_nothing": {
+        "distributor": "0x7b53d176E76F87D0ba5173b6e596aFEe717e6b0b",
+        "revertData": "0x969bf728",
+        "revertName": "NothingToClaim",
+        "note": "A wallet holding none of the token. The distributor reverts by name; it is a fact about the wallet, never a failure of the call."
+      }
+    },
+    "callerBountyEvidence": {
+      "txHash": "0x8022a2e046b6281e5193a7e67e01f43eb44fba33563fd02c7a937dc97e0d2db3",
+      "distributor": "0xb7633B965A86dF8AdF7c8D2b2B4aD7D975d94036",
+      "caller": "0x491a5b3683c8caabc9a185f6659d8a7ff4d60de3",
+      "callerBountyEventAmount": "1468600694080745304774",
+      "erc20TransferToCallerAsset": "0x017f53815e02d5ad151ed8484605fc9f1d9bb9a2",
+      "erc20TransferToCallerAmount": "1468600694080745304774",
+      "distributorTokenSideMoved": "293720138816149060954828",
+      "impliedBps": 50,
+      "apiPaysCallerBounty": false,
+      "note": "MEASURED CONTRADICTION of the plan's premise that the caller of distribute() is paid nothing. On the 22171-byte runtime the caller received exactly CALLER_BOUNTY_BPS (50 bps) of the token side, in the LAUNCHED TOKEN, declared by a CallerBounty event - while the launchpad's paysCallerBounty reads false on a distributor carrying the same constant. The row still carries no leg (the `reward_distribution` role binding forbids one on the server side); the bounty is recorded as provenance and stated in words."
+    }
+  }
+}

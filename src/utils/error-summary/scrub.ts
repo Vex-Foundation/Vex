@@ -89,7 +89,7 @@ const SENSITIVE_FRAGMENT_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
   // that carry IDENTITY (0x+40 address, 0x+64 tx hash) and deliberately keeps
   // their shape; both are `\b`-anchored, so neither matches a blob LONGER than
   // 64 hex, which is exactly what a reverted-calldata dump is. Absorbed here
-  // from `trench/handlers/failure.ts` (owner decree 2026-08-02) when that
+  // from a protocol `handlers/failure.ts` (owner decree 2026-08-02) when that
   // venue's byte-clone sanitizer was routed through this module: the guarantee
   // it held must not be lost by the consolidation, and every other venue gains
   // it. 80 (not 65) keeps the threshold clear of any near-hash-length shape.

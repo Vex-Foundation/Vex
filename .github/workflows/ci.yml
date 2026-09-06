@@ -45,6 +45,14 @@ jobs:
       - name: Reject binary source files
         run: pnpm check:no-binary-sources
 
+      # Repo-wide and every event, for the reason above and one more: this gate
+      # asserts a property of the WHOLE tree (nothing outside a measured
+      # allowlist still names the retired Trench Express protocol), so scoping
+      # it to a pull request's diff would let residue arrive on a trunk push and
+      # never be seen again.
+      - name: Reject Trench Express residue
+        run: pnpm check:trench-residue
+
       - name: Reject unsafe test escapes
         # PULL REQUESTS ONLY, by design. The deleted-test allowlist's lifecycle
         # is PR-scoped: an entry is consumed the moment its change merges, so a

@@ -13,7 +13,7 @@
  * tool writes.
  */
 
-import { getAddress, type Address, type Hex } from "viem";
+import { getAddress, isAddress, type Address, type Hex } from "viem";
 
 import { getLocalChain } from "@tools/evm-chains/registry.js";
 import {
@@ -267,12 +267,19 @@ export const listPoolsMyLaunches: ListPoolsMyLaunches = async (session, inputs) 
 export const getAwaitingPoolsLaunchForm: GetAwaitingPoolsLaunchForm = async (session) => {
   try {
     const awaiting = await getAwaitingForSession(session.sessionId);
-    // The pools.fun rows only: the same table carries Trench's forms, and the
-    // desktop's pools lane must not open a Trench launch in a pools form.
+    // The pools.fun rows only: the same table carries every launchpad's forms,
+    // and the desktop's pools lane must not open another venue's launch in a
+    // pools form.
     const row = awaiting.find((intent) => intent.protocol === "pools_fun");
     // `null` is the ORDINARY answer and is deliberately not an error: "nothing
     // is waiting" is what this question usually returns.
     if (row === undefined) return { ok: true, value: null };
+
+    // WHICH tokenised stock the agent proposed, on a stock pair and on no other.
+    // The column is written by `pools.launch_request_form` and was reaching
+    // nobody, so a stock-paired proposal opened the form with the pair chosen
+    // and an empty address box the user had to retype out of the transcript.
+    const pairedStockAddress = proposedStockAddress(row.pools);
 
     return {
       ok: true,
@@ -284,6 +291,14 @@ export const getAwaitingPoolsLaunchForm: GetAwaitingPoolsLaunchForm = async (ses
           name: row.name,
           symbol: row.symbol,
           ...(row.pools?.pairedAsset === undefined ? {} : { pairedAsset: row.pools.pairedAsset }),
+          // WHICH tokenised stock the agent proposed, on a stock pair and on no
+          // other. The column is written by `pools.launch_request_form` and was
+          // reaching nobody, so a stock-paired proposal opened the form with the
+          // pair chosen and an empty address box the user had to retype from the
+          // transcript. It is carried across VERBATIM and never invented: absent
+          // stays absent, and the pair guard means a WETH row can never smuggle
+          // a stock address into the form.
+          ...(pairedStockAddress === null ? {} : { pairedStockAddress }),
           ...(row.imageId === null ? {} : { image: { kind: "locker" as const, imageId: row.imageId } }),
           ...(row.prebuyRaw === null || row.prebuyRaw === "0"
             ? {}
@@ -298,6 +313,27 @@ export const getAwaitingPoolsLaunchForm: GetAwaitingPoolsLaunchForm = async (ses
     );
   }
 };
+
+/**
+ * The proposed stock's address, or `null` - never a guess.
+ *
+ * A DURABLE ROW IS UNTRUSTED INPUT (rule 04), so the stored value is checked for
+ * shape before it can prefill anything, and an unreadable one yields `null`
+ * rather than throwing: a malformed column must not turn "a form is waiting"
+ * into "the awaiting read failed", which would keep the user from answering the
+ * agent at all. The PAIR guards it too - a WETH or USDG row cannot carry a stock
+ * address into the form even if one were somehow stored - because the form's own
+ * boundary refuses an address on a non-stock pair, and a prefill the form would
+ * then refuse is worse than no prefill.
+ */
+function proposedStockAddress(
+  pools: { readonly pairedAsset?: string; readonly pairedAssetAddress?: string | null | undefined } | null,
+): Address | null {
+  if (pools === null || pools.pairedAsset !== "stock") return null;
+  const raw = pools.pairedAssetAddress;
+  if (typeof raw !== "string" || !isAddress(raw.trim())) return null;
+  return getAddress(raw.trim());
+}
 
 /** The stored prebuy as the form shows it. Decimals travel with the raw amount. */
 function formatPrebuy(raw: string, decimals: number | null): string {

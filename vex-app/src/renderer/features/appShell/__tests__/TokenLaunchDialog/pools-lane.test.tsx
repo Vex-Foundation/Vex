@@ -10,16 +10,18 @@
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { createElement } from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { PoolsPreparedLaunch } from "@shared/schemas/pools-launch.js";
 
 const prepare = vi.fn();
 const deploy = vi.fn();
+const cancelAwaitingForm = vi.fn();
 
 vi.mock("../../../../lib/api/pools-launch.js", () => ({
   isPoolsLaunchAvailable: () => true,
   preparePoolsLaunch: (...args: unknown[]) => prepare(...args),
   deployPoolsLaunch: (...args: unknown[]) => deploy(...args),
+  cancelAwaitingPoolsLaunchForm: (...args: unknown[]) => cancelAwaitingForm(...args),
 }));
 
 // The locker picker reaches for the images IPC domain, which this lane does not
@@ -61,23 +63,27 @@ function prepared(over: Partial<PoolsPreparedLaunch> = {}): PoolsPreparedLaunch 
     },
     metadataUri: "https://example.test/m.json",
     imageLanded: true,
+    // The identity of the exact bytes Deploy will sign.
+    callFingerprint: `0x${"ef".repeat(32)}`,
     // Far in the future: expiry is exercised on its own below.
     expiresAt: new Date(Date.now() + 600_000).toISOString(),
+    expiryReason: "vex_window",
     ...over,
   };
 }
 
-function mount(): void {
+function mount(over: Record<string, unknown> = {}): { readonly onOpenChange: ReturnType<typeof vi.fn> } {
+  const onOpenChange = vi.fn();
   render(
     createElement(PoolsLaunchLane, {
       open: true,
-      onOpenChange: vi.fn(),
+      onOpenChange,
       sessionId: "s1",
       origin: "user" as const,
-      platform: "pools" as const,
-      onPlatformChange: vi.fn(),
+      ...over,
     }),
   );
+  return { onOpenChange };
 }
 
 /** Fill the form to the point where a preparation may be asked for. */
@@ -114,11 +120,33 @@ describe("pools lane - stage 1 is a gate, not a formality", () => {
     expect(screen.getByText(/nothing is authorized until/i)).toBeTruthy();
   });
 
-  it("does not offer tokenised stocks, which the factory cannot launch", () => {
+  // The V3 factory allows all 194 listed tokenised stocks (measured
+  // 2026-09-04), so the pair is offered - and the address that says WHICH stock
+  // appears only once the pair is chosen, because it means nothing otherwise.
+  it("offers the three pairs the factory allows, and asks which stock only for a stock pair", () => {
     mount();
-    expect(screen.queryByRole("radio", { name: /stock/i })).toBeNull();
     expect(screen.getByRole("radio", { name: "WETH" })).toBeTruthy();
     expect(screen.getByRole("radio", { name: "USDG" })).toBeTruthy();
+    const stock = screen.getByRole("radio", { name: "Stock" });
+    expect(screen.queryByLabelText("Which stock")).toBeNull();
+    fireEvent.click(stock);
+    expect(screen.getByLabelText("Which stock")).toBeTruthy();
+  });
+
+  /**
+   * HOLDER REWARDS ARE IRREVERSIBLE, so the form says so before the user can
+   * reach Deploy, and it replaces the recipient box rather than sitting beside
+   * it: two visible destinations for one fee stream is the ambiguity this
+   * screen exists to remove.
+   */
+  it("warns that holder rewards are permanent, and hides the recipient box when they are on", () => {
+    mount();
+    const holders = screen.getByRole("checkbox", {
+      name: /pay the trading fees to this token's holders/i,
+    });
+    fireEvent.click(holders);
+    expect(screen.getByText(/locked at launch and cannot be undone/i)).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "Both" })).toBeTruthy();
   });
 });
 
@@ -247,5 +275,153 @@ describe("pools lane - a refused preparation", () => {
     );
     expect(submitButton().textContent).toMatch(/prepare launch/i);
     expect(deploy).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * THE FINAL CONFIRMATION: what the Deploy click is actually authorizing.
+ *
+ * Everything on this card is main's own verified figure rendered as given. Two
+ * of them are new and are the reason the card is a CONFIRMATION rather than a
+ * summary: the calldata FINGERPRINT, which is the identity of the exact bytes
+ * that will be signed, and the COUNTDOWN, because how long the confirmation
+ * stays valid depends on what is being launched - seconds for a signed stock
+ * quote, minutes for an ordinary launch - and an absolute timestamp makes those
+ * two look identical.
+ */
+describe("pools lane - the final confirmation states what will be signed, and for how long", () => {
+  it("shows the calldata fingerprint of the bytes Deploy will sign", async () => {
+    const fingerprint = `0x${"ab".repeat(32)}`;
+    prepare.mockResolvedValue({ ok: true, data: prepared({ callFingerprint: fingerprint }) });
+    mount();
+    fillValidForm();
+    fireEvent.click(screen.getByRole("button", { name: /prepare/i }));
+    await waitFor(() => expect(screen.getByText(fingerprint)).toBeTruthy());
+  });
+
+  it("counts down the time left, rather than printing a timestamp to subtract from", async () => {
+    prepare.mockResolvedValue({
+      ok: true,
+      data: prepared({
+        expiresAt: new Date(Date.now() + 45_000).toISOString(),
+        expiryReason: "quote_window",
+      }),
+    });
+    mount();
+    fillValidForm();
+    fireEvent.click(screen.getByRole("button", { name: /prepare/i }));
+    const timer = await screen.findByRole("timer");
+    // Seconds under a minute, and the SIGNED-QUOTE reason named, because the
+    // remedy for a lapsed stock quote is different from a lapsed Vex window.
+    expect(timer.textContent).toMatch(/^\d{1,2}s$/);
+    expect(screen.getByText(/signed stock price quote/i)).toBeTruthy();
+  });
+
+  // A confirmation that has already lapsed must SAY so rather than sitting there
+  // looking deployable. Main refuses it either way - the countdown decides
+  // nothing - but a user clicking a dead button learns that only from an error.
+  it("says a lapsed confirmation has expired, and names the clock that ended it", async () => {
+    prepare.mockResolvedValue({
+      ok: true,
+      data: prepared({
+        expiresAt: new Date(Date.now() - 1_000).toISOString(),
+        expiryReason: "gateway_deadline",
+      }),
+    });
+    mount();
+    fillValidForm();
+    fireEvent.click(screen.getByRole("button", { name: /prepare/i }));
+    await waitFor(() => expect(screen.getByText(/has expired/i)).toBeTruthy());
+    expect(screen.getByText(/on-chain deadline/i)).toBeTruthy();
+  });
+
+  /**
+   * A HOLDERS LAUNCH HAS NO RECIPIENT ADDRESS TO SHOW, and showing the sentinel
+   * as one would be a lie: it is a gateway constant, not a wallet, and the
+   * distributor that will actually receive the fees does not exist until the
+   * launch is mined. The card says what happened instead, and says it is
+   * permanent.
+   */
+  it("renders a holders launch as a mode and a warning, never as a recipient address", async () => {
+    const sentinel = "0x968b0c1E896fB1Ddb2042957fc0614c67ab7FFc4";
+    prepare.mockResolvedValue({
+      ok: true,
+      data: prepared({ resolvedFeeRecipient: sentinel, holderRewards: { mode: "both", sentinel } }),
+    });
+    mount();
+    fillValidForm();
+    fireEvent.click(screen.getByRole("button", { name: /prepare/i }));
+    await waitFor(() => expect(screen.getByText(/this token's holders/i)).toBeTruthy());
+    expect(screen.getByText(/locked at launch and cannot be undone/i)).toBeTruthy();
+    // Scoped to the CARD: the form above still has its own recipient field, and
+    // what must not appear is a recipient row on the thing being authorized.
+    const card = screen.getByRole("region", { name: /what you are authorizing/i });
+    expect(within(card).queryByText("Fee recipient")).toBeNull();
+    expect(within(card).queryByText(sentinel)).toBeNull();
+  });
+});
+
+/**
+ * DISMISSING owes an answer only when an AGENT asked the question.
+ *
+ * The origin is a renderer-side concept and the only thing that decides it: a
+ * `user`-origin launch has no intent row and no parked tool call, so cancelling
+ * one would address an id that does not exist. An `agent_requested_form` has
+ * both, and leaving it uncancelled is what made the agent wait out the
+ * fifteen-minute window for a decision the user had already made.
+ */
+describe("pools lane - dismissing an agent-requested form answers its agent", () => {
+  const INTENT_ID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+
+  function dismiss(): void {
+    fireEvent.click(screen.getByRole("button", { name: /^cancel$/i }));
+  }
+
+  it("cancels the draft, by intent id, and closes", () => {
+    const { onOpenChange } = mount({ origin: "agent_requested_form", intentId: INTENT_ID });
+
+    dismiss();
+
+    expect(cancelAwaitingForm).toHaveBeenCalledWith({ sessionId: "s1", intentId: INTENT_ID });
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    // Nothing on the money path is touched by a dismissal.
+    expect(prepare).not.toHaveBeenCalled();
+    expect(deploy).not.toHaveBeenCalled();
+  });
+
+  it("a USER-started launch closes silently - there is no intent and no agent to answer", () => {
+    const { onOpenChange } = mount();
+
+    dismiss();
+
+    expect(cancelAwaitingForm).not.toHaveBeenCalled();
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("an agent origin WITHOUT an intent id cancels nothing rather than guessing one", () => {
+    const { onOpenChange } = mount({ origin: "agent_requested_form", intentId: null });
+
+    dismiss();
+
+    expect(cancelAwaitingForm).not.toHaveBeenCalled();
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("does not cancel while a signature is in flight - the dialog is not dismissible then", async () => {
+    // `deploy` never settles, so the lane stays in its `deploying` phase.
+    prepare.mockResolvedValue({ ok: true, data: prepared() });
+    deploy.mockReturnValue(new Promise(() => undefined));
+    mount({ origin: "agent_requested_form", intentId: INTENT_ID });
+    fillValidForm();
+    fireEvent.click(submitButton());
+    await waitFor(() => expect(submitButton().textContent).toMatch(/deploy token/i));
+    fireEvent.click(submitButton());
+    await waitFor(() => expect(submitButton().textContent).toMatch(/deploying/i));
+
+    dismiss();
+
+    // A form whose launch is being signed is not a form the user dismissed, and
+    // cancelling its intent would race a signature.
+    expect(cancelAwaitingForm).not.toHaveBeenCalled();
   });
 });

@@ -251,6 +251,23 @@ export interface PoolsPrepareRequest {
   /** The identity to pay, as `{type, value}`. See `PoolsPrepareFeeRecipient`. */
   readonly feeRecipient?: PoolsPrepareFeeRecipient | undefined;
   readonly pairedStockAddress?: string | undefined;
+  /**
+   * Opt the new token's CREATOR FEE STREAM into holder rewards, locked at launch
+   * (measured 2026-09-04: "Locked at launch" in the launchpad's own UI, and no
+   * endpoint turns it off afterwards).
+   *
+   * Sent WITHOUT `feeRecipient`: the backend substitutes the gateway's
+   * `FEES_TO_HOLDERS*` sentinel for the chosen payout mode, and the sentinel is
+   * what the signed tuple carries. Verifier point 15 reads that sentinel live
+   * from the gateway and refuses any other value.
+   */
+  readonly feesToHolders?: boolean | undefined;
+  /**
+   * Which asset the holders are paid in. The enum is the launchpad's own
+   * (`launches/config.holderRewardsPayoutModes`); a mode this suite cannot serve
+   * comes back as HTTP 400 with `holderRewardsPayout` in `invalidPaths`.
+   */
+  readonly holderRewardsPayout?: "token" | "paired" | "both" | undefined;
   readonly devBuyEth?: string | undefined;
   readonly devBuyAmount?: string | undefined;
 }
@@ -299,6 +316,17 @@ export interface PoolsPrepareResponse {
 export interface PoolsLaunchConfig {
   readonly deploymentFeeWei: string;
   readonly gatewayVersion: number;
+  /**
+   * The holder-reward payout modes this launchpad build serves, verbatim.
+   *
+   * OPTIONAL because it is the provider's field and a response without it is a
+   * response from a build that predates the feature - which is a fact to report,
+   * not a reason to refuse a WETH launch. `null` therefore means NOT STATED and
+   * never "no modes": the authority for whether a mode can actually be launched
+   * is the gateway's own sentinel (verifier point 15), and this list is the
+   * provider's echo of it, used to refuse early with a better sentence.
+   */
+  readonly holderRewardsPayoutModes: readonly string[] | null;
 }
 
 /** `/pools-fun/launches/upload-image` - the multipart upload's answer. */
@@ -414,6 +442,36 @@ export interface PoolsHolderRewards {
   readonly lastBuybackAt: number | null;
   readonly pendingFees: { readonly token: string | null; readonly paired: string | null } | null;
   readonly hasWorkToDistribute: boolean | null;
+}
+
+/**
+ * `POST /pools-fun/holder-rewards/prepare` - the launchpad's own calldata for a
+ * holder-reward claim or a permissionless distribute.
+ *
+ * NOT AUTHORITY, and the type says so by carrying only what a cross-check needs.
+ * Vex builds `to` and `data` itself from the verified distributor ABI and the
+ * distributor the suite's deployer named; this response is compared against that
+ * and a disagreement is a refusal, never an override. Measured 2026-09-04:
+ * `action: "distribute"` answers 200 with `data` = `0xe4fc6b6d` and `to` = the
+ * distributor, and `action: "claim"` answers HTTP 400 `{"error":"Nothing to
+ * claim"}` for a wallet the distributor owes nothing - a provider DECLINE, which
+ * is not a disagreement about calldata.
+ *
+ * The body also echoes the whole `GET /pools-fun/holder-rewards` row; those
+ * fields are read from the GET (which is the one place that echo is projected)
+ * rather than duplicated here.
+ */
+export interface PoolsHolderRewardsPrepare {
+  /** The contract the provider would send to. Compared against our distributor. */
+  readonly to: string;
+  /** The calldata the provider would send. Compared byte for byte against ours. */
+  readonly data: string;
+  /** Wei, as the provider spells it (`"0x0"` measured). Compared against zero. */
+  readonly value: string | null;
+  /** The action the provider believes it prepared. */
+  readonly action: string | null;
+  readonly token: string | null;
+  readonly distributor: string | null;
 }
 
 /** `/discover/{token}/ohlcv` params. */

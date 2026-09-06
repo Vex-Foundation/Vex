@@ -1,9 +1,12 @@
 import type { Result } from "../../../ipc/result.js";
 import type {
+  LaunchFormEvent,
+  PoolsAwaitingFormCancelResult,
   PoolsClaimedFees,
   PoolsClaimInput,
   PoolsClaimPreview,
   PoolsDeployedLaunch,
+  PoolsLaunchCancelAwaitingFormInput,
   PoolsLaunchCancelInput,
   PoolsLaunchCancelResult,
   PoolsLaunchDeployInput,
@@ -51,6 +54,18 @@ export interface PoolsLaunchBridge {
   readonly cancel: (
     input: PoolsLaunchCancelInput,
   ) => Promise<Result<PoolsLaunchCancelResult>>;
+  /**
+   * The user DISMISSED the form an agent asked them to fill: end the draft and
+   * wake the turn parked on it.
+   *
+   * A DIFFERENT OBJECT from `cancel` above. That one ends a PREPARED launch by
+   * its verified fingerprint; this one ends an `awaiting_user_form` intent by
+   * the `intentId` `getAwaiting` handed over, and is the only launch call that
+   * can answer a parked agent. Neither signs, spends, or names an amount.
+   */
+  readonly cancelAwaitingForm: (
+    input: PoolsLaunchCancelAwaitingFormInput,
+  ) => Promise<Result<PoolsAwaitingFormCancelResult>>;
   readonly myLaunches: (
     input: PoolsLaunchMyLaunchesInput,
   ) => Promise<Result<PoolsLaunchMyLaunchesResult>>;
@@ -66,4 +81,12 @@ export interface PoolsLaunchBridge {
     input: PoolsClaimInput,
   ) => Promise<Result<PoolsClaimPreview>>;
   readonly claim: (input: PoolsClaimInput) => Promise<Result<PoolsClaimedFees>>;
+  /**
+   * Subscribe to `EV.launch.formRequested` - fired after an agent's
+   * `pools.launch_request_form` intent has COMMITTED. The payload is an
+   * INVALIDATION SIGNAL only: it carries ids, an enum and a timestamp, and the
+   * renderer re-reads `getAwaiting` rather than reconstructing a draft from it.
+   * Returns its own unsubscribe.
+   */
+  readonly onFormRequested: (cb: (event: LaunchFormEvent) => void) => () => void;
 }

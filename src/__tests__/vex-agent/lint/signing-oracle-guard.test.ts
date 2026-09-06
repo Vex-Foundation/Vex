@@ -1,6 +1,6 @@
 /**
  * Signing-oracle guard (Sprint 3 T10) - the trading keys sign exactly three
- * fixed message shapes anywhere in this codebase: the trench.express
+ * fixed message shapes anywhere in this codebase: the launchpad
  * `VEX-attest:` badge attestation, the pools.fun
  * `VEX-attest:v1:pools.fun:` badge attestation, and the AgentScan
  * `AgentScan Handshake v1` wallet-binding proof. A new signing call site
@@ -27,11 +27,15 @@
  * tests in this directory), INCLUDING `scripts/`/`e2e/` subtrees (dropped
  * from the exclusion list - `src/vex-agent/scripts` alone ships 24 real
  * files that are as capable of holding a signing call as anything else) -
- * because the three allowed modules live on both sides of the
- * `vex-agent`/`tools` boundary: `src/tools/wallet/handshake-signing.ts`,
- * `src/vex-agent/tools/protocols/trench/handlers/launch/execute/attribute.ts`
- * and
+ * because the allowed modules live on both sides of the `vex-agent`/`tools`
+ * boundary: `src/tools/wallet/handshake-signing.ts` and
  * `src/vex-agent/tools/protocols/pools/handlers/launch/execute/attribute.ts`.
+ *
+ * THERE USED TO BE A THIRD, the trench.express badge sign site. Migration 108
+ * retired that launchpad and deleted both its sign site and its message builder,
+ * so the allowlist SHRANK - which is the direction it is allowed to move. The
+ * bare `VEX-attest:<chainId>:<token>` form it owned now has no producer at all,
+ * and the literal check below therefore admits nobody for it.
  *
  * Uses a recursive readdir walk, NOT `git ls-files`: on this machine the repo
  * path contains a space, which breaks the `git ls-files`-based scanners the
@@ -54,19 +58,14 @@ const EXCLUDED_DIR_NAMES = new Set(["__tests__", "node_modules"]);
 
 const HANDSHAKE_SIGNING_MODULE = resolve(ROOT, "tools/wallet/handshake-signing.ts");
 const HANDSHAKE_ORCHESTRATOR = resolve(ROOT, "vex-agent/agentscan/handshake.ts");
-const TRENCH_ATTRIBUTION_SIGN_SITE = resolve(
-  ROOT,
-  "vex-agent/tools/protocols/trench/handlers/launch/execute/attribute.ts",
-);
-const TRENCH_ATTRIBUTION_MESSAGE_BUILDER = resolve(ROOT, "tools/trench-express/attribution.ts");
-
 /**
- * The pools.fun badge lane, admitted 2026-08-23. It is a THIRD text-signing
- * site, not a reuse of the trench one, and deliberately so: both launchpads
- * live on chain 4663, so a shared `VEX-attest:<chainId>:<token>` string would
- * let a signature produced for one venue be replayed at the other. The pools
- * string is versioned and domain-bound (`VEX-attest:v1:pools.fun:<chainId>:
- * <token>`), and each literal stays pinned to its own owning module below.
+ * The pools.fun badge lane, admitted 2026-08-23. It was a THIRD text-signing
+ * site, not a reuse of the retired launchpad's, and deliberately so: both
+ * launchpads lived on chain 4663, so a shared `VEX-attest:<chainId>:<token>`
+ * string would have let a signature produced for one venue be replayed at the
+ * other. The pools string is versioned and domain-bound
+ * (`VEX-attest:v1:pools.fun:<chainId>:<token>`), and it stays pinned to its own
+ * owning module below. It is now the only text-signing launch lane.
  */
 const POOLS_ATTRIBUTION_SIGN_SITE = resolve(
   ROOT,
@@ -74,10 +73,58 @@ const POOLS_ATTRIBUTION_SIGN_SITE = resolve(
 );
 const POOLS_ATTRIBUTION_MESSAGE_BUILDER = resolve(ROOT, "tools/pools-fun/attribution.ts");
 
+/**
+ * The AGENTSCAN REGISTRY message, admitted 2026-09-05 with the pools.fun V3
+ * launch lane (PR5) and signed by the Virtuals agent-launch lane (PR-C3) too.
+ *
+ * A FOURTH shape, and it has to be. The AgentScan attestation registry recovers
+ * over ONE canonical string, `VEX-attest:<chainId>:<token>` - the same bytes the
+ * trench badge happens to sign, because that badge predates the registry and the
+ * registry was built around it. The pools.fun badge is deliberately DIFFERENT
+ * (`VEX-attest:v1:pools.fun:...`, domain-bound so a signature for one venue
+ * cannot be replayed at the other), so a launch that wants to appear in the
+ * registry has to sign the canonical string as well: one signature cannot serve
+ * both verifiers, and sending either to the other's is a definitive refusal.
+ *
+ * IT IS A BUILDER ONLY, and that is the containment. It formats a string and
+ * signs nothing, so it adds no entry to `ALLOWED_SIGNING_MODULES`; the modules
+ * that SIGN what it builds are named there in their own right. The exclusivity
+ * check below keeps the canonical literal in this one module: a copy per
+ * launchpad is exactly the duplicated signable payload this guard exists to
+ * prevent.
+ *
+ * WHY IT IS LAUNCHPAD-NEUTRAL rather than living under `tools/pools-fun/` or
+ * `tools/virtuals/`: the registry covers several launchpads on several chains,
+ * the message binds a chain AND a token address, and the chain is a parameter
+ * precisely because Virtuals launches on Base 8453 as well as 4663. The trench
+ * builder could not have served either lane - it pins the chain to
+ * `TRENCH_CHAIN_ID` and lives inside the subtree the Trench retirement removes.
+ */
+const AGENTSCAN_ATTEST_MESSAGE_BUILDER = resolve(ROOT, "vex-agent/agentscan/attest-message.ts");
+
+/**
+ * The Virtuals agent-launch lane's SIGNING site, admitted 2026-09-05 (PR-C3).
+ * A fourth text-signing module, not a fourth literal owner: it imports the
+ * launchpad-neutral builder above and signs what that builds.
+ *
+ * WHY THE SHARED SHAPE IS NOT THE REPLAY HAZARD the pools comment describes.
+ * That hazard was two venues on ONE chain producing byte-identical strings for
+ * a badge claimed at a venue backend. This message binds a chain AND a token
+ * address, which is unique on its chain, and AgentScan dispatches its creation
+ * proof on the `launchpad` the claim is posted with - for Virtuals, the
+ * `preLaunch` transaction (`tx.from == recovered signer`, `tx.to` in the
+ * BondingV5 allowlist, a `PreLaunched` in the receipt). A trench signature
+ * re-presented as a Virtuals claim fails that proof, and the converse.
+ */
+const VIRTUALS_ATTRIBUTION_SIGN_SITE = resolve(
+  ROOT,
+  "vex-agent/tools/protocols/virtuals/handlers/launch/attribute.ts",
+);
+
 const ALLOWED_SIGNING_MODULES = [
   HANDSHAKE_SIGNING_MODULE,
-  TRENCH_ATTRIBUTION_SIGN_SITE,
   POOLS_ATTRIBUTION_SIGN_SITE,
+  VIRTUALS_ATTRIBUTION_SIGN_SITE,
 ];
 
 /**
@@ -247,12 +294,6 @@ describe("signing-oracle guard — only the named modules may produce VEX-attest
   });
 
   it("ties each allowed signing call site to the one message format it is permitted to produce", () => {
-    const attributeSource = readFileSync(TRENCH_ATTRIBUTION_SIGN_SITE, "utf-8");
-    expect(attributeSource).toContain("buildAttestMessage");
-
-    const attributionSource = readFileSync(TRENCH_ATTRIBUTION_MESSAGE_BUILDER, "utf-8");
-    expect(attributionSource).toContain("VEX-attest:");
-
     const poolsAttributeSource = readFileSync(POOLS_ATTRIBUTION_SIGN_SITE, "utf-8");
     expect(poolsAttributeSource).toContain("buildPoolsAttestMessage");
 
@@ -263,7 +304,7 @@ describe("signing-oracle guard — only the named modules may produce VEX-attest
     expect(handshakeSigningSource).toContain("AgentScan Handshake v1");
   });
 
-  it("only the orchestrator may import handshake-signing.js; only the trench sign site may import buildAttestMessage", () => {
+  it("only the orchestrator may import handshake-signing.js, and only the pools sign site may import its builder", () => {
     const files = listTsFiles(ROOT);
 
     const handshakeSigningImporters = findExclusivityViolations(files, "handshake-signing", [
@@ -275,14 +316,9 @@ describe("signing-oracle guard — only the named modules may produce VEX-attest
       `only ${HANDSHAKE_ORCHESTRATOR} may import handshake-signing.js`,
     ).toEqual([]);
 
-    const buildAttestMessageImporters = findExclusivityViolations(files, "buildAttestMessage", [
-      TRENCH_ATTRIBUTION_MESSAGE_BUILDER,
-      TRENCH_ATTRIBUTION_SIGN_SITE,
-    ]);
-    expect(
-      buildAttestMessageImporters,
-      `only ${TRENCH_ATTRIBUTION_SIGN_SITE} may import buildAttestMessage`,
-    ).toEqual([]);
+    // `buildAttestMessage` was the retired launchpad's builder and went with it.
+    // NOBODY may import it now, which is the strongest form of this check.
+    expect(findExclusivityViolations(files, "buildAttestMessage", [])).toEqual([]);
 
     const buildPoolsAttestMessageImporters = findExclusivityViolations(
       files,
@@ -304,12 +340,12 @@ describe("signing-oracle guard — only the named modules may produce VEX-attest
     expect(handshakeLiteralElsewhere).toEqual([]);
 
     // `VEX-attest:` is a PREFIX of the pools literal, so the pools builder is
-    // admitted here too. The narrower check below is what actually pins the
-    // pools string to one module: without it, admitting the pools builder for
-    // the shared prefix would also let it hold the bare trench form.
+    // admitted here. The narrower check below is what actually pins the pools
+    // string to one module. The retired launchpad's builder used to be admitted
+    // beside it and no longer exists, so the bare form has no producer at all.
     const attestLiteralElsewhere = findRawStringViolations(files, "VEX-attest:", [
-      TRENCH_ATTRIBUTION_MESSAGE_BUILDER,
       POOLS_ATTRIBUTION_MESSAGE_BUILDER,
+      AGENTSCAN_ATTEST_MESSAGE_BUILDER,
     ]);
     expect(attestLiteralElsewhere).toEqual([]);
 
@@ -320,10 +356,9 @@ describe("signing-oracle guard — only the named modules may produce VEX-attest
     );
     expect(poolsAttestLiteralElsewhere).toEqual([]);
 
-    // The bare trench form must NOT appear in the pools builder: the pools
-    // module may only ever build the versioned, domain-bound string, and the
-    // whole point of the split is that neither venue can produce the other's
-    // signable bytes.
+    // The bare form must NOT appear in the pools builder: the pools module may
+    // only ever build the versioned, domain-bound string. The split outlives the
+    // venue it was built against - a replayable string is a replayable string.
     const trenchFormInPoolsBuilder = readFileSync(POOLS_ATTRIBUTION_MESSAGE_BUILDER, "utf-8")
       .includes("VEX-attest:${");
     expect(

@@ -52,7 +52,7 @@ export interface AgentscanReportingState {
   readonly nextRegisterAttemptAt: string;
   readonly backfillEnqueuedAt: string | null;
   /**
-   * Which reporting vocabulary this install's DATABASE carries (migration 102
+   * Which reporting vocabulary this install's DATABASE carries (migration 107
    * stamps 2). It says which roles the schema can STORE, never which roles a
    * backfill has already covered - that is `backfillVocabularyVersion`.
    */
@@ -64,7 +64,7 @@ export interface AgentscanReportingState {
    * Separate from `vocabularyVersion` because the two answer different
    * questions, and conflating them is how an older binary defeats the gate: a
    * build whose `AGENTSCAN_VOCABULARY_VERSION` is 1, running against a database
-   * migration 102 has already stamped at 2, scans only the V1 roles and would
+   * migration 107 has already stamped at 2, scans only the V1 roles and would
    * otherwise leave behind a completion mark that the next V2 build reads as
    * "the family history is already covered" - and every historical family row
    * then reaches the server labelled as live activity. The stamp is written by
@@ -158,11 +158,16 @@ export type OutboxWriteOutcome =
  * proven against the running server before rows are sent, not inferred from the
  * enum it publishes.
  *
- * `pools_fee` is likewise still absent, and that is a NAMED GAP rather than a
- * decision: the server has admitted it on the `launch` arm since its own
- * migration 0015, and no pools.fun launch fee this install charges has ever been
- * reported. Closing it belongs with the lane that owns the pools launch writer,
- * because the same change has to decide what the historical rows mean.
+ * `pools_fee` WAS such a gap and is now closed, by the lane that owns the pools
+ * launch writer (PR5). WHAT THE HISTORICAL ROWS MEAN, decided there and recorded
+ * here because this predicate is what acts on it: a `pools_fee` row is THE SAME
+ * FEE a `vex_fee` row on a launch is - the same 25 bps, on the same
+ * `launch_msg_value` basis, to the same Vex treasury, charged by the same leg -
+ * written under the venue-named spelling the vocabulary used before migration
+ * 107 unified it. It is history, not a different charge, so it is admitted
+ * beside `vex_fee` on the launch arm rather than left unreportable. New rows are
+ * written as `vex_fee` (`@tools/pools-fun/fee/venue.ts`), so this arm stops
+ * gaining members the day migration 107 landed and covers a closed population.
  *
  * `wallet_transfer` and the `transaction` kind's five roles are absent for the
  * same reason as `wrap`: present in the server's vocabulary, never proven live.
@@ -183,7 +188,7 @@ const ELIGIBLE_VOCABULARY_V1_SQL = `(
         'token_launch'))`;
 
 /**
- * The launchpad family and the venue-independent fee leg (migration 102). Every
+ * The launchpad family and the venue-independent fee leg (migration 107). Every
  * arm mirrors the server's `ROLES_BY_KIND`: the claim kind carries the three new
  * claim roles beside `pools_claim`, `launch_cancel` rides the launch kind, and
  * `vex_fee` is admitted on swap, bridge and launch and nowhere else.
@@ -197,7 +202,8 @@ const ELIGIBLE_VOCABULARY_V2_SQL = `(
       (a.kind = 'claim'
        AND a.event_role IN ('pools_claim','creator_fee_claim','holder_reward_claim','reward_distribution'))
    OR (a.kind = 'launch' AND a.event_role = 'launch_cancel')
-   OR (a.kind IN ('swap','bridge','launch') AND a.event_role = 'vex_fee'))`;
+   OR (a.kind IN ('swap','bridge','launch') AND a.event_role = 'vex_fee')
+   OR (a.kind = 'launch' AND a.event_role = 'pools_fee'))`;
 
 /**
  * The vocabulary version this build writes and reports. Migration 102 stamps the
@@ -229,7 +235,7 @@ export const AGENTSCAN_VOCABULARY_VERSION = 2;
  * THE SECOND CONDITION IS A VERSION AND NOT A TIMESTAMP, and that is the whole
  * point of it. `backfill_enqueued_at IS NOT NULL` says only that SOME backfill
  * ran; it cannot say which vocabulary that backfill scanned. A build at
- * `AGENTSCAN_VOCABULARY_VERSION = 1` running against a database migration 102
+ * `AGENTSCAN_VOCABULARY_VERSION = 1` running against a database migration 107
  * has already stamped at 2 - an older binary on a migrated install, which is an
  * ordinary state during a staged rollout - performs a V1-ONLY scan and, under
  * the timestamp gate, leaves a mark the next V2 build reads as "the family
@@ -240,7 +246,7 @@ export const AGENTSCAN_VOCABULARY_VERSION = 2;
  *
  * That is the VS Code one-time-migration shape (a durable done-marker, the work
  * skipped when it is present, the marker written after the work) applied to a
- * set query: migration 102 resets the marker, the next periodic run enqueues the
+ * set query: migration 107 resets the marker, the next periodic run enqueues the
  * history under it, and every incremental tick before that mark refuses the new
  * roles instead of stealing them.
  *

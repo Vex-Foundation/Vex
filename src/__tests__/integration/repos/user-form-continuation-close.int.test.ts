@@ -74,6 +74,11 @@ async function seedParkedIntent(sessionId: string): Promise<string> {
       symbol: "CONT",
       toolCallId: `call-${randomUUID()}`,
       expiresAt: new Date(Date.now() + 600_000).toISOString(),
+      // The venue, stated rather than defaulted: migration 108 dropped the
+      // `trench` DEFAULT, and the continuation floor under test is
+      // launchpad-agnostic, so the fixture uses the venue that still launches.
+      protocol: "pools_fun",
+      pools: { pairedAsset: "weth" },
     });
   } finally {
     client.release();

@@ -143,6 +143,12 @@ export const STUDIO_TOOL_TITLES: Readonly<Record<string, string>> = {
   virtuals__agent_trades_list: "Read a Virtuals agent's curve trade tape",
   virtuals__agent_candles_list: "Read a Virtuals agent's price candles",
   virtuals__creator_fees_get: "Read a Virtuals agent creator's fee status",
+  virtuals__agent_trade_quote: "Price a Virtuals bonding-curve trade",
+  virtuals__agent_trade_execute: "Trade a Virtuals agent on its bonding curve",
+  virtuals__agent_launch_preview: "Plan a Virtuals agent launch",
+  virtuals__agent_launch_execute: "Launch a Virtuals agent",
+  virtuals__agent_launch_status: "Check a Virtuals agent launch",
+  virtuals__agent_launch_cancel: "Cancel a Virtuals agent launch",
 
   // ── pendle ────────────────────────────────────────────────────────────────
   pendle__markets_discover: "Screen Pendle yield markets",
@@ -196,17 +202,6 @@ export const STUDIO_TOOL_TITLES: Readonly<Record<string, string>> = {
   morpho__market_withdraw: "Withdraw a supply from a Morpho market",
   morpho__rewards_claim: "Claim earned Morpho rewards",
 
-  // ── trench ────────────────────────────────────────────────────────────────
-  trench__tokens_discover: "Screen Trench Express tokens",
-  trench__tokens_search: "Search Trench Express tokens",
-  trench__token_trades_list: "Read a Trench Express token's trade tape",
-  trench__launch_preview: "Dry-run a Trench Express launch",
-  trench__trade_quote: "Quote a Trench Express trade",
-  trench__trade_execute: "Trade a Trench Express token",
-  trench__images_list: "List Trench image-locker images",
-  trench__my_launches_list: "List this wallet's Trench launches",
-  trench__launch_request_form: "Ask the user to confirm a Trench launch",
-  trench__launch_execute: "Launch a token on Trench Express",
 
   // ── pools ─────────────────────────────────────────────────────────────────
   pools__tokens_discover: "Screen pools.fun tokens",
@@ -220,4 +215,6 @@ export const STUDIO_TOOL_TITLES: Readonly<Record<string, string>> = {
   pools__fees_claim: "Claim pools.fun creator fees",
   pools__launch_assets_list: "List pools.fun launchable stocks",
   pools__holder_rewards_get: "Read pools.fun holder rewards",
+  pools__holder_rewards_claim: "Claim pools.fun holder rewards",
+  pools__holder_rewards_distribute: "Distribute pools.fun holder rewards",
 };

@@ -4,15 +4,15 @@
   "datasetId": "tool-discovery-launchpads",
   "datasetVersion": "launchpads-v1",
   "status": "captured",
-  "capturedAt": "2026-09-05T08:28:55.301Z",
+  "capturedAt": "2026-09-05T14:41:08.555Z",
   "metrics": {
     "overall": {
       "count": 9,
       "recall1": 0.444,
       "recall5": 0.778,
       "coverage5": 0.667,
-      "mrr5": 0.583,
-      "groupMrr5": 0.528
+      "mrr5": 0.578,
+      "groupMrr5": 0.522
     },
     "awareness": {
       "blind": {
@@ -20,8 +20,8 @@
         "recall1": 0.333,
         "recall5": 0.833,
         "coverage5": 0.667,
-        "mrr5": 0.542,
-        "groupMrr5": 0.458
+        "mrr5": 0.533,
+        "groupMrr5": 0.45
       },
       "protocolAware": {
         "count": 3,
@@ -38,8 +38,8 @@
         "recall1": 0.375,
         "recall5": 0.75,
         "coverage5": 0.75,
-        "mrr5": 0.531,
-        "groupMrr5": 0.531
+        "mrr5": 0.525,
+        "groupMrr5": 0.525
       },
       "cross": {
         "count": 0,
@@ -168,14 +168,14 @@
         "recall1": 0.444,
         "recall5": 0.778,
         "coverage5": 0.667,
-        "mrr5": 0.583,
-        "groupMrr5": 0.528
+        "mrr5": 0.578,
+        "groupMrr5": 0.522
       }
     }
   },
   "notes": [
     "dataset tool-discovery-launchpads@launchpads-v1, mode lexical, 9 cases evaluated.",
-    "overall recall@1 0.444, recall@5 0.778, coverage@5 0.667, mrr@5 0.583, groupMrr@5 0.528.",
-    "Measured delta vs previous baseline (launchpads-v1, captured 2026-09-04T20:43:47.334Z): 12 metric values moved; overall recall@5 0.778 -> 0.778, overall mrr@5 0.694 -> 0.583, case count 9 -> 9."
+    "overall recall@1 0.444, recall@5 0.778, coverage@5 0.667, mrr@5 0.578, groupMrr@5 0.522.",
+    "Measured delta: none, metrics are identical to the previous baseline."
   ]
 }

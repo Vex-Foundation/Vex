@@ -15,7 +15,7 @@
  *      for a dozen honest reasons, and none of them should have unlocked a
  *      wallet.
  *   3. Establish the C0 authorization VARIANT from HOST evidence, never from
- *      params - shared with Trench so two launchpads cannot disagree about who
+ *      params - shared across launchpads so two of them cannot disagree about who
  *      may spend (`shared/launch-authorization-variant.ts`). A restricted
  *      session is refused by name and sent to `pools.launch_request_form`, which
  *      is this tool's consent surface instead of an approval card.
@@ -51,6 +51,11 @@ import { resolveLaunchAuthorizationVariant } from "../../../shared/launch-author
 import type { ProtocolExecutionContext } from "../../../types.js";
 import type { ToolResult } from "../../../../types.js";
 import { readPoolsLaunchInputs } from "./inputs.js";
+import {
+  resolveProjectFileLaunchImage,
+  type LaunchImageSelection,
+} from "../../../shared/launch-image-input.js";
+import type { PoolsLaunchImageSource } from "./execute/prepare.js";
 import type { PoolsLaunchAuthorization } from "./authorization.js";
 import { buildPoolsLaunchPlan, type PoolsLaunchPlan } from "./execute/plan.js";
 import {
@@ -129,7 +134,10 @@ export async function poolsLaunchExecuteHandler(
   // 1. Boundary.
   // `requireImage` is set HERE and nowhere else: this is the only leg that
   // signs, and an imageless launch is irreversible (the PPV incident).
-  const validated = readPoolsLaunchInputs(params, { requireImage: true });
+  const validated = readPoolsLaunchInputs(params, context, {
+    requireImage: true,
+    toolName: "pools__launch_execute",
+  });
   if (!validated.ok) return fail(validated.reason);
   const inputs = validated.value;
 
@@ -150,6 +158,18 @@ export async function poolsLaunchExecuteHandler(
   if (!chainConfig) {
     return fail(`Robinhood Chain (${POOLS_CHAIN_ID}) is not in the local chain registry.`);
   }
+
+  // 2b. THE PICTURE'S BYTES, resolved on the surface that owns the containment.
+  //
+  //     A locker id travels as an id and is resolved by the byte seam inside the
+  //     prepare step. A PROJECT PATH cannot: it is a path the MODEL supplied, and
+  //     the only boundary that can contain it is the one holding this call's
+  //     project root. So it is read HERE, through the no-follow reader, before
+  //     any wallet, authorization or provider call exists - a refusal costs
+  //     nothing at this point, and reading it later would mean resolving a
+  //     model-supplied path in a module that has no root to contain it to.
+  const image = await resolveLaunchImageSource(inputs.image, context);
+  if (!image.ok) return fail(image.reason);
 
   // 3. The C0 variant, from host evidence only.
   const variant = await resolveLaunchAuthorizationVariant(context, {
@@ -183,16 +203,25 @@ export async function poolsLaunchExecuteHandler(
     name: inputs.name,
     symbol: inputs.symbol,
     pairedAsset: inputs.pairedAsset,
-    image: inputs.imageId === null ? { kind: "none" } : { kind: "locker", imageId: inputs.imageId },
+    pairedStockAddress: inputs.pairedStockAddress,
+    image: image.value,
     prebuyWei: inputs.prebuyWei,
     prebuyHuman: inputs.prebuyHuman,
     sessionId,
     walletAddress,
-    // The system pins the creator fee stream to the session wallet on every
-    // agent launch, and the tools have no recipient parameter at all - so this
-    // is always an ADDRESS choice, held to exact equality by the verifier. Only
-    // the desktop form may name anyone else (owner decision 3).
-    feeRecipient: { kind: "address", address: walletAddress },
+    // TWO SHAPES ON THE AGENT PATH, NEITHER OF THEM AN ADDRESS THE MODEL CHOSE.
+    //
+    // Without `holderRewards`, the system pins the creator fee stream to the
+    // session wallet: the tools have no recipient parameter at all, and the
+    // verifier holds the signed tuple to exact equality with it. With it, the
+    // stream goes to the gateway's own `FEES_TO_HOLDERS*` sentinel for the
+    // chosen mode - a constant read LIVE from the gateway by verifier point 15,
+    // not from any input and not from any constant in this build. Only the
+    // desktop form may name a third party (owner decision 3).
+    feeRecipient:
+      inputs.feeStream.kind === "holders"
+        ? { kind: "holders", mode: inputs.feeStream.mode }
+        : { kind: "address", address: walletAddress },
     permission: context.sessionPermission,
     publicClient,
     ...(simulateOnly ? { simulateOnly: true } : {}),
@@ -253,6 +282,31 @@ export async function poolsLaunchExecuteHandler(
 }
 
 /**
+ * The picture, in the form the prepare step can use.
+ *
+ * A locker selection stays an ID: the byte seam that resolves it also owns the
+ * digest check the metadata is verified against, and resolving it here would
+ * give that check a second, weaker home. A PROJECT FILE is read here and travels
+ * as bytes, because the reader that contains it needs the project root this
+ * context carries and the prepare step has none.
+ */
+async function resolveLaunchImageSource(
+  selection: LaunchImageSelection | null,
+  context: ProtocolExecutionContext,
+): Promise<{ ok: true; value: PoolsLaunchImageSource } | { ok: false; reason: string }> {
+  if (selection === null) return { ok: true, value: { kind: "none" } };
+  if (selection.kind === "locker") {
+    return { ok: true, value: { kind: "locker", imageId: selection.imageId } };
+  }
+  const resolved = await resolveProjectFileLaunchImage(selection, context);
+  if (!resolved.ok) return { ok: false, reason: resolved.reason };
+  return {
+    ok: true,
+    value: { kind: "bytes", bytes: resolved.image.bytes, label: resolved.image.displayLabel },
+  };
+}
+
+/**
  * What a `simulateOnly` run returns: the launch that WOULD have been signed.
  *
  * Every number here was produced by the same code a real launch runs, at one
@@ -301,7 +355,7 @@ function describeSimulatedLaunch(plan: PoolsLaunchPlan, walletAddress: Address):
 /**
  * The C0 record persisted for audit.
  *
- * Written on BOTH agent variants, unlike Trench, which writes one only for
+ * Written on BOTH agent variants, rather than only for
  * `session_full`. The reason is the pools.fun order: there is no
  * re-derive-and-compare before signing (a second prepare would describe a
  * different token), so the binding this record carries is the only durable

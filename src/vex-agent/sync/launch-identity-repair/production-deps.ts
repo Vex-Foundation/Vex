@@ -37,10 +37,16 @@ export function buildProductionLaunchRepairDeps(): LaunchIdentityRepairDeps {
       const chain = getLocalChain(chainId);
       if (!chain) return null;
       const { getLocalPublicClient } = await import("@tools/evm-chains/evm-client.js");
+      // The retired Trench Express launchpad. Its decoder is history-only
+      // (`sync/legacy-trench-express/`): no new intent can carry
+      // `protocol='trench'` since migration 108, but a `broadcast_pending` row
+      // mined before it must still be reconciled to a token identity.
       const { decodeLaunchReceipt } = await import(
-        "@vex-agent/tools/protocols/trench/handlers/launch/settlement.js"
+        "../legacy-trench-express/launch-settlement.js"
       );
-      const { TRENCH_DIAMOND_ADDRESS } = await import("@tools/trench-express/constants.js");
+      const { LEGACY_TRENCH_DIAMOND_ADDRESS } = await import(
+        "../legacy-trench-express/constants.js"
+      );
 
       const client = getLocalPublicClient(chain);
 
@@ -78,7 +84,7 @@ export function buildProductionLaunchRepairDeps(): LaunchIdentityRepairDeps {
           topics: log.topics as string[],
           data: log.data,
         })),
-        diamond: TRENCH_DIAMOND_ADDRESS as `0x${string}`,
+        diamond: LEGACY_TRENCH_DIAMOND_ADDRESS as `0x${string}`,
         wallet: walletAddress as `0x${string}`,
         // The sweep never reads an AMOUNT off the chain — the authorized native
         // prebuy comes from the intent. Only the identity is decoded here.
@@ -170,6 +176,14 @@ export function readAuthorizedPoolsPlan(intent: TokenLaunchIntent): AuthorizedPo
     userSalt,
     predictedTokenAddress,
     gateway: pools.gatewayAddress ?? null,
+    // COLUMNS, not the blob (migration 109). Without this the sweep would hold a
+    // holders launch's receipt to the SENTINEL that was signed, which the
+    // gateway resolved away before emitting - and this sweep is the only thing
+    // that settles a launch whose broadcast came back ambiguous.
+    holderRewards:
+      pools.holderRewards == null
+        ? null
+        : { mode: pools.holderRewards.mode, sentinel: pools.holderRewards.sentinel },
   };
 }
 
@@ -207,6 +221,13 @@ async function decodePoolsLaunchForSweep(
       pairedAsset: plan.pairedAsset as `0x${string}`,
       userSalt: plan.userSalt as `0x${string}`,
       predictedTokenAddress: plan.predictedTokenAddress as `0x${string}`,
+      holderRewards:
+        plan.holderRewards === null
+          ? null
+          : {
+            mode: plan.holderRewards.mode,
+            sentinel: plan.holderRewards.sentinel as `0x${string}`,
+          },
     },
     // The gateway the plan recorded SELECTS THE SUITE, and its factory comes
     // with it. A row from before migration 082 carries none; the decoder then

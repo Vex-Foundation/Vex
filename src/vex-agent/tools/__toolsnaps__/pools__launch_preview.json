@@ -1,13 +1,30 @@
 {
   "definition": {
     "function": {
-      "description": "Price a pools.fun token launch on Robinhood Chain (4663) before committing to it, and record the preview. Use this when the user is considering a launch and wants to know what it costs: it reads the gateway's CURRENT deployment fee, prices an optional ETH prebuy, and returns the whole cost breakdown as raw amounts with their decimals, plus Vex's 25 bps fee on the native launch value. ADVISORY, and it says so: the final token ADDRESS cannot be known here, because the image determines the metadata link, which determines the salt, which determines the address - the address is settled only when the launch is actually prepared. This writes a local preview record so the run can be reviewed later; it spends nothing, signs nothing, takes no image lock, raises NO approval card (a local record is not a spend, which is why it is flagged mutating and not destructive), and can never turn into a launch by itself. Read the numbers as an estimate of a launch, not as a launch that is about to happen.",
+      "description": "Price a pools.fun token launch on Robinhood Chain (4663) before committing to it, and record the preview. Use this when the user is considering a launch and wants to know what it costs: it reads the gateway's CURRENT deployment fee, prices an optional ETH prebuy, and returns the whole cost breakdown as raw amounts with their decimals, plus Vex's 25 bps fee on the native launch value. It also states where the creator fee stream would go: the user's own session wallet, or - with holderRewards - the token's HOLDERS, in which case there is no address to show yet, because the launchpad deploys the rewards distributor during the launch itself. ADVISORY, and it says so: the final token ADDRESS cannot be known here, because the image determines the metadata link, which determines the salt, which determines the address - the address is settled only when the launch is actually prepared. This writes a local preview record so the run can be reviewed later; it spends nothing, signs nothing, takes no image lock, raises NO approval card (a local record is not a spend, which is why it is flagged mutating and not destructive), and can never turn into a launch by itself. Read the numbers as an estimate of a launch, not as a launch that is about to happen.",
       "name": "pools__launch_preview",
       "parameters": {
         "additionalProperties": false,
         "properties": {
+          "holderRewards": {
+            "description": "Set true to direct this token's CREATOR FEE STREAM to its own holders instead of to the launching wallet. Locked at launch and IRREVERSIBLE: the launchpad deploys a rewards distributor for the token and the creator receives nothing from trading fees, ever. Vex proves this before signing by reading the gateway's own FEES_TO_HOLDERS sentinel constants live and refusing unless the transaction carries exactly the sentinel for the mode you asked for; no address can be supplied here or anywhere on this surface. Omit or set false for the ordinary launch, where the fee stream goes to the user's session wallet.",
+            "type": "boolean"
+          },
+          "holderRewardsMode": {
+            "description": "Which asset the holders are paid in when holderRewards is true: token (default - the launched token, bought back from the fees), paired (the asset the pool trades against), or both. Refused by name when holderRewards is not true, and refused by name when the launch suite does not expose that mode's sentinel - the V2 suite has the token mode only.",
+            "enum": [
+              "token",
+              "paired",
+              "both"
+            ],
+            "type": "string"
+          },
           "imageId": {
-            "description": "Identifier of a picture the user already staged in the app's image locker, listed by launchpads__images_list (one locker, shared by every launchpad). The agent can never create one, only name one the locker already holds. Optional here; pools__launch_execute REQUIRES it.",
+            "description": "IN-APP ONLY: the identifier of a picture the user already staged in the app's image locker, listed by launchpads__images_list (one locker, shared by every launchpad). The agent can never create one, only name one the locker already holds. Over the Vex Studio MCP surface this parameter is REFUSED BY NAME and imagePath is used instead. Optional here; pools__launch_execute REQUIRES a picture.",
+            "type": "string"
+          },
+          "imagePath": {
+            "description": "VEX STUDIO MCP ONLY: the path of an image file INSIDE the current project (PNG, JPEG, WebP or GIF), which Vex reads itself and publishes. A URL is never accepted on any surface, because the launchpad writes the picture's location on chain and a URL could serve different bytes tomorrow. In the Vex app this parameter is REFUSED BY NAME and imageId is used instead. Optional here; pools__launch_execute REQUIRES a picture.",
             "type": "string"
           },
           "name": {
@@ -15,15 +32,20 @@
             "type": "string"
           },
           "pairedAsset": {
-            "description": "Which asset the new pool trades against: weth (default) or usdg. These are the only two the factory allows today - tokenised stocks exist in the provider's vocabulary but the on-chain allowlist refuses them, so asking for one would deploy nothing.",
+            "description": "Which asset the new pool trades against: weth (default), usdg, or stock for one of the tokenised stocks the launch factory allows. A stock pair REQUIRES pairedStockAddress naming which stock, and it is the launch factory - not this build - that decides whether that address is launchable and how it is priced: list the allowed stocks and their pricing mode with pools__launch_assets_list. A stock-paired pool's liquidity after listing is UNKNOWN at launch time; the illiquidity badge on pools.fun is a fact about pools that already trade and says nothing about a pair being created now.",
             "enum": [
               "weth",
-              "usdg"
+              "usdg",
+              "stock"
             ],
             "type": "string"
           },
+          "pairedStockAddress": {
+            "description": "The 0x address of the tokenised stock to pair against, REQUIRED when pairedAsset is stock and refused by name on any other pair. Take it from pools__launch_assets_list, which reads the factory's own allowedPairedAsset and pricingModeFor for every listed stock. A SIGNED_STOCK pair is priced by a backend-signed quote the factory accepts only 30 to 120 seconds after it was observed, so such a launch must be prepared, confirmed and broadcast inside that window and is re-prepared automatically if it lapses.",
+            "type": "string"
+          },
           "prebuy": {
-            "description": "Optional same-transaction first buy, in HUMAN decimal ETH (for example \"0.01\") - not wei. Autonomous launches support an ETH prebuy only; a USDG prebuy needs an approval leg and is available through the desktop form instead.",
+            "description": "Optional same-transaction first buy, in HUMAN decimal ETH (for example \"0.01\") - not wei. Autonomous launches support an ETH prebuy only, and only on a WETH pair (the gateway refuses a native dev buy against any other pair); a USDG or stock-paired prebuy needs an approval leg and is available through the desktop form instead.",
             "type": "string"
           },
           "symbol": {

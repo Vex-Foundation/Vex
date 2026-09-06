@@ -28,6 +28,29 @@ export type TokenLaunchIntentStatus =
   | "consuming"
   | "broadcast_pending"
   | "confirmed"
+  /**
+   * VIRTUALS ONLY, and deliberately NOT a failure (migration 110).
+   *
+   * A Virtuals launch takes two transactions and only the first is ours.
+   * `BondingV5.preLaunch` confirmed - the agent token exists, its pair exists,
+   * the creator's VIRTUAL is inside BondingV5 - and the second, the keeper's
+   * `BondingV5.launch(token)`, has not been OBSERVED within the bounded wait
+   * the signing handler could hold. Nothing is wrong: the keeper's own
+   * transaction is what lists the agent, Vex must never send it (doing so on
+   * 2026-09-04 cost token `0xd1eF7097` its listing), and the sweep observes it
+   * later without a signer.
+   *
+   * Migration 110 requires `protocol = 'virtuals'`, a `tx_hash` and a
+   * `token_address` on this status: all three were established before it could
+   * be reached, and a row asserting the state without them is a defect the
+   * schema refuses to store.
+   *
+   * THE VEX FEE IS WAIVED HERE, PERMANENTLY (owner F3). The fee is collectible
+   * only while the handler still owns the approved signer; a reconciliation has
+   * none, so a later collection would be a transfer nobody authorized. Reaching
+   * this status is the waiver, not a deferral.
+   */
+  | "awaiting_keeper"
   | "terminal_failure"
   | "cancelled"
   | "expired"
@@ -83,6 +106,18 @@ export const LIVE_TOKEN_LAUNCH_INTENT_STATUSES: readonly TokenLaunchIntentStatus
   "consuming",
   "broadcast_pending",
 ];
+
+/**
+ * `awaiting_keeper` is deliberately ABSENT from the list above, and the reason
+ * is the definition of that list rather than an oversight.
+ *
+ * "Live" here means a row that may yet SIGN, or that has signed and not
+ * settled. An `awaiting_keeper` row has signed AND settled: its `preLaunch`
+ * confirmed, the token address is decoded, and nothing about it can reach a
+ * signature again - the only remaining event is somebody else's transaction.
+ * The image-locker delete refusal reads this list, and holding a user's image
+ * hostage to a launch that already happened would be a bug, not a safeguard.
+ */
 
 /**
  * The live statuses whose ONLY forward transition carries `expires_at > NOW()`
@@ -178,6 +213,15 @@ export interface TokenLaunchIntent {
   protocol: TokenLaunchIntentProtocol;
   /** Migration 082: pools.fun fields, `null` on a Trench intent. */
   pools: PoolsLaunchIntentFields | null;
+  /**
+   * Migration 110: the Virtuals launch block, `null` on every other launchpad.
+   *
+   * `unknown` for the same reason `authorizationJson` is: `mapRow` hands back
+   * what the database held, and the launch lane's own reader validates it
+   * before acting. Typing it as the trusted shape here would make every reader
+   * believe a row it never checked.
+   */
+  virtuals: unknown;
   consumedAt: string | null;
   cancelledAt: string | null;
   broadcastAt: string | null;
@@ -186,7 +230,7 @@ export interface TokenLaunchIntent {
 }
 
 /** The launchpad an intent belongs to (migration 082's discriminator). */
-export type TokenLaunchIntentProtocol = "trench" | "pools_fun";
+export type TokenLaunchIntentProtocol = "trench" | "pools_fun" | "virtuals";
 
 /**
  * pools.fun launch fields.
@@ -197,7 +241,13 @@ export type TokenLaunchIntentProtocol = "trench" | "pools_fun";
  * afterwards.
  */
 export interface PoolsLaunchIntentFields {
-  readonly pairedAsset: "weth" | "usdg";
+  /**
+   * The SYMBOLIC pair. `stock` joined the two originals with migration 109, when
+   * the V3 factory was measured allowing all 194 listed tokenised stocks; WHICH
+   * stock a `stock` row names is `pairedAssetAddress`, which is why the two
+   * columns are not redundant and neither can be dropped.
+   */
+  readonly pairedAsset: "weth" | "usdg" | "stock";
   readonly pairedAssetAddress?: string | null | undefined;
   /** The RESOLVED recipient address, whatever choice produced it. */
   readonly feeRecipientAddress?: string | null | undefined;
@@ -206,6 +256,87 @@ export interface PoolsLaunchIntentFields {
   readonly predictedTokenAddress?: string | null | undefined;
   readonly gatewayAddress?: string | null | undefined;
   readonly deploymentFeeWei?: string | null | undefined;
+  /**
+   * The FEES-TO-HOLDERS binding (migration 109), or `null` on a launch whose fee
+   * stream goes to an address.
+   *
+   * THREE FIELDS, ORDERED IN TIME, because a holders launch has two different
+   * correct answers to "where do the fees go" and they are true at different
+   * moments. `mode` and `sentinel` are the INTENT: what the user agreed to, and
+   * the gateway constant that expresses it in the bytes that were signed. Both
+   * exist at authorization. `distributor` is the SETTLEMENT fact - the address
+   * the gateway resolved the sentinel to when it deployed the distributor inside
+   * the launch transaction - and is `null` until a receipt has proven it from
+   * that transaction's own `DistributorDeployed` event.
+   *
+   * Collapsing them would force a lie: recording only the sentinel leaves a
+   * reader decoding a constant to recover a product decision, and recording only
+   * the distributor asserts an address nobody signed.
+   */
+  readonly holderRewards?:
+    | {
+      readonly mode: "token" | "paired" | "both";
+      readonly sentinel: string;
+      readonly distributor?: string | null | undefined;
+    }
+    | null
+    | undefined;
+}
+
+/**
+ * The Virtuals launch block (migration 110), stored as one JSONB column.
+ *
+ * `unknown` is deliberately NOT used for the shape the way `authorizationJson`
+ * is, because unlike that blob this one is written and read by the SAME lane
+ * and every field has a named consumer. What IS shared with it is the reading
+ * discipline: `mapRow` performs no validation, so the launch lane's own reader
+ * schema-checks the block before anything acts on it (rule 04 - a durable row
+ * is untrusted input).
+ *
+ * The fields that already have a column on this table are NOT repeated here:
+ * chain, wallet, name, symbol, description, links, image id, the committed
+ * amount (`prebuyRaw`/`prebuyDecimals`), the transaction hash and the token
+ * address mean exactly what they mean for the other launchpads.
+ */
+export interface VirtualsLaunchIntentFields {
+  /** The canonical chain slug the deployment table names: `base` or `robinhood`. */
+  readonly chainKey: string;
+  /** `BondingV5` - the contract signed, recorded so an upgrade is auditable. */
+  readonly bondingV5: string;
+  /** The PUBLIC content-addressed image URL written into `preLaunch`. */
+  readonly imageUrl: string;
+  /** The content id the launch-assets host addressed those bytes by. */
+  readonly imageCid?: string | null | undefined;
+  /** `cores_`, the venue's capability ids. */
+  readonly cores: readonly number[];
+  /** `antiSniperTaxType_`, 0-5 (`BondingConfig.sol:30-35`). */
+  readonly antiSniperTaxType: number;
+  /** Whether `" by Virtuals"` was appended, and therefore the on-chain name. */
+  readonly nameSuffix: "by_virtuals" | "none";
+  /** The name the ERC-20 actually carries - what the approval displayed. */
+  readonly onChainName: string;
+  /** twitter, telegram, youtube, website - the contract's fixed order. */
+  readonly urls: readonly [string, string, string, string];
+  /** `keccak256(chainId | to | value | data)` of the exact `preLaunch` call. */
+  readonly calldataFingerprint: string;
+  /** `purchaseAmount_`: what the venue receives. `committed - vexFee`. */
+  readonly launchAmountRaw: string;
+  /** `calculateLaunchFee(false, false)` at the pinned block. Measured 0. */
+  readonly protocolFeeRaw: string;
+  /** Vex's 25 bps, or `null` when it floored to zero. */
+  readonly vexFeeRaw?: string | null | undefined;
+  /** The pair `PreLaunched` named, once the receipt is decoded. */
+  readonly pairAddress?: string | null | undefined;
+  /** `virtualId` from `PreLaunched`. */
+  readonly virtualId?: string | null | undefined;
+  /** `initialPurchase` from `PreLaunched` - exactly what a cancel refunds. */
+  readonly initialPurchaseRaw?: string | null | undefined;
+  /** The block `preLaunch` landed in; the sweep scans for `Launched` from it. */
+  readonly preLaunchBlock?: string | null | undefined;
+  /** The keeper's `launch()` hash, once observed. */
+  readonly keeperLaunchTxHash?: string | null | undefined;
+  /** True once the fee leg was skipped for good under owner F3. */
+  readonly vexFeeWaived?: boolean | undefined;
 }
 
 export interface CreateTokenLaunchIntentInput {
@@ -259,17 +390,24 @@ export interface CreateTokenLaunchIntentInput {
    * hangs or resumes against a form the user can still submit.
    */
   /**
-   * WHICH LAUNCHPAD this intent belongs to (migration 082). Defaults to
-   * `"trench"` in the database, so an omitted value keeps every existing caller
-   * writing exactly the rows it wrote before.
+   * WHICH LAUNCHPAD this intent belongs to (migration 082). REQUIRED: migration
+   * 108 dropped the database's `'trench'` DEFAULT with the protocol it named,
+   * so an omitted discriminator is now an INSERT failure rather than a silent
+   * Trench row. Stated here as well so the refusal happens at the type, before
+   * the database has to.
    */
-  protocol?: TokenLaunchIntentProtocol | undefined;
+  protocol: TokenLaunchIntentProtocol;
   /**
    * The pools.fun launch fields. All optional and all meaningless on a Trench
    * intent, which has no pair (its curve is ETH by construction). The database
    * requires `pairedAsset` on any `pools_fun` row.
    */
   pools?: PoolsLaunchIntentFields | undefined;
+  /**
+   * The Virtuals launch block (migration 110). Required by the database on a
+   * `virtuals` intent and forbidden on every other launchpad.
+   */
+  virtuals?: VirtualsLaunchIntentFields | undefined;
   expiresAt: string;
 }
 
@@ -310,7 +448,14 @@ export const SELECT_COLUMNS =
   // as a pools intent - a field that can be written but not read is half a
   // feature, and Agent Scan needs `protocol` to surface previews distinctly.
   "protocol, paired_asset, paired_asset_address, fee_recipient_address, " +
-  "metadata_uri, image_url, predicted_token_address, gateway_address, deployment_fee_wei";
+  "metadata_uri, image_url, predicted_token_address, gateway_address, deployment_fee_wei, " +
+  // Migration 109: the holders binding, read back so an audit can tell the
+  // sentinel that was signed from the distributor that was resolved.
+  "holder_rewards_mode, holder_rewards_sentinel, holder_rewards_distributor, " +
+  // Migration 110. Selected for every reader for the same reason the pools
+  // columns are: a field that can be written but not read is half a feature,
+  // and the keeper sweep reads this block to know which token to look for.
+  "virtuals";
 
 export function mapRow(r: Record<string, unknown>): TokenLaunchIntent {
   return {
@@ -348,7 +493,7 @@ export function mapRow(r: Record<string, unknown>): TokenLaunchIntent {
     pools: r.paired_asset === null || r.paired_asset === undefined
       ? null
       : {
-        pairedAsset: r.paired_asset as "weth" | "usdg",
+        pairedAsset: r.paired_asset as "weth" | "usdg" | "stock",
         pairedAssetAddress: (r.paired_asset_address as string | null) ?? null,
         feeRecipientAddress: (r.fee_recipient_address as string | null) ?? null,
         metadataUri: (r.metadata_uri as string | null) ?? null,
@@ -356,7 +501,17 @@ export function mapRow(r: Record<string, unknown>): TokenLaunchIntent {
         predictedTokenAddress: (r.predicted_token_address as string | null) ?? null,
         gatewayAddress: (r.gateway_address as string | null) ?? null,
         deploymentFeeWei: (r.deployment_fee_wei as string | null) ?? null,
+        holderRewards: r.holder_rewards_mode == null
+          ? null
+          : {
+            mode: r.holder_rewards_mode as "token" | "paired" | "both",
+            sentinel: r.holder_rewards_sentinel as string,
+            distributor: (r.holder_rewards_distributor as string | null) ?? null,
+          },
       },
+    // Handed back exactly as stored. Validation belongs to the launch lane's
+    // own reader, not to a mapper that has no idea what a valid block is.
+    virtuals: r.virtuals ?? null,
     consumedAt: toIsoOrNull(r.consumed_at as string | Date | null),
     cancelledAt: toIsoOrNull(r.cancelled_at as string | Date | null),
     broadcastAt: toIsoOrNull(r.broadcast_at as string | Date | null),

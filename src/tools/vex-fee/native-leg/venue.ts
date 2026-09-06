@@ -2,7 +2,7 @@
  * What makes one venue's native Vex-fee leg different from another's.
  *
  * WHY THIS EXISTS. Three venues had grown a near-identical fee lane -
- * `trench-express/fee/`, `uniswap/fee/` and `bridge-fee/` - each with its own
+ * `pools-fun/fee/`, `uniswap/fee/` and `bridge-fee/` - each with its own
  * copy of the same five decisions: a bps rate, a treasury target, a native
  * transfer builder, a disclosure shape, and an `agent_activity` role. The
  * arithmetic was already shared (`../bps-split.ts`, extracted when four copies
@@ -59,7 +59,7 @@ export interface NativeFeeVenue<Basis extends string = string> {
    * migration before it can use a new role.
    */
   readonly activityEventRole: string;
-  /** The `agent_activity.protocol` value, e.g. `"trench"`. */
+  /** The `agent_activity.protocol` value, e.g. `"pools_fun"`. */
   readonly protocol: string;
   /** The chain slug stamped on the fee row. */
   readonly chainSlug: string;
@@ -67,9 +67,9 @@ export interface NativeFeeVenue<Basis extends string = string> {
   readonly nativeLabel: string;
   /** Decimals of the native asset. 18 everywhere today, stated rather than assumed. */
   readonly nativeDecimals: number;
-  /** Label prefix for this venue's fee log lines, e.g. `"trench.fee"`. */
+  /** Label prefix for this venue's fee log lines, e.g. `"pools.fee"`. */
   readonly logPrefix: string;
-  /** The venue's name as it appears in agent-facing prose, e.g. `"Trench"`. */
+  /** The venue's name as it appears in agent-facing prose, e.g. `"pools.fun"`. */
   readonly displayName: string;
   /** How the fee amount is named when the split refuses a non-positive base. */
   readonly amountLabel: string;

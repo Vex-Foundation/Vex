@@ -55,7 +55,7 @@ const ERC20_OUT = {
 };
 
 /**
- * Put the reporting state exactly where migration 102 leaves an existing
+ * Put the reporting state exactly where migration 107 leaves an existing
  * install: the widened vocabulary is present, and the one-time backfill it owes
  * has NOT run yet.
  */

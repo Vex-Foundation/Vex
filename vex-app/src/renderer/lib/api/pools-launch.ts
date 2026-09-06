@@ -17,19 +17,34 @@
  * a renderer that type-checks against a contract main does not implement is a
  * runtime failure with a green build.
  *
- * Deliberately NOT hooks. The two-stage lane drives `prepare` and `deploy`
- * imperatively from its own state machine — a background-refetching query is
- * exactly the shape this launchpad must not have, because a fingerprint that
- * refreshed itself under the user would break the promise that Deploy authorizes
- * what is on screen.
+ * THE TWO-STAGE CALLS ARE DELIBERATELY NOT HOOKS. The lane drives `prepare` and
+ * `deploy` imperatively from its own state machine - a background-refetching
+ * query is exactly the shape this launchpad must not have, because a fingerprint
+ * that refreshed itself under the user would break the promise that Deploy
+ * authorizes what is on screen.
+ *
+ * THE AWAITING-FORM READ IS THE ONE EXCEPTION, and it is not a money surface:
+ * it answers "has an agent drafted a launch for this session?" and nothing more.
+ * It is a poll plus a push, so it is a query. It moved here from the retired
+ * `token-launch.ts` adapter with the rest of the launch lane (migration 108).
  */
+
+import { useEffect } from "react";
+import {
+  queryOptions,
+  useQuery,
+  useQueryClient,
+  type UseQueryResult,
+} from "@tanstack/react-query";
 
 import type { Result } from "@shared/ipc/result.js";
 import type {
+  PoolsAwaitingFormCancelResult,
   PoolsClaimInput,
   PoolsClaimedFees,
   PoolsClaimPreview,
   PoolsDeployedLaunch,
+  PoolsLaunchCancelAwaitingFormInput,
   PoolsLaunchCancelInput,
   PoolsLaunchCancelResult,
   PoolsLaunchDeployInput,
@@ -41,6 +56,7 @@ import type {
   PoolsPreparedLaunch,
 } from "@shared/schemas/pools-launch.js";
 import type { PoolsLaunchBridge } from "@shared/types/bridge/agent/pools-launch.js";
+import { poolsLaunchKeys } from "./queryKeys.js";
 
 /**
  * The preload domain, or `null`.
@@ -106,6 +122,24 @@ export function cancelPoolsLaunch(
   return call((bridge) => bridge.cancel(input));
 }
 
+/**
+ * THE DISMISSAL of an agent-requested form: end the draft and wake the turn.
+ *
+ * Deliberately NOT `cancelPoolsLaunch` above, which takes a `fingerprintId` and
+ * ends a PREPARED launch. This one takes the `intentId` the awaiting read
+ * handed over, and is the only launch call that answers a parked agent.
+ *
+ * Fire-and-forget at the call site by design: the dialog must close on the
+ * user's click rather than behind a round-trip, and main owns the row either
+ * way. What comes back is what happened, for the log - `cancelled: false` is a
+ * success meaning the form was answered in the same instant.
+ */
+export function cancelAwaitingPoolsLaunchForm(
+  input: PoolsLaunchCancelAwaitingFormInput,
+): Promise<Result<PoolsAwaitingFormCancelResult>> {
+  return call((bridge) => bridge.cancelAwaitingForm(input));
+}
+
 export function listPoolsMyLaunches(
   input: PoolsLaunchMyLaunchesInput,
 ): Promise<Result<PoolsLaunchMyLaunchesResult>> {
@@ -128,4 +162,74 @@ export function claimPoolsFees(
   input: PoolsClaimInput,
 ): Promise<Result<PoolsClaimedFees>> {
   return call((bridge) => bridge.claim(input));
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// The agent-requested form (C3b): a poll and a push over ONE query key
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * The fallback poll's cadence. The push below is the primary signal; this only
+ * has to catch a DROPPED event, so it is deliberately slow.
+ */
+const AWAITING_POLL_MS = 30_000;
+
+/**
+ * The form an agent drafted for this session, or `null` when none is waiting.
+ *
+ * READ-ONLY and NOT a spend surface: it returns what the agent PROPOSED so the
+ * dialog can prefill. Stage 1 still has to be asked for explicitly and Deploy is
+ * still armed only by a verified fingerprint main produced, so a prefilled form
+ * shortens the typing and never the authorization.
+ *
+ * `null` data is the ordinary idle answer, not an error.
+ */
+export function useAwaitingPoolsLaunchForm(
+  sessionId: string | null,
+): UseQueryResult<Result<PoolsLaunchGetAwaitingResult>> {
+  return useQuery(
+    queryOptions({
+      queryKey: poolsLaunchKeys.awaiting(sessionId),
+      queryFn: async () => {
+        const bridge = poolsLaunchBridge();
+        if (bridge === null || sessionId === null) return BRIDGE_UNAVAILABLE;
+        return bridge.getAwaiting({ sessionId });
+      },
+      enabled: sessionId !== null && isPoolsLaunchAvailable(),
+      refetchInterval: AWAITING_POLL_MS,
+      retry: false,
+    }),
+  );
+}
+
+/**
+ * Push half of the C3b pair: invalidate the awaiting read the moment main says
+ * an agent drafted a form.
+ *
+ * SESSION-SCOPED ON PURPOSE, and this is the opposite choice from
+ * `useGlobalApprovalsLiveSync`. An approval inbox is a global badge that must
+ * surface background sessions; this drives a MODAL that takes over the screen,
+ * and popping a spend-consent dialog for a session the user is not looking at
+ * would interrupt them about a conversation they did not open. Foreign-session
+ * events are dropped here rather than filtered downstream so the query key and
+ * the filter can never disagree.
+ *
+ * The event carries ids only - nothing is reconstructed from it. It invalidates,
+ * and the database answers.
+ */
+export function usePoolsLaunchFormLiveSync(sessionId: string | null): void {
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    const bridge = poolsLaunchBridge();
+    if (bridge === null || sessionId === null) return;
+    const off = bridge.onFormRequested((event) => {
+      if (event.sessionId !== sessionId) return;
+      void queryClient.invalidateQueries({
+        queryKey: poolsLaunchKeys.awaiting(sessionId),
+      });
+    });
+    return () => {
+      off();
+    };
+  }, [queryClient, sessionId]);
 }

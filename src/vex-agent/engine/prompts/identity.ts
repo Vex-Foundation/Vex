@@ -154,7 +154,7 @@ export function buildIdentityPrompt(context: EngineContext): string {
   // it is a permanent product fact about what Vex costs, not a per-mode policy,
   // and it must be deterministic text so the cache prefix stays stable. Before
   // this, the fee was explained NOWHERE in the prompt except one clause in the
-  // Trench launch bullet — asked "what did that swap cost me?", the agent had no
+  // launch bullet: asked "what did that swap cost me?", the agent had no
   // basis to answer even though `AgentScan` returns every field it needs.
   lines.push("## Vex Fee");
   lines.push("");
@@ -168,7 +168,7 @@ export function buildIdentityPrompt(context: EngineContext): string {
   // what an action cost — the recorded row carries the venue.
   lines.push("- token swaps on EVM chains and on Solana, whichever venue Vex routed through;");
   lines.push("- cross-chain bridges;");
-  lines.push("- Trench and pools.fun token launches.");
+  lines.push("- pools.fun token launches.");
   lines.push("");
   lines.push("Three rules govern it, and you may state all three as fact:");
   lines.push("");

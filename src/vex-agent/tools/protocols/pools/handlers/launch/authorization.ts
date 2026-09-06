@@ -1,11 +1,11 @@
 /**
  * The C0 authorization record for a pools.fun launch.
  *
- * SAME IDEA AS TRENCH, ONE DIFFERENT GATE, and the difference is the whole
- * reason this file exists rather than reusing `trench/handlers/launch/
+ * ONE GATE, and its shape is the whole
+ * reason this file exists rather than reusing a re-derive-and-compare
  * authorization.ts`.
  *
- * Trench builds its own calldata, so it can re-derive the entire plan from first
+ * A launchpad that builds its own calldata can re-derive the entire plan from first
  * principles immediately before signing and compare it field by field; that
  * re-derivation IS its last gate. pools.fun cannot do that. Its calldata comes
  * from the provider's `prepare`, and a second prepare pins a second persistent
@@ -30,7 +30,7 @@
  * `consumeIfAuthorizedWith` CAS in the intents repo, the only thing standing
  * between one launch and two.
  *
- * THE PERSISTED RECORD IS AUDIT, NOT THE GATE - identically to the trench agent
+ * THE PERSISTED RECORD IS AUDIT, NOT THE GATE - as on every agent
  * paths. Nothing reads `authorization_json` back to decide anything on this
  * path. It exists so a reviewer can reconstruct months later exactly what was
  * authorized: which token at which address, which pair, which fee at which
@@ -56,7 +56,7 @@ export interface PoolsLaunchAuthorizationBinding {
   // ── where ──
   readonly chainId: number;
   readonly gateway: Address;
-  readonly pairedAsset: "weth" | "usdg";
+  readonly pairedAsset: "weth" | "usdg" | "stock";
   readonly pairedAssetAddress: Address;
   /** The address these exact bytes produce, agreed by three independent derivations. */
   readonly predictedTokenAddress: Address;
@@ -76,7 +76,31 @@ export interface PoolsLaunchAuthorizationBinding {
   readonly anchorBlockNumber: string;
 
   // ── who gets paid, and who launched ──
+  /**
+   * The recipient EXACTLY as the signed tuple carries it.
+   *
+   * On a holders launch this is the gateway's `FEES_TO_HOLDERS*` SENTINEL, which
+   * is not an address anybody owns and is NOT what the receipt will name: the
+   * gateway resolves it to the distributor it deploys during the launch, and
+   * emits that. So the sentinel is the SIGNED fact and {@link holderRewards}
+   * carries the intent it expressed; the resolved distributor is a SETTLEMENT
+   * fact and is recorded only once a receipt has proven it.
+   */
   readonly feeRecipient: Address;
+  /**
+   * The holder-rewards INTENT this launch was authorized under, or `null` for an
+   * ordinary launch whose fee stream goes to an address.
+   *
+   * Two fields rather than one, because they answer different questions and only
+   * one of them is on chain yet: `mode` is what the human agreed to ("holders,
+   * paid in the paired asset"), and `sentinel` is the constant that expresses it
+   * in the bytes that were signed. Recording only the mode would leave the audit
+   * unable to say which sentinel was signed; recording only the sentinel would
+   * leave a reader decoding a constant to recover a product decision.
+   */
+  readonly holderRewards:
+    | { readonly mode: "token" | "paired" | "both"; readonly sentinel: Address }
+    | null;
   readonly walletAddress: Address;
 
   // ── the exact transaction ──

@@ -40,13 +40,13 @@ import {
   decodeUniswapExecutedLegs,
   type DecodedUniswapLegs,
 } from "@tools/uniswap/receipt-decoder.js";
-import { decodeCurveBuy, decodeCurveSell } from "@tools/trench-express/evm/settlement.js";
+import { decodeCurveBuy, decodeCurveSell } from "../legacy-trench-express/curve-settlement.js";
 import {
   decodeMorphoBorrowSettlement,
   decodeMorphoSettlement,
   readMorphoBorrowRouteProvenance,
 } from "../morpho-settlement-decoder.js";
-import { TRENCH_DIAMOND_ADDRESS } from "@tools/trench-express/constants.js";
+import { LEGACY_TRENCH_DIAMOND_ADDRESS } from "../legacy-trench-express/constants.js";
 import { getAddress, type Address } from "viem";
 import {
   resolveBridgeDepositAmount,
@@ -434,7 +434,7 @@ async function decodeTrenchRow(input: VenueDecodeInput): Promise<VenueDecodeResu
     return declineTrench("the row is missing a token address or hash the decoder requires");
   }
   const hint = input.hint?.decoder === "trench_trade" ? input.hint : null;
-  const diamond = checksum(hint?.routerAddress ?? TRENCH_DIAMOND_ADDRESS);
+  const diamond = checksum(hint?.routerAddress ?? LEGACY_TRENCH_DIAMOND_ADDRESS);
   const wallet = checksum(row.walletAddress);
   if (diamond === null || wallet === null) {
     return declineTrench("the diamond or wallet address is not a valid EVM address");

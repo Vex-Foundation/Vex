@@ -29,6 +29,10 @@ const FORM = {
   name: "Flamingo",
   symbol: "FLAM",
   pairedAsset: "weth" as const,
+  // `null` and not absent: a stock address belongs only on a stock pair, and one
+  // spelling of "there is no stock here" is what keeps the boundary's refusal
+  // unambiguous.
+  pairedStockAddress: null,
   image: { kind: "url" as const, url: "https://example.test/f.png" },
   tweetUrl: null,
   websiteUrl: null,
@@ -50,11 +54,13 @@ describe("the pools.fun launch domain is exposed on the agent bridge", () => {
     expect(agentBridge.poolsLaunch).toBe(poolsLaunch);
     expect(Object.keys(poolsLaunch).sort()).toEqual([
       "cancel",
+      "cancelAwaitingForm",
       "claim",
       "claimPreview",
       "deploy",
       "getAwaiting",
       "myLaunches",
+      "onFormRequested",
       "prepare",
     ]);
   });
@@ -74,6 +80,14 @@ describe("each method invokes its OWN channel", () => {
   it("cancel → vex:poolsLaunch:cancel", async () => {
     await poolsLaunch.cancel({ sessionId: SESSION_ID, fingerprintId: "fp1" });
     expect(invokedChannel()).toBe(CH.poolsLaunch.cancel);
+  });
+
+  // TWO CANCELS, TWO CHANNELS. Both payloads carry one opaque id, so a wrapper
+  // pointed at the sibling channel would look identical from here - and would
+  // silently leave the agent's turn parked while claiming the form was closed.
+  it("cancelAwaitingForm → vex:poolsLaunch:cancelAwaitingForm", async () => {
+    await poolsLaunch.cancelAwaitingForm({ sessionId: SESSION_ID, intentId: "int1" });
+    expect(invokedChannel()).toBe(CH.poolsLaunch.cancelAwaitingForm);
   });
 
   it("myLaunches → vex:poolsLaunch:myLaunches", async () => {
@@ -96,11 +110,9 @@ describe("each method invokes its OWN channel", () => {
     expect(invokedChannel()).toBe(CH.poolsLaunch.claim);
   });
 
-  it("never reaches the OTHER launchpad's channels", async () => {
+  it("stays inside its own channel namespace", async () => {
     await poolsLaunch.prepare({ sessionId: SESSION_ID, form: FORM });
-    const channel = invokedChannel();
-    expect(channel.startsWith("vex:poolsLaunch:")).toBe(true);
-    expect(channel).not.toBe(CH.tokenLaunch.preview);
+    expect(invokedChannel().startsWith("vex:poolsLaunch:")).toBe(true);
   });
 });
 

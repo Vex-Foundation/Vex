@@ -43,7 +43,7 @@
  *     itself no longer carries the field).
  *   - v3 — FROZEN. Identical to v1's shape; the version bump existed only so
  *     a mission accepted under v2 is never silently reinterpreted as v3.
- *   - v4 — FROZEN (Trench Express launch, contract C6). Added the enforceable
+ *   - v4 - FROZEN (launchpad launch, contract C6). Added the enforceable
  *     autonomous-launch spend ceiling `maxLaunchValueRaw` +
  *     `maxLaunchValueDecimals` to the canonical shape. The bump is MANDATORY,
  *     not cosmetic: without it a v3-accepted mission and a v4 draft carrying a

@@ -18,6 +18,13 @@ import {
 } from "../../TokenLaunchDialog/pools/form-values.js";
 
 const ADDRESS = "0x1111111111111111111111111111111111111111";
+/**
+ * A REAL tokenised stock from the launch factory's own list (NVDA, measured
+ * `allowedPairedAsset = true` on the V3 factory, probe 2026-09-04). Real rather
+ * than invented: these are checksummed addresses, and an invented one would be
+ * refused for the wrong reason.
+ */
+const NVDA_STOCK = "0xd0601CE157Db5bdC3162BbaC2a2C8aF5320D9EEC";
 
 /** A form that is complete and valid, as the baseline for one-field defects. */
 function validForm(over: Partial<PoolsLaunchFormValues> = {}): PoolsLaunchFormValues {
@@ -38,12 +45,61 @@ describe("poolsFormToPayload - what it accepts", () => {
       name: "Flamingo",
       symbol: "FLAM",
       pairedAsset: "weth",
+      // `null` and not absent: a stock address belongs only on a stock pair, and
+      // one spelling of "there is no stock here" is what keeps the boundary's
+      // refusal unambiguous.
+      pairedStockAddress: null,
       prebuy: null,
       image: { kind: "url", url: "https://example.test/flamingo.png" },
       tweetUrl: null,
       websiteUrl: null,
       feeRecipient: { kind: "address", address: ADDRESS },
     });
+  });
+
+  /**
+   * A STOCK PAIR NAMES A KIND; THE ADDRESS NAMES THE ASSET. 194 stocks are
+   * launchable, so neither direction can be defaulted: a pair with no address
+   * identifies nothing, and an address the form ignored would launch against an
+   * asset the user did not pick - permanently.
+   */
+  it("carries a stock pair with the address that identifies it", () => {
+    const payload = poolsFormToPayload(
+      validForm({ pairedAsset: "stock", pairedStockAddress: NVDA_STOCK }),
+    );
+    expect(payload?.pairedAsset).toBe("stock");
+    expect(payload?.pairedStockAddress).toBe(NVDA_STOCK);
+  });
+
+  it("refuses a stock pair that does not say which stock", () => {
+    expect(poolsFormToPayload(validForm({ pairedAsset: "stock" }))).toBeNull();
+  });
+
+  it("refuses a stock address on a pair that is not a stock", () => {
+    expect(
+      poolsFormToPayload(validForm({ pairedAsset: "weth", pairedStockAddress: NVDA_STOCK })),
+    ).toBeNull();
+  });
+
+  /**
+   * HOLDER REWARDS REPLACE THE RECIPIENT rather than sitting beside it. There is
+   * nobody to name - the launchpad deploys the distributor during the launch -
+   * so requiring an address there would demand a value that can have no meaning,
+   * and sending one alongside would state two destinations for one fee stream.
+   */
+  it("sends holder rewards as the recipient choice, with no address at all", () => {
+    const payload = poolsFormToPayload(
+      validForm({ holderRewards: true, holderRewardsMode: "both", feeRecipient: "" }),
+    );
+    expect(payload?.feeRecipient).toEqual({ kind: "holders", mode: "both" });
+  });
+
+  it("does not require a fee recipient when the fees go to the holders", () => {
+    expect(poolsFormToPayload(validForm({ holderRewards: true, feeRecipient: "" }))).not.toBeNull();
+  });
+
+  it("still requires a fee recipient when the fees do NOT go to the holders", () => {
+    expect(poolsFormToPayload(validForm({ holderRewards: false, feeRecipient: "" }))).toBeNull();
   });
 
   it("sends an X username as a RESOLVABLE choice, never as an address", () => {

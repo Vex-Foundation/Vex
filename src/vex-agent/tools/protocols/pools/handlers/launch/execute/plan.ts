@@ -23,7 +23,7 @@
  *
  * WHY THE VERIFIER RUNS BEFORE ANY AUTHORIZATION EXISTS: authorizing first and
  * checking afterwards would mean the user approved something nobody had checked.
- * See `../authorization.ts` for why a trench-style re-derive-and-compare is
+ * See `../authorization.ts` for why a re-derive-and-compare is
  * unavailable here and what stands in its place.
  */
 
@@ -79,7 +79,18 @@ const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 export interface BuildPoolsLaunchPlanInput {
   readonly name: string;
   readonly symbol: string;
-  readonly pairedAsset: "weth" | "usdg";
+  readonly pairedAsset: "weth" | "usdg" | "stock";
+  /**
+   * WHICH tokenised stock, on a `stock` pair; `null` on every other pair.
+   *
+   * The pair the verifier holds the tuple to is THIS address (point 5), and the
+   * factory's own `allowedPairedAsset` and `pricingModeFor` at the anchored
+   * block decide whether it is launchable and how its opening price is derived.
+   * Nothing in this build carries a list of stock addresses: such a list would
+   * be a second source of truth that goes stale the day the launchpad lists
+   * another one.
+   */
+  readonly pairedStockAddress: Address | null;
   readonly image: PoolsLaunchImageSource;
   /** The NATIVE prebuy, or `null`. Human ETH travels with it for the provider. */
   readonly prebuyWei: bigint | null;
@@ -89,11 +100,13 @@ export interface BuildPoolsLaunchPlanInput {
   /**
    * Where the creator fee stream goes.
    *
-   * On the AGENT path this is always `{kind: "address"}` holding the session
-   * wallet: the system pins it, the tools have no recipient parameter, and the
-   * verifier holds the signed tuple to EXACT equality with it (zero rejected).
-   * The manual form may also pass an X handle, which only the launchpad can
-   * resolve - see `resolveFeeRecipientExpectation`.
+   * On the AGENT path this is either `{kind: "address"}` holding the session
+   * wallet - the system pins it, the tools have no recipient parameter, and the
+   * verifier holds the signed tuple to EXACT equality with it (zero rejected) -
+   * or `{kind: "holders"}`, which names no address at all and is proven against
+   * the gateway's own live sentinel by point 15. The manual form may also pass
+   * an X handle, which only the launchpad can resolve - see
+   * `resolveFeeRecipientExpectation`.
    */
   readonly feeRecipient: PoolsFeeRecipientChoice;
   /**
@@ -202,7 +215,15 @@ export async function buildPoolsLaunchPlan(
     name: input.name,
     symbol: input.symbol,
     pairedAsset: input.pairedAsset,
-    feeRecipient: toPrepareFeeRecipient(input.feeRecipient),
+    ...(input.pairedStockAddress === null
+      ? {}
+      : { pairedStockAddress: input.pairedStockAddress }),
+    // A holders launch sends `feesToHolders` and NO recipient; every other
+    // launch sends the recipient explicitly. The two are mutually exclusive on
+    // the wire because they are mutually exclusive in fact.
+    ...(input.feeRecipient.kind === "holders"
+      ? { holderRewards: { payout: input.feeRecipient.mode } }
+      : { feeRecipient: toPrepareFeeRecipient(input.feeRecipient) }),
     launcher: input.walletAddress,
     image: input.image,
     devBuyEth: input.prebuyHuman,
@@ -336,10 +357,17 @@ export async function buildPoolsLaunchPlan(
       name: input.name,
       symbol: input.symbol,
       pairedAsset: input.pairedAsset,
-      // WETH has an on-chain definition and is held to it; USDG does not and is
-      // held to the pinned address the chain registry carries.
-      pairedAssetAddress:
-        input.pairedAsset === "weth" ? anchors.gatewayWeth : (POOLS_USDG_ADDRESS as Address),
+      // THREE PAIRS, THREE AUTHORITIES, and none of them the response.
+      //
+      // WETH has an on-chain definition and is held to it - the gateway's own
+      // `weth()`, which is the address its native-prebuy guard compares
+      // against. USDG has none, so it is held to the pinned address the chain
+      // registry carries. A STOCK is held to the address the CALLER named, which
+      // is the only thing that can distinguish one of 194 listed stocks from
+      // another; whether the factory will accept it is `allowedPairedAsset` at
+      // the anchored block (point 5), and how it is priced is `pricingModeFor`
+      // (points 6 and 14). Neither is decided here.
+      pairedAssetAddress: expectedPairedAssetAddress(input, anchors.gatewayWeth),
       feeRecipient,
       launcher: input.walletAddress,
       gatewayVersion: BigInt(config.gatewayVersion),
@@ -399,11 +427,23 @@ export async function buildPoolsLaunchPlan(
         vexFeeWei: vexFeeWei.toString(),
         gasBoundWei: gasBoundWei.toString(),
         anchorBlockNumber: anchors.blockNumber.toString(),
-        // The durable binding records the address that is actually IN the signed
-        // tuple. Under a holders intent that is the gateway's sentinel, which is
-        // exactly what the settlement decoder will see in `GatewayLaunch`, so
-        // recording the intent's label instead would break the receipt proof.
+        // THE ADDRESS THAT IS ACTUALLY IN THE SIGNED TUPLE - which under a
+        // holders intent is the gateway's SENTINEL, and is NOT what the
+        // settlement decoder will find in `GatewayLaunch`.
+        //
+        // This comment used to say the opposite, and it was wrong in exactly the
+        // case this lane enables. The verified V3 gateway RESOLVES the sentinel
+        // to the distributor it just deployed before emitting the event, so the
+        // receipt names the distributor and the tuple names the sentinel. Both
+        // facts are recorded, separately: this field is what was SIGNED, and
+        // `holderRewards` below is the INTENT the sentinel expressed, which is
+        // what lets the decoder prove the resolved distributor is the one this
+        // launch's own `DistributorDeployed` event named.
         feeRecipient: tuple.feeRecipient,
+        holderRewards:
+          input.feeRecipient.kind === "holders"
+            ? { mode: input.feeRecipient.mode, sentinel: tuple.feeRecipient }
+            : null,
         walletAddress: input.walletAddress,
         calldata: call.data,
         callFingerprint: call.fingerprint,
@@ -426,8 +466,16 @@ export async function buildPoolsLaunchPlan(
  * A handle is NEVER mapped to `wallet`. The two resolve to different addresses,
  * and quietly re-labelling one as the other would point the fee stream somewhere
  * the user did not name - the exact defect the manual path exists to avoid.
+ *
+ * A HOLDERS CHOICE HAS NO TRANSLATION HERE, and that is structural rather than
+ * an omission: it is not an identity the launchpad resolves, it is the absence
+ * of one. The prepare sends `feesToHolders` INSTEAD of a recipient (see the
+ * caller), so asking this function for a `{type, value}` would mean a holders
+ * launch had reached the one code path that names somebody to pay.
  */
-export function toPrepareFeeRecipient(choice: PoolsFeeRecipientChoice): PoolsPrepareFeeRecipient {
+export function toPrepareFeeRecipient(
+  choice: Exclude<PoolsFeeRecipientChoice, { kind: "holders" }>,
+): PoolsPrepareFeeRecipient {
   return choice.kind === "address"
     ? { type: "wallet", value: choice.address }
     : { type: "x", value: choice.username };
@@ -474,6 +522,12 @@ function resolveFeeRecipientExpectation(
   | { readonly ok: true; readonly intent: PoolsFeeRecipientIntent }
   | { readonly ok: false; readonly reason: string } {
   if (choice.kind === "address") return { ok: true, intent: { kind: "address", address: choice.address } };
+  // A HOLDERS INTENT NAMES NO ADDRESS AND RESOLVES TO NONE HERE. It travels as
+  // the mode the caller chose, and point 15 is what binds it to the gateway's
+  // own live sentinel for exactly that mode. Resolving it to an address in this
+  // function would put a fee destination in a module the provider's response can
+  // reach, which is the property this whole path exists to deny.
+  if (choice.kind === "holders") return { ok: true, intent: { kind: "holders", mode: choice.mode } };
 
   let resolved: Address;
   try {
@@ -504,6 +558,30 @@ function resolveFeeRecipientExpectation(
     };
   }
   return { ok: true, intent: { kind: "address", address: resolved } };
+}
+
+/**
+ * The address the tuple's pair must equal, per pair kind.
+ *
+ * A `stock` pair with no address is a defect in the caller, not a provider
+ * outcome: the input reader refuses that combination by name before a plan is
+ * ever built, so reaching here without one would mean the boundary was bypassed.
+ * It throws rather than falling back to WETH, because a fallback would launch
+ * against a different asset than the one that was asked for.
+ */
+function expectedPairedAssetAddress(
+  input: Pick<BuildPoolsLaunchPlanInput, "pairedAsset" | "pairedStockAddress">,
+  gatewayWeth: Address,
+): Address {
+  if (input.pairedAsset === "weth") return gatewayWeth;
+  if (input.pairedAsset === "usdg") return POOLS_USDG_ADDRESS as Address;
+  if (input.pairedStockAddress === null) {
+    throw new Error(
+      "pools launch plan: a stock-paired launch reached the verifier with no stock address; the input "
+        + "boundary must refuse that combination before a plan exists",
+    );
+  }
+  return input.pairedStockAddress;
 }
 
 /** Case-insensitive address equality that refuses a malformed input. */

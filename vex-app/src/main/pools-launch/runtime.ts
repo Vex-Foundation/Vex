@@ -18,6 +18,7 @@
  */
 
 import type {
+  CancelAwaitingPoolsLaunchForm,
   CancelPoolsLaunch,
   ClaimPoolsFees,
   DeployPoolsLaunch,
@@ -27,11 +28,17 @@ import type {
   PreviewPoolsClaim,
 } from "@vex-agent/tools/protocols/pools/launch/runtime-contract.js";
 
-/** The seven entry points, exactly as the runtime contract types them. */
+/** The eight entry points, exactly as the runtime contract types them. */
 export interface PoolsLaunchRuntime {
   readonly prepare: PreparePoolsLaunch;
   readonly deploy: DeployPoolsLaunch;
   readonly cancel: CancelPoolsLaunch;
+  /**
+   * The DISMISSAL of an agent-requested form, by intent id. A different object
+   * from `cancel` above, which takes a verified fingerprint: this one ends a
+   * DRAFT and wakes the turn parked on it. Neither reaches a signer.
+   */
+  readonly cancelAwaitingForm: CancelAwaitingPoolsLaunchForm;
   readonly previewClaim: PreviewPoolsClaim;
   readonly claim: ClaimPoolsFees;
   readonly myLaunches: ListPoolsMyLaunches;
@@ -64,6 +71,8 @@ export function getPoolsLaunchRuntime(): PoolsLaunchRuntime {
       (await loadPoolsLaunchModule()).deployPoolsLaunch(session, inputs),
     cancel: async (session, inputs) =>
       (await loadPoolsLaunchModule()).cancelPoolsLaunch(session, inputs),
+    cancelAwaitingForm: async (session, inputs) =>
+      (await loadPoolsLaunchModule()).cancelAwaitingPoolsLaunchForm(session, inputs),
     previewClaim: async (session, inputs) =>
       (await loadPoolsLaunchModule()).previewPoolsClaim(session, inputs),
     claim: async (session, inputs) =>

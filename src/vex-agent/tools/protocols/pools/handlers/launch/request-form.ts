@@ -35,7 +35,7 @@ import { readPoolsLaunchInputs } from "./inputs.js";
 const TOOL_ID = "pools.launch_request_form";
 
 /**
- * How long the user has to act. The same 15 minutes Trench's launch form uses -
+ * How long the user has to act. Fifteen minutes -
  * stated here rather than shared, because the window is a per-surface product
  * decision and a single constant would silently couple two of them.
  */
@@ -53,7 +53,7 @@ export async function poolsLaunchRequestFormHandler(
   p: Record<string, unknown>,
   context: ProtocolExecutionContext,
 ) {
-  const validated = readPoolsLaunchInputs(p);
+  const validated = readPoolsLaunchInputs(p, context, { toolName: "pools__launch_request_form" });
   if (!validated.ok) return fail(validated.reason);
   const inputs = validated.value;
 
@@ -94,10 +94,12 @@ export async function poolsLaunchRequestFormHandler(
         walletAddress,
         name: inputs.name,
         symbol: inputs.symbol,
-        // The proposed image, if the agent named one the user already staged.
-        // `createWith` takes that image's advisory lock and REFUSES a dangling
-        // id, so a form cannot be raised against bytes that are already gone.
-        ...(inputs.imageId === null ? {} : { imageId: inputs.imageId }),
+        // Only a LOCKER id can be proposed on a form: the form is the in-app
+        // consent surface, the locker is where its picture comes from, and a
+        // Studio project path names a file the desktop form cannot show, let
+        // alone lock. `createWith` takes the image's advisory lock and REFUSES a
+        // dangling id, so a form cannot be raised against bytes already gone.
+        ...(inputs.image?.kind === "locker" ? { imageId: inputs.image.imageId } : {}),
         ...(inputs.prebuyWei === null
           ? {}
           : { prebuyRaw: inputs.prebuyWei.toString(), prebuyDecimals: 18 }),
@@ -107,6 +109,9 @@ export async function poolsLaunchRequestFormHandler(
         protocol: "pools_fun",
         pools: {
           pairedAsset: inputs.pairedAsset,
+          ...(inputs.pairedStockAddress === null
+            ? {}
+            : { pairedAssetAddress: inputs.pairedStockAddress }),
           // Deliberately NO feeRecipientAddress: the user chooses it in the
           // form, and writing a default here would make the proposal look like
           // a decision that had already been taken.
@@ -131,12 +136,20 @@ export async function poolsLaunchRequestFormHandler(
         name: inputs.name,
         symbol: inputs.symbol,
         pairedAsset: inputs.pairedAsset,
-        ...(inputs.imageId === null ? {} : { imageId: inputs.imageId }),
+        ...(inputs.pairedStockAddress === null
+          ? {}
+          : { pairedStockAddress: inputs.pairedStockAddress }),
+        ...(inputs.feeStream.kind === "holders"
+          ? { holderRewards: true as const, holderRewardsMode: inputs.feeStream.mode }
+          : {}),
+        ...(inputs.image?.kind === "locker" ? { imageId: inputs.image.imageId } : {}),
         ...(inputs.prebuyHuman === null ? {} : { prebuyEth: inputs.prebuyHuman }),
       },
       note:
         "The launch form is open and this turn is parked until the user submits or cancels it. Everything "
-        + "proposed above is editable by them, including the image and where the creator fee stream goes. "
+        + "proposed above is editable by them, including the image and where the creator fee stream goes - a "
+        + "fees-to-holders proposal in particular is theirs to accept or drop, and it cannot be undone once "
+        + "launched. "
         + "Their submission is what authorizes the launch; nothing has been signed and nothing has been spent.",
     }),
     // The turn loop's user-form arm keys off THIS field, not off the tool id.

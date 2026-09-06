@@ -3,23 +3,26 @@
  */
 
 import { createHash } from "node:crypto";
-import { Connection, type Commitment, Keypair, Transaction } from "@solana/web3.js";
+import { Connection, Keypair, Transaction } from "@solana/web3.js";
 import bs58 from "bs58";
-import { loadConfig } from "../../../../config/store.js";
 import { VexError, ErrorCodes } from "../../../../errors.js";
 import { DEFAULT_CONFIRM_TIMEOUT_MS, DEFAULT_SEND_RETRIES, DEFAULT_NETWORK_RETRIES } from "./constants.js";
 import { deserializeVersionedTx } from "./deserialize.js";
 import { signVersionedTx } from "./sign.js";
 import { confirmVersionedTx } from "./confirm.js";
-import { getSolanaConnection } from "./connection.js";
+import { createSolanaConnection, getSolanaConnection } from "./connection.js";
 import type { PreparedSolanaTx } from "./prepare.js";
 
+/**
+ * The connection a SIGNED transaction is broadcast through.
+ *
+ * `role: "broadcast"` pins it to the endpoint this repository has always
+ * broadcast through rather than the faster read endpoint: `sendTransaction` was
+ * never probed on the read endpoint, and a read measurement is not evidence a
+ * node will accept and propagate signed material.
+ */
 function getConfiguredSolanaConnection(): Connection {
-  const cfg = loadConfig();
-  return new Connection(
-    cfg.solana.rpcUrl,
-    { commitment: cfg.solana.commitment as Commitment },
-  );
+  return createSolanaConnection({ role: "broadcast" });
 }
 
 /**

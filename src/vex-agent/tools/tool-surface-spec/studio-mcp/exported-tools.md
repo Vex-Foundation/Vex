@@ -43,12 +43,12 @@ free. Both texts live on the tool
 
 ## Totals
 
-- exported tools: 172
+- exported tools: 170
 - internal: 27
-- protocol: 145 across 11 namespaces
+- protocol: 143 across 10 namespaces
 - always loaded: 27
-- read-only: 114
-- destructive: 50
+- read-only: 109
+- destructive: 53
 
 ## Internal tools
 
@@ -193,11 +193,13 @@ free. Both texts live on the tool
 | name | title | lane | read only | destructive | always load | requires env | description bytes | returns | vex fee |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | pools__fees_claim | Claim pools.fun creator fees | protocol | no | yes | no | - | 1619 | - | - |
+| pools__holder_rewards_claim | Claim pools.fun holder rewards | protocol | no | yes | no | - | 4428 | - | - |
+| pools__holder_rewards_distribute | Distribute pools.fun holder rewards | protocol | no | yes | no | - | 3726 | - | - |
 | pools__holder_rewards_get | Read pools.fun holder rewards | protocol | yes | no | no | - | 2102 | - | none (read) |
 | pools__launch_assets_list | List pools.fun launchable stocks | protocol | yes | no | no | - | 1698 | - | none (read) |
-| pools__launch_execute | Launch a token on pools.fun | protocol | no | yes | no | - | 2805 | - | - |
-| pools__launch_preview | Price a pools.fun launch | protocol | no | no | no | - | 998 | - | - |
-| pools__launch_request_form | Ask the user to confirm a pools.fun launch | protocol | no | no | no | - | 902 | - | - |
+| pools__launch_execute | Launch a token on pools.fun | protocol | no | yes | no | - | 3774 | - | - |
+| pools__launch_preview | Price a pools.fun launch | protocol | no | no | no | - | 1257 | - | - |
+| pools__launch_request_form | Ask the user to confirm a pools.fun launch | protocol | no | no | no | - | 1253 | - | - |
 | pools__my_launches_list | List this wallet's pools.fun launches | protocol | yes | no | no | - | 1371 | - | none (read) |
 | pools__token_candles_list | Read pools.fun token candles | protocol | yes | no | no | - | 1006 | - | none (read) |
 | pools__token_get | Read one pools.fun token | protocol | yes | no | no | - | 1411 | - | none (read) |
@@ -250,21 +252,6 @@ free. Both texts live on the tool
 | solana__tokens_discover | Discover new and trending Solana tokens | protocol | yes | no | no | JUPITER_API_KEY | 1123 | - | none (read) |
 | solana__tokens_search | Search Solana tokens by name | protocol | yes | no | no | JUPITER_API_KEY | 835 | - | none (read) |
 
-### trench
-
-| name | title | lane | read only | destructive | always load | requires env | description bytes | returns | vex fee |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| trench__images_list | List Trench image-locker images | protocol | yes | no | no | - | 1034 | - | none (read) |
-| trench__launch_execute | Launch a token on Trench Express | protocol | no | yes | no | - | 2400 | - | - |
-| trench__launch_preview | Dry-run a Trench Express launch | protocol | yes | no | no | - | 1704 | - | none (read) |
-| trench__launch_request_form | Ask the user to confirm a Trench launch | protocol | no | no | no | - | 959 | - | - |
-| trench__my_launches_list | List this wallet's Trench launches | protocol | yes | no | no | - | 884 | - | none (read) |
-| trench__token_trades_list | Read a Trench Express token's trade tape | protocol | yes | no | no | - | 950 | - | none (read) |
-| trench__tokens_discover | Screen Trench Express tokens | protocol | yes | no | no | - | 2293 | - | none (read) |
-| trench__tokens_search | Search Trench Express tokens | protocol | yes | no | no | - | 729 | - | none (read) |
-| trench__trade_execute | Trade a Trench Express token | protocol | no | yes | no | - | 1593 | - | - |
-| trench__trade_quote | Quote a Trench Express trade | protocol | yes | no | no | - | 659 | - | none (read) |
-
 ### uniswap
 
 | name | title | lane | read only | destructive | always load | requires env | description bytes | returns | vex fee |
@@ -276,8 +263,14 @@ free. Both texts live on the tool
 
 | name | title | lane | read only | destructive | always load | requires env | description bytes | returns | vex fee |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| virtuals__agent_candles_list | Read a Virtuals agent's price candles | protocol | yes | no | no | - | 1611 | - | none (read) |
+| virtuals__agent_candles_list | Read a Virtuals agent's price candles | protocol | yes | no | no | - | 2973 | - | none (read) |
 | virtuals__agent_get | Read one Virtuals agent token | protocol | yes | no | no | - | 1365 | - | none (read) |
+| virtuals__agent_launch_cancel | Cancel a Virtuals agent launch | protocol | no | yes | no | - | 1677 | - | - |
+| virtuals__agent_launch_execute | Launch a Virtuals agent | protocol | no | yes | no | - | 2276 | - | - |
+| virtuals__agent_launch_preview | Plan a Virtuals agent launch | protocol | no | no | no | - | 2023 | - | - |
+| virtuals__agent_launch_status | Check a Virtuals agent launch | protocol | yes | no | no | - | 1889 | - | none (read) |
+| virtuals__agent_trade_execute | Trade a Virtuals agent on its bonding curve | protocol | no | yes | no | - | 1971 | - | - |
+| virtuals__agent_trade_quote | Price a Virtuals bonding-curve trade | protocol | yes | no | no | - | 1576 | - | none (read) |
 | virtuals__agent_trades_list | Read a Virtuals agent's curve trade tape | protocol | yes | no | no | - | 1331 | - | none (read) |
 | virtuals__agents_discover | Screen Virtuals agent tokens | protocol | yes | no | no | - | 2039 | - | none (read) |
 | virtuals__creator_fees_get | Read a Virtuals agent creator's fee status | protocol | yes | no | no | - | 2347 | - | none (read) |

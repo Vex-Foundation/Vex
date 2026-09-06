@@ -1,7 +1,7 @@
 /**
  * WHICH C0 variant authorizes a launch dispatch - shared by every launchpad.
  *
- * EXTRACTED, NOT COPIED. This decision was written for `trench.launch_execute`
+ * EXTRACTED, NOT COPIED. This decision was written for the first launch execute
  * and is reproduced here verbatim in behaviour so pools.fun can reuse it: a
  * second hand-written copy of an authorization matrix is how two launch tools
  * end up disagreeing about who may spend, and the difference would only ever

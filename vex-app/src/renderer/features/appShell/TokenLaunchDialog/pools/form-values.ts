@@ -11,11 +11,12 @@
 
 import { hasForbiddenTokenMetadataText } from "@vex-lib/token-metadata-text-policy.js";
 import {
-  LAUNCH_NAME_MAX,
-  LAUNCH_SYMBOL_MAX,
-} from "../../../../lib/api/token-launch.js";
+  TOKEN_METADATA_NAME_MAX as LAUNCH_NAME_MAX,
+  TOKEN_METADATA_SYMBOL_MAX as LAUNCH_SYMBOL_MAX,
+} from "@vex-lib/token-metadata-limits.js";
 import { isAcceptableLaunchLink } from "../../token-launch/launch-display.js";
 import type {
+  PoolsHolderRewardsMode,
   PoolsLaunchFormInput,
   PoolsLaunchImage,
   PoolsPairedAsset,
@@ -32,6 +33,12 @@ export interface PoolsLaunchFormValues {
   readonly name: string;
   readonly symbol: string;
   readonly pairedAsset: PoolsPairedAsset;
+  /**
+   * WHICH tokenised stock, as typed, when the pair is `stock`. Kept as a string
+   * rather than as a parsed address so the user does not lose what they typed
+   * while it is still incomplete.
+   */
+  readonly pairedStockAddress: string;
   /** As TYPED, in the paired asset's units. Main converts it. */
   readonly prebuy: string;
   readonly imageSource: PoolsImageSource;
@@ -41,12 +48,23 @@ export interface PoolsLaunchFormValues {
   readonly websiteUrl: string;
   /** An address or an X username, as typed. Main resolves it. */
   readonly feeRecipient: string;
+  /**
+   * Send the CREATOR FEE STREAM to the token's holders instead of to a
+   * recipient. IRREVERSIBLE once launched, so it is a separate explicit switch
+   * rather than a value in the recipient box: a destination the user could type
+   * by accident is not how a permanent giveaway of the fee stream should be
+   * expressed.
+   */
+  readonly holderRewards: boolean;
+  /** Which asset the holders are paid in. Only meaningful while `holderRewards`. */
+  readonly holderRewardsMode: PoolsHolderRewardsMode;
 }
 
 export const EMPTY_POOLS_LAUNCH_FORM: PoolsLaunchFormValues = {
   name: "",
   symbol: "",
   pairedAsset: "weth",
+  pairedStockAddress: "",
   prebuy: "",
   imageSource: "locker",
   imageId: null,
@@ -54,6 +72,8 @@ export const EMPTY_POOLS_LAUNCH_FORM: PoolsLaunchFormValues = {
   tweetUrl: "",
   websiteUrl: "",
   feeRecipient: "",
+  holderRewards: false,
+  holderRewardsMode: "token",
 };
 
 /**
@@ -65,11 +85,24 @@ export const EMPTY_POOLS_LAUNCH_FORM: PoolsLaunchFormValues = {
 const PAIRED_ASSET_DECIMALS: Readonly<Record<PoolsPairedAsset, number>> = {
   weth: 18,
   usdg: 6,
+  // Every tokenised stock on this launchpad is 18 decimals. It is a refusal
+  // bound only, and a prebuy is not offered on a stock pair anyway - the gateway
+  // takes a native dev buy only against WETH - so nothing money-bearing rests
+  // on it.
+  stock: 18,
 };
 
 export const PAIRED_ASSET_LABEL: Readonly<Record<PoolsPairedAsset, string>> = {
   weth: "WETH",
   usdg: "USDG",
+  stock: "Stock",
+};
+
+/** What each holder-reward mode pays out, in the user's words. */
+export const HOLDER_REWARDS_MODE_LABEL: Readonly<Record<PoolsHolderRewardsMode, string>> = {
+  token: "This token",
+  paired: "The paired asset",
+  both: "Both",
 };
 
 /** An EVM address, checked only for SHAPE. Main is the authority. */
@@ -178,19 +211,39 @@ export function poolsFormToPayload(
     return null;
   }
 
-  if (!isAcceptableFeeRecipient(values.feeRecipient)) return null;
+  // A STOCK PAIR MUST NAME ITS STOCK, and a stock address belongs on no other
+  // pair. Both directions are refusals: 194 stocks are launchable, so there is
+  // no sensible default, and an address the form ignored would launch against an
+  // asset the user did not choose, permanently.
+  const stockAddress = values.pairedStockAddress.trim();
+  if (values.pairedAsset === "stock") {
+    if (!ADDRESS_PATTERN.test(stockAddress)) return null;
+  } else if (stockAddress.length > 0) {
+    return null;
+  }
+
+  // The recipient box is only asked for when the fee stream goes to a
+  // RECIPIENT. Under holder rewards there is nobody to name - the launchpad
+  // deploys the distributor during the launch - so requiring an address there
+  // would demand a value that can have no meaning.
+  if (!values.holderRewards && !isAcceptableFeeRecipient(values.feeRecipient)) {
+    return null;
+  }
 
   return {
     name,
     symbol,
     pairedAsset: values.pairedAsset,
+    pairedStockAddress: values.pairedAsset === "stock" ? stockAddress : null,
     // ABSENT, not "0". The contract distinguishes "no prebuy was asked for"
     // from "a prebuy of zero", and an empty field means the first.
     prebuy: prebuy === "0" ? null : { amountHuman: prebuy },
     image,
     tweetUrl: tweetUrl.length === 0 ? null : tweetUrl,
     websiteUrl: websiteUrl.length === 0 ? null : websiteUrl,
-    feeRecipient: toRecipientChoice(values.feeRecipient),
+    feeRecipient: values.holderRewards
+      ? { kind: "holders", mode: values.holderRewardsMode }
+      : toRecipientChoice(values.feeRecipient),
   };
 }
 

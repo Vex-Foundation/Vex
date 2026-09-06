@@ -61,8 +61,20 @@ export interface PoolsAmount {
 
 // ── Stage 1: prepare + verify ───────────────────────────────────────────────
 
-/** Which paired asset the new pool trades against. Stocks are not launchable today. */
-export type PoolsPairedAsset = "weth" | "usdg";
+/**
+ * Which paired asset the new pool trades against.
+ *
+ * `stock` names a TOKENISED STOCK and deliberately does not say which one:
+ * {@link PoolsLaunchInputs.pairedStockAddress} does that, and the launch
+ * factory's own `allowedPairedAsset` and `pricingModeFor` at the anchored block
+ * decide whether it is launchable and how its opening price is derived. No list
+ * of stocks lives in this build, because such a list is a second source of truth
+ * that goes stale the day the launchpad lists another one.
+ */
+export type PoolsPairedAsset = "weth" | "usdg" | "stock";
+
+/** Which asset a fees-to-holders token pays its holders in. */
+export type PoolsHolderRewardsMode = "token" | "paired" | "both";
 
 /**
  * Who receives the creator fee stream.
@@ -76,7 +88,19 @@ export type PoolsPairedAsset = "weth" | "usdg";
 export type PoolsLaunchRecipientChoice =
   | { readonly kind: "session_wallet" }
   | { readonly kind: "address"; readonly address: Address }
-  | { readonly kind: "x_username"; readonly username: string };
+  | { readonly kind: "x_username"; readonly username: string }
+  /**
+   * THE TOKEN'S OWN HOLDERS, and no address at all.
+   *
+   * IRREVERSIBLE AND LOCKED AT LAUNCH: the launchpad deploys a rewards
+   * distributor during the launch transaction and the creator receives nothing
+   * from trading fees, ever. It is also the ONE choice that cannot be pointed
+   * anywhere by anything a caller or a provider says - the transaction carries
+   * the gateway's own `FEES_TO_HOLDERS*` sentinel, read live from that gateway
+   * and refused if it differs (verifier point 15) - which is why the agent path
+   * may make it while `address` and `x_username` stay manual-form only.
+   */
+  | { readonly kind: "holders"; readonly mode: PoolsHolderRewardsMode };
 
 /**
  * The optional same-transaction prebuy.
@@ -96,7 +120,7 @@ export interface PoolsLaunchPrebuy {
  *
  * `locker` is the primary path and the one the desktop form uses: the user picks
  * a picture they staged earlier in the SHARED IMAGE LOCKER (the same locker
- * Trench launches use), so what crosses the boundary is an opaque id the agent
+ * the locker uses), so what crosses the boundary is an opaque id the agent
  * can never mint - only name one a read tool listed. `prepare` resolves that id
  * to bytes through the EXISTING image lane and uploads them ONCE.
  *
@@ -118,6 +142,13 @@ export interface PoolsLaunchInputs {
   readonly name: string;
   readonly symbol: string;
   readonly pairedAsset: PoolsPairedAsset;
+  /**
+   * WHICH tokenised stock, required when {@link pairedAsset} is `stock` and
+   * refused by name on any other pair. Absent, not null, on a WETH or USDG
+   * launch: "this launch has no stock" and "this launch has an empty stock" are
+   * different statements and only the first is true.
+   */
+  readonly pairedStockAddress?: Address | undefined;
   /**
    * The picture the token launches with, from the locker or from a URL. Absent
    * means no image at all, which the provider accepts and which
@@ -176,16 +207,62 @@ export interface PoolsPreparedLaunch {
   readonly predictedTokenAddress: Address;
   readonly predictedPoolAddress: Address;
   /** The RESOLVED recipient address, whatever choice produced it. Shown before Deploy. */
+  /**
+   * The recipient EXACTLY as the calldata carries it.
+   *
+   * On a holder-rewards launch that is the gateway's SENTINEL, which is not a
+   * wallet and is not where the fees end up: the gateway resolves it to the
+   * distributor it deploys during the launch. {@link holderRewards} is what says
+   * so, and the confirmation screen must render THAT rather than presenting a
+   * sentinel as somebody's address.
+   */
   readonly resolvedFeeRecipient: Address;
+  /**
+   * Present exactly when the fee stream was directed to the holders. `mode` is
+   * what the human agreed to and `sentinel` is the constant that expresses it in
+   * the bytes about to be signed; the distributor's own address does not exist
+   * yet and is deliberately not guessed here.
+   */
+  readonly holderRewards?:
+    | { readonly mode: PoolsHolderRewardsMode; readonly sentinel: Address }
+    | undefined;
   readonly pairedAsset: PoolsPairedAsset;
   readonly pairedAssetAddress: Address;
+  /**
+   * The hash of the EXACT bytes the Deploy click will sign, over
+   * `(chainId, to, calldata, value)`.
+   *
+   * Shown because it is the identity of what is being authorized: everything
+   * else on the confirmation screen is a rendering of these bytes, and this is
+   * the one value that changes if any of them do. Stage 2 signs the call this
+   * fingerprint names and nothing else.
+   */
+  readonly callFingerprint: Hex;
   readonly costs: PoolsLaunchCostBreakdown;
   /** The metadata document the launch pins, so the form can show what was published. */
   readonly metadataUri: string;
   /** Whether the image actually landed in that metadata - a provider trap, surfaced. */
   readonly imageLanded: boolean;
-  /** When the verified fingerprint stops being usable and a fresh prepare is required. */
+  /**
+   * When the verified fingerprint stops being usable and a fresh prepare is
+   * required. The confirmation screen counts down to it, and stage 2 re-checks
+   * it against the clock before it authorizes anything.
+   */
   readonly expiresAt: string;
+  /**
+   * WHY it expires then - because the three possible reasons have wildly
+   * different windows and a countdown with no cause is unactionable.
+   *
+   *   `quote_window`  a SIGNED_STOCK pair, whose backend-signed price quote the
+   *                   factory accepts only 30 to 120 seconds after it was
+   *                   observed. This is the short one, and it is why a
+   *                   stock-paired confirmation has to be acted on immediately.
+   *   `gateway_deadline`  the deadline inside the launch calldata itself.
+   *   `vex_window`    Vex's own cap on how long a verified quote may sit, which
+   *                   exists because the deployment fee moves (measured 4x
+   *                   inside 24 hours).
+   */
+  readonly expiryReason: "quote_window" | "gateway_deadline" | "vex_window";
 }
 
 // ── Stage 2: deploy ─────────────────────────────────────────────────────────
@@ -293,6 +370,7 @@ export interface PoolsAwaitingLaunchForm {
  *
  * Suggested mapping, matching the existing handler's reasoning:
  *   `invalid_inputs`         -> the input-validation code the domain already uses
+ *   `form_not_cancellable`   -> `internal.unexpected` (the ROW moved, not the input)
  *   `wallet_unavailable`     -> `wallet.*` (no wallet / locked)
  *   `insufficient_funds`     -> `wallet.insufficient_funds`
  *   `pair_not_allowlisted`   -> `internal.unexpected` (our on-chain read refused it)
@@ -303,6 +381,19 @@ export interface PoolsAwaitingLaunchForm {
  */
 export type PoolsLaunchRefusalKind =
   | "invalid_inputs"
+  /**
+   * THE AWAITING FORM CANNOT BE CANCELLED, and the message says which state it
+   * is in instead.
+   *
+   * Not `invalid_inputs`: the id the renderer sent is the one it was given, so
+   * this is never the user's typing to fix. What changed is the ROW - the form
+   * was submitted, authorized, signed, or already settled between the dialog
+   * opening and the dismissal - and the only honest answer names that state.
+   * Cancelling from any of them is refused rather than attempted, because
+   * `cancelIfAwaitingWith` is one-way out of `awaiting_user_form` and a launch
+   * past that point has no exit that is not terminal.
+   */
+  | "form_not_cancellable"
   | "wallet_unavailable"
   | "insufficient_funds"
   | "pair_not_allowlisted"
@@ -370,3 +461,41 @@ export type ListPoolsMyLaunches = (
 export type GetAwaitingPoolsLaunchForm = (
   session: PoolsLaunchSession,
 ) => Promise<PoolsLaunchOutcome<PoolsAwaitingLaunchForm | null>>;
+
+/**
+ * What a dismissal did to the agent's parked turn.
+ *
+ * TWO BOOLEANS, NOT ONE, because they answer different questions and only one
+ * of them is about the row. `cancelled` says THIS call moved the intent to
+ * `cancelled`; `false` means the CAS missed - the form was answered in the same
+ * instant by whoever submitted or expired it - and is deliberately a SUCCESS,
+ * not a refusal, because there was nothing live left to cancel.
+ * `resumedAgentTurn` reports whether the parked turn was actually woken, never
+ * merely that a wake was attempted: a busy lease leaves the turn owed, and the
+ * durable floor in `sync/launch-form-expiry.ts` is what finds it again.
+ */
+export interface PoolsAwaitingFormCancellation {
+  readonly cancelled: boolean;
+  readonly resumedAgentTurn: boolean;
+}
+
+/**
+ * THE USER DISMISSED THE FORM THE AGENT ASKED FOR - cancel its intent now.
+ *
+ * The counterpart of `CancelPoolsLaunch`, and a DIFFERENT object: that one
+ * cancels a PREPARED launch by its verified `fingerprintId`, this one cancels a
+ * DRAFT by the `intentId` the awaiting DTO already carries. Neither reaches a
+ * signer, but only this one can answer a parked turn, which is the whole reason
+ * it exists: without it a dismissed form sat `awaiting_user_form` until the
+ * fifteen-minute window lapsed and the agent waited with it.
+ *
+ * NO MONEY FIELD, AND NO MONEY EFFECT. No fingerprint, no plan, no signer, no
+ * fee: its entire authority is "the human closed the dialog". It fires only
+ * from `awaiting_user_form` - every other status is refused BY NAME - so it can
+ * never race a signature, exactly as `cancelIfAwaitingWith` guarantees one
+ * layer down.
+ */
+export type CancelAwaitingPoolsLaunchForm = (
+  session: PoolsLaunchSession,
+  inputs: { readonly intentId: string },
+) => Promise<PoolsLaunchOutcome<PoolsAwaitingFormCancellation>>;

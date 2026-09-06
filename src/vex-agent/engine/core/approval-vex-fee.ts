@@ -2,7 +2,7 @@
  * The Vex fee line on an approval card — one owner, one rate table, no guessing.
  *
  * WHY IT EXISTS. Until now the 25 bps Vex fee was itemised in front of a human
- * on exactly two surfaces: the Trench launch form and a Jupiter approval card
+ * on exactly two surfaces: the launch form and a Jupiter approval card
  * (which carries its own richer `feeDisclosure` from the persisted prequote).
  * On an EVM swap or a bridge the fee sat INSIDE `amountIn`/`amountRaw` and the
  * approval card's allow-listed `criticalArgs` had no fee key at all — so a user
@@ -16,11 +16,11 @@
  *   recorder, persisted on the quote row and covered by the row-disclosure
  *   digest. It derives no amount at all; it renders figures.
  *
- *   {@link describeApprovalVexFee} is what is left for the one tool whose fee
- *   cannot exist at quote time, and it reads only the RATE (from the venue's own
- *   product-owner constant `TRENCH_FEE_BPS`, so the card can never state a rate
- *   the executor does not charge) and the AMOUNT param the approval is already
- *   for.
+ *   There is no second, args-derived path any more. It existed for exactly one
+ *   retired launchpad tool whose SELL fee could not be stated at quote time
+ *   (migration 108), and the derivation was deleted with it. Every remaining
+ *   venue states its fee on the quote, so one card can never carry two
+ *   derivations of one number.
  *
  * Neither reads a `fee` / `feeBps` / `feeReceiver` / `feeAmount` param. The
  * standing decree is that a model-chosen fee is an overcharge vector; the venues
@@ -46,17 +46,15 @@
  *     `SwapExecute` alias card, which carried no fee line whatsoever.
  *   - `solana.swap.execute` - Jupiter's own `feePreview` rides the same typed
  *     prequote channel and renders a richer disclosure (fee + tip + ATA rent).
- *   - `trench.launch_execute` and `pools.launch_execute` - the launch FORM is
+ *   - `pools.launch_execute` - the launch FORM is
  *     the approval surface and already prints the fee; there is no card.
  *   - Pendle and Morpho - they carry no Vex fee, so they must not grow a line.
  *
- * WHAT IS LEFT HERE. Exactly one tool: `trench.trade_execute`. Its SELL fee is
- * 25 bps of the ETH RECEIVED, which does not exist until the trade settles, so
- * there is no quote-time statement to bind and the honest line is the one that
- * says so.
+ * WHAT IS LEFT HERE. One function: the quote-bound renderer. A venue that
+ * cannot state its fee on the quote does not get an approval fee line invented
+ * for it here.
  */
 
-import { TRENCH_FEE_BPS } from "@tools/trench-express/fee/index.js";
 import {
   vexFeeOperationNoun,
   type VexFeePreview,
@@ -67,85 +65,12 @@ function rateLabel(bps: number): string {
   return `${formatDecimal(BigInt(bps), 2)}% (${bps} bps)`;
 }
 
-/**
- * Multiply a human decimal amount by a basis-point rate, EXACTLY.
- *
- * `bps/10000` is a shift of four decimal places, so the product's digits are
- * `digits × bps` and its scale is `places + 4`. No division, no rounding, no
- * `Number` — a 78-digit amount is as exact as a 1-digit one. Returns `null` for
- * anything that is not a plain non-negative decimal (scientific notation, a
- * sign, whitespace-only), because a fee derived from an amount we cannot read
- * is a fabricated fee.
- */
-function multiplyDecimalByBps(amount: string, bps: number): string | null {
-  const trimmed = amount.trim();
-  if (!/^\d+(\.\d+)?$/.test(trimmed)) return null;
-  const dot = trimmed.indexOf(".");
-  const places = dot === -1 ? 0 : trimmed.length - dot - 1;
-  const digits = dot === -1 ? trimmed : trimmed.slice(0, dot) + trimmed.slice(dot + 1);
-  return formatDecimal(BigInt(digits) * BigInt(bps), places + 4);
-}
-
 /** Render a scaled bigint as a decimal string, trailing zeros trimmed. */
 function formatDecimal(scaled: bigint, places: number): string {
   const digits = scaled.toString().padStart(places + 1, "0");
   const whole = digits.slice(0, digits.length - places);
   const fraction = digits.slice(digits.length - places).replace(/0+$/, "");
   return fraction.length === 0 ? whole : `${whole}.${fraction}`;
-}
-
-/** Read a param that must be a non-empty string, or nothing. */
-function readStringParam(args: Record<string, unknown>, key: string): string | undefined {
-  const value = args[key];
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
-}
-
-/**
- * The human unit a fee amount is denominated in. A token ADDRESS is not a unit
- * a person can read, and the card already shows `tokenIn`/`fromToken` on its own
- * line, so an address degrades to the param NAME rather than being repeated.
- */
-function unitLabel(token: string | undefined, tokenKey: string): string {
-  if (token === undefined) return `of the ${tokenKey} above`;
-  const native = token.toUpperCase();
-  if (native === "ETH" || native === "NATIVE") return "ETH";
-  return `of the ${tokenKey} above`;
-}
-
-function describeHumanAmountFee(
-  args: Record<string, unknown>,
-  spec: { bps: number; amountKey: string; tokenKey: string; tail: string },
-): string | undefined {
-  const amount = readStringParam(args, spec.amountKey);
-  if (amount === undefined) return undefined;
-  const fee = multiplyDecimalByBps(amount, spec.bps);
-  if (fee === null) return undefined;
-  const unit = unitLabel(readStringParam(args, spec.tokenKey), spec.tokenKey);
-  return `${rateLabel(spec.bps)}: ${fee} ${unit}. ${spec.tail}`;
-}
-
-/**
- * A Trench curve trade is asymmetric and the asymmetry is user-visible money.
- * A BUY's base is the ETH spent, known exactly before signing. A SELL's base is
- * the ETH RECEIVED, which does not exist until the trade settles — and if the
- * proceeds cannot be decoded Vex takes no fee at all. Claiming a sell number
- * here would put 25 bps of an estimate in front of a human as if it were fact.
- */
-function describeTrenchTradeFee(args: Record<string, unknown>): string | undefined {
-  const isBuy = readStringParam(args, "tokenIn")?.toUpperCase() === "ETH";
-  if (!isBuy) {
-    return `${rateLabel(TRENCH_FEE_BPS)} on the ETH you receive, charged as a separate transfer `
-      + "after the sale settles. The exact amount is not known until then, and if the ETH "
-      + "proceeds cannot be decoded Vex takes no fee at all.";
-  }
-  return describeHumanAmountFee(args, {
-    bps: TRENCH_FEE_BPS,
-    amountKey: "amountIn",
-    tokenKey: "tokenIn",
-    tail: "Charged as a separate transfer that runs only after the trade confirms, so a trade "
-      + "that does not happen is never charged; the curve is quoted for the remainder. This is "
-      + "Vex's fee only; Trench's own 1% curve fee is separate and already inside the quote.",
-  });
 }
 
 /**
@@ -182,25 +107,4 @@ export function describeBoundVexFee(toolId: string, fee: VexFeePreview): string 
   return `Vex fee ${rateLabel(fee.bps)}: ${amount}, taken on the input token ${collection}; `
     + `${fee.netAmountRaw} raw units are ${moved}; paid to ${fee.receiver}; `
     + "stated by the matched quote and re-checked before signing.";
-}
-
-/**
- * The Vex fee line for a tool whose fee cannot be stated at quote time, or
- * `undefined` when this tool carries no such fee.
- *
- * Tolerant reader by contract: absent means NO line - never a "0". Every venue
- * whose quote CAN state its fee is served by {@link describeBoundVexFee}
- * instead, and is deliberately absent from this switch so one card can never
- * carry two derivations of one number.
- */
-export function describeApprovalVexFee(
-  toolId: string,
-  args: Record<string, unknown>,
-): string | undefined {
-  switch (toolId) {
-    case "trench.trade_execute":
-      return describeTrenchTradeFee(args);
-    default:
-      return undefined;
-  }
 }

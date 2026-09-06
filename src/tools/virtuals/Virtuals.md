@@ -36,6 +36,9 @@ Sanitized copies of the captures the tests depend on live in
 | `throttle.ts` | Token bucket + TTL cache + in-flight dedupe, per host, with a configurable rate. |
 | `trades/vp-api.ts` | The bonding-curve trade tape, and the typed refusal for the chains it does not serve. |
 | `candles/geckoterminal.ts` | Pool OHLCV over GeckoTerminal's PUBLIC v2 API, and the typed "pool not indexed" outcome. |
+| `candles/bucketing.ts` | The exact OHLCV arithmetic both curve sources share: scaled-bigint prices and volumes, epoch-aligned buckets, no floats anywhere. |
+| `candles/curve-tape.ts` | Bonding-curve candles built from the provider's own trade feed (base, solana), with the feed's cursorless ceiling reported as a ceiling. |
+| `candles/curve-chain.ts` | Bonding-curve candles built from the pair's own `FPairV2` `Swap` logs (base, robinhood), the deepest and most precise source. |
 
 Base URL is `services.virtualsApiUrl` in the Vex config; the other two hosts are
 constants inside their own modules because they are not configurable endpoints.
@@ -297,6 +300,40 @@ The tape is keyed by the BONDING token: `preToken` while on the curve (where
 graduated token probed - both columns, every chainID, with and without the
 parameter - returned an empty tape.
 
+### THE TAPE HAS NO CURSOR, AND THAT SHAPES THE CANDLE BUILDER (probed 2026-09-05)
+
+Every candidate pagination parameter was sent live against CULTOS (agent 135655,
+BASE, 978 trades) and every one was SILENTLY IGNORED - each returned the
+byte-identical newest window (newest 1788533585, oldest 1787628387):
+
+| parameter sent | http | effect |
+|---|---|---|
+| `offset=200` | 200 | ignored |
+| `page=2` | 200 | ignored |
+| `skip=200` | 200 | ignored |
+| `before=<ts>` | 200 | ignored |
+| `beforeTimestamp=<ts>` | 200 | ignored |
+| `endTime=<ts>` | 200 | ignored |
+| `toTimestamp=<ts>` | 200 | ignored |
+
+The only depth knob is `limit`, and the provider states its own ceiling in its
+rejection body:
+
+    limit=1001 -> HTTP 400 {"code":-400,"message":"param limit maxLimit 1000"}
+
+So the tape is a NEWEST-1000 SNAPSHOT, not a walkable feed, and an agent past
+1000 curve trades has history no parameter can reach. `VP_API_PROVIDER_MAX_LIMIT`
+records the provider's ceiling; `VP_API_MAX_LIMIT` (200) stays as the trades
+TOOL's own product bound. The candle builder asks for the full ceiling and
+reports `coverage.stopReason: tape_ceiling` when the tape comes back full, so a
+history bounded by the ceiling is never presented as the start of the curve.
+
+**Tape amounts are float-damaged upstream.** The tape's newest CULTOS trade
+(`0x42b74f0a...`) reports `virtualTokenAmt` "0.8766472852825719" - sixteen
+significant digits - while the same trade's `Swap` log carries 876647285282571920
+wei exactly. The provider computes these in floating point before we see them.
+The on-chain source is strictly more precise, and the tool says which one it used.
+
 ## `vp-api/klines` - DEAD, and not wired
 
 Twelve probes: granularity 60 and 3600, five windows, timestamps in seconds AND
@@ -351,8 +388,75 @@ Coverage, measured:
 | ROBINHOOD / bonding | same shape as Base; not separately probed |
 | ETH / any | GeckoTerminal's `eth` slug exists but no Virtuals ETH agent was probed through it |
 
-The tool reports a 404 as `supported: false` with that reason and points at
-`virtuals__agent_trades_list` and the 24 h `priceSeries24h` instead.
+Those two 404 cells are why the curve sources below exist. GeckoTerminal stays
+the source for a GRADUATED pool on every chain, and for a SOLANA bonding agent
+whose curve it genuinely indexes.
+
+## The curve sources - candles where no indexer has any (added 2026-09-05)
+
+An `FPairV2` bonding curve on an EVM chain is not an indexed AMM pool, so no
+OHLCV provider carries it. That is exactly the pre-graduation population a
+trader asks about, so the bars are BUILT from the two feeds that do exist. Both
+fold through `candles/bucketing.ts`, so a bar means the same thing whichever
+source produced it: epoch-aligned buckets, prices and volumes as exact decimal
+strings from scaled bigints, and buckets with no trades ABSENT rather than
+zero-filled.
+
+### `FPairV2.Swap` - the on-chain source (`candles/curve-chain.ts`)
+
+    event Swap(uint256 amount0In, uint256 amount0Out, uint256 amount1In, uint256 amount1Out)
+    topic0 = 0x298c349c742327269dc8de6ad66687767310c948ea309df826f5bd103e19d207
+
+All four words are non-indexed and there is no sender topic, so topic0 alone
+selects the event. Index 0 is `tokenA` and index 1 is `tokenB`. THE ORDER IS
+READ FROM THE PAIR, never assumed: both pairs measured put the agent token at
+index 0 and VIRTUAL at index 1, but the module still calls `tokenA()` and
+REFUSES a pair it cannot match against the agent's own bonding token, because an
+inverted series looks exactly as authoritative as a correct one.
+
+| pair | chain | tokenA | tokenB |
+|---|---|---|---|
+| `0x3e11e685...84a` (CULTOS) | Base 8453 | agent token | VIRTUAL `0x0b3e3284...` |
+| `0x0f3Ff518...C2D` (FIDUCIA) | Robinhood 4663 | agent token | VIRTUAL `0xc6911796...` |
+
+RPC bounds, each quoted from the endpoint's own rejection (2026-09-05):
+
+| RPC | chain | bound |
+|---|---|---|
+| `base.drpc.org` | 8453 | "ranges over 10000 blocks are not supported on free plan" |
+| `mainnet.base.org` | 8453 | "eth_getLogs is limited to a 10,000 range" |
+| `base-rpc.publicnode.com` | 8453 | unusable: "Archive requests require a personal token" |
+| `rpc.mainnet.chain.robinhood.com` | 4663 | no range cap; a heavy query answers "log query timed out" |
+
+So Base is windowed at the 10,000 both usable endpoints state, and Robinhood is
+windowed to bound query COST rather than range. Per-log block timestamps are read
+in JSON-RPC batches of 10, the smallest cap measured (`mainnet.base.org`:
+"maximum 10 calls in 1 batch"). The scan walks BACKWARDS from the requested end
+so the work budget is always spent on the bars actually asked for, and
+`coverage` reports the block range covered, the windows spent and which bound
+stopped it.
+
+**Cross-checked against the tape.** The captured Base window
+(`src/__tests__/virtuals/fixtures/curve-swap-logs-base-cultos.json`) ends on the
+same trade the tape served as its newest row, and the two agree on every field;
+the log is the more precise of the two (see the tape section above).
+
+### Source selection, per lifecycle stage and chain
+
+| stage | chain | default source | also available |
+|---|---|---|---|
+| graduated | any | `geckoterminal` (the AMM pool) | - |
+| bonding | solana | `geckoterminal` (Meteora DBC pool) | `tape` |
+| bonding | base | `tape` | `onchain` |
+| bonding | robinhood | `onchain` (the only source there) | - |
+| bonding | ethereum | none; Virtuals runs no curve there | - |
+
+The `source` parameter overrides the default and is REFUSED BY NAME when the
+requested source cannot serve the agent. `currency` applies to GeckoTerminal
+only: the curve sources price in VIRTUAL per agent token as the exact ratio of
+the two token amounts each swap moved, and there is no per-bucket VIRTUAL/usd
+rate on that path, so a `currency` request there is refused rather than answered
+in a unit the caller did not ask for.
 
 ## Capability x chain matrix (the one the tool descriptions state)
 
@@ -362,9 +466,9 @@ The tool reports a 404 as `supported: false` with that reason and points at
 | 24 h price samples (`includePriceSeries`) | yes | yes | present but empty on the row sampled | untested |
 | curve trade tape | yes (chainID 0) | **no** (no chain id in the provider's feed) | yes (chainID 1) | **no** |
 | pool candles, graduated | yes | yes | yes | untested |
-| pool candles, bonding | **no** (404) | **no** (404 expected) | yes | **no** |
+| curve candles, bonding | yes (`tape`, or `onchain` for depth and exactness) | yes (`onchain`; the only source there) | yes (indexed Meteora DBC pool) | **no** (Virtuals runs no curve on ETH) |
 | trade a graduated agent | kyberswap | uniswap | solana tools (Jupiter) | kyberswap |
-| trade a bonding agent | no venue tool yet | no venue tool yet | Jupiter routes the DBC pool | no |
+| trade a bonding agent | `virtuals__agent_trade_quote` / `_execute` (BondingV5) | `virtuals__agent_trade_quote` / `_execute` (BondingV5) | Jupiter routes the DBC pool | no |
 | launch an agent | later lane | later lane | **unsupported**: the Meteora DBC pool creation is signed by Virtuals' backend wallet as both creator and payer, so a self-custodial launch would not be a Virtuals agent | no |
 
 ## The projection and drop table
@@ -461,18 +565,185 @@ this one, is the money authority.
 
 ## Contracts (for the lanes that trade and launch)
 
+Every address below was MEASURED on 2026-09-04, not transcribed: the closed loop
+that proves the table is `FRouterV3.factory() === BondingV5.factory()`,
+`FRouterV3.assetToken() === VIRTUAL`, `BondingV5.router() === FRouterV3`, and the
+EIP-1967 implementation slot of each proxy. The table lives in
+`src/tools/virtuals/curve/deployments.ts`.
+
 | what | Base 8453 | Robinhood 4663 |
 |---|---|---|
-| BondingV5 | `0x1a540088...` | `0xd4cCBFA37e2f35611b3042e4096Ad7a3459Bd007` |
-| FRouterV3 | `0x02fe8ec3...` | `0xCa6395246B4382Ba70F886526dD9a9De984F6081` |
-| FFactoryV2 | `0x488Db0978b34C6Fd901760b9024B565C1117c7c8` (buyTax 1, sellTax 1) | `0xFC2E4Da3EdB2E18100473339c763705d263D20A9` |
-| VIRTUAL | `0x0b3e3284...` | `0xc6911796...D9c31` |
+| BondingV5 (proxy) | `0x1A540088125d00dD3990f9dA45CA0859af4d3B01` | `0xd4cCBFA37e2f35611b3042e4096Ad7a3459Bd007` |
+| BondingV5 implementation | `0x20C124e13069889633FC4212e0797c95cb30Db40` | `0x66Fc520c7F316B8623eee2A5dA821c3b34D0539D` |
+| FRouterV3 (proxy) | `0x02FE8eC3d9BBf7318eb54590bcC39198a8b47deD` | `0xCa6395246B4382Ba70F886526dD9a9De984F6081` |
+| FRouterV3 implementation | `0x58377381523e86d66F9f29016371335dDcB89d32` | `0x09256b9D607c53fD946681F7C5a7a4381ba285A1` |
+| FFactoryV2 | `0x488Db0978b34C6Fd901760b9024B565C1117c7c8` | `0xFC2E4Da3EdB2E18100473339c763705d263D20A9` |
+| BondingConfig | `0x5C4A1A72c5a11909e318FCc08e52e49299ABEdaF` | `0x3e331Fdd9Fe54D5047b1B7339Fd5c91977D53e2F` |
 | AgentTaxV2 (`FFactoryV2.taxVault()`) | `0x617Fd668c5b0d1906C0B3E7E3E49d1409Df0a528` | `0x6D80B81d9Fc56A7A839b1Af9006Eb49151961ce7` |
 | AgentTaxV2 implementation | `0xF6dEd65faaB429b2d5E13552D618a2E231f3D129` | `0x4D4e8F06FE9a3dB2FA7AD4D17893128600Ec01bB` |
+| VIRTUAL | `0x0b3e328455c4059EEb9e3f84b5543F74E24e7E1b` | `0xc6911796042b15d7Fa4F6CDe69e245DdCd3d9c31` |
+| buyTax / sellTax | 1% / 1% | 1% / 1% |
+| antiSniperBuyTaxStartValue | 99% | 99% |
+
+The community-cited BondingV5 implementation `0x22aAAfa2...` is WRONG on Base and
+is recorded here so nobody re-adopts it; the slot answers `0x20C124e1...`.
 
 Curve params 8500 / 42000 VIRTUAL on both chains; launch fee 0, or 10 VIRTUAL
 with ACF. Full provenance in
-`agents-colab/agents_dm/launchpads-plan-2026-09-04.md` section 14.
+`agents-colab/agents_dm/launchpads-plan-2026-09-04.md` section 14 and
+`agents-colab/agents_dm/virtuals-trade-2026-09-04/pins.json`.
+
+## The curve TRADE tools (`virtuals__agent_trade_quote` / `_execute`)
+
+Two tools, both chains, both sides. The venue code is `src/tools/virtuals/curve/`
+(pure chain mechanics and arithmetic, no vex-agent dependency); the runtime is
+`src/vex-agent/tools/protocols/virtuals/handlers/trade-*.ts`.
+
+### The chain is the authority; the API row is discovery
+
+`virtuals__agent_get` says what the provider believes. BondingV5 says what will
+happen. Every figure a signature is held to is read on chain at ONE PINNED
+BLOCK - lifecycle from `tokenInfo`, taxes from `FFactoryV2`, the anti-sniper
+clock from the PAIR's `taxStartTime`/`startTime`, the price from
+`FRouterV3.getAmountsOut` - so the tax the user was shown belongs to the same
+block as the quote it was applied to.
+
+`tokenInfo` is the Solidity AUTO-GETTER over
+`mapping(address => BondingConfig.Token)`. Auto-getters OMIT array members, so
+`uint8[] cores` is absent and every member after it shifts by one. That shape was
+PROVEN by decoding a live response on both chains, not reasoned about; the raw
+bytes are a tracked fixture at
+`src/__tests__/virtuals/fixtures/bonding-v5-token-info.json`.
+
+### The arithmetic, transcribed from the contracts
+
+BUY (`FRouterV3.buy` :202-230, `BondingV5._buy` :728-730):
+
+```
+committed    = amountIn                       (what leaves the wallet)
+vexFee       = floor(committed * 25 / 10000)
+curveAmount  = committed - vexFee             (the amountIn_ argument)
+effectiveAnti= min(rawAntiBuy, 99 - buyTax)   (the router's own clamp)
+normalFee    = floor(curveAmount * buyTax / 100)
+antiFee      = floor(curveAmount * effectiveAnti / 100)
+taxedIn      = curveAmount - normalFee - antiFee
+quotedOut    = getAmountsOut(token, VIRTUAL, taxedIn)
+contractMinOut = floor(quotedOut * (10000 - slippageBps) / 10000)
+```
+
+The router pulls `taxedIn`, `normalFee` and `antiFee` from the wallet in three
+`transferFrom` calls that TOGETHER take exactly `curveAmount`, which is why the
+allowance and the balance guard are sized on `curveAmount` and never on
+`taxedIn`. The buy floor bounds DELIVERED tokens.
+
+SELL (`FRouterV3.sell` :155-186, `BondingV5.sell` :687-688):
+
+```
+quotedGross      = getAmountsOut(token, address(0), amountIn)
+contractGrossMin = floor(quotedGross * (10000 - slippageBps) / 10000)
+walletNetMin     = contractGrossMin - floor(sellTax*contractGrossMin/100)
+                                    - floor(antiSell*contractGrossMin/100)
+```
+
+**`contractGrossMin` is the ONLY floor the chain enforces**: `BondingV5.sell`
+compares the router's GROSS output, and the two taxes are removed afterwards
+inside FRouterV3. `walletNetMin` is an ESTIMATE and is labelled as one
+everywhere it is shown; a receipt below it is a settlement DISCREPANCY Vex
+reports as such, never a bound the contract prevented. The estimate errs on the
+safe side because the only tax that can move before inclusion is the anti-sniper
+one, which decays monotonically. v1 signs `BondingV5.sell` directly, with no
+balance-delta wrapper contract (owner decision, plan v3 section 10).
+
+### The anti-sniper window is consent to a BOUND
+
+`acceptAntiSniperTaxPct` (whole percent, 1-98) is the maximum the caller accepts
+on the side being traded. OMITTING IT REFUSES any active window, and that is the
+default: a window that reads 1 percent now read 99 percent a minute ago. The
+quote states the current percent and the seconds remaining; the execute refuses
+if the percent rose above the accepted bound - which can only happen if the
+window's clock moved, and is therefore a real and refusable event rather than
+drift.
+
+### What the execute revalidates immediately before signing
+
+| field | authority | refusal |
+|---|---|---|
+| BondingV5 / FRouterV3 implementation | EIP-1967 slot, re-read | `implementation_changed`, by name |
+| lifecycle (trading, graduated) | `BondingV5.tokenInfo` | hand-off naming the AMM tool and the pool |
+| buyTax / sellTax, anti-sniper type | `FFactoryV2`, `BondingConfig` | `tax_changed` |
+| anti-sniper percent on this side | `FRouterV3` maths over chain reads | bound-exceeded, with both numbers |
+| pair, side, amounts, fee | the sealed snapshot | `pair_changed` / `side_changed` / `amount_changed` / `fee_changed` |
+| the floor | the QUOTE's, written verbatim into the calldata | `floor unreachable`, never re-derived |
+| allowance | `allowance(wallet, FRouterV3)` | its own EXACT-amount approval leg |
+
+The floor is derived ONCE, at quote time, and the execute writes that number into
+the calldata. It never re-derives a floor from a fresher curve read: re-deriving
+is exactly how a sibling venue filled a 313,879.7 quote at 1,190.145 without
+reverting on 2026-08-27.
+
+### The Vex fee (owner F1/F2), and why the two sides differ
+
+25 bps, the same rate every Vex venue charges, always in VIRTUAL, always to the
+Vex treasury, and NEVER from a parameter - `fee`, `feeBps`, `feeReceiver`,
+`feeRecipient`, `feeAmount`, `vexFee`, `vexFeeBps` and `vexFeeReceiver` are
+rejected BY NAME rather than dropped, because a silent drop hides an attempted
+overcharge.
+
+- **BUY**: exact, deducted from the committed VIRTUAL before the curve, so
+  `committed = curveAmount + vexFee`.
+- **SELL**: 25 bps of the PROVEN executed VIRTUAL, decoded from the receipt's
+  ERC-20 `Transfer` logs. The quote states the rate and a labelled estimate,
+  because the exact number does not exist until the receipt does. **An
+  undecodable settlement means NO FEE AT ALL** - Vex does not charge a percentage
+  of a number nobody observed.
+
+The transfer is a SEPARATE leg that runs ONLY after the trade confirms, recorded
+as a `vex_fee` child row on the `swap` arm so the feed folds it under the trade.
+A reverted, refused or ambiguous trade is never charged; a failed fee never
+touches the confirmed trade; an ambiguous fee stays pending and is NEVER re-sent,
+because a blind retry could charge twice.
+
+### Rows a trade writes
+
+`allowance_reset` (only when a non-zero allowance is short), `allowance` (only
+when short, EXACT amount, spender FRouterV3), `swap` (venue `virtuals-curve`),
+then `vex_fee`. Every row exists before the first broadcast; the ones that never
+run are terminalized explicitly. The `swap` row's `routeProvenance` carries no
+`settlementDecode` hint, because no `virtuals_curve` decoder exists in the
+sync-side repair sweep yet - naming one the sweep cannot dispatch would be worse
+than an absent hint. Declared gap; the sweep-side decoder is its own change.
+
+### Hand-offs, not errors
+
+| chain / state | answer |
+|---|---|
+| graduated agent | the AMM tool for that chain (`kyberswap__*` on Base, `uniswap__*` on Robinhood) plus the pool address |
+| Solana | `solana__swap_*` - the Virtuals curve there is a Meteora DBC pool Jupiter routes, not BondingV5 |
+| Ethereum | no curve at all; agent tokens there are already-graduated ERC-20s |
+
+### `simulateOnly`
+
+`simulateOnly: true` proves the path to the edge of signing and no further: no
+signing key opened, no prequote CONSUMED, no row written, nothing broadcast. It
+re-reads the chain, re-prices, builds the exact transactions and `eth_call`s each
+from the session wallet address, returning them with `executed: false`. A leg
+that depends on an allowance the wallet does not hold yet reverts there by
+construction, and that is reported rather than hidden.
+
+IT IS STILL GATED, and that is a deliberate choice rather than an oversight.
+`virtuals.trade.execute` is a registered execute on the prequote gate, which runs
+in the runtime BEFORE the handler, so a simulation needs a fresh quote for the
+identical parameters exactly as a real execute does. The alternative - skipping
+the gate when a caller passes `simulateOnly` - would put a param-driven bypass on
+a trust boundary, and a later reordering of the handler's branches would then
+admit an unquoted execute. Selecting the prequote row is not claiming it, so the
+quote survives the simulation and the real execute can still use it.
+
+Two consequences worth knowing before running the harness: `proposalId` is
+CONDITIONALLY required (a real execute needs it, a simulation must not have one),
+which the manifest's `required` flag cannot express - so it is declared optional
+and the HANDLER refuses a real execute without it, ahead of the claim, so a
+forgotten parameter costs no quote.
 
 ## Creator fees - AgentTaxV2, and why the claim is `unsupported`
 
@@ -563,6 +834,237 @@ filter key. It is therefore carried as a labelled provider claim about a
 DIFFERENT revenue stream, tolerant and nullable, never as the answer, and never
 subtracted from the on-chain numbers.
 
+## The AGENT LAUNCH tools (`virtuals__agent_launch_preview` / `_execute` / `_status` / `_cancel`)
+
+Four tools rather than two, and the reason is the venue's own design.
+
+### A Virtuals launch takes TWO transactions, and only the first is Vex's
+
+```
+  1. BondingV5.preLaunch(...)    THE CREATOR'S. Mints the agent token, creates
+                                 the curve pair, takes the creator's VIRTUAL,
+                                 emits PreLaunched. The agent EXISTS. It does
+                                 not trade and it is not listed.
+  2. BondingV5.launch(token)     THE VIRTUALS KEEPER'S, about a minute later.
+                                 Runs the initial purchase, opens the curve,
+                                 starts the anti-sniper clock, emits Launched.
+                                 Only now does api.virtuals.io index the agent.
+```
+
+`launch(address)` is permissionless (`BondingV5.sol:579-592`), so calling it is
+technically possible. **Vex never does, and the reason is measured.** On
+2026-09-04 our own `launch()` on Robinhood (tx `0x17e401b9`) beat the keeper for
+token `0xd1eF7097` and `api.virtuals.io` never indexed that agent; the Base agent
+whose `launch()` the KEEPER ran (tx `0x9eca4cb5`, from `0x81f7ca6a...`) was
+indexed as id 139289 within minutes. Winning that race destroys the listing the
+user launched for.
+
+So the launch handler WATCHES, bounded (180 s, against a measured keeper latency
+of about a minute), and both endings are correct:
+
+| ending | status | what it means | Vex's fee |
+|---|---|---|---|
+| `Launched` observed | `launched` | the agent is live and listed | collected |
+| not observed in time | `awaiting_keeper` | the agent exists, the money is in BondingV5, the sweep finishes it | **WAIVED PERMANENTLY** |
+
+`awaiting_keeper` is NOT a failure and never becomes one. `virtuals__agent_launch_status`
+is what answers "is it live yet?" afterwards, and `virtuals__agent_launch_cancel`
+is the exit while the keeper has not acted.
+
+### The authority table (money path, rule 90)
+
+| field | authority | revalidated before signing |
+|---|---|---|
+| chain | caller, resolved to the pinned deployment (base, robinhood) | fixed |
+| BondingV5, VIRTUAL | `curve/deployments.ts` | pinned |
+| proxy implementations | EIP-1967 slot, re-read every call | YES |
+| bondingConfig | `BondingV5.bondingConfig()`, never assumed | YES |
+| router | `BondingV5.router()`, held to the pinned FRouterV3 | YES |
+| protocol launch fee | `BondingConfig.calculateLaunchFee(false, false)` | YES |
+| scheduled threshold | `getScheduledLaunchParams().startTimeDelay` | YES |
+| fee recipient | `BondingConfig.feeTo()` | YES |
+| name, ticker, cores, description, socials | caller | fixed |
+| on-chain name | `name` plus the venue suffix, computed and displayed | fixed |
+| image URL | the content-addressed host ONLY; a caller-supplied URL is refused BY NAME | fixed |
+| committed VIRTUAL | caller, raw + decimals, never a float | fixed |
+| anti-sniper type | caller, 0-5, held to `isValidAntiSniperType` | fixed |
+| allowance | exact-amount approve to **BondingV5** | YES |
+| balance | ERC-20 `balanceOf` at the pinned block | YES |
+| Vex fee | `launch/fee.ts` constants, never params | after the keeper is observed |
+| the plan | preview seals `keccak256(chainId ‖ to ‖ value ‖ data)`; the execute rebuilds it and refuses a mismatch | BINDING |
+
+### The allowance spender is BondingV5, NOT FRouterV3
+
+This is the one place the launch lane and the curve TRADE lane disagree, and
+getting it wrong is a launch that reverts after the approval was already signed
+and paid for. `preLaunch` pulls the purchase itself with
+`IERC20(assetToken).safeTransferFrom(msg.sender, address(this), initialPurchase)`
+(`BondingV5.sol:381-385`), where `address(this)` is BondingV5; a curve buy is
+pulled by FRouterV3 instead.
+
+### The name on chain is not always the name the caller typed
+
+`preLaunch` appends `" by Virtuals"` unless bit 1 of the `extParams_` flags word
+is set (`_decodeAppendByVirtualsSuffix`, `BondingV5.sol:234-238`, `:391`). That
+is a product fact, not an encoding detail: the ERC-20 the wallet ends up holding
+is named differently from the string that was approved. The preview shows
+`agent.onChainName` for exactly that reason, and `nameSuffix: "none"` sets the
+flag. An empty `extParams_` (`"0x"`) is what the venue's own app sends and what
+both 2026-09-04 launches carried.
+
+Every other `extParams_` flag is deliberately unreachable: bit 0 fee delegation,
+bit 2 robotics, the delegation-type bits and the trailing recipient word each
+change who receives an agent's fees, which is a money decision with no measured
+handler chain behind it.
+
+### The three-way split of what the caller commits
+
+```
+  amountIn  =  Vex fee (25 bps, floored)  +  purchaseAmount_
+  purchaseAmount_ =  calculateLaunchFee(false, false)  +  initialPurchase
+```
+
+`calculateLaunchFee(false, false)` is **0** for a normal immediate launch, read
+live on Base and Robinhood on 2026-09-04 and again on 2026-09-05, so today the
+initial purchase IS the venue-side amount. The split is written against the
+committed total anyway, because the contract will charge a fee for other launch
+shapes and a fee computed on "the initial purchase" would silently change
+meaning if this lane ever admitted one. `initialPurchase` is also **exactly what
+a cancel refunds** - the launch fee is not refundable.
+
+### `startTime` is the head block's timestamp, not a wall clock
+
+`preLaunch` calls a launch SCHEDULED once `startTime_ >= block.timestamp +
+startTimeDelay` (`BondingV5.sol:326-333`; `startTimeDelay` measured at 86400 s on
+both chains), and a scheduled launch is charged
+`scheduledLaunchParams.normalLaunchFee` and settles at a moment no signing
+handler is alive for. A wall clock running fast against a chain running slow
+could cross that threshold silently, so the plan reads the head block's own
+timestamp and refuses outright if the threshold ever drops below a 60 s margin.
+
+### What is `unsupported`, and the measured reason for each (owner L1)
+
+| shape | why it is closed |
+|---|---|
+| scheduled launch (`startTime`) | the initial purchase executes when no handler is alive to observe or settle it, and the venue charges `normalLaunchFee` |
+| ACF (`needAcf`) | costs `scheduledLaunchParams.acfFee`, measured at 10 VIRTUAL on both chains, and reserves supply to the venue's `teamTokenReservedWallet` |
+| non-zero airdrop (`airdropBips`) | moves reserved supply to `teamTokenReservedWallet`, which is not the creator's wallet, and Vex has no proven distribution path |
+| launch modes 1 and 2 | `_validateLaunchMode` reverts with `UnauthorizedLauncher` unless the sender is on `BondingConfig`'s privileged-launcher list, which a self-custodial wallet is not |
+| Solana | there is no BondingV5 there: a Solana agent's curve is a Meteora dynamic-bonding-curve pool the Virtuals BACKEND creates, so no permissionless call exists for a self-custodial wallet. `useInstead` is deliberately `null` - unlike the TRADE lane, which points at Jupiter |
+| Ethereum | Virtuals runs no launch contract there |
+
+### The bounds Vex adds, which are VEX'S and not the venue's
+
+`preLaunch` bounds almost nothing - `cores_.length > 0` is its only field check
+(`:317-319`) - and the venue's own UI limits were never measured. So these are
+Vex's refusal to sign a transaction it cannot show a person, and they are stated
+as such rather than as the venue's rule: name <= 64, ticker <= 16 and
+alphanumeric (uppercased before encoding), description <= 2000 (contract storage
+is real gas), each social URL <= 200 and `https` only with no credentials (the
+strings are written to permanent public storage and rendered as links), cores
+<= 8 whole numbers in 0-255 with no repeats, and no control characters anywhere
+(an approval surface cannot render them).
+
+**The core TAXONOMY is a declared omission.** Which id means what is the venue's
+own vocabulary, readable from `virtuals__agent_get`'s `cores` block on an
+existing agent; Vex does not carry a copy, because a stale copy would silently
+mislabel an agent's capabilities.
+
+### The image is content-addressed, and a URL is refused by name
+
+The on-chain `img_` string must address bytes that cannot change after the
+approval was signed (owner I1). In the Vex app the picture must ALREADY be
+published with `launchpads__image_publish`, which is the approval-gated owner of
+"bytes become public"; over the Studio MCP surface, where there is no locker,
+`imagePath` bytes are read through the contained no-follow reader and uploaded
+through the same client, whose answer is re-hashed locally before it is
+believed. `imageUrl`, `image`, `logoUrl` and their spellings are rejected BY
+NAME, never dropped.
+
+### Rows a launch writes
+
+`allowance_reset` (only when a non-zero allowance is short) -> `allowance`
+(exact amount, spender BondingV5) -> `token_launch` (kind `launch`, venue
+`virtuals-bonding`) -> `vex_fee` (child on the launch arm, migration 107). The
+fee row is PLANNED before anything is broadcast and may legitimately never be
+signed: `awaiting_keeper` aborts it with the reason `waived`, which the feed must
+not render as a failure.
+
+The `token_launch` row's OUTPUT leg records what the launch has delivered at the
+moment of the write. `preLaunch` itself buys nothing - the keeper's `launch()`
+does (`:619-641`) - so the output is the proven `initialPurchasedAmount` when the
+keeper acted inside the wait, and zero when it did not, with the keeper sweep
+writing the real figure when it observes the launch. Writing an expected amount
+in the second case would put an amount nobody observed into an audit row.
+
+A CANCEL is its own execution with one `launch_cancel` row carrying the refund as
+its output leg - not a fifth row on the launch's, because the two are different
+user actions minutes or hours apart.
+
+### The durable state machine (`token_launch_intents`, migration 110)
+
+```
+  previewed --(claimed by an execute, single use)--> cancelled
+  [fresh row] authorized --CAS--> consuming --signed--> broadcast_pending
+                                                          |
+                    Launched observed --> confirmed       |
+                    not observed ------> awaiting_keeper --+
+                    reverted ----------> terminal_failure
+                    unknown -----------> stays broadcast_pending (reconciled, NEVER re-sent)
+  awaiting_keeper --sweep sees Launched--> confirmed
+                  --creator cancels------> cancelled
+```
+
+`awaiting_keeper` is the one new state, and migration 110 requires
+`protocol = 'virtuals'`, a `tx_hash` and a `token_address` on it: all three were
+established before it could be reached. The `virtuals` JSONB block holds what has
+no query on it (the cores, the anti-sniper type, the fingerprint, the pair, the
+keeper's hash); everything the table already has a column for is not repeated.
+
+### AgentScan attestation
+
+The creator proof is a signature over `VEX-attest:<chainId>:<lowercased token>`,
+stored in `launched_tokens.agentscan_attest_signature` (migration 110, shared
+with pools.fun rather than a third venue column). It is signed **inside the
+launch handler**, because that is the last place in the system holding the
+launching wallet's key - the attest sweep runs later with no signer, so a
+signature not taken there can never be taken. The server's own creator proof for
+this launchpad is the `preLaunch` transaction: `tx.from == recovered signer`,
+`tx.to` in the BondingV5 allowlist, and a `PreLaunched(token, pair, ...)` in the
+receipt.
+
+### Live acceptance, 2026-09-05 (NOTHING WAS SIGNED)
+
+Owner rule 8 forbids executing a launch, so the path is proven to the edge of
+signing. Archived under `agents-colab/agents_dm/virtuals-launch-2026-09-05/`.
+
+- Both chains' EIP-1967 slots re-read and MATCHING the pins: Base
+  `0x20C124e1...` / `0x58377381...`, Robinhood `0x66Fc520c...` / `0x09256b9D...`.
+- `calculateLaunchFee(false, false) = 0`, `startTimeDelay = 86400`,
+  `feeTo = 0x86CbAC9d...`, `initialSupply = 1000000000` on BOTH chains.
+- `eth_simulateV1` of approve THEN `preLaunch` in one block, from the session
+  wallet address, with the exact calldata `buildLaunchPlan` produces:
+  **Base status 0x1, gas 0x4f0522**; **Robinhood status 0x1, gas 0x4efc5d**. The
+  real Robinhood `preLaunch` of 2026-09-04 used 5,199,204 gas, so the simulated
+  5,176,413 is the same transaction shape.
+- A plain `eth_call` of `preLaunch` reverts with `ERC20: insufficient allowance`
+  when the allowance leg has not run, which is what the handler's own
+  `simulateOnly` reports rather than hides.
+- `cancelLaunch` for the Robinhood token `0xd1eF7097` reverts, and
+  `tokenInfo(token)` says why: `creator = 0x33eF6673...` (this wallet),
+  `launchExecuted = true`, `initialPurchase = 0`. That is the same fact the
+  handler's gate reads before opening a key.
+- The receipt decoders are proven against FOUR real receipts (both chains'
+  `preLaunch` and both `launch()`), tracked as sanitized fixtures.
+
+**A measured provider finding, outside this lane's files.** `base.drpc.org`, the
+bundled Base RPC in `curve/deployments.ts`, answers `eth_getStorageAt` with
+`{"code":30,"message":"Request timeout on the free plan"}` on every attempt, so
+the EIP-1967 proxy re-read - which the curve TRADE lane also performs before
+signing - fails closed on Base today. `base-mainnet.public.blastapi.io` answers
+it correctly. Reported rather than patched here: that table belongs to the trade
+lane.
+
 ## Known gaps, stated rather than hidden
 
 1. **Ordered multi-sort** is reachable upstream and not exposed (reason above).
@@ -571,8 +1073,21 @@ subtracted from the on-chain numbers.
 4. **ETH coverage of the market-history tools** was never probed against a real
    ETH agent - the chain holds two - so those cells are reported as unsupported
    rather than claimed.
-5. **Robinhood bonding candles** were inferred from the Base 404 rather than
-   probed directly.
+5. **Robinhood bonding candles** no longer depend on that inference: the chain
+   is served by the on-chain source, proven live on FIDUCIA (agent 139254, pair
+   `0x0f3Ff518...C2D`, 128 `Swap` logs) whose tape is empty at every chainID.
+10. **A `token` or `chain` subject** for the candle read is NOT exposed; the
+   numeric agent id is the only subject, because it already determines the
+   chain, the bonding token and the pair, and the provider's own row is the
+   authority for all three. Named here rather than left as an undeclared gap.
+11. **Solana bonding depth** is bounded by whichever source answers: the indexed
+   pool has GeckoTerminal's own history, and the tape stops at its 1000-trade
+   ceiling. There is no third source on that chain, so the oldest bucket the
+   tool can offer there is the oldest one of those two carry.
+12. **The on-chain source's work budget** (40 log windows, 600 block-header
+   reads per call) is a bound on WORK, not on the answer: when it stops, the
+   coverage block names the bound and hands back the cursor that resumes exactly
+   there.
 6. **`filters[status]=5`** filters 236 rows on BASE and we do not know what it
    means, so it is not exposed.
 7. **`api2.virtuals.io`** mirrors `api.virtuals.io` (identical totals) and

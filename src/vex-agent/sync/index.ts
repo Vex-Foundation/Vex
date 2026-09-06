@@ -199,7 +199,7 @@ export async function syncTick(): Promise<void> {
           solanaResult.confirmed + solanaResult.failed,
         );
       } else if (job.syncType === "launch_identity_repair") {
-        // Trench launch identity sweep — seeded (seed.ts) and dispatched by
+        // Launch identity sweep - seeded (seed.ts) and dispatched by
         // worker.ts; this is its periodic driver, mirroring the branch above
         // exactly. Omitting it is the C1 defect the bridge sweep already hit:
         // the job's own timer fires nothing and the omission is silent.
@@ -210,17 +210,6 @@ export async function syncTick(): Promise<void> {
           runId,
           { ...launchResult, periodic: true },
           launchResult.repaired + launchResult.failed,
-        );
-      } else if (job.syncType === "launch_attribution") {
-        // Trench attribution retry lane — periodic driver, mirroring the branch
-        // above exactly. Omitting it is the silent C1 defect the bridge sweep hit.
-        const { attributeLaunchedTokens, buildProductionLaunchAttributionDeps } = await import("./launch-attribution.js");
-        const attributionResult = await attributeLaunchedTokens(buildProductionLaunchAttributionDeps());
-        const runId = await syncRepo.enqueueRun(job.id);
-        await syncRepo.completeRun(
-          runId,
-          { ...attributionResult, periodic: true },
-          attributionResult.attributed,
         );
       } else if (job.syncType === "pools_attribution") {
         // pools.fun attribution retry lane - periodic driver, mirroring the
@@ -234,6 +223,27 @@ export async function syncTick(): Promise<void> {
           runId,
           { ...poolsResult, periodic: true },
           poolsResult.attributed,
+        );
+      } else if (job.syncType === "virtuals_keeper_launch") {
+        // Virtuals keeper-launch reconciliation - periodic driver, mirroring
+        // the branch above exactly. THIS IS THE THIRD registration site, and
+        // omitting it is the silent C1 defect the bridge sweep hit: the job
+        // seeds, the worker dispatches it, and the timer fires nothing.
+        //
+        // Read-only on chain. It NEVER calls launch() - doing so pre-empts the
+        // venue keeper and the platform then never indexes the agent (measured
+        // 2026-09-04) - and it never takes a fee, because owner F3 waived it
+        // permanently when the launch was recorded awaiting_keeper.
+        const { reconcileVirtualsKeeperLaunches } = await import("./virtuals-keeper-launch.js");
+        const { buildProductionVirtualsKeeperSweepDeps } = await import(
+          "./virtuals-keeper-launch-production-deps.js"
+        );
+        const keeperResult = await reconcileVirtualsKeeperLaunches(buildProductionVirtualsKeeperSweepDeps());
+        const runId = await syncRepo.enqueueRun(job.id);
+        await syncRepo.completeRun(
+          runId,
+          { ...keeperResult, periodic: true },
+          keeperResult.launched + keeperResult.cancelled,
         );
       } else if (job.syncType === "launch_form_expiry") {
         const { expireOverdueLaunchForms } = await import("./launch-form-expiry.js");

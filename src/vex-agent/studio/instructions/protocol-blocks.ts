@@ -37,7 +37,7 @@ import { isStudioEnvironmentKeyConfigured } from "./installation-environment.js"
  * WHAT VEX CHARGES IN ONE NAMESPACE, in one line per block.
  *
  * The live test (2026-09-03, p1.txt lines 134-136) measured the gap: the fee
- * note names swaps, bridges, Trench, the generic EVM pair and launches, and the
+ * note names swaps, bridges, the generic EVM pair and launches, and the
  * FREE list names sends, wraps, Pendle and Morpho, which leaves the Solana
  * generic pair, Solana lend and predict, and the pools trades in NEITHER list.
  * An agent that cannot tell whether a namespace charges guesses, and a guess
@@ -122,13 +122,6 @@ export const STUDIO_NAMESPACE_FEES: Readonly<Record<string, StudioNamespaceFee>>
       + "charges anything. The launch a picture is FOR is charged by its own launchpad namespace.",
     freeLanes: ["src/vex-agent/tools/protocols/launchpads"],
   },
-  trench: {
-    line:
-      "25 bps of the ETH a curve trade moves, or of a launch's native value; "
-      + "reads and previews are free.",
-    charged: { symbol: "TRENCH_FEE_BPS", lane: "src/tools/trench-express" },
-    freeLanes: [],
-  },
   uniswap: {
     line:
       "25 bps of the input on a swap execute, as a separate transfer leg, not "
@@ -137,18 +130,22 @@ export const STUDIO_NAMESPACE_FEES: Readonly<Record<string, StudioNamespaceFee>>
     freeLanes: [],
   },
   virtuals: {
-    // Every Virtuals tool that EXISTS today is a read, and reads are free. The
-    // second sentence is the owner-confirmed policy for the curve trade and
-    // launch tools of the later lanes (v3 F1-F5); it is stated as future
-    // behaviour, not as a charge the user can incur now, because claiming a fee
-    // for a tool that does not exist is as wrong as hiding one that does.
+    // Both halves are shipped now (PR-C2 curve trades, PR-C3 launches), so the
+    // line states charges a user can incur TODAY. The launch half carries its
+    // WAIVER, because a fee the user will not be charged is as much a fact
+    // about their money as one they will.
     line:
-      "none today - every Virtuals tool here is a read, and reads are free. The confirmed policy for "
-      + "the curve trade and launch tools of a later lane is 25 bps of the VIRTUAL committed on a buy, "
-      + "of the VIRTUAL a receipt proves was received on a sell, and of the initial purchase once a "
-      + "launch is observed on chain; genesis is free, and a graduated agent trades under its venue's "
-      + "own fee with no second one.",
-    freeLanes: ["src/vex-agent/tools/protocols/virtuals", "src/tools/virtuals"],
+      "25 bps of the VIRTUAL you commit on a bonding-curve buy, taken off the input before the curve, "
+      + "and 25 bps of the VIRTUAL a receipt proves you received on a sell, taken as a separate leg "
+      + "after the sale settles; a trade that reverts or cannot be proven is never charged. On an "
+      + "agent LAUNCH, 25 bps of the VIRTUAL you commit, taken off the input, and charged ONLY when "
+      + "Vex has seen the Virtuals keeper launch your agent while it still held your approval - if "
+      + "the keeper is slower than that the launch is recorded awaiting_keeper and the fee is WAIVED "
+      + "PERMANENTLY, never collected later. Cancelling a launch is free. Every Virtuals read is "
+      + "free, a graduated agent trades under its venue's own fee with no second one, and genesis "
+      + "participation is not a path Vex executes at all.",
+    charged: { symbol: "VIRTUALS_CURVE_FEE_BPS", lane: "src/tools/virtuals" },
+    freeLanes: [],
   },
 };
 

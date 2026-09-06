@@ -22,7 +22,6 @@ import { PENDLE_NAVIGATION } from "./entries-market/pendle.js";
 import { SOLANA_NAVIGATION } from "./entries-market/solana.js";
 import { DEXSCREENER_NAVIGATION } from "./entries-market/dexscreener.js";
 import { VIRTUALS_NAVIGATION } from "./entries-market/virtuals.js";
-import { TRENCH_NAVIGATION } from "./entries-market/trench.js";
 import { POOLS_NAVIGATION } from "./entries-market/pools.js";
 import { LAUNCHPADS_NAVIGATION } from "./entries-market/launchpads.js";
 
@@ -36,7 +35,6 @@ export const MARKET_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
   SOLANA_NAVIGATION,
   DEXSCREENER_NAVIGATION,
   VIRTUALS_NAVIGATION,
-  TRENCH_NAVIGATION,
   POOLS_NAVIGATION,
   LAUNCHPADS_NAVIGATION,
 ] as const;

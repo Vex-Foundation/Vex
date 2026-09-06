@@ -142,8 +142,8 @@ function renderBookSection(
       return scope.kind === "project" ? (
         <ProjectBlock projectId={scope.projectId} />
       ) : null;
-    case "trench":
-      // Trench Photos + Launch a Token are ONE card: a launch REQUIRES an
+    case "launchpads":
+      // The image locker + Launch a Token are ONE card: a launch REQUIRES an
       // image from that locker, so separating them sent the user hunting for
       // the reason a launch refused. BOTH scopes: the locker is global; the
       // card itself decides that only a session renders the launch.

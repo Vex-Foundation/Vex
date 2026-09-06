@@ -5,7 +5,7 @@
  * `expireIfAwaitingWith` existed, was correct, and had no production caller. So
  * an `agent_requested_form` launch the user walked away from parked the agent's
  * turn FOREVER: nothing ever stamped the row `expired`, and nothing appended
- * the tool result the parked `trench.launch_request_form` call was waiting for.
+ * the tool result the parked launch request-form call was waiting for.
  * The manifest promised a turn that resumes; the runtime delivered one that
  * hangs until the process restarts.
  *
@@ -111,7 +111,7 @@ export async function expireOverdueLaunchForms(): Promise<LaunchFormExpiryResult
     const stamped = await withSessionControlLock(intent.sessionId, (client) =>
       expireIfAwaitingWith(client, intent.intentId, intent.sessionId));
     if (stamped === null) {
-      logger.info("trench.launch_form_expiry.cas_miss", { intentId: intent.intentId });
+      logger.info("launch_form_expiry.cas_miss", { intentId: intent.intentId });
       continue;
     }
     expired++;
@@ -127,7 +127,7 @@ export async function expireOverdueLaunchForms(): Promise<LaunchFormExpiryResult
 
   if (expired > 0 || resumeFailures > 0 || recovery.recovered > 0
       || recovery.recoveryFailures > 0 || closed > 0) {
-    logger.info("trench.launch_form_expiry.swept", {
+    logger.info("launch_form_expiry.swept", {
       expired,
       resumed,
       resumeFailures,
@@ -219,10 +219,24 @@ type ParkedTurnOutcome = "resumed" | "nothing_parked" | "failed" | "closed";
  * belt-and-braces rather than a case that should occur; a superseded intent
  * somehow without one is answered `expired` rather than with a sentence naming
  * a transaction that is not there.
+ *
+ * `cancelled` WITH A STATED REASON is the same correction one step further out.
+ * A cancellation the user made themselves carries no reason and stays `expired`
+ * - "your form's moment passed" is close enough to "you dismissed it", and the
+ * dialog already told them. A cancellation written by something OTHER than the
+ * user does carry one, and migration 108 is the first writer of that pair: it
+ * closes every Trench launch intent that never signed when the protocol was
+ * retired. Answering those with `expired` would tell the model the form simply
+ * lapsed, and a model that believes that will offer to try the launch again on
+ * a protocol that no longer exists. `failed` already carries the executor's own
+ * user-safe prose and says "No token was created", which is the true sentence.
  */
 function recoveryOutcomeFor(intent: TokenLaunchIntent): LaunchFormOutcome {
   if (intent.status === "superseded_unproven" && intent.txHash !== null) {
     return { kind: "superseded_unproven", txHash: intent.txHash };
+  }
+  if (intent.status === "cancelled" && intent.failureReason !== null) {
+    return { kind: "failed", reason: intent.failureReason };
   }
   return { kind: "expired" };
 }
@@ -267,7 +281,7 @@ async function resumeParkedTurn(intent: TokenLaunchIntent): Promise<ParkedTurnOu
       forgetContinuation(intentId);
       return "nothing_parked";
     }
-    logger.warn("trench.launch_form_expiry.resume_declined", { intentId, reason: result.reason });
+    logger.warn("launch_form_expiry.resume_declined", { intentId, reason: result.reason });
     // A decline is a state answer, never a provider refusal: `busy` and
     // `already_resolved` say nothing about whether the request itself is sound,
     // so they can only ever move the ladder, never park it.
@@ -275,7 +289,7 @@ async function resumeParkedTurn(intent: TokenLaunchIntent): Promise<ParkedTurnOu
   } catch (err) {
     const summary = summarizeProtocolError(err);
     const status = httpStatusOf(err, summary);
-    logger.warn("trench.launch_form_expiry.resume_failed", {
+    logger.warn("launch_form_expiry.resume_failed", {
       intentId,
       status,
       // The canonical scrub boundary — a runtime error can carry prompt text,
@@ -347,7 +361,7 @@ async function applyRetryDecision(
   });
   if (decision.kind === "park") return closeContinuation(intent, decision.reason);
   if (decision.kind === "dormant_until_restart") {
-    logger.info("trench.launch_form_expiry.retry_dormant", {
+    logger.info("launch_form_expiry.retry_dormant", {
       intentId: intent.intentId,
       // Not "given up": the next app start gets one more ladder, because a
       // restart genuinely changes what a resume runs against.
@@ -376,7 +390,7 @@ async function closeContinuation(
     casCloseUserFormContinuationWith(client, intent.intentId, intent.sessionId, reason));
   forgetContinuation(intent.intentId);
   if (recorded) {
-    logger.info("trench.launch_form_expiry.continuation_closed", {
+    logger.info("launch_form_expiry.continuation_closed", {
       intentId: intent.intentId,
       reason,
     });

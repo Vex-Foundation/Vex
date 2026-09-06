@@ -421,7 +421,7 @@ export function renderStudioOutcomeVocabulary(): string {
  * EVERY CLAIM IS CROSS-CHECKED against the constants by
  * `__tests__/vex-agent/studio/instructions-fee-note.test.ts`: the rate against
  * `KYBERSWAP_FEE_BPS`, `UNISWAP_FEE_BPS`, `JUPITER_SWAP_FEE_BPS`,
- * `BRIDGE_FEE_BPS`, `TRENCH_FEE_BPS`, `POOLS_FEE_BPS` and `WALLET_TX_FEE_BPS`,
+ * `BRIDGE_FEE_BPS`, `POOLS_FEE_BPS` and `WALLET_TX_FEE_BPS`,
  * and the free paths against the modules that keep them free (neither the wrap
  * lane nor the send lane imports a fee module at all). The clarity review found
  * the fee described per tool, contradicted between tools, and mentioned NOWHERE
@@ -443,13 +443,11 @@ export const STUDIO_FEE_NOTE = [
   "- Bridges (`BridgeQuote`/`BridgeExecute` and the Relay pair): a SEPARATE",
   "  transfer that runs only after the deposit lands, so a bridge that does not",
   "  happen is never charged.",
-  "- Trench curve trades: a SEPARATE transfer after the trade confirms, 25 bps",
-  "  of the ETH sent on a buy or of the ETH received on a sale.",
   "- The generic EVM pair: 25 bps of that transaction's own native `valueWei`,",
   "  as a separate transfer after it confirms. A zero-value transaction - every",
   "  ERC-20 transfer and every approve - pays NOTHING, and nothing is charged",
   "  when the fee would cost more to collect than it is worth.",
-  "- Trench and pools.fun launches: 25 bps of the native value the launch sends.",
+  "- pools.fun launches: 25 bps of the native value the launch sends.",
   "",
   "FREE: every read, quote, preview and research call; `WalletSendPrepare` and",
   "`WalletSendConfirm`; the wrap pair, which is exactly 1:1; every Pendle and",

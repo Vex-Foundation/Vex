@@ -1,21 +1,27 @@
 /**
- * Khalani-independent viem client factory for local (non-Khalani) EVM chains.
+ * viem client factory for local (non-Khalani) EVM chains.
  *
- * Mirrors `tools/kyberswap/evm/config.ts` (getKyberEvmClients / toViemChain) and
- * `tools/khalani/evm-client.ts` (createDynamicPublicClient/WalletClient) so the
- * whole toolkit builds clients the same way. The viem `Chain` (including
- * `contracts.multicall3`) comes from the local registry, so `publicClient
- * .multicall(...)` works without any Khalani dependency.
+ * TRANSPORTS COME FROM THE SHARED RPC OWNER (`./rpc-endpoints.ts` +
+ * `./rpc-transport.ts`), never from a url this module knows. That is the whole
+ * change: the endpoint order, the per-endpoint method scope, the user's own
+ * override and the failover policy are chain properties with one owner, and a
+ * client factory's job is to bind them to a viem `Chain` and an account.
+ *
+ * READS AND EXECUTIONS GET DIFFERENT TRANSPORTS, DELIBERATELY. A read rides the
+ * failover list, so a refusing endpoint costs a retry on the next one instead of
+ * an error. An EXECUTION rides a single pinned endpoint, so the nonce read, the
+ * gas estimate, the pre-sign simulation and the broadcast are all the same
+ * node's opinion; see `./rpc-transport.ts` for why that matters more than the
+ * availability the failover would buy.
  *
  * Gas rule: NEVER cache or hardcode gas limits. Robinhood Chain is an Arbitrum
- * Orbit L2 whose fee has an L1-data component that fluctuates block to block —
+ * Orbit L2 whose fee has an L1-data component that fluctuates block to block -
  * viem estimates gas fresh at send time (its default) and we keep it that way.
  */
 
 import {
   createPublicClient,
   createWalletClient,
-  http,
   type Account,
   type Chain,
   type Hex,
@@ -24,10 +30,8 @@ import {
   type WalletClient,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { getLocalChainRpcUrl, toLocalViemChain, type LocalChainConfig } from "./registry.js";
-
-const EVM_RPC_TIMEOUT_MS = 30_000;
-const EVM_RPC_RETRY_COUNT = 2;
+import { toLocalViemChain, type LocalChainConfig } from "./registry.js";
+import { buildEvmTransport, buildPinnedEvmTransport } from "./rpc-transport.js";
 
 export interface LocalEvmClients {
   publicClient: PublicClient<Transport, Chain>;
@@ -38,24 +42,25 @@ export interface LocalEvmClients {
 // khalani/evm-client.ts): viem's inferred client types reference internal
 // action modules and are not portable across declaration emit (TS2742).
 export function getLocalPublicClient(config: LocalChainConfig): PublicClient<Transport, Chain> {
-  const rpcUrl = getLocalChainRpcUrl(config);
   return createPublicClient({
     chain: toLocalViemChain(config),
-    transport: http(rpcUrl, { timeout: EVM_RPC_TIMEOUT_MS, retryCount: EVM_RPC_RETRY_COUNT }),
+    transport: buildEvmTransport(config.id),
   }) as PublicClient<Transport, Chain>;
 }
 
+/**
+ * The pair one execution signs and reads through, both on the SAME pinned
+ * endpoint by construction: the transport instance is shared, so the two
+ * clients cannot end up on two different nodes.
+ */
 export function getLocalEvmClients(config: LocalChainConfig, privateKey: Hex): LocalEvmClients {
   const chain = toLocalViemChain(config);
-  const rpcUrl = getLocalChainRpcUrl(config);
-  const publicClient = createPublicClient({
-    chain,
-    transport: http(rpcUrl, { timeout: EVM_RPC_TIMEOUT_MS, retryCount: EVM_RPC_RETRY_COUNT }),
-  }) as PublicClient<Transport, Chain>;
+  const transport = buildPinnedEvmTransport(config.id);
+  const publicClient = createPublicClient({ chain, transport }) as PublicClient<Transport, Chain>;
   const walletClient = createWalletClient({
     account: privateKeyToAccount(privateKey),
     chain,
-    transport: http(rpcUrl, { timeout: EVM_RPC_TIMEOUT_MS, retryCount: EVM_RPC_RETRY_COUNT }),
+    transport,
   }) as WalletClient<Transport, Chain, Account>;
   return { publicClient, walletClient };
 }

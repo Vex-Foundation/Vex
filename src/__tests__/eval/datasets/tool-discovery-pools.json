@@ -186,6 +186,38 @@
       "intentShape": "single",
       "expectedToolIds": ["pools.holder_rewards"],
       "expectedCoverageGroups": [["pools.holder_rewards"]]
+    },
+    {
+      "query": "collect the fees I have earned just by holding this coin and put them in my wallet",
+      "awareness": "blind",
+      "scenario": "rewards",
+      "intentShape": "single",
+      "expectedToolIds": ["pools.holder_rewards_claim"],
+      "expectedCoverageGroups": [["pools.holder_rewards_claim"]]
+    },
+    {
+      "query": "claim my holder rewards on this pools.fun token, but simulate what it would pay first",
+      "awareness": "protocol-aware",
+      "scenario": "rewards",
+      "intentShape": "single",
+      "expectedToolIds": ["pools.holder_rewards_claim"],
+      "expectedCoverageGroups": [["pools.holder_rewards_claim"]]
+    },
+    {
+      "query": "the rewards on this coin have stalled, push its collected fees out to everyone holding it",
+      "awareness": "blind",
+      "scenario": "rewards",
+      "intentShape": "single",
+      "expectedToolIds": ["pools.holder_rewards_distribute"],
+      "expectedCoverageGroups": [["pools.holder_rewards_distribute"]]
+    },
+    {
+      "query": "trigger the permissionless reward distribution on this pools.fun token so holders start earning",
+      "awareness": "protocol-aware",
+      "scenario": "rewards",
+      "intentShape": "single",
+      "expectedToolIds": ["pools.holder_rewards_distribute"],
+      "expectedCoverageGroups": [["pools.holder_rewards_distribute"]]
     }
   ]
 }

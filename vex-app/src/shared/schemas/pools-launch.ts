@@ -88,8 +88,19 @@ function onChainMetadataText(field: string) {
   });
 }
 
-/** The two pairing options that are actually launchable today. */
-export const poolsPairedAssetSchema = z.enum(["weth", "usdg"]);
+/**
+ * The pairing options the launch factory allows.
+ *
+ * `stock` names a KIND and not an asset: it is always accompanied by
+ * `pairedStockAddress`, because one of 194 listed tokenised stocks cannot be
+ * identified from the word "stock". Which stocks are launchable, and how each is
+ * priced, is the factory's answer at the anchored block - no list of them lives
+ * in this app.
+ */
+export const poolsPairedAssetSchema = z.enum(["weth", "usdg", "stock"]);
+
+/** Which asset a fees-to-holders token pays its holders in. The launchpad's own enum. */
+export const poolsHolderRewardsModeSchema = z.enum(["token", "paired", "both"]);
 
 /**
  * Decimals per paired asset, used ONLY to refuse an amount the asset cannot
@@ -99,6 +110,16 @@ export const poolsPairedAssetSchema = z.enum(["weth", "usdg"]);
 const PAIRED_ASSET_DECIMALS: Readonly<Record<z.infer<typeof poolsPairedAssetSchema>, number>> = {
   weth: 18,
   usdg: 6,
+  /**
+   * Every tokenised stock on this launchpad is 18 decimals, and this bound is
+   * used ONLY to refuse an amount no stock could represent. It is deliberately
+   * the LOOSEST honest bound rather than a per-stock table: this app does not
+   * know which stock is selected until main reads the factory, and a wrong
+   * per-asset guess here would refuse a legitimate amount. A prebuy is refused
+   * on a stock pair anyway - the gateway takes a native dev buy only against
+   * WETH - so nothing money-bearing rests on this number.
+   */
+  stock: 18,
 };
 
 /**
@@ -111,6 +132,19 @@ const PAIRED_ASSET_DECIMALS: Readonly<Record<z.infer<typeof poolsPairedAssetSche
 export const poolsRecipientChoiceSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("session_wallet") }).strict(),
   z.object({ kind: z.literal("address"), address: evmAddressSchema }).strict(),
+  /**
+   * THE TOKEN'S OWN HOLDERS, and no address at all.
+   *
+   * IRREVERSIBLE AND LOCKED AT LAUNCH: the launchpad deploys a rewards
+   * distributor during the launch transaction, and the creator earns nothing
+   * from trading fees for the life of the token. It carries no address and
+   * cannot: the transaction names the gateway's own sentinel constant, which
+   * main reads live from that gateway and refuses if it differs. That is why
+   * this is the one recipient choice the renderer cannot get wrong.
+   */
+  z
+    .object({ kind: z.literal("holders"), mode: poolsHolderRewardsModeSchema })
+    .strict(),
   z
     .object({
       kind: z.literal("x_username"),
@@ -173,6 +207,12 @@ export const poolsLaunchFormSchema = z
     symbol: onChainMetadataText("symbol").min(1).max(TOKEN_METADATA_SYMBOL_MAX),
     pairedAsset: poolsPairedAssetSchema,
     /**
+     * WHICH tokenised stock, required when `pairedAsset` is `stock` and refused
+     * on any other pair (see the refinement below). `null` on a WETH or USDG
+     * launch, spelled exactly one way.
+     */
+    pairedStockAddress: evmAddressSchema.nullable(),
+    /**
      * The picture, from the locker or from a URL. `null` means NO image, spelled
      * exactly one way — the runtime then reports `imageLanded: false` rather
      * than failing quietly.
@@ -208,6 +248,23 @@ export const poolsLaunchFormSchema = z
       error: "more decimal places than the paired asset can represent",
       path: ["prebuy", "amountHuman"],
     },
+  )
+  /**
+   * A STOCK PAIR NAMES A KIND; THE ADDRESS NAMES THE ASSET.
+   *
+   * Both directions are refused rather than defaulted. A stock pair with no
+   * address identifies nothing, and 194 stocks are launchable - there is no
+   * sensible default. An address on a non-stock pair is an input the user
+   * believes took effect, and a launch that ignored it would trade against a
+   * different asset than the one they picked, permanently.
+   */
+  .refine(
+    (form) => (form.pairedAsset === "stock") === (form.pairedStockAddress !== null),
+    {
+      error:
+        "a stock-paired launch must name which stock, and a stock address belongs only on a stock pair",
+      path: ["pairedStockAddress"],
+    },
   );
 
 // ── Inputs ──────────────────────────────────────────────────────────────────
@@ -235,6 +292,26 @@ export const poolsLaunchMyLaunchesInputSchema = z
 
 export const poolsLaunchGetAwaitingInputSchema = z
   .object({ sessionId: opaqueIdSchema })
+  .strict();
+
+/**
+ * THE DISMISSAL of an agent-requested form, addressed by the `intentId` the
+ * awaiting DTO handed the renderer.
+ *
+ * A DIFFERENT OBJECT from `poolsLaunchCancelInputSchema` above, and the reason
+ * this is a second channel rather than a widened one: that cancel takes the
+ * verified `fingerprintId` of a PREPARED launch, this one ends a DRAFT and wakes
+ * the agent turn parked on it. A union would let a renderer address the wrong
+ * stage with the wrong id and be told nothing about it.
+ *
+ * The id is OPAQUE and was minted main-side; the renderer echoes what it was
+ * given. Session-scoped like every other launch channel, so an intent belonging
+ * to another session misses rather than being cancelled from here. There is no
+ * fee, value, gas, wallet or recipient field, because nothing this operation
+ * does can move money.
+ */
+export const poolsLaunchCancelAwaitingFormInputSchema = z
+  .object({ sessionId: opaqueIdSchema, intentId: opaqueIdSchema })
   .strict();
 
 export const poolsClaimInputSchema = z
@@ -270,9 +347,32 @@ export const poolsPreparedLaunchSchema = z
     fingerprintId: opaqueIdSchema,
     predictedTokenAddress: evmAddressSchema,
     predictedPoolAddress: evmAddressSchema,
+    /**
+     * The recipient EXACTLY as the calldata carries it.
+     *
+     * On a holder-rewards launch this is the gateway's SENTINEL, which is not a
+     * wallet and is not where the fees end up - the gateway resolves it to the
+     * distributor it deploys during the launch. `holderRewards` below is what
+     * says so, and the confirmation screen renders THAT rather than presenting a
+     * sentinel as somebody's address.
+     */
     resolvedFeeRecipient: evmAddressSchema,
+    /** Present exactly when the fee stream was directed to the holders. */
+    holderRewards: z
+      .object({ mode: poolsHolderRewardsModeSchema, sentinel: evmAddressSchema })
+      .strict()
+      .optional(),
     pairedAsset: poolsPairedAssetSchema,
     pairedAssetAddress: evmAddressSchema,
+    /**
+     * The hash of the EXACT bytes the Deploy click will sign, over
+     * `(chainId, to, calldata, value)`.
+     *
+     * Shown because it is the identity of what is being authorized: every other
+     * figure on the confirmation screen is a rendering of these bytes, and this
+     * is the one value that changes if any of them do.
+     */
+    callFingerprint: z.string().regex(/^0x[0-9a-fA-F]{64}$/),
     costs: poolsCostBreakdownSchema,
     /**
      * The published metadata document, as the PROVIDER reports it.
@@ -300,6 +400,15 @@ export const poolsPreparedLaunchSchema = z
     imageLanded: z.boolean(),
     /** After this, the fingerprint is refused and a fresh prepare is required. */
     expiresAt: z.string().min(1).max(64),
+    /**
+     * WHY it expires then, because the three possible clocks differ by two
+     * orders of magnitude and a countdown with no cause is unactionable: a
+     * SIGNED_STOCK pair's backend-signed price quote lives for seconds
+     * (`quote_window`), the calldata's own deadline bounds every launch
+     * (`gateway_deadline`), and Vex's own window exists because the deployment
+     * fee moves (`vex_window`).
+     */
+    expiryReason: z.enum(["quote_window", "gateway_deadline", "vex_window"]),
   })
   .strict();
 
@@ -378,6 +487,13 @@ export const poolsAwaitingLaunchFormSchema = z
         name: z.string().max(TOKEN_METADATA_NAME_MAX).optional(),
         symbol: z.string().max(TOKEN_METADATA_SYMBOL_MAX).optional(),
         pairedAsset: poolsPairedAssetSchema.optional(),
+        /**
+         * WHICH tokenised stock the agent proposed. Present only on a `stock`
+         * pair, validated by the SAME address schema the deploy path uses, and
+         * never invented: absent means the form opens with an empty box rather
+         * than with an address nobody chose.
+         */
+        pairedStockAddress: evmAddressSchema.optional(),
         image: poolsLaunchImageSchema.optional(),
         tweetUrl: httpsUrlSchema.optional(),
         websiteUrl: httpsUrlSchema.optional(),
@@ -400,15 +516,64 @@ export const poolsLaunchCancelResultSchema = z
   .object({ cancelled: z.boolean() })
   .strict();
 
+/**
+ * What the dismissal did, in two booleans that answer different questions.
+ *
+ * `cancelled: false` is a SUCCESS, not a failure: the form was submitted or
+ * swept in the same instant, so there was nothing live left to cancel and
+ * whoever won that race owns the parked call's one result.
+ * `resumedAgentTurn` reports whether the agent's turn was ACTUALLY woken, never
+ * that a wake was attempted - a busy lease leaves the turn owed and the
+ * launch-form expiry sweep's durable floor finds it again.
+ */
+export const poolsLaunchCancelAwaitingFormResultSchema = z
+  .object({ cancelled: z.boolean(), resumedAgentTurn: z.boolean() })
+  .strict();
+
+// ── the push event (main -> renderer) ────────────────────────────────────────
+
+/** Literal kept in sync with the engine `LAUNCH_FORM_EVENT_TYPE`. */
+export const LAUNCH_FORM_EVENT_TYPE = "engine.launch.form" as const;
+
+export const launchFormEventKindSchema = z.enum(["requested"]);
+export type LaunchFormEventKind = z.infer<typeof launchFormEventKindSchema>;
+
+/**
+ * Renderer-facing launch-form event.
+ *
+ * Mirrors the engine's `LaunchFormEvent`
+ * (`src/vex-agent/engine/runtime/launch-form-bus.ts`), emitted only AFTER the
+ * `awaiting_user_form` insert has COMMITTED. The renderer treats it purely as an
+ * invalidation signal - it reconstructs no draft from the payload and instead
+ * re-reads `poolsLaunch.getAwaiting`, with the DB as source of truth.
+ *
+ * Bounded to ids, an enum and a timestamp: no token name, symbol, description or
+ * amount rides this event.
+ */
+export const launchFormEventSchema = z
+  .object({
+    type: z.literal(LAUNCH_FORM_EVENT_TYPE),
+    sessionId: z.string().uuid(),
+    intentId: opaqueIdSchema,
+    kind: launchFormEventKindSchema,
+    occurredAt: z.string().datetime({ offset: true }),
+  })
+  .strict();
+export type LaunchFormEvent = z.infer<typeof launchFormEventSchema>;
+
 // ── Inferred types ──────────────────────────────────────────────────────────
 
 export type PoolsPairedAsset = z.infer<typeof poolsPairedAssetSchema>;
+export type PoolsHolderRewardsMode = z.infer<typeof poolsHolderRewardsModeSchema>;
 export type PoolsLaunchImage = z.infer<typeof poolsLaunchImageSchema>;
 export type PoolsRecipientChoice = z.infer<typeof poolsRecipientChoiceSchema>;
 export type PoolsLaunchFormInput = z.infer<typeof poolsLaunchFormSchema>;
 export type PoolsLaunchPrepareInput = z.infer<typeof poolsLaunchPrepareInputSchema>;
 export type PoolsLaunchDeployInput = z.infer<typeof poolsLaunchDeployInputSchema>;
 export type PoolsLaunchCancelInput = z.infer<typeof poolsLaunchCancelInputSchema>;
+export type PoolsLaunchCancelAwaitingFormInput = z.infer<
+  typeof poolsLaunchCancelAwaitingFormInputSchema
+>;
 export type PoolsLaunchMyLaunchesInput = z.infer<typeof poolsLaunchMyLaunchesInputSchema>;
 export type PoolsLaunchGetAwaitingInput = z.infer<typeof poolsLaunchGetAwaitingInputSchema>;
 export type PoolsClaimInput = z.infer<typeof poolsClaimInputSchema>;
@@ -424,3 +589,6 @@ export type PoolsLaunchMyLaunchesResult = z.infer<typeof poolsLaunchMyLaunchesRe
 export type PoolsAwaitingLaunchForm = z.infer<typeof poolsAwaitingLaunchFormSchema>;
 export type PoolsLaunchGetAwaitingResult = z.infer<typeof poolsLaunchGetAwaitingResultSchema>;
 export type PoolsLaunchCancelResult = z.infer<typeof poolsLaunchCancelResultSchema>;
+export type PoolsAwaitingFormCancelResult = z.infer<
+  typeof poolsLaunchCancelAwaitingFormResultSchema
+>;

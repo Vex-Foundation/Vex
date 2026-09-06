@@ -97,40 +97,62 @@ const entries: [string, MutationContract][] = [
   ["kyberswap.swap.execute", { kind: "trade", capture: "none", expectedType: "swap", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
   ["uniswap.swap.execute",   { kind: "trade", capture: "none", expectedType: "swap", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
   ["solana.swap.execute",    { kind: "trade", capture: "none", expectedType: "swap", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
-  // Trench Express curve buy/sell - the handler writes the durable truth
-  // DIRECTLY to agent_activity (kind "swap") across the staged lifecycle, so
-  // `capture: "none"` (no proj_activity projection). No dryRun preview.
-  ["trench.trade_execute",   { kind: "trade", capture: "none", expectedType: "swap", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
-  // Trench Express token LAUNCH (migration 062). Same direct-write shape: the
-  // handler writes its `kind: "launch"` row itself across the staged lifecycle,
-  // so `capture: "none"` keeps the legacy proj_activity projection out of it.
-  // `kind: "trade"` because a launch with a prebuy acquires a position - and the
-  // create plus its initial buy are ONE transaction and ONE activity row, never
-  // a second `swap` row for the same tx hash. No dryRun: the read-only dry run
-  // is the separate `trench.launch_preview` tool.
-  ["trench.launch_execute",  { kind: "trade", capture: "none", expectedType: "launch", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
-  // `trench.launch_request_form` is `mutating: true` with actionKind
-  // "local_write": it drafts a durable `token_launch_intents` row and parks the
-  // turn for the user, but signs nothing, broadcasts nothing, and writes no
-  // agent_activity row. `kind: "utility"` (no portfolio impact) with
-  // `capture: "none"` and a placeholder `expectedType` - no `_tradeCapture`
-  // ever exists for it.
-  ["trench.launch_request_form", { kind: "utility", capture: "none", expectedType: "none", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
+  // The Virtuals bonding-curve execute is the same shape as the EVM swap
+  // executes above: one token in, one token out, an on-chain swap whose durable
+  // truth the handler writes to `agent_activity` itself from the receipt, so
+  // `capture: "none"` keeps the legacy proj_activity projection out of it. No
+  // `dryRun`: the read-only preview is the separate `virtuals.trade.quote`
+  // tool, and the execute's own `simulateOnly` stops before signing rather than
+  // standing in for an approval-skipping preview.
+  ["virtuals.trade.execute", { kind: "trade", capture: "none", expectedType: "swap", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
   // pools.fun's two LOCAL-WRITE launch tools. Both are `mutating: true` because
   // each writes a durable row, and neither signs anything: `launch_preview`
   // records an advisory `previewed` intent (non-live by database CHECK - no
   // authorization, no hash), and `launch_request_form` opens the app's form and
-  // parks the turn. `capture: "none"` on both, for the same reason the trench
-  // form row has it: there is no on-chain effect to capture.
+  // parks the turn. `capture: "none"` on both: there is no on-chain effect to
+  // capture.
   ["pools.launch_preview",       { kind: "utility", capture: "none", expectedType: "none", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
   ["pools.launch_request_form",  { kind: "utility", capture: "none", expectedType: "none", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
-  // The pools.fun LAUNCH itself, shaped exactly like `trench.launch_execute`:
-  // the handler writes its `kind: "launch"` row directly across the staged
+  // `launchpads.image_publish` is the first PROVIDER-SIDE mutation in the
+  // matrix: `actionKind: "external_post"`, an HTTP upload of locker bytes to
+  // the launch-assets host, idempotent by content, with no chain, no signature
+  // and no receipt to capture. It needs no new `CaptureKind`: `utility` already
+  // names exactly this - a real mutation with zero portfolio impact and no
+  // `_tradeCapture` - so it joins the local-write rows here rather than
+  // widening the vocabulary for one tool.
+  ["launchpads.image_publish",   { kind: "utility", capture: "none", expectedType: "none", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
+  // The pools.fun LAUNCH itself: the handler writes its `kind: "launch"` row directly across the staged
   // lifecycle, so `capture: "none"` keeps the legacy proj_activity projection
   // out of it, and `kind: "trade"` because a launch with a prebuy acquires a
   // position - the launch and its prebuy are ONE transaction and ONE row. No
   // dryRun: the read-only estimate is the separate `pools.launch_preview` tool.
   ["pools.launch_execute",       { kind: "trade", capture: "none", expectedType: "launch", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
+  // The Virtuals agent-launch family (PR-C3). THREE rows, not four:
+  // `virtuals.launch.status` is `mutating: false` and this matrix covers only
+  // mutating tools.
+  //
+  // `virtuals.launch.preview` joins the local-write rows above for the same
+  // reason `pools.launch_preview` does: it writes an advisory `previewed`
+  // intent that the database itself forbids from carrying an authorization or
+  // a hash, and it signs nothing.
+  //
+  // `virtuals.launch.execute` is `expectedType: "launch"` and shaped exactly
+  // like the pools launch above: the handler writes its `kind: "launch"`
+  // row directly across the staged lifecycle, so `capture: "none"` keeps the
+  // legacy proj_activity projection out of it. No `dryRun`: the read-only
+  // estimate is `virtuals.launch.preview`, and the execute's own `simulateOnly`
+  // stops before signing rather than standing in for an approval-skipping
+  // preview.
+  //
+  // `virtuals.launch.cancel` is the FIRST row whose product is a REFUND rather
+  // than an acquisition, and it is still `kind: "trade"` / `expectedType:
+  // "launch"`: it rides the launch arm (`launch_cancel`, migration 107), it is
+  // the same contract and the same position, and it moves the user's VIRTUAL
+  // back. A `utility` classification would hide a real balance change from the
+  // portfolio lane.
+  ["virtuals.launch.preview",    { kind: "utility", capture: "none", expectedType: "none", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
+  ["virtuals.launch.execute",    { kind: "trade", capture: "none", expectedType: "launch", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
+  ["virtuals.launch.cancel",     { kind: "trade", capture: "none", expectedType: "launch", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
   // The creator-fee claim. `capture: "none"` for the same reason as every other
   // staged-write handler here: it writes its own row across the lifecycle, so
   // the legacy proj_activity projection must not also run. `expectedType:
@@ -138,6 +160,16 @@ const entries: [string, MutationContract][] = [
   // because a payout is not a launch. `previewSupport: true` because `dryRun` is
   // a real read-only mode of THIS tool rather than a separate preview tool.
   ["pools.claim_fees",           { kind: "trade", capture: "none", expectedType: "claim", previewSupport: true, fanOut: "single", requiredFields: NO_FIELDS }],
+  // The HOLDER-REWARD family (PR6). Same staged-write shape as the creator-fee
+  // claim above: each handler writes its own `kind: 'claim'` row across the
+  // lifecycle, so `capture: "none"` keeps the legacy proj_activity projection
+  // out of it. `previewSupport: true` on both because `dryRun` is a real
+  // read-only mode of THESE tools rather than a separate preview tool - which is
+  // also what makes the runtime treat a `dryRun` call as read-only and skip the
+  // approval gate. `simulateOnly` deliberately does NOT do that: it runs the
+  // whole money path and stays classified as the mutation it is a rehearsal of.
+  ["pools.holder_rewards_claim",      { kind: "trade", capture: "none", expectedType: "claim", previewSupport: true, fanOut: "single", requiredFields: NO_FIELDS }],
+  ["pools.holder_rewards_distribute", { kind: "trade", capture: "none", expectedType: "claim", previewSupport: true, fanOut: "single", requiredFields: NO_FIELDS }],
 
   // Pendle PT / YT / PY (Batch B, migration 053) - flipped capture:"full" ->
   // "none" with the same staged `agent_activity` write path the Kyber/Uniswap/

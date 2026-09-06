@@ -4,24 +4,24 @@
   "datasetId": "tool-discovery-pendle",
   "datasetVersion": "pendle-v1",
   "status": "captured",
-  "capturedAt": "2026-09-05T08:29:02.777Z",
+  "capturedAt": "2026-09-05T14:41:13.605Z",
   "metrics": {
     "overall": {
       "count": 67,
       "recall1": 0.254,
-      "recall5": 0.642,
-      "coverage5": 0.642,
-      "mrr5": 0.398,
-      "groupMrr5": 0.398
+      "recall5": 0.612,
+      "coverage5": 0.612,
+      "mrr5": 0.392,
+      "groupMrr5": 0.392
     },
     "awareness": {
       "blind": {
         "count": 37,
         "recall1": 0.108,
-        "recall5": 0.432,
-        "coverage5": 0.432,
-        "mrr5": 0.229,
-        "groupMrr5": 0.229
+        "recall5": 0.378,
+        "coverage5": 0.378,
+        "mrr5": 0.218,
+        "groupMrr5": 0.218
       },
       "protocolAware": {
         "count": 30,
@@ -36,10 +36,10 @@
       "single": {
         "count": 67,
         "recall1": 0.254,
-        "recall5": 0.642,
-        "coverage5": 0.642,
-        "mrr5": 0.398,
-        "groupMrr5": 0.398
+        "recall5": 0.612,
+        "coverage5": 0.612,
+        "mrr5": 0.392,
+        "groupMrr5": 0.392
       },
       "cross": {
         "count": 0,
@@ -86,18 +86,18 @@
       "evm_lp": {
         "count": 14,
         "recall1": 0.286,
-        "recall5": 0.643,
-        "coverage5": 0.643,
-        "mrr5": 0.407,
-        "groupMrr5": 0.407
+        "recall5": 0.571,
+        "coverage5": 0.571,
+        "mrr5": 0.393,
+        "groupMrr5": 0.393
       },
       "evm_swap": {
         "count": 30,
         "recall1": 0.233,
-        "recall5": 0.633,
-        "coverage5": 0.633,
-        "mrr5": 0.38,
-        "groupMrr5": 0.38
+        "recall5": 0.6,
+        "coverage5": 0.6,
+        "mrr5": 0.373,
+        "groupMrr5": 0.373
       },
       "limit_order": {
         "count": 2,
@@ -175,7 +175,7 @@
   },
   "notes": [
     "dataset tool-discovery-pendle@pendle-v1, mode lexical, 67 cases evaluated.",
-    "overall recall@1 0.254, recall@5 0.642, coverage@5 0.642, mrr@5 0.398, groupMrr@5 0.398.",
+    "overall recall@1 0.254, recall@5 0.612, coverage@5 0.612, mrr@5 0.392, groupMrr@5 0.392.",
     "Measured delta: none, metrics are identical to the previous baseline."
   ]
 }

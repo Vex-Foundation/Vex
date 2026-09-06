@@ -52,6 +52,9 @@ beforeEach(() => {
   vi.spyOn(getPoolsFunClient(), "launchConfig").mockResolvedValue({
     deploymentFeeWei: FEE_WEI,
     gatewayVersion: 1,
+    // NOT STATED, which is what a build predating holder rewards answers. The
+    // gateway's own sentinel is the authority; this echo only refuses earlier.
+    holderRewardsPayoutModes: null,
   });
 });
 
@@ -66,6 +69,15 @@ async function requestForm(params: Record<string, unknown>, ctx = context()) {
 
 const VALID = { name: "My Token", symbol: "MYT", pairedAsset: "weth" };
 
+/**
+ * A REAL tokenised stock from the launch factory's own list: NVDA, measured
+ * `allowedPairedAsset = true` and `pricingModeFor = CHAINLINK_STOCK` on the V3
+ * factory (probe 2026-09-04). Real rather than invented because these are
+ * checksummed addresses and an invented one is refused at the boundary for the
+ * wrong reason, which would make the test pass without proving the pair works.
+ */
+const NVDA_STOCK = "0xd0601CE157Db5bdC3162BbaC2a2C8aF5320D9EEC";
+
 describe("shared launch input reading", () => {
   it.each(["name", "symbol"])("requires %s", async (key) => {
     const params: Record<string, unknown> = { ...VALID };
@@ -74,11 +86,86 @@ describe("shared launch input reading", () => {
     expect((await requestForm(params)).success).toBe(false);
   });
 
-  it("rejects an unlaunchable pair by naming the two that work", async () => {
-    const res = await preview({ ...VALID, pairedAsset: "stock" });
+  it("rejects a pair the factory has no vocabulary for by naming the three that work", async () => {
+    const res = await preview({ ...VALID, pairedAsset: "doge" });
     expect(res.success).toBe(false);
     expect(res.output).toContain("weth");
     expect(res.output).toContain("usdg");
+    expect(res.output).toContain("stock");
+  });
+
+  // A stock pair names a KIND, not an asset: one of 194 listed stocks cannot be
+  // identified from the word "stock". Defaulting to any of them would launch
+  // against an asset nobody chose, so the address is required and the refusal
+  // says where to get one.
+  it("refuses a stock pair that does not say WHICH stock, and names the tool that lists them", async () => {
+    const res = await preview({ ...VALID, pairedAsset: "stock" });
+    expect(res.success).toBe(false);
+    expect(res.output).toContain("pairedStockAddress");
+    expect(res.output).toContain("pools__launch_assets_list");
+  });
+
+  // The mirror image, and the reason it is a refusal rather than a silent drop:
+  // a caller that supplied a stock address and was ignored believes it chose a
+  // stock, and would read the WETH launch that followed as the one it asked for.
+  it("refuses a stock address on a pair that is not a stock, rather than ignoring it", async () => {
+    const res = await preview({
+      ...VALID,
+      pairedAsset: "weth",
+      pairedStockAddress: NVDA_STOCK,
+    });
+    expect(res.success).toBe(false);
+    expect(res.output).toContain("pairedStockAddress");
+    expect(res.output).toContain("stock");
+  });
+
+  it("carries a stock pair through to the intent row with the address that identifies it", async () => {
+    const res = await preview({
+      ...VALID,
+      pairedAsset: "stock",
+      pairedStockAddress: NVDA_STOCK,
+    });
+    expect(res.success).toBe(true);
+    const row = written[0];
+    if (row === undefined) throw new Error("the preview wrote no intent row");
+    const pools = row.pools;
+    if (typeof pools !== "object" || pools === null) {
+      throw new Error("the preview wrote an intent row with no pools block");
+    }
+    expect(pools).toMatchObject({ pairedAsset: "stock", pairedAssetAddress: NVDA_STOCK });
+  });
+
+  // A payout mode with no opt-in is a caller who believes the fee stream is
+  // going to the holders while it is going to their own wallet - and after the
+  // launch that cannot be undone. It is refused by name rather than applied to a
+  // launch that has no holder rewards at all.
+  it("refuses a holder-rewards payout mode when holder rewards were not asked for", async () => {
+    const res = await preview({ ...VALID, holderRewardsMode: "paired" });
+    expect(res.success).toBe(false);
+    expect(res.output).toContain("holderRewardsMode");
+    expect(res.output).toContain("holderRewards");
+  });
+
+  // `holderRewards` is irreversible, so it is never inferred from a value that
+  // merely looks true: a coercion that read the string "false" as truthy would
+  // opt a token in for the rest of its life.
+  it("refuses a holder-rewards switch that is not a real boolean", async () => {
+    const res = await preview({ ...VALID, holderRewards: "false" });
+    expect(res.success).toBe(false);
+    expect(res.output).toContain("holderRewards");
+  });
+
+  it("prices a holders launch and shows no recipient address, because none exists yet", async () => {
+    const res = await preview({ ...VALID, holderRewards: true, holderRewardsMode: "both" });
+    expect(res.success).toBe(true);
+    const data = res.data;
+    if (typeof data !== "object" || data === null) throw new Error("the preview returned no data object");
+    const recipient = (data as { feeRecipient?: unknown }).feeRecipient;
+    expect(recipient).toMatchObject({
+      destination: "holders",
+      holderRewardsMode: "both",
+      address: null,
+    });
   });
 
   it("converts the prebuy from HUMAN ETH exactly once, against stated decimals", async () => {

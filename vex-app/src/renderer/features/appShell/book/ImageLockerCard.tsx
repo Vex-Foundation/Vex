@@ -1,9 +1,8 @@
 /**
- * TRENCH EXPRESS — the image locker AND the launch opener, as ONE card.
+ * LAUNCHPAD - the image locker AND the launch opener, as ONE card.
  *
- * This is the ONE place the user and the agent see the same library. A Trench
- * token launch REQUIRES an image (our product rule — the Diamond itself
- * accepts empty image bytes; we refuse to), and an agent running a mission
+ * This is the ONE place the user and the agent see the same library. A token
+ * launch REQUIRES an image (our product rule), and an agent running a mission
  * cannot produce one. So this card is not a convenience: it is the only way a
  * fully autonomous launch can happen with nobody present, because the picture
  * has to be staged by a human in advance.
@@ -13,15 +12,14 @@
  * mission will stall at the point where it can no longer be fixed.
  *
  * Card grammar is `PortfolioCard` (the shared glass chrome + eyebrow, which
- * uppercases to TRENCH PHOTOS). This file declares NO glass of its own: the
+ * uppercases to LAUNCHPAD). This file declares NO glass of its own: the
  * blur is inherited from that wrapper, which is the single design-guard
  * whitelisted entry, and a second one anywhere under `features/appShell` is a
  * red build. (The guard is a raw TEXT scan, so even naming the banned utility
  * in a comment trips it — hence the circumlocution.)
  *
  * THE MERGE (owner brief §8): the locker and "Launch a token" are one card,
- * under the Trench Express mark the app already pairs with that name
- * (`TokenLaunchDialog` renders the same resolution beside the same words). A
+ * under the mark of the launchpad a launch actually goes to. A
  * launch REQUIRES an image from this locker, so two cards sent the user hunting
  * for the reason a launch refused. `TokenLaunchButton` is composed unchanged -
  * the agent-driven `AgentLaunchFormHost` path is a separate flow and keeps
@@ -35,8 +33,8 @@
  * (its `backingSessionId` is an owner decision, not a rail's); and a project
  * LAUNCHPAD is BROWSE-ONLY by decision, so upload and delete are not offered
  * there either. The scope decides the card's MODE here, in one place:
- * `session` mounts `SessionLocker` (read, upload, delete, the launchpad chips
- * and the launch action); `project` mounts `ProjectLocker`, which calls ONLY
+ * `session` mounts `SessionLocker` (read, upload, delete and the launch
+ * action); `project` mounts `ProjectLocker`, which calls ONLY
  * the read query, renders non-deletable tiles, and says where a launch is
  * signed from. The split is two components rather than one with branches
  * because hooks cannot be conditional: a browse-only rail must not instantiate
@@ -55,11 +53,14 @@ import {
 } from "../../../lib/api/images.js";
 import { ProtocolMark } from "../../../components/common/ProtocolMark.js";
 import { resolveProtocolMark } from "../../../lib/protocol-marks.js";
+
+/**
+ * The venue whose mark this card wears. A CONSTANT rather than a prop: there is
+ * one launchpad, and a card that took the venue from its host could wear a mark
+ * for a lane the Launch button does not open.
+ */
+const LAUNCHPAD = "pools";
 import { TokenLaunchButton } from "../token-launch/TokenLaunchButton.js";
-import {
-  LaunchPlatformChips,
-  type LaunchPlatform,
-} from "../TokenLaunchDialog/LaunchPlatformChips.js";
 import { CardStateNote, PortfolioCard } from "./portfolio/PortfolioCard.js";
 import { ImageThumb, type ImageThumbRemoval } from "./image-locker/ImageThumb.js";
 
@@ -100,14 +101,11 @@ export function ImageLockerCard({
 function LockerFrame({
   query,
   removal,
-  platform,
   emptyNote,
   children,
 }: {
   readonly query: ReturnType<typeof useLockerImages>;
   readonly removal: ImageThumbRemoval | null;
-  /** Whose mark the card wears: the venue about to receive a launch. */
-  readonly platform: LaunchPlatform;
   readonly emptyNote: ReactNode;
   readonly children: ReactNode;
 }): JSX.Element {
@@ -117,7 +115,7 @@ function LockerFrame({
   return (
     <PortfolioCard
       eyebrow="Launchpad"
-      leading={<ProtocolMark mark={resolveProtocolMark(platform)} size={16} />}
+      leading={<ProtocolMark mark={resolveProtocolMark(LAUNCHPAD)} size={16} />}
       trailing={images.length > 0 ? `${images.length}` : undefined}
     >
       {query.isLoading ? (
@@ -148,7 +146,6 @@ function ProjectLocker(): JSX.Element {
     <LockerFrame
       query={query}
       removal={null}
-      platform="trench"
       emptyNote={PROJECT_LOCKER_EMPTY_NOTE}
     >
       {/* The seat the launch action holds for a session. A PROJECT rail has
@@ -170,14 +167,8 @@ function SessionLocker({ sessionId }: { readonly sessionId: string }): JSX.Eleme
   const query = useLockerImages();
   const upload = useUploadLockerImage();
   const remove = useDeleteLockerImage();
-  // Which launchpad the next launch goes to. Owned HERE because the choice has
-  // to be visible while the user picks a picture, not only after the dialog
-  // opens. Not persisted: a launchpad is a per-launch decision, and reviving
-  // yesterday's choice under a Launch button is how a token lands on the wrong
-  // one.
-  const [platform, setPlatform] = useState<LaunchPlatform>("trench");
   // The last thing the user should still be looking at: a refusal, or the
-  // report that a Trench copy was prepared. Cleared whenever a new attempt
+  // report that a display copy was prepared. Cleared whenever a new attempt
   // starts, so a stale message never sits under a fresh upload.
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -192,7 +183,7 @@ function SessionLocker({ sessionId }: { readonly sessionId: string }): JSX.Eleme
           return;
         }
         // The original is stored untouched, but a SECOND, smaller copy may have
-        // been prepared for Trench. Say so - the thumbnail grid renders that
+        // been prepared for the grid. Say so - the thumbnail grid renders that
         // copy, so a user who is shown a softer, square tile would otherwise
         // conclude Vex quietly degraded the file they picked.
         setNotice(onchainVariantNotice(outcome.data.onchainVariant));
@@ -228,7 +219,6 @@ function SessionLocker({ sessionId }: { readonly sessionId: string }): JSX.Eleme
     <LockerFrame
       query={query}
       removal={{ onDelete: runDelete, deleting: remove.isPending }}
-      platform={platform}
       emptyNote={
         <>
           A launch needs an image, and the agent can&apos;t make one. Add one
@@ -252,16 +242,12 @@ function SessionLocker({ sessionId }: { readonly sessionId: string }): JSX.Eleme
         {busy ? "Adding…" : "Add image"}
       </button>
 
-      {/* The ONLY way a user reaches the launch dialog, now inside the card
-          that holds the image every launch needs. The chips sit beside it so
-          the launchpad is chosen where the picture is. */}
+      {/* The ONLY way a user reaches the launch dialog, inside the card that
+          holds the image every launch needs. There is no launchpad chooser any
+          more: migration 108 retired Trench Express and pools.fun is the only
+          lane, so a chooser with one chip would state a decision nobody makes. */}
       <div className="mt-2.5 flex flex-col gap-2 border-t border-line-2 pt-2.5">
-        <LaunchPlatformChips value={platform} onChange={setPlatform} />
-        <TokenLaunchButton
-          sessionId={sessionId}
-          platform={platform}
-          onPlatformChange={setPlatform}
-        />
+        <TokenLaunchButton sessionId={sessionId} />
       </div>
     </LockerFrame>
   );
@@ -278,32 +264,32 @@ function uploadNotice(error: VexError): string | null {
 }
 
 /**
- * The on-chain-copy report, in the same place a refusal would appear.
+ * The display-copy report, in the same place a refusal would appear.
  *
- * WHAT IT MUST NOT SAY ANY MORE is that the picture was optimized. Since the
- * per-lane decision the ORIGINAL is stored at full quality and is exactly what
- * a pools.fun launch publishes; what the ladder produced is an additional
- * small square COPY that only Trench uses. Reporting that as "optimized" would
- * tell the user their file was degraded when it was not.
+ * WHAT IT MUST NOT SAY is that the picture was optimized. The ORIGINAL is
+ * stored at full quality and is exactly what a launch publishes; what the
+ * ladder produced is an additional small square COPY, and reporting that as
+ * "optimized" would tell the user their file was degraded when it was not.
  *
  * Absent report means no copy had to be made - the file was already inside the
- * Trench budget and is its own copy - and that deserves no message at all.
+ * derivative's budget and is its own copy - and that deserves no message at all.
  *
  * THE CROP IS NAMED, because the thumbnail grid renders that copy: a user who
  * sees a square tile of a wide photo would otherwise be left wondering what
  * happened to the edges.
  *
- * THE GAS SENTENCE NAMES TRENCH, because it is only true there. A Trench launch
- * carries the image bytes inside the transaction; pools.fun hosts its metadata
- * off-chain, so the same picture costs no gas on that launchpad.
+ * WHAT IT NO LONGER CLAIMS is that the copy is gas. It was, on Trench Express,
+ * which carried the image bytes inside the create transaction; migration 108
+ * retired that protocol and pools.fun hosts its metadata off-chain, so the
+ * derivative is now a thumbnail and nothing else. Saying otherwise would name a
+ * cost the user does not pay.
  */
 function onchainVariantNotice(variant: ImageOnchainVariant | undefined): string | null {
   if (variant === undefined) return null;
   return (
-    `Stored at full quality (${formatKb(variant.originalByteLength)}). For Trench ` +
-    `launches Vex also prepared a ${formatKb(variant.variantByteLength)} square copy, ` +
-    `because a Trench launch carries the image inside the transaction and its size ` +
-    `is gas you pay. pools.fun uses your original.`
+    `Stored at full quality (${formatKb(variant.originalByteLength)}). Vex also ` +
+    `prepared a ${formatKb(variant.variantByteLength)} square copy to render in ` +
+    `this grid. Your launch uses the original.`
   );
 }
 

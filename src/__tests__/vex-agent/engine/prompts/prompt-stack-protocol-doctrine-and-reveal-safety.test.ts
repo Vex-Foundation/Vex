@@ -20,22 +20,31 @@ describe("prompt-stack — protocol doctrine & reveal safety", () => {
   // the advertised `virtuals` namespace, and the volatile `# $VEX (own token)`
   // banner that must stay OUT of the static prefix (KV-cache invariant).
   describe("Virtuals Protocol (Wave 3)", () => {
-    it("protocols prompt advertises the read-only virtuals namespace", () => {
+    it("protocols prompt advertises virtuals as a namespace that now TRADES", () => {
       const prompt = buildProtocolsPrompt();
       expect(prompt).toContain("### virtuals");
       const section = prompt.split("### virtuals")[1]?.split("###")[0] ?? "";
-      // Wave 2 migration rows T449-T451.
-      expect(section).toContain("read-only intelligence");
-      // Read-only namespace: no mutating marker in its section.
-      expect(section).not.toContain("Contains mutating tools");
+      // Wave 2 migration rows T449-T451 asserted "read-only intelligence" and
+      // the ABSENCE of the mutating marker. PR-C2 reverses exactly that: the
+      // namespace still reads, but it also quotes and executes a bonding-curve
+      // trade, so the section MUST carry the mutating marker. An agent that
+      // still read "read-only" here would route every curve buy to an AMM that
+      // has no pool for a token that has not graduated.
+      expect(section).toContain("intelligence");
+      expect(section).toContain("bonding-curve trading venue");
+      expect(section).toContain("Contains mutating tools");
     });
 
     it("carries Virtuals acquisition and anti-sniper judgment in the static task shape", () => {
       const prompt = buildProtocolsPrompt();
       // Wave 2 migration rows T452-T459.
       expect(prompt).toContain("### Swap");
-      expect(prompt).toContain("Virtuals discovery is read-only");
-      expect(prompt).toContain("venue named by its route");
+      // PR-C2 made "Virtuals discovery is read-only" false: the namespace now
+      // owns curve trade tools, and a task shape that still called it read-only
+      // steered agents away from them. The shape now names the curve tools for a
+      // token still on its curve and keeps the post-graduation routing rule.
+      expect(prompt).toContain("still on its bonding curve trades on that curve through the virtuals curve tools");
+      expect(prompt).toContain("after graduation acquisition continues on the venue named by its route");
       expect(prompt).toContain("NEVER buy while `windowActive` is true");
       expect(prompt).toContain("virtuals__agent_get");
       expect(prompt).toContain("Bonding-curve pre-graduation can be illiquid");

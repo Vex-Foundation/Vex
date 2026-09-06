@@ -20,7 +20,7 @@
  *
  * NO CEILINGS APPLY HERE, deliberately. The mission ceilings bound UNATTENDED
  * spending against a host-authored contract; a human clicking Deploy is not that
- * situation, exactly as on the Trench form path.
+ * situation, exactly as on the agent form path.
  *
  * WHAT STAGE 2 DOES NOT DO IS RE-PREPARE. A second prepare pins a second
  * persistent IPFS object and mines a DIFFERENT salt, so it would describe a
@@ -59,6 +59,7 @@ import type {
   PoolsAmount,
   PoolsLaunchOutcome,
   PoolsLaunchRefusalKind,
+  PoolsPreparedLaunch,
   PreparePoolsLaunch,
 } from "./runtime-contract.js";
 
@@ -67,13 +68,99 @@ const NATIVE_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
 const NATIVE_DECIMALS = 18;
 
 /**
- * How long a verified fingerprint stays usable.
+ * How long a verified fingerprint stays usable, when nothing on chain expires
+ * sooner.
  *
  * Shorter than the gateway's own deadline on purpose: the deployment fee is
  * dynamic, and a quote a user sat on for a quarter of an hour is a quote worth
  * re-taking rather than signing.
  */
 const FINGERPRINT_WINDOW_MS = 10 * 60 * 1000;
+
+/**
+ * How much of a SIGNED price quote's life must still remain when the user clicks
+ * Deploy.
+ *
+ * The factory accepts a signed stock quote only 30 to 120 seconds after it was
+ * observed (`MIN/MAX_SIGNED_QUOTE_AGE`, measured), and a launch still has to be
+ * authorized, signed and INCLUDED inside that window. Ten seconds is the floor
+ * below which the remaining work cannot plausibly finish; it is an ABSOLUTE
+ * number rather than a fraction of the window, because a fraction would shrink
+ * exactly when the window is shortest. It matches the verifier's own margin, so
+ * the confirmation screen and the pre-signing check cannot disagree about
+ * whether a quote is still alive.
+ */
+const SIGNED_QUOTE_DEPLOY_MARGIN_MS = 10 * 1000;
+
+/**
+ * WHEN THIS PREPARED LAUNCH DIES, and which clock killed it.
+ *
+ * THREE DEADLINES, AND THE TIGHTEST ONE WINS. Before this lane carried stock
+ * pairs there was only one - Vex's own ten-minute window - and taking it alone
+ * was harmless because nothing inside the calldata expired sooner. That is no
+ * longer true:
+ *
+ *   - a SIGNED_STOCK pair carries a backend-signed quote the factory refuses
+ *     outside a 30-to-120-second window, so its real deadline can be TWO ORDERS
+ *     OF MAGNITUDE shorter than the Vex window;
+ *   - the calldata's own `deadline` bounds every launch.
+ *
+ * Showing the ten-minute window on a stock launch would count down to a moment
+ * the transaction was already guaranteed to revert at, and the user would burn
+ * gas on a launch Vex had told them they had minutes left for. So the window is
+ * the MINIMUM of the three, and the reason travels with it, because "42 seconds"
+ * and "42 seconds because the price quote expires" are different instructions.
+ */
+function resolveFingerprintExpiry(
+  plan: PoolsLaunchPlan,
+  nowMs: number,
+): { readonly expiresAtMs: number; readonly reason: PoolsPreparedLaunch["expiryReason"] } {
+  const candidates: { readonly atMs: number; readonly reason: PoolsPreparedLaunch["expiryReason"] }[] = [
+    { atMs: nowMs + FINGERPRINT_WINDOW_MS, reason: "vex_window" },
+  ];
+
+  // The gateway's own deadline, in seconds since the epoch.
+  if (plan.tuple.deadline > 0n) {
+    candidates.push({ atMs: Number(plan.tuple.deadline) * 1000, reason: "gateway_deadline" });
+  }
+
+  // The signed quote, when there is one. An all-zero attestation is a real value
+  // meaning "this pair needs no signed quote" (the gateway takes the struct by
+  // value), so a zero `expiresAt` is NOT a deadline of 1970 and must not be
+  // treated as one.
+  const quoteExpiresAt = plan.tuple.priceAttestation.expiresAt;
+  if (quoteExpiresAt > 0n) {
+    candidates.push({
+      atMs: Number(quoteExpiresAt) * 1000 - SIGNED_QUOTE_DEPLOY_MARGIN_MS,
+      reason: "quote_window",
+    });
+  }
+
+  let tightest = candidates[0]!;
+  for (const candidate of candidates) {
+    if (candidate.atMs < tightest.atMs) tightest = candidate;
+  }
+  return { expiresAtMs: tightest.atMs, reason: tightest.reason };
+}
+
+/** The sentence a lapsed confirmation gets, in the words of the clock that lapsed. */
+function expiredConfirmationReason(reason: PoolsPreparedLaunch["expiryReason"]): string {
+  const nothing = "Nothing was signed and no funds moved. Prepare the launch again to get a fresh quote.";
+  switch (reason) {
+    case "quote_window":
+      return (
+        "This launch's signed stock price quote has expired. The launch factory accepts one for a matter of "
+        + `seconds after it was observed, so a stock-paired launch has to be confirmed immediately. ${nothing}`
+      );
+    case "gateway_deadline":
+      return `This launch's own on-chain deadline has passed, so the transaction would revert. ${nothing}`;
+    case "vex_window":
+      return (
+        "This prepared launch is no longer current: the launchpad's deployment fee moves, and Vex will not "
+        + `sign a quote this old. ${nothing}`
+      );
+  }
+}
 
 function refusal<T>(kind: PoolsLaunchRefusalKind, message: string): PoolsLaunchOutcome<T> {
   return { ok: false, refusal: { kind, message } };
@@ -185,6 +272,7 @@ export const preparePoolsLaunch: PreparePoolsLaunch = async (session, inputs) =>
     name: read.value.name,
     symbol: read.value.symbol,
     pairedAsset: read.value.pairedAsset,
+    pairedStockAddress: read.value.pairedStockAddress,
     image: read.value.image,
     prebuyWei: read.value.prebuyWei,
     prebuyHuman: read.value.prebuyHuman,
@@ -201,12 +289,14 @@ export const preparePoolsLaunch: PreparePoolsLaunch = async (session, inputs) =>
   if (!planned.ok) return refusal(planRefusalKind(planned), planned.reason);
 
   const plan = planned.plan;
-  const expiresAtMs = Date.now() + FINGERPRINT_WINDOW_MS;
+  const expiry = resolveFingerprintExpiry(plan, Date.now());
+  const expiresAtMs = expiry.expiresAtMs;
   const fingerprintId = storePreparedLaunch({
     sessionId: session.sessionId,
     walletAddress,
     plan,
     expiresAtMs,
+    expiryReason: expiry.reason,
   });
 
   return {
@@ -216,8 +306,15 @@ export const preparePoolsLaunch: PreparePoolsLaunch = async (session, inputs) =>
       predictedTokenAddress: plan.binding.predictedTokenAddress,
       predictedPoolAddress: plan.predictedPoolAddress,
       resolvedFeeRecipient: plan.binding.feeRecipient,
+      ...(plan.binding.holderRewards === null
+        ? {}
+        : { holderRewards: plan.binding.holderRewards }),
       pairedAsset: read.value.pairedAsset,
       pairedAssetAddress: plan.binding.pairedAssetAddress,
+      // The identity of the exact bytes Deploy will sign. Everything else on the
+      // confirmation screen is a rendering of them; this is the one value that
+      // changes if any of them do.
+      callFingerprint: plan.call.fingerprint,
       costs: {
         deploymentFee: nativeAmount(BigInt(plan.binding.deploymentFeeWei)),
         ...(read.value.prebuyWei === null ? {} : { prebuy: nativeAmount(read.value.prebuyWei) }),
@@ -228,6 +325,7 @@ export const preparePoolsLaunch: PreparePoolsLaunch = async (session, inputs) =>
       metadataUri: plan.metadataUri,
       imageLanded: plan.imageLanded,
       expiresAt: new Date(expiresAtMs).toISOString(),
+      expiryReason: expiry.reason,
     },
   };
 };
@@ -239,8 +337,8 @@ export const deployPoolsLaunch: DeployPoolsLaunch = async (session, inputs) => {
   // a second Deploy click, a cancelled launch, a lapsed one, and another
   // session's launch all arrive at this same refusal - which is deliberate: a
   // distinct answer for the last of those would confirm that it exists.
-  const entry = consumePreparedLaunch(session.sessionId, inputs.fingerprintId);
-  if (entry === null) {
+  const prepared = consumePreparedLaunch(session.sessionId, inputs.fingerprintId);
+  if (prepared.kind === "missing") {
     return refusal(
       "fingerprint_expired",
       "This prepared launch is no longer available: it was already deployed, cancelled, or it expired. "
@@ -248,6 +346,13 @@ export const deployPoolsLaunch: DeployPoolsLaunch = async (session, inputs) => {
         + "moves, so a stale one would fail anyway.",
     );
   }
+  // THE PRE-SIGN EXPIRY RE-CHECK, named by the clock that ran out. The
+  // confirmation screen showed a countdown; this is where the clock is asked
+  // again, and it is asked BEFORE a signer is opened or an authorization exists.
+  if (prepared.kind === "expired") {
+    return refusal("fingerprint_expired", expiredConfirmationReason(prepared.reason));
+  }
+  const entry = prepared.entry;
 
   const chainConfig = getLocalChain(POOLS_CHAIN_ID);
   if (!chainConfig) {
@@ -312,7 +417,16 @@ export const deployPoolsLaunch: DeployPoolsLaunch = async (session, inputs) => {
         poolAddress: getAddress(String(data.poolAddress)),
         txHash,
         activityId: Number(data._executionId),
-        resolvedFeeRecipient: plan.binding.feeRecipient,
+        // THE RECIPIENT THE RECEIPT PROVED, not the one that was signed.
+        //
+        // On an ordinary launch these are the same address. On a HOLDERS launch
+        // they are not: the tuple carried the gateway's sentinel and the gateway
+        // resolved it to the distributor it deployed inside the transaction, so
+        // `plan.binding.feeRecipient` is a constant nobody owns. Reporting it
+        // here would tell the user their fees go to an address that receives
+        // nothing. The broadcast leg carries the address the decoder proved from
+        // this receipt's own `DistributorDeployed`, and that is what is shown.
+        resolvedFeeRecipient: resolvedRecipientFrom(data, plan),
       },
     };
   }
@@ -334,6 +448,32 @@ export const deployPoolsLaunch: DeployPoolsLaunch = async (session, inputs) => {
   await settlePoolsLaunchFailure(ids.intentId, session.sessionId, "DeployOutcomeUnknown");
   return refusal("provider_unavailable", result.output);
 };
+
+/**
+ * Where the fee stream ACTUALLY ended up, from the settled launch.
+ *
+ * The broadcast result's `feeRecipient` is decoded from the receipt and has
+ * already been proven against the authorized plan - exactly, on an ordinary
+ * launch, and through this transaction's own `DistributorDeployed` on a holders
+ * launch. It is preferred over the signed tuple's value for that reason.
+ *
+ * The fallback is the signed recipient, used only when the result carries no
+ * readable address. That is unreachable on a `confirmed` outcome (the decoder
+ * must have proven one to reach it) and exists so a shape change degrades to the
+ * previous behaviour rather than to a crash.
+ */
+function resolvedRecipientFrom(
+  data: Record<string, unknown>,
+  plan: PoolsLaunchPlan,
+): Address {
+  const settled = data.feeRecipient;
+  if (typeof settled !== "string") return plan.binding.feeRecipient;
+  try {
+    return getAddress(settled);
+  } catch {
+    return plan.binding.feeRecipient;
+  }
+}
 
 // ── Cancel ──────────────────────────────────────────────────────────────────
 

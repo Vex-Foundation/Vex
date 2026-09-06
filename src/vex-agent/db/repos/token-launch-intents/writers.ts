@@ -28,9 +28,15 @@ import {
 
 // ── create ──────────────────────────────────────────────────────────────────
 
-// The pools columns (migration 082) are all nullable and `protocol` DEFAULTs to
-// 'trench' in the database, so a caller that supplies none of them writes
-// exactly the row it wrote before this existed.
+// The pools columns (migration 082) are all nullable, so a caller that supplies
+// none of them writes exactly the row it wrote before they existed.
+//
+// `protocol` is NOT among them: migration 108 dropped its 'trench' DEFAULT when
+// the Trench protocol was retired, so the discriminator is now stated by every
+// writer or the INSERT fails. It used to be `COALESCE($20, 'trench')` here, and
+// that pair - a defaulted column plus a defaulting parameter - is exactly how a
+// forgotten discriminator would have written a live row on a protocol that no
+// longer has a handler.
 const INSERT_SQL = `INSERT INTO token_launch_intents (
   intent_id, session_id, origin, status, chain_id, wallet_address,
   name, symbol, description, links, image_id, prebuy_raw, prebuy_decimals,
@@ -38,15 +44,19 @@ const INSERT_SQL = `INSERT INTO token_launch_intents (
   tool_call_id, mission_run_id, expires_at,
   protocol, paired_asset, paired_asset_address, fee_recipient_address,
   metadata_uri, image_url, predicted_token_address, gateway_address,
-  deployment_fee_wei
+  deployment_fee_wei,
+  holder_rewards_mode, holder_rewards_sentinel,
+  virtuals
 ) VALUES (
   $1, $2, $3, $4, $5, $6,
   $7, $8, $9, $10::jsonb, $11, $12, $13,
   $14, $15, $16::jsonb, CASE WHEN $14::text IS NULL THEN NULL ELSE NOW() END,
   $17, $18, $19,
-  COALESCE($20, 'trench'), $21, $22, $23,
+  $20, $21, $22, $23,
   $24, $25, $26, $27,
-  $28
+  $28,
+  $29, $30,
+  $31::jsonb
 ) RETURNING ${SELECT_COLUMNS}`;
 
 /**
@@ -97,7 +107,7 @@ export async function createWith(
     input.toolCallId ?? null,
     input.missionRunId ?? null,
     input.expiresAt,
-    input.protocol ?? null,
+    input.protocol,
     input.pools?.pairedAsset ?? null,
     input.pools?.pairedAssetAddress ?? null,
     input.pools?.feeRecipientAddress ?? null,
@@ -106,6 +116,15 @@ export async function createWith(
     input.pools?.predictedTokenAddress ?? null,
     input.pools?.gatewayAddress ?? null,
     input.pools?.deploymentFeeWei ?? null,
+    // The holder-rewards INTENT (migration 109): the mode the user agreed to and
+    // the sentinel that expresses it in the signed bytes. The DISTRIBUTOR the
+    // gateway resolves that sentinel to is deliberately not here - it does not
+    // exist until the launch transaction has been mined, and this row is written
+    // before it is broadcast.
+    input.pools?.holderRewards?.mode ?? null,
+    input.pools?.holderRewards?.sentinel ?? null,
+    // Migration 110. Written as-is; the launch lane's reader validates it.
+    nullableJsonb(input.virtuals ?? null),
   ]);
   const row = res.rows[0];
   if (row === undefined) {
@@ -403,16 +422,31 @@ export async function confirmWith(
   intentId: string,
   sessionId: string,
   tokenAddress: string,
+  /**
+   * The distributor a fees-to-holders launch resolved its sentinel to, PROVEN
+   * from this transaction's own `DistributorDeployed` event, or `null` on every
+   * other launch.
+   *
+   * Written HERE rather than in a second statement because it is settled by the
+   * same receipt that settles the token address: they are one fact about one
+   * mined transaction, and a separate write is a second thing that can fail and
+   * leave a confirmed holders launch whose fee destination this row cannot name.
+   *
+   * `COALESCE` rather than a plain assignment, so an ordinary launch's `null`
+   * cannot erase a value - the column is only ever written once, from a proof.
+   */
+  holderRewardsDistributor: string | null = null,
 ): Promise<TokenLaunchIntent | null> {
   return casRow(
     client,
     `UPDATE token_launch_intents
-        SET status = 'confirmed', token_address = $3, confirmed_at = NOW()
+        SET status = 'confirmed', token_address = $3, confirmed_at = NOW(),
+            holder_rewards_distributor = COALESCE($4, holder_rewards_distributor)
       WHERE intent_id = $1
         AND session_id = $2
         AND status = 'broadcast_pending'
       RETURNING ${SELECT_COLUMNS}`,
-    [intentId, sessionId, tokenAddress],
+    [intentId, sessionId, tokenAddress, holderRewardsDistributor],
   );
 }
 
@@ -534,6 +568,172 @@ export async function expireIfAwaitingWith(
         AND session_id = $2
         AND status = 'awaiting_user_form'
         AND expires_at <= NOW()
+      RETURNING ${SELECT_COLUMNS}`,
+    [intentId, sessionId],
+  );
+}
+
+// ── the Virtuals two-transaction terminals (migration 110) ──────────────────
+
+/**
+ * `broadcast_pending -> awaiting_keeper` - OUR transaction confirmed and the
+ * keeper's has not been observed.
+ *
+ * `tokenAddress` is REQUIRED for the same reason `confirmWith` requires it: the
+ * status asserts that we know WHICH agent is waiting, and a row without an
+ * address is a row the sweep cannot look anything up for. Migration 110's
+ * `token_launch_intents_awaiting_keeper_is_proven` is the database's half of
+ * the same rule.
+ *
+ * `tx_hash` is in the PREDICATE, not just implied. The evidence being recorded
+ * is evidence about ONE broadcast, and a row that agrees on intent and session
+ * but not on hash is a different one.
+ *
+ * NOT a failure and NOT terminal: `confirmAfterKeeperWith` below is the forward
+ * transition the sweep takes when it finally sees `Launched`.
+ */
+export async function markAwaitingKeeperWith(
+  client: PoolClient,
+  intentId: string,
+  sessionId: string,
+  txHash: string,
+  tokenAddress: string,
+): Promise<TokenLaunchIntent | null> {
+  return casRow(
+    client,
+    `UPDATE token_launch_intents
+        SET status = 'awaiting_keeper', token_address = $4
+      WHERE intent_id = $1
+        AND session_id = $2
+        AND status = 'broadcast_pending'
+        AND tx_hash = $3
+      RETURNING ${SELECT_COLUMNS}`,
+    [intentId, sessionId, txHash, tokenAddress],
+  );
+}
+
+/**
+ * `awaiting_keeper -> confirmed` - the keeper's `Launched` was finally observed.
+ *
+ * The ONE forward transition out of `awaiting_keeper`, and the sweep's whole
+ * job. `token_address` is already set and is deliberately NOT rewritten here: a
+ * sweep that could change which token an intent points at could rewrite
+ * history, and the address was proven from our own receipt while the handler
+ * still owned the execution.
+ *
+ * `confirmed_at` stamps the moment the observation was made, not the moment the
+ * keeper acted - the two differ by the sweep's cadence and only the first is
+ * something this process witnessed.
+ */
+export async function confirmAfterKeeperWith(
+  client: PoolClient,
+  intentId: string,
+  sessionId: string,
+  tokenAddress: string,
+): Promise<TokenLaunchIntent | null> {
+  return casRow(
+    client,
+    `UPDATE token_launch_intents
+        SET status = 'confirmed', confirmed_at = NOW()
+      WHERE intent_id = $1
+        AND session_id = $2
+        AND status = 'awaiting_keeper'
+        AND token_address = $3
+      RETURNING ${SELECT_COLUMNS}`,
+    [intentId, sessionId, tokenAddress],
+  );
+}
+
+/**
+ * `awaiting_keeper -> cancelled` - the creator took the launch back.
+ *
+ * `cancelLaunch` is the creator's own signed transaction, so unlike every other
+ * cancel on this table this one records an on-chain event rather than a
+ * dismissed dialog. It is still a `cancelled` row and not a failure: the launch
+ * did not fail, the creator ended it, and their VIRTUAL came back.
+ *
+ * Reachable ONLY from `awaiting_keeper`, because that is the only state in
+ * which the contract itself would accept the call: `cancelLaunch` reverts with
+ * `InvalidTokenStatus` once `launchExecuted` is set (`BondingV5.sol:553-557`),
+ * which the keeper's `launch()` does.
+ */
+export async function cancelAfterPreLaunchWith(
+  client: PoolClient,
+  intentId: string,
+  sessionId: string,
+  tokenAddress: string,
+): Promise<TokenLaunchIntent | null> {
+  return casRow(
+    client,
+    `UPDATE token_launch_intents
+        SET status = 'cancelled', cancelled_at = NOW()
+      WHERE intent_id = $1
+        AND session_id = $2
+        AND status = 'awaiting_keeper'
+        AND token_address = $3
+      RETURNING ${SELECT_COLUMNS}`,
+    [intentId, sessionId, tokenAddress],
+  );
+}
+
+/**
+ * Replace the stored Virtuals block, keeping the status untouched.
+ *
+ * The block accumulates FACTS as they are proven - the pair and virtual id from
+ * the receipt, the keeper's hash from the observation - and each of those
+ * arrives at a different moment from a different authority. Folding them into
+ * the status transitions would make every transition also a blob writer and
+ * would let a lost race silently drop an observation.
+ *
+ * Deliberately NOT a merge: the caller reads the current block, validates it,
+ * and writes the whole thing back, so the shape that lands is one a reader has
+ * actually checked. A partial `jsonb_set` would let an unvalidated fragment in.
+ */
+export async function stampVirtualsBlockWith(
+  client: PoolClient,
+  intentId: string,
+  sessionId: string,
+  block: unknown,
+): Promise<TokenLaunchIntent | null> {
+  return casRow(
+    client,
+    `UPDATE token_launch_intents
+        SET virtuals = $3::jsonb
+      WHERE intent_id = $1
+        AND session_id = $2
+        AND protocol = 'virtuals'
+      RETURNING ${SELECT_COLUMNS}`,
+    [intentId, sessionId, nullableJsonb(block)],
+  );
+}
+
+/**
+ * `previewed -> cancelled` - a preview has been spent by the execute it authorized.
+ *
+ * SINGLE USE, and that is the whole point. A Virtuals preview carries the
+ * calldata fingerprint a person was shown; the execute claims it here before it
+ * creates the authorized intent it will actually sign, so a second execute
+ * against the same preview gets `null` and refuses rather than signing a second
+ * launch against one shown plan.
+ *
+ * `expires_at > NOW()` is in the predicate for the reason every other
+ * pre-signature CAS on this table has it: a plan whose window lapsed was priced
+ * against a chain that has moved, and a lapsed preview must produce a fresh one
+ * rather than authorize a stale launch.
+ */
+export async function claimPreviewWith(
+  client: PoolClient,
+  intentId: string,
+  sessionId: string,
+): Promise<TokenLaunchIntent | null> {
+  return casRow(
+    client,
+    `UPDATE token_launch_intents
+        SET status = 'cancelled', cancelled_at = NOW()
+      WHERE intent_id = $1
+        AND session_id = $2
+        AND status = 'previewed'
+        AND expires_at > NOW()
       RETURNING ${SELECT_COLUMNS}`,
     [intentId, sessionId],
   );

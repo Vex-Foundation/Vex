@@ -21,36 +21,97 @@ function context(overrides: Partial<EngineContext>): EngineContext {
 }
 
 /**
- * REVIEWED CEILING MOVE, launchpads namespace (PR2 of the launchpads arc).
+ * REVIEWED CEILING MOVE, launchpads arc integration. TWO additions share this
+ * raise, and both were measured on this merged tree rather than estimated.
  *
- * +1062 bytes on the agent modes, +1128 on mission setup, +1224 on mission run.
- * The cost is one advertised namespace card plus two prompt lines, and it was
- * measured, not estimated: the numbers below are exactly what
- * `buildPromptStack` produces today.
+ * 1. THE LAUNCHPADS NAMESPACE (PR2 of the launchpads arc). +1062 bytes on the
+ *    agent modes, +1128 on mission setup, +1224 on mission run. The cost is one
+ *    advertised namespace card plus two prompt lines.
  *
- * WHAT THE BYTES BUY. `launchpads` is the launchpad-neutral half of a token
- * launch - one image locker shared by every launchpad, and the public
- * content-addressed host a launch's image URL points at. Without a card the
- * model cannot find the locker at all, and a mission that discovers an empty
- * locker at signing time has already wasted itself: the whole point of the
- * planning obligation in the mission-setup line is that the user is still
- * present to fix it.
+ *    WHAT THE BYTES BUY. `launchpads` is the launchpad-neutral half of a token
+ *    launch - one image locker shared by every launchpad, and the public
+ *    content-addressed host a launch's image URL points at. Without a card the
+ *    model cannot find the locker at all, and a mission that discovers an empty
+ *    locker at signing time has already wasted itself: the whole point of the
+ *    planning obligation in the mission-setup line is that the user is still
+ *    present to fix it.
  *
- * WHAT WAS DONE TO KEEP IT SMALL, so this is not read later as an unbounded
- * grant: the namespace does NOT set `advertiseFacetsInPrompt` (its two facets
- * cost nothing here and are reachable through ToolSearch), its declaration
- * prose was tightened by about 250 bytes against the first draft, and the two
- * mission-prompt lines it touches were rewritten to be launchpad-neutral rather
- * than added alongside the Trench ones. The Trench retirement lane removes the
- * Trench card and its lines, which returns more than this costs.
+ *    WHAT WAS DONE TO KEEP IT SMALL, so this is not read later as an unbounded
+ *    grant: the namespace does NOT set `advertiseFacetsInPrompt` (its two facets
+ *    cost nothing here and are reachable through ToolSearch), its declaration
+ *    prose was tightened by about 250 bytes against the first draft, and the two
+ *    mission-prompt lines it touches were rewritten to be launchpad-neutral
+ *    rather than added alongside the Trench ones. The Trench retirement lane
+ *    removes the Trench card and its lines, which returns more than this costs.
+ *
+ * 2. VIRTUALS BONDING-CURVE TRADING (PR-C2, folded in by this merge). NET +620
+ *    in EVERY mode, and the uniformity is the proof that only namespace-level
+ *    text moved: the declaration and the coverage line render once per mode and
+ *    nothing per-tool entered the static prefix.
+ *
+ *    Every item is a statement that became FALSE when the namespace stopped
+ *    being read-only:
+ *      - `quote` and `act` said "No quote capability is available" and "No
+ *        action capability is available". The namespace now prices and executes
+ *        a curve trade, so both lines state the capability and its BOUND (not
+ *        graduated; Base and Robinhood only).
+ *      - `identity` called the namespace read-only intelligence.
+ *      - `characteristicAndLimits` said no purchase action is exposed. It now
+ *        says a purchase IS exposed and names the two conditions, which is the
+ *        rule-90 honesty clause for a tool that spends real funds.
+ *      - the COVERAGE line in `prompts/chain-coverage.ts` ended with "an EVM
+ *        bonding curve has no venue tool yet". That sentence would route every
+ *        curve buy to an AMM that has no pool for a token which has not
+ *        graduated, so it was replaced rather than kept.
+ *      - the declaration gained its fifth facet (bonding-curve trading), which
+ *        is what makes the two tools findable; the declaration still teaches
+ *        capabilities and never tool names.
+ *      - the runtime marker "Contains mutating tools (may require approval)."
+ *        now renders in this section, which is not prose anyone chose: it
+ *        follows from the namespace owning a mutating tool.
+ *
+ *    WHY COMPRESSION WAS INSUFFICIENT. The growth is almost entirely the
+ *    REPLACEMENT of false sentences by true ones, so there was no cheaper
+ *    wording available: the two "No ... capability is available" lines could not
+ *    simply be deleted, because a namespace that trades and says nothing about
+ *    its bounds is worse than one that says too much. No other namespace's prose
+ *    was compressed to fund either addition.
+ *
+ * THE MEASURED TOTAL on the merged tree. The launchpads figures are already in
+ * the left column, which this merge raises by the uniform Virtuals +620:
+ *
+ *   agent / restricted          58,782 -> 59,402
+ *   agent / full                59,483 -> 60,103
+ *   mission setup / restricted  65,259 -> 65,879
+ *   mission setup / full        65,278 -> 65,898
+ *   mission run / restricted    63,983 -> 64,603
+ *   mission run / full          63,798 -> 64,418
+ *
+ *
+ * 3. THE SWAP TASK SHAPE, corrected for curve trading (this branch). NET +80 in
+ *    every mode: one sentence replaced by a longer true one. The shape said
+ *    "Virtuals discovery is read-only and acquisition continues on the venue
+ *    named by its route", which stopped being true the moment the trade pair
+ *    landed and would have steered an agent away from the only tools that can
+ *    buy a token still on its curve. It now names the curve tools for a
+ *    pre-graduation agent and keeps the post-graduation routing rule.
+ *
+ *   agent / restricted          59,402 -> 59,482
+ *   agent / full                60,103 -> 60,183
+ *   mission setup / restricted  65,879 -> 65,959
+ *   mission setup / full        65,898 -> 65,978
+ *   mission run / restricted    64,603 -> 64,683
+ *   mission run / full          64,418 -> 64,498
+ *
+ * The coordinator reviews this raise.
  */
 const MODES = [
-  { name: "agent / restricted", context: context({}), ceiling: 58_782 },
-  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 59_483 },
-  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 65_259 },
-  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 65_278 },
-  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 63_983 },
-  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 63_798 },
+  { name: "agent / restricted", context: context({}), ceiling: 59_821 },
+  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 60_522 },
+  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 66_298 },
+  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 66_317 },
+  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 65_022 },
+  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 64_837 },
 ] as const;
 
 beforeAll(() => {
@@ -280,6 +341,66 @@ describe("static prompt byte ceilings", () => {
       // is not. Dropping the per-capability sentence entirely was the
       // alternative and it re-introduces the false claim above. No other
       // namespace's prose was touched to fund this.
+      // REVIEWED BUDGET DIFF, PR-C5 (Virtuals candles at DexScreener depth,
+      // 2026-09-05, folded onto the arc branch). NET +7 in every mode, and the
+      // seven bytes buy the removal of a FALSE CLAIM rather than any new prose.
+      // The left column is the arc branch's own figure, not this lane's base:
+      //
+      //   agent / restricted          59,482 -> 59,489  (+7)
+      //   agent / full                60,183 -> 60,190  (+7)
+      //   mission setup / restricted  65,959 -> 65,966  (+7)
+      //   mission setup / full        65,978 -> 65,985  (+7)
+      //   mission run / restricted    64,683 -> 64,690  (+7)
+      //   mission run / full          64,498 -> 64,505  (+7)
+      //
+      // WHAT CHANGED, and it is one clause. The Virtuals coverage line said
+      // candles existed "for bonding agents on solana only", which was true
+      // while an EVM bonding curve had no candle source; this lane gave it two
+      // (the provider's curve trade feed, and the curve pair's own Swap logs),
+      // so bonding agents now chart on base and robinhood as well. The clause
+      // now reads "on all three of those", pointing at the three chains the
+      // same sentence has already named. Leaving it would have taught every
+      // agent, in every mode, that a base or robinhood bonding chart does not
+      // exist - the exact belief that costs a wasted call, which is what this
+      // ceiling exists to price.
+      //
+      // WHY COMPRESSION WAS INSUFFICIENT. The first draft named the two new
+      // sources inline and cost +133. It was cut to the chain list alone
+      // because WHERE a capability exists belongs in the always-loaded prompt
+      // and HOW it is built belongs in the tool description, which carries it
+      // in full. No other namespace's prose was touched to fund this.
+      // REVIEWED BUDGET DIFF, PR-C3 (Virtuals agent launch and cancel,
+      // 2026-09-05). NET +332 in every mode, and it buys a CAPABILITY the
+      // always-loaded prompt could not otherwise teach:
+      //
+      //   agent / restricted          59,489 -> 59,816  (+332)
+      //   agent / full                60,190 -> 60,517  (+332)
+      //   mission setup / restricted  65,966 -> 66,293  (+332)
+      //   mission setup / full        65,985 -> 66,312  (+332)
+      //   mission run / restricted    64,690 -> 65,017  (+332)
+      //   mission run / full          64,505 -> 64,832  (+332)
+      //
+      // WHAT WAS ADDED, and it is three things. First, the Virtuals namespace
+      // DECLARATION gained a fourth facet (launching an agent) and two
+      // retrieval terms, which is what makes four new tools findable at all -
+      // the declaration teaches capabilities, never tool names, and "the user
+      // wants to launch their own agent" is a capability nothing else in the
+      // catalog covers. Second, its `act` and `characteristicAndLimits` lines
+      // gained one clause each: that a launch exists here, and that it is
+      // immediate normal-mode only, because a model that believes it can
+      // schedule a launch or set an airdrop spends a call proving otherwise.
+      // Third, the COVERAGE line gained nine words saying launching is base
+      // and robinhood only - the same reason its trade clause exists.
+      //
+      // WHY COMPRESSION WAS INSUFFICIENT. The first draft cost +652: it named
+      // the four tools' shapes in the facet summary, listed four retrieval
+      // terms, and spelled out in the coverage line WHY solana and ethereum are
+      // closed. All three were cut to their smallest true form - the facet
+      // summary now names the four verbs and nothing else, two retrieval terms
+      // were dropped as near-duplicates of the facet label, and the closed
+      // chains' MEASURED reasons moved into the tool descriptions, which carry
+      // them in full and which an agent reads only once it has reached the
+      // namespace. No other namespace's prose was touched to fund this.
       // The coordinator reviews this diff.
       expect(bytes).toBeLessThanOrEqual(mode.ceiling);
     });

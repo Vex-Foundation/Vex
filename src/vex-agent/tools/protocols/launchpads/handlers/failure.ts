@@ -7,7 +7,7 @@
  * and stops.
  *
  * The redaction is NOT owned here. It routes through `summarizeProtocolError`,
- * the runtime's canonical provider-safe summarizer, exactly as the Trench and
+ * the runtime's canonical provider-safe summarizer, exactly as the
  * pools lanes do. This module is a thin adapter, not a second copy of that
  * policy: a scrub-core fix has to protect every caller at once, which it
  * cannot do if a venue keeps its own preprocessor.
