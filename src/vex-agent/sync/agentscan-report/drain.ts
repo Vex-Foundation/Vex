@@ -14,6 +14,12 @@ import type { AgentscanClient, SendOutcome } from "../../agentscan/client.js";
 import logger from "@utils/logger.js";
 import type { AgentscanReportResult } from "../agentscan-report.js";
 import { tryConsumeAgentscanSendSlot } from "./rate-limit.js";
+import {
+  AGENTSCAN_ROLE_RECHECK_MS,
+  isRoleWithheld,
+  noteRoleAcceptedByServer,
+  noteRoleRefusedByServer,
+} from "../../agentscan/server-capability.js";
 
 /** Contract batch ceiling (server rejects larger batches with 413). */
 export const AGENTSCAN_BATCH_LIMIT = 500;
@@ -29,6 +35,26 @@ export const AGENTSCAN_MAX_BATCHES_PER_TICK = 6;
 
 /** An envelope-level 400 is a client bug, not weather — hold the rows a full hour and say so loudly. */
 const INVALID_BATCH_HOLD_SECONDS = 3600;
+
+/** How long a row waits when the deployed server does not carry its role yet. */
+const ROLE_WITHHELD_HOLD_SECONDS = AGENTSCAN_ROLE_RECHECK_MS / 1000;
+
+/**
+ * The reason written to `agentscan_outbox.last_error` for a withheld row. Code
+ * words only, and the role is the whole diagnosis: it names both what is owed
+ * and which server deployment would clear it.
+ */
+const roleNotDeployedReason = (eventRole: string): string => `role_not_deployed ${eventRole}`;
+
+/**
+ * The row's role, or null when the activity row vanished or carries no role this
+ * code can read. A null is never treated as provisional: an unreadable role
+ * cannot be evidence about the server's vocabulary.
+ */
+function eventRoleOf(claimed: ClaimedOutboxEvent): string | null {
+  const role = claimed.activity?.["event_role"];
+  return typeof role === "string" ? role : null;
+}
 
 /**
  * The incremental scan-then-drain step: shared verbatim by the periodic
@@ -50,14 +76,14 @@ export async function drainIncremental(
   agentHash: string,
   ingestToken: string,
   atGeneration: number,
-): Promise<Pick<AgentscanReportResult, "enqueued" | "sent" | "rejected" | "deferred">> {
+): Promise<Pick<AgentscanReportResult, "enqueued" | "sent" | "rejected" | "deferred" | "owed">> {
   const enqueued = await reportingRepo.enqueueEligibleActivity(false, atGeneration);
   if (enqueued.kind === "stale_generation") {
     logger.warn("agentscan.report.enqueue_stale_generation", {
       reason: "registration_reset_since_state_read",
       atGeneration,
     });
-    return { enqueued: 0, sent: 0, rejected: 0, deferred: 0 };
+    return { enqueued: 0, sent: 0, rejected: 0, deferred: 0, owed: 0 };
   }
   const drain = await drainOutbox(client, agentHash, ingestToken, atGeneration);
   return { enqueued: enqueued.rows, ...drain };
@@ -68,10 +94,11 @@ export async function drainOutbox(
   agentHash: string,
   ingestToken: string,
   atGeneration: number,
-): Promise<{ sent: number; rejected: number; deferred: number }> {
+): Promise<{ sent: number; rejected: number; deferred: number; owed: number }> {
   let sent = 0;
   let rejected = 0;
   let deferred = 0;
+  let owed = 0;
 
   for (let batch = 0; batch < AGENTSCAN_MAX_BATCHES_PER_TICK; batch++) {
     // The lane's credential generation travels from the caller into the claim
@@ -111,6 +138,7 @@ export async function drainOutbox(
       sent += outcome.sent;
       rejected += outcome.rejected;
       deferred += outcome.deferred;
+      owed += outcome.owed;
       if (outcome.stop) {
         stop = true;
         break;
@@ -119,7 +147,7 @@ export async function drainOutbox(
     if (stop) break;
   }
 
-  return { sent, rejected, deferred };
+  return { sent, rejected, deferred, owed };
 }
 
 /**
@@ -140,11 +168,49 @@ async function sendGroup(
   ingestToken: string,
   group: ClaimedOutboxEvent[],
   atGeneration: number,
-): Promise<{ sent: number; rejected: number; deferred: number; stop: boolean }> {
+): Promise<{ sent: number; rejected: number; deferred: number; owed: number; stop: boolean }> {
   // A vanished activity row (cascade already removed its outbox rows) has
   // nothing to send and nothing to mark.
-  const mappable = group.filter((c) => c.activity !== null);
-  if (mappable.length === 0) return { sent: 0, rejected: 0, deferred: 0, stop: false };
+  const claimable = group.filter((c) => c.activity !== null);
+  if (claimable.length === 0) {
+    return { sent: 0, rejected: 0, deferred: 0, owed: 0, stop: false };
+  }
+
+  // THE GATE, BEFORE THE REQUEST. A role the last probe found the server does not
+  // carry is not put on the wire again until the recheck window lapses: sending
+  // it could only earn another per-item refusal, and each refusal spends a slot
+  // of the lane's minute budget answering a question that was already answered.
+  // The rows stay owed with the reason visible.
+  const withheld = claimable.filter((c) => {
+    const role = eventRoleOf(c);
+    return role !== null && isRoleWithheld(role, Date.now());
+  });
+  const withheldIds = new Set(withheld.map((c) => c.outboxId));
+  const mappable = claimable.filter((c) => !withheldIds.has(c.outboxId));
+  let owed = 0;
+  for (const item of withheld) {
+    const role = eventRoleOf(item) ?? "unknown";
+    const held = await reportingRepo.rescheduleOutbox(
+      [item.outboxId],
+      ROLE_WITHHELD_HOLD_SECONDS,
+      atGeneration,
+      roleNotDeployedReason(role),
+    );
+    if (held.kind === "stale_generation") {
+      logger.warn("agentscan.report.hold_stale_generation", {
+        rows: 1,
+        claimedAtGeneration: atGeneration,
+      });
+    }
+    owed += 1;
+  }
+  if (withheld.length > 0) {
+    logger.info("agentscan.report.role_withheld", {
+      rows: withheld.length,
+      roles: [...new Set(withheld.map((c) => eventRoleOf(c) ?? "unknown"))].sort(),
+    });
+  }
+  if (mappable.length === 0) return { sent: 0, rejected: 0, deferred: 0, owed, stop: false };
 
   const events = mappable.map((c) =>
     mapActivityToEvent(c.activity as Record<string, unknown>, { status: c.status }),
@@ -181,11 +247,45 @@ async function sendGroup(
       });
     }
 
+    // The probe's positive half: the server took a row of this role, so nothing
+    // about it is withheld any more, whatever an earlier deployment answered.
+    for (const item of mappable.filter((_, index) => !rejectedIndexes.has(index))) {
+      const role = eventRoleOf(item);
+      if (role !== null) noteRoleAcceptedByServer(role);
+    }
+
     let rejected = 0;
     let staleRejected = 0;
     for (const index of outcome.rejectedIndexes) {
       const item = mappable[index];
       if (item === undefined) continue;
+
+      // The probe's negative half. A refusal of a role the deployment does not
+      // carry yet withholds the role and leaves the row OWED with the reason; a
+      // refusal of anything else is our payload's fault and stays terminal.
+      const role = eventRoleOf(item);
+      if (role !== null && noteRoleRefusedByServer(role, Date.now())) {
+        const held = await reportingRepo.rescheduleOutbox(
+          [item.outboxId],
+          ROLE_WITHHELD_HOLD_SECONDS,
+          atGeneration,
+          roleNotDeployedReason(role),
+        );
+        if (held.kind === "stale_generation") {
+          logger.warn("agentscan.report.hold_stale_generation", {
+            rows: 1,
+            claimedAtGeneration: atGeneration,
+          });
+        }
+        owed += 1;
+        logger.warn("agentscan.report.role_not_deployed", {
+          activityId: item.activityId,
+          eventRole: role,
+          status: item.status,
+        });
+        continue;
+      }
+
       const rejection = await reportingRepo.markOutboxRejected(
         item.outboxId,
         "validation_failed",
@@ -210,9 +310,9 @@ async function sendGroup(
 
     const stale = staleSent + staleRejected;
     if (stale > 0) {
-      return { sent: sentIds.length - staleSent, rejected, deferred: stale, stop: true };
+      return { sent: sentIds.length - staleSent, rejected, deferred: stale, owed, stop: true };
     }
-    return { sent: sentIds.length, rejected, deferred: 0, stop: false };
+    return { sent: sentIds.length, rejected, deferred: 0, owed, stop: false };
   }
 
   const owedIds = mappable.map((c) => c.outboxId);
@@ -225,12 +325,12 @@ async function sendGroup(
     // owed; a genuine conflict surfaces at that re-register as a terminal 409.
     await reportingRepo.resetForReRegistration();
     logger.warn("agentscan.report.auth_lost_reregistering");
-    return { sent: 0, rejected: 0, deferred: owedIds.length, stop: true };
+    return { sent: 0, rejected: 0, deferred: owedIds.length, owed, stop: true };
   }
   if (outcome.kind === "stopped") {
     await reportingRepo.markStopped(outcome.reason);
     logger.warn("agentscan.report.stopped_by_server", { reason: outcome.reason });
-    return { sent: 0, rejected: 0, deferred: owedIds.length, stop: true };
+    return { sent: 0, rejected: 0, deferred: owedIds.length, owed, stop: true };
   }
   if (outcome.kind === "invalid") {
     // OUR envelope failed the server's schema — a client bug, not weather.
@@ -244,7 +344,7 @@ async function sendGroup(
       });
     }
     logger.error("agentscan.report.batch_invalid", { detail: outcome.detail, rows: owedIds.length });
-    return { sent: 0, rejected: 0, deferred: owedIds.length, stop: true };
+    return { sent: 0, rejected: 0, deferred: owedIds.length, owed, stop: true };
   }
   // retryable — the claim already stamped exponential backoff; the server's
   // own Retry-After overrides it when present.
@@ -261,5 +361,5 @@ async function sendGroup(
     detail: outcome.detail,
     rows: owedIds.length,
   });
-  return { sent: 0, rejected: 0, deferred: owedIds.length, stop: true };
+  return { sent: 0, rejected: 0, deferred: owedIds.length, owed, stop: true };
 }
