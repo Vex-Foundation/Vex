@@ -34,8 +34,11 @@
  * ## What may move between the quote and the execute
  *
  * The curve price may move: the floor already carries the tolerance the caller
- * authorized, so any fill at or above it executes normally. What may NOT move is
- * the pair, the side, the amount, the fee, the taxes, the implementation or the
+ * authorized, so any fill at or above it executes normally. The SELL fee's
+ * stated amount may move with it, because that number is an estimate of a rate
+ * on proceeds the receipt has not proven yet - its rate, its receiver and its
+ * policy are what bind. What may NOT move is the pair, the side, the amount, the
+ * fee policy, the buy fee's exact amount, the taxes, the implementation or the
  * accepted anti-sniper bound - each is refused BY NAME, and none of them is ever
  * quietly re-derived to make the trade fit.
  */
@@ -394,16 +397,41 @@ export function compareVirtualsExecutionInputs(
       `the amount that would reach the curve changed since the quote (approved ${snapshot.curveAmountRaw} raw units, now ${fresh.curveAmountRaw})`,
     );
   }
+  // THE FEE POLICY - the disposition, the rate, the receiver and the words the
+  // person read. All four are bound on both sides and none of them may move.
   if (
     snapshot.fee.disposition !== fresh.fee.disposition
-    || snapshot.fee.amountRaw !== fresh.fee.amountRaw
     || snapshot.fee.bps !== fresh.fee.bps
     || !sameAddress(snapshot.fee.receiver, fresh.fee.receiver)
     || snapshot.fee.disclosureText !== fresh.fee.disclosureText
   ) {
     return driftRefusal(
       "fee_changed",
-      `the Vex fee resolved differently than at quote time (approved ${snapshot.fee.amountRaw ?? "none"} raw units, now ${fresh.fee.amountRaw ?? "none"})`,
+      "the Vex fee resolved differently than at quote time: its disposition, rate, receiver or disclosure is not the one the quote stated"
+      + ` (approved ${snapshot.fee.bps} bps ${snapshot.fee.disposition} to ${snapshot.fee.receiver}, now ${fresh.fee.bps} bps ${fresh.fee.disposition} to ${fresh.fee.receiver})`,
+    );
+  }
+  // THE FEE AMOUNT, only where the amount IS the charge.
+  //
+  // On a BUY the fee is an exact deduction from the input, known before the
+  // trade and stated exactly on the card: a different amount is a different
+  // charge, and it stays refused. On a SELL the fee is a rate on proceeds that
+  // do not exist until the receipt, and `amountRaw` on that arm is the
+  // quote-time ESTIMATE the card labels as one. It moves with any price
+  // movement the approved floor already tolerates and with every second a
+  // decaying anti-sniper tax runs, so comparing it exactly turned an otherwise
+  // acceptable price move into `fee_changed` and refused trades nothing was
+  // wrong with. What the person consented to on that arm is the RATE, the
+  // RECEIVER and the POLICY - all three held above - and how far the proceeds
+  // may fall is bounded by the sealed floor, enforced by the executor
+  // (`floorUnreachableRefusal`) and by the contract itself.
+  if (
+    snapshot.fee.disposition !== "charged_on_settled_output"
+    && snapshot.fee.amountRaw !== fresh.fee.amountRaw
+  ) {
+    return driftRefusal(
+      "fee_changed",
+      `the Vex fee amount resolved differently than at quote time (approved ${snapshot.fee.amountRaw ?? "none"} raw units, now ${fresh.fee.amountRaw ?? "none"})`,
     );
   }
   if (snapshot.taxes.acceptedAntiSniperPct !== fresh.taxes.acceptedAntiSniperPct) {

@@ -8,7 +8,15 @@
  *   decrypts) -> CLAIM the approved quote -> re-read the whole chain state at
  *   the head -> re-price -> hold every "yes" row of the authority table against
  *   the sealed snapshot -> resolve the signing key -> plan the rows -> stage the
- *   allowance -> stage the trade -> decode the receipt -> only then the fee leg.
+ *   allowance -> HOLD THE WHOLE TABLE AGAIN, on the PINNED signing reader, at
+ *   the last gate before the key -> stage the trade -> decode the receipt ->
+ *   only then the fee leg.
+ *
+ * The second hold is not a duplicate of the first. The first runs on the
+ * fallback reader and BEFORE the allowance legs; the trade is signed on the
+ * pinned node minutes later, and a tax, a proxy implementation, the agent's
+ * lifecycle and the proposal's own expiry can all move in between
+ * (`trade/final-authority.ts`).
  *
  * ## What `simulateOnly` is, and why it stops where it does
  *
@@ -93,6 +101,7 @@ import { parseTradeAmount, readTradeParams, type PartialTradeParams, type TradeP
 import { buyTaxedInFor, executionInputsFrom, human, priceCurveTrade, type PricedCurveTrade } from "./trade/pricing.js";
 import { runCurveFeeLeg, type CurveFeeCollection } from "./trade/fee-leg.js";
 import { runCurveLeg, type CurveLegOutcome } from "./trade/broadcast.js";
+import { assertCurveTradeFinalAuthority } from "./trade/final-authority.js";
 import { QUOTE_PUBLIC_NAME, PROTOCOL, TRADE_TOOL_ID } from "./trade/tool-ids.js";
 
 /** The AMM tool that trades a graduated agent, per chain. */
@@ -346,6 +355,27 @@ export async function virtualsTradeExecute(
       const tx = buildTxForEvent(event, { params, state, trade, contractFloorRaw, deadline, spendToken });
       const outcome: CurveLegOutcome = await runCurveLeg({
         event, tx, clients, priorLeg, label: describeRole(event.eventRole),
+        // THE TRADE'S OWN AUTHORITY, re-established at the last gate before the
+        // key and through the PINNED signing reader - the node that will
+        // broadcast these bytes, not the fallback list the plan was read on.
+        // Everything checked above this loop was proven before the allowance
+        // legs mined, and an approval takes block time during which a tax can be
+        // raised, a proxy upgraded, an agent graduated or the proposal expired.
+        // Only the swap leg carries it: an approval has no floor, no fee and no
+        // tax to be held to.
+        ...(event.eventRole === "swap"
+          ? {
+              onBeforeSign: (request) =>
+                assertCurveTradeFinalAuthority({
+                  client: clients.publicClient,
+                  approved,
+                  params,
+                  wallet,
+                  plannedTx: tx,
+                  request,
+                }),
+            }
+          : {}),
       });
 
       if (outcome.kind === "ambiguous") {

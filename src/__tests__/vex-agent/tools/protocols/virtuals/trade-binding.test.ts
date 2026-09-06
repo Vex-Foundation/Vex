@@ -239,6 +239,70 @@ describe("compareVirtualsExecutionInputs - the pre-sign authority walk", () => {
     expect(compareVirtualsExecutionInputs(snapshot, fresh)).toBeNull();
   });
 
+  it("does NOT refuse a moved SELL fee ESTIMATE while the rate, receiver and policy stand", () => {
+    // The sell fee is a RATE on proceeds that do not exist until the receipt.
+    // `amountRaw` on that arm is the quote-time ESTIMATE, and it moves with any
+    // price movement the approved floor already tolerates and with every second
+    // a decaying anti-sniper tax runs. Comparing it exactly turned an accepted
+    // price move into `fee_changed` and refused a trade nothing was wrong with.
+    const sellSnapshot = sealVirtualsSnapshot(sellFields());
+    const moved = {
+      ...inputsFrom(sellFields()),
+      fee: { ...sellFields().fee, amountRaw: "2169702031000000" },
+    } as VirtualsExecutionInputs;
+    expect(compareVirtualsExecutionInputs(sellSnapshot, moved)).toBeNull();
+  });
+
+  it("still refuses a SELL fee whose rate, receiver, policy or disposition moved", () => {
+    const sellSnapshot = sealVirtualsSnapshot(sellFields());
+    const base = inputsFrom(sellFields());
+    const moved: Array<[string, VirtualsExecutionInputs]> = [
+      ["receiver", { ...base, fee: { ...sellFields().fee, receiver: "0x000000000000000000000000000000000000dEaD" } } as VirtualsExecutionInputs],
+      ["rate", { ...base, fee: { ...sellFields().fee, bps: 50 } } as VirtualsExecutionInputs],
+      ["policy text", { ...base, fee: { ...sellFields().fee, disclosureText: "Vex charges nothing." } } as VirtualsExecutionInputs],
+      [
+        "disposition",
+        {
+          ...base,
+          fee: {
+            disposition: "charged_on_input",
+            amountRaw: "2169702031074365",
+            receiver: sellFields().fee.receiver,
+            bps: 25,
+            disclosureText: sellFields().fee.disclosureText,
+          },
+        } as VirtualsExecutionInputs,
+      ],
+    ];
+    for (const [what, fresh] of moved) {
+      expect(compareVirtualsExecutionInputs(sellSnapshot, fresh)?.kind, `${what} must refuse`).toBe("fee_changed");
+    }
+  });
+
+  it("still refuses a SELL whose curve tax ROSE, even though the fee estimate moved with it", () => {
+    // The two halves of this lane's fix must not cancel: letting the sell fee
+    // ESTIMATE move is safe only because the thing that would move it
+    // dishonestly - the curve's own tax - is bound on its own row. A raised
+    // sellTax lowers the proceeds and therefore the estimate, and the refusal
+    // must be about the TAX, not about the number it dragged with it.
+    const sellSnapshot = sealVirtualsSnapshot(sellFields());
+    const raised = {
+      ...inputsFrom(sellFields()),
+      taxes: { ...sellFields().taxes, protocolTaxPct: 25 },
+      fee: { ...sellFields().fee, amountRaw: "1600000000000000" },
+    } as VirtualsExecutionInputs;
+    const drift = compareVirtualsExecutionInputs(sellSnapshot, raised);
+    expect(drift?.kind).toBe("tax_changed");
+  });
+
+  it("keeps the BUY fee amount EXACT - it is a known charge, not an estimate", () => {
+    const fresh = {
+      ...inputsFrom(buyFields()),
+      fee: { ...buyFields().fee, amountRaw: "1250000000000001" },
+    } as VirtualsExecutionInputs;
+    expect(compareVirtualsExecutionInputs(snapshot, fresh)?.kind).toBe("fee_changed");
+  });
+
   it("every refusal carries a hint that says nothing was signed and nothing re-cut", () => {
     const drift = compareVirtualsExecutionInputs(snapshot, { ...inputsFrom(buyFields()), curveAmountRaw: "1" });
     expect(drift?.hint).toMatch(/Nothing was signed/);
