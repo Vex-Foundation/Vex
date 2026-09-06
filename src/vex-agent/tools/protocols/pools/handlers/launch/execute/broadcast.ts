@@ -61,6 +61,7 @@ import type { ToolResult } from "../../../../../types.js";
 import { fail } from "../../../../handler-helpers.js";
 import { poolsFailureDetail } from "../../failure.js";
 import { settlePoolsLaunchFailure } from "./authorize.js";
+import { assertPoolsLaunchNotExpired } from "./expiry.js";
 import {
   POOLS_LAUNCHPAD,
   postPoolsLaunchAttribution,
@@ -131,6 +132,14 @@ export async function broadcastPoolsLaunch(x: BroadcastPoolsLaunchInput): Promis
       // names.
       { to: x.plan.call.to, data: x.plan.call.data, value: x.plan.call.valueWei },
       {
+        // THE LAST GATE BEFORE THE KEY: the calldata's own clocks, asked again
+        // after every stall - see `./expiry.ts` for why the earlier checks
+        // cannot cover this window. A throw here means nothing was signed and
+        // nothing was sent, which is what the pre-sign refusal below tells the
+        // user. Both entry points reach it because both broadcast through here.
+        onBeforeSign: async () => {
+          assertPoolsLaunchNotExpired(x.plan.tuple, Date.now());
+        },
         onNonceReserved: (request) => reserveActivityEvmNonce(launchRowId, request),
         onHashStaged: async (handles) => {
           signedLocally = true;

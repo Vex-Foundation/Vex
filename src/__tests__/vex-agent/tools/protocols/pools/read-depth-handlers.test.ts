@@ -273,7 +273,7 @@ describe("pools.launch_assets", () => {
     stubUnreachableChain();
     const res = await POOLS_HANDLERS["pools.launch_assets"]!({ limit: 1 }, CTX);
     expect(String(data(res).note)).toContain("SIGNED_STOCK");
-    expect(String(data(res).note)).toContain("30 to 120 seconds");
+    expect(String(data(res).note)).toContain("configured between 30 and 120 seconds");
   });
 
   it("names the factory mode per asset, replayed from the captured chain read", async () => {

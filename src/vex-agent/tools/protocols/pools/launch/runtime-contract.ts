@@ -253,9 +253,10 @@ export interface PoolsPreparedLaunch {
    * WHY it expires then - because the three possible reasons have wildly
    * different windows and a countdown with no cause is unactionable.
    *
-   *   `quote_window`  a SIGNED_STOCK pair, whose backend-signed price quote the
-   *                   factory accepts only 30 to 120 seconds after it was
-   *                   observed. This is the short one, and it is why a
+   *   `quote_window`  a SIGNED_STOCK pair, whose backend-signed price quote is
+   *                   valid only for that pair's own window (`maxQuoteAge`,
+   *                   configurable between 30 and 120 seconds; no minimum age
+   *                   applies). This is the short one, and it is why a
    *                   stock-paired confirmation has to be acted on immediately.
    *   `gateway_deadline`  the deadline inside the launch calldata itself.
    *   `vex_window`    Vex's own cap on how long a verified quote may sit, which
