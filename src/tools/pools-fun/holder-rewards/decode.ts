@@ -207,11 +207,18 @@ export function decodePoolsHolderRewardClaim(
       continue;
     }
     if (!sameAddress(args.account, expected.account)) continue;
+    // A DUAL-SHAPE LOG WITHOUT ITS SECOND WORD IS NOT EVIDENCE. It cannot come
+    // out of `decodeEventLog` against the dual ABI - the call throws first - and
+    // it is skipped rather than defaulted, because the alternative reachable
+    // from here was `?? 0n`: a settlement amount nobody read, recorded as a
+    // payout of nothing.
+    const pairedAmountRaw = shape === "dual" ? args.amountPaired : null;
+    if (pairedAmountRaw === undefined) continue;
     decoded.push({
       account: getAddress(args.account),
       distributor: getAddress(expected.distributor),
       tokenAmountRaw: args.amount,
-      pairedAmountRaw: shape === "dual" ? (args.amountPaired ?? 0n) : null,
+      pairedAmountRaw,
       shape,
     });
   }

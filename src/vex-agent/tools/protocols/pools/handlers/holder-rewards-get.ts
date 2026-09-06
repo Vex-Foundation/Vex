@@ -49,18 +49,30 @@ import { isEvmAddress, readAddressParam } from "./project.js";
 import type { ProtocolExecutionContext } from "../../types.js";
 
 function projectLeg(leg: PoolsRewardLeg): Record<string, unknown> {
-  const human = poolsRewardAmountHuman(leg.earnedRaw, leg.decimals);
+  // TWO DIFFERENT ABSENCES, and neither is a zero. `earnedRaw === null` means
+  // the accrual call itself did not answer, so how much has accrued is unknown;
+  // a null SCALE means the amount was read but cannot be rendered. The leg is
+  // still reported either way, because its asset is a fact the holder needs.
+  const human = leg.earnedRaw === null ? null : poolsRewardAmountHuman(leg.earnedRaw, leg.decimals);
   return {
     asset: leg.asset,
     symbol: leg.symbol,
     decimals: leg.decimals,
     earnedRaw: leg.earnedRaw,
-    ...(human !== null
-      ? { earned: human }
-      : {
+    ...(human !== null ? { earned: human } : {}),
+    ...(leg.earnedRaw === null
+      ? {
+        earnedUnavailable:
+            "The distributor's accrual view for this leg did not answer at this block, so what has accrued is "
+            + "UNKNOWN. That is a missing read, not a balance of zero.",
+      }
+      : {}),
+    ...(leg.earnedRaw !== null && human === null
+      ? {
         earnedUnavailable:
             "The asset's decimals() did not answer, so the raw amount above cannot be scaled. Do not assume 18.",
-      }),
+      }
+      : {}),
   };
 }
 
@@ -257,7 +269,15 @@ export async function poolsHolderRewardsGetHandler(
       );
     }
   }
-  if (api !== null && api.earned !== null && api.earned !== onchain.tokenLeg.earnedRaw) {
+  // A COMPARISON NEEDS BOTH SIDES. A null `earnedRaw` is the on-chain read not
+  // answering, and calling that a disagreement with the launchpad would invent a
+  // conflict between one number and no number.
+  if (
+    api !== null
+    && api.earned !== null
+    && onchain.tokenLeg.earnedRaw !== null
+    && api.earned !== onchain.tokenLeg.earnedRaw
+  ) {
     // Not necessarily a defect: the two reads are at different instants and this
     // reward streams continuously, so a small difference is expected. It is
     // still SHOWN, because the alternative is an agent quoting one number while

@@ -76,7 +76,11 @@ import {
   type PoolsHolderRewardsClaimSimulation,
 } from "@tools/pools-fun/holder-rewards/mutations.js";
 import { crossCheckPoolsHolderRewardsPrepare } from "@tools/pools-fun/holder-rewards/prepare-cross-check.js";
-import { poolsRewardAmountHuman } from "@tools/pools-fun/holder-rewards/read.js";
+import {
+  poolsReadableScale,
+  poolsRewardAmountHuman,
+  poolsRewardAmountHumanAtScale,
+} from "@tools/pools-fun/holder-rewards/read.js";
 import {
   createAgentActivityIntent,
   markActivityBroadcast,
@@ -84,6 +88,7 @@ import {
   markBroadcastAccepted,
   confirmActivityEvent,
   failActivityEvent,
+  type AgentActivityLegInput,
 } from "@vex-agent/db/repos/agent-activity.js";
 import { noteHandlerPendingReason } from "@vex-agent/tools/protocols/runtime/pending-provenance.js";
 import logger from "@utils/logger.js";
@@ -105,6 +110,7 @@ import {
   noHolderRewardsResult,
   unsupportedSuiteResult,
   type PoolsRewardPayoutLeg,
+  type PoolsSignableRewardLeg,
 } from "./holder-rewards-shared.js";
 
 const TOOL_ID = "pools.holder_rewards_claim";
@@ -196,7 +202,9 @@ export async function poolsHolderRewardsClaimHandler(
   if (prepared.kind !== "ready") return prepared.result;
   const { binding, simulation, gasLimit, crossCheck } = prepared;
 
-  const legs = payoutLegs(binding, simulation);
+  const payout = payoutLegs(binding, simulation);
+  if (payout.kind === "refused") return fail(payout.reason);
+  const legs = payout.legs;
   const base = {
     chain: POOLS_CHAIN_SLUG,
     chainId: POOLS_CHAIN_ID,
@@ -231,6 +239,13 @@ export async function poolsHolderRewardsClaimHandler(
         + "signed and no gas was spent.",
     });
   }
+
+  // EVERY PAYOUT'S SCALE, PROVEN, BEFORE ANY PATH THAT COULD SIGN. `simulateOnly`
+  // is held to it as well: it promises that every check a real claim runs was
+  // run, so a stop the real claim would make must stop it too or the two answers
+  // describe different worlds.
+  const signable = signableLegs(legs);
+  if (signable.kind === "refused") return fail(signable.reason);
 
   if (gasLimit === null) {
     return fail(
@@ -272,7 +287,7 @@ export async function poolsHolderRewardsClaimHandler(
     params,
     binding,
     simulation,
-    legs,
+    legs: signable.legs,
   });
 }
 
@@ -456,7 +471,7 @@ function nothingToClaimResult(
 function payoutLegs(
   binding: PoolsHolderRewardsBinding,
   simulation: Extract<PoolsHolderRewardsClaimSimulation, { kind: "would_pay" }>,
-): readonly PoolsRewardPayoutLeg[] {
+): PayoutLegsOutcome {
   const legs: PoolsRewardPayoutLeg[] = [
     {
       side: "token",
@@ -467,22 +482,104 @@ function payoutLegs(
       earnedRaw: binding.tokenLeg.earnedRaw,
     },
   ];
-  // The paired leg exists ONLY when this runtime's claim() returned a second
-  // word AND the distributor named a paired asset with a scale. A leg without
-  // its scale is unreadable, and a leg the runtime never returns is absent
-  // rather than zero.
-  if (simulation.pairedAmountRaw !== null && binding.pairedLeg !== null) {
+
+  // WHETHER A PAIRED PAYOUT EXISTS IS THE RUNTIME'S ANSWER, not an accrual
+  // read's. `claim()` simulated at the pinned block either returns a second word
+  // or it does not, and that word is what the transaction will pay. `earned` and
+  // `earnedPaired` are optional views beside it; when one of them fails the
+  // amount is still proven, so the leg must survive (Codex final review, lane 2 -
+  // a both-mode claim paid two assets and confirmed a row naming one).
+  if (simulation.pairedAmountRaw !== null) {
+    // ITS IDENTITY COMES FROM `pairedAsset()`, the distributor's own statement of
+    // which asset the second leg pays in. The bind reads it with the suite
+    // facts and the reward read reads it beside the accruals - the same view at
+    // the same block, through two multicalls, either of which can fail alone.
+    // Either answer establishes the asset; only the reward read also carries its
+    // scale and label.
+    const bound = binding.pairedAsset === null ? null : getAddress(binding.pairedAsset);
+    const beside = binding.pairedLeg === null ? null : getAddress(binding.pairedLeg.asset);
+    if (bound !== null && beside !== null && bound !== beside) {
+      // TWO READS OF ONE VIEW DISAGREEING is not a preference to resolve. One of
+      // them describes a distributor this is not, and picking either would send
+      // a payout to a row naming an asset the chain did not.
+      return {
+        kind: "refused",
+        reason:
+          `${TOOL_ID} refuses this claim: the distributor's pairedAsset() answered ${bound} when read with its `
+          + `suite binding and ${beside} when read with its reward state, at the same block. Two reads of one `
+          + "view cannot name two assets, so which asset this claim's second leg would pay is UNKNOWN and Vex "
+          + "will not pick one. Nothing was signed.",
+      };
+    }
+    const asset = bound ?? beside;
+    if (asset === null) {
+      return {
+        kind: "refused",
+        reason:
+          `${TOOL_ID} refuses this claim: the distributor's claim() would pay a SECOND amount `
+          + `(${simulation.pairedAmountRaw} base units) and its pairedAsset() did not answer, so which asset `
+          + "that amount is in is UNKNOWN. Vex will not sign a transaction whose payout it cannot name, and it "
+          + "will not record one under a guessed asset either. Nothing was signed. Retry - a view that did not "
+          + "answer at one block usually answers at the next.",
+      };
+    }
+    // The scale and the label come with the reward read or not at all; a payout
+    // whose scale nobody read is refused by `signableLegs`, never defaulted.
+    const meta = beside === asset ? binding.pairedLeg : null;
     legs.push({
       side: "paired",
-      asset: getAddress(binding.pairedLeg.asset),
-      symbol: binding.pairedLeg.symbol,
-      decimals: binding.pairedLeg.decimals,
+      asset,
+      symbol: meta?.symbol ?? null,
+      decimals: meta?.decimals ?? null,
       amountRaw: simulation.pairedAmountRaw,
-      earnedRaw: binding.pairedLeg.earnedRaw,
+      earnedRaw: meta?.earnedRaw ?? null,
     });
   }
-  return legs;
+  return { kind: "legs", legs };
 }
+
+type PayoutLegsOutcome =
+  | { readonly kind: "legs"; readonly legs: readonly PoolsRewardPayoutLeg[] }
+  | { readonly kind: "refused"; readonly reason: string };
+
+/**
+ * The legs a durable row may be written from, or a named refusal.
+ *
+ * THE LAST FACT ESTABLISHED BEFORE THE MUTATION. A row records how much money
+ * moved, and an amount without its scale does not say that: `"25000"` is 0.025
+ * at three decimals and 0.000000000000025 at eighteen. The handler used to fill
+ * the gap with `tokenDecimals: 0` and `amountHuman: "0"`, which turns a positive
+ * payout into a durable statement that nothing was paid - the exact shape rule
+ * 90 forbids on the money path. So the scale is proven here, before the signer
+ * is opened, and an unprovable one refuses BY NAME.
+ *
+ * The READ arm does not come through here: `dryRun` shows the raw amount and
+ * says the scale is unknown, which is the honest answer to a question that moves
+ * no money and denies the holder nothing.
+ */
+function signableLegs(legs: readonly PoolsRewardPayoutLeg[]): SignableLegsOutcome {
+  const signable: PoolsSignableRewardLeg[] = [];
+  for (const leg of legs) {
+    const scale = poolsReadableScale(leg.decimals);
+    if (scale === null) {
+      return {
+        kind: "refused",
+        reason:
+          `${TOOL_ID} refuses this claim: ${leg.asset}, the asset its ${leg.side} leg would pay `
+          + `${leg.amountRaw} base units of, did not answer decimals(), so how much money that is cannot be `
+          + "stated. Vex does not assume 18, and it will not write an activity row claiming a payout at a scale "
+          + "nobody read. Nothing was signed and the rewards are untouched. Retry - a view that did not answer "
+          + "at one block usually answers at the next.",
+      };
+    }
+    signable.push({ ...leg, decimals: scale });
+  }
+  return { kind: "legs", legs: signable };
+}
+
+type SignableLegsOutcome =
+  | { readonly kind: "legs"; readonly legs: readonly PoolsSignableRewardLeg[] }
+  | { readonly kind: "refused"; readonly reason: string };
 
 function projectPayoutLeg(leg: PoolsRewardPayoutLeg): Record<string, unknown> {
   const human = poolsRewardAmountHuman(leg.amountRaw.toString(), leg.decimals);
@@ -498,10 +595,35 @@ function projectPayoutLeg(leg: PoolsRewardPayoutLeg): Record<string, unknown> {
         amountUnavailable:
             "The asset's decimals() did not answer, so the raw amount above cannot be scaled. Do not assume 18.",
       }),
+    // The PAYOUT above is what the simulation proved; the accrual figure beside
+    // it is an optional second view and its absence is reported as absence. A
+    // null here never means the wallet has accrued nothing.
     earnedRaw: leg.earnedRaw,
-    earnedNote:
-      "earnedRaw is the distributor's accrual view at the same block. It differs from the simulated payout by "
-      + "the time between the two reads, because the reward streams continuously.",
+    earnedNote: leg.earnedRaw === null
+      ? "The distributor's accrual view for this leg (earned/earnedPaired) did not answer at this block, so it "
+        + "is not shown. That is a missing READ, not a balance of zero - the amount above is what the claim "
+        + "itself would pay and it was simulated, not accrued."
+      : "earnedRaw is the distributor's accrual view at the same block. It differs from the simulated payout by "
+        + "the time between the two reads, because the reward streams continuously.",
+  };
+}
+
+/**
+ * One activity leg from a scale-proven payout leg.
+ *
+ * ONE PLACE where a payout becomes a durable row, so there is one place a scale
+ * or a human figure could ever be invented - and by construction neither can be:
+ * `decimals` is the proven brand and `amountHuman` is rendered from it. The
+ * symbol is display-only, so an asset that named none is written WITHOUT the
+ * field rather than with an empty string that would read as a name.
+ */
+function activityLeg(leg: PoolsSignableRewardLeg): AgentActivityLegInput {
+  return {
+    tokenAddress: leg.asset,
+    ...(leg.symbol === null ? {} : { tokenSymbol: leg.symbol }),
+    tokenDecimals: leg.decimals,
+    amountHuman: poolsRewardAmountHumanAtScale(leg.amountRaw.toString(), leg.decimals),
+    amountRaw: leg.amountRaw.toString(),
   };
 }
 
@@ -516,7 +638,8 @@ interface ExecuteClaimInput {
   readonly params: Record<string, unknown>;
   readonly binding: PoolsHolderRewardsBinding;
   readonly simulation: Extract<PoolsHolderRewardsClaimSimulation, { kind: "would_pay" }>;
-  readonly legs: readonly PoolsRewardPayoutLeg[];
+  /** Scale-proven, so every amount this writes can be stated rather than guessed. */
+  readonly legs: readonly PoolsSignableRewardLeg[];
 }
 
 async function executeClaim(x: ExecuteClaimInput): Promise<ToolResult> {
@@ -553,30 +676,17 @@ async function executeClaim(x: ExecuteClaimInput): Promise<ToolResult> {
             claimReturnWordCount: x.simulation.returnWordCount,
             simulatedAtBlock: x.binding.blockNumber.toString(),
           },
-          tokenOut: {
-            tokenAddress: tokenLeg.asset,
-            tokenSymbol: tokenLeg.symbol ?? "",
-            tokenDecimals: tokenLeg.decimals ?? 0,
-            amountHuman: poolsRewardAmountHuman(tokenLeg.amountRaw.toString(), tokenLeg.decimals) ?? "0",
-            amountRaw: tokenLeg.amountRaw.toString(),
-          },
+          // The scale is PROVEN (`signableLegs`), so every amount here is stated
+          // rather than defaulted. The symbol is display-only and is OMITTED
+          // when the asset did not name one - an empty string would read as a
+          // symbol the chain gave us.
+          tokenOut: activityLeg(tokenLeg),
           // DECLARED ONLY WHEN THIS RUNTIME PAYS ONE. `roleLegsIncomplete`
           // requires an executed second amount for every row that names a second
           // token, so declaring a leg the chain will never fill would hold the
           // row incomplete forever and re-sweep it for an amount that was never
           // coming.
-          ...(pairedLeg === null
-            ? {}
-            : {
-              tokenOut2: {
-                tokenAddress: pairedLeg.asset,
-                tokenSymbol: pairedLeg.symbol ?? "",
-                tokenDecimals: pairedLeg.decimals ?? 0,
-                amountHuman:
-                    poolsRewardAmountHuman(pairedLeg.amountRaw.toString(), pairedLeg.decimals) ?? "0",
-                amountRaw: pairedLeg.amountRaw.toString(),
-              },
-            }),
+          ...(pairedLeg === null ? {} : { tokenOut2: activityLeg(pairedLeg) }),
         },
       ],
     });
@@ -717,14 +827,22 @@ async function executeClaim(x: ExecuteClaimInput): Promise<ToolResult> {
   try {
     await confirmActivityEvent(rowId, {
       executedAmountOutRaw: paid.tokenAmountRaw.toString(),
-      executedAmountOutHuman:
-        poolsRewardAmountHuman(paid.tokenAmountRaw.toString(), tokenLeg.decimals) ?? "0",
+      executedAmountOutHuman: poolsRewardAmountHumanAtScale(
+        paid.tokenAmountRaw.toString(),
+        tokenLeg.decimals,
+      ),
+      // EVERY PROVEN LEG IS SETTLED. The row declared a second leg exactly when
+      // the runtime returns a second word, so a receipt carrying that amount
+      // must record it: dropping it leaves `roleLegsIncomplete` true forever and
+      // the money the claim actually paid unrecorded.
       ...(pairedLeg === null || paid.pairedAmountRaw === null
         ? {}
         : {
           executedAmountOut2Raw: paid.pairedAmountRaw.toString(),
-          executedAmountOut2Human:
-              poolsRewardAmountHuman(paid.pairedAmountRaw.toString(), pairedLeg.decimals) ?? "0",
+          executedAmountOut2Human: poolsRewardAmountHumanAtScale(
+            paid.pairedAmountRaw.toString(),
+            pairedLeg.decimals,
+          ),
         }),
     });
   } catch (err) {
@@ -763,9 +881,12 @@ async function executeClaim(x: ExecuteClaimInput): Promise<ToolResult> {
       `Claimed holder rewards on ${x.token}: `
       + x.legs
         .map((leg, index) => {
-          const raw = index === 0 ? paid.tokenAmountRaw : (paid.pairedAmountRaw ?? 0n);
-          const human = poolsRewardAmountHuman(raw.toString(), leg.decimals);
-          return `${human ?? `${raw} raw`} ${leg.symbol ?? leg.asset}`;
+          const raw = index === 0 ? paid.tokenAmountRaw : paid.pairedAmountRaw;
+          // A leg the row declared and the receipt did not carry is UNPROVEN,
+          // and saying "0" of it would be the invented figure this path exists
+          // to refuse.
+          if (raw === null) return `an unproven amount of ${leg.symbol ?? leg.asset}`;
+          return `${poolsRewardAmountHumanAtScale(raw.toString(), leg.decimals)} ${leg.symbol ?? leg.asset}`;
         })
         .join(" and ")
       + `. Tx: ${outcome.txHash}`,
@@ -784,7 +905,7 @@ async function executeClaim(x: ExecuteClaimInput): Promise<ToolResult> {
         assetSymbol: leg.symbol,
         decimals: leg.decimals,
         amountRaw: raw === null ? null : raw.toString(),
-        amount: raw === null ? null : poolsRewardAmountHuman(raw.toString(), leg.decimals),
+        amount: raw === null ? null : poolsRewardAmountHumanAtScale(raw.toString(), leg.decimals),
       };
     }),
     /**

@@ -200,15 +200,57 @@ const ERC20_DISPLAY_ABI = [
   },
 ] as const;
 
-/** One reward leg's amount, with everything needed to render it honestly. */
+/**
+ * One reward leg: the ASSET it pays in, its scale, and the distributor's accrual
+ * view of it.
+ *
+ * IDENTITY AND ACCRUAL ARE SEPARATE FACTS, and the split is load-bearing. The
+ * asset and its `decimals()` say WHAT a payout is and HOW TO READ IT; `earned`
+ * and `earnedPaired` say how much has accrued so far. The accrual reads are
+ * optional - they differ between the live runtimes and a multicall entry can
+ * simply fail - while a claim that pays this leg still needs its identity and
+ * scale to record what moved. Letting the accrual read decide the leg's
+ * existence discarded both (Codex final review, lane 2), so the leg exists as
+ * soon as its asset does and `earnedRaw` is nullable.
+ */
 export interface PoolsRewardLeg {
   /** The asset the leg pays in. */
   readonly asset: string;
   readonly symbol: string | null;
   /** `null` means the token's `decimals()` did not answer - never assume 18. */
   readonly decimals: number | null;
-  /** Base units, as a decimal string. Never a JS number. */
-  readonly earnedRaw: string;
+  /**
+   * The accrual view in base units, as a decimal string. `null` means the
+   * accrual call did not answer, which is NOT a balance of zero.
+   */
+  readonly earnedRaw: string | null;
+}
+
+declare const POOLS_READABLE_SCALE: unique symbol;
+
+/**
+ * A decimals value already PROVEN renderable by {@link poolsReadableScale}.
+ *
+ * The brand exists so a money path cannot render an amount at a scale nobody
+ * checked: a writer that holds one of these has passed the check, and a writer
+ * that has not cannot manufacture one. It is the type-level form of "no
+ * `decimals ?? 0`".
+ */
+export type PoolsReadableScale = number & { readonly [POOLS_READABLE_SCALE]: true };
+
+/**
+ * The scale, if this value can render a uint256 amount at all.
+ *
+ * `null` for an absent, fractional, negative or absurd scale. 77 is the last
+ * scale at which a uint256 still has a whole part, so anything beyond it is not
+ * an ERC-20 answer this code will act on.
+ */
+export function poolsReadableScale(decimals: number | null): PoolsReadableScale | null {
+  if (decimals === null || !Number.isInteger(decimals) || decimals < 0 || decimals > 77) return null;
+  // The single guarded crossing into the brand, immediately after the check that
+  // defines it (rule 04: a cast is a last-resort boundary escape with a real
+  // guard in front of it).
+  return decimals as PoolsReadableScale;
 }
 
 /**
@@ -225,7 +267,19 @@ export interface PoolsRewardLeg {
  * is how two tools start disagreeing about what a wallet is owed.
  */
 export function poolsRewardAmountHuman(raw: string, decimals: number | null): string | null {
-  if (decimals === null || !Number.isInteger(decimals) || decimals < 0 || decimals > 77) return null;
+  const scale = poolsReadableScale(decimals);
+  return scale === null ? null : poolsRewardAmountHumanAtScale(raw, scale);
+}
+
+/**
+ * The same rendering where the scale is ALREADY PROVEN, so the result is a
+ * string rather than a maybe-string.
+ *
+ * Every leg on the signing path passes {@link poolsReadableScale} before a row
+ * is written, which is what lets the writer state the human amount instead of
+ * falling back to a `"0"` that would read as "this paid nothing".
+ */
+export function poolsRewardAmountHumanAtScale(raw: string, decimals: PoolsReadableScale): string {
   const negative = raw.startsWith("-");
   const digits = (negative ? raw.slice(1) : raw).padStart(decimals + 1, "0");
   const whole = digits.slice(0, digits.length - decimals);
@@ -265,8 +319,10 @@ export type PoolsHolderRewardsOnChain =
       /** `earned(wallet)` and its asset. Always present - it is in every runtime. */
       readonly tokenLeg: PoolsRewardLeg;
       /**
-       * `earnedPaired(wallet)`. `null` when this distributor has no such
-       * function, which means the leg does not exist to be read, NOT zero.
+       * The paired asset's leg. `null` when the distributor names NO paired
+       * asset - the leg does not exist to be read, which is not zero. A paired
+       * asset whose `earnedPaired(wallet)` did not answer still has a leg, with
+       * a null `earnedRaw`: the identity and the scale are what a payout needs.
        */
       readonly pairedLeg: PoolsRewardLeg | null;
       /** `rewardExcluded(wallet)`; `null` when the call did not answer. */
@@ -436,11 +492,15 @@ export async function readPoolsHolderRewardsOnChain(input: {
   const pairedAsset = at<Address>(5);
   const earnedPaired = at<bigint>(1);
 
-  // The paired leg needs BOTH a paired asset and an `earnedPaired` that
-  // answered. Either one missing means there is no paired leg to report, and a
-  // zero here would be a claim the chain did not make.
+  // THE PAIRED ASSET IS WHAT THE LEG IS. `pairedAsset()` answering means this
+  // distributor has a second asset to pay in; `earnedPaired()` is only the
+  // accrual view over it and is absent on runtimes that do not carry it. Gating
+  // the leg on the accrual read threw away the asset and its scale whenever that
+  // one multicall entry failed, and a claim that then paid the asset had nothing
+  // to record it with (Codex final review, lane 2). A missing accrual figure is
+  // `null` below; it is never a zero the chain did not state.
   let pairedLeg: PoolsRewardLeg | null = null;
-  if (pairedAsset !== null && earnedPaired !== null) {
+  if (pairedAsset !== null) {
     let pairedDecimals: number | null = null;
     let pairedSymbol: string | null = null;
     try {
@@ -457,8 +517,10 @@ export async function readPoolsHolderRewardsOnChain(input: {
       pairedDecimals = d?.status === "success" ? Number(d.result) : null;
       pairedSymbol = s?.status === "success" ? (s.result as string) : null;
     } catch {
-      // The amount is already proven; only its label is missing, and a missing
-      // label is reported as `null` rather than costing the amount.
+      // The ASSET is already established; only its scale and label are missing,
+      // and both are reported as `null` rather than guessed. A caller that needs
+      // to write an amount refuses on the null scale; a caller that only shows
+      // the raw figure says the scale is unknown.
       pairedDecimals = null;
       pairedSymbol = null;
     }
@@ -466,7 +528,7 @@ export async function readPoolsHolderRewardsOnChain(input: {
       asset: pairedAsset,
       symbol: pairedSymbol,
       decimals: pairedDecimals,
-      earnedRaw: earnedPaired.toString(),
+      earnedRaw: earnedPaired === null ? null : earnedPaired.toString(),
     };
   }
 
