@@ -10,6 +10,10 @@
  * `getTransactionReceipt`. No signer, no wallet client, no send.
  */
 
+import { getAddress } from "viem";
+
+import { virtualsCurveDeploymentByChainId } from "@tools/virtuals/curve/index.js";
+import { decodePreLaunched } from "@tools/virtuals/launch/index.js";
 import logger from "@utils/logger.js";
 import type { TokenLaunchIntent } from "@vex-agent/db/repos/token-launch-intents.js";
 import { isReceiptNotFound } from "./receipt-errors.js";
@@ -76,6 +80,23 @@ export function buildProductionLaunchRepairDeps(): LaunchIdentityRepairDeps {
           walletAddress,
           poolsPlan,
         );
+      }
+
+      // THE VIRTUALS ARM. Without it a Virtuals `preLaunch` fell through to the
+      // retired Trench decoder below, decoded to nothing, and was re-checked as
+      // ambiguity forever - so the intent never reached `awaiting_keeper` and
+      // the keeper sweep, which claims only that status, never saw it. The
+      // user's agent existed on chain and nothing in Vex would ever finish it.
+      if (protocol === "virtuals") {
+        return decodeVirtualsPreLaunchForSweep({
+          chainId,
+          blockNumber: receipt.blockNumber,
+          logs: receipt.logs.map((log) => ({
+            address: log.address,
+            topics: log.topics as string[],
+            data: log.data,
+          })),
+        });
       }
 
       const decoded = decodeLaunchReceipt({
@@ -243,4 +264,69 @@ async function decodePoolsLaunchForSweep(
     return null;
   }
   return { kind: "created", identity: { tokenAddress: decoded.value.tokenAddress } };
+}
+
+/**
+ * The Virtuals half of the sweep's decode: the `PreLaunched` event of OUR
+ * pre-launch, read from its own receipt.
+ *
+ * It uses the SAME decoder the handler's primary path uses
+ * (`tools/virtuals/launch/receipt-decoder.ts`), so the two cannot disagree
+ * about which agent a receipt establishes, and that decoder requires the log to
+ * come from the PINNED BondingV5 - any contract can emit a log whose topic0
+ * matches, and a decoder that accepted one would let a stranger name the token
+ * a launch is recorded against.
+ *
+ * There is no creator cross-check here and none is available: `PreLaunched`
+ * carries no creator field. The binding is the RECEIPT - the sweep looked this
+ * up by the intent's own signed transaction hash - which is strictly stronger
+ * than an address comparison inside a receipt that could hold several launches.
+ *
+ * `null` on anything it cannot read, which the sweep treats as ambiguity and
+ * re-checks. Recovery is where a wrong answer is least likely to be noticed, so
+ * it declines rather than decoding loosely.
+ */
+function decodeVirtualsPreLaunchForSweep(input: {
+  readonly chainId: number;
+  readonly blockNumber: bigint | null | undefined;
+  readonly logs: readonly { address: string; topics: string[]; data: string }[];
+}): LaunchReceiptOutcome | null {
+  const deployment = virtualsCurveDeploymentByChainId(input.chainId);
+  if (deployment === undefined) {
+    logger.info("virtuals.launch_identity_repair.no_deployment", { chainId: input.chainId });
+    return null;
+  }
+  const blockNumber = input.blockNumber;
+  if (typeof blockNumber !== "bigint") {
+    // The keeper sweep scans FROM this block. Without it the recovered row
+    // would either be unusable to that sweep or force a scan from genesis on
+    // every tick, so the launch stays pending until a receipt that carries one.
+    logger.info("virtuals.launch_identity_repair.receipt_block_missing", { chainId: input.chainId });
+    return null;
+  }
+
+  const preLaunched = decodePreLaunched({
+    logs: input.logs,
+    bondingV5: getAddress(deployment.bondingV5),
+  });
+  if (preLaunched === null) {
+    logger.info("virtuals.launch_identity_repair.prelaunch_undecoded", { chainId: input.chainId });
+    return null;
+  }
+
+  return {
+    kind: "pre_launched",
+    virtuals: {
+      tokenAddress: preLaunched.token,
+      pairAddress: preLaunched.pair,
+      virtualId: preLaunched.virtualId.toString(),
+      initialPurchaseRaw: preLaunched.initialPurchaseRaw.toString(),
+      // The deployment's PINNED decimals, the same ones the launch handler
+      // parsed the committed amount with. An amount without its scale is not a
+      // number a person can read.
+      initialPurchaseDecimals: deployment.virtualDecimals,
+      virtualAddress: getAddress(deployment.virtual),
+      preLaunchBlock: blockNumber.toString(),
+    },
+  };
 }

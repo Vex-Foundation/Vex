@@ -28,14 +28,25 @@
  * | anti-sniper type                 | caller, 0-5, held to `isValidAntiSniperType`  | fixed                |
  * | calldata fingerprint             | `keccak256(chainId | to | value | data)`      | BINDING              |
  *
- * ## Why `startTime` is `block.timestamp` and not `Date.now()`
+ * ## Why `startTime` is 0 and not a clock reading of any kind
  *
  * `preLaunch` compares `startTime_` against `block.timestamp + startTimeDelay`
  * to decide whether the launch is SCHEDULED (`BondingV5.sol:326-333`), and a
  * scheduled launch is charged a fee and settles at a time no handler is alive
- * for. A wall clock that ran fast against a chain running slow would silently
- * cross that threshold. So the plan reads the head block's timestamp and names
- * a `startTime` strictly below the threshold, and states the margin it kept.
+ * for. For an IMMEDIATE launch the contract then ignores the argument entirely
+ * and stores `block.timestamp` itself (`BondingV5.sol:343-354`), so the only
+ * thing `startTime_` decides is which side of that threshold the launch falls
+ * on - and 0 is below it at every block that will ever exist.
+ *
+ * The plan therefore encodes the constant. It used to encode the head block's
+ * own timestamp, which is a reading of the clock, and the 2026-09-06 final
+ * review measured what that costs: two plans over IDENTICAL inputs, 6.5 s apart
+ * on both chains, produced two different fingerprints. The preview seals the
+ * fingerprint and the execute rebuilds the calldata and refuses on any
+ * difference, so every launch whose approval outlived one block was refused at
+ * the last gate before signing, naming a drift the user had not caused. A
+ * binding over bytes is only a binding if the bytes are a function of the
+ * approved fields.
  */
 
 import { formatUnits, type Address, type Chain, type Hex, type PublicClient, type Transport } from "viem";
@@ -58,16 +69,21 @@ import { describeAntiSniperChoice, type LaunchFields } from "./params.js";
 import type { ResolvedLaunchImage } from "./image.js";
 
 /**
- * How far below the scheduled threshold a launch's `startTime` must sit.
+ * The `startTime_` every Vex launch encodes.
  *
- * The threshold is `block.timestamp + startTimeDelay` (86400 s, read live), and
- * the plan names `block.timestamp` itself, so the real margin is the whole
- * delay. This constant is the assertion Vex makes about that margin rather than
- * a value it chooses: if a chain ever set `startTimeDelay` below it, an
- * immediate launch would be indistinguishable from a scheduled one and the
- * plan refuses instead of guessing which the venue would call it.
+ * ZERO, and it is the contract's own argument for "immediate" rather than a
+ * sentinel this lane invented: `isScheduledLaunch` is `startTime_ >=
+ * block.timestamp + startTimeDelay` (`BondingV5.sol:326-333`), which 0 can
+ * never satisfy for any block, any delay and any chain. The venue then stores
+ * `block.timestamp` as the real start (`BondingV5.sol:343-354`), so the launch
+ * begins exactly when it is mined - the same behaviour the previous
+ * timestamp-carrying encoding produced, minus the fingerprint drift.
+ *
+ * It is a CONSTANT because the calldata fingerprint is the approval's binding:
+ * anything read from a clock, a block or a provider would make identical
+ * approved fields produce different bytes.
  */
-export const IMMEDIATE_LAUNCH_MIN_MARGIN_SECONDS = 60n;
+export const IMMEDIATE_LAUNCH_START_TIME = 0n;
 
 export interface LaunchPlan {
   /** The pinned contract table this plan was built against. */
@@ -89,8 +105,6 @@ export interface LaunchPlan {
   readonly fingerprint: Hex;
   readonly onChainName: string;
   readonly image: ResolvedLaunchImage;
-  /** The head block's timestamp the `startTime` was derived from. */
-  readonly blockTimestamp: bigint;
 }
 
 export type BuildLaunchPlanResult =
@@ -129,19 +143,6 @@ export async function buildLaunchPlan(input: {
         `VIRTUAL on ${fields.deployment.name} reports ${state.virtualDecimals} decimals, but Vex parsed the amount `
         + `with ${fields.deployment.virtualDecimals}. The amount you typed would not mean what you meant. Nothing `
         + "was signed.",
-    };
-  }
-
-  const block = await input.client.getBlock({ blockNumber: state.blockNumber });
-  const blockTimestamp = block.timestamp;
-  if (state.scheduledStartTimeDelaySeconds < IMMEDIATE_LAUNCH_MIN_MARGIN_SECONDS) {
-    return {
-      ok: false,
-      reason:
-        `BondingConfig on ${fields.deployment.name} now treats a launch as SCHEDULED only `
-        + `${state.scheduledStartTimeDelaySeconds} s ahead of the block, which is below the margin Vex requires to `
-        + "state confidently that this launch is immediate. A scheduled launch is charged a fee and settles when no "
-        + "handler is alive for it. Nothing was signed.",
     };
   }
 
@@ -184,7 +185,7 @@ export async function buildLaunchPlan(input: {
     // What the venue is given. Vex's fee is already out; the venue's own
     // `calculateLaunchFee` comes out of this number inside the contract.
     purchaseAmountRaw: fee.launchAmountRaw,
-    startTime: blockTimestamp,
+    startTime: IMMEDIATE_LAUNCH_START_TIME,
     antiSniperTaxType: fields.antiSniperTaxType,
     nameSuffix: fields.nameSuffix,
   };
@@ -219,7 +220,6 @@ export async function buildLaunchPlan(input: {
       }),
       onChainName: onChainTokenName(fields.name, fields.nameSuffix),
       image,
-      blockTimestamp,
     },
   };
 }
@@ -324,8 +324,10 @@ export function describeLaunchPlan(input: {
       blockNumber: plan.state.blockNumber.toString(),
       scheduledThresholdSeconds: plan.state.scheduledStartTimeDelaySeconds.toString(),
       note:
-        "startTime is the head block's own timestamp, which is why this is an IMMEDIATE launch: preLaunch calls a "
-        + "launch scheduled once startTime reaches block.timestamp + startTimeDelay.",
+        "startTime is 0, which is the contract's own argument for an IMMEDIATE launch: preLaunch calls a launch "
+        + "scheduled only once startTime reaches block.timestamp + startTimeDelay, and then stores block.timestamp "
+        + "itself as the real start. It is a constant rather than a clock reading so that identical fields always "
+        + "produce identical calldata, which is what the fingerprint above binds.",
     },
     lifecycle: {
       note:

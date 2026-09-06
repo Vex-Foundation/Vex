@@ -40,7 +40,18 @@ export function buildProductionVirtualsKeeperSweepDeps(): VirtualsKeeperSweepDep
           token: getAddress(token),
           fromBlock,
         });
-        if (outcome.kind === "observed") return { kind: "launched", keeperTxHash: outcome.txHash };
+        if (outcome.kind === "observed") {
+          return {
+            kind: "launched",
+            keeperTxHash: outcome.txHash,
+            // THE LATE RESULT IS CARRIED, not summarised away. `Launched`
+            // proves what the keeper's own transaction bought, and it is the
+            // only figure that can replace the provisional zero the handler
+            // recorded when its wait elapsed. Dropping it here left every
+            // late-settled launch reporting a zero payout forever.
+            initialPurchasedAmountRaw: outcome.launched.initialPurchasedAmountRaw.toString(),
+          };
+        }
         if (outcome.kind === "cancelled") return { kind: "cancelled", txHash: outcome.txHash };
         return { kind: "none" };
       } catch (err) {

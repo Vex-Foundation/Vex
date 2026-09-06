@@ -221,3 +221,44 @@ export async function fillLaunchOutputIdentityOnConfirmed(
   );
   return row !== null;
 }
+
+/**
+ * The KEEPER'S proven purchase, written onto a launch row that recorded the
+ * provisional zero.
+ *
+ * A Virtuals launch takes two transactions and only the first is Vex's. When
+ * the handler's bounded wait for the keeper elapses it confirms the row with
+ * `executed_amount_out_raw = '0'`, which is the honest figure at that moment:
+ * `preLaunch` buys nothing, and no agent tokens exist for the wallet until the
+ * keeper's `launch()` runs. The keeper sweep observes that transaction later
+ * and its `Launched` event carries `initialPurchasedAmount` - the tokens the
+ * launch actually delivered. Without this writer that number had nowhere to go
+ * and the provisional zero stood as the final payout forever.
+ *
+ * IT ONLY EVER FILLS A ZERO OR A BLANK. The predicate refuses a row that
+ * already carries a non-zero amount, so a proven figure - the handler's own,
+ * when the keeper acted inside the wait - can never be restated by a later
+ * observation. Status is untouched: the row is already terminal and this is not
+ * a second confirmation.
+ *
+ * The HUMAN amount is deliberately left alone. `token_out_decimals` is NULL on
+ * these rows (the agent token's scale is not read at launch time), and a human
+ * figure rendered against an assumed scale is worse than none.
+ *
+ * Returns whether a row was actually settled, so the caller can keep the launch
+ * in its sweep's claimable set instead of retiring it on an unwritten amount.
+ */
+export async function settleLaunchKeeperPurchaseByTxHash(
+  txHash: string,
+  executedAmountOutRaw: string,
+): Promise<boolean> {
+  const row = await queryOne<Record<string, unknown>>(
+    `UPDATE agent_activity
+        SET executed_amount_out_raw = $2, updated_at = NOW()
+      WHERE tx_hash = $1 AND event_role = 'token_launch'
+        AND (executed_amount_out_raw IS NULL OR executed_amount_out_raw = '0')
+      RETURNING id`,
+    [txHash, executedAmountOutRaw],
+  );
+  return row !== null;
+}

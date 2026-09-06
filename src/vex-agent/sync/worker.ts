@@ -135,7 +135,7 @@ export async function drainPendingRuns(): Promise<DrainResult> {
         const { repairLaunchIdentities, buildProductionLaunchRepairDeps } = await import("./launch-identity-repair.js");
         const launchResult = await repairLaunchIdentities(buildProductionLaunchRepairDeps());
         result = { ...launchResult };
-        rowsAffected = launchResult.repaired + launchResult.failed;
+        rowsAffected = launchResult.repaired + launchResult.failed + launchResult.awaitingKeeper;
       } else if (syncType === "pools_attribution") {
         // pools.fun attribution retry lane - see sync/pools-attribution.ts.
         // Keyless POST only; holds no signer.
@@ -265,7 +265,11 @@ export async function processNextRun(): Promise<boolean> {
     } else if (job.syncType === "launch_identity_repair") {
       const { repairLaunchIdentities, buildProductionLaunchRepairDeps } = await import("./launch-identity-repair.js");
       const launchResult = await repairLaunchIdentities(buildProductionLaunchRepairDeps());
-      await syncRepo.completeRun(run.id, { ...launchResult }, launchResult.repaired + launchResult.failed);
+      await syncRepo.completeRun(
+        run.id,
+        { ...launchResult },
+        launchResult.repaired + launchResult.failed + launchResult.awaitingKeeper,
+      );
     } else if (job.syncType === "pools_attribution") {
       // pools.fun attribution retry lane - BOTH dispatchers need this branch;
       // the bridge job shipped with one missing and its timer silently fired

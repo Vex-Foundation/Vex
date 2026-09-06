@@ -209,7 +209,7 @@ export async function syncTick(): Promise<void> {
         await syncRepo.completeRun(
           runId,
           { ...launchResult, periodic: true },
-          launchResult.repaired + launchResult.failed,
+          launchResult.repaired + launchResult.failed + launchResult.awaitingKeeper,
         );
       } else if (job.syncType === "pools_attribution") {
         // pools.fun attribution retry lane - periodic driver, mirroring the
