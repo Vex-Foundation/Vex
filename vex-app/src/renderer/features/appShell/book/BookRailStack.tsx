@@ -311,8 +311,12 @@ function SessionBookInstruments({
       keepMounted
       className="min-h-0 flex-1"
     >
-      <div className="flex items-center gap-1 self-start">
-        <TabsList>
+      <div
+        role="group"
+        aria-label="Book instruments"
+        className="inline-flex h-9 self-start items-center justify-center gap-1 rounded-lg border border-line-3 bg-transparent p-1 text-ink-tertiary"
+      >
+        <TabsList className="h-auto justify-start rounded-none border-0 p-0">
           <TabsTrigger value="portfolio">Portfolio</TabsTrigger>
           <TabsTrigger value="board">
             Board
@@ -338,7 +342,7 @@ function SessionBookInstruments({
           aria-haspopup="dialog"
           data-vex-area="book-lighter-launch"
           onClick={requestLighterWorkspaceOpen}
-          className="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-md px-3 text-[13px] font-medium text-ink-tertiary hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-[13px] font-medium leading-5 text-ink-tertiary hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           Lighter
         </button>
