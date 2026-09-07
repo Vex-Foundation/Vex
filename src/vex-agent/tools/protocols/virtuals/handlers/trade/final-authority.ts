@@ -134,8 +134,15 @@ export interface CurveFinalAuthorityInput {
   readonly plannedTx: BuiltCurveTx;
   /** What `signStageBroadcast` is about to serialize. */
   readonly request: FinalSignedRequest;
-  /** Injectable for tests; the wall clock in production. */
-  readonly nowMs?: number;
+  /**
+   * The clock, READ EACH TIME rather than sampled once.
+   *
+   * A single `nowMs` would be the defect this seam exists to make testable: the
+   * gate awaits the pinned node twice after its first expiry check, and the
+   * proposal's deadline keeps running through both round trips. Injectable for
+   * tests; `Date.now` in production.
+   */
+  readonly now?: () => number;
 }
 
 /**
@@ -145,21 +152,27 @@ export interface CurveFinalAuthorityInput {
  * THE ORDER IS DELIBERATE and mirrors the pre-claim walk: the cheapest and most
  * final fact first (has the proposal expired at all), then what the pinned node
  * says the contracts are, then whether the trade still prices inside what was
- * approved, and last whether the bytes are the planned bytes.
+ * approved, then whether the bytes are the planned bytes - and the deadline
+ * ONCE MORE at the very end, because the two reads in the middle are network
+ * round trips the proposal's own life keeps running through.
  */
 export async function assertCurveTradeFinalAuthority(
   input: CurveFinalAuthorityInput,
 ): Promise<void> {
   const { approved, params, client } = input;
+  const now = input.now ?? Date.now;
 
-  // ── THE PROPOSAL'S OWN DEADLINE ──
+  // ── THE PROPOSAL'S OWN DEADLINE, FIRST TIME ──
   //
   // The claim proved the row was unexpired when it was consumed. An allowance
   // leg sits between that moment and this one, so the expiry is re-asserted
   // against the clock HERE. `deadline_expired` is the durable code for exactly
   // this, and it is not an unknown failure.
+  //
+  // This check is the CHEAP one: it costs nothing and spares the pinned node two
+  // round trips for a proposal that is already dead. It is NOT the authoritative
+  // one - see the second assertion at the end of this function.
   const expiresAtMs = Date.parse(approved.expiresAt);
-  const now = input.nowMs ?? Date.now();
   if (!Number.isFinite(expiresAtMs)) {
     refuse(
       "quote_expired",
@@ -167,13 +180,12 @@ export async function assertCurveTradeFinalAuthority(
       `the approved quote carries an expiry this build cannot read (${approved.expiresAt}), so it cannot be proven current.`,
     );
   }
-  if (now >= expiresAtMs) {
-    refuse(
-      "quote_expired",
-      "deadline_expired",
-      `the approved quote expired at ${approved.expiresAt}, before this trade reached its signature - the approval that preceded it took longer than the quote's own life.`,
-    );
-  }
+  assertUnexpired(
+    approved.expiresAt,
+    expiresAtMs,
+    now(),
+    "the approval that preceded it took longer than the quote's own life",
+  );
 
   // ── THE CHAIN, AS THE SIGNING NODE SEES IT ──
   let state: Awaited<ReturnType<typeof readCurveState>>;
@@ -265,4 +277,49 @@ export async function assertCurveTradeFinalAuthority(
       "the transaction about to be signed is not the transaction this execution planned and priced.",
     );
   }
+
+  // ── THE PROPOSAL'S OWN DEADLINE, AND THIS IS THE ONE THAT DECIDES ──
+  //
+  // Everything above this line was proven against the pinned node, and reaching
+  // it took two awaited round trips on a node whose latency Vex does not
+  // control. A quote with seconds of life left can therefore pass the first
+  // check and lapse inside `readCurveState` or `readCurveQuote`, and every fact
+  // established in between would then be attached to an approval that had
+  // already expired.
+  //
+  // So the clock is read once more, AFTER the last awaited operation this gate
+  // performs and immediately before it resolves. `signStageBroadcast` awaits
+  // nothing that reaches a provider between this return and the signature (the
+  // trade leg signs offline), so what is proven here is what the bytes commit
+  // to. MetaMask's controller does the structural equivalent: after the
+  // `beforeSign` hook and after every awaited step inside signing it RE-READS
+  // the transaction and signs `finalTxParams` rather than the object it started
+  // with (`TransactionController.ts:3664-3730`).
+  assertUnexpired(
+    approved.expiresAt,
+    expiresAtMs,
+    now(),
+    "the final authority reads on the signing node themselves outlasted the quote",
+  );
+}
+
+/**
+ * Refuse when the approved proposal's deadline has passed at `nowMs`.
+ *
+ * Called TWICE by design, and the second call is the authoritative one; `why`
+ * names which window consumed the remaining life so the durable row says what
+ * actually happened rather than only that a deadline passed.
+ */
+function assertUnexpired(
+  expiresAt: string,
+  expiresAtMs: number,
+  nowMs: number,
+  why: string,
+): void {
+  if (nowMs < expiresAtMs) return;
+  refuse(
+    "quote_expired",
+    "deadline_expired",
+    `the approved quote expired at ${expiresAt}, before this trade reached its signature - ${why}.`,
+  );
 }
