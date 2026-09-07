@@ -49,7 +49,7 @@ import {
   type TokenLaunchIntent,
   type VirtualsLaunchIntentFields,
 } from "@vex-agent/db/repos/token-launch-intents.js";
-import { concludeLaunchKeeperSettlementByTxHash } from "@vex-agent/db/repos/agent-activity.js";
+import { concludeLaunchKeeperSettlementByTxHashWith } from "@vex-agent/db/repos/agent-activity.js";
 import { LaunchImageMissingError } from "@vex-agent/db/repos/launch-image-lock.js";
 import logger from "@utils/logger.js";
 
@@ -288,32 +288,49 @@ export async function confirmObservedKeeperLaunch(input: {
  * its call sites is what makes it hold for BOTH cancellation paths, the sweep's
  * and the cancel tool's, without either having to remember.
  *
- * Deliberately AFTER the transaction and best-effort: the cancellation is a
- * receipt fact that has already been established, and a bookkeeping write that
- * did not land must not unsay it. A row left holding stays claimable by the
- * sweep, which is the safe direction.
+ * ONE TRANSACTION, UNDER ONE LOCK, and that is a correction rather than a
+ * refinement. This used to commit the cancelled intent and then conclude the
+ * activity settlement best-effort afterwards, on the reasoning that "a row left
+ * holding stays claimable by the sweep". THAT REASONING WAS WRONG, and Codex's
+ * round-3 failure injection proved it: the keeper sweep claims `awaiting_keeper`
+ * and nothing else (`token-launch-intents/sweep-claim.ts`), so an intent that
+ * has already committed as `cancelled` is a row no sweep will ever look at
+ * again. A crash or a database failure in that window left `intent = cancelled`
+ * with `activity = keeper_purchase_pending` - a reporting hold that ends on an
+ * EVENT, whose only remaining event had just been retired - and the function
+ * still returned `true`.
+ *
+ * Both rows are ours and both are reachable from one client, so the cancellation
+ * and the end of the keeper hold are written as ONE fact. This is MetaMask's
+ * rule for a status transition and its bookkeeping
+ * (`TransactionController.ts:4003-4066`: the transition and everything it
+ * implies are applied inside a single update, never as a best-effort follow-up).
+ * A failure of the second write now rolls the first back, which leaves the
+ * intent `awaiting_keeper` and genuinely still claimable, and the caller is told
+ * the cancellation was not recorded rather than told it was.
  */
 export async function recordLaunchCancelled(input: {
   readonly intentId: string;
   readonly sessionId: string;
   readonly tokenAddress: string;
 }): Promise<boolean> {
-  const cancelled = await withTransaction(async (client) => {
+  return await withTransaction(async (client) => {
     await acquireSessionControlLock(client, input.sessionId);
-    return await cancelAfterPreLaunchWith(client, input.intentId, input.sessionId, input.tokenAddress);
+    const cancelled = await cancelAfterPreLaunchWith(
+      client, input.intentId, input.sessionId, input.tokenAddress,
+    );
+    if (cancelled === null) return false;
+    const preLaunchTxHash = cancelled.txHash;
+    // A cancelled launch whose hash was never staged has no activity row to
+    // find, so there is no hold to end - not a skipped write.
+    if (preLaunchTxHash === null || preLaunchTxHash === undefined) return true;
+    // The conclusion is idempotent by predicate (`settlement_source =
+    // 'keeper_purchase_pending'`), so a repeat, or a row some other writer
+    // already settled, applies nothing and is not an error. Only a THROW - the
+    // database failure this ordering exists for - undoes the cancellation.
+    await concludeLaunchKeeperSettlementByTxHashWith(client, preLaunchTxHash, "cancelled");
+    return true;
   });
-  if (cancelled === null) return false;
-  const preLaunchTxHash = cancelled.txHash;
-  if (preLaunchTxHash !== null && preLaunchTxHash !== undefined) {
-    try {
-      await concludeLaunchKeeperSettlementByTxHash(preLaunchTxHash, "cancelled");
-    } catch (err) {
-      logger.warn("virtuals.launch.cancel_settlement_conclude_failed", {
-        error: err instanceof Error ? err.name : "unknown",
-      });
-    }
-  }
-  return true;
 }
 
 /**

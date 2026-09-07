@@ -241,8 +241,14 @@ export {
   // The keeper wait's other ending: the second transaction settled without a
   // readable purchase, or was a cancellation.
   concludeLaunchKeeperSettlementByTxHash,
+  // The same conclusion on the CALLER's transaction, so a cancellation retires
+  // the intent and ends the activity's keeper hold as ONE commit.
+  concludeLaunchKeeperSettlementByTxHashWith,
   confirmLaunchWithOutputIdentity,
   fillLaunchOutputIdentityOnConfirmed,
+  // "This launch owes a keeper purchase", established at hash-staging time -
+  // before the row can be confirmed by anyone at all.
+  markLaunchKeeperPurchaseOwedByTxHash,
   // The sweep's read of the lane's own durable verdict for a launch hash — the
   // ONE way `sync/launch-identity-repair.ts` may reach this table.
   findLaunchActivityTerminalByTxHash,

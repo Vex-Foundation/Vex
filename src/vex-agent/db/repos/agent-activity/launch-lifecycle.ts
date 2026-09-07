@@ -19,6 +19,8 @@
  * ever correct for the role whose output is discovered post-hoc.
  */
 
+import type { PoolClient } from "pg";
+
 import { queryOne, queryOneWith } from "../../client.js";
 import { mapRow } from "./mappers.js";
 import { resolveFastLane } from "./fast-lane-signal.js";
@@ -148,11 +150,52 @@ export async function confirmLaunchWithOutputIdentity(
     ));
 
   if (row) return { applied: true, row: resolveFastLane(mapRow(row)) };
+
+  // THE CAS MISSED, WHICH MEANS THE STATUS-ONLY SWEEP GOT HERE FIRST (it
+  // confirms a pending row from its hash after ~90 seconds and writes no
+  // amounts). The row is terminal in status and this call is still the only
+  // thing that knows the payout is OWED - so the obligation is recorded on the
+  // confirmed row rather than lost with the update. Without this, the reporting
+  // gate saw a confirmed launch with no settlement provenance at all and, once
+  // the grace elapsed, sent the terminal event with an empty payout, spending
+  // the server's one merge window before the keeper had acted.
+  //
+  // Only ever for an input that NAMES the owed payout: a caller with a proven
+  // amount owes nothing, and the pools lane (which never passes the reason) is
+  // untouched.
+  if (input.outputPendingReason === "keeper_purchase") {
+    await markKeeperPurchaseOwed(`id = $1`, [id]);
+  }
   const currentRow = await getActivityEventById(id);
   if (!currentRow) {
     throw new Error(`agent_activity: confirmLaunchWithOutputIdentity — row ${id} vanished`);
   }
   return { applied: false, row: currentRow };
+}
+
+/**
+ * The obligation write itself, shared by both of the ways a launch can come to
+ * owe one so the guards can never drift apart.
+ *
+ * A FILL-IN-THE-BLANK, never an overwrite: it refuses a row whose payout is
+ * already proven and a row that carries some OTHER settlement provenance, so it
+ * can never unsay a settlement, a conclusion or a quarantine. A row that already
+ * owes matches, so re-running it is a `true` rather than a failure.
+ */
+async function markKeeperPurchaseOwed(
+  keyClause: string,
+  params: unknown[],
+): Promise<boolean> {
+  const row = await queryOne<Record<string, unknown>>(
+    `UPDATE agent_activity
+        SET settlement_source = 'keeper_purchase_pending', updated_at = NOW()
+      WHERE ${keyClause} AND event_role = 'token_launch'
+        AND executed_amount_out_raw IS NULL
+        AND (settlement_source IS NULL OR settlement_source = 'keeper_purchase_pending')
+      RETURNING id`,
+    params,
+  );
+  return row !== null;
 }
 
 /**
@@ -263,6 +306,48 @@ export async function fillLaunchOutputIdentityOnConfirmed(
 }
 
 /**
+ * ESTABLISH the keeper obligation on a launch row, addressed by the hash of the
+ * `preLaunch` that created it.
+ *
+ * THE OBLIGATION IS OLDER THAN THE CONFIRMATION, and that ordering is the whole
+ * point. It used to be installed only by the handler's own finalizer
+ * ({@link confirmLaunchWithOutputIdentity}), which CAS-requires `status =
+ * 'pending'`; the generic status-only receipt sweep confirms a pending row from
+ * its hash after ~90 seconds and can win that race. When it did, the finalizer
+ * applied nothing, `settlement_source` stayed NULL, and after the reporting
+ * grace the drain sent a TERMINAL launch event with no payout at all - spending
+ * the server's single `pending -> terminal` merge window on an empty figure
+ * before the keeper had even acted (Codex round-3 blocker 5A, reproduced on real
+ * Postgres).
+ *
+ * So the obligation is written at the moment the launch leg's hash is STAGED -
+ * before the bytes reach the network, and therefore before any confirmer,
+ * sweep or recovery can see the row at all. This is MetaMask's shape for a
+ * pending obligation: `TransactionController` reserves the nonce and stamps the
+ * transaction in the same update that makes it publishable
+ * (`TransactionController.ts:3102-3135`), and
+ * `PendingTransactionTracker` only ever carries that record forward through
+ * later status transitions - it never re-derives it after the fact.
+ *
+ * BY HASH, not by row id, because the two writers that need it address the row
+ * differently and must not drift apart: the handler stages the hash it just
+ * signed, and the identity-repair sweep knows a launch only by the hash on its
+ * intent. Every other keeper writer here is already hash-addressed for the same
+ * reason.
+ *
+ * A FILL-IN-THE-BLANK, never an overwrite. It refuses a row whose payout is
+ * already proven and a row that already carries some OTHER settlement
+ * provenance, so it can never unsay a settlement, a conclusion or a quarantine;
+ * re-running it on a row that already owes returns `true`, so the caller can
+ * require the obligation to stand without a repeat becoming a failure.
+ *
+ * Returns whether the obligation stands after this call.
+ */
+export async function markLaunchKeeperPurchaseOwedByTxHash(txHash: string): Promise<boolean> {
+  return markKeeperPurchaseOwed(`tx_hash = $1`, [txHash]);
+}
+
+/**
  * The KEEPER'S proven purchase, written onto a launch row that recorded the
  * payout as owed.
  *
@@ -334,7 +419,43 @@ export async function concludeLaunchKeeperSettlementByTxHash(
   txHash: string,
   conclusion: "cancelled" | "amount_unreadable",
 ): Promise<boolean> {
-  const row = await queryOne<Record<string, unknown>>(
+  return runConcludeLaunchKeeperSettlement(
+    (sql, params) => queryOne<Record<string, unknown>>(sql, params),
+    txHash,
+    conclusion,
+  );
+}
+
+/**
+ * {@link concludeLaunchKeeperSettlementByTxHash} on the CALLER's transaction.
+ *
+ * The cancellation path needs it: retiring the intent and ending the activity's
+ * keeper hold are ONE fact about one launch, and committing them separately left
+ * a crash window whose end state is unreachable by every repair path we have -
+ * `intent = cancelled` (so the keeper sweep, which claims `awaiting_keeper`
+ * only, will never look at it again) with `activity = keeper_purchase_pending`
+ * (so the reporting gate holds its terminal event forever). Codex's round-3
+ * failure injection produced exactly that state, and the function still returned
+ * `true`.
+ */
+export async function concludeLaunchKeeperSettlementByTxHashWith(
+  client: PoolClient,
+  txHash: string,
+  conclusion: "cancelled" | "amount_unreadable",
+): Promise<boolean> {
+  return runConcludeLaunchKeeperSettlement(
+    (sql, params) => queryOneWith<Record<string, unknown>>(client, sql, params),
+    txHash,
+    conclusion,
+  );
+}
+
+async function runConcludeLaunchKeeperSettlement(
+  run: (sql: string, params: unknown[]) => Promise<Record<string, unknown> | null>,
+  txHash: string,
+  conclusion: "cancelled" | "amount_unreadable",
+): Promise<boolean> {
+  const row = await run(
     `UPDATE agent_activity
         SET executed_amount_out_raw =
               CASE WHEN $2::text = 'cancelled' THEN '0' ELSE executed_amount_out_raw END,
