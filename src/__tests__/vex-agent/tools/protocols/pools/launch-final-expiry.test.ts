@@ -32,17 +32,24 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   createPublicClient,
   createWalletClient,
+  custom,
   defineChain,
   encodeAbiParameters,
   encodeEventTopics,
   getAddress,
   http,
+  numberToHex,
+  parseTransaction,
+  recoverTransactionAddress,
   type Address,
   type Chain,
   type Hex,
+  type TransactionSerialized,
   type Transport,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+
+import { definedValue } from "../../../../_test-value-guards.js";
 
 import {
   PARTY_FACTORY_TOKEN_LAUNCHED_ABI,
@@ -64,7 +71,6 @@ const STOCK = getAddress("0x000000000000000000000000000000000000dead");
 const SALT = `0x${"7a".repeat(32)}` as Hex;
 const CALLDATA = `0x${"cd".repeat(64)}` as Hex;
 const FINGERPRINT = `0x${"ef".repeat(32)}` as Hex;
-const SERIALIZED = `0x${"5e".repeat(40)}` as Hex;
 const METADATA_URI = "ipfs://bafkreifaguifkgqdrrs2cwlbjejqblrguynowkm3zb77yvq3gsydqacywm";
 
 const FEE_WEI = 1_051_674_002_092_832n;
@@ -101,6 +107,12 @@ const CHAIN: Chain = defineChain({
 const dbCalls = vi.hoisted(() => ({
   nonceReservations: [] as number[],
   broadcastStaged: [] as number[],
+  /**
+   * Host-clock milliseconds at `onHashStaged` - the first hook after the
+   * signature exists, and therefore an upper bound on when the bytes were
+   * signed. Nothing between the signature and this hook moves the fake clock.
+   */
+  stagedAtMs: [] as number[],
   abortedFrom: [] as number[],
   failedIntents: [] as string[],
   confirmedIntents: [] as string[],
@@ -127,6 +139,7 @@ vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
   },
   markActivityBroadcast: async (id: number) => {
     dbCalls.broadcastStaged.push(id);
+    dbCalls.stagedAtMs.push(Date.now());
     return { applied: true };
   },
   markBroadcastAccepted: async () => ({ applied: true }),
@@ -331,9 +344,13 @@ function plan(tuple: PoolsLaunchTuple): PoolsLaunchPlan {
  * signed quote spends dying.
  */
 function harness(prepareStallMs: number) {
-  const signTransaction = vi.fn(async (_request: Record<string, unknown>) => {
-    return SERIALIZED;
-  });
+  // THE KEY ITSELF, watched where it actually signs. The launch broadcasts
+  // through the DEFERRED signer arm, which signs offline with the local
+  // account's own signer rather than through viem's wallet action - so a double
+  // on the wallet client's `signTransaction` would sit on a path nothing takes
+  // and prove nothing about whether the key was asked. The spy calls through:
+  // these tests broadcast real signed bytes.
+  const signTransaction = vi.spyOn(ACCOUNT, "signTransaction");
   const sendRawTransaction = vi.fn(async () => `0x${"ab".repeat(32)}` as Hex);
 
   const prepared = {
@@ -367,7 +384,7 @@ function harness(prepareStallMs: number) {
 
   const walletClient = Object.assign(
     createWalletClient({ account: ACCOUNT, chain: CHAIN, transport: http("http://127.0.0.1:1") as Transport }),
-    { prepareTransactionRequest: prepare, signTransaction },
+    { prepareTransactionRequest: prepare },
   );
 
   return { publicClient, walletClient, signTransaction, sendRawTransaction };
@@ -390,6 +407,7 @@ async function run(tuple: PoolsLaunchTuple, prepareStallMs: number) {
 beforeEach(() => {
   dbCalls.nonceReservations.length = 0;
   dbCalls.broadcastStaged.length = 0;
+  dbCalls.stagedAtMs.length = 0;
   dbCalls.abortedFrom.length = 0;
   dbCalls.failedIntents.length = 0;
   dbCalls.confirmedIntents.length = 0;
@@ -496,5 +514,154 @@ describe("which clock kills the authorized bytes", () => {
     // A zero deadline is "no deadline" and an all-zero attestation is "this pair
     // needs no signed quote" - neither is a moment in 1970.
     expect(poolsLaunchOnChainExpiry(wethTuple({ deadline: 0n }))).toBeNull();
+  });
+});
+
+/**
+ * THE SAME LAUNCH, driven through a wallet client whose PROVIDER IS REAL enough
+ * to answer.
+ *
+ * The harness above hands the wallet client a `signTransaction` double, which is
+ * exactly what hides the defect this block is about: viem's `signTransaction`
+ * WALLET ACTION awaits `eth_chainId` before it reaches the local account
+ * (measured in the installed viem 2.54.3,
+ * `viem/_esm/actions/wallet/signTransaction.js:63`), so on the eager arm a
+ * provider round trip stands BETWEEN the expiry gate and the signature. A gate
+ * that passed with four seconds of headroom can therefore be followed by a stall
+ * and a signature over bytes that are already dead.
+ *
+ * So here the wallet client keeps its own transport, records every request it
+ * receives, and makes `eth_chainId` cost sixteen seconds. Only the public
+ * client's reads are doubled - the signing path itself is the real one.
+ */
+function offlineSigningHarness(chainIdStallMs: number) {
+  const walletRequests: { readonly method: string; readonly atMs: number }[] = [];
+  const sentBytes: TransactionSerialized[] = [];
+  const sendRawTransaction = vi.fn(
+    async ({ serializedTransaction }: { serializedTransaction: TransactionSerialized }) => {
+      sentBytes.push(serializedTransaction);
+      return `0x${"ab".repeat(32)}` as Hex;
+    },
+  );
+
+  // What viem's own `prepareTransactionRequest` produces, `chainId` included -
+  // the field the offline signer asserts the prepared chain against.
+  const prepare = vi.fn(async () => ({
+    to: GATEWAY,
+    data: CALLDATA,
+    value: VALUE_WEI,
+    gas: 3_000_000n,
+    nonce: 11,
+    chainId: POOLS_CHAIN_ID,
+    chain: CHAIN,
+    maxFeePerGas: 1_500_000_000n,
+    maxPriorityFeePerGas: 100_000_000n,
+  }));
+
+  const publicClient = Object.assign(
+    createPublicClient({ chain: CHAIN, transport: http("http://127.0.0.1:1") as Transport }),
+    {
+      estimateGas: vi.fn(async () => 2_000_000n),
+      prepareTransactionRequest: prepare,
+      sendRawTransaction,
+      waitForTransactionReceipt: vi.fn(async () => ({
+        status: "success",
+        blockNumber: 39_620_500n,
+        logs: receiptLogs(),
+      })),
+    },
+  );
+
+  const walletClient = Object.assign(
+    createWalletClient({
+      account: ACCOUNT,
+      chain: CHAIN,
+      transport: custom({
+        request: async ({ method }) => {
+          walletRequests.push({ method, atMs: Date.now() });
+          if (method === "eth_chainId") {
+            // THE STALL viem's wallet action opens the window for: a node that
+            // answers slowly, sixteen seconds after a gate that had four.
+            vi.setSystemTime(Date.now() + chainIdStallMs);
+            return numberToHex(POOLS_CHAIN_ID);
+          }
+          throw new Error(`unexpected provider call on the signing path: ${method}`);
+        },
+      }),
+    }),
+    // Preparation is doubled on both clients so the ONLY thing that can reach
+    // this transport is a call the signing path itself makes.
+    { prepareTransactionRequest: prepare },
+  );
+
+  return { publicClient, walletClient, sendRawTransaction, walletRequests, sentBytes };
+}
+
+describe("nothing reaches the network between the last check and the signature", () => {
+  it("signs the launch offline while its quote is still alive, despite a stalling node", async () => {
+    const tuple = signedStockTuple();
+    const clients = offlineSigningHarness(16_000);
+
+    const result = await broadcastPoolsLaunch({
+      intentId: "intent-1",
+      sessionId: "sess-1",
+      walletAddress: WALLET,
+      plan: plan(tuple),
+      params: { name: "Vex Flamingo", symbol: "VEXFLAM" },
+      publicClient: clients.publicClient,
+      walletClient: clients.walletClient,
+    });
+
+    // THE STRUCTURAL PROPERTY. The wallet client's provider was never asked for
+    // anything at all: there is no round trip left standing between the expiry
+    // gate and the bytes, so no stall can outlive the check.
+    expect(clients.walletRequests).toEqual([]);
+
+    // THE CONSEQUENCE the user meets. The gate passed with the quote alive, and
+    // the signature exists while it is still alive - not sixteen seconds later,
+    // when these exact bytes would be certain to revert.
+    const expiry = definedValue(poolsLaunchOnChainExpiry(tuple), "the tuple's on-chain expiry");
+    const stagedAtMs = definedValue(dbCalls.stagedAtMs[0], "the moment the signed hash was staged");
+    expect(stagedAtMs).toBeLessThan(expiry.atMs);
+    expect(stagedAtMs).toBe(BASE_MS);
+
+    // A REAL SIGNATURE over the authorized bytes, produced with no provider at
+    // all: the chain id came from preparation, and the key that signed is the
+    // wallet the launch was prepared for.
+    const sent = definedValue(clients.sentBytes[0], "the broadcast raw transaction");
+    const parsed = parseTransaction(sent);
+    expect(parsed.chainId).toBe(POOLS_CHAIN_ID);
+    expect(parsed.to).toBe(GATEWAY.toLowerCase());
+    expect(parsed.nonce).toBe(11);
+    await expect(recoverTransactionAddress({ serializedTransaction: sent })).resolves.toBe(WALLET);
+
+    expect(result.success).toBe(true);
+    expect(clients.sendRawTransaction).toHaveBeenCalledTimes(1);
+    expect(dbCalls.confirmedIntents).toEqual(["intent-1"]);
+  });
+
+  it("still refuses at the gate, with the key never asked, when the quote died first", async () => {
+    dbCalls.nonceStallMs = 5_000;
+    const clients = offlineSigningHarness(16_000);
+    // The nonce reservation burns five seconds, the preparation double burns
+    // none, and the quote's margin is gone at t0 + 5 s.
+    vi.setSystemTime(BASE_MS + 1_000);
+
+    const result = await broadcastPoolsLaunch({
+      intentId: "intent-1",
+      sessionId: "sess-1",
+      walletAddress: WALLET,
+      plan: plan(signedStockTuple()),
+      params: { name: "Vex Flamingo", symbol: "VEXFLAM" },
+      publicClient: clients.publicClient,
+      walletClient: clients.walletClient,
+    });
+
+    expect(clients.walletRequests).toEqual([]);
+    expect(clients.sentBytes).toEqual([]);
+    expect(dbCalls.stagedAtMs).toEqual([]);
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("refused before signing");
+    expect(result.output).toContain("signed stock price quote");
   });
 });

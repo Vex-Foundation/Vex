@@ -28,6 +28,10 @@
  * THE BYTES SIGNED ARE THE BYTES AUTHORIZED. The staged broadcast is handed
  * `plan.call`, whose fingerprint is what the C0 record names; nothing here
  * rebuilds calldata, and no reprepare is possible after this point.
+ *
+ * AND THE CLOCK THAT ALLOWED THEM IS STILL THE CLOCK AT THE SIGNATURE. The
+ * launch signs on the DEFERRED arm, so no provider call at all stands between
+ * the expiry gate (`./expiry.ts`, wired as `onBeforeSign` below) and the bytes.
  */
 
 import { formatEther, formatUnits, type Account, type Address, type Chain, type PublicClient, type Transport, type WalletClient } from "viem";
@@ -35,7 +39,11 @@ import { formatEther, formatUnits, type Account, type Address, type Chain, type 
 import { POOLS_CHAIN_ID } from "@tools/pools-fun/constants.js";
 import { POOLS_FEE_VENUE } from "@tools/pools-fun/fee/venue.js";
 import { readPoolsTokenDecimals } from "@tools/pools-fun/evm/token-registration.js";
-import { signStageBroadcast, type StagedBroadcastOutcome } from "@tools/evm-chains/staged-broadcast.js";
+import {
+  signStageBroadcast,
+  type DeferredEvmSigner,
+  type StagedBroadcastOutcome,
+} from "@tools/evm-chains/staged-broadcast.js";
 import { priorLegAnchorFrom } from "@tools/evm-chains/dependent-leg-gas-estimate.js";
 import { withTransaction } from "@vex-agent/db/client.js";
 import { acquireSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status.js";
@@ -122,11 +130,36 @@ export async function broadcastPoolsLaunch(x: BroadcastPoolsLaunchInput): Promis
     return fail(`${TOOL_ID} failed before broadcasting: ${safeDetail(err)}. Nothing was signed.`);
   }
 
+  // THE DEFERRED SIGNER ARM, for the one property it exists to give: the
+  // signature is produced OFFLINE, with nothing at all reaching a provider
+  // between the expiry gate below and the bytes being signed. On the eager arm
+  // viem's `signTransaction` wallet action awaits one `eth_chainId` of its own
+  // after that gate (measured in viem 2.54.3,
+  // `viem/_esm/actions/wallet/signTransaction.js`), and a node that answers it
+  // slowly is precisely how a launch whose quote passed with seconds to spare
+  // gets signed dead - the deployment fee spent on a guaranteed revert.
+  //
+  // The key is resolved by the caller, as it always has been: both entry points
+  // hold an open wallet client before they get here, so `createSigner` hands
+  // that same client back and this arm's OTHER property (a late key) is not what
+  // the launch path is using it for. The gate stays in `hooks.onBeforeSign`
+  // below, which `signStageBroadcast` runs strictly later - immediately before
+  // the signature, with the resolved key already in hand.
+  const signer: DeferredEvmSigner = {
+    kind: "deferred",
+    // The preparation identity is the AUTHORIZED wallet, so a client for any
+    // other account is refused by `signStageBroadcast` before the key signs.
+    address: x.walletAddress,
+    chain: x.walletClient.chain,
+    onBeforeSign: async () => {},
+    createSigner: async () => x.walletClient,
+  };
+
   let outcome: StagedBroadcastOutcome;
   try {
     outcome = await signStageBroadcast(
       x.publicClient,
-      x.walletClient,
+      signer,
       // THE AUTHORIZED BYTES, verbatim. Not rebuilt, not re-quoted, not
       // re-prepared: this is the exact call whose fingerprint the C0 record
       // names.
