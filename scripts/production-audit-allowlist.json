@@ -8,7 +8,7 @@
       "severity": "high",
       "version": "1.1.5",
       "path": ".>@solana/spl-token>@solana/buffer-layout-utils>bigint-buffer",
-      "rationale": "Exception proposed by the Lighter integration author on 2026-09-06; pending the owner's decision in PR review; expires 2026-09-18 unless renewed. Upstream has no patched release. Vex reaches this package only through fixed-width Solana SPL layouts (8 to 32 bytes); the layout slices the input to the declared span before toBigIntLE. Malformed short data is rejected by the layout. This exception rests on that argument alone, with no mechanical reachability check. Re-review immediately when Solana removes or patches bigint-buffer."
+      "rationale": "Exception proposed by the Lighter integration author on 2026-09-06; pending the owner's decision in PR review; expires 2026-09-18 unless renewed. Upstream has no patched release. The advisory is a buffer overflow in the NATIVE binding; Vex never builds it (package.json lists bigint-buffer under pnpm.ignoredBuiltDependencies), so the pure-JavaScript fallback runs. Vex reaches the package only through fixed-width Solana SPL layouts (8 to 32 bytes). The audit verifies the absence of a compiled binding, the install-script ban, the fixed literal widths in the installed @solana/buffer-layout-utils, and exercises the reachable converters at 8 and 32 bytes. Re-review immediately when Solana removes or patches bigint-buffer."
     },
     {
       "url": "https://github.com/advisories/GHSA-w5hq-g745-h8pq",

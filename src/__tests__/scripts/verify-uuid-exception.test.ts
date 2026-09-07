@@ -16,10 +16,19 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, beforeAll } from "vitest";
 
-// @ts-expect-error - the gate scripts are plain ESM with no type declarations.
-import { verifyUuidException } from "../../../scripts/verify-uuid-exception.mjs";
+// The gate script is plain ESM without type declarations. It is loaded at run
+// time through a resolved specifier and typed once at this seam, so the test
+// carries no suppression comment and the contract it relies on is spelled out.
+type ReachabilityVerifier = (projectRoot: string) => Promise<void>;
+let verifyUuidException: ReachabilityVerifier;
+
+beforeAll(async () => {
+  const specifier = new URL("../../../scripts/verify-uuid-exception.mjs", import.meta.url).href;
+  const loaded = (await import(specifier)) as { readonly verifyUuidException: ReachabilityVerifier };
+  verifyUuidException = loaded.verifyUuidException;
+});
 
 const sandboxes: string[] = [];
 

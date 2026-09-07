@@ -15,10 +15,30 @@
  *    CLOSED rather than being read as "no findings".
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll } from "vitest";
 
-// @ts-expect-error - the gate scripts are plain ESM with no type declarations.
-import { evaluateProductionAudit } from "../../../scripts/production-audit-decision.mjs";
+// The gate script is plain ESM without type declarations. It is loaded at run
+// time through a resolved specifier and typed once at this seam (the fields the
+// tests observe), so the test carries no suppression comment.
+interface ProductionAuditDecision {
+  readonly ok: boolean;
+  readonly failures: readonly string[];
+  readonly unexpected: readonly Record<string, unknown>[];
+  readonly stale: readonly Record<string, unknown>[];
+  readonly exceptions: readonly Record<string, unknown>[];
+}
+type EvaluateProductionAudit = (input: {
+  readonly allowlist: unknown;
+  readonly advisories: unknown;
+  readonly now: Date | string;
+}) => ProductionAuditDecision;
+let evaluateProductionAudit: EvaluateProductionAudit;
+
+beforeAll(async () => {
+  const specifier = new URL("../../../scripts/production-audit-decision.mjs", import.meta.url).href;
+  const loaded = (await import(specifier)) as { readonly evaluateProductionAudit: EvaluateProductionAudit };
+  evaluateProductionAudit = loaded.evaluateProductionAudit;
+});
 
 const REVIEW_BY = "2026-09-18";
 const BEFORE_REVIEW = new Date("2026-09-07T12:00:00.000Z");

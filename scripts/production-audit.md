@@ -13,11 +13,12 @@ Files:
 - `scripts/production-audit-decision.mjs` - the pure decision. Exact match in
   both directions (an unlisted finding fails, and a listed exception the audit
   no longer reports fails), plus the hard `reviewBy` expiry.
-- `scripts/verify-stream-json-exception.mjs`,
+- `scripts/verify-bigint-buffer-exception.mjs`,
+  `scripts/verify-stream-json-exception.mjs`,
   `scripts/verify-uuid-exception.mjs` - reachability verifiers. An exception
   whose package has a verifier is never accepted on its rationale text alone:
   the verifier reads the INSTALLED module graph and fails when the claim stops
-  holding.
+  holding. Every current exception has one.
 - `scripts/production-audit-allowlist.json` (root),
   `vex-app/scripts/production-audit-allowlist.json` (desktop).
 
@@ -31,7 +32,7 @@ inattention.
 
 | Package | Version | Advisory | Workspaces | Why it is tolerated | Removal condition |
 | --- | --- | --- | --- | --- | --- |
-| bigint-buffer | 1.1.5 | GHSA-3gc7-fjrx-p6mg (high) | root | No patched release upstream. Reached only through fixed-width Solana SPL layouts (8 to 32 bytes), which slice input to the declared span before `toBigIntLE` and reject short data. Argued only: no mechanical reachability check. | Solana removes or patches bigint-buffer. |
+| bigint-buffer | 1.1.5 | GHSA-3gc7-fjrx-p6mg (high) | root | No patched release upstream. The overflow is in the NATIVE binding, which is never built here (`pnpm.ignoredBuiltDependencies`), so the pure-JavaScript fallback runs. Reached only through fixed-width Solana SPL layouts (8 to 32 bytes). Verified mechanically: no compiled `.node` artifact, the install-script ban still in `package.json`, literal widths in the installed `@solana/buffer-layout-utils`, and a real 8 and 32 byte round trip. | Solana removes or patches bigint-buffer. |
 | uuid | 8.3.2 | GHSA-w5hq-g745-h8pq (moderate) | root, vex-app | The advisory covers v3, v5 and v6 with a caller-provided output buffer. Jayson binds `require("uuid").v4` and calls it with no arguments. Verified mechanically. | Jayson or Solana accepts uuid 11.1.1 or newer. |
 | stream-json | 1.9.1 | GHSA-528h-pc64-c93x (moderate) | root, vex-app | The advisory covers the pick/ignore/filter/replace path filters and excludes StreamValues. Jayson 4.3.0 imports StreamValues and Verifier only. Verified mechanically, including that no filter module is loaded. 3.5.0 changes module exports and is not a compatible replacement. | Jayson accepts a patched release, or its reachable imports change. |
 
@@ -81,7 +82,10 @@ intended: a fixable advisory is fixed, never excused.
 
 `pnpm.onlyBuiltDependencies` and `pnpm.ignoredBuiltDependencies` record which
 packages may run install scripts. Nothing is added to `onlyBuiltDependencies`
-without a reason to execute code from that package at install time. Note that
+without a reason to execute code from that package at install time. The
+`bigint-buffer` entry in `ignoredBuiltDependencies` is load-bearing: it is what
+keeps the vulnerable native binding unbuilt, so the reachability verifier fails
+the gate if that entry disappears. Note that
 under pnpm 10.32.1 the desktop install still prints its "Ignored build scripts"
 notice for `bufferutil`, `cpu-features`, `protobufjs`, `ssh2` and
 `utf-8-validate`; listing those packages in `ignoredBuiltDependencies` was
@@ -94,7 +98,7 @@ script runs either way.
    An exception is the last resort, not the first.
 2. If it must stay, write the rationale as a reachability argument about THIS
    repository's code path, and say plainly who decided and when.
-3. If the claim is mechanical, add a verifier next to the existing two and
+3. If the claim is mechanical, add a verifier next to the existing three and
    register it in `REACHABILITY_VERIFIERS`. A claim nobody can check is worth
    less than a red gate.
 4. Move `reviewBy` only with a stated reason. It is the gate's only automatic

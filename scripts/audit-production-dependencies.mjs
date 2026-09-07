@@ -8,11 +8,11 @@
  * `production-audit-decision.mjs` (pure, unit-tested); this file owns the
  * process side only.
  *
- * Two of the exceptions claim the vulnerable code is UNREACHABLE from Vex.
- * A claim like that rots the moment a transitive dependency changes its
- * imports, so each one has a verifier that reads the INSTALLED module graph
- * and fails when the claim stops holding. An exception whose package has a
- * verifier is never accepted on the rationale text alone.
+ * Every exception claims the vulnerable code is UNREACHABLE from Vex. A claim
+ * like that rots the moment a transitive dependency changes its imports or an
+ * install builds a native binding, so each one has a verifier that reads the
+ * INSTALLED module graph and fails when the claim stops holding. An exception
+ * whose package has a verifier is never accepted on the rationale text alone.
  *
  * Usage: node scripts/audit-production-dependencies.mjs [allowlist] [workspace]
  * Both arguments are resolved from the repository root and default to the root
@@ -25,6 +25,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { evaluateProductionAudit } from "./production-audit-decision.mjs";
+import { verifyBigIntBufferException } from "./verify-bigint-buffer-exception.mjs";
 import { verifyStreamJsonException } from "./verify-stream-json-exception.mjs";
 import { verifyUuidException } from "./verify-uuid-exception.mjs";
 
@@ -35,6 +36,7 @@ import { verifyUuidException } from "./verify-uuid-exception.mjs";
  * difference between "mechanically checked" and "argued" is never invisible.
  */
 const REACHABILITY_VERIFIERS = new Map([
+  ["bigint-buffer", verifyBigIntBufferException],
   ["stream-json", verifyStreamJsonException],
   ["uuid", verifyUuidException],
 ]);
