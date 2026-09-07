@@ -21,7 +21,19 @@ const FIXTURES: readonly GoldenFixture[] = [
   { intent: "bridge usdc to base", expectedAny: ["khalani.bridge", "khalani.quote"] },
   { intent: "cross chain token search", expectedAny: ["khalani.tokens"] },
   { intent: "supported bridge chains", expectedAny: ["khalani.chains"] },
-  { intent: "swap on base", expectedAny: ["kyberswap.swap"] },
+  // RETARGETED 2026-09-07 with the equal-standing decision, not loosened to
+  // hide a regression. A blind "swap on base" names no venue, and after that
+  // decision BOTH EVM venues are a right answer to it - pinning the aggregator
+  // would assert in retrieval the ranking the owner just retired. What the
+  // fixture still guards is that a bare swap intent reaches an EVM swap venue
+  // at all, rather than a bridge, a launchpad or a research tool.
+  //
+  // MEASURED, and reported rather than tuned away: on this LEXICAL fallback
+  // path the top 3 is now uniswap.swap.quote, solana.swap.execute,
+  // uniswap.swap.execute - the aggregator has left the top 3 entirely. D11
+  // ruled the two venues ranking together the desired outcome and the dense
+  // path is the default one; the eval datasets assert CO-retrieval there.
+  { intent: "swap on base", expectedAny: ["kyberswap.swap", "uniswap.swap"] },
   { intent: "honeypot token check", expectedAny: ["kyberswap.tokens"] },
   { intent: "swap on solana", expectedAny: ["solana.swap"] },
   { intent: "solana token search", expectedAny: ["solana.tokens"] },

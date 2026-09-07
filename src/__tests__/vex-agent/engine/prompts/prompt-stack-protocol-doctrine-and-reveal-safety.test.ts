@@ -8,6 +8,7 @@ import {
 } from "../../../../vex-agent/engine/prompts/index.js";
 import { defaultVisibilityContext, getOpenAITools } from "../../../../vex-agent/tools/registry.js";
 import { makeContext } from "./_prompt-stack-helpers.js";
+import { SWAP_VENUE_STANDING } from "@vex-agent/tools/registry/swap-venue-guidance.js";
 
 describe("prompt-stack — protocol doctrine & reveal safety", () => {
   beforeEach(() => {
@@ -155,14 +156,18 @@ describe("prompt-stack — protocol doctrine & reveal safety", () => {
     // the venue silently disappearing again. So the block is INVERTED: the pair
     // must be PRESENT and callable, and the preference (KyberSwap primary) must
     // be stated in prose rather than enforced by hiding.
-    it("the COMPLETE built prompt states the venue preference in prose", () => {
+    it("the COMPLETE built prompt states the venue standing in prose, ONCE", () => {
       resetProtocolsPromptCache();
       const stack = buildPromptStack(makeContext());
       const full = [...stack.staticLayers, ...stack.turnLayers].join("\n");
 
-      // Wave 2 migration rows T473 and T474.
-      expect(full).toContain("KyberSwap is the primary EVM swap venue");
-      expect(full.match(/KyberSwap is the primary EVM swap venue/g)).toHaveLength(1);
+      // Owner decision 2026-09-07: peers, not a ranking, and the sentence is
+      // the owner module's. The "exactly once" half is the load-bearing one -
+      // the defect this replaces was FOUR surfaces each stating their own
+      // version of the standing in one context window.
+      expect(full).toContain(SWAP_VENUE_STANDING);
+      expect(full.split(SWAP_VENUE_STANDING)).toHaveLength(2);
+      expect(full).not.toMatch(/primary swap (route|venue)|fallback venue|hidden fallback/i);
       // The preference is guidance, never a gate: the prompt must not claim the
       // alternative is locked, unavailable, or has to be unlocked by a failure.
       expect(full).not.toMatch(/unlocks? it|now available for this session|backup venue is now available/i);

@@ -7,6 +7,10 @@ import { getKyberChains } from "@tools/kyberswap/chains.js";
 import { getProtocolNamespaceCoverage } from "@vex-agent/engine/prompts/chain-coverage.js";
 import { buildPromptStack } from "@vex-agent/engine/prompts/index.js";
 import { makeContext } from "./_prompt-stack-helpers.js";
+import {
+  SWAP_VENUE_STANDING,
+  SWAP_VENUE_UNISWAP_OCCASIONS,
+} from "@vex-agent/tools/registry/swap-venue-guidance.js";
 
 describe("buildProtocolsPrompt", () => {
   it("advertises real active namespaces", () => {
@@ -16,40 +20,37 @@ describe("buildProtocolsPrompt", () => {
     expect(prompt).toContain("### kyberswap");
   });
 
-  // Agent Scan plan v3 §11.2 (FIX3-W7, Codex final-review round 2 finding 2 /
-  // C30): the hidden Uniswap fallback must not be statically advertised in
-  // the BUILT system prompt for an unrevealed session — no per-namespace
-  // section (that would come from a navigation entry's `advertised: true`),
-  // and no imperative instruction telling the agent to proactively "fall
-  // back" or "switch" to it. Only a specific KyberSwap route-not-found-class
-  // failure output (checked at dispatch time, not documented here as a
-  // manual trigger) may surface it — this static, always-rendered layer must
-  // stay reveal-agnostic. The cross-venue safety sentence ("a uniswap quote
-  // only authorizes a uniswap execute") is intentionally kept — it is a
-  // conditional invariant for the rare revealed case, not an instruction to
-  // go use the venue, so it does not violate the hidden-by-default posture.
-  // INVERTED by owner decision D4: uniswap is an advertised namespace now, and
-  // the prompt states the PREFERENCE rather than hiding the alternative.
-  it("advertises the uniswap namespace and states the venue preference", () => {
+  // Owner decision D4 made `uniswap` an advertised namespace; the owner
+  // decision of 2026-09-07 made the two EVM swap venues PEERS. What the always
+  // rendered protocols layer must therefore carry is the STANDING, in the one
+  // wording `registry/swap-venue-guidance.ts` owns, and never a claim that a
+  // venue is locked or has to be unlocked by a failure.
+  it("advertises the uniswap namespace and states the venue standing", () => {
     resetProtocolsPromptCache();
     const prompt = buildProtocolsPrompt();
     expect(prompt).toContain("### uniswap");
-    // Wave 2 migration rows T531-T534.
-    expect(prompt).toContain("KyberSwap is the primary EVM swap venue");
-    // The preference must never be phrased as a lock.
+    expect(prompt).toContain(SWAP_VENUE_STANDING);
+    // The standing must never be phrased as a lock, or as a ranking.
     expect(prompt).not.toContain("backup venue is now available");
     expect(prompt).not.toMatch(/unlocks? it/i);
+    expect(prompt).not.toMatch(/primary swap (route|venue)|fallback venue/i);
   });
 
   // The routing line describes the failure CLASS rather than enumerating
   // codes, because the enumeration went stale twice - most recently when a
   // geo-blocked user's 403 matched nothing it listed.
-  it("names the availability class and the conditions that are NOT reasons to switch", () => {
+  it("names the occasions Uniswap serves, positively", () => {
     resetProtocolsPromptCache();
     const prompt = buildProtocolsPrompt();
-    // Wave 2 migration rows T535 and T536.
-    expect(prompt).toContain("or is unavailable");
-    expect(prompt).toContain("Do not switch for a bad price alone or for slippage, balance, allowance, or deadline failures");
+    // Replaces the old "or is unavailable" availability-class assertion: after
+    // the 2026-09-07 decision the layer states WHEN each venue serves rather
+    // than what makes the other one fail. "Do not switch for a bad price
+    // alone" is deliberately gone with it - that clause forbade exactly the
+    // quote comparison the owner now wants - while the rule it used to travel
+    // with, that slippage/balance/allowance/deadline failures are not venue
+    // failures, lives on in the swap task shape and is asserted there.
+    expect(prompt).toContain(SWAP_VENUE_UNISWAP_OCCASIONS);
+    expect(prompt).not.toContain("Do not switch for a bad price alone");
   });
 
   it("the venue-routing lines carry no em dash (owner decree 2026-08-05)", () => {

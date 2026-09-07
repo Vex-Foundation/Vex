@@ -3,6 +3,7 @@ import {
   WEB_SEARCH_DEFAULT_MAX_RESULTS,
   WEB_SEARCH_MAX_FETCH_TOP,
 } from "@vex-agent/tools/internal/web-research/search-options.js";
+import { SWAP_VENUE_GUIDANCE_FULL } from "@vex-agent/tools/registry/swap-venue-guidance.js";
 
 export interface TaskShapeAvailability {
   readonly webResearch: boolean;
@@ -29,7 +30,7 @@ function buildSwapShape(): string[] {
   return [
     "### Swap",
     "Trigger: The user wants to buy, sell, swap, exit, or acquire a token after discovery.",
-    "Default procedure: Resolve the exact token and chain, check safety where available, then quote before execution. KyberSwap is the primary EVM swap venue and Uniswap is the always-callable alternative when KyberSwap lacks chain support, cannot route the pair, fails its own route checks, reverts on-chain, or is unavailable. Do not switch for a bad price alone or for slippage, balance, allowance, or deadline failures; correct the amount or take a fresh quote. When switching, quote the new venue and never reuse the failed route. Use Jupiter for Solana. A pools.fun token has no curve and needs a separate standard swap quote from its first block; measured routing found 13 of 13 sampled tokens. A Virtuals agent still on its bonding curve trades on that curve through the virtuals curve tools; after graduation acquisition continues on the venue named by its route.",
+    `Default procedure: Resolve the exact token and chain, check safety where available, then quote before execution. ${SWAP_VENUE_GUIDANCE_FULL} Slippage, balance, allowance and deadline failures are NOT venue failures: correct the amount or take a fresh quote on the same venue rather than switching. Whichever venue you use, quote it first and never reuse a failed route. Use Jupiter for Solana. A pools.fun token has no curve and needs a separate standard swap quote from its first block; measured routing found 13 of 13 sampled tokens. A Virtuals agent still on its bonding curve trades on that curve through the virtuals curve tools; after graduation acquisition continues on the venue named by its route.`,
     "Quote and execute on the SAME venue: a swap execute runs only against a fresh quote from the exact venue it will broadcast on. The runtime enforces this.",
     "Robinhood caution: KyberSwap's indexed reserves can be stale on thin pairs there.",
     "Price protection: slippage binds the quote you were SHOWN. The execute claims that exact quote, writes its floor into the calldata, and refuses by name if it cannot honour it - one quote, one attempt. Every refusal is recoverable by re-quoting; none is fixed by raising slippage.",

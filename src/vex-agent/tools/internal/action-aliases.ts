@@ -158,7 +158,7 @@ export async function handleSwapQuote(
     return executeProtocolTool({ toolId: "solana.swap.quote", params }, protocolContext(context));
   }
 
-  // EVM → KyberSwap ONLY (plan §11.2 - the silent Uniswap fallback is removed).
+  // EVM → KyberSwap ONLY (plan §11.2 - the silent substitution is removed).
   // Both quote handlers resolve tokens strictly (address-only), so DEX symbol
   // search is disabled to avoid wrong-contract matches (e.g. "USDC" → axlUSDC).
   if (!isEvmSwapTokenInput(a.tokenIn) || !isEvmSwapTokenInput(a.tokenOut)) {
@@ -190,7 +190,7 @@ export async function handleSwapQuote(
   return executeProtocolTool({ toolId: "kyberswap.swap.quote", params }, protocolContext(context));
 }
 
-// ── SwapQuoteUniswap - HIDDEN EVM-only Uniswap fallback quote ──────
+// ── SwapQuoteUniswap - the EVM-only Uniswap quote ──────────────────
 
 const SwapQuoteUniswapArgs = z.object({
   chain: ChainParam,
