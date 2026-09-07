@@ -550,8 +550,10 @@ type PayoutLegsOutcome =
  * at three decimals and 0.000000000000025 at eighteen. The handler used to fill
  * the gap with `tokenDecimals: 0` and `amountHuman: "0"`, which turns a positive
  * payout into a durable statement that nothing was paid - the exact shape rule
- * 90 forbids on the money path. So the scale is proven here, before the signer
- * is opened, and an unprovable one refuses BY NAME.
+ * 90 forbids on the money path. So the scale is proven here - before anything is
+ * SIGNED, though after the signing clients are opened (`openLaunchSigningClients`
+ * runs earlier, because the reader used for the simulation is the signer's own
+ * public client) - and an unprovable one refuses BY NAME.
  *
  * The READ arm does not come through here: `dryRun` shows the raw amount and
  * says the scale is unknown, which is the honest answer to a question that moves

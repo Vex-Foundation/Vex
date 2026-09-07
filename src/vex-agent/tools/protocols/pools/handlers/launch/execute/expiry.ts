@@ -30,6 +30,15 @@
  * this is wired into `signStageBroadcast`'s `onBeforeSign` (the last awaited
  * call before the key) rather than after it.
  *
+ * A GATE IS ONLY AS GOOD AS ITS SILENCE AFTERWARDS. The launch therefore signs
+ * on the DEFERRED arm, whose signature is produced offline: viem's
+ * `signTransaction` wallet action awaits one `eth_chainId` before it reaches the
+ * local account (measured in viem 2.54.3), and a node that answers that slowly
+ * would let this hook pass with seconds of quote left and the bytes be signed
+ * long after the clock it just read had run out. Nothing reaches the network
+ * between this check and the signature - see `execute/broadcast.ts` and
+ * `staged-broadcast.ts`'s `DeferredEvmSigner`.
+ *
  * Rabby carries an approval-time deadline on the approved transaction
  * (`agents-colab/rabby/src/background/controller/provider/controller.ts:699`,
  * `lowGasDeadline`) and signs strictly the approved object - the "sign what was
