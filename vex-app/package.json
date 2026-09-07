@@ -39,6 +39,8 @@
     "lint:tsc:ratchet:update": "node scripts/check-type-baseline.mjs --update",
     "lint:tsc:all": "tsc --noEmit -p tsconfig.shared.json && tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.preload.json && tsc --noEmit -p tsconfig.pty-host.json && tsc --noEmit -p tsconfig.renderer.json && tsc --noEmit -p tsconfig.renderer-worker.json && tsc --noEmit -p tsconfig.e2e.json",
     "test": "vitest run",
+    "test:except-native-fs": "node scripts/vitest-except-native-fs.mjs",
+    "test:native-fs": "vitest run src/main/studio/files/__tests__/files-real-fs.test.ts",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "audit:deps": "pnpm audit --prod && pnpm audit",

@@ -5,6 +5,31 @@ import { defineConfig } from "vitest/config";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /**
+ * The one suite that drives a REAL native watcher (@parcel/watcher over
+ * FSEvents / inotify) against a real directory tree.
+ *
+ * On `macos-latest` it is the only suite in the repository that has ever
+ * flaked: run 33956745474 lost the SUSPEND test, and run 34113589611 - with
+ * that test armed and passing - lost a different one in the same file
+ * ("SUPPRESSES child deletes under a deleted directory"), which waited 8112 ms
+ * for a directory-delete event that the stream never delivered while it was
+ * delivering the child delete. Both runs were a fully contended runner: 796
+ * files under vitest's default worker fan-out. So the darwin CI job runs this
+ * file ALONE (`test:native-fs`) after running everything else without it
+ * (`test:except-native-fs`), and this flag is how "everything else" is
+ * expressed.
+ *
+ * It lives here, not on the CLI: vitest 4.1.5 lets a project-level
+ * `test.exclude` override the CLI `--exclude`, measured on this config -
+ * `vitest list --filesOnly` stayed at 796 files under every `--exclude`
+ * variant aimed at this path, while a control `--exclude` matching every
+ * `.test.ts` file removed the 131 renderer files, which is the project that
+ * declares no `exclude` of its own.
+ */
+const NATIVE_FS_SUITE = "src/main/studio/files/__tests__/files-real-fs.test.ts";
+const excludeNativeFsSuite = process.env.VEX_SKIP_NATIVE_FS_SUITE === "1";
+
+/**
  * Two projects so renderer component tests run under jsdom while main /
  * shared / preload unit tests stay in pure node — keeps the existing
  * suite fast and avoids accidental DOM globals in main-process code.
@@ -62,7 +87,12 @@ export default defineConfig({
            * container; running them here would fail on a missing database
            * rather than on the behaviour they assert.
            */
-          exclude: ["**/node_modules/**", "**/dist/**", "**/*.int.test.ts"],
+          exclude: [
+            "**/node_modules/**",
+            "**/dist/**",
+            "**/*.int.test.ts",
+            ...(excludeNativeFsSuite ? [NATIVE_FS_SUITE] : []),
+          ],
         },
       },
       {
