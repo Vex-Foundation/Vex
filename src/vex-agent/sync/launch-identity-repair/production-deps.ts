@@ -8,14 +8,23 @@
  *
  * READ-ONLY BY CONSTRUCTION: the only chain capability reached here is
  * `getTransactionReceipt`. No signer, no wallet client, no send.
+ *
+ * WHICH NODE ANSWERS is chosen by the LAUNCHPAD THAT OWNS THE CHAIN, not by the
+ * local chain registry alone - see {@link resolveLaunchReceiptReader}.
  */
 
-import { getAddress } from "viem";
+import { getAddress, type Chain, type PublicClient, type Transport } from "viem";
 
-import { virtualsCurveDeploymentByChainId } from "@tools/virtuals/curve/index.js";
+import {
+  virtualsCurveDeploymentByChainId,
+  type VirtualsCurveDeployment,
+} from "@tools/virtuals/curve/index.js";
 import { decodePreLaunched } from "@tools/virtuals/launch/index.js";
 import logger from "@utils/logger.js";
-import type { TokenLaunchIntent } from "@vex-agent/db/repos/token-launch-intents.js";
+import type {
+  TokenLaunchIntent,
+  TokenLaunchIntentProtocol,
+} from "@vex-agent/db/repos/token-launch-intents.js";
 import { isReceiptNotFound } from "./receipt-errors.js";
 import type {
   AuthorizedPoolsLaunchPlan,
@@ -37,22 +46,9 @@ import type {
 export function buildProductionLaunchRepairDeps(): LaunchIdentityRepairDeps {
   return {
     resolveLaunchOutcome: async ({ chainId, txHash, walletAddress, protocol, poolsPlan }) => {
-      const { getLocalChain } = await import("@tools/evm-chains/registry.js");
-      const chain = getLocalChain(chainId);
-      if (!chain) return null;
-      const { getLocalPublicClient } = await import("@tools/evm-chains/evm-client.js");
-      // The retired Trench Express launchpad. Its decoder is history-only
-      // (`sync/legacy-trench-express/`): no new intent can carry
-      // `protocol='trench'` since migration 108, but a `broadcast_pending` row
-      // mined before it must still be reconciled to a token identity.
-      const { decodeLaunchReceipt } = await import(
-        "../legacy-trench-express/launch-settlement.js"
-      );
-      const { LEGACY_TRENCH_DIAMOND_ADDRESS } = await import(
-        "../legacy-trench-express/constants.js"
-      );
-
-      const client = getLocalPublicClient(chain);
+      const reader = await resolveLaunchReceiptReader(chainId, protocol);
+      if (reader === null) return null;
+      const client = reader.client;
 
       let receipt;
       try {
@@ -70,41 +66,47 @@ export function buildProductionLaunchRepairDeps(): LaunchIdentityRepairDeps {
       if (status === "reverted") return { kind: "reverted" };
       if (status !== "success") return null;
 
-      if (protocol === "pools_fun") {
-        return await decodePoolsLaunchForSweep(
-          receipt.logs.map((log) => ({
-            address: log.address,
-            topics: log.topics as string[],
-            data: log.data,
-          })),
-          walletAddress,
-          poolsPlan,
-        );
-      }
+      const logs = receipt.logs.map((log) => ({
+        address: log.address,
+        topics: log.topics as string[],
+        data: log.data,
+      }));
 
       // THE VIRTUALS ARM. Without it a Virtuals `preLaunch` fell through to the
       // retired Trench decoder below, decoded to nothing, and was re-checked as
       // ambiguity forever - so the intent never reached `awaiting_keeper` and
       // the keeper sweep, which claims only that status, never saw it. The
       // user's agent existed on chain and nothing in Vex would ever finish it.
-      if (protocol === "virtuals") {
+      //
+      // The reader's kind is `virtuals` for exactly the Virtuals protocol, so
+      // this IS the protocol dispatch - it just carries the deployment that was
+      // already resolved to pick the node, instead of looking it up a second
+      // time and having to handle a miss that cannot happen here.
+      if (reader.kind === "virtuals") {
         return decodeVirtualsPreLaunchForSweep({
-          chainId,
+          deployment: reader.deployment,
           blockNumber: receipt.blockNumber,
-          logs: receipt.logs.map((log) => ({
-            address: log.address,
-            topics: log.topics as string[],
-            data: log.data,
-          })),
+          logs,
         });
       }
 
+      if (protocol === "pools_fun") {
+        return await decodePoolsLaunchForSweep(logs, walletAddress, poolsPlan);
+      }
+
+      // The retired Trench Express launchpad. Its decoder is history-only
+      // (`sync/legacy-trench-express/`): no new intent can carry
+      // `protocol='trench'` since migration 108, but a `broadcast_pending` row
+      // mined before it must still be reconciled to a token identity.
+      const { decodeLaunchReceipt } = await import(
+        "../legacy-trench-express/launch-settlement.js"
+      );
+      const { LEGACY_TRENCH_DIAMOND_ADDRESS } = await import(
+        "../legacy-trench-express/constants.js"
+      );
+
       const decoded = decodeLaunchReceipt({
-        logs: receipt.logs.map((log) => ({
-          address: log.address,
-          topics: log.topics as string[],
-          data: log.data,
-        })),
+        logs,
         diamond: LEGACY_TRENCH_DIAMOND_ADDRESS as `0x${string}`,
         wallet: walletAddress as `0x${string}`,
         // The sweep never reads an AMOUNT off the chain — the authorized native
@@ -114,6 +116,76 @@ export function buildProductionLaunchRepairDeps(): LaunchIdentityRepairDeps {
       return decoded === null ? null : { kind: "created", identity: { tokenAddress: decoded.tokenAddress } };
     },
   };
+}
+
+/**
+ * THE NODE THAT ANSWERS FOR ONE LAUNCH, chosen by the launchpad that owns the
+ * chain - and never silently absent.
+ *
+ * BASE WAS UNREACHABLE HERE FOR EVERY VIRTUALS LAUNCH. This resolution used to
+ * be `getLocalChain(chainId)` for every protocol, and the local registry holds
+ * Robinhood only, so a Virtuals launch on Base (8453, where most of them happen)
+ * returned `null` before any decoder was reached. The sweep reads `null` as "not
+ * mined yet", so a mined `preLaunch` whose broadcast answer was lost stayed
+ * `broadcast_pending` forever: never `awaiting_keeper`, therefore never seen by
+ * the keeper sweep, with the user's VIRTUAL parked inside BondingV5 and nothing
+ * in Vex able to finish the launch. Measured 2026-09-07 against a real Base
+ * pre-launch hash: `{ localBase: null, receiptOutcome: null }`.
+ *
+ * BASE IS NOT ADDED TO THE LOCAL REGISTRY, deliberately. The Virtuals
+ * deployment's own client (`getVirtualsCurvePublicClient`) is the owner of Base
+ * reads for this venue - it already resolves Robinhood through the local
+ * registry and every other chain through the shared RPC owner - and widening the
+ * registry instead would hand a Base client to every unrelated caller under no
+ * one's decision. The pools.fun and legacy Trench arms keep the local registry:
+ * the Virtuals deployment table is one venue's contract pin, not a chain
+ * registry, and must not answer for another launchpad.
+ *
+ * A chain with no reader is reported by name rather than swallowed. It is still
+ * not terminal - this sweep never terminalizes on what it could not ask - but a
+ * launch Vex structurally cannot read is a different fact from a launch that has
+ * not mined yet, and the silence of the first is what made the Base defect
+ * survive review.
+ */
+type LaunchReceiptReader =
+  | {
+    readonly kind: "virtuals";
+    readonly client: PublicClient<Transport, Chain>;
+    readonly deployment: VirtualsCurveDeployment;
+  }
+  | { readonly kind: "local_chain"; readonly client: PublicClient<Transport, Chain> };
+
+async function resolveLaunchReceiptReader(
+  chainId: number,
+  protocol: TokenLaunchIntentProtocol,
+): Promise<LaunchReceiptReader | null> {
+  if (protocol === "virtuals") {
+    const deployment = virtualsCurveDeploymentByChainId(chainId);
+    if (deployment === undefined) {
+      logger.warn("virtuals.launch_identity_repair.no_deployment", {
+        chainId,
+        hint: "this intent claims a Virtuals launch on a chain where Virtuals runs no bonding curve; "
+          + "no node is asked and the row is left pending, never terminalized.",
+      });
+      return null;
+    }
+    const { getVirtualsCurvePublicClient } = await import("@tools/virtuals/curve/index.js");
+    return { kind: "virtuals", client: getVirtualsCurvePublicClient(deployment), deployment };
+  }
+
+  const { getLocalChain } = await import("@tools/evm-chains/registry.js");
+  const chain = getLocalChain(chainId);
+  if (chain === undefined) {
+    logger.warn("launch_identity_repair.no_chain_client", {
+      chainId,
+      protocol,
+      hint: "this launchpad reads through the local chain registry and the registry does not hold this "
+        + "chain, so no node can be asked. The row is left pending, never terminalized.",
+    });
+    return null;
+  }
+  const { getLocalPublicClient } = await import("@tools/evm-chains/evm-client.js");
+  return { kind: "local_chain", client: getLocalPublicClient(chain) };
 }
 
 /**
@@ -287,21 +359,19 @@ async function decodePoolsLaunchForSweep(
  * it declines rather than decoding loosely.
  */
 function decodeVirtualsPreLaunchForSweep(input: {
-  readonly chainId: number;
+  /** The SAME deployment whose client answered this receipt - never a second lookup. */
+  readonly deployment: VirtualsCurveDeployment;
   readonly blockNumber: bigint | null | undefined;
   readonly logs: readonly { address: string; topics: string[]; data: string }[];
 }): LaunchReceiptOutcome | null {
-  const deployment = virtualsCurveDeploymentByChainId(input.chainId);
-  if (deployment === undefined) {
-    logger.info("virtuals.launch_identity_repair.no_deployment", { chainId: input.chainId });
-    return null;
-  }
+  const deployment = input.deployment;
+  const chainId = deployment.chainId;
   const blockNumber = input.blockNumber;
   if (typeof blockNumber !== "bigint") {
     // The keeper sweep scans FROM this block. Without it the recovered row
     // would either be unusable to that sweep or force a scan from genesis on
     // every tick, so the launch stays pending until a receipt that carries one.
-    logger.info("virtuals.launch_identity_repair.receipt_block_missing", { chainId: input.chainId });
+    logger.info("virtuals.launch_identity_repair.receipt_block_missing", { chainId });
     return null;
   }
 
@@ -310,7 +380,7 @@ function decodeVirtualsPreLaunchForSweep(input: {
     bondingV5: getAddress(deployment.bondingV5),
   });
   if (preLaunched === null) {
-    logger.info("virtuals.launch_identity_repair.prelaunch_undecoded", { chainId: input.chainId });
+    logger.info("virtuals.launch_identity_repair.prelaunch_undecoded", { chainId });
     return null;
   }
 
