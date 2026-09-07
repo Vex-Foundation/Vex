@@ -89,6 +89,8 @@ export interface AgentscanReportingState {
   readonly serverCursorRowId: number | null;
   /** sha256 of the sorted chainFamily:address inventory list the last handshake covered. */
   readonly boundWalletsFingerprint: string | null;
+  readonly shareToken: string | null;
+  readonly shareTokenRegisteredAt: string | null;
 }
 
 export interface ClaimedOutboxEvent {
@@ -411,6 +413,8 @@ interface StateRow {
   last_handshake_at: Date | null;
   server_cursor_row_id: string | number | null;
   bound_wallets_fingerprint: string | null;
+  share_token: string | null;
+  share_token_registered_at: Date | null;
 }
 
 function mapState(row: StateRow): AgentscanReportingState {
@@ -432,6 +436,10 @@ function mapState(row: StateRow): AgentscanReportingState {
     lastHandshakeAt: row.last_handshake_at ? new Date(row.last_handshake_at).toISOString() : null,
     serverCursorRowId: row.server_cursor_row_id === null ? null : Number(row.server_cursor_row_id),
     boundWalletsFingerprint: row.bound_wallets_fingerprint,
+    shareToken: row.share_token ?? null,
+    shareTokenRegisteredAt: row.share_token_registered_at
+      ? new Date(row.share_token_registered_at).toISOString()
+      : null,
   };
 }
 
@@ -600,6 +608,8 @@ export async function resetIdentityForRecovery(): Promise<void> {
               registration_generation = registration_generation + 1,
               last_handshake_at = NULL,
               server_cursor_row_id = NULL,
+              share_token = NULL,
+              share_token_registered_at = NULL,
               register_attempt_count = 0,
               next_register_attempt_at = NOW(),
               updated_at = NOW()
@@ -607,6 +617,34 @@ export async function resetIdentityForRecovery(): Promise<void> {
     );
     await resetOutboxForFullResend(client);
   });
+}
+
+export async function persistShareToken(token: string): Promise<void> {
+  await ensureSingleton();
+  await execute(
+    `UPDATE agentscan_reporting_state
+        SET share_token = $1, share_token_registered_at = NULL, updated_at = NOW()
+      WHERE id = 1`,
+    [token],
+  );
+}
+
+export async function markShareTokenRegistered(): Promise<void> {
+  await ensureSingleton();
+  await execute(
+    `UPDATE agentscan_reporting_state
+        SET share_token_registered_at = NOW(), updated_at = NOW()
+      WHERE id = 1 AND share_token IS NOT NULL`,
+  );
+}
+
+export async function clearShareToken(): Promise<void> {
+  await ensureSingleton();
+  await execute(
+    `UPDATE agentscan_reporting_state
+        SET share_token = NULL, share_token_registered_at = NULL, updated_at = NOW()
+      WHERE id = 1`,
+  );
 }
 
 /** Permanent stop — 410, 403-quarantined, or a register 409. Never auto-cleared. */
