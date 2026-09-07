@@ -198,7 +198,7 @@ Vex reaches real venues under their real names. Read-only calls run freely; anyt
 | Where | What Vex can do there |
 | --- | --- |
 | Ethereum, Base, Arbitrum, Optimism, Polygon, BSC, Avalanche, Linea, Mantle, Sonic, Berachain, Ronin, Unichain, HyperEVM, Plasma, Monad, MegaETH, Robinhood Chain | Swap, via KyberSwap (18 chains) |
-| Ethereum, Base, Arbitrum, Optimism, Polygon, BSC, Robinhood Chain | Swap directly on Uniswap, as the backup route (7 chains) |
+| Ethereum, Base, Arbitrum, Optimism, Polygon, BSC, Robinhood Chain | Swap directly on Uniswap pools, an equal-standing venue next to KyberSwap (7 chains) |
 | Ethereum, Optimism, BSC, Base, Arbitrum, Mantle, Sonic, HyperEVM, Berachain, Monad, Plasma | Pendle yield trading (11 chains) |
 | Ethereum, Optimism, Unichain, Polygon, Monad, HyperEVM, Robinhood Chain, Base, Arbitrum | Morpho variable-rate lending (9 chains) |
 | Solana | Swap, lend, borrow, prediction markets, via Jupiter |
@@ -206,10 +206,10 @@ Vex reaches real venues under their real names. Read-only calls run freely; anyt
 | More than forty chains, list fetched live from the bridge's own registry | See balances; bridge between them |
 
 ### ![Uniswap](/protocols/uniswap.png) Uniswap
-One of the oldest token-swap exchanges on Ethereum-style ("EVM") chains. Vex quotes and executes swaps directly on-chain, on Uniswap V2 and V3. It stays hidden from the agent until a KyberSwap attempt fails for a routing reason - no route, an unknown token, a refused build, or the swap itself reverting - and only then is it offered as the backup, with its own fresh quote and its own approval. Example: "Swap 0.1 ETH for USDC" - if KyberSwap has no route, Uniswap catches it.
+One of the oldest token-swap exchanges on Ethereum-style ("EVM") chains. Vex quotes and executes swaps directly on-chain, on Uniswap V2 and V3, with no aggregator in between. It is an equal-standing swap venue next to KyberSwap: KyberSwap is usually the better first choice because it aggregates many exchanges, and Uniswap is the pool itself, for when the aggregator cannot serve a pair, its quote fails, or you ask for Uniswap. Each venue gets its own fresh quote and its own approval. Example: "Swap 0.1 ETH for USDC on Uniswap."
 
 ### ![KyberSwap](/protocols/kyberswap.svg) KyberSwap
-An aggregator: it shops 18 EVM chains for the best swap price. This is Vex's primary swap venue - quotes, execution, and basic token-safety checks. Every attempt, pending or confirmed or failed, is recorded with its transaction hash (the receipt id you can look up on a block explorer). Example: "Swap 250 USDC for ETH on Base."
+An aggregator: it shops 18 EVM chains for the best swap price, so it is usually the better first choice for a swap - quotes, execution, and basic token-safety checks. Uniswap is Vex's equal-standing on-chain swap venue for when the aggregator cannot serve a pair or you want the pool itself. Every attempt, pending or confirmed or failed, is recorded with its transaction hash (the receipt id you can look up on a block explorer). Example: "Swap 250 USDC for ETH on Base."
 
 ### ![Jupiter](/protocols/jupiter.jpg) Jupiter
 The main swap router on Solana. Vex swaps Solana tokens, looks up prices, searches tokens, deposits into and withdraws from Jupiter Lend - it can even borrow against a position - and it can both browse **and trade** Jupiter Predict prediction markets, buying, selling, claiming and closing. Everything except the reads moves real money and goes through approval. Example: "Put half my SOL into USDC."
