@@ -54,9 +54,13 @@ vi.mock("@vex-agent/db/repos/launch-images.js", async (importOriginal) => {
 
 const resolveLaunchAssetsPublisher = vi.fn();
 
-vi.mock("@vex-agent/agentscan/assets-client.js", () => ({
-  resolveLaunchAssetsPublisher: () => resolveLaunchAssetsPublisher(),
-}));
+vi.mock("@vex-agent/agentscan/assets-client.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@vex-agent/agentscan/assets-client.js")>();
+  // The content-address derivation stays REAL. It is the binding between what
+  // this tool records and what a launch later asks for, and a fake one would
+  // make the suite agree with itself rather than with the host's addressing.
+  return { ...actual, resolveLaunchAssetsPublisher: () => resolveLaunchAssetsPublisher() };
+});
 
 const { PublicAssetConflictError } = await import("@vex-agent/db/repos/launch-images.js");
 const { launchpadsImagePublishHandler } = await import(

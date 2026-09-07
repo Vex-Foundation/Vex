@@ -108,13 +108,15 @@ function launchFieldParams(): ProtocolParamDef[] {
       key: "imagePath",
       type: "string",
       description:
-        "The picture, over the Vex Studio MCP surface: a path to an image file inside THIS project. IT IS REFUSED BY "
-        + "A VIRTUALS LAUNCH, and the refusal is the honest answer rather than a gap. The URL written on chain is "
-        + "permanent, so it must address bytes that were made public deliberately, and making a file public is a "
-        + "decision Vex will not take for you as a side effect of a launch or a preview. "
-        + "launchpads__image_publish is the approval-gated tool that asks for it, and it runs in the Vex app, where "
-        + "pictures are staged in the image locker - so a Virtuals agent launch is done from the Vex app today. You "
-        + "cannot pass a URL of your own on either surface.",
+        "The picture, over the Vex Studio MCP surface: a path to an image file inside THIS project. REQUIRED on "
+        + "this surface, and it must ALREADY BE PUBLISHED, which is a TWO-STEP flow: first call "
+        + "launchpads__image_publish with this same imagePath - it asks for your approval, because publishing makes "
+        + "the bytes fetchable by anyone - then launch with the same imagePath. A launch never publishes for you: "
+        + "the URL written on chain is permanent, so it must address bytes that were made public deliberately, and "
+        + "that decision is not a side effect of a launch or a preview. Vex reads the file itself, hashes those "
+        + "bytes and matches them against what was published, so a file EDITED after publishing is refused by name "
+        + "rather than launched against a stale address - publish it again and retry. Symbolic links are never "
+        + "followed and a path outside the project is refused. You cannot pass a URL of your own on either surface.",
     },
     {
       key: "amountIn",
@@ -183,7 +185,10 @@ export const VIRTUALS_LAUNCH_TOOLS: readonly ProtocolToolManifest[] = [
       + "launch() - not Vex's - is what makes it tradable and listed. IT REFUSES rather than guessing: a scheduled "
       + "launch, ACF and a non-zero airdrop each answer `supported: false` with the measured reason, solana and "
       + "ethereum answer with why they are closed, a caller-supplied image URL or fee override is refused BY NAME, "
-      + "and an unreadable fee or threshold is refused rather than treated as zero. Feed the previewId and the "
+      + "and an unreadable fee or threshold is refused rather than treated as zero. THE PICTURE MUST ALREADY BE "
+      + "PUBLIC and this tool never publishes one: pass imageId in the Vex app, or imagePath to a file in your "
+      + "project over Vex Studio, and in both cases call launchpads__image_publish with that same picture first. "
+      + "Feed the previewId and the "
       + "IDENTICAL fields to virtuals__agent_launch_execute. It returns `previewId`, `expiresAt`, `chain`, "
       + "`chainId`, `wallet`, `contracts`, `agent` (with `onChainName`), `money`, `antiSniper`, `allowance`, "
       + "`balance`, `transaction` (with `calldataFingerprint`), `lifecycle` and `vexFee`.",
@@ -214,7 +219,9 @@ export const VIRTUALS_LAUNCH_TOOLS: readonly ProtocolToolManifest[] = [
       + "rebuilds the exact preLaunch calldata and REFUSES if its fingerprint differs from the one the preview "
       + "sealed - a changed field, picture or amount is refused by name rather than re-priced, and the preview is "
       + "not consumed. It also refuses if a proxy was upgraded, if the venue's suite no longer matches Vex's pins, "
-      + "or if the wallet cannot pay. The launch is structurally IMMEDIATE and cannot become scheduled between the "
+      + "or if the wallet cannot pay. THE PICTURE MUST ALREADY BE PUBLIC, on either surface, and nothing here "
+      + "publishes one: imageId in the Vex app, imagePath to a file in your project over Vex Studio, and "
+      + "launchpads__image_publish with that same picture is the step before this one. The launch is structurally IMMEDIATE and cannot become scheduled between the "
       + "preview and the signature: preLaunch is encoded with startTime 0, which is below the venue's scheduled "
       + "threshold at every block. It sends up to two "
       + "transactions: an EXACT-amount approval to BondingV5 when the allowance is short (BondingV5, not the curve "

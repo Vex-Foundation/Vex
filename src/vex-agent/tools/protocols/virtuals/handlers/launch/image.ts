@@ -32,20 +32,51 @@
  * been published to a public host. A second publishing path is also a second
  * place the consent question could be skipped, which is exactly what happened.
  *
- * THE CONSEQUENCE IS NAMED RATHER THAN HIDDEN: `launchpads__image_publish` is
- * not available over the Vex Studio MCP surface (there is no image locker
- * there), so a Virtuals launch cannot currently be driven end to end from
- * Studio. The refusal says so and says where the launch CAN be done, instead
- * of publishing on the user's behalf to keep a path open.
+ * ## HOW EACH SURFACE NAMES AN ALREADY-PUBLIC PICTURE
+ *
+ * The two surfaces differ only in what they can name, never in what they are
+ * allowed to do:
+ *
+ *   `in_app_form`  an `imageId`: the locker row the user staged, which must
+ *                  already carry the public URL and cid that publish recorded.
+ *
+ *   `studio_mcp`   an `imagePath`: a file in the agent's own project. The bytes
+ *                  are read through the SAME contained no-follow reader the
+ *                  publish tool uses, hashed with the SAME content-address
+ *                  function, and that hash is looked up in our own record. A
+ *                  hit means these exact bytes are already public and the
+ *                  launch may point at them; a miss is refused BY NAME, telling
+ *                  the agent to publish this same path first.
+ *
+ * THE HASH IS THE WHOLE BINDING on the Studio side. It is derived from the
+ * bytes ON DISK RIGHT NOW, so a file edited after it was published simply does
+ * not match any row and is refused - which is the correct answer, because the
+ * on-chain URL would otherwise address a picture the project no longer holds.
+ * Nothing here trusts a path, a name or a timestamp to stand for bytes.
  */
 
-import { getLaunchImage } from "../../../../../db/repos/launch-images.js";
+import { deriveAssetContentId } from "../../../../../agentscan/assets-client.js";
+import {
+  findLaunchImageByPublicCid,
+  getLaunchImage,
+} from "../../../../../db/repos/launch-images.js";
 import {
   readLaunchImageSelection,
+  resolveProjectFileLaunchImage,
   LAUNCH_IMAGE_PARAM_BY_SURFACE,
+  type LaunchImageSelection,
 } from "../../../shared/launch-image-input.js";
 import type { ProtocolExecutionContext } from "../../../types.js";
 import { LAUNCH_EXECUTE_PUBLIC_NAME } from "./tool-ids.js";
+
+/**
+ * The public name of the tool that owns the consent decision. Written once so
+ * every refusal that points at it names the same tool.
+ */
+const IMAGE_PUBLISH_TOOL = "launchpads__image_publish";
+
+/** What did NOT happen when this lane refuses, in the launch's own words. */
+const NOTHING_WAS_SIGNED = "Nothing was signed.";
 
 export interface ResolvedLaunchImage {
   /** The content-addressed https URL written into `preLaunch`. */
@@ -100,28 +131,91 @@ export async function resolveLaunchImage(input: {
   if (selection.selection.kind === "locker") {
     return await resolveFromLocker(selection.selection.imageId);
   }
-  return refuseUnpublishedProjectFile(selection.selection.imagePath);
+  return await resolveFromProjectFile(selection.selection, input.context);
 }
 
 /**
- * The Studio surface named a file in its project. Vex will not publish it.
+ * The Studio surface named a file in its project. It must ALREADY be public.
+ *
+ * The order of the steps is the contract:
+ *
+ *  1. CONTAINMENT FIRST, and it is the no-follow reader's, not this module's.
+ *     The path came from a model, so what may be opened at all is decided
+ *     before anything else runs, and a second containment boundary here would
+ *     be a second place to get it wrong (rule 07, path resolution).
+ *  2. THE BYTES ON DISK ARE HASHED, with the host's own content-address
+ *     function - the same one `launchpads__image_publish` derives its cid
+ *     with. A path or a filename could never stand in for this: the file may
+ *     have been edited since it was published.
+ *  3. OUR OWN RECORD ANSWERS, and no request is made. A row whose `public_cid`
+ *     is this hash is proof these exact bytes are already fetchable at a URL
+ *     that can never serve anything else.
+ *  4. A MISS IS A REFUSAL, never an upload. It names the publishing tool and
+ *     quotes the path AS THE AGENT WROTE IT, so the remedy is a call the agent
+ *     can make verbatim - and never the resolved absolute path, which would
+ *     hand the model the user's directory layout.
+ */
+async function resolveFromProjectFile(
+  selection: Extract<LaunchImageSelection, { kind: "project_file" }>,
+  context: ProtocolExecutionContext,
+): Promise<ResolveLaunchImageResult> {
+  const resolved = await resolveProjectFileLaunchImage(selection, context, {
+    nothingHappened: NOTHING_WAS_SIGNED,
+  });
+  if (!resolved.ok) return { ok: false, reason: resolved.reason };
+  const image = resolved.image;
+
+  const cid = deriveAssetContentId(image.bytes);
+
+  let published: Awaited<ReturnType<typeof findLaunchImageByPublicCid>>;
+  try {
+    published = await findLaunchImageByPublicCid(cid);
+  } catch {
+    // NOT the same as "not published". Treating an unreadable record as a miss
+    // would send the agent to publish bytes that are already public, and a
+    // second publication of the same file is a second consent question the user
+    // never needed to answer.
+    return {
+      ok: false,
+      reason:
+        `Vex could not check whether "${selection.imagePath}" has already been published, so it will not launch `
+        + `against it. ${NOTHING_WAS_SIGNED} This is worth trying again.`,
+    };
+  }
+  if (published === null || published.publicUrl === null || published.publicCid === null) {
+    return { ok: false, reason: refuseUnpublishedProjectFile(selection.imagePath) };
+  }
+
+  return {
+    ok: true,
+    image: {
+      url: published.publicUrl,
+      cid: published.publicCid,
+      imageId: published.imageId,
+      // The PROJECT-RELATIVE path the reader resolved, never the absolute one:
+      // this string is shown to a person and read by the model.
+      label: image.displayLabel,
+    },
+  };
+}
+
+/**
+ * The bytes at that path are not public, so no launch can point at them yet.
  *
  * The refusal is specific about WHAT is missing (a picture that is already
- * public), WHO may make it public (the approval-gated publish tool) and WHERE
- * that tool runs (the Vex app), because an agent that is only told "no" will
- * try the same call again with a different path.
+ * public), WHO may make it public (the approval-gated publish tool, on this
+ * very surface), and WITH WHICH ARGUMENT - the agent's own path, quoted back
+ * unchanged - because an agent that is only told "no" will try the same call
+ * again with a different path.
  */
-function refuseUnpublishedProjectFile(imagePath: string): ResolveLaunchImageResult {
-  return {
-    ok: false,
-    reason:
-      `Vex will not publish "${imagePath}" as part of a launch, and nothing was uploaded. A Virtuals launch writes `
-      + "the picture's URL into contract storage permanently, so it must address bytes that are already public and "
-      + "cannot change - and making bytes public is a decision only the person whose files they are can take. "
-      + "launchpads__image_publish is the tool that asks for that approval, and it runs in the Vex app, where the "
-      + "picture is staged in the image locker. Publish the picture there and launch the agent from the Vex app. "
-      + "Nothing was signed.",
-  };
+function refuseUnpublishedProjectFile(imagePath: string): string {
+  return (
+    `"${imagePath}" has not been published, and a launch will never publish it for you: nothing was uploaded. A `
+    + "Virtuals launch writes the picture's URL into contract storage permanently, so it must address bytes that "
+    + "are already public and cannot change - and making bytes public is a decision only the person whose files "
+    + `they are can take. Call ${IMAGE_PUBLISH_TOOL} with imagePath "${imagePath}" first (it asks for that `
+    + `approval), then retry this launch with the same imagePath. ${NOTHING_WAS_SIGNED}`
+  );
 }
 
 /**
