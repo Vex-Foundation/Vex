@@ -130,9 +130,18 @@ describe("the exported inventory covers exactly the export scope", () => {
     // `trench__*` tools were deleted with the protocol. All ten were protocol
     // tools, so the internal count is unmoved again and the protocol count
     // carries the whole drop (153 -> 143).
-    expect(inventory).toHaveLength(170);
+    // 170 -> 171 on the image-publish Studio arm (2026-09-06):
+    // `launchpads__image_publish` left `NON_EXPORTED_PROTOCOL_TOOLS`. Excluding
+    // it withheld not a locker but the only APPROVED way to make bytes public,
+    // and a launch will not publish as a side effect - so a coding agent could
+    // never give a launched token a picture. It takes an `imagePath` on this
+    // surface, read through the same contained no-follow reader a Studio launch
+    // uses, and raises the same approval card. `launchpads__images_list`, the
+    // listing of a locker that is always empty here, stays withheld. It is a
+    // protocol tool, so the internal count is unmoved (143 -> 144).
+    expect(inventory).toHaveLength(171);
     expect(inventory.filter((t) => t.kind === "internal")).toHaveLength(27);
-    expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(143);
+    expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(144);
   });
 
   it("keeps WebResearch OUT of tools/list while the in-app registry keeps it", () => {

@@ -1,5 +1,5 @@
 {
-  "toolCount": 170,
+  "toolCount": 171,
   "tools": [
     {
       "alwaysLoad": true,
@@ -4994,6 +4994,36 @@
       "requiresEnv": null,
       "title": "Audit an EVM token with KyberSwap",
       "toolId": "kyberswap.tokens.check"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 1742,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "imageId": {
+            "description": "IN-APP ONLY: identifier of a picture already staged in the app's image locker, as listed by launchpads__images_list. The agent can never create one, only name one the locker already holds. Over the Vex Studio MCP surface this parameter is REFUSED BY NAME and imagePath is used instead. Required on this surface, and enforced by the tool rather than by the schema, because which parameter names the picture depends on the surface.",
+            "type": "string"
+          },
+          "imagePath": {
+            "description": "VEX STUDIO MCP ONLY: the path of an image file INSIDE the current project (PNG, JPEG or WebP, at most 2 MiB), which Vex reads itself and publishes. Symbolic links are never followed and a path outside the project is refused by name. In the Vex app this parameter is REFUSED BY NAME and imageId is used instead. Required on this surface, and enforced by the tool rather than by the schema.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "launchpads",
+      "publicName": "launchpads__image_publish",
+      "readOnlyHint": false,
+      "requiresEnv": null,
+      "title": "Publish a launch picture publicly",
+      "toolId": "launchpads.image_publish"
     },
     {
       "alwaysLoad": false,
