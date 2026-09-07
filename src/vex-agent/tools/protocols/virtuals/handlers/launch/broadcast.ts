@@ -32,9 +32,14 @@
  * (`TransactionController.ts:3107-3179`).
  */
 
-import type { Hex, TransactionReceipt } from "viem";
+import type { Account, Chain, Hex, TransactionReceipt, Transport, WalletClient } from "viem";
 
-import { signStageBroadcast, type StagedBroadcastOutcome } from "@tools/evm-chains/staged-broadcast.js";
+import {
+  signStageBroadcast,
+  type DeferredEvmSigner,
+  type FinalSignedRequest,
+  type StagedBroadcastOutcome,
+} from "@tools/evm-chains/staged-broadcast.js";
 import type { ConfirmedPriorLeg } from "@tools/evm-chains/dependent-leg-gas-estimate.js";
 import { classifyLaunchRevert, type LaunchRevertClass } from "@tools/virtuals/launch/revert-mapping.js";
 import type { BuiltLaunchTx } from "@tools/virtuals/launch/index.js";
@@ -45,9 +50,12 @@ import {
   markBroadcastAccepted,
   reserveActivityEvmNonce,
   type AgentActivityEvent,
+  type AgentActivityFailureCode,
 } from "@vex-agent/db/repos/agent-activity.js";
 import { noteHandlerPendingReason } from "@vex-agent/tools/protocols/runtime/pending-provenance.js";
 import logger from "@utils/logger.js";
+
+import { VirtualsLaunchFinalAuthorityError } from "./final-authority.js";
 
 export type LaunchLegOutcome =
   | {
@@ -86,15 +94,50 @@ export async function runLaunchLeg(input: {
    * second launch for a user whose first may already be mined.
    */
   readonly onHashStaged?: (txHash: Hex) => Promise<void>;
+  /**
+   * THE LAST GATE BEFORE THE KEY, for the leg that has one.
+   *
+   * Handed to `signStageBroadcast` verbatim, so it runs after every awaited
+   * preparation step and immediately before the signature, and is given the
+   * request that is about to be serialized rather than the transaction this
+   * caller handed in. A throw means nothing was signed and nothing was sent - a
+   * `VirtualsLaunchFinalAuthorityError` is terminalized below under its own named
+   * reason instead of being classified as an unnamed revert.
+   *
+   * Only the `preLaunch` leg passes one: what this gate re-establishes is the
+   * LAUNCH's authority - the implementation behind BondingV5, the venue's fee,
+   * the sealed fields and the exact calldata - and an approval carries none of
+   * those.
+   */
+  readonly onBeforeSign?: (request: FinalSignedRequest) => Promise<void>;
 }): Promise<LaunchLegOutcome> {
   const { event } = input;
+  // THE DEFERRED ARM, for the one property it exists to give: the signature is
+  // produced OFFLINE, so nothing at all reaches a provider between the pre-sign
+  // gate and the bytes being signed. viem's eager `signTransaction` wallet
+  // action awaits an `eth_chainId` of its own in exactly that window
+  // (`staged-broadcast.ts:243-262`, measured in viem 2.54.3), and a gate that
+  // re-establishes launch authority must not have a network round trip standing
+  // after it. The key is already resolved when this runs, as it always has been:
+  // `createSigner` hands back the wallet client the execute already holds, and
+  // this signer's own `onBeforeSign` is empty because the caller's gate below is
+  // the one `signStageBroadcast` runs immediately before the signature.
+  const walletClient: WalletClient<Transport, Chain, Account> = input.clients.walletClient;
+  const signer: DeferredEvmSigner = {
+    kind: "deferred",
+    address: walletClient.account.address,
+    chain: walletClient.chain,
+    onBeforeSign: async () => {},
+    createSigner: async () => walletClient,
+  };
   let outcome: StagedBroadcastOutcome;
   try {
     outcome = await signStageBroadcast(
       input.clients.publicClient,
-      input.clients.walletClient,
+      signer,
       { to: input.tx.to, data: input.tx.data, value: input.tx.value },
       {
+        ...(input.onBeforeSign === undefined ? {} : { onBeforeSign: input.onBeforeSign }),
         onNonceReserved: (request) => reserveActivityEvmNonce(event.id, request),
         onHashStaged: async (handles) => {
           const res = await markActivityBroadcast(event.id, handles);
@@ -113,6 +156,15 @@ export async function runLaunchLeg(input: {
       input.priorLeg,
     );
   } catch (err) {
+    // THE FINAL AUTHORITY GATE REFUSED. It already says which figure moved and
+    // that nothing was signed, and it names its own durable failure code, so it
+    // is terminalized as itself rather than pushed through the revert
+    // classifier, which would report an upgraded proxy or a moved venue fee as
+    // "the contract gave no reason Vex can name".
+    if (err instanceof VirtualsLaunchFinalAuthorityError) {
+      await recordLegFailure(input.toolId, event.id, err.failureCode, `${input.label}: ${err.refusal}`);
+      return { kind: "failed", stage: "pre_broadcast", reason: err.refusal, txHash: null };
+    }
     // Nothing reached the network: the pre-sign estimate refused, the nonce
     // could not be reserved, or the staging CAS missed. The row is terminalized
     // hashless, which is exactly what "nothing was signed" means durably.
@@ -168,7 +220,7 @@ function failureCodeFor(kind: LaunchRevertClass) {
 async function recordLegFailure(
   toolId: string,
   eventId: number,
-  failureCode: "allowance_or_balance" | "simulation_reverted" | "mined_revert",
+  failureCode: AgentActivityFailureCode,
   failureReason: string,
 ): Promise<void> {
   try {

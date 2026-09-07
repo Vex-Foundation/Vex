@@ -49,6 +49,7 @@ import {
   type TokenLaunchIntent,
   type VirtualsLaunchIntentFields,
 } from "@vex-agent/db/repos/token-launch-intents.js";
+import { concludeLaunchKeeperSettlementByTxHash } from "@vex-agent/db/repos/agent-activity.js";
 import { LaunchImageMissingError } from "@vex-agent/db/repos/launch-image-lock.js";
 import logger from "@utils/logger.js";
 
@@ -274,17 +275,45 @@ export async function confirmObservedKeeperLaunch(input: {
   });
 }
 
-/** `awaiting_keeper -> cancelled`, after the creator's own `cancelLaunch` confirmed. */
+/**
+ * `awaiting_keeper -> cancelled`, after the creator's own `cancelLaunch`
+ * confirmed - and the END of the launch activity row's keeper wait.
+ *
+ * The activity row for a launch whose keeper had not acted is confirmed with its
+ * payout ABSENT and owed (`launch-lifecycle.ts`), which holds its AgentScan
+ * terminal report until the delivered amount is known. A cancellation is one of
+ * the two events that answers that: the keeper never ran, the agent tokens were
+ * never bought, and nothing will ever deliver them - so the payout is a proven
+ * zero and the hold has to end here. Doing it inside this writer rather than at
+ * its call sites is what makes it hold for BOTH cancellation paths, the sweep's
+ * and the cancel tool's, without either having to remember.
+ *
+ * Deliberately AFTER the transaction and best-effort: the cancellation is a
+ * receipt fact that has already been established, and a bookkeeping write that
+ * did not land must not unsay it. A row left holding stays claimable by the
+ * sweep, which is the safe direction.
+ */
 export async function recordLaunchCancelled(input: {
   readonly intentId: string;
   readonly sessionId: string;
   readonly tokenAddress: string;
 }): Promise<boolean> {
-  return await withTransaction(async (client) => {
+  const cancelled = await withTransaction(async (client) => {
     await acquireSessionControlLock(client, input.sessionId);
-    const cancelled = await cancelAfterPreLaunchWith(client, input.intentId, input.sessionId, input.tokenAddress);
-    return cancelled !== null;
+    return await cancelAfterPreLaunchWith(client, input.intentId, input.sessionId, input.tokenAddress);
   });
+  if (cancelled === null) return false;
+  const preLaunchTxHash = cancelled.txHash;
+  if (preLaunchTxHash !== null && preLaunchTxHash !== undefined) {
+    try {
+      await concludeLaunchKeeperSettlementByTxHash(preLaunchTxHash, "cancelled");
+    } catch (err) {
+      logger.warn("virtuals.launch.cancel_settlement_conclude_failed", {
+        error: err instanceof Error ? err.name : "unknown",
+      });
+    }
+  }
+  return true;
 }
 
 /**

@@ -409,6 +409,34 @@ const ROLE_LEGS_COMPLETE_SQL = `
   END`;
 
 /**
+ * THE ONE HOLD THE GRACE MAY NOT LIFT: an amount whose own transaction has not
+ * happened yet.
+ *
+ * Every other reason a confirmed row is amountless is a lane that might never
+ * finish, which is what the grace above bounds. `keeper_purchase_pending` is not
+ * that: a Virtuals launch's payout is bought by the VENUE'S KEEPER in a second
+ * transaction, minutes to hours later, with no signer or job of ours able to
+ * hurry it. Releasing the terminal pair on a timer would spend the server's
+ * single `pending -> terminal` merge window (`activities-ingest-repo.ts:73`
+ * accepts that promotion exactly once and silently drops a repeat) on a report
+ * that carries no payout - and the real figure, when the keeper sweep writes it,
+ * would then have nowhere to go, forever.
+ *
+ * So a launch waiting on its keeper is not reportable as terminal at all. The
+ * hold ends when a settlement is OBSERVED (the keeper's amount, or a
+ * cancellation) or when the sweep concludes by name that no amount is coming -
+ * both of which replace this provenance, which is what makes the wait bounded by
+ * an event rather than unbounded in time. The pending snapshot was reported when
+ * the row was created, so the activity itself is never invisible meanwhile.
+ */
+// `IS DISTINCT FROM` rather than `<>`: settlement_source is NULL on every
+// pending row and on every row written before migration 067, and three-valued
+// logic would turn "we do not know how the amounts were established" into "not
+// ready", holding back the whole table.
+const SETTLEMENT_NOT_STILL_OWED_SQL =
+  `a.settlement_source IS DISTINCT FROM 'keeper_purchase_pending'`;
+
+/**
  * The settlement provenances that END the wait without amounts: a decoder that
  * declined by name (`noteSettlementDeclined`) and the durable quarantine two
  * disagreeing decoders leave behind. Each is a CONCLUSION that no reportable
@@ -431,13 +459,19 @@ const SETTLEMENT_CONCLUDED_WITHOUT_AMOUNTS_SQL =
  * decoder concluded by name that none are coming, or the grace elapsed. Every
  * other status bypasses the gate entirely — a pending row has no amounts to
  * wait for, and neither a definitive failure nor a superseded row ever will.
+ *
+ * The SECOND arm is the exception to the grace and the only one: an amount whose
+ * own transaction has not happened yet is not a lane that might never finish
+ * (see {@link SETTLEMENT_NOT_STILL_OWED_SQL}). It ends on an event, never on a
+ * clock.
  */
 const CONFIRMED_READINESS_SQL = `
-  (a.status <> 'confirmed'
-   OR ${ROLE_LEGS_COMPLETE_SQL}
-   OR ${SETTLEMENT_CONCLUDED_WITHOUT_AMOUNTS_SQL}
-   OR a.confirmed_at IS NULL
-   OR a.confirmed_at < NOW() - make_interval(mins => ${CONFIRMED_AMOUNT_GRACE_MINUTES}))`;
+  ((a.status <> 'confirmed'
+    OR ${ROLE_LEGS_COMPLETE_SQL}
+    OR ${SETTLEMENT_CONCLUDED_WITHOUT_AMOUNTS_SQL}
+    OR a.confirmed_at IS NULL
+    OR a.confirmed_at < NOW() - make_interval(mins => ${CONFIRMED_AMOUNT_GRACE_MINUTES}))
+   AND (a.status <> 'confirmed' OR ${SETTLEMENT_NOT_STILL_OWED_SQL}))`;
 
 /** Exponential claim backoff: 30 s · 2^n, capped at 1 h (exponent clamped so POWER stays finite). */
 const CLAIM_BACKOFF_SQL = `LEAST(30 * POWER(2, LEAST(o.attempt_count, 20)), 3600)`;

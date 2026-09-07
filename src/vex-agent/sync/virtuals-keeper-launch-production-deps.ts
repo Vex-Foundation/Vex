@@ -46,9 +46,9 @@ export function buildProductionVirtualsKeeperSweepDeps(): VirtualsKeeperSweepDep
             keeperTxHash: outcome.txHash,
             // THE LATE RESULT IS CARRIED, not summarised away. `Launched`
             // proves what the keeper's own transaction bought, and it is the
-            // only figure that can replace the provisional zero the handler
-            // recorded when its wait elapsed. Dropping it here left every
-            // late-settled launch reporting a zero payout forever.
+            // only figure that can settle the payout the handler recorded as
+            // OWED when its wait elapsed. Dropping it here left every
+            // late-settled launch with no payout at all, forever.
             initialPurchasedAmountRaw: outcome.launched.initialPurchasedAmountRaw.toString(),
           };
         }

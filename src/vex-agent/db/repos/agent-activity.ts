@@ -238,13 +238,16 @@ export {
 // `event_role = 'token_launch'`. See `./agent-activity/launch-lifecycle.ts`.
 export type { ConfirmLaunchWithOutputIdentityInput } from "./agent-activity/launch-lifecycle.js";
 export {
+  // The keeper wait's other ending: the second transaction settled without a
+  // readable purchase, or was a cancellation.
+  concludeLaunchKeeperSettlementByTxHash,
   confirmLaunchWithOutputIdentity,
   fillLaunchOutputIdentityOnConfirmed,
   // The sweep's read of the lane's own durable verdict for a launch hash — the
   // ONE way `sync/launch-identity-repair.ts` may reach this table.
   findLaunchActivityTerminalByTxHash,
   // The Virtuals keeper sweep's late-result write: the purchase the keeper's
-  // own transaction proved, onto the row that recorded the provisional zero.
+  // own transaction proved, onto the row that recorded the payout as owed.
   settleLaunchKeeperPurchaseByTxHash,
   stampLaunchOutputIdentityByTxHash,
 } from "./agent-activity/launch-lifecycle.js";

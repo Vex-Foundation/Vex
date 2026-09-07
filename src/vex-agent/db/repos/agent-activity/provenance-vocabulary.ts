@@ -73,6 +73,31 @@ export const SETTLEMENT_SOURCES = [
   "amounts_incomplete",
   /** No decoder could read this transaction's amounts at all. */
   "amounts_undecodable",
+  /**
+   * THE ONE MEMBER THAT IS NOT A CONCLUSION: the amounts are absent because the
+   * transaction that delivers them HAS NOT HAPPENED YET.
+   *
+   * A Virtuals launch takes two transactions and only the first is Vex's; the
+   * agent tokens are bought by the venue's KEEPER in a `launch()` of its own,
+   * minutes later, with no signer of ours involved. A launch confirmed before
+   * that is terminal in status and owes a payout, and the figure is UNKNOWN
+   * rather than zero.
+   *
+   * The AgentScan readiness gate HOLDS a row carrying this - past its grace,
+   * because keeper latency is unbounded and a fixed grace cannot bound it - so
+   * the server's single `pending -> terminal` merge window still carries the
+   * real amount when it arrives. The late-decode fallback skips it for the same
+   * reason: the receipt it would read is `preLaunch`'s, which by construction
+   * contains no purchase. `keeper_settlement_observed` and the two decline
+   * members are the ways out.
+   */
+  "keeper_purchase_pending",
+  /**
+   * The launch's SECOND transaction was observed on chain and settled this row:
+   * the keeper's `launch()` with its `initialPurchasedAmount`, or a cancellation
+   * that proves nothing was ever delivered.
+   */
+  "keeper_settlement_observed",
 ] as const;
 
 export type SettlementSource = (typeof SETTLEMENT_SOURCES)[number];
