@@ -2,6 +2,7 @@ import type { ProtocolToolManifest } from "../../types.js";
 import { KYBERSWAP_SWAP_DISCOVERY } from "../../embeddings/kyberswap/swap.js";
 import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-policy.js";
 import { KYBERSWAP_SWAP_VEX_FEE } from "../../../vex-fee-notes.js";
+import { SWAP_VENUE_GUIDANCE } from "@vex-agent/tools/registry/swap-venue-guidance.js";
 
 const SWAP_EXECUTE_PARAMS = [
   { key: "chain", type: "string" as const, required: true, description: "Chain slug or alias." },
@@ -22,8 +23,8 @@ export const SWAP_TOOLS: readonly ProtocolToolManifest[] = [
       + "`kyberswap__chains_list` returns) without signing anything, and seed the prequote "
       + "`kyberswap__swap_execute` is matched against. Use this before every KyberSwap execute, and whenever the user "
       + "asks what a trade would return, what the rate or the price impact is, or which venues a route crosses. "
-      + "KyberSwap is the PRIMARY EVM swap route; `SwapQuoteUniswap` is the alternative when KyberSwap has no "
-      + "aggregator support for the chain or cannot price the pair. Both token params take a CONTRACT ADDRESS "
+      + `${SWAP_VENUE_GUIDANCE} `
+      + "Both token params take a CONTRACT ADDRESS "
       + "(resolve a symbol with TokenFind first) or the native keyword, and `amountIn` is human decimals. Pass the "
       + "SAME `slippageBps` on the execute, or omit it on both: the prequote match requires identical params. "
       + "RETURNS `summary` (a one-line reading whose amounts are HUMAN units), `chain`, `chainId`, `tokenIn` and "
@@ -74,8 +75,7 @@ export const SWAP_TOOLS: readonly ProtocolToolManifest[] = [
     description:
       "Swap tokens FOR REAL through the KyberSwap aggregator: signs and broadcasts an exact-input trade with the "
       + "session's wallet. SPENDS REAL FUNDS AND IS IRREVERSIBLE. Use this once the user has agreed to a trade you "
-      + "already priced; KyberSwap is the PRIMARY EVM swap route and `SwapExecuteUniswap` is the alternative when "
-      + "KyberSwap has no aggregator support for the chain or cannot route the pair. APPROVAL: in a RESTRICTED "
+      + `already priced. ${SWAP_VENUE_GUIDANCE} APPROVAL: in a RESTRICTED `
       + "session this does not execute, it returns pending approval and a human sees the trade with the matched "
       + "quote's safety verdict before anything is signed; in a FULL-permission session it executes directly. "
       + "PRECONDITIONS, each refused BY NAME rather than worked around: a fresh `kyberswap__swap_quote` with "

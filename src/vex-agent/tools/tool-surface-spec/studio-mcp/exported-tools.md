@@ -63,8 +63,8 @@ free. Both texts live on the tool
 | ChainRead | Read raw EVM chain data | internal | yes | no | yes | - | 1326 | yes | none |
 | SwapExecute | Execute a token swap | internal | no | yes | yes | - | 2047 | yes | 25 bps |
 | SwapExecuteUniswap | Execute a Uniswap swap | internal | no | yes | yes | - | 2046 | yes | 25 bps |
-| SwapQuote | Quote a token swap | internal | yes | no | yes | - | 2047 | yes | none |
-| SwapQuoteUniswap | Quote a Uniswap swap | internal | yes | no | yes | - | 2017 | yes | none |
+| SwapQuote | Quote a token swap | internal | yes | no | yes | - | 2046 | yes | none |
+| SwapQuoteUniswap | Quote a Uniswap swap | internal | yes | no | yes | - | 1959 | yes | none |
 | TokenCheck | Check an EVM token for honeypot and tax | internal | yes | no | yes | - | 953 | yes | none |
 | TokenFind | Find a token's address and decimals | internal | yes | no | yes | - | 1956 | yes | none |
 | TwitterAccount | Read Twitter accounts and posts | internal | yes | no | yes | RETTIWT_API_KEY | 2039 | yes | none |
@@ -126,8 +126,8 @@ free. Both texts live on the tool
 | name | title | lane | read only | destructive | always load | requires env | description bytes | returns | vex fee |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | kyberswap__chains_list | List KyberSwap chains | protocol | yes | no | no | - | 776 | - | none (read) |
-| kyberswap__swap_execute | Execute a KyberSwap swap | protocol | no | yes | no | - | 3718 | yes | 25 bps |
-| kyberswap__swap_quote | Quote a KyberSwap swap | protocol | yes | no | no | - | 3591 | - | none (read) |
+| kyberswap__swap_execute | Execute a KyberSwap swap | protocol | no | yes | no | - | 3776 | yes | 25 bps |
+| kyberswap__swap_quote | Quote a KyberSwap swap | protocol | yes | no | no | - | 3654 | - | none (read) |
 | kyberswap__token_safety_check | Audit an EVM token with KyberSwap | protocol | yes | no | no | - | 1138 | - | none (read) |
 
 ### launchpads
@@ -262,8 +262,8 @@ free. Both texts live on the tool
 
 | name | title | lane | read only | destructive | always load | requires env | description bytes | returns | vex fee |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| uniswap__swap_execute | Execute a Uniswap V2/V3 swap | protocol | no | yes | no | - | 1442 | yes | 25 bps |
-| uniswap__swap_quote | Quote a Uniswap V2/V3 route | protocol | yes | no | no | - | 1790 | - | none (read) |
+| uniswap__swap_execute | Execute a Uniswap V2/V3 swap | protocol | no | yes | no | - | 3258 | yes | 25 bps |
+| uniswap__swap_quote | Quote a Uniswap V2/V3 route | protocol | yes | no | no | - | 4260 | - | none (read) |
 
 ### virtuals
 

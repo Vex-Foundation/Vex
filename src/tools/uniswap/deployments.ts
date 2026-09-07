@@ -7,7 +7,7 @@
  * route-not-found failure, until owner decision D4 un-gated it; the reveal
  * module is deleted and KyberSwap is now simply the PREFERRED route rather than
  * the only reachable one. There is no
- * runtime Kyber→Uniswap fallback INSIDE the quote path anymore (the old
+ * runtime Kyber-to-Uniswap substitution INSIDE the quote path anymore (the old
  * silent retry was removed — see `venue-router.ts`'s header). Every address
  * below was RE-VERIFIED on-chain before it landed here — a wrong router/
  * factory address moves real funds to the wrong contract, so the registry is
@@ -73,7 +73,7 @@ export interface UniswapDeployment {
 
 const STANDARD_V3_FEE_TIERS = [100, 500, 3000, 10000] as const;
 
-// ── Robinhood Chain (4663) — Uniswap fallback (KyberSwap primary here too) ────
+// ── Robinhood Chain (4663) - a Uniswap deployment, KyberSwap aggregates it too ──
 // All six deployment addresses + WETH cross-verified 2026-07-05:
 //   V2 Router02.factory()=0x8bce…937f, WETH()=0x0Bd7…AD73
 //   V3 SwapRouter02.factory()=0x1f7d…2efa, WETH9()=0x0Bd7…AD73

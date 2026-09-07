@@ -46,7 +46,13 @@ export type ManifestLintRule =
   // A declared retired input spelling (`ProtocolParamDef.aliases`). Checked at
   // the tool level, not the param level, because uniqueness is a fact about the
   // whole call.
-  | "param-alias";
+  | "param-alias"
+  // A model-facing string that still ranks one EVM swap venue over the other in
+  // its own words. The standing between KyberSwap and Uniswap has ONE owner
+  // (`registry/swap-venue-guidance.ts`); a second wording of it is how a model
+  // ended up reading two different rankings in one context window. Source-level
+  // rule: `_manifest-lint/source-rules.ts`.
+  | "retired-venue-precedence";
 
 export interface ManifestLintIssue {
   /** Tool id, tool name, or source path - whatever owns the violation. */

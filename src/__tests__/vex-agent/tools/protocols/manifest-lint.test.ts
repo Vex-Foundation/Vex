@@ -37,6 +37,7 @@ import {
 import {
   isLinterOwnSource,
   lintGenericErrorLiterals,
+  lintRetiredVenuePrecedence,
   lintSlippageDefaultHome,
   lintStaleOutputCapClaims,
   lintToolSubject,
@@ -121,6 +122,22 @@ const MODEL_FACING_SOURCE_ROOTS: readonly string[] = [
 ];
 
 const modelFacingSources = MODEL_FACING_SOURCE_ROOTS.flatMap((root) => readSources(root));
+
+/**
+ * The venue-standing rule's subject: every model-facing root above PLUS the
+ * Studio instruction blocks. The Studio task shapes are read by an external
+ * agent exactly like a prompt layer, and one of them carried the retired
+ * "the Uniswap pair forces Uniswap" framing, so a rule scoped to the in-app
+ * roots alone would have declared the tree clean while Studio still disagreed
+ * with it. It is a separate list rather than a sixth entry in
+ * MODEL_FACING_SOURCE_ROOTS because the other two rules there are about
+ * strings the RUNTIME emits, and widening their subject is a decision of its
+ * own.
+ */
+const venueStandingSources = [
+  ...modelFacingSources,
+  ...readSources("src/vex-agent/studio/instructions"),
+];
 
 const sourceIssues = [
   ...lintGenericErrorLiterals(protocolSources),
@@ -275,6 +292,47 @@ describe("W0 — manifest convention linter", () => {
         + format(capIssues),
     ).toEqual([]);
     expect(MANIFEST_LINT_ALLOWLIST.filter((e) => e.rule === "stale-output-cap-claim")).toEqual([]);
+  });
+
+  // Owner decision 2026-09-07: KyberSwap and Uniswap have EQUAL STANDING, and
+  // the standing has one owner (`registry/swap-venue-guidance.ts`). Same
+  // zero-and-empty-allowlist shape as the two rules above, for a sharper
+  // reason: a second occurrence is a second WRITER of the policy, and the
+  // defect this replaces was exactly that - four surfaces ranking the venues
+  // in four different sentences, one of them still calling Uniswap a "HIDDEN
+  // fallback" long after the reveal that hid it was deleted.
+  it("no model-facing string re-words the swap-venue standing, and none is allowlisted", () => {
+    const venueIssues = lintRetiredVenuePrecedence(venueStandingSources);
+    expect(
+      venueIssues,
+      "these strings state their own KyberSwap/Uniswap ranking instead of importing the owner's:\n"
+        + format(venueIssues),
+    ).toEqual([]);
+    expect(MANIFEST_LINT_ALLOWLIST.filter((e) => e.rule === "retired-venue-precedence")).toEqual([]);
+  });
+
+  // Proves the rule above is not vacuously green: the exact sentence the
+  // Uniswap quote manifest shipped before this decision, fed back in.
+  it("flags a retired precedence sentence reintroduced into a description", () => {
+    const issues = lintRetiredVenuePrecedence([
+      {
+        path: "src/vex-agent/tools/protocols/uniswap/manifests/swap.ts",
+        text: "KyberSwap is Vex's primary swap route. Use this when KyberSwap cannot serve the pair.",
+      },
+    ]);
+    expect(issues.map((issue) => issue.detail)).toEqual(["primary swap route"]);
+  });
+
+  // The bridge lane keeps its own wording (the same decision left Khalani and
+  // Relay alone, and there "fallback venue" describes a real routing
+  // mechanism). Without this case the exclusion would be an untested claim.
+  it("leaves the bridge lane's venue wording alone", () => {
+    expect(lintRetiredVenuePrecedence([
+      {
+        path: "src/vex-agent/tools/protocols/khalani/failure-mapping.ts",
+        text: "a fallback venue such as Relay could serve the route",
+      },
+    ])).toEqual([]);
   });
 
   // Batch 3 Wave 1: the dotted tool id. Same zero-and-empty-allowlist shape as

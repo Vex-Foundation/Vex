@@ -136,7 +136,7 @@
         "uniswap",
         "robinhood swap",
         "v2 v3 swap",
-        "uniswap fallback"
+        "spot pool swap"
       ],
       "discoveryHints": [
         "swap on robinhood",
@@ -1181,8 +1181,8 @@
     "kyberswap.tokens.check": "e4b877b701a4dd3a51100f64a1efb26b5691a1ba04a2c619ab35bd86253b54b8",
     "kyberswap.swap.quote": "621b1eda12d7584f6933d74820dff9004aa83833dc09c56b33d25df15b7979b2",
     "kyberswap.swap.execute": "02fb625fd092112c214e680283647d55b5cd30e119e775e874a48ff465c05abc",
-    "uniswap.swap.quote": "15c95162e9e6d643d154e660f21614e87bafc63831bad2159ad8d99427fa3050",
-    "uniswap.swap.execute": "b9aaeffe942500693a216840b7e45a0fd861c9981a308624a6ed5733ade21e80",
+    "uniswap.swap.quote": "f1e2c76707a851155bab85038317bcaff29efa4ed3ea5bf5cdb67c42062eed67",
+    "uniswap.swap.execute": "7ca6d584d6f74fad14762431e43e4e28e9e664e556901ca378612ddab1e1e09e",
     "relay.quote.get": "9951bb1aedf1b72b5a4f0f694a7dd25e211faaf0f313843580d26fd263665897",
     "relay.bridge": "7d9d19e3caa79f0c8be40b1fe57f66932196b8b8bd6dca4c047b1fe0d7e0cfd4",
     "dexscreener.pairs.trending": "2f7ba9621112c6910269ccdd73581de5b904d883125a61721010be75375e56db",
