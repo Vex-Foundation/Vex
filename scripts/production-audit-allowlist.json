@@ -1,0 +1,30 @@
+{
+  "reviewBy": "2026-09-18",
+  "decision": "Every exception below was proposed by the Lighter integration author on 2026-09-06 and is pending the repository owner's decision in PR review. Nothing here is owner-approved yet.",
+  "exceptions": [
+    {
+      "url": "https://github.com/advisories/GHSA-3gc7-fjrx-p6mg",
+      "package": "bigint-buffer",
+      "severity": "high",
+      "version": "1.1.5",
+      "path": ".>@solana/spl-token>@solana/buffer-layout-utils>bigint-buffer",
+      "rationale": "Exception proposed by the Lighter integration author on 2026-09-06; pending the owner's decision in PR review; expires 2026-09-18 unless renewed. Upstream has no patched release. Vex reaches this package only through fixed-width Solana SPL layouts (8 to 32 bytes); the layout slices the input to the declared span before toBigIntLE. Malformed short data is rejected by the layout. This exception rests on that argument alone, with no mechanical reachability check. Re-review immediately when Solana removes or patches bigint-buffer."
+    },
+    {
+      "url": "https://github.com/advisories/GHSA-w5hq-g745-h8pq",
+      "package": "uuid",
+      "severity": "moderate",
+      "version": "8.3.2",
+      "path": ".>@solana/web3.js>jayson>uuid",
+      "rationale": "Exception proposed by the Lighter integration author on 2026-09-06; pending the owner's decision in PR review; expires 2026-09-18 unless renewed. The advisory affects uuid v3, v5, and v6 with caller-provided output buffers. Jayson imports and invokes uuid v4 only, without a caller-provided buffer. The audit verifies that binding and every call site in the installed Jayson sources and exercises the reachable entry point. Re-review when Jayson or Solana accepts uuid 11.1.1 or newer."
+    },
+    {
+      "url": "https://github.com/advisories/GHSA-528h-pc64-c93x",
+      "package": "stream-json",
+      "severity": "moderate",
+      "version": "1.9.1",
+      "path": ".>@solana/web3.js>jayson>stream-json",
+      "rationale": "Exception proposed by the Lighter integration author on 2026-09-06; pending the owner's decision in PR review; expires 2026-09-18 unless renewed. The advisory affects pick/ignore/filter/replace path filters and explicitly excludes StreamValues. Jayson 4.3.0 imports only StreamValues and Verifier. The audit verifies those installed imports, rejects loaded filter modules, and exercises chunked and malformed JSON parsing. The patched 3.5.0 changes module exports and cannot replace 1.9.1 compatibly. Re-review by 2026-09-18 or when Jayson accepts a patched release or reachable imports change."
+    }
+  ]
+}
