@@ -26,10 +26,11 @@
  * and which this lane inherits rather than reimplementing.
  */
 
-import type { Hex, TransactionReceipt } from "viem";
+import type { Account, Chain, Hex, TransactionReceipt, Transport, WalletClient } from "viem";
 
 import {
   signStageBroadcast,
+  type DeferredEvmSigner,
   type FinalSignedRequest,
   type StagedBroadcastOutcome,
 } from "@tools/evm-chains/staged-broadcast.js";
@@ -88,11 +89,37 @@ export async function runCurveLeg(input: {
   readonly onBeforeSign?: (request: FinalSignedRequest) => Promise<void>;
 }): Promise<CurveLegOutcome> {
   const { event } = input;
+  // THE DEFERRED ARM, for the one property it exists to give: the signature is
+  // produced OFFLINE, so nothing at all reaches a provider between the pre-sign
+  // gate below and the bytes being signed. On the eager arm viem's wallet action
+  // awaits one `eth_chainId` of its own after that gate (measured in viem
+  // 2.54.3), and this leg's gate is `assertCurveTradeFinalAuthority` - a verdict
+  // about an expiring proposal and a mutable curve, which a node can invalidate
+  // simply by being slow to answer that one round trip.
+  //
+  // The key is resolved before this function is called, as it always has been:
+  // this arm's OTHER property (a late key) is not what the curve path uses it
+  // for, which is why `createSigner` hands back the wallet client the execute
+  // already holds and the signer's own `onBeforeSign` is empty. The leg's real
+  // gate is `hooks.onBeforeSign` below, which `signStageBroadcast` runs strictly
+  // later, immediately before the signature. Same construction as the fee leg
+  // (`./fee-leg.ts`) and the KyberSwap swap leg.
   let outcome: StagedBroadcastOutcome;
   try {
+    // Inside the try, like everything else that can refuse before the network:
+    // a signer that cannot be built is a leg that was never signed, and it is
+    // terminalized as one rather than escaping this function uncaught.
+    const walletClient: WalletClient<Transport, Chain, Account> = input.clients.walletClient;
+    const signer: DeferredEvmSigner = {
+      kind: "deferred",
+      address: walletClient.account.address,
+      chain: walletClient.chain,
+      onBeforeSign: async () => {},
+      createSigner: async () => walletClient,
+    };
     outcome = await signStageBroadcast(
       input.clients.publicClient,
-      input.clients.walletClient,
+      signer,
       { to: input.tx.to, data: input.tx.data, value: input.tx.value },
       {
         onNonceReserved: (request) => reserveActivityEvmNonce(event.id, request),

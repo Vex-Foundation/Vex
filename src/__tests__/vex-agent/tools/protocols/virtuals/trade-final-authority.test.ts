@@ -32,6 +32,7 @@ import { getAddress, parseUnits, type Address, type Hex } from "viem";
 import type { FailActivityEventInput } from "@vex-agent/db/repos/agent-activity.js";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 import { definedValue } from "../../../../_test-value-guards.js";
+import { walletClientDouble } from "../../../../_test-evm-clients.js";
 
 const WALLET = getAddress("0x1111111111111111111111111111111111111111");
 const TOKEN = getAddress("0x1984edF491D3399FBc09E6d0856E01fF3721f952");
@@ -104,6 +105,12 @@ function makeClient(
   reads: () => Record<string, unknown>,
   info: () => readonly unknown[],
   implementations: () => Record<string, string>,
+  /**
+   * Called for every `readContract` this node answers, BEFORE the value is
+   * returned. The seam a test uses to make one specific read slow in the only
+   * way that matters here: the clock moves while it is in flight.
+   */
+  observe: (functionName: string) => void = () => {},
 ) {
   return {
     async getStorageAt(args: { address: Address }) {
@@ -119,6 +126,7 @@ function makeClient(
       return 5_000_000_000_000_000n;
     },
     async readContract(args: { functionName: string }) {
+      observe(args.functionName);
       if (args.functionName === "tokenInfo") return info();
       const value = reads()[args.functionName] ?? DEFAULT_READS[args.functionName];
       // The sentinel is what an endpoint that cannot answer looks like to this
@@ -170,15 +178,22 @@ const fallbackClient = makeClient(
   () => fallbackTokenInfo,
   () => fallbackImplementations,
 );
+/** Per-test observer on the PINNED node's reads. Reset in `beforeEach`. */
+let pinnedReadObserver: (functionName: string) => void = () => {};
 const pinnedClient = makeClient(
   () => pinnedReads,
   () => pinnedTokenInfo,
   () => pinnedImplementations,
+  (functionName) => pinnedReadObserver(functionName),
 );
 
 vi.mock("@tools/virtuals/curve/evm-client.js", () => ({
   getVirtualsCurvePublicClient: () => fallbackClient,
-  getVirtualsCurveClients: () => ({ publicClient: pinnedClient, walletClient: {} }),
+  // The wallet client is a REAL account-bound viem client (see
+  // `pinnedWalletClient` below): the leg reads its account and chain to build
+  // the deferred signer that keeps the signature offline, so a bare `{}` would
+  // make this suite pass by never reaching production's own identity read.
+  getVirtualsCurveClients: () => ({ publicClient: pinnedClient, walletClient: pinnedWalletClient }),
 }));
 
 /** Every leg the fake was asked to send, and every leg it got past the gate. */
@@ -247,6 +262,8 @@ const { sealVirtualsSnapshot, VIRTUALS_SNAPSHOT_VERSION } = await import(
 
 const BASE = definedValue(virtualsCurveDeployment("base"), "the base curve deployment");
 const BASE_BONDING = BASE.bondingV5;
+/** The signing identity the trade leg builds its deferred signer from. */
+const pinnedWalletClient = walletClientDouble(WALLET, {}, BASE.chainId);
 let fallbackImplementations: Record<string, string> = {};
 let pinnedImplementations: Record<string, string> = {};
 
@@ -358,6 +375,7 @@ beforeEach(() => {
   pinnedTokenInfo = defaultTokenInfo();
   fallbackImplementations = defaultImplementations();
   pinnedImplementations = defaultImplementations();
+  pinnedReadObserver = () => {};
 });
 
 describe("the trade is held to its approval at the last gate, on the signing node", () => {
@@ -439,6 +457,57 @@ describe("the trade is held to its approval at the last gate, on the signing nod
       expect(result.success).toBe(false);
       expect(refusalText(result)).toContain("expired");
       expect(signedTargets()).toEqual(["allowance"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /**
+   * THE WINDOW THE FIRST EXPIRY CHECK CANNOT SEE.
+   *
+   * The gate read the clock once and then awaited the pinned node twice
+   * (`readCurveState`, then `readCurveQuote`). Both of those are network round
+   * trips on a node that may be slow, rate-limited or simply busy, and the
+   * proposal's own deadline keeps running through them. So a quote with 30 s of
+   * life left could pass the check, spend 31 s in the authority reads, and be
+   * signed against a deadline that had already passed - the approval the human
+   * gave was for a price valid until a moment that was gone before the bytes
+   * existed.
+   *
+   * The clock here is advanced INSIDE the last awaited read, which is exactly
+   * where the real window is, and nowhere else: the first check must still pass,
+   * or this proves nothing about the second one.
+   */
+  it("refuses a proposal that expires DURING the final authority reads, and never signs the trade", async () => {
+    vi.useFakeTimers();
+    try {
+      const snapshot = sealApprovedSnapshot(new Date(Date.now() + 30_000).toISOString());
+      claim.mockResolvedValue({ ok: true, snapshot, prequoteId: "p", vexFee: undefined });
+      // `getAmountsOut` on the PINNED node is `readCurveQuote` - the last awaited
+      // authority read before the gate returns.
+      pinnedReadObserver = (functionName) => {
+        if (functionName === "getAmountsOut") {
+          vi.setSystemTime(new Date(Date.parse(snapshot.expiresAt) + 1_000));
+        }
+      };
+
+      const inFlight = run(snapshot.digest);
+      await allowanceReached.promise;
+      // The clock has NOT moved yet: the gate's first expiry check passes, and
+      // everything this test asserts is therefore about the second one.
+      allowanceMining.resolve();
+      const result = await inFlight;
+
+      expect(result.success).toBe(false);
+      const out = refusalText(result);
+      expect(out).toContain("expired");
+      expect(out).toContain("Nothing was signed");
+      expect(signedTargets()).toEqual(["allowance"]);
+      // The trade leg WAS prepared - the refusal happened at the gate, not
+      // before the leg was reached, which is what makes the window real.
+      expect(staged.map((leg) => leg.to.toLowerCase())).toContain(BASE_BONDING.toLowerCase());
+      const call = definedValue(failActivityEvent.mock.calls.at(-1), "failActivityEvent was never called");
+      expect(call[1].failureCode).toBe("deadline_expired");
     } finally {
       vi.useRealTimers();
     }
