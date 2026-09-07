@@ -80,6 +80,12 @@ const TOKEN = /trench/i;
  * intent repo - so the list states one fact once instead of repeating it.
  */
 const ALLOWLIST = [
+  // ── Documentation that records the retirement itself ─────────────────────
+  {
+    prefix: "VEX_STUDIO.md",
+    reason:
+      "the Studio engineering document states what shipped and what migration 108 removed; naming the retired protocol is how it tells a reader that a `trench` namespace they see elsewhere is stale",
+  },
   // ── Durable data: values written to disk that must keep reading back ─────
   {
     prefix: "src/vex-agent/db/repos/token-launch-intents",

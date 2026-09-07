@@ -189,6 +189,28 @@ Three columns on one screen. Both side columns fold away to a thin strip when yo
 | **FAILED** | The attempt failed. Amounts are deliberately not shown, because they did not happen. |
 | **in flight - no token address yet** (My Launches) | Your launch was broadcast and no token address is proven yet. Vex will not invent one. |
 
+## Vex Studio
+
+Studio is the second shell inside Vex, for people who already work with a coding agent such as Claude Code, Codex CLI, Gemini CLI or Cursor. Flip the **Agent | Studio** switch at the top of the app (or press `Ctrl+Shift+A`) and Vex becomes a workspace: a project rail with a file explorer on the left, a terminal running real shells in tabs, a file viewer with syntax colouring, and one search box that finds projects and files together. Up to four projects stay open at once, each keeping its terminal and its expanded tree; a fifth asks you to close one first. Close Vex and reopen it and you land back on the same project, the same file tab and the same terminal.
+
+**What a project is.** A folder under `~/Vex/projects` (you can move that root in Settings before the first project exists), plus a scope you control: a **permission**, `restricted` or `full`, and one EVM wallet and one Solana wallet, or none. Restricted means every read runs freely and every fund-moving call stops at an approval card in Vex. Full means those calls run without a card, the same deliberate autonomy a Full Autonomous session has. No wallet selected means no wallet at all; nothing falls back to your primary one.
+
+**How your agent connects.** When you add a project, Vex writes one small config entry into the repository for each coding agent you tick, pointing at `vex-mcp`, a tiny bridge program that ships with Vex. It also writes four project files: `AGENTS.md` and `.vex/vex-guide.md` (the instructions every agent reads), `CLAUDE.md` (two import lines) and `.vex/protocols.md` (the tool reference). Vex verifies each file before it writes, never deletes one, and reports a file you edited as drift instead of overwriting it. Thirteen of the fifteen agents on the roster get a working setup today; Cline and Warp are named as unsupported because they only read a machine-wide file Vex will not touch.
+
+**What the agent can do.** The same 171 tools the Vex agent uses, over MCP on your own machine: balances, research, quotes, swaps on KyberSwap and Uniswap, bridges, Pendle, Morpho, Jupiter, Virtuals, pools.fun launches and plain transaction signing. Twenty-seven load at once; the rest are found by a read-only search. The Vex fee is the same 0.25% and it is printed on the card you approve. What never leaves the app: your keys, your memory, missions and the session-only tools.
+
+**Approvals from Studio.** A restricted project's fund-moving call waits for you on the ordinary approval card, for up to one hour, while the agent is told every two seconds that a person is deciding. Approve, reject or let it expire; the agent hears exactly one of seven named outcomes, each saying whether anything moved. What you approve is bound to the card you read: change the project's wallet or permission while a card waits and the card is refused; even an already-approved action is re-checked at the last moment and refused if the scope moved. Locking Vex closes the door for every connected agent and cancels what was waiting.
+
+**When it does not connect.** Studio only works while Vex is open and unlocked. If your agent says the Vex tools are unavailable, unlock Vex and try again. The bridge never retries and never guesses: it prints one sentence and exits with a code that names the problem (locked, unknown project, at capacity, wrong version, nothing listening). Copy the connection command Vex shows for the project rather than typing one.
+
+| Studio limits | |
+|---|---|
+| Connected agents | 16 at once, 4 more mid-handshake |
+| Calls waiting on a card | 32 |
+| Approval window | 1 hour, shorter if the action itself expires sooner |
+| Projects kept open | 4 |
+| Roster | 15 agents, 13 wired |
+
 ## What Vex can do
 
 Vex reaches real venues under their real names. Read-only calls run freely; anything that moves funds goes through the approval system above unless the session is Full Autonomous.
