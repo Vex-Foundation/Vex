@@ -99,6 +99,18 @@ const mockUseWizardState = vi.hoisted(() => vi.fn());
 vi.mock("../../../../lib/api/wizard.js", () => ({
   useWizardState: mockUseWizardState,
 }));
+vi.mock("../../../../lib/api/superboard-key.js", () => ({
+  useSuperboardKey: () => ({
+    isLoading: false,
+    isFetching: false,
+    data: {
+      ok: true,
+      data: { kind: "registered", shareToken: "vex_share_" + "A".repeat(43) },
+    },
+  }),
+  useGenerateSuperboardKey: () => ({ mutate: () => undefined, isPending: false }),
+  useRegenerateSuperboardKey: () => ({ mutate: () => undefined, isPending: false }),
+}));
 // The Background row has its own suite (SettingsBackdropRow.test.tsx); this
 // one owns routing and the register, so its hooks stub to "shipped artwork".
 vi.mock("../../../../lib/api/shell-backdrop.js", () => ({
@@ -151,7 +163,17 @@ function setEnv(env: EnvState): void {
   });
 }
 
-function openSettings(section: "vault" | "wallets" | "apiKeys" | "model" | "memory" | "tuning" | null = null): void {
+function openSettings(
+  section:
+    | "vault"
+    | "wallets"
+    | "apiKeys"
+    | "superboardKey"
+    | "model"
+    | "memory"
+    | "tuning"
+    | null = null,
+): void {
   useUiStore.setState({
     shellRoute: { kind: "settings", origin: ORIGIN, section },
   });
@@ -186,13 +208,22 @@ describe("SettingsScreen", () => {
     openSettings();
 
     await screen.findByRole("dialog", { name: "Settings" });
-    for (const name of ["Vault", "Wallets", "API keys", "Model", "Memory", "Tuning"]) {
+    for (const name of [
+      "Vault",
+      "Wallets",
+      "API keys",
+      "Superboard key",
+      "Model",
+      "Memory",
+      "Tuning",
+    ]) {
       expect(screen.getByText(name)).not.toBeNull();
     }
     // Status = colored WORDS from envState (never a dot).
     expect(screen.getByText("Protected")).not.toBeNull();
     expect(screen.getByText("Both chains")).not.toBeNull();
     expect(screen.getByText("Configured")).not.toBeNull();
+    expect(screen.getByText("Linked")).not.toBeNull();
     expect(screen.getByText("OpenRouter")).not.toBeNull();
     expect(screen.getByText("Reachable")).not.toBeNull();
     expect(screen.getByText("Saved")).not.toBeNull();

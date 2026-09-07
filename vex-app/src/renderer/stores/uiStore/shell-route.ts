@@ -93,6 +93,7 @@ export type SettingsSection =
   | "vault"
   | "wallets"
   | "apiKeys"
+  | "superboardKey"
   | "model"
   | "memory"
   | "tuning";

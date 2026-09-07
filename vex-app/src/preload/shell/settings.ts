@@ -28,4 +28,13 @@ export const settings = {
   setUserProfile(profile: UserProfile) {
     return invokeWithSchema(CH.settings.setUserProfile, profile, userProfileSchema);
   },
+  getSuperboardKey() {
+    return invokeWithSchema(CH.settings.getSuperboardKey, {});
+  },
+  generateSuperboardKey() {
+    return invokeWithSchema(CH.settings.generateSuperboardKey, {});
+  },
+  regenerateSuperboardKey() {
+    return invokeWithSchema(CH.settings.regenerateSuperboardKey, {});
+  },
 } satisfies SettingsBridge;

@@ -1,18 +1,18 @@
 /**
- * Settings register data: the six section rows (id, hosted wizard step,
+ * Settings register data: the section rows (id, hosted wizard step,
  * copy) and the pure status-word derivation the register renders. Status
  * words derive from the same `useEnvState()` payload the retired review
  * cards read.
  */
 
 import type { EnvState } from "@shared/schemas/onboarding.js";
+import type { SuperboardKeyStatus } from "@shared/schemas/superboard-key.js";
 import type { WizardStepId } from "@shared/schemas/wizard.js";
 import type { SettingsSection } from "../../../../stores/uiStore.js";
 
 export interface SectionMeta {
   readonly id: SettingsSection;
-  /** The wizard step whose form (and icon) this section hosts. */
-  readonly stepId: Exclude<WizardStepId, "review">;
+  readonly stepId?: Exclude<WizardStepId, "review">;
   readonly name: string;
   readonly hint: string;
 }
@@ -36,6 +36,11 @@ export const SETTINGS_SECTIONS: ReadonlyArray<SectionMeta> = [
     stepId: "apiKeys",
     name: "API keys",
     hint: "Jupiter, Tavily, and Rettiwt integrations",
+  },
+  {
+    id: "superboardKey",
+    name: "Superboard key",
+    hint: "Code you paste into Superboard",
   },
   {
     id: "model",
@@ -70,10 +75,28 @@ export interface SettingsStatus {
  * exception - envState does not expose AGENT_* values, so its word stays
  * a neutral "Saved".
  */
+export function superboardRegisterStatus(
+  status: SuperboardKeyStatus | null,
+): SettingsStatus {
+  if (status === null) return { word: "-", tone: "neutral" };
+  switch (status.kind) {
+    case "not_ready":
+      return { word: "Not ready", tone: "warning" };
+    case "missing":
+      return { word: "Not set", tone: "warning" };
+    case "pending":
+      return { word: "Linking", tone: "neutral" };
+    case "registered":
+      return { word: "Linked", tone: "success" };
+  }
+}
+
 export function settingsSectionStatus(
   section: SettingsSection,
   env: EnvState | null,
+  superboard: SuperboardKeyStatus | null = null,
 ): SettingsStatus {
+  if (section === "superboardKey") return superboardRegisterStatus(superboard);
   if (env === null) return { word: "-", tone: "neutral" };
   switch (section) {
     case "vault":

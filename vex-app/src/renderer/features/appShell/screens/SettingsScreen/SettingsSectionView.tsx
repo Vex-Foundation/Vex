@@ -19,6 +19,7 @@ import {
 } from "../../../wizard/index.js";
 import { ExportPrivateKeyModal } from "../../../wallets/ExportPrivateKeyModal.js";
 import type { SectionMeta } from "./settings-sections.js";
+import { SuperboardKeySection } from "./SuperboardKeySection.js";
 
 export function SettingsSectionView({
   meta,
@@ -43,14 +44,18 @@ export function SettingsSectionView({
       className="mx-auto flex w-full max-w-[680px] flex-col gap-4"
       data-vex-settings-section={meta.id}
     >
-      {renderSectionForm(meta.stepId, stepProps)}
+      {meta.id === "superboardKey" ? (
+        <SuperboardKeySection />
+      ) : meta.stepId !== undefined ? (
+        renderSectionForm(meta.stepId, stepProps)
+      ) : null}
       {meta.id === "wallets" ? <ExportPrivateKeySection env={env} /> : null}
     </div>
   );
 }
 
 function renderSectionForm(
-  stepId: SectionMeta["stepId"],
+  stepId: Exclude<SectionMeta["stepId"], undefined>,
   props: {
     readonly completedSteps: ReadonlyArray<WizardStepId>;
     readonly onAdvance: (next: WizardStepId) => void;

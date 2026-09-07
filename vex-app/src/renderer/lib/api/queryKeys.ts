@@ -20,6 +20,11 @@ export const dockerKeys = {
   status: () => ["docker", "status"] as const,
 };
 
+export const superboardKeyKeys = {
+  all: ["superboardKey"] as const,
+  status: () => ["superboardKey", "status"] as const,
+};
+
 export const onboardingKeys = {
   all: ["onboarding"] as const,
   envState: () => ["onboarding", "envState"] as const,

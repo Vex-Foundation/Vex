@@ -1,5 +1,6 @@
 import type { Result } from "../../../ipc/result.js";
 import type { Preferences } from "../../../schemas/preferences.js";
+import type { SuperboardKeyStatus } from "../../../schemas/superboard-key.js";
 import type { UserProfile } from "../../../schemas/user-profile.js";
 
 export interface SettingsBridge {
@@ -10,4 +11,7 @@ export interface SettingsBridge {
   /** "Vex setup" user profile — DB-backed (soul singleton), replaces persona.md. */
   readonly getUserProfile: () => Promise<Result<UserProfile>>;
   readonly setUserProfile: (profile: UserProfile) => Promise<Result<UserProfile>>;
+  readonly getSuperboardKey: () => Promise<Result<SuperboardKeyStatus>>;
+  readonly generateSuperboardKey: () => Promise<Result<SuperboardKeyStatus>>;
+  readonly regenerateSuperboardKey: () => Promise<Result<SuperboardKeyStatus>>;
 }
