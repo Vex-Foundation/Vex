@@ -72,6 +72,13 @@ describe("Safety Contract — untrusted tool output and destinations", () => {
     expect(prompt).toContain("There is no approval-free path to a mutation.");
   });
 
+  it("keeps direct deposit amounts exact instead of converting them to target balances", () => {
+    const prompt = buildSafetyContractPrompt();
+    expect(prompt).toContain("Direct amounts are exact transfers");
+    expect(prompt).toContain("deposit, transfer, bridge, or withdraw 5 tokens, move exactly 5 tokens");
+    expect(prompt).toContain("Never subtract an existing destination or protocol balance");
+  });
+
   it("does not claim the runtime enforces the TokenCheck gate", () => {
     const prompt = buildSafetyContractPrompt();
     expect(prompt).not.toContain("The runtime enforces this gate");

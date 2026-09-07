@@ -180,12 +180,25 @@ describe("capture contract — structural coverage", () => {
     }
   });
 
-  it("projection kind is exactly the Pendle LP lifecycle rows, all capture:none (Batch B card B2; R5d E5)", () => {
+  it("projection kind is exactly the pinned order/LP lifecycle rows, all capture:none (Batch B card B2; R5d E5)", () => {
     // The dual-leg pair joined at card E5 on the same terms as lp.add/lp.remove:
     // an LP lifecycle row, no LP economics, and never a second quote-derived
     // truth beside the handler's own agent_activity write.
+    // The Lighter writes join on the same terms: their durable lifecycle
+    // truth lives in protocol-specific intent/workflow tables written
+    // directly by their handlers.
     const projection = getToolsByKind("projection");
     expect(projection.map(([id]) => id).sort()).toEqual([
+      "lighter.deposit",
+      "lighter.fees.approve",
+      "lighter.key.register",
+      "lighter.order.cancel",
+      "lighter.order.cancelAll",
+      "lighter.order.create",
+      "lighter.order.modify",
+      "lighter.position.close",
+      "lighter.withdraw",
+      "lighter.withdraw.claim",
       "pendle.lp.add",
       "pendle.lp.addKeepYt",
       "pendle.lp.remove",

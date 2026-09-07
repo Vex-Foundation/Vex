@@ -47,6 +47,7 @@ import { useEngineErrorRetentionSync } from "../../lib/api/engine-errors.js";
 import { ShellBackdrop } from "./ShellBackdrop.js";
 import { ShellDragHandle } from "./ShellDragHandle.js";
 import { ShellScreens } from "./screens/ShellScreens.js";
+import { LighterTradingHost } from "./lighterTrading/LighterTradingHost.js";
 
 export function AppShell(): JSX.Element {
   // App-wide engine-error RETENTION. Mounted here, not per session: a wake or
@@ -88,7 +89,7 @@ export function AppShell(): JSX.Element {
         runtimeMode={runtimeMode}
         activeSessionId={activeSessionId}
         activeProjectId={activeProjectId}
-        onCreate={() => openCreateSession()}
+        onCreate={(initialMessage) => openCreateSession(initialMessage ?? null)}
       />
 
       {/* Full-app overlay screens (Memory / Sessions / How Vex works) —
@@ -122,7 +123,7 @@ function ShellFrame({
   readonly runtimeMode: RuntimeMode;
   readonly activeSessionId: string | null;
   readonly activeProjectId: string | null;
-  readonly onCreate: () => void;
+  readonly onCreate: (initialMessage?: string) => void;
 }): JSX.Element {
   const sidebarOpen = useUiStore((s) => s.sidebarOpen);
   const setSidebarOpen = useUiStore((s) => s.setSidebarOpen);
@@ -135,6 +136,7 @@ function ShellFrame({
   const bookWidth = useUiStore((s) => s.bookWidth);
   const setBookWidth = useUiStore((s) => s.setBookWidth);
   const setActiveProjectId = useUiStore((s) => s.setActiveProjectId);
+  const [lighterTradingOpen, setLighterTradingOpen] = useState(false);
 
   const frameRef = useRef<HTMLDivElement | null>(null);
   const [viewport, setViewport] = useState(() =>
@@ -288,8 +290,23 @@ function ShellFrame({
           activeSessionId={activeSessionId}
         />
 
+        <LighterTradingHost
+          activeSessionId={activeSessionId}
+          open={lighterTradingOpen}
+          onOpenChange={setLighterTradingOpen}
+          onCreateSession={onCreate}
+        />
+
         <div className="min-h-0 flex-1">
-          {studio ? <StudioCenter /> : <SessionPanel />}
+          {/* The live conversation moves into Light it up while the workspace
+           * is open. Keeping a single mounted chat prevents duplicate
+           * composers, approval cards, and submit handlers. Studio owns its
+           * separate center and is unaffected by the agent workspace state. */}
+          {studio ? (
+            <StudioCenter />
+          ) : lighterTradingOpen ? null : (
+            <SessionPanel />
+          )}
         </div>
       </section>
 

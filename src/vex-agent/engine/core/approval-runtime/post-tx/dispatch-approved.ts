@@ -146,6 +146,38 @@ import { buildResumedApprovalToolContext } from "./dispatch-approved/resumed-too
 import { claimDispatchSlotUnderStopGate } from "./dispatch-approved/dispatch-slot-gate.js";
 import { applyStudioApproveSideEffects } from "./dispatch-approved/studio.js";
 
+type ApprovedDispatchExecutionStatus = "succeeded" | "failed" | "indeterminate";
+
+function isLighterUnresolvedResult(data: unknown): boolean {
+  if (data === null || typeof data !== "object" || Array.isArray(data)) {
+    return false;
+  }
+  const row = data as Record<string, unknown>;
+  if (
+    row["source"] === "vex_lighter_live_deposit"
+    && (row["status"] === "ambiguous" || row["status"] === "l2_pending")
+  ) {
+    return true;
+  }
+  if (row["source"] !== "vex_lighter_live_order_create") return false;
+  const status = row["status"];
+  const executionState = row["executionState"];
+  return (
+    status === "ambiguous"
+    || status === "sequencer_pending"
+    || executionState === "ambiguous"
+    || executionState === "sequencer_pending"
+  );
+}
+
+export function deriveApprovedDispatchExecutionStatus(input: {
+  readonly success: boolean;
+  readonly data?: Record<string, unknown>;
+}): ApprovedDispatchExecutionStatus {
+  if (!input.success) return "failed";
+  return isLighterUnresolvedResult(input.data) ? "indeterminate" : "succeeded";
+}
+
 /**
  * Side effects after `approved_in_tx` snapshot — claim the continuation, take
  * the dispatch slot, dispatch the tool, commit the result, return the
@@ -374,11 +406,13 @@ export async function applyApproveSideEffects(
     // FIRST, before the stop below. The dispatch ran unlocked and may already
     // have moved funds; that outcome is durable history and a Stop that
     // arrived afterwards must not cost us the record of it.
+    const executionStatus = deriveApprovedDispatchExecutionStatus(dispatchResult);
     await commitApprovedToolResult({
       approvalId,
       sessionId,
       toolCallId: toolCall.toolCallId,
       dispatchResult,
+      executionStatus,
       explorerRefs: deriveExplorerRefs(dispatchResult.data),
       // DISPLAY-only: an approved swap whose receipt never came back is the
       // exact case that rendered a red FAILED above its own "pending" prose.
@@ -420,7 +454,7 @@ export async function applyApproveSideEffects(
       kind: "dispatched",
       approvalId,
       resolvedAt: snapshot.queueResolvedAt,
-      executionStatus: dispatchResult.success ? "succeeded" : "failed",
+      executionStatus,
       sessionId,
       missionRunId,
       // `null` here is the honest "the tool ran, the agent was NOT resumed"

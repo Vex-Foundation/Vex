@@ -41,6 +41,10 @@ export const TOOL_MAP_CATEGORIES: readonly ToolMapCategory[] = [
   // `execute_tool` ToolDef is deleted and its dispatch route survives solely
   // for approval resume.
   { label: "Protocol tool search", toolNames: ["ToolSearch"] },
+  {
+    label: "Lighter onboarding (complete environment-fixed live reads)",
+    toolNames: ["lighter_rhc_onboarding_status", "lighter_core_onboarding_status"],
+  },
   { label: "Live state reads", toolNames: ["WalletBalances", "ChainRead", "AgentScan"] },
   { label: "Local-chain token pinning (Robinhood - DB bookmark, no tx)", toolNames: ["WalletTrackToken"] },
   { label: "Token resolution", toolNames: ["TokenFind"] },

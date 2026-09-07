@@ -1,6 +1,7 @@
 # Studio MCP Export Scope
 
-Owner decision, 2026-08-21. Records which parts of the agent tool surface the
+Owner decision, 2026-08-21; reviewed for the Lighter surface on 2026-09-02.
+Records which parts of the agent tool surface the
 future local MCP server (vex-studio.plan.md) exports to external coding
 agents (Claude Code, Codex CLI) running in Studio terminals. This is a scope
 record for the Studio phase; nothing here is implemented in Batch 1.
@@ -18,6 +19,7 @@ The MCP server exports the tool surface EXCEPT the session-bound groups:
 | Research | YES | twitter_account |
 | Web research | NO | web_research |
 | Math | YES | units_convert |
+| Lighter onboarding | YES | lighter_rhc_onboarding_status, lighter_core_onboarding_status |
 | Protocol tools | YES for every namespace except the toolIds under "Protocol tools not exported" below | the full catalog under their publicName |
 | Memory | NO | session_memory_search, session_memory_resolve_item, long_memory_suggest, long_memory_search, long_memory_get, long_memory_history |
 | Engine / runtime | NO | mission_draft_update, mission_stop, loop_defer, compact_apply, plan_write |

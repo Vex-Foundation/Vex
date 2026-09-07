@@ -74,7 +74,8 @@ describe("G2 - internal tool description lint", () => {
     // 37 → 39: the native <-> wrapped-native pair (`registry/wallet-wrap.ts`),
     // both inside the basic lane, which is why that count moved 18 → 20 in the
     // same step.
-    expect(SUBJECTS).toHaveLength(39);
+    // Lighter onboarding adds two read tools outside the basic lane.
+    expect(SUBJECTS).toHaveLength(41);
     expect(BASIC_LANE.size, "basic-lane coverage changed").toBe(20);
 
     // The 19 the basic rule never saw (18 + `BoardCompose`), and the 14 it
@@ -83,7 +84,7 @@ describe("G2 - internal tool description lint", () => {
     for (const name of BASIC_LANE) {
       expect(linted.has(name), `${name} is outside the ActionKind lane`).toBe(true);
     }
-    expect([...linted].filter((name) => !BASIC_LANE.has(name))).toHaveLength(19);
+    expect([...linted].filter((name) => !BASIC_LANE.has(name))).toHaveLength(21);
   });
 
   // The blast radius of the split: without the overlap, no committed rule can

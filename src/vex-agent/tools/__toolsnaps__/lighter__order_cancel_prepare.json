@@ -1,0 +1,49 @@
+{
+  "definition": {
+    "function": {
+      "description": "Prepare a user approval for canceling one exact active Lighter order. Use when the user wants to cancel a specific order returned by authenticated Lighter open orders. Reads provider state for the selected Core or RHC account, matches the exact string order_id and market, and persists immutable side, price, remaining amount, fills, status, credential scope, and expiry. Returns a trusted approval card; it never loads a private key, reserves a nonce, signs, submits, or treats absence as cancellation.",
+      "name": "lighter__order_cancel_prepare",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "accountIndex": {
+            "description": "Optional saved Lighter account index. Omit when exactly one managed account exists in the selected environment.",
+            "type": "number"
+          },
+          "environment": {
+            "description": "Optional Lighter environment for the persisted preview: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc. Any other value is rejected.",
+            "enum": [
+              "core",
+              "rhc"
+            ],
+            "type": "string"
+          },
+          "marketId": {
+            "description": "Exact Lighter market index of the active provider order.",
+            "type": "number"
+          },
+          "orderId": {
+            "description": "Exact decimal provider order_id string from authenticated Lighter open orders. It is never converted to a JavaScript number.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "marketId",
+          "orderId"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "approval_prepare",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "lighter",
+    "requiresEnv": null,
+    "toolId": "lighter.order.cancel.prepare"
+  }
+}

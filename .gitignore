@@ -22,6 +22,9 @@ AuthKey_*.p8
 .claude/
 AGENTS.md
 agents.md
+CLAUDE.md
+claude.md
+.context/
 .codex/
 .agents/
 *.swp
@@ -52,6 +55,9 @@ agents_dm/
 /vex-index.md
 /vex-how-it-works.md
 /chronos-update.md
+/tradeflow.md
+/withdrawalflow.md
+/urgentBuild.md
 .cursor/plans/
 .cursor/agent-transcripts/
 agent-transcripts/

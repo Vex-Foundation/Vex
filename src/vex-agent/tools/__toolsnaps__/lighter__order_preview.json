@@ -1,0 +1,115 @@
+{
+  "definition": {
+    "function": {
+      "description": "Create a live-data-backed Lighter order preview for a market order, plain limit order, or one standalone reduce-only perpetual stop-loss, stop-loss-limit, take-profit, or take-profit-limit order. Use when the user wants to review exact order terms before approval. When an ordinary limit omits timeInForce, default it to good-till-time so any unfilled amount can remain open until filled, canceled, or expired; when its duration is also omitted, use orderExpiryOffsetMinutes=1440 (one day). Preserve any explicit immediate-or-cancel, good-till-time, or post-only selection and duration exactly. Stop-loss-limit and take-profit-limit orders still require the user's explicit selection and expiry. Existing market, stop-loss, and take-profit requests may omit timeInForce and remain immediate-or-cancel. Prefer marketSymbol over marketId when the user names an asset and include marketType whenever stated; Vex refuses a product mismatch instead of silently switching markets. Triggered protective orders require an explicit triggerPrice, hard execution-price bound or limit price, reduceOnly=true, and a side that reduces the live position; if any required value is missing, ask instead of guessing. A dormant post-only trigger-limit is checked when Lighter activates it, not rejected against the current book. For paired stop-loss plus take-profit protection use lighter__position_protect. Combined entry-plus-protection, OTO, and OTOCO remain unavailable, so never silently preview only part of such a request. Returns the exact persisted preview and, when managed trading is ready, one approval card. Previewing never signs or submits anything. Provide at most one of: marketId, marketSymbol. Provide at most one of: orderExpiry, orderExpiryOffsetMinutes. Provide at least one of: marketId, marketSymbol. Provide at least one of: orderExpiry, orderExpiryOffsetMinutes.",
+      "name": "lighter__order_preview",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "accountIndex": {
+            "description": "Optional account index. Omit to use the account bound to the default saved Vex-managed Lighter trading credential. Derived read-only authorization refuses account mismatches.",
+            "type": "number"
+          },
+          "apiKeyIndex": {
+            "description": "Optional Lighter API-key index override. Omit for normal order previews; Vex attempts to resolve a public trading API-key index for later approval preparation, but a missing trading key does not block the read-only preview. This does not require or expose API private key material.",
+            "type": "number"
+          },
+          "baseAmountIn": {
+            "description": "Order size in the BASE asset as a human decimal string, for example 0.25. Vex converts it exactly using live Lighter size decimals and refuses rounding.",
+            "type": "string"
+          },
+          "environment": {
+            "description": "Optional public Lighter environment to read: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc for conversational Lighter requests. Any other value is rejected.",
+            "enum": [
+              "core",
+              "rhc"
+            ],
+            "type": "string"
+          },
+          "marketId": {
+            "description": "Optional numeric Lighter market id from lighter__markets_list. When omitted, the market list reads the environment's visible markets.",
+            "type": "number"
+          },
+          "marketSymbol": {
+            "description": "Optional market symbol such as ETH or ETH/USDC. Use this for conversational order previews when the user names an asset instead of a market id; Vex resolves it against live Lighter markets. Also pass marketType when the symbol can exist as both a perpetual and spot product.",
+            "type": "string"
+          },
+          "marketType": {
+            "description": "Optional exact Lighter product type for this order preview: perp or spot. Include it when resolving marketSymbol so a spot request cannot silently select the same asset's perpetual market. With marketId, the live market detail must match this value or the preview is refused.",
+            "enum": [
+              "perp",
+              "spot"
+            ],
+            "type": "string"
+          },
+          "orderExpiry": {
+            "description": "Exact order expiry as a JavaScript epoch-milliseconds integer. Use orderExpiryOffsetMinutes instead when the user says a relative expiry such as '30 minutes from now'. Vex requires the final expiry to be between 5 minutes and 30 days from preview time and requires at least 5 minutes to remain at actual submission for every order whose signed wire expiry is non-nil.",
+            "type": "number"
+          },
+          "orderExpiryOffsetMinutes": {
+            "description": "Preferred for relative expiries such as '30 minutes from now'. Whole minutes from preview time, between 5 and 43200. For an ordinary limit with no user-stated duration, use 1440 (one day), matching the trade ticket default; always preserve an explicit duration. Do not invent a duration for a trigger-limit order. Do not combine with orderExpiry.",
+            "type": "number"
+          },
+          "orderType": {
+            "description": "Optional native Lighter order type. Use market for an immediate market order; limit for a priced order; stop-loss or take-profit for a market-trigger protective order; and stop-loss-limit or take-profit-limit for a trigger that places a priced limit order. Every stop-loss and take-profit variant is perpetual-only, reduce-only, and requires triggerPrice. Limit, stop-loss-limit, and take-profit-limit support immediate-or-cancel, good-till-time, and post-only. TWAP and entry-with-attached-protection remain unavailable.",
+            "enum": [
+              "limit",
+              "market",
+              "stop-loss",
+              "stop-loss-limit",
+              "take-profit",
+              "take-profit-limit"
+            ],
+            "type": "string"
+          },
+          "price": {
+            "description": "Exact human-decimal order price. For market it is the immediate worst acceptable price. For plain limit it is the limit price. For stop-loss or take-profit it is the hard execution bound after the trigger. For stop-loss-limit or take-profit-limit it is the limit price activated after the trigger, which may rest and may never fill. It is never the trigger price itself.",
+            "type": "string"
+          },
+          "reduceOnly": {
+            "description": "Optional reduce-only flag. Defaults to false. When true, Vex requires live account position evidence that the side reduces the current position.",
+            "type": "boolean"
+          },
+          "side": {
+            "description": "Order side to preview: buy or sell. If the user does not say which direction, ask a short clarification instead of guessing. Unsupported values are rejected.",
+            "enum": [
+              "buy",
+              "sell"
+            ],
+            "type": "string"
+          },
+          "timeInForce": {
+            "description": "Optional for an ordinary limit order: when omitted, Vex uses good-till-time so any unfilled amount can remain open until filled, canceled, or expired. Preserve an explicit immediate-or-cancel, good-till-time, or post-only selection exactly. Required for stop-loss-limit and take-profit-limit orders. Market, stop-loss, and take-profit previews may omit it and resolve only to immediate-or-cancel. Post-only trigger limits are conditional maker instructions and are not rejected against the current book before activation.",
+            "enum": [
+              "good-till-time",
+              "immediate-or-cancel",
+              "post-only"
+            ],
+            "type": "string"
+          },
+          "triggerPrice": {
+            "description": "Required for stop-loss, stop-loss-limit, take-profit, and take-profit-limit orders and forbidden for ordinary market and limit orders. Human decimal trigger price. Vex verifies it is on the protective side of the live market for the current perpetual position.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "side",
+          "baseAmountIn",
+          "price"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "lighter",
+    "requiresEnv": null,
+    "toolId": "lighter.order.preview"
+  }
+}

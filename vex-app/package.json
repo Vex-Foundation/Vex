@@ -1,7 +1,7 @@
 {
   "name": "@vex/app",
   "version": "0.2.7",
-  "description": "Vex Electron desktop app — local self-custodial wallet + autonomous on-chain agent GUI",
+  "description": "Vex Electron desktop app \u2014 local self-custodial wallet + autonomous on-chain agent GUI",
   "homepage": "https://www.projectvex.ai/",
   "author": "Project VEX",
   "repository": {
@@ -18,16 +18,18 @@
     "build:main": "vite build --config vite.main.config.ts",
     "build:preload": "vite build --config vite.preload.config.ts",
     "build:renderer": "vite build --config vite.renderer.config.ts",
+    "build:assets": "node scripts/copy-migrations.mjs && node ../scripts/build-lighter-signer-runtime.mjs",
     "build:pty-host": "vite build --config vite.pty-host.config.ts",
-    "prebuild": "node scripts/copy-migrations.mjs",
+    "prebuild": "pnpm run build:assets",
     "build": "pnpm run lint && pnpm run build:main && pnpm run build:preload && pnpm run build:pty-host && pnpm run build:renderer",
     "postbuild": "node scripts/check-build-artifacts.mjs",
+    "dev:assets": "node scripts/doctor.mjs && node scripts/copy-migrations.mjs && node ../scripts/build-lighter-signer-runtime.mjs",
     "dev:renderer": "vite --config vite.renderer.config.ts",
     "dev:main:watch": "vite build --config vite.main.config.ts --watch",
     "dev:preload:watch": "vite build --config vite.preload.config.ts --watch",
     "dev:pty-host:watch": "vite build --config vite.pty-host.config.ts --watch",
     "dev:electron": "wait-on --log --timeout 60000 --delay 1500 http-get://127.0.0.1:5173/ dist/main/index.js dist/preload/index.cjs dist/pty-host/index.js && electron .",
-    "dev": "pnpm run build:main && pnpm run build:preload && pnpm run build:pty-host && concurrently --kill-others --names \"renderer,main,preload,pty-host,electron\" \"pnpm:dev:renderer\" \"pnpm:dev:main:watch\" \"pnpm:dev:preload:watch\" \"pnpm:dev:pty-host:watch\" \"pnpm:dev:electron\"",
+    "dev": "pnpm run dev:assets && pnpm run build:main && pnpm run build:preload && pnpm run build:pty-host && concurrently --kill-others --names \"renderer,main,preload,pty-host,electron\" \"pnpm:dev:renderer\" \"pnpm:dev:main:watch\" \"pnpm:dev:preload:watch\" \"pnpm:dev:pty-host:watch\" \"pnpm:dev:electron\"",
     "build:bridge": "node scripts/build-host-bridges.mjs",
     "build:bridge:dev": "node scripts/build-host-bridges.mjs --current-arch",
     "prepackage:bridge": "node scripts/stage-bridge.mjs --arch x64 --arch arm64",
@@ -45,7 +47,7 @@
     "test:e2e": "playwright test",
     "audit:deps": "pnpm audit --prod && pnpm audit",
     "doctor": "node scripts/doctor.mjs",
-    "predev": "pnpm run build:bridge:dev && node scripts/doctor.mjs && node scripts/copy-migrations.mjs",
+    "predev": "pnpm run build:bridge:dev",
     "check:build": "node scripts/check-build-artifacts.mjs",
     "check:package": "node scripts/check-packaged-payload.mjs",
     "probe:node-pty": "electron scripts/probe-node-pty.mjs",
@@ -56,7 +58,7 @@
   "dependencies": {
     "@hookform/resolvers": "~5.2.2",
     "@parcel/watcher": "~2.6.0",
-    "@sentry/electron": "~7.13.0",
+    "@sentry/electron": "~7.16.0",
     "@shikijs/vscode-textmate": "10.0.2",
     "@solana/web3.js": "~1.98.4",
     "@tanstack/react-query": "~5.100.9",
@@ -77,7 +79,7 @@
     "class-variance-authority": "~0.7.1",
     "clsx": "~2.1.1",
     "electron-log": "~5.4.3",
-    "electron-updater": "~6.8.3",
+    "electron-updater": "~6.8.9",
     "ignore": "~7.0.6",
     "lightweight-charts": "5.2.1",
     "marked": "~18.0.3",
@@ -117,26 +119,5 @@
     "vitest": "~4.1.5",
     "wait-on": "~9.0.5"
   },
-  "packageManager": "pnpm@10.32.1",
-  "pnpm": {
-    "supportedArchitectures": {
-      "os": [
-        "current",
-        "darwin"
-      ],
-      "cpu": [
-        "current",
-        "x64",
-        "arm64"
-      ]
-    },
-    "onlyBuiltDependencies": [
-      "@parcel/watcher",
-      "electron",
-      "electron-winstaller",
-      "esbuild",
-      "node-pty",
-      "sharp"
-    ]
-  }
+  "packageManager": "pnpm@10.32.1"
 }

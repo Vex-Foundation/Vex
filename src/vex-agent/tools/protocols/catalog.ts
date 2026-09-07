@@ -35,6 +35,8 @@ import { RELAY_TOOLS } from "./relay/manifest.js";
 import { RELAY_HANDLERS } from "./relay/handlers.js";
 import { DEXSCREENER_TOOLS } from "./dexscreener/manifest.js";
 import { DEXSCREENER_HANDLERS } from "./dexscreener/handlers.js";
+import { LIGHTER_TOOLS } from "./lighter/manifest.js";
+import { LIGHTER_HANDLERS } from "./lighter/handlers.js";
 import { VIRTUALS_TOOLS } from "./virtuals/manifest.js";
 import { VIRTUALS_HANDLERS } from "./virtuals/handlers.js";
 import { PENDLE_TOOLS } from "./pendle/manifest.js";
@@ -55,6 +57,7 @@ export const PROTOCOL_NAMESPACE_ALLOWLIST: readonly ProtocolNamespace[] = [
   "relay",
   "solana",
   "dexscreener",
+  "lighter",
   "virtuals",
   "pendle",
   "morpho",
@@ -91,6 +94,7 @@ export const NAMESPACE_MODULES: readonly NamespaceModule[] = [
   { namespace: "uniswap", manifests: UNISWAP_TOOLS, handlers: UNISWAP_HANDLERS },
   { namespace: "relay", manifests: RELAY_TOOLS, handlers: RELAY_HANDLERS },
   { namespace: "dexscreener", manifests: DEXSCREENER_TOOLS, handlers: DEXSCREENER_HANDLERS },
+  { namespace: "lighter", manifests: LIGHTER_TOOLS, handlers: LIGHTER_HANDLERS },
   { namespace: "virtuals", manifests: VIRTUALS_TOOLS, handlers: VIRTUALS_HANDLERS },
   { namespace: "pendle", manifests: PENDLE_TOOLS, handlers: PENDLE_HANDLERS },
   { namespace: "morpho", manifests: MORPHO_TOOLS, handlers: MORPHO_HANDLERS },
@@ -199,6 +203,7 @@ export const NAMESPACE_DEFAULTS: Record<ProtocolNamespace, NamespaceDefault> = {
   khalani: "bridge",
   relay: "bridge",
   dexscreener: "non_portfolio",
+  lighter: "non_portfolio",
   virtuals: "non_portfolio",
   // Read-only launchpad intelligence; no tool here holds, moves, or reports a
   // position, so nothing it returns belongs in portfolio capture.

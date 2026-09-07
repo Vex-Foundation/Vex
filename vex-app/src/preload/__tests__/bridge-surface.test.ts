@@ -260,7 +260,27 @@ describe("preload bridge surface", () => {
     ).toContain("onVexUpdate");
   });
 
-});
+  it("exposes only typed Lighter public subscription methods and event channels", () => {
+    const corpus = PRELOAD_FILES.map((f) => readFileSync(f, "utf8")).join("\n");
+    for (const reference of [
+      "EV.lighterTrading.candleSnapshot",
+      "EV.lighterTrading.candleUpdate",
+      "EV.lighterTrading.candleStatus",
+      "onCandleSnapshot",
+      "onCandleUpdate",
+      "onCandleStatus",
+      "EV.lighterTrading.publicBook",
+      "EV.lighterTrading.publicTrades",
+      "EV.lighterTrading.publicStats",
+      "EV.lighterTrading.publicMarketStatus",
+      "onPublicBook",
+      "onPublicTrades",
+      "onPublicStats",
+      "onPublicMarketStatus",
+    ]) {
+      expect(corpus).toContain(reference);
+    }
+  });
 
   it("exposes EV.studio.hostStatus and the host-status bridge method (B0)", () => {
     const corpus = PRELOAD_FILES.map((f) => readFileSync(f, "utf8")).join("\n");
@@ -273,3 +293,5 @@ describe("preload bridge surface", () => {
       "onHostStatus not exposed by the preload composer",
     ).toContain("onHostStatus");
   });
+
+});

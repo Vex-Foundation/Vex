@@ -15,13 +15,35 @@ export const VAULT_SECRET_KEYS = [
   // path (local-secret-vault/crypto.ts) leaves them inert on disk forever,
   // never mirrored to process.env again. A future consent-gated purge is a
   // separate follow-up; never print or re-derive these values.
+  //
+  // LIGHTER_CORE_READ_ONLY_AUTH_TOKEN / LIGHTER_RHC_READ_ONLY_AUTH_TOKEN
+  // removed: the standalone-token bypass let a stale pasted token silently
+  // block withdrawal/order-read auth that would otherwise derive correctly
+  // from the actually-registered trading credential via the local signer.
+  // Same non-migration policy as Polymarket above — any already-vaulted
+  // value goes inert, never purged or mirrored to process.env again.
 ] as const;
 
 export type VaultSecretKey = (typeof VAULT_SECRET_KEYS)[number];
 
+/**
+ * Former vault-backed environment names that must remain scrubbed forever.
+ *
+ * They are deliberately excluded from `VAULT_SECRET_KEYS`, so unlocking the
+ * vault never injects them into `process.env`. Keeping them in the managed-env
+ * set still removes legacy plaintext values from dotenv files, clears any
+ * inherited runtime values on relock, and prevents child processes from
+ * receiving them.
+ */
+export const RETIRED_SECRET_ENV_KEYS = [
+  "LIGHTER_CORE_READ_ONLY_AUTH_TOKEN",
+  "LIGHTER_RHC_READ_ONLY_AUTH_TOKEN",
+] as const;
+
 export const MANAGED_SECRET_ENV_KEYS = [
   MASTER_PASSWORD_ENV_KEY,
   ...VAULT_SECRET_KEYS,
+  ...RETIRED_SECRET_ENV_KEYS,
 ] as const;
 
 export function isVaultSecretKey(key: string): key is VaultSecretKey {

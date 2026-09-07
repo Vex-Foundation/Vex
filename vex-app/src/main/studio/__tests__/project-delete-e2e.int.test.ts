@@ -43,7 +43,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -231,11 +231,12 @@ async function sql<T extends Record<string, unknown>>(
   return result.data;
 }
 
-/** Wipe every table the migrations own, keeping `schema_version`. */
+/** Wipe domain data while keeping the migration ledgers. */
 async function resetDatabase(): Promise<void> {
   const tables = await sql<{ tablename: string }>(
     `SELECT tablename FROM pg_tables
-      WHERE schemaname = 'public' AND tablename <> 'schema_version'`,
+      WHERE schemaname = 'public'
+        AND tablename NOT IN ('schema_version', 'schema_migration_files', 'schema_migration_recovery_files', 'schema_migration_baseline')`,
   );
   if (tables.length === 0) return;
   const list = tables.map((row) => `"${row.tablename}"`).join(", ");
@@ -583,7 +584,7 @@ beforeEach(async () => {
   runtime.trashItem.mockResolvedValue(undefined);
   runtime.removeTerminalSnapshot.mockReset();
   runtime.removeTerminalSnapshot.mockResolvedValue(true);
-  projectsRoot = await mkdtemp(path.join(tmpdir(), "vex-studio-delete-"));
+  projectsRoot = await realpath(await mkdtemp(path.join(tmpdir(), "vex-studio-delete-")));
   runtime.projectsRoot = projectsRoot;
 });
 

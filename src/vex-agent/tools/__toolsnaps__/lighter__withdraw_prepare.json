@@ -1,0 +1,40 @@
+{
+  "definition": {
+    "function": {
+      "description": "Prepare one exact approval-gated secure withdrawal from the selected wallet's uniquely owned Lighter account: Core USDC to the same wallet on Ethereum mainnet, or RHC USDG to the same wallet on Robinhood Chain mainnet. Use when the user asks to withdraw or cash out Lighter collateral. The environment is mandatory and cannot be inferred from the address. It uses only the matching saved local credential and refuses destination, route, chain, nonce, ownership, margin, gateway, or unresolved-state ambiguity. Returns a durable intent id, exact amount and destination, settlement network, withdrawal delay, expiry, and trusted approval card. It never signs or submits.",
+      "name": "lighter__withdraw_prepare",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "amountIn": {
+            "description": "Exact stablecoin amount to withdraw in human decimals, for example \"2\": USDC for environment=core or USDG for environment=rhc. Vex proves the environment-specific live minimum, collateral safety, owner destination, delay, and settlement gateway before approval.",
+            "type": "string"
+          },
+          "environment": {
+            "description": "Optional Lighter environment for the persisted preview: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc. Any other value is rejected.",
+            "enum": [
+              "core",
+              "rhc"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "amountIn"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "approval_prepare",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "lighter",
+    "requiresEnv": null,
+    "toolId": "lighter.withdraw.prepare"
+  }
+}

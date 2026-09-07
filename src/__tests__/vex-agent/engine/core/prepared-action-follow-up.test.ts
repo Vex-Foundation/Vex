@@ -1,11 +1,19 @@
+import { requireValue } from "../../../helpers/require-value.js";
+import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { toInjectedToolName } from "@vex-agent/tools/registry/injected-protocol-tools.js";
 
 const dispatchTool = vi.fn();
+const loggerWarn = vi.fn();
 const persistBatchTranscript = vi.fn().mockResolvedValue(undefined);
 const enqueueApprovalIntent = vi.fn().mockResolvedValue("approval-1");
 
 vi.mock("@vex-agent/tools/dispatcher.js", () => ({
   dispatchTool: (...args: unknown[]) => dispatchTool(...args),
+}));
+
+vi.mock("@utils/logger.js", () => ({
+  default: { warn: (...args: unknown[]) => loggerWarn(...args) },
 }));
 vi.mock("@vex-agent/engine/core/turn-loop-tool-batch/execute.js", () => ({
   buildToolContext: (context: Record<string, unknown>) => ({
@@ -62,9 +70,22 @@ vi.mock("@vex-agent/engine/core/turn-loop-tool-batch/results.js", () => ({
 const { processTurnToolBatch } = await import(
   "../../../../vex-agent/engine/core/turn-loop-tool-batch.js"
 );
+const { resolvePreparedActionSourceIdentity } = await import(
+  "../../../../vex-agent/engine/core/turn-loop-tool-batch/prepared-follow-up.js"
+);
 
 const INTENT_ID = "intent-00000000-0000-4000-8000-000000000001";
+const LIGHTER_INTENT_ID = "lighter-exec-00000000-0000-4000-8000-000000000001";
+const LIGHTER_ONBOARDING_INTENT_ID =
+  "lighter-onboard-00000000-0000-4000-8000-000000000001";
+const LIGHTER_ORDER_PREVIEW_PUBLIC_NAME = toInjectedToolName("lighter.order.preview");
+const LIGHTER_ORDER_PREPARE_PUBLIC_NAME = toInjectedToolName("lighter.order.create.prepare");
+const LIGHTER_KEY_PREPARE_PUBLIC_NAME = toInjectedToolName("lighter.key.register.prepare");
 const EXPIRES_AT = "2030-01-01T00:00:00.000Z";
+const LIGHTER_KEY_PUBLIC_KEY = "ab".repeat(40);
+const LIGHTER_KEY_FINGERPRINT = createHash("sha256")
+  .update(Buffer.from(LIGHTER_KEY_PUBLIC_KEY, "hex"))
+  .digest("hex");
 const trustedPreview = {
   toolName: "WalletSendConfirm",
   criticalArgs: {
@@ -88,6 +109,92 @@ function prepareResult(overrides: Record<string, unknown> = {}) {
       approvalPreview: trustedPreview,
     },
     ...overrides,
+  };
+}
+
+function lighterPrepareResult(overrides: Record<string, unknown> = {}) {
+  return {
+    success: true,
+    output: "lighter create prepared",
+    actionKind: "approval_prepare",
+    preparedActionFollowUp: {
+      toolName: "execute_tool",
+      args: {
+        toolId: "lighter.order.create",
+        params: { intentId: LIGHTER_INTENT_ID },
+      },
+      expiresAt: EXPIRES_AT,
+      approvalPreview: {
+        toolName: "order.create",
+        namespace: "lighter",
+        criticalArgs: {
+          orderSummary:
+            "Buy 1 ETH at limit price 3000 (est. notional 3000) on Robinhood Chain Lighter (rhc); "
+            + "good-till-time; expires 2030-01-01T00:00:00.000Z. API acceptance is not final execution.",
+          marketSymbol: "ETH",
+          marketType: "perp",
+          baseAmountDisplay: "1",
+          priceDisplay: "3000",
+          triggerPriceDisplay: null,
+          notionalDisplay: "3000",
+          orderExpiryIso: "2030-01-01T00:00:00.000Z",
+          toolId: "lighter.order.create",
+          intentId: LIGHTER_INTENT_ID,
+          environment: "rhc",
+          accountIndex: 42,
+          apiKeyIndex: 7,
+          marketIndex: 0,
+          side: "buy",
+          baseAmountInteger: "10000",
+          priceInteger: "300000",
+          triggerPriceInteger: null,
+          orderType: "limit",
+          timeInForce: "good-till-time",
+          reduceOnly: false,
+          previewId: "lighter-preview-1",
+          matchHash: "a".repeat(64),
+        },
+      },
+    },
+    ...overrides,
+  };
+}
+
+function lighterRhcKeyRegistrationPrepareResult() {
+  return {
+    success: true,
+    output: "RHC key registration prepared",
+    actionKind: "approval_prepare",
+    preparedActionFollowUp: {
+      toolName: "execute_tool",
+      args: {
+        toolId: "lighter.key.register",
+        params: { intentId: LIGHTER_ONBOARDING_INTENT_ID },
+      },
+      expiresAt: EXPIRES_AT,
+      approvalPreview: {
+        toolName: "key.register",
+        namespace: "lighter",
+        criticalArgs: {
+          toolId: "lighter.key.register",
+          intentId: LIGHTER_ONBOARDING_INTENT_ID,
+          environment: "rhc",
+          walletAddress: "0x1111111111111111111111111111111111111111",
+          ethereumChainId: 4663,
+          lighterChainId: 466324,
+          accountIndex: 10231,
+          apiKeyIndex: 6,
+          registrationNonce: "0",
+          publicKey: LIGHTER_KEY_PUBLIC_KEY,
+          publicKeyFingerprint: LIGHTER_KEY_FINGERPRINT,
+          vaultCredentialId: "lighter/rhc/account-10231/api-key-6",
+          summary: "Register this exact encrypted RHC trading key.",
+          authorityNote: "Registers one local credential; later actions stay separately gated.",
+          signatureNote: "Signs one exact human-readable EIP-191 message locally.",
+          scopeNote: "Does not authorize a deposit, order, transfer, or withdrawal.",
+        },
+      },
+    },
   };
 }
 
@@ -130,8 +237,84 @@ async function run(permission: "restricted" | "full", abortSignal?: AbortSignal)
   });
 }
 
+async function runLighterInjectedPrepare(permission: "restricted" | "full") {
+  return processTurnToolBatch({
+    context: context(permission),
+    turnResult: {
+      content: "Preparing Lighter order.",
+      reasoning: null,
+      toolCalls: [
+        {
+          id: "lighter-prepare-call",
+          name: LIGHTER_ORDER_PREPARE_PUBLIC_NAME,
+          arguments: {
+            environment: "rhc",
+          },
+        },
+      ],
+    },
+    liveMessages: [],
+    currentTokenCount: 0,
+    contextLimit: 128_000,
+    lastTextSoFar: null,
+  });
+}
+
+async function runLighterInjectedPreview(permission: "restricted" | "full") {
+  return processTurnToolBatch({
+    context: context(permission),
+    turnResult: {
+      content: "Previewing Lighter order.",
+      reasoning: null,
+      toolCalls: [
+        {
+          id: "lighter-preview-call",
+          name: LIGHTER_ORDER_PREVIEW_PUBLIC_NAME,
+          arguments: {
+            environment: "rhc",
+            marketSymbol: "ETH",
+            side: "buy",
+            baseAmountIn: "1",
+            price: "3000",
+          },
+        },
+      ],
+    },
+    liveMessages: [],
+    currentTokenCount: 0,
+    contextLimit: 128_000,
+    lastTextSoFar: null,
+  });
+}
+
+async function runLighterRhcKeyRegistrationPrepare() {
+  return processTurnToolBatch({
+    context: context("restricted"),
+    turnResult: {
+      content: "Preparing secure RHC trading access.",
+      reasoning: null,
+      toolCalls: [{
+        id: "lighter-key-prepare-call",
+        name: LIGHTER_KEY_PREPARE_PUBLIC_NAME,
+        arguments: { environment: "rhc" },
+      }],
+    },
+    liveMessages: [],
+    currentTokenCount: 0,
+    contextLimit: 128_000,
+    lastTextSoFar: null,
+  });
+}
+
 beforeEach(() => {
-  vi.clearAllMocks();
+  // `clearAllMocks` preserves queued `mockResolvedValueOnce` implementations.
+  // A fail-closed prepare result can deliberately skip its follow-up, so reset
+  // every queue to prevent one test's unused confirm result from becoming the
+  // next test's prepare result.
+  dispatchTool.mockReset();
+  loggerWarn.mockReset();
+  persistBatchTranscript.mockReset();
+  enqueueApprovalIntent.mockReset();
   // The enqueue transaction now returns a discriminated outcome so the batch
   // can tell "parked for approval" from "auto-rejected onto a dead run".
   enqueueApprovalIntent.mockResolvedValue({
@@ -142,6 +325,38 @@ beforeEach(() => {
 });
 
 describe("prepared-action follow-up handoff", () => {
+  it.each([
+    "lighter.order.preview",
+    "lighter.order.create.prepare",
+    "lighter.order.cancel.prepare",
+    "lighter.order.modify.prepare",
+    "lighter.order.cancelAll.prepare",
+    "lighter.position.close.prepare",
+    "lighter.deposit.prepare",
+    "lighter.key.register.prepare",
+    "lighter.withdraw.prepare",
+    "lighter.withdraw.claim.prepare",
+  ])("resolves the live %s projection to its immutable source tool id", (toolId) => {
+    expect(resolvePreparedActionSourceIdentity({
+      name: toInjectedToolName(toolId),
+      arguments: {},
+    })).toBe(toolId);
+  });
+
+  it("resolves legacy envelopes structurally and rejects a bare wrapper identity", () => {
+    expect(resolvePreparedActionSourceIdentity({
+      name: "execute_tool",
+      arguments: {
+        toolId: "lighter.withdraw.prepare",
+        params: { environment: "rhc", amountIn: "1" },
+      },
+    })).toBe("lighter.withdraw.prepare");
+    expect(resolvePreparedActionSourceIdentity({
+      name: "execute_tool",
+      arguments: { params: {} },
+    })).toBe("unknown.execute_tool.source");
+  });
+
   it("restricted sessions persist prepare, synthesize confirm, and immediately enqueue its trusted preview", async () => {
     dispatchTool
       .mockResolvedValueOnce(prepareResult())
@@ -184,6 +399,144 @@ describe("prepared-action follow-up handoff", () => {
       executedCalls: [expect.objectContaining({ name: "WalletSendConfirm" })],
       executedResults: [],
       systemOriginated: true,
+    });
+  });
+
+  it("restricted sessions accept injected Lighter prepare and enqueue the trusted create approval", async () => {
+    dispatchTool
+      .mockResolvedValueOnce(lighterPrepareResult())
+      .mockResolvedValueOnce({
+        success: false,
+        output: "approval required",
+        pendingApproval: true,
+        actionKind: "external_post",
+      });
+
+    const outcome = await runLighterInjectedPrepare("restricted");
+
+    expect(outcome).toMatchObject({
+      kind: "approval_break",
+      pendingApprovalId: "approval-1",
+      toolCallsExecuted: 2,
+    });
+    expect(dispatchTool).toHaveBeenCalledTimes(2);
+    expect(requireValue(dispatchTool.mock.calls[0])[0]).toMatchObject({
+      name: LIGHTER_ORDER_PREPARE_PUBLIC_NAME,
+    });
+    expect(requireValue(dispatchTool.mock.calls[1])[0]).toMatchObject({
+      name: "execute_tool",
+      args: {
+        toolId: "lighter.order.create",
+        params: { intentId: LIGHTER_INTENT_ID },
+      },
+    });
+    expect(requireValue(dispatchTool.mock.calls[1])[1]).not.toHaveProperty(
+      "modelOriginated",
+      true,
+    );
+    expect(enqueueApprovalIntent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        trustedPreview: expect.objectContaining({
+          toolName: "order.create",
+          namespace: "lighter",
+          criticalArgs: expect.objectContaining({
+            toolId: "lighter.order.create",
+            intentId: LIGHTER_INTENT_ID,
+            matchHash: "a".repeat(64),
+          }),
+        }),
+        trustedExpiresAt: EXPIRES_AT,
+        toolCall: expect.objectContaining({ name: "execute_tool" }),
+      }),
+    );
+    expect(requireValue(persistBatchTranscript.mock.calls[0])[0]).toMatchObject({
+      content: "Preparing Lighter order.",
+      executedCalls: [expect.objectContaining({ name: LIGHTER_ORDER_PREPARE_PUBLIC_NAME })],
+      executedResults: [expect.objectContaining({ output: "lighter create prepared" })],
+    });
+  });
+
+  it("restricted sessions display the trusted create approval directly from a Lighter preview", async () => {
+    dispatchTool
+      .mockResolvedValueOnce(lighterPrepareResult({
+        output: "lighter preview ready with approval intent",
+        actionKind: "read",
+      }))
+      .mockResolvedValueOnce({
+        success: false,
+        output: "approval required",
+        pendingApproval: true,
+        actionKind: "external_post",
+      });
+
+    const outcome = await runLighterInjectedPreview("restricted");
+
+    expect(outcome).toMatchObject({
+      kind: "approval_break",
+      pendingApprovalId: "approval-1",
+      toolCallsExecuted: 2,
+    });
+    expect(dispatchTool).toHaveBeenCalledTimes(2);
+    expect(requireValue(dispatchTool.mock.calls[1])[0]).toMatchObject({
+      name: "execute_tool",
+      args: {
+        toolId: "lighter.order.create",
+        params: { intentId: LIGHTER_INTENT_ID },
+      },
+    });
+    expect(enqueueApprovalIntent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        trustedPreview: lighterPrepareResult().preparedActionFollowUp.approvalPreview,
+        trustedExpiresAt: EXPIRES_AT,
+      }),
+    );
+  });
+
+  it("turns an exact RHC key-registration prepare into a separate trusted approval", async () => {
+    dispatchTool
+      .mockResolvedValueOnce(lighterRhcKeyRegistrationPrepareResult())
+      .mockResolvedValueOnce({
+        success: false,
+        output: "approval required",
+        pendingApproval: true,
+        actionKind: "external_post",
+      });
+
+    const outcome = await runLighterRhcKeyRegistrationPrepare();
+
+    expect(outcome).toMatchObject({
+      kind: "approval_break",
+      pendingApprovalId: "approval-1",
+      toolCallsExecuted: 2,
+    });
+    expect(requireValue(dispatchTool.mock.calls[1])[0]).toMatchObject({
+      name: "execute_tool",
+      args: {
+        toolId: "lighter.key.register",
+        params: { intentId: LIGHTER_ONBOARDING_INTENT_ID },
+      },
+    });
+    expect(requireValue(dispatchTool.mock.calls[1])[1]).not.toHaveProperty("modelOriginated", true);
+    expect(enqueueApprovalIntent).toHaveBeenCalledWith(expect.objectContaining({
+      trustedExpiresAt: EXPIRES_AT,
+      trustedPreview: expect.objectContaining({
+        toolName: "key.register",
+        namespace: "lighter",
+        criticalArgs: expect.objectContaining({
+          environment: "rhc",
+          ethereumChainId: 4663,
+          lighterChainId: 466324,
+          accountIndex: 10231,
+          vaultCredentialId: "lighter/rhc/account-10231/api-key-6",
+        }),
+      }),
+      toolCall: expect.objectContaining({ name: "execute_tool" }),
+    }));
+    expect(requireValue(persistBatchTranscript.mock.calls[0])[0]).toMatchObject({
+      executedResults: [expect.objectContaining({
+        success: true,
+        output: "RHC key registration prepared",
+      })],
     });
   });
 
@@ -270,6 +623,21 @@ describe("prepared-action follow-up handoff", () => {
     const outcome = await run("restricted");
     expect(outcome).toMatchObject({ kind: "normal_complete", toolCallsExecuted: 1 });
     expect(dispatchTool).toHaveBeenCalledOnce();
+    const rejectionOutput = requireValue(persistBatchTranscript.mock.calls[0])[0]
+      .executedResults[0].output as string;
+    expect(rejectionOutput).toContain("internal approval mapping is unavailable");
+    expect(rejectionOutput).not.toContain(trustedPreview.criticalArgs.to);
+    expect(rejectionOutput).not.toContain(trustedPreview.criticalArgs.amount);
+    expect(loggerWarn).toHaveBeenCalledWith(
+      "engine.prepared_action_follow_up.rejected",
+      {
+        reason: "unknown_mapping",
+        sourceToolId: "WalletSendPrepare",
+        targetToolId: "swap",
+      },
+    );
+    expect(JSON.stringify(loggerWarn.mock.calls)).not.toContain(trustedPreview.criticalArgs.to);
+    expect(JSON.stringify(loggerWarn.mock.calls)).not.toContain(trustedPreview.criticalArgs.amount);
     expect(persistBatchTranscript.mock.calls[0]![0]).toMatchObject({
       executedResults: [
         expect.objectContaining({
@@ -278,6 +646,42 @@ describe("prepared-action follow-up handoff", () => {
         }),
       ],
     });
+  });
+
+  it("distinguishes invalid contracts without exposing prepared preview data", async () => {
+    const invalidAmount = "private-preview-amount";
+    dispatchTool.mockResolvedValueOnce(
+      prepareResult({
+        preparedActionFollowUp: {
+          ...prepareResult().preparedActionFollowUp,
+          approvalPreview: {
+            ...trustedPreview,
+            criticalArgs: {
+              ...trustedPreview.criticalArgs,
+              network: "eip155",
+              to: invalidAmount,
+            },
+          },
+        },
+      }),
+    );
+
+    const outcome = await run("restricted");
+    expect(outcome).toMatchObject({ kind: "normal_complete", toolCallsExecuted: 1 });
+    expect(dispatchTool).toHaveBeenCalledOnce();
+    const rejectionOutput = requireValue(persistBatchTranscript.mock.calls[0])[0]
+      .executedResults[0].output as string;
+    expect(rejectionOutput).toContain("failed a safety consistency check");
+    expect(rejectionOutput).not.toContain(invalidAmount);
+    expect(loggerWarn).toHaveBeenCalledWith(
+      "engine.prepared_action_follow_up.rejected",
+      {
+        reason: "invalid_contract",
+        sourceToolId: "WalletSendPrepare",
+        targetToolId: "WalletSendConfirm",
+      },
+    );
+    expect(JSON.stringify(loggerWarn.mock.calls)).not.toContain(invalidAmount);
   });
 
   it("rejects recursive chains after one follow-up and never dispatches a third tool", async () => {

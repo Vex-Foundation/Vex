@@ -135,12 +135,14 @@ describe("G2 - publicName mapping gate", () => {
     );
   });
 
-  it("the mapped surface is the whole 155-tool catalog (drift alarm, not a cap)", () => {
+  it("the mapped surface is the whole 185-tool catalog (drift alarm, not a cap)", () => {
     // Not a limit: a Batch-2 addition updates this number together with its
     // mapping row, so the count and the map can never diverge silently.
     // 137 before the Batch 2 near-duplicate merges (owner decision D7) retired
     // `kyberswap.chains.supported`, `dexscreener.profiles.recent` and
     // `dexscreener.boosts.top` into their surviving siblings' parameters.
+    // 170 after Lighter's 36-tool managed onboarding, trading, and withdrawal
+    // surface joined the publicName mapping.
     // 134 before the DexScreener site surface (stage S2b) added its eight
     // agent-visible tools: the six screening boards, the chain catalog and the
     // token-level screen.
@@ -193,7 +195,10 @@ describe("G2 - publicName mapping gate", () => {
     // protocol, mappings file and all - the first entry in this ledger that is
     // a retirement rather than a widening, which is why the arithmetic runs the
     // other way.
-    expect(PROTOCOL_TOOLS.length).toBe(145);
+    // 145 -> 185 on the Lighter integration (2026-09-07): the 40 Lighter tools
+    // (Core and Robinhood Chain), every one a new identity with its own mapping
+    // row in `mappings/lighter.json`; nothing was reclaimed or retired.
+    expect(PROTOCOL_TOOLS.length).toBe(185);
   });
 });
 

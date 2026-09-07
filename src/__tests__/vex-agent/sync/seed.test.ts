@@ -1,3 +1,4 @@
+import { requireValue } from "../../helpers/require-value.js";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mockExecute = vi.fn().mockResolvedValue(1);
@@ -16,7 +17,7 @@ describe("seedSyncJobs", () => {
     vi.clearAllMocks();
   });
 
-  it("inserts 16 sync jobs (10 global + 6 per-namespace)", async () => {
+  it("inserts 20 sync jobs", async () => {
     // Agent Scan added the _global/agent_activity_repair periodic job and
     // removed the polymarket/balances post_mutation job (polymarket removed).
     // Phase-2 bridge (W4) added the _global/bridge_activity_repair periodic sweep
@@ -45,8 +46,12 @@ describe("seedSyncJobs", () => {
     // retry lane, taking the total to 17. The seed row is only removed for
     // FRESH databases; 108 disables the already-installed one, because deleting
     // a definition never reaches a database that already has it.
+    // The Lighter integration (2026-09-07) adds three global sweeps:
+    // `lighter_deposit_repair` (evidence-only deposit crash recovery),
+    // `lighter_withdrawal_repair` (bounded withdrawal recovery) and
+    // `lighter_order_repair` (bounded public order repair), taking the total to 20.
     await seedSyncJobs();
-    expect(mockExecute).toHaveBeenCalledTimes(17);
+    expect(mockExecute).toHaveBeenCalledTimes(20);
   });
 
   it("uses ON CONFLICT DO NOTHING (idempotent)", async () => {
@@ -148,6 +153,42 @@ describe("seedSyncJobs", () => {
     expect((repairCall![1] as unknown[])[2]).toBeNull(); // no readToolId
     expect((repairCall![1] as unknown[])[3]).toBe("periodic");
     expect((repairCall![1] as unknown[])[4]).toBe(30);
+  });
+
+  it("seeds evidence-only Lighter deposit repair every 30 seconds", async () => {
+    await seedSyncJobs();
+    const repairCall = mockExecute.mock.calls.find(
+      (call: unknown[]) => (call[1] as unknown[])[1] === "lighter_deposit_repair",
+    );
+    expect(repairCall).toBeDefined();
+    expect((requireValue(repairCall)[1] as unknown[])[0]).toBe("_global");
+    expect((requireValue(repairCall)[1] as unknown[])[2]).toBeNull();
+    expect((requireValue(repairCall)[1] as unknown[])[3]).toBe("periodic");
+    expect((requireValue(repairCall)[1] as unknown[])[4]).toBe(30);
+  });
+
+  it("seeds evidence-only Lighter withdrawal repair every minute", async () => {
+    await seedSyncJobs();
+    const repairCall = mockExecute.mock.calls.find(
+      (call: unknown[]) => (call[1] as unknown[])[1] === "lighter_withdrawal_repair",
+    );
+    expect(repairCall).toBeDefined();
+    expect((requireValue(repairCall)[1] as unknown[])[0]).toBe("_global");
+    expect((requireValue(repairCall)[1] as unknown[])[2]).toBeNull();
+    expect((requireValue(repairCall)[1] as unknown[])[3]).toBe("periodic");
+    expect((requireValue(repairCall)[1] as unknown[])[4]).toBe(60);
+  });
+
+  it("seeds bounded public Lighter order repair every five minutes", async () => {
+    await seedSyncJobs();
+    const repairCall = mockExecute.mock.calls.find(
+      (call: unknown[]) => (call[1] as unknown[])[1] === "lighter_order_repair",
+    );
+    expect(repairCall).toBeDefined();
+    expect((requireValue(repairCall)[1] as unknown[])[0]).toBe("_global");
+    expect((requireValue(repairCall)[1] as unknown[])[2]).toBeNull();
+    expect((requireValue(repairCall)[1] as unknown[])[3]).toBe("periodic");
+    expect((requireValue(repairCall)[1] as unknown[])[4]).toBe(300);
   });
 
   it("seeds solana_activity_repair periodic job with 30s interval (status-only sweep, migration 061)", async () => {

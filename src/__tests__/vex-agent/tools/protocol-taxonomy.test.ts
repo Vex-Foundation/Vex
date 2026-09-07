@@ -21,9 +21,9 @@
  *     reclassification would change phase 2+ approval semantics, so each
  *     critical tool is pinned explicitly.
  *
- * Distribution at 1B ship (140 protocol tools): 112 read, 17
- * user_wallet_broadcast, 11 external_post; 0 destructive,
- * approval_prepare, schedule, local_write.
+ * Protocol approval-prepare tools are allowed to be non-mutating even though
+ * their action kind is not `read`: they create local preparation state for a
+ * later human approval, not an external side effect.
  */
 
 import { describe, it, expect } from "vitest";
@@ -57,11 +57,11 @@ describe("ProtocolToolManifest taxonomy — coverage", () => {
 });
 
 describe("ProtocolToolManifest taxonomy — mutating ↔ taxonomy invariant", () => {
-  it("non-mutating protocol tools classify as 'read'", () => {
+  it("non-mutating protocol tools classify as 'read' unless they are approval preparation", () => {
     const violations = PROTOCOL_TOOLS
-      .filter((m) => !m.mutating && m.actionKind !== "read")
+      .filter((m) => !m.mutating && m.actionKind !== "read" && m.actionKind !== "approval_prepare")
       .map((m) => `${m.toolId}: mutating=false but actionKind=${m.actionKind}`);
-    expect(violations, "non-mutating tools mis-classified as something other than read").toEqual([]);
+    expect(violations, "non-mutating tools mis-classified as something other than read/approval_prepare").toEqual([]);
   });
 
   it("mutating protocol tools do NOT classify as 'read'", () => {
@@ -111,6 +111,23 @@ describe("ProtocolToolManifest taxonomy — pinned critical mappings", () => {
     ["dexscreener.search", "read"],
     ["dexscreener.tokenPairs", "read"],
     ["dexscreener.trending", "read"],
+
+    // Lighter — deposit signs and broadcasts Ethereum transactions; order
+    // create is an external exchange mutation resume target.
+    ["lighter.deposit.prepare", "approval_prepare"],
+    ["lighter.deposit", "user_wallet_broadcast"],
+    ["lighter.order.cancel.prepare", "approval_prepare"],
+    ["lighter.order.cancel", "external_post"],
+    ["lighter.order.modify.prepare", "approval_prepare"],
+    ["lighter.order.modify", "external_post"],
+    ["lighter.order.cancelAll.prepare", "approval_prepare"],
+    ["lighter.order.cancelAll", "external_post"],
+    ["lighter.position.close.prepare", "approval_prepare"],
+    ["lighter.position.close", "external_post"],
+    ["lighter.key.register.prepare", "approval_prepare"],
+    ["lighter.key.register", "user_wallet_broadcast"],
+    ["lighter.order.create.prepare", "approval_prepare"],
+    ["lighter.order.create", "external_post"],
   ];
 
   it.each(CRITICAL_MAPPINGS)("%s → %s", (toolId, expectedKind) => {

@@ -74,7 +74,11 @@
  *     exactly like `wallet_intents.review_required` in predicate 5.
  *  9. `protocol_executions.execution_status = 'intent'` - a durable pre-sign
  *     record whose exchange outcome was never written back.
- * 10. `agent_activity.status = 'pending'` - a broadcast awaiting confirmation.
+ * 10. `lighter_onboarding_intents` — a live wallet-funded onboarding action,
+ *     including confirmed deposits that Lighter has not credited yet and every
+ *     ambiguous state. Expired, never-approved preparations are dead and do
+ *     not block.
+ * 11. `agent_activity.status = 'pending'` — a broadcast awaiting confirmation.
  *
  * KNOWN GAP (owner decision pending, not a build choice): `protocol_executions`
  * `session_id` is nullable, so an intent row created without a session is
@@ -124,6 +128,7 @@ export interface MoneyStateReason {
     | "wallet_wrap_intent_live"
     | "wallet_wrap_confirmation_unknown"
     | "protocol_execution_intent"
+    | "lighter_onboarding_unresolved"
     | "agent_activity_pending";
   /** Identifier of the blocking row, for audit and operator diagnosis. */
   ref: string;
@@ -143,10 +148,10 @@ export type UnresolvedMoneyState =
 const MAX_REASONS = 50;
 
 /**
- * One statement, eleven session-scoped predicates. Every branch hits a
+ * One statement, twelve session-scoped predicates. Every branch hits a
  * session-scoped index (`idx_approvals_session`, `idx_wallet_intents_session`,
  * `idx_wallet_transaction_intents_session`, `idx_wallet_wrap_intents_session`,
- * `idx_executions_session`,
+ * `idx_executions_session`, `idx_lighter_onboarding_intents_session`,
  * `idx_agent_activity_pending`), because this runs on
  * the critical path of every apply while the session control lock is held.
  */
@@ -244,6 +249,17 @@ const UNRESOLVED_MONEY_STATE_SQL = `
   SELECT 'protocol_execution_intent', e.id::text, e.tool_id::text
     FROM protocol_executions e
    WHERE e.session_id = $1 AND e.execution_status = 'intent'
+
+   UNION ALL
+
+  SELECT 'lighter_onboarding_unresolved', l.intent_id::text, l.execution_state::text
+    FROM lighter_onboarding_intents l
+   WHERE l.session_id = $1
+     AND l.execution_state NOT IN ('credited', 'failed')
+     AND (
+       l.approval_status = 'approved'
+       OR (l.approval_status = 'approval_pending' AND l.expires_at > NOW())
+     )
 
    UNION ALL
 

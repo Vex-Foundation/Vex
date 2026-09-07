@@ -38,6 +38,9 @@ export interface ApprovalDecisionActionsProps {
    */
   readonly rejectReason: string;
   readonly onRejectReasonChange: (value: string) => void;
+  readonly approveLabel?: string;
+  readonly confirmApproveLabel?: string;
+  readonly wrapReasonOnNarrow?: boolean;
 }
 
 // Shared key shape — the landing's mono-uppercase pill. Tone classes below
@@ -62,11 +65,14 @@ export function ApprovalDecisionActions({
   onApprove,
   rejectReason,
   onRejectReasonChange,
+  approveLabel = "Approve",
+  confirmApproveLabel = "Click again to confirm approve",
+  wrapReasonOnNarrow = false,
 }: ApprovalDecisionActionsProps): JSX.Element {
   const rejectArmed = isHighRisk && armedAction === "reject";
   const approveArmed = isHighRisk && armedAction === "approve";
   return (
-    <footer className="flex items-center justify-end gap-2 border-t border-[var(--vex-line)] px-4 py-3">
+    <footer className={`flex items-center justify-end gap-2 border-t border-[var(--vex-line)] px-4 py-3${wrapReasonOnNarrow ? " @max-[640px]:flex-wrap" : ""}`}>
       <input
         type="text"
         value={rejectReason}
@@ -75,7 +81,7 @@ export function ApprovalDecisionActions({
         maxLength={APPROVAL_REJECT_REASON_MAX}
         aria-label="Reason for rejecting (optional)"
         placeholder="Reason (optional)"
-        className={REASON_INPUT}
+        className={`${REASON_INPUT}${wrapReasonOnNarrow ? " @max-[640px]:basis-full" : ""}`}
       />
       {/* REJECT IS THE NAMED INITIAL FOCUS, and it is first in the footer.
           The safer action owns both, and it owns them through the same
@@ -103,12 +109,12 @@ export function ApprovalDecisionActions({
         type="button"
         onClick={onApprove}
         disabled={inFlight}
-        aria-label={approveArmed ? "Confirm approve" : "Approve"}
+        aria-label={approveArmed ? "Confirm approve" : approveLabel}
         className={`${KEY_BASE} bg-[var(--vex-pin)] font-medium text-[var(--vex-surface-0)] hover:bg-[var(--vex-pin-hover)] ${
           approveArmed ? ARMED_BORDER : "border-transparent"
         }`}
       >
-        {approveArmed ? "Click again to confirm approve" : "Approve"}
+        {approveArmed ? confirmApproveLabel : approveLabel}
       </button>
     </footer>
   );

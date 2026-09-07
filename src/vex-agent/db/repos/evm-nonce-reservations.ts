@@ -28,6 +28,12 @@ export interface LegacyEvmNonceReservation {
   readonly nonce: number;
 }
 
+export type LegacyEvmNoncePurpose =
+  | "pendle_allowance"
+  | "lighter_deposit_approve"
+  | "lighter_deposit"
+  | "lighter_withdrawal_claim";
+
 export type EvmNonceRepairTerminalReason =
   | "mined_success"
   | "mined_revert"
@@ -229,7 +235,7 @@ export async function reserveActivityEvmNonce(
 /** Reserve for the one active local signer seam that has no activity row. */
 export async function reserveLegacyEvmNonce(
   input: EvmNonceReservationRequest,
-  purpose: "pendle_allowance",
+  purpose: LegacyEvmNoncePurpose,
 ): Promise<LegacyEvmNonceReservation> {
   const normalizedAddress = validateRequest(input);
   return withTransaction(async (client) => {

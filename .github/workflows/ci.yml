@@ -30,6 +30,9 @@ jobs:
 
       - run: corepack enable
 
+      - name: Verify pinned toolchain
+        run: pnpm run verify:toolchain
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -100,6 +103,11 @@ jobs:
         with:
           node-version: 22
 
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: src/tools/lighter/signer-runtime/go.mod
+          cache-dependency-path: src/tools/lighter/signer-runtime/go.sum
+
       - run: corepack enable
 
       # The Studio bridge conformance test spawns the BUILT binary against the
@@ -115,12 +123,19 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: bash bridge/build.sh linux amd64
 
+      - name: Verify pinned toolchain
+        working-directory: ${{ github.workspace }}
+        run: pnpm run verify:toolchain
+
       - name: Install root dependencies (monorepo - @vex-lib/@vex-agent aliases bundle root agent/shared code into vex-app's main process, so root node_modules must exist at build time)
         working-directory: ${{ github.workspace }}
         run: pnpm install --frozen-lockfile
 
       - name: Install vex-app dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Audit vex-app production dependencies
+        run: pnpm run audit:deps
 
       # pnpm does not run the `electron` package's install script here, and
       # electron 42's index.js downloads the binary ON IMPORT
@@ -511,7 +526,16 @@ jobs:
         with:
           node-version: 22
 
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: src/tools/lighter/signer-runtime/go.mod
+          cache-dependency-path: src/tools/lighter/signer-runtime/go.sum
+
       - run: corepack enable
+
+      - name: Verify pinned toolchain
+        working-directory: ${{ github.workspace }}
+        run: pnpm run verify:toolchain
 
       - name: Install root dependencies (monorepo - same reason as the build-and-test job)
         working-directory: ${{ github.workspace }}
@@ -519,6 +543,9 @@ jobs:
 
       - name: Install vex-app dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Audit vex-app production dependencies
+        run: pnpm run audit:deps
 
       # The Studio journey spec creates a real project, and since the batch-1
       # contract change project creation renders agent config files through the

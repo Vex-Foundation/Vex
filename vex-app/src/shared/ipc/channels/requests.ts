@@ -315,10 +315,34 @@ export const CH = {
     getVexSnapshot: "vex:market:getVexSnapshot",
   },
 
+  // Light it up — bounded Lighter reads. Main owns every provider request;
+  // renderer inputs select only environment, market and candle resolution.
+  // The account snapshot derives short-lived read authorization in main; no
+  // auth token, signer, nonce or submission capability crosses this boundary.
+  lighterTrading: {
+    listMarkets: "vex:lighterTrading:listMarkets",
+    getSnapshot: "vex:lighterTrading:getSnapshot",
+    // Authenticated account panel read. Main resolves the owning account from
+    // the unlocked trading scope; renderer supplies only the environment and
+    // never receives auth tokens. Positions/balances are public account-index
+    // reads; open orders use a short-lived read-only auth derived in main.
+    getAccount: "vex:lighterTrading:getAccount",
+    startCandleSubscription: "vex:lighterTrading:startCandleSubscription",
+    stopCandleSubscription: "vex:lighterTrading:stopCandleSubscription",
+    startPublicMarketSubscription: "vex:lighterTrading:startPublicMarketSubscription",
+    stopPublicMarketSubscription: "vex:lighterTrading:stopPublicMarketSubscription",
+  },
+
   // Settings — read-only Phase 1 (Phase 2 dodaje setters)
   settings: {
     getPreferences: "vex:settings:getPreferences",
     setTelemetryConsent: "vex:settings:setTelemetryConsent",
+    getLighterIntegration: "vex:settings:getLighterIntegration",
+    setLighterIntegration: "vex:settings:setLighterIntegration",
+    inspectLighterCredentialConnections:
+      "vex:settings:inspectLighterCredentialConnections",
+    forgetLighterCredentialConnection:
+      "vex:settings:forgetLighterCredentialConnection",
     // "Vex setup" user profile (display name, instructions, work
     // description) — DB-backed (soul singleton), replaces persona.md.
     getUserProfile: "vex:settings:getUserProfile",

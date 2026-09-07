@@ -519,4 +519,3 @@ function requireTxHash(intent: TokenLaunchIntent): string {
   }
   return intent.txHash;
 }
-

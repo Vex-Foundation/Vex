@@ -31,10 +31,10 @@ export function useVexMarket(): UseQueryResult<SnapshotResult> {
 
   useEffect(() => {
     const off = window.vex.market.onVexUpdate((snapshot) => {
-      queryClient.setQueryData<SnapshotResult>(marketKeys.snapshot(), {
+      queryClient.setQueryData<SnapshotResult>(marketKeys.snapshot(), () => ({
         ok: true,
         data: snapshot,
-      });
+      }));
     });
     return () => off();
   }, [queryClient]);

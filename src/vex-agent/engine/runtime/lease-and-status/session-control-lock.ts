@@ -27,8 +27,8 @@
  *   2. the `mission_runs` row;
  *   3. the session's pending `approval_queue` rows;
  *   4. money-state rows (`wallet_intents`, `approval_intents`,
- *      `protocol_executions`, `agent_activity`) — see the compaction gate
- *      section below.
+ *      `protocol_executions`, `lighter_onboarding_intents`, `agent_activity`)
+ *      — see the compaction gate section below.
  *
  * A transaction may take any PREFIX-CONSISTENT subset, never out of order.
  * Because this lock is always taken FIRST, it can never be the second edge of
@@ -114,6 +114,29 @@ export async function acquireSessionControlLock(
 }
 
 /**
+ * Take more than one session boundary in a deterministic order. This is used
+ * only when one atomic money-state transition must retire work owned by an old
+ * session and create replacement work for a new session. Sorting and
+ * de-duplicating the ids prevents two such transitions from acquiring the same
+ * pair in opposite orders.
+ */
+export async function acquireSessionControlLocks(
+  client: PoolClient,
+  sessionIds: readonly string[],
+): Promise<void> {
+  const orderedSessionIds = [...new Set(sessionIds)].sort();
+  if (orderedSessionIds.length === 0) {
+    throw new Error("At least one session control lock is required.");
+  }
+  for (const sessionId of orderedSessionIds) {
+    if (sessionId.trim().length === 0) {
+      throw new Error("Session control lock ids must not be empty.");
+    }
+    await acquireSessionControlLock(client, sessionId);
+  }
+}
+
+/**
  * The same acquisition for a caller holding any SQL client, including the
  * privileged main process's `pg.Client` (stage A3: `updateProjectScope` and the
  * Studio refusal owners take this lock as edge 0 of their transactions).
@@ -143,6 +166,20 @@ export async function withSessionControlLock<T>(
 ): Promise<T> {
   return withTransaction(async (client) => {
     await acquireSessionControlLock(client, sessionId);
+    return fn(client);
+  });
+}
+
+/**
+ * Transaction wrapper for deterministic multi-session locking. `fn` is held
+ * to the same DB-only rule as `withSessionControlLock`.
+ */
+export async function withSessionControlLocks<T>(
+  sessionIds: readonly string[],
+  fn: (client: PoolClient) => Promise<T>,
+): Promise<T> {
+  return withTransaction(async (client) => {
+    await acquireSessionControlLocks(client, sessionIds);
     return fn(client);
   });
 }

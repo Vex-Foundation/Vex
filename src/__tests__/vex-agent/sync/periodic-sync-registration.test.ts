@@ -77,6 +77,18 @@ describe("every seeded periodic sync type is reachable", () => {
     expect(await seededPeriodicSyncTypes()).not.toContain("launch_attribution");
   });
 
+  it("includes the evidence-only Lighter deposit repair sweep", async () => {
+    expect(await seededPeriodicSyncTypes()).toContain("lighter_deposit_repair");
+  });
+
+  it("includes the evidence-only Lighter withdrawal repair sweep", async () => {
+    expect(await seededPeriodicSyncTypes()).toContain("lighter_withdrawal_repair");
+  });
+
+  it("includes the bounded public Lighter order repair sweep", async () => {
+    expect(await seededPeriodicSyncTypes()).toContain("lighter_order_repair");
+  });
+
   /**
    * The pools.fun badge lane is a SECOND attribution sweep with its own sync
    * type, and the two names differ by more than a prefix - `launch_attribution`

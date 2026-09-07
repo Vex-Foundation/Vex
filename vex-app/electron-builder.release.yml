@@ -114,6 +114,9 @@ extraResources:
   - from: resources/migrations
     to: migrations
     filter: ["**/*.sql"]
+  - from: resources/lighter-signer
+    to: lighter-signer
+    filter: ["vex-lighter-signer-*"]
   # The Vex Studio MCP bridge, staged for THIS platform/arch by
   # `scripts/stage-bridge.mjs` before electron-builder runs. Staged rather than
   # read straight from `bridge/dist/<goos>-<goarch>/` because electron-builder's

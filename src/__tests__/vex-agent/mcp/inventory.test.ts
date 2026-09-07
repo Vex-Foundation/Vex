@@ -87,7 +87,7 @@ describe("the exported inventory covers exactly the export scope", () => {
   });
 
   it("pins the exported surface size the owner decided (O20)", () => {
-    // 165 is a REVIEWED number: 25 internal tools plus 140 protocol tools. It
+    // 206 is a REVIEWED number: 29 internal tools plus 177 protocol tools. It
     // is pinned literally because a change to it is always a decision about
     // what external agents may call, never an incidental refactor.
     // 155 -> 159: stage A4b exported the four generic transaction signing
@@ -96,9 +96,11 @@ describe("the exported inventory covers exactly the export scope", () => {
     // with the 18-tool website-API surface (S10).
     // 165 -> 167: the native <-> wrapped-native pair, exported by default like
     // every other wallet tool and recorded in `mcp-export-scope.md`.
-    // 167 -> 168: `vex_ToolDescribe`, the MCP-only whole-contract reader that
+    // 167 -> 206: Lighter added two fixed-environment onboarding shortcuts
+    // and its reviewed 37-tool protocol surface.
+    // 206 -> 207: `vex_ToolDescribe`, the MCP-only whole-contract reader that
     // exists because a client truncates a description and never a result.
-    // 168 -> 167: `WebResearch` left the export (owner decision 2026-09-03).
+    // 207 -> 206: `WebResearch` left the export (owner decision 2026-09-03).
     // Every client that connects has its own web search, so the exported copy
     // was a duplicate that cost a provider key and 2 KB of context.
     // 167 -> 171 on the integration of the launchpads arc: the two pools.fun
@@ -139,9 +141,14 @@ describe("the exported inventory covers exactly the export scope", () => {
     // uses, and raises the same approval card. `launchpads__images_list`, the
     // listing of a locker that is always empty here, stays withheld. It is a
     // protocol tool, so the internal count is unmoved (143 -> 144).
-    expect(inventory).toHaveLength(171);
-    expect(inventory.filter((t) => t.kind === "internal")).toHaveLength(27);
-    expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(144);
+    // 171 -> 213 on the Lighter integration (2026-09-07): the 40 Lighter
+    // protocol tools (Core and Robinhood Chain reads, order previews and
+    // executions, funding, withdrawals, key registration, fee authorization)
+    // plus the two always-loaded onboarding shortcuts, which are INTERNAL
+    // registry tools (27 -> 29) rather than protocol manifests (144 -> 184).
+    expect(inventory).toHaveLength(213);
+    expect(inventory.filter((t) => t.kind === "internal")).toHaveLength(29);
+    expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(184);
   });
 
   it("keeps WebResearch OUT of tools/list while the in-app registry keeps it", () => {

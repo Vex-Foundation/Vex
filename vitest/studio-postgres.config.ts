@@ -57,6 +57,7 @@ export default defineConfig({
   test: {
     include: [
       "src/__tests__/integration/migrations/idempotency.int.test.ts",
+      "src/__tests__/integration/migrations/lighter-lineage-upgrade.int.test.ts",
       "src/__tests__/integration/migrations/096-wallet-wrap-intents.int.test.ts",
       // The snapshot group record: applied as an increment on a schema at 100.
       "src/__tests__/integration/migrations/101-portfolio-snapshot-groups.int.test.ts",
@@ -78,6 +79,7 @@ export default defineConfig({
       "src/__tests__/integration/repos/wallet-transaction-*.int.test.ts",
       "src/__tests__/integration/repos/wallet-wrap-*.int.test.ts",
       "src/__tests__/integration/repos/swap-prequotes-claim.int.test.ts",
+      "src/__tests__/integration/repos/lighter-fee-*.int.test.ts",
       "src/__tests__/integration/repos/wallet-transfer-unconfirmed-repair.int.test.ts",
       "src/__tests__/integration/repos/wallet-transfer-execution-first-writer.int.test.ts",
       "src/__tests__/integration/wallet/transaction-authority-fence.int.test.ts",
