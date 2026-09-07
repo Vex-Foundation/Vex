@@ -72,6 +72,9 @@ import {
   confirmActivityEvent,
   confirmLaunchWithOutputIdentity,
   createAgentActivityIntent,
+  fillLaunchOutputIdentityOnConfirmed,
+  markLaunchKeeperPurchaseOwedByTxHash,
+  settleLaunchKeeperPurchaseByTxHash,
   type AgentActivityEvent,
 } from "@vex-agent/db/repos/agent-activity.js";
 import {
@@ -345,6 +348,23 @@ export async function virtualsLaunchExecute(
                 });
               },
               onHashStaged: async (txHash: Hex) => {
+                // THE KEEPER OBLIGATION IS ESTABLISHED HERE, before the bytes
+                // reach the network and therefore before ANY confirmer can see
+                // this row. Installing it in the finalizer instead left the
+                // generic status-only receipt sweep free to confirm the row
+                // first, which made the finalizer's CAS miss and let a terminal
+                // launch event go out with no payout at all (round-3 blocker
+                // 5A). A throw here aborts with nothing sent, which is the
+                // documented contract of this hook and the safe direction: a
+                // launch nobody recorded as owing its keeper purchase is a
+                // launch that reports an empty figure to the world.
+                const owed = await markLaunchKeeperPurchaseOwedByTxHash(txHash);
+                if (!owed) {
+                  throw new Error(
+                    `agent_activity: could not record the keeper purchase owed by launch ${txHash} `
+                    + "- refusing to broadcast a launch whose payout nothing is waiting for",
+                  );
+                }
                 const staged = await recordLaunchBroadcast(intentId, sessionId, txHash);
                 if (staged === null) {
                   throw new Error(
@@ -559,14 +579,37 @@ async function finalizeConfirmedLaunch(x: {
   const delivered = observation.kind === "observed"
     ? { executedAmountOutRaw: observation.launched.initialPurchasedAmountRaw.toString() }
     : { executedAmountOutRaw: null, outputPendingReason: "keeper_purchase" as const };
+  const identityInput = {
+    executedAmountInRaw: plan.fee.launchAmountRaw.toString(),
+    executedAmountInHuman: formatUnits(plan.fee.launchAmountRaw, decimals),
+    ...delivered,
+    tokenOutAddress: token,
+    tokenOutSymbol: fields.ticker,
+  };
   try {
-    await confirmLaunchWithOutputIdentity(x.event.id, {
-      executedAmountInRaw: plan.fee.launchAmountRaw.toString(),
-      executedAmountInHuman: formatUnits(plan.fee.launchAmountRaw, decimals),
-      ...delivered,
-      tokenOutAddress: token,
-      tokenOutSymbol: fields.ticker,
-    });
+    const finalized = await confirmLaunchWithOutputIdentity(x.event.id, identityInput);
+    if (!finalized.applied) {
+      // THE GENERIC STATUS-ONLY SWEEP CONFIRMED THIS ROW FIRST. Its CAS requires
+      // `status = 'pending'`, so everything this call proved - the spent leg, the
+      // created token, and the keeper's purchase when the wait observed one -
+      // would otherwise be dropped on the floor; no sweep revisits a `confirmed`
+      // row. The obligation stamped at hash-staging time still stands, so the
+      // report is held either way; what has to land here is the EVIDENCE.
+      //
+      // The keeper's proven amount goes through the settlement writer that owns
+      // it, because writing the figure is what ENDS the hold, and it runs FIRST
+      // so the identity fill below can only ever COALESCE onto a settled row.
+      if (observation.kind === "observed") {
+        await settleLaunchKeeperPurchaseByTxHash(
+          outcome.txHash,
+          observation.launched.initialPurchasedAmountRaw.toString(),
+        );
+      }
+      await fillLaunchOutputIdentityOnConfirmed(x.event.id, identityInput);
+      logger.info("virtuals.launch.execute.confirm_cas_miss_filled", {
+        id: x.event.id, keeperObserved: observation.kind === "observed",
+      });
+    }
   } catch (err) {
     logger.warn("virtuals.launch.execute.confirm_failed", {
       id: x.event.id, error: summarizeProtocolError(err).message,

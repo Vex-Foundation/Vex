@@ -68,6 +68,7 @@ import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-stat
 import * as launchedTokens from "@vex-agent/db/repos/launched-tokens.js";
 import {
   findLaunchActivityTerminalByTxHash,
+  markLaunchKeeperPurchaseOwedByTxHash,
   stampLaunchOutputIdentityByTxHash,
 } from "@vex-agent/db/repos/agent-activity.js";
 import {
@@ -341,6 +342,18 @@ async function recoverVirtualsPreLaunch(
   });
 
   await stampLaunchOutputIdentityByTxHash(txHash, recovery.tokenAddress);
+
+  // AND RESTORE THE KEEPER OBLIGATION, because this arm recovers precisely the
+  // launches whose handler did not finish. The obligation is normally stamped at
+  // hash-staging time, before the broadcast; a crash in the window between that
+  // write and this recovery, or a row staged by a build that predates it, leaves
+  // a launch whose payout is owed by the venue's keeper and recorded as owed by
+  // nobody - and a reporting tick past the grace would then send a terminal
+  // launch event with an empty payout. This is a fill-in-the-blank by contract:
+  // it refuses a row whose amount is proven and one that already carries another
+  // settlement provenance, so a recovery running after a settlement can never
+  // reopen it. A `false` is that normal no-op, not a failure.
+  await markLaunchKeeperPurchaseOwedByTxHash(txHash);
 
   const settled = await settleLaunchOutcome({
     intentId: intent.intentId,

@@ -426,8 +426,11 @@ const ROLE_LEGS_COMPLETE_SQL = `
  * hold ends when a settlement is OBSERVED (the keeper's amount, or a
  * cancellation) or when the sweep concludes by name that no amount is coming -
  * both of which replace this provenance, which is what makes the wait bounded by
- * an event rather than unbounded in time. The pending snapshot was reported when
- * the row was created, so the activity itself is never invisible meanwhile.
+ * an event rather than unbounded in time. The activity itself is never invisible
+ * meanwhile: whichever tick first sees the row holds its terminal event and
+ * sends the PENDING snapshot instead (see
+ * {@link KEEPER_OWED_PENDING_PROJECTION_SQL}), which is also what the server
+ * needs in order to have something to promote when the payout lands.
  */
 // `IS DISTINCT FROM` rather than `<>`: settlement_source is NULL on every
 // pending row and on every row written before migration 067, and three-valued
@@ -472,6 +475,38 @@ const CONFIRMED_READINESS_SQL = `
     OR a.confirmed_at IS NULL
     OR a.confirmed_at < NOW() - make_interval(mins => ${CONFIRMED_AMOUNT_GRACE_MINUTES}))
    AND (a.status <> 'confirmed' OR ${SETTLEMENT_NOT_STILL_OWED_SQL}))`;
+
+/**
+ * THE PENDING PROJECTION A CONFIRMED-BUT-OWED LAUNCH STILL NEEDS.
+ *
+ * The diff scan enqueues the pair `(activity_id, a.status)` - the row's status
+ * as it stands NOW - so the pending snapshot of any row is only ever produced by
+ * a tick that RAN while the row was pending. For every other role that is
+ * harmless: a row that confirms between two ticks simply reports its terminal
+ * event, which the server inserts on first sight
+ * (`activities-ingest-repo.ts` INSERT arm).
+ *
+ * A launch waiting on the venue's keeper is the one row for which it is not.
+ * Its terminal event is HELD by {@link SETTLEMENT_NOT_STILL_OWED_SQL} until the
+ * keeper settles - minutes to hours - and if no tick happened to run between the
+ * row's creation and its confirmation, it has no pending event either. The
+ * activity is then INVISIBLE on AgentScan for the whole wait: created, confirmed
+ * and reported nowhere (Codex round-3 blocker 5C, reproduced on real Postgres).
+ * K3's "the pending snapshot still reports immediately" only ever held when a
+ * tick fell in that window.
+ *
+ * So a confirmed row whose keeper purchase is still owed also projects the
+ * PENDING snapshot it never got to send. That is not a second reporting path:
+ * it is the same outbox pair every other row produces, in the order the server
+ * expects - a pending insert now, its single `pending -> terminal` promotion
+ * when the payout is known. The `NOT EXISTS` diff makes it exactly once (a row
+ * that already sent its pending snapshot inserts nothing here), and the server
+ * ignores a pending event for a row it already holds as terminal
+ * (`PROMOTE_PENDING_ACTIVITY` requires `status = 'pending'`), so this can never
+ * regress a status either.
+ */
+const KEEPER_OWED_PENDING_PROJECTION_SQL = `
+  a.status = 'confirmed' AND a.settlement_source = 'keeper_purchase_pending'`;
 
 /** Exponential claim backoff: 30 s · 2^n, capped at 1 h (exponent clamped so POWER stays finite). */
 const CLAIM_BACKOFF_SQL = `LEAST(30 * POWER(2, LEAST(o.attempt_count, 20)), 3600)`;
@@ -721,8 +756,11 @@ export async function markStopped(reason: AgentscanStopReason): Promise<void> {
 
 /**
  * The diff scan. Inserts every eligible-AND-READY (activity, status) pair the
- * outbox has never seen; returns how many were enqueued. `backfill` stamps the
- * rows as belonging to the one-time post-registration history send.
+ * outbox has never seen - the row's own status, plus the pending projection a
+ * confirmed launch still owing its keeper purchase never sent
+ * (see {@link KEEPER_OWED_PENDING_PROJECTION_SQL}); returns how many were
+ * enqueued. `backfill` stamps the rows as belonging to the one-time
+ * post-registration history send.
  *
  * A confirmed pair that is held back by `CONFIRMED_READINESS_SQL` is not lost:
  * the scan is a diff, so the next tick that finds it ready enqueues it then.
@@ -731,18 +769,27 @@ export async function markStopped(reason: AgentscanStopReason): Promise<void> {
  */
 const enqueueEligibleSql = (generationPredicate: string): string => `
      INSERT INTO agentscan_outbox (activity_id, status, backfill)
-     SELECT a.id, a.status, $1::boolean
+     SELECT a.id, snapshot.status, $1::boolean
        FROM agent_activity a
       CROSS JOIN (
              SELECT vocabulary_version, backfill_vocabulary_version
                FROM agentscan_reporting_state
               WHERE id = 1
            ) s
+      -- THE SNAPSHOTS THIS ROW OWES, at most one of each per scan. The row's own
+      -- status when the readiness gate lets it through, plus the pending
+      -- projection a confirmed launch still owing its keeper purchase never got
+      -- to send. The two arms are mutually exclusive by construction: the
+      -- readiness gate holds exactly the rows the second arm selects.
+      CROSS JOIN LATERAL (
+             SELECT a.status AS status WHERE ${CONFIRMED_READINESS_SQL}
+             UNION ALL
+             SELECT 'pending'::text WHERE ${KEEPER_OWED_PENDING_PROJECTION_SQL}
+           ) snapshot
       WHERE ${ELIGIBILITY_SQL}
-        AND ${CONFIRMED_READINESS_SQL}
         AND ${generationPredicate}
         AND NOT EXISTS (SELECT 1 FROM agentscan_outbox o
-                         WHERE o.activity_id = a.id AND o.status = a.status)
+                         WHERE o.activity_id = a.id AND o.status = snapshot.status)
      ON CONFLICT (activity_id, status) DO NOTHING`;
 
 /**

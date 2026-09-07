@@ -80,6 +80,20 @@ const failActivityEvent = vi.fn(async () => undefined);
 const confirmLaunchWithOutputIdentity = vi.fn(
   async (_id: number, _input: Record<string, unknown>) => ({ applied: true }),
 );
+/**
+ * The keeper obligation, and the two writers that resolve it when the handler's
+ * own finalizer CAS-misses. They are spies rather than doubles of the SQL: what
+ * this file owns is the launch handler's ORDER of writes, and the predicates
+ * themselves are proven against real Postgres in
+ * `src/__tests__/integration/agentscan/keeper-purchase-lifecycle.int.test.ts`.
+ */
+const markLaunchKeeperPurchaseOwedByTxHash = vi.fn(async (_txHash: string) => true);
+/** The stamp that follows a SUCCESSFUL `eth_sendRawTransaction`: the ordering anchor. */
+const broadcastAccepted = vi.fn(async (_id: number) => ({ applied: true }));
+const settleLaunchKeeperPurchaseByTxHash = vi.fn(async (_txHash: string, _amountRaw: string) => true);
+const fillLaunchOutputIdentityOnConfirmed = vi.fn(
+  async (_id: number, _input: Record<string, unknown>) => true,
+);
 vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
   createAgentActivityIntent: async (input: { events: readonly { eventIndex: number; eventRole: string }[] }) => ({
     executionId: 91,
@@ -89,9 +103,18 @@ vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
   confirmLaunchWithOutputIdentity: (id: number, input: Record<string, unknown>) =>
     confirmLaunchWithOutputIdentity(id, input),
   failActivityEvent: (...a: unknown[]) => failActivityEvent(...(a as [])),
+  fillLaunchOutputIdentityOnConfirmed: (id: number, input: Record<string, unknown>) =>
+    fillLaunchOutputIdentityOnConfirmed(id, input),
   markActivityBroadcast: async () => ({ applied: true }),
-  markBroadcastAccepted: async () => ({ applied: true }),
+  markBroadcastAccepted: (id: number) => broadcastAccepted(id),
+  // The keeper obligation, established when the launch leg's hash is staged and
+  // before the bytes reach the network - the one moment at which no confirmer,
+  // sweep or recovery has seen this row yet.
+  markLaunchKeeperPurchaseOwedByTxHash: (txHash: string) =>
+    markLaunchKeeperPurchaseOwedByTxHash(txHash),
   reserveActivityEvmNonce: async () => 11,
+  settleLaunchKeeperPurchaseByTxHash: (txHash: string, amountRaw: string) =>
+    settleLaunchKeeperPurchaseByTxHash(txHash, amountRaw),
 }));
 
 const readLaunchIntent = vi.fn();
@@ -491,6 +514,99 @@ describe("an unobserved keeper purchase is recorded as UNKNOWN, never as zero", 
     const written = definedValue(confirmLaunchWithOutputIdentity.mock.calls[0], "the confirm call")[1];
     expect(written.executedAmountOutRaw).toBe("4000000000000000000000");
     expect(written.outputPendingReason).toBeUndefined();
+  });
+
+  /**
+   * WHERE the obligation is established, which is the round-3 half of this
+   * blocker. Recording it in the finalizer above was not enough: that writer's
+   * CAS requires `status = 'pending'`, and the generic status-only receipt sweep
+   * confirms a pending launch from its hash after ~90 seconds. When it won, the
+   * obligation was never written, and after the reporting grace the drain sent a
+   * terminal launch event with no payout - before the keeper had acted.
+   */
+  it("records the keeper obligation when the hash is STAGED, before the bytes reach the network", async () => {
+    const result = await executeWithApprovalMining(() => {
+      pinnedReads = { allowance: 10_000_000_000_000_000_000n };
+    });
+
+    expect(result.success, refusalText(result)).toBe(true);
+    // Once, for the launch leg only: an allowance owes nobody a purchase.
+    expect(markLaunchKeeperPurchaseOwedByTxHash).toHaveBeenCalledTimes(1);
+    // And BEFORE the launch reached the network, which is what makes the
+    // obligation older than any confirmation this row can acquire: no confirmer,
+    // sweep or recovery can see a transaction nobody has sent yet.
+    const stagedAt = definedValue(
+      markLaunchKeeperPurchaseOwedByTxHash.mock.invocationCallOrder[0],
+      "the obligation write order",
+    );
+    // The LAUNCH leg's acceptance - the last of the two, the approval's being
+    // the first.
+    const launchAcceptedAt = definedValue(
+      broadcastAccepted.mock.invocationCallOrder.at(-1),
+      "the launch broadcast acceptance order",
+    );
+    expect(broadcastAccepted).toHaveBeenCalledTimes(2);
+    expect(stagedAt).toBeLessThan(launchAcceptedAt);
+  });
+
+  it("refuses to broadcast at all when the obligation cannot be recorded", async () => {
+    markLaunchKeeperPurchaseOwedByTxHash.mockResolvedValueOnce(false);
+
+    const result = await executeWithApprovalMining(() => {
+      pinnedReads = { allowance: 10_000_000_000_000_000_000n };
+    });
+
+    // A launch whose payout nothing is waiting for reports an empty figure to
+    // the world once the grace elapses, so the hook throws - and a throw from
+    // the staging hook aborts with NOTHING SENT. The bytes exist (staging runs
+    // after the signature) and no gas was spent on them: only the approval leg
+    // was ever accepted by the network.
+    expect(result.success).toBe(false);
+    expect(broadcastAccepted).toHaveBeenCalledTimes(1);
+  });
+
+  it("lands the proven purchase and the identity when the status-only sweep confirmed first", async () => {
+    // The finalizer's CAS misses: everything it proved - the spent leg, the
+    // created token, the keeper's purchase - would otherwise be dropped, because
+    // no sweep revisits a confirmed row.
+    confirmLaunchWithOutputIdentity.mockResolvedValueOnce({ applied: false });
+
+    const result = await executeWithApprovalMining(() => {
+      pinnedReads = { allowance: 10_000_000_000_000_000_000n };
+    });
+
+    expect(result.success, refusalText(result)).toBe(true);
+    // The amount goes through the writer that OWNS the keeper settlement,
+    // because writing it is what ends the reporting hold - and it runs before
+    // the identity fill, which can then only COALESCE onto a settled row.
+    expect(settleLaunchKeeperPurchaseByTxHash).toHaveBeenCalledTimes(1);
+    expect(definedValue(settleLaunchKeeperPurchaseByTxHash.mock.calls[0], "the settle call")[1])
+      .toBe("4000000000000000000000");
+    expect(fillLaunchOutputIdentityOnConfirmed).toHaveBeenCalledTimes(1);
+    const settleOrder = definedValue(
+      settleLaunchKeeperPurchaseByTxHash.mock.invocationCallOrder[0],
+      "the settle order",
+    );
+    const fillOrder = definedValue(
+      fillLaunchOutputIdentityOnConfirmed.mock.invocationCallOrder[0],
+      "the fill order",
+    );
+    expect(settleOrder).toBeLessThan(fillOrder);
+  });
+
+  it("leaves the hold standing when the sweep confirmed first and the keeper was NOT observed", async () => {
+    keeperObservation = { kind: "not_observed", waitedMs: 90_000, lastReadError: null };
+    confirmLaunchWithOutputIdentity.mockResolvedValueOnce({ applied: false });
+
+    const result = await executeWithApprovalMining(() => {
+      pinnedReads = { allowance: 10_000_000_000_000_000_000n };
+    });
+
+    expect(result.success, refusalText(result)).toBe(true);
+    // No purchase was proven, so nothing may end the hold: the keeper sweep owns
+    // that, and settling here on an unobserved keeper would invent a payout.
+    expect(settleLaunchKeeperPurchaseByTxHash).not.toHaveBeenCalled();
+    expect(fillLaunchOutputIdentityOnConfirmed).toHaveBeenCalledTimes(1);
   });
 });
 

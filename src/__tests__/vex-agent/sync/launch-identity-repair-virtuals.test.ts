@@ -44,6 +44,7 @@ let pending: unknown[] = [];
 let mockConfirm: Mock;
 let mockRecord: Mock;
 let mockStampIdentity: Mock;
+let mockMarkKeeperOwed: Mock;
 let mockSettleOutcome: Mock;
 
 function reset(): void {
@@ -51,6 +52,7 @@ function reset(): void {
   mockConfirm = vi.fn(async () => ({ intentId: "i1" }));
   mockRecord = vi.fn(async () => ({ inserted: true }));
   mockStampIdentity = vi.fn(async () => true);
+  mockMarkKeeperOwed = vi.fn(async () => true);
   mockSettleOutcome = vi.fn(async () => true);
 }
 reset();
@@ -65,6 +67,7 @@ vi.mock("@vex-agent/db/repos/launched-tokens.js", () => ({
 }));
 vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
   stampLaunchOutputIdentityByTxHash: (...a: unknown[]) => mockStampIdentity(...a),
+  markLaunchKeeperPurchaseOwedByTxHash: (...a: unknown[]) => mockMarkKeeperOwed(...a),
   findLaunchActivityTerminalByTxHash: async () => null,
 }));
 vi.mock("@vex-agent/engine/runtime/lease-and-status/session-control-lock.js", () => ({
@@ -148,6 +151,13 @@ describe("the sweep moves a recovered Virtuals launch to awaiting_keeper", () =>
     });
     expect(mockStampIdentity).toHaveBeenCalledWith(TX_HASH, TOKEN);
 
+    // AND THE KEEPER OBLIGATION, because this arm recovers exactly the launches
+    // whose handler did not finish - the ones whose payout is owed by the venue
+    // and recorded as owed by nobody. Without it, the reporting grace releases a
+    // TERMINAL launch event with an empty payout while the keeper has not acted,
+    // and the server's single `pending -> terminal` merge window is spent.
+    expect(mockMarkKeeperOwed).toHaveBeenCalledWith(TX_HASH);
+
     // `awaiting_keeper`, with the block the keeper sweep scans from and the fee
     // waived. NEVER `confirmed`: only the keeper's launch() makes the agent live.
     expect(mockConfirm).not.toHaveBeenCalled();
@@ -187,5 +197,8 @@ describe("the sweep moves a recovered Virtuals launch to awaiting_keeper", () =>
     expect(result).toMatchObject({ checked: 1, awaitingKeeper: 0, stillPending: 1 });
     expect(mockSettleOutcome).not.toHaveBeenCalled();
     expect(mockRecord).not.toHaveBeenCalled();
+    // Nothing was written at all, the obligation included: a row this sweep
+    // could not read is a repairable record, not a launch to make claims about.
+    expect(mockMarkKeeperOwed).not.toHaveBeenCalled();
   });
 });
