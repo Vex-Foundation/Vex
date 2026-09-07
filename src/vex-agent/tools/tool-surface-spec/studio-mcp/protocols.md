@@ -53,9 +53,9 @@ whether its provider key is configured on this machine.
 
 ## Totals
 
-- tools: 170
+- tools: 171
 - Vex tools: 27
-- protocol tools: 143 across 10 protocols
+- protocol tools: 144 across 11 protocols
 - destructive: 53
 
 ## Vex tools
@@ -137,6 +137,12 @@ whether its provider key is configured on this machine.
 | kyberswap__swap_execute | Execute a KyberSwap swap | mutating | yes | - |
 | kyberswap__swap_quote | Quote a KyberSwap swap | read-only | no | - |
 | kyberswap__token_safety_check | Audit an EVM token with KyberSwap | read-only | no | - |
+
+### launchpads
+
+| tool | title | access | destructive | requires env |
+| --- | --- | --- | --- | --- |
+| launchpads__image_publish | Publish a launch picture publicly | mutating | no | - |
 
 ### morpho
 

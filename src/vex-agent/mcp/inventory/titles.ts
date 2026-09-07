@@ -203,6 +203,12 @@ export const STUDIO_TOOL_TITLES: Readonly<Record<string, string>> = {
   morpho__rewards_claim: "Claim earned Morpho rewards",
 
 
+  // ── launchpads ────────────────────────────────────────────────────────────
+  // The locker LISTING is not exported (there is no locker on this surface);
+  // publishing is, because it is the one approved way bytes become public and a
+  // launch will not do it as a side effect.
+  launchpads__image_publish: "Publish a launch picture publicly",
+
   // ── pools ─────────────────────────────────────────────────────────────────
   pools__tokens_discover: "Screen pools.fun tokens",
   pools__tokens_search: "Search pools.fun tokens",

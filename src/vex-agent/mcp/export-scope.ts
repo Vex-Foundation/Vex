@@ -76,18 +76,24 @@ export const EXPORTED_TOOL_SEARCH_NAME = "ToolSearch";
 /**
  * Protocol tools (by `toolId`, not publicName) that are NOT exported.
  *
- * The launchpads namespace owns the user's local IMAGE LOCKER, and these two
- * tools are the locker's own surface: `launchpads__images_list` lists the
- * pictures the user staged inside the Vex desktop app, and
- * `launchpads__image_publish` publishes locker bytes to a public
- * content-addressed host. An external coding agent on the Studio MCP surface
- * has no locker and no way to stage one - on that surface a launch tool takes
- * an `imagePath` inside the agent's OWN project directory instead. Exporting
- * the locker tools to a surface that can never satisfy them would advertise a
- * capability guaranteed to refuse, which is worse than not advertising it at
- * all: the agent spends a call and a turn to learn what `tools/list` could have
- * told it for free. Both tools are UNCHANGED for the in-app Vex agent, which
- * IS the locker's owner.
+ * `launchpads.images` (`launchpads__images_list`) lists the pictures the user
+ * staged inside the Vex desktop app's local IMAGE LOCKER. An external coding
+ * agent on the Studio MCP surface has no locker and no way to stage one, so on
+ * that surface a picture is named by an `imagePath` inside the agent's OWN
+ * project directory instead. Exporting a listing of a store that is always
+ * empty from there would advertise a capability guaranteed to refuse, which is
+ * worse than not advertising it at all: the agent spends a call and a turn to
+ * learn what `tools/list` could have told it for free. The tool is UNCHANGED
+ * for the in-app Vex agent, which IS the locker's owner.
+ *
+ * `launchpads.image_publish` WAS excluded for the same reason and is NOT any
+ * more (2026-09-06). Excluding it did not withhold a locker; it withheld the
+ * only approved way to make bytes public, and a launch will not publish as a
+ * side effect - so an agent working in a codebase could never give a token a
+ * picture at all. The tool now takes an `imagePath` on this surface, reads it
+ * through the same contained no-follow reader a Studio launch uses, and asks
+ * the SAME approval question about the SAME consequence. The capability it
+ * advertises is one it can satisfy.
  *
  * An id here need not be registered in the catalog: an unregistered id already
  * answers false below, so this set is a second, EARLIER reason to answer false,
@@ -95,7 +101,6 @@ export const EXPORTED_TOOL_SEARCH_NAME = "ToolSearch";
  */
 export const NON_EXPORTED_PROTOCOL_TOOLS: ReadonlySet<string> = new Set([
   "launchpads.images",
-  "launchpads.image_publish",
 ]);
 
 /**

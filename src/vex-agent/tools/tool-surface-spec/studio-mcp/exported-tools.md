@@ -43,9 +43,9 @@ free. Both texts live on the tool
 
 ## Totals
 
-- exported tools: 170
+- exported tools: 171
 - internal: 27
-- protocol: 143 across 10 namespaces
+- protocol: 144 across 11 namespaces
 - always loaded: 27
 - read-only: 109
 - destructive: 53
@@ -129,6 +129,12 @@ free. Both texts live on the tool
 | kyberswap__swap_execute | Execute a KyberSwap swap | protocol | no | yes | no | - | 3718 | yes | 25 bps |
 | kyberswap__swap_quote | Quote a KyberSwap swap | protocol | yes | no | no | - | 3591 | - | none (read) |
 | kyberswap__token_safety_check | Audit an EVM token with KyberSwap | protocol | yes | no | no | - | 1138 | - | none (read) |
+
+### launchpads
+
+| name | title | lane | read only | destructive | always load | requires env | description bytes | returns | vex fee |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| launchpads__image_publish | Publish a launch picture publicly | protocol | no | no | no | - | 1742 | yes | - |
 
 ### morpho
 

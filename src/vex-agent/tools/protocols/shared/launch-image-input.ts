@@ -68,7 +68,21 @@ export interface ReadLaunchImageSelectionOptions {
   readonly lockerListTool: string;
   /** The public name of the launching tool, so a refusal says what refused. */
   readonly toolName: string;
+  /**
+   * What did NOT happen, in the calling tool's own words. Defaults to
+   * {@link NOTHING_WAS_LAUNCHED}.
+   *
+   * The per-surface table is shared; the CONSEQUENCE of refusing is not. A
+   * launch that refuses launched nothing, and `launchpads__image_publish`
+   * uploaded nothing - telling its caller "Nothing was launched" would be a
+   * sentence about an act that tool never performs, and an agent reading it
+   * would look for a launch to retry instead of a publish.
+   */
+  readonly nothingHappened?: string;
 }
+
+/** The default outcome sentence: every caller so far is a launching tool. */
+export const NOTHING_WAS_LAUNCHED = "Nothing was launched.";
 
 /** Normalized once, exactly as `runtime/gates.ts` normalizes it. */
 function surfaceOf(context: ProtocolExecutionContext): ApprovalSurface {
@@ -98,15 +112,16 @@ export function readLaunchImageSelection(
   // other surface's parameter believes it chose a picture; telling it nothing
   // and launching anyway is how a token gets the wrong art, permanently.
   if (!isAbsent(params[forbidden])) {
+    const nothing = options.nothingHappened ?? NOTHING_WAS_LAUNCHED;
     return {
       ok: false,
       reason:
         surface === "in_app_form"
           ? `"imagePath" is not accepted here. This call is running in the Vex app, where pictures come `
-            + `from the user's image locker and not from a file path. Nothing was launched. List the `
+            + `from the user's image locker and not from a file path. ${nothing} List the `
             + `staged pictures with ${options.lockerListTool} and pass the "imageId" of the one the user wants.`
           : `"imageId" is not accepted here. This call is running over the Vex Studio MCP surface, which `
-            + `has no image locker. Nothing was launched. Pass "imagePath" instead: a path to an image `
+            + `has no image locker. ${nothing} Pass "imagePath" instead: a path to an image `
             + `file inside this project, which Vex will publish to a public content-addressed URL.`,
     };
   }
@@ -204,7 +219,9 @@ export type ResolveLaunchImageBytesResult =
 export async function resolveProjectFileLaunchImage(
   selection: Extract<LaunchImageSelection, { kind: "project_file" }>,
   context: ProtocolExecutionContext,
+  options?: { readonly nothingHappened?: string },
 ): Promise<ResolveLaunchImageBytesResult> {
+  const nothing = options?.nothingHappened ?? NOTHING_WAS_LAUNCHED;
   const projectId = context.studioProjectId ?? null;
   if (projectId === null) {
     // Fail closed. Without a project there is no root, and without a root there
@@ -214,7 +231,7 @@ export async function resolveProjectFileLaunchImage(
       ok: false,
       reason:
         "An image path can only be read inside a Vex Studio project, and this call carries no project. "
-        + "Nothing was launched.",
+        + nothing,
     };
   }
 
@@ -226,13 +243,13 @@ export async function resolveProjectFileLaunchImage(
       ok: false,
       reason:
         "Vex could not read this project's record, so it could not establish which directory the image "
-        + "path is allowed to be inside. Nothing was launched. This is worth trying again.",
+        + `path is allowed to be inside. ${nothing} This is worth trying again.`,
     };
   }
   if (root.kind === "unknown_project") {
     return {
       ok: false,
-      reason: "This Vex Studio project no longer exists, so no file in it can be read. Nothing was launched.",
+      reason: `This Vex Studio project no longer exists, so no file in it can be read. ${nothing}`,
     };
   }
   if (root.kind === "no_root_recorded") {
@@ -240,7 +257,7 @@ export async function resolveProjectFileLaunchImage(
       ok: false,
       reason:
         "This Vex Studio project has no directory recorded, so there is nothing to read an image path "
-        + "inside. Nothing was launched.",
+        + `inside. ${nothing}`,
     };
   }
 
@@ -248,7 +265,7 @@ export async function resolveProjectFileLaunchImage(
     projectRoot: root.rootPath,
     requestedPath: selection.imagePath,
   });
-  if (!opened.ok) return { ok: false, reason: describeNoFollowRefusal(opened.refusal) };
+  if (!opened.ok) return { ok: false, reason: describeNoFollowRefusal(opened.refusal, nothing) };
 
   return {
     ok: true,
@@ -267,8 +284,7 @@ export async function resolveProjectFileLaunchImage(
  * Exhaustive by construction: a new refusal kind is a compile error here rather
  * than a silent fall-through to a generic sentence.
  */
-function describeNoFollowRefusal(refusal: NoFollowRefusal): string {
-  const nothing = "Nothing was launched.";
+function describeNoFollowRefusal(refusal: NoFollowRefusal, nothing: string): string {
   switch (refusal.kind) {
     case "not_absolute_root":
       return `Vex could not establish this project's directory (${refusal.detail}). ${nothing}`;
