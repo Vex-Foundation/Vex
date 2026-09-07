@@ -17,9 +17,10 @@
  *   - an allowlisted exception the audit no longer reports fails the gate
  *     too, so exceptions cannot outlive the finding that justified them.
  *
- * `reviewBy` is a hard expiry, not a reminder: once the date passes, the gate
- * refuses regardless of the findings. An exception that nobody renewed is not
- * an exception.
+ * `reviewBy`, when set, is a hard expiry, not a reminder: once the date passes
+ * the gate refuses regardless of the findings. `reviewBy: null` means no
+ * calendar expiry (the owner's decision of 2026-09-07 for the three reviewed
+ * exceptions); the reachability verifiers are then the only standing guard.
  */
 
 /** Fields that identify a finding. Order matters only for error messages. */
@@ -53,13 +54,20 @@ export function evaluateProductionAudit({ allowlist, advisories, now }) {
     return refuse(failures, "the dependency-audit allowlist is not an object");
   }
 
-  const reviewBy = typeof allowlist.reviewBy === "string" ? allowlist.reviewBy : null;
-  const deadline = reviewBy === null ? Number.NaN : Date.parse(`${reviewBy}T00:00:00.000Z`);
-  if (!Number.isFinite(deadline)) {
-    return refuse(failures, `the dependency-audit allowlist has an invalid reviewBy (${String(allowlist.reviewBy)})`);
-  }
-  if (now.getTime() >= deadline) {
-    failures.push(`dependency-audit exceptions expired for mandatory review on ${reviewBy}`);
+  // `reviewBy: null` means the exceptions carry no calendar expiry (owner
+  // decision 2026-09-07): the standing condition is each exception's
+  // reachability verifier, which fails the audit the moment the vulnerable
+  // path becomes reachable. A string is still a hard expiry; anything else is
+  // refused rather than read as "no deadline".
+  const reviewBy = allowlist.reviewBy === null ? null : allowlist.reviewBy;
+  if (reviewBy !== null) {
+    const deadline = typeof reviewBy === "string" ? Date.parse(`${reviewBy}T00:00:00.000Z`) : Number.NaN;
+    if (!Number.isFinite(deadline)) {
+      return refuse(failures, `the dependency-audit allowlist has an invalid reviewBy (${String(allowlist.reviewBy)})`);
+    }
+    if (now.getTime() >= deadline) {
+      failures.push(`dependency-audit exceptions expired for mandatory review on ${reviewBy}`);
+    }
   }
 
   if (!Array.isArray(allowlist.exceptions)) {

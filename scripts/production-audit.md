@@ -25,10 +25,12 @@ Files:
 ## Current exceptions
 
 Every exception below was proposed by the Lighter integration author on
-2026-09-06 and is PENDING the repository owner's decision in PR review. None of
-them is owner-approved. All expire on 2026-09-18: after that date the gate
-fails regardless of the findings, so an unrenewed exception cannot survive by
-inattention.
+2026-09-06 and approved by the repository owner on 2026-09-07 with no expiry
+date. The standing condition is mechanical, not calendar-based: each exception
+has a reachability verifier that fails the audit the moment the vulnerable path
+becomes reachable, and a changed dependency path or a changed advisory reopens
+the decision. `reviewBy` is therefore `null` in both allowlists; setting a date
+turns the calendar expiry back on.
 
 | Package | Version | Advisory | Workspaces | Why it is tolerated | Removal condition |
 | --- | --- | --- | --- | --- | --- |
@@ -101,5 +103,5 @@ script runs either way.
 3. If the claim is mechanical, add a verifier next to the existing three and
    register it in `REACHABILITY_VERIFIERS`. A claim nobody can check is worth
    less than a red gate.
-4. Move `reviewBy` only with a stated reason. It is the gate's only automatic
-   expiry.
+4. `reviewBy` is `null` by the owner's decision (no calendar expiry); set a
+   date only with a stated reason, and it becomes a hard expiry again.

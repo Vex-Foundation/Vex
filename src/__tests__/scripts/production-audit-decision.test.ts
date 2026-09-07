@@ -147,6 +147,17 @@ describe("production audit decision", () => {
     expect(result.ok).toBe(true);
   });
 
+  it("treats a null reviewBy as no calendar expiry (owner decision 2026-09-07)", () => {
+    const base = allowlistFor(STREAM_JSON);
+    const result = evaluateProductionAudit({
+      allowlist: { ...base, reviewBy: null },
+      advisories: advisoriesFor(STREAM_JSON),
+      now: new Date("2099-01-01T00:00:00.000Z"),
+    });
+    expect(result.ok).toBe(true);
+    expect(result.failures).toEqual([]);
+  });
+
   it("refuses an unparseable reviewBy instead of treating it as no deadline", () => {
     const result = evaluateProductionAudit({
       allowlist: { reviewBy: "whenever", exceptions: [] },
