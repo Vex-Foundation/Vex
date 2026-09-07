@@ -10653,7 +10653,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 2428,
+      "descriptionBytes": 2674,
       "destructiveHint": true,
       "inputSchema": {
         "additionalProperties": false,
@@ -10722,7 +10722,7 @@
             "type": "string"
           },
           "imagePath": {
-            "description": "The picture, over the Vex Studio MCP surface: a path to an image file inside THIS project. IT IS REFUSED BY A VIRTUALS LAUNCH, and the refusal is the honest answer rather than a gap. The URL written on chain is permanent, so it must address bytes that were made public deliberately, and making a file public is a decision Vex will not take for you as a side effect of a launch or a preview. launchpads__image_publish is the approval-gated tool that asks for it, and it runs in the Vex app, where pictures are staged in the image locker - so a Virtuals agent launch is done from the Vex app today. You cannot pass a URL of your own on either surface.",
+            "description": "The picture, over the Vex Studio MCP surface: a path to an image file inside THIS project. REQUIRED on this surface, and it must ALREADY BE PUBLISHED, which is a TWO-STEP flow: first call launchpads__image_publish with this same imagePath - it asks for your approval, because publishing makes the bytes fetchable by anyone - then launch with the same imagePath. A launch never publishes for you: the URL written on chain is permanent, so it must address bytes that were made public deliberately, and that decision is not a side effect of a launch or a preview. Vex reads the file itself, hashes those bytes and matches them against what was published, so a file EDITED after publishing is refused by name rather than launched against a stale address - publish it again and retry. Symbolic links are never followed and a path outside the project is refused. You cannot pass a URL of your own on either surface.",
             "type": "string"
           },
           "links": {
@@ -10776,7 +10776,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 2023,
+      "descriptionBytes": 2257,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
@@ -10845,7 +10845,7 @@
             "type": "string"
           },
           "imagePath": {
-            "description": "The picture, over the Vex Studio MCP surface: a path to an image file inside THIS project. IT IS REFUSED BY A VIRTUALS LAUNCH, and the refusal is the honest answer rather than a gap. The URL written on chain is permanent, so it must address bytes that were made public deliberately, and making a file public is a decision Vex will not take for you as a side effect of a launch or a preview. launchpads__image_publish is the approval-gated tool that asks for it, and it runs in the Vex app, where pictures are staged in the image locker - so a Virtuals agent launch is done from the Vex app today. You cannot pass a URL of your own on either surface.",
+            "description": "The picture, over the Vex Studio MCP surface: a path to an image file inside THIS project. REQUIRED on this surface, and it must ALREADY BE PUBLISHED, which is a TWO-STEP flow: first call launchpads__image_publish with this same imagePath - it asks for your approval, because publishing makes the bytes fetchable by anyone - then launch with the same imagePath. A launch never publishes for you: the URL written on chain is permanent, so it must address bytes that were made public deliberately, and that decision is not a side effect of a launch or a preview. Vex reads the file itself, hashes those bytes and matches them against what was published, so a file EDITED after publishing is refused by name rather than launched against a stale address - publish it again and retry. Symbolic links are never followed and a path outside the project is refused. You cannot pass a URL of your own on either surface.",
             "type": "string"
           },
           "links": {

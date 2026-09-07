@@ -71,6 +71,24 @@ export const LAUNCH_ASSET_DELETE_PATH_PREFIX = "/v1/assets/";
 /** Client-side body cap, 2 MiB. Exactly the cap is allowed; one byte more is refused locally. */
 export const MAX_ASSET_BYTES = 2_097_152;
 
+/**
+ * THE CONTENT ADDRESS OF A PICTURE, and the one definition of it.
+ *
+ * The host addresses every asset by the sha256 of its exact bytes, so this
+ * function IS the id an upload will come back with - derivable before any
+ * request, and derivable again later from a file on disk. That second property
+ * is what lets a launch ask "are these exact bytes already public?" without
+ * uploading anything, so the derivation must have ONE owner: two copies of it
+ * would be two answers to a question whose whole value is that both sides agree.
+ *
+ * Exported from this module rather than from a caller because the rule is the
+ * HOST'S, not any tool's: if the host ever addressed assets differently, this
+ * is the line that would change, and every consumer would follow.
+ */
+export function deriveAssetContentId(bytes: Uint8Array): string {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
 /** Lowercase-hex sha256, the only shape a content address may take. */
 const CID_PATTERN = /^[0-9a-f]{64}$/;
 /** Bounded, punctuation-restricted shape an untrusted correlation id must match. */
@@ -199,7 +217,7 @@ async function uploadAsset(baseUrl: string, input: UploadAssetInput): Promise<Up
 
   // Derived BEFORE the request so the comparison below can never be influenced
   // by anything the host said.
-  const expectedCid = sha256Hex(input.bytes);
+  const expectedCid = deriveAssetContentId(input.bytes);
 
   let response: Response;
   try {
@@ -446,10 +464,6 @@ export async function resolveLaunchAssetsPublisher(): Promise<LaunchAssetsPublis
 }
 
 // ── helpers ─────────────────────────────────────────────────────────────────
-
-function sha256Hex(bytes: Uint8Array): string {
-  return createHash("sha256").update(bytes).digest("hex");
-}
 
 /**
  * The assets host lives at the ORIGIN of the configured AgentScan URL: its

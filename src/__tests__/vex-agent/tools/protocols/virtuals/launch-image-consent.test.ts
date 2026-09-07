@@ -17,24 +17,42 @@
  * recorded - and refuses by name otherwise, pointing at the tool that owns the
  * decision. One owner for "bytes become public" means one place the question is
  * asked.
+ *
+ * That property is the subject HERE, on both surfaces and with the reader made
+ * to succeed, so a refusal can only be about consent. What a PUBLISHED project
+ * file resolves to, and how containment behaves over real files, belongs to
+ * `./launch-studio-image.test.ts`.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const uploadAsset = vi.fn();
 const getLaunchImage = vi.fn();
+const findLaunchImageByPublicCid = vi.fn();
 
-vi.mock("@vex-agent/agentscan/assets-client.js", () => ({
-  resolveLaunchAssetsPublisher: async () => ({
-    kind: "ready",
-    ingestToken: "t",
-    client: { uploadAsset: (input: unknown) => uploadAsset(input) },
-  }),
-}));
+vi.mock("@vex-agent/agentscan/assets-client.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@vex-agent/agentscan/assets-client.js")>();
+  return {
+    ...actual,
+    // The real content-address derivation stays REAL: it is the binding between
+    // what publish recorded and what a launch asks for, and a fake one would
+    // make this suite agree with itself instead of with the publish tool.
+    resolveLaunchAssetsPublisher: async () => ({
+      kind: "ready",
+      ingestToken: "t",
+      client: { uploadAsset: (input: unknown) => uploadAsset(input) },
+    }),
+  };
+});
 
-vi.mock("@vex-agent/db/repos/launch-images.js", () => ({
-  getLaunchImage: (imageId: string) => getLaunchImage(imageId),
-}));
+vi.mock("@vex-agent/db/repos/launch-images.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@vex-agent/db/repos/launch-images.js")>();
+  return {
+    ...actual,
+    getLaunchImage: (imageId: string) => getLaunchImage(imageId),
+    findLaunchImageByPublicCid: (cid: string) => findLaunchImageByPublicCid(cid),
+  };
+});
 
 /**
  * The project-file reader is made to SUCCEED, so the refusal below can only be
@@ -87,10 +105,13 @@ function appContext(): ResolveInput["context"] {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // No row for these bytes: the picture in the agent's project has never been
+  // published, which is the state every refusal below is about.
+  findLaunchImageByPublicCid.mockResolvedValue(null);
 });
 
 describe("a Virtuals launch never publishes a picture itself", () => {
-  it("refuses a Studio project file by name and uploads nothing", async () => {
+  it("refuses an unpublished Studio project file by name and uploads nothing", async () => {
     const result = await resolveLaunchImage({
       params: { imagePath: "assets/agent.png" },
       context: studioContext(),

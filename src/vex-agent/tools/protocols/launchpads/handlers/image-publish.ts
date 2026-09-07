@@ -60,7 +60,7 @@
  * locker.
  */
 
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 
 import type { ApprovalSurface, ProtocolExecutionContext } from "../../types.js";
 import { ok, fail } from "../../handler-helpers.js";
@@ -73,6 +73,7 @@ import {
   type LaunchImageMime,
 } from "../../../../db/repos/launch-images.js";
 import {
+  deriveAssetContentId,
   resolveLaunchAssetsPublisher,
   type UploadOutcome,
 } from "../../../../agentscan/assets-client.js";
@@ -299,7 +300,9 @@ async function publishProjectFile(
 
   // The host addresses every asset by the sha256 of its bytes, so this is the
   // SAME id the upload would come back with - derivable before any request.
-  const cid = createHash("sha256").update(image.bytes).digest("hex");
+  // Derived through the client's own definition, because a launch later asks
+  // the same question of a file on disk and both sides must agree byte for byte.
+  const cid = deriveAssetContentId(image.bytes);
 
   let published;
   try {
