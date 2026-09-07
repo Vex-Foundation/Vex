@@ -144,6 +144,12 @@ const SLIPPAGE_BPS = 500;
 const AMOUNT_IN_HUMAN = "1";
 const AMOUNT_IN_RAW = parseUnits(AMOUNT_IN_HUMAN, 18);
 const QUOTED_OUT = parseUnits("313879.7", 18);
+/**
+ * The legacy gas price every prepared request in this suite carries. It matches
+ * this suite's fake chain (`uniswapSpendabilityFake`) so the debit gate always
+ * passes and the FENCE stays the only thing deciding these outcomes.
+ */
+const STANDIN_GAS_PRICE = 1_000n;
 
 const TOKEN_IN_LEG = { address: TOKEN_IN, symbol: "TKN", decimals: 18, isNative: false } as const;
 const TOKEN_OUT_LEG = { address: TOKEN_OUT, symbol: "TKN", decimals: 18, isNative: false } as const;
@@ -174,6 +180,28 @@ async function approved() {
     approvedMinOutRaw: applySlippage(QUOTED_OUT, SLIPPAGE_BPS),
     slippageBps: SLIPPAGE_BPS,
   });
+}
+
+/**
+ * A COMPLETE prepared request, built from the three fields each case below
+ * actually alters. `FinalSignedRequest` requires all three price fields to be
+ * PRESENT (`undefined` is a real state there, not an absent key), and a
+ * fixture that omitted them could not stand for a request the debit gate is
+ * willing to read.
+ *
+ * The stand-in legacy price is the suite's own constant: WP2-U's debit gate
+ * refuses a request whose price cannot be stated, and this suite is about the
+ * FENCE, so the price must never be the thing deciding an outcome.
+ */
+function preparedRequest(parts: Pick<FinalSignedRequest, "to" | "data" | "value">): FinalSignedRequest {
+  return {
+    ...parts,
+    gas: 300_000n,
+    nonce: 9,
+    gasPrice: STANDIN_GAS_PRICE,
+    maxFeePerGas: undefined,
+    maxPriorityFeePerGas: undefined,
+  };
 }
 
 /**
@@ -219,15 +247,16 @@ beforeEach(async () => {
   ) => {
     fences.push(onBeforeSign);
     if (onBeforeSign) {
-      const shown: FinalSignedRequest = alteredRequest
-        ? alteredRequest(tx)
-        : { to: tx.to as `0x${string}`, data: tx.data, value: tx.value, gas: 300_000n, nonce: 9 };
       // A real prepared request always carries a fee price - WP2-U's debit gate
       // refuses one that does not, because a cost nobody can state cannot be
       // checked against the ceiling the swap was totalled under. The stand-in
       // price matches this suite's fake chain (`uniswapSpendabilityFake`), so
-      // the FENCE stays the only thing deciding these outcomes.
-      await onBeforeSign({ gasPrice: 1_000n, ...shown });
+      // the FENCE stays the only thing deciding these outcomes; every altered
+      // request carries it too, via `preparedRequest`.
+      const shown: FinalSignedRequest = alteredRequest
+        ? alteredRequest(tx)
+        : preparedRequest({ to: tx.to as `0x${string}`, data: tx.data, value: tx.value });
+      await onBeforeSign(shown);
     }
     return { serializedTransaction: "0xsigned" as Hex, txHash: "0xswap" as Hex, fromAddress: WALLET, nonce: 9 };
   });
@@ -246,7 +275,7 @@ describe("the swap leg is fenced with the CLAIMED authority", () => {
     const snapshot = await approved();
     // The REAL encoder, at the collapsed-route floor the old code would have
     // derived. Same router, same value - only the bytes differ.
-    alteredRequest = (tx) => ({
+    alteredRequest = (tx) => preparedRequest({
       to: tx.to as `0x${string}`,
       data: buildSwapTx({
         // The SAME deployment the handler resolved, read back through the
@@ -262,8 +291,6 @@ describe("the swap leg is fenced with the CLAIMED authority", () => {
         tokenOutIsNative: false,
       }).data,
       value: tx.value,
-      gas: 300_000n,
-      nonce: 9,
     });
 
     const result = await run();
@@ -281,7 +308,7 @@ describe("the swap leg is fenced with the CLAIMED authority", () => {
 
   it("refuses a request whose calldata pays the output to someone else", async () => {
     const snapshot = await approved();
-    alteredRequest = (tx) => ({
+    alteredRequest = (tx) => preparedRequest({
       to: tx.to as `0x${string}`,
       data: buildSwapTx({
         deployment: ROBINHOOD_DEPLOYMENT,
@@ -296,8 +323,6 @@ describe("the swap leg is fenced with the CLAIMED authority", () => {
         tokenOutIsNative: false,
       }).data,
       value: tx.value,
-      gas: 300_000n,
-      nonce: 9,
     });
 
     const result = await run();
@@ -308,9 +333,9 @@ describe("the swap leg is fenced with the CLAIMED authority", () => {
   });
 
   it("refuses a request retargeted at another contract", async () => {
-    alteredRequest = (tx) => ({
+    alteredRequest = (tx) => preparedRequest({
       to: "0x9999999999999999999999999999999999999999",
-      data: tx.data, value: tx.value, gas: 300_000n, nonce: 9,
+      data: tx.data, value: tx.value,
     });
 
     const result = await run();
@@ -321,8 +346,8 @@ describe("the swap leg is fenced with the CLAIMED authority", () => {
   });
 
   it("refuses a request that attaches native value to an ERC-20 input trade", async () => {
-    alteredRequest = (tx) => ({
-      to: tx.to as `0x${string}`, data: tx.data, value: 1n, gas: 300_000n, nonce: 9,
+    alteredRequest = (tx) => preparedRequest({
+      to: tx.to as `0x${string}`, data: tx.data, value: 1n,
     });
 
     const result = await run();

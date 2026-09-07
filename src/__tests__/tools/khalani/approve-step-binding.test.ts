@@ -28,7 +28,7 @@
 import { describe, expect, it } from "vitest";
 import { encodeAbiParameters, encodeFunctionData, getAddress } from "viem";
 
-import { planKhalaniDepositLegs } from "@tools/khalani/bridge-executor.js";
+import { planKhalaniDepositLegs, type KhalaniDepositOriginBinding } from "@tools/khalani/bridge-executor.js";
 import type {
   ContractCallDepositPlan,
   EvmApproval,
@@ -52,7 +52,7 @@ const FOREIGN_TOKEN = getAddress("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48");
  * number here is Vex's own, which is what makes rule 2 a BOUND rather than a
  * restatement of what the provider sent back.
  */
-const ORIGIN = { fromToken: USDC, wallet: WALLET, bridgedAmountRaw: PRINCIPAL.toString() };
+const ORIGIN: KhalaniDepositOriginBinding = { fromToken: USDC, wallet: WALLET, bridgedAmountRaw: PRINCIPAL.toString() };
 
 const APPROVE_ABI = [{
   type: "function", name: "approve", stateMutability: "nonpayable",
@@ -107,7 +107,7 @@ describe("planKhalaniDepositLegs - a CONTRACT_CALL approval must authorize this 
     expect(legs.map((leg) => leg.role)).toEqual(["allowance_reset", "allowance", "bridge_deposit"]);
   });
 
-  const refused: readonly (readonly [string, unknown[]])[] = [
+  const refused: readonly (readonly [string, readonly EvmApproval[]])[] = [
     ["an allowance granted to an address the plan never calls",
       [send(USDC, approveData(STRANGER, PRINCIPAL), false), depositCall]],
     ["an unlimited allowance granted to a stranger",
@@ -307,7 +307,7 @@ describe("planKhalaniDepositLegs - reset then grant then deposit, and nothing el
 // ── A zero reset gets every check except the amount ─────────────────────────
 
 describe("planKhalaniDepositLegs - a reset is bound like a grant, minus the amount", () => {
-  const resetNegatives: readonly (readonly [string, EvmApproval, typeof ORIGIN])[] = [
+  const resetNegatives: readonly (readonly [string, EvmApproval, KhalaniDepositOriginBinding])[] = [
     ["a reset on a token that is not the origin currency",
       send(FOREIGN_TOKEN, approveData(DEPOSIT_TARGET, 0n), false), ORIGIN],
     ["a reset sent from an address that is not the selected wallet",

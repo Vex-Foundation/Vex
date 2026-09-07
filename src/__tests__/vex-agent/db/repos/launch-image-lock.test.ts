@@ -26,6 +26,8 @@
 
 import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 
+import type { CreateTokenLaunchIntentInput } from "@vex-agent/db/repos/token-launch-intents.js";
+
 type PoolQueryOneMock = Mock<
   (sql: string, params?: unknown[]) => Promise<Record<string, unknown> | null>
 >;
@@ -104,12 +106,18 @@ function calls(client: ReturnType<typeof fakeClient>): [string, unknown[]][] {
   );
 }
 
-function createInput(imageId: string | null) {
+function createInput(imageId: string | null): CreateTokenLaunchIntentInput {
   return {
     intentId: INTENT_ID,
     sessionId: SESSION_ID,
-    origin: "agent_requested_form" as const,
-    status: "awaiting_user_form" as const,
+    origin: "agent_requested_form",
+    status: "awaiting_user_form",
+    // Chain 4663 is the pools.fun launchpad, so the row names that protocol and
+    // carries the `pairedAsset` its database CHECK requires. `protocol` became
+    // REQUIRED when migration 108 dropped the `'trench'` default, and the lock
+    // this suite asserts runs on every launchpad alike.
+    protocol: "pools_fun",
+    pools: { pairedAsset: "weth" },
     chainId: 4663,
     walletAddress: WALLET,
     name: "Test Coin",
