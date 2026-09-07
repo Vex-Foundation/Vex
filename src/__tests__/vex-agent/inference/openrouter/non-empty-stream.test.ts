@@ -402,4 +402,75 @@ describe("requireNonEmptyOpenRouterStream", () => {
     ]);
     expect(attemptedTags).toEqual(["blank/fp8", "blank/fp8", "healthy/fp8"]);
   });
+
+  it("rejects with the typed empty-stream failure once every candidate answered with nothing", async () => {
+    // No sibling is healthy, so the bounded capacity policy runs out of
+    // attempts. What comes back out is the typed 502, thrown BEFORE any chunk
+    // reached the consumer - which is exactly the condition
+    // `runStreamingInference` turns into a buffered fallback, and, when that
+    // is empty too, into an empty completion for the turn loop to count as a
+    // blank round. The failover never invents an answer.
+    const candidates: EndpointCandidate[] = [
+      {
+        tag: "blank-a/fp8",
+        providerName: "BlankA",
+        uptimePercent: 90,
+        contextLength: 128_000,
+        inputPricePerM: 1,
+        outputPricePerM: 1,
+        cachePricePerM: null,
+        cacheWritePricePerM: null,
+        reasoningPricePerM: null,
+      },
+      {
+        tag: "blank-b/fp8",
+        providerName: "BlankB",
+        uptimePercent: 99.9,
+        contextLength: 128_000,
+        inputPricePerM: 1,
+        outputPricePerM: 1,
+        cachePricePerM: null,
+        cacheWritePricePerM: null,
+        reasoningPricePerM: null,
+      },
+    ];
+    const config: InferenceConfig = {
+      provider: "openrouter",
+      model: "deepseek/deepseek-v4-pro",
+      contextLimit: 128_000,
+      endpointTag: "blank-a/fp8",
+      endpointCandidates: candidates,
+      maxOutputTokens: 4096,
+      inputPricePerM: 1,
+      outputPricePerM: 1,
+      priceCurrency: "USD",
+      cachePricePerM: null,
+      cacheWritePricePerM: null,
+      reasoningPricePerM: null,
+      supportsReasoningEffort: true,
+    };
+    const attemptedTags: Array<string | undefined> = [];
+
+    const rejection = sendWithEndpointFailover(
+      async (attemptConfig) => {
+        attemptedTags.push(attemptConfig.endpointTag);
+        return requireNonEmptyOpenRouterStream(
+          fromChunks([{ type: "done", finishReason: "stop" }]),
+        );
+      },
+      config,
+      { sessionId: "exhausted-empty-failover", missionRunId: null },
+      {
+        loadCandidates: async () => candidates,
+        sleep: async () => undefined,
+        loadPersistedSwitch: async () => null,
+        persistSwitch: async () => undefined,
+      },
+    );
+
+    await expect(rejection).rejects.toBeInstanceOf(OpenRouterEmptyStreamError);
+    // Bounded: the policy stopped asking instead of rotating forever.
+    expect(attemptedTags.length).toBeGreaterThan(1);
+    expect(attemptedTags.length).toBeLessThanOrEqual(candidates.length * 2);
+  });
 });

@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  assertActionableInferenceResponse,
-  hasActionableInferenceResponse,
-} from "@vex-agent/inference/response-validation.js";
+import { hasActionableInferenceResponse } from "@vex-agent/inference/response-validation.js";
 import type { InferenceResponse } from "@vex-agent/inference/types.js";
 
 const BASE: InferenceResponse = {
@@ -16,7 +13,7 @@ const BASE: InferenceResponse = {
   servingProvider: "provider-a",
 };
 
-describe("actionable inference response validation", () => {
+describe("actionable inference response predicate", () => {
   it("accepts final text and tool calls", () => {
     expect(hasActionableInferenceResponse({ ...BASE, content: "done" })).toBe(true);
     expect(
@@ -34,8 +31,13 @@ describe("actionable inference response validation", () => {
     expect(
       hasActionableInferenceResponse({ ...BASE, reasoning: "private reasoning" }),
     ).toBe(false);
-    expect(() => assertActionableInferenceResponse(BASE)).toThrow(
-      "Inference provider returned an empty response",
-    );
+  });
+
+  it("reads the turn loop's round shape, not only a provider response", () => {
+    // The engine's blank-round detector calls this predicate with the round it
+    // is about to classify. One rule, two callers: if the shapes ever diverge
+    // this stops compiling instead of drifting silently.
+    expect(hasActionableInferenceResponse({ content: null, toolCalls: [] })).toBe(false);
+    expect(hasActionableInferenceResponse({ content: "answer", toolCalls: null })).toBe(true);
   });
 });

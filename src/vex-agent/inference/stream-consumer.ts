@@ -35,7 +35,6 @@ import type {
 } from "./types.js";
 import logger from "@utils/logger.js";
 import { attachErrorType, attachStatus, scrubMessage } from "./openrouter/errors.js";
-import { assertActionableInferenceResponse } from "./response-validation.js";
 
 const ZERO_USAGE: InferenceUsage = {
   promptTokens: 0,
@@ -182,7 +181,6 @@ async function bufferedFallback(
     context,
     signal,
   );
-  assertActionableInferenceResponse(response);
   return { response, aborted: false, usageObserved: true };
 }
 
@@ -381,11 +379,12 @@ export async function runStreamingInference(
           servingProvider,
         };
 
-  // A normal, non-aborted completion must contain final text or at least one
-  // valid tool call. Without this guard the engine treats an empty completion
-  // as "keep iterating" and can silently repeat the same paid request until
-  // the broad 50-iteration / 10-minute runtime bound fires.
-  if (!aborted) assertActionableInferenceResponse(response);
-
+  // A completion with no final text and no valid tool call is returned AS a
+  // completion, never as an error. Whether the engine may ask the same
+  // question again is the turn loop's decision, and it already owns one: the
+  // consecutive-blank detector (`engine/core/runner/unproductive-rounds.ts`)
+  // counts this round as blank and stops the turn with `no_progress` on the
+  // third in a row. Rejecting here would pre-empt that bound with a hard
+  // error, which is why this layer stays a transport.
   return { response, aborted, usageObserved };
 }
