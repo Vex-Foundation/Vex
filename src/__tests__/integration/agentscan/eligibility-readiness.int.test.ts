@@ -579,6 +579,69 @@ describe("readiness: the launchpad family", () => {
     expect(await enqueuedFor(withoutRefund)).toBe(2);
   });
 
+  /**
+   * THE TWO-TRANSACTION LAUNCH, whose payout is not ours to produce.
+   *
+   * A Virtuals `preLaunch` buys nothing: the agent tokens are bought by the
+   * VENUE'S KEEPER in a `launch()` of its own, minutes to hours later. A launch
+   * confirmed before that is terminal in status and its payout is UNKNOWN, and
+   * the server merges `pending -> terminal` exactly once
+   * (`activities-ingest-repo.ts:73`) - so a terminal pair sent while the keeper
+   * has not acted spends that one window on an empty payout and the real figure
+   * can never reach it afterwards. That is the round-2 blocker this pair of
+   * cases pins.
+   */
+  it("holds a token_launch whose keeper purchase is still owed, and the GRACE does not lift it", async () => {
+    const { execute } = await sql();
+    const id = await seedPending("launch", "token_launch");
+    // The pending snapshot goes out immediately, as for every other role: the
+    // activity is never invisible while the payout is owed.
+    expect(await enqueuedFor(id)).toBe(1);
+
+    // Exactly what the handler writes when its bounded keeper wait elapsed.
+    await confirmStatusOnly(id);
+    await setColumns(id, {
+      executed_amount_in_raw: "2000000",
+      executed_amount_out_raw: null,
+      settlement_source: "keeper_purchase_pending",
+    });
+    expect(await enqueuedFor(id)).toBe(1);
+
+    // A fixed grace cannot bound an unbounded keeper: this hold ends on an
+    // EVENT, never on a clock.
+    await execute(
+      `UPDATE agent_activity SET confirmed_at = NOW() - make_interval(mins => 16) WHERE id = $1`,
+      [id],
+    );
+    expect(await enqueuedFor(id)).toBe(1);
+
+    // The keeper sweep's own write, and the terminal pair carries the money.
+    await setColumns(id, {
+      executed_amount_out_raw: "4000000000000000000000",
+      settlement_source: "keeper_settlement_observed",
+    });
+    expect(await enqueuedFor(id)).toBe(2);
+  });
+
+  it("releases a token_launch whose keeper wait was CONCLUDED without an amount", async () => {
+    const id = await seedPending("launch", "token_launch");
+    // The pending snapshot first, as always: the terminal pair is what the hold
+    // is about, and the server needs the pending half to merge it onto.
+    expect(await enqueuedFor(id)).toBe(1);
+    await confirmStatusOnly(id);
+    await setColumns(id, {
+      executed_amount_in_raw: "2000000",
+      executed_amount_out_raw: null,
+      settlement_source: "keeper_purchase_pending",
+    });
+    expect(await enqueuedFor(id)).toBe(1);
+
+    // The keeper's launch WAS observed and its purchase could not be read. No
+    // amount is coming, so the activity is reported without inventing one.
+    await setColumns(id, { settlement_source: "amounts_incomplete" });
+    expect(await enqueuedFor(id)).toBe(2);
+  });
+
   it("never holds a vex_fee leg: its one amount rides the row's own input side", async () => {
     await markVocabularyBackfillComplete();
     const id = await seedPending("swap", "vex_fee");

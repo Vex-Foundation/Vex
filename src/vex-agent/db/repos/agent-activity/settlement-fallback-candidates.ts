@@ -60,6 +60,13 @@ export async function listAmountCorrectionCandidates(
         -- A quarantined row is EXCLUDED: two decoders already disagreed about
         -- its money, and re-running one of them cannot settle that dispute.
         AND settlement_source IS DISTINCT FROM 'conflict_quarantined'
+        -- A launch WAITING FOR THE VENUE'S KEEPER is excluded for the opposite
+        -- reason to the quarantine: its amount is not disputed, it does not
+        -- exist yet. The only receipt this lane could read is the preLaunch
+        -- one, which by construction carries no purchase, so a decode would
+        -- decline by name and CONCLUDE a wait that the keeper sweep is about to
+        -- settle with the real figure.
+        AND settlement_source IS DISTINCT FROM 'keeper_purchase_pending'
         AND settlement_decode_version IS DISTINCT FROM $2
         -- The loose prefilter. roleLegsIncomplete makes the real decision.
         AND (executed_amount_in_raw IS NULL

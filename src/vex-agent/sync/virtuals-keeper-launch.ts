@@ -37,7 +37,10 @@
  * because one unreadable chain must not stop every other launch from settling.
  */
 
-import { settleLaunchKeeperPurchaseByTxHash } from "@vex-agent/db/repos/agent-activity.js";
+import {
+  concludeLaunchKeeperSettlementByTxHash,
+  settleLaunchKeeperPurchaseByTxHash,
+} from "@vex-agent/db/repos/agent-activity.js";
 import {
   claimAwaitingKeeperForSweep,
   type TokenLaunchIntent,
@@ -157,7 +160,9 @@ async function settleOne(
   if (observation.kind === "cancelled") {
     // The creator cancelled outside this session's handler - through the cancel
     // tool in another session, or directly. The row still has to leave
-    // `awaiting_keeper`, and `cancelled` is what happened.
+    // `awaiting_keeper`, and `cancelled` is what happened. `recordLaunchCancelled`
+    // also ends the activity row's keeper wait: nothing was ever delivered, so
+    // the payout it was holding the report for is a proven zero.
     const applied = await recordLaunchCancelled({
       intentId: intent.intentId,
       sessionId: intent.sessionId,
@@ -168,19 +173,23 @@ async function settleOne(
 
   // THE ACTIVITY ROW FIRST, and the order is the whole point of this write.
   //
-  // The handler recorded the provisional zero when its bounded wait elapsed:
+  // The handler recorded the payout as OWED when its bounded wait elapsed:
   // `preLaunch` buys nothing, and until the keeper runs `launch()` there are no
   // agent tokens to record. The keeper has now run it, and `Launched` carries
-  // what the launch delivered. `awaiting_keeper` is this sweep's ONLY claim
+  // what the launch delivered - which is also what releases the AgentScan
+  // terminal report the pending marker is holding. `awaiting_keeper` is this sweep's ONLY claim
   // ticket - a row that has left it is never looked at again - so the amount is
   // written before the row leaves, and a write that throws leaves the row for
   // the next tick instead of retiring it on a payout nobody recorded.
   //
-  // A `Launched` with no readable amount writes NOTHING. It is a launch without
-  // a proven purchase, not a purchase of zero.
+  // A `Launched` with no readable amount writes NO AMOUNT. It is a launch
+  // without a proven purchase, not a purchase of zero. It does still CONCLUDE
+  // the activity row's keeper wait: the second transaction has settled, so the
+  // hold on the terminal report has to end on that event rather than stand
+  // forever waiting for a figure this observation established will never come.
+  const txHash = intent.txHash;
   const amountRaw = observation.initialPurchasedAmountRaw;
   if (amountRaw !== undefined && amountRaw !== "") {
-    const txHash = intent.txHash;
     if (txHash === null) {
       // Unreachable for this status - migration 110's CHECK requires a proven
       // launch here - and still not guessed: the activity row is found BY the
@@ -189,6 +198,8 @@ async function settleOne(
       return "unusable";
     }
     await settleLaunchKeeperPurchaseByTxHash(txHash, amountRaw);
+  } else if (txHash !== null) {
+    await concludeLaunchKeeperSettlementByTxHash(txHash, "amount_unreadable");
   }
 
   const applied = await confirmObservedKeeperLaunch({

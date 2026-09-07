@@ -30,7 +30,28 @@ export interface ConfirmLaunchWithOutputIdentityInput {
   readonly executedAmountInHuman?: string | undefined;
   readonly executedAmountInRaw: string;
   readonly executedAmountOutHuman?: string | undefined;
-  readonly executedAmountOutRaw: string;
+  /**
+   * What the launch DELIVERED, raw - or `null` when it is not knowable yet,
+   * which on a two-transaction venue is a normal stage rather than a defect.
+   *
+   * `null` is only accepted together with {@link outputPendingReason}, so an
+   * unknown payout can never be written by omission: it is always an explicit
+   * statement that a NAMED later writer owes this figure.
+   */
+  readonly executedAmountOutRaw: string | null;
+  /**
+   * Why the output leg is UNKNOWN rather than proven, on a row that is
+   * otherwise terminal.
+   *
+   * `keeper_purchase`: the agent tokens are bought by the VIRTUALS KEEPER in a
+   * second transaction that had not been observed when this row was confirmed.
+   * It stamps `settlement_source = 'keeper_purchase_pending'`, which is the one
+   * settlement provenance that is NOT a conclusion: the AgentScan readiness gate
+   * holds the terminal report while it stands, and
+   * {@link settleLaunchKeeperPurchaseByTxHash} or
+   * {@link concludeLaunchKeeperSettlementByTxHash} is what ends the wait.
+   */
+  readonly outputPendingReason?: "keeper_purchase" | undefined;
   /** The address `TokenCreated` proved. Never guessed, never a prediction. */
   readonly tokenOutAddress: string;
   readonly tokenOutSymbol?: string | undefined;
@@ -65,10 +86,25 @@ export async function confirmLaunchWithOutputIdentity(
         + `identity onto event_role '${current.eventRole}'; only 'token_launch' discovers its output`,
     );
   }
-  if (!input.executedAmountInRaw || !input.executedAmountOutRaw) {
+  if (!input.executedAmountInRaw) {
     throw new Error(
-      "agent_activity: confirmLaunchWithOutputIdentity — event_role 'token_launch' requires "
-        + "executedAmountInRaw + executedAmountOutRaw",
+      "agent_activity: confirmLaunchWithOutputIdentity - event_role 'token_launch' requires "
+        + "executedAmountInRaw",
+    );
+  }
+  // AN UNKNOWN PAYOUT IS ONLY EVER WRITTEN ON PURPOSE. A missing output leg with
+  // no named reason is the old provisional zero in a different disguise: the row
+  // would go terminal owing money nobody is waiting for.
+  if (!input.executedAmountOutRaw && input.outputPendingReason === undefined) {
+    throw new Error(
+      "agent_activity: confirmLaunchWithOutputIdentity - event_role 'token_launch' requires "
+        + "executedAmountOutRaw, or outputPendingReason naming the writer that owes it",
+    );
+  }
+  if (input.executedAmountOutRaw && input.outputPendingReason !== undefined) {
+    throw new Error(
+      "agent_activity: confirmLaunchWithOutputIdentity - a proven output amount cannot also be "
+        + "pending; the report would be held for a payout that is already known",
     );
   }
   if (!input.tokenOutAddress) {
@@ -86,7 +122,10 @@ export async function confirmLaunchWithOutputIdentity(
               executed_amount_in_human = $2, executed_amount_in_raw = $3,
               executed_amount_out_human = $4, executed_amount_out_raw = $5,
               token_out_address = $6, token_out_symbol = $7, token_out_decimals = $8,
-              confirmation_source = 'tool_response', settlement_source = 'tool_response',
+              -- The STATUS was proven by this handler's own receipt whatever
+              -- happened to the amounts; the two provenances are separate
+              -- columns for exactly this case (migration 067).
+              confirmation_source = 'tool_response', settlement_source = $9,
               pending_reason = NULL,
               -- A TERMINAL ROW HOLDS NO CLAIM — same invariant as every other
               -- winning terminal write, cleared in this statement rather than a
@@ -104,6 +143,7 @@ export async function confirmLaunchWithOutputIdentity(
         input.tokenOutAddress,
         input.tokenOutSymbol ?? null,
         input.tokenOutDecimals ?? null,
+        input.outputPendingReason === undefined ? "tool_response" : "keeper_purchase_pending",
       ],
     ));
 
@@ -224,22 +264,24 @@ export async function fillLaunchOutputIdentityOnConfirmed(
 
 /**
  * The KEEPER'S proven purchase, written onto a launch row that recorded the
- * provisional zero.
+ * payout as owed.
  *
  * A Virtuals launch takes two transactions and only the first is Vex's. When
- * the handler's bounded wait for the keeper elapses it confirms the row with
- * `executed_amount_out_raw = '0'`, which is the honest figure at that moment:
- * `preLaunch` buys nothing, and no agent tokens exist for the wallet until the
- * keeper's `launch()` runs. The keeper sweep observes that transaction later
- * and its `Launched` event carries `initialPurchasedAmount` - the tokens the
- * launch actually delivered. Without this writer that number had nowhere to go
- * and the provisional zero stood as the final payout forever.
+ * the handler's bounded wait for the keeper elapses it confirms the row with NO
+ * output amount and `settlement_source = 'keeper_purchase_pending'`, which is
+ * the honest statement at that moment: `preLaunch` buys nothing, no agent tokens
+ * exist for the wallet until the keeper's `launch()` runs, and the figure is
+ * UNKNOWN rather than zero. The keeper sweep observes that transaction later and
+ * its `Launched` event carries `initialPurchasedAmount` - the tokens the launch
+ * actually delivered. This writer is where that number lands, and writing it is
+ * what ENDS the AgentScan reporting hold the pending marker created.
  *
  * IT ONLY EVER FILLS A ZERO OR A BLANK. The predicate refuses a row that
  * already carries a non-zero amount, so a proven figure - the handler's own,
  * when the keeper acted inside the wait - can never be restated by a later
- * observation. Status is untouched: the row is already terminal and this is not
- * a second confirmation.
+ * observation. The historical zero is still accepted because rows written before
+ * the pending marker existed carry it. Status is untouched: the row is already
+ * terminal and this is not a second confirmation.
  *
  * The HUMAN amount is deliberately left alone. `token_out_decimals` is NULL on
  * these rows (the agent token's scale is not read at launch time), and a human
@@ -254,11 +296,55 @@ export async function settleLaunchKeeperPurchaseByTxHash(
 ): Promise<boolean> {
   const row = await queryOne<Record<string, unknown>>(
     `UPDATE agent_activity
-        SET executed_amount_out_raw = $2, updated_at = NOW()
+        SET executed_amount_out_raw = $2,
+            settlement_source = 'keeper_settlement_observed',
+            updated_at = NOW()
       WHERE tx_hash = $1 AND event_role = 'token_launch'
         AND (executed_amount_out_raw IS NULL OR executed_amount_out_raw = '0')
       RETURNING id`,
     [txHash, executedAmountOutRaw],
+  );
+  return row !== null;
+}
+
+/**
+ * END the keeper wait on a launch whose second transaction is settled but whose
+ * payout will never be a proven positive number.
+ *
+ * The pending marker `settleLaunchKeeperPurchaseByTxHash` normally clears is a
+ * HOLD on the AgentScan terminal report, and a hold with no way out is worse
+ * than the provisional zero it replaced. There are exactly two ways a keeper
+ * wait ends without a delivered amount, and they are different facts:
+ *
+ *  - `cancelled` - the creator cancelled before the keeper acted. Nothing was
+ *    ever delivered and nothing ever will be, so ZERO is the proven payout here
+ *    rather than a placeholder, and the row is settled with it. (The refund
+ *    itself is the `launch_cancel` row's output leg, not this one's.)
+ *  - `amount_unreadable` - the keeper's `Launched` WAS observed and its
+ *    `initialPurchasedAmount` could not be read. The launch delivered something;
+ *    Vex declines to say how much. The amount stays absent and the row takes the
+ *    repository's existing "no reportable amount is coming" provenance, so the
+ *    activity is reported without inventing a figure.
+ *
+ * Only ever applies to a row still carrying the pending marker: a launch whose
+ * amount some other writer already proved is finished, and a second conclusion
+ * must not unsay it.
+ */
+export async function concludeLaunchKeeperSettlementByTxHash(
+  txHash: string,
+  conclusion: "cancelled" | "amount_unreadable",
+): Promise<boolean> {
+  const row = await queryOne<Record<string, unknown>>(
+    `UPDATE agent_activity
+        SET executed_amount_out_raw =
+              CASE WHEN $2::text = 'cancelled' THEN '0' ELSE executed_amount_out_raw END,
+            settlement_source =
+              CASE WHEN $2::text = 'cancelled' THEN 'keeper_settlement_observed' ELSE 'amounts_incomplete' END,
+            updated_at = NOW()
+      WHERE tx_hash = $1 AND event_role = 'token_launch'
+        AND settlement_source = 'keeper_purchase_pending'
+      RETURNING id`,
+    [txHash, conclusion],
   );
   return row !== null;
 }

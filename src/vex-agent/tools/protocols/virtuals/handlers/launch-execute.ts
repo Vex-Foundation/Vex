@@ -8,9 +8,16 @@
  *   decrypts) -> the public image URL -> re-read the whole chain state at the
  *   head -> rebuild the exact calldata -> hold its FINGERPRINT against the one
  *   the preview sealed -> claim the preview and CAS-authorize the intent ->
- *   resolve the signing key -> plan the rows -> stage the allowance -> stage the
- *   preLaunch -> decode the receipt -> WATCH for the keeper -> only then the fee
- *   leg.
+ *   resolve the signing key -> plan the rows -> stage the allowance -> RE-ESTABLISH
+ *   THE LAUNCH AUTHORITY ON THE SIGNING NODE -> stage the preLaunch -> decode the
+ *   receipt -> WATCH for the keeper -> only then the fee leg.
+ *
+ * The re-establishment is not a repetition of the walk above it. Everything
+ * before the allowance leg was read on the FALLBACK reader and before an
+ * approval that takes unbounded block time; `./launch/final-authority.ts` runs
+ * on the PINNED signing reader as the last thing before the key, and refuses by
+ * name when BondingV5's implementation, the venue's fee, the wallet's ability to
+ * pay or the calldata itself is no longer what the approval bound.
  *
  * ## The two-transaction shape, which no other launchpad here has
  *
@@ -59,6 +66,7 @@ import {
   getVirtualsCurvePublicClient,
 } from "@tools/virtuals/curve/index.js";
 import { priorLegAnchorFrom, type ConfirmedPriorLeg } from "@tools/evm-chains/dependent-leg-gas-estimate.js";
+import type { FinalSignedRequest } from "@tools/evm-chains/staged-broadcast.js";
 import type { ChainWallet } from "@tools/wallet/multi-auth.js";
 import {
   confirmActivityEvent,
@@ -82,6 +90,7 @@ import { resolveLaunchImage } from "./launch/image.js";
 import { buildLaunchPlan, describeLaunchPlan, simulateLaunchPlan, type LaunchPlan } from "./launch/plan.js";
 import { abortRemainingLaunchPlans, planLaunchEvents } from "./launch/activity.js";
 import { runLaunchLeg, type LaunchLegOutcome } from "./launch/broadcast.js";
+import { assertVirtualsLaunchFinalAuthority } from "./launch/final-authority.js";
 import { runLaunchFeeLeg, type LaunchFeeCollection } from "./launch/fee-leg.js";
 import {
   claimPreviewAndAuthorize,
@@ -321,6 +330,20 @@ export async function virtualsLaunchExecute(
         // second agent for a user whose first may already be mined.
         ...(event.eventRole === "token_launch"
           ? {
+              // THE LAST GATE BEFORE THE KEY, on the PINNED signing reader and
+              // after every dependent approval has mined. Only the launch leg
+              // carries it: see `./launch/final-authority.ts` for what it
+              // re-establishes and why the pre-claim walk above cannot.
+              onBeforeSign: async (request: FinalSignedRequest) => {
+                await assertVirtualsLaunchFinalAuthority({
+                  client: clients.publicClient,
+                  deployment: fields.deployment,
+                  wallet,
+                  plan,
+                  sealed: sealed.block,
+                  request,
+                });
+              },
               onHashStaged: async (txHash: Hex) => {
                 const staged = await recordLaunchBroadcast(intentId, sessionId, txHash);
                 if (staged === null) {
@@ -514,26 +537,33 @@ async function finalizeConfirmedLaunch(x: {
 
   const launched = observation.kind === "observed";
 
-  // THE OUTPUT LEG RECORDS WHAT THIS LAUNCH HAS DELIVERED AT THE MOMENT OF THE
-  // WRITE, and that is one rule with two answers rather than two rules.
+  // THE OUTPUT LEG RECORDS WHAT THIS LAUNCH HAS DELIVERED, and when that is not
+  // yet knowable it says so rather than guessing a number.
   //
   // `preLaunch` itself buys NOTHING: it mints the token, creates the pair and
   // parks the creator's VIRTUAL inside BondingV5. The agent tokens are bought by
   // the keeper's `launch()` (`BondingV5.sol:619-641`, `_buy(initialPurchase,
   // token, creator)`), in a different transaction. So when the keeper acted
   // inside this call's wait, the proven `initialPurchasedAmount` is what this
-  // launch delivered and is recorded; when it did not, the honest figure is
-  // zero, and the keeper sweep writes the real one when it observes the launch.
-  // Writing an expected amount in the second case would put an amount nobody
-  // observed into an audit row.
-  const deliveredRaw = observation.kind === "observed"
-    ? observation.launched.initialPurchasedAmountRaw
-    : 0n;
+  // launch delivered and is recorded.
+  //
+  // WHEN IT DID NOT, THE PAYOUT IS UNKNOWN - NOT ZERO. It used to be written as
+  // `0`, which reads to every consumer as a proven amount: the AgentScan
+  // readiness gate treats a non-null figure as settled, so a reporting tick
+  // between this write and the keeper's launch could spend the server's single
+  // `pending -> terminal` merge window on a zero payout, and the real amount the
+  // keeper sweep writes minutes later could then never reach it (round-2
+  // blocker 5). The row is confirmed with the leg ABSENT and named as owed
+  // instead, which holds the terminal report until the sweep settles it or
+  // concludes by name.
+  const delivered = observation.kind === "observed"
+    ? { executedAmountOutRaw: observation.launched.initialPurchasedAmountRaw.toString() }
+    : { executedAmountOutRaw: null, outputPendingReason: "keeper_purchase" as const };
   try {
     await confirmLaunchWithOutputIdentity(x.event.id, {
       executedAmountInRaw: plan.fee.launchAmountRaw.toString(),
       executedAmountInHuman: formatUnits(plan.fee.launchAmountRaw, decimals),
-      executedAmountOutRaw: deliveredRaw.toString(),
+      ...delivered,
       tokenOutAddress: token,
       tokenOutSymbol: fields.ticker,
     });

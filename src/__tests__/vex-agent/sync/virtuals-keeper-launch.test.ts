@@ -29,6 +29,7 @@ const claimAwaitingKeeperForSweep = vi.fn();
 const confirmObservedKeeperLaunch = vi.fn();
 const recordLaunchCancelled = vi.fn();
 const settleLaunchKeeperPurchaseByTxHash = vi.fn();
+const concludeLaunchKeeperSettlementByTxHash = vi.fn();
 
 vi.mock("@vex-agent/db/repos/token-launch-intents.js", () => ({
   claimAwaitingKeeperForSweep: (limit: number) => claimAwaitingKeeperForSweep(limit),
@@ -41,6 +42,7 @@ vi.mock("@vex-agent/tools/protocols/virtuals/handlers/launch/intent.js", () => (
 
 vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
   settleLaunchKeeperPurchaseByTxHash: (...a: unknown[]) => settleLaunchKeeperPurchaseByTxHash(...a),
+  concludeLaunchKeeperSettlementByTxHash: (...a: unknown[]) => concludeLaunchKeeperSettlementByTxHash(...a),
 }));
 
 const { reconcileVirtualsKeeperLaunches, VIRTUALS_KEEPER_BATCH_LIMIT } = await import(
@@ -95,6 +97,7 @@ beforeEach(() => {
   confirmObservedKeeperLaunch.mockResolvedValue(true);
   recordLaunchCancelled.mockResolvedValue(true);
   settleLaunchKeeperPurchaseByTxHash.mockResolvedValue(true);
+  concludeLaunchKeeperSettlementByTxHash.mockResolvedValue(true);
 });
 
 describe("reconcileVirtualsKeeperLaunches", () => {
@@ -296,6 +299,29 @@ describe("the keeper's proven purchase amount is carried, not dropped", () => {
     const result = await reconcileVirtualsKeeperLaunches(depsAnswering(observe));
     expect(result).toMatchObject({ launched: 1 });
     expect(settleLaunchKeeperPurchaseByTxHash).not.toHaveBeenCalled();
+  });
+
+  it("still CONCLUDES the activity row when the observation proves no amount", async () => {
+    // The launch row is holding its terminal AgentScan report for a payout this
+    // observation has just established will never be readable. Leaving the hold
+    // standing would make the activity's terminal event unreachable forever -
+    // the very failure the hold exists to prevent, in the other direction.
+    claimAwaitingKeeperForSweep.mockResolvedValue([intentRow()]);
+    const observe = vi.fn().mockResolvedValue({ kind: "launched", keeperTxHash: "0x9eca4cb5" });
+    await reconcileVirtualsKeeperLaunches(depsAnswering(observe));
+    expect(concludeLaunchKeeperSettlementByTxHash).toHaveBeenCalledWith("0xd0fbcca8", "amount_unreadable");
+  });
+
+  it("does NOT conclude when the keeper's amount was proven and written", async () => {
+    claimAwaitingKeeperForSweep.mockResolvedValue([intentRow()]);
+    const observe = vi.fn().mockResolvedValue({
+      kind: "launched",
+      keeperTxHash: "0x9eca4cb5",
+      initialPurchasedAmountRaw: "4000000000000000000000",
+    });
+    await reconcileVirtualsKeeperLaunches(depsAnswering(observe));
+    expect(settleLaunchKeeperPurchaseByTxHash).toHaveBeenCalledWith("0xd0fbcca8", "4000000000000000000000");
+    expect(concludeLaunchKeeperSettlementByTxHash).not.toHaveBeenCalled();
   });
 });
 
