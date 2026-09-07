@@ -1,5 +1,6 @@
 /**
- * THE VIRTUALS ARM of the crash-recovery sweep, at both of its ends.
+ * THE VIRTUALS ARM of the crash-recovery sweep: what it does with a decoded
+ * pre-launch.
  *
  * The defect the 2026-09-06 final review found is silent and permanent: the
  * production dispatcher handled `pools_fun` explicitly and routed EVERYTHING
@@ -16,13 +17,17 @@
  * makes it live. The Vex fee is waived there permanently (owner F3), and this
  * sweep holds no signer, so a fee is structurally impossible here.
  *
- * Logs are REAL ENCODED EVENTS from the verified BondingV5 ABI.
+ * WHICH NODE answers a Virtuals receipt, and the decode of the `PreLaunched`
+ * event itself, are proven in `launch-identity-repair-chain-clients.test.ts`
+ * against the REAL chain registry. They used to be proven here over a registry
+ * mocked to contain Base, which is exactly the mask that hid the Base defect the
+ * 2026-09-07 review measured. This suite owns the other end: what the sweep DOES
+ * with a decoded pre-launch.
  */
 
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
-import { encodeAbiParameters, encodeEventTopics, getAddress, type Hex } from "viem";
+import { getAddress, type Hex } from "viem";
 
-import { BONDING_V5_LAUNCH_ABI } from "@tools/virtuals/launch/index.js";
 import { virtualsCurveDeployment } from "@tools/virtuals/curve/index.js";
 import { definedValue } from "../../_test-value-guards.js";
 
@@ -33,26 +38,7 @@ const PAIR = getAddress("0x50136d4174129585ec766eacf2f00cd1856690ca");
 const WALLET = getAddress("0x33eF6673BD80cB11fcC41b82Bc2181E65cC4d2fA");
 const TX_HASH = `0x${"d0".repeat(32)}` as Hex;
 const INITIAL_PURCHASE = 997_500_000_000_000_000n;
-
-// ── the production dispatcher's half ────────────────────────────────────────
-
-let receiptLogs: { address: string; topics: string[]; data: string }[] = [];
 const RECEIPT_BLOCK = 50_870_256n;
-
-vi.mock("@tools/evm-chains/registry.js", () => ({
-  getLocalChain: () => ({ id: 8453, name: "Base" }),
-}));
-vi.mock("@tools/evm-chains/evm-client.js", () => ({
-  getLocalPublicClient: () => ({
-    getTransactionReceipt: async () => ({
-      status: "success",
-      blockNumber: RECEIPT_BLOCK,
-      logs: receiptLogs,
-    }),
-  }),
-}));
-
-// ── the sweep's half ────────────────────────────────────────────────────────
 
 let pending: unknown[] = [];
 let mockConfirm: Mock;
@@ -88,43 +74,7 @@ vi.mock("@vex-agent/tools/protocols/virtuals/handlers/launch/intent.js", () => (
   settleLaunchOutcome: (input: unknown) => mockSettleOutcome(input),
 }));
 
-const { buildProductionLaunchRepairDeps, repairLaunchIdentities } = await import(
-  "@vex-agent/sync/launch-identity-repair.js"
-);
-
-function concreteTopics(topics: readonly (string | readonly string[] | null)[]): string[] {
-  return topics.filter((topic): topic is string => typeof topic === "string");
-}
-
-function preLaunchedLog(emitter: string = BONDING_V5) {
-  return {
-    address: emitter,
-    topics: concreteTopics(
-      encodeEventTopics({
-        abi: BONDING_V5_LAUNCH_ABI,
-        eventName: "PreLaunched",
-        args: { token: TOKEN, pair: PAIR },
-      }),
-    ),
-    data: encodeAbiParameters(
-      [
-        { type: "uint256" },
-        { type: "uint256" },
-        {
-          type: "tuple",
-          components: [
-            { name: "launchMode", type: "uint8" },
-            { name: "airdropBips", type: "uint16" },
-            { name: "needAcf", type: "bool" },
-            { name: "antiSniperTaxType", type: "uint8" },
-            { name: "isProject60days", type: "bool" },
-          ],
-        },
-      ],
-      [139_289n, INITIAL_PURCHASE, { launchMode: 0, airdropBips: 0, needAcf: false, antiSniperTaxType: 1, isProject60days: false }],
-    ),
-  };
-}
+const { repairLaunchIdentities } = await import("@vex-agent/sync/launch-identity-repair.js");
 
 /** The `virtuals` block a live intent carries, exactly as the preview sealed it. */
 function sealedBlock(): Record<string, unknown> {
@@ -163,46 +113,6 @@ function virtualsIntent(overrides: Record<string, unknown> = {}): Record<string,
 
 beforeEach(() => {
   reset();
-  receiptLogs = [preLaunchedLog()];
-});
-
-describe("the production dispatcher decodes a Virtuals preLaunch receipt", () => {
-  it("proves the token, the pair and the parked purchase from PreLaunched", async () => {
-    const deps = buildProductionLaunchRepairDeps();
-    const outcome = await deps.resolveLaunchOutcome({
-      chainId: 8453,
-      txHash: TX_HASH,
-      walletAddress: WALLET,
-      protocol: "virtuals",
-      poolsPlan: null,
-    });
-
-    expect(outcome).toEqual({
-      kind: "pre_launched",
-      virtuals: {
-        tokenAddress: TOKEN,
-        pairAddress: PAIR,
-        virtualId: "139289",
-        initialPurchaseRaw: INITIAL_PURCHASE.toString(),
-        initialPurchaseDecimals: BASE.virtualDecimals,
-        virtualAddress: getAddress(BASE.virtual),
-        preLaunchBlock: RECEIPT_BLOCK.toString(),
-      },
-    });
-  });
-
-  it("declines a PreLaunched emitted by anything other than the pinned BondingV5", async () => {
-    receiptLogs = [preLaunchedLog(getAddress("0x9999999999999999999999999999999999999999"))];
-    const deps = buildProductionLaunchRepairDeps();
-    const outcome = await deps.resolveLaunchOutcome({
-      chainId: 8453,
-      txHash: TX_HASH,
-      walletAddress: WALLET,
-      protocol: "virtuals",
-      poolsPlan: null,
-    });
-    expect(outcome).toBeNull();
-  });
 });
 
 describe("the sweep moves a recovered Virtuals launch to awaiting_keeper", () => {
