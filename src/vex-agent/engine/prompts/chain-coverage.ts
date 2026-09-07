@@ -12,7 +12,6 @@ import { getKyberChains } from "@tools/kyberswap/chains.js";
 import { MORPHO_CHAINS } from "@tools/morpho/chains.js";
 import { PENDLE_CHAIN_REGISTRY } from "@tools/pendle/chains.js";
 import { POOLS_CHAIN_ID } from "@tools/pools-fun/constants.js";
-import { TRENCH_CHAIN_ID } from "@tools/trench-express/constants.js";
 import { listUniswapDeployments } from "@tools/uniswap/deployments.js";
 import { BRIDGE_FAMILY } from "@vex-agent/tools/protocols/relay/handlers/bridge/constants.js";
 import { VIRTUALS_TOOLS } from "@vex-agent/tools/protocols/virtuals/manifest.js";
@@ -78,7 +77,7 @@ const COVERAGE_BY_NAMESPACE: Readonly<Partial<Record<ProtocolNamespace, Protocol
   },
   relay: {
     namespace: "relay",
-    line: `Coverage: ${BRIDGE_FAMILY} EVM chains only. ${localChainLine(TRENCH_CHAIN_ID)} is reachable only through Relay when its live health gate passes; Solana is not supported.`,
+    line: `Coverage: ${BRIDGE_FAMILY} EVM chains only. ${localChainLine(POOLS_CHAIN_ID)} is reachable only through Relay when its live health gate passes; Solana is not supported.`,
   },
   kyberswap: {
     namespace: "kyberswap",
@@ -96,10 +95,6 @@ const COVERAGE_BY_NAMESPACE: Readonly<Partial<Record<ProtocolNamespace, Protocol
     namespace: "pendle",
     line: `Coverage: ${renderNamedChains(PENDLE_CHAIN_REGISTRY)}.`,
   },
-  trench: {
-    namespace: "trench",
-    line: `Coverage: ${localChainLine(TRENCH_CHAIN_ID)} only.`,
-  },
   pools: {
     namespace: "pools",
     line: `Coverage: ${localChainLine(POOLS_CHAIN_ID)} only.`,
@@ -113,15 +108,19 @@ const COVERAGE_BY_NAMESPACE: Readonly<Partial<Record<ProtocolNamespace, Protocol
     // Coverage is not uniform across the four chains, and the differences are
     // MEASURED, not assumed (`src/tools/virtuals/Virtuals.md`): the API indexes
     // all four, the curve trade tape exists only where the provider's own SDK
-    // numbers a chain, and candles need an indexed pool. Naming only the chain
+    // numbers a chain, and candles come from an indexed pool once an agent has
+    // graduated and from the curve's own trades before that. Naming only the chain
     // list would tell the agent that every tool works everywhere, which is the
     // exact wrong thing to believe before spending a call.
     line:
       `Coverage: ${virtualsManifestChainValues().join(", ")} for screening, detail, graduations and `
       + "genesis. Narrower per capability: trade tape base and solana only; candles for graduated "
-      + "agents everywhere but ethereum, and for bonding agents on solana only. Trades execute "
-      + "elsewhere - kyberswap on base/ethereum, uniswap on robinhood, solana tools on solana; an "
-      + "EVM bonding curve has no venue tool yet.",
+      + "agents everywhere but ethereum, and for bonding agents on all three of those. Curve trading "
+      + "is base and robinhood only: an agent still on its BondingV5 curve is bought and sold HERE on "
+      + "those two chains. Everything else trades elsewhere - a GRADUATED agent through kyberswap on "
+      + "base/ethereum or uniswap on robinhood, and solana through the solana tools, whose curve is a "
+      + "Meteora pool rather than BondingV5. LAUNCHING an agent is base and robinhood only, and immediate "
+      + "normal-mode only.",
   },
 } as const;
 

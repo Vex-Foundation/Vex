@@ -259,9 +259,17 @@ describe("manifest bps declarations", () => {
     // value would widen real spending authority.
     // +2 since the market LENDER lane: `morpho.market.supply` and
     // `morpho.market.withdraw` take the same slippageBps for the same reason.
+    // +2 since the Virtuals bonding-curve trade pair: `virtuals.trade.quote`
+    // and `virtuals.trade.execute` share one slippageBps, which becomes the
+    // floor written into the curve calldata, so it is exactly the class of
+    // value this gate exists for. `virtuals` therefore joins the venue set.
+    // -2 on the Trench Express retirement (migration 108): `trench.trade_quote`
+    // and `trench.trade_execute` were deleted with the protocol, and they were
+    // the namespace's only bps declarations, so `trench` leaves the venue set
+    // entirely rather than shrinking within it.
     expect(declared.length).toBe(41);
     expect(new Set(declared.map((id) => id.split(".")[0]))).toEqual(
-      new Set(["solana", "kyberswap", "uniswap", "pendle", "trench", "relay", "morpho"]),
+      new Set(["solana", "kyberswap", "uniswap", "pendle", "relay", "morpho", "virtuals"]),
     );
   });
 

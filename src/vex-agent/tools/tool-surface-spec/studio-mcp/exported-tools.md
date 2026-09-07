@@ -43,12 +43,12 @@ free. Both texts live on the tool
 
 ## Totals
 
-- exported tools: 172
+- exported tools: 171
 - internal: 27
-- protocol: 145 across 11 namespaces
+- protocol: 144 across 11 namespaces
 - always loaded: 27
-- read-only: 114
-- destructive: 50
+- read-only: 109
+- destructive: 53
 
 ## Internal tools
 
@@ -63,8 +63,8 @@ free. Both texts live on the tool
 | ChainRead | Read raw EVM chain data | internal | yes | no | yes | - | 1326 | yes | none |
 | SwapExecute | Execute a token swap | internal | no | yes | yes | - | 2047 | yes | 25 bps |
 | SwapExecuteUniswap | Execute a Uniswap swap | internal | no | yes | yes | - | 2046 | yes | 25 bps |
-| SwapQuote | Quote a token swap | internal | yes | no | yes | - | 2047 | yes | none |
-| SwapQuoteUniswap | Quote a Uniswap swap | internal | yes | no | yes | - | 2017 | yes | none |
+| SwapQuote | Quote a token swap | internal | yes | no | yes | - | 2046 | yes | none |
+| SwapQuoteUniswap | Quote a Uniswap swap | internal | yes | no | yes | - | 1959 | yes | none |
 | TokenCheck | Check an EVM token for honeypot and tax | internal | yes | no | yes | - | 953 | yes | none |
 | TokenFind | Find a token's address and decimals | internal | yes | no | yes | - | 1956 | yes | none |
 | TwitterAccount | Read Twitter accounts and posts | internal | yes | no | yes | RETTIWT_API_KEY | 2039 | yes | none |
@@ -126,9 +126,15 @@ free. Both texts live on the tool
 | name | title | lane | read only | destructive | always load | requires env | description bytes | returns | vex fee |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | kyberswap__chains_list | List KyberSwap chains | protocol | yes | no | no | - | 776 | - | none (read) |
-| kyberswap__swap_execute | Execute a KyberSwap swap | protocol | no | yes | no | - | 3718 | yes | 25 bps |
-| kyberswap__swap_quote | Quote a KyberSwap swap | protocol | yes | no | no | - | 3591 | - | none (read) |
+| kyberswap__swap_execute | Execute a KyberSwap swap | protocol | no | yes | no | - | 3776 | yes | 25 bps |
+| kyberswap__swap_quote | Quote a KyberSwap swap | protocol | yes | no | no | - | 3654 | - | none (read) |
 | kyberswap__token_safety_check | Audit an EVM token with KyberSwap | protocol | yes | no | no | - | 1138 | - | none (read) |
+
+### launchpads
+
+| name | title | lane | read only | destructive | always load | requires env | description bytes | returns | vex fee |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| launchpads__image_publish | Publish a launch picture publicly | protocol | no | no | no | - | 1742 | yes | - |
 
 ### morpho
 
@@ -193,11 +199,13 @@ free. Both texts live on the tool
 | name | title | lane | read only | destructive | always load | requires env | description bytes | returns | vex fee |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | pools__fees_claim | Claim pools.fun creator fees | protocol | no | yes | no | - | 1619 | - | - |
+| pools__holder_rewards_claim | Claim pools.fun holder rewards | protocol | no | yes | no | - | 4767 | - | - |
+| pools__holder_rewards_distribute | Distribute pools.fun holder rewards | protocol | no | yes | no | - | 3726 | - | - |
 | pools__holder_rewards_get | Read pools.fun holder rewards | protocol | yes | no | no | - | 2102 | - | none (read) |
-| pools__launch_assets_list | List pools.fun launchable stocks | protocol | yes | no | no | - | 1698 | - | none (read) |
-| pools__launch_execute | Launch a token on pools.fun | protocol | no | yes | no | - | 2805 | - | - |
-| pools__launch_preview | Price a pools.fun launch | protocol | no | no | no | - | 998 | - | - |
-| pools__launch_request_form | Ask the user to confirm a pools.fun launch | protocol | no | no | no | - | 902 | - | - |
+| pools__launch_assets_list | List pools.fun launchable stocks | protocol | yes | no | no | - | 1793 | - | none (read) |
+| pools__launch_execute | Launch a token on pools.fun | protocol | no | yes | no | - | 3834 | - | - |
+| pools__launch_preview | Price a pools.fun launch | protocol | no | no | no | - | 1257 | - | - |
+| pools__launch_request_form | Ask the user to confirm a pools.fun launch | protocol | no | no | no | - | 1253 | - | - |
 | pools__my_launches_list | List this wallet's pools.fun launches | protocol | yes | no | no | - | 1371 | - | none (read) |
 | pools__token_candles_list | Read pools.fun token candles | protocol | yes | no | no | - | 1006 | - | none (read) |
 | pools__token_get | Read one pools.fun token | protocol | yes | no | no | - | 1411 | - | none (read) |
@@ -250,34 +258,25 @@ free. Both texts live on the tool
 | solana__tokens_discover | Discover new and trending Solana tokens | protocol | yes | no | no | JUPITER_API_KEY | 1123 | - | none (read) |
 | solana__tokens_search | Search Solana tokens by name | protocol | yes | no | no | JUPITER_API_KEY | 835 | - | none (read) |
 
-### trench
-
-| name | title | lane | read only | destructive | always load | requires env | description bytes | returns | vex fee |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| trench__images_list | List Trench image-locker images | protocol | yes | no | no | - | 1034 | - | none (read) |
-| trench__launch_execute | Launch a token on Trench Express | protocol | no | yes | no | - | 2400 | - | - |
-| trench__launch_preview | Dry-run a Trench Express launch | protocol | yes | no | no | - | 1704 | - | none (read) |
-| trench__launch_request_form | Ask the user to confirm a Trench launch | protocol | no | no | no | - | 959 | - | - |
-| trench__my_launches_list | List this wallet's Trench launches | protocol | yes | no | no | - | 884 | - | none (read) |
-| trench__token_trades_list | Read a Trench Express token's trade tape | protocol | yes | no | no | - | 950 | - | none (read) |
-| trench__tokens_discover | Screen Trench Express tokens | protocol | yes | no | no | - | 2293 | - | none (read) |
-| trench__tokens_search | Search Trench Express tokens | protocol | yes | no | no | - | 729 | - | none (read) |
-| trench__trade_execute | Trade a Trench Express token | protocol | no | yes | no | - | 1593 | - | - |
-| trench__trade_quote | Quote a Trench Express trade | protocol | yes | no | no | - | 659 | - | none (read) |
-
 ### uniswap
 
 | name | title | lane | read only | destructive | always load | requires env | description bytes | returns | vex fee |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| uniswap__swap_execute | Execute a Uniswap V2/V3 swap | protocol | no | yes | no | - | 1442 | yes | 25 bps |
-| uniswap__swap_quote | Quote a Uniswap V2/V3 route | protocol | yes | no | no | - | 1790 | - | none (read) |
+| uniswap__swap_execute | Execute a Uniswap V2/V3 swap | protocol | no | yes | no | - | 3258 | yes | 25 bps |
+| uniswap__swap_quote | Quote a Uniswap V2/V3 route | protocol | yes | no | no | - | 4260 | - | none (read) |
 
 ### virtuals
 
 | name | title | lane | read only | destructive | always load | requires env | description bytes | returns | vex fee |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| virtuals__agent_candles_list | Read a Virtuals agent's price candles | protocol | yes | no | no | - | 1611 | - | none (read) |
+| virtuals__agent_candles_list | Read a Virtuals agent's price candles | protocol | yes | no | no | - | 2973 | - | none (read) |
 | virtuals__agent_get | Read one Virtuals agent token | protocol | yes | no | no | - | 1365 | - | none (read) |
+| virtuals__agent_launch_cancel | Cancel a Virtuals agent launch | protocol | no | yes | no | - | 1677 | - | - |
+| virtuals__agent_launch_execute | Launch a Virtuals agent | protocol | no | yes | no | - | 2674 | - | - |
+| virtuals__agent_launch_preview | Plan a Virtuals agent launch | protocol | no | no | no | - | 2257 | - | - |
+| virtuals__agent_launch_status | Check a Virtuals agent launch | protocol | yes | no | no | - | 1889 | - | none (read) |
+| virtuals__agent_trade_execute | Trade a Virtuals agent on its bonding curve | protocol | no | yes | no | - | 1971 | - | - |
+| virtuals__agent_trade_quote | Price a Virtuals bonding-curve trade | protocol | yes | no | no | - | 1576 | - | none (read) |
 | virtuals__agent_trades_list | Read a Virtuals agent's curve trade tape | protocol | yes | no | no | - | 1331 | - | none (read) |
 | virtuals__agents_discover | Screen Virtuals agent tokens | protocol | yes | no | no | - | 2039 | - | none (read) |
 | virtuals__creator_fees_get | Read a Virtuals agent creator's fee status | protocol | yes | no | no | - | 2347 | - | none (read) |

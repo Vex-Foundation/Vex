@@ -24,8 +24,11 @@ vi.mock("../../../config/store.js", () => ({
 }));
 
 import { execute, queryOne } from "@vex-agent/db/client.js";
-import { record, stampAttestSignature } from "@vex-agent/db/repos/launched-tokens.js";
-import { TRENCH_CHAIN_ID } from "@tools/trench-express/constants.js";
+import { record } from "@vex-agent/db/repos/launched-tokens.js";
+// The retired launchpad's chain, from the kept legacy module: this lane
+// delivers the creation proofs stored for HISTORICAL trench.express launches,
+// so its fixtures are seeded on the chain those launches are actually on.
+import { LEGACY_TRENCH_CHAIN_ID as TRENCH_CHAIN_ID } from "@vex-agent/sync/legacy-trench-express/constants.js";
 import type {
   AttestOutcome,
   AttestVerdictOutcome,
@@ -61,16 +64,25 @@ async function seedLaunchedToken(
     tokenAddress,
     name: "Attest Coin",
     symbol: "ATTEST",
+    launchpad: "trench_express",
     createTxHash: txHash,
   });
   seededIds.push(row.id);
   if (input.withSignature) {
-    const stamped = await stampAttestSignature({
-      chainId: TRENCH_CHAIN_ID,
-      tokenAddress,
-      attestSignature: SIGNATURE,
-    });
-    expect(stamped).toBe(true);
+    // Written in SQL, not through a repo writer: migration 108 retired
+    // trench.express and its launch handler was the only thing that ever
+    // stamped `attest_signature`, so the write-dead `stampAttestSignature` was
+    // deleted with it. The column is now read-only HISTORY, which is precisely
+    // the population this sweep serves, so the fixture must be able to create
+    // that history without a production writer existing.
+    const updated = await execute(
+      `UPDATE launched_tokens
+          SET attest_signature = $3
+        WHERE chain_id = $1 AND LOWER(token_address) = LOWER($2)
+          AND attest_signature IS NULL`,
+      [TRENCH_CHAIN_ID, tokenAddress, SIGNATURE],
+    );
+    expect(updated).toBe(1);
   }
   return { id: row.id, tokenAddress, txHash };
 }
@@ -424,7 +436,7 @@ describe("agentscan attest sweep: the verdict read-back (D4)", () => {
  *
  * While the POST path copied that word onto the row, the UPDATE wrote
  * `agentscan_verify_status = 'verified'` with `agentscan_verified_at` still
- * NULL, which migration 102's `launched_tokens_agentscan_verified_stamp` CHECK
+ * NULL, which migration 107's `launched_tokens_agentscan_verified_stamp` CHECK
  * forbids. The statement aborted, the row was never marked attested, and it
  * came back on every sweep from then on - a permanent loop out of an ordinary
  * crash. The POST is submission only now, so the retry simply succeeds.

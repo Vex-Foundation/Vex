@@ -105,9 +105,9 @@ export const EV = {
   /**
    * The agent asked the user to launch a token (§C3b).
    *
-   * `formRequested` fires after `trench.launch_request_form` has COMMITTED an
+   * `formRequested` fires after `pools.launch_request_form` has COMMITTED an
    * `awaiting_user_form` intent and parked the turn. Payload is IDS ONLY — the
-   * renderer opens the modal by re-reading `tokenLaunch.getAwaiting`, so no
+   * renderer opens the modal by re-reading `poolsLaunch.getAwaiting`, so no
    * token name, symbol or amount rides this channel.
    *
    * It is a SEPARATE channel from `EV.engine.controlState` on purpose: a chat

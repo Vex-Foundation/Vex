@@ -41,7 +41,6 @@ export const NAMESPACE_LIFECYCLE: Record<ProtocolNamespace, NamespaceLifecycle> 
   virtuals: "active",
   pendle: "active",
   morpho: "active",
-  trench: "active",
   pools: "active",
   launchpads: "active",
 };

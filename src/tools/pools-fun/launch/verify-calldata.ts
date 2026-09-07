@@ -86,11 +86,15 @@ export interface VerifyPoolsCalldataInput {
 /**
  * How much of a signed quote's life must remain at the anchored block.
  *
- * The factory's own window is 30-120 s (`MIN/MAX_SIGNED_QUOTE_AGE`, measured),
- * and a launch still has to be authorized, signed and included inside it. Ten
- * seconds is the floor below which the remaining work cannot plausibly finish;
- * it is an ABSOLUTE number, not a percentage of the window, because a percentage
- * would shrink exactly when the window is shortest.
+ * The window the factory enforces is the PAIR's own `maxQuoteAge`. The
+ * `MIN/MAX_SIGNED_QUOTE_AGE` constants (30 and 120 s, measured) bound what an
+ * owner may configure that window to; they impose no MINIMUM age on a quote, so
+ * a fresh one is usable immediately. A launch still has to be authorized, signed
+ * and included inside the pair's window.
+ *
+ * Ten seconds is the floor below which the remaining work cannot plausibly
+ * finish; it is an ABSOLUTE number, not a percentage of the window, because a
+ * percentage would shrink exactly when the window is shortest.
  */
 export const POOLS_SIGNED_QUOTE_SAFETY_MARGIN_SECONDS = 10n;
 

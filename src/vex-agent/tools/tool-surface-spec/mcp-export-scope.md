@@ -35,18 +35,26 @@ one and not the other fails that test naming itself.
 
 - `launchpads.images` (`launchpads__images_list`) - lists the pictures the user
   staged in the Vex desktop app's local image locker.
-- `launchpads.image_publish` (`launchpads__image_publish`) - publishes locker
-  bytes to a public content-addressed host.
 
 Reason, and it is a product decision rather than a filter of convenience: the
-launchpads namespace owns the user's LOCAL image locker, which lives inside the
-desktop app. An external coding agent on the Studio MCP surface has no locker
-and no way to stage one, so on that surface a launch tool takes an `imagePath`
-inside the agent's own project directory instead. Exporting the locker tools to
-a surface that can never satisfy them would advertise a capability guaranteed to
-refuse, and the agent would spend a call and a turn learning what `tools/list`
-could have told it for free. Both tools are UNCHANGED for the in-app Vex agent,
-which is the locker's owner.
+locker is LOCAL to the desktop app. An external coding agent on the Studio MCP
+surface has no locker and no way to stage one, so on that surface a picture is
+named by an `imagePath` inside the agent's own project directory instead.
+Exporting a listing of a store that is always empty there would advertise a
+capability guaranteed to refuse, and the agent would spend a call and a turn
+learning what `tools/list` could have told it for free. The tool is UNCHANGED
+for the in-app Vex agent, which is the locker's owner.
+
+`launchpads.image_publish` (`launchpads__image_publish`) WAS on this list and
+was removed on 2026-09-06. Withholding it did not withhold a locker: it withheld
+the only approved way to make bytes public. A launch writes the picture's URL on
+chain and will not publish as a side effect - that consent belongs to a human -
+so with no publish tool on this surface an agent working in a codebase could
+never give a token a picture at all. The tool now takes an `imagePath` on the
+Studio surface, reads it through the same contained, no-follow, size-bounded,
+magic-byte-sniffing reader a Studio launch uses, and raises the SAME approval
+card with the SAME disclosure as the in-app arm. It is exported because it can
+satisfy what it advertises.
 
 The exclusion is enforced in one place and consumed by all three surfaces:
 `isExportedProtocolTool` gates `listExportedTools` (`tools/list`),

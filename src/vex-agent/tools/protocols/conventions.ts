@@ -177,6 +177,28 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   ["beforeTimestampSeconds", "walk a candle history BACKWARDS: return buckets strictly before this unix-seconds mark"],
   ["currency", "which side a candle series is denominated in; declared as an `enum`"],
 
+  // -- Virtuals bonding-curve trade pair (PR-C2) -------------------
+  //
+  // The vocabulary the curve quote and its execute share. `side` and `amountIn`
+  // above already carry the direction and the size; these three are what a
+  // CURVE trade needs beyond a generic swap. `simulateOnly` is deliberately NOT
+  // `dryRun`: `dryRun` is the RUNTIME's own preview key, and `isPreviewExecution`
+  // downgrades such a call to `actionKind: "read"`, which would take a
+  // fund-moving tool out of the approval gate. This simulation is handler-owned
+  // and keeps the execute approval-gated, so it must not borrow that key.
+  [
+    "acceptAntiSniperTaxPct",
+    "the anti-sniper tax, as a PERCENT, the caller accepts on a Virtuals curve buy; the execute refuses when the live tax has risen above it, so the bound is consent and never a hint",
+  ],
+  [
+    "proposalId",
+    "the digest of everything a Virtuals curve quote bound (contracts, side, amounts, fee, taxes and floor); proves the trade executed is the trade priced, and is never synthesised by the caller",
+  ],
+  [
+    "simulateOnly",
+    "eth_call the exact transactions this execute would send and return them with `executed: false`; no signer opened, no quote consumed, nothing broadcast",
+  ],
+
   // -- Lending-market reads (morpho, batch 1) ----------------------
   //
   // Domain range predicates. They are named rather than folded into a generic
@@ -290,6 +312,7 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   ["feeRecipientAddress", "the ACCOUNT a token's fee stream pays; on some launchpads it differs from the deployer"],
   ["timeframe", "the base unit of one price candle (minute/hour/day)"],
   ["aggregate", "how many timeframe units make one candle; the span is aggregate x timeframe"],
+  ["source", "which of several measured providers a history is read from; `auto` picks by lifecycle and chain"],
 
   // -- Screening DEPTH (morpho, coverage audit 2026-08-18) ---------
   //
@@ -547,7 +570,7 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   ["minSupplyRate", "floor on the supply rate a rates read returns"],
   ["minTotalRate", "floor on the total (rewards-inclusive) rate a rates read returns"],
 
-  // -- Launchpad creation and screening (trench, pools.fun) -----------
+  // -- Launchpad creation and screening (pools.fun, virtuals) ---------
   //
   // The token a launch CREATES does not exist yet, so these are not `token`
   // keys: they are the metadata the launch is minted with. `prebuy` is the
@@ -559,6 +582,18 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   ["prebuy", "the creator's own first buy, executed in the launch transaction"],
   ["pairedAsset", "which asset the new token is paired against in its pool"],
   ["imageByteLength", "size of the image a launch preview will upload, in BYTES"],
+  ["imagePath", "the picture, as a path INSIDE the caller's own project; the Studio MCP counterpart of `imageId`, which names a locker row the external surface has no access to"],
+
+  // -- Virtuals agent launch (PR-C3) ---------------------------------
+  //
+  // Four keys with no existing counterpart, because the venue's launch has
+  // choices the other two launchpads do not. Each is the CONTRACT's own concept
+  // rather than a Vex invention, so a model reading the agent detail and a model
+  // launching one meet the same word.
+  ["cores", "the venue's CAPABILITY ids a launched agent declares; `BondingV5.preLaunch`'s `cores_`"],
+  ["antiSniperTaxType", "which anti-sniper tax WINDOW a launch opens its curve with; declared as an `enum` over the contract's six types"],
+  ["nameSuffix", "whether the venue appends its own suffix to the token NAME on chain; declared as an `enum`"],
+  ["previewId", "the id of a launch PREVIEW this call executes; single-use, and never synthesised by the caller"],
   ["creator", "the ACCOUNT that launched a token; the launchpad's deployer filter"],
   ["status", "which lifecycle state a listing must be in; declared as an `enum`"],
   ["excludeRuggedFlagged", "drop rows the launchpad has flagged as rugged"],
@@ -579,8 +614,22 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   // PoolsFun.md lines 233-242), and it decides whether a launch needs a
   // time-boxed signed price attestation, so it is an axis a caller screens on.
   ["vexAttested", "pools.fun opt-in switch keeping only launches carrying a Vex attestation; the provider accepts the literal true only"],
-  ["holderRewards", "pools.fun opt-in switch keeping only tokens that stream their fees to holders; same true-only contract as vexAttested"],
+  ["holderRewards", "pools.fun's fees-to-holders switch: on a READ it keeps only tokens that stream their fees to holders (the provider's true-only contract, same as vexAttested); on a LAUNCH it OPTS THE NEW TOKEN IN, irreversibly. One spelling because it is one product fact, seen from either side"],
   ["pricingMode", "the pools.fun launch factory's own pricing enum for a paired asset; decides whether a launch needs a signed price attestation"],
+
+  // -- pools.fun launch V3 fields (PR5) -------------------------------
+  //
+  // `holderRewardsMode` is the provider's `holderRewardsPayout` enum in the
+  // spelling the READ surface already uses for the same fact
+  // (`project.holderRewardsMode`), so one token's payout mode has one name
+  // across the launch that set it and every read that reports it.
+  // `pairedStockAddress` is the provider's own prepare field verbatim, and it
+  // is an ASSET identity rather than a destination: no value of it can move
+  // money to anybody, and the factory's `allowedPairedAsset` is what admits it.
+  ["holderRewardsMode", "WHICH asset a fees-to-holders token pays its holders in (token, paired or both); on a launch it selects the gateway's own sentinel constant, never an address"],
+  ["pairedStockAddress", "the ADDRESS of the tokenised stock a stock-paired launch trades against; identifies an asset, never a destination"],
+  ["imagePath", "path of an image file INSIDE the current Vex Studio project, read by Vex itself; the Studio surface's counterpart to imageId, and the only picture input where no locker exists"],
+  ["simulateOnly", "run a mutating path end to end and STOP at the edge of signing, returning what would have been signed; no key is opened and nothing is broadcast"],
 
   // -- Time-series and deep-read shaping (DexScreener deep dive, S4) ---
   //
@@ -717,7 +766,7 @@ export const CANONICAL_HUMAN_AMOUNT_SENTENCE =
  * and `confirmed_unrecorded`, and a completed call routinely carries neither:
  * both bridges (`relay/handlers/bridge/results.ts`, `khalani/handlers/
  * bridge-execute.ts` and its poll), both EVM swap executes on their broadcast
- * and failure paths, the Jupiter swap, the lend pair, trench and pools all
+ * and failure paths, the Jupiter swap, the lend pair and pools all
  * return `status: "pending"` from a call the broker settles as `completed`. An
  * agent told `pending` is not a settled word reads a broadcast transaction as an
  * unfinished call and sends it again - the double-spend this sentence exists to

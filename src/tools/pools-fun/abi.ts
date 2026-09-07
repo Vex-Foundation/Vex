@@ -10,7 +10,7 @@
  * Only the fragments the read tools actually call are listed, plus
  * `TokenLaunched`, which is the launch path's settlement anchor and is carried
  * here so the launch phase inherits a verified event rather than transcribing
- * one later (the same reason `trench-express/constants.ts` carries the Diamond
+ * one later (the same reason a venue's constants module carries its contract
  * address ahead of its trading phase).
  */
 
@@ -75,7 +75,7 @@ export const PARTY_LOCKER_ABI = [
  * Source: the Blockscout-verified `PartyLocker` ABI, fetched 2026-08-18. The
  * probe's FINDINGS listed this surface as UNPROBED; it was verified on-chain
  * before these fragments were written, because an invented money-path fragment
- * is exactly what the trench precedent refused to ship.
+ * is exactly what the launchpad precedent refused to ship.
  */
 export const PARTY_LOCKER_CLAIM_ABI = [
   {

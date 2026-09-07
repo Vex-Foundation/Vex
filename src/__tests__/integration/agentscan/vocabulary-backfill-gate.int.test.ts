@@ -55,9 +55,13 @@ const ERC20_OUT = {
 };
 
 /**
- * Put the reporting state exactly where migration 102 leaves an existing
- * install: the widened vocabulary is present, and the one-time backfill it owes
- * has NOT run yet.
+ * Put the reporting state exactly where this build's vocabulary migrations leave
+ * an existing install: the widened vocabulary is present in the schema, and the
+ * one-time backfill it owes has NOT run yet.
+ *
+ * The version comes from the build constant rather than a literal so that adding
+ * a coverage version (107 stamped 2, 111 stamps 3) does not silently leave this
+ * fixture describing a database one version behind the predicate under test.
  */
 async function stateAfterMigration(): Promise<void> {
   const repo = await reportingRepo();
@@ -65,10 +69,11 @@ async function stateAfterMigration(): Promise<void> {
   const { execute } = await sql();
   await execute(
     `UPDATE agentscan_reporting_state
-        SET vocabulary_version = 2,
+        SET vocabulary_version = $1::int,
             backfill_enqueued_at = NULL,
             backfill_vocabulary_version = NULL
       WHERE id = 1`,
+    [repo.AGENTSCAN_VOCABULARY_VERSION],
   );
 }
 
@@ -87,6 +92,35 @@ async function runControlledBackfill(): Promise<{ enqueued: number; marked: bool
   return { enqueued: outcome.enqueued, marked: outcome.marked };
 }
 
+/**
+ * The state a MAIN installation is in when the arc arrives: the V2 widening was
+ * applied there, its controlled backfill RAN, and the mark records that it
+ * covered V2. This is the population migration 107 cannot help, because its own
+ * walk is guarded by `vocabulary_version < 2` and this install is already at 2.
+ */
+async function stateAfterCompletedV2Backfill(): Promise<void> {
+  const repo = await reportingRepo();
+  await repo.getReportingState();
+  const { execute } = await sql();
+  await execute(
+    `UPDATE agentscan_reporting_state
+        SET vocabulary_version = 2,
+            backfill_enqueued_at = NOW(),
+            backfill_vocabulary_version = 2
+      WHERE id = 1`,
+  );
+}
+
+/** What migration 111 does to that install: walk the coverage version to 3. */
+async function applyCoverageVersion3(): Promise<void> {
+  const { execute } = await sql();
+  await execute(
+    `UPDATE agentscan_reporting_state
+        SET vocabulary_version = 3, updated_at = NOW()
+      WHERE id = 1 AND vocabulary_version < 3`,
+  );
+}
+
 /** An install whose database has NOT applied the widening. */
 async function stateBeforeMigration(): Promise<void> {
   const repo = await reportingRepo();
@@ -103,7 +137,7 @@ async function stateBeforeMigration(): Promise<void> {
 
 /** One pending row of the given kind/role through the real generic write path. */
 async function seedPending(
-  kind: "swap" | "claim",
+  kind: "swap" | "claim" | "launch",
   eventRole: string,
 ): Promise<number> {
   const repo = await activityRepo();
@@ -140,13 +174,15 @@ beforeEach(async () => {
 afterEach(async () => {
   const { execute } = await sql();
   await execute(`DELETE FROM agentscan_outbox`, []);
+  const repo = await reportingRepo();
   await execute(
     `UPDATE agentscan_reporting_state
-        SET vocabulary_version = 2,
+        SET vocabulary_version = $1::int,
             backfill_enqueued_at = NULL,
             backfill_vocabulary_version = NULL,
             registration_generation = 0
       WHERE id = 1`,
+    [repo.AGENTSCAN_VOCABULARY_VERSION],
   );
   await cleanupSeeded();
 });
@@ -215,6 +251,86 @@ describe("the widened vocabulary waits for its own backfill", () => {
     await enqueueAtCurrentGeneration(true);
 
     expect(await outboxFor(family)).toEqual([]);
+  });
+});
+
+/**
+ * THE HISTORICAL `pools_fee` POPULATION, AND WHY IT NEEDED ITS OWN VERSION.
+ *
+ * `pools_fee` joined the eligibility predicate on this arc while the coverage
+ * version stayed at 2 (Codex final review 2026-09-06, lane 7). That is the one
+ * shape the version gate cannot absorb, because the gate is `>= version` and the
+ * version did not move: a MAIN installation that had already completed the V2
+ * backfill satisfies `backfill_vocabulary_version >= 2` on the day it upgrades,
+ * migration 107's walk is guarded by `vocabulary_version < 2` and skips it, and
+ * the very first incremental tick therefore sweeps every historical launch-fee
+ * row into the outbox labelled LIVE ACTIVITY. A completed outbox row is never
+ * re-sent, so nothing afterwards can correct it.
+ *
+ * The fix is the same mechanism used honestly: a THIRD coverage version, so the
+ * install that covered 2 no longer satisfies the gate for what 3 admits.
+ */
+describe("the historical launch-fee population is routed through its own backfill", () => {
+  it("an install that completed the V2 backfill does NOT take historical pools_fee as live activity", async () => {
+    await stateAfterCompletedV2Backfill();
+    const historicalFee = await seedPending("launch", "pools_fee");
+    // The V2 roles are unaffected: that install really did cover them.
+    const v2Role = await seedPending("claim", "creator_fee_claim");
+
+    await enqueueAtCurrentGeneration(false);
+
+    expect(await outboxFor(historicalFee)).toEqual([]);
+    expect(await outboxFor(v2Role)).toEqual([{ backfill: false }]);
+  });
+
+  it("still refuses it after migration 111 until the V3 backfill actually runs", async () => {
+    await stateAfterCompletedV2Backfill();
+    await applyCoverageVersion3();
+    const historicalFee = await seedPending("launch", "pools_fee");
+
+    await enqueueAtCurrentGeneration(false);
+
+    expect(await outboxFor(historicalFee)).toEqual([]);
+  });
+
+  it("the controlled backfill takes it as HISTORY once migration 111 has walked the version", async () => {
+    await stateAfterCompletedV2Backfill();
+    await applyCoverageVersion3();
+    const historicalFee = await seedPending("launch", "pools_fee");
+
+    await runControlledBackfill();
+
+    expect(await outboxFor(historicalFee)).toEqual([{ backfill: true }]);
+  });
+
+  it("a launch fee written AFTER that backfill is live activity, and labelled so", async () => {
+    await stateAfterCompletedV2Backfill();
+    await applyCoverageVersion3();
+    await runControlledBackfill();
+
+    const fresh = await seedPending("launch", "pools_fee");
+    await enqueueAtCurrentGeneration(false);
+
+    expect(await outboxFor(fresh)).toEqual([{ backfill: false }]);
+  });
+
+  it("the V3 backfill re-queues NOTHING that the V2 backfill already sent", async () => {
+    await stateAfterCompletedV2Backfill();
+    const alreadyReported = await seedPending("claim", "creator_fee_claim");
+    // The V2 backfill's work, as it exists on the upgrading installation.
+    await enqueueAtCurrentGeneration(true);
+    const { execute } = await sql();
+    await execute(`UPDATE agentscan_outbox SET sent_at = NOW() WHERE activity_id = $1`, [
+      alreadyReported,
+    ]);
+
+    await applyCoverageVersion3();
+    const historicalFee = await seedPending("launch", "pools_fee");
+    await runControlledBackfill();
+
+    // Exactly one row for the fee, and the already-sent pair is untouched.
+    expect(await outboxFor(historicalFee)).toEqual([{ backfill: true }]);
+    expect(await outboxFor(alreadyReported)).toEqual([{ backfill: true }]);
   });
 });
 

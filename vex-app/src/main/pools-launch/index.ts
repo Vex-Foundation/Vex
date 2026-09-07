@@ -28,6 +28,7 @@ import type {
 } from "@vex-agent/tools/protocols/pools/launch/runtime-contract.js";
 import type {
   PoolsAmount,
+  PoolsAwaitingFormCancelResult,
   PoolsClaimedFees,
   PoolsClaimPreview,
   PoolsDeployedLaunch,
@@ -145,6 +146,13 @@ function toLaunchInputs(form: PoolsLaunchFormInput): PoolsLaunchInputs {
     name: form.name,
     symbol: form.symbol,
     pairedAsset: form.pairedAsset,
+    // WHICH stock, and only on a stock pair. The schema's refinement already
+    // proved the pair and the address agree; this carries the answer inward,
+    // spelled `undefined` rather than `null` because the runtime contract has
+    // exactly one way to say "this launch has no stock".
+    ...(form.pairedStockAddress === null
+      ? {}
+      : { pairedStockAddress: form.pairedStockAddress as `0x${string}` }),
     image,
     tweetUrl: form.tweetUrl ?? undefined,
     websiteUrl: form.websiteUrl ?? undefined,
@@ -177,8 +185,17 @@ export async function preparePoolsLaunch(input: {
         predictedTokenAddress: prepared.predictedTokenAddress,
         predictedPoolAddress: prepared.predictedPoolAddress,
         resolvedFeeRecipient: prepared.resolvedFeeRecipient,
+        // THE HOLDERS FACT, carried outward because the confirmation screen
+        // cannot render a sentinel as a recipient address. Absent on an ordinary
+        // launch, where `resolvedFeeRecipient` above is the whole answer.
+        ...(prepared.holderRewards === undefined
+          ? {}
+          : { holderRewards: prepared.holderRewards }),
         pairedAsset: prepared.pairedAsset,
         pairedAssetAddress: prepared.pairedAssetAddress,
+        // The identity of the exact bytes a Deploy click will sign. Every other
+        // figure on the confirmation screen is a rendering of them.
+        callFingerprint: prepared.callFingerprint,
         costs: {
           deploymentFee: toAmount(prepared.costs.deploymentFee),
           prebuy:
@@ -190,6 +207,10 @@ export async function preparePoolsLaunch(input: {
         metadataUri: prepared.metadataUri,
         imageLanded: prepared.imageLanded,
         expiresAt: prepared.expiresAt,
+        // WHICH clock ends this confirmation. Without it the screen counts down
+        // to a moment it cannot explain, and a signed stock quote's seconds look
+        // the same as Vex's own ten minutes.
+        expiryReason: prepared.expiryReason,
       },
     };
   });
@@ -229,6 +250,28 @@ export async function cancelPoolsLaunch(input: {
   return withRuntime(input.sessionId, (runtime, session) =>
     runtime.cancel(session, { fingerprintId: input.fingerprintId }),
   );
+}
+
+/**
+ * The user dismissed the form the agent asked for - cancel its intent NOW.
+ *
+ * A DIFFERENT OBJECT from `cancelPoolsLaunch` above, which takes the verified
+ * `fingerprintId` of a PREPARED launch. This one takes the `intentId` the
+ * awaiting DTO already carries, ends the draft, and wakes the parked agent turn
+ * with an honest "the user declined" - so a dismissal is answered at once
+ * instead of waiting out the fifteen-minute window and then being reported as
+ * an expiry.
+ *
+ * NO MONEY FIELD CROSSES, in either direction. The payload is a session id and
+ * an opaque intent id; the reply is two booleans about what happened to the row
+ * and to the turn.
+ */
+export async function cancelAwaitingPoolsLaunchForm(input: {
+  readonly sessionId: string;
+  readonly intentId: string;
+}): Promise<PoolsLaunchOperationOutcome<PoolsAwaitingFormCancelResult>> {
+  return withRuntime(input.sessionId, (runtime, session) =>
+    runtime.cancelAwaitingForm(session, { intentId: input.intentId }));
 }
 
 export async function previewPoolsClaim(input: {
@@ -354,6 +397,12 @@ export async function getAwaitingPoolsLaunchForm(input: {
             tweetUrl: awaiting.proposed.tweetUrl,
             websiteUrl: awaiting.proposed.websiteUrl,
             prebuyAmountHuman: awaiting.proposed.prebuy?.amountHuman,
+            // WHICH stock the agent proposed, so a stock-paired draft opens with
+            // its asset already named. The runtime carries it only on a stock
+            // pair and only when the stored value is a real address, so this
+            // mapping neither guesses nor filters: absent stays absent, and the
+            // form's own default (an empty box) is what the user then meets.
+            pairedStockAddress: awaiting.proposed.pairedStockAddress,
           },
         },
       },

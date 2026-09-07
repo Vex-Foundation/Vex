@@ -23,8 +23,10 @@ import { VIRTUALS_TOOLS } from "@vex-agent/tools/protocols/virtuals/manifest.js"
 import { getVirtualsClient } from "@tools/virtuals/client.js";
 import { readVpApiTrades } from "@tools/virtuals/trades/vp-api.js";
 import { readGeckoTerminalCandles } from "@tools/virtuals/candles/geckoterminal.js";
+import { buildChainCandles } from "@tools/virtuals/candles/curve-chain.js";
 import { validateVirtualDetail, validateVirtualsList, validateGeneses } from "@tools/virtuals/validation.js";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
+import { definedValue } from "../../../../_test-value-guards.js";
 import LIST_PAGE from "../../../../virtuals/fixtures/agents-list-page.json" with { type: "json" };
 import DETAIL from "../../../../virtuals/fixtures/agent-detail.json" with { type: "json" };
 import GENESES from "../../../../virtuals/fixtures/geneses-page.json" with { type: "json" };
@@ -38,6 +40,13 @@ vi.mock("@tools/virtuals/trades/vp-api.js", async (importOriginal) => ({
 vi.mock("@tools/virtuals/candles/geckoterminal.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@tools/virtuals/candles/geckoterminal.js")>()),
   readGeckoTerminalCandles: vi.fn(),
+}));
+// The on-chain source owns a viem client and an RPC; the tape source is left
+// REAL above `readVpApiTrades` on purpose, so the bucketing these tests care
+// about is the product's own and not a fixture of it.
+vi.mock("@tools/virtuals/candles/curve-chain.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tools/virtuals/candles/curve-chain.js")>()),
+  buildChainCandles: vi.fn(),
 }));
 vi.mock("@utils/logger.js", () => ({
   default: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -102,15 +111,57 @@ describe("registry parity", () => {
     expect(Object.keys(VIRTUALS_HANDLERS).sort()).toEqual(manifest);
   });
 
-  it("declares seven read-only tools", () => {
-    // 6 -> 7 with `virtuals.creator_fees` (PR-C4). It stays read-only on
-    // purpose: the payout it reports is executed by Virtuals' own backend under
-    // SWAP_ROLE, so there is no transaction this namespace could sign.
-    expect(VIRTUALS_TOOLS).toHaveLength(7);
-    for (const tool of VIRTUALS_TOOLS) {
+  /**
+   * CONTRACT CHANGE (PR-C3): the namespace declares thirteen tools, of which
+   * FIVE mutate - the execute half of the bonding-curve trade pair, and the
+   * four members of the agent-launch family.
+   *
+   * The mutating set is pinned BY NAME so a sixth cannot appear unnoticed, and
+   * each one's `actionKind` is pinned too, because the three kinds mean three
+   * different things to the approval surface:
+   *
+   *   `virtuals.launch.preview` is `local_write`: it opens no key and sends no
+   *     transaction. It is mutating only because it writes an advisory row that
+   *     a later execute can claim exactly once.
+   *   `virtuals.launch.execute` and `virtuals.launch.cancel` are
+   *     `user_wallet_broadcast`: they sign from the user's wallet.
+   *   `virtuals.launch.status` is deliberately NOT here. It observes the chain
+   *     and may record an observation it just made, but it signs nothing,
+   *     spends nothing and calls no contract function - and above all it must
+   *     never call `launch()`, which is the incident this whole lane is shaped
+   *     around.
+   *
+   * `virtuals.creator_fees` (PR-C4) is read-only on purpose: the payout it
+   * reports is executed by Virtuals' own backend under SWAP_ROLE, so there is
+   * no transaction this namespace could sign for it.
+   */
+  it("declares eight read-only tools and five that mutate", () => {
+    expect(VIRTUALS_TOOLS).toHaveLength(13);
+
+    const mutating = VIRTUALS_TOOLS.filter((t) => t.mutating);
+    expect(mutating.map((t) => t.toolId).sort()).toEqual([
+      "virtuals.launch.cancel",
+      "virtuals.launch.execute",
+      "virtuals.launch.preview",
+      "virtuals.trade.execute",
+    ]);
+    const actionKinds = new Map(mutating.map((t) => [t.toolId, t.actionKind]));
+    expect(actionKinds.get("virtuals.trade.execute")).toBe("user_wallet_broadcast");
+    expect(actionKinds.get("virtuals.launch.execute")).toBe("user_wallet_broadcast");
+    expect(actionKinds.get("virtuals.launch.cancel")).toBe("user_wallet_broadcast");
+    expect(actionKinds.get("virtuals.launch.preview")).toBe("local_write");
+
+    const readOnly = VIRTUALS_TOOLS.filter((t) => !t.mutating);
+    expect(readOnly).toHaveLength(9);
+    for (const tool of readOnly) {
       expect(tool.mutating).toBe(false);
       expect(tool.actionKind).toBe("read");
     }
+    // The priced half of the trade pair is deliberately among them: a quote
+    // signs nothing, grants no allowance and opens no key. So is the launch
+    // status read, which must never be able to trigger a launch.
+    expect(readOnly.map((t) => t.toolId)).toContain("virtuals.trade.quote");
+    expect(readOnly.map((t) => t.toolId)).toContain("virtuals.launch.status");
   });
 });
 
@@ -370,24 +421,157 @@ describe("virtuals.candles", () => {
     expect(out.olderHistoryNote).toMatch(/beforeTimestampSeconds = 1/);
   });
 
-  it("charts a bonding agent from its curve pair, and reports a 404 as unsupported", async () => {
-    (readGeckoTerminalCandles as Mock).mockResolvedValue({ found: false, reason: "not indexed" });
+  it("charts a ROBINHOOD bonding agent from the pair's own swap logs, not the chart provider", async () => {
+    // The behavior this lane changed. This agent used to be answered with the
+    // chart provider's 404 ("supported: false"), which is the pre-graduation
+    // population the tool is most often asked about. Robinhood has no trade
+    // feed at all, so the pair's logs are the ONLY source, and the chart
+    // provider must not be called for it.
+    (buildChainCandles as Mock).mockResolvedValue({
+      available: true,
+      candles: [{ timestampSeconds: 3_600, open: "1", high: "2", low: "0.5", close: "1.5", volumeVirtual: "10", volumeToken: "7", tradeCount: 3, buyCount: 2, sellCount: 1 }],
+      coverage: { source: "curve_swap_logs", stopReason: "window_covered", truncated: false },
+    });
     mockClient({
       getVirtual: vi.fn().mockResolvedValue({
         ...AGENT,
         status: "UNDERGRAD",
         tokenAddress: null,
+        preToken: "0xCbb116D1f789a95B1d7F5ba8aCfBC6D26b295BE3",
         lpAddress: null,
         preTokenPair: "0xFB899EFC1Ad4128118cD33Eb3A0d912aceC6c8eE",
       }),
     });
     const out = data(await run("virtuals.candles", { id: 1 }));
-    expect((readGeckoTerminalCandles as Mock).mock.calls[0]![0].poolAddress).toBe(
-      "0xFB899EFC1Ad4128118cD33Eb3A0d912aceC6c8eE",
+    expect((readGeckoTerminalCandles as Mock)).not.toHaveBeenCalled();
+    const chainCandlesCall = definedValue(
+      (buildChainCandles as Mock).mock.calls[0],
+      "the first buildChainCandles call",
     );
-    expect(out.supported).toBe(false);
+    expect(chainCandlesCall[0]).toMatchObject({
+      chain: "ROBINHOOD",
+      pairAddress: "0xFB899EFC1Ad4128118cD33Eb3A0d912aceC6c8eE",
+      agentTokenAddress: "0xCbb116D1f789a95B1d7F5ba8aCfBC6D26b295BE3",
+    });
     expect(out.market).toBe("curve");
-    expect(out.candles).toEqual([]);
+    expect(out.source).toBe("curve_swap_logs");
+    expect(out.denomination).toBe("VIRTUAL per agent token");
+    expect(out.supported).not.toBe(false);
+    expect(out.candles).toHaveLength(1);
+  });
+
+  it("builds a BASE bonding agent's bars from the trade feed, and calls the ceiling a ceiling", async () => {
+    // Two trades in one hour bucket and one in the next, deliberately handed
+    // over NEWEST FIRST the way the feed serves them, so open and close have to
+    // follow time rather than arrival order.
+    (readVpApiTrades as Mock).mockResolvedValue({
+      supported: true,
+      chainId: 0,
+      trades: [
+        { txHash: "0xc", txSender: "0x0", tokenAddress: "0xt", isBuy: true, agentTokenAmount: "100", virtualTokenAmount: "3", price: "0.03", timestampSeconds: 7_205 },
+        { txHash: "0xb", txSender: "0x0", tokenAddress: "0xt", isBuy: false, agentTokenAmount: "200", virtualTokenAmount: "4", price: "0.02", timestampSeconds: 3_700 },
+        { txHash: "0xa", txSender: "0x0", tokenAddress: "0xt", isBuy: true, agentTokenAmount: "100", virtualTokenAmount: "1", price: "0.01", timestampSeconds: 3_610 },
+      ],
+    });
+    mockClient({
+      getVirtual: vi.fn().mockResolvedValue({
+        ...AGENT,
+        chain: "BASE",
+        status: "UNDERGRAD",
+        tokenAddress: null,
+        preToken: "0x1984edF491D3399FBc09E6d0856E01fF3721f952",
+        lpAddress: null,
+        preTokenPair: "0x3e11e685a056048C2dFa1c0dc1E1D0F233DbA84a",
+      }),
+    });
+    const out = data(await run("virtuals.candles", { id: 1, timeframe: "hour" }));
+    expect(out.source).toBe("virtuals_tape");
+    // The feed has no cursor, so the builder must ask for the provider's own
+    // full ceiling: asking for less would cap the history for no saving.
+    const lastTapeCall = definedValue(
+      (readVpApiTrades as Mock).mock.calls.at(-1),
+      "the last readVpApiTrades call",
+    );
+    expect(lastTapeCall[0].limit).toBe(1000);
+
+    const candles = out.candles as { timestampSeconds: number; open: string; high: string; low: string; close: string; volumeVirtual: string; tradeCount: number }[];
+    expect(candles.map((c) => c.timestampSeconds)).toEqual([3_600, 7_200]);
+    // Bucket 3600 holds the 3610 and 3700 trades: open follows the OLDER one.
+    expect(candles[0]).toMatchObject({
+      open: "0.01",
+      close: "0.02",
+      high: "0.02",
+      low: "0.01",
+      volumeVirtual: "5",
+      tradeCount: 2,
+    });
+    // 978 of a 1000 ceiling is the whole history, so nothing is withheld.
+    const coverage = out.coverage as { stopReason: string; truncated: boolean };
+    expect(coverage.stopReason).toBe("tape_exhausted");
+    expect(coverage.truncated).toBe(false);
+    expect(out.hasMore).toBe(false);
+  });
+
+  it("reports a FULL trade feed as a ceiling, not as the start of the curve", async () => {
+    (readVpApiTrades as Mock).mockResolvedValue({
+      supported: true,
+      chainId: 0,
+      trades: Array.from({ length: 1000 }, (_unused, i) => ({
+        txHash: `0x${i}`, txSender: "0x0", tokenAddress: "0xt", isBuy: true,
+        agentTokenAmount: "1", virtualTokenAmount: "1", price: "1",
+        timestampSeconds: 3_600 + i * 3_600,
+      })),
+    });
+    mockClient({
+      getVirtual: vi.fn().mockResolvedValue({
+        ...AGENT, chain: "BASE", status: "UNDERGRAD", tokenAddress: null,
+        preToken: "0xpre", lpAddress: null, preTokenPair: "0xpair",
+      }),
+    });
+    const out = data(await run("virtuals.candles", { id: 1, timeframe: "hour", limit: 10 }));
+    const coverage = out.coverage as { stopReason: string; truncated: boolean; tapeCeiling: number; note: string };
+    expect(coverage.stopReason).toBe("tape_ceiling");
+    expect(coverage.truncated).toBe(true);
+    expect(coverage.tapeCeiling).toBe(1000);
+    expect(coverage.note).toMatch(/NOT the start of the curve/);
+    // The reply must hand back a usable cursor and never claim completeness.
+    expect(out.hasMore).toBe(true);
+    const firstCandle = definedValue(
+      (out.candles as { timestampSeconds: number }[])[0],
+      "the first returned candle",
+    );
+    expect(out.nextBeforeTimestampSeconds).toBe(firstCandle.timestampSeconds);
+  });
+
+  it("refuses currency on a curve source rather than answering in another unit", async () => {
+    mockClient({
+      getVirtual: vi.fn().mockResolvedValue({
+        ...AGENT, chain: "BASE", status: "UNDERGRAD", tokenAddress: null,
+        preToken: "0xpre", lpAddress: null, preTokenPair: "0xpair",
+      }),
+    });
+    const reason = refusal(await run("virtuals.candles", { id: 1, currency: "usd" }));
+    expect(reason).toMatch(/applies only to the chart provider/);
+    expect(reason).toMatch(/VIRTUAL per agent token/);
+    expect(readVpApiTrades as Mock).not.toHaveBeenCalled();
+  });
+
+  it("refuses an explicit source that cannot serve the agent, by name", async () => {
+    mockClient({
+      getVirtual: vi.fn().mockResolvedValue({
+        ...AGENT, status: "UNDERGRAD", tokenAddress: null,
+        preToken: "0xpre", lpAddress: null, preTokenPair: "0xpair",
+      }),
+    });
+    // Robinhood is the measured no-tape chain.
+    const noTape = data(await run("virtuals.candles", { id: 1, source: "tape" }));
+    expect(noTape.supported).toBe(false);
+    expect(noTape.reason).toMatch(/no chain id/);
+    expect(noTape.candles).toEqual([]);
+    // And the chart provider does not index an EVM curve.
+    const noChart = data(await run("virtuals.candles", { id: 1, source: "geckoterminal" }));
+    expect(noChart.supported).toBe(false);
+    expect(noChart.reason).toMatch(/does not index an EVM bonding-curve pair/);
   });
 
   it("refuses an aggregate the provider does not allow ON THAT TIMEFRAME", async () => {

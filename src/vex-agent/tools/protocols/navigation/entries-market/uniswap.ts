@@ -1,29 +1,35 @@
 import type { ProtocolNamespaceNavigation } from "../types.js";
+import {
+  SWAP_VENUE_GUIDANCE_FULL,
+  SWAP_VENUE_STANDING,
+  UNISWAP_BEST_FOR,
+} from "@vex-agent/tools/registry/swap-venue-guidance.js";
 
 export const UNISWAP_NAVIGATION: ProtocolNamespaceNavigation = {
   // Owner decision D4 (`tool-surface-spec/owner-decisions.md`), superseding the
   // Agent Scan plan v3 §11.2 hidden-pair design: the Uniswap venue tools LOSE
-  // their reveal gating and become always-visible alternatives alongside the
+  // their reveal gating and become always-visible tools alongside the
   // KyberSwap router. `advertised: true` is the single source of truth that
   // admits the namespace to `PROTOCOL_ADVERTISED_NAMESPACE_ALLOWLIST`
   // (catalog.ts derives that list FROM this flag),
   // `buildDiscoverNamespaceDescription()`'s static schema text,
   // `discoverProtocolCapabilities`'s candidate filter, and the built
-  // `# Available Protocol Namespaces` prompt section - so these tools now
-  // discover normally instead of only through the internal aliases.
+  // `# Available Protocol Namespaces` prompt section - so these tools discover
+  // normally instead of only through the internal aliases.
   //
-  // Available is not preferred: `preferInstead` below, and the Tool Map
-  // doctrine in the system prompt, both state that KyberSwap is the primary
-  // swap route and this is the alternative.
+  // The owner decision of 2026-09-07 finished the job the visibility change
+  // started: the two EVM swap venues now have EQUAL STANDING, and the text
+  // below states it by importing it. `registry/swap-venue-guidance.ts` is the
+  // one owner of that wording; nothing here re-words it.
   namespace: "uniswap",
   advertised: true,
   groupId: "evm-trading",
   groupLabel: "EVM Trading",
-  summary: "Uniswap is on-chain spot swapping straight against V2 and V3 pools, routed for the best of the two and quoted before it is executed. It is Vex's all-EVM alternative to the KyberSwap aggregator, and the venue that covers Robinhood Chain (4663), where $VEX and Virtuals agent tokens trade against VIRTUAL. It takes token contract ADDRESSES; there is no symbol search.",
+  summary: `Uniswap is on-chain spot swapping straight against V2 and V3 pools, routed for the best of the two and quoted before it is executed. It is one of Vex's two EVM swap venues, and the venue that covers Robinhood Chain (4663), where $VEX and Virtuals agent tokens trade against VIRTUAL. ${UNISWAP_BEST_FOR} It takes token contract ADDRESSES; there is no symbol search.`,
   whenToUse:
-    "Use as a fallback on any EVM chain when KyberSwap is unavailable or lacks a route, including Robinhood Chain (quote/execute against VIRTUAL/ETH). Pass token contract ADDRESSES (no symbol search).",
+    `Use it to quote or execute an EVM swap priced directly off V2 and V3 pools, including Robinhood Chain (quote/execute against VIRTUAL/ETH). ${SWAP_VENUE_GUIDANCE_FULL} Pass token contract ADDRESSES (no symbol search).`,
   preferInstead:
-    "Prefer `kyberswap` on the chains it supports (aggregated pricing + token safety flags), incl. Robinhood Chain; use `uniswap` when Kyber lacks the chain/route.",
+    `${SWAP_VENUE_STANDING} Reach for \`khalani\` to resolve token addresses across chains or to bridge between them, \`solana\` for Solana trading, and \`dexscreener\` for read-only research.`,
   declaration: {
     identity: "Uniswap is an on-chain spot-swap venue that compares V2 and V3 pools for an exact-input trade.",
     read: "Read a route preview's pool path, expected output, price impact, gas estimate, and token-safety signals. Token identity must already be resolved because this venue has no symbol search.",
@@ -52,7 +58,7 @@ export const UNISWAP_NAVIGATION: ProtocolNamespaceNavigation = {
     'ToolSearch(query="uniswap quote", namespace="uniswap")',
     'ToolSearch(query="buy vex with virtual", namespace="uniswap")',
   ],
-  aliases: ["uniswap", "robinhood swap", "v2 v3 swap", "uniswap fallback"],
+  aliases: ["uniswap", "robinhood swap", "v2 v3 swap", "spot pool swap"],
   discoveryHints: ["swap on robinhood", "uniswap quote", "buy on robinhood", "sell on robinhood", "virtual to vex"],
   facets: [
     {

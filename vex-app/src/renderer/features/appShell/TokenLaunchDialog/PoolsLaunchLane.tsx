@@ -34,11 +34,11 @@ import {
   DialogTitle,
 } from "../../../components/ui/dialog.js";
 import {
+  cancelAwaitingPoolsLaunchForm,
   deployPoolsLaunch,
   isPoolsLaunchAvailable,
   preparePoolsLaunch,
 } from "../../../lib/api/pools-launch.js";
-import { LaunchPlatformChips, type LaunchPlatform } from "./LaunchPlatformChips.js";
 import type { LaunchLaneProps } from "./lane-props.js";
 import { DEPLOYED_AUTO_DISMISS_MS } from "./phase.js";
 import { FingerprintCard } from "./pools/FingerprintCard.js";
@@ -56,28 +56,37 @@ import {
   POOLS_LAUNCH_INITIAL_STATE,
 } from "./pools/machine.js";
 
-export interface PoolsLaunchLaneProps extends LaunchLaneProps {
-  readonly platform: LaunchPlatform;
-  readonly onPlatformChange: (next: LaunchPlatform) => void;
-}
+export type PoolsLaunchLaneProps = LaunchLaneProps;
 
 export function PoolsLaunchLane({
   open,
   onOpenChange,
   sessionId,
+  origin,
+  intentId,
   onBusyChange,
-  platform,
-  onPlatformChange,
+  initialValues,
 }: PoolsLaunchLaneProps): JSX.Element {
-  const [values, setValues] = useState<PoolsLaunchFormValues>(EMPTY_POOLS_LAUNCH_FORM);
+  // THE PREFILL IS A STARTING POINT, NEVER AN AUTHORIZATION. An agent-requested
+  // form opens seeded with what the agent PROPOSED; every field stays editable,
+  // stage 1 still has to be asked for, and the Deploy click still authorizes
+  // only the fingerprint main verified from whatever the user finally confirmed.
+  // `?? EMPTY_POOLS_LAUNCH_FORM` is the user-origin path, which prefills nothing.
+  const [values, setValues] = useState<PoolsLaunchFormValues>(
+    initialValues ?? EMPTY_POOLS_LAUNCH_FORM,
+  );
   const [state, dispatch] = useReducer(poolsLaunchReducer, POOLS_LAUNCH_INITIAL_STATE);
 
   const wasOpenRef = useRef(open);
   const onOpenChangeRef = useRef(onOpenChange);
   const onBusyChangeRef = useRef(onBusyChange);
+  // Read only by the reopen effect, so a changing prefill identity cannot
+  // re-seed the form under a user who is already typing in it.
+  const initialValuesRef = useRef(initialValues);
   useEffect(() => {
     onOpenChangeRef.current = onOpenChange;
     onBusyChangeRef.current = onBusyChange;
+    initialValuesRef.current = initialValues;
   });
 
   // A fresh open is a fresh consent: the form and the machine both reset, so no
@@ -86,7 +95,10 @@ export function PoolsLaunchLane({
     const reopened = open && !wasOpenRef.current;
     wasOpenRef.current = open;
     if (!reopened) return;
-    setValues(EMPTY_POOLS_LAUNCH_FORM);
+    // A reopen re-seeds from the CURRENT prefill rather than clearing to empty:
+    // the host remounts this component per intent, so `initialValues` is the
+    // draft belonging to the form being opened now.
+    setValues(initialValuesRef.current ?? EMPTY_POOLS_LAUNCH_FORM);
     dispatch({ type: "reopened" });
   }, [open]);
 
@@ -195,10 +207,27 @@ export function PoolsLaunchLane({
   );
 
   const requestClose = useCallback((): void => {
-    // A SIGNATURE IN FLIGHT IS NOT DISMISSIBLE — same rule as the Trench lane.
+    // A SIGNATURE IN FLIGHT IS NOT DISMISSIBLE.
     if (!canDismissPoolsLaunch(state)) return;
+    // AN AGENT-REQUESTED FORM OWES ITS AGENT AN ANSWER. Dismissing it cancels
+    // the `awaiting_user_form` intent and wakes the parked turn with "the user
+    // declined"; without that the row sat live until its fifteen-minute window
+    // lapsed and the sweep reported an EXPIRY for a decision the user had
+    // already made. A `user`-origin launch has no intent and no parked call, so
+    // it closes silently, exactly as before.
+    //
+    // FIRE AND FORGET, on purpose: the dialog must close on the click rather
+    // than behind a round-trip, and main owns the row either way - a refusal
+    // (the form was submitted or signed in the same instant) changes nothing
+    // the user can act on here, and the launch-form expiry sweep is still the
+    // floor under every outcome. Nothing here signs, spends or names an amount:
+    // the payload is the session and the opaque intent id.
+    if (origin === "agent_requested_form" && sessionId !== null
+        && typeof intentId === "string" && intentId !== "") {
+      void cancelAwaitingPoolsLaunchForm({ sessionId, intentId });
+    }
     onOpenChange(false);
-  }, [onOpenChange, state]);
+  }, [intentId, onOpenChange, origin, sessionId, state]);
 
   const bridgeMounted = isPoolsLaunchAvailable();
   const canPrepare =
@@ -213,11 +242,6 @@ export function PoolsLaunchLane({
             <DialogTitle className="text-[17px] font-semibold">
               Launch a token
             </DialogTitle>
-            <LaunchPlatformChips
-              value={platform}
-              onChange={onPlatformChange}
-              disabled={frozen}
-            />
             <DialogDescription className="text-[11px] text-ink-tertiary">
               pools.fun · Robinhood Chain. The whole supply goes into a locked
               SushiSwap V3 pool, so the token trades from its first block.

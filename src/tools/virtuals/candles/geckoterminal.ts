@@ -163,14 +163,16 @@ function readCandle(raw: unknown): VirtualsCandle | null {
   if (!Array.isArray(raw) || raw.length < 6) return null;
   const ts = raw[0];
   if (typeof ts !== "number" || !Number.isFinite(ts)) return null;
-  // Indexed reads are `T | undefined` under the app's stricter tsconfig, so each
-  // member is coalesced to the same `null` a non-decimal value produces.
-  const parts = [raw[1], raw[2], raw[3], raw[4], raw[5]].map(decimal);
-  const open = parts[0] ?? null;
-  const high = parts[1] ?? null;
-  const low = parts[2] ?? null;
-  const close = parts[3] ?? null;
-  const volume = parts[4] ?? null;
+  // Read column by column rather than destructuring a mapped array: under
+  // `noUncheckedIndexedAccess` (which the desktop app compiles these sources
+  // with, and the engine's own tsconfig does not) every element of a mapped
+  // array is `string | null | undefined`, and the null guard below narrows away
+  // the null without touching the undefined.
+  const open = decimal(raw[1]);
+  const high = decimal(raw[2]);
+  const low = decimal(raw[3]);
+  const close = decimal(raw[4]);
+  const volume = decimal(raw[5]);
   if (open === null || high === null || low === null || close === null || volume === null) {
     return null;
   }

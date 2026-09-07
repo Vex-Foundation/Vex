@@ -111,11 +111,19 @@ import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-po
 import { KYBERSWAP_HANDLERS } from "../../../../vex-agent/tools/protocols/kyberswap/handlers.js";
 import { mapAggregatorError } from "@tools/kyberswap/aggregator/errors.js";
 import { VexError, ErrorCodes } from "../../../../errors.js";
+import { SWAP_VENUE_PEER_NUDGE_SUFFIX } from "@vex-agent/tools/registry/swap-venue-guidance.js";
 
 const TOKEN_A = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
 const TOKEN_B = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
 
-const FALLBACK_SENTENCE = "Uniswap is an alternative venue for this trade: quote it with SwapQuoteUniswap, then execute with SwapExecuteUniswap.";
+/**
+ * Read off the owner module rather than retyped: the sentence is the swap-venue
+ * standing's (`registry/swap-venue-guidance.ts`), and a copy here would let the
+ * failure message and the tool descriptions describe the two venues
+ * differently, which is the drift that module exists to prevent. `.trim()`
+ * drops its leading space - it is authored as an appendable suffix.
+ */
+const FALLBACK_SENTENCE = SWAP_VENUE_PEER_NUDGE_SUFFIX.trim();
 const TERMINAL_LEAD = "KyberSwap did not price the route at all";
 const RETRY_FIRST_LEAD = "retry the same KyberSwap request once after a short backoff";
 const COVERAGE_CAVEAT = "Uniswap covers only the EVM chains with a verified Vex deployment";

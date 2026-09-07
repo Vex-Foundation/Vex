@@ -19,6 +19,11 @@
 import { describe, it, expect } from "vitest";
 
 import { ACTION_ALIAS_TOOLS } from "@vex-agent/tools/registry/action-aliases.js";
+import {
+  SWAP_VENUE_GUIDANCE_COMPACT,
+  SWAP_VENUE_GUIDANCE_COMPACT_ROUTER,
+  SWAP_VENUE_STANDING_COMPACT,
+} from "@vex-agent/tools/registry/swap-venue-guidance.js";
 
 const VENUE_TOOLS = [
   "SwapQuoteUniswap",
@@ -44,9 +49,8 @@ describe("venue tools are always visible (owner decision D4)", () => {
     }
   });
 
-  it("the primary routers NAME the alternative venue instead of hiding it", () => {
+  it("the swap router NAMES the other venue instead of hiding it", () => {
     expect(toolByName("SwapQuote").description).toContain("SwapQuoteUniswap");
-    expect(toolByName("SwapQuote").description).toMatch(/primary swap venue/i);
   });
 
   it("no venue tool description claims it must be unlocked", () => {
@@ -58,10 +62,29 @@ describe("venue tools are always visible (owner decision D4)", () => {
     }
   });
 
-  it("the venue tools still state the preference, so visibility is not the only signal", () => {
-    // The preference has to live SOMEWHERE now that hiding no longer expresses
-    // it. Each venue tool says which route is primary.
-    expect(toolByName("SwapQuoteUniswap").description).toMatch(/KyberSwap is the primary swap route/i);
+  it("both swap quote surfaces state the SAME standing, from the one owner", () => {
+    // The standing has to live SOMEWHERE now that hiding no longer expresses
+    // it, and after the 2026-09-07 decision it has to be the SAME sentence on
+    // both venues - a router that ranked itself and a venue that ranked itself
+    // is exactly how the model used to read two rankings in one context
+    // window. Asserted against the owner's constant, not a re-typed phrase, so
+    // a reworded policy moves both surfaces or fails here.
+    // Both carry the same STANDING clause; SwapQuote's form additionally names
+    // the peer tool, because it is the surface a model reaches first.
+    expect(toolByName("SwapQuote").description).toContain(SWAP_VENUE_GUIDANCE_COMPACT_ROUTER);
+    expect(toolByName("SwapQuote").description).toContain(SWAP_VENUE_STANDING_COMPACT);
+    expect(toolByName("SwapQuoteUniswap").description).toContain(SWAP_VENUE_GUIDANCE_COMPACT);
+  });
+
+  it("no swap venue surface calls the other one a fallback", () => {
+    for (const name of ["SwapQuote", "SwapExecute", "SwapQuoteUniswap", "SwapExecuteUniswap"]) {
+      expect(toolByName(name).description, `${name} still ranks the venues`).not.toMatch(
+        /primary swap (route|venue)|fallback venue|hidden fallback/i,
+      );
+    }
+  });
+
+  it("the BRIDGE lane is untouched by that decision", () => {
     expect(toolByName("BridgeQuoteRelay").description).toMatch(/Khalani is the primary bridge route/i);
   });
 });

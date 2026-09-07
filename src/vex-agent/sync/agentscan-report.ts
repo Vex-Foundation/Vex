@@ -115,6 +115,14 @@ export interface AgentscanReportResult {
   readonly rejected: number;
   /** Claimed rows left for retry after a batch-level failure. */
   readonly deferred: number;
+  /**
+   * Rows this run held because the DEPLOYED AgentScan server does not carry
+   * their role yet - neither sent nor rejected, waiting with the reason in
+   * `agentscan_outbox.last_error`. Distinct from `deferred`, which is weather:
+   * an owed row is waiting on someone else's deployment, and the count is what
+   * makes that visible without reading the table.
+   */
+  readonly owed: number;
 }
 
 const NOTHING: Omit<AgentscanReportResult, "skipped"> = {
@@ -123,10 +131,11 @@ const NOTHING: Omit<AgentscanReportResult, "skipped"> = {
   sent: 0,
   rejected: 0,
   deferred: 0,
+  owed: 0,
 };
 
 /** The drain half of `NOTHING` - nothing was claimed, so nothing was sent. */
-const NOTHING_DRAIN = { sent: 0, rejected: 0, deferred: 0 } as const;
+const NOTHING_DRAIN = { sent: 0, rejected: 0, deferred: 0, owed: 0 } as const;
 
 /**
  * Is the one-time controlled backfill still owed?

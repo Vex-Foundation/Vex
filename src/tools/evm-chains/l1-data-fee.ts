@@ -31,7 +31,7 @@
  *     is carried by its own base fee. No separate posting charge exists to add.
  *
  * PROVENANCE OF EVERY ROW. Measured 2026-08-31 from this machine against the
- * chain's configured RPC (`tools/kyberswap/evm/config.ts` `DEFAULT_RPC`, and
+ * chain's configured RPC (`tools/evm-chains/rpc-endpoints.ts`, and
  * `evm-chains/registry.ts` for 4663): `eth_getCode` at the predeploy address,
  * then a real `eth_call` of `getL1Fee` over a 118-byte payload, then
  * `eth_estimateGas` for an empty and a 118-byte self-call to see whether the

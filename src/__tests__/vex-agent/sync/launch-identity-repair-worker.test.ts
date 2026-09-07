@@ -10,7 +10,18 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mockRepair = vi.fn().mockResolvedValue({ checked: 2, repaired: 1, indexed: 1, failed: 0, stillPending: 1 });
+// The sweep's WHOLE result, including the Virtuals arm's `awaitingKeeper`. A
+// fake that omits a member the worker sums would make `rowsAffected` NaN, which
+// is exactly the regression this line pins.
+const mockRepair = vi.fn().mockResolvedValue({
+  checked: 3,
+  repaired: 1,
+  indexed: 2,
+  failed: 0,
+  supersededMirrored: 0,
+  awaitingKeeper: 1,
+  stillPending: 1,
+});
 const mockBuildDeps = vi.fn().mockReturnValue({ resolveLaunchOutcome: async () => null });
 
 vi.mock("../../../vex-agent/sync/launch-identity-repair.js", () => ({
@@ -62,8 +73,14 @@ describe("worker dispatch for launch_identity_repair", () => {
     expect(mockRepair).toHaveBeenCalledTimes(1);
     expect(result.errors).toBe(0);
     expect(result.processed).toBe(1);
-    // repaired + failed — the rows this run moved out of pending.
-    expect(mockCompleteRun).toHaveBeenCalledWith(11, expect.objectContaining({ repaired: 1 }), 1);
+    // repaired + failed + awaitingKeeper - the rows this run moved out of
+    // pending. A recovered Virtuals pre-launch is one of them: it did not reach
+    // `confirmed`, but it did leave `broadcast_pending` for the keeper sweep.
+    expect(mockCompleteRun).toHaveBeenCalledWith(
+      11,
+      expect.objectContaining({ repaired: 1, awaitingKeeper: 1 }),
+      2,
+    );
   });
 
   it("runs the sweep from the single-run path too", async () => {

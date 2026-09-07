@@ -1,7 +1,7 @@
 /**
  * May THIS mission run authorize ONE more launch, right now?
  *
- * EXTRACTED FROM THE TRENCH AUTHORIZE STEP, unchanged in behaviour, because
+ * EXTRACTED FROM THE FIRST LAUNCH AUTHORIZE STEP, unchanged in behaviour, because
  * pools.fun launches ask the identical question and a second copy of a spending
  * gate is a second place for it to be got wrong. Both callers run it inside the
  * transaction that already holds the session control lock and that CAS-consumes

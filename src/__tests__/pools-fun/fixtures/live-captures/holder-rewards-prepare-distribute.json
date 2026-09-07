@@ -1,0 +1,43 @@
+{
+  "endpoint": "POST https://api.bankr.bot/pools-fun/holder-rewards/prepare  {tokenAddress, walletAddress, action: \"distribute\"}",
+  "capturedAt": "2026-09-04T19:05:00.000Z",
+  "httpStatus": 200,
+  "note": "The CALLDATA CROSS-CHECK's positive case. `to` is the distributor the V3 HolderRewardsDeployer emitted for this token and `data` is the bare `distribute()` selector `0xe4fc6b6d` - which is exactly what `poolsHolderRewardsDistributeCalldata()` encodes from the Sourcify-verified distributor ABI, so a byte-for-byte comparison passes. `value` is the string \"0x0\". The body also echoes the whole GET /pools-fun/holder-rewards row. SANITIZED: `wallet` echoed the Vex probe wallet and is replaced with a placeholder; nothing the cross-check reads (`to`, `data`, `value`, `action`) was touched.",
+  "sanitized": {
+    "wallet": "the request's own walletAddress echo, replaced with a placeholder"
+  },
+  "response": {
+    "to": "0x25ff1A3D76Ff6469485C86146650825cBDa2Bc0a",
+    "data": "0xe4fc6b6d",
+    "value": "0x0",
+    "action": "distribute",
+    "token": "0x3d7341a260a2ee460c9d68e302c2e0c883487039",
+    "distributor": "0x25ff1A3D76Ff6469485C86146650825cBDa2Bc0a",
+    "pairedAsset": "0x411eFb0E7f985935DAec3D4C3ebaEa0d0AD7D89f",
+    "pairedSymbol": "SLV",
+    "pairedDecimals": 18,
+    "wallet": "0x0000000000000000000000000000000000C0FFEE",
+    "rewardMode": "token",
+    "paysCallerBounty": false,
+    "conversion": "buyback",
+    "earned": "0",
+    "earnedPaired": "0",
+    "walletExcluded": false,
+    "eligibleSupply": "101650311601851190467262575",
+    "rewardRate": "67764839029923771726",
+    "rewardRatePaired": "0",
+    "periodFinish": 1788591363,
+    "periodFinishPaired": 0,
+    "remainingStream": "4376117774874417330521628",
+    "remainingStreamPaired": "0",
+    "surplus": "42843",
+    "surplusPaired": "0",
+    "buybackBacklog": "6344207564368264244",
+    "lastBuybackAt": 1788504963,
+    "pendingFees": {
+      "token": "506813735552981349700837",
+      "paired": "522975343736421"
+    },
+    "hasWorkToDistribute": true
+  }
+}

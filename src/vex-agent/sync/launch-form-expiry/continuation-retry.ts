@@ -6,7 +6,7 @@
  * The durable floor retries anything still owed on every ~60s sweep. That is
  * the right default for a busy lease and the wrong one for a failure that
  * cannot improve: intent aa5401f2 logged
- * `trench.launch_form_expiry.resume_failed status=400` once a minute,
+ * `launch_form_expiry.resume_failed status=400` once a minute,
  * indefinitely, because the sweep had no memory of having already tried.
  *
  * So the sweep gets a memory, and it is deliberately PROCESS-LOCAL:

@@ -45,6 +45,14 @@ jobs:
       - name: Reject binary source files
         run: pnpm check:no-binary-sources
 
+      # Repo-wide and every event, for the reason above and one more: this gate
+      # asserts a property of the WHOLE tree (nothing outside a measured
+      # allowlist still names the retired Trench Express protocol), so scoping
+      # it to a pull request's diff would let residue arrive on a trunk push and
+      # never be seen again.
+      - name: Reject Trench Express residue
+        run: pnpm check:trench-residue
+
       - name: Reject unsafe test escapes
         # PULL REQUESTS ONLY, by design. The deleted-test allowlist's lifecycle
         # is PR-scoped: an entry is consumed the moment its change merges, so a
@@ -656,8 +664,31 @@ jobs:
       - name: Materialize the Electron binary
         run: node node_modules/electron/install.js
 
-      - name: Test (vitest, darwin)
-        run: pnpm test
+      # Two steps, not one, since 2026-09-07. The only suite in the repository
+      # that has ever flaked on this runner is the one that drives a REAL
+      # native watcher over FSEvents: run 33956745474 lost its SUSPEND test,
+      # and run 34113589611 - with that test armed and passing - lost
+      # "SUPPRESSES child deletes under a deleted directory" in the same file
+      # after waiting 8112 ms for a directory-delete event the stream never
+      # delivered while it was delivering the child delete. Both were a fully
+      # contended runner: 796 files under vitest's default worker fan-out,
+      # 638 s wall with 449 s of it in import. So the machine is quiet when
+      # that file runs. `test:except-native-fs` sets VEX_SKIP_NATIVE_FS_SUITE=1,
+      # which vex-app/vitest.config.ts reads (a CLI --exclude cannot express
+      # this: the node project's own test.exclude overrides it on vitest
+      # 4.1.5); `test:native-fs` then runs the file by path, alone. Together
+      # they cover exactly what `pnpm test` covers, and no assertion is
+      # weakened, skipped or retried. Linux and Windows keep `pnpm test`.
+      #
+      # If the isolated step goes red, load is no longer the explanation and
+      # the finding is FSEvents delivery itself on darwin: that is evidence for
+      # a product-level darwin fallback in the watcher, not for widening a
+      # timeout budget here.
+      - name: Test (vitest, darwin, all but the native watcher suite)
+        run: pnpm run test:except-native-fs
+
+      - name: Test (vitest, darwin, native watcher suite alone)
+        run: pnpm run test:native-fs
 
       # The same golden vectors the Linux and Windows bridge jobs run, on the
       # third shipped kernel. `bridge` is addressed absolutely because this

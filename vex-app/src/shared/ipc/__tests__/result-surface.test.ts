@@ -108,10 +108,6 @@ describe("result barrel surface", () => {
       "shellBackdrop.unsupported_format",
       "shellBackdrop.undecodable",
       "shellBackdrop.store_unavailable",
-      "tokenLaunch.preview_stale",
-      "tokenLaunch.value_ceiling_exceeded",
-      "tokenLaunch.launch_count_exceeded",
-      "tokenLaunch.ceiling_not_set",
       // Vex Studio projects (stage P). Seven named refusals rather than a
       // generic failure: a project that cannot be created or edited is always
       // one of a small set of concrete, user-fixable situations.
@@ -169,7 +165,6 @@ describe("result barrel surface", () => {
       // The user's own wallpaper: a preference with a byte store behind it,
       // held apart from `images` because nothing downstream signs over it.
       "shellBackdrop",
-      "tokenLaunch",
       // P3: a routing/ownership label only. `poolsLaunch` mints no error code
       // of its own — its refusals map onto codes that already exist, so the
       // VEX_ERROR_CODES pin above is deliberately unchanged.

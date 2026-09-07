@@ -1,0 +1,211 @@
+/**
+ * The launch FIELDS, and the bounds Vex puts on them.
+ *
+ * ## These bounds are VEX'S, and they are labelled as such
+ *
+ * `BondingV5.preLaunch` bounds almost nothing: `cores_.length > 0` is the only
+ * field check in the function (`BondingV5.sol:317-319`), and `name_`, `ticker_`,
+ * `desc_`, `img_` and `urls_` are unbounded strings written straight into
+ * storage. The venue's own app applies limits in its UI; those limits were NOT
+ * measured, so nothing here pretends to be the venue's rule.
+ *
+ * What the bounds below actually are: Vex's own refusal to sign a transaction it
+ * cannot show a person. A 40 KB description is real money in calldata on both
+ * chains, an unprintable control character renders as nothing in the approval a
+ * user consents from, and a name that is whitespace is a token nobody can find.
+ * Every bound is stated in `Virtuals.md` as a Vex bound with its reason, which
+ * is the honest form of "we are stricter than the contract".
+ *
+ * ## What is NOT bounded here
+ *
+ * The image URL. It never comes from the caller at all - it is the
+ * content-addressed URL the launch-assets host returned for bytes the user
+ * already staged, and the handler refuses a caller-supplied URL by name (owner
+ * I1, no mutable-URL fallback). A validator here would imply the string is
+ * user input.
+ */
+
+/** Trimmed length bounds, in UTF-16 code units, that the approval can render. */
+export const LAUNCH_NAME_MAX = 64;
+export const LAUNCH_TICKER_MAX = 16;
+export const LAUNCH_DESCRIPTION_MAX = 2_000;
+export const LAUNCH_URL_MAX = 200;
+/** `cores_` is `uint8[]`; the venue's own agents carry a handful. */
+export const LAUNCH_CORES_MAX = 8;
+
+/** The four social slots, in the contract's `string[4]` order. */
+export const LAUNCH_URL_SLOTS = ["twitter", "telegram", "youtube", "website"] as const;
+export type LaunchUrlSlot = (typeof LAUNCH_URL_SLOTS)[number];
+
+export type FieldVerdict =
+  | { readonly ok: true; readonly value: string }
+  | { readonly ok: false; readonly reason: string };
+
+/** C0 and C1 control characters, which no approval surface can render. */
+const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/;
+
+function printable(value: string, label: string): string | null {
+  if (CONTROL_CHARS.test(value)) {
+    return `${label} contains control characters, which cannot be shown in an approval. Nothing was signed.`;
+  }
+  return null;
+}
+
+/** The agent's display name, before the venue suffix is applied. */
+export function readLaunchName(raw: unknown): FieldVerdict {
+  if (typeof raw !== "string") return { ok: false, reason: "name is required and must be a string." };
+  const value = raw.trim();
+  if (value === "") return { ok: false, reason: "name is required and cannot be blank." };
+  if (value.length > LAUNCH_NAME_MAX) {
+    return {
+      ok: false,
+      reason: `name is ${value.length} characters; Vex signs at most ${LAUNCH_NAME_MAX} so the approval can show it whole.`,
+    };
+  }
+  const bad = printable(value, "name");
+  return bad === null ? { ok: true, value } : { ok: false, reason: bad };
+}
+
+/**
+ * The ticker.
+ *
+ * Uppercased rather than refused for case, because that is a presentation
+ * choice every venue makes and refusing a lowercase ticker would be pedantry;
+ * the UPPERCASED string is what the approval shows and what is encoded, so the
+ * user consents to the exact bytes.
+ */
+export function readLaunchTicker(raw: unknown): FieldVerdict {
+  if (typeof raw !== "string") return { ok: false, reason: "ticker is required and must be a string." };
+  const value = raw.trim().toUpperCase();
+  if (value === "") return { ok: false, reason: "ticker is required and cannot be blank." };
+  if (value.length > LAUNCH_TICKER_MAX) {
+    return { ok: false, reason: `ticker is ${value.length} characters; Vex signs at most ${LAUNCH_TICKER_MAX}.` };
+  }
+  if (!/^[A-Z0-9]+$/.test(value)) {
+    return {
+      ok: false,
+      reason: "ticker must be letters and digits only - a symbol with spaces or punctuation is unreadable in a wallet.",
+    };
+  }
+  return { ok: true, value };
+}
+
+/** The agent's description. Required: an agent with none is unlistable. */
+export function readLaunchDescription(raw: unknown): FieldVerdict {
+  if (typeof raw !== "string") return { ok: false, reason: "description is required and must be a string." };
+  const value = raw.trim();
+  if (value === "") return { ok: false, reason: "description is required and cannot be blank." };
+  if (value.length > LAUNCH_DESCRIPTION_MAX) {
+    return {
+      ok: false,
+      reason:
+        `description is ${value.length} characters; Vex signs at most ${LAUNCH_DESCRIPTION_MAX}. The string is written `
+        + "to contract storage, so length is real gas on both chains.",
+    };
+  }
+  const bad = printable(value, "description");
+  return bad === null ? { ok: true, value } : { ok: false, reason: bad };
+}
+
+/**
+ * One optional social URL.
+ *
+ * `https:` only, and no credentials: these strings are written on chain and
+ * rendered as links by every explorer and by the venue's own site, so an
+ * `http:` link is a downgrade Vex would be publishing, and a `user:pass@` URL
+ * is a secret in permanent storage.
+ */
+export function readLaunchUrl(raw: unknown, slot: LaunchUrlSlot): FieldVerdict {
+  if (raw === undefined || raw === null) return { ok: true, value: "" };
+  if (typeof raw !== "string") return { ok: false, reason: `${slot} must be a string URL.` };
+  const value = raw.trim();
+  if (value === "") return { ok: true, value: "" };
+  if (value.length > LAUNCH_URL_MAX) {
+    return { ok: false, reason: `${slot} is ${value.length} characters; Vex signs at most ${LAUNCH_URL_MAX}.` };
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return { ok: false, reason: `${slot} is not a valid URL.` };
+  }
+  if (parsed.protocol !== "https:") {
+    return {
+      ok: false,
+      reason: `${slot} must be an https URL - the string is written on chain and rendered as a link.`,
+    };
+  }
+  if (parsed.username !== "" || parsed.password !== "") {
+    return {
+      ok: false,
+      reason: `${slot} carries credentials in the URL, which would be written to permanent public storage.`,
+    };
+  }
+  return { ok: true, value: parsed.toString() };
+}
+
+export type CoresVerdict =
+  | { readonly ok: true; readonly value: readonly number[] }
+  | { readonly ok: false; readonly reason: string };
+
+/**
+ * `cores_` - the only field `preLaunch` itself bounds.
+ *
+ * The contract requires a non-empty array (`InvalidInput` otherwise) and the
+ * type is `uint8[]`, so 0-255. Which ids MEAN what is the venue's taxonomy,
+ * readable from `virtuals__agent_get`'s `cores` block on an existing agent; Vex
+ * does not carry a copy of that taxonomy, because a stale copy would silently
+ * mislabel an agent's capabilities. Declared omission, stated in `Virtuals.md`.
+ *
+ * THREE SPELLINGS ARE ACCEPTED, and that is the manifest's convention rather
+ * than leniency: the param is declared `type: "string"` with
+ * `acceptsStringArray`, which is how this repository spells "a list", so a
+ * model may send `"0,1,2"` or `["0","1","2"]`. A real `number[]` is accepted
+ * too because a JSON tool call makes it natural. Everything else is refused by
+ * name - a bare `2` is NOT read as `[2]`, because a single value silently
+ * widening into a list is how a caller launches an agent with capabilities it
+ * did not choose.
+ */
+export function readLaunchCores(raw: unknown): CoresVerdict {
+  const entries = coreEntries(raw);
+  if (entries === null || entries.length === 0) {
+    return {
+      ok: false,
+      reason:
+        "cores is required and must be a non-empty list of core ids - as an array like [0, 1, 2] or a "
+        + 'comma-separated string like "0,1,2". BondingV5.preLaunch reverts with InvalidInput on an empty one. Read '
+        + "the `cores` block of any existing agent (virtuals__agent_get) for the venue's ids.",
+    };
+  }
+  if (entries.length > LAUNCH_CORES_MAX) {
+    return { ok: false, reason: `cores holds ${entries.length} ids; Vex signs at most ${LAUNCH_CORES_MAX}.` };
+  }
+  const value: number[] = [];
+  for (const entry of entries) {
+    const parsed = typeof entry === "number" ? entry : Number(entry.trim());
+    if (!Number.isInteger(parsed) || parsed < 0 || parsed > 255) {
+      return { ok: false, reason: `cores must hold whole numbers in 0-255 (uint8); received ${JSON.stringify(entry)}.` };
+    }
+    if (value.includes(parsed)) {
+      return { ok: false, reason: `cores repeats id ${parsed}; each core may appear once.` };
+    }
+    value.push(parsed);
+  }
+  return { ok: true, value };
+}
+
+/** The three accepted spellings, flattened to entries, or `null` for anything else. */
+function coreEntries(raw: unknown): readonly (string | number)[] | null {
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    if (trimmed === "") return [];
+    return trimmed.split(",");
+  }
+  if (!Array.isArray(raw)) return null;
+  const entries: (string | number)[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== "string" && typeof entry !== "number") return null;
+    entries.push(entry);
+  }
+  return entries;
+}

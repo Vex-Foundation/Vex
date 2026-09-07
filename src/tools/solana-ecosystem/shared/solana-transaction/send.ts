@@ -7,7 +7,7 @@ import { VexError, ErrorCodes } from "../../../../errors.js";
 import { solanaExplorerUrl } from "../solana-validation.js";
 import { DEFAULT_CONFIRM_TIMEOUT_MS, DEFAULT_SEND_RETRIES } from "./constants.js";
 import { confirmVersionedTx } from "./confirm.js";
-import { getSolanaConnection } from "./connection.js";
+import { createSolanaConnection } from "./connection.js";
 import { signAndSubmitVersionedTxStaged } from "./staged.js";
 
 export async function sendSignedVersionedTx(
@@ -109,7 +109,10 @@ export async function signAndSendLegacyTx(
   keypair: Keypair,
   opts?: { connection?: Connection },
 ): Promise<string> {
-  const connection = opts?.connection ?? getSolanaConnection();
+  // `role: "broadcast"` when the caller did not inject one: this function
+  // signs and sends, and the endpoint that accepts a signature must be the one
+  // this repository has broadcast evidence for, not the faster read endpoint.
+  const connection = opts?.connection ?? createSolanaConnection({ role: "broadcast" });
 
   const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
   transaction.recentBlockhash = blockhash;

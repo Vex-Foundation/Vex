@@ -1,0 +1,47 @@
+{
+  "definition": {
+    "function": {
+      "description": "Cancel a Virtuals agent launch the keeper has not run yet, and take the initial purchase back. Use this when the user changed their mind about an agent they pre-launched, or when virtuals__agent_launch_status says a launch is still awaiting_keeper and they want their VIRTUAL back. REAL FUNDS and IRREVERSIBLE: it signs and broadcasts BondingV5.cancelLaunch from your wallet, and a cancelled launch cannot be resumed - the agent token stays on chain, permanently untradable. WHAT IT REFUNDS, EXACTLY: the INITIAL PURCHASE and nothing else. Any protocol launch fee the venue charged when the agent was pre-launched went to its fee recipient inside that transaction and is NOT refunded - for the normal immediate launches Vex signs that fee is 0, measured live on both chains, so today the refund is the whole amount the venue holds, and the reply states the number rather than the reassurance. Gas is yours either way. Vex charges nothing for a cancel, and it never charged a launch fee for an agent the keeper had not launched. IT REFUSES rather than wasting a transaction: BondingV5 only accepts the token's CREATOR, and it reverts with InvalidTokenStatus once the launch has executed - so a live agent cannot be cancelled and answers with the sell tools to use instead. Both facts are read from the contract, and the exact call is eth_call'd from your wallet, before any key is opened. Pass intentId (the id virtuals__agent_launch_execute returned) or token with its chain. Pass simulateOnly: true for the same checks and the exact transaction with `cancelled: false` and nothing signed. It is never retried: a cancel whose outcome is unknown stays pending and is reconciled.",
+      "name": "virtuals__agent_launch_cancel",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "chain": {
+            "description": "Required together with token - Vex must know which BondingV5 to call. Chain slug/alias, or the numeric chain id `TokenFind` returns (e.g. `base` or `8453`).",
+            "enum": [
+              "base",
+              "solana",
+              "robinhood",
+              "ethereum"
+            ],
+            "type": "string"
+          },
+          "intentId": {
+            "description": "The launch to cancel, as returned by virtuals__agent_launch_execute. Vex resolves the token from its own record, but the CONTRACT still decides who may cancel and what is refunded. Pass this OR token.",
+            "type": "string"
+          },
+          "simulateOnly": {
+            "description": "When true, run every check and eth_call the exact cancelLaunch transaction from your wallet address, then return it with `cancelled: false`. No signing key is opened, no activity row is written and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "token": {
+            "description": "The agent's ERC-20 contract address, for a launch Vex has no record of. Requires chain. The creator check is the contract's, so a token this wallet did not create is refused by name.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "user_wallet_broadcast",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": true,
+    "namespace": "virtuals",
+    "requiresEnv": null,
+    "toolId": "virtuals.launch.cancel"
+  }
+}

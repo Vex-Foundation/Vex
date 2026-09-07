@@ -1,7 +1,7 @@
 /**
  * `approvalSurface` - the launch-form carve-out is surface-scoped.
  *
- * `trench.launch_execute` and `pools.launch_execute` skip the generic approval
+ * `pools.launch_execute` skips the generic approval
  * card in the desktop app because their own consent FORM is the surface that
  * authorizes the spend. Over the Studio MCP surface that form does not exist,
  * so skipping the card there would let an external agent reach a fund-moving
@@ -32,7 +32,7 @@ vi.mock("@vex-agent/tools/protocols/capture-validator.js", async (importOriginal
   return { ...actual, isPreviewExecution: vi.fn(() => false) };
 });
 
-const LAUNCH_TOOL_IDS = ["trench.launch_execute", "pools.launch_execute"] as const;
+const LAUNCH_TOOL_IDS = ["pools.launch_execute"] as const;
 
 /** The real manifest, so the gate reads the real `mutating` / `actionKind`. */
 function launchManifest(toolId: string): ProtocolToolManifest {

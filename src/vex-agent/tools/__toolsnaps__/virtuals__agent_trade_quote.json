@@ -1,0 +1,65 @@
+{
+  "definition": {
+    "function": {
+      "description": "Price a BONDING-CURVE buy or sell of one Virtuals agent token and return the whole approval preview. Read-only: nothing is signed and no allowance is granted. Everything it states is read from the CHAIN at one pinned block - BondingV5's own lifecycle flags, FFactoryV2's protocol tax, the pair's anti-sniper clock and FRouterV3.getAmountsOut - never from the Virtuals API, which this namespace uses for discovery only. The answer carries: the agent and its curve pair, the BondingV5 and FRouterV3 addresses AND the exact proxy implementations behind them, the total debited, the amount that reaches the curve, the curve's protocol tax and any anti-sniper tax, the quoted output, the floor the contract will enforce, Vex's fee, the wallet's balance and allowance, a proposalId and an expiry. THE TWO FLOORS ARE NOT THE SAME THING: on a buy the contract floor bounds the agent tokens delivered; on a sell it bounds the router's GROSS VIRTUAL BEFORE the curve removes its taxes, so the reply also shows a walletNetMin clearly labelled as an ESTIMATE the contract does not enforce. IT REFUSES rather than guessing: a graduated agent answers with the AMM tool and pool to use instead, solana answers with the Jupiter tools (its curve is a Meteora pool, not BondingV5), ethereum has no curve at all, an unreadable tax or anti-sniper clock is refused rather than treated as zero, and an ACTIVE anti-sniper window is refused unless you passed acceptAntiSniperTaxPct. Feed the proposalId and the identical parameters to virtuals__agent_trade_execute; any difference is refused by name.",
+      "name": "virtuals__agent_trade_quote",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "acceptAntiSniperTaxPct": {
+            "description": "The maximum anti-sniper tax, in WHOLE PERCENT (1-98), you accept on the side you are trading. OMIT IT to accept none, which is the default and refuses any active window. A fresh Virtuals launch is taxed by FRouterV3 starting at 99% and decaying linearly to zero over the window its anti-sniper type defines (60s, 600s or 5880s), so a trade inside that window can lose almost the whole amount. This parameter is consent to a BOUND, not to a value: the quote shows the current percent and the seconds remaining, and the execute refuses if the percent has risen above what you accepted.",
+            "type": "number"
+          },
+          "amountIn": {
+            "description": "REQUIRED. A plain decimal amount in WHOLE tokens, never wei and never a float: on a buy it is the total VIRTUAL you commit (Vex's fee comes out of it, so this is exactly what leaves the wallet); on a sell it is the agent tokens you sell.",
+            "type": "string"
+          },
+          "chain": {
+            "description": "REQUIRED. The chain the agent lives on. Vex signs bonding-curve trades on base and robinhood; solana and ethereum answer with a typed hand-off naming the tool that does trade them. Chain slug/alias, or the numeric chain id `TokenFind` returns (e.g. `base` or `8453`).",
+            "enum": [
+              "base",
+              "solana",
+              "robinhood",
+              "ethereum"
+            ],
+            "type": "string"
+          },
+          "side": {
+            "description": "REQUIRED. buy spends VIRTUAL and receives the agent token; sell spends the agent token and receives VIRTUAL. The two are priced by different contract paths and are never interchangeable: a buy quote can never authorize a sell.",
+            "enum": [
+              "buy",
+              "sell"
+            ],
+            "type": "string"
+          },
+          "slippageBps": {
+            "description": "Slippage tolerance in basis points (1 bps = 0.01%). Default 100. Vex caps it at 1000 bps and REFUSES a higher value by name rather than clamping it. On a buy it bounds the agent tokens delivered; on a sell it bounds the router's GROSS VIRTUAL output before the curve's taxes, which is what the contract actually compares.",
+            "type": "number"
+          },
+          "token": {
+            "description": "REQUIRED. The agent's ERC-20 contract address, exactly as virtuals__agents_discover and virtuals__agent_get return it: `preToken` while the agent is still on its bonding curve, `tokenAddress` once it has graduated. The chain decides what is tradable here, not the API row: BondingV5 is re-read for every call.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chain",
+          "token",
+          "side",
+          "amountIn"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "virtuals",
+    "requiresEnv": null,
+    "toolId": "virtuals.trade.quote"
+  }
+}

@@ -49,7 +49,7 @@
  *   - `pre_sign_revert` - the chain refused the `swap`-role leg's PRE-SIGN
  *     `eth_estimateGas` and NOTHING was broadcast. Added 2026-07-30 after a
  *     live 4663 session failed twice on router revert `"Call failed"` with the
- *     fallback venue still locked. It closes an asymmetry that had it exactly
+ *     other venue never named. It closes an asymmetry that had it exactly
  *     backwards: the SAME calldata reverting once MINED already pointed at the other venue
  *     (`swap_mined_revert`) even though gas was burned, while the pre-sign
  *     refusal - nothing signed, nothing spent, strictly stronger evidence that

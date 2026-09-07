@@ -49,7 +49,6 @@ import { registerBoardSpotlightHandlers } from "./board-spotlight.js";
 import { registerBoardChartHandlers } from "./board-chart.js";
 import { registerImagesHandlers } from "./images.js";
 import { registerPoolsLaunchHandlers } from "./pools-launch.js";
-import { registerTokenLaunchHandlers } from "./token-launch.js";
 import { registerPortfolioHandlers } from "./portfolio.js";
 import { registerProjectsHandlers } from "./projects/index.js";
 import { registerAgentCoreHandler } from "./onboarding/agent-core.js";
@@ -166,7 +165,6 @@ export function registerAllIpcHandlers(): () => Promise<void> {
   // Token-launch IPC (plan C5): preview, submit (Deploy = consent), cancel and
   // myLaunches are all real; the agent-requested form flow authorizes the
   // drafted intent and resumes the parked turn.
-  teardowns.push(...registerTokenLaunchHandlers());
   teardowns.push(...registerPoolsLaunchHandlers());
   // T1: read-only VEX market snapshot for the welcome-screen price widget. The
   // handler serves main's in-memory cache; the external poll + EV.market.vex

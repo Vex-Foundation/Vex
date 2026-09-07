@@ -92,7 +92,7 @@ describe("postTokenAttestation — wire shape", () => {
     // NON-AUTHORITATIVE by contract: `sync/agentscan-attest.ts` logs it and
     // stores nothing, because a POST proves only that the claim was accepted,
     // and `db/repos/launched-tokens.ts` writes the status solely from the GET
-    // verdict, together with the `verified_at` stamp migration 102's CHECK
+    // verdict, together with the `verified_at` stamp migration 107's CHECK
     // requires beside it.
     expect(outcome).toEqual({ kind: "accepted", verifyStatus: "verified" });
     expect(mock).toHaveBeenCalledTimes(1);

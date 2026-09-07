@@ -27,7 +27,6 @@ import { STUDIO_FEE_NOTE } from "@vex-agent/studio/instructions/shared-usage.js"
 import { KYBERSWAP_FEE_BPS } from "@tools/kyberswap/constants.js";
 import { UNISWAP_FEE_BPS } from "@tools/uniswap/fee/constants.js";
 import { BRIDGE_FEE_BPS } from "@tools/bridge-fee/constants.js";
-import { TRENCH_FEE_BPS } from "@tools/trench-express/fee/constants.js";
 import { POOLS_FEE_BPS } from "@tools/pools-fun/fee/venue.js";
 import { JUPITER_SWAP_FEE_BPS } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/constants.js";
 import { WALLET_TX_FEE_BPS } from "@vex-agent/tools/internal/wallet/transaction/vex-fee.js";
@@ -62,7 +61,6 @@ describe("the Vex fee note in the managed block", () => {
       UNISWAP_FEE_BPS,
       JUPITER_SWAP_FEE_BPS,
       BRIDGE_FEE_BPS,
-      TRENCH_FEE_BPS,
       POOLS_FEE_BPS,
       WALLET_TX_FEE_BPS,
     ];
@@ -86,15 +84,17 @@ describe("the Vex fee note in the managed block", () => {
 
   it("names the venues whose fee is NOT in the quote the way their fee modules do", () => {
     // Uniswap's routers expose no integrator-fee field, so its fee is Vex's own
-    // transfer leg (`src/tools/uniswap/fee/constants.ts`); Trench charges a
-    // separate transfer on the ETH side of the trade
-    // (`engine/core/approval-vex-fee.ts`, describeTrenchTradeFee). A note that
-    // filed either under "embedded in the quote" would have the agent report a
-    // net output the venue never produced.
+    // transfer leg (`src/tools/uniswap/fee/constants.ts`). A note that filed it
+    // under "embedded in the quote" would have the agent report a net output the
+    // venue never produced.
+    //
+    // The Trench curve-trade line was here too and went with migration 108: the
+    // venue whose fee came off the ETH side of a sale no longer exists, and a
+    // note that kept naming it would teach an agent a fee it can never be
+    // charged.
     expect(STUDIO_FEE_NOTE).toContain("The Uniswap pair takes");
     expect(STUDIO_FEE_NOTE).toContain("Vex's own transfer leg after the swap");
-    expect(STUDIO_FEE_NOTE).toContain("Trench curve trades: a SEPARATE transfer");
-    expect(STUDIO_FEE_NOTE).toContain("of the ETH received on a sale");
+    expect(STUDIO_FEE_NOTE).not.toContain("Trench");
   });
 
   it("calls Pendle and Morpho free, and neither protocol imports a fee module", () => {

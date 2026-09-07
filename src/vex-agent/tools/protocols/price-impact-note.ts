@@ -12,7 +12,7 @@
  * semantic from scratch four times, so the explanation lives next to the number
  * instead of in the agent's reasoning budget.
  *
- * NOT every impact figure in the repo shares this convention: `trench.trade_quote`
+ * NOT every impact figure in the repo shares this convention: some curve quotes
  * reports (execPrice - spotPrice) / spotPrice against the bonding curve, which is
  * structurally negative on EVERY sell (`curve-reader.ts` `computePriceImpactPct`),
  * so the note deliberately does not apply there.

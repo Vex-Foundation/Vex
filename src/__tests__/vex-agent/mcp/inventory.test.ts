@@ -106,9 +106,42 @@ describe("the exported inventory covers exactly the export scope", () => {
     // `pools__holder_rewards_get`) and the two Virtuals market-history reads
     // (`virtuals__agent_trades_list`, `virtuals__agent_candles_list`). All four
     // are read-only and none signs.
-    expect(inventory).toHaveLength(172);
+    // 172 -> 174 on the PR-C2 merge: the Virtuals bonding-curve trade pair
+    // (`virtuals__agent_trade_quote`, `virtuals__agent_trade_execute`). The
+    // quote is read-only; the execute is the FIRST signing tool this namespace
+    // has ever exported, which is why the internal count is unmoved and the
+    // protocol count carries both.
+    // 174 -> 176 on the holder-rewards merge: the two pools.fun MUTATIONS
+    // `pools__holder_rewards_claim` (the holder's own claim, which pays
+    // whoever signs it and carries no Vex fee) and
+    // `pools__holder_rewards_distribute` (the permissionless push, which pays
+    // the token's holders rather than its caller). Both sign, so unlike the
+    // two pools reads above neither is read-only; the internal count is
+    // unmoved and the protocol count carries both (147 -> 149).
+    // 176 -> 180 on the Virtuals AGENT-LAUNCH family
+    // (`virtuals__agent_launch_preview`, `_execute`, `_status`, `_cancel`).
+    // All four ARE exported to the Studio surface, unlike the two locker tools
+    // in `NON_EXPORTED_PROTOCOL_TOOLS`: an external agent has no image locker,
+    // but it does have its own project, and the launch family takes `imagePath`
+    // there and publishes those bytes to the same content-addressed host. Only
+    // one of the four is read-only (`_status`); the internal count was unmoved
+    // and the protocol count carried all four (149 -> 153).
+    // 180 -> 170 on the Trench Express retirement (migration 108): the ten
+    // `trench__*` tools were deleted with the protocol. All ten were protocol
+    // tools, so the internal count is unmoved again and the protocol count
+    // carries the whole drop (153 -> 143).
+    // 170 -> 171 on the image-publish Studio arm (2026-09-06):
+    // `launchpads__image_publish` left `NON_EXPORTED_PROTOCOL_TOOLS`. Excluding
+    // it withheld not a locker but the only APPROVED way to make bytes public,
+    // and a launch will not publish as a side effect - so a coding agent could
+    // never give a launched token a picture. It takes an `imagePath` on this
+    // surface, read through the same contained no-follow reader a Studio launch
+    // uses, and raises the same approval card. `launchpads__images_list`, the
+    // listing of a locker that is always empty here, stays withheld. It is a
+    // protocol tool, so the internal count is unmoved (143 -> 144).
+    expect(inventory).toHaveLength(171);
     expect(inventory.filter((t) => t.kind === "internal")).toHaveLength(27);
-    expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(145);
+    expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(144);
   });
 
   it("keeps WebResearch OUT of tools/list while the in-app registry keeps it", () => {
@@ -273,7 +306,7 @@ describe("annotations are pinned to O7, literally", () => {
     // nothing and broadcasts nothing). A `mutating`-derived hint would fire a
     // client's irreversible-action prompt on it, and on the two launch-request
     // forms that only ask the user a question.
-    const diverging = ["pools__launch_preview", "pools__launch_request_form", "trench__launch_request_form"];
+    const diverging = ["pools__launch_preview", "pools__launch_request_form"];
     for (const name of diverging) {
       const manifest = getProtocolManifest(
         inventory.find((t) => t.publicName === name)?.toolId ?? "",

@@ -16,7 +16,7 @@ describe("seedSyncJobs", () => {
     vi.clearAllMocks();
   });
 
-  it("inserts 17 sync jobs (11 global + 6 per-namespace)", async () => {
+  it("inserts 16 sync jobs (10 global + 6 per-namespace)", async () => {
     // Agent Scan added the _global/agent_activity_repair periodic job and
     // removed the polymarket/balances post_mutation job (polymarket removed).
     // Phase-2 bridge (W4) added the _global/bridge_activity_repair periodic sweep
@@ -36,7 +36,15 @@ describe("seedSyncJobs", () => {
     // token-attestation sweep (`agentscan_attest`, periodic 300s) makes 16.
     // The pools.fun attribution retry lane (`pools_attribution`, periodic
     // 120s) makes 17 - a SECOND badge sweep, against a different partner and
-    // a different attest string, not a widening of the trench one.
+    // a different attest string, not a widening of the trench one. The
+    // Virtuals keeper-launch reconciliation (`virtuals_keeper_launch`, periodic
+    // 30s) made 18 - the only sweep in the tree that waits on SOMEBODY ELSE'S
+    // transaction, the venue keeper's `launch()`, and the reason a Virtuals
+    // launch has a durable `awaiting_keeper` state at all (migration 110).
+    // Migration 108 then retired Trench Express and UNSEEDED its attribution
+    // retry lane, taking the total to 17. The seed row is only removed for
+    // FRESH databases; 108 disables the already-installed one, because deleting
+    // a definition never reaches a database that already has it.
     await seedSyncJobs();
     expect(mockExecute).toHaveBeenCalledTimes(17);
   });

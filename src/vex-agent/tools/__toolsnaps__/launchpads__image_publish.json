@@ -1,19 +1,20 @@
 {
   "definition": {
     "function": {
-      "description": "Publish one picture from the user's image locker to Vex's public image host, and return the permanent URL a token launch puts on chain. THE BYTES BECOME PUBLIC: anyone who has the link can fetch them without signing in, and they stay hosted until the user withdraws them. The URL is addressed by the sha256 of the exact bytes, so it can never later serve a different picture than the one approved. Call this AFTER the user has chosen which staged picture to use and BEFORE a launch that needs its URL. This does NOT launch anything, signs nothing and spends no gas. Pass the `imageId` of a picture already in the locker (list them with launchpads__images_list); you can never supply bytes or a URL yourself. Publishing a picture that was already published uploads nothing and returns the same URL, with `alreadyPublished` true. Returns `imageUrl`, `contentId`, `alreadyPublished` and a `disclosure` sentence stating what became public.",
+      "description": "Publish one picture to Vex's public image host, and return the permanent URL a token launch puts on chain. THE BYTES BECOME PUBLIC: anyone who has the link can fetch them without signing in, and they stay hosted until the user withdraws them. The URL is addressed by the sha256 of the exact bytes, so it can never later serve a different picture than the one approved. Call this BEFORE a launch that needs the URL. This does NOT launch anything, signs nothing and spends no gas. NAME THE PICTURE THE WAY YOUR SURFACE NAMES IT: in the Vex app pass `imageId`, a picture the user already staged in the image locker (list them with launchpads__images_list); over the Vex Studio MCP surface pass `imagePath`, the path of an image file INSIDE this project, which Vex reads itself - it never follows a symbolic link, never reads outside the project, and refuses a file that is not a PNG, JPEG or WebP under 2 MiB. The other surface's parameter is REFUSED BY NAME rather than ignored, and you can never supply bytes or a URL yourself. Publishing bytes that were already published uploads nothing and returns the same URL, with `alreadyPublished` true. APPROVAL: over MCP in a restricted project the call WAITS until the user answers the Vex card, which IS the confirmation - do not ask for one again in chat. It returns the settled outcome: executed (this tool's own status: confirmed, confirmed_unrecorded or pending - poll it, never re-send), declined, expired, refused, dispatch_failed or indeterminate; never call it twice while you wait; never retry an indeterminate one. In a full project it executes directly under standing permission. Returns `imageUrl`, `contentId`, `alreadyPublished` and a `disclosure` sentence stating what became public.",
       "name": "launchpads__image_publish",
       "parameters": {
         "additionalProperties": false,
         "properties": {
           "imageId": {
-            "description": "Identifier of a picture already staged in the app's image locker, as listed by launchpads__images_list. The agent can never create one, only name one the locker already holds.",
+            "description": "IN-APP ONLY: identifier of a picture already staged in the app's image locker, as listed by launchpads__images_list. The agent can never create one, only name one the locker already holds. Over the Vex Studio MCP surface this parameter is REFUSED BY NAME and imagePath is used instead. Required on this surface, and enforced by the tool rather than by the schema, because which parameter names the picture depends on the surface.",
+            "type": "string"
+          },
+          "imagePath": {
+            "description": "VEX STUDIO MCP ONLY: the path of an image file INSIDE the current project (PNG, JPEG or WebP, at most 2 MiB), which Vex reads itself and publishes. Symbolic links are never followed and a path outside the project is refused by name. In the Vex app this parameter is REFUSED BY NAME and imageId is used instead. Required on this surface, and enforced by the tool rather than by the schema.",
             "type": "string"
           }
         },
-        "required": [
-          "imageId"
-        ],
         "type": "object"
       }
     },

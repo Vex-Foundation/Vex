@@ -66,12 +66,15 @@ describe("every seeded periodic sync type is reachable", () => {
     expect(underDispatched).toEqual([]);
   });
 
-  it("includes the Trench launch identity sweep", async () => {
+  it("includes the launch identity sweep", async () => {
     expect(await seededPeriodicSyncTypes()).toContain("launch_identity_repair");
   });
 
-  it("includes the Trench launch attribution retry lane", async () => {
-    expect(await seededPeriodicSyncTypes()).toContain("launch_attribution");
+  it("no longer seeds the RETIRED launchpad's attribution retry lane", async () => {
+    // Migration 108 unseeded it. A row still seeded here would be enabled work
+    // for a protocol with no handler, which the tick would meet forever as
+    // unknown - the failure `048_drop_hyperliquid.sql` documents.
+    expect(await seededPeriodicSyncTypes()).not.toContain("launch_attribution");
   });
 
   /**

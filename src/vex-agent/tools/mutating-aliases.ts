@@ -146,7 +146,7 @@ type SwapArgs = z.infer<typeof SwapArgs>;
 /**
  * Resolve the `SwapExecute` alias to a concrete swap EXECUTE toolId +
  * translated params. EVM → `kyberswap.swap.execute` ONLY (plan §11.2 - the
- * silent Uniswap fallback is removed); Solana → `solana.swap.execute`
+ * silent Uniswap substitution is removed); Solana → `solana.swap.execute`
  * (unchanged). Throws `MutatingAliasRouteError` on invalid args or an unknown
  * family; when the chain has NO KyberSwap aggregator support at all it throws a
  * message naming `SwapExecuteUniswap` as the venue that does cover it.
@@ -231,7 +231,7 @@ function routeSwap(args: Record<string, unknown>): ResolvedAliasTarget {
   return { toolId: "kyberswap.swap.execute", params };
 }
 
-// ── SwapExecuteUniswap - HIDDEN EVM-only Uniswap fallback execute ────────
+// ── SwapExecuteUniswap - the EVM-only Uniswap execute ────────────────────
 
 const SwapExecuteUniswapArgs = z.object({
   // Same shared schema as `SwapQuoteUniswap` - see `SwapArgs` above.

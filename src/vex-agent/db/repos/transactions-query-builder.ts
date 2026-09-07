@@ -23,7 +23,7 @@ const CURSOR_TS_EXPR = `to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH2
  *
  * The problem it fixes: on the venues that charge the fee as its own on-chain
  * transfer (relay/khalani bridges, Uniswap, Trench trade and launch, and since
- * migration 102 the venue-independent `vex_fee` leg) the fee lives on a SIBLING
+ * migration 107 the venue-independent `vex_fee` leg) the fee lives on a SIBLING
  * leg row, and that leg is not a feed row - so the logical row the user and the
  * agent actually read reported no fee at all.
  *
@@ -204,7 +204,7 @@ export function buildActivityHalf(
   // above, so without this exclusion the generic lane's fee transfer would
   // render as a standalone signed transaction beside the one it charges for.
   // The parent still reports the charge, through the fee lateral above.
-  // `vex_fee` (migration 102) is the venue-independent name for that same leg on
+  // `vex_fee` (migration 107) is the venue-independent name for that same leg on
   // the swap, bridge and launch arms, so it is excluded here and folded there
   // for exactly the same reason. Adding it to only ONE of the two lists is the
   // failure mode this pairing exists to prevent: excluded but not folded hides a

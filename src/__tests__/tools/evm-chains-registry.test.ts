@@ -30,7 +30,8 @@ describe("evm-chains registry — Robinhood Chain (4663)", () => {
     expect(chain!.name).toBe("Robinhood Chain");
     expect(chain!.family).toBe("eip155");
     expect(chain!.nativeCurrency).toEqual({ name: "Ether", symbol: "ETH", decimals: 18 });
-    expect(chain!.defaultRpcUrl).toBe(DEFAULT_RPC);
+    // The bundled URL is no longer a registry field: `getLocalChainRpcUrl`
+    // resolves it through the shared owner, and the tests below assert that.
     expect(chain!.multicall3).toBe(CANONICAL_MULTICALL3);
     expect(chain!.dexscreenerSlug).toBe("robinhood");
     const seedLabels = chain!.seedTokens.map((t) => t.label);

@@ -23,6 +23,8 @@ import { poolsLaunchExecuteHandler } from "./handlers/launch/execute.js";
 import { poolsClaimFeesHandler } from "./handlers/claim.js";
 import { poolsLaunchAssetsHandler } from "./handlers/launch-assets.js";
 import { poolsHolderRewardsGetHandler } from "./handlers/holder-rewards-get.js";
+import { poolsHolderRewardsClaimHandler } from "./handlers/holder-rewards-claim.js";
+import { poolsHolderRewardsDistributeHandler } from "./handlers/holder-rewards-distribute.js";
 
 export const POOLS_HANDLERS: Record<string, ProtocolHandler> = {
   "pools.tokens": (p, context) => poolsTokensHandler(p, context),
@@ -44,4 +46,10 @@ export const POOLS_HANDLERS: Record<string, ProtocolHandler> = {
   // `dryRun: true` simulates and signs nothing; without it this claims for real
   // behind the ordinary approval gate.
   "pools.claim_fees": (p, context) => poolsClaimFeesHandler(p, context),
+  // The HOLDER's side of the same launchpad: `claim()` on the token's own
+  // reward distributor, and the permissionless `distribute()` that starts the
+  // stream for everybody. Both carry NO Vex fee - the server's claim arm binds
+  // no fee role, and the owner fee policy charges swaps, bridges and launches.
+  "pools.holder_rewards_claim": (p, context) => poolsHolderRewardsClaimHandler(p, context),
+  "pools.holder_rewards_distribute": (p, context) => poolsHolderRewardsDistributeHandler(p, context),
 };

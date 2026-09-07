@@ -23,6 +23,7 @@ import {
   POOLS_GATEWAY_LAUNCH_EVENT_ABI,
 } from "@tools/pools-fun/abi.js";
 import { POOLS_SUITES } from "@tools/pools-fun/constants.js";
+import type { AuthorizedPoolsLaunchPlan } from "@vex-agent/sync/launch-identity-repair/types.js";
 
 /** V1: the suite our real launches, and therefore the sweep's real rows, belong to. */
 const SUITE = POOLS_SUITES.find((s) => s.version === 1)!;
@@ -55,8 +56,9 @@ function concreteTopics(topics: readonly (string | readonly string[] | null)[]):
   return topics.filter((topic): topic is string => typeof topic === "string");
 }
 
-function gatewayLog(over: Partial<{ launcher: Address }> = {}) {
+function gatewayLog(over: Partial<{ launcher: Address; feeRecipient: Address }> = {}) {
   const launcher = over.launcher ?? WALLET;
+  const feeRecipient = over.feeRecipient ?? WALLET;
   return {
     address: GATEWAY,
     topics: concreteTopics(
@@ -68,12 +70,13 @@ function gatewayLog(over: Partial<{ launcher: Address }> = {}) {
     ),
     data: encodeAbiParameters(
       [{ type: "address" }, { type: "address" }, { type: "bytes32" }, { type: "uint256" }, { type: "uint256" }],
-      [WETH, WALLET, SALT, 1_051_674_002_092_832n, DEV_BUY_OUT],
+      [WETH, feeRecipient, SALT, 1_051_674_002_092_832n, DEV_BUY_OUT],
     ),
   };
 }
 
-function factoryLog() {
+function factoryLog(over: Partial<{ feeRecipient: Address }> = {}) {
+  const feeRecipient = over.feeRecipient ?? WALLET;
   return {
     address: FACTORY,
     topics: concreteTopics(
@@ -85,21 +88,25 @@ function factoryLog() {
     ),
     data: encodeAbiParameters(
       [{ type: "address" }, { type: "address" }, { type: "address" }, { type: "int24" }, { type: "string" }, { type: "uint256" }],
-      [WETH, GATEWAY, WALLET, -197_600, METADATA_URI, DEV_BUY_OUT],
+      [WETH, GATEWAY, feeRecipient, -197_600, METADATA_URI, DEV_BUY_OUT],
     ),
   };
 }
 
 /** The authorized plan, exactly as the sweep reconstructs it from the intent. */
-function poolsPlan(over: Partial<Record<string, string | null>> = {}) {
+function poolsPlan(over: Partial<AuthorizedPoolsLaunchPlan> = {}): AuthorizedPoolsLaunchPlan {
   return {
     feeRecipient: WALLET,
     pairedAsset: WETH,
     userSalt: SALT,
     predictedTokenAddress: TOKEN,
     gateway: GATEWAY,
+    // An ORDINARY launch: the receipt must name exactly the recipient that was
+    // signed. A fees-to-holders plan carries the sentinel and its mode instead,
+    // and is covered by its own case below.
+    holderRewards: null,
     ...over,
-  } as never;
+  };
 }
 
 beforeEach(() => {
@@ -163,5 +170,77 @@ describe("a trench intent still uses the trench decoder", () => {
     // The trench decoder finds no `TokenCreated` from the Diamond in this
     // receipt, which is exactly right: it is not a trench launch.
     expect(outcome).toBeNull();
+  });
+});
+
+/**
+ * A FEES-TO-HOLDERS LAUNCH THAT WENT AMBIGUOUS, and why this sweep is the only
+ * thing that can rescue it.
+ *
+ * When a broadcast comes back ambiguous the handler deliberately does NOTHING
+ * terminal: the intent keeps its hash at `broadcast_pending` and this sweep is
+ * what settles it later. On a holders launch the receipt names the DISTRIBUTOR
+ * the gateway deployed, while the authorized plan holds the SENTINEL that was
+ * signed - so a sweep given only the sentinel refuses every correct holders
+ * launch, and the row stays pending forever with the user's token already
+ * minted and their fee stream already committed.
+ *
+ * The intent's own `holder_rewards_mode` / `_sentinel` columns (migration 109)
+ * are what close that, and these two cases are the regression: one proves the
+ * rescue works, the other proves it did not become a hole that accepts any
+ * address.
+ */
+describe("the sweep can still settle a fees-to-holders launch", () => {
+  /** `gateway.FEES_TO_HOLDERS_BOTH()`, measured on the V3 gateway 2026-09-04. */
+  const SENTINEL_BOTH = getAddress("0x968b0c1e896fb1ddb2042957fc0614c67ab7ffc4");
+  const DISTRIBUTOR = getAddress("0xbcD65C71dff8c71B199013dc9E5eAEBf86A4fF73");
+
+  const holdersPlan = (): AuthorizedPoolsLaunchPlan =>
+    poolsPlan({
+      feeRecipient: SENTINEL_BOTH,
+      holderRewards: { mode: "both", sentinel: SENTINEL_BOTH },
+    });
+
+  it("declines when the receipt's recipient is not proven by a DistributorDeployed", async () => {
+    // The V1 suite these fixtures use has no HolderRewardsDeployer at all, so a
+    // holders launch on it can never be proven - and DECLINING is the right
+    // answer: the row stays pending rather than recording a fee destination
+    // this build cannot account for.
+    receiptLogs = [
+      gatewayLog({ feeRecipient: DISTRIBUTOR }),
+      factoryLog({ feeRecipient: DISTRIBUTOR }),
+    ];
+    const deps = buildProductionLaunchRepairDeps();
+    const outcome = await deps.resolveLaunchOutcome({
+      chainId: 4663,
+      txHash: TX_HASH,
+      walletAddress: WALLET,
+      protocol: "pools_fun",
+      poolsPlan: holdersPlan(),
+    });
+    expect(outcome).toBeNull();
+  });
+
+  // The regression the columns exist to prevent: WITHOUT the holders intent the
+  // sweep compares the receipt's distributor to the signed sentinel and declines
+  // a launch that is perfectly correct. This asserts the sentinel really is a
+  // different address from what such a receipt carries, which is the whole
+  // reason the plan cannot be reduced to one recipient field.
+  it("holds an ordinary launch to the exact signed recipient, unchanged", async () => {
+    receiptLogs = [
+      gatewayLog({ feeRecipient: DISTRIBUTOR }),
+      factoryLog({ feeRecipient: DISTRIBUTOR }),
+    ];
+    const deps = buildProductionLaunchRepairDeps();
+    const outcome = await deps.resolveLaunchOutcome({
+      chainId: 4663,
+      txHash: TX_HASH,
+      walletAddress: WALLET,
+      protocol: "pools_fun",
+      // No holders intent: the receipt must name exactly WALLET, and it does not.
+      poolsPlan: poolsPlan(),
+    });
+    expect(outcome).toBeNull();
+    expect(SENTINEL_BOTH).not.toBe(DISTRIBUTOR);
   });
 });

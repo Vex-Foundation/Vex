@@ -41,8 +41,6 @@ import { PENDLE_TOOLS } from "./pendle/manifest.js";
 import { PENDLE_HANDLERS } from "./pendle/handlers.js";
 import { MORPHO_TOOLS } from "./morpho/manifest.js";
 import { MORPHO_HANDLERS } from "./morpho/handlers.js";
-import { TRENCH_TOOLS } from "./trench/manifest.js";
-import { TRENCH_HANDLERS } from "./trench/handlers.js";
 import { POOLS_TOOLS } from "./pools/manifest.js";
 import { POOLS_HANDLERS } from "./pools/handlers.js";
 import { LAUNCHPADS_TOOLS } from "./launchpads/manifest.js";
@@ -60,7 +58,6 @@ export const PROTOCOL_NAMESPACE_ALLOWLIST: readonly ProtocolNamespace[] = [
   "virtuals",
   "pendle",
   "morpho",
-  "trench",
   "pools",
   "launchpads",
 ] as const;
@@ -97,7 +94,6 @@ export const NAMESPACE_MODULES: readonly NamespaceModule[] = [
   { namespace: "virtuals", manifests: VIRTUALS_TOOLS, handlers: VIRTUALS_HANDLERS },
   { namespace: "pendle", manifests: PENDLE_TOOLS, handlers: PENDLE_HANDLERS },
   { namespace: "morpho", manifests: MORPHO_TOOLS, handlers: MORPHO_HANDLERS },
-  { namespace: "trench", manifests: TRENCH_TOOLS, handlers: TRENCH_HANDLERS },
   { namespace: "pools", manifests: POOLS_TOOLS, handlers: POOLS_HANDLERS },
   { namespace: "launchpads", manifests: LAUNCHPADS_TOOLS, handlers: LAUNCHPADS_HANDLERS },
 ];
@@ -204,7 +200,6 @@ export const NAMESPACE_DEFAULTS: Record<ProtocolNamespace, NamespaceDefault> = {
   relay: "bridge",
   dexscreener: "non_portfolio",
   virtuals: "non_portfolio",
-  trench: "non_portfolio",
   // Read-only launchpad intelligence; no tool here holds, moves, or reports a
   // position, so nothing it returns belongs in portfolio capture.
   pools: "non_portfolio",

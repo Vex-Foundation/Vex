@@ -119,20 +119,33 @@ describe("capture contract — structural coverage", () => {
     expect([...MUTATION_MATRIX].filter(([, c]) => c.capture === "full")).toEqual([]);
   });
 
-  it("the utility kind holds exactly the local-write tools that sign nothing", () => {
+  it("the utility kind holds exactly the tools that mutate without touching a portfolio", () => {
     // hyperliquid.risk.proposeSetup was the sole "utility" (no portfolio
-    // impact) entry until Agent Scan Phase 3 deleted it with the protocol.
-    // `trench.launch_request_form` (migration 062) is the successor this
-    // comment predicted: mutating (it drafts a launch-intent row and parks the
-    // turn) but zero portfolio impact and no capture — signs nothing.
-    // pools.fun adds two more of the same shape (migration 082): `launch_preview`
+    // impact) entry until Agent Scan Phase 3 deleted it with the protocol, and
+    // `trench.launch_request_form` (migration 062) succeeded it in the same
+    // shape - until migration 108 retired THAT protocol too. Two entries have
+    // now left this kind the same way, which is worth stating: a form-drafting
+    // tool is exactly as deletable as the launchpad behind it.
+    // pools.fun carries two of the same shape (migration 082): `launch_preview`
     // records an advisory `previewed` intent that the database itself keeps
     // non-live, and `launch_request_form` opens the app's form and parks the
     // turn. Both are mutating because each writes a durable row; neither signs.
+    // `launchpads.image_publish` is the first non-local member: it mutates the
+    // launch-assets host over HTTP (`actionKind: "external_post"`), which is a
+    // real and irreversible consequence, but there is no chain, no signature
+    // and no receipt - so it lands in the same "no portfolio impact, no
+    // capture" class rather than in a new one invented for one tool.
+    // `virtuals.launch.preview` (PR-C3) is the pools preview's exact shape on a
+    // third launchpad: it writes an advisory `previewed` intent the database
+    // keeps non-live (migration 082's CHECK, which migration 110 leaves
+    // untouched), opens no key and sends nothing. Its three siblings are
+    // deliberately absent - `launch.execute` and `launch.cancel` broadcast, and
+    // `launch.status` is read-only and writes nothing at all.
     expect(getToolsByKind("utility").map(([id]) => id).sort()).toEqual([
+      "launchpads.image_publish",
       "pools.launch_preview",
       "pools.launch_request_form",
-      "trench.launch_request_form",
+      "virtuals.launch.preview",
     ]);
   });
 

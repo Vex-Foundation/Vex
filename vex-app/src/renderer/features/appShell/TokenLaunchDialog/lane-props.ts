@@ -2,14 +2,20 @@
  * The props every launch LANE takes — the shared half of the launch surface's
  * public contract.
  *
- * Extracted so the facade (`../TokenLaunchDialog.tsx`) and each platform lane
- * name the same shape without importing each other. `TokenLaunchDialogProps` is
+ * Extracted so the facade (`../TokenLaunchDialog.tsx`) and the lane name the
+ * same shape without importing each other. `TokenLaunchDialogProps` is
  * re-exported from the facade under its original name, so no caller's import
  * changes.
  */
 
-import type { LaunchOrigin } from "../../../lib/api/token-launch.js";
-import type { LaunchFormValues } from "../token-launch/LaunchForm.js";
+import type { PoolsLaunchFormValues } from "./pools/form-values.js";
+
+/**
+ * Which of the three C1 origins opened the dialog. A RENDERER-side concept, not
+ * a wire field: it decides whether dismissing the dialog owes an agent an
+ * answer. The IPC contract deliberately has no origin - main stamps it.
+ */
+export type LaunchOrigin = "user" | "agent_requested_form" | "agent";
 
 export interface LaunchLaneProps {
   readonly open: boolean;
@@ -36,7 +42,7 @@ export interface LaunchLaneProps {
    * identity changes, and a fresh object every render would overwrite the user's
    * edits on each keystroke.
    */
-  readonly initialValues?: LaunchFormValues | null;
+  readonly initialValues?: PoolsLaunchFormValues | null;
   /**
    * Fired when this dialog becomes BUSY (a submit is in flight, or its result
    * has not been read yet) and when it stops. One boolean: the dialog keeps

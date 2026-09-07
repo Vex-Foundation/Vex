@@ -1,11 +1,14 @@
 /**
  * Uniswap viem client factory (public + wallet), per chain.
  *
- * Client policy (LOCKED Wave-2 note): where the LOCAL chain registry knows the
- * chain (Robinhood 4663), defer to it — it honours the user's RPC override and
- * wires Multicall3. Otherwise build a viem chain inline via `defineChain` from
- * the verified deployment's bundled RPC (documented provenance in
- * `./deployments.ts`).
+ * Client policy: the SHARED RPC OWNER (`@tools/evm-chains/rpc-endpoints.ts`)
+ * decides which endpoints a chain has, in what order, with what method scopes,
+ * and where the user's own override sits. Robinhood 4663 keeps deferring to the
+ * local chain registry, which wires Multicall3 and the explorer; every other
+ * chain now gets the same owner instead of a url copied into `./deployments.ts`.
+ * That is what fixes the defect this venue carried: Base pointed at
+ * `base.drpc.org`, which answered every `eth_call` with a free-plan timeout, and
+ * no Uniswap chain except 4663 could see a user's RPC override at all.
  *
  * Gas rule: NEVER cache/hardcode gas limits — viem estimates fresh at send time
  * (its default). Robinhood is an Arbitrum-Orbit L2 with a fluctuating L1-data
@@ -16,7 +19,6 @@ import {
   createPublicClient,
   createWalletClient,
   defineChain,
-  http,
   type Account,
   type Chain,
   type Hex,
@@ -27,10 +29,9 @@ import {
 import { privateKeyToAccount } from "viem/accounts";
 import { getLocalChain } from "@tools/evm-chains/registry.js";
 import { getLocalEvmClients, getLocalPublicClient } from "@tools/evm-chains/evm-client.js";
+import { resolveRpcEndpoints } from "@tools/evm-chains/rpc-endpoints.js";
+import { buildEvmTransport, buildPinnedEvmTransport } from "@tools/evm-chains/rpc-transport.js";
 import type { UniswapDeployment } from "./deployments.js";
-
-const RPC_TIMEOUT_MS = 30_000;
-const RPC_RETRY_COUNT = 2;
 
 export interface UniswapEvmClients {
   publicClient: PublicClient<Transport, Chain>;
@@ -38,11 +39,18 @@ export interface UniswapEvmClients {
 }
 
 function toViemChain(deployment: UniswapDeployment): Chain {
+  // Chain METADATA only. The transport reaches the whole resolved endpoint
+  // list; this url is the first of them, which is what viem's `Chain` wants.
+  const endpoints = resolveRpcEndpoints(deployment.chainId);
+  const first = endpoints[0];
+  if (first === undefined) {
+    throw new Error(`Uniswap: no RPC endpoint is bundled or configured for chain ${deployment.chainId}.`);
+  }
   return defineChain({
     id: deployment.chainId,
     name: deployment.name,
     nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-    rpcUrls: { default: { http: [deployment.defaultRpcUrl] } },
+    rpcUrls: { default: { http: [first.url] } },
   });
 }
 
@@ -58,10 +66,7 @@ export function getUniswapPublicClient(
   if (local) return getLocalPublicClient(local);
   return createPublicClient({
     chain: toViemChain(deployment),
-    transport: http(deployment.defaultRpcUrl, {
-      timeout: RPC_TIMEOUT_MS,
-      retryCount: RPC_RETRY_COUNT,
-    }),
+    transport: buildEvmTransport(deployment.chainId),
   }) as PublicClient<Transport, Chain>;
 }
 
@@ -74,20 +79,15 @@ export function getUniswapEvmClients(
   if (local) return getLocalEvmClients(local, privateKey);
 
   const chain = toViemChain(deployment);
-  const publicClient = createPublicClient({
-    chain,
-    transport: http(deployment.defaultRpcUrl, {
-      timeout: RPC_TIMEOUT_MS,
-      retryCount: RPC_RETRY_COUNT,
-    }),
-  }) as PublicClient<Transport, Chain>;
+  // ONE pinned transport for both clients: the quote, the estimate, the nonce
+  // and the broadcast are the same node's opinion, and no silent endpoint
+  // switch can make the simulation stale between them.
+  const transport = buildPinnedEvmTransport(deployment.chainId);
+  const publicClient = createPublicClient({ chain, transport }) as PublicClient<Transport, Chain>;
   const walletClient = createWalletClient({
     account: privateKeyToAccount(privateKey),
     chain,
-    transport: http(deployment.defaultRpcUrl, {
-      timeout: RPC_TIMEOUT_MS,
-      retryCount: RPC_RETRY_COUNT,
-    }),
+    transport,
   }) as WalletClient<Transport, Chain, Account>;
   return { publicClient, walletClient };
 }

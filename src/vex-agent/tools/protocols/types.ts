@@ -30,7 +30,6 @@ export type ProtocolNamespace =
   | "virtuals"
   | "pendle"
   | "morpho"
-  | "trench"
   | "pools"
   | "launchpads";
 
@@ -427,7 +426,7 @@ export interface ProtocolExecutionContext {
    * a model-supplied id could park a form whose result answers a DIFFERENT call.
    *
    * Only a handler that must ANSWER ITS OWN CALL LATER needs it -
-   * `trench.launch_request_form` parks the turn on §C3b and the eventual result
+   * A launch request-form tool parks the turn on §C3b and the eventual result
    * must address exactly this call, or the turn can never close. Optional
    * because dispatch paths that were never a model tool call (previews,
    * maintenance, internal resumes) genuinely have none; a handler that requires
