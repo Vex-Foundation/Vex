@@ -29,6 +29,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { getAddress, parseUnits, type Address, type Hex } from "viem";
 
+import type { FailActivityEventInput } from "@vex-agent/db/repos/agent-activity.js";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 import { definedValue } from "../../../../_test-value-guards.js";
 
@@ -144,7 +145,7 @@ vi.mock("@tools/evm-chains/erc20-balance-guard.js", () => ({
   ensureErc20Balance: async () => undefined,
 }));
 
-const failActivityEvent = vi.fn(async () => undefined);
+const failActivityEvent = vi.fn(async (_id: number, _input: FailActivityEventInput) => undefined);
 const confirmActivityEvent = vi.fn(async () => ({ applied: true }));
 vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
   createAgentActivityIntent: async (input: { events: readonly { eventIndex: number; eventRole: string }[] }) => ({
@@ -154,7 +155,7 @@ vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
   createAgentActivityPreBroadcastFailure: async () => ({ executionId: 78 }),
   abortPlannedEvents: vi.fn(async () => undefined),
   confirmActivityEvent: (...a: unknown[]) => confirmActivityEvent(...(a as [])),
-  failActivityEvent: (...a: unknown[]) => failActivityEvent(...(a as [])),
+  failActivityEvent: (id: number, input: FailActivityEventInput) => failActivityEvent(id, input),
   markActivityBroadcast: async () => ({ applied: true }),
   markBroadcastAccepted: async () => ({ applied: true }),
   reserveActivityEvmNonce: async () => 7,
@@ -447,7 +448,7 @@ describe("the trade is held to its approval at the last gate, on the signing nod
     await executeWithApprovalMining(() => {
       pinnedReads = { buyTax: 25n };
     });
-    const call = failActivityEvent.mock.calls.at(-1) as unknown as [number, { failureCode: string; failureReason: string }];
+    const call = definedValue(failActivityEvent.mock.calls.at(-1), "failActivityEvent was never called");
     expect(call[0]).toBe(101);
     expect(call[1].failureCode).toBe("simulation_reverted");
     expect(call[1].failureReason).toContain("tax setup changed");

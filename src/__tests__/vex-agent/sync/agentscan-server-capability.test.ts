@@ -47,7 +47,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 import type { ClaimedOutboxEvent } from "@vex-agent/db/repos/agentscan-reporting.js";
-import type { AgentscanClient, SendOutcome } from "@vex-agent/agentscan/client.js";
+import type { AgentscanClient, SendEventsInput, SendOutcome } from "@vex-agent/agentscan/client.js";
 
 const mockClaimDueOutbox = vi.fn();
 const mockMarkOutboxSent = vi.fn();
@@ -94,7 +94,7 @@ function claimedRow(input: {
       chain_id: 8453,
       created_at: new Date("2026-09-06T10:00:00Z"),
     },
-  } as unknown as ClaimedOutboxEvent;
+  };
 }
 
 /** One claimed batch, then an empty claim so the drain's loop terminates. */
@@ -115,7 +115,7 @@ const OK_ALL_REJECTED: SendOutcome = {
 /** A server on the deployed contract: it refuses every role it does not carry. */
 function serverWithoutRoles(unknownRoles: readonly string[]): AgentscanClient {
   return {
-    sendEvents: vi.fn(async (input: { events: { eventRole?: string }[] }) => {
+    sendEvents: vi.fn(async (input: SendEventsInput): Promise<SendOutcome> => {
       const rejectedIndexes = input.events
         .map((event, index) => ({ event, index }))
         .filter(({ event }) => unknownRoles.includes(event.eventRole ?? ""))
@@ -128,7 +128,15 @@ function serverWithoutRoles(unknownRoles: readonly string[]): AgentscanClient {
         agentHealth: null,
       } satisfies SendOutcome;
     }),
-  } as unknown as AgentscanClient;
+  };
+}
+
+/**
+ * A server that refuses every row it is handed, whatever the role. Used where
+ * the refusal itself is the subject and the server's vocabulary is not.
+ */
+function serverRefusingEverything(): AgentscanClient {
+  return { sendEvents: vi.fn(async (): Promise<SendOutcome> => OK_ALL_REJECTED) };
 }
 
 beforeEach(() => {
@@ -142,7 +150,7 @@ beforeEach(() => {
 describe("a role the deployed server does not carry yet", () => {
   it("is NOT rejected terminally: the row stays owed", async () => {
     claimOnce([claimedRow({ outboxId: 1, eventRole: "vex_fee", kind: "launch" })]);
-    const client = { sendEvents: vi.fn(async () => OK_ALL_REJECTED) } as unknown as AgentscanClient;
+    const client = serverRefusingEverything();
 
     const result = await drainOutbox(client, AGENT_HASH, "token", 0);
 
@@ -154,7 +162,7 @@ describe("a role the deployed server does not carry yet", () => {
 
   it("records the reason where the read model can see it, and holds the row", async () => {
     claimOnce([claimedRow({ outboxId: 7, eventRole: "creator_fee_claim", kind: "claim" })]);
-    const client = { sendEvents: vi.fn(async () => OK_ALL_REJECTED) } as unknown as AgentscanClient;
+    const client = serverRefusingEverything();
 
     await drainOutbox(client, AGENT_HASH, "token", 0);
 
@@ -202,7 +210,7 @@ describe("a role the deployed server does not carry yet", () => {
     // A `swap` the server refuses is our bug, not its deployment: retrying an
     // identical payload can only refail, and the row must not hold forever.
     claimOnce([claimedRow({ outboxId: 3, eventRole: "swap", kind: "swap" })]);
-    const client = { sendEvents: vi.fn(async () => OK_ALL_REJECTED) } as unknown as AgentscanClient;
+    const client = serverRefusingEverything();
 
     const result = await drainOutbox(client, AGENT_HASH, "token", 0);
 
@@ -284,7 +292,7 @@ describe("a role the deployment has demonstrably accepted", () => {
     // A malformed row of the SAME role, on the SAME deployment.
     mockClaimDueOutbox.mockReset();
     claimOnce([claimedRow({ outboxId: 2, eventRole: "vex_fee", kind: "launch" })]);
-    const refusing = { sendEvents: vi.fn(async () => OK_ALL_REJECTED) } as unknown as AgentscanClient;
+    const refusing = serverRefusingEverything();
     const result = await drainOutbox(refusing, AGENT_HASH, "token", 0);
 
     // Held forever it would never be reported and never be diagnosed.
