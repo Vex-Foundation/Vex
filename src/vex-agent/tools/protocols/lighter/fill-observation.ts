@@ -70,10 +70,10 @@ import * as feeAuthorizationsRepo from "@vex-agent/db/repos/lighter-fee-authoriz
 import logger from "@utils/logger.js";
 import {
   buildLighterFillRecord,
-  hasLighterFillForIntent,
   isLighterFillBuildFailure,
   lighterPerpVenueAssetId,
   lighterVenueAssetId,
+  recordedLighterFillBaseSizeForIntent,
   recordLighterFillActivity,
   type LighterFillFeeTerms,
   type LighterFillIntentFacts,
@@ -106,12 +106,13 @@ export interface LighterFillObservationDeps {
   /** The approved integrator terms in force for this account, or null when none is. */
   readonly findFeeAuthorization: typeof feeAuthorizationsRepo.findLatestApprovedLighterFeeAuthorization;
   /**
-   * Does the ledger already hold a fill for a given intent? Read ONLY by
-   * {@link observeLighterFillsFromAccountTrades} when its caller asked for the
-   * self-healing form, so a repeated trigger for an intent already in the
-   * ledger costs one local query instead of a privileged provider request.
+   * How much base quantity the ledger already holds for a given intent. Read
+   * ONLY by {@link observeLighterFillsFromAccountTrades} when its caller asked
+   * for the self-healing form, so a trigger for an intent the ledger is
+   * already level with costs one local query instead of a privileged provider
+   * request.
    */
-  readonly hasFillForIntent: typeof hasLighterFillForIntent;
+  readonly recordedFillBaseSize: typeof recordedLighterFillBaseSizeForIntent;
 }
 
 export function defaultLighterFillObservationDeps(): LighterFillObservationDeps {
@@ -119,7 +120,7 @@ export function defaultLighterFillObservationDeps(): LighterFillObservationDeps 
     client: getLighterClient(),
     recordFill: recordLighterFillActivity,
     findFeeAuthorization: feeAuthorizationsRepo.findLatestApprovedLighterFeeAuthorization,
-    hasFillForIntent: hasLighterFillForIntent,
+    recordedFillBaseSize: recordedLighterFillBaseSizeForIntent,
   };
 }
 
@@ -301,18 +302,29 @@ export async function observeLighterFills(input: {
  * canonical identity, so a second trigger over the same trade records nothing
  * new.
  *
- * `onlyWhenLedgerAlreadyEmpty` is the SELF-HEALING form, for triggers that can
- * repeat while an intent stays live (a re-sent order frame, a repair sweep):
- * it asks the ledger first and spends no provider request when a row for the
- * intent is already held. The terminal-transition sites leave it off, because
- * there the read happens exactly once per transition.
+ * `onlyWhenLedgerIncomplete` is the SELF-HEALING form, for triggers that can
+ * repeat while an intent stays live (a re-sent order frame, a repair sweep).
+ * It asks the ledger first and spends no provider request while the ledger is
+ * LEVEL WITH THE VENUE - which is a question about COMPLETENESS, not about
+ * existence. Gating on "the ledger holds a row for this intent" loses fills
+ * for good: a partial-fill frame records fill A, a later filled-order frame
+ * finds A already held and skips its read, the intent leaves the
+ * stream-watchable set, and terminal repair applies the same test - so fill B,
+ * whose trade frame arrived late, is never read for and never recorded. The
+ * caller therefore passes the filled quantity the PROVIDER reported for the
+ * order, and the read runs while the recorded sum is below it. A caller whose
+ * evidence carries no filled quantity passes null and the read runs: an
+ * unknown is not evidence of completeness.
+ *
+ * The terminal-transition sites leave the gate off entirely, because there the
+ * read happens exactly once per transition.
  */
 export async function observeLighterFillsFromAccountTrades(input: {
   readonly intent: LighterFillIntentFacts;
   readonly authorizedFees: LighterIntegratorFees | null;
   readonly deps: LighterFillObservationDeps;
   readonly read: LighterFillFollowUpRead;
-  readonly onlyWhenLedgerAlreadyEmpty?: boolean;
+  readonly onlyWhenLedgerIncomplete?: LighterFillLedgerCompletenessGate;
 }): Promise<LighterFillObservationReport> {
   const { intent, read } = input;
   // Without the account's own client order id there is no rule by which a
@@ -320,18 +332,9 @@ export async function observeLighterFillsFromAccountTrades(input: {
   // in a list is exactly what the boundary refuses to do.
   if (intent.clientOrderIndex === null) return NOTHING_OBSERVED;
 
-  if (input.onlyWhenLedgerAlreadyEmpty === true) {
-    try {
-      if (await input.deps.hasFillForIntent(intent.intentId)) return NOTHING_OBSERVED;
-    } catch (error) {
-      // The ledger could not answer. Reading is the safe direction: the write
-      // that follows is idempotent, so at worst one provider request is spent
-      // on a fill that is already held.
-      logger.warn("lighter.fill_observation.follow_up_ledger_unreadable", {
-        intentId: intent.intentId,
-        reason: error instanceof Error ? error.name : "unknown",
-      });
-    }
+  const gate = input.onlyWhenLedgerIncomplete;
+  if (gate !== undefined && await ledgerIsLevelWithVenue(intent.intentId, gate, input.deps)) {
+    return NOTHING_OBSERVED;
   }
 
   let page: Awaited<ReturnType<LighterClient["getAccountTrades"]>>;
@@ -365,6 +368,96 @@ export async function observeLighterFillsFromAccountTrades(input: {
     authorizedFees: input.authorizedFees,
     deps: input.deps,
   });
+}
+
+/**
+ * What a SELF-HEALING trigger knows about how much the venue says filled.
+ *
+ * The quantity is the provider's OWN figure for the order (an order row's
+ * `filled_base_amount`, or the same field carried on the stored order
+ * evidence), in the market's base units. NULL means the trigger's evidence
+ * does not carry one - an older durable row, an outcome recorded before the
+ * field was retained - and null is never read as "complete".
+ */
+export interface LighterFillLedgerCompletenessGate {
+  readonly reportedFilledBaseSize: string | null;
+}
+
+/**
+ * Is the ledger already level with the filled quantity the venue reported?
+ *
+ * Only then may a self-healing trigger skip its read. Every other answer -
+ * an unknown reported quantity, an unreadable ledger, a figure neither side
+ * can parse - resolves to reading, because the write that follows is
+ * idempotent by canonical identity and a skipped read is a fill lost for good.
+ */
+async function ledgerIsLevelWithVenue(
+  intentId: string,
+  gate: LighterFillLedgerCompletenessGate,
+  deps: LighterFillObservationDeps,
+): Promise<boolean> {
+  const reported = gate.reportedFilledBaseSize;
+  if (reported === null) return false;
+  let recorded: string;
+  try {
+    recorded = await deps.recordedFillBaseSize(intentId);
+  } catch (error) {
+    logger.warn("lighter.fill_observation.follow_up_ledger_unreadable", {
+      intentId,
+      reason: error instanceof Error ? error.name : "unknown",
+    });
+    return false;
+  }
+  const comparison = compareLighterDecimalStrings(recorded, reported);
+  if (comparison === null) {
+    logger.warn("lighter.fill_observation.follow_up_quantity_unreadable", { intentId });
+    return false;
+  }
+  return comparison >= 0;
+}
+
+/**
+ * The provider's own filled-quantity figure, or null when the value is not a
+ * decimal string this boundary may compare against a ledger sum.
+ *
+ * A guessed or coerced figure would silence the follow-up read for a fill that
+ * is genuinely missing, so an unparsable value is an UNKNOWN, never a zero.
+ */
+export function reportedLighterFilledBaseSize(value: unknown): string | null {
+  return typeof value === "string" && LIGHTER_DECIMAL.test(value) ? value : null;
+}
+
+const LIGHTER_DECIMAL = /^[0-9]+(\.[0-9]+)?$/;
+
+/** The most decimal places either side of a comparison may carry. */
+const LIGHTER_DECIMAL_MAX_PLACES = 36;
+
+/**
+ * Exact decimal-string comparison, or null when either side is not a decimal
+ * this module may reason about.
+ *
+ * NEVER floating point: a fill quantity that has been through a double has
+ * already lost the digits that decide whether the ledger is behind the venue.
+ * The two operands are scaled to a common integer basis - the venue quotes
+ * both the trade size and the order's filled amount in the market's own size
+ * decimals, so the common scale IS that precision - and compared as bigints.
+ */
+function compareLighterDecimalStrings(left: string, right: string): number | null {
+  const a = splitLighterDecimal(left);
+  const b = splitLighterDecimal(right);
+  if (a === null || b === null) return null;
+  const scale = Math.max(a.places, b.places);
+  const scaledLeft = a.units * 10n ** BigInt(scale - a.places);
+  const scaledRight = b.units * 10n ** BigInt(scale - b.places);
+  if (scaledLeft < scaledRight) return -1;
+  return scaledLeft > scaledRight ? 1 : 0;
+}
+
+function splitLighterDecimal(value: string): { units: bigint; places: number } | null {
+  if (!LIGHTER_DECIMAL.test(value)) return null;
+  const [whole = "", fraction = ""] = value.split(".");
+  if (fraction.length > LIGHTER_DECIMAL_MAX_PLACES) return null;
+  return { units: BigInt(`${whole}${fraction}`), places: fraction.length };
 }
 
 async function writeFill(

@@ -154,13 +154,27 @@ function executionIntent(
   };
 }
 
-/** A recording ledger: the same identity map `lighter_fills` enforces in SQL. */
-function ledger(options: { readonly failFirst?: boolean } = {}) {
+/**
+ * A recording ledger: the same identity map `lighter_fills` enforces in SQL,
+ * and the same SUM over `base_size` the completeness gate reads back.
+ *
+ * The sum is served from the rows this ledger actually holds, so a test never
+ * has to state the completeness answer by hand - it falls out of what was
+ * recorded, which is the property under test.
+ */
+function ledger(options: { readonly failFirst?: boolean; readonly failOn?: string } = {}) {
   const rows = new Map<string, LighterFillRecord>();
   let failuresLeft = options.failFirst === true ? 1 : 0;
+  const failedIdentities = new Set<string>();
   const recordFill = vi.fn<LighterFillObservationDeps["recordFill"]>(async (record: LighterFillRecord) => {
     if (failuresLeft > 0) {
       failuresLeft -= 1;
+      throw new Error("ledger write interrupted");
+    }
+    if (options.failOn !== undefined
+      && record.canonicalIdentity === options.failOn
+      && !failedIdentities.has(record.canonicalIdentity)) {
+      failedIdentities.add(record.canonicalIdentity);
       throw new Error("ledger write interrupted");
     }
     const existing = rows.get(record.canonicalIdentity);
@@ -170,17 +184,41 @@ function ledger(options: { readonly failFirst?: boolean } = {}) {
     rows.set(record.canonicalIdentity, record);
     return { kind: "recorded" as const, fillId: rows.size };
   });
-  return { rows, recordFill };
+  const recordedFillBaseSize = vi.fn<LighterFillObservationDeps["recordedFillBaseSize"]>(
+    async (executionIntentId: string) => {
+      let total = 0n;
+      for (const row of rows.values()) {
+        if (row.executionIntentId !== executionIntentId) continue;
+        // The ledger stores base_size in the market's four size decimals; the
+        // sum is exact integer arithmetic on those, never a float.
+        total += baseSizeUnits(row.baseSize);
+      }
+      return formatBaseSize(total);
+    },
+  );
+  return { rows, recordFill, recordedFillBaseSize };
+}
+
+const BASE_SIZE_DECIMALS = 4;
+
+function baseSizeUnits(value: string): bigint {
+  const [whole = "0", fraction = ""] = value.split(".");
+  return BigInt(`${whole}${fraction.padEnd(BASE_SIZE_DECIMALS, "0").slice(0, BASE_SIZE_DECIMALS)}`);
+}
+
+function formatBaseSize(units: bigint): string {
+  const text = units.toString().padStart(BASE_SIZE_DECIMALS + 1, "0");
+  return `${text.slice(0, text.length - BASE_SIZE_DECIMALS)}.${text.slice(text.length - BASE_SIZE_DECIMALS)}`;
 }
 
 function fillDeps(
   recordFill: LighterFillObservationDeps["recordFill"],
-  hasFillForIntent: LighterFillObservationDeps["hasFillForIntent"] =
-    vi.fn<LighterFillObservationDeps["hasFillForIntent"]>(async () => false),
+  recordedFillBaseSize: LighterFillObservationDeps["recordedFillBaseSize"] =
+    vi.fn<LighterFillObservationDeps["recordedFillBaseSize"]>(async () => "0"),
 ): LighterFillObservationDeps {
   resetLighterMarketAssetsCache();
   return {
-    hasFillForIntent,
+    recordedFillBaseSize,
     client: {
       getMarketDetails: vi.fn<FillClient["getMarketDetails"]>(async () => ({
         code: 200,
@@ -568,19 +606,14 @@ describe("account stream: an ORDER frame with no trade still reaches the ledger"
   });
 
   it("records ONE row when the order frame is followed by the trade frame for the same fill", async () => {
-    const { rows, recordFill } = ledger();
+    const { rows, recordFill, recordedFillBaseSize } = ledger();
     const intent = executionIntent();
-    const held = new Set<string>();
-    const fills = fillDeps(
-      recordFill,
-      vi.fn<LighterFillObservationDeps["hasFillForIntent"]>(async (intentId) => held.has(intentId)),
-    );
+    const fills = fillDeps(recordFill, recordedFillBaseSize);
     const getAccountTrades = tradesReader([LIVE_TRADE]);
 
     await reconcileLighterAccountStreamMessage(
       "core", ACCOUNT_INDEX, ordersFrame([filledOrder()]), orderFrameDeps(intent, fills, getAccountTrades),
     );
-    held.add(intent.intentId);
 
     const second = await reconcileLighterAccountStreamMessage(
       "core", ACCOUNT_INDEX, tradesFrame([LIVE_TRADE]), streamDeps(intent, fills).deps,
@@ -592,12 +625,13 @@ describe("account stream: an ORDER frame with no trade still reaches the ledger"
     expect([...rows.keys()]).toEqual(["lighter:core:42:0:491032980"]);
   });
 
-  it("spends no provider request when the ledger already holds a fill for the intent", async () => {
+  it("spends no provider request when the ledger is already LEVEL with the frame", async () => {
     const { recordFill } = ledger();
     const getAccountTrades = tradesReader([LIVE_TRADE]);
+    // The frame says 0.0050 filled and the ledger already sums to 0.0050.
     const fills = fillDeps(
       recordFill,
-      vi.fn<LighterFillObservationDeps["hasFillForIntent"]>(async () => true),
+      vi.fn<LighterFillObservationDeps["recordedFillBaseSize"]>(async () => "0.0050"),
     );
 
     await reconcileLighterAccountStreamMessage(
@@ -606,6 +640,107 @@ describe("account stream: an ORDER frame with no trade still reaches the ledger"
     );
 
     expect(getAccountTrades).not.toHaveBeenCalled();
+  });
+
+  /**
+   * THE FILL AN EXISTENCE TEST THREW AWAY, driven through the reconciler.
+   *
+   * A partial frame records fill A. The order then reaches `filled` and the
+   * frame reports MORE base filled than the ledger holds, because trade B has
+   * not arrived yet. A follow-up gated on "a row exists" skips its read here,
+   * the intent leaves the stream-watchable set, and terminal repair applies
+   * the same test - so B is never recorded by anyone. Gated on completeness,
+   * the read runs and B lands.
+   */
+  it("still reads when the frame reports MORE filled than the ledger holds", async () => {
+    const { rows, recordFill, recordedFillBaseSize } = ledger();
+    const intent = executionIntent();
+    const fills = fillDeps(recordFill, recordedFillBaseSize);
+    const tradeA = { ...LIVE_TRADE, trade_id: 1, trade_id_str: "1", size: "0.0020" };
+    const tradeB = { ...LIVE_TRADE, trade_id: 2, trade_id_str: "2", size: "0.0030" };
+
+    // 1. The partial frame's trade records fill A and nothing else.
+    await reconcileLighterAccountStreamMessage(
+      "core", ACCOUNT_INDEX, tradesFrame([tradeA]), streamDeps(intent, fills).deps,
+    );
+    expect([...rows.keys()]).toEqual(["lighter:core:42:0:1"]);
+
+    // 2. The order frame reports the order fully filled at 0.0050 while the
+    //    ledger holds 0.0020. Trade B is on the account's trade page by now.
+    const getAccountTrades = tradesReader([tradeA, tradeB]);
+    const report = await reconcileLighterAccountStreamMessage(
+      "core",
+      ACCOUNT_INDEX,
+      ordersFrame([filledOrder()]),
+      orderFrameDeps(intent, fills, getAccountTrades),
+    );
+
+    expect(getAccountTrades).toHaveBeenCalledTimes(1);
+    expect(report.fillsRecorded).toBe(1);
+    expect([...rows.keys()].sort()).toEqual(["lighter:core:42:0:1", "lighter:core:42:0:2"]);
+  });
+
+  /**
+   * The same sequence with B's FIRST ledger write refused. The outcome the
+   * reconciler committed is untouched, and the next trigger - terminal repair
+   * - still sees the ledger behind the venue and writes B.
+   */
+  it("recovers fill B on repair when its first ledger write was refused", async () => {
+    const { rows, recordFill, recordedFillBaseSize } = ledger({ failOn: "lighter:core:42:0:2" });
+    const intent = executionIntent();
+    const fills = fillDeps(recordFill, recordedFillBaseSize);
+    const tradeA = { ...LIVE_TRADE, trade_id: 1, trade_id_str: "1", size: "0.0020" };
+    const tradeB = { ...LIVE_TRADE, trade_id: 2, trade_id_str: "2", size: "0.0030" };
+
+    await reconcileLighterAccountStreamMessage(
+      "core", ACCOUNT_INDEX, tradesFrame([tradeA]), streamDeps(intent, fills).deps,
+    );
+    const frameReport = await reconcileLighterAccountStreamMessage(
+      "core",
+      ACCOUNT_INDEX,
+      ordersFrame([filledOrder()]),
+      orderFrameDeps(intent, fills, tradesReader([tradeA, tradeB])),
+    );
+    // B was observed and refused; the frame's own outcome is unaffected.
+    expect(frameReport.fillsRecorded).toBe(0);
+    expect([...rows.keys()]).toEqual(["lighter:core:42:0:1"]);
+
+    const terminal = executionIntent({
+      executionState: "filled",
+      providerOutcomeSource: "inactive_order",
+      providerOutcomeJson: { filledBaseAmount: "0.0050" },
+    });
+    const repairTrades = tradesReader([tradeA, tradeB]);
+    const repairReport = await repairLighterOrderIntent(terminal, {
+      client: {
+        getNextNonce: vi.fn<RepairClient["getNextNonce"]>(async () => ({ code: 200, nonce: 10 })),
+        getAccountActiveOrders: vi.fn<RepairClient["getAccountActiveOrders"]>(
+          async () => ({ code: 200, orders: [] }),
+        ),
+        getAccountInactiveOrders: vi.fn<RepairClient["getAccountInactiveOrders"]>(
+          async () => ({ code: 200, orders: [] }),
+        ),
+        getAccountTrades: repairTrades,
+      },
+      intents: {
+        listUnresolved: vi.fn<RepairIntents["listUnresolved"]>(async () => [terminal]),
+        findByIntentIdAnySession: vi.fn<RepairIntents["findByIntentIdAnySession"]>(async () => terminal),
+        markRepairResolved: vi.fn<RepairIntents["markRepairResolved"]>(async () => terminal),
+        markEvidenceConflict: vi.fn<RepairIntents["markEvidenceConflict"]>(async () => null),
+      },
+      nonceState: {
+        find: vi.fn<RepairNonceState["find"]>(async () => null),
+        releaseReservation: vi.fn<RepairNonceState["releaseReservation"]>(async () => null),
+        recordExecutionObserved: vi.fn<RepairNonceState["recordExecutionObserved"]>(async () => null),
+      },
+      resolvePrivilegedAccountAuth: vi.fn(async () => ({ token: "read-token", accountIndex: ACCOUNT_INDEX })),
+      fills,
+      now: () => 1_788_863_960_000,
+    });
+
+    expect(repairReport.resolution).toBe("already_terminal");
+    expect(repairTrades).toHaveBeenCalledTimes(1);
+    expect([...rows.keys()].sort()).toEqual(["lighter:core:42:0:1", "lighter:core:42:0:2"]);
   });
 });
 
@@ -647,7 +782,11 @@ describe("order repair: a terminal intent whose fills never reached the ledger",
 
   it("already_terminal with an EMPTY ledger reads the trades once and records the fill", async () => {
     const { rows, recordFill } = ledger();
-    const intent = executionIntent({ executionState: "filled", providerOutcomeSource: "inactive_order" });
+    const intent = executionIntent({
+      executionState: "filled",
+      providerOutcomeSource: "inactive_order",
+      providerOutcomeJson: { filledBaseAmount: "0.0050" },
+    });
     const getAccountTrades = tradesReader([LIVE_TRADE]);
 
     const report = await repairLighterOrderIntent(
@@ -660,13 +799,17 @@ describe("order repair: a terminal intent whose fills never reached the ledger",
     expect([...rows.keys()]).toEqual(["lighter:core:42:0:491032980"]);
   });
 
-  it("already_terminal with the row already present reads nothing", async () => {
+  it("already_terminal with every reported fill already recorded reads nothing", async () => {
     const { recordFill } = ledger();
-    const intent = executionIntent({ executionState: "filled", providerOutcomeSource: "inactive_order" });
+    const intent = executionIntent({
+      executionState: "filled",
+      providerOutcomeSource: "inactive_order",
+      providerOutcomeJson: { filledBaseAmount: "0.0050" },
+    });
     const getAccountTrades = tradesReader([LIVE_TRADE]);
     const fills = fillDeps(
       recordFill,
-      vi.fn<LighterFillObservationDeps["hasFillForIntent"]>(async () => true),
+      vi.fn<LighterFillObservationDeps["recordedFillBaseSize"]>(async () => "0.0050"),
     );
 
     const report = await repairLighterOrderIntent(intent, repairDeps(intent, fills, getAccountTrades));
@@ -740,7 +883,7 @@ describe("market assets: a perpetual names its instrument and its collateral, a 
   ): LighterFillObservationDeps {
     resetLighterMarketAssetsCache();
     return {
-      hasFillForIntent: vi.fn<LighterFillObservationDeps["hasFillForIntent"]>(async () => false),
+      recordedFillBaseSize: vi.fn<LighterFillObservationDeps["recordedFillBaseSize"]>(async () => "0"),
       client: {
         getMarketDetails: vi.fn<FillClient["getMarketDetails"]>(async () => ({
           code: 200,

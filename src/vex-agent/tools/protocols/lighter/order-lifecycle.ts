@@ -4,6 +4,7 @@ import { lighterSignerRunExited } from "@tools/lighter/signer-binary-adapter.js"
 import type { LighterIntegratorFees } from "@tools/lighter/fee-policy.js";
 import { resolveLighterOrderFees, revalidateLighterOrderFees, type LighterOrderFeeClient } from "./order-fees.js";
 import { confirmedLighterCloseDisposition } from "./close-position-confirmation.js";
+import { lighterDecimalGreaterThanZero } from "./order-evidence.js";
 import { createHash } from "node:crypto";
 
 import type {
@@ -47,6 +48,13 @@ import * as intentsRepo from "@vex-agent/db/repos/lighter-order-lifecycle-intent
 import type { LighterOrderLifecycleIntentRow } from "@vex-agent/db/repos/lighter-order-lifecycle-intents.js";
 import * as nonceRepo from "@vex-agent/db/repos/lighter-nonce-state.js";
 import { acquireSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
+import {
+  defaultLighterFillObservationDeps,
+  observeLighterFillsFromAccountTrades,
+  reportedLighterFilledBaseSize,
+  type LighterFillObservationDeps,
+} from "./fill-observation.js";
+import logger from "@utils/logger.js";
 
 const AUTH_TTL_SECONDS = 10 * 60;
 const SIGNER_EXPIRY_MS = 60_000;
@@ -232,6 +240,12 @@ export interface LighterOrderLifecycleExecutionDeps {
   readonly acquireSessionControlLock: typeof acquireSessionControlLock;
   readonly now: () => number;
   readonly wait: (delayMs: number) => Promise<void>;
+  /**
+   * The fill observation boundary. OPTIONAL and defaulted in the production
+   * factory, exactly as it is on the order-create executor, so a caller that
+   * assembles its own deps never writes to the fill ledger by accident.
+   */
+  readonly fills?: LighterFillObservationDeps;
 }
 
 let configuredDeps: LighterOrderLifecycleExecutionDeps | null = null;
@@ -262,6 +276,7 @@ export function defaultLighterOrderLifecycleExecutionDeps(input: {
     acquireSessionControlLock,
     now: Date.now,
     wait: (delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs)),
+    fills: defaultLighterFillObservationDeps(),
   };
 }
 
@@ -1505,6 +1520,20 @@ export async function executeApprovedLighterClosePosition(
       await deps.intents.markProviderOutcome({ intentId: intent.intentId, state: "completed", evidence: {
         kind: "lighter_close_position_outcome", order: observedOrder, resultingPosition, disposition: status,
       } });
+      // THE OBSERVATION BOUNDARY FOR THE DEDICATED CLOSE TOOL. The close
+      // settles from an INACTIVE ORDER row and never reads a trade, so nothing
+      // has reached `lighter_fills` at this point - the same order-shaped
+      // confirmation that left the create executor's fills unrecorded. One
+      // bounded follow-up read, after the outcome is durable, never throwing
+      // and never changing what was just committed.
+      await observeClosePositionFills({
+        intent,
+        deps,
+        auth,
+        clientOrderIndex: unsignedOrder.clientOrderIndex,
+        filledBaseAmount: observedOrder.filledBaseAmount,
+        submittedTxHash: response.tx_hash,
+      });
       return {
         status,
         intentId: intent.intentId,
@@ -1954,4 +1983,69 @@ function blocked(message: string): VexError {
     `${message} No lifecycle transaction was submitted.`,
     "Refresh the exact Lighter order and prepare a new approval-gated action.",
   );
+}
+
+/**
+ * One bounded follow-up read of the account's own trades for a CONFIRMED
+ * close.
+ *
+ * The ledger row for a close belongs to the LIFECYCLE intent that authorized
+ * it: `lighter_fills.execution_intent_id` stores whichever Vex intent owns the
+ * fill, and for the dedicated close tool that is the lifecycle row, not an
+ * order-execution row.
+ *
+ * Skipped when the venue reports nothing filled (a close that moved no money
+ * has no fill to record) and when the ledger is already level with the
+ * reported quantity. Never throws: the close outcome is committed and a
+ * reporting failure must never change it.
+ */
+async function observeClosePositionFills(input: {
+  readonly intent: LighterOrderLifecycleIntentRow;
+  readonly deps: LighterOrderLifecycleExecutionDeps;
+  readonly auth: LighterPrivilegedAccountAuth;
+  readonly clientOrderIndex: string;
+  readonly filledBaseAmount: string;
+  readonly submittedTxHash: string;
+}): Promise<void> {
+  const fills = input.deps.fills;
+  if (fills === undefined) return;
+  const reportedFilledBaseSize = reportedLighterFilledBaseSize(input.filledBaseAmount);
+  if (reportedFilledBaseSize === null || !lighterDecimalGreaterThanZero(reportedFilledBaseSize)) return;
+  const { marketIndex, requestedSide } = input.intent;
+  if (marketIndex === null || requestedSide === null) {
+    logger.warn("lighter.fill_observation.follow_up_scope_incomplete", {
+      site: "close_position_execution",
+      intentId: input.intent.intentId,
+    });
+    return;
+  }
+  const report = await observeLighterFillsFromAccountTrades({
+    intent: {
+      intentId: input.intent.intentId,
+      environment: input.intent.environment,
+      accountIndex: input.intent.accountIndex,
+      marketIndex,
+      side: requestedSide,
+      clientOrderIndex: input.clientOrderIndex,
+    },
+    authorizedFees: input.intent.integratorFees ?? null,
+    deps: fills,
+    read: {
+      // Bound through a closure: the production client is a class instance
+      // whose method needs its receiver.
+      getAccountTrades: (environment, params, auth) =>
+        input.deps.client.getAccountTrades(environment, params, auth),
+      auth: input.auth,
+      submittedTxHash: input.submittedTxHash,
+    },
+    onlyWhenLedgerIncomplete: { reportedFilledBaseSize },
+  });
+  logger.info("lighter.fill_observation.follow_up", {
+    site: "close_position_execution",
+    intentId: input.intent.intentId,
+    observed: report.observed,
+    recorded: report.recorded,
+    duplicates: report.duplicates,
+    failed: report.failed,
+  });
 }

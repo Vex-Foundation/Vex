@@ -35,6 +35,15 @@ import {
   stateFromActiveLighterOrder,
   stateFromInactiveLighterOrder,
 } from "./order-evidence.js";
+import {
+  defaultLighterFillObservationDeps,
+  matchingLighterTrades,
+  observeLighterFills,
+  observeLighterFillsFromAccountTrades,
+  reportedLighterFilledBaseSize,
+  type LighterFillObservationDeps,
+} from "./fill-observation.js";
+import logger from "@utils/logger.js";
 import type { LighterOcoExecutionPlan } from "./oco-execution-plan.js";
 import { ocoLegRevalidationPlan } from "./oco-execution-plan.js";
 import { revalidateApprovedLighterOrder } from "./pre-submit-revalidation.js";
@@ -92,6 +101,12 @@ export interface LighterOcoExecutionDeps {
   readonly transaction: typeof withTransaction;
   readonly now: () => number;
   readonly wait: (delayMs: number) => Promise<void>;
+  /**
+   * The fill observation boundary. OPTIONAL and defaulted in the production
+   * factory, exactly as it is on the order-create executor, so a caller that
+   * assembles its own deps never writes to the fill ledger by accident.
+   */
+  readonly fills?: LighterFillObservationDeps;
 }
 
 let configuredDeps: LighterOcoExecutionDeps | null = null;
@@ -119,6 +134,7 @@ export function defaultLighterOcoExecutionDeps(input: {
     transaction: withTransaction,
     now: Date.now,
     wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    fills: defaultLighterFillObservationDeps(),
   };
 }
 
@@ -433,7 +449,7 @@ async function reconcileOco(input: {
         accountIndex: plan.accountIndex, marketId: plan.marketIndex, marketType: "all",
       }, auth);
       const evidence = classifyOcoEvidence(plan, group, active.orders, [], [], input.submittedTxHash);
-      if (evidence.state === "active") return persistOutcome(input, evidence);
+      if (evidence.state === "active") return persistOutcome(input, evidence, null);
       if (attempt < ACTIVE_ATTEMPTS - 1) await deps.wait(delay * (attempt + 1));
     }
     const [active, inactive, trades] = await Promise.all([
@@ -441,11 +457,35 @@ async function reconcileOco(input: {
       deps.client.getAccountInactiveOrders(plan.environment, { accountIndex: plan.accountIndex, marketId: plan.marketIndex, marketType: "all", limit: 100 }, auth),
       deps.client.getAccountTrades(plan.environment, { accountIndex: plan.accountIndex, limit: 100, sortBy: "timestamp" }, auth),
     ]);
-    return persistOutcome(input, classifyOcoEvidence(plan, group, active.orders, inactive.orders, trades.trades, input.submittedTxHash));
+    return persistOutcome(
+      input,
+      classifyOcoEvidence(plan, group, active.orders, inactive.orders, trades.trades, input.submittedTxHash),
+      trades.trades,
+    );
   } catch {
     await markAmbiguous(plan, deps, "oco_provider_outcome_read_failed");
     return ambiguous(plan, "oco_provider_outcome_read_failed", input.signerTxHash);
   }
+}
+
+/**
+ * One OCO leg as the classification saw it, in the shape the FILL BOUNDARY
+ * needs: which child order it is, what the venue says it did, and how much the
+ * venue reports it filled.
+ *
+ * The evidence JSON beside it is what the intent stores; this is the typed
+ * half, because deciding whether a leg's fill reached the ledger from an
+ * untyped `Record<string, unknown>` is exactly the kind of guess the fill
+ * boundary refuses to make.
+ */
+export interface LighterOcoLegEvidence {
+  readonly name: "stop_loss" | "take_profit";
+  readonly clientOrderIndex: string;
+  readonly state: string;
+  readonly source: "active_order" | "inactive_order" | "account_trade" | "not_found";
+  /** The venue's own filled base quantity for this leg, or null when its evidence carries none. */
+  readonly reportedFilledBaseSize: string | null;
+  readonly evidence: Record<string, unknown>;
 }
 
 export function classifyOcoEvidence(
@@ -455,22 +495,30 @@ export function classifyOcoEvidence(
   inactive: readonly LighterAccountOrder[],
   trades: readonly LighterTrade[],
   _submittedTxHash: string,
-): { readonly state: "active" | "resolved" | "rejected" | "sequencer_pending"; readonly evidence: Record<string, unknown> } {
-  const leg = (index: 0 | 1, name: "stop_loss" | "take_profit") => {
+): {
+  readonly state: "active" | "resolved" | "rejected" | "sequencer_pending";
+  readonly evidence: Record<string, unknown>;
+  readonly legs: readonly LighterOcoLegEvidence[];
+} {
+  const leg = (index: 0 | 1, name: "stop_loss" | "take_profit"): LighterOcoLegEvidence => {
     const clientOrderIndex = group.orders[index].clientOrderIndex;
     const activeOrder = findMatchingLighterOrder(active, plan, clientOrderIndex);
-    if (activeOrder !== null) return { name, state: stateFromActiveLighterOrder(activeOrder),
-      source: "active_order", evidence: lighterOrderEvidenceJson("active_order", activeOrder, clientOrderIndex) };
+    if (activeOrder !== null) return { name, clientOrderIndex, state: stateFromActiveLighterOrder(activeOrder),
+      source: "active_order", reportedFilledBaseSize: reportedLighterFilledBaseSize(activeOrder.filled_base_amount),
+      evidence: lighterOrderEvidenceJson("active_order", activeOrder, clientOrderIndex) };
     const inactiveOrder = findMatchingLighterOrder(inactive, plan, clientOrderIndex);
-    if (inactiveOrder !== null) return { name, state: stateFromInactiveLighterOrder(inactiveOrder),
-      source: "inactive_order", evidence: lighterOrderEvidenceJson("inactive_order", inactiveOrder, clientOrderIndex) };
+    if (inactiveOrder !== null) return { name, clientOrderIndex, state: stateFromInactiveLighterOrder(inactiveOrder),
+      source: "inactive_order", reportedFilledBaseSize: reportedLighterFilledBaseSize(inactiveOrder.filled_base_amount),
+      evidence: lighterOrderEvidenceJson("inactive_order", inactiveOrder, clientOrderIndex) };
     // Grouped transactions share one transaction hash across both children, so
     // tx-hash fallback could incorrectly attribute one fill to both legs. OCO
     // reconciliation therefore requires the exact child client-order index.
     const trade = findMatchingLighterTrade(trades, plan, clientOrderIndex, "__vex_oco_child_id_only__");
-    if (trade !== null) return { name, state: "partially_filled", source: "account_trade",
+    if (trade !== null) return { name, clientOrderIndex, state: "partially_filled", source: "account_trade",
+      reportedFilledBaseSize: null,
       evidence: { ...lighterTradeEvidenceJson(trade, plan, clientOrderIndex), orderId: lighterOrderIdFromTrade(trade, plan) } };
-    return { name, state: "not_found", source: "not_found", evidence: { clientOrderIndex } };
+    return { name, clientOrderIndex, state: "not_found", source: "not_found",
+      reportedFilledBaseSize: null, evidence: { clientOrderIndex } };
   };
   const stopLoss = leg(0, "stop_loss");
   const takeProfit = leg(1, "take_profit");
@@ -489,12 +537,18 @@ export function classifyOcoEvidence(
       takeProfit,
       completePairVisible: state === "active" || state === "resolved" || state === "rejected",
     },
+    legs: [stopLoss, takeProfit],
   };
 }
 
 async function persistOutcome(
   input: Parameters<typeof reconcileOco>[0],
   outcome: ReturnType<typeof classifyOcoEvidence>,
+  /**
+   * The trade page this classification read, or NULL when it classified from
+   * order rows alone (the active-only attempts read no trades).
+   */
+  trades: readonly LighterTrade[] | null,
 ): Promise<ExecuteApprovedLighterOcoResult> {
   const persisted = await input.deps.intents.markProviderOutcome({
     intentId: input.plan.intentId, sessionId: input.plan.sessionId,
@@ -504,6 +558,7 @@ async function persistOutcome(
     await markAmbiguous(input.plan, input.deps, "oco_provider_outcome_persist_failed");
     return ambiguous(input.plan, "oco_provider_outcome_persist_failed", input.signerTxHash);
   }
+  await observeOcoLegFills(input, outcome.legs, trades);
   const common = {
     intentId: input.plan.intentId,
     signerTxHash: input.signerTxHash,
@@ -516,6 +571,87 @@ async function persistOutcome(
     return { status: outcome.state, executionState: outcome.state, ...common };
   }
   return { status: "sequencer_pending", executionState: "sequencer_pending", ...common };
+}
+
+/**
+ * THE OBSERVATION BOUNDARY FOR A TRIGGERED OCO LEG.
+ *
+ * An OCO leg that triggers is a fill like any other, and until this existed
+ * none of them reached `lighter_fills`: the classification above reads the
+ * account's trades, decides the group's state from ORDER rows wherever it can,
+ * and returns - so a leg confirmed from an inactive order carried its fill
+ * away with it. The ledger row belongs to the OCO EXECUTION INTENT that
+ * authorized the group, which is what `lighter_fills.execution_intent_id`
+ * stores for these rows.
+ *
+ * Two paths, the same boundary. When this classification read a trade page,
+ * every matching trade on it is observed directly - no second provider request
+ * for bytes already in hand. When it classified from order rows alone, a leg
+ * the venue says filled gets ONE bounded follow-up read, gated on the ledger
+ * being behind the quantity that order row reported.
+ *
+ * Never throws and never changes the outcome that was just committed: a
+ * reporting failure is owed to the next observation, never to the money.
+ */
+async function observeOcoLegFills(
+  input: Parameters<typeof reconcileOco>[0],
+  legs: readonly LighterOcoLegEvidence[],
+  trades: readonly LighterTrade[] | null,
+): Promise<void> {
+  const fills = input.deps.fills;
+  if (fills === undefined) return;
+  const { plan } = input;
+  for (const leg of legs) {
+    if (leg.state !== "filled" && leg.state !== "partially_filled") continue;
+    const intent = {
+      intentId: plan.intentId,
+      environment: plan.environment,
+      accountIndex: plan.accountIndex,
+      marketIndex: plan.marketIndex,
+      side: plan.side,
+      clientOrderIndex: leg.clientOrderIndex,
+    };
+    const report = trades !== null
+      ? await observeLighterFills({
+        intent,
+        // Grouped transactions share one hash across both children, so the
+        // child client-order index is the ONLY admissible match here - the
+        // same rule the classification above applies.
+        trades: matchingLighterTrades(
+          trades,
+          { accountIndex: plan.accountIndex, marketIndex: plan.marketIndex, side: plan.side },
+          leg.clientOrderIndex,
+          "__vex_oco_child_id_only__",
+        ),
+        authorizedFees: plan.integratorFees ?? null,
+        deps: fills,
+      })
+      : await observeLighterFillsFromAccountTrades({
+        intent,
+        authorizedFees: plan.integratorFees ?? null,
+        deps: fills,
+        read: {
+          // Bound through a closure: the production client is a class instance
+          // whose method needs its receiver.
+          getAccountTrades: (environment, params, auth) =>
+            input.deps.client.getAccountTrades(environment, params, auth),
+          auth: { token: input.authToken, accountIndex: plan.accountIndex },
+          submittedTxHash: "__vex_oco_child_id_only__",
+        },
+        onlyWhenLedgerIncomplete: { reportedFilledBaseSize: leg.reportedFilledBaseSize },
+      });
+    logger.info("lighter.fill_observation.follow_up", {
+      site: "oco_execution",
+      intentId: plan.intentId,
+      leg: leg.name,
+      source: leg.source,
+      state: leg.state,
+      observed: report.observed,
+      recorded: report.recorded,
+      duplicates: report.duplicates,
+      failed: report.failed,
+    });
+  }
 }
 
 function normalizeKey(value: string): string {

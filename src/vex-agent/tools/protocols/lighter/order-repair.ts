@@ -15,6 +15,7 @@ import {
   matchingLighterTrades,
   observeLighterFills,
   observeLighterFillsFromAccountTrades,
+  reportedLighterFilledBaseSize,
   type LighterFillObservationDeps,
 } from "./fill-observation.js";
 import {
@@ -351,9 +352,14 @@ export async function repairLighterOrderIntent(
  *
  * Bounded three ways, in this order, so a repeated repair costs nothing: the
  * intent must be filled or partially filled (a canceled or rejected order
- * moved no money), the ledger must hold no row for it, and a read-only account
- * token must be derivable. The unattended background sweep passes no auth
- * resolver at all, so it never spends an authenticated request here.
+ * moved no money), the ledger must be BEHIND the filled quantity the provider
+ * reported on the stored outcome evidence, and a read-only account token must
+ * be derivable. The unattended background sweep passes no auth resolver at
+ * all, so it never spends an authenticated request here.
+ *
+ * The middle bound is completeness, not existence. Repair is the LAST path
+ * that revisits such an intent, so gating it on "a row exists" is what turned
+ * a late second trade into a fill nobody would ever record.
  *
  * Never throws and never changes durable state: this is the ledger catching
  * up with an outcome that is already settled.
@@ -388,7 +394,9 @@ async function repairMissingFillLedgerRows(
       auth,
       submittedTxHash: intent.submittedTxHash ?? "__vex_repair_no_tx_hash__",
     },
-    onlyWhenLedgerAlreadyEmpty: true,
+    onlyWhenLedgerIncomplete: {
+      reportedFilledBaseSize: reportedLighterFilledBaseSize(intent.providerOutcomeJson?.filledBaseAmount),
+    },
   });
   logger.info("lighter.fill_observation.follow_up", {
     site: "order_repair_already_terminal",

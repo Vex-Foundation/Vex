@@ -690,24 +690,34 @@ export async function attachLighterFillToIntent(
 }
 
 /**
- * Does the ledger already hold a fill for this Vex intent?
+ * How much base quantity the ledger already holds for this Vex intent, as an
+ * exact decimal string ("0" when it holds nothing).
  *
  * The question a SELF-HEALING follow-up read asks before it spends a
- * privileged provider request: an intent whose order settled before the fill
- * ledger existed (or before an interrupted write completed) has a terminal
- * durable outcome and NO ledger row, and that is the only state worth reading
- * the account's trades again for. A `true` answer is not proof that every fill
- * of the intent is held - a partially filled order can gain more - so callers
- * that must see later fills observe them at their own boundary rather than
- * asking this.
+ * privileged provider request, and it is COMPLETENESS, never existence.
+ * Existence loses fills for good: a partial-fill frame records fill A, the
+ * order then settles `filled` from an order row, and a follow-up gated on "is
+ * there any row" skips every read from that moment on - so fill B, whose trade
+ * arrives later, never reaches the ledger and never reaches AgentScan. The sum
+ * compared against the filled quantity the provider itself reported for the
+ * order says whether the ledger is actually behind the venue.
+ *
+ * Summed in SQL over `base_size`, whose column CHECK admits only a
+ * non-negative decimal string, so the numeric cast is total. Never floating
+ * point: the caller compares the result as a decimal string.
  */
-export async function hasLighterFillForIntent(executionIntentId: string): Promise<boolean> {
-  const row = await queryOne<{ id: string | number }>(SELECT_FILL_ID_FOR_INTENT_SQL, [executionIntentId]);
-  return row !== null;
+export async function recordedLighterFillBaseSizeForIntent(executionIntentId: string): Promise<string> {
+  const row = await queryOne<{ base_size_total: string | null }>(
+    SELECT_FILL_BASE_SIZE_TOTAL_FOR_INTENT_SQL,
+    [executionIntentId],
+  );
+  const total = row?.base_size_total ?? null;
+  return typeof total === "string" && total.length > 0 ? total : "0";
 }
 
-const SELECT_FILL_ID_FOR_INTENT_SQL = `
-  SELECT id FROM lighter_fills WHERE execution_intent_id = $1 LIMIT 1`;
+const SELECT_FILL_BASE_SIZE_TOTAL_FOR_INTENT_SQL = `
+  SELECT COALESCE(SUM(base_size::numeric), 0)::text AS base_size_total
+    FROM lighter_fills WHERE execution_intent_id = $1`;
 
 const SELECT_FILL_FOR_ATTACH_SQL = `
   SELECT id, environment, account_index, market_index, provider_order_id, execution_intent_id

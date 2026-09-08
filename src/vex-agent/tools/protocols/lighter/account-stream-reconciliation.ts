@@ -29,6 +29,7 @@ import {
   matchingLighterTrades,
   observeLighterFills,
   observeLighterFillsFromAccountTrades,
+  reportedLighterFilledBaseSize,
   type LighterFillObservationDeps,
 } from "./fill-observation.js";
 import { resolveLighterReadOnlyAccountAuth } from "./read-account-auth.js";
@@ -160,20 +161,42 @@ async function orderFrameFillCandidates(
   accountIndex: number,
   message: LighterAccountAllOrdersStreamMessage,
   deps: LighterAccountStreamReconciliationDeps,
-): Promise<readonly LighterOrderExecutionIntentRow[]> {
+): Promise<readonly LighterOrderFrameFillCandidate[]> {
   if (deps.fills === undefined || deps.resolveAuth === undefined) return [];
-  const filledClientOrderIds = new Set<string>();
+  // THE FRAME'S OWN FILLED QUANTITY travels with the candidate: it is what the
+  // follow-up read compares the ledger against, and the frame is the only
+  // place it is available once the intent has left the watchable set. A frame
+  // that repeats an order keeps the latest row, which is the venue's newest
+  // statement about it.
+  const reportedFilledByClientOrderId = new Map<string, string | null>();
   for (const order of flattenOrders(message)) {
     if (order.owner_account_index !== accountIndex) continue;
     const state = classifyLighterStreamOrderState(order);
     if (state === "filled" || state === "partially_filled") {
-      filledClientOrderIds.add(order.client_order_id);
+      reportedFilledByClientOrderId.set(
+        order.client_order_id,
+        reportedLighterFilledBaseSize(order.filled_base_amount),
+      );
     }
   }
-  if (filledClientOrderIds.size === 0) return [];
+  if (reportedFilledByClientOrderId.size === 0) return [];
   const intents = await deps.orderIntents.listStreamWatchable(environment, accountIndex, 500);
-  return intents.filter((intent) =>
-    intent.clientOrderIndex !== null && filledClientOrderIds.has(intent.clientOrderIndex));
+  const candidates: LighterOrderFrameFillCandidate[] = [];
+  for (const intent of intents) {
+    if (intent.clientOrderIndex === null) continue;
+    if (!reportedFilledByClientOrderId.has(intent.clientOrderIndex)) continue;
+    candidates.push({
+      intent,
+      reportedFilledBaseSize: reportedFilledByClientOrderId.get(intent.clientOrderIndex) ?? null,
+    });
+  }
+  return candidates;
+}
+
+/** One watchable intent the frame says filled, with the venue's own figure for it. */
+interface LighterOrderFrameFillCandidate {
+  readonly intent: LighterOrderExecutionIntentRow;
+  readonly reportedFilledBaseSize: string | null;
 }
 
 /**
@@ -181,9 +204,11 @@ async function orderFrameFillCandidates(
  *
  * The trades page is ACCOUNT-scoped, so a single read serves every candidate
  * in the frame; a per-intent read would multiply provider requests for the
- * same bytes. Each candidate that already has a ledger row is skipped before
- * the read is made, which is what keeps a repeated `partially_filled` frame
- * from re-reading forever.
+ * same bytes. A candidate whose ledger rows already sum to the quantity THIS
+ * FRAME says filled is skipped before the read is made, which is what keeps a
+ * repeated `partially_filled` frame from re-reading forever - while a frame
+ * that reports MORE filled than the ledger holds still reads, which is the
+ * fill an existence test would have thrown away.
  *
  * The read never throws and never touches the durable outcome the reconciler
  * just committed: a failure is counted and the next frame reads again.
@@ -191,7 +216,7 @@ async function orderFrameFillCandidates(
 async function observeFillsBehindOrderFrame(
   environment: LighterOrderExecutionIntentRow["environment"],
   accountIndex: number,
-  candidates: readonly LighterOrderExecutionIntentRow[],
+  candidates: readonly LighterOrderFrameFillCandidate[],
   deps: LighterAccountStreamReconciliationDeps,
 ): Promise<{ readonly observed: number; readonly recorded: number }> {
   const fills = deps.fills;
@@ -210,7 +235,8 @@ async function observeFillsBehindOrderFrame(
   let observed = 0;
   let recorded = 0;
   let failed = 0;
-  for (const intent of candidates) {
+  for (const candidate of candidates) {
+    const intent = candidate.intent;
     const report = await observeLighterFillsFromAccountTrades({
       intent: {
         intentId: intent.intentId,
@@ -230,7 +256,7 @@ async function observeFillsBehindOrderFrame(
         auth,
         submittedTxHash: intent.submittedTxHash ?? "__no_submitted_hash__",
       },
-      onlyWhenLedgerAlreadyEmpty: true,
+      onlyWhenLedgerIncomplete: { reportedFilledBaseSize: candidate.reportedFilledBaseSize },
     });
     observed += report.observed;
     recorded += report.recorded;

@@ -2131,7 +2131,7 @@ function fillObservationDeps(
     },
     recordFill,
     findFeeAuthorization: vi.fn<LighterFillObservationDeps["findFeeAuthorization"]>(async () => null),
-    hasFillForIntent: vi.fn<LighterFillObservationDeps["hasFillForIntent"]>(async () => false),
+    recordedFillBaseSize: vi.fn<LighterFillObservationDeps["recordedFillBaseSize"]>(async () => "0"),
   };
 }
 

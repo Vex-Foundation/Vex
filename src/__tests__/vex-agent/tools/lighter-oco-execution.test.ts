@@ -4,7 +4,18 @@ import { describe, expect, it, vi } from "vitest";
 
 import { buildLighterOcoPreview, buildLighterUnsignedOcoRequest } from "@tools/lighter/oco-order.js";
 import type { LighterOrderPreview } from "@tools/lighter/order-preview.js";
-import type { LighterAccountOrder, LighterAccountResponse, LighterMarketDetail } from "@tools/lighter/types.js";
+import type {
+  LighterAccountOrder,
+  LighterAccountResponse,
+  LighterAssetDetail,
+  LighterMarketDetail,
+  LighterTrade,
+} from "@tools/lighter/types.js";
+import type { LighterFillRecord } from "@vex-agent/tools/protocols/lighter/agentscan-activity.js";
+import {
+  resetLighterMarketAssetsCache,
+  type LighterFillObservationDeps,
+} from "@vex-agent/tools/protocols/lighter/fill-observation.js";
 import type { LighterOrderPreviewRow } from "@vex-agent/db/repos/lighter-order-previews.js";
 import type { LighterOcoExecutionPlan } from "@vex-agent/tools/protocols/lighter/oco-execution-plan.js";
 import {
@@ -255,5 +266,159 @@ describe("Lighter OCO signer settlement contract", () => {
     expect(d.intents.markAmbiguous).toHaveBeenCalledOnce();
     expect(d.nonceState.releaseUnsubmittedReservation).not.toHaveBeenCalled();
     expect(d.intents.markUnsubmittedRefused).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * A TRIGGERED OCO LEG IS A FILL, and until the observation boundary was wired
+ * into this executor none of them reached `lighter_fills`: the classification
+ * decides the group's state from ORDER rows wherever it can and returns, so a
+ * leg confirmed from an inactive order carried its fill away with it. The
+ * ledger row belongs to the OCO EXECUTION INTENT that authorized the group.
+ */
+describe("OCO fills reach the ledger", () => {
+  const RHC_COLLATERAL: LighterAssetDetail = {
+    asset_id: 3, symbol: "USDG", l1_decimals: 6, decimals: 6, min_transfer_amount: "0",
+    l1_address: "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+  };
+
+  function ledger() {
+    const rows = new Map<string, LighterFillRecord>();
+    const recordFill = vi.fn<LighterFillObservationDeps["recordFill"]>(async (record: LighterFillRecord) => {
+      if (rows.has(record.canonicalIdentity)) return { kind: "duplicate" as const, fillId: 1 };
+      rows.set(record.canonicalIdentity, record);
+      return { kind: "recorded" as const, fillId: rows.size };
+    });
+    return { rows, recordFill };
+  }
+
+  function fillDeps(
+    recordFill: LighterFillObservationDeps["recordFill"],
+    recordedFillBaseSize: LighterFillObservationDeps["recordedFillBaseSize"] =
+      vi.fn<LighterFillObservationDeps["recordedFillBaseSize"]>(async () => "0"),
+  ): LighterFillObservationDeps {
+    resetLighterMarketAssetsCache();
+    return {
+      recordedFillBaseSize,
+      recordFill,
+      findFeeAuthorization: vi.fn<LighterFillObservationDeps["findFeeAuthorization"]>(async () => null),
+      client: {
+        getMarketDetails: vi.fn<LighterFillObservationDeps["client"]["getMarketDetails"]>(async () => ({
+          code: 200, order_book_details: [MARKET], spot_order_book_details: [],
+        })),
+        getAssetDetails: vi.fn<LighterFillObservationDeps["client"]["getAssetDetails"]>(async () => ({
+          code: 200, asset_details: [RHC_COLLATERAL],
+        })),
+      },
+    };
+  }
+
+  /** The account is the ASK on a sell leg, and the child client order id is the only admissible match. */
+  function legTrade(index: 0 | 1, overrides: Partial<LighterTrade> = {}): LighterTrade {
+    return {
+      trade_id: 900 + index, trade_id_str: String(900 + index), tx_hash: TX_HASH, type: "trade",
+      market_id: 0, size: "1.0000", price: "2850", usd_amount: "2850.000000",
+      ask_id: index + 1, ask_id_str: String(index + 1), bid_id: 77, bid_id_str: "77",
+      ask_account_id: 42, bid_account_id: 99, is_maker_ask: false,
+      block_height: 5150, timestamp: NOW, transaction_time: NOW * 1000,
+      ask_client_id_str: GROUP.orders[index].clientOrderIndex, taker_fee: 350,
+      ...overrides,
+    };
+  }
+
+  function inactive(index: 0 | 1, status: string, filled: string): LighterAccountOrder {
+    return { ...active(index), status, filled_base_amount: filled, remaining_base_amount: "0", filled_quote_amount: "2850" };
+  }
+
+  it("records the fill of a leg that TRIGGERED from the trade page the classification read", async () => {
+    const { rows, recordFill } = ledger();
+    const dependencies = ocoDeps();
+    Object.assign(dependencies, { fills: fillDeps(recordFill) });
+    // The pre-submission preflight must see NO child; the reconciliation after
+    // submission sees the triggered leg and its trade.
+    let submitted = false;
+    Object.assign(dependencies.client, {
+      sendTx: vi.fn(async () => {
+        submitted = true;
+        return { code: 200, tx_hash: TX_HASH, predicted_execution_time_ms: 1 };
+      }),
+      getAccountActiveOrders: vi.fn(async () => ({ code: 200, orders: [] })),
+      getAccountInactiveOrders: vi.fn(async () => ({
+        code: 200,
+        orders: submitted ? [inactive(0, "filled", "1.0000"), inactive(1, "canceled", "0")] : [],
+      })),
+      getAccountTrades: vi.fn(async () => ({ code: 200, trades: submitted ? [legTrade(0)] : [] })),
+    });
+
+    const result = await executeApprovedLighterOco({ plan: PLAN, group: GROUP, deps: dependencies });
+
+    expect(result.status).toBe("resolved");
+    const recorded = rows.get("lighter:rhc:42:0:900");
+    expect(recorded).toBeDefined();
+    expect(recorded?.executionIntentId).toBe(PLAN.intentId);
+    expect(recorded?.clientOrderId).toBe(GROUP.orders[0].clientOrderIndex);
+    expect(recorded?.baseSize).toBe("1.0000");
+    // The canceled sibling moved no money and must never produce a row.
+    expect(rows.size).toBe(1);
+  });
+
+  it("reads once for a leg still ACTIVE with a partial fill, and not again once the ledger is level", async () => {
+    const { rows, recordFill } = ledger();
+    const partial: LighterAccountOrder = {
+      ...active(0), filled_base_amount: "0.5000", remaining_base_amount: "0.5000", filled_quote_amount: "1425",
+    };
+    let submitted = false;
+    const getAccountTrades = vi.fn(async () => ({
+      code: 200,
+      trades: submitted ? [legTrade(0, { size: "0.5000", usd_amount: "1425.000000" })] : [],
+    }));
+    const dependencies = ocoDeps();
+    Object.assign(dependencies, { fills: fillDeps(recordFill) });
+    Object.assign(dependencies.client, {
+      sendTx: vi.fn(async () => {
+        submitted = true;
+        return { code: 200, tx_hash: TX_HASH, predicted_execution_time_ms: 1 };
+      }),
+      getAccountActiveOrders: vi.fn(async () => ({
+        code: 200, orders: submitted ? [partial, active(1)] : [],
+      })),
+      getAccountTrades,
+    });
+
+    const result = await executeApprovedLighterOco({ plan: PLAN, group: GROUP, deps: dependencies });
+
+    // The group is still protecting the position; the partial fill is real money and is recorded.
+    expect(result.status).toBe("active");
+    // Two reads in total: the pre-submission preflight, and ONE bounded
+    // follow-up behind the partial fill.
+    expect(getAccountTrades).toHaveBeenCalledTimes(2);
+    expect(rows.get("lighter:rhc:42:0:900")?.baseSize).toBe("0.5000");
+
+    // A second execution over the same evidence, with the ledger now level
+    // with what the order row reports, spends no provider request at all.
+    let resubmitted = false;
+    const levelTrades = vi.fn(async () => ({ code: 200, trades: [] }));
+    const again = ocoDeps();
+    Object.assign(again, {
+      fills: fillDeps(
+        recordFill,
+        vi.fn<LighterFillObservationDeps["recordedFillBaseSize"]>(async () => "0.5000"),
+      ),
+    });
+    Object.assign(again.client, {
+      sendTx: vi.fn(async () => {
+        resubmitted = true;
+        return { code: 200, tx_hash: TX_HASH, predicted_execution_time_ms: 1 };
+      }),
+      getAccountActiveOrders: vi.fn(async () => ({
+        code: 200, orders: resubmitted ? [partial, active(1)] : [],
+      })),
+      getAccountTrades: levelTrades,
+    });
+
+    await executeApprovedLighterOco({ plan: PLAN, group: GROUP, deps: again });
+
+    // The preflight read stands; the follow-up is not made at all.
+    expect(levelTrades).toHaveBeenCalledTimes(1);
   });
 });
