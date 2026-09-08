@@ -26,7 +26,7 @@ import {
   defaultLighterOrderLifecycleExecutionDeps,
 } from "@vex-agent/tools/protocols/lighter/order-lifecycle.js";
 import { configureLighterRepairPrivilegedAccountAuthResolver } from "@vex-agent/tools/protocols/lighter/order-repair.js";
-import { configureLighterReadOnlyAccountAuthResolver } from "@vex-agent/tools/protocols/lighter/read-account-auth.js";
+import { configureLighterReadOnlyAccountAuthOutcomeResolver } from "@vex-agent/tools/protocols/lighter/read-account-auth.js";
 import { configureLighterTradingCredentialScopeResolver } from "@vex-agent/tools/protocols/lighter/trading-credential-scope.js";
 import { configureLighterManagedTradingReadinessResolver } from "@vex-agent/tools/protocols/lighter/managed-trading-readiness.js";
 import {
@@ -40,6 +40,7 @@ import {
   createUnlockedVaultLighterTradingSecretReader,
   listUnlockedLighterTradingCredentialScopes,
 } from "../secrets/lighter-trading-credential.js";
+import { isSecretSessionUnlocked } from "../secrets/session.js";
 import { resolveManagedLighterTradingReadiness } from "./managed-trading-readiness.js";
 import { installLighterOrderStreamSupervisor } from "./order-stream.js";
 import {
@@ -178,22 +179,39 @@ export function installLighterOrderCreateExecutionDeps(): () => void {
   // derives fresh from the vault - there is no standalone pasted-token
   // shortcut any more (it silently blocked withdrawal/order-read auth
   // whenever the pasted token went stale, e.g. after a key re-registration).
-  const uninstallReadAuth = configureLighterReadOnlyAccountAuthResolver(
+  const uninstallReadAuth = configureLighterReadOnlyAccountAuthOutcomeResolver(
     async (environment, accountIndex) => {
+      // THE THREE ANSWERS A PERSON CAN ACT ON. A locked vault, a wallet with
+      // no saved credential and a signer that refused are three different
+      // situations with three different next steps, and every one of them used
+      // to arrive upstream as the same `null`. The Settings points view shows
+      // the wallet with its reason instead of dropping it, so the reason has to
+      // be derived here, where the vault state is actually known.
+      if (!isSecretSessionUnlocked()) {
+        log.warn("[lighter] read-only auth resolver: the vault is locked", {
+          environment,
+          accountIndex,
+        });
+        return {
+          kind: "unavailable",
+          reason: "vault_locked",
+          detail: "Vex is locked, so the saved Lighter trading credential cannot be read.",
+        };
+      }
       const unlockedScopes = listUnlockedLighterTradingCredentialScopes(environment);
       const scope = unlockedScopes.find((candidate) => candidate.accountIndex === accountIndex);
       if (scope === undefined) {
-        // Distinguishes a genuinely locked/empty vault (unlockedScopes.length === 0)
-        // from an accountIndex that simply isn't present among the unlocked scopes -
-        // both currently surface upstream as "the vault is locked", which is only
-        // true for the first case.
         log.warn("[lighter] read-only auth resolver: no matching unlocked scope", {
           environment,
           accountIndex,
           unlockedScopeCount: unlockedScopes.length,
           unlockedAccountIndexes: unlockedScopes.map((s) => s.accountIndex),
         });
-        return null;
+        return {
+          kind: "unavailable",
+          reason: "no_credential",
+          detail: "No Lighter trading credential is saved for this account on this machine.",
+        };
       }
       const reference: LighterTradingCredentialVaultReference = {
         kind: "encrypted_vault_reference",
@@ -202,7 +220,17 @@ export function installLighterOrderCreateExecutionDeps(): () => void {
         apiKeyIndex: scope.apiKeyIndex,
         vaultCredentialId: defaultLighterTradingVaultCredentialId(scope),
       };
-      return deriveLighterReadOnlyAccountAuth(reference, secretReader, signer);
+      const auth = await deriveLighterReadOnlyAccountAuth(reference, secretReader, signer);
+      // `deriveLighterReadOnlyAccountAuth` deliberately swallows the cause (it
+      // has crossed the secret-loading boundary and the raw error can carry key
+      // material). The reason stays coarse for exactly that reason.
+      return auth === null
+        ? {
+            kind: "unavailable",
+            reason: "signer_failed",
+            detail: "Vex could not derive a read-only authorization from the saved credential.",
+          }
+        : { kind: "auth", auth };
     },
   );
   const uninstallScopeResolver = configureLighterTradingCredentialScopeResolver({

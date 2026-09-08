@@ -52,7 +52,18 @@ export const LIGHTER_ENDPOINT_PATHS = {
   withdrawalDelay: "/api/v1/withdrawalDelay",
   withdrawHistory: "/api/v1/withdraw/history",
   sendTx: "/api/v1/sendTx",
+  leaderboard: "/api/v1/leaderboard",
+  livePointsTotal: "/api/v1/livePoints/total",
+  referralPoints: "/api/v1/referral/points",
 } as const;
+
+/**
+ * Leaderboard boards, spelled from Lighter's own descriptor
+ * (`agents-colab/lighter-python/openapi.json`, `/api/v1/leaderboard` -> the
+ * required `type` query parameter enum), never from convention.
+ */
+export const LIGHTER_LEADERBOARD_TYPES = ["weekly", "all", "competition"] as const;
+export type LighterLeaderboardType = (typeof LIGHTER_LEADERBOARD_TYPES)[number];
 
 export const LIGHTER_MARKET_FILTERS = ["all", "spot", "perp"] as const;
 export type LighterMarketFilter = (typeof LIGHTER_MARKET_FILTERS)[number];
@@ -104,3 +115,12 @@ export const LIGHTER_CACHE_TTL_MS = 5_000;
 
 /** Standard public REST allowance. Premium/account-specific buckets are out of scope for P1. */
 export const LIGHTER_PUBLIC_REST_RATE_PER_MINUTE = 60;
+
+/**
+ * Bounds on the two points collections. The all-time board answers with the
+ * top ten plus the caller's own row; the cap exists so a provider change
+ * cannot hand the renderer an unbounded list, and a response past it is
+ * refused loudly rather than silently cut.
+ */
+export const LIGHTER_LEADERBOARD_ENTRIES_MAX = 1_000;
+export const LIGHTER_REFERRALS_MAX = 1_000;

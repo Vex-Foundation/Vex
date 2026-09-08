@@ -2,8 +2,11 @@ import { z } from "zod";
 import { ErrorCodes, VexError } from "../../errors.js";
 import {
   LIGHTER_CANDLE_RESOLUTIONS,
+  LIGHTER_LEADERBOARD_ENTRIES_MAX,
   LIGHTER_MARKET_FILTERS,
+  LIGHTER_REFERRALS_MAX,
 } from "./constants.js";
+import { describeLighterBody } from "./errors.js";
 import type {
   LighterAccountOrdersResponse,
   LighterAccountAllOrdersStreamMessage,
@@ -28,6 +31,9 @@ import type {
   LighterSystemConfigResponse,
   LighterLayer1BasicInfoResponse,
   LighterInfoResponse,
+  LighterLeaderboardResponse,
+  LighterLivePointsTotalResponse,
+  LighterReferralPointsResponse,
   LighterTxFromL1Response,
   LighterWithdrawalDelayResponse,
   LighterWithdrawHistoryResponse,
@@ -886,4 +892,121 @@ export function validateLighterRecentTrades(raw: unknown): LighterRecentTradesRe
 
 export function validateLighterCandles(raw: unknown): LighterCandlesResponse {
   return parseOrThrow(candlesResponseSchema, raw, "candles");
+}
+
+
+/**
+ * THE POINTS-CAMPAIGN VALIDATORS (Robinhood Chain incentives).
+ *
+ * Measured, not assumed (live probe 2026-09-08, account 24226): a leaderboard
+ * and a referral SUCCESS body carry NO `code` field at all, while
+ * livePoints/total does. Every one of the three answers a LOGICAL error with
+ * HTTP 200 and a `{ code, message }` envelope instead (`{"code":20001,
+ * "message":"invalid param : auth query param and Authorization header are
+ * empty"}`), which is why the envelope is recognised on its own, before the
+ * success shape is parsed: a body with a non-200 `code` is a refusal whose
+ * reason is the provider's sentence, not a shape error of ours.
+ *
+ * `metadata` is REQUIRED in the descriptor and was absent on every measured
+ * row, so it is optional here; the descriptor table test records that
+ * disagreement rather than hiding it.
+ */
+const leaderboardEntrySchema = z
+  .object({
+    l1_address: z.string().min(1),
+    points: finiteNumber,
+    entry: providerInteger,
+    entryId: providerInteger,
+    metadata: z.string().optional(),
+  })
+  .passthrough();
+
+/** The leaderboard-entry field names this validator accepts. The descriptor test walks it. */
+export const LIGHTER_LEADERBOARD_ENTRY_VALIDATED_FIELDS: readonly string[] =
+  Object.keys(leaderboardEntrySchema.shape);
+
+const leaderboardSchema = z
+  .object({
+    // The board Lighter returns is the top rows plus, when `l1_address` is
+    // supplied on an AUTHENTICATED read, the wallet's own row. Bounded so a
+    // provider change cannot hand the renderer an unbounded list.
+    entries: z.array(leaderboardEntrySchema).max(LIGHTER_LEADERBOARD_ENTRIES_MAX),
+  })
+  .passthrough();
+
+export const LIGHTER_LEADERBOARD_VALIDATED_FIELDS: readonly string[] =
+  Object.keys(leaderboardSchema.shape);
+
+const livePointsTotalSchema = z
+  .object({
+    code: int,
+    message,
+    total_live_points: finiteNumber,
+  })
+  .passthrough();
+
+export const LIGHTER_LIVE_POINTS_TOTAL_VALIDATED_FIELDS: readonly string[] =
+  Object.keys(livePointsTotalSchema.shape);
+
+const referralPointEntrySchema = z
+  .object({
+    l1_address: z.string().min(1),
+    total_points: finiteNumber,
+    week_points: finiteNumber,
+    total_reward_points: finiteNumber,
+    week_reward_points: finiteNumber,
+    reward_point_multiplier: numericString,
+  })
+  .passthrough();
+
+export const LIGHTER_REFERRAL_POINT_ENTRY_VALIDATED_FIELDS: readonly string[] =
+  Object.keys(referralPointEntrySchema.shape);
+
+const referralPointsSchema = z
+  .object({
+    referrals: z.array(referralPointEntrySchema).max(LIGHTER_REFERRALS_MAX),
+    user_total_points: finiteNumber,
+    user_last_week_points: finiteNumber,
+    user_total_referral_reward_points: finiteNumber,
+    user_last_week_referral_reward_points: finiteNumber,
+    reward_point_multiplier: numericString,
+  })
+  .passthrough();
+
+export const LIGHTER_REFERRAL_POINTS_VALIDATED_FIELDS: readonly string[] =
+  Object.keys(referralPointsSchema.shape);
+
+/**
+ * The HTTP-200 logical refusal. Applied BEFORE the success shape so a refusal
+ * reaches the caller as the provider's own reason with its code, never as
+ * "invalid response shape", and so a body that legitimately carries no `code`
+ * (leaderboard, referral) is not made to invent one.
+ */
+function assertNoLighterLogicalError(raw: unknown, label: string): void {
+  if (raw === null || typeof raw !== "object") return;
+  const code = (raw as Record<string, unknown>).code;
+  if (typeof code !== "number" || code === 200) return;
+  const detail = describeLighterBody(raw);
+  const error = new VexError(
+    ErrorCodes.LIGHTER_API_ERROR,
+    `Lighter refused the ${label} read with code ${code}.${detail === undefined ? "" : ` Upstream said: ${detail}`}`,
+    "Lighter answered HTTP 200 with an error code; the read did not happen.",
+  );
+  error.httpStatus = 200;
+  throw error;
+}
+
+export function validateLighterLeaderboard(raw: unknown): LighterLeaderboardResponse {
+  assertNoLighterLogicalError(raw, "leaderboard");
+  return parseOrThrow(leaderboardSchema, raw, "leaderboard");
+}
+
+export function validateLighterLivePointsTotal(raw: unknown): LighterLivePointsTotalResponse {
+  assertNoLighterLogicalError(raw, "live points total");
+  return parseOrThrow(livePointsTotalSchema, raw, "live points total");
+}
+
+export function validateLighterReferralPoints(raw: unknown): LighterReferralPointsResponse {
+  assertNoLighterLogicalError(raw, "referral points");
+  return parseOrThrow(referralPointsSchema, raw, "referral points");
 }

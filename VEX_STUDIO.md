@@ -2051,6 +2051,20 @@ encrypted vault; it is loaded only inside the privileged main process, and it is
 through the tool surface, persisted in Postgres, or written to a log
 (`src/tools/lighter/trading-secret.ts`).
 
+#### Campaign points are visible, and only ever read
+
+Settings -> Lighter Points is a read-only surface over Lighter's Robinhood Chain
+points campaign. For every wallet with a Lighter account registered through the
+app it shows the all-time and weekly leaderboard position, the live (unsettled)
+points and the referral rewards with the provider's own multiplier, each read
+with that wallet's read-only account authorization derived in the main process.
+Nothing on the surface signs, moves or authorizes anything, and no Studio tool
+exports it. A wallet Vex cannot authorize right now (locked vault, no saved
+trading credential) is listed with that reason rather than as zero points, and a
+board with no row for the wallet reads "Rank unavailable"
+(`vex-app/src/renderer/features/appShell/screens/SettingsScreen/LighterPointsSection.tsx`,
+read model `src/vex-agent/tools/protocols/lighter/points.ts`).
+
 #### The Vex fee is charged by the exchange, not by Vex
 
 Lighter is the one venue where Vex's fee is NOT a separate transfer Vex sends. Lighter supports a

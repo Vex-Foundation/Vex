@@ -102,6 +102,35 @@ Agent-facing files live under `src/vex-agent/tools/protocols/lighter/`:
 | `getRecentTrades(environment, params)` | `GET /api/v1/recentTrades` | Required `market_id`; `limit` 1-100 |
 | `getAccountTrades(environment, params)` | `GET /api/v1/trades` | Auth-gated account trade history candidate |
 | `getCandles(environment, params)` | `GET /api/v1/candles` | Required market, resolution, epoch-ms timestamp range, bounded `count_back` |
+| `getLeaderboard(environment, params, auth?)` | `GET /api/v1/leaderboard` | Points board; required `type` (`all`, `weekly`, `competition`), optional `l1_address`, `competition_id` |
+| `getLivePointsTotal(environment, params, auth)` | `GET /api/v1/livePoints/total` | Auth-gated live campaign points for one account |
+| `getReferralPoints(environment, params, auth)` | `GET /api/v1/referral/points` | Auth-gated referral points and reward multiplier for one account |
+
+### The points campaign (Settings -> Lighter Points)
+
+Lighter awards campaign points for trading on Robinhood Chain. The Settings
+section "Lighter Points" shows, for every wallet with a Lighter account
+registered through the app, that wallet's all-time and weekly board position,
+its live (unsettled) points and its referral rewards, read through the wallet's
+own read-only account authorization. The read model is
+`src/vex-agent/tools/protocols/lighter/points.ts`, behind the IPC channel
+`vex:settings:lighterPoints`; the view is
+`vex-app/src/renderer/features/appShell/screens/SettingsScreen/LighterPointsSection.tsx`.
+
+Three measured provider facts shape it (live probe 2026-09-08, account 24226,
+`vex-app/src/main/lighter/__tests__/live/points-probe.test.ts`). The wallet's
+own row appears on a board ONLY when the read is authenticated AND carries
+`l1_address`; every other row arrives masked (`0x9C****...`), so the row is
+found by an exact full-address match and never by a prefix. The board position
+is the entry's `entry` field, not `entryId`, which is a row identifier (the
+owner's wallet: `entry` 22146 all-time, `entry` 1 weekly, `entryId` 11 on both).
+And a leaderboard or referral SUCCESS body carries no `code` field, while
+livePoints/total does; all three answer a logical refusal with HTTP 200 and a
+`{code, message}` envelope, which the validators recognise on its own before
+the success shape. A wallet whose read-only authorization cannot be minted is
+listed with its reason (locked vault, no saved credential, signer refusal), never
+as zero points. Referral binding (`POST /api/v1/referral/use`) is not
+implemented; it needs Vex's own referral code first.
 
 ## Low-Level Submit Boundary
 

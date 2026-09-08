@@ -95,7 +95,9 @@ export type SettingsSection =
   | "apiKeys"
   | "model"
   | "memory"
-  | "tuning";
+  | "tuning"
+  /** The Lighter points campaign; the one section with no wizard step behind it. */
+  | "lighterPoints";
 
 /**
  * Full-app overlay screen route (Chronos screens redesign, 2026-07-20;

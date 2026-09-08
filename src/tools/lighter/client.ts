@@ -9,6 +9,7 @@ import {
   LIGHTER_CANDLES_COUNT_MIN,
   LIGHTER_ENDPOINT_PATHS,
   LIGHTER_ENDPOINTS,
+  LIGHTER_LEADERBOARD_TYPES,
   LIGHTER_ORDER_BOOK_LIMIT_MAX,
   LIGHTER_ORDER_BOOK_LIMIT_MIN,
   LIGHTER_RECENT_TRADES_LIMIT_MAX,
@@ -61,6 +62,11 @@ import type {
   LighterSystemConfigResponse,
   LighterLayer1BasicInfoResponse,
   LighterInfoResponse,
+  LighterAccountPointsParams,
+  LighterLeaderboardParams,
+  LighterLeaderboardResponse,
+  LighterLivePointsTotalResponse,
+  LighterReferralPointsResponse,
   LighterTxFromL1Params,
   LighterTxFromL1Response,
   LighterTxQuery,
@@ -89,6 +95,9 @@ import {
   validateLighterSystemConfig,
   validateLighterLayer1BasicInfo,
   validateLighterInfo,
+  validateLighterLeaderboard,
+  validateLighterLivePointsTotal,
+  validateLighterReferralPoints,
   validateLighterTxFromL1,
   validateLighterWithdrawalDelay,
   validateLighterWithdrawHistory,
@@ -676,6 +685,96 @@ export class LighterClient {
     );
   }
 
+  /**
+   * The points leaderboard for one board.
+   *
+   * MEASURED (live, 2026-09-08): `type=all` answers the top ten with MASKED
+   * addresses (`0x9C****...`); the caller's own unmasked row is appended only
+   * when `l1Address` is supplied AND the request is authenticated. The same
+   * request without the token returns the ten masked rows and nothing else, so
+   * a wallet's absence from an anonymous board proves nothing about its rank.
+   * `privilegedAuth` is therefore optional in the signature and required in
+   * practice for any read about a specific wallet.
+   *
+   * The auth token is used as a bearer for the board read only; there is no
+   * account index on this endpoint to bind it to, so the caller owns the pairing
+   * of token and wallet.
+   */
+  async getLeaderboard(
+    environment: LighterEnvironment,
+    params: LighterLeaderboardParams,
+    privilegedAuth?: LighterPrivilegedAccountAuth,
+    options: LighterPublicReadOptions = {},
+  ): Promise<LighterLeaderboardResponse> {
+    if (!LIGHTER_LEADERBOARD_TYPES.includes(params.type)) {
+      throw new VexError(
+        ErrorCodes.LIGHTER_INVALID_REQUEST,
+        `Invalid Lighter leaderboard type: ${String(params.type)}`,
+        `Use one of: ${LIGHTER_LEADERBOARD_TYPES.join(", ")}.`,
+      );
+    }
+    if (params.type === "competition" && params.competitionId === undefined) {
+      throw new VexError(
+        ErrorCodes.LIGHTER_INVALID_REQUEST,
+        "A Lighter competition leaderboard read requires a competition id.",
+      );
+    }
+    const token = privilegedAuth === undefined
+      ? undefined
+      : readAuthToken(privilegedAuth);
+    return this.request(
+      environment,
+      LIGHTER_ENDPOINT_PATHS.leaderboard,
+      validateLighterLeaderboard,
+      {
+        type: params.type,
+        l1_address: params.l1Address === undefined
+          ? undefined
+          : readNonEmptyString(params.l1Address, "l1Address"),
+        competition_id: params.competitionId === undefined
+          ? undefined
+          : readNonEmptyString(params.competitionId, "competitionId"),
+      },
+      token === undefined
+        ? { signal: options.signal, fresh: options.fresh }
+        : { auth: "read-only", authToken: token, signal: options.signal },
+    );
+  }
+
+  /** Live (unsettled) campaign points for one account. Authorization required. */
+  async getLivePointsTotal(
+    environment: LighterEnvironment,
+    params: LighterAccountPointsParams,
+    privilegedAuth: LighterPrivilegedAccountAuth,
+    options: LighterPublicReadOptions = {},
+  ): Promise<LighterLivePointsTotalResponse> {
+    const auth = this.accountAuth(environment, params.accountIndex, privilegedAuth);
+    return this.request(
+      environment,
+      LIGHTER_ENDPOINT_PATHS.livePointsTotal,
+      validateLighterLivePointsTotal,
+      { account_index: String(auth.accountIndex) },
+      { auth: "read-only", authToken: auth.token, signal: options.signal },
+    );
+  }
+
+  /** Referral points and reward multiplier for one account. Authorization required. */
+  async getReferralPoints(
+    environment: LighterEnvironment,
+    params: LighterAccountPointsParams,
+    privilegedAuth: LighterPrivilegedAccountAuth,
+    options: LighterPublicReadOptions = {},
+  ): Promise<LighterReferralPointsResponse> {
+    const auth = this.accountAuth(environment, params.accountIndex, privilegedAuth);
+    return this.request(
+      environment,
+      LIGHTER_ENDPOINT_PATHS.referralPoints,
+      validateLighterReferralPoints,
+      { account_index: String(auth.accountIndex) },
+      { auth: "read-only", authToken: auth.token, signal: options.signal },
+    );
+  }
+
   async getCandles(
     environment: LighterEnvironment,
     params: LighterCandlesParams,
@@ -753,6 +852,23 @@ function readNonEmptyString(value: string, field: string): string {
     );
   }
   return normalized;
+}
+
+/**
+ * The bearer token for an endpoint that carries no account index of its own
+ * (the leaderboard). `accountAuth` cannot be used there: it exists to bind a
+ * token to an explicit account index, and inventing one would be a lie about
+ * what the provider was asked.
+ */
+function readAuthToken(privilegedAuth: LighterPrivilegedAccountAuth): string {
+  const token = privilegedAuth.token.trim();
+  if (token.length === 0) {
+    throw new VexError(
+      ErrorCodes.LIGHTER_INVALID_REQUEST,
+      "Privileged Lighter account auth token is empty.",
+    );
+  }
+  return token;
 }
 
 function readAccountIndex(value: number): number {

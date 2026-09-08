@@ -1254,6 +1254,224 @@
           "description": null
         }
       }
+    },
+    "Leaderboard": {
+      "required": [
+        "entries"
+      ],
+      "properties": {
+        "entries": {
+          "name": "entries",
+          "type": "array",
+          "format": null,
+          "ref": null,
+          "enum": null,
+          "description": null
+        }
+      }
+    },
+    "LeaderboardEntry": {
+      "required": [
+        "entry",
+        "entryId",
+        "l1_address",
+        "metadata",
+        "points"
+      ],
+      "properties": {
+        "entry": {
+          "name": "entry",
+          "type": "integer",
+          "format": "int32",
+          "ref": null,
+          "enum": null,
+          "description": null
+        },
+        "entryId": {
+          "name": "entryId",
+          "type": "integer",
+          "format": "int32",
+          "ref": null,
+          "enum": null,
+          "description": null
+        },
+        "l1_address": {
+          "name": "l1_address",
+          "type": "string",
+          "format": null,
+          "ref": null,
+          "enum": null,
+          "description": null
+        },
+        "metadata": {
+          "name": "metadata",
+          "type": "string",
+          "format": null,
+          "ref": null,
+          "enum": null,
+          "description": null
+        },
+        "points": {
+          "name": "points",
+          "type": "number",
+          "format": "float",
+          "ref": null,
+          "enum": null,
+          "description": null
+        }
+      }
+    },
+    "LivePointsTotal": {
+      "required": [
+        "code",
+        "total_live_points"
+      ],
+      "properties": {
+        "code": {
+          "name": "code",
+          "type": "integer",
+          "format": "int32",
+          "ref": null,
+          "enum": null,
+          "description": null
+        },
+        "message": {
+          "name": "message",
+          "type": "string",
+          "format": null,
+          "ref": null,
+          "enum": null,
+          "description": null
+        },
+        "total_live_points": {
+          "name": "total_live_points",
+          "type": "number",
+          "format": "double",
+          "ref": null,
+          "enum": null,
+          "description": null
+        }
+      }
+    },
+    "ReferralPoints": {
+      "required": [
+        "referrals",
+        "reward_point_multiplier",
+        "user_last_week_points",
+        "user_last_week_referral_reward_points",
+        "user_total_points",
+        "user_total_referral_reward_points"
+      ],
+      "properties": {
+        "referrals": {
+          "name": "referrals",
+          "type": "array",
+          "format": null,
+          "ref": null,
+          "enum": null,
+          "description": null
+        },
+        "reward_point_multiplier": {
+          "name": "reward_point_multiplier",
+          "type": "string",
+          "format": null,
+          "ref": null,
+          "enum": null,
+          "description": null
+        },
+        "user_last_week_points": {
+          "name": "user_last_week_points",
+          "type": "number",
+          "format": "float",
+          "ref": null,
+          "enum": null,
+          "description": null
+        },
+        "user_last_week_referral_reward_points": {
+          "name": "user_last_week_referral_reward_points",
+          "type": "number",
+          "format": "float",
+          "ref": null,
+          "enum": null,
+          "description": null
+        },
+        "user_total_points": {
+          "name": "user_total_points",
+          "type": "number",
+          "format": "float",
+          "ref": null,
+          "enum": null,
+          "description": null
+        },
+        "user_total_referral_reward_points": {
+          "name": "user_total_referral_reward_points",
+          "type": "number",
+          "format": "float",
+          "ref": null,
+          "enum": null,
+          "description": null
+        }
+      }
+    },
+    "ReferralPointEntry": {
+      "required": [
+        "l1_address",
+        "reward_point_multiplier",
+        "total_points",
+        "total_reward_points",
+        "week_points",
+        "week_reward_points"
+      ],
+      "properties": {
+        "l1_address": {
+          "name": "l1_address",
+          "type": "string",
+          "format": null,
+          "ref": null,
+          "enum": null,
+          "description": null
+        },
+        "reward_point_multiplier": {
+          "name": "reward_point_multiplier",
+          "type": "string",
+          "format": null,
+          "ref": null,
+          "enum": null,
+          "description": null
+        },
+        "total_points": {
+          "name": "total_points",
+          "type": "number",
+          "format": "float",
+          "ref": null,
+          "enum": null,
+          "description": null
+        },
+        "total_reward_points": {
+          "name": "total_reward_points",
+          "type": "number",
+          "format": "float",
+          "ref": null,
+          "enum": null,
+          "description": null
+        },
+        "week_points": {
+          "name": "week_points",
+          "type": "number",
+          "format": "float",
+          "ref": null,
+          "enum": null,
+          "description": null
+        },
+        "week_reward_points": {
+          "name": "week_reward_points",
+          "type": "number",
+          "format": "float",
+          "ref": null,
+          "enum": null,
+          "description": null
+        }
+      }
     }
   }
 }

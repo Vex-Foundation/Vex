@@ -40,7 +40,12 @@ import { fileURLToPath } from "node:url";
 import { describe, it, expect } from "vitest";
 
 import {
+  LIGHTER_LEADERBOARD_ENTRY_VALIDATED_FIELDS,
+  LIGHTER_LEADERBOARD_VALIDATED_FIELDS,
+  LIGHTER_LIVE_POINTS_TOTAL_VALIDATED_FIELDS,
   LIGHTER_MARKET_DETAIL_VALIDATED_FIELDS,
+  LIGHTER_REFERRAL_POINT_ENTRY_VALIDATED_FIELDS,
+  LIGHTER_REFERRAL_POINTS_VALIDATED_FIELDS,
   LIGHTER_TRADE_VALIDATED_FIELDS,
 } from "@tools/lighter/validation.js";
 
@@ -292,10 +297,15 @@ describe("the Lighter OpenAPI field artifact", () => {
     expect(artifact.openapiVersion).toBe("3.0.0");
   });
 
-  it("carries the four schemas Vex projects or stores", () => {
+  it("carries the nine schemas Vex projects or stores", () => {
     expect(Object.keys(artifact.schemas).sort()).toEqual([
       "AccountPosition",
+      "Leaderboard",
+      "LeaderboardEntry",
+      "LivePointsTotal",
       "PerpsOrderBookDetail",
+      "ReferralPointEntry",
+      "ReferralPoints",
       "SpotOrderBookDetail",
       "Trade",
     ]);
@@ -416,5 +426,96 @@ describe("AccountPosition, the schema the position snapshot mirrors", () => {
     ]) {
       expect(artifact.schemas.AccountPosition.properties).toHaveProperty(field);
     }
+  });
+});
+
+
+/**
+ * The points-campaign schemas. Same contract as the trade and market tables:
+ * the wire TYPE compared against is the descriptor's, and a provider field
+ * absent from both tables fails the completeness check.
+ */
+const POINTS_WIRE_TYPES: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  Leaderboard: { entries: "array" },
+  LeaderboardEntry: {
+    l1_address: "string",
+    points: "number",
+    entry: "integer",
+    entryId: "integer",
+    metadata: "string",
+  },
+  LivePointsTotal: {
+    code: "integer",
+    message: "string",
+    total_live_points: "number",
+  },
+  ReferralPoints: {
+    referrals: "array",
+    user_total_points: "number",
+    user_last_week_points: "number",
+    user_total_referral_reward_points: "number",
+    user_last_week_referral_reward_points: "number",
+    reward_point_multiplier: "string",
+  },
+  ReferralPointEntry: {
+    l1_address: "string",
+    total_points: "number",
+    week_points: "number",
+    total_reward_points: "number",
+    week_reward_points: "number",
+    reward_point_multiplier: "string",
+  },
+};
+
+const POINTS_VALIDATED_FIELDS: Readonly<Record<string, readonly string[]>> = {
+  Leaderboard: LIGHTER_LEADERBOARD_VALIDATED_FIELDS,
+  LeaderboardEntry: LIGHTER_LEADERBOARD_ENTRY_VALIDATED_FIELDS,
+  LivePointsTotal: LIGHTER_LIVE_POINTS_TOTAL_VALIDATED_FIELDS,
+  ReferralPoints: LIGHTER_REFERRAL_POINTS_VALIDATED_FIELDS,
+  ReferralPointEntry: LIGHTER_REFERRAL_POINT_ENTRY_VALIDATED_FIELDS,
+};
+
+describe("the points-campaign fields the validators accept exist in Lighter's descriptor", () => {
+  for (const [schemaName, validatedFields] of Object.entries(POINTS_VALIDATED_FIELDS)) {
+    it.each(validatedFields.map((field) => ({ field })))(
+      `${schemaName}.$field is a descriptor property of the type Vex reads`,
+      ({ field }) => {
+        const expectedType = POINTS_WIRE_TYPES[schemaName][field];
+        expect(expectedType, `no wire type declared for ${schemaName}.${field}`).toBeDefined();
+        expect(artifact.schemas[schemaName].properties).toHaveProperty(field);
+        expect(artifact.schemas[schemaName].properties[field].type).toBe(expectedType);
+      },
+    );
+
+    it(`accounts for every ${schemaName} property the descriptor declares`, () => {
+      const unaccounted = Object.keys(artifact.schemas[schemaName].properties).filter(
+        (field) => !validatedFields.includes(field),
+      );
+      expect(unaccounted).toEqual([]);
+    });
+  }
+
+  it("records that the descriptor requires a leaderboard metadata the provider never sends", () => {
+    // The live probe (2026-09-08) measured `metadata` absent on every row of
+    // every board, authenticated or not, so the DTO and the validator make it
+    // optional. This assertion is the disagreement itself, written down: if
+    // Lighter ever starts sending it, or drops it from `required`, the
+    // decision gets re-made here rather than silently.
+    expect(artifact.schemas.LeaderboardEntry.required).toContain("metadata");
+  });
+
+  it("pins the two integers the rank projection reads apart", () => {
+    // `entry` is the board POSITION (measured 22146 all-time for the owner's
+    // wallet), `entryId` a row identifier (11 on both boards). Both are int32
+    // in the descriptor, which is exactly why only the measurement can tell
+    // them apart and why the projection is tested against saved bytes.
+    expect(artifact.schemas.LeaderboardEntry.properties.entry.format).toBe("int32");
+    expect(artifact.schemas.LeaderboardEntry.properties.entryId.format).toBe("int32");
+  });
+
+  it("keeps the code envelope on live points only", () => {
+    expect(artifact.schemas.LivePointsTotal.required).toContain("code");
+    expect(artifact.schemas.Leaderboard.properties).not.toHaveProperty("code");
+    expect(artifact.schemas.ReferralPoints.properties).not.toHaveProperty("code");
   });
 });

@@ -343,6 +343,10 @@ export const CH = {
       "vex:settings:inspectLighterCredentialConnections",
     forgetLighterCredentialConnection:
       "vex:settings:forgetLighterCredentialConnection",
+    // The Robinhood Chain points campaign, read on demand for every wallet
+    // with a Lighter account registered through the app. Cancellable: the
+    // renderer aborts it on navigation and on a second Refresh.
+    lighterPoints: "vex:settings:lighterPoints",
     // "Vex setup" user profile (display name, instructions, work
     // description) - DB-backed (soul singleton), replaces persona.md.
     getUserProfile: "vex:settings:getUserProfile",

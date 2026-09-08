@@ -45,7 +45,19 @@ const OUTPUT = join(REPO_ROOT, "src/tools/lighter/wire/openapi-fields.json");
  * wholesale: an artifact of all 152 schemas would be a copy of the descriptor,
  * and the point is the small set our own types claim to mirror.
  */
-const SCHEMAS = ["Trade", "PerpsOrderBookDetail", "SpotOrderBookDetail", "AccountPosition"];
+const SCHEMAS = [
+  "Trade",
+  "PerpsOrderBookDetail",
+  "SpotOrderBookDetail",
+  "AccountPosition",
+  // The Robinhood Chain points campaign: the Settings "Lighter Points"
+  // section reads all five, so all five are pinned.
+  "Leaderboard",
+  "LeaderboardEntry",
+  "LivePointsTotal",
+  "ReferralPoints",
+  "ReferralPointEntry",
+];
 
 function descriptorPath() {
   const argument = process.argv[2];

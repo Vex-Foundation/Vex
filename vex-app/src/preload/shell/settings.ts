@@ -15,7 +15,8 @@ import {
   type InspectLighterCredentialConnectionsInput,
   type SetLighterIntegrationInput,
 } from "../../shared/schemas/lighter-integration.js";
-import { invokeWithSchema } from "../_dispatch.js";
+import { readLighterPointsInputSchema } from "../../shared/schemas/lighter-points.js";
+import { abortableInvoke, invokeWithSchema } from "../_dispatch.js";
 
 const setTelemetryConsentInputSchema = z
   .object({ enabled: z.boolean() })
@@ -63,6 +64,11 @@ export const settings = {
       input,
       forgetLighterCredentialConnectionInputSchema,
     );
+  },
+  // Abortable: unmounting the Settings section or pressing Refresh again
+  // cancels the in-flight read, which is what reaches main's `ctx.signal`.
+  lighterPoints() {
+    return abortableInvoke(CH.settings.lighterPoints, {}, readLighterPointsInputSchema);
   },
   getUserProfile() {
     return invokeWithSchema(CH.settings.getUserProfile, {});

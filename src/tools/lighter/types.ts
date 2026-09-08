@@ -1,10 +1,16 @@
 import type {
   LighterCandleResolution,
   LighterEnvironment,
+  LighterLeaderboardType,
   LighterMarketFilter,
 } from "./constants.js";
 
-export type { LighterCandleResolution, LighterEnvironment, LighterMarketFilter };
+export type {
+  LighterCandleResolution,
+  LighterEnvironment,
+  LighterLeaderboardType,
+  LighterMarketFilter,
+};
 
 export interface LighterStatusResponse {
   status: number;
@@ -665,4 +671,69 @@ export interface LighterCandlesParams {
   endTimestamp: number;
   countBack?: number;
   setTimestampToEnd?: boolean;
+}
+
+/**
+ * The Robinhood Chain points campaign DTOs, mirroring the descriptor schemas
+ * `Leaderboard`, `LeaderboardEntry`, `LivePointsTotal`, `ReferralPoints` and
+ * `ReferralPointEntry` (pinned in `wire/openapi-fields.json`).
+ *
+ * Points are DISPLAY values, not money: they are reported as the provider
+ * sends them (IEEE doubles on the wire) and never fed into an amount, a fee or
+ * a signed field. The one string the provider keeps a string, the referral
+ * `reward_point_multiplier`, stays a string here too.
+ */
+export interface LighterLeaderboardEntry {
+  l1_address: string;
+  points: number;
+  /** The board POSITION as the provider reports it (measured: 22146 all-time). */
+  entry: number;
+  /** A row identifier inside the response, not the position (measured: 11 for both boards). */
+  entryId: number;
+  /** Required in the descriptor, absent on every measured row. */
+  metadata?: string;
+  [key: string]: unknown;
+}
+
+export interface LighterLeaderboardResponse {
+  entries: LighterLeaderboardEntry[];
+  [key: string]: unknown;
+}
+
+export interface LighterLivePointsTotalResponse {
+  code: number;
+  message?: string;
+  total_live_points: number;
+  [key: string]: unknown;
+}
+
+export interface LighterReferralPointEntry {
+  l1_address: string;
+  total_points: number;
+  week_points: number;
+  total_reward_points: number;
+  week_reward_points: number;
+  reward_point_multiplier: string;
+  [key: string]: unknown;
+}
+
+export interface LighterReferralPointsResponse {
+  referrals: LighterReferralPointEntry[];
+  user_total_points: number;
+  user_last_week_points: number;
+  user_total_referral_reward_points: number;
+  user_last_week_referral_reward_points: number;
+  reward_point_multiplier: string;
+  [key: string]: unknown;
+}
+
+export interface LighterLeaderboardParams {
+  type: LighterLeaderboardType;
+  /** Asks the provider to append this wallet's own row to the board. */
+  l1Address?: string;
+  competitionId?: string;
+}
+
+export interface LighterAccountPointsParams {
+  accountIndex: number;
 }

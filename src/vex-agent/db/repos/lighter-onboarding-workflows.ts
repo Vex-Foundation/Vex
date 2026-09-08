@@ -2,7 +2,7 @@
 
 import type { PoolClient } from "pg";
 
-import { queryOne } from "../client.js";
+import { query, queryOne } from "../client.js";
 import type { LighterEnvironment } from "@tools/lighter/types.js";
 
 export const LIGHTER_ONBOARDING_WORKFLOW_STATES = [
@@ -102,6 +102,68 @@ export async function getLighterOnboardingWorkflow(
     [environment, walletAddress],
   );
   return row === null ? null : mapRow(row);
+}
+
+/**
+ * A wallet that reached a resolved Lighter account, which is what "registered
+ * through the app" means: the deposit landed, the L2 account exists, and the
+ * app recorded its index.
+ */
+export interface LighterOnboardingResolvedAccount {
+  readonly environment: LighterEnvironment;
+  readonly walletAddress: string;
+  readonly accountIndex: number;
+}
+
+/** Default page for the resolved-account listing; also its documented bound. */
+const LIGHTER_RESOLVED_ACCOUNT_LIST_LIMIT = 100;
+
+/**
+ * Every wallet with a resolved Lighter account, oldest first, BOUNDED and
+ * reporting its own bound: `totalCount` is what exists, `rows` what fits, so a
+ * consumer can say how many wallets it did not read instead of pretending the
+ * list was complete (rule 05, boundedness).
+ *
+ * Ordered by creation so the order a caller renders is stable across refreshes
+ * rather than following whatever the planner returned.
+ */
+export async function listLighterOnboardingResolvedAccounts(
+  options: { readonly limit?: number } = {},
+): Promise<{
+  readonly rows: readonly LighterOnboardingResolvedAccount[];
+  readonly totalCount: number;
+}> {
+  const limit = options.limit ?? LIGHTER_RESOLVED_ACCOUNT_LIST_LIMIT;
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1_000) {
+    throw new Error("Lighter resolved-account listing requires a limit from 1 to 1000.");
+  }
+  const rows = await query<{
+    readonly environment: LighterEnvironment;
+    readonly wallet_address: string;
+    readonly resolved_account_index: string | number;
+    readonly total_count: string | number;
+  }>(
+    `SELECT environment,
+            wallet_address,
+            resolved_account_index,
+            COUNT(*) OVER () AS total_count
+       FROM lighter_onboarding_workflows
+      WHERE resolved_account_index IS NOT NULL
+      ORDER BY created_at ASC, environment ASC, wallet_address ASC
+      LIMIT $1`,
+    [limit],
+  );
+  const first = rows[0];
+  return {
+    rows: rows.map((row) => ({
+      environment: row.environment,
+      walletAddress: row.wallet_address,
+      accountIndex: readSafeInteger(row.resolved_account_index, "resolved_account_index", 0),
+    })),
+    totalCount: first === undefined
+      ? 0
+      : readSafeInteger(first.total_count, "total_count", 0),
+  };
 }
 
 export async function ensureLighterOnboardingWorkflowEnabledWith(
