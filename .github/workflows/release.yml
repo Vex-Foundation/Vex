@@ -554,9 +554,12 @@ jobs:
       # publisher. Runs after --publish uploaded to the DRAFT release, which
       # stays invisible to updaters until the owner publishes it.
 
-      # Post-sign evidence for the Lighter signer helper: the afterPack hook
-      # verifies the helper BEFORE codesign; this verifies the shipped, signed
-      # helper's signature and refuses an unsigned one.
+      # Post-sign evidence for the Lighter signer helper. On Windows the helper
+      # is Authenticode-signed while electron-builder COPIES it into resources
+      # (app-builder-lib winPackager createTransformerForExtraFiles), so the
+      # afterPack hook already sees signed bytes and proves provenance from the
+      # staging digest plus a valid signature; this step re-checks the shipped
+      # helper's signature against the signed app and refuses an unsigned one.
       - name: Verify packaged Lighter signer signatures
         working-directory: vex-app
         run: pnpm run check:package

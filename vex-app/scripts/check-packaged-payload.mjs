@@ -272,8 +272,17 @@ function inspectPayload(payload) {
  * Returns `{ verified, detail }`. `verified: false` with a detail is a real
  * answer from the platform tool; a tool that is missing throws, because a gate
  * that silently degrades to "fine" when it cannot look is worse than no gate.
+ *
+ * Exported because it is the ONE answer in this repository to "does this file
+ * carry a valid platform signature": `build/afterPack.mjs` asks the same
+ * question about the Windows helper, which electron-builder signs while COPYING
+ * it into resources, before afterPack runs. A second implementation there is
+ * how one gate would accept what the other rejects.
+ *
+ * It is also the seam the tests fake: a Linux runner has neither `codesign` nor
+ * `Get-AuthenticodeSignature`, and no test may hold a signing identity.
  */
-function inspectPlatformSignature(file, platform) {
+export function inspectPlatformSignature(file, platform) {
   if (platform === "darwin") {
     const result = spawnSync("codesign", ["--verify", "--strict", "--verbose=2", file], {
       encoding: "utf8",
@@ -303,8 +312,10 @@ function inspectPlatformSignature(file, platform) {
 /**
  * THE POST-SIGNING GATE for the Lighter signer helper.
  *
- * `build/afterPack.mjs` proves the helper's BYTES before signing, against the
- * digests the pinned Go toolchain recorded. It cannot prove the thing that
+ * `build/afterPack.mjs` proves the helper's PROVENANCE while it still can (see
+ * that file for the per-platform order: on macOS and Linux the packaged bytes
+ * are still the unsigned build output; on Windows they are already Authenticode
+ * signed). It cannot prove the thing that
  * actually breaks in production: on macOS a nested Mach-O executable that
  * @electron/osx-sign never signed is refused by the hardened runtime and
  * rejected by notarization, and the helper is exactly such an executable (no
@@ -318,9 +329,22 @@ function inspectPlatformSignature(file, platform) {
  * expect and that is REPORTED as a note rather than silently skipped. Linux
  * packages carry no platform signature at all, which is also a note.
  *
+ * BOTH signing platforms are asserted here, by the same three sentences: macOS
+ * through `codesign --verify --strict`, Windows through
+ * `Get-AuthenticodeSignature`. The release workflow runs this step after
+ * electron-builder has signed, on the macOS job and on the Windows job alike.
+ *
+ * `inspectSignature` and `host` are the test seam and nothing else:
+ * `inspectSignature` is the platform signature tool (defaulting to the real
+ * one) and `host` is the platform this process runs on, so a Linux test can
+ * drive the Windows branch without a signing identity or a Windows runner.
+ *
  * Returns `{ issues, notes }`.
  */
-export function verifyPackagedLighterSignerSignature(payload) {
+export function verifyPackagedLighterSignerSignature(
+  payload,
+  { inspectSignature = inspectPlatformSignature, host = process.platform } = {}
+) {
   const { target, resources } = payload;
   const issues = [];
   const notes = [];
@@ -340,9 +364,9 @@ export function verifyPackagedLighterSignerSignature(payload) {
     notes.push("Linux packages carry no platform code signature; the helper is verified by digest only");
     return { issues, notes };
   }
-  if (target.platform !== process.platform) {
+  if (target.platform !== host) {
     notes.push(
-      `the ${target.platform} helper signatures cannot be verified from a ${process.platform} host; `
+      `the ${target.platform} helper signatures cannot be verified from a ${host} host; `
         + `this evidence comes from the ${target.platform} CI job and the owner's signed build`
     );
     return { issues, notes };
@@ -358,7 +382,7 @@ export function verifyPackagedLighterSignerSignature(payload) {
 
   let app;
   try {
-    app = inspectPlatformSignature(appBinary, target.platform);
+    app = inspectSignature(appBinary, target.platform);
   } catch (error) {
     issues.push(`the signing tool for ${target.platform} is unavailable: ${error.message}`);
     return { issues, notes };
@@ -374,7 +398,7 @@ export function verifyPackagedLighterSignerSignature(payload) {
   for (const helper of helpers) {
     let signature;
     try {
-      signature = inspectPlatformSignature(helper, target.platform);
+      signature = inspectSignature(helper, target.platform);
     } catch (error) {
       issues.push(`${path.basename(helper)}: ${error.message}`);
       continue;

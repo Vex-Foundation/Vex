@@ -22,14 +22,17 @@ import { fileURLToPath } from "node:url";
 import { flipFuses, FuseVersion, FuseV1Options } from "@electron/fuses";
 
 import { artifactBinaryName, artifactsFor, assertBridgeArtifact, goTargetFor, PACKAGED_BRIDGE_SUBPATH } from "../scripts/bridge-artifact.mjs";
-import { checkPayload } from "../scripts/check-packaged-payload.mjs";
+import { checkPayload, inspectPlatformSignature } from "../scripts/check-packaged-payload.mjs";
 import {
+  assertLighterSignerArtifact,
   assertLighterSignerBytes,
   builtLighterSignerDir,
+  LIGHTER_SIGNER_DIGEST_FILE,
   lighterSignerBinaryName,
   lighterSignerTargetsForPlatform,
   PACKAGED_LIGHTER_SIGNER_SUBPATH,
   readLighterSignerDigests,
+  sha256OfFile,
 } from "../scripts/lighter-signer-artifact.mjs";
 
 /**
@@ -41,7 +44,11 @@ import {
  * two sits `extraResources` copying, an arch loop that can run several times
  * in one invocation, and any future config edit that repoints the mapping.
  * This is the check that the shipped bundle carries the right executables, and
- * it runs BEFORE codesigning so a failure costs no signature.
+ * it runs before the app bundle is codesigned, so a failure costs no signature.
+ * It reads each file's own header only, which Authenticode does not touch, so
+ * it is equally valid on Windows, where electron-builder has already signed
+ * these `.exe` files while copying them in (winPackager.js
+ * `createTransformerForExtraFiles`).
  *
  * WHICH artifacts is the table's answer, not this hook's: `vex-pipe-front` is
  * built for Windows only, so `artifactsFor` returns one entry on darwin and
@@ -90,11 +97,86 @@ export async function verifyPackagedBridge(context) {
 }
 
 /**
- * The Lighter signer helpers, re-inspected where electron-builder actually PUT
- * them, BEFORE codesigning.
+ * ONE packaged helper: right format, right machine, and provenance proven the
+ * way this platform's packaging order allows.
  *
- * Three assertions, each aimed at a failure that has already happened once in
- * this repository's history or in the review that produced this gate:
+ * Returns the header inspection plus `digest` and `provenance`, which is
+ * `"build-digest"` when the packaged bytes are still the ones SHA256SUMS
+ * records and `"staged-digest+authenticode"` when Windows signing changed them.
+ * Throws with the mismatch named. See `verifyPackagedLighterSigner` for why the
+ * two platforms differ.
+ */
+function verifyOnePackagedHelper(packaged, target, digests, electronPlatformName, inspectSignature) {
+  if (electronPlatformName !== "win32") {
+    return { ...assertLighterSignerBytes(packaged, target, digests), provenance: "build-digest" };
+  }
+
+  const found = assertLighterSignerArtifact(packaged, target);
+  const name = lighterSignerBinaryName(target);
+  const expected = digests.get(name);
+  if (expected === undefined) {
+    throw new Error(`${name} is not listed in ${LIGHTER_SIGNER_DIGEST_FILE}; it was not built here`);
+  }
+  const digest = sha256OfFile(packaged);
+  if (digest === expected) {
+    // Unsigned Windows build: nothing rewrote the file on its way in.
+    return { ...found, digest, provenance: "build-digest" };
+  }
+
+  let signature;
+  try {
+    signature = inspectSignature(packaged, "win32");
+  } catch (error) {
+    throw new Error(
+      `${packaged} has sha256 ${digest}, but ${LIGHTER_SIGNER_DIGEST_FILE} records ${expected} for `
+        + `${name}. On Windows that is expected AFTER electron-builder signs the helper while `
+        + `copying it into resources, so the signature is what has to prove it - and the signature `
+        + `tool could not be run: ${error.message}`
+    );
+  }
+  if (!signature.verified) {
+    throw new Error(
+      `${packaged} has sha256 ${digest}, but ${LIGHTER_SIGNER_DIGEST_FILE} records ${expected} for `
+        + `${name}, and the packaged file carries NO valid Authenticode signature `
+        + `(${signature.detail || "no detail reported"}).\n`
+        + "    Signed-during-copy is the only reason these bytes may differ from the build "
+        + "manifest; without a valid signature the helper is simply not the one this repository "
+        + "built, and a Vex that spawns an unverified signer must never be signed."
+    );
+  }
+  return { ...found, digest, provenance: "staged-digest+authenticode" };
+}
+
+/**
+ * The Lighter signer helpers, re-inspected where electron-builder actually PUT
+ * them.
+ *
+ * TWO DIFFERENT FACTS, deliberately separated, because a single "digest equals
+ * SHA256SUMS" assertion conflates them and is FALSE on a signed Windows build:
+ *
+ *   PROVENANCE - these bytes are what the pinned Go toolchain produced.
+ *   PACKAGING INTEGRITY - the right helper for this platform and arch is in the
+ *   package, in one loadable place, and has not been swapped for something else
+ *   on its way there.
+ *
+ * THE ACTUAL PER-PLATFORM ORDER, read out of the installed app-builder-lib 26
+ * rather than assumed (platformPackager.js `doPack`: `copyFiles` over the
+ * extraResource matchers runs BEFORE `emitAfterPack`):
+ *
+ *   - macOS: extraResources are copied verbatim, this hook runs, THEN
+ *     `doSignAfterPack` signs the bundle (macPackager.js: `emitAfterPack` then
+ *     `doAddElectronFuses` then `doSignAfterPack`). The packaged helper is
+ *     still the unsigned build output here, so its sha256 must equal SHA256SUMS.
+ *   - Linux: no platform signing at all; the packaged helper is the unsigned
+ *     build output for the life of the artifact.
+ *   - Windows: `createTransformerForExtraFiles` (winPackager.js) wraps the copy
+ *     in a `CopyFileTransformer` that calls `signIf` on every `.exe` it accepts,
+ *     so the helper is Authenticode-signed DURING the copy and reaches this
+ *     hook ALREADY SIGNED, with different bytes. Demanding the build digest
+ *     here would fail every signed Windows release while passing every unsigned
+ *     local one, which is exactly the shape of defect that reaches production.
+ *
+ * So the assertions are:
  *
  *   1. EXACTLY the two helpers for the packaged platform are present. The
  *      `extraResources` entry used to copy the whole build directory, so every
@@ -102,23 +184,44 @@ export async function verifyPackagedBridge(context) {
  *      inside a notarized macOS bundle, none of them signed, none of them
  *      executable there. A foreign helper is a failure, not a curiosity.
  *   2. Each one's OWN header says it is the format and machine this package
- *      targets, so a stale copy at the right path cannot pass.
- *   3. Each one's sha256 matches `SHA256SUMS`, the manifest the pinned Go
- *      toolchain wrote at build time. This is what ties the shipped bytes to a
- *      reviewed compiler and a reviewed module graph.
+ *      targets, so a stale copy at the right path cannot pass. Signing does not
+ *      touch the PE machine field, so this holds on every platform.
+ *   3. PROVENANCE, proven differently where the bytes differ:
+ *        - darwin and linux: sha256 equals `SHA256SUMS`, the manifest the
+ *          pinned Go toolchain wrote at build time.
+ *        - win32: if the bytes still match SHA256SUMS this is an unsigned build
+ *          (no certificate configured, `signFile` logs "signing is skipped" and
+ *          leaves the file alone) and the digest proves provenance directly. If
+ *          they do not match, the helper must carry a VALID Authenticode
+ *          signature; provenance then rests on `stage-lighter-signer.mjs`, which
+ *          verified header, machine and digest on these same bytes minutes
+ *          earlier, and integrity on the signature, which the signing authority
+ *          computed over the file electron-builder copied and which no later
+ *          edit can survive.
  *
- * It runs BEFORE signing, which is also why it is a DIGEST check and not a
- * signature check: after codesign the helper's bytes change by design. The
- * signature is verified afterwards, by the `check:package` CLI
- * (`scripts/check-packaged-payload.mjs`), which runs after electron-builder has
- * signed.
+ * A byte-for-byte content comparison of the signed file against the staged one
+ * is deliberately NOT attempted: stripping an Authenticode signature back out
+ * of a PE requires parsing the certificate table and the checksum, that is,
+ * a second PE writer in this repository whose bugs would be indistinguishable
+ * from a tampered helper. "Staged bytes were verified" plus "the signature over
+ * the packaged bytes verifies" is the correct pair of facts, and both are
+ * evidence someone else computed.
+ *
+ * The post-signing gate for macOS lives in the `check:package` CLI
+ * (`scripts/check-packaged-payload.mjs`), which the release workflow runs after
+ * electron-builder finishes, on the Windows job as well.
  *
  * Exported so a test can drive THIS function over a synthetic packaged tree,
  * for the same reason `verifyPackagedBridge` is; `builtDir` names where the
- * digest manifest lives and defaults to this repository's build output.
- * Returns the helper names it accepted.
+ * digest manifest lives and defaults to this repository's build output, and
+ * `inspectSignature` is the platform signature tool, faked by tests that have
+ * neither a Windows host nor a signing identity. Returns the helper names it
+ * accepted.
  */
-export function verifyPackagedLighterSigner(context, { builtDir = builtLighterSignerDir(APP_ROOT) } = {}) {
+export function verifyPackagedLighterSigner(
+  context,
+  { builtDir = builtLighterSignerDir(APP_ROOT), inspectSignature = inspectPlatformSignature } = {}
+) {
   const { electronPlatformName, appOutDir, packager } = context;
   const targets = lighterSignerTargetsForPlatform(electronPlatformName);
 
@@ -156,10 +259,11 @@ export function verifyPackagedLighterSigner(context, { builtDir = builtLighterSi
     const name = lighterSignerBinaryName(target);
     const packaged = path.join(packagedDir, name);
     try {
-      const found = assertLighterSignerBytes(packaged, target, digests);
+      const found = verifyOnePackagedHelper(packaged, target, digests, electronPlatformName, inspectSignature);
       console.log(
         `afterPack: Lighter signer ${name} OK at ${packaged} `
-          + `(${found.format} ${found.goos}/${found.arch} sha256 ${found.digest})`
+          + `(${found.format} ${found.goos}/${found.arch} sha256 ${found.digest}, `
+          + `provenance: ${found.provenance})`
       );
       accepted.push(name);
     } catch (error) {
@@ -223,8 +327,10 @@ const APP_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 export default async function afterPack(context) {
   const { electronPlatformName, appOutDir, packager } = context;
 
-  // Fail closed BEFORE the fuses are flipped and before codesigning: a package
-  // without its bridge must never reach a signature.
+  // Fail closed before the fuses are flipped and before the APP BUNDLE is
+  // codesigned: a package without its bridge must never reach a signature.
+  // (The Windows `.exe` extraResources are already signed at this point; see
+  // `verifyPackagedLighterSigner` for the per-platform order.)
   await verifyPackagedBridge(context);
   verifyPackagedLighterSigner(context);
   verifyPackagedPayload(context);
