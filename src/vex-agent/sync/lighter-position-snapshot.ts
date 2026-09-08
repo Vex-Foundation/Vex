@@ -21,10 +21,32 @@
  *
  * Observations arrive out of order: a sweep that took longer than the next
  * one, a replay, a backfill after downtime. Freshness is therefore compared
- * PER MARKET and WITHOUT the observation's own identity (Codex H0 round 2,
- * correction 2): `lighter_position_market_state` is keyed by (environment,
+ * WITHOUT the observation's own identity (Codex H0 round 2, correction 2), and
+ * at TWO levels, because one is provably not enough.
+ *
+ * PER MARKET: `lighter_position_market_state` is keyed by (environment,
  * account, market) and carries the observed_at of the newest observation that
- * spoke for that market. An older observation updates nothing.
+ * spoke for that market, open or closed. An older observation updates nothing.
+ *
+ * PER SCOPE: `lighter_position_sweep_state.complete_watermark_at` carries the
+ * observed_at of the newest COMPLETE observation whose coverage was "all".
+ * That observation spoke for every market on the account, including markets it
+ * never listed - and those markets have no row of their own to refuse a late
+ * backfill with. Three histories the market table alone gets wrong, all three
+ * pinned in `src/__tests__/integration/repos/lighter-position-observations.int.test.ts`:
+ *
+ *   1. an EMPTY complete observation at 12:00 writes no market row at all;
+ *      an 11:00 backfill listing an open position then inserts it as open and
+ *      a closed position has resurrected.
+ *   2. a position closed at 10:00, an empty complete observation at 12:00,
+ *      then the same 11:00 backfill: same resurrection.
+ *   3. a COMPLETE observation whose coverage lists only market 1 closes
+ *      market 2, which it never read.
+ *
+ * The watermark closes 1 and 2 by refusing every observation older than it for
+ * the whole scope. Scoping the closure to the observation's own COVERAGE
+ * closes 3: a coverage list closes only the markets on that list, and only a
+ * coverage of "all" may close a market it did not mention.
  *
  * A CLOSURE KEEPS ITS MARKER. When a complete observation reports no position
  * in a market, the row stays with `open = FALSE` and the new observed_at
@@ -37,11 +59,21 @@
  * markets it lists and never infers a closure from an absence, because an
  * absence in an incomplete reading is exactly what it says: unknown.
  *
- * ## Boundedness
+ * ## Boundedness, and the fairness the bound needs
  *
  * A fixed number of scopes per sweep, and the report says how many were left
  * (`hasMore`, `remainingScopes`) rather than silently doing part of the work.
  * The next sweep continues; nothing is dropped.
+ *
+ * ORDERING BY THE LAST SUCCESS STARVES, which is the whole reason
+ * `lighter_position_sweep_state` carries an attempt marker. Five scopes that
+ * always fail - no credential in the vault, a provider error - never get a
+ * last-observation time, so they sort first forever and fill every bounded
+ * sweep; a sixth healthy account is then never observed at all. The queue is
+ * ordered by the last ATTEMPT instead, and the marker is written for every
+ * attempt whatever it produced. It is written BEFORE the provider read as
+ * well, so a sweep that dies mid-scope has still moved that scope to the tail
+ * rather than leaving it to block every sweep after it.
  *
  * ## Credentials
  *
@@ -76,6 +108,20 @@ export interface LighterSnapshotScope {
   readonly accountIndex: number;
 }
 
+/**
+ * What one attempt on one scope produced. Written to the attempt marker
+ * whatever it is: the queue is ordered by attempt, not by success.
+ *
+ * `attempted` is the marker written before the provider read and overwritten
+ * by one of the other three afterwards; a row still carrying it is a sweep
+ * that died mid-scope.
+ */
+export type LighterSnapshotAttemptResult =
+  | "attempted"
+  | "no_credential"
+  | "provider_unavailable"
+  | "observed";
+
 export interface LighterPositionSnapshotReport {
   readonly examined: number;
   readonly observed: number;
@@ -91,6 +137,10 @@ export interface LighterPositionSnapshotReport {
 /**
  * The onboarded scopes, oldest observation first, plus the total so the sweep
  * can report what it left behind.
+ *
+ * ORDERED BY THE LAST ATTEMPT, NULLS FIRST - never by the last observation. A
+ * scope that always fails has no observation and would sort first forever
+ * under a success ordering, and five such scopes fill every sweep of five.
  *
  * READ-ONLY PROJECTION, and it belongs to the onboarding repo rather than
  * here: `db/repos/lighter-onboarding-workflows.ts` is the owner of that table
@@ -118,13 +168,10 @@ async function listSnapshotScopes(
             scopes.account_index,
             (SELECT COUNT(*) FROM scopes) AS total
        FROM scopes
-       LEFT JOIN LATERAL (
-              SELECT MAX(o.observed_at) AS last_observed_at
-                FROM lighter_position_observations o
-               WHERE o.environment = scopes.environment
-                 AND o.account_index = scopes.account_index
-            ) last ON TRUE
-      ORDER BY last.last_observed_at ASC NULLS FIRST, scopes.account_index ASC
+       LEFT JOIN lighter_position_sweep_state sweep
+              ON sweep.environment = scopes.environment
+             AND sweep.account_index = scopes.account_index
+      ORDER BY sweep.last_attempt_at ASC NULLS FIRST, scopes.account_index ASC
       LIMIT $1`,
     [limit],
   );
@@ -192,20 +239,87 @@ export interface LighterPositionObservation {
 }
 
 /**
- * Store one observation and settle the per-market freshness in ONE
- * transaction.
+ * Record that this scope was ATTEMPTED, with what the attempt produced.
  *
- * Atomic because the two halves are one fact: an observation whose positions
+ * Called twice per scope: once with `attempted` before the provider is read,
+ * and once with the settled result afterwards. The first write is what makes
+ * the queue fair under a crash - the scope has already moved to the tail
+ * before anything can go wrong with it - and the second is what makes the
+ * marker readable, so an operator can see that five scopes are failing for
+ * `no_credential` rather than inferring it from silence.
+ */
+export async function recordLighterSnapshotAttempt(input: {
+  readonly environment: LighterEnvironment;
+  readonly accountIndex: number;
+  readonly result: LighterSnapshotAttemptResult;
+}): Promise<void> {
+  await query(
+    `INSERT INTO lighter_position_sweep_state
+       (environment, account_index, last_attempt_at, last_attempt_result, last_observed_at, updated_at)
+     VALUES ($1, $2, NOW(), $3, CASE WHEN $3 = 'observed' THEN NOW() ELSE NULL END, NOW())
+     ON CONFLICT (environment, account_index) DO UPDATE
+        SET last_attempt_at = NOW(),
+            last_attempt_result = EXCLUDED.last_attempt_result,
+            last_observed_at = CASE
+              WHEN EXCLUDED.last_attempt_result = 'observed' THEN NOW()
+              ELSE lighter_position_sweep_state.last_observed_at
+            END,
+            updated_at = NOW()`,
+    [input.environment, input.accountIndex, input.result],
+  );
+}
+
+/** What storing one observation did to the durable state. */
+export interface LighterPositionObservationOutcome {
+  /** Market rows this observation moved. Zero is ordinary, never an error. */
+  readonly marketsUpdated: number;
+  /**
+   * TRUE when the observation was older than the scope watermark, so a newer
+   * complete reading of the whole account had already spoken for every market
+   * it could have covered. The observation is still retained as a record; it
+   * simply moved nothing.
+   */
+  readonly ignoredAsStale: boolean;
+  /** TRUE when this exact observation id had already been stored. */
+  readonly replayed: boolean;
+}
+
+/**
+ * Store one observation and settle the freshness in ONE transaction.
+ *
+ * Atomic because the halves are one fact: an observation whose positions
  * landed but whose closures did not would leave the account showing exposure
  * it has just closed, and that is precisely the state a reader would act on.
+ * `received_at` is server-assigned by the column default; nothing here dates
+ * its own arrival.
  *
- * Returns how many market rows the observation actually moved. Zero is an
- * ordinary outcome for a late observation, not an error.
+ * The order is deliberate. The scope row is created and locked FIRST, so two
+ * observations of one account can never interleave their watermark reads; the
+ * watermark is then compared before a single market row is touched.
  */
 export async function storeLighterPositionObservation(
   observation: LighterPositionObservation,
-): Promise<{ marketsUpdated: number; ignoredAsStale: boolean }> {
+): Promise<LighterPositionObservationOutcome> {
+  const coverageAll = observation.coverage === "all";
+  const coveredMarkets: readonly number[] = coverageAll ? [] : observation.coverage;
   return withTransaction(async (client) => {
+    // RESERVE THE SCOPE BEFORE READING ITS WATERMARK. Without the insert there
+    // is no row to lock on the first observation an install ever stores, and
+    // two concurrent sweeps would both read "no watermark" and both apply.
+    await client.query(
+      `INSERT INTO lighter_position_sweep_state (environment, account_index)
+       VALUES ($1, $2)
+       ON CONFLICT (environment, account_index) DO NOTHING`,
+      [observation.environment, observation.accountIndex],
+    );
+    const scope = await client.query<{ complete_watermark_at: Date | string | null }>(
+      `SELECT complete_watermark_at
+         FROM lighter_position_sweep_state
+        WHERE environment = $1 AND account_index = $2
+        FOR UPDATE`,
+      [observation.environment, observation.accountIndex],
+    );
+
     const inserted = await client.query(
       `INSERT INTO lighter_position_observations
          (environment, account_index, observation_id, observed_at, source, coverage_markets, complete, positions)
@@ -222,12 +336,29 @@ export async function storeLighterPositionObservation(
         JSON.stringify(observation.positions),
       ],
     );
-    if (inserted.rowCount === 0) return { marketsUpdated: 0, ignoredAsStale: false };
+    if (inserted.rowCount === 0) {
+      return { marketsUpdated: 0, ignoredAsStale: false, replayed: true };
+    }
+
+    // THE SCOPE WATERMARK, and it is checked before anything is written. A
+    // complete "all" observation spoke for EVERY market on this account, so
+    // nothing older than it may move any market here - including a market it
+    // never listed, which has no row of its own to defend itself with.
+    const watermark = timestampOrNull(scope.rows[0]?.complete_watermark_at ?? null);
+    const observedAtMs = Date.parse(observation.observedAt);
+    if (watermark !== null && Number.isFinite(observedAtMs) && observedAtMs <= watermark) {
+      logger.debug("sync.lighter_position_snapshot.ignored_as_stale", {
+        environment: observation.environment,
+        observationId: observation.observationId,
+      });
+      return { marketsUpdated: 0, ignoredAsStale: true, replayed: false };
+    }
 
     let marketsUpdated = 0;
     // THE OPEN MARKETS. `observed_at <` in the conflict guard is what makes a
     // late observation a no-op rather than a rewrite: the stored row already
-    // speaks for this market with a newer reading.
+    // speaks for this market with a newer reading. The guard does not look at
+    // `open`, so a market closed at 10:00 and reopened at 11:00 reopens.
     for (const position of observation.positions) {
       const updated = await client.query(
         `INSERT INTO lighter_position_market_state
@@ -252,33 +383,92 @@ export async function storeLighterPositionObservation(
       marketsUpdated += updated.rowCount ?? 0;
     }
 
-    // THE CLOSURES, and only from a COMPLETE observation. An incomplete
-    // reading's silence about a market means "unknown", never "closed".
+    // THE CLOSURES, only from a COMPLETE observation and only INSIDE ITS OWN
+    // COVERAGE. An incomplete reading's silence about a market means
+    // "unknown", never "closed"; and a complete reading of markets 1 and 3
+    // says nothing whatsoever about market 2.
     if (observation.complete) {
       const openMarketIndexes = observation.positions.map((position) => position.marketIndex);
-      const closed = await client.query(
-        `UPDATE lighter_position_market_state
-            SET observed_at = $4::timestamptz,
-                observation_id = $5,
-                open = FALSE,
-                position = NULL,
+      if (coverageAll) {
+        // Coverage "all" is the only reading entitled to close a market it did
+        // not mention. Already-closed rows are left alone: the scope watermark
+        // this observation is about to advance is what defends them, so
+        // rewriting every closed row on every sweep would be churn.
+        const closed = await client.query(
+          `UPDATE lighter_position_market_state
+              SET observed_at = $4::timestamptz,
+                  observation_id = $5,
+                  open = FALSE,
+                  position = NULL,
+                  updated_at = NOW()
+            WHERE environment = $1 AND account_index = $2
+              AND observed_at < $4::timestamptz
+              AND open = TRUE
+              AND NOT (market_index = ANY($3::int[]))`,
+          [
+            observation.environment,
+            observation.accountIndex,
+            openMarketIndexes,
+            observation.observedAt,
+            observation.observationId,
+          ],
+        );
+        marketsUpdated += closed.rowCount ?? 0;
+      } else {
+        // A LISTED market with no position is closed, and the marker is
+        // WRITTEN rather than only updated: a market that has never had a row
+        // needs one now, or the next late backfill has nothing to lose against.
+        // This scope's watermark does not move for a partial coverage, so the
+        // marker is the only defence these markets have.
+        const closedMarkets = coveredMarkets.filter(
+          (market) => !openMarketIndexes.includes(market),
+        );
+        for (const market of closedMarkets) {
+          const closed = await client.query(
+            `INSERT INTO lighter_position_market_state
+               (environment, account_index, market_index, observed_at, observation_id, open, position, updated_at)
+             VALUES ($1, $2, $3, $4::timestamptz, $5, FALSE, NULL, NOW())
+             ON CONFLICT (environment, account_index, market_index) DO UPDATE
+                SET observed_at = EXCLUDED.observed_at,
+                    observation_id = EXCLUDED.observation_id,
+                    open = FALSE,
+                    position = NULL,
+                    updated_at = NOW()
+              WHERE lighter_position_market_state.observed_at < EXCLUDED.observed_at`,
+            [
+              observation.environment,
+              observation.accountIndex,
+              market,
+              observation.observedAt,
+              observation.observationId,
+            ],
+          );
+          marketsUpdated += closed.rowCount ?? 0;
+        }
+      }
+    }
+
+    // ADVANCE THE SCOPE WATERMARK, and only for a COMPLETE reading of the
+    // WHOLE account. A partial coverage never earns the right to silence the
+    // markets it did not read.
+    if (observation.complete && coverageAll) {
+      await client.query(
+        `UPDATE lighter_position_sweep_state
+            SET complete_watermark_at = $3::timestamptz,
+                complete_watermark_observation_id = $4,
                 updated_at = NOW()
           WHERE environment = $1 AND account_index = $2
-            AND observed_at < $4::timestamptz
-            AND open = TRUE
-            AND NOT (market_index = ANY($3::int[]))`,
+            AND (complete_watermark_at IS NULL OR complete_watermark_at < $3::timestamptz)`,
         [
           observation.environment,
           observation.accountIndex,
-          openMarketIndexes,
           observation.observedAt,
           observation.observationId,
         ],
       );
-      marketsUpdated += closed.rowCount ?? 0;
     }
 
-    return { marketsUpdated, ignoredAsStale: false };
+    return { marketsUpdated, ignoredAsStale: false, replayed: false };
   });
 }
 
@@ -299,48 +489,59 @@ export async function snapshotLighterPositions(): Promise<LighterPositionSnapsho
   let lastError: string | null = null;
 
   for (const scope of scopes) {
+    // THE ATTEMPT MARKER GOES DOWN FIRST. A scope that dies mid-read - an
+    // unhandled provider hang, a process kill - has already moved to the tail
+    // of the queue, so it cannot occupy the front of every later sweep.
+    await markAttempt(scope, "attempted");
+    let result: LighterSnapshotAttemptResult = "provider_unavailable";
     try {
       const auth = await resolveLighterReadOnlyAccountAuth(scope.environment, scope.accountIndex);
       if (auth === null) {
         awaitingVault += 1;
-        continue;
+        result = "no_credential";
+      } else {
+        const response = await client.getAccount(scope.environment, {
+          by: "index",
+          value: scope.accountIndex,
+        });
+        const account = response.accounts.find(
+          (candidate) => Number(candidate.account_index ?? candidate.index) === scope.accountIndex,
+        );
+        // A response that did not carry this account is an INCOMPLETE reading,
+        // not an empty one: reporting it as complete would close every position
+        // the account holds on the strength of a page that never mentioned it.
+        const positionsDto = account?.positions;
+        const complete = account !== undefined && Array.isArray(positionsDto);
+        const positions = (positionsDto ?? []).flatMap((dto) => {
+          const projected = projectLighterPosition(dto);
+          return projected === null ? [] : [projected];
+        });
+        const stored = await storeLighterPositionObservation({
+          environment: scope.environment,
+          accountIndex: scope.accountIndex,
+          observationId: randomUUID(),
+          observedAt: new Date().toISOString(),
+          coverage: complete ? "all" : positions.map((position) => position.marketIndex),
+          complete,
+          positions,
+        });
+        observed += 1;
+        result = "observed";
+        logger.debug("sync.lighter_position_snapshot.observed", {
+          environment: scope.environment,
+          complete,
+          positions: positions.length,
+          marketsUpdated: stored.marketsUpdated,
+          ignoredAsStale: stored.ignoredAsStale,
+        });
       }
-      const response = await client.getAccount(scope.environment, {
-        by: "index",
-        value: scope.accountIndex,
-      });
-      const account = response.accounts.find(
-        (candidate) => Number(candidate.account_index ?? candidate.index) === scope.accountIndex,
-      );
-      // A response that did not carry this account is an INCOMPLETE reading,
-      // not an empty one: reporting it as complete would close every position
-      // the account holds on the strength of a page that never mentioned it.
-      const positionsDto = account?.positions;
-      const complete = account !== undefined && Array.isArray(positionsDto);
-      const positions = (positionsDto ?? []).flatMap((dto) => {
-        const projected = projectLighterPosition(dto);
-        return projected === null ? [] : [projected];
-      });
-      const result = await storeLighterPositionObservation({
-        environment: scope.environment,
-        accountIndex: scope.accountIndex,
-        observationId: randomUUID(),
-        observedAt: new Date().toISOString(),
-        coverage: complete ? "all" : positions.map((position) => position.marketIndex),
-        complete,
-        positions,
-      });
-      observed += 1;
-      logger.debug("sync.lighter_position_snapshot.observed", {
-        environment: scope.environment,
-        complete,
-        positions: positions.length,
-        marketsUpdated: result.marketsUpdated,
-      });
     } catch (error) {
       errors += 1;
       lastError = error instanceof Error ? error.message : String(error);
+      result = "provider_unavailable";
     }
+    // SETTLE THE MARKER WITH THE REAL REASON.
+    await markAttempt(scope, result);
   }
 
   const remainingScopes = Math.max(0, total - scopes.length);
@@ -368,4 +569,34 @@ function signedDecimalOrNull(value: unknown): string | null {
 
 function isZeroDecimal(value: string): boolean {
   return /^0(\.0+)?$/.test(value);
+}
+
+/**
+ * Write one attempt marker and never throw.
+ *
+ * The marker is bookkeeping about fairness, and a failed write must not turn
+ * one scope into the whole sweep's failure - that is the same starvation the
+ * marker exists to prevent, arriving through the back door. A scope whose
+ * marker did not move is simply attempted again by the next sweep.
+ */
+async function markAttempt(
+  scope: LighterSnapshotScope,
+  result: LighterSnapshotAttemptResult,
+): Promise<void> {
+  try {
+    await recordLighterSnapshotAttempt({ ...scope, result });
+  } catch (error) {
+    logger.warn("sync.lighter_position_snapshot.attempt_marker_failed", {
+      environment: scope.environment,
+      result,
+      reason: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+/** A timestamp column as epoch milliseconds, or null when the column is empty. */
+function timestampOrNull(value: Date | string | null): number | null {
+  if (value === null) return null;
+  const ms = value instanceof Date ? value.getTime() : Date.parse(value);
+  return Number.isFinite(ms) ? ms : null;
 }

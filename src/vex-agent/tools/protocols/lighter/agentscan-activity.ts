@@ -44,13 +44,28 @@
  *
  * ## Authorized fee terms are not observed fees
  *
- * The integrator TICK on a fill is what the authorization permits, the
- * ESTIMATE is arithmetic on this fill's own notional, and the CHARGED amount
- * is the provider's own report. `order-evidence.ts` already keeps the expected
- * tick apart from the provider-observed one; that distinction survives into
- * the ledger rather than being flattened into a single "fee". An unproven
- * charged amount stays NULL - never zero, because a zero is a proven amount
- * and reads as "no fee was taken".
+ * FOUR different numbers, four columns, and collapsing any two of them
+ * misreports the money (Codex H0 round 2, correction 6):
+ *
+ *   - the AUTHORIZED integrator tick, from the fee-authorization terms: what
+ *     the approval PERMITS on this side of the book. It is a term, and a term
+ *     is not evidence that it was applied to anything;
+ *   - the OBSERVED integrator tick, which the provider stamped on THIS trade
+ *     record (`integrator_maker_fee` / `integrator_taker_fee`), null when the
+ *     record carries none;
+ *   - the OBSERVED exchange tick (`maker_fee` / `taker_fee`). Measured live
+ *     2026-09-08: these are RATE TICKS in millionths of notional - 350 on RHC,
+ *     100 and 28 on Core beside notionals under one dollar - the same unit as
+ *     `current_taker_fee_tick`, and not amounts. Reading them as amounts would
+ *     overstate a sub-dollar trade's fee by orders of magnitude;
+ *   - the ESTIMATE, arithmetic on this fill's own basis, computed from the
+ *     OBSERVED tick when the provider gave one and from the authorized term
+ *     otherwise - and it says which, because an estimate on an authorized
+ *     basis is the weaker claim.
+ *
+ * The CHARGED amount is the provider's own figure and is none of the above.
+ * An unproven charged amount stays NULL - never zero, because a zero is a
+ * proven amount and reads as "no fee was taken".
  *
  * ## Privacy
  *
@@ -144,13 +159,19 @@ export interface LighterFillRecord {
   readonly quoteAsset: LighterVenueAssetRef;
   readonly blockHeight: string;
   readonly feeSide: "maker" | "taker";
-  readonly integratorFeeTick: number | null;
+  /** The tick the fee AUTHORIZATION permits for this side. A term, not evidence. */
+  readonly integratorFeeTickAuthorized: number | null;
+  /** The integrator tick the provider stamped on this trade record. Null when absent. */
+  readonly integratorFeeTickObserved: number | null;
   readonly integratorFeeAsset: LighterVenueAssetRef | null;
   readonly integratorFeeEstimatedRaw: string | null;
   readonly integratorFeeEstimateBasis: "quote_notional" | "received_base" | null;
+  /** Which tick the estimate was computed from. Null exactly when there is no estimate. */
+  readonly integratorFeeEstimateTickSource: "observed" | "authorized" | null;
   /** EXACT provider-reported amount. Null until proven; never zero as a placeholder. */
   readonly integratorFeeChargedRaw: string | null;
-  readonly exchangeFeeTick: number | null;
+  /** The exchange tier tick observed on this trade record, in millionths of notional. */
+  readonly exchangeFeeTickObserved: number | null;
   readonly exchangeFeeChargedRaw: string | null;
   readonly collectorAccountIndex: number | null;
   readonly feeAuthorizationIntentId: string | null;
@@ -217,12 +238,24 @@ export function buildLighterFillRecord(input: {
   // behaviour; the basis travels with the estimate so a reader can never be
   // left guessing which number the percentage was applied to.
   const receivedBase = spot && intent.side === "buy";
-  const integratorFeeTick = maker ? feeTerms.integratorMakerFeeTick : feeTerms.integratorTakerFeeTick;
-  const estimate = integratorFeeTick === null || feeTerms.feeAsset === null
+  const integratorFeeTickAuthorized = maker
+    ? feeTerms.integratorMakerFeeTick
+    : feeTerms.integratorTakerFeeTick;
+  // THE PROVIDER'S OWN TICK FOR THIS TRADE, read from the side the account was
+  // actually on. It is evidence; the authorization above is a term.
+  const integratorFeeTickObserved = feeRateTick(
+    maker ? trade.integrator_maker_fee : trade.integrator_taker_fee,
+  );
+  const exchangeFeeTickObserved = feeRateTick(maker ? trade.maker_fee : trade.taker_fee);
+  // ESTIMATE FROM WHAT THE PROVIDER DID when the provider said what it did,
+  // and from the authorized term only when it did not - labelled either way.
+  const estimateTickSource = integratorFeeTickObserved !== null ? "observed" : "authorized";
+  const estimateTick = integratorFeeTickObserved ?? integratorFeeTickAuthorized;
+  const estimate = estimateTick === null || feeTerms.feeAsset === null
     ? null
     : estimateIntegratorFeeRaw(
         receivedBase ? trade.size : quoteNotional,
-        integratorFeeTick,
+        estimateTick,
         feeTerms.feeAsset.decimals,
       );
 
@@ -249,14 +282,16 @@ export function buildLighterFillRecord(input: {
     quoteAsset: market.quoteAsset,
     blockHeight,
     feeSide,
-    integratorFeeTick,
+    integratorFeeTickAuthorized,
+    integratorFeeTickObserved,
     integratorFeeAsset: estimate === null ? null : feeTerms.feeAsset,
     integratorFeeEstimatedRaw: estimate,
     integratorFeeEstimateBasis: estimate === null ? null : receivedBase ? "received_base" : "quote_notional",
+    integratorFeeEstimateTickSource: estimate === null ? null : estimateTickSource,
     // NEVER derived. The exact charged amount is the provider's own figure and
     // is written only by the enrichment path, when it exists.
     integratorFeeChargedRaw: null,
-    exchangeFeeTick: (maker ? trade.maker_fee : trade.taker_fee) ?? null,
+    exchangeFeeTickObserved,
     exchangeFeeChargedRaw: null,
     collectorAccountIndex: feeTerms.collectorAccountIndex,
     feeAuthorizationIntentId: feeTerms.feeAuthorizationIntentId,
@@ -326,14 +361,16 @@ export async function recordLighterFillActivity(
     record.quoteAsset.decimals,
     record.blockHeight,
     record.feeSide,
-    record.integratorFeeTick,
+    record.integratorFeeTickAuthorized,
+    record.integratorFeeTickObserved,
     record.integratorFeeAsset?.venueAssetId ?? null,
     record.integratorFeeAsset?.symbol ?? null,
     record.integratorFeeAsset?.decimals ?? null,
     record.integratorFeeEstimatedRaw,
     record.integratorFeeEstimateBasis,
+    record.integratorFeeEstimateTickSource,
     record.integratorFeeChargedRaw,
-    record.exchangeFeeTick,
+    record.exchangeFeeTickObserved,
     record.exchangeFeeChargedRaw,
     record.collectorAccountIndex,
     record.feeAuthorizationIntentId,
@@ -381,12 +418,14 @@ const INSERT_FILL_SQL = `
     base_asset_id, base_asset_symbol, base_asset_decimals,
     quote_asset_id, quote_asset_symbol, quote_asset_decimals,
     block_height, fee_side,
-    integrator_fee_tick, integrator_fee_asset_id, integrator_fee_asset_symbol, integrator_fee_asset_decimals,
-    integrator_fee_estimated_raw, integrator_fee_estimate_basis, integrator_fee_charged_raw,
-    exchange_fee_tick, exchange_fee_charged_raw, collector_account_index, fee_authorization_intent_id
+    integrator_fee_tick_authorized, integrator_fee_tick_observed,
+    integrator_fee_asset_id, integrator_fee_asset_symbol, integrator_fee_asset_decimals,
+    integrator_fee_estimated_raw, integrator_fee_estimate_basis, integrator_fee_estimate_tick_source,
+    integrator_fee_charged_raw,
+    exchange_fee_tick_observed, exchange_fee_charged_raw, collector_account_index, fee_authorization_intent_id
   ) VALUES (
     $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,
-    $22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32
+    $22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34
   )
   ON CONFLICT (canonical_identity) DO NOTHING
   RETURNING id`;
@@ -405,6 +444,14 @@ const SELECT_FILL_BY_IDENTITY_SQL = `
  * a different figure. Nothing else about the row is writable at all.
  *
  * Pass the client to enrich inside a caller's own transaction.
+ *
+ * THE REVISION IS BUMPED IN THE SAME STATEMENT, and it is the reason a fee
+ * proven after delivery ever reaches AgentScan at all. The fill's own outbox
+ * row is terminal once sent, so without a monotonic token there is nothing for
+ * the diff scan to notice: `enqueueEligibleLighterFills` enqueues one
+ * enrichment row per (fill, revision) pair, and a repeat enrichment - which
+ * updates no row, because the `IS NULL` guard refuses to revise a proven
+ * amount - leaves the revision where it was and produces no second row.
  *
  * Returns whether a row was enriched. `false` means the fill is unknown, or
  * the amount was already proven - both ordinary, neither an error.
@@ -437,6 +484,7 @@ const ENRICH_FILL_FEES_SQL = `
            CASE WHEN exchange_fee_charged_raw IS NULL
                 THEN COALESCE($3::text, exchange_fee_charged_raw)
                 ELSE exchange_fee_charged_raw END,
+         revision = revision + 1,
          updated_at = NOW()
    WHERE canonical_identity = $1
      AND ((integrator_fee_charged_raw IS NULL AND $2::text IS NOT NULL)
@@ -576,6 +624,19 @@ function splitDecimal(value: string): { units: bigint; decimals: number } | null
 
 function nonEmpty(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+/**
+ * A provider fee RATE TICK, in millionths of notional.
+ *
+ * Bounded at 1e6 (one hundred percent) because a tick outside that range is
+ * not a rate, and storing it as one would silently produce a fee estimate that
+ * exceeds the trade. Out of range, or not an integer, reads as "the provider
+ * did not report a tick here" rather than as a number to compute with.
+ */
+function feeRateTick(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isSafeInteger(value)) return null;
+  return value >= 0 && value <= 1_000_000 ? value : null;
 }
 
 function integerString(value: unknown): string | null {

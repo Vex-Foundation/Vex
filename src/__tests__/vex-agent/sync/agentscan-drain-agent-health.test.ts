@@ -38,6 +38,13 @@ const { drainOutbox } = await import("@vex-agent/sync/agentscan-report/drain.js"
 function claimedRow(): ClaimedOutboxEvent {
   return {
     outboxId: 1,
+    // The discriminator is part of the claimed row's contract: the drain reads
+    // it to decide which ledger built the payload and whether the row needs the
+    // Lighter capability, and a row without one would be routed by guesswork.
+    sourceKind: "agent_activity",
+    fillId: null,
+    fill: null,
+    enrichmentRevision: null,
     activityId: 10,
     status: "confirmed",
     backfill: false,

@@ -64,6 +64,7 @@ function fillRow(outboxId: number): ClaimedOutboxEvent {
   return {
     outboxId,
     sourceKind: "lighter_fill",
+    enrichmentRevision: null,
     activityId: null,
     status: "confirmed",
     backfill: false,
@@ -113,6 +114,7 @@ function activityRow(outboxId: number, eventRole = "swap"): ClaimedOutboxEvent {
   return {
     outboxId,
     sourceKind: "agent_activity",
+    enrichmentRevision: null,
     activityId: outboxId * 10,
     status: "confirmed",
     backfill: false,

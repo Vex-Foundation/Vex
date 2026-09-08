@@ -30,7 +30,9 @@ import {
 } from "./lighter-capability.js";
 import {
   isLighterFillMappingFailure,
+  mapLighterFillEnrichmentToEvent,
   mapLighterFillToEvent,
+  type LighterFillEnrichmentEvent,
   type LighterFillEvent,
 } from "./lighter-fill-event.js";
 
@@ -89,7 +91,7 @@ const LIGHTER_ACTIVITY_ROLES: ReadonlySet<string> = new Set([
  * legs.
  */
 function needsLighterCapability(claimed: ClaimedOutboxEvent): boolean {
-  if (claimed.sourceKind === "lighter_fill") return true;
+  if (claimed.sourceKind !== "agent_activity") return true;
   const role = eventRoleOf(claimed);
   return role !== null && LIGHTER_ACTIVITY_ROLES.has(role);
 }
@@ -250,7 +252,7 @@ async function sendGroup(
   // nothing to send and nothing to mark - checked against the ledger the row
   // actually names, because a fill row legitimately carries no activity.
   const claimable = group.filter((c) =>
-    c.sourceKind === "lighter_fill" ? c.fill !== null : c.activity !== null,
+    c.sourceKind === "agent_activity" ? c.activity !== null : c.fill !== null,
   );
   if (claimable.length === 0) {
     return { sent: 0, rejected: 0, deferred: 0, owed: 0, stop: false };
@@ -320,11 +322,19 @@ async function sendGroup(
   // which is why the array is typed by the union rather than by the base:
   // the extra field must survive to the wire, and a widened element type
   // would be the one thing that silently drops it.
-  const events: Array<AgentscanEvent | LighterFillEvent> = [];
+  const events: Array<AgentscanEvent | LighterFillEvent | LighterFillEnrichmentEvent> = [];
   for (const item of admitted) {
-    if (item.sourceKind === "lighter_fill") {
+    if (item.sourceKind === "lighter_fill" || item.sourceKind === "lighter_fill_enrichment") {
       if (item.fill === null) continue;
-      const mapped = mapLighterFillToEvent(item.fill);
+      // AN ENRICHMENT IS AN UPDATE TO THE FILL THIS ROW ALREADY DELIVERED, so
+      // it maps through its own projection: the same identity, the newly
+      // proven fees, and no economics at all. The revision comes from the
+      // outbox row rather than from the ledger, because the ledger row can be
+      // enriched again between enqueue and drain and this row delivers the
+      // revision it was queued for.
+      const mapped = item.sourceKind === "lighter_fill_enrichment"
+        ? mapLighterFillEnrichmentToEvent(item.fill, item.enrichmentRevision ?? 0)
+        : mapLighterFillToEvent(item.fill);
       if (isLighterFillMappingFailure(mapped)) {
         await holdRow(
           item.outboxId,

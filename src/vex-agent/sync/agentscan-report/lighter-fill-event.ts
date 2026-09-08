@@ -30,14 +30,26 @@
  * record instead, and says so in its own verification field. Nothing here
  * asserts verification - that is the server's word, never the client's.
  *
- * ## Fees: authorized, estimated, charged
+ * ## Fees: authorized, observed, estimated, charged
  *
- * Three different things, three different fields, and collapsing them is the
- * defect this shape exists to prevent. The TICK is an authorized term (what
- * the integrator approval permits), the ESTIMATE is arithmetic on this fill's
- * own notional, and the CHARGED amount is the provider's own report. Charged
- * is null until it is proven, and null never becomes zero: a zero is a proven
- * amount and would be read as "no fee was taken".
+ * Four different things, four different fields, and collapsing any two is the
+ * defect this shape exists to prevent (H0 Codex correction 6). The AUTHORIZED
+ * tick is a term - what the integrator approval permits. The OBSERVED ticks
+ * are what the provider stamped on this trade record, integrator and exchange
+ * alike, in millionths of notional. The ESTIMATE is arithmetic on this fill's
+ * own basis and says which tick it used. The CHARGED amount is the provider's
+ * own report; it is null until proven, and null never becomes zero, because a
+ * zero is a proven amount and would be read as "no fee was taken".
+ *
+ * ## The enrichment event
+ *
+ * A charged amount frequently becomes known AFTER the fill has been delivered,
+ * and the fill's own outbox row is terminal by then. {@link
+ * mapLighterFillEnrichmentToEvent} is the update that carries it: the SAME
+ * `sourceRowId`, so the server updates the fill it already holds rather than
+ * accepting a second one, and NO economics at all - no price, no size, no
+ * notional, no legs. There is nothing in that payload that could revise what
+ * the fill already said.
  */
 
 import type { AgentscanEvent, AgentscanTokenRef } from "../../agentscan/mapper.js";
@@ -81,12 +93,18 @@ export interface LighterFillPayload {
   readonly baseAsset: LighterVenueAsset;
   readonly quoteAsset: LighterVenueAsset;
   readonly feeSide: "maker" | "taker";
-  readonly integratorFeeTick: number | null;
+  /** The tick the integrator approval PERMITS on this side. A term, not evidence. */
+  readonly integratorFeeTickAuthorized: number | null;
+  /** The integrator tick the provider stamped on this trade record. Null when absent. */
+  readonly integratorFeeTickObserved: number | null;
   readonly integratorFeeEstimatedRaw: string | null;
   readonly integratorFeeEstimateBasis: "quote_notional" | "received_base" | null;
+  /** Which tick the estimate used. Null exactly when there is no estimate. */
+  readonly integratorFeeEstimateTickSource: "observed" | "authorized" | null;
   readonly integratorFeeChargedRaw: string | null;
   readonly integratorFeeAsset: LighterVenueAsset | null;
-  readonly exchangeFeeTick: number | null;
+  /** The exchange tier tick observed on this trade record, in millionths of notional. */
+  readonly exchangeFeeTickObserved: number | null;
   readonly exchangeFeeChargedRaw: string | null;
   readonly collectorAccountIndex: string | null;
   readonly feeAuthorizationIntentId: string | null;
@@ -227,16 +245,18 @@ export function mapLighterFillToEvent(row: Record<string, unknown>): LighterFill
       baseAsset,
       quoteAsset,
       feeSide,
-      integratorFeeTick: num(row.integrator_fee_tick),
+      integratorFeeTickAuthorized: num(row.integrator_fee_tick_authorized),
+      integratorFeeTickObserved: num(row.integrator_fee_tick_observed),
       integratorFeeEstimatedRaw: guarded(row.integrator_fee_estimated_raw, INTEGER),
       integratorFeeEstimateBasis: feeEstimateBasis(row.integrator_fee_estimate_basis),
+      integratorFeeEstimateTickSource: feeEstimateTickSource(row.integrator_fee_estimate_tick_source),
       integratorFeeChargedRaw: guarded(row.integrator_fee_charged_raw, INTEGER),
       integratorFeeAsset: venueAsset(
         row.integrator_fee_asset_id,
         row.integrator_fee_asset_symbol,
         row.integrator_fee_asset_decimals,
       ),
-      exchangeFeeTick: num(row.exchange_fee_tick),
+      exchangeFeeTickObserved: num(row.exchange_fee_tick_observed),
       exchangeFeeChargedRaw: guarded(row.exchange_fee_charged_raw, SIGNED_INTEGER),
       collectorAccountIndex: idString(row.collector_account_index),
       feeAuthorizationIntentId: str(row.fee_authorization_intent_id),
@@ -245,9 +265,120 @@ export function mapLighterFillToEvent(row: Record<string, unknown>): LighterFill
   };
 }
 
-/** Whether a mapping result is the failure arm. */
+/**
+ * The typed enrichment object: the identity, the revision it delivers, and the
+ * exact charged amounts. NOTHING ELSE. No price, no size, no notional, no
+ * side, no legs - there is deliberately no field here through which an
+ * enrichment could revise an economic fact the fill already established
+ * (H0 Codex correction 4: enrichment never creates another fill and never
+ * changes established economics).
+ */
+export interface LighterFillEnrichmentPayload {
+  readonly canonicalIdentity: string;
+  /**
+   * The `lighter_fills.revision` this update carries. Monotonic per fill and
+   * bumped only by the enrichment write, so the server can apply updates in
+   * order and ignore one it has already applied.
+   */
+  readonly revision: number;
+  readonly integratorFeeChargedRaw: string | null;
+  readonly exchangeFeeChargedRaw: string | null;
+  readonly integratorFeeAsset: LighterVenueAsset | null;
+}
+
+/** The ingest event an enrichment produces. Same identity, no economics. */
+export type LighterFillEnrichmentEvent = AgentscanEvent & {
+  readonly lighterFillEnrichment: LighterFillEnrichmentPayload;
+};
+
+/**
+ * Map one already-delivered ledger row into the update that carries its newly
+ * proven fees.
+ *
+ * The `sourceRowId` is the fill's own, unchanged: AgentScan dedupes on
+ * (agent_hash, source_row_id), and this event is by construction a second
+ * report of that identity. Under H0 correction 4 the server treats it as an
+ * enrichment of the fill it already holds rather than as a duplicate fill;
+ * nothing in the payload could turn it into a new one, because nothing in the
+ * payload is an economic fact.
+ *
+ * `revision` comes from the OUTBOX ROW rather than from the ledger, because
+ * the ledger row can be enriched again between enqueue and drain: the row that
+ * was queued names the revision it is delivering, and a later revision gets
+ * its own row.
+ */
+export function mapLighterFillEnrichmentToEvent(
+  row: Record<string, unknown>,
+  revision: number,
+): LighterFillEnrichmentEvent | LighterFillMappingFailure {
+  const id = num(row.id);
+  const canonicalIdentity = str(row.canonical_identity);
+  const environment = str(row.environment);
+  if (id === null || canonicalIdentity === null) return unmappable("missing_identity");
+  if (environment !== "core" && environment !== "rhc") return unmappable("unknown_environment");
+  if (!Number.isSafeInteger(revision) || revision <= 0) return unmappable("missing_identity");
+
+  const marketIndex = num(row.market_index);
+  if (marketIndex === null) return unmappable("missing_identity");
+  const spot = marketIndex >= LIGHTER_SPOT_MARKET_INDEX_FLOOR;
+  const observedAt = iso(row.observed_at);
+  const createdAt = iso(row.created_at) ?? observedAt ?? new Date(0).toISOString();
+  const chainId = getLighterFundingDeployment(environment).lighterSignerChainId;
+
+  return {
+    sourceRowId: `${LIGHTER_FILL_SOURCE_ROW_PREFIX}${id}`,
+    sourceExecutionId: str(row.execution_intent_id) ?? canonicalIdentity,
+    eventIndex: 0,
+    // The routing fields the server needs to find the fill this updates, and
+    // nothing beyond them.
+    kind: spot ? "exchange" : "perp",
+    eventRole: spot ? "spot_fill" : "perp_fill",
+    status: "confirmed",
+    protocol: "lighter",
+    chainFamily: "lighter",
+    chainId: String(chainId),
+    fromChainId: null,
+    toChainId: null,
+    // EVERY ECONOMIC FIELD IS NULL, deliberately and structurally: an
+    // enrichment has no authority over what the fill said it traded.
+    tokenIn: null,
+    tokenOut: null,
+    amountInRaw: null,
+    amountOutRaw: null,
+    executedInRaw: null,
+    executedOutRaw: null,
+    tokenIn2: null,
+    tokenOut2: null,
+    amountIn2Raw: null,
+    amountOut2Raw: null,
+    executedIn2Raw: null,
+    executedOut2Raw: null,
+    usdInEst: null,
+    usdOutEst: null,
+    usdFeeEst: null,
+    usdSource: null,
+    txHash: null,
+    failureCode: null,
+    createdAt,
+    confirmedAt: null,
+    observedAt,
+    lighterFillEnrichment: {
+      canonicalIdentity,
+      revision,
+      integratorFeeChargedRaw: guarded(row.integrator_fee_charged_raw, INTEGER),
+      exchangeFeeChargedRaw: guarded(row.exchange_fee_charged_raw, SIGNED_INTEGER),
+      integratorFeeAsset: venueAsset(
+        row.integrator_fee_asset_id,
+        row.integrator_fee_asset_symbol,
+        row.integrator_fee_asset_decimals,
+      ),
+    },
+  };
+}
+
+/** Whether a mapping result - a fill's or an enrichment's - is the failure arm. */
 export function isLighterFillMappingFailure(
-  result: LighterFillEvent | LighterFillMappingFailure,
+  result: LighterFillEvent | LighterFillEnrichmentEvent | LighterFillMappingFailure,
 ): result is LighterFillMappingFailure {
   return "kind" in result && result.kind === "unmappable";
 }
@@ -293,6 +424,10 @@ function venueAsset(id: unknown, symbol: unknown, decimals: unknown): LighterVen
 
 function feeEstimateBasis(value: unknown): "quote_notional" | "received_base" | null {
   return value === "quote_notional" || value === "received_base" ? value : null;
+}
+
+function feeEstimateTickSource(value: unknown): "observed" | "authorized" | null {
+  return value === "observed" || value === "authorized" ? value : null;
 }
 
 function str(value: unknown): string | null {

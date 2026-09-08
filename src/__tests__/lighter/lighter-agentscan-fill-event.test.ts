@@ -22,8 +22,10 @@ import { describe, it, expect } from "vitest";
 
 import {
   isLighterFillMappingFailure,
+  mapLighterFillEnrichmentToEvent,
   mapLighterFillToEvent,
   LIGHTER_FILL_SOURCE_ROW_PREFIX,
+  type LighterFillEnrichmentEvent,
   type LighterFillEvent,
 } from "@vex-agent/sync/agentscan-report/lighter-fill-event.js";
 
@@ -51,17 +53,20 @@ function ledgerRow(overrides: Record<string, unknown> = {}): Record<string, unkn
     quote_asset_decimals: 6,
     block_height: "12345",
     fee_side: "taker",
-    integrator_fee_tick: 1000,
+    integrator_fee_tick_authorized: 1000,
+    integrator_fee_tick_observed: 350,
     integrator_fee_asset_id: "lighter:core:asset:0",
     integrator_fee_asset_symbol: "USDC",
     integrator_fee_asset_decimals: 6,
     integrator_fee_estimated_raw: "1000200",
     integrator_fee_estimate_basis: "quote_notional",
+    integrator_fee_estimate_tick_source: "observed",
     integrator_fee_charged_raw: null,
-    exchange_fee_tick: 5,
+    exchange_fee_tick_observed: 5,
     exchange_fee_charged_raw: null,
     collector_account_index: "743799",
     fee_authorization_intent_id: "fee-intent-1",
+    revision: 0,
     observed_at: new Date("2026-09-07T10:00:00Z"),
     created_at: new Date("2026-09-07T10:00:00Z"),
     ...overrides,
@@ -183,10 +188,29 @@ describe("legs and amounts", () => {
 describe("fees", () => {
   it("keeps the authorized tick, the estimate and the charged amount apart", () => {
     const fill = mapOrThrow(ledgerRow()).lighterFill;
-    expect(fill.integratorFeeTick).toBe(1000);
+    expect(fill.integratorFeeTickAuthorized).toBe(1000);
     expect(fill.integratorFeeEstimatedRaw).toBe("1000200");
     expect(fill.integratorFeeEstimateBasis).toBe("quote_notional");
     expect(fill.integratorFeeChargedRaw).toBeNull();
+  });
+
+  it("carries the OBSERVED ticks beside the authorized one, never instead of it", () => {
+    // The authorization permits 1000; the provider stamped 350 on this trade
+    // and charged its own tier at 5. Three separate facts, three fields.
+    const fill = mapOrThrow(ledgerRow()).lighterFill;
+    expect(fill.integratorFeeTickAuthorized).toBe(1000);
+    expect(fill.integratorFeeTickObserved).toBe(350);
+    expect(fill.exchangeFeeTickObserved).toBe(5);
+    expect(fill.integratorFeeEstimateTickSource).toBe("observed");
+  });
+
+  it("says the estimate stands on the AUTHORIZED tick when the provider reported none", () => {
+    const fill = mapOrThrow(ledgerRow({
+      integrator_fee_tick_observed: null,
+      integrator_fee_estimate_tick_source: "authorized",
+    })).lighterFill;
+    expect(fill.integratorFeeTickObserved).toBeNull();
+    expect(fill.integratorFeeEstimateTickSource).toBe("authorized");
   });
 
   it("reports an unproven charge as null, never as zero", () => {
@@ -226,14 +250,16 @@ describe("privacy", () => {
       "collectorAccountIndex",
       "environment",
       "exchangeFeeChargedRaw",
-      "exchangeFeeTick",
+      "exchangeFeeTickObserved",
       "feeAuthorizationIntentId",
       "feeSide",
       "integratorFeeAsset",
       "integratorFeeChargedRaw",
       "integratorFeeEstimateBasis",
+      "integratorFeeEstimateTickSource",
       "integratorFeeEstimatedRaw",
-      "integratorFeeTick",
+      "integratorFeeTickAuthorized",
+      "integratorFeeTickObserved",
       "lighterChainId",
       "marketIndex",
       "marketSymbol",
@@ -283,5 +309,72 @@ describe("rows the mapper refuses", () => {
     const result = mapLighterFillToEvent(ledgerRow(overrides));
     expect(isLighterFillMappingFailure(result)).toBe(true);
     expect(result).toEqual({ kind: "unmappable", reason });
+  });
+});
+
+describe("the enrichment projection", () => {
+  function enrichOrThrow(row: Record<string, unknown>, revision: number): LighterFillEnrichmentEvent {
+    const result = mapLighterFillEnrichmentToEvent(row, revision);
+    if (isLighterFillMappingFailure(result)) throw new Error(`unmappable: ${result.reason}`);
+    return result;
+  }
+
+  it("reports the SAME identity as the fill, so the server updates one it already holds", () => {
+    const enriched = enrichOrThrow(
+      ledgerRow({ integrator_fee_charged_raw: "1000000", revision: 1 }),
+      1,
+    );
+    const fill = mapOrThrow(ledgerRow());
+    expect(enriched.sourceRowId).toBe(fill.sourceRowId);
+    expect(enriched.sourceRowId).toBe(`${LIGHTER_FILL_SOURCE_ROW_PREFIX}41`);
+    expect(enriched.lighterFillEnrichment.canonicalIdentity).toBe(fill.lighterFill.canonicalIdentity);
+  });
+
+  it("carries the newly proven fees and the revision that delivers them", () => {
+    const enriched = enrichOrThrow(
+      ledgerRow({ integrator_fee_charged_raw: "1000000", exchange_fee_charged_raw: "-250", revision: 2 }),
+      2,
+    );
+    expect(enriched.lighterFillEnrichment).toEqual({
+      canonicalIdentity: "lighter:core:743799:1:99",
+      revision: 2,
+      integratorFeeChargedRaw: "1000000",
+      exchangeFeeChargedRaw: "-250",
+      integratorFeeAsset: { venueAssetId: "lighter:core:asset:0", symbol: "USDC", decimals: 6 },
+    });
+  });
+
+  it("carries NO economics at all, so it cannot revise what the fill established", () => {
+    // The whole point of H0 correction 4: an enrichment is an update to fees,
+    // never a second fill and never a revision of price, size or notional.
+    const enriched = enrichOrThrow(ledgerRow({ integrator_fee_charged_raw: "1000000", revision: 1 }), 1);
+    expect(Object.keys(enriched.lighterFillEnrichment).sort()).toEqual([
+      "canonicalIdentity",
+      "exchangeFeeChargedRaw",
+      "integratorFeeAsset",
+      "integratorFeeChargedRaw",
+      "revision",
+    ]);
+    expect(enriched.tokenIn).toBeNull();
+    expect(enriched.tokenOut).toBeNull();
+    expect(enriched.amountInRaw).toBeNull();
+    expect(enriched.amountOutRaw).toBeNull();
+    expect(enriched.executedInRaw).toBeNull();
+    expect(enriched.executedOutRaw).toBeNull();
+    const serialized = JSON.stringify(enriched);
+    for (const economic of ["2500.5", "0.4", "1000.2"]) {
+      expect(serialized).not.toContain(economic);
+    }
+  });
+
+  it("refuses a revision that is not a real one rather than sending an update nobody can order", () => {
+    expect(mapLighterFillEnrichmentToEvent(ledgerRow(), 0)).toEqual({
+      kind: "unmappable",
+      reason: "missing_identity",
+    });
+    expect(mapLighterFillEnrichmentToEvent(ledgerRow(), -1)).toEqual({
+      kind: "unmappable",
+      reason: "missing_identity",
+    });
   });
 });

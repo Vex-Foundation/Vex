@@ -168,7 +168,7 @@ describe("buildLighterFillRecord", () => {
       feeTerms: FEE_TERMS,
     });
     expect(taker.feeSide).toBe("taker");
-    expect(taker.exchangeFeeTick).toBe(5);
+    expect(taker.exchangeFeeTickObserved).toBe(5);
 
     // Same trade, the account on the ask side: now it is the MAKER.
     const maker = buildOrThrow({
@@ -178,7 +178,7 @@ describe("buildLighterFillRecord", () => {
       feeTerms: FEE_TERMS,
     });
     expect(maker.feeSide).toBe("maker");
-    expect(maker.exchangeFeeTick).toBe(2);
+    expect(maker.exchangeFeeTickObserved).toBe(2);
   });
 
   it("reads the maker and taker integrator ticks apart", () => {
@@ -195,8 +195,61 @@ describe("buildLighterFillRecord", () => {
       market: PERP_MARKET,
       feeTerms: terms,
     });
-    expect(asMaker.integratorFeeTick).toBe(400);
-    expect(asTaker.integratorFeeTick).toBe(1000);
+    expect(asMaker.integratorFeeTickAuthorized).toBe(400);
+    expect(asTaker.integratorFeeTickAuthorized).toBe(1000);
+  });
+
+  it("keeps the AUTHORIZED tick apart from the one the provider OBSERVED", () => {
+    // The authorization permits 1000 on the taker side; the provider stamped
+    // 350 on this trade. Both are facts and they answer different questions,
+    // so neither may stand in for the other (H0 Codex correction 6).
+    const record = buildOrThrow({
+      trade: trade({ is_maker_ask: true, integrator_taker_fee: 350, taker_fee: 100 }),
+      intent: intent({ side: "buy" }),
+      market: PERP_MARKET,
+      feeTerms: { ...FEE_TERMS, integratorTakerFeeTick: 1000 },
+    });
+    expect(record.integratorFeeTickAuthorized).toBe(1000);
+    expect(record.integratorFeeTickObserved).toBe(350);
+    expect(record.exchangeFeeTickObserved).toBe(100);
+    // The estimate follows what the provider DID: 1000.2 * 350 / 1e6 in 6dp.
+    expect(record.integratorFeeEstimateTickSource).toBe("observed");
+    expect(record.integratorFeeEstimatedRaw).toBe("350070");
+  });
+
+  it("reads the OBSERVED integrator tick from the side the account was on", () => {
+    const asMaker = buildOrThrow({
+      trade: trade({ is_maker_ask: true, integrator_maker_fee: 28, integrator_taker_fee: 350 }),
+      intent: intent({ side: "sell" }),
+      market: PERP_MARKET,
+      feeTerms: FEE_TERMS,
+    });
+    expect(asMaker.integratorFeeTickObserved).toBe(28);
+  });
+
+  it("falls back to the AUTHORIZED tick, labelled as such, when the record carries none", () => {
+    const record = buildOrThrow({
+      trade: trade(),
+      intent: intent({ side: "buy" }),
+      market: PERP_MARKET,
+      feeTerms: FEE_TERMS,
+    });
+    expect(record.integratorFeeTickObserved).toBeNull();
+    expect(record.integratorFeeEstimateTickSource).toBe("authorized");
+  });
+
+  it("refuses an observed tick outside the provider's own rate range", () => {
+    // A "tick" above 1e6 is not a rate. Reading it as one would compute a fee
+    // larger than the trade, so it reads as "no tick reported" instead.
+    const record = buildOrThrow({
+      trade: trade({ is_maker_ask: true, integrator_taker_fee: 1_000_001, taker_fee: -4 }),
+      intent: intent({ side: "buy" }),
+      market: PERP_MARKET,
+      feeTerms: FEE_TERMS,
+    });
+    expect(record.integratorFeeTickObserved).toBeNull();
+    expect(record.exchangeFeeTickObserved).toBeNull();
+    expect(record.integratorFeeEstimateTickSource).toBe("authorized");
   });
 
   it("charges a perpetual on the quote notional", () => {
@@ -332,7 +385,9 @@ describe("buildLighterFillRecord", () => {
       market: PERP_MARKET,
       feeTerms: { ...FEE_TERMS, integratorTakerFeeTick: null },
     });
-    expect(record.integratorFeeTick).toBeNull();
+    expect(record.integratorFeeTickAuthorized).toBeNull();
+    expect(record.integratorFeeTickObserved).toBeNull();
+    expect(record.integratorFeeEstimateTickSource).toBeNull();
     expect(record.integratorFeeEstimatedRaw).toBeNull();
     expect(record.integratorFeeEstimateBasis).toBeNull();
     expect(record.integratorFeeAsset).toBeNull();

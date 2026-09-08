@@ -101,7 +101,18 @@ export interface AgentscanReportingState {
  * on (agent_hash, source_row_id), and two ledgers sharing an id space would
  * collide there silently.
  */
-export type AgentscanOutboxSourceKind = "agent_activity" | "lighter_fill";
+export type AgentscanOutboxSourceKind =
+  | "agent_activity"
+  | "lighter_fill"
+  /**
+   * An UPDATE to one already-delivered fill, carrying only the exact charged
+   * fees that became known after it was sent. A fill's own outbox row is
+   * terminal once sent, so without this kind an exact fee proven later has no
+   * row to ride and never reaches the server at all. It is never a second
+   * fill: it reports the SAME `sourceRowId` and carries no economics (H0
+   * Codex correction 4).
+   */
+  | "lighter_fill_enrichment";
 
 export interface ClaimedOutboxEvent {
   readonly outboxId: number;
@@ -116,6 +127,8 @@ export interface ClaimedOutboxEvent {
   readonly fillId: number | null;
   /** Raw `lighter_fills` row for payload building; null if the row vanished between claim and read. */
   readonly fill: Record<string, unknown> | null;
+  /** The `lighter_fills.revision` an enrichment row delivers; null on every other kind. */
+  readonly enrichmentRevision: number | null;
 }
 
 /**
@@ -881,6 +894,54 @@ const enqueueEligibleFillsSql = (generationPredicate: string): string => `
                          WHERE o.lighter_fill_id = f.id AND o.status = 'confirmed')`;
 
 /**
+ * THE ENRICHMENT SCAN - how an exact fee proven AFTER delivery gets out.
+ *
+ * The defect it closes (Codex round 1, gap A): the fill scan above excludes
+ * any fill that already has an outbox row, which is correct for the fill (its
+ * economics are immutable, so a second report of it would be a duplicate) and
+ * fatal for the fee. `enrichLighterFillChargedFees` writes an exact charged
+ * amount that was unknown at fill time and bumps `lighter_fills.revision`; the
+ * fill's own row is already `sent_at`, terminal and invisible to the diff, so
+ * without this scan the exact figure is never reported and AgentScan sums
+ * estimates forever.
+ *
+ * The row is keyed on (fill, revision), so:
+ *
+ *   - a fee proven after delivery produces exactly ONE pending enrichment row;
+ *   - a repeat of the same enrichment updates nothing (the `IS NULL` guard),
+ *     leaves the revision where it was, and produces no second row;
+ *   - a SECOND, genuinely new fee (the exchange fee proven after the
+ *     integrator fee) bumps the revision again and gets its own row.
+ *
+ * DELIVERY OF THE FILL IS THE PRECONDITION. While the fill's own row is still
+ * unsent, the mapper reads the ledger row at claim time and the exact fee
+ * travels on the fill itself; enqueuing an enrichment for a fill nobody has
+ * seen would ask the server to update a fill it does not hold.
+ */
+const enqueueFillEnrichmentsSql = (generationPredicate: string): string => `
+     INSERT INTO agentscan_outbox
+       (source_kind, lighter_fill_id, enrichment_revision, status, backfill)
+     SELECT 'lighter_fill_enrichment', f.id, f.revision, 'confirmed', $1::boolean
+       FROM lighter_fills f
+      CROSS JOIN (
+             SELECT vocabulary_version, backfill_vocabulary_version
+               FROM agentscan_reporting_state
+              WHERE id = 1
+           ) s
+      WHERE f.revision > 0
+        AND s.vocabulary_version >= ${LIGHTER_VOCABULARY_VERSION}
+        AND ($1::boolean OR s.backfill_vocabulary_version >= ${LIGHTER_VOCABULARY_VERSION})
+        AND ${generationPredicate}
+        AND EXISTS (SELECT 1 FROM agentscan_outbox base
+                     WHERE base.lighter_fill_id = f.id
+                       AND base.source_kind = 'lighter_fill'
+                       AND base.sent_at IS NOT NULL)
+        AND NOT EXISTS (SELECT 1 FROM agentscan_outbox e
+                         WHERE e.lighter_fill_id = f.id
+                           AND e.source_kind = 'lighter_fill_enrichment'
+                           AND e.enrichment_revision = f.revision)`;
+
+/**
  * The controlled backfill's own enqueue. No generation predicate here: its
  * caller (`enqueueBackfillAndMark`) already holds the singleton `FOR UPDATE`
  * and has compared the generation itself before reaching this statement.
@@ -890,8 +951,14 @@ const ENQUEUE_BACKFILL_SQL = enqueueEligibleSql("TRUE");
 /** The fill ledger's half of the controlled backfill, under the same lock. */
 const ENQUEUE_BACKFILL_FILLS_SQL = enqueueEligibleFillsSql("TRUE");
 
+/** The enrichment half of the controlled backfill, under the same lock. */
+const ENQUEUE_BACKFILL_FILL_ENRICHMENTS_SQL = enqueueFillEnrichmentsSql("TRUE");
+
 /** The incremental fill scan, fenced on the lane's credential generation. */
 const ENQUEUE_INCREMENTAL_FILLS_SQL = enqueueEligibleFillsSql(GENERATION_UNCHANGED_SQL("$2"));
+
+/** The incremental enrichment scan, fenced on the same generation. */
+const ENQUEUE_INCREMENTAL_FILL_ENRICHMENTS_SQL = enqueueFillEnrichmentsSql(GENERATION_UNCHANGED_SQL("$2"));
 
 /** The incremental scan's enqueue, fenced on the lane's credential generation. */
 const ENQUEUE_INCREMENTAL_SQL = enqueueEligibleSql(GENERATION_UNCHANGED_SQL("$2"));
@@ -946,6 +1013,12 @@ export async function enqueueEligibleActivity(
  * because the two read different tables with different eligibility, and a
  * single statement over both would have to invent a join that means nothing.
  * They share the transaction discipline, not the query.
+ *
+ * TWO STATEMENTS, ONE TRANSACTION AND ONE FENCE: the new fills, then the
+ * enrichments of fills already delivered. The second reads the outbox rows the
+ * first may have just written, and running it in the same transaction is what
+ * keeps a fill and the enrichment of an older fill from landing under two
+ * different generations.
  */
 export async function enqueueEligibleLighterFills(
   backfill: boolean,
@@ -960,7 +1033,9 @@ export async function enqueueEligibleLighterFills(
     if (state === null || Number(state.registration_generation) !== expectedGeneration) {
       return { kind: "stale_generation", rows: 0 } as const;
     }
-    const rows = await executeWith(client, ENQUEUE_INCREMENTAL_FILLS_SQL, [backfill, expectedGeneration]);
+    const rows =
+      (await executeWith(client, ENQUEUE_INCREMENTAL_FILLS_SQL, [backfill, expectedGeneration]))
+      + (await executeWith(client, ENQUEUE_INCREMENTAL_FILL_ENRICHMENTS_SQL, [backfill, expectedGeneration]));
     return { kind: "applied", rows } as const;
   });
 }
@@ -1042,7 +1117,8 @@ export async function enqueueBackfillAndMark(input: {
     // leave the other permanently blocked by its own gate's second condition.
     const enqueued =
       (await executeWith(client, ENQUEUE_BACKFILL_SQL, [true]))
-      + (await executeWith(client, ENQUEUE_BACKFILL_FILLS_SQL, [true]));
+      + (await executeWith(client, ENQUEUE_BACKFILL_FILLS_SQL, [true]))
+      + (await executeWith(client, ENQUEUE_BACKFILL_FILL_ENRICHMENTS_SQL, [true]));
     await executeWith(
       client,
       `UPDATE agentscan_reporting_state
@@ -1073,6 +1149,24 @@ export async function enqueueBackfillAndMark(input: {
  * `enqueueBackfillAndMark` via `FOR UPDATE`, the fenced incremental enqueue and
  * the fenced terminal writes via `FOR SHARE`), so no pair of them can deadlock.
  */
+/**
+ * The discriminator a claimed row reports, read against the references it
+ * actually carries rather than trusted blindly: a column value that disagrees
+ * with the row's own references would otherwise route the payload builder at
+ * the wrong ledger.
+ */
+function readSourceKind(
+  column: string | null,
+  fillId: number | null,
+  enrichmentRevision: string | number | null,
+): AgentscanOutboxSourceKind {
+  if (fillId === null) return "agent_activity";
+  if (column === "lighter_fill_enrichment" && enrichmentRevision !== null) {
+    return "lighter_fill_enrichment";
+  }
+  return "lighter_fill";
+}
+
 export async function claimDueOutbox(
   limit: number,
   expectedGeneration: number,
@@ -1093,6 +1187,7 @@ export async function claimDueOutbox(
       source_kind: string | null;
       activity_id: string | number | null;
       lighter_fill_id: string | number | null;
+      enrichment_revision: string | number | null;
       status: ClaimedOutboxEvent["status"];
       backfill: boolean;
     }>(
@@ -1111,7 +1206,8 @@ export async function claimDueOutbox(
               last_error = NULL
          FROM claimed
         WHERE o.id = claimed.id
-       RETURNING o.id, o.source_kind, o.activity_id, o.lighter_fill_id, o.status, o.backfill`,
+       RETURNING o.id, o.source_kind, o.activity_id, o.lighter_fill_id, o.enrichment_revision,
+                 o.status, o.backfill`,
       [limit, expectedGeneration],
     );
     if (claimed.length === 0) return { kind: "claimed", events: [] } as const;
@@ -1151,13 +1247,14 @@ export async function claimDueOutbox(
           // value of its own only in theory - the column has a DEFAULT - but a
           // null is read as the ledger the reference actually points at rather
           // than trusted blindly.
-          sourceKind: (c.source_kind === "lighter_fill" ? "lighter_fill" : "agent_activity") as AgentscanOutboxSourceKind,
+          sourceKind: readSourceKind(c.source_kind, fillId, c.enrichment_revision),
           activityId,
           status: c.status,
           backfill: c.backfill,
           activity: activityId === null ? null : byId.get(activityId) ?? null,
           fillId,
           fill: fillId === null ? null : fillById.get(fillId) ?? null,
+          enrichmentRevision: c.enrichment_revision === null ? null : Number(c.enrichment_revision),
         };
       }),
     } as const;

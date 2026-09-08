@@ -81,6 +81,7 @@ function claimedRow(input: {
   return {
     outboxId: input.outboxId,
     sourceKind: "agent_activity",
+    enrichmentRevision: null,
     activityId: input.outboxId * 10,
     status: "confirmed",
     backfill: false,

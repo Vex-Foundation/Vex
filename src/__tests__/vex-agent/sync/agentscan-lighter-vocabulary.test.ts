@@ -75,9 +75,12 @@ describe("the fill ledger's diff scan", () => {
     expect(mockExecuteWith).not.toHaveBeenCalled();
   });
 
-  it("enqueues at the current generation and reports the rows", async () => {
+  it("enqueues at the current generation and reports the rows of BOTH statements", async () => {
+    // Two statements under one fence: the new fills, then the enrichments of
+    // fills already delivered. The reported count is what both wrote.
     const outcome = await repo.enqueueEligibleLighterFills(false, 7);
-    expect(outcome).toEqual({ kind: "applied", rows: 3 });
+    expect(outcome).toEqual({ kind: "applied", rows: 6 });
+    expect(mockExecuteWith).toHaveBeenCalledTimes(2);
   });
 
   it("gates on the database carrying the widening AND on backfill coverage", async () => {
@@ -93,6 +96,27 @@ describe("the fill ledger's diff scan", () => {
     expect(String(sql)).toContain("INSERT INTO agentscan_outbox (source_kind, lighter_fill_id, status, backfill)");
     expect(String(sql)).toContain("'lighter_fill'");
     expect(String(sql)).not.toContain("activity_id");
+  });
+
+  it("enqueues an ENRICHMENT only for a fill the server has already been sent", async () => {
+    // The defect this closes: a fill's own outbox row is terminal once sent, so
+    // an exact fee proven afterwards has no row left to ride. The enrichment is
+    // keyed on (fill, revision), so one proven fee is one row and a repeat -
+    // which never moves the revision - is none.
+    await repo.enqueueEligibleLighterFills(false, 7);
+    const [, sql] = mockExecuteWith.mock.calls[1] ?? [];
+    expect(String(sql)).toContain("'lighter_fill_enrichment'");
+    expect(String(sql)).toContain("f.revision > 0");
+    expect(String(sql)).toContain("base.source_kind = 'lighter_fill'");
+    expect(String(sql)).toContain("base.sent_at IS NOT NULL");
+    expect(String(sql)).toContain("e.enrichment_revision = f.revision");
+  });
+
+  it("gates the enrichment scan on the same vocabulary and generation as the fill scan", async () => {
+    await repo.enqueueEligibleLighterFills(false, 7);
+    const [, sql] = mockExecuteWith.mock.calls[1] ?? [];
+    expect(String(sql)).toContain("s.vocabulary_version >= 4");
+    expect(String(sql)).toContain("$1::boolean OR s.backfill_vocabulary_version >= 4");
   });
 
   it("enqueues exactly one confirmed pair per fill", async () => {
@@ -118,6 +142,9 @@ describe("the controlled backfill", () => {
     const statements = mockExecuteWith.mock.calls.map((call) => String(call[1]));
     expect(statements.some((sql) => sql.includes("FROM agent_activity a"))).toBe(true);
     expect(statements.some((sql) => sql.includes("FROM lighter_fills f"))).toBe(true);
+    // And the enrichments, or a fee proven before this install ever registered
+    // would be permanently blocked by the enrichment scan's own backfill gate.
+    expect(statements.some((sql) => sql.includes("'lighter_fill_enrichment'"))).toBe(true);
     // Marking coverage while scanning one of the two would leave the other
     // permanently blocked by its own gate's second condition.
     expect(statements.some((sql) => sql.includes("backfill_vocabulary_version = GREATEST"))).toBe(true);

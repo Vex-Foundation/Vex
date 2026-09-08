@@ -47,6 +47,7 @@ vi.mock("@utils/logger.js", () => {
 });
 
 const {
+  recordLighterSnapshotAttempt,
   snapshotLighterPositions,
   projectLighterPosition,
   storeLighterPositionObservation,
@@ -166,6 +167,84 @@ describe("the sweep's bound", () => {
     const report = await snapshotLighterPositions();
     expect(report.hasMore).toBe(false);
     expect(report.remainingScopes).toBe(0);
+  });
+});
+
+/** Every attempt marker the sweep wrote, in order, as (accountIndex, result). */
+function attemptMarkers(): Array<[number, string]> {
+  return mockQuery.mock.calls
+    .filter((call) => String(call[0]).includes("INSERT INTO lighter_position_sweep_state"))
+    .map((call) => {
+      const params = call[1] as unknown[];
+      return [Number(params[1]), String(params[2])] as [number, string];
+    });
+}
+
+describe("fair scheduling", () => {
+  it("orders the queue by the last ATTEMPT, never by the last observation", async () => {
+    mockQuery.mockResolvedValue(scopeRows(1));
+
+    await snapshotLighterPositions();
+
+    const [sql] = mockQuery.mock.calls[0] ?? [];
+    // The defect: five scopes that always fail never get a last-observation
+    // time, so under a success ordering they sort first forever and fill every
+    // bounded sweep. A sixth healthy account is then never observed at all.
+    expect(String(sql)).toContain("ORDER BY sweep.last_attempt_at ASC NULLS FIRST");
+    expect(String(sql)).not.toContain("last_observed_at ASC");
+  });
+
+  it("marks the attempt BEFORE the read and settles it AFTER, whatever it produced", async () => {
+    mockQuery.mockResolvedValue(scopeRows(1));
+
+    await snapshotLighterPositions();
+
+    expect(attemptMarkers()).toEqual([[700000, "attempted"], [700000, "observed"]]);
+  });
+
+  it("marks a scope with NO CREDENTIAL as attempted, so it cannot hold its slot", async () => {
+    mockQuery.mockResolvedValue(scopeRows(1));
+    mockResolveAuth.mockResolvedValue(null);
+
+    await snapshotLighterPositions();
+
+    expect(attemptMarkers()).toEqual([[700000, "attempted"], [700000, "no_credential"]]);
+  });
+
+  it("marks a scope the PROVIDER REFUSED as attempted, with the reason", async () => {
+    mockQuery.mockResolvedValue(scopeRows(1));
+    mockGetAccount.mockRejectedValue(new Error("provider unavailable"));
+
+    await snapshotLighterPositions();
+
+    expect(attemptMarkers()).toEqual([[700000, "attempted"], [700000, "provider_unavailable"]]);
+  });
+
+  it("keeps the sweep alive when the marker write itself fails", async () => {
+    // A bookkeeping failure must not turn one scope into the whole sweep's
+    // failure; the scope stays marked `attempted`, which still orders it fairly.
+    mockQuery.mockImplementation(async (sql: string) => {
+      if (String(sql).includes("INSERT INTO lighter_position_sweep_state")
+        && String(sql).includes("last_attempt_result = EXCLUDED")) {
+        throw new Error("marker write failed");
+      }
+      return scopeRows(1);
+    });
+
+    const report = await snapshotLighterPositions();
+
+    expect(report.observed).toBe(1);
+    expect(report.errors).toBe(0);
+  });
+
+  it("records the settled result with the scope it belongs to", async () => {
+    // `clearAllMocks` clears calls, not implementations: the case above
+    // installed a throwing one and this case owns its own.
+    mockQuery.mockResolvedValue([]);
+    await recordLighterSnapshotAttempt({ environment: "rhc", accountIndex: 22869, result: "observed" });
+    const [sql, params] = mockQuery.mock.calls[0] ?? [];
+    expect(String(sql)).toContain("ON CONFLICT (environment, account_index) DO UPDATE");
+    expect(params).toEqual(["rhc", 22869, "observed"]);
   });
 });
 
@@ -349,7 +428,10 @@ describe("storing an observation", () => {
       positions: [],
     });
 
-    expect(result.marketsUpdated).toBe(0);
-    expect(statements).toHaveLength(1);
+    expect(result).toEqual({ marketsUpdated: 0, ignoredAsStale: false, replayed: true });
+    // Reserve the scope row, read its watermark, attempt the observation - and
+    // then stop: a replay of an observation already stored moves nothing.
+    expect(statements.map((s) => s.sql.includes("lighter_position_market_state"))).not.toContain(true);
+    expect(statements).toHaveLength(3);
   });
 });
