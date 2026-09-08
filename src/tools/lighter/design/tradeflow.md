@@ -1,4 +1,32 @@
-# Vex → Lighter Wallet-Funded Trading Flow
+# Vex to Lighter Wallet-Funded Trading Flow
+
+> **Status: historical design record. Superseded in part; not a current specification.**
+>
+> This is the author's original four-phase design document for the Vex to Lighter
+> wallet-funded trading flow, written between 2026-08-17 and 2026-09-02 while the
+> integration was being built on the `Lighter-Integration` branch. It is kept
+> because it records why the flow has the shape it has, not because it describes
+> the shipped code. Moved here from the repository root on 2026-09-07 as part of
+> landing Lighter on `main`.
+>
+> The current homes for these facts are `src/tools/lighter/Lighter.md` (the module
+> map: files, endpoints, boundaries, verification), `src/tools/lighter/FEE_LAUNCH.md`
+> (fee collector identity and live evidence) and `VEX_STUDIO.md` (the Lighter
+> section of Part 5, for the exported tool surface and the approval path). Where
+> this document and those disagree, they are right and this one is history.
+>
+> **One policy statement in this document changed after it was written.** Phase 2
+> describes the deposit approval as binding gas limits and an EIP-1559 maximum-fee
+> ceiling, and the repair path as accepting only a repricing "within the original
+> approval ceiling". That is no longer the policy. The tenth Phase 4 slice, recorded
+> later in this same document, removed short-lived gas quotes from deposit consent,
+> and on 2026-09-07 the owner accepted that removal as the shipped policy: the
+> deposit card binds amount, wallet, chain, gateway, asset and deposit-only scope,
+> carries NO numerical network-fee ceiling, and discloses the gap in one sentence,
+> "Network fees are selected at execution." A four-times live-quote sanity boundary
+> remains internal to the signer path to reject abnormal provider values; it is
+> derived after approval and is not a bound shown to or promised to the user.
+
 
 ## Objective
 
@@ -42,7 +70,7 @@ same environment, wallet, and account.
 
 ---
 
-## Phase 1 — Activation, durable workflow, and safety foundation
+## Phase 1 - Activation, durable workflow, and safety foundation
 
 **Status:** Implementation and Phase 1-focused verification completed on
 2026-08-17. Its approval, durability, execution-lease, and reconciliation
@@ -64,7 +92,7 @@ wallet key can reach a deposit signer.
 
 2. Define one durable onboarding workflow keyed by environment and wallet, with
    explicit states for deposit, account resolution, key registration, readiness,
-   failure, and ambiguity. Persist structural evidence only—never private keys,
+   failure, and ambiguity. Persist structural evidence only-never private keys,
    signatures, auth tokens, or signed payloads.
 
 3. Add a partial uniqueness constraint that prevents more than one unresolved
@@ -114,9 +142,9 @@ checked durable state, privileged execution dependencies, and wallet nonce lease
 
 ---
 
-## Phase 2 — Deposit, L2 credit proof, and account resolution
+## Phase 2 - Deposit, L2 credit proof, and account resolution
 
-### Status — implementation complete; live canary user-confirmed 2026-08-18
+### Status - implementation complete; live canary user-confirmed 2026-08-18
 
 The exact deposit-evidence slice is implemented and verified. Vex now obtains
 the new `account_index` from the specific L1 `Deposit` event, rather than from
@@ -125,7 +153,8 @@ Lighter deposit with matching fields and a uniquely wallet-owned master account
 before persisting `credited`. The production repair path is evidence-only and
 never signs, broadcasts, retries, or creates replacement transactions. It can
 observe and persist only an exact same-calldata fee repricing within the
-original approval ceiling.
+original approval ceiling. (Superseded 2026-09-07: the deposit card no longer
+carries a fee ceiling at all; see the status note at the top of this file.)
 
 Preparation also now reads and persists the live Ethereum chain/block, selected
 wallet's USDC and ETH balances, exact gateway allowance, Lighter's current
@@ -136,8 +165,9 @@ the dependent deposit estimate under an exact USDC allowance state override,
 has passed against real Ethereum and Lighter Core.
 
 Immediate public-only revalidation runs before lease/key resolution and beside
-each signer leg; the
-serialized EIP-1559 transaction cannot exceed any approved gas or fee ceiling.
+each signer leg. (Superseded 2026-09-07: there is no approved gas or fee ceiling
+for the serialized EIP-1559 transaction to be checked against; see the status
+note at the top of this file.)
 Replacement observations preserve the original hash/sender/nonce, accept only
 exact fee-only repricings, and expose both identities in status. The repair
 sweep rechecks the canonical Ethereum receipt before any Lighter credit and
@@ -228,7 +258,7 @@ verified wallet-owned account index.
 
 ---
 
-## Phase 3 — Local API-key generation and L2ChangePubKey registration
+## Phase 3 - Local API-key generation and L2ChangePubKey registration
 
 ### Goal
 
@@ -278,7 +308,7 @@ the newly created account, and never expose or orphan its private key.
 10. Restrict the production signer helper to a packaged, integrity-verified
     executable. Development path overrides must be unavailable in production.
 
-### Implementation status — 2026-08-17
+### Implementation status - 2026-08-17
 
 Phase 3 is live-complete on `Lighter-Integration`. The code path includes full-slot
 reservation, privileged key generation and encrypted pending storage, exact
@@ -318,7 +348,7 @@ never sufficient.
 
 ---
 
-## Phase 4 — Ready-to-trade orchestration and production hardening
+## Phase 4 - Ready-to-trade orchestration and production hardening
 
 ### Goal
 
@@ -380,7 +410,7 @@ order path into one resumable user experience, then prove it safely in productio
     API keys have withdrawal authority, but no withdrawal path may be reachable
     from integration, deposit, key-registration, or trade approval alone.
 
-### Phase 4 implementation status — started 2026-08-18
+### Phase 4 implementation status - started 2026-08-18
 
 The first Phase 4 hardening slice is implemented and verified. The managed
 onboarding status path no longer treats a saved credential scope plus an
@@ -655,7 +685,7 @@ No wallet was unlocked and no transaction or order was signed, submitted, or
 broadcast during this verification. The local shell remains below the
 repository's declared Node/pnpm versions.
 
-### Managed onboarding UX status — 2026-08-17
+### Managed onboarding UX status - 2026-08-17
 
 The normal-user entry path is implemented. Requests such as "set up my Lighter
 account", "I need to trade on Lighter", and "I want to trade perps on Lighter"
