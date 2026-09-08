@@ -17,9 +17,129 @@ import {
   foldFileEvent,
   suppressUnderDeletedParents,
   type CoalescedChanges,
+  type RawFileEvent,
 } from "../coalescer.js";
 
 const HUGE = 10_000;
+
+describe("deleted directory batches", () => {
+  const orderings: Array<[string, string[][]]> = [
+    ["child only", [["tree/inner/leaf.txt"]]],
+    ["inner directory only", [["tree/inner"]]],
+    ["parent only", [["tree"]]],
+    ["child then parent in separate batches", [["tree/inner/leaf.txt"], ["tree"]]],
+    ["parent then child in one batch", [["tree", "tree/inner/leaf.txt"]]],
+    ["parent then child in separate batches", [["tree"], ["tree/inner/leaf.txt"]]],
+  ];
+
+  it.each(orderings)("reports the highest missing ancestor once: %s", (_name, batches) => {
+    // The disk state after rm(tree) completes, independent of which paths the
+    // native callback happens to name. Each batch is fully drained before the
+    // next, so a pending-map-only post-pass cannot satisfy this contract.
+    const deletedPaths = new Set<string>();
+    const context = {
+      deletedPaths,
+      isPathMissing: (path: string): boolean =>
+        path === "tree" || path.startsWith("tree/"),
+    };
+    const emitted: Array<[string, string]> = [];
+    for (const paths of batches) {
+      const events: RawFileEvent[] = paths.map((path) => ({ path, type: "delete" }));
+      const { changes } = coalesceFileEvents(events, HUGE, new Map(), context);
+      emitted.push(...changes);
+    }
+    expect(emitted).toEqual([["tree", "deleted"]]);
+  });
+
+  it("does not probe the watched root or promote past a surviving parent", () => {
+    const probed: string[] = [];
+    const result = coalesceFileEvents(
+      [{ path: "kept/tree/inner/leaf.txt", type: "delete" }], HUGE, new Map(), {
+        deletedPaths: new Set(),
+        isPathMissing: (path) => {
+          probed.push(path);
+          return path.startsWith("kept/tree");
+        },
+      },
+    );
+    expect([...result.changes]).toEqual([["kept/tree", "deleted"]]);
+    expect(probed).toEqual(["kept/tree/inner", "kept/tree", "kept"]);
+  });
+
+  it("keeps sibling prefixes, exact case and Unicode spelling distinct", () => {
+    const result = coalesceFileEvents([
+      { path: "tree/leaf", type: "delete" },
+      { path: "tree2/leaf", type: "delete" },
+      { path: "Tree/leaf", type: "delete" },
+      { path: "cafe\u0301/leaf", type: "delete" },
+    ], HUGE, new Map(), {
+      deletedPaths: new Set(["tree"]),
+      isPathMissing: (path) => path === "tree" || path === "cafe\u0301",
+    });
+    expect([...result.changes]).toEqual([
+      ["tree2/leaf", "deleted"], ["Tree/leaf", "deleted"], ["cafe\u0301", "deleted"],
+    ]);
+  });
+
+  it.each(["create", "update"] as const)("allows a second deletion after descendant %s", (type) => {
+    const deletedPaths = new Set(["tree"]);
+    const recreated = coalesceFileEvents([{ path: "tree/new.txt", type }], HUGE, new Map(), {
+      deletedPaths, isPathMissing: () => false,
+    });
+    expect([...recreated.changes]).toEqual([["tree/new.txt", type === "create" ? "added" : "updated"]]);
+    const removed = coalesceFileEvents([{ path: "tree/new.txt", type: "delete" }], HUGE, new Map(), {
+      deletedPaths, isPathMissing: () => true,
+    });
+    expect([...removed.changes]).toEqual([["tree", "deleted"]]);
+  });
+
+  it("ignores stale creates beneath a directory still missing on disk", () => {
+    const deletedPaths = new Set(["tree"]);
+    const result = coalesceFileEvents([
+      { path: "tree/inner", type: "create" },
+      { path: "tree", type: "delete" },
+    ], HUGE, new Map(), { deletedPaths, isPathMissing: () => true });
+    expect([...result.changes]).toEqual([]);
+    expect([...deletedPaths]).toEqual(["tree"]);
+  });
+
+  it("reports a recreated ancestor as updated while its delete is still pending", () => {
+    const deletedPaths = new Set<string>();
+    const pending = coalesceFileEvents([{ path: "tree/old.txt", type: "delete" }], HUGE, new Map(), {
+      deletedPaths, isPathMissing: () => true,
+    }).changes;
+    const recreated = coalesceFileEvents([{ path: "tree/new.txt", type: "create" }], HUGE, pending, {
+      deletedPaths, isPathMissing: () => false,
+    });
+    expect([...recreated.changes]).toEqual([["tree", "updated"], ["tree/new.txt", "added"]]);
+    expect([...deletedPaths]).toEqual([]);
+  });
+
+  it("normalizes before counting distinct paths and probes shared ancestors once", () => {
+    const probed: string[] = [];
+    const result = coalesceFileEvents(
+      Array.from({ length: 1_000 }, (_, index) => ({ path: `tree/inner/${index}`, type: "delete" as const })),
+      1, new Map(), {
+        deletedPaths: new Set(),
+        isPathMissing: (path) => { probed.push(path); return true; },
+      },
+    );
+    expect([...result.changes]).toEqual([["tree", "deleted"]]);
+    expect(result.dropped).toBe(0);
+    expect(probed).toEqual(["tree/inner", "tree"]);
+  });
+
+  it("bounds retained deletion history and signals when deduplication knowledge is lost", () => {
+    const context = { deletedPaths: new Set<string>(), isPathMissing: () => false };
+    for (const name of ["one", "two"]) {
+      expect(coalesceFileEvents([{ path: name, type: "delete" }], 2, new Map(), context).historyOverflow).toBe(false);
+    }
+    const result = coalesceFileEvents([{ path: "three", type: "delete" }], 2, new Map(), context);
+    expect(result.historyOverflow).toBe(true);
+    expect(context.deletedPaths.size).toBeLessThanOrEqual(2);
+    expect([...result.changes]).toEqual([["three", "deleted"]]);
+  });
+});
 
 describe("the event coalescer", () => {
   it("ANNIHILATES a file created and deleted inside one window", () => {

@@ -1076,6 +1076,7 @@ describe("watching a real project", () => {
     await waitFor("the directory delete", () => changeFor("tree")?.kind === "deleted");
     // Give any straggling child event a window to arrive and be suppressed.
     await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(changes().filter((c) => c.path === "tree" && c.kind === "deleted")).toHaveLength(1);
     expect(changes().filter((c) => c.path.startsWith("tree/"))).toEqual([]);
   });
 
