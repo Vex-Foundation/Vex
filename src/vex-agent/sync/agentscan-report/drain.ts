@@ -29,6 +29,14 @@ import {
   refreshLighterCapabilityIfDue,
 } from "./lighter-capability.js";
 import {
+  listUnsentLighterPositionObservations,
+  markLighterPositionObservationSent,
+  projectLighterObservationForWire,
+  readObservationSizeDecimals,
+  type StoredLighterPositionObservation,
+} from "../lighter-position-snapshot.js";
+import { defaultLighterFillObservationDeps } from "@vex-agent/tools/protocols/lighter/fill-observation.js";
+import {
   isLighterFillMappingFailure,
   mapLighterFillEnrichmentToEvent,
   mapLighterFillToEvent,
@@ -47,6 +55,17 @@ export const AGENTSCAN_BATCH_LIMIT = 500;
  * staying far under the server's 60 req/min per-token limit.
  */
 export const AGENTSCAN_MAX_BATCHES_PER_TICK = 6;
+
+/**
+ * Position observations sent per tick.
+ *
+ * Ten is one request per drain in every realistic install (the sweep observes
+ * a handful of scopes) and stays far inside the server's own batch ceiling of
+ * fifty. The bound is a bound, not a cut: what it leaves behind is still
+ * unsent and the next tick continues, and the reader reports nothing as
+ * delivered that was not.
+ */
+export const AGENTSCAN_POSITION_OBSERVATIONS_PER_TICK = 10;
 
 /** An envelope-level 400 is a client bug, not weather - hold the rows a full hour and say so loudly. */
 const INVALID_BATCH_HOLD_SECONDS = 3600;
@@ -161,11 +180,37 @@ export async function drainIncremental(
   return { enqueued: enqueued.rows + (fills.kind === "applied" ? fills.rows : 0), ...drain };
 }
 
+/**
+ * The snapshot lane's own boundary, injected so a test can drive it without a
+ * database or a provider. Production takes the module functions.
+ */
+export interface LighterObservationLaneDeps {
+  readonly listUnsent: typeof listUnsentLighterPositionObservations;
+  readonly markSent: typeof markLighterPositionObservationSent;
+  readonly readSizeDecimals: (
+    observation: StoredLighterPositionObservation,
+  ) => Promise<ReadonlyMap<number, number> | null>;
+}
+
+export function defaultLighterObservationLaneDeps(): LighterObservationLaneDeps {
+  const fills = defaultLighterFillObservationDeps();
+  return {
+    listUnsent: listUnsentLighterPositionObservations,
+    markSent: markLighterPositionObservationSent,
+    readSizeDecimals: (observation) => readObservationSizeDecimals(observation, fills),
+  };
+}
+
 export async function drainOutbox(
   client: AgentscanClient,
   agentHash: string,
   ingestToken: string,
   atGeneration: number,
+  // LAZY, not a default argument: building the production deps reaches the
+  // Lighter client, and evaluating that on every drain - including one whose
+  // observation lane is about to be skipped - would make a client
+  // misconfiguration take the whole outbox drain down with it.
+  observationDeps?: LighterObservationLaneDeps,
 ): Promise<{ sent: number; rejected: number; deferred: number; owed: number }> {
   let sent = 0;
   let rejected = 0;
@@ -178,6 +223,31 @@ export async function drainOutbox(
   // released is a refresh that happens on the lane's own schedule rather than
   // as a side effect of a send.
   await refreshLighterCapabilityIfDue(atGeneration, Date.now());
+
+  // THE SNAPSHOT LANE, BEHIND THE SAME CAPABILITY GATE AS A FILL. An
+  // observation is not an outbox row - it has no economic lifecycle and it is
+  // not activity - so it is drained here rather than mapped into the event
+  // envelope, but it may no more reach a server that has not advertised
+  // `lighter_v1` than a fill may.
+  // A SNAPSHOT FAILURE IS NOT AN OUTBOX FAILURE. The two lanes share this
+  // function and nothing else: an observation is telemetry about a position,
+  // and losing a tick of it must never stop the activity and fill rows behind
+  // it from going out. The observations stay unsent and the next tick retries.
+  try {
+    const observations = await drainLighterPositionObservations(
+      client,
+      agentHash,
+      ingestToken,
+      atGeneration,
+      observationDeps ?? defaultLighterObservationLaneDeps(),
+    );
+    sent += observations.sent;
+    owed += observations.owed;
+  } catch (error) {
+    logger.warn("agentscan.report.lighter_observations_failed", {
+      reason: error instanceof Error ? error.name : "unknown",
+    });
+  }
 
   for (let batch = 0; batch < AGENTSCAN_MAX_BATCHES_PER_TICK; batch++) {
     // The lane's credential generation travels from the caller into the claim
@@ -241,6 +311,98 @@ export async function drainOutbox(
  * rejected or held. The drain stops after one, because continuing to send under
  * a token the reset has invalidated can only earn another 401.
  */
+/**
+ * Send the newest unsent position observation of each scope, once.
+ *
+ * HELD, NEVER DROPPED. An observation the capability gate refuses stays
+ * exactly where it is, with nothing written; when the capability appears the
+ * next tick sends whatever the sweep has by then, which is the freshest
+ * reading rather than a queue of stale ones - and the older readings are
+ * settled as `superseded` when their successor lands, so nothing accumulates
+ * unaccounted for.
+ *
+ * A REJECTED observation is left unsent and is NOT retried in a loop: the
+ * reader takes only the newest per scope, so the next sweep's observation
+ * supersedes it and the rejected one is settled with it. That is why a payload
+ * this build cannot express costs one request and then stops costing anything.
+ */
+async function drainLighterPositionObservations(
+  client: AgentscanClient,
+  agentHash: string,
+  ingestToken: string,
+  atGeneration: number,
+  deps: LighterObservationLaneDeps,
+): Promise<{ sent: number; owed: number }> {
+  const pending = await deps.listUnsent(AGENTSCAN_POSITION_OBSERVATIONS_PER_TICK);
+  if (pending.length === 0) return { sent: 0, owed: 0 };
+
+  const capability = await readLighterCapability(atGeneration, Date.now());
+  if (capability.state !== "present") {
+    logger.info("agentscan.report.lighter_observations_held", {
+      observations: pending.length,
+      state: capability.state,
+      observedAt: capability.observedAt,
+    });
+    return { sent: 0, owed: pending.length };
+  }
+
+  const sendable: StoredLighterPositionObservation[] = [];
+  const payloads = [];
+  for (const observation of pending) {
+    const decimals = await deps.readSizeDecimals(observation);
+    if (decimals === null) continue;
+    const payload = projectLighterObservationForWire(observation, decimals);
+    if (payload === null) continue;
+    sendable.push(observation);
+    payloads.push(payload);
+  }
+  const owed = pending.length - sendable.length;
+  if (payloads.length === 0) return { sent: 0, owed };
+
+  if (!tryConsumeAgentscanSendSlot()) {
+    logger.info("agentscan.report.rate_budget_exhausted", { observations: payloads.length });
+    return { sent: 0, owed: pending.length };
+  }
+  const outcome = await client.postLighterPositionObservations({
+    agentHash,
+    ingestToken,
+    observations: payloads,
+  });
+  if (outcome.kind !== "ok") {
+    logger.info("agentscan.report.lighter_observations_deferred", {
+      kind: outcome.kind,
+      observations: payloads.length,
+    });
+    return { sent: 0, owed: pending.length };
+  }
+
+  // EVERYTHING THE SERVER DID NOT REJECT IS SETTLED. `accepted` and
+  // `ignoredStale` are both terminal for the client: one landed, and the other
+  // arrived after a newer reading, which is not an error this install can fix
+  // and never becomes one by being sent again.
+  const rejected = new Set(outcome.rejectedIndexes);
+  let sent = 0;
+  let unsettled = 0;
+  for (const [index, observation] of sendable.entries()) {
+    if (rejected.has(index)) {
+      unsettled += 1;
+      logger.warn("agentscan.report.lighter_observation_rejected", {
+        environment: observation.environment,
+        observationId: observation.observationId,
+      });
+      continue;
+    }
+    const marked = await deps.markSent(observation.id);
+    if (marked.sent) sent += 1;
+  }
+  logger.info("agentscan.report.lighter_observations_sent", {
+    accepted: outcome.accepted,
+    ignoredStale: outcome.ignoredStale,
+    rejected: outcome.rejectedIndexes.length,
+  });
+  return { sent, owed: owed + unsettled };
+}
+
 async function sendGroup(
   client: AgentscanClient,
   agentHash: string,

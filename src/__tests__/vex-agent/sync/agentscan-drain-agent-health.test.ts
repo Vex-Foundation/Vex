@@ -8,6 +8,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 import type { ClaimedOutboxEvent } from "@vex-agent/db/repos/agentscan-reporting.js";
 import type { AgentscanClient, SendOutcome } from "@vex-agent/agentscan/client.js";
+import { sendOnlyAgentscanClient } from "../../helpers/agentscan-client.js";
 
 const mockClaimDueOutbox = vi.fn();
 const mockMarkOutboxSent = vi.fn();
@@ -63,7 +64,7 @@ function claimedRow(): ClaimedOutboxEvent {
 }
 
 function clientReturning(outcome: SendOutcome): AgentscanClient {
-  return { sendEvents: vi.fn(async () => outcome) };
+  return sendOnlyAgentscanClient(vi.fn(async () => outcome));
 }
 
 beforeEach(() => {

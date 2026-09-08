@@ -1,5 +1,9 @@
 import { confirmedLighterCloseDisposition } from "./close-position-confirmation.js";
-import { getLighterClient, type LighterClient } from "@tools/lighter/client.js";
+import {
+  getLighterClient,
+  type LighterClient,
+  type LighterPrivilegedAccountAuth,
+} from "@tools/lighter/client.js";
 import { decimalToLighterInteger } from "@tools/lighter/order-preview.js";
 import { deriveVexAssignedClientOrderIndex } from "@tools/lighter/signer-order.js";
 import type {
@@ -17,17 +21,26 @@ import * as nonceStateRepo from "@vex-agent/db/repos/lighter-nonce-state.js";
 import * as orderIntentsRepo from "@vex-agent/db/repos/lighter-order-execution-intents.js";
 import type { LighterOrderExecutionIntentRow } from "@vex-agent/db/repos/lighter-order-execution-intents.js";
 import {
-  findMatchingLighterTrade,
   lighterOrderIdFromTrade,
   lighterTradeEvidenceJson,
 } from "./order-evidence.js";
 import {
+  defaultLighterFillObservationDeps,
+  matchingLighterTrades,
+  observeLighterFills,
+  observeLighterFillsFromAccountTrades,
+  type LighterFillObservationDeps,
+} from "./fill-observation.js";
+import { resolveLighterReadOnlyAccountAuth } from "./read-account-auth.js";
+import {
+  classifyLighterStreamOrderState,
   reconcileLighterOrderStreamMessage,
   type LighterOrderStreamReconciliationReport,
 } from "./order-stream-reconciliation.js";
+import logger from "@utils/logger.js";
 
 export interface LighterAccountStreamReconciliationDeps {
-  readonly client: Pick<LighterClient, "getNextNonce">;
+  readonly client: Pick<LighterClient, "getNextNonce" | "getAccountTrades">;
   readonly orderIntents: Pick<
     typeof orderIntentsRepo,
     "listStreamWatchable" | "markStreamOutcome" | "markEvidenceConflict"
@@ -35,12 +48,34 @@ export interface LighterAccountStreamReconciliationDeps {
   readonly lifecycleIntents: Pick<typeof lifecycleIntentsRepo, "listStreamWatchable" | "markStreamEvidence">;
   readonly nonceState: Pick<typeof nonceStateRepo, "find" | "recordExecutionObserved">;
   readonly orderTransport?: "account_all_orders_stream" | "account_orders_resnapshot";
+  /**
+   * The fill observation boundary. Optional so a caller that assembles its own
+   * deps neither reaches the provider nor writes the ledger by accident;
+   * production always arrives through
+   * {@link defaultLighterAccountStreamReconciliationDeps}, which wires it.
+   */
+  readonly fills?: LighterFillObservationDeps;
+  /**
+   * Mints the short-lived READ-ONLY account token the follow-up trades read
+   * needs. Optional for the same reason `fills` is; production arrives through
+   * {@link defaultLighterAccountStreamReconciliationDeps}, which wires the
+   * process-wide resolver the main process installs. Without it an order frame
+   * still advances the intent and simply records no follow-up fill.
+   */
+  readonly resolveAuth?: (
+    environment: LighterOrderExecutionIntentRow["environment"],
+    accountIndex: number,
+  ) => Promise<LighterPrivilegedAccountAuth | null>;
 }
 
 export interface LighterAccountStreamReconciliationReport {
   readonly frameType: LighterAccountStreamMessage["type"];
   readonly createOrders: LighterOrderStreamReconciliationReport | null;
   readonly createTradeMatches: number;
+  /** Fills OBSERVED in this frame, over every matched intent. */
+  readonly fillsObserved: number;
+  /** Ledger rows this frame inserted. Fewer than observed on a re-observation. */
+  readonly fillsRecorded: number;
   readonly lifecycleExamined: number;
   readonly lifecycleMatched: number;
   readonly lifecycleAdvanced: number;
@@ -55,6 +90,8 @@ export function defaultLighterAccountStreamReconciliationDeps(): LighterAccountS
     orderIntents: orderIntentsRepo,
     lifecycleIntents: lifecycleIntentsRepo,
     nonceState: nonceStateRepo,
+    fills: defaultLighterFillObservationDeps(),
+    resolveAuth: resolveLighterReadOnlyAccountAuth,
   };
 }
 
@@ -71,18 +108,26 @@ export async function reconcileLighterAccountStreamMessage(
 ): Promise<LighterAccountStreamReconciliationReport> {
   let createOrders: LighterOrderStreamReconciliationReport | null = null;
   let createTradeMatches = 0;
+  let fills = { observed: 0, recorded: 0 };
   if (message.type === "update/account_all_orders") {
+    // The candidates are collected BEFORE the transition, because an intent
+    // that reaches `filled` leaves the stream-watchable set and could not be
+    // found afterwards.
+    const candidates = await orderFrameFillCandidates(environment, accountIndex, message, deps);
     createOrders = await reconcileLighterOrderStreamMessage(environment, accountIndex, message, {
       client: deps.client,
       intents: deps.orderIntents,
       nonceState: deps.nonceState,
       transport: deps.orderTransport,
     });
+    fills = await observeFillsBehindOrderFrame(environment, accountIndex, candidates, deps);
   } else if (
     message.type === "subscribed/account_all_trades"
     || message.type === "update/account_all_trades"
   ) {
-    createTradeMatches = await reconcileCreateOrderTrades(environment, accountIndex, message, deps);
+    const outcome = await reconcileCreateOrderTrades(environment, accountIndex, message, deps);
+    createTradeMatches = outcome.matched;
+    fills = { observed: outcome.fillsObserved, recorded: outcome.fillsRecorded };
   }
 
   const lifecycle = await reconcileLifecycleFrame(environment, accountIndex, message, deps);
@@ -90,8 +135,119 @@ export async function reconcileLighterAccountStreamMessage(
     frameType: message.type,
     createOrders,
     createTradeMatches,
+    fillsObserved: fills.observed,
+    fillsRecorded: fills.recorded,
     ...lifecycle,
   };
+}
+
+/**
+ * THE ORDER-FRAME GAP, and the two functions that close it.
+ *
+ * An `update/account_all_orders` frame carries NO trades. Measured live on
+ * 2026-09-08: an IOC buy settled from exactly such a frame (status filled)
+ * before any trade frame was consumed, so the intent reached `filled`, the
+ * execution returned, and not one row reached `lighter_fills`. An order row
+ * says how much filled; only a trade record carries the identity, price, size
+ * and fee ticks a ledger row is made of.
+ *
+ * The candidate scan below is PURE - it reads the frame and, only when the
+ * frame actually names a fill, one local page of watchable intents. A frame
+ * that fills nothing costs zero queries and zero provider requests.
+ */
+async function orderFrameFillCandidates(
+  environment: LighterOrderExecutionIntentRow["environment"],
+  accountIndex: number,
+  message: LighterAccountAllOrdersStreamMessage,
+  deps: LighterAccountStreamReconciliationDeps,
+): Promise<readonly LighterOrderExecutionIntentRow[]> {
+  if (deps.fills === undefined || deps.resolveAuth === undefined) return [];
+  const filledClientOrderIds = new Set<string>();
+  for (const order of flattenOrders(message)) {
+    if (order.owner_account_index !== accountIndex) continue;
+    const state = classifyLighterStreamOrderState(order);
+    if (state === "filled" || state === "partially_filled") {
+      filledClientOrderIds.add(order.client_order_id);
+    }
+  }
+  if (filledClientOrderIds.size === 0) return [];
+  const intents = await deps.orderIntents.listStreamWatchable(environment, accountIndex, 500);
+  return intents.filter((intent) =>
+    intent.clientOrderIndex !== null && filledClientOrderIds.has(intent.clientOrderIndex));
+}
+
+/**
+ * ONE bounded follow-up read per frame, after the transitions have committed.
+ *
+ * The trades page is ACCOUNT-scoped, so a single read serves every candidate
+ * in the frame; a per-intent read would multiply provider requests for the
+ * same bytes. Each candidate that already has a ledger row is skipped before
+ * the read is made, which is what keeps a repeated `partially_filled` frame
+ * from re-reading forever.
+ *
+ * The read never throws and never touches the durable outcome the reconciler
+ * just committed: a failure is counted and the next frame reads again.
+ */
+async function observeFillsBehindOrderFrame(
+  environment: LighterOrderExecutionIntentRow["environment"],
+  accountIndex: number,
+  candidates: readonly LighterOrderExecutionIntentRow[],
+  deps: LighterAccountStreamReconciliationDeps,
+): Promise<{ readonly observed: number; readonly recorded: number }> {
+  const fills = deps.fills;
+  const resolveAuth = deps.resolveAuth;
+  if (candidates.length === 0 || fills === undefined || resolveAuth === undefined) {
+    return { observed: 0, recorded: 0 };
+  }
+  let auth: LighterPrivilegedAccountAuth | null;
+  try {
+    auth = await resolveAuth(environment, accountIndex);
+  } catch {
+    auth = null;
+  }
+  if (auth === null) return { observed: 0, recorded: 0 };
+
+  let observed = 0;
+  let recorded = 0;
+  let failed = 0;
+  for (const intent of candidates) {
+    const report = await observeLighterFillsFromAccountTrades({
+      intent: {
+        intentId: intent.intentId,
+        environment,
+        accountIndex,
+        marketIndex: intent.marketIndex,
+        side: intent.side,
+        clientOrderIndex: intent.clientOrderIndex,
+      },
+      authorizedFees: intent.integratorFees ?? null,
+      deps: fills,
+      read: {
+        // Bound through a closure: the production client is a class instance
+        // whose method needs its receiver.
+        getAccountTrades: (tradeEnvironment, params, tradeAuth) =>
+          deps.client.getAccountTrades(tradeEnvironment, params, tradeAuth),
+        auth,
+        submittedTxHash: intent.submittedTxHash ?? "__no_submitted_hash__",
+      },
+      onlyWhenLedgerAlreadyEmpty: true,
+    });
+    observed += report.observed;
+    recorded += report.recorded;
+    failed += report.failed;
+  }
+  if (observed > 0 || failed > 0) {
+    logger.info("lighter.fill_observation.follow_up", {
+      site: "account_stream_order_frame",
+      environment,
+      accountIndex,
+      candidates: candidates.length,
+      observed,
+      recorded,
+      failed,
+    });
+  }
+  return { observed, recorded };
 }
 
 async function reconcileCreateOrderTrades(
@@ -99,20 +255,52 @@ async function reconcileCreateOrderTrades(
   accountIndex: number,
   message: LighterAccountAllTradesStreamMessage,
   deps: LighterAccountStreamReconciliationDeps,
-): Promise<number> {
+): Promise<{ readonly matched: number; readonly fillsObserved: number; readonly fillsRecorded: number }> {
   const trades = flattenTrades(message);
-  if (trades.length === 0) return 0;
+  if (trades.length === 0) return { matched: 0, fillsObserved: 0, fillsRecorded: 0 };
   const intents = await deps.orderIntents.listStreamWatchable(environment, accountIndex, 500);
   let matched = 0;
+  let fillsObserved = 0;
+  let fillsRecorded = 0;
   for (const intent of intents) {
     if (intent.clientOrderIndex === null) continue;
-    const trade = findMatchingLighterTrade(trades, {
-      accountIndex,
-      marketIndex: intent.marketIndex,
-      side: intent.side,
-    }, intent.clientOrderIndex, intent.submittedTxHash ?? "__no_submitted_hash__");
-    if (trade === null) continue;
+    const scope = { accountIndex, marketIndex: intent.marketIndex, side: intent.side };
+    // EVERY matching trade in the frame, not the first one. A frame can carry
+    // several fills of one order; the outcome below records ONE of them as its
+    // evidence and deduplicates the rest away, so a ledger write that ran off
+    // that evidence would lose the others permanently.
+    const matches = matchingLighterTrades(
+      trades,
+      scope,
+      intent.clientOrderIndex,
+      intent.submittedTxHash ?? "__no_submitted_hash__",
+    );
+    const trade = matches[0];
+    if (trade === undefined) continue;
     matched += 1;
+
+    // THE OBSERVATION BOUNDARY, BEFORE THE DEDUPLICATION BELOW. The ledger is
+    // idempotent by canonical identity, so a re-observed frame writes nothing
+    // new; skipping it because the intent's mutable evidence already names one
+    // of these trades is what would drop the others.
+    if (deps.fills !== undefined) {
+      const observation = await observeLighterFills({
+        intent: {
+          intentId: intent.intentId,
+          environment,
+          accountIndex,
+          marketIndex: intent.marketIndex,
+          side: intent.side,
+          clientOrderIndex: intent.clientOrderIndex,
+        },
+        trades: matches,
+        authorizedFees: intent.integratorFees ?? null,
+        deps: deps.fills,
+      });
+      fillsObserved += observation.observed;
+      fillsRecorded += observation.recorded;
+    }
+
     if (
       intent.providerOutcomeSource === "account_trade"
       && intent.providerOutcomeJson?.tradeId === trade.trade_id_str
@@ -122,24 +310,16 @@ async function reconcileCreateOrderTrades(
       environment,
       state: "partially_filled",
       source: "account_trade",
-      providerOrderId: lighterOrderIdFromTrade(trade, {
-        accountIndex,
-        marketIndex: intent.marketIndex,
-        side: intent.side,
-      }),
+      providerOrderId: lighterOrderIdFromTrade(trade, scope),
       providerOrderStatus: "trade_seen",
       providerOutcomeJson: {
-        ...lighterTradeEvidenceJson(trade, {
-          accountIndex,
-          marketIndex: intent.marketIndex,
-          side: intent.side,
-        }, intent.clientOrderIndex),
+        ...lighterTradeEvidenceJson(trade, scope, intent.clientOrderIndex),
         transport: "account_all_trades_stream",
         frameType: message.type,
       },
     });
   }
-  return matched;
+  return { matched, fillsObserved, fillsRecorded };
 }
 
 async function reconcileLifecycleFrame(
@@ -147,7 +327,10 @@ async function reconcileLifecycleFrame(
   accountIndex: number,
   message: LighterAccountStreamMessage,
   deps: LighterAccountStreamReconciliationDeps,
-): Promise<Omit<LighterAccountStreamReconciliationReport, "frameType" | "createOrders" | "createTradeMatches">> {
+): Promise<Omit<
+  LighterAccountStreamReconciliationReport,
+  "frameType" | "createOrders" | "createTradeMatches" | "fillsObserved" | "fillsRecorded"
+>> {
   const intents = await deps.lifecycleIntents.listStreamWatchable(environment, accountIndex, 500);
   const nonceScopes = new Map<string, LighterOrderLifecycleIntentRow>();
   let lifecycleMatched = 0;

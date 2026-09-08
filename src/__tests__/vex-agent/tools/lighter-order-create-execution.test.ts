@@ -22,8 +22,13 @@ import {
   signerRunnerRejectingWithoutEvidence,
 } from "../../helpers/lighter-scripted-signer.js";
 import { buildLighterOrderPreview } from "@tools/lighter/order-preview.js";
-import type { LighterAccountResponse, LighterMarketDetail } from "@tools/lighter/types.js";
+import type { LighterAccountResponse, LighterMarketDetail, LighterTrade } from "@tools/lighter/types.js";
 import { ErrorCodes, VexError } from "../../../errors.js";
+import type { LighterFillRecord } from "@vex-agent/tools/protocols/lighter/agentscan-activity.js";
+import {
+  resetLighterMarketAssetsCache,
+  type LighterFillObservationDeps,
+} from "@vex-agent/tools/protocols/lighter/fill-observation.js";
 
 // These lifecycle fixtures represent orders approved while collection is disabled.
 // Enabled-policy refusal is exercised separately below and fee terms have their own suite.
@@ -2080,5 +2085,219 @@ describe("Lighter create-order signer settlement contract", () => {
     expect(d.nonceState.releaseUnsubmittedReservation).not.toHaveBeenCalled();
     expect(d.intents.markUnsubmittedRefused).not.toHaveBeenCalled();
     expect(d.intents.markExpiredUnsubmitted).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * FILLS CONFIRMED FROM ORDER EVIDENCE, measured live on 2026-09-08.
+ *
+ * One IOC buy settled from an inactive-order read (status filled) and returned
+ * `executionState: "filled"`. The trade branch below it was never reached, so
+ * nothing observed the trade and `lighter_fills` stayed EMPTY - the fill
+ * existed on the venue and in Vex's own terminal outcome, and AgentScan would
+ * never have heard of it. These tests drive the real executor and assert the
+ * ledger row, not a call count.
+ */
+function fillLedger() {
+  const rows = new Map<string, LighterFillRecord>();
+  const recordFill = vi.fn<LighterFillObservationDeps["recordFill"]>(async (record) => {
+    if (rows.has(record.canonicalIdentity)) return { kind: "duplicate", fillId: 1 };
+    rows.set(record.canonicalIdentity, record);
+    return { kind: "recorded", fillId: rows.size };
+  });
+  return { rows, recordFill };
+}
+
+function fillObservationDeps(
+  recordFill: LighterFillObservationDeps["recordFill"],
+): LighterFillObservationDeps {
+  resetLighterMarketAssetsCache();
+  return {
+    client: {
+      getMarketDetails: vi.fn<LighterFillObservationDeps["client"]["getMarketDetails"]>(async () => ({
+        code: 200,
+        order_book_details: [MARKET],
+        spot_order_book_details: [],
+      })),
+      getAssetDetails: vi.fn<LighterFillObservationDeps["client"]["getAssetDetails"]>(async () => ({
+        code: 200,
+        asset_details: [
+          // The Robinhood Chain collateral as Lighter lists it: asset 3, the
+          // deployment's pinned USDG proxy, six decimals on both sides.
+          { asset_id: 3, symbol: "USDG", l1_decimals: 6, decimals: 6, min_transfer_amount: "0", l1_address: "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168" },
+          { asset_id: 1, symbol: "ETH", l1_decimals: 18, decimals: 18, min_transfer_amount: "0", l1_address: "0x" },
+        ],
+      })),
+    },
+    recordFill,
+    findFeeAuthorization: vi.fn<LighterFillObservationDeps["findFeeAuthorization"]>(async () => null),
+    hasFillForIntent: vi.fn<LighterFillObservationDeps["hasFillForIntent"]>(async () => false),
+  };
+}
+
+/** The live trade record of the fill the order evidence above proves. */
+function settledTrade(overrides: Partial<LighterTrade> = {}): LighterTrade {
+  return {
+    trade_id: 491032980,
+    trade_id_str: "491032980",
+    tx_hash: "176f5ad254b7604e6d59f658607947b873979dc979ad16f680ecf08fa00c04fc0d7d91e1d3746ee3",
+    type: "trade",
+    market_id: PLAN.marketIndex,
+    size: "0.0050",
+    price: "2484.97",
+    usd_amount: "12.424850",
+    ask_id: 281475039427104,
+    ask_id_str: "281475039427104",
+    bid_id: 562949887334777,
+    bid_id_str: "562949887334777",
+    ask_account_id: 16948,
+    bid_account_id: PLAN.accountIndex,
+    is_maker_ask: true,
+    block_height: 18912426,
+    timestamp: 1788863950104,
+    transaction_time: 1788863950329557,
+    integrator_taker_fee: 1000,
+    integrator_taker_fee_collector_index: 22869,
+    taker_fee: 350,
+    ask_client_id: 181836669862286,
+    bid_client_id: Number(UNSIGNED_ORDER.clientOrderIndex),
+    ask_client_id_str: "181836669862286",
+    bid_client_id_str: UNSIGNED_ORDER.clientOrderIndex,
+    taker_position_size_before: "0.0000",
+    taker_entry_quote_before: "0.000000",
+    taker_position_sign_changed: true,
+    maker_position_size_before: "0.0000",
+    maker_entry_quote_before: "0.000000",
+    maker_position_sign_changed: true,
+    ask_order_version: 0,
+    bid_order_version: 0,
+    ...overrides,
+  };
+}
+
+function filledInactiveOrder() {
+  return accountOrder({
+    status: "filled",
+    filled_base_amount: "1",
+    remaining_base_amount: "0",
+    filled_quote_amount: "3000",
+  });
+}
+
+describe("Lighter create execution: an ORDER-evidence fill still reaches the ledger", () => {
+  it("records the fill an inactive-order confirmation proves", async () => {
+    const { rows, recordFill } = fillLedger();
+    const d = deps({ fills: fillObservationDeps(recordFill) });
+    vi.mocked(d.client.getAccountInactiveOrders)
+      .mockResolvedValueOnce({ code: 200, orders: [] })
+      .mockResolvedValue({ code: 200, orders: [filledInactiveOrder()] });
+    vi.mocked(d.client.getAccountTrades)
+      .mockResolvedValueOnce({ code: 200, trades: [] })
+      .mockResolvedValue({ code: 200, trades: [settledTrade()] });
+
+    const result = await executeApprovedLighterCreateOrder({
+      plan: PLAN, unsignedOrder: UNSIGNED_ORDER, deps: d,
+    });
+
+    expect(result).toMatchObject({
+      status: "provider_confirmed", executionState: "filled", evidenceSource: "inactive_order",
+    });
+    const recorded = rows.get("lighter:rhc:42:0:491032980");
+    expect(recorded).toBeDefined();
+    expect(recorded?.executionIntentId).toBe(PLAN.intentId);
+    expect(recorded?.tradeType).toBe("trade");
+    expect(recorded?.usdAmount).toBe("12.424850");
+    // MEASURED, not assumed: the authenticated trades page carries the
+    // position "before" fields but no realized PnL for either side, so the
+    // account half of the record is incomplete and the position effect stays
+    // NULL rather than being guessed. It is established later, once, by an
+    // observation that carries the PnL.
+    expect(recorded?.positionEffect).toBeNull();
+    expect(recorded?.accountFacts).toBeNull();
+    expect(recorded?.integratorFeeTickObserved).toBe(1000);
+    expect(recorded?.exchangeFeeTickObserved).toBe(350);
+  });
+
+  it("records the fill the stream confirmed while the REST lookup was in flight", async () => {
+    const { rows, recordFill } = fillLedger();
+    const d = deps({ fills: fillObservationDeps(recordFill) });
+    vi.mocked(d.client.getAccountInactiveOrders)
+      .mockResolvedValueOnce({ code: 200, orders: [] })
+      .mockResolvedValue({ code: 200, orders: [filledInactiveOrder()] });
+    vi.mocked(d.client.getAccountTrades)
+      .mockResolvedValueOnce({ code: 200, trades: [] })
+      .mockResolvedValue({ code: 200, trades: [settledTrade()] });
+    vi.mocked(d.intents.markProviderOutcome).mockResolvedValue(null);
+    vi.mocked(d.intents.findByIntentIdAnySession).mockResolvedValue({
+      ...APPROVED_INTENT_ROW, executionState: "filled", clientOrderIndex: UNSIGNED_ORDER.clientOrderIndex,
+      providerOrderId: "123", providerOrderStatus: "filled", providerOutcomeSource: "inactive_order",
+      providerOutcomeJson: { filledBaseAmount: "1", remainingBaseAmount: "0", filledQuoteAmount: "3000" },
+    });
+
+    const result = await executeApprovedLighterCreateOrder({
+      plan: PLAN, unsignedOrder: UNSIGNED_ORDER, deps: d,
+    });
+
+    expect(result).toMatchObject({ status: "provider_confirmed", executionState: "filled" });
+    expect([...rows.keys()]).toEqual(["lighter:rhc:42:0:491032980"]);
+  });
+
+  it("leaves the confirmed outcome untouched when the follow-up trades read fails", async () => {
+    const { rows, recordFill } = fillLedger();
+    const d = deps({ fills: fillObservationDeps(recordFill) });
+    vi.mocked(d.client.getAccountInactiveOrders)
+      .mockResolvedValueOnce({ code: 200, orders: [] })
+      .mockResolvedValue({ code: 200, orders: [filledInactiveOrder()] });
+    vi.mocked(d.client.getAccountTrades)
+      .mockResolvedValueOnce({ code: 200, trades: [] })
+      .mockRejectedValue(new Error("provider unreachable"));
+
+    const result = await executeApprovedLighterCreateOrder({
+      plan: PLAN, unsignedOrder: UNSIGNED_ORDER, deps: d,
+    });
+
+    expect(result).toMatchObject({
+      status: "provider_confirmed", executionState: "filled", evidenceSource: "inactive_order",
+    });
+    expect(d.intents.markAmbiguous).not.toHaveBeenCalled();
+    expect(rows.size).toBe(0);
+  });
+
+  it("records nothing twice when the same trade is observed again", async () => {
+    const { rows, recordFill } = fillLedger();
+    const fills = fillObservationDeps(recordFill);
+    const run = async () => {
+      const d = deps({ fills });
+      vi.mocked(d.client.getAccountInactiveOrders)
+        .mockResolvedValueOnce({ code: 200, orders: [] })
+        .mockResolvedValue({ code: 200, orders: [filledInactiveOrder()] });
+      vi.mocked(d.client.getAccountTrades)
+        .mockResolvedValueOnce({ code: 200, trades: [] })
+        .mockResolvedValue({ code: 200, trades: [settledTrade()] });
+      return executeApprovedLighterCreateOrder({ plan: PLAN, unsignedOrder: UNSIGNED_ORDER, deps: d });
+    };
+
+    await run();
+    await run();
+
+    expect(recordFill).toHaveBeenCalledTimes(2);
+    expect([...rows.keys()]).toEqual(["lighter:rhc:42:0:491032980"]);
+  });
+
+  it("does not read the trades again when the trade branch already observed them", async () => {
+    const { rows, recordFill } = fillLedger();
+    const d = deps({ fills: fillObservationDeps(recordFill) });
+    vi.mocked(d.client.getAccountTrades)
+      .mockResolvedValueOnce({ code: 200, trades: [] })
+      .mockResolvedValue({ code: 200, trades: [settledTrade()] });
+
+    const result = await executeApprovedLighterCreateOrder({
+      plan: PLAN, unsignedOrder: UNSIGNED_ORDER, deps: d,
+    });
+
+    expect(result).toMatchObject({ evidenceSource: "account_trade" });
+    // One preflight read plus the trade branch's own read, and no third.
+    expect(d.client.getAccountTrades).toHaveBeenCalledTimes(2);
+    expect([...rows.keys()]).toEqual(["lighter:rhc:42:0:491032980"]);
   });
 });

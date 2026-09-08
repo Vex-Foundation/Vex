@@ -96,13 +96,22 @@ export const LIGHTER_CAPABILITY_HOLD_REASON = `capability_not_advertised ${LIGHT
  * advertises nothing is a real, negative answer). `absent` is an old server:
  * a 404 on the endpoint, or a handshake response with no capability field at
  * all, both of which say "this deployment has no capabilities to declare".
- * `unreachable` is transport failure, which says nothing and must not be
- * recorded as either answer.
+ * `unreachable` is a failed lookup, which says nothing and must not be
+ * recorded as either answer; it names WHY so an operator can tell a token the
+ * server rejected from a host that never answered.
  */
 export type ServerCapabilityAnswer =
   | { readonly kind: "list"; readonly capabilities: readonly string[] }
   | { readonly kind: "absent" }
-  | { readonly kind: "unreachable" };
+  | { readonly kind: "unreachable"; readonly reason: ServerCapabilityUnreachableReason };
+
+/**
+ * `no_ingest_token`: this install has not handshaken, so nothing was asked.
+ * `transport`: the request never produced a response. `refused`: the server
+ * answered with a status that is not a capability statement (401, 403, 410,
+ * 5xx).
+ */
+export type ServerCapabilityUnreachableReason = "no_ingest_token" | "transport" | "refused";
 
 /**
  * Where the capability list comes from. Injected rather than imported so this
@@ -198,7 +207,7 @@ export async function refreshLighterCapabilityIfDue(
   lastRefreshAtMs = nowMs;
   const answer = await source.fetchCapabilities();
   if (answer.kind === "unreachable") {
-    logger.info("agentscan.report.lighter_capability_unreachable");
+    logger.info("agentscan.report.lighter_capability_unreachable", { reason: answer.reason });
     return true;
   }
   const present = answer.kind === "list" && answer.capabilities.includes(LIGHTER_SERVER_CAPABILITY);

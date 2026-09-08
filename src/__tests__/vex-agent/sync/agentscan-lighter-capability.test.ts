@@ -17,14 +17,15 @@
  * `markOutboxRejected` is terminal and a rejected row is never retried. A
  * capability mismatch is a statement about a DEPLOYMENT, not about a payload,
  * so reading it as a verdict would lose the activity permanently - the same
- * defect the role gate was built to close (Codex final review 2026-09-06,
+ * defect the role gate was built to close (the final review of 2026-09-06,
  * lane 7), one vocabulary later.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 import type { ClaimedOutboxEvent } from "@vex-agent/db/repos/agentscan-reporting.js";
-import type { AgentscanClient, SendOutcome } from "@vex-agent/agentscan/client.js";
+import type { AgentscanClient, SendEventsInput, SendOutcome } from "@vex-agent/agentscan/client.js";
+import { sendOnlyAgentscanClient } from "../../helpers/agentscan-client.js";
 
 const mockClaimDueOutbox = vi.fn();
 const mockMarkOutboxSent = vi.fn();
@@ -92,16 +93,29 @@ function fillRow(outboxId: number): ClaimedOutboxEvent {
       quote_asset_symbol: "USDC",
       quote_asset_decimals: 6,
       block_height: "12345",
+      trade_type: "trade",
+      traded_at: new Date("2026-09-08T09:11:56.527Z"),
+      transaction_time_us: "1788858716531726",
+      usd_amount: "1000.20",
+      position_size_before: null,
+      position_sign_changed: null,
+      entry_quote_before: null,
+      account_pnl: null,
+      position_effect: null,
       fee_side: "taker",
-      integrator_fee_tick: 1000,
+      integrator_fee_tick_authorized: 1000,
+      integrator_fee_tick_observed: null,
       integrator_fee_asset_id: "lighter:core:asset:0",
       integrator_fee_asset_symbol: "USDC",
       integrator_fee_asset_decimals: 6,
       integrator_fee_estimated_raw: "1000200",
       integrator_fee_estimate_basis: "quote_notional",
+      integrator_fee_estimate_tick_source: "authorized",
       integrator_fee_charged_raw: null,
-      exchange_fee_tick: 5,
+      exchange_fee_tick_observed: 5,
       exchange_fee_charged_raw: null,
+      integrator_fee_estimated_usd: null,
+      exchange_fee_estimated_usd: null,
       collector_account_index: "743799",
       fee_authorization_intent_id: "fee-intent-1",
       observed_at: new Date("2026-09-07T10:00:00Z"),
@@ -146,11 +160,11 @@ function acceptingServer(): AgentscanClient & { sent: unknown[][] } {
   const sent: unknown[][] = [];
   return {
     sent,
-    sendEvents: vi.fn(async (input) => {
+    ...sendOnlyAgentscanClient(vi.fn(async (input: SendEventsInput) => {
       sent.push([...input.events]);
       return ACCEPT_ALL;
-    }),
-  } as AgentscanClient & { sent: unknown[][] };
+    })),
+  };
 }
 
 /** A server that advertises whatever the test says it does. */
@@ -161,7 +175,7 @@ function sourceAdvertising(capabilities: readonly string[] | "absent" | "unreach
       capabilities === "absent"
         ? { kind: "absent" }
         : capabilities === "unreachable"
-          ? { kind: "unreachable" }
+          ? { kind: "unreachable", reason: "transport" }
           : { kind: "list", capabilities },
   });
 }
@@ -282,15 +296,15 @@ describe("a refusal after the capability was advertised", () => {
     storedObservation(true);
     sourceAdvertising(["lighter_v1"]);
     claimOnce([fillRow(1)]);
-    const client: AgentscanClient = {
-      sendEvents: vi.fn(async (): Promise<SendOutcome> => ({
+    const client: AgentscanClient = sendOnlyAgentscanClient(
+      vi.fn(async (): Promise<SendOutcome> => ({
         kind: "ok",
         accepted: 0,
         duplicates: 0,
         rejectedIndexes: [0],
         agentHealth: null,
       })),
-    };
+    );
 
     const result = await drainOutbox(client, AGENT_HASH, "token", GENERATION);
 

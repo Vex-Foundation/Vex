@@ -8,7 +8,15 @@ import type { LighterEnvironment } from "@tools/lighter/types.js";
 import * as lighterNonceStateRepo from "@vex-agent/db/repos/lighter-nonce-state.js";
 import * as lighterOrderExecutionIntentsRepo from "@vex-agent/db/repos/lighter-order-execution-intents.js";
 import type { LighterOrderExecutionIntentRow } from "@vex-agent/db/repos/lighter-order-execution-intents.js";
+import logger from "@utils/logger.js";
 import { lighterOrderNonceReservationId } from "./nonce-reservation.js";
+import {
+  defaultLighterFillObservationDeps,
+  matchingLighterTrades,
+  observeLighterFills,
+  observeLighterFillsFromAccountTrades,
+  type LighterFillObservationDeps,
+} from "./fill-observation.js";
 import {
   buildLighterOrderEvidenceScope,
   findMatchingLighterOrder,
@@ -162,6 +170,13 @@ export interface LighterOrderRepairDeps {
   // Optional: derive a read-only account auth token from the saved trading key.
   // Absent in pure agent runtime.
   readonly resolvePrivilegedAccountAuth?: LighterRepairPrivilegedAccountAuthResolver;
+  /**
+   * The fill observation boundary. Optional for the same reason
+   * `resolvePrivilegedAccountAuth` is: a caller that assembles its own deps
+   * must not reach the provider or write the ledger by accident. Production
+   * arrives through {@link defaultLighterOrderRepairDeps}.
+   */
+  readonly fills?: LighterFillObservationDeps;
   readonly now: () => number;
 }
 
@@ -171,6 +186,7 @@ export function defaultLighterOrderRepairDeps(): LighterOrderRepairDeps {
     intents: lighterOrderExecutionIntentsRepo,
     nonceState: lighterNonceStateRepo,
     resolvePrivilegedAccountAuth: configuredPrivilegedAuthResolver ?? undefined,
+    fills: defaultLighterFillObservationDeps(),
     now: Date.now,
   };
 }
@@ -293,6 +309,13 @@ export async function repairLighterOrderIntent(
   if (!isUnresolvedState(intent.executionState)
     && intent.executionState !== "open"
     && intent.executionState !== "partially_filled") {
+    // THE SELF-HEALING ARM. An order that settled from ORDER evidence has a
+    // terminal outcome and, before the follow-up read existed, no fill in the
+    // ledger at all - measured live on 2026-09-08. Repair is the only path
+    // that revisits such an intent, so it asks the ledger once and, when the
+    // fill is genuinely missing, reads the account's trades once to supply it.
+    // Nothing about the durable outcome is touched either way.
+    await repairMissingFillLedgerRows(intent, deps);
     return {
       ...base,
       resolution: "already_terminal",
@@ -320,6 +343,62 @@ export async function repairLighterOrderIntent(
   if (evidence !== null) return evidence;
 
   return resolveFromNonceFacts(intent, deps, liveNextNonce);
+}
+
+/**
+ * One bounded follow-up read for a TERMINAL intent whose fills never reached
+ * the ledger.
+ *
+ * Bounded three ways, in this order, so a repeated repair costs nothing: the
+ * intent must be filled or partially filled (a canceled or rejected order
+ * moved no money), the ledger must hold no row for it, and a read-only account
+ * token must be derivable. The unattended background sweep passes no auth
+ * resolver at all, so it never spends an authenticated request here.
+ *
+ * Never throws and never changes durable state: this is the ledger catching
+ * up with an outcome that is already settled.
+ */
+async function repairMissingFillLedgerRows(
+  intent: LighterOrderExecutionIntentRow,
+  deps: LighterOrderRepairDeps,
+): Promise<void> {
+  if (intent.executionState !== "filled" && intent.executionState !== "partially_filled") return;
+  if (deps.fills === undefined || intent.clientOrderIndex === null) return;
+  const auth = deps.resolvePrivilegedAccountAuth
+    ? await deps.resolvePrivilegedAccountAuth(intent.credentialRefJson)
+    : null;
+  if (auth === null) return;
+
+  const report = await observeLighterFillsFromAccountTrades({
+    intent: {
+      intentId: intent.intentId,
+      environment: intent.environment,
+      accountIndex: intent.accountIndex,
+      marketIndex: intent.marketIndex,
+      side: intent.side,
+      clientOrderIndex: intent.clientOrderIndex,
+    },
+    authorizedFees: intent.integratorFees ?? null,
+    deps: deps.fills,
+    read: {
+      // Bound through a closure: the production client is a class instance
+      // whose method needs its receiver.
+      getAccountTrades: (environment, params, tradeAuth) =>
+        deps.client.getAccountTrades(environment, params, tradeAuth),
+      auth,
+      submittedTxHash: intent.submittedTxHash ?? "__vex_repair_no_tx_hash__",
+    },
+    onlyWhenLedgerAlreadyEmpty: true,
+  });
+  logger.info("lighter.fill_observation.follow_up", {
+    site: "order_repair_already_terminal",
+    intentId: intent.intentId,
+    state: intent.executionState,
+    observed: report.observed,
+    recorded: report.recorded,
+    duplicates: report.duplicates,
+    failed: report.failed,
+  });
 }
 
 async function resolveFromProviderEvidence(
@@ -360,6 +439,33 @@ async function resolveFromProviderEvidence(
         sortBy: "timestamp",
       }, privilegedAuth),
     ]);
+
+    // THE OBSERVATION BOUNDARY, BEFORE THE EVIDENCE BRANCHES. An order row
+    // classifies this intent and returns below without ever reaching the trade
+    // branch, so a ledger write hung off that branch would silently drop every
+    // trade this same read already returned. The ledger is idempotent by
+    // canonical identity, so re-observing a trade a previous sweep already
+    // recorded writes nothing new.
+    if (deps.fills !== undefined) {
+      await observeLighterFills({
+        intent: {
+          intentId: intent.intentId,
+          environment: intent.environment,
+          accountIndex: intent.accountIndex,
+          marketIndex: intent.marketIndex,
+          side: intent.side,
+          clientOrderIndex: intent.clientOrderIndex,
+        },
+        trades: matchingLighterTrades(
+          trades.trades,
+          scope,
+          intent.clientOrderIndex,
+          intent.submittedTxHash ?? "__vex_repair_no_tx_hash__",
+        ),
+        authorizedFees: intent.integratorFees ?? null,
+        deps: deps.fills,
+      });
+    }
 
     const active = findMatchingLighterOrder(activeOrders.orders, scope, intent.clientOrderIndex);
     if (active !== null) {

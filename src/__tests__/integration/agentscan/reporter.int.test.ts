@@ -40,6 +40,7 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { seedIntent, cleanupSeeded } from "../agent-scan/_fixtures.js";
+import { neverAskedCapabilities, neverPostedObservations } from "../../helpers/agentscan-client.js";
 
 import type {
   AgentscanClient,
@@ -148,6 +149,8 @@ afterEach(async () => {
 class FakeClient implements AgentscanClient {
   readonly sendCalls: SendEventsInput[] = [];
   sendOutcomes: SendOutcome[] = [];
+  readonly fetchCapabilities = neverAskedCapabilities;
+  readonly postLighterPositionObservations = neverPostedObservations;
 
   async sendEvents(input: SendEventsInput): Promise<SendOutcome> {
     this.sendCalls.push(input);
@@ -212,7 +215,7 @@ class FakeSessionClient implements AgentscanSessionClient {
     // Must satisfy the wire contract's ingest_token shape (43-char base64url).
     const rotated = `rotated-token-${this.sessionCompleteCalls.length}`.padEnd(43, "A");
     this.serverBoundTokens.set(input.agentHash, rotated);
-    return { kind: "bound", ingestToken: rotated, agentName: "agent-default", lastAcceptedRowId: null };
+    return { kind: "bound", ingestToken: rotated, agentName: "agent-default", lastAcceptedRowId: null, capabilities: null };
   }
 }
 
@@ -404,7 +407,7 @@ describe("reporter lane — handshake + one-time backfill (AC1/AC2)", () => {
     const session = new FakeSessionClient();
     const ROTATED_TOKEN = "server-rotated-token".padEnd(43, "A");
     session.sessionCompleteOutcomes = [
-      { kind: "bound", ingestToken: ROTATED_TOKEN, agentName: "agent-007", lastAcceptedRowId: 99 },
+      { kind: "bound", ingestToken: ROTATED_TOKEN, agentName: "agent-007", lastAcceptedRowId: 99, capabilities: null },
     ];
     const signer = new FakeSigner();
 

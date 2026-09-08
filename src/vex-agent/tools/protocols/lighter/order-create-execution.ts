@@ -21,6 +21,7 @@ import {
   type LighterTradingSecretReader,
 } from "@tools/lighter/trading-secret.js";
 import { ErrorCodes, VexError } from "../../../../errors.js";
+import logger from "@utils/logger.js";
 import * as lighterOrderExecutionIntentsRepo from "@vex-agent/db/repos/lighter-order-execution-intents.js";
 import * as lighterOrderPreviewsRepo from "@vex-agent/db/repos/lighter-order-previews.js";
 import * as lighterNonceStateRepo from "@vex-agent/db/repos/lighter-nonce-state.js";
@@ -29,6 +30,13 @@ import {
   type LighterOrderNonceReservation,
 } from "./nonce-reservation.js";
 import type { LighterOrderReadyForSignerPlan } from "./execution-plan.js";
+import {
+  defaultLighterFillObservationDeps,
+  matchingLighterTrades,
+  observeLighterFills,
+  observeLighterFillsFromAccountTrades,
+  type LighterFillObservationDeps,
+} from "./fill-observation.js";
 import {
   buildLighterOrderEvidenceScope,
   findMatchingLighterOrder,
@@ -125,6 +133,12 @@ export interface ExecuteApprovedLighterCreateOrderDeps {
   readonly nonceState: LighterEvidenceWritePorts<Pick<typeof lighterNonceStateRepo, "recordExecutionObserved">>
     & Pick<typeof lighterNonceStateRepo, "releaseUnsubmittedReservation">;
   readonly previews: Pick<typeof lighterOrderPreviewsRepo, "findFreshById">;
+  /**
+   * The fill observation boundary. Optional so a caller that assembles its own
+   * deps neither reaches the provider nor writes the ledger by accident;
+   * production arrives through {@link defaultLighterCreateOrderExecutionDeps}.
+   */
+  readonly fills?: LighterFillObservationDeps;
   readonly now: () => number;
   readonly wait: (delayMs: number) => Promise<void>;
   readonly intents: LighterEvidenceWritePorts<Pick<typeof lighterOrderExecutionIntentsRepo,
@@ -450,6 +464,7 @@ export function defaultLighterCreateOrderExecutionDeps(
     intents: lighterOrderExecutionIntentsRepo,
     nonceState: lighterNonceStateRepo,
     previews: lighterOrderPreviewsRepo,
+    fills: defaultLighterFillObservationDeps(),
     now: Date.now,
     wait: (delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs)),
     ...overrides,
@@ -679,6 +694,7 @@ async function reconcileProviderOutcome(input: {
           plan,
           unsignedOrder,
           deps,
+          accountAuthToken,
           signerTxHash,
           submittedTxHash,
           source: "active_order",
@@ -716,6 +732,7 @@ async function reconcileProviderOutcome(input: {
         plan,
         unsignedOrder,
         deps,
+        accountAuthToken,
         signerTxHash,
         submittedTxHash,
         source: "inactive_order",
@@ -738,6 +755,34 @@ async function reconcileProviderOutcome(input: {
       },
       { token: accountAuthToken, accountIndex: plan.accountIndex },
     );
+    // THE OBSERVATION BOUNDARY. Every trade this read returned for the order
+    // becomes a ledger row, whether or not the outcome below advances the
+    // intent - a partially-filled order can arrive with several trades and the
+    // outcome carries only one of them as evidence. `observeLighterFills`
+    // never throws, so a ledger failure can never reach the `catch` around
+    // this block and turn a confirmed provider outcome into an ambiguous one;
+    // the next observation of the same trade records it, idempotently.
+    if (deps.fills !== undefined) {
+      await observeLighterFills({
+        intent: {
+          intentId: plan.intentId,
+          environment: plan.environment,
+          accountIndex: plan.accountIndex,
+          marketIndex: plan.marketIndex,
+          side: plan.side,
+          clientOrderIndex: unsignedOrder.clientOrderIndex,
+        },
+        trades: matchingLighterTrades(
+          trades.trades,
+          evidenceScope,
+          unsignedOrder.clientOrderIndex,
+          submittedTxHash,
+        ),
+        authorizedFees: plan.integratorFees ?? null,
+        deps: deps.fills,
+      });
+    }
+
     const trade = findMatchingLighterTrade(
       trades.trades,
       evidenceScope,
@@ -749,6 +794,7 @@ async function reconcileProviderOutcome(input: {
         plan,
         unsignedOrder,
         deps,
+        accountAuthToken,
         signerTxHash,
         submittedTxHash,
         source: "account_trade",
@@ -826,6 +872,8 @@ async function persistProviderOutcome(input: {
   readonly unsignedOrder: LighterUnsignedCreateOrderRequest;
   readonly deps: ExecuteApprovedLighterCreateOrderDeps;
   readonly abortSignal?: AbortSignal;
+  /** The short-lived READ-ONLY account token this settlement already holds. */
+  readonly accountAuthToken: string;
   readonly signerTxHash: string;
   readonly submittedTxHash: string;
   readonly source: "active_order" | "inactive_order" | "account_trade";
@@ -847,6 +895,7 @@ async function persistProviderOutcome(input: {
     providerOrderStatus: input.providerOrderStatus,
     providerOutcomeJson: input.providerOutcomeJson,
   });
+  if (persisted !== null) await observeFillsFromOrderEvidence(input, input.state, input.source);
   if (persisted === null) {
     // A stream update can confirm the order while the REST lookup is in flight.
     const current = await input.deps.intents.findByIntentIdAnySession(input.plan.intentId);
@@ -858,6 +907,9 @@ async function persistProviderOutcome(input: {
       && current.providerOrderId === input.providerOrderId
       && current.executionState === "filled"
       && current.providerOutcomeSource === "inactive_order") {
+      // The stream committed the terminal outcome while this read was in
+      // flight, so the ledger write that belongs to it was never made here.
+      await observeFillsFromOrderEvidence(input, "filled", "inactive_order");
       return {
         status: "provider_confirmed",
         intentId: input.plan.intentId,
@@ -909,6 +961,64 @@ async function persistProviderOutcome(input: {
     providerOrderStatus: input.providerOrderStatus,
     message: `Lighter provider evidence confirmed order state ${input.state}.`,
   };
+}
+
+/**
+ * THE TERMINAL COMMIT POINT FOR AN ORDER-SHAPED CONFIRMATION.
+ *
+ * An order row tells Vex the order filled; it never names the trades that
+ * filled it, so nothing has reached the fill ledger by the time this outcome
+ * commits. Measured live on 2026-09-08: an IOC buy confirmed `filled` from
+ * `inactive_order` evidence left `lighter_fills` empty, and AgentScan would
+ * never have heard of the fill.
+ *
+ * ONE bounded follow-up read, after the outcome is durable, and only for a
+ * state that means money moved. The `account_trade` source is excluded because
+ * the trade branch above already observed the very page it classified from,
+ * and reading again would spend a second privileged request for nothing.
+ *
+ * The read never throws and never changes the committed outcome; its counts
+ * are logged so an operator can see that it ran and what it found.
+ */
+async function observeFillsFromOrderEvidence(
+  input: Parameters<typeof persistProviderOutcome>[0],
+  state: Parameters<typeof persistProviderOutcome>[0]["state"],
+  source: Parameters<typeof persistProviderOutcome>[0]["source"],
+): Promise<void> {
+  if (state !== "filled" && state !== "partially_filled") return;
+  if (source !== "active_order" && source !== "inactive_order") return;
+  const fills = input.deps.fills;
+  if (fills === undefined) return;
+  const report = await observeLighterFillsFromAccountTrades({
+    intent: {
+      intentId: input.plan.intentId,
+      environment: input.plan.environment,
+      accountIndex: input.plan.accountIndex,
+      marketIndex: input.plan.marketIndex,
+      side: input.plan.side,
+      clientOrderIndex: input.unsignedOrder.clientOrderIndex,
+    },
+    authorizedFees: input.plan.integratorFees ?? null,
+    deps: fills,
+    read: {
+      // Bound through a closure: the production client is a class instance
+      // whose method needs its receiver.
+      getAccountTrades: (environment, params, auth) =>
+        input.deps.client.getAccountTrades(environment, params, auth),
+      auth: { token: input.accountAuthToken, accountIndex: input.plan.accountIndex },
+      submittedTxHash: input.submittedTxHash,
+    },
+  });
+  logger.info("lighter.fill_observation.follow_up", {
+    site: "order_create_execution",
+    intentId: input.plan.intentId,
+    evidenceSource: source,
+    state,
+    observed: report.observed,
+    recorded: report.recorded,
+    duplicates: report.duplicates,
+    failed: report.failed,
+  });
 }
 
 async function persistProviderOutcomeSafely(

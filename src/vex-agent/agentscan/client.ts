@@ -25,6 +25,8 @@
 import { fetchWithTimeout, readJson } from "@utils/http.js";
 import { readRetryAfterSeconds } from "@utils/http/retry-after.js";
 import type { AgentscanEvent } from "./mapper.js";
+import type { ServerCapabilityAnswer } from "../sync/agentscan-report/lighter-capability.js";
+import logger from "@utils/logger.js";
 
 const REQUEST_TIMEOUT_MS = 15_000;
 const MAX_DETAIL_LEN = 120;
@@ -74,14 +76,192 @@ export interface SendEventsInput {
   readonly events: AgentscanEvent[];
 }
 
+/**
+ * One position observation exactly as `POST /v1/lighter/positions` accepts it.
+ *
+ * A NAMED shape, never a passthrough of anything the sweep stored: the
+ * observation is account-wide and the payload allowlist is what keeps
+ * counterparty and credential material out of it by construction.
+ */
+export interface LighterPositionObservationPayload {
+  readonly environment: "core" | "rhc";
+  /** Decimal digits: the account index is a venue identity, not a number to round. */
+  readonly accountIndex: string;
+  readonly observationId: string;
+  readonly observedAt: string;
+  readonly source: "account_endpoint";
+  readonly coverage: {
+    readonly markets: "all" | readonly number[];
+    readonly complete: boolean;
+  };
+  readonly positions: ReadonlyArray<{
+    readonly marketIndex: number;
+    readonly marketSymbol: string;
+    readonly sizeDecimals: number;
+    readonly size: string;
+    readonly entryPrice: string | null;
+    readonly unrealizedPnl: string | null;
+    readonly realizedPnl: string | null;
+    readonly liquidationPrice: string | null;
+  }>;
+}
+
+export interface SendPositionObservationsInput {
+  readonly agentHash: string;
+  readonly ingestToken: string;
+  readonly observations: readonly LighterPositionObservationPayload[];
+}
+
+/**
+ * What the positions endpoint said, in the SAME outcome vocabulary ingest uses.
+ *
+ * `ok` splits three ways because the three mean different things to the lane:
+ * `accepted` landed, `ignoredStale` arrived after a newer reading and is
+ * settled (never an error the client can fix), and a rejected index is a
+ * payload this install cannot express. There is no `receivedAt` on the wire:
+ * the server assigns one and does not return it, so nothing here can claim to
+ * know it.
+ */
+export type SendPositionsOutcome =
+  | {
+      readonly kind: "ok";
+      readonly accepted: number;
+      readonly ignoredStale: number;
+      readonly rejectedIndexes: number[];
+    }
+  | { readonly kind: "auth_lost" }
+  | { readonly kind: "stopped"; readonly reason: "consent_revoked" | "quarantined" }
+  | { readonly kind: "invalid"; readonly detail: string }
+  | {
+      readonly kind: "retryable";
+      readonly status: number | null;
+      readonly retryAfterSeconds: number | null;
+      readonly detail: string;
+    };
+
 export interface AgentscanClient {
   sendEvents(input: SendEventsInput): Promise<SendOutcome>;
+  /**
+   * What this deployment advertises, read from `GET /capabilities`.
+   *
+   * The three answers are not interchangeable. A 200 is the LIST, whatever it
+   * contains. A 404 is `absent`: the route does not exist, which is exactly
+   * what an old server should say and a real, negative answer. Everything else
+   * - transport failure, 401, 403, 410, 5xx - is `unreachable`, because none of
+   * them is the server telling us what it carries: a 401 says this install's
+   * token is not accepted, not that the deployment lacks the capability, and
+   * recording it as `absent` would turn an auth problem into a capability
+   * rollback. The reason is logged so an operator can tell them apart.
+   */
+  fetchCapabilities(input: FetchCapabilitiesInput): Promise<ServerCapabilityAnswer>;
+  postLighterPositionObservations(
+    input: SendPositionObservationsInput,
+  ): Promise<SendPositionsOutcome>;
+}
+
+export interface FetchCapabilitiesInput {
+  /** The stored ingest token, or null when this install has none yet. */
+  readonly ingestToken: string | null;
 }
 
 export function buildAgentscanClient(baseUrl: string): AgentscanClient {
   return {
     sendEvents: (input) => sendEvents(baseUrl, input),
+    fetchCapabilities: (input) => fetchCapabilities(baseUrl, input),
+    postLighterPositionObservations: (input) => postLighterPositionObservations(baseUrl, input),
   };
+}
+
+/** Wire version of the positions batch. The server accepts exactly 1 today. */
+const POSITIONS_SCHEMA_VERSION = 1;
+
+async function fetchCapabilities(
+  baseUrl: string,
+  input: FetchCapabilitiesInput,
+): Promise<ServerCapabilityAnswer> {
+  // NO TOKEN IS NOT AN ANSWER EITHER. The endpoint authenticates like ingest,
+  // so an install that has not handshaken yet would earn a 401 - asking would
+  // teach us nothing and spend a request saying so.
+  if (input.ingestToken === null) {
+    logger.info("agentscan.capabilities.unreachable", { reason: "no_ingest_token" });
+    return { kind: "unreachable", reason: "no_ingest_token" };
+  }
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(joinUrl(baseUrl, "capabilities"), {
+      method: "GET",
+      timeoutMs: REQUEST_TIMEOUT_MS,
+      headers: { Authorization: `Bearer ${input.ingestToken}` },
+    });
+  } catch (err) {
+    logger.info("agentscan.capabilities.unreachable", { reason: "transport", detail: safeDetail(err) });
+    return { kind: "unreachable", reason: "transport" };
+  }
+
+  const body = await readJson(response).catch(() => null);
+  if (response.ok) {
+    const record = isRecord(body) ? body : {};
+    const capabilities = Array.isArray(record.capabilities)
+      ? record.capabilities.filter((entry): entry is string => typeof entry === "string" && entry.length > 0)
+      : [];
+    return { kind: "list", capabilities };
+  }
+  // AN OLD SERVER, and the only status that is a real negative answer: the
+  // route does not exist, so this deployment has no capabilities to declare.
+  if (response.status === 404) return { kind: "absent" };
+  logger.info("agentscan.capabilities.unreachable", {
+    reason: "refused",
+    detail: describeError(response.status, body),
+  });
+  return { kind: "unreachable", reason: "refused" };
+}
+
+async function postLighterPositionObservations(
+  baseUrl: string,
+  input: SendPositionObservationsInput,
+): Promise<SendPositionsOutcome> {
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(joinUrl(baseUrl, "v1/lighter/positions"), {
+      method: "POST",
+      timeoutMs: REQUEST_TIMEOUT_MS,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${input.ingestToken}`,
+      },
+      body: JSON.stringify({
+        schemaVersion: POSITIONS_SCHEMA_VERSION,
+        agentHash: input.agentHash,
+        observations: input.observations,
+      }),
+    });
+  } catch (err) {
+    return { kind: "retryable", status: null, retryAfterSeconds: null, detail: safeDetail(err) };
+  }
+
+  const body = await readJson(response).catch(() => null);
+
+  if (response.ok) {
+    const record = isRecord(body) ? body : {};
+    const rejected = Array.isArray(record.rejected) ? record.rejected : [];
+    return {
+      kind: "ok",
+      accepted: toCount(record.accepted),
+      ignoredStale: toCount(record.ignoredStale),
+      rejectedIndexes: rejected
+        .map((item) => (isRecord(item) ? Number(item.index) : Number.NaN))
+        .filter((index) => Number.isInteger(index) && index >= 0),
+    };
+  }
+
+  const code = errorCode(body);
+  if (response.status === 401) return { kind: "auth_lost" };
+  if (response.status === 403) {
+    return code === "quarantined" ? { kind: "stopped", reason: "quarantined" } : { kind: "auth_lost" };
+  }
+  if (response.status === 410) return { kind: "stopped", reason: "consent_revoked" };
+  if (response.status === 429 || response.status >= 500) return retryableFrom(response, body);
+  return { kind: "invalid", detail: describeError(response.status, body) };
 }
 
 async function sendEvents(baseUrl: string, input: SendEventsInput): Promise<SendOutcome> {

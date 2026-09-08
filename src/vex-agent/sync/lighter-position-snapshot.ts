@@ -21,7 +21,7 @@
  *
  * Observations arrive out of order: a sweep that took longer than the next
  * one, a replay, a backfill after downtime. Freshness is therefore compared
- * WITHOUT the observation's own identity (Codex H0 round 2, correction 2), and
+ * WITHOUT the observation's own identity (H0 revision 2, correction 2), and
  * at TWO levels, because one is provably not enough.
  *
  * PER MARKET: `lighter_position_market_state` is keyed by (environment,
@@ -92,6 +92,11 @@ import { getLighterClient } from "@tools/lighter/client.js";
 import type { LighterEnvironment } from "@tools/lighter/constants.js";
 import type { LighterAccountPosition } from "@tools/lighter/types.js";
 import { resolveLighterReadOnlyAccountAuth } from "@vex-agent/tools/protocols/lighter/read-account-auth.js";
+import {
+  resolveLighterMarketAssets,
+  type LighterFillObservationDeps,
+} from "@vex-agent/tools/protocols/lighter/fill-observation.js";
+import type { LighterPositionObservationPayload } from "../agentscan/client.js";
 import logger from "@utils/logger.js";
 
 /**
@@ -599,4 +604,230 @@ function timestampOrNull(value: Date | string | null): number | null {
   if (value === null) return null;
   const ms = value instanceof Date ? value.getTime() : Date.parse(value);
   return Number.isFinite(ms) ? ms : null;
+}
+
+// ── The wire path: which observation goes to AgentScan, and when it is settled ──
+
+/**
+ * One stored observation, ready to be projected onto the wire.
+ *
+ * The ledger row is the source; nothing here is re-read from the provider,
+ * because the observation is a record of what was true at `observedAt` and a
+ * fresh read would be a different observation.
+ */
+export interface StoredLighterPositionObservation {
+  readonly id: number;
+  readonly environment: LighterEnvironment;
+  readonly accountIndex: number;
+  readonly observationId: string;
+  readonly observedAt: string;
+  readonly coverage: "all" | readonly number[];
+  readonly complete: boolean;
+  readonly positions: readonly LighterObservedPosition[];
+}
+
+/**
+ * The NEWEST unsent observation per scope, oldest scope first, bounded.
+ *
+ * Newest per scope because an older unsent observation of the same account is
+ * already superseded by construction: the server ignores an observation older
+ * than one it holds (`ignoredStale`), so sending it would spend a request to
+ * be told what we already know. Oldest scope FIRST so a busy account cannot
+ * starve a quiet one out of every bounded batch - the same fairness rule the
+ * sweep's attempt marker enforces upstream.
+ *
+ * Superseded rows are not silently dropped: {@link markLighterPositionObservationSent}
+ * settles them explicitly, with `superseded` as their disposition, so the
+ * table never accumulates rows that are neither owed nor accounted for.
+ */
+export async function listUnsentLighterPositionObservations(
+  limit: number,
+): Promise<readonly StoredLighterPositionObservation[]> {
+  const rows = await query<{
+    id: string | number;
+    environment: string;
+    account_index: string | number;
+    observation_id: string;
+    observed_at: Date | string;
+    coverage_markets: unknown;
+    complete: boolean;
+    positions: unknown;
+  }>(
+    `SELECT * FROM (
+       SELECT DISTINCT ON (environment, account_index)
+              id, environment, account_index, observation_id, observed_at,
+              coverage_markets, complete, positions
+         FROM lighter_position_observations
+        WHERE sent_at IS NULL
+        ORDER BY environment, account_index, observed_at DESC
+     ) newest
+      ORDER BY observed_at ASC
+      LIMIT $1`,
+    [Math.max(1, Math.trunc(limit))],
+  );
+  return rows.flatMap((row) => {
+    if (row.environment !== "core" && row.environment !== "rhc") return [];
+    const accountIndex = Number(row.account_index);
+    if (!Number.isSafeInteger(accountIndex)) return [];
+    const coverage = readCoverage(row.coverage_markets);
+    if (coverage === null) return [];
+    return [{
+      id: Number(row.id),
+      environment: row.environment as LighterEnvironment,
+      accountIndex,
+      observationId: row.observation_id,
+      observedAt: new Date(row.observed_at).toISOString(),
+      coverage,
+      complete: row.complete,
+      positions: readStoredPositions(row.positions),
+    }];
+  });
+}
+
+/**
+ * Settle one delivered observation, and every older unsent observation of the
+ * same scope with it.
+ *
+ * ONE TRANSACTION, because the two halves are one fact: an observation marked
+ * sent while its predecessors stayed owed would put them back at the head of
+ * the next batch, where the server can only ignore them as stale. The
+ * disposition column is what keeps the two apart honestly - `sent` means this
+ * install delivered it and the server took it; `superseded` means a newer
+ * reading of the same account was delivered instead and this one never will
+ * be.
+ *
+ * The server assigns its own `received_at` and does not return it, so nothing
+ * here records a server-side arrival time it cannot know.
+ */
+export async function markLighterPositionObservationSent(
+  observationRowId: number,
+): Promise<{ readonly sent: boolean; readonly superseded: number }> {
+  return withTransaction(async (client) => {
+    const delivered = await client.query(
+      `UPDATE lighter_position_observations
+          SET sent_at = NOW(), send_disposition = 'sent'
+        WHERE id = $1 AND sent_at IS NULL
+        RETURNING environment, account_index, observed_at`,
+      [observationRowId],
+    );
+    const row = delivered.rows[0];
+    if (row === undefined) return { sent: false, superseded: 0 };
+    const superseded = await client.query(
+      `UPDATE lighter_position_observations
+          SET sent_at = NOW(), send_disposition = 'superseded'
+        WHERE environment = $1 AND account_index = $2
+          AND observed_at < $3::timestamptz
+          AND sent_at IS NULL`,
+      [row.environment, row.account_index, new Date(row.observed_at).toISOString()],
+    );
+    return { sent: true, superseded: superseded.rowCount ?? 0 };
+  });
+}
+
+function readCoverage(value: unknown): "all" | readonly number[] | null {
+  if (value === "all") return "all";
+  if (!Array.isArray(value)) return null;
+  const markets = value.filter((entry): entry is number => Number.isInteger(entry) && entry >= 0);
+  return markets.length === value.length ? markets : null;
+}
+
+/**
+ * The stored positions, read back through the SAME named fields they were
+ * stored with. No spread and no passthrough: a column that grew a field this
+ * build does not know must not reach the wire.
+ */
+function readStoredPositions(value: unknown): readonly LighterObservedPosition[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) return [];
+    const row = entry as Record<string, unknown>;
+    const marketIndex = Number(row.marketIndex);
+    if (!Number.isSafeInteger(marketIndex) || marketIndex < 0) return [];
+    if (typeof row.marketSymbol !== "string" || row.marketSymbol.length === 0) return [];
+    const size = signedDecimalOrNull(row.size);
+    if (size === null) return [];
+    return [{
+      marketIndex,
+      marketSymbol: row.marketSymbol,
+      size,
+      entryPrice: decimalOrNull(row.entryPrice),
+      unrealizedPnl: signedDecimalOrNull(row.unrealizedPnl),
+      realizedPnl: signedDecimalOrNull(row.realizedPnl),
+      liquidationPrice: decimalOrNull(row.liquidationPrice),
+    }];
+  });
+}
+
+/**
+ * PURE: one stored observation plus the venue's size decimals -> the wire
+ * payload `POST /v1/lighter/positions` accepts.
+ *
+ * ALL OR NOTHING. A position whose size decimals cannot be resolved is not
+ * dropped from the payload: dropping it would turn a complete observation into
+ * a false one, and a complete observation is exactly what the server is
+ * entitled to close positions on. The whole observation stays unsent instead,
+ * and the next drain tries again.
+ *
+ * `accountIndex` travels as decimal digits, not a number: it is a venue
+ * identity and a JSON number is not a safe container for one.
+ */
+export function projectLighterObservationForWire(
+  observation: StoredLighterPositionObservation,
+  sizeDecimalsByMarket: ReadonlyMap<number, number>,
+): LighterPositionObservationPayload | null {
+  const positions: LighterPositionObservationPayload["positions"][number][] = [];
+  for (const position of observation.positions) {
+    const sizeDecimals = sizeDecimalsByMarket.get(position.marketIndex);
+    if (sizeDecimals === undefined) return null;
+    positions.push({
+      marketIndex: position.marketIndex,
+      marketSymbol: position.marketSymbol,
+      sizeDecimals,
+      size: position.size,
+      entryPrice: position.entryPrice,
+      unrealizedPnl: position.unrealizedPnl,
+      realizedPnl: position.realizedPnl,
+      liquidationPrice: position.liquidationPrice,
+    });
+  }
+  return {
+    environment: observation.environment,
+    accountIndex: String(observation.accountIndex),
+    observationId: observation.observationId,
+    observedAt: observation.observedAt,
+    source: "account_endpoint",
+    coverage: { markets: observation.coverage, complete: observation.complete },
+    positions,
+  };
+}
+
+/**
+ * The size decimals every market this observation names, read through the
+ * shared market cache. `null` when the provider could not describe one of
+ * them - the observation then waits rather than going out incomplete.
+ */
+export async function readObservationSizeDecimals(
+  observation: StoredLighterPositionObservation,
+  deps: LighterFillObservationDeps,
+): Promise<ReadonlyMap<number, number> | null> {
+  const decimals = new Map<number, number>();
+  for (const position of observation.positions) {
+    if (decimals.has(position.marketIndex)) continue;
+    try {
+      const market = await resolveLighterMarketAssets(
+        observation.environment,
+        position.marketIndex,
+        deps,
+      );
+      decimals.set(position.marketIndex, market.sizeDecimals);
+    } catch (error) {
+      logger.info("sync.lighter_position_snapshot.market_decimals_unavailable", {
+        environment: observation.environment,
+        marketIndex: position.marketIndex,
+        reason: error instanceof Error ? error.name : "unknown",
+      });
+      return null;
+    }
+  }
+  return decimals;
 }
