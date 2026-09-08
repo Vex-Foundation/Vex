@@ -71,6 +71,40 @@ process `net.fetch`, and a Node `fetch`/`undici`/`axios` path is not an option.
 A 403 whose `content-type` is `text/html` must be classified as a transport or
 bot-gate failure, never as an address-not-found or empty-balance result.
 
+## Runtime verification 2026-09-08
+
+A bounded, sequential recheck of the inventory operation returned HTTP 403
+from `robinhoodchain.blockscout.com` through both the ordinary HTTP client and
+Electron `net.fetch`. The previously observed Chromium access is therefore not
+a permanent capability. No successful response or redirect established a new
+path or an API-key requirement, so the configured operation remains unchanged.
+The client now carries `http_403` to the chain sync instead of `unavailable`.
+A refusal keeps the last successful rows and cannot establish an empty wallet.
+
+Transport absence, deadline, transport failure and redirect refusal similarly
+carry `transport_unavailable`, `timeout`, `transport_failed` and
+`redirect_refused`; malformed JSON and schema failures carry `invalid_response`.
+Provider non-success responses carry their actual `http_<status>`.
+
+## User-owned base URL overrides
+
+Settings > Chain endpoints exposes EVM RPC and Blockscout overrides together.
+The local config key `blockscoutBaseUrls` maps chain ID strings to base URLs;
+for example, chain `4663` can use an owner-controlled reverse proxy. HTTPS is
+accepted, including private hosts; HTTP is accepted on loopback only. URL
+credentials, query parameters, fragments and malformed URLs are refused by
+name (`BLOCKSCOUT_OVERRIDE_INVALID`) without echoing the URL. Path prefixes
+are preserved before `/api/v2`. The operation still accepts only an address,
+and redirects away from the exact configured operation are refused. Removing
+an override restores the public default on the next read. Diagnostic logs
+show only the resolved host. This setting does not enable additional chain
+inventory adapters.
+
+The September 8 recheck still returned HTTP 403 from the public host. A real
+loopback HTTP test returned 200 through a configured path prefix and exercised
+the complete bridge/client response validation. The owner's private proxy
+was not available to this environment.
+
 ## Rate limiting
 
 Response headers on every 200 (exposed via `access-control-expose-headers`):
@@ -418,8 +452,9 @@ them.
 
 WP6a exposes one operation-specific transport method for
 `GET /api/v2/addresses/{address}/token-balances`. The shared contract accepts
-an address, not a URL. The Electron implementation composes the exact HTTPS
-host and path, refuses redirects, applies caller and lifecycle cancellation,
+an address, not a URL. The Electron implementation resolves the user-owned
+base URL (or the unchanged public default), composes the exact operation path,
+refuses redirects, applies caller and lifecycle cancellation,
 and rejects the complete response when it passes 512 KiB. The client rejects
 an unpaginated array above 500 rows. Neither limit returns a prefix that looks
 complete.
@@ -429,7 +464,8 @@ The client result has `inventoryScope: "erc20"` and one of these states:
 | state | `inventoryComplete` | candidates retained | meaning |
 | --- | --- | --- | --- |
 | `complete` | `true` | every validated ERC-20 identity | the whole bounded response validated; non-ERC-20 rows are reported by count and type census |
-| `incomplete / unavailable` | `false` | none | no usable provider response arrived, including a 403 HTML challenge |
+| `incomplete / http_<status>` | `false` | none | provider HTTP refusal, including a 403 HTML challenge |
+| `incomplete / transport_unavailable, transport_failed, timeout, redirect_refused` | `false` | none | named transport, deadline or redirect failure |
 | `incomplete / over_cap` | `false` | none | the byte or row ceiling was exceeded; the response was rejected whole |
 | `incomplete / invalid_response` | `false` | every independently valid ERC-20 row | at least one row or the response document was invalid; invalid counts and any recoverable unprocessed contract addresses are reported |
 

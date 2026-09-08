@@ -139,3 +139,16 @@ describe("the refresh failure log line", () => {
     expect(line).not.toContain("CANARYKEY123");
   });
 });
+
+
+describe("partial balance refresh", () => {
+  it("reports an unresolved chain as partial instead of refreshed", async () => {
+    mockRefreshPortfolioNow.mockResolvedValue({
+      wallets: [{ walletFamily: "solana", walletAddress: "fixture-wallet", totalUsd: 16.8,
+        tokensUpdated: 0, chainsUpdated: 0,
+        unresolvedChains: [{ chainId: 20011000000, reason: "http_403" }],
+      }], snapshots: [], totalUsd: 16.8, snapshotSkippedReason: "chain_reads_unresolved",
+    });
+    expect(await invokeRefresh()).toMatchObject({ ok: true, data: { status: "partial" } });
+  });
+});

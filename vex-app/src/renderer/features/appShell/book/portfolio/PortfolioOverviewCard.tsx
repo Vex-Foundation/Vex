@@ -26,6 +26,7 @@
  * stay the project's own.
  */
 
+import { ChainReadWarning } from "./ChainReadWarning.js";
 import { useState, type JSX } from "react";
 import type { PortfolioDto } from "@shared/schemas/portfolio.js";
 import {
@@ -145,6 +146,7 @@ function TotalFigure({
       <span className="font-display text-[30px] font-semibold leading-none tracking-[-0.01em] tabular-nums text-ink-primary">
         {formatUsd(portfolio?.liveTotalUsd ?? null)}
       </span>
+      {portfolio !== null ? <ChainReadWarning portfolio={portfolio} /> : null}
       {portfolio !== null &&
       portfolio.snapshotTotalUsd !== null &&
       portfolio.pnlVsPrev !== null ? (

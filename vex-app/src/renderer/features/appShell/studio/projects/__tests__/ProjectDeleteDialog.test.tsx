@@ -880,3 +880,18 @@ describe("the dialog's own posture", () => {
     expect(onClose).toHaveBeenCalled();
   });
 });
+
+describe("diagnosed OS trash refusal", () => {
+  it("shows the aborted cause and remedies while keeping Retry reachable", async () => {
+    deleteMock.mockResolvedValue({ ok: true, data: {
+      outcome: "cleanup_pending", cleanup: [], trash: "failed",
+      trashFailure: "aborted", trashRequested: true, attempts: 1,
+    } });
+    const harness = renderDialog();
+    await confirmDelete();
+    await screen.findByText(/The OS aborted the trash operation/);
+    expect(screen.getByText(/Close programs and retry/)).toBeDefined();
+    expect(confirmButton().disabled).toBe(false);
+    expect(harness.onClose).not.toHaveBeenCalled();
+  });
+});

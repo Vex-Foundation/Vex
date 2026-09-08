@@ -1,3 +1,4 @@
+vi.mock("../../../vex-agent/sync/balance-sync/read-failure-deferral.js", () => ({ shouldDeferFailedChainReads: vi.fn().mockResolvedValue(false) }));
 /**
  * `fullBalanceSync` SINGLE-FLIGHT (Wave P, Blocker 3).
  *
@@ -52,7 +53,7 @@ vi.mock("@tools/khalani/chains.js", () => ({
 }));
 
 vi.mock("../../../vex-agent/sync/local-chain-balance-sync.js", () => ({
-  syncLocalChainForWallet: () => ({ chainId: 0, tokensUpdated: 0, skipped: true }),
+  syncLocalChainForWallet: () => ({ chainId: 4663, tokensUpdated: 0, skipped: false }),
 }));
 
 vi.mock("../../../vex-agent/sync/pendle-enrichment.js", () => ({
@@ -65,10 +66,11 @@ vi.mock("../../../vex-agent/sync/pendle-enrichment.js", () => ({
 }));
 
 const mockInsertSnapshot = vi.fn();
+const mockGetBalancesByChain = vi.fn().mockResolvedValue([]);
 vi.mock("@vex-agent/db/repos/balances.js", () => ({
   replaceBalancesForChain: vi.fn().mockResolvedValue(0),
   getBalances: vi.fn().mockResolvedValue([]),
-  getBalancesByChain: vi.fn().mockResolvedValue([]),
+  getBalancesByChain: (...args: unknown[]) => mockGetBalancesByChain(...args),
   insertSnapshot: (...a: unknown[]) => mockInsertSnapshot(...a),
   getLatestSnapshot: vi.fn().mockResolvedValue(null),
   getSnapshotHistory: vi.fn().mockResolvedValue([]),
@@ -196,11 +198,12 @@ describe("overlapping callers", () => {
       throw new Error("provider down");
     });
 
+    mockGetBalancesByChain.mockRejectedValueOnce(new Error("database unavailable"));
     const periodic = fullBalanceSync({ snapshot: "when-settled" });
     const manual = fullBalanceSync({ snapshot: "always" });
 
     // A failed periodic sync is not a reason to drop a user's explicit refresh.
-    await expect(periodic).rejects.toThrow("provider down");
+    await expect(periodic).rejects.toThrow("database unavailable");
     await vi.waitFor(() => expect(mockScan).toHaveBeenCalledTimes(2));
     await releaseInFlightScan();
 

@@ -13,9 +13,9 @@
  * The signature is produced ONCE, at launch time, while the launch's own
  * signing clients are open - the token address does not exist before the
  * receipt, and no sweep in this repo holds a signer. So a row with no stored
- * signature is not a candidate here: it is a NAMED GAP, counted and logged once
- * per pass. Retrying it would be a loop that can only fail, and hiding it would
- * be worse.
+ * signature is not a candidate here: it is a NAMED GAP, counted each pass and
+ * logged on change with bounded reminders. Retrying it would be a loop that
+ * can only fail, and hiding it would be worse.
  *
  * TERMINAL MEANS TERMINAL. A refusal from the closed vocabulary in
  * `@tools/pools-fun/attribution-codes.ts` is recorded with
@@ -44,6 +44,9 @@ import {
 import { POOLS_ATTEST_LANE_MISCONFIG_CODE } from "@tools/pools-fun/attribution-codes.js";
 import type { PoolsAttributionOutcome } from "@tools/pools-fun/attribution.js";
 import logger from "@utils/logger.js";
+import { createTransitionLog } from "@utils/transition-log.js";
+
+const unsignedGapLog = createTransitionLog();
 
 /**
  * Bounded batch per run, mirroring the trench attribution lane: the sweep does
@@ -201,12 +204,17 @@ export async function attributePoolsLaunches(
   }
 
   const unsignedGap = await countPoolsUnsignedAttributionGap();
-  if (unsignedGap > 0) {
-    // ONCE per pass, and named for what it is. These tokens launched while the
-    // lane was disabled, or their signature could not be produced; nothing
-    // after the handler holds a signer, so no sweep will ever attribute them.
+  const observation = unsignedGap > 0
+    ? unsignedGapLog.observe("unsigned_gap", String(unsignedGap))
+    : undefined;
+  if (unsignedGap === 0) {
+    const recovery = unsignedGapLog.clear("unsigned_gap");
+    if (recovery) logger.info("pools.attribution.unsigned_gap", { count: 0, ...recovery });
+  }
+  if (observation) {
     logger.info("pools.attribution.unsigned_gap", {
       count: unsignedGap,
+      ...observation,
       hint: "these pools.fun launches have no stored launcher signature, so the badge cannot be claimed "
         + "for them; only the launch handler can sign, and it no longer holds their signing clients.",
     });

@@ -47,7 +47,9 @@ export async function insertSnapshot(
   );
   let pnlVsPrev: number | null = null;
   let pnlPctVsPrev: number | null = null;
-  if (prev && prev.totalUsd > 0) {
+  // A partial value is visible history, never a PnL baseline. The first fresh
+  // row after an outage also has no adjacent delta; the next fresh pair resumes.
+  if (!args.partial && prev && !prev.partial && prev.totalUsd > 0) {
     pnlVsPrev = args.totalUsd - prev.totalUsd;
     pnlPctVsPrev = (pnlVsPrev / prev.totalUsd) * 100;
   }
@@ -55,10 +57,10 @@ export async function insertSnapshot(
   const row = await queryOneWith<{ id: number }>(
     executor,
     `INSERT INTO proj_portfolio_snapshots
-       (wallet_family, wallet_address, snapshot_group_id, total_usd, positions, active_chains, pnl_vs_prev, pnl_pct_vs_prev, source)
-     VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9) RETURNING id`,
+       (wallet_family, wallet_address, snapshot_group_id, total_usd, positions, active_chains, pnl_vs_prev, pnl_pct_vs_prev, source, partial, unresolved_chain_count)
+     VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11) RETURNING id`,
     [args.walletFamily, args.walletAddress, args.snapshotGroupId, args.totalUsd,
-     jsonb(args.positions), args.activeChains, pnlVsPrev, pnlPctVsPrev, args.source ?? "sync"],
+     jsonb(args.positions), args.activeChains, pnlVsPrev, pnlPctVsPrev, args.source ?? "sync", args.partial ?? false, args.unresolvedChainCount ?? 0],
   );
   return { snapshotId: row?.id ?? 0, pnlVsPrev };
 }

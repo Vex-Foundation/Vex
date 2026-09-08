@@ -191,7 +191,7 @@ export function usePortfolioRefresh(): {
   const refresh = useCallback(async (): Promise<PortfolioRefreshOutput> => {
     const result = await window.vex.portfolio.refresh();
     if (!result.ok) return { status: "unavailable" };
-    if (result.data.status === "refreshed") {
+    if (result.data.status !== "throttled") {
       // Re-read rather than patch: main just rewrote the projection, and the DB
       // is the source of truth for every figure the card shows.
       await queryClient.invalidateQueries({ queryKey: portfolioKeys.all });

@@ -21,6 +21,35 @@ function withPoisonedPrepareStackTrace(body: () => void): void {
 }
 
 describe("redact", () => {
+  it.each([
+    ["seeded", 5],
+    ["tokens", 4],
+    ["wallets", 4],
+    ["droppedAddresses", 0],
+    ["walletsWithMoneyInFlight", 0],
+    ["tokenCount", 12],
+    ["seedCount", 2],
+  ])("preserves the numeric count %s", (key, value) => {
+    expect(redact({ [key]: value })).toEqual({ [key]: value });
+  });
+
+  it.each(["password", "seed", "private_key", "api-key", "token", "authorization"])(
+    "still redacts numeric credentials under %s", (key) => {
+      expect(redact({ [key]: 123456 })).toEqual({ [key]: "[REDACTED]" });
+    },
+  );
+
+  it("scrubs sensitive value shapes even under count-like keys", () => {
+    const address = `0x${"a".repeat(40)}`;
+    const base58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijk";
+    expect(redact({ seeded: address, tokens: [base58], wallets: { personal: "hidden" } })).toEqual({
+      seeded: "[REDACTED]", tokens: "[REDACTED]", wallets: "[REDACTED]",
+    });
+    expect(redact({ reason: "timeout https://rpc.example/credential?key=hidden" })).toEqual({
+      reason: "timeout [REDACTED]",
+    });
+  });
+
   it("redacts sensitive object keys regardless of value", () => {
     const input = {
       password: "hunter2",

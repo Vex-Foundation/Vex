@@ -42,6 +42,8 @@
  * engine's test tree because vex-app owns the composition under test.
  */
 
+import { readPendingProjectCleanups } from "../../database/projects/pending-cleanups.js";
+
 import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -890,10 +892,13 @@ describe("deleteProject: the filesystem teardown", () => {
 });
 
 describe("deleteProject: the trash step", () => {
-  it("reports trash FAILURE without rolling back the authority commit", async () => {
+  it.each([
+    ["aborted", new Error("Operation was aborted")],
+    ["permission_denied", Object.assign(new Error("EPERM: operation not permitted"), { code: "EPERM" })],
+  ] as const)("reports trash %s without rolling back the authority commit", async (failure, cause) => {
     const project = await seedProject();
     await installProjectArtifacts(project);
-    runtime.trashItem.mockRejectedValue(new Error("EPERM: operation not permitted"));
+    runtime.trashItem.mockRejectedValue(cause);
 
     const result = unwrap(
       await deleteProject(
@@ -906,6 +911,7 @@ describe("deleteProject: the trash step", () => {
     expect(result.outcome).toBe("cleanup_pending");
     if (result.outcome !== "cleanup_pending") return;
     expect(result.trash).toBe("failed");
+    expect(result.trashFailure).toBe(failure);
     // The failure must come from the TRASH CALL, not from a guard that ran
     // before it: an unasserted call count is how this test previously passed
     // while `shell` was undefined and nothing was ever attempted.
@@ -918,16 +924,22 @@ describe("deleteProject: the trash step", () => {
       cleanup_state: "trash_pending",
       cleanup_attempts: 1,
     });
-    // The failure reason is a redacted sentence, never the provider message.
+    // A classified durable reason, never the native payload.
     const reason = await sql<{ cleanup_last_error: string | null }>(
       "SELECT cleanup_last_error FROM projects WHERE id = $1",
       [project.projectId],
     );
     expect(reason[0]?.cleanup_last_error).toBe(
-      "The project folder could not be moved to the trash.",
+      `trash:${failure}`,
     );
     expect(reason[0]?.cleanup_last_error).not.toMatch(/EPERM/);
     expect(await exists(project.directory)).toBe(true);
+    const pending = await readPendingProjectCleanups(0);
+    expect(pending.ok).toBe(true);
+    if (!pending.ok) return;
+    expect(pending.data.items).toEqual(expect.arrayContaining([expect.objectContaining({
+      projectId: project.projectId, trashFailure: failure, trashRequested: true, attempts: 1,
+    })]));
   });
 
   it("RESUMES an unfinished cleanup and honours the tombstone's trash intent", async () => {
@@ -1700,7 +1712,7 @@ describe("deleteProject: the startup repair sweep", () => {
       [project.projectId],
     );
     expect(reason[0]?.cleanup_last_error).toBe(
-      "The project folder could not be moved to the trash.",
+      "trash:io_error",
     );
     expect(reason[0]?.cleanup_last_error).not.toMatch(/EPERM/);
   }, 30_000);

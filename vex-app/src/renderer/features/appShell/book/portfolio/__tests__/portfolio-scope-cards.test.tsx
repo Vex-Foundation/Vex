@@ -315,3 +315,43 @@ describe("WalletsCard scope input", () => {
     });
   });
 });
+
+
+describe("chain read uncertainty", () => {
+  it("shows the stale chain and both timestamps beside cached portfolio value", async () => {
+    const staleSince = "2026-09-08T20:37:00.000Z";
+    const lastSuccessAt = "2026-09-07T10:00:00.000Z";
+    readMock.mockResolvedValue({ ok: true, data: portfolio({ chainReadIssues: [{
+      chainId: 20011000000, status: "read_failed", reason: "http_403", staleSince, lastSuccessAt,
+    }] }) });
+    const { container } = renderWith(<PortfolioOverviewCard scope={GLOBAL_PORTFOLIO_SCOPE} />);
+    expect((await screen.findByRole("status")).textContent).toContain("Solana: stale since");
+    expect(screen.getByRole("status").textContent).toContain("Totals include last known values");
+    expect(container.querySelector(`time[datetime="${lastSuccessAt}"]`)).not.toBeNull();
+    expect(container.querySelector(`time[datetime="${staleSince}"]`)).not.toBeNull();
+  });
+});
+
+
+describe("partial snapshots and incomplete discovery", () => {
+  it("labels missing new tokens without claiming that known balances are stale", async () => {
+    readMock.mockResolvedValue({ ok: true, data: portfolio({ chainReadIssues: [{
+      chainId: 4663, status: "inventory_incomplete", reason: "http_403",
+      staleSince: "2026-09-08T20:37:00.000Z", lastSuccessAt: "2026-09-08T20:39:00.000Z",
+    }] }) });
+    renderWith(<PortfolioOverviewCard scope={GLOBAL_PORTFOLIO_SCOPE} />);
+    const warning = await screen.findByRole("status");
+    expect(warning.textContent).toContain("new tokens on this chain may be missing since");
+    expect(warning.textContent).toContain("Reason: http_403");
+    expect(warning.textContent).not.toContain("Some balances are stale");
+  });
+
+  it("labels a partial snapshot and explains that its P&L is unavailable", async () => {
+    readMock.mockResolvedValue({ ok: true, data: portfolio({ snapshotPartial: true,
+      snapshotUnresolvedChainCount: 1, pnlVsPrev: null,
+    }) });
+    renderWith(<PortfolioOverviewCard scope={GLOBAL_PORTFOLIO_SCOPE} />);
+    expect((await screen.findByRole("status")).textContent).toContain("Latest snapshot is partial (1 unresolved chain reads)");
+    expect(screen.getByRole("status").textContent).toContain("P&L is unavailable");
+  });
+});

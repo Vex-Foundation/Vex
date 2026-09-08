@@ -45,6 +45,26 @@ afterEach(() => {
 });
 
 describe("installEngineLogBridge", () => {
+  it("writes once through the app sink while standalone and detached engines keep stderr", () => {
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      engineLogger.warn("standalone.event");
+      expect(stderr.mock.calls.filter(([line]) => String(line).includes("standalone.event"))).toHaveLength(1);
+      stderr.mockClear();
+      installEngineLogBridge();
+      engineLogger.warn("embedded.event", { seeded: 5, wallets: 4 });
+      expect(stderr.mock.calls.filter(([line]) => String(line).includes("embedded.event"))).toHaveLength(0);
+      expect(electronLogSpies.warn).toHaveBeenCalledExactlyOnceWith(
+        "[engine] embedded.event", { seeded: 5, wallets: 4 },
+      );
+      __resetEngineLogBridgeForTests();
+      engineLogger.warn("detached.event");
+      expect(stderr.mock.calls.filter(([line]) => String(line).includes("detached.event"))).toHaveLength(1);
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+
   it("forwards error→log.error as `[engine] <message>` + meta object", () => {
     installEngineLogBridge();
     engineLogger.error("inference.openrouter.api_unreachable", {

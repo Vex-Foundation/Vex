@@ -172,3 +172,36 @@ describe("getLatestSnapshot / getSnapshotHistory - wallet scoping", () => {
     expect(call[1]).toEqual(["eip155", "0xA"]);
   });
 });
+
+
+describe("partial snapshot history and PnL", () => {
+  it.each([[true, false], [false, true], [true, true]])(
+    "does not compute a delta with partial current=%s or previous=%s",
+    async (partial, previousPartial) => {
+      mockQueryOne.mockImplementation(async (sql: string) => sql.includes("INSERT")
+        ? { id: 44 } : { total_usd: 100, partial: previousPartial, unresolved_chain_count: previousPartial ? 1 : 0 });
+      expect((await repo.insertSnapshot({ walletFamily: "solana", walletAddress: "SolA", snapshotGroupId: "g", totalUsd: 150,
+        activeChains: ["20011000000"], positions: {}, partial, unresolvedChainCount: partial ? 1 : 0 })).pnlVsPrev).toBeNull();
+      const args = findCall(mockQueryOne.mock.calls, "INSERT")?.[1] as unknown[];
+      expect(args[9]).toBe(partial);
+      expect(args[10]).toBe(partial ? 1 : 0);
+    },
+  );
+
+  it("keeps partial history visible and excludes both adjacent deltas", async () => {
+    mockQuery.mockResolvedValue([
+      { snapshot_group_id: "g1", total_usd: "100", partial: false },
+      { snapshot_group_id: "g2", total_usd: "500", partial: true, unresolved_chain_count: 2 },
+      { snapshot_group_id: "g3", total_usd: "120", partial: false },
+      { snapshot_group_id: "g4", total_usd: "130", partial: false },
+    ]);
+    const rows = await repo.getAggregateSnapshots(["a"]);
+    expect(rows.map((row) => row.pnlVsPrev)).toEqual([null, null, null, 10]);
+    expect(rows[1]).toMatchObject({ totalUsd: 500, partial: true, unresolvedChainCount: 2 });
+  });
+
+  it.each([[true, false], [false, true]])("latest aggregate rejects partial delta inputs %s/%s", async (partial, previousPartial) => {
+    mockQuery.mockResolvedValue([{ total_usd: "150", partial, unresolved_chain_count: partial ? 1 : 0 }, { total_usd: "100", partial: previousPartial }]);
+    expect(await repo.getLatestAggregateSnapshot(["a"])).toMatchObject({ totalUsd: 150, partial, pnlVsPrev: null });
+  });
+});

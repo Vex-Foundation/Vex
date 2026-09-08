@@ -22,6 +22,7 @@ export type {
 export {
   upsertBalance,
   replaceBalancesForChain,
+  replaceKnownEvmBalancesForChain,
 } from "./balances/write.js";
 export {
   getBalances,

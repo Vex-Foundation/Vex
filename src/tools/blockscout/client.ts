@@ -28,6 +28,11 @@ export const BLOCKSCOUT_TOKEN_BALANCES_TIMEOUT_MS = 15_000;
 
 export type BlockscoutInventoryIncompleteReason =
   | "unavailable"
+  | "transport_unavailable"
+  | "transport_failed"
+  | "timeout"
+  | "redirect_refused"
+  | `http_${number}`
   | "over_cap"
   | "invalid_response";
 
@@ -171,12 +176,16 @@ function mapTypedFailure(
     case BlockscoutErrorCodes.RESPONSE_OVER_CAP:
       return noRowsIncomplete("over_cap", error.code, transport);
     case BlockscoutErrorCodes.TRANSPORT_UNAVAILABLE:
+      return noRowsIncomplete("transport_unavailable", error.code, transport);
     case BlockscoutErrorCodes.TRANSPORT_TIMEOUT:
+      return noRowsIncomplete("timeout", error.code, transport);
     case BlockscoutErrorCodes.TRANSPORT_FAILED:
+      return noRowsIncomplete("transport_failed", error.code, transport);
     case BlockscoutErrorCodes.REDIRECT_REFUSED:
+      return noRowsIncomplete("redirect_refused", error.code, transport);
     case BlockscoutErrorCodes.PROVIDER_UNAVAILABLE:
-      return noRowsIncomplete("unavailable", error.code, transport);
     case BlockscoutErrorCodes.PROVIDER_REFUSED:
+      return noRowsIncomplete(error.httpStatus === undefined ? "transport_failed" : `http_${error.httpStatus}`, error.code, transport);
     case BlockscoutErrorCodes.CONTENT_TYPE_INVALID:
     case BlockscoutErrorCodes.RESPONSE_INVALID:
       return noRowsIncomplete("invalid_response", error.code, transport);

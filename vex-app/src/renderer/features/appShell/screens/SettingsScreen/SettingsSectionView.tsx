@@ -1,3 +1,4 @@
+import { ChainEndpointsSection } from "./ChainEndpointsSection.js";
 /**
  * One section's calm full-page view: the wizard step form in back-edit
  * mode (saving returns to the register via `onAdvance`). The Wallets
@@ -61,6 +62,8 @@ function renderSectionContent(
   },
 ): JSX.Element | null {
   switch (meta.id) {
+    case "chainEndpoints":
+      return <ChainEndpointsSection />;
     case "superboardKey":
       return <SuperboardKeySection />;
     case "lighterPoints":

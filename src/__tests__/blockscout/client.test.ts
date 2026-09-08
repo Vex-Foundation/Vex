@@ -351,7 +351,25 @@ describe("readRobinhoodErc20IdentityCandidates", () => {
     expect(result.candidates).toHaveLength(34);
   });
 
-  it("treats a 403 HTML challenge as unavailable, never as empty success", async () => {
+  it.each([401, 404, 429, 500, 503])("preserves HTTP %i as the inventory failure reason", async (status) => {
+    unregister = registerBlockscoutTransport(transportFor(async () => response(encoder.encode("refused"), { status })));
+    await expect(readRobinhoodErc20IdentityCandidates(PUBLIC_ADDRESS)).resolves.toMatchObject({
+      status: "incomplete", inventoryComplete: false, incompleteReason: `http_${status}`, candidates: [],
+    });
+  });
+
+  it.each([
+    [BlockscoutErrorCodes.TRANSPORT_TIMEOUT, "timeout"],
+    [BlockscoutErrorCodes.TRANSPORT_FAILED, "transport_failed"],
+    [BlockscoutErrorCodes.REDIRECT_REFUSED, "redirect_refused"],
+  ])("preserves %s without a provider payload", async (code, reason) => {
+    unregister = registerBlockscoutTransport(transportFor(async () => { throw blockscoutError(code, "safe failure"); }));
+    await expect(readRobinhoodErc20IdentityCandidates(PUBLIC_ADDRESS)).resolves.toMatchObject({
+      status: "incomplete", inventoryComplete: false, incompleteReason: reason, candidates: [],
+    });
+  });
+
+  it("names a 403 HTML refusal, never as empty success", async () => {
     unregister = registerBlockscoutTransport(
       transportFor(async () =>
         response(encoder.encode("<html>challenge</html>"), {
@@ -367,7 +385,7 @@ describe("readRobinhoodErc20IdentityCandidates", () => {
       expect.objectContaining({
         status: "incomplete",
         inventoryComplete: false,
-        incompleteReason: "unavailable",
+        incompleteReason: "http_403",
         errorCode: BlockscoutErrorCodes.PROVIDER_UNAVAILABLE,
         candidates: [],
         providerRowCount: null,
@@ -470,12 +488,12 @@ describe("readRobinhoodErc20IdentityCandidates", () => {
     expect(result.unprocessedContractAddresses).toEqual([SECOND_PUBLIC_ADDRESS]);
   });
 
-  it("returns unavailable when no Electron transport is mounted", async () => {
+  it("names the missing Electron transport when none is mounted", async () => {
     const result = await readRobinhoodErc20IdentityCandidates(PUBLIC_ADDRESS);
     expect(result).toEqual(
       expect.objectContaining({
         status: "incomplete",
-        incompleteReason: "unavailable",
+        incompleteReason: "transport_unavailable",
         errorCode: BlockscoutErrorCodes.TRANSPORT_UNAVAILABLE,
         transport: null,
       }),

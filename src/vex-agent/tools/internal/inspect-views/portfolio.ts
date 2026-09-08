@@ -26,6 +26,8 @@ export async function inspectSummary(addresses: string[]): Promise<ToolResult> {
     openPositionCount: openPositions.length,
     latestSnapshot: latestSnapshot ? {
       totalUsd: latestSnapshot.totalUsd,
+      partial: latestSnapshot.partial,
+      unresolvedChainCount: latestSnapshot.unresolvedChainCount,
       pnlVsPrev: latestSnapshot.pnlVsPrev,
       activeChains: latestSnapshot.activeChains,
       at: latestSnapshot.at,
@@ -47,8 +49,8 @@ export async function inspectBalances(addresses: string[]): Promise<ToolResult> 
 
 export async function inspectSnapshots(addresses: string[]): Promise<ToolResult> {
   const { getAggregateSnapshots } = await import("@vex-agent/db/repos/balances.js");
-  // Aggregated per full-sync cycle across the selected wallet set (complete
-  // cycles only - partial syncs excluded).
+  // Whole wallet groups include explicitly partial chain reads. Deltas touching
+  // those rows are null so stale holdings never become a PnL baseline.
   const snapshots = await getAggregateSnapshots(addresses, "7d");
 
   return ok({
@@ -56,6 +58,8 @@ export async function inspectSnapshots(addresses: string[]): Promise<ToolResult>
     count: snapshots.length,
     snapshots: snapshots.map(s => ({
       totalUsd: s.totalUsd,
+      partial: s.partial,
+      unresolvedChainCount: s.unresolvedChainCount,
       pnlVsPrev: s.pnlVsPrev,
       pnlPctVsPrev: s.pnlPctVsPrev,
       activeChains: s.activeChains,

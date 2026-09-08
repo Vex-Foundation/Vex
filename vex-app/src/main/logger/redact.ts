@@ -14,14 +14,40 @@
  * defense-in-depth, not the first line.
  */
 
-const SENSITIVE_KEY_RE =
-  /(password|passphrase|mnemonic|seed|phrase|private[_-]?key|secret|token|api[_-]?key|auth(?:orization)?|signature|sig\b|wallet|address|keystore|cipher|tag|salt|nonce|iv\b|jwt)/i;
+// Exact names after normalizing separators. Numeric credentials are sensitive
+// too; token/wallet/address COUNTS are not credential fields.
+const SENSITIVE_KEYS: ReadonlySet<string> = new Set([
+  "password", "passphrase", "mnemonic", "seed", "seedphrase", "phrase",
+  "masterpassword", "keystorepassword", "pgpassword", "passwordhash",
+  "privatekey", "secret", "clientsecret", "apisecret", "secretkey",
+  "existingprivatekey", "solanasecretkey", "customsecret", "extrasecrets",
+  "lighterrhctradingapiprivatekey", "lightercoretradingapiprivatekey",
+  "token", "accesstoken", "refreshtoken", "authtoken", "ingesttoken",
+  "pendingauthtoken", "claimtoken", "sharetoken", "sessiontoken", "tokens",
+  "apikey", "auth", "authorization", "signature", "attestsignature", "sig",
+  "apikeys", "openrouterapikey", "jupiterapikey", "legacyapikey",
+  "keystore", "cipher", "ciphertext", "tag", "salt", "nonce", "iv", "jwt",
+  "wallet", "address", "walletaddress", "tokenaddress", "wallets", "addresses",
+]);
+
+const COUNT_KEYS: ReadonlySet<string> = new Set([
+  "seeded", "tokens", "wallets", "droppedaddresses", "walletswithmoneyinflight",
+]);
+
+function isSensitiveField(key: string, value: unknown): boolean {
+  const normalized = key.replace(/[_-]/g, "").toLowerCase();
+  if (COUNT_KEYS.has(normalized) && typeof value === "number" && Number.isFinite(value)) return false;
+  return SENSITIVE_KEYS.has(normalized);
+}
 
 const SECRET_PATTERNS: ReadonlyArray<RegExp> = [
   /\b0x[a-fA-F0-9]{64}\b/g, // EVM private key
   /\b0x[a-fA-F0-9]{40}\b/g, // EVM address
   /\beyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, // JWT
   /\b[A-Za-z0-9+/]{86}={0,2}\b/g, // 64-byte base64 (Solana secret etc.)
+  /\b[1-9A-HJ-NP-Za-km-z]{32,88}\b/g, // Solana addresses and base58 key material
+  /\b(?:Bearer|Basic)\s+[A-Za-z0-9._~+\/-]+=*/gi,
+  /\b(?:https?|wss?):\/\/[^\s<>"']+/gi, // RPC URLs may carry credentials in any segment
 ];
 
 const REDACTED = "[REDACTED]";
@@ -94,7 +120,7 @@ function redactValue(value: unknown, depth: number, seen: WeakSet<object>): unkn
     seen.add(value as object);
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      if (SENSITIVE_KEY_RE.test(k)) {
+      if (isSensitiveField(k, v)) {
         out[k] = REDACTED;
       } else {
         out[k] = redactValue(v, depth + 1, seen);

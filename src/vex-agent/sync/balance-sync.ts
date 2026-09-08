@@ -5,7 +5,9 @@
  * chain. Absent tokens are removed only for chains that were actually scanned.
  */
 
+import { shouldDeferFailedChainReads } from "./balance-sync/read-failure-deferral.js";
 import { randomUUID } from "node:crypto";
+import { recordChainReadObservations, type ChainReadObservation } from "@vex-agent/db/repos/balance-chain-read-status.js";
 import { getTokenBalancesAcrossChains } from "@tools/khalani/balances.js";
 import { getCachedKhalaniChains } from "@tools/khalani/chains.js";
 import { listWallets, type InventoryFamily } from "@tools/wallet/inventory.js";
@@ -50,6 +52,10 @@ export interface SyncResult {
   tokensUpdated: number;
   chainsUpdated: number;
   totalUsd: number;
+  /** Provider failure without a named chain still makes the wallet incomplete. */
+  readFailed?: boolean;
+  /** Failed chain reads, kept out of a complete snapshot. */
+  unresolvedChains?: readonly ChainReadObservation[];
 }
 
 export interface WalletSnapshotResult {
@@ -58,6 +64,8 @@ export interface WalletSnapshotResult {
   snapshotId: number;
   totalUsd: number;
   pnlVsPrev: number | null;
+  partial: boolean;
+  unresolvedChainCount: number;
 }
 
 export interface FullSyncResult {
@@ -112,12 +120,16 @@ export async function syncWalletBalances(
 
   // Local chains FIRST so the Khalani path's final total-USD read (which sums
   // ALL of the wallet's proj_balances) already includes freshly-written local rows.
+  const observations = new Map<number, ChainReadObservation>();
   let localTokens = 0;
   let localChainsUpdated = 0;
   for (const localChainId of localChainIds) {
     const local = await syncLocalChainForWallet(family, address, localChainId);
     localTokens += local.tokensUpdated;
     if (!local.skipped) localChainsUpdated += 1;
+    const status = local.readStatus ?? (local.skipped ? "read_failed" : "ok");
+    observations.set(local.chainId, { chainId: local.chainId, status,
+      reason: status === "ok" ? null : local.reason ?? (status === "read_failed" ? "rpc_failed" : "enumeration_not_exhaustive") });
   }
 
   // Pendle chains Khalani CANNOT scan - seed PT balances via the chain's own RPC
@@ -128,7 +140,13 @@ export async function syncWalletBalances(
   for (const seedChainId of pendleSeedChainIds) {
     const seeded = await seedPendleChainBalances(family, address, seedChainId);
     pendleSeedTokens += seeded.tokensUpdated;
-    if (!seeded.skipped) pendleSeedChainsUpdated += 1;
+    if (!seeded.skipped) {
+      pendleSeedChainsUpdated += 1;
+      observations.set(seedChainId, { chainId: seedChainId, status: "ok", reason: null });
+    } else if ((await balancesRepo.getBalances(address, seedChainId)).length > 0) {
+      // No tracked PT is a normal skip, but cached holdings cannot be vouched for.
+      observations.set(seedChainId, { chainId: seedChainId, status: "read_failed", reason: "read_incomplete" });
+    }
   }
 
   // Solana: direct RPC is the PRIMARY source (owner decision 2026-08-26).
@@ -151,7 +169,11 @@ export async function syncWalletBalances(
       solanaTokens = solana.tokensUpdated;
       solanaChainsUpdated = 1;
     }
+    observations.set(solana.chainId, { chainId: solana.chainId, status: solana.skipped ? "read_failed" : "ok", reason: solana.skipped ? (solana.reason ?? "rpc_failed") : null });
   }
+
+  // Persist before fallback: even a throwing fallback cannot hide a failed primary.
+  await recordChainReadObservations(address, [...observations.values()]);
 
   let base: SyncResult;
   if (skipKhalani) {
@@ -171,11 +193,14 @@ export async function syncWalletBalances(
       address,
       khalaniChainIds,
       lastGoodProtectedChainIds,
+      observations,
     );
   }
 
+  const unresolvedChains = [...observations.values()].filter((entry) => entry.status === "read_failed");
   return {
     ...base,
+    unresolvedChains,
     tokensUpdated: base.tokensUpdated + localTokens + pendleSeedTokens + solanaTokens,
     chainsUpdated: base.chainsUpdated + localChainsUpdated + pendleSeedChainsUpdated + solanaChainsUpdated,
   };
@@ -325,13 +350,34 @@ async function syncKhalaniWalletBalances(
   address: string,
   chainIds?: number[],
   lastGoodProtectedChainIds: readonly number[] = [],
+  observations: Map<number, ChainReadObservation> = new Map(),
 ): Promise<SyncResult> {
   // `address` is supplied by the caller (inventory iteration). Address-only -
   // the sync path never touches key material.
 
   // Fetch from Khalani. Scanning per chain avoids incomplete multi-chain
   // balance responses and lets cleanup distinguish "empty" from "not scanned".
-  const scan = await getTokenBalancesAcrossChains({ address, family, chainIds });
+  let scan: Awaited<ReturnType<typeof getTokenBalancesAcrossChains>>;
+  try {
+    scan = await getTokenBalancesAcrossChains({ address, family, chainIds });
+  } catch (error) {
+    const previous = await balancesRepo.getBalancesByChain(address);
+    let registryIds: number[] = [];
+    if (chainIds === undefined) {
+      try { registryIds = (await getCachedKhalaniChains()).filter((chain) => chain.type === family).map((chain) => chain.id); }
+      catch { /* The provider registry may share the same outage. Cached ids remain authoritative. */ }
+    }
+    const failedIds = chainIds ?? [...new Set([...previous.map((chain) => chain.chainId), ...registryIds])];
+    const failures = failedIds.filter((chainId) => !observations.has(chainId))
+      .map((chainId): ChainReadObservation => ({ chainId, status: "read_failed", reason: "rpc_failed" }));
+    // Only the provider call is caught. Database failures must still propagate.
+    for (const failure of failures) observations.set(failure.chainId, failure);
+    await recordChainReadObservations(address, failures);
+    logger.warn("sync.balance.provider_read_failed", { reason: "rpc_failed", error: describeFailureForLog(error) });
+    const cached = await balancesRepo.getBalances(address);
+    return { walletFamily: family, walletAddress: address, tokensUpdated: 0, chainsUpdated: 0, readFailed: true,
+      totalUsd: cached.reduce((sum, row) => sum + (row.balanceUsd ?? 0), 0) };
+  }
 
   // Khalani's own price wins wherever it exists; this only fills the nulls it
   // started returning on 2026-08-26. It runs on the PROVIDER's rows, before
@@ -403,12 +449,28 @@ async function syncKhalaniWalletBalances(
     }
   }
 
+  const scanObservations = new Map<number, ChainReadObservation>();
+  for (const failure of scan.chainErrors) {
+    scanObservations.set(failure.chainId, { chainId: failure.chainId, status: "read_failed", reason: "rpc_failed" });
+  }
+  for (const chainId of replaceBlockedChainIds) {
+    scanObservations.set(chainId, { chainId, status: "read_failed", reason: "read_incomplete" });
+  }
+  for (const chainId of scan.scannedChainIds) {
+    if (scanObservations.has(chainId)) continue;
+    if (protectedChainIds.has(chainId) && !byChain.has(chainId)) continue;
+    scanObservations.set(chainId, { chainId, status: "ok", reason: null });
+  }
+
   // Replace per chain (transactional) - empty arrays delete stale rows
   let tokensUpdated = 0;
   for (const [chainId, rows] of byChain) {
     const count = await balancesRepo.replaceBalancesForChain(address, chainId, rows);
     tokensUpdated += count;
   }
+
+  await recordChainReadObservations(address, [...scanObservations.values()]);
+  for (const [chainId, observation] of scanObservations) observations.set(chainId, observation);
 
   // Calculate total USD for this wallet
   const walletBalances = await balancesRepo.getBalances(address);
@@ -419,7 +481,7 @@ async function syncKhalaniWalletBalances(
     address: address.slice(0, 10) + "...",
     tokens: tokensUpdated,
     chains: byChain.size,
-    chainErrors: scan.chainErrors.length,
+    chainErrors: [...observations.values()].filter((entry) => entry.status === "read_failed").length,
     rejectedEntries: rejectedEntries.length,
     replaceBlockedChains: replaceBlockedChainIds.size,
     totalUsd: totalUsd.toFixed(2),
@@ -547,12 +609,18 @@ async function runFullBalanceSync(): Promise<FullSyncResult> {
       totalUsd: sync.totalUsd,
       positions,
       activeChains: [...chainSet],
+      partial: unresolvedReadCount(sync) > 0,
+      unresolvedChainCount: unresolvedReadCount(sync),
     });
   }
 
+  const unresolvedChainCount = wallets.reduce((sum, wallet) => sum + unresolvedReadCount(wallet), 0);
+  const deferChainReads = await shouldDeferFailedChainReads(walletEntries, unresolvedChainCount);
   const outcome: PublicationOutcome = fenceUnavailable
     ? { published: false, reason: "gate_probe_failed" }
-    : await publishSnapshotGroup({
+    : deferChainReads
+      ? { published: false, reason: "chain_reads_unresolved" }
+      : await publishSnapshotGroup({
         snapshotGroupId,
         walletAddresses,
         fenceAtCycleStart,
@@ -567,6 +635,8 @@ async function runFullBalanceSync(): Promise<FullSyncResult> {
         snapshotId: row.snapshotId,
         totalUsd: row.totalUsd,
         pnlVsPrev: row.pnlVsPrev,
+        partial: row.partial,
+        unresolvedChainCount: row.unresolvedChainCount,
       }))
     : [];
 
@@ -574,9 +644,11 @@ async function runFullBalanceSync(): Promise<FullSyncResult> {
     wallets: wallets.length,
     snapshots: snapshots.length,
     snapshotSkipped: !outcome.published,
+    partial: outcome.published ? outcome.ledger.partial : null,
     snapshotSkippedReason: outcome.published ? null : outcome.reason,
     inTransitUsd: outcome.published ? outcome.ledger.inTransitUsd.toFixed(2) : null,
     unresolvedCount: outcome.published ? outcome.ledger.unresolvedCount : null,
+    unresolvedChainCount: wallets.reduce((sum, wallet) => sum + unresolvedReadCount(wallet), 0),
     // The rows the ledger FOUND, not the rows it displays: the list is bounded
     // at 50 and the totals above are not, so a cycle log that reported only the
     // list would understate the money the group accounted for.
@@ -593,6 +665,11 @@ async function runFullBalanceSync(): Promise<FullSyncResult> {
     snapshotGroupId,
     ...(outcome.published ? {} : { snapshotSkippedReason: outcome.reason }),
   };
+}
+
+/** Unknown provider scope still counts as one unresolved read, never a fake chain id. */
+function unresolvedReadCount(wallet: SyncResult): number {
+  return Math.max(wallet.unresolvedChains?.length ?? 0, wallet.readFailed ? 1 : 0);
 }
 
 /**

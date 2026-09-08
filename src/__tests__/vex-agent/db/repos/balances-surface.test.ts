@@ -112,6 +112,7 @@ describe("balances façade — public surface", () => {
       [
         "upsertBalance",
         "replaceBalancesForChain",
+        "replaceKnownEvmBalancesForChain",
         "getBalances",
         "getBalancesByChain",
         "getTotalUsd",

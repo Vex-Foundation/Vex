@@ -19,6 +19,10 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+vi.mock("@vex-agent/db/repos/balance-chain-read-status.js", () => ({
+  recordChainReadObservations: vi.fn().mockResolvedValue(undefined),
+}));
+
 const mockListWallets = vi.fn();
 vi.mock("@tools/wallet/inventory.js", () => ({
   listWallets: (family: string) => mockListWallets(family),

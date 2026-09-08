@@ -2,7 +2,8 @@
  * Balances repo — aggregate (per-session) snapshots.
  *
  * Per-CYCLE totals across a wallet set, stitched back together via
- * `snapshot_group_id`; only COMPLETE cycles count.
+ * `snapshot_group_id`; every selected wallet must have a row. A whole group
+ * can still carry partial chain reads, which remain visible with null PnL.
  */
 
 import { query } from "../../client.js";
@@ -13,6 +14,8 @@ interface AggregateGroupRow {
   total_usd: string;
   at: string;
   chains: string[][] | null;
+  partial: boolean;
+  unresolved_chain_count: string | number;
 }
 
 function flattenChains(nested: string[][] | null): string[] {
@@ -29,8 +32,9 @@ function aggregatePnl(totalUsd: number, prevTotal: number | null): { pnlVsPrev: 
  * Aggregate per-wallet snapshots into per-CYCLE totals for the given wallet
  * set. Only COMPLETE cycles (a row for EVERY selected wallet, via
  * `HAVING COUNT(DISTINCT wallet_address) = <n>`) count, so a partial/failed
- * sync can't understate the total. PnL is the delta between consecutive
- * complete cycles. Empty set → [] (never global — Codex 5E-2).
+ * sync can't understate the total. PnL requires two adjacent groups whose
+ * chain reads are complete; partial values never become delta baselines.
+ * An empty wallet set returns no rows and never widens to the global scope.
  */
 export async function getAggregateSnapshots(
   addresses: string[],
@@ -40,7 +44,8 @@ export async function getAggregateSnapshots(
   const intervals: Record<string, string> = { "24h": "24 hours", "7d": "7 days", "30d": "30 days", "all": "100 years" };
   const rows = await query<AggregateGroupRow>(
     `SELECT snapshot_group_id, SUM(total_usd) AS total_usd, MAX(created_at) AS at,
-            array_agg(active_chains) AS chains
+            array_agg(active_chains) AS chains, BOOL_OR(partial) AS partial,
+            SUM(unresolved_chain_count) AS unresolved_chain_count
      FROM proj_portfolio_snapshots
      WHERE created_at > NOW() - INTERVAL '${intervals[range]}' AND wallet_address = ANY($1::text[])
      GROUP BY snapshot_group_id
@@ -51,10 +56,13 @@ export async function getAggregateSnapshots(
   let prevTotal: number | null = null;
   return rows.map((r) => {
     const totalUsd = Number(r.total_usd);
-    const { pnlVsPrev, pnlPctVsPrev } = aggregatePnl(totalUsd, prevTotal);
-    prevTotal = totalUsd;
+    const partial = r.partial === true;
+    const { pnlVsPrev, pnlPctVsPrev } = aggregatePnl(totalUsd, partial ? null : prevTotal);
+    prevTotal = partial ? null : totalUsd;
     return {
       snapshotGroupId: r.snapshot_group_id,
+      partial,
+      unresolvedChainCount: Number(r.unresolved_chain_count ?? 0),
       totalUsd,
       pnlVsPrev,
       pnlPctVsPrev,
@@ -65,8 +73,8 @@ export async function getAggregateSnapshots(
 }
 
 /**
- * Latest COMPLETE cycle for the wallet set, with PnL vs the previous complete
- * cycle. Empty set → null. Used by the portfolio summary.
+ * Latest whole wallet group, with PnL only when both adjacent groups have
+ * complete chain reads. Empty set → null. Used by the portfolio summary.
  */
 export async function getLatestAggregateSnapshot(
   addresses: string[],
@@ -74,7 +82,8 @@ export async function getLatestAggregateSnapshot(
   if (addresses.length === 0) return null;
   const rows = await query<AggregateGroupRow>(
     `SELECT snapshot_group_id, SUM(total_usd) AS total_usd, MAX(created_at) AS at,
-            array_agg(active_chains) AS chains
+            array_agg(active_chains) AS chains, BOOL_OR(partial) AS partial,
+            SUM(unresolved_chain_count) AS unresolved_chain_count
      FROM proj_portfolio_snapshots
      WHERE wallet_address = ANY($1::text[])
      GROUP BY snapshot_group_id
@@ -83,12 +92,14 @@ export async function getLatestAggregateSnapshot(
      LIMIT 2`,
     [addresses, addresses.length],
   );
-  if (rows.length === 0) return null;
   const latest = rows[0];
+  if (latest === undefined) return null;
   const totalUsd = Number(latest.total_usd);
-  const { pnlVsPrev, pnlPctVsPrev } = aggregatePnl(totalUsd, rows[1] ? Number(rows[1].total_usd) : null);
+  const { pnlVsPrev, pnlPctVsPrev } = aggregatePnl(totalUsd, !latest.partial && rows[1] && !rows[1].partial ? Number(rows[1].total_usd) : null);
   return {
     snapshotGroupId: latest.snapshot_group_id,
+    partial: latest.partial === true,
+    unresolvedChainCount: Number(latest.unresolved_chain_count ?? 0),
     totalUsd,
     pnlVsPrev,
     pnlPctVsPrev,
