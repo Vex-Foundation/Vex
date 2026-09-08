@@ -13,21 +13,11 @@
  *     only - which looks like a rendering bug, not a missing token;
  *  2. an incomplete ANSI set, so a program emitting SGR 35 gets whatever the
  *     fallback is while SGR 31 is themed;
- *  3. a background that is not transparent, which would paint over the
- *     watermark the pane deliberately layers underneath - AND, measured in the
- *     UX audit of 2026-09-02, a background spelled in a syntax xterm's own
- *     parser rejects, which is the same defect wearing a correct-looking
- *     stylesheet. xterm 6.0.0 parses theme colours with `css.toColor`: hex and
- *     `rgb()/rgba()` take a fast path, anything else goes to a 1x1 canvas
- *     probe that THROWS when the alpha is not 255, and `ThemeService` swallows
- *     that throw and keeps `#000000`. The keyword `transparent` therefore
- *     painted an OPAQUE BLACK canvas in both themes. The test below pins the
- *     8-digit hex, which is the syntax the parser accepts with alpha 0;
- *     `allowTransparency: true` in `terminal-registry.ts` is its other half.
- *  4. a palette that parses and is still unreadable. The canvas is transparent,
- *     so the colour a glyph competes with is the SURFACE UNDER IT - the
- *     `--vex-alias-bg-layer-1` card `XtermHost` paints - and the contrast table
- *     below measures every slot against it in both themes.
+ *  3. a background that misreports the surface through OSC 11. Dark mode
+ *     and light modes own opaque reading surfaces. Both use xterm's supported
+ *     eight-digit hex syntax.
+ *  4. a palette that parses and is still unreadable. Light mode measures
+ *     every text slot against its actual opaque background, including SGR 90.
  *
  * Unlike every other alias family here, the sixteen ANSI slots are RAW HEX on
  * purpose. They are a wire contract with programs that emit SGR 30-37 and
@@ -166,29 +156,16 @@ describe("terminal palette tokens", () => {
   });
 
   it.each([
-    ["chronos", chronos],
-    ["celeris", celeris],
-  ])("keeps the background alpha 0 AND carries the pane's surface RGB (%s)", (name, body) => {
-    // The pane paints its own surface and the watermark sits UNDER the
-    // terminal. An opaque background would hide it, in one theme or both.
-    //
-    // The keyword `transparent` looks like it says this and does the opposite:
-    // xterm's parser rejects it, ThemeService keeps its `#000000` default, and
-    // the canvas paints opaque black. Only the 8-digit hex form survives.
-    //
-    // AND THE RGB IS NOT FREE. xterm answers a program's OSC 11 query from this
-    // token with the alpha dropped, so `#00000000` told Claude Code, bat, delta
-    // and nvim that a light pane was pure black (measured 2026-09-04: Claude
-    // Code's dark chrome over the light pane at 2.5:1). The RGB is the surface
-    // the glass pane veils with (`--vex-alias-bg-base`: the tint in shell.css
-    // is that ramp step at partial alpha), resolved through the var chain so a
-    // moved surface re-measures the token rather than silently outdating it.
+    ["chronos", chronos, "ff"],
+    ["celeris", celeris, "ff"],
+  ])("pins surface opacity and OSC 11 RGB (%s)", (name, body, alpha) => {
+    // Both themes have a stable reading ground. OSC 11 reports its RGB.
     const value = declarationValue(body, "--vex-alias-term-background");
     expect(value, `${name} must not use the keyword xterm rejects`).not.toBe("transparent");
     const match = /^#([0-9a-f]{6})([0-9a-f]{2})$/.exec(value ?? "");
     expect(match, `${name} background "${String(value)}" is not an 8-digit hex`).not.toBeNull();
     if (match === null) return;
-    expect(match[2], `${name} background alpha`).toBe("00");
+    expect(match[2], `${name} background alpha`).toBe(alpha);
     expect(`#${match[1] ?? ""}`, `${name} background RGB`).toBe(
       resolveHex(body, "--vex-alias-bg-base"),
     );
@@ -210,14 +187,11 @@ describe("terminal palette tokens", () => {
   it.each([
     ["chronos", chronos],
     ["celeris", celeris],
-  ])("clears the rule-08 contrast floor on the card it paints over (%s)", (theme, body) => {
-    // WHAT THE FLOOR IS MEASURED AGAINST. The canvas is transparent, so a
-    // glyph is read against the surface the pane paints under it, which is
-    // `bg-surface-1` -> `--vex-alias-bg-layer-1` in `XtermHost`. Resolving the
-    // var chain rather than pasting the hex keeps ONE source of truth: moving
-    // the card's surface re-measures the palette instead of silently
-    // invalidating the numbers in this file.
-    const surface = resolveHex(body, "--vex-alias-bg-layer-1");
+  ])("clears the normal-text contrast floor on the actual opaque reading surface (%s)", (theme, body) => {
+    // This exact opaque background is painted by both the wrapper and xterm.
+    const background = declarationValue(body, "--vex-alias-term-background");
+    if (background === undefined) throw new Error("Terminal background token is missing");
+    const surface = background.slice(0, 7);
     const failures: string[] = [];
     for (const slot of ["foreground", ...ANSI_SLOTS] as const) {
       const ratio = contrastRatio(resolveHex(body, `--vex-alias-term-${slot}`), surface);
@@ -233,6 +207,30 @@ describe("terminal palette tokens", () => {
       }
     }
     expect(failures, `${theme}: slots below WCAG AA`).toEqual([]);
+  });
+
+  it.each([
+    ["chronos", chronos],
+    ["celeris", celeris],
+  ])("keeps default SGR 2 dim text above its separate 3:1 target (%s)", (_theme, body) => {
+    // xterm's opaque atlas composites SGR 2 at 50% before rasterization.
+    // This tests a fully covered glyph pixel, not an antialiased edge. Dim
+    // deliberately has a 3:1 target: even black at 50% cannot reach 4.5 on white.
+    const background = declarationValue(body, "--vex-alias-term-background");
+    if (background === undefined) throw new Error("Terminal background token is missing");
+    const foreground = resolveHex(body, "--vex-alias-term-foreground");
+    const surface = background.slice(0, 7);
+    const dim = "#" + [1, 3, 5].map((at) => Math.round(
+      (parseInt(foreground.slice(at, at + 2), 16) + parseInt(surface.slice(at, at + 2), 16)) / 2,
+    ).toString(16).padStart(2, "0")).join("");
+    expect(contrastRatio(dim, surface)).toBeGreaterThanOrEqual(3);
+    expect(contrastRatio(resolveHex(body, "--vex-alias-term-bright-black"), surface)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("uses light primary ink for the default foreground without changing ANSI black", () => {
+    expect(declarationValue(celeris, "--vex-alias-term-foreground")).toBe("var(--vex-alias-label-primary)");
+    expect(resolveHex(celeris, "--vex-alias-term-foreground")).toBe("#12141c");
+    expect(resolveHex(celeris, "--vex-alias-term-black")).toBe("#2b3040");
   });
 
   it("gives the two themes DIFFERENT ANSI values, so the flip is real", () => {

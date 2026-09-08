@@ -193,8 +193,7 @@ export function Tooltip({
         onMouseLeave: (e) => {
           children.props.onMouseLeave?.(e);
           triggers.current.hover = false;
-          cancelShow();
-          setPos(null);
+          hide();
         },
         onFocus: (e) => {
           children.props.onFocus?.(e);

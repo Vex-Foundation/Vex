@@ -14,6 +14,7 @@
 
 import type { JSX, ReactNode } from "react";
 import { cn } from "../../lib/utils.js";
+import { Tooltip } from "./tooltip.js";
 
 export interface RailRowProps {
   readonly selected: boolean;
@@ -26,6 +27,12 @@ export interface RailRowProps {
   readonly title: string;
   /** Trailing quiet metadata (a time), hidden while actions reveal. */
   readonly trailing?: ReactNode;
+  /** Persistent state inside the select control; reserves separate action space. */
+  readonly persistentTrailing?: ReactNode;
+  /** Persistent compact state positioned over the collapsed icon. */
+  readonly collapsedOverlay?: ReactNode;
+  /** Explanation exposed on hover, keyboard focus and to assistive technology. */
+  readonly description?: string;
   /** Hover-revealed action cluster occupying the trailing slot. */
   readonly actions?: ReactNode;
   /** Keep the actions revealed and the row highlighted (open menu pins). */
@@ -48,6 +55,9 @@ export function RailRow({
   leading,
   title,
   trailing,
+  persistentTrailing,
+  collapsedOverlay,
+  description,
   actions,
   actionsPinned = false,
   onSelect,
@@ -67,53 +77,70 @@ export function RailRow({
       )}
       data-rail-row-pinned={actionsPinned || undefined}
     >
-      <button
-        type="button"
-        onClick={onSelect}
-        onDoubleClick={onDoubleClick}
-        aria-current={selected ? "true" : undefined}
-        aria-label={collapsed ? label ?? title : undefined}
-        title={collapsed ? label ?? title : undefined}
-        className={cn(
-          "flex h-full w-full min-w-0 items-center rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary",
-          collapsed ? "justify-center px-0" : "gap-2 px-2",
-        )}
-      >
-        {collapsed ? (
-          <span className="flex h-7 w-7 items-center justify-center text-ink-tertiary">
-            {icon}
-          </span>
-        ) : (
-          <>
-            {leading !== undefined ? (
-              <span className="flex h-5 w-4 shrink-0 items-center justify-center text-ink-tertiary">
-                {leading}
-              </span>
-            ) : null}
-            <span className="min-w-0 flex-1 truncate text-[14px] leading-[20px] text-ink-primary">
-              {title}
+      <Tooltip label={description ?? label ?? title} disabled={description === undefined}>
+        <button
+          type="button"
+          onClick={onSelect}
+          onDoubleClick={onDoubleClick}
+          aria-current={selected ? "true" : undefined}
+          aria-label={collapsed ? label ?? title : undefined}
+          aria-description={description}
+          title={collapsed && description === undefined ? label ?? title : undefined}
+          className={cn(
+            "flex h-full w-full min-w-0 items-center rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary",
+            collapsed ? "justify-center px-0" : "gap-2 px-2",
+          )}
+        >
+          {collapsed ? (
+            <span className="relative flex h-7 w-7 items-center justify-center text-ink-tertiary">
+              {icon}
+              {collapsedOverlay !== undefined ? (
+                <span className="absolute -bottom-0.5 -right-0.5 flex items-center">
+                  {collapsedOverlay}
+                </span>
+              ) : null}
             </span>
-            {trailing !== undefined ? (
-              <span
-                className={cn(
-                  "shrink-0 text-[12px] leading-[20px] tabular-nums text-ink-tertiary",
-                  hasActions &&
-                    (actionsPinned
-                      ? "opacity-0"
-                      : "group-focus-within/rail-row:opacity-0 group-hover/rail-row:opacity-0"),
-                )}
-              >
-                {trailing}
+          ) : (
+            <>
+              {leading !== undefined ? (
+                <span className="flex h-5 w-4 shrink-0 items-center justify-center text-ink-tertiary">
+                  {leading}
+                </span>
+              ) : null}
+              <span className="min-w-0 flex-1 truncate text-[14px] leading-[20px] text-ink-primary">
+                {title}
               </span>
-            ) : null}
-          </>
-        )}
-      </button>
+              {trailing !== undefined ? (
+                <span
+                  className={cn(
+                    "shrink-0 text-[12px] leading-[20px] tabular-nums text-ink-tertiary",
+                    hasActions &&
+                      (actionsPinned
+                        ? "opacity-0"
+                        : "group-focus-within/rail-row:opacity-0 group-hover/rail-row:opacity-0"),
+                  )}
+                >
+                  {trailing}
+                </span>
+              ) : null}
+              {persistentTrailing !== undefined ? (
+                <span className="flex shrink-0 items-center" data-rail-persistent-state>
+                  {persistentTrailing}
+                </span>
+              ) : null}
+            </>
+          )}
+        </button>
+      </Tooltip>
 
       {hasActions ? (
         <div
+          data-rail-actions
           className={cn(
-            "absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-0.5",
+            "flex items-center gap-0.5",
+            persistentTrailing === undefined
+              ? "absolute right-1 top-1/2 -translate-y-1/2"
+              : "shrink-0 pr-1",
             actionsPinned
               ? "opacity-100"
               : "opacity-0 transition-opacity duration-100 group-focus-within/rail-row:opacity-100 group-hover/rail-row:opacity-100",

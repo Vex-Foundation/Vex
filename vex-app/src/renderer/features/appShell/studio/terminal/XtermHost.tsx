@@ -88,7 +88,6 @@
 import { useCallback, useEffect, useRef, useState, type JSX } from "react";
 import type { Terminal } from "@xterm/xterm";
 import type { TerminalErrorCode } from "@shared/schemas/terminal.js";
-import { VexMark } from "../../../../components/common/VexMark.js";
 import { cn } from "../../../../lib/utils.js";
 import {
   attachTerminal,
@@ -401,10 +400,8 @@ export function XtermHost({
 
   return (
     <div
-      // NO SURFACE OF ITS OWN. The glass pane above this host is the surface,
-      // and the xterm canvas is alpha-0 (`terminal-palette.ts`), so what shows
-      // between the glyphs is the wallpaper through the pane's tint. A fill
-      // here would sit between the two and turn the glass back into a card.
+      // The registry wrapper paints an opaque reading surface inside this
+      // host's inset. The enclosing pane and header retain their glass tint.
       className={cn(
         "relative flex h-full min-h-0 w-full min-w-0 flex-col bg-transparent",
         className,
@@ -431,18 +428,6 @@ export function XtermHost({
         setMenuAt({ x: event.clientX, y: event.clientY });
       }}
     >
-      {/*
-        The watermark sits UNDER the terminal: the terminal palette declares a
-        transparent background in both themes exactly so this shows through. It
-        is `aria-hidden` decoration and never intercepts a click.
-      */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 flex items-center justify-center"
-      >
-        <VexMark size={120} className="text-brand-mark opacity-[0.06]" />
-      </div>
-
       {/*
         THE GRID'S INSET from the pane edge: 8px, the same rhythm as the header
         text above it and the column padding outside the pane, so the text

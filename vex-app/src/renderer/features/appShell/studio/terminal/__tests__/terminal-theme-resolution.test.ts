@@ -5,10 +5,9 @@
  * suite is the other half, in the shape VS Code's `xtermTerminal.test.ts`
  * `suite('theme')` uses: mount the stylesheet, resolve the theme against a root
  * carrying each theme attribute, assert the whole resolved `ITheme`, flip, and
- * assert again. The reader is the real `readTerminalTheme`, the cascade is
- * jsdom's own (it resolves a custom property by selector; it does NOT resolve a
- * `var()` chain, which is why the ANSI slots and the background, the literal
- * ones, are the slots asserted by value).
+ * assert again. jsdom selects custom properties but does not resolve var()
+ * chains. The fixture materializes those chains from the real stylesheet
+ * before mounting it. Chromium surface captures cover the native cascade.
  *
  * WHY THE BACKGROUND GETS ITS OWN INVARIANT. `options.theme.background` is not
  * only a paint instruction: xterm 6.0.0 answers a program's OSC 11 query
@@ -19,8 +18,8 @@
  * A background of `#00000000` therefore told every one of them the pane was
  * pure black, in light mode too (measured on the owner's machine 2026-09-04:
  * Claude Code's dark-theme grey `rgb(153,153,153)` on the light pane, 2.5:1).
- * The token keeps alpha 0 so the watermark survives and carries the RGB of the
- * surface the pane paints, so the answer classifies by theme.
+ * Both modes paint opaque text backgrounds and carry the RGB of that surface,
+ * so the answer classifies by theme. The transparent-RGB protocol stays valid.
  *
  * The last suite computes the reply BYTES xterm sends for each resolved
  * background and classifies them, so the wire contract is proven on every
@@ -32,8 +31,10 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { readTerminalTheme } from "../terminal-palette.js";
+import { TerminalRegistry } from "../terminal-registry.js";
+import { installMatchMedia } from "./terminal-harness.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const tokensCss = readFileSync(
@@ -41,15 +42,34 @@ const tokensCss = readFileSync(
   "utf8",
 );
 
-/**
- * The stylesheet minus its Tailwind `@theme` at-rules, which jsdom's CSS
- * parser refuses (and reports on the virtual console) while parsing the rest.
- * Nothing the terminal reads lives in those blocks: the alias tier is plain
- * `:root` and `[data-vex-theme="celeris"]` rules, mounted intact. Anchored to
- * column 0 because the theme blocks MENTION `@theme` in their comments, and
- * an unanchored match would eat the block from that mention to its brace.
- */
-const themeableCss = tokensCss.replace(/^@theme[^{]*\{[\s\S]*?\n\}/gm, "");
+/** Resolve the CSS var chains that jsdom leaves literal, using source tokens. */
+function terminalThemeFixture(): string {
+  const source = tokensCss.replace(/\/\*[\s\S]*?\*\//g, "");
+  const declarations = (body: string): Map<string, string> => new Map(
+    [...body.matchAll(/(--[a-z0-9-]+):\s*([^;]+);/g)].map((match) => [match[1] ?? "", match[2]?.trim() ?? ""]),
+  );
+  const rootAt = source.indexOf(":root {");
+  const inherited = declarations(source.slice(0, rootAt));
+  const rules: string[] = [];
+  for (const match of source.matchAll(/(^:root|^\[data-vex-theme="celeris"\]) \{([\s\S]*?)^\}/gm)) {
+    const selector = match[1] ?? "";
+    const own = declarations(match[2] ?? "");
+    const values = new Map([...inherited, ...own]);
+    const resolve = (value: string, seen = new Set<string>()): string => value.replace(
+      /var\((--[a-z0-9-]+)\)/g,
+      (_reference, token: string) => {
+        if (seen.has(token)) throw new Error(`Cyclic CSS token ${token}`);
+        const next = values.get(token);
+        if (next === undefined) throw new Error(`Missing CSS token ${token}`);
+        return resolve(next, new Set([...seen, token]));
+      },
+    );
+    rules.push(`${selector} {\n${[...own].filter(([name]) => name.startsWith("--vex-alias-term-"))
+      .map(([name, value]) => `  ${name}: ${resolve(value)};`).join("\n")}\n}`);
+    if (selector === ":root") for (const [name, value] of own) inherited.set(name, value);
+  }
+  return rules.join("\n");
+}
 
 /** Every slot the bridge hands xterm, sorted, so an added or lost key shows. */
 const THEME_SLOTS = [
@@ -149,10 +169,15 @@ function setTheme(theme: "chronos" | "celeris"): void {
 }
 
 beforeAll(() => {
+  installMatchMedia();
   const sheet = document.createElement("style");
   sheet.dataset["terminalThemeSuite"] = "tokens";
-  sheet.textContent = themeableCss;
+  sheet.textContent = terminalThemeFixture();
   document.head.appendChild(sheet);
+});
+
+afterAll(() => {
+  document.querySelector('[data-terminal-theme-suite="tokens"]')?.remove();
 });
 
 afterEach(() => {
@@ -180,16 +205,18 @@ describe("readTerminalTheme against the real stylesheet", () => {
       expect(resolved[key], `${theme}/${key} is not a wire-contract hex`).toMatch(/^#[0-9a-f]{6}$/);
     }
 
-    // THE BACKGROUND: 8-digit hex (xterm's fast path), alpha 0 (the watermark
-    // shows through), and the RGB of the pane's surface, so a program that asks
-    // is told the truth about the theme it is running in.
+    // xterm-supported syntax, intentional opacity, and the actual surface RGB.
     const background = typed.background ?? "";
     expect(background).toMatch(/^#[0-9a-f]{8}$/);
-    expect(channels(background).a).toBe(0);
+    expect(channels(background).a).toBe(255);
     expect(background, `${theme} background is colourless`).not.toBe(COLOURLESS);
     expect(claudeCodeClassifies(background)).toBe(expected);
     // The glyph colour under a block cursor reuses the background token.
     expect(resolved["cursorAccent"]).toBe(background);
+    expect(typed.foreground).toBe(theme === "celeris" ? "#12141c" : "#e3e7ef");
+    expect(typed.cursor).toBe(theme === "celeris" ? "#0000c0" : "#7a8cff");
+    expect(typed.selectionBackground?.replace(/\s/g, "")).toBe(theme === "celeris" ? "rgba(10,13,24,0.14)" : "rgba(255,255,255,0.18)");
+    expect(typed.selectionForeground).toBeUndefined();
   });
 
   it("re-resolves to the other theme's surface when the root attribute flips", () => {
@@ -229,6 +256,69 @@ describe("readTerminalTheme against the real stylesheet", () => {
     const reply = osc11ReplyBytes(COLOURLESS);
     expect(reply).toBe("\x1b]11;rgb:0000/0000/0000\x1b\\");
     expect(classifyOsc11Reply(reply).theme).toBe("dark");
+  });
+
+  it.each(["chronos", "celeris"] as const)("creates in %s and updates a running xterm's OSC 10/11 replies while retaining its buffer", async (initialTheme) => {
+    setTheme(initialTheme);
+    const registry = new TerminalRegistry({
+      webglLoader: () => Promise.reject(new Error("no WebGL in jsdom")),
+    });
+    const replies: string[] = [];
+    const entry = registry.acquire("theme-switch");
+    const subscription = entry.terminal.onData((data) => replies.push(data));
+    try {
+      expect(entry.terminal.options.minimumContrastRatio).toBe(4.5);
+      expect(entry.terminal.options.allowTransparency).toBe(false);
+      await new Promise<void>((resolve) => entry.terminal.write("client remains running", resolve));
+      for (const [theme, background, foreground] of [
+        ["celeris", "#ffffffff", "#12141cff"],
+        ["chronos", "#0a0d18ff", "#e3e7efff"],
+        ["celeris", "#ffffffff", "#12141cff"],
+      ] as const) {
+        setTheme(theme);
+        // MutationObserver publication happens at the microtask checkpoint.
+        await Promise.resolve();
+        expect(entry.terminal.options.minimumContrastRatio).toBe(4.5);
+        expect(entry.terminal.options.allowTransparency).toBe(false);
+        expect(entry.terminal.options.theme?.background).toBe(background);
+        await new Promise<void>((resolve) => entry.terminal.write("\x1b]10;?\x07\x1b]11;?\x07", resolve));
+        expect(replies.slice(-2)).toEqual([
+          osc11ReplyBytes(foreground).replace("]11;", "]10;"),
+          osc11ReplyBytes(background),
+        ]);
+        expect(entry.terminal.buffer.active.getLine(0)?.translateToString(true)).toBe("client remains running");
+      }
+      expect(registry.acquire("theme-switch").terminal).toBe(entry.terminal);
+    } finally {
+      subscription.dispose();
+      registry.disposeAll();
+    }
+  });
+
+  it.each(["chronos", "celeris"] as const)("retains SGR 90, dim and reverse-video cell semantics in %s", async (theme) => {
+    setTheme(theme);
+    const registry = new TerminalRegistry({
+      webglLoader: () => Promise.reject(new Error("no WebGL in jsdom")),
+    });
+    const { terminal } = registry.acquire("sgr-fixture");
+    try {
+      // Parsing is real xterm. Pixel contrast and selected/cursor painting need
+      // the Electron capture; the token suite tests the dim compositing target.
+      await new Promise<void>((resolve) => terminal.write(
+        "\x1b[90mB\x1b[0m\x1b[2mD\x1b[0m\x1b[7mR\x1b[0m", resolve,
+      ));
+      const row = terminal.buffer.active.getLine(0);
+      expect(row?.translateToString(true)).toBe("BDR");
+      expect(row?.getCell(0)?.getFgColor()).toBe(8);
+      expect(row?.getCell(0)?.isFgPalette()).toBeTruthy();
+      expect(row?.getCell(1)?.isDim()).toBeTruthy();
+      expect(row?.getCell(1)?.isFgDefault()).toBeTruthy();
+      expect(row?.getCell(2)?.isInverse()).toBeTruthy();
+      expect(row?.getCell(2)?.isFgDefault()).toBeTruthy();
+      expect(row?.getCell(2)?.isBgDefault()).toBeTruthy();
+    } finally {
+      registry.disposeAll();
+    }
   });
 
   it("stays neutral and colourless with no element to resolve against", () => {

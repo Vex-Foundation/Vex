@@ -1,28 +1,14 @@
-/**
- * ONE project row, in the house rail grammar (`components/ui/rail-list.tsx`).
- *
- * The sidebar and the Studio welcome screen render THE SAME row rather than two
- * that look alike: they show the same facts about the same object, and a second
- * implementation would be a second answer to "is this project drifted".
- *
- * Trailing content is always-visible metadata, deliberately: the permission tag
- * says whether an agent in this project may touch anything outside it, and a
- * fact with that weight is not a hover reveal. The drift badge sits beside it
- * for the same reason. `RailRow` fades the trailing slot while the actions
- * cluster reveals, which is the house behaviour and is correct here too: the
- * actions only appear on hover or focus, and the tag is back the moment they go.
- */
+/** Sidebar project selection with persistent permission and drift state. */
 
 import type { JSX, ReactNode } from "react";
 import type { ProjectDto } from "@shared/schemas/projects.js";
 import { IconFolderClose, IconWarning } from "../../../../components/icons/index.js";
-import { Pill } from "../../../../components/ui/pill.js";
 import { RailRow } from "../../../../components/ui/rail-list.js";
-import { Tooltip } from "../../../../components/ui/tooltip.js";
 import { StateDot } from "../../../../components/ui/state-dot.js";
+import { ProjectPermissionState } from "../ProjectPermissionState.js";
 import {
   projectDriftLabel,
-  projectPermissionTag,
+  projectPermissionDescription,
   STUDIO_DRIFT_SENTENCES,
 } from "../studio-copy.js";
 import { worstDriftState } from "./project-row-model.js";
@@ -47,6 +33,19 @@ export function ProjectRailRow({
 }: ProjectRailRowProps): JSX.Element {
   const drift = worstDriftState(project);
   const driftSentence = drift === null ? null : STUDIO_DRIFT_SENTENCES[drift];
+  const driftDescription = driftSentence == null ? null : projectDriftLabel(project.name, driftSentence);
+  const description = [projectPermissionDescription(project.permission), driftDescription]
+    .filter(Boolean).join(" ");
+  const driftMark = driftDescription === null ? null : (
+    <span
+      role="img"
+      aria-label={driftDescription}
+      data-vex-project-drift={drift ?? undefined}
+      className="flex items-center text-warning"
+    >
+      <IconWarning size={13} />
+    </span>
+  );
 
   return (
     <RailRow
@@ -58,29 +57,19 @@ export function ProjectRailRow({
       // a dot that meant two things would report neither.
       leading={selected ? <StateDot state="done" size={8} /> : undefined}
       title={project.name}
-      trailing={
+      persistentTrailing={
         <span className="flex items-center gap-1">
-          <Pill size="sm" variant={project.permission === "full" ? "caution" : "neutral"}>
-            {projectPermissionTag(project.permission)}
-          </Pill>
-          {driftSentence !== undefined && driftSentence !== null ? (
-            // The glyph carried its meaning ONLY in `aria-label`: a pointer
-            // user saw a warning triangle and had no way to find out what had
-            // drifted. The tooltip says the same sentence the label says, from
-            // the same source, so the two readings cannot diverge.
-            <Tooltip label={projectDriftLabel(project.name, driftSentence)}>
-              <span
-                role="img"
-                aria-label={projectDriftLabel(project.name, driftSentence)}
-                data-vex-project-drift={drift ?? undefined}
-                className="flex items-center text-warning"
-              >
-                <IconWarning size={13} />
-              </span>
-            </Tooltip>
-          ) : null}
+          <ProjectPermissionState permission={project.permission} />
+          {driftMark}
         </span>
       }
+      collapsedOverlay={
+        <span className="flex items-center gap-0.5">
+          <ProjectPermissionState permission={project.permission} collapsed />
+          {driftMark}
+        </span>
+      }
+      description={description}
       actions={actions}
       actionsPinned={actionsPinned}
       onSelect={onSelect}

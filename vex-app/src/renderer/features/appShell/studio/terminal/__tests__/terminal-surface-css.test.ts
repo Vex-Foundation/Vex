@@ -5,8 +5,8 @@
  * pinned the way `glass-tokens.test.ts` pins its sheets: read the file, find
  * the rule, assert the declaration. Three promises can break silently:
  *
- *  1. the viewport rule that keeps xterm's own background transparent - lose
- *     it and the DOM renderer paints an opaque viewport over the glass;
+ *  1. the shared opaque wrapper background and transparent viewport, so
+ *     canvas gaps and the DOM fallback use the same reading surface;
  *  2. the strip's hover, which is the one tab state glass.css does not own:
  *     it must read the PANE tint (an activation preview) and must be scoped
  *     to the terminal strip, since the tabs primitive's list is shared;
@@ -36,8 +36,16 @@ function ruleBody(selector: string): string {
   return rules.slice(open + 1, close);
 }
 
-describe("terminal.css on glass", () => {
-  it("keeps xterm's viewport transparent so the pane shows through", () => {
+describe("terminal.css surfaces", () => {
+  it("uses the palette background across the whole wrapper in both themes", () => {
+    expect(ruleBody(".vex-terminal-surface")).toMatch(
+      /background-color:\s*var\(--vex-alias-term-background\)/,
+    );
+    // One semantic alias repoints between the two opaque reading surfaces.
+    expect(rules).not.toMatch(/#[0-9a-f]{3,8}\b/i);
+  });
+
+  it("keeps the viewport transparent to the opaque wrapper in both themes", () => {
     expect(ruleBody(".vex-terminal-surface .xterm-viewport")).toMatch(
       /background-color:\s*transparent\s*!important/,
     );

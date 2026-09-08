@@ -326,6 +326,15 @@ describe("the picker's popup has a surface under it", () => {
 });
 
 describe("the header on glass", () => {
+  it("places the decorative mark in the header outside the terminal glyph surface", () => {
+    const { view } = renderHeader();
+    const mark = view.container.querySelector("[data-vex-terminal-header] svg.text-brand-mark");
+    expect(mark).not.toBeNull();
+    expect(mark?.getAttribute("aria-hidden")).toBe("true");
+    expect(mark?.getAttribute("height")).toBe("20");
+    expect(mark?.closest(".vex-terminal-surface")).toBeNull();
+  });
+
   it("draws no rule under itself and keeps the pane's 8px inset", () => {
     const { view } = renderHeader();
     const header = view.container.firstElementChild;

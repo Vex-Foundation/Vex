@@ -354,22 +354,17 @@ export class TerminalRegistry {
       // host cannot reproduce after a reattach.
       scrollback: TERMINAL_SCROLLBACK_ROWS,
       allowProposedApi: true,
-      // WITHOUT THIS THE PANE PAINTS OPAQUE BLACK. The palette's background is
-      // alpha 0 so the card surface and the brand watermark show through; with
-      // `allowTransparency` at its default (false) xterm composites every cell
-      // onto its own opaque background instead, and the watermark the pane
-      // renders underneath is never visible. The WebGL renderer honours the
-      // flag (`@xterm/addon-webgl` 0.19.0 passes it into the texture atlas and
-      // returns NULL_COLOR for cell backgrounds), so this is not a
-      // renderer-specific escape hatch. See `terminal-palette.ts` for why the
-      // token is spelled `#00000000` rather than `transparent`.
-      allowTransparency: true,
+      // The opaque atlas path avoids washing out SGR 2 glyphs in both themes.
+      allowTransparency: false,
       convertEol: false,
       cursorBlink: !prefersReducedMotion(),
       // The library's only inertial behaviour. Reduced motion collapses it.
       smoothScrollDuration: prefersReducedMotion() ? 0 : 125,
       fontFamily: readMonoFontFamily(),
       theme: readTerminalTheme(document.documentElement),
+      // Correct explicit program colours as well as themed ANSI slots. xterm
+      // exempts background glyphs and halves this target for SGR 2.
+      minimumContrastRatio: 4.5,
       // THE OSC 8 PATH, which is a DIFFERENT path from the web-links addon
       // below and was the one that was broken. A shell that emits the
       // hyperlink escape sequence (Claude Code does, `gh` does, modern `ls`
@@ -458,8 +453,7 @@ export class TerminalRegistry {
 
     record.disposeTheme = observeTerminalTheme(() => {
       if (record.disposed) return;
-      // Repointing through the aliases, not a rebuild: `options.theme` is a
-      // setter xterm re-reads, so the flip costs one repaint.
+      // The public setters repaint without rebuilding the terminal or buffer.
       terminal.options.theme = readTerminalTheme(document.documentElement);
     });
 

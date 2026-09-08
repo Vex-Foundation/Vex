@@ -80,6 +80,7 @@ import {
   IconSplitVertical,
   IconTrash,
 } from "../../../../components/icons/index.js";
+import { VexMark } from "../../../../components/common/VexMark.js";
 import { StateDot } from "../../../../components/ui/state-dot.js";
 import { cn } from "../../../../lib/utils.js";
 import {
@@ -147,7 +148,8 @@ export function TerminalPanelHeader({
     // NO RULE UNDER THE HEADER: on glass the separation from the grid below is
     // the spacing, and the pane's edge light is the only line it carries. The
     // 8px inset lines the title up with the tabs above and the grid below.
-    <div className="flex shrink-0 items-start gap-3 px-2 py-2">
+    <div data-vex-terminal-header="" className="flex shrink-0 items-start gap-3 px-2 py-2">
+      <VexMark size={20} className="pointer-events-none mt-0.5 shrink-0 text-brand-mark opacity-40" />
       <div className="min-w-0 flex-1">
         {/*
           SENTENCE CASE, in the display face. The heading used to be

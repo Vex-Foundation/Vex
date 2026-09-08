@@ -4,7 +4,8 @@
  * document.body, fixed-positioned from the anchor rect, for anchors inside
  * overflow-clipping containers. Entries cover items, separators, and
  * non-interactive labels; submenus open on hover/focus inside the same
- * root. No entry animation by design. Copy arrives via entry labels.
+ * root. Motion is opt-in through the owner's list presentation. Copy arrives
+ * via entry labels.
  */
 
 import {
@@ -13,6 +14,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type AnimationEventHandler,
   type JSX,
   type ReactNode,
 } from "react";
@@ -94,6 +96,12 @@ export interface MenuProps {
    */
   readonly getAnchorRect?: () => DOMRect | null;
   readonly className?: string;
+  /** Optional owner-managed exit lifetime; closing lists cannot be interacted with. */
+  readonly listPresentation?: {
+    readonly state: "open" | "closing";
+    readonly className: string;
+    readonly onAnimationEnd: AnimationEventHandler<HTMLDivElement>;
+  };
 }
 
 export function Menu({
@@ -113,7 +121,9 @@ export function Menu({
   compact = false,
   getAnchorRect,
   className,
+  listPresentation,
 }: MenuProps): JSX.Element {
+  const present = open || listPresentation?.state === "closing";
   const rootRef = useRef<HTMLSpanElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const [openSubmenuId, setOpenSubmenuId] = useState<string | null>(null);
@@ -126,7 +136,7 @@ export function Menu({
   // runs before the parent's, so a wrapper the host positions in its own
   // effect measures stale here.
   useLayoutEffect(() => {
-    if (!open || !portal) {
+    if (!present || !portal) {
       setFixedPos(null);
       return;
     }
@@ -169,7 +179,7 @@ export function Menu({
       window.removeEventListener("scroll", place, true);
       window.removeEventListener("resize", place);
     };
-  }, [open, portal, align, side, getAnchorRect]);
+  }, [present, portal, align, side, getAnchorRect]);
 
   useEffect(() => {
     if (!open) {
@@ -292,11 +302,12 @@ export function Menu({
   // Portal lists render hidden until placed: the placement effect measures
   // this pre-render in the same commit, so the first painted frame is
   // already at the final position.
-  const list = open && (
+  const list = present && (
     <div
       ref={listRef}
       className={cn(
         "vex-menu",
+        listPresentation?.className,
         dense && "vex-menu-dense",
         compact && "vex-menu-compact",
         scrollable && "vex-menu-scrollable",
@@ -306,6 +317,10 @@ export function Menu({
       )}
       style={portal ? fixedPos ?? MEASURE_STYLE : undefined}
       role="menu"
+      data-state={listPresentation?.state}
+      inert={!open}
+      aria-hidden={!open || undefined}
+      onAnimationEnd={listPresentation?.onAnimationEnd}
       // React portals bubble synthetic events through the REACT tree:
       // without this stop, an item click re-fires the anchor row's own
       // onClick (open/toggle) after onSelect.

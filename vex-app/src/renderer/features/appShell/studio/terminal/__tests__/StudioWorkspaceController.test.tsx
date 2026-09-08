@@ -1076,10 +1076,10 @@ describe("StudioWorkspaceController terminal disposal", () => {
 });
 
 describe("StudioWorkspaceController surface", () => {
-  it("layers the brand watermark under every terminal pane", async () => {
+  it("places the brand mark in the header outside terminal glyphs", async () => {
     const { container } = await renderOpened();
 
-    const mark = container.querySelector("svg.text-brand-mark");
+    const mark = container.querySelector("[data-vex-terminal-header] svg.text-brand-mark");
     expect(mark).not.toBeNull();
     expect(mark?.getAttribute("aria-hidden")).toBe("true");
   });

@@ -74,15 +74,7 @@ vi.mock("../../../wizard/index.js", () => ({
   EmbeddingStep: stepStub("embedding"),
   AgentCoreStep: stepStub("agentCore"),
   ProviderStep: stepStub("provider"),
-  WIZARD_STEP_META: {
-    keystore: { icon: "i", label: "Master password", description: "" },
-    wallets: { icon: "i", label: "Wallets", description: "" },
-    apiKeys: { icon: "i", label: "API keys", description: "" },
-    embedding: { icon: "i", label: "Embedding", description: "" },
-    agentCore: { icon: "i", label: "Agent core", description: "" },
-    provider: { icon: "i", label: "Provider", description: "" },
-    review: { icon: "i", label: "Review", description: "" },
-  },
+
 }));
 
 // The export modal is a high-risk surface with its own suites — a stub
@@ -227,10 +219,10 @@ describe("SettingsScreen", () => {
       "Vault",
       "Wallets",
       "API keys",
-      "Superboard key",
       "Model",
       "Memory",
       "Tuning",
+      "Superboard key",
       "Lighter Points",
     ]) {
       expect(screen.getByText(name)).not.toBeNull();
@@ -244,7 +236,26 @@ describe("SettingsScreen", () => {
     expect(screen.getByText("Reachable")).not.toBeNull();
     expect(screen.getByText("Saved")).not.toBeNull();
     expect(screen.getByText("Open")).not.toBeNull();
-    expect(document.querySelectorAll("[data-vex-settings-row]")).toHaveLength(8);
+    const rows = Array.from(document.querySelectorAll("[data-vex-settings-row]"));
+    expect(rows.map((row) => row.getAttribute("data-vex-settings-row"))).toEqual([
+      "vault", "wallets", "apiKeys", "model", "memory", "tuning", "superboardKey", "lighterPoints",
+    ]);
+    for (const row of rows) {
+      const icon = row.querySelector("svg");
+      const slot = icon?.parentElement;
+      expect(slot?.className).toBe("flex h-8 w-8 shrink-0 items-center justify-center text-ink-secondary");
+      expect(slot?.className).not.toMatch(/rounded|border|overflow-hidden/);
+      expect(icon?.getAttribute("aria-hidden")).toBe("true");
+      if (row.getAttribute("data-vex-settings-row") !== "superboardKey") {
+        expect(icon?.getAttribute("width")).toBe("20");
+      }
+      const section = row.getAttribute("data-vex-settings-row");
+      if (section === null) throw new Error("Settings row has no section identifier");
+      if (!["superboardKey", "lighterPoints"].includes(section)) {
+        expect(icon?.getAttribute("viewBox")).toBe("0 0 16 16");
+        expect(icon?.querySelector("[stroke]")).toBeNull();
+      }
+    }
     expect(screen.getByText(/the Superboard key, and Lighter points/)).not.toBeNull();
 
     const superboard = screen.getByRole("button", { name: /Superboard key/ });
@@ -252,9 +263,9 @@ describe("SettingsScreen", () => {
     const superboardIcon = superboard.querySelector("svg");
     const lighterIcon = lighter.querySelector("svg");
     expect(superboardIcon?.getAttribute("viewBox")).toBe("0 0 48 31");
-    expect(superboardIcon?.getAttribute("width")).toBe("36");
-    expect(lighterIcon?.getAttribute("viewBox")).toBe("0 0 64 64");
-    expect(lighterIcon?.getAttribute("width")).toBe("24");
+    expect(superboardIcon?.getAttribute("width")).toBe("28");
+    expect(lighterIcon?.getAttribute("viewBox")).toBe("12 12 40 40");
+    expect(lighterIcon?.getAttribute("width")).toBe("20");
     expect(superboardIcon?.parentElement?.className).toBe(lighterIcon?.parentElement?.className);
     expect(lighter.querySelector("img")).toBeNull();
     expect(screen.queryByRole("switch", { name: /Lighter integration/i })).toBeNull();
@@ -263,9 +274,9 @@ describe("SettingsScreen", () => {
   it.each([
     [{ kind: "not_ready" }, "Not ready", "text-warning"],
     [{ kind: "missing" }, "Not set", "text-warning"],
-    [{ kind: "pending", shareToken: "A".repeat(43), lastError: null }, "Linking", "text-ink-tertiary"],
+    [{ kind: "pending", shareToken: "A".repeat(43), lastError: null }, "Linking", "text-ink-secondary"],
     [{ kind: "registered", shareToken: "A".repeat(43) }, "Linked", "text-success"],
-    [null, "-", "text-ink-tertiary"],
+    [null, "-", "text-ink-secondary"],
   ] satisfies ReadonlyArray<readonly [SuperboardKeyStatus | null, string, string]>)(
     "keeps the Superboard status %j independent of the Lighter entry",
     async (status, word, tone) => {
@@ -277,7 +288,7 @@ describe("SettingsScreen", () => {
       const superboard = await screen.findByRole("button", { name: /Superboard key/ });
       expect(within(superboard).getByText(word).classList.contains(tone)).toBe(true);
       const lighter = screen.getByRole("button", { name: /Lighter Points/ });
-      expect(within(lighter).getByText("Open").classList.contains("text-ink-tertiary")).toBe(true);
+      expect(within(lighter).getByText("Open").classList.contains("text-ink-secondary")).toBe(true);
     },
   );
 

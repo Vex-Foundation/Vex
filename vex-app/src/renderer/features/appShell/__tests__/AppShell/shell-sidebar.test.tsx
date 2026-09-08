@@ -2,7 +2,7 @@ import { StrictMode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { greetingPoolForHour } from "../../../../lib/greeting.js";
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeEngineBridgeStub } from "../../../../test/engine-bridge-stub.js";
 import type { Result } from "@shared/ipc/result.js";
 import type {
@@ -83,8 +83,23 @@ const messagesListMock = vi.fn();
 const shellBackdropReadMock = vi.fn();
 const missionGetDraftMock = vi.fn();
 const runtimeGetStateMock = vi.fn();
+let reducedMotion = false;
+const motionChanges = new EventTarget();
+const originalMatchMedia = window.matchMedia;
+
+afterAll(() => { window.matchMedia = originalMatchMedia; });
 
 beforeAll(() => {
+  window.matchMedia = (query) => ({
+    get matches() { return query === "(prefers-reduced-motion: reduce)" && reducedMotion; },
+    media: query,
+    onchange: null,
+    addEventListener: motionChanges.addEventListener.bind(motionChanges),
+    removeEventListener: motionChanges.removeEventListener.bind(motionChanges),
+    dispatchEvent: motionChanges.dispatchEvent.bind(motionChanges),
+    addListener: () => {},
+    removeListener: () => {},
+  });
   // jsdom does not implement ResizeObserver, which SessionsList uses for
   // fit-to-height. The component's effect feature-detects it, so without a
   // stub it just leaves containerHeight at 0 (the planned fallback) — but
@@ -101,6 +116,7 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
+  reducedMotion = false;
   window.localStorage.clear();
   sessionsListMock.mockReset();
   sessionsGetMock.mockReset();
@@ -333,6 +349,81 @@ describe("AppShell", () => {
     expect(settingsRoute.section).toBeNull();
     expect(useUiStore.getState().currentView).not.toBe("wizard");
     useUiStore.getState().setShellRoute({ kind: "none" });
+  });
+
+  it.each(["Escape", "outside", "selection"])("profile menu retains an inert exit after %s until its own animation ends", async (dismissal) => {
+    renderShell();
+    await screen.findByText("The night shift is active.");
+    const trigger = screen.getByRole("button", { name: /Open menu/i });
+    trigger.focus();
+    fireEvent.click(trigger);
+    const menu = screen.getByRole("menu");
+    expect(menu.classList.contains("vex-profile-menu")).toBe(true);
+    expect(menu.getAttribute("data-state")).toBe("open");
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    expect(document.activeElement).toBe(trigger);
+
+    if (dismissal === "Escape") fireEvent.keyDown(document, { key: "Escape" });
+    else if (dismissal === "outside") fireEvent.pointerDown(document.body);
+    else {
+      fireEvent.click(screen.getByRole("menuitem", { name: /Settings/i }));
+      expect(useUiStore.getState().shellRoute.kind).toBe("settings");
+    }
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    expect(menu.isConnected).toBe(true);
+    expect(menu.getAttribute("data-state")).toBe("closing");
+    expect(menu.hasAttribute("inert")).toBe(true);
+    expect(screen.queryByRole("menu")).toBeNull();
+    finishMenuAnimation(menu, "vex-profile-menu-enter");
+    const menuButton = menu.querySelector("button");
+    if (menuButton === null) throw new Error("The retained menu has no button");
+    finishMenuAnimation(menuButton);
+    expect(menu.isConnected).toBe(true);
+    finishMenuAnimation(menu);
+    expect(menu.isConnected).toBe(false);
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it("reopening the profile menu cancels an exit without a stale event closing it", async () => {
+    renderShell();
+    await screen.findByText("The night shift is active.");
+    const trigger = screen.getByRole("button", { name: /Open menu/i });
+    fireEvent.click(trigger);
+    const menu = screen.getByRole("menu");
+    fireEvent.click(trigger);
+    expect(menu.getAttribute("data-state")).toBe("closing");
+    fireEvent.click(trigger);
+    finishMenuAnimation(menu);
+    expect(screen.getByRole("menu")).toBe(menu);
+    expect(menu.hasAttribute("inert")).toBe(false);
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("opens and removes the profile menu immediately with reduced motion", async () => {
+    reducedMotion = true;
+    renderShell();
+    await screen.findByText("The night shift is active.");
+    const trigger = screen.getByRole("button", { name: /Open menu/i });
+    fireEvent.click(trigger);
+    const menu = screen.getByRole("menu");
+    fireEvent.click(trigger);
+    expect(menu.isConnected).toBe(false);
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("removes a closing profile menu when reduced motion becomes active", async () => {
+    renderShell();
+    await screen.findByText("The night shift is active.");
+    const trigger = screen.getByRole("button", { name: /Open menu/i });
+    fireEvent.click(trigger);
+    const menu = screen.getByRole("menu");
+    fireEvent.click(trigger);
+    expect(menu.isConnected).toBe(true);
+    act(() => {
+      reducedMotion = true;
+      motionChanges.dispatchEvent(new Event("change"));
+    });
+    expect(menu.isConnected).toBe(false);
   });
 
   it("Sessions menu entry opens the Sessions screen mounting the sessions library", async () => {
@@ -699,6 +790,11 @@ describe("AppShell", () => {
     ).toBe("false");
   });
 });
+
+/** jsdom lacks AnimationEvent, so React subscribes to its supported WebKit event. */
+function finishMenuAnimation(element: Element, animationName = "vex-profile-menu-exit"): void {
+  fireEvent(element, Object.assign(new Event("webkitAnimationEnd", { bubbles: true }), { animationName }));
+}
 
 function makeAgentRow(title: string): SessionListItem {
   return {

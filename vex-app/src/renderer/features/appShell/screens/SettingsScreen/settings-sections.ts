@@ -9,9 +9,17 @@ import type { ComponentType } from "react";
 import type { EnvState } from "@shared/schemas/onboarding.js";
 import type { SuperboardKeyStatus } from "@shared/schemas/superboard-key.js";
 import type { WizardStepId } from "@shared/schemas/wizard.js";
-import { IconLighter } from "../../../../components/icons/brand/IconLighter.js";
-import { IconSuperboard } from "../../../../components/icons/brand/IconSuperboard.js";
-import type { GlyphProps } from "../../../../components/icons/index.js";
+import {
+  IconLighter,
+  IconSuperboard,
+  IconVaultOutline16,
+  IconWalletOutline16,
+  IconKeyOutline16,
+  IconModelOutline16,
+  IconMemoryOutline16,
+  IconTuningOutline16,
+  type GlyphProps,
+} from "../../../../components/icons/index.js";
 import type { SettingsSection } from "../../../../stores/uiStore.js";
 
 /** Superboard wordmark for the register row and the section header. */
@@ -20,61 +28,66 @@ export const SUPERBOARD_KEY_ICON: ComponentType<GlyphProps> = IconSuperboard;
 export interface SectionMeta {
   readonly id: SettingsSection;
   readonly stepId?: Exclude<WizardStepId, "review">;
-  readonly icon?: ComponentType<GlyphProps>;
+  readonly icon: ComponentType<GlyphProps>;
   readonly iconSize?: number;
   readonly name: string;
   readonly hint: string;
 }
 
-/** Register order is the custody gradient: secrets first, tuning last. */
+/** Register order is the custody gradient: secrets first, tuning next, integrations last. */
 export const SETTINGS_SECTIONS: ReadonlyArray<SectionMeta> = [
   {
     id: "vault",
     stepId: "keystore",
+    icon: IconVaultOutline16,
     name: "Vault",
     hint: "The master password that encrypts everything on this machine",
   },
   {
     id: "wallets",
     stepId: "wallets",
+    icon: IconWalletOutline16,
     name: "Wallets",
     hint: "EVM and Solana keys - add, import, back up, or export",
   },
   {
     id: "apiKeys",
     stepId: "apiKeys",
+    icon: IconKeyOutline16,
     name: "API keys",
     hint: "Jupiter, Tavily, and Rettiwt integrations",
   },
   {
-    id: "superboardKey",
-    icon: SUPERBOARD_KEY_ICON,
-    iconSize: 36,
-    name: "Superboard key",
-    hint: "One code you paste into Superboard",
-  },
-  {
     id: "model",
     stepId: "provider",
+    icon: IconModelOutline16,
     name: "Model",
     hint: "The OpenRouter key and model the agent thinks with",
   },
   {
     id: "memory",
     stepId: "embedding",
+    icon: IconMemoryOutline16,
     name: "Memory",
     hint: "The embedding endpoint behind long-term recall",
   },
   {
     id: "tuning",
     stepId: "agentCore",
+    icon: IconTuningOutline16,
     name: "Tuning",
     hint: "Context, output, and sampling limits",
   },
   {
+    id: "superboardKey",
+    icon: SUPERBOARD_KEY_ICON,
+    iconSize: 28,
+    name: "Superboard key",
+    hint: "One code you paste into Superboard",
+  },
+  {
     id: "lighterPoints",
     icon: IconLighter,
-    iconSize: 24,
     name: "Lighter Points",
     hint: "Robinhood Chain campaign points and leaderboard position per wallet",
   },

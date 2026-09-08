@@ -73,14 +73,26 @@ describe("Tooltip", () => {
         <button type="button">anchor</button>
       </Tooltip>,
     );
-    fireEvent.focus(anchorButton());
+    act(() => anchorButton().focus());
     fireEvent.mouseEnter(anchorButton());
     fireEvent.mouseLeave(anchorButton());
-    // mouseLeave drops the bubble outright; a still-focused anchor re-shows
-    // on the next focus event, but hide-on-blur must respect focus state.
-    fireEvent.focus(anchorButton());
+    expect(document.activeElement).toBe(anchorButton());
     expect(screen.getByRole("tooltip")).not.toBeNull();
-    fireEvent.blur(anchorButton());
+    act(() => anchorButton().blur());
+    expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+
+  it("keeps a hovered tooltip visible when keyboard focus leaves", () => {
+    render(
+      <Tooltip label="hint">
+        <button type="button">anchor</button>
+      </Tooltip>,
+    );
+    fireEvent.mouseEnter(anchorButton());
+    act(() => anchorButton().focus());
+    act(() => anchorButton().blur());
+    expect(screen.getByRole("tooltip")).not.toBeNull();
+    fireEvent.mouseLeave(anchorButton());
     expect(screen.queryByRole("tooltip")).toBeNull();
   });
 
