@@ -841,7 +841,7 @@ describe("deleteProject: the filesystem teardown", () => {
   });
 
   /**
-   * THE TOML DIALECT, which the JSON cases above cannot exercise: Codex's
+   * THE TOML DIALECT, which the JSON cases above cannot exercise: the review's
    * `.codex/config.toml` is rewritten by SECTION-LEVEL TEXT REPLACEMENT, and the
    * property that matters is that every byte outside our one section - a foreign
    * server section, and the user's comments - survives the teardown verbatim.

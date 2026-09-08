@@ -1,5 +1,5 @@
 /**
- * Direct tests for the shared migration runner. Codex turn 2 flagged
+ * Direct tests for the shared migration runner. The second review turn flagged
  * that the engine + vex-app suites both mock this module - the lock
  * sequencing, rollback path, MigrationError shape, and unlock-failure
  * handling were the most important new logic and were under-tested.
@@ -405,7 +405,7 @@ describe("runMigrationsWithProgress - unlock failure handling", () => {
  * (`launchpads.plan.md` section 9, "DEV DB HAZARD"). Every later run reported
  * "up to date" against a schema that was missing a migration.
  *
- * The runner now refuses instead, and refuses BEFORE applying anything: Codex's
+ * The runner now refuses instead, and refuses BEFORE applying anything: the review's
  * answer to the question the arc posed is that an automatic replay is the wrong
  * repair, because an older migration can restate a CHECK constraint and undo a
  * later one. So the runner names the missing versions and stops; a human

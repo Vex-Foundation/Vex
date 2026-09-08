@@ -160,7 +160,7 @@ export function buildActivityHalf(
     // its own feed row) OR — for a bridge logical row only — when ANY sibling
     // leg of the same execution carries the hash, so `AgentScan txHash=` finds
     // a bridge by a deposit / refund / extra-fill hash and returns the logical
-    // row with its legs (Codex FIX-ROUND-1 m7). The EXISTS is gated on the
+    // row with its legs (fix round 1, m7). The EXISTS is gated on the
     // logical role so it never widens a swap leg's own-hash match.
     const txHashParam = push(txHash);
     activityConds.push(

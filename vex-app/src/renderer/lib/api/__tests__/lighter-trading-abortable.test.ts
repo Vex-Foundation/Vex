@@ -1,7 +1,7 @@
 /**
  * `abortable` - the cancellation seam every Lighter trading query goes through.
  *
- * THE TWO DEFECTS THIS PINS (Codex round-1 minor M3):
+ * THE TWO DEFECTS THIS PINS (review round 1, minor M3):
  *
  *  1. AN ALREADY-ABORTED SIGNAL WAS IGNORED. The helper only called
  *     `addEventListener("abort", ...)`, and an event that has already fired

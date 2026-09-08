@@ -2367,7 +2367,7 @@ When you install Vex Studio into a project, more lands on disk than the config f
 | File | Purpose |
 |---|---|
 | `AGENTS.md` | The authority core - the managed instruction block every coding agent reads whether or not its own config was written. |
-| `.vex/vex-guide.md` | The rest of the protocol: what changed in this Vex version, which protocol namespaces are available in this project, what an app built on them inherits, how to report a bug. Split out because it does not fit inside Codex's roughly 32 KiB `AGENTS.md` budget (`vex-app/src/main/studio/installer/plan.ts:164-166`). |
+| `.vex/vex-guide.md` | The rest of the protocol: what changed in this Vex version, which protocol namespaces are available in this project, what an app built on them inherits, how to report a bug. Split out because it does not fit inside the review's roughly 32 KiB `AGENTS.md` budget (`vex-app/src/main/studio/installer/plan.ts:164-166`). |
 | `CLAUDE.md` | Two import lines so Claude Code picks up the two files above. |
 | `.vex/protocols.md` | A generated reference for the protocol tools this project has access to. |
 
@@ -3287,7 +3287,7 @@ The approval broker caps how many Studio actions can block waiting for a human d
 
 | Bound | Value | Refusal behavior | Citation |
 |---|---|---|---|
-| Managed-block body | 24,576 bytes (24 KiB), derived from Codex's 32,768-byte limit minus an 8 KiB reserve | test-enforced hard bound; the remedy is moving a section to the guide, never truncating a sentence | `src/vex-agent/studio/installer/render/managed-block.ts:158` |
+| Managed-block body | 24,576 bytes (24 KiB), derived from the review's 32,768-byte limit minus an 8 KiB reserve | test-enforced hard bound; the remedy is moving a section to the guide, never truncating a sentence | `src/vex-agent/studio/installer/render/managed-block.ts:158` |
 | Any file the installer reads/parses/rewrites | 1,048,576 bytes (1 MiB) | refuse, re-checked against the actual bytes read, not just the preflight stat | `vex-app/src/main/studio/installer/paths.ts:62`; `vex-app/src/main/studio/installer/confined-fs.ts:211-219` |
 | `project_change_notes.summary` | 400 characters (DB CHECK constraint, migration 089) | database rejects the write | measured against the full artifact roster: 315 characters worst case (`vex-app/src/main/studio/installer.ts:701-709`) |
 

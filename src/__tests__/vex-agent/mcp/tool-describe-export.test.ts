@@ -75,7 +75,7 @@ describe("vex_ToolDescribe returns one tool's whole contract", () => {
   });
 
   /**
-   * THE DEFECT THIS PINS (Codex round-1 minor M1). The note was derived from
+   * THE DEFECT THIS PINS (review round 1, minor M1). The note was derived from
    * `mutating` alone, and a PREPARATION tool is not mutating - it signs
    * nothing. So `lighter__order_create_prepare`, whose entire effect is to
    * raise the user's approval card, was described to an external agent as

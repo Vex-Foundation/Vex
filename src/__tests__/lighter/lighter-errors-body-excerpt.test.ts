@@ -1,7 +1,7 @@
 /**
  * `describeLighterBody` - the provider's own words, with no venue-local cut.
  *
- * THE DEFECT THIS PINS (Codex round-1 minor M4). The function used to slice the
+ * THE DEFECT THIS PINS (review round 1, minor M4). The function used to slice the
  * already-sanitized provider text at 200 characters and append "...", a SECOND
  * cut layered on top of the one the shared sanitizer owns. Lighter's longest
  * rejections are the ones worth reading: a reproduction of a rejected order put

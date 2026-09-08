@@ -347,7 +347,7 @@ describe("filters", () => {
   });
 
   it("txHash lookup is LEG-AWARE on the agent_activity half — a bridge matches by ANY sibling leg hash (m7)", async () => {
-    // Codex FIX-ROUND-1 m7: `agent_scan txHash=<deposit|refund|extra-fill>` must
+    // fix round 1, m7: `agent_scan txHash=<deposit|refund|extra-fill>` must
     // return the bridge's LOGICAL row (legs included), not miss it because the
     // logical row's own tx_hash is only the FILL hash. The half matches the
     // logical row when ANY leg of the same execution carries the hash, gated on

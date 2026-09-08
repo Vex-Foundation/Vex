@@ -8,7 +8,7 @@
  * cannot tell a correct guard from a misspelled one. Each case here plays a
  * real history against the real schema and reads the real end state.
  *
- * The three histories Codex round 1 found (F6), each of which the per-market
+ * The three histories the round-1 review found (F6), each of which the per-market
  * guard alone gets WRONG:
  *
  *   1. an EMPTY complete observation at 12:00 writes no market row anywhere;

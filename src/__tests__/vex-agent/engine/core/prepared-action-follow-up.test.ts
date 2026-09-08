@@ -702,7 +702,7 @@ describe("prepared-action follow-up handoff", () => {
     });
   });
 
-  // ── Codex Wave-1 defect 7: post-dispatch Stop, money path ─────
+  // ── wave 1 defect 7: post-dispatch Stop, money path ─────
   // `WalletSendPrepare → WalletSendConfirm` is the one place the runtime
   // dispatches a SECOND tool on its own initiative, and the confirm leg is the
   // one that signs. A Stop that arrives while the prepare is in flight must
