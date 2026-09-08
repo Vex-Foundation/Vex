@@ -33,6 +33,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # The production graph gate. It runs BEFORE the build so a vulnerable
+      # transitive dependency fails the job in seconds rather than after a full
+      # build and test cycle, and it runs once per lockfile: here for the root
+      # workspace, and in vex-app-build-and-test for the desktop lockfile.
+      - name: Audit production dependencies
+        run: pnpm run audit:deps
+
       - name: Build
         run: pnpm run build
 
@@ -121,6 +128,9 @@ jobs:
 
       - name: Install vex-app dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Audit vex-app production dependencies
+        run: pnpm run audit:deps
 
       # pnpm does not run the `electron` package's install script here, and
       # electron 42's index.js downloads the binary ON IMPORT
