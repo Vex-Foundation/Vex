@@ -1,24 +1,27 @@
 /**
- * Settings register data: the six section rows (id, hosted wizard step,
+ * Settings register data: the section rows (id, hosted wizard step,
  * copy) and the pure status-word derivation the register renders. Status
  * words derive from the same `useEnvState()` payload the retired review
  * cards read.
  */
 
+import type { ComponentType } from "react";
 import type { EnvState } from "@shared/schemas/onboarding.js";
+import type { SuperboardKeyStatus } from "@shared/schemas/superboard-key.js";
 import type { WizardStepId } from "@shared/schemas/wizard.js";
+import { IconLighter } from "../../../../components/icons/brand/IconLighter.js";
+import { IconSuperboard } from "../../../../components/icons/brand/IconSuperboard.js";
+import type { GlyphProps } from "../../../../components/icons/index.js";
 import type { SettingsSection } from "../../../../stores/uiStore.js";
+
+/** Superboard wordmark for the register row and the section header. */
+export const SUPERBOARD_KEY_ICON: ComponentType<GlyphProps> = IconSuperboard;
 
 export interface SectionMeta {
   readonly id: SettingsSection;
-  /**
-   * The wizard step whose form (and icon) this section hosts. Absent for a
-   * section that hosts its own view instead of a wizard step - it then carries
-   * a `logoSrc` for the register's icon badge.
-   */
   readonly stepId?: Exclude<WizardStepId, "review">;
-  /** Protocol logo for a section with no wizard step behind it. */
-  readonly logoSrc?: string;
+  readonly icon?: ComponentType<GlyphProps>;
+  readonly iconSize?: number;
   readonly name: string;
   readonly hint: string;
 }
@@ -44,6 +47,13 @@ export const SETTINGS_SECTIONS: ReadonlyArray<SectionMeta> = [
     hint: "Jupiter, Tavily, and Rettiwt integrations",
   },
   {
+    id: "superboardKey",
+    icon: SUPERBOARD_KEY_ICON,
+    iconSize: 36,
+    name: "Superboard key",
+    hint: "One code you paste into Superboard",
+  },
+  {
     id: "model",
     stepId: "provider",
     name: "Model",
@@ -63,9 +73,8 @@ export const SETTINGS_SECTIONS: ReadonlyArray<SectionMeta> = [
   },
   {
     id: "lighterPoints",
-    // The one shipped Lighter logo asset, the same file the trading dialog
-    // uses; no second copy.
-    logoSrc: "./protocols/lighter.svg",
+    icon: IconLighter,
+    iconSize: 24,
     name: "Lighter Points",
     hint: "Robinhood Chain campaign points and leaderboard position per wallet",
   },
@@ -84,10 +93,28 @@ export interface SettingsStatus {
  * exception - envState does not expose AGENT_* values, so its word stays
  * a neutral "Saved".
  */
+export function superboardRegisterStatus(
+  status: SuperboardKeyStatus | null,
+): SettingsStatus {
+  if (status === null) return { word: "-", tone: "neutral" };
+  switch (status.kind) {
+    case "not_ready":
+      return { word: "Not ready", tone: "warning" };
+    case "missing":
+      return { word: "Not set", tone: "warning" };
+    case "pending":
+      return { word: "Linking", tone: "neutral" };
+    case "registered":
+      return { word: "Linked", tone: "success" };
+  }
+}
+
 export function settingsSectionStatus(
   section: SettingsSection,
   env: EnvState | null,
+  superboard: SuperboardKeyStatus | null = null,
 ): SettingsStatus {
+  if (section === "superboardKey") return superboardRegisterStatus(superboard);
   if (env === null) return { word: "-", tone: "neutral" };
   switch (section) {
     case "vault":

@@ -351,6 +351,8 @@ export const CH = {
     // description) - DB-backed (soul singleton), replaces persona.md.
     getUserProfile: "vex:settings:getUserProfile",
     setUserProfile: "vex:settings:setUserProfile",
+    getSuperboardKey: "vex:settings:getSuperboardKey",
+    generateSuperboardKey: "vex:settings:generateSuperboardKey",
   },
 
   /**

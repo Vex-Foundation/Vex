@@ -1,6 +1,6 @@
 /**
  * Settings screen - the in-shell Settings ShellScreen. Two registers in
- * one surface: the landing register (six section rows + the Preferences
+ * one surface: the landing register (section rows + the Preferences
  * group - see `SettingsScreen/SettingsRegister.tsx`) and the section
  * sub-view hosting the SAME wizard step form in `flowMode="back-edit"`
  * (`SettingsScreen/SettingsSectionView.tsx`; per-chain private-key export

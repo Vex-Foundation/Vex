@@ -53,6 +53,12 @@ function at<T>(items: readonly T[], index: number): T {
   return item;
 }
 
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve: (value: T) => void = () => { throw new Error("promise not initialized"); };
+  const promise = new Promise<T>((settle) => { resolve = settle; });
+  return { promise, resolve };
+}
+
 afterEach(async () => {
   await resetAgentscanTables();
   await cleanupSeeded();
@@ -114,6 +120,8 @@ describe("agentscan_reporting_state — singleton + progress stamps", () => {
     expect(state.backfillEnqueuedAt).toBeNull();
     expect(state.stoppedReason).toBeNull();
     expect(state.registerAttemptCount).toBe(0);
+    expect(state.shareToken).toBeNull();
+    expect(state.shareTokenRegisteredAt).toBeNull();
   });
 
   it("ensureIdentity stores the first identity and NEVER replaces it", async () => {
@@ -480,6 +488,11 @@ describe("agentscan_outbox — resetForReRegistration (auth_lost full resend)", 
     });
     await repo.noteRegisterAttemptFailed(600);
 
+    await repo.persistShareToken("A".repeat(43));
+    await repo.markShareTokenRegistered({
+      registrationGeneration: (await repo.getReportingState()).registrationGeneration,
+      shareToken: "A".repeat(43),
+    });
     await repo.resetIdentityForRecovery();
 
     const state = await repo.getReportingState();
@@ -493,5 +506,101 @@ describe("agentscan_outbox — resetForReRegistration (auth_lost full resend)", 
     expect(state.serverCursorRowId).toBeNull();
     expect(state.registerAttemptCount).toBe(0);
     expect(new Date(state.nextRegisterAttemptAt).getTime()).toBeLessThanOrEqual(Date.now() + 1000);
+    expect(state.shareToken).toBeNull();
+    expect(state.shareTokenRegisteredAt).toBeNull();
+  });
+});
+
+describe("agentscan_reporting_state - Superboard share token", () => {
+  it("resetForReRegistration clears acceptance and retains the same share token until accepted again", async () => {
+    const repo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
+    await repo.ensureIdentity(() => IDENTITY_A);
+    const shareToken = "S".repeat(43);
+    await repo.persistShareToken(shareToken);
+    const before = await repo.getReportingState();
+    expect(await repo.markShareTokenRegistered({
+      registrationGeneration: before.registrationGeneration, shareToken,
+    })).toBe(true);
+    expect((await repo.getReportingState()).shareTokenRegisteredAt).not.toBeNull();
+
+    await repo.resetForReRegistration();
+    const reset = await repo.getReportingState();
+    expect(reset.shareToken).toBe(shareToken);
+    expect(reset.shareTokenRegisteredAt).toBeNull();
+    expect(reset.registrationGeneration).toBe(before.registrationGeneration + 1);
+    expect(await repo.markShareTokenRegistered({
+      registrationGeneration: before.registrationGeneration, shareToken,
+    })).toBe(false);
+    expect((await repo.getReportingState()).shareTokenRegisteredAt).toBeNull();
+
+    expect(await repo.markShareTokenRegistered({
+      registrationGeneration: reset.registrationGeneration, shareToken,
+    })).toBe(true);
+    expect((await repo.getReportingState()).shareTokenRegisteredAt).not.toBeNull();
+  });
+
+  it("refuses acceptance for a different token even at the current registration generation", async () => {
+    const repo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
+    await repo.ensureIdentity(() => IDENTITY_A);
+    await repo.persistShareToken("S".repeat(43));
+    const state = await repo.getReportingState();
+
+    expect(await repo.markShareTokenRegistered({
+      registrationGeneration: state.registrationGeneration, shareToken: "T".repeat(43),
+    })).toBe(false);
+    expect((await repo.getReportingState()).shareTokenRegisteredAt).toBeNull();
+  });
+
+  it("identity recovery while POST is pending refuses stale success and leaves the new token unregistered", async () => {
+    const repo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
+    const { registerPersistedShareToken } = await import("../../../vex-agent/agentscan/register-share-token.js");
+    await repo.ensureIdentity(() => IDENTITY_A);
+    await repo.persistShareToken("S".repeat(43));
+    const started = deferred<void>();
+    const response = deferred<{ readonly kind: "registered" }>();
+    const pending = registerPersistedShareToken({
+      baseUrl: () => "http://localhost",
+      getState: repo.getReportingState,
+      persistShareToken: repo.persistShareToken,
+      markShareTokenRegistered: repo.markShareTokenRegistered,
+      post: async () => {
+        started.resolve();
+        return response.promise;
+      },
+    });
+
+    try {
+      await started.promise;
+      await repo.resetIdentityForRecovery();
+      await repo.ensureIdentity(() => IDENTITY_B);
+      await repo.persistShareToken("T".repeat(43));
+    } finally {
+      response.resolve({ kind: "registered" });
+    }
+
+    expect(await pending).toEqual({ kind: "not_ready" });
+    const recovered = await repo.getReportingState();
+    expect(recovered.agentHash).toBe(IDENTITY_B.agentHash);
+    expect(recovered.shareToken).toBe("T".repeat(43));
+    expect(recovered.shareTokenRegisteredAt).toBeNull();
+  });
+
+  it("persistShareToken stores plaintext locally and markShareTokenRegistered stamps the time", async () => {
+    const repo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
+    await repo.ensureIdentity(() => IDENTITY_A);
+    await repo.persistShareToken("A".repeat(43));
+    let state = await repo.getReportingState();
+    expect(state.shareToken).toBe("A".repeat(43));
+    expect(state.shareTokenRegisteredAt).toBeNull();
+    await repo.markShareTokenRegistered({
+      registrationGeneration: (await repo.getReportingState()).registrationGeneration,
+      shareToken: "A".repeat(43),
+    });
+    state = await repo.getReportingState();
+    expect(state.shareTokenRegisteredAt).not.toBeNull();
+    await repo.persistShareToken("B".repeat(43));
+    state = await repo.getReportingState();
+    expect(state.shareToken).toBe("A".repeat(43));
+    expect(state.shareTokenRegisteredAt).not.toBeNull();
   });
 });

@@ -60,6 +60,8 @@ export default defineConfig({
       // Every database shape the migration runner can meet, plus the gate
       // that keeps the pinned main baseline honest.
       "src/__tests__/integration/migrations/upgrade-matrix.int.test.ts",
+      // Share-token write-once persistence and registration recovery use real SQL.
+      "src/__tests__/integration/agentscan/reporting-repo.int.test.ts",
       "src/__tests__/integration/migrations/096-wallet-wrap-intents.int.test.ts",
       // The snapshot group record: applied as an increment on a schema at 100.
       "src/__tests__/integration/migrations/101-portfolio-snapshot-groups.int.test.ts",

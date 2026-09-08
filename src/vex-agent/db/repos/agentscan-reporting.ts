@@ -89,6 +89,8 @@ export interface AgentscanReportingState {
   readonly serverCursorRowId: number | null;
   /** sha256 of the sorted chainFamily:address inventory list the last handshake covered. */
   readonly boundWalletsFingerprint: string | null;
+  readonly shareToken: string | null;
+  readonly shareTokenRegisteredAt: string | null;
 }
 
 /**
@@ -608,6 +610,8 @@ interface StateRow {
   last_handshake_at: Date | null;
   server_cursor_row_id: string | number | null;
   bound_wallets_fingerprint: string | null;
+  share_token: string | null;
+  share_token_registered_at: Date | null;
 }
 
 function mapState(row: StateRow): AgentscanReportingState {
@@ -629,6 +633,10 @@ function mapState(row: StateRow): AgentscanReportingState {
     lastHandshakeAt: row.last_handshake_at ? new Date(row.last_handshake_at).toISOString() : null,
     serverCursorRowId: row.server_cursor_row_id === null ? null : Number(row.server_cursor_row_id),
     boundWalletsFingerprint: row.bound_wallets_fingerprint,
+    shareToken: row.share_token ?? null,
+    shareTokenRegisteredAt: row.share_token_registered_at
+      ? new Date(row.share_token_registered_at).toISOString()
+      : null,
   };
 }
 
@@ -755,6 +763,7 @@ export async function resetForReRegistration(): Promise<void> {
     await client.query(
       `UPDATE agentscan_reporting_state
           SET registered_at = NULL,
+              share_token_registered_at = NULL,
               backfill_enqueued_at = NULL,
               backfill_vocabulary_version = NULL,
               registration_generation = registration_generation + 1,
@@ -797,6 +806,8 @@ export async function resetIdentityForRecovery(): Promise<void> {
               registration_generation = registration_generation + 1,
               last_handshake_at = NULL,
               server_cursor_row_id = NULL,
+              share_token = NULL,
+              share_token_registered_at = NULL,
               register_attempt_count = 0,
               next_register_attempt_at = NOW(),
               updated_at = NOW()
@@ -804,6 +815,33 @@ export async function resetIdentityForRecovery(): Promise<void> {
     );
     await resetOutboxForFullResend(client);
   });
+}
+
+/** Write-once. A later persist does not replace an existing token. */
+export async function persistShareToken(token: string): Promise<void> {
+  await ensureSingleton();
+  await execute(
+    `UPDATE agentscan_reporting_state
+        SET share_token = $1, share_token_registered_at = NULL, updated_at = NOW()
+      WHERE id = 1 AND share_token IS NULL`,
+    [token],
+  );
+}
+
+/** A delayed response can publish only for the token and identity generation it registered. */
+export async function markShareTokenRegistered(input: {
+  registrationGeneration: number;
+  shareToken: string;
+}): Promise<boolean> {
+  await ensureSingleton();
+  const row = await queryOne<{ id: number }>(
+    `UPDATE agentscan_reporting_state
+        SET share_token_registered_at = NOW(), updated_at = NOW()
+      WHERE id = 1 AND registration_generation = $1 AND share_token = $2
+      RETURNING id`,
+    [input.registrationGeneration, input.shareToken],
+  );
+  return row !== null;
 }
 
 /** Permanent stop - 410, 403-quarantined, or a register 409. Never auto-cleared. */

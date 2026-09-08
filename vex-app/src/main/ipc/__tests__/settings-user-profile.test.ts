@@ -53,6 +53,7 @@ vi.mock("../../logger/index.js", () => ({
 }));
 vi.mock("../../database/engine-db-readiness.js", () => ({
   ensureEngineDbUrl: (...args: unknown[]) => mocks.ensureEngineDbUrl(...args),
+  whenEngineDbReady: vi.fn(async () => undefined),
 }));
 vi.mock("@vex-agent/db/repos/soul.js", () => ({
   getUserProfile: (...args: unknown[]) => mocks.getUserProfile(...args),

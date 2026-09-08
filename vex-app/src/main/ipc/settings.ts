@@ -10,6 +10,10 @@ import {
   type Preferences,
 } from "@shared/schemas/preferences.js";
 import {
+  superboardKeyStatusSchema,
+  type SuperboardKeyStatus,
+} from "@shared/schemas/superboard-key.js";
+import {
   userProfileSchema,
   type UserProfile,
 } from "@shared/schemas/user-profile.js";
@@ -44,11 +48,58 @@ import {
 } from "../telemetry/sentry-lifecycle.js";
 import { log } from "../logger/index.js";
 import { cancelledError, isAbortError } from "./cancel-helpers.js";
-import { registerHandler } from "./register-handler.js";
+import { registerHandler, type HandlerContext } from "./register-handler.js";
 import { controlFailedError } from "./runtime/_errors.js";
-import { ensureEngineDbUrl } from "../database/engine-db-readiness.js";
+import {
+  ensureEngineDbUrl,
+  whenEngineDbReady,
+} from "../database/engine-db-readiness.js";
+import type { RegisterShareTokenOutcome } from "@vex-agent/agentscan/share-token-client.js";
 
 const empty = z.object({}).strict();
+
+type ShareMintHold =
+  | { kind: "none" }
+  | { kind: "stopped"; registrationGeneration: number; lastError: string | null }
+  | { kind: "cooldown"; registrationGeneration: number; untilMs: number; lastError: string | null };
+
+let shareMintHold: ShareMintHold = { kind: "none" };
+
+function resetShareMintHold(): void {
+  shareMintHold = { kind: "none" };
+}
+
+function rememberShareMintOutcome(
+  outcome: RegisterShareTokenOutcome,
+  registrationGeneration: number,
+): void {
+  const lastError = lastErrorFrom(outcome);
+  if (outcome.kind === "auth_lost" || outcome.kind === "stopped") {
+    shareMintHold = { kind: "stopped", registrationGeneration, lastError };
+    return;
+  }
+  if (outcome.kind === "retryable") {
+    const waitMs = Math.max(0, outcome.retryAfterSeconds ?? 0) * 1000;
+    shareMintHold = { kind: "cooldown", registrationGeneration, untilMs: Date.now() + waitMs, lastError };
+    return;
+  }
+  if (outcome.kind === "registered") {
+    shareMintHold = { kind: "none" };
+  }
+}
+
+function shouldSkipGetMint(registrationGeneration: number): boolean {
+  // Recovery invalidates provider refusals and backoff for the old identity state.
+  if (shareMintHold.kind !== "none" && shareMintHold.registrationGeneration !== registrationGeneration) {
+    resetShareMintHold();
+  }
+  if (shareMintHold.kind === "stopped") return true;
+  return shareMintHold.kind === "cooldown" && Date.now() < shareMintHold.untilMs;
+}
+
+function holdLastError(): string | null {
+  return shareMintHold.kind === "none" ? null : shareMintHold.lastError;
+}
 
 const setTelemetryConsentInput = z
   .object({
@@ -57,6 +108,7 @@ const setTelemetryConsentInput = z
   .strict();
 
 export function registerSettingsHandlers(): Array<() => void> {
+  resetShareMintHold();
   const handlers: Array<() => void> = [];
 
   handlers.push(
@@ -306,6 +358,26 @@ export function registerSettingsHandlers(): Array<() => void> {
     })
   );
 
+  handlers.push(
+    registerHandler({
+      channel: CH.settings.getSuperboardKey,
+      domain: "settings",
+      inputSchema: empty,
+      outputSchema: superboardKeyStatusSchema,
+      handle: (_input, ctx) => handleSuperboardKey(ctx, "get"),
+    })
+  );
+
+  handlers.push(
+    registerHandler({
+      channel: CH.settings.generateSuperboardKey,
+      domain: "settings",
+      inputSchema: empty,
+      outputSchema: superboardKeyStatusSchema,
+      handle: (_input, ctx) => handleSuperboardKey(ctx, "ensure"),
+    })
+  );
+
   return handlers;
 }
 
@@ -440,4 +512,110 @@ function lighterWalletRequiredError(correlationId: string): VexError {
     redacted: true,
     correlationId,
   };
+}
+
+function superboardUnexpected(correlationId: string): Result<never> {
+  return err({
+    code: "internal.unexpected",
+    domain: "settings",
+    message: "Unable to read Superboard key. Verify services are running and retry.",
+    retryable: true,
+    userActionable: true,
+    redacted: true,
+    correlationId,
+  });
+}
+
+function lastErrorFrom(outcome: RegisterShareTokenOutcome): string | null {
+  switch (outcome.kind) {
+    case "registered":
+    case "not_ready":
+      return null;
+    case "auth_lost":
+      return "unauthorized";
+    case "stopped":
+      return outcome.reason;
+    case "conflict":
+      return "share_token_conflict";
+    case "invalid":
+    case "retryable":
+      return outcome.detail;
+  }
+}
+
+function statusFromState(
+  state: {
+    readonly ingestToken: string | null;
+    readonly shareToken: string | null;
+    readonly shareTokenRegisteredAt: string | null;
+  },
+  lastError: string | null,
+): SuperboardKeyStatus {
+  if (state.ingestToken === null) return { kind: "not_ready" };
+  if (state.shareToken === null) return { kind: "missing" };
+  if (state.shareTokenRegisteredAt === null) {
+    return { kind: "pending", shareToken: state.shareToken, lastError };
+  }
+  return { kind: "registered", shareToken: state.shareToken };
+}
+
+async function registerShareToken(): Promise<RegisterShareTokenOutcome> {
+  const { registerPersistedShareToken } = await import(
+    "@vex-agent/agentscan/register-share-token.js"
+  );
+  const reporting = await import("@vex-agent/db/repos/agentscan-reporting.js");
+  const { resolveAgentscanBaseUrl } = await import(
+    "@vex-agent/sync/agentscan-report/production-deps.js"
+  );
+  const { loadConfig } = await import("@config/store.js");
+  return registerPersistedShareToken({
+    baseUrl: () => resolveAgentscanBaseUrl(loadConfig().services.agentscanApiUrl),
+    getState: async () => {
+      const state = await reporting.getReportingState();
+      return {
+        ingestToken: state.ingestToken,
+        shareToken: state.shareToken,
+        registrationGeneration: state.registrationGeneration,
+      };
+    },
+    persistShareToken: reporting.persistShareToken,
+    markShareTokenRegistered: reporting.markShareTokenRegistered,
+  });
+}
+
+async function handleSuperboardKey(
+  ctx: HandlerContext,
+  action: "get" | "ensure",
+): Promise<Result<SuperboardKeyStatus>> {
+  try {
+    await whenEngineDbReady({ signal: ctx.signal });
+  } catch (cause) {
+    log.warn(`[ipc:vex:settings:superboardKey] db wait failed correlationId=${ctx.requestId}`, cause);
+    return superboardUnexpected(ctx.requestId);
+  }
+  try {
+    const reporting = await import("@vex-agent/db/repos/agentscan-reporting.js");
+    const state = await reporting.getReportingState();
+    if (action === "get") {
+      if (state.ingestToken === null) return ok({ kind: "not_ready" });
+      if (state.shareToken === null) return ok({ kind: "missing" });
+      if (state.shareTokenRegisteredAt !== null) {
+        return ok({ kind: "registered", shareToken: state.shareToken });
+      }
+      if (shouldSkipGetMint(state.registrationGeneration)) {
+        return ok(statusFromState(state, holdLastError()));
+      }
+      const outcome = await registerShareToken();
+      rememberShareMintOutcome(outcome, state.registrationGeneration);
+      const next = await reporting.getReportingState();
+      return ok(statusFromState(next, lastErrorFrom(outcome)));
+    }
+    const outcome = await registerShareToken();
+    rememberShareMintOutcome(outcome, state.registrationGeneration);
+    const next = await reporting.getReportingState();
+    return ok(statusFromState(next, lastErrorFrom(outcome)));
+  } catch (cause) {
+    log.warn(`[ipc:vex:settings:superboardKey] failed correlationId=${ctx.requestId}`, cause);
+    return superboardUnexpected(ctx.requestId);
+  }
 }

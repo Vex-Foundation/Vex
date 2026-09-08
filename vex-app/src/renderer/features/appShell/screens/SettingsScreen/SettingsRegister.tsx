@@ -1,5 +1,5 @@
 /**
- * The Settings landing register: the section rows in the profile-menu
+ * The Settings landing register: section rows in the profile-menu
  * grammar (round hairline icon badge, name, hint, micro-label status word,
  * chevron) followed by the Preferences group.
  */
@@ -8,9 +8,11 @@ import { type JSX } from "react";
 import type { EnvState } from "@shared/schemas/onboarding.js";
 import {
   IconChevronRight,
+  IconKey,
 } from "../../../../components/icons/index.js";
 import type { SettingsSection } from "../../../../stores/uiStore.js";
 import { cn } from "../../../../lib/utils.js";
+import { useSuperboardKey } from "../../../../lib/api/superboard-key.js";
 import { WIZARD_STEP_META } from "../../../wizard/index.js";
 import {
   SETTINGS_SECTIONS,
@@ -33,18 +35,21 @@ export function SettingsRegister({
   readonly env: EnvState | null;
   readonly onOpenSection: (section: SettingsSection) => void;
 }): JSX.Element {
+  const superboardQuery = useSuperboardKey();
+  const superboard = superboardQuery.data?.ok === true ? superboardQuery.data.data : null;
   return (
     <div className="mx-auto w-full max-w-[680px]">
       <p className="mb-6 text-[13px] leading-[20px] text-ink-secondary">
         Everything Vex runs on lives in these sections - keys, wallets, the
-        model, and the Lighter points campaign. Changes save to this machine
-        only.
+        model, the Superboard key, and Lighter points. Changes save to this
+        machine only.
       </p>
       <ul className="flex flex-col" data-vex-settings-register>
         {SETTINGS_SECTIONS.map((meta) => {
-          const status = settingsSectionStatus(meta.id, env);
+          const status = settingsSectionStatus(meta.id, env, superboard);
           const StepGlyph =
-            meta.stepId === undefined ? null : WIZARD_STEP_META[meta.stepId].icon;
+            meta.icon ??
+            (meta.stepId !== undefined ? WIZARD_STEP_META[meta.stepId].icon : IconKey);
           return (
             <li key={meta.id} className="border-b border-line-1 last:border-b-0">
               <button
@@ -53,12 +58,8 @@ export function SettingsRegister({
                 data-vex-settings-row={meta.id}
                 className="flex w-full items-center gap-4 rounded-xl px-3 py-4 text-left transition-colors hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent-primary"
               >
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-line-2 text-ink-secondary">
-                  {StepGlyph === null ? (
-                    <img src={meta.logoSrc} alt="" width={17} height={17} />
-                  ) : (
-                    <StepGlyph size={17} />
-                  )}
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-line-2 text-ink-secondary">
+                  <StepGlyph size={meta.iconSize ?? 17} />
                 </span>
                 <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                   <span className="text-[14px] leading-[22px] text-ink-primary">

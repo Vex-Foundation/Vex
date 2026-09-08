@@ -5,7 +5,7 @@
  * Pins:
  *   - `shellRoute = { kind: "settings", section: null }` mounts the screen
  *     through ShellScreens as a titled modal dialog ("Settings") showing
- *     the six-row landing register,
+ *     the eight-row landing register,
  *   - status WORDS derive from envState (success / neutral / warning
  *     vocabulary — "Protected", "Both chains", "Jupiter missing", …),
  *   - clicking a row slides to that section's sub-view hosting the wizard
@@ -24,8 +24,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { EnvState } from "@shared/schemas/onboarding.js";
+import type { SuperboardKeyStatus } from "@shared/schemas/superboard-key.js";
+import type { SettingsSection } from "../../../../stores/uiStore.js";
 
 // Vitest 4 can expose Node's incomplete localStorage shim when the inherited
 // NODE_OPTIONS contains --localstorage-file without a path. Give Zustand's
@@ -113,6 +115,18 @@ const mockUseWizardState = vi.hoisted(() => vi.fn());
 vi.mock("../../../../lib/api/wizard.js", () => ({
   useWizardState: mockUseWizardState,
 }));
+const mockUseSuperboardKey = vi.hoisted(() => vi.fn());
+vi.mock("../../../../lib/api/superboard-key.js", () => ({
+  useSuperboardKey: mockUseSuperboardKey,
+  useGenerateSuperboardKey: () => ({ mutate: () => undefined, isPending: false }),
+}));
+vi.mock("../../../../lib/api/lighter-points.js", () => ({
+  useLighterPoints: () => ({
+    state: { kind: "ready", result: { rows: [], walletCount: 0 } },
+    refreshing: false,
+    refresh: () => undefined,
+  }),
+}));
 // The Background row has its own suite (SettingsBackdropRow.test.tsx); this
 // one owns routing and the register, so its hooks stub to "shipped artwork".
 vi.mock("../../../../lib/api/shell-backdrop.js", () => ({
@@ -165,14 +179,23 @@ function setEnv(env: EnvState): void {
   });
 }
 
-function openSettings(section: "vault" | "wallets" | "apiKeys" | "model" | "memory" | "tuning" | null = null): void {
-  useUiStore.setState({
-    shellRoute: { kind: "settings", origin: ORIGIN, section },
+function openSettings(
+  section: SettingsSection | null = null,
+): void {
+  act(() => {
+    useUiStore.setState({
+      shellRoute: { kind: "settings", origin: ORIGIN, section },
+    });
   });
 }
 
 beforeEach(() => {
   setEnv(envFixture());
+  mockUseSuperboardKey.mockReturnValue({
+    isLoading: false,
+    isFetching: false,
+    data: { ok: true, data: { kind: "registered", shareToken: "A".repeat(43) } },
+  });
   mockUseWizardState.mockReturnValue({
     isLoading: false,
     isError: false,
@@ -195,24 +218,102 @@ afterEach(() => {
 });
 
 describe("SettingsScreen", () => {
-  it("mounts through ShellScreens as the Settings dialog with the six-row register and healthy status words", async () => {
+  it("mounts through ShellScreens as the Settings dialog with the eight-row register and healthy status words", async () => {
     render(<ShellScreens />);
     openSettings();
 
     await screen.findByRole("dialog", { name: "Settings" });
-    for (const name of ["Vault", "Wallets", "API keys", "Model", "Memory", "Tuning"]) {
+    for (const name of [
+      "Vault",
+      "Wallets",
+      "API keys",
+      "Superboard key",
+      "Model",
+      "Memory",
+      "Tuning",
+      "Lighter Points",
+    ]) {
       expect(screen.getByText(name)).not.toBeNull();
     }
     // Status = colored WORDS from envState (never a dot).
     expect(screen.getByText("Protected")).not.toBeNull();
     expect(screen.getByText("Both chains")).not.toBeNull();
     expect(screen.getByText("Configured")).not.toBeNull();
+    expect(screen.getByText("Linked")).not.toBeNull();
     expect(screen.getByText("OpenRouter")).not.toBeNull();
     expect(screen.getByText("Reachable")).not.toBeNull();
     expect(screen.getByText("Saved")).not.toBeNull();
-    expect(screen.queryByText("Lighter")).toBeNull();
+    expect(screen.getByText("Open")).not.toBeNull();
+    expect(document.querySelectorAll("[data-vex-settings-row]")).toHaveLength(8);
+    expect(screen.getByText(/the Superboard key, and Lighter points/)).not.toBeNull();
+
+    const superboard = screen.getByRole("button", { name: /Superboard key/ });
+    const lighter = screen.getByRole("button", { name: /Lighter Points/ });
+    const superboardIcon = superboard.querySelector("svg");
+    const lighterIcon = lighter.querySelector("svg");
+    expect(superboardIcon?.getAttribute("viewBox")).toBe("0 0 48 31");
+    expect(superboardIcon?.getAttribute("width")).toBe("36");
+    expect(lighterIcon?.getAttribute("viewBox")).toBe("0 0 64 64");
+    expect(lighterIcon?.getAttribute("width")).toBe("24");
+    expect(superboardIcon?.parentElement?.className).toBe(lighterIcon?.parentElement?.className);
+    expect(lighter.querySelector("img")).toBeNull();
     expect(screen.queryByRole("switch", { name: /Lighter integration/i })).toBeNull();
   });
+
+  it.each([
+    [{ kind: "not_ready" }, "Not ready", "text-warning"],
+    [{ kind: "missing" }, "Not set", "text-warning"],
+    [{ kind: "pending", shareToken: "A".repeat(43), lastError: null }, "Linking", "text-ink-tertiary"],
+    [{ kind: "registered", shareToken: "A".repeat(43) }, "Linked", "text-success"],
+    [null, "-", "text-ink-tertiary"],
+  ] satisfies ReadonlyArray<readonly [SuperboardKeyStatus | null, string, string]>)(
+    "keeps the Superboard status %j independent of the Lighter entry",
+    async (status, word, tone) => {
+      mockUseSuperboardKey.mockReturnValue({
+        data: status === null ? undefined : { ok: true, data: status },
+      });
+      render(<ShellScreens />);
+      openSettings();
+      const superboard = await screen.findByRole("button", { name: /Superboard key/ });
+      expect(within(superboard).getByText(word).classList.contains(tone)).toBe(true);
+      const lighter = screen.getByRole("button", { name: /Lighter Points/ });
+      expect(within(lighter).getByText("Open").classList.contains("text-ink-tertiary")).toBe(true);
+    },
+  );
+
+  it.each([
+    ["superboardKey", /Superboard key/, "[data-vex-superboard-key]", "[data-vex-lighter-points]"],
+    ["lighterPoints", /Lighter Points/, "[data-vex-lighter-points]", "[data-vex-superboard-key]"],
+  ] satisfies ReadonlyArray<readonly [SettingsSection, RegExp, string, string]>)(
+    "opens %s from its row and returns to the register",
+    async (_section, name, active, inactive) => {
+      const { container } = render(<ShellScreens />);
+      openSettings();
+      fireEvent.click(await screen.findByRole("button", { name }));
+      await screen.findByRole("button", { name: "Settings" });
+      await waitFor(() => expect(container.querySelector(active)).not.toBeNull());
+      expect(container.querySelector(inactive)).toBeNull();
+      expect(container.querySelector("[data-vex-step-stub]")).toBeNull();
+      expect(container.querySelector("[data-vex-settings-export]")).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+      await screen.findByRole("button", { name });
+      expect(container.querySelector(active)).toBeNull();
+    },
+  );
+
+  it.each([
+    ["superboardKey", "[data-vex-superboard-key]"],
+    ["lighterPoints", "[data-vex-lighter-points]"],
+  ] satisfies ReadonlyArray<readonly [SettingsSection, string]>)(
+    "deep-links directly to %s",
+    async (section, selector) => {
+      const { container } = render(<ShellScreens />);
+      openSettings(section);
+      await screen.findByRole("button", { name: "Settings" });
+      expect(container.querySelector(selector)).not.toBeNull();
+      expect(container.querySelector("[data-vex-settings-register]")).toBeNull();
+    },
+  );
 
   it("speaks the warning vocabulary when envState is degraded", async () => {
     setEnv(
