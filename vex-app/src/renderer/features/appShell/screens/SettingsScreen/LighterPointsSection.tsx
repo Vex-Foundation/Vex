@@ -70,7 +70,7 @@ function Field({
 }): JSX.Element {
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="vex-micro-label uppercase text-ink-tertiary">{label}</span>
+      <span className="vex-micro-label uppercase text-ink-secondary">{label}</span>
       <span className="text-[13px] leading-[20px] text-ink-primary">{children}</span>
     </div>
   );
@@ -149,7 +149,7 @@ function WalletCard({ row }: { readonly row: LighterPointsRow }): JSX.Element {
         <span className="font-mono text-[12px] leading-[18px] text-ink-secondary">
           {row.walletAddress}
         </span>
-        <span className="vex-micro-label uppercase text-ink-tertiary">
+        <span className="vex-micro-label uppercase text-ink-secondary">
           {ENVIRONMENT_LABEL[row.environment]} - account {row.accountIndex}
         </span>
       </div>
