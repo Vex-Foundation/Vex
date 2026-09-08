@@ -4,7 +4,7 @@
 
 import { z } from "zod";
 import { CH } from "@shared/ipc/channels.js";
-import { err, ok, type Result } from "@shared/ipc/result.js";
+import { err, ok, type Result, type VexError } from "@shared/ipc/result.js";
 import {
   preferencesSchema,
   type Preferences,
@@ -13,12 +13,37 @@ import {
   userProfileSchema,
   type UserProfile,
 } from "@shared/schemas/user-profile.js";
+import {
+  forgetLighterCredentialConnectionInputSchema,
+  forgetLighterCredentialConnectionResultSchema,
+  getLighterIntegrationInputSchema,
+  inspectLighterCredentialConnectionsInputSchema,
+  inspectLighterCredentialConnectionsResultSchema,
+  lighterIntegrationStateSchema,
+  setLighterIntegrationInputSchema,
+  type ForgetLighterCredentialConnectionResult,
+  type InspectLighterCredentialConnectionsResult,
+  type LighterIntegrationState,
+} from "@shared/schemas/lighter-integration.js";
+import {
+  lighterPointsResultSchema,
+  readLighterPointsInputSchema,
+  type LighterPointsResult,
+} from "@shared/schemas/lighter-points.js";
+import { getPrimaryEvmAddress } from "@vex-lib/wallet.js";
 import { preferencesStore } from "../preferences/store.js";
+import {
+  forgetLighterCredentialConnection,
+  inspectLighterCredentialConnections,
+  LighterCredentialCleanupError,
+  type LighterCredentialCleanupFailure,
+} from "../lighter/credential-connection-cleanup.js";
 import {
   disableSentry,
   initSentryIfConsented,
 } from "../telemetry/sentry-lifecycle.js";
 import { log } from "../logger/index.js";
+import { cancelledError, isAbortError } from "./cancel-helpers.js";
 import { registerHandler } from "./register-handler.js";
 import { controlFailedError } from "./runtime/_errors.js";
 import { ensureEngineDbUrl } from "../database/engine-db-readiness.js";
@@ -45,6 +70,156 @@ export function registerSettingsHandlers(): Array<() => void> {
         return ok(preferencesSchema.parse(prefs));
       },
     })
+  );
+
+  handlers.push(
+    registerHandler({
+      channel: CH.settings.getLighterIntegration,
+      domain: "settings",
+      inputSchema: getLighterIntegrationInputSchema,
+      outputSchema: lighterIntegrationStateSchema,
+      handle: async ({ environment }, ctx): Promise<Result<LighterIntegrationState>> => {
+        const dbUrlOutcome = await ensureEngineDbUrl(ctx.requestId);
+        if (!dbUrlOutcome.ok) return dbUrlOutcome;
+        const walletAddress = getPrimaryEvmAddress();
+        if (walletAddress === null) return err(lighterWalletRequiredError(ctx.requestId));
+        try {
+          const { getLighterIntegrationSetting } = await import(
+            "@vex-agent/db/repos/lighter-integration-settings.js"
+          );
+          const setting = await getLighterIntegrationSetting(environment, walletAddress);
+          return ok(lighterIntegrationStateSchema.parse(
+            setting === null
+              ? {
+                  environment,
+                  walletAddress,
+                  enabled: false,
+                  enabledAt: null,
+                  disabledAt: null,
+                  createdAt: null,
+                  updatedAt: null,
+                }
+              : mapLighterIntegrationSetting(setting),
+          ));
+        } catch (cause) {
+          log.warn(
+            `[ipc:vex:settings:getLighterIntegration] failed correlationId=${ctx.requestId}`,
+            cause,
+          );
+          return err(controlFailedError(ctx.requestId));
+        }
+      },
+    }),
+  );
+
+  handlers.push(
+    registerHandler({
+      channel: CH.settings.inspectLighterCredentialConnections,
+      domain: "settings",
+      inputSchema: inspectLighterCredentialConnectionsInputSchema,
+      outputSchema: inspectLighterCredentialConnectionsResultSchema,
+      handle: async (_input, ctx): Promise<Result<InspectLighterCredentialConnectionsResult>> => {
+        try {
+          return ok(await inspectLighterCredentialConnections());
+        } catch (cause) {
+          const reason = cleanupFailureReason(cause);
+          log.warn(
+            `[ipc:vex:settings:inspectLighterCredentialConnections] failed `
+              + `reason=${reason} correlationId=${ctx.requestId}`,
+          );
+          return err(cleanupFailureError(reason, ctx.requestId));
+        }
+      },
+    }),
+  );
+
+  handlers.push(
+    registerHandler({
+      channel: CH.settings.forgetLighterCredentialConnection,
+      domain: "settings",
+      inputSchema: forgetLighterCredentialConnectionInputSchema,
+      outputSchema: forgetLighterCredentialConnectionResultSchema,
+      handle: async (input, ctx): Promise<Result<ForgetLighterCredentialConnectionResult>> => {
+        try {
+          return ok(await forgetLighterCredentialConnection(input));
+        } catch (cause) {
+          const reason = cleanupFailureReason(cause);
+          log.warn(
+            `[ipc:vex:settings:forgetLighterCredentialConnection] refused `
+              + `reason=${reason} correlationId=${ctx.requestId}`,
+          );
+          return err(cleanupFailureError(reason, ctx.requestId));
+        }
+      },
+    }),
+  );
+
+  handlers.push(
+    registerHandler({
+      channel: CH.settings.lighterPoints,
+      domain: "settings",
+      inputSchema: readLighterPointsInputSchema,
+      outputSchema: lighterPointsResultSchema,
+      handle: async (_input, ctx): Promise<Result<LighterPointsResult>> => {
+        const dbUrlOutcome = await ensureEngineDbUrl(ctx.requestId);
+        if (!dbUrlOutcome.ok) return dbUrlOutcome;
+        try {
+          const { readLighterPointsForWallets } = await import(
+            "@vex-agent/tools/protocols/lighter/points.js"
+          );
+          // The renderer's cancellation IS this signal: aborting the invocation
+          // stops the wallet loop between wallets and the provider read inside
+          // one, so a stale refresh never keeps burning the rate budget.
+          // No second parse here: `registerHandler`'s `outputSchema` is the
+          // owner of output validation, and it classifies a wrong shape as the
+          // contract violation it is. Parsing again inside the try would
+          // report a Vex bug as a provider outage.
+          return ok(await readLighterPointsForWallets({ signal: ctx.signal }));
+        } catch (cause) {
+          if (isAbortError(cause)) return err(cancelledError("settings", ctx.requestId));
+          // Structural log only: the cause has touched a provider response and
+          // a vault-derived token, and neither belongs in a log line.
+          log.warn(
+            `[ipc:vex:settings:lighterPoints] failed correlationId=${ctx.requestId}`,
+          );
+          return err(lighterPointsFailedError(ctx.requestId));
+        }
+      },
+    }),
+  );
+
+  handlers.push(
+    registerHandler({
+      channel: CH.settings.setLighterIntegration,
+      domain: "settings",
+      inputSchema: setLighterIntegrationInputSchema,
+      outputSchema: lighterIntegrationStateSchema,
+      handle: async ({ environment, enabled }, ctx): Promise<Result<LighterIntegrationState>> => {
+        const dbUrlOutcome = await ensureEngineDbUrl(ctx.requestId);
+        if (!dbUrlOutcome.ok) return dbUrlOutcome;
+        const walletAddress = getPrimaryEvmAddress();
+        if (walletAddress === null) return err(lighterWalletRequiredError(ctx.requestId));
+        try {
+          const { setLighterIntegrationEnabled } = await import(
+            "@vex-agent/db/repos/lighter-integration-settings.js"
+          );
+          const setting = await setLighterIntegrationEnabled({
+            environment,
+            walletAddress,
+            enabled,
+          });
+          return ok(lighterIntegrationStateSchema.parse(
+            mapLighterIntegrationSetting(setting),
+          ));
+        } catch (cause) {
+          log.warn(
+            `[ipc:vex:settings:setLighterIntegration] failed correlationId=${ctx.requestId}`,
+            cause,
+          );
+          return err(controlFailedError(ctx.requestId));
+        }
+      },
+    }),
   );
 
   handlers.push(
@@ -132,4 +307,137 @@ export function registerSettingsHandlers(): Array<() => void> {
   );
 
   return handlers;
+}
+
+function cleanupFailureReason(cause: unknown): LighterCredentialCleanupFailure {
+  return cause instanceof LighterCredentialCleanupError
+    ? cause.reason
+    : "vault_write_failed";
+}
+
+function cleanupFailureError(
+  reason: LighterCredentialCleanupFailure,
+  correlationId: string,
+): VexError {
+  switch (reason) {
+    case "vault_locked":
+      return {
+        code: "wallet.keystore_locked",
+        domain: "settings",
+        message: "Unlock Vex before reviewing or forgetting Lighter access.",
+        retryable: false,
+        userActionable: true,
+        redacted: true,
+        correlationId,
+      };
+    case "primary_wallet_unavailable":
+      return {
+        code: "wallet.keystore_missing",
+        domain: "settings",
+        message: "Vex could not resolve the primary EVM wallet. Nothing was removed.",
+        retryable: false,
+        userActionable: true,
+        redacted: true,
+        correlationId,
+      };
+    case "provider_unavailable":
+      return {
+        code: "provider.unavailable",
+        domain: "settings",
+        message: "Vex could not verify every stored Lighter credential against the live owner account. Nothing was removed.",
+        retryable: true,
+        userActionable: true,
+        redacted: true,
+        correlationId,
+      };
+    case "protected_wallet":
+      return {
+        code: "wallet.policy_blocked",
+        domain: "settings",
+        message: "This is the primary Vex wallet, so its Lighter access is protected. Nothing was removed.",
+        retryable: false,
+        userActionable: true,
+        redacted: true,
+        correlationId,
+      };
+    case "connection_not_found":
+      return {
+        code: "wallet.not_found",
+        domain: "settings",
+        message: "That Lighter connection is no longer stored locally. Review the connections again.",
+        retryable: true,
+        userActionable: true,
+        redacted: true,
+        correlationId,
+      };
+    case "state_changed":
+      return {
+        code: "wallet.policy_blocked",
+        domain: "settings",
+        message: "The stored Lighter scopes changed after review. Nothing was removed; review them again.",
+        retryable: true,
+        userActionable: true,
+        redacted: true,
+        correlationId,
+      };
+    case "vault_write_failed":
+      return {
+        code: "wallet.vault_unavailable",
+        domain: "settings",
+        message: "Vex could not update the encrypted vault. Nothing was removed.",
+        retryable: true,
+        userActionable: true,
+        redacted: true,
+        correlationId,
+      };
+  }
+}
+
+function mapLighterIntegrationSetting(setting: {
+  readonly environment: "core" | "rhc";
+  readonly walletAddress: string;
+  readonly enabled: boolean;
+  readonly enabledAt: Date | null;
+  readonly disabledAt: Date | null;
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+}): LighterIntegrationState {
+  return {
+    environment: setting.environment,
+    walletAddress: setting.walletAddress,
+    enabled: setting.enabled,
+    enabledAt: setting.enabledAt?.toISOString() ?? null,
+    disabledAt: setting.disabledAt?.toISOString() ?? null,
+    createdAt: setting.createdAt.toISOString(),
+    updatedAt: setting.updatedAt.toISOString(),
+  };
+}
+
+/**
+ * The points read is a provider read, and saying so is the difference between
+ * a user who presses Refresh and one who thinks Vex broke. Nothing was changed
+ * by a failed read, which the message states.
+ */
+function lighterPointsFailedError(correlationId: string): VexError {
+  return {
+    code: "provider.unavailable",
+    domain: "settings",
+    message: "Vex could not read the Lighter points campaign. Nothing was changed; try again.",
+    retryable: true,
+    userActionable: true,
+    redacted: true,
+    correlationId,
+  };
+}
+
+function lighterWalletRequiredError(correlationId: string): VexError {
+  return {
+    code: "wallet.keystore_missing",
+    domain: "wallet",
+    message: "Add an EVM wallet before enabling the Lighter integration.",
+    retryable: false,
+    userActionable: true,
+    redacted: true,
+    correlationId,
+  };
 }

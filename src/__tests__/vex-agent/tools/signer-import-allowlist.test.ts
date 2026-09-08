@@ -78,10 +78,21 @@ describe("signer import allowlist", () => {
   });
 
   it("protocol manifest actionKinds stay within the deny-covered census", () => {
-    // "local_write" is allowed for a tool that changes local state only — no
+    // "local_write" is allowed for a tool that changes local state only - no
     // signing, no provider call, no approval. Currently unused by any live
     // manifest; kept as a reviewed, allowed kind for the next tool that needs it.
-    const allowedKinds = new Set(["read", "user_wallet_broadcast", "external_post", "local_write"]);
+    // "approval_prepare" is allowed for a tool that persists a durable local
+    // execution intent and enqueues the approval card for its execute twin -
+    // no signing and no provider mutation happen in the prepare itself; the
+    // execute twin stays behind its own approval and actionKind review
+    // (Lighter order-create prepare is the first user).
+    const allowedKinds = new Set([
+      "read",
+      "user_wallet_broadcast",
+      "external_post",
+      "local_write",
+      "approval_prepare",
+    ]);
     const seen = new Set<string>();
     for (const file of walk(join(TOOLS_DIR, "protocols"))) {
       const src = readFileSync(file, "utf-8");
@@ -100,7 +111,7 @@ describe("signer import allowlist", () => {
 // ── src/tools/** protocol-client signer scan (5D-protocols p5) ──────
 // The shared protocol clients (khalani/bridge-executor, polymarket/clob/client,
 // kyberswap, solana-ecosystem) must not resolve the zero-arg primary wallet
-// either. `multi-auth.ts` DEFINES the primitives (export, not import) — the
+// either. `multi-auth.ts` DEFINES the primitives (export, not import) - the
 // import-line check excludes it.
 const SRC_TOOLS_DIR = join(process.cwd(), "src/tools");
 
@@ -148,7 +159,7 @@ describe("protocol-path keystore/decrypt isolation", () => {
       try {
         files = walk(root);
       } catch {
-        continue; // path absent — skip
+        continue; // path absent - skip
       }
       for (const file of files) {
         const importLines = readFileSync(file, "utf-8")

@@ -134,7 +134,15 @@ describe("sessionComplete — wire shape", () => {
     const client = buildAgentscanSessionClient("http://localhost");
     const outcome = await client.sessionComplete(COMPLETE_INPUT, "current-token-xyz");
 
-    expect(outcome).toEqual({ kind: "bound", ingestToken: TOKEN, agentName: "agent-007", lastAcceptedRowId: 42 });
+    expect(outcome).toEqual({
+      kind: "bound",
+      ingestToken: TOKEN,
+      agentName: "agent-007",
+      lastAcceptedRowId: 42,
+      // The server sent no capability field: an OLD SERVER, which is null and
+      // never an empty declaration (see session-client-capabilities.test.ts).
+      capabilities: null,
+    });
     const [url, init] = mock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("http://localhost/v1/agents/session/complete");
     expect((init.headers as Record<string, string>)["Authorization"]).toBe("Bearer current-token-xyz");
@@ -148,7 +156,15 @@ describe("sessionComplete — wire shape", () => {
     const client = buildAgentscanSessionClient("http://localhost");
     const outcome = await client.sessionComplete(COMPLETE_INPUT, "current-token-xyz");
 
-    expect(outcome).toEqual({ kind: "bound", ingestToken: TOKEN, agentName: "agent-cursor", lastAcceptedRowId: 4000 });
+    expect(outcome).toEqual({
+      kind: "bound",
+      ingestToken: TOKEN,
+      agentName: "agent-cursor",
+      lastAcceptedRowId: 4000,
+      // The server sent no capability field: an OLD SERVER, which is null and
+      // never an empty declaration (see session-client-capabilities.test.ts).
+      capabilities: null,
+    });
   });
 
   it("rejects a non-digit syncState.lastAcceptedRowId string, degrading to null rather than throwing", async () => {
@@ -158,7 +174,15 @@ describe("sessionComplete — wire shape", () => {
     const client = buildAgentscanSessionClient("http://localhost");
     const outcome = await client.sessionComplete(COMPLETE_INPUT, "current-token-xyz");
 
-    expect(outcome).toEqual({ kind: "bound", ingestToken: TOKEN, agentName: "agent-bad-cursor", lastAcceptedRowId: null });
+    expect(outcome).toEqual({
+      kind: "bound",
+      ingestToken: TOKEN,
+      agentName: "agent-bad-cursor",
+      lastAcceptedRowId: null,
+      // The server sent no capability field: an OLD SERVER, which is null and
+      // never an empty declaration (see session-client-capabilities.test.ts).
+      capabilities: null,
+    });
   });
 
   it("omits the Authorization header when no current token is passed (brand-new agent)", async () => {
@@ -168,7 +192,15 @@ describe("sessionComplete — wire shape", () => {
     const client = buildAgentscanSessionClient("http://localhost");
     const outcome = await client.sessionComplete(COMPLETE_INPUT, null);
 
-    expect(outcome).toEqual({ kind: "bound", ingestToken: TOKEN, agentName: "agent-fresh", lastAcceptedRowId: null });
+    expect(outcome).toEqual({
+      kind: "bound",
+      ingestToken: TOKEN,
+      agentName: "agent-fresh",
+      lastAcceptedRowId: null,
+      // The server sent no capability field: an OLD SERVER, which is null and
+      // never an empty declaration (see session-client-capabilities.test.ts).
+      capabilities: null,
+    });
     const [, init] = mock.mock.calls[0] as [string, RequestInit];
     expect((init.headers as Record<string, string>)["Authorization"]).toBeUndefined();
   });

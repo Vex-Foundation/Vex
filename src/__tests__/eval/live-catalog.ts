@@ -17,6 +17,7 @@
 import { buildDiscoveryCandidates } from "./lexical-retrieval.js";
 import { liveProtocolManifests } from "./retrieval-eval-harness.js";
 
+
 /** Active manifests in advertised namespaces. Independent of process env. */
 export function liveCatalogToolCount(): number {
   return liveProtocolManifests().length;
@@ -41,8 +42,12 @@ export function liveCatalogToolCount(): number {
  * 145 after the Trench Express retirement (migration 108) DELETED the ten
  * `trench.*` manifests, the first movement in this ledger that is a retirement
  * rather than a widening, so every baseline was recaptured again at the fold.
+ * 185 with the Lighter integration (2026-09-07): the 40 Lighter tools (Core and
+ * Robinhood Chain reads, order previews and executions, funding, withdrawals,
+ * key registration, fee authorization), a pure +40 on a new namespace, and
+ * every affected baseline recaptured in the same change.
  */
-export const PINNED_LIVE_CATALOG_TOOL_COUNT = 145;
+export const PINNED_LIVE_CATALOG_TOOL_COUNT = 185;
 
 /**
  * The candidate count every dense and lexical measurement must have seen.

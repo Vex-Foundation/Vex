@@ -18,6 +18,7 @@ export {
   createSecretVault,
   unlockSecretVault,
   verifySecretVaultPassword,
+  writeSecretVaultExtraSecrets,
   writeSecretVaultSecrets,
 } from "./local-secret-vault/lifecycle.js";
 export {

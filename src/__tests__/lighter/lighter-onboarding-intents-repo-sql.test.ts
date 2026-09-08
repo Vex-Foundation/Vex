@@ -1,0 +1,890 @@
+import { requireValue } from "../helpers/require-value.js";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const dbMocks = vi.hoisted(() => ({
+  query: vi.fn(),
+  queryOne: vi.fn(),
+}));
+
+vi.mock("@vex-agent/db/client.js", () => ({
+  query: (...args: unknown[]) => dbMocks.query(...args),
+  queryOne: (...args: unknown[]) => dbMocks.queryOne(...args),
+}));
+
+import * as repo from "@vex-agent/db/repos/lighter-onboarding-intents.js";
+
+const ROW = {
+  intent_id: "lighter-onboard-00000000-0000-4000-8000-000000000001",
+  session_id: "session-1",
+  protocol_execution_id: null,
+  approval_id: null,
+  environment: "core",
+  capability: "deposit",
+  wallet_address: "0xaCEE6141F6171491D34699C9266cb06A41FAA43C",
+  chain_id: 1,
+  deposit_contract: "0x3B4D794a66304F130a4Db8F2551B0070dfCf5ca7",
+  deposit_to: "0xaCEE6141F6171491D34699C9266cb06A41FAA43C",
+  asset_index: 3,
+  route_type: 0,
+  amount_units: "11000000",
+  settlement_token_address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+  settlement_token_symbol: "USDC",
+  settlement_token_decimals: 6,
+  preflight_min_transfer_units: "1000000",
+  preflight_wallet_balance_units: "50000000",
+  preflight_wallet_allowance_units: "0",
+  preflight_wallet_native_balance_wei: "1000000000000000000",
+  preflight_ethereum_block_number: "23456789",
+  preflight_lighter_block_number: "23456780",
+  preflight_observed_at: new Date("2030-01-01T00:00:00.000Z"),
+  preflight_approve_gas_limit: "100000",
+  preflight_deposit_gas_limit: "200000",
+  preflight_max_fee_per_gas_wei: "20000000000",
+  preflight_max_priority_fee_per_gas_wei: "2000000000",
+  preflight_approve_max_fee_wei: "2000000000000000",
+  preflight_deposit_max_fee_wei: "4000000000000000",
+  preflight_total_max_fee_wei: "6000000000000000",
+  preflight_native_reserve_wei: "4000000000000000",
+  preflight_required_native_balance_wei: "10000000000000000",
+  approval_status: "approval_pending",
+  execution_state: "approval_pending",
+  approve_tx_hash: null,
+  approve_tx_from: null,
+  approve_tx_nonce: null,
+  approve_replacement_tx_hash: null,
+  approve_replacement_reason: null,
+  approve_replacement_observed_at: null,
+  deposit_tx_hash: null,
+  deposit_tx_from: null,
+  deposit_tx_nonce: null,
+  deposit_replacement_tx_hash: null,
+  deposit_replacement_reason: null,
+  deposit_replacement_observed_at: null,
+  deposit_l1_block_hash: null,
+  deposit_l1_block_number: null,
+  deposit_event_account_index: null,
+  lighter_tx_hash: null,
+  lighter_tx_status: null,
+  lighter_block_height: null,
+  lighter_executed_at: null,
+  lighter_evidence_observed_at: null,
+  resolved_account_index: null,
+  decision_reason: null,
+  failure_reason: null,
+  created_at: new Date("2030-01-01T00:00:00.000Z"),
+  updated_at: new Date("2030-01-01T00:00:00.000Z"),
+  expires_at: new Date("2030-01-01T00:15:00.000Z"),
+};
+
+const WORKFLOW_ROW = {
+  environment: "core",
+  wallet_address: ROW.wallet_address.toLowerCase(),
+  workflow_state: "deposit_approval_pending",
+  last_stable_state: "deposit_approval_pending",
+  active_deposit_intent_id: ROW.intent_id,
+  resolved_account_index: null,
+  api_key_index: null,
+  public_key_fingerprint: null,
+  failure_code: null,
+  revision: 1,
+  created_at: ROW.created_at,
+  updated_at: ROW.updated_at,
+};
+
+const INPUT: repo.CreateDepositIntentInput = {
+  sessionId: "session-1",
+  environment: "core",
+  walletAddress: ROW.wallet_address,
+  chainId: 1,
+  depositContract: ROW.deposit_contract,
+  depositTo: ROW.deposit_to,
+  assetIndex: 3,
+  routeType: 0,
+  amountUnits: "11000000",
+  preflight: {
+    observedAt: ROW.preflight_observed_at,
+    environment: "core",
+    lighterRestBaseUrl: "https://mainnet.zklighter.elliot.ai",
+    settlementNetworkName: "Ethereum mainnet",
+    walletAddress: ROW.wallet_address,
+    beneficiaryAddress: ROW.wallet_address,
+    chainId: 1,
+    settlementBlockNumber: ROW.preflight_ethereum_block_number,
+    ethereumBlockNumber: ROW.preflight_ethereum_block_number,
+    lighterBlockNumber: ROW.preflight_lighter_block_number,
+    gatewayAddress: ROW.deposit_contract,
+    gatewayImplementationAddress: null,
+    gatewayCodeHash: `0x${"1".repeat(64)}`,
+    settlementTokenAddress: ROW.settlement_token_address,
+    settlementTokenImplementationAddress: null,
+    settlementTokenCodeHash: `0x${"2".repeat(64)}`,
+    settlementTokenSymbol: "USDC",
+    settlementTokenDecimals: 6,
+    assetIndex: 3,
+    routeType: 0,
+    amountUnits: ROW.amount_units,
+    minimumTransferUnits: ROW.preflight_min_transfer_units,
+    depositCalldata: "0x8a857083",
+    depositValueWei: "0",
+    walletBalanceUnits: ROW.preflight_wallet_balance_units,
+    walletAllowanceUnits: ROW.preflight_wallet_allowance_units,
+    walletNativeBalanceWei: ROW.preflight_wallet_native_balance_wei,
+    approvalRequired: true,
+    approveGasLimit: ROW.preflight_approve_gas_limit,
+    depositGasLimit: ROW.preflight_deposit_gas_limit,
+    maxFeePerGasWei: ROW.preflight_max_fee_per_gas_wei,
+    maxPriorityFeePerGasWei: ROW.preflight_max_priority_fee_per_gas_wei,
+    approveMaxFeeWei: ROW.preflight_approve_max_fee_wei,
+    depositMaxFeeWei: ROW.preflight_deposit_max_fee_wei,
+    totalMaxFeeWei: ROW.preflight_total_max_fee_wei,
+    nativeReserveWei: ROW.preflight_native_reserve_wei,
+    requiredNativeBalanceWei: ROW.preflight_required_native_balance_wei,
+  },
+  expiresAt: ROW.expires_at,
+};
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
+describe("lighter onboarding intent creation SQL", () => {
+  it("exposes deposit mutations only through caller-owned transactions", () => {
+    expect(repo).not.toHaveProperty("markApprovalDecision");
+    expect(repo).not.toHaveProperty("markApproveSubmitted");
+    expect(repo).not.toHaveProperty("markApproveConfirmed");
+    expect(repo).not.toHaveProperty("markAllowanceVerified");
+    expect(repo).not.toHaveProperty("markDepositSubmitted");
+    expect(repo).not.toHaveProperty("markDepositConfirmed");
+    expect(repo).not.toHaveProperty("markCredited");
+    expect(repo).not.toHaveProperty("markCreditedWith");
+    expect(repo).not.toHaveProperty("reconcileCreditedWith");
+    expect(repo).not.toHaveProperty("markAmbiguous");
+    expect(repo).not.toHaveProperty("markFailed");
+  });
+
+  it("creates through a caller-bound client with conflict-safe insertion", async () => {
+    const client = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [ROW], rowCount: 1 })
+        .mockResolvedValueOnce({ rows: [WORKFLOW_ROW], rowCount: 1 }),
+    };
+
+    const result = await repo.createOrFindLiveDepositApprovalPendingWith(
+      client,
+      INPUT,
+    );
+
+    expect(result).toMatchObject({ outcome: "created", intent: { intentId: ROW.intent_id } });
+    const createCall = client.query.mock.calls[0];
+    if (createCall === undefined) throw new Error("expected the intent insert query");
+    const [sql, params] = createCall;
+    expect(sql).toContain("ON CONFLICT DO NOTHING");
+    expect(sql).toContain("preflight_wallet_allowance_units");
+    expect(params).toEqual([
+      expect.stringMatching(/^lighter-onboard-/),
+      INPUT.sessionId,
+      "core",
+      ROW.wallet_address,
+      1,
+      ROW.deposit_contract,
+      ROW.deposit_to,
+      3,
+      0,
+      ROW.amount_units,
+      ROW.settlement_token_address,
+      "USDC",
+      6,
+      ROW.preflight_min_transfer_units,
+      ROW.preflight_wallet_balance_units,
+      ROW.preflight_wallet_allowance_units,
+      ROW.preflight_wallet_native_balance_wei,
+      ROW.preflight_ethereum_block_number,
+      ROW.preflight_lighter_block_number,
+      ROW.preflight_observed_at,
+      ROW.preflight_approve_gas_limit,
+      ROW.preflight_deposit_gas_limit,
+      ROW.preflight_max_fee_per_gas_wei,
+      ROW.preflight_max_priority_fee_per_gas_wei,
+      ROW.preflight_approve_max_fee_wei,
+      ROW.preflight_deposit_max_fee_wei,
+      ROW.preflight_total_max_fee_wei,
+      ROW.preflight_native_reserve_wei,
+      ROW.preflight_required_native_balance_wei,
+      expect.stringContaining('"depositValueWei":"0"'),
+      ROW.expires_at,
+    ]);
+    expect(client.query).toHaveBeenCalledTimes(2);
+    const [workflowSql] = requireValue(client.query.mock.calls[1]);
+    expect(workflowSql).toContain("workflow_state = ANY($3)");
+  });
+
+  it("refuses to persist a preflight snapshot that differs from the durable intent", async () => {
+    const client = { query: vi.fn() };
+    await expect(repo.createOrFindLiveDepositApprovalPendingWith(client, {
+      ...INPUT,
+      preflight: { ...INPUT.preflight, gatewayAddress: ROW.wallet_address },
+    })).rejects.toThrow("preflight does not match");
+    expect(client.query).not.toHaveBeenCalled();
+  });
+
+  it("returns the live conflicting row after losing the unique-index race", async () => {
+    const client = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [], rowCount: 0 })
+        .mockResolvedValueOnce({ rows: [ROW], rowCount: 1 }),
+    };
+
+    const result = await repo.createOrFindLiveDepositApprovalPendingWith(
+      client,
+      INPUT,
+    );
+
+    expect(result).toMatchObject({
+      outcome: "live_conflict",
+      intent: { intentId: ROW.intent_id, executionState: "approval_pending" },
+    });
+    const [lookupSql, params] = requireValue(client.query.mock.calls[1]);
+    expect(lookupSql).toContain("LOWER(wallet_address) = LOWER($2)");
+    expect(lookupSql).toContain("approval_status IN ('approval_pending', 'approved')");
+    expect(lookupSql).toContain("execution_state NOT IN ('credited', 'failed')");
+    expect(params).toEqual(["core", ROW.wallet_address]);
+  });
+
+  it("renews only a pristine approved deposit with fresh live preflight data", async () => {
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+    const approvedRow = {
+      ...ROW,
+      approval_status: "approved",
+      execution_state: "approved",
+      approval_id: "approval-previous",
+      decision_reason: "user approved exact Lighter deposit intent",
+      expires_at: expiresAt,
+    };
+    const client = {
+      query: vi.fn().mockResolvedValueOnce({ rows: [approvedRow], rowCount: 1 }),
+    };
+
+    const result = await repo.renewPristineApprovedDepositIntentWith(client, {
+      intentId: ROW.intent_id,
+      sessionId: ROW.session_id,
+      preflight: INPUT.preflight,
+      expiresAt,
+    });
+
+    expect(result).toMatchObject({
+      intentId: ROW.intent_id,
+      approvalId: "approval-previous",
+      approvalStatus: "approved",
+      executionState: "approved",
+      expiresAt,
+    });
+    const [sql, params] = requireValue(client.query.mock.calls[0]);
+    expect(sql).toContain("approval_status = 'approved'");
+    expect(sql).toContain("execution_state = 'approved'");
+    expect(sql).toContain("approve_tx_hash IS NULL");
+    expect(sql).toContain("deposit_tx_hash IS NULL");
+    expect(sql).toContain("lighter_tx_hash IS NULL");
+    expect(sql).toContain("failure_reason IS NULL");
+    expect(sql).not.toContain("approval_id =");
+    expect(sql).toContain("preflight_max_fee_per_gas_wei = $16");
+    expect(params).toEqual([
+      ROW.intent_id,
+      ROW.session_id,
+      INPUT.preflight.walletAddress,
+      INPUT.preflight.settlementTokenAddress,
+      INPUT.preflight.settlementTokenSymbol,
+      INPUT.preflight.settlementTokenDecimals,
+      INPUT.preflight.minimumTransferUnits,
+      INPUT.preflight.walletBalanceUnits,
+      INPUT.preflight.walletAllowanceUnits,
+      INPUT.preflight.walletNativeBalanceWei,
+      INPUT.preflight.ethereumBlockNumber,
+      INPUT.preflight.lighterBlockNumber,
+      INPUT.preflight.observedAt,
+      INPUT.preflight.approveGasLimit,
+      INPUT.preflight.depositGasLimit,
+      INPUT.preflight.maxFeePerGasWei,
+      INPUT.preflight.maxPriorityFeePerGasWei,
+      INPUT.preflight.approveMaxFeeWei,
+      INPUT.preflight.depositMaxFeeWei,
+      INPUT.preflight.totalMaxFeeWei,
+      INPUT.preflight.nativeReserveWei,
+      INPUT.preflight.requiredNativeBalanceWei,
+      expect.stringContaining('"environment":"core"'),
+      expiresAt,
+      INPUT.preflight.chainId,
+      INPUT.preflight.gatewayAddress,
+      INPUT.preflight.assetIndex,
+      INPUT.preflight.routeType,
+      INPUT.preflight.amountUnits,
+    ]);
+  });
+
+  it("renews a confirmed allowance only as a fresh deposit-only approval", async () => {
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+    const preflight = {
+      ...INPUT.preflight,
+      walletAllowanceUnits: ROW.amount_units,
+      approvalRequired: false,
+      approveGasLimit: "0",
+      approveMaxFeeWei: "0",
+      totalMaxFeeWei: ROW.preflight_deposit_max_fee_wei,
+      requiredNativeBalanceWei: "8000000000000000",
+    };
+    const renewedRow = {
+      ...ROW,
+      approval_status: "approval_pending",
+      execution_state: "approve_confirmed",
+      approval_id: null,
+      approve_tx_hash: `0x${"a".repeat(64)}`,
+      approve_tx_from: ROW.wallet_address,
+      approve_tx_nonce: "7",
+      preflight_wallet_allowance_units: preflight.walletAllowanceUnits,
+      preflight_approve_gas_limit: "0",
+      preflight_approve_max_fee_wei: "0",
+      preflight_total_max_fee_wei: preflight.totalMaxFeeWei,
+      preflight_required_native_balance_wei: preflight.requiredNativeBalanceWei,
+      expires_at: expiresAt,
+    };
+    const client = {
+      query: vi.fn().mockResolvedValueOnce({ rows: [renewedRow], rowCount: 1 }),
+    };
+
+    const result = await repo.renewConfirmedApprovalDepositIntentWith(client, {
+      intentId: ROW.intent_id,
+      sessionId: ROW.session_id,
+      preflight,
+      expiresAt,
+    });
+
+    expect(result).toMatchObject({
+      approvalStatus: "approval_pending",
+      executionState: "approve_confirmed",
+      approvalId: null,
+      approveTxHash: renewedRow.approve_tx_hash,
+      preflightWalletAllowanceUnits: ROW.amount_units,
+      preflightApproveGasLimit: "0",
+    });
+    const [sql, params] = requireValue(client.query.mock.calls[0]);
+    expect(sql).toContain("approval_status = 'approval_pending'");
+    expect(sql).toContain("approval_id = NULL");
+    expect(sql).toContain("execution_state = 'approve_confirmed'");
+    expect(sql).toContain("approve_tx_hash IS NOT NULL");
+    expect(sql).toContain("deposit_tx_hash IS NULL");
+    expect(sql).toContain("failure_reason IS NULL");
+    expect(params).toEqual([
+      ROW.intent_id,
+      ROW.session_id,
+      preflight.walletAddress,
+      preflight.settlementTokenAddress,
+      preflight.settlementTokenSymbol,
+      preflight.settlementTokenDecimals,
+      preflight.minimumTransferUnits,
+      preflight.walletBalanceUnits,
+      preflight.walletAllowanceUnits,
+      preflight.walletNativeBalanceWei,
+      preflight.ethereumBlockNumber,
+      preflight.lighterBlockNumber,
+      preflight.observedAt,
+      preflight.approveGasLimit,
+      preflight.depositGasLimit,
+      preflight.maxFeePerGasWei,
+      preflight.maxPriorityFeePerGasWei,
+      preflight.approveMaxFeeWei,
+      preflight.depositMaxFeeWei,
+      preflight.totalMaxFeeWei,
+      preflight.nativeReserveWei,
+      preflight.requiredNativeBalanceWei,
+      expect.stringContaining('"approvalRequired":false'),
+      expiresAt,
+      preflight.chainId,
+      preflight.gatewayAddress,
+      preflight.assetIndex,
+      preflight.routeType,
+      preflight.amountUnits,
+    ]);
+  });
+
+  it("accepts an exact approve-confirmed state already advanced by repair", async () => {
+    const txHash = `0x${"a".repeat(64)}`;
+    const confirmedRow = {
+      ...ROW,
+      approval_status: "approved",
+      execution_state: "approve_confirmed",
+      approve_tx_hash: txHash,
+      approve_tx_from: ROW.wallet_address,
+      approve_tx_nonce: "7",
+    };
+    const client = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [], rowCount: 0 })
+        .mockResolvedValueOnce({ rows: [confirmedRow], rowCount: 1 }),
+    };
+
+    const result = await repo.markApproveConfirmedWith(client, ROW.intent_id, txHash);
+
+    expect(result).toMatchObject({ executionState: "approve_confirmed", approveTxHash: txHash });
+    const [advanceSql, advanceParams] = requireValue(client.query.mock.calls[0]);
+    expect(advanceSql).toContain("execution_state = 'approve_submitted'");
+    expect(advanceSql).toContain("COALESCE(approve_replacement_tx_hash, approve_tx_hash)");
+    expect(advanceParams).toEqual([ROW.intent_id, txHash]);
+    const [existingSql, existingParams] = requireValue(client.query.mock.calls[1]);
+    expect(existingSql).toContain("i.execution_state = 'approve_confirmed'");
+    expect(existingSql).toContain("w.workflow_state = 'approve_confirmed'");
+    expect(existingSql).toContain("w.active_deposit_intent_id = i.intent_id");
+    expect(existingParams).toEqual([ROW.intent_id, txHash]);
+  });
+
+  it("records a fresh approval decision without replaying the confirmed allowance transition", async () => {
+    const approvedRow = {
+      ...ROW,
+      approval_status: "approved",
+      execution_state: "approve_confirmed",
+      approval_id: "approval-recovery",
+      approve_tx_hash: `0x${"a".repeat(64)}`,
+      approve_tx_from: ROW.wallet_address,
+      approve_tx_nonce: "7",
+    };
+    const client = {
+      query: vi.fn().mockResolvedValueOnce({ rows: [approvedRow], rowCount: 1 }),
+    };
+
+    const result = await repo.markConfirmedApprovalRecoveryDecisionWith(client, {
+      intentId: ROW.intent_id,
+      decision: "approved",
+      approvalId: "approval-recovery",
+      reason: "fresh deposit-only approval",
+    });
+
+    expect(result).toMatchObject({
+      approvalStatus: "approved",
+      executionState: "approve_confirmed",
+      approvalId: "approval-recovery",
+    });
+    expect(client.query).toHaveBeenCalledTimes(1);
+    const [sql] = requireValue(client.query.mock.calls[0]);
+    expect(sql).toContain("approval_status = 'approval_pending'");
+    expect(sql).toContain("execution_state = 'approve_confirmed'");
+    expect(sql).toContain("deposit_tx_hash IS NULL");
+  });
+
+  it("supersedes only a pristine old-session deposit and preserves its approval audit", async () => {
+    const reason =
+      "Superseded by a fresh Lighter onboarding session before any transaction was signed or submitted.";
+    const supersededRow = {
+      ...ROW,
+      approval_status: "approved",
+      execution_state: "failed",
+      approval_id: "approval-previous",
+      decision_reason: "user approved exact Lighter deposit intent",
+      failure_reason: reason,
+    };
+    const client = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [supersededRow], rowCount: 1 })
+        .mockResolvedValueOnce({
+          rows: [{
+            ...WORKFLOW_ROW,
+            workflow_state: "failed",
+            failure_code: "deposit_superseded_pristine",
+          }],
+          rowCount: 1,
+        }),
+    };
+
+    const result = await repo.supersedePristineDepositIntentWith(client, {
+      intentId: ROW.intent_id,
+      sessionId: "session-previous",
+      environment: "core",
+      walletAddress: ROW.wallet_address,
+    });
+
+    expect(result).toMatchObject({
+      approvalId: "approval-previous",
+      approvalStatus: "approved",
+      executionState: "failed",
+      decisionReason: "user approved exact Lighter deposit intent",
+      failureReason: reason,
+    });
+    const [sql, params] = requireValue(client.query.mock.calls[0]);
+    expect(sql).toContain("session_id = $2");
+    expect(sql).toContain("approval_status = 'approval_pending'");
+    expect(sql).toContain("execution_state = 'approved'");
+    expect(sql).toContain("approval_id IS NULL");
+    expect(sql).toContain("protocol_execution_id IS NULL");
+    expect(sql).toContain("approve_tx_hash IS NULL");
+    expect(sql).toContain("deposit_tx_hash IS NULL");
+    expect(sql).toContain("lighter_tx_hash IS NULL");
+    expect(sql).toContain("resolved_account_index IS NULL");
+    expect(params).toEqual([
+      ROW.intent_id,
+      "session-previous",
+      "core",
+      ROW.wallet_address,
+      reason,
+    ]);
+    const [workflowSql, workflowParams] = requireValue(client.query.mock.calls[1]);
+    expect(workflowSql).toContain("workflow_state = ANY($3)");
+    expect(workflowParams).toEqual([
+      "core",
+      ROW.wallet_address,
+      ["deposit_approval_pending", "deposit_preflight_validated"],
+      "failed",
+      ROW.intent_id,
+      null,
+      null,
+      null,
+      "deposit_superseded_pristine",
+    ]);
+  });
+
+  it("will not record a stale approval after a deposit was superseded", async () => {
+    const client = {
+      query: vi.fn().mockResolvedValueOnce({ rows: [], rowCount: 0 }),
+    };
+
+    const result = await repo.markApprovalDecisionWith(client, {
+      intentId: ROW.intent_id,
+      decision: "approved",
+      approvalId: "approval-stale",
+    });
+
+    expect(result).toBeNull();
+    const [sql] = requireValue(client.query.mock.calls[0]);
+    expect(sql).toContain("capability = 'deposit'");
+    expect(sql).toContain("approval_status = 'approval_pending'");
+    expect(sql).toContain("execution_state = 'approval_pending'");
+  });
+
+  it("orders the unresolved-deposit queue by the last attempt over both environments", async () => {
+    // The repository fetches limit + 1 rows so the page can report hasMore
+    // without a second count query.
+    dbMocks.query.mockResolvedValueOnce([ROW, { ...ROW, intent_id: `${ROW.intent_id}-2` }]);
+
+    const page = await repo.listUnresolvedDepositsByAttempt({ limit: 1 });
+
+    expect(page.rows).toHaveLength(1);
+    expect(page.hasMore).toBe(true);
+    const [sql, params] = requireValue(dbMocks.query.mock.calls[0]);
+    // No environment predicate: one order over both environments is what stops
+    // a backlog in one from hiding every row of the other.
+    expect(sql).not.toContain("environment = ");
+    expect(sql).toContain("capability = 'deposit'");
+    expect(sql).toContain("execution_state NOT IN ('credited','failed')");
+    // ORDERED BY THE LAST ATTEMPT, never by the last success and never by
+    // updated_at alone: a row no evidence can move keeps its updated_at
+    // forever and would hold the front of every sweep.
+    expect(sql).toContain(
+      "ORDER BY repair_attempted_at ASC NULLS FIRST, updated_at ASC, intent_id ASC",
+    );
+    expect(sql).toContain("LIMIT $1");
+    expect(sql).not.toContain("OFFSET");
+    // No cursor parameter: the durable marker is the resume point.
+    expect(params).toEqual([2]);
+  });
+
+  it("defaults the unresolved-deposit queue page to its declared bound and rejects an invalid one", async () => {
+    dbMocks.query.mockResolvedValueOnce([ROW]);
+
+    const page = await repo.listUnresolvedDepositsByAttempt();
+
+    expect(page.hasMore).toBe(false);
+    const [, params] = requireValue(dbMocks.query.mock.calls[0]);
+    expect(params).toEqual([repo.LIGHTER_ONBOARDING_UNRESOLVED_PAGE_LIMIT + 1]);
+    await expect(repo.listUnresolvedDepositsByAttempt({ limit: 0 }))
+      .rejects.toThrow(/positive integer/);
+  });
+
+  it("writes the attempt marker without touching the row's own lifecycle timestamp", async () => {
+    dbMocks.queryOne.mockResolvedValueOnce({ intent_id: ROW.intent_id });
+
+    const moved = await repo.recordDepositRepairAttempt(ROW.intent_id, "attempted");
+
+    expect(moved).toBe(true);
+    const [sql, params] = requireValue(dbMocks.queryOne.mock.calls[0]);
+    expect(sql).toContain("SET repair_attempted_at = NOW(), repair_attempt_result = $2");
+    // The marker is scheduling bookkeeping, not evidence about the deposit:
+    // moving updated_at here would rewrite the money row's lifecycle timestamp
+    // every time a sweep merely looked at it.
+    expect(sql).not.toContain("updated_at = NOW()");
+    expect(sql).toContain("capability = 'deposit'");
+    expect(params).toEqual([ROW.intent_id, "attempted"]);
+  });
+
+  it("reports a marker write that matched no row as a false rather than an error", async () => {
+    dbMocks.queryOne.mockResolvedValueOnce(null);
+
+    await expect(repo.recordDepositRepairAttempt("lighter-onboard-gone", "awaiting"))
+      .resolves.toBe(false);
+  });
+
+  it("scopes unresolved deposit status reads to capability and wallet", async () => {
+    dbMocks.query.mockResolvedValueOnce([ROW]);
+
+    const rows = await repo.listUnresolvedDepositsForWallet(
+      "core",
+      ROW.wallet_address,
+    );
+
+    expect(rows).toHaveLength(1);
+    const [sql, params] = requireValue(dbMocks.query.mock.calls[0]);
+    expect(sql).toContain("capability = 'deposit'");
+    expect(sql).toContain("LOWER(wallet_address) = LOWER($2)");
+    expect(sql).toContain("execution_state NOT IN ('credited','failed')");
+    expect(params).toEqual(["core", ROW.wallet_address]);
+  });
+
+  it("reconciles an approval receipt only against its staged hash and pre-deposit states", async () => {
+    const client = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [ROW], rowCount: 1 })
+        .mockResolvedValueOnce({
+          rows: [{ ...WORKFLOW_ROW, workflow_state: "approve_confirmed" }],
+          rowCount: 1,
+        }),
+    };
+    const txHash = `0x${"a".repeat(64)}`;
+
+    await repo.reconcileApproveReceiptWith(client, {
+      intentId: ROW.intent_id,
+      txHash,
+      outcome: "confirmed",
+    });
+
+    const stagedCall = client.query.mock.calls[0];
+    if (stagedCall === undefined) throw new Error("expected the staged deposit query");
+    const [sql, params] = stagedCall;
+    expect(sql).toContain("LOWER(COALESCE(approve_replacement_tx_hash, approve_tx_hash)) = LOWER($2)");
+    expect(sql).toContain("deposit_tx_hash IS NULL");
+    expect(sql).toContain("execution_state IN ('approve_submitted', 'ambiguous')");
+    expect(params).toEqual([ROW.intent_id, txHash, "approve_confirmed", null]);
+  });
+
+  it("throws when the wallet workflow CAS rejects an otherwise valid intent transition", async () => {
+    const client = {
+      query: vi.fn()
+        .mockResolvedValueOnce({
+          rows: [{ ...ROW, execution_state: "allowance_verified" }],
+          rowCount: 1,
+        })
+        .mockResolvedValueOnce({ rows: [], rowCount: 0 }),
+    };
+
+    await expect(
+      repo.markAllowanceVerifiedWith(client, ROW.intent_id),
+    ).rejects.toThrow("workflow rejected allowance_verified");
+    expect(client.query).toHaveBeenCalledTimes(2);
+  });
+
+  it("stages the public sender and nonce with the deposit hash before broadcast", async () => {
+    const staged = {
+      txHash: `0x${"b".repeat(64)}`,
+      fromAddress: ROW.wallet_address,
+      nonce: 17,
+    };
+    const client = {
+      query: vi.fn()
+        .mockResolvedValueOnce({
+          rows: [{
+            ...ROW,
+            execution_state: "deposit_submitted",
+            deposit_tx_hash: staged.txHash,
+            deposit_tx_from: staged.fromAddress,
+            deposit_tx_nonce: staged.nonce,
+          }],
+          rowCount: 1,
+        })
+        .mockResolvedValueOnce({
+          rows: [{ ...WORKFLOW_ROW, workflow_state: "deposit_staged" }],
+          rowCount: 1,
+        }),
+    };
+
+    const result = await repo.markDepositSubmittedWith(client, ROW.intent_id, staged);
+
+    expect(result).toMatchObject({
+      depositTxHash: staged.txHash,
+      depositTxFrom: staged.fromAddress,
+      depositTxNonce: "17",
+    });
+    const replacementCall = client.query.mock.calls[0];
+    if (replacementCall === undefined) throw new Error("expected the replacement query");
+    const [sql, params] = replacementCall;
+    expect(sql).toContain("deposit_tx_hash = $3");
+    expect(sql).toContain("deposit_tx_from = $4");
+    expect(sql).toContain("deposit_tx_nonce = $5");
+    expect(params).toEqual([
+      ROW.intent_id,
+      "deposit_submitted",
+      staged.txHash,
+      staged.fromAddress,
+      staged.nonce,
+      ["approve_confirmed", "allowance_verified"],
+    ]);
+  });
+
+  it("records only an idempotent repriced replacement against the original hash", async () => {
+    const originalTxHash = `0x${"b".repeat(64)}`;
+    const replacementTxHash = `0x${"d".repeat(64)}`;
+    const observedAt = new Date("2030-01-01T00:02:00.000Z");
+    const client = {
+      query: vi.fn().mockResolvedValueOnce({
+        rows: [{
+          ...ROW,
+          execution_state: "deposit_submitted",
+          deposit_tx_hash: originalTxHash,
+          deposit_tx_from: ROW.wallet_address,
+          deposit_tx_nonce: 17,
+          deposit_replacement_tx_hash: replacementTxHash,
+          deposit_replacement_reason: "repriced",
+          deposit_replacement_observed_at: observedAt,
+        }],
+        rowCount: 1,
+      }),
+    };
+
+    const result = await repo.recordDepositReplacementWith(client, ROW.intent_id, {
+      originalTxHash,
+      replacementTxHash,
+      reason: "repriced",
+      observedAt,
+    });
+
+    expect(result).toMatchObject({
+      depositTxHash: originalTxHash,
+      depositReplacementTxHash: replacementTxHash,
+      depositReplacementReason: "repriced",
+    });
+    const [sql, params] = requireValue(client.query.mock.calls[0]);
+    expect(sql).toContain("LOWER(deposit_tx_hash) = LOWER($2)");
+    expect(sql).toContain("deposit_tx_from IS NOT NULL");
+    expect(sql).toContain("deposit_tx_nonce IS NOT NULL");
+    expect(sql).toContain("LOWER(deposit_replacement_tx_hash) = LOWER($3)");
+    expect(params).toEqual([
+      ROW.intent_id,
+      originalTxHash,
+      replacementTxHash,
+      "repriced",
+      observedAt,
+      ["deposit_submitted", "ambiguous"],
+    ]);
+  });
+
+  it("binds L1 confirmation to the staged hash and every approved deposit field", async () => {
+    const confirmedRow = {
+      ...ROW,
+      execution_state: "deposit_confirmed",
+      deposit_tx_hash: `0x${"b".repeat(64)}`,
+      deposit_l1_block_hash: `0x${"c".repeat(64)}`,
+      deposit_l1_block_number: "23456789",
+      deposit_event_account_index: 42,
+    };
+    const client = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [confirmedRow], rowCount: 1 })
+        .mockResolvedValueOnce({
+          rows: [{ ...WORKFLOW_ROW, workflow_state: "deposit_l1_confirmed" }],
+          rowCount: 1,
+        })
+        .mockResolvedValueOnce({
+          rows: [{ ...WORKFLOW_ROW, workflow_state: "deposit_l2_pending" }],
+          rowCount: 1,
+        }),
+    };
+
+    await repo.markDepositConfirmedWith(
+      client,
+      ROW.intent_id,
+      {
+        txHash: confirmedRow.deposit_tx_hash,
+        blockHash: confirmedRow.deposit_l1_block_hash,
+        blockNumber: confirmedRow.deposit_l1_block_number,
+        accountIndex: 42,
+        walletAddress: ROW.wallet_address,
+        assetIndex: 3,
+        routeType: 0,
+        amountUnits: ROW.amount_units,
+      },
+    );
+
+    const firstCall = client.query.mock.calls[0];
+    if (firstCall === undefined) throw new Error("expected the intent update query");
+    const [sql, params] = firstCall;
+    expect(sql).toContain("LOWER(COALESCE(deposit_replacement_tx_hash, deposit_tx_hash)) = LOWER($2)");
+    expect(sql).toContain("LOWER(wallet_address) = LOWER($6)");
+    expect(sql).toContain("asset_index = $7");
+    expect(sql).toContain("amount_units = $9");
+    expect(params).toEqual([
+      ROW.intent_id,
+      confirmedRow.deposit_tx_hash,
+      confirmedRow.deposit_l1_block_hash,
+      confirmedRow.deposit_l1_block_number,
+      42,
+      ROW.wallet_address,
+      3,
+      0,
+      ROW.amount_units,
+    ]);
+    expect(client.query).toHaveBeenCalledTimes(3);
+  });
+
+  it("credits only against the persisted L1 proof and advances the exact account", async () => {
+    const creditedRow = {
+      ...ROW,
+      execution_state: "credited",
+      deposit_tx_hash: `0x${"b".repeat(64)}`,
+      deposit_l1_block_hash: `0x${"c".repeat(64)}`,
+      deposit_l1_block_number: "23456789",
+      deposit_event_account_index: 42,
+      resolved_account_index: 42,
+      lighter_tx_hash: "lighter-tx-hash",
+      lighter_tx_status: 3,
+      lighter_block_height: 313485202,
+      lighter_executed_at: 1786949159112,
+      lighter_evidence_observed_at: new Date(),
+    };
+    const client = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [creditedRow], rowCount: 1 })
+        .mockResolvedValueOnce({
+          rows: [{
+            ...WORKFLOW_ROW,
+            workflow_state: "account_resolved",
+            resolved_account_index: 42,
+          }],
+          rowCount: 1,
+        }),
+    };
+
+    await repo.markDepositCreditedWith(
+      client,
+      ROW.intent_id,
+      {
+        txHash: creditedRow.deposit_tx_hash,
+        blockHash: creditedRow.deposit_l1_block_hash,
+        blockNumber: creditedRow.deposit_l1_block_number,
+        accountIndex: 42,
+        walletAddress: ROW.wallet_address,
+        assetIndex: 3,
+        routeType: 0,
+        amountUnits: ROW.amount_units,
+        lighterTxHash: "lighter-tx-hash",
+        lighterStatus: 3,
+        lighterBlockHeight: 313485202,
+        lighterExecutedAt: 1786949159112,
+      },
+    );
+
+    const intentCall = client.query.mock.calls[0];
+    if (intentCall === undefined) throw new Error("expected the intent credit query");
+    const [sql] = intentCall;
+    expect(sql).toContain("execution_state = 'deposit_confirmed'");
+    expect(sql).toContain("LOWER(deposit_l1_block_hash) = LOWER($8)");
+    expect(sql).toContain("deposit_event_account_index = $3");
+    const workflowCall = client.query.mock.calls[1];
+    if (workflowCall === undefined) throw new Error("expected the workflow credit query");
+    const [, workflowParams] = workflowCall;
+    expect(workflowParams[3]).toBe("account_resolved");
+    expect(workflowParams[5]).toBe(42);
+  });
+});

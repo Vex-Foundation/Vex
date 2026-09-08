@@ -38,7 +38,7 @@ these surfaces from this file.
   keeps the gutter reservation.
 - Rows: generic primitives in `components/ui/rail-list.tsx` (RailRow 32px /
   radius 8 / title 14/20 / time 12/20; hover fill == selected fill;
-  actions replace the time on hover; RailGroup eyebrow headers; 
+  actions replace the time on hover; RailGroup eyebrow headers;
   RailSearchField). Session mapping lives in `SessionRows*` - state dot in
   the leading slot (pixel chase while live, warn while paused), Remove+Pin
   cluster, HoverCard preview (full title, started time, mode facts),

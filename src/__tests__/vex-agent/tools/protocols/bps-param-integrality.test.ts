@@ -267,9 +267,11 @@ describe("manifest bps declarations", () => {
     // and `trench.trade_execute` were deleted with the protocol, and they were
     // the namespace's only bps declarations, so `trench` leaves the venue set
     // entirely rather than shrinking within it.
-    expect(declared.length).toBe(41);
+    // +1 for Lighter's approval-bound integrator fee ceiling (`lighter.fees.approve`), so
+    // `lighter` joins the venue set with the Lighter integration.
+    expect(declared.length).toBe(42);
     expect(new Set(declared.map((id) => id.split(".")[0]))).toEqual(
-      new Set(["solana", "kyberswap", "uniswap", "pendle", "relay", "morpho", "virtuals"]),
+      new Set(["solana", "kyberswap", "uniswap", "pendle", "relay", "morpho", "virtuals", "lighter"]),
     );
   });
 

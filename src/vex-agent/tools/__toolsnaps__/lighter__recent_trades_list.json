@@ -1,0 +1,44 @@
+{
+  "definition": {
+    "function": {
+      "description": "Read the recent public trade tape for one Lighter market on Core or Robinhood Chain. Use when the user asks for latest fills, trade prices, sizes, maker side, USD amount, block height, transaction hash, or short-term activity before comparing with depth or candles. Returns bounded trade rows plus provider row count, truncation state, and next cursor when Lighter supplies one. Read-only: no private account data, signing, order placement, deposit, or withdrawal support.",
+      "name": "lighter__recent_trades_list",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "environment": {
+            "description": "Optional public Lighter environment to read: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc for conversational Lighter requests. Any other value is rejected.",
+            "enum": [
+              "core",
+              "rhc"
+            ],
+            "type": "string"
+          },
+          "limit": {
+            "description": "Max recent trade rows to return (default 25, max 50). Out-of-range values are rejected, not clamped.",
+            "type": "number"
+          },
+          "marketId": {
+            "description": "Numeric Lighter market id from lighter__markets_list, as an integer from 0 to 65535. It names the order book to read.",
+            "type": "number"
+          }
+        },
+        "required": [
+          "marketId"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "lighter",
+    "requiresEnv": null,
+    "toolId": "lighter.recentTrades"
+  }
+}

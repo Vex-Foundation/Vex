@@ -23,6 +23,9 @@ function context(overrides: Partial<EngineContext>): EngineContext {
 /**
  * REVIEWED CEILING MOVE, launchpads arc integration. TWO additions share this
  * raise, and both were measured on this merged tree rather than estimated.
+ * The Lighter integration (2026-09-07) raised every mode by a further 827 B:
+ * the Lighter namespace declaration in the protocol block plus safety rule 3
+ * ("Direct amounts are exact transfers"), both measured on the merged tree.
  *
  * 1. THE LAUNCHPADS NAMESPACE (PR2 of the launchpads arc). +1062 bytes on the
  *    agent modes, +1128 on mission setup, +1224 on mission run. The cost is one
@@ -106,12 +109,12 @@ function context(overrides: Partial<EngineContext>): EngineContext {
  * The coordinator reviews this raise.
  */
 const MODES = [
-  { name: "agent / restricted", context: context({}), ceiling: 59_821 },
-  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 60_522 },
-  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 66_298 },
-  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 66_317 },
-  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 65_022 },
-  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 64_837 },
+  { name: "agent / restricted", context: context({}), ceiling: 60_648 },
+  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 61_349 },
+  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 67_125 },
+  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 67_144 },
+  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 65_849 },
+  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 65_664 },
 ] as const;
 
 beforeAll(() => {
@@ -185,6 +188,23 @@ describe("static prompt byte ceilings", () => {
       // Funding the rest by shrinking another namespace's honesty clauses was
       // ruled out on the same grounds as every diff below: this budget belongs
       // to the change that spends it. The coordinator reviews this raise.
+      //
+      // REVIEWED BUDGET DIFF, Lighter namespace integration (2026-09-02).
+      // +2,808 bytes in every mode. The identical delta proves this is one
+      // static addition: Lighter's advertised namespace declaration. It gives
+      // the model enough identity/read/preview/action/limit guidance to route a
+      // request through ToolSearch while preserving explicit environment,
+      // local-key, and approval-gate constraints. The 40 Lighter tool schemas
+      // remain discovery-injected and do not enter this static prefix. Keeping
+      // those safety and routing clauses together was preferred to hiding the
+      // new integration or silently charging another namespace's guidance.
+      //
+      //   agent / restricted          57,296 -> 60,104
+      //   agent / full                57,997 -> 60,805
+      //   mission setup / restricted  63,719 -> 66,527
+      //   mission setup / full        63,738 -> 66,546
+      //   mission run / restricted    62,335 -> 65,143
+      //   mission run / full          62,150 -> 64,958
       //
       // REVIEWED BUDGET DIFF, D-DS9 REVERTED plus board doctrine (owner order
       // 2026-08-26). NET +617 bytes in every mode, and the figure is identical

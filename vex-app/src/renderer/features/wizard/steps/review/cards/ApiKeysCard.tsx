@@ -24,6 +24,8 @@ export function ApiKeysCard({
   items.push(`Tavily: ${k.tavilyConfigured ? "set" : "-"}`);
   items.push(`Rettiwt: ${k.rettiwtConfigured ? "set" : "-"}`);
   items.push(`Relay: ${k.relayConfigured ? "set" : "-"}`);
+  items.push(`Lighter RHC: ${k.lighterRhcTradingConfigured ? "set" : "-"}`);
+  items.push(`Lighter Core: ${k.lighterCoreTradingConfigured ? "set" : "-"}`);
   return (
     <SummaryCard
       title="API keys"

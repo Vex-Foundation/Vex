@@ -86,6 +86,11 @@ const KIND_PRODUCT: Readonly<Record<string, string>> = {
   // to an address with no route, price or counterparty, so the `ELSE` arm's
   // "spot" would state a trade that never happened.
   transfer: "transfer",
+  // Migration 152. Exchange funding (a Lighter deposit or claimed withdrawal on
+  // the settlement chain) renders as its OWN product: it is neither a swap nor
+  // a wallet send, and folding it into "spot" would describe a trade that never
+  // happened on the chain the row is verified on.
+  exchange: "exchange",
   // Migration 087. A generic signed transaction renders as its OWN product: an
   // approval or an arbitrary contract call has no asset leg to state, so both
   // the `ELSE` arm's "spot" and the `transfer` product would describe a
@@ -111,6 +116,7 @@ const KIND_LOGICAL_ROLES: Readonly<Record<string, readonly string[]>> = {
   launch: ["token_launch"],
   claim: ["pools_claim"],
   transfer: ["wallet_transfer"],
+  exchange: ["exchange_deposit", "exchange_withdrawal"],
   transaction: [
     "tx_approve",
     "tx_contract_call",

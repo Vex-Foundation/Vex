@@ -56,7 +56,12 @@ export const ALWAYS_LOADED_DESCRIPTION_MAX_CHARACTERS = 2048;
 export interface StudioToolAnnotations {
   /** True exactly when `actionKind === "read"`. */
   readonly readOnlyHint: boolean;
-  /** True exactly when `actionKind` is `user_wallet_broadcast` or `destructive`. */
+  /**
+   * True when `actionKind` is `user_wallet_broadcast` or `destructive`, or when
+   * the protocol manifest DECLARES `destructive: true` (the O7 amendment of
+   * 2026-09-07, for venue executions that are irreversible without being a
+   * user-wallet broadcast). Never derived from `mutating`.
+   */
   readonly destructiveHint: boolean;
 }
 

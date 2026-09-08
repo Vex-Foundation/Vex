@@ -27,6 +27,15 @@ export const EV = {
   market: {
     vex: "vex:event:market:vex",
   },
+  lighterTrading: {
+    candleSnapshot: "vex:event:lighter:candleSnapshot",
+    candleUpdate: "vex:event:lighter:candleUpdate",
+    candleStatus: "vex:event:lighter:candleStatus",
+    publicBook: "vex:event:lighter:publicBook",
+    publicTrades: "vex:event:lighter:publicTrades",
+    publicStats: "vex:event:lighter:publicStats",
+    publicMarketStatus: "vex:event:lighter:publicMarketStatus",
+  },
 
   /**
    * Vex Studio MCP host status (stage B0). Main's host publishes a

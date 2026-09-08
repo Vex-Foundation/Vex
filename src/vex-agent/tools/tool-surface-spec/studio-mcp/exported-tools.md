@@ -43,12 +43,12 @@ free. Both texts live on the tool
 
 ## Totals
 
-- exported tools: 171
-- internal: 27
-- protocol: 144 across 11 namespaces
-- always loaded: 27
-- read-only: 109
-- destructive: 53
+- exported tools: 213
+- internal: 29
+- protocol: 184 across 12 namespaces
+- always loaded: 29
+- read-only: 129
+- destructive: 63
 
 ## Internal tools
 
@@ -79,6 +79,8 @@ free. Both texts live on the tool
 | WalletTrackToken | Track a token in the local wallet view | internal | no | no | yes | - | 1044 | yes | none |
 | WalletWrapConfirm | Broadcast a prepared wrap or unwrap | internal | no | yes | yes | - | 2023 | yes | none |
 | WalletWrapPrepare | Prepare a native / wrapped-native conversion | internal | no | no | yes | - | 2022 | yes | none |
+| lighter_core_onboarding_status | Check Lighter Core onboarding readiness | internal | yes | no | yes | - | 1135 | yes | none (read) |
+| lighter_rhc_onboarding_status | Check Robinhood Chain Lighter readiness | internal | yes | no | yes | - | 1134 | yes | none (read) |
 | vex_ToolDescribe | Read one tool's whole contract | internal | yes | no | yes | - | 1812 | yes | none |
 | vex_ToolSearch | Search the protocol tool catalog | internal | yes | no | yes | - | 1500 | yes | none |
 
@@ -135,6 +137,51 @@ free. Both texts live on the tool
 | name | title | lane | read only | destructive | always load | requires env | description bytes | returns | vex fee |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | launchpads__image_publish | Publish a launch picture publicly | protocol | no | no | no | - | 1742 | yes | - |
+
+### lighter
+
+| name | title | lane | read only | destructive | always load | requires env | description bytes | returns | vex fee |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| lighter__account_get | Read a Lighter account | protocol | yes | no | no | - | 536 | - | none (read) |
+| lighter__account_onboarding_status | Check Lighter account onboarding readiness | protocol | yes | no | no | - | 1366 | - | none (read) |
+| lighter__api_keys_inspect | Inspect Lighter API-key registrations | protocol | yes | no | no | - | 518 | - | none (read) |
+| lighter__candles_list | Read Lighter market candles | protocol | yes | no | no | - | 483 | - | none (read) |
+| lighter__deposit | Execute an approved Lighter deposit | protocol | no | yes | no | - | 817 | - | - |
+| lighter__deposit_prepare | Prepare a Lighter deposit approval | protocol | no | no | no | - | 1005 | - | - |
+| lighter__deposit_status | Check a Lighter deposit's status | protocol | yes | no | no | - | 919 | - | none (read) |
+| lighter__fees_approve | Authorize approved Lighter trading fees | protocol | no | yes | no | - | 698 | - | - |
+| lighter__fees_approve_prepare | Prepare Lighter trading-fee approval | protocol | no | no | no | - | 752 | - | - |
+| lighter__fees_status | Check Lighter trading-fee authorization | protocol | yes | no | no | - | 560 | - | none (read) |
+| lighter__key_register | Register an approved Lighter trading key | protocol | no | yes | no | - | 724 | - | - |
+| lighter__key_register_prepare | Prepare a Lighter trading-key approval | protocol | no | no | no | - | 1016 | - | - |
+| lighter__key_register_status | Check a Lighter key registration's status | protocol | yes | no | no | - | 773 | - | none (read) |
+| lighter__market_get | Read one Lighter market | protocol | yes | no | no | - | 594 | - | none (read) |
+| lighter__markets_list | List Lighter markets | protocol | yes | no | no | - | 549 | - | none (read) |
+| lighter__open_orders_list | List open Lighter orders | protocol | yes | no | no | - | 503 | - | none (read) |
+| lighter__order_cancel | Cancel an approved Lighter order | protocol | no | yes | no | - | 636 | - | - |
+| lighter__order_cancel_all | Cancel all approved Lighter orders | protocol | no | yes | no | - | 665 | - | - |
+| lighter__order_cancel_all_prepare | Prepare approval to cancel all Lighter orders | protocol | no | no | no | - | 533 | - | - |
+| lighter__order_cancel_prepare | Prepare a Lighter order-cancellation approval | protocol | no | no | no | - | 503 | - | - |
+| lighter__order_create | Submit an approved Lighter order | protocol | no | yes | no | - | 691 | - | - |
+| lighter__order_create_prepare | Prepare a Lighter order approval | protocol | no | no | no | - | 667 | - | - |
+| lighter__order_history_list | Read Lighter order history | protocol | yes | no | no | - | 483 | - | none (read) |
+| lighter__order_modify | Modify an approved Lighter limit order | protocol | no | yes | no | - | 613 | - | - |
+| lighter__order_modify_prepare | Prepare a Lighter order-modification approval | protocol | no | no | no | - | 552 | - | - |
+| lighter__order_preview | Preview a Lighter order | protocol | no | no | no | - | 1870 | - | - |
+| lighter__order_status | Check a Lighter order action's status | protocol | yes | no | no | - | 936 | - | none (read) |
+| lighter__orderbook_get | Read a Lighter order book | protocol | yes | no | no | - | 537 | - | none (read) |
+| lighter__position_close | Close an approved Lighter position | protocol | no | yes | no | - | 631 | - | - |
+| lighter__position_close_prepare | Prepare a Lighter position-close approval | protocol | no | no | no | - | 602 | - | - |
+| lighter__position_protect | Preview Lighter position protection | protocol | no | no | no | - | 1108 | - | - |
+| lighter__positions_list | List Lighter positions | protocol | yes | no | no | - | 529 | - | none (read) |
+| lighter__recent_trades_list | Read recent public Lighter trades | protocol | yes | no | no | - | 472 | - | none (read) |
+| lighter__system_get | Read Lighter system status | protocol | yes | no | no | - | 462 | - | none (read) |
+| lighter__trades_list | Read Lighter account trades | protocol | yes | no | no | - | 522 | - | none (read) |
+| lighter__withdraw | Submit an approved Lighter withdrawal | protocol | no | yes | no | - | 787 | - | - |
+| lighter__withdraw_claim | Broadcast an approved Lighter withdrawal claim | protocol | no | yes | no | - | 685 | - | - |
+| lighter__withdraw_claim_prepare | Prepare a Lighter withdrawal-claim approval | protocol | no | no | no | - | 586 | - | - |
+| lighter__withdraw_prepare | Prepare a Lighter withdrawal approval | protocol | no | no | no | - | 668 | - | - |
+| lighter__withdraw_status | Check a Lighter withdrawal's status | protocol | yes | no | no | - | 851 | - | none (read) |
 
 ### morpho
 

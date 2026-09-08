@@ -258,7 +258,27 @@ function actionKindFor(tool: StudioTool): ActionKind | undefined {
   return getProtocolManifest(tool.toolId ?? "")?.actionKind;
 }
 
-function approvalCardFor(tool: StudioTool): { raised: boolean; note: string } {
+/**
+ * The sentence a PREPARATION tool gets, in both lanes.
+ *
+ * `approval_prepare` is the one action kind for which "runs directly, no card"
+ * is false in the direction that matters. The tool is indeed not gated - it
+ * signs nothing and spends nothing, so no gate blocks it - but its WHOLE effect
+ * is to raise the user's approval card that its execute target then requires.
+ * Deriving the sentence from `mutating` alone described a card-producing tool
+ * as a tool with no card anywhere in the flow, which is exactly backwards for
+ * an external agent trying to learn where consent happens.
+ */
+const PREPARATION_CARD_NOTE =
+  "This call is not itself blocked: it signs, submits and spends nothing, so it runs in both "
+  + "permission modes. What it PRODUCES is the user's approval card - Vex shows the prepared "
+  + "action to the user, and nothing executes until the user accepts that card, which is what "
+  + "runs the separate execute tool. A declined or expired card leaves nothing executed.";
+
+function approvalCardFor(
+  tool: StudioTool,
+  actionKind: ActionKind,
+): { raised: boolean; note: string } {
   if (tool.kind === "internal") {
     const registryName = tool.publicName === EXPORTED_TOOL_SEARCH_PUBLIC_NAME
       ? EXPORTED_TOOL_SEARCH_NAME
@@ -266,23 +286,43 @@ function approvalCardFor(tool: StudioTool): { raised: boolean; note: string } {
     const raised = getToolDef(registryName)?.mutating === true;
     return {
       raised,
-      note: raised
-        ? "In a restricted project the call waits on the user's approval card in Vex and returns the "
-          + "settled outcome. In a full project it executes directly."
-        : "No approval card: this tool is not classified mutating, so it runs directly in both "
-          + "permission modes.",
+      note: actionKind === "approval_prepare"
+        ? PREPARATION_CARD_NOTE
+        : raised
+          ? "In a restricted project the call waits on the user's approval card in Vex and returns the "
+            + "settled outcome. In a full project it executes directly."
+          : "No approval card: this tool is not classified mutating, so it runs directly in both "
+            + "permission modes.",
     };
   }
   const manifest = getProtocolManifest(tool.toolId ?? "");
   const raised = manifest?.mutating === true && manifest.actionKind !== "local_write";
+  // A PREPARED-ACTION TARGET IS THE EXCEPTION, and getting it wrong here is a
+  // money-path lie: "in a full project it executes directly" would tell an
+  // external agent that raising project permission is a way to place a Lighter
+  // order without a card. It is not. Two independent facts make the card
+  // unavoidable, and both are read from code rather than intent: `executor.ts`
+  // dispatches the validated follow-up hop with `permission: "restricted"`
+  // whatever the project holds, and every one of these handlers refuses a call
+  // that arrives without `approved` and an `approvalId`, returning
+  // `pendingApproval` instead of executing.
+  const prepared = manifest?.studioPreparedAction === true;
   return {
     raised,
-    note: raised
-      ? "In a restricted project the call waits on the user's approval card in Vex and returns the "
-        + "settled outcome. In a full project it executes directly."
-      : manifest?.mutating === true
-        ? "No approval card: this tool only writes a local Vex record, which is not a spend."
-        : "No approval card: this tool is read-only.",
+    note: prepared
+      ? "The approval card is raised in BOTH permission modes and cannot be skipped: Vex Studio "
+        + "dispatches this tool's prepared follow-up under restricted permission whatever the "
+        + "project holds, and the tool itself refuses any call that does not carry an approved "
+        + "Vex approval card for a prepared intent. Raising project permission does not execute "
+        + "it directly."
+      : actionKind === "approval_prepare"
+        ? PREPARATION_CARD_NOTE
+        : raised
+          ? "In a restricted project the call waits on the user's approval card in Vex and returns the "
+            + "settled outcome. In a full project it executes directly."
+          : manifest?.mutating === true
+            ? "No approval card: this tool only writes a local Vex record, which is not a spend."
+            : "No approval card: this tool is read-only.",
   };
 }
 
@@ -616,7 +656,7 @@ export function describeExportedTool(
       + "classification could not be read, so its risk class cannot be stated. Nothing was executed.",
     );
   }
-  const card = approvalCardFor(tool);
+  const card = approvalCardFor(tool, actionKind);
   const authored = authoredContractFields(tool);
 
   return {

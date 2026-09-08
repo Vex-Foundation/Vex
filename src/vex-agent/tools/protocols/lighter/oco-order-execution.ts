@@ -1,0 +1,701 @@
+import { persistLighterSigningEvidence, type LighterEvidenceWritePorts } from "./execution-boundary.js";
+import { assertIntentAuthority, LighterIntentRefusal } from "./intent-expiry.js";
+import { lighterSignerRunExited } from "@tools/lighter/signer-binary-adapter.js";
+import { revalidateLighterOrderFees, type LighterOrderFeeClient } from "./order-fees.js";
+import { LIGHTER_ENDPOINTS, type LighterEnvironment } from "@tools/lighter/constants.js";
+import type { LighterClient } from "@tools/lighter/client.js";
+import {
+  buildLighterAccountAuthSigningInput,
+  createLighterAccountAuthWithAdapter,
+  type LighterSignerAdapter,
+} from "@tools/lighter/signer-adapter.js";
+import {
+  buildLighterCreateGroupedOrdersSigningInput,
+  signLighterCreateGroupedOrdersWithAdapter,
+  type LighterGroupedOrderSignerAdapter,
+} from "@tools/lighter/signer-grouped-orders.js";
+import type { LighterUnsignedOcoRequest } from "@tools/lighter/oco-order.js";
+import {
+  loadLighterTradingSecretMaterial,
+  type LighterTradingSecretReader,
+} from "@tools/lighter/trading-secret.js";
+import type { LighterAccountOrder, LighterTrade } from "@tools/lighter/types.js";
+import { LIGHTER_ORDER_PREVIEW_FRESHNESS_MS } from "@tools/lighter/order-preview.js";
+import { ErrorCodes, VexError } from "../../../../errors.js";
+import { withTransaction } from "@vex-agent/db/client.js";
+import * as intentsRepo from "@vex-agent/db/repos/lighter-oco-execution-intents.js";
+import * as nonceRepo from "@vex-agent/db/repos/lighter-nonce-state.js";
+import * as previewsRepo from "@vex-agent/db/repos/lighter-order-previews.js";
+import {
+  findMatchingLighterOrder,
+  findMatchingLighterTrade,
+  lighterOrderEvidenceJson,
+  lighterOrderIdFromTrade,
+  lighterTradeEvidenceJson,
+  stateFromActiveLighterOrder,
+  stateFromInactiveLighterOrder,
+} from "./order-evidence.js";
+import {
+  defaultLighterFillObservationDeps,
+  matchingLighterTrades,
+  observeLighterFills,
+  observeLighterFillsFromAccountTrades,
+  reportedLighterFilledBaseSize,
+  type LighterFillObservationDeps,
+} from "./fill-observation.js";
+import logger from "@utils/logger.js";
+import type { LighterOcoExecutionPlan } from "./oco-execution-plan.js";
+import { ocoLegRevalidationPlan } from "./oco-execution-plan.js";
+import { revalidateApprovedLighterOrder } from "./pre-submit-revalidation.js";
+
+const FRESH = { fresh: true } as const;
+const AUTH_TTL_SECONDS = 10 * 60;
+const ACTIVE_ATTEMPTS = 3;
+
+export type ExecuteApprovedLighterOcoResult =
+  | {
+      readonly status: "active" | "resolved" | "rejected";
+      readonly intentId: string;
+      readonly executionState: "active" | "resolved" | "rejected";
+      readonly signerTxHash: string;
+      readonly submittedTxHash: string;
+      readonly stopLossClientOrderIndex: string;
+      readonly takeProfitClientOrderIndex: string;
+      readonly evidence: Record<string, unknown>;
+    }
+  | {
+      readonly status: "sequencer_pending";
+      readonly intentId: string;
+      readonly executionState: "sequencer_pending";
+      readonly signerTxHash: string;
+      readonly submittedTxHash: string;
+      readonly stopLossClientOrderIndex: string;
+      readonly takeProfitClientOrderIndex: string;
+      readonly evidence: Record<string, unknown>;
+    }
+  | {
+      readonly status: "ambiguous";
+      readonly intentId: string;
+      readonly executionState: "ambiguous";
+      readonly reason: string;
+      readonly signerTxHash: string | null;
+    };
+
+export interface LighterOcoExecutionDeps {
+  readonly secretReader: LighterTradingSecretReader;
+  readonly authSigner: LighterSignerAdapter;
+  readonly groupedSigner: LighterGroupedOrderSignerAdapter;
+  readonly client: LighterOrderFeeClient & Pick<LighterClient,
+    | "sendTx" | "getApiKeys" | "getNextNonce" | "getMarketDetails"
+    | "getOrderBookOrders" | "getAccount" | "getAccountActiveOrders"
+    | "getAccountInactiveOrders" | "getAccountTrades">;
+  readonly intents: LighterEvidenceWritePorts<Pick<typeof intentsRepo,
+    "markPreSubmitRevalidated" | "attachNonceReservationWith" | "markSigned" | "markSubmitted" | "markApiAccepted" | "markSequencerPending" | "markProviderOutcome" | "markAmbiguous">>
+    & Pick<typeof intentsRepo, "markSendAttemptStarted" | "markExpiredUnsubmitted" | "markUnsubmittedRefused">;
+  readonly previews: Pick<typeof previewsRepo, "findFreshById">;
+  readonly nonceState: LighterEvidenceWritePorts<Pick<typeof nonceRepo, "recordExecutionObserved">>
+    & Pick<typeof nonceRepo, "releaseUnsubmittedReservation">
+    & { readonly reserveObservedWith: (...args: Parameters<typeof nonceRepo.reserveObservedWith>) => Promise<{
+      readonly reservedNonce: string | null; readonly reservationId: string | null;
+    } | null> };
+  readonly transaction: typeof withTransaction;
+  readonly now: () => number;
+  readonly wait: (delayMs: number) => Promise<void>;
+  /**
+   * The fill observation boundary. OPTIONAL and defaulted in the production
+   * factory, exactly as it is on the order-create executor, so a caller that
+   * assembles its own deps never writes to the fill ledger by accident.
+   */
+  readonly fills?: LighterFillObservationDeps;
+}
+
+let configuredDeps: LighterOcoExecutionDeps | null = null;
+
+export function configureLighterOcoExecutionDeps(deps: LighterOcoExecutionDeps): () => void {
+  configuredDeps = deps;
+  return () => { if (configuredDeps === deps) configuredDeps = null; };
+}
+
+export function getConfiguredLighterOcoExecutionDeps(): LighterOcoExecutionDeps | null {
+  return configuredDeps;
+}
+
+export function defaultLighterOcoExecutionDeps(input: {
+  readonly secretReader: LighterTradingSecretReader;
+  readonly authSigner: LighterSignerAdapter;
+  readonly groupedSigner: LighterGroupedOrderSignerAdapter;
+  readonly client: LighterOcoExecutionDeps["client"];
+}): LighterOcoExecutionDeps {
+  return {
+    ...input,
+    intents: intentsRepo,
+    previews: previewsRepo,
+    nonceState: nonceRepo,
+    transaction: withTransaction,
+    now: Date.now,
+    wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    fills: defaultLighterFillObservationDeps(),
+  };
+}
+
+export async function executeApprovedLighterOco(input: {
+  readonly plan: LighterOcoExecutionPlan;
+  readonly group: LighterUnsignedOcoRequest;
+  readonly deps: LighterOcoExecutionDeps;
+  readonly abortSignal?: AbortSignal;
+}): Promise<ExecuteApprovedLighterOcoResult> {
+  const { plan, group, deps } = input;
+  const assertAuthority = (phase: Parameters<typeof assertIntentAuthority>[2]): void =>
+    assertIntentAuthority(plan.expiresAt, deps.now(), phase, input.abortSignal);
+  assertAuthority("before_reservation");
+  await revalidate(plan, deps);
+  const credential = await readCredential(plan, deps);
+  const secret = await loadLighterTradingSecretMaterial(plan.credentialReference, deps.secretReader);
+  assertAuthority("before_reservation");
+  const auth = await createLighterAccountAuthWithAdapter(
+    buildLighterAccountAuthSigningInput({
+      order: group.orders[0],
+      secret,
+      deadlineUnixSeconds: Math.floor(deps.now() / 1000) + AUTH_TTL_SECONDS,
+    }),
+    deps.authSigner,
+  );
+  if (normalizeKey(credential.publicKey) !== normalizeKey(auth.publicKey)) {
+    throw blocked("The local Lighter trading key does not match the registered account key.");
+  }
+  await assertNoExistingChildren(plan, group, auth.authToken, deps);
+  const observed = await deps.nonceState.recordExecutionObserved({
+    environment: plan.environment,
+    accountIndex: plan.accountIndex,
+    apiKeyIndex: plan.apiKeyIndex,
+    nonce: credential.nextNonce,
+    publicKey: credential.publicKey,
+    transactionTime: credential.transactionTime,
+  });
+  if (observed === null) {
+    throw blocked("The live Lighter nonce is blocked by an unresolved local reservation.");
+  }
+  assertAuthority("before_reservation");
+  const reservation = await reserveNonce(plan, deps);
+  let signerTxHash: string | null = null;
+  let signingStarted = false;
+  let signerExited = false;
+  let sendAdmissionStarted = false;
+  try {
+    assertAuthority("after_reservation");
+    assertAuthority("before_signing");
+    assertOcoWireExpiry(group, deps.now());
+    signingStarted = true;
+    const signed = await signLighterCreateGroupedOrdersWithAdapter(
+      buildLighterCreateGroupedOrdersSigningInput({
+        group,
+        secret,
+        nonce: reservation.nonceValue,
+        restBaseUrl: LIGHTER_ENDPOINTS[plan.environment].restBaseUrl,
+      }),
+      deps.groupedSigner,
+    );
+    signerExited = lighterSignerRunExited({ kind: "resolved" });
+    signerTxHash = signed.txHash;
+    let persistedSigned;
+    try {
+      persistedSigned = await persistLighterSigningEvidence(() => deps.intents.markSigned({
+        intentId: plan.intentId,
+        sessionId: plan.sessionId,
+        environment: plan.environment,
+        reservationId: reservation.reservationId,
+        nonceValue: reservation.nonceValue,
+        stopLossClientOrderIndex: group.orders[0].clientOrderIndex,
+        takeProfitClientOrderIndex: group.orders[1].clientOrderIndex,
+        signerTxHash: signed.txHash,
+      }));
+    } catch {
+      await markAmbiguous(plan, deps, "oco_signed_state_persist_failed");
+      throw blocked("The signed OCO state could not be persisted before submission.");
+    }
+    if (persistedSigned === null) {
+      await markAmbiguous(plan, deps, "oco_signed_state_persist_failed");
+      throw blocked("The signed OCO state could not be persisted before submission.");
+    }
+    assertAuthority("after_signing");
+    assertOcoWireExpiry(group, deps.now());
+    let staged;
+    try {
+      staged = await deps.intents.markSubmitted({
+        intentId: plan.intentId, sessionId: plan.sessionId,
+        environment: plan.environment, signerTxHash: signed.txHash,
+      });
+    } catch {
+      await markAmbiguous(plan, deps, "oco_submitted_state_persist_failed");
+      throw blocked("The OCO submission stage could not be persisted before sendTx.");
+    }
+    if (staged === null) throw new LighterIntentRefusal("submission_admission_refused");
+
+    assertAuthority("before_submission");
+    sendAdmissionStarted = true;
+    const admitted = await deps.intents.markSendAttemptStarted({
+      intentId: plan.intentId, sessionId: plan.sessionId, signerTxHash: signed.txHash,
+    });
+    if (!admitted) {
+      sendAdmissionStarted = false;
+      throw new LighterIntentRefusal("submission_admission_refused");
+    }
+    assertAuthority("before_submission");
+    assertOcoWireExpiry(group, deps.now());
+
+    let response: Awaited<ReturnType<LighterClient["sendTx"]>>;
+    try {
+      response = await deps.client.sendTx(plan.environment, {
+        txType: signed.txType,
+        txInfo: signed.txInfo,
+      });
+    } catch (error) {
+      const reason = structuralSendFailure(error);
+      await markAmbiguous(plan, deps, reason);
+      return ambiguous(plan, reason, signed.txHash);
+    }
+    if (response.code !== 200 || response.tx_hash !== signed.txHash) {
+      const reason = response.code !== 200 ? "oco_provider_non_acceptance_code" : "oco_provider_tx_hash_mismatch";
+      await markAmbiguous(plan, deps, reason);
+      return ambiguous(plan, reason, signed.txHash);
+    }
+    let accepted;
+    try {
+      accepted = await deps.intents.markApiAccepted({
+        intentId: plan.intentId, sessionId: plan.sessionId, environment: plan.environment,
+        signerTxHash: signed.txHash, submittedTxHash: response.tx_hash,
+        submitCode: response.code, submitMessage: response.message ?? null,
+        predictedExecutionTimeMs: response.predicted_execution_time_ms,
+        volumeQuotaRemaining: response.volume_quota_remaining ?? null,
+      });
+    } catch {
+      await markAmbiguous(plan, deps, "oco_api_acceptance_persist_failed");
+      return ambiguous(plan, "oco_api_acceptance_persist_failed", signed.txHash);
+    }
+    if (accepted === null) {
+      await markAmbiguous(plan, deps, "oco_api_acceptance_persist_failed");
+      return ambiguous(plan, "oco_api_acceptance_persist_failed", signed.txHash);
+    }
+    let pending;
+    try {
+      pending = await deps.intents.markSequencerPending({
+        intentId: plan.intentId, sessionId: plan.sessionId, environment: plan.environment,
+      });
+    } catch {
+      await markAmbiguous(plan, deps, "oco_sequencer_pending_persist_failed");
+      return ambiguous(plan, "oco_sequencer_pending_persist_failed", signed.txHash);
+    }
+    if (pending === null) {
+      await markAmbiguous(plan, deps, "oco_sequencer_pending_persist_failed");
+      return ambiguous(plan, "oco_sequencer_pending_persist_failed", signed.txHash);
+    }
+    return await reconcileOco({
+      plan, group, deps, authToken: auth.authToken,
+      signerTxHash: signed.txHash, submittedTxHash: response.tx_hash,
+      predictedExecutionTimeMs: response.predicted_execution_time_ms,
+    });
+  } catch (error) {
+    signerExited ||= lighterSignerRunExited({ kind: "rejected", error });
+    if (!sendAdmissionStarted && (!signingStarted
+      || (signerExited && (error instanceof LighterIntentRefusal || signerTxHash === null)))) {
+      const refused = signerTxHash === null
+        ? await deps.intents.markUnsubmittedRefused({
+          intentId: plan.intentId, sessionId: plan.sessionId, reservationId: reservation.reservationId, reason: error instanceof LighterIntentRefusal ? error.reason : "pre_sign_refused",
+        })
+        : await deps.intents.markExpiredUnsubmitted({
+          intentId: plan.intentId, sessionId: plan.sessionId, reservationId: reservation.reservationId,
+          signerTxHash, reason: error instanceof LighterIntentRefusal ? error.reason : "pre_sign_refused",
+        });
+      if (refused) await deps.nonceState.releaseUnsubmittedReservation({
+        environment: plan.environment, accountIndex: plan.accountIndex, apiKeyIndex: plan.apiKeyIndex,
+        reservationId: reservation.reservationId, nonceValue: reservation.nonceValue,
+      });
+    } else if (signerTxHash === null || error instanceof LighterIntentRefusal) {
+      await markAmbiguous(plan, deps, error instanceof LighterIntentRefusal ? error.reason : "oco_signing_failed_after_nonce_reservation");
+    }
+    throw error;
+  }
+}
+
+async function revalidate(plan: LighterOcoExecutionPlan, deps: LighterOcoExecutionDeps): Promise<void> {
+  const [stopLoss, takeProfit] = await Promise.all([
+    deps.previews.findFreshById(plan.sessionId, plan.environment, plan.stopLossPreviewId),
+    deps.previews.findFreshById(plan.sessionId, plan.environment, plan.takeProfitPreviewId),
+  ]);
+  if (stopLoss === null || takeProfit === null) {
+    throw blocked("One or both exact OCO child previews are no longer fresh.");
+  }
+  let marketResponse: Awaited<ReturnType<LighterClient["getMarketDetails"]>>;
+  let orderBook: Awaited<ReturnType<LighterClient["getOrderBookOrders"]>>;
+  let account: Awaited<ReturnType<LighterClient["getAccount"]>>;
+  try {
+    [marketResponse, orderBook, account] = await Promise.all([
+      deps.client.getMarketDetails(plan.environment, { marketId: plan.marketIndex, filter: "all" }, FRESH),
+      deps.client.getOrderBookOrders(plan.environment, { marketId: plan.marketIndex, limit: 250 }, FRESH),
+      deps.client.getAccount(plan.environment, { by: "index", value: plan.accountIndex }, FRESH),
+    ]);
+  } catch {
+    throw blocked("Fresh Lighter market, book, or position evidence is unavailable for OCO revalidation.");
+  }
+  const market = marketResponse.order_book_details.find((row) => row.market_id === plan.marketIndex);
+  if (market === undefined || market.market_type !== "perp") {
+    throw blocked("The approved perpetual market is unavailable during OCO revalidation.");
+  }
+  await revalidateLighterOrderFees({ client: deps.client, environment: plan.environment, accountIndex: plan.accountIndex, market, account, reduceOnly: true, side: plan.side, integratorFees: plan.integratorFees });
+  const previewNowMs = Date.parse(stopLoss.expiresAt) - LIGHTER_ORDER_PREVIEW_FRESHNESS_MS;
+  const stopEvidence = revalidateApprovedLighterOrder({
+    plan: ocoLegRevalidationPlan(plan, "stop-loss"), approvedPreview: stopLoss,
+    context: { market, orderBook, account }, nowMs: previewNowMs,
+  });
+  const takeEvidence = revalidateApprovedLighterOrder({
+    plan: ocoLegRevalidationPlan(plan, "take-profit"), approvedPreview: takeProfit,
+    context: { market, orderBook, account }, nowMs: previewNowMs,
+  });
+  const persisted = await deps.intents.markPreSubmitRevalidated({
+    intentId: plan.intentId, sessionId: plan.sessionId, environment: plan.environment,
+    evidence: {
+      kind: "lighter_oco_pre_submit_revalidation",
+      checkedAt: new Date(deps.now()).toISOString(),
+      stopLoss: stopEvidence,
+      takeProfit: takeEvidence,
+      groupChecks: ["same_position", "same_size", "same_side", "same_expiry", "both_reduce_only"],
+    },
+  });
+  if (persisted === null) throw blocked("OCO revalidation evidence could not be persisted.");
+}
+
+async function readCredential(plan: LighterOcoExecutionPlan, deps: LighterOcoExecutionDeps): Promise<{
+  readonly publicKey: string; readonly nextNonce: number; readonly transactionTime: number;
+}> {
+  let keys: Awaited<ReturnType<LighterClient["getApiKeys"]>>;
+  let nonce: Awaited<ReturnType<LighterClient["getNextNonce"]>>;
+  try {
+    [keys, nonce] = await Promise.all([
+      deps.client.getApiKeys(plan.environment, { accountIndex: plan.accountIndex, apiKeyIndex: plan.apiKeyIndex }, FRESH),
+      deps.client.getNextNonce(plan.environment, { accountIndex: plan.accountIndex, apiKeyIndex: plan.apiKeyIndex }, FRESH),
+    ]);
+  } catch {
+    throw blocked("Lighter API-key identity or next nonce is unavailable.");
+  }
+  const matches = keys.api_keys.filter((key) =>
+    key.account_index === plan.accountIndex && key.api_key_index === plan.apiKeyIndex);
+  const key = matches[0];
+  if (matches.length !== 1 || key === undefined) throw blocked("The exact registered Lighter API key is unavailable.");
+  return { publicKey: key.public_key, nextNonce: nonce.nonce, transactionTime: key.transaction_time };
+}
+
+async function assertNoExistingChildren(
+  plan: LighterOcoExecutionPlan,
+  group: LighterUnsignedOcoRequest,
+  authToken: string,
+  deps: LighterOcoExecutionDeps,
+): Promise<void> {
+  const auth = { token: authToken, accountIndex: plan.accountIndex };
+  let active: Awaited<ReturnType<LighterClient["getAccountActiveOrders"]>>;
+  let inactive: Awaited<ReturnType<LighterClient["getAccountInactiveOrders"]>>;
+  let trades: Awaited<ReturnType<LighterClient["getAccountTrades"]>>;
+  try {
+    [active, inactive, trades] = await Promise.all([
+      deps.client.getAccountActiveOrders(plan.environment, { accountIndex: plan.accountIndex, marketId: plan.marketIndex, marketType: "all" }, auth),
+      deps.client.getAccountInactiveOrders(plan.environment, { accountIndex: plan.accountIndex, marketId: plan.marketIndex, marketType: "all", limit: 100 }, auth),
+      deps.client.getAccountTrades(plan.environment, { accountIndex: plan.accountIndex, limit: 100, sortBy: "timestamp" }, auth),
+    ]);
+  } catch {
+    throw blocked("Authenticated OCO outcome repair is unavailable before submission.");
+  }
+  for (const order of group.orders) {
+    if (
+      findMatchingLighterOrder([...active.orders, ...inactive.orders], plan, order.clientOrderIndex) !== null
+      || findMatchingLighterTrade(trades.trades, plan, order.clientOrderIndex, "__vex_oco_preflight__") !== null
+    ) throw blocked("A child client-order id already exists before OCO submission.");
+  }
+}
+
+async function reserveNonce(plan: LighterOcoExecutionPlan, deps: LighterOcoExecutionDeps): Promise<{
+  readonly reservationId: string; readonly nonceValue: string;
+}> {
+  return deps.transaction(async (client) => {
+    const reservationId = `lighter-oco:${plan.intentId}`;
+    const reserved = await deps.nonceState.reserveObservedWith(client, {
+      environment: plan.environment, accountIndex: plan.accountIndex,
+      apiKeyIndex: plan.apiKeyIndex, reservationId,
+    });
+    if (reserved?.reservedNonce == null || reserved.reservationId == null) {
+      throw blocked("No observed Lighter nonce is available for this OCO group.");
+    }
+    const attached = await deps.intents.attachNonceReservationWith(client, {
+      intentId: plan.intentId, sessionId: plan.sessionId, environment: plan.environment,
+      accountIndex: plan.accountIndex, apiKeyIndex: plan.apiKeyIndex,
+      reservationId: reserved.reservationId, nonceValue: reserved.reservedNonce,
+    });
+    if (attached === null) throw blocked("The OCO nonce reservation could not be attached atomically.");
+    return { reservationId: reserved.reservationId, nonceValue: reserved.reservedNonce };
+  });
+}
+
+async function reconcileOco(input: {
+  readonly plan: LighterOcoExecutionPlan; readonly group: LighterUnsignedOcoRequest;
+  readonly deps: LighterOcoExecutionDeps;
+  readonly abortSignal?: AbortSignal; readonly authToken: string;
+  readonly signerTxHash: string; readonly submittedTxHash: string;
+  readonly predictedExecutionTimeMs: number;
+}): Promise<ExecuteApprovedLighterOcoResult> {
+  const { plan, group, deps } = input;
+  const auth = { token: input.authToken, accountIndex: plan.accountIndex };
+  try {
+    const delay = Math.min(2_000, Math.max(100, Math.ceil(input.predictedExecutionTimeMs || 100)));
+    for (let attempt = 0; attempt < ACTIVE_ATTEMPTS; attempt += 1) {
+      const active = await deps.client.getAccountActiveOrders(plan.environment, {
+        accountIndex: plan.accountIndex, marketId: plan.marketIndex, marketType: "all",
+      }, auth);
+      const evidence = classifyOcoEvidence(plan, group, active.orders, [], [], input.submittedTxHash);
+      if (evidence.state === "active") return persistOutcome(input, evidence, null);
+      if (attempt < ACTIVE_ATTEMPTS - 1) await deps.wait(delay * (attempt + 1));
+    }
+    const [active, inactive, trades] = await Promise.all([
+      deps.client.getAccountActiveOrders(plan.environment, { accountIndex: plan.accountIndex, marketId: plan.marketIndex, marketType: "all" }, auth),
+      deps.client.getAccountInactiveOrders(plan.environment, { accountIndex: plan.accountIndex, marketId: plan.marketIndex, marketType: "all", limit: 100 }, auth),
+      deps.client.getAccountTrades(plan.environment, { accountIndex: plan.accountIndex, limit: 100, sortBy: "timestamp" }, auth),
+    ]);
+    return persistOutcome(
+      input,
+      classifyOcoEvidence(plan, group, active.orders, inactive.orders, trades.trades, input.submittedTxHash),
+      trades.trades,
+    );
+  } catch {
+    await markAmbiguous(plan, deps, "oco_provider_outcome_read_failed");
+    return ambiguous(plan, "oco_provider_outcome_read_failed", input.signerTxHash);
+  }
+}
+
+/**
+ * One OCO leg as the classification saw it, in the shape the FILL BOUNDARY
+ * needs: which child order it is, what the venue says it did, and how much the
+ * venue reports it filled.
+ *
+ * The evidence JSON beside it is what the intent stores; this is the typed
+ * half, because deciding whether a leg's fill reached the ledger from an
+ * untyped `Record<string, unknown>` is exactly the kind of guess the fill
+ * boundary refuses to make.
+ */
+export interface LighterOcoLegEvidence {
+  readonly name: "stop_loss" | "take_profit";
+  readonly clientOrderIndex: string;
+  readonly state: string;
+  readonly source: "active_order" | "inactive_order" | "account_trade" | "not_found";
+  /** The venue's own filled base quantity for this leg, or null when its evidence carries none. */
+  readonly reportedFilledBaseSize: string | null;
+  readonly evidence: Record<string, unknown>;
+}
+
+export function classifyOcoEvidence(
+  plan: Pick<LighterOcoExecutionPlan, "accountIndex" | "marketIndex" | "side">,
+  group: LighterUnsignedOcoRequest,
+  active: readonly LighterAccountOrder[],
+  inactive: readonly LighterAccountOrder[],
+  trades: readonly LighterTrade[],
+  _submittedTxHash: string,
+): {
+  readonly state: "active" | "resolved" | "rejected" | "sequencer_pending";
+  readonly evidence: Record<string, unknown>;
+  readonly legs: readonly LighterOcoLegEvidence[];
+} {
+  const leg = (index: 0 | 1, name: "stop_loss" | "take_profit"): LighterOcoLegEvidence => {
+    const clientOrderIndex = group.orders[index].clientOrderIndex;
+    const activeOrder = findMatchingLighterOrder(active, plan, clientOrderIndex);
+    if (activeOrder !== null) return { name, clientOrderIndex, state: stateFromActiveLighterOrder(activeOrder),
+      source: "active_order", reportedFilledBaseSize: reportedLighterFilledBaseSize(activeOrder.filled_base_amount),
+      evidence: lighterOrderEvidenceJson("active_order", activeOrder, clientOrderIndex) };
+    const inactiveOrder = findMatchingLighterOrder(inactive, plan, clientOrderIndex);
+    if (inactiveOrder !== null) return { name, clientOrderIndex, state: stateFromInactiveLighterOrder(inactiveOrder),
+      source: "inactive_order", reportedFilledBaseSize: reportedLighterFilledBaseSize(inactiveOrder.filled_base_amount),
+      evidence: lighterOrderEvidenceJson("inactive_order", inactiveOrder, clientOrderIndex) };
+    // Grouped transactions share one transaction hash across both children, so
+    // tx-hash fallback could incorrectly attribute one fill to both legs. OCO
+    // reconciliation therefore requires the exact child client-order index.
+    const trade = findMatchingLighterTrade(trades, plan, clientOrderIndex, "__vex_oco_child_id_only__");
+    if (trade !== null) return { name, clientOrderIndex, state: "partially_filled", source: "account_trade",
+      reportedFilledBaseSize: null,
+      evidence: { ...lighterTradeEvidenceJson(trade, plan, clientOrderIndex), orderId: lighterOrderIdFromTrade(trade, plan) } };
+    return { name, clientOrderIndex, state: "not_found", source: "not_found",
+      reportedFilledBaseSize: null, evidence: { clientOrderIndex } };
+  };
+  const stopLoss = leg(0, "stop_loss");
+  const takeProfit = leg(1, "take_profit");
+  const states = [stopLoss.state, takeProfit.state];
+  const bothActive = states.every((state) => state === "open" || state === "partially_filled");
+  const hasFill = states.some((state) => state === "filled" || state === "partially_filled");
+  const siblingEnded = states.some((state) => state === "canceled" || state === "rejected");
+  const bothRejected = states.every((state) => state === "canceled" || state === "rejected");
+  const state = bothActive ? "active" : hasFill && siblingEnded ? "resolved" : bothRejected ? "rejected" : "sequencer_pending";
+  return {
+    state,
+    evidence: {
+      kind: "lighter_oco_provider_evidence",
+      groupingType: "one-cancels-the-other",
+      stopLoss,
+      takeProfit,
+      completePairVisible: state === "active" || state === "resolved" || state === "rejected",
+    },
+    legs: [stopLoss, takeProfit],
+  };
+}
+
+async function persistOutcome(
+  input: Parameters<typeof reconcileOco>[0],
+  outcome: ReturnType<typeof classifyOcoEvidence>,
+  /**
+   * The trade page this classification read, or NULL when it classified from
+   * order rows alone (the active-only attempts read no trades).
+   */
+  trades: readonly LighterTrade[] | null,
+): Promise<ExecuteApprovedLighterOcoResult> {
+  const persisted = await input.deps.intents.markProviderOutcome({
+    intentId: input.plan.intentId, sessionId: input.plan.sessionId,
+    environment: input.plan.environment, state: outcome.state, evidence: outcome.evidence,
+  });
+  if (persisted === null) {
+    await markAmbiguous(input.plan, input.deps, "oco_provider_outcome_persist_failed");
+    return ambiguous(input.plan, "oco_provider_outcome_persist_failed", input.signerTxHash);
+  }
+  await observeOcoLegFills(input, outcome.legs, trades);
+  const common = {
+    intentId: input.plan.intentId,
+    signerTxHash: input.signerTxHash,
+    submittedTxHash: input.submittedTxHash,
+    stopLossClientOrderIndex: input.group.orders[0].clientOrderIndex,
+    takeProfitClientOrderIndex: input.group.orders[1].clientOrderIndex,
+    evidence: outcome.evidence,
+  };
+  if (outcome.state === "active" || outcome.state === "resolved" || outcome.state === "rejected") {
+    return { status: outcome.state, executionState: outcome.state, ...common };
+  }
+  return { status: "sequencer_pending", executionState: "sequencer_pending", ...common };
+}
+
+/**
+ * THE OBSERVATION BOUNDARY FOR A TRIGGERED OCO LEG.
+ *
+ * An OCO leg that triggers is a fill like any other, and until this existed
+ * none of them reached `lighter_fills`: the classification above reads the
+ * account's trades, decides the group's state from ORDER rows wherever it can,
+ * and returns - so a leg confirmed from an inactive order carried its fill
+ * away with it. The ledger row belongs to the OCO EXECUTION INTENT that
+ * authorized the group, which is what `lighter_fills.execution_intent_id`
+ * stores for these rows.
+ *
+ * Two paths, the same boundary. When this classification read a trade page,
+ * every matching trade on it is observed directly - no second provider request
+ * for bytes already in hand. When it classified from order rows alone, a leg
+ * the venue says filled gets ONE bounded follow-up read, gated on the ledger
+ * being behind the quantity that order row reported.
+ *
+ * Never throws and never changes the outcome that was just committed: a
+ * reporting failure is owed to the next observation, never to the money.
+ */
+async function observeOcoLegFills(
+  input: Parameters<typeof reconcileOco>[0],
+  legs: readonly LighterOcoLegEvidence[],
+  trades: readonly LighterTrade[] | null,
+): Promise<void> {
+  const fills = input.deps.fills;
+  if (fills === undefined) return;
+  const { plan } = input;
+  for (const leg of legs) {
+    if (leg.state !== "filled" && leg.state !== "partially_filled") continue;
+    const intent = {
+      intentId: plan.intentId,
+      environment: plan.environment,
+      accountIndex: plan.accountIndex,
+      marketIndex: plan.marketIndex,
+      side: plan.side,
+      clientOrderIndex: leg.clientOrderIndex,
+    };
+    const report = trades !== null
+      ? await observeLighterFills({
+        intent,
+        // Grouped transactions share one hash across both children, so the
+        // child client-order index is the ONLY admissible match here - the
+        // same rule the classification above applies.
+        trades: matchingLighterTrades(
+          trades,
+          { accountIndex: plan.accountIndex, marketIndex: plan.marketIndex, side: plan.side },
+          leg.clientOrderIndex,
+          "__vex_oco_child_id_only__",
+        ),
+        authorizedFees: plan.integratorFees ?? null,
+        deps: fills,
+      })
+      : await observeLighterFillsFromAccountTrades({
+        intent,
+        authorizedFees: plan.integratorFees ?? null,
+        deps: fills,
+        read: {
+          // Bound through a closure: the production client is a class instance
+          // whose method needs its receiver.
+          getAccountTrades: (environment, params, auth) =>
+            input.deps.client.getAccountTrades(environment, params, auth),
+          auth: { token: input.authToken, accountIndex: plan.accountIndex },
+          submittedTxHash: "__vex_oco_child_id_only__",
+        },
+        onlyWhenLedgerIncomplete: { reportedFilledBaseSize: leg.reportedFilledBaseSize },
+      });
+    logger.info("lighter.fill_observation.follow_up", {
+      site: "oco_execution",
+      intentId: plan.intentId,
+      leg: leg.name,
+      source: leg.source,
+      state: leg.state,
+      observed: report.observed,
+      recorded: report.recorded,
+      duplicates: report.duplicates,
+      failed: report.failed,
+    });
+  }
+}
+
+function normalizeKey(value: string): string {
+  return value.trim().replace(/^0x/i, "").toLowerCase();
+}
+
+function structuralSendFailure(error: unknown): string {
+  if (error instanceof VexError) {
+    return `oco_sendtx_failed_after_submit_attempt:code=${error.code}${
+      typeof error.httpStatus === "number" ? `,http=${error.httpStatus}` : ""}`;
+  }
+  return "oco_sendtx_failed_after_submit_attempt";
+}
+
+async function markAmbiguous(
+  plan: LighterOcoExecutionPlan,
+  deps: LighterOcoExecutionDeps,
+  reason: string,
+): Promise<void> {
+  await deps.intents.markAmbiguous({
+    intentId: plan.intentId, sessionId: plan.sessionId,
+    environment: plan.environment, reason,
+  });
+}
+
+function ambiguous(
+  plan: LighterOcoExecutionPlan,
+  reason: string,
+  signerTxHash: string | null,
+): ExecuteApprovedLighterOcoResult {
+  return { status: "ambiguous", executionState: "ambiguous", intentId: plan.intentId, reason, signerTxHash };
+}
+
+function blocked(reason: string): VexError {
+  return new VexError(
+    ErrorCodes.LIGHTER_INVALID_REQUEST,
+    `${reason} No grouped order was submitted.`,
+    "Run lighter.order.status for unresolved state, or restart from a fresh OCO preview when safe.",
+  );
+}
+
+
+function assertOcoWireExpiry(group: LighterUnsignedOcoRequest, nowMs: number): void {
+  if (group.orders.some((order) => order.orderExpiryMs !== 0 && order.orderExpiryMs < nowMs + 300_000)) {
+    throw blocked("The approved OCO wire expiry is below the provider minimum. No submission is authorized.");
+  }
+}

@@ -1,3 +1,4 @@
+import { createApprovedDispatchAbortOwner } from "../../studio/dispatch-preflight.js";
 /**
  * The Vex Studio approved-dispatch path - sibling of `../dispatch-approved.ts`,
  * with the same ordering and none of the agent-session machinery.
@@ -144,10 +145,12 @@ export async function applyStudioApproveSideEffects(
   approvalId: string,
   snapshot: Extract<ApproveSnapshot, { type: "approved_in_tx" }>,
 ): Promise<ApprovePrepareOutcome> {
+  const abortOwner = createApprovedDispatchAbortOwner(snapshot.row.project_id);
   const lease = acquireStudioDispatchLease(snapshot.row.project_id);
   try {
-    return await dispatchApprovedStudioAction(approvalId, snapshot);
+    return await dispatchApprovedStudioAction(approvalId, snapshot, abortOwner.signal);
   } finally {
+    abortOwner.dispose();
     lease?.release();
   }
 }
@@ -155,6 +158,7 @@ export async function applyStudioApproveSideEffects(
 async function dispatchApprovedStudioAction(
   approvalId: string,
   snapshot: Extract<ApproveSnapshot, { type: "approved_in_tx" }>,
+  abortSignal: AbortSignal,
 ): Promise<ApprovePrepareOutcome> {
   const row = snapshot.row;
   const sessionId = row.session_id;
@@ -333,7 +337,7 @@ async function dispatchApprovedStudioAction(
   // rebuild their current prequote/risk disclosures. The complete rebuilt card
   // must equal the JSON the user approved, including every top-level field and
   // every critical-argument key.
-  const card = await revalidateStudioApprovalCard(scope, toolCall, row.preview_json);
+  const card = await revalidateStudioApprovalCard(scope, toolCall, row.preview_json, expiresAt);
   if (!card.ok) {
     logger.warn("engine.studio.approval_card_revalidation_refused", {
       approvalId,
@@ -361,6 +365,7 @@ async function dispatchApprovedStudioAction(
   //    approval this time. `executeProtocolTool` re-runs the prequote gate.
   const context = buildProjectToolContext(scope, {
     approved: true,
+    abortSignal,
     approvalId,
     // WHICH QUOTE this card authorized, from the envelope the authority digest
     // above has just proven unchanged. The card rebuild already refuses a
@@ -434,6 +439,7 @@ async function revalidateStudioApprovalCard(
   scope: ProjectScope,
   toolCall: NonNullable<ReturnType<typeof readStudioApprovalToolCall>>,
   storedPreview: unknown,
+  expiresAt: string,
 ): Promise<StudioCardRevalidation> {
   let admission: Awaited<ReturnType<typeof admitStudioCall>>;
   try {
@@ -465,10 +471,14 @@ async function revalidateStudioApprovalCard(
         "the call no longer produced the approval card that was previously shown",
     };
   }
+  if (admission.preparedApproval !== undefined && admission.preparedApproval.expiresAt !== expiresAt) {
+    return { ok: false, reason: "expiry_mismatch", refusal: "the prepared order expiry no longer matches the approval" };
+  }
   const rebuilt = buildApprovalIntentPreview({
     toolName: toolCall.toolName,
     toolArgs: toolCall.toolArgs,
     result: admission.result,
+    ...(admission.preparedApproval === undefined ? {} : { trustedPreview: admission.preparedApproval.approvalPreview }),
     ...(admission.result.preparedApprovalBinding === undefined
       ? {}
       : { preparedApprovalBinding: admission.result.preparedApprovalBinding }),

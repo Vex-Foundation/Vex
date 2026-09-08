@@ -67,6 +67,33 @@ describe("buildProtocolsPrompt", () => {
     for (const line of routingLines) expect(line).not.toContain("—");
   });
 
+  it("tells the model that Lighter previews prepare approval rather than execute", () => {
+    resetProtocolsPromptCache();
+    const prompt = buildProtocolsPrompt();
+    const section = prompt.split("### lighter")[1]?.split("\n### ")[0] ?? "";
+    expect(section).toContain("Preview exact Lighter orders from live market and account data before any approval");
+    expect(section).toContain("approval-gated deposits, orders, withdrawals, and claims");
+    expect(section).toContain("previews are read-only");
+    expect(section).toContain("every fund-moving or exchange-state-changing action remains approval-gated");
+    expect(section).toContain("normal users never paste trading keys");
+    expect(section).not.toContain("Settings/API keys");
+  });
+
+  it("routes plain-language Lighter setup without exposing internal identifiers", () => {
+    resetProtocolsPromptCache();
+    const prompt = buildProtocolsPrompt();
+    const section = prompt.split("### lighter")[1]?.split("\n### ")[0] ?? "";
+    expect(section).toContain("set up Lighter");
+    expect(section).toContain("trade perps on Lighter");
+    expect(section).toContain("managed wallet-funded onboarding");
+    expect(section).toContain("account/API-key indexes are resolved internally");
+    expect(section).toContain("environment-specific settlement assets");
+    expect(section).toContain("Ethereum USDC for Core");
+    expect(section).toContain("Robinhood Chain USDG for RHC");
+    expect(section).not.toContain("ask the user for their account index");
+    expect(section).not.toContain("Ask the user to paste an API key");
+  });
+
   // pools.fun doctrine (P4). The integration shipped every layer except the
   // system-prompt doctrine, so a cold model could see the namespace on the map
   // and still not know that these tokens trade on `kyberswap`, that the preview
@@ -110,12 +137,6 @@ describe("buildProtocolsPrompt", () => {
       expect(prompt).toContain("my launches on the Robinhood launchpad");
     });
 
-    // The address is NOT knowable at preview time (image -> metadata link ->
-    // salt -> address) and the deployment fee moves; a model that promises
-    // either from a preview is stating a money fact it cannot support.
-    // Post-PPV (2026-08-19): the doctrine must state the REQUIREMENT and the
-    // refusal, not merely warn about a blank token. A model reading only a
-    // consequence launched one anyway.
     it("states that the agent path requires an image and that execute refuses without one", () => {
       resetProtocolsPromptCache();
       const prompt = buildProtocolsPrompt();
@@ -139,8 +160,6 @@ describe("buildProtocolsPrompt", () => {
       expect(prompt).toContain("The deployment cost is dynamic");
     });
 
-    // Fee basis and destination are the two facts rule 90 says must never be
-    // model-chosen: 25 bps on the NATIVE value only, recipient pinned.
     it("states the 25 bps native-only fee basis and the pinned fee recipient", () => {
       resetProtocolsPromptCache();
       const full = buildPromptStack(makeContext()).staticLayers.join("\n");
@@ -161,8 +180,6 @@ describe("buildProtocolsPrompt", () => {
       expect(prompt).toContain("HOST-authored launch ceilings");
     });
 
-    // `alreadyCollected` is NOT the claimable total - the simulation is. That
-    // inversion is the one way this tool misreports money.
     it("states dryRun claim semantics: both legs, and alreadyCollected is not the total", () => {
       resetProtocolsPromptCache();
       const prompt = buildProtocolsPrompt();

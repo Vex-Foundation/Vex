@@ -48,7 +48,15 @@ import {
 import { statusFor } from "./api-keys/status-helpers.js";
 import { ApiKeysSkipPanel } from "./api-keys/ApiKeysSkipPanel.js";
 import { ApiKeysFormFooter } from "./api-keys/ApiKeysFormFooter.js";
-import { JupiterCard, TavilyCard, RettiwtCard, RelayCard } from "./api-keys/ProviderCards.js";
+import { LighterCredentialConnections } from "./api-keys/LighterCredentialConnections.js";
+import { LighterKeysConfigSection } from "./api-keys/LighterKeysConfigSection.js";
+import {
+  JupiterCard,
+  LighterTradingCard,
+  TavilyCard,
+  RettiwtCard,
+  RelayCard,
+} from "./api-keys/ProviderCards.js";
 
 export interface ApiKeysStepProps {
   readonly completedSteps: ReadonlyArray<WizardStepId>;
@@ -77,6 +85,14 @@ export function ApiKeysStep({
     tavily: useRef<HTMLInputElement | null>(null),
     rettiwt: useRef<HTMLInputElement | null>(null),
     relay: useRef<HTMLInputElement | null>(null),
+    lighterCoreTradingAccountIndex: useRef<HTMLInputElement | null>(null),
+    lighterCoreTradingApiKeyIndex: useRef<HTMLInputElement | null>(null),
+    lighterCoreTradingPrivateKey: useRef<HTMLInputElement | null>(null),
+    lighterCoreTradingRemove: useRef<HTMLInputElement | null>(null),
+    lighterRhcTradingAccountIndex: useRef<HTMLInputElement | null>(null),
+    lighterRhcTradingApiKeyIndex: useRef<HTMLInputElement | null>(null),
+    lighterRhcTradingPrivateKey: useRef<HTMLInputElement | null>(null),
+    lighterRhcTradingRemove: useRef<HTMLInputElement | null>(null),
   };
 
   const envState = envQuery.data?.ok === true ? envQuery.data.data : null;
@@ -85,6 +101,14 @@ export function ApiKeysStep({
   const tavilyConfigured = apiKeysState?.tavilyConfigured ?? false;
   const rettiwtConfigured = apiKeysState?.rettiwtConfigured ?? false;
   const relayConfigured = apiKeysState?.relayConfigured ?? false;
+  const lighterCoreTradingConfigured =
+    apiKeysState?.lighterCoreTradingConfigured ?? false;
+  const lighterRhcTradingConfigured =
+    apiKeysState?.lighterRhcTradingConfigured ?? false;
+  const lighterCoreManagedTradingScopes =
+    apiKeysState?.lighterCoreManagedTradingScopes ?? [];
+  const lighterRhcManagedTradingScopes =
+    apiKeysState?.lighterRhcManagedTradingScopes ?? [];
   // Back-edit ALWAYS renders the full form. In setup mode the skip-card
   // stays available whenever Jupiter is already configured (the skip-card
   // copy assumes it).
@@ -157,6 +181,31 @@ export function ApiKeysStep({
     );
   }
 
+  const rhcTradingCard = (
+    <LighterTradingCard
+      environment="rhc"
+      status={statusFor(lighterRhcTradingConfigured)}
+      configured={lighterRhcTradingConfigured}
+      managedScopes={lighterRhcManagedTradingScopes}
+      accountIndexRef={refs.lighterRhcTradingAccountIndex}
+      apiKeyIndexRef={refs.lighterRhcTradingApiKeyIndex}
+      privateKeyRef={refs.lighterRhcTradingPrivateKey}
+      removeRef={refs.lighterRhcTradingRemove}
+    />
+  );
+  const coreTradingCard = (
+    <LighterTradingCard
+      environment="core"
+      status={statusFor(lighterCoreTradingConfigured)}
+      configured={lighterCoreTradingConfigured}
+      managedScopes={lighterCoreManagedTradingScopes}
+      accountIndexRef={refs.lighterCoreTradingAccountIndex}
+      apiKeyIndexRef={refs.lighterCoreTradingApiKeyIndex}
+      privateKeyRef={refs.lighterCoreTradingPrivateKey}
+      removeRef={refs.lighterCoreTradingRemove}
+    />
+  );
+
   return (
     <WizardStepPanel
       panelDataAttr={{ kind: "apikeys", value: "form" }}
@@ -214,6 +263,29 @@ export function ApiKeysStep({
           status={statusFor(relayConfigured)}
           inputRef={refs.relay}
         />
+
+        {flowMode === "back-edit" ? (
+          <LighterKeysConfigSection
+            configuredCount={
+              Number(lighterRhcTradingConfigured) +
+              Number(lighterCoreTradingConfigured)
+            }
+          >
+            <div
+              className="flex flex-col gap-6"
+              data-vex-lighter-environment-list
+            >
+              {rhcTradingCard}
+              {coreTradingCard}
+            </div>
+            <LighterCredentialConnections />
+          </LighterKeysConfigSection>
+        ) : (
+          <>
+            {rhcTradingCard}
+            {coreTradingCard}
+          </>
+        )}
 
         {formError ? (
           <p className="text-sm text-danger" role="alert">

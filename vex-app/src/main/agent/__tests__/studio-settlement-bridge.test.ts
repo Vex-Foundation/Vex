@@ -15,6 +15,11 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type {
+  SecretSessionLifecycleListener,
+  SecretSessionLifecycleState,
+} from "../../secrets/session.js";
+
 vi.mock("../../logger/index.js", () => ({
   log: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
@@ -74,11 +79,53 @@ function databaseIsUp(): void {
 let secretSessionUnlocked = true;
 let studioTransitioning = false;
 let studioPoisoned = false;
+/**
+ * The bridge's lock listener, held exactly as the real session module holds it:
+ * a set the subscription adds to and the returned disposer removes from. Both
+ * halves matter - emitting through the set is how the lock revocation becomes
+ * observable, and the set's size after a teardown is how the disposer is proved
+ * to have run.
+ */
+const secretSessionLifecycleListeners =
+  new Set<SecretSessionLifecycleListener>();
 vi.mock("../../secrets/session.js", () => ({
   isSecretSessionUnlocked: () => secretSessionUnlocked,
   isStudioSessionTransitionInProgress: () => studioTransitioning,
   isStudioDispatchPoisoned: () => studioPoisoned,
+  onSecretSessionLifecycle: (listener: SecretSessionLifecycleListener) => {
+    secretSessionLifecycleListeners.add(listener);
+    return () => {
+      secretSessionLifecycleListeners.delete(listener);
+    };
+  },
 }));
+function emitSecretSessionLifecycle(state: SecretSessionLifecycleState): void {
+  for (const listener of secretSessionLifecycleListeners) listener(state);
+}
+/**
+ * The revocation the lock listener performs. The dispatch-preflight registry is
+ * deliberately REAL in this file, so the export is WRAPPED rather than replaced:
+ * the spy records the call and the production revocation still runs, which is
+ * what keeps the pre-existing teardown cases reading the same registry.
+ */
+const revokeApprovedDispatches = vi.fn();
+vi.mock(
+  "@vex-agent/engine/core/approval-runtime/studio/dispatch-preflight.js",
+  async (importOriginal) => {
+    const actual = await importOriginal<
+      typeof import("@vex-agent/engine/core/approval-runtime/studio/dispatch-preflight.js")
+    >();
+    return {
+      ...actual,
+      revokeApprovedDispatches: (
+        event: Parameters<typeof actual.revokeApprovedDispatches>[0],
+      ): void => {
+        revokeApprovedDispatches(event);
+        actual.revokeApprovedDispatches(event);
+      },
+    };
+  },
+);
 
 const setStudioDispatchPreflight = vi.fn();
 const reconcileAbandonedStudioDispatches = vi.fn();
@@ -140,6 +187,9 @@ const { readStudioDispatchPreflight, setStudioDispatchPreflight: setRealPrefligh
 beforeEach(() => {
   vi.clearAllMocks();
   trace.length = 0;
+  // Process-wide like the real session module: a case that never tears down
+  // must not leave its lock listener behind for the next one.
+  secretSessionLifecycleListeners.clear();
   secretSessionUnlocked = true;
   studioTransitioning = false;
   studioPoisoned = false;
@@ -471,6 +521,45 @@ describe("the registration retry is OWNED, and a teardown ends it", () => {
     await vi.waitFor(() => {
       expect(disposeStudioWriteRepair).toHaveBeenCalled();
     });
+  });
+
+  /**
+   * THE LOCK REVOCATION. The vault locking is not a shutdown: the bridge stays
+   * up, so the only thing that can end an already-approved dispatch is this
+   * listener. It is registered SYNCHRONOUSLY at setup, which is why the
+   * emission below needs no readiness await.
+   */
+  it("revokes approved dispatches when the secret session locks", async () => {
+    const teardown = setupStudioSettlementBridge();
+    try {
+      await awaitStudioRuntimeReady();
+      expect(revokeApprovedDispatches).not.toHaveBeenCalled();
+
+      emitSecretSessionLifecycle("unlocked");
+      // An unlock revokes NOTHING: only the locked state ends live dispatches.
+      expect(revokeApprovedDispatches).not.toHaveBeenCalled();
+
+      emitSecretSessionLifecycle("locked");
+      expect(revokeApprovedDispatches).toHaveBeenCalledTimes(1);
+      expect(revokeApprovedDispatches).toHaveBeenCalledWith({ reason: "lock" });
+    } finally {
+      teardown();
+    }
+  });
+
+  it("unsubscribes the lock listener on teardown", async () => {
+    const teardown = setupStudioSettlementBridge();
+    await awaitStudioRuntimeReady();
+    expect(secretSessionLifecycleListeners.size).toBe(1);
+
+    teardown();
+    // The disposer the subscription returned is the bridge's own, and the
+    // teardown must call it: a listener surviving here would revoke dispatches
+    // belonging to a bridge that no longer exists.
+    expect(secretSessionLifecycleListeners.size).toBe(0);
+    revokeApprovedDispatches.mockClear();
+    emitSecretSessionLifecycle("locked");
+    expect(revokeApprovedDispatches).not.toHaveBeenCalled();
   });
 });
 

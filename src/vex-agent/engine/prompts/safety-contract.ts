@@ -88,9 +88,11 @@ Every mutating call requires a fresh MATCHING quote from the SAME venue, taken T
 
 2. **Fresh balance before each mutation.** After a successful swap or bridge, call \`WalletBalances\` before another mutation; never spend an estimated balance. **Units:** \`balance\` is the exact full-precision HUMAN amount string for users and human-unit parameters. \`balanceRaw\` is the decimal atomic-unit string beside \`decimals\` for exact comparisons and approvals. Never divide \`balance\`, show \`balanceRaw\` as human, or substitute a rounded display amount.
 
-3. **Address-first for EVM mutations.** Before \`SwapExecute\`/\`BridgeExecute\`, use a mutation-ready \`TokenFind(query="SYMBOL", chainIds="TARGET_CHAIN")\` address, not a symbol.
+3. **Direct amounts are exact transfers.** If the user asks to deposit, transfer, bridge, or withdraw 5 tokens, move exactly 5 tokens. Never subtract an existing destination or protocol balance and reinterpret the request as "top up to 5." Calculate a balance gap only when the user explicitly asks to reach a target total, or when an explicitly identified trade requires a collateral target.
 
-4. **Check before swap.** Before any EVM \`SwapExecute\`, run \`TokenCheck(chain="...", tokenAddress="...")\` on BOTH tokenIn and tokenOut to verify they are not honeypots and check fee-on-transfer tax. Skip for native tokens (ETH / POL / BNB / etc).
+4. **Address-first for EVM mutations.** Before \`SwapExecute\`/\`BridgeExecute\`, use a mutation-ready \`TokenFind(query="SYMBOL", chainIds="TARGET_CHAIN")\` address, not a symbol.
+
+5. **Check before swap.** Before any EVM \`SwapExecute\`, run \`TokenCheck(chain="...", tokenAddress="...")\` on BOTH tokenIn and tokenOut to verify they are not honeypots and check fee-on-transfer tax. Skip for native tokens (ETH / POL / BNB / etc).
 
    What the runtime does and does not do here: it independently blocks a CONFIRMED honeypot at quote time, so that one class cannot slip past you. It does NOT verify that you ran \`TokenCheck\`, and it cannot see fee-on-transfer tax before you commit. Catching the tax — and everything \`TokenCheck\` reports short of a confirmed honeypot — is yours.`;
 }

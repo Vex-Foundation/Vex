@@ -56,7 +56,16 @@ export type AgentActivityKind =
    * through its role) and the chain outcome, and nothing about amounts it cannot
    * establish.
    */
-  | "transaction";
+  | "transaction"
+  /**
+   * Migration 152 - EXCHANGE FUNDING on a settlement chain: the deposit that
+   * moves a wallet's USDC or USDG into a Lighter account and the claimed
+   * withdrawal that brings it back. Its own kind rather than a `transfer`: the
+   * counterparty is the exchange gateway, the L2 credit is separate evidence,
+   * and AgentScan verifies the settlement transaction only (H0 R2.7). Fills
+   * themselves are not activity rows: they live in the `lighter_fills` ledger.
+   */
+  | "exchange";
 
 /**
  * Kinds valid through the GENERIC write path (`./swap-intent.js` +
@@ -231,7 +240,15 @@ export type AgentActivityEventRole =
    * `transaction` kind, which the AgentScan contract does not have, so the two
    * are not interchangeable even though they name the same kind of charge.
    */
-  | "vex_fee";
+  | "vex_fee"
+  /**
+   * Migration 152 - the two legs of the `exchange` kind: the settlement-chain
+   * deposit into the Lighter gateway (input leg: the wallet's settlement asset)
+   * and the claimed withdrawal back to the owning wallet (output leg). No fee
+   * role rides these: the integrator fee is charged by the exchange on fills.
+   */
+  | "exchange_deposit"
+  | "exchange_withdrawal";
 
 /** Chain family discriminator (045) — drives the nonce matrix + explorer-link resolution. */
 export type BridgeChainFamily = "eip155" | "solana";

@@ -19,7 +19,11 @@
  *      "one loadable candidate per module" a fact rather than an intention:
  *      node-pty searches build/Release BEFORE prebuilds/, so a build/ surviving
  *      into the payload silently demotes the reviewed, signed artifact;
- *   3. nothing outside the reviewed paths carries a stray `.node`.
+ *   3. nothing outside the reviewed paths carries a stray `.node`;
+ *   4. (CLI only, POST-SIGNING) the Lighter signer helpers are present and, in
+ *      an app that is itself signed, carry a valid platform signature - the
+ *      failure `build/afterPack.mjs` cannot see, because it runs before
+ *      codesign.
  *
  * One nuance in (1): a module that is OPTIONAL with a working fallback
  * (bufferutil, utf-8-validate - see native-payload-contract.mjs) may be absent
@@ -45,9 +49,10 @@
  * skips is not a gate.
  */
 
+import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, statSync, constants } from "node:fs";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import asar from "@electron/asar";
 
@@ -68,6 +73,17 @@ import {
   WS_ACCELERATOR_MODULES,
   wsAcceleratorPrebuildDir,
 } from "./native-payload-contract.mjs";
+import {
+  assertPackagedWindowsSignerBytes,
+  builtLighterSignerDir,
+  lighterSignerBinaryName,
+  lighterSignerTargetsForPlatform,
+  PACKAGED_LIGHTER_SIGNER_SUBPATH,
+  readLighterSignerDigests,
+} from "./lighter-signer-artifact.mjs";
+
+/** This repository's `vex-app/`, resolved from this file rather than the CWD. */
+const APP_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 const RED = "\x1b[31m";
 const GREEN = "\x1b[32m";
@@ -253,6 +269,225 @@ function inspectPayload(payload) {
   return { issues, undecided, degraded };
 }
 
+
+// ── Post-signing: the Lighter signer helper's own signature ─────────────────
+
+/**
+ * Is this file signed, and does its signature verify?
+ *
+ * Returns `{ verified, detail }`. `verified: false` with a detail is a real
+ * answer from the platform tool; a tool that is missing throws, because a gate
+ * that silently degrades to "fine" when it cannot look is worse than no gate.
+ *
+ * Exported because it is the ONE answer in this repository to "does this file
+ * carry a valid platform signature": `build/afterPack.mjs` asks the same
+ * question about the Windows helper, which electron-builder signs while COPYING
+ * it into resources, before afterPack runs. A second implementation there is
+ * how one gate would accept what the other rejects.
+ *
+ * It is also the seam the tests fake: a Linux runner has neither `codesign` nor
+ * `Get-AuthenticodeSignature`, and no test may hold a signing identity.
+ */
+export function inspectPlatformSignature(file, platform) {
+  if (platform === "darwin") {
+    const result = spawnSync("codesign", ["--verify", "--strict", "--verbose=2", file], {
+      encoding: "utf8",
+    });
+    if (result.error !== undefined) {
+      throw new Error(`codesign could not be run: ${result.error.message}`);
+    }
+    const detail = `${result.stderr ?? ""}${result.stdout ?? ""}`.trim();
+    return { verified: result.status === 0, detail };
+  }
+  // Authenticode. `Get-AuthenticodeSignature` answers `NotSigned`,
+  // `HashMismatch`, `UnknownError` or `Valid`; only `Valid` is a signature that
+  // both exists and verifies against the file's current bytes.
+  const literal = file.replace(/'/g, "''");
+  const result = spawnSync(
+    "powershell",
+    ["-NoProfile", "-NonInteractive", "-Command", `(Get-AuthenticodeSignature -LiteralPath '${literal}').Status`],
+    { encoding: "utf8" }
+  );
+  if (result.error !== undefined) {
+    throw new Error(`powershell Get-AuthenticodeSignature could not be run: ${result.error.message}`);
+  }
+  const detail = `${result.stdout ?? ""}${result.stderr ?? ""}`.trim();
+  return { verified: detail.split(/\r?\n/)[0]?.trim() === "Valid", detail };
+}
+
+/**
+ * THE POST-SIGNING GATE for the Lighter signer helper.
+ *
+ * `build/afterPack.mjs` proves the helper's PROVENANCE while it still can (see
+ * that file for the per-platform order: on macOS and Linux the packaged bytes
+ * are still the unsigned build output; on Windows they are already Authenticode
+ * signed). It cannot prove the thing that
+ * actually breaks in production: on macOS a nested Mach-O executable that
+ * @electron/osx-sign never signed is refused by the hardened runtime and
+ * rejected by notarization, and the helper is exactly such an executable (no
+ * file extension, so the default nested-binary walker skips it - which is why
+ * `mac.binaries` names it explicitly in both profiles). The equivalent on
+ * Windows is a helper missing the Authenticode signature the installer carries.
+ *
+ * The rule is RELATIVE to the app itself, deliberately: if the packaged app is
+ * signed, an unsigned helper beside it is a failure; if the app is unsigned (an
+ * ordinary local `--dir` build with no identity), there is no signature to
+ * expect and that is REPORTED as a note rather than silently skipped. Linux
+ * packages carry no platform signature at all, which is also a note.
+ *
+ * BOTH signing platforms are asserted here, by the same three sentences: macOS
+ * through `codesign --verify --strict`, Windows through
+ * `Get-AuthenticodeSignature`. The release workflow runs this step after
+ * electron-builder has signed, on the macOS job and on the Windows job alike.
+ *
+ * ON WINDOWS THERE IS A SECOND, EARLIER ASSERTION, and it is the important one:
+ * the shipped helper is bound back to this build's own output through the
+ * Authenticode content digest, BEFORE any signature is discussed and without
+ * consulting a platform tool. "Signed by our certificate" is not "built by this
+ * build" - a helper from an older release carries a signature that verifies
+ * perfectly - so a gate that stopped at signature status could be satisfied by
+ * a stale binary (Codex review, round 1, finding A1).
+ *
+ * `inspectSignature`, `host` and `builtDir` are the test seam and nothing else:
+ * `inspectSignature` is the platform signature tool (defaulting to the real
+ * one), `host` is the platform this process runs on, so a Linux test can
+ * drive the Windows branch without a signing identity or a Windows runner, and
+ * `builtDir` is where this build's helpers and their `SHA256SUMS` live.
+ *
+ * Returns `{ issues, notes }`.
+ */
+export function verifyPackagedLighterSignerSignature(
+  payload,
+  {
+    inspectSignature = inspectPlatformSignature,
+    host = process.platform,
+    builtDir = builtLighterSignerDir(APP_ROOT),
+  } = {}
+) {
+  const { target, resources } = payload;
+  const issues = [];
+  const notes = [];
+  const signerDir = path.join(resources, PACKAGED_LIGHTER_SIGNER_SUBPATH);
+  const helpers = lighterSignerTargetsForPlatform(target.platform).map((entry) =>
+    path.join(signerDir, lighterSignerBinaryName(entry))
+  );
+
+  for (const helper of helpers) {
+    if (!existsSync(helper)) {
+      issues.push(`Lighter signer helper MISSING from the payload at ${helper}`);
+    }
+  }
+  if (issues.length > 0) return { issues, notes };
+
+  if (target.platform === "win32") {
+    // PROVENANCE, BEFORE ANY QUESTION ABOUT SIGNATURES, and independent of the
+    // host: the shipped helper must be the one this build produced, bound
+    // through the Authenticode content digest that signing cannot change (see
+    // `assertPackagedWindowsSignerBytes`). A signature check alone would accept
+    // an OLD RELEASE's helper, signed by the same publisher - that gap is what
+    // this block closes, and a Linux runner can prove it because no platform
+    // tool is involved.
+    issues.push(...bindWindowsHelpersToBuild(signerDir, target, builtDir));
+    if (issues.length > 0) return { issues, notes };
+  }
+
+  if (target.platform === "linux") {
+    notes.push("Linux packages carry no platform code signature; the helper is verified by digest only");
+    return { issues, notes };
+  }
+  if (target.platform !== host) {
+    notes.push(
+      `the ${target.platform} helper signatures cannot be verified from a ${host} host; `
+        + `this evidence comes from the ${target.platform} CI job and the owner's signed build`
+    );
+    return { issues, notes };
+  }
+
+  const appBinary = target.platform === "darwin"
+    ? path.dirname(path.dirname(resources))
+    : findWindowsAppExecutable(path.dirname(resources));
+  if (appBinary === undefined) {
+    notes.push("no packaged application executable found beside the resources directory; signatures not compared");
+    return { issues, notes };
+  }
+
+  let app;
+  try {
+    app = inspectSignature(appBinary, target.platform);
+  } catch (error) {
+    issues.push(`the signing tool for ${target.platform} is unavailable: ${error.message}`);
+    return { issues, notes };
+  }
+  if (!app.verified) {
+    notes.push(
+      `${path.basename(appBinary)} itself carries no valid signature (an unsigned local build), `
+        + "so the helper signatures are not asserted for this payload"
+    );
+    return { issues, notes };
+  }
+
+  for (const helper of helpers) {
+    let signature;
+    try {
+      signature = inspectSignature(helper, target.platform);
+    } catch (error) {
+      issues.push(`${path.basename(helper)}: ${error.message}`);
+      continue;
+    }
+    if (!signature.verified) {
+      issues.push(
+        `${path.basename(helper)} is NOT signed (or its signature does not verify) inside a SIGNED app: `
+          + `${signature.detail || "no detail reported"}.\n`
+          + "      Add it to `mac.binaries` (macOS) or the Windows signing list in the "
+          + "electron-builder profile: an unsigned nested executable is refused by the hardened "
+          + "runtime and rejected by notarization, so the app would ship unable to sign a Lighter order."
+      );
+    }
+  }
+  return { issues, notes };
+}
+
+/**
+ * Every shipped Windows helper bound back to this build's output, as a list of
+ * issues (empty when all of them are).
+ *
+ * `assertPackagedWindowsSignerBytes` is the rule and `build/afterPack.mjs` asks
+ * it the same question during packaging; this is the POST-BUILD reading of it,
+ * over the payload as shipped. Collecting rather than throwing is this file's
+ * convention: one run reports every helper, not the first.
+ */
+function bindWindowsHelpersToBuild(signerDir, target, builtDir) {
+  const issues = [];
+  let digests;
+  try {
+    digests = readLighterSignerDigests(builtDir);
+  } catch (error) {
+    return [
+      `the Windows helpers cannot be bound to a build: ${error.message}\n`
+        + "      This gate compares the shipped helper against the build output it came from, so "
+        + "it must run in the workspace that produced the package.",
+    ];
+  }
+  for (const entry of lighterSignerTargetsForPlatform(target.platform)) {
+    const helper = path.join(signerDir, lighterSignerBinaryName(entry));
+    try {
+      assertPackagedWindowsSignerBytes(helper, entry, digests, builtDir);
+    } catch (error) {
+      issues.push(error.message);
+    }
+  }
+  return issues;
+}
+
+/** The packaged Windows application executable beside `resources/`. */
+function findWindowsAppExecutable(appOutDir) {
+  if (!existsSync(appOutDir)) return undefined;
+  const executables = readdirSync(appOutDir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".exe"))
+    .map((entry) => path.join(appOutDir, entry.name));
+  return executables.length === 1 ? executables[0] : undefined;
+}
+
 /**
  * The contract over ONE packaged app, addressed by the target it was packaged
  * for rather than by directory name.
@@ -321,7 +556,14 @@ function main() {
   let failed = 0;
   for (const payload of payloads) {
     const { issues, undecided, degraded } = inspectPayload(payload);
+    // Post-signing, and CLI-only: `build/afterPack.mjs` runs BEFORE codesign,
+    // where no helper signature exists yet.
+    const signatures = verifyPackagedLighterSignerSignature(payload);
+    issues.push(...signatures.issues);
     const label = `${payload.label} (${payload.target.platform}/${payload.target.arch})`;
+    for (const note of signatures.notes) {
+      console.log(`${YELLOW}!${RESET} ${label}: Lighter signer signature check - ${note}`);
+    }
     if (degraded.length > 0) {
       // An accepted, documented capability loss. Printed by name every run so
       // "this target ships no native ws accelerator" is a fact someone chose to
@@ -339,7 +581,10 @@ function main() {
       for (const entry of undecided) console.log(`    ${entry}`);
     }
     if (issues.length === 0) {
-      console.log(`${GREEN}✓${RESET} ${label} - one native candidate per module, all reviewed`);
+      console.log(
+        `${GREEN}✓${RESET} ${label} - one native candidate per module, all reviewed; `
+          + "Lighter signer helper present and consistent with the app's signing state"
+      );
     } else {
       failed += 1;
       console.log(`${RED}✗${RESET} ${label}`);

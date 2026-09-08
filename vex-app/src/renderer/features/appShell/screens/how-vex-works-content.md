@@ -48,6 +48,8 @@ Three separate costs, and they are genuinely separate. None of them is refundabl
 - It is charged **only after the operation succeeds**. A failed, reverted, or never-broadcast attempt is never charged. At very small sizes it rounds to zero and no fee is taken at all.
 - It is **Vex's own fee**, separate from network gas, from the venue's own protocol fee, and from bridge relayer costs.
 
+**Lighter is the one venue where the fee works differently**, because it is an exchange rather than a pool. There Vex does not send itself a transfer; the exchange deducts Vex's fee from your fill: **0.1% on perpetuals and 0.25% on spot**, on both the maker and the taker side. It only applies to trades that actually fill, and it needs a one-time authorization you approve before your first Lighter order. That authorization is described under Lighter below, and you can revoke it at any time.
+
 The fee goes to the Vex treasury, which the project uses to buy back and burn $VEX - which is why that token's price sits in a small card in your left rail. You do not need to hold $VEX to use Vex, and Vex will never ask you to.
 
 Read-only actions cost nothing beyond model tokens: quotes, previews, balance reads, research, and every search Vex runs are free. You can always ask Vex "what did that cost?" - every executed move records the exact fee.
@@ -197,7 +199,7 @@ Studio is the second shell inside Vex, for people who already work with a coding
 
 **How your agent connects.** When you add a project, Vex writes one small config entry into the repository for each coding agent you tick, pointing at `vex-mcp`, a tiny bridge program that ships with Vex. It also writes four project files: `AGENTS.md` and `.vex/vex-guide.md` (the instructions every agent reads), `CLAUDE.md` (two import lines) and `.vex/protocols.md` (the tool reference). Vex verifies each file before it writes, never deletes one, and reports a file you edited as drift instead of overwriting it. Thirteen of the fifteen agents on the roster get a working setup today; Cline and Warp are named as unsupported because they only read a machine-wide file Vex will not touch.
 
-**What the agent can do.** The same 171 tools the Vex agent uses, over MCP on your own machine: balances, research, quotes, swaps on KyberSwap and Uniswap, bridges, Pendle, Morpho, Jupiter, Virtuals, pools.fun launches and plain transaction signing. Twenty-seven load at once; the rest are found by a read-only search. The Vex fee is the same 0.25% and it is printed on the card you approve. What never leaves the app: your keys, your memory, missions and the session-only tools.
+**What the agent can do.** The same 213 tools the Vex agent uses, over MCP on your own machine: balances, research, quotes, swaps on KyberSwap and Uniswap, bridges, Pendle, Morpho, Jupiter, Virtuals, pools.fun launches, Lighter perpetuals and spot trading, and plain transaction signing. Twenty-nine load at once; the rest are found by a read-only search. The Vex fee is the same 0.25% and it is printed on the card you approve. What never leaves the app: your keys, your memory, missions and the session-only tools.
 
 **Approvals from Studio.** A restricted project's fund-moving call waits for you on the ordinary approval card, for up to one hour, while the agent is told every two seconds that a person is deciding. Approve, reject or let it expire; the agent hears exactly one of seven named outcomes, each saying whether anything moved. What you approve is bound to the card you read: change the project's wallet or permission while a card waits and the card is refused; even an already-approved action is re-checked at the last moment and refused if the scope moved. Locking Vex closes the door for every connected agent and cancels what was waiting.
 
@@ -225,6 +227,7 @@ Vex reaches real venues under their real names. Read-only calls run freely; anyt
 | Ethereum, Optimism, Unichain, Polygon, Monad, HyperEVM, Robinhood Chain, Base, Arbitrum | Morpho variable-rate lending (9 chains) |
 | Solana | Swap, lend, borrow, prediction markets, via Jupiter |
 | Robinhood Chain | pools.fun launches, fee claims and launchpad research |
+| Ethereum (Lighter Core), Robinhood Chain (Lighter) | Perpetuals and spot trading on the Lighter exchange, funded from your own wallet |
 | More than forty chains, list fetched live from the bridge's own registry | See balances; bridge between them |
 
 ### ![Uniswap](/protocols/uniswap.png) Uniswap
@@ -262,6 +265,21 @@ The launchpad on Robinhood Chain. There is no bonding curve and no graduation mo
 - **Claiming** collects the trading fees your locked position has earned. They arrive as two amounts, your own token and the asset it is paired with, and Vex simulates the claim first so the approval card shows both before you agree to it.
 - **Trading a pools.fun token needs no new venue.** Because the token sits in an ordinary Sushi V3 pool, Vex quotes and trades it through **KyberSwap** with the usual approval card, and researches the pool itself on **DexScreener**.
 - Prices, market caps and volumes from the launchpad's own feed are for reading, not for deciding - the number you approve always comes from the trading venue's quote.
+
+### ![Lighter](/protocols/lighter.svg) Lighter
+An order-book exchange for **perpetuals** (a contract that tracks an asset's price with no expiry date) and spot, running as two separate venues: **Lighter Core**, which settles in USDC on Ethereum, and **Lighter on Robinhood Chain**, which settles in USDG. They are two different accounts with two different balances, and Vex never mixes them up or moves money between them on its own.
+
+**What you can do.** Read markets, order books, recent trades, candles and your own positions and order history; preview an order before committing to it; place market, limit and reduce-only protective orders; attach one stop-loss and one take-profit to an existing position as a single linked pair; cancel one order, change one order, cancel everything at once, or close a position fully. On the account side Vex can deposit from your wallet, withdraw, and claim a completed withdrawal. Example: "Show me my Lighter positions and what a 0.1 ETH long would cost."
+
+**Getting set up takes three approvals, once.** Trading on Lighter needs a funded exchange account, a trading key, and a fee authorization. Vex walks you through all three, and each one is its own approval card you read and accept: a **deposit** from your own wallet into your own Lighter account, a **trading key** that Vex generates locally so it can sign your orders, and the **fee authorization** below. Nothing is done in the background and no step is bundled into another.
+
+**Vex never holds your exchange key outside the vault.** The Lighter trading key is generated on your machine and stored in your encrypted vault, exactly like your wallet key. It is decrypted only inside Vex's privileged process at the moment it signs an order you already approved. It never appears in a tool result, in a log, in the database, or in anything the model can read.
+
+**Every order needs your approval, every time.** The fee authorization is not permission to trade. Each order, each cancel, each change, each close, each deposit and each withdrawal raises its own approval card with the exact market, side, size, price and account on it, and Vex re-reads the live market and your live position immediately before signing. If anything moved, it refuses rather than sending a different order than the one you agreed to.
+
+**The fee authorization also changes your account tier, and here is why.** Lighter charges Vex's fee itself rather than letting Vex send a transfer, so it needs a standing authorization naming the rate: 0.1% on perpetuals and 0.25% on spot, maker and taker. From September 14, 2026, Lighter refuses trades carrying an integrator fee from a **Standard** account, so the same approval also upgrades your account: to **Plus** on Lighter Core, and to **Premium** on Robinhood Chain, which has no Plus tier. The card shows the exchange's own fees before and after the change next to Vex's, and states that the change applies to that wallet's Lighter account and its subaccounts. This is a real change on Lighter's side, not a Vex setting: Vex does not switch it back, you can change the account type yourself in the Lighter app, an upgrade takes effect immediately, and a downgrade is allowed once 24 hours have passed since the last change. The authorization runs for ten years and **you can revoke it at any time**; revoking stops future fee-bearing orders and cannot change an order already submitted.
+
+**What Vex will not do here.** TWAP orders, one-triggers-the-other and one-triggers-one-cancels-other brackets, and opening a position with protection attached in the same step are not supported and are not faked. Vex says so instead of approximating them. A deposit is also never treated as done from the settlement-chain receipt alone: Vex waits for Lighter's own evidence that the exact transaction was credited.
 
 ### ![Relay](/protocols/relay.png) Relay bridge
 A bridge that needs no account or key of its own - that is all "keyless" means here. It still moves your money with your wallet's signature, and it still asks for your approval. Used for certain cross-chain moves.

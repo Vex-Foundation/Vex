@@ -399,3 +399,67 @@ that DexScreener indexing lags so a launchpad-native read or Jupiter's
 recent feed can see a token first). The model reads the eleven protocol
 declarations and chooses. feat/prompt-wave2 was restored to the 76f6306d
 prompt text after 913b9405.
+
+## D20. O7 amendment (2026-09-07): a manifest may DECLARE its own irreversibility
+
+Recorded 2026-09-07, Lighter integration, lane E. Applied in
+`mcp/inventory/annotations.ts`, `tools/protocols/types.ts`
+(`ProtocolToolManifest.destructive`) and the six Lighter execution manifests.
+
+O7 pinned `destructiveHint = actionKind in {user_wallet_broadcast,
+destructive}` and deliberately excluded `external_post`, reasoning that
+mutating somebody else's system is real but is not the irreversible-value
+class MCP's destructive prompt is about, and that marking every such tool
+would train users to click through the prompt that matters. That reasoning
+holds for a social post or an off-chain bookmark.
+
+It does not hold for Lighter. Six tools carry `actionKind: "external_post"`
+and every one of them submits a signed transaction to the exchange:
+`lighter.order.create`, `lighter.order.cancel`, `lighter.order.modify`,
+`lighter.order.cancelAll`, `lighter.position.close` and `lighter.withdraw`.
+A create moves collateral; a close realises profit or loss at the fill
+price; a withdrawal moves funds off the venue; a cancel or a modify destroys
+a resting order's queue position, which no later call can restore. The
+branch's own description at `manifests/write.ts` says it plainly: "real
+funds move on the exchange". A `destructiveHint: false` on those six tells
+an external client the opposite.
+
+THE OPTION THAT WAS REJECTED: reclassifying them as `user_wallet_broadcast`
+to make the existing table answer true. It would have yielded the right hint
+by lying about the signing path. `user_wallet_broadcast` means the USER'S
+WALLET key signs, which is exactly the distinction that separates
+`lighter.deposit`, `lighter.key.register`, `lighter.fees.approve` and
+`lighter.withdraw.claim` (wallet key, EVM chain) from these six (the locally
+generated Lighter trading credential, submitted to the venue). `actionKind`
+is also hashed into the approval fingerprint and read by wallet policy, so
+bending it to fix an annotation would move a money-path classification to
+buy a display hint.
+
+THE RULING. `ProtocolToolManifest.destructive?: true` is a DECLARATION read
+in exactly one place, `mcp/inventory/annotations.ts`, which stays the only
+annotation table. It can only ADD the hint, never remove one the action kind
+already implies, and it is authored next to a description that states the
+same irreversibility in words (the inventory lint requires the description
+of a destructive tool to say so inside its first 2000 bytes). `external_post`
+by itself still implies nothing: a new tool of that kind is harmless until
+somebody decides otherwise, in writing, here.
+
+## D21. Lighter is a trading namespace, not a research one (2026-09-07)
+
+Recorded 2026-09-07, Lighter integration, lane E. Applied in
+`tools/protocols/navigation/entries-market/lighter.ts`.
+
+The branch filed `lighter` under the `market-research` navigation group. The
+group a namespace declares is what `vex_ToolSearch`'s own `namespace`
+parameter description lists, so an agent looking for somewhere to place a
+trade read a list of venues that did not include the only perpetuals venue
+Vex has. Lighter's read half is real but it is the smaller half: the
+namespace exists to onboard a wallet, place, protect and close
+approval-gated perpetual orders, and withdraw collateral.
+
+It moves to `evm-trading` ("EVM Trading") rather than to a new perps group:
+both environments are EVM chains (Lighter Core is an Ethereum L2, Robinhood
+Chain is EVM), the group already holds every other venue Vex can trade
+through, and a one-member group would cost a line in every ToolSearch
+parameter description to say nothing the namespace card does not already
+say. Revisit if a second perpetuals venue lands.

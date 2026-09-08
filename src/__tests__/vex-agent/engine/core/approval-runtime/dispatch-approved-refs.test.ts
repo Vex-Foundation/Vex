@@ -1,3 +1,4 @@
+import { requireValue } from "../../../../helpers/require-value.js";
 /**
  * Caller-level: `applyApproveSideEffects` derives explorer refs from the
  * approved dispatch's `result.data` (capture-shaped) and PASSES them to
@@ -86,6 +87,9 @@ vi.mock("@utils/logger.js", () => ({
 const { applyApproveSideEffects } = await import(
   "@vex-agent/engine/core/approval-runtime/post-tx/dispatch-approved.js"
 );
+const { deriveApprovedDispatchExecutionStatus } = await import(
+  "@vex-agent/engine/core/approval-runtime/post-tx/dispatch-approved.js"
+);
 
 function approvedSnapshot() {
   return {
@@ -168,5 +172,97 @@ describe("applyApproveSideEffects — explorer ref derivation", () => {
     expect(outcome.missionRunId).toBeNull();
     expect(outcome.continuation).not.toBeNull();
     expect(outcome.continuation?.kind).toBe("chat_session");
+  });
+
+  it("classifies unresolved Lighter create output as indeterminate, not succeeded", async () => {
+    mockDispatchTool.mockResolvedValue({
+      success: true,
+      output: "{}",
+      data: {
+        source: "vex_lighter_live_order_create",
+        status: "ambiguous",
+        executionState: "ambiguous",
+      },
+    });
+
+    const outcome = await applyApproveSideEffects("appr-1", approvedSnapshot());
+
+    if (outcome.kind !== "dispatched") throw new Error("kind mismatch");
+    expect(outcome.executionStatus).toBe("indeterminate");
+    expect(requireValue(mockCommitApprovedToolResult.mock.calls[0])[0]).toMatchObject({
+      executionStatus: "indeterminate",
+      displayStatus: "pending",
+    });
+  });
+
+  it("classifies an ambiguous Lighter deposit as indeterminate, not succeeded", async () => {
+    mockDispatchTool.mockResolvedValue({
+      success: true,
+      output: "{}",
+      data: {
+        source: "vex_lighter_live_deposit",
+        status: "ambiguous",
+        stage: "deposit",
+        txHash: `0x${"a".repeat(64)}`,
+      },
+    });
+
+    const outcome = await applyApproveSideEffects("appr-1", approvedSnapshot());
+
+    if (outcome.kind !== "dispatched") throw new Error("kind mismatch");
+    expect(outcome.executionStatus).toBe("indeterminate");
+    expect(requireValue(mockCommitApprovedToolResult.mock.calls[0])[0]).toMatchObject({
+      executionStatus: "indeterminate",
+      displayStatus: "pending",
+    });
+  });
+});
+
+describe("deriveApprovedDispatchExecutionStatus", () => {
+  it("keeps normal successes and failures unchanged", () => {
+    expect(deriveApprovedDispatchExecutionStatus({ success: true, data: {} })).toBe("succeeded");
+    expect(deriveApprovedDispatchExecutionStatus({ success: false, data: {} })).toBe("failed");
+  });
+
+  it("uses indeterminate only for source-scoped unresolved Lighter results", () => {
+    expect(
+      deriveApprovedDispatchExecutionStatus({
+        success: true,
+        data: {
+          source: "vex_lighter_live_order_create",
+          status: "sequencer_pending",
+        },
+      }),
+    ).toBe("indeterminate");
+    expect(
+      deriveApprovedDispatchExecutionStatus({
+        success: true,
+        data: {
+          source: "vex_lighter_live_deposit",
+          status: "l2_pending",
+        },
+      }),
+    ).toBe("indeterminate");
+    expect(
+      deriveApprovedDispatchExecutionStatus({
+        success: true,
+        data: { status: "sequencer_pending" },
+      }),
+    ).toBe("succeeded");
+    expect(
+      deriveApprovedDispatchExecutionStatus({
+        success: true,
+        data: {
+          source: "vex_lighter_live_deposit",
+          status: "ambiguous",
+        },
+      }),
+    ).toBe("indeterminate");
+    expect(
+      deriveApprovedDispatchExecutionStatus({
+        success: true,
+        data: { source: "vex_lighter_live_deposit", status: "failed" },
+      }),
+    ).toBe("succeeded");
   });
 });

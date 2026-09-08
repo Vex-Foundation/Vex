@@ -2,7 +2,7 @@
 
 *The engineering source of truth for Vex Studio: how an external coding agent drives the self-custodial Vex desktop app over MCP, from the bridge binary to the approval card, with every technical claim cited to the shipping tree.*
 
-Tree documented: `launchpads/arc` (Vex-Foundation/vex), assembled 2026-09-07. Citations are worktree-relative `path:line` references into that tree. Numbers come from a measured probe of the same tree; see the Facts And Numbers Reference. Where a plan document and the code disagree, this document says what shipped.
+Tree documented: `feat/lighter-integration` (Vex-Foundation/vex), assembled 2026-09-07 on top of `launchpads/arc`. Citations are worktree-relative `path:line` references into that tree. Numbers come from a measured probe of the same tree; see the Facts And Numbers Reference. Where a plan document and the code disagree, this document says what shipped.
 
 ## Contents
 
@@ -50,6 +50,7 @@ Tree documented: `launchpads/arc` (Vex-Foundation/vex), assembled 2026-09-07. Ci
   - [Swap And Bridge Fee Mechanics](#swap-and-bridge-fee-mechanics)
   - [The pools.fun Launch: The Deepest Money Path](#the-pools-fun-launch-the-deepest-money-path)
   - [Virtuals And Lending Protocols](#virtuals-and-lending-protocols)
+  - [Lighter: Perpetuals And Spot On Two Exchanges](#lighter-perpetuals-and-spot-on-two-exchanges)
   - [The Prequote Gate](#the-prequote-gate)
 - [Part 6 - Projects, Files, And The Installer](#part-6-projects-files-and-the-installer)
   - [What A Project Is](#what-a-project-is)
@@ -207,7 +208,7 @@ Two counters, deliberately distinct. **Generation** is a `u32` in every frame he
 
 #### Hot set, protocol namespace, provenance, drift, tombstone
 
-The **hot set** is the 27 always-loaded tools (internal tools plus `vex_ToolSearch`, `vex_ToolDescribe`), served on every `tools/list` without a search step (`src/vex-agent/mcp/inventory/index.ts:146-207`), pinned under a 2048-character/byte description budget (`src/vex-agent/mcp/inventory/types.ts:15-39`). The remainder are exported protocol tools under a `<namespace>__` prefix (e.g. `khalani__`, `pools__`).
+The **hot set** is the 29 always-loaded tools, which is exactly the internal-tool set: the wallet, swap, bridge and research tools, `vex_ToolSearch`, `vex_ToolDescribe`, and the two Lighter onboarding shortcuts `lighter_core_onboarding_status` and `lighter_rhc_onboarding_status`. It is served on every `tools/list` without a search step (`src/vex-agent/mcp/inventory/index.ts:146-207`), pinned under a 2048-character/byte description budget (`src/vex-agent/mcp/inventory/types.ts:15-39`). The remainder are exported protocol tools under a `<namespace>__` prefix (e.g. `khalani__`, `pools__`).
 
 **Provenance** records, per managed artifact, whether Vex wrote the bytes (`origin: "written"`) or found them already present and adopted the fact without claiming authorship (`origin: "adopted"`, `vex-app/src/main/studio/installer/reconcile.ts:380-389`); only `"written"` rows can be taken over or torn down. **Drift** is a filesystem fact recomputed on every read, never cached: on-disk content no longer hashes to what provenance recorded (`installer.ts:406-409`) - reported, never silently overwritten outside an explicit Repair. A **tombstone** is a project's soft-delete: `tombstoneProject` sets `deleted_at` in one commit transaction with no filesystem work (`vex-app/src/main/database/projects/delete.ts:132`); a tombstoned project reads as absent to every later scope check.
 
@@ -1055,13 +1056,13 @@ exercised in CI against a real second local account
 
 ### The Exported Tool Surface
 
-Everything a coding agent can call through Vex Studio's MCP server comes from one array, rebuilt fresh for every Studio connection rather than memoized once at module load for the whole process: each call to `createStudioMcpServer` invokes `buildStudioInventory()` and registers every tool onto the SDK's `McpServer` through the local `registerStudioTool` wrapper, which calls `server.registerTool`, and the SDK then serves `tools/list` from that already-registered set for the life of the connection (`src/vex-agent/mcp/inventory/index.ts:139-150`; `src/vex-agent/mcp/server.ts:195-209,240-245`). The factory can run twice for a single connection - a modern `server/discover` probe followed by a legacy `initialize` fallback - but never once per `tools/list` call (`src/vex-agent/mcp/server.ts:1-14`). As measured on this tree, that array holds **171 tools**: 27 internal tools plus 144 protocol tools spread across 11 protocol namespaces (`src/__tests__/vex-agent/mcp/inventory.test.ts:142-145`). The internal 27 is the hot set, the always-loaded tools whose descriptions ship in full on every connection: the wallet, swap, bridge, token-lookup, chain-read, twitter, and units-conversion tools, plus the in-app `ToolSearch` registry tool re-exported as `vex_ToolSearch` under a narrower, search-only description and input schema through its own read-only adapter, and `vex_ToolDescribe`, the one tool that exists only for this exported surface, assembled directly in the inventory rather than registered as an in-app tool (`src/vex-agent/mcp/inventory/titles.ts:26-55`; `src/vex-agent/mcp/inventory/index.ts:104-116,146-160`). Memory and session-bound tools (session narrative recall, mission lifecycle, plan mode) are exactly the group excluded from this surface, not part of it (`src/vex-agent/mcp/export-scope.ts:41-56`).
+Everything a coding agent can call through Vex Studio's MCP server comes from one array, rebuilt fresh for every Studio connection rather than memoized once at module load for the whole process: each call to `createStudioMcpServer` invokes `buildStudioInventory()` and registers every tool onto the SDK's `McpServer` through the local `registerStudioTool` wrapper, which calls `server.registerTool`, and the SDK then serves `tools/list` from that already-registered set for the life of the connection (`src/vex-agent/mcp/inventory/index.ts:139-150`; `src/vex-agent/mcp/server.ts:195-209,240-245`). The factory can run twice for a single connection - a modern `server/discover` probe followed by a legacy `initialize` fallback - but never once per `tools/list` call (`src/vex-agent/mcp/server.ts:1-14`). As measured on this tree, that array holds **213 tools**: 29 internal tools plus 184 protocol tools spread across 12 protocol namespaces (`src/__tests__/vex-agent/mcp/inventory.test.ts:144-149`). The internal 29 is the hot set, the always-loaded tools whose descriptions ship in full on every connection: the wallet, swap, bridge, token-lookup, chain-read, twitter, and units-conversion tools, the two Lighter onboarding shortcuts (`lighter_core_onboarding_status`, `lighter_rhc_onboarding_status`), plus the in-app `ToolSearch` registry tool re-exported as `vex_ToolSearch` under a narrower, search-only description and input schema through its own read-only adapter, and `vex_ToolDescribe`, the one tool that exists only for this exported surface, assembled directly in the inventory rather than registered as an in-app tool (`src/vex-agent/mcp/inventory/titles.ts:26-55`; `src/vex-agent/mcp/inventory/index.ts:104-116,146-160`). Memory and session-bound tools (session narrative recall, mission lifecycle, plan mode) are exactly the group excluded from this surface, not part of it (`src/vex-agent/mcp/export-scope.ts:41-56`).
 
-The 144 protocol tools cover khalani, kyberswap, uniswap, relay, solana, dexscreener, virtuals, pendle, morpho, pools, and launchpads. The catalog itself registers 145 manifests across those namespaces; exactly one, `launchpads.images` (listing the desktop app's local, in-process image locker), is withheld because an external Studio agent has no locker for that tool to list (`src/vex-agent/mcp/export-scope.ts:79-96`). Its sibling, `launchpads.image_publish`, used to be withheld for the same reason but was un-excluded on 2026-09-06 once it was redesigned to take a project-local file path through the same contained, size-bounded reader a launch already uses (`src/vex-agent/mcp/export-scope.ts:89-96`).
+The 184 protocol tools cover khalani, kyberswap, uniswap, relay, solana, dexscreener, lighter, virtuals, pendle, morpho, pools, and launchpads. The catalog itself registers 185 manifests across those namespaces; exactly one, `launchpads.images` (listing the desktop app's local, in-process image locker), is withheld because an external Studio agent has no locker for that tool to list (`src/vex-agent/mcp/export-scope.ts:79-96`). Its sibling, `launchpads.image_publish`, used to be withheld for the same reason but was un-excluded on 2026-09-06 once it was redesigned to take a project-local file path through the same contained, size-bounded reader a launch already uses (`src/vex-agent/mcp/export-scope.ts:89-96`).
 
 #### Read-only versus destructive
 
-Every tool carries two MCP hints, `readOnlyHint` and `destructiveHint`, and nothing else - `idempotentHint` and `openWorldHint` are deliberately left unset rather than defaulted (`src/vex-agent/mcp/inventory/types.ts:41-61`). Across the 171 exported tools, 109 are read-only and 53 carry the destructive hint (`src/vex-agent/mcp/inventory/annotations.ts:39-49`; measured-counts.md). Both hints are derived strictly from a tool's `actionKind`: `readOnlyHint` is true only when `actionKind === "read"`, and `destructiveHint` is true only for the two irreversible kinds, `user_wallet_broadcast` and `destructive` (`src/vex-agent/mcp/inventory/annotations.ts:9-19,39-49`). Neither hint is ever derived from the coarser in-app `mutating` flag, because a tool can be `mutating` (it writes something) without being destructive - a wallet-transaction preparation step, or a local-write tool that stages a launch without signing anything - and deriving the hint from `mutating` would trip an MCP client's irreversible-action warning on a call that signs nothing.
+Every tool carries two MCP hints, `readOnlyHint` and `destructiveHint`, and nothing else - `idempotentHint` and `openWorldHint` are deliberately left unset rather than defaulted (`src/vex-agent/mcp/inventory/types.ts:41-61`). Across the 213 exported tools, 129 are read-only and 63 carry the destructive hint (`src/vex-agent/mcp/inventory/annotations.ts:39-49`; `exported-tools.md` Totals). Both hints are derived strictly from a tool's `actionKind`: `readOnlyHint` is true only when `actionKind === "read"`, and `destructiveHint` is true only for the two irreversible kinds, `user_wallet_broadcast` and `destructive` (`src/vex-agent/mcp/inventory/annotations.ts:9-19,39-49`). Neither hint is ever derived from the coarser in-app `mutating` flag, because a tool can be `mutating` (it writes something) without being destructive - a wallet-transaction preparation step, or a local-write tool that stages a launch without signing anything - and deriving the hint from `mutating` would trip an MCP client's irreversible-action warning on a call that signs nothing.
 
 These hints are advisory only. The approval decision for anything that can move funds stays inside Vex's own privileged executor regardless of what a client's tool picker shows.
 
@@ -1075,13 +1076,15 @@ The exported surface is stateless and connection-invariant by design: `tools/lis
 
 #### How the count got here
 
-The exported total has moved repeatedly as the tool surface changed, and each move is a name-checked test change rather than a silent renumber (`src/__tests__/vex-agent/mcp/inventory.test.ts:93-141`): 155, then 159 (four generic transaction-signing tools), 165 (the dexscreener namespace's public-API tools replaced by an 18-tool website-API surface), 167 (a native/wrapped-native pair), 168 (`vex_ToolDescribe` added), back to 167 (`WebResearch` removed - every client already has its own web search), up to 171 (two pools.fun read tools and two Virtuals market-history reads), 174 (a Virtuals bonding-curve trade pair, the first signing tool that namespace ever exported), 176 (two pools.fun holder-reward mutations), 180 (the Virtuals agent-launch family of four tools), then down to 170 when the entire Trench Express protocol was retired in migration 108, deleting ten tools, and finally back up to **171 current** when `launchpads__image_publish` was un-excluded on 2026-09-06. A landing-site figure of 167 tools (27 internal plus 140 protocol) reflects an earlier point in that history and is stale against the current code.
+The exported total has moved repeatedly as the tool surface changed, and each move is a name-checked test change rather than a silent renumber (`src/__tests__/vex-agent/mcp/inventory.test.ts:93-141`): 155, then 159 (four generic transaction-signing tools), 165 (the dexscreener namespace's public-API tools replaced by an 18-tool website-API surface), 167 (a native/wrapped-native pair), 168 (`vex_ToolDescribe` added), back to 167 (`WebResearch` removed - every client already has its own web search), up to 171 (two pools.fun read tools and two Virtuals market-history reads), 174 (a Virtuals bonding-curve trade pair, the first signing tool that namespace ever exported), 176 (two pools.fun holder-reward mutations), 180 (the Virtuals agent-launch family of four tools), then down to 170 when the entire Trench Express protocol was retired in migration 108, deleting ten tools, back up to 171 when `launchpads__image_publish` was un-excluded on 2026-09-06, and finally to **213 current** when the Lighter integration added 40 protocol tools and two always-loaded onboarding shortcuts on 2026-09-07. A landing-site figure of 167 tools (27 internal plus 140 protocol) reflects an earlier point in that history and is stale against the current code.
+
+Source for the current figure: `src/vex-agent/tools/tool-surface-spec/studio-mcp/exported-tools.md` Totals (`exported tools: 213`, `internal: 29`, `protocol: 184 across 12 namespaces`).
 
 ### Protocol Namespaces And What They Cover
 
-Every protocol tool Vex Studio exposes belongs to one of 11 namespaces, each a fixed prefix on the tool's public name (`<namespace>__<resource_action>`, for example `khalani__bridge_quote_get`) (`src/vex-agent/tools/protocols/types.ts:207` grammar; `src/vex-agent/tools/protocols/khalani/manifest.ts:232` example). The list is an allowlist, not a convention: a namespace exists only if it has a row in `PROTOCOL_NAMESPACE_ALLOWLIST`, and the current 11 rows are `khalani`, `kyberswap`, `uniswap`, `relay`, `solana`, `dexscreener`, `virtuals`, `pendle`, `morpho`, `pools`, `launchpads` (`src/vex-agent/tools/protocols/catalog.ts:52-62`).
+Every protocol tool Vex Studio exposes belongs to one of 12 namespaces, each a fixed prefix on the tool's public name (`<namespace>__<resource_action>`, for example `khalani__bridge_quote_get`) (`src/vex-agent/tools/protocols/types.ts:207` grammar; `src/vex-agent/tools/protocols/khalani/manifest.ts:232` example). The list is an allowlist, not a convention: a namespace exists only if it has a row in `PROTOCOL_NAMESPACE_ALLOWLIST`, and the current 12 rows are `khalani`, `kyberswap`, `uniswap`, `relay`, `solana`, `dexscreener`, `lighter`, `virtuals`, `pendle`, `morpho`, `pools`, `launchpads` (`src/vex-agent/tools/protocols/catalog.ts:53-66`).
 
-The 11 namespaces carry 145 tool manifests between them, of which 144 are exported to an external Studio agent; the withheld one is a locker listing (`launchpads.images`) that only makes sense for the in-app agent, which has a local image locker an external client never has (`src/vex-agent/mcp/export-scope.ts:79-96`). The measured breakdown, per namespace:
+The 12 namespaces carry 185 tool manifests between them, of which 184 are exported to an external Studio agent; the withheld one is a locker listing (`launchpads.images`) that only makes sense for the in-app agent, which has a local image locker an external client never has (`src/vex-agent/mcp/export-scope.ts:79-96`). The measured breakdown, per namespace:
 
 | Namespace | Manifests | What it covers |
 | --- | --- | --- |
@@ -1091,17 +1094,20 @@ The 11 namespaces carry 145 tool manifests between them, of which 144 are export
 | uniswap | 2 | Direct Uniswap swaps |
 | relay | 2 | Cross-chain bridging, including the only route to/from Robinhood Chain, which khalani does not cover |
 | dexscreener | 18 | Market data, pairs, and token discovery |
+| lighter | 40 | Perpetuals and spot on Lighter Core and Robinhood Chain: market and account reads, order create including OCO protection, cancel, modify, cancel-all, position close, deposit, withdraw, claim, trading-key registration and fee authorization |
 | virtuals | 13 | Bonding-curve agent-token trades and launches |
 | pendle | 29 | Fixed-term yield markets (PT/YT) |
 | morpho | 19 | Lending markets |
 | pools | 13 | The pools.fun bonding-curve launchpad: launches, holder rewards, launch-asset reads |
 | launchpads | 2 | Shared cross-launchpad plumbing: staged-image publishing to a public content-addressed URL, used by both pools.fun and Virtuals launches |
 
-Counts are the measured manifest totals for this tree, not a hand count (`measured-counts.md`, probe run 2026-09-07). `launchpads` holds only 2 manifests because it deliberately owns nothing venue-specific: a launch itself is each venue's own contract, fee model, and verifier, and stays with that venue's namespace; `launchpads` owns only what is true of a launch on any launchpad, which today is the shared image locker and its publish tool (`src/vex-agent/tools/protocols/launchpads/manifest.ts:1-13`). Of its 2 manifests, `launchpads__image_publish` is exported and `launchpads__images_list` (the locker listing) is withheld for the same external-agent reason as above.
+Counts are the measured manifest totals for this tree, not a hand count.
+
+Sources: `src/vex-agent/tools/tool-surface-spec/studio-mcp/exported-tools.md` (Totals block and the per-tool table, regenerated by `pnpm generate:studio-tools-doc`) for the exported figures; `src/__tests__/eval/live-catalog.ts:50` (`PINNED_LIVE_CATALOG_TOOL_COUNT = 185`) for the manifest total. `launchpads` holds only 2 manifests because it deliberately owns nothing venue-specific: a launch itself is each venue's own contract, fee model, and verifier, and stays with that venue's namespace; `launchpads` owns only what is true of a launch on any launchpad, which today is the shared image locker and its publish tool (`src/vex-agent/tools/protocols/launchpads/manifest.ts:1-13`). Of its 2 manifests, `launchpads__image_publish` is exported and `launchpads__images_list` (the locker listing) is withheld for the same external-agent reason as above.
 
 An earlier `trench` namespace, described in older material as "launchpad and trading (RBC)" with 10 tools, no longer exists. Migration 108 retired the Trench Express protocol entirely and deleted all ten `trench__*` tools; `launchpads` is not a rename of that namespace but a structurally different one, built around shared publish plumbing rather than a venue's own trading surface (`src/__tests__/vex-agent/mcp/inventory.test.ts:129-132`). Any reference to a `trench` namespace or a "Trench Express" protocol pill describes a stale build; the current allowlist has no such row (`src/vex-agent/tools/protocols/catalog.ts:51-63`).
 
-The 144 exported protocol manifests, together with 27 internal tools, make up the 171-tool exported surface (see [s2-tool-surface](#s2-tool-surface)) (`src/__tests__/vex-agent/mcp/inventory.test.ts:142-144`).
+The 184 exported protocol manifests, together with 29 internal tools, make up the 213-tool exported surface (see [s2-tool-surface](#s2-tool-surface)) (`src/__tests__/vex-agent/mcp/inventory.test.ts:144-149`).
 
 ### vex_ToolSearch And vex_ToolDescribe
 
@@ -1231,7 +1237,7 @@ Because one predicate gates the listing, the search tool, and the dispatcher tog
 
 ### The Hot Set And Description Budget
 
-The Vex Studio MCP server exports 171 tools, but a connecting client does not load all 171 descriptions into context at handshake. Only 27 load eagerly (`_meta["anthropic/alwaysLoad"]`); the remaining 144 are protocol tools across 11 namespaces (khalani, kyberswap, uniswap, relay, solana, dexscreener, virtuals, pendle, morpho, pools, launchpads) that a client discovers on demand (`src/vex-agent/mcp/inventory/index.ts:146-207`, `src/__tests__/vex-agent/mcp/inventory.test.ts:142-145`). The hot set is exactly the internal tool registry plus `vex_ToolSearch` itself (an internal tool under its exported name) plus `vex_ToolDescribe`, the one MCP-only row that reads a tool's full contract; a test enumerates this membership and asserts the hot set stays under half the total surface, so a hot set that quietly grew past the internal registry fails a named test rather than degrading silently (`src/__tests__/vex-agent/mcp/inventory.test.ts:335-357`).
+The Vex Studio MCP server exports 213 tools, but a connecting client does not load all 213 descriptions into context at handshake. Only 29 load eagerly (`_meta["anthropic/alwaysLoad"]`); the remaining 184 are protocol tools across 12 namespaces (khalani, kyberswap, uniswap, relay, solana, dexscreener, lighter, virtuals, pendle, morpho, pools, launchpads) that a client discovers on demand (`src/vex-agent/mcp/inventory/index.ts:146-207`, `src/__tests__/vex-agent/mcp/inventory.test.ts:144-149`). The hot set is exactly the internal tool registry (which now carries the two Lighter onboarding shortcuts) plus `vex_ToolSearch` itself (an internal tool under its exported name) plus `vex_ToolDescribe`, the one MCP-only row that reads a tool's full contract; a test enumerates this membership and asserts the hot set stays under half the total surface, so a hot set that quietly grew past the internal registry fails a named test rather than degrading silently (`src/__tests__/vex-agent/mcp/inventory.test.ts:335-357`).
 
 This split exists because tool-selection accuracy measurably degrades once a session holds more than roughly 30 to 50 tool descriptions at once, an empirical bound the owner cites from the Anthropic Tool Search research behind the O20 exposure-model decision, not a number Vex measured itself (`src/vex-agent/tools/tool-surface-spec/studio-mcp/mcp-landscape-2026.md:137`). Rather than build a custom search facade in front of a narrowed tool list, the shipped design exports every protocol manifest as a real MCP tool under a `<namespace>__` prefix and lets a client's own on-demand discovery (`vex_ToolSearch` to find a tool by intent, `vex_ToolDescribe` for its whole contract) pull in a description only when the agent actually needs it.
 
@@ -1242,7 +1248,7 @@ Two different bounds apply depending on whether a tool is in the hot set.
 | Scope | Bound | Enforcement |
 | --- | --- | --- |
 | Hot-set description (27 tools) | 2048 characters AND 2048 UTF-8 bytes, both checked separately, whole text | `ALWAYS_LOADED_DESCRIPTION_MAX_CHARACTERS = 2048` (`src/vex-agent/mcp/inventory/types.ts:39`); asserted in `src/__tests__/vex-agent/mcp/inventory.test.ts:422-506` |
-| Protocol description (144 tools) | Unbounded overall; risk class and preconditions must appear in the first 2000 bytes | `src/__tests__/vex-agent/mcp/inventory.test.ts:369-420` |
+| Protocol description (184 tools) | Unbounded overall; risk class and preconditions must appear in the first 2000 bytes | `src/__tests__/vex-agent/mcp/inventory.test.ts:369-420` |
 
 The 2048-character bound is measured, not chosen: Claude Code was observed cutting an MCP tool description at exactly 2048 characters of the original string and appending a truncation marker, confirmed across four independent counts on four different tools, each time losing the tail of the description (the `RETURNS` section, on six always-loaded tools) (`src/vex-agent/mcp/inventory/types.ts:16-38`). Because the client does the cutting, the hot set is authored to fit whole rather than shipped to be cut. The bound is checked in both units because the hot set is not pure ASCII: `SwapExecute` and `SwapQuote` carry a U+2192 arrow, landing at 2045 characters and 2047 UTF-8 bytes, one byte under the limit, so a character-only check would have missed a byte overflow on a non-ASCII edit (`src/vex-agent/mcp/inventory/types.ts:26-33`).
 
@@ -1264,7 +1270,7 @@ The usage notes that follow tell the agent how to find and call a tool: every to
 
 The safety rules and most of the usage notes (finding tools, truncation, amounts, project scope, unavailable tools) are embedded verbatim in both the handshake and the `AGENTS.md` managed block from the same named constants, `STUDIO_SAFETY_RULES`, `STUDIO_USAGE_AMOUNTS`, `STUDIO_USAGE_FINDING_TOOLS`, `STUDIO_USAGE_PROJECT_SCOPE`, `STUDIO_USAGE_TRUNCATION` and `STUDIO_USAGE_UNAVAILABLE_TOOLS`, that the Studio installer imports individually (`src/vex-agent/studio/instructions/project-brief.ts:61-67`). Neither side holds its own copy of that wording, so the handshake and the file on disk cannot come to say different things about approval, amounts, finding tools, truncation or project scope; a future edit changes one source and both consumers pick it up. Outcomes are the exception: the handshake carries the short bucket sentence `STUDIO_USAGE_ERRORS` (nothing-happened, happened, or unknown), while `AGENTS.md` carries a longer, differently worded table with a per-word retry verdict, rendered from the same underlying vocabulary data by `renderStudioOutcomeVocabulary()` (`src/vex-agent/studio/instructions/shared-usage.ts:135-137,396-416`, called at `src/vex-agent/studio/instructions/project-brief.ts:469`) rather than sharing one literal string.
 
-Separately from the handshake, Vex writes `.vex/protocols.md` into every Studio project and refreshes it on every Vex update. It is generated, not hand-authored, and is a full offline table of the whole exported surface, currently 171 tools (27 internal, 144 protocol tools across 11 protocols), each row naming its read-only and destructive hints and the environment variable it needs, without argument contracts or descriptions, which stay on each tool's own `tools/list` entry (`src/vex-agent/tools/tool-surface-spec/studio-mcp/protocols.md:1-59`). An agent can read this file directly, without spending a tool call, to see the whole catalog before it ever calls `vex_ToolSearch`.
+Separately from the handshake, Vex writes `.vex/protocols.md` into every Studio project and refreshes it on every Vex update. It is generated, not hand-authored, and is a full offline table of the whole exported surface, currently 213 tools (29 internal, 184 protocol tools across 12 protocols), each row naming its read-only and destructive hints and the environment variable it needs, without argument contracts or descriptions, which stay on each tool's own `tools/list` entry (`src/vex-agent/tools/tool-surface-spec/studio-mcp/protocols.md:1-59`). An agent can read this file directly, without spending a tool call, to see the whole catalog before it ever calls `vex_ToolSearch`.
 
 
 ## Part 4 - Approvals: The Money Gate
@@ -1779,6 +1785,7 @@ The full set reachable from Studio spans:
 - **Bridging**: Khalani (`khalani__bridge_execute`) and Relay (`BridgeExecuteRelay`), plus the internal `BridgeExecute` lane.
 - **Lending**: Morpho and Pendle on EVM, Jupiter Lend on Solana.
 - **Launches**: pools.fun (`pools__launch_execute`) and Virtuals, both curve trades and new-token launches.
+- **Exchange trading**: Lighter perpetuals and spot on Lighter Core and Robinhood Chain (`lighter__order_create`, `lighter__position_close`, `lighter__order_cancel`, `lighter__order_modify`, `lighter__order_cancel_all`), plus the account money legs `lighter__deposit`, `lighter__withdraw`, `lighter__withdraw_claim`, the trading-key registration `lighter__key_register` and the fee authorization `lighter__fees_approve`.
 
 `admitStudioCall` is the one dispatcher every Studio tool call passes through (`src/vex-agent/mcp/admission.ts:161-225`). For an exported internal tool it calls the same `dispatchTool` the in-app chat path calls; for an exported protocol tool (a swap, bridge, launch, or lend call) it calls the same `executeProtocolTool` the in-app path calls, wrapped through the one mapper `toProtocolExecutionContext` that turns the call into a `ProtocolExecutionContext` (`src/vex-agent/tools/protocols/execution-context.ts:22-66`). The only thing Studio adds is a tag: `approvalSurface: "studio_mcp"`, stamped explicitly at the call site (`admission.ts:220-223`). The in-app dispatcher stamps the same field explicitly too, at its own mutating call sites (the `execute_tool` resume envelope, the injected discovered-tool lane, and the mutating-protocol-alias router `SwapExecute`/`BridgeExecute`/`BridgeExecuteRelay` route through), passing `"in_app_form"` through the same mapper (`src/vex-agent/tools/dispatcher/protocol-route.ts:86`, `:142`, `:174`). Only the non-mutating quote/list helpers build a `ProtocolExecutionContext` by hand without going through the mapper at all and rely on the gate's default of `"in_app_form"` for an omitted value (`src/vex-agent/tools/internal/action-aliases.ts:81-90`, default at `src/vex-agent/tools/protocols/runtime/gates.ts:292-294`). So the two surfaces run through identical prequote checks, identical approval-gate logic, and identical fee arithmetic; the tag only changes which consent surface a mutating call is routed to (an in-app form for a launch, an approval card everywhere else on Studio, since Studio has no in-app launch form of its own).
 
@@ -1974,6 +1981,191 @@ bridges (see [The Prequote Gate](#the-prequote-gate)). Beyond that shared ladder
 traced against the shared bps split, and their Studio-specific behavior was not independently
 verified in this pass - this is stated as lower-depth coverage, not asserted as identical to the
 25 bps pattern seen elsewhere by assumption.
+
+### Lighter: Perpetuals And Spot On Two Exchanges
+
+`lighter` is the newest and largest protocol namespace: 40 manifests, all 40 exported
+(`exported-tools.md`, `lighter__` rows). It is the first venue Vex reaches that is an ORDER-BOOK
+EXCHANGE rather than an on-chain pool, so its money path has three legs a swap does not have -
+funding an exchange account, registering a trading key, and authorizing the venue to charge Vex's
+fee on fills - and each of those is its own approval.
+
+#### Two environments, two settlement assets
+
+Lighter runs as two independent deployments, and Vex treats them as two separate accounts with
+separate onboarding, never as one venue with a network switch
+(`src/tools/lighter/wallet-funding/deployments.ts:43-84`):
+
+| Environment | Settlement chain | Settlement asset | Lighter signer domain | REST base |
+|---|---|---|---|---|
+| `core` (Lighter Core) | Ethereum mainnet, chain id 1 | USDC, 6 decimals, asset index 3 | chain id 304 | `https://mainnet.zklighter.elliot.ai` |
+| `rhc` (Robinhood Chain) | Robinhood Chain mainnet, chain id 4663 | USDG, 6 decimals, asset index 3 | chain id 466324 | `https://api.rh.lighter.xyz` |
+
+The settlement chain id and the Lighter signer chain id are deliberately distinct fields, and the
+deployment constructor refuses a row where they are equal
+(`deployments.ts:13-17,98-102`): a signed L2 message bound to the wrong domain would be a valid
+signature for the wrong exchange.
+
+#### What the 40 tools cover
+
+- **Public market reads**: `markets_list`, `market_get`, `orderbook_get`, `recent_trades_list`,
+  `candles_list`, `system_get`.
+- **Account reads**: `account_get`, `positions_list`, `open_orders_list`, `order_history_list`,
+  `trades_list`, `api_keys_inspect`, `account_onboarding_status`.
+- **Previews**: `order_preview` and `position_protect` build a live-data-backed preview of one
+  order, or of a stop-loss plus take-profit pair, and (once managed trading is ready) the approval
+  card for it. Neither signs nor submits anything.
+- **Order lifecycle**: `order_create` (including the native OCO pair described below),
+  `order_cancel`, `order_modify`, `order_cancel_all`, `position_close`.
+- **Account money legs**: `deposit`, `withdraw`, `withdraw_claim`.
+- **Credential and fee**: `key_register`, `fees_approve`.
+- **Status tools**: `deposit_status`, `order_status`, `key_register_status`, `fees_status`,
+  `withdraw_status` - evidence-only reads that never sign, retry or broadcast.
+
+Every mutating tool ships as a PAIR: a `_prepare` tool that builds a durable intent and returns the
+approval card's contents, and the bare tool that resumes exactly that intent. `lighter__deposit`
+and `lighter__deposit_prepare` are one such pair, and there are ten of them: deposit, withdraw,
+withdraw_claim, key_register, fees_approve, order_create, order_cancel, order_cancel_all,
+order_modify and position_close.
+
+Two further Lighter tools are INTERNAL rather than protocol tools, and therefore always loaded:
+`lighter_core_onboarding_status` and `lighter_rhc_onboarding_status`
+(`src/vex-agent/mcp/inventory/titles.ts`). They exist because an agent that does not know
+Lighter is a two-account venue would otherwise have to discover the namespace before it could find
+out that the account is not funded yet; these two answer "can I trade here, and what is missing"
+without a search step. They are the only protocol-specific rows in the hot set, and they are the
+reason the internal count moved from 27 to 29.
+
+#### How a mutating Lighter call becomes an approval
+
+A prepared Lighter action does not create an approval by itself. The `_prepare` call writes a
+durable intent and returns its contents; the bare call then resumes that exact intent, and
+`admitStudioCall` recognises a Lighter result that is still pending approval, resolves the stored
+prepared action, and refuses outright when the saved action is missing, expired, or inconsistent
+rather than rebuilding one from the caller's arguments
+(the prepared-approval branch of `admitStudioCall`, `src/vex-agent/mcp/admission.ts`). Nothing about the Studio surface changes this: the same
+`executeProtocolTool` path, the same approval broker, and the same approval card serve the in-app
+agent (see [How A Mutating Call Becomes An Approval](#how-a-mutating-call-becomes-an-approval)).
+The private key that signs a Lighter order is a locally generated Lighter API key held in the
+encrypted vault; it is loaded only inside the privileged main process, and it is never returned
+through the tool surface, persisted in Postgres, or written to a log
+(`src/tools/lighter/trading-secret.ts`).
+
+#### Campaign points are visible, and only ever read
+
+Settings -> Lighter Points is a read-only surface over Lighter's Robinhood Chain
+points campaign. For every wallet with a Lighter account registered through the
+app it shows the all-time and weekly leaderboard position, the live (unsettled)
+points and the referral rewards with the provider's own multiplier, each read
+with that wallet's read-only account authorization derived in the main process.
+Nothing on the surface signs, moves or authorizes anything, and no Studio tool
+exports it. A wallet Vex cannot authorize right now (locked vault, no saved
+trading credential) is listed with that reason rather than as zero points, and a
+board with no row for the wallet reads "Rank unavailable"
+(`vex-app/src/renderer/features/appShell/screens/SettingsScreen/LighterPointsSection.tsx`,
+read model `src/vex-agent/tools/protocols/lighter/points.ts`).
+
+#### The Vex fee is charged by the exchange, not by Vex
+
+Lighter is the one venue where Vex's fee is NOT a separate transfer Vex sends. Lighter supports a
+native integrator fee: an order signed with Vex's integrator attributes carries Vex's collector
+account and the maker and taker rates, and the EXCHANGE deducts them on the fill. The rates are
+release constants on a 1,000,000 tick (`LIGHTER_FEE_TICK`, `LIGHTER_PERPS_FEE`,
+`LIGHTER_SPOT_FEE` in `src/tools/lighter/fee-policy.ts`):
+
+| Market type | Maker | Taker | Tick value |
+|---|---|---|---|
+| Perpetuals | 0.1% (10 bps) | 0.1% (10 bps) | 1000 |
+| Spot | 0.25% (25 bps) | 0.25% (25 bps) | 2500 |
+
+10 bps is Lighter's own documented maximum for perpetuals, so the perps rate cannot be raised
+later without the provider rejecting it. The collector is one wallet on both environments,
+`0x10Ce97Cf3142BE2a1a28aC83A55b21fDCE493C03`, holding Lighter account 743799 on Core and 22869 on
+Robinhood Chain (`COLLECTORS` in `fee-policy.ts`); a collector row is only enabled after that
+ownership is verified, and a malformed row throws rather than silently disabling the fee.
+
+Because the exchange charges it, the fee needs its own standing authorization, and that
+authorization is its own approval card. The card names the perpetual and spot rates as percentages
+of executed trade value, the collector wallet AND its Lighter account, the exact trading account
+being authorized, the ISO instant the authorization stops being valid, and the scope sentence
+"Covers future VEX fills until expiry or revocation. Each trade still requires your normal
+approval. Spot fees reduce the asset received."
+(`buildLighterFeeAuthorizationDisclosure`,
+`src/vex-agent/tools/protocols/lighter/fee-authorization-disclosure.ts`). The authorization
+is valid for ten years (`LIGHTER_FEE_AUTHORIZATION_DURATION_MS`, `fee-policy.ts`) and is
+revocable at any time: `lighter__fees_approve_prepare` with `revoke: true` builds the mirror card,
+whose scope sentence is "Stop authorizing new VEX fee-bearing orders. Existing submitted orders
+retain their signed terms." Accepting that card is what resumes `lighter__fees_approve`, which takes
+only the prepared `intentId` and never a `revoke` flag of its own. A revocation stops future
+fee-bearing orders; it cannot reach into an order already submitted under the old terms, and the
+card says so rather than implying it can.
+
+#### The account-tier requirement, and why it is on the same card
+
+From 2026-09-14 Lighter rejects integrator-attributed trades and new integrator approvals from
+Standard accounts. A Vex user therefore cannot open a fee-bearing Lighter position from a Standard
+account, and the fee authorization is the moment that becomes true, so the tier change rides on the
+same approval: the card carries an `accountChange` row reading "Change to Plus" on Core or "Change
+to Premium" on Robinhood Chain, states that it applies to this wallet's Lighter account and its
+subaccounts, and shows the exchange's own maker and taker fees for the target tier next to the
+current ones (the `accountChange` and `exchangeFees` rows of
+`buildLighterFeeAuthorizationDisclosure`). Core and Robinhood Chain get different
+targets because Robinhood Chain has no Plus tier at all. The change is a real account change on
+Lighter's side, not a Vex-local flag: Vex does not switch the tier back, the user can change the
+account type in the Lighter app, an upgrade applies immediately, and a downgrade is allowed once 24
+hours have passed since the last tier change.
+
+#### Deposit consent: what is bound, and what is honestly not
+
+Funding a Lighter account is an ordinary settlement-chain ERC-20 transfer to the exchange gateway,
+and its approval card binds the deposit amount, the selected wallet, the settlement chain, the
+gateway contract, the settlement asset, and the deposit-only scope. It deliberately does NOT bind a
+numerical network-fee ceiling. The card states this in one sentence, "Network fees are selected at
+execution.", and that sentence is the whole promise: after approval Vex re-reads the live preflight
+beside each signer leg and signs with the current EIP-1559 estimate, so ordinary fee movement
+between the card and execution does not invalidate consent. A four-times live-quote sanity boundary
+exists inside the signer path only to reject abnormal provider values; it is derived after
+approval, is not shown on the card, and is not a promise to the user. This is an explicit,
+owner-signed exception to the usual rule that a money card binds every bound (owner decision
+2026-09-07); the honest disclosure is what stands in for the missing ceiling. The deposit itself is
+never complete from an L1 receipt alone: a confirmed Ethereum or Robinhood Chain receipt is
+`deposit_l1_confirmed`, and only Lighter-side evidence for that exact L1 hash moves it to credited.
+
+#### What Vex deliberately does not support
+
+Native OCO protection is supported for one existing perpetual position: exactly one reduce-only
+stop-loss and one same-size reduce-only take-profit, bound to one approval and one grouped
+submission, reported active only after both child order identities are visible in authenticated
+provider evidence. Vex never emulates the sibling cancellation and never retries an uncertain
+grouped submission.
+
+TWAP orders, OTO, OTOCO, and entry-with-attached-protection are NOT exported and are not emulated;
+the `lighter__order_preview` description says so in the tool contract itself, and
+`src/tools/lighter/Lighter.md` is the module's own home for that fact. Each of them would require Vex to hold standing authority
+between two legs, or to invent a cancellation the venue does not guarantee, and neither is a thing
+this surface does. An agent asking for one gets a refusal naming the unsupported shape, not a
+best-effort approximation.
+
+#### What an external agent can meet when a Lighter call does not complete
+
+Lighter calls resolve into the same seven closed `StudioCallOutcome` kinds as every other Studio
+tool (see [The Seven Outcomes An Agent Sees](#the-seven-outcomes-an-agent-sees)); there is no
+Lighter-specific wire outcome. What is Lighter-specific is the vocabulary inside a refusal:
+
+| Situation | What the agent is told |
+|---|---|
+| The prepared action is gone, expired, or does not match | "The saved Lighter action is missing, expired, or inconsistent. No approval was created. Prepare a fresh action." (`admission.ts`) |
+| Consent expired before anything was reserved or signed | a typed refusal naming the expiry; nothing was reserved, nothing signed |
+| Consent expired after signing but before submission | the signing evidence is retained, submission is refused, and the order is NEVER re-signed |
+| The submission outcome is unknown | the intent stays ambiguous and is reconciled from provider evidence; it is never reported cancelled, never retried, and a later cancellation never overwrites a known provider result |
+| The tier change succeeded but the fee approval did not submit | the partial effect is reported explicitly ("tier changed, fee authorization not submitted") rather than reported as one failure |
+| A trigger is already crossed, or a post-only order would cross the refreshed book | refused at revalidation rather than sent |
+
+The rule under all of these is the one that governs every Vex money path: an unknown outcome is a
+state of its own, not a failure, and signing and submission never retry themselves.
+
+Sources for the counts in this section: `src/vex-agent/tools/tool-surface-spec/studio-mcp/exported-tools.md`
+(the 40 `lighter__` rows and the Totals block).
 
 ### The Prequote Gate
 
@@ -2189,7 +2381,7 @@ When you install Vex Studio into a project, more lands on disk than the config f
 | File | Purpose |
 |---|---|
 | `AGENTS.md` | The authority core - the managed instruction block every coding agent reads whether or not its own config was written. |
-| `.vex/vex-guide.md` | The rest of the protocol: what changed in this Vex version, which protocol namespaces are available in this project, what an app built on them inherits, how to report a bug. Split out because it does not fit inside Codex's roughly 32 KiB `AGENTS.md` budget (`vex-app/src/main/studio/installer/plan.ts:164-166`). |
+| `.vex/vex-guide.md` | The rest of the protocol: what changed in this Vex version, which protocol namespaces are available in this project, what an app built on them inherits, how to report a bug. Split out because it does not fit inside the review's roughly 32 KiB `AGENTS.md` budget (`vex-app/src/main/studio/installer/plan.ts:164-166`). |
 | `CLAUDE.md` | Two import lines so Claude Code picks up the two files above. |
 | `.vex/protocols.md` | A generated reference for the protocol tools this project has access to. |
 
@@ -3109,7 +3301,7 @@ The approval broker caps how many Studio actions can block waiting for a human d
 
 | Bound | Value | Refusal behavior | Citation |
 |---|---|---|---|
-| Managed-block body | 24,576 bytes (24 KiB), derived from Codex's 32,768-byte limit minus an 8 KiB reserve | test-enforced hard bound; the remedy is moving a section to the guide, never truncating a sentence | `src/vex-agent/studio/installer/render/managed-block.ts:158` |
+| Managed-block body | 24,576 bytes (24 KiB), derived from the review's 32,768-byte limit minus an 8 KiB reserve | test-enforced hard bound; the remedy is moving a section to the guide, never truncating a sentence | `src/vex-agent/studio/installer/render/managed-block.ts:158` |
 | Any file the installer reads/parses/rewrites | 1,048,576 bytes (1 MiB) | refuse, re-checked against the actual bytes read, not just the preflight stat | `vex-app/src/main/studio/installer/paths.ts:62`; `vex-app/src/main/studio/installer/confined-fs.ts:211-219` |
 | `project_change_notes.summary` | 400 characters (DB CHECK constraint, migration 089) | database rejects the write | measured against the full artifact roster: 315 characters worst case (`vex-app/src/main/studio/installer.ts:701-709`) |
 
@@ -3184,13 +3376,15 @@ stale plan document disagree, the numbers below are what the code does today.
 |---|---:|---|
 | coding-client agent ids in the registry | 15 | `src/vex-agent/studio/agents.ts:311-762` (15 `id:` entries), `STUDIO_AGENT_LIST` walks the same order |
 | agents Vex actually writes config for | 13 | `agents.ts:311-725`; `cline` and `warp` are `unsupported` writers, no file is written for either (`agents.ts:737-757,759-762`) |
-| exported Studio MCP tools | 171 | `measured-counts.md`; 27 internal + 144 protocol |
-| internal tools (hot set, always loaded) | 27 | `measured-counts.md` |
-| exported protocol tools | 144 | `src/vex-agent/mcp/export-scope.ts:79-104,129-137`; the catalog holds 145 protocol manifests, and exactly one, `launchpads.images`, is withheld from every Studio-facing surface (`tools/list`, `vex_ToolSearch`, and call admission alike) because it lists images staged in the desktop app's local locker, which an external Studio agent does not have |
-| protocol namespaces | 11 | khalani, solana, kyberswap, uniswap, relay, dexscreener, virtuals, pendle, morpho, pools, launchpads |
+| exported Studio MCP tools | 213 | `exported-tools.md` Totals; 29 internal + 184 protocol |
+| internal tools (hot set, always loaded) | 29 | `exported-tools.md` Totals (`internal: 29`, `always loaded: 29`) |
+| exported protocol tools | 184 | `src/vex-agent/mcp/export-scope.ts:79-104,129-137`; the catalog holds 185 protocol manifests, and exactly one, `launchpads.images`, is withheld from every Studio-facing surface (`tools/list`, `vex_ToolSearch`, and call admission alike) because it lists images staged in the desktop app's local locker, which an external Studio agent does not have |
+| protocol namespaces | 12 | khalani, solana, kyberswap, uniswap, relay, dexscreener, lighter, virtuals, pendle, morpho, pools, launchpads |
+| read-only exported tools | 129 | `exported-tools.md` Totals |
+| destructive exported tools | 63 | `exported-tools.md` Totals |
 | approval expiry window | 1 hour | `APPROVAL_TTL_MS = 60 * 60 * 1000` (3,600,000 ms), `src/vex-agent/engine/core/approval-runtime/enqueue.ts:118` |
 
-#### Per-namespace manifest counts (145 total, 11 namespaces)
+#### Per-namespace manifest counts (185 total, 12 namespaces)
 
 | namespace | manifests |
 |---|---:|
@@ -3200,6 +3394,7 @@ stale plan document disagree, the numbers below are what the code does today.
 | uniswap | 2 |
 | relay | 2 |
 | dexscreener | 18 |
+| lighter | 40 |
 | virtuals | 13 |
 | pendle | 29 |
 | morpho | 19 |
@@ -3208,10 +3403,15 @@ stale plan document disagree, the numbers below are what the code does today.
 
 These are manifest counts, not exported-tool counts: every namespace exports its full manifest
 count except `launchpads`, which exports 1 of its 2 (`launchpads.image_publish` ships,
-`launchpads.images` is withheld) [see resolved/numbers.md]. A per-namespace breakdown of the 144
+`launchpads.images` is withheld) [see resolved/numbers.md]. A per-namespace breakdown of the 184
 *exported* tools (as opposed to the manifest counts above) is not reproduced in this flat table;
 it is tracked separately, along with the readOnlyHint/destructiveHint split per namespace, and is
 owed as a follow-up in `resolved/numbers.md`.
+
+Sources: every figure in the two tables above is copied from
+`src/vex-agent/tools/tool-surface-spec/studio-mcp/exported-tools.md` (regenerated by
+`pnpm generate:studio-tools-doc`, checked in CI with `--check`), except the 185 manifest total,
+which is `PINNED_LIVE_CATALOG_TOOL_COUNT` in `src/__tests__/eval/live-catalog.ts:50`.
 
 #### Fee rate and connection bounds
 
@@ -3713,9 +3913,11 @@ The same page claims Windows is refused at runtime with a constant named `window
 
 #### Stale numbers
 
-The exported-tool-count claim (167 = 27 internal + 140 protocol, repeated on `app/docs/studio/page.tsx`, `app/docs/studio/approvals/page.tsx`, `StudioSection.tsx`, and as the `lib/facts.ts` constants `protocolTools`/`studioExportedTools`) is stale. The pinned inventory test currently asserts 171 exported tools total: 27 internal and 144 protocol (`src/__tests__/vex-agent/mcp/inventory.test.ts:142-144`). `studioInternalTools: 27` alone is still correct; only the protocol figure (140 to 144) and the total (167 to 171) moved.
+The exported-tool-count claim (167 = 27 internal + 140 protocol, repeated on `app/docs/studio/page.tsx`, `app/docs/studio/approvals/page.tsx`, `StudioSection.tsx`, and as the `lib/facts.ts` constants `protocolTools`/`studioExportedTools`) is stale, and so is every intermediate figure. The pinned inventory test currently asserts 213 exported tools total: 29 internal and 184 protocol (`src/__tests__/vex-agent/mcp/inventory.test.ts:144-149`). All three landing constants move: `studioInternalTools` 27 to 29, `protocolTools` 140 to 184, `studioExportedTools` 167 to 213.
 
-`lib/facts.ts`'s `perNamespace` table still lists a `trench` row (10 tools) and `protocolNames` still lists "Trench Express" as a protocol pill. The Trench Express protocol was fully retired in migration 108: the ten `trench__*` tools were deleted with the protocol and the namespace no longer appears in `PROTOCOL_NAMESPACE_ALLOWLIST`, which instead lists `launchpads` (`src/vex-agent/tools/protocols/catalog.ts:51-63`). `protocolIntegrations` staying at 11 is coincidental (one member changed identity, the count did not). The correct replacement numbers are measured: `pools` exports 13 tools and `launchpads` exports 1 of its 2 manifests (`launchpads.image_publish`; the sibling `launchpads.images` / `launchpads__images_list` is the single withheld row across the whole 144-tool export). Both counts come from loading `buildStudioInventory()` and grouping the protocol rows by `manifest.namespace`, cross-checked against the pinned 144-tool total across all 11 namespaces (dexscreener 18, khalani 9, kyberswap 4, launchpads 1, morpho 19, pendle 29, pools 13, relay 2, solana 34, uniswap 2, virtuals 13). The withholding predicate itself lives in `NON_EXPORTED_PROTOCOL_TOOLS`, a set containing only `"launchpads.images"` (`src/vex-agent/mcp/export-scope.ts:79-104`, the set at 102-104), and `isExportedProtocolTool` is documented as the one enumerator predicate that `tools/list`, `vex_ToolSearch`, and `admitStudioCall` all consult, so no surface can show or run what another withholds (`src/vex-agent/mcp/export-scope.ts:129-131`).
+Sources: `src/vex-agent/tools/tool-surface-spec/studio-mcp/exported-tools.md` Totals.
+
+`lib/facts.ts`'s `perNamespace` table still lists a `trench` row (10 tools) and `protocolNames` still lists "Trench Express" as a protocol pill. The Trench Express protocol was fully retired in migration 108: the ten `trench__*` tools were deleted with the protocol and the namespace no longer appears in `PROTOCOL_NAMESPACE_ALLOWLIST`, which instead lists `launchpads` (`src/vex-agent/tools/protocols/catalog.ts:51-63`). `protocolIntegrations` stayed at 11 through that change (one member changed identity, the count did not), but the Lighter integration moves it to 12, and `protocolNames` gains "Lighter". The correct replacement numbers are measured: `pools` exports 13 tools, `lighter` exports all 40 of its manifests, and `launchpads` exports 1 of its 2 (`launchpads.image_publish`; the sibling `launchpads.images` / `launchpads__images_list` is the single withheld row across the whole 184-tool export). The counts come from loading `buildStudioInventory()` and grouping the protocol rows by `manifest.namespace`, cross-checked against the pinned 184-tool total across all 12 namespaces (dexscreener 18, khalani 9, kyberswap 4, launchpads 1, lighter 40, morpho 19, pendle 29, pools 13, relay 2, solana 34, uniswap 2, virtuals 13). The withholding predicate itself lives in `NON_EXPORTED_PROTOCOL_TOOLS`, a set containing only `"launchpads.images"` (`src/vex-agent/mcp/export-scope.ts:79-104`, the set at 102-104), and `isExportedProtocolTool` is documented as the one enumerator predicate that `tools/list`, `vex_ToolSearch`, and `admitStudioCall` all consult, so no surface can show or run what another withholds (`src/vex-agent/mcp/export-scope.ts:129-131`).
 
 #### Missing content
 
@@ -3847,9 +4049,9 @@ against a `FakeFront` harness.
 #### Tool surface
 
 `inventory.test.ts` is the load-bearing suite: it asserts the exported tool inventory at exactly
-171 entries (27 internal, 144 protocol), with a reviewed changelog comment tracking every count
-change, most recently 170 to 171 for the image-publish Studio arm
-(`src/__tests__/vex-agent/mcp/inventory.test.ts:133,142-144`). It also pins ordering, the
+213 entries (29 internal, 184 protocol), with a reviewed changelog comment tracking every count
+change, most recently 171 to 213 for the Lighter integration
+(`src/__tests__/vex-agent/mcp/inventory.test.ts:144-149`). It also pins ordering, the
 ASCII-name gate, title uniqueness, annotation exhaustiveness, hot-set membership, and the
 description-budget bounds. `export-scope.test.ts`, `tool-search-export.test.ts`,
 `tool-describe-export.test.ts` and `fee-cap-two-call-workflow.test.ts` (all under
