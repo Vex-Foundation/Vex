@@ -8,13 +8,19 @@ import type {
 } from "@tools/lighter/types.js";
 import type {
   LighterTradingAccount,
+  LighterTradingAccountUnavailableReason,
   LighterTradingAsset,
   LighterTradingOpenOrder,
   LighterTradingPosition,
 } from "@shared/schemas/lighter-trading.js";
+import { isAbortError, throwIfAborted } from "../../../../src/utils/cancellation.js";
 import { resolveLighterReadOnlyAccountAuth } from "@vex-agent/tools/protocols/lighter/read-account-auth.js";
 import { listUnlockedLighterTradingCredentialScopes } from "../secrets/lighter-trading-credential.js";
-import { readLighterTradingMarketList } from "./trading-panel-service.js";
+import { requireUnlockedMasterPassword } from "../secrets/session.js";
+import {
+  LighterTradingReadError,
+  readLighterTradingMarketList,
+} from "./trading-panel-service.js";
 import { log } from "../logger/index.js";
 
 const MAX_ROWS = 200;
@@ -180,7 +186,7 @@ function projectAsset(raw: LighterAccountAsset): LighterTradingAsset | null {
   const balance = cleanUnsigned(raw.balance);
   const locked = cleanUnsigned(raw.locked_balance);
   const marginBalance = cleanUnsigned(raw.margin_balance);
-  // Surface any asset the account actually holds — spot balance, locked, or
+  // Surface any asset the account actually holds - spot balance, locked, or
   // posted margin. USDG and other collateral tokens live here, not in the
   // single perp `collateral` field.
   const hasHolding = isNonZero(balance) || isNonZero(locked) || isNonZero(marginBalance);
@@ -225,12 +231,22 @@ export function resolveUniqueLighterAccountIndex(
 
 async function symbolResolver(
   environment: LighterEnvironment,
+  signal?: AbortSignal,
 ): Promise<(marketId: number) => string> {
   try {
-    const markets = await readLighterTradingMarketList(environment);
+    const markets = await readLighterTradingMarketList(
+      environment,
+      undefined,
+      undefined,
+      signal,
+    );
     const byId = new Map(markets.markets.map((market) => [market.marketId, market.symbol]));
     return (marketId) => byId.get(marketId) ?? `#${marketId}`;
-  } catch {
+  } catch (cause) {
+    // Symbols are decoration: a failed market list downgrades labels to
+    // `#id`. An abort is not decoration, so it keeps propagating.
+    throwIfAborted(signal);
+    if (isAbortError(cause)) throw cause;
     return (marketId) => `#${marketId}`;
   }
 }
@@ -238,11 +254,13 @@ async function symbolResolver(
 function unavailable(
   environment: LighterEnvironment,
   now: () => number,
+  reason: LighterTradingAccountUnavailableReason,
 ): LighterTradingAccount {
   return {
     environment,
     retrievedAt: now(),
     status: "unavailable",
+    unavailableReason: reason,
     accountIndex: null,
     openOrdersAvailable: false,
     openOrdersTruncated: false,
@@ -255,7 +273,7 @@ function unavailable(
 
 /**
  * Reads the authenticated Light it up account panel. The owning account is
- * resolved from the unlocked trading scope — the renderer never supplies an
+ * resolved from the unlocked trading scope - the renderer never supplies an
  * account identity and never receives auth tokens. Positions and balances come
  * from the public account-index read; open orders use a short-lived read-only
  * auth derived in the main process. When no unlocked trading scope exists (no
@@ -314,6 +332,7 @@ export function projectLighterTradingAccount(
     environment: input.environment,
     retrievedAt: input.now(),
     status: "ready",
+    unavailableReason: null,
     accountIndex: input.accountIndex,
     openOrdersAvailable: input.openOrdersAvailable,
     openOrdersTruncated,
@@ -332,23 +351,38 @@ export async function readLighterTradingAccount(
   environment: LighterEnvironment,
   client: LighterTradingAccountClient = getLighterClient(),
   now: () => number = Date.now,
+  signal?: AbortSignal,
 ): Promise<LighterTradingAccount> {
+  throwIfAborted(signal);
   const scopes = listUnlockedLighterTradingCredentialScopes(environment);
+  if (scopes.length === 0) {
+    // The scope list is empty for two different reasons and the person needs
+    // to be told which: a locked vault is one unlock away, while an
+    // un-onboarded account needs a trading key. Reading the session's lock
+    // state (never the password itself) is what separates them.
+    return unavailable(
+      environment,
+      now,
+      requireUnlockedMasterPassword().ok ? "not_onboarded" : "locked_vault",
+    );
+  }
   // Multiple API keys for one account are equivalent for this read-only
   // projection. Multiple distinct accounts are not: the renderer supplies no
   // account identity, so main must fail closed instead of choosing by sort
   // order and displaying an arbitrary account.
   const accountIndex = resolveUniqueLighterAccountIndex(scopes);
-  if (accountIndex === null) return unavailable(environment, now);
+  if (accountIndex === null) return unavailable(environment, now, "ambiguous_account");
 
-  const symbolFor = await symbolResolver(environment);
+  const symbolFor = await symbolResolver(environment, signal);
   const accountResponse = await client.getAccount(environment, {
     by: "index",
     value: accountIndex,
-  });
+  }, { signal });
   const account = findOwningLighterAccount(accountResponse.accounts, accountIndex);
   if (account === null) {
-    throw new Error("Lighter did not return the credential-bound account.");
+    // The provider answered without the account the local credential is bound
+    // to. Nothing local can fix that, so it is a provider condition.
+    throw new LighterTradingReadError("provider_unavailable");
   }
 
   let orders: readonly LighterAccountOrder[] = [];
@@ -361,13 +395,18 @@ export async function readLighterTradingAccount(
         environment,
         { accountIndex },
         auth,
+        { signal },
       );
       orders = ordersResponse.orders;
       ordersNextCursor = ordersResponse.next_cursor;
       openOrdersAvailable = true;
-    } catch {
-      // Provider errors may echo request context. Keep this secret-adjacent
-      // auth failure diagnostic bounded and never attach the raw cause.
+    } catch (cause) {
+      // A cancelled read is the caller's own event, not a degraded panel:
+      // publishing an "open orders unavailable" snapshot for it would be a
+      // lie. Everything else stays a bounded, cause-free warning because
+      // provider errors may echo request context.
+      throwIfAborted(signal);
+      if (isAbortError(cause)) throw cause;
       log.warn("[lighter-trading] active orders read failed", { environment, accountIndex });
     }
   }

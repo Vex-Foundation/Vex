@@ -105,6 +105,7 @@ interface RequestOptions {
   readonly auth?: LighterAuthMode;
   readonly authToken?: string;
   readonly fresh?: boolean;
+  readonly signal?: AbortSignal;
 }
 
 /**
@@ -114,6 +115,14 @@ interface RequestOptions {
  */
 export interface LighterPublicReadOptions {
   readonly fresh?: boolean;
+  /**
+   * The caller's cancellation. Abandoning a read stops its rate-limit wait
+   * immediately and cancels the HTTP request once no other caller is still
+   * waiting on the same coalesced read (see `LighterThrottle.run`). The
+   * rejection carries the signal's own reason, so a caller abort is never
+   * reported as a provider timeout.
+   */
+  readonly signal?: AbortSignal;
 }
 
 export interface LighterPrivilegedAccountAuth {
@@ -175,8 +184,8 @@ export class LighterClient {
       const ttlMs = options.auth === undefined && options.fresh !== true
         ? this.throttle.defaultTtlMs
         : 0;
-      return await this.throttle.run(url, environment, ttlMs, async () => {
-        const response = await fetchWithTimeout(url, { headers });
+      return await this.throttle.run(url, environment, ttlMs, async (signal) => {
+        const response = await fetchWithTimeout(url, { headers, signal });
 
         if (!response.ok) {
           if (response.status === 429) {
@@ -188,7 +197,7 @@ export class LighterClient {
 
         const raw = await readJson(response);
         return validator(raw);
-      });
+      }, options.signal);
     } catch (err) {
       mapLighterTransportError(err);
     }
@@ -522,6 +531,7 @@ export class LighterClient {
     environment: LighterEnvironment,
     params: LighterAccountActiveOrdersParams,
     privilegedAuth?: LighterPrivilegedAccountAuth,
+    options: LighterPublicReadOptions = {},
   ): Promise<LighterAccountOrdersResponse> {
     const auth = this.accountAuth(environment, params.accountIndex, privilegedAuth);
     return this.request(
@@ -529,7 +539,7 @@ export class LighterClient {
       LIGHTER_ENDPOINT_PATHS.accountActiveOrders,
       validateLighterAccountOrders,
       buildAccountOrdersQuery({ ...params, accountIndex: auth.accountIndex }),
-      { auth: "read-only", authToken: auth.token },
+      { auth: "read-only", authToken: auth.token, signal: options.signal },
     );
   }
 
@@ -560,11 +570,18 @@ export class LighterClient {
   async getMarkets(
     environment: LighterEnvironment,
     params: LighterMarketQuery = {},
+    options: LighterPublicReadOptions = {},
   ): Promise<LighterMarketsResponse> {
     const query: Record<string, QueryValue> = {};
     if (params.marketId !== undefined) query.market_id = String(readUint16(params.marketId, "marketId"));
     if (params.filter !== undefined) query.filter = params.filter;
-    return this.request(environment, LIGHTER_ENDPOINT_PATHS.orderBooks, validateLighterMarkets, query);
+    return this.request(
+      environment,
+      LIGHTER_ENDPOINT_PATHS.orderBooks,
+      validateLighterMarkets,
+      query,
+      options,
+    );
   }
 
   async getMarketDetails(
@@ -612,6 +629,7 @@ export class LighterClient {
   async getRecentTrades(
     environment: LighterEnvironment,
     params: LighterRecentTradesParams,
+    options: LighterPublicReadOptions = {},
   ): Promise<LighterRecentTradesResponse> {
     const marketId = readUint16(params.marketId, "marketId");
     const limit = readBoundedInt(
@@ -628,6 +646,7 @@ export class LighterClient {
         market_id: String(marketId),
         limit: String(limit),
       },
+      options,
     );
   }
 
@@ -660,9 +679,10 @@ export class LighterClient {
   async getCandles(
     environment: LighterEnvironment,
     params: LighterCandlesParams,
+    options: LighterPublicReadOptions = {},
   ): Promise<LighterCandlesResponse> {
     const query = buildCandlesQuery(params);
-    const response = await this.requestCandles(environment, query);
+    const response = await this.requestCandles(environment, query, options);
     if (response.c.length > LIGHTER_CANDLES_COUNT_MAX) {
       throw new VexError(
         ErrorCodes.LIGHTER_INVALID_RESPONSE,
@@ -676,12 +696,13 @@ export class LighterClient {
   private async requestCandles(
     environment: LighterEnvironment,
     query: Record<string, QueryValue>,
+    options: LighterPublicReadOptions = {},
   ): Promise<LighterCandlesResponse> {
     const url = this.buildUrl(environment, LIGHTER_ENDPOINT_PATHS.candles, query);
     const headers = this.headersFor(environment);
     try {
-      return await this.throttle.run(url, environment, this.throttle.defaultTtlMs, async () => {
-        const response = await fetchWithTimeout(url, { headers });
+      return await this.throttle.run(url, environment, this.throttle.defaultTtlMs, async (signal) => {
+        const response = await fetchWithTimeout(url, { headers, signal });
         if (!response.ok) {
           if (response.status === 429) {
             const retryMs = parseRetryAfterMs(response.headers.get("retry-after"));
@@ -694,7 +715,7 @@ export class LighterClient {
           );
         }
         return validateLighterCandles(await readExactCandleJson(response));
-      });
+      }, options.signal);
     } catch (err) {
       mapLighterTransportError(err);
     }

@@ -116,7 +116,7 @@ function identityKey(
 }
 
 const MARKET_MARKS: ReadonlyMap<string, LighterMarketMark> = new Map([
-  // Lighter Core — crypto markets.
+  // Lighter Core - crypto markets.
   ["core:0:0:perp:ETH", brand("ethereum", Ethereum)],
   ["core:1:0:perp:BTC", brand("bitcoin", Bitcoin)],
   ["core:2:0:perp:SOL", brand("solana", Solana)],
@@ -141,7 +141,7 @@ const MARKET_MARKS: ReadonlyMap<string, LighterMarketMark> = new Map([
   ["core:2048:1:spot:ETH/USDC", brand("ethereum", Ethereum)],
   ["core:2050:5:spot:LINK/USDC", brand("chainlink", Chainlink)],
 
-  // Lighter Core — equity-linked markets.
+  // Lighter Core - equity-linked markets.
   ["core:108:0:perp:HOOD", brand("robinhood", Robinhood)],
   ["core:109:0:perp:COIN", brand("coinbase", Coinbase)],
   ["core:110:0:perp:NVDA", brand("nvidia", Nvidia)],
@@ -165,7 +165,7 @@ const MARKET_MARKS: ReadonlyMap<string, LighterMarketMark> = new Map([
   ["core:210:0:perp:AVGO", brand("broadcom", Broadcom)],
   ["core:219:0:perp:ANSEM", ANSEM_MARK],
 
-  // Robinhood Chain — crypto markets.
+  // Robinhood Chain - crypto markets.
   ["rhc:0:0:perp:ETH", brand("ethereum", Ethereum)],
   ["rhc:1:0:perp:BTC", brand("bitcoin", Bitcoin)],
   ["rhc:3:0:perp:SOL", brand("solana", Solana)],
@@ -175,7 +175,7 @@ const MARKET_MARKS: ReadonlyMap<string, LighterMarketMark> = new Map([
   ["rhc:9:0:perp:SUI", brand("sui", Sui)],
   ["rhc:2048:1:spot:ETH/USDG", brand("ethereum", Ethereum)],
 
-  // Robinhood Chain — equity-linked perpetual and spot markets.
+  // Robinhood Chain - equity-linked perpetual and spot markets.
   ["rhc:10:0:perp:AAPL", brand("apple", AppleMarketMark)],
   ["rhc:11:0:perp:AMZN", brand("amazon", AmazonMarketMark)],
   ["rhc:12:0:perp:GOOGL", brand("google", Google)],

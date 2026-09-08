@@ -393,6 +393,23 @@ export const lighterTradingAccountInputSchema = z
 
 export const lighterTradingAccountStatusSchema = z.enum(["ready", "unavailable"]);
 
+/**
+ * Why an account panel has nothing to show. These are STATES, not failures:
+ * the read succeeded and the honest answer is that no account is readable yet.
+ * A provider failure is not in here; it arrives as a `Result` error with its
+ * own code so the panel can offer retry only where retry can help.
+ *
+ * - `locked_vault`: the vault is locked, so no trading scope is readable.
+ * - `not_onboarded`: the vault is unlocked and holds no Lighter trading key.
+ * - `ambiguous_account`: several distinct accounts are onboarded and the
+ *   renderer supplies no account identity, so main refuses to pick one.
+ */
+export const lighterTradingAccountUnavailableReasonSchema = z.enum([
+  "locked_vault",
+  "not_onboarded",
+  "ambiguous_account",
+]);
+
 const lighterTradingPositionSchema = z
   .object({
     marketId: marketIdSchema,
@@ -455,6 +472,8 @@ export const lighterTradingAccountSchema = z
     environment: lighterIntegrationEnvironmentSchema,
     retrievedAt: z.number().int().nonnegative(),
     status: lighterTradingAccountStatusSchema,
+    // Null exactly when `status` is "ready".
+    unavailableReason: lighterTradingAccountUnavailableReasonSchema.nullable(),
     accountIndex: z.number().int().nonnegative().nullable(),
     openOrdersAvailable: z.boolean(),
     // Required so a bounded snapshot can never be mistaken for a complete one.
@@ -547,6 +566,9 @@ export type LighterTradingAccountInput = z.infer<
   typeof lighterTradingAccountInputSchema
 >;
 export type LighterTradingAccount = z.infer<typeof lighterTradingAccountSchema>;
+export type LighterTradingAccountUnavailableReason = z.infer<
+  typeof lighterTradingAccountUnavailableReasonSchema
+>;
 export type LighterTradingAsset = z.infer<typeof lighterTradingAssetSchema>;
 export type LighterTradingPosition = z.infer<typeof lighterTradingPositionSchema>;
 export type LighterTradingOpenOrder = z.infer<

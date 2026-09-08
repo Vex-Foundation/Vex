@@ -60,6 +60,31 @@ describe("Lighter renderer preference persistence", () => {
     expect(store.getState().charts["rhc:7"]).toEqual({ preferences, drawings: [drawing] });
     expect(store.getState().favorites).toEqual(["rhc:perp:7:1:2:ETH"]);
   });
+  it("reports a write that has not persisted yet instead of guessing it worked", async () => {
+    // An asynchronous store has written NOTHING at the moment the action
+    // returns, and a rejected write used to disappear entirely. The signal the
+    // chart surfaces read said "a storage object exists", which was true even
+    // when nothing was ever stored.
+    const rejections: unknown[] = [];
+    const onRejection = (reason: unknown): void => { rejections.push(reason); };
+    process.on("unhandledRejection", onRejection);
+    const storage = {
+      getItem: () => null,
+      setItem: vi.fn(async () => { throw new Error("quota denied"); }),
+      removeItem: () => undefined,
+    };
+    const store = createLighterAnalysisStore(() => storage);
+
+    expect(store.getState().saveDrawings("rhc:7", [drawing])).toBe(false);
+    expect(store.getState().savePreferences("rhc:7", preferences)).toBe(false);
+    expect(store.getState().saveFavorites(["rhc:perp:7:1:2:ETH"])).toBe(false);
+    // The edit still stands in memory: the chart is not silently reverted.
+    expect(store.getState().charts["rhc:7"]).toEqual({ preferences, drawings: [drawing] });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    process.off("unhandledRejection", onRejection);
+    expect(rejections).toEqual([]);
+  });
   it("validates version migrations with the same read whitelist", () => {
     const store = createLighterAnalysisStore(() => memoryStorage(JSON.stringify({ version: 0, state: { charts: { "rhc:7": { preferences, drawings: [drawing] } }, favorites: [], saveDrawings: "invalid" } })));
     expect(requireValue(store.getState().charts["rhc:7"]).preferences).toEqual(preferences);

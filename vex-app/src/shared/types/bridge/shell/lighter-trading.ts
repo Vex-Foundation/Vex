@@ -1,4 +1,5 @@
 import type { Result } from "../../../ipc/result.js";
+import type { AbortableInvocation } from "../common.js";
 import type {
   LighterTradingAccount,
   LighterTradingAccountInput,
@@ -25,15 +26,20 @@ import type {
 
 /** Read-only, renderer-safe Lighter market data for the Light it up workspace. */
 export interface LighterTradingBridge {
+  /**
+   * The REST reads are abortable so an unmounted panel or a superseded market
+   * selection cancels the provider read instead of finishing it unobserved.
+   * Consume the `AbortSignal` in the query function and call `cancel`.
+   */
   readonly listMarkets: (
     input: LighterTradingListMarketsInput,
-  ) => Promise<Result<LighterTradingMarketList>>;
+  ) => AbortableInvocation<LighterTradingMarketList>;
   readonly getSnapshot: (
     input: LighterTradingSnapshotInput,
-  ) => Promise<Result<LighterTradingSnapshot>>;
+  ) => AbortableInvocation<LighterTradingSnapshot>;
   readonly getAccount: (
     input: LighterTradingAccountInput,
-  ) => Promise<Result<LighterTradingAccount>>;
+  ) => AbortableInvocation<LighterTradingAccount>;
   readonly startCandleSubscription: (
     input: LighterTradingCandleSubscriptionStartInput,
   ) => Promise<Result<LighterTradingCandleSubscriptionStartResult>>;

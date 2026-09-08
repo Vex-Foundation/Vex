@@ -31,7 +31,7 @@ export const INTERNAL_TOOL_LOADERS: Readonly<Record<string, InternalHandlerLoade
   // Agent Scan (renamed from `portfolio`, Agent Scan plan v3 §1.9)
   AgentScan: async () => (await import("../internal/portfolio-inspect.js")).handleAgentScan,
 
-  // Lighter Robinhood Chain hot path — complete deterministic readiness in one
+  // Lighter Robinhood Chain hot path - complete deterministic readiness in one
   // live read, without protocol discovery or a redundant wallet-balance call.
   lighter_rhc_onboarding_status: async () =>
     (await import("../internal/lighter-onboarding.js")).handleLighterRhcOnboardingStatus,

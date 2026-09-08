@@ -33,8 +33,10 @@ import {
   type LighterTradingSnapshot,
 } from "@shared/schemas/lighter-trading.js";
 import {
+  lighterTradingReadFailureOf,
   readLighterTradingMarketList,
   readLighterTradingMarketSnapshot,
+  type LighterTradingReadFailure,
 } from "../lighter/trading-panel-service.js";
 import { readLighterTradingAccount } from "../lighter/trading-account-service.js";
 import {
@@ -49,17 +51,55 @@ import {
 } from "../lighter/public-market-stream.js";
 import { log } from "../logger/index.js";
 import { registerHandler } from "./register-handler.js";
+import { AbortError, isAbortError } from "./cancel-helpers.js";
 
-function unavailable<T>(correlationId: string): Result<T> {
-  return err({
-    code: "provider.unavailable",
-    domain: "market",
-    message: "Live Lighter market data is temporarily unavailable.",
-    retryable: true,
-    userActionable: true,
-    redacted: true,
-    correlationId,
-  });
+/**
+ * One Lighter read failure, told honestly.
+ *
+ * Every read used to answer "live Lighter market data is temporarily
+ * unavailable, retryable" no matter what happened, so an unclassified bug and
+ * a rejected request both offered a retry that could not work. The shape
+ * follows `settings.ts`'s `cleanupFailureError`: a closed reason vocabulary in
+ * the service, one exhaustive mapping here, nothing from the cause in the
+ * message. A locked vault and an un-onboarded account are NOT failures and
+ * never reach here: they are states the account DTO reports itself.
+ */
+function readFailureError<T>(
+  reason: LighterTradingReadFailure,
+  correlationId: string,
+): Result<T> {
+  switch (reason) {
+    case "provider_unavailable":
+      return err({
+        code: "provider.unavailable",
+        domain: "market",
+        message: "Live Lighter market data is temporarily unavailable.",
+        retryable: true,
+        userActionable: true,
+        redacted: true,
+        correlationId,
+      });
+    case "invalid_request":
+      return err({
+        code: "validation.invalid_input",
+        domain: "market",
+        message: "Vex could not ask Lighter for that market.",
+        retryable: false,
+        userActionable: false,
+        redacted: true,
+        correlationId,
+      });
+    case "unknown":
+      return err({
+        code: "internal.unexpected",
+        domain: "market",
+        message: "Vex could not complete the Lighter read.",
+        retryable: false,
+        userActionable: false,
+        redacted: true,
+        correlationId,
+      });
+  }
 }
 
 function invalidSubscription<T>(correlationId: string): Result<T> {
@@ -261,12 +301,22 @@ export function registerLighterTradingHandlers(): Array<() => void> {
       outputSchema: lighterTradingMarketListSchema,
       handle: async (input, ctx): Promise<Result<LighterTradingMarketList>> => {
         try {
-          return ok(await readLighterTradingMarketList(input.environment));
-        } catch {
+          return ok(await readLighterTradingMarketList(
+            input.environment,
+            // The service owns its client and clock; this layer only adds the
+            // request's cancellation.
+            undefined,
+            undefined,
+            ctx.signal,
+          ));
+        } catch (cause) {
+          if (isAbortError(cause)) throw cause;
+          const reason = lighterTradingReadFailureOf(cause);
           log.warn("[lighter-trading] live market list read failed", {
             environment: input.environment,
+            reason,
           });
-          return unavailable(ctx.requestId);
+          return readFailureError(reason, ctx.requestId);
         }
       },
     }),
@@ -277,14 +327,22 @@ export function registerLighterTradingHandlers(): Array<() => void> {
       outputSchema: lighterTradingSnapshotSchema,
       handle: async (input, ctx): Promise<Result<LighterTradingSnapshot>> => {
         try {
-          return ok(await readLighterTradingMarketSnapshot(input));
-        } catch {
+          return ok(await readLighterTradingMarketSnapshot(
+            input,
+            undefined,
+            undefined,
+            ctx.signal,
+          ));
+        } catch (cause) {
+          if (isAbortError(cause)) throw cause;
+          const reason = lighterTradingReadFailureOf(cause);
           log.warn("[lighter-trading] live market snapshot read failed", {
             environment: input.environment,
             marketId: input.marketId,
             resolution: input.resolution,
+            reason,
           });
-          return unavailable(ctx.requestId);
+          return readFailureError(reason, ctx.requestId);
         }
       },
     }),
@@ -295,12 +353,20 @@ export function registerLighterTradingHandlers(): Array<() => void> {
       outputSchema: lighterTradingAccountSchema,
       handle: async (input, ctx): Promise<Result<LighterTradingAccount>> => {
         try {
-          return ok(await readLighterTradingAccount(input.environment));
-        } catch {
+          return ok(await readLighterTradingAccount(
+            input.environment,
+            undefined,
+            undefined,
+            ctx.signal,
+          ));
+        } catch (cause) {
+          if (isAbortError(cause)) throw cause;
+          const reason = lighterTradingReadFailureOf(cause);
           log.warn("[lighter-trading] account panel read failed", {
             environment: input.environment,
+            reason,
           });
-          return unavailable(ctx.requestId);
+          return readFailureError(reason, ctx.requestId);
         }
       },
     }),
@@ -324,20 +390,29 @@ export function registerLighterTradingHandlers(): Array<() => void> {
             input,
             (event: unknown) => forwardCandleStreamEvent(sender, input, event),
           );
-          if (subscription.subscriptionId !== input.subscriptionId) {
+          // A subscription is a durable resource: publishing one the caller
+          // has already abandoned would leak a stream nobody will ever stop.
+          if (
+            subscription.subscriptionId !== input.subscriptionId
+            || ctx.signal.aborted
+          ) {
             subscription.unsubscribe();
+            if (ctx.signal.aborted) throw new AbortError();
             return invalidSubscription(ctx.requestId);
           }
           state.subscriptionIds.add(input.subscriptionId);
           candleSubscriptionOwners.set(input.subscriptionId, sender.id);
           return ok({ ...input, status: "started" });
-        } catch {
+        } catch (cause) {
+          if (isAbortError(cause)) throw cause;
+          const reason = lighterTradingReadFailureOf(cause);
           log.warn("[lighter-trading] candle subscription start failed", {
             environment: input.environment,
             marketId: input.marketId,
             resolution: input.resolution,
+            reason,
           });
-          return unavailable(ctx.requestId);
+          return readFailureError(reason, ctx.requestId);
         }
       },
     }),
@@ -385,20 +460,29 @@ export function registerLighterTradingHandlers(): Array<() => void> {
             input,
             (event: unknown) => forwardPublicMarketEvent(sender, input, event),
           );
-          if (subscription.subscriptionId !== input.subscriptionId) {
+          // Same publication rule as the candle stream: an abandoned start
+          // must not leave a live subscription behind.
+          if (
+            subscription.subscriptionId !== input.subscriptionId
+            || ctx.signal.aborted
+          ) {
             subscription.unsubscribe();
+            if (ctx.signal.aborted) throw new AbortError();
             return invalidSubscription(ctx.requestId);
           }
           state.subscriptionIds.add(input.subscriptionId);
           publicMarketSubscriptionOwners.set(input.subscriptionId, sender.id);
           return ok({ ...input, status: "started" });
-        } catch {
+        } catch (cause) {
+          if (isAbortError(cause)) throw cause;
+          const reason = lighterTradingReadFailureOf(cause);
           log.warn("[lighter-trading] public market subscription start failed", {
             environment: input.environment,
             marketId: input.marketId,
             marketType: input.marketType,
+            reason,
           });
-          return unavailable(ctx.requestId);
+          return readFailureError(reason, ctx.requestId);
         }
       },
     }),

@@ -6,12 +6,12 @@ export const VAULT_SECRET_KEYS = [
   "TAVILY_API_KEY",
   "RETTIWT_API_KEY",
   // OPTIONAL. Relay bridging works fully without it; a key only raises Relay's
-  // rate limits. Deliberately NOT a `requiresEnv` on any relay manifest — that
+  // rate limits. Deliberately NOT a `requiresEnv` on any relay manifest - that
   // would hide the bridge tools from every keyless user.
   "RELAY_API_KEY",
   // Polymarket integration removed (Agent Scan §4.6): the 4 POLYMARKET_* keys
   // were dropped from this registry deliberately. Any already-vaulted values
-  // are NOT migrated or purged here — the vault's `extraSecrets` retention
+  // are NOT migrated or purged here - the vault's `extraSecrets` retention
   // path (local-secret-vault/crypto.ts) leaves them inert on disk forever,
   // never mirrored to process.env again. A future consent-gated purge is a
   // separate follow-up; never print or re-derive these values.
@@ -20,7 +20,7 @@ export const VAULT_SECRET_KEYS = [
   // removed: the standalone-token bypass let a stale pasted token silently
   // block withdrawal/order-read auth that would otherwise derive correctly
   // from the actually-registered trading credential via the local signer.
-  // Same non-migration policy as Polymarket above — any already-vaulted
+  // Same non-migration policy as Polymarket above - any already-vaulted
   // value goes inert, never purged or mirrored to process.env again.
 ] as const;
 

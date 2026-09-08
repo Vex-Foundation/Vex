@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, 
 import type { Logical, UTCTimestamp } from "lightweight-charts";
 import type { DrawingChartApi, DrawingSeriesApi } from "./chart-analysis-api.js";
 import { drawingHistory, logicalToTime, MAX_DRAWINGS, timeToLogical, type Anchor, type Drawing, type DrawingKind } from "./chart-drawings.js";
+import { NO_VALUE } from "./format.js";
 import { useLighterAnalysisStore } from "../../../stores/lighterAnalysisStore.js";
 const TOOLS: {
   kind: DrawingKind | "cursor";
@@ -355,7 +356,7 @@ export function ChartDrawings({ chart, series, host, times, scope, precision, mi
               />
               <text x={x + 4} y={a.y + (b.y - a.y) * ratio - 4}>{ratio.toFixed(3)} · {(drawing.a.price + (drawing.b.price - drawing.a.price) * ratio).toFixed(precision)}</text>
             </g>) : line}
-            {drawing.kind === "measure" ? <text x={x + 5} y={Math.max(14, y - 7)}>{(drawing.b.price - drawing.a.price).toFixed(precision)} ({drawing.a.price === 0 ? "—" : `${((drawing.b.price / drawing.a.price - 1) * 100).toFixed(2)}%`}) · {Math.round(Math.abs(drawing.b.time - drawing.a.time) / 60)} min</text> : null}
+            {drawing.kind === "measure" ? <text x={x + 5} y={Math.max(14, y - 7)}>{(drawing.b.price - drawing.a.price).toFixed(precision)} ({drawing.a.price === 0 ? NO_VALUE : `${((drawing.b.price / drawing.a.price - 1) * 100).toFixed(2)}%`}) · {Math.round(Math.abs(drawing.b.time - drawing.a.time) / 60)} min</text> : null}
             {drawing.kind === "horizontal" ? <text x={8} y={a.y - 5}>
               {drawing.a.price.toFixed(precision)}
             </text> : null}

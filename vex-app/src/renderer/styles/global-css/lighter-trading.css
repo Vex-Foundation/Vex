@@ -1652,7 +1652,7 @@ button.lit-market-select > .lit-market-symbol[data-symbol-length="long"] { min-w
 .lit-trades-list > div[data-side="sell"] > span:first-child { color: var(--lit-negative); }
 .lit-trades-list time { color: var(--lit-ink-muted); text-align: right; }
 
-/* Tabbed bottom panel — live tape plus authenticated account views. */
+/* Tabbed bottom panel - live tape plus authenticated account views. */
 .lit-bottom-header { gap: 12px; }
 
 .lit-account-refresh {

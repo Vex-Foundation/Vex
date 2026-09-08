@@ -8,6 +8,21 @@ import type {
   LighterTradingSnapshot,
 } from "@shared/schemas/lighter-trading.js";
 
+/**
+ * CANCELLATION IS REAL HERE, and consuming the signal is what arms it.
+ * TanStack only cancels a fetch whose query function touched its
+ * `AbortSignal`; touching it turns "the reader closed the workspace or picked
+ * another market" into main's own `ctx.signal`, which stops the queued Lighter
+ * REST read instead of paying for an answer nobody will see.
+ */
+function abortable<T>(
+  invocation: { readonly promise: Promise<T>; readonly cancel: () => void },
+  signal: AbortSignal,
+): Promise<T> {
+  signal.addEventListener("abort", invocation.cancel, { once: true });
+  return invocation.promise;
+}
+
 const MARKET_LIST_STALE_MS = 30_000;
 // The account panel changes less often than the tape; a slower cadence keeps
 // the authenticated read light while positions/orders stay reasonably fresh.
@@ -19,7 +34,8 @@ export function useLighterTradingMarkets(
 ): UseQueryResult<Result<LighterTradingMarketList>> {
   return useQuery({
     queryKey: ["lighterTrading", "markets", environment],
-    queryFn: () => window.vex.lighterTrading.listMarkets({ environment }),
+    queryFn: ({ signal }) =>
+      abortable(window.vex.lighterTrading.listMarkets({ environment }), signal),
     enabled,
     staleTime: MARKET_LIST_STALE_MS,
     refetchInterval: enabled ? MARKET_LIST_STALE_MS : false,
@@ -35,13 +51,12 @@ export function useLighterTradingSnapshot(
 ): UseQueryResult<Result<LighterTradingSnapshot>> {
   return useQuery({
     queryKey: ["lighterTrading", "snapshot", environment, marketId, resolution],
-    queryFn: () => {
+    queryFn: ({ signal }) => {
       if (marketId === null) throw new Error("A Lighter market is required.");
-      return window.vex.lighterTrading.getSnapshot({
-        environment,
-        marketId,
-        resolution,
-      });
+      return abortable(
+        window.vex.lighterTrading.getSnapshot({ environment, marketId, resolution }),
+        signal,
+      );
     },
     enabled: enabled && marketId !== null,
     staleTime: 2_000,
@@ -59,7 +74,8 @@ export function useLighterTradingAccount(
 ): UseQueryResult<Result<LighterTradingAccount>> {
   return useQuery({
     queryKey: ["lighterTrading", "account", environment],
-    queryFn: () => window.vex.lighterTrading.getAccount({ environment }),
+    queryFn: ({ signal }) =>
+      abortable(window.vex.lighterTrading.getAccount({ environment }), signal),
     enabled,
     staleTime: 5_000,
     refetchInterval: enabled ? ACCOUNT_REFETCH_MS : false,

@@ -59,6 +59,34 @@ function updateChart(charts: Record<string, SavedChart>, scope: string, patch: P
   return Object.fromEntries(Object.entries(next).slice(-MAX_SAVED_CHARTS));
 }
 
+/**
+ * Did the edit actually reach durable storage?
+ *
+ * `storage === undefined` means the browser refused the store outright, so
+ * persist only warns and nothing is written. Otherwise the value is whatever
+ * zustand's persist middleware returned from its own write: `undefined` for a
+ * synchronous store that succeeded (a quota failure throws instead, and the
+ * callers catch it), or a promise for an asynchronous one, which has NOT
+ * written yet. A pending write is reported as not-persisted rather than
+ * guessed at, and its rejection is observed so it can never surface as an
+ * unhandled rejection.
+ */
+function persisted(
+  storage: ReturnType<typeof createJSONStorage<PersistedLighterAnalysis>>,
+  written: unknown,
+): boolean {
+  if (storage === undefined) return false;
+  if (
+    typeof written === "object"
+    && written !== null
+    && typeof (written as { then?: unknown }).then === "function"
+  ) {
+    void (written as Promise<unknown>).catch(() => undefined);
+    return false;
+  }
+  return true;
+}
+
 export function createLighterAnalysisStore(storageProvider: () => StateStorage = () => localStorage) {
   const storage = createJSONStorage<PersistedLighterAnalysis>(storageProvider);
   return create<LighterAnalysisState>()(
@@ -70,22 +98,25 @@ export function createLighterAnalysisStore(storageProvider: () => StateStorage =
           if (!validScope(scope)) return false;
           try {
             const validated = parseChartPreferences(JSON.stringify(preferences));
-            set(state => ({ charts: updateChart(state.charts, scope, { preferences: validated }) }));
-            return storage !== undefined;
+            return persisted(storage, set(
+              state => ({ charts: updateChart(state.charts, scope, { preferences: validated }) }),
+            ));
           } catch { return false; }
         },
         saveDrawings: (scope, drawings) => {
           if (!validScope(scope)) return false;
           try {
             const validated = parseDrawings(JSON.stringify(drawings));
-            set(state => ({ charts: updateChart(state.charts, scope, { drawings: validated }) }));
-            return storage !== undefined;
+            return persisted(storage, set(
+              state => ({ charts: updateChart(state.charts, scope, { drawings: validated }) }),
+            ));
           } catch { return false; }
         },
         saveFavorites: (favorites) => {
           try {
-            set({ favorites: [...new Set(favorites.filter(validFavorite))].slice(0, MAX_MARKET_FAVORITES) });
-            return storage !== undefined;
+            return persisted(storage, set({
+              favorites: [...new Set(favorites.filter(validFavorite))].slice(0, MAX_MARKET_FAVORITES),
+            }));
           } catch { return false; }
         },
       }),

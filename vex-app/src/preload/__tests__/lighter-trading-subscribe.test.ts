@@ -56,23 +56,34 @@ afterEach(() => {
 });
 
 describe("lighter trading preload candle boundary", () => {
-  it("validates account reads before invoking main", async () => {
+  it("validates account reads before invoking main and hands back a cancel", async () => {
     const getAccountRaw = lighterTrading.getAccount as (
       input: unknown,
-    ) => Promise<unknown>;
+    ) => { readonly promise: Promise<unknown>; readonly cancel: () => void };
 
-    await getAccountRaw({ environment: "rhc" });
+    const accepted = getAccountRaw({ environment: "rhc" });
+    await accepted.promise;
     expect(invoke).toHaveBeenCalledWith(
       CH.lighterTrading.getAccount,
       expect.objectContaining({ payload: { environment: "rhc" } }),
     );
 
+    // The cancel is the renderer's only way to stop a read it no longer
+    // wants; it reaches main's own cancellation channel.
     invoke.mockClear();
-    await getAccountRaw({
+    accepted.cancel();
+    expect(invoke).toHaveBeenCalledWith(
+      CH.cancel,
+      expect.objectContaining({ payload: expect.objectContaining({ correlationId: expect.any(String) }) }),
+    );
+
+    invoke.mockClear();
+    const refused = getAccountRaw({
       environment: "rhc",
       authToken: "must-not-cross",
       accountIndex: 42,
     });
+    await refused.promise;
     expect(invoke).not.toHaveBeenCalled();
   });
 

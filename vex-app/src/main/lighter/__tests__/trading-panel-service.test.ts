@@ -161,7 +161,7 @@ describe("Lighter trading panel service", () => {
     expect(client.getMarketDetails).toHaveBeenCalledWith("rhc", {
       marketId: 255,
       filter: "all",
-    });
+    }, { signal: undefined });
   });
 
   it("does not attach activity from mismatched provider identity", async () => {
@@ -225,7 +225,7 @@ describe("Lighter trading panel service", () => {
       marketId: 7,
       resolution: "1h",
       setTimestampToEnd: false,
-    }));
+    }), { signal: undefined });
     expect(lighterTradingSnapshotSchema.safeParse(result).success).toBe(true);
   });
 
@@ -302,7 +302,7 @@ describe("Lighter trading panel service", () => {
     expect(client.getCandles).toHaveBeenCalledWith("rhc", expect.objectContaining({
       resolution: "15m",
       setTimestampToEnd: false,
-    }));
+    }), { signal: undefined });
   });
 
   it("hydrates the IPC market snapshot without a duplicate candle-history gate", async () => {
@@ -346,5 +346,68 @@ describe("Lighter trading panel service", () => {
       { environment: "core", marketId: 7, resolution: "5m" },
       client,
     )).rejects.toThrow("trades do not match");
+  });
+});
+
+describe("Lighter panel reads under cancellation", () => {
+  it("stops the snapshot fan-out instead of paying for every leg", async () => {
+    // The snapshot is five concurrent provider reads. A reader who closed the
+    // workspace must not fund any of them.
+    const client = fakeClient();
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(readLighterTradingSnapshot(
+      { environment: "core", marketId: 7, resolution: "1h" },
+      client,
+      () => 1_787_530_000_000,
+      controller.signal,
+    )).rejects.toMatchObject({ name: "AbortError" });
+
+    expect(client.getMarkets).not.toHaveBeenCalled();
+    expect(client.getMarketDetails).not.toHaveBeenCalled();
+    expect(client.getOrderBookOrders).not.toHaveBeenCalled();
+    expect(client.getRecentTrades).not.toHaveBeenCalled();
+    expect(client.getCandles).not.toHaveBeenCalled();
+  });
+
+  it("hands the same cancellation to every leg of the fan-out", async () => {
+    const client = fakeClient();
+    const controller = new AbortController();
+
+    await readLighterTradingSnapshot(
+      { environment: "core", marketId: 7, resolution: "1h" },
+      client,
+      () => 1_787_530_000_000,
+      controller.signal,
+    );
+
+    for (const leg of [
+      client.getMarkets,
+      client.getMarketDetails,
+      client.getOrderBookOrders,
+      client.getRecentTrades,
+      client.getCandles,
+    ]) {
+      expect(leg).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        { signal: controller.signal },
+      );
+    }
+  });
+
+  it("refuses the market list for an abandoned reader", async () => {
+    const client = fakeClient();
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(readLighterTradingMarketList(
+      "core",
+      client,
+      () => 1_787_530_000_000,
+      controller.signal,
+    )).rejects.toMatchObject({ name: "AbortError" });
+    expect(client.getMarkets).not.toHaveBeenCalled();
   });
 });

@@ -295,7 +295,7 @@ const entries: [string, MutationContract][] = [
   // the wallet. Not a spot trade (no input/output pair, no principal moved) →
   // audited as a "reward" income event.
   ["pendle.claim",             { kind: "audit", capture: "none", expectedType: "yield", previewSupport: true,  fanOut: "single", requiredFields: NO_FIELDS }],
-  // Lighter approval-gated order create — the handler writes its durable
+  // Lighter approval-gated order create - the handler writes its durable
   // truth DIRECTLY to `lighter_order_execution_intents` across the
   // signed/submitted/api_accepted/sequencer_pending/provider-outcome
   // lifecycle, so `capture: "none"` keeps the legacy proj_activity projection
@@ -307,7 +307,7 @@ const entries: [string, MutationContract][] = [
   ["lighter.order.modify",     { kind: "projection", capture: "none", expectedType: "none", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
   ["lighter.order.cancelAll",  { kind: "projection", capture: "none", expectedType: "none", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
   ["lighter.position.close",   { kind: "projection", capture: "none", expectedType: "none", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],
-  // Lighter approval-gated wallet deposit — the handler owns its durable
+  // Lighter approval-gated wallet deposit - the handler owns its durable
   // lifecycle in `lighter_deposit_intents` and `lighter_wallet_workflows`.
   // It must never also enter the legacy trade/activity projection pipeline.
   ["lighter.deposit",          { kind: "projection", capture: "none", expectedType: "none", previewSupport: false, fanOut: "single", requiredFields: NO_FIELDS }],

@@ -25,10 +25,19 @@ vi.mock("electron", () => ({
 vi.mock("../../logger/index.js", () => ({
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
-vi.mock("../../lighter/trading-panel-service.js", () => ({
-  readLighterTradingMarketList: (...args: unknown[]) => mocks.readList(...args),
-  readLighterTradingMarketSnapshot: (...args: unknown[]) => mocks.readSnapshot(...args),
-}));
+// The failure taxonomy stays REAL: the point of these tests is the mapping
+// from a service reason to a public code, which a hand-written stub would
+// only restate.
+vi.mock("../../lighter/trading-panel-service.js", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../lighter/trading-panel-service.js")
+  >("../../lighter/trading-panel-service.js");
+  return {
+    ...actual,
+    readLighterTradingMarketList: (...args: unknown[]) => mocks.readList(...args),
+    readLighterTradingMarketSnapshot: (...args: unknown[]) => mocks.readSnapshot(...args),
+  };
+});
 vi.mock("../../lighter/candle-stream.js", () => ({
   subscribeLighterCandleStream: (...args: unknown[]) => mocks.subscribe(...args),
   unsubscribeLighterCandleStream: (...args: unknown[]) => mocks.unsubscribe(...args),
@@ -46,6 +55,9 @@ vi.mock("../../lighter/trading-account-service.js", () => ({
 }));
 
 const { registerLighterTradingHandlers } = await import("../lighter-trading.js");
+const { getCancelController } = await import("../register-handler.js");
+const { LighterTradingReadError } = await import("../../lighter/trading-panel-service.js");
+const { ErrorCodes, VexError } = await import("../../../../../src/errors.js");
 const { CH } = await import("@shared/ipc/channels.js");
 
 class TestWebContents {
@@ -98,6 +110,7 @@ const account = {
   environment: "rhc",
   retrievedAt: 1_787_530_000_000,
   status: "ready",
+  unavailableReason: null,
   accountIndex: 42,
   openOrdersAvailable: true,
   openOrdersTruncated: false,
@@ -117,6 +130,8 @@ type CallResult<T = unknown> = {
   readonly error: { readonly code: string; readonly message?: string };
 };
 
+const REQUEST_ID = "00000000-0000-4000-8000-000000000224";
+
 async function call<T = unknown>(
   channel: string,
   payload: unknown,
@@ -125,7 +140,7 @@ async function call<T = unknown>(
   const handler = handlers.get(channel);
   if (handler === undefined) throw new Error(`Handler not registered: ${channel}`);
   return (await handler(event, {
-    requestId: "00000000-0000-4000-8000-000000000224",
+    requestId: REQUEST_ID,
     payload,
   })) as CallResult<T>;
 }
@@ -173,7 +188,12 @@ describe("lighterTrading IPC", () => {
 
     expect(result.ok).toBe(true);
     expect(result.data.markets[0]).toEqual(market);
-    expect(mocks.readList).toHaveBeenCalledWith("rhc");
+    expect(mocks.readList).toHaveBeenCalledWith(
+      "rhc",
+      undefined,
+      undefined,
+      expect.any(AbortSignal),
+    );
   });
 
   it("rejects auth-shaped extra input before reaching the service", async () => {
@@ -187,25 +207,116 @@ describe("lighterTrading IPC", () => {
     expect(mocks.readList).not.toHaveBeenCalled();
   });
 
-  it("redacts provider failures", async () => {
+  it("redacts an unclassified failure and refuses to call it a retryable outage", async () => {
     mocks.readList.mockRejectedValueOnce(new Error("provider body with sensitive text"));
 
     const result = await call(CH.lighterTrading.listMarkets, { environment: "core" });
 
     expect(result.ok).toBe(false);
     expect(result.error).toMatchObject({
+      code: "internal.unexpected",
+      domain: "market",
+      redacted: true,
+      retryable: false,
+    });
+    expect(JSON.stringify(result)).not.toContain("provider body");
+  });
+
+  it("reports a real provider failure as a retryable provider outage", async () => {
+    const cause = new VexError(ErrorCodes.LIGHTER_API_ERROR, "provider body with sensitive text");
+    mocks.readList.mockRejectedValueOnce(cause);
+
+    const result = await call(CH.lighterTrading.listMarkets, { environment: "core" });
+
+    expect(result.error).toMatchObject({
       code: "provider.unavailable",
       domain: "market",
       redacted: true,
+      retryable: true,
     });
     expect(JSON.stringify(result)).not.toContain("provider body");
+  });
+
+  it("carries a service-typed provider failure through without inventing a cause", async () => {
+    mocks.readAccount.mockRejectedValueOnce(new LighterTradingReadError("provider_unavailable"));
+
+    const result = await call(CH.lighterTrading.getAccount, { environment: "core" });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatchObject({ code: "provider.unavailable", retryable: true });
+  });
+
+  it("passes a locked vault through as a READ that succeeded and says why it is empty", async () => {
+    // The state belongs to the DTO, not to an error code: an unlock is not a
+    // retry, and the panel renders its own copy for it.
+    mocks.readAccount.mockResolvedValueOnce({
+      ...account,
+      status: "unavailable",
+      unavailableReason: "locked_vault",
+      accountIndex: null,
+      openOrdersAvailable: false,
+      summary: null,
+    });
+
+    const result = await call<{ status: string; unavailableReason: string }>(
+      CH.lighterTrading.getAccount,
+      { environment: "core" },
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.data.unavailableReason).toBe("locked_vault");
+  });
+
+  it("reports an invalid market request as invalid input, not as an outage", async () => {
+    mocks.readSnapshot.mockRejectedValueOnce(
+      new VexError(ErrorCodes.LIGHTER_INVALID_REQUEST, "Unsupported Lighter candle resolution."),
+    );
+
+    const result = await call(CH.lighterTrading.getSnapshot, {
+      environment: "core",
+      marketId: 7,
+      resolution: "1h",
+    });
+
+    expect(result.error).toMatchObject({
+      code: "validation.invalid_input",
+      retryable: false,
+    });
+  });
+
+  it("cancels a read the renderer abandoned instead of answering it", async () => {
+    let observed: AbortSignal | undefined;
+    mocks.readList.mockImplementationOnce(
+      async (_environment: unknown, _client: unknown, _now: unknown, signal: AbortSignal) => {
+        observed = signal;
+        await new Promise<void>((resolve) => {
+          signal.addEventListener("abort", () => resolve(), { once: true });
+        });
+        signal.throwIfAborted();
+        return { environment: "core", retrievedAt: 1, markets: [] };
+      },
+    );
+
+    const pending = call(CH.lighterTrading.listMarkets, { environment: "core" });
+    await vi.waitFor(() => expect(observed).toBeDefined());
+    // The same registry the renderer's `vex:cancel` reaches.
+    getCancelController(REQUEST_ID)?.abort();
+
+    const result = await pending;
+    expect(result.ok).toBe(false);
+    expect(result.error.code).toBe("internal.cancelled");
   });
 
   it("accepts only an environment for the account snapshot and returns the validated DTO", async () => {
     const result = await call(CH.lighterTrading.getAccount, { environment: "rhc" });
 
     expect(result).toEqual({ ok: true, data: account });
-    expect(mocks.readAccount).toHaveBeenCalledWith("rhc");
+    expect(mocks.readAccount).toHaveBeenCalledWith(
+      "rhc",
+      undefined,
+      undefined,
+      expect.any(AbortSignal),
+    );
 
     mocks.readAccount.mockClear();
     const refused = await call(CH.lighterTrading.getAccount, {
@@ -225,7 +336,7 @@ describe("lighterTrading IPC", () => {
 
     expect(result.ok).toBe(false);
     expect(result.error).toMatchObject({
-      code: "provider.unavailable",
+      code: "internal.unexpected",
       redacted: true,
     });
     expect(JSON.stringify(result)).not.toContain("privileged-token");

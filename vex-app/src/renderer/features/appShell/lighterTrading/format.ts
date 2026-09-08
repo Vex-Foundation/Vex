@@ -1,8 +1,16 @@
+/**
+ * The one "no value" placeholder for every Lighter surface. Two ASCII hyphens
+ * rather than a typographic dash: it never reads as a minus sign next to a
+ * negative number, and it keeps the renderer inside the repository's
+ * no-em-dash gate.
+ */
+export const NO_VALUE = "--";
+
 export function formatNumber(
   value: number | null,
   options: Intl.NumberFormatOptions = {},
 ): string {
-  if (value === null || !Number.isFinite(value)) return "—";
+  if (value === null || !Number.isFinite(value)) return NO_VALUE;
   return new Intl.NumberFormat("en-US", {
     maximumFractionDigits: 6,
     ...options,
@@ -10,7 +18,7 @@ export function formatNumber(
 }
 
 export function formatDecimalString(value: string | null): string {
-  if (value === null || !/^-?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(value)) return "—";
+  if (value === null || !/^-?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(value)) return NO_VALUE;
   const negative = value.startsWith("-");
   const unsigned = negative ? value.slice(1) : value;
   const [integer = "0", fraction] = unsigned.split(".");
@@ -29,7 +37,7 @@ export function formatQuoteVolume(
   value: number | null,
   quoteSymbol: string | null,
 ): string {
-  if (value === null || !Number.isFinite(value)) return "—";
+  if (value === null || !Number.isFinite(value)) return NO_VALUE;
   const compact = formatCompact(value);
   if (quoteSymbol === "USD") return `$${compact}`;
   return quoteSymbol === null ? compact : `${compact} ${quoteSymbol}`;
@@ -39,13 +47,13 @@ export function formatBaseAmount(
   value: number | null,
   baseSymbol: string | null,
 ): string {
-  if (value === null || !Number.isFinite(value)) return "—";
+  if (value === null || !Number.isFinite(value)) return NO_VALUE;
   const compact = formatCompact(value);
   return baseSymbol === null || baseSymbol === "" ? compact : `${compact} ${baseSymbol}`;
 }
 
 export function formatPrice(value: number | null, precision?: number): string {
-  if (value === null || !Number.isFinite(value)) return "—";
+  if (value === null || !Number.isFinite(value)) return NO_VALUE;
   if (precision !== undefined) {
     return formatNumber(value, {
       minimumFractionDigits: precision,
@@ -65,7 +73,7 @@ export function formatProviderPercent(
 ): string {
   if (!enabled) return "Disabled";
   const formatted = formatDecimalString(value);
-  return formatted === "—" ? formatted : `${formatted}%`;
+  return formatted === NO_VALUE ? formatted : `${formatted}%`;
 }
 
 export function marketSymbols(

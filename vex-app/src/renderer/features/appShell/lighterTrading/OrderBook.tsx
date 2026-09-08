@@ -1,6 +1,6 @@
 import { useMemo, type JSX } from "react";
 import type { LighterTradingCandleConnectionStatus } from "@shared/schemas/lighter-trading.js";
-import { formatDecimalString, formatNumber, formatRetrievedAt } from "./format.js";
+import { NO_VALUE, formatDecimalString, formatNumber, formatRetrievedAt } from "./format.js";
 
 type BookRow = {
   readonly price: string;
@@ -170,7 +170,7 @@ export function OrderBook({ book, symbol, status, receivedAt }: {
         <div className="lit-book-spread">
           <strong>{formatDecimalString(spread)}</strong>
           <span>Spread</span>
-          <strong>{spreadPercent === null ? "—" : `${formatNumber(spreadPercent)}%`}</strong>
+          <strong>{spreadPercent === null ? NO_VALUE : `${formatNumber(spreadPercent)}%`}</strong>
         </div>
         <BookSide rows={book.bids} side="bid" />
       </div>

@@ -86,3 +86,111 @@ describe("LighterThrottle", () => {
     });
   });
 });
+
+describe("LighterThrottle cancellation", () => {
+  it("abandons a queued request without spending a provider slot", async () => {
+    // The bucket is under a provider penalty, so this call can only be waiting
+    // in the queue. A reader who walked away must not keep the wait alive or
+    // spend the slot when it finally opens.
+    let resolveSleep: (() => void) | undefined;
+    const throttle = new LighterThrottle({
+      deps: {
+        now: () => 0,
+        sleep: (_ms, signal) => new Promise<void>((resolve, reject) => {
+          resolveSleep = resolve;
+          signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+        }),
+      },
+    });
+    const fetcher = vi.fn(async () => ({ ok: true }));
+    const controller = new AbortController();
+    // A 429 penalty is what actually parks a Lighter request in the queue.
+    throttle.penalize("core", 5_000);
+
+    const pending = throttle.run("queued", "core", 0, fetcher, controller.signal);
+    // Let the acquire loop reach its wait before abandoning it.
+    await Promise.resolve();
+    expect(resolveSleep).toBeDefined();
+    controller.abort();
+
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("never starts a request for an already-abandoned caller", async () => {
+    const throttle = new LighterThrottle();
+    const fetcher = vi.fn(async () => ({ ok: true }));
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      throttle.run("dead", "core", 0, fetcher, controller.signal),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("keeps a coalesced read alive for the callers that are still waiting", async () => {
+    let settle!: (value: { ok: true }) => void;
+    const inner = new Promise<{ ok: true }>((resolve) => {
+      settle = resolve;
+    });
+    let fetchSignal: AbortSignal | undefined;
+    const throttle = new LighterThrottle({ ttlMs: 1_000 });
+    const fetcher = vi.fn((signal?: AbortSignal) => {
+      fetchSignal = signal;
+      return inner;
+    });
+    const leaving = new AbortController();
+
+    const abandoned = throttle.run("shared", "core", 1_000, fetcher, leaving.signal);
+    const staying = throttle.run("shared", "core", 1_000, fetcher);
+    await Promise.resolve();
+    leaving.abort();
+
+    await expect(abandoned).rejects.toMatchObject({ name: "AbortError" });
+    expect(fetchSignal?.aborted).toBe(false);
+    settle({ ok: true });
+    await expect(staying).resolves.toEqual({ ok: true });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancels the shared read once its last caller has left", async () => {
+    let fetchSignal: AbortSignal | undefined;
+    const throttle = new LighterThrottle({ ttlMs: 1_000 });
+    const fetcher = vi.fn((signal?: AbortSignal) => {
+      fetchSignal = signal;
+      return new Promise<{ ok: true }>((_resolve, reject) => {
+        signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+      });
+    });
+    const only = new AbortController();
+
+    const pending = throttle.run("solo", "core", 1_000, fetcher, only.signal);
+    await Promise.resolve();
+    only.abort();
+
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    expect(fetchSignal?.aborted).toBe(true);
+  });
+});
+
+describe("LighterThrottle in-flight reuse after cancellation", () => {
+  it("does not hand a new caller someone else's cancelled read", async () => {
+    const throttle = new LighterThrottle({ ttlMs: 1_000 });
+    const fetcher = vi.fn((signal?: AbortSignal) => new Promise<{ n: number }>((resolve, reject) => {
+      signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+      if (fetcher.mock.calls.length === 2) resolve({ n: 2 });
+    }));
+    const leaving = new AbortController();
+
+    const abandoned = throttle.run("reused", "core", 1_000, fetcher, leaving.signal);
+    await Promise.resolve();
+    leaving.abort();
+    await expect(abandoned).rejects.toMatchObject({ name: "AbortError" });
+
+    // The cancelled entry may still be in the map for a microtask; a fresh
+    // caller must get a fresh read, not the abandoned rejection.
+    await expect(throttle.run("reused", "core", 1_000, fetcher)).resolves.toEqual({ n: 2 });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+});

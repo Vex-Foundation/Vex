@@ -1,3 +1,5 @@
+import { ErrorCodes, VexError } from "../../../../src/errors.js";
+import { throwIfAborted } from "../../../../src/utils/cancellation.js";
 import {
   LIGHTER_CANDLE_RESOLUTION_MS,
   type LighterEnvironment,
@@ -16,6 +18,63 @@ import type {
   LighterTradingSnapshot,
   LighterTradingStreamCandle,
 } from "@shared/schemas/lighter-trading.js";
+
+/**
+ * Why a desktop Lighter read FAILED.
+ *
+ * The desktop panel had ONE failure ("temporarily unavailable, retryable") for
+ * every cause, so a locked vault read to the person as a Lighter outage and
+ * offered a retry that could never work. These are the distinct failures the
+ * two read services can produce; `vex-app/src/main/ipc/lighter-trading.ts`
+ * owns the mapping to a public error code, exactly as `settings.ts` maps
+ * `LighterCredentialCleanupFailure`.
+ *
+ * A locked vault, an un-onboarded account and several connected accounts are
+ * deliberately NOT here: those reads SUCCEED and report themselves in the
+ * account DTO's `unavailableReason` (see
+ * `@shared/schemas/lighter-trading.js`), which is the one carrier for them.
+ * Duplicating them as error codes would give the same fact two vocabularies.
+ */
+export type LighterTradingReadFailure =
+  | "provider_unavailable"
+  | "invalid_request"
+  | "unknown";
+
+/** A read failure with its reason preserved across the service boundary. */
+export class LighterTradingReadError extends Error {
+  constructor(readonly reason: LighterTradingReadFailure) {
+    super(reason);
+    this.name = "LighterTradingReadError";
+  }
+}
+
+/**
+ * Classify an unknown cause thrown under a desktop Lighter read.
+ *
+ * Provider payloads may echo request context, so nothing from the cause is
+ * carried into the returned reason: this yields a closed vocabulary only.
+ * An unrecognised cause stays `unknown` rather than being flattered into a
+ * retryable provider outage.
+ */
+export function lighterTradingReadFailureOf(cause: unknown): LighterTradingReadFailure {
+  if (cause instanceof LighterTradingReadError) return cause.reason;
+  if (cause instanceof VexError) {
+    if (cause.code === ErrorCodes.LIGHTER_INVALID_REQUEST) return "invalid_request";
+    if (
+      cause.code === ErrorCodes.LIGHTER_API_ERROR
+      || cause.code === ErrorCodes.LIGHTER_RATE_LIMITED
+      || cause.code === ErrorCodes.LIGHTER_TIMEOUT
+      || cause.code === ErrorCodes.LIGHTER_INVALID_RESPONSE
+      || cause.code === ErrorCodes.LIGHTER_NOT_FOUND
+      || cause.code === ErrorCodes.HTTP_REQUEST_FAILED
+      || cause.code === ErrorCodes.HTTP_TIMEOUT
+    ) {
+      return "provider_unavailable";
+    }
+    return "unknown";
+  }
+  return "unknown";
+}
 
 const SNAPSHOT_CANDLE_COUNT = 300;
 const SNAPSHOT_BOOK_ROWS = 24;
@@ -182,18 +241,21 @@ export async function readLighterTradingMarketList(
   environment: LighterEnvironment,
   client: LighterTradingPanelClient = getLighterClient(),
   now: () => number = Date.now,
+  signal?: AbortSignal,
 ): Promise<LighterTradingMarketList> {
+  throwIfAborted(signal);
   const [response, detailsResult] = await Promise.all([
-    client.getMarkets(environment, { filter: "all" }),
+    client.getMarkets(environment, { filter: "all" }, { signal }),
     client.getMarketDetails(environment, {
       // Lighter uses 255 as the read-only all-market detail sentinel.
       marketId: ALL_MARKET_DETAILS_ID,
       filter: "all",
-    }).then(
+    }, { signal }).then(
       (details) => ({ ok: true as const, details }),
       () => ({ ok: false as const }),
     ),
   ]);
+  throwIfAborted(signal);
   const details = detailsResult.ok
     ? [
         ...detailsResult.details.order_book_details,
@@ -322,6 +384,7 @@ export async function readLighterTradingCandleHistory(
   },
   client: Pick<LighterTradingPanelClient, "getCandles"> = getLighterClient(),
   now: () => number = Date.now,
+  signal?: AbortSignal,
 ): Promise<LighterInternalCandle[]> {
   const target = canonicalLighterCandleTarget(input);
   const count = input.count ?? SNAPSHOT_CANDLE_COUNT;
@@ -339,7 +402,7 @@ export async function readLighterTradingCandleHistory(
     countBack: count,
     // Provider `t` is the candle open timestamp. Keep REST and WS semantics equal.
     setTimestampToEnd: false,
-  });
+  }, { signal });
   if (response.r !== target.resolution) {
     throw new Error("Lighter candle history resolution does not match the request.");
   }
@@ -359,8 +422,9 @@ export async function readLighterTradingSnapshot(
   },
   client: LighterTradingPanelClient = getLighterClient(),
   now: () => number = Date.now,
+  signal?: AbortSignal,
 ): Promise<LighterTradingSnapshot> {
-  return readLighterTradingSnapshotInternal(input, client, now, true);
+  return readLighterTradingSnapshotInternal(input, client, now, true, signal);
 }
 
 /**
@@ -376,8 +440,9 @@ export async function readLighterTradingMarketSnapshot(
   },
   client: LighterTradingPanelClient = getLighterClient(),
   now: () => number = Date.now,
+  signal?: AbortSignal,
 ): Promise<LighterTradingSnapshot> {
-  return readLighterTradingSnapshotInternal(input, client, now, false);
+  return readLighterTradingSnapshotInternal(input, client, now, false, signal);
 }
 
 async function readLighterTradingSnapshotInternal(
@@ -389,31 +454,36 @@ async function readLighterTradingSnapshotInternal(
   client: LighterTradingPanelClient,
   now: () => number,
   includeCandles: boolean,
+  signal?: AbortSignal,
 ): Promise<LighterTradingSnapshot> {
   const target = canonicalLighterCandleTarget(input);
+  throwIfAborted(signal);
+  // Every leg carries the same signal, so an abort stops the legs that have
+  // not been admitted yet instead of only the one being awaited.
   const [marketResult, candleResult] = await Promise.allSettled([
     Promise.all([
       client.getMarkets(input.environment, {
         marketId: input.marketId,
         filter: "all",
-      }),
+      }, { signal }),
       client.getMarketDetails(input.environment, {
         marketId: input.marketId,
         filter: "all",
-      }),
+      }, { signal }),
       client.getOrderBookOrders(input.environment, {
         marketId: input.marketId,
         limit: SNAPSHOT_BOOK_ROWS,
-      }),
+      }, { signal }),
       client.getRecentTrades(input.environment, {
         marketId: input.marketId,
         limit: SNAPSHOT_TRADE_ROWS,
-      }),
+      }, { signal }),
     ]),
     includeCandles
-      ? readLighterTradingCandleHistory(target, client, now)
+      ? readLighterTradingCandleHistory(target, client, now, signal)
       : Promise.resolve([]),
   ]);
+  throwIfAborted(signal);
   if (marketResult.status === "rejected") throw marketResult.reason;
   if (candleResult.status === "rejected") throw candleResult.reason;
   const [markets, details, orderBook, recentTrades] = marketResult.value;

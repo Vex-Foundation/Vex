@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { lighterTradingAccountSchema } from "@shared/schemas/lighter-trading.js";
 import type {
@@ -6,9 +6,31 @@ import type {
   LighterAccountOrder,
   LighterAccountPosition,
 } from "@tools/lighter/types.js";
+const secrets = vi.hoisted(() => ({
+  listScopes: vi.fn<() => readonly { environment: string; accountIndex: number; apiKeyIndex: number }[]>(),
+  vaultUnlocked: vi.fn<() => boolean>(),
+  readOnlyAuth: vi.fn(),
+}));
+
+vi.mock("../../secrets/lighter-trading-credential.js", () => ({
+  listUnlockedLighterTradingCredentialScopes: () => secrets.listScopes(),
+}));
+vi.mock("../../secrets/session.js", () => ({
+  requireUnlockedMasterPassword: () => (secrets.vaultUnlocked()
+    ? { ok: true, data: "never-read-by-this-module" }
+    : { ok: false, error: { code: "wallet.keystore_locked" } }),
+}));
+vi.mock("@vex-agent/tools/protocols/lighter/read-account-auth.js", () => ({
+  resolveLighterReadOnlyAccountAuth: (...args: unknown[]) => secrets.readOnlyAuth(...args),
+}));
+vi.mock("../../logger/index.js", () => ({
+  log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}));
+
 import {
   findOwningLighterAccount,
   projectLighterTradingAccount,
+  readLighterTradingAccount,
   resolveUniqueLighterAccountIndex,
 } from "../trading-account-service.js";
 
@@ -432,5 +454,61 @@ describe("projectLighterTradingAccount", () => {
     expect(dto.openOrdersTruncated).toBe(false);
     expect(dto.openOrders).toHaveLength(0);
     expect(lighterTradingAccountSchema.safeParse(dto).success).toBe(true);
+  });
+});
+
+describe("Lighter account read: why there is nothing to show", () => {
+  const scope = { environment: "core" as const, accountIndex: 42, apiKeyIndex: 5 };
+  const client = {
+    getAccount: vi.fn(),
+    getAccountActiveOrders: vi.fn(),
+  };
+
+  function reset(): void {
+    vi.clearAllMocks();
+    secrets.readOnlyAuth.mockResolvedValue(null);
+  }
+
+  it("separates a locked vault from an account that was never onboarded", async () => {
+    // Both produce an empty scope list, and the panel used to show the same
+    // "no account" copy for each. The person needs to know which one it is.
+    reset();
+    secrets.listScopes.mockReturnValue([]);
+    secrets.vaultUnlocked.mockReturnValue(false);
+    const locked = await readLighterTradingAccount("core", client, () => 1);
+    expect(locked.status).toBe("unavailable");
+    expect(locked.unavailableReason).toBe("locked_vault");
+
+    secrets.vaultUnlocked.mockReturnValue(true);
+    const empty = await readLighterTradingAccount("core", client, () => 1);
+    expect(empty.unavailableReason).toBe("not_onboarded");
+
+    expect(client.getAccount).not.toHaveBeenCalled();
+    expect(lighterTradingAccountSchema.safeParse(locked).success).toBe(true);
+    expect(lighterTradingAccountSchema.safeParse(empty).success).toBe(true);
+  });
+
+  it("refuses to pick between several onboarded accounts and says so", async () => {
+    reset();
+    secrets.vaultUnlocked.mockReturnValue(true);
+    secrets.listScopes.mockReturnValue([scope, { ...scope, accountIndex: 43 }]);
+
+    const result = await readLighterTradingAccount("core", client, () => 1);
+
+    expect(result.unavailableReason).toBe("ambiguous_account");
+    expect(client.getAccount).not.toHaveBeenCalled();
+  });
+
+  it("stops before the provider read when the caller already abandoned it", async () => {
+    reset();
+    secrets.vaultUnlocked.mockReturnValue(true);
+    secrets.listScopes.mockReturnValue([scope]);
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      readLighterTradingAccount("core", client, () => 1, controller.signal),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(client.getAccount).not.toHaveBeenCalled();
   });
 });

@@ -58,6 +58,7 @@ import { selectDefaultLighterMarket } from "./market-selection.js";
 import { useLighterCandleStream } from "./useLighterCandleStream.js";
 import { useLighterPublicMarketStream } from "./useLighterPublicMarketStream.js";
 import {
+  NO_VALUE,
   formatNumber,
   formatPrice,
   formatProviderPercent,
@@ -168,7 +169,7 @@ export function LighterTradingDialog({
         data-lighter-environment={environment}
         data-chart-expanded={chartExpanded || undefined}
       >
-        <DialogTitle className="sr-only">Light it up — Lighter trading analysis</DialogTitle>
+        <DialogTitle className="sr-only">Light it up: Lighter trading analysis</DialogTitle>
         <DialogDescription className="sr-only">
           Review live Lighter markets, charts, and order-book depth while chatting with Vex in the active session.
         </DialogDescription>
@@ -226,7 +227,16 @@ export function LighterTradingDialog({
         </header>
 
         {marketsQuery.data?.ok === false ? (
-          <WorkspaceError title="Markets unavailable" message={marketsQuery.data.error.message} />
+          <WorkspaceError
+            title={marketsQuery.data.error.code === "provider.unavailable"
+              ? "Lighter is not answering"
+              : "Markets unavailable"}
+            message={marketsQuery.data.error.message}
+            onRetry={marketsQuery.data.error.retryable
+              ? () => { void marketsQuery.refetch(); }
+              : undefined}
+            retrying={marketsQuery.isFetching}
+          />
         ) : marketsQuery.isLoading || marketList === null ? (
           <WorkspaceLoading label="Loading live Lighter markets…" />
         ) : filteredMarkets.length === 0 ? (
@@ -662,7 +672,7 @@ function MarketBar({
           <MarketMetric
             metric="change"
             label="24h change"
-            value={change === null ? "—" : `${change >= 0 ? "+" : ""}${formatNumber(change)}%`}
+            value={change === null ? NO_VALUE : `${change >= 0 ? "+" : ""}${formatNumber(change)}%`}
             tone={change === null ? undefined : change >= 0 ? "positive" : "negative"}
           />
           <MarketMetric metric="volume" label="24h volume" value={formatQuoteVolume(quoteVolume, symbols?.quote ?? "USD")} />
@@ -683,7 +693,7 @@ function MarketBar({
           <MarketMetric
             metric="change"
             label="24h change"
-            value={change === null ? "—" : `${change >= 0 ? "+" : ""}${formatNumber(change)}%`}
+            value={change === null ? NO_VALUE : `${change >= 0 ? "+" : ""}${formatNumber(change)}%`}
             tone={change === null ? undefined : change >= 0 ? "positive" : "negative"}
           />
           <MarketMetric metric="high" label="24h high" value={formatPrice(high, precision)} />
@@ -738,6 +748,28 @@ function WorkspaceLoading({ label }: { readonly label: string }): JSX.Element {
   return <div className="lit-workspace-state" role="status"><span className="lit-loader" aria-hidden="true" />{label}</div>;
 }
 
-function WorkspaceError({ title, message }: { readonly title: string; readonly message: string }): JSX.Element {
-  return <div className="lit-workspace-state" role="alert"><b>{title}</b><span>{message}</span></div>;
+/** Retry is offered only when the error itself says a retry can help. */
+function WorkspaceError({ title, message, onRetry, retrying }: {
+  readonly title: string;
+  readonly message: string;
+  readonly onRetry?: () => void;
+  readonly retrying?: boolean;
+}): JSX.Element {
+  return (
+    <div className="lit-workspace-state" role="alert">
+      <b>{title}</b>
+      <span>{message}</span>
+      {onRetry === undefined ? null : (
+        <button
+          type="button"
+          className="lit-account-refresh-button"
+          onClick={onRetry}
+          aria-busy={retrying === true}
+          disabled={retrying === true}
+        >
+          Try again
+        </button>
+      )}
+    </div>
+  );
 }

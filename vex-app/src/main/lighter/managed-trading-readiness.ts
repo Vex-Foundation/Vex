@@ -1,4 +1,5 @@
 import { getLighterClient, type LighterClient } from "@tools/lighter/client.js";
+import { app } from "electron";
 import type { LighterEnvironment } from "@tools/lighter/constants.js";
 import {
   createLighterRegisteredKeyCheckerBinary,
@@ -213,7 +214,7 @@ function defaultDeps(): LighterManagedTradingReadinessDeps {
       listUnlockedManagedLighterTradingCredentialScopes(environment),
     findRegistrationIntent: keyIntentsRepo.findLiveLighterKeyRegistrationIntentForAccount,
     secretReader: createUnlockedVaultLighterTradingSecretReader(),
-    keyChecker: createLighterRegisteredKeyCheckerBinary(),
+    keyChecker: createLighterRegisteredKeyCheckerBinary({ allowBinaryPathOverride: !app.isPackaged }),
     client: getLighterClient(),
     recordExecutionObserved: nonceStateRepo.recordExecutionObserved,
   };

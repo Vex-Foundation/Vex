@@ -4,6 +4,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { LighterTradingMarket } from "@shared/schemas/lighter-trading.js";
 import { MarketPicker } from "../MarketPicker.js";
+import { NO_VALUE } from "../format.js";
 
 const makeMarket = (id: number, symbol: string, price: number | null, overrides: Partial<LighterTradingMarket> = {}): LighterTradingMarket => ({
   marketId: id, symbol, marketType: "perp", status: "active", baseAssetId: 0, quoteAssetId: 0,
@@ -28,7 +29,7 @@ describe("market picker", () => {
     expect(within(btc).getByText("-1.2%")).toBeTruthy();
     expect(within(btc).getByText("$6M")).toBeTruthy();
     expect(within(btc).getByText("500 BTC")).toBeTruthy();
-    expect(within(screen.getByRole("option", { name: /UNKNOWN/ })).getAllByText("—")).toHaveLength(4);
+    expect(within(screen.getByRole("option", { name: /UNKNOWN/ })).getAllByText(NO_VALUE)).toHaveLength(4);
     expect(screen.queryByText("Minimum size")).toBeNull();
   });
 

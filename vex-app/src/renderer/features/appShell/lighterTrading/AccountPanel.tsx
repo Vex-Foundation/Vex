@@ -1,12 +1,14 @@
 import { useState, type JSX } from "react";
+import type { VexError } from "@shared/ipc/result.js";
 import type {
   LighterTradingAccount,
+  LighterTradingAccountUnavailableReason,
   LighterTradingCandleConnectionStatus,
   LighterTradingEnvironment,
   LighterTradingSnapshot,
 } from "@shared/schemas/lighter-trading.js";
 import { useLighterTradingAccount } from "../../../lib/api/lighter-trading.js";
-import { formatDecimalString, formatRetrievedAt } from "./format.js";
+import { NO_VALUE, formatDecimalString, formatRetrievedAt } from "./format.js";
 
 type BottomTab = "trades" | "positions" | "orders" | "assets";
 
@@ -46,7 +48,7 @@ function timeInForceLabel(value: string | null | undefined): string | null {
 }
 
 function providerLabel(value: string | null | undefined): string {
-  if (value === null || value === undefined || value.trim().length === 0) return "—";
+  if (value === null || value === undefined || value.trim().length === 0) return NO_VALUE;
   const words = value.trim().replace(/[_-]+/g, " ").toLowerCase();
   return `${words.charAt(0).toUpperCase()}${words.slice(1)}`;
 }
@@ -104,8 +106,12 @@ export function TradingBottomPanel({
       : account === null
       ? "Account"
       : account.status === "unavailable"
-        ? "No account"
-        : `Account #${account.accountIndex ?? "—"} · Snapshot ${formatRetrievedAt(account.retrievedAt)}`;
+        ? account.unavailableReason === "locked_vault"
+          ? "Locked"
+          : account.unavailableReason === "ambiguous_account"
+            ? "Several accounts"
+            : "No account"
+        : `Account #${account.accountIndex ?? NO_VALUE} · Snapshot ${formatRetrievedAt(account.retrievedAt)}`;
 
   return (
     <section className="lit-panel lit-bottom-panel" aria-labelledby={activeTabId}>
@@ -162,9 +168,15 @@ export function TradingBottomPanel({
         ) : accountQuery.isLoading ? (
           <p className="lit-book-empty">Loading account…</p>
         ) : accountQuery.data?.ok === false ? (
-          <p className="lit-book-empty">{accountQuery.data.error.message}</p>
-        ) : account === null || account.status === "unavailable" ? (
-          <AccountUnavailable />
+          <AccountReadFailed
+            error={accountQuery.data.error}
+            onRetry={() => { void accountQuery.refetch(); }}
+            retrying={accountQuery.isFetching}
+          />
+        ) : account === null ? (
+          <AccountUnavailable reason={null} />
+        ) : account.status === "unavailable" ? (
+          <AccountUnavailable reason={account.unavailableReason} />
         ) : tab === "positions" ? (
           <PositionsTab account={account} />
         ) : tab === "orders" ? (
@@ -177,14 +189,61 @@ export function TradingBottomPanel({
   );
 }
 
-function AccountUnavailable(): JSX.Element {
+/**
+ * The read SUCCEEDED and there is nothing to show. Each reason gets its own
+ * remediation because they need different actions from the person: one is an
+ * unlock, one is onboarding, one is a choice Vex refuses to make for them.
+ * A null reason is the pre-first-answer state, not a fourth reason.
+ */
+function AccountUnavailable({ reason }: {
+  readonly reason: LighterTradingAccountUnavailableReason | null;
+}): JSX.Element {
+  const copy = reason === "locked_vault"
+    ? {
+        title: "Vex is locked",
+        detail: "Unlock Vex to see positions, open orders, and balances for your Lighter account.",
+      }
+    : reason === "ambiguous_account"
+      ? {
+          title: "Several Lighter accounts are connected",
+          detail: "Vex will not pick one for you. Forget the connections you do not want in Settings, then reopen this panel.",
+        }
+      : {
+          title: "No Lighter account connected",
+          detail: "Onboard a Lighter trading key to see positions, open orders, and balances here.",
+        };
   return (
     <div className="lit-account-empty" role="status">
-      <b>No Lighter account connected</b>
-      <span>
-        Onboard a Lighter trading key and unlock your vault to see
-        positions, open orders, and balances here.
-      </span>
+      <b>{copy.title}</b>
+      <span>{copy.detail}</span>
+    </div>
+  );
+}
+
+/**
+ * The read FAILED. Retry is offered only where the error says a retry can
+ * help, so a locked vault never shows a button that cannot work.
+ */
+function AccountReadFailed({ error, onRetry, retrying }: {
+  readonly error: VexError;
+  readonly onRetry: () => void;
+  readonly retrying: boolean;
+}): JSX.Element {
+  return (
+    <div className="lit-account-empty" role="alert">
+      <b>{error.code === "provider.unavailable" ? "Lighter is not answering" : "Account unavailable"}</b>
+      <span>{error.message}</span>
+      {error.retryable ? (
+        <button
+          type="button"
+          className="lit-account-refresh-button"
+          onClick={onRetry}
+          aria-busy={retrying}
+          disabled={retrying}
+        >
+          Try again
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -250,7 +309,7 @@ function OpenOrdersTab({ account }: { readonly account: LighterTradingAccount })
   if (!account.openOrdersAvailable) {
     return (
       <p className="lit-book-empty">
-        Open orders are unavailable — unlock your vault so a read-only
+        Open orders are unavailable: unlock your vault so a read-only
         authorization can be derived.
       </p>
     );
@@ -347,11 +406,11 @@ function AssetsTab({ account }: { readonly account: LighterTradingAccount }): JS
         ))
       )}
       <p className="lit-asset-section">Account</p>
-      <AssetRow label="Collateral" value={summary === null ? "—" : num(summary.collateral)} suffix={settlementSymbol} />
-      <AssetRow label="Available balance" value={summary === null ? "—" : num(summary.availableBalance)} suffix={settlementSymbol} />
+      <AssetRow label="Collateral" value={summary === null ? NO_VALUE : num(summary.collateral)} suffix={settlementSymbol} />
+      <AssetRow label="Available balance" value={summary === null ? NO_VALUE : num(summary.availableBalance)} suffix={settlementSymbol} />
       <AssetRow
         label="Unrealized PnL"
-        value={summary === null ? "—" : num(summary.unrealizedPnl)}
+        value={summary === null ? NO_VALUE : num(summary.unrealizedPnl)}
         suffix={settlementSymbol}
         tone={signedTone(summary?.unrealizedPnl ?? null)}
       />
@@ -360,7 +419,7 @@ function AssetsTab({ account }: { readonly account: LighterTradingAccount }): JS
         label="Open orders"
         value={account.openOrdersAvailable
           ? `${account.openOrders.length}${account.openOrdersTruncated ? "+" : ""}`
-          : "—"}
+          : NO_VALUE}
       />
     </div>
   );
@@ -375,7 +434,7 @@ function AssetRow({ label, value, suffix, tone }: {
   return (
     <div className="lit-asset-row">
       <span>{label}</span>
-      <b data-tone={tone}>{value === "—" || suffix === undefined ? value : `${value} ${suffix}`}</b>
+      <b data-tone={tone}>{value === NO_VALUE || suffix === undefined ? value : `${value} ${suffix}`}</b>
     </div>
   );
 }

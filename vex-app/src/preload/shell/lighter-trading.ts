@@ -16,25 +16,28 @@ import {
   lighterTradingSnapshotInputSchema,
 } from "../../shared/schemas/lighter-trading.js";
 import type { LighterTradingBridge } from "../../shared/types/bridge/shell/lighter-trading.js";
-import { invokeWithSchema, subscribe } from "../_dispatch.js";
+import { abortableInvoke, invokeWithSchema, subscribe } from "../_dispatch.js";
 
 export const lighterTrading = {
+  // The three REST reads are abortable: closing the workspace, switching
+  // market or unmounting the panel cancels them, which is what reaches main's
+  // `ctx.signal` and stops the provider read behind it.
   listMarkets(input) {
-    return invokeWithSchema(
+    return abortableInvoke(
       CH.lighterTrading.listMarkets,
       input,
       lighterTradingListMarketsInputSchema,
     );
   },
   getSnapshot(input) {
-    return invokeWithSchema(
+    return abortableInvoke(
       CH.lighterTrading.getSnapshot,
       input,
       lighterTradingSnapshotInputSchema,
     );
   },
   getAccount(input) {
-    return invokeWithSchema(
+    return abortableInvoke(
       CH.lighterTrading.getAccount,
       input,
       lighterTradingAccountInputSchema,

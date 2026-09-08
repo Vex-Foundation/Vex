@@ -4,6 +4,7 @@ import {
   type LighterEnvironment,
 } from "./constants.js";
 import { ErrorCodes, VexError } from "../../errors.js";
+import { delay, throwIfAborted } from "../../utils/cancellation.js";
 
 const DEFAULT_MAX_CACHE_ENTRIES = 128;
 
@@ -20,6 +21,17 @@ export function parseRetryAfterMs(header: string | null | undefined, fallbackMs 
   return fallbackMs;
 }
 
+/**
+ * One shared, in-flight provider read. `waiters` counts the callers still
+ * interested in the answer; the request is cancelled only when that reaches
+ * zero.
+ */
+interface InFlightEntry {
+  promise: Promise<unknown>;
+  readonly controller: AbortController;
+  waiters: number;
+}
+
 interface CacheEntry {
   value: unknown;
   expiresAt: number;
@@ -27,12 +39,17 @@ interface CacheEntry {
 
 interface ThrottleDeps {
   now: () => number;
-  sleep: (ms: number) => Promise<void>;
+  /**
+   * Rate-limit wait. Rejects with the signal's own reason when the caller
+   * abandons the request, so a queued call never keeps burning its slot after
+   * the reader has gone.
+   */
+  sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
 }
 
 const REAL_DEPS: ThrottleDeps = {
   now: () => Date.now(),
-  sleep: (ms) => new Promise((resolve) => setTimeout(resolve, Math.max(0, ms))),
+  sleep: (ms, signal) => delay(Math.max(0, ms), signal),
 };
 
 class TokenBucket {
@@ -58,20 +75,24 @@ class TokenBucket {
     this.lastRefill = now;
   }
 
-  async acquire(): Promise<void> {
+  async acquire(signal?: AbortSignal): Promise<void> {
     for (;;) {
+      throwIfAborted(signal);
       const now = this.deps.now();
       if (now < this.penaltyUntil) {
-        await this.deps.sleep(this.penaltyUntil - now);
+        await this.deps.sleep(this.penaltyUntil - now, signal);
         continue;
       }
       this.refill(now);
       if (this.tokens >= 1) {
+        // A token is only spent by a caller that is still waiting for the
+        // answer: the abort check above and the one the queue performs before
+        // the fetch keep an abandoned request from consuming provider budget.
         this.tokens -= 1;
         return;
       }
       const waitMs = Math.ceil((1 - this.tokens) / this.refillPerMs);
-      await this.deps.sleep(waitMs);
+      await this.deps.sleep(waitMs, signal);
     }
   }
 
@@ -83,7 +104,7 @@ class TokenBucket {
 export class LighterThrottle {
   private readonly buckets: Record<LighterEnvironment, TokenBucket>;
   private readonly cache = new Map<string, CacheEntry>();
-  private readonly inFlight = new Map<string, Promise<unknown>>();
+  private readonly inFlight = new Map<string, InFlightEntry>();
   private readonly deps: ThrottleDeps;
   private readonly maxCacheEntries: number;
   private readonly ttlMs: number;
@@ -112,15 +133,35 @@ export class LighterThrottle {
     return this.ttlMs;
   }
 
+  /**
+   * Rate-limited, cached, single-flight read.
+   *
+   * CANCELLATION AND COALESCING, because the two interact and the policy has
+   * to be stated once. `signal` belongs to ONE caller, while an in-flight
+   * entry may be shared by several. Aborting therefore abandons the caller's
+   * WAIT immediately (it rejects with the signal's own reason) and only
+   * cancels the underlying request when the abandoning caller was the last
+   * one still interested. A second reader waiting on the same key keeps its
+   * answer, and the cache it populates stays correct. The fetcher receives the
+   * ENTRY's signal, never a single caller's, for exactly that reason.
+   *
+   * An already-aborted caller never takes a rate-limit token and never starts
+   * a request.
+   */
   async run<T>(
     key: string,
     bucketKey: LighterEnvironment,
     ttlMs: number,
-    fetcher: () => Promise<T>,
+    fetcher: (signal?: AbortSignal) => Promise<T>,
+    signal?: AbortSignal,
   ): Promise<T> {
+    throwIfAborted(signal);
     if (ttlMs <= 0) {
-      await this.bucketFor(bucketKey).acquire();
-      return fetcher();
+      // Uncached reads have exactly one caller, so the caller's own signal is
+      // the request's signal: no sharing to reason about.
+      await this.bucketFor(bucketKey).acquire(signal);
+      throwIfAborted(signal);
+      return fetcher(signal);
     }
 
     const cached = this.cache.get(key);
@@ -129,23 +170,71 @@ export class LighterThrottle {
     }
 
     const existing = this.inFlight.get(key);
-    if (existing) {
-      return existing as Promise<T>;
+    // An entry whose last waiter has already left is cancelled and will only
+    // ever reject. A new caller starts its own read rather than inheriting
+    // someone else's abandonment; the stale entry retires itself.
+    if (existing !== undefined && !existing.controller.signal.aborted) {
+      existing.waiters += 1;
+      return await this.joinInFlight<T>(existing, signal);
     }
 
-    const promise = (async () => {
-      await this.bucketFor(bucketKey).acquire();
-      const value = freezeCachedValue(await fetcher());
+    const controller = new AbortController();
+    const entry: InFlightEntry = {
+      promise: Promise.resolve<unknown>(undefined),
+      controller,
+      waiters: 1,
+    };
+    entry.promise = (async () => {
+      await this.bucketFor(bucketKey).acquire(controller.signal);
+      throwIfAborted(controller.signal);
+      const value = freezeCachedValue(await fetcher(controller.signal));
       this.setCache(key, value, ttlMs);
       return value;
     })();
+    // Retire the entry on every terminal path, and observe the rejection here
+    // so an entry every caller abandoned can never raise an unhandled
+    // rejection. Real waiters re-observe the same promise in `joinInFlight`.
+    const retire = (): void => {
+      if (this.inFlight.get(key) === entry) this.inFlight.delete(key);
+    };
+    entry.promise.then(retire, retire);
 
-    this.inFlight.set(key, promise);
-    try {
-      return await promise;
-    } finally {
-      this.inFlight.delete(key);
+    this.inFlight.set(key, entry);
+    return await this.joinInFlight<T>(entry, signal);
+  }
+
+  /** Await a shared entry, abandoning it (not cancelling it) on caller abort. */
+  private async joinInFlight<T>(entry: InFlightEntry, signal?: AbortSignal): Promise<T> {
+    if (signal === undefined) return await (entry.promise as Promise<T>);
+    if (signal.aborted) {
+      this.abandonInFlight(entry);
+      throwIfAborted(signal);
     }
+    return await new Promise<T>((resolve, reject) => {
+      const onAbort = (): void => {
+        this.abandonInFlight(entry);
+        reject(signal.reason);
+      };
+      // Removes the listener on the non-abort exits; `once` covers the abort.
+      const settled = (): void => signal.removeEventListener("abort", onAbort);
+      signal.addEventListener("abort", onAbort, { once: true });
+      entry.promise.then(
+        (value) => {
+          settled();
+          resolve(value as T);
+        },
+        (cause: unknown) => {
+          settled();
+          reject(cause);
+        },
+      );
+    });
+  }
+
+  /** Drop one waiter; the last one leaving cancels the shared request. */
+  private abandonInFlight(entry: InFlightEntry): void {
+    entry.waiters -= 1;
+    if (entry.waiters <= 0) entry.controller.abort();
   }
 
   penalize(bucketKey: LighterEnvironment, retryAfterMs: number): void {

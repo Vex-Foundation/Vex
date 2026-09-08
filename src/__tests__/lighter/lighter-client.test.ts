@@ -1022,3 +1022,39 @@ describe("Lighter error mapping", () => {
     expect(message).not.toContain("0123456789abcdef");
   });
 });
+
+describe("LighterClient cancellation", () => {
+  it("aborts the request in flight when its only caller walks away", async () => {
+    let requestSignal: AbortSignal | undefined;
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      (_url: string, init: RequestInit) => new Promise((_resolve, reject) => {
+        requestSignal = init.signal ?? undefined;
+        init.signal?.addEventListener(
+          "abort",
+          () => reject(new DOMException("aborted", "AbortError")),
+          { once: true },
+        );
+      }),
+    );
+    const controller = new AbortController();
+
+    const pending = client.getMarkets("core", { filter: "all" }, { signal: controller.signal });
+    await vi.waitFor(() => expect(requestSignal).toBeDefined());
+    expect(requestSignal?.aborted).toBe(false);
+    controller.abort();
+
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    // Not merely "we stopped waiting": the HTTP request itself was cancelled.
+    expect(requestSignal?.aborted).toBe(true);
+  });
+
+  it("never reaches the provider for a read the caller already abandoned", async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      client.getMarkets("core", { filter: "all" }, { signal: controller.signal }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+});

@@ -6,7 +6,14 @@ import { TradingBottomPanel } from "../AccountPanel.js";
 interface MockAccountQuery {
   readonly data:
     | { readonly ok: true; readonly data: LighterTradingAccount }
-    | { readonly ok: false; readonly error: { readonly message: string } }
+    | {
+        readonly ok: false;
+        readonly error: {
+          readonly message: string;
+          readonly code?: string;
+          readonly retryable?: boolean;
+        };
+      }
     | undefined;
   readonly isLoading: boolean;
   readonly isFetching: boolean;
@@ -26,6 +33,7 @@ const EMPTY_ACCOUNT: LighterTradingAccount = {
   environment: "rhc",
   retrievedAt: 1_787_530_000_000,
   status: "ready",
+  unavailableReason: null,
   accountIndex: 42,
   openOrdersAvailable: true,
   openOrdersTruncated: false,
@@ -87,11 +95,77 @@ describe("TradingBottomPanel", () => {
     mocks.useAccount.mockReturnValue(query({
       data: {
         ok: true,
-        data: { ...EMPTY_ACCOUNT, status: "unavailable", accountIndex: null },
+        data: {
+          ...EMPTY_ACCOUNT,
+          status: "unavailable",
+          unavailableReason: "not_onboarded",
+          accountIndex: null,
+        },
       },
     }));
     view.rerender(panel());
     expect(screen.getByText("No Lighter account connected")).toBeTruthy();
+  });
+
+  it("tells the reader WHY the panel is empty, and offers retry only where it helps", () => {
+    // A locked vault used to read as a Lighter outage with a retry button.
+    mocks.useAccount.mockReturnValue(query({
+      data: {
+        ok: true,
+        data: {
+          ...EMPTY_ACCOUNT,
+          status: "unavailable",
+          unavailableReason: "locked_vault",
+          accountIndex: null,
+        },
+      },
+    }));
+    const view = renderPanel();
+    expect(screen.getByText("Vex is locked")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+
+    mocks.useAccount.mockReturnValue(query({
+      data: {
+        ok: true,
+        data: {
+          ...EMPTY_ACCOUNT,
+          status: "unavailable",
+          unavailableReason: "ambiguous_account",
+          accountIndex: null,
+        },
+      },
+    }));
+    view.rerender(panel());
+    expect(screen.getByText("Several Lighter accounts are connected")).toBeTruthy();
+
+    mocks.useAccount.mockReturnValue(query({
+      data: {
+        ok: false,
+        error: {
+          code: "wallet.keystore_locked",
+          message: "Unlock Vex to read your Lighter account.",
+          retryable: false,
+        },
+      },
+    }));
+    view.rerender(panel());
+    expect(screen.getByText("Unlock Vex to read your Lighter account.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+
+    mocks.useAccount.mockReturnValue(query({
+      data: {
+        ok: false,
+        error: {
+          code: "provider.unavailable",
+          message: "Live Lighter market data is temporarily unavailable.",
+          retryable: true,
+        },
+      },
+    }));
+    view.rerender(panel());
+    expect(screen.getByText("Lighter is not answering")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(mocks.refetch).toHaveBeenCalled();
   });
 
   it("renders empty positions and open orders truthfully", () => {

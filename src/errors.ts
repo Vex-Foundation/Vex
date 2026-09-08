@@ -9,7 +9,7 @@ export class VexError extends Error {
    * provider that ANSWERED (set by `utils/http.ts` on a non-ok response).
    * Absent for network/timeout/parse failures, where no status exists.
    *
-   * Callers use it to tell a definitive provider refusal (4xx — the request
+   * Callers use it to tell a definitive provider refusal (4xx - the request
    * was understood and rejected, nothing was acted on) from an ambiguous
    * transport failure. Never assume its absence means success.
    */
@@ -18,7 +18,7 @@ export class VexError extends Error {
    * How long the provider said to wait before retrying, in WHOLE SECONDS, when
    * a rate-limited response advertised it (`Retry-After`, or the
    * `x-ratelimit-*` family on a 429). Set by `utils/http.ts`; always a
-   * validated integer within `utils/http/retry-after.ts`'s bounds — never raw
+   * validated integer within `utils/http/retry-after.ts`'s bounds - never raw
    * header text, and absent whenever the provider named no interval.
    *
    * Flat and optional like `httpStatus` above, for the same reason: it is one
@@ -117,7 +117,7 @@ export const ErrorCodes = {
    * An EVM transaction's `tx.value` could not be fully attributed to proven
    * cost components, or the transaction reaching the signer is not the one
    * whose value was authorized. An AUTHORIZATION failure, not an economics one
-   * — maps to the `agent_activity` failure code `allowance_or_balance` with a
+   * - maps to the `agent_activity` failure code `allowance_or_balance` with a
    * structured reason. Nothing is signed.
    * See `src/tools/evm-chains/native-value-authorization`.
    */
@@ -126,13 +126,13 @@ export const ErrorCodes = {
    * A provider quoted a gas limit so far above Vex's own fresh
    * `eth_estimateGas` for the same call that Vex will not sign it. The inverse
    * of the lowball defect: our floor stops a provider lowering the limit, this
-   * stops one raising Vex's signed exposure without bound. A PRE-SIGN refusal —
+   * stops one raising Vex's signed exposure without bound. A PRE-SIGN refusal -
    * nothing is signed, staged, or broadcast.
    * See `src/tools/evm-chains/gas-limit-headroom.ts`.
    */
   PROVIDER_GAS_LIMIT_EXCESSIVE: "PROVIDER_GAS_LIMIT_EXCESSIVE",
 
-  // Relay (api.relay.link) — keyless cross-chain bridge
+  // Relay (api.relay.link) - keyless cross-chain bridge
   RELAY_API_ERROR: "RELAY_API_ERROR",
   RELAY_TIMEOUT: "RELAY_TIMEOUT",
   RELAY_RATE_LIMITED: "RELAY_RATE_LIMITED",
@@ -142,7 +142,7 @@ export const ErrorCodes = {
   RELAY_STEP_CHAIN_MISMATCH: "RELAY_STEP_CHAIN_MISMATCH",
   RELAY_BRIDGE_FAILED: "RELAY_BRIDGE_FAILED",
 
-  // KyberSwap — shared
+  // KyberSwap - shared
   KYBER_API_ERROR: "KYBER_API_ERROR",
   KYBER_TIMEOUT: "KYBER_TIMEOUT",
   KYBER_RATE_LIMITED: "KYBER_RATE_LIMITED",
@@ -169,7 +169,7 @@ export const ErrorCodes = {
   /**
    * The built swap calldata's embedded `minReturnAmount` is below the price
    * floor Vex approved at quote time (or below the floor the fresh route
-   * implies). A genuine slippage abort — maps to the `agent_activity`
+   * implies). A genuine slippage abort - maps to the `agent_activity`
    * failure code `slippage`. Nothing is signed.
    */
   KYBER_PRICE_FLOOR_VIOLATED: "KYBER_PRICE_FLOOR_VIOLATED",
@@ -316,14 +316,14 @@ export const ErrorCodes = {
   DEXSCREENER_INVALID_RESPONSE: "DEXSCREENER_INVALID_RESPONSE",
   DEXSCREENER_NOT_FOUND: "DEXSCREENER_NOT_FOUND",
 
-  // Virtuals Protocol (agent-token intelligence — read-only)
+  // Virtuals Protocol (agent-token intelligence - read-only)
   VIRTUALS_API_ERROR: "VIRTUALS_API_ERROR",
   VIRTUALS_RATE_LIMITED: "VIRTUALS_RATE_LIMITED",
   VIRTUALS_TIMEOUT: "VIRTUALS_TIMEOUT",
   VIRTUALS_INVALID_RESPONSE: "VIRTUALS_INVALID_RESPONSE",
   VIRTUALS_NOT_FOUND: "VIRTUALS_NOT_FOUND",
 
-  // Lighter — Core + Robinhood Chain market data (read-only P1)
+  // Lighter - Core + Robinhood Chain market data (read-only P1)
   LIGHTER_API_ERROR: "LIGHTER_API_ERROR",
   LIGHTER_RATE_LIMITED: "LIGHTER_RATE_LIMITED",
   LIGHTER_TIMEOUT: "LIGHTER_TIMEOUT",
@@ -331,7 +331,7 @@ export const ErrorCodes = {
   LIGHTER_INVALID_REQUEST: "LIGHTER_INVALID_REQUEST",
   LIGHTER_NOT_FOUND: "LIGHTER_NOT_FOUND",
 
-  // Pendle v2 (fixed-yield PT — Ethereum v1)
+  // Pendle v2 (fixed-yield PT - Ethereum v1)
   PENDLE_API_ERROR: "PENDLE_API_ERROR",
   PENDLE_RATE_LIMITED: "PENDLE_RATE_LIMITED",
   PENDLE_TIMEOUT: "PENDLE_TIMEOUT",

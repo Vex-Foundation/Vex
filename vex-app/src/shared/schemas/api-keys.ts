@@ -2,7 +2,7 @@
  * Schemas for `vex.onboarding.apiKeysSet` (M9 Step 3).
  *
  * Field set:
- *   - JUPITER_API_KEY (optional in input — user may already have it
+ *   - JUPITER_API_KEY (optional in input - user may already have it
  *     set; the wizard's Step-3 skip-card uses the
  *     envState `apiKeys.jupiterConfigured` boolean to decide whether
  *     to show the form at all).
@@ -16,7 +16,7 @@
  *     `src/tools/relay/client.ts`). Attribution is the only thing a keyless
  *     deployment gives up; it is deliberately not a tool prerequisite, so no
  *     relay manifest declares it as a required env.
- *   - LIGHTER_*_TRADING_API_PRIVATE_KEY (optional) — one-time import fields
+ *   - LIGHTER_*_TRADING_API_PRIVATE_KEY (optional) - one-time import fields
  *     for Lighter credentials. This is the normal one-key Lighter setup:
  *     previews stay read-only, and approval/execution paths remain gated.
  *     These keys are stored only as encrypted-vault extra secrets under an
@@ -57,7 +57,7 @@ export const MANAGED_API_KEYS_CANONICAL_ORDER = [
 ] as const;
 
 /**
- * Canonical field names that may appear in `fieldsWritten` — order matches the
+ * Canonical field names that may appear in `fieldsWritten` - order matches the
  * deterministic write order in `api-keys-writer.ts`. Trading credential fields
  * are local vault extra-secret actions, not process env keys.
  */

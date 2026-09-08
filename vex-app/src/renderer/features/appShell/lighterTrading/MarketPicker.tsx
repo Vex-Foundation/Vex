@@ -3,7 +3,7 @@ import type { LighterTradingEnvironment, LighterTradingMarket } from "@shared/sc
 import { IconChevronDown, IconClose, IconSearch, IconStar, IconStarFill } from "../../../components/icons/index.js";
 import { MarketSymbol } from "./MarketSymbol.js";
 import { classifyLighterMarket, marketProductLabel, type LighterMarketSection } from "./market-classification.js";
-import { formatBaseAmount, formatNumber, formatPrice, formatQuoteVolume, marketSymbols } from "./format.js";
+import { NO_VALUE, formatBaseAmount, formatNumber, formatPrice, formatQuoteVolume, marketSymbols } from "./format.js";
 
 import { LIGHTER_ANALYSIS_STORAGE_KEY, useLighterAnalysisStore } from "../../../stores/lighterAnalysisStore.js";
 type SortColumn = "market" | "price" | "change" | "volume" | "interest";
@@ -200,7 +200,7 @@ export function MarketPicker({ environment, markets, selectedMarketId, onClose, 
             const isFavorite = favorites.has(key);
             const change = market.statistics?.priceChange24h ?? null;
             const priceLabel = formatPrice(market.statistics?.lastTradePrice ?? null, market.decimals.price);
-            const changeLabel = change === null ? "—" : `${change > 0 ? "+" : ""}${formatNumber(change, { maximumFractionDigits: 2 })}%`;
+            const changeLabel = change === null ? NO_VALUE : `${change > 0 ? "+" : ""}${formatNumber(change, { maximumFractionDigits: 2 })}%`;
             const volumeLabel = formatQuoteVolume(market.activity24h.quoteVolume, symbols.quote);
             const interestLabel = formatBaseAmount(market.statistics?.openInterestBase ?? null, symbols.base);
             return <div className="lit-picker-row" key={key} role="presentation" data-highlighted={key === activeKey || undefined}>
