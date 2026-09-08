@@ -20,32 +20,59 @@ import * as intentsRepo from "@vex-agent/db/repos/lighter-withdrawal-intents.js"
 import * as claimsRepo from "@vex-agent/db/repos/lighter-withdrawal-claims.js";
 import type { LighterWithdrawalIntentRow } from "@vex-agent/db/repos/lighter-withdrawal-intents.js";
 import { ErrorCodes, VexError } from "../../../../errors.js";
-import { insertSettlementProvenActivityRowWith } from "@vex-agent/db/repos/agent-activity/settlement-proven.js";
+import {
+  insertSettlementProvenActivityRowWith,
+  type SettlementProvenRefusal,
+} from "@vex-agent/db/repos/agent-activity/settlement-proven.js";
 import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
 import logger from "@utils/logger.js";
 import { buildLighterWithdrawalActivityRow } from "./agentscan-activity.js";
 
 /**
- * THE SETTLEMENT-PROVEN ACTIVITY WRITER, as this file needs it.
+ * THE CONFIRMED ARM COMMITS ONCE.
  *
- * A claimed withdrawal is an `agent_activity` row: a settlement-chain
- * transaction with a real receipt, which is exactly what the existing EVM
- * claim lane confirms. The row is written PENDING with its hash, its from
- * address and its nonce, because that is the shape the schema admits (045's
- * `agent_activity_evm_signed_leg_has_nonce` requires a nonce on any eip155 row
- * carrying a hash, and 049's `agent_activity_non_bridge_no_bridge_cols`
- * forbids the observed-row columns here); the claim lane then proves it from
- * the chain. No `agent_activity` SQL is written from this file: the row goes
- * through the settlement-proven writer
- * (`db/repos/agent-activity/settlement-proven.ts`), under the session control
- * lock that every money-state writer takes, in its own short transaction
- * AFTER the withdrawal's own state has committed.
+ * `destination_confirmed`, the manual claim attempt's own outcome, and the
+ * `agent_activity` row that reports the settlement are ONE durable step, on
+ * ONE transaction, under the session control lock - the same shape the deposit
+ * credit uses in `sync/lighter-deposit-repair.ts`.
  *
- * The deps carry the write as a FUNCTION OF THE INPUT rather than the
- * client-bound writer itself: the transaction belongs to the production
- * factory below, and a caller driving this lane in a test has no database to
- * open one on.
+ * IT USED TO BE TWO. The reconciliation committed, and the activity row went
+ * out afterwards in a transaction of its own whose failures were caught and
+ * logged. Because the repair sweep's candidate query excludes
+ * `destination_confirmed`, nothing ever revisited the intent: a crash between
+ * the two commits, or one failed insert, lost the row permanently. There is no
+ * "later" for a state no sweep selects.
+ *
+ * WHAT A FAILURE MEANS NOW. An insert that throws rolls the whole step back,
+ * so the intent is NOT confirmed and stays a reconciliation candidate; the
+ * next sweep re-derives the same proof from the same receipt and commits both.
+ * That is the unknown-outcome behaviour rule 90 asks for - the confirmation
+ * was never durable, so nothing durable was undone - and it is why a reporting
+ * failure can no longer unmake a confirmation: there is no window in which one
+ * exists without the other.
+ *
+ * A REFUSAL IS NOT A FAILURE. An auto-claim the gateway released carries no
+ * sender and no nonce that Vex signed, so no honest row exists for it (see
+ * `db/repos/agent-activity/settlement-proven.ts`). That is a fact about the
+ * withdrawal, recorded with it in the same transaction as
+ * `destinationEvidence.activityReport`, and never retried.
  */
+export type LighterWithdrawalActivityRefusal =
+  | SettlementProvenRefusal
+  | "no_claim_attempt"
+  | "gateway_auto_claim_not_signed_by_vex"
+  | "claim_hash_does_not_match_settlement";
+
+/** What the confirmed arm recorded about its own reporting, on the intent. */
+export type LighterWithdrawalActivityReport =
+  | { readonly status: "recorded" | "already_recorded"; readonly activityId: number }
+  | { readonly status: "not_reported"; readonly reason: LighterWithdrawalActivityRefusal };
+
+/** The activity-row outcome as this lane consumes it, narrowed from the writer's. */
+export type LighterWithdrawalActivityOutcome =
+  | { readonly outcome: "recorded" | "already_recorded"; readonly activityId: number }
+  | { readonly outcome: "refused"; readonly reason: SettlementProvenRefusal };
+
 export interface LighterSettlementProvenActivityInput {
   readonly sessionId: string;
   readonly protocolExecutionId: number | null;
@@ -69,71 +96,84 @@ export interface LighterSettlementProvenActivityInput {
   readonly metadata: Record<string, unknown>;
 }
 
-/** How the claim facts are read and how the row is written. `write` is null only for a caller that assembles its own deps without a database. */
-export interface LighterWithdrawalActivityDeps {
-  readonly write:
-    | ((input: LighterSettlementProvenActivityInput) => Promise<{ readonly activityId: number } | null>)
-    | null;
-  readonly findClaim: typeof claimsRepo.findLatestForWithdrawalIntent;
+/**
+ * Every write the confirmed arm makes, bound to ONE transaction.
+ *
+ * The arm keeps the decisions (which claim backs the settlement, whether a row
+ * can honestly be written, what the intent records about it); the writer owns
+ * only the statements. That split is what lets a test drive the real arm over
+ * a transactional double and prove the atomicity, rather than assert that a
+ * production helper was called.
+ */
+export interface LighterWithdrawalConfirmationWriter {
+  readonly findClaim: (withdrawalIntentId: string) => Promise<claimsRepo.LighterWithdrawalClaimAttemptRow | null>;
+  readonly recordReconciliation: (
+    input: intentsRepo.RecordReconciliationInput,
+  ) => Promise<LighterWithdrawalIntentRow | null>;
+  readonly markReconciledOutcome: (input: claimsRepo.MarkReconciledOutcomeInput) => Promise<boolean>;
+  readonly insertActivityRow: (
+    input: LighterSettlementProvenActivityInput,
+  ) => Promise<LighterWithdrawalActivityOutcome>;
 }
 
 /**
- * Production wiring: one short transaction under the session control lock,
- * the settlement-proven writer, and its outcome folded to what this lane needs.
- *
- * `already_recorded` is the ordinary replay: reconciliation re-enters the
- * confirmed arm on every later sweep, and migration 044's unique `tx_hash`
- * index makes the second visit converge on the row the first one wrote. A
- * refusal (a malformed hash, an unreadable asset) is logged with its reason
- * and reported as "no row", never raised: the withdrawal is already durably
- * confirmed by the time this runs.
+ * How the confirmed arm gets its transaction. `commit` MUST take the session
+ * control lock first and roll back on any throw - that rollback IS the
+ * atomicity guarantee, not a convenience.
  */
-export function defaultLighterWithdrawalActivityDeps(): LighterWithdrawalActivityDeps {
+export interface LighterWithdrawalConfirmationDeps {
+  readonly commit: <T>(
+    sessionId: string,
+    write: (writer: LighterWithdrawalConfirmationWriter) => Promise<T>,
+  ) => Promise<T>;
+}
+
+/** Production wiring: one short transaction under the session control lock. */
+export function defaultLighterWithdrawalConfirmationDeps(): LighterWithdrawalConfirmationDeps {
   return {
-    write: (input) => withSessionControlLock(input.sessionId, async (client) => {
-      const outcome = await insertSettlementProvenActivityRowWith(client, {
-        eventRole: input.eventRole,
-        protocol: "lighter",
-        sessionId: input.sessionId,
-        walletAddress: input.walletAddress,
-        execution: input.protocolExecutionId === null
-          ? {
-              toolId: "lighter.withdraw",
-              namespace: "lighter",
-              intentParams: {
-                intentId: input.withdrawalIntentId,
-                environment: input.environment,
-                accountIndex: input.accountIndex,
-                amountUnits: input.amountOutRaw,
-                assetSymbol: input.tokenOutSymbol,
-              },
-            }
-          : { existingId: input.protocolExecutionId },
-        chainId: input.chainId,
-        txHash: input.txHash,
-        fromAddress: input.fromAddress,
-        nonce: input.nonce,
-        submitAttemptedAt: input.submitAttemptedAt,
-        asset: {
-          address: input.tokenOutAddress,
-          symbol: input.tokenOutSymbol,
-          decimals: input.tokenOutDecimals,
-        },
-        amountRaw: input.amountOutRaw,
-        venueEvidence: input.metadata,
-      });
-      if (outcome.outcome === "refused") {
-        logger.warn("lighter.withdrawal.activity_row_refused", {
-          environment: input.environment,
-          intentId: input.withdrawalIntentId,
-          reason: outcome.reason,
-          detail: outcome.detail,
+    commit: (sessionId, write) => withSessionControlLock(sessionId, (client) => write({
+      findClaim: (withdrawalIntentId) =>
+        claimsRepo.findLatestForWithdrawalIntentWith(client, withdrawalIntentId),
+      recordReconciliation: (input) => intentsRepo.recordReconciliationWith(client, input),
+      markReconciledOutcome: (input) => claimsRepo.markReconciledOutcomeWith(client, input),
+      insertActivityRow: async (input) => {
+        const outcome = await insertSettlementProvenActivityRowWith(client, {
+          eventRole: input.eventRole,
+          protocol: "lighter",
+          sessionId: input.sessionId,
+          walletAddress: input.walletAddress,
+          execution: input.protocolExecutionId === null
+            ? {
+                toolId: "lighter.withdraw",
+                namespace: "lighter",
+                intentParams: {
+                  intentId: input.withdrawalIntentId,
+                  environment: input.environment,
+                  accountIndex: input.accountIndex,
+                  amountUnits: input.amountOutRaw,
+                  assetSymbol: input.tokenOutSymbol,
+                },
+              }
+            : { existingId: input.protocolExecutionId },
+          chainId: input.chainId,
+          txHash: input.txHash,
+          fromAddress: input.fromAddress,
+          nonce: input.nonce,
+          submitAttemptedAt: input.submitAttemptedAt,
+          asset: {
+            address: input.tokenOutAddress,
+            symbol: input.tokenOutSymbol,
+            decimals: input.tokenOutDecimals,
+          },
+          amountRaw: input.amountOutRaw,
+          venueEvidence: input.metadata,
         });
-        return null;
-      }
-      return { activityId: outcome.activityId };
-    }),
-    findClaim: claimsRepo.findLatestForWithdrawalIntent,
+        if (outcome.outcome === "refused") {
+          return { outcome: "refused", reason: outcome.reason };
+        }
+        return { outcome: outcome.outcome, activityId: outcome.activityId };
+      },
+    })),
   };
 }
 
@@ -154,7 +194,8 @@ export async function reconcileLighterCoreWithdrawal(input: {
   readonly historicalPublicClient?: PublicClient;
   readonly intents?: Pick<typeof intentsRepo, "recordReconciliation">;
   readonly claims?: Pick<typeof claimsRepo, "markReconciledOutcome">;
-  readonly activity?: LighterWithdrawalActivityDeps;
+  /** How the confirmed arm commits. Defaults to the production transaction. */
+  readonly confirmation?: LighterWithdrawalConfirmationDeps;
 }): Promise<LighterWithdrawalIntentRow> {
   if (input.intent.environment !== "core") {
     throw invalid("The withdrawal intent is not a Core withdrawal.");
@@ -170,7 +211,8 @@ export async function reconcileLighterWithdrawal(input: {
   readonly historicalPublicClient?: PublicClient;
   readonly intents?: Pick<typeof intentsRepo, "recordReconciliation">;
   readonly claims?: Pick<typeof claimsRepo, "markReconciledOutcome">;
-  readonly activity?: LighterWithdrawalActivityDeps;
+  /** How the confirmed arm commits. Defaults to the production transaction. */
+  readonly confirmation?: LighterWithdrawalConfirmationDeps;
 }): Promise<LighterWithdrawalIntentRow> {
   const repo = input.intents ?? intentsRepo;
   const intent = input.intent;
@@ -268,7 +310,7 @@ export async function reconcileLighterWithdrawal(input: {
       hash: settlementHash,
       claimMode: intent.claimTxHash === null ? "auto" : "manual",
       claims: input.claims ?? claimsRepo,
-      activity: input.activity ?? defaultLighterWithdrawalActivityDeps(),
+      confirmation: input.confirmation ?? defaultLighterWithdrawalConfirmationDeps(),
     });
   }
   if (historyRow.status === "failed" || historyRow.status === "refunded") {
@@ -328,7 +370,7 @@ export async function reconcileLighterWithdrawal(input: {
     hash: historyHash as Hex,
     claimMode: intent.claimTxHash === null ? "auto" : "manual",
     claims: input.claims ?? claimsRepo,
-    activity: input.activity ?? defaultLighterWithdrawalActivityDeps(),
+    confirmation: input.confirmation ?? defaultLighterWithdrawalConfirmationDeps(),
   });
 }
 
@@ -362,7 +404,7 @@ async function reconcileDestinationTransaction(input: {
   readonly hash: Hex;
   readonly claimMode: "auto" | "manual";
   readonly claims: Pick<typeof claimsRepo, "markReconciledOutcome">;
-  readonly activity: LighterWithdrawalActivityDeps;
+  readonly confirmation: LighterWithdrawalConfirmationDeps;
 }): Promise<LighterWithdrawalIntentRow> {
   let receipt;
   try {
@@ -446,8 +488,15 @@ async function reconcileDestinationTransaction(input: {
     if (!recorded) throw invalid("Finalized manual claim revert could not update its durable attempt.");
     return row;
   }
+  // ONLY THE PROOF IS GUARDED. The catch below turns a failure into
+  // `ambiguous`, which is the right answer for a settlement that cannot be
+  // proven and the WRONG answer for a database failure - so the commit that
+  // follows is deliberately outside it: a write that fails must propagate,
+  // roll its transaction back and leave the intent a reconciliation candidate,
+  // never be recorded as an unprovable settlement.
+  let proof;
   try {
-    const proof = proveLighterCoreWithdrawalSettlement({
+    proof = proveLighterCoreWithdrawalSettlement({
       receipt,
       canonicalBlockHash: block.hash,
       latestBlockNumber,
@@ -456,41 +505,6 @@ async function reconcileDestinationTransaction(input: {
       tokenAddress: input.intent.settlementTokenAddress,
       amountUnits: BigInt(input.intent.amountUnits),
     });
-    const publicProof = Object.fromEntries(Object.entries(proof));
-    if (input.pendingBalance !== 0n) {
-      return persist(input.repo, {
-        ...input.common,
-        state: "ambiguous",
-        ambiguousReason: "destination_proven_but_gateway_balance_nonzero",
-      });
-    }
-    const row = await persist(input.repo, {
-      ...input.common,
-      state: "destination_confirmed",
-      claimMode: input.claimMode,
-      destinationTxHash: proof.transactionHash,
-      destinationBlockNumber: proof.blockNumber,
-      destinationBlockHash: proof.blockHash,
-      destinationConfirmations: proof.confirmations,
-      destinationEvidence: publicProof,
-    });
-    if (input.claimMode === "manual") {
-      const recorded = await input.claims.markReconciledOutcome({
-        sessionId: input.intent.sessionId,
-        withdrawalIntentId: input.intent.intentId,
-        transactionHash: proof.transactionHash,
-        outcome: "confirmed",
-        receipt: publicProof,
-      });
-      if (!recorded) throw invalid("Finalized manual claim delivery could not update its durable attempt.");
-    }
-    // THE ACTIVITY ROW, AFTER THE AUTHORITATIVE COMMIT ABOVE. `persist` is what
-    // makes `destination_confirmed` durable; the activity row is a report of
-    // that fact and must never be able to unmake it, so it is a separate
-    // commit and its failure is logged rather than raised. A reverted claim
-    // arm never reaches here and is never reported.
-    await recordWithdrawalActivity(input, proof.transactionHash);
-    return row;
   } catch (error) {
     if (error instanceof LighterSettlementConfirmingError) {
       return persist(input.repo, {
@@ -512,105 +526,162 @@ async function reconcileDestinationTransaction(input: {
       destinationBlockHash: receipt.blockHash,
     });
   }
+  const publicProof = Object.fromEntries(Object.entries(proof));
+  if (input.pendingBalance !== 0n) {
+    return persist(input.repo, {
+      ...input.common,
+      state: "ambiguous",
+      ambiguousReason: "destination_proven_but_gateway_balance_nonzero",
+    });
+  }
+  return commitConfirmedWithdrawal(input, proof.transactionHash, publicProof, {
+    destinationBlockNumber: proof.blockNumber,
+    destinationBlockHash: proof.blockHash,
+    destinationConfirmations: proof.confirmations,
+  });
 }
 
 /**
- * Report one CLAIMED withdrawal as exchange activity.
+ * The whole confirmed step, in ONE transaction: the exchange activity row, the
+ * `destination_confirmed` reconciliation that carries what the reporting did,
+ * and (for a manual claim) the attempt's own outcome.
  *
- * Only a claim Vex itself signed can be reported: the schema requires the
- * settlement transaction's own from address and nonce on an eip155 row that
- * carries a hash, and an auto-claim released by the gateway has neither. That
- * is not a gap to paper over - a row invented with someone else's sender would
- * be a false statement about who moved the money - so an auto-claim is logged
- * with its reason and no row is written.
+ * ORDER IS DELIBERATE. The row is written first because the reconciliation
+ * RECORDS its result: `destinationEvidence.activityReport` is how a refusal
+ * becomes a durable fact about this withdrawal rather than a log line nobody
+ * will ever revisit - the repair sweep does not select `destination_confirmed`
+ * intents, so this transaction is the only chance to say it.
  *
- * NEVER THROWS. The withdrawal is already durably `destination_confirmed`;
- * losing that because a telemetry row could not be written would be the
- * money-path failure, not the missing row.
+ * NOTHING IS CAUGHT HERE. A statement that fails aborts the transaction; the
+ * intent is left exactly as it was, still selected by the sweep, and the next
+ * pass re-derives the same proof from the same receipt.
  */
-async function recordWithdrawalActivity(
+async function commitConfirmedWithdrawal(
   input: {
     readonly intent: LighterWithdrawalIntentRow;
-    readonly activity: LighterWithdrawalActivityDeps;
+    readonly common: ReconciliationCommon;
+    readonly claimMode: "auto" | "manual";
+    readonly confirmation: LighterWithdrawalConfirmationDeps;
   },
   settlementTxHash: string,
-): Promise<void> {
-  const write = input.activity.write;
-  if (write === null) {
-    logger.info("lighter.withdrawal.activity_writer_unavailable", {
-      environment: input.intent.environment,
-      intentId: input.intent.intentId,
-    });
-    return;
-  }
-  try {
-    const claim = await input.activity.findClaim(input.intent.intentId);
-    const fromAddress = claim?.fromAddress ?? null;
-    const nonce = claim?.nonce ?? null;
-    const claimHash = claim?.replacementTxHash ?? claim?.txHash ?? null;
-    if (
-      claim === null
-      || fromAddress === null
-      || nonce === null
-      || claimHash === null
-      || claimHash.toLowerCase() !== settlementTxHash.toLowerCase()
-    ) {
+  publicProof: Record<string, unknown>,
+  destination: {
+    readonly destinationBlockNumber: string;
+    readonly destinationBlockHash: string;
+    readonly destinationConfirmations: number;
+  },
+): Promise<LighterWithdrawalIntentRow> {
+  return input.confirmation.commit(input.intent.sessionId, async (writer) => {
+    const claim = await writer.findClaim(input.intent.intentId);
+    const activityInput = buildWithdrawalActivityInput(input.intent, claim, settlementTxHash);
+    const report = "reason" in activityInput
+      ? activityInput
+      : foldActivityOutcome(await writer.insertActivityRow(activityInput));
+    if (report.status === "not_reported") {
       logger.info("lighter.withdrawal.activity_not_reported", {
         environment: input.intent.environment,
         intentId: input.intent.intentId,
-        reason: claim === null
-          ? "no_claim_attempt"
-          : fromAddress === null || nonce === null
-            ? "gateway_auto_claim_without_vex_signature"
-            : "claim_hash_does_not_match_settlement",
+        reason: report.reason,
       });
-      return;
     }
-    const funding = buildLighterWithdrawalActivityRow({
-      settlementChainId: input.intent.settlementChainId,
-      txHash: settlementTxHash,
-      asset: {
-        address: input.intent.settlementTokenAddress,
-        symbol: input.intent.assetSymbol,
-        decimals: input.intent.assetDecimals,
-      },
-      amountRaw: input.intent.amountUnits,
-      environment: input.intent.environment,
-      accountIndex: input.intent.accountIndex,
+    const row = await writer.recordReconciliation({
+      ...input.common,
+      state: "destination_confirmed",
+      claimMode: input.claimMode,
+      destinationTxHash: settlementTxHash,
+      ...destination,
+      destinationEvidence: { ...publicProof, activityReport: report },
     });
-    await write({
-      sessionId: input.intent.sessionId,
-      protocolExecutionId: input.intent.protocolExecutionId,
-      withdrawalIntentId: input.intent.intentId,
-      environment: input.intent.environment,
-      accountIndex: input.intent.accountIndex,
-      kind: funding.kind,
-      eventRole: funding.eventRole,
-      chainFamily: funding.chainFamily,
-      chainId: funding.chainId,
-      txHash: funding.txHash,
-      fromAddress,
-      nonce,
-      submitAttemptedAt: claim.submittedAt ?? claim.stagedAt ?? new Date().toISOString(),
-      walletAddress: input.intent.walletAddress,
-      tokenOutAddress: funding.asset.address,
-      tokenOutSymbol: funding.asset.symbol,
-      tokenOutDecimals: funding.asset.decimals,
-      amountOutRaw: funding.amountRaw,
-      metadata: {
-        protocol: funding.protocol,
-        environment: funding.environment,
-        accountIndex: funding.accountIndex,
+    if (row === null) throw invalid("Lighter withdrawal reconciliation could not persist its monotonic state.");
+    if (input.claimMode === "manual") {
+      const recorded = await writer.markReconciledOutcome({
+        sessionId: input.intent.sessionId,
         withdrawalIntentId: input.intent.intentId,
-      },
-    });
-  } catch (error) {
-    logger.warn("lighter.withdrawal.activity_write_failed", {
-      environment: input.intent.environment,
-      intentId: input.intent.intentId,
-      reason: error instanceof Error ? error.name : "unknown",
-    });
+        transactionHash: settlementTxHash,
+        outcome: "confirmed",
+        receipt: publicProof,
+      });
+      if (!recorded) throw invalid("Finalized manual claim delivery could not update its durable attempt.");
+    }
+    return row;
+  });
+}
+
+function foldActivityOutcome(
+  outcome: LighterWithdrawalActivityOutcome,
+): LighterWithdrawalActivityReport {
+  return outcome.outcome === "refused"
+    ? { status: "not_reported", reason: outcome.reason }
+    : { status: outcome.outcome, activityId: outcome.activityId };
+}
+
+/**
+ * The activity row a CLAIMED withdrawal earns, or the reason it earns none.
+ *
+ * PURE, and deliberately so: whether a settlement can be reported honestly is
+ * a decision about the claim's identity, not a database operation, and keeping
+ * it out of the writer is what lets the reason be recorded on the intent
+ * instead of being discovered inside a transaction that has nothing to say.
+ *
+ * Only a claim VEX ITSELF SIGNED can be reported. Migration 045 requires the
+ * settlement transaction's own sender and nonce on an eip155 row that carries
+ * a hash, and an auto-claim released by the gateway has neither. That is not a
+ * gap to paper over - a row invented with someone else's sender would be a
+ * false statement about who moved the money - so the refusal is the answer.
+ */
+function buildWithdrawalActivityInput(
+  intent: LighterWithdrawalIntentRow,
+  claim: claimsRepo.LighterWithdrawalClaimAttemptRow | null,
+  settlementTxHash: string,
+): LighterSettlementProvenActivityInput | { readonly status: "not_reported"; readonly reason: LighterWithdrawalActivityRefusal } {
+  if (claim === null) return { status: "not_reported", reason: "no_claim_attempt" };
+  const fromAddress = claim.fromAddress;
+  const nonce = claim.nonce;
+  if (fromAddress === null || nonce === null) {
+    return { status: "not_reported", reason: "gateway_auto_claim_not_signed_by_vex" };
   }
+  const claimHash = claim.replacementTxHash ?? claim.txHash;
+  if (claimHash === null || claimHash.toLowerCase() !== settlementTxHash.toLowerCase()) {
+    return { status: "not_reported", reason: "claim_hash_does_not_match_settlement" };
+  }
+  const funding = buildLighterWithdrawalActivityRow({
+    settlementChainId: intent.settlementChainId,
+    txHash: settlementTxHash,
+    asset: {
+      address: intent.settlementTokenAddress,
+      symbol: intent.assetSymbol,
+      decimals: intent.assetDecimals,
+    },
+    amountRaw: intent.amountUnits,
+    environment: intent.environment,
+    accountIndex: intent.accountIndex,
+  });
+  return {
+    sessionId: intent.sessionId,
+    protocolExecutionId: intent.protocolExecutionId,
+    withdrawalIntentId: intent.intentId,
+    environment: intent.environment,
+    accountIndex: intent.accountIndex,
+    kind: funding.kind,
+    eventRole: funding.eventRole,
+    chainFamily: funding.chainFamily,
+    chainId: funding.chainId,
+    txHash: funding.txHash,
+    fromAddress,
+    nonce,
+    submitAttemptedAt: claim.submittedAt ?? claim.stagedAt ?? new Date().toISOString(),
+    walletAddress: intent.walletAddress,
+    tokenOutAddress: funding.asset.address,
+    tokenOutSymbol: funding.asset.symbol,
+    tokenOutDecimals: funding.asset.decimals,
+    amountOutRaw: funding.amountRaw,
+    metadata: {
+      protocol: funding.protocol,
+      environment: funding.environment,
+      accountIndex: funding.accountIndex,
+      withdrawalIntentId: intent.intentId,
+    },
+  };
 }
 
 async function scanSettlement(

@@ -185,14 +185,31 @@ export async function findLatestForWithdrawal(
 export async function findLatestForWithdrawalIntent(
   withdrawalIntentId: string,
 ): Promise<LighterWithdrawalClaimAttemptRow | null> {
-  const row = await queryOne<Record<string, unknown>>(
-    `SELECT ${COLUMNS} FROM lighter_withdrawal_claim_attempts
-      WHERE withdrawal_intent_id = $1
-      ORDER BY created_at DESC LIMIT 1`,
+  const row = await queryOne<Record<string, unknown>>(LATEST_FOR_INTENT_SQL, [withdrawalIntentId]);
+  return row === null ? null : mapRow(row);
+}
+
+/**
+ * The same read on the CALLER'S transaction, for a caller that must decide
+ * from the claim and commit that decision together. Reading it on the pool
+ * instead would read outside the transaction that then writes, which is the
+ * gap a stale claim slips through.
+ */
+export async function findLatestForWithdrawalIntentWith(
+  client: PoolClient,
+  withdrawalIntentId: string,
+): Promise<LighterWithdrawalClaimAttemptRow | null> {
+  const row = await queryOneWith<Record<string, unknown>>(
+    client,
+    LATEST_FOR_INTENT_SQL,
     [withdrawalIntentId],
   );
   return row === null ? null : mapRow(row);
 }
+
+const LATEST_FOR_INTENT_SQL = `SELECT ${COLUMNS} FROM lighter_withdrawal_claim_attempts
+  WHERE withdrawal_intent_id = $1
+  ORDER BY created_at DESC LIMIT 1`;
 
 export async function expirePreparedWith(
   client: PoolClient,
@@ -366,30 +383,61 @@ export async function markOutcomeWith(client: PoolClient, input: {
   return true;
 }
 
-export async function markReconciledOutcome(input: {
+export interface MarkReconciledOutcomeInput {
   readonly sessionId: string;
   readonly withdrawalIntentId: string;
   readonly transactionHash: string;
   readonly outcome: "confirmed" | "reverted";
   readonly receipt: Record<string, unknown>;
-}): Promise<boolean> {
-  const txHash = hash(input.transactionHash);
+}
+
+export async function markReconciledOutcome(input: MarkReconciledOutcomeInput): Promise<boolean> {
   const row = await queryOne<Record<string, unknown>>(
-    `UPDATE lighter_withdrawal_claim_attempts
-        SET state = $4, receipt_json = $5::jsonb,
-            confirmed_at = CASE WHEN $4 = 'confirmed' THEN NOW() ELSE confirmed_at END,
-            updated_at = NOW()
-      WHERE withdrawal_intent_id = $2
-        AND EXISTS (
-          SELECT 1 FROM lighter_withdrawal_intents parent
-           WHERE parent.intent_id = $2 AND parent.session_id = $1
-        )
-        AND state IN ('staged','submitted','confirming','ambiguous')
-        AND (LOWER(tx_hash) = LOWER($3) OR LOWER(replacement_tx_hash) = LOWER($3))
-      RETURNING ${COLUMNS}`,
-    [input.sessionId, input.withdrawalIntentId, txHash, input.outcome, jsonb(input.receipt)],
+    RECONCILED_OUTCOME_SQL,
+    reconciledOutcomeParams(input),
   );
   return row !== null;
+}
+
+/**
+ * The same CAS on the CALLER'S transaction. The confirmed arm of
+ * reconciliation commits the intent's state, this attempt's outcome and the
+ * exchange activity row together; splitting them was how a confirmed
+ * withdrawal could end up with no attempt outcome and no activity row.
+ */
+export async function markReconciledOutcomeWith(
+  client: PoolClient,
+  input: MarkReconciledOutcomeInput,
+): Promise<boolean> {
+  const row = await queryOneWith<Record<string, unknown>>(
+    client,
+    RECONCILED_OUTCOME_SQL,
+    reconciledOutcomeParams(input),
+  );
+  return row !== null;
+}
+
+const RECONCILED_OUTCOME_SQL = `UPDATE lighter_withdrawal_claim_attempts
+    SET state = $4, receipt_json = $5::jsonb,
+        confirmed_at = CASE WHEN $4 = 'confirmed' THEN NOW() ELSE confirmed_at END,
+        updated_at = NOW()
+  WHERE withdrawal_intent_id = $2
+    AND EXISTS (
+      SELECT 1 FROM lighter_withdrawal_intents parent
+       WHERE parent.intent_id = $2 AND parent.session_id = $1
+    )
+    AND state IN ('staged','submitted','confirming','ambiguous')
+    AND (LOWER(tx_hash) = LOWER($3) OR LOWER(replacement_tx_hash) = LOWER($3))
+  RETURNING ${COLUMNS}`;
+
+function reconciledOutcomeParams(input: MarkReconciledOutcomeInput): unknown[] {
+  return [
+    input.sessionId,
+    input.withdrawalIntentId,
+    hash(input.transactionHash),
+    input.outcome,
+    jsonb(input.receipt),
+  ];
 }
 
 function mapRow(row: Record<string, unknown>): LighterWithdrawalClaimAttemptRow {

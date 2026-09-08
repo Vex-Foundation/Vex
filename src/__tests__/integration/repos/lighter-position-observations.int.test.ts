@@ -19,6 +19,14 @@
  *   3. a COMPLETE observation whose coverage lists only market 1 closes market
  *      2, which it never read.
  *
+ * And the round-1 review's F-supersession finding: the wire path took the
+ * NEWEST unsent observation per scope and settled every older unsent one with
+ * it, so a reading of market 2 at 11:00 was discarded undelivered by a reading
+ * of market 1 at 12:00 that says nothing about market 2. Coverage, not
+ * recency, is what makes one observation a replacement for another, and the
+ * containment test is performed by the database - which is exactly why it is
+ * proved here rather than against a statement-recording fake.
+ *
  * And F7, starvation: five scopes that always fail occupied every bounded
  * sweep because the queue was ordered by the last SUCCESS, so a sixth healthy
  * account was never observed at all. The sweep here is driven twice, end to
@@ -29,6 +37,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { query, queryOne } from "@vex-agent/db/client.js";
 import {
+  listUnsentLighterPositionObservations,
+  markLighterPositionObservationSent,
   storeLighterPositionObservation,
   type LighterObservedPosition,
   type LighterPositionObservation,
@@ -384,5 +394,127 @@ describe("fair scheduling across a bounded sweep", () => {
     const results = await attemptedAccounts();
     expect(results.filter((row) => row.result === "provider_unavailable")).toHaveLength(5);
     expect(results.find((row) => row.account === accounts[5])?.result).toBe("observed");
+  });
+});
+
+describe("the wire path: which observation is owed, and what a delivery replaces", () => {
+  /** The unsent queue as the drain reads it: ids in delivery order. */
+  async function owedOrder(): Promise<string[]> {
+    const rows = await listUnsentLighterPositionObservations(10);
+    return rows.map((row) => row.observationId);
+  }
+
+  /** The delivery ledger: every row's disposition, by observation id. */
+  async function dispositions(): Promise<Array<{ id: string; disposition: string | null }>> {
+    const rows = await query<{ observation_id: string; send_disposition: string | null }>(
+      `SELECT observation_id, send_disposition FROM lighter_position_observations
+        WHERE environment = 'core' AND account_index = $1
+        ORDER BY observation_id`,
+      [ACCOUNT],
+    );
+    return rows.map((row) => ({ id: row.observation_id, disposition: row.send_disposition }));
+  }
+
+  /** The row id the marker needs, for one observation id. */
+  async function rowId(observationId: string): Promise<number> {
+    const row = await queryOne<{ id: string | number }>(
+      `SELECT id FROM lighter_position_observations
+        WHERE environment = 'core' AND account_index = $1 AND observation_id = $2`,
+      [ACCOUNT, observationId],
+    );
+    if (row === null) throw new Error(`no observation row for ${observationId}`);
+    return Number(row.id);
+  }
+
+  it("owes BOTH disjoint readings and delivers them oldest first", async () => {
+    await storeLighterPositionObservation(
+      observation("obs-market-2", 11, { coverage: [2], positions: [position(2)] }),
+    );
+    await storeLighterPositionObservation(
+      observation("obs-market-1", 12, { coverage: [1], positions: [position(1)] }),
+    );
+
+    // The old reader returned only obs-market-1 here, and market 2's only
+    // reading was then superseded without ever being sent.
+    expect(await owedOrder()).toEqual(["obs-market-2", "obs-market-1"]);
+
+    expect(await markLighterPositionObservationSent(await rowId("obs-market-2")))
+      .toEqual({ sent: true, superseded: 0 });
+    expect(await markLighterPositionObservationSent(await rowId("obs-market-1")))
+      .toEqual({ sent: true, superseded: 0 });
+
+    expect(await dispositions()).toEqual([
+      { id: "obs-market-1", disposition: "sent" },
+      { id: "obs-market-2", disposition: "sent" },
+    ]);
+  });
+
+  it("does NOT let a newer incomplete reading supersede an older complete one", async () => {
+    await storeLighterPositionObservation(
+      observation("obs-complete", 11, { coverage: [1], positions: [position(1)] }),
+    );
+    await storeLighterPositionObservation(
+      observation("obs-truncated", 12, { coverage: [1], complete: false, positions: [position(1)] }),
+    );
+
+    // Delivered newest-first on purpose: the incomplete reading must not carry
+    // the complete one out with it whatever order the drain reaches them in.
+    expect(await markLighterPositionObservationSent(await rowId("obs-truncated")))
+      .toEqual({ sent: true, superseded: 0 });
+    expect(await owedOrder()).toEqual(["obs-complete"]);
+
+    expect(await markLighterPositionObservationSent(await rowId("obs-complete")))
+      .toEqual({ sent: true, superseded: 0 });
+  });
+
+  it("supersedes exactly the older readings a delivered LIST covers, and no others", async () => {
+    await storeLighterPositionObservation(
+      observation("obs-1", 9, { coverage: [1], positions: [position(1)] }),
+    );
+    await storeLighterPositionObservation(
+      observation("obs-3", 10, { coverage: [3], positions: [position(3)] }),
+    );
+    await storeLighterPositionObservation(
+      observation("obs-1-and-2", 11, { coverage: [1, 2], positions: [position(1)] }),
+    );
+
+    expect(await markLighterPositionObservationSent(await rowId("obs-1-and-2")))
+      .toEqual({ sent: true, superseded: 1 });
+
+    expect(await dispositions()).toEqual([
+      { id: "obs-1", disposition: "superseded" },
+      { id: "obs-1-and-2", disposition: "sent" },
+      // Market 3 was never read by the delivered observation, so its only
+      // reading is still owed.
+      { id: "obs-3", disposition: null },
+    ]);
+    expect(await owedOrder()).toEqual(["obs-3"]);
+  });
+
+  it("supersedes everything older when a COMPLETE all-markets reading is delivered", async () => {
+    await storeLighterPositionObservation(
+      observation("obs-1", 9, { coverage: [1], positions: [position(1)] }),
+    );
+    await storeLighterPositionObservation(
+      observation("obs-3", 10, { coverage: [3], positions: [position(3)] }),
+    );
+    await storeLighterPositionObservation(observation("obs-all", 11, { positions: [] }));
+
+    expect(await markLighterPositionObservationSent(await rowId("obs-all")))
+      .toEqual({ sent: true, superseded: 2 });
+    expect(await owedOrder()).toEqual([]);
+    expect(await dispositions()).toEqual([
+      { id: "obs-1", disposition: "superseded" },
+      { id: "obs-3", disposition: "superseded" },
+      { id: "obs-all", disposition: "sent" },
+    ]);
+  });
+
+  it("refuses to settle a row twice, so a replayed mark claims no second delivery", async () => {
+    await storeLighterPositionObservation(observation("obs-all", 11));
+    const id = await rowId("obs-all");
+
+    expect(await markLighterPositionObservationSent(id)).toEqual({ sent: true, superseded: 0 });
+    expect(await markLighterPositionObservationSent(id)).toEqual({ sent: false, superseded: 0 });
   });
 });

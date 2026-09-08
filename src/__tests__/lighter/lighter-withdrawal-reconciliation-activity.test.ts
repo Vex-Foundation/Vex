@@ -1,21 +1,30 @@
 /**
- * The exchange_withdrawal activity row, written at the CONFIRMED arm and
- * nowhere else.
+ * THE CONFIRMED ARM IS ONE DURABLE STEP.
  *
- * Three facts pinned here, and each one is about not making a false statement:
+ * `destination_confirmed`, the manual claim attempt's outcome and the
+ * `exchange_withdrawal` activity row commit together or not at all. The old
+ * shape committed the reconciliation and then wrote the row in a transaction
+ * of its own whose failures were logged; because the repair sweep's candidate
+ * query excludes `destination_confirmed`, one failed insert lost the row
+ * forever. There is no later for a state no sweep selects.
  *
- *   - a CONFIRMED destination writes exactly one row, carrying the settlement
- *     transaction, the claim's own sender and nonce, and the asset moved OUT;
+ * Pinned here, through the REAL arm over a transactional double that applies
+ * staged writes only on success:
+ *
+ *   - a CONFIRMED Vex-signed claim writes exactly one row, carrying the
+ *     settlement transaction, the claim's own sender and nonce, and the asset
+ *     moved OUT - on the SAME transaction as the confirmation;
+ *   - a failing insert commits NOTHING: the intent is not confirmed, so it is
+ *     still a reconciliation candidate and the next pass re-derives it;
+ *   - a failure AFTER the reconciliation statement discards that too, so there
+ *     is no window in which the intent is confirmed and the row is missing;
  *   - a REVERTED claim writes nothing: nothing settled, so there is nothing to
  *     report;
- *   - an AUTO claim released by the gateway writes nothing either. The schema
- *     requires the settlement transaction's own sender and nonce on an eip155
- *     row that carries a hash, and Vex signed neither - inventing them would be
- *     a false statement about who moved the money, so the reason is logged and
- *     the row is not written.
- *
- * In every case the withdrawal's own durable state is settled first and is
- * never affected by what the activity writer does.
+ *   - an AUTO claim released by the gateway writes no row either - Vex signed
+ *     neither the sender nor the nonce the schema requires, and inventing them
+ *     would be a false statement about who moved the money - and the reason is
+ *     RECORDED ON THE INTENT, in the same transaction, rather than logged and
+ *     lost.
  */
 import { claimAttempt as claimAttemptRow, withdrawalIntent } from "../helpers/lighter-intents.js";
 import { testPublicClient } from "../helpers/viem-public-client.js";
@@ -35,9 +44,11 @@ import {
 } from "@tools/lighter/withdrawal/core-preflight.js";
 import type { LighterWithdrawalClaimAttemptRow } from "@vex-agent/db/repos/lighter-withdrawal-claims.js";
 import type { LighterWithdrawalIntentRow } from "@vex-agent/db/repos/lighter-withdrawal-intents.js";
+import type { RecordReconciliationInput } from "@vex-agent/db/repos/lighter-withdrawal-intents.js";
 import {
   reconcileLighterCoreWithdrawal,
-  type LighterWithdrawalActivityDeps,
+  type LighterWithdrawalConfirmationDeps,
+  type LighterWithdrawalActivityOutcome,
   type LighterSettlementProvenActivityInput,
 } from "@vex-agent/tools/protocols/lighter/withdrawal-reconciliation.js";
 
@@ -189,31 +200,84 @@ function claimAttempt(
   });
 }
 
-function activityDeps(input: {
-  readonly writer: ((row: LighterSettlementProvenActivityInput) => Promise<{ activityId: number }>) | null;
+/**
+ * The confirmed arm's transaction, as a double that BEHAVES like one.
+ *
+ * Writes are staged and applied only when the whole callback returns; a throw
+ * discards them, exactly as ROLLBACK does. That is the only way a test can
+ * tell "committed together" from "called in order", and it is what makes the
+ * failure cases below evidence rather than assertions about call counts.
+ */
+interface ConfirmationDouble {
+  readonly deps: LighterWithdrawalConfirmationDeps;
+  /** Committed reconciliations, in order. */
+  readonly reconciliations: RecordReconciliationInput[];
+  /** Committed activity rows. */
+  readonly activityRows: LighterSettlementProvenActivityInput[];
+  /** Committed manual-claim outcomes. */
+  readonly claimOutcomes: string[];
+  readonly insertAttempts: () => number;
+}
+
+function confirmationDouble(options: {
   readonly claim: LighterWithdrawalClaimAttemptRow | null;
-}): LighterWithdrawalActivityDeps {
+  /** Refuse or fail the insert instead of recording it. */
+  readonly insert?: () => LighterWithdrawalActivityOutcome;
+  /** Fail the manual claim outcome, which happens AFTER the reconciliation statement. */
+  readonly failClaimOutcome?: boolean;
+  readonly intent: LighterWithdrawalIntentRow;
+}): ConfirmationDouble {
+  const reconciliations: RecordReconciliationInput[] = [];
+  const activityRows: LighterSettlementProvenActivityInput[] = [];
+  const claimOutcomes: string[] = [];
+  let insertAttempts = 0;
   return {
-    write: input.writer,
-    findClaim: vi.fn<LighterWithdrawalActivityDeps["findClaim"]>(async () => input.claim),
+    reconciliations,
+    activityRows,
+    claimOutcomes,
+    insertAttempts: () => insertAttempts,
+    deps: {
+      commit: async (_sessionId, write) => {
+        const staged: Array<() => void> = [];
+        const result = await write({
+          findClaim: async () => options.claim,
+          insertActivityRow: async (row) => {
+            insertAttempts += 1;
+            const outcome = options.insert?.() ?? { outcome: "recorded" as const, activityId: 5 };
+            if (outcome.outcome !== "refused") staged.push(() => activityRows.push(row));
+            return outcome;
+          },
+          recordReconciliation: async (input) => {
+            staged.push(() => reconciliations.push(input));
+            return { ...options.intent, executionState: input.state };
+          },
+          markReconciledOutcome: async (input) => {
+            if (options.failClaimOutcome === true) return false;
+            staged.push(() => claimOutcomes.push(input.outcome));
+            return true;
+          },
+        });
+        for (const apply of staged) apply();
+        return result;
+      },
+    },
   };
 }
 
 function reconciliationInput(options: {
   readonly claimMode: "auto" | "manual";
   readonly receiptStatus?: "success" | "reverted";
-  readonly activity: LighterWithdrawalActivityDeps;
+  readonly confirmation: LighterWithdrawalConfirmationDeps;
+  readonly intent: LighterWithdrawalIntentRow;
 }) {
-  const manual = options.claimMode === "manual";
-  const current = intent(manual ? { claimTxHash: TX_HASH, executionState: "manual_claim_submitted" } : {});
   const recordReconciliation = vi.fn(
     async (write: { state: LighterWithdrawalIntentRow["executionState"] }) => ({
-      ...current,
+      ...options.intent,
       executionState: write.state,
     }),
   );
   return {
-    intent: current,
+    intent: options.intent,
     client: {
       getTx: vi.fn(async () => l2Tx()),
       getWithdrawHistory: vi.fn(async () => ({
@@ -243,24 +307,32 @@ function reconciliationInput(options: {
     }),
     intents: { recordReconciliation },
     claims: { markReconciledOutcome: vi.fn(async () => true) },
-    activity: options.activity,
+    confirmation: options.confirmation,
     recordReconciliation,
   };
 }
 
-describe("exchange_withdrawal activity at the confirmed arm", () => {
-  it("writes ONE settlement-proven row for a Vex-signed claim that confirmed", async () => {
-    const writer = vi.fn(async (_row: LighterSettlementProvenActivityInput) => ({ activityId: 5 }));
-    const input = reconciliationInput({
-      claimMode: "manual",
-      activity: activityDeps({ writer, claim: claimAttempt() }),
-    });
+/** The intent as the arm receives it, for the requested claim mode. */
+function intentFor(claimMode: "auto" | "manual"): LighterWithdrawalIntentRow {
+  return intent(
+    claimMode === "manual"
+      ? { claimTxHash: TX_HASH, executionState: "manual_claim_submitted" }
+      : {},
+  );
+}
 
-    const reconciled = await reconcileLighterCoreWithdrawal(input);
+describe("the confirmed arm's single durable step", () => {
+  it("writes ONE settlement-proven row for a Vex-signed claim, on the confirmation's own transaction", async () => {
+    const current = intentFor("manual");
+    const double = confirmationDouble({ claim: claimAttempt(), intent: current });
+
+    const reconciled = await reconcileLighterCoreWithdrawal(
+      reconciliationInput({ claimMode: "manual", confirmation: double.deps, intent: current }),
+    );
 
     expect(reconciled.executionState).toBe("destination_confirmed");
-    expect(writer).toHaveBeenCalledTimes(1);
-    expect(writer.mock.calls[0]?.[0]).toMatchObject({
+    expect(double.activityRows).toHaveLength(1);
+    expect(double.activityRows[0]).toMatchObject({
       sessionId: "session-1",
       kind: "exchange",
       eventRole: "exchange_withdrawal",
@@ -274,62 +346,124 @@ describe("exchange_withdrawal activity at the confirmed arm", () => {
       tokenOutDecimals: 6,
       amountOutRaw: "2000000",
     });
+    // The confirmation and the claim outcome are in the same committed batch.
+    expect(double.reconciliations).toHaveLength(1);
+    expect(double.reconciliations[0]).toMatchObject({ state: "destination_confirmed" });
+    expect(double.claimOutcomes).toEqual(["confirmed"]);
+    // And the intent records what the reporting did, durably.
+    expect(double.reconciliations[0]?.destinationEvidence).toMatchObject({
+      activityReport: { status: "recorded", activityId: 5 },
+    });
   });
 
-  it("writes NOTHING for an auto claim the gateway released, and still confirms the withdrawal", async () => {
-    const writer = vi.fn(async () => ({ activityId: 5 }));
-    const input = reconciliationInput({
-      claimMode: "auto",
-      activity: activityDeps({ writer, claim: null }),
+  it("commits NOTHING when the activity insert fails, so the withdrawal stays reconcilable", async () => {
+    const current = intentFor("manual");
+    const double = confirmationDouble({
+      claim: claimAttempt(),
+      intent: current,
+      insert: () => {
+        throw new Error("activity table unavailable");
+      },
     });
 
-    const reconciled = await reconcileLighterCoreWithdrawal(input);
+    await expect(reconcileLighterCoreWithdrawal(
+      reconciliationInput({ claimMode: "manual", confirmation: double.deps, intent: current }),
+    )).rejects.toThrow(/activity table unavailable/);
 
-    expect(reconciled.executionState).toBe("destination_confirmed");
-    expect(writer).not.toHaveBeenCalled();
+    expect(double.activityRows).toEqual([]);
+    expect(double.reconciliations).toEqual([]);
+    expect(double.claimOutcomes).toEqual([]);
   });
 
-  it("writes NOTHING when the claim row carries no sender or nonce", async () => {
-    const writer = vi.fn(async () => ({ activityId: 5 }));
-    const input = reconciliationInput({
-      claimMode: "manual",
-      activity: activityDeps({
-        writer,
-        claim: claimAttempt({ fromAddress: null, nonce: null }),
-      }),
+  it("discards the reconciliation too when a LATER statement in the step fails", async () => {
+    // The window the old two-transaction shape had: confirmed on disk, row
+    // still owed. One transaction has no such window - the reconciliation
+    // statement is already staged when this fails, and it is discarded with
+    // everything else.
+    const current = intentFor("manual");
+    const double = confirmationDouble({
+      claim: claimAttempt(),
+      intent: current,
+      failClaimOutcome: true,
     });
 
-    const reconciled = await reconcileLighterCoreWithdrawal(input);
+    await expect(reconcileLighterCoreWithdrawal(
+      reconciliationInput({ claimMode: "manual", confirmation: double.deps, intent: current }),
+    )).rejects.toThrow(/could not update its durable attempt/);
+
+    expect(double.reconciliations).toEqual([]);
+    expect(double.activityRows).toEqual([]);
+  });
+
+  it("RECORDS the refusal on the intent for an auto claim the gateway released, and still confirms", async () => {
+    const current = intentFor("auto");
+    const double = confirmationDouble({ claim: null, intent: current });
+
+    const reconciled = await reconcileLighterCoreWithdrawal(
+      reconciliationInput({ claimMode: "auto", confirmation: double.deps, intent: current }),
+    );
 
     expect(reconciled.executionState).toBe("destination_confirmed");
-    expect(writer).not.toHaveBeenCalled();
+    expect(double.activityRows).toEqual([]);
+    expect(double.insertAttempts()).toBe(0);
+    expect(double.reconciliations[0]?.destinationEvidence).toMatchObject({
+      activityReport: { status: "not_reported", reason: "no_claim_attempt" },
+    });
+  });
+
+  it("RECORDS the refusal when the claim row carries no sender or nonce", async () => {
+    const current = intentFor("manual");
+    const double = confirmationDouble({
+      claim: claimAttempt({ fromAddress: null, nonce: null }),
+      intent: current,
+    });
+
+    const reconciled = await reconcileLighterCoreWithdrawal(
+      reconciliationInput({ claimMode: "manual", confirmation: double.deps, intent: current }),
+    );
+
+    expect(reconciled.executionState).toBe("destination_confirmed");
+    expect(double.activityRows).toEqual([]);
+    expect(double.reconciliations[0]?.destinationEvidence).toMatchObject({
+      activityReport: {
+        status: "not_reported",
+        reason: "gateway_auto_claim_not_signed_by_vex",
+      },
+    });
+  });
+
+  it("records a writer REFUSAL as a fact rather than losing the confirmation to it", async () => {
+    const current = intentFor("manual");
+    const double = confirmationDouble({
+      claim: claimAttempt(),
+      intent: current,
+      insert: () => ({ outcome: "refused", reason: "malformed_signed_leg" }),
+    });
+
+    const reconciled = await reconcileLighterCoreWithdrawal(
+      reconciliationInput({ claimMode: "manual", confirmation: double.deps, intent: current }),
+    );
+
+    expect(reconciled.executionState).toBe("destination_confirmed");
+    expect(double.activityRows).toEqual([]);
+    expect(double.reconciliations[0]?.destinationEvidence).toMatchObject({
+      activityReport: { status: "not_reported", reason: "malformed_signed_leg" },
+    });
   });
 
   it("never reports a REVERTED claim as exchange activity", async () => {
-    const writer = vi.fn(async () => ({ activityId: 5 }));
-    const input = reconciliationInput({
+    const current = intentFor("manual");
+    const double = confirmationDouble({ claim: claimAttempt(), intent: current });
+
+    const reconciled = await reconcileLighterCoreWithdrawal(reconciliationInput({
       claimMode: "manual",
       receiptStatus: "reverted",
-      activity: activityDeps({ writer, claim: claimAttempt() }),
-    });
-
-    const reconciled = await reconcileLighterCoreWithdrawal(input);
+      confirmation: double.deps,
+      intent: current,
+    }));
 
     expect(reconciled.executionState).not.toBe("destination_confirmed");
-    expect(writer).not.toHaveBeenCalled();
-  });
-
-  it("a writer failure never unmakes the confirmed withdrawal", async () => {
-    const writer = vi.fn(async () => {
-      throw new Error("activity table unavailable");
-    });
-    const input = reconciliationInput({
-      claimMode: "manual",
-      activity: activityDeps({ writer, claim: claimAttempt() }),
-    });
-
-    const reconciled = await reconcileLighterCoreWithdrawal(input);
-
-    expect(reconciled.executionState).toBe("destination_confirmed");
+    expect(double.activityRows).toEqual([]);
+    expect(double.insertAttempts()).toBe(0);
   });
 });

@@ -15,7 +15,14 @@
  *     so nothing claims a delivery that did not happen;
  *   - an observation whose market decimals cannot be resolved is not sent
  *     PARTIALLY: it waits, because a complete observation is what the server
- *     closes positions on.
+ *     closes positions on;
+ *   - a 200 that does not ACCOUNT FOR the batch settles nothing: an
+ *     acknowledgement the client could not read is the absence of a verdict,
+ *     and marking on it would retire an undelivered observation and supersede
+ *     its predecessors with it;
+ *   - DISJOINT observations of one scope are all delivered, oldest first, and
+ *     each is marked in that order - the marker, not the reader, decides what
+ *     a delivery replaces.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
@@ -80,7 +87,7 @@ function laneDeps(input: {
   readonly pending: readonly StoredLighterPositionObservation[];
   readonly decimals?: ReadonlyMap<number, number> | null;
 }) {
-  const markSent = vi.fn(async () => ({ sent: true, superseded: 2 }));
+  const markSent = vi.fn(async (_id: number) => ({ sent: true, superseded: 2 }));
   return {
     listUnsent: vi.fn(async () => input.pending),
     markSent,
@@ -214,6 +221,72 @@ describe("the snapshot arm of the drain", () => {
 
     expect(deps.markSent).not.toHaveBeenCalled();
     expect(result.sent).toBe(0);
+    expect(result.owed).toBe(1);
+  });
+});
+
+describe("an acknowledgement the arm cannot read", () => {
+  it("marks NOTHING and holds the observation when the server's 200 does not account for it", async () => {
+    advertise(true);
+    const post = vi.fn<PostObservations>(async () => ({
+      kind: "unknown_acknowledgement" as const,
+      detail: "the acknowledgement body is not an object",
+    }));
+    const deps = laneDeps({ pending: [observation()] });
+
+    const result = await drainOutbox(client(post), AGENT_HASH, TOKEN, GENERATION, deps);
+
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(deps.markSent).not.toHaveBeenCalled();
+    expect(result.sent).toBe(0);
+    expect(result.owed).toBe(1);
+  });
+});
+
+describe("disjoint observations of one scope", () => {
+  it("delivers BOTH, oldest first, and marks each in that order", async () => {
+    // Market 2 at 11:00 and market 1 at 12:00 are two disjoint facts about the
+    // same account. Taking only the newest delivered a hole: nothing this
+    // install ever said about market 2 reached the server.
+    advertise(true);
+    const older = observation({
+      id: 1, observationId: "obs-11", observedAt: "2026-09-08T11:00:00.000Z",
+      coverage: [2], complete: true,
+      positions: [{
+        marketIndex: 2, marketSymbol: "BTC", size: "1.0", entryPrice: "60000.0",
+        unrealizedPnl: null, realizedPnl: null, liquidationPrice: null,
+      }],
+    });
+    const newer = observation({ id: 2, observationId: "obs-12", coverage: [1] });
+    const post = vi.fn<PostObservations>(async () => ({
+      kind: "ok" as const, accepted: 2, ignoredStale: 0, rejectedIndexes: [],
+    }));
+    const deps = laneDeps({ pending: [older, newer] });
+    deps.readSizeDecimals.mockResolvedValue(new Map([[1, 4], [2, 5]]));
+
+    const result = await drainOutbox(client(post), AGENT_HASH, TOKEN, GENERATION, deps);
+
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(post.mock.calls[0]?.[0].observations.map((o) => o.observationId))
+      .toEqual(["obs-11", "obs-12"]);
+    expect(deps.markSent.mock.calls.map((call) => call[0])).toEqual([1, 2]);
+    expect(result.sent).toBe(2);
+    expect(result.owed).toBe(0);
+  });
+
+  it("marks only the observations the server did not reject, by their own index", async () => {
+    advertise(true);
+    const first = observation({ id: 1, observationId: "obs-a" });
+    const second = observation({ id: 2, observationId: "obs-b", observedAt: "2026-09-08T11:00:00.000Z" });
+    const post = vi.fn<PostObservations>(async () => ({
+      kind: "ok" as const, accepted: 1, ignoredStale: 0, rejectedIndexes: [0],
+    }));
+    const deps = laneDeps({ pending: [first, second] });
+
+    const result = await drainOutbox(client(post), AGENT_HASH, TOKEN, GENERATION, deps);
+
+    expect(deps.markSent.mock.calls.map((call) => call[0])).toEqual([2]);
+    expect(result.sent).toBe(1);
     expect(result.owed).toBe(1);
   });
 });

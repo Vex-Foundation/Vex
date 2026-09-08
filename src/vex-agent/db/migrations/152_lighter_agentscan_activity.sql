@@ -74,8 +74,14 @@ CREATE TABLE IF NOT EXISTS lighter_fills (
   provider_trade_id TEXT NOT NULL CHECK (provider_trade_id ~ '^[0-9]+$'),
   provider_order_id TEXT CHECK (provider_order_id ~ '^[0-9]+$'),
   client_order_id TEXT CHECK (client_order_id ~ '^[0-9]+$'),
-  -- The Vex order execution intent this fill belongs to: the execution
-  -- grouping, stable across every fill of one order.
+  -- THE VEX INTENT THIS FILL BELONGS TO: the execution grouping, stable
+  -- across every fill of one order. Whichever intent OWNS the fill is stored
+  -- here, not only an order-execution intent: a close from the dedicated
+  -- position-close tool is owned by its lifecycle intent
+  -- (`lighter_order_lifecycle_intents`) and a triggered protective leg by its
+  -- OCO execution intent, and each of those is the row that authorized the
+  -- money. No foreign key for the same reason: one column, several owning
+  -- intent tables.
   execution_intent_id TEXT,
   market_symbol TEXT NOT NULL,
   side TEXT NOT NULL CHECK (side IN ('buy','sell')),
@@ -244,7 +250,7 @@ COMMENT ON COLUMN lighter_fills.account_pnl IS
 COMMENT ON COLUMN lighter_fills.position_effect IS
   'open | increase | reduce | close | flip, from Lighter''s own fields. NULL until the account-relative fields exist; established once.';
 COMMENT ON COLUMN lighter_fills.execution_intent_id IS
-  'The Vex order execution intent. NULL means the fill is HELD: observed before its intent was known, never reported until attachLighterFillToIntent proves the binding.';
+  'The Vex intent that owns this fill: an order execution, a close-position lifecycle intent, or an OCO execution intent. NULL means the fill is HELD: observed before its intent was known, never reported until attachLighterFillToIntent proves the binding.';
 
 -- HELD ROWS ARE THE ONES WITHOUT AN INTENT, and the outbox diff scan skips
 -- them by that null. A partial index keeps that scan from walking rows it will
@@ -280,9 +286,13 @@ CREATE TABLE IF NOT EXISTS lighter_position_observations (
   -- Positions as reported, projected through the payload allowlist. `[]` on a
   -- complete observation means "no open positions", which is a real fact.
   positions JSONB NOT NULL,
-  -- DELIVERY TO AGENTSCAN. The wire path sends the NEWEST unsent observation
-  -- per scope and settles every older unsent one of that scope in the same
-  -- transaction. Two columns rather than one on purpose: marking a superseded
+  -- DELIVERY TO AGENTSCAN. The wire path sends the unsent observations of a
+  -- scope OLDEST FIRST and settles, in the same transaction, every older
+  -- unsent one the delivered reading COVERS: a complete 'all' reading covers
+  -- everything older, a list reading covers only older lists that are subsets
+  -- of it, and an incomplete reading never covers a complete one. Recency
+  -- alone is not coverage - market 1 at 12:00 says nothing about market 2 at
+  -- 11:00. Two columns rather than one on purpose: marking a superseded
   -- observation 'sent' would be a false statement, and leaving it unsent
   -- would put it at the head of every later batch to be ignored as stale.
   sent_at TIMESTAMPTZ,
@@ -297,12 +307,12 @@ CREATE TABLE IF NOT EXISTS lighter_position_observations (
 COMMENT ON TABLE lighter_position_observations IS
   'Account-wide Lighter position observations. Client-reported, never verified; may include activity outside Vex.';
 COMMENT ON COLUMN lighter_position_observations.send_disposition IS
-  'sent = this install delivered it and the server took it; superseded = a newer reading of the same account was delivered instead and this one never will be. Never NULL once sent_at is set.';
+  'sent = this install delivered it and the server took it; superseded = a delivered reading of the same account covered it (coverage superset, and never an incomplete reading over a complete one) so it never will be delivered. Never NULL once sent_at is set.';
 
 CREATE INDEX IF NOT EXISTS idx_lighter_position_observations_scope
   ON lighter_position_observations (environment, account_index, observed_at DESC);
--- The unsent reader walks each scope newest-first; the partial index keeps it
--- off the settled rows entirely.
+-- The unsent reader walks each scope by observed_at; the partial index keeps
+-- it off the settled rows entirely.
 CREATE INDEX IF NOT EXISTS idx_lighter_position_observations_unsent
   ON lighter_position_observations (environment, account_index, observed_at DESC)
   WHERE sent_at IS NULL;

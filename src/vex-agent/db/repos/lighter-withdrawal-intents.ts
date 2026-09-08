@@ -803,7 +803,7 @@ export async function markAmbiguous(input: {
   return row === null ? null : mapRow(row);
 }
 
-export async function recordReconciliation(input: {
+export interface RecordReconciliationInput {
   readonly intentId: string;
   readonly sessionId: string;
   readonly state:
@@ -834,12 +834,44 @@ export async function recordReconciliation(input: {
   readonly destinationConfirmations?: number | null;
   readonly destinationEvidence?: Record<string, unknown> | null;
   readonly settlementScanFromBlock?: string | null;
-}): Promise<LighterWithdrawalIntentRow | null> {
-  const historyId = input.historyId === undefined || input.historyId === null
-    ? null
-    : safeText(input.historyId, "history id");
+}
+
+/**
+ * The reconciliation UPDATE, on the pool.
+ *
+ * The CONFIRMED arm does not use this one: `destination_confirmed` and the
+ * exchange activity row it earns are a single durable step, so that path calls
+ * {@link recordReconciliationWith} on the transaction the caller already holds
+ * the session control lock on. See `withdrawal-reconciliation.ts`.
+ */
+export async function recordReconciliation(
+  input: RecordReconciliationInput,
+): Promise<LighterWithdrawalIntentRow | null> {
   const row = await queryOne<Record<string, unknown>>(
-    `UPDATE lighter_withdrawal_intents
+    RECONCILIATION_SQL,
+    reconciliationParams(input),
+  );
+  return row === null ? null : mapRow(row);
+}
+
+/**
+ * The same UPDATE, on the CALLER'S transaction, so a reconciliation can commit
+ * with whatever else has to commit with it. The caller owns the transaction and
+ * must already hold the session control lock for `input.sessionId`.
+ */
+export async function recordReconciliationWith(
+  client: PoolClient,
+  input: RecordReconciliationInput,
+): Promise<LighterWithdrawalIntentRow | null> {
+  const row = await queryOneWith<Record<string, unknown>>(
+    client,
+    RECONCILIATION_SQL,
+    reconciliationParams(input),
+  );
+  return row === null ? null : mapRow(row);
+}
+
+const RECONCILIATION_SQL = `UPDATE lighter_withdrawal_intents
         SET execution_state = $3,
             provider_tx_status = $4,
             provider_tx_evidence_json = $5::jsonb,
@@ -903,49 +935,52 @@ export async function recordReconciliation(input: {
           OR $6::text IS NULL
           OR withdrawal_history_id = $6::text
         )
-      RETURNING ${SELECT_COLUMNS}`,
-    [
-      input.intentId,
-      input.sessionId,
-      input.state,
-      input.providerTxStatus === null ? null : safeNonNegativeInteger(input.providerTxStatus, "provider tx status"),
-      input.providerTxEvidence === null ? null : jsonb(assertPublicEvidence(input.providerTxEvidence)),
-      historyId,
-      input.historyStatus ?? null,
-      input.historyTimestamp === null || input.historyTimestamp === undefined
-        ? null
-        : safeNonNegativeInteger(input.historyTimestamp, "history timestamp"),
-      input.historyEvidence === null || input.historyEvidence === undefined
-        ? null
-        : jsonb(assertPublicEvidence(input.historyEvidence)),
-      input.pendingBalanceUnits === null || input.pendingBalanceUnits === undefined
-        ? null
-        : decimal(input.pendingBalanceUnits, true, "pending balance"),
-      input.ambiguousReason === null || input.ambiguousReason === undefined
-        ? null
-        : safeText(input.ambiguousReason, "ambiguity reason"),
-      input.claimMode ?? null,
-      input.destinationTxHash === null || input.destinationTxHash === undefined
-        ? null
-        : safeText(input.destinationTxHash, "destination transaction hash"),
-      input.destinationBlockNumber === null || input.destinationBlockNumber === undefined
-        ? null
-        : decimal(input.destinationBlockNumber, true, "destination block"),
-      input.destinationBlockHash === null || input.destinationBlockHash === undefined
-        ? null
-        : safeText(input.destinationBlockHash, "destination block hash"),
-      input.destinationConfirmations === null || input.destinationConfirmations === undefined
-        ? null
-        : safeNonNegativeInteger(input.destinationConfirmations, "destination confirmations"),
-      input.destinationEvidence === null || input.destinationEvidence === undefined
-        ? null
-        : jsonb(assertPublicEvidence(input.destinationEvidence)),
-      input.settlementScanFromBlock === null || input.settlementScanFromBlock === undefined
-        ? null
-        : decimal(input.settlementScanFromBlock, true, "settlement scan block"),
-    ],
-  );
-  return row === null ? null : mapRow(row);
+      RETURNING ${SELECT_COLUMNS}`;
+
+function reconciliationParams(input: RecordReconciliationInput): unknown[] {
+  const historyId = input.historyId === undefined || input.historyId === null
+    ? null
+    : safeText(input.historyId, "history id");
+  return [
+    input.intentId,
+    input.sessionId,
+    input.state,
+    input.providerTxStatus === null ? null : safeNonNegativeInteger(input.providerTxStatus, "provider tx status"),
+    input.providerTxEvidence === null ? null : jsonb(assertPublicEvidence(input.providerTxEvidence)),
+    historyId,
+    input.historyStatus ?? null,
+    input.historyTimestamp === null || input.historyTimestamp === undefined
+      ? null
+      : safeNonNegativeInteger(input.historyTimestamp, "history timestamp"),
+    input.historyEvidence === null || input.historyEvidence === undefined
+      ? null
+      : jsonb(assertPublicEvidence(input.historyEvidence)),
+    input.pendingBalanceUnits === null || input.pendingBalanceUnits === undefined
+      ? null
+      : decimal(input.pendingBalanceUnits, true, "pending balance"),
+    input.ambiguousReason === null || input.ambiguousReason === undefined
+      ? null
+      : safeText(input.ambiguousReason, "ambiguity reason"),
+    input.claimMode ?? null,
+    input.destinationTxHash === null || input.destinationTxHash === undefined
+      ? null
+      : safeText(input.destinationTxHash, "destination transaction hash"),
+    input.destinationBlockNumber === null || input.destinationBlockNumber === undefined
+      ? null
+      : decimal(input.destinationBlockNumber, true, "destination block"),
+    input.destinationBlockHash === null || input.destinationBlockHash === undefined
+      ? null
+      : safeText(input.destinationBlockHash, "destination block hash"),
+    input.destinationConfirmations === null || input.destinationConfirmations === undefined
+      ? null
+      : safeNonNegativeInteger(input.destinationConfirmations, "destination confirmations"),
+    input.destinationEvidence === null || input.destinationEvidence === undefined
+      ? null
+      : jsonb(assertPublicEvidence(input.destinationEvidence)),
+    input.settlementScanFromBlock === null || input.settlementScanFromBlock === undefined
+      ? null
+      : decimal(input.settlementScanFromBlock, true, "settlement scan block"),
+  ];
 }
 
 function createParams(input: CreateLighterWithdrawalIntentInput): unknown[] {

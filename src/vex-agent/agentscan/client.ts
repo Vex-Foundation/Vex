@@ -59,6 +59,16 @@ export type SendOutcome =
       readonly rejectedIndexes: number[];
       readonly agentHealth: AgentHealth | null;
     }
+  /**
+   * A 200 whose body does not ACCOUNT FOR the batch: an unreadable body, a
+   * missing or non-integer count, a rejection naming an index outside the
+   * batch or naming one twice, or counts that do not add up to what was sent.
+   * It is not a delivery and it is not a refusal - it is the absence of an
+   * answer, and the lane must mark nothing and ask again. See the note on
+   * {@link readBatchAcknowledgement} for why this is a named outcome rather
+   * than a tolerant zero.
+   */
+  | { readonly kind: "unknown_acknowledgement"; readonly detail: string }
   | { readonly kind: "auth_lost" }
   | { readonly kind: "stopped"; readonly reason: "consent_revoked" | "quarantined" }
   | { readonly kind: "invalid"; readonly detail: string }
@@ -129,6 +139,8 @@ export type SendPositionsOutcome =
       readonly ignoredStale: number;
       readonly rejectedIndexes: number[];
     }
+  /** See {@link SendOutcome}: a 200 that does not account for the batch settles nothing. */
+  | { readonly kind: "unknown_acknowledgement"; readonly detail: string }
   | { readonly kind: "auth_lost" }
   | { readonly kind: "stopped"; readonly reason: "consent_revoked" | "quarantined" }
   | { readonly kind: "invalid"; readonly detail: string }
@@ -242,15 +254,16 @@ async function postLighterPositionObservations(
   const body = await readJson(response).catch(() => null);
 
   if (response.ok) {
-    const record = isRecord(body) ? body : {};
-    const rejected = Array.isArray(record.rejected) ? record.rejected : [];
+    const reading = readBatchAcknowledgement(body, "ignoredStale", input.observations.length);
+    if (!reading.ok) {
+      logger.warn("agentscan.positions.unknown_acknowledgement", { detail: reading.detail });
+      return { kind: "unknown_acknowledgement", detail: reading.detail };
+    }
     return {
       kind: "ok",
-      accepted: toCount(record.accepted),
-      ignoredStale: toCount(record.ignoredStale),
-      rejectedIndexes: rejected
-        .map((item) => (isRecord(item) ? Number(item.index) : Number.NaN))
-        .filter((index) => Number.isInteger(index) && index >= 0),
+      accepted: reading.accepted,
+      ignoredStale: reading.settled,
+      rejectedIndexes: reading.rejectedIndexes,
     };
   }
 
@@ -288,18 +301,20 @@ async function sendEvents(baseUrl: string, input: SendEventsInput): Promise<Send
   const body = await readJson(response).catch(() => null);
 
   if (response.ok) {
-    // TOLERANT READER: only the known result fields are consumed; anything
-    // extra the server sends is ignored rather than allowed to fail the parse.
-    const record = isRecord(body) ? body : {};
-    const rejected = Array.isArray(record.rejected) ? record.rejected : [];
+    // TOLERANT ABOUT WHAT IT DOES NOT KNOW, STRICT ABOUT THE VERDICT. Extra
+    // fields the server sends are still ignored rather than allowed to fail
+    // the parse; the disposition of every event in the batch is not extra.
+    const reading = readBatchAcknowledgement(body, "duplicates", input.events.length);
+    if (!reading.ok) {
+      logger.warn("agentscan.events.unknown_acknowledgement", { detail: reading.detail });
+      return { kind: "unknown_acknowledgement", detail: reading.detail };
+    }
     return {
       kind: "ok",
-      accepted: toCount(record.accepted),
-      duplicates: toCount(record.duplicates),
-      rejectedIndexes: rejected
-        .map((item) => (isRecord(item) ? Number(item.index) : Number.NaN))
-        .filter((index) => Number.isInteger(index) && index >= 0),
-      agentHealth: readAgentHealth(record.agent),
+      accepted: reading.accepted,
+      duplicates: reading.settled,
+      rejectedIndexes: reading.rejectedIndexes,
+      agentHealth: readAgentHealth(isRecord(body) ? body.agent : null),
     };
   }
 
@@ -339,9 +354,82 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function toCount(value: unknown): number {
-  const n = Number(value);
-  return Number.isInteger(n) && n >= 0 ? n : 0;
+/**
+ * What a batch acknowledgement was read as, or why it could not be read.
+ *
+ * `settled` is whichever terminal-but-not-accepted count this endpoint uses:
+ * `duplicates` on ingest, `ignoredStale` on positions. Both mean the same
+ * thing to the caller - the item is finished and will never be finished
+ * differently by sending it again.
+ */
+type BatchAcknowledgementReading =
+  | {
+      readonly ok: true;
+      readonly accepted: number;
+      readonly settled: number;
+      readonly rejectedIndexes: number[];
+    }
+  | { readonly ok: false; readonly detail: string };
+
+/**
+ * READ THE SERVER'S VERDICT, OR DECLARE THAT THERE IS NONE.
+ *
+ * A 200 whose body is `{}` used to read as "accepted 0, duplicates 0, nothing
+ * rejected", and the drain settles everything a batch did not reject: an empty
+ * body therefore RETIRED an undelivered batch. A malformed answer is not a
+ * verdict - the same posture MetaMask's `PendingTransactionTracker` takes when
+ * a receipt lookup comes back without a status: it leaves the transaction
+ * pending rather than deciding for the chain.
+ *
+ * So every disposition is required to be exact and to add up. Both routes
+ * place each item in exactly one bucket (`accepted`, the settled count, or one
+ * `rejected` entry), so `accepted + settled + rejected === sent` is the
+ * server's own invariant and anything else means the body did not come from a
+ * server that processed this batch.
+ *
+ * `expected` is the number of items THIS request sent, which is why an index
+ * outside it is refused rather than clamped: it names an item this batch does
+ * not contain.
+ */
+function readBatchAcknowledgement(
+  body: unknown,
+  settledField: "duplicates" | "ignoredStale",
+  expected: number,
+): BatchAcknowledgementReading {
+  if (!isRecord(body)) return { ok: false, detail: "the acknowledgement body is not an object" };
+  const accepted = exactCount(body.accepted);
+  const settled = exactCount(body[settledField]);
+  if (accepted === null) return { ok: false, detail: "the acknowledgement carries no exact accepted count" };
+  if (settled === null) return { ok: false, detail: `the acknowledgement carries no exact ${settledField} count` };
+  if (!Array.isArray(body.rejected)) return { ok: false, detail: "the acknowledgement carries no rejected list" };
+  const rejectedIndexes = new Set<number>();
+  for (const entry of body.rejected) {
+    if (!isRecord(entry)) return { ok: false, detail: "a rejection entry is not an object" };
+    const index = entry.index;
+    if (typeof index !== "number" || !Number.isInteger(index) || index < 0 || index >= expected) {
+      return { ok: false, detail: "a rejection names an index outside the batch" };
+    }
+    if (typeof entry.code !== "string" || entry.code.trim().length === 0) {
+      return { ok: false, detail: "a rejection carries no reason code" };
+    }
+    if (rejectedIndexes.has(index)) return { ok: false, detail: "a rejection names the same index twice" };
+    rejectedIndexes.add(index);
+  }
+  const accounted = accepted + settled + rejectedIndexes.size;
+  if (accounted !== expected) {
+    return { ok: false, detail: `the acknowledgement accounts for ${accounted} of ${expected} items` };
+  }
+  return { ok: true, accepted, settled, rejectedIndexes: [...rejectedIndexes] };
+}
+
+/**
+ * A count the server actually stated. NO COERCION, for the reason
+ * `readAgentHealth` gives: `Number(null)` is 0 and `Number(true)` is 1, so
+ * coercing would read a missing field as a real zero - which is precisely the
+ * defect this parser exists to close.
+ */
+function exactCount(value: unknown): number | null {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null;
 }
 
 /**

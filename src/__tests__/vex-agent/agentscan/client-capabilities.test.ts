@@ -127,14 +127,25 @@ describe("postLighterPositionObservations", () => {
   });
 
   it("surfaces a per-item refusal by index and counts an ignored-stale arrival separately", async () => {
-    stubFetch(jsonResponse(200, { accepted: 1, ignoredStale: 2, rejected: [{ index: 0 }] }));
+    // The dispositions have to ADD UP to the batch: every observation lands in
+    // exactly one bucket on the server, so a body that accounts for a
+    // different number of items is not a verdict about this batch at all.
+    stubFetch(jsonResponse(200, {
+      accepted: 1,
+      ignoredStale: 1,
+      rejected: [{ index: 0, code: "validation_failed" }],
+    }));
     const client = buildAgentscanClient("http://localhost");
 
     expect(await client.postLighterPositionObservations({
       agentHash: HASH,
       ingestToken: TOKEN,
-      observations: [OBSERVATION],
-    })).toEqual({ kind: "ok", accepted: 1, ignoredStale: 2, rejectedIndexes: [0] });
+      observations: [
+        OBSERVATION,
+        { ...OBSERVATION, observationId: "obs-2" },
+        { ...OBSERVATION, observationId: "obs-3" },
+      ],
+    })).toEqual({ kind: "ok", accepted: 1, ignoredStale: 1, rejectedIndexes: [0] });
   });
 
   it("maps 401 to auth_lost, 410 to a permanent stop and 503 to a retryable outcome", async () => {

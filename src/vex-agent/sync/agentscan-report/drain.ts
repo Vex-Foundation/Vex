@@ -369,9 +369,15 @@ async function drainLighterPositionObservations(
     observations: payloads,
   });
   if (outcome.kind !== "ok") {
+    // `unknown_acknowledgement` lands here with everything else that is not a
+    // verdict: nothing is marked, so nothing is superseded either, and the
+    // observations are still owed at the next tick.
     logger.info("agentscan.report.lighter_observations_deferred", {
       kind: outcome.kind,
       observations: payloads.length,
+      detail: outcome.kind === "unknown_acknowledgement" || outcome.kind === "invalid"
+        ? outcome.detail
+        : null,
     });
     return { sent: 0, owed: pending.length };
   }
@@ -657,6 +663,18 @@ async function sendGroup(
   if (outcome.kind === "stopped") {
     await reportingRepo.markStopped(outcome.reason);
     logger.warn("agentscan.report.stopped_by_server", { reason: outcome.reason });
+    return { sent: 0, rejected: 0, deferred: owedIds.length, owed, stop: true };
+  }
+  if (outcome.kind === "unknown_acknowledgement") {
+    // A 200 THAT SAID NOTHING ABOUT THIS BATCH. Not a delivery, not a
+    // refusal: the rows stay claimed and owed, nothing is marked, and the
+    // claim's own backoff decides when to ask again. Settling them on a body
+    // that does not account for them is exactly how a batch is retired
+    // undelivered.
+    logger.error("agentscan.report.batch_acknowledgement_unknown", {
+      detail: outcome.detail,
+      rows: owedIds.length,
+    });
     return { sent: 0, rejected: 0, deferred: owedIds.length, owed, stop: true };
   }
   if (outcome.kind === "invalid") {

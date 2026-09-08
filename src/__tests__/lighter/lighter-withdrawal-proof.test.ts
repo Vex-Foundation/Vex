@@ -22,10 +22,18 @@ import {
   LighterSettlementConfirmingError,
   proveLighterCoreWithdrawalSettlement,
 } from "@tools/lighter/withdrawal/settlement-proof.js";
-import type { LighterWithdrawalIntentRow } from "@vex-agent/db/repos/lighter-withdrawal-intents.js";
+import type {
+  LighterWithdrawalIntentRow,
+  RecordReconciliationInput,
+} from "@vex-agent/db/repos/lighter-withdrawal-intents.js";
+import type {
+  LighterWithdrawalClaimAttemptRow,
+  MarkReconciledOutcomeInput,
+} from "@vex-agent/db/repos/lighter-withdrawal-claims.js";
 import {
   reconcileLighterCoreWithdrawal,
   reconcileLighterWithdrawal,
+  type LighterWithdrawalConfirmationDeps,
 } from "@vex-agent/tools/protocols/lighter/withdrawal-reconciliation.js";
 
 const OWNER = "0xaCEE6141F6171491D34699C9266cb06A41FAA43C";
@@ -210,7 +218,33 @@ function reconciliationDeps(input?: {
       getBlock: vi.fn(async () => ({ hash: BLOCK_HASH })),
     }),
     intents: { recordReconciliation },
+    confirmation: passthroughConfirmation({ recordReconciliation }),
     recordReconciliation,
+  };
+}
+
+/**
+ * The confirmed arm's transaction, as a passthrough.
+ *
+ * Everything the arm commits together runs here through the same spies the
+ * rest of the suite asserts on, so these cases keep testing the PROOF, not the
+ * transaction. The atomicity of that transaction is the subject of
+ * `lighter-withdrawal-reconciliation-activity.test.ts`.
+ */
+function passthroughConfirmation(spies: {
+  readonly recordReconciliation: (
+    input: RecordReconciliationInput,
+  ) => Promise<LighterWithdrawalIntentRow>;
+  readonly markReconciledOutcome?: (input: MarkReconciledOutcomeInput) => Promise<boolean>;
+  readonly claim?: LighterWithdrawalClaimAttemptRow | null;
+}): LighterWithdrawalConfirmationDeps {
+  return {
+    commit: (_sessionId, write) => write({
+      findClaim: async () => spies.claim ?? null,
+      recordReconciliation: spies.recordReconciliation,
+      markReconciledOutcome: spies.markReconciledOutcome ?? (async () => true),
+      insertActivityRow: async () => ({ outcome: "recorded", activityId: 1 }),
+    }),
   };
 }
 
@@ -468,6 +502,7 @@ describe("RHC withdrawal exact settlement isolation", () => {
         getBlock: vi.fn(async () => ({ hash: BLOCK_HASH })),
       }),
       intents: { recordReconciliation },
+      confirmation: passthroughConfirmation({ recordReconciliation }),
     });
     expect(reconciled.executionState).toBe("destination_confirmed");
     expect(recordReconciliation).toHaveBeenCalledWith(expect.objectContaining({

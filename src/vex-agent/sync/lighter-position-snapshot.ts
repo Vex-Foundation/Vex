@@ -627,14 +627,33 @@ export interface StoredLighterPositionObservation {
 }
 
 /**
- * The NEWEST unsent observation per scope, oldest scope first, bounded.
+ * How many unsent observations of ONE scope a single tick may carry.
  *
- * Newest per scope because an older unsent observation of the same account is
- * already superseded by construction: the server ignores an observation older
- * than one it holds (`ignoredStale`), so sending it would spend a request to
- * be told what we already know. Oldest scope FIRST so a busy account cannot
- * starve a quiet one out of every bounded batch - the same fairness rule the
- * sweep's attempt marker enforces upstream.
+ * The batch is bounded overall by its caller's limit; this second bound is
+ * about FAIRNESS inside it, so an account that produced a burst of partial
+ * readings cannot take every slot from the quiet accounts behind it. The rest
+ * of the burst is still owed and goes out on the next tick, in the same order.
+ */
+const OBSERVATIONS_PER_SCOPE_PER_TICK = 4;
+
+/**
+ * The unsent observations, OLDEST FIRST WITHIN EACH SCOPE, bounded twice.
+ *
+ * IT USED TO TAKE THE NEWEST PER SCOPE AND NOTHING ELSE, on the reasoning that
+ * an older unsent observation of the same account is superseded by
+ * construction. That is only true when the newer one COVERS it. Market 1
+ * observed at 12:00 and market 2 at 11:00 are two disjoint facts about the
+ * same account: the 11:00 reading is still the only thing this install knows
+ * about market 2, and dropping it delivered a hole. So every unsent
+ * observation is a candidate, and coverage - not recency - decides what
+ * replaces what, at the marker below.
+ *
+ * ORDER IS PART OF THE CONTRACT. Within a scope the batch is oldest-first, so
+ * the marker only ever collapses backwards: a delivered observation settles
+ * the older readings it covers, never a newer one it does not. Across scopes
+ * the queue is ordered by each scope's OLDEST owed reading, so a busy account
+ * cannot starve a quiet one - the same fairness rule the sweep's attempt
+ * marker enforces upstream.
  *
  * Superseded rows are not silently dropped: {@link markLighterPositionObservationSent}
  * settles them explicitly, with `superseded` as their disposition, so the
@@ -653,17 +672,23 @@ export async function listUnsentLighterPositionObservations(
     complete: boolean;
     positions: unknown;
   }>(
-    `SELECT * FROM (
-       SELECT DISTINCT ON (environment, account_index)
-              id, environment, account_index, observation_id, observed_at,
-              coverage_markets, complete, positions
-         FROM lighter_position_observations
-        WHERE sent_at IS NULL
-        ORDER BY environment, account_index, observed_at DESC
-     ) newest
-      ORDER BY observed_at ASC
+    `SELECT id, environment, account_index, observation_id, observed_at,
+            coverage_markets, complete, positions
+       FROM (
+         SELECT id, environment, account_index, observation_id, observed_at,
+                coverage_markets, complete, positions,
+                MIN(observed_at) OVER (PARTITION BY environment, account_index) AS scope_owed_since,
+                ROW_NUMBER() OVER (
+                  PARTITION BY environment, account_index
+                  ORDER BY observed_at ASC, id ASC
+                ) AS scope_rank
+           FROM lighter_position_observations
+          WHERE sent_at IS NULL
+       ) owed
+      WHERE scope_rank <= $2
+      ORDER BY scope_owed_since ASC, environment ASC, account_index ASC, observed_at ASC, id ASC
       LIMIT $1`,
-    [Math.max(1, Math.trunc(limit))],
+    [Math.max(1, Math.trunc(limit)), OBSERVATIONS_PER_SCOPE_PER_TICK],
   );
   return rows.flatMap((row) => {
     if (row.environment !== "core" && row.environment !== "rhc") return [];
@@ -686,15 +711,32 @@ export async function listUnsentLighterPositionObservations(
 
 /**
  * Settle one delivered observation, and every older unsent observation of the
- * same scope with it.
+ * same scope THAT THE DELIVERED ONE COVERS.
  *
  * ONE TRANSACTION, because the two halves are one fact: an observation marked
  * sent while its predecessors stayed owed would put them back at the head of
  * the next batch, where the server can only ignore them as stale. The
  * disposition column is what keeps the two apart honestly - `sent` means this
- * install delivered it and the server took it; `superseded` means a newer
- * reading of the same account was delivered instead and this one never will
- * be.
+ * install delivered it and the server took it; `superseded` means a delivered
+ * reading of the same account REPLACED it and this one never will be
+ * delivered.
+ *
+ * ## COVERAGE, NOT RECENCY, DECIDES
+ *
+ * Being newer is not being a replacement. Two rules, and each one exists
+ * because breaking it discards a fact this install is the only holder of:
+ *
+ *   - COVERAGE. A complete `all` observation read every market, so every older
+ *     reading of that account is contained in it. A LIST observation read the
+ *     markets it names and nothing else: it replaces only older readings whose
+ *     own list is a SUBSET of it (jsonb `<@`), so market 1 at 12:00 leaves
+ *     market 2 at 11:00 exactly where it was - still owed, still the only
+ *     thing known about market 2.
+ *   - COMPLETENESS. An incomplete reading never supersedes a complete one. A
+ *     complete observation carries a fact a truncated one cannot: that the
+ *     positions it lists are ALL the positions in its coverage, which is what
+ *     the server closes positions on. Retiring it behind a partial reading of
+ *     the same markets would silently drop that closure evidence.
  *
  * The server assigns its own `received_at` and does not return it, so nothing
  * here records a server-side arrival time it cannot know.
@@ -703,11 +745,17 @@ export async function markLighterPositionObservationSent(
   observationRowId: number,
 ): Promise<{ readonly sent: boolean; readonly superseded: number }> {
   return withTransaction(async (client) => {
-    const delivered = await client.query(
+    const delivered = await client.query<{
+      environment: string;
+      account_index: string | number;
+      observed_at: Date | string;
+      coverage_markets: unknown;
+      complete: boolean;
+    }>(
       `UPDATE lighter_position_observations
           SET sent_at = NOW(), send_disposition = 'sent'
         WHERE id = $1 AND sent_at IS NULL
-        RETURNING environment, account_index, observed_at`,
+        RETURNING environment, account_index, observed_at, coverage_markets, complete`,
       [observationRowId],
     );
     const row = delivered.rows[0];
@@ -717,8 +765,16 @@ export async function markLighterPositionObservationSent(
           SET sent_at = NOW(), send_disposition = 'superseded'
         WHERE environment = $1 AND account_index = $2
           AND observed_at < $3::timestamptz
-          AND sent_at IS NULL`,
-      [row.environment, row.account_index, new Date(row.observed_at).toISOString()],
+          AND sent_at IS NULL
+          AND ($4::jsonb = '"all"'::jsonb OR coverage_markets <@ $4::jsonb)
+          AND ($5::boolean OR NOT complete)`,
+      [
+        row.environment,
+        row.account_index,
+        new Date(row.observed_at).toISOString(),
+        JSON.stringify(row.coverage_markets),
+        row.complete,
+      ],
     );
     return { sent: true, superseded: superseded.rowCount ?? 0 };
   });
