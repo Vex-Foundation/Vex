@@ -26,7 +26,21 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { EnvState } from "@shared/schemas/onboarding.js";
-import { useUiStore } from "../../../../stores/uiStore.js";
+
+// Vitest 4 can expose Node's incomplete localStorage shim when the inherited
+// NODE_OPTIONS contains --localstorage-file without a path. Give Zustand's
+// persisted UI store the Storage contract this focused jsdom suite needs.
+const localStorageState = new Map<string, string>();
+Object.defineProperty(globalThis, "localStorage", {
+  configurable: true,
+  value: {
+    getItem: (key: string) => localStorageState.get(key) ?? null,
+    setItem: (key: string, value: string) => localStorageState.set(key, value),
+    removeItem: (key: string) => localStorageState.delete(key),
+    clear: () => localStorageState.clear(),
+  },
+});
+const { useUiStore } = await import("../../../../stores/uiStore.js");
 
 // Sibling screens pull heavy registers; only the settings branch is under test.
 vi.mock("../MemoryScreen.js", () => ({ MemoryScreen: () => null }));
@@ -196,6 +210,8 @@ describe("SettingsScreen", () => {
     expect(screen.getByText("OpenRouter")).not.toBeNull();
     expect(screen.getByText("Reachable")).not.toBeNull();
     expect(screen.getByText("Saved")).not.toBeNull();
+    expect(screen.queryByText("Lighter")).toBeNull();
+    expect(screen.queryByRole("switch", { name: /Lighter integration/i })).toBeNull();
   });
 
   it("speaks the warning vocabulary when envState is degraded", async () => {

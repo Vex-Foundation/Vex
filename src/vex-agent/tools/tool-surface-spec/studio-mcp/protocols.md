@@ -53,10 +53,10 @@ whether its provider key is configured on this machine.
 
 ## Totals
 
-- tools: 171
-- Vex tools: 27
-- protocol tools: 144 across 11 protocols
-- destructive: 53
+- tools: 213
+- Vex tools: 29
+- protocol tools: 184 across 12 protocols
+- destructive: 63
 
 ## Vex tools
 
@@ -87,6 +87,8 @@ whether its provider key is configured on this machine.
 | WalletTrackToken | Track a token in the local wallet view | mutating | no | - |
 | WalletWrapConfirm | Broadcast a prepared wrap or unwrap | mutating | yes | - |
 | WalletWrapPrepare | Prepare a native / wrapped-native conversion | mutating | no | - |
+| lighter_core_onboarding_status | Check Lighter Core onboarding readiness | read-only | no | - |
+| lighter_rhc_onboarding_status | Check Robinhood Chain Lighter readiness | read-only | no | - |
 | vex_ToolDescribe | Read one tool's whole contract | read-only | no | - |
 | vex_ToolSearch | Search the protocol tool catalog | read-only | no | - |
 
@@ -143,6 +145,51 @@ whether its provider key is configured on this machine.
 | tool | title | access | destructive | requires env |
 | --- | --- | --- | --- | --- |
 | launchpads__image_publish | Publish a launch picture publicly | mutating | no | - |
+
+### lighter
+
+| tool | title | access | destructive | requires env |
+| --- | --- | --- | --- | --- |
+| lighter__account_get | Read a Lighter account | read-only | no | - |
+| lighter__account_onboarding_status | Check Lighter account onboarding readiness | read-only | no | - |
+| lighter__api_keys_inspect | Inspect Lighter API-key registrations | read-only | no | - |
+| lighter__candles_list | Read Lighter market candles | read-only | no | - |
+| lighter__deposit | Execute an approved Lighter deposit | mutating | yes | - |
+| lighter__deposit_prepare | Prepare a Lighter deposit approval | mutating | no | - |
+| lighter__deposit_status | Check a Lighter deposit's status | read-only | no | - |
+| lighter__fees_approve | Authorize approved Lighter trading fees | mutating | yes | - |
+| lighter__fees_approve_prepare | Prepare Lighter trading-fee approval | mutating | no | - |
+| lighter__fees_status | Check Lighter trading-fee authorization | read-only | no | - |
+| lighter__key_register | Register an approved Lighter trading key | mutating | yes | - |
+| lighter__key_register_prepare | Prepare a Lighter trading-key approval | mutating | no | - |
+| lighter__key_register_status | Check a Lighter key registration's status | read-only | no | - |
+| lighter__market_get | Read one Lighter market | read-only | no | - |
+| lighter__markets_list | List Lighter markets | read-only | no | - |
+| lighter__open_orders_list | List open Lighter orders | read-only | no | - |
+| lighter__order_cancel | Cancel an approved Lighter order | mutating | yes | - |
+| lighter__order_cancel_all | Cancel all approved Lighter orders | mutating | yes | - |
+| lighter__order_cancel_all_prepare | Prepare approval to cancel all Lighter orders | mutating | no | - |
+| lighter__order_cancel_prepare | Prepare a Lighter order-cancellation approval | mutating | no | - |
+| lighter__order_create | Submit an approved Lighter order | mutating | yes | - |
+| lighter__order_create_prepare | Prepare a Lighter order approval | mutating | no | - |
+| lighter__order_history_list | Read Lighter order history | read-only | no | - |
+| lighter__order_modify | Modify an approved Lighter limit order | mutating | yes | - |
+| lighter__order_modify_prepare | Prepare a Lighter order-modification approval | mutating | no | - |
+| lighter__order_preview | Preview a Lighter order | mutating | no | - |
+| lighter__order_status | Check a Lighter order action's status | read-only | no | - |
+| lighter__orderbook_get | Read a Lighter order book | read-only | no | - |
+| lighter__position_close | Close an approved Lighter position | mutating | yes | - |
+| lighter__position_close_prepare | Prepare a Lighter position-close approval | mutating | no | - |
+| lighter__position_protect | Preview Lighter position protection | mutating | no | - |
+| lighter__positions_list | List Lighter positions | read-only | no | - |
+| lighter__recent_trades_list | Read recent public Lighter trades | read-only | no | - |
+| lighter__system_get | Read Lighter system status | read-only | no | - |
+| lighter__trades_list | Read Lighter account trades | read-only | no | - |
+| lighter__withdraw | Submit an approved Lighter withdrawal | mutating | yes | - |
+| lighter__withdraw_claim | Broadcast an approved Lighter withdrawal claim | mutating | yes | - |
+| lighter__withdraw_claim_prepare | Prepare a Lighter withdrawal-claim approval | mutating | no | - |
+| lighter__withdraw_prepare | Prepare a Lighter withdrawal approval | mutating | no | - |
+| lighter__withdraw_status | Check a Lighter withdrawal's status | read-only | no | - |
 
 ### morpho
 

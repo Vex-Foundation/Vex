@@ -30,6 +30,17 @@ jobs:
 
       - run: corepack enable
 
+      # The toolchain check refuses a Go that differs from the signer pin, and
+      # the runner image ships its own Go: install the pinned one first.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.0"
+          check-latest: false
+          cache: false
+
+      - name: Verify pinned toolchain
+        run: pnpm run verify:toolchain
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -107,6 +118,23 @@ jobs:
         with:
           node-version: 22
 
+      # The Lighter signer helper is built from a PINNED Go (the go.mod toolchain
+      # directive and scripts/verify-runtime-toolchain.mjs refuse any other), so
+      # the exact patch is stated here rather than read from a version file.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.0"
+          cache-dependency-path: src/tools/lighter/signer-runtime/go.sum
+
+      # The TypeScript wire codes for Lighter order types and time-in-force are
+      # table-tested against this artifact; it must be exactly what the pinned
+      # lighter-go module says, never a hand edit.
+      - name: Verify the Lighter wire-constants artifact
+        working-directory: src/tools/lighter/signer-runtime
+        run: |
+          go run ./cmd/wire-constants > "$RUNNER_TEMP/wire-constants.json"
+          diff -u wire-constants.json "$RUNNER_TEMP/wire-constants.json"
+
       - run: corepack enable
 
       # The Studio bridge conformance test spawns the BUILT binary against the
@@ -121,6 +149,10 @@ jobs:
       - name: Build the Vex Studio bridge (linux amd64)
         working-directory: ${{ github.workspace }}
         run: bash bridge/build.sh linux amd64
+
+      - name: Verify pinned toolchain
+        working-directory: ${{ github.workspace }}
+        run: pnpm run verify:toolchain
 
       - name: Install root dependencies (monorepo - @vex-lib/@vex-agent aliases bundle root agent/shared code into vex-app's main process, so root node_modules must exist at build time)
         working-directory: ${{ github.workspace }}
@@ -521,7 +553,17 @@ jobs:
         with:
           node-version: 22
 
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.0"
+          check-latest: false
+          cache: false
+
       - run: corepack enable
+
+      - name: Verify pinned toolchain
+        working-directory: ${{ github.workspace }}
+        run: pnpm run verify:toolchain
 
       - name: Install root dependencies (monorepo - same reason as the build-and-test job)
         working-directory: ${{ github.workspace }}
@@ -529,6 +571,9 @@ jobs:
 
       - name: Install vex-app dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Audit vex-app production dependencies
+        run: pnpm run audit:deps
 
       # The Studio journey spec creates a real project, and since the batch-1
       # contract change project creation renders agent config files through the

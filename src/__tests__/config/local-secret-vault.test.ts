@@ -43,12 +43,20 @@ import {
   stripManagedSecretsFromDotenvFile,
   unlockSecretVault,
   verifySecretVaultPassword,
+  writeSecretVaultExtraSecrets,
   writeSecretVaultSecrets,
 } from "../../lib/local-secret-vault.js";
+import {
+  MANAGED_SECRET_ENV_KEYS,
+  RETIRED_SECRET_ENV_KEYS,
+  VAULT_SECRET_KEYS,
+} from "../../lib/secret-keys.js";
 
 let testDir = "";
 let vaultFile = "";
 let envFile = "";
+const EXTRA_SECRET_KEY = "lighter/rhc/account-42/api-key-7";
+const EXTRA_SECRET_VALUE = `0x${"1".repeat(80)}`;
 
 beforeEach(() => {
   testDir = join(tmpdir(), `vex-secret-vault-${Date.now()}-${Math.random()}`);
@@ -57,11 +65,13 @@ beforeEach(() => {
   envFile = join(testDir, ".env");
   delete process.env.OPENROUTER_API_KEY;
   delete process.env.JUPITER_API_KEY;
+  delete process.env[EXTRA_SECRET_KEY];
 });
 
 afterEach(() => {
   delete process.env.OPENROUTER_API_KEY;
   delete process.env.JUPITER_API_KEY;
+  delete process.env[EXTRA_SECRET_KEY];
   rmSync(testDir, { recursive: true, force: true });
   vi.restoreAllMocks();
 });
@@ -167,11 +177,67 @@ describe("local secret vault", () => {
     expect(process.env.OPENROUTER_API_KEY).toBe("sk-or-test");
   });
 
+  it("writes extra secrets without mirroring them to process.env", () => {
+    createSecretVault("master-password", { filePath: vaultFile });
+    writeSecretVaultSecrets(
+      "master-password",
+      { OPENROUTER_API_KEY: "sk-or-test" },
+      { filePath: vaultFile },
+    );
+
+    writeSecretVaultExtraSecrets(
+      "master-password",
+      { [EXTRA_SECRET_KEY]: EXTRA_SECRET_VALUE },
+      { filePath: vaultFile },
+    );
+
+    const raw = readFileSync(vaultFile, "utf8");
+    expect(raw).not.toContain(EXTRA_SECRET_VALUE);
+    const unlocked = unlockSecretVault("master-password", { filePath: vaultFile });
+    expect(unlocked.secrets.OPENROUTER_API_KEY).toBe("sk-or-test");
+    expect(unlocked.extraSecrets?.[EXTRA_SECRET_KEY]).toBe(EXTRA_SECRET_VALUE);
+
+    applySecretVaultToProcessEnv("master-password", { filePath: vaultFile });
+    expect(process.env.OPENROUTER_API_KEY).toBe("sk-or-test");
+    expect(process.env[EXTRA_SECRET_KEY]).toBeUndefined();
+  });
+
+  it("deletes extra secrets without touching managed secrets or neighboring extras", () => {
+    createSecretVault("master-password", { filePath: vaultFile });
+    writeSecretVaultSecrets(
+      "master-password",
+      { JUPITER_API_KEY: "jup-test" },
+      { filePath: vaultFile },
+    );
+    writeSecretVaultExtraSecrets(
+      "master-password",
+      {
+        [EXTRA_SECRET_KEY]: EXTRA_SECRET_VALUE,
+        "future/provider/key": "future-value",
+      },
+      { filePath: vaultFile },
+    );
+
+    writeSecretVaultExtraSecrets(
+      "master-password",
+      { [EXTRA_SECRET_KEY]: null },
+      { filePath: vaultFile },
+    );
+
+    const unlocked = unlockSecretVault("master-password", { filePath: vaultFile });
+    expect(unlocked.secrets.JUPITER_API_KEY).toBe("jup-test");
+    expect(unlocked.extraSecrets?.[EXTRA_SECRET_KEY]).toBeUndefined();
+    expect(unlocked.extraSecrets?.["future/provider/key"]).toBe("future-value");
+  });
+
   it("strips managed secrets from legacy dotenv files", () => {
     writeFileSync(
       envFile,
       [
         'OPENROUTER_API_KEY="legacy"',
+        'RELAY_API_KEY="legacy-relay-key"',
+        'LIGHTER_CORE_READ_ONLY_AUTH_TOKEN="retired-core-token"',
+        'LIGHTER_RHC_READ_ONLY_AUTH_TOKEN="retired-rhc-token"',
         'VEX_KEYSTORE_PASSWORD="legacy-password"',
         'AGENT_MODEL="openai/test"',
       ].join("\n") + "\n",
@@ -180,8 +246,22 @@ describe("local secret vault", () => {
     stripManagedSecretsFromDotenvFile(envFile);
     const raw = readFileSync(envFile, "utf8");
     expect(raw).not.toContain("OPENROUTER_API_KEY");
+    expect(raw).not.toContain("RELAY_API_KEY");
+    expect(raw).not.toContain("LIGHTER_CORE_READ_ONLY_AUTH_TOKEN");
+    expect(raw).not.toContain("LIGHTER_RHC_READ_ONLY_AUTH_TOKEN");
     expect(raw).not.toContain("VEX_KEYSTORE_PASSWORD");
     expect(raw).toContain('AGENT_MODEL="openai/test"');
+  });
+
+  it("keeps retired Lighter tokens scrub-only and never vault-injected", () => {
+    expect(RETIRED_SECRET_ENV_KEYS).toEqual([
+      "LIGHTER_CORE_READ_ONLY_AUTH_TOKEN",
+      "LIGHTER_RHC_READ_ONLY_AUTH_TOKEN",
+    ]);
+    for (const key of RETIRED_SECRET_ENV_KEYS) {
+      expect(MANAGED_SECRET_ENV_KEYS).toContain(key);
+      expect(VAULT_SECRET_KEYS).not.toContain(key);
+    }
   });
 
   it("creates fresh vaults with CURRENT_KDF_PARAMS", () => {

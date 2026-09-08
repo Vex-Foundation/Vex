@@ -8,6 +8,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 import type { ClaimedOutboxEvent } from "@vex-agent/db/repos/agentscan-reporting.js";
 import type { AgentscanClient, SendOutcome } from "@vex-agent/agentscan/client.js";
+import { sendOnlyAgentscanClient } from "../../helpers/agentscan-client.js";
 
 const mockClaimDueOutbox = vi.fn();
 const mockMarkOutboxSent = vi.fn();
@@ -38,6 +39,13 @@ const { drainOutbox } = await import("@vex-agent/sync/agentscan-report/drain.js"
 function claimedRow(): ClaimedOutboxEvent {
   return {
     outboxId: 1,
+    // The discriminator is part of the claimed row's contract: the drain reads
+    // it to decide which ledger built the payload and whether the row needs the
+    // Lighter capability, and a row without one would be routed by guesswork.
+    sourceKind: "agent_activity",
+    fillId: null,
+    fill: null,
+    enrichmentRevision: null,
     activityId: 10,
     status: "confirmed",
     backfill: false,
@@ -56,7 +64,7 @@ function claimedRow(): ClaimedOutboxEvent {
 }
 
 function clientReturning(outcome: SendOutcome): AgentscanClient {
-  return { sendEvents: vi.fn(async () => outcome) };
+  return sendOnlyAgentscanClient(vi.fn(async () => outcome));
 }
 
 beforeEach(() => {

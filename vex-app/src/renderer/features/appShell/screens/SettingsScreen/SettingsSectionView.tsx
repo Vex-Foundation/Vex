@@ -2,7 +2,8 @@
  * One section's calm full-page view: the wizard step form in back-edit
  * mode (saving returns to the register via `onAdvance`). The Wallets
  * section appends the ONLY surface in the app offering per-chain
- * private-key export.
+ * private-key export. A section with no wizard step behind it (Lighter
+ * Points) renders its own view instead of a step form.
  */
 
 import { useState, type JSX } from "react";
@@ -18,6 +19,7 @@ import {
   WalletsStep,
 } from "../../../wizard/index.js";
 import { ExportPrivateKeyModal } from "../../../wallets/ExportPrivateKeyModal.js";
+import { LighterPointsSection } from "./LighterPointsSection.js";
 import type { SectionMeta } from "./settings-sections.js";
 
 export function SettingsSectionView({
@@ -43,14 +45,15 @@ export function SettingsSectionView({
       className="mx-auto flex w-full max-w-[680px] flex-col gap-4"
       data-vex-settings-section={meta.id}
     >
-      {renderSectionForm(meta.stepId, stepProps)}
+      {meta.stepId === undefined ? null : renderSectionForm(meta.stepId, stepProps)}
+      {meta.id === "lighterPoints" ? <LighterPointsSection /> : null}
       {meta.id === "wallets" ? <ExportPrivateKeySection env={env} /> : null}
     </div>
   );
 }
 
 function renderSectionForm(
-  stepId: SectionMeta["stepId"],
+  stepId: NonNullable<SectionMeta["stepId"]>,
   props: {
     readonly completedSteps: ReadonlyArray<WizardStepId>;
     readonly onAdvance: (next: WizardStepId) => void;

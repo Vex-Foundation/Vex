@@ -62,6 +62,38 @@ export {
 
 let unlockedMasterPassword: string | null = null;
 
+export type SecretSessionLifecycleState = "unlocked" | "locked";
+export type SecretSessionLifecycleListener = (
+  state: SecretSessionLifecycleState,
+) => void;
+
+const secretSessionLifecycleListeners = new Set<SecretSessionLifecycleListener>();
+
+/**
+ * Main-process-only lifecycle signal. It carries no password, secret, vault
+ * contents, or credential metadata. Privileged consumers use it to immediately
+ * revoke derived capabilities (for example authenticated read streams) on lock.
+ */
+export function onSecretSessionLifecycle(
+  listener: SecretSessionLifecycleListener,
+): () => void {
+  secretSessionLifecycleListeners.add(listener);
+  return () => {
+    secretSessionLifecycleListeners.delete(listener);
+  };
+}
+
+function emitSecretSessionLifecycle(state: SecretSessionLifecycleState): void {
+  for (const listener of secretSessionLifecycleListeners) {
+    try {
+      listener(state);
+    } catch {
+      // A capability cleanup listener must never make vault lock/unlock fail.
+      log.warn("[secrets-session] lifecycle listener failed", { state });
+    }
+  }
+}
+
 /**
  * Placeholder correlation id for session-layer errors built outside an IPC
  * handler (this module has no `requestId` of its own). `registerHandler`
@@ -216,6 +248,7 @@ export function initializeMasterPassword(
     unlockedMasterPassword = password;
     applyUnlockedRuntime(password);
     stripManagedSecretsFromDotenvFile(ENV_FILE);
+    emitSecretSessionLifecycle("unlocked");
     // First-time setup also establishes an unlocked session, so admission
     // opens exactly the way an ordinary unlock opens it. The listener itself
     // was bound at app-ready and is untouched here.
@@ -245,6 +278,7 @@ export async function unlockSecretSession(
     unlockedRuntimeChanged = true;
     applyUnlockedRuntime(password);
     stripManagedSecretsFromDotenvFile(ENV_FILE);
+    emitSecretSessionLifecycle("unlocked");
     // Vex Studio: the dispatch generation is MONOTONIC in both directions, so
     // unlocking ADVANCES it rather than restoring the pre-lock value. That is
     // what stops an intent enqueued before the lock from becoming dispatchable
@@ -403,6 +437,7 @@ async function runStudioRecoveryPass(): Promise<void> {
  * just `VAULT_SECRET_KEYS`, so a relock leaves NO managed secret in env.
  */
 function scrubUnlockedRuntime(): void {
+  const wasUnlocked = unlockedMasterPassword !== null;
   unlockedMasterPassword = null;
   for (const key of MANAGED_SECRET_ENV_KEYS) {
     delete process.env[key];
@@ -411,6 +446,7 @@ function scrubUnlockedRuntime(): void {
   // chokepoint falls back to env-only, which is also scrubbed → signing fails
   // closed until the next unlock re-registers the provider.
   clearKeystorePasswordProvider();
+  if (wasUnlocked) emitSecretSessionLifecycle("locked");
 }
 
 /**
@@ -538,6 +574,7 @@ export function adoptUnlockedPassword(password: string): void {
   applyUnlockedRuntime(password);
   unlockedMasterPassword = password;
   stripManagedSecretsFromDotenvFile(ENV_FILE);
+  emitSecretSessionLifecycle("unlocked");
   // A restore leaves the session unlocked, so admission belongs open again.
   reopenStudioHostIfSafe();
 }

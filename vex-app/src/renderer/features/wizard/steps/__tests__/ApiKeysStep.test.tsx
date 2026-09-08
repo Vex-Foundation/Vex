@@ -1,3 +1,4 @@
+import { requireValue } from "../../../../../../../src/__tests__/helpers/require-value.js";
 /**
  * ApiKeysStep tests (M9 Step 3 + PR8 redesign — per-provider glass cards).
  *
@@ -9,8 +10,8 @@
  *  - Successful submit clears all input refs synchronously and advances.
  *  - "Skip optional" advances without calling setApiKeys.
  *  - Legacy API-key fields are not rendered.
- *  - 4 provider cards render in canonical order (jupiter → tavily →
- *    rettiwt) and each carries the correct external link.
+ *  - Provider cards render in canonical order and each external link
+ *    carries the correct browser safety attributes.
  *  - Every external "Get key" link opens with target="_blank" +
  *    rel="noopener noreferrer".
  */
@@ -84,6 +85,8 @@ function envState(overrides: Partial<EnvState["apiKeys"]> = {}): EnvState {
       tavilyConfigured: false,
       rettiwtConfigured: false,
       relayConfigured: false,
+      lighterCoreTradingConfigured: false,
+      lighterRhcTradingConfigured: false,
       ...overrides,
     },
     secrets: {
@@ -130,6 +133,18 @@ function renderWithQuery(ui: JSX.Element) {
   return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>);
 }
 
+function embeddingWizardState(): Result<WizardState> {
+  return {
+    ok: true,
+    data: {
+      schemaVersion: 2,
+      currentStepId: "embedding",
+      completedSteps: ["keystore", "wallets", "apiKeys"],
+      completed: false,
+    },
+  };
+}
+
 beforeEach(() => {
   mockUseEnvState.mockReset();
   mockSetApiKeys.mockReset();
@@ -158,15 +173,7 @@ describe("ApiKeysStep", () => {
       ok: true,
       data: { fieldsWritten: ["JUPITER_API_KEY"] },
     } as Result<ApiKeysSetResult>);
-    mockSetWizardMutate.mockResolvedValue({
-      ok: true,
-      data: {
-        schemaVersion: 1,
-        currentStepId: "embedding",
-        completedSteps: ["keystore", "wallets", "apiKeys"],
-        completed: false,
-      },
-    } as Result<WizardState>);
+    mockSetWizardMutate.mockResolvedValue(embeddingWizardState());
     const { container, getByLabelText } = renderWithQuery(
       <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
     );
@@ -182,6 +189,43 @@ describe("ApiKeysStep", () => {
     await waitFor(() => {
       expect(mockOnAdvance).toHaveBeenCalledWith("embedding");
     });
+  });
+
+  it("submits Lighter trading credentials without keeping them in the form", async () => {
+    mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
+    mockSetApiKeys.mockResolvedValue({
+      ok: true,
+      data: {
+        fieldsWritten: ["LIGHTER_RHC_TRADING_API_PRIVATE_KEY"],
+      },
+    } as Result<ApiKeysSetResult>);
+    mockSetWizardMutate.mockResolvedValue(embeddingWizardState());
+    const { container, getByLabelText } = renderWithQuery(
+      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
+    );
+    const accountInput = container.querySelector(
+      "#vex-apikey-lighter-rhc-trading-account-index",
+    ) as HTMLInputElement;
+    const apiKeyInput = container.querySelector(
+      "#vex-apikey-lighter-rhc-trading-api-key-index",
+    ) as HTMLInputElement;
+    const privateKeyInput = getByLabelText(/RHC trading key API private key/i) as HTMLInputElement;
+    fireEvent.input(accountInput, { target: { value: "1171" } });
+    fireEvent.input(apiKeyInput, { target: { value: "7" } });
+    fireEvent.input(privateKeyInput, { target: { value: `0x${"1".repeat(80)}` } });
+    const form = requireValue(container.querySelector('[data-vex-wizard-apikeys="form"] form'));
+    fireEvent.submit(form);
+
+    await waitFor(() => {
+      expect(mockSetApiKeys).toHaveBeenCalledWith({
+        lighterRhcTradingAccountIndex: 1171,
+        lighterRhcTradingApiKeyIndex: 7,
+        lighterRhcTradingApiPrivateKey: `0x${"1".repeat(80)}`,
+      });
+    });
+    expect(accountInput.value).toBe("");
+    expect(apiKeyInput.value).toBe("");
+    expect(privateKeyInput.value).toBe("");
   });
 
   // Optional-connections model: API keys never block advancement. The
@@ -200,15 +244,7 @@ describe("ApiKeysStep", () => {
 
   it("'Skip optional' ADVANCES even when Jupiter is not configured (optional model)", async () => {
     mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
-    mockSetWizardMutate.mockResolvedValue({
-      ok: true,
-      data: {
-        schemaVersion: 1,
-        currentStepId: "embedding",
-        completedSteps: ["keystore", "wallets", "apiKeys"],
-        completed: false,
-      },
-    } as Result<WizardState>);
+    mockSetWizardMutate.mockResolvedValue(embeddingWizardState());
     const { getByText } = renderWithQuery(
       <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
     );
@@ -221,15 +257,7 @@ describe("ApiKeysStep", () => {
 
   it("'Skip optional' advances when Jupiter configured", async () => {
     mockUseEnvState.mockReturnValue(makeQueryResult(envState({ jupiterConfigured: true })));
-    mockSetWizardMutate.mockResolvedValue({
-      ok: true,
-      data: {
-        schemaVersion: 1,
-        currentStepId: "embedding",
-        completedSteps: ["keystore", "wallets", "apiKeys"],
-        completed: false,
-      },
-    } as Result<WizardState>);
+    mockSetWizardMutate.mockResolvedValue(embeddingWizardState());
     const { getByText, container } = renderWithQuery(
       <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
     );
@@ -244,15 +272,7 @@ describe("ApiKeysStep", () => {
 
   it("'Save and continue' empty submit ADVANCES without calling setApiKeys (optional model)", async () => {
     mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
-    mockSetWizardMutate.mockResolvedValue({
-      ok: true,
-      data: {
-        schemaVersion: 1,
-        currentStepId: "embedding",
-        completedSteps: ["keystore", "wallets", "apiKeys"],
-        completed: false,
-      },
-    } as Result<WizardState>);
+    mockSetWizardMutate.mockResolvedValue(embeddingWizardState());
     const { container } = renderWithQuery(
       <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
     );
@@ -274,6 +294,122 @@ describe("ApiKeysStep", () => {
     expect(html).not.toContain("legacyapikey");
   });
 
+  it("does not ask normal users for separate Lighter read-only tokens", () => {
+    mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
+    const { container, queryByLabelText } = renderWithQuery(
+      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
+    );
+    expect(queryByLabelText(/Lighter RHC read-only token/i)).toBeNull();
+    expect(queryByLabelText(/Lighter Core read-only token/i)).toBeNull();
+    expect(container.textContent ?? "").not.toContain("ro:");
+    expect(container.querySelector('[data-vex-apikeys-card="lighter-rhc-trading"]')).not.toBeNull();
+    expect(container.querySelector('[data-vex-apikeys-card="lighter-core-trading"]')).not.toBeNull();
+  });
+
+  it("shows a Vex-managed Core credential without asking for a dashboard key", () => {
+    mockUseEnvState.mockReturnValue(makeQueryResult(envState({
+      lighterCoreTradingConfigured: true,
+      lighterCoreManagedTradingScopes: [{ accountIndex: 737810, apiKeyIndex: 4 }],
+    })));
+
+    const { container, getByText } = renderWithQuery(
+      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
+    );
+
+    const card = container.querySelector('[data-vex-apikeys-card="lighter-core-trading"]');
+    const managedStatus = container.querySelector(
+      '[data-vex-lighter-managed-credential="core"]',
+    );
+    expect(managedStatus).not.toBeNull();
+    expect(getByText(/Encrypted locally/)).toBeTruthy();
+    expect(managedStatus?.textContent ?? "").toContain("737810");
+    expect(managedStatus?.textContent ?? "").toContain("4");
+    expect(card?.textContent ?? "").toContain("MANAGED");
+    expect(card?.textContent ?? "").toContain("Created and registered locally by Vex");
+    expect(card?.textContent ?? "").not.toContain("Add the trading API private key from Lighter");
+    expect(container.querySelector(
+      '[data-vex-lighter-manual-credential="core"]',
+    )?.hasAttribute("open")).toBe(false);
+  });
+
+  it("shows a Vex-managed RHC credential without stale unavailable copy", () => {
+    mockUseEnvState.mockReturnValue(makeQueryResult(envState({
+      lighterRhcTradingConfigured: true,
+      lighterRhcManagedTradingScopes: [{ accountIndex: 1171, apiKeyIndex: 7 }],
+    })));
+
+    const { container, getByText } = renderWithQuery(
+      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
+    );
+
+    const card = container.querySelector('[data-vex-apikeys-card="lighter-rhc-trading"]');
+    const managedStatus = container.querySelector(
+      '[data-vex-lighter-managed-credential="rhc"]',
+    );
+    expect(managedStatus).not.toBeNull();
+    expect(getByText(/Encrypted locally/)).toBeTruthy();
+    expect(managedStatus?.textContent ?? "").toContain("1171");
+    expect(managedStatus?.textContent ?? "").toContain("7");
+    expect(card?.textContent ?? "").toContain("MANAGED");
+    expect(card?.textContent ?? "").toContain("Created and registered locally by Vex");
+    expect(card?.textContent ?? "").not.toContain("automatic registration is not available");
+    expect(container.querySelector(
+      '[data-vex-lighter-manual-credential="rhc"]',
+    )?.hasAttribute("open")).toBe(false);
+  });
+
+  it("routes normal Core setup to Vex onboarding and keeps manual import advanced", () => {
+    mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
+
+    const { container } = renderWithQuery(
+      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
+    );
+
+    const card = container.querySelector('[data-vex-apikeys-card="lighter-core-trading"]');
+    expect(card?.textContent ?? "").toContain("Normal setup creates and registers this key");
+    expect(card?.textContent ?? "").toContain("Advanced: manage an externally created Core key");
+    expect(card?.textContent ?? "").not.toContain("Add the trading API private key from Lighter");
+  });
+
+  it("routes normal RHC setup to Vex onboarding and keeps manual import advanced", () => {
+    mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
+
+    const { container } = renderWithQuery(
+      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
+    );
+
+    const card = container.querySelector('[data-vex-apikeys-card="lighter-rhc-trading"]');
+    expect(card?.textContent ?? "").toContain("Normal setup creates and registers this key");
+    expect(card?.textContent ?? "").toContain("Advanced: manage an externally created RHC key");
+    expect(card?.textContent ?? "").not.toContain("automatic registration is not available");
+    expect(container.querySelector(
+      '[data-vex-lighter-manual-credential="rhc"]',
+    )?.hasAttribute("open")).toBe(false);
+  });
+
+  it("distinguishes RHC and Core with factual metadata and restrained RHC atmosphere", () => {
+    mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
+
+    const { container } = renderWithQuery(
+      <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
+    );
+
+    const rhcCard = container.querySelector('[data-vex-apikeys-card="lighter-rhc-trading"]');
+    const coreCard = container.querySelector('[data-vex-apikeys-card="lighter-core-trading"]');
+    expect(rhcCard?.getAttribute("data-vex-lighter-environment")).toBe("rhc");
+    expect(coreCard?.getAttribute("data-vex-lighter-environment")).toBe("core");
+    expect(rhcCard?.textContent ?? "").toContain("RHC trading key");
+    expect(coreCard?.textContent ?? "").toContain("Core trading key");
+    expect(rhcCard?.textContent ?? "").toContain("Robinhood Chain");
+    expect(rhcCard?.textContent ?? "").toContain("USDG");
+    expect(coreCard?.textContent ?? "").toContain("Lighter Core");
+    expect(coreCard?.textContent ?? "").toContain("USDC");
+    expect(rhcCard?.classList.contains("vex-lighter-rhc-shadow")).toBe(true);
+    expect(coreCard?.classList.contains("vex-lighter-rhc-shadow")).toBe(false);
+    expect(rhcCard?.querySelector(".bg-accent-wash")).toBeNull();
+    expect(coreCard?.querySelector(".bg-accent-wash")).toBeNull();
+  });
+
   it("back-edit mode renders the full form even when Jupiter is configured", () => {
     mockUseEnvState.mockReturnValue(makeQueryResult(envState({ jupiterConfigured: true })));
     const { container } = renderWithQuery(
@@ -287,18 +423,74 @@ describe("ApiKeysStep", () => {
     expect(container.querySelector('[data-vex-wizard-apikeys="skip"]')).toBeNull();
   });
 
+  it("groups every Lighter setting into one collapsed Settings disclosure", () => {
+    mockUseEnvState.mockReturnValue(makeQueryResult(envState({
+      lighterCoreTradingConfigured: true,
+      lighterRhcTradingConfigured: true,
+    })));
+    const { container, getByRole } = renderWithQuery(
+      <ApiKeysStep
+        completedSteps={["keystore", "wallets", "apiKeys"]}
+        onAdvance={mockOnAdvance}
+        flowMode="back-edit"
+      />,
+    );
+
+    const trigger = getByRole("button", { name: /Lighter Keys Config/i });
+    const content = container.querySelector(
+      "[data-vex-lighter-keys-config] [role='region']",
+    ) as HTMLElement;
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    expect(trigger.textContent ?? "").toContain("2/2 configured");
+    expect(content.hidden).toBe(true);
+
+    fireEvent.click(trigger);
+
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    expect(content.hidden).toBe(false);
+    expect(content.textContent ?? "").toContain("RHC trading key");
+    expect(content.textContent ?? "").toContain("Core trading key");
+    expect(content.textContent ?? "").toContain("Stored Lighter access");
+    const environmentList = container.querySelector(
+      "[data-vex-lighter-environment-list]",
+    );
+    expect(environmentList).not.toBeNull();
+    expect(
+      Array.from(
+        environmentList?.querySelectorAll("[data-vex-lighter-environment]") ??
+          [],
+      ).map((element) => element.getAttribute("data-vex-lighter-environment")),
+    ).toEqual(["rhc", "core"]);
+
+    const accountInput = container.querySelector(
+      "#vex-apikey-lighter-rhc-trading-account-index",
+    ) as HTMLInputElement;
+    fireEvent.input(accountInput, { target: { value: "1171" } });
+    fireEvent.click(trigger);
+    expect(content.hidden).toBe(true);
+    fireEvent.click(trigger);
+    expect(accountInput.value).toBe("1171");
+  });
+
   // ── PR8 redesign — per-provider cards ────────────────────────────────
 
-  it("renders 4 provider cards in canonical order (PR8 + Relay)", () => {
+  it("renders provider cards in canonical order", () => {
     mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
     const { container } = renderWithQuery(
       <ApiKeysStep completedSteps={["keystore", "wallets"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
     );
     const cards = container.querySelectorAll("[data-vex-apikeys-card]");
-    expect(cards).toHaveLength(4);
+    expect(cards).toHaveLength(6);
     expect(
       Array.from(cards).map((c) => c.getAttribute("data-vex-apikeys-card")),
-    ).toEqual(["jupiter", "tavily", "rettiwt", "relay"]);
+    ).toEqual([
+      "jupiter",
+      "tavily",
+      "rettiwt",
+      "relay",
+      "lighter-rhc-trading",
+      "lighter-core-trading",
+    ]);
   });
 
   it("renders canonical external links for each provider card (PR8)", () => {
@@ -333,6 +525,7 @@ describe("ApiKeysStep", () => {
       "https://dashboard.relay.link",
     );
     expect(relayCard?.textContent ?? "").toContain("Bridging works without it");
+
   });
 
   it("every external link on a card uses target='_blank' + rel='noopener noreferrer' (PR8)", () => {

@@ -13,7 +13,7 @@
  * sent, comes back in `rejectedIndexes` as `validation_failed`, and
  * `markOutboxRejected` makes that PERMANENT. The activity is then never reported
  * at all, not even after the server deploys, because a rejected outbox row is
- * terminal and is never retried. (Codex final review 2026-09-06, lane 7.)
+ * terminal and is never retried. (the final review of 2026-09-06, lane 7.)
  *
  * ## The posture, and where it comes from
  *
@@ -48,6 +48,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 import type { ClaimedOutboxEvent } from "@vex-agent/db/repos/agentscan-reporting.js";
 import type { AgentscanClient, SendEventsInput, SendOutcome } from "@vex-agent/agentscan/client.js";
+import { sendOnlyAgentscanClient } from "../../helpers/agentscan-client.js";
 
 const mockClaimDueOutbox = vi.fn();
 const mockMarkOutboxSent = vi.fn();
@@ -80,9 +81,13 @@ function claimedRow(input: {
 }): ClaimedOutboxEvent {
   return {
     outboxId: input.outboxId,
+    sourceKind: "agent_activity",
+    enrichmentRevision: null,
     activityId: input.outboxId * 10,
     status: "confirmed",
     backfill: false,
+    fillId: null,
+    fill: null,
     activity: {
       id: input.outboxId * 10,
       protocol_execution_id: 5,
@@ -114,8 +119,8 @@ const OK_ALL_REJECTED: SendOutcome = {
 
 /** A server on the deployed contract: it refuses every role it does not carry. */
 function serverWithoutRoles(unknownRoles: readonly string[]): AgentscanClient {
-  return {
-    sendEvents: vi.fn(async (input: SendEventsInput): Promise<SendOutcome> => {
+  return sendOnlyAgentscanClient(
+    vi.fn(async (input: SendEventsInput): Promise<SendOutcome> => {
       const rejectedIndexes = input.events
         .map((event, index) => ({ event, index }))
         .filter(({ event }) => unknownRoles.includes(event.eventRole ?? ""))
@@ -128,7 +133,7 @@ function serverWithoutRoles(unknownRoles: readonly string[]): AgentscanClient {
         agentHealth: null,
       } satisfies SendOutcome;
     }),
-  };
+  );
 }
 
 /**
@@ -136,7 +141,7 @@ function serverWithoutRoles(unknownRoles: readonly string[]): AgentscanClient {
  * the refusal itself is the subject and the server's vocabulary is not.
  */
 function serverRefusingEverything(): AgentscanClient {
-  return { sendEvents: vi.fn(async (): Promise<SendOutcome> => OK_ALL_REJECTED) };
+  return sendOnlyAgentscanClient(vi.fn(async (): Promise<SendOutcome> => OK_ALL_REJECTED));
 }
 
 beforeEach(() => {

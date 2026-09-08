@@ -27,6 +27,7 @@ export type ProtocolNamespace =
   | "relay"
   | "solana"
   | "dexscreener"
+  | "lighter"
   | "virtuals"
   | "pendle"
   | "morpho"
@@ -258,6 +259,51 @@ export interface ProtocolToolManifest {
    * dryRun is read-only simulation regardless of mutating intent).
    */
   actionKind: ActionKind;
+  /**
+   * DECLARED IRREVERSIBLE EFFECT, overriding the `actionKind` derivation of
+   * MCP's `destructiveHint` for this one tool.
+   *
+   * Owner decision O7 derives `destructiveHint` from `actionKind` alone and
+   * deliberately excludes `external_post`, on the reasoning that mutating
+   * somebody else's system is not automatically the irreversible-value class
+   * MCP's destructive prompt is about. That reasoning holds for a social post
+   * or an off-chain bookmark. It does NOT hold for a venue whose
+   * `external_post` tools submit signed exchange transactions that move real
+   * collateral, realise PnL or destroy a resting order's queue position: there
+   * the prompt a client shows before an irreversible action is exactly the
+   * prompt the user needs. See the dated O7 amendment in
+   * `tool-surface-spec/owner-decisions.md`.
+   *
+   * Read in exactly one place - `mcp/inventory/annotations.ts`, the one
+   * annotation table - so this stays a DECLARATION on the manifest, never a
+   * second derivation. It may only ever be `true`: a tool whose `actionKind`
+   * already classifies it destructive cannot be declared harmless here, and a
+   * manifest that omits the field keeps exactly the O7 answer.
+   *
+   * NEVER set it to buy a destructive prompt for a tool that signs nothing.
+   * The prompt is a budget: spend it where the effect cannot be taken back.
+   */
+  destructive?: true;
+  /**
+   * This tool's success produces a DURABLE PREPARED ACTION whose approval the
+   * Vex Studio surface must rebuild from session-owned rows and re-check at
+   * dispatch (`mcp/prepared-approval.ts`).
+   *
+   * It is a CAPABILITY DECLARATION, not a namespace: the two Studio gates that
+   * need it (`mcp/admission.ts` reading the card back, `mcp/executor.ts`
+   * admitting the one validated follow-up hop) previously tested
+   * `toolId.startsWith("lighter.")`, which made a protocol NAME the policy and
+   * would silently withhold the same handling from the next protocol that
+   * prepares a durable intent, or wrongly claim it for a Lighter tool that
+   * prepares nothing.
+   *
+   * Set it on the APPROVAL-RESUME TARGET, never on the `*.prepare` half: both
+   * gates read the target's identity (admission reads the row back for the
+   * tool it just dispatched, and the executor checks the toolId the validated
+   * follow-up points AT). Absent means the ordinary approval path, which is
+   * what every other protocol tool uses.
+   */
+  studioPreparedAction?: true;
   /** Parameter definitions */
   params: ProtocolParamDef[];
   /** Example params for LLM guidance */

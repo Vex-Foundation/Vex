@@ -50,7 +50,15 @@
     "vex:test": "pnpm --dir vex-app test",
     "vex:test:e2e": "pnpm --dir vex-app test:e2e",
     "build:bridge": "bash bridge/build.sh",
-    "test:bridge": "cd bridge && GOTOOLCHAIN=local go test ./..."
+    "test:bridge": "cd bridge && GOTOOLCHAIN=local go test ./...",
+    "test:lighter:live": "VEX_LIGHTER_LIVE=1 vitest run src/__tests__/lighter/lighter-live-market-data.test.ts",
+    "test:lighter:live:apikeys": "VEX_LIGHTER_API_KEYS_LIVE=1 vitest run src/__tests__/lighter/lighter-live-api-keys.test.ts",
+    "test:lighter:live:accounts": "VEX_LIGHTER_ACCOUNT_READS_LIVE=1 vitest run src/__tests__/lighter/lighter-live-account-reads.test.ts",
+    "test:lighter:live:preview": "VEX_LIGHTER_PREVIEW_LIVE=1 vitest run src/__tests__/lighter/lighter-live-order-preview.test.ts",
+    "test:lighter:live:deposit-evidence": "VEX_LIGHTER_DEPOSIT_EVIDENCE_LIVE=1 vitest run src/__tests__/lighter/lighter-live-deposit-evidence.test.ts",
+    "test:lighter:live:deposit-preflight": "VEX_LIGHTER_DEPOSIT_PREFLIGHT_LIVE=1 vitest run src/__tests__/lighter/lighter-live-deposit-preflight.test.ts",
+    "lighter:deposit:canary-readiness": "tsx src/tools/lighter/scripts/run-live-deposit-canary-readiness.ts",
+    "verify:toolchain": "node scripts/verify-runtime-toolchain.mjs"
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.14.0",

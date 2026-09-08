@@ -11,8 +11,14 @@ import type { SettingsSection } from "../../../../stores/uiStore.js";
 
 export interface SectionMeta {
   readonly id: SettingsSection;
-  /** The wizard step whose form (and icon) this section hosts. */
-  readonly stepId: Exclude<WizardStepId, "review">;
+  /**
+   * The wizard step whose form (and icon) this section hosts. Absent for a
+   * section that hosts its own view instead of a wizard step - it then carries
+   * a `logoSrc` for the register's icon badge.
+   */
+  readonly stepId?: Exclude<WizardStepId, "review">;
+  /** Protocol logo for a section with no wizard step behind it. */
+  readonly logoSrc?: string;
   readonly name: string;
   readonly hint: string;
 }
@@ -54,6 +60,14 @@ export const SETTINGS_SECTIONS: ReadonlyArray<SectionMeta> = [
     stepId: "agentCore",
     name: "Tuning",
     hint: "Context, output, and sampling limits",
+  },
+  {
+    id: "lighterPoints",
+    // The one shipped Lighter logo asset, the same file the trading dialog
+    // uses; no second copy.
+    logoSrc: "./protocols/lighter.svg",
+    name: "Lighter Points",
+    hint: "Robinhood Chain campaign points and leaderboard position per wallet",
   },
 ];
 
@@ -111,5 +125,10 @@ export function settingsSectionStatus(
     }
     case "tuning":
       return { word: "Saved", tone: "neutral" };
+    case "lighterPoints":
+      // envState says nothing about the campaign, and the points read is the
+      // section's own on-demand work. A guessed word here would be a claim
+      // about a live provider nobody asked yet.
+      return { word: "Open", tone: "neutral" };
   }
 }

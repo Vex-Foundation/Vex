@@ -19,7 +19,7 @@
 
 /* Nested mode: the panel's scroll body owns overflow (it is the only box that
  * can also hold the sticky composer seat), so the transcript collapses to
- * ordinary flow content. Mounted alone the transcript keeps its own scroller - 
+ * ordinary flow content. Mounted alone the transcript keeps its own scroller -
  * `scrollportOf` in `useTranscriptScroll.ts` resolves between the two. */
 [data-vex-conversation-scroll] [data-vex-transcript-frame],
 [data-vex-conversation-scroll] [data-vex-area="chat-transcript"] {

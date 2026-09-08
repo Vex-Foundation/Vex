@@ -39,5 +39,6 @@ export const AGENT_ACTIVITY_LOGICAL_ROW_PREDICATE = `aa.event_role IN (
           'creator_fee_claim', 'holder_reward_claim', 'reward_distribution',
           'launch_cancel',
           'wallet_transfer',
+          'exchange_deposit', 'exchange_withdrawal',
           'tx_approve', 'tx_contract_call', 'tx_native_transfer', 'tx_spl_instruction_set'
         )`;

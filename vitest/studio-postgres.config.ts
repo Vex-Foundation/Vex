@@ -57,6 +57,9 @@ export default defineConfig({
   test: {
     include: [
       "src/__tests__/integration/migrations/idempotency.int.test.ts",
+      // Every database shape the migration runner can meet, plus the gate
+      // that keeps the pinned main baseline honest.
+      "src/__tests__/integration/migrations/upgrade-matrix.int.test.ts",
       "src/__tests__/integration/migrations/096-wallet-wrap-intents.int.test.ts",
       // The snapshot group record: applied as an increment on a schema at 100.
       "src/__tests__/integration/migrations/101-portfolio-snapshot-groups.int.test.ts",
@@ -78,6 +81,20 @@ export default defineConfig({
       "src/__tests__/integration/repos/wallet-transaction-*.int.test.ts",
       "src/__tests__/integration/repos/wallet-wrap-*.int.test.ts",
       "src/__tests__/integration/repos/swap-prequotes-claim.int.test.ts",
+      "src/__tests__/integration/repos/lighter-fee-*.int.test.ts",
+      // Position-observation freshness watermarks, the attempt-ordered sweep and
+      // the fill fee-enrichment delivery path: SQL guards no fake client can prove.
+      "src/__tests__/integration/repos/lighter-position-observations.int.test.ts",
+      "src/__tests__/integration/repos/lighter-fill-enrichment.int.test.ts",
+      // The fill merge rule: immutable economics refuse a conflict, the account
+      // half fills once, held rows never enqueue.
+      "src/__tests__/integration/repos/lighter-fill-merge.int.test.ts",
+      // The settlement-proven exchange row against every agent_activity CHECK.
+      "src/__tests__/integration/repos/settlement-proven-activity.int.test.ts",
+      // The durable refusal that retires a consent-expired key registration.
+      "src/__tests__/integration/repos/lighter-key-registration-refusal.int.test.ts",
+      // Deposit-repair attempt ordering on the intents table (needs VEX_LIGHTER_ONBOARDING_DB=1).
+      "src/__tests__/lighter/lighter-onboarding-intents-repo.test.ts",
       "src/__tests__/integration/repos/wallet-transfer-unconfirmed-repair.int.test.ts",
       "src/__tests__/integration/repos/wallet-transfer-execution-first-writer.int.test.ts",
       "src/__tests__/integration/wallet/transaction-authority-fence.int.test.ts",

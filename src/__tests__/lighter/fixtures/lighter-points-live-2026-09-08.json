@@ -1,0 +1,171 @@
+{
+  "provenance": {
+    "source": "vex-app/src/main/lighter/__tests__/live/points-probe.test.ts",
+    "recordedAt": "2026-09-08T12:18:01.851Z",
+    "environment": "rhc",
+    "wallet": "0x33eF6673BD80cB11fcC41b82Bc2181E65cC4d2fA",
+    "accountIndex": 24226,
+    "note": "Verbatim provider bodies from the live probe. The top-ten rows arrive masked from Lighter itself; only the queried wallet is unmasked, and that wallet is the repo-wide test wallet.",
+    "logicalErrorEnvelopeNote": "`unauthorizedLivePoints` is the HTTP-200 logical refusal Lighter answers an unauthenticated points read with, recorded in src/tools/lighter/Lighter.md and in the plan's measured-facts table."
+  },
+  "authorizedAllForWallet": {
+    "entries": [
+      {
+        "l1_address": "0x9C**************************************",
+        "points": 19995.764,
+        "entry": 1,
+        "entryId": 1
+      },
+      {
+        "l1_address": "0x04**************************************",
+        "points": 13507.439,
+        "entry": 2,
+        "entryId": 2
+      },
+      {
+        "l1_address": "0xa4**************************************",
+        "points": 12808.787,
+        "entry": 3,
+        "entryId": 3
+      },
+      {
+        "l1_address": "0xB4**************************************",
+        "points": 9082.814,
+        "entry": 4,
+        "entryId": 4
+      },
+      {
+        "l1_address": "0xe4**************************************",
+        "points": 4569.1914,
+        "entry": 5,
+        "entryId": 5
+      },
+      {
+        "l1_address": "0x78**************************************",
+        "points": 4076.6729,
+        "entry": 6,
+        "entryId": 6
+      },
+      {
+        "l1_address": "0x48**************************************",
+        "points": 3550.2722,
+        "entry": 7,
+        "entryId": 7
+      },
+      {
+        "l1_address": "0xC5**************************************",
+        "points": 3473.518,
+        "entry": 8,
+        "entryId": 8
+      },
+      {
+        "l1_address": "0xeb**************************************",
+        "points": 2413.7004,
+        "entry": 9,
+        "entryId": 9
+      },
+      {
+        "l1_address": "0xDe**************************************",
+        "points": 2399.5518,
+        "entry": 10,
+        "entryId": 10
+      },
+      {
+        "l1_address": "0x33eF6673BD80cB11fcC41b82Bc2181E65cC4d2fA",
+        "points": 4.470142e-05,
+        "entry": 22146,
+        "entryId": 11
+      }
+    ]
+  },
+  "anonymousAllForWallet": {
+    "entries": [
+      {
+        "l1_address": "0x9C**************************************",
+        "points": 19995.764,
+        "entry": 1,
+        "entryId": 1
+      },
+      {
+        "l1_address": "0x04**************************************",
+        "points": 13507.439,
+        "entry": 2,
+        "entryId": 2
+      },
+      {
+        "l1_address": "0xa4**************************************",
+        "points": 12808.787,
+        "entry": 3,
+        "entryId": 3
+      },
+      {
+        "l1_address": "0xB4**************************************",
+        "points": 9082.814,
+        "entry": 4,
+        "entryId": 4
+      },
+      {
+        "l1_address": "0xe4**************************************",
+        "points": 4569.1914,
+        "entry": 5,
+        "entryId": 5
+      },
+      {
+        "l1_address": "0x78**************************************",
+        "points": 4076.6729,
+        "entry": 6,
+        "entryId": 6
+      },
+      {
+        "l1_address": "0x48**************************************",
+        "points": 3550.2722,
+        "entry": 7,
+        "entryId": 7
+      },
+      {
+        "l1_address": "0xC5**************************************",
+        "points": 3473.518,
+        "entry": 8,
+        "entryId": 8
+      },
+      {
+        "l1_address": "0xeb**************************************",
+        "points": 2413.7004,
+        "entry": 9,
+        "entryId": 9
+      },
+      {
+        "l1_address": "0xDe**************************************",
+        "points": 2399.5518,
+        "entry": 10,
+        "entryId": 10
+      }
+    ]
+  },
+  "weeklyForWallet": {
+    "entries": [
+      {
+        "l1_address": "0x33eF6673BD80cB11fcC41b82Bc2181E65cC4d2fA",
+        "points": 0,
+        "entry": 1,
+        "entryId": 11
+      }
+    ]
+  },
+  "livePoints": {
+    "code": 200,
+    "total_live_points": 4.470142118493782e-05
+  },
+  "referralPoints": {
+    "referrals": [],
+    "user_total_points": 0,
+    "user_last_week_points": 0,
+    "user_total_referral_reward_points": 0,
+    "user_last_week_referral_reward_points": 0,
+    "reward_point_multiplier": "0.1000"
+  },
+  "unauthorizedLivePoints": {
+    "code": 20001,
+    "message": "invalid param : auth query param and Authorization header are empty"
+  }
+}

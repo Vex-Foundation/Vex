@@ -89,36 +89,36 @@ export function TranscriptRows({
           prev === undefined || crossesLocalDay(prev.createdAt, row.createdAt);
         return (
           <Fragment key={entryKey(row)}>
-          {startsDay ? <DaySeparator iso={row.createdAt} /> : null}
-          <div
-            data-vex-entry-id={row.id}
-            data-vex-entry-variant={row.variant}
-            data-vex-anchor-key={entryKey(row)}
-            className={cn(row.variant === "user" && "mt-4")}
-          >
+            {startsDay ? <DaySeparator iso={row.createdAt} /> : null}
             <div
-              className={cn(
-                liveAppend &&
-                  // The user's own message gets the fuller SEND entry; every
-                  // other live arrival keeps the quieter print.
-                  (row.variant === "user"
-                    ? "vex-message-send"
-                    : "vex-entry-settle"),
-              )}
+              data-vex-entry-id={row.id}
+              data-vex-entry-variant={row.variant}
+              data-vex-anchor-key={entryKey(row)}
+              className={cn(row.variant === "user" && "mt-4")}
             >
-              <TranscriptMessage
-                row={row}
-                pendingApprovals={pendingApprovals}
-                boardArrival={liveAppend ? "live-append" : "settled"}
-                agentWorking={workingAgentEntryKey === entryKey(row)}
-                feedbackSessionId={sessionId}
-                feedbackMessageKey={entryKey(row)}
-                onEditMessage={forkActions?.onEditMessage}
-                onEditInNewBranch={forkActions?.onEditInNewBranch}
-                onBranchFrom={forkActions?.onBranchFrom}
-              />
+              <div
+                className={cn(
+                  liveAppend &&
+                    // The user's own message gets the fuller SEND entry; every
+                    // other live arrival keeps the quieter print.
+                    (row.variant === "user"
+                      ? "vex-message-send"
+                      : "vex-entry-settle"),
+                )}
+              >
+                <TranscriptMessage
+                  row={row}
+                  pendingApprovals={pendingApprovals}
+                  boardArrival={liveAppend ? "live-append" : "settled"}
+                  agentWorking={workingAgentEntryKey === entryKey(row)}
+                  feedbackSessionId={sessionId}
+                  feedbackMessageKey={entryKey(row)}
+                  onEditMessage={forkActions?.onEditMessage}
+                  onEditInNewBranch={forkActions?.onEditInNewBranch}
+                  onBranchFrom={forkActions?.onBranchFrom}
+                />
+              </div>
             </div>
-          </div>
           </Fragment>
         );
       })}

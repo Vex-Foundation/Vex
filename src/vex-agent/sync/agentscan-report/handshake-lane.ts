@@ -50,7 +50,17 @@ function domainMatches(baseUrl: string, serverDomain: string): boolean {
 }
 
 export type HandshakeAttemptOutcome =
-  | { readonly kind: "handshaken"; readonly ingestToken: string }
+  | {
+      readonly kind: "handshaken";
+      readonly ingestToken: string;
+      /**
+       * What the server advertised on the handshake response, or `null` when
+       * it sent no capability field at all (an old server). Passed straight
+       * through to the reporting lane, which is what decides what an answer
+       * means; this file only carries it.
+       */
+      readonly capabilities: readonly string[] | null;
+    }
   | { readonly kind: "skip"; readonly reason: "unregistered" | "vault_locked" | "no_wallets" | "stopped" };
 
 /**
@@ -146,7 +156,11 @@ export async function handshakeOnce(
       walletsFingerprint: fingerprint,
     });
     logger.info("agentscan.report.handshake_bound");
-    return { kind: "handshaken", ingestToken: completed.ingestToken };
+    return {
+      kind: "handshaken",
+      ingestToken: completed.ingestToken,
+      capabilities: completed.capabilities,
+    };
   }
   if (completed.kind === "challenge_expired") {
     // Not a failure worth punishing — just restart the flow next run.

@@ -1,10 +1,11 @@
+import { createApprovedDispatchAbortOwner } from "../../studio/dispatch-preflight.js";
 /**
  * The `InternalToolContext` an APPROVED tool is resumed under.
  *
  * Its own module because the wallet scope here is a security decision, not
  * plumbing: a resumed `WalletSendConfirm` must sign with the SESSION's
  * selected wallet under the mission policy, never the primary. This is the
- * cold approval-resume path, so nothing is inherited from a live turn — the
+ * cold approval-resume path, so nothing is inherited from a live turn - the
  * session is re-hydrated and, if that fails, the policy fails CLOSED
  * (`kind: "invalid"`) rather than defaulting to something permissive.
  */
@@ -46,7 +47,9 @@ export async function buildResumedApprovalToolContext(args: {
    * a resume that can name no row.
    */
   readonly approvedPrequoteAuthority?: ApprovedPrequoteAuthority | null;
-}): Promise<InternalToolContext> {
+}): Promise<InternalToolContext & { readonly disposeDispatch: () => void }> {
+  const abortOwner = createApprovedDispatchAbortOwner(null);
+  try {
   const walletHydrated = await hydrateEngineSession(args.sessionId);
   const walletResolution: WalletResolution = walletHydrated
     ? buildSessionWalletResolution(walletHydrated.context)
@@ -55,13 +58,15 @@ export async function buildResumedApprovalToolContext(args: {
     ?? { kind: "invalid", reason: "session_unavailable" };
 
   return {
+    abortSignal: abortOwner.signal,
+    disposeDispatch: abortOwner.dispose,
     sessionId: args.sessionId,
     loadedDocuments: new Map(),
     sessionPermission: args.permissionAtEnqueue,
     approved: true,
     missionRunId: args.missionRunId,
     // Resolved from the run rather than left null: a resumed mission dispatch
-    // DOES have a mission, and C0 needs to bind it. Fails soft to null — a
+    // DOES have a mission, and C0 needs to bind it. Fails soft to null - a
     // missing mission id must not break an already-approved resume; the paths
     // that require provenance refuse by name instead (`execution-provenance.ts`).
     missionId: await resolveMissionId(args.missionRunId),
@@ -70,7 +75,7 @@ export async function buildResumedApprovalToolContext(args: {
     approvedPrequoteAuthority: args.approvedPrequoteAuthority ?? null,
     sessionKind: "agent",
     // Resuming an action the user already approved is explicit per-action
-    // authorization — the plan-acceptance gate (agent-autonomy) does not
+    // authorization - the plan-acceptance gate (agent-autonomy) does not
     // re-gate it (and the gate already cleared it at enqueue time).
     planMode: false,
     contextUsageBand: "normal",
@@ -79,11 +84,15 @@ export async function buildResumedApprovalToolContext(args: {
     walletResolution,
     walletPolicy,
   };
+  } catch (error) {
+    abortOwner.dispose();
+    throw error;
+  }
 }
 
 /**
  * Mission id behind a run id. Dynamic import mirrors the repo's engine→DB
- * access pattern. A read failure is not fatal here — see the call site.
+ * access pattern. A read failure is not fatal here - see the call site.
  */
 async function resolveMissionId(missionRunId: string | null): Promise<string | null> {
   if (missionRunId === null) return null;

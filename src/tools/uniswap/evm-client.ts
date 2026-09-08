@@ -25,12 +25,13 @@ import {
   type PublicClient,
   type Transport,
   type WalletClient,
+  http,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { getLocalChain } from "@tools/evm-chains/registry.js";
 import { getLocalEvmClients, getLocalPublicClient } from "@tools/evm-chains/evm-client.js";
 import { resolveRpcEndpoints } from "@tools/evm-chains/rpc-endpoints.js";
-import { buildEvmTransport, buildPinnedEvmTransport } from "@tools/evm-chains/rpc-transport.js";
+import { buildEvmTransport, buildPinnedEvmTransport, rpcHostOf } from "@tools/evm-chains/rpc-transport.js";
 import type { UniswapDeployment } from "./deployments.js";
 
 export interface UniswapEvmClients {
@@ -67,6 +68,31 @@ export function getUniswapPublicClient(
   return createPublicClient({
     chain: toViemChain(deployment),
     transport: buildEvmTransport(deployment.chainId),
+  }) as PublicClient<Transport, Chain>;
+}
+
+/**
+ * Read-only client for durable receipt and event-log evidence.
+ *
+ * It never signs or broadcasts. Deployments without a separately reviewed
+ * historical endpoint retain the normal public-client behavior.
+ */
+export function getUniswapHistoricalPublicClient(
+  deployment: UniswapDeployment,
+): PublicClient<Transport, Chain> {
+  if (deployment.historicalRpcUrl === undefined) {
+    return getUniswapPublicClient(deployment);
+  }
+  return createPublicClient({
+    chain: toViemChain(deployment),
+    // Same shape as the pinned transport in `evm-chains/rpc-transport.ts`: the
+    // host as the viem key (never the full url, rule 07), the registry's 30 s
+    // per-request timeout, and no viem retries (the caller owns retry policy).
+    transport: http(deployment.historicalRpcUrl, {
+      key: rpcHostOf(deployment.historicalRpcUrl),
+      timeout: 30_000,
+      retryCount: 0,
+    }),
   }) as PublicClient<Transport, Chain>;
 }
 

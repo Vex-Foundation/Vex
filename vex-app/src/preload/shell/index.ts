@@ -20,6 +20,7 @@ import { database } from "./database.js";
 import { docker } from "./docker.js";
 import { files } from "./files.js";
 import { market } from "./market.js";
+import { lighterTrading } from "./lighter-trading.js";
 import { studio } from "./studio.js";
 import { onboarding } from "./onboarding.js";
 import { search } from "./search.js";
@@ -49,6 +50,7 @@ export const shellBridge = {
   support,
   updater,
   market,
+  lighterTrading,
   studio,
   terminal,
   terminalLinks,

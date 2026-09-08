@@ -24,10 +24,13 @@
 
 import type { InternalToolContext } from "../tools/internal/types.js";
 import type { ToolResult } from "../tools/types.js";
+import type { ProtocolToolManifest } from "../tools/protocols/types.js";
+import logger from "@utils/logger.js";
 import { dispatchTool } from "../tools/dispatcher.js";
 import { executeProtocolTool } from "../tools/protocols/runtime.js";
 import { toProtocolExecutionContext } from "../tools/protocols/execution-context.js";
 import { resolveInjectedProtocolTool } from "../tools/registry/injected-protocol-tools.js";
+import { getProtocolManifest } from "../tools/protocols/catalog.js";
 import { getToolDef } from "../tools/registry.js";
 import { resolveToolName } from "../tools/registry/name-resolution.js";
 import { checkStaticConfiguration } from "./availability.js";
@@ -57,6 +60,7 @@ import {
 export interface StudioAdmission {
   readonly result: ToolResult;
   readonly dispatched: boolean;
+  readonly preparedApproval?: import("../tools/registry/prepared-action-follow-ups.js").ValidatedPreparedActionFollowUp;
 }
 
 /** One call as it arrives from the MCP surface. */
@@ -118,6 +122,62 @@ function unknownToolRefusal(name: string): ToolResult {
       + `${EXPORTED_TOOL_SEARCH_PUBLIC_NAME} with a query describing what you need, then call the `
       + "`publicName` it returns. Nothing was executed.",
   };
+}
+
+/**
+ * Does this tool's approval have to be rebuilt from durable rows by
+ * `readStudioPreparedApproval` (`./prepared-approval.ts`), or does it take the
+ * ordinary path?
+ *
+ * A MANIFEST CAPABILITY, never a name. This gate and the executor's follow-up
+ * hop both used to test `toolId.startsWith("lighter.")`, which made a protocol
+ * NAME the policy: the next protocol to prepare a durable intent would have
+ * been silently denied the handling, and a Lighter tool that prepares nothing
+ * would have been wrongly claimed by it. `studioPreparedAction` is declared on
+ * the approval-resume target itself, next to the `actionKind` that says what
+ * the call does.
+ */
+function isStudioPreparedActionTarget(
+  manifest: Pick<ProtocolToolManifest, "studioPreparedAction">,
+): boolean {
+  return manifest.studioPreparedAction === true;
+}
+
+/**
+ * The same question asked by catalog id, for the executor's follow-up hop,
+ * which holds a validated toolId rather than a manifest. An id no manifest
+ * claims answers `false`: an unresolvable target is not a prepared action.
+ */
+export function isStudioPreparedActionToolId(toolId: string): boolean {
+  const manifest = getProtocolManifest(toolId);
+  return manifest !== undefined && isStudioPreparedActionTarget(manifest);
+}
+
+/**
+ * Why a prepared action could not be handed to Studio approval.
+ *
+ * A BOUNDED ENUM rather than one collapsed sentence, for the reason rule 04's
+ * error layers give: "missing, expired, or inconsistent" told a caller nothing
+ * it could act on, and it read identically whether the mapping was absent (a
+ * Vex defect nothing the caller does can fix) or the saved row had simply aged
+ * out (prepare again and it works).
+ *
+ * `no_reader` - the manifest declares `studioPreparedAction` but the reader has
+ * no case for it, so no card could be built. An internal wiring gap.
+ * `card_unavailable` - the reader refused: the saved row is missing, belongs to
+ * another session, is no longer awaiting approval, has expired, or could not
+ * produce a card that matches the call. TODAY these five arrive as one reason
+ * because the reader raises one refusal for all of them; splitting them is the
+ * reader's change, not this module's, and this enum is where the finer members
+ * land when it happens.
+ */
+export type StudioPreparedApprovalRefusal = "no_reader" | "card_unavailable";
+
+/** The caller-visible answer for each refusal. Nothing was executed in either. */
+export function preparedApprovalRefusalOutput(reason: StudioPreparedApprovalRefusal): string {
+  return reason === "no_reader"
+    ? "This action was prepared, but Vex Studio has no approval reader for it, so no approval card could be created. Nothing was executed and nothing was signed. This is a Vex wiring gap rather than something the call did wrong; report the tool name."
+    : "The saved action could not be reopened for approval: it is missing, belongs to another session, has already been answered, has expired, or no longer matches this call. No approval card was created, nothing was executed and nothing was signed. Prepare the action again and approve the fresh card.";
 }
 
 /** The `vex_ToolSearch` answer, serialized the way every tool result is. */
@@ -221,5 +281,27 @@ export async function admitStudioCall(
     { toolId: manifest.toolId, params: call.args },
     toProtocolExecutionContext(call, context, "studio_mcp"),
   );
+  if (result.pendingApproval === true && isStudioPreparedActionTarget(manifest)) {
+    let reason: StudioPreparedApprovalRefusal;
+    try {
+      const { readStudioPreparedApproval } = await import("./prepared-approval.js");
+      const preparedApproval = await readStudioPreparedApproval(context.sessionId, call);
+      if (preparedApproval) return { result, dispatched: true, preparedApproval };
+      reason = "no_reader";
+    } catch {
+      reason = "card_unavailable";
+    }
+    // SAFE DIAGNOSTICS ONLY, the same rule the in-app sibling follows
+    // (`engine/core/turn-loop-tool-batch/prepared-follow-up.ts`): the bounded
+    // reason and the catalog toolId, never the thrown message. That message can
+    // be a repository or driver error whose text carries a query, a path or a
+    // connection string, and this lane is one `await import` away from the
+    // database.
+    logger.warn("studio.prepared_approval.rejected", { reason, toolId: manifest.toolId });
+    return {
+      dispatched: true,
+      result: { success: false, output: preparedApprovalRefusalOutput(reason) },
+    };
+  }
   return { result, dispatched: true };
 }

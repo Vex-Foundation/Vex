@@ -28,6 +28,7 @@ import { registerCompactionHandlers } from "./compaction.js";
 import { registerDatabaseHandlers } from "./database.js";
 import { registerLongMemoryHandlers } from "./long-memory.js";
 import { registerMarketHandlers } from "./market.js";
+import { registerLighterTradingHandlers } from "./lighter-trading.js";
 import { registerStudioHandlers } from "./studio.js";
 import { registerStudioBridgeReadinessHandlers } from "./studio-bridge-readiness.js";
 import { registerStudioFilesHandlers } from "./studio-files.js";
@@ -171,6 +172,7 @@ export function registerAllIpcHandlers(): () => Promise<void> {
   // handler serves main's in-memory cache; the external poll + EV.market.vex
   // broadcast are owned by the market service, started in index.ts.
   teardowns.push(...registerMarketHandlers());
+  teardowns.push(...registerLighterTradingHandlers());
 
   // B0: read-only Vex Studio host status. The handler serves main's in-memory
   // cache; the transitions are published by the MCP host itself and broadcast

@@ -77,13 +77,14 @@
  */
 
 import { studioSettlementBus } from "@vex-agent/engine/runtime/studio-settlement-bus.js";
-import { setStudioDispatchPreflight } from "@vex-agent/engine/core/approval-runtime/studio/dispatch-preflight.js";
+import { setStudioDispatchPreflight, revokeApprovedDispatches } from "@vex-agent/engine/core/approval-runtime/studio/dispatch-preflight.js";
 import {
   setStudioProjectLeaseAcquirer,
   type StudioProjectDispatchLease,
 } from "@vex-agent/engine/core/approval-runtime/studio/project-lease-registry.js";
 import { log } from "../logger/index.js";
 import {
+  onSecretSessionLifecycle,
   isSecretSessionUnlocked,
   isStudioDispatchPoisoned,
   isStudioSessionTransitionInProgress,
@@ -152,6 +153,10 @@ export function setupStudioSettlementBridge(): () => void {
   // delete's drain does not wait for.
   setStudioProjectLeaseAcquirer(acquireStudioDispatchLease);
 
+  const offRevocation = onSecretSessionLifecycle((state) => {
+    if (state === "locked") revokeApprovedDispatches({ reason: "lock" });
+  });
+
   const off = studioSettlementBus.subscribe((event) => {
     void releaseWaiter(event.approvalId);
   });
@@ -170,6 +175,8 @@ export function setupStudioSettlementBridge(): () => void {
   readyBarrier = initializeStudioRuntime(epoch, initializationAbort.signal);
 
   return () => {
+    revokeApprovedDispatches({ reason: "vex_quit" });
+    offRevocation();
     off();
     readyBarrier = null;
     setStudioRuntimeRetryHook(null);

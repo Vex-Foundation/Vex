@@ -39,6 +39,8 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { sendOnlyAgentscanClient } from "../../helpers/agentscan-client.js";
+
 import { seedIntent, cleanupSeeded } from "../agent-scan/_fixtures.js";
 import type { AgentscanClient, SendOutcome } from "@vex-agent/agentscan/client.js";
 import { enqueueAtCurrentGeneration, claimAtCurrentGeneration } from "./_reporting-tick.js";
@@ -361,7 +363,7 @@ describe("the incremental scan is fenced by the generation the lane read its cre
         detail: "unavailable",
       }),
     );
-    const client: AgentscanClient = { sendEvents };
+    const client: AgentscanClient = sendOnlyAgentscanClient(sendEvents);
     const { drainIncremental } = await import("@vex-agent/sync/agentscan-report/drain.js");
 
     const result = await drainIncremental(

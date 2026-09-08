@@ -25,6 +25,8 @@
 import { fetchWithTimeout, readJson } from "@utils/http.js";
 import { readRetryAfterSeconds } from "@utils/http/retry-after.js";
 import type { AgentscanEvent } from "./mapper.js";
+import type { ServerCapabilityAnswer } from "../sync/agentscan-report/lighter-capability.js";
+import logger from "@utils/logger.js";
 
 const REQUEST_TIMEOUT_MS = 15_000;
 const MAX_DETAIL_LEN = 120;
@@ -57,6 +59,16 @@ export type SendOutcome =
       readonly rejectedIndexes: number[];
       readonly agentHealth: AgentHealth | null;
     }
+  /**
+   * A 200 whose body does not ACCOUNT FOR the batch: an unreadable body, a
+   * missing or non-integer count, a rejection naming an index outside the
+   * batch or naming one twice, or counts that do not add up to what was sent.
+   * It is not a delivery and it is not a refusal - it is the absence of an
+   * answer, and the lane must mark nothing and ask again. See the note on
+   * {@link readBatchAcknowledgement} for why this is a named outcome rather
+   * than a tolerant zero.
+   */
+  | { readonly kind: "unknown_acknowledgement"; readonly detail: string }
   | { readonly kind: "auth_lost" }
   | { readonly kind: "stopped"; readonly reason: "consent_revoked" | "quarantined" }
   | { readonly kind: "invalid"; readonly detail: string }
@@ -74,14 +86,195 @@ export interface SendEventsInput {
   readonly events: AgentscanEvent[];
 }
 
+/**
+ * One position observation exactly as `POST /v1/lighter/positions` accepts it.
+ *
+ * A NAMED shape, never a passthrough of anything the sweep stored: the
+ * observation is account-wide and the payload allowlist is what keeps
+ * counterparty and credential material out of it by construction.
+ */
+export interface LighterPositionObservationPayload {
+  readonly environment: "core" | "rhc";
+  /** Decimal digits: the account index is a venue identity, not a number to round. */
+  readonly accountIndex: string;
+  readonly observationId: string;
+  readonly observedAt: string;
+  readonly source: "account_endpoint";
+  readonly coverage: {
+    readonly markets: "all" | readonly number[];
+    readonly complete: boolean;
+  };
+  readonly positions: ReadonlyArray<{
+    readonly marketIndex: number;
+    readonly marketSymbol: string;
+    readonly sizeDecimals: number;
+    readonly size: string;
+    readonly entryPrice: string | null;
+    readonly unrealizedPnl: string | null;
+    readonly realizedPnl: string | null;
+    readonly liquidationPrice: string | null;
+  }>;
+}
+
+export interface SendPositionObservationsInput {
+  readonly agentHash: string;
+  readonly ingestToken: string;
+  readonly observations: readonly LighterPositionObservationPayload[];
+}
+
+/**
+ * What the positions endpoint said, in the SAME outcome vocabulary ingest uses.
+ *
+ * `ok` splits three ways because the three mean different things to the lane:
+ * `accepted` landed, `ignoredStale` arrived after a newer reading and is
+ * settled (never an error the client can fix), and a rejected index is a
+ * payload this install cannot express. There is no `receivedAt` on the wire:
+ * the server assigns one and does not return it, so nothing here can claim to
+ * know it.
+ */
+export type SendPositionsOutcome =
+  | {
+      readonly kind: "ok";
+      readonly accepted: number;
+      readonly ignoredStale: number;
+      readonly rejectedIndexes: number[];
+    }
+  /** See {@link SendOutcome}: a 200 that does not account for the batch settles nothing. */
+  | { readonly kind: "unknown_acknowledgement"; readonly detail: string }
+  | { readonly kind: "auth_lost" }
+  | { readonly kind: "stopped"; readonly reason: "consent_revoked" | "quarantined" }
+  | { readonly kind: "invalid"; readonly detail: string }
+  | {
+      readonly kind: "retryable";
+      readonly status: number | null;
+      readonly retryAfterSeconds: number | null;
+      readonly detail: string;
+    };
+
 export interface AgentscanClient {
   sendEvents(input: SendEventsInput): Promise<SendOutcome>;
+  /**
+   * What this deployment advertises, read from `GET /capabilities`.
+   *
+   * The three answers are not interchangeable. A 200 is the LIST, whatever it
+   * contains. A 404 is `absent`: the route does not exist, which is exactly
+   * what an old server should say and a real, negative answer. Everything else
+   * - transport failure, 401, 403, 410, 5xx - is `unreachable`, because none of
+   * them is the server telling us what it carries: a 401 says this install's
+   * token is not accepted, not that the deployment lacks the capability, and
+   * recording it as `absent` would turn an auth problem into a capability
+   * rollback. The reason is logged so an operator can tell them apart.
+   */
+  fetchCapabilities(input: FetchCapabilitiesInput): Promise<ServerCapabilityAnswer>;
+  postLighterPositionObservations(
+    input: SendPositionObservationsInput,
+  ): Promise<SendPositionsOutcome>;
+}
+
+export interface FetchCapabilitiesInput {
+  /** The stored ingest token, or null when this install has none yet. */
+  readonly ingestToken: string | null;
 }
 
 export function buildAgentscanClient(baseUrl: string): AgentscanClient {
   return {
     sendEvents: (input) => sendEvents(baseUrl, input),
+    fetchCapabilities: (input) => fetchCapabilities(baseUrl, input),
+    postLighterPositionObservations: (input) => postLighterPositionObservations(baseUrl, input),
   };
+}
+
+/** Wire version of the positions batch. The server accepts exactly 1 today. */
+const POSITIONS_SCHEMA_VERSION = 1;
+
+async function fetchCapabilities(
+  baseUrl: string,
+  input: FetchCapabilitiesInput,
+): Promise<ServerCapabilityAnswer> {
+  // NO TOKEN IS NOT AN ANSWER EITHER. The endpoint authenticates like ingest,
+  // so an install that has not handshaken yet would earn a 401 - asking would
+  // teach us nothing and spend a request saying so.
+  if (input.ingestToken === null) {
+    logger.info("agentscan.capabilities.unreachable", { reason: "no_ingest_token" });
+    return { kind: "unreachable", reason: "no_ingest_token" };
+  }
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(joinUrl(baseUrl, "capabilities"), {
+      method: "GET",
+      timeoutMs: REQUEST_TIMEOUT_MS,
+      headers: { Authorization: `Bearer ${input.ingestToken}` },
+    });
+  } catch (err) {
+    logger.info("agentscan.capabilities.unreachable", { reason: "transport", detail: safeDetail(err) });
+    return { kind: "unreachable", reason: "transport" };
+  }
+
+  const body = await readJson(response).catch(() => null);
+  if (response.ok) {
+    const record = isRecord(body) ? body : {};
+    const capabilities = Array.isArray(record.capabilities)
+      ? record.capabilities.filter((entry): entry is string => typeof entry === "string" && entry.length > 0)
+      : [];
+    return { kind: "list", capabilities };
+  }
+  // AN OLD SERVER, and the only status that is a real negative answer: the
+  // route does not exist, so this deployment has no capabilities to declare.
+  if (response.status === 404) return { kind: "absent" };
+  logger.info("agentscan.capabilities.unreachable", {
+    reason: "refused",
+    detail: describeError(response.status, body),
+  });
+  return { kind: "unreachable", reason: "refused" };
+}
+
+async function postLighterPositionObservations(
+  baseUrl: string,
+  input: SendPositionObservationsInput,
+): Promise<SendPositionsOutcome> {
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(joinUrl(baseUrl, "v1/lighter/positions"), {
+      method: "POST",
+      timeoutMs: REQUEST_TIMEOUT_MS,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${input.ingestToken}`,
+      },
+      body: JSON.stringify({
+        schemaVersion: POSITIONS_SCHEMA_VERSION,
+        agentHash: input.agentHash,
+        observations: input.observations,
+      }),
+    });
+  } catch (err) {
+    return { kind: "retryable", status: null, retryAfterSeconds: null, detail: safeDetail(err) };
+  }
+
+  const body = await readJson(response).catch(() => null);
+
+  if (response.ok) {
+    const reading = readBatchAcknowledgement(body, "ignoredStale", input.observations.length);
+    if (!reading.ok) {
+      logger.warn("agentscan.positions.unknown_acknowledgement", { detail: reading.detail });
+      return { kind: "unknown_acknowledgement", detail: reading.detail };
+    }
+    return {
+      kind: "ok",
+      accepted: reading.accepted,
+      ignoredStale: reading.settled,
+      rejectedIndexes: reading.rejectedIndexes,
+    };
+  }
+
+  const code = errorCode(body);
+  if (response.status === 401) return { kind: "auth_lost" };
+  if (response.status === 403) {
+    return code === "quarantined" ? { kind: "stopped", reason: "quarantined" } : { kind: "auth_lost" };
+  }
+  if (response.status === 410) return { kind: "stopped", reason: "consent_revoked" };
+  if (response.status === 429 || response.status >= 500) return retryableFrom(response, body);
+  return { kind: "invalid", detail: describeError(response.status, body) };
 }
 
 async function sendEvents(baseUrl: string, input: SendEventsInput): Promise<SendOutcome> {
@@ -108,18 +301,20 @@ async function sendEvents(baseUrl: string, input: SendEventsInput): Promise<Send
   const body = await readJson(response).catch(() => null);
 
   if (response.ok) {
-    // TOLERANT READER: only the known result fields are consumed; anything
-    // extra the server sends is ignored rather than allowed to fail the parse.
-    const record = isRecord(body) ? body : {};
-    const rejected = Array.isArray(record.rejected) ? record.rejected : [];
+    // TOLERANT ABOUT WHAT IT DOES NOT KNOW, STRICT ABOUT THE VERDICT. Extra
+    // fields the server sends are still ignored rather than allowed to fail
+    // the parse; the disposition of every event in the batch is not extra.
+    const reading = readBatchAcknowledgement(body, "duplicates", input.events.length);
+    if (!reading.ok) {
+      logger.warn("agentscan.events.unknown_acknowledgement", { detail: reading.detail });
+      return { kind: "unknown_acknowledgement", detail: reading.detail };
+    }
     return {
       kind: "ok",
-      accepted: toCount(record.accepted),
-      duplicates: toCount(record.duplicates),
-      rejectedIndexes: rejected
-        .map((item) => (isRecord(item) ? Number(item.index) : Number.NaN))
-        .filter((index) => Number.isInteger(index) && index >= 0),
-      agentHealth: readAgentHealth(record.agent),
+      accepted: reading.accepted,
+      duplicates: reading.settled,
+      rejectedIndexes: reading.rejectedIndexes,
+      agentHealth: readAgentHealth(isRecord(body) ? body.agent : null),
     };
   }
 
@@ -159,9 +354,82 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function toCount(value: unknown): number {
-  const n = Number(value);
-  return Number.isInteger(n) && n >= 0 ? n : 0;
+/**
+ * What a batch acknowledgement was read as, or why it could not be read.
+ *
+ * `settled` is whichever terminal-but-not-accepted count this endpoint uses:
+ * `duplicates` on ingest, `ignoredStale` on positions. Both mean the same
+ * thing to the caller - the item is finished and will never be finished
+ * differently by sending it again.
+ */
+type BatchAcknowledgementReading =
+  | {
+      readonly ok: true;
+      readonly accepted: number;
+      readonly settled: number;
+      readonly rejectedIndexes: number[];
+    }
+  | { readonly ok: false; readonly detail: string };
+
+/**
+ * READ THE SERVER'S VERDICT, OR DECLARE THAT THERE IS NONE.
+ *
+ * A 200 whose body is `{}` used to read as "accepted 0, duplicates 0, nothing
+ * rejected", and the drain settles everything a batch did not reject: an empty
+ * body therefore RETIRED an undelivered batch. A malformed answer is not a
+ * verdict - the same posture MetaMask's `PendingTransactionTracker` takes when
+ * a receipt lookup comes back without a status: it leaves the transaction
+ * pending rather than deciding for the chain.
+ *
+ * So every disposition is required to be exact and to add up. Both routes
+ * place each item in exactly one bucket (`accepted`, the settled count, or one
+ * `rejected` entry), so `accepted + settled + rejected === sent` is the
+ * server's own invariant and anything else means the body did not come from a
+ * server that processed this batch.
+ *
+ * `expected` is the number of items THIS request sent, which is why an index
+ * outside it is refused rather than clamped: it names an item this batch does
+ * not contain.
+ */
+function readBatchAcknowledgement(
+  body: unknown,
+  settledField: "duplicates" | "ignoredStale",
+  expected: number,
+): BatchAcknowledgementReading {
+  if (!isRecord(body)) return { ok: false, detail: "the acknowledgement body is not an object" };
+  const accepted = exactCount(body.accepted);
+  const settled = exactCount(body[settledField]);
+  if (accepted === null) return { ok: false, detail: "the acknowledgement carries no exact accepted count" };
+  if (settled === null) return { ok: false, detail: `the acknowledgement carries no exact ${settledField} count` };
+  if (!Array.isArray(body.rejected)) return { ok: false, detail: "the acknowledgement carries no rejected list" };
+  const rejectedIndexes = new Set<number>();
+  for (const entry of body.rejected) {
+    if (!isRecord(entry)) return { ok: false, detail: "a rejection entry is not an object" };
+    const index = entry.index;
+    if (typeof index !== "number" || !Number.isInteger(index) || index < 0 || index >= expected) {
+      return { ok: false, detail: "a rejection names an index outside the batch" };
+    }
+    if (typeof entry.code !== "string" || entry.code.trim().length === 0) {
+      return { ok: false, detail: "a rejection carries no reason code" };
+    }
+    if (rejectedIndexes.has(index)) return { ok: false, detail: "a rejection names the same index twice" };
+    rejectedIndexes.add(index);
+  }
+  const accounted = accepted + settled + rejectedIndexes.size;
+  if (accounted !== expected) {
+    return { ok: false, detail: `the acknowledgement accounts for ${accounted} of ${expected} items` };
+  }
+  return { ok: true, accepted, settled, rejectedIndexes: [...rejectedIndexes] };
+}
+
+/**
+ * A count the server actually stated. NO COERCION, for the reason
+ * `readAgentHealth` gives: `Number(null)` is 0 and `Number(true)` is 1, so
+ * coercing would read a missing field as a real zero - which is precisely the
+ * defect this parser exists to close.
+ */
+function exactCount(value: unknown): number | null {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null;
 }
 
 /**

@@ -93,6 +93,13 @@ const KIND_ADMISSION: Readonly<Record<string, string | null>> = {
    */
   transfer: null,
   /**
+   * `exchange` (migration 152) is NOT carried by the token history today,
+   * recorded as a declared gap like `transfer`: a Lighter deposit or claimed
+   * withdrawal is visible in the Agent Scan feed and on AgentScan itself, but
+   * the token page does not list exchange funding legs yet.
+   */
+  exchange: null,
+  /**
    * `transaction` (migration 087) is NOT carried by the token history, and here
    * that is a verdict rather than a deferred gap.
    *

@@ -5,7 +5,18 @@ import {
   type UserProfile,
 } from "../../shared/schemas/user-profile.js";
 import type { SettingsBridge } from "../../shared/types/bridge/shell/settings.js";
-import { invokeWithSchema } from "../_dispatch.js";
+import {
+  forgetLighterCredentialConnectionInputSchema,
+  getLighterIntegrationInputSchema,
+  inspectLighterCredentialConnectionsInputSchema,
+  setLighterIntegrationInputSchema,
+  type ForgetLighterCredentialConnectionInput,
+  type GetLighterIntegrationInput,
+  type InspectLighterCredentialConnectionsInput,
+  type SetLighterIntegrationInput,
+} from "../../shared/schemas/lighter-integration.js";
+import { readLighterPointsInputSchema } from "../../shared/schemas/lighter-points.js";
+import { abortableInvoke, invokeWithSchema } from "../_dispatch.js";
 
 const setTelemetryConsentInputSchema = z
   .object({ enabled: z.boolean() })
@@ -21,6 +32,43 @@ export const settings = {
       input,
       setTelemetryConsentInputSchema
     );
+  },
+  getLighterIntegration(input: GetLighterIntegrationInput) {
+    return invokeWithSchema(
+      CH.settings.getLighterIntegration,
+      input,
+      getLighterIntegrationInputSchema,
+    );
+  },
+  setLighterIntegration(input: SetLighterIntegrationInput) {
+    return invokeWithSchema(
+      CH.settings.setLighterIntegration,
+      input,
+      setLighterIntegrationInputSchema,
+    );
+  },
+  inspectLighterCredentialConnections(
+    input: InspectLighterCredentialConnectionsInput = {},
+  ) {
+    return invokeWithSchema(
+      CH.settings.inspectLighterCredentialConnections,
+      input,
+      inspectLighterCredentialConnectionsInputSchema,
+    );
+  },
+  forgetLighterCredentialConnection(
+    input: ForgetLighterCredentialConnectionInput,
+  ) {
+    return invokeWithSchema(
+      CH.settings.forgetLighterCredentialConnection,
+      input,
+      forgetLighterCredentialConnectionInputSchema,
+    );
+  },
+  // Abortable: unmounting the Settings section or pressing Refresh again
+  // cancels the in-flight read, which is what reaches main's `ctx.signal`.
+  lighterPoints() {
+    return abortableInvoke(CH.settings.lighterPoints, {}, readLighterPointsInputSchema);
   },
   getUserProfile() {
     return invokeWithSchema(CH.settings.getUserProfile, {});

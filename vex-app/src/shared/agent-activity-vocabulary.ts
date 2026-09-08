@@ -77,6 +77,7 @@ export const AGENT_ACTIVITY_KINDS = [
   // things at once. The row states the decoded effect through its role and the
   // chain outcome, never an amount nobody proved.
   "transaction",
+  "exchange",
 ] as const;
 export type AgentActivityKind = (typeof AGENT_ACTIVITY_KINDS)[number];
 
@@ -216,6 +217,8 @@ export const AGENT_ACTIVITY_EVENT_ROLES = [
   // is a CHILD LEG of the action it charges for and never its own feed row -
   // `agent-activity-logical-row.ts` is where that is enforced.
   "vex_fee",
+  "exchange_deposit",
+  "exchange_withdrawal",
 ] as const;
 export type AgentActivityEventRole = (typeof AGENT_ACTIVITY_EVENT_ROLES)[number];
 

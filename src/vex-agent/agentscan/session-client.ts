@@ -80,6 +80,17 @@ export type SessionCompleteOutcome =
       readonly ingestToken: string;
       readonly agentName: string;
       readonly lastAcceptedRowId: number | null;
+      /**
+       * What this deployment says it accepts, from the handshake response's
+       * additive `capabilities` field.
+       *
+       * `null` means the field was ABSENT, which is an OLD SERVER and not an
+       * empty list: an empty array is a real, negative answer from a server
+       * that has capabilities to declare and declares none. The two are kept
+       * apart because the capability gate treats "never told" and "told, and
+       * the answer is no" as different observations.
+       */
+      readonly capabilities: readonly string[] | null;
     }
   | { readonly kind: "challenge_expired" }
   | { readonly kind: "invalid"; readonly detail: string }
@@ -209,10 +220,21 @@ function parseSessionStartBody(
   return { challengeId, nonce, domain, expiresAt };
 }
 
-/** TOLERANT READER: `syncState.lastAcceptedRowId` degrades to null rather than failing the parse. */
+/**
+ * TOLERANT READER: `syncState.lastAcceptedRowId` degrades to null rather than
+ * failing the parse, and so does `capabilities` - but the two nulls mean
+ * different things, and only this function can tell them apart. An ABSENT
+ * capabilities field is an old server (null); a present array is the answer,
+ * even when it is empty.
+ */
 function parseSessionCompleteBody(
   body: unknown,
-): { ingestToken: string; agentName: string; lastAcceptedRowId: number | null } | null {
+): {
+  ingestToken: string;
+  agentName: string;
+  lastAcceptedRowId: number | null;
+  capabilities: readonly string[] | null;
+} | null {
   if (!isRecord(body)) return null;
   const { ingestToken, agentName } = body;
   if (!nonEmptyString(ingestToken) || typeof agentName !== "string") return null;
@@ -223,7 +245,20 @@ function parseSessionCompleteBody(
     if (typeof raw === "number" && Number.isInteger(raw)) lastAcceptedRowId = raw;
     else if (typeof raw === "string" && /^\d+$/.test(raw)) lastAcceptedRowId = Number(raw);
   }
-  return { ingestToken, agentName, lastAcceptedRowId };
+  return { ingestToken, agentName, lastAcceptedRowId, capabilities: readCapabilities(body.capabilities) };
+}
+
+/**
+ * The advertised capability list, or null when the server sent no field at all.
+ *
+ * A NON-ARRAY value is a malformed field rather than an absent one, and it
+ * reads as null for the same reason: it is not an answer. Entries that are not
+ * non-empty strings are dropped - the gate compares exact capability strings,
+ * and a garbage entry can only ever fail that comparison anyway.
+ */
+function readCapabilities(value: unknown): readonly string[] | null {
+  if (!Array.isArray(value)) return null;
+  return value.filter((entry): entry is string => nonEmptyString(entry));
 }
 
 function retryableFrom(

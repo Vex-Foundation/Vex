@@ -31,6 +31,14 @@ export const INTERNAL_TOOL_LOADERS: Readonly<Record<string, InternalHandlerLoade
   // Agent Scan (renamed from `portfolio`, Agent Scan plan v3 §1.9)
   AgentScan: async () => (await import("../internal/portfolio-inspect.js")).handleAgentScan,
 
+  // Lighter Robinhood Chain hot path - complete deterministic readiness in one
+  // live read, without protocol discovery or a redundant wallet-balance call.
+  lighter_rhc_onboarding_status: async () =>
+    (await import("../internal/lighter-onboarding.js")).handleLighterRhcOnboardingStatus,
+  // Same hot path, independently fixed to Lighter Core / Ethereum USDC.
+  lighter_core_onboarding_status: async () =>
+    (await import("../internal/lighter-onboarding.js")).handleLighterCoreOnboardingStatus,
+
   // Khalani direct read alias (the other three were removed 2026-07-30 - their
   // protocol tools remain reachable through ToolSearch)
   TokenFind: async () => (await import("../internal/khalani.js")).handleTokenFind,

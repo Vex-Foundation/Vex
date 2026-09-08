@@ -21,6 +21,7 @@ const OWNER = "0x18b467Cb28FC07Ca6E17A964b3319051B3072B79" as Address;
 const TO = "0x6131B5fae19EA4f9D964eAc0408E4408b66337b5" as Address;
 const SERIALIZED = "0x02f8710182012a8459682f008459682f2f82520894111111111111111111111111111111111111111180840123456780c0" as Hex;
 const HASH = keccak256(SERIALIZED);
+const REPLACEMENT_HASH = `0x${"d".repeat(64)}` as Hex;
 const NONCE = 42;
 
 function makeClients(opts: {
@@ -34,7 +35,16 @@ function makeClients(opts: {
   /** Per-attempt estimate script (a bigint resolves, an Error rejects) — overrides the options above. */
   estimateScript?: Array<bigint | Error>;
   preparedGasOverride?: bigint;
+  maxFeePerGas?: bigint;
+  maxPriorityFeePerGas?: bigint;
+  preparedMaxFeePerGasOverride?: bigint;
   headBlock?: bigint;
+  replacement?: {
+    data?: Hex;
+    gas?: bigint;
+    maxFeePerGas?: bigint;
+    maxPriorityFeePerGas?: bigint;
+  };
 } = {}) {
   const calls: string[] = [];
   const estimateArgs: Array<Record<string, unknown>> = [];
@@ -59,13 +69,37 @@ function makeClients(opts: {
       if (opts.estimateThrows) throw new Error("execution reverted: Call failed");
       return opts.gasEstimate ?? 100_000n;
     }),
+    estimateFeesPerGas: vi.fn(async () => ({
+      maxFeePerGas: opts.maxFeePerGas ?? 20_000_000_000n,
+      maxPriorityFeePerGas: opts.maxPriorityFeePerGas ?? 2_000_000_000n,
+    })),
     sendRawTransaction: vi.fn(async () => {
       calls.push("sendRawTransaction");
       if (opts.sendThrows) throw new Error("network down");
       return HASH;
     }),
-    waitForTransactionReceipt: vi.fn(async () => {
+    waitForTransactionReceipt: vi.fn(async (args: Record<string, unknown>) => {
       calls.push("waitForTransactionReceipt");
+      if (opts.replacement) {
+        const onReplaced = args.onReplaced as ((value: unknown) => void) | undefined;
+        onReplaced?.({
+          reason: "repriced",
+          replacedTransaction: { hash: HASH },
+          transaction: {
+            hash: REPLACEMENT_HASH,
+            from: OWNER,
+            nonce: NONCE,
+            to: TO,
+            input: opts.replacement.data ?? "0x",
+            value: 0n,
+            gas: opts.replacement.gas ?? 200_000n,
+            maxFeePerGas: opts.replacement.maxFeePerGas ?? 20_000_000_000n,
+            maxPriorityFeePerGas:
+              opts.replacement.maxPriorityFeePerGas ?? 2_000_000_000n,
+          },
+          transactionReceipt: { status: "success", logs: [] },
+        });
+      }
       if (receiptScript) {
         const next = receiptScript.shift();
         if (next === undefined) throw new Error("test: waitForTransactionReceipt called past the scripted bound");
@@ -90,6 +124,12 @@ function makeClients(opts: {
         // `undefined` unless a test simulates viem's `wallet_fillTransaction`
         // path replacing the requested gas with the node's own figure.
         ...(opts.preparedGasOverride === undefined ? {} : { gas: opts.preparedGasOverride }),
+        ...(request.maxFeePerGas === undefined
+          ? {}
+          : { maxFeePerGas: opts.preparedMaxFeePerGasOverride ?? request.maxFeePerGas }),
+        ...(request.maxPriorityFeePerGas === undefined
+          ? {}
+          : { maxPriorityFeePerGas: request.maxPriorityFeePerGas }),
       };
     }),
     signTransaction: vi.fn(async (request: Record<string, unknown>) => {
@@ -302,6 +342,146 @@ describe("signStageBroadcast gas limit", () => {
     // No confirmed prior leg was supplied, so there is no stale-state
     // hypothesis: one attempt, the node's error, done.
     expect(calls.filter((c) => c === "estimateGas")).toHaveLength(1);
+  });
+});
+
+describe("signStageBroadcast approval-bound fee exposure", () => {
+  const ceiling = {
+    gasLimit: 200_000n,
+    maxFeePerGas: 20_000_000_000n,
+    maxPriorityFeePerGas: 2_000_000_000n,
+    maxNetworkFeeWei: 4_000_000_000_000_000n,
+  };
+
+  it("serializes only the live EIP-1559 fees proven within the approved ceiling", async () => {
+    const { publicClient, walletClient, signedRequests } = makeClients();
+
+    await signStageBroadcast(
+      publicClient,
+      walletClient,
+      { to: TO, data: "0x" },
+      hooks(),
+      undefined,
+      undefined,
+      ceiling,
+    );
+
+    expect(signedRequests[0]).toMatchObject({
+      gas: 200_000n,
+      maxFeePerGas: 20_000_000_000n,
+      maxPriorityFeePerGas: 2_000_000_000n,
+    });
+  });
+
+  it.each([
+    ["gas", { gasEstimate: 100_001n }],
+    ["max fee", { maxFeePerGas: 20_000_000_001n }],
+    ["priority fee", { maxPriorityFeePerGas: 2_000_000_001n }],
+  ])("refuses increased %s before signing, staging, or broadcasting", async (_name, options) => {
+    const { publicClient, walletClient, calls } = makeClients(options);
+    const h = hooks();
+
+    await expect(signStageBroadcast(
+      publicClient,
+      walletClient,
+      { to: TO, data: "0x" },
+      h,
+      undefined,
+      undefined,
+      ceiling,
+    )).rejects.toThrow(/approved transaction ceiling/);
+
+    expect(h.onHashStaged).not.toHaveBeenCalled();
+    expect(calls).not.toContain("signTransaction");
+    expect(calls).not.toContain("sendRawTransaction");
+  });
+
+  it("refuses a preparation result that raises the approved maximum fee", async () => {
+    const { publicClient, walletClient, calls } = makeClients({
+      preparedMaxFeePerGasOverride: 20_000_000_001n,
+    });
+
+    await expect(signStageBroadcast(
+      publicClient,
+      walletClient,
+      { to: TO, data: "0x" },
+      hooks(),
+      undefined,
+      undefined,
+      ceiling,
+    )).rejects.toThrow(/prepared EIP-1559 fees/);
+
+    expect(calls).not.toContain("signTransaction");
+    expect(calls).not.toContain("sendRawTransaction");
+  });
+
+  it("preserves an exact fee-only replacement within the approved ceiling", async () => {
+    const { publicClient, walletClient } = makeClients({ replacement: {} });
+
+    const outcome = await signStageBroadcast(
+      publicClient,
+      walletClient,
+      { to: TO, data: "0x" },
+      hooks(),
+      undefined,
+      undefined,
+      ceiling,
+    );
+
+    expect(outcome).toMatchObject({
+      kind: "confirmed",
+      replacement: {
+        reason: "repriced",
+        replacedTxHash: HASH,
+        replacementTxHash: REPLACEMENT_HASH,
+        fromAddress: OWNER,
+        nonce: NONCE,
+      },
+    });
+  });
+
+  it("refuses to confirm a replacement above the approved fee ceiling", async () => {
+    const { publicClient, walletClient } = makeClients({
+      replacement: { maxFeePerGas: ceiling.maxFeePerGas + 1n },
+    });
+
+    const outcome = await signStageBroadcast(
+      publicClient,
+      walletClient,
+      { to: TO, data: "0x" },
+      hooks(),
+      undefined,
+      undefined,
+      ceiling,
+    );
+
+    expect(outcome).toMatchObject({
+      kind: "ambiguous",
+      stage: "confirm",
+      reason: expect.stringContaining("approved fee ceiling"),
+    });
+  });
+
+  it("refuses to confirm a replacement that changes the staged calldata", async () => {
+    const { publicClient, walletClient } = makeClients({
+      replacement: { data: "0x1234" },
+    });
+
+    const outcome = await signStageBroadcast(
+      publicClient,
+      walletClient,
+      { to: TO, data: "0x" },
+      hooks(),
+      undefined,
+      undefined,
+      ceiling,
+    );
+
+    expect(outcome).toMatchObject({
+      kind: "ambiguous",
+      stage: "confirm",
+      reason: expect.stringContaining("calldata"),
+    });
   });
 });
 

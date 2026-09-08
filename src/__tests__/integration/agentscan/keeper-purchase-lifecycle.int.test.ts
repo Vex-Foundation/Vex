@@ -27,6 +27,7 @@
 import { afterEach, beforeEach, describe, it, expect } from "vitest";
 
 import { seedIntent, cleanupSeeded } from "../agent-scan/_fixtures.js";
+import { neverAskedCapabilities, neverPostedObservations } from "../../helpers/agentscan-client.js";
 import { enqueueAtCurrentGeneration } from "./_reporting-tick.js";
 import type {
   AgentscanClient,
@@ -73,6 +74,8 @@ afterEach(async () => {
 /** Records every event the drain would put on the wire; answers every batch OK. */
 class RecordingClient implements AgentscanClient {
   readonly events: AgentscanEvent[] = [];
+  readonly fetchCapabilities = neverAskedCapabilities;
+  readonly postLighterPositionObservations = neverPostedObservations;
 
   async sendEvents(input: SendEventsInput): Promise<SendOutcome> {
     this.events.push(...input.events);

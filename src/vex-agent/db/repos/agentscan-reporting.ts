@@ -1,12 +1,12 @@
 /**
- * AgentScan reporting repo — the state singleton + outbox behind the
+ * AgentScan reporting repo - the state singleton + outbox behind the
  * `agentscan_report` sync lane (migration 073).
  *
  * ── The diff scan, not writer hooks ────────────────────────────────────────
  *
  * `enqueueEligibleActivity` is the ONLY producer of outbox rows. It diffs
  * `agent_activity` against the outbox's `UNIQUE (activity_id, status)` pair,
- * so it captures both brand-new rows and status transitions idempotently —
+ * so it captures both brand-new rows and status transitions idempotently -
  * with ZERO code in the money-path writers. Completed outbox rows are kept
  * forever as the report-log; deleting them would let the scan re-enqueue the
  * same pair on every tick.
@@ -85,19 +85,50 @@ export interface AgentscanReportingState {
   readonly agentName: string | null;
   /** When the last successful wallet-binding handshake completed. */
   readonly lastHandshakeAt: string | null;
-  /** session/complete's syncState.lastAcceptedRowId — null for a brand-new agent. */
+  /** session/complete's syncState.lastAcceptedRowId - null for a brand-new agent. */
   readonly serverCursorRowId: number | null;
   /** sha256 of the sorted chainFamily:address inventory list the last handshake covered. */
   readonly boundWalletsFingerprint: string | null;
 }
 
+/**
+ * Which LOCAL LEDGER an outbox row reports.
+ *
+ * Two id spaces, never one: `agent_activity` ids and `lighter_fills` ids are
+ * independent sequences, so a row names its source and carries exactly one
+ * reference (migration 152's `agentscan_outbox_source_reference` CHECK). The
+ * reported `sourceRowId` is namespaced for the same reason - AgentScan dedupes
+ * on (agent_hash, source_row_id), and two ledgers sharing an id space would
+ * collide there silently.
+ */
+export type AgentscanOutboxSourceKind =
+  | "agent_activity"
+  | "lighter_fill"
+  /**
+   * An UPDATE to one already-delivered fill, carrying only the exact charged
+   * fees that became known after it was sent. A fill's own outbox row is
+   * terminal once sent, so without this kind an exact fee proven later has no
+   * row to ride and never reaches the server at all. It is never a second
+   * fill: it reports the SAME `sourceRowId` and carries no economics (H0
+   * H0 correction 4).
+   */
+  | "lighter_fill_enrichment";
+
 export interface ClaimedOutboxEvent {
   readonly outboxId: number;
-  readonly activityId: number;
+  readonly sourceKind: AgentscanOutboxSourceKind;
+  /** The `agent_activity` id, or null on a `lighter_fill` row. */
+  readonly activityId: number | null;
   readonly status: "pending" | "confirmed" | "definitively_failed" | "superseded_unproven";
   readonly backfill: boolean;
   /** Raw `agent_activity` row for payload building; null if the row vanished between claim and read. */
   readonly activity: Record<string, unknown> | null;
+  /** The `lighter_fills` id, or null on an `agent_activity` row. */
+  readonly fillId: number | null;
+  /** Raw `lighter_fills` row for payload building; null if the row vanished between claim and read. */
+  readonly fill: Record<string, unknown> | null;
+  /** The `lighter_fills.revision` an enrichment row delivers; null on every other kind. */
+  readonly enrichmentRevision: number | null;
 }
 
 /**
@@ -159,7 +190,7 @@ export type OutboxWriteOutcome =
  * enum it publishes.
  *
  * NOTHING IN THIS PREDICATE IS A STATEMENT ABOUT THE SERVER, and reading it as
- * one was a real defect (Codex final review 2026-09-06, lane 7). Both versions it
+ * one was a real defect (the final review of 2026-09-06, lane 7). Both versions it
  * compares are LOCAL: `vocabulary_version` is what this database can STORE and
  * `backfill_vocabulary_version` is what a scan on this install has COVERED.
  * Neither can say whether the deployment accepts a role, and a role the
@@ -224,7 +255,7 @@ const ELIGIBLE_VOCABULARY_V2_SQL = `(
  * migration 107 unified it - but admitting it is still a WIDENING, and a
  * widening makes rows that already exist newly eligible. It was first written
  * into the V2 arm with the version left at 2, and that is precisely the shape
- * the gate cannot absorb (Codex final review 2026-09-06, lane 7): the gate asks
+ * the gate cannot absorb (the final review of 2026-09-06, lane 7): the gate asks
  * `backfill_vocabulary_version >= version`, and an installation that had already
  * completed the V2 backfill satisfies it on the day it upgrades. Migration 107's
  * walk is guarded by `vocabulary_version < 2` and skips that installation
@@ -246,6 +277,25 @@ const ELIGIBLE_VOCABULARY_V2_SQL = `(
 const ELIGIBLE_VOCABULARY_V3_SQL = `(a.kind = 'launch' AND a.event_role = 'pools_fee')`;
 
 /**
+ * V4: the exchange FUNDING legs of the Lighter integration - a deposit into
+ * the venue and a claimed withdrawal out of it.
+ *
+ * Only the funding legs. A Lighter FILL has no settlement transaction and no
+ * `agent_activity` row at all; it lives in the `lighter_fills` ledger
+ * (migration 152) and reaches the same outbox through
+ * {@link enqueueEligibleLighterFills}. Cancels, modifies and closes are not
+ * economic activity and are never reported: a close is one or more fills.
+ *
+ * The arm gets its own version for the reason the V3 arm did, even though no
+ * install can have history under it yet: a widening is gated at the version
+ * that introduced it, so the discipline holds when the population is not empty
+ * on some future install.
+ */
+const ELIGIBLE_VOCABULARY_V4_SQL = `(
+      a.kind = 'exchange'
+  AND a.event_role IN ('exchange_deposit','exchange_withdrawal'))`;
+
+/**
  * The vocabulary version this build writes and reports. Migration 111 stamps the
  * same number onto `agentscan_reporting_state.vocabulary_version`, so a build
  * running against a database that has not applied it stays at whatever that
@@ -258,10 +308,20 @@ const ELIGIBLE_VOCABULARY_V3_SQL = `(a.kind = 'launch' AND a.event_role = 'pools
  * decline in `enqueueBackfillAndMark`), so every widening that adds historical
  * rows must bump it and add the matching migration in the same change.
  */
-export const AGENTSCAN_VOCABULARY_VERSION = 3;
+export const AGENTSCAN_VOCABULARY_VERSION = 4;
 
 /** The version the launchpad-family arm (migration 107) was gated at, and stays gated at. */
 const LAUNCHPAD_FAMILY_VOCABULARY_VERSION = 2;
+
+/** The version the historical launch-fee arm (migration 111) was gated at, and stays gated at. */
+const LAUNCH_FEE_VOCABULARY_VERSION = 3;
+
+/**
+ * The version the Lighter arms are gated at (migration 152) - both the
+ * exchange funding legs above and the fill ledger's own enqueue below.
+ */
+export const LIGHTER_VOCABULARY_VERSION = 4;
+
 
 /**
  * THE BACKFILL GATE ON THE WIDENED VOCABULARY, and the defect it exists to
@@ -316,9 +376,13 @@ const ELIGIBILITY_SQL = `
          AND ($1::boolean
               OR s.backfill_vocabulary_version >= ${LAUNCHPAD_FAMILY_VOCABULARY_VERSION}))
      OR (${ELIGIBLE_VOCABULARY_V3_SQL}
-         AND s.vocabulary_version >= ${AGENTSCAN_VOCABULARY_VERSION}
+         AND s.vocabulary_version >= ${LAUNCH_FEE_VOCABULARY_VERSION}
          AND ($1::boolean
-              OR s.backfill_vocabulary_version >= ${AGENTSCAN_VOCABULARY_VERSION}))
+              OR s.backfill_vocabulary_version >= ${LAUNCH_FEE_VOCABULARY_VERSION}))
+     OR (${ELIGIBLE_VOCABULARY_V4_SQL}
+         AND s.vocabulary_version >= ${LIGHTER_VOCABULARY_VERSION}
+         AND ($1::boolean
+              OR s.backfill_vocabulary_version >= ${LIGHTER_VOCABULARY_VERSION}))
       )`;
 
 /**
@@ -371,7 +435,7 @@ const LEND_ROLES_SQL = `('lend_deposit','lend_withdraw','lend_borrow_operate')`;
 const CLAIM_FAMILY_PAYOUT_ROLES_SQL = `('pools_claim','creator_fee_claim','holder_reward_claim')`;
 
 /**
- * "This row's role has every executed leg it requires" — the SQL mirror of
+ * "This row's role has every executed leg it requires" - the SQL mirror of
  * `roleLegsIncomplete` (`./agent-activity/role-legs.ts`), negated.
  *
  * A mirror rather than a shared implementation because the scan is one set
@@ -449,7 +513,7 @@ const SETTLEMENT_CONCLUDED_WITHOUT_AMOUNTS_SQL =
   `a.settlement_source IN ('amounts_incomplete','amounts_undecodable','conflict_quarantined')`;
 
 /**
- * HOLD A CONFIRMED ROW UNTIL ITS MONEY IS KNOWN — the readiness gate, applied
+ * HOLD A CONFIRMED ROW UNTIL ITS MONEY IS KNOWN - the readiness gate, applied
  * before the pair is ever enqueued.
  *
  * The server merges `pending -> terminal` exactly once and silently drops a
@@ -460,7 +524,7 @@ const SETTLEMENT_CONCLUDED_WITHOUT_AMOUNTS_SQL =
  *
  * Three ways out, so the hold can never be permanent: the amounts arrived, a
  * decoder concluded by name that none are coming, or the grace elapsed. Every
- * other status bypasses the gate entirely — a pending row has no amounts to
+ * other status bypasses the gate entirely - a pending row has no amounts to
  * wait for, and neither a definitive failure nor a superseded row ever will.
  *
  * The SECOND arm is the exception to the grace and the only one: an amount whose
@@ -578,7 +642,7 @@ export async function getReportingState(): Promise<AgentscanReportingState> {
 /**
  * Store an identity IF none exists yet; an already-stored identity always
  * wins. The `agent_hash IS NULL` guard (not a read-then-write) is what makes
- * concurrent callers safe — exactly one generator result is ever persisted.
+ * concurrent callers safe - exactly one generator result is ever persisted.
  */
 export async function ensureIdentity(
   gen: () => { agentHash: string; ingestToken: string },
@@ -597,9 +661,9 @@ export async function ensureIdentity(
 export interface MarkHandshakeCompleteInput {
   /** Display name AgentScan bound to this install (session/complete response). */
   readonly agentName: string;
-  /** The ROTATED token session/complete returned — replaces whatever was stored. */
+  /** The ROTATED token session/complete returned - replaces whatever was stored. */
   readonly ingestToken: string;
-  /** session/complete's syncState.lastAcceptedRowId — null for a brand-new agent. */
+  /** session/complete's syncState.lastAcceptedRowId - null for a brand-new agent. */
   readonly serverCursorRowId: number | null;
   /** sha256 of the sorted chainFamily:address inventory list this handshake covered. */
   readonly walletsFingerprint: string;
@@ -609,7 +673,7 @@ export interface MarkHandshakeCompleteInput {
  * A successful wallet-binding handshake (session/start → sign → session/complete):
  * rotate the stored token, stamp `registered_at` (kept in sync so the existing
  * backfill/drain gate needs no change) and `last_handshake_at`, store the
- * server's name/cursor/fingerprint, and reset the attempt backoff to 0/now —
+ * server's name/cursor/fingerprint, and reset the attempt backoff to 0/now -
  * a stale attempt count from a PRIOR failed handshake must not throttle the
  * NEXT one this success has nothing to do with.
  */
@@ -677,7 +741,7 @@ async function resetOutboxForFullResend(client: PoolClient): Promise<void> {
  * `auth_lost` recovery (401/403-not_registered on send): the server no longer
  * knows this install (a server-side reset is the expected cause), so it also
  * has none of the history this install already sent. Registration is
- * idempotent — the lane simply re-registers the SAME identity next tick — but
+ * idempotent - the lane simply re-registers the SAME identity next tick - but
  * the diff scan's NOT-EXISTS can never re-enqueue a pair that already has an
  * outbox row, so a full resend has to come from resetting the existing rows,
  * not from re-scanning. The identity itself (agent_hash/ingest_token) is left
@@ -707,14 +771,14 @@ export async function resetForReRegistration(): Promise<void> {
  * by retrying the same identity, because the server holds SOME current token
  * for this agent_hash that this install does not know (the canonical cause:
  * a crash between the server committing a rotation and this install
- * persisting it via `markHandshakeComplete` — the next handshake attempt
+ * persisting it via `markHandshakeComplete` - the next handshake attempt
  * would keep presenting the same stale bearer forever, an infinite 401 loop).
  * The only way out is to abandon the identity entirely: clear agent_hash,
  * ingest_token, agent_name, bound_wallets_fingerprint, and every
  * registration/backfill/handshake stamp, and reset the attempt backoff so
  * the next tick retries immediately. `ensureIdentity` then mints a FRESH
  * agent_hash/ingest_token next run, and the server's transfer-on-proof
- * semantics (sprint lead addendum) re-bind the same proven wallets to it —
+ * semantics (sprint lead addendum) re-bind the same proven wallets to it -
  * that is the designed recovery, not a data-loss path. The outbox reset is
  * the same full-resend as `resetForReRegistration`, in the same transaction.
  */
@@ -742,7 +806,7 @@ export async function resetIdentityForRecovery(): Promise<void> {
   });
 }
 
-/** Permanent stop — 410, 403-quarantined, or a register 409. Never auto-cleared. */
+/** Permanent stop - 410, 403-quarantined, or a register 409. Never auto-cleared. */
 export async function markStopped(reason: AgentscanStopReason): Promise<void> {
   await ensureSingleton();
   await execute(
@@ -793,11 +857,115 @@ const enqueueEligibleSql = (generationPredicate: string): string => `
      ON CONFLICT (activity_id, status) DO NOTHING`;
 
 /**
+ * THE FILL LEDGER'S OWN DIFF SCAN.
+ *
+ * The same shape as the activity scan and for the same reasons: a set query
+ * over the ledger, `NOT EXISTS` against the outbox, no hooks in the writers, so
+ * a fill recorded while the app was offline is enqueued by the next tick and a
+ * fill already enqueued is never enqueued twice.
+ *
+ * ONE STATUS, ALWAYS `confirmed`. A fill is not a proposal that might fail
+ * later: the provider executed it, and its economics are immutable from that
+ * moment. There is no pending snapshot to send and no terminal transition to
+ * wait for, so the `(source, status)` pair a fill produces is unique by
+ * construction. That is also why the readiness gate the activity scan applies
+ * (hold a confirmed row until its money is known) has no counterpart here: the
+ * money IS the fill.
+ *
+ * The vocabulary gate is the same two-part gate the launchpad arms use - the
+ * database carries the widening, and either this scan IS the controlled
+ * backfill or a backfill that covered this vocabulary has completed - so fills
+ * written before this install ever registered are reported as the history they
+ * are, not as live activity.
+ */
+const enqueueEligibleFillsSql = (generationPredicate: string): string => `
+     INSERT INTO agentscan_outbox (source_kind, lighter_fill_id, status, backfill)
+     SELECT 'lighter_fill', f.id, 'confirmed', $1::boolean
+       FROM lighter_fills f
+      CROSS JOIN (
+             SELECT vocabulary_version, backfill_vocabulary_version
+               FROM agentscan_reporting_state
+              WHERE id = 1
+           ) s
+      WHERE s.vocabulary_version >= ${LIGHTER_VOCABULARY_VERSION}
+        AND ($1::boolean OR s.backfill_vocabulary_version >= ${LIGHTER_VOCABULARY_VERSION})
+        -- HELD ROWS ARE NOT VEX ACTIVITY YET. A fill observed before its
+        -- intent was known (recovery after a crash) is a fact worth storing
+        -- and NOT a claim that Vex created the order: reporting it would
+        -- attribute someone else's trading to this agent whenever the match is
+        -- wrong. attachLighterFillToIntent is what grants the attribution,
+        -- and this null is what withholds it until then.
+        AND f.execution_intent_id IS NOT NULL
+        AND ${generationPredicate}
+        AND NOT EXISTS (SELECT 1 FROM agentscan_outbox o
+                         WHERE o.lighter_fill_id = f.id AND o.status = 'confirmed')`;
+
+/**
+ * THE ENRICHMENT SCAN - how an exact fee proven AFTER delivery gets out.
+ *
+ * The defect it closes (review round 1, gap A): the fill scan above excludes
+ * any fill that already has an outbox row, which is correct for the fill (its
+ * economics are immutable, so a second report of it would be a duplicate) and
+ * fatal for the fee. `enrichLighterFillChargedFees` writes an exact charged
+ * amount that was unknown at fill time and bumps `lighter_fills.revision`; the
+ * fill's own row is already `sent_at`, terminal and invisible to the diff, so
+ * without this scan the exact figure is never reported and AgentScan sums
+ * estimates forever.
+ *
+ * The row is keyed on (fill, revision), so:
+ *
+ *   - a fee proven after delivery produces exactly ONE pending enrichment row;
+ *   - a repeat of the same enrichment updates nothing (the `IS NULL` guard),
+ *     leaves the revision where it was, and produces no second row;
+ *   - a SECOND, genuinely new fee (the exchange fee proven after the
+ *     integrator fee) bumps the revision again and gets its own row.
+ *
+ * DELIVERY OF THE FILL IS THE PRECONDITION. While the fill's own row is still
+ * unsent, the mapper reads the ledger row at claim time and the exact fee
+ * travels on the fill itself; enqueuing an enrichment for a fill nobody has
+ * seen would ask the server to update a fill it does not hold.
+ */
+const enqueueFillEnrichmentsSql = (generationPredicate: string): string => `
+     INSERT INTO agentscan_outbox
+       (source_kind, lighter_fill_id, enrichment_revision, status, backfill)
+     SELECT 'lighter_fill_enrichment', f.id, f.revision, 'confirmed', $1::boolean
+       FROM lighter_fills f
+      CROSS JOIN (
+             SELECT vocabulary_version, backfill_vocabulary_version
+               FROM agentscan_reporting_state
+              WHERE id = 1
+           ) s
+      WHERE f.revision > 0
+        AND s.vocabulary_version >= ${LIGHTER_VOCABULARY_VERSION}
+        AND ($1::boolean OR s.backfill_vocabulary_version >= ${LIGHTER_VOCABULARY_VERSION})
+        AND ${generationPredicate}
+        AND EXISTS (SELECT 1 FROM agentscan_outbox base
+                     WHERE base.lighter_fill_id = f.id
+                       AND base.source_kind = 'lighter_fill'
+                       AND base.sent_at IS NOT NULL)
+        AND NOT EXISTS (SELECT 1 FROM agentscan_outbox e
+                         WHERE e.lighter_fill_id = f.id
+                           AND e.source_kind = 'lighter_fill_enrichment'
+                           AND e.enrichment_revision = f.revision)`;
+
+/**
  * The controlled backfill's own enqueue. No generation predicate here: its
  * caller (`enqueueBackfillAndMark`) already holds the singleton `FOR UPDATE`
  * and has compared the generation itself before reaching this statement.
  */
 const ENQUEUE_BACKFILL_SQL = enqueueEligibleSql("TRUE");
+
+/** The fill ledger's half of the controlled backfill, under the same lock. */
+const ENQUEUE_BACKFILL_FILLS_SQL = enqueueEligibleFillsSql("TRUE");
+
+/** The enrichment half of the controlled backfill, under the same lock. */
+const ENQUEUE_BACKFILL_FILL_ENRICHMENTS_SQL = enqueueFillEnrichmentsSql("TRUE");
+
+/** The incremental fill scan, fenced on the lane's credential generation. */
+const ENQUEUE_INCREMENTAL_FILLS_SQL = enqueueEligibleFillsSql(GENERATION_UNCHANGED_SQL("$2"));
+
+/** The incremental enrichment scan, fenced on the same generation. */
+const ENQUEUE_INCREMENTAL_FILL_ENRICHMENTS_SQL = enqueueFillEnrichmentsSql(GENERATION_UNCHANGED_SQL("$2"));
 
 /** The incremental scan's enqueue, fenced on the lane's credential generation. */
 const ENQUEUE_INCREMENTAL_SQL = enqueueEligibleSql(GENERATION_UNCHANGED_SQL("$2"));
@@ -841,6 +1009,40 @@ export async function enqueueEligibleActivity(
       return { kind: "stale_generation", rows: 0 } as const;
     }
     const rows = await executeWith(client, ENQUEUE_INCREMENTAL_SQL, [backfill, expectedGeneration]);
+    return { kind: "applied", rows } as const;
+  });
+}
+
+/**
+ * The incremental fill scan, fenced exactly like the activity one.
+ *
+ * Separate from {@link enqueueEligibleActivity} rather than folded into it
+ * because the two read different tables with different eligibility, and a
+ * single statement over both would have to invent a join that means nothing.
+ * They share the transaction discipline, not the query.
+ *
+ * TWO STATEMENTS, ONE TRANSACTION AND ONE FENCE: the new fills, then the
+ * enrichments of fills already delivered. The second reads the outbox rows the
+ * first may have just written, and running it in the same transaction is what
+ * keeps a fill and the enrichment of an older fill from landing under two
+ * different generations.
+ */
+export async function enqueueEligibleLighterFills(
+  backfill: boolean,
+  expectedGeneration: number,
+): Promise<OutboxWriteOutcome> {
+  await ensureSingleton();
+  return withTransaction(async (client) => {
+    const state = await queryOneWith<{ registration_generation: number }>(
+      client,
+      `SELECT registration_generation FROM agentscan_reporting_state WHERE id = 1 FOR SHARE`,
+    );
+    if (state === null || Number(state.registration_generation) !== expectedGeneration) {
+      return { kind: "stale_generation", rows: 0 } as const;
+    }
+    const rows =
+      (await executeWith(client, ENQUEUE_INCREMENTAL_FILLS_SQL, [backfill, expectedGeneration]))
+      + (await executeWith(client, ENQUEUE_INCREMENTAL_FILL_ENRICHMENTS_SQL, [backfill, expectedGeneration]));
     return { kind: "applied", rows } as const;
   });
 }
@@ -916,7 +1118,14 @@ export async function enqueueBackfillAndMark(input: {
       return { enqueued: 0, marked: false, declined: "already_marked" as const };
     }
 
-    const enqueued = await executeWith(client, ENQUEUE_BACKFILL_SQL, [true]);
+    // BOTH LEDGERS, ONE BACKFILL. The completion mark says which VOCABULARY was
+    // covered, and the Lighter vocabulary spans the activity funding legs and
+    // the fill ledger; marking coverage while scanning only one of them would
+    // leave the other permanently blocked by its own gate's second condition.
+    const enqueued =
+      (await executeWith(client, ENQUEUE_BACKFILL_SQL, [true]))
+      + (await executeWith(client, ENQUEUE_BACKFILL_FILLS_SQL, [true]))
+      + (await executeWith(client, ENQUEUE_BACKFILL_FILL_ENRICHMENTS_SQL, [true]));
     await executeWith(
       client,
       `UPDATE agentscan_reporting_state
@@ -947,6 +1156,24 @@ export async function enqueueBackfillAndMark(input: {
  * `enqueueBackfillAndMark` via `FOR UPDATE`, the fenced incremental enqueue and
  * the fenced terminal writes via `FOR SHARE`), so no pair of them can deadlock.
  */
+/**
+ * The discriminator a claimed row reports, read against the references it
+ * actually carries rather than trusted blindly: a column value that disagrees
+ * with the row's own references would otherwise route the payload builder at
+ * the wrong ledger.
+ */
+function readSourceKind(
+  column: string | null,
+  fillId: number | null,
+  enrichmentRevision: string | number | null,
+): AgentscanOutboxSourceKind {
+  if (fillId === null) return "agent_activity";
+  if (column === "lighter_fill_enrichment" && enrichmentRevision !== null) {
+    return "lighter_fill_enrichment";
+  }
+  return "lighter_fill";
+}
+
 export async function claimDueOutbox(
   limit: number,
   expectedGeneration: number,
@@ -964,7 +1191,10 @@ export async function claimDueOutbox(
 
     const claimed = await queryWith<{
       id: string | number;
-      activity_id: string | number;
+      source_kind: string | null;
+      activity_id: string | number | null;
+      lighter_fill_id: string | number | null;
+      enrichment_revision: string | number | null;
       status: ClaimedOutboxEvent["status"];
       backfill: boolean;
     }>(
@@ -983,28 +1213,57 @@ export async function claimDueOutbox(
               last_error = NULL
          FROM claimed
         WHERE o.id = claimed.id
-       RETURNING o.id, o.activity_id, o.status, o.backfill`,
+       RETURNING o.id, o.source_kind, o.activity_id, o.lighter_fill_id, o.enrichment_revision,
+                 o.status, o.backfill`,
       [limit, expectedGeneration],
     );
     if (claimed.length === 0) return { kind: "claimed", events: [] } as const;
 
-    const activityIds = [...new Set(claimed.map((c) => Number(c.activity_id)))];
-    const activityRows = await queryWith<Record<string, unknown>>(
-      client,
-      `SELECT * FROM agent_activity WHERE id = ANY($1::bigint[])`,
-      [activityIds],
-    );
+    const activityIds = [
+      ...new Set(claimed.filter((c) => c.activity_id !== null).map((c) => Number(c.activity_id))),
+    ];
+    const activityRows = activityIds.length === 0
+      ? []
+      : await queryWith<Record<string, unknown>>(
+          client,
+          `SELECT * FROM agent_activity WHERE id = ANY($1::bigint[])`,
+          [activityIds],
+        );
     const byId = new Map(activityRows.map((r) => [Number(r.id), r]));
+
+    const fillIds = [
+      ...new Set(claimed.filter((c) => c.lighter_fill_id !== null).map((c) => Number(c.lighter_fill_id))),
+    ];
+    const fillRows = fillIds.length === 0
+      ? []
+      : await queryWith<Record<string, unknown>>(
+          client,
+          `SELECT * FROM lighter_fills WHERE id = ANY($1::bigint[])`,
+          [fillIds],
+        );
+    const fillById = new Map(fillRows.map((r) => [Number(r.id), r]));
 
     return {
       kind: "claimed",
-      events: claimed.map((c) => ({
-        outboxId: Number(c.id),
-        activityId: Number(c.activity_id),
-        status: c.status,
-        backfill: c.backfill,
-        activity: byId.get(Number(c.activity_id)) ?? null,
-      })),
+      events: claimed.map((c) => {
+        const activityId = c.activity_id === null ? null : Number(c.activity_id);
+        const fillId = c.lighter_fill_id === null ? null : Number(c.lighter_fill_id);
+        return {
+          outboxId: Number(c.id),
+          // A row written before migration 152 carries no discriminator column
+          // value of its own only in theory - the column has a DEFAULT - but a
+          // null is read as the ledger the reference actually points at rather
+          // than trusted blindly.
+          sourceKind: readSourceKind(c.source_kind, fillId, c.enrichment_revision),
+          activityId,
+          status: c.status,
+          backfill: c.backfill,
+          activity: activityId === null ? null : byId.get(activityId) ?? null,
+          fillId,
+          fill: fillId === null ? null : fillById.get(fillId) ?? null,
+          enrichmentRevision: c.enrichment_revision === null ? null : Number(c.enrichment_revision),
+        };
+      }),
     } as const;
   });
 }
@@ -1153,4 +1412,86 @@ export async function rescheduleOutbox(
       [outboxIds, delaySeconds, atGeneration, reason ?? null],
     ),
   );
+}
+
+/**
+ * WHAT THE DEPLOYED SERVER ADVERTISES, observed durably with its time.
+ *
+ * The process-lifetime record in `../../agentscan/server-capability.ts` learns
+ * from ingest REFUSALS, and that mechanism cannot work for a vocabulary whose
+ * whole contract is that nothing is sent before the server advertises it: the
+ * first send would be the probe, and the probe is exactly what must not happen.
+ * So a capability is learned from what the server SAYS (its handshake response
+ * and its capabilities endpoint) and remembered here, keyed by which server
+ * said it and under which registration.
+ *
+ * `present = false` is a real observation, not an absence of one: an old server
+ * answering 404 on the capabilities endpoint has positively told us it carries
+ * nothing. "Never asked" is the row not existing.
+ */
+export interface AgentscanServerCapabilityRecord {
+  readonly capability: string;
+  readonly present: boolean;
+  readonly observedAt: string;
+  readonly registrationGeneration: number;
+}
+
+/**
+ * Record one capability observation for one server.
+ *
+ * The write is unconditional for the (server, capability) pair: the newest
+ * answer from the server is the answer, in both directions. A capability that
+ * disappears (a rollback, or a deployment skew behind a load balancer) must be
+ * able to go back to absent, because the alternative is sending rows to a
+ * deployment that will refuse them.
+ */
+export async function recordServerCapabilityObservation(input: {
+  readonly serverFingerprint: string;
+  readonly capability: string;
+  readonly present: boolean;
+  readonly registrationGeneration: number;
+}): Promise<void> {
+  await execute(
+    `INSERT INTO agentscan_server_capabilities
+       (server_fingerprint, capability, present, observed_at, registration_generation)
+     VALUES ($1, $2, $3, NOW(), $4)
+     ON CONFLICT (server_fingerprint, capability) DO UPDATE
+        SET present = EXCLUDED.present,
+            observed_at = EXCLUDED.observed_at,
+            registration_generation = EXCLUDED.registration_generation`,
+    [input.serverFingerprint, input.capability, input.present, input.registrationGeneration],
+  );
+}
+
+/**
+ * The stored observation, or `null` when this server has never been asked.
+ *
+ * A POSITIVE observation made under a DIFFERENT registration generation is
+ * returned as it is stored, with its generation, so the caller can decide: a
+ * re-registration can move the install to a different agent on a different
+ * deployment, and a positive answer from the deployment we were talking to
+ * before is not evidence about the one we are talking to now.
+ */
+export async function getServerCapabilityObservation(
+  serverFingerprint: string,
+  capability: string,
+): Promise<AgentscanServerCapabilityRecord | null> {
+  const row = await queryOne<{
+    capability: string;
+    present: boolean;
+    observed_at: Date;
+    registration_generation: number;
+  }>(
+    `SELECT capability, present, observed_at, registration_generation
+       FROM agentscan_server_capabilities
+      WHERE server_fingerprint = $1 AND capability = $2`,
+    [serverFingerprint, capability],
+  );
+  if (row === null) return null;
+  return {
+    capability: row.capability,
+    present: row.present,
+    observedAt: new Date(row.observed_at).toISOString(),
+    registrationGeneration: Number(row.registration_generation),
+  };
 }

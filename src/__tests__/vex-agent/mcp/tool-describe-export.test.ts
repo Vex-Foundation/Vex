@@ -55,6 +55,53 @@ describe("vex_ToolDescribe returns one tool's whole contract", () => {
     expect(contractOf("SwapExecute").approvalCard.note).toContain("waits");
   });
 
+  it("does not tell a caller that full permission executes a prepared action directly", () => {
+    // THE DEFECT THIS PINS. Every mutating protocol row used to carry the same
+    // note, ending "In a full project it executes directly." For a Lighter
+    // prepared action that sentence is a money-path lie in the one direction
+    // that matters: it reads as "raise project permission and the order goes
+    // through without a card". Two independent facts say otherwise, and both
+    // are code, not intent - `executor.ts` dispatches the validated follow-up
+    // hop under `permission: "restricted"` whatever the project holds, and the
+    // handler itself refuses a call with no `approved`/`approvalId` and answers
+    // `pendingApproval`.
+    const contract = contractOf("lighter__order_create");
+    expect(contract.approvalCard.raisedInRestrictedProject).toBe(true);
+    expect(contract.approvalCard.note).toContain("BOTH permission modes");
+    expect(contract.approvalCard.note).not.toContain("executes directly.");
+    // The ordinary mutating protocol tool keeps the ordinary answer, so this is
+    // a per-capability correction and not a blanket rewrite.
+    expect(contractOf("kyberswap__swap_execute").approvalCard.note).toContain("executes directly.");
+  });
+
+  /**
+   * THE DEFECT THIS PINS (review round 1, minor M1). The note was derived from
+   * `mutating` alone, and a PREPARATION tool is not mutating - it signs
+   * nothing. So `lighter__order_create_prepare`, whose entire effect is to
+   * raise the user's approval card, was described to an external agent as
+   * "No approval card: this tool is read-only", and the internal
+   * `WalletSendPrepare` as "not classified mutating, so it runs directly".
+   * Both told a caller that no human decision exists anywhere in the flow,
+   * which is the one thing about a prepare tool that must not be wrong.
+   */
+  it("says a preparation tool produces the card rather than skipping it", () => {
+    for (const name of ["lighter__order_create_prepare", "WalletSendPrepare"]) {
+      const contract = contractOf(name);
+      expect(contract.actionKind).toBe("approval_prepare");
+      // It is genuinely not gated - it spends nothing - so the flag stays false
+      // and the SENTENCE has to carry the fact the flag cannot.
+      expect(contract.approvalCard.raisedInRestrictedProject).toBe(false);
+      expect(contract.approvalCard.note).toContain("PRODUCES is the user's approval card");
+      expect(contract.approvalCard.note).toContain("nothing executes until the user accepts");
+      expect(contract.approvalCard.note).not.toContain("No approval card");
+      expect(contract.approvalCard.note).not.toContain("read-only");
+    }
+    // Not a blanket rewrite: an ordinary read and an ordinary mutating tool
+    // keep the answers they had.
+    expect(contractOf("dexscreener__pairs_search").approvalCard.note).toContain("read-only");
+    expect(contractOf("kyberswap__swap_execute").approvalCard.note).toContain("executes directly.");
+  });
+
   it("says a read and a local write raise no card", () => {
     // `WalletTrackToken` writes a Vex-local bookmark and signs nothing: the
     // in-app gate keys on `ToolDef.mutating`, which is false for it.

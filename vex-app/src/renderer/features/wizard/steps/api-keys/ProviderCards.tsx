@@ -15,9 +15,11 @@
 
 import type { JSX, RefObject } from "react";
 import { Tavily, X } from "@thesvg/react";
+import type { LighterManagedTradingScope } from "@shared/schemas/onboarding.js";
 import { IconWaypoints } from "../../../../components/icons/index.js";
 import { Label } from "../../../../components/ui/label.js";
 import { PasswordField } from "../../../../components/common/PasswordField.js";
+import { cn } from "../../../../lib/utils.js";
 import { ProviderCard, type ProviderCardStatus } from "./ProviderCard.js";
 
 export interface JupiterCardProps {
@@ -225,5 +227,261 @@ export function RelayCard({
         ref={inputRef}
       />
     </ProviderCard>
+  );
+}
+
+export interface LighterTradingCardProps {
+  readonly environment: "core" | "rhc";
+  readonly status: ProviderCardStatus;
+  readonly configured: boolean;
+  readonly managedScopes: readonly LighterManagedTradingScope[];
+  readonly accountIndexRef: RefObject<HTMLInputElement | null>;
+  readonly apiKeyIndexRef: RefObject<HTMLInputElement | null>;
+  readonly privateKeyRef: RefObject<HTMLInputElement | null>;
+  readonly removeRef: RefObject<HTMLInputElement | null>;
+}
+
+const LIGHTER_STATUS_WORD_COLOR: Record<ProviderCardStatus["tone"], string> = {
+  set: "text-success",
+  partial: "text-warning",
+  unset: "text-ink-tertiary",
+};
+
+export function LighterTradingCard({
+  environment,
+  status,
+  configured,
+  managedScopes,
+  accountIndexRef,
+  apiKeyIndexRef,
+  privateKeyRef,
+  removeRef,
+}: LighterTradingCardProps): JSX.Element {
+  const title =
+    environment === "rhc"
+      ? "RHC trading key"
+      : "Core trading key";
+  const environmentDescription = environment === "rhc"
+    ? "Robinhood Chain environment · USDG collateral"
+    : "Lighter Core environment · USDC collateral";
+  const prefix = `vex-apikey-lighter-${environment}-trading`;
+  const managed = managedScopes.length > 0;
+  const displayStatus = managed
+    ? { tone: "set" as const, label: "MANAGED" }
+    : status;
+  const manualFields = (
+    <LighterManualTradingFields
+      title={title}
+      prefix={prefix}
+      configured={configured}
+      managed={managed}
+      accountIndexRef={accountIndexRef}
+      apiKeyIndexRef={apiKeyIndexRef}
+      privateKeyRef={privateKeyRef}
+      removeRef={removeRef}
+    />
+  );
+  return (
+    <section
+      data-vex-apikeys-card={
+        environment === "rhc"
+          ? "lighter-rhc-trading"
+          : "lighter-core-trading"
+      }
+      data-vex-lighter-environment={environment}
+      aria-labelledby={`${prefix}-title`}
+      className={cn(
+        "border-t border-line-2 pt-5",
+        environment === "rhc" && "vex-lighter-rhc-shadow",
+      )}
+    >
+      <header className="flex flex-wrap items-start justify-between gap-x-6 gap-y-2">
+        <div className="min-w-0">
+          <h3
+            id={`${prefix}-title`}
+            className="text-sm font-semibold text-ink-primary"
+          >
+            {title}
+          </h3>
+          <p className="mt-1 text-sm leading-relaxed text-ink-secondary">
+            {environmentDescription}
+          </p>
+        </div>
+        <span
+          className={cn(
+            "vex-micro shrink-0 pt-0.5",
+            LIGHTER_STATUS_WORD_COLOR[displayStatus.tone],
+          )}
+        >
+          {displayStatus.label}
+        </span>
+      </header>
+
+      <p className="mt-3 max-w-3xl text-xs leading-relaxed text-ink-tertiary">
+        {managed
+          ? "Created and registered locally by Vex after your approval."
+          : "Normal setup creates and registers this key during wallet-funded onboarding. External key import remains available below."}
+      </p>
+
+      <div className="mt-4">
+        {managed ? (
+          <div
+            role="status"
+            data-vex-lighter-managed-credential={environment}
+            className="border-y border-line-2"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 py-2.5">
+              <p className="text-xs font-medium text-ink-primary">
+                Vex-managed credential
+              </p>
+              <p className="text-xs text-ink-tertiary">
+                Encrypted locally · never displayed · approval required per
+                trade
+              </p>
+            </div>
+            <div>
+              {managedScopes.map((scope) => (
+                <dl
+                  key={`${scope.accountIndex}:${scope.apiKeyIndex}`}
+                  className="grid grid-cols-2 gap-x-8 gap-y-2 border-t border-line-1 py-3 text-xs sm:grid-cols-[minmax(0,1fr)_minmax(7rem,auto)_minmax(6rem,auto)]"
+                >
+                  <div className="col-span-2 sm:col-span-1">
+                    <dt className="sr-only">Credential scope</dt>
+                    <dd className="text-ink-secondary">
+                      Registered trading scope
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-ink-tertiary">Account</dt>
+                    <dd className="mt-1 font-mono text-sm text-ink-primary">
+                      {scope.accountIndex}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-ink-tertiary">API key</dt>
+                    <dd className="mt-1 font-mono text-sm text-ink-primary">
+                      {scope.apiKeyIndex}
+                    </dd>
+                  </div>
+                </dl>
+              ))}
+            </div>
+          </div>
+        ) : configured ? (
+          <p
+            data-vex-lighter-external-credential={environment}
+            className="border-y border-line-2 py-3 text-xs leading-relaxed text-ink-tertiary"
+          >
+            An externally managed {environment === "rhc" ? "RHC" : "Core"}
+            trading key is saved in the encrypted local vault. No key value is
+            displayed.
+          </p>
+        ) : null}
+
+        <details
+          data-vex-lighter-manual-credential={environment}
+          className="border-b border-line-1 py-3"
+        >
+          <summary className="cursor-pointer text-xs font-medium text-ink-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            Advanced: manage an externally created{" "}
+            {environment === "rhc" ? "RHC" : "Core"} key
+          </summary>
+          <div className="mt-4 space-y-3">{manualFields}</div>
+        </details>
+      </div>
+    </section>
+  );
+}
+
+interface LighterManualTradingFieldsProps {
+  readonly title: string;
+  readonly prefix: string;
+  readonly configured: boolean;
+  readonly managed: boolean;
+  readonly accountIndexRef: RefObject<HTMLInputElement | null>;
+  readonly apiKeyIndexRef: RefObject<HTMLInputElement | null>;
+  readonly privateKeyRef: RefObject<HTMLInputElement | null>;
+  readonly removeRef: RefObject<HTMLInputElement | null>;
+}
+
+function LighterManualTradingFields({
+  title,
+  prefix,
+  configured,
+  managed,
+  accountIndexRef,
+  apiKeyIndexRef,
+  privateKeyRef,
+  removeRef,
+}: LighterManualTradingFieldsProps): JSX.Element {
+  return (
+    <>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-1.5">
+          <Label
+            htmlFor={`${prefix}-account-index`}
+            className="text-xs text-[var(--color-text-muted)]"
+          >
+            Account index
+          </Label>
+          <input
+            id={`${prefix}-account-index`}
+            ref={accountIndexRef}
+            type="number"
+            min={0}
+            step={1}
+            inputMode="numeric"
+            autoComplete="off"
+            className="h-10 w-full rounded-md border border-[var(--color-border-subtle)] bg-[var(--color-surface-elevated)] px-3 text-sm text-[var(--color-text-primary)] outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label
+            htmlFor={`${prefix}-api-key-index`}
+            className="text-xs text-[var(--color-text-muted)]"
+          >
+            API-key index
+          </Label>
+          <input
+            id={`${prefix}-api-key-index`}
+            ref={apiKeyIndexRef}
+            type="number"
+            min={4}
+            max={254}
+            step={1}
+            inputMode="numeric"
+            autoComplete="off"
+            className="h-10 w-full rounded-md border border-[var(--color-border-subtle)] bg-[var(--color-surface-elevated)] px-3 text-sm text-[var(--color-text-primary)] outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+        </div>
+      </div>
+      <Label htmlFor={`${prefix}-private-key`} className="sr-only">
+        {title} API private key
+      </Label>
+      <PasswordField
+        id={`${prefix}-private-key`}
+        autoComplete="new-password"
+        ref={privateKeyRef}
+      />
+      <label
+        htmlFor={`${prefix}-remove`}
+        className="flex items-start gap-2 text-xs text-[var(--color-text-muted)]"
+      >
+        <input
+          id={`${prefix}-remove`}
+          ref={removeRef}
+          type="checkbox"
+          className="mt-0.5 h-4 w-4 rounded border-[var(--color-border-subtle)] bg-transparent"
+        />
+        Remove the manually imported trading key for this account/API-key scope.
+      </label>
+      <p className="text-xs text-[var(--color-text-muted)]">
+        {managed
+          ? "Vex-managed registered keys cannot be replaced or removed here. These controls are only for a different externally managed scope."
+          : configured
+            ? "Leave blank to keep the saved external key, paste a replacement, or check remove."
+            : "Use only for an existing account whose key was created outside Vex."}
+      </p>
+    </>
   );
 }

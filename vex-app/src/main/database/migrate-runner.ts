@@ -85,8 +85,15 @@ export async function runMigrationsForIpc(): Promise<MigrateRunResult> {
 
   const startedAt = Date.now();
   try {
+    // Root agent code and the independently installed desktop tree can carry
+    // different patch releases of @types/pg. Runtime `pg` is API-compatible,
+    // but TypeScript treats the two Pool class declarations as distinct. Keep
+    // that package-identity bridge at this single shared-library boundary.
+    const migrationPool = pool as unknown as Parameters<
+      typeof runMigrationsWithProgress
+    >[0]["pool"];
     const result = await runMigrationsWithProgress({
-      pool,
+      pool: migrationPool,
       migrationsDir: resolveMigrationsDir(),
       onProgress: (event: MigrationProgressEvent) => {
         migrationProgressBus.emit({ ...event, ts: Date.now() });

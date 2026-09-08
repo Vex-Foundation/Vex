@@ -4,15 +4,15 @@
   "datasetId": "tool-discovery-seed",
   "datasetVersion": "v3-agent-116",
   "status": "captured",
-  "capturedAt": "2026-09-07T08:33:56.754Z",
+  "capturedAt": "2026-09-07T18:07:37.176Z",
   "metrics": {
     "overall": {
       "count": 109,
       "recall1": 0.394,
       "recall5": 0.587,
       "coverage5": 0.514,
-      "mrr5": 0.458,
-      "groupMrr5": 0.418
+      "mrr5": 0.457,
+      "groupMrr5": 0.417
     },
     "awareness": {
       "blind": {
@@ -28,8 +28,8 @@
         "recall1": 0.386,
         "recall5": 0.596,
         "coverage5": 0.526,
-        "mrr5": 0.452,
-        "groupMrr5": 0.416
+        "mrr5": 0.449,
+        "groupMrr5": 0.413
       }
     },
     "intentShapes": {
@@ -38,16 +38,16 @@
         "recall1": 0.378,
         "recall5": 0.567,
         "coverage5": 0.567,
-        "mrr5": 0.441,
-        "groupMrr5": 0.441
+        "mrr5": 0.439,
+        "groupMrr5": 0.439
       },
       "cross": {
         "count": 3,
         "recall1": 0,
         "recall5": 0.667,
         "coverage5": 0.333,
-        "mrr5": 0.15,
-        "groupMrr5": 0.108
+        "mrr5": 0.133,
+        "groupMrr5": 0.1
       },
       "compare": {
         "count": 1,
@@ -72,8 +72,8 @@
         "recall1": 0.429,
         "recall5": 0.571,
         "coverage5": 0.571,
-        "mrr5": 0.47,
-        "groupMrr5": 0.47
+        "mrr5": 0.461,
+        "groupMrr5": 0.461
       },
       "bridge": {
         "count": 15,
@@ -168,14 +168,14 @@
         "recall1": 0.471,
         "recall5": 0.647,
         "coverage5": 0.235,
-        "mrr5": 0.534,
-        "groupMrr5": 0.305
+        "mrr5": 0.531,
+        "groupMrr5": 0.303
       }
     }
   },
   "notes": [
     "dataset tool-discovery-seed@v3-agent-116, mode lexical, 109 cases evaluated.",
-    "overall recall@1 0.394, recall@5 0.587, coverage@5 0.514, mrr@5 0.458, groupMrr@5 0.418.",
-    "Measured delta: none, metrics are identical to the previous baseline."
+    "overall recall@1 0.394, recall@5 0.587, coverage@5 0.514, mrr@5 0.457, groupMrr@5 0.417.",
+    "Measured delta vs previous baseline (v3-agent-116, captured 2026-09-07T08:33:56.754Z): 12 metric values moved; overall recall@5 0.587 -> 0.587, overall mrr@5 0.458 -> 0.457, case count 109 -> 109."
   ]
 }

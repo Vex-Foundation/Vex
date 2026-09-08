@@ -26,6 +26,7 @@ import { useStreamStore } from "../../../stores/streamStore.js";
 import {
   ISO,
   SESSION,
+  submitMock,
   failure,
   freshClient,
   getScroller,
@@ -45,6 +46,96 @@ function makeWrapper(client: QueryClient) {
 afterEach(resetTranscriptEnv);
 
 describe("SessionTranscript", () => {
+  it("does not render the retired prepare-approval action after a Lighter preview", { timeout: 10_000 }, async () => {
+    listMock.mockResolvedValue(
+      page(
+        [
+          msg({
+            id: 1,
+            role: "assistant",
+            kind: "tool_call",
+            content: "",
+            toolName: "lighter.order.preview",
+            toolCalls: [
+              {
+                toolCallId: "call-preview",
+                toolName: "lighter.order.preview",
+                toolArgs: null,
+              },
+            ],
+          }),
+          msg({
+            id: 2,
+            role: "tool",
+            kind: "tool_result",
+            content: JSON.stringify({
+              source: "live_lighter_public_api",
+              status: "preview_ready",
+              approvalReady: true,
+              nextStep: "review_approval",
+            }),
+            toolName: "lighter.order.preview",
+            toolCallId: "call-preview",
+          }),
+          msg({
+            id: 3,
+            role: "assistant",
+            kind: "text",
+            content:
+              "Preview of your Lighter RHC limit-buy order\n\nThis is a read-only preview.",
+          }),
+        ],
+        null,
+      ),
+    );
+    setVex();
+    render(createElement(SessionTranscript, { sessionId: SESSION }), {
+      wrapper: makeWrapper(freshClient()),
+    });
+
+    expect(screen.queryByText(/lighter\.order\.create\.prepare/)).toBeNull();
+    await screen.findByText(
+      /Preview of your Lighter RHC limit-buy order/,
+    );
+    expect(screen.queryByRole("button", {
+      name: /^prepare trade approval$/i,
+    })).toBeNull();
+    expect(submitMock).not.toHaveBeenCalled();
+  });
+
+  it("does not render the Lighter preview action when approval is not ready", async () => {
+    listMock.mockResolvedValue(
+      page(
+        [
+          msg({
+            id: 1,
+            role: "tool",
+            kind: "tool_result",
+            content: JSON.stringify({
+              source: "live_lighter_public_api",
+              status: "preview_ready",
+              approvalReady: false,
+              nextStep: "connect_trading_api_key_before_approval",
+            }),
+            toolName: "lighter.order.preview",
+          }),
+        ],
+        null,
+      ),
+    );
+    setVex();
+    render(createElement(SessionTranscript, { sessionId: SESSION }), {
+      wrapper: makeWrapper(freshClient()),
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("lighter.order.preview_output")).not.toBeNull();
+    });
+    expect(screen.queryByRole("button", {
+      name: /^prepare trade approval$/i,
+    })).toBeNull();
+  });
+
   it("renders the newest page rows and never parses content as HTML", async () => {
     const injected = '<img src=x onerror="alert(1)"> **not bold**';
     listMock.mockResolvedValue(

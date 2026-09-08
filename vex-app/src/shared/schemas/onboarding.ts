@@ -32,12 +32,33 @@ export const walletAddressesSchema = z
 
 export type WalletAddresses = z.infer<typeof walletAddressesSchema>;
 
+export const lighterManagedTradingScopeSchema = z
+  .object({
+    accountIndex: z.number().int().nonnegative(),
+    apiKeyIndex: z.number().int().min(4).max(254),
+  })
+  .strict();
+
+export type LighterManagedTradingScope = z.infer<
+  typeof lighterManagedTradingScopeSchema
+>;
+
 export const apiKeysStateSchema = z
   .object({
     jupiterConfigured: z.boolean(),
     tavilyConfigured: z.boolean(),
     rettiwtConfigured: z.boolean(),
     relayConfigured: z.boolean(),
+    lighterCoreTradingConfigured: z.boolean().optional(),
+    lighterRhcTradingConfigured: z.boolean().optional(),
+    lighterCoreManagedTradingScopes: z
+      .array(lighterManagedTradingScopeSchema)
+      .max(251)
+      .optional(),
+    lighterRhcManagedTradingScopes: z
+      .array(lighterManagedTradingScopeSchema)
+      .max(251)
+      .optional(),
   })
   .strict();
 

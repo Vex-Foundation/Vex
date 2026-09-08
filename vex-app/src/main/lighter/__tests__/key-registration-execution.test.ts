@@ -1,0 +1,587 @@
+import { createHash } from "node:crypto";
+
+import { requireValue } from "../../../../../src/__tests__/helpers/require-value.js";
+import { describe, expect, it, vi } from "vitest";
+
+import { mapLighterError } from "@tools/lighter/errors.js";
+import type { LighterChangePubKeySignerResult } from "@tools/lighter/change-pub-key.js";
+import type { LighterEnvironment } from "@tools/lighter/constants.js";
+import type { EvmWallet } from "@tools/wallet/multi-auth.js";
+import type { LighterKeyRegistrationReservationRow } from "@vex-agent/db/repos/lighter-key-registration-intents.js";
+import {
+  executeApprovedLighterKeyRegistration,
+  reconcileLighterKeyRegistration,
+  type LighterKeyRegistrationExecutionDeps,
+} from "../key-registration-execution.js";
+import {
+  createLighterApiKeyGeneratorBinary,
+  createLighterChangePubKeySignerBinary,
+  lighterSignerChildState,
+  type LighterSignerBinaryRunner,
+} from "@tools/lighter/signer-binary-adapter.js";
+import {
+  signerRunnerEmitting,
+  signerRunnerExitingWithoutOutput,
+  signerRunnerNeverClosing,
+  signerRunnerRejectingWithoutEvidence,
+} from "../../../../../src/__tests__/helpers/lighter-scripted-signer.js";
+import { signApprovedLighterKeyRegistration } from "../key-registration-signing.js";
+
+const PUBLIC_KEY = "b".repeat(80);
+const OTHER_PUBLIC_KEY = "c".repeat(80);
+const TX_HASH = "a".repeat(80);
+/** What `markLighterKeyGeneratedEncryptedWith` stores: sha256 over the key bytes. */
+const PUBLIC_KEY_FINGERPRINT = createHash("sha256")
+  .update(Buffer.from(PUBLIC_KEY, "hex"))
+  .digest("hex");
+const LIGHTER_PRIVATE_KEY = `0x${"1".repeat(80)}`;
+const WALLET: EvmWallet = {
+  family: "eip155",
+  address: "0x1111111111111111111111111111111111111111",
+  privateKey: `0x${"2".repeat(64)}`,
+};
+
+function intent(
+  executionState: LighterKeyRegistrationReservationRow["executionState"] = "approved",
+  environment: LighterEnvironment = "core",
+  apiKeyIndex = 7,
+): LighterKeyRegistrationReservationRow {
+  const now = new Date("2026-08-17T12:00:00.000Z");
+  return {
+    intentId: "lighter-keyreg-1",
+    sessionId: "session-1",
+    environment,
+    walletAddress: WALLET.address,
+    chainId: environment === "core" ? 1 : 4663,
+    accountIndex: 42,
+    apiKeyIndex,
+    slotObservedAt: now,
+    slotObservationHash: "d".repeat(64),
+    approvalStatus: "approved",
+    executionState,
+    vaultCredentialId: `lighter/${environment}/account-42/api-key-${apiKeyIndex}`,
+    publicKey: PUBLIC_KEY,
+    publicKeyFingerprint: PUBLIC_KEY_FINGERPRINT,
+    keyGeneratedAt: now,
+    registrationNonce: "0",
+    registrationNonceObservedAt: now,
+    registrationTxType: executionState === "approved" ? null : 8,
+    registrationTxHash: executionState === "approved" ? null : TX_HASH,
+    registrationTxExpiredAt: executionState === "approved" ? null : "1893456000000",
+    registrationTxStagedAt: executionState === "approved" ? null : now,
+    registrationSubmittedTxHash: null,
+    registrationSubmitCode: null,
+    registrationPredictedExecutionTimeMs: null,
+    registrationSubmitAcceptedAt: null,
+    registrationAmbiguityReason: null,
+    registrationKeyVerifiedAt: null,
+    registrationClientCheckedAt: null,
+    postRegistrationNonce: null,
+    registrationNonceSynchronizedAt: null,
+    registrationActivatedAt: null,
+    createdAt: now,
+    updatedAt: now,
+    expiresAt: new Date("2026-08-17T13:00:00.000Z"),
+  };
+}
+
+function signedResult(
+  environment: LighterEnvironment = "core",
+  apiKeyIndex = 7,
+): LighterChangePubKeySignerResult {
+  return {
+    kind: "lighter_change_pub_key_signer_result",
+    environment,
+    accountIndex: 42,
+    apiKeyIndex,
+    nonce: "0",
+    expiredAt: "1893456000000",
+    publicKey: PUBLIC_KEY,
+    expectedL1Address: WALLET.address,
+    messageToSign: "Register Lighter Account",
+    txType: 8,
+    txInfo: "{\"signed\":true}",
+    txHash: TX_HASH,
+  };
+}
+
+function slot(publicKey = PUBLIC_KEY, apiKeyIndex = 7) {
+  return {
+    account_index: 42,
+    api_key_index: apiKeyIndex,
+    nonce: 1,
+    public_key: publicKey,
+    transaction_time: 1,
+  };
+}
+
+function makeDeps(options: {
+  readonly sendTx?: () => Promise<{
+    code: number;
+    message?: string;
+    tx_hash: string;
+    predicted_execution_time_ms: number;
+  }>;
+  readonly reconciliationPublicKey?: string | null;
+  readonly ownedAccount?: boolean;
+  readonly postRegistrationNonce?: number;
+  readonly checkerPublicKey?: string;
+  readonly initialExecutionState?: LighterKeyRegistrationReservationRow["executionState"];
+  readonly missingSlotResponse?: "empty" | "not_found" | "other_error";
+  readonly environment?: LighterEnvironment;
+  readonly apiKeyIndex?: number;
+} = {}) {
+  const environment = options.environment ?? "core";
+  const apiKeyIndex = options.apiKeyIndex ?? 7;
+  const initiallyApproved = (options.initialExecutionState ?? "approved") === "approved";
+  let current = intent(options.initialExecutionState, environment, apiKeyIndex);
+  let apiKeyReadCount = 0;
+  let nonceReadCount = 0;
+  const events: string[] = [];
+  const markAmbiguous = vi.fn(async (
+    _sessionId: string,
+    _intentId: string,
+    input: { readonly reason: string },
+  ) => {
+    events.push(`ambiguous:${input.reason}`);
+    current = { ...current, executionState: "ambiguous", registrationAmbiguityReason: input.reason };
+    return current;
+  });
+  const activateVaultCredential = vi.fn(() => ({
+    present: true as const,
+    reference: {
+      kind: "encrypted_vault_reference" as const,
+      environment,
+      accountIndex: 42,
+      apiKeyIndex,
+      vaultCredentialId: `lighter/${environment}/account-42/api-key-${apiKeyIndex}`,
+    },
+    registrationState: "key_registered_active" as const,
+  }));
+  const deps: LighterKeyRegistrationExecutionDeps = {
+    client: {
+      getAccountsByL1Address: vi.fn(async () => ({
+        code: 200,
+        l1_address: WALLET.address,
+        sub_accounts: options.ownedAccount === false ? [] : [{
+          account_type: 0,
+          index: 42,
+          l1_address: WALLET.address,
+        }],
+      })),
+      getApiKeys: vi.fn(async () => {
+        apiKeyReadCount += 1;
+        if (initiallyApproved && apiKeyReadCount === 1) {
+          if (options.missingSlotResponse === "not_found") {
+            throw mapLighterError(environment, 400, { message: "api key not found" });
+          }
+          if (options.missingSlotResponse === "other_error") {
+            throw mapLighterError(environment, 400, { message: "invalid account index" });
+          }
+        }
+        const publicKey = initiallyApproved && apiKeyReadCount === 1
+          ? null
+          : options.reconciliationPublicKey;
+        return {
+          code: 200,
+          api_keys: publicKey === null ? [] : [slot(publicKey ?? PUBLIC_KEY, apiKeyIndex)],
+        };
+      }),
+      getNextNonce: vi.fn(async () => {
+        nonceReadCount += 1;
+        return {
+          code: 200,
+          nonce: initiallyApproved && nonceReadCount === 1
+            ? 0
+            : (options.postRegistrationNonce ?? 1),
+        };
+      }),
+      sendTx: vi.fn(options.sendTx ?? (async () => {
+        events.push("sendTx");
+        return { code: 200, tx_hash: TX_HASH, predicted_execution_time_ms: 25 };
+      })),
+    },
+    readIntent: vi.fn(async () => current),
+    integrationEnabled: vi.fn(async () => true),
+    resolveWallet: vi.fn(() => WALLET),
+    sign: vi.fn(async () => {
+      events.push("sign");
+      return signedResult(environment, apiKeyIndex);
+    }),
+    keyGenerator: {
+      source: "official_lighter_signer",
+      generate: vi.fn(),
+      derivePublicKey: vi.fn(async () => PUBLIC_KEY),
+    },
+    keyChecker: {
+      source: "official_lighter_signer",
+      check: vi.fn(async () => ({ publicKey: options.checkerPublicKey ?? PUBLIC_KEY })),
+    },
+    readVaultPrivateKey: vi.fn(() => LIGHTER_PRIVATE_KEY),
+    readVaultRegistrationState: vi.fn(() => "key_generated_pending_registration" as const),
+    activateVaultCredential,
+    claimSigning: vi.fn(async () => true),
+    admitSend: vi.fn(async () => true),
+    refuseUnsubmitted: vi.fn(async () => true),
+    markStaged: vi.fn(async (_sessionId, _intentId, input) => {
+      events.push("stage");
+      current = {
+        ...current,
+        executionState: "key_registration_tx_staged",
+        registrationTxType: input.txType,
+        registrationTxHash: input.txHash,
+        registrationTxExpiredAt: input.expiredAt,
+        registrationTxStagedAt: input.stagedAt,
+      };
+      return current;
+    }),
+    markSubmitted: vi.fn(async (_sessionId, _intentId, input) => {
+      events.push("submitted");
+      current = {
+        ...current,
+        executionState: "change_pub_key_submitted",
+        registrationSubmittedTxHash: input.submittedTxHash,
+      };
+      return current;
+    }),
+    markAmbiguous: markAmbiguous as LighterKeyRegistrationExecutionDeps["markAmbiguous"],
+    markKeyVerified: vi.fn(async () => {
+      events.push("verified");
+      current = { ...current, executionState: "key_verified" };
+      return current;
+    }),
+    markNonceSynchronized: vi.fn(async (_sessionId, _intentId, input) => {
+      events.push("nonce");
+      current = { ...current, executionState: "nonce_synchronized", postRegistrationNonce: input.nextNonce };
+      return current;
+    }),
+    markActive: vi.fn(async () => {
+      events.push("active-db");
+      current = { ...current, executionState: "active" };
+      return current;
+    }),
+    now: vi.fn(() => new Date("2026-08-17T12:01:00.000Z")),
+    sleep: vi.fn(async () => undefined),
+    reconciliationAttempts: 1,
+  };
+  return { deps, events, activateVaultCredential, markAmbiguous };
+}
+
+const EXECUTION_INPUT = {
+  sessionId: "session-1",
+  intentId: "lighter-keyreg-1",
+  walletResolution: { source: "default" } as const,
+  walletPolicy: { kind: "none" } as const,
+};
+
+describe("Lighter key registration execution", () => {
+  it("stages before sendTx and activates only after exact key, CheckClient, and nonce +1", async () => {
+    const setup = makeDeps({
+      reconciliationPublicKey: PUBLIC_KEY,
+      missingSlotResponse: "not_found",
+    });
+
+    const result = await executeApprovedLighterKeyRegistration(EXECUTION_INPUT, setup.deps);
+
+    expect(result).toMatchObject({
+      status: "active",
+      executionState: "active",
+      txHash: TX_HASH,
+      postRegistrationNonce: "1",
+    });
+    expect(setup.events).toEqual([
+      "sign",
+      "stage",
+      "sendTx",
+      "submitted",
+      "verified",
+      "nonce",
+      "active-db",
+    ]);
+    expect(setup.deps.keyChecker.check).toHaveBeenCalledOnce();
+    expect(setup.activateVaultCredential).toHaveBeenCalledOnce();
+    expect(JSON.stringify(result)).not.toContain(LIGHTER_PRIVATE_KEY);
+    expect(JSON.stringify(result)).not.toContain("signed");
+  });
+
+  it("uses Robinhood Chain for every provider read, signing check, submission, and activation", async () => {
+    const setup = makeDeps({
+      environment: "rhc",
+      reconciliationPublicKey: PUBLIC_KEY,
+      missingSlotResponse: "not_found",
+    });
+
+    const result = await executeApprovedLighterKeyRegistration(EXECUTION_INPUT, setup.deps);
+
+    expect(result).toMatchObject({ status: "active", executionState: "active" });
+    expect(setup.deps.client.getAccountsByL1Address).toHaveBeenCalledWith("rhc", {
+      l1Address: WALLET.address,
+      cursor: undefined,
+    });
+    expect(setup.deps.client.getApiKeys).toHaveBeenCalledWith("rhc", {
+      accountIndex: 42,
+      apiKeyIndex: 7,
+    });
+    expect(setup.deps.client.getNextNonce).toHaveBeenCalledWith("rhc", {
+      accountIndex: 42,
+      apiKeyIndex: 7,
+    });
+    expect(setup.deps.client.sendTx).toHaveBeenCalledWith("rhc", {
+      txType: 8,
+      txInfo: expect.any(String),
+    });
+    expect(setup.deps.keyChecker.check).toHaveBeenCalledWith(expect.objectContaining({
+      environment: "rhc",
+    }));
+    expect(setup.activateVaultCredential).toHaveBeenCalledWith(expect.objectContaining({
+      environment: "rhc",
+      vaultCredentialId: "lighter/rhc/account-42/api-key-7",
+    }));
+  });
+
+  it("rejects RHC provider-reserved index 157 before provider, signer, or vault work", async () => {
+    const setup = makeDeps({
+      environment: "rhc",
+      apiKeyIndex: 157,
+      reconciliationPublicKey: PUBLIC_KEY,
+    });
+
+    await expect(executeApprovedLighterKeyRegistration(EXECUTION_INPUT, setup.deps))
+      .rejects.toThrow("reserved by the Lighter RHC provider");
+
+    expect(setup.deps.integrationEnabled).not.toHaveBeenCalled();
+    expect(setup.deps.client.getAccountsByL1Address).not.toHaveBeenCalled();
+    expect(setup.deps.client.getApiKeys).not.toHaveBeenCalled();
+    expect(setup.deps.client.getNextNonce).not.toHaveBeenCalled();
+    expect(setup.deps.resolveWallet).not.toHaveBeenCalled();
+    expect(setup.deps.sign).not.toHaveBeenCalled();
+    expect(setup.deps.readVaultPrivateKey).not.toHaveBeenCalled();
+    expect(setup.deps.client.sendTx).not.toHaveBeenCalled();
+  });
+
+  it("does not treat unrelated exact-slot 400 responses as vacancy", async () => {
+    const setup = makeDeps({
+      reconciliationPublicKey: PUBLIC_KEY,
+      missingSlotResponse: "other_error",
+    });
+
+    await expect(executeApprovedLighterKeyRegistration(EXECUTION_INPUT, setup.deps))
+      .rejects.toThrow("invalid account index");
+    expect(setup.deps.resolveWallet).not.toHaveBeenCalled();
+    expect(setup.deps.sign).not.toHaveBeenCalled();
+    expect(setup.deps.client.sendTx).not.toHaveBeenCalled();
+  });
+
+  it("records an uncertain send once and never resubmits while the slot is absent", async () => {
+    const setup = makeDeps({
+      reconciliationPublicKey: null,
+      sendTx: async () => {
+        setup.events.push("sendTx");
+        throw new Error(`raw provider body ${LIGHTER_PRIVATE_KEY}`);
+      },
+    });
+
+    const result = await executeApprovedLighterKeyRegistration(EXECUTION_INPUT, setup.deps);
+
+    expect(result.status).toBe("ambiguity_unresolved");
+    expect(setup.deps.client.sendTx).toHaveBeenCalledOnce();
+    expect(setup.markAmbiguous).toHaveBeenCalledWith(
+      "session-1",
+      "lighter-keyreg-1",
+      expect.objectContaining({ reason: "send_tx_outcome_unknown" }),
+    );
+    expect(setup.activateVaultCredential).not.toHaveBeenCalled();
+    expect(JSON.stringify(result)).not.toContain(LIGHTER_PRIVATE_KEY);
+  });
+
+  it("refuses a different registered key and keeps the local credential inactive", async () => {
+    const setup = makeDeps({ reconciliationPublicKey: OTHER_PUBLIC_KEY });
+
+    const result = await executeApprovedLighterKeyRegistration(EXECUTION_INPUT, setup.deps);
+
+    expect(result.status).toBe("registered_key_conflict");
+    expect(setup.markAmbiguous).toHaveBeenCalledWith(
+      "session-1",
+      "lighter-keyreg-1",
+      expect.objectContaining({ reason: "registered_public_key_conflict" }),
+    );
+    expect(setup.deps.keyChecker.check).not.toHaveBeenCalled();
+    expect(setup.activateVaultCredential).not.toHaveBeenCalled();
+  });
+
+  it("checks exact wallet ownership before resolving or decrypting a signing wallet", async () => {
+    const setup = makeDeps({ ownedAccount: false, reconciliationPublicKey: PUBLIC_KEY });
+
+    await expect(executeApprovedLighterKeyRegistration(EXECUTION_INPUT, setup.deps))
+      .rejects.toThrow("not uniquely owned");
+    expect(setup.deps.resolveWallet).not.toHaveBeenCalled();
+    expect(setup.deps.sign).not.toHaveBeenCalled();
+    expect(setup.deps.client.sendTx).not.toHaveBeenCalled();
+  });
+
+  it("keeps the credential inactive when CheckClient does not confirm the vault key", async () => {
+    const setup = makeDeps({
+      reconciliationPublicKey: PUBLIC_KEY,
+      checkerPublicKey: OTHER_PUBLIC_KEY,
+    });
+
+    await expect(executeApprovedLighterKeyRegistration(EXECUTION_INPUT, setup.deps))
+      .rejects.toThrow("official client check returned a different public key");
+    expect(setup.activateVaultCredential).not.toHaveBeenCalled();
+  });
+
+  it("keeps the credential inactive until the public nonce is exactly approved nonce plus one", async () => {
+    const setup = makeDeps({
+      reconciliationPublicKey: PUBLIC_KEY,
+      postRegistrationNonce: 2,
+    });
+
+    const result = await executeApprovedLighterKeyRegistration(EXECUTION_INPUT, setup.deps);
+
+    expect(result.status).toBe("key_verified_pending_nonce");
+    expect(result.executionState).toBe("key_verified");
+    expect(setup.activateVaultCredential).not.toHaveBeenCalled();
+  });
+
+  it("reconciles a submitted transaction without reaching any signing or sendTx path", async () => {
+    const setup = makeDeps({
+      initialExecutionState: "change_pub_key_submitted",
+      reconciliationPublicKey: PUBLIC_KEY,
+    });
+
+    const result = await reconcileLighterKeyRegistration(EXECUTION_INPUT, setup.deps);
+
+    expect(result.status).toBe("active");
+    expect(setup.deps.resolveWallet).not.toHaveBeenCalled();
+    expect(setup.deps.sign).not.toHaveBeenCalled();
+    expect(setup.deps.client.sendTx).not.toHaveBeenCalled();
+    expect(setup.deps.integrationEnabled).not.toHaveBeenCalled();
+  });
+
+  it("refuses evidence-only reconciliation before a transaction is staged", async () => {
+    const setup = makeDeps({ reconciliationPublicKey: PUBLIC_KEY });
+
+    await expect(reconcileLighterKeyRegistration(EXECUTION_INPUT, setup.deps))
+      .rejects.toThrow("no staged transaction to reconcile");
+    expect(setup.deps.sign).not.toHaveBeenCalled();
+    expect(setup.deps.client.sendTx).not.toHaveBeenCalled();
+  });
+});
+
+function controlledSigningGate() {
+  let release!: () => void;
+  const promise = new Promise<void>((resolve) => { release = resolve; });
+  return { promise, release };
+}
+describe("key registration consent races", () => {
+  for (const kind of ["expiry", "cancellation"] as const) {
+    it.each(["reservation", "signing", "staging", "send-admission"] as const)(`${kind} at %s refuses submission`, async (phase) => {
+      const { deps } = makeDeps(), controller = new AbortController();
+      const entered = controlledSigningGate(), finish = controlledSigningGate();
+      const pause = async () => { entered.release(); await finish.promise; };
+      if (phase === "reservation") {
+        vi.mocked(deps.claimSigning).mockImplementation(async () => { await pause(); return true; });
+      } else if (phase === "signing") {
+        vi.mocked(deps.sign).mockImplementation(async () => { await pause(); return signedResult(); });
+      } else if (phase === "staging") {
+        const original = requireValue(vi.mocked(deps.markStaged).getMockImplementation());
+        vi.mocked(deps.markStaged).mockImplementation(async (...args) => { const row = await original(...args); await pause(); return row; });
+      } else {
+        vi.mocked(deps.admitSend).mockImplementation(async () => { await pause(); return true; });
+      }
+      const execution = executeApprovedLighterKeyRegistration({ ...EXECUTION_INPUT, abortSignal: controller.signal }, deps);
+      const rejected = expect(execution).rejects.toMatchObject({ reason: expect.stringMatching(kind === "expiry" ? /^consent_expired_/ : /^cancelled_/) });
+      await entered.promise;
+      if (kind === "expiry") vi.mocked(deps.now).mockReturnValue(intent().expiresAt); else controller.abort("lock");
+      finish.release();
+      await rejected;
+      expect(deps.client.sendTx).not.toHaveBeenCalled();
+      expect(deps.sign).toHaveBeenCalledTimes(phase === "reservation" ? 0 : 1);
+      if (phase !== "reservation") expect(deps.markStaged).toHaveBeenCalledOnce();
+      if (phase === "signing") expect(deps.refuseUnsubmitted).toHaveBeenCalledWith(expect.objectContaining({ intentId: EXECUTION_INPUT.intentId }));
+      if (phase === "send-admission") expect(deps.refuseUnsubmitted).not.toHaveBeenCalled();
+    });
+  }
+  it("does not sign again after the durable signing claim was lost", async () => {
+    const { deps } = makeDeps();
+    vi.mocked(deps.claimSigning).mockResolvedValue(false);
+    await expect(executeApprovedLighterKeyRegistration(EXECUTION_INPUT, deps)).rejects.toThrow("already claimed or expired");
+    expect(deps.sign).not.toHaveBeenCalled();
+    expect(deps.client.sendTx).not.toHaveBeenCalled();
+  });
+  it("persists a returned hash after a transient staging write failure without signing twice", async () => {
+    const { deps } = makeDeps(), controller = new AbortController();
+    vi.mocked(deps.sign).mockImplementation(async () => { controller.abort("lock"); return signedResult(); });
+    vi.mocked(deps.markStaged).mockRejectedValueOnce(new Error("storage temporarily unavailable"));
+    await expect(executeApprovedLighterKeyRegistration({ ...EXECUTION_INPUT, abortSignal: controller.signal }, deps))
+      .rejects.toMatchObject({ reason: "cancelled_after_signing" });
+    expect(deps.markStaged).toHaveBeenCalledTimes(2);
+    expect(deps.markStaged).toHaveBeenLastCalledWith(EXECUTION_INPUT.sessionId, EXECUTION_INPUT.intentId, expect.objectContaining({ txHash: TX_HASH }));
+    expect(deps.sign).toHaveBeenCalledOnce();
+    expect(deps.client.sendTx).not.toHaveBeenCalled();
+  });
+});
+
+it("does not relabel an unrelated failed registration as expired consent", async () => {
+  const { deps } = makeDeps({ initialExecutionState: "failed" });
+  await expect(executeApprovedLighterKeyRegistration(EXECUTION_INPUT, deps)).rejects.toThrow("failed without an unsubmitted consent refusal");
+  expect(deps.sign).not.toHaveBeenCalled();
+  expect(deps.client.sendTx).not.toHaveBeenCalled();
+});
+
+
+/**
+ * THE SIGNER SETTLEMENT CONTRACT across the privileged registration wrapper
+ * (round-1 fix F2), proved in composition: the real wrapper drives the real
+ * change-pub-key adapter over a real `runLighterSignerBinary` run against a
+ * scripted child, and the executor sees exactly what that produced.
+ *
+ * The registration path releases nothing on a signer failure - there is no
+ * nonce reservation to release, and the durable claim is retired only by an
+ * authority refusal - so what these prove is the conservative half: a child
+ * whose end is unproven leaves the registration untouched and reconcilable,
+ * and nothing is ever submitted.
+ */
+describe("Lighter key-registration signer settlement contract", () => {
+  function composedSign(
+    signRunner: LighterSignerBinaryRunner,
+  ): LighterKeyRegistrationExecutionDeps["sign"] {
+    return (args) => signApprovedLighterKeyRegistration(args, {
+      readVaultPrivateKey: () => LIGHTER_PRIVATE_KEY,
+      readVaultRegistrationState: () => "key_generated_pending_registration",
+      keyGenerator: createLighterApiKeyGeneratorBinary({
+        binaryPath: "/tmp/vex-lighter-signer-test",
+        runner: signerRunnerEmitting({ ok: true, publicKey: PUBLIC_KEY }),
+      }),
+      signer: createLighterChangePubKeySignerBinary({
+        binaryPath: "/tmp/vex-lighter-signer-test",
+        // Small enough that a child which never closes is killed inside the test.
+        timeoutMs: 5,
+        runner: signRunner,
+      }),
+      signWalletMessage: async () => `0x${"1".repeat(128)}1b`,
+      now: () => new Date("2026-08-17T12:01:00.000Z"),
+    });
+  }
+
+  it.each([
+    ["a child that provably exited", signerRunnerExitingWithoutOutput, "exited"],
+    ["a child that never closed", signerRunnerNeverClosing, "unknown"],
+    ["a failure that never reached the child", signerRunnerRejectingWithoutEvidence, undefined],
+  ] as const)("submits nothing and retires nothing after %s", async (_name, runner, expectedState) => {
+    const { deps } = makeDeps();
+    vi.mocked(deps.sign).mockImplementation(composedSign(runner()));
+
+    const error = await executeApprovedLighterKeyRegistration(EXECUTION_INPUT, deps)
+      .then(() => null, (thrown: unknown) => thrown);
+
+    // The wrapper hands the child's end state through untouched; only a failure
+    // that never reached a child carries none.
+    expect(lighterSignerChildState(error)).toBe(expectedState);
+    expect(String(error)).not.toContain(LIGHTER_PRIVATE_KEY);
+    expect(deps.client.sendTx).not.toHaveBeenCalled();
+    expect(deps.markStaged).not.toHaveBeenCalled();
+    expect(deps.refuseUnsubmitted).not.toHaveBeenCalled();
+    expect(deps.markAmbiguous).not.toHaveBeenCalled();
+  });
+});
