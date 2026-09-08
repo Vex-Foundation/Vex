@@ -103,10 +103,22 @@ jobs:
         with:
           node-version: 22
 
-      - uses: actions/setup-go@v5
+      # The Lighter signer helper is built from a PINNED Go (the go.mod toolchain
+      # directive and scripts/verify-runtime-toolchain.mjs refuse any other), so
+      # the exact patch is stated here rather than read from a version file.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: src/tools/lighter/signer-runtime/go.mod
+          go-version: "1.27.0"
           cache-dependency-path: src/tools/lighter/signer-runtime/go.sum
+
+      # The TypeScript wire codes for Lighter order types and time-in-force are
+      # table-tested against this artifact; it must be exactly what the pinned
+      # lighter-go module says, never a hand edit.
+      - name: Verify the Lighter wire-constants artifact
+        working-directory: src/tools/lighter/signer-runtime
+        run: |
+          go run ./cmd/wire-constants > "$RUNNER_TEMP/wire-constants.json"
+          diff -u wire-constants.json "$RUNNER_TEMP/wire-constants.json"
 
       - run: corepack enable
 

@@ -258,6 +258,10 @@ jobs:
         working-directory: vex-app
         run: node scripts/stage-bridge.mjs --platform mac --arch arm64 --arch x64
 
+      - name: Stage & verify Lighter signer for packaging
+        working-directory: vex-app
+        run: node scripts/stage-lighter-signer.mjs --platform mac
+
       # Method B notarization: decode the App Store Connect API key (.p8) to an
       # ephemeral file and expose its PATH + the key id/issuer via $GITHUB_ENV.
       # notarytool reads APPLE_API_KEY (path) + APPLE_API_KEY_ID + APPLE_API_ISSUER
@@ -304,6 +308,13 @@ jobs:
       # validate the per-arch .app bundles — validating the DMGs would false-fail
       # (Codex final-review fix). Runs after --publish uploaded to the DRAFT, which
       # stays invisible until the owner publishes it.
+
+      # Post-sign evidence for the Lighter signer helper: the afterPack hook
+      # verifies the helper BEFORE codesign; this verifies the shipped, signed
+      # helper's signature and refuses an unsigned one.
+      - name: Verify packaged Lighter signer signatures
+        working-directory: vex-app
+        run: pnpm run check:package
       - name: Verify notarization stapled to the .app bundles
         working-directory: vex-app
         run: |
@@ -411,6 +422,10 @@ jobs:
         working-directory: vex-app
         run: node scripts/stage-bridge.mjs --platform linux --arch x64
 
+      - name: Stage & verify Lighter signer for packaging
+        working-directory: vex-app
+        run: node scripts/stage-lighter-signer.mjs --platform linux
+
       # No signing env on Linux (AppImage/deb are unsigned). --linux with no arch
       # flag uses the release profile's arch list (x64). electron-updater feed is
       # latest-linux.yml. Publishes to the SAME tagged draft release as the macOS
@@ -514,6 +529,10 @@ jobs:
         shell: bash
         run: node scripts/stage-bridge.mjs --platform win --arch x64
 
+      - name: Stage & verify Lighter signer for packaging
+        working-directory: vex-app
+        run: node scripts/stage-lighter-signer.mjs --platform win
+
       # app-builder-lib's WindowsSignAzureManager authenticates through
       # DefaultAzureCredential's EnvironmentCredential using these three vars.
       # Verified in the installed 26.8.1: initialize() hard-requires
@@ -534,6 +553,13 @@ jobs:
       # produced .exe is unsigned, untimestamped, or attributed to the wrong
       # publisher. Runs after --publish uploaded to the DRAFT release, which
       # stays invisible to updaters until the owner publishes it.
+
+      # Post-sign evidence for the Lighter signer helper: the afterPack hook
+      # verifies the helper BEFORE codesign; this verifies the shipped, signed
+      # helper's signature and refuses an unsigned one.
+      - name: Verify packaged Lighter signer signatures
+        working-directory: vex-app
+        run: pnpm run check:package
       - name: Verify Authenticode signature
         working-directory: vex-app
         shell: pwsh

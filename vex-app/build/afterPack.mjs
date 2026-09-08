@@ -1,6 +1,6 @@
 /**
  * Electron Fuses applied in afterPack hook (skill §7), plus the Vex Studio
- * bridge re-inspection.
+ * bridge and Lighter signer helper re-inspection.
  * Flips fuses BEFORE codesigning so signature covers the modified binary.
  *
  * Mandatory production-grade flags (even for unsigned dev builds):
@@ -15,11 +15,22 @@
  * Run via electron-builder `afterPack` hook.
  */
 
+import { existsSync, readdirSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { flipFuses, FuseVersion, FuseV1Options } from "@electron/fuses";
 
 import { artifactBinaryName, artifactsFor, assertBridgeArtifact, goTargetFor, PACKAGED_BRIDGE_SUBPATH } from "../scripts/bridge-artifact.mjs";
 import { checkPayload } from "../scripts/check-packaged-payload.mjs";
+import {
+  assertLighterSignerBytes,
+  builtLighterSignerDir,
+  lighterSignerBinaryName,
+  lighterSignerTargetsForPlatform,
+  PACKAGED_LIGHTER_SIGNER_SUBPATH,
+  readLighterSignerDigests,
+} from "../scripts/lighter-signer-artifact.mjs";
 
 /**
  * The Vex Studio bridge artifacts, re-inspected where electron-builder
@@ -79,6 +90,90 @@ export async function verifyPackagedBridge(context) {
 }
 
 /**
+ * The Lighter signer helpers, re-inspected where electron-builder actually PUT
+ * them, BEFORE codesigning.
+ *
+ * Three assertions, each aimed at a failure that has already happened once in
+ * this repository's history or in the review that produced this gate:
+ *
+ *   1. EXACTLY the two helpers for the packaged platform are present. The
+ *      `extraResources` entry used to copy the whole build directory, so every
+ *      artifact shipped all six - two Windows PE files and two Linux ELF files
+ *      inside a notarized macOS bundle, none of them signed, none of them
+ *      executable there. A foreign helper is a failure, not a curiosity.
+ *   2. Each one's OWN header says it is the format and machine this package
+ *      targets, so a stale copy at the right path cannot pass.
+ *   3. Each one's sha256 matches `SHA256SUMS`, the manifest the pinned Go
+ *      toolchain wrote at build time. This is what ties the shipped bytes to a
+ *      reviewed compiler and a reviewed module graph.
+ *
+ * It runs BEFORE signing, which is also why it is a DIGEST check and not a
+ * signature check: after codesign the helper's bytes change by design. The
+ * signature is verified afterwards, by the `check:package` CLI
+ * (`scripts/check-packaged-payload.mjs`), which runs after electron-builder has
+ * signed.
+ *
+ * Exported so a test can drive THIS function over a synthetic packaged tree,
+ * for the same reason `verifyPackagedBridge` is; `builtDir` names where the
+ * digest manifest lives and defaults to this repository's build output.
+ * Returns the helper names it accepted.
+ */
+export function verifyPackagedLighterSigner(context, { builtDir = builtLighterSignerDir(APP_ROOT) } = {}) {
+  const { electronPlatformName, appOutDir, packager } = context;
+  const targets = lighterSignerTargetsForPlatform(electronPlatformName);
+
+  const resourcesDir = electronPlatformName === "darwin"
+    ? path.join(appOutDir, `${packager.appInfo.productFilename}.app`, "Contents", "Resources")
+    : path.join(appOutDir, "resources");
+  const packagedDir = path.join(resourcesDir, PACKAGED_LIGHTER_SIGNER_SUBPATH);
+
+  if (!existsSync(packagedDir)) {
+    throw new Error(
+      `the packaged Lighter signer directory is missing at ${packagedDir}.\n`
+        + "    Stage it before packaging: `node scripts/stage-lighter-signer.mjs --platform "
+        + `${electronPlatformName}\`. electron-builder only WARNS on a missing extraResources `
+        + "source, so this is the gate that stops an app that cannot sign a Lighter order from "
+        + "being signed and published."
+    );
+  }
+
+  const digests = readLighterSignerDigests(builtDir);
+  const expected = targets.map((target) => lighterSignerBinaryName(target));
+  const present = readdirSync(packagedDir).filter((name) => name.startsWith("vex-lighter-signer-"));
+  const foreign = present.filter((name) => !expected.includes(name));
+  if (foreign.length > 0) {
+    throw new Error(
+      `the package for ${electronPlatformName} carries signer helpers for other platforms: `
+        + `${foreign.join(", ")}.\n`
+        + "    Only this platform's helpers may ship: an unsignable foreign executable inside a "
+        + "hardened, notarized bundle is exactly what `scripts/stage-lighter-signer.mjs` exists to "
+        + "prevent."
+    );
+  }
+
+  const accepted = [];
+  for (const target of targets) {
+    const name = lighterSignerBinaryName(target);
+    const packaged = path.join(packagedDir, name);
+    try {
+      const found = assertLighterSignerBytes(packaged, target, digests);
+      console.log(
+        `afterPack: Lighter signer ${name} OK at ${packaged} `
+          + `(${found.format} ${found.goos}/${found.arch} sha256 ${found.digest})`
+      );
+      accepted.push(name);
+    } catch (error) {
+      throw new Error(
+        `the packaged Lighter signer helper ${name} is wrong or missing: ${error.message}\n`
+          + "    A Vex that cannot spawn a verified signer cannot place a Lighter order, and one "
+          + "that spawns an unverified binary must never be signed."
+      );
+    }
+  }
+  return accepted;
+}
+
+/**
  * The one-loadable-candidate native contract, asserted on THIS packaged app.
  *
  * `pnpm check:package` asserts the same contract, but only after a separate
@@ -122,12 +217,16 @@ function verifyPackagedPayload(context) {
  */
 const Arch = { 0: "ia32", 1: "x64", 2: "armv7l", 3: "arm64", 4: "universal" };
 
+/** The vex-app root, where `resources/lighter-signer/SHA256SUMS` was written. */
+const APP_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
 export default async function afterPack(context) {
   const { electronPlatformName, appOutDir, packager } = context;
 
   // Fail closed BEFORE the fuses are flipped and before codesigning: a package
   // without its bridge must never reach a signature.
   await verifyPackagedBridge(context);
+  verifyPackagedLighterSigner(context);
   verifyPackagedPayload(context);
 
   let appPath;

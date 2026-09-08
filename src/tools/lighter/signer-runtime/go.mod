@@ -2,6 +2,14 @@ module github.com/vex-foundation/vex/lighter-signer-runtime
 
 go 1.23.0
 
+// Pins the COMPILER; the `go` line above is only the language floor. Kept
+// strictly above that floor so `go mod tidy` cannot drop it as redundant.
+// `actions/setup-go` reads this file (go-version-file) and
+// scripts/verify-runtime-toolchain.mjs reads this directive, so the Go that
+// builds the Lighter signing helper has exactly one home. 1.27.0 is the version
+// the bridge jobs already pin in .github/workflows/ci.yml.
+toolchain go1.27.0
+
 require github.com/elliottech/lighter-go v1.0.7
 
 require (

@@ -17,4 +17,15 @@ export interface AfterPackContext {
  */
 export function verifyPackagedBridge(context: AfterPackContext): Promise<string[]>;
 
+/**
+ * Assert that the packaged Lighter signer helpers are exactly this platform's
+ * two, of the right format and machine, with the sha256 the pinned Go
+ * toolchain recorded in `resources/lighter-signer/SHA256SUMS`. Returns the
+ * helper file names accepted; throws with the mismatch named.
+ */
+export function verifyPackagedLighterSigner(
+  context: AfterPackContext,
+  options?: { readonly builtDir?: string }
+): string[];
+
 export default function afterPack(context: AfterPackContext): Promise<void>;

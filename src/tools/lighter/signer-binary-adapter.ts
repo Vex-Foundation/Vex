@@ -1,7 +1,8 @@
-import { spawn } from "node:child_process";
+import { spawn, type SpawnOptions } from "node:child_process";
 import path from "node:path";
 
 import { ErrorCodes, VexError } from "../../errors.js";
+import logger from "@utils/logger.js";
 import type { LighterEnvironment } from "./constants.js";
 import type {
   LighterChangePubKeySignerAdapter,
@@ -66,6 +67,13 @@ export interface LighterSignerBinaryAdapterOptions {
   readonly binaryPath?: string;
   readonly timeoutMs?: number;
   readonly runner?: LighterSignerBinaryRunner;
+  /**
+   * Whether `VEX_LIGHTER_SIGNER_BINARY_PATH` may redirect the helper for this
+   * adapter. See `LighterSignerBinaryPathOptions.allowBinaryPathOverride`; the
+   * default is `false`, so an adapter built without an explicit decision runs
+   * the packaged helper and nothing else.
+   */
+  readonly allowBinaryPathOverride?: boolean;
 }
 
 export interface LighterSignerBinaryPathOptions {
@@ -74,6 +82,22 @@ export interface LighterSignerBinaryPathOptions {
   readonly platform?: NodeJS.Platform;
   readonly arch?: string;
   readonly defaultApp?: boolean;
+  /**
+   * Whether the `VEX_LIGHTER_SIGNER_BINARY_PATH` environment variable may
+   * redirect the helper.
+   *
+   * The helper receives a Lighter API PRIVATE KEY on stdin, so an environment
+   * variable that repoints it is a key-exfiltration channel in a packaged,
+   * signed app - the one place where the shipped, verified, signed binary is
+   * the only acceptable answer. In development the same variable is a
+   * legitimate convenience (a locally built helper, a debug build).
+   *
+   * This adapter runs in core and has no Electron, so it cannot read
+   * `app.isPackaged` itself: the DECISION is passed in by the privileged main
+   * process, and the default is `false`. Fail closed on purpose - a caller that
+   * never thought about it gets the packaged helper, not the environment's.
+   */
+  readonly allowBinaryPathOverride?: boolean;
 }
 
 interface LighterSignerBinaryBasePayload {
@@ -246,6 +270,17 @@ export interface LighterRegisteredKeyChecker {
 }
 
 /**
+ * The helper path one adapter will use: an explicit path when the caller gave
+ * one, otherwise the packaged location, with the environment override allowed
+ * only when the caller said so.
+ */
+function defaultBinaryPath(options: LighterSignerBinaryAdapterOptions): string {
+  return options.binaryPath ?? resolveDefaultLighterSignerBinaryPath({
+    allowBinaryPathOverride: options.allowBinaryPathOverride ?? false,
+  });
+}
+
+/**
  * Privileged key-generation surface. It is intentionally separate from the
  * order signer adapter so renderer/agent-facing dependencies never receive a
  * generation method accidentally.
@@ -254,7 +289,7 @@ export function createLighterApiKeyGeneratorBinary(
   options: LighterSignerBinaryAdapterOptions = {},
 ): LighterApiKeyGenerator {
   const runner = options.runner ?? runLighterSignerBinary;
-  const binaryPath = options.binaryPath ?? resolveDefaultLighterSignerBinaryPath();
+  const binaryPath = defaultBinaryPath(options);
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
   const derivePublicKey = async (secret: LighterTradingSecretMaterial): Promise<string> => {
@@ -289,7 +324,7 @@ export function createLighterSignerBinaryAdapter(
   options: LighterSignerBinaryAdapterOptions = {},
 ): LighterSignerAdapter {
   const runner = options.runner ?? runLighterSignerBinary;
-  const binaryPath = options.binaryPath ?? resolveDefaultLighterSignerBinaryPath();
+  const binaryPath = defaultBinaryPath(options);
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
   return {
@@ -339,7 +374,7 @@ export function createLighterGroupedOrderSignerBinaryAdapter(
   options: LighterSignerBinaryAdapterOptions = {},
 ): LighterGroupedOrderSignerAdapter {
   const runner = options.runner ?? runLighterSignerBinary;
-  const binaryPath = options.binaryPath ?? resolveDefaultLighterSignerBinaryPath();
+  const binaryPath = defaultBinaryPath(options);
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   return {
     source: "official_lighter_signer",
@@ -377,7 +412,7 @@ export function createLighterOrderLifecycleSignerBinary(
   options: LighterSignerBinaryAdapterOptions = {},
 ): LighterOrderLifecycleSignerAdapter {
   const runner = options.runner ?? runLighterSignerBinary;
-  const binaryPath = options.binaryPath ?? resolveDefaultLighterSignerBinaryPath();
+  const binaryPath = defaultBinaryPath(options);
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
   const run = async (
@@ -433,7 +468,7 @@ export function createLighterSignerBinaryApproveIntegratorAdapter(
   return {
     source: "official_lighter_signer",
     signApproveIntegrator: async (input) => {
-      const raw = await runner({ binaryPath: options.binaryPath ?? resolveDefaultLighterSignerBinaryPath(),
+      const raw = await runner({ binaryPath: defaultBinaryPath(options),
         timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS, payload: buildApproveIntegratorPayload(input) });
       const output = parseSignerOutput(raw);
       if (output.txType !== LIGHTER_TX_TYPE_APPROVE_INTEGRATOR || !isRecord(raw) || typeof raw.messageToSign !== "string") throw signerProcessFailed(raw);
@@ -458,7 +493,7 @@ export function createLighterChangePubKeySignerBinary(
   options: LighterSignerBinaryAdapterOptions = {},
 ): LighterChangePubKeySignerAdapter {
   const runner = options.runner ?? runLighterSignerBinary;
-  const binaryPath = options.binaryPath ?? resolveDefaultLighterSignerBinaryPath();
+  const binaryPath = defaultBinaryPath(options);
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   return {
     source: "official_lighter_signer",
@@ -500,7 +535,7 @@ export function createLighterWithdrawalSignerBinary(
   options: LighterSignerBinaryAdapterOptions = {},
 ): LighterWithdrawalSignerAdapter {
   const runner = options.runner ?? runLighterSignerBinary;
-  const binaryPath = options.binaryPath ?? resolveDefaultLighterSignerBinaryPath();
+  const binaryPath = defaultBinaryPath(options);
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   return {
     source: "official_lighter_signer",
@@ -540,7 +575,7 @@ export function createLighterRegisteredKeyCheckerBinary(
   options: LighterSignerBinaryAdapterOptions = {},
 ): LighterRegisteredKeyChecker {
   const runner = options.runner ?? runLighterSignerBinary;
-  const binaryPath = options.binaryPath ?? resolveDefaultLighterSignerBinaryPath();
+  const binaryPath = defaultBinaryPath(options);
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   return {
     source: "official_lighter_signer",
@@ -656,11 +691,38 @@ function buildCancelAllOrdersPayload(
   };
 }
 
+/**
+ * Logged once per process, not per signing call: the deviation is a property of
+ * this run, and a wallet-grade log line repeated on every order is noise that
+ * hides the next one.
+ */
+let signerOverrideLogged = false;
+
 export function resolveDefaultLighterSignerBinaryPath(
   options: LighterSignerBinaryPathOptions = {},
 ): string {
   const envPath = process.env.VEX_LIGHTER_SIGNER_BINARY_PATH?.trim();
-  if (envPath) return envPath;
+  if (envPath) {
+    if (options.allowBinaryPathOverride === true) {
+      if (!signerOverrideLogged) {
+        signerOverrideLogged = true;
+        logger.warn(
+          "Lighter signer helper path overridden by VEX_LIGHTER_SIGNER_BINARY_PATH; "
+            + "this is permitted only in an unpackaged build and the helper receives "
+            + "trading private keys on stdin.",
+          { binaryPath: envPath },
+        );
+      }
+      return envPath;
+    }
+    if (!signerOverrideLogged) {
+      signerOverrideLogged = true;
+      logger.warn(
+        "VEX_LIGHTER_SIGNER_BINARY_PATH is set but IGNORED: a packaged Vex runs the "
+          + "signed helper that ships inside the application bundle.",
+      );
+    }
+  }
 
   const platform = options.platform ?? process.platform;
   const arch = options.arch ?? process.arch;
@@ -685,73 +747,272 @@ export function resolveDefaultLighterSignerBinaryPath(
   return path.join(baseDir, binaryName);
 }
 
+/**
+ * How the signer child ended, as far as this process can prove it.
+ *
+ * `"exited"` means the child's `close` event was observed: the process is gone,
+ * its pipes are closed, and no further signing work can be in flight. That is
+ * the ONLY state in which a nonce reservation may be released, because it is
+ * the only one in which "nothing was signed and submitted behind our back" is a
+ * fact rather than a hope.
+ *
+ * `"unknown"` means the adapter gave up waiting: it sent SIGKILL and the child
+ * still had not closed within the drain grace. The signing outcome is
+ * indeterminate and every caller must treat it conservatively - no re-sign, no
+ * resubmit, no reservation release, reconcile instead.
+ */
+export type LighterSignerChildState = "exited" | "unknown";
+
+/** A rejection from `runLighterSignerBinary`, carrying the child's end state. */
+export interface LighterSignerChildStateCarrier {
+  readonly lighterSignerChildState: LighterSignerChildState;
+}
+
+/**
+ * The child state a signer rejection carries, or `undefined` for an error that
+ * did not come from the signer child at all.
+ *
+ * A RESOLVED promise always means `"exited"`: the runner never resolves before
+ * the `close` event, which is the contract this accessor complements.
+ */
+export function lighterSignerChildState(error: unknown): LighterSignerChildState | undefined {
+  if (error === null || typeof error !== "object") return undefined;
+  const carried = (error as Partial<LighterSignerChildStateCarrier>).lighterSignerChildState;
+  return carried === "exited" || carried === "unknown" ? carried : undefined;
+}
+
+function withChildState(error: VexError, state: LighterSignerChildState): VexError {
+  Object.defineProperty(error, "lighterSignerChildState", {
+    value: state,
+    enumerable: true,
+    writable: false,
+  });
+  return error;
+}
+
+/**
+ * How long the adapter waits for a killed child to actually close before it
+ * declares the outcome unknown. Long enough for a normal SIGKILL teardown on a
+ * loaded machine, short enough that a wedged helper cannot hold a signing path
+ * open indefinitely.
+ */
+const KILL_DRAIN_GRACE_MS = 5_000;
+
+/** The read side of a child pipe as this runner drives it (stdout, and stderr without decoding). */
+export interface LighterSignerChildReadable {
+  setEncoding(encoding: BufferEncoding): unknown;
+  on(event: "data", listener: (chunk: string) => void): unknown;
+  removeAllListeners(): unknown;
+}
+
+/** The write side of the child's stdin as this runner drives it: one payload line, then end. */
+export interface LighterSignerChildWritable {
+  on(event: "error", listener: (error: Error) => void): unknown;
+  end(chunk: string): unknown;
+  removeAllListeners(): unknown;
+}
+
+/**
+ * The subset of a `ChildProcess` this runner touches, declared STRUCTURALLY.
+ * Node's real `spawn` satisfies it unchanged, and a test can hand the runner a
+ * scripted child without inhabiting the twenty overloads of `typeof spawn`
+ * (no double cast can express that honestly, so the seam names what it uses).
+ */
+export interface LighterSignerChildProcess {
+  readonly pid?: number | undefined;
+  readonly stdout: LighterSignerChildReadable | null;
+  readonly stderr: Pick<LighterSignerChildReadable, "on" | "removeAllListeners"> | null;
+  readonly stdin: LighterSignerChildWritable | null;
+  on(event: "error", listener: (error: Error) => void): unknown;
+  on(event: "close", listener: (code: number | null, signal: NodeJS.Signals | null) => void): unknown;
+  removeAllListeners(): unknown;
+  kill(signal: NodeJS.Signals): boolean;
+  unref(): void;
+}
+
+/** The one `spawn` shape this runner calls: a binary path, no arguments, piped stdio. */
+export type LighterSignerSpawn = (
+  command: string,
+  args: readonly string[],
+  options: SpawnOptions,
+) => LighterSignerChildProcess;
+
+/** The pieces of `node:child_process` this runner needs, so a test can drive it. */
+export interface LighterSignerSpawnDependencies {
+  readonly spawn: LighterSignerSpawn;
+  readonly killDrainGraceMs: number;
+}
+
+const REAL_SPAWN_DEPENDENCIES: LighterSignerSpawnDependencies = {
+  spawn,
+  killDrainGraceMs: KILL_DRAIN_GRACE_MS,
+};
+
+/**
+ * The environment the helper is given.
+ *
+ * NOT `process.env`. The privileged Vex process holds vault material, provider
+ * credentials and RPC endpoints in its environment, and the signer helper needs
+ * none of it: its entire input arrives as one JSON document on stdin. Every
+ * variable withheld here is one that cannot leak into a crash dump, a child of
+ * the helper, or a helper that is not the one we think it is.
+ *
+ * Windows keeps `SystemRoot` and `windir` because the loader and the platform
+ * crypto libraries resolve system DLLs through them; a Windows process started
+ * with a truly empty environment can fail before `main`. Nothing else is
+ * inherited on any platform, PATH included: the helper is launched by absolute
+ * path and never resolves a program name.
+ */
+function signerChildEnvironment(platform: NodeJS.Platform): NodeJS.ProcessEnv {
+  if (platform !== "win32") return {};
+  const inherited: NodeJS.ProcessEnv = {};
+  for (const name of ["SystemRoot", "windir"]) {
+    const value = process.env[name];
+    if (value !== undefined) inherited[name] = value;
+  }
+  return inherited;
+}
+
+/**
+ * Run the signer helper over one payload and settle ONLY after the child is
+ * gone.
+ *
+ * The lifecycle contract, which the Lighter execution owners depend on
+ * (plan section 12.4):
+ *
+ *   - the promise settles after the child's `close` event, never before, so a
+ *     resolved or rejected call means no signing work is still running;
+ *   - on timeout, on stdout overflow, and on a stdin failure, the child is
+ *     SIGKILLed and then DRAINED: the promise still waits for `close`, up to
+ *     `killDrainGraceMs`;
+ *   - if that grace expires, the promise settles with `childState: "unknown"`
+ *     on the error and the child is unref'd so it cannot hold the process open;
+ *   - every rejection carries `lighterSignerChildState`, and every resolution
+ *     implies `"exited"`;
+ *   - all listeners and timers are removed on the settling path, on every
+ *     branch, so a long-lived process does not accumulate them per signature.
+ *
+ * The first failure WINS: a child that is killed for overflow and then exits
+ * non-zero reports the overflow, not the exit code, because the overflow is
+ * what happened first and what the operator has to fix.
+ */
 export async function runLighterSignerBinary(
   request: LighterSignerBinaryRunRequest,
+  dependencies: LighterSignerSpawnDependencies = REAL_SPAWN_DEPENDENCIES,
 ): Promise<unknown> {
   return new Promise((resolve, reject) => {
     let settled = false;
     let stdout = "";
     let stdoutBytes = 0;
-    const child = spawn(request.binaryPath, [], {
+    let failure: VexError | null = null;
+    let graceTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const child = dependencies.spawn(request.binaryPath, [], {
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
+      env: signerChildEnvironment(process.platform),
     });
 
-    const finish = (fn: () => void) => {
+    const releaseListeners = (): void => {
+      clearTimeout(timer);
+      if (graceTimer !== undefined) clearTimeout(graceTimer);
+      child.stdout?.removeAllListeners();
+      child.stderr?.removeAllListeners();
+      child.stdin?.removeAllListeners();
+      child.removeAllListeners();
+    };
+
+    const settle = (state: LighterSignerChildState, exitCode: number | null): void => {
       if (settled) return;
       settled = true;
+      releaseListeners();
+
+      if (state === "unknown") {
+        child.unref();
+        reject(withChildState(
+          failure ?? signerUnavailable("Lighter signer helper did not exit."),
+          "unknown",
+        ));
+        return;
+      }
+      if (failure !== null) {
+        reject(withChildState(failure, "exited"));
+        return;
+      }
+      let parsed: unknown;
+      try {
+        parsed = parseHelperJson(stdout);
+      } catch (err) {
+        reject(err instanceof VexError ? withChildState(err, "exited") : err);
+        return;
+      }
+      if (exitCode !== 0) {
+        reject(withChildState(signerProcessFailed(parsed), "exited"));
+        return;
+      }
+      resolve(parsed);
+    };
+
+    /**
+     * Record the first failure, stop the child, and keep waiting for `close`.
+     *
+     * Killing is not the same as proving quiescence (rule 05): the reservation
+     * owner needs the `close` event, so the promise stays open until it arrives
+     * or the grace expires.
+     */
+    const abort = (error: VexError): void => {
+      if (settled || failure !== null) return;
+      failure = error;
       clearTimeout(timer);
-      fn();
+      try {
+        child.kill("SIGKILL");
+      } catch {
+        // A child that is already gone cannot be killed; `close` decides.
+      }
+      graceTimer = setTimeout(() => settle("unknown", null), dependencies.killDrainGraceMs);
+      graceTimer.unref?.();
     };
 
     const timer = setTimeout(() => {
-      child.kill("SIGKILL");
-      finish(() => reject(signerUnavailable("Lighter signer helper timed out.")));
+      abort(signerUnavailable("Lighter signer helper timed out."));
     }, request.timeoutMs);
 
-    child.stdout.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => {
+    child.stdout?.setEncoding("utf8");
+    child.stdout?.on("data", (chunk: string) => {
+      if (failure !== null) return;
       stdoutBytes += Buffer.byteLength(chunk);
       if (stdoutBytes > MAX_STDOUT_BYTES) {
-        child.kill("SIGKILL");
-        finish(() => reject(signerUnavailable("Lighter signer helper returned too much output.")));
+        abort(signerUnavailable("Lighter signer helper returned too much output."));
         return;
       }
       stdout += chunk;
     });
 
-    child.stderr.on("data", () => {
+    child.stderr?.on("data", () => {
       // Deliberately drain without retaining text; helper errors must stay structural.
     });
 
     child.on("error", () => {
-      finish(() => reject(signerUnavailable("Lighter signer helper is not available.")));
+      if (child.pid === undefined) {
+        // The process was never created (a missing or unexecutable helper), so
+        // there is nothing to drain and nothing that could have signed.
+        failure ??= signerUnavailable("Lighter signer helper is not available.");
+        settle("exited", null);
+        return;
+      }
+      abort(signerUnavailable("Lighter signer helper is not available."));
     });
 
-    child.on("close", (code) => {
-      finish(() => {
-        let parsed: unknown;
-        try {
-          parsed = parseHelperJson(stdout);
-        } catch (err) {
-          reject(err);
-          return;
-        }
-        if (code !== 0) {
-          reject(signerProcessFailed(parsed));
-          return;
-        }
-        resolve(parsed);
-      });
+    child.on("close", (code: number | null) => {
+      settle("exited", code);
     });
 
-    child.stdin.on("error", () => {
-      finish(() => reject(signerUnavailable("Lighter signer helper input stream failed.")));
+    child.stdin?.on("error", () => {
+      abort(signerUnavailable("Lighter signer helper input stream failed."));
     });
-    child.stdin.end(`${JSON.stringify(request.payload)}\n`);
+    child.stdin?.end(`${JSON.stringify(request.payload)}\n`);
   });
 }
-
 function buildSignerPayload(input: LighterCreateOrderSigningInput): LighterSignerBinaryPayload {
   return {
     operation: "signCreateOrder",

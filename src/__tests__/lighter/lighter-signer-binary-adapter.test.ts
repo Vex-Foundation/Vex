@@ -1,12 +1,17 @@
-import { readFileSync } from "node:fs";
+import type { SpawnOptions } from "node:child_process";
+import { EventEmitter } from "node:events";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import {
   createLighterApiKeyGeneratorBinary,
   createLighterRegisteredKeyCheckerBinary,
   createLighterSignerBinaryAdapter,
+  lighterSignerChildState,
   resolveDefaultLighterSignerBinaryPath,
+  runLighterSignerBinary,
   type LighterSignerBinaryRunRequest,
 } from "@tools/lighter/signer-binary-adapter.js";
 import {
@@ -23,6 +28,9 @@ const PRIVATE_KEY = `0x${"1".repeat(80)}`;
 
 function plan(overrides: Partial<LighterOrderReadyForSignerPlan> = {}): LighterOrderReadyForSignerPlan {
   return {
+    // The consent expiry the execution owners revalidate before signing; this
+    // fixture only has to carry one, so it is far in the future.
+    expiresAt: "2030-01-01T00:00:00.000Z",
     intentId: "lighter-exec-1",
     sessionId: "session-1",
     previewId: "lighter-preview-1",
@@ -261,13 +269,6 @@ describe("Lighter signer binary adapter", () => {
     })).toBe(join("/repo", "vex-app", "resources", "lighter-signer", "vex-lighter-signer-darwin-arm64"));
   });
 
-  it("keeps the helper process argument list empty so secrets travel only over stdin", () => {
-    const source = readFileSync(
-      join(process.cwd(), "src/tools/lighter/signer-binary-adapter.ts"),
-      "utf-8",
-    );
-    expect(source).toContain("spawn(request.binaryPath, []");
-  });
 });
 
 
@@ -290,5 +291,316 @@ describe("Lighter signed fee attribute binding", () => {
     const unexpected = createLighterSignerBinaryAdapter({ runner: async () => ({ ok: true, txType: 14,
       txInfo: JSON.stringify({ L2TxAttributes: { "1": 123, "2": 1000, "3": 1000 } }), txHash: "ab".repeat(40) }) });
     await expect(unexpected.signCreateOrder(base)).rejects.toThrow();
+  });
+});
+
+/**
+ * THE CHILD-PROCESS CONTRACT of the signer helper (plan section 12.4).
+ *
+ * Two kinds of evidence, on purpose. The REAL-CHILD tests spawn an actual
+ * executable, so they prove what only a real process can: that the helper is
+ * started with no arguments, that its environment is empty, and that a hung
+ * child is killed and still awaited. The SCRIPTED-CHILD tests drive an injected
+ * spawner, because the state that matters most - a child that does not close
+ * even after SIGKILL - cannot be produced by a real process on purpose (SIGKILL
+ * is not catchable), and a race that cannot be produced cannot be tested with
+ * wall-clock sleeps either.
+ *
+ * The listener assertion follows the pattern of VS Code's
+ * `ptyHostService.test.ts` ("listener counts should not grow"): the interesting
+ * failure is not one leaked handle, it is the per-signature accumulation in a
+ * process that signs all day.
+ */
+
+const temporaryRoots: string[] = [];
+
+function temporaryHelper(body: string): string {
+  const root = mkdtempSync(join(os.tmpdir(), "vex-lighter-signer-"));
+  temporaryRoots.push(root);
+  const file = join(root, "helper");
+  writeFileSync(file, `#!${process.execPath}\n${body}\n`);
+  chmodSync(file, 0o755);
+  return file;
+}
+
+afterEach(() => {
+  for (const root of temporaryRoots.splice(0)) rmSync(root, { recursive: true, force: true });
+});
+
+/** A child whose every transition this test decides. */
+class ScriptedChild extends EventEmitter {
+  readonly stdout = Object.assign(new EventEmitter(), { setEncoding: () => undefined });
+  readonly stderr = new EventEmitter();
+  readonly stdin = Object.assign(new EventEmitter(), { end: () => undefined });
+  pid: number | undefined = 4242;
+  readonly signals: string[] = [];
+  unreferenced = false;
+
+  kill(signal: string): boolean {
+    this.signals.push(signal);
+    return true;
+  }
+
+  unref(): void {
+    this.unreferenced = true;
+  }
+
+  /** Every listener this runner registered, across the child and its pipes. */
+  listenerTotal(): number {
+    const emitters = [this, this.stdout, this.stderr, this.stdin];
+    return emitters.reduce(
+      (total, emitter) => total + emitter.eventNames().reduce(
+        (sum, name) => sum + emitter.listenerCount(name as string),
+        0,
+      ),
+      0,
+    );
+  }
+}
+
+function scriptedDependencies(child: ScriptedChild, killDrainGraceMs = 20) {
+  return {
+    spawn: () => child,
+    killDrainGraceMs,
+  };
+}
+
+const REQUEST: LighterSignerBinaryRunRequest = {
+  binaryPath: "/nonexistent/vex-lighter-signer",
+  payload: { operation: "generateApiKey" },
+  timeoutMs: 5_000,
+};
+
+describe("Lighter signer helper child lifecycle", () => {
+  const realChild = process.platform === "win32" ? it.skip : it;
+
+  realChild("runs the helper with no arguments and an empty environment", async () => {
+    process.env.VEX_SIGNER_ENV_LEAK_PROBE = "must-not-reach-the-helper";
+    try {
+      const helper = temporaryHelper(`
+        let input = "";
+        process.stdin.on("data", (chunk) => { input += chunk; });
+        process.stdin.on("end", () => {
+          process.stdout.write(JSON.stringify({
+            ok: true,
+            publicKey: "b".repeat(80),
+            privateKey: "0x" + "1".repeat(80),
+            argv: process.argv.slice(2),
+            envKeys: Object.keys(process.env).sort(),
+            sawPayload: JSON.parse(input).operation,
+          }));
+        });
+      `);
+
+      const result = await runLighterSignerBinary({
+        binaryPath: helper,
+        payload: { operation: "generateApiKey" },
+        timeoutMs: 10_000,
+      }) as {
+        argv: string[];
+        envKeys: string[];
+        sawPayload: string;
+      };
+
+      expect(result.sawPayload).toBe("generateApiKey");
+      expect(result.argv).toEqual([]);
+      // The vault-populated environment of the privileged process never reaches
+      // the process that holds a trading private key.
+      expect(result.envKeys).toEqual([]);
+    } finally {
+      delete process.env.VEX_SIGNER_ENV_LEAK_PROBE;
+    }
+  });
+
+  realChild("kills a hung helper, waits for its close, and reports an exited child", async () => {
+    const helper = temporaryHelper(`
+      process.stdin.resume();
+      setInterval(() => {}, 1000);
+    `);
+
+    await expect(runLighterSignerBinary({
+      binaryPath: helper,
+      payload: { operation: "generateApiKey" },
+      timeoutMs: 150,
+    })).rejects.toMatchObject({
+      message: "Lighter signer helper timed out.",
+      lighterSignerChildState: "exited",
+    });
+  });
+
+  it("does not settle before the child's close event", async () => {
+    const child = new ScriptedChild();
+    const pending = runLighterSignerBinary(REQUEST, scriptedDependencies(child));
+
+    let settled = false;
+    void pending.then(() => { settled = true; }, () => { settled = true; });
+
+    child.stdout.emit("data", JSON.stringify({ ok: true, publicKey: "b".repeat(80) }));
+    child.emit("exit", 0, null);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    child.emit("close", 0);
+    await expect(pending).resolves.toMatchObject({ ok: true });
+    expect(child.listenerTotal()).toBe(0);
+  });
+
+  it("drains a killed child before settling, and settles as exited when it closes", async () => {
+    const child = new ScriptedChild();
+    const pending = runLighterSignerBinary(
+      { ...REQUEST, timeoutMs: 5 } as LighterSignerBinaryRunRequest,
+      scriptedDependencies(child, 10_000),
+    );
+    let settled = false;
+    void pending.then(() => { settled = true; }, () => { settled = true; });
+
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(child.signals).toEqual(["SIGKILL"]);
+    expect(settled).toBe(false);
+
+    child.emit("close", null);
+    await expect(pending).rejects.toMatchObject({
+      message: "Lighter signer helper timed out.",
+      lighterSignerChildState: "exited",
+    });
+    expect(child.unreferenced).toBe(false);
+    expect(child.listenerTotal()).toBe(0);
+  });
+
+  it("settles with an unknown child state when a killed child never closes", async () => {
+    const child = new ScriptedChild();
+    const pending = runLighterSignerBinary(
+      { ...REQUEST, timeoutMs: 5 } as LighterSignerBinaryRunRequest,
+      scriptedDependencies(child, 15),
+    );
+
+    const error = await pending.then(() => null, (err: unknown) => err);
+    expect(lighterSignerChildState(error)).toBe("unknown");
+    expect(child.signals).toEqual(["SIGKILL"]);
+    // Unref'd so a wedged helper cannot hold the app open, and no listener is
+    // left behind waiting for a close that will never come.
+    expect(child.unreferenced).toBe(true);
+    expect(child.listenerTotal()).toBe(0);
+  });
+
+  it("kills and drains on output overflow, reporting the first failure", async () => {
+    const child = new ScriptedChild();
+    const pending = runLighterSignerBinary(REQUEST, scriptedDependencies(child));
+
+    child.stdout.emit("data", "x".repeat(256 * 1024 + 1));
+    await Promise.resolve();
+    expect(child.signals).toEqual(["SIGKILL"]);
+
+    child.emit("close", 3);
+    await expect(pending).rejects.toMatchObject({
+      message: "Lighter signer helper returned too much output.",
+      lighterSignerChildState: "exited",
+    });
+    expect(child.listenerTotal()).toBe(0);
+  });
+
+  it("kills and drains when the stdin pipe fails", async () => {
+    const child = new ScriptedChild();
+    const pending = runLighterSignerBinary(REQUEST, scriptedDependencies(child));
+
+    child.stdin.emit("error", new Error("EPIPE"));
+    await Promise.resolve();
+    expect(child.signals).toEqual(["SIGKILL"]);
+
+    child.emit("close", null);
+    await expect(pending).rejects.toMatchObject({
+      message: "Lighter signer helper input stream failed.",
+      lighterSignerChildState: "exited",
+    });
+    expect(child.listenerTotal()).toBe(0);
+  });
+
+  it("reports a helper that could never be spawned as an exited child", async () => {
+    const child = new ScriptedChild();
+    child.pid = undefined;
+    const pending = runLighterSignerBinary(REQUEST, scriptedDependencies(child));
+
+    child.emit("error", new Error("ENOENT"));
+    await expect(pending).rejects.toMatchObject({
+      message: "Lighter signer helper is not available.",
+      lighterSignerChildState: "exited",
+    });
+    expect(child.signals).toEqual([]);
+    expect(child.listenerTotal()).toBe(0);
+  });
+
+  it("passes an empty environment to the child on this platform", async () => {
+    const child = new ScriptedChild();
+    let seen: Record<string, unknown> | undefined;
+    const pending = runLighterSignerBinary(REQUEST, {
+      spawn: (_path: string, _args: readonly string[], options: SpawnOptions) => {
+        seen = options.env;
+        return child;
+      },
+      killDrainGraceMs: 20,
+    });
+    child.stdout.emit("data", JSON.stringify({ ok: true }));
+    child.emit("close", 0);
+    await pending;
+
+    expect(seen).toBeDefined();
+    const inherited = Object.keys(seen ?? {});
+    expect(process.platform === "win32"
+      ? inherited.every((name) => name === "SystemRoot" || name === "windir")
+      : inherited.length === 0).toBe(true);
+  });
+});
+
+describe("Lighter signer helper path override", () => {
+  const OVERRIDE = "/tmp/attacker-supplied-signer";
+
+  afterEach(() => {
+    delete process.env.VEX_LIGHTER_SIGNER_BINARY_PATH;
+  });
+
+  it("ignores VEX_LIGHTER_SIGNER_BINARY_PATH unless the caller allows the override", () => {
+    process.env.VEX_LIGHTER_SIGNER_BINARY_PATH = OVERRIDE;
+
+    // The packaged app (and any caller that never made the decision) runs the
+    // helper that ships inside the bundle: the private key goes to a signed,
+    // digest-verified binary or to nothing.
+    expect(resolveDefaultLighterSignerBinaryPath({
+      resourcesPath: "/Applications/Vex.app/Contents/Resources",
+      platform: "darwin",
+      arch: "arm64",
+    })).toBe("/Applications/Vex.app/Contents/Resources/lighter-signer/vex-lighter-signer-darwin-arm64");
+
+    expect(resolveDefaultLighterSignerBinaryPath({
+      resourcesPath: "/Applications/Vex.app/Contents/Resources",
+      platform: "darwin",
+      arch: "arm64",
+      allowBinaryPathOverride: false,
+    })).toBe("/Applications/Vex.app/Contents/Resources/lighter-signer/vex-lighter-signer-darwin-arm64");
+
+    // An unpackaged build may point at a locally built helper.
+    expect(resolveDefaultLighterSignerBinaryPath({
+      resourcesPath: "/Applications/Vex.app/Contents/Resources",
+      platform: "darwin",
+      arch: "arm64",
+      allowBinaryPathOverride: true,
+    })).toBe(OVERRIDE);
+  });
+
+  it("keeps the packaged helper when an adapter is built without an explicit decision", () => {
+    process.env.VEX_LIGHTER_SIGNER_BINARY_PATH = OVERRIDE;
+    const calls: LighterSignerBinaryRunRequest[] = [];
+    const adapter = createLighterSignerBinaryAdapter({
+      runner: async (request) => {
+        calls.push(request);
+        return { ok: true, txType: 14, txInfo: JSON.stringify({}), txHash: "ab".repeat(40) };
+      },
+    });
+
+    return signLighterCreateOrderWithAdapter(signingInput(), adapter).then(() => {
+      expect(calls).toHaveLength(1);
+      expect(calls[0].binaryPath).not.toBe(OVERRIDE);
+      expect(calls[0].binaryPath).toContain("vex-lighter-signer-");
+    });
   });
 });

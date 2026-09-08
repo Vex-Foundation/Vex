@@ -57,6 +57,10 @@ import {
   privilegedBundleChecks,
 } from "./check-privileged-bundles.mjs";
 import { nativeArtifactChecks } from "./check-native-artifacts.mjs";
+import {
+  builtLighterSignerDir,
+  evaluateBuiltLighterSigners,
+} from "./lighter-signer-artifact.mjs";
 
 const root = path.resolve(process.cwd());
 const distRendererHtml = path.join(root, "dist", "renderer", "index.html");
@@ -578,42 +582,21 @@ check("migration resources — mirror canonical vex-agent migrations", () => {
   }
 });
 
-// 12. Lighter signer helper resources are built for every packaged target.
-check("lighter signer helpers — built for supported packaged targets", () => {
-  const signerDir = path.join(root, "resources", "lighter-signer");
-  const expected = [
-    "vex-lighter-signer-darwin-arm64",
-    "vex-lighter-signer-darwin-x64",
-    "vex-lighter-signer-linux-arm64",
-    "vex-lighter-signer-linux-x64",
-    "vex-lighter-signer-win32-arm64.exe",
-    "vex-lighter-signer-win32-x64.exe",
-  ];
-
-  if (!existsSync(signerDir)) {
-    throw new Error(
-      `missing signer resource dir: ${signerDir}. Run \`node ../scripts/build-lighter-signer-runtime.mjs\` from vex-app/.`
-    );
-  }
-
-  const issues = [];
-  for (const name of expected) {
-    const full = path.join(signerDir, name);
-    if (!existsSync(full)) {
-      issues.push(`${name}: missing`);
-      continue;
-    }
-    const size = statSync(full).size;
-    if (size < 1_000_000) {
-      issues.push(`${name}: unexpectedly small (${size} bytes)`);
-    }
-  }
-
+// 12. Lighter signer helper resources are built for every packaged target, and
+//     are byte-for-byte the ones the pinned Go toolchain recorded.
+check("lighter signer helpers - built, correct machine, digests match SHA256SUMS", () => {
+  const { issues, verified } = evaluateBuiltLighterSigners(builtLighterSignerDir(root));
   if (issues.length > 0) {
     throw new Error(
       `Lighter signer helper issues:\n    ${issues.join("\n    ")}\n` +
-        `Run \`node ../scripts/build-lighter-signer-runtime.mjs\` from vex-app/.`
+        "Run `node ../scripts/build-lighter-signer-runtime.mjs` from vex-app/ with the pinned Go toolchain."
     );
+  }
+  // Printed, not just counted: the digests are the evidence that the shipped
+  // signing helper came from the reviewed compiler and the committed module
+  // graph, and a build log nobody can compare proves nothing later.
+  for (const helper of verified) {
+    console.log(`    ${helper.name} ${helper.format} sha256 ${helper.digest}`);
   }
 });
 
