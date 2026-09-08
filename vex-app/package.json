@@ -1,7 +1,7 @@
 {
   "name": "@vex/app",
   "version": "0.2.7",
-  "description": "Vex Electron desktop app \u2014 local self-custodial wallet + autonomous on-chain agent GUI",
+  "description": "Vex Electron desktop app — local self-custodial wallet + autonomous on-chain agent GUI",
   "homepage": "https://www.projectvex.ai/",
   "author": "Project VEX",
   "repository": {
@@ -18,12 +18,10 @@
     "build:main": "vite build --config vite.main.config.ts",
     "build:preload": "vite build --config vite.preload.config.ts",
     "build:renderer": "vite build --config vite.renderer.config.ts",
-    "build:assets": "node scripts/copy-migrations.mjs && node ../scripts/build-lighter-signer-runtime.mjs",
     "build:pty-host": "vite build --config vite.pty-host.config.ts",
     "prebuild": "pnpm run build:assets",
     "build": "pnpm run lint && pnpm run build:main && pnpm run build:preload && pnpm run build:pty-host && pnpm run build:renderer",
     "postbuild": "node scripts/check-build-artifacts.mjs",
-    "dev:assets": "node scripts/doctor.mjs && node scripts/copy-migrations.mjs && node ../scripts/build-lighter-signer-runtime.mjs",
     "dev:renderer": "vite --config vite.renderer.config.ts",
     "dev:main:watch": "vite build --config vite.main.config.ts --watch",
     "dev:preload:watch": "vite build --config vite.preload.config.ts --watch",
@@ -33,7 +31,6 @@
     "build:bridge": "node scripts/build-host-bridges.mjs",
     "build:bridge:dev": "node scripts/build-host-bridges.mjs --current-arch",
     "prepackage:bridge": "node scripts/stage-bridge.mjs --arch x64 --arch arm64",
-    "prepackage:lighter-signer": "node scripts/stage-lighter-signer.mjs",
     "package": "pnpm run build && pnpm run build:bridge && pnpm run prepackage:bridge && pnpm run prepackage:lighter-signer && electron-builder --dir --publish never && pnpm run check:package",
     "make": "pnpm run build && pnpm run build:bridge && pnpm run prepackage:bridge && pnpm run prepackage:lighter-signer && electron-builder --publish never",
     "lint": "pnpm run lint:tsc && pnpm run lint:tsc:ratchet && pnpm run check:boundaries",
@@ -46,7 +43,7 @@
     "test:native-fs": "vitest run src/main/studio/files/__tests__/files-real-fs.test.ts",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "audit:deps": "pnpm audit --prod && pnpm audit",
+    "audit:deps": "node ../scripts/audit-production-dependencies.mjs vex-app/scripts/production-audit-allowlist.json vex-app",
     "doctor": "node scripts/doctor.mjs",
     "predev": "pnpm run build:bridge:dev",
     "check:build": "node scripts/check-build-artifacts.mjs",
@@ -54,7 +51,10 @@
     "probe:node-pty": "electron scripts/probe-node-pty.mjs",
     "probe:node-pty:packaged": "electron scripts/probe-node-pty.mjs --packaged",
     "probe:pg-connect": "node scripts/probes/pg-connect-latency.mjs",
-    "check:boundaries": "node scripts/check-process-boundaries.mjs"
+    "check:boundaries": "node scripts/check-process-boundaries.mjs",
+    "build:assets": "node scripts/copy-migrations.mjs && node ../scripts/build-lighter-signer-runtime.mjs",
+    "dev:assets": "node scripts/doctor.mjs && node scripts/copy-migrations.mjs && node ../scripts/build-lighter-signer-runtime.mjs",
+    "prepackage:lighter-signer": "node scripts/stage-lighter-signer.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "~5.2.2",
@@ -120,5 +120,35 @@
     "vitest": "~4.1.5",
     "wait-on": "~9.0.5"
   },
-  "packageManager": "pnpm@10.32.1"
+  "packageManager": "pnpm@10.32.1",
+  "pnpm": {
+    "supportedArchitectures": {
+      "os": [
+        "current",
+        "darwin"
+      ],
+      "cpu": [
+        "current",
+        "x64",
+        "arm64"
+      ]
+    },
+    "onlyBuiltDependencies": [
+      "@parcel/watcher",
+      "electron",
+      "electron-winstaller",
+      "esbuild",
+      "node-pty",
+      "sharp"
+    ],
+    "ignoredBuiltDependencies": [
+      "bufferutil",
+      "utf-8-validate"
+    ],
+    "overrides": {
+      "electron-updater>js-yaml": "4.3.1",
+      "jayson>ws": "7.5.13",
+      "rpc-websockets>ws": "8.21.3"
+    }
+  }
 }

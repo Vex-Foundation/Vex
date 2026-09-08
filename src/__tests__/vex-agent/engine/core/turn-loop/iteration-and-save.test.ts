@@ -2,7 +2,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import * as streamConsumer from "@vex-agent/inference/stream-consumer.js";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import type { StreamChunk } from "@vex-agent/inference/types.js";
+import type {
+  InferenceConfig,
+  InferenceProvider,
+  InferenceResponse,
+  InferenceUsage,
+  StreamChunk,
+} from "@vex-agent/inference/types.js";
+import { OpenRouterEmptyStreamError } from "@vex-agent/inference/openrouter/non-empty-stream.js";
 
 // ── Mocks ─────────────────────────────────────────────────────
 
@@ -305,6 +312,84 @@ describe("turn-loop", () => {
     };
   }
 
+  /**
+   * A FULLY typed `InferenceProvider` double. The sibling helpers above predate
+   * the test-escape ratchet and reach `runTurnLoop` through `as any`; new tests
+   * may not, so this one implements the whole interface and the scripted arms
+   * are typed against it. Rounds are scripted per call index; the last entry
+   * repeats, exactly like `makeProvider`.
+   */
+  function makeTypedProvider(parts: {
+    readonly completions?: ReadonlyArray<{
+      readonly content?: string | null;
+      readonly reasoning?: string | null;
+    }>;
+    readonly streamRounds?: ReadonlyArray<readonly StreamChunk[]>;
+    readonly streamThrows?: () => Error;
+    readonly onChatCompletion?: () => void;
+    readonly onStream?: () => void;
+  }): InferenceProvider {
+    let completionIndex = 0;
+    let streamIndex = 0;
+    const usage: InferenceUsage = {
+      promptTokens: 1000,
+      completionTokens: 0,
+      totalTokens: 1000,
+    };
+    return {
+      id: "fake",
+      displayName: "Fake",
+      loadConfig: async () => null,
+      chatCompletion: async (): Promise<InferenceResponse> => {
+        parts.onChatCompletion?.();
+        const scripted = parts.completions ?? [{ content: "" }];
+        const round = scripted[completionIndex] ?? scripted[scripted.length - 1];
+        completionIndex += 1;
+        return {
+          content: round.content ?? null,
+          toolCalls: null,
+          usage,
+          reasoning: round.reasoning ?? null,
+          finishReason: "stop",
+          generationId: null,
+          servingProvider: null,
+        };
+      },
+      chatCompletionSimple: async () => ({ content: "", usage }),
+      chatCompletionStream: async function* (): AsyncGenerator<StreamChunk> {
+        parts.onStream?.();
+        if (parts.streamThrows) throw parts.streamThrows();
+        const scripted = parts.streamRounds ?? [];
+        const round = scripted[streamIndex] ?? scripted[scripted.length - 1] ?? [];
+        streamIndex += 1;
+        for (const chunk of round) yield chunk;
+      },
+      getBalance: async () => null,
+      calculateCost: () => ({
+        totalCost: 0.001,
+        currency: "USD",
+        breakdown: { promptCost: 0, completionCost: 0, cachedSavings: 0, reasoningCost: 0 },
+      }),
+    };
+  }
+
+  /** The typed config the scripted rounds above run under. */
+  function makeTypedConfig(): InferenceConfig {
+    return {
+      provider: "openrouter",
+      model: "test-model",
+      contextLimit: 128000,
+      maxOutputTokens: 4096,
+      inputPricePerM: 3,
+      outputPricePerM: 15,
+      priceCurrency: "USD",
+      cachePricePerM: null,
+      cacheWritePricePerM: null,
+      reasoningPricePerM: null,
+      supportsReasoningEffort: false,
+    };
+  }
+
   function makeConfig() {
     return {
       provider: "openrouter",
@@ -452,6 +537,94 @@ describe("turn-loop", () => {
       // Real work DID happen before the stall - the user-facing copy and the
       // retry gate both depend on this count being truthful.
       expect(result.toolCallsMade).toBe(1);
+    });
+
+    it("counts a REASONING-ONLY round as blank, exactly like an empty one", async () => {
+      // A model that thinks without answering. The inference layer hands the
+      // reasoning-only completion back AS a completion (it stopped throwing on
+      // one), so this bound is the only thing standing between it and fifty
+      // billed repeats of the identical prompt.
+      let streamCalls = 0;
+      const provider = makeTypedProvider({
+        streamRounds: [[
+          { type: "reasoning", reasoningText: "thinking hard" },
+          { type: "done", finishReason: "stop" },
+        ]],
+        onStream: () => { streamCalls += 1; },
+      });
+
+      const result = await runTurnLoop(
+        makeContext(), [], null, 0, provider, makeTypedConfig(), [],
+        { ...defaultLoopConfig, maxIterations: 50 },
+      );
+
+      expect(result.stopReason).toBe("no_progress");
+      expect(streamCalls).toBe(MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS);
+      expect(result.text).toBe(null);
+      expect(mockAddMessage).not.toHaveBeenCalled();
+      // Logged as blank AND as reasoning-only: the model spent output tokens,
+      // it just never answered.
+      const blankLog = mockLoggerWarn.mock.calls.find(
+        (c) => c[0] === "engine.turn.unproductive_round",
+      );
+      expect(blankLog).toBeDefined();
+      expect(blankLog?.[1]).toMatchObject({ reasoningOnly: true });
+    });
+
+    it("a reasoning-only round does NOT reset the counter", async () => {
+      // Blank, reasoning-only, blank is a run of THREE, not two runs of one:
+      // if reasoning counted as progress the turn would sail past the bound.
+      let streamCalls = 0;
+      const provider = makeTypedProvider({
+        streamRounds: [
+          [{ type: "done", finishReason: "stop" }],
+          [
+            { type: "reasoning", reasoningText: "still thinking" },
+            { type: "done", finishReason: "stop" },
+          ],
+          [{ type: "done", finishReason: "stop" }],
+          [{ type: "content", text: "unreachable" }, { type: "done", finishReason: "stop" }],
+        ],
+        onStream: () => { streamCalls += 1; },
+      });
+
+      const result = await runTurnLoop(
+        makeContext(), [], null, 0, provider, makeTypedConfig(), [],
+        { ...defaultLoopConfig, maxIterations: 50 },
+      );
+
+      expect(result.stopReason).toBe("no_progress");
+      expect(streamCalls).toBe(MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS);
+      expect(result.text).toBe(null);
+    });
+
+    it("a provider whose streams are all empty stops at the blank bound, not with an error", async () => {
+      // End to end over the reconciled policy: every streaming attempt fails
+      // the bounded empty-stream failover with its typed 502, the buffered
+      // fallback answers with nothing either, and the turn loop - not the
+      // inference layer - decides what that means. Restore the inference-layer
+      // throw and this turn rejects on round one instead of stopping with
+      // `no_progress` on round three.
+      let completions = 0;
+      const provider = makeTypedProvider({
+        completions: [{ content: "" }],
+        streamThrows: () => new OpenRouterEmptyStreamError({
+          reason: "stream_exhausted",
+          chunksSeen: 0,
+          bytesSeen: 0,
+        }),
+        onChatCompletion: () => { completions += 1; },
+      });
+
+      const result = await runTurnLoop(
+        makeContext(), [], null, 0, provider, makeTypedConfig(), [],
+        { ...defaultLoopConfig, maxIterations: 50 },
+      );
+
+      expect(result.stopReason).toBe("no_progress");
+      expect(completions).toBe(MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS);
+      expect(result.text).toBe(null);
+      expect(mockAddMessage).not.toHaveBeenCalled();
     });
 
     it("reports what the turn consumed when the stall bound fires", async () => {

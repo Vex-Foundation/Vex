@@ -42,6 +42,8 @@
  * rounds of full-context prompts billed for zero output.
  */
 
+import { hasActionableInferenceResponse } from "@vex-agent/inference/response-validation.js";
+
 /**
  * Consecutive rounds that may emit nothing before the turn stops with
  * `no_progress`. Not configurable and not permission-aware: an autonomous
@@ -53,17 +55,23 @@ export const MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS = 3;
  * Whether a completed inference round produced anything the turn can build on.
  *
  * Productive = at least one tool call to dispatch, or assistant text with at
- * least one non-whitespace character.
+ * least one non-whitespace character. The rule is NOT restated here: it is the
+ * inference layer's `hasActionableInferenceResponse`, so "the provider
+ * returned nothing to act on" and "this round was blank" can never drift
+ * apart. That predicate is pure - the inference layer hands an empty
+ * completion straight through and this detector is the only owner of what to
+ * do about it.
  *
- * Reasoning is deliberately NOT productive. A reasoning-only response is
- * discarded by the same fall-through as an empty one (the turn loop persists
- * reasoning only alongside content or tool calls), so counting it as progress
- * would re-open the exact hole this detector closes.
+ * Reasoning is deliberately NOT productive, and a reasoning-only completion is
+ * therefore a blank round like any other. It is discarded by the same
+ * fall-through as an empty one (the turn loop persists reasoning only
+ * alongside content or tool calls), so counting it as progress would re-open
+ * the exact hole this detector closes - and it is the shape an empty stream
+ * that exhausted its endpoint failover degrades into.
  */
 export function isProductiveRound(round: {
   readonly content: string | null;
   readonly toolCalls: readonly unknown[] | null;
 }): boolean {
-  if (round.toolCalls !== null && round.toolCalls.length > 0) return true;
-  return round.content !== null && round.content.trim().length > 0;
+  return hasActionableInferenceResponse(round);
 }

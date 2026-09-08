@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { runStreamingInference } from "@vex-agent/inference/stream-consumer.js";
+import { hasActionableInferenceResponse } from "@vex-agent/inference/response-validation.js";
+import { OpenRouterEmptyStreamError } from "@vex-agent/inference/openrouter/non-empty-stream.js";
 import type {
   InferenceConfig,
   InferenceProvider,
@@ -115,6 +117,9 @@ describe("runStreamingInference — accumulation equivalence", () => {
   });
 
   it("reasoning-only: content is empty string, toolCalls null", async () => {
+    // Handed BACK as a completion, not rejected. Reasoning alone is not
+    // actionable, and the turn loop's blank-round detector is what acts on
+    // that (`engine/core/runner/unproductive-rounds.ts`).
     const res = await run([
       { type: "reasoning", reasoningText: "just thinking" },
       { type: "done" },
@@ -406,6 +411,31 @@ describe("runStreamingInference — fallback to chatCompletion", () => {
     expect(res.response).toBe(FALLBACK);
     expect(res.aborted).toBe(false);
     expect(res.usageObserved).toBe(true);
+    expect(chatCompletion).toHaveBeenCalledTimes(1);
+  });
+
+  it("degrades an exhausted empty-stream failover to an empty completion, never an error", async () => {
+    // The shape a stream whose every endpoint answered with nothing arrives
+    // in: the bounded failover has rejected with its synthetic 502 before the
+    // first chunk, the buffered fallback runs, and it answers with nothing
+    // either. The result is a COMPLETION with no text and no tool calls; the
+    // turn loop counts it as a blank round and stops at its own bound. If this
+    // layer threw instead, the user would see an inference error where the
+    // engine has a policy.
+    const emptyCompletion: InferenceResponse = { ...FALLBACK, content: "" };
+    const chatCompletion = vi.fn().mockResolvedValue(emptyCompletion);
+    const provider = providerFrom(async function* (): AsyncGenerator<StreamChunk> {
+      throw new OpenRouterEmptyStreamError({
+        reason: "stream_exhausted",
+        chunksSeen: 0,
+        bytesSeen: 0,
+      });
+    }, chatCompletion);
+
+    const res = await runStreamingInference(provider, MSGS, TOOLS, CFG);
+    expect(res.response).toBe(emptyCompletion);
+    expect(res.aborted).toBe(false);
+    expect(hasActionableInferenceResponse(res.response)).toBe(false);
     expect(chatCompletion).toHaveBeenCalledTimes(1);
   });
 });
