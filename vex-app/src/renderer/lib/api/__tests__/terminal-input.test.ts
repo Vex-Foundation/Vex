@@ -1,15 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TERMINAL_CLIPBOARD_MAX_LENGTH } from "@shared/schemas/terminal-input.js";
-import { readTerminalClipboardContent, terminalClipboard, TerminalClipboardError, triggerNativeTerminalPaste } from "../terminal-input.js";
+import { readTerminalClipboardContent, terminalClipboard, TerminalClipboardError, readTerminalClipboardFiles } from "../terminal-input.js";
 
 const readClipboardContent = vi.fn();
 const readClipboardText = vi.fn();
 const writeClipboardText = vi.fn();
-const triggerPaste = vi.fn();
+const readClipboardFiles = vi.fn();
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.stubGlobal("vex", { terminalInput: { readClipboardContent, readClipboardText, writeClipboardText, triggerPaste } });
+  vi.stubGlobal("vex", { terminalInput: { readClipboardContent, readClipboardText, writeClipboardText, readClipboardFiles } });
 });
 afterEach(() => vi.unstubAllGlobals());
 
@@ -37,7 +37,7 @@ describe("terminal native clipboard adapter", () => {
     await expect(readTerminalClipboardContent()).rejects.toEqual(new TerminalClipboardError("terminal_clipboard_unavailable"));
   });
 
-  it("retains exact native text access for OSC 52 and selected-text copy", async () => {
+  it("retains exact native text access for explicit clipboard actions", async () => {
     readClipboardText.mockResolvedValueOnce({ ok: true, data: { kind: "text", text: "exact\n" } });
     expect(await terminalClipboard.readText()).toBe("exact\n");
     writeClipboardText.mockResolvedValueOnce({ ok: true, data: { kind: "written" } });
@@ -50,8 +50,13 @@ describe("terminal native clipboard adapter", () => {
     expect(writeClipboardText).not.toHaveBeenCalled();
   });
 
-  it("surfaces native file-paste refusal", async () => {
-    triggerPaste.mockResolvedValueOnce({ ok: true, data: { kind: "refused", reason: "terminal_clipboard_unavailable" } });
-    await expect(triggerNativeTerminalPaste()).rejects.toMatchObject({ reason: "terminal_clipboard_unavailable" });
+  it("surfaces a correlated file-read refusal and forwards cancellation", async () => {
+    const cancel = vi.fn();
+    readClipboardFiles.mockReturnValue({ promise: Promise.resolve({ ok: true, data: { kind: "refused", reason: "terminal_clipboard_files_unavailable" } }), cancel });
+    const controller = new AbortController();
+    const pending = readTerminalClipboardFiles(controller.signal);
+    controller.abort();
+    expect(await pending).toMatchObject({ ok: true, data: { kind: "refused", reason: "terminal_clipboard_files_unavailable" } });
+    expect(cancel).toHaveBeenCalledOnce();
   });
 });

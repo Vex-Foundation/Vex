@@ -1,16 +1,15 @@
 import type { AbortableInvocation } from "../common.js";
 import type { Result } from "../../../ipc/result.js";
-import type {
-  AnswerTerminalLinkInput,
-  CancelTerminalLinkInput,
-  OpenTerminalLinkInput,
-  OpenTerminalLinkValue,
-} from "../../../schemas/terminal-links.js";
+import type { AnswerTerminalLinkInput, OpenTerminalLinkInput, OpenTerminalLinkValue, TerminalLinkOpenOptions } from "../../../schemas/terminal-links.js";
 
-/** Main owns URL policy, single-use proposals, host trust and browser effects. */
+/** The proposing renderer cannot answer its own link requests. */
 export interface TerminalLinksBridge {
-  readonly open: (input: OpenTerminalLinkInput) => AbortableInvocation<OpenTerminalLinkValue>;
-  readonly answer: (input: AnswerTerminalLinkInput) => AbortableInvocation<OpenTerminalLinkValue>;
-  /** Withdraw a pending proposal on pane teardown or abandoned interaction. */
-  readonly cancel: (input: CancelTerminalLinkInput) => Promise<Result<OpenTerminalLinkValue>>;
+  readonly open: {
+    (input: OpenTerminalLinkInput): Promise<Result<OpenTerminalLinkValue>>;
+    (input: OpenTerminalLinkInput, options: TerminalLinkOpenOptions): AbortableInvocation<OpenTerminalLinkValue>;
+  };
+}
+/** Exposed only in the separate main-owned consent window. */
+export interface TerminalLinkConsentBridge {
+  readonly answer: (input: AnswerTerminalLinkInput) => Promise<Result<OpenTerminalLinkValue>>;
 }

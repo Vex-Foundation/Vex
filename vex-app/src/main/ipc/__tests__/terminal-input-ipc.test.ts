@@ -84,9 +84,12 @@ describe("native terminal clipboard", () => {
     expect(await call(CH.terminalInput.readClipboardText)).toEqual({ ok: true, data: { kind: "text", text: "" } });
   });
 
-  it("dispatches native paste only to the requesting window", async () => {
-    expect(await call(CH.terminalInput.triggerPaste)).toEqual({ ok: true, data: { kind: "triggered" } });
-    expect(mocks.paste).toHaveBeenCalledExactlyOnceWith();
+  it("accepts clipboard reads from another trusted Vex window but rejects a non-Vex sender", async () => {
+    const other = createTrustedSender({ sender: { id: 77, isDestroyed: () => false } });
+    expect(await call(CH.terminalInput.readClipboardText, {}, other)).toEqual({ ok: true, data: { kind: "text", text: "clipboard text" } });
+    const untrusted = { ...other, senderFrame: { url: "https://untrusted.example/", parent: null, top: null } };
+    expect(await call(CH.terminalInput.readClipboardText, {}, untrusted)).toMatchObject({ ok: false, error: { code: "validation.invalid_sender" } });
+    expect(mocks.readText).toHaveBeenCalledTimes(1);
   });
 
   it("refuses oversize content by name without shortening or overwriting the clipboard", async () => {
@@ -111,7 +114,6 @@ describe("native terminal clipboard", () => {
     [CH.terminalInput.readClipboardContent, {}],
     [CH.terminalInput.readClipboardText, {}],
     [CH.terminalInput.writeClipboardText, { text: "hello" }],
-    [CH.terminalInput.triggerPaste, {}],
   ])("validates input, sender, subframes and cancellation for %s", async (channel, payload) => {
     expect(await call(channel, { ...payload, format: "private" })).toMatchObject({ ok: false, error: { code: "validation.invalid_input" } });
     expect(await call(channel, payload, { ...sender(), senderFrame: { url: "https://other.example", parent: null, top: null } })).toMatchObject({ ok: false, error: { code: "validation.invalid_sender" } });
@@ -140,7 +142,6 @@ describe("native terminal clipboard", () => {
     [CH.terminalInput.readClipboardContent, {}, mocks.readText],
     [CH.terminalInput.readClipboardText, {}, mocks.readText],
     [CH.terminalInput.writeClipboardText, { text: "hello" }, mocks.writeText],
-    [CH.terminalInput.triggerPaste, {}, mocks.paste],
   ])("redacts native failure for %s", async (channel, payload, operation) => {
     operation.mockImplementationOnce(() => { throw new Error("sensitive native exception"); });
     expect(await call(channel, payload)).toEqual({ ok: true, data: { kind: "refused", reason: "terminal_clipboard_unavailable" } });

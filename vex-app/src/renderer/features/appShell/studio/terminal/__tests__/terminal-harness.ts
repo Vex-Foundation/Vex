@@ -631,12 +631,12 @@ export function installTerminalBridge(): TerminalBridgeStub {
           stub.copiedText.push(text);
           return { ok: true, data: { kind: "written" } };
         },
-        triggerPaste: async () => {
-          const event = new Event("paste", { bubbles: true, cancelable: true });
-          Object.defineProperty(event, "clipboardData", { value: { files: stub.clipboardFiles } });
-          document.activeElement?.dispatchEvent(event);
-          return { ok: true, data: { kind: "triggered" } };
-        },
+        readClipboardFiles: () => ({
+          promise: Promise.resolve({ ok: true, data: {
+            kind: "files", paths: stub.clipboardFiles.map((file) => stub.filePaths.get(file) ?? ""),
+          } }),
+          cancel: () => undefined,
+        }),
       },
       files: { getPathForFile: (file: File) => {
         const path = stub.filePaths.get(file);

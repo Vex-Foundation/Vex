@@ -1,3 +1,4 @@
+import type { ReadClipboardFilesValue } from "@shared/schemas/terminal-clipboard-files.js";
 import type { Result } from "@shared/ipc/result.js";
 import type { ReadClipboardContentValue, TerminalClipboardRefusal, TerminalFilePathValue } from "@shared/schemas/terminal-input.js";
 import { TERMINAL_CLIPBOARD_MAX_LENGTH } from "@shared/schemas/terminal-input.js";
@@ -45,10 +46,13 @@ export const terminalClipboard = {
   },
 };
 
-export async function triggerNativeTerminalPaste(): Promise<void> {
-  const result = await window.vex.terminalInput.triggerPaste();
-  if (!result.ok) throw new TerminalClipboardError("terminal_clipboard_unavailable");
-  if (result.data.kind === "refused") throw new TerminalClipboardError(result.data.reason);
+export async function readTerminalClipboardFiles(signal: AbortSignal): Promise<Result<ReadClipboardFilesValue>> {
+  if (signal.aborted) return { ok: true, data: { kind: "cancelled" } };
+  const invocation = window.vex.terminalInput.readClipboardFiles();
+  const cancel = (): void => invocation.cancel();
+  signal.addEventListener("abort", cancel, { once: true });
+  try { return await invocation.promise; }
+  finally { signal.removeEventListener("abort", cancel); }
 }
 
 export function resolveTerminalFilePath(file: File): Result<TerminalFilePathValue> {

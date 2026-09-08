@@ -7,19 +7,38 @@ const proposalId = "11111111-1111-4111-8111-111111111111";
 beforeEach(() => { vi.clearAllMocks(); });
 
 describe("terminal link preload boundary", () => {
-  it("uses narrow methods and retains a validated result", async () => {
-    mocks.invoke.mockResolvedValue({ ok: true, data: { kind: "cancelled" } });
-    await terminalLinks.open({ url: "https://example.com" }).promise;
-    await terminalLinks.answer({ proposalId, choice: "copy", rememberHost: false }).promise;
-    expect(await terminalLinks.cancel({ proposalId })).toEqual({ ok: true, data: { kind: "cancelled" } });
-    expect(mocks.invoke.mock.calls.map(call => call[0])).toEqual([CH.terminal.openLink, CH.terminal.answerLink, CH.terminal.cancelLink]);
+  it("preserves the directly awaited successful Result for a refused file scheme", async () => {
+    const refusal = { ok: true, data: { kind: "refused", reason: "terminal_link_scheme_refused" } };
+    mocks.invoke.mockResolvedValue(refusal);
+    expect(await terminalLinks.open({ url: "file:///etc/passwd" })).toEqual(refusal);
+    expect(mocks.invoke).toHaveBeenCalledWith(CH.terminal.openLink, {
+      requestId: expect.any(String), payload: { url: "file:///etc/passwd" },
+    });
   });
 
-  it.each(["open", "answer"] as const)("%s cancels only its own invocation and only once", async method => {
+  it("uses narrow methods and retains a validated result", async () => {
     mocks.invoke.mockResolvedValue({ ok: true, data: { kind: "cancelled" } });
-    const invocation = method === "open"
-      ? terminalLinks.open({ url: "https://example.com" })
-      : terminalLinks.answer({ proposalId, choice: "open", rememberHost: false });
+    await terminalLinks.open({ url: "https://example.com" });
+    expect(Object.keys(terminalLinks)).toEqual(["open"]);
+    expect(mocks.invoke.mock.calls.map(call => call[0])).toEqual([CH.terminal.openLink]);
+  });
+
+  it("retains the successful scheme refusal in the opt-in cancellable call", async () => {
+    const refusal = { ok: true, data: { kind: "refused", reason: "terminal_link_scheme_refused" } };
+    mocks.invoke.mockResolvedValue(refusal);
+    expect(await terminalLinks.open({ url: "file:///etc/passwd" }, { cancellable: true }).promise).toEqual(refusal);
+  });
+
+  it("rejects malformed cancellation options without invoking main", async () => {
+    const options = { cancellable: true as const, unrecognized: true };
+    const invocation = terminalLinks.open({ url: "https://example.com" }, options);
+    expect(await invocation.promise).toMatchObject({ ok: false, error: { code: "validation.invalid_input" } });
+    expect(mocks.invoke).not.toHaveBeenCalled();
+  });
+
+  it("open cancels only its own invocation and only once", async () => {
+    mocks.invoke.mockResolvedValue({ ok: true, data: { kind: "cancelled" } });
+    const invocation = terminalLinks.open({ url: "https://example.com" }, { cancellable: true });
     invocation.cancel();
     invocation.cancel();
     await invocation.promise;
@@ -31,9 +50,7 @@ describe("terminal link preload boundary", () => {
   });
 
   it("rejects invalid input locally before invoking main", async () => {
-    expect(await terminalLinks.open({ url: "" }).promise).toMatchObject({ ok: false, error: { code: "validation.invalid_input" } });
-    expect(await terminalLinks.answer({ proposalId: "bad", choice: "open", rememberHost: true }).promise).toMatchObject({ ok: false, error: { code: "validation.invalid_input" } });
-    expect(await terminalLinks.cancel({ proposalId: "bad" })).toMatchObject({ ok: false, error: { code: "validation.invalid_input" } });
+    expect(await terminalLinks.open({ url: "" })).toMatchObject({ ok: false, error: { code: "validation.invalid_input" } });
     expect(mocks.invoke).not.toHaveBeenCalled();
   });
 
@@ -43,14 +60,14 @@ describe("terminal link preload boundary", () => {
     { ok: true, data: { kind: "cancelled" }, extra: "private payload" },
   ])("refuses malformed output without forwarding its contents", async output => {
     mocks.invoke.mockResolvedValue(output);
-    const result = await terminalLinks.cancel({ proposalId });
+    const result = await terminalLinks.open({ url: "https://example.com" });
     expect(result).toMatchObject({ ok: false, error: { code: "internal.contract_violation", redacted: true } });
     expect(JSON.stringify(result)).not.toContain("private payload");
   });
 
   it("contains transport rejection and preserves a valid unauthorized result", async () => {
     mocks.invoke.mockRejectedValueOnce(new Error("private transport detail"));
-    const failure = await terminalLinks.open({ url: "https://example.com" }).promise;
+    const failure = await terminalLinks.open({ url: "https://example.com" });
     expect(failure).toMatchObject({ ok: false, error: { code: "internal.contract_violation" } });
     expect(JSON.stringify(failure)).not.toContain("private transport detail");
     const unauthorized = { ok: false, error: {
@@ -58,6 +75,6 @@ describe("terminal link preload boundary", () => {
       retryable: false, userActionable: false, redacted: true, correlationId: proposalId,
     } };
     mocks.invoke.mockResolvedValueOnce(unauthorized);
-    expect(await terminalLinks.answer({ proposalId, choice: "open", rememberHost: true }).promise).toEqual(unauthorized);
+    expect(await terminalLinks.open({ url: "https://example.com" })).toEqual(unauthorized);
   });
 });

@@ -815,6 +815,9 @@ export function fromSnapshot(snapshot: TerminalWorkspaceRestore): WorkspaceState
   // where it was spawned. A row whose value is `null` (the host could not
   // describe that terminal) seeds nothing and the header says the directory is
   // not known yet, until the terminal's first property event arrives.
+  const launchShellNames = new Map(
+    snapshot.terminals.map((entry) => [entry.terminalId, entry.shellName]),
+  );
   const directories = new Map(
     snapshot.terminals.map((entry) => [entry.terminalId, entry.displayCwd]),
   );
@@ -827,6 +830,7 @@ export function fromSnapshot(snapshot: TerminalWorkspaceRestore): WorkspaceState
         terminalId: pane.terminalId,
         relativeSize: pane.relativeSize,
         displayCwd: directories.get(pane.terminalId) ?? null,
+        launchShellName: launchShellNames.get(pane.terminalId) ?? "",
       }));
     if (panes.length === 0) continue;
     const activeIndex = Math.min(group.activePaneIndex, panes.length - 1);

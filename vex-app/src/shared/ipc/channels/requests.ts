@@ -666,7 +666,8 @@ export const CH = {
     readClipboardContent: "vex:terminalInput:readClipboardContent",
     readClipboardText: "vex:terminalInput:readClipboardText",
     writeClipboardText: "vex:terminalInput:writeClipboardText",
-    triggerPaste: "vex:terminalInput:triggerPaste",
+    readClipboardFiles: "vex:terminalInput:readClipboardFiles",
+    clipboardFilesReply: "vex:terminalInput:clipboardFilesReply",
   },
   terminal: {
     create: "vex:terminal:create",
@@ -690,7 +691,6 @@ export const CH = {
      */
     openLink: "vex:terminal:openLink",
     answerLink: "vex:terminal:answerLink",
-    cancelLink: "vex:terminal:cancelLink",
   },
 
   /**

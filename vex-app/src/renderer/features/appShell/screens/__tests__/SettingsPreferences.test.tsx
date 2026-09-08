@@ -113,4 +113,20 @@ describe("SettingsPreferences", () => {
     fireEvent.click(toggle);
     expect(useUiStore.getState().notificationsEnabled).toBe(false);
   });
+  it("lets a user re-enable the persisted terminal paste warning after Don't ask again", () => {
+    useUiStore.getState().setTerminalPasteWarning(false);
+    const view = renderGroup(<SettingsPreferences />);
+    const toggle = screen.getByRole("switch", { name: "Multi-line paste warning" });
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(toggle);
+    expect(useUiStore.getState().terminalPasteWarning).toBe(true);
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    view.unmount();
+    renderGroup(<SettingsPreferences />);
+    expect(screen.getByRole("switch", { name: "Multi-line paste warning" }).getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(screen.getByRole("switch", { name: "Multi-line paste warning" }));
+    expect(useUiStore.getState().terminalPasteWarning).toBe(false);
+    useUiStore.getState().setTerminalPasteWarning(true);
+  });
+
 });

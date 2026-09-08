@@ -161,7 +161,7 @@ export default defineConfig(({ command }) => ({
     target: "es2024",
     assetsInlineLimit: 0,
     rollupOptions: {
-      input: path.resolve(rendererRoot, "index.html"),
+      input: ["index.html", "terminal-link-consent.html", "terminal-clipboard-files.html"].map(file => path.resolve(rendererRoot, file)),
     },
   },
 

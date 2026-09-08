@@ -69,6 +69,8 @@ export const STUDIO_FILE_TABS_MAX = 16;
 export interface WorkspacePane {
   readonly paneId: string;
   readonly terminalId: string;
+  /** Immutable host-resolved executable basename, separate from mutable OSC titles. */
+  readonly launchShellName?: string;
   /** Share of the group's split axis, 0..1. Relative so a restore fits any size. */
   readonly relativeSize: number;
   /**

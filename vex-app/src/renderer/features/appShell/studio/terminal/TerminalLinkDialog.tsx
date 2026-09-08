@@ -1,4 +1,4 @@
-import { useState, type JSX } from "react";
+import { useState, useRef, useEffect, type JSX } from "react";
 import type { TerminalLinkProposal, AnswerTerminalLinkInput } from "@shared/schemas/terminal-links.js";
 import { VexMark } from "../../../../components/common/VexMark.js";
 import { Button } from "../../../../components/ui/button.js";
@@ -12,9 +12,30 @@ export function TerminalLinkDialog({ proposal, onAnswer }: {
   readonly onAnswer: (choice: AnswerTerminalLinkInput["choice"], rememberHost: boolean) => void;
 }): JSX.Element {
   const [remember, setRemember] = useState(false);
+  const [open, setOpen] = useState(true);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const answer = useRef<{ choice: AnswerTerminalLinkInput["choice"]; remember: boolean } | null>(null);
+  const close = (choice: AnswerTerminalLinkInput["choice"], rememberHost: boolean): void => {
+    if (answer.current !== null) return;
+    answer.current = { choice, remember: rememberHost };
+    setOpen(false);
+  };
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (dialog === null) return;
+    const closed = (): void => {
+      const selected = answer.current;
+      if (selected !== null) {
+        answer.current = null;
+        queueMicrotask(() => onAnswer(selected.choice, selected.remember));
+      }
+    };
+    dialog.addEventListener("close", closed);
+    return () => dialog.removeEventListener("close", closed);
+  }, [onAnswer]);
   return (
-    <Dialog open onOpenChange={(open) => { if (!open) onAnswer("cancel", false); }}>
-      <DialogContent className="max-w-[560px]">
+    <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen) close("cancel", false); }}>
+      <DialogContent className="max-w-[560px]" ref={dialogRef}>
         <DialogHeader>
           <VexMark size={32} className="mb-2 text-brand-mark" />
           <DialogTitle>Open a link from the terminal</DialogTitle>
@@ -33,9 +54,9 @@ export function TerminalLinkDialog({ proposal, onAnswer }: {
           </label>
         </DialogBody>
         <DialogFooter className="flex-wrap">
-          <Button size="sm" variant="ghost" {...DIALOG_INITIAL_FOCUS} onClick={() => onAnswer("cancel", false)}>Cancel</Button>
-          <Button size="sm" variant="outline" onClick={() => onAnswer("copy", false)}>Copy link</Button>
-          <Button size="sm" onClick={() => onAnswer("open", remember)}>Open link</Button>
+          <Button size="sm" variant="ghost" {...DIALOG_INITIAL_FOCUS} onClick={() => close("cancel", false)}>Cancel</Button>
+          <Button size="sm" variant="outline" onClick={() => close("copy", false)}>Copy link</Button>
+          <Button size="sm" onClick={() => close("open", remember)}>Open link</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

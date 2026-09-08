@@ -186,6 +186,7 @@ export interface XtermHostProps {
    * `useStudioKeybindings` takes it.
    */
   readonly platform?: StudioPlatform;
+  readonly launchShellName?: string | null;
   readonly className?: string;
 }
 
@@ -198,6 +199,7 @@ export function XtermHost({
   onExit,
   onActivate,
   platform = studioPlatform,
+  launchShellName = null,
   className,
 }: XtermHostProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -228,11 +230,11 @@ export function XtermHost({
   const clipboardTargetRef = useRef<Terminal | null>(null);
 
   const { runClipboard, insertFiles, dialog: pasteDialog } = useTerminalInput({
-    terminalId, visible, platform, containerRef, targetRef: clipboardTargetRef,
+    terminalId, visible, platform, launchShellName, containerRef, targetRef: clipboardTargetRef,
     onNotice: setClipboardNotice,
   });
   const fileDrop = useTerminalFileDrop(visible, insertFiles);
-  const { openLink, dialog: linkDialog } = useTerminalLinkConsent(setClipboardNotice);
+  const { openLink } = useTerminalLinkConsent(setClipboardNotice);
   const openLinkRef = useRef(openLink);
   openLinkRef.current = openLink;
 
@@ -486,7 +488,6 @@ export function XtermHost({
       />
       {fileDrop.overlay}
       {pasteDialog}
-      {linkDialog}
 
       {exit !== null ? (
         <div className="pointer-events-none absolute bottom-2 left-2 rounded-md border border-line-3 bg-surface-2 px-2 py-0.5 text-[11px] leading-4 text-ink-tertiary">

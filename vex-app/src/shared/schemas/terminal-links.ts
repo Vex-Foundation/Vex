@@ -20,6 +20,7 @@ export const terminalLinkRefusalSchema = z.enum([
   "terminal_link_proposal_other_window",
   "terminal_link_proposal_cancelled",
   "terminal_link_proposal_limit",
+  "terminal_link_consent_unavailable",
 ]);
 export type TerminalLinkRefusal = z.infer<typeof terminalLinkRefusalSchema>;
 
@@ -44,6 +45,11 @@ export const openTerminalLinkInputSchema = z.object({
 }).strict();
 export type OpenTerminalLinkInput = z.infer<typeof openTerminalLinkInputSchema>;
 
+/** Preload-only control: the default public call remains directly awaitable. */
+export const terminalLinkOpenOptionsSchema = z.object({ cancellable: z.literal(true) }).strict();
+export type TerminalLinkOpenOptions = z.infer<typeof terminalLinkOpenOptionsSchema>;
+
+
 /** Answers reference main-owned authority; they cannot replace its URL or host. */
 export const answerTerminalLinkInputSchema = z.object({
   proposalId: z.string().uuid(),
@@ -52,14 +58,9 @@ export const answerTerminalLinkInputSchema = z.object({
 }).strict();
 export type AnswerTerminalLinkInput = z.infer<typeof answerTerminalLinkInputSchema>;
 
-export const cancelTerminalLinkInputSchema = z.object({
-  proposalId: z.string().uuid(),
-}).strict();
-export type CancelTerminalLinkInput = z.infer<typeof cancelTerminalLinkInputSchema>;
-
+/** Policy refusals are successful Results with a named reason, not transport errors. */
 export const openTerminalLinkValueSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("pending"), proposal: terminalLinkProposalSchema }).strict(),
-  z.object({ kind: z.literal("opened"), host: terminalLinkHostSchema, asked: z.boolean() }).strict(),
+  z.object({ kind: z.literal("opened"), host: terminalLinkHostSchema, asked: z.boolean(), rememberLimitReached: z.boolean().optional() }).strict(),
   z.object({ kind: z.literal("declined"), host: terminalLinkHostSchema }).strict(),
   z.object({ kind: z.literal("copied"), host: terminalLinkHostSchema }).strict(),
   z.object({ kind: z.literal("cancelled") }).strict(),

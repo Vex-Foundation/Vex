@@ -16,7 +16,7 @@
   },
   "scripts": {
     "build:main": "vite build --config vite.main.config.ts",
-    "build:preload": "vite build --config vite.preload.config.ts",
+    "build:preload": "vite build --config vite.preload.config.ts && vite build --config vite.preload.config.ts --mode terminal-link-consent && vite build --config vite.preload.config.ts --mode terminal-clipboard-files",
     "build:renderer": "vite build --config vite.renderer.config.ts",
     "build:pty-host": "vite build --config vite.pty-host.config.ts",
     "prebuild": "pnpm run build:assets",
@@ -24,7 +24,7 @@
     "postbuild": "node scripts/check-build-artifacts.mjs",
     "dev:renderer": "vite --config vite.renderer.config.ts",
     "dev:main:watch": "vite build --config vite.main.config.ts --watch",
-    "dev:preload:watch": "vite build --config vite.preload.config.ts --watch",
+    "dev:preload:watch": "concurrently --kill-others \"vite build --config vite.preload.config.ts --watch\" \"vite build --config vite.preload.config.ts --mode terminal-link-consent --watch\" \"vite build --config vite.preload.config.ts --mode terminal-clipboard-files --watch\"",
     "dev:pty-host:watch": "vite build --config vite.pty-host.config.ts --watch",
     "dev:electron": "wait-on --log --timeout 60000 --delay 1500 http-get://127.0.0.1:5173/ dist/main/index.js dist/preload/index.cjs dist/pty-host/index.js && electron .",
     "dev": "pnpm run dev:assets && pnpm run build:main && pnpm run build:preload && pnpm run build:pty-host && concurrently --kill-others --names \"renderer,main,preload,pty-host,electron\" \"pnpm:dev:renderer\" \"pnpm:dev:main:watch\" \"pnpm:dev:preload:watch\" \"pnpm:dev:pty-host:watch\" \"pnpm:dev:electron\"",

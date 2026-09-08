@@ -394,18 +394,8 @@ export class TerminalRegistry {
     terminal.loadAddon(serialize);
     terminal.loadAddon(search);
     terminal.loadAddon(new ClipboardAddon(undefined, {
-      readText: async (selection) => {
-        if (selection !== "c") {
-          this.#notice(terminalId, "This terminal supports the system clipboard only. The requested selection clipboard is unavailable.");
-          return "";
-        }
-        try {
-          return await terminalClipboard.readText();
-        } catch (error) {
-          this.#notice(terminalId, error instanceof TerminalClipboardError ? error.message : "Vex could not read the terminal clipboard. Try pasting again.");
-          return "";
-        }
-      },
+      // Read queries are consumed before this addon; this provider never reads.
+      readText: () => "",
       writeText: async (selection, text) => {
         if (selection !== "c") {
           this.#notice(terminalId, "This terminal supports the system clipboard only. The requested selection clipboard is unavailable.");
@@ -418,6 +408,21 @@ export class TerminalRegistry {
         }
       },
     }));
+    // The installed addon reports even an empty read result to the PTY. A
+    // later parser handler takes precedence and consumes every query without
+    // consulting the clipboard or sending terminal input.
+    let disposeClipboardReadGuard = (): void => undefined;
+    terminal.loadAddon({
+      activate: (target) => {
+        const guard = target.parser.registerOscHandler(52, (data) => {
+          if (data.split(";")[1] !== "?") return false;
+          this.#notice(terminalId, "Vex blocked a terminal program from reading the clipboard. Use Paste to share clipboard content.");
+          return true;
+        });
+        disposeClipboardReadGuard = () => guard.dispose();
+      },
+      dispose: () => disposeClipboardReadGuard(),
+    });
     terminal.loadAddon(
       new WebLinksAddon((event, uri) => this.#activateLink(terminalId, event, uri), {
         hover: (_event, text) => {

@@ -1,4 +1,4 @@
-import { useState, type JSX } from "react";
+import { useState, useRef, useEffect, type JSX } from "react";
 import { VexMark } from "../../../../components/common/VexMark.js";
 import { Button } from "../../../../components/ui/button.js";
 import {
@@ -13,16 +13,36 @@ export interface TerminalPastePrompt {
 }
 export type TerminalPasteChoice = "paste" | "oneLine" | "cancel";
 
-export function TerminalPasteDialog({ prompt, onAnswer }: {
+export function TerminalPasteDialog({ prompt, open, onOpenChange, onClosed, onAnswer }: {
   readonly prompt: TerminalPastePrompt;
+  readonly open: boolean;
+  readonly onOpenChange: (open: boolean) => void;
+  readonly onClosed: () => void;
   readonly onAnswer: (choice: TerminalPasteChoice, dontAsk: boolean) => void;
 }): JSX.Element {
   const [dontAsk, setDontAsk] = useState(false);
   const [showWhole, setShowWhole] = useState(false);
   const preview = terminalPastePreview(prompt.text);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const closedCallback = useRef(onClosed);
+  closedCallback.current = onClosed;
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (dialog === null) return;
+    const closed = (): void => { queueMicrotask(() => closedCallback.current()); };
+    dialog.addEventListener("close", closed);
+    return () => dialog.removeEventListener("close", closed);
+  }, []);
+  const answer = (choice: TerminalPasteChoice, remember: boolean): void => {
+    onAnswer(choice, remember);
+    onOpenChange(false);
+  };
   return (
-    <Dialog open onOpenChange={(open) => { if (!open) onAnswer("cancel", false); }}>
-      <DialogContent className="max-w-[520px]">
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        className="max-w-[520px]"
+        ref={dialogRef}
+      >
         <DialogHeader>
           <VexMark size={28} className="mb-2 text-brand-mark" />
           <DialogTitle>Paste {prompt.lineCount} lines into the terminal?</DialogTitle>
@@ -44,9 +64,9 @@ export function TerminalPasteDialog({ prompt, onAnswer }: {
           </label>
         </DialogBody>
         <DialogFooter className="flex-wrap">
-          <Button size="sm" variant="ghost" {...DIALOG_INITIAL_FOCUS} onClick={() => onAnswer("cancel", false)}>Cancel</Button>
-          <Button size="sm" variant="outline" onClick={() => onAnswer("oneLine", dontAsk)}>Paste as one line</Button>
-          <Button size="sm" onClick={() => onAnswer("paste", dontAsk)}>Paste</Button>
+          <Button size="sm" variant="ghost" {...DIALOG_INITIAL_FOCUS} onClick={() => answer("cancel", false)}>Cancel</Button>
+          <Button size="sm" variant="outline" onClick={() => answer("oneLine", dontAsk)}>Paste as one line</Button>
+          <Button size="sm" onClick={() => answer("paste", dontAsk)}>Paste</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

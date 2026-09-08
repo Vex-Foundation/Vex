@@ -1,3 +1,5 @@
+import type { Result } from "@shared/ipc/result.js";
+import type { ReadClipboardFilesValue } from "@shared/schemas/terminal-clipboard-files.js";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useUiStore } from "../../../../../stores/uiStore.js";
@@ -19,10 +21,10 @@ afterEach(() => { cleanup(); registry.disposeAll(); });
 async function settle(): Promise<void> {
   for (let turn = 0; turn < 4; turn += 1) await new Promise((resolve) => setTimeout(resolve, 0));
 }
-function pane(platform: StudioPlatform = "linux") {
-  const mounted = render(<XtermHost terminalId="t1" visible registry={registry} platform={platform} />);
+function pane(platform: StudioPlatform = "linux", terminalId = "t1", launchShellName: string | null = platform === "win32" ? "cmd" : "bash") {
+  const mounted = render(<XtermHost terminalId={terminalId} visible registry={registry} platform={platform} launchShellName={launchShellName} />);
   for (const node of document.querySelectorAll("div")) stubBox(node, { width: 800, height: 400 });
-  const entry = registry.acquire("t1"); registry.release("t1");
+  const entry = registry.acquire(terminalId); registry.release(terminalId);
   const textarea = entry.wrapper.querySelector("textarea");
   if (textarea === null) throw new Error("terminal has no textarea");
   return { ...mounted, entry, textarea };
@@ -63,6 +65,7 @@ describe("main-owned clipboard in the terminal", () => {
     bridge.clipboardContent = { kind: "image" };
     await paste(textarea, platform);
     expect(sent()).toBe(platform === "win32" ? `${escape}v` : String.fromCharCode(22));
+    expect(screen.getByRole("alert").textContent).toContain("The paste key was sent to the program in the terminal; it attaches the image if it supports that.");
   });
   it("pastes text with one final newline removed", async () => {
     const { textarea } = pane();
@@ -108,7 +111,7 @@ describe("main-owned clipboard in the terminal", () => {
     await paste(mounted.textarea);
     expect(bridge.pendingClipboardReads).toHaveLength(1);
     if (action === "unmount") mounted.unmount();
-    else mounted.rerender(<XtermHost terminalId="t1" visible={false} registry={registry} platform="linux" />);
+    else mounted.rerender(<XtermHost terminalId="t1" visible={false} registry={registry} platform="linux" launchShellName="bash" />);
     await act(async () => { for (const resolve of bridge.pendingClipboardReads.splice(0)) resolve(); await settle(); });
     expect(sent()).toBe("");
   });
@@ -130,6 +133,21 @@ describe("multiline paste confirmation", () => {
     expect(sent()).toBe(choice === "cancel" ? "" : choice === "paste" ? "first\rsecond" : "first second");
     expect(useUiStore.getState().terminalPasteWarning).toBe(choice === "cancel");
     if (choice === "cancel") expect(screen.getByRole("alert").textContent).toContain("cancel");
+  });
+  it.each(["Cancel", "Escape"])("restores terminal focus after %s dismissal", async (action) => {
+    const { textarea } = pane();
+    textarea.focus();
+    bridge.clipboardContent = { kind: "text", text: "first\nsecond" };
+    await paste(textarea);
+    const dialog = await screen.findByRole("dialog");
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Cancel" }));
+    if (action === "Cancel") fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    else fireEvent(dialog, new Event("cancel", { bubbles: false, cancelable: true }));
+    await waitFor(() => expect(document.querySelector("dialog")).toBeNull());
+    expect(document.activeElement).toBe(textarea);
+    expect(screen.getByRole("alert").textContent).toContain("cancel");
+    expect(sent()).toBe("");
+    expect(useUiStore.getState().terminalPasteWarning).toBe(true);
   });
   it("retains a persisted opt-out while still stripping a final newline", async () => {
     const { textarea } = pane();
@@ -171,107 +189,110 @@ describe("file input and visible refusals", () => {
     await paste(textarea);
     expect(sent()).toBe("'/tmp/my shot.png' '/tmp/other.txt'");
   });
-  it("cancels a copied-file paste when focus moves to another pane before the native event", async () => {
-    const first = pane();
-    render(<XtermHost terminalId="t2" visible registry={registry} platform="linux" />);
-    const other = registry.acquire("t2"); registry.release("t2");
-    const otherTextarea = other.wrapper.querySelector("textarea");
-    if (otherTextarea === null) throw new Error("second terminal has no textarea");
+  it.each(["darwin", "linux", "win32"] as const)("quotes copied paths for launched PowerShell on %s", async (platform) => {
+    const { textarea } = pane(platform, "t1", "pwsh");
     const file = new File([""], "local.txt");
-    bridge.clipboardContent = { kind: "files" };
-    bridge.filePaths.set(file, "/tmp/local.txt");
-    let deliverPaste: (() => void) | undefined;
-    const trigger = vi.spyOn(window.vex.terminalInput, "triggerPaste").mockImplementation(() => new Promise((resolve) => {
-      deliverPaste = () => {
-        const event = new Event("paste", { bubbles: true, cancelable: true });
-        Object.defineProperty(event, "clipboardData", { value: { files: [file] } });
-        document.activeElement?.dispatchEvent(event);
-        resolve({ ok: true, data: { kind: "triggered" } });
-      };
-    }));
+    bridge.clipboardContent = { kind: "files" }; bridge.clipboardFiles = [file];
+    bridge.filePaths.set(file, "/tmp/a';whoami;#");
+    await paste(textarea, platform);
+    expect(sent()).toBe("'/tmp/a'';whoami;#'");
+  });
+  it("quotes a dropped path for the launch shell despite an updated terminal title", async () => {
+    const { textarea } = pane("linux", "t1", "pwsh");
+    const file = new File([""], "local.txt");
+    bridge.filePaths.set(file, "/tmp/a';whoami;#");
+    await act(async () => {
+      bridge.emitData("t1", `${escape}]0;bash${String.fromCharCode(7)}`);
+      await settle();
+      fireEvent.drop(textarea, { dataTransfer: { types: ["Files"], files: [file] } });
+      await settle();
+    });
+    expect(sent()).toBe("'/tmp/a'';whoami;#'");
+  });
+  it("keeps a competing native text paste independent of a pending file request", async () => {
+    const first = pane();
+    const second = pane("linux", "t2");
+    const response = Promise.withResolvers<Result<ReadClipboardFilesValue>>();
+    const cancel = vi.fn();
+    const readFiles = vi.spyOn(window.vex.terminalInput, "readClipboardFiles").mockReturnValue({ promise: response.promise, cancel });
+    const documentListeners = vi.spyOn(document, "addEventListener");
     try {
+      bridge.clipboardContent = { kind: "files" };
       await paste(first.textarea);
-      expect(trigger).toHaveBeenCalledOnce();
-      otherTextarea.focus();
-      expect(document.activeElement).toBe(otherTextarea);
-      await act(async () => { deliverPaste?.(); await settle(); });
-      expect(bridge.writes).toEqual([]);
-      expect(document.activeElement).toBe(otherTextarea);
-      expect(screen.getByRole("alert").textContent).toMatch(/focus changed|cancelled/i);
+      expect(readFiles).toHaveBeenCalledOnce();
+      second.textarea.focus();
+      bridge.clipboardContent = { kind: "text", text: "independent text" };
+      await act(async () => {
+        fireEvent.paste(second.textarea, { clipboardData: { getData: () => "independent text", files: [] } });
+        await settle();
+      });
+      expect(bridge.writes).toEqual([{ terminalId: "t2", data: "independent text" }]);
+      await act(async () => {
+        response.resolve({ ok: true, data: { kind: "files", paths: ["/tmp/original.txt"] } });
+        await settle();
+      });
+      expect(bridge.writes).toEqual([{ terminalId: "t2", data: "independent text" }]);
+      expect(document.activeElement).toBe(second.textarea);
+      expect(screen.getByRole("alert").textContent).toContain("File paste cancelled");
+      expect(documentListeners.mock.calls.filter(([name, , capture]) => name === "paste" && capture === true)).toEqual([]);
     } finally {
-      trigger.mockRestore();
+      readFiles.mockRestore();
+      documentListeners.mockRestore();
     }
   });
-  it.each(["hide", "unmount"])("drains a queued native file event after %s without sending it to another pane", async (change) => {
+  it.each(["hide", "unmount"])("cancels the native file invocation after %s and ignores its late response", async (change) => {
     const first = pane();
-    render(<XtermHost terminalId="t2" visible registry={registry} platform="linux" />);
-    const other = registry.acquire("t2"); registry.release("t2");
-    const otherTextarea = other.wrapper.querySelector("textarea");
-    if (otherTextarea === null) throw new Error("second terminal has no textarea");
-    const file = new File([""], "local.txt");
-    bridge.clipboardContent = { kind: "files" };
-    bridge.filePaths.set(file, "/tmp/local.txt");
-    const addListener = vi.spyOn(document, "addEventListener");
-    const removeListener = vi.spyOn(document, "removeEventListener");
-    let deliverPaste: (() => void) | undefined;
-    const trigger = vi.spyOn(window.vex.terminalInput, "triggerPaste").mockImplementation(() => new Promise((resolve) => {
-      deliverPaste = () => {
-        const event = new Event("paste", { bubbles: true, cancelable: true });
-        Object.defineProperty(event, "clipboardData", { value: { files: [file] } });
-        document.activeElement?.dispatchEvent(event);
-        resolve({ ok: true, data: { kind: "triggered" } });
-      };
-    }));
+    const second = pane("linux", "t2");
+    const response = Promise.withResolvers<Result<ReadClipboardFilesValue>>();
+    const cancel = vi.fn();
+    const readFiles = vi.spyOn(window.vex.terminalInput, "readClipboardFiles").mockReturnValue({ promise: response.promise, cancel });
     try {
+      bridge.clipboardContent = { kind: "files" };
       await paste(first.textarea);
-      expect(trigger).toHaveBeenCalledOnce();
-      const capture = addListener.mock.calls.find(([name, , capturePhase]) => name === "paste" && capturePhase === true)?.[1];
-      expect(capture).toBeDefined();
-      if (change === "hide") first.rerender(<XtermHost terminalId="t1" visible={false} registry={registry} platform="linux" />);
+      expect(readFiles).toHaveBeenCalledOnce();
+      if (change === "hide") first.rerender(<XtermHost terminalId="t1" visible={false} registry={registry} platform="linux" launchShellName="bash" />);
       else first.unmount();
-      otherTextarea.focus();
-      await act(async () => { deliverPaste?.(); await settle(); });
+      expect(cancel).toHaveBeenCalledOnce();
+      second.textarea.focus();
+      await act(async () => {
+        response.resolve({ ok: true, data: { kind: "files", paths: ["/tmp/original.txt"] } });
+        await settle();
+      });
       expect(bridge.writes).toEqual([]);
-      expect(document.activeElement).toBe(otherTextarea);
-      expect(removeListener).toHaveBeenCalledWith("paste", capture, true);
+      expect(document.activeElement).toBe(second.textarea);
+      bridge.clipboardContent = { kind: "text", text: "later text" };
+      await act(async () => { fireEvent.paste(second.textarea); await settle(); });
+      expect(bridge.writes).toEqual([{ terminalId: "t2", data: "later text" }]);
     } finally {
-      trigger.mockRestore();
-      addListener.mockRestore();
-      removeListener.mockRestore();
+      readFiles.mockRestore();
     }
   });
-  it("retains native paste capture while main acknowledgment is delayed beyond the event timeout", async () => {
-    const first = pane();
-    render(<XtermHost terminalId="t2" visible registry={registry} platform="linux" />);
-    const other = registry.acquire("t2"); registry.release("t2");
-    const otherTextarea = other.wrapper.querySelector("textarea");
-    if (otherTextarea === null) throw new Error("second terminal has no textarea");
-    const file = new File([""], "local.txt");
-    bridge.clipboardContent = { kind: "files" };
-    bridge.filePaths.set(file, "/tmp/local.txt");
-    let deliverPaste: (() => void) | undefined;
-    const trigger = vi.spyOn(window.vex.terminalInput, "triggerPaste").mockImplementation(() => new Promise((resolve) => {
-      deliverPaste = () => {
-        const event = new Event("paste", { bubbles: true, cancelable: true });
-        Object.defineProperty(event, "clipboardData", { value: { files: [file] } });
-        document.activeElement?.dispatchEvent(event);
-        resolve({ ok: true, data: { kind: "triggered" } });
-      };
-    }));
-    vi.useFakeTimers();
+  it("uses the correlated file response even if the global clipboard changes", async () => {
+    const { textarea } = pane();
+    const response = Promise.withResolvers<Result<ReadClipboardFilesValue>>();
+    const readFiles = vi.spyOn(window.vex.terminalInput, "readClipboardFiles").mockReturnValue({ promise: response.promise, cancel: vi.fn() });
     try {
-      await act(async () => { fireEvent.keyDown(first.textarea, { key: "v", code: "KeyV", keyCode: 86, ctrlKey: true, shiftKey: true }); });
-      expect(trigger).toHaveBeenCalledOnce();
-      first.unmount();
-      otherTextarea.focus();
-      await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
-      await act(async () => { deliverPaste?.(); await vi.advanceTimersByTimeAsync(0); });
-      expect(bridge.writes).toEqual([]);
-      expect(document.activeElement).toBe(otherTextarea);
+      bridge.clipboardContent = { kind: "files" };
+      await paste(textarea);
+      bridge.clipboardContent = { kind: "text", text: "different clipboard" };
+      await act(async () => {
+        response.resolve({ ok: true, data: { kind: "files", paths: ["/tmp/request owned.txt"] } });
+        await settle();
+      });
+      expect(sent()).toBe("'/tmp/request owned.txt'");
+      expect(readFiles).toHaveBeenCalledOnce();
     } finally {
-      trigger.mockRestore();
-      vi.useRealTimers();
+      readFiles.mockRestore();
     }
+  });
+  it("refuses copied paths when the launched shell is unknown", async () => {
+    const { textarea } = pane("linux", "t1", null);
+    const file = new File([""], "local.txt");
+    bridge.clipboardContent = { kind: "files" }; bridge.clipboardFiles = [file];
+    bridge.filePaths.set(file, "/tmp/local.txt");
+    await paste(textarea);
+    expect(sent()).toBe("");
+    expect(screen.getByRole("alert").textContent).toContain("launched shell is unknown or unsupported");
   });
   it("shows the drop overlay and inserts local paths on drop", async () => {
     const { container, textarea } = pane();

@@ -185,6 +185,40 @@ function NotificationsRow(): JSX.Element {
   );
 }
 
+function TerminalPasteWarningRow(): JSX.Element {
+  const enabled = useUiStore((state) => state.terminalPasteWarning);
+  const setEnabled = useUiStore((state) => state.setTerminalPasteWarning);
+  return (
+    <div className="flex items-center justify-between gap-3 border-t border-line-1 py-4" data-vex-settings-terminal-paste>
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <div className="text-[14px] leading-[22px] text-ink-primary">Multi-line paste warning</div>
+        <div className="text-[12px] leading-[18px] text-ink-tertiary">
+          Ask before pasting multiple lines when the terminal program does not handle bracketed paste.
+        </div>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={enabled}
+        aria-label="Multi-line paste warning"
+        onClick={() => setEnabled(!enabled)}
+        className={cn(
+          "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary",
+          enabled ? "border-button-accent bg-button-accent" : "border-line-4 bg-interactive-solid",
+        )}
+      >
+        <span
+          aria-hidden
+          className={cn(
+            "inline-block h-3.5 w-3.5 rounded-full transition-transform",
+            enabled ? "translate-x-[18px] bg-ink-on-button-accent" : "translate-x-[3px] bg-ink-primary",
+          )}
+        />
+      </button>
+    </div>
+  );
+}
+
 export function SettingsPreferences(): JSX.Element {
   return (
     <section
@@ -197,6 +231,7 @@ export function SettingsPreferences(): JSX.Element {
       <SettingsBackdropRow />
       <SubmitKeyRow />
       <NotificationsRow />
+      <TerminalPasteWarningRow />
     </section>
   );
 }

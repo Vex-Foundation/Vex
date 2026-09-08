@@ -45,9 +45,9 @@ describe("terminal clipboard preload", () => {
     mocks.invoke.mockResolvedValueOnce({ ok: true, data: { kind: "written" } });
     expect(await terminalInput.writeClipboardText({ text: "hello" })).toEqual({ ok: true, data: { kind: "written" } });
     expect(mocks.invoke).toHaveBeenLastCalledWith(CH.terminalInput.writeClipboardText, { requestId: expect.any(String), payload: { text: "hello" } });
-    mocks.invoke.mockResolvedValueOnce({ ok: true, data: { kind: "triggered" } });
-    expect(await terminalInput.triggerPaste()).toEqual({ ok: true, data: { kind: "triggered" } });
-    expect(mocks.invoke).toHaveBeenLastCalledWith(CH.terminalInput.triggerPaste, { requestId: expect.any(String), payload: {} });
+    mocks.invoke.mockResolvedValueOnce({ ok: true, data: { kind: "files", paths: ["/tmp/local.txt"] } });
+    expect(await terminalInput.readClipboardFiles().promise).toEqual({ ok: true, data: { kind: "files", paths: ["/tmp/local.txt"] } });
+    expect(mocks.invoke).toHaveBeenLastCalledWith(CH.terminalInput.readClipboardFiles, { requestId: expect.any(String), payload: {} });
   });
 
   it("rejects excess fields before invoking main", async () => {

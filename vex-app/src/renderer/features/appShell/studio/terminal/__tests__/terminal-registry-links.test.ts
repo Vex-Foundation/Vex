@@ -131,16 +131,19 @@ describe("terminal registry links", () => {
 });
 
 describe("terminal registry OSC 52 clipboard", () => {
-  it("writes and reads system clipboard through the native adapter", async () => {
+  it("allows native clipboard writes but sends no bytes for unsolicited read queries", async () => {
     const { entry } = mount();
     const writeText = vi.spyOn(terminalClipboard, "writeText").mockResolvedValue(undefined);
-    vi.spyOn(terminalClipboard, "readText").mockResolvedValue("read value");
+    const readText = vi.spyOn(terminalClipboard, "readText").mockResolvedValue("private clipboard value");
     const replies: string[] = [];
     const off = entry.terminal.onData((value) => replies.push(value));
     await write(entry.terminal, "\x1b]52;c;d3JpdGUgdmFsdWU=\x07");
     expect(writeText).toHaveBeenCalledWith("write value");
-    await write(entry.terminal, "\x1b]52;c;?\x07");
-    expect(replies.join("")).toContain("\x1b]52;c;cmVhZCB2YWx1ZQ==\x07");
+    for (const selection of ["c", "p", "s", "", "cp"]) {
+      await write(entry.terminal, `\x1b]52;${selection};?\x07`);
+    }
+    expect(readText).not.toHaveBeenCalled();
+    expect(replies).toEqual([]);
     off.dispose();
   });
 
@@ -148,8 +151,8 @@ describe("terminal registry OSC 52 clipboard", () => {
     const { registry, entry } = mount();
     const onNotice = vi.fn();
     registry.setInteractionHandlers("t1", { openLink: vi.fn(), onNotice });
-    vi.spyOn(terminalClipboard, "readText").mockRejectedValue(new TerminalClipboardError("terminal_clipboard_too_large"));
-    await write(entry.terminal, "\x1b]52;c;?\x07");
+    vi.spyOn(terminalClipboard, "writeText").mockRejectedValue(new TerminalClipboardError("terminal_clipboard_too_large"));
+    await write(entry.terminal, "\x1b]52;c;dGV4dA==\x07");
     expect(onNotice).toHaveBeenCalledWith(expect.stringContaining("exceeds Vex's terminal limit"));
     await write(entry.terminal, "still reading");
     expect(entry.terminal.buffer.active.getLine(0)?.translateToString()).toContain("still reading");

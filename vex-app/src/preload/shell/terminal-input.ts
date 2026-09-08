@@ -1,3 +1,4 @@
+import { readClipboardFilesInputSchema, readClipboardFilesValueSchema, type ReadClipboardFilesValue } from "../../shared/schemas/terminal-clipboard-files.js";
 import { z } from "zod";
 import { CH } from "../../shared/ipc/channels.js";
 import { err, ok, VEX_ERROR_CODES, type Result } from "../../shared/ipc/result.js";
@@ -8,20 +9,13 @@ import {
   readClipboardTextValueSchema,
   writeClipboardTextInputSchema,
   writeClipboardTextValueSchema,
-  triggerTerminalPasteInputSchema,
-  triggerTerminalPasteValueSchema,
 } from "../../shared/schemas/terminal-input.js";
 import type { TerminalInputBridge } from "../../shared/types/bridge/shell/terminal-input.js";
-import { invokeWithSchema } from "../_dispatch.js";
+import { abortableInvoke, invokeWithSchema } from "../_dispatch.js";
 
-async function invokeClipboard<I, O>(
-  channel: string,
-  input: I,
-  inputSchema: z.ZodType<I>,
-  outputSchema: z.ZodType<O>,
-): Promise<Result<O>> {
+async function checkedClipboard<O>(pending: Promise<Result<unknown>>, outputSchema: z.ZodType<O>): Promise<Result<O>> {
   try {
-    const result = await invokeWithSchema<unknown, I>(channel, input, inputSchema);
+    const result = await pending;
     if (result.ok) {
       const parsed = outputSchema.safeParse(result.data);
       if (parsed.success) return ok(parsed.data);
@@ -54,6 +48,10 @@ async function invokeClipboard<I, O>(
   });
 }
 
+function invokeClipboard<I, O>(channel: string, input: I, inputSchema: z.ZodType<I>, outputSchema: z.ZodType<O>): Promise<Result<O>> {
+  return checkedClipboard(invokeWithSchema<unknown, I>(channel, input, inputSchema), outputSchema);
+}
+
 export const terminalInput = {
   readClipboardContent() {
     return invokeClipboard(CH.terminalInput.readClipboardContent, {}, readClipboardContentInputSchema, readClipboardContentValueSchema);
@@ -64,7 +62,8 @@ export const terminalInput = {
   writeClipboardText(input) {
     return invokeClipboard(CH.terminalInput.writeClipboardText, input, writeClipboardTextInputSchema, writeClipboardTextValueSchema);
   },
-  triggerPaste() {
-    return invokeClipboard(CH.terminalInput.triggerPaste, {}, triggerTerminalPasteInputSchema, triggerTerminalPasteValueSchema);
+  readClipboardFiles() {
+    const invocation = abortableInvoke<ReadClipboardFilesValue>(CH.terminalInput.readClipboardFiles, {}, readClipboardFilesInputSchema);
+    return { promise: checkedClipboard(invocation.promise, readClipboardFilesValueSchema), cancel: invocation.cancel };
   },
 } satisfies TerminalInputBridge;

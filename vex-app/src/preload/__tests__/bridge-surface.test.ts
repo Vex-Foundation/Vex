@@ -40,30 +40,27 @@ function walkPreload(dir: string): string[] {
 const PRELOAD_FILES = walkPreload(PRELOAD_ROOT);
 
 describe("preload bridge surface", () => {
-  it("exposes the bridge through exactly one contextBridge.exposeInMainWorld call (target 'vex', in preload/index.ts)", () => {
-    let callCount = 0;
-    let matchedTarget: string | null = null;
-    let matchedFile: string | null = null;
-    // Require the second positional arg to be a bare identifier (the
-    // assembled api object) rather than a string or `ipcRenderer`. A
-    // loose comment with the text "contextBridge.exposeInMainWorld" is
-    // discounted by also requiring `(\s*["']vex["']\s*,\s*<ident>\s*)`.
-    const callPattern =
-      /contextBridge\.exposeInMainWorld\(\s*(["'])([^"']+)\1\s*,\s*([A-Za-z_$][\w$]*)\s*\)/;
-
+  it("pins each isolated preload's exact exposure and never adds consent authority to the main bridge", () => {
+    const exposures: Array<{ file: string; target: string }> = [];
+    const callPattern = /contextBridge\.exposeInMainWorld\(\s*(["'])([^"']+)\1\s*,\s*([A-Za-z_$][\w$]*)\s*\)/g;
+    let occurrences = 0;
     for (const file of PRELOAD_FILES) {
       const src = readFileSync(file, "utf8");
-      const occurrences = src.match(/contextBridge\.exposeInMainWorld/g);
-      if (occurrences) callCount += occurrences.length;
-      const matched = src.match(callPattern);
-      if (matched) {
-        matchedTarget = matched[2] ?? null;
-        matchedFile = file;
+      occurrences += src.match(/contextBridge\.exposeInMainWorld/g)?.length ?? 0;
+      for (const match of src.matchAll(callPattern)) {
+        const target = match[2];
+        if (target === undefined) throw new Error("Missing bridge exposure target");
+        exposures.push({ file, target });
       }
     }
-    expect(callCount).toBe(1);
-    expect(matchedTarget).toBe("vex");
-    expect(matchedFile).toBe(PRELOAD_INDEX);
+    expect(occurrences).toBe(2);
+    expect(exposures).toEqual([
+      { file: PRELOAD_INDEX, target: "vex" },
+      { file: path.join(path.dirname(PRELOAD_INDEX), "terminal-link-consent.ts"), target: "terminalLinkConsent" },
+    ]);
+    const mainBridge = readFileSync(path.join(path.dirname(PRELOAD_INDEX), "shell/terminal-links.ts"), "utf8");
+    expect(mainBridge).not.toContain("answerLink");
+    expect(mainBridge).not.toContain("answer(input)");
   });
 
   it("no preload file exposes raw invoke:/send:/on:/ipcRenderer: keys", () => {

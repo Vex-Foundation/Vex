@@ -1,3 +1,4 @@
+import { registerTerminalClipboardFileHandlers } from "./terminal-clipboard-files.js";
 import { clipboard } from "electron";
 import { CH } from "@shared/ipc/channels.js";
 import { ok, type Result } from "@shared/ipc/result.js";
@@ -9,12 +10,9 @@ import {
   readClipboardTextValueSchema,
   writeClipboardTextInputSchema,
   writeClipboardTextValueSchema,
-  triggerTerminalPasteInputSchema,
-  triggerTerminalPasteValueSchema,
   TERMINAL_CLIPBOARD_MAX_LENGTH,
   type ReadClipboardTextValue,
   type WriteClipboardTextValue,
-  type TriggerTerminalPasteValue,
 } from "@shared/schemas/terminal-input.js";
 import { AbortError } from "./cancel-helpers.js";
 import { registerHandler, type HandlerContext } from "./register-handler.js";
@@ -84,22 +82,6 @@ export function registerTerminalInputHandlers(): Array<() => void> {
         }
       },
     }),
-    registerHandler({
-      channel: CH.terminalInput.triggerPaste,
-      domain: "studio",
-      inputSchema: triggerTerminalPasteInputSchema,
-      outputSchema: triggerTerminalPasteValueSchema,
-      handle: async (_input, ctx): Promise<Result<TriggerTerminalPasteValue>> => {
-        await checkActiveWindow(ctx);
-        try {
-          // Chromium decodes Finder/Explorer file clipboard formats into the native
-          // paste event. No format parser or renderer-selected target window is needed.
-          ctx.event.sender.paste();
-          return ok({ kind: "triggered" });
-        } catch {
-          return ok({ kind: "refused", reason: "terminal_clipboard_unavailable" });
-        }
-      },
-    }),
+    ...registerTerminalClipboardFileHandlers(),
   ];
 }

@@ -21,7 +21,6 @@ export const readClipboardTextInputSchema = z.object({}).strict();
 export const writeClipboardTextInputSchema = z.object({
   text: z.string().max(TERMINAL_CLIPBOARD_TRANSPORT_MAX),
 }).strict();
-export const triggerTerminalPasteInputSchema = z.object({}).strict();
 
 export const readClipboardTextValueSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("text"), text: z.string().max(TERMINAL_CLIPBOARD_MAX_LENGTH) }).strict(),
@@ -40,13 +39,8 @@ export const writeClipboardTextValueSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("written") }).strict(),
   refusedSchema,
 ]);
-export const triggerTerminalPasteValueSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("triggered") }).strict(),
-  refusedSchema,
-]);
 export type ReadClipboardTextValue = z.infer<typeof readClipboardTextValueSchema>;
 export type WriteClipboardTextValue = z.infer<typeof writeClipboardTextValueSchema>;
-export type TriggerTerminalPasteValue = z.infer<typeof triggerTerminalPasteValueSchema>;
 
 export const terminalFilePathValueSchema = z.discriminatedUnion("kind", [
   z.object({

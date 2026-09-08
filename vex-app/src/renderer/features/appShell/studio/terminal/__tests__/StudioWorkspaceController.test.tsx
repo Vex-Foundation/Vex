@@ -17,7 +17,7 @@
  */
 
 import { StrictMode, type JSX } from "react";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type TerminalWorkspaceRestore,
@@ -2052,5 +2052,35 @@ describe("the workspace on glass", () => {
     expect(pane?.className).toContain("rounded-xl");
     expect(pane?.className).not.toMatch(/\bborder\b/);
     expect(pane?.className).not.toContain("bg-surface");
+  });
+});
+
+
+describe("file quoting follows the launched executable", () => {
+  it.each(["create", "restore"])("retains PowerShell quoting after an OSC title change on %s", async (source) => {
+    const terminalId = source === "create" ? "t-auto" : "t1";
+    if (source === "create") {
+      bridge.savedWorkspace = null;
+      bridge.nextCreate = { ok: true, value: { ...AUTO_TERMINAL, shellName: "pwsh" } };
+    } else {
+      const snapshot = savedWorkspace();
+      bridge.savedWorkspace = {
+        ...snapshot,
+        terminals: snapshot.terminals.map((entry) => ({ ...entry, shellName: "pwsh", title: "bash" })),
+      };
+    }
+    renderController();
+    await waitFor(() => expect(bridge.attaches).toContain(terminalId));
+    const entry = registry.acquire(terminalId);
+    registry.release(terminalId);
+    const textarea = entry.wrapper.querySelector("textarea");
+    if (textarea === null) throw new Error("terminal textarea missing");
+    act(() => bridge.emitProperty(terminalId, { property: "title", value: "cmd" }));
+    const file = new File([""], "example");
+    bridge.filePaths.set(file, "/tmp/a';whoami;#");
+    fireEvent.drop(textarea, { dataTransfer: { types: ["Files"], files: [file] } });
+    await waitFor(() => {
+      expect(bridge.writes.filter((write) => write.terminalId === terminalId).map((write) => write.data).join("")).toBe("'/tmp/a'';whoami;#'");
+    });
   });
 });

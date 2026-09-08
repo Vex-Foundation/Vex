@@ -1407,7 +1407,7 @@ export function StudioWorkspaceController({
             // the same pre-mutation state and claim the same number.
             title: nextTerminalTitle(current.tabs),
             orientation: "horizontal",
-            panes: [{ paneId, terminalId, relativeSize: 1, displayCwd }],
+            panes: [{ paneId, terminalId, relativeSize: 1, displayCwd, launchShellName: shellName }],
             activePaneId: paneId,
           }),
         );
@@ -1422,6 +1422,7 @@ export function StudioWorkspaceController({
           // cannot know the group's current proportions.
           relativeSize: 0,
           displayCwd,
+          launchShellName: shellName,
         }),
       );
     },
