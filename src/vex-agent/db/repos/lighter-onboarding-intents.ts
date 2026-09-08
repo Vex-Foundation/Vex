@@ -1,5 +1,5 @@
 /**
- * Repository for `lighter_onboarding_intents` — the durable state of each
+ * Repository for `lighter_onboarding_intents` - the durable state of each
  * fund-moving onboarding leg (Phase 7). It records addresses, amounts, tx
  * hashes, and lifecycle only; never keys, signatures, or signed payloads.
  * Marks persist tx hashes BEFORE broadcast (staged-broadcast doctrine) and
@@ -1235,18 +1235,59 @@ export async function findByIntentId(intentId: string): Promise<LighterOnboardin
   return row ? mapRow(row) : null;
 }
 
+/** Rows one unresolved-intent page returns when the caller states no bound. */
+export const LIGHTER_ONBOARDING_UNRESOLVED_PAGE_LIMIT = 25;
+
+export interface LighterOnboardingUnresolvedPage {
+  readonly rows: LighterOnboardingIntentRow[];
+  /** More unresolved rows exist beyond this page's limit and offset. */
+  readonly hasMore: boolean;
+}
+
+/**
+ * One bounded page of unresolved intents, least recently updated first.
+ *
+ * The order is what makes an unattended sweep fair: every row the sweep
+ * advances gets a fresh updated_at and moves to the back of the queue. The
+ * offset lets a caller rotate past rows that no evidence can move yet, so a
+ * permanently pending row cannot hold the first page forever. The page never
+ * pretends to be the whole set: `hasMore` says when it is not.
+ */
 export async function listUnresolved(
   environment: LighterEnvironment,
-): Promise<LighterOnboardingIntentRow[]> {
+  options: { readonly limit?: number; readonly offset?: number } = {},
+): Promise<LighterOnboardingUnresolvedPage> {
+  const limit = boundedPageLimit(options.limit);
+  const offset = boundedPageOffset(options.offset);
   const rows = await query<Record<string, unknown>>(
     `SELECT ${RETURNING} FROM lighter_onboarding_intents
       WHERE environment = $1
         AND execution_state NOT IN ('credited','failed')
         AND approval_status <> 'rejected'
-      ORDER BY updated_at DESC`,
-    [environment],
+      ORDER BY updated_at ASC, intent_id ASC
+      LIMIT $2 OFFSET $3`,
+    [environment, limit + 1, offset],
   );
-  return rows.map(mapRow);
+  return {
+    rows: rows.slice(0, limit).map(mapRow),
+    hasMore: rows.length > limit,
+  };
+}
+
+function boundedPageLimit(limit: number | undefined): number {
+  if (limit === undefined) return LIGHTER_ONBOARDING_UNRESOLVED_PAGE_LIMIT;
+  if (!Number.isInteger(limit) || limit < 1) {
+    throw new Error("Lighter unresolved-intent page limit must be a positive integer.");
+  }
+  return Math.min(limit, 200);
+}
+
+function boundedPageOffset(offset: number | undefined): number {
+  if (offset === undefined) return 0;
+  if (!Number.isInteger(offset) || offset < 0) {
+    throw new Error("Lighter unresolved-intent page offset must be a non-negative integer.");
+  }
+  return offset;
 }
 
 export async function listUnresolvedDepositsForWallet(

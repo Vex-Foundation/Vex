@@ -69,6 +69,8 @@ import { installLighterOrderCreateExecutionDeps } from "./lighter/order-create-e
 import { installLighterKeyRegistrationCredentialPreparer } from "./lighter/key-registration-credential.js";
 import { installLighterKeyRegistrationExecutor } from "./lighter/key-registration-execution.js";
 import { installLighterFeeAuthorizationService } from "./lighter/fee-authorization-execution.js";
+import { shutdownLighterPublicMarkets } from "./lighter/public-market-stream.js";
+import { shutdownLighterCandleStreams } from "./lighter/candle-stream.js";
 import { setupStudioHostStatusBridge } from "./studio/host-status-bridge.js";
 import { setupBoardLiveService } from "./market/board-live-owner.js";
 import { lockSecretSession, reopenStudioHostIfSafe } from "./secrets/session.js";
@@ -273,6 +275,17 @@ async function initializeMainRuntime(): Promise<void> {
   globalCleanup.add(() => {
     uninstallLighterFeeAuthorizationService();
   }, "lighter-fee-authorization-service");
+
+  // The two public Lighter market supervisors are process-wide singletons owned
+  // by their modules. Shutting them down here closes their sockets and their
+  // timers, and closes ADMISSION: a subscribe that races teardown is refused
+  // instead of opening a socket nothing will ever close.
+  globalCleanup.add(() => {
+    shutdownLighterPublicMarkets();
+  }, "lighter-public-market-streams");
+  globalCleanup.add(() => {
+    shutdownLighterCandleStreams();
+  }, "lighter-candle-streams");
 
   // The agent-bridge disposer is handed back rather than self-registered: it
   // drains the board read caches and the DexScreener transport, so it belongs

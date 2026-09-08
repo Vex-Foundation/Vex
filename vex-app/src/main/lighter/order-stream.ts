@@ -29,6 +29,23 @@ export const LIGHTER_ORDER_STREAM_AUTH_ROTATION_MS = 8 * 60_000;
 export const LIGHTER_ORDER_STREAM_RESNAPSHOT_MIN_INTERVAL_MS = 60_000;
 export const LIGHTER_ORDER_STREAM_MAX_FRAME_BYTES = 1_048_576;
 export const LIGHTER_ORDER_STREAM_MAX_QUEUED_FRAMES = 100;
+/**
+ * Consecutive failed connection attempts before a watcher gives up and stays
+ * unavailable until the next credential change, vault unlock, or app restart.
+ * Same cap as the public market and candle supervisors. The backoff CEILING is
+ * deliberately higher here (60 s against their 30 s): those two back a panel a
+ * user is watching, while this one is a background evidence stream whose gap
+ * is also covered by the periodic resnapshot and the repair sweeps, so it
+ * trades reconnect latency for fewer authenticated handshakes.
+ */
+export const LIGHTER_ORDER_STREAM_MAX_RECONNECT_ATTEMPTS = 8;
+/**
+ * Rows read per discovery pass from each intent repository. The repositories
+ * return a plain array today, so a full page is reported as a bound that was
+ * reached (`watchable_truncated`) instead of being silently trusted as the
+ * whole watch set. See listLighterOrderStreamTargets.
+ */
+export const LIGHTER_ORDER_STREAM_WATCHABLE_PAGE_LIMIT = 500;
 
 const WS_OPEN = 1;
 
@@ -75,6 +92,9 @@ interface AccountWatcher {
   readonly key: string;
   target: LighterOrderStreamTarget;
   active: boolean;
+  givenUp: boolean;
+  lastFailureReason: string;
+  connecting: boolean;
   socket: LighterOrderStreamSocket | null;
   pendingAuthToken: string | null;
   reconnectAttempt: number;
@@ -190,6 +210,10 @@ export class LighterOrderStreamSupervisor {
           const credentialChanged = !sameCredential(watcher.target.credential, target.credential);
           watcher.target = target;
           if (credentialChanged) {
+            // Fresh authority is fresh evidence: it re-arms an exhausted
+            // watcher instead of leaving it terminally unavailable.
+            watcher.givenUp = false;
+            watcher.reconnectAttempt = 0;
             this.restartWatcher(watcher, "credential_changed");
           } else {
             this.scheduleConnect(watcher, 0);
@@ -218,10 +242,16 @@ export class LighterOrderStreamSupervisor {
     if (
       this.stopped
       || !watcher.active
+      || watcher.givenUp
+      || watcher.connecting
       || watcher.socket !== null
       || watcher.reconnectTimer !== null
       || !this.deps.isVaultUnlocked()
     ) {
+      return;
+    }
+    if (watcher.reconnectAttempt >= LIGHTER_ORDER_STREAM_MAX_RECONNECT_ATTEMPTS) {
+      this.giveUp(watcher);
       return;
     }
     const delay = delayMs ?? reconnectDelayMs(watcher.reconnectAttempt, this.deps.random());
@@ -233,7 +263,11 @@ export class LighterOrderStreamSupervisor {
   }
 
   private async connect(watcher: AccountWatcher): Promise<void> {
-    if (this.stopped || !watcher.active || !this.deps.isVaultUnlocked()) return;
+    if (this.stopped || !watcher.active || watcher.connecting || !this.deps.isVaultUnlocked()) return;
+    // Single-flight per watcher: the discovery pass runs every five seconds and
+    // would otherwise start a second connect while this one awaits its auth
+    // token, orphaning the first socket without an owner to close it.
+    watcher.connecting = true;
     let auth: LighterPrivilegedAccountAuth | null = null;
     try {
       auth = await this.deps.resolveAuth(watcher.target.credential);
@@ -243,6 +277,8 @@ export class LighterOrderStreamSupervisor {
         || auth.token.trim().length === 0
       ) {
         this.deps.diagnostic("lighter.order_stream.auth_failed", scopeDetail(watcher.target));
+        watcher.lastFailureReason = "auth_failed";
+        watcher.connecting = false;
         this.scheduleConnect(watcher);
         return;
       }
@@ -263,9 +299,13 @@ export class LighterOrderStreamSupervisor {
       socket.addEventListener("error", () => this.handleSocketError(watcher, socket));
     } catch {
       watcher.pendingAuthToken = null;
+      watcher.lastFailureReason = "connect_failed";
       disconnectWatcherSocket(watcher, "connect_failed");
       this.deps.diagnostic("lighter.order_stream.connect_failed", scopeDetail(watcher.target));
+      watcher.connecting = false;
       this.scheduleConnect(watcher);
+    } finally {
+      watcher.connecting = false;
     }
   }
 
@@ -435,6 +475,7 @@ export class LighterOrderStreamSupervisor {
   private handleClose(watcher: AccountWatcher, socket: LighterOrderStreamSocket): void {
     if (watcher.socket !== socket) return;
     watcher.socket = null;
+    watcher.lastFailureReason = "socket_closed";
     watcher.pendingAuthToken = null;
     clearWatcherSocketTimers(watcher);
     if (!this.stopped && watcher.active && this.deps.isVaultUnlocked()) {
@@ -450,10 +491,27 @@ export class LighterOrderStreamSupervisor {
   }
 
   private restartWatcher(watcher: AccountWatcher, reason: string): void {
+    watcher.lastFailureReason = reason;
     disconnectWatcherSocket(watcher, reason);
     if (!this.stopped && watcher.active && this.deps.isVaultUnlocked()) {
       this.scheduleConnect(watcher);
     }
+  }
+
+  /**
+   * Terminal end of the restart budget. This stream has no renderer status
+   * channel, so the terminal state is reported as a diagnostic with its reason
+   * and attempt count. A credential change, a vault unlock, or the target
+   * leaving and re-entering the watch set builds a fresh attempt budget.
+   */
+  private giveUp(watcher: AccountWatcher): void {
+    if (watcher.givenUp) return;
+    watcher.givenUp = true;
+    this.deps.diagnostic("lighter.order_stream.recovery_exhausted", {
+      ...scopeDetail(watcher.target),
+      attempts: watcher.reconnectAttempt,
+      reason: watcher.lastFailureReason,
+    });
   }
 
   private sendIfOpen(socket: LighterOrderStreamSocket, data: string): boolean {
@@ -481,11 +539,59 @@ export class LighterOrderStreamSupervisor {
   }
 }
 
-export async function listLighterOrderStreamTargets(): Promise<readonly LighterOrderStreamTarget[]> {
+interface LighterOrderStreamWatchableRow {
+  readonly environment: LighterEnvironment;
+  readonly accountIndex: number;
+  readonly apiKeyIndex: number;
+  readonly credentialRefJson: LighterTradingCredentialVaultReference;
+}
+
+export interface LighterOrderStreamWatchableReaders {
+  readonly readOrderPage: (limit: number) => Promise<readonly LighterOrderStreamWatchableRow[]>;
+  readonly readLifecyclePage: (limit: number) => Promise<readonly LighterOrderStreamWatchableRow[]>;
+  readonly diagnostic: LighterOrderStreamSupervisorDeps["diagnostic"];
+}
+
+function defaultWatchableReaders(): LighterOrderStreamWatchableReaders {
+  return {
+    readOrderPage: (limit) =>
+      lighterOrderExecutionIntentsRepo.listStreamWatchable(undefined, undefined, limit),
+    readLifecyclePage: (limit) =>
+      lighterOrderLifecycleIntentsRepo.listStreamWatchable(undefined, undefined, limit),
+    diagnostic: (event, detail) => log.warn(event, detail),
+  };
+}
+
+/**
+ * Discovery reads both intent repositories one page at a time. Neither
+ * repository reports whether more rows exist, so a page that comes back FULL
+ * is treated as a bound that was REACHED and is reported with its counts: the
+ * watch set is then known to be incomplete rather than silently trusted as the
+ * whole set. The accounts beyond the page keep their evidence through the
+ * repair sweeps until the repositories can page.
+ */
+export async function listLighterOrderStreamTargets(
+  readers: LighterOrderStreamWatchableReaders = defaultWatchableReaders(),
+): Promise<readonly LighterOrderStreamTarget[]> {
+  const limit = LIGHTER_ORDER_STREAM_WATCHABLE_PAGE_LIMIT;
   const [orderRows, lifecycleRows] = await Promise.all([
-    lighterOrderExecutionIntentsRepo.listStreamWatchable(undefined, undefined, 500),
-    lighterOrderLifecycleIntentsRepo.listStreamWatchable(undefined, undefined, 500),
+    readers.readOrderPage(limit),
+    readers.readLifecyclePage(limit),
   ]);
+  const sources = [
+    { source: "order_execution", rows: orderRows },
+    { source: "order_lifecycle", rows: lifecycleRows },
+  ] as const;
+  for (const { source, rows } of sources) {
+    if (rows.length >= limit) {
+      readers.diagnostic("lighter.order_stream.watchable_truncated", {
+        source,
+        returned: rows.length,
+        pageLimit: limit,
+        hasMore: true,
+      });
+    }
+  }
   const targets = new Map<string, LighterOrderStreamTarget>();
   for (const row of [...orderRows, ...lifecycleRows]) {
     const credential = row.credentialRefJson;
@@ -511,6 +617,9 @@ function createWatcher(key: string, target: LighterOrderStreamTarget): AccountWa
     key,
     target,
     active: true,
+    givenUp: false,
+    lastFailureReason: "none",
+    connecting: false,
     socket: null,
     pendingAuthToken: null,
     reconnectAttempt: 0,

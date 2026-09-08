@@ -184,3 +184,32 @@ describe("Lighter order nonce-repair scheduling", () => {
     );
   });
 });
+
+describe("Lighter startup repair one-shot", () => {
+  it("runs each Lighter repair exactly once per startup, before the balance snapshot", async () => {
+    await initSync();
+
+    expect(mocks.repairDeposits).toHaveBeenCalledTimes(1);
+    expect(mocks.repairWithdrawals).toHaveBeenCalledTimes(1);
+    expect(mocks.repairOrders).toHaveBeenCalledTimes(1);
+    const snapshotOrder = requireValue(mocks.fullBalanceSync.mock.invocationCallOrder[0]);
+    for (const repair of [mocks.repairDeposits, mocks.repairWithdrawals, mocks.repairOrders]) {
+      expect(requireValue(repair.mock.invocationCallOrder[0])).toBeLessThan(snapshotOrder);
+    }
+  });
+
+  it("keeps starting the app when a Lighter repair throws", async () => {
+    mocks.repairDeposits.mockRejectedValueOnce(new Error("database unavailable"));
+    mocks.repairWithdrawals.mockRejectedValueOnce(new Error("vault locked"));
+    mocks.repairOrders.mockRejectedValueOnce(new Error("provider unreachable"));
+
+    await expect(initSync()).resolves.toBeUndefined();
+
+    // A failed recovery pass is reported and skipped; it never becomes a boot
+    // failure and it is never retried inside the same startup.
+    expect(mocks.repairDeposits).toHaveBeenCalledTimes(1);
+    expect(mocks.repairWithdrawals).toHaveBeenCalledTimes(1);
+    expect(mocks.repairOrders).toHaveBeenCalledTimes(1);
+    expect(mocks.fullBalanceSync).toHaveBeenCalledTimes(1);
+  });
+});

@@ -13,8 +13,17 @@ import { withSessionControlLocks } from "@vex-agent/engine/runtime/lease-and-sta
 import { resolveLighterReadOnlyAccountAuth } from "@vex-agent/tools/protocols/lighter/read-account-auth.js";
 import { reconcileLighterWithdrawal } from "@vex-agent/tools/protocols/lighter/withdrawal-reconciliation.js";
 
+/**
+ * Rows one unattended withdrawal repair pass examines. Each row can perform
+ * settlement-chain and authenticated Lighter reads, so the pass is bounded by
+ * rows and reports when the bound was reached.
+ */
+export const LIGHTER_WITHDRAWAL_REPAIR_SWEEP_LIMIT = 5;
+
 export interface LighterWithdrawalRepairReport {
   readonly examined: number;
+  /** The page came back full, so more reconciliation candidates may exist. */
+  readonly hasMore: boolean;
   readonly advanced: number;
   readonly awaitingVault: number;
   readonly awaitingEvidence: number;
@@ -23,7 +32,9 @@ export interface LighterWithdrawalRepairReport {
 }
 
 export async function repairUnresolvedLighterWithdrawals(): Promise<LighterWithdrawalRepairReport> {
-  const candidates = await intentsRepo.listReconciliationCandidates(5);
+  const candidates = await intentsRepo.listReconciliationCandidates(
+    LIGHTER_WITHDRAWAL_REPAIR_SWEEP_LIMIT,
+  );
   const client = getLighterClient();
   let advanced = 0;
   let awaitingVault = 0;
@@ -75,5 +86,13 @@ export async function repairUnresolvedLighterWithdrawals(): Promise<LighterWithd
       lastError = error instanceof Error ? error.message : String(error);
     }
   }
-  return { examined: candidates.length, advanced, awaitingVault, awaitingEvidence, errors, lastError };
+  return {
+    examined: candidates.length,
+    hasMore: candidates.length >= LIGHTER_WITHDRAWAL_REPAIR_SWEEP_LIMIT,
+    advanced,
+    awaitingVault,
+    awaitingEvidence,
+    errors,
+    lastError,
+  };
 }

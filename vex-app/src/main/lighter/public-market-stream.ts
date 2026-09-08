@@ -22,6 +22,17 @@ export const LIGHTER_PUBLIC_MARKET_MAX_FRAME_BYTES = 1_048_576;
 export const LIGHTER_PUBLIC_MARKET_MAX_BOOK_LEVELS = 5_000;
 export const LIGHTER_PUBLIC_MARKET_VISIBLE_BOOK_LEVELS = 40;
 export const LIGHTER_PUBLIC_MARKET_VISIBLE_TRADES = 40;
+/**
+ * Consecutive failed connection attempts before a watcher gives up and reports
+ * the terminal `unavailable` status instead of retrying forever. The same cap
+ * is used by the candle and order stream supervisors; only the backoff ceiling
+ * differs, because those two serve different consumers (see reconnectDelayMs).
+ * A successful subscription resets the counter, so the cap only ever bounds an
+ * unbroken run of failures. Recovery is user-driven from that point: dropping
+ * the last subscription retires the watcher, and the next subscribe builds a
+ * fresh one that starts a new attempt budget.
+ */
+export const LIGHTER_PUBLIC_MARKET_MAX_RECONNECT_ATTEMPTS = 8;
 
 const WS_OPEN = 1;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -78,6 +89,8 @@ interface PublicMarketWatcher {
   readonly trades: Map<string, LighterTradingPublicTradesEvent["trades"][number]>;
   socket: LighterPublicMarketSocket | null;
   stopped: boolean;
+  givenUp: boolean;
+  lastFailureReason: string;
   subscriptionSent: boolean;
   reconnectAttempt: number;
   reconnectTimer: ReturnType<typeof setTimeout> | null;
@@ -156,6 +169,11 @@ export class LighterPublicMarketSupervisor {
     if (watcher.liveAnnounced) {
       this.emitStatusTo(subscription, watcher, "live");
       this.emitCurrentTo(subscription, watcher);
+    } else if (watcher.givenUp) {
+      // Recovery for this market is already exhausted. Report the terminal
+      // state to the new subscriber instead of silently showing "connecting"
+      // for a watcher that will never reconnect on its own.
+      this.emitStatusTo(subscription, watcher, "unavailable");
     } else {
       this.emitStatusTo(subscription, watcher, watcher.socket === null ? "connecting" : "reconnecting");
       this.scheduleConnect(watcher, 0);
@@ -196,10 +214,15 @@ export class LighterPublicMarketSupervisor {
     if (
       this.stopped
       || watcher.stopped
+      || watcher.givenUp
       || watcher.subscriptions.size === 0
       || watcher.socket !== null
       || watcher.reconnectTimer !== null
     ) return;
+    if (watcher.reconnectAttempt >= LIGHTER_PUBLIC_MARKET_MAX_RECONNECT_ATTEMPTS) {
+      this.giveUp(watcher);
+      return;
+    }
     const delay = delayMs ?? reconnectDelayMs(watcher.reconnectAttempt, this.deps.random());
     watcher.reconnectAttempt += 1;
     watcher.reconnectTimer = setTimeout(() => {
@@ -216,20 +239,27 @@ export class LighterPublicMarketSupervisor {
       );
       watcher.socket = socket;
       resetConnectionEvidence(watcher);
+      // Every callback is fenced by socket identity: a late error, close, or
+      // handshake timeout from a replaced socket must never close the socket
+      // that took its place.
       socket.addEventListener("open", () => this.sendSubscriptions(watcher, socket));
       socket.addEventListener("message", (event) => this.handleMessage(watcher, socket, event));
       socket.addEventListener("close", () => this.handleClose(watcher, socket));
-      socket.addEventListener("error", () => this.restartWatcher(watcher, "socket_error"));
+      socket.addEventListener("error", () => {
+        if (watcher.socket !== socket) return;
+        this.restartWatcher(watcher, "socket_error");
+      });
       watcher.handshakeTimer = setTimeout(() => {
         watcher.handshakeTimer = null;
+        if (watcher.socket !== socket) return;
         this.deps.diagnostic("lighter.public_market.handshake_failed", targetDetail(watcher.target));
-        this.emitStatus(watcher, "unavailable");
         this.restartWatcher(watcher, "handshake_timeout");
       }, LIGHTER_PUBLIC_MARKET_HANDSHAKE_TIMEOUT_MS);
       if (socket.readyState === WS_OPEN) this.sendSubscriptions(watcher, socket);
     } catch {
       this.deps.diagnostic("lighter.public_market.connect_failed", targetDetail(watcher.target));
-      this.emitStatus(watcher, "unavailable");
+      // Transient failures stay "reconnecting"; "unavailable" is reserved for
+      // the terminal end of the restart budget so the renderer can trust it.
       this.restartWatcher(watcher, "connect_failed");
     }
   }
@@ -329,6 +359,26 @@ export class LighterPublicMarketSupervisor {
     }
     applyBookChanges(watcher.asks, frame.asks);
     applyBookChanges(watcher.bids, frame.bids);
+    const retainedLevels = watcher.asks.size + watcher.bids.size;
+    if (retainedLevels > LIGHTER_PUBLIC_MARKET_MAX_BOOK_LEVELS) {
+      // The declared bound is on the RETAINED book, not only on one frame.
+      // Dropping levels silently would hand the user a book that is neither
+      // the provider's nor a stated subset, so the reconstruction is discarded
+      // and re-established from a fresh provider snapshot. The drop is
+      // reported with its counts before anything is emitted.
+      this.deps.diagnostic("lighter.public_market.book_bound_exceeded", {
+        ...targetDetail(watcher.target),
+        askLevels: watcher.asks.size,
+        bidLevels: watcher.bids.size,
+        retainedLevels,
+        maxLevels: LIGHTER_PUBLIC_MARKET_MAX_BOOK_LEVELS,
+        droppedLevels: retainedLevels,
+      });
+      watcher.asks.clear();
+      watcher.bids.clear();
+      this.restartWatcher(watcher, "order_book_bound_exceeded");
+      return;
+    }
     watcher.bookNonce = frame.nonce;
     watcher.bookProviderTimestamp = frame.providerTimestamp;
     watcher.bookReady = true;
@@ -415,6 +465,7 @@ export class LighterPublicMarketSupervisor {
   private handleClose(watcher: PublicMarketWatcher, socket: LighterPublicMarketSocket): void {
     if (watcher.socket !== socket) return;
     watcher.socket = null;
+    watcher.lastFailureReason = "socket_closed";
     clearSocketTimers(watcher);
     resetConnectionEvidence(watcher);
     if (!this.stopped && !watcher.stopped && watcher.subscriptions.size > 0) {
@@ -429,12 +480,29 @@ export class LighterPublicMarketSupervisor {
   }
 
   private restartWatcher(watcher: PublicMarketWatcher, reason: string): void {
+    watcher.lastFailureReason = reason;
     disconnectSocket(watcher, reason);
     resetConnectionEvidence(watcher);
     if (!this.stopped && !watcher.stopped && watcher.subscriptions.size > 0) {
       this.emitStatus(watcher, "reconnecting");
       this.scheduleConnect(watcher);
     }
+  }
+
+  /**
+   * Terminal end of the restart budget. The renderer learns about it through
+   * the `unavailable` status; the reason and the attempt count stay in the
+   * diagnostic, because the shared status event carries no reason field.
+   */
+  private giveUp(watcher: PublicMarketWatcher): void {
+    if (watcher.givenUp) return;
+    watcher.givenUp = true;
+    this.deps.diagnostic("lighter.public_market.recovery_exhausted", {
+      ...targetDetail(watcher.target),
+      attempts: watcher.reconnectAttempt,
+      reason: watcher.lastFailureReason,
+    });
+    this.emitStatus(watcher, "unavailable");
   }
 
   private removeSubscription(subscription: Subscription, notify: boolean): void {
@@ -647,6 +715,8 @@ function createWatcher(
     trades: new Map(),
     socket: null,
     stopped: false,
+    givenUp: false,
+    lastFailureReason: "none",
     subscriptionSent: false,
     reconnectAttempt: 0,
     reconnectTimer: null,

@@ -13,6 +13,8 @@ import {
   buildLighterOrderEvidenceScope,
   findMatchingLighterOrder,
   findMatchingLighterTrade,
+  isLighterExpiredUnsubmittedState,
+  LIGHTER_EXPIRED_UNSUBMITTED_GUIDANCE,
   LighterOrderEvidenceConflictError,
   lighterOrderEvidenceJson,
   lighterOrderIdFromTrade,
@@ -32,7 +34,7 @@ import {
  * signs an order and never calls sendTx. When a privileged account-auth resolver
  * is installed (main process only), it derives a short-lived READ-ONLY account
  * auth token from the saved trading key so the order can be classified from
- * account evidence. That token authorizes account reads only — it is never used
+ * account evidence. That token authorizes account reads only; it is never used
  * to sign or submit an order.
  *
  * Release rules are deliberately narrow. A reservation is freed only when:
@@ -57,6 +59,23 @@ import {
  */
 export const LIGHTER_ORDER_BACKGROUND_REPAIR_LIMIT = 5;
 
+/**
+ * Candidate window the background sweep rotates through when the first page
+ * comes back FULL, so a row that never resolves cannot keep the five oldest
+ * slots forever and starve the sixth. Reading the window is one local SQL
+ * query; the Lighter request budget is unchanged, because only the selected
+ * LIGHTER_ORDER_BACKGROUND_REPAIR_LIMIT rows perform a provider read.
+ */
+export const LIGHTER_ORDER_BACKGROUND_REPAIR_ROTATION_WINDOW = 100;
+
+/**
+ * How long one rotation slot lasts. The starting offset is derived from the
+ * wall clock rather than from process memory, so the rotation survives a
+ * restart: with W recoverable rows every row is examined within
+ * ceil(W / LIGHTER_ORDER_BACKGROUND_REPAIR_LIMIT) periods.
+ */
+export const LIGHTER_ORDER_BACKGROUND_REPAIR_ROTATION_PERIOD_MS = 5 * 60_000;
+
 /** Ambiguous reasons proving the signed transaction was never sent to Lighter. */
 const NEVER_SUBMITTED_AMBIGUOUS_REASONS: ReadonlySet<string> = new Set([
   "signing_failed_after_nonce_reservation",
@@ -66,6 +85,7 @@ const NEVER_SUBMITTED_AMBIGUOUS_REASONS: ReadonlySet<string> = new Set([
 
 export type LighterOrderRepairResolution =
   | "already_terminal"
+  | "expired_unsubmitted"
   | "provider_evidence"
   | "nonce_reset_consumed"
   | "nonce_released_never_submitted"
@@ -96,6 +116,10 @@ export interface LighterOrderRepairReport {
 
 export interface LighterOrderRepairSweepReport {
   readonly examined: number;
+  /** More recoverable rows exist than this sweep examined. */
+  readonly hasMore: boolean;
+  /** Rows the rotation could choose from, so the bound reports itself. */
+  readonly candidates: number;
   readonly advanced: number;
   readonly awaiting: number;
   readonly degraded: number;
@@ -187,7 +211,17 @@ export async function repairUnresolvedLighterOrdersInBackground(
     1,
     Math.min(input.limit ?? LIGHTER_ORDER_BACKGROUND_REPAIR_LIMIT, LIGHTER_ORDER_BACKGROUND_REPAIR_LIMIT),
   );
-  const intents = await deps.intents.listUnresolved(input.environment, limit);
+  const page = await deps.intents.listUnresolved(input.environment, limit);
+  // A page that is not full is the whole recoverable set: everything in it is
+  // examined, so no rotation is needed and no extra query is issued.
+  let candidates: readonly LighterOrderExecutionIntentRow[] = page;
+  if (page.length >= limit) {
+    candidates = await deps.intents.listUnresolved(
+      input.environment,
+      LIGHTER_ORDER_BACKGROUND_REPAIR_ROTATION_WINDOW,
+    );
+  }
+  const intents = selectRotatingSlice(candidates, limit, deps.now());
   const backgroundDeps: LighterOrderRepairDeps = {
     ...deps,
     resolvePrivilegedAccountAuth: undefined,
@@ -212,6 +246,8 @@ export async function repairUnresolvedLighterOrdersInBackground(
 
   return {
     examined: intents.length,
+    hasMore: candidates.length > intents.length,
+    candidates: candidates.length,
     advanced,
     awaiting,
     degraded,
@@ -220,11 +256,40 @@ export async function repairUnresolvedLighterOrdersInBackground(
   };
 }
 
+/**
+ * Fair selection inside the candidate window. Oldest-first is the right order
+ * for a first pass, but repeated oldest-first sweeps starve every row after
+ * the first `limit`, so the starting point rotates with the wall clock and the
+ * window is walked cyclically from there.
+ */
+export function selectRotatingSlice<T>(
+  rows: readonly T[],
+  limit: number,
+  nowMs: number,
+): readonly T[] {
+  if (rows.length <= limit) return rows;
+  const period = Math.max(1, Math.floor(nowMs / LIGHTER_ORDER_BACKGROUND_REPAIR_ROTATION_PERIOD_MS));
+  const start = ((period * limit) % rows.length + rows.length) % rows.length;
+  const selected: T[] = [];
+  for (let offset = 0; offset < limit; offset += 1) {
+    const row = rows[(start + offset) % rows.length];
+    if (row !== undefined) selected.push(row);
+  }
+  return selected;
+}
+
 export async function repairLighterOrderIntent(
   intent: LighterOrderExecutionIntentRow,
   deps: LighterOrderRepairDeps = defaultLighterOrderRepairDeps(),
 ): Promise<LighterOrderRepairReport> {
   const base = baseReport(intent);
+  if (isLighterExpiredUnsubmittedState(intent.executionState)) {
+    return {
+      ...base,
+      resolution: "expired_unsubmitted",
+      guidance: LIGHTER_EXPIRED_UNSUBMITTED_GUIDANCE,
+    };
+  }
   if (!isUnresolvedState(intent.executionState)
     && intent.executionState !== "open"
     && intent.executionState !== "partially_filled") {

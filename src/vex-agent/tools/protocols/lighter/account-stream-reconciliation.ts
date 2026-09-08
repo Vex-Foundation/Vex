@@ -206,7 +206,10 @@ function lifecycleOutcome(
     if (intent.actionType !== "close_position") return null;
     const trade = matchingCloseTrade(intent, flattenTrades(message));
     if (trade === null) return null;
-    const trades = readEvidenceArray(previous.trades, "tradeId");
+    const retainedTrades = readEvidenceArray(previous.trades, "tradeId");
+    const trades = [...retainedTrades.rows];
+    let droppedTrades = readCount(previous.tradesDropped) + retainedTrades.dropped;
+    let totalTrades = Math.max(readCount(previous.tradesTotal), trades.length + droppedTrades);
     if (!trades.some((entry) => entry.tradeId === trade.trade_id_str)) {
       trades.push({
         tradeId: trade.trade_id_str,
@@ -216,9 +219,23 @@ function lifecycleOutcome(
         txHash: trade.tx_hash,
       });
       trades.sort((left, right) => compareIntegerStrings(String(left.tradeId), String(right.tradeId)));
-      while (trades.length > 100) trades.shift();
+      totalTrades += 1;
+      // Bounded tail: the oldest rows go first and the drop is COUNTED, so a
+      // reader can tell how many fills the retained evidence leaves out.
+      while (trades.length > LIGHTER_LIFECYCLE_EVIDENCE_MAX_ROWS) {
+        trades.shift();
+        droppedTrades += 1;
+      }
     }
-    return finishCloseOutcome(intent, { ...previous, trades, lastFrameType: message.type });
+    return finishCloseOutcome(intent, {
+      ...previous,
+      trades,
+      tradesRetained: trades.length,
+      tradesTotal: totalTrades,
+      tradesDropped: droppedTrades,
+      tradesTruncated: droppedTrades > 0,
+      lastFrameType: message.type,
+    });
   }
   if (intent.actionType !== "close_position" || intent.marketIndex === null) return null;
   const positionMessage = message as LighterAccountAllPositionsStreamMessage;
@@ -239,8 +256,15 @@ function lifecycleOrderOutcome(
   const orders = flattenOrders(message);
   if (intent.actionType === "cancel_all") {
     const targets = approvedCancelAllTargets(intent);
-    const terminal = new Map(readEvidenceArray(previous.terminalOrders, "orderId")
-      .map((entry) => [String(entry.orderId), entry]));
+    const retainedTerminal = readEvidenceArray(previous.terminalOrders, "orderId");
+    const terminal = new Map(retainedTerminal.rows.map((entry) => [String(entry.orderId), entry]));
+    // The completion decision is made on the COMPLETE id set, never on the
+    // bounded rich rows: a cancel-all with more targets than the evidence
+    // bound must still be able to reach "completed".
+    const confirmedIds = new Set<string>([
+      ...readEvidenceIds(previous.terminalOrderIds),
+      ...terminal.keys(),
+    ]);
     let matched = false;
     for (const target of targets) {
       const order = orders.find((candidate) =>
@@ -250,18 +274,26 @@ function lifecycleOrderOutcome(
       if (order === undefined || !isTerminalStatus(order.status)) continue;
       matched = true;
       terminal.set(order.order_id, orderEvidence(order));
+      confirmedIds.add(order.order_id);
     }
     if (!matched) return null;
-    const terminalOrders = [...terminal.values()].sort((left, right) =>
+    const ordered = [...terminal.values()].sort((left, right) =>
       String(left.orderId).localeCompare(String(right.orderId)));
+    const terminalOrders = ordered.slice(-LIGHTER_LIFECYCLE_EVIDENCE_MAX_ROWS);
+    const droppedTerminal = retainedTerminal.dropped + (ordered.length - terminalOrders.length);
     const evidence = lifecycleEvidence(intent, {
       ...previous,
       terminalOrders,
+      terminalOrderIds: [...confirmedIds].sort(),
+      terminalOrdersRetained: terminalOrders.length,
+      terminalOrdersTotal: confirmedIds.size,
+      terminalOrdersDropped: droppedTerminal,
+      terminalOrdersTruncated: confirmedIds.size > terminalOrders.length,
       targetCount: targets.length,
       lastFrameType: message.type,
     });
     return {
-      state: terminal.size === targets.length ? "completed" : "sequencer_pending",
+      state: confirmedIds.size >= targets.length ? "completed" : "sequencer_pending",
       evidence,
     };
   }
@@ -457,16 +489,43 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-function readEvidenceArray(value: unknown, requiredKey: string): Record<string, unknown>[] {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((entry) => {
+/**
+ * Rows of retained provider evidence kept inline on a lifecycle intent. The
+ * bound is on the RICH rows only: identity sets that a state decision depends
+ * on are kept complete (see terminalOrderIds).
+ */
+export const LIGHTER_LIFECYCLE_EVIDENCE_MAX_ROWS = 100;
+
+/**
+ * Reads a retained evidence array and REPORTS what the bound left out, so a
+ * caller never mistakes a bounded window for the whole record.
+ */
+function readEvidenceArray(
+  value: unknown,
+  requiredKey: string,
+): { readonly rows: Record<string, unknown>[]; readonly dropped: number } {
+  if (!Array.isArray(value)) return { rows: [], dropped: 0 };
+  const rows = value.flatMap((entry) => {
     const record = asRecord(entry);
     return record !== null
       && typeof record[requiredKey] === "string"
       && /^\d+$/.test(record[requiredKey] as string)
       ? [{ ...record }]
       : [];
-  }).slice(0, 100);
+  });
+  return {
+    rows: rows.slice(0, LIGHTER_LIFECYCLE_EVIDENCE_MAX_ROWS),
+    dropped: Math.max(0, rows.length - LIGHTER_LIFECYCLE_EVIDENCE_MAX_ROWS),
+  };
+}
+
+function readEvidenceIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry): entry is string => typeof entry === "string" && /^\d+$/.test(entry));
+}
+
+function readCount(value: unknown): number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : 0;
 }
 
 function sameJson(left: Record<string, unknown> | null, right: Record<string, unknown>): boolean {

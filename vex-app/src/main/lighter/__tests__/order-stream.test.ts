@@ -7,7 +7,11 @@ import {
   LIGHTER_ORDER_STREAM_DISCOVERY_INTERVAL_MS,
   LIGHTER_ORDER_STREAM_HANDSHAKE_TIMEOUT_MS,
   LIGHTER_ORDER_STREAM_KEEPALIVE_INTERVAL_MS,
+  LIGHTER_ORDER_STREAM_MAX_QUEUED_FRAMES,
+  LIGHTER_ORDER_STREAM_MAX_RECONNECT_ATTEMPTS,
+  LIGHTER_ORDER_STREAM_WATCHABLE_PAGE_LIMIT,
   LighterOrderStreamSupervisor,
+  listLighterOrderStreamTargets,
   type LighterOrderStreamSocket,
   type LighterOrderStreamSupervisorDeps,
   type LighterOrderStreamTarget,
@@ -413,5 +417,157 @@ describe("Lighter order stream supervisor", () => {
 
     expect(socket.closes.at(-1)?.reason).toBe("no_watchable_orders");
     stop();
+  });
+  it("stops retrying after the restart budget and reports the exhausted recovery", async () => {
+    const h = makeHarness();
+    const stop = await startHarness(h);
+
+    let current = requireValue(h.sockets[0]);
+    for (let attempt = 0; attempt < LIGHTER_ORDER_STREAM_MAX_RECONNECT_ATTEMPTS + 2; attempt += 1) {
+      current.emit("error", {});
+      await vi.advanceTimersByTimeAsync(120_000);
+      const next = h.sockets.at(-1);
+      if (next === undefined || next === current) break;
+      current = next;
+    }
+
+    expect(h.sockets).toHaveLength(LIGHTER_ORDER_STREAM_MAX_RECONNECT_ATTEMPTS);
+    expect(h.diagnostics).toContainEqual(expect.objectContaining({
+      event: "lighter.order_stream.recovery_exhausted",
+      detail: expect.objectContaining({
+        environment: "rhc",
+        accountIndex: 42,
+        attempts: LIGHTER_ORDER_STREAM_MAX_RECONNECT_ATTEMPTS,
+      }),
+    }));
+
+    // Discovery keeps running and must not resurrect an exhausted watcher.
+    await vi.advanceTimersByTimeAsync(LIGHTER_ORDER_STREAM_DISCOVERY_INTERVAL_MS * 3);
+    expect(h.sockets).toHaveLength(LIGHTER_ORDER_STREAM_MAX_RECONNECT_ATTEMPTS);
+    stop();
+  });
+
+  it("re-arms an exhausted watcher when the credential changes", async () => {
+    const h = makeHarness();
+    const stop = await startHarness(h);
+
+    let current = requireValue(h.sockets[0]);
+    for (let attempt = 0; attempt < LIGHTER_ORDER_STREAM_MAX_RECONNECT_ATTEMPTS + 2; attempt += 1) {
+      current.emit("error", {});
+      await vi.advanceTimersByTimeAsync(120_000);
+      const next = h.sockets.at(-1);
+      if (next === undefined || next === current) break;
+      current = next;
+    }
+    const exhausted = h.sockets.length;
+
+    h.listTargets.mockResolvedValue([{
+      ...TARGET,
+      credential: { ...CREDENTIAL, vaultCredentialId: "lighter/rhc/account-42/api-key-8" },
+    }]);
+    await vi.advanceTimersByTimeAsync(LIGHTER_ORDER_STREAM_DISCOVERY_INTERVAL_MS + 1_000);
+
+    expect(h.sockets.length).toBeGreaterThan(exhausted);
+    stop();
+  });
+
+  it("does not open a second socket while a connect attempt is still resolving auth", async () => {
+    const h = makeHarness();
+    const gate: { release: (() => void) | null } = { release: null };
+    h.resolveAuth.mockImplementationOnce(async () => {
+      await new Promise<void>((resolve) => {
+        gate.release = resolve;
+      });
+      return { token: AUTH_TOKEN, accountIndex: 42 };
+    });
+    const supervisor = new LighterOrderStreamSupervisor(h.deps);
+    const stop = supervisor.start();
+    await vi.advanceTimersToNextTimerAsync();
+    await vi.advanceTimersToNextTimerAsync();
+
+    expect(h.sockets).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(LIGHTER_ORDER_STREAM_DISCOVERY_INTERVAL_MS * 3);
+    expect(h.sockets).toHaveLength(0);
+
+    requireValue(gate.release)();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.sockets).toHaveLength(1);
+    stop();
+  });
+
+  it("closes the socket when the reconciliation backlog exceeds the queue bound", async () => {
+    const h = makeHarness();
+    const gate: { release: (() => void) | null } = { release: null };
+    h.reconcile.mockImplementation(async () => {
+      await new Promise<void>((resolve) => {
+        gate.release = resolve;
+      });
+      return undefined;
+    });
+    const stop = await startHarness(h);
+    const socket = requireValue(h.sockets[0]);
+    socket.message({ type: "connected" });
+    await vi.runAllTicks();
+
+    for (let frame = 0; frame <= LIGHTER_ORDER_STREAM_MAX_QUEUED_FRAMES; frame += 1) {
+      socket.message(orderFrame("open"));
+    }
+
+    expect(h.diagnostics).toContainEqual(expect.objectContaining({
+      event: "lighter.order_stream.backlog_closed",
+    }));
+    expect(socket.closes.at(-1)?.reason).toBe("consumer_backlog");
+    gate.release?.();
+    await vi.runAllTicks();
+    stop();
+  });
+});
+
+describe("Lighter order stream watch set", () => {
+  const row = (accountIndex: number) => ({
+    environment: "rhc" as const,
+    accountIndex,
+    apiKeyIndex: 7,
+    credentialRefJson: {
+      ...CREDENTIAL,
+      accountIndex,
+      vaultCredentialId: `lighter/rhc/account-${accountIndex}/api-key-7`,
+    },
+  });
+
+  it("reports the read bound when a repository page comes back full", async () => {
+    const diagnostics: Array<{ event: string; detail: Record<string, unknown> }> = [];
+    const full = Array.from(
+      { length: LIGHTER_ORDER_STREAM_WATCHABLE_PAGE_LIMIT },
+      (_value, index) => row(index + 1),
+    );
+
+    const targets = await listLighterOrderStreamTargets({
+      readOrderPage: async () => full,
+      readLifecyclePage: async () => [row(1)],
+      diagnostic: (event, detail) => diagnostics.push({ event, detail: { ...detail } }),
+    });
+
+    expect(targets).toHaveLength(LIGHTER_ORDER_STREAM_WATCHABLE_PAGE_LIMIT);
+    expect(diagnostics).toEqual([{
+      event: "lighter.order_stream.watchable_truncated",
+      detail: {
+        source: "order_execution",
+        returned: LIGHTER_ORDER_STREAM_WATCHABLE_PAGE_LIMIT,
+        pageLimit: LIGHTER_ORDER_STREAM_WATCHABLE_PAGE_LIMIT,
+        hasMore: true,
+      },
+    }]);
+  });
+
+  it("keeps only credential-consistent rows and deduplicates accounts", async () => {
+    const mismatched = { ...row(9), credentialRefJson: { ...CREDENTIAL, accountIndex: 10 } };
+    const targets = await listLighterOrderStreamTargets({
+      readOrderPage: async () => [row(1), mismatched],
+      readLifecyclePage: async () => [row(1)],
+      diagnostic: () => undefined,
+    });
+
+    expect(targets.map((target) => target.accountIndex)).toEqual([1]);
   });
 });

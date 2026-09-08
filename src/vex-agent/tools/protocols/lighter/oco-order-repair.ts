@@ -4,6 +4,10 @@ import * as intentsRepo from "@vex-agent/db/repos/lighter-oco-execution-intents.
 import type { LighterOcoExecutionIntentRow } from "@vex-agent/db/repos/lighter-oco-execution-intents.js";
 import * as nonceRepo from "@vex-agent/db/repos/lighter-nonce-state.js";
 import { classifyOcoEvidence } from "./oco-order-execution.js";
+import {
+  isLighterExpiredUnsubmittedState,
+  LIGHTER_EXPIRED_UNSUBMITTED_GUIDANCE,
+} from "./order-evidence.js";
 import { defaultLighterOrderRepairDeps } from "./order-repair.js";
 
 const NEVER_SUBMITTED = new Set([
@@ -17,7 +21,7 @@ export interface LighterOcoRepairReport {
   readonly intentId: string;
   readonly stateBefore: LighterOcoExecutionIntentRow["executionState"];
   readonly stateAfter: LighterOcoExecutionIntentRow["executionState"];
-  readonly resolution: "already_terminal" | "provider_evidence" | "awaiting_provider" | "nonce_released_never_submitted" | "degraded";
+  readonly resolution: "already_terminal" | "expired_unsubmitted" | "provider_evidence" | "awaiting_provider" | "nonce_released_never_submitted" | "degraded";
   readonly nonceBlockedAfter: boolean;
   readonly guidance: string;
   readonly evidence: Record<string, unknown> | null;
@@ -49,6 +53,13 @@ function groupFor(intent: LighterOcoExecutionIntentRow) {
 export async function repairLighterOcoIntent(
   intent: LighterOcoExecutionIntentRow,
 ): Promise<LighterOcoRepairReport> {
+  if (isLighterExpiredUnsubmittedState(intent.executionState)) {
+    // Terminal for recovery: no provider read is spent, nothing is resubmitted,
+    // and the outcome is reported under its own name instead of "ambiguous".
+    return report(intent, intent.executionState, "expired_unsubmitted",
+      intent.nonceReservationId !== null,
+      LIGHTER_EXPIRED_UNSUBMITTED_GUIDANCE, intent.providerOutcomeJson);
+  }
   const terminal = ["active", "resolved", "rejected"].includes(intent.executionState);
   const deps = defaultLighterOrderRepairDeps();
   let nextNonce: number;

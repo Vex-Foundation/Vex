@@ -27,6 +27,19 @@ export const LIGHTER_CANDLE_STREAM_RECONCILE_INTERVAL_MS = 30_000;
 export const LIGHTER_CANDLE_STREAM_MAX_FRAME_BYTES = 65_536;
 export const LIGHTER_CANDLE_STREAM_MAX_BUFFERED_FRAMES = 100;
 export const LIGHTER_CANDLE_STREAM_MAX_RECORDS = 500;
+/**
+ * Largest candle count one update event may carry. It matches the shared
+ * schema bound (lighterTradingCandleUpdateEventSchema allows at most 50), so a
+ * larger recovered batch is emitted as consecutive complete events rather than
+ * cut down to its first page.
+ */
+export const LIGHTER_CANDLE_STREAM_MAX_EVENT_CANDLES = 50;
+/**
+ * Consecutive failed connection attempts before the watcher gives up and
+ * reports the terminal `unavailable` status. Same cap as the public market and
+ * order stream supervisors; the backoff ceiling differs per consumer.
+ */
+export const LIGHTER_CANDLE_STREAM_MAX_RECONNECT_ATTEMPTS = 8;
 
 const INITIAL_HISTORY_COUNT = 300;
 const TAIL_HISTORY_COUNT = 3;
@@ -111,6 +124,8 @@ interface CandleWatcher {
   subscriptionSent: boolean;
   providerAcknowledged: boolean;
   stopped: boolean;
+  givenUp: boolean;
+  lastFailureReason: string;
   reconnectAttempt: number;
   reconnectTimer: ReturnType<typeof setTimeout> | null;
   handshakeTimer: ReturnType<typeof setTimeout> | null;
@@ -183,6 +198,10 @@ export class LighterCandleStreamSupervisor {
     if (watcher.providerAcknowledged) {
       this.emitStatusTo(subscription, watcher, "live");
       if (watcher.records.size > 0) this.emitSnapshotTo(subscription, watcher);
+    } else if (watcher.givenUp) {
+      // Recovery is already exhausted for this market and resolution. Report
+      // the terminal state rather than a "connecting" that will never resolve.
+      this.emitStatusTo(subscription, watcher, "unavailable");
     } else {
       this.emitStatusTo(subscription, watcher, "connecting");
       this.scheduleConnect(watcher, 0);
@@ -225,10 +244,15 @@ export class LighterCandleStreamSupervisor {
     if (
       this.stopped
       || watcher.stopped
+      || watcher.givenUp
       || watcher.subscriptions.size === 0
       || watcher.socket !== null
       || watcher.reconnectTimer !== null
     ) return;
+    if (watcher.reconnectAttempt >= LIGHTER_CANDLE_STREAM_MAX_RECONNECT_ATTEMPTS) {
+      this.giveUp(watcher);
+      return;
+    }
     const delay = delayMs ?? reconnectDelayMs(watcher.reconnectAttempt, this.deps.random());
     watcher.reconnectAttempt += 1;
     watcher.reconnectTimer = setTimeout(() => {
@@ -247,19 +271,27 @@ export class LighterCandleStreamSupervisor {
       watcher.subscriptionSent = false;
       watcher.providerAcknowledged = false;
       watcher.lastReceivedAt = this.deps.now();
+      // Every callback is fenced by socket identity: a late error, close, or
+      // handshake timeout from a replaced socket must never close the socket
+      // that took its place.
       socket.addEventListener("open", () => this.sendSubscription(watcher, socket));
       socket.addEventListener("message", (event) => this.handleMessage(watcher, socket, event));
       socket.addEventListener("close", () => this.handleClose(watcher, socket));
-      socket.addEventListener("error", () => this.restartWatcher(watcher, "socket_error"));
+      socket.addEventListener("error", () => {
+        if (watcher.socket !== socket) return;
+        this.restartWatcher(watcher, "socket_error");
+      });
       watcher.handshakeTimer = setTimeout(() => {
         watcher.handshakeTimer = null;
+        if (watcher.socket !== socket) return;
         this.deps.diagnostic("lighter.candle_stream.handshake_failed", targetDetail(watcher.target));
         this.restartWatcher(watcher, "handshake_timeout");
       }, LIGHTER_CANDLE_STREAM_HANDSHAKE_TIMEOUT_MS);
       if (socket.readyState === WS_OPEN) this.sendSubscription(watcher, socket);
     } catch {
       this.deps.diagnostic("lighter.candle_stream.connect_failed", targetDetail(watcher.target));
-      this.emitStatus(watcher, "unavailable");
+      // Transient failures stay "reconnecting"; "unavailable" is reserved for
+      // the terminal end of the restart budget and for a proven empty history.
       this.restartWatcher(watcher, "connect_failed");
     }
   }
@@ -501,6 +533,7 @@ export class LighterCandleStreamSupervisor {
   private handleClose(watcher: CandleWatcher, socket: LighterCandleStreamSocket): void {
     if (watcher.socket !== socket) return;
     watcher.socket = null;
+    watcher.lastFailureReason = "socket_closed";
     watcher.providerAcknowledged = false;
     watcher.subscriptionSent = false;
     clearSocketTimers(watcher);
@@ -516,11 +549,28 @@ export class LighterCandleStreamSupervisor {
   }
 
   private restartWatcher(watcher: CandleWatcher, reason: string): void {
+    watcher.lastFailureReason = reason;
     disconnectSocket(watcher, reason);
     if (!this.stopped && !watcher.stopped && watcher.subscriptions.size > 0) {
       this.emitStatus(watcher, "reconnecting");
       this.scheduleConnect(watcher);
     }
+  }
+
+  /**
+   * Terminal end of the restart budget. The renderer learns about it through
+   * the `unavailable` status; reason and attempt count stay in the diagnostic
+   * because the shared status event carries no reason field.
+   */
+  private giveUp(watcher: CandleWatcher): void {
+    if (watcher.givenUp) return;
+    watcher.givenUp = true;
+    this.deps.diagnostic("lighter.candle_stream.recovery_exhausted", {
+      ...targetDetail(watcher.target),
+      attempts: watcher.reconnectAttempt,
+      reason: watcher.lastFailureReason,
+    });
+    this.emitStatus(watcher, "unavailable");
   }
 
   private removeSubscription(subscription: Subscription, notify: boolean): void {
@@ -570,18 +620,23 @@ export class LighterCandleStreamSupervisor {
     candles: readonly LighterInternalCandle[],
   ): void {
     if (candles.length === 0) return;
-    const projected = candles
-      .slice(0, 50)
-      .map(stripInternalMetadata);
-    for (const subscription of watcher.subscriptions.values()) {
-      this.callListener(subscription, {
-        ...eventScope(subscription.id, watcher.target),
-        kind,
-        status: "live",
-        providerTimestamp,
-        receivedAt: this.deps.now(),
-        candles: projected,
-      });
+    // A recovered batch is larger than one event may carry (the shared schema
+    // caps an update at LIGHTER_CANDLE_STREAM_MAX_EVENT_CANDLES). Emitting its
+    // first page only would drop the NEWEST bars while the status still says
+    // live, so the batch is emitted as consecutive complete events instead.
+    const projected = candles.map(stripInternalMetadata);
+    for (let offset = 0; offset < projected.length; offset += LIGHTER_CANDLE_STREAM_MAX_EVENT_CANDLES) {
+      const page = projected.slice(offset, offset + LIGHTER_CANDLE_STREAM_MAX_EVENT_CANDLES);
+      for (const subscription of watcher.subscriptions.values()) {
+        this.callListener(subscription, {
+          ...eventScope(subscription.id, watcher.target),
+          kind,
+          status: "live",
+          providerTimestamp,
+          receivedAt: this.deps.now(),
+          candles: page,
+        });
+      }
     }
   }
 
@@ -752,6 +807,8 @@ function createWatcher(key: string, target: LighterCandleTarget): CandleWatcher 
     subscriptionSent: false,
     providerAcknowledged: false,
     stopped: false,
+    givenUp: false,
+    lastFailureReason: "none",
     reconnectAttempt: 0,
     reconnectTimer: null,
     handshakeTimer: null,

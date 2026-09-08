@@ -22,6 +22,10 @@ import {
   reconcileLighterAccountStreamMessage,
   type LighterAccountStreamReconciliationDeps,
 } from "./account-stream-reconciliation.js";
+import {
+  isLighterExpiredUnsubmittedState,
+  LIGHTER_EXPIRED_UNSUBMITTED_GUIDANCE,
+} from "./order-evidence.js";
 import { averageFillPrice } from "./order-lifecycle.js";
 import { resolveLighterReadOnlyAccountAuth } from "./read-account-auth.js";
 
@@ -35,6 +39,7 @@ const NEVER_SUBMITTED_REASONS = new Set([
 
 export type LighterOrderLifecycleRepairResolution =
   | "already_terminal"
+  | "expired_unsubmitted"
   | "stale_pre_submit"
   | "awaiting_submission"
   | "provider_evidence"
@@ -119,6 +124,13 @@ export async function repairLighterOrderLifecycleIntent(
   intent: LighterOrderLifecycleIntentRow,
   deps: LighterOrderLifecycleRepairDeps = defaultLighterOrderLifecycleRepairDeps(),
 ): Promise<LighterOrderLifecycleRepairReport> {
+  if (isLighterExpiredUnsubmittedState(intent.executionState)) {
+    // Terminal for recovery: no provider read is spent, nothing is resubmitted,
+    // and the outcome is reported under its own name instead of "ambiguous".
+    return report(intent, intent, "expired_unsubmitted", null, null,
+      intent.nonceReservationId !== null, intent.nonceReservationId !== null,
+      LIGHTER_EXPIRED_UNSUBMITTED_GUIDANCE);
+  }
   if (isTerminal(intent.executionState)) {
     return report(intent, intent, "already_terminal", null, null, false, false,
       `Lifecycle action is already ${intent.executionState}; no repair was needed.`);

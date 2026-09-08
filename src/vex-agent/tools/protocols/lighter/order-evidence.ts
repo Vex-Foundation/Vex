@@ -15,6 +15,31 @@ import {
  * create path and the repair path. Both must classify identically: an outcome
  * repaired after a crash may not disagree with one observed in-line.
  */
+
+/**
+ * Durable execution state for an intent that was signed or staged and whose
+ * consent expired (or whose dispatch was aborted) before any submission was
+ * attempted: the signing evidence is retained, and nothing reached Lighter.
+ *
+ * Recovery treats it as TERMINAL. It is never resubmitted, never reclassified
+ * as ambiguous, and never reported as an unknown outcome, because "no send was
+ * attempted" is exactly what the state proves.
+ *
+ * The string is compared against the widened row state on purpose: the
+ * execution owners and the migrations introduce this member (plan section
+ * 12.3), and recovery must recognise it without waiting for the union type.
+ */
+export const LIGHTER_EXPIRED_UNSUBMITTED_STATE = "expired_unsubmitted";
+
+export function isLighterExpiredUnsubmittedState(state: string): boolean {
+  return state === LIGHTER_EXPIRED_UNSUBMITTED_STATE;
+}
+
+/** Guidance shared by every recovery owner so the outcome reads identically. */
+export const LIGHTER_EXPIRED_UNSUBMITTED_GUIDANCE =
+  "Consent expired (or the dispatch was aborted) after signing and before any submission was attempted, "
+  + "so nothing reached Lighter and the signing evidence is retained. This is terminal for recovery: "
+  + "do not resubmit and do not treat the outcome as ambiguous. Prepare a fresh, freshly approved action if you still want it.";
 export interface LighterOrderEvidenceScope {
   readonly integratorFees?: LighterIntegratorFees | null;
   readonly accountIndex: number;

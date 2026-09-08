@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LighterCandleTarget, LighterInternalCandle } from "../trading-panel-service.js";
 import {
   LIGHTER_CANDLE_STREAM_KEEPALIVE_INTERVAL_MS,
+  LIGHTER_CANDLE_STREAM_MAX_EVENT_CANDLES,
+  LIGHTER_CANDLE_STREAM_MAX_RECONNECT_ATTEMPTS,
   LIGHTER_CANDLE_STREAM_RECONCILE_INTERVAL_MS,
   LighterCandleStreamSupervisor,
   type LighterCandleStreamEvent,
@@ -340,6 +342,87 @@ describe("Lighter candle stream supervisor", () => {
       event: "lighter.candle_stream.frame_invalid",
       detail: { environment: "rhc", marketId: 7, resolution: "1m" },
     });
+    h.supervisor.stop();
+  });
+  it("emits every recovered bar after a reconnect instead of the first page only", async () => {
+    const first = deferred<readonly LighterInternalCandle[]>();
+    const h = makeHarness(first);
+    const socket = await connect(h);
+    socket.message(candleFrame("subscribed/candle", [providerCandle()]));
+    first.resolve([internalCandle()]);
+    await vi.runAllTicks();
+    expect(h.events.some((event) => event.kind === "snapshot")).toBe(true);
+
+    const recovered = deferred<readonly LighterInternalCandle[]>();
+    h.readHistory.mockImplementation(() => recovered.promise);
+    socket.emit("close", {});
+    await vi.advanceTimersByTimeAsync(2_000);
+    const reconnected = requireValue(h.sockets[1]);
+    reconnected.message(candleFrame("subscribed/candle", [providerCandle({ i: 101 })]));
+    h.events.length = 0;
+
+    const RECOVERED = 60;
+    recovered.resolve(Array.from({ length: RECOVERED }, (_value, index) => internalCandle({
+      timestamp: OPEN_TIME + (index + 1) * 60_000,
+      lastTradeId: String(200 + index),
+    })));
+    await vi.runAllTicks();
+
+    const updates = h.events.filter((event) => event.kind === "update");
+    const emitted = new Set(
+      updates.flatMap((event) => event.candles.map((candle) => candle.timestamp)),
+    );
+    const recoveredTimestamps = Array.from(
+      { length: RECOVERED },
+      (_value, index) => OPEN_TIME + (index + 1) * 60_000,
+    );
+    // Not one recovered bar may be missing, and the newest ones are exactly
+    // the bars the first-page cut used to drop while the status said live.
+    expect(recoveredTimestamps.filter((timestamp) => !emitted.has(timestamp))).toEqual([]);
+    expect(emitted.has(OPEN_TIME + RECOVERED * 60_000)).toBe(true);
+    for (const update of updates) {
+      expect(update.candles.length).toBeLessThanOrEqual(LIGHTER_CANDLE_STREAM_MAX_EVENT_CANDLES);
+    }
+    h.supervisor.stop();
+  });
+
+  it("keeps a replaced socket alive when the socket it replaced fails late", async () => {
+    const h = makeHarness();
+    const first = await connect(h);
+    first.emit("close", {});
+    await vi.advanceTimersByTimeAsync(2_000);
+    const second = requireValue(h.sockets[1]);
+
+    first.emit("error", {});
+    await vi.runAllTicks();
+
+    expect(second.closes).toEqual([]);
+    expect(h.sockets).toHaveLength(2);
+    h.supervisor.stop();
+  });
+
+  it("stops retrying after the restart budget and reports the resolution unavailable", async () => {
+    const h = makeHarness();
+    const socket = await connect(h);
+    h.events.length = 0;
+
+    let current = socket;
+    for (let attempt = 0; attempt < LIGHTER_CANDLE_STREAM_MAX_RECONNECT_ATTEMPTS + 1; attempt += 1) {
+      current.emit("error", {});
+      await vi.advanceTimersByTimeAsync(60_000);
+      const next = h.sockets.at(-1);
+      if (next === undefined || next === current) break;
+      current = next;
+    }
+
+    expect(h.sockets).toHaveLength(LIGHTER_CANDLE_STREAM_MAX_RECONNECT_ATTEMPTS);
+    expect(h.diagnostics).toContainEqual(expect.objectContaining({
+      event: "lighter.candle_stream.recovery_exhausted",
+      detail: expect.objectContaining({
+        attempts: LIGHTER_CANDLE_STREAM_MAX_RECONNECT_ATTEMPTS,
+      }),
+    }));
+    expect(h.events.at(-1)).toMatchObject({ kind: "status", status: "unavailable" });
     h.supervisor.stop();
   });
 });

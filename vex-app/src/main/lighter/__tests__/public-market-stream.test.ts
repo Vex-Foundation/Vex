@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   LIGHTER_PUBLIC_MARKET_KEEPALIVE_INTERVAL_MS,
+  LIGHTER_PUBLIC_MARKET_MAX_BOOK_LEVELS,
+  LIGHTER_PUBLIC_MARKET_MAX_RECONNECT_ATTEMPTS,
   LIGHTER_PUBLIC_MARKET_STALE_AFTER_MS,
   LighterPublicMarketSupervisor,
   type LighterPublicMarketSocket,
@@ -390,6 +392,111 @@ describe("Lighter public market stream", () => {
       bookStatus: "delayed",
       statsStatus: "live",
     }));
+    h.supervisor.stop();
+  });
+  it("keeps a replaced socket alive when the socket it replaced fails late", async () => {
+    const h = makeHarness();
+    const first = await connect(h);
+
+    // The provider drops the connection, the watcher reconnects, and only then
+    // does the abandoned socket report its error.
+    first.emit("close", {});
+    await vi.advanceTimersByTimeAsync(2_000);
+    const second = requireValue(h.sockets[1]);
+    expect(second).not.toBe(first);
+
+    first.emit("error", {});
+    await vi.runAllTicks();
+
+    expect(second.closes).toEqual([]);
+    expect(h.deps.createSocket).toHaveBeenCalledTimes(2);
+    h.supervisor.stop();
+  });
+
+  it("discards a reconstructed book that outgrows its retained bound and resnapshots", async () => {
+    const h = makeHarness();
+    const socket = await connect(h);
+
+    const half = LIGHTER_PUBLIC_MARKET_MAX_BOOK_LEVELS / 2;
+    const levels = (offset: number, count: number) =>
+      Array.from({ length: count }, (_value, index) => ({
+        price: String(offset + index),
+        size: "1",
+      }));
+    socket.message(bookFrame({
+      nonce: "10",
+      asks: levels(1_000_000, half),
+      bids: levels(2_000_000, half),
+    }));
+    h.events.length = 0;
+    // Every level is new, so the retained book would hold 6000 against a
+    // declared maximum of 5000.
+    socket.message(bookFrame({
+      type: "update/order_book",
+      nonce: "11",
+      beginNonce: "10",
+      asks: levels(3_000_000, 500),
+      bids: levels(4_000_000, 500),
+    }));
+    await vi.runAllTicks();
+
+    expect(h.diagnostics).toContainEqual(expect.objectContaining({
+      event: "lighter.public_market.book_bound_exceeded",
+      detail: expect.objectContaining({
+        retainedLevels: LIGHTER_PUBLIC_MARKET_MAX_BOOK_LEVELS + 1_000,
+        maxLevels: LIGHTER_PUBLIC_MARKET_MAX_BOOK_LEVELS,
+      }),
+    }));
+    expect(h.events.filter((event) => event.kind === "book")).toEqual([]);
+    expect(h.events).toContainEqual(expect.objectContaining({
+      kind: "status",
+      status: "reconnecting",
+    }));
+    expect(socket.closes).toHaveLength(1);
+    h.supervisor.stop();
+  });
+
+  it("stops retrying after the restart budget and reports the market unavailable", async () => {
+    const h = makeHarness();
+    const socket = await connect(h);
+    h.events.length = 0;
+
+    let current = socket;
+    for (let attempt = 0; attempt < LIGHTER_PUBLIC_MARKET_MAX_RECONNECT_ATTEMPTS + 1; attempt += 1) {
+      current.emit("error", {});
+      await vi.advanceTimersByTimeAsync(60_000);
+      const next = h.sockets.at(-1);
+      if (next === undefined || next === current) break;
+      current = next;
+    }
+
+    expect(h.sockets).toHaveLength(LIGHTER_PUBLIC_MARKET_MAX_RECONNECT_ATTEMPTS);
+    expect(h.diagnostics).toContainEqual(expect.objectContaining({
+      event: "lighter.public_market.recovery_exhausted",
+      detail: expect.objectContaining({
+        attempts: LIGHTER_PUBLIC_MARKET_MAX_RECONNECT_ATTEMPTS,
+        // The last failure wins: the handshake timer fires inside the final
+        // backoff window, so it is the reason the watcher gave up with.
+        reason: "handshake_timeout",
+      }),
+    }));
+    expect(h.events.at(-1)).toMatchObject({ kind: "status", status: "unavailable" });
+
+    // A later subscriber is told the truth instead of a "connecting" that will
+    // never resolve, and no new socket is opened for it.
+    h.supervisor.subscribe(
+      52,
+      {
+        subscriptionId: "00000000-0000-4000-8000-000000000732",
+        environment: "core",
+        marketId: 1,
+        marketType: "perp",
+      },
+      (event) => h.events.push(event),
+    );
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(h.events.at(-1)).toMatchObject({ kind: "status", status: "unavailable" });
+    expect(h.sockets).toHaveLength(LIGHTER_PUBLIC_MARKET_MAX_RECONNECT_ATTEMPTS);
     h.supervisor.stop();
   });
 });
