@@ -13,5 +13,4 @@ export interface SettingsBridge {
   readonly setUserProfile: (profile: UserProfile) => Promise<Result<UserProfile>>;
   readonly getSuperboardKey: () => Promise<Result<SuperboardKeyStatus>>;
   readonly generateSuperboardKey: () => Promise<Result<SuperboardKeyStatus>>;
-  readonly regenerateSuperboardKey: () => Promise<Result<SuperboardKeyStatus>>;
 }

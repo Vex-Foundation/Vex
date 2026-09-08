@@ -34,7 +34,4 @@ export const settings = {
   generateSuperboardKey() {
     return invokeWithSchema(CH.settings.generateSuperboardKey, {});
   },
-  regenerateSuperboardKey() {
-    return invokeWithSchema(CH.settings.regenerateSuperboardKey, {});
-  },
 } satisfies SettingsBridge;

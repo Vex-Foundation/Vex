@@ -3,8 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import { registerPersistedShareToken } from "../../../vex-agent/agentscan/register-share-token.js";
 import type { RegisterShareTokenOutcome } from "../../../vex-agent/agentscan/share-token-client.js";
 
-const SHARE_A = "vex_share_" + "A".repeat(43);
-const SHARE_B = "vex_share_" + "B".repeat(43);
+const SHARE_A = "A".repeat(43);
+const SHARE_B = "B".repeat(43);
 const INGEST = "I".repeat(43);
 
 function registered(): RegisterShareTokenOutcome {
@@ -12,7 +12,7 @@ function registered(): RegisterShareTokenOutcome {
 }
 
 describe("registerPersistedShareToken", () => {
-  it("mode ensure with an existing unregistered token does not call generate", async () => {
+  it("with an existing unregistered token does not call generate", async () => {
     const generate = vi.fn(() => SHARE_B);
     const persistShareToken = vi.fn(async () => undefined);
     const markShareTokenRegistered = vi.fn(async () => undefined);
@@ -25,7 +25,6 @@ describe("registerPersistedShareToken", () => {
       markShareTokenRegistered,
       generate,
       post,
-      mode: "ensure",
     });
 
     expect(outcome).toEqual({ kind: "registered" });
@@ -58,7 +57,6 @@ describe("registerPersistedShareToken", () => {
       markShareTokenRegistered,
       generate,
       post,
-      mode: "ensure",
     });
 
     expect(first.kind).toBe("retryable");
@@ -74,7 +72,6 @@ describe("registerPersistedShareToken", () => {
       markShareTokenRegistered,
       generate,
       post,
-      mode: "ensure",
     });
 
     expect(second).toEqual({ kind: "registered" });
@@ -83,33 +80,30 @@ describe("registerPersistedShareToken", () => {
     expect(markShareTokenRegistered).toHaveBeenCalledTimes(1);
   });
 
-  it("mode rotate calls generate once and persist before post", async () => {
-    const calls: string[] = [];
+  it("after persist, posts the stored token even if generate returned a different one", async () => {
     const generate = vi.fn(() => SHARE_B);
-    const persistShareToken = vi.fn(async (token: string) => {
-      calls.push(`persist:${token}`);
-    });
-    const markShareTokenRegistered = vi.fn(async () => {
-      calls.push("mark");
-    });
-    const post = vi.fn(async (input: { ingestToken: string; shareToken: string }) => {
-      calls.push(`post:${input.shareToken}`);
-      return registered();
-    });
+    const persistShareToken = vi.fn(async () => undefined);
+    const markShareTokenRegistered = vi.fn(async () => undefined);
+    const post = vi.fn(async () => registered());
+    let stored: string | null = null;
 
     const outcome = await registerPersistedShareToken({
       baseUrl: () => "http://localhost",
-      getState: async () => ({ ingestToken: INGEST, shareToken: SHARE_A }),
-      persistShareToken,
+      getState: async () => ({ ingestToken: INGEST, shareToken: stored }),
+      persistShareToken: async (token) => {
+        if (stored === null) stored = SHARE_A;
+        await persistShareToken(token);
+      },
       markShareTokenRegistered,
       generate,
       post,
-      mode: "rotate",
     });
 
     expect(outcome).toEqual({ kind: "registered" });
     expect(generate).toHaveBeenCalledTimes(1);
-    expect(calls).toEqual([`persist:${SHARE_B}`, `post:${SHARE_B}`, "mark"]);
+    expect(persistShareToken).toHaveBeenCalledWith(SHARE_B);
+    expect(post).toHaveBeenCalledWith({ ingestToken: INGEST, shareToken: SHARE_A });
+    expect(markShareTokenRegistered).toHaveBeenCalledTimes(1);
   });
 
   it("returns not_ready when ingestToken or baseUrl is missing", async () => {
@@ -126,7 +120,6 @@ describe("registerPersistedShareToken", () => {
         markShareTokenRegistered,
         generate,
         post,
-        mode: "ensure",
       }),
     ).toEqual({ kind: "not_ready" });
 
@@ -138,7 +131,6 @@ describe("registerPersistedShareToken", () => {
         markShareTokenRegistered,
         generate,
         post,
-        mode: "ensure",
       }),
     ).toEqual({ kind: "not_ready" });
 
@@ -168,7 +160,6 @@ describe("registerPersistedShareToken", () => {
         markShareTokenRegistered,
         generate,
         post,
-        mode: "ensure",
       });
       expect(result).toEqual(outcome);
       expect(markShareTokenRegistered).not.toHaveBeenCalled();

@@ -1,21 +1,28 @@
-import { useState, type JSX } from "react";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "../../../../components/ui/dialog.js";
+/**
+ * Settings → Superboard key. Same chrome as wizard-hosted Settings
+ * sections (icon badge, serif title, lede, footer actions, trailing
+ * meta) without joining the wizard step union. The key is write-once.
+ */
+
+import { useEffect, useState, type JSX } from "react";
+import { IconArrowUpRight } from "../../../../components/icons/index.js";
+import { Button } from "../../../../components/ui/button.js";
 import { useCopyFeedback } from "../../../../lib/use-copy-feedback.js";
 import {
   useGenerateSuperboardKey,
-  useRegenerateSuperboardKey,
   useSuperboardKey,
 } from "../../../../lib/api/superboard-key.js";
+import { cn } from "../../../../lib/utils.js";
 import type { SuperboardKeyStatus } from "@shared/schemas/superboard-key.js";
+import { SUPERBOARD_KEY_ICON } from "./settings-sections.js";
+import { superboardPendingCopy } from "./superboard-pending-copy.js";
 
 const MASK = "••••••••••••••••••••••••";
+
+const ICON_CIRCLE_CHROME = cn(
+  "flex h-10 w-10 shrink-0 items-center justify-center rounded-full",
+  "border border-[var(--color-border)] text-ink-primary",
+);
 
 function statusFromQuery(
   query: ReturnType<typeof useSuperboardKey>,
@@ -27,105 +34,106 @@ function statusFromQuery(
 export function SuperboardKeySection(): JSX.Element {
   const query = useSuperboardKey();
   const generate = useGenerateSuperboardKey();
-  const regenerate = useRegenerateSuperboardKey();
   const status = statusFromQuery(query);
-  const [confirmOpen, setConfirmOpen] = useState(false);
   const [revealed, setRevealed] = useState(false);
   const shareToken =
     status?.kind === "pending" || status?.kind === "registered" ? status.shareToken : "";
+  useEffect(() => {
+    setRevealed(false);
+  }, [shareToken]);
   const { copied, onCopy } = useCopyFeedback(shareToken);
   const kind = status?.kind ?? "not_ready";
   const pendingError = status?.kind === "pending" ? status.lastError : null;
-  const busy = generate.isPending || regenerate.isPending || query.isFetching;
+  const busy = generate.isPending || query.isFetching;
   const copyEnabled = kind === "registered" && shareToken.length > 0 && !busy;
 
   return (
-    <div className="flex flex-col gap-4" data-vex-superboard-key="" data-vex-superboard-kind={kind}>
-      <p className="text-[13px] leading-[20px] text-ink-secondary">
-        Paste this code in Superboard.
-      </p>
-      {kind === "not_ready" ? (
-        <p className="text-[13px] leading-[20px] text-ink-secondary">Not ready.</p>
-      ) : null}
-      {kind === "missing" ? (
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => generate.mutate()}
-          className="h-7 w-fit rounded-full border border-line-2 px-3 text-[12px] leading-[18px] text-ink-secondary transition-colors hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          Generate
-        </button>
-      ) : null}
-      {shareToken.length > 0 ? (
-        <div className="flex flex-col gap-2">
-          <code className="break-all rounded-xl border border-line-2 px-3 py-2 font-mono text-[12px] leading-[18px] text-ink-primary">
-            {revealed ? shareToken : MASK}
-          </code>
-          {kind === "pending" ? (
-            <p className="text-[12px] leading-[18px] text-ink-tertiary">
-              {pendingError ?? "Not linked yet."}
-            </p>
-          ) : null}
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setRevealed((value) => !value)}
-              className="h-7 rounded-full border border-line-2 px-3 text-[12px] leading-[18px] text-ink-secondary transition-colors hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
-            >
-              {revealed ? "Hide" : "Show"}
-            </button>
-            <button
-              type="button"
-              disabled={!copyEnabled}
-              onClick={onCopy}
-              className="h-7 rounded-full border border-line-2 px-3 text-[12px] leading-[18px] text-ink-secondary transition-colors hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {copied ? "Copied" : "Copy"}
-            </button>
-            {kind === "registered" ? (
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => setConfirmOpen(true)}
-                className="h-7 rounded-full border border-line-2 px-3 text-[12px] leading-[18px] text-ink-secondary transition-colors hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                Regenerate
-              </button>
+    <div
+      className="flex w-full flex-col"
+      data-vex-superboard-key=""
+      data-vex-superboard-kind={kind}
+    >
+      <header className="vex-step-header flex items-start gap-4">
+        <span aria-hidden className={ICON_CIRCLE_CHROME}>
+          <SUPERBOARD_KEY_ICON size={20} />
+        </span>
+        <div className="flex flex-col gap-1.5 pt-0.5">
+          <h1 className="font-serif text-2xl font-normal leading-tight text-ink-primary">
+            Superboard key
+          </h1>
+          <p className="vex-step-lede text-sm leading-relaxed text-ink-secondary">
+            One code, generated once. Paste it in Superboard — it cannot be
+            rotated.
+          </p>
+        </div>
+      </header>
+
+      <div className="mt-7 flex flex-col gap-4">
+        {kind === "not_ready" ? (
+          <p className="text-sm leading-relaxed text-ink-secondary">
+            Connect AgentScan first. The Superboard key is minted against that
+            identity.
+          </p>
+        ) : null}
+        {kind === "missing" ? (
+          <p className="text-sm leading-relaxed text-ink-secondary">
+            Generate the code, then paste it in Superboard. This install mints
+            only one.
+          </p>
+        ) : null}
+        {shareToken.length > 0 ? (
+          <div className="flex flex-col gap-2">
+            <code className="break-all rounded-xl border border-line-2 px-3 py-2.5 font-mono text-[13px] leading-[20px] text-ink-primary">
+              {revealed ? shareToken : MASK}
+            </code>
+            {kind === "pending" ? (
+              <p className="text-sm leading-relaxed text-ink-tertiary">
+                {superboardPendingCopy(pendingError)}
+              </p>
             ) : null}
           </div>
+        ) : null}
+      </div>
+
+      {kind === "missing" || shareToken.length > 0 ? (
+        <div className="vex-step-actions mt-8 flex items-center justify-end gap-3">
+          {kind === "missing" ? (
+            <Button disabled={busy} onClick={() => generate.mutate()}>
+              Generate
+            </Button>
+          ) : (
+            <>
+              <Button
+                variant="outline"
+                onClick={() => setRevealed((value) => !value)}
+              >
+                {revealed ? "Hide" : "Show"}
+              </Button>
+              <Button disabled={!copyEnabled} onClick={onCopy}>
+                {copied ? "Copied" : "Copy"}
+              </Button>
+            </>
+          )}
         </div>
       ) : null}
-      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Regenerate Superboard key</DialogTitle>
-            <DialogDescription>
-              The previous code stops working once the new one is linked. Paste the new
-              code in Superboard.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <button
-              type="button"
-              onClick={() => setConfirmOpen(false)}
-              className="h-7 rounded-full border border-line-2 px-3 text-[12px] leading-[18px] text-ink-secondary transition-colors hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setConfirmOpen(false);
-                regenerate.mutate();
-              }}
-              className="h-7 rounded-full border border-line-2 px-3 text-[12px] leading-[18px] text-ink-primary transition-colors hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
-            >
-              Regenerate
-            </button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+
+      <div className="mt-6 border-t border-[var(--color-border)] pt-4">
+        <div className="flex items-center gap-3 vex-micro text-ink-tertiary">
+          <a
+            href="https://docs.vex.ai/security/local-vault"
+            target="_blank"
+            rel="noopener noreferrer"
+            className={cn(
+              "inline-flex items-center gap-1 text-ink-secondary transition-colors",
+              "hover:text-ink-primary",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary focus-visible:ring-offset-2 focus-visible:ring-offset-transparent",
+            )}
+          >
+            Your data stays yours
+            <IconArrowUpRight size={10} />
+          </a>
+        </div>
+      </div>
     </div>
   );
 }

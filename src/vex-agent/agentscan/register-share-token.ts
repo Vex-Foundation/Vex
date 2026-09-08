@@ -13,17 +13,16 @@ export async function registerPersistedShareToken(deps: {
   markShareTokenRegistered: () => Promise<void>;
   generate?: () => string;
   post?: ReturnType<typeof buildShareTokenClient>["register"];
-  mode: "ensure" | "rotate";
 }): Promise<RegisterShareTokenOutcome> {
   const state = await deps.getState();
   const baseUrl = deps.baseUrl();
   if (state.ingestToken === null || baseUrl === null) return { kind: "not_ready" };
 
-  const generate = deps.generate ?? generateShareToken;
   let shareToken = state.shareToken;
-  if (deps.mode === "rotate" || shareToken === null) {
-    shareToken = generate();
-    await deps.persistShareToken(shareToken);
+  if (shareToken === null) {
+    await deps.persistShareToken((deps.generate ?? generateShareToken)());
+    shareToken = (await deps.getState()).shareToken;
+    if (shareToken === null) return { kind: "not_ready" };
   }
 
   const post = deps.post ?? buildShareTokenClient(baseUrl).register;

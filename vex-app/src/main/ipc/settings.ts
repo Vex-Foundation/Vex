@@ -33,6 +33,42 @@ import type { RegisterShareTokenOutcome } from "@vex-agent/agentscan/share-token
 
 const empty = z.object({}).strict();
 
+type ShareMintHold =
+  | { kind: "none" }
+  | { kind: "stopped"; lastError: string | null }
+  | { kind: "cooldown"; untilMs: number; lastError: string | null };
+
+let shareMintHold: ShareMintHold = { kind: "none" };
+
+function resetShareMintHold(): void {
+  shareMintHold = { kind: "none" };
+}
+
+function rememberShareMintOutcome(outcome: RegisterShareTokenOutcome): void {
+  const lastError = lastErrorFrom(outcome);
+  if (outcome.kind === "auth_lost" || outcome.kind === "stopped") {
+    shareMintHold = { kind: "stopped", lastError };
+    return;
+  }
+  if (outcome.kind === "retryable") {
+    const waitMs = Math.max(0, outcome.retryAfterSeconds ?? 0) * 1000;
+    shareMintHold = { kind: "cooldown", untilMs: Date.now() + waitMs, lastError };
+    return;
+  }
+  if (outcome.kind === "registered") {
+    shareMintHold = { kind: "none" };
+  }
+}
+
+function shouldSkipGetMint(): boolean {
+  if (shareMintHold.kind === "stopped") return true;
+  return shareMintHold.kind === "cooldown" && Date.now() < shareMintHold.untilMs;
+}
+
+function holdLastError(): string | null {
+  return shareMintHold.kind === "none" ? null : shareMintHold.lastError;
+}
+
 const setTelemetryConsentInput = z
   .object({
     enabled: z.boolean(),
@@ -40,6 +76,7 @@ const setTelemetryConsentInput = z
   .strict();
 
 export function registerSettingsHandlers(): Array<() => void> {
+  resetShareMintHold();
   const handlers: Array<() => void> = [];
 
   handlers.push(
@@ -159,16 +196,6 @@ export function registerSettingsHandlers(): Array<() => void> {
     })
   );
 
-  handlers.push(
-    registerHandler({
-      channel: CH.settings.regenerateSuperboardKey,
-      domain: "settings",
-      inputSchema: empty,
-      outputSchema: superboardKeyStatusSchema,
-      handle: (_input, ctx) => handleSuperboardKey(ctx, "rotate"),
-    })
-  );
-
   return handlers;
 }
 
@@ -217,9 +244,7 @@ function statusFromState(
   return { kind: "registered", shareToken: state.shareToken };
 }
 
-async function registerShareToken(
-  mode: "ensure" | "rotate",
-): Promise<RegisterShareTokenOutcome> {
+async function registerShareToken(): Promise<RegisterShareTokenOutcome> {
   const { registerPersistedShareToken } = await import(
     "@vex-agent/agentscan/register-share-token.js"
   );
@@ -228,7 +253,7 @@ async function registerShareToken(
     "@vex-agent/sync/agentscan-report/production-deps.js"
   );
   const { loadConfig } = await import("@config/store.js");
-  const deps = {
+  return registerPersistedShareToken({
     baseUrl: () => resolveAgentscanBaseUrl(loadConfig().services.agentscanApiUrl),
     getState: async () => {
       const state = await reporting.getReportingState();
@@ -236,17 +261,12 @@ async function registerShareToken(
     },
     persistShareToken: reporting.persistShareToken,
     markShareTokenRegistered: reporting.markShareTokenRegistered,
-  };
-  let outcome = await registerPersistedShareToken({ ...deps, mode });
-  if (outcome.kind === "conflict") {
-    outcome = await registerPersistedShareToken({ ...deps, mode: "rotate" });
-  }
-  return outcome;
+  });
 }
 
 async function handleSuperboardKey(
   ctx: HandlerContext,
-  action: "get" | "ensure" | "rotate",
+  action: "get" | "ensure",
 ): Promise<Result<SuperboardKeyStatus>> {
   try {
     await whenEngineDbReady({ signal: ctx.signal });
@@ -263,11 +283,16 @@ async function handleSuperboardKey(
       if (state.shareTokenRegisteredAt !== null) {
         return ok({ kind: "registered", shareToken: state.shareToken });
       }
-      const outcome = await registerShareToken("ensure");
+      if (shouldSkipGetMint()) {
+        return ok(statusFromState(state, holdLastError()));
+      }
+      const outcome = await registerShareToken();
+      rememberShareMintOutcome(outcome);
       const next = await reporting.getReportingState();
       return ok(statusFromState(next, lastErrorFrom(outcome)));
     }
-    const outcome = await registerShareToken(action);
+    const outcome = await registerShareToken();
+    rememberShareMintOutcome(outcome);
     const state = await reporting.getReportingState();
     return ok(statusFromState(state, lastErrorFrom(outcome)));
   } catch (cause) {

@@ -619,12 +619,13 @@ export async function resetIdentityForRecovery(): Promise<void> {
   });
 }
 
+/** Write-once. A later persist does not replace an existing token. */
 export async function persistShareToken(token: string): Promise<void> {
   await ensureSingleton();
   await execute(
     `UPDATE agentscan_reporting_state
         SET share_token = $1, share_token_registered_at = NULL, updated_at = NOW()
-      WHERE id = 1`,
+      WHERE id = 1 AND share_token IS NULL`,
     [token],
   );
 }
@@ -635,15 +636,6 @@ export async function markShareTokenRegistered(): Promise<void> {
     `UPDATE agentscan_reporting_state
         SET share_token_registered_at = NOW(), updated_at = NOW()
       WHERE id = 1 AND share_token IS NOT NULL`,
-  );
-}
-
-export async function clearShareToken(): Promise<void> {
-  await ensureSingleton();
-  await execute(
-    `UPDATE agentscan_reporting_state
-        SET share_token = NULL, share_token_registered_at = NULL, updated_at = NOW()
-      WHERE id = 1`,
   );
 }
 

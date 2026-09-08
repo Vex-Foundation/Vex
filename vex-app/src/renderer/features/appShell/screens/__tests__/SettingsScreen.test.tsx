@@ -105,11 +105,10 @@ vi.mock("../../../../lib/api/superboard-key.js", () => ({
     isFetching: false,
     data: {
       ok: true,
-      data: { kind: "registered", shareToken: "vex_share_" + "A".repeat(43) },
+      data: { kind: "registered", shareToken: "A".repeat(43) },
     },
   }),
   useGenerateSuperboardKey: () => ({ mutate: () => undefined, isPending: false }),
-  useRegenerateSuperboardKey: () => ({ mutate: () => undefined, isPending: false }),
 }));
 // The Background row has its own suite (SettingsBackdropRow.test.tsx); this
 // one owns routing and the register, so its hooks stub to "shipped artwork".

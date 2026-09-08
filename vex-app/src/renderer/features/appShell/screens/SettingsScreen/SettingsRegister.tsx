@@ -47,7 +47,8 @@ export function SettingsRegister({
         {SETTINGS_SECTIONS.map((meta) => {
           const status = settingsSectionStatus(meta.id, env, superboard);
           const StepGlyph =
-            meta.stepId !== undefined ? WIZARD_STEP_META[meta.stepId].icon : IconKey;
+            meta.icon ??
+            (meta.stepId !== undefined ? WIZARD_STEP_META[meta.stepId].icon : IconKey);
           return (
             <li key={meta.id} className="border-b border-line-1 last:border-b-0">
               <button

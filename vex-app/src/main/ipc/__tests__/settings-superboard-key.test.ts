@@ -81,7 +81,7 @@ const { registerSettingsHandlers } = await import("../settings.js");
 const { CH } = await import("@shared/ipc/channels.js");
 
 const sender = createTrustedSender({ sender: createTestWebContents() });
-const SHARE = "vex_share_" + "A".repeat(43);
+const SHARE = "A".repeat(43);
 const INGEST = "I".repeat(43);
 
 type CallResult = {
@@ -108,6 +108,10 @@ function reportingState(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 }
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -152,38 +156,78 @@ describe("settings.getSuperboardKey", () => {
     mocks.registerPersistedShareToken.mockResolvedValueOnce({ kind: "registered" });
     const result = await call(CH.settings.getSuperboardKey, {});
     expect(result.data).toEqual({ kind: "registered", shareToken: SHARE });
-    expect(mocks.registerPersistedShareToken).toHaveBeenCalledWith(
-      expect.objectContaining({ mode: "ensure" }),
+    expect(mocks.registerPersistedShareToken).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not remint from GET after auth_lost; generate still mints", async () => {
+    mocks.getReportingState.mockResolvedValue(
+      reportingState({ shareToken: SHARE, shareTokenRegisteredAt: null }),
     );
+    mocks.registerPersistedShareToken.mockResolvedValue({ kind: "auth_lost" });
+    const first = await call(CH.settings.getSuperboardKey, {});
+    expect(first.data).toEqual({
+      kind: "pending",
+      shareToken: SHARE,
+      lastError: "unauthorized",
+    });
+    await call(CH.settings.getSuperboardKey, {});
+    expect(mocks.registerPersistedShareToken).toHaveBeenCalledTimes(1);
+    await call(CH.settings.generateSuperboardKey, {});
+    expect(mocks.registerPersistedShareToken).toHaveBeenCalledTimes(2);
+  });
+
+  it("skips GET mint during retryable cooldown", async () => {
+    vi.useFakeTimers();
+    mocks.getReportingState.mockResolvedValue(
+      reportingState({ shareToken: SHARE, shareTokenRegisteredAt: null }),
+    );
+    mocks.registerPersistedShareToken.mockResolvedValue({
+      kind: "retryable",
+      status: 429,
+      retryAfterSeconds: 60,
+      detail: "rate_limited",
+    });
+    await call(CH.settings.getSuperboardKey, {});
+    await call(CH.settings.getSuperboardKey, {});
+    expect(mocks.registerPersistedShareToken).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(60_000);
+    await call(CH.settings.getSuperboardKey, {});
+    expect(mocks.registerPersistedShareToken).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
   });
 });
 
 describe("settings.generateSuperboardKey", () => {
-  it("registers with mode ensure", async () => {
+  it("registers the existing token and never rotates", async () => {
     mocks.getReportingState.mockResolvedValue(
       reportingState({ shareToken: SHARE, shareTokenRegisteredAt: "2026-09-07T00:00:00.000Z" }),
     );
     const result = await call(CH.settings.generateSuperboardKey, {});
     expect(result.ok).toBe(true);
     expect(result.data).toEqual({ kind: "registered", shareToken: SHARE });
-    expect(mocks.registerPersistedShareToken).toHaveBeenCalledWith(
-      expect.objectContaining({ mode: "ensure" }),
-    );
+    expect(mocks.registerPersistedShareToken).toHaveBeenCalledTimes(1);
+    expect(mocks.registerPersistedShareToken.mock.calls[0]?.[0]).not.toHaveProperty("mode");
     expect(JSON.stringify(result)).not.toContain("ingestToken");
+  });
+
+  it("does not remint when AgentScan reports share_token_conflict", async () => {
+    mocks.getReportingState.mockResolvedValue(
+      reportingState({ shareToken: SHARE, shareTokenRegisteredAt: null }),
+    );
+    mocks.registerPersistedShareToken.mockResolvedValue({ kind: "conflict" });
+    const result = await call(CH.settings.generateSuperboardKey, {});
+    expect(mocks.registerPersistedShareToken).toHaveBeenCalledTimes(1);
+    expect(result.data).toEqual({
+      kind: "pending",
+      shareToken: SHARE,
+      lastError: "share_token_conflict",
+    });
   });
 });
 
 describe("settings.regenerateSuperboardKey", () => {
-  it("registers with mode rotate", async () => {
-    const rotated = "vex_share_" + "B".repeat(43);
-    mocks.getReportingState.mockResolvedValue(
-      reportingState({ shareToken: rotated, shareTokenRegisteredAt: "2026-09-07T00:00:00.000Z" }),
-    );
-    const result = await call(CH.settings.regenerateSuperboardKey, {});
-    expect(result.data).toEqual({ kind: "registered", shareToken: rotated });
-    expect(mocks.registerPersistedShareToken).toHaveBeenCalledWith(
-      expect.objectContaining({ mode: "rotate" }),
-    );
+  it("does not register a regenerate Superboard key channel", () => {
+    expect(handlers.has("vex:settings:regenerateSuperboardKey")).toBe(false);
   });
 });
 

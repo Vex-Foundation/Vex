@@ -4,8 +4,8 @@ import { buildShareTokenClient } from "../../../vex-agent/agentscan/share-token-
 import { generateShareToken } from "../../../vex-agent/agentscan/share-token.js";
 
 const INGEST = "I".repeat(43);
-const SHARE = "vex_share_" + "S".repeat(43);
-const SHARE_PATTERN = /^vex_share_[A-Za-z0-9_-]{43}$/;
+const SHARE = "S".repeat(43);
+const SHARE_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 
 function jsonResponse(status: number, body: unknown, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), {
@@ -28,7 +28,7 @@ afterEach(() => {
 });
 
 describe("generateShareToken", () => {
-  it("mints prefix plus 43-char base64url", () => {
+  it("mints 43-char base64url", () => {
     const token = generateShareToken();
     expect(token).toMatch(SHARE_PATTERN);
     expect(generateShareToken()).not.toBe(token);

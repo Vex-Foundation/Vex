@@ -13,6 +13,8 @@ export function useSuperboardKey(): UseQueryResult<Result<SuperboardKeyStatus>> 
   return useQuery({
     queryKey: superboardKeyKeys.status(),
     queryFn: () => window.vex.settings.getSuperboardKey(),
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 }
 
@@ -22,8 +24,10 @@ function useSuperboardKeyMutation(
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: mutate,
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: superboardKeyKeys.status() });
+    onSuccess: (result) => {
+      if (result.ok) {
+        queryClient.setQueryData(superboardKeyKeys.status(), result);
+      }
     },
   });
 }
@@ -34,12 +38,4 @@ export function useGenerateSuperboardKey(): UseMutationResult<
   void
 > {
   return useSuperboardKeyMutation(() => window.vex.settings.generateSuperboardKey());
-}
-
-export function useRegenerateSuperboardKey(): UseMutationResult<
-  Result<SuperboardKeyStatus>,
-  Error,
-  void
-> {
-  return useSuperboardKeyMutation(() => window.vex.settings.regenerateSuperboardKey());
 }

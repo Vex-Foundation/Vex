@@ -5,14 +5,20 @@
  * cards read.
  */
 
+import type { ComponentType } from "react";
 import type { EnvState } from "@shared/schemas/onboarding.js";
 import type { SuperboardKeyStatus } from "@shared/schemas/superboard-key.js";
 import type { WizardStepId } from "@shared/schemas/wizard.js";
+import { IconShare, type GlyphProps } from "../../../../components/icons/index.js";
 import type { SettingsSection } from "../../../../stores/uiStore.js";
+
+/** Glyph for Superboard in the register row and the section header. */
+export const SUPERBOARD_KEY_ICON: ComponentType<GlyphProps> = IconShare;
 
 export interface SectionMeta {
   readonly id: SettingsSection;
   readonly stepId?: Exclude<WizardStepId, "review">;
+  readonly icon?: ComponentType<GlyphProps>;
   readonly name: string;
   readonly hint: string;
 }
@@ -39,8 +45,9 @@ export const SETTINGS_SECTIONS: ReadonlyArray<SectionMeta> = [
   },
   {
     id: "superboardKey",
+    icon: SUPERBOARD_KEY_ICON,
     name: "Superboard key",
-    hint: "Code you paste into Superboard",
+    hint: "One code you paste into Superboard",
   },
   {
     id: "model",

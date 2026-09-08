@@ -482,7 +482,7 @@ describe("agentscan_outbox — resetForReRegistration (auth_lost full resend)", 
     });
     await repo.noteRegisterAttemptFailed(600);
 
-    await repo.persistShareToken("vex_share_" + "A".repeat(43));
+    await repo.persistShareToken("A".repeat(43));
     await repo.markShareTokenRegistered();
     await repo.resetIdentityForRecovery();
 
@@ -506,12 +506,16 @@ describe("agentscan_reporting_state - Superboard share token", () => {
   it("persistShareToken stores plaintext locally and markShareTokenRegistered stamps the time", async () => {
     const repo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
     await repo.ensureIdentity(() => IDENTITY_A);
-    await repo.persistShareToken("vex_share_" + "A".repeat(43));
+    await repo.persistShareToken("A".repeat(43));
     let state = await repo.getReportingState();
-    expect(state.shareToken).toBe("vex_share_" + "A".repeat(43));
+    expect(state.shareToken).toBe("A".repeat(43));
     expect(state.shareTokenRegisteredAt).toBeNull();
     await repo.markShareTokenRegistered();
     state = await repo.getReportingState();
+    expect(state.shareTokenRegisteredAt).not.toBeNull();
+    await repo.persistShareToken("B".repeat(43));
+    state = await repo.getReportingState();
+    expect(state.shareToken).toBe("A".repeat(43));
     expect(state.shareTokenRegisteredAt).not.toBeNull();
   });
 });
