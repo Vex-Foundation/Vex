@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/Vex-Foundation/vex/bridge/internal/endpoint"
+	"github.com/Vex-Foundation/vex/bridge/internal/sockettest"
 )
 
 // THE DEFECT THIS FILE OWNS, MEASURED THROUGH A REAL PROCESS.
@@ -146,6 +147,7 @@ func buildBridge(t *testing.T) string {
 // the client's own binary talking to whatever answers.
 func listenAsHost(t *testing.T, socket string) func() {
 	t.Helper()
+	sockettest.CheckPath(t, socket)
 	listener, err := net.Listen("unix", socket)
 	if err != nil {
 		t.Fatalf("binding the fake host at %s: %v", socket, err)

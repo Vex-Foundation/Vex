@@ -6,7 +6,7 @@ import (
 	"io"
 	"net"
 	"os"
-	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -16,6 +16,7 @@ import (
 	"github.com/Vex-Foundation/vex/bridge/internal/endpoint"
 	"github.com/Vex-Foundation/vex/bridge/internal/handshake"
 	"github.com/Vex-Foundation/vex/bridge/internal/relay"
+	"github.com/Vex-Foundation/vex/bridge/internal/sockettest"
 	"github.com/Vex-Foundation/vex/bridge/internal/vectors"
 )
 
@@ -26,13 +27,12 @@ const projectID = "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
 // property under test.
 func socketPair(t *testing.T) (client *net.UnixConn, server *net.UnixConn) {
 	t.Helper()
-	dir := t.TempDir()
-	if err := os.Chmod(dir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(dir, "s.sock")
+	path := sockettest.Path(t)
 	listener, err := net.Listen("unix", path)
 	if err != nil {
+		if runtime.GOOS == "windows" {
+			t.Fatalf("Windows AF_UNIX listen failed: %v", err)
+		}
 		t.Skipf("this sandbox cannot bind a unix socket: %v", err)
 	}
 	defer listener.Close()
@@ -61,6 +61,24 @@ func socketPair(t *testing.T) (client *net.UnixConn, server *net.UnixConn) {
 		_ = server.Close()
 	})
 	return client, server
+}
+
+func TestSocketPairBindsWithALongTestName(t *testing.T) {
+	// testing.TempDir also nests under GOTMPDIR. Build directories and long
+	// test names must not consume the socket's path budget.
+	t.Setenv("GOTMPDIR", t.TempDir())
+	executed := false
+	t.Run(strings.Repeat("long-test-name-", 12), func(t *testing.T) {
+		client, _ := socketPair(t)
+		path := client.RemoteAddr().String()
+		if len(path) > endpoint.SunPathMaxBytes {
+			t.Fatalf("socket-pair path is %d bytes, exceeds SunPathMaxBytes=%d", len(path), endpoint.SunPathMaxBytes)
+		}
+		executed = true
+	})
+	if !executed {
+		t.Fatal("socket-pair fixture did not execute with a long test name")
+	}
 }
 
 // A reader that never returns, standing in for an MCP client that has sent its
@@ -226,35 +244,43 @@ func TestSocketEOFReturnsWithoutWaitingForABlockedStdin(t *testing.T) {
 
 func TestStdinEOFHalfClosesThenDrainsADelayingPeer(t *testing.T) {
 	client, server := socketPair(t)
+	conn, beforePeerRead := observeHalfClose(t, client)
 	out := &syncWriter{}
+	const request = "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"ping\"}\n"
 
-	peerSawFIN := make(chan struct{})
+	peerSawFIN := make(chan peerEOF, 1)
 	go func() {
+		if !beforePeerRead() {
+			return
+		}
 		// Read until the bridge half-closes: that FIN is what tells the host
 		// the client is done, and it is the reason CloseWrite exists.
-		_, _ = io.Copy(io.Discard, server)
-		close(peerSawFIN)
+		payload, err := io.ReadAll(server)
+		peerSawFIN <- peerEOF{payload: string(payload), err: err}
 		time.Sleep(150 * time.Millisecond)
 		_, _ = server.Write([]byte("{\"jsonrpc\":\"2.0\",\"id\":7,\"result\":{}}\n"))
 		_ = server.Close()
 	}()
 
 	done := runAsync(relay.Options{
-		In:            strings.NewReader("{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"ping\"}\n"),
+		In:            strings.NewReader(request),
 		Out:           relay.TypedStdout(out),
-		Conn:          client,
+		Conn:          conn,
 		DrainDeadline: 5 * time.Second,
 	})
 
 	select {
-	case <-peerSawFIN:
+	case end := <-peerSawFIN:
+		if end.err != nil || end.payload != request {
+			t.Fatalf("peer read (%q, %v), want (%q, clean EOF)", end.payload, end.err, request)
+		}
 	case <-time.After(3 * time.Second):
-		t.Fatal("the peer never saw the half-close; CloseWrite did not reach it")
+		t.Fatalf("the peer never saw the half-close; %s", conn.halfCloseState())
 	}
 
 	result := await(t, done, 5*time.Second)
-	if result.Outcome != relay.OutcomeClientEOF {
-		t.Fatalf("outcome %v, want OutcomeClientEOF (err %v)", result.Outcome, result.Err)
+	if result.Outcome != relay.OutcomeClientEOF || result.Err != nil || !result.HalfClosed {
+		t.Fatalf("result %+v, want OutcomeClientEOF with HalfClosed and no error", result)
 	}
 	if !strings.Contains(out.String(), `"id":7`) {
 		t.Fatalf("the drain lost the late response: %q", out.String())
@@ -513,32 +539,104 @@ func TestDrainBoundEndsASessionWithoutHalfClose(t *testing.T) {
 // weaker path would leave the host waiting for an EOF that never came.
 func TestUnixArmStillReportsARealHalfClose(t *testing.T) {
 	client, server := socketPair(t)
+	conn, beforePeerRead := observeHalfClose(t, client)
 	out := &syncWriter{}
+	const request = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}\n"
+	const response = "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}\n"
 
-	peerSawFIN := make(chan struct{})
+	peerSawFIN := make(chan peerEOF, 1)
 	go func() {
-		_, _ = io.Copy(io.Discard, server)
-		close(peerSawFIN)
+		if !beforePeerRead() {
+			return
+		}
+		payload, err := io.ReadAll(server)
+		peerSawFIN <- peerEOF{payload: string(payload), err: err}
+		_, _ = server.Write([]byte(response))
 		_ = server.Close()
 	}()
 
 	done := runAsync(relay.Options{
-		In:            strings.NewReader("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}\n"),
+		In:            strings.NewReader(request),
 		Out:           relay.TypedStdout(out),
-		Conn:          client,
+		Conn:          conn,
 		DrainDeadline: 5 * time.Second,
 	})
 
 	select {
-	case <-peerSawFIN:
+	case end := <-peerSawFIN:
+		if end.err != nil || end.payload != request {
+			t.Fatalf("peer read (%q, %v), want (%q, clean EOF)", end.payload, end.err, request)
+		}
 	case <-time.After(3 * time.Second):
-		t.Fatal("the peer never saw the half-close")
+		t.Fatalf("the peer never saw the half-close; %s", conn.halfCloseState())
 	}
 	result := await(t, done, 5*time.Second)
-	if result.Outcome != relay.OutcomeClientEOF {
-		t.Fatalf("outcome %v, want OutcomeClientEOF", result.Outcome)
+	if result.Outcome != relay.OutcomeClientEOF || result.Err != nil {
+		t.Fatalf("result %+v, want OutcomeClientEOF without error", result)
 	}
 	if !result.HalfClosed {
 		t.Fatal("a unix socket must report a REAL half-close")
+	}
+	if got := out.String(); got != response {
+		t.Fatalf("drained %q, want %q", got, response)
+	}
+}
+
+type peerEOF struct {
+	payload string
+	err     error
+}
+
+// observedUnixConn traces the real shutdown without replacing its result.
+type observedUnixConn struct {
+	*net.UnixConn
+	started  chan struct{}
+	returned chan struct{}
+}
+
+func (c *observedUnixConn) CloseWrite() error {
+	close(c.started)
+	err := c.UnixConn.CloseWrite()
+	close(c.returned)
+	return err
+}
+
+func (c *observedUnixConn) halfCloseState() string {
+	select {
+	case <-c.returned:
+		return "CloseWrite returned"
+	default:
+	}
+	select {
+	case <-c.started:
+		return "CloseWrite entered but has not returned"
+	default:
+		return "relay has not entered CloseWrite"
+	}
+}
+
+func observeHalfClose(t *testing.T, client *net.UnixConn) (*observedUnixConn, func() bool) {
+	t.Helper()
+	c := &observedUnixConn{UnixConn: client, started: make(chan struct{}), returned: make(chan struct{})}
+	stopped := make(chan struct{})
+	t.Cleanup(func() {
+		close(stopped)
+		t.Logf("half-close trace: %s", c.halfCloseState())
+	})
+	t.Logf("half-close: GOOS=%s Go=%s NumCPU=%d GOMAXPROCS=%d", runtime.GOOS, runtime.Version(), runtime.NumCPU(), runtime.GOMAXPROCS(0))
+	return c, func() bool {
+		if runtime.GOOS == "windows" {
+			// Windows AF_UNIX peer reads racing shutdown can hang (Go issue
+			// 73140; Go 1.27 net.TestCloseWrite uses a sleep). Order this
+			// small request's read after the real CloseWrite instead. EOF,
+			// byte delivery and the open response direction remain required.
+			// Other platforms retain the concurrent peer read.
+			select {
+			case <-c.returned:
+			case <-stopped:
+				return false
+			}
+		}
+		return true
 	}
 }
