@@ -660,7 +660,7 @@ describe("mapActivityToEvent — the widened vocabulary", () => {
 });
 
 /**
- * THE LAUNCHPAD FAMILY on the wire (migration 102, server migration 0018).
+ * THE LAUNCHPAD FAMILY on the wire (migration 107, server migration 0018).
  *
  * The mapper passes the new roles through unchanged; what it must NOT do is
  * declare a leg the server's role binding forbids, because that rejects the

@@ -29,7 +29,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 import { encodeAbiParameters, encodeEventTopics, getAddress, type Hex } from "viem";
-import { TRENCH_DIAMOND_ABI } from "@tools/trench-express/abi.js";
+// The retired launchpad's kept event ABI. Migration 108 deleted the callable
+// half of the Diamond ABI and preserved only the three events a confirmed
+// HISTORICAL row still has to be decoded from, which is exactly what this
+// fallback lane does.
+import { LEGACY_TRENCH_EVENT_ABI as TRENCH_DIAMOND_ABI } from "@vex-agent/sync/legacy-trench-express/events-abi.js";
 
 import type { AgentActivityEvent } from "@vex-agent/db/repos/agent-activity.js";
 

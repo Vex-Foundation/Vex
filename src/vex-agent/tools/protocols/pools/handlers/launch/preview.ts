@@ -57,7 +57,7 @@ export async function poolsLaunchPreviewHandler(
   p: Record<string, unknown>,
   context: ProtocolExecutionContext,
 ) {
-  const validated = readPoolsLaunchInputs(p);
+  const validated = readPoolsLaunchInputs(p, context, { toolName: "pools__launch_preview" });
   if (!validated.ok) return fail(validated.reason);
   const inputs = validated.value;
 
@@ -117,6 +117,12 @@ export async function poolsLaunchPreviewHandler(
         protocol: "pools_fun",
         pools: {
           pairedAsset: inputs.pairedAsset,
+          // The stock a `stock` pair names, recorded beside the symbolic value:
+          // "stock" alone cannot say WHICH stock, and a preview a reader cannot
+          // reproduce is not an audit record (migration 109).
+          ...(inputs.pairedStockAddress === null
+            ? {}
+            : { pairedAssetAddress: inputs.pairedStockAddress }),
           // The suite a launch would target, recorded on the preview row so a
           // later reader knows which contract this estimate described.
           gatewayAddress: poolsLaunchSuite().gateway,
@@ -148,12 +154,32 @@ export async function poolsLaunchPreviewHandler(
           chargedOn: POOLS_FEE_VENUE.basisText.launch_msg_value,
         },
       },
-      feeRecipient: {
-        address: walletAddress,
-        note: "Vex pins the creator fee stream to your own session wallet on an agent launch. To send it "
-          + "somewhere else, launch through the app's form, where you choose the recipient and your submission "
-          + "authorizes it.",
-      },
+      ...(inputs.pairedStockAddress === null ? {} : { pairedStockAddress: inputs.pairedStockAddress }),
+      // WHERE THE FEE STREAM WOULD GO, in the same two shapes the launch itself
+      // has. A holders launch has no recipient ADDRESS to quote at preview time:
+      // the launchpad deploys the distributor during the launch transaction, so
+      // the honest answer names the mode and says the address does not exist yet
+      // rather than showing a wallet that would receive nothing.
+      feeRecipient:
+        inputs.feeStream.kind === "session_wallet"
+          ? {
+            destination: "session_wallet" as const,
+            address: walletAddress,
+            note: "Vex pins the creator fee stream to your own session wallet on an agent launch. To send it "
+              + "somewhere else, launch through the app's form, where you choose the recipient and your submission "
+              + "authorizes it, or set holderRewards: true to stream the fees to the token's holders.",
+          }
+          : {
+            destination: "holders" as const,
+            holderRewardsMode: inputs.feeStream.mode,
+            address: null,
+            note: "This launch would stream its creator fees to the token's HOLDERS, paid in "
+              + `${inputs.feeStream.mode === "both" ? "both the token and the paired asset" : `the ${inputs.feeStream.mode}`}`
+              + ". The launching wallet would receive nothing from trading fees, ever, and the choice is locked "
+              + "at launch and cannot be undone. There is no recipient address to show: the launchpad deploys "
+              + "the rewards distributor during the launch transaction itself, and the transaction carries the "
+              + "gateway's own sentinel constant until it does.",
+          },
       note:
         "ADVISORY ESTIMATE. The token's final ADDRESS is not knowable yet: the image sets the metadata link, "
         + "which sets the salt, which sets the address, and only preparing a real launch settles it. The "

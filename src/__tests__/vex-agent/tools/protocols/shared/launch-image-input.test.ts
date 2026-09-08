@@ -55,6 +55,44 @@ function refusalOf(result: { ok: boolean } & Record<string, unknown>): string {
   return String(result.reason);
 }
 
+// ── the outcome sentence each caller owns ──────────────────────────────────
+
+describe("what did NOT happen, in the calling tool's own words", () => {
+  it("says a launch was not performed by default, for every launching caller", () => {
+    const reason = refusalOf(
+      readLaunchImageSelection({ imagePath: "./logo.png" }, inAppContext(), OPTIONS),
+    );
+    expect(reason).toContain("Nothing was launched.");
+  });
+
+  it("says what the CALLER did not do when it states one, on both surfaces", () => {
+    const options = { ...OPTIONS, nothingHappened: "Nothing was uploaded." } as const;
+
+    const inApp = refusalOf(readLaunchImageSelection({ imagePath: "./logo.png" }, inAppContext(), options));
+    const onStudio = refusalOf(readLaunchImageSelection({ imageId: "img_01" }, studioContext(), options));
+
+    for (const reason of [inApp, onStudio]) {
+      expect(reason).toContain("Nothing was uploaded.");
+      // A publish tool that told an agent "nothing was launched" would send it
+      // looking for a launch to retry that it never asked for.
+      expect(reason).not.toContain("Nothing was launched.");
+    }
+  });
+
+  it("carries the same sentence into every no-follow refusal the reader produces", async () => {
+    resolveProjectRootPath.mockResolvedValue({ kind: "unknown_project" });
+
+    const result = await resolveProjectFileLaunchImage(
+      { kind: "project_file", imagePath: "logo.png" },
+      studioContext({ studioProjectId: "proj_1" }),
+      { nothingHappened: "Nothing was uploaded." },
+    );
+
+    expect(refusalOf(result)).toContain("Nothing was uploaded.");
+    expect(refusalOf(result)).not.toContain("Nothing was launched.");
+  });
+});
+
 // ── surface routing ────────────────────────────────────────────────────────
 
 describe("the parameter each surface takes", () => {

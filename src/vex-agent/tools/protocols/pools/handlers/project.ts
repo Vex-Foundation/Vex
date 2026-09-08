@@ -2,7 +2,7 @@
  * The shared `/discover` row projection, plus own-launch marking.
  *
  * Three handlers (`pools.tokens`, `pools.search`, `pools.my_launches`) return
- * the same row, so the projection lives once - the trench lesson that two
+ * the same row, so the projection lives once - the lesson that two
  * discovery handlers with their own projector also share their defects.
  *
  * WHAT IS DELIBERATELY NOT EMITTED:

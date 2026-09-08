@@ -95,7 +95,11 @@
   "099_swap_prequotes_balance_eligibility.sql",
   "100_wallet_intent_wallet_indexes.sql",
   "101_portfolio_snapshot_groups.sql",
-  "102_launchpad_family_roles.sql",
   "102_portfolio_snapshot_group_wallets.sql",
-  "106_launch_image_public_asset.sql"
+  "106_launch_image_public_asset.sql",
+  "107_launchpad_family_roles.sql",
+  "108_trench_express_retirement.sql",
+  "109_pools_launch_v3_fields.sql",
+  "110_virtuals_launch_intents.sql",
+  "111_agentscan_pools_fee_coverage.sql"
 ]

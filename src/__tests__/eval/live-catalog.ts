@@ -38,10 +38,16 @@ import { liveProtocolManifests } from "./retrieval-eval-harness.js";
  * and recapture the affected baselines with the lane's `--update` command. Do
  * not silence the test by deriving the number from the catalog.
  *
- * 177 before the launchpads integration from main. The merged surface adds
- * ten active advertised tools while preserving Lighter's complete catalog.
+ * 177 before the launchpads integration from main.
+ *
+ * MERGE, main into Lighter-Integration (2026-09-07): main's own launchpads/
+ * pools/Virtuals arc moved this number independently (widened repeatedly,
+ * then the Trench Express retirement in migration 108 shrank it) since the
+ * two branches last shared a base, so the merged count is measured directly
+ * on the merged tree - 185 - rather than reconciled by summing either change
+ * log by hand.
  */
-export const PINNED_LIVE_CATALOG_TOOL_COUNT = 187;
+export const PINNED_LIVE_CATALOG_TOOL_COUNT = 185;
 
 /** Active manifests in advertised namespaces. Independent of process env. */
 export function liveCatalogToolCount(): number {

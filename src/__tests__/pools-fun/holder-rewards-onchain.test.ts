@@ -77,8 +77,28 @@ describe("readPoolsHolderRewardsOnChain", () => {
     expect(result.pairedLeg?.earnedRaw).toBe("250000000000000000");
   });
 
-  it("a distributor without earnedPaired has NO paired leg, not a zero one", async () => {
+  // CONTRACT CHANGE (Codex final review, lane 2). The paired leg is the paired
+  // ASSET's leg, and `pairedAsset()` is what says whether that asset exists.
+  // `earnedPaired()` is an ACCRUAL view over it and is optional on the live
+  // runtimes, so letting it decide the leg's existence threw away the leg's
+  // identity and scale - the two facts a claim needs to record what it paid -
+  // whenever a multicall entry failed. The accrual figure is now nullable and
+  // the leg survives without it.
+  it("keeps the paired leg's identity and scale when earnedPaired() did not answer", async () => {
     stubChain({ failing: ["earnedPaired"] });
+    const result = await readPoolsHolderRewardsOnChain({ token: TOKEN, wallet: WALLET, suiteVersion: 3 });
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") return;
+    expect(result.pairedLeg).not.toBeNull();
+    expect(result.pairedLeg?.asset.toLowerCase()).toBe(`0x${"9".repeat(40)}`);
+    expect(result.pairedLeg?.decimals).toBe(18);
+    // NOT "0". The accrual view did not answer, and an unanswered read is not a
+    // balance of zero.
+    expect(result.pairedLeg?.earnedRaw).toBeNull();
+  });
+
+  it("has NO paired leg at all when the distributor names no paired asset", async () => {
+    stubChain({ failing: ["pairedAsset"] });
     const result = await readPoolsHolderRewardsOnChain({ token: TOKEN, wallet: WALLET, suiteVersion: 3 });
     expect(result.status).toBe("ok");
     if (result.status !== "ok") return;

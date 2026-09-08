@@ -17,7 +17,7 @@
  * Robinhood Chain (`POOLS_CHAIN_ID`), so accepting a chain here would only
  * create a way to sign something for a venue this module does not serve.
  *
- * WHY IT IS NOT THE TRENCH STRING. trench.express and pools.fun both launch on
+ * WHY IT IS NOT THE OTHER VENUE'S STRING. Two launchpads both launch on
  * chain 4663, and the bare `VEX-attest:<chainId>:<token>` form is already
  * consumed by two other verifiers. A byte-identical string across two venues
  * would let a signature produced for one be replayed at the other, so this one

@@ -76,6 +76,7 @@ One exception: an explicit Lighter deposit or funding amount is an exact transfe
 | \`TokenFind\` | EVM token identity router: Khalani search on Khalani-covered chains, local search plus contract validation on Robinhood Chain |
 | \`TokenCheck\` | \`kyberswap__token_safety_check\` (EVM honeypot / fee-on-transfer) |
 | \`SwapQuote\` / \`SwapExecute\` | the chain's swap venue (EVM → \`kyberswap__swap_*\`, \`chain="solana"\` → \`solana__swap_*\`) |
+| \`SwapQuoteUniswap\` / \`SwapExecuteUniswap\` | \`uniswap__swap_*\` - the equal-standing EVM venue, priced straight off V2 and V3 pools |
 | \`BridgeQuote\` / \`BridgeExecute\` | the route's bridge provider, auto-selected (Khalani, or Relay to/from Robinhood Chain) |
 | \`BridgeStatus\` | \`khalani__order_get\` (with \`orderId\`) / \`khalani__orders_list\` |
 

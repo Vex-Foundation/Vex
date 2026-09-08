@@ -9,7 +9,7 @@
  *
  * THE CONTRACT IS REJECT, NEVER TRANSFORM. Vex does not repair the text:
  *
- *   - `trench.launch_execute` can sign under full autonomy with NO preview, so a
+ *   - a launch execute can sign under full autonomy with NO preview, so a
  *     silent rewrite would put text on-chain that the user never reviewed;
  *   - the preview result carries no canonical text field, so a normalized value
  *     would not even be visible to the user before it was signed;
@@ -25,7 +25,7 @@
  * defect of its own.
  *
  * WHY THIS LIVES IN `src/lib`. Three surfaces must apply ONE definition of the
- * policy: the agent runtime (`trench` launch handlers), the privileged IPC
+ * policy: the agent runtime (the launch handlers), the privileged IPC
  * contract (`vex-app/src/shared/schemas/token-launch.ts`) and the renderer form.
  * The renderer and `shared` may not import `src/vex-agent`, and the sanctioned
  * cross-boundary path is `@vex-lib` -> `../src/lib` for modules that are PURE.

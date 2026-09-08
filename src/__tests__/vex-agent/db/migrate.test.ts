@@ -37,14 +37,19 @@ let testDir = "";
 beforeEach(() => {
   vi.clearAllMocks();
   testDir = mkdtempSync(join(tmpdir(), "vex-migrate-"));
-  // Default client.query: SELECTs return the minimal pg-shaped result the
-  // shared runner consumes; all other statements may return `undefined`.
+  // Default client.query: every SELECT the shared runner issues (the
+  // schema_version ledger, schema_migration_files, recovery files, and the
+  // legacy baseline) returns an EMPTY row set - a fresh database - so every
+  // file is treated as pending; all other statements return `undefined`. The
+  // runner reads the whole ledger rather than its maximum because a maximum
+  // cannot distinguish a version that was never applied from one that does
+  // not exist yet (see its `MigrationLedgerGapError`).
   mockClientQuery.mockImplementation(async (sql: unknown) => {
     if (
       typeof sql === "string" &&
-      /SELECT COALESCE\(MAX\(version\)/i.test(sql)
+      /SELECT version\s+FROM schema_version/i.test(sql)
     ) {
-      return { rows: [{ version: 0 }] };
+      return { rows: [] };
     }
     if (
       typeof sql === "string" &&

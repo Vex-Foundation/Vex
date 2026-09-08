@@ -185,7 +185,7 @@ export async function runAgentscanAttest(deps: AgentscanAttestDeps): Promise<Age
       // NON-AUTHORITATIVE, and deliberately not stored. A duplicate POST is
       // answered with the row's EXISTING status, which can already be
       // `verified`; copying that word onto the row without the `verified_at`
-      // stamp violates migration 102's CHECK and burns the row forever. Only
+      // stamp violates migration 107's CHECK and burns the row forever. Only
       // `sweepVerdicts` below writes a status, and only from the GET verdict.
       // Logged because it is still evidence about the server's queue.
       if (outcome.verifyStatus !== null) {

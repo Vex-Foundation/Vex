@@ -72,6 +72,7 @@ const INPUT = {
   tokenAddress: TOKEN,
   name: "Test Coin",
   symbol: "TEST",
+  launchpad: "pools_fun",
   createTxHash: TX,
 };
 
@@ -87,10 +88,18 @@ describe("record — idempotent by construction", () => {
     expect(sql).not.toContain("DO UPDATE");
   });
 
-  it("defaults the launchpad rather than leaving it implicit", async () => {
+  it("writes the launchpad the CALLER named, and cannot be given none", async () => {
+    // It used to default to `trench_express` for callers that predated the
+    // second venue. Migration 108 retired that venue and dropped both the
+    // database DEFAULT and this one: chain 4663 carries more than one
+    // launchpad, so a defaulted discriminator would file a launch under a
+    // protocol nobody chose - and, since the retirement, under one that no
+    // longer exists.
     mockQueryOne.mockResolvedValue(dbRow());
-    await repo.record(INPUT);
-    expect(mockQueryOne.mock.calls[0]![1]![2]).toBe("trench_express");
+    await repo.record({ ...INPUT, launchpad: "pools_fun" });
+    const params = mockQueryOne.mock.calls[0]?.[1];
+    if (params === undefined) throw new Error("expected record to issue a query with params");
+    expect(params[2]).toBe("pools_fun");
   });
 
   it("a CONFLICT reports inserted:false and returns the EXISTING row — not an error", async () => {
@@ -167,11 +176,6 @@ function firstCall(mock: QueryMock | QueryOneMock): { sql: string; params: reado
 }
 
 describe("launchpad confinement - chain_id stopped being a venue selector at 082", () => {
-  it("claimAttributionCandidates is confined to trench_express", async () => {
-    await repo.claimAttributionCandidates({ chainId: 4663, limit: 25, retryAfterSeconds: 600 });
-    expect(firstCall(mockQuery).sql).toContain("launchpad = 'trench_express'");
-  });
-
   it("claimAgentscanAttestCandidates selects by LAUNCHPAD and binds no chain at all", async () => {
     // Sharper than its twin: `attest_signature` is the TRENCH-formatted proof
     // over AgentScan's canonical message, so a pools row here would ship a
@@ -183,11 +187,6 @@ describe("launchpad confinement - chain_id stopped being a venue selector at 082
     expect(sql).toContain("launchpad = 'trench_express'");
     expect(sql).not.toContain("chain_id = $");
     expect(params).toEqual([25, "600"]);
-  });
-
-  it("countUnsignedAttributionGap is confined to trench_express", async () => {
-    await repo.countUnsignedAttributionGap(4663);
-    expect(firstCall(mockQueryOne).sql).toContain("launchpad = 'trench_express'");
   });
 
   it("every pools lane selector is confined to pools_fun", async () => {

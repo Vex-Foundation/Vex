@@ -1,6 +1,6 @@
 /**
  * Swap prequote recording - the token-safety-verdict path shared by kyberswap,
- * uniswap, jupiter and the Trench Express curve quote.
+ * uniswap and jupiter.
  */
 
 import { randomUUID } from "node:crypto";

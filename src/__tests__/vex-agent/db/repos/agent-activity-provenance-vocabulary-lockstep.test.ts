@@ -118,8 +118,17 @@ describe("migration 067 provenance vocabularies — lockstep with their writers"
       .map((f) => readFileSync(path.join(REPO_ROOT, f), "utf8"))
       .join("\n");
     const laneOwned = new Set(["in_mempool", "nonce_superseded"]);
+    // HISTORY-ONLY, and it is the one member with no writer BY DESIGN. Its
+    // writer was the Trench Express launch broadcast, which migration 108
+    // deleted; the value stays in the vocabulary because it is DURABLE - rows
+    // written before the retirement carry it in `agent_activity.pending_reason`,
+    // and a reader that no longer admits it cannot decode its own history.
+    // Removing it here would be the mirror of the defect this test exists for:
+    // that one asserts no member is unwritable, this exemption states the one
+    // member that is unwritable and says why that is correct rather than a gap.
+    const historyOnly = new Set(["launch_prebuy_undecodable"]);
     for (const member of PENDING_REASONS) {
-      if (laneOwned.has(member)) continue;
+      if (laneOwned.has(member) || historyOnly.has(member)) continue;
       expect(handlerSources, `no venue handler ever writes pending_reason '${member}'`)
         .toContain(`"${member}"`);
     }

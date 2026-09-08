@@ -33,7 +33,10 @@ import type { Address } from "viem";
 import { getPoolsFunClient } from "@tools/pools-fun/client.js";
 import { POOLS_CHAIN_SLUG } from "@tools/pools-fun/constants.js";
 import { readPoolsOnChainSnapshot } from "@tools/pools-fun/evm/token-registration.js";
-import { readPoolsHolderRewardsOnChain } from "@tools/pools-fun/holder-rewards/read.js";
+import {
+  poolsRewardAmountHuman,
+  readPoolsHolderRewardsOnChain,
+} from "@tools/pools-fun/holder-rewards/read.js";
 import type {
   PoolsHolderRewardsOnChain,
   PoolsRewardLeg,
@@ -45,35 +48,31 @@ import { poolsFailureDetail } from "./failure.js";
 import { isEvmAddress, readAddressParam } from "./project.js";
 import type { ProtocolExecutionContext } from "../../types.js";
 
-/**
- * Render a raw base-unit amount as a decimal string WITHOUT floating point.
- *
- * `null` decimals means the scale is unknown, and an unknown scale produces no
- * human figure at all - a number at a guessed scale is worse than none
- * (rule 90). String arithmetic, never `Number`: these are uint256 values.
- */
-function humanAmount(raw: string, decimals: number | null): string | null {
-  if (decimals === null || !Number.isInteger(decimals) || decimals < 0 || decimals > 77) return null;
-  const negative = raw.startsWith("-");
-  const digits = (negative ? raw.slice(1) : raw).padStart(decimals + 1, "0");
-  const whole = digits.slice(0, digits.length - decimals);
-  const fraction = decimals === 0 ? "" : digits.slice(digits.length - decimals).replace(/0+$/, "");
-  return `${negative ? "-" : ""}${whole}${fraction ? `.${fraction}` : ""}`;
-}
-
 function projectLeg(leg: PoolsRewardLeg): Record<string, unknown> {
-  const human = humanAmount(leg.earnedRaw, leg.decimals);
+  // TWO DIFFERENT ABSENCES, and neither is a zero. `earnedRaw === null` means
+  // the accrual call itself did not answer, so how much has accrued is unknown;
+  // a null SCALE means the amount was read but cannot be rendered. The leg is
+  // still reported either way, because its asset is a fact the holder needs.
+  const human = leg.earnedRaw === null ? null : poolsRewardAmountHuman(leg.earnedRaw, leg.decimals);
   return {
     asset: leg.asset,
     symbol: leg.symbol,
     decimals: leg.decimals,
     earnedRaw: leg.earnedRaw,
-    ...(human !== null
-      ? { earned: human }
-      : {
+    ...(human !== null ? { earned: human } : {}),
+    ...(leg.earnedRaw === null
+      ? {
+        earnedUnavailable:
+            "The distributor's accrual view for this leg did not answer at this block, so what has accrued is "
+            + "UNKNOWN. That is a missing read, not a balance of zero.",
+      }
+      : {}),
+    ...(leg.earnedRaw !== null && human === null
+      ? {
         earnedUnavailable:
             "The asset's decimals() did not answer, so the raw amount above cannot be scaled. Do not assume 18.",
-      }),
+      }
+      : {}),
   };
 }
 
@@ -270,7 +269,15 @@ export async function poolsHolderRewardsGetHandler(
       );
     }
   }
-  if (api !== null && api.earned !== null && api.earned !== onchain.tokenLeg.earnedRaw) {
+  // A COMPARISON NEEDS BOTH SIDES. A null `earnedRaw` is the on-chain read not
+  // answering, and calling that a disagreement with the launchpad would invent a
+  // conflict between one number and no number.
+  if (
+    api !== null
+    && api.earned !== null
+    && onchain.tokenLeg.earnedRaw !== null
+    && api.earned !== onchain.tokenLeg.earnedRaw
+  ) {
     // Not necessarily a defect: the two reads are at different instants and this
     // reward streams continuously, so a small difference is expected. It is
     // still SHOWN, because the alternative is an agent quoting one number while

@@ -415,7 +415,7 @@ export interface ToolResult {
   failure?: ToolFailure;
   /**
    * Set by a handler that PARKED the turn on a human form instead of producing
-   * an answer (§C3b - `trench.launch_request_form`). Sibling of
+   * an answer (§C3b - a launch request-form tool). Sibling of
    * `pendingApproval` and handled the same way by the tool batch: the call is
    * recorded WITHOUT a result, the rest of the batch is not dispatched, and the
    * ONE result is appended later by the resume that observes the human's answer.

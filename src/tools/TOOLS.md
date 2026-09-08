@@ -14,7 +14,6 @@
 |--------|--------------------|-------|-------|------|
 | `dexscreener/` | DexScreener analytics (REST + WS) | Multi-chain | 5 | [DexScreener.md](dexscreener/DexScreener.md) |
 | `lighter/` | Lighter Core + RHC market data — read client consumed by agent tools | Core + RHC | 7 | [Lighter.md](lighter/Lighter.md) |
-| `trench-express/` | Trench Express launchpad — P1 read client (tokens/token/search/trades/stats) | RBC 4663 | 8 | [TrenchExpress.md](trench-express/TrenchExpress.md) |
 | `khalani/` | Khalani cross-chain bridge (40+ chains) | Multi-chain | 7 | [Khalani.md](khalani/Khalani.md) |
 | `kyberswap/` | KyberSwap aggregator swaps (limit orders + ZaaS deleted, Agent Scan Phase 1) | 19 EVM chains | 23 | [KyberSwap.md](kyberswap/KyberSwap.md) |
 | `uniswap/` | Direct on-chain swap quote/execute — hidden pair, reveal-gated behind KyberSwap | EVM | 12 | (no dedicated doc yet) |

@@ -9,6 +9,10 @@
  */
 
 import { getVisibleToolDefs, type ToolVisibilityContext } from "./visibility.js";
+import {
+  SWAP_VENUE_EXECUTE_RULE,
+  SWAP_VENUE_GUIDANCE_FULL,
+} from "./swap-venue-guidance.js";
 
 /**
  * Ordered, visibility-coherent categorization of the agent-surface tools
@@ -48,12 +52,16 @@ export const TOOL_MAP_CATEGORIES: readonly ToolMapCategory[] = [
   // do in its head (wei/gwei, raw/human, bps, USD).
   { label: "Unit and fee math (exact, no rounding up)", toolNames: ["UnitsConvert"] },
   {
-    // VENUE PREFERENCE, stated not enforced (owner decision D4). The venue
-    // tools are always visible; the label is where the model learns which one
-    // to reach for first, because hiding a venue is what used to "enforce" the
-    // preference and that cost the agent its fallback exactly when the primary
-    // venue failed. Approval, not visibility, is what protects the money.
-    label: "Swap & bridge previews (read-only) - KyberSwap is the primary swap route and Khalani the primary bridge route; the venue-named tools are alternatives for when the primary cannot serve the pair or route",
+    // THE SWAP VENUES ARE PEERS, and this label is where the model learns the
+    // standing between them: it is rendered into every context window by
+    // `prompts/tool-catalog.ts`, which makes it the one budget-free surface
+    // that can carry the whole sentence (the always-loaded descriptions sit at
+    // the 2048-character client cut and carry the compact form). The wording
+    // comes from `swap-venue-guidance.ts` and is never restated here.
+    //
+    // The BRIDGE half is unchanged and is not a preference: `BridgeQuote`
+    // ROUTES, picking Khalani or Relay from Khalani's live registry.
+    label: `Swap & bridge previews (read-only) - ${SWAP_VENUE_GUIDANCE_FULL} Khalani is the bridge route BridgeQuote picks by default and BridgeQuoteRelay is the venue-named alternative for a route it cannot serve`,
     toolNames: [
       "SwapQuote",
       "SwapQuoteUniswap",
@@ -64,7 +72,7 @@ export const TOOL_MAP_CATEGORIES: readonly ToolMapCategory[] = [
     ],
   },
   {
-    label: "Swap & bridge execution (on-chain - quote first, same venue) - SwapExecute and BridgeExecute are the primary routes; execute on the venue you quoted on",
+    label: `Swap & bridge execution (on-chain - quote first, same venue) - ${SWAP_VENUE_EXECUTE_RULE} SwapQuote authorizes SwapExecute, SwapQuoteUniswap authorizes SwapExecuteUniswap, and a BridgeQuote authorizes BridgeExecute whichever venue it chose`,
     toolNames: ["SwapExecute", "SwapExecuteUniswap", "BridgeExecute", "BridgeExecuteRelay"],
   },
   { label: "Research", toolNames: ["WebResearch", "TwitterAccount"] },

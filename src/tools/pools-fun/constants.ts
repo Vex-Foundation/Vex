@@ -179,6 +179,15 @@ export const POOLS_ENDPOINTS = {
   // distributor read. Neither is under `/launches/`.
   launchAssets: "pools-fun/launch-assets",
   holderRewards: "pools-fun/holder-rewards",
+  // The holder-rewards CALLDATA route (POST). Named in the frontend bundle and
+  // measured live 2026-09-04: it answers `{to, data, value, ...}` for
+  // `action: "claim" | "distribute"`. Vex NEVER signs what it returns - the
+  // response is compared byte for byte against calldata Vex built itself from
+  // the verified distributor ABI, and a disagreement refuses by name.
+  // `POST /pools-fun/holder-rewards` (no `/prepare`) is the provider's OWN
+  // custody path behind a Privy session and is deliberately absent from this
+  // table: Vex is self-custodial and has no such session.
+  holderRewardsPrepare: "pools-fun/holder-rewards/prepare",
 } as const;
 
 /**

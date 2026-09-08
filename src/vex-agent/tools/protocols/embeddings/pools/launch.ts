@@ -1,7 +1,7 @@
 /**
  * Retrieval metadata for the pools.fun launch tools.
  *
- * Written to be hard to confuse with the Trench launch tools, which are the
+ * Written to be hard to confuse with the sibling launch tools, which are the
  * nearest neighbours in this space: both launch a coin on the same chain from
  * the same app. The differentiator leads each passage - pools.fun coins open
  * directly into a real trading pool against ETH or a dollar token, with no

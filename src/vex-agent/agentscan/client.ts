@@ -9,7 +9,7 @@
  *
  * NOTHING THROWS. Reporting is telemetry: every expected failure — a refusal,
  * a rate limit, an unreachable host — comes back as a named outcome for the
- * reporter lane to act on, exactly like the trench attribution client. A
+ * reporter lane to act on, exactly like the attribution clients. A
  * throw escaping this module would be contained by the lane anyway, but the
  * outcome unions ARE the retry policy, so they carry everything the lane
  * needs: the contract says only 429/5xx/network are retryable, 401 and

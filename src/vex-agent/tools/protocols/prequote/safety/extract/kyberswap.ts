@@ -1,6 +1,5 @@
 /**
- * EVM quote extraction (kyberswap.swap.quote, and the shape-identical Trench
- * Express curve quote). We deliberately do NOT import the handler-local
+ * EVM quote extraction (kyberswap.swap.quote). We deliberately do NOT import the handler-local
  * `QuoteSafetyLeg` type from kyberswap/handlers/swap.ts (it is not exported); we
  * structurally re-validate instead.
  */

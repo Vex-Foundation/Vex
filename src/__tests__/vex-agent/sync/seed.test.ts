@@ -36,8 +36,16 @@ describe("seedSyncJobs", () => {
     // lane (`agentscan_report`, periodic 30s) makes 15. The AgentScan
     // token-attestation sweep (`agentscan_attest`, periodic 300s) makes 16.
     // The pools.fun attribution retry lane (`pools_attribution`, periodic
-    // 120s) adds a SECOND badge sweep, against a different partner and
-    // a different attest string, not a widening of the trench one.
+    // 120s) makes 17 - a SECOND badge sweep, against a different partner and
+    // a different attest string, not a widening of the trench one. The
+    // Virtuals keeper-launch reconciliation (`virtuals_keeper_launch`, periodic
+    // 30s) made 18 - the only sweep in the tree that waits on SOMEBODY ELSE'S
+    // transaction, the venue keeper's `launch()`, and the reason a Virtuals
+    // launch has a durable `awaiting_keeper` state at all (migration 110).
+    // Migration 108 then retired Trench Express and UNSEEDED its attribution
+    // retry lane, taking the total to 17. The seed row is only removed for
+    // FRESH databases; 108 disables the already-installed one, because deleting
+    // a definition never reaches a database that already has it.
     // Evidence-only Lighter deposit crash recovery, bounded withdrawal
     // recovery, and bounded public order repair bring the merged total to 20.
     await seedSyncJobs();

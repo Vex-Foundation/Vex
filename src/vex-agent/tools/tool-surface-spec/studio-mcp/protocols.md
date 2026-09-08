@@ -53,10 +53,10 @@ whether its provider key is configured on this machine.
 
 ## Totals
 
-- tools: 214
+- tools: 213
 - Vex tools: 29
-- protocol tools: 185 across 12 protocols
-- destructive: 54
+- protocol tools: 184 across 12 protocols
+- destructive: 57
 
 ## Vex tools
 
@@ -139,6 +139,12 @@ whether its provider key is configured on this machine.
 | kyberswap__swap_execute | Execute a KyberSwap swap | mutating | yes | - |
 | kyberswap__swap_quote | Quote a KyberSwap swap | read-only | no | - |
 | kyberswap__token_safety_check | Audit an EVM token with KyberSwap | read-only | no | - |
+
+### launchpads
+
+| tool | title | access | destructive | requires env |
+| --- | --- | --- | --- | --- |
+| launchpads__image_publish | Publish a launch picture publicly | mutating | no | - |
 
 ### lighter
 
@@ -248,6 +254,8 @@ whether its provider key is configured on this machine.
 | tool | title | access | destructive | requires env |
 | --- | --- | --- | --- | --- |
 | pools__fees_claim | Claim pools.fun creator fees | mutating | yes | - |
+| pools__holder_rewards_claim | Claim pools.fun holder rewards | mutating | yes | - |
+| pools__holder_rewards_distribute | Distribute pools.fun holder rewards | mutating | yes | - |
 | pools__holder_rewards_get | Read pools.fun holder rewards | read-only | no | - |
 | pools__launch_assets_list | List pools.fun launchable stocks | read-only | no | - |
 | pools__launch_execute | Launch a token on pools.fun | mutating | yes | - |
@@ -305,21 +313,6 @@ whether its provider key is configured on this machine.
 | solana__tokens_discover | Discover new and trending Solana tokens | read-only | no | JUPITER_API_KEY |
 | solana__tokens_search | Search Solana tokens by name | read-only | no | JUPITER_API_KEY |
 
-### trench
-
-| tool | title | access | destructive | requires env |
-| --- | --- | --- | --- | --- |
-| trench__images_list | List Trench image-locker images | read-only | no | - |
-| trench__launch_execute | Launch a token on Trench Express | mutating | yes | - |
-| trench__launch_preview | Dry-run a Trench Express launch | read-only | no | - |
-| trench__launch_request_form | Ask the user to confirm a Trench launch | mutating | no | - |
-| trench__my_launches_list | List this wallet's Trench launches | read-only | no | - |
-| trench__token_trades_list | Read a Trench Express token's trade tape | read-only | no | - |
-| trench__tokens_discover | Screen Trench Express tokens | read-only | no | - |
-| trench__tokens_search | Search Trench Express tokens | read-only | no | - |
-| trench__trade_execute | Trade a Trench Express token | mutating | yes | - |
-| trench__trade_quote | Quote a Trench Express trade | read-only | no | - |
-
 ### uniswap
 
 | tool | title | access | destructive | requires env |
@@ -333,6 +326,12 @@ whether its provider key is configured on this machine.
 | --- | --- | --- | --- | --- |
 | virtuals__agent_candles_list | Read a Virtuals agent's price candles | read-only | no | - |
 | virtuals__agent_get | Read one Virtuals agent token | read-only | no | - |
+| virtuals__agent_launch_cancel | Cancel a Virtuals agent launch | mutating | yes | - |
+| virtuals__agent_launch_execute | Launch a Virtuals agent | mutating | yes | - |
+| virtuals__agent_launch_preview | Plan a Virtuals agent launch | mutating | no | - |
+| virtuals__agent_launch_status | Check a Virtuals agent launch | read-only | no | - |
+| virtuals__agent_trade_execute | Trade a Virtuals agent on its bonding curve | mutating | yes | - |
+| virtuals__agent_trade_quote | Price a Virtuals bonding-curve trade | read-only | no | - |
 | virtuals__agent_trades_list | Read a Virtuals agent's curve trade tape | read-only | no | - |
 | virtuals__agents_discover | Screen Virtuals agent tokens | read-only | no | - |
 | virtuals__creator_fees_get | Read a Virtuals agent creator's fee status | read-only | no | - |

@@ -14,6 +14,7 @@ import {
   PENDLE_SUPPORTED_CHAIN_IDS,
   PENDLE_CHAIN_REGISTRY,
 } from "@tools/pendle/chains.js";
+import { resolveRpcEndpoints } from "@tools/evm-chains/rpc-endpoints.js";
 
 const EXPECTED_IDS = [1, 10, 56, 143, 146, 999, 5000, 8453, 9745, 42161, 80094];
 
@@ -77,7 +78,11 @@ describe("pendle chain registry", () => {
       expect(getPendleChain(chain.chainId)).toBe(chain);
       // Multicall3 is required for publicClient.multicall on every chain.
       expect(chain.multicall3).toBe("0xcA11bde05977b3631167028862bE2a173976CA11");
-      expect(chain.defaultRpcUrl).toMatch(/^https:\/\//);
+      // The endpoint is no longer a field on the Pendle chain row: every
+      // chain's endpoints belong to `@tools/evm-chains/rpc-endpoints.ts`. The
+      // property this line guarded - that Pendle can build a client for every
+      // chain it claims to support - is asserted against the owner instead.
+      expect(resolveRpcEndpoints(chain.chainId).length).toBeGreaterThan(0);
     }
   });
 

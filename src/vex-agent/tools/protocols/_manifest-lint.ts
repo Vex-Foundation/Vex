@@ -25,6 +25,8 @@
  *                           unreachable under case-insensitive normalization)
  *   param-alias             a declared retired input spelling is banned, unique across the
  *                           tool, and names its removal condition
+ *   retired-venue-precedence  no model-facing string re-words the KyberSwap/Uniswap
+ *                           standing; `registry/swap-venue-guidance.ts` owns it
  *
  * TODAY'S VIOLATIONS ARE ALLOWLISTED, not fixed (see `_manifest-lint/allowlist.ts`).
  * The suite is green on the current tree; every migration wave DELETES the
@@ -61,6 +63,7 @@ export type { ManifestLintAllowlistEntry } from "./_manifest-lint/allowlist.js";
 export {
   isLinterOwnSource,
   lintGenericErrorLiterals,
+  lintRetiredVenuePrecedence,
   lintSlippageDefaultHome,
   lintStaleOutputCapClaims,
   SLIPPAGE_DEFAULT_OWNER,

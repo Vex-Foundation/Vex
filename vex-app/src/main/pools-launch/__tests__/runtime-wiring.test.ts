@@ -1,10 +1,10 @@
 /**
- * THE SWAP ITSELF: `getPoolsLaunchRuntime()` is bound to the seven published
+ * THE SWAP ITSELF: `getPoolsLaunchRuntime()` is bound to the eight published
  * implementations, and to nothing else.
  *
  * This is the one test that looks at the real seam rather than a fake. It pins
  * the two things the swap can get wrong and a type cannot catch, because all
- * seven implementations share the same shape family:
+ * eight implementations share the same shape family:
  *
  *  1. a method that is WIRED TO THE WRONG IMPLEMENTATION — `claim` reaching
  *     `previewClaim` typechecks perfectly and would simulate a payout while
@@ -26,6 +26,7 @@ const implementations = {
   claimPoolsFees: vi.fn(),
   listPoolsMyLaunches: vi.fn(),
   getAwaitingPoolsLaunchForm: vi.fn(),
+  cancelAwaitingPoolsLaunchForm: vi.fn(),
 };
 
 vi.mock("@vex-agent/tools/protocols/pools/launch.js", () => implementations);
@@ -42,6 +43,14 @@ const WIRING = [
   ["prepare", implementations.preparePoolsLaunch, { name: "Moon" }],
   ["deploy", implementations.deployPoolsLaunch, { fingerprintId: "fp_1" }],
   ["cancel", implementations.cancelPoolsLaunch, { fingerprintId: "fp_1" }],
+  // The TWO cancels are the crossed wire this table exists for: both take one
+  // opaque id, so `cancelAwaitingForm` reaching `cancelPoolsLaunch` typechecks
+  // and would silently leave the agent's turn parked.
+  [
+    "cancelAwaitingForm",
+    implementations.cancelAwaitingPoolsLaunchForm,
+    { intentId: "int_1" },
+  ],
   ["previewClaim", implementations.previewPoolsClaim, { tokenAddress: `0x${"a".repeat(40)}` }],
   ["claim", implementations.claimPoolsFees, { tokenAddress: `0x${"a".repeat(40)}` }],
   ["myLaunches", implementations.listPoolsMyLaunches, { limit: 5 }],
@@ -52,9 +61,10 @@ beforeEach(() => {
 });
 
 describe("getPoolsLaunchRuntime", () => {
-  it("exposes all seven contract methods and no eighth", () => {
+  it("exposes all eight contract methods and no ninth", () => {
     expect(Object.keys(getPoolsLaunchRuntime()).sort()).toEqual([
       "cancel",
+      "cancelAwaitingForm",
       "claim",
       "deploy",
       "getAwaiting",

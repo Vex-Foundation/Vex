@@ -4,9 +4,9 @@
  * WHY IT EXISTS. `(amount * 25n) / 10_000n` had been written out independently
  * at four venues — `bridge-fee/fee-amount.ts`, `kyberswap/swap-vex-fee.ts`,
  * `jupiter/fee-swap.ts` and `kyberswap/evm/swap-source-transfer-binding.ts` —
- * and Trench would have been the fifth. Four copies of a real-funds rounding
+ * and a launchpad would have been the fifth. Four copies of a real-funds rounding
  * rule is four chances for one of them to round instead of floor, or to use a
- * denominator of 1000 (the Trench Diamond's own trade-fee base, notably) and
+ * denominator of 1000 (a curve Diamond's own trade-fee base, notably) and
  * overcharge a user by 10×. The arithmetic is stated here, once.
  *
  * PROPERTIES, all of which the venues depend on:

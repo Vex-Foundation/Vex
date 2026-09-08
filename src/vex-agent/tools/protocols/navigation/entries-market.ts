@@ -23,7 +23,6 @@ import { SOLANA_NAVIGATION } from "./entries-market/solana.js";
 import { DEXSCREENER_NAVIGATION } from "./entries-market/dexscreener.js";
 import { LIGHTER_NAVIGATION } from "./entries-market/lighter.js";
 import { VIRTUALS_NAVIGATION } from "./entries-market/virtuals.js";
-import { TRENCH_NAVIGATION } from "./entries-market/trench.js";
 import { POOLS_NAVIGATION } from "./entries-market/pools.js";
 import { LAUNCHPADS_NAVIGATION } from "./entries-market/launchpads.js";
 
@@ -38,7 +37,6 @@ export const MARKET_PROTOCOL_NAVIGATION: readonly ProtocolNamespaceNavigation[] 
   DEXSCREENER_NAVIGATION,
   LIGHTER_NAVIGATION,
   VIRTUALS_NAVIGATION,
-  TRENCH_NAVIGATION,
   POOLS_NAVIGATION,
   LAUNCHPADS_NAVIGATION,
 ] as const;

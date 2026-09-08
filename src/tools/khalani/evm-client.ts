@@ -1,7 +1,6 @@
 import {
   createPublicClient,
   createWalletClient,
-  http,
   type Account,
   type Chain,
   type Hex,
@@ -12,9 +11,7 @@ import {
 import { privateKeyToAccount } from "viem/accounts";
 import type { KhalaniChain } from "./types.js";
 import { getChainRpcUrl } from "./chains.js";
-
-const EVM_RPC_TIMEOUT_MS = 30_000;
-const EVM_RPC_RETRY_COUNT = 2;
+import { buildEvmTransport, buildPinnedEvmTransport } from "../evm-chains/rpc-transport.js";
 
 function toViemChain(chain: KhalaniChain, rpcUrl: string): Chain {
   return {
@@ -42,10 +39,14 @@ export function createDynamicWalletClient(
   privateKey: Hex,
 ): WalletClient<Transport, Chain, Account> {
   const rpcUrl = getChainRpcUrl(chain.id, chains);
+  // Khalani's registry url enters as a PROVIDER-tier entry behind the user's
+  // own endpoint and any bundled entry for the chain, so a bridge leg on a
+  // chain Vex already knows uses the same measured endpoints every other venue
+  // does. Pinned, because this client signs.
   return createWalletClient({
     account: privateKeyToAccount(privateKey),
     chain: toViemChain(chain, rpcUrl),
-    transport: http(rpcUrl, { timeout: EVM_RPC_TIMEOUT_MS, retryCount: EVM_RPC_RETRY_COUNT }),
+    transport: buildPinnedEvmTransport(chain.id, { providerUrls: [rpcUrl] }),
   }) as WalletClient<Transport, Chain, Account>;
 }
 
@@ -56,6 +57,6 @@ export function createDynamicPublicClient(
   const rpcUrl = getChainRpcUrl(chain.id, chains);
   return createPublicClient({
     chain: toViemChain(chain, rpcUrl),
-    transport: http(rpcUrl, { timeout: EVM_RPC_TIMEOUT_MS, retryCount: EVM_RPC_RETRY_COUNT }),
+    transport: buildEvmTransport(chain.id, { providerUrls: [rpcUrl] }),
   }) as PublicClient<Transport, Chain>;
 }

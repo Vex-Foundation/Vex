@@ -144,7 +144,13 @@ export type PoolsHolderRewardsMode = (typeof POOLS_HOLDER_REWARDS_MODES)[number]
 export interface PoolsVerifierExpectation {
   readonly name: string;
   readonly symbol: string;
-  readonly pairedAsset: "weth" | "usdg";
+  /**
+   * The pair in the CALLER's vocabulary. `stock` names a tokenised stock and
+   * says nothing about WHICH one - {@link pairedAssetAddress} does that, and the
+   * factory's own `allowedPairedAsset` and `pricingModeFor` at the anchored
+   * block decide whether it is launchable and how it is priced (points 5 and 6).
+   */
+  readonly pairedAsset: "weth" | "usdg" | "stock";
   readonly pairedAssetAddress: Address;
   /**
    * The recipient the CALLER intends.

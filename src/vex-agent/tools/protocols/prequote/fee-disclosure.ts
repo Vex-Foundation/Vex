@@ -198,8 +198,7 @@ export type VexFeePreview = z.infer<typeof vexFeePreviewSchema>;
  *
  * Jupiter (`solana.swap.quote`) is absent on purpose: it carries its own richer
  * `feePreview` channel (fee + tip + ATA rent) and a second, poorer line beside
- * it would contradict it. Pendle and Morpho carry no Vex fee at all, and Trench
- * cannot state its SELL fee before settlement.
+ * it would contradict it. Pendle and Morpho carry no Vex fee at all.
  */
 export const VEX_FEE_COLLECTION_BY_QUOTE_TOOL: Readonly<Record<string, VexFeeCollection>> = {
   "kyberswap.swap.quote": "inside_route",
@@ -252,8 +251,8 @@ const FEE_BEARING_GATED_EXECUTES: ReadonlySet<string> = new Set([
  *
  * Keyed on the RESOLVED venue id, which is what `EXECUTE_GATE_TOOLS` registers
  * and what the gate is called with. `solana.swap.execute` is excluded (Jupiter's
- * own `feePreview` is its statement); Pendle, Morpho and the Trench lanes carry
- * no Vex fee on this channel.
+ * own `feePreview` is its statement); Pendle and Morpho carry no Vex fee on this
+ * channel.
  */
 export function isFeeBearingGatedExecute(toolId: string): boolean {
   return FEE_BEARING_GATED_EXECUTES.has(toolId);

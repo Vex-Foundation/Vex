@@ -35,7 +35,6 @@ import type { ProjectsBridge } from "./projects.js";
 import type { RuntimeBridge } from "./runtime.js";
 import type { SessionsBridge } from "./sessions.js";
 import type { PoolsLaunchBridge } from "./pools-launch.js";
-import type { TokenLaunchBridge } from "./token-launch.js";
 import type { UsageBridge } from "./usage.js";
 import type { WalletsBridge } from "./wallets.js";
 
@@ -57,7 +56,6 @@ export type { ProjectsBridge } from "./projects.js";
 export type { RuntimeBridge } from "./runtime.js";
 export type { SessionsBridge } from "./sessions.js";
 export type { PoolsLaunchBridge } from "./pools-launch.js";
-export type { TokenLaunchBridge } from "./token-launch.js";
 export type { UsageBridge } from "./usage.js";
 export type { WalletsBridge } from "./wallets.js";
 
@@ -123,12 +121,6 @@ export interface VexAgentBridge {
    * the spotlight, and never served from a positive cache.
    */
   readonly boardChart: BoardChartBridge;
-  /**
-   * Token launch (C5). `preview` and `myLaunches` are live; `submit` and
-   * `cancel` are mounted but refuse in words, pending the C0 authorization
-   * snapshot and the agent-wake machinery.
-   */
-  readonly tokenLaunch: TokenLaunchBridge;
   /**
    * pools.fun launches and creator-fee claims (P3). Two stages: `prepare`
    * verifies and returns an opaque fingerprint, `deploy` authorizes exactly

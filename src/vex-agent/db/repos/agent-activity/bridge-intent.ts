@@ -89,7 +89,7 @@ export function buildNormalizedBridgeRoute(route: BridgeRouteEndpoints): string 
 export interface BridgeActivityLeg {
   readonly eventIndex: number;
   /**
-   * `vex_fee` joined the union in migration 102: it is the venue-independent
+   * `vex_fee` joined the union in migration 107: it is the venue-independent
    * name for the same integrator-fee transfer `bridge_fee` records, and the
    * database's kind/role binding admits it on the bridge arm. Both are listed
    * because `bridge_fee` names the rows already written under it.

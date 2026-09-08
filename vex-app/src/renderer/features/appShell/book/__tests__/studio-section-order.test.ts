@@ -50,7 +50,7 @@ const EXPECTED_SCOPES: Readonly<Record<BookSectionId, readonly string[]>> = {
   project: ["project"],
   // The locker is GLOBAL; only the launch is a session's, and the card
   // itself withholds that action under a project scope.
-  trench: ["session", "project"],
+  launchpads: ["session", "project"],
 };
 
 describe("the scope table is the only thing that shortens a rail", () => {
@@ -90,7 +90,7 @@ describe("the scope table is the only thing that shortens a rail", () => {
       "project",
       // TRENCH joined with the parity decree: the locker is global, and the
       // card withholds the launch action for a project itself.
-      "trench",
+      "launchpads",
     ]);
   });
 });
@@ -149,7 +149,7 @@ describe("resolveStudioBookSectionOrder", () => {
       "wallets",
       "activity",
       "project",
-      "trench",
+      "launchpads",
     ]);
   });
 

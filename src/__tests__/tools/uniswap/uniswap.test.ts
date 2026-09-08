@@ -37,7 +37,6 @@ function tok(address: Address, isNative = false): UniswapToken {
 describe("uniswap deployment registry", () => {
   it("pins a separate historical evidence RPC for Ethereum", () => {
     const ethereum = getUniswapDeployment(1);
-    expect(ethereum?.defaultRpcUrl).toBe("https://ethereum-rpc.publicnode.com");
     expect(ethereum?.historicalRpcUrl).toBe("https://eth.drpc.org");
   });
 

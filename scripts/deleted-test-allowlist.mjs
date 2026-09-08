@@ -20,6 +20,11 @@
  * outlives its merge is stale by construction and the gate says so.
  */
 
+/**
+ * Resting state. The migration-108 Trench Express retirement carried 63 reviewed
+ * deletions here; they merged with PR #165 (`7890245fa`) and were consumed by
+ * that merge, so the table is empty again until the next contract change.
+ */
 export const DELETED_TEST_ALLOWLIST = [];
 
 export const DELETED_TEST_ALLOWLIST_PATHS = new Set(

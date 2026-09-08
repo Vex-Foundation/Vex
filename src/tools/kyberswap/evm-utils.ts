@@ -2,7 +2,7 @@
  * KyberSwap multi-chain EVM utilities — barrel re-export.
  */
 
-export { ERC20_ABI, DEFAULT_RPC, RPC_TIMEOUT_MS, RPC_RETRY_COUNT, toViemChain } from "./evm/config.js";
+export { ERC20_ABI, toViemChain } from "./evm/config.js";
 export type { KyberEvmClients } from "./evm/config.js";
 export { getKyberEvmClients, getKyberPublicClient } from "./evm/config.js";
 

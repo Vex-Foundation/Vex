@@ -1,7 +1,7 @@
 /**
  * A2 — the bounded ladder that ends the permanent 60s warn loop.
  *
- * Live evidence: `trench.launch_form_expiry.resume_failed status=400` for one
+ * Live evidence: `launch_form_expiry.resume_failed status=400` for one
  * intent, every sweep, forever, because the sweep had no memory of having
  * already tried. Each case below uses its own intent id — the policy's memory
  * is deliberately process-wide, exactly as it is in production.

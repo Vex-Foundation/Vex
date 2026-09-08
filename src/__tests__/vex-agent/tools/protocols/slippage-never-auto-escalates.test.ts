@@ -13,7 +13,7 @@
  * incremented and never widened by `Math.max` cannot be raised at runtime, on
  * any branch, whatever the mocks say.
  *
- * SCOPE. kyberswap, solana-jupiter, pendle and trench — the four money paths
+ * SCOPE. kyberswap, solana-jupiter and pendle - the three money paths
  * that carry a caller `slippageBps` into a signable route AND are owned by this
  * change. Uniswap and relay are deliberately absent: they are being edited
  * concurrently in this same wave, and a characterization test must freeze
@@ -44,10 +44,6 @@ const VENUE_SOURCES: Readonly<Record<string, readonly string[]>> = {
   pendle: [
     "src/vex-agent/tools/protocols/pendle/calldata/price-floor.ts",
     "src/vex-agent/tools/protocols/pendle/handlers/shared.ts",
-  ],
-  trench: [
-    "src/vex-agent/tools/protocols/trench/handlers/trade",
-    "src/tools/trench-express/evm/min-out.ts",
   ],
 };
 

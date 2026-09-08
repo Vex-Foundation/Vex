@@ -9,7 +9,7 @@
  * `resumeAgentAfterUserForm` and never touches the runtime primitives, so the
  * claim/stamp ordering cannot be reimplemented — or half-implemented — there.
  *
- * WHY THE TURN CANNOT JUST END. The agent's `trench.launch_request_form` call is
+ * WHY THE TURN CANNOT JUST END. The agent's launch request-form call is
  * still pending when the form opens. Without this wake the run stays parked on
  * `paused_user_form` forever holding an unanswered tool call: the user's token
  * launches and the agent never learns it happened. Every terminal outcome —
@@ -418,7 +418,7 @@ function describeOutcome(outcome: LaunchFormOutcome): string {
       );
     case "unconfirmed":
       // Deliberately mirrors the executor's own ambiguous wording
-      // (`trench.launch_execute.ambiguous`): the two paths describe the SAME
+      // (the launch execute's `ambiguous` outcome): the two paths describe the SAME
       // event, and a model told "done" here while the tool result says
       // "unconfirmed" learns whichever it read last.
       return (

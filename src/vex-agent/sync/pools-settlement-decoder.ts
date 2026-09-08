@@ -57,6 +57,11 @@ import {
   POOLS_SUITES,
   type PoolsContractSuite,
 } from "@tools/pools-fun/constants.js";
+import {
+  POOLS_DISTRIBUTOR_DEPLOYED_EVENT_ABI,
+  poolsHolderRewardModeFromWire,
+  type PoolsHolderRewardMode,
+} from "@tools/pools-fun/holder-rewards/read.js";
 
 /** One receipt log, as the decoders read it. */
 export interface PoolsSettlementLog {
@@ -72,6 +77,15 @@ const TOKEN_LAUNCHED_TOPIC = toEventSelector(
   "TokenLaunched(address,address,address,address,address,address,int24,string,uint256)",
 );
 const CLAIMED_TOPIC = toEventSelector("Claimed(address,address,uint256,uint256)");
+/**
+ * `DistributorDeployed(address,address,uint8)` - the ONLY authority on which
+ * distributor a fees-to-holders launch actually created.
+ *
+ * Read from the Sourcify-verified HolderRewardsDeployer ABI, not spelled here
+ * from convention; the ABI object it is derived from lives beside the holder-
+ * rewards reader that owns this vocabulary.
+ */
+const DISTRIBUTOR_DEPLOYED_TOPIC = toEventSelector("DistributorDeployed(address,address,uint8)");
 
 /** What the authorized plan said this launch would be. The decoder proves the receipt matches. */
 export interface PoolsLaunchExpectation {
@@ -81,6 +95,30 @@ export interface PoolsLaunchExpectation {
   readonly userSalt: Hex;
   /** The token address the user approved, from the verifier. */
   readonly predictedTokenAddress: Address;
+  /**
+   * THE HOLDER-REWARDS INTENT, when the launch had one - and the reason this
+   * decoder cannot simply compare `feeRecipient` on such a launch.
+   *
+   * The verified V3 gateway RESOLVES the `FEES_TO_HOLDERS*` sentinel to the
+   * distributor it has just deployed BEFORE it emits `GatewayLaunch`, so a
+   * holders launch's receipt names the distributor and the signed tuple names
+   * the sentinel. They are different addresses by construction, and neither is
+   * wrong.
+   *
+   * So the proof changes shape rather than relaxing: the receipt's recipient
+   * must be the distributor that THIS transaction's own
+   * `DistributorDeployed(token, distributor, mode)` named, emitted by the suite's
+   * pinned HolderRewardsDeployer, for THIS token, in the mode that was
+   * authorized. Comparing against the sentinel would refuse every correct
+   * holders launch; accepting any address would prove nothing at all.
+   *
+   * `null` for an ordinary launch, where the tuple's recipient is an address and
+   * the receipt must carry exactly it.
+   */
+  readonly holderRewards?:
+    | { readonly mode: PoolsHolderRewardMode; readonly sentinel: Address }
+    | null
+    | undefined;
 }
 
 /** A launch proven to be ours. */
@@ -88,7 +126,20 @@ export interface DecodedPoolsLaunch {
   readonly tokenAddress: Address;
   readonly poolAddress: Address;
   readonly pairedAsset: Address;
+  /** Whatever the gateway emitted: an address on an ordinary launch, the DISTRIBUTOR on a holders launch. */
   readonly feeRecipient: Address;
+  /**
+   * The distributor this launch deployed, PROVEN from its own
+   * `DistributorDeployed` event, and the mode that event declared.
+   *
+   * `null` on an ordinary launch. It is not merely a copy of `feeRecipient`: the
+   * two are the same address only because the proof below established that they
+   * must be, and recording where the value came from is what lets a later reader
+   * tell a proven distributor from an unexamined recipient.
+   */
+  readonly holderRewards:
+    | { readonly distributor: Address; readonly mode: PoolsHolderRewardMode }
+    | null;
   readonly launcher: Address;
   readonly feePaidWei: bigint;
   readonly devBuyOut: bigint;
@@ -272,13 +323,33 @@ export function decodePoolsLaunchSettlement(
         + `${expected.predictedTokenAddress}`,
     };
   }
-  if (!sameAddress(gatewayEvent.feeRecipient, expected.feeRecipient)) {
-    return {
-      ok: false,
-      reason:
-        `the fee stream was set to ${gatewayEvent.feeRecipient} but the authorized plan set `
-        + `${expected.feeRecipient}`,
-    };
+  // ── WHERE THE FEE STREAM ACTUALLY WENT ────────────────────────────
+  //
+  // Two proofs, because the chain has two shapes. An ordinary launch must name
+  // the exact address that was signed. A HOLDERS launch cannot: the gateway
+  // resolved the sentinel before emitting, so the receipt names a distributor
+  // that did not exist when the tuple was signed - and the only thing that can
+  // prove it is the right one is this transaction's own DistributorDeployed.
+  const holderRewards = expected.holderRewards ?? null;
+  let provenHolderRewards: { readonly distributor: Address; readonly mode: PoolsHolderRewardMode } | null = null;
+  if (holderRewards === null) {
+    if (!sameAddress(gatewayEvent.feeRecipient, expected.feeRecipient)) {
+      return {
+        ok: false,
+        reason:
+          `the fee stream was set to ${gatewayEvent.feeRecipient} but the authorized plan set `
+          + `${expected.feeRecipient}`,
+      };
+    }
+  } else {
+    const proven = proveHolderRewardsDistributor(logs, {
+      suiteGateway: gateway,
+      token: getAddress(gatewayEvent.token),
+      emittedRecipient: getAddress(gatewayEvent.feeRecipient),
+      intent: holderRewards,
+    });
+    if (!proven.ok) return proven;
+    provenHolderRewards = proven.value;
   }
   if (!sameAddress(gatewayEvent.pairedAsset, expected.pairedAsset)) {
     return {
@@ -302,6 +373,7 @@ export function decodePoolsLaunchSettlement(
       poolAddress: getAddress(gatewayEvent.pool),
       pairedAsset: getAddress(gatewayEvent.pairedAsset),
       feeRecipient: getAddress(gatewayEvent.feeRecipient),
+      holderRewards: provenHolderRewards,
       launcher: getAddress(gatewayEvent.launcher),
       feePaidWei: gatewayEvent.feePaidWei,
       devBuyOut: gatewayEvent.devBuyOut,
@@ -309,6 +381,132 @@ export function decodePoolsLaunchSettlement(
       metadataUri: factoryEvent.metadataUri,
     },
   };
+}
+
+/**
+ * PROVE which distributor a fees-to-holders launch created, from the launch's
+ * own receipt.
+ *
+ * THE PROBLEM. On a holders launch the signed tuple carries a SENTINEL
+ * (`FEES_TO_HOLDERS`, `_PAIRED` or `_BOTH`), and the gateway resolves it to the
+ * distributor it deploys in the same transaction before emitting
+ * `GatewayLaunch`. So the address in the receipt is one that did not exist when
+ * the user approved the launch, and comparing it to anything the plan holds
+ * would either refuse every correct launch (compare to the sentinel) or prove
+ * nothing (accept whatever arrived).
+ *
+ * THE PROOF. The suite's own HolderRewardsDeployer emits
+ * `DistributorDeployed(token, distributor, rewardMode)` in this same receipt.
+ * Four facts must line up, and every one of them is a refusal:
+ *
+ *   1. EXACTLY ONE such event, from the PINNED deployer of the SAME suite the
+ *      launch was signed against. Any contract can emit a same-signature event,
+ *      and a deployer from another suite would prove a different launchpad's
+ *      launch.
+ *   2. Its `token` is the token this launch created. A distributor deployed for
+ *      some other token in the same transaction is not this token's.
+ *   3. Its `distributor` is EXACTLY the address the gateway emitted as the fee
+ *      recipient. This is the join that makes the whole proof: it is what turns
+ *      "a distributor was deployed" into "the fee stream goes to it".
+ *   4. Its `rewardMode` is the mode that was AUTHORIZED. The user agreed to be
+ *      paid in one asset, and a distributor in another mode pays a different
+ *      stream for the life of the token.
+ *
+ * A suite with no known deployer refuses rather than skipping the proof: V1 and
+ * V2 cannot deploy the paired or both modes at all, and a launch that claims to
+ * have done so is a launch this build cannot account for.
+ */
+function proveHolderRewardsDistributor(
+  logs: readonly PoolsSettlementLog[],
+  input: {
+    readonly suiteGateway: string;
+    readonly token: Address;
+    readonly emittedRecipient: Address;
+    readonly intent: { readonly mode: PoolsHolderRewardMode; readonly sentinel: Address };
+  },
+): PoolsSettlementOutcome<{ readonly distributor: Address; readonly mode: PoolsHolderRewardMode }> {
+  const suite = POOLS_SUITES.find((candidate) => sameAddress(candidate.gateway, input.suiteGateway));
+  const deployer = suite?.holderRewardsDeployer;
+  if (deployer === undefined) {
+    return {
+      ok: false,
+      reason:
+        `this launch set the fee stream to the holders sentinel ${input.intent.sentinel}, but the suite it was `
+        + `signed against (gateway ${input.suiteGateway}) has no HolderRewardsDeployer Vex knows, so which `
+        + "distributor now receives the fees cannot be proven from this receipt",
+    };
+  }
+
+  const deployedLogs = logsFrom(logs, deployer, DISTRIBUTOR_DEPLOYED_TOPIC);
+  if (deployedLogs.length === 0) {
+    return {
+      ok: false,
+      reason:
+        `this launch asked for fees to holders, but its receipt carries no DistributorDeployed event from the `
+        + `pinned HolderRewardsDeployer ${deployer}; the address now receiving the fee stream `
+        + `(${input.emittedRecipient}) is unproven`,
+    };
+  }
+  if (deployedLogs.length > 1) {
+    return {
+      ok: false,
+      reason:
+        `${deployedLogs.length} DistributorDeployed events from the pinned deployer in one receipt; which of `
+        + "them belongs to this launch cannot be established, and picking one would be a guess",
+    };
+  }
+
+  let args;
+  try {
+    args = decodeEventLog({
+      abi: [POOLS_DISTRIBUTOR_DEPLOYED_EVENT_ABI] as const,
+      data: deployedLogs[0]!.data as Hex,
+      topics: deployedLogs[0]!.topics as [Hex, ...Hex[]],
+    }).args;
+  } catch (err) {
+    return {
+      ok: false,
+      reason:
+        "the DistributorDeployed event did not decode against its verified ABI: "
+        + `${err instanceof Error ? err.message : "unknown"}`,
+    };
+  }
+
+  if (!sameAddress(args.token, input.token)) {
+    return {
+      ok: false,
+      reason:
+        `the receipt's DistributorDeployed names token ${args.token}, but this launch created `
+        + `${input.token}; that distributor belongs to a different token`,
+    };
+  }
+  if (!sameAddress(args.distributor, input.emittedRecipient)) {
+    return {
+      ok: false,
+      reason:
+        `the gateway set the fee stream to ${input.emittedRecipient}, but the distributor this launch deployed `
+        + `is ${args.distributor}; the fee stream does not go to the distributor this token created`,
+    };
+  }
+  const mode = poolsHolderRewardModeFromWire(Number(args.rewardMode));
+  if (mode === null) {
+    return {
+      ok: false,
+      reason:
+        `the distributor was deployed in reward mode ${args.rewardMode}, which this build has no name for, so `
+        + "what the holders will be paid in cannot be stated",
+    };
+  }
+  if (mode !== input.intent.mode) {
+    return {
+      ok: false,
+      reason:
+        `this launch was authorized to pay holders in "${input.intent.mode}" mode (sentinel `
+        + `${input.intent.sentinel}), but the distributor it deployed runs in "${mode}" mode`,
+    };
+  }
+
+  return { ok: true, value: { distributor: getAddress(args.distributor), mode } };
 }
 
 /**

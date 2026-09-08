@@ -54,29 +54,23 @@
  * signing and that read, never this one, is the money authority.
  */
 
-/** The six contract types, with duration and the sides each one taxes. */
-interface AntiSniperTypeSpec {
-  readonly durationSeconds: number;
-  readonly appliesOnBuy: boolean;
-  readonly appliesOnSell: boolean;
-  /** The contract's own constant name, echoed so the model can cite it. */
-  readonly name: string;
-}
+import {
+  ANTI_SNIPER_START_TAX_PCT,
+  ANTI_SNIPER_TYPES,
+  FLAT_CURVE_TAX_PCT,
+} from "@tools/virtuals/anti-sniper-types.js";
 
-export const ANTI_SNIPER_TYPES: Readonly<Record<number, AntiSniperTypeSpec>> = {
-  0: { durationSeconds: 0, appliesOnBuy: false, appliesOnSell: false, name: "ANTI_SNIPER_NONE" },
-  1: { durationSeconds: 60, appliesOnBuy: true, appliesOnSell: false, name: "ANTI_SNIPER_60S" },
-  2: { durationSeconds: 5880, appliesOnBuy: true, appliesOnSell: false, name: "ANTI_SNIPER_98M" },
-  3: { durationSeconds: 5880, appliesOnBuy: false, appliesOnSell: true, name: "ANTI_SNIPER_98M_SELL" },
-  4: { durationSeconds: 5880, appliesOnBuy: true, appliesOnSell: true, name: "ANTI_SNIPER_98M_BOTH" },
-  5: { durationSeconds: 600, appliesOnBuy: true, appliesOnSell: false, name: "ANTI_SNIPER_10M" },
-};
-
-/** `factory.antiSniperBuyTaxStartValue()` - 99 percent at the window's start. */
-export const ANTI_SNIPER_START_TAX_PCT = 99;
-
-/** `FFactoryV2.buyTax` / `.sellTax`, measured 1 on Base and Robinhood. */
-export const FLAT_CURVE_TAX_PCT = 1;
+// The type table itself lives in the VENUE layer (`@tools/virtuals/anti-sniper-types.js`)
+// because the launch lane needs the same six rows to describe the CHOICE a
+// creator makes, and the vex-agent layer may not be imported from there. This
+// module owns the ESTIMATE built on top of them; it re-exports the table so its
+// existing consumers keep one import.
+export {
+  ANTI_SNIPER_TYPES,
+  ANTI_SNIPER_START_TAX_PCT,
+  FLAT_CURVE_TAX_PCT,
+  type AntiSniperTypeSpec,
+} from "@tools/virtuals/anti-sniper-types.js";
 
 /** The router's clamp: the two taxes together can never exceed 99 percent. */
 const MAX_COMBINED_TAX_PCT = 99;

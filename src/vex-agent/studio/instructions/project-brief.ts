@@ -66,6 +66,7 @@ import {
   STUDIO_USAGE_UNAVAILABLE_TOOLS,
   renderStudioOutcomeVocabulary,
 } from "./shared-usage.js";
+import { SWAP_VENUE_GUIDANCE_FULL } from "../../tools/registry/swap-venue-guidance.js";
 
 /** Minutes a quote stays fresh, from the constant the gate itself enforces. */
 const QUOTE_FRESH_MINUTES = String(Math.round(PREQUOTE_MAX_AGE_MS / 60_000));
@@ -522,12 +523,18 @@ export const STUDIO_COMMON_JOBS_NOTE = [
   "",
   "`TokenFind` resolves each token to a CONTRACT ADDRESS on the exact chain, then",
   "`SwapQuote`, then `SwapExecute` with identical parameters including the same",
-  "slippage. That pair is the one you normally need: it routes EVM trades to",
-  "KyberSwap and Solana to Jupiter itself. The Uniswap pair forces Uniswap, for a",
-  "chain with a verified Vex deployment where KyberSwap cannot route. Restate the",
-  "quote's expected output, price impact, gas and safety verdicts before",
-  "executing. Slippage binds the quote you were SHOWN: the execute writes that",
-  "floor into the calldata and refuses BY NAME rather than filling worse. So",
+  "slippage. That pair routes EVM trades to KyberSwap and Solana to Jupiter",
+  "itself; `SwapQuoteUniswap` then `SwapExecuteUniswap` is the Uniswap pair, on a",
+  "chain with a verified Vex deployment.",
+  "",
+  // One unwrapped line ON PURPOSE: the swap-venue standing has ONE owner
+  // (`tools/registry/swap-venue-guidance.ts`) and re-wrapping it here would
+  // mean re-typing it, which is how the four earlier copies drifted apart.
+  SWAP_VENUE_GUIDANCE_FULL,
+  "",
+  "Restate the quote's expected output, price impact, gas and safety verdicts",
+  "before executing. Slippage binds the quote you were SHOWN: the execute writes",
+  "that floor into the calldata and refuses BY NAME rather than filling worse. So",
   "RE-QUOTE AT THE SAME SLIPPAGE FIRST. Raise `slippageBps` only when the",
   "refusal names that parameter, raise it in steps, and say the new worst-case",
   "price to the user before executing - a wider bound is the user's choice, made",

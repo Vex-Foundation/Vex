@@ -51,6 +51,51 @@ export class MigrationError extends Error {
   }
 }
 
+/**
+ * Thrown BEFORE anything is applied when the ledger skipped a migration this
+ * directory still carries.
+ *
+ * WHY THE RUNNER REFUSES RATHER THAN REPAIRING. The cursor used to be
+ * `MAX(version)`, which is correct for an immutable, strictly ordered release
+ * history and silently wrong for a database that was touched by hand: measured
+ * on the owner's development install 2026-09-06, 109 was applied manually before
+ * 108 existed, and every later run reported "up to date" while 108 was missing
+ * for good. Replaying the missing files automatically is NOT the fix. These
+ * migrations restate named CHECK constraints in full (107 and 108 both restate
+ * `agent_activity_event_role_valid`), so applying an older file on top of a
+ * newer schema would silently narrow a constraint a later migration widened.
+ * A gap is therefore a REPAIR DECISION a person makes, and the runner's job is
+ * to name it exactly and stop.
+ *
+ * A ledger version this build has no file for is NOT a gap: that database was
+ * migrated by a newer build, and an older binary correctly has nothing to do.
+ * Neither is a hole in the directory's own numbering (this repository has one:
+ * 103, 104 and 105 were never authored) - only a file whose version sits below
+ * the applied high-water mark and is absent from `schema_version` counts.
+ */
+export class MigrationLedgerGapError extends Error {
+  /** The migrations this directory carries that the ledger never recorded, ascending. */
+  public readonly missing: ReadonlyArray<PendingMigration>;
+  /** The highest version `schema_version` does record. */
+  public readonly appliedThrough: number;
+
+  constructor(missing: ReadonlyArray<PendingMigration>, appliedThrough: number) {
+    const named = missing.map((m) => `${m.file} (v${m.version})`).join(", ");
+    super(
+      `Migration ledger gap: ${named} ` +
+        `${missing.length === 1 ? "is" : "are"} missing from schema_version although ` +
+        `v${appliedThrough} is already applied. Vex will not migrate this database: ` +
+        `re-running an older migration on a newer schema can restate a CHECK constraint ` +
+        `and undo a later change, so the repair is explicit. Apply the named file(s) by ` +
+        `hand, verify the result, insert the matching schema_version row(s), and start ` +
+        `Vex again - or restore a backup taken before the ledger diverged.`
+    );
+    this.name = "MigrationLedgerGapError";
+    this.missing = missing;
+    this.appliedThrough = appliedThrough;
+  }
+}
+
 export interface MigrationProgressEvent {
   /**
    * - `planned`: emitted once at the start with `total` set to the count
@@ -83,6 +128,7 @@ interface PendingMigration {
   readonly file: string;
 }
 
+/** Every `NNN_*.sql` this directory carries, ascending by version. */
 function listMigrations(migrationsDir: string): ReadonlyArray<PendingMigration> {
   return readdirSync(migrationsDir)
     .filter((file) => /^\d{3}_.*\.sql$/.test(file))
@@ -172,11 +218,30 @@ async function planHistoricalRecovery(
   return new Set(result.rows.map(({ file }) => file));
 }
 
-async function readCurrentVersion(client: pg.PoolClient): Promise<number> {
+/**
+ * The whole ledger, not its maximum. The set is what makes a gap visible; the
+ * maximum alone cannot distinguish "108 was never applied" from "108 does not
+ * exist yet".
+ */
+async function readAppliedVersions(client: pg.PoolClient): Promise<ReadonlySet<number>> {
   const result = await client.query<{ version: number }>(
-    "SELECT COALESCE(MAX(version), 0) AS version FROM schema_version"
+    "SELECT version FROM schema_version ORDER BY version ASC"
   );
-  return result.rows[0]?.version ?? 0;
+  return new Set(result.rows.map((row) => Number(row.version)));
+}
+
+/**
+ * The migrations this directory carries that the ledger skipped: below the
+ * applied high-water mark and absent from `schema_version`. Empty ledger means
+ * a fresh database, where nothing can be skipped.
+ */
+function ledgerGaps(
+  files: ReadonlyArray<PendingMigration>,
+  applied: ReadonlySet<number>
+): ReadonlyArray<PendingMigration> {
+  if (applied.size === 0) return [];
+  const appliedThrough = Math.max(...applied);
+  return files.filter((m) => m.version < appliedThrough && !applied.has(m.version));
 }
 
 async function readAppliedFiles(
@@ -277,11 +342,25 @@ export async function runMigrationsWithProgress(
     await client.query(`SET statement_timeout = ${statementTimeoutMs}`);
 
     await ensureSchemaVersionTable(client);
-    const currentVersion = await readCurrentVersion(client);
+    const applied = await readAppliedVersions(client);
+    const migrations = listMigrations(options.migrationsDir);
+    const currentVersion = applied.size === 0 ? 0 : Math.max(...applied);
     const recordedFiles = await readAppliedFiles(client);
     const legacyVersion = await readLegacyVersion(client, currentVersion, recordedFiles);
-    const migrations = listMigrations(options.migrationsDir);
     const recoveryFiles = await planHistoricalRecovery(client, migrations, currentVersion, recordedFiles);
+
+    // Fail closed BEFORE the first BEGIN: a database with a hole in its ledger
+    // is not a database this runner may keep migrating forward - UNLESS every
+    // missing version is already covered by historical recovery (its table
+    // does not exist yet, so recovery already plans to apply it). Without this
+    // exemption, an install whose OWN numbering legitimately skips a version
+    // (this repo's main lineage has no 103-105) trips a false gap the moment a
+    // sibling branch's real file lands at that number.
+    const gaps = ledgerGaps(migrations, applied).filter((m) => !recoveryFiles.has(m.file));
+    if (gaps.length > 0) {
+      throw new MigrationLedgerGapError(gaps, currentVersion);
+    }
+
     const pending = listPendingMigrations(
       migrations,
       currentVersion,

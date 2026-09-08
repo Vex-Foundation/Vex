@@ -92,12 +92,31 @@
     "101_portfolio_snapshot_groups.sql"
   ],
   "102": [
-    "102_launchpad_family_roles.sql",
     "102_lighter_core_withdrawals.sql",
     "102_portfolio_snapshot_group_wallets.sql"
   ],
   "106": [
     "106_launch_image_public_asset.sql",
     "106_lighter_rhc_withdrawal_claims.sql"
+  ],
+  "107": [
+    "107_launchpad_family_roles.sql",
+    "107_lighter_order_lifecycle_intents.sql"
+  ],
+  "108": [
+    "108_lighter_rhc_gateway_implementation.sql",
+    "108_trench_express_retirement.sql"
+  ],
+  "109": [
+    "109_migration_079_084_collision_repair.sql",
+    "109_pools_launch_v3_fields.sql"
+  ],
+  "110": [
+    "110_lighter_withdrawal_predicted_execution_timestamp.sql",
+    "110_virtuals_launch_intents.sql"
+  ],
+  "111": [
+    "111_agentscan_pools_fee_coverage.sql",
+    "111_lighter_order_submit_message.sql"
   ]
 }

@@ -1,12 +1,15 @@
-import { CH } from "../../shared/ipc/channels.js";
+import { CH, EV } from "../../shared/ipc/channels.js";
 import {
+  launchFormEventSchema,
   poolsClaimInputSchema,
+  poolsLaunchCancelAwaitingFormInputSchema,
   poolsLaunchCancelInputSchema,
   poolsLaunchDeployInputSchema,
   poolsLaunchGetAwaitingInputSchema,
   poolsLaunchMyLaunchesInputSchema,
   poolsLaunchPrepareInputSchema,
   type PoolsClaimInput,
+  type PoolsLaunchCancelAwaitingFormInput,
   type PoolsLaunchCancelInput,
   type PoolsLaunchDeployInput,
   type PoolsLaunchGetAwaitingInput,
@@ -14,10 +17,11 @@ import {
   type PoolsLaunchPrepareInput,
 } from "../../shared/schemas/pools-launch.js";
 import type { PoolsLaunchBridge } from "../../shared/types/bridge/agent/pools-launch.js";
-import { invokeWithSchema } from "../_dispatch.js";
+import { invokeWithSchema, subscribe } from "../_dispatch.js";
 
 /**
- * pools.fun launch domain wrapper. Seven named domain methods and nothing else
+ * pools.fun launch domain wrapper. Eight named domain methods plus one
+ * subscription, and nothing else
  * — no channel string, no `ipcRenderer`, and no way for the renderer to name an
  * amount that becomes a spend: the shared schemas validated here are `.strict()`
  * and carry no fee, value, deadline or gas field, so an extra money-shaped key
@@ -42,6 +46,13 @@ export const poolsLaunch = {
   cancel(input: PoolsLaunchCancelInput) {
     return invokeWithSchema(CH.poolsLaunch.cancel, input, poolsLaunchCancelInputSchema);
   },
+  cancelAwaitingForm(input: PoolsLaunchCancelAwaitingFormInput) {
+    return invokeWithSchema(
+      CH.poolsLaunch.cancelAwaitingForm,
+      input,
+      poolsLaunchCancelAwaitingFormInputSchema,
+    );
+  },
   myLaunches(input: PoolsLaunchMyLaunchesInput) {
     return invokeWithSchema(
       CH.poolsLaunch.myLaunches,
@@ -61,5 +72,14 @@ export const poolsLaunch = {
   },
   claim(input: PoolsClaimInput) {
     return invokeWithSchema(CH.poolsLaunch.claim, input, poolsClaimInputSchema);
+  },
+  /**
+   * The C3b push. `subscribe` re-validates the payload against the shared
+   * schema and DROPS anything off-contract - the third validation layer, after
+   * the engine type-check and the main-side bridge. An event that cannot be
+   * trusted must not be able to open a spend-consent dialog.
+   */
+  onFormRequested(cb) {
+    return subscribe(EV.launch.formRequested, launchFormEventSchema, cb);
   },
 } satisfies PoolsLaunchBridge;

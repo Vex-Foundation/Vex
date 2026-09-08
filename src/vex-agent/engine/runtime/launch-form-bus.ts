@@ -10,7 +10,7 @@
  * ## Why this is its OWN bus and not a topic on an existing one
  *
  * The obvious reuse candidate is `control-bus.ts`, which already knows the
- * `paused_user_form` run status. It cannot serve: `trench.launch_request_form`
+ * `paused_user_form` run status. It cannot serve: a launch request-form tool
  * parks a MISSION RUN, and a CHAT session has no run to park — the turn simply
  * ends holding the pending call (see `request-form.ts`). A control-state event
  * therefore never fires for a chat-mode launch, which is the majority case for

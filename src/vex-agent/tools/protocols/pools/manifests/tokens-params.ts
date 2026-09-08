@@ -6,7 +6,7 @@
  * HTTP 400 listing all fourteen accepted keys, and the client surfaces that text
  * verbatim when a value still slips through.
  *
- * Unlike trench, EVERY filter below is applied SERVER-SIDE. That matters for
+ * EVERY filter below is applied SERVER-SIDE. That matters for
  * honesty: a "0 rows" answer here means the provider found nothing matching, not
  * that Vex filtered a page down to nothing, and the handler echoes the active
  * filters so the emptiness is attributable either way.
@@ -23,7 +23,7 @@
  * values. So `vexAttested` and `holderRewards` are separate boolean filters
  * here, combinable with any platform, exactly as the app sends them.
  *
- * Kept in its own file (trench precedent) because the wide filter surface is the
+ * Kept in its own file because the wide filter surface is the
  * part of a manifest that grows.
  */
 

@@ -40,7 +40,15 @@ vi.mock("electron", () => ({
   },
 }));
 
-vi.mock("../sender-validation.js", () => ({ assertTrustedSender: () => undefined }));
+/**
+ * The sender check is the REAL one's seam: trusted by default, so every other
+ * case reads as it always did, and switchable so the unauthorized-sender path
+ * can be driven through the production `registerHandler` rather than described.
+ */
+const assertTrustedSender = vi.fn<(event: unknown) => void>(() => undefined);
+vi.mock("../sender-validation.js", () => ({
+  assertTrustedSender: (event: unknown) => assertTrustedSender(event),
+}));
 
 vi.mock("../../logger/index.js", () => ({
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -59,6 +67,7 @@ const runtime = {
   claim: vi.fn(),
   myLaunches: vi.fn(),
   getAwaiting: vi.fn(),
+  cancelAwaitingForm: vi.fn(),
 };
 vi.mock("../../pools-launch/runtime.js", () => ({ getPoolsLaunchRuntime: () => runtime }));
 
@@ -77,6 +86,7 @@ const FORM = {
   name: "Moon",
   symbol: "MOON",
   pairedAsset: "weth",
+  pairedStockAddress: null,
   image: { kind: "locker", imageId: "img_0123456789abcdef" },
   tweetUrl: null,
   websiteUrl: null,
@@ -103,6 +113,7 @@ const PREPARED = {
   resolvedFeeRecipient: WALLET,
   pairedAsset: "weth",
   pairedAssetAddress: WETH,
+  callFingerprint: `0x${"ef".repeat(32)}`,
   costs: {
     deploymentFee: DEPLOYMENT_FEE,
     prebuy: PREBUY,
@@ -113,6 +124,7 @@ const PREPARED = {
   metadataUri: "ipfs://bafy0000",
   imageLanded: true,
   expiresAt: "2026-08-19T10:01:00.000Z",
+  expiryReason: "vex_window",
 };
 
 interface ErrorResult {
@@ -154,7 +166,11 @@ function expectError(value: unknown, code: string): ErrorResult {
 
 let teardown: ReadonlyArray<() => void> = [];
 
+const INTENT_ID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+const STOCK = `0x${"e".repeat(40)}`;
+
 beforeEach(() => {
+  assertTrustedSender.mockImplementation(() => undefined);
   getSessionWalletScope.mockResolvedValue({ ok: true, data: { evm: { address: WALLET }, solana: null } });
   teardown = registerPoolsLaunchHandlers();
 });
@@ -196,6 +212,12 @@ describe("every channel reaches the runtime", () => {
       { wallet: WALLET, launches: [] },
     ],
     [CH.poolsLaunch.getAwaiting, { sessionId: SESSION_ID }, runtime.getAwaiting, null],
+    [
+      CH.poolsLaunch.cancelAwaitingForm,
+      { sessionId: SESSION_ID, intentId: INTENT_ID },
+      runtime.cancelAwaitingForm,
+      { cancelled: true, resumedAgentTurn: true },
+    ],
     [
       CH.poolsLaunch.claimPreview,
       { sessionId: SESSION_ID, tokenAddress: TOKEN },
@@ -441,6 +463,9 @@ describe("every refusal kind lands on an existing wire code", () => {
     ["fingerprint_expired", "internal.unexpected", true, true],
     ["provider_unavailable", "internal.unexpected", true, false],
     ["claim_ceiling_exceeded", "internal.unexpected", false, false],
+    // The ROW moved, not the input: the renderer echoed the id it was handed,
+    // so this is never the user's typing to fix and never worth a retry.
+    ["form_not_cancellable", "internal.unexpected", false, false],
   ] as const;
 
   it.each(REFUSALS)(
@@ -519,5 +544,214 @@ describe("no money-shaped field can cross inward, even now the runtime is live",
     });
     expectError(result, "validation.invalid_input");
     expect(runtime.deploy).not.toHaveBeenCalled();
+  });
+});
+
+// ── The dismissal of an agent-requested form ────────────────────────────────
+
+/**
+ * `cancelAwaitingForm` is the SECOND cancel and a different object: `cancel`
+ * ends a PREPARED launch by its verified fingerprint, this one ends a DRAFT by
+ * the intent id `getAwaiting` handed the renderer and wakes the agent turn
+ * parked on it. The cases below are the four the boundary owes: the positive
+ * path, an invalid payload, an untrusted sender, and a state the runtime refuses
+ * by name.
+ */
+describe("cancelAwaitingForm - dismissing the form an agent asked for", () => {
+  it("forwards the opaque intent id and reports what happened to row AND turn", async () => {
+    runtime.cancelAwaitingForm.mockResolvedValue({
+      ok: true,
+      value: { cancelled: true, resumedAgentTurn: true },
+    });
+
+    const result = expectOk(
+      await call(CH.poolsLaunch.cancelAwaitingForm, {
+        sessionId: SESSION_ID,
+        intentId: INTENT_ID,
+      }),
+    );
+
+    expect(result.data).toEqual({ cancelled: true, resumedAgentTurn: true });
+    expect(runtime.cancelAwaitingForm).toHaveBeenCalledWith(
+      { sessionId: SESSION_ID, walletAddress: WALLET },
+      { intentId: INTENT_ID },
+    );
+    // A dismissal is not a launch: the two-stage path is never touched.
+    expect(runtime.prepare).not.toHaveBeenCalled();
+    expect(runtime.deploy).not.toHaveBeenCalled();
+    expect(runtime.cancel).not.toHaveBeenCalled();
+  });
+
+  it("a CAS miss stays a SUCCESS - there was nothing live left to cancel", async () => {
+    runtime.cancelAwaitingForm.mockResolvedValue({
+      ok: true,
+      value: { cancelled: false, resumedAgentTurn: false },
+    });
+
+    const result = expectOk(
+      await call(CH.poolsLaunch.cancelAwaitingForm, {
+        sessionId: SESSION_ID,
+        intentId: INTENT_ID,
+      }),
+    );
+    expect(result.data).toEqual({ cancelled: false, resumedAgentTurn: false });
+  });
+
+  it("refuses a wrong-state form with the runtime's own sentence, naming the state", async () => {
+    runtime.cancelAwaitingForm.mockResolvedValue({
+      ok: false,
+      refusal: {
+        kind: "form_not_cancellable",
+        message:
+          "That launch has already been authorized and is being signed, so it can no longer be "
+          + "cancelled. Check Agent Scan for how it settles.",
+      },
+    });
+
+    const error = expectError(
+      await call(CH.poolsLaunch.cancelAwaitingForm, {
+        sessionId: SESSION_ID,
+        intentId: INTENT_ID,
+      }),
+      "internal.unexpected",
+    );
+    expect(error.error.message).toContain("already been authorized");
+    // Retrying a dismissal against a signed launch repeats the same refusal, and
+    // there is nothing in the dialog for the user to edit.
+    expect(error.error.retryable).toBe(false);
+    expect(error.error.userActionable).toBe(false);
+  });
+
+  it.each([
+    ["a missing intentId", { sessionId: SESSION_ID }],
+    ["an empty intentId", { sessionId: SESSION_ID, intentId: "" }],
+    ["a money-shaped extra field", { sessionId: SESSION_ID, intentId: INTENT_ID, valueWei: "1" }],
+    ["a caller-named wallet", { sessionId: SESSION_ID, intentId: INTENT_ID, walletAddress: WALLET }],
+    ["a fingerprint instead of an intent", { sessionId: SESSION_ID, fingerprintId: "pf_1" }],
+  ])("rejects %s before the runtime runs", async (_name, payload) => {
+    expectError(await call(CH.poolsLaunch.cancelAwaitingForm, payload), "validation.invalid_input");
+    expect(runtime.cancelAwaitingForm).not.toHaveBeenCalled();
+  });
+
+  it("an UNTRUSTED sender is refused by name and cancels nothing", async () => {
+    // The real `registerHandler` classifies this throw; the frame that raised it
+    // is not our renderer, so no row may move on its say-so.
+    assertTrustedSender.mockImplementation(() => {
+      throw new Error("Untrusted IPC sender: https://evil.example");
+    });
+
+    const error = expectError(
+      await call(CH.poolsLaunch.cancelAwaitingForm, {
+        sessionId: SESSION_ID,
+        intentId: INTENT_ID,
+      }),
+      "validation.invalid_sender",
+    );
+    expect(error.error.message).not.toContain("evil.example");
+    expect(runtime.cancelAwaitingForm).not.toHaveBeenCalled();
+  });
+
+  it("a THROWN runtime failure is structural and does not claim the form is gone", async () => {
+    runtime.cancelAwaitingForm.mockRejectedValue(
+      new Error("connect ECONNREFUSED postgres://vex:hunter2@127.0.0.1:5432/vex"),
+    );
+
+    const error = expectError(
+      await call(CH.poolsLaunch.cancelAwaitingForm, {
+        sessionId: SESSION_ID,
+        intentId: INTENT_ID,
+      }),
+      "internal.unexpected",
+    );
+    expect(error.error.message).not.toContain("hunter2");
+    expect(error.error.message).toContain("Nothing was signed");
+  });
+});
+
+// ── The stock pair, in both directions ──────────────────────────────────────
+
+/**
+ * THE LANE GAP THE PR5/PR-C3 FOLD NAMED: nothing pinned that a stock-paired form
+ * actually forwards WHICH stock, nor that the awaiting read carries it back.
+ * Both halves matter for the same reason - 194 stocks are launchable, so a lost
+ * address is a launch against an asset the user did not choose, permanently.
+ */
+describe("the tokenised stock travels in both directions, and only on a stock pair", () => {
+  const STOCK_FORM = {
+    ...FORM,
+    pairedAsset: "stock",
+    pairedStockAddress: STOCK,
+    // The gateway takes a native dev buy only against WETH.
+    prebuy: null,
+  };
+
+  it("forwards pairedStockAddress inward on a stock pair", async () => {
+    runtime.prepare.mockResolvedValue({
+      ok: true,
+      value: { ...PREPARED, pairedAsset: "stock", pairedAssetAddress: STOCK },
+    });
+
+    await call(CH.poolsLaunch.prepare, { sessionId: SESSION_ID, form: STOCK_FORM });
+
+    const inputs = runtime.prepare.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(inputs.pairedAsset).toBe("stock");
+    expect(inputs.pairedStockAddress).toBe(STOCK);
+  });
+
+  it("spells 'this launch has no stock' as ABSENT, never as null or empty", async () => {
+    runtime.prepare.mockResolvedValue({ ok: true, value: PREPARED });
+
+    await call(CH.poolsLaunch.prepare, { sessionId: SESSION_ID, form: FORM });
+
+    const inputs = runtime.prepare.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect("pairedStockAddress" in inputs).toBe(false);
+  });
+
+  it.each([
+    ["a stock pair with no address", { ...FORM, pairedAsset: "stock" }],
+    ["a stock address on a WETH pair", { ...FORM, pairedStockAddress: STOCK }],
+    ["a malformed stock address", { ...STOCK_FORM, pairedStockAddress: "0xnope" }],
+  ])("the schema refuses %s before the runtime runs", async (_name, form) => {
+    expectError(
+      await call(CH.poolsLaunch.prepare, { sessionId: SESSION_ID, form }),
+      "validation.invalid_input",
+    );
+    expect(runtime.prepare).not.toHaveBeenCalled();
+  });
+
+  it("carries the proposed stock address back OUT so the form opens with it", async () => {
+    runtime.getAwaiting.mockResolvedValue({
+      ok: true,
+      value: {
+        intentId: INTENT_ID,
+        sessionId: SESSION_ID,
+        expiresAt: "2026-09-06T10:01:00.000Z",
+        proposed: { name: "Moon", pairedAsset: "stock", pairedStockAddress: STOCK },
+      },
+    });
+
+    const result = expectOk(await call(CH.poolsLaunch.getAwaiting, { sessionId: SESSION_ID }));
+
+    expect(result.data.awaiting).toEqual({
+      intentId: INTENT_ID,
+      expiresAt: "2026-09-06T10:01:00.000Z",
+      proposed: { name: "Moon", pairedAsset: "stock", pairedStockAddress: STOCK },
+    });
+  });
+
+  it("an absent proposed stock stays absent - the form's empty box, not an invented address", async () => {
+    runtime.getAwaiting.mockResolvedValue({
+      ok: true,
+      value: {
+        intentId: INTENT_ID,
+        sessionId: SESSION_ID,
+        expiresAt: "2026-09-06T10:01:00.000Z",
+        proposed: { name: "Moon", pairedAsset: "weth" },
+      },
+    });
+
+    const result = expectOk(await call(CH.poolsLaunch.getAwaiting, { sessionId: SESSION_ID }));
+    const proposed = (result.data.awaiting as { proposed: Record<string, unknown> }).proposed;
+    expect(proposed.pairedStockAddress).toBeUndefined();
   });
 });

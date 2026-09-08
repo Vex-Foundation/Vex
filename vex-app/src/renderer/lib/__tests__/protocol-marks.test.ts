@@ -7,8 +7,9 @@
  * other value degrades to a monogram, and nothing ever resolves to a remote
  * URL. The venue strings below are the complete vocabulary the tools emit
  * (`khalani`, `kyberswap`, `morpho`, `pendle`, `pools`, `relay`, `trench`,
- * `uniswap`, `jupiter`, `dexscreener`, `polymarket`, plus the `solana`/`virtuals` toolId
- * namespaces); `polymarket` and `solana` deliberately have no bundled asset
+ * `uniswap`, `jupiter`, `dexscreener`, `polymarket`, `trench`, plus the
+ * `solana`/`virtuals` toolId namespaces); `polymarket`, `trench` and `solana`
+ * deliberately have no bundled asset
  * and MUST take the monogram rather than borrow another brand's mark —
  * `/protocols/jupiter.jpg` is Jupiter's mark, not Solana's.
  *
@@ -31,7 +32,6 @@ describe("resolveProtocolMark - curated venues", () => {
     ["pendle", "/protocols/pendle.jpg", "Pendle"],
     ["pools", "/protocols/pools.jpg", "pools.fun"],
     ["relay", "/protocols/relay.png", "Relay"],
-    ["trench", "/protocols/trench.jpg", "Trench Express"],
     ["uniswap", "/protocols/uniswap.png", "Uniswap"],
     ["virtuals", "/logo/virtuals.svg", "Virtuals"],
   ])("resolves %s to its bundled asset", (protocol, src, label) => {
@@ -54,6 +54,18 @@ describe("resolveProtocolMark - fallbacks", () => {
       kind: "monogram",
       label: "Polymarket",
       initial: "P",
+    });
+  });
+
+  it("keeps the RETIRED venue readable, labelled legacy and wearing no artwork", () => {
+    // Migration 108 retired Trench Express and its bundled mark went with it,
+    // but historical `agent_activity` rows still carry `trench` and must render
+    // as what they are - with a label that does not send a user looking for a
+    // launchpad that is gone.
+    expect(resolveProtocolMark("trench")).toEqual({
+      kind: "monogram",
+      label: "Trench Express (legacy)",
+      initial: "T",
     });
   });
 
@@ -96,7 +108,6 @@ describe("resolveProtocolMark - fallbacks", () => {
       "pendle",
       "pools",
       "relay",
-      "trench",
       "uniswap",
       "virtuals",
     ]) {

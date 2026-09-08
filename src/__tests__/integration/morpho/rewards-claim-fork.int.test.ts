@@ -53,6 +53,18 @@ import type {
 } from "@vex-agent/tools/protocols/types.js";
 
 const FORK_RPC = process.env["VEX_MORPHO_FORK_RPC"];
+
+/**
+ * The endpoint the shared RPC owner resolves for 8453 during this run.
+ *
+ * Set in `beforeAll` once anvil's url is known. Mocking the override reader
+ * rather than the config store keeps every other consumer of the store real.
+ */
+let forkRpcOverride: string | null = null;
+vi.mock("@config/chain-rpc-overrides.js", () => ({
+  getUserRpcOverridesForChain: (chainId: number): string[] =>
+    chainId === 8453 && forkRpcOverride !== null ? [forkRpcOverride] : [],
+}));
 const describeFork = FORK_RPC === undefined ? describe.skip : describe;
 
 const DISTRIBUTOR = "0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae";
@@ -171,11 +183,12 @@ describeFork("morpho.rewards.claim through the product spine, on a Base fork", (
   let txHash: string;
 
   beforeAll(async () => {
+    // POINT THE SHARED RPC OWNER AT THE FORK THROUGH THE PATH A USER WOULD USE.
+    // The Morpho-private endpoint table this used to mutate is gone; endpoints
+    // now belong to `@tools/evm-chains/rpc-endpoints.ts`, whose resolver puts a
+    // configured override ahead of every bundled entry.
     const rpc = FORK_RPC as string;
-
-    const constants = await import("@tools/morpho/constants.js");
-    (constants.MORPHO_DEFAULT_RPC as Record<number, string>)[8453] = rpc;
-    (constants.MORPHO_RPC_FALLBACKS as Record<number, readonly string[]>)[8453] = [];
+    forkRpcOverride = rpc;
 
     await anvil("anvil_setBalance", [WALLET, `0x${parseEther("1").toString(16)}`]);
     await anvil("anvil_setStorageAt", [DISTRIBUTOR, SLOT_TREE, LEAF]);

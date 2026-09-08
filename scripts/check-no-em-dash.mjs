@@ -191,11 +191,6 @@ const RELOCATED_VERBATIM_SENTENCES = [
     ledgerRow: "L368",
     text: `NEVER buy while \`windowActive\` is true ${EM_DASH} the buy tax starts near 99% at graduation and decays to ~1% over the window.`,
   },
-  {
-    file: "src/vex-agent/engine/prompts/task-shapes.ts",
-    ledgerRow: "L294",
-    text: `In a RESTRICTED session it refuses by name ${EM_DASH} call \`trench__launch_request_form\` instead, because the launch form is this tool's consent surface and the user's Deploy click is what launches.`,
-  },
 ];
 
 function relocatedVerbatimSentence(file, line, baseText) {

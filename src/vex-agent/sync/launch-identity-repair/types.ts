@@ -42,14 +42,36 @@ export interface LaunchReceiptLookupInput {
   readonly poolsPlan: AuthorizedPoolsLaunchPlan | null;
 }
 
-/** The five facts the pools.fun settlement decoder proves a receipt against. */
+/** The facts the pools.fun settlement decoder proves a receipt against. */
 export interface AuthorizedPoolsLaunchPlan {
+  /**
+   * The recipient the TUPLE carried. On a fees-to-holders launch that is the
+   * gateway's sentinel, which the receipt will NOT name - see
+   * {@link holderRewards}.
+   */
   readonly feeRecipient: string;
   readonly pairedAsset: string;
   readonly userSalt: string;
   readonly predictedTokenAddress: string;
   /** The gateway that was authorized, when the row recorded one. */
   readonly gateway: string | null;
+  /**
+   * The FEES-TO-HOLDERS intent, when the launch had one (migration 109).
+   *
+   * WITHOUT IT THE SWEEP CANNOT SETTLE SUCH A LAUNCH AT ALL. The gateway
+   * resolves the sentinel to the distributor it deploys inside the transaction
+   * before it emits `GatewayLaunch`, so the receipt names the distributor while
+   * {@link feeRecipient} holds the sentinel. A decoder handed only the sentinel
+   * refuses every correct holders launch - and this sweep is the ONLY thing that
+   * ever settles a launch whose broadcast came back ambiguous, so the row would
+   * stay pending forever with the user's token already minted.
+   *
+   * `null` on an ordinary launch and on every row written before migration 109,
+   * where the receipt must name exactly the recipient that was signed.
+   */
+  readonly holderRewards:
+    | { readonly mode: "token" | "paired" | "both"; readonly sentinel: string }
+    | null;
 }
 
 /**
@@ -66,7 +88,40 @@ export interface LaunchReceiptIdentity {
 }
 
 /**
- * The THREE answers the chain can give about a staged create, and the reason
+ * What a VIRTUALS `preLaunch` receipt proves, which is deliberately more than
+ * an identity and deliberately less than a launch.
+ *
+ * A Virtuals launch takes TWO transactions and only the first is Vex's. The
+ * `preLaunch` this recovers proves the agent EXISTS and that the creator's
+ * VIRTUAL is parked inside BondingV5; the keeper's own `launch(token)` is what
+ * makes it tradable and listed. So the recovered row lands in
+ * `awaiting_keeper`, where the keeper sweep can finish it, and NOT in
+ * `confirmed` - the sweep must never claim an agent is live because its
+ * pre-launch mined.
+ *
+ * Every field here comes from the `PreLaunched` event or the receipt itself.
+ * None of it is read back out of the intent, because the intent is what the
+ * user APPROVED and this is what the chain DID.
+ */
+export interface VirtualsPreLaunchRecovery {
+  readonly tokenAddress: string;
+  readonly pairAddress: string;
+  readonly virtualId: string;
+  /**
+   * `purchaseAmount - launchFee`: the VIRTUAL BondingV5 holds for this launch,
+   * and exactly what a cancel would refund. Raw, and never separated from the
+   * two facts that give it meaning.
+   */
+  readonly initialPurchaseRaw: string;
+  readonly initialPurchaseDecimals: number;
+  /** The VIRTUAL contract the purchase is denominated in - not the agent token. */
+  readonly virtualAddress: string;
+  /** The block the `preLaunch` landed in: where the keeper sweep starts scanning. */
+  readonly preLaunchBlock: string;
+}
+
+/**
+ * The FOUR answers the chain can give about a staged create, and the reason
  * this is a union rather than a nullable identity.
  *
  * A create that is later proven to have REVERTED emits no `TokenCreated`, so an
@@ -97,7 +152,15 @@ export type LaunchReceiptOutcome =
    * race the fence exists to prevent. So this sweep CLASSIFIES, and the lane
    * TERMINALIZES.
    */
-  | { readonly kind: "superseded" };
+  | { readonly kind: "superseded" }
+  /**
+   * A VIRTUALS `preLaunch` mined and its `PreLaunched` event was decoded. Not
+   * `created`, because that kind means "the launch is finished and the intent
+   * may be confirmed", and a Virtuals pre-launch finishes nothing: the agent is
+   * not tradable and not listed until the keeper acts. See
+   * {@link VirtualsPreLaunchRecovery}.
+   */
+  | { readonly kind: "pre_launched"; readonly virtuals: VirtualsPreLaunchRecovery };
 
 export interface LaunchIdentityRepairDeps {
   /**

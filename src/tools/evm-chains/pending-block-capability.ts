@@ -70,7 +70,7 @@
  * tag no meaning, not seven.
  *
  * Endpoints are the repository's own configured RPCs
- * (`tools/kyberswap/evm/config.ts` `DEFAULT_RPC`; `evm-chains/registry.ts` for
+ * (`tools/evm-chains/rpc-endpoints.ts`; `evm-chains/registry.ts` for
  * 4663), because the capability is a property of the ENDPOINT Vex actually
  * calls, not of the chain in the abstract. The full probe output is archived in
  * `vex-agent/tools/tool-surface-spec/balance-reads/wp2-signing-pin-note-2026-08-31.md`

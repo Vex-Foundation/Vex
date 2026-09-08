@@ -22,7 +22,6 @@
 import {
   createPublicClient,
   defineChain,
-  http,
   type Chain,
   type PublicClient,
   type Transport,
@@ -30,13 +29,12 @@ import {
 
 import { getLocalChain } from "@tools/evm-chains/registry.js";
 import { getLocalPublicClient } from "@tools/evm-chains/evm-client.js";
+import { resolveRpcEndpoints } from "@tools/evm-chains/rpc-endpoints.js";
+import { buildEvmTransport } from "@tools/evm-chains/rpc-transport.js";
 import type { VirtualsTaxDeployment } from "./deployments.js";
 
 /** Canonical Multicall3, live-verified on 8453 and 4663 on 2026-09-04. */
 const MULTICALL3_ADDRESS = "0xcA11bde05977b3631167028862bE2a173976CA11" as const;
-
-const RPC_TIMEOUT_MS = 30_000;
-const RPC_RETRY_COUNT = 2;
 
 /**
  * Explicit return annotation, same reason as every other client factory in the
@@ -48,17 +46,20 @@ export function getVirtualsTaxPublicClient(
 ): PublicClient<Transport, Chain> {
   const local = getLocalChain(deployment.chainId);
   if (local) return getLocalPublicClient(local);
+  const first = resolveRpcEndpoints(deployment.chainId)[0];
+  if (first === undefined) {
+    throw new Error(
+      `Virtuals creator fees: no RPC endpoint is bundled or configured for chain ${deployment.chainId}.`,
+    );
+  }
   return createPublicClient({
     chain: defineChain({
       id: deployment.chainId,
       name: deployment.slug,
       nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-      rpcUrls: { default: { http: [deployment.defaultRpcUrl] } },
+      rpcUrls: { default: { http: [first.url] } },
       contracts: { multicall3: { address: MULTICALL3_ADDRESS } },
     }),
-    transport: http(deployment.defaultRpcUrl, {
-      timeout: RPC_TIMEOUT_MS,
-      retryCount: RPC_RETRY_COUNT,
-    }),
+    transport: buildEvmTransport(deployment.chainId),
   }) as PublicClient<Transport, Chain>;
 }

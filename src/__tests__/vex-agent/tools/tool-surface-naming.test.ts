@@ -135,7 +135,7 @@ describe("G2 - publicName mapping gate", () => {
     );
   });
 
-  it("the mapped surface is the whole 187-tool catalog (drift alarm, not a cap)", () => {
+  it("the mapped surface is the whole 185-tool catalog (drift alarm, not a cap)", () => {
     // Not a limit: a Batch-2 addition updates this number together with its
     // mapping row, so the count and the map can never diverge silently.
     // 137 before the Batch 2 near-duplicate merges (owner decision D7) retired
@@ -164,9 +164,47 @@ describe("G2 - publicName mapping gate", () => {
     // 176 after combining Lighter's 36-tool surface with the six-tool net
     // DexScreener site expansion that brought the non-Lighter catalog to 140.
     // 177 after native Lighter OCO position protection added one public tool.
-    // 187 after merging main's launchpads, pools and Virtuals expansion into
-    // the complete Lighter surface. Every added identity has a mapping row.
-    expect(PROTOCOL_TOOLS.length).toBe(187);
+    // 140 before PR-C1, which added the two Virtuals market-history reads
+    // (`virtuals.trades`, `virtuals.candles`). Both are new identities with
+    // their own mapping rows in `mappings/virtuals.json`.
+    // 142 before the launchpads arc's wave 1-2 merge. Five read tools arrived
+    // across that arc: the two pools.fun reads (`pools.launch_assets`,
+    // `pools.holder_rewards`), the two Virtuals market-history reads
+    // (`virtuals.trades`, `virtuals.candles`) and the Virtuals creator-fee read
+    // (`virtuals.creator_fees`). The market-history pair is already counted in
+    // the 142 above, which the PR-C1 lane raised on its own, so the delta this
+    // merge records is the remaining three. Every one is a new identity with
+    // its own mapping row; nothing was reclaimed or retired.
+    // 145 before the two in-app launchpads tools (`launchpads.images`,
+    // `launchpads.image_publish`) landed, which took the surface to 147.
+    // 147 before this merge folded in the Virtuals bonding-curve TRADE pair
+    // (`virtuals.trade.quote`, `virtuals.trade.execute`) - the first mutating
+    // members of the virtuals namespace. Both are new identities with their own
+    // rows in `mappings/virtuals.json`; nothing was reclaimed or retired.
+    // 149 before this merge folded in the pools.fun holder-rewards MUTATIONS
+    // (`pools.holder_rewards_claim`, `pools.holder_rewards_distribute`) - the
+    // holder's own claim and the permissionless distribute. Both are new
+    // identities with their own rows in `mappings/pools.json`; nothing was
+    // reclaimed or retired, so this is a pure +2 to 151.
+    // 151 before the Virtuals AGENT-LAUNCH family (`virtuals.launch.preview`,
+    // `virtuals.launch.execute`, `virtuals.launch.status`,
+    // `virtuals.launch.cancel`). Four rather than two because a Virtuals launch
+    // takes TWO transactions and only `preLaunch` is Vex's: the keeper's
+    // `launch()` is what makes the agent live, so the state between them needs
+    // its own read and its own exit. All four are new identities with their own
+    // rows in `mappings/virtuals.json`; nothing was reclaimed or retired, so
+    // that was a pure +4 to 155. 155 -> 145 on the Trench Express retirement
+    // (migration 108): the ten `trench.*` identities were DELETED with the
+    // protocol, mappings file and all - the first entry in this ledger that is
+    // a retirement rather than a widening, which is why the arithmetic runs the
+    // other way.
+    // MERGE, main into Lighter-Integration (2026-09-07): main's launchpads,
+    // pools and Virtuals expansion (177 -> 145 net worth of it above) merges
+    // into the complete Lighter surface (177 above). The two branches moved
+    // this count independently since they last shared a base, so the merged
+    // total is measured directly on the merged tree rather than reconciled by
+    // summing either change log by hand.
+    expect(PROTOCOL_TOOLS.length).toBe(185);
   });
 });
 

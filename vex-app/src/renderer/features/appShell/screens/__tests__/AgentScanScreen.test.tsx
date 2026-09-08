@@ -144,7 +144,7 @@ describe("AgentScanScreen - filters drive the query input", () => {
       "KyberSwap",
       "Uniswap",
       "Jupiter",
-      "Trench Express",
+      "Trench Express (legacy)",
       // Joined in Phase 3, with the launch and claim executors that write it.
       "pools.fun",
       "Khalani",

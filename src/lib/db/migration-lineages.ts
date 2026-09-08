@@ -1,12 +1,25 @@
-/** Historical migrations whose numbers overlap the main and Lighter histories. */
+/**
+ * Historical migrations whose numbers overlap the main and Lighter histories.
+ *
+ * A file belongs here when its own numeric prefix is shared with a sibling
+ * from the OTHER lineage: applying that sibling advances `schema_version`'s
+ * numeric cursor past this file's version without this file ever running, so
+ * an install with no filename ledger (`schema_migration_files` never existed,
+ * or was dropped) would otherwise treat it as already-covered legacy history
+ * and skip it forever. An ALTER-only file joins the group of the table it
+ * modifies rather than getting its own entry, matching every other multi-file
+ * group here; `109_migration_079_084_collision_repair.sql` is idempotent
+ * (`CREATE TABLE IF NOT EXISTS`) and joins the three groups for the tables the
+ * original 079-084 collision could have left missing.
+ */
 export const HISTORICAL_MIGRATION_GROUPS = [
   {
     table: "lighter_nonce_state",
-    files: ["079_lighter_nonce_state.sql"],
+    files: ["079_lighter_nonce_state.sql", "109_migration_079_084_collision_repair.sql"],
   },
   {
     table: "lighter_order_previews",
-    files: ["080_lighter_order_previews.sql"],
+    files: ["080_lighter_order_previews.sql", "109_migration_079_084_collision_repair.sql"],
   },
   {
     table: "lighter_order_execution_intents",
@@ -15,7 +28,13 @@ export const HISTORICAL_MIGRATION_GROUPS = [
       "082_lighter_order_submit_lifecycle.sql",
       "083_lighter_order_provider_outcomes.sql",
       "084_lighter_order_pre_submit_revalidation.sql",
+      "109_migration_079_084_collision_repair.sql",
+      "111_lighter_order_submit_message.sql",
     ],
+  },
+  {
+    table: "lighter_order_lifecycle_intents",
+    files: ["107_lighter_order_lifecycle_intents.sql"],
   },
   {
     table: "lighter_onboarding_intents",
@@ -46,11 +65,17 @@ export const HISTORICAL_MIGRATION_GROUPS = [
       "102_lighter_core_withdrawals.sql",
       "103_lighter_withdrawal_lifecycle.sql",
       "105_lighter_rhc_withdrawals.sql",
+      "108_lighter_rhc_gateway_implementation.sql",
+      "110_lighter_withdrawal_predicted_execution_timestamp.sql",
     ],
   },
   {
     table: "lighter_withdrawal_claim_attempts",
-    files: ["104_lighter_withdrawal_manual_claims.sql", "106_lighter_rhc_withdrawal_claims.sql"],
+    files: [
+      "104_lighter_withdrawal_manual_claims.sql",
+      "106_lighter_rhc_withdrawal_claims.sql",
+      "108_lighter_rhc_gateway_implementation.sql",
+    ],
   },
   {
     table: "projects",
@@ -78,9 +103,9 @@ export const HISTORICAL_MIGRATION_GROUPS = [
       "099_swap_prequotes_balance_eligibility.sql",
       "100_wallet_intent_wallet_indexes.sql",
       "101_portfolio_snapshot_groups.sql",
-      "102_launchpad_family_roles.sql",
       "102_portfolio_snapshot_group_wallets.sql",
       "106_launch_image_public_asset.sql",
+      "107_launchpad_family_roles.sql",
     ],
   },
 ] as const;

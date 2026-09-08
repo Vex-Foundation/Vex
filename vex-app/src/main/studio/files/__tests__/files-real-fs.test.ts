@@ -1093,6 +1093,34 @@ describe("watching a real project", () => {
 
   it("SUSPENDS when the root vanishes and RESUMES with a synthetic ADDED", async () => {
     await watchTree();
+
+    // AN ARMING SIGNAL, not a sleep, and the same idiom the atomic-save test
+    // uses above. `watchFile` resolves as soon as the native `subscribe` call
+    // resolves, which is NOT the moment the stream starts delivering: on macOS
+    // FSEvents an event that lands in that gap - and the root delete below is
+    // one shot, with nothing to replay it - is simply never seen, which is
+    // exactly how this test failed on `macos-latest` while passing everywhere
+    // else. VS Code's parcel suite lives with the same shape by running its
+    // watcher tests on demand only (`parcelWatcher.test.ts` opens with
+    // `suite.skip` over "flaky runs ... would just hang and timeout") and by
+    // spacing its own root-delete test with explicit settles. We do not need
+    // either: a sentinel written INSIDE the root travels the whole pipeline,
+    // so its arrival proves the subscription is live before we destroy the
+    // thing we are watching.
+    await writeFile(path.join(root, "arming-sentinel.txt"), "x", "utf8");
+    await waitFor(
+      "the sentinel that arms the native subscription",
+      () => changeFor("arming-sentinel.txt") !== undefined,
+      5_000,
+    );
+
+    // Everything from here describes the vanish and the resume alone. Dropping
+    // the arming event keeps `waitFor`'s diagnostic honest (a `saw [...]` that
+    // still lists the sentinel would read as if the delete had produced it)
+    // and leaves the reads below - the FIRST `status`, the LAST `changed` -
+    // pointing at the suspend and the synthetic ADDED, as they did before.
+    events = [];
+
     await rm(root, { recursive: true, force: true });
 
     await waitFor("the suspend", () =>
