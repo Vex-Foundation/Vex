@@ -18,6 +18,13 @@ import type {
   LighterTrade,
 } from "@tools/lighter/types.js";
 
+import {
+  classifyLighterPositionEffect,
+  lighterCampaignTradeType,
+  readLighterAccountFillFacts,
+  type LighterPositionEffect,
+} from "./fill-position-effect.js";
+
 export interface LighterSlice<T> {
   readonly rows: T[];
   readonly total: number;
@@ -145,6 +152,22 @@ export function projectMarketDetail(detail: LighterMarketDetail): Record<string,
       quoteMultiplier: numberOrNull(detail.quote_multiplier),
     },
     strategyIndex: numberOrNull(detail.strategy_index),
+    // MARGIN AND REFERENCE PRICES, perpetual markets only (the spot detail
+    // model carries neither, so every field here is null on a spot row rather
+    // than absent). The fractions come on the provider's 10000 scale and the
+    // scale travels with them: a bare 5000 read as a percentage is a 5000%
+    // margin requirement, and read as a fraction it is 5000x too small.
+    margin: {
+      scale: 10_000,
+      scaleNote: "Provider fractions on a 10000 scale: 5000 is 50 percent.",
+      defaultInitialFraction: numberOrNull(detail.default_initial_margin_fraction),
+      minInitialFraction: numberOrNull(detail.min_initial_margin_fraction),
+      maintenanceFraction: numberOrNull(detail.maintenance_margin_fraction),
+      closeoutFraction: numberOrNull(detail.closeout_margin_fraction),
+    },
+    // Decimal strings as the provider reports them, never parsed to a float.
+    markPrice: detail.mark_price ?? null,
+    indexPrice: detail.index_price ?? null,
     funding: {
       clampSmall: detail.funding_clamp_small ?? null,
       clampBig: detail.funding_clamp_big ?? null,
@@ -358,10 +381,22 @@ export function projectOrderBook(response: LighterOrderBookOrdersResponse, limit
   };
 }
 
-export function projectTrade(trade: LighterTrade): Record<string, unknown> {
+/**
+ * One trade record, projected.
+ *
+ * `accountIndex` is the account the reader is asking ABOUT. Lighter's
+ * account-relative fields (position size before, sign changed, realized PnL)
+ * describe one side of the trade, and which side is the account's own is
+ * decided by the ask and bid account ids on the record itself. Without an
+ * account there is no "our side", so those fields project as null and the
+ * position effect as unknown - the public `recentTrades` surface, where the
+ * rows belong to strangers.
+ */
+export function projectTrade(trade: LighterTrade, accountIndex?: number): Record<string, unknown> {
   const tradeIdNumeric = safeIntegerOrNull(trade.trade_id);
   const askOrderIdNumeric = safeIntegerOrNull(trade.ask_id);
   const bidOrderIdNumeric = safeIntegerOrNull(trade.bid_id);
+  const account = projectTradeAccountView(trade, accountIndex);
   return {
     tradeId: trade.trade_id_str,
     tradeIdPrecision: "provider_string_canonical",
@@ -388,13 +423,98 @@ export function projectTrade(trade: LighterTrade): Record<string, unknown> {
     bidOrderIdStr: trade.bid_id_str,
     blockHeight: trade.block_height,
     timestamp: trade.timestamp,
+    timestampUnit: "epoch_milliseconds",
+    tradedAt: epochMillisecondsIsoOrNull(trade.timestamp),
     transactionTime: trade.transaction_time ?? null,
+    transactionTimeUnit: "epoch_microseconds",
     txHash: trade.tx_hash,
+    // FEE RATE TICKS, in millionths of notional - never amounts. Measured live
+    // 2026-09-08: 350 on RHC, 100 and 28 on Core beside notionals under one
+    // dollar. Reading one as an amount overstates a sub-dollar fill's fee by
+    // orders of magnitude.
+    fees: {
+      unit: "rate_tick_millionths_of_notional",
+      exchangeMakerTick: feeRateTickOrNull(trade.maker_fee),
+      exchangeTakerTick: feeRateTickOrNull(trade.taker_fee),
+      integratorMakerTick: feeRateTickOrNull(trade.integrator_maker_fee),
+      integratorTakerTick: feeRateTickOrNull(trade.integrator_taker_fee),
+      integratorMakerCollectorIndex: safeIntegerOrNull(trade.integrator_maker_fee_collector_index),
+      integratorTakerCollectorIndex: safeIntegerOrNull(trade.integrator_taker_fee_collector_index),
+    },
+    account,
   };
 }
 
-export function projectRecentTrades(response: LighterRecentTradesResponse, limit: number): Record<string, unknown> {
-  const trades = takeFirst(response.trades.map(projectTrade), limit);
+/**
+ * The account's own half of a trade record: which side it was on, what it held
+ * before the fill, what Lighter says it realized, and the effect the fill had.
+ *
+ * `known: false` says the account-relative fields were absent (a public row,
+ * or a row the account did not take part in) - which is a different statement
+ * from an effect of "unknown", and the two are deliberately not collapsed.
+ */
+function projectTradeAccountView(
+  trade: LighterTrade,
+  accountIndex?: number,
+): Record<string, unknown> {
+  const absent = {
+    known: false,
+    side: null,
+    role: null,
+    positionSizeBefore: null,
+    positionSignChanged: null,
+    entryQuoteBefore: null,
+    initialMarginFractionBefore: null,
+    marginFractionScale: 10_000,
+    realizedPnl: null,
+    positionEffect: "unknown" as LighterPositionEffect,
+    campaignType: "unknown",
+  };
+  if (accountIndex === undefined || !Number.isSafeInteger(accountIndex)) return absent;
+  const isAsk = trade.ask_account_id === accountIndex;
+  const isBid = trade.bid_account_id === accountIndex;
+  // An account on BOTH sides of one trade is its own counterparty: there is no
+  // single side to report, so nothing is reported rather than one half guessed.
+  if (isAsk === isBid) return absent;
+  const side = isAsk ? "sell" : "buy";
+  const role = (side === "sell" ? trade.is_maker_ask : !trade.is_maker_ask) ? "maker" : "taker";
+  const facts = readLighterAccountFillFacts({ trade, role, side });
+  if (facts === null) return { ...absent, side, role };
+  const effect = classifyLighterPositionEffect({
+    positionSizeBefore: facts.positionSizeBefore,
+    positionSignChanged: facts.positionSignChanged,
+    fillBaseSize: trade.size,
+    side,
+  });
+  return {
+    known: true,
+    side,
+    role,
+    positionSizeBefore: facts.positionSizeBefore,
+    positionSignChanged: facts.positionSignChanged,
+    entryQuoteBefore: facts.entryQuoteBefore,
+    initialMarginFractionBefore: facts.initialMarginFractionBefore,
+    marginFractionScale: 10_000,
+    // Lighter's own realized PnL for this account and this fill. Never
+    // computed here from entry and exit.
+    realizedPnl: facts.accountPnl,
+    positionEffect: effect,
+    campaignType: lighterCampaignTradeType(effect),
+  };
+}
+
+/** A provider fee RATE TICK in millionths of notional; anything else is "not reported". */
+function feeRateTickOrNull(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isSafeInteger(value)) return null;
+  return value >= 0 && value <= 1_000_000 ? value : null;
+}
+
+export function projectRecentTrades(
+  response: LighterRecentTradesResponse,
+  limit: number,
+  accountIndex?: number,
+): Record<string, unknown> {
+  const trades = takeFirst(response.trades.map((trade) => projectTrade(trade, accountIndex)), limit);
   return {
     count: trades.count,
     totalProviderRows: trades.total,

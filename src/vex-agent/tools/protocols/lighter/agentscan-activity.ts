@@ -45,7 +45,7 @@
  * ## Authorized fee terms are not observed fees
  *
  * FOUR different numbers, four columns, and collapsing any two of them
- * misreports the money (Codex H0 round 2, correction 6):
+ * misreports the money (H0 revision 2, correction 6):
  *
  *   - the AUTHORIZED integrator tick, from the fee-authorization terms: what
  *     the approval PERMITS on this side of the book. It is a term, and a term
@@ -81,8 +81,15 @@ import type { PoolClient } from "pg";
 
 import { execute, executeWith, queryOne, queryOneWith } from "@vex-agent/db/client.js";
 import type { LighterEnvironment } from "@tools/lighter/constants.js";
-import type { LighterTrade } from "@tools/lighter/types.js";
+import type { LighterTrade, LighterTradeType } from "@tools/lighter/types.js";
 import logger from "@utils/logger.js";
+
+import {
+  classifyLighterPositionEffect,
+  readLighterAccountFillFacts,
+  type LighterAccountFillFacts,
+  type LighterPositionEffect,
+} from "./fill-position-effect.js";
 
 /** Spot markets start here; below it a market is a perpetual. */
 const LIGHTER_SPOT_MARKET_INDEX_FLOOR = 2048;
@@ -90,6 +97,19 @@ const LIGHTER_SPOT_MARKET_INDEX_FLOOR = 2048;
 /** The venue asset id namespace. Lighter assets have no EVM address and none is invented. */
 export function lighterVenueAssetId(environment: LighterEnvironment, assetId: string | number): string {
   return `lighter:${environment}:asset:${assetId}`;
+}
+
+/**
+ * The venue id of a PERPETUAL'S INSTRUMENT, the base leg of a perp fill.
+ *
+ * A perpetual has no base asset: measured live on 2026-09-08, Lighter's
+ * `orderBookDetails` reports `base_asset_id: 0, quote_asset_id: 0` for every
+ * perp on Core and on Robinhood Chain (asset id 0 names nothing), while a spot
+ * market carries the real ids of its two assets. Naming the instrument by its
+ * market keeps every perp distinct and keeps asset id 0 out of the ledger.
+ */
+export function lighterPerpVenueAssetId(environment: LighterEnvironment, marketIndex: number): string {
+  return `lighter:${environment}:perp:${marketIndex}`;
 }
 
 /**
@@ -158,6 +178,35 @@ export interface LighterFillRecord {
   readonly baseAsset: LighterVenueAssetRef;
   readonly quoteAsset: LighterVenueAssetRef;
   readonly blockHeight: string;
+  /** Lighter's own classification of the record: trade, liquidation, deleverage, market-settlement. */
+  readonly tradeType: LighterTradeType;
+  /**
+   * When the VENUE matched the fill, from `trade.timestamp`. MEASURED
+   * 2026-09-08 against the live public endpoint: epoch MILLISECONDS
+   * (1788858716527 beside a wall clock of 1788858717535), and
+   * `transaction_time` beside it is epoch MICROSECONDS. This is the campaign
+   * API's "time", and it is the provider's, never our observation time.
+   */
+  readonly tradedAt: string;
+  /** `trade.transaction_time`, epoch microseconds, as a lossless decimal string. */
+  readonly transactionTimeUs: string | null;
+  /**
+   * LIGHTER'S OWN USD notional for the fill (`usd_amount`), which is what the
+   * campaign sums as volume. Distinct from `quoteNotional` below, which is our
+   * own exact product of size and price in the QUOTE asset: the two agree on a
+   * USD-quoted market and would not on any other, and only one of them is the
+   * provider's word.
+   */
+  readonly usdAmount: string;
+  /**
+   * The account's own half of the trade record, or null when the observation
+   * was a public row that does not carry it. Established ONCE: a later
+   * authenticated observation fills it through the merge rule and nothing ever
+   * revises it.
+   */
+  readonly accountFacts: LighterAccountFillFacts | null;
+  /** Null exactly when {@link accountFacts} is null. Established with it, once. */
+  readonly positionEffect: LighterPositionEffect | null;
   readonly feeSide: "maker" | "taker";
   /** The tick the fee AUTHORIZATION permits for this side. A term, not evidence. */
   readonly integratorFeeTickAuthorized: number | null;
@@ -173,6 +222,17 @@ export interface LighterFillRecord {
   /** The exchange tier tick observed on this trade record, in millionths of notional. */
   readonly exchangeFeeTickObserved: number | null;
   readonly exchangeFeeChargedRaw: string | null;
+  /**
+   * THE FEE ESTIMATES IN USD, computed on LIGHTER'S OWN `usd_amount` and never
+   * on an assumed stablecoin parity: the campaign asks for fees in USD, and
+   * treating a quote-asset amount as dollars because the symbol looks like a
+   * dollar is exactly the assumption that breaks on the first non-USD market.
+   * Null when the tick is absent, and null for the integrator fee on a spot
+   * BUY, which is charged in the received base and keeps that denomination
+   * rather than being converted by a rate nobody measured.
+   */
+  readonly integratorFeeEstimatedUsd: string | null;
+  readonly exchangeFeeEstimatedUsd: string | null;
   readonly collectorAccountIndex: number | null;
   readonly feeAuthorizationIntentId: string | null;
   /** Whether this fill is on a spot market. Decides the reported kind and role. */
@@ -182,7 +242,13 @@ export interface LighterFillRecord {
 /** Why a trade record could not become a fill row. Never thrown: a bad record must not kill a reconciliation. */
 export interface LighterFillBuildFailure {
   readonly kind: "unbuildable";
-  readonly reason: "malformed_amount" | "missing_trade_identity";
+  readonly reason:
+    | "malformed_amount"
+    | "missing_trade_identity"
+    /** No intent AND no observation scope: nothing says which account this fill belongs to. */
+    | "missing_observation_scope"
+    /** The scope's account is on neither side of this trade record, or on both. */
+    | "account_not_party_to_trade";
 }
 
 const DECIMAL = /^(0|[1-9][0-9]*)(\.[0-9]+)?$/;
@@ -203,6 +269,21 @@ export interface LighterFillIntentFacts {
 }
 
 /**
+ * The scope a fill was OBSERVED in, when no intent is known yet.
+ *
+ * Recovery after a crash reads the account's trades and finds fills whose Vex
+ * intent has not been recovered. Those fills are facts and are written; what
+ * they are NOT is attributed activity, so the row is HELD (execution intent
+ * null, excluded from the outbox) until {@link attachLighterFillToIntent}
+ * proves which durable intent it belongs to.
+ */
+export interface LighterFillObservationScope {
+  readonly environment: LighterEnvironment;
+  readonly accountIndex: number;
+  readonly marketIndex: number;
+}
+
+/**
  * PURE: one provider trade record plus the intent it matched -> one fill row.
  *
  * The maker/taker side is derived the way `order-evidence.ts` derives it (the
@@ -212,32 +293,70 @@ export interface LighterFillIntentFacts {
  */
 export function buildLighterFillRecord(input: {
   readonly trade: LighterTrade;
-  readonly intent: LighterFillIntentFacts;
+  /**
+   * The Vex order execution intent this fill belongs to, or NULL when the
+   * observation found the fill before its intent was known. A null intent
+   * requires {@link LighterFillObservationScope} and produces a HELD row.
+   */
+  readonly intent: LighterFillIntentFacts | null;
+  /** Required when `intent` is null; ignored when an intent is given. */
+  readonly observation?: LighterFillObservationScope;
   readonly market: LighterMarketAssets;
   readonly feeTerms: LighterFillFeeTerms;
 }): LighterFillRecord | LighterFillBuildFailure {
   const { trade, intent, market, feeTerms } = input;
+  const scope: LighterFillObservationScope | undefined = intent === null
+    ? input.observation
+    : { environment: intent.environment, accountIndex: intent.accountIndex, marketIndex: intent.marketIndex };
+  if (scope === undefined) return { kind: "unbuildable", reason: "missing_observation_scope" };
+
+  // WITHOUT AN INTENT THE SIDE COMES FROM THE TRADE RECORD, which names both
+  // parties: the account is the seller when it is the ask, the buyer when it
+  // is the bid. Neither (or both, which is an account trading with itself)
+  // leaves no side to report, and a guessed side would put the fill on the
+  // wrong half of every fee and every position figure below.
+  const side = intent !== null ? intent.side : tradeSideForAccount(trade, scope.accountIndex);
+  if (side === null) return { kind: "unbuildable", reason: "account_not_party_to_trade" };
+
   const providerTradeId = nonEmpty(trade.trade_id_str);
   const blockHeight = integerString(trade.block_height);
-  if (providerTradeId === null || blockHeight === null) {
+  const tradedAt = epochMillisecondsIso(trade.timestamp);
+  if (providerTradeId === null || blockHeight === null || tradedAt === null) {
     return { kind: "unbuildable", reason: "missing_trade_identity" };
   }
   if (!DECIMAL.test(trade.price) || !DECIMAL.test(trade.size)) {
     return { kind: "unbuildable", reason: "malformed_amount" };
   }
+  if (typeof trade.usd_amount !== "string" || !DECIMAL.test(trade.usd_amount)) {
+    return { kind: "unbuildable", reason: "malformed_amount" };
+  }
   const quoteNotional = multiplyDecimals(trade.size, trade.price);
   if (quoteNotional === null) return { kind: "unbuildable", reason: "malformed_amount" };
 
-  const maker = intent.side === "sell" ? trade.is_maker_ask : !trade.is_maker_ask;
+  const maker = side === "sell" ? trade.is_maker_ask : !trade.is_maker_ask;
   const feeSide = maker ? "maker" : "taker";
-  const providerOrderId = nonEmpty(intent.side === "buy" ? trade.bid_id_str : trade.ask_id_str);
-  const spot = intent.marketIndex >= LIGHTER_SPOT_MARKET_INDEX_FLOOR;
+  const providerOrderId = nonEmpty(side === "buy" ? trade.bid_id_str : trade.ask_id_str);
+  const spot = scope.marketIndex >= LIGHTER_SPOT_MARKET_INDEX_FLOOR;
+
+  // THE ACCOUNT'S OWN HALF, or nothing. A public row carries the position
+  // sizes but neither the sign-changed flag nor the realized PnL, and half the
+  // fields is not a classification - so the effect stays NULL and a later
+  // authenticated observation establishes it once, through the merge rule.
+  const accountFacts = readLighterAccountFillFacts({ trade, role: feeSide, side });
+  const positionEffect = accountFacts === null
+    ? null
+    : classifyLighterPositionEffect({
+        positionSizeBefore: accountFacts.positionSizeBefore,
+        positionSignChanged: accountFacts.positionSignChanged,
+        fillBaseSize: trade.size,
+        side,
+      });
 
   // A SPOT BUY IS CHARGED ON THE RECEIVED BASE, every other case on the quote
   // notional. `order-evidence.ts` established this from the provider's own
   // behaviour; the basis travels with the estimate so a reader can never be
   // left guessing which number the percentage was applied to.
-  const receivedBase = spot && intent.side === "buy";
+  const receivedBase = spot && side === "buy";
   const integratorFeeTickAuthorized = maker
     ? feeTerms.integratorMakerFeeTick
     : feeTerms.integratorTakerFeeTick;
@@ -261,26 +380,32 @@ export function buildLighterFillRecord(input: {
 
   return {
     canonicalIdentity: lighterFillIdentity({
-      environment: intent.environment,
-      accountIndex: intent.accountIndex,
-      marketIndex: intent.marketIndex,
+      environment: scope.environment,
+      accountIndex: scope.accountIndex,
+      marketIndex: scope.marketIndex,
       providerTradeId,
     }),
-    environment: intent.environment,
-    accountIndex: intent.accountIndex,
-    marketIndex: intent.marketIndex,
+    environment: scope.environment,
+    accountIndex: scope.accountIndex,
+    marketIndex: scope.marketIndex,
     providerTradeId,
     providerOrderId,
-    clientOrderId: intent.clientOrderIndex,
-    executionIntentId: intent.intentId,
+    clientOrderId: intent?.clientOrderIndex ?? null,
+    executionIntentId: intent?.intentId ?? null,
     marketSymbol: market.marketSymbol,
-    side: intent.side,
+    side,
     price: trade.price,
     baseSize: trade.size,
     quoteNotional,
     baseAsset: market.baseAsset,
     quoteAsset: market.quoteAsset,
     blockHeight,
+    tradeType: trade.type,
+    tradedAt,
+    transactionTimeUs: integerString(trade.transaction_time),
+    usdAmount: trade.usd_amount,
+    accountFacts,
+    positionEffect,
     feeSide,
     integratorFeeTickAuthorized,
     integratorFeeTickObserved,
@@ -293,6 +418,11 @@ export function buildLighterFillRecord(input: {
     integratorFeeChargedRaw: null,
     exchangeFeeTickObserved,
     exchangeFeeChargedRaw: null,
+    // USD estimates on Lighter's own `usd_amount`. The integrator estimate is
+    // withheld on a spot buy: that fee is taken in the received base, and
+    // converting it here would need a rate this module has not measured.
+    integratorFeeEstimatedUsd: receivedBase ? null : estimateFeeUsd(trade.usd_amount, estimateTick),
+    exchangeFeeEstimatedUsd: estimateFeeUsd(trade.usd_amount, exchangeFeeTickObserved),
     collectorAccountIndex: feeTerms.collectorAccountIndex,
     feeAuthorizationIntentId: feeTerms.feeAuthorizationIntentId,
     spot,
@@ -312,6 +442,13 @@ export type LighterFillWriteOutcome =
   /** The same identity was already recorded with the same economics. Nothing changed. */
   | { readonly kind: "duplicate"; readonly fillId: number }
   /**
+   * The same identity was already held WITHOUT the account's own fields, and
+   * this observation supplied them. The economics were untouched; the row
+   * learned what it did not know, once, and its revision moved so the
+   * knowledge reaches AgentScan as an update to the fill already delivered.
+   */
+  | { readonly kind: "enriched"; readonly fillId: number; readonly revision: number }
+  /**
    * The same identity was already recorded with DIFFERENT economics. Refused
    * and logged: a fill's price, size and side are immutable, so a
    * contradiction is a defect in whoever produced the second report, and
@@ -319,8 +456,25 @@ export type LighterFillWriteOutcome =
    */
   | { readonly kind: "conflict"; readonly fillId: number; readonly fields: readonly string[] };
 
-/** The economics a repeat report must match exactly. */
-const IMMUTABLE_FILL_FIELDS = ["side", "price", "base_size", "quote_notional", "block_height"] as const;
+/**
+ * The economics a repeat report must match exactly.
+ *
+ * Every one of these is on the trade record from the FIRST observation
+ * onwards, public or authenticated alike, so a difference is a contradiction
+ * rather than a source knowing more. The account-relative columns are
+ * deliberately absent from this list: they are the ones a public row leaves
+ * null, and filling a null is not a revision.
+ */
+const IMMUTABLE_FILL_FIELDS = [
+  "side",
+  "price",
+  "base_size",
+  "quote_notional",
+  "block_height",
+  "trade_type",
+  "usd_amount",
+  "traded_at",
+] as const;
 
 /**
  * THE FILL COMMIT POINT.
@@ -360,6 +514,15 @@ export async function recordLighterFillActivity(
     record.quoteAsset.symbol,
     record.quoteAsset.decimals,
     record.blockHeight,
+    record.tradeType,
+    record.tradedAt,
+    record.transactionTimeUs,
+    record.usdAmount,
+    record.accountFacts?.positionSizeBefore ?? null,
+    record.accountFacts?.positionSignChanged ?? null,
+    record.accountFacts?.entryQuoteBefore ?? null,
+    record.accountFacts?.accountPnl ?? null,
+    record.positionEffect,
     record.feeSide,
     record.integratorFeeTickAuthorized,
     record.integratorFeeTickObserved,
@@ -372,6 +535,8 @@ export async function recordLighterFillActivity(
     record.integratorFeeChargedRaw,
     record.exchangeFeeTickObserved,
     record.exchangeFeeChargedRaw,
+    record.integratorFeeEstimatedUsd,
+    record.exchangeFeeEstimatedUsd,
     record.collectorAccountIndex,
     record.feeAuthorizationIntentId,
   ];
@@ -398,17 +563,170 @@ export async function recordLighterFillActivity(
     base_size: record.baseSize,
     quote_notional: record.quoteNotional,
     block_height: record.blockHeight,
+    trade_type: record.tradeType,
+    usd_amount: record.usdAmount,
+    // Compared as the same ISO 8601 spelling the record carries: the SELECT
+    // formats the column in UTC with milliseconds, so two identical instants
+    // never read as a difference because of a session time zone.
+    traded_at: record.tradedAt,
   };
   const fields = IMMUTABLE_FILL_FIELDS.filter((field) => String(existing[field]) !== proposed[field]);
   const fillId = Number(existing.id);
-  if (fields.length === 0) return { kind: "duplicate", fillId };
+  if (fields.length > 0) {
+    logger.error("lighter.agentscan.fill_identity_conflict", {
+      canonicalIdentity: record.canonicalIdentity,
+      fields: [...fields],
+    });
+    return { kind: "conflict", fillId, fields: [...fields] };
+  }
 
-  logger.error("lighter.agentscan.fill_identity_conflict", {
-    canonicalIdentity: record.canonicalIdentity,
-    fields: [...fields],
-  });
-  return { kind: "conflict", fillId, fields: [...fields] };
+  // THE ECONOMICS AGREE. If this observation knows the account's own half and
+  // the held row does not, that is knowledge arriving, not a revision: fill it
+  // once and move the revision so it reaches a server that already has the
+  // fill. If the row already knows, or this observation does not, nothing
+  // happens and the report is an ordinary duplicate.
+  if (record.accountFacts === null || existing.position_size_before !== null) {
+    return { kind: "duplicate", fillId };
+  }
+  const mergeParams = [
+    record.canonicalIdentity,
+    record.accountFacts.positionSizeBefore,
+    record.accountFacts.positionSignChanged,
+    record.accountFacts.entryQuoteBefore,
+    record.accountFacts.accountPnl,
+    record.positionEffect,
+  ];
+  const merged = client === undefined
+    ? await queryOne<{ id: string | number; revision: number }>(MERGE_FILL_ACCOUNT_FACTS_SQL, mergeParams)
+    : await queryOneWith<{ id: string | number; revision: number }>(client, MERGE_FILL_ACCOUNT_FACTS_SQL, mergeParams);
+  // A concurrent observation won the race and established the same knowledge
+  // first. Nothing was lost and nothing is claimed twice.
+  if (merged === null) return { kind: "duplicate", fillId };
+  return { kind: "enriched", fillId: Number(merged.id), revision: Number(merged.revision) };
 }
+
+/**
+ * ATTACHING A HELD FILL TO THE VEX INTENT THAT PRODUCED IT.
+ *
+ * A fill found by recovery before its intent was known is written HELD:
+ * `execution_intent_id` null, and excluded from the AgentScan outbox by that
+ * null (`agentscan-reporting.ts`). Attribution is the claim "Vex created this
+ * order", so it is granted only on evidence that the venue itself carries.
+ *
+ * FOUR FACTS MUST AGREE, and the fourth is the one that does the work: the
+ * environment, the account index, the market index, and THE ACCOUNT'S OWN
+ * ORDER ID on the venue - the bid id when the account bought, the ask id when
+ * it sold - against the provider order id the durable intent recorded when the
+ * exchange accepted it. The integrator COLLECTOR index attributes nothing: it
+ * says a fee was routed to Vex's collector, which is equally true of a fill
+ * from an order some other client placed under the same integrator terms.
+ *
+ * A mismatch is a typed refusal, never a best-effort attach: an attribution
+ * granted on a near-match is a claim about someone else's trading.
+ */
+export type LighterFillAttachOutcome =
+  | { readonly kind: "attached"; readonly fillId: number }
+  /** Already attached to this same intent. Idempotent; a replayed recovery is not an error. */
+  | { readonly kind: "already_attached"; readonly fillId: number }
+  | {
+      readonly kind: "refused";
+      readonly reason:
+        | "unknown_fill"
+        | "scope_mismatch"
+        | "provider_order_id_mismatch"
+        | "attached_to_other_intent";
+    };
+
+/** The durable intent facts an attachment is proved against. */
+export interface LighterFillAttachIntent {
+  readonly intentId: string;
+  readonly environment: LighterEnvironment;
+  readonly accountIndex: number;
+  readonly marketIndex: number;
+  /** The provider order id the exchange returned for the Vex order. */
+  readonly providerOrderId: string;
+  readonly clientOrderIndex: string | null;
+}
+
+export async function attachLighterFillToIntent(
+  input: {
+    readonly canonicalIdentity: string;
+    readonly intent: LighterFillAttachIntent;
+  },
+  client?: PoolClient,
+): Promise<LighterFillAttachOutcome> {
+  const { canonicalIdentity, intent } = input;
+  const params = [canonicalIdentity];
+  const existing = client === undefined
+    ? await queryOne<Record<string, unknown>>(SELECT_FILL_FOR_ATTACH_SQL, params)
+    : await queryOneWith<Record<string, unknown>>(client, SELECT_FILL_FOR_ATTACH_SQL, params);
+  if (existing === null) return { kind: "refused", reason: "unknown_fill" };
+
+  const attached = existing.execution_intent_id;
+  if (typeof attached === "string" && attached.length > 0) {
+    return attached === intent.intentId
+      ? { kind: "already_attached", fillId: Number(existing.id) }
+      : { kind: "refused", reason: "attached_to_other_intent" };
+  }
+  if (
+    existing.environment !== intent.environment
+    || String(existing.account_index) !== String(intent.accountIndex)
+    || Number(existing.market_index) !== intent.marketIndex
+  ) {
+    return { kind: "refused", reason: "scope_mismatch" };
+  }
+  if (String(existing.provider_order_id) !== intent.providerOrderId) {
+    return { kind: "refused", reason: "provider_order_id_mismatch" };
+  }
+
+  const attachParams = [canonicalIdentity, intent.intentId, intent.clientOrderIndex];
+  const updated = client === undefined
+    ? await queryOne<{ id: string | number }>(ATTACH_FILL_SQL, attachParams)
+    : await queryOneWith<{ id: string | number }>(client, ATTACH_FILL_SQL, attachParams);
+  // A concurrent attach won. The row is attached either way; the caller's
+  // claim is not, so the outcome is the honest one.
+  if (updated === null) return { kind: "refused", reason: "attached_to_other_intent" };
+  return { kind: "attached", fillId: Number(updated.id) };
+}
+
+/**
+ * Does the ledger already hold a fill for this Vex intent?
+ *
+ * The question a SELF-HEALING follow-up read asks before it spends a
+ * privileged provider request: an intent whose order settled before the fill
+ * ledger existed (or before an interrupted write completed) has a terminal
+ * durable outcome and NO ledger row, and that is the only state worth reading
+ * the account's trades again for. A `true` answer is not proof that every fill
+ * of the intent is held - a partially filled order can gain more - so callers
+ * that must see later fills observe them at their own boundary rather than
+ * asking this.
+ */
+export async function hasLighterFillForIntent(executionIntentId: string): Promise<boolean> {
+  const row = await queryOne<{ id: string | number }>(SELECT_FILL_ID_FOR_INTENT_SQL, [executionIntentId]);
+  return row !== null;
+}
+
+const SELECT_FILL_ID_FOR_INTENT_SQL = `
+  SELECT id FROM lighter_fills WHERE execution_intent_id = $1 LIMIT 1`;
+
+const SELECT_FILL_FOR_ATTACH_SQL = `
+  SELECT id, environment, account_index, market_index, provider_order_id, execution_intent_id
+    FROM lighter_fills WHERE canonical_identity = $1`;
+
+/**
+ * The attach write. `execution_intent_id IS NULL` is the fence: only a HELD
+ * row can be attached, so two racing recoveries cannot move a fill from one
+ * intent to another, and the client order id travels with the attribution
+ * because it is part of the same claim.
+ */
+const ATTACH_FILL_SQL = `
+  UPDATE lighter_fills
+     SET execution_intent_id = $2,
+         client_order_id = COALESCE(client_order_id, $3),
+         updated_at = NOW()
+   WHERE canonical_identity = $1
+     AND execution_intent_id IS NULL
+  RETURNING id`;
 
 const INSERT_FILL_SQL = `
   INSERT INTO lighter_fills (
@@ -417,22 +735,58 @@ const INSERT_FILL_SQL = `
     price, base_size, quote_notional,
     base_asset_id, base_asset_symbol, base_asset_decimals,
     quote_asset_id, quote_asset_symbol, quote_asset_decimals,
-    block_height, fee_side,
+    block_height,
+    trade_type, traded_at, transaction_time_us, usd_amount,
+    position_size_before, position_sign_changed, entry_quote_before, account_pnl, position_effect,
+    fee_side,
     integrator_fee_tick_authorized, integrator_fee_tick_observed,
     integrator_fee_asset_id, integrator_fee_asset_symbol, integrator_fee_asset_decimals,
     integrator_fee_estimated_raw, integrator_fee_estimate_basis, integrator_fee_estimate_tick_source,
     integrator_fee_charged_raw,
-    exchange_fee_tick_observed, exchange_fee_charged_raw, collector_account_index, fee_authorization_intent_id
+    exchange_fee_tick_observed, exchange_fee_charged_raw,
+    integrator_fee_estimated_usd, exchange_fee_estimated_usd,
+    collector_account_index, fee_authorization_intent_id
   ) VALUES (
-    $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,
-    $22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34
+    $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,
+    $21,$22::timestamptz,$23,$24,$25,$26,$27,$28,$29,$30,
+    $31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,$45
   )
   ON CONFLICT (canonical_identity) DO NOTHING
   RETURNING id`;
 
 const SELECT_FILL_BY_IDENTITY_SQL = `
-  SELECT id, side, price, base_size, quote_notional, block_height
+  SELECT id, side, price, base_size, quote_notional, block_height,
+         trade_type, usd_amount, to_char(traded_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS traded_at,
+         position_size_before, execution_intent_id
     FROM lighter_fills WHERE canonical_identity = $1`;
+
+/**
+ * THE KNOWLEDGE MERGE, and the whole of it.
+ *
+ * Fills the account-relative columns ONLY while they are null, all five in one
+ * statement, so the account's own view of a fill is established atomically and
+ * once. `position_size_before IS NULL` is the marker for "this row has no
+ * own-account knowledge yet": the five arrive together from one authenticated
+ * observation and are never partially present.
+ *
+ * Economics are not in this statement AT ALL - there is no column here through
+ * which a second observation could revise a price, a size or a notional - and
+ * the revision bump is what carries the new knowledge to a server that already
+ * holds the fill.
+ */
+const MERGE_FILL_ACCOUNT_FACTS_SQL = `
+  UPDATE lighter_fills
+     SET position_size_before = $2,
+         position_sign_changed = $3,
+         entry_quote_before = $4,
+         account_pnl = $5,
+         position_effect = $6,
+         revision = revision + 1,
+         updated_at = NOW()
+   WHERE canonical_identity = $1
+     AND position_size_before IS NULL
+     AND $2::text IS NOT NULL
+  RETURNING id, revision`;
 
 /**
  * THE ENRICHMENT PATH - the only write that may touch a recorded fill.
@@ -490,20 +844,21 @@ const ENRICH_FILL_FEES_SQL = `
      AND ((integrator_fee_charged_raw IS NULL AND $2::text IS NOT NULL)
           OR (exchange_fee_charged_raw IS NULL AND $3::text IS NOT NULL))`;
 
-// ── The exchange funding legs ───────────────────────────────────────────────
+// ── The exchange funding leg a claimed withdrawal reports ───────────────────
 
 /**
- * What a deposit or a claimed withdrawal reports.
+ * What a claimed withdrawal reports.
  *
- * These are `agent_activity` rows: the identity is the SETTLEMENT chain and
+ * This is an `agent_activity` row: the identity is the SETTLEMENT chain and
  * transaction, which is what a receipt reader can independently verify. The L2
- * side (the credit that followed the deposit, the withdrawal the claim
- * released) is client-reported evidence and is never presented as proven by
- * the receipt.
+ * side (the withdrawal the claim released) is client-reported evidence and is
+ * never presented as proven by the receipt. A credited DEPOSIT has no
+ * descriptor here: `sync/lighter-deposit-repair.ts` writes its row straight
+ * through the settlement-proven writer inside the credit transaction.
  */
 export interface LighterExchangeFundingRow {
   readonly kind: "exchange";
-  readonly eventRole: "exchange_deposit" | "exchange_withdrawal";
+  readonly eventRole: "exchange_withdrawal";
   readonly protocol: "lighter";
   readonly chainFamily: "eip155";
   /** The SETTLEMENT chain, not the Lighter L2 - the receipt lives there. */
@@ -516,24 +871,12 @@ export interface LighterExchangeFundingRow {
 }
 
 /**
- * PURE: settlement transaction identity -> the deposit row.
+ * PURE: the claim's settlement transaction identity -> the withdrawal row.
  *
  * `amountRaw` is integer units of the asset's own decimals; the caller has
  * both from the transfer it authorized, and neither is derived here from a
  * price or a float.
  */
-export function buildLighterDepositActivityRow(input: {
-  readonly settlementChainId: number;
-  readonly txHash: string;
-  readonly asset: LighterExchangeFundingRow["asset"];
-  readonly amountRaw: string;
-  readonly environment: LighterEnvironment;
-  readonly accountIndex: number;
-}): LighterExchangeFundingRow {
-  return fundingRow("exchange_deposit", input);
-}
-
-/** PURE: the claim's settlement transaction identity -> the withdrawal row. */
 export function buildLighterWithdrawalActivityRow(input: {
   readonly settlementChainId: number;
   readonly txHash: string;
@@ -542,23 +885,9 @@ export function buildLighterWithdrawalActivityRow(input: {
   readonly environment: LighterEnvironment;
   readonly accountIndex: number;
 }): LighterExchangeFundingRow {
-  return fundingRow("exchange_withdrawal", input);
-}
-
-function fundingRow(
-  eventRole: LighterExchangeFundingRow["eventRole"],
-  input: {
-    readonly settlementChainId: number;
-    readonly txHash: string;
-    readonly asset: LighterExchangeFundingRow["asset"];
-    readonly amountRaw: string;
-    readonly environment: LighterEnvironment;
-    readonly accountIndex: number;
-  },
-): LighterExchangeFundingRow {
   return {
     kind: "exchange",
-    eventRole,
+    eventRole: "exchange_withdrawal",
     protocol: "lighter",
     chainFamily: "eip155",
     chainId: input.settlementChainId,
@@ -620,6 +949,48 @@ function splitDecimal(value: string): { units: bigint; decimals: number } | null
   if (!DECIMAL.test(value)) return null;
   const [whole, fraction = ""] = value.split(".");
   return { units: BigInt(`${whole}${fraction}`), decimals: fraction.length };
+}
+
+/**
+ * A fee estimate in USD, from Lighter's own `usd_amount` and a rate tick.
+ *
+ * Exact bigint arithmetic, floored at six decimal places: an estimate rounded
+ * UP would claim a charge larger than the provider could have taken. Six
+ * places because that is the smallest unit of the USD-quoted stablecoins on
+ * both environments; it is an estimate either way and is stored and displayed
+ * as one.
+ */
+export function estimateFeeUsd(usdAmount: string, feeTick: number | null): string | null {
+  if (feeTick === null || !Number.isSafeInteger(feeTick) || feeTick < 0 || feeTick > 1_000_000) return null;
+  const parsed = splitDecimal(usdAmount);
+  if (parsed === null) return null;
+  const micros = (parsed.units * BigInt(feeTick) * 10n ** 6n)
+    / (1_000_000n * 10n ** BigInt(parsed.decimals));
+  const text = micros.toString().padStart(7, "0");
+  return `${text.slice(0, text.length - 6)}.${text.slice(text.length - 6)}`;
+}
+
+/**
+ * Which side of a trade record an account was on, from the record's own party
+ * ids. Null when the account is on neither side, or on both (it traded with
+ * itself and there is no single side to report).
+ */
+function tradeSideForAccount(trade: LighterTrade, accountIndex: number): "buy" | "sell" | null {
+  const isAsk = trade.ask_account_id === accountIndex;
+  const isBid = trade.bid_account_id === accountIndex;
+  if (isAsk === isBid) return null;
+  return isAsk ? "sell" : "buy";
+}
+
+/**
+ * `trade.timestamp` as ISO 8601 UTC. MEASURED epoch milliseconds against the
+ * live public endpoint on 2026-09-08; a value read as seconds instead would
+ * date every fill to 1970.
+ */
+function epochMillisecondsIso(value: unknown): string | null {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
 function nonEmpty(value: unknown): string | null {

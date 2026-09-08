@@ -24,9 +24,9 @@ import { describe, it, expect } from "vitest";
 
 import type { LighterTrade } from "@tools/lighter/types.js";
 import {
-  buildLighterDepositActivityRow,
   buildLighterFillRecord,
   buildLighterWithdrawalActivityRow,
+  estimateFeeUsd,
   estimateIntegratorFeeRaw,
   isLighterFillBuildFailure,
   lighterFillIdentity,
@@ -202,7 +202,7 @@ describe("buildLighterFillRecord", () => {
   it("keeps the AUTHORIZED tick apart from the one the provider OBSERVED", () => {
     // The authorization permits 1000 on the taker side; the provider stamped
     // 350 on this trade. Both are facts and they answer different questions,
-    // so neither may stand in for the other (H0 Codex correction 6).
+    // so neither may stand in for the other (H0 correction 6).
     const record = buildOrThrow({
       trade: trade({ is_maker_ask: true, integrator_taker_fee: 350, taker_fee: 100 }),
       intent: intent({ side: "buy" }),
@@ -394,31 +394,8 @@ describe("buildLighterFillRecord", () => {
   });
 });
 
-describe("exchange funding rows", () => {
-  it("identifies a deposit by its SETTLEMENT chain, not the Lighter L2", () => {
-    const row = buildLighterDepositActivityRow({
-      settlementChainId: 1,
-      txHash: "0xdeadbeef",
-      asset: { address: "0xA0b8", symbol: "USDC", decimals: 6 },
-      amountRaw: "1000000",
-      environment: "core",
-      accountIndex: 743799,
-    });
-    expect(row).toMatchObject({
-      kind: "exchange",
-      eventRole: "exchange_deposit",
-      protocol: "lighter",
-      chainFamily: "eip155",
-      chainId: 1,
-      txHash: "0xdeadbeef",
-      amountRaw: "1000000",
-    });
-    // 304 and 466324 are Lighter L2 signer chain ids; a receipt reader asked
-    // for either would find nothing.
-    expect(row.chainId).not.toBe(304);
-  });
-
-  it("identifies a claimed withdrawal the same way", () => {
+describe("the exchange funding row a claimed withdrawal reports", () => {
+  it("identifies the withdrawal by its SETTLEMENT chain, not the Lighter L2", () => {
     const row = buildLighterWithdrawalActivityRow({
       settlementChainId: 466324,
       txHash: "0xfeed",
@@ -427,8 +404,18 @@ describe("exchange funding rows", () => {
       environment: "rhc",
       accountIndex: 22869,
     });
-    expect(row.eventRole).toBe("exchange_withdrawal");
-    expect(row.chainFamily).toBe("eip155");
+    expect(row).toMatchObject({
+      kind: "exchange",
+      eventRole: "exchange_withdrawal",
+      protocol: "lighter",
+      chainFamily: "eip155",
+      chainId: 466324,
+      txHash: "0xfeed",
+      amountRaw: "5000000",
+    });
+    // 304 and 466324 are Lighter L2 signer chain ids on Core and RHC; the row
+    // names the SETTLEMENT chain of the RHC deployment, where the receipt is.
+    expect(row.chainId).not.toBe(304);
   });
 });
 
@@ -437,5 +424,229 @@ describe("what is never reported", () => {
     const module = await import("@vex-agent/tools/protocols/lighter/agentscan-activity.js");
     const exported = Object.keys(module).join(" ").toLowerCase();
     expect(exported).not.toMatch(/cancel|modif|close|liquidat/);
+  });
+});
+
+/**
+ * LIGHTER'S OWN TRADE FACTS ON THE FILL ROW.
+ *
+ * Everything below is a field the campaign API reads and none of it is Vex
+ * arithmetic: the trade type, the venue's own match time, Lighter's USD
+ * notional, the account's position before the fill and the realized PnL
+ * Lighter attributes to it. The one derivation is the position EFFECT, which
+ * names the transition those fields already describe.
+ */
+describe("the trade facts a fill carries", () => {
+  it("keeps Lighter's own USD amount beside our computed quote notional", () => {
+    const record = buildOrThrow({
+      trade: trade({ usd_amount: "1000.20" }),
+      intent: intent(),
+      market: PERP_MARKET,
+      feeTerms: FEE_TERMS,
+    });
+    // Two different numbers with two different authorities: `usdAmount` is the
+    // provider's word and is what the campaign sums; `quoteNotional` is our
+    // exact size x price in the QUOTE asset.
+    expect(record.usdAmount).toBe("1000.20");
+    expect(record.quoteNotional).toBe("1000.2");
+  });
+
+  it("reads the trade timestamp as milliseconds, the unit measured live", () => {
+    const record = buildOrThrow({
+      trade: trade({ timestamp: 1788858716527, transaction_time: 1788858716531726 }),
+      intent: intent(),
+      market: PERP_MARKET,
+      feeTerms: FEE_TERMS,
+    });
+    expect(record.tradedAt).toBe("2026-09-08T09:11:56.527Z");
+    expect(record.transactionTimeUs).toBe("1788858716531726");
+  });
+
+  it("carries the provider's own classification of the record", () => {
+    const record = buildOrThrow({
+      trade: trade({ type: "liquidation" }),
+      intent: intent(),
+      market: PERP_MARKET,
+      feeTerms: FEE_TERMS,
+    });
+    // A liquidation is a fill the user did not ask for, and reporting it as
+    // ordinary trading would misdescribe what happened to the account.
+    expect(record.tradeType).toBe("liquidation");
+  });
+
+  it("refuses a record whose USD amount it cannot read", () => {
+    expect(buildLighterFillRecord({
+      trade: trade({ usd_amount: "n/a" }),
+      intent: intent(),
+      market: PERP_MARKET,
+      feeTerms: FEE_TERMS,
+    })).toEqual({ kind: "unbuildable", reason: "malformed_amount" });
+  });
+
+  it("holds the account's own half null when the observation was a public row", () => {
+    const record = buildOrThrow({
+      trade: trade(),
+      intent: intent(),
+      market: PERP_MARKET,
+      feeTerms: FEE_TERMS,
+    });
+    // The public tape carries no realized PnL, so nothing about the account's
+    // position is established - and NULL is not the same claim as "unknown".
+    expect(record.accountFacts).toBeNull();
+    expect(record.positionEffect).toBeNull();
+  });
+
+  it("establishes the effect from the account's own half of an authenticated row", () => {
+    const record = buildOrThrow({
+      // The account (743799) is the BIDDER, and `is_maker_ask: true` makes the
+      // bidder the taker, so its own fields are the TAKER ones.
+      trade: trade({
+        is_maker_ask: true,
+        taker_position_size_before: "-2.5",
+        taker_entry_quote_before: "-6000.000000",
+        taker_position_sign_changed: false,
+        bid_account_pnl: "1.989696",
+        ask_account_pnl: "-9.999999",
+      }),
+      intent: intent({ side: "buy" }),
+      market: PERP_MARKET,
+      feeTerms: FEE_TERMS,
+    });
+    expect(record.accountFacts).toEqual({
+      positionSizeBefore: "-2.5",
+      positionSignChanged: false,
+      entryQuoteBefore: "-6000.000000",
+      // The BID pnl, because the account bought. The ask value beside it is
+      // the counterparty's and must never be reported as the user's.
+      accountPnl: "1.989696",
+      initialMarginFractionBefore: null,
+    });
+    // Short 2.5, bought 0.4: a reduce.
+    expect(record.positionEffect).toBe("reduce");
+  });
+
+  it("estimates the fees in USD on Lighter's own amount, never on an assumed parity", () => {
+    const record = buildOrThrow({
+      trade: trade({ usd_amount: "1000.20", integrator_taker_fee: 1000, taker_fee: 350 }),
+      intent: intent({ side: "buy" }),
+      market: PERP_MARKET,
+      feeTerms: FEE_TERMS,
+    });
+    // 1000.20 x 1000 / 1e6 and 1000.20 x 350 / 1e6, floored at six places.
+    expect(record.integratorFeeEstimatedUsd).toBe("1.000200");
+    expect(record.exchangeFeeEstimatedUsd).toBe("0.350070");
+  });
+
+  it("withholds a USD integrator estimate on a spot buy, which is charged in base", () => {
+    const record = buildOrThrow({
+      trade: trade({ usd_amount: "1000.20", integrator_taker_fee: 1000, taker_fee: 350 }),
+      intent: intent({ side: "buy", marketIndex: 4096 }),
+      market: SPOT_MARKET,
+      feeTerms: FEE_TERMS,
+    });
+    expect(record.integratorFeeEstimateBasis).toBe("received_base");
+    // Converting a base-denominated fee to USD would need a rate nobody here
+    // measured, so no number is produced at all.
+    expect(record.integratorFeeEstimatedUsd).toBeNull();
+    // The exchange fee is charged on the notional and keeps its USD estimate.
+    expect(record.exchangeFeeEstimatedUsd).toBe("0.350070");
+  });
+});
+
+/**
+ * FILLS OBSERVED BEFORE THEIR INTENT: held, never reported, attached only on
+ * the venue's own evidence.
+ */
+describe("a fill with no intent", () => {
+  const SCOPE = { environment: "core" as const, accountIndex: 743799, marketIndex: 1 };
+
+  it("is buildable from the observation scope, with no execution intent", () => {
+    const record = buildOrThrow({
+      trade: trade(),
+      intent: null,
+      observation: SCOPE,
+      market: PERP_MARKET,
+      feeTerms: FEE_TERMS,
+    });
+    expect(record.executionIntentId).toBeNull();
+    expect(record.clientOrderId).toBeNull();
+    expect(record.canonicalIdentity).toBe("lighter:core:743799:1:99");
+  });
+
+  it("takes its side from the trade record, which names both parties", () => {
+    // The account 743799 is the bidder on this record, so it bought.
+    const bought = buildOrThrow({
+      trade: trade(),
+      intent: null,
+      observation: SCOPE,
+      market: PERP_MARKET,
+      feeTerms: FEE_TERMS,
+    });
+    expect(bought.side).toBe("buy");
+    expect(bought.providerOrderId).toBe("8");
+
+    const sold = buildOrThrow({
+      trade: trade({ ask_account_id: 743799, bid_account_id: 111 }),
+      intent: null,
+      observation: SCOPE,
+      market: PERP_MARKET,
+      feeTerms: FEE_TERMS,
+    });
+    expect(sold.side).toBe("sell");
+    expect(sold.providerOrderId).toBe("7");
+  });
+
+  it("refuses to build without a scope, rather than inventing an account", () => {
+    expect(buildLighterFillRecord({
+      trade: trade(),
+      intent: null,
+      market: PERP_MARKET,
+      feeTerms: FEE_TERMS,
+    })).toEqual({ kind: "unbuildable", reason: "missing_observation_scope" });
+  });
+
+  it("refuses a record the scope's account is not party to", () => {
+    expect(buildLighterFillRecord({
+      trade: trade(),
+      intent: null,
+      observation: { ...SCOPE, accountIndex: 999_999 },
+      market: PERP_MARKET,
+      feeTerms: FEE_TERMS,
+    })).toEqual({ kind: "unbuildable", reason: "account_not_party_to_trade" });
+  });
+
+  it("refuses a record where the account is its own counterparty", () => {
+    expect(buildLighterFillRecord({
+      trade: trade({ ask_account_id: 743799 }),
+      intent: null,
+      observation: SCOPE,
+      market: PERP_MARKET,
+      feeTerms: FEE_TERMS,
+    })).toEqual({ kind: "unbuildable", reason: "account_not_party_to_trade" });
+  });
+});
+
+describe("the USD fee estimate", () => {
+  it.each([
+    ["1000.20", 1000, "1.000200"],
+    ["1000.20", 350, "0.350070"],
+    ["0.74", 350, "0.000259"],
+    ["1567.082000", 28, "0.043878"],
+    ["0", 1000, "0.000000"],
+  ])("estimates %s at %s ticks as %s USD", (usdAmount, tick, expected) => {
+    expect(estimateFeeUsd(usdAmount, tick)).toBe(expected);
+  });
+
+  it("floors rather than rounding up, so an estimate never exceeds the charge", () => {
+    // 0.74 x 350 / 1e6 = 0.000259, exactly; 0.75 x 350 / 1e6 = 0.0002625, and
+    // the sub-microdollar remainder is dropped rather than rounded up.
+    expect(estimateFeeUsd("0.75", 350)).toBe("0.000262");
+  });
+
+  it("produces nothing from a tick that is not a rate", () => {
+    expect(estimateFeeUsd("1000.20", null)).toBeNull();
+    expect(estimateFeeUsd("1000.20", 1_000_001)).toBeNull();
+    expect(estimateFeeUsd("1000.20", -1)).toBeNull();
+    expect(estimateFeeUsd("n/a", 1000)).toBeNull();
   });
 });

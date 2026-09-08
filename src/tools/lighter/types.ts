@@ -152,6 +152,17 @@ export interface LighterAccount {
   pending_order_count?: number;
   cross_initial_margin_requirement?: string;
   cross_maintenance_margin_requirement?: string;
+  /**
+   * OPTIONAL ON THE WIRE, ALWAYS AN ARRAY AFTER VALIDATION.
+   *
+   * Lighter omits the key entirely on an account with no integrator approval
+   * (Go `omitempty`; verified live on RHC account 24226, 2026-09-08), so the
+   * raw shape this interface describes is genuinely optional. `validation.ts`
+   * maps absent, null and empty to the same empty list, so anything that has
+   * been through the validator holds an array: a consumer never has to decide
+   * which flavour of absence it is looking at, and "the key was missing" must
+   * never be read as "we could not see the approvals".
+   */
   approved_integrators?: LighterApprovedIntegrator[];
   positions?: LighterAccountPosition[];
   assets?: LighterAccountAsset[];
@@ -423,6 +434,18 @@ export interface LighterMarketDetail extends LighterMarket {
   funding_clamp_small?: string;
   funding_clamp_big?: string;
   base_interest_rate?: string;
+  /**
+   * MARGIN FRACTIONS, on the provider's 10000 scale (K2 measured RHC market 0:
+   * 5000 / 200 / 120 / 80). Perpetual markets only: the spot detail model
+   * carries none of them, which is why every one is optional.
+   */
+  default_initial_margin_fraction?: number;
+  min_initial_margin_fraction?: number;
+  maintenance_margin_fraction?: number;
+  closeout_margin_fraction?: number;
+  /** Decimal strings, quote per base. Perpetual markets only. */
+  mark_price?: string | null;
+  index_price?: string | null;
 }
 
 export interface LighterMarketDetailsResponse {
@@ -486,6 +509,41 @@ export interface LighterTrade {
   bid_client_id?: number;
   ask_client_id_str?: string;
   bid_client_id_str?: string;
+  /**
+   * THE ACCOUNT-RELATIVE FIELDS. Lighter fills these for the account the read
+   * was authorized for; a PUBLIC `recentTrades` row carries the position sizes
+   * before the trade but NOT the sign-changed flags and NOT the account pnl
+   * (measured 2026-09-08, both environments). Optional and nullable here for
+   * exactly that reason: a public row is a legitimate source that simply knows
+   * less, never a malformed one.
+   *
+   * Signed decimal strings: a short position before the fill is negative.
+   */
+  taker_position_size_before?: string | null;
+  taker_entry_quote_before?: string | null;
+  /** Initial margin fraction before the fill, on the provider's 10000 scale. */
+  taker_initial_margin_fraction_before?: number | null;
+  /** TRUE when this fill carried the position through zero (a flip). */
+  taker_position_sign_changed?: boolean | null;
+  maker_position_size_before?: string | null;
+  maker_entry_quote_before?: string | null;
+  maker_initial_margin_fraction_before?: number | null;
+  maker_position_sign_changed?: boolean | null;
+  /**
+   * "Realized PnL for the queried account index, triggered by reducing a long
+   * (ask) / short (bid) position" - Lighter's own words in the descriptor. The
+   * side the ACCOUNT was on decides which of the two applies to it; reading
+   * the other one reports the counterparty's realized PnL as the user's.
+   */
+  ask_account_pnl?: string | null;
+  bid_account_pnl?: string | null;
+  /** Allocated margin around the fill, in the provider's own USDC integer units. */
+  taker_allocated_margin_usdc_before?: number | null;
+  taker_allocated_margin_usdc_after?: number | null;
+  maker_allocated_margin_usdc_before?: number | null;
+  maker_allocated_margin_usdc_after?: number | null;
+  ask_order_version?: number | null;
+  bid_order_version?: number | null;
   [key: string]: unknown;
 }
 

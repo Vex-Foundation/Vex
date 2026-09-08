@@ -1,7 +1,7 @@
 /**
  * FEE ENRICHMENT AFTER DELIVERY, AGAINST REAL POSTGRESQL.
  *
- * The defect (Codex round 1, gap A): `enrichLighterFillChargedFees` writes the
+ * The defect (review round 1, gap A): `enrichLighterFillChargedFees` writes the
  * exact charged fee the provider eventually reports, and the fill's own outbox
  * row is `sent_at` and terminal by then. The fill diff scan excludes any fill
  * that already has a row - correctly, because a fill's economics are immutable
@@ -15,7 +15,7 @@
  * enrichment row that names no revision or an ordinary row that names one.
  * None of that is provable against a fake client, so it is proved here.
  *
- * H0 Codex correction 4 is what the shape has to satisfy: enrichment never
+ * H0 correction 4 is what the shape has to satisfy: enrichment never
  * creates another fill and never changes established economics.
  */
 
@@ -61,6 +61,12 @@ function fillRecord(providerTradeId: string): LighterFillRecord {
     baseAsset: ETH,
     quoteAsset: USDC,
     blockHeight: "12345",
+    tradeType: "trade",
+    tradedAt: "2026-09-08T09:11:56.527Z",
+    transactionTimeUs: "1788858716531726",
+    usdAmount: "1000.20",
+    accountFacts: null,
+    positionEffect: null,
     feeSide: "taker",
     integratorFeeTickAuthorized: 1000,
     integratorFeeTickObserved: 350,
@@ -71,6 +77,8 @@ function fillRecord(providerTradeId: string): LighterFillRecord {
     integratorFeeChargedRaw: null,
     exchangeFeeTickObserved: 100,
     exchangeFeeChargedRaw: null,
+    integratorFeeEstimatedUsd: "0.350070",
+    exchangeFeeEstimatedUsd: "0.100020",
     collectorAccountIndex: 743799,
     feeAuthorizationIntentId: "fee-intent-1",
     spot: false,

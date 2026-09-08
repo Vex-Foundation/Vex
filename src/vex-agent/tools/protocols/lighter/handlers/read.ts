@@ -1123,7 +1123,10 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         accountIndex: auth.accountIndex ?? null,
         accountIndexSource: accountIndex.value === undefined ? "credential" : "caller",
         limit: limit.value,
-        ...projectRecentTrades(response, limit.value),
+        // The resolved account lights up the account view (position before,
+        // realized PnL, effect); `lighter.recentTrades` stays two-argument
+        // because those rows belong to strangers.
+        ...projectRecentTrades(response, limit.value, auth.accountIndex),
       });
     } catch (err) {
       return fail(`Lighter account trades unavailable (${failureDetail("lighter.trades", err)})`);

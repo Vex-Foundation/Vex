@@ -110,7 +110,7 @@ export type AgentscanOutboxSourceKind =
    * terminal once sent, so without this kind an exact fee proven later has no
    * row to ride and never reaches the server at all. It is never a second
    * fill: it reports the SAME `sourceRowId` and carries no economics (H0
-   * Codex correction 4).
+   * H0 correction 4).
    */
   | "lighter_fill_enrichment";
 
@@ -190,7 +190,7 @@ export type OutboxWriteOutcome =
  * enum it publishes.
  *
  * NOTHING IN THIS PREDICATE IS A STATEMENT ABOUT THE SERVER, and reading it as
- * one was a real defect (Codex final review 2026-09-06, lane 7). Both versions it
+ * one was a real defect (the final review of 2026-09-06, lane 7). Both versions it
  * compares are LOCAL: `vocabulary_version` is what this database can STORE and
  * `backfill_vocabulary_version` is what a scan on this install has COVERED.
  * Neither can say whether the deployment accepts a role, and a role the
@@ -255,7 +255,7 @@ const ELIGIBLE_VOCABULARY_V2_SQL = `(
  * migration 107 unified it - but admitting it is still a WIDENING, and a
  * widening makes rows that already exist newly eligible. It was first written
  * into the V2 arm with the version left at 2, and that is precisely the shape
- * the gate cannot absorb (Codex final review 2026-09-06, lane 7): the gate asks
+ * the gate cannot absorb (the final review of 2026-09-06, lane 7): the gate asks
  * `backfill_vocabulary_version >= version`, and an installation that had already
  * completed the V2 backfill satisfies it on the day it upgrades. Migration 107's
  * walk is guarded by `vocabulary_version < 2` and skips that installation
@@ -889,6 +889,13 @@ const enqueueEligibleFillsSql = (generationPredicate: string): string => `
            ) s
       WHERE s.vocabulary_version >= ${LIGHTER_VOCABULARY_VERSION}
         AND ($1::boolean OR s.backfill_vocabulary_version >= ${LIGHTER_VOCABULARY_VERSION})
+        -- HELD ROWS ARE NOT VEX ACTIVITY YET. A fill observed before its
+        -- intent was known (recovery after a crash) is a fact worth storing
+        -- and NOT a claim that Vex created the order: reporting it would
+        -- attribute someone else's trading to this agent whenever the match is
+        -- wrong. attachLighterFillToIntent is what grants the attribution,
+        -- and this null is what withholds it until then.
+        AND f.execution_intent_id IS NOT NULL
         AND ${generationPredicate}
         AND NOT EXISTS (SELECT 1 FROM agentscan_outbox o
                          WHERE o.lighter_fill_id = f.id AND o.status = 'confirmed')`;
@@ -896,7 +903,7 @@ const enqueueEligibleFillsSql = (generationPredicate: string): string => `
 /**
  * THE ENRICHMENT SCAN - how an exact fee proven AFTER delivery gets out.
  *
- * The defect it closes (Codex round 1, gap A): the fill scan above excludes
+ * The defect it closes (review round 1, gap A): the fill scan above excludes
  * any fill that already has an outbox row, which is correct for the fill (its
  * economics are immutable, so a second report of it would be a duplicate) and
  * fatal for the fee. `enrichLighterFillChargedFees` writes an exact charged

@@ -17,7 +17,7 @@
  * independent id sequences would collide there silently: `agent_activity` row
  * 41 and `lighter_fills` row 41 are different facts with the same name, and
  * whichever arrived second would be dropped as a duplicate of the first. So a
- * fill reports `lighter_fill:<ledgerId>` (Codex H0 round 2, correction 1), and
+ * fill reports `lighter_fill:<ledgerId>` (H0 revision 2, correction 1), and
  * the canonical venue identity travels beside it in the typed payload.
  *
  * ## Why a fill is `confirmed` and carries no transaction hash
@@ -33,7 +33,7 @@
  * ## Fees: authorized, observed, estimated, charged
  *
  * Four different things, four different fields, and collapsing any two is the
- * defect this shape exists to prevent (H0 Codex correction 6). The AUTHORIZED
+ * defect this shape exists to prevent (H0 correction 6). The AUTHORIZED
  * tick is a term - what the integrator approval permits. The OBSERVED ticks
  * are what the provider stamped on this trade record, integrator and exchange
  * alike, in millionths of notional. The ESTIMATE is arithmetic on this fill's
@@ -50,11 +50,33 @@
  * accepting a second one, and NO economics at all - no price, no size, no
  * notional, no legs. There is nothing in that payload that could revise what
  * the fill already said.
+ *
+ * ## The key set is the server's, not ours
+ *
+ * The AgentScan contract parses `lighterFill` and `lighterFillEnrichment` as
+ * STRICT objects: an unknown key is a rejection of the whole event, not a
+ * dropped field. So the two payload interfaces below carry exactly the keys
+ * the contract names (H0 revision 2 plus the round-2 additions lane I2 shipped)
+ * and nothing the ledger row also knows. `transaction_time_us`, the campaign
+ * open/close label and the USD fee estimates stay local: the server derives
+ * the label from `positionEffect` and can compute the estimate from
+ * `usdAmount` and the tick it already receives. A future contract revision
+ * that admits them adds them here in the same change, never before.
+ *
+ * Two more ledger facts stay off the fill for the same reason. The canonical
+ * identity is DERIVED by the server from environment, account, market and
+ * trade id (the enrichment names it, because that is how an update finds its
+ * fill); and the estimate's basis is carried by the asset the estimate is
+ * denominated in (the quote asset for a notional basis, the base asset for a
+ * spot buy charged on what it received). The check that proves this key set
+ * against the server branch's own schemas is
+ * `scratchpad/lighter-review/wire-check.mts`; a hand-kept key list is not it.
  */
 
 import type { AgentscanEvent, AgentscanTokenRef } from "../../agentscan/mapper.js";
 import { getLighterFundingDeployment } from "@tools/lighter/wallet-funding/deployments.js";
 import type { LighterEnvironment } from "@tools/lighter/constants.js";
+import { LIGHTER_POSITION_EFFECTS } from "@vex-agent/tools/protocols/lighter/fill-position-effect.js";
 
 /** The prefix that keeps the fill ledger's ids out of `agent_activity`'s id space. */
 export const LIGHTER_FILL_SOURCE_ROW_PREFIX = "lighter_fill:";
@@ -76,7 +98,6 @@ export interface LighterVenueAsset {
 
 /** The typed fill object that rides the event. Every field is named; nothing is copied. */
 export interface LighterFillPayload {
-  readonly canonicalIdentity: string;
   readonly environment: LighterEnvironment;
   readonly lighterChainId: number;
   readonly accountIndex: string;
@@ -87,6 +108,37 @@ export interface LighterFillPayload {
   readonly providerOrderId: string | null;
   readonly clientOrderId: string | null;
   readonly blockHeight: string;
+  /** Lighter's own classification: trade, liquidation, deleverage, market-settlement. */
+  readonly tradeType: string;
+  /**
+   * When the VENUE matched the fill, ISO 8601 UTC from `trade.timestamp`
+   * (measured epoch milliseconds, 2026-09-08). The campaign API's "time".
+   */
+  readonly tradedAt: string | null;
+  /**
+   * LIGHTER'S OWN USD notional for the fill: the campaign's volume, summed per
+   * fill. `quoteNotional` beside it is Vex's exact size x price in the QUOTE
+   * asset, which is a different number on any market not quoted in dollars.
+   */
+  readonly usdAmount: string;
+  /**
+   * WHAT THE FILL DID TO THE ACCOUNT'S POSITION, from Lighter's own fields.
+   * Null while the account-relative fields are unknown (the fill was first
+   * seen on a public row); the enrichment update below delivers it when an
+   * authenticated observation supplies them. `unknown` is the narrower case of
+   * fields present and contradictory, and the two are not collapsed.
+   */
+  readonly positionEffect: "open" | "increase" | "reduce" | "close" | "flip" | "unknown" | null;
+  /** Signed decimal string: the account's position before the fill. Null when unknown. */
+  readonly positionSizeBefore: string | null;
+  readonly positionSignChanged: boolean | null;
+  readonly entryQuoteBefore: string | null;
+  /**
+   * LIGHTER'S realized PnL for this account on this fill, as reported. Null
+   * while unknown. Never computed by Vex from entry and exit, which is why the
+   * campaign's pnl column can carry it as the venue's own number.
+   */
+  readonly accountPnl: string | null;
   readonly price: string;
   readonly baseSize: string;
   readonly quoteNotional: string;
@@ -98,14 +150,22 @@ export interface LighterFillPayload {
   /** The integrator tick the provider stamped on this trade record. Null when absent. */
   readonly integratorFeeTickObserved: number | null;
   readonly integratorFeeEstimatedRaw: string | null;
-  readonly integratorFeeEstimateBasis: "quote_notional" | "received_base" | null;
   /** Which tick the estimate used. Null exactly when there is no estimate. */
   readonly integratorFeeEstimateTickSource: "observed" | "authorized" | null;
   readonly integratorFeeChargedRaw: string | null;
+  /** The asset the integrator fee is denominated in; it is also the estimate's basis. */
   readonly integratorFeeAsset: LighterVenueAsset | null;
   /** The exchange tier tick observed on this trade record, in millionths of notional. */
   readonly exchangeFeeTickObserved: number | null;
   readonly exchangeFeeChargedRaw: string | null;
+  /**
+   * The asset a charged exchange fee is denominated in, present exactly when
+   * the charged amount is: the contract refuses an amount without its asset.
+   * The denomination is the one the venue charges fees in on this fill (the
+   * quote asset; the received base on a spot buy), the same rule the ledger
+   * applies to the integrator fee it records.
+   */
+  readonly exchangeFeeAsset: LighterVenueAsset | null;
   readonly collectorAccountIndex: string | null;
   readonly feeAuthorizationIntentId: string | null;
   /**
@@ -131,8 +191,25 @@ export interface LighterFillMappingFailure {
 }
 
 const DECIMAL = /^[0-9]+(\.[0-9]+)?$/;
+const SIGNED_DECIMAL = /^-?[0-9]+(\.[0-9]+)?$/;
 const INTEGER = /^[0-9]+$/;
 const SIGNED_INTEGER = /^-?[0-9]+$/;
+
+const TRADE_TYPES: readonly string[] = ["trade", "liquidation", "deleverage", "market-settlement"];
+
+function tradeTypeOf(value: unknown): string | null {
+  return typeof value === "string" && TRADE_TYPES.includes(value) ? value : null;
+}
+
+function positionEffectOf(value: unknown): LighterFillPayload["positionEffect"] {
+  return typeof value === "string" && (LIGHTER_POSITION_EFFECTS as readonly string[]).includes(value)
+    ? (value as LighterFillPayload["positionEffect"])
+    : null;
+}
+
+function bool(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
+}
 
 /**
  * Map one ledger row.
@@ -174,10 +251,16 @@ export function mapLighterFillToEvent(row: Record<string, unknown>): LighterFill
   const feeSide = str(row.fee_side);
   if (feeSide !== "maker" && feeSide !== "taker") return unmappable("missing_identity");
 
+  const tradeType = tradeTypeOf(row.trade_type);
+  const usdAmount = guarded(row.usd_amount, DECIMAL);
+  if (tradeType === null || usdAmount === null) return unmappable("malformed_amount");
+  const positionEffect = positionEffectOf(row.position_effect);
+
   const spot = marketIndex >= LIGHTER_SPOT_MARKET_INDEX_FLOOR;
   const observedAt = iso(row.observed_at);
   const createdAt = iso(row.created_at) ?? observedAt ?? new Date(0).toISOString();
   const chainId = getLighterFundingDeployment(environment).lighterSignerChainId;
+  const exchangeFeeChargedRaw = guarded(row.exchange_fee_charged_raw, SIGNED_INTEGER);
 
   // The two legs a fill moves, in the direction the account traded: a buy
   // spends quote and receives base. Amounts stay decimal strings with their
@@ -221,14 +304,14 @@ export function mapLighterFillToEvent(row: Record<string, unknown>): LighterFill
     txHash: null,
     failureCode: null,
     createdAt,
-    // The provider's own execution time is not carried on the ledger row; the
-    // block height above is what orders a fill on the venue. Reporting our own
-    // observation time as the confirmation time is what the activity mapper
-    // refuses to do, and it is refused here for the same reason.
-    confirmedAt: null,
+    // THE VENUE'S OWN MATCH TIME, not ours. `traded_at` is `trade.timestamp`
+    // (measured epoch milliseconds, 2026-09-08), so the confirmation time is
+    // the provider's word; reporting our observation time here is what the
+    // activity mapper refuses to do, and it stays refused. Null only when the
+    // ledger row somehow carries no trade time, never our clock as a stand-in.
+    confirmedAt: iso(row.traded_at),
     observedAt,
     lighterFill: {
-      canonicalIdentity,
       environment,
       lighterChainId: chainId,
       accountIndex,
@@ -239,6 +322,14 @@ export function mapLighterFillToEvent(row: Record<string, unknown>): LighterFill
       providerOrderId: guarded(row.provider_order_id, INTEGER),
       clientOrderId: guarded(row.client_order_id, INTEGER),
       blockHeight,
+      tradeType,
+      tradedAt: iso(row.traded_at),
+      usdAmount,
+      positionEffect,
+      positionSizeBefore: guarded(row.position_size_before, SIGNED_DECIMAL),
+      positionSignChanged: bool(row.position_sign_changed),
+      entryQuoteBefore: guarded(row.entry_quote_before, SIGNED_DECIMAL),
+      accountPnl: guarded(row.account_pnl, SIGNED_DECIMAL),
       price,
       baseSize,
       quoteNotional,
@@ -248,7 +339,6 @@ export function mapLighterFillToEvent(row: Record<string, unknown>): LighterFill
       integratorFeeTickAuthorized: num(row.integrator_fee_tick_authorized),
       integratorFeeTickObserved: num(row.integrator_fee_tick_observed),
       integratorFeeEstimatedRaw: guarded(row.integrator_fee_estimated_raw, INTEGER),
-      integratorFeeEstimateBasis: feeEstimateBasis(row.integrator_fee_estimate_basis),
       integratorFeeEstimateTickSource: feeEstimateTickSource(row.integrator_fee_estimate_tick_source),
       integratorFeeChargedRaw: guarded(row.integrator_fee_charged_raw, INTEGER),
       integratorFeeAsset: venueAsset(
@@ -257,7 +347,8 @@ export function mapLighterFillToEvent(row: Record<string, unknown>): LighterFill
         row.integrator_fee_asset_decimals,
       ),
       exchangeFeeTickObserved: num(row.exchange_fee_tick_observed),
-      exchangeFeeChargedRaw: guarded(row.exchange_fee_charged_raw, SIGNED_INTEGER),
+      exchangeFeeChargedRaw: exchangeFeeChargedRaw,
+      exchangeFeeAsset: exchangeFeeChargedRaw === null ? null : feeDenominationAsset(side, spot, baseAsset, quoteAsset),
       collectorAccountIndex: idString(row.collector_account_index),
       feeAuthorizationIntentId: str(row.fee_authorization_intent_id),
       attribution: "client_asserted",
@@ -270,11 +361,24 @@ export function mapLighterFillToEvent(row: Record<string, unknown>): LighterFill
  * exact charged amounts. NOTHING ELSE. No price, no size, no notional, no
  * side, no legs - there is deliberately no field here through which an
  * enrichment could revise an economic fact the fill already established
- * (H0 Codex correction 4: enrichment never creates another fill and never
+ * (H0 correction 4: enrichment never creates another fill and never
  * changes established economics).
  */
 export interface LighterFillEnrichmentPayload {
   readonly canonicalIdentity: string;
+  /**
+   * KNOWLEDGE, NOT ECONOMICS. A fill first observed on a public row carries no
+   * account-relative fields and therefore no position effect; a later
+   * authenticated observation supplies them, the merge rule fills the nulls
+   * once, and this update is how that reaches a server which already holds the
+   * fill. Nothing here can revise a price, a size or a notional - there is no
+   * field for it - and every value below is Lighter's own.
+   */
+  readonly positionEffect: LighterFillPayload["positionEffect"];
+  readonly positionSizeBefore: string | null;
+  readonly positionSignChanged: boolean | null;
+  readonly entryQuoteBefore: string | null;
+  readonly accountPnl: string | null;
   /**
    * The `lighter_fills.revision` this update carries. Monotonic per fill and
    * bumped only by the enrichment write, so the server can apply updates in
@@ -284,6 +388,8 @@ export interface LighterFillEnrichmentPayload {
   readonly integratorFeeChargedRaw: string | null;
   readonly exchangeFeeChargedRaw: string | null;
   readonly integratorFeeAsset: LighterVenueAsset | null;
+  /** Present exactly when `exchangeFeeChargedRaw` is; see {@link LighterFillPayload.exchangeFeeAsset}. */
+  readonly exchangeFeeAsset: LighterVenueAsset | null;
 }
 
 /** The ingest event an enrichment produces. Same identity, no economics. */
@@ -320,10 +426,25 @@ export function mapLighterFillEnrichmentToEvent(
 
   const marketIndex = num(row.market_index);
   if (marketIndex === null) return unmappable("missing_identity");
+  const enrichmentEffect = positionEffectOf(row.position_effect);
   const spot = marketIndex >= LIGHTER_SPOT_MARKET_INDEX_FLOOR;
   const observedAt = iso(row.observed_at);
   const createdAt = iso(row.created_at) ?? observedAt ?? new Date(0).toISOString();
   const chainId = getLighterFundingDeployment(environment).lighterSignerChainId;
+  const exchangeFeeChargedRaw = guarded(row.exchange_fee_charged_raw, SIGNED_INTEGER);
+  // A charged exchange fee needs the asset it is denominated in, which is a
+  // fact about the fill's own legs; without both legs the amount cannot be
+  // named and the update must not pretend to.
+  const side = str(row.side);
+  const baseAsset = venueAsset(row.base_asset_id, row.base_asset_symbol, row.base_asset_decimals);
+  const quoteAsset = venueAsset(row.quote_asset_id, row.quote_asset_symbol, row.quote_asset_decimals);
+  if (exchangeFeeChargedRaw !== null && ((side !== "buy" && side !== "sell") || baseAsset === null || quoteAsset === null)) {
+    return unmappable("malformed_asset");
+  }
+  const exchangeFeeAsset = exchangeFeeChargedRaw === null || (side !== "buy" && side !== "sell")
+    || baseAsset === null || quoteAsset === null
+    ? null
+    : feeDenominationAsset(side, spot, baseAsset, quoteAsset);
 
   return {
     sourceRowId: `${LIGHTER_FILL_SOURCE_ROW_PREFIX}${id}`,
@@ -365,15 +486,37 @@ export function mapLighterFillEnrichmentToEvent(
     lighterFillEnrichment: {
       canonicalIdentity,
       revision,
+      positionEffect: enrichmentEffect,
+      positionSizeBefore: guarded(row.position_size_before, SIGNED_DECIMAL),
+      positionSignChanged: bool(row.position_sign_changed),
+      entryQuoteBefore: guarded(row.entry_quote_before, SIGNED_DECIMAL),
+      accountPnl: guarded(row.account_pnl, SIGNED_DECIMAL),
       integratorFeeChargedRaw: guarded(row.integrator_fee_charged_raw, INTEGER),
-      exchangeFeeChargedRaw: guarded(row.exchange_fee_charged_raw, SIGNED_INTEGER),
+      exchangeFeeChargedRaw,
       integratorFeeAsset: venueAsset(
         row.integrator_fee_asset_id,
         row.integrator_fee_asset_symbol,
         row.integrator_fee_asset_decimals,
       ),
+      exchangeFeeAsset,
     },
   };
+}
+
+/**
+ * The asset the venue charges this fill's fees in: the quote asset, except a
+ * spot BUY, which is charged on the base it received. `order-evidence.ts`
+ * established the rule from the provider's own behaviour and the ledger
+ * records the integrator fee's asset by it; the exchange fee shares the
+ * denomination.
+ */
+function feeDenominationAsset(
+  side: "buy" | "sell",
+  spot: boolean,
+  baseAsset: LighterVenueAsset,
+  quoteAsset: LighterVenueAsset,
+): LighterVenueAsset {
+  return spot && side === "buy" ? baseAsset : quoteAsset;
 }
 
 /** Whether a mapping result - a fill's or an enrichment's - is the failure arm. */
@@ -420,10 +563,6 @@ function venueAsset(id: unknown, symbol: unknown, decimals: unknown): LighterVen
   const dec = num(decimals);
   if (venueAssetId === null || sym === null || dec === null || !Number.isInteger(dec) || dec < 0) return null;
   return { venueAssetId, symbol: sym, decimals: dec };
-}
-
-function feeEstimateBasis(value: unknown): "quote_notional" | "received_base" | null {
-  return value === "quote_notional" || value === "received_base" ? value : null;
 }
 
 function feeEstimateTickSource(value: unknown): "observed" | "authorized" | null {

@@ -45,6 +45,21 @@ const integerString = z.string().regex(/^\d+$/, {
 });
 const optionalIntegerString = integerString.optional();
 const optionalNumericString = z.string().optional();
+/**
+ * A SIGNED decimal string, the form Lighter reports a position size, an entry
+ * quote and a realized PnL in. Strict rather than tolerant because every one of
+ * these reaches a financial decision (rule 90): a value this regex refuses is a
+ * value the fill ledger's own CHECK constraints would refuse a moment later,
+ * and refusing it at the boundary is where the reason is still legible.
+ */
+const signedDecimalString = z.string().regex(/^-?(0|[1-9][0-9]*)(\.[0-9]+)?$/, {
+  message: "Expected a signed decimal string",
+});
+/** Present, explicitly null, or absent. A public trade row omits what it does not know. */
+const nullableSignedDecimalString = signedDecimalString.nullish();
+const nullableProviderInteger = providerInteger.nullish();
+const nullableInt = int.nullish();
+const nullableBoolean = z.boolean().nullish();
 const message = z.string().optional();
 
 const marketType = z.enum(["perp", "spot"]);
@@ -97,8 +112,20 @@ const marketDetailSchema = marketSchema
     funding_clamp_small: optionalNumericString,
     funding_clamp_big: optionalNumericString,
     base_interest_rate: optionalNumericString,
+    // Perpetual markets only: the spot detail model carries neither, so both
+    // are nullable as well as optional.
+    mark_price: nullableSignedDecimalString,
+    index_price: nullableSignedDecimalString,
   })
   .passthrough();
+
+/**
+ * The market-detail field names this validator accepts, from the schema
+ * itself. Same contract as {@link LIGHTER_TRADE_VALIDATED_FIELDS}: the
+ * descriptor test walks it.
+ */
+export const LIGHTER_MARKET_DETAIL_VALIDATED_FIELDS: readonly string[] =
+  Object.keys(marketDetailSchema.shape);
 
 const simpleOrderSchema = z
   .object({
@@ -143,8 +170,36 @@ const tradeSchema = z
     bid_client_id: providerInteger.optional(),
     ask_client_id_str: optionalIntegerString,
     bid_client_id_str: optionalIntegerString,
+    // THE ACCOUNT-RELATIVE FIELDS. A public `recentTrades` row carries the
+    // position sizes before the trade and omits the rest; the authenticated
+    // read for the account carries all of them. Nullable AND optional, so a
+    // public row validates as the weaker source it is instead of failing.
+    taker_position_size_before: nullableSignedDecimalString,
+    taker_entry_quote_before: nullableSignedDecimalString,
+    taker_initial_margin_fraction_before: nullableInt,
+    taker_position_sign_changed: nullableBoolean,
+    maker_position_size_before: nullableSignedDecimalString,
+    maker_entry_quote_before: nullableSignedDecimalString,
+    maker_initial_margin_fraction_before: nullableInt,
+    maker_position_sign_changed: nullableBoolean,
+    ask_account_pnl: nullableSignedDecimalString,
+    bid_account_pnl: nullableSignedDecimalString,
+    taker_allocated_margin_usdc_before: nullableProviderInteger,
+    taker_allocated_margin_usdc_after: nullableProviderInteger,
+    maker_allocated_margin_usdc_before: nullableProviderInteger,
+    maker_allocated_margin_usdc_after: nullableProviderInteger,
+    ask_order_version: nullableProviderInteger,
+    bid_order_version: nullableProviderInteger,
   })
   .passthrough();
+
+/**
+ * The Trade field names this validator accepts, taken from the schema itself
+ * rather than re-typed. `lighter-openapi-fields.test.ts` walks this list
+ * against Lighter's descriptor artifact, so a field spelled wrong here fails
+ * there instead of silently reading `undefined` forever.
+ */
+export const LIGHTER_TRADE_VALIDATED_FIELDS: readonly string[] = Object.keys(tradeSchema.shape);
 
 const rawCandleSchema = z
   .object({
@@ -353,7 +408,20 @@ const accountSchema = z
     pending_order_count: int.optional(),
     cross_initial_margin_requirement: optionalNumericString,
     cross_maintenance_margin_requirement: optionalNumericString,
-    approved_integrators: z.array(approvedIntegratorSchema).nullish().transform((value) => value === null ? [] : value),
+    // LIGHTER OMITS THE KEY ENTIRELY on an account with no integrator
+    // approval yet (Go `omitempty`; verified live on RHC account 24226,
+    // GET /api/v1/account?by=index&value=24226 - the key is absent, not null).
+    // The previous transform mapped only `null` to `[]`, so `undefined`
+    // survived, `Array.isArray` said false, and the fee-authorization
+    // preparation reported "Lighter did not return fee-authorization evidence"
+    // - refusing the FIRST authorization of every fresh account, which is the
+    // one case where the list is legitimately empty. Absent, null and empty
+    // all mean the same thing here: no approvals, and the parsed field is
+    // always an array so no consumer has to decide which absence it is.
+    approved_integrators: z
+      .array(approvedIntegratorSchema)
+      .nullish()
+      .transform((value) => value ?? []),
     positions: z.array(accountPositionSchema).optional(),
     assets: z.array(accountAssetSchema).optional(),
   })

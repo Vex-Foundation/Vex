@@ -53,7 +53,8 @@ describe("native Lighter fees", () => {
   it("requires current allowance for both markets and rejects expiry, revocation and Standard", () => {
     const account = requireValue(validateLighterAccount({ code: 200, accounts: [{ index: 42, approved_integrators: [allowance] }] }).accounts[0]);
     const accountLimits = validateLighterAccountLimits(limits);
-    expect(requireValue(validateLighterAccount({ code: 200, accounts: [{ index: 42 }] }).accounts[0]).approved_integrators).toBeUndefined();
+    // Lighter omits the key on a fresh account (Go omitempty): absent, null and empty are one answer.
+    expect(requireValue(validateLighterAccount({ code: 200, accounts: [{ index: 42 }] }).accounts[0]).approved_integrators).toEqual([]);
     expect(() => assertLighterFeeAllowance(policy, { account, accountLimits, nowMs: 1_800_000_000_000 })).not.toThrow();
     expect(() => assertLighterFeeAllowance(policy, { account, accountLimits, nowMs: allowance.approval_expiry })).toThrow(/Approve/);
     expect(() => assertLighterFeeAllowance(policy, { account: { ...account, approved_integrators: [] }, accountLimits })).toThrow(/Approve/);

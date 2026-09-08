@@ -8,7 +8,7 @@
  *   1. THE SOURCE ROW ID IS NAMESPACED. AgentScan dedupes on
  *      (agent_hash, source_row_id). `agent_activity` row 41 and `lighter_fills`
  *      row 41 are different facts, and an un-namespaced id would make the
- *      server silently drop whichever arrived second (Codex H0 round 2,
+ *      server silently drop whichever arrived second (H0 revision 2,
  *      correction 1).
  *   2. NOTHING ABOUT THE COUNTERPARTY LEAVES. A public trade record carries
  *      the other side's account id, order id and position size. None of it has
@@ -52,6 +52,17 @@ function ledgerRow(overrides: Record<string, unknown> = {}): Record<string, unkn
     quote_asset_symbol: "USDC",
     quote_asset_decimals: 6,
     block_height: "12345",
+    trade_type: "trade",
+    // The venue's own match time; `observed_at` below is when Vex saw it.
+    traded_at: new Date("2026-09-07T09:59:59.250Z"),
+    transaction_time_us: "1757239199250731",
+    // LIGHTER'S OWN USD notional, which is what the campaign sums as volume.
+    usd_amount: "1000.20",
+    position_size_before: "2.5",
+    position_sign_changed: false,
+    entry_quote_before: "6000.000000",
+    account_pnl: "-0.022890",
+    position_effect: "increase",
     fee_side: "taker",
     integrator_fee_tick_authorized: 1000,
     integrator_fee_tick_observed: 350,
@@ -64,6 +75,8 @@ function ledgerRow(overrides: Record<string, unknown> = {}): Record<string, unkn
     integrator_fee_charged_raw: null,
     exchange_fee_tick_observed: 5,
     exchange_fee_charged_raw: null,
+    integrator_fee_estimated_usd: "0.350070",
+    exchange_fee_estimated_usd: "0.005001",
     collector_account_index: "743799",
     fee_authorization_intent_id: "fee-intent-1",
     revision: 0,
@@ -101,8 +114,18 @@ describe("the fill event's identity", () => {
     expect(event.sourceExecutionId).toBe("lighter:core:743799:1:99");
   });
 
-  it("carries the canonical identity to the server unchanged", () => {
-    expect(mapOrThrow(ledgerRow()).lighterFill.canonicalIdentity).toBe("lighter:core:743799:1:99");
+  it("carries the four fields the server derives the canonical identity from, and not the identity itself", () => {
+    // The contract's fill object is strict and has no identity field: the
+    // server computes `lighter:<environment>:<account>:<market>:<tradeId>`
+    // from these four, so a client-sent copy could only ever disagree with it.
+    const fill = mapOrThrow(ledgerRow()).lighterFill;
+    expect(fill).toMatchObject({
+      environment: "core",
+      accountIndex: "743799",
+      marketIndex: 1,
+      providerTradeId: "99",
+    });
+    expect("canonicalIdentity" in fill).toBe(false);
   });
 });
 
@@ -142,10 +165,20 @@ describe("the vocabulary and chain identity", () => {
     expect(event.txHash).toBeNull();
   });
 
-  it("never reports our observation time as the confirmation time", () => {
+  it("reports the VENUE's match time as the confirmation time, never our own", () => {
     const event = mapOrThrow(ledgerRow());
-    expect(event.confirmedAt).toBeNull();
+    // `traded_at` is Lighter's `trade.timestamp`; `observed_at` is when Vex
+    // saw the fill, and the two are 750ms apart in this fixture precisely so
+    // that reading the wrong one is visible.
+    expect(event.confirmedAt).toBe("2026-09-07T09:59:59.250Z");
     expect(event.observedAt).toBe("2026-09-07T10:00:00.000Z");
+    expect(event.confirmedAt).not.toBe(event.observedAt);
+  });
+
+  it("leaves the confirmation time null rather than substituting our clock", () => {
+    const event = mapOrThrow(ledgerRow({ traded_at: null }));
+    expect(event.confirmedAt).toBeNull();
+    expect(event.lighterFill.tradedAt).toBeNull();
   });
 
   it("asserts attribution as client-asserted, never as verified origin", () => {
@@ -190,8 +223,25 @@ describe("fees", () => {
     const fill = mapOrThrow(ledgerRow()).lighterFill;
     expect(fill.integratorFeeTickAuthorized).toBe(1000);
     expect(fill.integratorFeeEstimatedRaw).toBe("1000200");
-    expect(fill.integratorFeeEstimateBasis).toBe("quote_notional");
+    // The estimate's basis travels as the asset it is denominated in: the
+    // quote asset here, which is what "quote_notional" means on the wire.
+    expect(fill.integratorFeeAsset).toEqual({ venueAssetId: "lighter:core:asset:0", symbol: "USDC", decimals: 6 });
     expect(fill.integratorFeeChargedRaw).toBeNull();
+    // No charged exchange fee, so no asset is claimed for one.
+    expect(fill.exchangeFeeChargedRaw).toBeNull();
+    expect(fill.exchangeFeeAsset).toBeNull();
+  });
+
+  it("names the asset of a charged exchange fee: the quote asset, or the received base on a spot buy", () => {
+    const perp = mapOrThrow(ledgerRow({ exchange_fee_charged_raw: "-250" })).lighterFill;
+    expect(perp.exchangeFeeChargedRaw).toBe("-250");
+    expect(perp.exchangeFeeAsset).toEqual({ venueAssetId: "lighter:core:asset:0", symbol: "USDC", decimals: 6 });
+
+    const spotBuy = mapOrThrow(ledgerRow({ market_index: 2048, side: "buy", exchange_fee_charged_raw: "10" })).lighterFill;
+    expect(spotBuy.exchangeFeeAsset).toEqual({ venueAssetId: "lighter:core:asset:1", symbol: "ETH", decimals: 18 });
+
+    const spotSell = mapOrThrow(ledgerRow({ market_index: 2048, side: "sell", exchange_fee_charged_raw: "10" })).lighterFill;
+    expect(spotSell.exchangeFeeAsset).toEqual({ venueAssetId: "lighter:core:asset:0", symbol: "USDC", decimals: 6 });
   });
 
   it("carries the OBSERVED ticks beside the authorized one, never instead of it", () => {
@@ -241,21 +291,22 @@ describe("privacy", () => {
     const fill = mapOrThrow(ledgerRow()).lighterFill;
     expect(Object.keys(fill).sort()).toEqual([
       "accountIndex",
+      "accountPnl",
       "attribution",
       "baseAsset",
       "baseSize",
       "blockHeight",
-      "canonicalIdentity",
       "clientOrderId",
       "collectorAccountIndex",
+      "entryQuoteBefore",
       "environment",
+      "exchangeFeeAsset",
       "exchangeFeeChargedRaw",
       "exchangeFeeTickObserved",
       "feeAuthorizationIntentId",
       "feeSide",
       "integratorFeeAsset",
       "integratorFeeChargedRaw",
-      "integratorFeeEstimateBasis",
       "integratorFeeEstimateTickSource",
       "integratorFeeEstimatedRaw",
       "integratorFeeTickAuthorized",
@@ -263,12 +314,18 @@ describe("privacy", () => {
       "lighterChainId",
       "marketIndex",
       "marketSymbol",
+      "positionEffect",
+      "positionSignChanged",
+      "positionSizeBefore",
       "price",
       "providerOrderId",
       "providerTradeId",
       "quoteAsset",
       "quoteNotional",
       "side",
+      "tradeType",
+      "tradedAt",
+      "usdAmount",
     ]);
   });
 
@@ -327,7 +384,7 @@ describe("the enrichment projection", () => {
     const fill = mapOrThrow(ledgerRow());
     expect(enriched.sourceRowId).toBe(fill.sourceRowId);
     expect(enriched.sourceRowId).toBe(`${LIGHTER_FILL_SOURCE_ROW_PREFIX}41`);
-    expect(enriched.lighterFillEnrichment.canonicalIdentity).toBe(fill.lighterFill.canonicalIdentity);
+    expect(enriched.lighterFillEnrichment.canonicalIdentity).toBe("lighter:core:743799:1:99");
   });
 
   it("carries the newly proven fees and the revision that delivers them", () => {
@@ -341,7 +398,49 @@ describe("the enrichment projection", () => {
       integratorFeeChargedRaw: "1000000",
       exchangeFeeChargedRaw: "-250",
       integratorFeeAsset: { venueAssetId: "lighter:core:asset:0", symbol: "USDC", decimals: 6 },
+      // The charged exchange fee names its asset, as the contract requires.
+      exchangeFeeAsset: { venueAssetId: "lighter:core:asset:0", symbol: "USDC", decimals: 6 },
+      // KNOWLEDGE TRAVELS WITH THE FEE. A fill first seen on a public row has
+      // no account-relative fields; the authenticated observation that
+      // supplies them bumps the same revision, and this is the only way they
+      // reach a server that already holds the fill.
+      positionEffect: "increase",
+      positionSizeBefore: "2.5",
+      positionSignChanged: false,
+      entryQuoteBefore: "6000.000000",
+      accountPnl: "-0.022890",
     });
+  });
+
+  it("carries the account knowledge for a fill whose effect was established later", () => {
+    // The public-row case: the fill was delivered with nothing known about the
+    // account's position, and the authenticated read that followed established
+    // it once.
+    const enriched = enrichOrThrow(ledgerRow({
+      position_size_before: "-2.5",
+      position_sign_changed: true,
+      entry_quote_before: "-6000.000000",
+      account_pnl: "1.989696",
+      position_effect: "flip",
+      revision: 1,
+    }), 1);
+    expect(enriched.lighterFillEnrichment.positionEffect).toBe("flip");
+    expect(enriched.lighterFillEnrichment.accountPnl).toBe("1.989696");
+    expect(enriched.lighterFillEnrichment.positionSizeBefore).toBe("-2.5");
+  });
+
+  it("reports an unestablished effect as null", () => {
+    const enriched = enrichOrThrow(ledgerRow({
+      position_size_before: null,
+      position_sign_changed: null,
+      entry_quote_before: null,
+      account_pnl: null,
+      position_effect: null,
+      integrator_fee_charged_raw: "1000000",
+      revision: 1,
+    }), 1);
+    expect(enriched.lighterFillEnrichment.positionEffect).toBeNull();
+    expect(enriched.lighterFillEnrichment.accountPnl).toBeNull();
   });
 
   it("carries NO economics at all, so it cannot revise what the fill established", () => {
@@ -349,10 +448,16 @@ describe("the enrichment projection", () => {
     // never a second fill and never a revision of price, size or notional.
     const enriched = enrichOrThrow(ledgerRow({ integrator_fee_charged_raw: "1000000", revision: 1 }), 1);
     expect(Object.keys(enriched.lighterFillEnrichment).sort()).toEqual([
+      "accountPnl",
       "canonicalIdentity",
+      "entryQuoteBefore",
+      "exchangeFeeAsset",
       "exchangeFeeChargedRaw",
       "integratorFeeAsset",
       "integratorFeeChargedRaw",
+      "positionEffect",
+      "positionSignChanged",
+      "positionSizeBefore",
       "revision",
     ]);
     expect(enriched.tokenIn).toBeNull();

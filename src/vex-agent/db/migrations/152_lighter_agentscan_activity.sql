@@ -91,6 +91,51 @@ CREATE TABLE IF NOT EXISTS lighter_fills (
   quote_asset_symbol TEXT NOT NULL,
   quote_asset_decimals INTEGER NOT NULL CHECK (quote_asset_decimals >= 0),
   block_height TEXT NOT NULL CHECK (block_height ~ '^[0-9]+$'),
+  -- LIGHTER'S OWN CLASSIFICATION of the record. A liquidation and a
+  -- deleverage are fills the user did not ask for, and reporting them as
+  -- ordinary trading would misdescribe what happened to the account.
+  -- No DEFAULT anywhere in this block: the table is created here and the row
+  -- writer always supplies all three. A default would let a writer that forgot
+  -- one record 'trade' at NOW() for zero dollars, which reads as a fact.
+  trade_type TEXT NOT NULL
+    CHECK (trade_type IN ('trade','liquidation','deleverage','market-settlement')),
+  -- When the VENUE matched the fill (`trade.timestamp`). MEASURED against the
+  -- live public endpoint on 2026-09-08: epoch MILLISECONDS (1788858716527
+  -- beside a wall clock of 1788858717535), with `transaction_time` beside it
+  -- in MICROSECONDS. This is the campaign API's "time"; `observed_at` below is
+  -- when Vex saw the fill and is a different fact.
+  traded_at TIMESTAMPTZ NOT NULL,
+  -- `trade.transaction_time`, epoch microseconds, lossless as a decimal string.
+  transaction_time_us TEXT CHECK (transaction_time_us ~ '^[0-9]+$'),
+  -- LIGHTER'S OWN USD notional (`usd_amount`), which is what the campaign sums
+  -- as volume. `quote_notional` above is OUR exact product of size and price in
+  -- the quote asset: the two agree on a USD-quoted market and would not on any
+  -- other, and only this one is the provider's word.
+  usd_amount TEXT NOT NULL CHECK (usd_amount ~ '^[0-9]+(\.[0-9]+)?$'),
+  -- ── The account's own half of the trade record ────────────────────────────
+  --
+  -- NULL together and non-null together. A public `recentTrades` row does not
+  -- carry them (measured 2026-09-08: it carries the position sizes but not the
+  -- realized PnL), so a fill first seen publicly holds them null until an
+  -- authenticated observation supplies them - once, through the merge rule in
+  -- `agentscan-activity.ts`, which fills nulls and never revises a value.
+  --
+  -- Signed decimal strings: a short position before the fill is negative, and
+  -- a realized loss is negative.
+  position_size_before TEXT CHECK (position_size_before ~ '^-?[0-9]+(\.[0-9]+)?$'),
+  position_sign_changed BOOLEAN,
+  entry_quote_before TEXT CHECK (entry_quote_before ~ '^-?[0-9]+(\.[0-9]+)?$'),
+  -- Lighter's realized PnL for THIS account on THIS fill, from the ask or bid
+  -- side by the side the account traded. Never computed here from entry and
+  -- exit: an arithmetic PnL of our own would disagree with the venue's the
+  -- moment funding or fees enter.
+  account_pnl TEXT CHECK (account_pnl ~ '^-?[0-9]+(\.[0-9]+)?$'),
+  -- What the fill did to the account's position, classified from the three
+  -- columns above. 'unknown' is the narrow case where they are present and
+  -- contradict each other (a fill larger than the position it opposed, with no
+  -- sign change reported); NULL is the wider one, "not known yet".
+  position_effect TEXT
+    CHECK (position_effect IN ('open','increase','reduce','close','flip','unknown')),
   -- Which side of the book this account was on for THIS fill: the fee tier and
   -- the integrator tick both differ between maker and taker.
   fee_side TEXT NOT NULL CHECK (fee_side IN ('maker','taker')),
@@ -127,6 +172,13 @@ CREATE TABLE IF NOT EXISTS lighter_fills (
   -- charged amount below admits a leading '-'.
   exchange_fee_tick_observed INTEGER,
   exchange_fee_charged_raw TEXT CHECK (exchange_fee_charged_raw ~ '^-?[0-9]+$'),
+  -- FEE ESTIMATES IN USD, computed on Lighter's own `usd_amount` and its rate
+  -- tick - never on an assumed stablecoin parity, and never on a quote-asset
+  -- amount relabelled as dollars. NULL for the integrator fee on a spot BUY,
+  -- which is charged in the received base and keeps that denomination.
+  -- ESTIMATES, and the campaign displays them as such.
+  integrator_fee_estimated_usd TEXT CHECK (integrator_fee_estimated_usd ~ '^[0-9]+(\.[0-9]+)?$'),
+  exchange_fee_estimated_usd TEXT CHECK (exchange_fee_estimated_usd ~ '^[0-9]+(\.[0-9]+)?$'),
   collector_account_index BIGINT CHECK (collector_account_index >= 0),
   -- Provenance of the authorization only. Never proof that a fee was charged.
   fee_authorization_intent_id TEXT,
@@ -151,6 +203,15 @@ CREATE TABLE IF NOT EXISTS lighter_fills (
     (integrator_fee_estimated_raw IS NULL) = (integrator_fee_estimate_basis IS NULL)
     AND (integrator_fee_estimated_raw IS NULL) = (integrator_fee_estimate_tick_source IS NULL)
   ),
+  -- THE ACCOUNT'S OWN HALF ARRIVES WHOLE OR NOT AT ALL. Three columns come
+  -- from one authenticated observation; two of three would be a classification
+  -- resting on a field nobody read.
+  CONSTRAINT lighter_fills_account_facts_whole CHECK (
+    (position_size_before IS NULL AND position_sign_changed IS NULL
+     AND account_pnl IS NULL AND position_effect IS NULL)
+    OR (position_size_before IS NOT NULL AND position_sign_changed IS NOT NULL
+        AND account_pnl IS NOT NULL AND position_effect IS NOT NULL)
+  ),
   -- Any integrator fee figure needs the asset it is denominated in.
   CONSTRAINT lighter_fills_fee_asset_complete CHECK (
     (integrator_fee_estimated_raw IS NULL AND integrator_fee_charged_raw IS NULL)
@@ -173,7 +234,24 @@ COMMENT ON COLUMN lighter_fills.integrator_fee_tick_observed IS
 COMMENT ON COLUMN lighter_fills.exchange_fee_tick_observed IS
   'The exchange tier tick observed on this trade record, in millionths of notional.';
 COMMENT ON COLUMN lighter_fills.revision IS
-  'Incremented only by the fee-enrichment UPDATE. The monotonic token the enrichment outbox row is keyed on.';
+  'Incremented by the enrichment writes: an exact charged fee, or the account-relative knowledge a later authenticated observation supplies. The monotonic token the enrichment outbox row is keyed on.';
+COMMENT ON COLUMN lighter_fills.traded_at IS
+  'When the VENUE matched the fill (trade.timestamp, measured epoch milliseconds 2026-09-08). Not observed_at.';
+COMMENT ON COLUMN lighter_fills.usd_amount IS
+  'Lighter''s own usd_amount for the fill: the campaign''s volume. quote_notional is our own size x price in the quote asset.';
+COMMENT ON COLUMN lighter_fills.account_pnl IS
+  'Lighter''s realized PnL for this account on this fill, as reported. Never computed from entry and exit.';
+COMMENT ON COLUMN lighter_fills.position_effect IS
+  'open | increase | reduce | close | flip, from Lighter''s own fields. NULL until the account-relative fields exist; established once.';
+COMMENT ON COLUMN lighter_fills.execution_intent_id IS
+  'The Vex order execution intent. NULL means the fill is HELD: observed before its intent was known, never reported until attachLighterFillToIntent proves the binding.';
+
+-- HELD ROWS ARE THE ONES WITHOUT AN INTENT, and the outbox diff scan skips
+-- them by that null. A partial index keeps that scan from walking rows it will
+-- never enqueue.
+CREATE INDEX IF NOT EXISTS idx_lighter_fills_held
+  ON lighter_fills (environment, account_index, market_index)
+  WHERE execution_intent_id IS NULL;
 
 CREATE INDEX IF NOT EXISTS idx_lighter_fills_execution
   ON lighter_fills (execution_intent_id);
@@ -202,16 +280,32 @@ CREATE TABLE IF NOT EXISTS lighter_position_observations (
   -- Positions as reported, projected through the payload allowlist. `[]` on a
   -- complete observation means "no open positions", which is a real fact.
   positions JSONB NOT NULL,
+  -- DELIVERY TO AGENTSCAN. The wire path sends the NEWEST unsent observation
+  -- per scope and settles every older unsent one of that scope in the same
+  -- transaction. Two columns rather than one on purpose: marking a superseded
+  -- observation 'sent' would be a false statement, and leaving it unsent
+  -- would put it at the head of every later batch to be ignored as stale.
+  sent_at TIMESTAMPTZ,
+  send_disposition TEXT CHECK (send_disposition IN ('sent','superseded')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT uniq_lighter_position_observation
-    UNIQUE (environment, account_index, observation_id)
+    UNIQUE (environment, account_index, observation_id),
+  CONSTRAINT lighter_position_observations_send_settled
+    CHECK ((sent_at IS NULL) = (send_disposition IS NULL))
 );
 
 COMMENT ON TABLE lighter_position_observations IS
   'Account-wide Lighter position observations. Client-reported, never verified; may include activity outside Vex.';
+COMMENT ON COLUMN lighter_position_observations.send_disposition IS
+  'sent = this install delivered it and the server took it; superseded = a newer reading of the same account was delivered instead and this one never will be. Never NULL once sent_at is set.';
 
 CREATE INDEX IF NOT EXISTS idx_lighter_position_observations_scope
   ON lighter_position_observations (environment, account_index, observed_at DESC);
+-- The unsent reader walks each scope newest-first; the partial index keeps it
+-- off the settled rows entirely.
+CREATE INDEX IF NOT EXISTS idx_lighter_position_observations_unsent
+  ON lighter_position_observations (environment, account_index, observed_at DESC)
+  WHERE sent_at IS NULL;
 
 -- The FRESHNESS MARKER, one row per covered market, keyed WITHOUT the
 -- observation id and without observed_at. A closed market keeps its row with
