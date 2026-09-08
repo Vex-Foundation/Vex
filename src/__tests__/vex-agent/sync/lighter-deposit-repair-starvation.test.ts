@@ -3,13 +3,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { onboardingIntent } from "../../helpers/lighter-intents.js";
 
 import type {
+  LighterDepositRepairAttemptResult,
   LighterOnboardingIntentRow,
-  LighterUnresolvedDepositCursor,
-  LighterUnresolvedDepositPage,
+  LighterUnresolvedDepositQueuePage,
 } from "@vex-agent/db/repos/lighter-onboarding-intents.js";
 
 /**
- * The starvation history Codex reproduced against round 1: 25 older core
+ * The starvation history the round-1 review reproduced: 25 older core
  * deposits that no evidence can move plus ONE newer rhc deposit. The old
  * production reader asked each environment for the same limit and offset,
  * merged the two pages, sorted by updatedAt and sliced back to the limit, so
@@ -19,7 +19,8 @@ import type {
  */
 
 const mocks = vi.hoisted(() => ({
-  listUnresolvedDeposits: vi.fn(),
+  listUnresolvedDepositsByAttempt: vi.fn(),
+  recordDepositRepairAttempt: vi.fn(),
   query: vi.fn(async () => {
     throw new Error("the deposit sweep must not reach the database in this test");
   }),
@@ -38,7 +39,8 @@ vi.mock("@vex-agent/db/client.js", () => ({
 }));
 vi.mock("@vex-agent/db/repos/lighter-onboarding-intents.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@vex-agent/db/repos/lighter-onboarding-intents.js")>()),
-  listUnresolvedDeposits: mocks.listUnresolvedDeposits,
+  listUnresolvedDepositsByAttempt: mocks.listUnresolvedDepositsByAttempt,
+  recordDepositRepairAttempt: mocks.recordDepositRepairAttempt,
 }));
 vi.mock("@tools/lighter/client.js", () => ({
   LighterClient: class {
@@ -54,7 +56,6 @@ vi.mock("@tools/uniswap/evm-client.js", () => ({
 }));
 
 const {
-  LIGHTER_DEPOSIT_REPAIR_ROTATION_PERIOD_MS,
   LIGHTER_DEPOSIT_REPAIR_SWEEP_LIMIT,
   buildProductionLighterDepositRepairDeps,
   repairUnresolvedLighterDeposits,
@@ -86,37 +87,45 @@ const HISTORY: readonly LighterOnboardingIntentRow[] = [
   STARVED_RHC,
 ];
 
-/** The repository contract: one global order, keyset paging, limit + 1 lookahead. */
-function keysetPage(page: {
-  readonly limit: number;
-  readonly cursor: LighterUnresolvedDepositCursor | null;
-}): LighterUnresolvedDepositPage {
-  const after = page.cursor;
-  const remaining = after === null
-    ? [...HISTORY]
-    : HISTORY.filter((row) => (
-      row.updatedAt.getTime() > after.updatedAt.getTime()
-      || (row.updatedAt.getTime() === after.updatedAt.getTime()
-        && row.intentId > after.intentId)
-    ));
-  const window = remaining.slice(0, page.limit);
-  const last = window.at(-1);
-  return {
-    rows: window,
-    hasMore: remaining.length > page.limit,
-    nextCursor: last === undefined
-      ? null
-      : { updatedAt: last.updatedAt, intentId: last.intentId },
-  };
+/**
+ * The repository contract: one order over BOTH environments, least recently
+ * attempted first, with the same `limit + 1` lookahead the SQL uses. The
+ * attempt markers the sweep writes are durable here, exactly as they are in the
+ * table, so the second sweep's order is computed from the first sweep's work.
+ */
+const attempts = new Map<string, number>();
+let attemptClock = 0;
+
+function attemptOrderedPage(page: { readonly limit: number }): LighterUnresolvedDepositQueuePage {
+  const ordered = [...HISTORY].sort((left, right) => {
+    const leftAt = attempts.get(left.intentId);
+    const rightAt = attempts.get(right.intentId);
+    if (leftAt !== rightAt) {
+      if (leftAt === undefined) return -1;
+      if (rightAt === undefined) return 1;
+      return leftAt - rightAt;
+    }
+    return left.updatedAt.getTime() - right.updatedAt.getTime()
+      || left.intentId.localeCompare(right.intentId);
+  });
+  return { rows: ordered.slice(0, page.limit), hasMore: ordered.length > page.limit };
 }
 
 describe("Lighter deposit repair over the production repository wiring", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.listUnresolvedDeposits.mockImplementation(async (page: {
-      readonly limit: number;
-      readonly cursor: LighterUnresolvedDepositCursor | null;
-    }) => keysetPage(page));
+    attempts.clear();
+    attemptClock = 0;
+    mocks.listUnresolvedDepositsByAttempt.mockImplementation(
+      async (page: { readonly limit: number }) => attemptOrderedPage(page),
+    );
+    mocks.recordDepositRepairAttempt.mockImplementation(
+      async (intentId: string, _result: LighterDepositRepairAttemptResult) => {
+        attemptClock += 1;
+        attempts.set(intentId, attemptClock);
+        return true;
+      },
+    );
   });
 
   it("examines the one newer rhc deposit behind 25 unresolvable core deposits", async () => {
@@ -124,10 +133,7 @@ describe("Lighter deposit repair over the production repository wiring", () => {
     const examined: string[] = [];
 
     for (let sweep = 0; sweep < 2; sweep += 1) {
-      const result = await repairUnresolvedLighterDeposits({
-        ...base,
-        now: () => sweep * LIGHTER_DEPOSIT_REPAIR_ROTATION_PERIOD_MS,
-      });
+      const result = await repairUnresolvedLighterDeposits(base);
       examined.push(...result.reports.map((entry) => entry.intentId));
     }
 

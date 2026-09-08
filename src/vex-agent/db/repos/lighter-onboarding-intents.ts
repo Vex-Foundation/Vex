@@ -23,6 +23,20 @@ import {
 
 export type LighterOnboardingCapability = "deposit" | "key_registration" | "swap" | "withdrawal";
 
+/**
+ * What one unattended repair attempt on one deposit row produced.
+ *
+ * `attempted` is the marker written BEFORE the provider read and overwritten
+ * by one of the settled values afterwards; a row still carrying it is a sweep
+ * that died mid-row, and it has already moved to the tail of the queue.
+ */
+export type LighterDepositRepairAttemptResult =
+  | "attempted"
+  | "advanced"
+  | "awaiting"
+  | "terminal"
+  | "error";
+
 export type LighterOnboardingApprovalStatus =
   | "approval_pending"
   | "approved"
@@ -117,6 +131,9 @@ export interface LighterOnboardingIntentRow {
   readonly resolvedAccountIndex: number | null;
   readonly decisionReason: string | null;
   readonly failureReason: string | null;
+  /** When the unattended repair sweep last ATTEMPTED this row, whatever it produced. */
+  readonly repairAttemptedAt: Date | null;
+  readonly repairAttemptResult: LighterDepositRepairAttemptResult | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
   readonly expiresAt: Date;
@@ -170,7 +187,8 @@ const RETURNING = `
   deposit_l1_block_hash, deposit_l1_block_number, deposit_event_account_index,
   lighter_tx_hash, lighter_tx_status, lighter_block_height, lighter_executed_at,
   lighter_evidence_observed_at,
-  decision_reason, failure_reason, created_at, updated_at, expires_at
+  decision_reason, failure_reason, repair_attempted_at, repair_attempt_result,
+  created_at, updated_at, expires_at
 `;
 
 const INSERT_DEPOSIT_SQL = `
@@ -1238,82 +1256,87 @@ export async function findByIntentId(intentId: string): Promise<LighterOnboardin
 /** Rows one unresolved-deposit page returns when the caller states no bound. */
 export const LIGHTER_ONBOARDING_UNRESOLVED_PAGE_LIMIT = 25;
 
-/**
- * Position in the global unresolved-deposit order: the sort key itself,
- * `(updated_at, intent_id)`, so a page can be continued exactly where the
- * previous one ended even after rows in front of it were advanced or removed.
- *
- * MEASURED (real Postgres, not assumed): `timestamptz` keeps microseconds while
- * the driver hands JavaScript a millisecond `Date`, so a cursor built from a
- * returned row is strictly SMALLER than the row's stored timestamp and a plain
- * `>` comparison returns that same row forever. Both the comparison and the
- * order therefore run on `date_trunc('milliseconds', updated_at)`, the exact
- * value a caller can hold. The pair stays unique because `intent_id` is the
- * primary key, so the order is still total and no row is skipped or repeated.
- */
-export interface LighterUnresolvedDepositCursor {
-  readonly updatedAt: Date;
-  readonly intentId: string;
-}
-
-export interface LighterUnresolvedDepositPage {
+/** One bounded page of the repair queue, plus whether more rows are waiting. */
+export interface LighterUnresolvedDepositQueuePage {
   readonly rows: LighterOnboardingIntentRow[];
-  /** More unresolved deposit rows exist after this page's last row. */
+  /** More unresolved deposit rows exist than this page returned. */
   readonly hasMore: boolean;
-  /**
-   * The position after the last returned row, or null when the page is empty.
-   * Passing it back returns the next page; nothing between the two pages is
-   * skipped and nothing is returned twice.
-   */
-  readonly nextCursor: LighterUnresolvedDepositCursor | null;
 }
 
 /**
- * One bounded page of unresolved deposit intents across BOTH environments,
- * least recently updated first, walked by keyset rather than by offset.
+ * One bounded page of the unattended deposit repair QUEUE, across BOTH
+ * environments, LEAST RECENTLY ATTEMPTED FIRST.
  *
- * Both properties are load-bearing for the unattended repair sweep. Reading
- * the environments together in one globally ordered query is what stops a
- * backlog in one environment from hiding every row of the other: with two
- * separately limited pages merged and sliced, the rows the slice discarded
- * were unreachable by any later page. Keyset paging is what makes the walk
- * total: an offset shifts under concurrent writes (an advanced row leaves the
- * front of the order and pulls every later row one position forward, past the
- * offset the next page starts at), while `(updated_at, intent_id) > cursor`
- * cannot skip a row that was never returned.
+ * Three properties are load-bearing, and each answers a way an earlier reader
+ * starved a row.
  *
- * The order is also what makes the sweep fair over time: every row the sweep
- * advances gets a fresh updated_at and moves to the back of the queue.
+ * ONE QUERY OVER BOTH ENVIRONMENTS. Two separately limited pages merged and
+ * sliced back to the limit discard rows no later page can reach, which is how
+ * a backlog in one environment hid every unresolved row of the other.
+ *
+ * ORDERED BY THE LAST ATTEMPT, NULLS FIRST - never by the last success and
+ * never by `updated_at` alone. A row no evidence can move keeps its
+ * `updated_at` forever, so an `updated_at` ordering hands the front of every
+ * sweep to the same rows: with more unresolved rows than one sweep examines,
+ * the rows past the first page are never reached at all.
+ *
+ * NO CURSOR, BY CONSTRUCTION. The sweep writes each examined row's attempt
+ * marker before it reads a provider, so the row has already moved to the tail
+ * of this order by the time the sweep could be interrupted. The next sweep
+ * resumes at the least recently attempted row without any caller state, which
+ * is what makes a sweep that dies on its deadline - or on a process kill -
+ * resume where it stopped instead of re-reading the same front page forever.
+ *
+ * The tie-break `(updated_at, intent_id)` keeps the order TOTAL among rows that
+ * were never attempted, so a first sweep still walks them in a stable,
+ * repeatable order rather than in whatever order the heap returns them.
  */
-export async function listUnresolvedDeposits(
-  options: {
-    readonly limit?: number;
-    readonly cursor?: LighterUnresolvedDepositCursor | null;
-  } = {},
-): Promise<LighterUnresolvedDepositPage> {
+export async function listUnresolvedDepositsByAttempt(
+  options: { readonly limit?: number } = {},
+): Promise<LighterUnresolvedDepositQueuePage> {
   const limit = boundedPageLimit(options.limit);
-  const cursor = boundedCursor(options.cursor);
   const rows = await query<Record<string, unknown>>(
     `SELECT ${RETURNING} FROM lighter_onboarding_intents
       WHERE capability = 'deposit'
         AND execution_state NOT IN ('credited','failed')
         AND approval_status <> 'rejected'
-        AND ($2::timestamptz IS NULL
-             OR (date_trunc('milliseconds', updated_at), intent_id)
-                > ($2::timestamptz, $3::text))
-      ORDER BY date_trunc('milliseconds', updated_at) ASC, intent_id ASC
+      ORDER BY repair_attempted_at ASC NULLS FIRST, updated_at ASC, intent_id ASC
       LIMIT $1`,
-    [limit + 1, cursor?.updatedAt ?? null, cursor?.intentId ?? null],
+    [limit + 1],
   );
-  const page = rows.slice(0, limit).map(mapRow);
-  const last = page.at(-1);
-  return {
-    rows: page,
-    hasMore: rows.length > limit,
-    nextCursor: last === undefined
-      ? null
-      : { updatedAt: last.updatedAt, intentId: last.intentId },
-  };
+  return { rows: rows.slice(0, limit).map(mapRow), hasMore: rows.length > limit };
+}
+
+/**
+ * Write one deposit row's repair attempt marker.
+ *
+ * Called twice per examined row: once with `attempted` BEFORE any provider
+ * read, and once with the settled result after it. The first write is what
+ * makes the queue fair under a crash or a spent deadline - the row has already
+ * moved to the tail before anything can go wrong with it - and the second is
+ * what makes the marker readable, so an operator can see that a row is
+ * `awaiting` rather than inferring it from silence.
+ *
+ * Deliberately NOT part of the repair's CAS transitions and deliberately not
+ * touching `updated_at`: the marker is scheduling bookkeeping, not evidence
+ * about the deposit, and moving `updated_at` here would rewrite the money
+ * row's lifecycle timestamp every time a sweep merely looked at it.
+ *
+ * Returns whether the marker moved. A row that vanished between the page read
+ * and the marker write is a false, not an error.
+ */
+export async function recordDepositRepairAttempt(
+  intentId: string,
+  result: LighterDepositRepairAttemptResult,
+): Promise<boolean> {
+  const row = await queryOne<Record<string, unknown>>(
+    `UPDATE lighter_onboarding_intents
+        SET repair_attempted_at = NOW(), repair_attempt_result = $2
+      WHERE intent_id = $1 AND capability = 'deposit'
+      RETURNING intent_id`,
+    [intentId, result],
+  );
+  return row !== null && row !== undefined;
 }
 
 function boundedPageLimit(limit: number | undefined): number {
@@ -1322,19 +1345,6 @@ function boundedPageLimit(limit: number | undefined): number {
     throw new Error("Lighter unresolved-intent page limit must be a positive integer.");
   }
   return Math.min(limit, 200);
-}
-
-function boundedCursor(
-  cursor: LighterUnresolvedDepositCursor | null | undefined,
-): LighterUnresolvedDepositCursor | null {
-  if (cursor === undefined || cursor === null) return null;
-  if (!(cursor.updatedAt instanceof Date) || Number.isNaN(cursor.updatedAt.getTime())) {
-    throw new Error("Lighter unresolved-deposit cursor needs a valid updatedAt timestamp.");
-  }
-  if (typeof cursor.intentId !== "string" || cursor.intentId.length === 0) {
-    throw new Error("Lighter unresolved-deposit cursor needs a non-empty intent id.");
-  }
-  return cursor;
 }
 
 export async function listUnresolvedDepositsForWallet(
@@ -1631,6 +1641,13 @@ function mapRow(row: Record<string, unknown>): LighterOnboardingIntentRow {
     resolvedAccountIndex: row.resolved_account_index === null ? null : Number(row.resolved_account_index),
     decisionReason: row.decision_reason === null ? null : String(row.decision_reason),
     failureReason: row.failure_reason === null ? null : String(row.failure_reason),
+    repairAttemptedAt: row.repair_attempted_at === null || row.repair_attempted_at === undefined
+      ? null
+      : row.repair_attempted_at as Date,
+    repairAttemptResult: row.repair_attempt_result === null
+      || row.repair_attempt_result === undefined
+      ? null
+      : row.repair_attempt_result as LighterDepositRepairAttemptResult,
     createdAt: row.created_at as Date,
     updatedAt: row.updated_at as Date,
     expiresAt: row.expires_at as Date,

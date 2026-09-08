@@ -3,7 +3,6 @@ import { encodeAbiParameters, encodeEventTopics } from "viem";
 
 import type { LighterOnboardingIntentRow } from "@vex-agent/db/repos/lighter-onboarding-intents.js";
 import {
-  LIGHTER_DEPOSIT_REPAIR_ROTATION_PERIOD_MS,
   LIGHTER_DEPOSIT_REPAIR_SWEEP_DEADLINE_MS,
   LIGHTER_DEPOSIT_REPAIR_SWEEP_LIMIT,
   repairLighterDepositIntent,
@@ -196,6 +195,8 @@ function intent(
     resolvedAccountIndex: null,
     decisionReason: null,
     failureReason: "receipt unavailable",
+    repairAttemptedAt: null,
+    repairAttemptResult: null,
     createdAt: new Date("2030-01-01T00:00:00.000Z"),
     updatedAt: new Date("2030-01-01T00:01:00.000Z"),
     expiresAt: new Date("2030-01-01T00:15:00.000Z"),
@@ -205,11 +206,9 @@ function intent(
 
 function deps() {
   return {
-    listUnresolvedDeposits: vi.fn().mockResolvedValue({
-      rows: [],
-      hasMore: false,
-      nextCursor: null,
-    }),
+    listUnresolvedDepositsByAttempt: vi.fn().mockResolvedValue({ rows: [], hasMore: false }),
+    recordRepairAttempt: vi.fn<LighterDepositRepairDeps["recordRepairAttempt"]>()
+      .mockResolvedValue(undefined),
     readReceipt: vi.fn().mockResolvedValue({
       receipt: depositReceipt(),
       replacement: null,
@@ -224,11 +223,6 @@ function deps() {
     markAmbiguous: vi.fn<LighterDepositRepairDeps["markAmbiguous"]>().mockResolvedValue(null),
     markCredited: vi.fn<LighterDepositRepairDeps["markCredited"]>().mockResolvedValue(null),
   } satisfies LighterDepositRepairDeps;
-}
-
-function cursorOf(row: LighterOnboardingIntentRow | undefined) {
-  if (row === undefined) throw new Error("missing fixture row");
-  return { updatedAt: row.updatedAt, intentId: row.intentId };
 }
 
 function confirmedIntent(): LighterOnboardingIntentRow {
@@ -290,10 +284,13 @@ describe("Lighter deposit evidence-only repair", () => {
     });
     d.readLighterTx.mockResolvedValueOnce(lighterTx());
     d.readOwnedAccounts.mockResolvedValueOnce(ownedAccounts());
-    d.markCredited.mockImplementationOnce(async (current, evidence) => rhcIntent({
-      ...current,
-      executionState: "credited",
-      resolvedAccountIndex: evidence.accountIndex,
+    d.markCredited.mockImplementationOnce(async (current, evidence) => ({
+      intent: rhcIntent({
+        ...current,
+        executionState: "credited",
+        resolvedAccountIndex: evidence.accountIndex,
+      }),
+      activityRow: { status: "recorded", activityId: 501 },
     }));
 
     const result = await repairLighterDepositIntent(row, d);
@@ -628,16 +625,19 @@ describe("Lighter deposit evidence-only repair", () => {
     const d = deps();
     const row = confirmedIntent();
     d.readLighterTx.mockResolvedValueOnce(lighterTx());
-    d.markCredited.mockResolvedValueOnce(intent({
-      ...row,
-      executionState: "credited",
-      resolvedAccountIndex: 42,
-      lighterTxHash: "lighter-tx-hash",
-      lighterTxStatus: 3,
-      lighterBlockHeight: 313_485_202,
-      lighterExecutedAt: 1_786_949_159_112,
-      lighterEvidenceObservedAt: new Date(),
-    }));
+    d.markCredited.mockResolvedValueOnce({
+      intent: intent({
+        ...row,
+        executionState: "credited",
+        resolvedAccountIndex: 42,
+        lighterTxHash: "lighter-tx-hash",
+        lighterTxStatus: 3,
+        lighterBlockHeight: 313_485_202,
+        lighterExecutedAt: 1_786_949_159_112,
+        lighterEvidenceObservedAt: new Date(),
+      }),
+      activityRow: { status: "recorded", activityId: 502 },
+    });
 
     const result = await repairLighterDepositIntent(row, d);
 
@@ -655,6 +655,10 @@ describe("Lighter deposit evidence-only repair", () => {
         lighterTxHash: "lighter-tx-hash",
       }),
     );
+    // The credit and its activity row settled together, and the sweep report
+    // says which row: a credited deposit with no ledger entry is exactly the
+    // silence this hook exists to end.
+    expect(result.activityRow).toEqual({ status: "recorded", activityId: 502 });
   });
 
   it("keeps an executed deposit pending while account ownership is still propagating", async () => {
@@ -711,7 +715,7 @@ describe("Lighter deposit evidence-only repair", () => {
 
   it("isolates per-intent provider errors during a sweep", async () => {
     const d = deps();
-    d.listUnresolvedDeposits.mockResolvedValueOnce({
+    d.listUnresolvedDepositsByAttempt.mockResolvedValueOnce({
       rows: [
         intent({ intentId: "lighter-onboard-first", depositTxHash: DEPOSIT_HASH }),
         intent({
@@ -721,7 +725,6 @@ describe("Lighter deposit evidence-only repair", () => {
         }),
       ],
       hasMore: false,
-      nextCursor: null,
     });
     d.readReceipt.mockRejectedValueOnce(new Error("RPC unavailable"));
 
@@ -736,7 +739,7 @@ describe("Lighter deposit evidence-only repair", () => {
     expect(result.reports).toHaveLength(1);
     expect(result.reports[0]?.resolution).toBe("awaiting_approval");
   });
-  it("bounds one unattended sweep, reports that more rows exist, and rotates the page", async () => {
+  it("bounds one unattended sweep and reports that more rows exist", async () => {
     const d = deps();
     const rows = Array.from({ length: LIGHTER_DEPOSIT_REPAIR_SWEEP_LIMIT }, (_value, index) =>
       intent({
@@ -744,72 +747,51 @@ describe("Lighter deposit evidence-only repair", () => {
         approvalStatus: "approval_pending",
         executionState: "approval_pending",
       }));
-    const second = Array.from({ length: 4 }, (_value, index) =>
-      intent({
-        intentId: `lighter-onboard-tail-${index}`,
-        approvalStatus: "approval_pending",
-        executionState: "approval_pending",
-      }));
-    d.listUnresolvedDeposits.mockImplementation(async (page: {
-      readonly cursor: { readonly intentId: string } | null;
-    }) => (page.cursor === null
-      ? { rows, hasMore: true, nextCursor: cursorOf(rows[rows.length - 1]) }
-      : { rows: second, hasMore: false, nextCursor: cursorOf(second[second.length - 1]) }));
-    const at = (nowMs: number) => ({ ...d, now: () => nowMs });
+    d.listUnresolvedDepositsByAttempt.mockResolvedValue({ rows, hasMore: true });
 
-    const first = await repairUnresolvedLighterDeposits(at(0));
-    const next = await repairUnresolvedLighterDeposits(
-      at(LIGHTER_DEPOSIT_REPAIR_ROTATION_PERIOD_MS),
-    );
+    const sweep = await repairUnresolvedLighterDeposits(d);
 
-    expect(first).toMatchObject({
+    expect(sweep).toMatchObject({
       examined: LIGHTER_DEPOSIT_REPAIR_SWEEP_LIMIT,
       hasMore: true,
       stoppedAtDeadline: false,
-      resumeCursor: null,
-      candidates: LIGHTER_DEPOSIT_REPAIR_SWEEP_LIMIT + second.length,
+      candidates: LIGHTER_DEPOSIT_REPAIR_SWEEP_LIMIT,
     });
-    expect(first.reports).toHaveLength(LIGHTER_DEPOSIT_REPAIR_SWEEP_LIMIT);
-    // The window is walked by cursor, so the second page continues exactly
-    // after the first page's last row instead of re-reading by offset.
-    expect(d.listUnresolvedDeposits).toHaveBeenNthCalledWith(1, {
+    expect(sweep.reports).toHaveLength(LIGHTER_DEPOSIT_REPAIR_SWEEP_LIMIT);
+    // One page per sweep: the fairness lives in the repository order, not in a
+    // window this sweep reads and then throws most of away.
+    expect(d.listUnresolvedDepositsByAttempt).toHaveBeenCalledTimes(1);
+    expect(d.listUnresolvedDepositsByAttempt).toHaveBeenCalledWith({
       limit: LIGHTER_DEPOSIT_REPAIR_SWEEP_LIMIT,
-      cursor: null,
     });
-    expect(d.listUnresolvedDeposits).toHaveBeenNthCalledWith(2, {
-      limit: LIGHTER_DEPOSIT_REPAIR_SWEEP_LIMIT,
-      cursor: cursorOf(rows[rows.length - 1]),
-    });
-    // A row the sweep cannot advance may not hold the first page forever: the
-    // next slot examines the rest of the window.
-    expect(next.reports.map((entry) => entry.intentId))
-      .toEqual(second.map((row) => row.intentId));
   });
 
-  it("rotates modulo the pages that exist instead of onto an empty page", async () => {
+  it("marks every examined row before the provider read and settles the marker after it", async () => {
     const d = deps();
-    const rows = [intent({
-      intentId: "lighter-onboard-only",
+    const pending = intent({
+      intentId: "lighter-onboard-pending",
       approvalStatus: "approval_pending",
       executionState: "approval_pending",
-    })];
-    d.listUnresolvedDeposits.mockResolvedValue({
-      rows,
-      hasMore: false,
-      nextCursor: cursorOf(rows[0]),
     });
+    d.listUnresolvedDepositsByAttempt.mockResolvedValue({ rows: [pending], hasMore: false });
 
-    const sweep = await repairUnresolvedLighterDeposits({
-      ...d,
-      now: () => 2 * LIGHTER_DEPOSIT_REPAIR_ROTATION_PERIOD_MS,
-    });
+    await repairUnresolvedLighterDeposits(d);
 
-    expect(d.listUnresolvedDeposits).toHaveBeenCalledTimes(1);
-    expect(d.listUnresolvedDeposits).toHaveBeenLastCalledWith({
-      limit: LIGHTER_DEPOSIT_REPAIR_SWEEP_LIMIT,
-      cursor: null,
-    });
-    expect(sweep).toMatchObject({ examined: 1, hasMore: false });
+    expect(d.recordRepairAttempt).toHaveBeenNthCalledWith(1, pending, "attempted");
+    expect(d.recordRepairAttempt).toHaveBeenNthCalledWith(2, pending, "awaiting");
+  });
+
+  it("settles the marker as an error when the row's repair throws", async () => {
+    const d = deps();
+    const row = intent({ intentId: "lighter-onboard-throws", depositTxHash: DEPOSIT_HASH });
+    d.listUnresolvedDepositsByAttempt.mockResolvedValue({ rows: [row], hasMore: false });
+    d.readReceipt.mockRejectedValueOnce(new Error("RPC unavailable"));
+
+    const sweep = await repairUnresolvedLighterDeposits(d);
+
+    expect(sweep).toMatchObject({ examined: 1, errors: 1 });
+    expect(d.recordRepairAttempt).toHaveBeenNthCalledWith(1, row, "attempted");
+    expect(d.recordRepairAttempt).toHaveBeenNthCalledWith(2, row, "error");
   });
 
   it("stops on its own deadline and says so instead of running the page to the end", async () => {
@@ -820,11 +802,7 @@ describe("Lighter deposit evidence-only repair", () => {
         approvalStatus: "approval_pending",
         executionState: "approval_pending",
       }));
-    d.listUnresolvedDeposits.mockResolvedValue({
-      rows,
-      hasMore: false,
-      nextCursor: cursorOf(rows[rows.length - 1]),
-    });
+    d.listUnresolvedDepositsByAttempt.mockResolvedValue({ rows, hasMore: false });
     let clock = 0;
     // The second row pushes the sweep past its budget.
     const now = () => {
@@ -838,8 +816,11 @@ describe("Lighter deposit evidence-only repair", () => {
     expect(sweep.stoppedAtDeadline).toBe(true);
     expect(sweep.hasMore).toBe(true);
     expect(sweep.reports.length).toBe(sweep.examined);
-    // The interrupted sweep says exactly where it stopped, so the next one
-    // resumes there instead of paying for the same rows again.
-    expect(sweep.resumeCursor).toEqual(cursorOf(rows[sweep.examined - 1]));
+    // Every row it did examine carries a settled marker, so the next sweep
+    // starts behind them with no cursor handed back by the caller.
+    const marked = d.recordRepairAttempt.mock.calls
+      .filter((call) => call[1] !== "attempted")
+      .map((call) => call[0].intentId);
+    expect(marked).toEqual(sweep.reports.map((entry) => entry.intentId));
   });
 });

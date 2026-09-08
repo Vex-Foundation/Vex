@@ -108,6 +108,8 @@ function depositIntent(overrides: Partial<LighterOnboardingIntentRow> = {}): Lig
     lighterExecutedAt: null,
     lighterEvidenceObservedAt: null,
     resolvedAccountIndex: null,
+    repairAttemptedAt: null,
+    repairAttemptResult: null,
     decisionReason: null,
     failureReason: null,
     createdAt: new Date(),

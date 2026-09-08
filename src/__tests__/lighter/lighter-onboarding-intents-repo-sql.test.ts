@@ -556,64 +556,66 @@ describe("lighter onboarding intent creation SQL", () => {
     expect(sql).toContain("execution_state = 'approval_pending'");
   });
 
-  it("walks unresolved deposits of both environments by keyset and reports that more exist", async () => {
+  it("orders the unresolved-deposit queue by the last attempt over both environments", async () => {
     // The repository fetches limit + 1 rows so the page can report hasMore
     // without a second count query.
     dbMocks.query.mockResolvedValueOnce([ROW, { ...ROW, intent_id: `${ROW.intent_id}-2` }]);
 
-    const page = await repo.listUnresolvedDeposits({ limit: 1 });
+    const page = await repo.listUnresolvedDepositsByAttempt({ limit: 1 });
 
     expect(page.rows).toHaveLength(1);
     expect(page.hasMore).toBe(true);
-    expect(page.nextCursor).toEqual({
-      updatedAt: ROW.updated_at,
-      intentId: ROW.intent_id,
-    });
     const [sql, params] = requireValue(dbMocks.query.mock.calls[0]);
     // No environment predicate: one order over both environments is what stops
     // a backlog in one from hiding every row of the other.
     expect(sql).not.toContain("environment = ");
     expect(sql).toContain("capability = 'deposit'");
     expect(sql).toContain("execution_state NOT IN ('credited','failed')");
-    // The comparison and the order run on the same millisecond-truncated
-    // expression, because the driver hands JavaScript a millisecond Date while
-    // the column keeps microseconds; comparing raw would return the cursor row
-    // forever.
-    expect(sql).toContain("(date_trunc('milliseconds', updated_at), intent_id)");
-    expect(sql).toContain("ORDER BY date_trunc('milliseconds', updated_at) ASC, intent_id ASC");
+    // ORDERED BY THE LAST ATTEMPT, never by the last success and never by
+    // updated_at alone: a row no evidence can move keeps its updated_at
+    // forever and would hold the front of every sweep.
+    expect(sql).toContain(
+      "ORDER BY repair_attempted_at ASC NULLS FIRST, updated_at ASC, intent_id ASC",
+    );
     expect(sql).toContain("LIMIT $1");
     expect(sql).not.toContain("OFFSET");
-    expect(params).toEqual([2, null, null]);
+    // No cursor parameter: the durable marker is the resume point.
+    expect(params).toEqual([2]);
   });
 
-  it("continues an unresolved-deposit page from the cursor it was given", async () => {
-    dbMocks.query.mockResolvedValueOnce([]);
-    const cursor = { updatedAt: new Date("2030-02-02T03:04:05.000Z"), intentId: "lighter-onboard-7" };
-
-    const page = await repo.listUnresolvedDeposits({ limit: 3, cursor });
-
-    expect(page.rows).toEqual([]);
-    expect(page.hasMore).toBe(false);
-    expect(page.nextCursor).toBeNull();
-    const [, params] = requireValue(dbMocks.query.mock.calls[0]);
-    expect(params).toEqual([4, cursor.updatedAt, cursor.intentId]);
-  });
-
-  it("defaults the unresolved-deposit page to its declared bound and rejects an invalid page", async () => {
+  it("defaults the unresolved-deposit queue page to its declared bound and rejects an invalid one", async () => {
     dbMocks.query.mockResolvedValueOnce([ROW]);
 
-    const page = await repo.listUnresolvedDeposits();
+    const page = await repo.listUnresolvedDepositsByAttempt();
 
     expect(page.hasMore).toBe(false);
     const [, params] = requireValue(dbMocks.query.mock.calls[0]);
-    expect(params).toEqual([repo.LIGHTER_ONBOARDING_UNRESOLVED_PAGE_LIMIT + 1, null, null]);
-    await expect(repo.listUnresolvedDeposits({ limit: 0 })).rejects.toThrow(/positive integer/);
-    await expect(
-      repo.listUnresolvedDeposits({ cursor: { updatedAt: new Date("nope"), intentId: "x" } }),
-    ).rejects.toThrow(/valid updatedAt/);
-    await expect(
-      repo.listUnresolvedDeposits({ cursor: { updatedAt: new Date(0), intentId: "" } }),
-    ).rejects.toThrow(/non-empty intent id/);
+    expect(params).toEqual([repo.LIGHTER_ONBOARDING_UNRESOLVED_PAGE_LIMIT + 1]);
+    await expect(repo.listUnresolvedDepositsByAttempt({ limit: 0 }))
+      .rejects.toThrow(/positive integer/);
+  });
+
+  it("writes the attempt marker without touching the row's own lifecycle timestamp", async () => {
+    dbMocks.queryOne.mockResolvedValueOnce({ intent_id: ROW.intent_id });
+
+    const moved = await repo.recordDepositRepairAttempt(ROW.intent_id, "attempted");
+
+    expect(moved).toBe(true);
+    const [sql, params] = requireValue(dbMocks.queryOne.mock.calls[0]);
+    expect(sql).toContain("SET repair_attempted_at = NOW(), repair_attempt_result = $2");
+    // The marker is scheduling bookkeeping, not evidence about the deposit:
+    // moving updated_at here would rewrite the money row's lifecycle timestamp
+    // every time a sweep merely looked at it.
+    expect(sql).not.toContain("updated_at = NOW()");
+    expect(sql).toContain("capability = 'deposit'");
+    expect(params).toEqual([ROW.intent_id, "attempted"]);
+  });
+
+  it("reports a marker write that matched no row as a false rather than an error", async () => {
+    dbMocks.queryOne.mockResolvedValueOnce(null);
+
+    await expect(repo.recordDepositRepairAttempt("lighter-onboard-gone", "awaiting"))
+      .resolves.toBe(false);
   });
 
   it("scopes unresolved deposit status reads to capability and wallet", async () => {

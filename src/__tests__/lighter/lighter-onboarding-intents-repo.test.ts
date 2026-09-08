@@ -861,16 +861,16 @@ d("lighter_onboarding_intents repo", () => {
     await withSessionControlLock(doneSessionId, (client) =>
       repo.markFailedWith(client, done.intentId, "test failed"));
 
-    const unresolved = await repo.listUnresolvedDeposits({ limit: 200 });
+    const unresolved = await repo.listUnresolvedDepositsByAttempt({ limit: 200 });
     const ids = unresolved.rows.map((r) => r.intentId);
     expect(ids).toContain(live.intentId);
     expect(ids).not.toContain(done.intentId);
   });
 
-  it("walks both environments in one keyset order without skipping or repeating a row", async () => {
-    // The starvation defect this order replaces: two separately limited pages
-    // merged and sliced discarded rows that no later page could reach, so a
-    // backlog of core deposits hid every rhc deposit forever.
+  it("orders the queue by the last attempt so an examined row moves to the back", async () => {
+    // The starvation defect this order replaces: reading the same front of a
+    // fixed order every sweep examines the same rows forever, so the rows
+    // behind them are never reached however many sweeps run.
     const coreSession = await newSession();
     const core = await newDepositIntent(coreSession);
     const rhcSession = await newSession();
@@ -881,52 +881,62 @@ d("lighter_onboarding_intents repo", () => {
     );
     const rhc = requireValue(rhcCreated.intent);
 
-    const single = await repo.listUnresolvedDeposits({ limit: 200 });
-    expect(single.hasMore).toBe(false);
-
-    // The same set, walked one row at a time: the keyset must reach every row
-    // the single bounded read returns, in the same order, with no repeats.
-    const walked: string[] = [];
-    let cursor: repo.LighterUnresolvedDepositCursor | null = null;
-    for (let page = 0; page < single.rows.length + 1; page += 1) {
-      const read: repo.LighterUnresolvedDepositPage = await repo.listUnresolvedDeposits({
-        limit: 1,
-        cursor,
-      });
-      walked.push(...read.rows.map((row) => row.intentId));
-      if (!read.hasMore || read.nextCursor === null) break;
-      cursor = read.nextCursor;
+    const before = await repo.listUnresolvedDepositsByAttempt({ limit: 200 });
+    const beforeIds = before.rows.map((row) => row.intentId);
+    expect(beforeIds).toContain(core.intentId);
+    expect(beforeIds).toContain(rhc.intentId);
+    expect(before.hasMore).toBe(false);
+    // Every row starts unattempted, so the queue is the millisecond-stable
+    // (updated_at, intent_id) order among them.
+    for (const row of before.rows) {
+      expect(row.repairAttemptedAt).toBeNull();
+      expect(row.repairAttemptResult).toBeNull();
     }
 
-    expect(walked).toContain(core.intentId);
-    expect(walked).toContain(rhc.intentId);
-    expect(new Set(walked).size).toBe(walked.length);
-    expect(walked).toEqual(single.rows.map((row) => row.intentId));
+    // The first row of the queue is examined: marked before the provider read
+    // and settled after it, exactly as the sweep does it.
+    const head = requireValue(before.rows[0]);
+    expect(await repo.recordDepositRepairAttempt(head.intentId, "attempted")).toBe(true);
+    const midFlight = await repo.listUnresolvedDepositsByAttempt({ limit: 200 });
+    expect(requireValue(midFlight.rows.at(-1)).intentId).toBe(head.intentId);
+    expect(await repo.recordDepositRepairAttempt(head.intentId, "awaiting")).toBe(true);
+
+    const after = await repo.listUnresolvedDepositsByAttempt({ limit: 200 });
+    const settled = requireValue(after.rows.find((row) => row.intentId === head.intentId));
+    expect(settled.repairAttemptResult).toBe("awaiting");
+    expect(settled.repairAttemptedAt).not.toBeNull();
+    // The marker is scheduling bookkeeping: it must not rewrite the money
+    // row's own lifecycle timestamp.
+    expect(settled.updatedAt.getTime()).toBe(head.updatedAt.getTime());
+    // An examined row is at the BACK, and every row still unattempted is in
+    // front of it.
+    expect(requireValue(after.rows.at(-1)).intentId).toBe(head.intentId);
+    for (const row of after.rows.slice(0, -1)) {
+      expect(row.repairAttemptedAt).toBeNull();
+    }
   });
 
-  it("bounds an unresolved-deposit page, reports hasMore, and rejects an invalid page", async () => {
+  it("bounds an unresolved-deposit queue page, reports hasMore, and rejects an invalid page", async () => {
     const first = await newDepositIntent(await newSession());
     const second = await newDepositIntent(await newSession());
     const third = await newDepositIntent(await newSession());
     const created = new Set([first.intentId, second.intentId, third.intentId]);
 
-    const page = await repo.listUnresolvedDeposits({ limit: 1 });
+    const page = await repo.listUnresolvedDepositsByAttempt({ limit: 1 });
     expect(page.rows).toHaveLength(1);
     expect(page.hasMore).toBe(true);
-    expect(page.nextCursor).toEqual({
-      updatedAt: requireValue(page.rows[0]).updatedAt,
-      intentId: requireValue(page.rows[0]).intentId,
-    });
 
-    const next = await repo.listUnresolvedDeposits({ limit: 1, cursor: page.nextCursor });
-    expect(next.rows).toHaveLength(1);
-    expect(next.rows[0]?.intentId).not.toBe(page.rows[0]?.intentId);
-
-    const all = await repo.listUnresolvedDeposits({ limit: 200 });
+    const all = await repo.listUnresolvedDepositsByAttempt({ limit: 200 });
     for (const intentId of created) {
       expect(all.rows.map((row) => row.intentId)).toContain(intentId);
     }
-    await expect(repo.listUnresolvedDeposits({ limit: 0 })).rejects.toThrow(/positive integer/);
+    await expect(repo.listUnresolvedDepositsByAttempt({ limit: 0 }))
+      .rejects.toThrow(/positive integer/);
+  });
+
+  it("refuses to move a repair marker on a row that is not a deposit intent", async () => {
+    await expect(repo.recordDepositRepairAttempt("lighter-onboard-does-not-exist", "attempted"))
+      .resolves.toBe(false);
   });
 
   it("markApprovalDecision only acts on approval_pending", async () => {

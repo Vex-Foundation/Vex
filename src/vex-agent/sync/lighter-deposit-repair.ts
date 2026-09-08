@@ -7,6 +7,29 @@
  * through hash-bound CAS updates under the
  * owning session's control lock. A missing receipt remains pending; an RPC
  * failure is surfaced as an error and is never converted into a verdict.
+ *
+ * THE CREDIT AND ITS ACTIVITY ROW COMMIT TOGETHER. When a deposit is proven
+ * credited, the durable `agent_activity` row for the settlement transaction is
+ * written inside the SAME transaction as `markDepositCreditedWith`, under the
+ * same session control lock. That is the only ordering with no window in it:
+ *
+ *   - written first and committed separately, the row could exist for a credit
+ *     that never lands;
+ *   - written after and committed separately, a crash between the two leaves a
+ *     credited deposit with no record, and no sweep would ever come back for
+ *     it, because the intent is terminal.
+ *
+ * So a failing INSERT rolls the credit back with it. The deposit stays
+ * `deposit_confirmed`, which is exactly what the unresolved-deposit queue
+ * selects, and the next sweep re-examines it from the same evidence and
+ * credits it again with its row. An unknown outcome stays reconcilable rather
+ * than being converted into a verdict, which is the same rule this module
+ * applies to the chain.
+ *
+ * A deposit Vex did not sign (no recorded sender or nonce) has no valid shape
+ * in `agent_activity` at all - see `settlement-proven.ts` - so the credit
+ * commits alone and the sweep report names the skipped row and its reason
+ * rather than silently recording nothing.
  */
 
 import type { PoolClient } from "pg";
@@ -17,12 +40,16 @@ import * as intentsRepo from "@vex-agent/db/repos/lighter-onboarding-intents.js"
 import {
   effectiveApproveTxHash,
   effectiveDepositTxHash,
+  type LighterDepositRepairAttemptResult,
   type LighterOnboardingIntentRow,
   type LighterReplacementTransaction,
-  type LighterUnresolvedDepositCursor,
-  type LighterUnresolvedDepositPage,
+  type LighterUnresolvedDepositQueuePage,
 } from "@vex-agent/db/repos/lighter-onboarding-intents.js";
 import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
+import {
+  insertSettlementProvenActivityRowWith,
+  type SettlementProvenRefusal,
+} from "@vex-agent/db/repos/agent-activity/settlement-proven.js";
 import { getUniswapDeployment } from "@tools/uniswap/deployments.js";
 import { getUniswapPublicClient } from "@tools/uniswap/evm-client.js";
 import { LighterClient } from "@tools/lighter/client.js";
@@ -44,6 +71,7 @@ import {
   type ReceiptReplacementEvidence,
 } from "@tools/evm-chains/receipt-guard.js";
 import { proveApprovedLighterDepositReplacement } from "@tools/lighter/wallet-funding/deposit-replacement.js";
+import logger from "@utils/logger.js";
 
 export type LighterDepositRepairResolution =
   | "awaiting_approval"
@@ -57,6 +85,23 @@ export type LighterDepositRepairResolution =
   | "terminal"
   | "superseded";
 
+/**
+ * What the credit transaction did about the durable `agent_activity` row for
+ * the settlement transaction. `skipped` is a first-class outcome, not a
+ * failure: a deposit Vex did not sign has no valid row shape, and the reason is
+ * carried so the operator sees WHY the ledger has no entry for it.
+ */
+export type LighterDepositActivityRecording =
+  | { readonly status: "recorded"; readonly activityId: number }
+  | { readonly status: "already_recorded"; readonly activityId: number }
+  | { readonly status: "skipped"; readonly reason: SettlementProvenRefusal };
+
+/** What one credit transaction settled: the intent row AND its activity row. */
+export interface LighterDepositCreditOutcome {
+  readonly intent: LighterOnboardingIntentRow;
+  readonly activityRow: LighterDepositActivityRecording;
+}
+
 export interface LighterDepositRepairReport {
   readonly intentId: string;
   readonly stateBefore: string;
@@ -65,6 +110,8 @@ export interface LighterDepositRepairReport {
   readonly evidence: "none" | "ethereum_receipt" | "lighter_transaction" | "lighter_account";
   readonly txHash: string | null;
   readonly accountIndex: number | null;
+  /** Present only on the arm that credits a deposit; `null` everywhere else. */
+  readonly activityRow: LighterDepositActivityRecording | null;
   readonly guidance: string;
 }
 
@@ -78,14 +125,7 @@ export interface LighterDepositRepairSweepReport {
   readonly hasMore: boolean;
   /** The sweep stopped on its own deadline rather than on an empty page. */
   readonly stoppedAtDeadline: boolean;
-  /**
-   * Where an interrupted sweep stopped, so the next one can resume there
-   * instead of re-examining the rows this one already paid for. It is set only
-   * when the deadline cut the page short; a sweep that finished its page
-   * returns null and the next sweep rotates normally.
-   */
-  readonly resumeCursor: LighterUnresolvedDepositCursor | null;
-  /** Rows the rotation window held, of which `examined` were examined. */
+  /** Rows the queue page held, of which `examined` were examined. */
   readonly candidates: number;
   /** One report per examined row; bounded by the page limit above. */
   readonly reports: readonly LighterDepositRepairReport[];
@@ -94,34 +134,12 @@ export interface LighterDepositRepairSweepReport {
 /**
  * Rows one unattended deposit sweep examines. Each row can perform several
  * settlement-chain and Lighter reads, so the sweep is bounded by rows, not by
- * "everything unresolved". Fair progress comes from the repository order
- * (least recently updated first, so an advanced row moves to the back) plus
- * the rotation below for rows that no evidence can move yet.
+ * "everything unresolved". Fair progress comes from the repository order: the
+ * queue is least-recently-ATTEMPTED first, and every row this sweep examines
+ * has its attempt marker written before the provider read, so it moves to the
+ * tail of the queue whatever the read then does to it.
  */
 export const LIGHTER_DEPOSIT_REPAIR_SWEEP_LIMIT = 25;
-
-/**
- * Wall-clock rotation slot for the page offset. Deriving it from the clock
- * rather than from process memory keeps the rotation across restarts, where
- * this sweep also runs from `initSync`.
- */
-export const LIGHTER_DEPOSIT_REPAIR_ROTATION_PERIOD_MS = 5 * 60_000;
-
-/**
- * How many pages of the global keyset the rotation window holds. The window is
- * read page by page with the repository cursor, so it is exactly the first
- * LIGHTER_DEPOSIT_REPAIR_ROTATION_PAGES * LIGHTER_DEPOSIT_REPAIR_SWEEP_LIMIT
- * unresolved deposit rows, in one order across both environments. The rotation
- * picks one page of that window per sweep, taken modulo the pages that are
- * actually there, so with P pages present every row is examined within P
- * consecutive sweeps and P is never larger than this bound. A larger backlog
- * is not silently ignored: the report says `hasMore`, and the
- * least-recently-updated ordering keeps pulling advanced rows out of the
- * window. Reading the window costs local SQL pages only; the provider budget
- * is unchanged, because only the selected page performs chain and Lighter
- * reads.
- */
-export const LIGHTER_DEPOSIT_REPAIR_ROTATION_PAGES = 8;
 
 /**
  * Wall-clock budget for one sweep. The owner is the sweep itself: it stops
@@ -131,12 +149,17 @@ export const LIGHTER_DEPOSIT_REPAIR_ROTATION_PAGES = 8;
 export const LIGHTER_DEPOSIT_REPAIR_SWEEP_DEADLINE_MS = 60_000;
 
 export interface LighterDepositRepairDeps {
-  readonly listUnresolvedDeposits: (
-    page: {
-      readonly limit: number;
-      readonly cursor: LighterUnresolvedDepositCursor | null;
-    },
-  ) => Promise<LighterUnresolvedDepositPage>;
+  readonly listUnresolvedDepositsByAttempt: (
+    page: { readonly limit: number },
+  ) => Promise<LighterUnresolvedDepositQueuePage>;
+  /**
+   * Move one row's attempt marker. Called before the provider read and again
+   * with the settled result; it never throws out of the sweep.
+   */
+  readonly recordRepairAttempt: (
+    intent: LighterOnboardingIntentRow,
+    result: LighterDepositRepairAttemptResult,
+  ) => Promise<void>;
   readonly now?: () => number;
   readonly readReceipt: (intent: LighterOnboardingIntentRow, txHash: string) => Promise<{
     readonly receipt: LighterDepositReceipt;
@@ -177,10 +200,15 @@ export interface LighterDepositRepairDeps {
     intent: LighterOnboardingIntentRow,
     reason: string,
   ) => Promise<LighterOnboardingIntentRow | null>;
+  /**
+   * Credit the intent AND write its settlement activity row in ONE
+   * transaction. Both writes or neither: see this module's header for why the
+   * rollback is the correct unknown-outcome behaviour.
+   */
   readonly markCredited: (
     intent: LighterOnboardingIntentRow,
     evidence: LighterDepositCreditEvidence,
-  ) => Promise<LighterOnboardingIntentRow | null>;
+  ) => Promise<LighterDepositCreditOutcome | null>;
 }
 
 export function buildProductionLighterDepositRepairDeps(): LighterDepositRepairDeps {
@@ -201,12 +229,29 @@ export function buildProductionLighterDepositRepairDeps(): LighterDepositRepairD
   }
 
   return {
-    listUnresolvedDeposits(page) {
-      // One globally ordered query over both environments. Two separately
-      // limited pages merged and sliced would drop rows that no later page
-      // could reach, which is how a backlog in one environment used to hide
-      // every unresolved deposit of the other.
-      return intentsRepo.listUnresolvedDeposits({ limit: page.limit, cursor: page.cursor });
+    listUnresolvedDepositsByAttempt(page) {
+      // One globally ordered query over both environments, least recently
+      // attempted first. Two separately limited pages merged and sliced would
+      // drop rows that no later page could reach, which is how a backlog in
+      // one environment used to hide every unresolved deposit of the other;
+      // ordering by the attempt is what stops the rows at the front of that
+      // one order from occupying every sweep.
+      return intentsRepo.listUnresolvedDepositsByAttempt({ limit: page.limit });
+    },
+    async recordRepairAttempt(intent, result) {
+      // A marker write that fails must not turn one row into the whole sweep's
+      // failure - that is the same starvation the marker exists to prevent,
+      // arriving through the back door. A row whose marker did not move is
+      // simply attempted again by the next sweep.
+      try {
+        await intentsRepo.recordDepositRepairAttempt(intent.intentId, result);
+      } catch (err) {
+        logger.warn("sync.lighter_deposit_repair.attempt_marker_failed", {
+          environment: intent.environment,
+          result,
+          reason: errorText(err),
+        });
+      }
     },
     async readReceipt(intent, txHash) {
       assertTxHash(txHash);
@@ -308,10 +353,105 @@ export function buildProductionLighterDepositRepairDeps(): LighterDepositRepairD
         intentsRepo.markAmbiguousWith(client, intent.intentId, reason));
     },
     markCredited(intent, evidence) {
-      return withIntentSessionLock(intent, (client) =>
-        intentsRepo.markDepositCreditedWith(client, intent.intentId, evidence));
+      return withIntentSessionLock(intent, async (client) => {
+        const credited = await intentsRepo.markDepositCreditedWith(
+          client,
+          intent.intentId,
+          evidence,
+        );
+        // The CAS lost: another writer moved the intent first. Nothing is
+        // credited, so nothing is recorded either - a row written here would
+        // claim a credit this transaction did not make.
+        if (credited === null) return null;
+        const activityRow = await recordCreditedDepositActivity(client, credited, evidence);
+        return { intent: credited, activityRow };
+      });
     },
   };
+}
+
+/**
+ * The credited deposit's `agent_activity` row, written on the credit's own
+ * transaction.
+ *
+ * Every identity the row carries comes from evidence this sweep already
+ * proved: the settlement chain and asset from the PINNED funding deployment
+ * (never from the intent's own nullable settlement columns, which a legacy row
+ * may not carry and which are not the authority for what the gateway accepts),
+ * the amount from the decoded gateway event, and the sender and nonce from the
+ * transaction Vex signed. The Lighter side is client-reported evidence and
+ * rides in the row's provenance, per the AgentScan contract R2.7: a receipt
+ * proves the settlement transaction, never the L2 credit.
+ *
+ * It THROWS on a database failure, on purpose: the credit must roll back with
+ * it, and the deposit stays reconcilable for the next sweep.
+ */
+async function recordCreditedDepositActivity(
+  client: PoolClient,
+  intent: LighterOnboardingIntentRow,
+  evidence: LighterDepositCreditEvidence,
+): Promise<LighterDepositActivityRecording> {
+  const funding = getLighterFundingDeployment(intent.environment);
+  const outcome = await insertSettlementProvenActivityRowWith(client, {
+    eventRole: "exchange_deposit",
+    protocol: "lighter",
+    sessionId: intent.sessionId,
+    walletAddress: intent.walletAddress,
+    execution: intent.protocolExecutionId === null
+      ? {
+          toolId: "lighter.deposit",
+          namespace: "lighter",
+          intentParams: {
+            intentId: intent.intentId,
+            environment: intent.environment,
+            capability: intent.capability,
+            amountUnits: evidence.amountUnits,
+            assetIndex: evidence.assetIndex,
+            routeType: evidence.routeType,
+          },
+        }
+      : { existingId: intent.protocolExecutionId },
+    chainId: funding.settlementChainId,
+    txHash: evidence.txHash,
+    fromAddress: intent.depositTxFrom,
+    nonce: parseSignedNonce(intent.depositTxNonce),
+    asset: {
+      address: funding.settlementTokenProxy,
+      symbol: funding.settlementSymbol,
+      decimals: funding.settlementDecimals,
+    },
+    amountRaw: evidence.amountUnits,
+    venueEvidence: {
+      source: "lighter_client_reported",
+      environment: intent.environment,
+      accountIndex: evidence.accountIndex,
+      lighterTxHash: evidence.lighterTxHash,
+      lighterBlockHeight: evidence.lighterBlockHeight,
+      lighterExecutedAt: evidence.lighterExecutedAt,
+      settlementBlockHash: evidence.blockHash,
+      settlementBlockNumber: evidence.blockNumber,
+    },
+  });
+  if (outcome.outcome === "refused") {
+    logger.info("sync.lighter_deposit_repair.activity_row_skipped", {
+      environment: intent.environment,
+      reason: outcome.reason,
+    });
+    return { status: "skipped", reason: outcome.reason };
+  }
+  return { status: outcome.outcome, activityId: outcome.activityId };
+}
+
+/**
+ * The staged deposit nonce as the activity row needs it. `null` for anything
+ * that is not a plain non-negative integer, which the writer then refuses as an
+ * unsigned leg rather than inventing a nonce for a transaction it cannot prove
+ * Vex sent.
+ */
+function parseSignedNonce(nonce: string | null): number | null {
+  if (nonce === null || !/^(0|[1-9][0-9]*)$/.test(nonce)) return null;
+  const parsed = Number(nonce);
+  return Number.isSafeInteger(parsed) ? parsed : null;
 }
 
 export async function repairLighterDepositIntent(
@@ -346,134 +486,102 @@ export async function repairLighterDepositIntent(
 /**
  * One unattended sweep over the unresolved deposit set of BOTH environments.
  *
- * Progress is deterministic rather than durable, because the sync framework has
- * no per-job state row to persist a cursor in: the rotation slot is derived
- * from the wall clock, so it survives a restart, and it selects one page of the
- * global keyset window modulo the pages that are actually present. With P pages
- * present every unresolved row is examined within P consecutive sweeps, and a
- * row nothing can move is examined, reported, and left behind instead of
- * holding the first page forever.
+ * PROGRESS IS DURABLE, AND IT LIVES IN THE ROW, NOT IN THE CALLER. Every row
+ * this sweep examines has its attempt marker written BEFORE the provider read
+ * and its settled result written after, so the row has already moved to the
+ * tail of the least-recently-attempted queue by the time anything can go wrong
+ * with it. Three consequences, and each one is a way an earlier sweep starved
+ * a row:
  *
- * A caller that receives `resumeCursor` from a deadline-interrupted sweep may
- * pass it back as `input.cursor`. That is the one case where the rotation is
- * skipped: the caller has said exactly where the previous sweep stopped, and
- * re-rotating would re-examine rows it already paid for.
+ *   - A backlog larger than one page is walked completely. Reading the front
+ *     of a fixed order every time examines the same rows forever; here each
+ *     page is retired as it is examined, so N pages of rows are covered by N
+ *     consecutive sweeps.
+ *   - A row that consumes the whole deadline does not hold the front. It was
+ *     marked before the read, so the next sweep starts with the rows behind it.
+ *   - No caller state is needed to resume. A sweep interrupted by its deadline,
+ *     by a crash, or by a process kill resumes at the least recently attempted
+ *     row on the next call, which is why the three production call sites can go
+ *     on invoking this with no arguments.
+ *
+ * A row nothing can move is examined, reported, marked, and left behind. It is
+ * never converted into a verdict and never blocks the rows behind it.
  */
 export async function repairUnresolvedLighterDeposits(
   deps: LighterDepositRepairDeps = buildProductionLighterDepositRepairDeps(),
-  input: {
-    readonly limit?: number;
-    readonly cursor?: LighterUnresolvedDepositCursor | null;
-  } = {},
+  input: { readonly limit?: number } = {},
 ): Promise<LighterDepositRepairSweepReport> {
   const now = deps.now ?? Date.now;
   const limit = Math.max(1, Math.min(input.limit ?? LIGHTER_DEPOSIT_REPAIR_SWEEP_LIMIT, 100));
   const startedAt = now();
-  const resuming = input.cursor !== undefined && input.cursor !== null;
-  // A resuming sweep already knows which page it owes: the one after the
-  // cursor. It reads that page and nothing more.
-  const window = await readRotationWindow(
-    deps,
-    limit,
-    input.cursor ?? null,
-    resuming ? 1 : LIGHTER_DEPOSIT_REPAIR_ROTATION_PAGES,
-  );
-  const intents = resuming
-    ? window.rows
-    : selectRotatingPage(window.rows, limit, startedAt);
+  const page = await deps.listUnresolvedDepositsByAttempt({ limit });
   const reports: LighterDepositRepairReport[] = [];
   let errors = 0;
   let examined = 0;
   let stoppedAtDeadline = false;
-  let resumeCursor: LighterUnresolvedDepositCursor | null = null;
 
-  for (const intent of intents) {
+  for (const intent of page.rows) {
     if (now() - startedAt > LIGHTER_DEPOSIT_REPAIR_SWEEP_DEADLINE_MS) {
       stoppedAtDeadline = true;
       break;
     }
+    // THE ATTEMPT MARKER GOES DOWN FIRST, exactly as the position snapshot
+    // sweep does it: a row that dies mid-repair has already left the front of
+    // the queue, so it cannot occupy the front of every later sweep.
+    await deps.recordRepairAttempt(intent, "attempted");
     examined += 1;
+    let settled: LighterDepositRepairAttemptResult = "error";
     try {
-      reports.push(await repairLighterDepositIntent(intent, deps));
+      const report = await repairLighterDepositIntent(intent, deps);
+      reports.push(report);
+      settled = attemptResultOf(report.resolution);
     } catch {
       errors += 1;
     }
-    // The page is a contiguous slice of the keyset order, so the last examined
-    // row is the exact position a following sweep should continue from.
-    resumeCursor = { updatedAt: intent.updatedAt, intentId: intent.intentId };
+    await deps.recordRepairAttempt(intent, settled);
   }
 
-  const advancedResolutions = new Set<LighterDepositRepairResolution>([
-    "approve_confirmed",
-    "deposit_confirmed",
-    "credited",
-    "failed",
-  ]);
-  const awaitingResolutions = new Set<LighterDepositRepairResolution>([
-    "awaiting_approval",
-    "awaiting_chain",
-    "awaiting_lighter",
-    "manual_review",
-  ]);
   return {
     examined,
-    advanced: reports.filter((item) => advancedResolutions.has(item.resolution)).length,
-    awaiting: reports.filter((item) => awaitingResolutions.has(item.resolution)).length,
+    advanced: reports.filter((item) => ADVANCED_RESOLUTIONS.has(item.resolution)).length,
+    awaiting: reports.filter((item) => AWAITING_RESOLUTIONS.has(item.resolution)).length,
     failed: reports.filter((item) => item.resolution === "failed").length,
     errors,
-    hasMore: window.hasMore || stoppedAtDeadline || examined < window.rows.length,
+    hasMore: page.hasMore || stoppedAtDeadline || examined < page.rows.length,
     stoppedAtDeadline,
-    resumeCursor: stoppedAtDeadline ? resumeCursor : null,
-    candidates: window.rows.length,
+    candidates: page.rows.length,
     reports,
   };
 }
 
-/**
- * The bounded rotation window: at most
- * LIGHTER_DEPOSIT_REPAIR_ROTATION_PAGES pages of the global keyset order,
- * walked with the repository cursor so no row between two pages is skipped.
- * `hasMore` reports rows past the window instead of pretending the window was
- * the whole set.
- */
-async function readRotationWindow(
-  deps: LighterDepositRepairDeps,
-  limit: number,
-  startCursor: LighterUnresolvedDepositCursor | null,
-  pages: number,
-): Promise<{ readonly rows: LighterOnboardingIntentRow[]; readonly hasMore: boolean }> {
-  const rows: LighterOnboardingIntentRow[] = [];
-  let cursor = startCursor;
-  let hasMore = false;
-  for (let page = 0; page < pages; page += 1) {
-    const read = await deps.listUnresolvedDeposits({ limit, cursor });
-    rows.push(...read.rows);
-    hasMore = read.hasMore;
-    if (!read.hasMore || read.nextCursor === null) break;
-    cursor = read.nextCursor;
-  }
-  return { rows, hasMore };
-}
+/** Resolutions that moved local state forward on real evidence. */
+const ADVANCED_RESOLUTIONS: ReadonlySet<LighterDepositRepairResolution> = new Set([
+  "approve_confirmed",
+  "deposit_confirmed",
+  "credited",
+  "failed",
+]);
+
+/** Resolutions that leave the row unresolved and waiting for evidence. */
+const AWAITING_RESOLUTIONS: ReadonlySet<LighterDepositRepairResolution> = new Set([
+  "awaiting_approval",
+  "awaiting_chain",
+  "awaiting_lighter",
+  "manual_review",
+]);
 
 /**
- * The page of the window this sweep examines. The slot is derived from the
- * wall clock rather than from process memory, so the rotation survives the
- * restart path that also runs this sweep from `initSync`, and it is taken
- * modulo the pages actually present rather than modulo a fixed page count:
- * with P pages present the slot walks 0, 1, ... P-1 over P consecutive sweeps,
- * so every row in the window is examined within P sweeps and a short window
- * never rotates onto an empty page.
+ * The attempt marker one settled repair leaves behind. Coarser than the
+ * resolution on purpose: the marker answers "what happened the last time a
+ * sweep looked at this row", and the row's own lifecycle columns carry the
+ * verdict itself.
  */
-export function selectRotatingPage<T>(
-  rows: readonly T[],
-  limit: number,
-  nowMs: number,
-): readonly T[] {
-  if (rows.length <= limit) return rows;
-  const pages = Math.ceil(rows.length / limit);
-  const slot = Math.floor(nowMs / LIGHTER_DEPOSIT_REPAIR_ROTATION_PERIOD_MS);
-  const page = ((slot % pages) + pages) % pages;
-  return rows.slice(page * limit, page * limit + limit);
+function attemptResultOf(
+  resolution: LighterDepositRepairResolution,
+): LighterDepositRepairAttemptResult {
+  if (ADVANCED_RESOLUTIONS.has(resolution)) return "advanced";
+  if (AWAITING_RESOLUTIONS.has(resolution)) return "awaiting";
+  return "terminal";
 }
 
 async function repairApproveLeg(
@@ -656,13 +764,17 @@ async function repairDepositLeg(
   const credited = await deps.markCredited(confirmed, creditEvidence);
   if (credited === null) return superseded(confirmed, txHash);
   return report(
-    credited,
+    credited.intent,
     "credited",
     "lighter_account",
     txHash,
     creditEvidence.accountIndex,
-    "The exact settlement deposit, executed Lighter transaction, and wallet-owned master account all match.",
+    credited.activityRow.status === "skipped"
+      ? "The exact settlement deposit, executed Lighter transaction, and wallet-owned master account all match. "
+        + `No activity row was recorded (${credited.activityRow.reason}): the settlement transaction is not one Vex can prove it signed.`
+      : "The exact settlement deposit, executed Lighter transaction, and wallet-owned master account all match.",
     intent.executionState,
+    credited.activityRow,
   );
 }
 
@@ -778,6 +890,7 @@ function report(
   accountIndex: number | null,
   guidance: string,
   stateBefore = intent.executionState,
+  activityRow: LighterDepositActivityRecording | null = null,
 ): LighterDepositRepairReport {
   return {
     intentId: intent.intentId,
@@ -787,6 +900,7 @@ function report(
     evidence,
     txHash,
     accountIndex,
+    activityRow,
     guidance,
   };
 }

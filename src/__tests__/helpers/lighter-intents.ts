@@ -138,6 +138,8 @@ export function onboardingIntent(
     lighterExecutedAt: null,
     lighterEvidenceObservedAt: null,
     resolvedAccountIndex: null,
+    repairAttemptedAt: null,
+    repairAttemptResult: null,
     decisionReason: null,
     failureReason: "receipt unavailable",
     createdAt: new Date("2030-01-01T00:00:00.000Z"),

@@ -60,6 +60,25 @@ CREATE TABLE IF NOT EXISTS lighter_onboarding_intents (
   decision_reason          TEXT,
   failure_reason           TEXT,
   decided_at               TIMESTAMPTZ,
+
+  -- THE UNATTENDED REPAIR SWEEP'S FAIRNESS TOKEN.
+  --
+  -- The bounded deposit repair sweep orders its queue by the last ATTEMPT,
+  -- never by the last success and never by updated_at alone. A row nothing can
+  -- move keeps its updated_at forever, so an updated_at ordering hands the
+  -- first page of every sweep to the same rows: with more unresolved rows than
+  -- one sweep examines, the rows past the first page are never reached, and a
+  -- single row that consumes the whole sweep deadline is examined again by the
+  -- next sweep and by every sweep after it.
+  --
+  -- The marker is written BEFORE the provider read and overwritten with the
+  -- settled result after it, so a row that dies mid-repair (a provider hang, a
+  -- process kill) has ALREADY moved to the tail of the queue. A row still
+  -- carrying 'attempted' is exactly that case, and it is readable as such.
+  repair_attempted_at      TIMESTAMPTZ,
+  repair_attempt_result    TEXT CHECK (
+    repair_attempt_result IN ('attempted','advanced','awaiting','terminal','error')
+  ),
   created_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   expires_at               TIMESTAMPTZ NOT NULL,
@@ -67,6 +86,9 @@ CREATE TABLE IF NOT EXISTS lighter_onboarding_intents (
   CHECK (
     (approval_status = 'approval_pending' AND decided_at IS NULL)
     OR (approval_status <> 'approval_pending' AND decided_at IS NOT NULL)
+  ),
+  CHECK (
+    (repair_attempted_at IS NULL) = (repair_attempt_result IS NULL)
   ),
   CHECK (
     capability <> 'deposit'
@@ -87,3 +109,18 @@ CREATE INDEX IF NOT EXISTS idx_lighter_onboarding_intents_execution
 
 CREATE INDEX IF NOT EXISTS idx_lighter_onboarding_intents_wallet
   ON lighter_onboarding_intents (environment, wallet_address, capability, created_at DESC);
+
+-- The repair sweep's queue index: least recently attempted first, exactly the
+-- order the sweep reads in, over exactly the rows it considers. NULLS FIRST is
+-- the default for ASC, so a never-attempted row sorts to the front without a
+-- separate expression.
+CREATE INDEX IF NOT EXISTS idx_lighter_onboarding_intents_deposit_repair_queue
+  ON lighter_onboarding_intents (repair_attempted_at ASC, updated_at ASC, intent_id ASC)
+  WHERE capability = 'deposit'
+    AND execution_state NOT IN ('credited','failed')
+    AND approval_status <> 'rejected';
+
+COMMENT ON COLUMN lighter_onboarding_intents.repair_attempted_at IS
+  'The deposit repair sweep ORDERS by this, never by success: ordering by success starves rows no evidence can move.';
+COMMENT ON COLUMN lighter_onboarding_intents.repair_attempt_result IS
+  'What the last attempt produced. Written as attempted before the provider read and settled after it.';
