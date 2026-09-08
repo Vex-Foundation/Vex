@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Vex-Foundation/vex/bridge/internal/front/fronttest"
+	"github.com/Vex-Foundation/vex/bridge/internal/sockettest"
 )
 
 // A unix socket stands in for the named pipe. The accept loop and the raw
@@ -16,7 +16,7 @@ import (
 // close - are invisible in a test that does not fill it.
 func testListener(t *testing.T) (net.Listener, string) {
 	t.Helper()
-	path := fronttest.SocketPath(t)
+	path := sockettest.Path(t)
 	l, err := net.Listen("unix", path)
 	if err != nil {
 		t.Fatalf("listening: %v", err)

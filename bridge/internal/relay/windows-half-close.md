@@ -4,7 +4,8 @@ Evidence collected on 2026-09-08 against `c8ebc5cb2`, Go 1.27.0.
 
 The evidence supports a Windows test-fixture ordering correction. It does
 not establish a production relay defect or conclusively identify the stalled
-operation in the old Windows failures. Native confirmation is still required.
+operation in the old Windows failures. The subsequent native run below passed
+the half-close assertions and exposed a separate socket-path fixture defect.
 
 ## CI evidence
 
@@ -137,7 +138,7 @@ of the Windows fixture correction. The original Linux test passed all 20
 runs, and this environment has no native Windows executor, so that specific
 reproducer and the exact historical root cause remain unproven.
 
-Native validation must run the focused tests with `-race -count=20 -v`,
+Repeated native validation must run the focused tests with `-race -count=20 -v`,
 then the normal full `bridge-windows` job. Compare original and corrected
 fixtures on the same image, retaining phase diagnostics on the original
 ordering to establish which operation stalls. Only those runs can prove
@@ -146,3 +147,60 @@ ordering removes the intermittent failure. Load dependence requires a
 controlled comparison of default package concurrency and `-p=1`; current
 logs do not settle it. Linux full-suite readiness additionally needs a
 writable private runtime directory in the test environment.
+
+## Socket-path follow-up: PR 176
+
+Read the complete log for run 34256587788,
+[job 102163837214](https://github.com/Vex-Foundation/Vex/actions/runs/34256587788/job/102163837214).
+The image and Go version are unchanged. `TestUnixArmStillReportsARealHalfClose`
+no longer fails, and Windows socket setup can no longer skip. The two failures
+are now in setup for `TestSocketEOFReturnsWithoutWaitingForABlockedStdin` and
+`TestStdinEOFOnATransportWithoutHalfCloseStillDrains`.
+
+Each logged socket path is exactly 108 bytes. Go's Windows
+`syscall.SockaddrUnix.sockaddr` rejects a filesystem path that fills its entire
+108-byte array because it needs a NUL terminator. These failures therefore
+precede relay execution. `testing.TempDir` includes the test name, random
+suffix and sequence directory, exhausting the budget under the Windows temp
+root. Restoring the skip would hide those relay contracts again.
+
+All four AF_UNIX bind sites were audited. The existing short-directory helper
+was moved from the front's test package to `internal/sockettest`, shared by
+relay, front listener and front control tests. It creates a private random
+directory directly under `os.TempDir`, registers cleanup immediately, and
+checks the final path against production `endpoint.SunPathMaxBytes` (103).
+The Linux process rendezvous tests retain their endpoint-derived locations
+and call the same check before binding. A too-long OS temp root now fails
+with a diagnostic naming `SunPathMaxBytes`, before the OS bind call.
+The old helper was deleted after a repository-wide consumer search.
+
+Reference decisions: keep the front's short random directory convention and
+the production endpoint's portable byte limit. go-winio uses a caller-supplied
+pipe namespace path, with a short fixed test pipe name. The bridge's Windows
+production pipe name uses its config hash; native pipe tests use PID/counter
+isolation. Adopt explicit identity and teardown; reject a fixed shared name
+or a pipe-namespace path for these filesystem sockets.
+
+`TestSocketPairBindsWithALongTestName` uses a long subtest name and nested
+`GOTMPDIR`. It fails if socket setup skips. Before the fix it failed with
+`bind: invalid argument`; after the fix it passes. Restoring only the old
+`socketPair` in a temporary copy reproduced the failure with the new test
+still present. This is red-on-revert proof for the path correction.
+
+Follow-up verification used the same pinned toolchain and writable cache:
+
+| Check | Result |
+| --- | --- |
+| New regression and both exposed tests, `-race -count=20 -v` | PASS, 1.284s |
+| Relay, front listener and front control suites, `-race -count=1` | PASS |
+| `go vet ./...`, three runs | PASS on all three |
+| `go test -race -count=1 ./...`, three runs | Same two read-only `/run/user/1000` bind failures on all three; all other packages passed |
+| `pnpm run test:bridge` | Same two filesystem failures |
+| Windows amd64 test cross-compilation: relay, front listener, front control | PASS |
+| `pnpm run check:em-dash` and `git diff --check` | PASS |
+
+The two previously hidden Windows scenarios are peer EOF while stdin stays
+blocked, and response draining on a transport without half-close. Their new
+fixtures pass on Linux. Only the next native Windows job can establish that
+both now execute beyond setup and pass their relay assertions on that runner.
+No timeouts, race checks or Windows setup failures were relaxed.

@@ -6,7 +6,6 @@ import (
 	"io"
 	"net"
 	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -17,6 +16,7 @@ import (
 	"github.com/Vex-Foundation/vex/bridge/internal/endpoint"
 	"github.com/Vex-Foundation/vex/bridge/internal/handshake"
 	"github.com/Vex-Foundation/vex/bridge/internal/relay"
+	"github.com/Vex-Foundation/vex/bridge/internal/sockettest"
 	"github.com/Vex-Foundation/vex/bridge/internal/vectors"
 )
 
@@ -27,11 +27,7 @@ const projectID = "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
 // property under test.
 func socketPair(t *testing.T) (client *net.UnixConn, server *net.UnixConn) {
 	t.Helper()
-	dir := t.TempDir()
-	if err := os.Chmod(dir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(dir, "s.sock")
+	path := sockettest.Path(t)
 	listener, err := net.Listen("unix", path)
 	if err != nil {
 		if runtime.GOOS == "windows" {
@@ -65,6 +61,24 @@ func socketPair(t *testing.T) (client *net.UnixConn, server *net.UnixConn) {
 		_ = server.Close()
 	})
 	return client, server
+}
+
+func TestSocketPairBindsWithALongTestName(t *testing.T) {
+	// testing.TempDir also nests under GOTMPDIR. Build directories and long
+	// test names must not consume the socket's path budget.
+	t.Setenv("GOTMPDIR", t.TempDir())
+	executed := false
+	t.Run(strings.Repeat("long-test-name-", 12), func(t *testing.T) {
+		client, _ := socketPair(t)
+		path := client.RemoteAddr().String()
+		if len(path) > endpoint.SunPathMaxBytes {
+			t.Fatalf("socket-pair path is %d bytes, exceeds SunPathMaxBytes=%d", len(path), endpoint.SunPathMaxBytes)
+		}
+		executed = true
+	})
+	if !executed {
+		t.Fatal("socket-pair fixture did not execute with a long test name")
+	}
 }
 
 // A reader that never returns, standing in for an MCP client that has sent its
