@@ -781,13 +781,57 @@ export function lighterSignerChildState(error: unknown): LighterSignerChildState
   return carried === "exited" || carried === "unknown" ? carried : undefined;
 }
 
-function withChildState(error: VexError, state: LighterSignerChildState): VexError {
+function withChildState<E extends object>(error: E, state: LighterSignerChildState): E {
   Object.defineProperty(error, "lighterSignerChildState", {
     value: state,
     enumerable: true,
     writable: false,
   });
   return error;
+}
+
+/**
+ * THE ONE SIGNER SETTLEMENT CONTRACT, owned here because this adapter is what
+ * produces the evidence (plan section 12.4).
+ *
+ * A `resolved` run is exit evidence BY CONSTRUCTION: `runLighterSignerBinary`
+ * settles a success only after the child's `close` event, so there is no
+ * resolved value that could describe a child still running. A `rejected` run
+ * carries `lighterSignerChildState`, and only `"exited"` is proof.
+ *
+ * Callers must not re-derive this from the shape of a signer result. A result
+ * is a signed transaction, not a lifecycle record; a predicate that reads a
+ * field off it can only be fooled or fabricated.
+ */
+export type LighterSignerRunOutcome =
+  | { readonly kind: "resolved" }
+  | { readonly kind: "rejected"; readonly error: unknown };
+
+/**
+ * Whether the signer child provably ended, and therefore whether a nonce
+ * reservation held across the signing call may be released.
+ *
+ * Missing evidence is `false` (unknown), including errors from a custom runner
+ * and errors thrown by a caller between the runner and this adapter.
+ */
+export function lighterSignerRunExited(outcome: LighterSignerRunOutcome): boolean {
+  return outcome.kind === "resolved"
+    || lighterSignerChildState(outcome.error) === "exited";
+}
+
+/**
+ * Copy the settlement evidence from one error onto the sanitized error a
+ * privileged wrapper returns upstream.
+ *
+ * A wrapper that must not leak helper stderr, a private key or a wallet
+ * signature still owes its caller the child's end state: dropping the carrier
+ * turns proven quiescence into "unknown" and strands a nonce reservation. When
+ * the source carries nothing, the target is returned unchanged and stays
+ * unknown.
+ */
+export function carryLighterSignerChildState<E extends object>(source: unknown, target: E): E {
+  const state = lighterSignerChildState(source);
+  return state === undefined ? target : withChildState(target, state);
 }
 
 /**
@@ -798,18 +842,29 @@ function withChildState(error: VexError, state: LighterSignerChildState): VexErr
  */
 const KILL_DRAIN_GRACE_MS = 5_000;
 
-/** The read side of a child pipe as this runner drives it (stdout, and stderr without decoding). */
+/**
+ * The read side of a child pipe as this runner drives it (stdout, and stderr
+ * without decoding).
+ *
+ * `off` and not `removeAllListeners`: this runner removes the listeners IT
+ * registered and nothing else. `removeAllListeners` also strips Node's own
+ * stdio bookkeeping from the pipe, which is not ours to take.
+ */
 export interface LighterSignerChildReadable {
   setEncoding(encoding: BufferEncoding): unknown;
   on(event: "data", listener: (chunk: string) => void): unknown;
-  removeAllListeners(): unknown;
+  on(event: "error", listener: (error: Error) => void): unknown;
+  off(event: "data", listener: (chunk: string) => void): unknown;
+  off(event: "error", listener: (error: Error) => void): unknown;
+  destroy(): unknown;
 }
 
 /** The write side of the child's stdin as this runner drives it: one payload line, then end. */
 export interface LighterSignerChildWritable {
   on(event: "error", listener: (error: Error) => void): unknown;
+  off(event: "error", listener: (error: Error) => void): unknown;
   end(chunk: string): unknown;
-  removeAllListeners(): unknown;
+  destroy(): unknown;
 }
 
 /**
@@ -821,11 +876,12 @@ export interface LighterSignerChildWritable {
 export interface LighterSignerChildProcess {
   readonly pid?: number | undefined;
   readonly stdout: LighterSignerChildReadable | null;
-  readonly stderr: Pick<LighterSignerChildReadable, "on" | "removeAllListeners"> | null;
+  readonly stderr: Pick<LighterSignerChildReadable, "on" | "off" | "destroy"> | null;
   readonly stdin: LighterSignerChildWritable | null;
   on(event: "error", listener: (error: Error) => void): unknown;
   on(event: "close", listener: (code: number | null, signal: NodeJS.Signals | null) => void): unknown;
-  removeAllListeners(): unknown;
+  off(event: "error", listener: (error: Error) => void): unknown;
+  off(event: "close", listener: (code: number | null, signal: NodeJS.Signals | null) => void): unknown;
   kill(signal: NodeJS.Signals): boolean;
   unref(): void;
 }
@@ -873,6 +929,16 @@ function signerChildEnvironment(platform: NodeJS.Platform): NodeJS.ProcessEnv {
   return inherited;
 }
 
+/** A pipe that is already gone cannot be destroyed; abandoning must not throw. */
+function destroyQuietly(pipe: { destroy(): unknown } | null): void {
+  if (pipe === null) return;
+  try {
+    pipe.destroy();
+  } catch {
+    // The handle is already closed; nothing is left to release.
+  }
+}
+
 /**
  * Run the signer helper over one payload and settle ONLY after the child is
  * gone.
@@ -885,12 +951,16 @@ function signerChildEnvironment(platform: NodeJS.Platform): NodeJS.ProcessEnv {
  *   - on timeout, on stdout overflow, and on a stdin failure, the child is
  *     SIGKILLed and then DRAINED: the promise still waits for `close`, up to
  *     `killDrainGraceMs`;
- *   - if that grace expires, the promise settles with `childState: "unknown"`
- *     on the error and the child is unref'd so it cannot hold the process open;
+ *   - if that grace expires, the promise settles with
+ *     `lighterSignerChildState: "unknown"` on the error and the child is
+ *     abandoned: pipes destroyed, child unref'd, and one no-op `error` listener
+ *     left on each so a late pipe error cannot crash the privileged process;
  *   - every rejection carries `lighterSignerChildState`, and every resolution
  *     implies `"exited"`;
- *   - all listeners and timers are removed on the settling path, on every
- *     branch, so a long-lived process does not accumulate them per signature.
+ *   - every listener this runner registered, and every timer it started, is
+ *     removed on the settling path on every branch, so a long-lived process
+ *     does not accumulate them per signature; listeners it did not register
+ *     (Node's own stdio bookkeeping, another owner's) are never touched.
  *
  * The first failure WINS: a child that is killed for overflow and then exits
  * non-zero reports the overflow, not the exit code, because the overflow is
@@ -913,13 +983,46 @@ export async function runLighterSignerBinary(
       env: signerChildEnvironment(process.platform),
     });
 
+    /**
+     * Exactly the listeners this runner registered, each paired with the call
+     * that undoes it. Nothing else is touched: `removeAllListeners` on a pipe
+     * takes Node's own stdio bookkeeping with it, and on the child it would
+     * remove listeners other owners registered on the same object.
+     */
+    const ownedListeners: Array<() => void> = [];
+
     const releaseListeners = (): void => {
       clearTimeout(timer);
       if (graceTimer !== undefined) clearTimeout(graceTimer);
-      child.stdout?.removeAllListeners();
-      child.stderr?.removeAllListeners();
-      child.stdin?.removeAllListeners();
-      child.removeAllListeners();
+      for (const release of ownedListeners.splice(0)) release();
+    };
+
+    /** A late pipe or child `error` with no listener is an unhandled event. */
+    const ignoreLateError = (): void => {};
+
+    /**
+     * The child survived SIGKILL and this process is giving up on it.
+     *
+     * Ownership ends here, so it ends completely: the pipes are destroyed and
+     * the child is unreferenced, because a wedged helper holding three open
+     * pipe handles keeps the runtime alive just as effectively as the process
+     * itself. One no-op `error` listener stays on the child and on each pipe -
+     * the handles outlive this runner, and an unhandled `error` event on any of
+     * them would take the privileged process down long after the call that
+     * spawned it returned.
+     *
+     * The reported state stays `"unknown"`: abandoning a child is not evidence
+     * that it stopped signing.
+     */
+    const abandonChild = (): void => {
+      child.on("error", ignoreLateError);
+      child.stdout?.on("error", ignoreLateError);
+      child.stderr?.on("error", ignoreLateError);
+      child.stdin?.on("error", ignoreLateError);
+      destroyQuietly(child.stdout);
+      destroyQuietly(child.stderr);
+      destroyQuietly(child.stdin);
+      child.unref();
     };
 
     const settle = (state: LighterSignerChildState, exitCode: number | null): void => {
@@ -928,7 +1031,7 @@ export async function runLighterSignerBinary(
       releaseListeners();
 
       if (state === "unknown") {
-        child.unref();
+        abandonChild();
         reject(withChildState(
           failure ?? signerUnavailable("Lighter signer helper did not exit."),
           "unknown",
@@ -977,8 +1080,7 @@ export async function runLighterSignerBinary(
       abort(signerUnavailable("Lighter signer helper timed out."));
     }, request.timeoutMs);
 
-    child.stdout?.setEncoding("utf8");
-    child.stdout?.on("data", (chunk: string) => {
+    const onStdoutData = (chunk: string): void => {
       if (failure !== null) return;
       stdoutBytes += Buffer.byteLength(chunk);
       if (stdoutBytes > MAX_STDOUT_BYTES) {
@@ -986,13 +1088,10 @@ export async function runLighterSignerBinary(
         return;
       }
       stdout += chunk;
-    });
-
-    child.stderr?.on("data", () => {
-      // Deliberately drain without retaining text; helper errors must stay structural.
-    });
-
-    child.on("error", () => {
+    };
+    // Deliberately drained without retaining text; helper errors stay structural.
+    const onStderrData = (): void => {};
+    const onChildError = (): void => {
       if (child.pid === undefined) {
         // The process was never created (a missing or unexecutable helper), so
         // there is nothing to drain and nothing that could have signed.
@@ -1001,16 +1100,35 @@ export async function runLighterSignerBinary(
         return;
       }
       abort(signerUnavailable("Lighter signer helper is not available."));
-    });
-
-    child.on("close", (code: number | null) => {
+    };
+    const onChildClose = (code: number | null): void => {
       settle("exited", code);
-    });
-
-    child.stdin?.on("error", () => {
+    };
+    const onStdinError = (): void => {
       abort(signerUnavailable("Lighter signer helper input stream failed."));
-    });
-    child.stdin?.end(`${JSON.stringify(request.payload)}\n`);
+    };
+
+    const stdoutPipe = child.stdout;
+    if (stdoutPipe !== null) {
+      stdoutPipe.setEncoding("utf8");
+      stdoutPipe.on("data", onStdoutData);
+      ownedListeners.push(() => { stdoutPipe.off("data", onStdoutData); });
+    }
+    const stderrPipe = child.stderr;
+    if (stderrPipe !== null) {
+      stderrPipe.on("data", onStderrData);
+      ownedListeners.push(() => { stderrPipe.off("data", onStderrData); });
+    }
+    child.on("error", onChildError);
+    ownedListeners.push(() => { child.off("error", onChildError); });
+    child.on("close", onChildClose);
+    ownedListeners.push(() => { child.off("close", onChildClose); });
+    const stdinPipe = child.stdin;
+    if (stdinPipe !== null) {
+      stdinPipe.on("error", onStdinError);
+      ownedListeners.push(() => { stdinPipe.off("error", onStdinError); });
+      stdinPipe.end(`${JSON.stringify(request.payload)}\n`);
+    }
   });
 }
 function buildSignerPayload(input: LighterCreateOrderSigningInput): LighterSignerBinaryPayload {

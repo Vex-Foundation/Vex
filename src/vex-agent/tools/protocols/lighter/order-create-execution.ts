@@ -1,5 +1,6 @@
 import { persistLighterSigningEvidence, type LighterEvidenceWritePorts } from "./execution-boundary.js";
-import { assertIntentAuthority, LighterIntentRefusal, lighterSignerExited, lighterSignerResolutionExited } from "./intent-expiry.js";
+import { assertIntentAuthority, LighterIntentRefusal } from "./intent-expiry.js";
+import { lighterSignerRunExited } from "@tools/lighter/signer-binary-adapter.js";
 import { revalidateLighterOrderFees, readLighterOrderAccountFeeTicks, type LighterOrderFeeClient } from "./order-fees.js";
 import { lighterIntegratorFeesEqual } from "@tools/lighter/fee-policy.js";
 import type { LighterClient } from "@tools/lighter/client.js";
@@ -225,7 +226,7 @@ export async function executeApprovedLighterCreateOrder(input: {
       nonce: nonce.nonceValue,
     });
     const signed = await signLighterCreateOrderWithAdapter(signingInput, deps.signer);
-    signerExited = lighterSignerResolutionExited(signed);
+    signerExited = lighterSignerRunExited({ kind: "resolved" });
     signerTxHash = signed.txHash;
 
     const signedIntent = await persistLighterSigningEvidence(() => deps.intents.markSigned({
@@ -342,8 +343,9 @@ export async function executeApprovedLighterCreateOrder(input: {
       accountAuthToken: auth.authToken,
     });
   } catch (error) {
-    signerExited ||= lighterSignerExited(error);
-    if (!sendAdmissionStarted && (!signingStarted || (error instanceof LighterIntentRefusal && signerExited))) {
+    signerExited ||= lighterSignerRunExited({ kind: "rejected", error });
+    if (!sendAdmissionStarted && (!signingStarted
+      || (signerExited && (error instanceof LighterIntentRefusal || signerTxHash === null)))) {
       const refused = signerTxHash === null
         ? await deps.intents.markUnsubmittedRefused({
           intentId: plan.intentId, sessionId: plan.sessionId, reservationId: nonce.reservationId, reason: error instanceof LighterIntentRefusal ? error.reason : "pre_sign_refused",

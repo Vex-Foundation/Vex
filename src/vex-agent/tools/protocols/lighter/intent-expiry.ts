@@ -41,27 +41,3 @@ export function assertIntentAuthority(
   if (signal?.aborted) throw new LighterIntentRefusal(`cancelled_${phase}`);
   assertIntentUnexpired(expiresAt, nowMs, `consent_expired_${phase}`);
 }
-
-export interface LighterSignerSettlementEvidence {
-  readonly childState: "exited" | "unknown";
-}
-
-/** Missing drain evidence is unknown, including errors from custom adapters. */
-export function lighterSignerExited(value: unknown): boolean {
-  return typeof value === "object" && value !== null
-    && "childState" in value && value.childState === "exited";
-}
-
-/**
- * A RESOLVED signer call is drained by contract: the binary adapter settles a
- * successful helper run only after the child's close event (plan 12.4), so a
- * resolution is exit evidence unless the adapter says `childState: "unknown"`
- * on the value itself. Rejections go through `lighterSignerExited`, where
- * missing evidence stays unknown.
- */
-export function lighterSignerResolutionExited(value: unknown): boolean {
-  if (typeof value === "object" && value !== null && "childState" in value) {
-    return value.childState === "exited";
-  }
-  return true;
-}

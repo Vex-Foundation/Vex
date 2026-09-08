@@ -1,5 +1,4 @@
 import type { SpawnOptions } from "node:child_process";
-import { EventEmitter } from "node:events";
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import { join } from "node:path";
@@ -21,6 +20,10 @@ import {
   signLighterCreateOrderWithAdapter,
 } from "@tools/lighter/signer-adapter.js";
 import { buildLighterUnsignedCreateOrderRequest } from "@tools/lighter/signer-order.js";
+import {
+  ScriptedSignerChild,
+  scriptedSignerDependencies,
+} from "../helpers/lighter-scripted-signer.js";
 import { materialFromSecret } from "@tools/lighter/trading-secret.js";
 import type { LighterOrderReadyForSignerPlan } from "@vex-agent/tools/protocols/lighter/execution-plan.js";
 
@@ -327,44 +330,6 @@ afterEach(() => {
   for (const root of temporaryRoots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
-/** A child whose every transition this test decides. */
-class ScriptedChild extends EventEmitter {
-  readonly stdout = Object.assign(new EventEmitter(), { setEncoding: () => undefined });
-  readonly stderr = new EventEmitter();
-  readonly stdin = Object.assign(new EventEmitter(), { end: () => undefined });
-  pid: number | undefined = 4242;
-  readonly signals: string[] = [];
-  unreferenced = false;
-
-  kill(signal: string): boolean {
-    this.signals.push(signal);
-    return true;
-  }
-
-  unref(): void {
-    this.unreferenced = true;
-  }
-
-  /** Every listener this runner registered, across the child and its pipes. */
-  listenerTotal(): number {
-    const emitters = [this, this.stdout, this.stderr, this.stdin];
-    return emitters.reduce(
-      (total, emitter) => total + emitter.eventNames().reduce(
-        (sum, name) => sum + emitter.listenerCount(name as string),
-        0,
-      ),
-      0,
-    );
-  }
-}
-
-function scriptedDependencies(child: ScriptedChild, killDrainGraceMs = 20) {
-  return {
-    spawn: () => child,
-    killDrainGraceMs,
-  };
-}
-
 const REQUEST: LighterSignerBinaryRunRequest = {
   binaryPath: "/nonexistent/vex-lighter-signer",
   payload: { operation: "generateApiKey" },
@@ -429,8 +394,8 @@ describe("Lighter signer helper child lifecycle", () => {
   });
 
   it("does not settle before the child's close event", async () => {
-    const child = new ScriptedChild();
-    const pending = runLighterSignerBinary(REQUEST, scriptedDependencies(child));
+    const child = new ScriptedSignerChild();
+    const pending = runLighterSignerBinary(REQUEST, scriptedSignerDependencies(child));
 
     let settled = false;
     void pending.then(() => { settled = true; }, () => { settled = true; });
@@ -447,10 +412,10 @@ describe("Lighter signer helper child lifecycle", () => {
   });
 
   it("drains a killed child before settling, and settles as exited when it closes", async () => {
-    const child = new ScriptedChild();
+    const child = new ScriptedSignerChild();
     const pending = runLighterSignerBinary(
       { ...REQUEST, timeoutMs: 5 } as LighterSignerBinaryRunRequest,
-      scriptedDependencies(child, 10_000),
+      scriptedSignerDependencies(child, 10_000),
     );
     let settled = false;
     void pending.then(() => { settled = true; }, () => { settled = true; });
@@ -468,25 +433,44 @@ describe("Lighter signer helper child lifecycle", () => {
     expect(child.listenerTotal()).toBe(0);
   });
 
-  it("settles with an unknown child state when a killed child never closes", async () => {
-    const child = new ScriptedChild();
+  it("abandons a killed child that never closes without touching listeners it does not own", async () => {
+    const child = new ScriptedSignerChild();
+    // Two listeners this runner must never remove: Node registers its own stdio
+    // bookkeeping on real pipes, and `removeAllListeners` takes it with it.
+    const foreignData = (): void => {};
+    const foreignClose = (): void => {};
+    child.stdout.on("data", foreignData);
+    child.on("close", foreignClose);
+
     const pending = runLighterSignerBinary(
       { ...REQUEST, timeoutMs: 5 } as LighterSignerBinaryRunRequest,
-      scriptedDependencies(child, 15),
+      scriptedSignerDependencies(child, 15),
     );
 
     const error = await pending.then(() => null, (err: unknown) => err);
     expect(lighterSignerChildState(error)).toBe("unknown");
     expect(child.signals).toEqual(["SIGKILL"]);
-    // Unref'd so a wedged helper cannot hold the app open, and no listener is
-    // left behind waiting for a close that will never come.
-    expect(child.unreferenced).toBe(true);
-    expect(child.listenerTotal()).toBe(0);
+    // Unref'd AND with its pipes destroyed, so a wedged helper holds neither
+    // the process nor three pipe handles open.
+    expect(child.abandoned()).toBe(true);
+    // Nothing of this runner's is left waiting for a close that will never come.
+    expect(child.listenerCount("close")).toBe(1);
+    expect(child.stdout.listenerCount("data")).toBe(1);
+    expect(child.stdin.listenerCount("error")).toBe(1);
+    // The foreign listeners are exactly the ones that survived.
+    expect(child.listeners("close")).toEqual([foreignClose]);
+    expect(child.stdout.listeners("data")).toEqual([foreignData]);
+    // A late pipe or child error after abandonment cannot become an unhandled
+    // 'error' event, which would take the privileged process down.
+    for (const emitter of [child, child.stdout, child.stderr, child.stdin]) {
+      expect(emitter.listenerCount("error")).toBe(1);
+      expect(() => emitter.emit("error", new Error("EPIPE"))).not.toThrow();
+    }
   });
 
   it("kills and drains on output overflow, reporting the first failure", async () => {
-    const child = new ScriptedChild();
-    const pending = runLighterSignerBinary(REQUEST, scriptedDependencies(child));
+    const child = new ScriptedSignerChild();
+    const pending = runLighterSignerBinary(REQUEST, scriptedSignerDependencies(child));
 
     child.stdout.emit("data", "x".repeat(256 * 1024 + 1));
     await Promise.resolve();
@@ -501,8 +485,8 @@ describe("Lighter signer helper child lifecycle", () => {
   });
 
   it("kills and drains when the stdin pipe fails", async () => {
-    const child = new ScriptedChild();
-    const pending = runLighterSignerBinary(REQUEST, scriptedDependencies(child));
+    const child = new ScriptedSignerChild();
+    const pending = runLighterSignerBinary(REQUEST, scriptedSignerDependencies(child));
 
     child.stdin.emit("error", new Error("EPIPE"));
     await Promise.resolve();
@@ -517,9 +501,9 @@ describe("Lighter signer helper child lifecycle", () => {
   });
 
   it("reports a helper that could never be spawned as an exited child", async () => {
-    const child = new ScriptedChild();
+    const child = new ScriptedSignerChild();
     child.pid = undefined;
-    const pending = runLighterSignerBinary(REQUEST, scriptedDependencies(child));
+    const pending = runLighterSignerBinary(REQUEST, scriptedSignerDependencies(child));
 
     child.emit("error", new Error("ENOENT"));
     await expect(pending).rejects.toMatchObject({
@@ -531,7 +515,7 @@ describe("Lighter signer helper child lifecycle", () => {
   });
 
   it("passes an empty environment to the child on this platform", async () => {
-    const child = new ScriptedChild();
+    const child = new ScriptedSignerChild();
     let seen: Record<string, unknown> | undefined;
     const pending = runLighterSignerBinary(REQUEST, {
       spawn: (_path: string, _args: readonly string[], options: SpawnOptions) => {

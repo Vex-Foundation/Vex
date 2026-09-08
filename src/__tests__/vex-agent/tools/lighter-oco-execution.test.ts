@@ -102,7 +102,6 @@ function ocoDeps(): LighterOcoExecutionDeps {
         publicKey: PUBLIC_KEY,
       })), signCreateOrder: vi.fn() },
       groupedSigner: { source: "official_lighter_signer", signCreateGroupedOrders: vi.fn<LighterOcoExecutionDeps["groupedSigner"]["signCreateGroupedOrders"]>(async (input) => ({
-        childState: "exited",
         kind: "lighter_create_grouped_orders_signer_result", environment: input.environment,
         accountIndex: input.accountIndex, apiKeyIndex: input.apiKeyIndex, nonce: input.nonce,
         clientOrderIndexes: [input.group.orders[0].clientOrderIndex, input.group.orders[1].clientOrderIndex],
@@ -136,6 +135,17 @@ function ocoDeps(): LighterOcoExecutionDeps {
       transaction: vi.fn(async (fn) => fn({} as PoolClient)), now: () => NOW, wait: vi.fn(async () => undefined),
     };
 }
+
+import {
+  createLighterGroupedOrderSignerBinaryAdapter,
+  type LighterSignerBinaryRunner,
+} from "@tools/lighter/signer-binary-adapter.js";
+import {
+  signerRunnerEmitting,
+  signerRunnerExitingWithoutOutput,
+  signerRunnerNeverClosing,
+  signerRunnerRejectingWithoutEvidence,
+} from "../../helpers/lighter-scripted-signer.js";
 
 describe("approved Lighter native OCO execution", () => {
   it("revalidates both legs, submits exactly once, and proves both children before active", async () => {
@@ -180,4 +190,70 @@ describe("OCO authority races", () => {
       else expect(d.nonceState.releaseUnsubmittedReservation).toHaveBeenCalledOnce();
     });
   }
+});
+
+
+/**
+ * THE SIGNER SETTLEMENT CONTRACT for grouped orders, proved in composition
+ * (round-1 fix F2): the real adapter projects a real child run into the
+ * executor, which decides the reservation's fate on that evidence alone.
+ */
+describe("Lighter OCO signer settlement contract", () => {
+  const GROUPED_DOCUMENT = { ok: true, txType: 28, txInfo: "{\"signed\":true}", txHash: TX_HASH };
+
+  function compositionDeps(signRunner: LighterSignerBinaryRunner): LighterOcoExecutionDeps {
+    const d = ocoDeps();
+    return {
+      ...d,
+      groupedSigner: createLighterGroupedOrderSignerBinaryAdapter({
+        binaryPath: "/tmp/vex-lighter-signer-test",
+        // Small enough that a child which never closes is killed inside the test.
+        timeoutMs: 5,
+        runner: signRunner,
+      }),
+    };
+  }
+
+  it("retires an OCO signed before consent expiry and releases its nonce", async () => {
+    let nowMs = NOW;
+    const d = compositionDeps(signerRunnerEmitting(() => {
+      nowMs = Date.parse(PLAN.expiresAt);
+      return GROUPED_DOCUMENT;
+    }));
+    Object.assign(d, { now: () => nowMs });
+
+    await expect(executeApprovedLighterOco({ plan: PLAN, group: GROUP, deps: d }))
+      .rejects.toMatchObject({ reason: expect.stringMatching(/^consent_expired_/) });
+
+    expect(d.intents.markExpiredUnsubmitted).toHaveBeenCalledWith(expect.objectContaining({
+      signerTxHash: TX_HASH,
+    }));
+    expect(d.nonceState.releaseUnsubmittedReservation).toHaveBeenCalledOnce();
+    expect(d.client.sendTx).not.toHaveBeenCalled();
+  });
+
+  it("releases the nonce when the signer child provably exited without signing", async () => {
+    const d = compositionDeps(signerRunnerExitingWithoutOutput());
+
+    await expect(executeApprovedLighterOco({ plan: PLAN, group: GROUP, deps: d })).rejects.toThrow();
+
+    expect(d.intents.markUnsubmittedRefused).toHaveBeenCalledWith(expect.objectContaining({
+      reason: "pre_sign_refused",
+    }));
+    expect(d.nonceState.releaseUnsubmittedReservation).toHaveBeenCalledOnce();
+    expect(d.intents.markAmbiguous).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["a child that never closed", signerRunnerNeverClosing],
+    ["a failure that never reached the child", signerRunnerRejectingWithoutEvidence],
+  ])("keeps the nonce reserved after %s", async (_name, runner) => {
+    const d = compositionDeps(runner());
+
+    await expect(executeApprovedLighterOco({ plan: PLAN, group: GROUP, deps: d })).rejects.toThrow();
+
+    expect(d.intents.markAmbiguous).toHaveBeenCalledOnce();
+    expect(d.nonceState.releaseUnsubmittedReservation).not.toHaveBeenCalled();
+    expect(d.intents.markUnsubmittedRefused).not.toHaveBeenCalled();
+  });
 });

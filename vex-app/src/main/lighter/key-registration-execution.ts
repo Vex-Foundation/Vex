@@ -1,6 +1,6 @@
 import { persistLighterSigningEvidence } from "@vex-agent/tools/protocols/lighter/execution-boundary.js";
 import { app } from "electron";
-import { assertIntentAuthority, LighterIntentRefusal, lighterSignerExited } from "@vex-agent/tools/protocols/lighter/intent-expiry.js";
+import { assertIntentAuthority, LighterIntentRefusal } from "@vex-agent/tools/protocols/lighter/intent-expiry.js";
 import { getAddress } from "viem";
 
 import { getLighterClient, type LighterClient } from "@tools/lighter/client.js";
@@ -9,6 +9,7 @@ import { getLighterFundingDeployment } from "@tools/lighter/wallet-funding/deplo
 import {
   createLighterApiKeyGeneratorBinary,
   createLighterRegisteredKeyCheckerBinary,
+  lighterSignerRunExited,
   type LighterApiKeyGenerator,
   type LighterRegisteredKeyChecker,
 } from "@tools/lighter/signer-binary-adapter.js";
@@ -162,7 +163,7 @@ async function runLighterKeyRegistration(
       wallet,
       revalidatedNonce: String(nonce.nonce),
     });
-    signerExited = lighterSignerExited(signed);
+    signerExited = lighterSignerRunExited({ kind: "resolved" });
     const signingIntentId = intent.intentId;
     const staged = await persistLighterSigningEvidence(() => deps.markStaged(input.sessionId, signingIntentId, {
       txType: signed.txType,
@@ -221,7 +222,7 @@ async function runLighterKeyRegistration(
       intent = await recordAmbiguous(deps, intent, "submit_acceptance_persistence_failed");
     }
     } catch (error) {
-      signerExited ||= lighterSignerExited(error);
+      signerExited ||= lighterSignerRunExited({ kind: "rejected", error });
       if (error instanceof LighterIntentRefusal && !sendAdmissionStarted && (!signingStarted || signerExited)) {
         await deps.refuseUnsubmitted({ intentId: intent.intentId, sessionId: intent.sessionId, reason: error.reason });
       } else if (intent.registrationTxHash !== null) {

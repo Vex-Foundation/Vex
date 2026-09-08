@@ -7,6 +7,7 @@ import {
   signLighterApproveIntegratorWithAdapter,
 } from "@tools/lighter/signer-integrator.js";
 import {
+  carryLighterSignerChildState,
   createLighterApiKeyGeneratorBinary,
   createLighterSignerBinaryApproveIntegratorAdapter,
 } from "@tools/lighter/signer-binary-adapter.js";
@@ -116,10 +117,15 @@ export async function signApprovedLighterFeeAuthorization(
       }),
       deps.signer,
     );
-  } catch {
-    // Never return helper stderr, a private key, or a wallet signature upstream.
-    throw new Error(
-      "The approved fee authorization could not be signed locally. Reconcile its status before retrying.",
+  } catch (error) {
+    // Never return helper stderr, a private key, or a wallet signature
+    // upstream - but carry the signer child's end state, because the executor
+    // decides on it whether the reserved nonce may be released.
+    throw carryLighterSignerChildState(
+      error,
+      new Error(
+        "The approved fee authorization could not be signed locally. Reconcile its status before retrying.",
+      ),
     );
   }
 }

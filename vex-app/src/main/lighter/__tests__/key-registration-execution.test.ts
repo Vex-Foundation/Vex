@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { requireValue } from "../../../../../src/__tests__/helpers/require-value.js";
 import { describe, expect, it, vi } from "vitest";
 
@@ -11,10 +13,27 @@ import {
   reconcileLighterKeyRegistration,
   type LighterKeyRegistrationExecutionDeps,
 } from "../key-registration-execution.js";
+import {
+  createLighterApiKeyGeneratorBinary,
+  createLighterChangePubKeySignerBinary,
+  lighterSignerChildState,
+  type LighterSignerBinaryRunner,
+} from "@tools/lighter/signer-binary-adapter.js";
+import {
+  signerRunnerEmitting,
+  signerRunnerExitingWithoutOutput,
+  signerRunnerNeverClosing,
+  signerRunnerRejectingWithoutEvidence,
+} from "../../../../../src/__tests__/helpers/lighter-scripted-signer.js";
+import { signApprovedLighterKeyRegistration } from "../key-registration-signing.js";
 
 const PUBLIC_KEY = "b".repeat(80);
 const OTHER_PUBLIC_KEY = "c".repeat(80);
 const TX_HASH = "a".repeat(80);
+/** What `markLighterKeyGeneratedEncryptedWith` stores: sha256 over the key bytes. */
+const PUBLIC_KEY_FINGERPRINT = createHash("sha256")
+  .update(Buffer.from(PUBLIC_KEY, "hex"))
+  .digest("hex");
 const LIGHTER_PRIVATE_KEY = `0x${"1".repeat(80)}`;
 const WALLET: EvmWallet = {
   family: "eip155",
@@ -42,7 +61,7 @@ function intent(
     executionState,
     vaultCredentialId: `lighter/${environment}/account-42/api-key-${apiKeyIndex}`,
     publicKey: PUBLIC_KEY,
-    publicKeyFingerprint: "e".repeat(64),
+    publicKeyFingerprint: PUBLIC_KEY_FINGERPRINT,
     keyGeneratedAt: now,
     registrationNonce: "0",
     registrationNonceObservedAt: now,
@@ -463,7 +482,7 @@ describe("key registration consent races", () => {
       if (phase === "reservation") {
         vi.mocked(deps.claimSigning).mockImplementation(async () => { await pause(); return true; });
       } else if (phase === "signing") {
-        vi.mocked(deps.sign).mockImplementation(async () => { await pause(); return Object.assign(signedResult(), { childState: "exited" }); });
+        vi.mocked(deps.sign).mockImplementation(async () => { await pause(); return signedResult(); });
       } else if (phase === "staging") {
         const original = requireValue(vi.mocked(deps.markStaged).getMockImplementation());
         vi.mocked(deps.markStaged).mockImplementation(async (...args) => { const row = await original(...args); await pause(); return row; });
@@ -492,7 +511,7 @@ describe("key registration consent races", () => {
   });
   it("persists a returned hash after a transient staging write failure without signing twice", async () => {
     const { deps } = makeDeps(), controller = new AbortController();
-    vi.mocked(deps.sign).mockImplementation(async () => { controller.abort("lock"); return Object.assign(signedResult(), { childState: "exited" }); });
+    vi.mocked(deps.sign).mockImplementation(async () => { controller.abort("lock"); return signedResult(); });
     vi.mocked(deps.markStaged).mockRejectedValueOnce(new Error("storage temporarily unavailable"));
     await expect(executeApprovedLighterKeyRegistration({ ...EXECUTION_INPUT, abortSignal: controller.signal }, deps))
       .rejects.toMatchObject({ reason: "cancelled_after_signing" });
@@ -508,4 +527,61 @@ it("does not relabel an unrelated failed registration as expired consent", async
   await expect(executeApprovedLighterKeyRegistration(EXECUTION_INPUT, deps)).rejects.toThrow("failed without an unsubmitted consent refusal");
   expect(deps.sign).not.toHaveBeenCalled();
   expect(deps.client.sendTx).not.toHaveBeenCalled();
+});
+
+
+/**
+ * THE SIGNER SETTLEMENT CONTRACT across the privileged registration wrapper
+ * (round-1 fix F2), proved in composition: the real wrapper drives the real
+ * change-pub-key adapter over a real `runLighterSignerBinary` run against a
+ * scripted child, and the executor sees exactly what that produced.
+ *
+ * The registration path releases nothing on a signer failure - there is no
+ * nonce reservation to release, and the durable claim is retired only by an
+ * authority refusal - so what these prove is the conservative half: a child
+ * whose end is unproven leaves the registration untouched and reconcilable,
+ * and nothing is ever submitted.
+ */
+describe("Lighter key-registration signer settlement contract", () => {
+  function composedSign(
+    signRunner: LighterSignerBinaryRunner,
+  ): LighterKeyRegistrationExecutionDeps["sign"] {
+    return (args) => signApprovedLighterKeyRegistration(args, {
+      readVaultPrivateKey: () => LIGHTER_PRIVATE_KEY,
+      readVaultRegistrationState: () => "key_generated_pending_registration",
+      keyGenerator: createLighterApiKeyGeneratorBinary({
+        binaryPath: "/tmp/vex-lighter-signer-test",
+        runner: signerRunnerEmitting({ ok: true, publicKey: PUBLIC_KEY }),
+      }),
+      signer: createLighterChangePubKeySignerBinary({
+        binaryPath: "/tmp/vex-lighter-signer-test",
+        // Small enough that a child which never closes is killed inside the test.
+        timeoutMs: 5,
+        runner: signRunner,
+      }),
+      signWalletMessage: async () => `0x${"1".repeat(128)}1b`,
+      now: () => new Date("2026-08-17T12:01:00.000Z"),
+    });
+  }
+
+  it.each([
+    ["a child that provably exited", signerRunnerExitingWithoutOutput, "exited"],
+    ["a child that never closed", signerRunnerNeverClosing, "unknown"],
+    ["a failure that never reached the child", signerRunnerRejectingWithoutEvidence, undefined],
+  ] as const)("submits nothing and retires nothing after %s", async (_name, runner, expectedState) => {
+    const { deps } = makeDeps();
+    vi.mocked(deps.sign).mockImplementation(composedSign(runner()));
+
+    const error = await executeApprovedLighterKeyRegistration(EXECUTION_INPUT, deps)
+      .then(() => null, (thrown: unknown) => thrown);
+
+    // The wrapper hands the child's end state through untouched; only a failure
+    // that never reached a child carries none.
+    expect(lighterSignerChildState(error)).toBe(expectedState);
+    expect(String(error)).not.toContain(LIGHTER_PRIVATE_KEY);
+    expect(deps.client.sendTx).not.toHaveBeenCalled();
+    expect(deps.markStaged).not.toHaveBeenCalled();
+    expect(deps.refuseUnsubmitted).not.toHaveBeenCalled();
+    expect(deps.markAmbiguous).not.toHaveBeenCalled();
+  });
 });

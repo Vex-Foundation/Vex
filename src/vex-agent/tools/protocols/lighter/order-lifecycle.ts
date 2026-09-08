@@ -1,5 +1,6 @@
 import { persistLighterSigningEvidence, type LighterEvidenceWritePorts } from "./execution-boundary.js";
-import { assertIntentAuthority, assertIntentUnexpired, LighterIntentRefusal, lighterSignerExited, lighterSignerResolutionExited } from "./intent-expiry.js";
+import { assertIntentAuthority, assertIntentUnexpired, LighterIntentRefusal } from "./intent-expiry.js";
+import { lighterSignerRunExited } from "@tools/lighter/signer-binary-adapter.js";
 import type { LighterIntegratorFees } from "@tools/lighter/fee-policy.js";
 import { resolveLighterOrderFees, revalidateLighterOrderFees, type LighterOrderFeeClient } from "./order-fees.js";
 import { confirmedLighterCloseDisposition } from "./close-position-confirmation.js";
@@ -652,7 +653,7 @@ export async function executeApprovedLighterCancelOne(
       providerOrderId: intent.providerOrderId!,
       secret,
     }));
-    signerExited = lighterSignerResolutionExited(signed);
+    signerExited = lighterSignerRunExited({ kind: "resolved" });
     signerTxHash = signed.txHash;
     const signedRow = await persistLighterSigningEvidence(() => deps.intents.markSigned({
       intentId: intent.intentId,
@@ -744,8 +745,9 @@ export async function executeApprovedLighterCancelOne(
       reason: "Provider accepted the cancel transaction; exact inactive-order evidence is pending.",
     };
   } catch (error) {
-    signerExited ||= lighterSignerExited(error);
-    if (!sendAdmissionStarted && (!signingStarted || (error instanceof LighterIntentRefusal && signerExited))) {
+    signerExited ||= lighterSignerRunExited({ kind: "rejected", error });
+    if (!sendAdmissionStarted && (!signingStarted
+      || (signerExited && (error instanceof LighterIntentRefusal || signerTxHash === null)))) {
       const refused = signerTxHash === null
         ? await deps.intents.markUnsubmittedRefused({
           intentId: intent.intentId, sessionId: intent.sessionId, reservationId, reason: error instanceof LighterIntentRefusal ? error.reason : "pre_sign_refused",
@@ -901,7 +903,7 @@ export async function executeApprovedLighterModifyOrder(
       triggerPriceInteger: "0",
       secret,
     }));
-    signerExited = lighterSignerResolutionExited(signed);
+    signerExited = lighterSignerRunExited({ kind: "resolved" });
     signerTxHash = signed.txHash;
     const signedRow = await persistLighterSigningEvidence(() => deps.intents.markSigned({
       intentId: intent.intentId,
@@ -997,8 +999,9 @@ export async function executeApprovedLighterModifyOrder(
       reason: "Provider accepted the modify transaction; exact updated-order evidence is pending.",
     };
   } catch (error) {
-    signerExited ||= lighterSignerExited(error);
-    if (!sendAdmissionStarted && (!signingStarted || (error instanceof LighterIntentRefusal && signerExited))) {
+    signerExited ||= lighterSignerRunExited({ kind: "rejected", error });
+    if (!sendAdmissionStarted && (!signingStarted
+      || (signerExited && (error instanceof LighterIntentRefusal || signerTxHash === null)))) {
       const refused = signerTxHash === null
         ? await deps.intents.markUnsubmittedRefused({
           intentId: intent.intentId, sessionId: intent.sessionId, reservationId, reason: error instanceof LighterIntentRefusal ? error.reason : "pre_sign_refused",
@@ -1129,7 +1132,7 @@ export async function executeApprovedLighterCancelAll(
       expiredAt: String(signerExpiryMs),
       secret,
     }));
-    signerExited = lighterSignerResolutionExited(signed);
+    signerExited = lighterSignerRunExited({ kind: "resolved" });
     signerTxHash = signed.txHash;
     const signedRow = await persistLighterSigningEvidence(() => deps.intents.markSigned({
       intentId: intent.intentId,
@@ -1227,8 +1230,9 @@ export async function executeApprovedLighterCancelAll(
       reason: "Provider accepted cancel-all; proof that the exact approved order set is terminal is pending.",
     };
   } catch (error) {
-    signerExited ||= lighterSignerExited(error);
-    if (!sendAdmissionStarted && (!signingStarted || (error instanceof LighterIntentRefusal && signerExited))) {
+    signerExited ||= lighterSignerRunExited({ kind: "rejected", error });
+    if (!sendAdmissionStarted && (!signingStarted
+      || (signerExited && (error instanceof LighterIntentRefusal || signerTxHash === null)))) {
       const refused = signerTxHash === null
         ? await deps.intents.markUnsubmittedRefused({
           intentId: intent.intentId, sessionId: intent.sessionId, reservationId, reason: error instanceof LighterIntentRefusal ? error.reason : "pre_sign_refused",
@@ -1412,7 +1416,7 @@ export async function executeApprovedLighterClosePosition(
       buildLighterCreateOrderSigningInput({ order: unsignedOrder, secret, nonce: reserved }),
       deps.authSigner,
     );
-    signerExited = lighterSignerResolutionExited(signed);
+    signerExited = lighterSignerRunExited({ kind: "resolved" });
     signerTxHash = signed.txHash;
     const signedRow = await persistLighterSigningEvidence(() => deps.intents.markSigned({
       intentId: intent.intentId,
@@ -1535,8 +1539,9 @@ export async function executeApprovedLighterClosePosition(
         : "The close order has terminal fill evidence, but the position update is not yet consistent with it. Report the observed fill; position confirmation is pending. Do not call it partially closed or resubmit.",
     };
   } catch (error) {
-    signerExited ||= lighterSignerExited(error);
-    if (!sendAdmissionStarted && (!signingStarted || (error instanceof LighterIntentRefusal && signerExited))) {
+    signerExited ||= lighterSignerRunExited({ kind: "rejected", error });
+    if (!sendAdmissionStarted && (!signingStarted
+      || (signerExited && (error instanceof LighterIntentRefusal || signerTxHash === null)))) {
       const refused = signerTxHash === null
         ? await deps.intents.markUnsubmittedRefused({
           intentId: intent.intentId, sessionId: intent.sessionId, reservationId, reason: error instanceof LighterIntentRefusal ? error.reason : "pre_sign_refused",

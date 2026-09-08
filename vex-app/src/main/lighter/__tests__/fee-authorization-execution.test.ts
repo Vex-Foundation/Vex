@@ -14,6 +14,19 @@ import {
   type LighterFeeAuthorizationObserved,
 } from "../fee-authorization-preparation.js";
 import type { LighterApproveIntegratorSignerResult } from "@tools/lighter/signer-integrator.js";
+import {
+  createLighterApiKeyGeneratorBinary,
+  createLighterSignerBinaryApproveIntegratorAdapter,
+  type LighterSignerBinaryRunner,
+} from "@tools/lighter/signer-binary-adapter.js";
+import {
+  signerRunnerEmitting,
+  signerRunnerExitingWithoutOutput,
+  signerRunnerNeverClosing,
+  signerRunnerRejectingWithoutEvidence,
+} from "../../../../../src/__tests__/helpers/lighter-scripted-signer.js";
+import { signApprovedLighterFeeAuthorization } from "../fee-authorization-signing.js";
+import { LIGHTER_TRADING_CREDENTIAL_ACTIVE_STATE } from "../../secrets/lighter-trading-credential.js";
 
 const NOW = Date.parse("2030-01-01T00:00:00Z"),
   HASH = "cd".repeat(40),
@@ -316,7 +329,7 @@ describe("Lighter fee authorization lifecycle", () => {
     expect(h.deps.client.changeAccountTier).not.toHaveBeenCalled();
     expect(h.deps.sign).not.toHaveBeenCalled();
   });
-  it("does not send if cancellation arrives while signing", async () => {
+  it("retires and releases when cancellation arrives after signing", async () => {
     const h = setup(),
       abort = new AbortController(),
       original = h.deps.sign;
@@ -325,6 +338,9 @@ describe("Lighter fee authorization lifecycle", () => {
       abort.abort();
       return result;
     });
+    // A RESOLVED signer call is exit evidence by construction, so nothing can
+    // still be signing: the unsubmitted transaction is retired and its nonce
+    // released rather than parked as ambiguous for a reconciler to unpick.
     expect(
       (
         await executeApprovedLighterFeeAuthorization(
@@ -332,7 +348,9 @@ describe("Lighter fee authorization lifecycle", () => {
           h.deps,
         )
       ).status,
-    ).toBe("pending_verification");
+    ).toBe("failed");
+    expect(h.current()).toMatchObject({ txHash: HASH, executionState: "expired_unsubmitted" });
+    expect(h.deps.releaseUnsubmittedNonce).toHaveBeenCalledOnce();
     expect(h.deps.client.sendTx).not.toHaveBeenCalled();
   });
   it("checks both cap classes when verifying allowance", async () => {
@@ -460,7 +478,7 @@ describe("fee consent races", () => {
         vi.mocked(original).mockImplementation(async (...args) => { const row = await implementation(...args); await pause(); return row; });
       } else if (phase === "signing") {
         const implementation = requireValue(vi.mocked(h.deps.sign).getMockImplementation());
-        vi.mocked(h.deps.sign).mockImplementation(async (...args) => { const signed = await implementation(...args); await pause(); return Object.assign(signed, { childState: "exited" }); });
+        vi.mocked(h.deps.sign).mockImplementation(async (...args) => { const signed = await implementation(...args); await pause(); return signed; });
       } else if (phase === "staging") {
         const implementation = requireValue(vi.mocked(h.deps.transition).getMockImplementation());
         vi.mocked(h.deps.transition).mockImplementation(async (...args) => { const row = await implementation(...args); if (args[1] === "submission_staged") await pause(); return row; });
@@ -502,4 +520,67 @@ it("reports known provider authorization ahead of an earlier partial-effect reas
   expect(result.status).toBe("active");
   expect(result.message).toContain("Lighter confirmed");
   expect(h.deps.client.sendTx).not.toHaveBeenCalled();
+});
+
+
+/**
+ * THE SIGNER SETTLEMENT CONTRACT across the privileged fee wrapper (round-1 fix
+ * F2).
+ *
+ * The wrapper deliberately replaces every signing failure with one sanitized
+ * message, so nothing of the helper's stderr, the trading key or the wallet
+ * signature can travel upstream. What it must NOT drop is the child's end
+ * state: the executor releases the reserved nonce only on proven exit. These
+ * tests drive the real wrapper over the real approve-integrator adapter over a
+ * real `runLighterSignerBinary` run against a scripted child, so the evidence
+ * the executor acts on is produced, not declared.
+ */
+describe("Lighter fee authorization signer settlement contract", () => {
+  function composedSign(
+    h: ReturnType<typeof setup>,
+    signRunner: LighterSignerBinaryRunner,
+  ): LighterFeeAuthorizationExecutionDeps["sign"] {
+    return (args) => signApprovedLighterFeeAuthorization(args, {
+      readVaultPrivateKey: () => `0x${"1".repeat(80)}`,
+      readVaultRegistrationState: () => LIGHTER_TRADING_CREDENTIAL_ACTIVE_STATE,
+      keyGenerator: createLighterApiKeyGeneratorBinary({
+        binaryPath: "/tmp/vex-lighter-signer-test",
+        runner: signerRunnerEmitting({ ok: true, publicKey: h.current().terms.publicKey }),
+      }),
+      signer: createLighterSignerBinaryApproveIntegratorAdapter({
+        binaryPath: "/tmp/vex-lighter-signer-test",
+        // Small enough that a child which never closes is killed inside the test.
+        timeoutMs: 5,
+        runner: signRunner,
+      }),
+      signWalletMessage: async () => `0x${"1".repeat(128)}1b`,
+    });
+  }
+
+  it("releases the reserved nonce when the signer child provably exited", async () => {
+    const h = setup();
+    vi.mocked(h.deps.sign).mockImplementation(composedSign(h, signerRunnerExitingWithoutOutput()));
+
+    const result = await executeApprovedLighterFeeAuthorization(input, h.deps);
+
+    expect(result.status).toBe("failed");
+    expect(h.current().executionState).toBe("failed");
+    expect(h.deps.releaseUnsubmittedNonce).toHaveBeenCalledOnce();
+    expect(h.deps.client.sendTx).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["a child that never closed", signerRunnerNeverClosing],
+    ["a failure that never reached the child", signerRunnerRejectingWithoutEvidence],
+  ])("keeps the nonce reserved after %s", async (_name, runner) => {
+    const h = setup();
+    vi.mocked(h.deps.sign).mockImplementation(composedSign(h, runner()));
+
+    const result = await executeApprovedLighterFeeAuthorization(input, h.deps);
+
+    expect(result.status).toBe("pending_verification");
+    expect(h.current().executionState).toBe("ambiguous");
+    expect(h.deps.releaseUnsubmittedNonce).not.toHaveBeenCalled();
+    expect(h.deps.client.sendTx).not.toHaveBeenCalled();
+  });
 });

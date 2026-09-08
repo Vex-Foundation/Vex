@@ -3,6 +3,16 @@ import { describe, expect, it, vi } from "vitest";
 import { requireValue } from "../helpers/require-value.js";
 
 import { materialFromSecret } from "@tools/lighter/trading-secret.js";
+import {
+  createLighterWithdrawalSignerBinary,
+  type LighterSignerBinaryRunner,
+} from "@tools/lighter/signer-binary-adapter.js";
+import {
+  signerRunnerEmitting,
+  signerRunnerExitingWithoutOutput,
+  signerRunnerNeverClosing,
+  signerRunnerRejectingWithoutEvidence,
+} from "../helpers/lighter-scripted-signer.js";
 import type { LighterCoreWithdrawalPreflightSnapshot } from "@tools/lighter/withdrawal/core-preflight.js";
 import type { LighterRhcWithdrawalPreflightSnapshot } from "@tools/lighter/withdrawal/rhc-preflight.js";
 import {
@@ -374,7 +384,7 @@ describe("withdrawal consent races", () => {
         vi.mocked(d.reserveNonce).mockImplementation(async (...args) => { const row = await original(...args); await pause(); return row; });
       } else if (phase === "signing") {
         const original = requireValue(vi.mocked(d.withdrawalSigner.signWithdraw).getMockImplementation());
-        vi.mocked(d.withdrawalSigner.signWithdraw).mockImplementation(async (...args) => { const signed = await original(...args); await pause(); return Object.assign(signed, { childState: "exited" }); });
+        vi.mocked(d.withdrawalSigner.signWithdraw).mockImplementation(async (...args) => { const signed = await original(...args); await pause(); return signed; });
       } else if (phase === "staging") {
         const original = requireValue(vi.mocked(d.intents.markSubmissionStaged).getMockImplementation());
         vi.mocked(d.intents.markSubmissionStaged).mockImplementation(async (...args) => { const row = await original(...args); await pause(); return row; });
@@ -392,4 +402,74 @@ describe("withdrawal consent races", () => {
       if (phase === "send-admission") expect(d.nonceState.releaseUnsubmittedReservation).not.toHaveBeenCalled();
     });
   }
+});
+
+
+/**
+ * THE SIGNER SETTLEMENT CONTRACT for withdrawals, proved in composition
+ * (round-1 fix F2). The withdrawal signer here is the real binary adapter over
+ * a real `runLighterSignerBinary` run against a scripted child.
+ */
+describe("Lighter withdrawal signer settlement contract", () => {
+  const WITHDRAW_DOCUMENT = {
+    ok: true, txType: 13, txInfo: "opaque-signed-payload", txHash: "lighter-tx-hash",
+  };
+
+  function compositionDeps(
+    signRunner: LighterSignerBinaryRunner,
+  ): ExecuteApprovedLighterCoreWithdrawalDeps {
+    const d = deps([]);
+    return {
+      ...d,
+      withdrawalSigner: createLighterWithdrawalSignerBinary({
+        binaryPath: "/tmp/vex-lighter-signer-test",
+        // Small enough that a child which never closes is killed inside the test.
+        timeoutMs: 5,
+        runner: signRunner,
+      }),
+    };
+  }
+
+  it("retires a withdrawal signed before consent expiry and releases its nonce", async () => {
+    let nowMs = NOW;
+    const d = compositionDeps(signerRunnerEmitting(() => {
+      nowMs = Date.parse(plan().expiresAt);
+      return WITHDRAW_DOCUMENT;
+    }));
+    Object.assign(d, { now: () => nowMs });
+
+    await expect(executeApprovedLighterWithdrawal({ plan: plan(), deps: d }))
+      .rejects.toMatchObject({ reason: expect.stringMatching(/^consent_expired_/) });
+
+    expect(d.intents.markExpiredUnsubmitted).toHaveBeenCalledWith(expect.objectContaining({
+      signerTxHash: "lighter-tx-hash",
+    }));
+    expect(d.nonceState.releaseUnsubmittedReservation).toHaveBeenCalledOnce();
+    expect(d.client.sendTx).not.toHaveBeenCalled();
+  });
+
+  it("releases the nonce when the signer child provably exited without signing", async () => {
+    const d = compositionDeps(signerRunnerExitingWithoutOutput());
+
+    await expect(executeApprovedLighterWithdrawal({ plan: plan(), deps: d })).rejects.toThrow();
+
+    expect(d.intents.markUnsubmittedRefused).toHaveBeenCalledWith(expect.objectContaining({
+      reason: "pre_sign_refused",
+    }));
+    expect(d.nonceState.releaseUnsubmittedReservation).toHaveBeenCalledOnce();
+    expect(d.intents.markAmbiguous).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["a child that never closed", signerRunnerNeverClosing],
+    ["a failure that never reached the child", signerRunnerRejectingWithoutEvidence],
+  ])("keeps the nonce reserved after %s", async (_name, runner) => {
+    const d = compositionDeps(runner());
+
+    await expect(executeApprovedLighterWithdrawal({ plan: plan(), deps: d })).rejects.toThrow();
+
+    expect(d.intents.markAmbiguous).toHaveBeenCalledOnce();
+    expect(d.nonceState.releaseUnsubmittedReservation).not.toHaveBeenCalled();
+    expect(d.intents.markUnsubmittedRefused).not.toHaveBeenCalled();
+  });
 });

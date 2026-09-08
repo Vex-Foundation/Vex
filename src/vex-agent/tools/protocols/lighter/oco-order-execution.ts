@@ -1,5 +1,6 @@
 import { persistLighterSigningEvidence, type LighterEvidenceWritePorts } from "./execution-boundary.js";
-import { assertIntentAuthority, LighterIntentRefusal, lighterSignerExited, lighterSignerResolutionExited } from "./intent-expiry.js";
+import { assertIntentAuthority, LighterIntentRefusal } from "./intent-expiry.js";
+import { lighterSignerRunExited } from "@tools/lighter/signer-binary-adapter.js";
 import { revalidateLighterOrderFees, type LighterOrderFeeClient } from "./order-fees.js";
 import { LIGHTER_ENDPOINTS, type LighterEnvironment } from "@tools/lighter/constants.js";
 import type { LighterClient } from "@tools/lighter/client.js";
@@ -178,7 +179,7 @@ export async function executeApprovedLighterOco(input: {
       }),
       deps.groupedSigner,
     );
-    signerExited = lighterSignerResolutionExited(signed);
+    signerExited = lighterSignerRunExited({ kind: "resolved" });
     signerTxHash = signed.txHash;
     let persistedSigned;
     try {
@@ -278,8 +279,9 @@ export async function executeApprovedLighterOco(input: {
       predictedExecutionTimeMs: response.predicted_execution_time_ms,
     });
   } catch (error) {
-    signerExited ||= lighterSignerExited(error);
-    if (!sendAdmissionStarted && (!signingStarted || (error instanceof LighterIntentRefusal && signerExited))) {
+    signerExited ||= lighterSignerRunExited({ kind: "rejected", error });
+    if (!sendAdmissionStarted && (!signingStarted
+      || (signerExited && (error instanceof LighterIntentRefusal || signerTxHash === null)))) {
       const refused = signerTxHash === null
         ? await deps.intents.markUnsubmittedRefused({
           intentId: plan.intentId, sessionId: plan.sessionId, reservationId: reservation.reservationId, reason: error instanceof LighterIntentRefusal ? error.reason : "pre_sign_refused",

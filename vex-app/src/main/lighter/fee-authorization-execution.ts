@@ -1,4 +1,5 @@
-import { assertIntentAuthority, LighterIntentRefusal, lighterSignerExited } from "@vex-agent/tools/protocols/lighter/intent-expiry.js";
+import { assertIntentAuthority, LighterIntentRefusal } from "@vex-agent/tools/protocols/lighter/intent-expiry.js";
+import { lighterSignerRunExited } from "@tools/lighter/signer-binary-adapter.js";
 import { getAddress } from "viem";
 import { getLighterClient, type LighterClient } from "@tools/lighter/client.js";
 import type { LighterTxFromL1Response } from "@tools/lighter/types.js";
@@ -335,7 +336,7 @@ export async function executeApprovedLighterFeeAuthorization(
   assertAuthority("before_signing");
   signingStarted = true;
   const signed = await deps.sign({ intent, wallet });
-  signerExited = lighterSignerExited(signed);
+  signerExited = lighterSignerRunExited({ kind: "resolved" });
   signedHash = signed.txHash;
   // Record the hash independently of send admission, even if consent expired.
   try {
@@ -377,9 +378,10 @@ export async function executeApprovedLighterFeeAuthorization(
   }
   return reconcileLighterFeeAuthorization(input, deps);
   } catch (error) {
-    signerExited ||= lighterSignerExited(error);
+    signerExited ||= lighterSignerRunExited({ kind: "rejected", error });
     const reason = error instanceof LighterIntentRefusal ? error.reason : "fee_execution_interrupted";
-    if (intent.nonceValue !== null && !sendAdmissionStarted && (!signingStarted || signerExited)) {
+    if (intent.nonceValue !== null && !sendAdmissionStarted && (!signingStarted
+      || (signerExited && (error instanceof LighterIntentRefusal || signedHash === null)))) {
       intent = await deps.transition(intent, signedHash === null ? "failed" : "expired_unsubmitted", {
         ...(signedHash === null ? {} : { txHash: signedHash }), failureReason: tierChanged && !sendAdmissionStarted ? "tier_changed_fee_authorization_not_submitted" : reason,
       });

@@ -82,6 +82,12 @@ export default defineConfig({
       "src/__tests__/integration/repos/wallet-wrap-*.int.test.ts",
       "src/__tests__/integration/repos/swap-prequotes-claim.int.test.ts",
       "src/__tests__/integration/repos/lighter-fee-*.int.test.ts",
+      // Position-observation freshness watermarks, the attempt-ordered sweep and
+      // the fill fee-enrichment delivery path: SQL guards no fake client can prove.
+      "src/__tests__/integration/repos/lighter-position-observations.int.test.ts",
+      "src/__tests__/integration/repos/lighter-fill-enrichment.int.test.ts",
+      // The durable refusal that retires a consent-expired key registration.
+      "src/__tests__/integration/repos/lighter-key-registration-refusal.int.test.ts",
       "src/__tests__/integration/repos/wallet-transfer-unconfirmed-repair.int.test.ts",
       "src/__tests__/integration/repos/wallet-transfer-execution-first-writer.int.test.ts",
       "src/__tests__/integration/wallet/transaction-authority-fence.int.test.ts",

@@ -23,6 +23,17 @@ import type { LighterOrderLifecycleSignerResult } from "@tools/lighter/signer-or
 beforeEach(() => vi.spyOn(feePolicy, "getLighterFeePolicy").mockReturnValue(null));
 afterEach(() => vi.restoreAllMocks());
 
+import {
+  createLighterOrderLifecycleSignerBinary,
+  type LighterSignerBinaryRunner,
+} from "@tools/lighter/signer-binary-adapter.js";
+import {
+  signerRunnerEmitting,
+  signerRunnerExitingWithoutOutput,
+  signerRunnerNeverClosing,
+  signerRunnerRejectingWithoutEvidence,
+} from "../../helpers/lighter-scripted-signer.js";
+
 const NOW = Date.parse("2026-08-19T20:00:00.000Z");
 const PRIVATE_KEY = "1".repeat(80);
 
@@ -576,7 +587,6 @@ describe("Lighter reduce-only position close lifecycle", () => {
       code: 200, tx_hash: "hash-14", predicted_execution_time_ms: 100, volume_quota_remaining: 99,
     });
     vi.mocked(dependencies.authSigner.signCreateOrder).mockImplementation(async (input) => ({
-      childState: "exited",
         kind: "lighter_create_order_signer_result",
       environment: "rhc",
       accountIndex: 42,
@@ -712,7 +722,6 @@ describe("Lighter reduce-only position close lifecycle", () => {
     vi.mocked(dependencies.authSigner.signCreateOrder).mockImplementation(async (input) => {
       if (phase === "signing") await pause();
       return {
-      childState: "exited",
         kind: "lighter_create_order_signer_result",
       environment: "rhc",
       accountIndex: 42,
@@ -789,7 +798,7 @@ describe("lifecycle consent boundaries", () => {
       const original = d.lifecycleSigner[method];
       const signed = lifecycleSignerResult(action);
       vi.mocked(original).mockClear();
-      vi.mocked(original).mockImplementation(async () => { if (phase === "signing") await pause(); return Object.assign(signed, { childState: "exited" }); });
+      vi.mocked(original).mockImplementation(async () => { if (phase === "signing") await pause(); return signed; });
       if (phase === "staging") {
         vi.mocked(d.intents.markSubmissionStaged).mockImplementation(async () => { await pause(); return intent({ executionState: "submission_staged" }); });
       } else if (phase === "send-admission") {
@@ -807,4 +816,89 @@ describe("lifecycle consent boundaries", () => {
       } else expect(d.nonceState.releaseUnsubmittedReservation).toHaveBeenCalledOnce();
     });
   }
+});
+
+
+/**
+ * THE SIGNER SETTLEMENT CONTRACT for the lifecycle actions, proved in
+ * composition (round-1 fix F2): the real lifecycle adapter projects a real
+ * `runLighterSignerBinary` run over a scripted child, and the executor decides
+ * the reserved nonce's fate on that evidence and nothing else.
+ *
+ * `close_position` signs through the create-order adapter, whose identical
+ * contract is proved in `lighter-order-create-execution.test.ts`.
+ */
+describe("Lighter lifecycle signer settlement contract", () => {
+  const ACTIONS = ["cancel_one", "modify", "cancel_all"] as const;
+
+  function approvedIntent(action: typeof ACTIONS[number]): LighterOrderLifecycleIntentRow {
+    return intent(action === "modify" ? {
+      actionType: action, requestedBaseAmountInteger: "7500", requestedPriceInteger: "5125",
+      providerSnapshotJson: { ...lifecycleSnapshot(openOrder), marketSizeDecimals: 4, marketPriceDecimals: 2 },
+    } : action === "cancel_all" ? {
+      actionType: action, marketIndex: null, providerOrderId: null,
+      providerSnapshotJson: { orders: [lifecycleSnapshot(openOrder)], orderCount: 1 },
+    } : {});
+  }
+
+  function executorFor(action: typeof ACTIONS[number]) {
+    return action === "modify"
+      ? executeApprovedLighterModifyOrder
+      : action === "cancel_all" ? executeApprovedLighterCancelAll : executeApprovedLighterCancelOne;
+  }
+
+  function compositionDeps(signRunner: LighterSignerBinaryRunner): LighterOrderLifecycleExecutionDeps {
+    return deps({
+      lifecycleSigner: createLighterOrderLifecycleSignerBinary({
+        binaryPath: "/tmp/vex-lighter-signer-test",
+        // Small enough that a child which never closes is killed inside the test.
+        timeoutMs: 5,
+        runner: signRunner,
+      }),
+    });
+  }
+
+  it.each(ACTIONS)("retires a %s signed before consent expiry and releases its nonce", async (action) => {
+    let nowMs = NOW;
+    const approved = approvedIntent(action);
+    const d = compositionDeps(signerRunnerEmitting(() => {
+      nowMs = Date.parse(approved.expiresAt);
+      return { ok: true, ...LIFECYCLE_SIGNER_TX[action] };
+    }));
+    Object.assign(d, { now: () => nowMs });
+
+    await expect(executorFor(action)(approved, d))
+      .rejects.toMatchObject({ reason: expect.stringMatching(/^consent_expired_/) });
+
+    expect(d.intents.markExpiredUnsubmitted).toHaveBeenCalledWith(expect.objectContaining({
+      signerTxHash: LIFECYCLE_SIGNER_TX[action].txHash,
+    }));
+    expect(d.nonceState.releaseUnsubmittedReservation).toHaveBeenCalledOnce();
+    expect(d.client.sendTx).not.toHaveBeenCalled();
+  });
+
+  it.each(ACTIONS)("releases the %s nonce when the signer child provably exited without signing", async (action) => {
+    const d = compositionDeps(signerRunnerExitingWithoutOutput());
+
+    await expect(executorFor(action)(approvedIntent(action), d)).rejects.toThrow();
+
+    expect(d.intents.markUnsubmittedRefused).toHaveBeenCalledWith(expect.objectContaining({
+      reason: "pre_sign_refused",
+    }));
+    expect(d.nonceState.releaseUnsubmittedReservation).toHaveBeenCalledOnce();
+    expect(d.intents.markAmbiguous).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["a child that never closed", signerRunnerNeverClosing],
+    ["a failure that never reached the child", signerRunnerRejectingWithoutEvidence],
+  ])("keeps the cancel nonce reserved after %s", async (_name, runner) => {
+    const d = compositionDeps(runner());
+
+    await expect(executeApprovedLighterCancelOne(approvedIntent("cancel_one"), d)).rejects.toThrow();
+
+    expect(d.intents.markAmbiguous).toHaveBeenCalledOnce();
+    expect(d.nonceState.releaseUnsubmittedReservation).not.toHaveBeenCalled();
+    expect(d.intents.markUnsubmittedRefused).not.toHaveBeenCalled();
+  });
 });

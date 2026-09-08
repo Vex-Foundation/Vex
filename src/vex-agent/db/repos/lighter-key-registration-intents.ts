@@ -883,7 +883,11 @@ function assertReservationInput(input: ReserveLighterApiKeySlotInput, now: Date)
 
 function mapRow(row: Record<string, unknown>): LighterKeyRegistrationReservationRow {
   if (
-    row.execution_state !== "slot_reserved"
+    // `failed` is terminal and is RETURNED by `markRegistrationUnsubmitted`: a
+    // mapper that refuses it rolls back the very transaction that retires a
+    // consent-expired registration, so the intent can never settle.
+    row.execution_state !== "failed"
+    && row.execution_state !== "slot_reserved"
     && row.execution_state !== "key_generated_encrypted"
     && row.execution_state !== "approval_pending"
     && row.execution_state !== "approved"

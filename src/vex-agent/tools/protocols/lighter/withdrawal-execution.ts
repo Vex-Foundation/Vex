@@ -1,5 +1,6 @@
 import { persistLighterSigningEvidence, type LighterEvidenceWritePorts } from "./execution-boundary.js";
-import { assertIntentAuthority, LighterIntentRefusal, lighterSignerExited, lighterSignerResolutionExited } from "./intent-expiry.js";
+import { assertIntentAuthority, LighterIntentRefusal } from "./intent-expiry.js";
+import { lighterSignerRunExited } from "@tools/lighter/signer-binary-adapter.js";
 import type { LighterClient } from "@tools/lighter/client.js";
 import {
   buildLighterAccountAuthSigningInputForScope,
@@ -183,7 +184,7 @@ export async function executeApprovedLighterWithdrawal(input: {
       }),
       deps.withdrawalSigner,
     );
-    signerExited = lighterSignerResolutionExited(signed);
+    signerExited = lighterSignerRunExited({ kind: "resolved" });
     signerTxHash = signed.txHash;
     const persistedSigned = await persistLighterSigningEvidence(() => deps.intents.markSigned({
       intentId: plan.intentId,
@@ -255,8 +256,9 @@ export async function executeApprovedLighterWithdrawal(input: {
       message: `The exact ${profile.sourceName} ${profile.assetSymbol} secure withdrawal was accepted by Lighter and is awaiting L2 and ${profile.settlementNetworkName} settlement proof.`,
     };
   } catch (error) {
-    signerExited ||= lighterSignerExited(error);
-    if (!sendAdmissionStarted && (!signingStarted || (error instanceof LighterIntentRefusal && signerExited))) {
+    signerExited ||= lighterSignerRunExited({ kind: "rejected", error });
+    if (!sendAdmissionStarted && (!signingStarted
+      || (signerExited && (error instanceof LighterIntentRefusal || signerTxHash === null)))) {
       const refused = signerTxHash === null
         ? await deps.intents.markUnsubmittedRefused({
           intentId: plan.intentId, sessionId: plan.sessionId, reservationId: reservation.reservationId, reason: error instanceof LighterIntentRefusal ? error.reason : "pre_sign_refused",

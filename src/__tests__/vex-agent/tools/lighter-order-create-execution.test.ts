@@ -11,6 +11,16 @@ import type { LighterOrderReadyForSignerPlan } from "@vex-agent/tools/protocols/
 import type { LighterOrderExecutionIntentRow } from "@vex-agent/db/repos/lighter-order-execution-intents.js";
 import type { LighterOrderPreviewRow } from "@vex-agent/db/repos/lighter-order-previews.js";
 import { buildLighterUnsignedCreateOrderRequest } from "@tools/lighter/signer-order.js";
+import {
+  createLighterSignerBinaryAdapter,
+  type LighterSignerBinaryRunner,
+} from "@tools/lighter/signer-binary-adapter.js";
+import {
+  signerRunnerEmitting,
+  signerRunnerExitingWithoutOutput,
+  signerRunnerNeverClosing,
+  signerRunnerRejectingWithoutEvidence,
+} from "../../helpers/lighter-scripted-signer.js";
 import { buildLighterOrderPreview } from "@tools/lighter/order-preview.js";
 import type { LighterAccountResponse, LighterMarketDetail } from "@tools/lighter/types.js";
 import { ErrorCodes, VexError } from "../../../errors.js";
@@ -348,7 +358,6 @@ function deps(overrides: Partial<ExecuteApprovedLighterCreateOrderDeps> = {}): E
         publicKey: PUBLIC_KEY,
       })),
       signCreateOrder: vi.fn<ExecuteApprovedLighterCreateOrderDeps["signer"]["signCreateOrder"]>(async (input) => ({
-        childState: "exited",
         kind: "lighter_create_order_signer_result",
         environment: input.environment,
         accountIndex: input.accountIndex,
@@ -1945,20 +1954,6 @@ describe("Lighter consent and cancellation races", () => {
     });
   }
 
-  it("keeps an unknown signer child reserved after cancellation", async () => {
-    const d = deps(), controller = new AbortController();
-    vi.mocked(d.signer.signCreateOrder).mockImplementation(async (input) => {
-      controller.abort("lock");
-      return Object.assign(await deps().signer.signCreateOrder(input), { childState: "unknown" });
-    });
-    await expect(executeApprovedLighterCreateOrder({ plan: PLAN, deps: d, abortSignal: controller.signal }))
-      .rejects.toMatchObject({ reason: "cancelled_after_signing" });
-    expect(d.intents.markSigned).toHaveBeenCalledOnce();
-    expect(d.intents.markAmbiguous).toHaveBeenCalledOnce();
-    expect(d.nonceState.releaseUnsubmittedReservation).not.toHaveBeenCalled();
-    expect(d.client.sendTx).not.toHaveBeenCalled();
-  });
-
   it("retains signed evidence across a failed evidence write without signing again", async () => {
     const d = deps(), controller = new AbortController();
     vi.mocked(d.intents.markSigned).mockRejectedValueOnce(new Error("database unavailable"));
@@ -1990,5 +1985,100 @@ describe("Lighter consent and cancellation races", () => {
     expect(d.intents.markExpiredUnsubmitted).not.toHaveBeenCalled();
     expect(d.intents.markAmbiguous).not.toHaveBeenCalled();
     expect(d.client.sendTx).toHaveBeenCalledOnce();
+  });
+});
+
+
+/**
+ * THE SIGNER SETTLEMENT CONTRACT, proved in composition (round-1 fix F2).
+ *
+ * No mock stands between the executor and the evidence here: the real binary
+ * adapter projects a real `runLighterSignerBinary` run over a scripted child,
+ * and the executor decides on what that produced. A test that hands the
+ * executor a hand-built signer result decides the answer itself and proves
+ * nothing about who owns the contract.
+ */
+describe("Lighter create-order signer settlement contract", () => {
+  const AUTH_DOCUMENT = { ok: true, authToken: AUTH_TOKEN, publicKey: PUBLIC_KEY };
+  const ORDER_DOCUMENT = { ok: true, txType: 14, txInfo: TX_INFO, txHash: TX_HASH };
+
+  function compositionDeps(
+    signRunner: LighterSignerBinaryRunner,
+    overrides: Partial<ExecuteApprovedLighterCreateOrderDeps> = {},
+  ): ExecuteApprovedLighterCreateOrderDeps {
+    const authAdapter = createLighterSignerBinaryAdapter({
+      binaryPath: "/tmp/vex-lighter-signer-test",
+      runner: signerRunnerEmitting(AUTH_DOCUMENT),
+    });
+    const signAdapter = createLighterSignerBinaryAdapter({
+      binaryPath: "/tmp/vex-lighter-signer-test",
+      // Small enough that a child which never closes is killed inside the test.
+      timeoutMs: 5,
+      runner: signRunner,
+    });
+    return deps({
+      signer: {
+        source: "official_lighter_signer",
+        createAccountAuth: authAdapter.createAccountAuth,
+        signCreateOrder: signAdapter.signCreateOrder,
+      },
+      ...overrides,
+    });
+  }
+
+  const RELEASE = {
+    environment: PLAN.environment,
+    accountIndex: PLAN.accountIndex,
+    apiKeyIndex: PLAN.apiKeyIndex,
+    reservationId: `lighter-order:${PLAN.intentId}`,
+    nonceValue: "0",
+  };
+
+  it("retires an order signed before consent expiry and releases its nonce", async () => {
+    let nowMs = NOW;
+    const d = compositionDeps(
+      signerRunnerEmitting(() => {
+        // Consent lapses between the signature and the pre-submission recheck.
+        nowMs = Date.parse(PLAN.expiresAt);
+        return ORDER_DOCUMENT;
+      }),
+      { now: () => nowMs },
+    );
+
+    await expect(executeApprovedLighterCreateOrder({ plan: PLAN, deps: d }))
+      .rejects.toMatchObject({ reason: "consent_expired_after_signing" });
+
+    expect(d.intents.markExpiredUnsubmitted).toHaveBeenCalledWith(expect.objectContaining({
+      signerTxHash: TX_HASH, reason: "consent_expired_after_signing",
+    }));
+    expect(d.nonceState.releaseUnsubmittedReservation).toHaveBeenCalledWith(RELEASE);
+    expect(d.intents.markAmbiguous).not.toHaveBeenCalled();
+    expect(d.client.sendTx).not.toHaveBeenCalled();
+  });
+
+  it("releases the nonce when the signer child provably exited without signing", async () => {
+    const d = compositionDeps(signerRunnerExitingWithoutOutput());
+
+    await expect(executeApprovedLighterCreateOrder({ plan: PLAN, deps: d })).rejects.toThrow();
+
+    expect(d.intents.markUnsubmittedRefused).toHaveBeenCalledWith(expect.objectContaining({
+      reason: "pre_sign_refused",
+    }));
+    expect(d.nonceState.releaseUnsubmittedReservation).toHaveBeenCalledWith(RELEASE);
+    expect(d.intents.markAmbiguous).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["a child that never closed", signerRunnerNeverClosing],
+    ["a failure that never reached the child", signerRunnerRejectingWithoutEvidence],
+  ])("keeps the nonce reserved after %s", async (_name, runner) => {
+    const d = compositionDeps(runner());
+
+    await expect(executeApprovedLighterCreateOrder({ plan: PLAN, deps: d })).rejects.toThrow();
+
+    expect(d.intents.markAmbiguous).toHaveBeenCalledOnce();
+    expect(d.nonceState.releaseUnsubmittedReservation).not.toHaveBeenCalled();
+    expect(d.intents.markUnsubmittedRefused).not.toHaveBeenCalled();
+    expect(d.intents.markExpiredUnsubmitted).not.toHaveBeenCalled();
   });
 });
