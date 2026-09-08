@@ -4,7 +4,9 @@ import { defineConfig } from "vite";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  const entry = ["terminal-link-consent", "terminal-clipboard-files"].includes(mode) ? mode : "index";
+  return {
   resolve: {
     alias: {
       "@shared": path.resolve(__dirname, "src/shared"),
@@ -15,21 +17,22 @@ export default defineConfig({
     outDir: path.resolve(__dirname, "dist/preload"),
     // Same race as vite.main.config.ts: keep the prebuilt bundle while the
     // dev watcher starts, so the window never loads a missing preload.
-    emptyOutDir: !process.argv.includes("--watch"),
+    emptyOutDir: entry === "index" && !process.argv.includes("--watch"),
     target: "node22",
     sourcemap: true,
     minify: false,
     lib: {
-      entry: path.resolve(__dirname, "src/preload/index.ts"),
+      entry: path.resolve(__dirname, `src/preload/${entry}.ts`),
       formats: ["cjs"],
-      fileName: () => "index.cjs",
+      fileName: () => `${entry}.cjs`,
     },
     rollupOptions: {
       external: ["electron"],
       output: {
         format: "cjs",
-        entryFileNames: "index.cjs",
+        entryFileNames: `${entry}.cjs`,
       },
     },
   },
+};
 });

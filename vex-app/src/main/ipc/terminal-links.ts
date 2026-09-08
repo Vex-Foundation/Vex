@@ -1,207 +1,164 @@
-/**
- * `vex:terminal:openLink` - the ONLY way a link a shell printed reaches a
- * browser.
- *
- * ## Why this is a channel and not `window.open`
- *
- * xterm's default OSC 8 activation is `confirm()` then `window.open`
- * (`@xterm/xterm/src/browser/OscLinkProvider.ts:114-129`). In Vex that produced
- * a renderer `confirm()` branded `@vex/app` with the URL cut mid-string, and
- * then nothing at all, because `setWindowOpenHandler` serves a CLOSED allowlist
- * of Vex's own destinations and denies every host a developer's shell might
- * print. Measured on the owner's Windows session (17.png, 18.png).
- *
- * The renderer never decides that a URL may be opened, and it never gets a
- * window handle. It asks; main decides.
- *
- * ## Two gates, and they answer different questions
- *
- * 1. `isUserOpenableTerminalLink` (`main/security/url.ts`) is POLICY: is this
- *    shape offerable at all. `http(s)` only, no embedded credentials, a real
- *    host, no whitespace or control characters. A failure here is refused BY
- *    NAME and no dialog is shown - there is nothing to consent to.
- * 2. The native `dialog.showMessageBox` is AUTHORITY: a human sees the whole
- *    host and the whole URL and says yes. A model cannot reach this channel and
- *    could not answer the dialog if it did.
- *
- * VS Code splits the same way - `TerminalUrlLinkOpener` hands the link to the
- * opener service with `openExternal: true`
- * (`terminalContrib/links/browser/terminalLinkOpeners.ts:298-313`) and the
- * trusted-domain prompt lives behind that service - and this is the ADOPTED
- * half of its model. The REJECTED half is its durable trusted-domains store
- * (`workbench/contrib/url/browser/trustedDomains.ts`), which persists a user's
- * yes across restarts: that is a durable authority record with its own
- * management UI, revocation story and threat model, and none of those exist
- * here yet. This memory is per window, per host, per RUN, and it dies with the
- * process.
- *
- * ## The raw string is what is opened
- *
- * Never `new URL(raw).href`. Re-serialising converts pre-encoded values
- * (`%2B` -> `+`) and would open a different resource than the one the user
- * clicked; VS Code passes `link.text` for the same reason
- * (`terminalLinkOpeners.ts:306-308`). The policy's control-character check is
- * what makes validating one string and opening another safe.
- */
-
-import { BrowserWindow, dialog, shell } from "electron";
+import { clipboard, shell, type BrowserWindow, type WebContents } from "electron";
+import { randomUUID } from "node:crypto";
 import { domainToUnicode } from "node:url";
 import { CH } from "@shared/ipc/channels.js";
 import { ok, type Result } from "@shared/ipc/result.js";
 import {
-  openTerminalLinkInputSchema,
-  openTerminalLinkValueSchema,
-  TERMINAL_LINK_MAX_LENGTH,
-  type OpenTerminalLinkValue,
-  type TerminalLinkHost,
+  answerTerminalLinkInputSchema, openTerminalLinkInputSchema, openTerminalLinkValueSchema,
+  TERMINAL_LINK_MAX_LENGTH, TERMINAL_LINK_PROPOSAL_TTL_MS,
+  type OpenTerminalLinkValue, type TerminalLinkHost, type TerminalLinkProposal, type TerminalLinkRefusal,
 } from "@shared/schemas/terminal-links.js";
 import { isUserOpenableTerminalLink } from "../security/url.js";
-import { log } from "../logger/index.js";
+import { createTerminalLinkConsentWindow } from "../windows/terminal-link-consent.js";
+import { globalCleanup } from "../lifecycle/cleanup-registry.js";
 import { registerHandler } from "./register-handler.js";
 
-/**
- * How many hosts one window may remember a yes for.
- *
- * Every entry costs the user a deliberate click on a modal dialog, so this is
- * not a defence against volume - it is rule 05's floor that a map living for
- * the process lifetime states its bound. Past it the dialog simply asks again,
- * which is the fail-closed direction.
- */
 const REMEMBERED_HOSTS_PER_WINDOW = 128;
+const PENDING_PER_WINDOW = 32;
+const PROPOSAL_RECORD_LIMIT = 1024;
+type ClosedReason = "terminal_link_proposal_expired" | "terminal_link_proposal_already_answered" | "terminal_link_proposal_cancelled";
+type Pending = {
+  readonly kind: "pending";
+  readonly windowId: number;
+  readonly consentId: number;
+  readonly parent: WebContents;
+  readonly proposal: TerminalLinkProposal;
+  readonly window: BrowserWindow;
+  readonly timer: ReturnType<typeof setTimeout>;
+  readonly signal: AbortSignal;
+  readonly releaseAbort: () => void;
+  readonly settle: (result: Result<OpenTerminalLinkValue>) => void;
+};
+type RecordValue = Pending | { readonly kind: "closed"; readonly windowId: number; readonly consentId: number; readonly reason: ClosedReason };
+interface WindowAuthority {
+  readonly trusted: Set<string>;
+  readonly pending: Set<string>;
+  readonly generation: () => number;
+  readonly dispose: () => void;
+}
+const proposals = new Map<string, RecordValue>();
+const windows = new Map<number, WindowAuthority>();
+function refused(reason: TerminalLinkRefusal): Result<OpenTerminalLinkValue> { return ok({ kind: "refused", reason }); }
 
-/**
- * Hosts this window has already been told yes for, THIS RUN.
- *
- * Keyed by `webContents.id` so one window's consent is not another's, and held
- * in a module constant because the authority it records has exactly one owner -
- * this handler - and no other reader.
- */
-const trustedHostsByWindow = new Map<number, Set<string>>();
-
-/** Test seam: forget every in-session yes. */
+function consume(id: string, reason: ClosedReason): Pending | undefined {
+  const record = proposals.get(id);
+  if (record?.kind !== "pending") return undefined;
+  clearTimeout(record.timer);
+  record.releaseAbort();
+  windows.get(record.windowId)?.pending.delete(id);
+  proposals.set(id, { kind: "closed", windowId: record.windowId, consentId: record.consentId, reason });
+  if (!record.window.isDestroyed()) record.window.close();
+  return record;
+}
+function cancel(id: string, reason: ClosedReason): void {
+  const record = consume(id, reason);
+  record?.settle(reason === "terminal_link_proposal_expired" ? refused(reason) : ok({ kind: "cancelled" }));
+}
+function authorityFor(sender: WebContents): WindowAuthority {
+  const existing = windows.get(sender.id);
+  if (existing !== undefined) return existing;
+  const trusted = new Set<string>();
+  const pending = new Set<string>();
+  let generation = 0;
+  const clear = (): void => {
+    generation += 1;
+    for (const id of pending) cancel(id, "terminal_link_proposal_cancelled");
+    trusted.clear();
+  };
+  const navigate = (_event: Electron.Event, _url: string, _inPlace: boolean, isMainFrame: boolean): void => { if (isMainFrame) clear(); };
+  const destroyed = (): void => { clear(); windows.delete(sender.id); };
+  sender.on("did-start-navigation", navigate);
+  sender.once("destroyed", destroyed);
+  const authority: WindowAuthority = {
+    trusted, pending, generation: () => generation,
+    dispose: () => { clear(); sender.removeListener("did-start-navigation", navigate); sender.removeListener("destroyed", destroyed); },
+  };
+  windows.set(sender.id, authority);
+  return authority;
+}
 export function __resetTerminalLinkTrustForTests(): void {
-  trustedHostsByWindow.clear();
+  for (const authority of windows.values()) authority.dispose();
+  windows.clear(); proposals.clear();
 }
-
-/**
- * The host as the dialog spells it.
- *
- * TWO spellings, because an internationalised domain has two truthful ones and
- * showing only the pretty one is how a homograph attack works: `аррӏе.com`
- * (Cyrillic) and `xn--80ak6aa92e.com` are the same host and only the second
- * says so. They are equal for an ordinary ASCII host, and the dialog labels
- * them separately only when they differ.
- */
-function describeHost(asciiHost: string): TerminalLinkHost {
-  let display = asciiHost;
-  try {
-    const unicode = domainToUnicode(asciiHost);
-    if (unicode !== "") display = unicode;
-  } catch {
-    // `domainToUnicode` refusing means the ASCII form is all there is, which is
-    // the safe spelling anyway.
+async function openUrl(url: string, host: TerminalLinkHost, asked: boolean): Promise<Result<OpenTerminalLinkValue>> {
+  try { await shell.openExternal(url); return ok({ kind: "opened", host, asked }); }
+  catch { return refused("terminal_link_open_failed"); }
+}
+function propose(parent: WebContents, url: string, host: TerminalLinkHost, signal: AbortSignal): Promise<Result<OpenTerminalLinkValue>> {
+  const authority = authorityFor(parent);
+  if (authority.pending.size >= PENDING_PER_WINDOW) return Promise.resolve(refused("terminal_link_proposal_limit"));
+  if (proposals.size >= PROPOSAL_RECORD_LIMIT) {
+    for (const [id, record] of proposals) { if (record.kind === "closed") { proposals.delete(id); break; } }
+    if (proposals.size >= PROPOSAL_RECORD_LIMIT) return Promise.resolve(refused("terminal_link_proposal_limit"));
   }
-  return { ascii: asciiHost, display };
+  const proposal: TerminalLinkProposal = { id: randomUUID(), url, host, expiresAt: Date.now() + TERMINAL_LINK_PROPOSAL_TTL_MS };
+  let window: BrowserWindow;
+  try { window = createTerminalLinkConsentWindow(parent, proposal); }
+  catch { return Promise.resolve(refused("terminal_link_consent_unavailable")); }
+  return new Promise(resolve => {
+    const abort = (): void => cancel(proposal.id, "terminal_link_proposal_cancelled");
+    const timer = setTimeout(() => cancel(proposal.id, "terminal_link_proposal_expired"), TERMINAL_LINK_PROPOSAL_TTL_MS);
+    timer.unref();
+    proposals.set(proposal.id, { kind: "pending", windowId: parent.id, consentId: window.webContents.id, parent,
+      proposal, window, timer, signal, releaseAbort: () => signal.removeEventListener("abort", abort), settle: resolve });
+    authority.pending.add(proposal.id);
+    window.once("closed", abort);
+    window.webContents.once("destroyed", abort);
+    signal.addEventListener("abort", abort, { once: true });
+    if (signal.aborted || parent.isDestroyed() || window.isDestroyed()) abort();
+  });
 }
-
-/**
- * The consent copy. WHOLE, never cut: see the schema module's note.
- *
- * The last line is not decoration. Consent here also covers every LATER link to
- * the same host until the app is closed, and a user cannot give informed
- * consent to a scope they were not told about.
- */
-function consentDetail(host: TerminalLinkHost, url: string): string {
-  const hostLines =
-    host.ascii === host.display
-      ? `Host: ${host.ascii}`
-      : `Host: ${host.display}\nHost (punycode): ${host.ascii}`;
-  return (
-    `${hostLines}\n\n${url}\n\n` +
-    "Vex will not ask again for this host until you close the app."
-  );
-}
-
 export function registerTerminalLinkHandlers(): Array<() => void> {
+  const unregisterCleanup = globalCleanup.add(__resetTerminalLinkTrustForTests, "terminal-link-authority");
   return [
+    () => { __resetTerminalLinkTrustForTests(); void unregisterCleanup(); },
     registerHandler({
-      channel: CH.terminal.openLink,
-      domain: "studio",
-      inputSchema: openTerminalLinkInputSchema,
-      outputSchema: openTerminalLinkValueSchema,
+      channel: CH.terminal.openLink, domain: "studio", inputSchema: openTerminalLinkInputSchema, outputSchema: openTerminalLinkValueSchema,
       handle: async (input, ctx): Promise<Result<OpenTerminalLinkValue>> => {
+        if (ctx.event.sender.isDestroyed() || ctx.signal.aborted) return ok({ kind: "cancelled" });
         const decision = isUserOpenableTerminalLink(input.url, TERMINAL_LINK_MAX_LENGTH);
-        if (decision.kind === "refused") {
-          // The REASON is logged, never the URL: a shell's output is the user's
-          // content and a link can carry a token in its query string.
-          log.warn(`[terminal-links] refused reason=${decision.reason}`);
-          return ok<OpenTerminalLinkValue>({ kind: "refused", reason: decision.reason });
+        if (decision.kind === "refused") return refused(decision.reason);
+        const host = { ascii: decision.asciiHost, display: domainToUnicode(decision.asciiHost) || decision.asciiHost };
+        if (authorityFor(ctx.event.sender).trusted.has(host.ascii)) return openUrl(decision.url, host, false);
+        return propose(ctx.event.sender, decision.url, host, ctx.signal);
+      },
+    }),
+    registerHandler({
+      channel: CH.terminal.answerLink, domain: "studio", inputSchema: answerTerminalLinkInputSchema, outputSchema: openTerminalLinkValueSchema,
+      handle: async (input, ctx): Promise<Result<OpenTerminalLinkValue>> => {
+        const record = proposals.get(input.proposalId);
+        if (record === undefined) return refused("terminal_link_proposal_unknown");
+        if (record.consentId !== ctx.event.sender.id) return refused("terminal_link_proposal_other_window");
+        if (record.kind === "closed") return refused(record.reason);
+        if (Date.now() >= record.proposal.expiresAt) { cancel(input.proposalId, "terminal_link_proposal_expired"); return refused("terminal_link_proposal_expired"); }
+        if (ctx.event.sender.isDestroyed() || ctx.signal.aborted || record.signal.aborted || record.parent.isDestroyed()) {
+          cancel(input.proposalId, "terminal_link_proposal_cancelled"); return ok({ kind: "cancelled" });
         }
-
-        const host = describeHost(decision.asciiHost);
-        const windowId = ctx.event.sender.id;
-        let trusted = trustedHostsByWindow.get(windowId);
-        if (trusted === undefined) {
-          trusted = new Set<string>();
-          trustedHostsByWindow.set(windowId, trusted);
-          // The set outlives no window: dropped when the window's contents go,
-          // so a reload cannot inherit the previous document's consent either.
-          ctx.event.sender.once("destroyed", () => {
-            trustedHostsByWindow.delete(windowId);
-          });
-        }
-
-        const asked = !trusted.has(host.ascii);
-        if (asked) {
-          const options = {
-            type: "question" as const,
-            buttons: ["Open link", "Cancel"],
-            // CANCEL IS THE DEFAULT AND THE ESCAPE. Rule 08's floor for a
-            // consequential action: the safer choice is the one a stray Enter
-            // or Escape lands on.
-            defaultId: 1,
-            cancelId: 1,
-            noLink: true,
-            title: "Open a link from the terminal",
-            message: "Open this link in your browser?",
-            detail: consentDetail(host, decision.url),
-          };
-          const parent = BrowserWindow.fromWebContents(ctx.event.sender);
-          // MODAL TO THE WINDOW THAT ASKED, when there is one: a sheet on the
-          // window whose terminal printed the link cannot be mistaken for a
-          // prompt from some other part of the app, and it cannot be answered
-          // while that window is gone.
-          const answer =
-            parent === null
-              ? await dialog.showMessageBox(options)
-              : await dialog.showMessageBox(parent, options);
-          if (answer.response !== 0) {
-            return ok<OpenTerminalLinkValue>({ kind: "declined", host });
+        // Consume before awaiting any effect. Closing this window cannot cancel an accepted answer.
+        consume(input.proposalId, "terminal_link_proposal_already_answered");
+        const { proposal } = record;
+        let result: Result<OpenTerminalLinkValue>;
+        if (input.choice === "cancel") result = ok({ kind: "declined", host: proposal.host });
+        else if (input.choice === "copy") {
+          try { clipboard.writeText(proposal.url); result = ok({ kind: "copied", host: proposal.host }); }
+          catch { result = refused("terminal_link_copy_failed"); }
+        } else {
+          const decision = isUserOpenableTerminalLink(proposal.url, TERMINAL_LINK_MAX_LENGTH);
+          if (decision.kind === "refused") result = refused(decision.reason);
+          else {
+            const authority = windows.get(record.windowId);
+            const generation = authority?.generation();
+            result = await openUrl(proposal.url, proposal.host, true);
+            if (result.ok && result.data.kind === "opened" && input.rememberHost && !record.signal.aborted &&
+              !ctx.signal.aborted && !record.parent.isDestroyed() && authority !== undefined &&
+              authority.generation() === generation && windows.get(record.windowId) === authority) {
+              if (authority.trusted.size < REMEMBERED_HOSTS_PER_WINDOW) authority.trusted.add(proposal.host.ascii);
+              else result = ok({ ...result.data, rememberLimitReached: true });
+            }
           }
-          // REMEMBERED ONLY IF THERE IS ROOM. Past the bound the dialog asks
-          // every time, which is the fail-closed direction.
-          if (trusted.size < REMEMBERED_HOSTS_PER_WINDOW) trusted.add(host.ascii);
         }
-
-        // CANCELLED WHILE THE DIALOG WAS UP. The pane was closed, the project
-        // switched, the window went away: a yes to a question nobody is waiting
-        // on any more does not open anything. Fail closed.
-        if (ctx.signal.aborted || ctx.event.sender.isDestroyed()) {
-          return ok<OpenTerminalLinkValue>({ kind: "declined", host });
-        }
-
-        try {
-          await shell.openExternal(decision.url);
-        } catch {
-          // The OS handler is the failure, and its message can carry a local
-          // path, so it is not propagated. Nothing was opened.
-          log.warn(`[terminal-links] openExternal failed host=${host.ascii}`);
-          return ok<OpenTerminalLinkValue>({
-            kind: "refused",
-            reason: "terminal_link_open_failed",
-          });
-        }
-        return ok<OpenTerminalLinkValue>({ kind: "opened", host, asked });
+        record.settle(result);
+        return result;
       },
     }),
   ];

@@ -54,3 +54,17 @@ describe("terminal.css on glass", () => {
     expect(rules).not.toMatch(/\bborder\b/);
   });
 });
+
+
+describe("terminal link hint chrome", () => {
+  it("loads semantic, non-interactive hint styling without motion", () => {
+    expect(sheet).toContain('@import "./terminal-link-hint.css"');
+    const hintSheet = readFileSync(path.join(here, "..", "..", "..", "..", "..", "styles", "global-css", "terminal-link-hint.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(hintSheet).toContain(".vex-terminal-link-hint");
+    expect(hintSheet).toMatch(/pointer-events:\s*none/);
+    expect(hintSheet).toContain("var(--vex-alias-bg-layer-2)");
+    expect(hintSheet).toContain("var(--vex-alias-label-primary)");
+    expect(hintSheet).toMatch(/overflow-wrap:\s*anywhere/);
+    expect(hintSheet).not.toMatch(/animation:|transition:|#[0-9a-f]{3,8}\b/i);
+  });
+});

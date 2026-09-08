@@ -277,6 +277,8 @@ export interface UiState {
    * on every rehydrate - the payload is user-writable localStorage.
    */
   readonly notificationsEnabled: boolean;
+  readonly terminalPasteWarning: boolean;
+  readonly setTerminalPasteWarning: (value: boolean) => void;
   /**
    * User's custom order for the session-stage BOOK rail sections. `[]` means
    * "no custom order — use the default". Stored as an ID LIST, never component
@@ -490,6 +492,8 @@ export const useUiStore = create<UiState>()(
       reviewModal: "none",
       hideDustBalances: true,
       notificationsEnabled: true,
+      terminalPasteWarning: true,
+      setTerminalPasteWarning: (terminalPasteWarning) => set({ terminalPasteWarning }),
       bookSectionOrder: [],
       studioBookSectionOrder: [],
       bookTab: "portfolio",
@@ -580,7 +584,7 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: "vex-ui",
-      version: 19,
+      version: 20,
       // Re-stamp the document root once the coerced, resolved theme is
       // known - theme-boot.js painted the pre-bundle frame from the RAW
       // payload, and a tampered value must not survive on <html>.

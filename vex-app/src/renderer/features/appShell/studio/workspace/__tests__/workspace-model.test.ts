@@ -811,3 +811,21 @@ describe("the pane's directory", () => {
     expect(layout.groups[0]?.panes[0]).toEqual({ terminalId: "a-t", relativeSize: 1 });
   });
 });
+
+
+describe("immutable terminal launch identity", () => {
+  it("restores the executable name independently of output-controlled title", () => {
+    const base = snapshotWith(toPersistedLayout(withGroups(["a"])), ["a-t"]);
+    const state = fromSnapshot({
+      ...base,
+      terminals: base.terminals.map((entry) => ({ ...entry, shellName: "pwsh", title: "bash" })),
+    });
+    const tab = state.tabs[0] as WorkspaceTerminalGroup;
+    expect(tab.title).toBe("bash");
+    expect(tab.panes[0]?.launchShellName).toBe("pwsh");
+    const renamed = setTabTitle(state, tab.tabId, "cmd");
+    if (!renamed.ok) throw new Error("rename refused");
+    expect((renamed.state.tabs[0] as WorkspaceTerminalGroup).panes[0]?.launchShellName).toBe("pwsh");
+    expect(toPersistedLayout(renamed.state).groups[0]?.panes[0]).not.toHaveProperty("launchShellName");
+  });
+});

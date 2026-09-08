@@ -9,6 +9,7 @@
  * asserts the vendor rules actually reach the bundle, so the sheet cannot go
  * missing again without a red build. */
 @import "@xterm/xterm/css/xterm.css";
+@import "./terminal-link-hint.css";
 
 /* THE TERMINAL SURFACE.
  *

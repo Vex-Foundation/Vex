@@ -89,13 +89,11 @@ describe("decideTerminalClipboardAction: the rest of the table", () => {
     );
   });
 
-  it.each(["win32", "linux"] as const)("%s: Ctrl+Shift+V pastes, plain Ctrl+V does not", (platform) => {
+  it.each(["win32", "linux"] as const)("%s: Ctrl+Shift+V pastes and plain Ctrl+V follows the platform", (platform) => {
     expect(decide(press("KeyV", { ctrl: true, shift: true }), platform, false)).toBe(
       "paste",
     );
-    // Ctrl+V belongs to the shell (it is `readline`'s quoted-insert), exactly
-    // as it does in VS Code on Windows and Linux.
-    expect(decide(press("KeyV", { ctrl: true }), platform, false)).toBeNull();
+    expect(decide(press("KeyV", { ctrl: true }), platform, false)).toBe(platform === "win32" ? "paste" : null);
   });
 
   it("darwin: Cmd+V pastes", () => {
@@ -239,7 +237,8 @@ describe("terminalClipboardNotice", () => {
   it("names the real cause rather than an unexpected error", () => {
     const denied = terminalClipboardNotice({ kind: "refused", action: "paste" });
     expect(denied).toContain("paste");
-    expect(denied).toContain("denied");
+    expect(denied).toContain("Vex could not");
+    expect(denied).not.toContain("system denied");
     expect(denied).not.toContain("nexpected");
 
     const missing = terminalClipboardNotice({ kind: "unavailable", action: "copySelection" });

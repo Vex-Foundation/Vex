@@ -149,6 +149,7 @@ export function TerminalPaneGroup({
             >
               <XtermHost
                 terminalId={pane.terminalId}
+                launchShellName={pane.launchShellName ?? null}
                 visible={visible}
                 {...(registry === undefined ? {} : { registry })}
                 onTitleChange={(title) => {

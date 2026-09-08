@@ -24,6 +24,7 @@
  * leaked a second subscription would otherwise pass here and fail in the app.
  */
 
+import type { ReadClipboardContentValue } from "@shared/schemas/terminal-input.js";
 import type { TerminalErrorCode, TerminalProperty } from "@shared/schemas/terminal.js";
 import type {
   TerminalCreateValue,
@@ -56,6 +57,12 @@ export interface TerminalBridgeStub {
    * business and is proved in `main/ipc/__tests__/terminal-links-ipc.test.ts`.
    */
   readonly openedLinks: string[];
+  clipboardContent: ReadClipboardContentValue;
+  readonly copiedText: string[];
+  clipboardFiles: File[];
+  readonly filePaths: Map<File, string>;
+  deferClipboard: boolean;
+  readonly pendingClipboardReads: Array<() => void>;
   readonly writes: { terminalId: string; data: string }[];
   readonly resizes: { terminalId: string; cols: number; rows: number }[];
   readonly attaches: string[];
@@ -325,6 +332,12 @@ export function installTerminalBridge(): TerminalBridgeStub {
 
   const stub: TerminalBridgeStub = {
     openedLinks: [],
+    clipboardContent: { kind: "empty" },
+    copiedText: [],
+    clipboardFiles: [],
+    filePaths: new Map(),
+    deferClipboard: false,
+    pendingClipboardReads: [],
     writes: [],
     resizes: [],
     attaches: [],
@@ -605,7 +618,31 @@ export function installTerminalBridge(): TerminalBridgeStub {
     // throw inside an xterm event callback rather than failing an assertion.
     // Recorded, never performed: opening a link is main's authority and this
     // double has none.
-    value: { terminal, terminalLinks: makeTerminalLinksStub(stub) },
+    value: {
+      terminal, terminalLinks: makeTerminalLinksStub(stub),
+      terminalInput: {
+        readClipboardContent: async () => {
+          const content = stub.clipboardContent;
+          if (stub.deferClipboard) await new Promise<void>((resolve) => stub.pendingClipboardReads.push(resolve));
+          return { ok: true, data: content };
+        },
+        readClipboardText: async () => ({ ok: true, data: stub.clipboardContent.kind === "text" ? stub.clipboardContent : { kind: "text", text: "" } }),
+        writeClipboardText: async ({ text }: { text: string }) => {
+          stub.copiedText.push(text);
+          return { ok: true, data: { kind: "written" } };
+        },
+        readClipboardFiles: () => ({
+          promise: Promise.resolve({ ok: true, data: {
+            kind: "files", paths: stub.clipboardFiles.map((file) => stub.filePaths.get(file) ?? ""),
+          } }),
+          cancel: () => undefined,
+        }),
+      },
+      files: { getPathForFile: (file: File) => {
+        const path = stub.filePaths.get(file);
+        return { ok: true, data: path === undefined ? { kind: "refused", reason: "terminal_file_path_unavailable" } : { kind: "resolved", path } };
+      } },
+    },
   });
 
   return stub;
@@ -613,19 +650,19 @@ export function installTerminalBridge(): TerminalBridgeStub {
 
 /** The `vex.terminalLinks` double: records the urls, answers `opened`. */
 function makeTerminalLinksStub(stub: TerminalBridgeStub): {
-  open: (input: { url: string }) => Promise<unknown>;
+  open: (input: { url: string }) => { promise: Promise<unknown>; cancel: () => void };
 } {
   return {
     open(input) {
       stub.openedLinks.push(input.url);
-      return Promise.resolve({
+      return { cancel: () => undefined, promise: Promise.resolve({
         ok: true,
         data: {
           kind: "opened",
           host: { ascii: "example.com", display: "example.com" },
           asked: true,
         },
-      });
+      }) };
     },
   };
 }
