@@ -4,12 +4,17 @@ import type { TerminalLinkConsentBridge } from "@shared/types/bridge/shell/termi
 const mocks = vi.hoisted(() => ({ expose: vi.fn(), invoke: vi.fn() }));
 vi.mock("electron", () => ({ contextBridge: { exposeInMainWorld: mocks.expose }, ipcRenderer: { invoke: mocks.invoke } }));
 await import("../terminal-link-consent.js");
-const bridge = mocks.expose.mock.calls[0]![1] as TerminalLinkConsentBridge;
+function firstCall<T>(calls: readonly T[]): T {
+  const call = calls[0];
+  if (call === undefined) throw new Error("expected at least one recorded call");
+  return call;
+}
+const bridge = firstCall(mocks.expose.mock.calls)[1] as TerminalLinkConsentBridge;
 const input = { proposalId: "11111111-1111-4111-8111-111111111111", choice: "cancel" as const, rememberHost: false };
 beforeEach(() => { mocks.invoke.mockReset(); });
 describe("consent-only preload", () => {
   it("exposes exactly answer and no proposing, clipboard, event or raw IPC authority", () => {
-    expect(mocks.expose).toHaveBeenCalledTimes(1); expect(mocks.expose.mock.calls[0]![0]).toBe("terminalLinkConsent");
+    expect(mocks.expose).toHaveBeenCalledTimes(1); expect(firstCall(mocks.expose.mock.calls)[0]).toBe("terminalLinkConsent");
     expect(Object.keys(bridge)).toEqual(["answer"]); expect(Object.isFrozen(bridge)).toBe(true);
   });
   it("sends the strict answer to its sole channel and validates the result", async () => {
