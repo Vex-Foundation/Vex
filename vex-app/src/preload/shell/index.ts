@@ -29,6 +29,7 @@ import { shellBackdrop } from "./shell-backdrop.js";
 import { support } from "./support.js";
 import { system } from "./system.js";
 import { terminal } from "./terminal.js";
+import { terminalInput } from "./terminal-input.js";
 import { terminalLinks } from "./terminal-links.js";
 import { telemetry } from "./telemetry.js";
 import { updater } from "./updater.js";
@@ -51,6 +52,7 @@ export const shellBridge = {
   studio,
   terminal,
   terminalLinks,
+  terminalInput,
   files,
   search,
 } satisfies VexShellBridge;

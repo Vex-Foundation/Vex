@@ -86,6 +86,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState, type JSX } from "react";
+import type { Terminal } from "@xterm/xterm";
 import type { TerminalErrorCode } from "@shared/schemas/terminal.js";
 import { VexMark } from "../../../../components/common/VexMark.js";
 import { cn } from "../../../../lib/utils.js";
@@ -105,12 +106,12 @@ import { studioPlatform, type StudioPlatform } from "../keybindings-labels.js";
 import { studioBoundIntents } from "../useStudioKeybindings.js";
 import {
   decideTerminalClipboardAction,
-  runTerminalClipboardAction,
-  terminalClipboardNotice,
   terminalRightClickIsCopyPaste,
-  type TerminalClipboardAction,
-  type TerminalClipboardTarget,
 } from "./terminal-clipboard.js";
+import { TerminalNotice } from "./TerminalNotice.js";
+import { useTerminalInput } from "./useTerminalInput.js";
+import { useTerminalFileDrop } from "./useTerminalFileDrop.js";
+import { useTerminalLinkConsent } from "./useTerminalLinkConsent.js";
 import { TerminalContextMenu } from "./TerminalContextMenu.js";
 import { terminalRegistry, type TerminalRegistry } from "./terminal-registry.js";
 
@@ -208,10 +209,8 @@ export function XtermHost({
   /**
    * What the clipboard could not do, IN WORDS, or null.
    *
-   * Separate from `refusal`, which is the HOST's vocabulary
-   * (`TerminalErrorCode`): a denied clipboard permission is a renderer fact
-   * with a different remedy, and forcing it through the host's enum would need
-   * a code the host can never send.
+   * Clipboard and link outcomes share the notice owner, while host refusals
+   * retain their typed service codes.
    */
   const [clipboardNotice, setClipboardNotice] = useState<string | null>(null);
   /** Where a context menu was opened, in viewport coordinates, or null. */
@@ -226,22 +225,16 @@ export function XtermHost({
    * to. Null while detached, so a context menu left open across an unmount
    * cannot write into a terminal nobody is showing.
    */
-  const clipboardTargetRef = useRef<TerminalClipboardTarget | null>(null);
+  const clipboardTargetRef = useRef<Terminal | null>(null);
 
-  const runClipboard = useCallback((action: TerminalClipboardAction): void => {
-    const target = clipboardTargetRef.current;
-    if (target === null) return;
-    void runTerminalClipboardAction(
-      action,
-      target,
-      typeof navigator === "undefined" ? undefined : navigator.clipboard,
-    ).then((outcome) => {
-      // REPORTED, never swallowed: a denied clipboard is the difference between
-      // "the shortcut is broken" and "your system said no", and only one of
-      // those has something the user can do about it.
-      setClipboardNotice(terminalClipboardNotice(outcome));
-    });
-  }, []);
+  const { runClipboard, insertFiles, dialog: pasteDialog } = useTerminalInput({
+    terminalId, visible, platform, containerRef, targetRef: clipboardTargetRef,
+    onNotice: setClipboardNotice,
+  });
+  const fileDrop = useTerminalFileDrop(visible, insertFiles);
+  const { openLink, dialog: linkDialog } = useTerminalLinkConsent(setClipboardNotice);
+  const openLinkRef = useRef(openLink);
+  openLinkRef.current = openLink;
 
   // Read through a ref inside the subscription effect so that re-creating the
   // callback can never tear down and re-establish the pty subscriptions.
@@ -270,6 +263,10 @@ export function XtermHost({
     const entry = registry.acquire(terminalId);
     registry.attach(terminalId, container);
     clipboardTargetRef.current = entry.terminal;
+    const offInteractions = registry.setInteractionHandlers(terminalId, {
+      openLink: (url, signal) => openLinkRef.current(url, signal),
+      onNotice: setClipboardNotice,
+    }, platform);
 
     // TWO REFUSALS, and they are not the same refusal.
     //
@@ -342,8 +339,15 @@ export function XtermHost({
       setRefusal(code);
     });
 
+    let live = true;
     const input = entry.terminal.onData((data) => {
-      void writeTerminal(terminalId, data);
+      void writeTerminal(terminalId, data).then((result) => {
+        if (!live) return;
+        if (!result.ok) setClipboardNotice(`Vex could not send terminal input (${result.error.code}). Try again.`);
+        else if (!result.data.ok) setRefusal(result.data.code);
+      }).catch(() => {
+        if (live) setClipboardNotice("Vex could not send terminal input. Try again.");
+      });
     });
 
     // Claim the live stream. The replay arrives through onData, preceded by the
@@ -352,6 +356,8 @@ export function XtermHost({
     pushSize(registry.refit(terminalId));
 
     return () => {
+      live = false;
+      offInteractions();
       offData();
       offResync();
       offProperty();
@@ -376,6 +382,7 @@ export function XtermHost({
   // every tab switch.
   useEffect(() => {
     pushSize(registry.setVisible(terminalId, visible));
+    if (!visible) setMenuAt(null);
   }, [pushSize, registry, terminalId, visible]);
 
   useEffect(() => {
@@ -400,6 +407,7 @@ export function XtermHost({
         "relative flex h-full min-h-0 w-full min-w-0 flex-col bg-transparent",
         className,
       )}
+      {...fileDrop.handlers}
       onFocus={onActivate}
       onPointerDown={onActivate}
       // RIGHT CLICK, split by platform exactly as VS Code splits it. On Windows
@@ -414,7 +422,7 @@ export function XtermHost({
         event.preventDefault();
         onActivate?.();
         const hasSelection = clipboardTargetRef.current?.hasSelection() ?? false;
-        if (terminalRightClickIsCopyPaste(platform)) {
+        if (terminalRightClickIsCopyPaste(platform) && !event.shiftKey) {
           runClipboard(hasSelection ? "copyAndClearSelection" : "paste");
           return;
         }
@@ -453,24 +461,6 @@ export function XtermHost({
         </div>
       ) : null}
 
-      {refusal !== null ? (
-        <div
-          role="alert"
-          className="absolute inset-x-2 bottom-2 rounded-md border border-line-2 bg-surface-2 px-3 py-2 text-[12px] leading-4 text-ink-primary"
-        >
-          <span>{REFUSAL_COPY[refusal] ?? `The terminal service refused: ${refusal}.`}</span>
-          <button
-            type="button"
-            onClick={() => {
-              setRefusal(null);
-            }}
-            className="ml-2 rounded px-1 text-ink-tertiary hover:text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-          >
-            Dismiss
-          </button>
-        </div>
-      ) : null}
-
       {menuAt === null ? null : (
         <TerminalContextMenu
           at={menuAt}
@@ -487,23 +477,16 @@ export function XtermHost({
         />
       )}
 
-      {clipboardNotice === null ? null : (
-        <div
-          role="alert"
-          className="absolute inset-x-2 bottom-2 rounded-md border border-line-2 bg-surface-2 px-3 py-2 text-[12px] leading-4 text-ink-primary"
-        >
-          <span>{clipboardNotice}</span>
-          <button
-            type="button"
-            onClick={() => {
-              setClipboardNotice(null);
-            }}
-            className="ml-2 rounded px-1 text-ink-tertiary hover:text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-          >
-            Dismiss
-          </button>
-        </div>
-      )}
+      <TerminalNotice
+        messages={[
+          ...(refusal === null ? [] : [REFUSAL_COPY[refusal] ?? `The terminal service refused: ${refusal}.`]),
+          ...(clipboardNotice === null ? [] : [clipboardNotice]),
+        ]}
+        onDismiss={() => { setRefusal(null); setClipboardNotice(null); }}
+      />
+      {fileDrop.overlay}
+      {pasteDialog}
+      {linkDialog}
 
       {exit !== null ? (
         <div className="pointer-events-none absolute bottom-2 left-2 rounded-md border border-line-3 bg-surface-2 px-2 py-0.5 text-[11px] leading-4 text-ink-tertiary">

@@ -210,3 +210,8 @@ export function studioWatermarkRows(
   }
   return rows;
 }
+
+/** Spoken modifier for a mouse gesture, which has no keyboard keycap. */
+export function primaryModifierName(platform: StudioPlatform): string {
+  return platform === "darwin" ? "cmd" : "ctrl";
+}

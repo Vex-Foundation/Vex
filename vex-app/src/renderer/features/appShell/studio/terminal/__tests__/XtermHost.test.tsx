@@ -557,16 +557,7 @@ describe("XtermHost key path", () => {
   });
 
   it("copies and clears instead, once there IS a selection", async () => {
-    const written: string[] = [];
-    Object.defineProperty(navigator, "clipboard", {
-      configurable: true,
-      value: {
-        writeText: (text: string) => {
-          written.push(text);
-          return Promise.resolve();
-        },
-      },
-    });
+    const written = bridge.copiedText;
 
     render(<XtermHost terminalId="t1" visible registry={registry} platform="win32" />);
     sizeThePane();
@@ -595,10 +586,7 @@ describe("XtermHost key path", () => {
   });
 
   it("pastes on Ctrl+Shift+V, into the pty like any other input", async () => {
-    Object.defineProperty(navigator, "clipboard", {
-      configurable: true,
-      value: { readText: () => Promise.resolve("echo hello") },
-    });
+    bridge.clipboardContent = { kind: "text", text: "echo hello" };
 
     render(<XtermHost terminalId="t1" visible registry={registry} platform="win32" />);
     sizeThePane();
@@ -620,10 +608,7 @@ describe("XtermHost key path", () => {
   });
 
   it("says WHY when the clipboard is denied, and sends nothing", async () => {
-    Object.defineProperty(navigator, "clipboard", {
-      configurable: true,
-      value: { readText: () => Promise.reject(new Error("denied")) },
-    });
+    bridge.clipboardContent = { kind: "refused", reason: "terminal_clipboard_unavailable" };
 
     render(<XtermHost terminalId="t1" visible registry={registry} platform="win32" />);
     sizeThePane();
@@ -642,7 +627,7 @@ describe("XtermHost key path", () => {
     });
 
     const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toContain("denied");
+    expect(alert.textContent).toContain("Vex could not access");
     expect(alert.textContent).not.toContain("nexpected");
     expect(sentBytes()).toBe("");
   });
@@ -662,7 +647,7 @@ describe("XtermHost link path", () => {
    * The renderer's whole contract is "it ASKED, with the exact string".
    * Whether a browser opens is main's authority, and is proved on main's side.
    */
-  it("routes an activated link to the bridge and never to window.open", () => {
+  it("routes an activated link to the bridge and never to window.open", async () => {
     const openSpy = vi.fn();
     Object.defineProperty(window, "open", { configurable: true, value: openSpy });
 
@@ -673,11 +658,12 @@ describe("XtermHost link path", () => {
     const raw = "https://dexscreener.com/robinhood/0xf65E8?a=1%2B2";
     const activate = entry.terminal.options.linkHandler?.activate;
     expect(activate).toBeTypeOf("function");
-    activate?.(new MouseEvent("click"), raw, {
+    activate?.(new MouseEvent("click", { ctrlKey: true }), raw, {
       start: { x: 1, y: 1 },
       end: { x: 1, y: 1 },
     });
 
+    await act(settle);
     // The RAW string, byte for byte: re-serialising a URL is lossy.
     expect(bridge.openedLinks).toEqual([raw]);
     expect(openSpy).not.toHaveBeenCalled();

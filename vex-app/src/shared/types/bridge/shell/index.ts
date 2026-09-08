@@ -25,6 +25,7 @@ import type { StudioBridge } from "./studio.js";
 import type { SupportBridge } from "./support.js";
 import type { SystemBridge } from "./system.js";
 import type { TerminalBridge } from "./terminal.js";
+import type { TerminalInputBridge } from "./terminal-input.js";
 import type { TerminalLinksBridge } from "./terminal-links.js";
 import type { TelemetryBridge } from "./telemetry.js";
 import type { UpdaterBridge } from "./updater.js";
@@ -44,6 +45,7 @@ export type { StudioBridge } from "./studio.js";
 export type { SupportBridge } from "./support.js";
 export type { SystemBridge } from "./system.js";
 export type { TerminalBridge } from "./terminal.js";
+export type { TerminalInputBridge } from "./terminal-input.js";
 export type { TerminalLinksBridge } from "./terminal-links.js";
 export type { TelemetryBridge } from "./telemetry.js";
 export type { UpdaterBridge } from "./updater.js";
@@ -66,6 +68,7 @@ export interface VexShellBridge {
   readonly studio: StudioBridge;
   readonly terminal: TerminalBridge;
   readonly terminalLinks: TerminalLinksBridge;
+  readonly terminalInput: TerminalInputBridge;
   readonly files: FilesBridge;
   readonly search: SearchBridge;
 }

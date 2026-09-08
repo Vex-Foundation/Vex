@@ -1,21 +1,31 @@
-/**
- * Opening a terminal link - the renderer's data-access layer.
- *
- * One function over `window.vex.terminalLinks.open`, so the terminal registry
- * does not reach for the global and a bridge change surfaces as one compile
- * error here.
- */
+import { ok, type Result } from "@shared/ipc/result.js";
+import type { AnswerTerminalLinkInput, OpenTerminalLinkValue } from "@shared/schemas/terminal-links.js";
+import type { AbortableInvocation } from "@shared/types/bridge/common.js";
 
-import type { Result } from "@shared/ipc/result.js";
-import type { OpenTerminalLinkValue } from "@shared/schemas/terminal-links.js";
+async function awaitLinkInvocation(
+  invocation: AbortableInvocation<OpenTerminalLinkValue>, signal?: AbortSignal,
+): Promise<Result<OpenTerminalLinkValue>> {
+  const cancel = (): void => invocation.cancel();
+  signal?.addEventListener("abort", cancel, { once: true });
+  if (signal?.aborted) cancel();
+  try {
+    return await invocation.promise;
+  } finally {
+    signal?.removeEventListener("abort", cancel);
+  }
+}
 
-/**
- * Ask main to open a link the terminal produced.
- *
- * @param url - the link EXACTLY as the terminal produced it. Do not normalise
- * it through `new URL().href` first: that converts pre-encoded values (`%2B` ->
- * `+`) and would open a different resource than the one the user clicked.
- */
-export function openTerminalLink(url: string): Promise<Result<OpenTerminalLinkValue>> {
-  return window.vex.terminalLinks.open({ url });
+/** The exact terminal text is preserved through consent and opening. */
+export function openTerminalLink(url: string, signal?: AbortSignal): Promise<Result<OpenTerminalLinkValue>> {
+  if (signal?.aborted) return Promise.resolve(ok({ kind: "cancelled" }));
+  return awaitLinkInvocation(window.vex.terminalLinks.open({ url }), signal);
+}
+
+export function answerTerminalLink(input: AnswerTerminalLinkInput, signal?: AbortSignal): Promise<Result<OpenTerminalLinkValue>> {
+  if (signal?.aborted) return Promise.resolve(ok({ kind: "cancelled" }));
+  return awaitLinkInvocation(window.vex.terminalLinks.answer(input), signal);
+}
+
+export function cancelTerminalLink(proposalId: string): Promise<Result<OpenTerminalLinkValue>> {
+  return window.vex.terminalLinks.cancel({ proposalId });
 }

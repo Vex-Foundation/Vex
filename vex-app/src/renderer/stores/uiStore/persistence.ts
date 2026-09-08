@@ -79,6 +79,7 @@ export const PERSISTED_UI_KEYS = [
   "bookWidth",
   "hideDustBalances",
   "notificationsEnabled",
+  "terminalPasteWarning",
   "bookSectionOrder",
   "studioBookSectionOrder",
   "bookTab",
@@ -280,6 +281,9 @@ export function migrateUiState(persisted: unknown, version: number): unknown {
       ),
     };
   }
+  if (version < 20 && !("terminalPasteWarning" in next)) {
+    next = { ...next, terminalPasteWarning: true };
+  }
   return next;
 }
 
@@ -357,6 +361,7 @@ export function mergeUiState(persisted: unknown, current: UiState): UiState {
     bookOpen,
     hideDustBalances,
     notificationsEnabled,
+    terminalPasteWarning: incoming?.terminalPasteWarning !== false,
     bookSectionOrder,
     studioBookSectionOrder,
     bookTab: coerceBookTab(incoming?.bookTab),

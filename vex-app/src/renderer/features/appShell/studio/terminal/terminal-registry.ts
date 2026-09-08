@@ -46,7 +46,9 @@ import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal } from "@xterm/xterm";
 import { TERMINAL_SCROLLBACK_ROWS } from "@shared/schemas/terminal.js";
-import { openTerminalLink } from "../../../../lib/api/terminal-links.js";
+import { terminalClipboard, TerminalClipboardError } from "../../../../lib/api/terminal-input.js";
+import { studioPlatform, type StudioPlatform } from "../keybindings-labels.js";
+import { isTerminalLinkActivation, TerminalLinkHint } from "./terminal-link-hint.js";
 import {
   observeTerminalTheme,
   prefersReducedMotion,
@@ -95,49 +97,96 @@ interface RegistryRecord {
   rendererGeneration: number;
   disposeTheme: () => void;
   disposed: boolean;
+  readonly linkHint: TerminalLinkHint;
+  platform: StudioPlatform;
+  interactions: TerminalInteractionHandlers | null;
+  linkRequest: AbortController | null;
+  pendingNotice: string | null;
 }
 
 export interface TerminalRegistryOptions {
   /** Injected so the WebGL chain is reachable under jsdom. See webgl-renderer.ts. */
   readonly webglLoader?: WebglAddonLoader;
   readonly rendererPreference?: RendererPreference;
-  /**
-   * Where a clicked link goes.
-   *
-   * The default is the `vex.terminalLinks` channel: main applies the
-   * terminal-link policy and asks the user, in a NATIVE dialog showing the
-   * whole host and the whole URL, once per host per window per run. The
-   * renderer never decides that a URL may be opened and never gets a window
-   * handle. Injected so a test can observe the call without a bridge.
-   *
-   * IT WAS `window.open`, and that was the defect: xterm's own OSC 8 handler
-   * runs `confirm()` and `window.open`, and `setWindowOpenHandler` serves a
-   * CLOSED allowlist of Vex's own destinations, so every dexscreener link
-   * Claude Code printed produced an ugly renderer confirm and then nothing
-   * (owner's Windows session, 17.png/18.png).
-   */
-  readonly openLink?: (url: string) => void;
+  /** Test seam for an opener; production attaches a consent owner per terminal. */
+  readonly openLink?: (url: string, signal: AbortSignal) => void | Promise<void>;
+  readonly platform?: StudioPlatform;
+}
+
+export interface TerminalInteractionHandlers {
+  /** The owner presents consent and surfaces the result, bound to this signal. */
+  readonly openLink: (url: string, signal: AbortSignal) => Promise<void>;
+  readonly onNotice: (message: string) => void;
 }
 
 export class TerminalRegistry {
   readonly #records = new Map<string, RegistryRecord>();
   readonly #webglLoader: WebglAddonLoader;
   readonly #rendererPreference: RendererPreference;
-  readonly #openLink: (url: string) => void;
+  readonly #openLink: TerminalRegistryOptions["openLink"];
+  readonly #platform: StudioPlatform;
 
   constructor(options: TerminalRegistryOptions = {}) {
     this.#webglLoader = options.webglLoader ?? importWebglAddon;
     this.#rendererPreference = options.rendererPreference ?? sharedRendererPreference;
-    this.#openLink =
-      options.openLink ??
-      ((url) => {
-        // Fire and forget by DESIGN: every outcome - opened, declined, refused
-        // by name - is main's to surface through its own dialog, and a renderer
-        // that awaited it would only be able to say something main already
-        // said. The rejection path is a transport failure and is swallowed
-        // rather than thrown into an xterm event handler.
-        void openTerminalLink(url).catch(() => undefined);
-      });
+    this.#openLink = options.openLink;
+    this.#platform = options.platform ?? studioPlatform;
+  }
+
+  /** Replacing or removing the UI owner withdraws any unfinished consent. */
+  setInteractionHandlers(
+    terminalId: string,
+    handlers: TerminalInteractionHandlers,
+    platform: StudioPlatform = this.#platform,
+  ): () => void {
+    const record = this.#records.get(terminalId);
+    if (record === undefined || record.disposed) return () => undefined;
+    this.#cancelInteraction(record);
+    record.interactions = handlers;
+    record.platform = platform;
+    if (record.pendingNotice !== null) {
+      handlers.onNotice(record.pendingNotice);
+      record.pendingNotice = null;
+    }
+    return () => {
+      if (record.interactions !== handlers) return;
+      this.#cancelInteraction(record);
+      record.interactions = null;
+    };
+  }
+
+  #cancelInteraction(record: RegistryRecord): void {
+    record.linkHint.clear();
+    record.linkRequest?.abort();
+    record.linkRequest = null;
+  }
+
+  #notice(terminalId: string, message: string): void {
+    const record = this.#records.get(terminalId);
+    if (record === undefined || record.disposed) return;
+    if (record.interactions !== null) record.interactions.onNotice(message);
+    else record.pendingNotice = message;
+  }
+
+  #activateLink(terminalId: string, event: MouseEvent, url: string): void {
+    event.preventDefault();
+    const record = this.#records.get(terminalId);
+    if (record === undefined || record.disposed || !isTerminalLinkActivation(event, record.platform)) return;
+    const open = this.#openLink ?? record.interactions?.openLink;
+    if (open === undefined) {
+      this.#notice(terminalId, "This terminal cannot ask to open a link right now. Reopen its pane and try again.");
+      return;
+    }
+    this.#cancelInteraction(record);
+    const request = new AbortController();
+    record.linkRequest = request;
+    void Promise.resolve().then(() => {
+      if (!request.signal.aborted) return open(url, request.signal);
+    }).catch(() => {
+      if (!request.signal.aborted) this.#notice(terminalId, "Vex could not finish opening this link. Try again.");
+    }).finally(() => {
+      if (record.linkRequest === request) record.linkRequest = null;
+    });
   }
 
   /** Whether a terminal already exists. Never creates one. */
@@ -181,6 +230,7 @@ export class TerminalRegistry {
     const record = this.#records.get(terminalId);
     if (record === undefined) return;
     record.consumers = Math.max(0, record.consumers - 1);
+    if (record.consumers === 0) this.#cancelInteraction(record);
     if (record.consumers === 0 && record.container !== null) {
       record.entry.wrapper.remove();
       record.container = null;
@@ -202,6 +252,9 @@ export class TerminalRegistry {
     record.disposed = true;
     // Invalidate first, so an in-flight WebGL load cannot attach to a corpse.
     record.rendererGeneration += 1;
+    this.#cancelInteraction(record);
+    record.linkHint.dispose();
+    record.interactions = null;
     record.disposeTheme();
     record.webgl?.dispose();
     record.webgl = null;
@@ -228,6 +281,7 @@ export class TerminalRegistry {
     if (record === undefined || record.disposed) return;
     if (record.container === container) return;
 
+    this.#cancelInteraction(record);
     record.container = container;
     container.appendChild(record.entry.wrapper);
     // The wrapper moved documents or stacking contexts. Re-opening xterm on its
@@ -254,7 +308,10 @@ export class TerminalRegistry {
     const record = this.#records.get(terminalId);
     if (record === undefined || record.disposed) return null;
     record.entry.wrapper.classList.toggle(TERMINAL_ACTIVE_CLASS, visible);
-    if (!visible) return null;
+    if (!visible) {
+      this.#cancelInteraction(record);
+      return null;
+    }
     return this.refit(terminalId);
   }
 
@@ -321,9 +378,12 @@ export class TerminalRegistry {
       // (`@xterm/xterm/src/browser/OscLinkProvider.ts:114-129`) and never
       // touches the addon. Both now end at the same owner.
       linkHandler: {
-        activate: (_event, text) => {
-          this.#openLink(text);
+        activate: (event, text) => this.#activateLink(terminalId, event, text),
+        hover: (_event, text) => {
+          const record = this.#records.get(terminalId);
+          if (record !== undefined) record.linkHint.show(text, record.platform);
         },
+        leave: () => this.#records.get(terminalId)?.linkHint.clear(),
       },
     });
 
@@ -333,10 +393,38 @@ export class TerminalRegistry {
     terminal.loadAddon(fit);
     terminal.loadAddon(serialize);
     terminal.loadAddon(search);
-    terminal.loadAddon(new ClipboardAddon());
+    terminal.loadAddon(new ClipboardAddon(undefined, {
+      readText: async (selection) => {
+        if (selection !== "c") {
+          this.#notice(terminalId, "This terminal supports the system clipboard only. The requested selection clipboard is unavailable.");
+          return "";
+        }
+        try {
+          return await terminalClipboard.readText();
+        } catch (error) {
+          this.#notice(terminalId, error instanceof TerminalClipboardError ? error.message : "Vex could not read the terminal clipboard. Try pasting again.");
+          return "";
+        }
+      },
+      writeText: async (selection, text) => {
+        if (selection !== "c") {
+          this.#notice(terminalId, "This terminal supports the system clipboard only. The requested selection clipboard is unavailable.");
+          return;
+        }
+        try {
+          await terminalClipboard.writeText(text);
+        } catch (error) {
+          this.#notice(terminalId, error instanceof TerminalClipboardError ? error.message : "Vex could not write the terminal clipboard. Try copying again.");
+        }
+      },
+    }));
     terminal.loadAddon(
-      new WebLinksAddon((_event, uri) => {
-        this.#openLink(uri);
+      new WebLinksAddon((event, uri) => this.#activateLink(terminalId, event, uri), {
+        hover: (_event, text) => {
+          const record = this.#records.get(terminalId);
+          if (record !== undefined) record.linkHint.show(text, record.platform);
+        },
+        leave: () => this.#records.get(terminalId)?.linkHint.clear(),
       }),
     );
     const unicode11 = new Unicode11Addon();
@@ -356,6 +444,11 @@ export class TerminalRegistry {
       rendererGeneration: 0,
       disposeTheme: () => undefined,
       disposed: false,
+      linkHint: new TerminalLinkHint(terminal, wrapper),
+      platform: this.#platform,
+      interactions: null,
+      linkRequest: null,
+      pendingNotice: null,
     };
 
     record.disposeTheme = observeTerminalTheme(() => {

@@ -634,6 +634,12 @@ export const CH = {
    * two would render "the terminal subsystem gave up after six restarts" as an
    * MCP problem the user cannot act on.
    */
+  terminalInput: {
+    readClipboardContent: "vex:terminalInput:readClipboardContent",
+    readClipboardText: "vex:terminalInput:readClipboardText",
+    writeClipboardText: "vex:terminalInput:writeClipboardText",
+    triggerPaste: "vex:terminalInput:triggerPaste",
+  },
   terminal: {
     create: "vex:terminal:create",
     write: "vex:terminal:write",
@@ -655,6 +661,8 @@ export const CH = {
      * `main/ipc/terminal-links.ts`.
      */
     openLink: "vex:terminal:openLink",
+    answerLink: "vex:terminal:answerLink",
+    cancelLink: "vex:terminal:cancelLink",
   },
 
   /**

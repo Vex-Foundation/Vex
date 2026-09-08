@@ -33,6 +33,7 @@ import { registerStudioBridgeReadinessHandlers } from "./studio-bridge-readiness
 import { registerStudioFilesHandlers } from "./studio-files.js";
 import { registerStudioSearchHandlers } from "./studio-search.js";
 import { registerStudioTerminalHandlers } from "./studio-terminal.js";
+import { registerTerminalInputHandlers } from "./terminal-input.js";
 import { registerTerminalLinkHandlers } from "./terminal-links.js";
 import { registerMemoryHandlers } from "./memory.js";
 import { registerMemoryInspectorHandlers } from "./memory-inspector.js";
@@ -188,8 +189,9 @@ export function registerAllIpcHandlers(): () => Promise<void> {
   // The terminal's LINK path. Separate from the terminal control plane because
   // its authority is separate: the control plane owns terminal lifetimes, this
   // owns a per-host, per-window, per-run consent to hand a URL to the OS
-  // browser. Neither the renderer nor a model can open a link without it.
+  // browser. Main binds each renderer answer to its own pending proposal.
   teardowns.push(...registerTerminalLinkHandlers());
+  teardowns.push(...registerTerminalInputHandlers());
   // B3a: the Vex Studio project-file surface. Main mints opaque node tokens,
   // holds the lifecycle gate's `watcher` lease per WATCHED PROJECT (one native
   // watcher however many subscriptions ride it), and enforces the read bound on

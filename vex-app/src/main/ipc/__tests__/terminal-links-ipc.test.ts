@@ -1,293 +1,282 @@
-/**
- * `vex:terminal:openLink` - the authority over a link a shell printed.
- *
- * What this suite exists to prove, and what a green fixture suite would NOT
- * have proved:
- *
- *  - NOTHING IS OPENED WITHOUT A HUMAN. Not a refused scheme, not a declined
- *    dialog, not a request whose window went away while the dialog was up.
- *    Every one of those is an explicit absence assertion on `shell.openExternal`
- *    (rule 06's "the critical side effect that must not occur").
- *  - The dialog carries the WHOLE URL and BOTH spellings of an
- *    internationalised host, because that text is what the user's consent is
- *    consent TO.
- *  - The yes is remembered per HOST and per WINDOW, and never leaks between
- *    windows. A per-process trust store would let a second window inherit a
- *    consent nobody in it gave.
- *  - The refusal REASON crosses the wire, because "unexpected error" is what
- *    rule 90 forbids.
- *
- * The two boundaries are doubled (`dialog`, `shell`) because they are the
- * process's, and nothing else is: the policy, the trust bookkeeping and the
- * outcome shaping are the real code.
- */
-
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { EventEmitter } from "node:events";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CH } from "@shared/ipc/channels.js";
-import { openTerminalLinkValueSchema } from "@shared/schemas/terminal-links.js";
-import { createTestWebContents, createTrustedSender } from "./test-sender.js";
+import { openTerminalLinkValueSchema, TERMINAL_LINK_PROPOSAL_TTL_MS, type TerminalLinkProposal } from "@shared/schemas/terminal-links.js";
+import { createMainFrame, createTrustedSender, type TestFrame } from "./test-sender.js";
 
-/**
- * The event shape THIS SUITE hands the handler.
- *
- * Declared here rather than borrowed from `IpcMainInvokeEvent` so no assertion
- * is needed anywhere below: the handler reads exactly `senderFrame` (sender
- * validation) and `sender.id` / `sender.once` / `sender.isDestroyed` (the trust
- * memory's key and lifetime), and a double that carries those IS the contract
- * this handler has with Electron. A cast to the full Electron type would only
- * promise fields nothing reads.
- */
-interface FakeInvokeEvent {
-  readonly senderFrame: { readonly url: string };
-  readonly sender: {
-    readonly id: number;
-    readonly once: (event: string, listener: () => void) => void;
-    readonly isDestroyed: () => boolean;
-  };
+class TestContents extends EventEmitter {
+  destroyed = false;
+  constructor(readonly id: number) { super(); }
+  isDestroyed(): boolean { return this.destroyed; }
 }
-type FakeHandler = (event: FakeInvokeEvent, payload: unknown) => Promise<unknown>;
-
+interface FakeEvent { readonly senderFrame: TestFrame; readonly sender: TestContents }
+type Handler = (event: FakeEvent, payload: unknown) => Promise<unknown>;
 const mocks = vi.hoisted(() => ({
-  showMessageBox: vi.fn(),
-  openExternal: vi.fn(),
-  fromWebContents: vi.fn(),
+  handlers: new Map<string, Handler>(), openExternal: vi.fn(), writeText: vi.fn(),
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
-  /** Owned by the suite, so reading it back needs no import assertion. */
-  handlers: new Map<string, FakeHandler>(),
 }));
-
 vi.mock("electron", () => ({
+  app: { isPackaged: true },
   ipcMain: {
-    handle: vi.fn((channel: string, fn: FakeHandler) =>
-      mocks.handlers.set(channel, fn),
-    ),
+    handle: vi.fn((channel: string, handler: Handler) => mocks.handlers.set(channel, handler)),
     removeHandler: vi.fn((channel: string) => mocks.handlers.delete(channel)),
   },
-  dialog: { showMessageBox: mocks.showMessageBox },
-  shell: { openExternal: mocks.openExternal },
-  BrowserWindow: { fromWebContents: mocks.fromWebContents },
+  shell: { openExternal: mocks.openExternal }, clipboard: { writeText: mocks.writeText },
 }));
 vi.mock("../../logger/index.js", () => ({ log: mocks.log }));
+const { registerTerminalLinkHandlers, __resetTerminalLinkTrustForTests } = await import("../terminal-links.js");
+const { getCancelController } = await import("../register-handler.js");
 
-const { registerTerminalLinkHandlers, __resetTerminalLinkTrustForTests } = await import(
-  "../terminal-links.js"
-);
-
-function openLinkHandler(): FakeHandler {
-  const handler = mocks.handlers.get(CH.terminal.openLink);
-  if (handler === undefined) throw new Error("no handler for terminal.openLink");
-  return handler;
+let cleanup: Array<() => void> = [];
+let counter = 0;
+const requestId = (): string => `11111111-1111-4111-8111-${String(++counter).padStart(12, "0")}`;
+const sender = (id = 11): FakeEvent => createTrustedSender({ sender: new TestContents(id) });
+async function invoke(channel: string, event: FakeEvent, payload: unknown, id = requestId()): Promise<unknown> {
+  const handler = mocks.handlers.get(channel);
+  if (handler === undefined) throw new Error("Missing terminal link handler");
+  return handler(event, { requestId: id, payload });
 }
-
-/** A sender for one window. The id is what the trust memory is keyed on. */
-function senderForWindow(id: number): FakeInvokeEvent {
-  return createTrustedSender({
-    sender: { ...createTestWebContents(), id, once: vi.fn(), isDestroyed: () => false },
-  });
+async function propose(event: FakeEvent, url = "https://example.com/a"): Promise<TerminalLinkProposal> {
+  const response = await invoke(CH.terminal.openLink, event, { url });
+  const envelope = response as { ok: boolean; data?: unknown };
+  expect(envelope.ok).toBe(true);
+  const value = openTerminalLinkValueSchema.parse(envelope.data);
+  if (value.kind !== "pending") throw new Error("Expected a proposal");
+  return value.proposal;
 }
-
-let requestCounter = 0;
-async function open(
-  url: string,
-  event: FakeInvokeEvent,
-): Promise<{ ok: boolean; data?: unknown; error?: { code: string } }> {
-  requestCounter += 1;
-  const answer = await openLinkHandler()(event, {
-    requestId: `11111111-1111-4111-8111-${String(requestCounter).padStart(12, "0")}`,
-    payload: { url },
-  });
-  return answer as { ok: boolean; data?: unknown; error?: { code: string } };
-}
-
-/** What the user clicks. 0 is "Open link", 1 is "Cancel". */
-function answers(response: 0 | 1): void {
-  mocks.showMessageBox.mockResolvedValue({ response, checkboxChecked: false });
-}
-
-const WINDOW_A = 11;
-const WINDOW_B = 22;
+const answer = (event: FakeEvent, proposalId: string, choice: "open" | "copy" | "cancel" = "open", rememberHost = false): Promise<unknown> =>
+  invoke(CH.terminal.answerLink, event, { proposalId, choice, rememberHost });
+const refusal = (reason: string): unknown => ({ ok: true, data: { kind: "refused", reason } });
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.useFakeTimers();
   mocks.handlers.clear();
   __resetTerminalLinkTrustForTests();
-  registerTerminalLinkHandlers();
-  mocks.fromWebContents.mockReturnValue(null);
+  cleanup = registerTerminalLinkHandlers();
   mocks.openExternal.mockResolvedValue(undefined);
-  answers(0);
+  mocks.writeText.mockReturnValue(undefined);
+});
+afterEach(() => {
+  cleanup.forEach(dispose => dispose());
+  vi.useRealTimers();
 });
 
-describe("terminal link open: consent", () => {
-  it("asks once, opens the RAW string, and answers what happened", async () => {
-    const raw = "https://dexscreener.com/robinhood/0xf65E8fc9?a=1%2B2";
-    const result = await open(raw, senderForWindow(WINDOW_A));
-
-    expect(mocks.showMessageBox).toHaveBeenCalledTimes(1);
-    expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(raw);
-    expect(result).toEqual({
-      ok: true,
-      data: { kind: "opened", host: { ascii: "dexscreener.com", display: "dexscreener.com" }, asked: true },
+describe("terminal link proposals", () => {
+  it("returns the full raw URL and both host spellings without opening until answered", async () => {
+    const event = sender();
+    const url = `https://münchen.example/${"segment/".repeat(200)}end?a=1%2B2`;
+    const proposal = await propose(event, url);
+    expect(proposal).toEqual({
+      id: expect.any(String), url, host: { ascii: "xn--mnchen-3ya.example", display: "münchen.example" },
+      expiresAt: Date.now() + TERMINAL_LINK_PROPOSAL_TTL_MS,
     });
-    // The wire shape is the contract, not just this object.
-    expect(openTerminalLinkValueSchema.safeParse(result.data).success).toBe(true);
-  });
-
-  it("shows the WHOLE url and defaults to the safe button", async () => {
-    const raw = `https://example.com/${"segment/".repeat(200)}end?token=abc`;
-    await open(raw, senderForWindow(WINDOW_A));
-
-    const options = mocks.showMessageBox.mock.calls[0]?.[0] as {
-      detail: string;
-      defaultId: number;
-      cancelId: number;
-      buttons: string[];
-    };
-    // NOT SHORTENED, NOT ELIDED. A user cannot consent to a destination they
-    // were not shown, so the whole string is in the dialog.
-    expect(options.detail).toContain(raw);
-    expect(options.detail).not.toContain("...");
-    expect(options.detail).toContain("Host: example.com");
-    // Enter and Escape both land on Cancel.
-    expect(options.buttons[options.defaultId]).toBe("Cancel");
-    expect(options.buttons[options.cancelId]).toBe("Cancel");
-  });
-
-  it("shows BOTH spellings of an internationalised host", async () => {
-    await open("https://münchen.example/x", senderForWindow(WINDOW_A));
-    const detail = (mocks.showMessageBox.mock.calls[0]?.[0] as { detail: string }).detail;
-    // A homograph is only visible when the punycode is on screen next to it.
-    expect(detail).toContain("Host: münchen.example");
-    expect(detail).toContain("Host (punycode): xn--mnchen-3ya.example");
-  });
-
-  it("opens NOTHING when the user cancels", async () => {
-    answers(1);
-    const result = await open("https://example.com/", senderForWindow(WINDOW_A));
     expect(mocks.openExternal).not.toHaveBeenCalled();
-    expect(result.data).toEqual({
-      kind: "declined",
-      host: { ascii: "example.com", display: "example.com" },
+    expect(await answer(event, proposal.id)).toEqual({ ok: true, data: { kind: "opened", host: proposal.host, asked: true } });
+    expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(url);
+  });
+
+  it.each(["copy", "cancel"] as const)("%s consumes the proposal without opening or remembering", async choice => {
+    const event = sender();
+    const proposal = await propose(event);
+    expect(await answer(event, proposal.id, choice, true)).toEqual({ ok: true, data: { kind: choice === "copy" ? "copied" : "declined", host: proposal.host } });
+    expect(mocks.openExternal).not.toHaveBeenCalled();
+    if (choice === "copy") expect(mocks.writeText).toHaveBeenCalledExactlyOnceWith(proposal.url);
+    else expect(mocks.writeText).not.toHaveBeenCalled();
+    await propose(event);
+    expect(await answer(event, proposal.id)).toEqual(refusal("terminal_link_proposal_already_answered"));
+  });
+
+  it("remembers only explicit successful open consent, scoped to host and window", async () => {
+    const event = sender();
+    await answer(event, (await propose(event)).id);
+    await answer(event, (await propose(event)).id, "open", true);
+    expect(await invoke(CH.terminal.openLink, event, { url: "https://example.com/b" })).toMatchObject({ data: { kind: "opened", asked: false } });
+    await propose(event, "https://other.example/a");
+    await propose(sender(22));
+  });
+
+  it.each(["http://localhost:3000/a", "http://127.0.0.1:8888/a", "https://[::1]:8000/a"])("opens loopback %s without a proposal", async url => {
+    expect(await invoke(CH.terminal.openLink, sender(), { url })).toMatchObject({ data: { kind: "opened", asked: false } });
+    expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(url);
+  });
+
+  it.each(["https://localhost.evil.example", "https://dev.localhost", "https://127.0.0.1.evil.example"])("does not auto-trust %s", async url => {
+    await propose(sender(), url);
+    expect(mocks.openExternal).not.toHaveBeenCalled();
+  });
+
+  it("refuses unknown, foreign and replayed proposals without consuming another window's proposal", async () => {
+    const event = sender();
+    const proposal = await propose(event);
+    expect(await answer(event, "22222222-2222-4222-8222-222222222222")).toEqual(refusal("terminal_link_proposal_unknown"));
+    expect(await answer(sender(22), proposal.id)).toEqual(refusal("terminal_link_proposal_other_window"));
+    expect(await invoke(CH.terminal.cancelLink, sender(22), { proposalId: proposal.id })).toEqual(refusal("terminal_link_proposal_other_window"));
+    expect(mocks.openExternal).not.toHaveBeenCalled();
+    const outcomes = await Promise.all([answer(event, proposal.id), answer(event, proposal.id)]);
+    expect(outcomes).toContainEqual(refusal("terminal_link_proposal_already_answered"));
+    expect(mocks.openExternal).toHaveBeenCalledTimes(1);
+  });
+
+  it("expires unanswered proposals and releases their timers", async () => {
+    const event = sender();
+    const proposal = await propose(event);
+    await vi.advanceTimersByTimeAsync(TERMINAL_LINK_PROPOSAL_TTL_MS);
+    expect(await answer(event, proposal.id)).toEqual(refusal("terminal_link_proposal_expired"));
+    expect(await invoke(CH.terminal.cancelLink, event, { proposalId: proposal.id })).toEqual(refusal("terminal_link_proposal_expired"));
+    expect(mocks.openExternal).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("withdraws an abandoned question and refuses a late answer", async () => {
+    const event = sender();
+    const proposal = await propose(event);
+    expect(await invoke(CH.terminal.cancelLink, event, { proposalId: proposal.id })).toEqual({ ok: true, data: { kind: "cancelled" } });
+    expect(await answer(event, proposal.id)).toEqual(refusal("terminal_link_proposal_cancelled"));
+    expect(mocks.openExternal).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each(["navigation", "destruction"])("%s revokes pending questions and remembered trust", async kind => {
+    const event = sender();
+    await answer(event, (await propose(event)).id, "open", true);
+    const pending = await propose(event, "https://other.example/a");
+    mocks.openExternal.mockClear();
+    if (kind === "navigation") event.sender.emit("did-start-navigation", {}, "app://vex/index.html", false, true);
+    else { event.sender.destroyed = true; event.sender.emit("destroyed"); }
+    expect(await answer(event, pending.id)).toEqual(refusal("terminal_link_proposal_cancelled"));
+    expect(mocks.openExternal).not.toHaveBeenCalled();
+    if (kind === "navigation") await propose(event);
+  });
+
+  it("does not reinstate trust when navigation happens during the OS open", async () => {
+    const event = sender();
+    const proposal = await propose(event);
+    mocks.openExternal.mockImplementationOnce(() => {
+      event.sender.emit("did-start-navigation", {}, "app://vex/index.html", false, true);
+      return Promise.resolve();
     });
+    await answer(event, proposal.id, "open", true);
+    await propose(event);
   });
 
-  it("does not ask twice for the same host in the same window", async () => {
-    const sender = senderForWindow(WINDOW_A);
-    const first = await open("https://example.com/a", sender);
-    const second = await open("https://example.com/b", sender);
-
-    expect(mocks.showMessageBox).toHaveBeenCalledTimes(1);
-    expect((first.data as { asked: boolean }).asked).toBe(true);
-    expect((second.data as { asked: boolean }).asked).toBe(false);
-    expect(mocks.openExternal).toHaveBeenNthCalledWith(2, "https://example.com/b");
-  });
-
-  it("asks again for a DIFFERENT host", async () => {
-    const sender = senderForWindow(WINDOW_A);
-    await open("https://example.com/a", sender);
-    await open("https://other.example/a", sender);
-    expect(mocks.showMessageBox).toHaveBeenCalledTimes(2);
-  });
-
-  it("never lets one window's yes answer for another window", async () => {
-    await open("https://example.com/a", senderForWindow(WINDOW_A));
-    mocks.showMessageBox.mockClear();
-    await open("https://example.com/a", senderForWindow(WINDOW_B));
-    // The second window was asked. A per-process trust store would not have.
-    expect(mocks.showMessageBox).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not remember a host the user REFUSED", async () => {
-    const sender = senderForWindow(WINDOW_A);
-    answers(1);
-    await open("https://example.com/a", sender);
-    answers(0);
-    await open("https://example.com/a", sender);
-    expect(mocks.showMessageBox).toHaveBeenCalledTimes(2);
+  it("bounds concurrent pending proposals and releases capacity after cancellation", async () => {
+    const event = sender();
+    const first = await propose(event);
+    for (let n = 1; n < 32; n++) await propose(event);
+    expect(await invoke(CH.terminal.openLink, event, { url: first.url })).toEqual(refusal("terminal_link_proposal_limit"));
+    await invoke(CH.terminal.cancelLink, event, { proposalId: first.id });
+    await propose(event);
   });
 });
 
-describe("terminal link open: refusals", () => {
+describe("terminal link boundaries", () => {
   it.each([
     ["file:///etc/passwd", "terminal_link_scheme_refused"],
     ["javascript:alert(1)", "terminal_link_scheme_refused"],
     ["https://paypal.com@evil.example/", "terminal_link_credentials_refused"],
     ["not a url", "terminal_link_unparsable"],
-  ])("refuses %s BY NAME, without asking anyone", async (raw, reason) => {
-    const result = await open(raw, senderForWindow(WINDOW_A));
-    expect(result.data).toEqual({ kind: "refused", reason });
-    // Neither gate ran: there is nothing to consent to.
-    expect(mocks.showMessageBox).not.toHaveBeenCalled();
+    [`https://example.com/${"x".repeat(5000)}`, "terminal_link_too_long"],
+  ])("refuses invalid link shape %s", async (url, reason) => {
+    expect(await invoke(CH.terminal.openLink, sender(), { url })).toEqual(refusal(reason));
     expect(mocks.openExternal).not.toHaveBeenCalled();
   });
 
-  it("reports an OS handler failure as its own named outcome", async () => {
-    mocks.openExternal.mockRejectedValue(new Error("no handler for https on this box"));
-    const result = await open("https://example.com/", senderForWindow(WINDOW_A));
-    expect(result.data).toEqual({ kind: "refused", reason: "terminal_link_open_failed" });
-    // The provider's message never reaches the renderer: it can carry a path.
-    expect(JSON.stringify(result)).not.toContain("no handler for https");
+  it.each([
+    [CH.terminal.openLink, { url: "https://example.com", trustForever: true }],
+    [CH.terminal.openLink, { url: "x".repeat(70_000) }],
+    [CH.terminal.answerLink, { proposalId: "bad", choice: "open", rememberHost: true }],
+    [CH.terminal.answerLink, { proposalId: "11111111-1111-4111-8111-111111111111", choice: "open", rememberHost: true, url: "https://evil.example" }],
+    [CH.terminal.cancelLink, { proposalId: "bad" }],
+  ])("rejects invalid payload on %s", async (channel, payload) => {
+    expect(await invoke(channel, sender(), payload)).toMatchObject({ ok: false, error: { code: "validation.invalid_input" } });
+    expect(mocks.openExternal).not.toHaveBeenCalled();
+    expect(mocks.writeText).not.toHaveBeenCalled();
   });
 
-  it("names the product bound, and refuses an absurd payload at the schema", async () => {
-    // Two bounds with two jobs. A long-but-plausible link gets the named
-    // product refusal the user can act on ...
-    const long = `https://example.com/${"a".repeat(5000)}`;
-    expect((await open(long, senderForWindow(WINDOW_A))).data).toEqual({
-      kind: "refused",
-      reason: "terminal_link_too_long",
+  it.each([CH.terminal.openLink, CH.terminal.answerLink, CH.terminal.cancelLink])("rejects hostile sender and subframes on %s", async channel => {
+    const event = sender();
+    const proposal = await propose(event);
+    const payload = channel === CH.terminal.openLink ? { url: proposal.url } : channel === CH.terminal.answerLink ? { proposalId: proposal.id, choice: "open", rememberHost: true } : { proposalId: proposal.id };
+    const top = createMainFrame();
+    for (const frame of [createMainFrame("https://evil.example"), { url: top.url, parent: top, top }]) {
+      expect(await invoke(channel, { ...event, senderFrame: frame }, payload)).toMatchObject({ ok: false, error: { code: "validation.invalid_sender" } });
+    }
+    expect(mocks.openExternal).not.toHaveBeenCalled();
+    expect(mocks.writeText).not.toHaveBeenCalled();
+  });
+
+  it("refuses OS failures safely and does not remember unsuccessful consent", async () => {
+    const event = sender();
+    mocks.openExternal.mockRejectedValueOnce(new Error("private error details"));
+    expect(await answer(event, (await propose(event)).id, "open", true)).toEqual(refusal("terminal_link_open_failed"));
+    await propose(event);
+    mocks.writeText.mockImplementationOnce(() => { throw new Error("private error details"); });
+    expect(await answer(event, (await propose(event)).id, "copy")).toEqual(refusal("terminal_link_copy_failed"));
+  });
+
+  it("an aborted answer before the side effect opens nothing", async () => {
+    const event = sender();
+    const proposal = await propose(event);
+    const id = requestId();
+    vi.spyOn(event.sender, "isDestroyed").mockImplementation(() => {
+      getCancelController(id)?.abort();
+      return false;
     });
-    // ... and something no terminal could have produced never reaches the
-    // policy at all.
-    const absurd = `https://example.com/${"a".repeat(70_000)}`;
-    const refused = await open(absurd, senderForWindow(WINDOW_A));
-    expect(refused.ok).toBe(false);
-    expect(refused.error?.code).toBe("validation.invalid_input");
-    expect(mocks.showMessageBox).not.toHaveBeenCalled();
+    expect(await invoke(CH.terminal.answerLink, event, { proposalId: proposal.id, choice: "open", rememberHost: true }, id)).toEqual({ ok: true, data: { kind: "cancelled" } });
     expect(mocks.openExternal).not.toHaveBeenCalled();
   });
 
-  it("refuses a payload carrying an unexpected field, rather than dropping it", async () => {
-    const result = (await openLinkHandler()(senderForWindow(WINDOW_A), {
-      requestId: "11111111-1111-4111-8111-111111111111",
-      payload: { url: "https://example.com/", trustForever: true },
-    })) as { ok: boolean; error?: { code: string } };
-    expect(result.ok).toBe(false);
-    expect(result.error?.code).toBe("validation.invalid_input");
-    expect(mocks.openExternal).not.toHaveBeenCalled();
-  });
-
-  it("refuses an untrusted sender before the policy runs", async () => {
-    const hostile: FakeInvokeEvent = {
-      senderFrame: { url: "https://evil.example/" },
-      sender: { ...createTestWebContents(), id: 99, once: vi.fn(), isDestroyed: () => false },
-    };
-    const result = (await openLinkHandler()(hostile, {
-      requestId: "11111111-1111-4111-8111-111111111111",
-      payload: { url: "https://example.com/" },
-    })) as { ok: boolean };
-    expect(result.ok).toBe(false);
-    expect(mocks.openExternal).not.toHaveBeenCalled();
-  });
-});
-
-describe("terminal link open: the window went away", () => {
-  it("opens nothing when the requesting contents died while the dialog was up", async () => {
-    const contents = {
-      ...createTestWebContents(),
-      id: WINDOW_A,
-      once: vi.fn(),
-      isDestroyed: vi.fn(() => false),
-    };
-    const event: FakeInvokeEvent = createTrustedSender({ sender: contents });
-    // The pane closed while the user was reading the dialog. Answering yes to a
-    // question nobody is waiting on must not open anything.
-    mocks.showMessageBox.mockImplementation(() => {
-      contents.isDestroyed.mockReturnValue(true);
-      return Promise.resolve({ response: 0, checkboxChecked: false });
+  it.each(["https://example.com", "http://localhost:3000"])("an independent request abort prevents proposal or browser work for %s", async url => {
+    const event = sender();
+    const id = requestId();
+    vi.spyOn(event.sender, "isDestroyed").mockImplementation(() => {
+      getCancelController(id)?.abort();
+      return false;
     });
-
-    const result = await open("https://example.com/", event);
+    expect(await invoke(CH.terminal.openLink, event, { url }, id)).toEqual({ ok: true, data: { kind: "cancelled" } });
     expect(mocks.openExternal).not.toHaveBeenCalled();
-    expect((result.data as { kind: string }).kind).toBe("declined");
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("an abort after browser dispatch never reinstates remembered trust", async () => {
+    const event = sender();
+    const proposal = await propose(event);
+    const id = requestId();
+    mocks.openExternal.mockImplementationOnce(() => {
+      getCancelController(id)?.abort();
+      return Promise.resolve();
+    });
+    expect(await invoke(CH.terminal.answerLink, event, { proposalId: proposal.id, choice: "open", rememberHost: true }, id)).toMatchObject({ data: { kind: "opened" } });
+    await propose(event);
+  });
+
+  it("a destroyed requesting window cannot mint a proposal or open trusted loopback", async () => {
+    const event = sender();
+    event.sender.destroyed = true;
+    for (const url of ["https://example.com", "http://localhost:3000"]) {
+      expect(await invoke(CH.terminal.openLink, event, { url })).toEqual({ ok: true, data: { kind: "cancelled" } });
+    }
+    expect(mocks.openExternal).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("never remembers more than 128 hosts in one window", async () => {
+    const event = sender();
+    for (let i = 0; i < 129; i++) {
+      await answer(event, (await propose(event, `https://host${i}.example/a`)).id, "open", true);
+    }
+    expect(await invoke(CH.terminal.openLink, event, { url: "https://host127.example/b" })).toMatchObject({ data: { kind: "opened", asked: false } });
+    await propose(event, "https://host128.example/b");
+  });
+
+  it("handler teardown cancels pending questions and removes listeners", async () => {
+    const event = sender();
+    await propose(event);
+    cleanup.forEach(dispose => dispose());
+    expect(event.sender.listenerCount("did-start-navigation")).toBe(0);
+    expect(event.sender.listenerCount("destroyed")).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(mocks.openExternal).not.toHaveBeenCalled();
   });
 });

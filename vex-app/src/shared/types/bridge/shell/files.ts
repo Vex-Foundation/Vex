@@ -1,4 +1,5 @@
 import type { Result } from "../../../ipc/result.js";
+import type { TerminalFilePathValue } from "../../../schemas/terminal-input.js";
 import type {
   FileContent,
   FileDeleteMode,
@@ -13,8 +14,10 @@ import type {
 /**
  * `vex.files.*` - Vex Studio project files, as the RENDERER sees them.
  *
- * DOMAIN METHODS ONLY. The renderer never sends a path, never receives one, and
- * never learns a channel name. Every node is addressed by an opaque token main
+ * Project operations use opaque node identifiers. The separate getPathForFile
+ * method reveals only a native file the user explicitly pasted or dropped.
+ * DOMAIN METHODS ONLY. Project operations never send or return raw paths, and no
+ * method exposes a channel name. Every project node uses an opaque token main
  * minted, and main re-derives and re-checks the real path behind that token on
  * every single call - so a token is a NAME the tree can hold, never an
  * authority it can spend.
@@ -39,6 +42,9 @@ import type {
  * `Result.error`.
  */
 export interface FilesBridge {
+  /** Resolve a native pasted/dropped File locally in preload. Never serialized over IPC. */
+  readonly getPathForFile: (file: File) => Result<TerminalFilePathValue>;
+
   /**
    * One page of one directory's children, in the tree's own total order.
    *

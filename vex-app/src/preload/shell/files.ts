@@ -42,7 +42,14 @@
  * acknowledging is not something it was ever asked to do.
  */
 
+import { webUtils } from "electron";
 import { EV, CH } from "../../shared/ipc/channels.js";
+import { ok, type Result } from "../../shared/ipc/result.js";
+import {
+  TERMINAL_FILE_PATH_MAX_LENGTH,
+  terminalFilePathValueSchema,
+  type TerminalFilePathValue,
+} from "../../shared/schemas/terminal-input.js";
 import {
   filesAckEventInputSchema,
   filesCreateInputSchema,
@@ -118,6 +125,21 @@ function releaseIfIdle(): void {
 }
 
 export const files = {
+  getPathForFile(file: File): Result<TerminalFilePathValue> {
+    try {
+      // Electron validates the native File identity; a synthetic File has no path.
+      // Do not serialize this DOM object or trust a renderer-supplied `path` field.
+      const path = webUtils.getPathForFile(file);
+      if (path.length > TERMINAL_FILE_PATH_MAX_LENGTH) {
+        return ok({ kind: "refused", reason: "terminal_file_path_too_long" });
+      }
+      const parsed = terminalFilePathValueSchema.safeParse({ kind: "resolved", path });
+      if (parsed.success) return ok(parsed.data);
+    } catch {
+      // Native exceptions may contain local paths and stay inside preload.
+    }
+    return ok({ kind: "refused", reason: "terminal_file_path_unavailable" });
+  },
   listChildren(input) {
     return invokeWithSchema(
       CH.files.listChildren,

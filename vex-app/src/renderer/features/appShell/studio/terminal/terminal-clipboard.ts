@@ -41,12 +41,13 @@
  * {@link decideTerminalClipboardAction} is a pure function of an event plus two
  * facts, so the whole table is provable without a DOM, a clipboard permission
  * or a real terminal. {@link runTerminalClipboardAction} owns the effects and
- * REPORTS ITS OUTCOME rather than throwing: `navigator.clipboard` is
- * permission-gated and can reject, and a terminal that silently did nothing
+ * REPORTS ITS OUTCOME rather than throwing: the native clipboard service
+ * can be unavailable, and a terminal that silently did nothing
  * would be indistinguishable from one whose keybinding is broken (rule 90's
  * error contract).
  */
 
+import { TerminalClipboardError, terminalClipboardErrorMessage } from "../../../../lib/api/terminal-input.js";
 import type { StudioPlatform } from "../keybindings-labels.js";
 
 /** What a clipboard gesture asks the terminal to do. */
@@ -93,6 +94,8 @@ export function decideTerminalClipboardAction(
   if (event.type !== "keydown") return null;
   if (event.altKey) return null;
 
+  if (context.platform === "linux" && event.code === "Insert" && event.shiftKey && !event.ctrlKey && !event.metaKey) return "paste";
+
   const mac = context.platform === "darwin";
   // On macOS the copy/paste modifier is Cmd and Control is the interrupt; off
   // macOS it is Control and Meta is never part of one of these chords.
@@ -110,7 +113,7 @@ export function decideTerminalClipboardAction(
 
   if (event.code === "KeyV") {
     if (mac) return event.shiftKey ? null : "paste";
-    return event.shiftKey ? "paste" : null;
+    return event.shiftKey || context.platform === "win32" ? "paste" : null;
   }
 
   return null;
@@ -133,17 +136,15 @@ export function terminalRightClickIsCopyPaste(platform: StudioPlatform): boolean
 /**
  * WHY a clipboard gesture did nothing, when it did nothing.
  *
- * Named outcomes rather than a thrown error: `navigator.clipboard` is
- * permission-gated, and "your browser refused the clipboard" is a different
- * fact from "there was nothing to paste", with a different thing for the user
- * to do about it.
+ * Named outcomes distinguish an unavailable service from an empty clipboard.
  */
 export type TerminalClipboardOutcome =
   | { readonly kind: "done"; readonly action: TerminalClipboardAction }
   /** Nothing to copy, or the clipboard was empty. Not a failure. */
   | { readonly kind: "nothing"; readonly action: TerminalClipboardAction }
   | { readonly kind: "unavailable"; readonly action: TerminalClipboardAction }
-  | { readonly kind: "refused"; readonly action: TerminalClipboardAction };
+  | { readonly kind: "refused"; readonly action: TerminalClipboardAction; readonly message?: string }
+  | { readonly kind: "cancelled"; readonly action: TerminalClipboardAction };
 
 /** The terminal capabilities this module needs. `Terminal` satisfies it. */
 export interface TerminalClipboardTarget {
@@ -154,7 +155,7 @@ export interface TerminalClipboardTarget {
   focus: () => void;
 }
 
-/** The clipboard capabilities this module needs. `navigator.clipboard` satisfies it. */
+/** The narrow native clipboard capabilities this module needs. */
 export interface ClipboardLike {
   readText?: () => Promise<string>;
   writeText?: (text: string) => Promise<void>;
@@ -163,7 +164,7 @@ export interface ClipboardLike {
 /**
  * Perform a clipboard action against a terminal, and say what happened.
  *
- * @param clipboard - injected rather than read off `navigator` so a test can
+ * @param clipboard - injected so a test can
  * drive the refused and unavailable branches, which are the two a real
  * clipboard will not produce on demand.
  */
@@ -171,6 +172,10 @@ export async function runTerminalClipboardAction(
   action: TerminalClipboardAction,
   terminal: TerminalClipboardTarget,
   clipboard: ClipboardLike | undefined,
+  options?: {
+    readonly isCurrent: () => boolean;
+    readonly preparePaste: (text: string) => Promise<string | null>;
+  },
 ): Promise<TerminalClipboardOutcome> {
   if (action === "paste") {
     if (clipboard?.readText === undefined) {
@@ -179,8 +184,14 @@ export async function runTerminalClipboardAction(
     let text: string;
     try {
       text = await clipboard.readText();
-    } catch {
-      return { kind: "refused", action };
+    } catch (error) {
+      return { kind: "refused", action, ...(error instanceof TerminalClipboardError ? { message: terminalClipboardErrorMessage(error.reason) } : {}) };
+    }
+    if (options !== undefined) {
+      if (!options.isCurrent()) return { kind: "cancelled", action };
+      const prepared = await options.preparePaste(text);
+      if (prepared === null || !options.isCurrent()) return { kind: "cancelled", action };
+      text = prepared;
     }
     if (text === "") return { kind: "nothing", action };
     // FOCUS FIRST, as VS Code's `_paste` does: the gesture may have come from a
@@ -198,12 +209,13 @@ export async function runTerminalClipboardAction(
   }
   try {
     await clipboard.writeText(selection);
-  } catch {
-    return { kind: "refused", action };
+  } catch (error) {
+    return { kind: "refused", action, ...(error instanceof TerminalClipboardError ? { message: terminalClipboardErrorMessage(error.reason) } : {}) };
   }
   // CLEARED ONLY AFTER THE WRITE SUCCEEDED. Dropping the selection first would
   // leave a user whose clipboard refused with neither the text nor the
   // selection they had.
+  if (options !== undefined && !options.isCurrent()) return { kind: "cancelled", action };
   if (action === "copyAndClearSelection") terminal.clearSelection();
   return { kind: "done", action };
 }
@@ -220,9 +232,12 @@ export function terminalClipboardNotice(
   outcome: TerminalClipboardOutcome,
 ): string | null {
   if (outcome.kind === "done" || outcome.kind === "nothing") return null;
+  if (outcome.kind === "cancelled") return outcome.action === "paste"
+    ? "Paste cancelled. No text was inserted."
+    : "The terminal changed while copying. Its selection was kept.";
   const verb = outcome.action === "paste" ? "paste" : "copy";
   if (outcome.kind === "unavailable") {
     return `This window cannot ${verb}: the system clipboard is not available to it.`;
   }
-  return `Vex was not allowed to ${verb}. Your system denied clipboard access to this window.`;
+  return outcome.message ?? `Vex could not ${verb} through its clipboard service. Try again.`;
 }
