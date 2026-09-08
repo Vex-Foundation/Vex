@@ -174,7 +174,7 @@ export const TERMINAL_DATA_FLUSH_TIMEOUT_MS = 250;
  */
 export const TERMINAL_SNAPSHOT_DRAIN_MS = 1_000;
 
-/** Force-kill backstop for a pty that will not exit on its own. */
+/** Total pty shutdown budget, including the native exit wait after force-kill. */
 export const TERMINAL_MAXIMUM_SHUTDOWN_MS = 5_000;
 
 /**
