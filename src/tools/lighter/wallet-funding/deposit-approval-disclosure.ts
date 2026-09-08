@@ -1,12 +1,23 @@
 /**
  * Non-spoofable approval-card disclosure for a prepared Lighter deposit.
  *
- * Every display value is recomputed here from the persisted deposit intent —
+ * Every display value is recomputed here from the persisted deposit intent:
  * amount from the stored base units, destination from the stored credit
- * address — never from model text, so the human-readable card can never diverge
+ * address, never from model text, so the human-readable card can never diverge
  * from what the executor will sign. The scope note enforces the trade/withdraw
  * separation at the approval layer: a deposit approval authorizes only a deposit
  * into the user's own account.
+ *
+ * NETWORK FEE, owner-accepted rule-90 exception (2026-09-07). Rule 90 asks a
+ * money-path card to bind every user-authorized bound, including the fee. This
+ * card carries NO numerical network-fee ceiling: an L1 gas quote taken at
+ * approval time would go stale faster than a human can read and accept the
+ * card, so a ceiling relative to that quote would expire consent rather than
+ * protect it. The card therefore states honestly that "Network fees are
+ * selected at execution.", and the runtime keeps the 4x abnormal-value guard
+ * derived from the execution-time preflight instead. Recorded with the owner's
+ * sign-off in src/tools/lighter/Lighter.md ("Deposit network fee"). Nothing
+ * here may promise a ceiling relative to the approval-time quote.
  */
 
 import { formatLighterIntegerAmount } from "@tools/lighter/order-preview.js";
@@ -203,7 +214,7 @@ export function buildLighterDepositApprovalDisclosure(
     createsAccountNote:
       "If this is your wallet's first Lighter deposit, it creates a new Lighter account owned by this wallet.",
     scopeNote:
-      "This approval authorizes only a deposit into your own Lighter perps account and, when needed, the exact settlement-token allowance for it. ETH is used only for network fees. It does not place any trade or include a swap, bridge, transfer, withdrawal, or key registration; key registration and any later trade require separate approvals.",
+      "This approval authorizes only a deposit into your own Lighter perps account and, when needed, the exact settlement-token allowance for it. ETH is used only for network fees. Network fees are selected at execution. It does not place any trade or include a swap, bridge, transfer, withdrawal, or key registration; key registration and any later trade require separate approvals.",
     summary:
       `Fund your ${environmentLabel} ${routeLabel} account with ${amountDisplay} from ${intent.depositTo} on ${chainLabel}.`,
   };

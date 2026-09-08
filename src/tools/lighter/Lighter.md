@@ -1,6 +1,6 @@
 # Lighter Module Map
 
-**Last updated: 2026-09-02**
+**Last updated: 2026-09-07**
 
 Lighter support now covers Core + Robinhood Chain public market data,
 read-only account visibility, wallet-funded account onboarding, local trading
@@ -429,13 +429,13 @@ vault secrets, `LighterClient`'s implicit fallback when no `privilegedAuth` is
 supplied) was deleted: it was a manually-pasted, never-regenerated credential
 with no mint/rotation path in Vex, and a stale one silently caused
 `lighter.withdraw.prepare` and other privileged reads to fail closed with a
-misleading "vault is locked" message instead of a token error — even while the
+misleading "vault is locked" message instead of a token error, even while the
 vault was genuinely unlocked and the real trading credential was registered
 and active. All privileged read-only auth is now always derived fresh from the
 saved trading credential via the local signer
 (`deriveLighterReadOnlyAccountAuth`); there is no more BYOK read-only-token
 path. The rest of this section is kept as a historical record of what Milestone
-4 verified live against Lighter — the endpoint auth classifications below are
+4 verified live against Lighter; the endpoint auth classifications below are
 still accurate, only the token-acquisition mechanism is gone.
 
 Milestone 4 was the read-only credential and request boundary, not account-tool
@@ -472,25 +472,57 @@ registered as read-only, approval-preparation, or approval-resume surfaces. The
 execution resume targets are exact-intent bound and reachable only from trusted
 host approval follow-ups with configured privileged dependencies.
 
-| Tool | Client calls | Returns |
-|------|--------------|---------|
-| `lighter.system` | `getStatus`, `getSystemConfig` | Status, network id, public pool/config fields |
-| `lighter.markets` | `getMarkets` | Deterministically ordered, paged market rows with count/truncation disclosure |
-| `lighter.market.get` | `getMarketDetails` | One-market detail rows for a numeric `marketId` |
-| `lighter.account.get` | `getAccount` | Public account rows by account index or L1 address |
-| `lighter.positions` | `getAccount` | Public inline positions from account rows |
-| `lighter.openOrders` | `getAccountActiveOrders` | Authenticated open-order rows through read-only token |
-| `lighter.orderHistory` | `getAccountInactiveOrders` | Authenticated inactive/historical order rows through read-only token |
-| `lighter.trades` | `getAccountTrades` | Authenticated account trade rows through read-only token |
-| `lighter.apiKeys.inspect` | `getApiKeys` | Public API-key indexes, public keys, and nonce metadata |
-| `lighter.order.preview` | live market resolution, public API-key metadata, market detail, order book, public account | Persisted preview-only Lighter order preflight from conversational asset/price/expiry requests |
-| `lighter.order.create.prepare` | persisted preview, local vault reference boundary | Local approval-prepared execution intent |
-| `lighter.order.create` | exact approved intent, privileged runtime dependencies | Revalidates live state, signs locally, submits, and reconciles only after trusted host approval |
-| `lighter.orderbook` | `getOrderBookOrders` | Bounded asks/bids sorted by best price with provider totals and truncation flags |
-| `lighter.recentTrades` | `getRecentTrades` | Bounded public trade tape rows plus cursor disclosure |
-| `lighter.candles` | `getCandles` | Newest candle rows up to the agent output cap |
+| Tool (public name) | Kind | Purpose |
+|---|---|---|
+| `lighter__account_onboarding_status` | read | Report the selected wallet's managed Lighter readiness on one environment and the minimal setup steps still missing. |
+| `lighter__system_get` | read | Read public system status and system configuration, including network id and the public fee and cooldown fields. |
+| `lighter__markets_list` | read | List public markets and order books with symbols, ids, active state, spot versus perp coverage and minimums, paged and sorted. |
+| `lighter__market_get` | read | Read detailed public metadata for one market by numeric market id: last price, daily activity, volume, open interest, fees. |
+| `lighter__account_get` | read | Read public account state by account index or owning L1 wallet address: balances, collateral, status, assets. |
+| `lighter__positions_list` | read | Read the positions exposed through the public account endpoint for one account or wallet. |
+| `lighter__open_orders_list` | read | Read authenticated resting orders using short-lived read-only auth derived locally from the saved trading credential. |
+| `lighter__order_history_list` | read | Read authenticated inactive order history (filled, cancelled, expired) through the same locally derived auth. |
+| `lighter__trades_list` | read | Read the authenticated account trade history, the user's own fills, through the same locally derived auth. |
+| `lighter__api_keys_inspect` | read | Read public API-key metadata for an account: which slots exist, their registered public keys and current nonces. |
+| `lighter__order_preview` | read | Create a live-data-backed persisted order preview for a market order, plain limit order, or one standalone reduce-only trigger order. |
+| `lighter__position_protect` | read | Preview and prepare one native one-cancels-the-other group protecting an existing perpetual position with two same-size reduce-only children. |
+| `lighter__deposit_status` | read | Check and reconcile this wallet's durable deposit intents after an approval or a pending or ambiguous Ethereum outcome. |
+| `lighter__withdraw_status` | read | Reconcile one durable Core USDC or RHC USDG withdrawal from exact evidence: pending, claimable, completed or ambiguous. |
+| `lighter__fees_status` | read | Check the wallet's fee readiness (collector, account tier, current provider allowance) or reconcile a submitted fee-authorization intent. |
+| `lighter__key_register_status` | read | Check and reconcile one staged key registration from exact provider and local vault evidence. |
+| `lighter__order_status` | read | Check and reconcile the true state of Vex-submitted creates and lifecycle actions after a sequencer-pending or ambiguous outcome. |
+| `lighter__orderbook_get` | read | Read public resting order-book rows for one market, sorted by best price with provider totals and truncation flags. |
+| `lighter__recent_trades_list` | read | Read the recent public trade tape for one market with cursor disclosure. |
+| `lighter__candles_list` | read | Read public OHLCV candles for one market over an epoch-millisecond range. |
+| `lighter__fees_approve_prepare` | prepare | Prepare the wallet's fee authorization and enqueue the one trusted fee card, or prepare its revocation with `revoke: true`. |
+| `lighter__fees_approve` | resume | Submit the exact approved fee-authorization intent, including the account tier change, only when resumed by its approved card. |
+| `lighter__order_cancel_prepare` | prepare | Prepare an approval for cancelling one exact active order, read from live provider state. |
+| `lighter__order_cancel` | resume | Execute one exact approved cancellation after revalidating the unchanged order, key and nonce. |
+| `lighter__order_modify_prepare` | prepare | Prepare an approval for replacing the total size and price of one exact active limit order. |
+| `lighter__order_modify` | resume | Execute one exact approved limit-order modification after revalidating order, market precision, key and nonce. |
+| `lighter__order_cancel_all_prepare` | prepare | Prepare one explicit approval to cancel every active order in the account across all markets. |
+| `lighter__order_cancel_all` | resume | Execute the approved account-wide cancellation, requiring the entire active-order set to be unchanged. |
+| `lighter__position_close_prepare` | prepare | Prepare one explicit approval to close the entire current position in one perpetual market. |
+| `lighter__position_close` | resume | Execute the approved full-position close as a reduce-only market IOC order after revalidating position and depth. |
+| `lighter__withdraw_claim_prepare` | prepare | Prepare a separate settlement-wallet approval for one exact claimable Core USDC or RHC USDG withdrawal. |
+| `lighter__withdraw_claim` | resume | Execute one exact separately approved manual settlement claim. |
+| `lighter__withdraw_prepare` | prepare | Prepare one approval-gated withdrawal from the wallet's uniquely owned account to the same wallet on the settlement chain. |
+| `lighter__withdraw` | resume | Execute one exact prepared withdrawal; direct calls, crossed environments and mismatched approvals are refused. |
+| `lighter__key_register_prepare` | prepare | Prepare the local trading-key registration for a funded account: reserve a free slot, generate and encrypt the key, enqueue its approval. |
+| `lighter__key_register` | resume | Sign and broadcast the exact approved TxType 8 registration in the privileged main process and reconcile the result. |
+| `lighter__deposit_prepare` | prepare | Prepare an exact approval-gated perps deposit of the amount the user named, in Ethereum USDC for Core or Robinhood Chain USDG for RHC. |
+| `lighter__deposit` | resume | Execute the approved deposit after a fresh exact preflight; direct or cross-session calls are refused. |
+| `lighter__order_create_prepare` | prepare | Prepare an approval-gated order create from a fresh persisted preview and enqueue its card. |
+| `lighter__order_create` | resume | Execute the approved create: revalidate live state, sign locally, submit and reconcile. |
 
-Every successful agent response includes provenance:
+Forty tools in total: 20 read, 10 approval-preparation, 10 approval-resume.
+Read them from `manifests/read.ts` and `manifests/write.ts`; those files are the
+source of truth for names, schemas and descriptions, and this table is a summary
+of them, never a second definition.
+
+Every successful public-read tool response includes provenance (the
+approval-preparation and approval-resume tools return their own intent and
+execution evidence instead):
 
 | Field | Meaning |
 |-------|---------|
@@ -503,6 +535,105 @@ Every successful agent response includes provenance:
 | `provenance.cacheStatus` | `fresh_or_short_cache`; the bytes are from live provider reads and may be served from Vex's short in-process cache |
 | `provenance.maxDataAgeMs` | Current maximum cache age for repeated identical reads |
 | `provenance.independentOnchainVerification` | `false` until a later phase adds independent chain/RPC verification |
+
+## WebSocket Surface
+
+`src/tools/lighter/constants.ts` holds four stream endpoints, two per
+deployment:
+
+| Endpoint | URL | Used by |
+|---|---|---|
+| Core `wsUrl` | `wss://mainnet.zklighter.elliot.ai/stream` | Recorded in the Core funding deployment metadata and asserted against it; no supervisor connects to it today |
+| Core `readonlyWsUrl` | `wss://mainnet.zklighter.elliot.ai/stream?readonly=true` | Every Core stream supervisor |
+| RHC `wsUrl` | `wss://api.rh.lighter.xyz/stream` | Recorded in the RHC funding deployment metadata and asserted against it; no supervisor connects to it today |
+| RHC `readonlyWsUrl` | `wss://api.rh.lighter.xyz/stream?readonly=true` | Every RHC stream supervisor |
+
+All three supervisors connect to the read-only URL only. Nothing in Vex sends a
+signed transaction over a socket; every mutation goes through REST `sendTx` on
+the privileged main-process path.
+
+Three supervisors live in the Electron main process, each owning its own socket,
+handshake timeout, restart policy and subscriber registry:
+
+| Supervisor | File | Auth | Channels subscribed |
+|---|---|---|---|
+| Public market | `vex-app/src/main/lighter/public-market-stream.ts` | none | `order_book/<marketId>`, `trade/<marketId>`, and `market_stats/<marketId>` or `spot_market_stats/<marketId>` for a spot market |
+| Candle | `vex-app/src/main/lighter/candle-stream.ts` | none | `candle/<marketId>/<resolution>`, with REST history hydration started only after the subscribe frame so no trade falls into a race gap |
+| Account order | `vex-app/src/main/lighter/order-stream.ts` | short-lived auth token derived locally from the saved trading credential, sent in the subscribe frame | `account_all_orders/<accountIndex>`, `account_all_trades/<accountIndex>`, `account_all_positions/<accountIndex>` |
+
+The account order stream requires an unlocked vault; without one it reports
+`missing_auth_token` and retries rather than showing stale account state as
+current. Stream state is display and reconciliation evidence. It never
+authorizes anything and never stands in for the provider evidence that an
+execution path reconciles against.
+
+## Fees
+
+Vex charges an integrator fee on the trades it attributes to itself. The rates
+are fixed in `src/tools/lighter/fee-policy.ts` and cannot be changed by an agent
+argument or a user request:
+
+| Market | Maker | Taker | Ticks |
+|---|---|---|---|
+| Perpetuals | 0.10% | 0.10% | 1,000 |
+| Spot | 0.25% | 0.25% | 2,500 |
+
+One tick is one millionth of executed trade value. 10 bps is Lighter's
+documented maximum integrator fee on perps; the spot maximum is 1%. The
+authorization lasts ten years from approval and is revocable at any time through
+`lighter__fees_approve_prepare` with `revoke: true`, which sets all four caps and
+the expiry to zero.
+
+Collector identity, owner-attested on 2026-09-07: wallet
+`0x10Ce97Cf3142BE2a1a28aC83A55b21fDCE493C03` on both deployments, Lighter Core
+account 743799, Robinhood Chain account 22869. The release-evidence rows for the
+live checks that must still be observed are in `FEE_LAUNCH.md` in this
+directory; the attestation is not itself evidence that a fee was ever credited.
+
+From 2026-09-14 Lighter rejects integrator-attributed trades and new integrator
+approvals from Standard accounts, so a fee-bearing account must be on a higher
+tier: Plus on Core, Premium on Robinhood Chain, which has no Plus tier. The
+authorization flow performs that tier change as part of the same approved
+operation. Tier changes are tied to the L1 address and cover its subaccounts.
+
+The one fee card, built in
+`src/vex-agent/tools/protocols/lighter/fee-authorization-disclosure.ts` and
+rendered entirely from the persisted intent, states: the four rate caps; the
+collector account and wallet; the expiry as an ISO timestamp and its duration in
+words; the account tier today and the tier targeted, with the exchange fees of
+each side by side; why the tier change is needed; that Vex does not switch the
+tier back, that upgrades apply immediately and that a downgrade is allowed once
+24 hours have passed since the last tier change; and that fee-bearing
+authorization is required to open positions, while orders that only reduce an
+existing position stay available without a Vex fee. Individual trades still
+require their own approval.
+
+### Deposit network fee
+
+Recorded rule-90 exception, owner sign-off 2026-09-07. Rule 90 requires a
+money-path approval card to bind every user-authorized bound, the fee included.
+The Lighter deposit card carries NO numerical network-fee ceiling. An L1 gas
+quote taken when the card is built would go stale faster than a human can read
+and accept it, so a ceiling relative to that quote would expire the user's
+consent rather than protect it, and re-preparing on every gas tick is worse for
+the user than the honest sentence.
+
+What the card says instead, verbatim: "Network fees are selected at execution."
+Nothing on the card promises a ceiling relative to the approval-time quote.
+
+What still guards the money: the execution-time preflight is taken again
+immediately before signing, and
+`src/tools/lighter/wallet-funding/deposit-pre-sign.ts` derives an abnormal-value
+boundary from THAT fresh quote through
+`LIGHTER_DEPOSIT_RUNTIME_FEE_SANITY_MULTIPLIER` (4x). The transaction signs with
+the current quote, not with the boundary; the boundary only refuses a quote that
+has moved absurdly between the preflight and the signer. The deposit amount, the
+destination, the gateway, the calldata and the zero native value all remain
+bound to the approved card exactly as rule 90 requires.
+
+Owner: `src/tools/lighter/wallet-funding/deposit-approval-disclosure.ts` for the
+wording, `deposit-pre-sign.ts` for the guard.
+
 
 ## Safety Notes
 

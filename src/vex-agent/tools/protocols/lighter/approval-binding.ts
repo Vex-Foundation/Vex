@@ -33,9 +33,6 @@ const CRITICAL_ARG_KEYS = [
   "timeInForce",
   "toolId",
 ] as const;
-const LEGACY_CRITICAL_ARG_KEYS = CRITICAL_ARG_KEYS.filter(
-  (key) => key !== "triggerPriceDisplay" && key !== "triggerPriceInteger",
-);
 
 export async function assertLighterOrderCreateApprovalBinding(input: {
   readonly approvalId: string;
@@ -97,9 +94,7 @@ function approvalPreviewMatchesIntent(
   const actualKeys = Object.keys(criticalArgs).sort().join(",");
   const feeArgs = lighterOrderFeeCriticalArgs(intent.integratorFees);
   const currentKeys = [...CRITICAL_ARG_KEYS, ...Object.keys(feeArgs)].sort().join(",");
-  const legacyKeys = [...LEGACY_CRITICAL_ARG_KEYS].sort().join(",");
-  const legacyNonProtective = intent.integratorFees == null && intent.triggerPriceInteger === null && actualKeys === legacyKeys;
-  if (actualKeys !== currentKeys && !legacyNonProtective) {
+  if (actualKeys !== currentKeys) {
     return false;
   }
 
@@ -115,7 +110,7 @@ function approvalPreviewMatchesIntent(
     && criticalArgs.side === intent.side
     && criticalArgs.baseAmountInteger === intent.baseAmountInteger
     && criticalArgs.priceInteger === intent.priceInteger
-    && (legacyNonProtective || criticalArgs.triggerPriceInteger === intent.triggerPriceInteger)
+    && criticalArgs.triggerPriceInteger === intent.triggerPriceInteger
     && criticalArgs.orderType === intent.orderType
     && criticalArgs.timeInForce === intent.timeInForce
     && criticalArgs.reduceOnly === intent.reduceOnly
@@ -126,10 +121,9 @@ function approvalPreviewMatchesIntent(
     && isNonEmptyString(criticalArgs.marketSymbol)
     && isNonEmptyString(criticalArgs.baseAmountDisplay)
     && isNonEmptyString(criticalArgs.priceDisplay)
-    && (legacyNonProtective || (intent.triggerPriceInteger === null
+    && (intent.triggerPriceInteger === null
       ? criticalArgs.triggerPriceDisplay === null
       : isNonEmptyString(criticalArgs.triggerPriceDisplay))
-    )
     && isNonEmptyString(criticalArgs.notionalDisplay)
   );
 }

@@ -31,6 +31,15 @@ interface CollectorConfiguration {
 
 // Only public, release-controlled collector identities belong here. Enable a
 // deployment after its collector ownership and live collection are verified.
+//
+// OWNER ATTESTATION 2026-09-07: the owner attested that
+// 0x10Ce97Cf3142BE2a1a28aC83A55b21fDCE493C03 is Vex's collector wallet on both
+// deployments, that Lighter Core account 743799 and Robinhood Chain account
+// 22869 are its accounts, and that 10 bps perps / 25 bps spot maker and taker
+// with a ten-year authorization are the intended terms. Both deployments stay
+// enabled on that attestation. FEE_LAUNCH.md in this directory holds the
+// evidence rows: the live checks per environment that must be observed before
+// the release claims collection works, each with its own status cell.
 const COLLECTORS: Readonly<Record<LighterEnvironment, CollectorConfiguration>> = Object.freeze({
   core: Object.freeze({
     enabled: true,

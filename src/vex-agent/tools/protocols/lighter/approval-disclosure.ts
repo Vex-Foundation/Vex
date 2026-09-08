@@ -12,8 +12,8 @@ import { ErrorCodes, VexError } from "../../../../errors.js";
  * Human-readable approval-card fields for a prepared Lighter order create.
  *
  * Every display value is recomputed here from the exact integer amounts the
- * signer will receive, using the market decimals persisted with the preview —
- * never taken from model text — so the human-readable disclosure can never
+ * signer will receive, using the market decimals persisted with the preview,
+ * never taken from model text, so the human-readable disclosure can never
  * diverge from the signed order.
  */
 export interface LighterOrderApprovalDisclosure {
@@ -128,7 +128,7 @@ function signedExpiryDisclosure(input: {
   readonly protective: boolean;
 }): string {
   if (input.timeInForce === "immediate-or-cancel" && !input.protective) {
-    return `stored, unsent expiry reference ${input.orderExpiryIso}; this timestamp is not the approval deadline and is not signed as an order expiry—Lighter receives a nil (0) OrderExpiry for this immediate-only order.`;
+    return `stored, unsent expiry reference ${input.orderExpiryIso}; this timestamp is not the approval deadline and is not signed as an order expiry - Lighter receives a nil (0) OrderExpiry for this immediate-only order.`;
   }
   if (input.protective) {
     return `signed trigger-order expiry ${input.orderExpiryIso}.`;

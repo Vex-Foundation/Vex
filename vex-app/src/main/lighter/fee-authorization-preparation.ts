@@ -360,10 +360,24 @@ export function buildLighterFeeAuthorizationTerms(
     exchangeTakerFeeTick: targetTier
       ? targetFees.taker
       : observed.limits.current_taker_fee_tick,
-    // Contract 12.2: lane C2 reads these from the authenticated account limits.
-    currentExchangeMakerFeeTick: null,
-    currentExchangeTakerFeeTick: null,
+    // Contract 12.2: the account's fees as the provider reports them TODAY, so
+    // the approval card can put "today" next to the tier the change targets.
+    // The provider may omit either tick; a non-integer is recorded as null
+    // rather than guessed, and the card then says the fee was not reported.
+    currentExchangeMakerFeeTick: feeTickOrNull(
+      observed.limits.current_maker_fee_tick,
+    ),
+    currentExchangeTakerFeeTick: feeTickOrNull(
+      observed.limits.current_taker_fee_tick,
+    ),
   };
+}
+
+/** Provider fee ticks are on the 1e6 scale; anything else is unreported. */
+function feeTickOrNull(value: unknown): number | null {
+  return Number.isSafeInteger(value) && (value as number) >= 0
+    ? (value as number)
+    : null;
 }
 
 export async function prepareLighterFeeAuthorization(

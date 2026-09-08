@@ -193,6 +193,10 @@ describe("buildLighterDepositApprovalDisclosure", () => {
       depositValueWei: "0",
     });
     expect(d.scopeNote).toContain("ETH is used only for network fees");
+    // Owner-accepted rule-90 exception 2026-09-07: the card promises no ceiling
+    // relative to the approval-time quote, and says so in those exact words.
+    expect(d.scopeNote).toContain("Network fees are selected at execution.");
+    expect(d.scopeNote).not.toMatch(/at most|no more than|maximum network fee/i);
   });
 
   it("refuses a non-deposit capability", () => {
