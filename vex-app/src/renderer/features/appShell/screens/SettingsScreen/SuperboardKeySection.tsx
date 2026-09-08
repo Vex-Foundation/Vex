@@ -20,7 +20,7 @@ import { superboardPendingCopy } from "./superboard-pending-copy.js";
 const MASK = "••••••••••••••••••••••••";
 
 const ICON_CIRCLE_CHROME = cn(
-  "flex h-10 w-10 shrink-0 items-center justify-center rounded-full",
+  "flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full",
   "border border-[var(--color-border)] text-ink-primary",
 );
 
@@ -55,7 +55,7 @@ export function SuperboardKeySection(): JSX.Element {
     >
       <header className="vex-step-header flex items-start gap-4">
         <span aria-hidden className={ICON_CIRCLE_CHROME}>
-          <SUPERBOARD_KEY_ICON size={20} />
+          <SUPERBOARD_KEY_ICON size={36} />
         </span>
         <div className="flex flex-col gap-1.5 pt-0.5">
           <h1 className="font-serif text-2xl font-normal leading-tight text-ink-primary">

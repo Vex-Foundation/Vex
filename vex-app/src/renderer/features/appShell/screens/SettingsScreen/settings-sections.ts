@@ -9,16 +9,18 @@ import type { ComponentType } from "react";
 import type { EnvState } from "@shared/schemas/onboarding.js";
 import type { SuperboardKeyStatus } from "@shared/schemas/superboard-key.js";
 import type { WizardStepId } from "@shared/schemas/wizard.js";
-import { IconShare, type GlyphProps } from "../../../../components/icons/index.js";
+import { IconSuperboard } from "../../../../components/icons/brand/IconSuperboard.js";
+import type { GlyphProps } from "../../../../components/icons/index.js";
 import type { SettingsSection } from "../../../../stores/uiStore.js";
 
-/** Glyph for Superboard in the register row and the section header. */
-export const SUPERBOARD_KEY_ICON: ComponentType<GlyphProps> = IconShare;
+/** Superboard wordmark for the register row and the section header. */
+export const SUPERBOARD_KEY_ICON: ComponentType<GlyphProps> = IconSuperboard;
 
 export interface SectionMeta {
   readonly id: SettingsSection;
   readonly stepId?: Exclude<WizardStepId, "review">;
   readonly icon?: ComponentType<GlyphProps>;
+  readonly iconSize?: number;
   readonly name: string;
   readonly hint: string;
 }
@@ -46,6 +48,7 @@ export const SETTINGS_SECTIONS: ReadonlyArray<SectionMeta> = [
   {
     id: "superboardKey",
     icon: SUPERBOARD_KEY_ICON,
+    iconSize: 36,
     name: "Superboard key",
     hint: "One code you paste into Superboard",
   },

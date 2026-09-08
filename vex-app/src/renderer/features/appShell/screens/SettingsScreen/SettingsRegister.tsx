@@ -57,8 +57,8 @@ export function SettingsRegister({
                 data-vex-settings-row={meta.id}
                 className="flex w-full items-center gap-4 rounded-xl px-3 py-4 text-left transition-colors hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent-primary"
               >
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-line-2 text-ink-secondary">
-                  <StepGlyph size={17} />
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-line-2 text-ink-secondary">
+                  <StepGlyph size={meta.iconSize ?? 17} />
                 </span>
                 <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                   <span className="text-[14px] leading-[22px] text-ink-primary">
