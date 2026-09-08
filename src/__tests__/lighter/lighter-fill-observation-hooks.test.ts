@@ -17,12 +17,14 @@
  *      - the transition commits, the ledger write is owed to the next
  *      observation, and nothing reports the order as unresolved.
  */
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, type Mock } from "vitest";
 
 import type {
   LighterAccountAllOrdersStreamMessage,
   LighterAccountAllTradesStreamMessage,
   LighterAccountOrder,
+  LighterAssetDetail,
+  LighterMarketDetail,
   LighterTrade,
 } from "@tools/lighter/types.js";
 import type { LighterOrderExecutionIntentRow } from "@vex-agent/db/repos/lighter-order-execution-intents.js";
@@ -45,6 +47,16 @@ import {
 
 const ACCOUNT_INDEX = 42;
 const CLIENT_ORDER_INDEX = "700";
+
+type FillClient = LighterFillObservationDeps["client"];
+type StreamClient = LighterAccountStreamReconciliationDeps["client"];
+type OrderIntents = LighterAccountStreamReconciliationDeps["orderIntents"];
+type MarkStreamOutcome = OrderIntents["markStreamOutcome"];
+type StreamLifecycleIntents = LighterAccountStreamReconciliationDeps["lifecycleIntents"];
+type StreamNonceState = LighterAccountStreamReconciliationDeps["nonceState"];
+type RepairClient = LighterOrderRepairDeps["client"];
+type RepairIntents = LighterOrderRepairDeps["intents"];
+type RepairNonceState = LighterOrderRepairDeps["nonceState"];
 
 function trade(overrides: Partial<LighterTrade> = {}): LighterTrade {
   return {
@@ -70,11 +82,12 @@ function trade(overrides: Partial<LighterTrade> = {}): LighterTrade {
   };
 }
 
-function tradesFrame(trades: LighterTrade[]): LighterAccountAllTradesStreamMessage {
+function tradesFrame(trades: readonly LighterTrade[]): LighterAccountAllTradesStreamMessage {
   return {
     type: "update/account_all_trades",
+    channel: `account_all_trades:${ACCOUNT_INDEX}`,
     trades,
-  } as unknown as LighterAccountAllTradesStreamMessage;
+  };
 }
 
 function executionIntent(
@@ -138,14 +151,14 @@ function executionIntent(
     updatedAt: "2026-09-08T09:00:01.000Z",
     expiresAt: "2026-09-08T10:00:00.000Z",
     ...overrides,
-  } as LighterOrderExecutionIntentRow;
+  };
 }
 
 /** A recording ledger: the same identity map `lighter_fills` enforces in SQL. */
 function ledger(options: { readonly failFirst?: boolean } = {}) {
   const rows = new Map<string, LighterFillRecord>();
   let failuresLeft = options.failFirst === true ? 1 : 0;
-  const recordFill = vi.fn(async (record: LighterFillRecord) => {
+  const recordFill = vi.fn<LighterFillObservationDeps["recordFill"]>(async (record: LighterFillRecord) => {
     if (failuresLeft > 0) {
       failuresLeft -= 1;
       throw new Error("ledger write interrupted");
@@ -161,7 +174,7 @@ function ledger(options: { readonly failFirst?: boolean } = {}) {
 }
 
 function fillDeps(
-  recordFill: ReturnType<typeof ledger>["recordFill"],
+  recordFill: LighterFillObservationDeps["recordFill"],
   hasFillForIntent: LighterFillObservationDeps["hasFillForIntent"] =
     vi.fn<LighterFillObservationDeps["hasFillForIntent"]>(async () => false),
 ): LighterFillObservationDeps {
@@ -169,7 +182,7 @@ function fillDeps(
   return {
     hasFillForIntent,
     client: {
-      getMarketDetails: vi.fn(async () => ({
+      getMarketDetails: vi.fn<FillClient["getMarketDetails"]>(async () => ({
         code: 200,
         order_book_details: [{
           symbol: "ETH",
@@ -192,7 +205,7 @@ function fillDeps(
         }],
         spot_order_book_details: [],
       })),
-      getAssetDetails: vi.fn(async () => ({
+      getAssetDetails: vi.fn<FillClient["getAssetDetails"]>(async () => ({
         code: 200,
         asset_details: [
           // The Core collateral as Lighter lists it: asset 3, the deployment's
@@ -208,31 +221,47 @@ function fillDeps(
           { asset_id: 1, symbol: "ETH", l1_decimals: 18, decimals: 18, min_transfer_amount: "0", l1_address: "0x" },
         ],
       })),
-    } as unknown as LighterFillObservationDeps["client"],
-    recordFill: recordFill as unknown as LighterFillObservationDeps["recordFill"],
-    findFeeAuthorization: vi.fn(async () => null) as unknown as LighterFillObservationDeps["findFeeAuthorization"],
+    },
+    recordFill,
+    findFeeAuthorization: vi.fn<LighterFillObservationDeps["findFeeAuthorization"]>(async () => null),
   };
+}
+
+/**
+ * A trade frame carries its own evidence, so it must never spend a privileged
+ * follow-up read. Asking is a defect, not a quiet empty page.
+ */
+function unaskedTradesReader() {
+  return vi.fn<StreamClient["getAccountTrades"]>(async () => {
+    throw new Error("unexpected account trades read on a trade frame");
+  });
 }
 
 function streamDeps(
   intent: LighterOrderExecutionIntentRow,
   fills: LighterFillObservationDeps,
-  markStreamOutcome = vi.fn(async () => intent),
-): { deps: LighterAccountStreamReconciliationDeps; markStreamOutcome: ReturnType<typeof vi.fn> } {
-  const deps = {
-    client: { getNextNonce: vi.fn(async () => ({ nonce: 10 })) },
+  markStreamOutcome: Mock<MarkStreamOutcome> = vi.fn<MarkStreamOutcome>(async () => intent),
+): { deps: LighterAccountStreamReconciliationDeps; markStreamOutcome: Mock<MarkStreamOutcome> } {
+  const deps: LighterAccountStreamReconciliationDeps = {
+    client: {
+      getNextNonce: vi.fn<StreamClient["getNextNonce"]>(async () => ({ code: 200, nonce: 10 })),
+      getAccountTrades: unaskedTradesReader(),
+    },
     orderIntents: {
-      listStreamWatchable: vi.fn(async () => [intent]),
+      listStreamWatchable: vi.fn<OrderIntents["listStreamWatchable"]>(async () => [intent]),
       markStreamOutcome,
-      markEvidenceConflict: vi.fn(async () => null),
+      markEvidenceConflict: vi.fn<OrderIntents["markEvidenceConflict"]>(async () => null),
     },
     lifecycleIntents: {
-      listStreamWatchable: vi.fn(async () => []),
-      markStreamEvidence: vi.fn(async () => null),
+      listStreamWatchable: vi.fn<StreamLifecycleIntents["listStreamWatchable"]>(async () => []),
+      markStreamEvidence: vi.fn<StreamLifecycleIntents["markStreamEvidence"]>(async () => null),
     },
-    nonceState: { find: vi.fn(async () => null), recordExecutionObserved: vi.fn(async () => undefined) },
+    nonceState: {
+      find: vi.fn<StreamNonceState["find"]>(async () => null),
+      recordExecutionObserved: vi.fn<StreamNonceState["recordExecutionObserved"]>(async () => null),
+    },
     fills,
-  } as unknown as LighterAccountStreamReconciliationDeps;
+  };
   return { deps, markStreamOutcome };
 }
 
@@ -315,14 +344,11 @@ describe("account stream: every fill in the frame reaches the ledger", () => {
   });
 
   it("a ledger write that keeps failing NEVER stops the provider outcome committing", async () => {
-    const recordFill = vi.fn(async () => {
+    const recordFill = vi.fn<LighterFillObservationDeps["recordFill"]>(async () => {
       throw new Error("ledger unavailable");
     });
     const intent = executionIntent();
-    const { deps, markStreamOutcome } = streamDeps(
-      intent,
-      fillDeps(recordFill as unknown as ReturnType<typeof ledger>["recordFill"]),
-    );
+    const { deps, markStreamOutcome } = streamDeps(intent, fillDeps(recordFill));
 
     const report = await reconcileLighterAccountStreamMessage(
       "core", ACCOUNT_INDEX, tradesFrame([trade()]), deps,
@@ -340,11 +366,14 @@ describe("order repair: trades read alongside order evidence are not lost", () =
     const { rows, recordFill } = ledger();
     const intent = executionIntent({ executionState: "sequencer_pending" });
     const resolved = { ...intent, executionState: "partially_filled" as const };
-    const deps = {
+    const deps: LighterOrderRepairDeps = {
       client: {
-        getNextNonce: vi.fn(async () => ({ nonce: 10 })),
-        getAccountActiveOrders: vi.fn(async () => ({
+        getNextNonce: vi.fn<RepairClient["getNextNonce"]>(async () => ({ code: 200, nonce: 10 })),
+        getAccountActiveOrders: vi.fn<RepairClient["getAccountActiveOrders"]>(async () => ({
+          code: 200,
           orders: [{
+            order_index: 8,
+            client_order_index: Number(CLIENT_ORDER_INDEX),
             order_id: "8",
             client_order_id: CLIENT_ORDER_INDEX,
             owner_account_index: ACCOUNT_INDEX,
@@ -358,24 +387,28 @@ describe("order repair: trades read alongside order evidence are not lost", () =
             is_ask: false,
           }],
         })),
-        getAccountInactiveOrders: vi.fn(async () => ({ orders: [] })),
-        getAccountTrades: vi.fn(async () => ({ trades: [trade()] })),
+        getAccountInactiveOrders: vi.fn<RepairClient["getAccountInactiveOrders"]>(
+          async () => ({ code: 200, orders: [] }),
+        ),
+        getAccountTrades: vi.fn<RepairClient["getAccountTrades"]>(
+          async () => ({ code: 200, trades: [trade()] }),
+        ),
       },
       intents: {
-        listUnresolved: vi.fn(async () => [intent]),
-        findByIntentIdAnySession: vi.fn(async () => intent),
-        markRepairResolved: vi.fn(async () => resolved),
-        markEvidenceConflict: vi.fn(async () => null),
+        listUnresolved: vi.fn<RepairIntents["listUnresolved"]>(async () => [intent]),
+        findByIntentIdAnySession: vi.fn<RepairIntents["findByIntentIdAnySession"]>(async () => intent),
+        markRepairResolved: vi.fn<RepairIntents["markRepairResolved"]>(async () => resolved),
+        markEvidenceConflict: vi.fn<RepairIntents["markEvidenceConflict"]>(async () => null),
       },
       nonceState: {
-        find: vi.fn(async () => null),
-        releaseReservation: vi.fn(async () => true),
-        recordExecutionObserved: vi.fn(async () => undefined),
+        find: vi.fn<RepairNonceState["find"]>(async () => null),
+        releaseReservation: vi.fn<RepairNonceState["releaseReservation"]>(async () => null),
+        recordExecutionObserved: vi.fn<RepairNonceState["recordExecutionObserved"]>(async () => null),
       },
       resolvePrivilegedAccountAuth: vi.fn(async () => ({ token: "read-token", accountIndex: ACCOUNT_INDEX })),
       fills: fillDeps(recordFill),
       now: () => 1_760_000_000_000,
-    } as unknown as LighterOrderRepairDeps;
+    };
 
     const report = await repairLighterOrderIntent(intent, deps);
 
@@ -457,8 +490,6 @@ function ordersFrame(orders: readonly LighterAccountOrder[]): LighterAccountAllO
     orders: { "0": [...orders] },
   };
 }
-
-type StreamClient = LighterAccountStreamReconciliationDeps["client"];
 
 /** A trades reader typed as the reconciler's own dependency, so the assertions run on the real contract. */
 function tradesReader(trades: readonly LighterTrade[]) {
@@ -691,7 +722,7 @@ describe("market assets: a perpetual names its instrument and its collateral, a 
   // Measured live on 2026-09-08: Lighter's orderBookDetails reports
   // base_asset_id 0 and quote_asset_id 0 for every perpetual on Core and on
   // Robinhood Chain, while a spot market carries real asset ids.
-  const collateral = {
+  const collateral: LighterAssetDetail = {
     asset_id: 3,
     symbol: "USDC",
     l1_decimals: 6,
@@ -699,32 +730,41 @@ describe("market assets: a perpetual names its instrument and its collateral, a 
     min_transfer_amount: "0",
     l1_address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
   };
-  const eth = { asset_id: 1, symbol: "ETH", l1_decimals: 18, decimals: 18, min_transfer_amount: "0", l1_address: "0x" };
+  const eth: LighterAssetDetail = {
+    asset_id: 1, symbol: "ETH", l1_decimals: 18, decimals: 18, min_transfer_amount: "0", l1_address: "0x",
+  };
 
-  function marketDeps(detail: Record<string, unknown>, assets: readonly Record<string, unknown>[]): LighterFillObservationDeps {
+  function marketDeps(
+    detail: LighterMarketDetail,
+    assets: readonly LighterAssetDetail[],
+  ): LighterFillObservationDeps {
     resetLighterMarketAssetsCache();
     return {
-      hasFillForIntent: vi.fn(async () => false),
+      hasFillForIntent: vi.fn<LighterFillObservationDeps["hasFillForIntent"]>(async () => false),
       client: {
-        getMarketDetails: vi.fn(async () => ({
+        getMarketDetails: vi.fn<FillClient["getMarketDetails"]>(async () => ({
           code: 200,
-          order_book_details: detail["market_type"] === "perp" ? [detail] : [],
-          spot_order_book_details: detail["market_type"] === "spot" ? [detail] : [],
+          order_book_details: detail.market_type === "perp" ? [detail] : [],
+          spot_order_book_details: detail.market_type === "spot" ? [detail] : [],
         })),
-        getAssetDetails: vi.fn(async () => ({ code: 200, asset_details: assets })),
-      } as unknown as LighterFillObservationDeps["client"],
-      recordFill: vi.fn() as unknown as LighterFillObservationDeps["recordFill"],
-      findFeeAuthorization: vi.fn(async () => null) as unknown as LighterFillObservationDeps["findFeeAuthorization"],
+        getAssetDetails: vi.fn<FillClient["getAssetDetails"]>(
+          async () => ({ code: 200, asset_details: [...assets] }),
+        ),
+      },
+      recordFill: vi.fn<LighterFillObservationDeps["recordFill"]>(),
+      findFeeAuthorization: vi.fn<LighterFillObservationDeps["findFeeAuthorization"]>(async () => null),
     };
   }
 
-  const perp = {
+  const perp: LighterMarketDetail = {
     symbol: "ETH", market_id: 0, market_type: "perp", base_asset_id: 0, quote_asset_id: 0, status: "active",
     taker_fee: "0", maker_fee: "0", liquidation_fee: "0", min_base_amount: "0", min_quote_amount: "0",
     supported_size_decimals: 4, supported_price_decimals: 2, supported_quote_decimals: 6, order_quote_limit: "0",
     is_maker_fee_enabled: true, is_taker_fee_enabled: true,
   };
-  const spot = { ...perp, symbol: "ETH/USDC", market_id: 2048, market_type: "spot", base_asset_id: 1, quote_asset_id: 3 };
+  const spot: LighterMarketDetail = {
+    ...perp, symbol: "ETH/USDC", market_id: 2048, market_type: "spot", base_asset_id: 1, quote_asset_id: 3,
+  };
 
   it("resolves a perpetual with asset ids 0/0 to the instrument and the verified collateral", async () => {
     const market = await resolveLighterMarketAssets("core", 0, marketDeps(perp, [collateral, eth]));

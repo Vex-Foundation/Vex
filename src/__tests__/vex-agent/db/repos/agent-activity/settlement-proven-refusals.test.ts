@@ -20,6 +20,7 @@ import {
   insertSettlementProvenActivityRowWith,
   type SettlementProvenActivityInput,
 } from "@vex-agent/db/repos/agent-activity/settlement-proven.js";
+import { testPoolClient } from "../../../../helpers/pool-client.js";
 
 const HASH = `0x${"b".repeat(64)}`;
 const WALLET = "0x1111111111111111111111111111111111111111";
@@ -27,11 +28,11 @@ const USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
 
 /** Any query at all is a failure: a refusal writes nothing and reads nothing. */
 function forbiddenClient(): PoolClient {
-  return {
-    query: () => {
+  return testPoolClient({
+    query: (): never => {
       throw new Error("the settlement-proven writer touched the database on a refused input");
     },
-  } as unknown as PoolClient;
+  });
 }
 
 function input(

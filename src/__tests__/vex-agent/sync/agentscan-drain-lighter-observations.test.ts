@@ -21,6 +21,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 import type { AgentscanClient, SendPositionObservationsInput } from "@vex-agent/agentscan/client.js";
 import type { StoredLighterPositionObservation } from "@vex-agent/sync/lighter-position-snapshot.js";
+import { neverAskedCapabilities } from "../../helpers/agentscan-client.js";
 
 const mockClaimDueOutbox = vi.fn();
 const mockGetServerCapabilityObservation = vi.fn();
@@ -88,12 +89,19 @@ function laneDeps(input: {
   };
 }
 
-function client(post: ReturnType<typeof vi.fn>): AgentscanClient {
+type PostObservations = AgentscanClient["postLighterPositionObservations"];
+
+/**
+ * The observation arm's own client. The capability answer comes from the gate's
+ * configured source in this suite, so this endpoint stays neutral, and the
+ * event outbox is empty, so `sendEvents` is never asked.
+ */
+function client(post: PostObservations): AgentscanClient {
   return {
-    sendEvents: vi.fn(),
-    fetchCapabilities: vi.fn(async () => ({ kind: "unreachable" as const })),
+    sendEvents: vi.fn<AgentscanClient["sendEvents"]>(),
+    fetchCapabilities: neverAskedCapabilities,
     postLighterPositionObservations: post,
-  } as unknown as AgentscanClient;
+  };
 }
 
 beforeEach(() => {
@@ -118,7 +126,7 @@ function advertise(present: boolean): void {
 describe("the snapshot arm of the drain", () => {
   it("HOLDS every observation while the capability is absent, and never calls the transport", async () => {
     advertise(false);
-    const post = vi.fn();
+    const post = vi.fn<PostObservations>();
     const deps = laneDeps({ pending: [observation()] });
 
     const result = await drainOutbox(client(post), AGENT_HASH, TOKEN, GENERATION, deps);
@@ -131,7 +139,7 @@ describe("the snapshot arm of the drain", () => {
 
   it("sends the observation ONCE and settles it when the capability is present", async () => {
     advertise(true);
-    const post = vi.fn(async (_input: SendPositionObservationsInput) => ({
+    const post = vi.fn<PostObservations>(async (_input: SendPositionObservationsInput) => ({
       kind: "ok" as const, accepted: 1, ignoredStale: 0, rejectedIndexes: [],
     }));
     const deps = laneDeps({ pending: [observation()] });
@@ -158,7 +166,7 @@ describe("the snapshot arm of the drain", () => {
 
   it("counts an IGNORED-STALE arrival as settled - it is not an error the client can fix", async () => {
     advertise(true);
-    const post = vi.fn(async () => ({
+    const post = vi.fn<PostObservations>(async () => ({
       kind: "ok" as const, accepted: 0, ignoredStale: 1, rejectedIndexes: [],
     }));
     const deps = laneDeps({ pending: [observation()] });
@@ -171,7 +179,7 @@ describe("the snapshot arm of the drain", () => {
 
   it("leaves a REFUSED observation unsent and marks nothing", async () => {
     advertise(true);
-    const post = vi.fn(async () => ({
+    const post = vi.fn<PostObservations>(async () => ({
       kind: "ok" as const, accepted: 0, ignoredStale: 0, rejectedIndexes: [0],
     }));
     const deps = laneDeps({ pending: [observation()] });
@@ -185,7 +193,7 @@ describe("the snapshot arm of the drain", () => {
 
   it("leaves the whole observation unsent when a market's size decimals cannot be read", async () => {
     advertise(true);
-    const post = vi.fn();
+    const post = vi.fn<PostObservations>();
     const deps = laneDeps({ pending: [observation()], decimals: null });
 
     const result = await drainOutbox(client(post), AGENT_HASH, TOKEN, GENERATION, deps);
@@ -197,7 +205,7 @@ describe("the snapshot arm of the drain", () => {
 
   it("defers the batch on a transport failure without claiming a delivery", async () => {
     advertise(true);
-    const post = vi.fn(async () => ({
+    const post = vi.fn<PostObservations>(async () => ({
       kind: "retryable" as const, status: null, retryAfterSeconds: null, detail: "network",
     }));
     const deps = laneDeps({ pending: [observation()] });

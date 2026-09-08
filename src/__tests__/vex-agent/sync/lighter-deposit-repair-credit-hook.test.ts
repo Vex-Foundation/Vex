@@ -42,6 +42,7 @@ import type {
   LighterAccountsByL1AddressResponse,
   LighterTxFromL1Response,
 } from "@tools/lighter/types.js";
+import { testPoolClient } from "../../helpers/pool-client.js";
 
 const DEPOSIT_HASH: `0x${string}` = `0x${"b".repeat(64)}`;
 const BLOCK_HASH: `0x${string}` = `0x${"c".repeat(64)}`;
@@ -226,7 +227,11 @@ function sweepDeps(row: LighterOnboardingIntentRow): LighterDepositRepairDeps {
   };
 }
 
-const CLIENT = { query: vi.fn() } as unknown as PoolClient;
+/**
+ * The suite asserts that BOTH writes land on the SAME client, so the double
+ * only has to be a real client identity: nothing here calls `query`.
+ */
+const CLIENT: PoolClient = testPoolClient({});
 
 beforeEach(() => {
   vi.clearAllMocks();

@@ -17,7 +17,7 @@
  * In every case the withdrawal's own durable state is settled first and is
  * never affected by what the activity writer does.
  */
-import { withdrawalIntent } from "../helpers/lighter-intents.js";
+import { claimAttempt as claimAttemptRow, withdrawalIntent } from "../helpers/lighter-intents.js";
 import { testPublicClient } from "../helpers/viem-public-client.js";
 import { requireValue } from "../helpers/require-value.js";
 import {
@@ -33,6 +33,7 @@ import {
   LIGHTER_CORE_WITHDRAW_ERC20_ABI,
   LIGHTER_CORE_WITHDRAW_GATEWAY_ABI,
 } from "@tools/lighter/withdrawal/core-preflight.js";
+import type { LighterWithdrawalClaimAttemptRow } from "@vex-agent/db/repos/lighter-withdrawal-claims.js";
 import type { LighterWithdrawalIntentRow } from "@vex-agent/db/repos/lighter-withdrawal-intents.js";
 import {
   reconcileLighterCoreWithdrawal,
@@ -172,28 +173,29 @@ function intent(overrides: Partial<LighterWithdrawalIntentRow> = {}): LighterWit
   });
 }
 
-function claimAttempt(overrides: Record<string, unknown> = {}) {
-  return {
-    claimId: "claim-1",
+function claimAttempt(
+  overrides: Partial<LighterWithdrawalClaimAttemptRow> = {},
+): LighterWithdrawalClaimAttemptRow {
+  return claimAttemptRow({
     withdrawalIntentId: "intent-1",
-    sessionId: "session-1",
     txHash: TX_HASH,
     replacementTxHash: null,
     fromAddress: OWNER,
     nonce: 4,
+    state: "submitted",
     submittedAt: "2030-01-01T00:05:00.000Z",
     stagedAt: "2030-01-01T00:04:00.000Z",
     ...overrides,
-  };
+  });
 }
 
 function activityDeps(input: {
   readonly writer: ((row: LighterSettlementProvenActivityInput) => Promise<{ activityId: number }>) | null;
-  readonly claim: unknown;
+  readonly claim: LighterWithdrawalClaimAttemptRow | null;
 }): LighterWithdrawalActivityDeps {
   return {
     write: input.writer,
-    findClaim: vi.fn(async () => input.claim) as unknown as LighterWithdrawalActivityDeps["findClaim"],
+    findClaim: vi.fn<LighterWithdrawalActivityDeps["findClaim"]>(async () => input.claim),
   };
 }
 
