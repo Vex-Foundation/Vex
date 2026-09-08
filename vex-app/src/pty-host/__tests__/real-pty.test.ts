@@ -34,12 +34,11 @@
  *
  * ## Cleanup is this suite's own responsibility
  *
- * `await shutdownAll()` does NOT mean the shells are dead: `dispose()` makes a
- * pending `kill()` return early, so the promise can resolve while a process is
- * still exiting. Every test therefore records the pids it spawned and REAPS
- * them - `process.kill(pid, 0)` until it throws ESRCH - rather than trusting
- * the service's own report. A leaked `yes` loop would otherwise outlive the
- * run and burn a core.
+ * Shutdown has a bounded fallback, so cleanup independently observes both the
+ * native pty exit and the spawned shell's disappearance. On Windows, node-pty
+ * emits exit when the ConPTY output socket closes; a dead shell PID alone does
+ * not establish that boundary. Both must precede removing the working directory.
+ * Survivors fail the test even when the detector has to kill them afterwards.
  *
  * EVERY SIGNAL GOES THROUGH `assertSignalablePid`, because "the pid the host
  * reported" and "a process this suite may signal" are not the same set: pid 0
@@ -167,6 +166,8 @@ let spawnedPids: number[];
  * spawner inside it is the production one, unchanged.
  */
 let spawnedPtys: PtyAdapter[];
+/** Native exit observers survive the host's bounded disposal fallback. */
+let ptyExits: Array<{ exited: boolean; dispose: () => void }>;
 let requestCounter = 0;
 
 function recordingSpawner(): PtySpawner {
@@ -174,6 +175,14 @@ function recordingSpawner(): PtySpawner {
   return (executable, args, options) => {
     const adapter = spawn(executable, args, options);
     spawnedPtys.push(adapter);
+    let exited = false;
+    const subscription = adapter.onExit(() => {
+      exited = true;
+    });
+    ptyExits.push({
+      get exited() { return exited; },
+      dispose: () => subscription.dispose(),
+    });
     return adapter;
   };
 }
@@ -642,6 +651,7 @@ beforeEach(async () => {
   services = [];
   spawnedPids = [];
   spawnedPtys = [];
+  ptyExits = [];
   traceWindowsPhase("beforeEach ready");
 });
 
@@ -660,6 +670,15 @@ afterEach(async () => {
   // because the harness did.
   const survivors = await detectSurvivors(spawnedPids);
   traceWindowsPhase(`afterEach survivors ${String(survivors.length)}`);
+  try {
+    await until(
+      () => ptyExits.every((pty) => pty.exited),
+      "every native pty exit (ConPTY output socket close on Windows)",
+      10_000,
+    );
+  } finally {
+    for (const pty of ptyExits) pty.dispose();
+  }
   await fs.rm(snapshotDir, { recursive: true, force: true });
   await fs.rm(workDir, { recursive: true, force: true });
   expect(survivors).toEqual([]);
@@ -712,7 +731,7 @@ describe.runIf(process.platform === "win32")("ConPTY under a vitest fork worker"
 
   it("spawns a real shell, reports a pid once it connects, and reads one line", async () => {
     traceWindowsPhase("canary: start");
-    const spawn = createNodePtySpawner();
+    const spawn = recordingSpawner();
     const pty = spawn(process.env.COMSPEC ?? "cmd.exe", ["/c", "echo VEX_CANARY"], {
       name: "xterm-256color",
       cols: 80,
@@ -1397,45 +1416,75 @@ describe("mirror-paced flow control against a real pty", () => {
     traceWindowsPhase("it: mirror-paced pause");
     const service = buildService();
     const port = new XtermConsumerPort();
-    await send(service, { kind: "attachWindow", windowId: WINDOW, nonce: "n".repeat(32) }, [
-      port,
-    ]);
+    try {
+      await send(service, { kind: "attachWindow", windowId: WINDOW, nonce: "n".repeat(32) }, [
+        port,
+      ]);
 
-    const line = "y".repeat(95);
-    await createTerminal(service, "t1", {
-      args: ["-c", `yes '${line}' | head -n 200000`],
-    });
-    // Armed, so the consumer WOULD ack - if it ever finished a write.
-    port.ackFor("t1");
-    port.stalled = true;
-    port.receive({ kind: "attach", terminalId: "t1" });
+      // ConPTY renders console rows and can coalesce output across the attach.
+      // Keep the marker within one row and gate production on the completed
+      // replay, so the pause belongs to this stalled consumer. The ready line
+      // lets node-pty's Windows first-data gate accept our input.
+      const line = "y".repeat(FLOOD_MARKER_CHARS);
+      await createTerminal(service, "t1", {
+        cols: FLOOD_COLS,
+        args: ["-c", `echo VEX_CONSUMER_READY; read _start; yes '${line}' | head -n 200000; read _hold`],
+      });
+      // Armed, so the consumer WOULD ack - if it ever finished a write.
+      port.ackFor("t1");
+      port.stalled = true;
+      port.receive({ kind: "attach", terminalId: "t1" });
+      await until(
+        () => port.eventsOfKind("replay").some((event) => event.last),
+        "the stalled consumer's attach replay to finish",
+      );
+      expect(await send(service, {
+        kind: "write",
+        terminalId: "t1",
+        windowId: WINDOW,
+        data: "\n",
+      })).toEqual({ ok: true, value: null });
 
-    const terminal = service.terminal("t1");
-    if (terminal === undefined) throw new Error("unreachable");
+      const terminal = service.terminal("t1");
+      if (terminal === undefined) throw new Error("unreachable");
 
-    // The producer is stopped at the source, because the only consumer stopped
-    // reporting progress.
-    await until(
-      () => terminal.process.isPaused,
-      "the pty to pause behind a stalled consumer",
-    );
+      // The producer is stopped at the source, because the only consumer stopped
+      // reporting progress.
+      await until(
+        () => terminal.process.isPaused,
+        "the pty to pause behind a stalled consumer",
+      );
+      const debt = terminal.process.unacknowledged;
+      expect(debt).toBeGreaterThan(TERMINAL_FLOW_HIGH_WATERMARK_CHARS);
+      // Drain the coalescer and real parser while its completion acknowledgements
+      // remain held. Their completion, not a particular ConPTY chunk count,
+      // establishes the stream whose growth is checked below.
+      await until(
+        () => dataOf(port).length === debt && port.outstandingWrites === 0,
+        "all paused output to reach the consumer's held completions",
+      );
 
-    // AND IT STAYS STOPPED. An arrival-time ack would have kept crediting the
-    // host and the stream would have run to completion regardless.
-    const atPause = port.eventsOfKind("data").length;
-    await delay(500);
-    const afterWaiting = port.eventsOfKind("data").length;
-    expect(afterWaiting - atPause).toBeLessThan(5);
+      // AND IT STAYS STOPPED. An arrival-time ack would have kept crediting the
+      // host and the stream would have run to completion regardless.
+      await delay(500);
+      expect(dataOf(port).length).toBe(debt);
+      expect(terminal.process.unacknowledged).toBe(debt);
+      expect(port.eventsOfKind("resyncRequired")).toEqual([]);
 
-    // Releasing the consumer lets the owed acks out and the producer resumes,
-    // so the pause was backpressure and not a deadlock.
-    port.resumeConsumer();
-    await until(
-      () => !terminal.process.isPaused,
-      "the pty to resume once the consumer caught up",
-    );
-
-    port.dispose();
+      // Releasing the consumer lets the owed acks out and the producer resumes,
+      // so the pause was backpressure and not a deadlock.
+      port.resumeConsumer();
+      await until(
+        () => dataOf(port).length > debt,
+        "new producer output after the consumer releases its completions",
+      );
+    } finally {
+      try {
+        await service.shutdownAll();
+      } finally {
+        port.dispose();
+      }
+    }
   }, 120_000);
 });
 

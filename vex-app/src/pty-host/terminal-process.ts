@@ -856,6 +856,10 @@ export class TerminalProcess {
 
   private beginGracefulShutdown(): void {
     this.queueExit();
+    // The host's total shutdown bound includes waiting for the native exit.
+    // Using that whole bound before issuing kill lets the host dispose this
+    // owner just as kill begins, removing the exit listener while ConPTY is
+    // still closing. Reserve the existing settlement window within the bound.
     this.forceKillTimer = setTimeout(() => {
       this.forceKillTimer = null;
       if (this.closeTimer !== null && !this.disposed) {
@@ -863,7 +867,7 @@ export class TerminalProcess {
         this.closeTimer = null;
         void this.kill();
       }
-    }, TERMINAL_MAXIMUM_SHUTDOWN_MS);
+    }, TERMINAL_MAXIMUM_SHUTDOWN_MS - TERMINAL_KILL_SETTLE_MS);
     this.forceKillTimer.unref?.();
   }
 

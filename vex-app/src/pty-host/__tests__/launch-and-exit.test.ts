@@ -215,7 +215,7 @@ describe("exit sequencing", () => {
         pty.emit("still going\r\n");
       }
 
-      // The backstop fired at 5000 ms regardless, which is the whole point.
+      // Continuous output cannot extend the total 5000 ms shutdown budget.
       expect(pty.killed).toBe(true);
       expect(exits).toBe(1);
       expect(TERMINAL_MAXIMUM_SHUTDOWN_MS).toBe(5_000);
