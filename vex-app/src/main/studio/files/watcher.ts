@@ -92,6 +92,9 @@
  * this project's change.
  */
 
+import { lstatSync } from "node:fs";
+import path from "node:path";
+
 import {
   FILES_AGGREGATION_MS,
   FILES_EMIT_MAX_ITEMS,
@@ -114,7 +117,7 @@ import {
   type CoalescedChanges,
   type RawFileEvent,
 } from "./coalescer.js";
-import { PROJECT_ROOT_RELATIVE, toProjectRelative } from "./node-path.js";
+import { isEnoentLike, PROJECT_ROOT_RELATIVE, toProjectRelative } from "./node-path.js";
 
 /* ------------------------------------------------------------------ *
  * The collaborators, so the policy above is testable without an OS
@@ -172,6 +175,8 @@ export interface ProjectFileWatcherOptions {
   readonly subscribeNative: NativeSubscribe;
   readonly pollForRoot: RootPoller;
   readonly rootExists: (directory: string) => Promise<boolean>;
+  /** Optional disk boundary for deterministic native-event tests. */
+  readonly isPathMissing?: (absolutePath: string) => boolean;
   readonly emit: (emission: WatcherEmission) => void;
 }
 
@@ -306,6 +311,7 @@ export class ProjectFileWatcher {
 
   private raw: RawFileEvent[] = [];
   private pending: CoalescedChanges = new Map();
+  private readonly deletedPaths = new Set<string>();
   private droppedCount = 0;
   private overflowReported = false;
 
@@ -446,7 +452,10 @@ export class ProjectFileWatcher {
       // map, and it is that map's bound which drops - and counts, into
       // `droppedCount`, so every fold this loop forces reports its losses
       // through the SAME overflow signal a timer-driven fold would.
-      if (this.raw.length >= FILES_RAW_EVENTS_MAX) this.foldNow();
+      if (this.raw.length >= FILES_RAW_EVENTS_MAX) {
+        this.foldNow();
+        if (this.disposed || generation !== this.liveGeneration) return;
+      }
     }
     this.scheduleAggregation();
   }
@@ -476,8 +485,39 @@ export class ProjectFileWatcher {
     if (this.disposed) return;
     const window = this.raw;
     this.raw = [];
-    const folded = coalesceFileEvents(window, FILES_PENDING_CHANGES_MAX, this.pending);
+    let folded: ReturnType<typeof coalesceFileEvents>;
+    try {
+      folded = coalesceFileEvents(window, FILES_PENDING_CHANGES_MAX, this.pending, {
+        deletedPaths: this.deletedPaths,
+        isPathMissing: (relativePath) => {
+          const absolutePath = path.join(this.options.realRoot, ...relativePath.split("/"));
+          if (this.options.isPathMissing !== undefined) {
+            return this.options.isPathMissing(absolutePath);
+          }
+          try {
+            lstatSync(absolutePath);
+            return false;
+          } catch (cause) {
+            if (isEnoentLike(cause)) return true;
+            throw cause;
+          }
+        },
+      });
+    } catch (cause) {
+      // This probe concerns an entry below the root. ENOTDIR here does not
+      // prove the watched root vanished; restart and re-check the root itself.
+      this.handleFailure(classifyWatcherFailure(cause) === "root_missing"
+        ? new Error("Could not reconcile a deleted entry", { cause })
+        : cause);
+      return;
+    }
     this.pending = folded.changes;
+    if (folded.historyOverflow) {
+      this.options.emit({
+        generation: this.generation,
+        payload: { kind: "resync", reason: "overflow", droppedCount: 0 },
+      });
+    }
     if (folded.dropped > 0) {
       this.droppedCount += folded.dropped;
       if (!this.overflowReported) {
@@ -508,10 +548,8 @@ export class ProjectFileWatcher {
     if (this.disposed || this.pending.size === 0) return;
     this.lastEmitMs = Date.now();
 
-    // The suppression post-pass runs again here and not only at aggregation:
-    // a parent's delete and a child's delete can arrive in DIFFERENT 75 ms
-    // windows, and a suppression applied only within a window would let the
-    // child through in the earlier batch.
+    // Pending windows may have merged since the previous flush. Cross-flush
+    // suppression belongs to the coalescer's retained deletion history.
     suppressUnderDeletedParents(this.pending);
 
     const changes: Array<{ path: string; kind: FileChangeKind }> = [];
@@ -612,6 +650,7 @@ export class ProjectFileWatcher {
     if (this.restartTimer !== null) return;
     this.raw = [];
     this.pending.clear();
+    this.deletedPaths.clear();
     this.droppedCount = 0;
     void this.stopNative().then(() => {
       if (this.disposed) return;
@@ -692,6 +731,7 @@ export class ProjectFileWatcher {
   }
 
   private bumpGeneration(): void {
+    this.deletedPaths.clear();
     this.generation += 1;
     this.batchSeq = 0;
   }
@@ -741,6 +781,7 @@ export class ProjectFileWatcher {
     this.stopPolling = null;
     this.raw = [];
     this.pending.clear();
+    this.deletedPaths.clear();
     const wasStarting = this.starting;
     if (wasStarting !== null) await wasStarting.catch(() => undefined);
     await this.stopNative();
