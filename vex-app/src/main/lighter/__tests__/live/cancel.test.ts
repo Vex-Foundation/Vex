@@ -21,6 +21,7 @@ import {
   approveAndResume,
   cardCriticalArgs,
   createLiveSession,
+  ensureIntegrationEnabled,
   decideOrderSizing,
   ETH_PERP_MARKET_ID,
   EXPECTED_ACCOUNT_INDEX,
@@ -62,12 +63,16 @@ beforeAll(async () => {
   }
   disposeSeams = await installLighterProductionSeams();
   session = await createLiveSession(target, "cancel");
+  const integration = await ensureIntegrationEnabled(target);
   evidence.record("target", {
     environment: LIVE_ENVIRONMENT,
     accountIndex: target.accountIndex,
     walletAddress: target.walletAddress,
     sessionId: session.sessionId,
     dryRun: isDryRun(),
+    workflowBefore: integration.before,
+    workflowAfter: integration.after,
+    workflowCreatedByThisRun: integration.created,
     marketId: ETH_PERP_MARKET_ID,
   });
 });
@@ -100,102 +105,125 @@ describeLive("a resting Lighter order placed and cancelled on the owner's accoun
     const live = requireSession();
     const record = requireEvidence();
 
-    const detail = await readRawMarketDetail(ETH_PERP_MARKET_ID);
-    const lastTradePrice = Number(detail["last_trade_price"]);
-    const priceDecimals = Number(detail["supported_price_decimals"]);
-    const price = (lastTradePrice * RESTING_PRICE_FRACTION).toFixed(priceDecimals);
+    // CANCEL-ONLY MODE: an order a previous run left resting (a failed cancel
+    // leg, an interrupted run) is cancelled without placing another. It is
+    // identified by Lighter's own open-orders read, exactly once, never by
+    // trusting the id alone.
+    const existingOrderId = process.env["VEX_LIGHTER_LIVE_CANCEL_ORDER_ID"]?.trim() || null;
+    let placementApprovalId: string | null = null;
+    let placementIntentId: unknown = null;
+    let providerOrderId: unknown;
 
-    const accountRead = await runReadTool({
-      sessionId: live.sessionId,
-      publicName: "lighter__account_get",
-      params: { environment: LIVE_ENVIRONMENT, accountIndex: EXPECTED_ACCOUNT_INDEX },
-    });
-    expect(accountRead.success, accountRead.output).toBe(true);
-    const accounts = (accountRead.json as Record<string, unknown> | null)?.["accounts"];
-    const account = Array.isArray(accounts) ? accounts[0] as Record<string, unknown> : null;
-    if (account === null) throw new Error("Lighter returned no account row for the owner's account.");
+    if (existingOrderId === null) {
+      const detail = await readRawMarketDetail(ETH_PERP_MARKET_ID);
+      const lastTradePrice = Number(detail["last_trade_price"]);
+      const priceDecimals = Number(detail["supported_price_decimals"]);
+      const price = (lastTradePrice * RESTING_PRICE_FRACTION).toFixed(priceDecimals);
 
-    const sizing = decideOrderSizing({
-      marketId: ETH_PERP_MARKET_ID,
-      detail,
-      initialMarginFractionBps: Number(detail["default_initial_margin_fraction"]),
-      availableCollateralUsdg: Number(account["availableBalance"] ?? account["collateral"]),
-      price: Number(price),
-    });
-    record.record("sizing", { price, sizing, rawOrderBookDetail: detail });
+      const accountRead = await runReadTool({
+        sessionId: live.sessionId,
+        publicName: "lighter__account_get",
+        params: { environment: LIVE_ENVIRONMENT, accountIndex: EXPECTED_ACCOUNT_INDEX },
+      });
+      expect(accountRead.success, accountRead.output).toBe(true);
+      const accounts = (accountRead.json as Record<string, unknown> | null)?.["accounts"];
+      const account = Array.isArray(accounts) ? accounts[0] as Record<string, unknown> : null;
+      if (account === null) throw new Error("Lighter returned no account row for the owner's account.");
 
-    // ── Leg 1: place the resting order ──
-    const preview = await runReadTool({
-      sessionId: live.sessionId,
-      publicName: "lighter__order_preview",
-      params: {
-        environment: LIVE_ENVIRONMENT,
-        accountIndex: EXPECTED_ACCOUNT_INDEX,
+      const sizing = decideOrderSizing({
         marketId: ETH_PERP_MARKET_ID,
-        side: "buy",
-        baseAmountIn: sizing.baseAmount,
-        price,
-        orderType: "limit",
-        timeInForce: "good-till-time",
-        reduceOnly: false,
-        orderExpiry: Date.now() + 60 * 60 * 1000,
-      },
-    });
-    expect(preview.success, preview.output).toBe(true);
-    const previewId = (preview.json as Record<string, unknown> | null)?.["previewId"];
-    expect(typeof previewId).toBe("string");
+        detail,
+        initialMarginFractionBps: Number(detail["default_initial_margin_fraction"]),
+        availableCollateralUsdg: Number(account["availableBalance"] ?? account["collateral"]),
+        price: Number(price),
+      });
+      record.record("sizing", { price, sizing, rawOrderBookDetail: detail });
 
-    const placement = await prepareAndEnqueueApproval({
-      sessionId: live.sessionId,
-      publicName: "lighter__order_create_prepare",
-      params: { environment: LIVE_ENVIRONMENT, previewId },
-    });
-    approvalIds.push(placement.approvalId);
-    const placementCard = await readApprovalRecord(placement.approvalId);
-    expect(placementCard.queueStatus).toBe("pending");
-    expect(placementCard.decision).toBeNull();
-    expect(placement.followUpToolId).toBe("lighter.order.create");
-    const placementIntentId = (JSON.parse(placement.prepareOutput) as Record<string, unknown>)["intentId"];
-    record.record("placement-prepared", {
-      approvalId: placement.approvalId,
-      intentId: placementIntentId,
-      previewId,
-      approvalCard: placementCard,
-    });
+      // ── Leg 1: place the resting order ──
+      const preview = await runReadTool({
+        sessionId: live.sessionId,
+        publicName: "lighter__order_preview",
+        params: {
+          environment: LIVE_ENVIRONMENT,
+          accountIndex: EXPECTED_ACCOUNT_INDEX,
+          marketId: ETH_PERP_MARKET_ID,
+          side: "buy",
+          baseAmountIn: sizing.baseAmount,
+          price,
+          orderType: "limit",
+          timeInForce: "good-till-time",
+          reduceOnly: false,
+          orderExpiry: Date.now() + 60 * 60 * 1000,
+        },
+      });
+      expect(preview.success, preview.output).toBe(true);
+      const previewId = (preview.json as Record<string, unknown> | null)?.["previewId"];
+      expect(typeof previewId).toBe("string");
 
-    if (isDryRun()) return;
+      const placement = await prepareAndEnqueueApproval({
+        sessionId: live.sessionId,
+        publicName: "lighter__order_create_prepare",
+        params: { environment: LIVE_ENVIRONMENT, previewId },
+      });
+      approvalIds.push(placement.approvalId);
+      placementApprovalId = placement.approvalId;
+      const placementCard = await readApprovalRecord(placement.approvalId);
+      expect(placementCard.queueStatus).toBe("pending");
+      expect(placementCard.decision).toBeNull();
+      expect(placement.followUpToolId).toBe("lighter.order.create");
+      placementIntentId = (JSON.parse(placement.prepareOutput) as Record<string, unknown>)["intentId"];
+      record.record("placement-prepared", {
+        approvalId: placement.approvalId,
+        intentId: placementIntentId,
+        previewId,
+        approvalCard: placementCard,
+      });
 
-    const placed = await approveAndResume(placement.approvalId);
-    expect(placed.toolResult.success, placed.toolResult.output).toBe(true);
-    record.record("placed", {
-      approvalId: placement.approvalId,
-      intentId: placementIntentId,
-      executionStatus: placed.executionStatus,
-      resumeToolOutput: placed.toolResult.output,
-    });
+      if (isDryRun()) return;
 
-    // ── Identify the resting order by Lighter's own open-orders read ──
-    const resting = await pollUntil(
-      { attempts: 20, intervalMs: 6_000, what: "the order resting on the book" },
-      () => runReadTool({
+      const placed = await approveAndResume(placement.approvalId);
+      expect(placed.toolResult.success, placed.toolResult.output).toBe(true);
+      record.record("placed", {
+        approvalId: placement.approvalId,
+        intentId: placementIntentId,
+        executionStatus: placed.executionStatus,
+        resumeToolOutput: placed.toolResult.output,
+      });
+
+      // ── Identify the resting order by Lighter's own open-orders read ──
+      const resting = await pollUntil(
+        { attempts: 20, intervalMs: 6_000, what: "the order resting on the book" },
+        () => runReadTool({
+          sessionId: live.sessionId,
+          publicName: "lighter__open_orders_list",
+          params: { environment: LIVE_ENVIRONMENT, marketId: ETH_PERP_MARKET_ID, limit: 25 },
+        }),
+        (attempt) => orderRows(attempt.json).some(
+          (row) => row["price"] === price && row["initialBaseAmount"] === sizing.baseAmount,
+        ),
+      );
+      expect(resting.settled, resting.attempts.at(-1)?.output ?? "no attempt").toBe(true);
+      const matches = orderRows(resting.attempts.at(-1)?.json).filter(
+        (row) => row["price"] === price && row["initialBaseAmount"] === sizing.baseAmount,
+      );
+      // Exactly one, or the cancel leg would be aimed at an order this run did not
+      // place. Ambiguity is a hard stop, never a "pick the first" guess.
+      expect(matches.length, JSON.stringify(matches)).toBe(1);
+      providerOrderId = matches[0]?.["orderId"];
+      record.record("resting", { providerOrderId, order: matches[0] });
+    } else {
+      const open = await runReadTool({
         sessionId: live.sessionId,
         publicName: "lighter__open_orders_list",
         params: { environment: LIVE_ENVIRONMENT, marketId: ETH_PERP_MARKET_ID, limit: 25 },
-      }),
-      (attempt) => orderRows(attempt.json).some(
-        (row) => row["price"] === price && row["initialBaseAmount"] === sizing.baseAmount,
-      ),
-    );
-    expect(resting.settled, resting.attempts.at(-1)?.output ?? "no attempt").toBe(true);
-    const matches = orderRows(resting.attempts.at(-1)?.json).filter(
-      (row) => row["price"] === price && row["initialBaseAmount"] === sizing.baseAmount,
-    );
-    // Exactly one, or the cancel leg would be aimed at an order this run did not
-    // place. Ambiguity is a hard stop, never a "pick the first" guess.
-    expect(matches.length, JSON.stringify(matches)).toBe(1);
-    const providerOrderId = matches[0]?.["orderId"];
+      });
+      expect(open.success, open.output).toBe(true);
+      const matches = orderRows(open.json).filter((row) => row["orderId"] === existingOrderId);
+      expect(matches.length, `order ${existingOrderId} is not resting exactly once: ${JSON.stringify(matches)}`).toBe(1);
+      providerOrderId = existingOrderId;
+      record.record("resting", { providerOrderId, order: matches[0], reusedFromEnvironment: true });
+    }
     expect(typeof providerOrderId).toBe("string");
-    record.record("resting", { providerOrderId, order: matches[0] });
 
     // ── Leg 2: cancel that exact order ──
     const cancellation = await prepareAndEnqueueApproval({
@@ -255,7 +283,7 @@ describeLive("a resting Lighter order placed and cancelled on the owner's accoun
     });
 
     record.record("cancelled", {
-      placementApprovalId: placement.approvalId,
+      placementApprovalId,
       cancelApprovalId: cancellation.approvalId,
       placementIntentId,
       cancelIntentId,

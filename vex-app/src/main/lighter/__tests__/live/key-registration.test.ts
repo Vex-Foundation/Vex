@@ -20,6 +20,7 @@ vi.mock("electron", async () => (await import("./harness.js")).electronMainStub(
 import {
   approveAndResume,
   createLiveSession,
+  ensureIntegrationEnabled,
   EXPECTED_ACCOUNT_INDEX,
   flagEnabled,
   installLighterProductionSeams,
@@ -52,13 +53,23 @@ beforeAll(async () => {
     await runMigrations();
   }
   disposeSeams = await installLighterProductionSeams();
-  session = await createLiveSession(target, "keyreg");
+  // Resuming reconciliation must run in the session that owns the durable
+  // intent (the handlers scope the intent lookup to the session), so a resume
+  // reuses the original session instead of creating a new one.
+  const resumeSessionId = process.env["VEX_LIGHTER_LIVE_RESUME_SESSION_ID"]?.trim() || null;
+  session = resumeSessionId === null
+    ? await createLiveSession(target, "keyreg")
+    : { sessionId: resumeSessionId, walletAddress: target.walletAddress };
+  const integration = await ensureIntegrationEnabled(target);
   evidence.record("target", {
     environment: LIVE_ENVIRONMENT,
     accountIndex: target.accountIndex,
     walletAddress: target.walletAddress,
     sessionId: session.sessionId,
     dryRun: isDryRun(),
+    workflowBefore: integration.before,
+    workflowAfter: integration.after,
+    workflowCreatedByThisRun: integration.created,
   });
 });
 
@@ -79,10 +90,66 @@ function requireEvidence(): EvidenceWriter {
   return evidence;
 }
 
+
+async function reconcileAndAssert(
+  sessionId: string,
+  record: ReturnType<typeof requireEvidence>,
+  intentId: unknown,
+  approvalId: string | null,
+  apiKeyIndex: unknown,
+): Promise<void> {
+    const reconciliation = await pollUntil(
+      { attempts: 30, intervalMs: 10_000, what: "key registration active" },
+      () => runReadTool({
+        sessionId: sessionId,
+        publicName: "lighter__key_register_status",
+        params: { intentId },
+      }),
+      // `status` is the reconciler's verdict, and "active" is the only value it
+      // returns once Lighter shows the exact vault-derived public key, the
+      // official client check passes and the nonce is synchronized.
+      (attempt) => (attempt.json as Record<string, unknown> | null)?.["status"] === "active",
+    );
+
+    const apiKeys = await runReadTool({
+      sessionId: sessionId,
+      publicName: "lighter__api_keys_inspect",
+      params: {
+        environment: LIVE_ENVIRONMENT,
+        accountIndex: EXPECTED_ACCOUNT_INDEX,
+        ...(apiKeyIndex === null || apiKeyIndex === undefined ? {} : { apiKeyIndex }),
+        limit: 10,
+      },
+    });
+
+    record.record("reconciled", {
+      approvalId: approvalId,
+      intentId,
+      settled: reconciliation.settled,
+      // Every attempt, not only the last: on a money path the sequence of
+      // provider answers is the evidence.
+      attempts: reconciliation.attempts.map((attempt) => attempt.output),
+      lighterApiKeysRead: apiKeys.output,
+    });
+
+    expect(reconciliation.settled, reconciliation.attempts.at(-1)?.output ?? "no attempt").toBe(true);
+    expect(apiKeys.success, apiKeys.output).toBe(true);
+}
+
 describeLive("Lighter key registration on the owner's Robinhood Chain account", () => {
   it("prepares, approves, signs and reconciles one registration", { timeout: 600_000 }, async () => {
     const live = requireSession();
     const record = requireEvidence();
+
+    // A previous run of this harness may have signed and submitted the
+    // registration and stopped before reconciling (the durable intent keeps
+    // every fact); resuming reconciles THAT intent instead of registering a
+    // second key.
+    const resumeIntentId = process.env["VEX_LIGHTER_LIVE_RESUME_INTENT_ID"]?.trim() || null;
+    if (resumeIntentId !== null) {
+      await reconcileAndAssert(live.sessionId, record, resumeIntentId, null, null);
+      return;
+    }
 
     const prepared = await prepareAndEnqueueApproval({
       sessionId: live.sessionId,
@@ -98,7 +165,7 @@ describeLive("Lighter key registration on the owner's Robinhood Chain account", 
     expect(card.queueStatus).toBe("pending");
     expect(card.decision).toBeNull();
     expect(card.executionStatus).toBe("not_started");
-    expect(card.source).toBe("agent");
+    expect(card.source).toBe("chat");
     expect(card.actionKind).toBe("user_wallet_broadcast");
     expect(prepared.followUpToolId).toBe("lighter.key.register");
 
@@ -136,41 +203,6 @@ describeLive("Lighter key registration on the owner's Robinhood Chain account", 
       resumeToolOutput: dispatched.toolResult.output,
     });
 
-    const reconciliation = await pollUntil(
-      { attempts: 30, intervalMs: 10_000, what: "key registration active" },
-      () => runReadTool({
-        sessionId: live.sessionId,
-        publicName: "lighter__key_register_status",
-        params: { environment: LIVE_ENVIRONMENT, intentId },
-      }),
-      // `status` is the reconciler's verdict, and "active" is the only value it
-      // returns once Lighter shows the exact vault-derived public key, the
-      // official client check passes and the nonce is synchronized.
-      (attempt) => (attempt.json as Record<string, unknown> | null)?.["status"] === "active",
-    );
-
-    const apiKeys = await runReadTool({
-      sessionId: live.sessionId,
-      publicName: "lighter__api_keys_inspect",
-      params: {
-        environment: LIVE_ENVIRONMENT,
-        accountIndex: EXPECTED_ACCOUNT_INDEX,
-        apiKeyIndex: prepareJson["apiKeyIndex"],
-        limit: 10,
-      },
-    });
-
-    record.record("reconciled", {
-      approvalId: prepared.approvalId,
-      intentId,
-      settled: reconciliation.settled,
-      // Every attempt, not only the last: on a money path the sequence of
-      // provider answers is the evidence.
-      attempts: reconciliation.attempts.map((attempt) => attempt.output),
-      lighterApiKeysRead: apiKeys.output,
-    });
-
-    expect(reconciliation.settled, reconciliation.attempts.at(-1)?.output ?? "no attempt").toBe(true);
-    expect(apiKeys.success, apiKeys.output).toBe(true);
+    await reconcileAndAssert(live.sessionId, record, intentId, prepared.approvalId, prepareJson["apiKeyIndex"]);
   });
 });

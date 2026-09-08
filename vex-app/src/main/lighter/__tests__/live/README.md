@@ -1,6 +1,6 @@
 # Lighter live handler-chain harness
 
-Four environment-gated tests that drive the REAL chain the desktop app runs for
+Five environment-gated tests that drive the REAL chain the desktop app runs for
 a Lighter onboarding or trading action, against the owner's Robinhood Chain
 account. Nothing here is a fixture: every step is the production function.
 
@@ -10,14 +10,44 @@ account. Nothing here is a fixture: every step is the production function.
 
 | step | file | flag |
 | --- | --- | --- |
+| 0 | (no file: `ensureIntegrationEnabled`, inside every step) | none |
+| 1a | `deposit.test.ts` | `VEX_LIGHTER_LIVE_DEPOSIT=1` |
 | 1 | `key-registration.test.ts` | `VEX_LIGHTER_LIVE_KEY_REGISTRATION=1` |
 | 2 | `fee-authorization.test.ts` | `VEX_LIGHTER_LIVE_FEE_AUTHORIZATION=1` |
 | 3 | `ioc-order.test.ts` | `VEX_LIGHTER_LIVE_IOC_ORDER=1` |
 | 4 | `cancel.test.ts` | `VEX_LIGHTER_LIVE_CANCEL=1` |
 
-With every flag unset the four files skip and the suite is green. Run the steps
-ONE AT A TIME, in the order above: step 2 signs with the key step 1 registers,
-and steps 3 and 4 trade under the fee authorization step 2 installs.
+With every flag unset the five gated files skip. One file is deliberately NOT
+gated: `deposit-amount-gate.test.ts` proves the deposit step's refusals with pure
+values (no vault, no database, no network), so the suite with no flags reports
+one passed file and five skipped.
+
+Run the steps ONE AT A TIME, in the order above: step 1a funds the account that
+steps 3 and 4 trade on, step 2 signs with the key step 1 registers, and steps 3
+and 4 trade under the fee authorization step 2 installs.
+
+## Step 0: the onboarding workflow row
+
+Every step calls `ensureIntegrationEnabled` after the wallet gate and before its
+prepare. The wallet-level `lighter_onboarding_workflows` row is what
+`lighter.deposit.prepare` and `lighter.key.register.prepare` advance; without it
+`resolveOrAdoptExistingAccount` has no `integration_enabled` state to adopt the
+wallet's existing Lighter master account from.
+
+The only production writer is `setLighterIntegrationEnabled`
+(`@vex-agent/db/repos/lighter-integration-settings.js`), which the settings IPC
+handler calls when the user turns the Lighter integration on
+(`vex-app/src/main/ipc/settings.ts`, `CH.settings.setLighterIntegration`). The
+harness calls THAT function with the same three arguments and nothing else, only
+when the row is absent, and records the workflow row before and after in the
+run's `target` evidence.
+
+An existing row in any state other than `integration_enabled`,
+`account_resolved`, `key_generated_encrypted` or
+`key_registration_approval_pending` is a REFUSAL, never a repair: a workflow
+parked in `failed`, `ambiguous` or a mid-deposit state is durable evidence of an
+unfinished money path, and moving it by hand would destroy the state the
+operator has to look at.
 
 ## Which production functions this drives
 
@@ -53,6 +83,12 @@ Every step needs all of these:
 | `VEX_LIGHTER_LIVE_EVIDENCE_DIR` | directory the run writes its JSON evidence into. |
 | the step's own flag | see the table above. |
 
+Step 1a needs one more:
+
+| variable | meaning |
+| --- | --- |
+| `VEX_LIGHTER_LIVE_DEPOSIT_AMOUNT` | the deposit amount in human USDG decimals, for example `3`. Refused when unset, when the production decimal parser rejects it, when it is below the environment's own minimum deposit (1 USDG on RHC), or when it exceeds the wallet's live USDG balance. Never rounded or resized. |
+
 Optional:
 
 | variable | meaning |
@@ -76,12 +112,41 @@ ordinary unlock does on this machine.
    `0x33eF6673BD80cB11fcC41b82Bc2181E65cC4d2fA`.
 
 All four refuse with a `LiveHarnessRefusal` naming the exact mismatch, before any
-tool runs, before the database is touched and before anything is signed.
+tool runs, before the database is touched and before anything is signed. Gate 3
+is the one exception to the refusal wording: an install with no vault at all
+fails with the production `LocalSecretVaultError: Secret vault is not
+configured.` verbatim, because rewrapping it would hide the real cause.
+
+Step 1a adds three amount gates and they run FIRST, before gate 2, so a mistyped
+amount is a no-op rather than an unresolved intent to reconcile:
+
+1. `VEX_LIGHTER_LIVE_DEPOSIT_AMOUNT` must be set.
+2. It must parse with the production decimal parser (`decimalToBaseUnits`) and be
+   at or above the environment's own minimum deposit.
+3. It must not exceed the wallet's live USDG balance, read through the
+   production reader that backs `lighter__account_onboarding_status`.
+
+Then, after the approval card exists and BEFORE the decision, the card's
+`amountUnits`, `walletAddress`, `depositTo`, `beneficiaryAddress` and
+`environment` are compared against what this run asked for. A mismatch stops the
+run with nothing signed.
 
 ## The exact commands
 
 Run each from `vex-app/`. Replace the two paths; keep the password file at mode
 600 and delete it when the run is finished.
+
+Step 1a - deposit USDG into the owner's Lighter account (run this first; it is
+also what tops the account up for step 3):
+
+    cd vex-app && \
+    VEX_DB_URL="$VEX_DB_URL" \
+    VEX_LIGHTER_LIVE_ACCOUNT_INDEX=24226 \
+    VEX_LIGHTER_LIVE_MASTER_PASSWORD_FILE=/run/user/1000/vex-live-password \
+    VEX_LIGHTER_LIVE_EVIDENCE_DIR=/home/kubas/Vex/agents-colab/agents_dm/lighter-live-evidence \
+    VEX_LIGHTER_LIVE_DEPOSIT_AMOUNT=3 \
+    VEX_LIGHTER_LIVE_DEPOSIT=1 \
+    pnpm exec vitest run src/main/lighter/__tests__/live/deposit.test.ts
 
 Step 1 - register the trading key:
 
@@ -113,6 +178,20 @@ Step 3 - one IOC ETH-perp buy (the round-2 unit measurement):
     VEX_LIGHTER_LIVE_IOC_ORDER=1 \
     pnpm exec vitest run src/main/lighter/__tests__/live/ioc-order.test.ts
 
+Step 3b - CLOSE the long step 3 opened (the same file, as a reduce-only IOC
+sell sized from the account's own position; evidence lands under `ioc-close-*`).
+Run it BEFORE step 4: the open position holds the margin step 4's resting order
+needs, and the sizing gate refuses step 4 until it is released:
+
+    cd vex-app && \
+    VEX_DB_URL="$VEX_DB_URL" \
+    VEX_LIGHTER_LIVE_ACCOUNT_INDEX=24226 \
+    VEX_LIGHTER_LIVE_MASTER_PASSWORD_FILE=/run/user/1000/vex-live-password \
+    VEX_LIGHTER_LIVE_EVIDENCE_DIR=/home/kubas/Vex/agents-colab/agents_dm/lighter-live-evidence \
+    VEX_LIGHTER_LIVE_IOC_ORDER=1 \
+    VEX_LIGHTER_LIVE_IOC_SIDE=sell \
+    pnpm exec vitest run src/main/lighter/__tests__/live/ioc-order.test.ts
+
 Step 4 - place one resting GTT limit order and cancel it:
 
     cd vex-app && \
@@ -123,7 +202,26 @@ Step 4 - place one resting GTT limit order and cancel it:
     VEX_LIGHTER_LIVE_CANCEL=1 \
     pnpm exec vitest run src/main/lighter/__tests__/live/cancel.test.ts
 
-Everything skipped (the ordinary state, and what CI sees):
+Step 5 - reconcile one settled order intent in its own session and prove the
+fill ledger self-heals (`lighter__order_status` reads the account's trades once
+when `lighter_fills` holds no row for a filled intent; the step reads the ledger
+back from the database and refuses to pass on the tool's word alone). Signs
+nothing. `VEX_LIGHTER_LIVE_STATUS_INTENT_ID` is the order intent from a step 3
+run's `04-prepared.json`; `VEX_LIGHTER_LIVE_RESUME_SESSION_ID` is that run's
+session from `01-target.json`:
+
+    cd vex-app && \
+    VEX_DB_URL="$VEX_DB_URL" \
+    VEX_LIGHTER_LIVE_ACCOUNT_INDEX=24226 \
+    VEX_LIGHTER_LIVE_MASTER_PASSWORD_FILE=/run/user/1000/vex-live-password \
+    VEX_LIGHTER_LIVE_EVIDENCE_DIR=/home/kubas/Vex/agents-colab/agents_dm/lighter-live-evidence \
+    VEX_LIGHTER_LIVE_ORDER_STATUS=1 \
+    VEX_LIGHTER_LIVE_STATUS_INTENT_ID=<intent id> \
+    VEX_LIGHTER_LIVE_RESUME_SESSION_ID=<session id> \
+    pnpm exec vitest run src/main/lighter/__tests__/live/order-status.test.ts
+
+Everything gated skipped, the pure refusal file green (the ordinary state, and
+what CI sees):
 
     cd vex-app && pnpm exec vitest run src/main/lighter/__tests__/live
 
@@ -155,6 +253,26 @@ Run a dry run ONLY against a throwaway install and a throwaway database:
 A dry run applies migrations (`runMigrations`) because a throwaway database has
 none; a live run never does, because the app's own database is already migrated.
 
+The deposit dry run is the same, plus the amount:
+
+    cd vex-app && \
+    VEX_CONFIG_DIR=/tmp/vex-live-dryrun/config \
+    VEX_DB_URL=postgres://.../throwaway \
+    VEX_LIGHTER_LIVE_DRY_RUN=1 \
+    VEX_LIGHTER_LIVE_ACCOUNT_INDEX=24226 \
+    VEX_LIGHTER_LIVE_MASTER_PASSWORD_FILE=/tmp/vex-live-dryrun/password \
+    VEX_LIGHTER_LIVE_EVIDENCE_DIR=/tmp/vex-live-dryrun/evidence \
+    VEX_LIGHTER_LIVE_DEPOSIT_AMOUNT=3 \
+    VEX_LIGHTER_LIVE_DEPOSIT=1 \
+    pnpm exec vitest run src/main/lighter/__tests__/live/deposit.test.ts
+
+To watch the amount gates refuse, point `VEX_DB_URL` at an unreachable database
+and set the amount to nothing, to `abc` or to `0.5`: the run stops with the
+refusal and never with a connection error, which is the proof that no row was
+written. The balance gate cannot be demonstrated that way without a real vault,
+so `deposit-amount-gate.test.ts` proves it (and the card-binding checks) over
+values instead - the same functions the live run calls.
+
 ## Evidence
 
 Each run creates `"$VEX_LIGHTER_LIVE_EVIDENCE_DIR"/<test>-<timestamp>/` and
@@ -163,12 +281,13 @@ after a signature still leaves the transaction identity on disk. The same record
 is printed to stdout as one JSON line.
 
 Recorded per step: the resolved target (environment, account, wallet, session
-id); the prepare output and the durable approval card; the approval decision and
+id, and the onboarding workflow row before and after step 0); the prepare output and the durable approval card; the approval decision and
 the resume tool's own output; every reconciliation attempt, not only the last,
 because on a money path the SEQUENCE of provider answers is the evidence; and
-the provider's own read-back (Lighter `apiKeys` for step 1, `fees_status` for
-step 2, the authenticated trades and positions for step 3, the inactive-order
-read for step 4).
+the provider's own read-back (the account collateral before and after plus the
+L1 transaction hash, block and credited amount for step 1a, Lighter `apiKeys` for
+step 1, `fees_status` for step 2, the authenticated trades and positions for
+step 3, the inactive-order read for step 4).
 
 Never recorded: the master password, any private key, any signed payload, any
 auth token.

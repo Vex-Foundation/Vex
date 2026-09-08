@@ -52,14 +52,30 @@ import { randomUUID } from "node:crypto";
 
 import { getAddress } from "viem";
 
+// Pure, I/O-free production money helpers: the amount gates below must decide
+// with the SAME decimal parser and the SAME environment minimum the deposit
+// handler uses, never with a second local copy of either.
+import { LIGHTER_SETTLEMENT_ASSET_DECIMALS } from "@tools/lighter/wallet-funding/constants.js";
+import { getLighterFundingDeployment } from "@tools/lighter/wallet-funding/deployments.js";
+import { decimalToBaseUnits } from "@tools/lighter/wallet-funding/onboarding-plan.js";
+import type {
+  LighterOnboardingWorkflowRow,
+  LighterOnboardingWorkflowState,
+} from "@vex-agent/db/repos/lighter-onboarding-workflows.js";
+
 // ── Environment contract ────────────────────────────────────────────────
 
 export const LIVE_FLAGS = {
+  deposit: "VEX_LIGHTER_LIVE_DEPOSIT",
   keyRegistration: "VEX_LIGHTER_LIVE_KEY_REGISTRATION",
   feeAuthorization: "VEX_LIGHTER_LIVE_FEE_AUTHORIZATION",
   iocOrder: "VEX_LIGHTER_LIVE_IOC_ORDER",
   cancel: "VEX_LIGHTER_LIVE_CANCEL",
+  orderStatus: "VEX_LIGHTER_LIVE_ORDER_STATUS",
 } as const;
+
+/** The human-decimals deposit amount for the deposit step, for example "3". */
+export const DEPOSIT_AMOUNT_ENV = "VEX_LIGHTER_LIVE_DEPOSIT_AMOUNT";
 
 export const LIVE_ENVIRONMENT = "rhc" as const;
 
@@ -280,6 +296,113 @@ export async function createLiveSession(target: LiveTarget, label: string): Prom
   return { sessionId, walletAddress: target.walletAddress };
 }
 
+// ── Gate 3: the wallet's Lighter onboarding workflow row ────────────────
+
+/**
+ * The workflow states from which a live step may legitimately continue.
+ *
+ * `integration_enabled` is the state the settings toggle writes;
+ * `resolveOrAdoptExistingAccount` (protocols/lighter/handlers/key-registration.ts)
+ * adopts the wallet's unique Lighter master account from it. The three later
+ * states mean an earlier live step already moved the workflow forward, which is
+ * the ordinary state of a second, third or fourth run.
+ */
+const CONTINUABLE_WORKFLOW_STATES: readonly LighterOnboardingWorkflowState[] = [
+  "integration_enabled",
+  "account_resolved",
+  "key_generated_encrypted",
+  "key_registration_approval_pending",
+  // After a registration was signed and submitted: the reconciler owns these
+  // and every later step (fees, orders) legitimately starts from them.
+  "change_pub_key_submitted",
+  "key_verified",
+  "nonce_synchronized",
+  "ready_to_trade",
+];
+
+export interface IntegrationEnableRecord {
+  /** The workflow row as it was found, or null when the wallet had none. */
+  readonly before: LighterOnboardingWorkflowRow | null;
+  readonly after: LighterOnboardingWorkflowRow;
+  /** True when this call created the row through the settings-IPC function. */
+  readonly created: boolean;
+}
+
+/**
+ * Make sure the selected wallet HAS a Lighter onboarding workflow, exactly the
+ * way the app's settings toggle creates one.
+ *
+ * Every live step needs it: without the workflow row, `lighter.deposit.prepare`
+ * and `lighter.key.register.prepare` have no wallet-level onboarding state to
+ * advance. The only production writer is `setLighterIntegrationEnabled`
+ * (`@vex-agent/db/repos/lighter-integration-settings.js`), which the settings
+ * IPC handler calls (`vex-app/src/main/ipc/settings.ts`,
+ * `CH.settings.setLighterIntegration`); its statement inserts the
+ * `integration_enabled` workflow in the same transaction as the activation row.
+ * This function calls THAT, with the same three arguments, and nothing else.
+ *
+ * An existing row in any other state is a REFUSAL, never a repair: a workflow
+ * sitting in `failed`, `ambiguous`, `deposit_l2_pending` or a mid-registration
+ * state is durable evidence of an unfinished money path, and moving it by hand
+ * would destroy exactly the state the operator has to look at.
+ */
+export async function ensureIntegrationEnabled(
+  target: LiveTarget,
+  options: { readonly alsoContinuable?: readonly string[] } = {},
+): Promise<IntegrationEnableRecord> {
+  const workflows = await import("@vex-agent/db/repos/lighter-onboarding-workflows.js");
+  const before = await workflows.getLighterOnboardingWorkflow(
+    LIVE_ENVIRONMENT,
+    target.walletAddress,
+  );
+  if (before !== null) {
+    const continuable = [...CONTINUABLE_WORKFLOW_STATES, ...(options.alsoContinuable ?? [])];
+    if (!continuable.includes(before.workflowState)) {
+      throw new LiveHarnessRefusal(
+        `The Lighter onboarding workflow for ${target.walletAddress} on ${LIVE_ENVIRONMENT} is in state `
+        + `"${before.workflowState}", which no live step may continue from `
+        + `(continuable: ${CONTINUABLE_WORKFLOW_STATES.join(", ")}). The harness never repairs a workflow. `
+        + "Nothing was prepared, signed or submitted; inspect the row and resolve it in the app first.",
+      );
+    }
+    return { before, after: before, created: false };
+  }
+
+  const { setLighterIntegrationEnabled } = await import(
+    "@vex-agent/db/repos/lighter-integration-settings.js"
+  );
+  await setLighterIntegrationEnabled({
+    environment: LIVE_ENVIRONMENT,
+    walletAddress: target.walletAddress,
+    enabled: true,
+  });
+  const after = await workflows.getLighterOnboardingWorkflow(
+    LIVE_ENVIRONMENT,
+    target.walletAddress,
+  );
+  if (after === null) {
+    throw new LiveHarnessRefusal(
+      `Enabling the Lighter integration for ${target.walletAddress} on ${LIVE_ENVIRONMENT} left no onboarding `
+      + "workflow row. Nothing was prepared, signed or submitted.",
+    );
+  }
+  if (after.workflowState !== "integration_enabled") {
+    throw new LiveHarnessRefusal(
+      `Enabling the Lighter integration produced workflow state "${after.workflowState}" instead of `
+      + "\"integration_enabled\". Nothing was prepared, signed or submitted.",
+    );
+  }
+  return { before: null, after, created: true };
+}
+
+/** Read the wallet-level onboarding workflow row for the evidence record. */
+export async function readOnboardingWorkflow(
+  walletAddress: string,
+): Promise<LighterOnboardingWorkflowRow | null> {
+  const workflows = await import("@vex-agent/db/repos/lighter-onboarding-workflows.js");
+  return await workflows.getLighterOnboardingWorkflow(LIVE_ENVIRONMENT, walletAddress);
+}
+
 // ── The chain ───────────────────────────────────────────────────────────
 
 export interface PreparedApproval {
@@ -331,6 +454,7 @@ export async function prepareAndEnqueueApproval(args: {
     arguments: args.params,
   };
 
+  await selectProtocolTool(dispatchTool, toolContext, sourceCall.name);
   const prepareResult = await dispatchTool(
     { name: sourceCall.name, args: sourceCall.arguments, toolCallId: sourceCall.id },
     toolContext,
@@ -502,6 +626,28 @@ export async function approveAndResume(approvalId: string): Promise<ApprovedDisp
  * Run one READ tool (a status or a market read) through the same dispatcher and
  * the same session context. Reads carry no approval, so this is the whole path.
  */
+/**
+ * Make a protocol tool callable by name in this session the way a model does
+ * it: the dispatcher keeps only the most recently selected protocol tools
+ * callable, and `ToolSearch(query="select:<name>")` is the production path
+ * that admits one. Nothing else in the harness bypasses that window.
+ */
+type DispatchToolFn = (typeof import("@vex-agent/tools/dispatcher.js"))["dispatchTool"];
+
+async function selectProtocolTool(
+  dispatchTool: DispatchToolFn,
+  toolContext: Parameters<DispatchToolFn>[1],
+  publicName: string,
+): Promise<void> {
+  const selected = await dispatchTool(
+    { name: "ToolSearch", args: { query: `select:${publicName}` }, toolCallId: `live-select-${randomUUID()}` },
+    toolContext,
+  );
+  if (!selected.success) {
+    throw new LiveHarnessRefusal(`ToolSearch could not select ${publicName}: ${selected.output}`);
+  }
+}
+
 export async function runReadTool(args: {
   readonly sessionId: string;
   readonly publicName: string;
@@ -516,13 +662,15 @@ export async function runReadTool(args: {
   if (hydrated === null) {
     throw new LiveHarnessRefusal(`Session ${args.sessionId} does not exist; the harness cannot continue.`);
   }
+  const toolContext = buildToolContext(hydrated.context, "normal", false, undefined);
+  await selectProtocolTool(dispatchTool, toolContext, args.publicName);
   const result = await dispatchTool(
     {
       name: args.publicName,
       args: args.params,
       toolCallId: `live-read-${randomUUID()}`,
     },
-    buildToolContext(hydrated.context, "normal", false, undefined),
+    toolContext,
   );
   let json: unknown = null;
   try {
@@ -806,3 +954,174 @@ export const LIGHTER_LIFECYCLE_TERMINAL_STATES: readonly string[] = [
   "expired",
   "expired_unsubmitted",
 ];
+
+// ── The deposit amount gates ────────────────────────────────────────────
+//
+// Three refusals, all BEFORE any database write and long before any signature:
+// a missing amount, an amount the production decimal parser rejects or that is
+// below the environment's own minimum deposit, and an amount larger than the
+// wallet's live settlement-asset balance. The first two are pure and the third
+// takes the balance as an argument, so all three are provable without a live
+// endpoint and without credentials.
+
+export interface DepositAmountRequest {
+  /** Exactly the string the operator asked for; never rounded or resized. */
+  readonly amountIn: string;
+  /** The same amount in settlement base units (6 decimals on RHC). */
+  readonly amountUnits: bigint;
+  readonly minimumDepositUnits: bigint;
+  readonly settlementSymbol: string;
+}
+
+/**
+ * FORMAT AND MINIMUM. `decimalToBaseUnits` is the production parser the deposit
+ * handler itself uses, so "3.0000001", "abc", "-1" and "1e3" are refused here
+ * for the same reason and with the same arithmetic they would be refused later;
+ * the minimum comes from the environment's funding deployment, not from a
+ * number written here.
+ */
+export function parseDepositAmount(raw: string | undefined): DepositAmountRequest {
+  const funding = getLighterFundingDeployment(LIVE_ENVIRONMENT);
+  if (typeof raw !== "string" || raw.trim().length === 0) {
+    throw new LiveHarnessRefusal(
+      `${DEPOSIT_AMOUNT_ENV} is not set. It must be the deposit amount in human ${funding.settlementSymbol} `
+      + "decimals, for example \"3\". Nothing was prepared, signed or submitted.",
+    );
+  }
+  const amountIn = raw.trim();
+  let amountUnits: bigint;
+  try {
+    amountUnits = decimalToBaseUnits(amountIn, LIGHTER_SETTLEMENT_ASSET_DECIMALS);
+  } catch (cause) {
+    throw new LiveHarnessRefusal(
+      `${DEPOSIT_AMOUNT_ENV} is "${amountIn}", which is not a valid ${funding.settlementSymbol} amount `
+      + `(${cause instanceof Error ? cause.message : String(cause)}). Nothing was prepared, signed or submitted.`,
+    );
+  }
+  if (amountUnits < funding.minimumDepositUnits) {
+    throw new LiveHarnessRefusal(
+      `${DEPOSIT_AMOUNT_ENV} is "${amountIn}", below the ${LIVE_ENVIRONMENT} minimum deposit of `
+      + `${funding.minimumDepositUnits} base units. A smaller deposit is not credited. Nothing was prepared, `
+      + "signed or submitted.",
+    );
+  }
+  return {
+    amountIn,
+    amountUnits,
+    minimumDepositUnits: funding.minimumDepositUnits,
+    settlementSymbol: funding.settlementSymbol,
+  };
+}
+
+/**
+ * BALANCE. The harness refuses an amount the wallet cannot actually pay rather
+ * than letting the prepare tool discover it after writing an intent row: the
+ * refusal has to land before the first durable write, which is what makes a
+ * mistyped amount a no-op instead of an unresolved intent to reconcile.
+ *
+ * This compares the deposit only. Gas is the deposit preflight's business and it
+ * revalidates its own fee exposure immediately before signing.
+ */
+export function assertDepositWithinWalletBalance(
+  request: DepositAmountRequest,
+  input: { readonly walletAddress: string; readonly walletSettlementUnits: bigint },
+): void {
+  if (request.amountUnits > input.walletSettlementUnits) {
+    throw new LiveHarnessRefusal(
+      `${DEPOSIT_AMOUNT_ENV} is "${request.amountIn}" (${request.amountUnits} base units), but wallet `
+      + `${input.walletAddress} holds ${input.walletSettlementUnits} base units of `
+      + `${request.settlementSymbol} on ${LIVE_ENVIRONMENT}. Nothing was prepared, signed or submitted.`,
+    );
+  }
+}
+
+/**
+ * The wallet's live settlement-asset balance, through the PRODUCTION reader that
+ * backs `lighter__account_onboarding_status`
+ * (`@tools/lighter/wallet-funding/onboarding-readers.js`). No RPC endpoint,
+ * token address or ABI is written here.
+ */
+export async function readWalletSettlementUnits(walletAddress: string): Promise<bigint> {
+  const { buildLighterOnboardingReaders } = await import(
+    "@tools/lighter/wallet-funding/onboarding-readers.js"
+  );
+  return await buildLighterOnboardingReaders().readWalletSettlementUnits(
+    LIVE_ENVIRONMENT,
+    walletAddress,
+  );
+}
+
+/**
+ * THE PRE-SIGNATURE BINDING CHECK for the deposit card.
+ *
+ * The card is the sentence the human approves, so the amount and the destination
+ * on it are compared against what this run asked for BEFORE the decision is
+ * taken. A mismatch means the prepare path bound a different transfer than the
+ * operator requested; the run stops there with nothing signed.
+ */
+export function assertDepositCardBinding(input: {
+  readonly criticalArgs: Record<string, unknown>;
+  readonly request: DepositAmountRequest;
+  readonly walletAddress: string;
+}): void {
+  const expectedWallet = getAddress(input.walletAddress);
+  const cardAmountUnits = input.criticalArgs["amountUnits"];
+  if (cardAmountUnits !== input.request.amountUnits.toString()) {
+    throw new LiveHarnessRefusal(
+      `The deposit approval card carries amountUnits ${String(cardAmountUnits)}, not the requested `
+      + `${input.request.amountUnits} (${input.request.amountIn} ${input.request.settlementSymbol}). `
+      + "Refusing before the approval decision; nothing was signed.",
+    );
+  }
+  for (const key of ["walletAddress", "depositTo", "beneficiaryAddress"] as const) {
+    const value = input.criticalArgs[key];
+    let resolved: string;
+    try {
+      resolved = getAddress(String(value));
+    } catch {
+      throw new LiveHarnessRefusal(
+        `The deposit approval card carries an unreadable ${key} (${String(value)}). Refusing before the `
+        + "approval decision; nothing was signed.",
+      );
+    }
+    if (resolved !== expectedWallet) {
+      throw new LiveHarnessRefusal(
+        `The deposit approval card credits ${key} ${resolved}, not the owner's wallet ${expectedWallet}. `
+        + "Refusing before the approval decision; nothing was signed.",
+      );
+    }
+  }
+  if (input.criticalArgs["environment"] !== LIVE_ENVIRONMENT) {
+    throw new LiveHarnessRefusal(
+      `The deposit approval card is for environment ${String(input.criticalArgs["environment"])}, not `
+      + `${LIVE_ENVIRONMENT}. Refusing before the approval decision; nothing was signed.`,
+    );
+  }
+}
+
+/**
+ * The deposit intent row for this run, pulled out of the `lighter.deposit.status`
+ * reconciliation report by intent id. The tool answers with EVERY unresolved
+ * intent for the wallet when asked without an id, so a test must select its own
+ * row rather than assume the first one is its own.
+ */
+export function depositStatusIntent(json: unknown, intentId: string): Record<string, unknown> | null {
+  const container = json as Record<string, unknown> | null;
+  const intents = container?.["intents"];
+  if (!Array.isArray(intents)) return null;
+  for (const entry of intents) {
+    if (entry !== null && typeof entry === "object") {
+      const row = entry as Record<string, unknown>;
+      if (row["intentId"] === intentId) return row;
+    }
+  }
+  return null;
+}
+
+/**
+ * The terminal deposit execution states. `credited` is the only success;
+ * `failed` is a definitive refusal. `ambiguous` is deliberately NOT terminal -
+ * it is the unknown-outcome state the status tool's own reconciliation is there
+ * to resolve, and treating it as settled would report an unknown as an answer.
+ */
+export const LIGHTER_DEPOSIT_TERMINAL_STATES: readonly string[] = ["credited", "failed"];

@@ -19,6 +19,7 @@ import {
   approveAndResume,
   cardCriticalArgs,
   createLiveSession,
+  ensureIntegrationEnabled,
   EXPECTED_ACCOUNT_INDEX,
   flagEnabled,
   installLighterProductionSeams,
@@ -57,12 +58,16 @@ beforeAll(async () => {
   }
   disposeSeams = await installLighterProductionSeams();
   session = await createLiveSession(target, "fees");
+  const integration = await ensureIntegrationEnabled(target);
   evidence.record("target", {
     environment: LIVE_ENVIRONMENT,
     accountIndex: target.accountIndex,
     walletAddress: target.walletAddress,
     sessionId: session.sessionId,
     dryRun: isDryRun(),
+    workflowBefore: integration.before,
+    workflowAfter: integration.after,
+    workflowCreatedByThisRun: integration.created,
   });
 });
 

@@ -26,6 +26,7 @@ vi.mock("electron", async () => (await import("./harness.js")).electronMainStub(
 import {
   approveAndResume,
   createLiveSession,
+  ensureIntegrationEnabled,
   decideOrderSizing,
   ETH_PERP_MARKET_ID,
   EXPECTED_ACCOUNT_INDEX,
@@ -34,6 +35,7 @@ import {
   isDryRun,
   LIVE_ENVIRONMENT,
   LIVE_FLAGS,
+  LiveHarnessRefusal,
   MIN_NOTIONAL_USDG,
   openEvidence,
   isTerminalOrderState,
@@ -52,16 +54,56 @@ import {
 
 const describeLive = flagEnabled(LIVE_FLAGS.iocOrder) ? describe : describe.skip;
 
-/** Bounded protection buffer over the best ask so a buy IOC can cross. */
+/** Bounded protection buffer: over the best ask for a buy, under the best bid for a sell, so the IOC can cross. */
 const CROSSING_BUFFER = 1.005;
+
+/**
+ * `VEX_LIGHTER_LIVE_IOC_SIDE=sell` turns this step into the reduce-only CLOSE
+ * of the long the buy opened: the size is the open position read from the
+ * account, never a number typed by hand, and no new margin is required.
+ */
+const IOC_SIDE: "buy" | "sell" = process.env["VEX_LIGHTER_LIVE_IOC_SIDE"] === "sell" ? "sell" : "buy";
+const REDUCE_ONLY = IOC_SIDE === "sell";
 
 let disposeSeams: (() => void) | null = null;
 let session: LiveSession | null = null;
 let evidence: EvidenceWriter | null = null;
 const approvalIds: string[] = [];
 
+/**
+ * THE CLOSE SIZING: the account's own long on this market, whole. Refuses when
+ * there is no long to close, or when the position is below the exchange's own
+ * minimums (an IOC below them would be rejected rather than partially closed).
+ */
+function decideCloseSizing(input: {
+  readonly detail: Record<string, unknown>;
+  readonly positions: unknown;
+  readonly price: number;
+}): { readonly baseAmount: string; readonly notionalUsdg: number; readonly positionBefore: string } {
+  const sizeDecimals = Number(input.detail["supported_size_decimals"]);
+  const minBaseAmount = Number(input.detail["min_base_amount"]);
+  const minQuoteAmount = Number(input.detail["min_quote_amount"]);
+  const rows = Array.isArray(input.positions) ? (input.positions as Record<string, unknown>[]) : [];
+  const long = rows.find((row) => Number(row["market_id"]) === ETH_PERP_MARKET_ID && Number(row["sign"]) === 1);
+  const position = long === undefined ? Number.NaN : Number(long["position"]);
+  if (!Number.isFinite(position) || position <= 0) {
+    throw new LiveHarnessRefusal(
+      `Refusing to prepare the close: the account holds no long on market ${ETH_PERP_MARKET_ID}. Nothing was prepared, signed or submitted.`,
+    );
+  }
+  const baseAmount = position.toFixed(sizeDecimals);
+  const notionalUsdg = Number(baseAmount) * input.price;
+  if (Number(baseAmount) < minBaseAmount || notionalUsdg < minQuoteAmount) {
+    throw new LiveHarnessRefusal(
+      `Refusing to prepare the close: the long of ${baseAmount} (${notionalUsdg.toFixed(6)} USDG at ${input.price}) is below `
+      + `the exchange minimums (min_base_amount ${minBaseAmount}, min_quote_amount ${minQuoteAmount}). Nothing was prepared, signed or submitted.`,
+    );
+  }
+  return { baseAmount, notionalUsdg, positionBefore: String(long?.["position"]) };
+}
+
 beforeAll(async () => {
-  evidence = openEvidence("ioc-order");
+  evidence = openEvidence(REDUCE_ONLY ? "ioc-close" : "ioc-order");
   const target = await requireLiveTarget();
   if (isDryRun()) {
     const { runMigrations } = await import("@vex-agent/db/migrate.js");
@@ -69,12 +111,16 @@ beforeAll(async () => {
   }
   disposeSeams = await installLighterProductionSeams();
   session = await createLiveSession(target, "ioc");
+  const integration = await ensureIntegrationEnabled(target);
   evidence.record("target", {
     environment: LIVE_ENVIRONMENT,
     accountIndex: target.accountIndex,
     walletAddress: target.walletAddress,
     sessionId: session.sessionId,
     dryRun: isDryRun(),
+    workflowBefore: integration.before,
+    workflowAfter: integration.after,
+    workflowCreatedByThisRun: integration.created,
     marketId: ETH_PERP_MARKET_ID,
     nominalMinNotionalUsdg: MIN_NOTIONAL_USDG,
   });
@@ -109,7 +155,7 @@ function firstNumber(rows: unknown, key: string): number | null {
 }
 
 describeLive("one live IOC ETH-perp order on the owner's Robinhood Chain account", () => {
-  it("previews, prepares, approves, signs and reconciles one IOC buy", { timeout: 900_000 }, async () => {
+  it(`previews, prepares, approves, signs and reconciles one IOC ${IOC_SIDE}${REDUCE_ONLY ? " (reduce-only close)" : ""}`, { timeout: 900_000 }, async () => {
     const live = requireSession();
     const record = requireEvidence();
 
@@ -117,14 +163,15 @@ describeLive("one live IOC ETH-perp order on the owner's Robinhood Chain account
     const detail = await readRawMarketDetail(ETH_PERP_MARKET_ID);
     const book = await runReadTool({
       sessionId: live.sessionId,
-      publicName: "lighter__orderbook",
+      publicName: "lighter__orderbook_get",
       params: { environment: LIVE_ENVIRONMENT, marketId: ETH_PERP_MARKET_ID, limit: 5 },
     });
     expect(book.success, book.output).toBe(true);
     const bookJson = book.json as Record<string, unknown> | null;
-    const bestAsk = firstNumber(bookJson?.["asks"], "price")
+    // A buy crosses the ask; the close (a sell) crosses the bid.
+    const bestOpposite = firstNumber(bookJson?.[REDUCE_ONLY ? "bids" : "asks"], "price")
       ?? Number(detail["last_trade_price"]);
-    expect(Number.isFinite(bestAsk) && bestAsk > 0).toBe(true);
+    expect(Number.isFinite(bestOpposite) && bestOpposite > 0).toBe(true);
 
     const accountRead = await runReadTool({
       sessionId: live.sessionId,
@@ -145,21 +192,26 @@ describeLive("one live IOC ETH-perp order on the owner's Robinhood Chain account
       ?? Number(detail["default_initial_margin_fraction"]);
 
     const priceDecimals = Number(detail["supported_price_decimals"]);
-    const price = (bestAsk * CROSSING_BUFFER).toFixed(priceDecimals);
-    const sizing = decideOrderSizing({
-      marketId: ETH_PERP_MARKET_ID,
-      detail,
-      initialMarginFractionBps,
-      availableCollateralUsdg,
-      price: Number(price),
-    });
+    const price = (REDUCE_ONLY ? bestOpposite / CROSSING_BUFFER : bestOpposite * CROSSING_BUFFER).toFixed(priceDecimals);
+    const sizing = REDUCE_ONLY
+      ? decideCloseSizing({ detail, positions: account["positions"], price: Number(price) })
+      : decideOrderSizing({
+          marketId: ETH_PERP_MARKET_ID,
+          detail,
+          initialMarginFractionBps,
+          availableCollateralUsdg,
+          price: Number(price),
+        });
     record.record("sizing", {
-      bestAsk,
+      mode: REDUCE_ONLY ? "close_reduce_only" : "open",
+      side: IOC_SIDE,
+      bestOpposite,
       price,
       availableCollateralUsdg,
       initialMarginFractionBps,
       initialMarginFractionSource: positionImf === null ? "market_default" : "open_position",
       sizing,
+      positionsBefore: account["positions"],
       // Verbatim, because the projected market read omits every margin field.
       rawOrderBookDetail: detail,
     });
@@ -172,12 +224,12 @@ describeLive("one live IOC ETH-perp order on the owner's Robinhood Chain account
         environment: LIVE_ENVIRONMENT,
         accountIndex: EXPECTED_ACCOUNT_INDEX,
         marketId: ETH_PERP_MARKET_ID,
-        side: "buy",
+        side: IOC_SIDE,
         baseAmountIn: sizing.baseAmount,
         price,
         orderType: "market",
         timeInForce: "immediate-or-cancel",
-        reduceOnly: false,
+        reduceOnly: REDUCE_ONLY,
         orderExpiry: Date.now() + 10 * 60 * 1000,
       },
     });
