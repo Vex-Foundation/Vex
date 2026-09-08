@@ -30,6 +30,14 @@ jobs:
 
       - run: corepack enable
 
+      # The toolchain check refuses a Go that differs from the signer pin, and
+      # the runner image ships its own Go: install the pinned one first.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.0"
+          check-latest: false
+          cache: false
+
       - name: Verify pinned toolchain
         run: pnpm run verify:toolchain
 
@@ -538,10 +546,11 @@ jobs:
         with:
           node-version: 22
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: src/tools/lighter/signer-runtime/go.mod
-          cache-dependency-path: src/tools/lighter/signer-runtime/go.sum
+          go-version: "1.27.0"
+          check-latest: false
+          cache: false
 
       - run: corepack enable
 

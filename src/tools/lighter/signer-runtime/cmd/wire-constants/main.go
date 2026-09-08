@@ -28,6 +28,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -74,12 +75,18 @@ func main() {
 		ApiMaxOrderType: txtypes.ApiMaxOrderType,
 	}
 
-	encoded, err := json.MarshalIndent(out, "", "  ")
-	if err != nil {
+	// An Encoder rather than MarshalIndent: MarshalIndent escapes "&", "<" and
+	// ">" as \u0026, \u003c and \u003e, which would turn the human-readable
+	// regenerate line into an artifact diff on every CI run.
+	var buffer bytes.Buffer
+	encoder := json.NewEncoder(&buffer)
+	encoder.SetEscapeHTML(false)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(out); err != nil {
 		fmt.Fprintf(os.Stderr, "wire-constants: %v\n", err)
 		os.Exit(1)
 	}
-	if _, err := os.Stdout.Write(append(encoded, '\n')); err != nil {
+	if _, err := os.Stdout.Write(buffer.Bytes()); err != nil {
 		fmt.Fprintf(os.Stderr, "wire-constants: %v\n", err)
 		os.Exit(1)
 	}
