@@ -2079,10 +2079,12 @@ approval. Spot fees reduce the asset received."
 (`buildLighterFeeAuthorizationDisclosure`,
 `src/vex-agent/tools/protocols/lighter/fee-authorization-disclosure.ts`). The authorization
 is valid for ten years (`LIGHTER_FEE_AUTHORIZATION_DURATION_MS`, `fee-policy.ts`) and is
-revocable at any time: `lighter__fees_approve` with `revoke` set builds the mirror card, whose
-scope sentence is "Stop authorizing new VEX fee-bearing orders. Existing submitted orders retain
-their signed terms." A revocation stops future fee-bearing orders; it cannot reach into an order
-already submitted under the old terms, and the card says so rather than implying it can.
+revocable at any time: `lighter__fees_approve_prepare` with `revoke: true` builds the mirror card,
+whose scope sentence is "Stop authorizing new VEX fee-bearing orders. Existing submitted orders
+retain their signed terms." Accepting that card is what resumes `lighter__fees_approve`, which takes
+only the prepared `intentId` and never a `revoke` flag of its own. A revocation stops future
+fee-bearing orders; it cannot reach into an order already submitted under the old terms, and the
+card says so rather than implying it can.
 
 #### The account-tier requirement, and why it is on the same card
 

@@ -973,11 +973,10 @@ describe("Lighter error mapping", () => {
     });
   });
 
-  it("redacts and bounds provider body excerpts", () => {
+  it("redacts provider body excerpts", () => {
     const secret = "sk-ant-abcdef0123456789abcdef0123456789";
     const excerpt = describeLighterBody({ error: `${secret} ${"x".repeat(500)}` });
     expect(excerpt).not.toContain(secret);
-    expect(excerpt?.length).toBeLessThanOrEqual(203);
   });
 
   it("redacts Lighter read-only auth tokens from provider bodies", () => {

@@ -2,8 +2,6 @@ import { ErrorCodes, VexError } from "../../errors.js";
 import { summarizeProtocolError } from "../../utils/error-summary.js";
 import type { LighterEnvironment } from "./constants.js";
 
-const MAX_BODY_EXCERPT = 200;
-
 export async function readLighterErrorBody(response: Response): Promise<unknown> {
   const text = await response.text().catch(() => "");
   if (text.trim().length === 0) return null;
@@ -14,14 +12,27 @@ export async function readLighterErrorBody(response: Response): Promise<unknown>
   }
 }
 
+/**
+ * The provider's own words about a rejection, sanitized, with NO cut of our own.
+ *
+ * `summarizeProtocolError` (`utils/error-summary/`) is the single owner of both
+ * the redaction and the bound on this text: it strips API keys, Lighter
+ * read-only auth tokens and the rest of the secret shapes, then applies its own
+ * documented cap. This function used to apply a SECOND, venue-local cut at 200
+ * characters with a "..." suffix on top of that, and Lighter's longest
+ * rejections are the useful ones - a reproduction lost the trailing "missing
+ * field X" instruction, which was the only actionable sentence in the body and
+ * the reason the caller had asked. The venue-local cut is gone; whatever the
+ * shared owner hands back reaches the caller unchanged, and a consumer that
+ * needs a tighter bound owns that bound and reports it (CLAUDE.md, "FORBIDDEN:
+ * silent content cutting").
+ */
 export function describeLighterBody(raw: unknown): string | undefined {
   const text = bodyText(raw);
   if (text === undefined) return undefined;
   const cleaned = summarizeProtocolError(new Error(text)).message.replace(/\s+/g, " ").trim();
   if (cleaned.length === 0) return undefined;
-  return cleaned.length > MAX_BODY_EXCERPT
-    ? `${cleaned.slice(0, MAX_BODY_EXCERPT)}...`
-    : cleaned;
+  return cleaned;
 }
 
 function bodyText(raw: unknown): string | undefined {

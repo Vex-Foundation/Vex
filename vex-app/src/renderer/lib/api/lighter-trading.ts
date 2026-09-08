@@ -14,13 +14,43 @@ import type {
  * `AbortSignal`; touching it turns "the reader closed the workspace or picked
  * another market" into main's own `ctx.signal`, which stops the queued Lighter
  * REST read instead of paying for an answer nobody will see.
+ *
+ * THE LISTENER HAS AN OWNER, and the owner is this call (rule 05). Two defects
+ * the first version carried, both from attaching and never detaching:
+ *
+ *  - an ALREADY-ABORTED signal was never honoured. TanStack reuses one signal
+ *    across a query's retries and hands an aborted one to a query function that
+ *    starts after the reader has already navigated away; `addEventListener`
+ *    fires nothing for an event that has passed, so the invocation ran to
+ *    completion and main paid for a read nobody would see - the exact cost this
+ *    helper exists to avoid. Cancel first, synchronously, the way VS Code's
+ *    `CancellationToken.Cancelled` shortcut answers a token that is already
+ *    cancelled instead of waiting for an event that will never fire.
+ *  - the listener OUTLIVED the invocation. A settled invocation's `cancel` stayed
+ *    on the signal until the signal itself was collected, so a later abort of
+ *    the same signal reached back into finished work, and a long-lived query
+ *    accumulated one dead listener per refetch.
+ *
+ * Exported for its colocated test, which is the only way to prove the listener
+ * count returns to zero on BOTH outcomes.
  */
-function abortable<T>(
+export function abortable<T>(
   invocation: { readonly promise: Promise<T>; readonly cancel: () => void },
   signal: AbortSignal,
 ): Promise<T> {
-  signal.addEventListener("abort", invocation.cancel, { once: true });
-  return invocation.promise;
+  if (signal.aborted) {
+    invocation.cancel();
+    return invocation.promise;
+  }
+  const onAbort = (): void => {
+    invocation.cancel();
+  };
+  signal.addEventListener("abort", onAbort, { once: true });
+  // `finally` preserves both the value and the rejection reason: it detaches on
+  // settlement without changing what the caller receives.
+  return invocation.promise.finally(() => {
+    signal.removeEventListener("abort", onAbort);
+  });
 }
 
 const MARKET_LIST_STALE_MS = 30_000;
